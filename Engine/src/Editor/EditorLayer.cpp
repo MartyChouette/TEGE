@@ -979,6 +979,26 @@ void EditorLayer::Update(f32 deltaTime) {
     // build dialog closed.
     PollBuildThread();
 
+    // Replay playback swapped the live scene for the replay's snapshot; when
+    // the replay session ends, hand the user their real scene back.
+    {
+        bool replayingNow = m_PlayMode.IsReplaying();
+        if (m_WasReplaying && !replayingNow && m_PlayMode.IsStopped() &&
+            !m_PreReplaySceneJson.empty() && m_World) {
+            Scene::SceneSerializer ser(m_World);
+            auto res = ser.LoadFromString(m_PreReplaySceneJson);
+            if (res.success) {
+                ClearSelection();
+                ENJIN_LOG_INFO(Editor, "Replay ended - working scene restored");
+            } else {
+                ENJIN_LOG_ERROR(Editor, "Replay ended but the working scene failed to restore: %s",
+                                res.error.c_str());
+            }
+            m_PreReplaySceneJson.clear();
+        }
+        m_WasReplaying = replayingNow;
+    }
+
     // --golden probe support: after the configured frame count, read back the
     // game view render target, write the reference images, and exit. When
     // --play was also passed, the count starts only once play mode is live -
@@ -4923,11 +4943,23 @@ void EditorLayer::PlayLatestReplay() {
         return;
     }
     if (!m_PlayMode.IsStopped()) m_PlayMode.Stop();
-    // Restore the recorded scene so the input stream lands on identical state.
+    // Load the recorded scene so the input stream lands on identical state -
+    // but FIRST preserve the real working scene. The replay snapshot replaces
+    // the live world, so without this the editor's stop-restore hands back the
+    // replay's scene and the user's actual scene (including unsaved work) is
+    // gone - and the autosave timer would then write that over the file.
     if (!data.sceneJson.empty() && m_World) {
         Scene::SceneSerializer ser(m_World);
+        {
+            Scene::SerializationOptions keep;
+            keep.prettyPrint = false;
+            keep.includeVertexData = true;
+            keep.useMeshReferences = true;
+            m_PreReplaySceneJson = ser.SaveToString(keep);
+        }
         auto res = ser.LoadFromString(data.sceneJson);
         if (!res.success) {
+            m_PreReplaySceneJson.clear();
             ShowNotification("Replay scene failed to load: " + res.error,
                              NotificationType::Error);
             return;

@@ -5,6 +5,7 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Material.h"
+#include "Enjin/ECS/Components/Mesh.h"
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Components/Notes.h"
@@ -1679,6 +1680,50 @@ ENJIN_TEST(SerdesRegistry, FullSceneRoundTripCoversLoopOnlyComponents) {
     auto* bc2 = w2.GetComponent<BeatClockComponent>(e2);
     ENJIN_ASSERT_NOT_NULL(bc2);
     ENJIN_EXPECT_TRUE(bc2->bpm > 127.9f && bc2->bpm < 128.1f);
+}
+
+// ===========================================================================
+// Replay snapshot options — an authored mesh (no source reference) must keep
+// its inline vertices under useMeshReferences + includeVertexData, the options
+// PlayMode uses for the replay's embedded scene. Regression: the compact form
+// (includeVertexData=false) stripped primitive meshes, so replay playback
+// showed an invisible character whose collider still fell (2026-08-23).
+// ===========================================================================
+
+ENJIN_TEST(ReplaySnapshot, AuthoredMeshKeepsVerticesUnderReferenceMode) {
+    // Arrange: an entity with a small authored triangle mesh (no source ref).
+    World src;
+    Entity e = src.CreateEntity();
+    src.AddComponent<TransformComponent>(e);
+    auto& mesh = src.AddComponent<MeshComponent>(e);
+    for (int i = 0; i < 3; ++i) {
+        MeshComponent::Vertex v;
+        v.position = Math::Vector3(static_cast<f32>(i), 0.0f, 0.0f);
+        v.normal = Math::Vector3(0.0f, 1.0f, 0.0f);
+        mesh.vertices.push_back(v);
+    }
+    mesh.indices = {0, 1, 2};
+
+    // Act: serialize with the replay snapshot's exact options, reload.
+    Scene::SceneSerializer ser(&src);
+    Scene::SerializationOptions opts;
+    opts.prettyPrint = false;
+    opts.includeVertexData = true;
+    opts.useMeshReferences = true;
+    std::string json = ser.SaveToString(opts);
+
+    World dst;
+    Scene::SceneSerializer de(&dst);
+    auto result = de.LoadFromString(json);
+
+    // Assert: the geometry survived.
+    ENJIN_ASSERT_TRUE(result.success);
+    ENJIN_ASSERT_TRUE(!result.entities.empty());
+    auto* back = dst.GetComponent<MeshComponent>(result.entities[0]);
+    ENJIN_ASSERT_NOT_NULL(back);
+    ENJIN_ASSERT_EQ((int)back->vertices.size(), 3);
+    ENJIN_EXPECT_EQ((int)back->indices.size(), 3);
+    ENJIN_EXPECT_FLOAT_NEAR(back->vertices[2].position.x, 2.0f, 0.001f);
 }
 
 ENJIN_TEST_MAIN()

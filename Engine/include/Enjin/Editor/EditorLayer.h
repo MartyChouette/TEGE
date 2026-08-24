@@ -1300,8 +1300,12 @@ private:
     i32 m_GoldenFrameCounter = 0;
     void WriteGoldenCapture();
     // Replay files: export the last session to <project>/replays/, replay the newest.
+    // Playback swaps the live scene for the replay's snapshot; the working scene
+    // is preserved here and restored when the replay session stops.
     void ExportReplayToProject();
     void PlayLatestReplay();
+    std::string m_PreReplaySceneJson;
+    bool m_WasReplaying = false;
     // Readback + write the game view as <basePath>.png/.ppm (no exit).
     bool CaptureGameViewToFile(const std::string& basePath);
 

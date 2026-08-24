@@ -127,6 +127,7 @@ exported_sprite.*
 # own tooling in /scripts and the golden scene's canary script.
 web-demo/scripts/
 web-demo/Build/
+Tests/GoldenScene/replays/
 
 # -----------------------------------------------------------------------------
 # Claude Code / AI tooling

@@ -266,7 +266,12 @@ void PlayMode::Play() {
             Scene::SceneSerializer ser(m_World);
             Scene::SerializationOptions opts;
             opts.prettyPrint = false;
-            opts.includeVertexData = false;
+            // Vertex data ON: with mesh references also on, imported meshes
+            // still shrink to source refs - but authored/primitive meshes
+            // (capsules, boxes, procgen output) keep their inline geometry.
+            // includeVertexData=false stripped them, so replay playback showed
+            // an invisible character whose collider still fell (2026-08-23).
+            opts.includeVertexData = true;
             opts.useMeshReferences = true;
             m_ActiveRecording.sceneJson = ser.SaveToString(opts);
         }
