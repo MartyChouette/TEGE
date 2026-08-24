@@ -105,6 +105,12 @@ ENJIN_TEST(McpServer, HooklessToolsFailCleanly) {
     ENJIN_EXPECT_TRUE(spawnNoPath.value("isError", false));
     json build = CallTool(s, "build_game", {{"target", "web"}});
     ENJIN_EXPECT_TRUE(build.value("isError", false));
+    json slist = CallTool(s, "script_list");
+    ENJIN_EXPECT_TRUE(slist.value("isError", false));
+    json sread = CallTool(s, "script_read", {{"path", "Foo.as"}});
+    ENJIN_EXPECT_TRUE(sread.value("isError", false));
+    json swriteNoPath = CallTool(s, "script_write", {{"content", "class X {}"}});
+    ENJIN_EXPECT_TRUE(swriteNoPath.value("isError", false));
 
     // Unknown method -> JSON-RPC error, notifications -> no response.
     json bad = Call(s, "bogus/method");

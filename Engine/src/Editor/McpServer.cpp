@@ -86,6 +86,17 @@ static json ToolList() {
                           {"description", "build target (default: the Build dialog's current setting)"}}},
               {"run", {{"type", "boolean"}, {"description", "launch (desktop) or serve+open (web) when the build succeeds"}}}},
              json::array()),
+        tool("script_list", "List the project's AngelScript files (paths relative to the scripts folder).",
+             json::object(), json::array()),
+        tool("script_read", "Read one AngelScript source file from the project's scripts folder.",
+             {{"path", {{"type", "string"}, {"description", "path relative to scripts/ (e.g. Player.as)"}}}},
+             json::array({"path"})),
+        tool("script_write", "Write an AngelScript source file (scripts folder, .as only) and compile it immediately; returns the compile diagnostics.",
+             {{"path", {{"type", "string"}, {"description", "path relative to scripts/ (e.g. Player.as)"}}},
+              {"content", {{"type", "string"}, {"description", "full file content"}}}},
+             json::array({"path", "content"})),
+        tool("script_errors", "Last script compile error and the runtime exception count for this session.",
+             json::object(), json::array()),
     });
 }
 
@@ -105,6 +116,7 @@ json McpServerCallTool(McpServer* self, ECS::World* world,
                        const std::function<std::string()>& capture,
                        const std::function<std::string(const std::string&, f32, f32, f32)>& spawnPrefab,
                        const std::function<std::string(const std::string&, bool)>& buildGame,
+                       const std::function<std::string(const std::string&, const std::string&, const std::string&)>& scriptTool,
                        const std::string& name, const json& args) {
     (void)self;
     auto needWorld = [&]() -> ECS::World* { return world; };
@@ -122,6 +134,15 @@ json McpServerCallTool(McpServer* self, ECS::World* world,
     if (name == "build_game") {
         if (!buildGame) return ToolText("building not available in this context", true);
         std::string r = buildGame(args.value("target", ""), args.value("run", false));
+        return ToolText(r, r.rfind("error", 0) == 0);
+    }
+    if (name == "script_list" || name == "script_read" || name == "script_write" || name == "script_errors") {
+        if (!scriptTool) return ToolText("script tools not available in this context", true);
+        std::string op = name.substr(7);   // strip "script_"
+        std::string path = args.value("path", "");
+        if ((op == "read" || op == "write") && path.empty())
+            return ToolText("error: 'path' is required", true);
+        std::string r = scriptTool(op, path, args.value("content", ""));
         return ToolText(r, r.rfind("error", 0) == 0);
     }
 
@@ -256,7 +277,7 @@ std::string McpServer::HandleJsonRpc(const std::string& body) {
         json args = params.value("arguments", json::object());
         try {
             json r = McpServerCallTool(this, m_World, m_SceneInfo, m_PlayControl, m_Capture,
-                                       m_SpawnPrefab, m_Build, name, args);
+                                       m_SpawnPrefab, m_Build, m_ScriptTool, name, args);
             return result(std::move(r));
         } catch (const std::exception& e) {
             return result(ToolText(std::string("tool threw: ") + e.what(), true));

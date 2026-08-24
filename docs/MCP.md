@@ -41,6 +41,10 @@ claude mcp add --transport http tege http://127.0.0.1:8971/mcp
 | `capture_view` | Save the game view as PNG, returns the path. |
 | `spawn_prefab` | Instantiate a `.enjprefab` (project-relative path) at an optional position. |
 | `build_game` | Start an async build (`target`: `desktop`/`web`, `run` to launch on success); returns immediately, poll `scene_info` for progress. |
+| `script_list` | List the project's AngelScript files. |
+| `script_read` | Read one script source (scripts folder, `.as` only). |
+| `script_write` | Write a script and compile it immediately; returns diagnostics with file/line/column. |
+| `script_errors` | Last compile error + runtime exception count. |
 
 Component JSON uses the exact same schema as `.enjin` scene files — whatever the
 serializer writes, `set_component` accepts.

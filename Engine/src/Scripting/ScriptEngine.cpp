@@ -315,7 +315,14 @@ bool ScriptEngine::CompileScript(const std::string& path)
 
     r = builder.BuildModule();
     if (r < 0) {
+        // MessageCallback already stored the DETAILED error (file, line, col,
+        // message) in m_LastError while BuildModule ran - keep it and prefix
+        // the module context instead of flattening it to a generic line.
+        std::string detail = m_LastError;
         m_LastError = "Compilation failed for module '" + moduleName + "'";
+        if (!detail.empty() && detail.rfind("Compilation failed", 0) != 0) {
+            m_LastError += ": " + detail;
+        }
         ENJIN_LOG_ERROR(Script, "%s", m_LastError.c_str());
         m_Engine->DiscardModule(moduleName.c_str());
         return false;

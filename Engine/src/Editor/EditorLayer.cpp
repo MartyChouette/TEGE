@@ -967,6 +967,63 @@ void EditorLayer::Update(f32 deltaTime) {
                        (m_BuildConfig.target == Build::BuildTargetPlatform::Web ? "web" : "desktop") +
                        ") - poll scene_info for progress";
             });
+            m_McpServer.SetScriptToolHook([this](const std::string& op, const std::string& relPath,
+                                                 const std::string& content) -> std::string {
+                std::string projPath = m_SceneManager.GetProjectPath();
+                if (projPath.empty()) return "error: no project open";
+                std::filesystem::path scriptsDir =
+                    std::filesystem::path(projPath).parent_path() / "scripts";
+
+                if (op == "list") {
+                    nlohmann::json arr = nlohmann::json::array();
+                    std::error_code ec;
+                    for (const auto& e : std::filesystem::recursive_directory_iterator(scriptsDir, ec)) {
+                        if (!e.is_regular_file() || e.path().extension() != ".as") continue;
+                        arr.push_back(std::filesystem::relative(e.path(), scriptsDir, ec).generic_string());
+                    }
+                    return arr.dump();
+                }
+                if (op == "errors") {
+                    auto* se = m_PlayMode.GetScriptEngine();
+                    nlohmann::json j;
+                    j["lastError"] = se ? se->GetLastError() : "";
+                    j["exceptionCount"] = se ? se->GetExceptionCount() : 0u;
+                    return j.dump();
+                }
+
+                // read / write: contain the path inside scripts/, .as files only
+                std::string resolved = Platform::ResolveWithinRoot(scriptsDir.string(), relPath);
+                if (resolved.empty()) return "error: path escapes the scripts folder";
+                if (std::filesystem::path(resolved).extension() != ".as")
+                    return "error: only .as script files";
+
+                if (op == "read") {
+                    std::ifstream f(resolved, std::ios::binary);
+                    if (!f.is_open()) return "error: could not open '" + relPath + "'";
+                    std::stringstream ss;
+                    ss << f.rdbuf();
+                    return ss.str();
+                }
+                if (op == "write") {
+                    std::error_code ec;
+                    std::filesystem::create_directories(std::filesystem::path(resolved).parent_path(), ec);
+                    {
+                        std::ofstream f(resolved, std::ios::binary | std::ios::trunc);
+                        if (!f.is_open()) return "error: could not write '" + relPath + "'";
+                        f.write(content.data(), static_cast<std::streamsize>(content.size()));
+                    }
+                    // Compile right away so the caller gets diagnostics in the
+                    // same round trip (modules recompile fresh on Play anyway).
+                    auto* se = m_PlayMode.GetScriptEngine();
+                    if (se && se->CompileScript(resolved)) {
+                        return "written and compiled cleanly (" +
+                               std::to_string(content.size()) + " bytes)";
+                    }
+                    return std::string("error: compile failed: ") +
+                           (se ? se->GetLastError() : "script engine unavailable");
+                }
+                return "error: unknown script op '" + op + "'";
+            });
             m_McpServer.Start(static_cast<u16>(m_EditorSettings.mcpServerPort));
         } else if (!want && m_McpServer.IsRunning()) {
             m_McpServer.Stop();
