@@ -81,6 +81,11 @@ static json ToolList() {
              {{"path", {{"type", "string"}, {"description", "prefab path relative to the project root"}}},
               {"x", {{"type", "number"}}}, {"y", {{"type", "number"}}}, {"z", {{"type", "number"}}}},
              json::array({"path"})),
+        tool("build_game", "Start an async build of the open project; returns immediately. Poll scene_info for progress.",
+             {{"target", {{"type", "string"}, {"enum", {"desktop", "web"}},
+                          {"description", "build target (default: the Build dialog's current setting)"}}},
+              {"run", {{"type", "boolean"}, {"description", "launch (desktop) or serve+open (web) when the build succeeds"}}}},
+             json::array()),
     });
 }
 
@@ -99,6 +104,7 @@ json McpServerCallTool(McpServer* self, ECS::World* world,
                        const std::function<std::string(const std::string&)>& playControl,
                        const std::function<std::string()>& capture,
                        const std::function<std::string(const std::string&, f32, f32, f32)>& spawnPrefab,
+                       const std::function<std::string(const std::string&, bool)>& buildGame,
                        const std::string& name, const json& args) {
     (void)self;
     auto needWorld = [&]() -> ECS::World* { return world; };
@@ -111,6 +117,11 @@ json McpServerCallTool(McpServer* self, ECS::World* world,
                                     args.value("x", 0.0f),
                                     args.value("y", 0.0f),
                                     args.value("z", 0.0f));
+        return ToolText(r, r.rfind("error", 0) == 0);
+    }
+    if (name == "build_game") {
+        if (!buildGame) return ToolText("building not available in this context", true);
+        std::string r = buildGame(args.value("target", ""), args.value("run", false));
         return ToolText(r, r.rfind("error", 0) == 0);
     }
 
@@ -245,7 +256,7 @@ std::string McpServer::HandleJsonRpc(const std::string& body) {
         json args = params.value("arguments", json::object());
         try {
             json r = McpServerCallTool(this, m_World, m_SceneInfo, m_PlayControl, m_Capture,
-                                       m_SpawnPrefab, name, args);
+                                       m_SpawnPrefab, m_Build, name, args);
             return result(std::move(r));
         } catch (const std::exception& e) {
             return result(ToolText(std::string("tool threw: ") + e.what(), true));

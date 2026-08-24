@@ -40,6 +40,7 @@ claude mcp add --transport http tege http://127.0.0.1:8971/mcp
 | `play_control` | `play` / `pause` / `resume` / `stop`. |
 | `capture_view` | Save the game view as PNG, returns the path. |
 | `spawn_prefab` | Instantiate a `.enjprefab` (project-relative path) at an optional position. |
+| `build_game` | Start an async build (`target`: `desktop`/`web`, `run` to launch on success); returns immediately, poll `scene_info` for progress. |
 
 Component JSON uses the exact same schema as `.enjin` scene files — whatever the
 serializer writes, `set_component` accepts.

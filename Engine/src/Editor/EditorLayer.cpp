@@ -722,6 +722,13 @@ void EditorLayer::InitializePlayMode() {
 }
 
 void EditorLayer::Shutdown() {
+    // A build still running on the worker thread must finish before teardown
+    // (it only touches files, but the thread must not outlive the editor).
+    if (m_BuildThread.joinable()) {
+        ENJIN_LOG_INFO(Editor, "Waiting for the in-flight build to finish...");
+        m_BuildThread.join();
+    }
+
     // End telemetry session (saves aggregate data to disk)
     m_Telemetry.EndSession();
 
@@ -907,6 +914,14 @@ void EditorLayer::Update(f32 deltaTime) {
                 j["playState"] = m_PlayMode.IsPlaying() ? "playing"
                                : m_PlayMode.IsPaused() ? "paused" : "stopped";
                 j["entityCount"] = m_World ? m_World->GetAllEntities().size() : 0;
+                if (m_BuildInProgress) {
+                    std::lock_guard<std::mutex> lock(m_BuildMutex);
+                    j["buildState"] = "building";
+                    j["buildPhase"] = m_BuildWorkerPhase;
+                    j["buildProgress"] = m_BuildWorkerProgress;
+                } else if (m_BuildFinished) {
+                    j["buildState"] = m_BuildResult.success ? "succeeded" : "failed";
+                }
                 return j.dump();
             });
             m_McpServer.SetPlayControlHook([this](const std::string& action) -> std::string {
@@ -936,12 +951,33 @@ void EditorLayer::Update(f32 deltaTime) {
                 if (e == ECS::INVALID_ENTITY) return "error: instantiate failed";
                 return "entity " + std::to_string(static_cast<u64>(e));
             });
+            m_McpServer.SetBuildHook([this](const std::string& target, bool run) -> std::string {
+                if (m_BuildInProgress) return "error: a build is already in progress";
+                if (m_SceneManager.GetProjectPath().empty()) return "error: no project open";
+                if (target == "web") m_BuildConfig.target = Build::BuildTargetPlatform::Web;
+                else if (target == "desktop") m_BuildConfig.target = Build::BuildTargetPlatform::Desktop;
+                else if (!target.empty()) return "error: unknown target '" + target + "' (desktop|web)";
+                if (m_BuildConfig.outputDir.empty()) {
+                    // Default beside the project, mirroring the Build dialog's suggestion
+                    m_BuildConfig.outputDir =
+                        (std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path() / "Build").string();
+                }
+                StartBuildAsync(run);
+                return std::string("build started (") +
+                       (m_BuildConfig.target == Build::BuildTargetPlatform::Web ? "web" : "desktop") +
+                       ") - poll scene_info for progress";
+            });
             m_McpServer.Start(static_cast<u16>(m_EditorSettings.mcpServerPort));
         } else if (!want && m_McpServer.IsRunning()) {
             m_McpServer.Stop();
         }
         if (m_McpServer.IsRunning()) m_McpServer.PumpMainThread();
     }
+
+    // Async build: publish a finished worker build's result on the main thread
+    // (notifications, run-after-build, dev web server). Runs even with the
+    // build dialog closed.
+    PollBuildThread();
 
     // --golden probe support: after the configured frame count, read back the
     // game view render target, write the reference images, and exit. When

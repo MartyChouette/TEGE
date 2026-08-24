@@ -47,6 +47,9 @@ public:
     // (path, x, y, z) -> "entity <id>" or "error: ..." - the editor resolves the
     // path inside the project root and instantiates via PrefabManager.
     void SetSpawnPrefabHook(std::function<std::string(const std::string&, f32, f32, f32)> hook) { m_SpawnPrefab = std::move(hook); }
+    // (target "desktop"|"web"|"", run) -> status string. Starts the ASYNC build
+    // and returns immediately; progress is visible via scene_info.
+    void SetBuildHook(std::function<std::string(const std::string&, bool)> hook) { m_Build = std::move(hook); }
 
     // Bind 127.0.0.1 on preferredPort (tries the next few on conflict).
     // Returns the bound port, or 0 on failure.
@@ -80,6 +83,7 @@ private:
     std::function<std::string(const std::string&)> m_PlayControl;
     std::function<std::string()> m_Capture;
     std::function<std::string(const std::string&, f32, f32, f32)> m_SpawnPrefab;
+    std::function<std::string(const std::string&, bool)> m_Build;
 
     std::thread m_Thread;
     std::atomic<bool> m_Running{false};

@@ -41,6 +41,9 @@
 #include "Enjin/Effects/CurlNoiseSystem.h"
 #include "Enjin/Scene/SceneManager.h"
 #include "Enjin/Scene/LayerSystem.h"
+#include <thread>
+#include <atomic>
+#include <mutex>
 #include "Enjin/ECS/Components/CineComponent.h"
 #include "Enjin/Renderer/SceneRenderSettings.h"
 #include "Enjin/Editor/PerformanceStats.h"
@@ -1423,7 +1426,12 @@ private:
     // Frame + select every model imported in a group batch, then clear batch state.
     void FinishGroupImport();
 
-    // Build dialog state
+    // Build dialog state. Builds run on a worker thread (BuildPipeline is pure
+    // file I/O + process spawns, no live editor state): the worker writes
+    // progress under m_BuildMutex and flips m_BuildThreadDone; PollBuildThread
+    // (called every frame from Update) joins and publishes the result on the
+    // main thread, where notifications / run-after-build / the dev web server
+    // belong. Editor shutdown joins a still-running build.
     bool m_ShowBuildDialog = false;
     Build::BuildConfig m_BuildConfig;
     Networking::NetworkConfig m_NetworkConfig;
@@ -1432,6 +1440,15 @@ private:
     bool m_BuildFinished = false;
     float m_BuildProgress = 0.0f;
     std::string m_BuildProgressPhase;
+    std::thread m_BuildThread;
+    std::atomic<bool> m_BuildThreadDone{false};
+    std::mutex m_BuildMutex;                  // guards the two worker-written fields below
+    float m_BuildWorkerProgress = 0.0f;
+    std::string m_BuildWorkerPhase;
+    Build::BuildResult m_BuildWorkerResult;   // written once before m_BuildThreadDone flips
+    bool m_BuildRunAfter = false;
+    void StartBuildAsync(bool runAfterBuild);
+    void PollBuildThread();
 
     // New Project dialog state (standalone, not project hub)
     bool m_ShowNewProjectDialog = false;

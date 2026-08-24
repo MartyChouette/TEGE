@@ -1434,65 +1434,18 @@ void EditorLayer::DrawBuildDialog() {
     };
 
     if (buildRequested) {
-        // Auto-save current scene before building so the .enjin file
-        // on disk contains all current entities and mesh data
-        if (!m_CurrentScenePath.empty()) {
-            SaveScene(m_CurrentScenePath);
-            ENJIN_LOG_INFO(Editor, "Auto-saved scene before build: %s", m_CurrentScenePath.c_str());
-        }
-        ENJIN_LOG_INFO(Editor, "Build: projectPath='%s' scenePath='%s'",
-            m_SceneManager.GetProjectPath().c_str(), m_CurrentScenePath.c_str());
-        m_BuildConfig.projectPath = m_SceneManager.GetProjectPath();
-        m_BuildInProgress = true;
-        m_BuildFinished = false;
-        m_BuildProgress = 0.0f;
-        m_BuildResult = Build::BuildResult{};
-
-        Build::BuildPipeline pipeline;
-        pipeline.SetProgressCallback([this](const std::string& phase, float progress) {
-            m_BuildProgressPhase = phase;
-            m_BuildProgress = progress;
-        });
-
-        m_BuildResult = pipeline.Execute(m_BuildConfig);
-        m_BuildInProgress = false;
-        m_BuildFinished = true;
-        m_Telemetry.TrackBuildRun();
-        if (m_BuildResult.success) {
-            ShowNotification("Build complete!", NotificationType::Success);
-            if (runAfterBuild) {
-                if (m_BuildConfig.target == Build::BuildTargetPlatform::Web) {
-                    // Web builds have no exe — serve the output on localhost
-                    // and open the browser (browsers refuse wasm over file://)
-                    u16 port = m_DevWebServer.Start(m_BuildConfig.outputDir);
-                    if (port != 0) {
-                        OpenUrlPreferChromium("http://localhost:" + std::to_string(port) + "/");
-                        ShowNotification("Running in browser...", NotificationType::Info);
-                    } else {
-                        ShowNotification("Build succeeded but the preview server could not start", NotificationType::Warning);
-                    }
-                } else {
-                    std::string exePath = builtExePath();
-                    if (std::filesystem::exists(exePath)) {
-#ifdef ENJIN_PLATFORM_WINDOWS
-                        ShellExecuteA(nullptr, "open", exePath.c_str(), nullptr,
-                                      m_BuildConfig.outputDir.c_str(), SW_SHOWNORMAL);
-#endif
-                        ShowNotification("Launching game...", NotificationType::Info);
-                    } else {
-                        ShowNotification("Build succeeded but the game exe was not found", NotificationType::Warning);
-                    }
-                }
-            }
-        } else {
-            ShowNotification("Build failed", NotificationType::Error);
-        }
+        StartBuildAsync(runAfterBuild);
     }
 
-    // Progress bar
+    // Progress bar (worker publishes progress under the mutex; UI copies it out)
     if (m_BuildInProgress || m_BuildFinished) {
         ImGui::SameLine();
         if (m_BuildInProgress) {
+            {
+                std::lock_guard<std::mutex> lock(m_BuildMutex);
+                m_BuildProgress = m_BuildWorkerProgress;
+                m_BuildProgressPhase = m_BuildWorkerPhase;
+            }
             ImGui::ProgressBar(m_BuildProgress, ImVec2(-1, 0),
                                m_BuildProgressPhase.c_str());
         } else if (m_BuildResult.success) {
@@ -1582,6 +1535,112 @@ void EditorLayer::DrawBuildDialog() {
     }
 
     ImGui::End();
+}
+
+// ---------------------------------------------------------------------------
+// Async build: the pipeline is pure file I/O + process spawns, so it runs on
+// a worker thread and the editor stays responsive. Everything that touches
+// editor subsystems (notifications, dev web server, launching the game)
+// happens in PollBuildThread on the main thread.
+// ---------------------------------------------------------------------------
+
+void EditorLayer::StartBuildAsync(bool runAfterBuild) {
+    if (m_BuildInProgress) return;
+
+    // Auto-save current scene before building so the .enjin file on disk
+    // contains all current entities and mesh data (main thread - touches World)
+    if (!m_CurrentScenePath.empty()) {
+        SaveScene(m_CurrentScenePath);
+        ENJIN_LOG_INFO(Editor, "Auto-saved scene before build: %s", m_CurrentScenePath.c_str());
+    }
+    ENJIN_LOG_INFO(Editor, "Build: projectPath='%s' scenePath='%s'",
+        m_SceneManager.GetProjectPath().c_str(), m_CurrentScenePath.c_str());
+    m_BuildConfig.projectPath = m_SceneManager.GetProjectPath();
+    m_BuildInProgress = true;
+    m_BuildFinished = false;
+    m_BuildProgress = 0.0f;
+    m_BuildProgressPhase.clear();
+    m_BuildResult = Build::BuildResult{};
+    m_BuildRunAfter = runAfterBuild;
+    m_BuildThreadDone.store(false, std::memory_order_release);
+    {
+        std::lock_guard<std::mutex> lock(m_BuildMutex);
+        m_BuildWorkerProgress = 0.0f;
+        m_BuildWorkerPhase = "starting...";
+    }
+
+    if (m_BuildThread.joinable()) m_BuildThread.join();   // reap a previous build
+    Build::BuildConfig config = m_BuildConfig;            // by value - worker owns its copy
+    m_BuildThread = std::thread([this, config]() {
+        Build::BuildPipeline pipeline;
+        pipeline.SetProgressCallback([this](const std::string& phase, float progress) {
+            std::lock_guard<std::mutex> lock(m_BuildMutex);
+            m_BuildWorkerPhase = phase;
+            m_BuildWorkerProgress = progress;
+        });
+        Build::BuildResult result = pipeline.Execute(config);
+        {
+            std::lock_guard<std::mutex> lock(m_BuildMutex);
+            m_BuildWorkerResult = std::move(result);
+        }
+        m_BuildThreadDone.store(true, std::memory_order_release);
+    });
+}
+
+void EditorLayer::PollBuildThread() {
+    if (!m_BuildInProgress || !m_BuildThreadDone.load(std::memory_order_acquire)) return;
+
+    if (m_BuildThread.joinable()) m_BuildThread.join();
+    {
+        std::lock_guard<std::mutex> lock(m_BuildMutex);
+        m_BuildResult = m_BuildWorkerResult;
+    }
+    m_BuildInProgress = false;
+    m_BuildFinished = true;
+    m_Telemetry.TrackBuildRun();
+
+    if (!m_BuildResult.success) {
+        ShowNotification("Build failed", NotificationType::Error);
+        return;
+    }
+    ShowNotification("Build complete!", NotificationType::Success);
+    if (!m_BuildRunAfter) return;
+    m_BuildRunAfter = false;
+
+    if (m_BuildConfig.target == Build::BuildTargetPlatform::Web) {
+        // Web builds have no exe — serve the output on localhost and open the
+        // browser (browsers refuse wasm over file://)
+        u16 port = m_DevWebServer.Start(m_BuildConfig.outputDir);
+        if (port != 0) {
+            OpenUrlPreferChromium("http://localhost:" + std::to_string(port) + "/");
+            ShowNotification("Running in browser...", NotificationType::Info);
+        } else {
+            ShowNotification("Build succeeded but the preview server could not start", NotificationType::Warning);
+        }
+        return;
+    }
+
+    // Same exe naming as CopyPlayer
+    std::string destName = m_BuildConfig.windowTitle.empty() ? "Game" : m_BuildConfig.windowTitle;
+    for (auto& c : destName) {
+        if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' ||
+            c == '"' || c == '<' || c == '>' || c == '|') {
+            c = '_';
+        }
+    }
+#ifdef ENJIN_PLATFORM_WINDOWS
+    destName += ".exe";
+#endif
+    std::string exePath = (std::filesystem::path(m_BuildConfig.outputDir) / destName).string();
+    if (std::filesystem::exists(exePath)) {
+#ifdef ENJIN_PLATFORM_WINDOWS
+        ShellExecuteA(nullptr, "open", exePath.c_str(), nullptr,
+                      m_BuildConfig.outputDir.c_str(), SW_SHOWNORMAL);
+#endif
+        ShowNotification("Launching game...", NotificationType::Info);
+    } else {
+        ShowNotification("Build succeeded but the game exe was not found", NotificationType::Warning);
+    }
 }
 
 // ---------------------------------------------------------------------------
