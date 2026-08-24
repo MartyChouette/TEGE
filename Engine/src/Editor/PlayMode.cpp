@@ -1,5 +1,8 @@
 #include "Enjin/Editor/PlayMode.h"
 #include <filesystem>
+#include <random>
+#include <type_traits>
+#include "Enjin/Math/Math.h"
 #include "Enjin/ECS/Systems/DungeonGeneratorSystem.h"
 #include "Enjin/ECS/Systems/RandomBagSystem.h"
 #include "Enjin/ECS/Systems/ScatterSystem.h"
@@ -220,6 +223,29 @@ void PlayMode::Play() {
     m_StreamingManager.SetEnabled(true);
     m_AISystem.SetEnabled(true);
     ENJIN_LOG_INFO(Editor, "PlayMode: Gameplay systems enabled");
+
+    // Replay determinism: procgen components with seed 0 roll a random_device
+    // seed inside Generate - invisible to the replay's scene snapshot, so a
+    // replay would regenerate DIFFERENT content. Resolve them to concrete
+    // seeds up front: generation below uses them, the snapshot captures them,
+    // and Stop's scene restore returns the editor values to 0.
+    if (m_World && !m_Replaying) {
+        std::random_device rd;
+        auto roll = [&rd]() { u32 s = rd(); return s ? s : 1u; };
+        auto preRoll = [&](auto* tag) {
+            using T = std::remove_pointer_t<decltype(tag)>;
+            for (ECS::Entity e : m_World->GetEntitiesWithComponent<T>()) {
+                auto* c = m_World->GetComponent<T>(e);
+                if (c && c->seed == 0) c->seed = roll();
+            }
+        };
+        preRoll(static_cast<ECS::DungeonGeneratorComponent*>(nullptr));
+        preRoll(static_cast<ECS::ScatterComponent*>(nullptr));
+        preRoll(static_cast<ECS::TerrainGeneratorComponent*>(nullptr));
+        preRoll(static_cast<ECS::WFCComponent*>(nullptr));
+        preRoll(static_cast<ECS::RandomBagComponent*>(nullptr));
+    }
+
     ECS::DungeonGeneratorSystem::GenerateAll(m_World);   // fresh dungeons on play (generateOnStart)
     ECS::RandomBagSystem::ResetAll(m_World);             // fresh bags on play (clears editor test-draw state)
     ECS::ScatterSystem::GenerateAll(m_World);            // fresh scatter batches on play (generateOnStart)
@@ -244,6 +270,19 @@ void PlayMode::Play() {
             opts.useMeshReferences = true;
             m_ActiveRecording.sceneJson = ser.SaveToString(opts);
         }
+        // Script Random()/RandomRange() drain a process-lifetime xorshift
+        // stream - a replay in the same session would resume it mid-stream and
+        // every script random would diverge. Seed it fresh per play session
+        // and carry the seed in the replay.
+        {
+            std::random_device rd;
+            u32 s = rd();
+            if (s == 0) s = 1;
+            m_ActiveRecording.rngSeed = s;
+            Math::SetRandomSeed(s);
+        }
+    } else {
+        Math::SetRandomSeed(m_ReplayData.rngSeed);
     }
 
     m_DebugRecorderEntity = ECS::INVALID_ENTITY;

@@ -4,6 +4,7 @@
 #include "EnjinTest.h"
 #include "Enjin/Gameplay/Replay.h"
 #include "Enjin/Platform/Input.h"
+#include "Enjin/Math/Math.h"
 
 using namespace Enjin;
 
@@ -41,6 +42,38 @@ ENJIN_TEST(Replay, ParseRejectsGarbage) {
     Gameplay::ReplayData out;
     ENJIN_EXPECT_FALSE(Gameplay::ParseReplay("not json", out));
     ENJIN_EXPECT_FALSE(Gameplay::ParseReplay("{\"foo\":1}", out));
+}
+
+ENJIN_TEST(Replay, RngSeedRoundTripsAndDefaultsToZero) {
+    // Arrange: a recorded session carries the script-RNG seed.
+    Gameplay::ReplayData r;
+    r.rngSeed = 0xDEADBEEF;
+    r.frames.push_back(Gameplay::ReplayFrame{});
+
+    // Act
+    Gameplay::ReplayData back;
+    bool ok = Gameplay::ParseReplay(Gameplay::SerializeReplay(r), back);
+
+    // Assert: seed survives, and a legacy replay without the field parses as 0.
+    ENJIN_ASSERT_TRUE(ok);
+    ENJIN_EXPECT_EQ(back.rngSeed, 0xDEADBEEFu);
+    Gameplay::ReplayData legacy;
+    ENJIN_ASSERT_TRUE(Gameplay::ParseReplay("{\"tege_replay\":1,\"frames\":[]}", legacy));
+    ENJIN_EXPECT_EQ(legacy.rngSeed, 0u);
+}
+
+ENJIN_TEST(Replay, SetRandomSeedReproducesTheScriptRandomStream) {
+    // Arrange/Act: seed, drain five values, reseed with the same seed.
+    Math::SetRandomSeed(1234u);
+    f32 first[5];
+    for (f32& v : first) v = Math::Random01();
+    Math::SetRandomSeed(1234u);
+
+    // Assert: identical sequence - the property replay playback relies on.
+    for (f32 v : first) {
+        ENJIN_EXPECT_FLOAT_NEAR(Math::Random01(), v, 0.0f);
+    }
+    Math::SetRandomSeed(0u);   // restore default stream state for other tests
 }
 
 ENJIN_TEST(Replay, InjectionDrivesEdgeDetection) {

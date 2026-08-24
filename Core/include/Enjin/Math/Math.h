@@ -109,6 +109,13 @@ inline u32& XorShiftState() {
     return state;
 }
 
+// Reseed the shared stream. Replay determinism: PlayMode seeds each play
+// session and records the seed, so a replay reproduces every script
+// Random()/RandomRange() call. 0 restores the historical default state.
+inline void SetRandomSeed(u32 seed) {
+    XorShiftState() = seed ? seed : 2463534242u;
+}
+
 ENJIN_FORCE_INLINE f32 Random01() {
     u32& s = XorShiftState();
     s ^= s << 13;

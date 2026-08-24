@@ -31,6 +31,9 @@ struct ReplayData {
     u32 version = 1;
     std::string engineVersion;   // informational; mismatches warn, not reject
     f32 fixedDt = 1.0f / 60.0f;  // the timestep every frame was simulated with
+    u32 rngSeed = 0;             // seed of the shared script-RNG stream for this
+                                 // session (Math::SetRandomSeed); 0 = unseeded
+                                 // legacy replay, stream state not reproduced
     std::string sceneJson;       // full scene snapshot at record start (self-contained)
     std::vector<ReplayFrame> frames;
 };
