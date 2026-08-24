@@ -4,6 +4,8 @@
 #include "Enjin/Audio/SimpleAudio.h"
 #include "Enjin/Logging/Log.h"
 #include <chrono>
+#include <cctype>
+#include <cstdlib>
 
 namespace Enjin {
 namespace VisualScript {
@@ -662,8 +664,32 @@ ECS::VariableValue VisualScriptExecutor::GetInputPinValue(const ExecutionContext
         }
     }
 
-    // No connection found - use default value from pin definition
+    // No connection found - first check for a typed-in literal on the node
+    // (the node inspector stores them in properties keyed by the lower-cased
+    // pin name: Print's "Message" box -> properties["message"]). These were
+    // written by the editor but never read back at runtime, so every typed
+    // literal silently fell through to the definition default.
     const auto* pin = script->graph.FindPin(pinId);
+    if (pin) {
+        auto litMetaIt = script->nodeMeta.find(pin->nodeId);
+        if (litMetaIt != script->nodeMeta.end() && !litMetaIt->second.properties.empty()) {
+            std::string key = pin->name;
+            for (auto& c : key) c = static_cast<char>(::tolower(static_cast<unsigned char>(c)));
+            auto propIt = litMetaIt->second.properties.find(key);
+            if (propIt != litMetaIt->second.properties.end()) {
+                const std::string& raw = propIt->second;
+                switch (pin->type) {
+                    case Editor::PinType::String: return raw;
+                    case Editor::PinType::Float:  return static_cast<f32>(std::atof(raw.c_str()));
+                    case Editor::PinType::Int:    return static_cast<i32>(std::atoi(raw.c_str()));
+                    case Editor::PinType::Bool:   return raw == "true" || raw == "1";
+                    default: break;   // compound types keep the definition default
+                }
+            }
+        }
+    }
+
+    // Then the default value from the pin definition
     if (pin) {
         const auto* node = script->graph.FindNode(pin->nodeId);
         if (node) {

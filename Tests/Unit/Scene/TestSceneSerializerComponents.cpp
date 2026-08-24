@@ -1602,12 +1602,11 @@ ENJIN_TEST(SerdesRegistry, EveryComponentRoundTripsThroughHelpers) {
     auto keys = Scene::SceneSerializer::RegisteredComponentKeys();
     ENJIN_ASSERT_TRUE(keys.size() > 140);   // full roster is registered
 
-    // These three carry a node graph whose ToJson() throws on a *default/empty*
-    // graph (never occurs for a real authored component). Their serialize path is
-    // registered; it just can't serialize the pathological empty default, so skip
-    // the non-empty-serialize check for them while still asserting the add + remove
-    // paths. Matches pre-refactor behavior (the old helper swallowed the same throw).
-    const std::set<std::string> serializeNeedsGraph = { "behaviorTree", "questFlow", "visualScript" };
+    // The graph components used to be allowlisted here as "ToJson() throws on
+    // an empty graph" - the REAL cause was RF() (a float rounder) wrapped
+    // around graph.ToJson()'s json object, an unconditional throw that made
+    // EVERY scene containing a visual script / behavior tree / quest flow fail
+    // SaveToString. Fixed; all components now pass the full round trip.
 
     std::string notAdded, notSerialized, notRemoved;
     for (const std::string& key : keys) {
@@ -1616,8 +1615,7 @@ ENJIN_TEST(SerdesRegistry, EveryComponentRoundTripsThroughHelpers) {
         // deserializer guards missing fields), exercising the deserialize path.
         if (!Scene::SceneSerializer::DeserializeOneComponent(&w, e, key, "{}")) { notAdded += key + " "; continue; }
         // Serialize path: with the component present, must produce non-empty JSON.
-        if (serializeNeedsGraph.find(key) == serializeNeedsGraph.end() &&
-            Scene::SceneSerializer::SerializeOneComponent(&w, e, key).empty()) notSerialized += key + " ";
+        if (Scene::SceneSerializer::SerializeOneComponent(&w, e, key).empty()) notSerialized += key + " ";
         // Remove path: must recognize the key and remove it.
         if (!Scene::SceneSerializer::RemoveOneComponent(&w, e, key)) notRemoved += key + " ";
     }

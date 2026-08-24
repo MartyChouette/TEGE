@@ -4461,7 +4461,7 @@ json SerializeVisualScriptComponent(const ECS::VisualScriptComponent& vs) {
     json j;
 
     // Serialize graph data
-    j["graph"] = RF(vs.graph.ToJson());
+    j["graph"] = vs.graph.ToJson();
 
     // Serialize variables
     json varsArr = json::array();
@@ -4715,7 +4715,7 @@ static AI::BlackboardValue DeserializeBlackboardValue(const json& j) {
 
 json SerializeBehaviorTreeComponent(const ECS::BehaviorTreeComponent& bt) {
     json j;
-    j["graph"] = RF(bt.graph.ToJson());
+    j["graph"] = bt.graph.ToJson();
     j["rootNodeId"] = bt.rootNodeId;
     j["enabled"] = bt.enabled;
     j["tickInterval"] = RF(bt.tickInterval);
@@ -4797,7 +4797,7 @@ ECS::BehaviorTreeComponent DeserializeBehaviorTreeComponent(const json& j) {
 
 json SerializeQuestFlowComponent(const ECS::QuestFlowComponent& qf) {
     json j;
-    j["graph"] = RF(qf.graph.ToJson());
+    j["graph"] = qf.graph.ToJson();
     j["startNodeId"] = qf.startNodeId;
     j["questId"] = qf.questId;
     j["questTitle"] = qf.questTitle;
