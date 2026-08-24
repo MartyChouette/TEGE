@@ -173,9 +173,11 @@ struct CapsuleColliderComponent {
     u32 collisionMask = 0xFFFFFFFF;
 };
 
-// Mesh Collider — generates collision shape from entity's mesh vertices
+// Mesh Collider — generates collision shape from entity's mesh vertices.
+// STATIC bodies always cook the exact triangle mesh (a convex hull of concave
+// level geometry is a dome over every valley — characters floated on it).
 struct MeshColliderComponent {
-    bool convex = true;           // true = convex hull, false = triangle mesh (static only)
+    bool convex = true;           // DYNAMIC bodies only: true = convex hull (Jolt requires convex for moving bodies)
     bool autoGenerate = true;     // auto-generate from MeshComponent on first use
     bool generated = false;       // internal: set after vertices are populated
     bool isTrigger = false;

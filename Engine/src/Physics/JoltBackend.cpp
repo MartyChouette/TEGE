@@ -532,7 +532,14 @@ void JoltBackend::CreateBodyForEntity(ECS::Entity entity) {
         }
 
         if (meshCol->generated && !meshCol->vertices.empty()) {
-            if (meshCol->convex) {
+            // STATIC geometry always cooks the exact triangle mesh. A convex
+            // hull of concave level geometry (terrain, caves, ramps meeting in
+            // a dip) is a dome bridging every valley - characters walked on
+            // the invisible roof instead of the ground. The convex flag only
+            // matters for DYNAMIC bodies, where Jolt requires a convex shape.
+            const bool isStaticBody = !rb || rb->bodyType == ECS::RigidbodyComponent::BodyType::Static;
+            const bool useHull = meshCol->convex && !isStaticBody;
+            if (useHull) {
                 // Build convex hull — Jolt computes the hull from the point cloud
                 JPH::Array<JPH::Vec3> points;
                 points.reserve(meshCol->vertices.size());

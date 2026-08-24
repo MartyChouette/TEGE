@@ -11,6 +11,7 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/Mesh.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/Gameplay/GameplayLoop.h"
 #include "Enjin/Logging/Log.h"
@@ -510,6 +511,64 @@ ENJIN_TEST(GameplayHazards, HazardOverlapDamagesPlayerWithoutSensorEvents) {
     auto* fhp = world.GetComponent<ECS::HealthComponent>(farPlayer);
     ENJIN_ASSERT_NOT_NULL(fhp);
     ENJIN_EXPECT_FLOAT_NEAR(fhp->currentHealth, 100.0f, 0.01f);
+}
+
+// ===========================================================================
+// Concave level geometry — a character dropped into a V-shaped valley must
+// rest on the valley FLOOR. Regression: MeshColliderComponent defaulted to a
+// convex hull for static geometry too, and the hull of concave terrain is a
+// dome bridging every dip - characters visibly floated above the ground
+// (found walking a capsule over generated terrain, 2026-08-23).
+// ===========================================================================
+
+ENJIN_TEST(PhysicsSim3D, CharacterRestsOnConcaveMeshValleyFloor) {
+    // Arrange: a V-valley triangle mesh - two ramps meeting at y=0 in the
+    // middle (x=0), rising to y=5 at x=+-10. Convex hull would roof it at y=5.
+    ECS::World world;
+    ECS::Entity valley = world.CreateEntity();
+    {
+        ECS::TransformComponent t;
+        world.AddComponent<ECS::TransformComponent>(valley, t);
+        ECS::MeshComponent mesh;
+        auto addQuad = [&mesh](Math::Vector3 a, Math::Vector3 b, Math::Vector3 c, Math::Vector3 d) {
+            u32 base = static_cast<u32>(mesh.vertices.size());
+            for (const auto& p : {a, b, c, d}) {
+                ECS::MeshComponent::Vertex v;
+                v.position = p;
+                v.normal = Math::Vector3(0, 1, 0);
+                mesh.vertices.push_back(v);
+            }
+            mesh.indices.insert(mesh.indices.end(), {base, base + 1, base + 2, base, base + 2, base + 3});
+        };
+        addQuad({-10, 5, -10}, {0, 0, -10}, {0, 0, 10}, {-10, 5, 10});   // left ramp
+        addQuad({0, 0, -10}, {10, 5, -10}, {10, 5, 10}, {0, 0, 10});     // right ramp
+        world.AddComponent<ECS::MeshComponent>(valley, mesh);
+        world.AddComponent<ECS::MeshColliderComponent>(valley);          // defaults
+    }
+
+    auto backend = Physics::CreatePhysicsBackend(Physics::PhysicsBackendType::Auto);
+    backend->SetWorld(&world);
+    backend->SetColliderEntities({valley});
+    backend->SetGravity(Math::Vector3(0.0f, -9.81f, 0.0f));
+    backend->Update(1.0f / 60.0f);
+
+    // A capsule character dropped over the valley centre.
+    ECS::Entity ch = world.CreateEntity();
+    ECS::TransformComponent ct;
+    ct.position = Math::Vector3(0.0f, 8.0f, 0.0f);
+    world.AddComponent<ECS::TransformComponent>(ch, ct);
+    backend->CreateCharacterController(ch, 0.3f, 0.9f, ct.position);
+
+    // Act: let it fall and settle.
+    Physics::IPhysicsBackend::CharacterState st;
+    for (int i = 0; i < 300; ++i) {
+        st = backend->UpdateCharacterController(ch, Math::Vector3(0.0f, -4.0f, 0.0f), 1.0f / 60.0f);
+        backend->Update(1.0f / 60.0f);
+    }
+
+    // Assert: feet near the valley floor (y=0), not roofed at hull height (y=5).
+    // Capsule centre sits ~ (height/2 + radius) above the feet.
+    ENJIN_EXPECT_TRUE(st.position.y < 2.5f);
 }
 
 // ===========================================================================
