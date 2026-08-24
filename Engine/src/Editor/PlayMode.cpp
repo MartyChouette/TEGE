@@ -315,6 +315,8 @@ void PlayMode::Play() {
     } else {
         Math::SetRandomSeed(m_ReplayData.rngSeed);
     }
+    m_SessionElapsed = 0.0f;
+    m_LastExceptionCount = m_ScriptEngine.GetExceptionCount();
 
     m_DebugRecorderEntity = ECS::INVALID_ENTITY;
     if (m_DebugRecordEnabled && m_World) {
@@ -589,6 +591,17 @@ void PlayMode::Resume() {
     ENJIN_LOG_INFO(Editor, "Play Mode Resumed");
 }
 
+void PlayMode::MarkBookmark(const std::string& label) {
+    if (m_State.load(std::memory_order_relaxed) != PlayState::Playing || m_Replaying) return;
+    Gameplay::ReplayBookmark b;
+    b.frame = static_cast<u32>(m_ActiveRecording.frames.empty() ? 0 : m_ActiveRecording.frames.size() - 1);
+    b.time = m_SessionElapsed;
+    b.label = label;
+    m_ActiveRecording.bookmarks.push_back(std::move(b));
+    ENJIN_LOG_INFO(Editor, "Bookmark at %.2fs: %s", m_SessionElapsed,
+                   m_ActiveRecording.bookmarks.back().label.c_str());
+}
+
 void PlayMode::StartReplay(Gameplay::ReplayData&& data) {
     m_ReplayData = std::move(data);
     m_ReplayCursor = 0;
@@ -838,6 +851,7 @@ void PlayMode::Update(f32 deltaTime) {
             if (m_ReplayCursor < m_ReplayData.frames.size()) {
                 const auto& rf = m_ReplayData.frames[m_ReplayCursor++];
                 deltaTime = rf.dt;   // replay the exact recorded dt stream
+                m_SessionElapsed += rf.dt;
                 bool keys[512]; bool mouse[8]; Math::Vector2 mpos;
                 Gameplay::ReplayFrameToBuffers(rf, keys, mouse, mpos);
                 Input::InjectFrameState(keys, mouse, mpos);
@@ -888,6 +902,20 @@ void PlayMode::Update(f32 deltaTime) {
                 Gameplay::ReplayFrameFromBuffers(frame, keys, mouse, mpos);
                 frame.dt = deltaTime;
                 m_ActiveRecording.frames.push_back(std::move(frame));
+            }
+            m_SessionElapsed += deltaTime;
+
+            // Bookmarks: F8 marks the current moment; a script exception marks
+            // itself with the error text. Both ride in the exported replay.
+            if (Input::IsKeyPressed(KeyCode::F8)) {
+                MarkBookmark("moment " + std::to_string(m_ActiveRecording.bookmarks.size() + 1));
+            }
+            u32 exNow = m_ScriptEngine.GetExceptionCount();
+            if (exNow != m_LastExceptionCount) {
+                m_LastExceptionCount = exNow;
+                MarkBookmark(m_ScriptEngine.GetLastError().empty()
+                             ? std::string("script exception")
+                             : m_ScriptEngine.GetLastError());
             }
         }
 

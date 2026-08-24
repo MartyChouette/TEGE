@@ -38,6 +38,15 @@ struct ReplayEndEntity {
     f32 rotX = 0, rotY = 0, rotZ = 0, rotW = 1;   // quaternion
 };
 
+// A marked moment in the session: the playtester pressed the mark key, or a
+// script exception fired. Carried in the replay file so the developer can jump
+// straight to the frame where the bug happened.
+struct ReplayBookmark {
+    u32 frame = 0;               // index into frames[]
+    f32 time = 0.0f;             // seconds from session start (sum of dt)
+    std::string label;
+};
+
 struct ReplayData {
     u32 version = 1;
     std::string engineVersion;   // informational; mismatches warn, not reject
@@ -48,6 +57,7 @@ struct ReplayData {
     std::string sceneJson;       // full scene snapshot at record start (self-contained)
     std::vector<ReplayFrame> frames;
     std::vector<ReplayEndEntity> endState;   // final transforms of named entities
+    std::vector<ReplayBookmark> bookmarks;   // marked moments (F8 / script exceptions)
 };
 
 // JSON (de)serialization. Parse is tolerant of missing optional fields and

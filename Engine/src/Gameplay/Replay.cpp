@@ -35,6 +35,13 @@ std::string SerializeReplay(const ReplayData& replay) {
         }
         j["endState"] = std::move(ends);
     }
+    if (!replay.bookmarks.empty()) {
+        json marks = json::array();
+        for (const auto& b : replay.bookmarks) {
+            marks.push_back(json{{"f", b.frame}, {"t", b.time}, {"l", b.label}});
+        }
+        j["bookmarks"] = std::move(marks);
+    }
     return j.dump();
 }
 
@@ -84,6 +91,17 @@ bool ParseReplay(const std::string& text, ReplayData& out) {
                 e.rotZ = ej["q"][2].get<f32>(); e.rotW = ej["q"][3].get<f32>();
             }
             out.endState.push_back(std::move(e));
+        }
+    }
+    out.bookmarks.clear();
+    if (j.contains("bookmarks") && j["bookmarks"].is_array()) {
+        for (const auto& bj : j["bookmarks"]) {
+            ReplayBookmark b;
+            b.frame = bj.value("f", 0u);
+            b.time = bj.value("t", 0.0f);
+            b.label = bj.value("l", std::string());
+            if (b.time < 0.0f) b.time = 0.0f;
+            out.bookmarks.push_back(std::move(b));
         }
     }
     return true;

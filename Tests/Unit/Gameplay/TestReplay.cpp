@@ -87,6 +87,25 @@ ENJIN_TEST(Replay, EndStateRoundTrips) {
     ENJIN_EXPECT_TRUE(legacy.endState.empty());
 }
 
+ENJIN_TEST(Replay, BookmarksRoundTrip) {
+    // Arrange: a session with a player mark and a script-exception mark.
+    Gameplay::ReplayData r;
+    r.frames.push_back(Gameplay::ReplayFrame{});
+    r.bookmarks.push_back({12u, 0.4f, "moment 1"});
+    r.bookmarks.push_back({90u, 3.0f, "script exception in OnUpdate line 7"});
+
+    // Act
+    Gameplay::ReplayData back;
+    bool ok = Gameplay::ParseReplay(Gameplay::SerializeReplay(r), back);
+
+    // Assert
+    ENJIN_ASSERT_TRUE(ok);
+    ENJIN_ASSERT_EQ((int)back.bookmarks.size(), 2);
+    ENJIN_EXPECT_EQ(back.bookmarks[0].frame, 12u);
+    ENJIN_EXPECT_FLOAT_NEAR(back.bookmarks[1].time, 3.0f, 0.001f);
+    ENJIN_EXPECT_TRUE(back.bookmarks[1].label.find("exception") != std::string::npos);
+}
+
 ENJIN_TEST(Replay, SetRandomSeedReproducesTheScriptRandomStream) {
     // Arrange/Act: seed, drain five values, reseed with the same seed.
     Math::SetRandomSeed(1234u);

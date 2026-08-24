@@ -72,6 +72,10 @@ public:
     // Get last compilation error
     const std::string& GetLastError() const { return m_LastError; }
 
+    // Monotonic count of runtime script exceptions this session. Pollable:
+    // the replay recorder auto-bookmarks the frame where the count rises.
+    u32 GetExceptionCount() const { return m_ExceptionCount; }
+
     // List all compiled class names that derive from TegeBehavior
     std::vector<std::string> GetBehaviorClasses() const;
 
@@ -109,6 +113,7 @@ private:
 
     std::string m_ScriptDirectory;
     std::string m_LastError;
+    u32 m_ExceptionCount = 0;
     u32 m_PollCounter = 0;
     static constexpr u32 POLL_INTERVAL = 30; // Check every 30 frames
 

@@ -144,6 +144,15 @@ public:
     void StartReplay(Gameplay::ReplayData&& data);
     bool IsReplaying() const { return m_Replaying; }
 
+    // Bookmarks: marked moments (F8 during play, or script exceptions). They
+    // ride in the replay file; while paused, the transport jumps the scene to
+    // a mark via the debug recorder's snapshot ring.
+    void MarkBookmark(const std::string& label);
+    const std::vector<Gameplay::ReplayBookmark>& GetSessionBookmarks() const {
+        return m_Replaying ? m_ReplayData.bookmarks : m_ActiveRecording.bookmarks;
+    }
+    f32 GetSessionElapsed() const { return m_SessionElapsed; }
+
     Audio::SimpleAudio* GetSimpleAudio() { return &m_SimpleAudio; }
     Effects::DestructibleSystem* GetDestructibleSystem() { return &m_DestructibleSystem; }
     Effects::InteractiveWaterSystem* GetInteractiveWaterSystem() { return &m_InteractiveWaterSystem; }
@@ -235,6 +244,8 @@ private:
     Gameplay::ReplayData m_ReplayData;        // stream being played back
     bool  m_Replaying = false;
     usize m_ReplayCursor = 0;
+    f32   m_SessionElapsed = 0.0f;            // seconds simulated this session (record + replay)
+    u32   m_LastExceptionCount = 0;           // script-exception watermark for auto-bookmarks
 
     // Audio-reactive system (beat sync, VU→visual, RTPC, threshold triggers)
     Audio::AudioReactiveSystem m_AudioReactiveSystem;

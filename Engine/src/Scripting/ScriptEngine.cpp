@@ -481,6 +481,7 @@ asIScriptObject* ScriptEngine::CreateInstance(const std::string& moduleName,
     r = ctx->Execute();
     if (r != asEXECUTION_FINISHED) {
         if (r == asEXECUTION_EXCEPTION) {
+            ++m_ExceptionCount;
             const char* exMsg = ctx->GetExceptionString();
             m_LastError = "Exception creating '" + className + "': " +
                           (exMsg ? exMsg : "unknown");
@@ -647,6 +648,7 @@ bool ScriptEngine::ExecuteMethod(asIScriptContext* ctx,
     }
 
     if (r == asEXECUTION_EXCEPTION) {
+        ++m_ExceptionCount;
         const char* exMsg = ctx->GetExceptionString();
         i32 exLine = ctx->GetExceptionLineNumber();
         const char* exFunc = nullptr;

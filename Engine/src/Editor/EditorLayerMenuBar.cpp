@@ -1326,6 +1326,38 @@ void EditorLayer::DrawMenuBar() {
                 ImGui::SetItemTooltip(canStep
                     ? "Scrub backward through the recorded play session\nResume plays on from wherever you scrubbed to"
                     : "Pause to scrub backward through the recording");
+
+                // Bookmarks: flags for marked moments (F8 / script exceptions).
+                // Click one while paused to jump the scene there via the
+                // snapshot ring (must still be inside the record buffer).
+                const auto& marks = m_PlayMode.GetSessionBookmarks();
+                if (!marks.empty()) {
+                    f32 elapsed = m_PlayMode.GetSessionElapsed();
+                    usize first = marks.size() > 8 ? marks.size() - 8 : 0;
+                    for (usize mi = first; mi < marks.size(); ++mi) {
+                        const auto& bm = marks[mi];
+                        f32 offset = elapsed - bm.time;
+                        bool reachable = canStep && offset >= 0.0f && offset <= recorded;
+                        ImGui::SameLine(0.0f, 3.0f);
+                        char flagId[32];
+                        snprintf(flagId, sizeof(flagId), "!%zu##bm%zu", mi + 1, mi);
+                        if (!reachable) ImGui::BeginDisabled();
+                        if (ImGui::SmallButton(flagId)) {
+                            m_DebugScrubOffset = offset;
+                            rewind->SeekSceneToTime(offset);
+                        }
+                        if (!reachable) ImGui::EndDisabled();
+                        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                            if (reachable) {
+                                ImGui::SetTooltip("%.1fs  %s\nJump the scene to this moment", bm.time, bm.label.c_str());
+                            } else if (!canStep) {
+                                ImGui::SetTooltip("%.1fs  %s\nPause to jump to this moment", bm.time, bm.label.c_str());
+                            } else {
+                                ImGui::SetTooltip("%.1fs  %s\nOutside the record buffer (raise it in the ... settings)", bm.time, bm.label.c_str());
+                            }
+                        }
+                    }
+                }
             }
 
             // --- Export / replay + recorder settings (stopped only) -----------
@@ -1365,6 +1397,9 @@ void EditorLayer::DrawMenuBar() {
                     ImGui::SetItemTooltip("How far back the timeline can scrub (30 snapshots/s)");
                     ImGui::TextDisabled("Input replay is always recorded;");
                     ImGui::TextDisabled("Export Replay saves it as a shareable file.");
+                    ImGui::TextDisabled("F8 during play marks a moment; script");
+                    ImGui::TextDisabled("errors mark themselves. Marks ride in");
+                    ImGui::TextDisabled("the replay - click a flag to jump there.");
                     if (changed) {
                         m_PlayMode.SetDebugRecording(m_EditorSettings.debugRecordPlay,
                                                      m_EditorSettings.debugRecordSeconds);
