@@ -122,8 +122,11 @@ imgui.ini
 *.enjpak
 exported_sprite.*
 
-# Editor/player scratch files
-scripts/
+# Loose script dirs emitted next to build outputs (embedded enjin_api copies).
+# Deliberately NOT a bare scripts/ rule - that silently swallowed the repo's
+# own tooling in /scripts and the golden scene's canary script.
+web-demo/scripts/
+web-demo/Build/
 
 # -----------------------------------------------------------------------------
 # Claude Code / AI tooling
