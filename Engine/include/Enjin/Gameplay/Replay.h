@@ -27,6 +27,17 @@ struct ReplayFrame {
                                  // recording never alters live play speed
 };
 
+// Where a named entity ended up when the recording stopped. Playback snaps
+// matching entities here when the stream ends, so a replay finishes exactly
+// where the session did - without this, tiny simulation drift compounds over
+// the run and the final frames land somewhere the original session never went
+// (the recorded character kept walking off a ledge).
+struct ReplayEndEntity {
+    std::string name;            // matched by NameComponent in the replayed scene
+    Math::Vector3 position{};
+    f32 rotX = 0, rotY = 0, rotZ = 0, rotW = 1;   // quaternion
+};
+
 struct ReplayData {
     u32 version = 1;
     std::string engineVersion;   // informational; mismatches warn, not reject
@@ -36,6 +47,7 @@ struct ReplayData {
                                  // legacy replay, stream state not reproduced
     std::string sceneJson;       // full scene snapshot at record start (self-contained)
     std::vector<ReplayFrame> frames;
+    std::vector<ReplayEndEntity> endState;   // final transforms of named entities
 };
 
 // JSON (de)serialization. Parse is tolerant of missing optional fields and

@@ -384,6 +384,36 @@ void EditorLayer::DrawCapsuleColliderComponent(ECS::Entity entity) {
         InspectorUndo::DragFloat(m_UndoRedo, "Height", &col->height, 0.1f, 0.001f, 100.0f);
         ImGui::SetItemTooltip("Cylinder section only (engine convention): total = height + 2 x radius");
 
+        // Resync with the visual: collider values are WORLD space and bake the
+        // scale at the moment they're set - resize or rescale the entity later
+        // and the physics capsule silently keeps the old size (character floats
+        // or sinks by the difference). One click makes them match again.
+        if (ImGui::Button("Fit to Mesh##capfit")) {
+            if (auto* mesh = m_World->GetComponent<ECS::MeshComponent>(entity)) {
+                if (!mesh->vertices.empty()) {
+                    Math::Vector3 mn = mesh->vertices[0].position;
+                    Math::Vector3 mx = mn;
+                    for (const auto& v : mesh->vertices) {
+                        mn.x = std::min(mn.x, v.position.x); mx.x = std::max(mx.x, v.position.x);
+                        mn.y = std::min(mn.y, v.position.y); mx.y = std::max(mx.y, v.position.y);
+                        mn.z = std::min(mn.z, v.position.z); mx.z = std::max(mx.z, v.position.z);
+                    }
+                    const Math::Matrix4 wm = ECS::ComputeWorldMatrix(m_World, entity);
+                    const Math::Vector3 s(
+                        Math::Vector3(wm.m[0], wm.m[1], wm.m[2]).Length(),
+                        Math::Vector3(wm.m[4], wm.m[5], wm.m[6]).Length(),
+                        Math::Vector3(wm.m[8], wm.m[9], wm.m[10]).Length());
+                    Math::Vector3 ext = mx - mn, ctr = (mx + mn) * 0.5f;
+                    col->radius = 0.5f * std::max(ext.x * s.x, ext.z * s.z);
+                    col->height = std::max(0.0f, ext.y * s.y - 2.0f * col->radius);
+                    col->center = Math::Vector3(ctr.x * s.x, ctr.y * s.y, ctr.z * s.z);
+                }
+            }
+        }
+        ImGui::SetItemTooltip("Recompute radius/height/center from the entity's mesh bounds at its\n"
+                              "CURRENT scale. Colliders are world-space: they don't follow later\n"
+                              "rescales on their own. Takes effect next Play.");
+
         const char* directions[] = { "X", "Y", "Z" };
         int dir = static_cast<int>(col->direction);
         if (InspectorUndo::Combo(m_UndoRedo, "Direction", &dir, directions, 3)) {

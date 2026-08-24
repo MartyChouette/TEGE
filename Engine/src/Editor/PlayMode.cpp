@@ -600,6 +600,7 @@ void PlayMode::StartReplay(Gameplay::ReplayData&& data) {
 }
 
 void PlayMode::Stop() {
+    const bool wasReplay = m_Replaying;
     if (m_Replaying) {
         Input::SetReplayInjection(false);
         m_Replaying = false;
@@ -608,6 +609,28 @@ void PlayMode::Stop() {
 
     if (m_State.load(std::memory_order_relaxed) == PlayState::Stopped) {
         return;
+    }
+
+    // End point of the recording: where every named entity ended up. Playback
+    // snaps to this when the stream runs out, so a replay finishes exactly
+    // where the session did instead of drifting past it (the recorded
+    // character kept walking off a ledge).
+    if (!wasReplay && m_World && !m_ActiveRecording.frames.empty()) {
+        m_ActiveRecording.endState.clear();
+        u32 captured = 0;
+        for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::NameComponent>()) {
+            if (captured >= 2000) break;
+            auto* nc = m_World->GetComponent<ECS::NameComponent>(e);
+            auto* t = m_World->GetComponent<ECS::TransformComponent>(e);
+            if (!nc || !t || nc->name.empty() || nc->name == "__DebugRecorder") continue;
+            Gameplay::ReplayEndEntity end;
+            end.name = nc->name;
+            end.position = t->position;
+            end.rotX = t->rotation.x; end.rotY = t->rotation.y;
+            end.rotZ = t->rotation.z; end.rotW = t->rotation.w;
+            m_ActiveRecording.endState.push_back(std::move(end));
+            ++captured;
+        }
     }
 
     m_GameOverReady = false;
@@ -819,7 +842,35 @@ void PlayMode::Update(f32 deltaTime) {
                 Gameplay::ReplayFrameToBuffers(rf, keys, mouse, mpos);
                 Input::InjectFrameState(keys, mouse, mpos);
             } else {
-                // Stream exhausted: hold here so the timeline can inspect it.
+                // Stream exhausted: snap named entities to the recorded end
+                // point (drift accumulated over the run would otherwise leave
+                // them somewhere the original session never went), kill their
+                // momentum, then hold here so the timeline can inspect it.
+                if (m_World && !m_ReplayData.endState.empty()) {
+                    f32 worstDrift = 0.0f;
+                    const char* worstName = "";
+                    u32 applied = 0;
+                    for (const auto& end : m_ReplayData.endState) {
+                        ECS::Entity e = m_World->FindEntityByName(end.name);
+                        if (e == ECS::INVALID_ENTITY) continue;
+                        auto* t = m_World->GetComponent<ECS::TransformComponent>(e);
+                        if (!t) continue;
+                        f32 drift = (t->position - end.position).Length();
+                        if (drift > worstDrift) { worstDrift = drift; worstName = end.name.c_str(); }
+                        t->position = end.position;
+                        t->rotation = Math::Quaternion(end.rotX, end.rotY, end.rotZ, end.rotW);
+                        if (auto* rb = m_World->GetComponent<ECS::RigidbodyComponent>(e)) {
+                            rb->velocity = Math::Vector3(0.0f);
+                            rb->angularVelocity = Math::Vector3(0.0f);
+                        }
+                        ++applied;
+                    }
+                    if (worstDrift > 0.05f) {
+                        ENJIN_LOG_WARN(Editor, "Replay drift: '%s' ended %.2f units from the recording "
+                                       "(snapped %u entities to the recorded end point)",
+                                       worstName, worstDrift, applied);
+                    }
+                }
                 Input::SetReplayInjection(false);
                 Pause();
                 ENJIN_LOG_INFO(Editor, "Replay finished (%zu frames) - paused at end",

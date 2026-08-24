@@ -24,6 +24,17 @@ std::string SerializeReplay(const ReplayData& replay) {
         frames.push_back(std::move(fj));
     }
     j["frames"] = std::move(frames);
+    if (!replay.endState.empty()) {
+        json ends = json::array();
+        for (const auto& e : replay.endState) {
+            ends.push_back(json{
+                {"n", e.name},
+                {"p", {e.position.x, e.position.y, e.position.z}},
+                {"q", {e.rotX, e.rotY, e.rotZ, e.rotW}},
+            });
+        }
+        j["endState"] = std::move(ends);
+    }
     return j.dump();
 }
 
@@ -58,6 +69,22 @@ bool ParseReplay(const std::string& text, ReplayData& out) {
         f.dt = fj.value("d", out.fixedDt);
         if (f.dt <= 0.0f || f.dt > 1.0f) f.dt = out.fixedDt;
         out.frames.push_back(std::move(f));
+    }
+    out.endState.clear();
+    if (j.contains("endState") && j["endState"].is_array()) {
+        for (const auto& ej : j["endState"]) {
+            ReplayEndEntity e;
+            e.name = ej.value("n", std::string());
+            if (e.name.empty()) continue;
+            if (ej.contains("p") && ej["p"].is_array() && ej["p"].size() >= 3) {
+                e.position = Math::Vector3(ej["p"][0].get<f32>(), ej["p"][1].get<f32>(), ej["p"][2].get<f32>());
+            }
+            if (ej.contains("q") && ej["q"].is_array() && ej["q"].size() >= 4) {
+                e.rotX = ej["q"][0].get<f32>(); e.rotY = ej["q"][1].get<f32>();
+                e.rotZ = ej["q"][2].get<f32>(); e.rotW = ej["q"][3].get<f32>();
+            }
+            out.endState.push_back(std::move(e));
+        }
     }
     return true;
 }

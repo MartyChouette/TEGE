@@ -62,6 +62,31 @@ ENJIN_TEST(Replay, RngSeedRoundTripsAndDefaultsToZero) {
     ENJIN_EXPECT_EQ(legacy.rngSeed, 0u);
 }
 
+ENJIN_TEST(Replay, EndStateRoundTrips) {
+    // Arrange: a recording that ended with the player at a known spot.
+    Gameplay::ReplayData r;
+    r.frames.push_back(Gameplay::ReplayFrame{});
+    Gameplay::ReplayEndEntity e;
+    e.name = "Capsule";
+    e.position = Math::Vector3(3.0f, 1.5f, -2.0f);
+    e.rotY = 0.7071f; e.rotW = 0.7071f;
+    r.endState.push_back(e);
+
+    // Act
+    Gameplay::ReplayData back;
+    bool ok = Gameplay::ParseReplay(Gameplay::SerializeReplay(r), back);
+
+    // Assert: the end point survives; legacy replays parse with none.
+    ENJIN_ASSERT_TRUE(ok);
+    ENJIN_ASSERT_EQ((int)back.endState.size(), 1);
+    ENJIN_EXPECT_TRUE(back.endState[0].name == "Capsule");
+    ENJIN_EXPECT_FLOAT_NEAR(back.endState[0].position.y, 1.5f, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(back.endState[0].rotY, 0.7071f, 0.001f);
+    Gameplay::ReplayData legacy;
+    ENJIN_ASSERT_TRUE(Gameplay::ParseReplay("{\"tege_replay\":1,\"frames\":[]}", legacy));
+    ENJIN_EXPECT_TRUE(legacy.endState.empty());
+}
+
 ENJIN_TEST(Replay, SetRandomSeedReproducesTheScriptRandomStream) {
     // Arrange/Act: seed, drain five values, reseed with the same seed.
     Math::SetRandomSeed(1234u);
