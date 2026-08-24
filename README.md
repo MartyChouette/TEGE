@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="installer/social_preview.png" alt="TEGE — The Enjin Game Engine" width="720">
+<img src="installer/social_preview.png" alt="TEGE, The Enjin Game Engine" width="720">
 
 <br><br>
 
@@ -62,13 +62,13 @@ The engine is free and open source now. A paid official 1.0 release (installer, 
 <tr valign="top">
 <td width="50%">
 
-### 🎨 Look and feel
+### Look and feel
 One-click art style presets, PS1 wobble to painterly · retro effects: dithering, CRT, palette crush, the gatekept 4th to 6th gen console looks · ray tracing when hardware allows: RT shadows, reflections, AO, GI, path tracing with denoisers · **Gaussian splat import**: photoreal phone captures as scene objects · custom shader graph with live apply · post-process volumes, reflection probes, lens effects · procedural skies for 2D and 3D with custom cloud textures · non-Euclidean spaces, 4D projection, framebuffer feedback, the weird stuff
 
 </td>
 <td width="50%">
 
-### 🌦️ World and simulation
+### World and simulation
 Dynamic fabric: tearable cloth that catches the wind · weather in zones: rain, snow, sleet by temperature, seasons that change the trees · water three ways: 2D volumes, 3D surfaces with buoyancy, and fluid simulation that carves terrain · GPU particles with world collision · living vegetation: grass, shrubs, trees swaying with the wind · destructibles, Voronoi fracture, metaballs, reaction-diffusion, cellular automata geometry · an elemental system where fire spreads and water douses · swarms, gravity zones, wind as a first-class system
 
 </td>
@@ -76,13 +76,13 @@ Dynamic fabric: tearable cloth that catches the wind · weather in zones: rain, 
 <tr valign="top">
 <td width="50%">
 
-### 🎲 Procedural generation
+### Procedural generation
 Dungeon generator · wave function collapse in 2D and 3D · scatter with Poisson and Voronoi modes that conforms to terrain · terrain generator with erosion and auto-splatting · random bags with Markov chains for loot and sequencing · everything seeded and replay-stable
 
 </td>
 <td width="50%">
 
-### 🕹️ Play and feel
+### Play and feel
 Character controllers for every genre: first person, third person, 2D platformer, top-down, dungeon crawler grid, vehicles · **time rewind** as a game mechanic and a debug tool · **shareable replays**: record a session, export one file, someone else watches it, with bookmarks that mark bugs by themselves · surface response: footsteps and impacts that know what they hit · quests, dialogue trees, cinematics, tiered saves, dynamic difficulty · IK, skeletal animation with blend trees, morph targets, motion matching
 
 </td>
@@ -90,13 +90,13 @@ Character controllers for every genre: first person, third person, 2D platformer
 <tr valign="top">
 <td width="50%">
 
-### 🎚️ Sound
+### Sound
 DAW-style audio: buses, event graphs, audio-reactive visuals that pulse to the music · spatial audio with HRTF, occlusion, and per-zone reverb through Steam Audio · MIDI input as a controller
 
 </td>
 <td width="50%">
 
-### 🧰 The editor
+### The editor
 Build within three clicks: templates, primitives, drag and drop everything · **every component explains itself**: what it does, how to use it, what it connects to · the wiring board: flip any entity into a node map of its connections · **the layers concept**: non-destructive scene variant layers · a DAW-style play transport: record, scrub backward through time, step frame by frame · visual scripting with breakpoints, behavior trees, quest flow graphs · real-time collaborative editing · built-in pixel editor, vector drawing, sprite sheet importer with auto collider tracing · terrain brushes, command palette, undo everywhere, git integration
 
 </td>
@@ -104,13 +104,13 @@ Build within three clicks: templates, primitives, drag and drop everything · **
 <tr valign="top">
 <td width="50%">
 
-### 🔓 Openness
+### Openness
 **Your game is a file you own**: readable JSON scenes, plain-text scripts, documented formats · AngelScript with a beginner-friendly TegeBehavior skeleton, deep C++ when you want it · **an MCP server**: any AI agent becomes a copilot, with scene, component, script, and graph access · one-click desktop builds, web export that runs in a browser · LAN multiplayer, HTTP client, webhooks
 
 </td>
 <td width="50%">
 
-### ♿ Accessibility from the ground up
+### Accessibility from the ground up
 Colorblind modes, screen reader announcer, subtitles, content warnings · remappable input, alternative input devices, reduced motion honored everywhere · OpenDyslexic built in, audio-visual indicators · **every exported game ships with the accessibility menu**
 
 </td>
