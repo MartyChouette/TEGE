@@ -1002,6 +1002,31 @@ void PlayMode::Update(f32 deltaTime) {
         m_SwarmSystem.Update(m_World, deltaTime);
         m_StateMachineSystem.Update(m_World, deltaTime);
         m_VisualScriptSystem.Update(deltaTime);
+
+        // Breakpoint <-> rewind: a visual script hitting a breakpoint pauses
+        // TIME, not just its own graph. Pausing play mode puts the transport
+        // timeline in reach, so from the breakpoint you step or scrub BACKWARD
+        // through the snapshots that led here - and the moment is bookmarked
+        // in the recording. Resuming play continues the world; the script
+        // itself stays paused until continued from the visual script editor.
+        // Transition-guarded so a paused script doesn't re-pause every frame.
+        {
+            u32 pausedNow = 0;
+            Editor::NodeId hitNode = 0;
+            for (ECS::Entity vsEnt : m_World->GetEntitiesWithComponent<ECS::VisualScriptComponent>()) {
+                auto* vs = m_World->GetComponent<ECS::VisualScriptComponent>(vsEnt);
+                if (vs && vs->isPaused) { ++pausedNow; if (!hitNode) hitNode = vs->pausedAtNode; }
+            }
+            if (pausedNow > m_PausedScriptCount &&
+                m_State.load(std::memory_order_relaxed) == PlayState::Playing) {
+                MarkBookmark("breakpoint at node " + std::to_string(hitNode));
+                ENJIN_LOG_INFO(Editor, "Breakpoint hit (node %u) - play paused; step backward from the timeline",
+                               hitNode);
+                Pause();
+            }
+            m_PausedScriptCount = pausedNow;
+        }
+
         m_BehaviorTreeSystem.Update(deltaTime);
         m_DialogueSystem.Update(m_World, deltaTime);
         m_AISystem.Update(deltaTime);

@@ -245,6 +245,7 @@ private:
     bool  m_Replaying = false;
     usize m_ReplayCursor = 0;
     f32   m_SessionElapsed = 0.0f;            // seconds simulated this session (record + replay)
+    u32   m_PausedScriptCount = 0;            // breakpoint-pause transition guard
     u32   m_LastExceptionCount = 0;           // script-exception watermark for auto-bookmarks
 
     // Audio-reactive system (beat sync, VU→visual, RTPC, threshold triggers)
