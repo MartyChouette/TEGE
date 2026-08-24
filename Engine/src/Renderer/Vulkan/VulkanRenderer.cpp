@@ -155,19 +155,19 @@ void VulkanRenderer::Shutdown() {
     DestroyComputeResources();
     DestroySyncObjects();
 
-    if (m_CommandPool != VK_NULL_HANDLE) {
+    if (m_Context && m_CommandPool != VK_NULL_HANDLE) {
         vkDestroyCommandPool(m_Context->GetDevice(), m_CommandPool, nullptr);
         m_CommandPool = VK_NULL_HANDLE;
     }
 
-    if (m_RenderPass != VK_NULL_HANDLE) {
+    if (m_Context && m_RenderPass != VK_NULL_HANDLE) {
         vkDestroyRenderPass(m_Context->GetDevice(), m_RenderPass, nullptr);
         m_RenderPass = VK_NULL_HANDLE;
     }
 
     m_Swapchain.reset();
 
-    if (m_Surface != VK_NULL_HANDLE) {
+    if (m_Context && m_Surface != VK_NULL_HANDLE) {
         vkDestroySurfaceKHR(m_Context->GetInstance(), m_Surface, nullptr);
         m_Surface = VK_NULL_HANDLE;
     }
@@ -479,15 +479,24 @@ bool VulkanRenderer::CreateSyncObjects() {
 }
 
 void VulkanRenderer::DestroySyncObjects() {
+    // A renderer whose Initialize failed (no Vulkan driver) reaches here with a
+    // null context and EMPTY vectors - indexing them by MAX_FRAMES_IN_FLIGHT
+    // was a null read and crashed the clean "Vulkan unavailable" exit path.
+    if (!m_Context || m_Context->GetDevice() == VK_NULL_HANDLE) {
+        m_ImageAvailableSemaphores.clear();
+        m_RenderFinishedSemaphores.clear();
+        m_InFlightFences.clear();
+        return;
+    }
     for (usize i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
         if (m_TimestampPools[i] != VK_NULL_HANDLE) {
             vkDestroyQueryPool(m_Context->GetDevice(), m_TimestampPools[i], nullptr);
             m_TimestampPools[i] = VK_NULL_HANDLE;
         }
-        if (m_ImageAvailableSemaphores[i] != VK_NULL_HANDLE) {
+        if (i < m_ImageAvailableSemaphores.size() && m_ImageAvailableSemaphores[i] != VK_NULL_HANDLE) {
             vkDestroySemaphore(m_Context->GetDevice(), m_ImageAvailableSemaphores[i], nullptr);
         }
-        if (m_InFlightFences[i] != VK_NULL_HANDLE) {
+        if (i < m_InFlightFences.size() && m_InFlightFences[i] != VK_NULL_HANDLE) {
             vkDestroyFence(m_Context->GetDevice(), m_InFlightFences[i], nullptr);
         }
     }
