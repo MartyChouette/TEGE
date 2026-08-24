@@ -448,7 +448,9 @@ void EditorLayer::DrawMeshColliderComponent(ECS::Entity entity) {
         DrawComponentHelp("meshCollider", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Convex", &col->convex);
-        ImGui::SetItemTooltip("Convex hull (dynamic/static) or triangle mesh (static only)");
+        ImGui::SetItemTooltip("Dynamic bodies only: collide as a convex hull (moving bodies need a convex shape).\n"
+                              "Static geometry always uses the exact triangle mesh, so terrain and level\n"
+                              "meshes collide with their real surface.");
 
         InspectorUndo::Checkbox(m_UndoRedo, "Auto Generate", &col->autoGenerate);
         ImGui::SetItemTooltip("Automatically generate collision from MeshComponent on first use");
