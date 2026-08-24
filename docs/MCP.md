@@ -49,6 +49,17 @@ claude mcp add --transport http tege http://127.0.0.1:8971/mcp
 Component JSON uses the exact same schema as `.enjin` scene files — whatever the
 serializer writes, `set_component` accepts.
 
+## Authoring node graphs
+
+Visual scripts (and behavior trees / quest flows) are components, so
+`set_component` authors them directly — no dedicated tools needed. A minimal
+working visual script: a `graph` (nodes with pins, links joining pin ids),
+`nodeMeta` mapping node id to its registered `nodeType` (see the node registry;
+e.g. `Event_OnStart`, `Debug_Print`), `eventNodes` mapping event enum value to
+entry node id, and typed-in literals in `nodeMeta.properties` keyed by the
+lower-cased pin name (`{"message": "hello"}` on a Print node). Read an existing
+entity's `visualScript` component for a complete worked example of the schema.
+
 ## How it works
 
 The HTTP listener runs on a worker thread but **executes nothing there**: tool
