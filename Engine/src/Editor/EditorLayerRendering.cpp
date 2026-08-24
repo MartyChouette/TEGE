@@ -2222,7 +2222,7 @@ void EditorLayer::DrawSettingsSection_Skybox() {
             // texture. Empty texture = domain-warped procedural clouds.
             if (config.cloudCoverage > 0.001f || config.cloud2Coverage > 0.001f) {
                 changed |= ImGui::SliderFloat("Cloud Softness", &config.cloudSoftness, 0.0f, 1.0f);
-                ImGui::SetItemTooltip("0 = crisp puffy edges, 1 = soft wispy haze (2D sky)");
+                ImGui::SetItemTooltip("0 = crisp puffy edges, 1 = soft wispy haze");
                 if (!config.cloudTexturePath.empty()) {
                     size_t sl = config.cloudTexturePath.find_last_of("/\\");
                     std::string fn = (sl != std::string::npos) ? config.cloudTexturePath.substr(sl + 1) : config.cloudTexturePath;
@@ -2234,7 +2234,7 @@ void EditorLayer::DrawSettingsSection_Skybox() {
                         std::string p = FileDialog::OpenFile("Cloud Texture", {{ "Images", "*.png;*.jpg;*.jpeg;*.bmp;*.tga" }});
                         if (!p.empty()) { config.cloudTexturePath = p; changed = true; }
                     }
-                    ImGui::SetItemTooltip("Supply your own cloud shape; its brightness drives the clouds (2D sky)");
+                    ImGui::SetItemTooltip("Supply your own cloud shape; its brightness drives the clouds (2D and 3D skies)");
                 }
             }
             changed |= ImGui::SliderFloat("Horizon Haze", &config.horizonHaze, 0.0f, 1.0f);

@@ -13832,11 +13832,16 @@ void RenderSystem::CreateSkyboxPipeline(VkRenderPass renderPass) {
         return;
     }
 
-    // Create pipeline layout
+    // Create pipeline layout. Set 1 is the engine's bindless array so the
+    // fragment shader can sample a user-provided cloud texture (cloudExtra.y).
+    VkDescriptorSetLayout skySetLayouts[2] = {
+        m_SkyboxDescriptorSetLayoutHandle,
+        m_BindlessManager ? m_BindlessManager->GetDescriptorSetLayout() : VK_NULL_HANDLE
+    };
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &m_SkyboxDescriptorSetLayoutHandle;
+    pipelineLayoutInfo.setLayoutCount = (skySetLayouts[1] != VK_NULL_HANDLE) ? 2u : 1u;
+    pipelineLayoutInfo.pSetLayouts = skySetLayouts;
 
     if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &m_SkyboxPipelineLayoutHandle) != VK_SUCCESS) {
         ENJIN_LOG_WARN(Renderer, "Failed to create skybox pipeline layout");
@@ -13939,7 +13944,15 @@ void RenderSystem::RenderSkybox(VkCommandBuffer commandBuffer,
     skyData.cloudParams = {skyCfg.cloudCoverage, skyCfg.cloudScale, skyCfg.cloudSpeed, skyCfg.cloud2Coverage};
     skyData.cloudColorHaze = {skyCfg.cloudColor.x, skyCfg.cloudColor.y, skyCfg.cloudColor.z, skyCfg.horizonHaze};
     skyData.misc = {skyCfg.sunIntensity, skyCfg.cloud2Scale, skyWind.x, skyWind.z};
-    skyData.cloudExtra = {skyCfg.cloudSoftness, 0.0f, 0.0f, 0.0f};
+    // Custom cloud texture: resolve the path to a bindless index (cached; shared
+    // with the 2D sky path, which uses the same fields). -1 keeps procedural FBM.
+    if (skyCfg.cloudTexturePath != m_CloudTexPath) {
+        m_CloudTexPath = skyCfg.cloudTexturePath;
+        m_CloudTexIndex = ResolveBindlessTextureIndex(skyCfg.cloudTexturePath);
+    }
+    f32 skyCloudTexIdx = (m_BindlessManager && m_CloudTexIndex >= 0)
+                         ? static_cast<f32>(m_CloudTexIndex) : -1.0f;
+    skyData.cloudExtra = {skyCfg.cloudSoftness, skyCloudTexIdx, 0.0f, 0.0f};
     m_SkyboxUniformBuffers[currentFrame]->UploadData(&skyData, sizeof(skyData));
 
     // Rewrite the descriptor set ONLY when its contents actually changed (first use,
@@ -14010,6 +14023,15 @@ void RenderSystem::RenderSkybox(VkCommandBuffer commandBuffer,
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
         m_SkyboxPipelineLayoutHandle, 0, 1, &m_SkyboxDescriptorSets[currentFrame], 0, nullptr);
+    // Set 1: bindless array for the custom cloud texture (layout includes it
+    // whenever the manager exists, so the bind must match).
+    if (m_BindlessManager) {
+        VkDescriptorSet skyBindless = m_BindlessManager->GetDescriptorSet();
+        if (skyBindless != VK_NULL_HANDLE) {
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                m_SkyboxPipelineLayoutHandle, 1, 1, &skyBindless, 0, nullptr);
+        }
+    }
 
     VkBuffer vertexBuffers[] = { m_SkyboxVertexBuffer->GetBuffer() };
     VkDeviceSize offsets[] = { 0 };
