@@ -432,6 +432,7 @@ private:
     void DrawWeatherZoneComponent(ECS::Entity entity);
     void DrawWaterVolumeComponent(ECS::Entity entity);
     void DrawWater3DComponent(ECS::Entity entity);
+    void DrawGaussianSplatComponent(ECS::Entity entity);
     void DrawGrassVolumeComponent(ECS::Entity entity);
     void DrawShrubVolumeComponent(ECS::Entity entity);
     void DrawTreeVolumeComponent(ECS::Entity entity);

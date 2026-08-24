@@ -75,6 +75,8 @@ SHADERS_LIST = [
     ("rt_hybrid_apply.frag.spv", "RTHybridApplyFragmentShaderData", "uchar"),
     ("gpu_particle.vert.spv",  "GpuParticleVertexShaderData",    "uchar"),
     ("gpu_particle.frag.spv",  "GpuParticleFragmentShaderData",  "uchar"),
+    ("splat.vert.spv",         "SplatVertexShaderData",          "uchar"),
+    ("splat.frag.spv",         "SplatFragmentShaderData",        "uchar"),
 ]
 
 BL = []

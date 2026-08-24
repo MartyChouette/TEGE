@@ -14,6 +14,7 @@
 #include "Enjin/ECS/Components/ShrubVolume.h"
 #include "Enjin/ECS/Components/TreeVolume.h"
 #include "Enjin/ECS/Components/Terrain.h"
+#include "Enjin/ECS/Components/GaussianSplat.h"
 #include "Enjin/ECS/Components/Terrain2D.h"
 #include "Enjin/ECS/Components/CameraTrigger.h"
 #include "Enjin/ECS/Components/TemperatureZone.h"
@@ -1447,6 +1448,29 @@ ECS::WFCComponent DeserializeWFCComponent(const json& j) {
             g.tiles.push_back(std::move(t));
         }
     }
+    return g;
+}
+
+json SerializeGaussianSplatComponent(const ECS::GaussianSplatComponent& g) {
+    json j;
+    j["sourcePath"] = g.sourcePath;
+    j["opacityScale"] = RF(g.opacityScale);
+    j["splatScale"] = RF(g.splatScale);
+    j["flipYZ"] = g.flipYZ;
+    j["maxSplats"] = g.maxSplats;
+    j["visible"] = g.visible;
+    return j;
+}
+
+ECS::GaussianSplatComponent DeserializeGaussianSplatComponent(const json& j) {
+    ECS::GaussianSplatComponent g;
+    if (j.contains("sourcePath")) g.sourcePath = SafeStr(j["sourcePath"], MAX_STR_PATH);
+    if (j.contains("opacityScale")) g.opacityScale = Math::Clamp(j["opacityScale"].get<f32>(), 0.0f, 4.0f);
+    if (j.contains("splatScale")) g.splatScale = Math::Clamp(j["splatScale"].get<f32>(), 0.01f, 16.0f);
+    if (j.contains("flipYZ")) g.flipYZ = JB(j["flipYZ"]);
+    if (j.contains("maxSplats")) g.maxSplats = std::min(j["maxSplats"].get<u32>(), 8000000u);
+    if (j.contains("visible")) g.visible = JB(j["visible"]);
+    g.dirty = true;   // freshly loaded component always (re)loads its file
     return g;
 }
 
@@ -7621,6 +7645,7 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
         ENJIN_SERDES("teleporter", ECS::TeleporterComponent, SerializeTeleporterComponent, DeserializeTeleporterComponent),
         ENJIN_SERDES("temperatureZone", ECS::TemperatureZoneComponent, SerializeTemperatureZoneComponent, DeserializeTemperatureZoneComponent),
         ENJIN_SERDES("terrain", ECS::TerrainComponent, SerializeTerrainComponent, DeserializeTerrainComponent),
+        ENJIN_SERDES("gaussianSplat", ECS::GaussianSplatComponent, SerializeGaussianSplatComponent, DeserializeGaussianSplatComponent),
         ENJIN_SERDES("terrain2d", ECS::Terrain2DComponent, SerializeTerrain2DComponent, DeserializeTerrain2DComponent),
         ENJIN_SERDES("terrainGenerator", ECS::TerrainGeneratorComponent, SerializeTerrainGeneratorComponent, DeserializeTerrainGeneratorComponent),
         ENJIN_SERDES("tether", ECS::TetherComponent, SerializeTetherComponent, DeserializeTetherComponent),

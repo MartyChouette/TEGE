@@ -334,6 +334,8 @@ static const std::unordered_map<std::string, ComponentHelp>& Registry() {
             };
             r["water3D"]      = { "A 3D water surface with waves, reflection and buoyancy.",
                 "Size the surface, then tune waves, color and flow.", nullptr, rend };
+            r["gaussianSplat"] = { "A photoreal 3D capture (Gaussian splats) placed in the scene.",
+                "Point it at a .ply or .spz splat file - phone scans work. Lights don't affect it (baked radiance); art styles and post effects do.", nullptr, rend };
             r["shrubVolume"]  = { "Scatters shrubs and bushes across an area on the GPU.",
                 "Set density and the area to cover.", nullptr, rend };
             r["treeVolume"]   = { "Scatters trees across an area, with seasons and wind sway.",

@@ -2917,6 +2917,7 @@ void RenderSystem::RequestPipelineRecreation() {}  // Vulkan-only heal; WebGPU r
 void RenderSystem::SetFluidSimulation(Effects::FluidSimulation* /*sim*/) {}
 void RenderSystem::RenderWeatherParticles(const Effects::WeatherSystem& /*w*/, bool /*r*/, u32, u32, bool, u32) {}
 void RenderSystem::RenderGPUParticles() {}  // Vulkan-only (needs WebGPU compute first)
+void RenderSystem::RenderSplats() {}       // Vulkan-only
 void RenderSystem::SpawnGPUParticles(u32, const Math::Vector3&, const Math::Vector3&) {}
 void RenderSystem::SpawnSurfaceBurst(u32, const Math::Vector3&, const Math::Vector3&, u8) {}
 void RenderSystem::TickGPUEmitters(f32) {}
@@ -3008,6 +3009,9 @@ void RenderSystem::SetUpscalerQuality(u32 quality) { m_UpscalerQuality = quality
 #include "Enjin/Renderer/DDGIProbeSystem.h"
 #include "Enjin/Renderer/VolumetricFog.h"
 #include "Enjin/Effects/GPUParticleSystem.h"
+#include "Enjin/Effects/SplatRenderer.h"
+#include "Enjin/Assets/SplatLoader.h"
+#include "Enjin/ECS/Components/GaussianSplat.h"
 #include "Enjin/Effects/ParticleColliders.h"
 #include "Enjin/Effects/Wind.h"
 #include "Enjin/ECS/Components/GPUParticleEmitter.h"
@@ -3559,6 +3563,10 @@ void RenderSystem::Initialize() {
         }
     }
 
+    // Gaussian splat cloud renderer (loads lazily when a component appears)
+    m_SplatRenderer = std::make_unique<Effects::SplatRenderer>();
+    m_SplatRenderer->Initialize(m_VulkanRenderer->GetContext());
+
     // Initialize visibility buffer renderer
 #ifdef ENJIN_VISIBILITY_BUFFER
     {
@@ -3934,6 +3942,56 @@ void RenderSystem::FlushPendingChanges() {
     // New frame is about to record — allow the compute pre-pass to run once
     m_ComputePrePassDone = false;
     m_FramePrepDone = false;
+
+    // Gaussian splats: (re)load dirty components and run the throttled
+    // back-to-front re-sort. Both create/write GPU buffers, so they live here
+    // in the pre-recording flush per the frame-safety contract.
+    if (m_World && m_SplatRenderer) {
+        Entity found = ECS::INVALID_ENTITY;
+        u32 splatCompCount = 0;
+        for (Entity e : m_World->GetEntitiesWithComponent<GaussianSplatComponent>()) {
+            if (found == ECS::INVALID_ENTITY) found = e;
+            ++splatCompCount;
+        }
+        if (splatCompCount > 1) {
+            static bool s_WarnedMulti = false;
+            if (!s_WarnedMulti) {
+                s_WarnedMulti = true;
+                ENJIN_LOG_WARN(Renderer, "Multiple GaussianSplatComponents - only the first renders (v1)");
+            }
+        }
+        if (found != m_SplatEntity) {
+            m_SplatEntity = found;
+            if (found == ECS::INVALID_ENTITY) m_SplatRenderer->Clear();
+            else if (auto* c = m_World->GetComponent<GaussianSplatComponent>(found)) c->dirty = true;
+        }
+        if (m_SplatEntity != ECS::INVALID_ENTITY) {
+            auto* comp = m_World->GetComponent<GaussianSplatComponent>(m_SplatEntity);
+            if (comp && comp->dirty) {
+                comp->dirty = false;
+                comp->loadError.clear();
+                comp->loadedCount = 0;
+                if (comp->sourcePath.empty()) {
+                    m_SplatRenderer->Clear();
+                } else {
+                    auto data = Assets::SplatLoader::LoadFromFile(comp->sourcePath,
+                                                                  comp->maxSplats, comp->flipYZ);
+                    if (!data.Valid()) {
+                        comp->loadError = data.error.empty() ? "no splats in file" : data.error;
+                        m_SplatRenderer->Clear();
+                        ENJIN_LOG_ERROR(Renderer, "Gaussian splat load failed: %s", comp->loadError.c_str());
+                    } else {
+                        m_SplatRenderer->LoadSplats(std::move(data));
+                        comp->loadedCount = m_SplatRenderer->GetCount();
+                    }
+                }
+            }
+            if (comp && comp->visible && m_SplatRenderer->GetCount() > 0 && m_Camera) {
+                m_SplatRenderer->SortIfNeeded(m_Camera->GetViewMatrix(),
+                                              ComputeWorldMatrix(m_World, m_SplatEntity));
+            }
+        }
+    }
 
     // Custom shaders persisted in the scene: (re)apply any that aren't live in
     // this session (fresh load, play-stop restore). Idempotent - pipelines
@@ -4969,6 +5027,7 @@ void RenderSystem::Update(f32 deltaTime) {
             RenderTrees(vpW, vpH);
             RenderParticles(vpW, vpH);
             RenderFluid(vpW, vpH);
+            RenderSplats(VK_NULL_HANDLE, 2, pixelW, pixelH);
             RenderGPUParticles();
         }
 
@@ -5262,6 +5321,9 @@ void RenderSystem::Update(f32 deltaTime) {
     if (m_MainPassWeather) {
         RenderWeatherParticles(*m_MainPassWeather, m_MainPassWeatherIsRain, 0, 0);
     }
+
+    // Gaussian splat cloud (scene content: before the particle effects layer)
+    RenderSplats();
 
     // GPU-compute particles: draw the sim's particle buffer (dormant until spawned)
     RenderGPUParticles();
@@ -6439,7 +6501,8 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     RenderTrees(targetW, targetH);
     RenderParticles(targetW, targetH);
     RenderFluid(targetW, targetH);
-    RenderGPUParticles(target->GetRenderPass(), 1);
+    RenderSplats(target->GetRenderPass(), 1, static_cast<f32>(target->GetWidth()), static_cast<f32>(target->GetHeight()));
+        RenderGPUParticles(target->GetRenderPass(), 1);
 
     // Restore main pass camera, buffers, and descriptor sets
     m_Camera = prevCamera;
@@ -6855,6 +6918,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
         RenderTrees(targetW, targetH);
         RenderParticles(targetW, targetH);
         RenderFluid(targetW, targetH);
+        RenderSplats(target->GetRenderPass(), 1, static_cast<f32>(target->GetWidth()), static_cast<f32>(target->GetHeight()));
         RenderGPUParticles(target->GetRenderPass(), 1);
     }
 
@@ -13154,6 +13218,35 @@ void RenderSystem::RenderGPUParticles(VkRenderPass pass, u32 colorAttachments) {
     m_GPUParticleSystem->Render(commandBuffer,
                                 (*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)],
                                 bindlessSet);
+}
+
+void RenderSystem::RenderSplats(VkRenderPass pass, u32 colorAttachments,
+                                f32 viewportW, f32 viewportH) {
+    if (!m_SplatRenderer || !m_Renderer || !m_Initialized || !m_ActiveDescriptorSets || !m_Pipeline) return;
+    if (m_SplatRenderer->GetCount() == 0 || m_SplatEntity == ECS::INVALID_ENTITY || !m_World) return;
+    auto* comp = m_World->GetComponent<GaussianSplatComponent>(m_SplatEntity);
+    if (!comp || !comp->visible) return;
+
+    VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE) return;
+
+    if (pass == VK_NULL_HANDLE) {
+        pass = m_VulkanRenderer->GetRenderPass();
+        colorAttachments = 2;   // swapchain main pass is MRT (color + velocity)
+    }
+    if (viewportW <= 0.0f || viewportH <= 0.0f) {
+        VkExtent2D ext = m_VulkanRenderer->GetSwapchainExtent();
+        viewportW = static_cast<f32>(ext.width);
+        viewportH = static_cast<f32>(ext.height);
+    }
+    m_SplatRenderer->EnsureDrawPipeline(pass, m_Pipeline->GetDescriptorSetLayout(), colorAttachments);
+
+    u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
+    Math::Matrix4 model = ComputeWorldMatrix(m_World, m_SplatEntity);
+    m_SplatRenderer->Render(commandBuffer,
+                            (*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)],
+                            model, viewportW, viewportH,
+                            comp->opacityScale, comp->splatScale);
 }
 
 void RenderSystem::SpawnSurfaceBurst(u32 count, const Math::Vector3& position,

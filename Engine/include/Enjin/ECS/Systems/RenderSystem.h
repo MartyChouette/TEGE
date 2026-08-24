@@ -58,6 +58,7 @@ namespace Enjin { namespace Effects {
     class FluidSimulation;
     class ElementalSystem;
     class GPUParticleSystem;
+    class SplatRenderer;
     enum class GPUParticlePreset : unsigned char; // defined in Effects/GPUParticleTypes.h
     class SpriteBatchRenderer;
     class SpriteTextureAtlas;
@@ -559,8 +560,14 @@ public:
     // it records into, so every call site states where it is.
 #if !ENJIN_RENDERER_WEBGPU
     void RenderGPUParticles(VkRenderPass pass = VK_NULL_HANDLE, u32 colorAttachments = 2);
+    // Gaussian splat cloud (first GaussianSplatComponent in the scene). Same
+    // pass-compatibility contract as particles; w/h = the viewport being
+    // recorded (the vertex shader's covariance projection works in pixels).
+    void RenderSplats(VkRenderPass pass = VK_NULL_HANDLE, u32 colorAttachments = 2,
+                      f32 viewportW = 0.0f, f32 viewportH = 0.0f);
 #else
     void RenderGPUParticles();
+    void RenderSplats();
 #endif
     // Seed GPU particles (wakes the compute sim; Debug Workstation has a burst button)
     void SpawnGPUParticles(u32 count, const Math::Vector3& position, const Math::Vector3& direction);
@@ -1844,6 +1851,12 @@ public:
     std::unique_ptr<Renderer::VolumetricFogSystem> m_VolumetricFog;
     std::unique_ptr<Effects::GPUParticleSystem> m_GPUParticleSystem;
 private:
+    // Gaussian splat cloud renderer (flagship #9). One cloud at a time (the
+    // first GaussianSplatComponent found); loading + sorting happen in
+    // FlushPendingChanges (frame safety), drawing rides the same passes as
+    // particles.
+    std::unique_ptr<Effects::SplatRenderer> m_SplatRenderer;
+    ECS::Entity m_SplatEntity = ECS::INVALID_ENTITY;
     // DDGI geometry feed: a MeshInstance SSBO (transform + pool offsets per
     // pool-eligible static mesh) built from m_EntityRenderData, handed to the
     // DDGI voxelizer alongside the merged vertex/index buffers.

@@ -85,6 +85,7 @@
 #include "Enjin/Renderer/PostProcessing.h"
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Platform/FileDialog.h"
+#include "Enjin/ECS/Components/GaussianSplat.h"
 #include "Enjin/Assets/Prefab.h"
 #include "Enjin/Build/BuildPipeline.h"
 #include "Enjin/Assets/DataAsset.h"
@@ -9488,3 +9489,50 @@ template void EditorLayer::RemoveComponentWithUndo<ECS::MaterialInteractionTable
 
 } // namespace Editor
 } // namespace Enjin
+
+void Enjin::Editor::EditorLayer::DrawGaussianSplatComponent(ECS::Entity entity) {
+    bool open = UI::SectionHeader("[G] Gaussian Splat", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("GaussianSplatCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::GaussianSplatComponent>(entity, "gaussianSplat", "Gaussian Splat");
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (!open) return;
+    auto* splat = m_World->GetComponent<ECS::GaussianSplatComponent>(entity);
+    if (!splat) return;
+    DrawComponentHelp("gaussianSplat", m_World, entity);
+
+    if (!splat->sourcePath.empty()) {
+        size_t sl = splat->sourcePath.find_last_of("/\\");
+        std::string fn = (sl != std::string::npos) ? splat->sourcePath.substr(sl + 1) : splat->sourcePath;
+        ImGui::Text("File: %s", fn.c_str());
+        ImGui::SameLine();
+        if (ImGui::SmallButton("X##SplatFile")) { splat->sourcePath.clear(); splat->dirty = true; }
+    }
+    if (ImGui::Button(splat->sourcePath.empty() ? "Choose Splat File..." : "Change...")) {
+        std::string p = FileDialog::OpenFile("Gaussian Splat",
+                                             {{ "Gaussian splats", "*.ply;*.spz" }});
+        if (!p.empty()) { splat->sourcePath = p; splat->dirty = true; }
+    }
+    ImGui::SetItemTooltip("A 3D Gaussian splat capture: .ply (INRIA layout) or .spz (Niantic).\n"
+                          "Free phone apps can capture these of real places and objects.");
+
+    if (ImGui::SliderFloat("Opacity", &splat->opacityScale, 0.0f, 2.0f)) {}
+    ImGui::SetItemTooltip("Fades the whole cloud");
+    if (ImGui::SliderFloat("Splat Scale", &splat->splatScale, 0.1f, 4.0f)) {}
+    ImGui::SetItemTooltip("Multiplies every gaussian's size - raise to close gaps, lower to sharpen");
+    if (ImGui::Checkbox("Flip Y/Z (COLMAP -> engine up)", &splat->flipYZ)) splat->dirty = true;
+    ImGui::SetItemTooltip("Most captures come out of COLMAP-style tools upside down without this");
+    ImGui::Checkbox("Visible", &splat->visible);
+
+    if (!splat->loadError.empty()) {
+        ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.3f, 1.0f), "Load failed: %s", splat->loadError.c_str());
+    } else if (splat->loadedCount > 0) {
+        ImGui::TextColored(ImVec4(0.4f, 0.85f, 0.5f, 1.0f), "%u splats resident", splat->loadedCount);
+    } else if (!splat->sourcePath.empty()) {
+        ImGui::TextDisabled("Loading...");
+    }
+}

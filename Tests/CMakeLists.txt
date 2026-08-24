@@ -148,6 +148,7 @@ enjin_add_test(TestMeshFactory        Unit/Renderer/TestMeshFactory.cpp)
 enjin_add_test(TestMeshSimplifier     Unit/Renderer/TestMeshSimplifier.cpp)
 enjin_add_test(TestAdaptiveQuality    Unit/Renderer/TestAdaptiveQuality.cpp)
 enjin_add_test(TestRendererLifecycle  Unit/Renderer/TestRendererLifecycle.cpp)
+enjin_add_test(TestSplatLoader        Unit/Assets/TestSplatLoader.cpp)
 
 # --- Editor ---
 enjin_add_test(TestEditorSettings     Unit/Editor/TestEditorSettings.cpp)
