@@ -56,6 +56,14 @@ namespace {
 
     // Replay injection: forced per-frame state (see Input::SetReplayInjection)
     bool s_ReplayInjection = false;
+    // Hardware state preserved during injection + the real-input scope flag
+    bool s_RealKeysDown[MAX_KEYS] = {};
+    bool s_RealMouseButtons[8] = {};
+    Math::Vector2 s_RealMousePos{};
+    Math::Vector2 s_RealMousePosPrev{};
+    Math::Vector2 s_RealMouseDelta{};
+    bool s_RealFirstMove = true;
+    bool s_RealScope = false;
     bool s_InjectedKeys[MAX_KEYS] = {};
     bool s_InjectedMouse[MAX_MOUSE_BUTTONS] = {};
     Math::Vector2 s_InjectedMousePos = {};
@@ -298,11 +306,23 @@ void Input::Update() {
 
     // Replay injection: the recorded snapshot wins over whatever the hardware
     // said this frame. Previous-frame state was already snapshotted above, so
-    // pressed/released edge queries work against the injected stream.
+    // pressed/released edge queries work against the injected stream. The
+    // hardware state is preserved to the side for real-input scopes (the
+    // replay free camera reads it).
     if (s_ReplayInjection) {
+        std::memcpy(s_RealKeysDown, s_KeysDown, sizeof(s_KeysDown));
+        std::memcpy(s_RealMouseButtons, s_MouseButtonsDown, sizeof(s_MouseButtonsDown));
+        s_RealMouseDelta = s_RealFirstMove ? Math::Vector2(0.0f, 0.0f)
+                                           : s_MousePosition - s_RealMousePosPrev;
+        s_RealFirstMove = false;
+        s_RealMousePosPrev = s_MousePosition;
+        s_RealMousePos = s_MousePosition;
+
         std::memcpy(s_KeysDown, s_InjectedKeys, sizeof(s_KeysDown));
         std::memcpy(s_MouseButtonsDown, s_InjectedMouse, sizeof(s_MouseButtonsDown));
         s_MousePosition = s_InjectedMousePos;
+    } else {
+        s_RealFirstMove = true;
     }
 
     // Calculate mouse delta
@@ -436,6 +456,7 @@ void Input::Update() {
 bool Input::IsKeyDown(KeyCode key) {
     i32 keyIndex = static_cast<i32>(key);
     if (keyIndex < 0 || keyIndex >= MAX_KEYS) return false;
+    if (s_RealScope && s_ReplayInjection) return s_RealKeysDown[keyIndex];
     return s_KeysDown[keyIndex];
 }
 
@@ -454,6 +475,7 @@ bool Input::IsKeyReleased(KeyCode key) {
 bool Input::IsMouseButtonDown(MouseButton button) {
     i32 buttonIndex = static_cast<i32>(button);
     if (buttonIndex < 0 || buttonIndex >= MAX_MOUSE_BUTTONS) return false;
+    if (s_RealScope && s_ReplayInjection) return s_RealMouseButtons[buttonIndex];
     return s_MouseButtonsDown[buttonIndex];
 }
 
@@ -470,6 +492,7 @@ bool Input::IsMouseButtonReleased(MouseButton button) {
 }
 
 Math::Vector2 Input::GetMousePosition() {
+    if (s_RealScope && s_ReplayInjection) return s_RealMousePos;
     return s_MousePosition;
 }
 
@@ -482,6 +505,7 @@ f32 Input::GetMouseY() {
 }
 
 Math::Vector2 Input::GetMouseDelta() {
+    if (s_RealScope && s_ReplayInjection) return s_RealMouseDelta;
     return s_MouseDelta;
 }
 
@@ -498,6 +522,9 @@ void Input::SetReplayInjection(bool enabled) {
 }
 
 bool Input::IsReplayInjectionActive() { return s_ReplayInjection; }
+
+void Input::BeginRealInputScope() { s_RealScope = true; }
+void Input::EndRealInputScope() { s_RealScope = false; }
 
 void Input::InjectFrameState(const bool* keysDown, const bool* mouseDown,
                              Math::Vector2 mousePos) {

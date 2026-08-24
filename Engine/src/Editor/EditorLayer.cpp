@@ -1036,6 +1036,15 @@ void EditorLayer::Update(f32 deltaTime) {
     // build dialog closed.
     PollBuildThread();
 
+    // Replay free camera: fly with the REAL keyboard/mouse while injection
+    // replays the recorded inputs into the game (the scope makes Input answer
+    // from hardware for the controller's queries only).
+    if (m_ReplayFreeCam && m_PlayMode.IsReplaying() && m_CameraController) {
+        Input::BeginRealInputScope();
+        m_CameraController->Update(ImGui::GetIO().DeltaTime);
+        Input::EndRealInputScope();
+    }
+
     // Replay playback swapped the live scene for the replay's snapshot; when
     // the replay session ends, hand the user their real scene back.
     {
@@ -1053,6 +1062,7 @@ void EditorLayer::Update(f32 deltaTime) {
             }
             m_PreReplaySceneJson.clear();
         }
+        if (m_WasReplaying && !replayingNow) m_ReplayFreeCam = false;
         m_WasReplaying = replayingNow;
     }
 
@@ -2411,14 +2421,23 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
                                     cameraComp->nearPlane, cameraComp->farPlane);
     }
 
-    // Set camera position and orientation from entity transform
-    gameCamera.SetPosition(cameraTransform->position);
+    // Set camera position and orientation from entity transform. During replay
+    // free-cam the fly camera takes the game view instead: the replay drives
+    // the world (including the recorded camera entity), you choose the angle.
+    if (m_ReplayFreeCam && m_PlayMode.IsReplaying() && m_Camera) {
+        gameCamera.SetPosition(m_Camera->GetPosition());
+        Math::Vector3 fcFwd = m_Camera->GetForward();
+        gameCamera.SetLookAt(m_Camera->GetPosition(), m_Camera->GetPosition() + fcFwd,
+                             Math::Vector3(0.0f, 1.0f, 0.0f));
+    } else {
+        gameCamera.SetPosition(cameraTransform->position);
 
-    // Compute forward/up from the entity's rotation quaternion
-    Math::Vector3 forward = cameraTransform->rotation.Rotate(Math::Vector3(0.0f, 0.0f, -1.0f));
-    Math::Vector3 up = cameraTransform->rotation.Rotate(Math::Vector3(0.0f, 1.0f, 0.0f));
-    Math::Vector3 target = cameraTransform->position + forward;
-    gameCamera.SetLookAt(cameraTransform->position, target, up);
+        // Compute forward/up from the entity's rotation quaternion
+        Math::Vector3 forward = cameraTransform->rotation.Rotate(Math::Vector3(0.0f, 0.0f, -1.0f));
+        Math::Vector3 up = cameraTransform->rotation.Rotate(Math::Vector3(0.0f, 1.0f, 0.0f));
+        Math::Vector3 target = cameraTransform->position + forward;
+        gameCamera.SetLookAt(cameraTransform->position, target, up);
+    }
 
     // Hand RT the game camera: ray tracing / path tracing renders the game view,
     // not the editor fly cam (RT dispatch happens in RenderSystem::Update).

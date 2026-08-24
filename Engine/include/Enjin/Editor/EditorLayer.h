@@ -1307,6 +1307,9 @@ private:
     void PlayLatestReplay();
     std::string m_PreReplaySceneJson;
     bool m_WasReplaying = false;
+    // Free camera during replay playback: the fly cam takes the game view
+    // while the replay drives the world (trailer / spectator angle).
+    bool m_ReplayFreeCam = false;
     // Readback + write the game view as <basePath>.png/.ppm (no exit).
     bool CaptureGameViewToFile(const std::string& basePath);
 

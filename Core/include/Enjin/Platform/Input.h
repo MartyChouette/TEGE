@@ -164,6 +164,13 @@ public:
     // Snapshot the live state (for the recorder). Buffers sized as above.
     static void CaptureFrameState(bool* keysDown, bool* mouseDown,
                                   Math::Vector2& mousePos);
+    // While injection is active the REAL hardware state is kept alongside the
+    // injected stream. Inside a real-input scope, IsKeyDown / mouse queries
+    // answer from the hardware instead - this is how the editor's free camera
+    // flies during replay playback without the recorded WASD steering it.
+    // (Edge queries - pressed/released - stay on the injected stream.)
+    static void BeginRealInputScope();
+    static void EndRealInputScope();
 
     // Mouse capture (hide cursor and lock to window)
     static void SetMouseCaptured(bool captured);

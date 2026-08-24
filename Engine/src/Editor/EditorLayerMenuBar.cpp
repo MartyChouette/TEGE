@@ -1284,6 +1284,18 @@ void EditorLayer::DrawMenuBar() {
                 ImGui::Dummy(ImVec2(ts.x + padX * 2.0f, btnH));
             }
 
+            // --- Replay free camera (trailer / spectator angle) ---------------
+            if (!stopped && m_PlayMode.IsReplaying()) {
+                ImGui::SameLine(0.0f, 8.0f);
+                bool fc = m_ReplayFreeCam;
+                if (fc) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+                if (ImGui::SmallButton("Free Cam")) m_ReplayFreeCam = !m_ReplayFreeCam;
+                if (fc) ImGui::PopStyleColor();
+                ImGui::SetItemTooltip(m_ReplayFreeCam
+                    ? "Game view follows YOUR fly camera while the replay plays.\nWASD + right-drag; click again to return to the recorded camera"
+                    : "Watch the replay from any angle: the fly camera takes the game\nview while the recorded session drives the world");
+            }
+
             // --- Record indicator + timeline scrubber -------------------------
             if (!stopped && hasRecorder) {
                 // REC dot: solid red while recording (playing), dim while paused
