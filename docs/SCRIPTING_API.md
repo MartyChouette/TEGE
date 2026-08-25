@@ -118,6 +118,7 @@ the transform and does the blend. A camera "cut" is just raising a vcam's priori
 - `Camera_SetVCamEnabled(uint64, bool)` — take a vcam out of / into the running.
 - `Camera_IsVCamLive(uint64)` — is this the shot currently on screen?
 - `Camera_SetVCamOffset(uint64, float x, y, z)` / `Camera_SetVCamFOV(uint64, float)` — retune a shot live.
+- `Camera_ApplyVCamShot(uint64, int shot)` — apply a named preset (seeds framing, keeps priority/targets): `1`=Isometric, `2`=Over-the-Shoulder, `3`=Follow, `4`=Top-Down, `5`=Close-Up, `6`=Wide, `7`=Side-Scroller, `8`=Bird's-Eye, `0`=Custom.
 
 **Tier 3 — manual (contract).** Take the wheel from the Director. **Contract:**
 after `TakeManualControl`, the Director stops writing the transform and YOU own

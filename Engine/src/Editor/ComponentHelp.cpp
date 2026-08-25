@@ -213,8 +213,10 @@ static const std::unordered_map<std::string, ComponentHelp>& Registry() {
         }
         r["virtualCamera"] = {
             "A camera shot. The Camera Director blends the real camera to the highest-priority vcam.",
-            "Drag an entity onto Follow, set an Offset and Priority. Two vcams + a priority swap = a camera cut. You never touch the real camera; the Director owns it.",
-            "// swap shots from a script (Tier 2, safe):\n"
+            "Drag an entity onto Follow, pick a Shot Preset, set a Priority. Two vcams + a priority swap = a camera cut. You never touch the real camera; the Director owns it.",
+            "// pick a preset from a script (1=Iso,2=OverShoulder,3=Follow,4=TopDown...):\n"
+            "Camera_ApplyVCamShot(shoulderCam, 2);\n"
+            "// swap shots by priority (Tier 2, safe):\n"
             "Camera_SetVCamPriority(shoulderCam, 20);   // raise -> Director blends to it\n"
             "// take the wheel (Tier 3, contract):\n"
             "Camera_TakeManualControl(self); /* ... */ Camera_ReleaseManualControl();",

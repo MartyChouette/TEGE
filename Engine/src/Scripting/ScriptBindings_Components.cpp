@@ -584,6 +584,16 @@ static void Camera_SetVCamFOV(u64 id, f32 fov) {
         vc->fov = fov;
 }
 
+// Apply a named shot preset to a vcam (see VCamShot). Seeds the framing fields;
+// priority/targets/enabled are preserved. 0=Custom,1=Isometric,2=OverShoulder,
+// 3=Follow,4=TopDown,5=CloseUp,6=Wide,7=SideScroll,8=BirdsEye.
+static void Camera_ApplyVCamShot(u64 id, int shot) {
+    if (!s_BindingsWorld) return;
+    if (shot < 0 || shot >= static_cast<int>(VCamShot::Count)) return;
+    if (auto* vc = s_BindingsWorld->GetComponent<VirtualCameraComponent>(static_cast<Entity>(id)))
+        ApplyVCamPreset(*vc, static_cast<VCamShot>(shot));
+}
+
 static void Camera_TakeManualControl(u64 owner) {
     if (s_BindingsCameraDirector) s_BindingsCameraDirector->TakeManualControl(static_cast<Entity>(owner));
 }
@@ -2116,6 +2126,7 @@ void RegisterComponentBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction("bool Camera_IsVCamLive(uint64)", ENJIN_AS_FN(Camera_IsVCamLive), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Camera_SetVCamOffset(uint64, float, float, float)", ENJIN_AS_FN(Camera_SetVCamOffset), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Camera_SetVCamFOV(uint64, float)", ENJIN_AS_FN(Camera_SetVCamFOV), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Camera_ApplyVCamShot(uint64, int)", ENJIN_AS_FN(Camera_ApplyVCamShot), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Camera_TakeManualControl(uint64)", ENJIN_AS_FN(Camera_TakeManualControl), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Camera_ReleaseManualControl()", ENJIN_AS_FN(Camera_ReleaseManualControl), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Camera_IsManualControl()", ENJIN_AS_FN(Camera_IsManualControl), ENJIN_AS_CALL_CDECL));

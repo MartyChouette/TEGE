@@ -5521,9 +5521,11 @@ json SerializeVirtualCameraComponent(const ECS::VirtualCameraComponent& vc) {
     json j;
     j["enabled"] = vc.enabled;
     j["priority"] = vc.priority;
+    j["shot"] = static_cast<u8>(vc.shot);
     j["follow"] = static_cast<u64>(vc.follow);
     j["lookAt"] = static_cast<u64>(vc.lookAt);
     j["offset"] = SerializeVector3(vc.offset);
+    j["offsetInFollowSpace"] = vc.offsetInFollowSpace;
     j["lookOffset"] = SerializeVector3(vc.lookOffset);
     j["fov"] = RF(vc.fov);
     j["damping"] = RF(vc.damping);
@@ -5535,9 +5537,11 @@ ECS::VirtualCameraComponent DeserializeVirtualCameraComponent(const json& j) {
     ECS::VirtualCameraComponent vc;
     if (j.contains("enabled")) vc.enabled = JB(j["enabled"]);
     if (j.contains("priority")) vc.priority = j["priority"].get<i32>();
+    if (j.contains("shot")) { u8 v = j["shot"].get<u8>(); if (v < static_cast<u8>(ECS::VCamShot::Count)) vc.shot = static_cast<ECS::VCamShot>(v); }
     if (j.contains("follow")) vc.follow = static_cast<ECS::Entity>(j["follow"].get<u64>());
     if (j.contains("lookAt")) vc.lookAt = static_cast<ECS::Entity>(j["lookAt"].get<u64>());
     if (j.contains("offset")) vc.offset = DeserializeVector3(j["offset"]);
+    if (j.contains("offsetInFollowSpace")) vc.offsetInFollowSpace = JB(j["offsetInFollowSpace"]);
     if (j.contains("lookOffset")) vc.lookOffset = DeserializeVector3(j["lookOffset"]);
     if (j.contains("fov")) vc.fov = j["fov"].get<f32>();
     if (j.contains("damping")) vc.damping = j["damping"].get<f32>();

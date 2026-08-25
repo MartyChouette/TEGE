@@ -5040,6 +5040,25 @@ void EditorLayer::DrawVirtualCameraComponent(ECS::Entity entity) {
             ImGui::TextColored(ImVec4(0.55f, 0.55f, 0.6f, 1.0f), "  standby");
         }
 
+        // Shot preset — the tutorialless front door. Pick one and the framing
+        // fields fill in with a good shot; everything stays editable below.
+        {
+            ImGui::TextUnformatted("Shot Preset");
+            ImGui::SameLine(120.0f);
+            ImGui::SetNextItemWidth(200.0f);
+            if (ImGui::BeginCombo("##vcamShot", ECS::VCamShotName(vc->shot))) {
+                for (u8 s = 0; s < static_cast<u8>(ECS::VCamShot::Count); ++s) {
+                    ECS::VCamShot shot = static_cast<ECS::VCamShot>(s);
+                    bool sel = (vc->shot == shot);
+                    if (ImGui::Selectable(ECS::VCamShotName(shot), sel)) {
+                        ECS::ApplyVCamPreset(*vc, shot);  // seed framing, keep targets/priority
+                    }
+                    if (sel) ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            }
+        }
+
         InspectorUndo::Checkbox(m_UndoRedo, "Enabled", &vc->enabled);
         InspectorUndo::DragInt(m_UndoRedo, "Priority", &vc->priority, 1, -1000, 1000);
 
@@ -5073,19 +5092,28 @@ void EditorLayer::DrawVirtualCameraComponent(ECS::Entity entity) {
         ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.55f, 1.0f),
                            "(drag an entity from the Hierarchy onto a slot)");
 
+        // Editing any framing field means it's no longer a stock preset.
+        bool edited = false;
         f32 off[3] = { vc->offset.x, vc->offset.y, vc->offset.z };
         if (InspectorUndo::DragFloat3(m_UndoRedo, "Offset", off,
                 [vc](f32 x, f32 y, f32 z) { vc->offset = Math::Vector3(x, y, z); }, 0.1f)) {
-            vc->offset = Math::Vector3(off[0], off[1], off[2]);
+            vc->offset = Math::Vector3(off[0], off[1], off[2]); edited = true;
+        }
+        if (InspectorUndo::Checkbox(m_UndoRedo, "Offset follows facing", &vc->offsetInFollowSpace)) edited = true;
+        ImGui::SameLine(); ImGui::TextDisabled("(?)");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("On: offset rotates with the follow target's facing (over-shoulder, follow).\n"
+                              "Off: offset is fixed in world axes (isometric, top-down).");
         }
         f32 lo[3] = { vc->lookOffset.x, vc->lookOffset.y, vc->lookOffset.z };
         if (InspectorUndo::DragFloat3(m_UndoRedo, "Look Offset", lo,
                 [vc](f32 x, f32 y, f32 z) { vc->lookOffset = Math::Vector3(x, y, z); }, 0.1f)) {
-            vc->lookOffset = Math::Vector3(lo[0], lo[1], lo[2]);
+            vc->lookOffset = Math::Vector3(lo[0], lo[1], lo[2]); edited = true;
         }
-        InspectorUndo::DragFloat(m_UndoRedo, "FOV", &vc->fov, 0.5f, 10.0f, 120.0f);
-        InspectorUndo::DragFloat(m_UndoRedo, "Damping (s)", &vc->damping, 0.02f, 0.0f, 3.0f);
-        InspectorUndo::DragFloat(m_UndoRedo, "Blend Time (s)", &vc->blendTime, 0.02f, 0.0f, 4.0f);
+        if (InspectorUndo::DragFloat(m_UndoRedo, "FOV", &vc->fov, 0.5f, 10.0f, 120.0f)) edited = true;
+        if (InspectorUndo::DragFloat(m_UndoRedo, "Damping (s)", &vc->damping, 0.02f, 0.0f, 3.0f)) edited = true;
+        if (InspectorUndo::DragFloat(m_UndoRedo, "Blend Time (s)", &vc->blendTime, 0.02f, 0.0f, 4.0f)) edited = true;
+        if (edited) vc->shot = ECS::VCamShot::Custom;
 
         if (ImGui::BeginPopupContextItem("VirtualCameraContext")) {
             if (ImGui::MenuItem("Remove Component")) {

@@ -728,7 +728,17 @@ void EditorLayer::DrawCameraGizmos() {
         if (vc->lookAt != 0 && m_World->IsValid(vc->lookAt)) {
             if (auto* lt = m_World->GetComponent<ECS::TransformComponent>(vc->lookAt)) aim = lt->position;
         }
-        Math::Vector3 camPos = anchor + vc->offset;
+        // Mirror the Director's follow-space offset so the gizmo shows the true pose.
+        Math::Vector3 worldOffset = vc->offset;
+        if (vc->offsetInFollowSpace) {
+            if (auto* at = m_World->GetComponent<ECS::TransformComponent>(anchorEnt)) {
+                Math::Vector3 fwd = at->rotation.GetForward();
+                f32 yaw = std::atan2(fwd.x, fwd.z);
+                Math::Quaternion yawQ(Math::Vector3(0, 1, 0), yaw);
+                worldOffset = yawQ.Rotate(vc->offset);
+            }
+        }
+        Math::Vector3 camPos = anchor + worldOffset;
         Math::Vector3 lookPos = aim + vc->lookOffset;
 
         ImVec2 sp;

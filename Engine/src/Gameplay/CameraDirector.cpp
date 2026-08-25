@@ -80,7 +80,20 @@ bool CameraDirector::ComputeVCamPose(ECS::World* world, ECS::Entity vcam, Pose& 
         }
     }
 
-    out.position = anchor + vc->offset;
+    // Follow-space offset: rotate the offset by the anchor's yaw so shots like
+    // over-the-shoulder / follow stay behind the character as it turns. Only yaw
+    // is used (no pitch/roll) so the camera never tilts with the character.
+    Math::Vector3 worldOffset = vc->offset;
+    if (vc->offsetInFollowSpace) {
+        if (auto* at = world->GetComponent<ECS::TransformComponent>(anchorEnt)) {
+            Math::Vector3 fwd = at->rotation.GetForward();
+            f32 yaw = std::atan2(fwd.x, fwd.z);
+            Math::Quaternion yawQ(Math::Vector3(0, 1, 0), yaw);
+            worldOffset = yawQ.Rotate(vc->offset);
+        }
+    }
+
+    out.position = anchor + worldOffset;
     out.lookPoint = aim + vc->lookOffset;
     out.fov = vc->fov;
     return true;
