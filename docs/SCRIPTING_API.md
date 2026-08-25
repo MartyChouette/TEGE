@@ -97,6 +97,40 @@ Channel constants: `AUDIO_CHANNEL_SFX=0`, `AUDIO_CHANNEL_MUSIC=1`, `AUDIO_CHANNE
 - **Controller**: `Controller_SetMoveSpeed/GetVelocity(uint64, ...)`, `Controller_SetEnabled(uint64, bool)` — suspend/resume player control (menus, cutscenes); works with all 5 controller types
 - **Viewmodel**: `Viewmodel_Set(uint64, bool)`, `Viewmodel_Get(uint64)` — first person viewmodel rendering (in front of world, no wall clipping, no shadows); typically on a weapon mesh parented to the camera
 - **Camera2D**: `Camera2D_Shake(uint64, float intensity, float duration)`, `Camera2D_GetZoom/SetZoom(uint64, float)`, `Camera2D_AddTarget/RemoveTarget(uint64 camera, uint64 target)`, `Camera2D_ClearTargets(uint64)`, `Camera2D_SetDeadZone(uint64, float w, float h)`, `Camera2D_SetLookAhead(uint64, float distance, float smoothing)`, `Camera2D_SetFollowTarget/GetFollowTarget(uint64, uint64)`
+
+## Virtual Cameras (the Camera Director)
+
+The 3D camera system. Author `VirtualCamera` components (vcams) in the editor — a
+follow target, an offset, a priority. The **Camera Director** activates the
+highest-priority vcam and blends the real camera to it.
+
+**Single-owner invariant:** while it is active, the Director is the ONLY thing
+that writes the game camera's transform. This is what makes the bindings below
+safe to expose — you drive *virtual cameras*, never the real camera, so you can
+never fight the Director. Three tiers of access:
+
+**Tier 1 — editor (no code).** Add vcams, set priority/targets. Can't go wrong.
+
+**Tier 2 — directed (safe).** Drive vcams from a script; the Director still owns
+the transform and does the blend. A camera "cut" is just raising a vcam's priority.
+- `Camera_HasVCam(uint64)` — does this entity have a vcam?
+- `Camera_SetVCamPriority(uint64, int)` / `Camera_GetVCamPriority(uint64)` — the highest-priority enabled vcam goes live; the Director blends over its `blendTime`.
+- `Camera_SetVCamEnabled(uint64, bool)` — take a vcam out of / into the running.
+- `Camera_IsVCamLive(uint64)` — is this the shot currently on screen?
+- `Camera_SetVCamOffset(uint64, float x, y, z)` / `Camera_SetVCamFOV(uint64, float)` — retune a shot live.
+- `Camera_ApplyVCamShot(uint64, int shot)` — apply a named preset (seeds framing, keeps priority/targets): `1`=Isometric, `2`=Over-the-Shoulder, `3`=Follow, `4`=Top-Down, `5`=Close-Up, `6`=Wide, `7`=Side-Scroller, `8`=Bird's-Eye, `0`=Custom.
+
+**Tier 3 — manual (contract).** Take the wheel from the Director. **Contract:**
+after `TakeManualControl`, the Director stops writing the transform and YOU own
+it (via `Entity_SetPosition` on the camera, etc.) until you `ReleaseManualControl`,
+which blends back to the live vcam. Control is a token — hold it or don't; there
+is no in-between where you and the Director both write.
+- `Camera_TakeManualControl(uint64 owner)` — Director yields.
+- `Camera_ReleaseManualControl()` — Director resumes, blending back.
+- `Camera_IsManualControl()` — is a script currently holding the token?
+
+When a scene has **no** vcams, the Director is dormant and the controller/cinematic
+camera path is untouched — adopting the system is opt-in per scene.
 - **Tilemap**: `HasComponent_Tilemap(uint64)`, `Tilemap_GetTile(uint64, int x, int y)`, `Tilemap_SetTile(uint64, int x, int y, int tileIndex)`, `Tilemap_GetWidth/GetHeight(uint64)`
 - **Existence checks**: `HasComponent_Health/Light/Camera/Material/AudioSource/Rigidbody/BoxCollider/Animator/Tilemap(uint64)`
 - **ReflectionProbe**: `ReflectionProbe_SetIntensity/GetIntensity(uint64, float)`, `ReflectionProbe_SetBoxMin/SetBoxMax(uint64, Vector3)`, `ReflectionProbe_Bake(uint64)`

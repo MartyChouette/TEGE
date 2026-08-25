@@ -3879,6 +3879,9 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         // Highlight the selected entity + its descendants (projected bounding boxes)
         DrawSelectionHighlight();
 
+        // Always-visible camera gizmos (virtual cameras have no mesh to click)
+        DrawCameraGizmos();
+
         // Grid is now rendered into the editor viewport RT in RenderOffscreen()
 
         // Draw camera frustum for all camera entities (or selected camera)

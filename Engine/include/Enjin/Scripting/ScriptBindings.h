@@ -14,7 +14,7 @@ namespace Audio { class SimpleAudio; }
 namespace Accessibility { class SubtitleSystem; class AccessibilityAnnouncer; struct RuntimeAccessibilitySettings; }
 namespace Scene { class SceneManager; class StreamingManager; }
 namespace Renderer { class PostProcessing; }
-namespace Gameplay { class TieredSaveSystem; class QuestSystem; class CinematicSystem; class ObjectPool; class RecordRewindSystem; }
+namespace Gameplay { class TieredSaveSystem; class QuestSystem; class CinematicSystem; class ObjectPool; class RecordRewindSystem; class CameraDirector; }
 namespace Effects { class WeatherSystem; class DestructibleSystem; class ElementalSystem; }
 namespace Procedural { class LevelGenerator; }
 namespace Plugin { class PluginSystem; }
@@ -85,6 +85,7 @@ void SetBindingsSaveSystem(Gameplay::TieredSaveSystem* sys);
 void SetBindingsWeather(Effects::WeatherSystem* weather);
 void SetBindingsQuestSystem(Gameplay::QuestSystem* quest);
 void SetBindingsCinematicSystem(Gameplay::CinematicSystem* cinematic);
+void SetBindingsCameraDirector(Gameplay::CameraDirector* director);
 void SetBindingsObjectPool(Gameplay::ObjectPool* pool);
 void SetBindingsDestructible(Effects::DestructibleSystem* destructible);
 void SetBindingsRewindSystem(Gameplay::RecordRewindSystem* system);

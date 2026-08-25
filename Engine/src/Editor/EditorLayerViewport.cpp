@@ -13,6 +13,7 @@
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Camera.h"
+#include "Enjin/ECS/Components/VirtualCamera.h"
 #include "Enjin/ECS/Components/Notes.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/Gameplay.h"
@@ -552,12 +553,25 @@ void EditorLayer::HandleViewportPicking() {
         static ECS::Entity lastClickedEntity = ECS::INVALID_ENTITY;
         const f64 doubleClickTime = 0.3;
 
-        ECS::Entity picked = ScenePicker::PickEntity(
-            m_World, m_Camera,
-            mousePos.x - m_EditorViewportImageMinX,
-            mousePos.y - m_EditorViewportImageMinY,
-            vpW, vpH
-        );
+        // Camera gizmos first: vcams have no mesh, so 3D picking can't hit them.
+        // If the click lands on a gizmo icon (cached last frame), select the vcam.
+        ECS::Entity picked = ECS::INVALID_ENTITY;
+        {
+            f32 bestD2 = 12.0f * 12.0f;  // ~12px grab radius
+            for (const auto& g : m_CameraGizmoScreenPos) {
+                f32 dx = mousePos.x - g.second.x, dy = mousePos.y - g.second.y;
+                f32 d2 = dx * dx + dy * dy;
+                if (d2 < bestD2) { bestD2 = d2; picked = g.first; }
+            }
+        }
+        if (picked == ECS::INVALID_ENTITY) {
+            picked = ScenePicker::PickEntity(
+                m_World, m_Camera,
+                mousePos.x - m_EditorViewportImageMinX,
+                mousePos.y - m_EditorViewportImageMinY,
+                vpW, vpH
+            );
+        }
 
         f64 currentTime = ImGui::GetTime();
 
@@ -677,6 +691,103 @@ void EditorLayer::DrawSelectionHighlight() {
     }
 }
 
+void EditorLayer::DrawCameraGizmos() {
+    // Always-visible, clickable gizmos for every VirtualCamera: an icon at the
+    // shot's effective position plus a little frustum showing where it looks.
+    // vcams have no mesh, so this overlay IS how you see and grab them. Click an
+    // icon to select the vcam (handled in the viewport click code, which reads
+    // m_CameraGizmoScreenPos, populated here).
+    m_CameraGizmoScreenPos.clear();
+    if (!m_World || !m_Camera) return;
+
+    const f32 vpW = m_EditorViewportImageMaxX - m_EditorViewportImageMinX;
+    const f32 vpH = m_EditorViewportImageMaxY - m_EditorViewportImageMinY;
+    if (vpW <= 1.0f || vpH <= 1.0f) return;
+
+    Math::Matrix4 viewProj = m_Camera->GetProjectionMatrix() * m_Camera->GetViewMatrix();
+    ImDrawList* dl = GetViewportOverlayDrawList();
+
+    auto toScreen = [&](const Math::Vector3& w, ImVec2& out) -> bool {
+        Math::Vector4 clip = viewProj * Math::Vector4(w.x, w.y, w.z, 1.0f);
+        if (clip.w <= 0.001f) return false;
+        f32 nx = clip.x / clip.w, ny = clip.y / clip.w;
+        out = ImVec2((nx + 1.0f) * 0.5f * vpW + m_EditorViewportImageMinX,
+                     (ny + 1.0f) * 0.5f * vpH + m_EditorViewportImageMinY);
+        return true;
+    };
+
+    for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::VirtualCameraComponent>()) {
+        auto* vc = m_World->GetComponent<ECS::VirtualCameraComponent>(e);
+        if (!vc) continue;
+
+        // Effective shot pose in edit mode: anchor (follow or self) + offset.
+        Math::Vector3 anchor(0, 0, 0);
+        ECS::Entity anchorEnt = (vc->follow != 0 && m_World->IsValid(vc->follow)) ? vc->follow : e;
+        if (auto* at = m_World->GetComponent<ECS::TransformComponent>(anchorEnt)) anchor = at->position;
+        Math::Vector3 aim = anchor;
+        if (vc->lookAt != 0 && m_World->IsValid(vc->lookAt)) {
+            if (auto* lt = m_World->GetComponent<ECS::TransformComponent>(vc->lookAt)) aim = lt->position;
+        }
+        // Mirror the Director's follow-space offset so the gizmo shows the true pose.
+        Math::Vector3 worldOffset = vc->offset;
+        if (vc->offsetInFollowSpace) {
+            if (auto* at = m_World->GetComponent<ECS::TransformComponent>(anchorEnt)) {
+                Math::Vector3 fwd = at->rotation.GetForward();
+                f32 yaw = std::atan2(fwd.x, fwd.z);
+                Math::Quaternion yawQ(Math::Vector3(0, 1, 0), yaw);
+                worldOffset = yawQ.Rotate(vc->offset);
+            }
+        }
+        Math::Vector3 camPos = anchor + worldOffset;
+        Math::Vector3 lookPos = aim + vc->lookOffset;
+
+        ImVec2 sp;
+        if (!toScreen(camPos, sp)) continue;
+
+        const bool selected = (e == m_PrimarySelected) || IsSelected(e);
+        const ImU32 col = vc->isLive ? IM_COL32(90, 230, 255, 255)      // live = bright cyan
+                        : selected  ? IM_COL32(255, 200, 90, 255)       // selected = amber
+                                    : IM_COL32(150, 190, 220, 210);     // idle = soft blue
+
+        // Frustum: from the shot position toward the look point, a small pyramid.
+        Math::Vector3 dir = lookPos - camPos;
+        f32 dlen = dir.Length();
+        if (dlen > 1e-4f) {
+            dir = dir * (1.0f / dlen);
+            Math::Vector3 up(0, 1, 0);
+            Math::Vector3 right = dir.Cross(up);
+            if (right.Length() < 1e-4f) right = Math::Vector3(1, 0, 0);
+            right = right.Normalized();
+            Math::Vector3 fup = right.Cross(dir).Normalized();
+            f32 d = 2.2f, h = 1.1f, w = 1.6f;
+            Math::Vector3 c = camPos + dir * d;
+            Math::Vector3 corners[4] = {
+                c + fup * h + right * w, c + fup * h - right * w,
+                c - fup * h - right * w, c - fup * h + right * w,
+            };
+            ImVec2 cs[4]; bool ok = true;
+            for (int i = 0; i < 4; ++i) if (!toScreen(corners[i], cs[i])) { ok = false; break; }
+            if (ok) {
+                for (int i = 0; i < 4; ++i) {
+                    dl->AddLine(sp, cs[i], col, 1.3f);
+                    dl->AddLine(cs[i], cs[(i + 1) % 4], col, 1.3f);
+                }
+            }
+        }
+
+        // Icon: a filled camera "body" dot with a ring, always readable.
+        dl->AddCircleFilled(sp, 6.0f, col);
+        dl->AddCircle(sp, 8.0f, IM_COL32(20, 25, 35, 220), 0, 2.0f);
+        // Label
+        auto* nc = m_World->GetComponent<ECS::NameComponent>(e);
+        std::string label = nc ? nc->name : "VCam";
+        if (vc->isLive) label += "  [live]";
+        dl->AddText(ImVec2(sp.x + 11.0f, sp.y - 7.0f), col, label.c_str());
+
+        m_CameraGizmoScreenPos.emplace_back(e, sp);
+    }
+}
+
 void EditorLayer::DrawMarqueeRect() {
     if (!m_MarqueeDragging) return;
 
@@ -746,6 +857,11 @@ void EditorLayer::DrawGizmos() {
     ImGuizmo::SetOrthographic(m_CameraController && m_CameraController->IsOrthographic());
     ImGuizmo::SetDrawlist(GetViewportOverlayDrawList());
     ImGuizmo::SetRect(m_EditorViewportImageMinX, m_EditorViewportImageMinY, vpW, vpH);
+    // Stop the gizmo's axis handles from auto-flipping to face the camera. That
+    // flip toggles frame-to-frame when the view crosses the threshold angle,
+    // which reads as the gizmo "flickering up/down" at certain positions. Fixed
+    // axes are steadier and match how most editors present the move gizmo.
+    ImGuizmo::AllowAxisFlip(false);
     ImGuiWindow* sceneWindow = ImGui::FindWindowByName("Scene");
     if (sceneWindow) {
         ImGuizmo::SetAlternativeWindow(sceneWindow);
