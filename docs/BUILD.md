@@ -42,15 +42,24 @@ cmake --version
 
 ### Ubuntu / Debian
 
+This is the CI-verified set (Ubuntu 24.04, GCC 13). The `linux-desktop` CI job
+builds the engine with exactly these packages and boots the editor headless on
+lavapipe every push.
+
 ```bash
 sudo apt-get update
 sudo apt-get install -y \
     build-essential \
     cmake \
+    ninja-build \
+    pkg-config \
     libvulkan-dev \
     vulkan-tools \
     vulkan-validationlayers \
     libglfw3-dev \
+    libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev \
+    libcurl4-openssl-dev \
+    mesa-vulkan-drivers \
     glslang-tools
 ```
 
@@ -178,9 +187,26 @@ cmake .. -G "Visual Studio 16 2019" -A x64 ^
 ```bash
 mkdir build
 cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build . -j$(nproc)
 ```
+
+Note for WSL: build to a directory on the Linux filesystem (ext4), not under
+`/mnt/`. Compiling on the Windows-mounted drive is many times slower.
+
+### Steam Deck
+
+The Deck runs SteamOS (Arch-based) with a real RADV Vulkan driver, so the
+standard Linux build applies. Practical notes:
+
+- Build in a distrobox/toolbox container or on a desktop Linux machine; the
+  SteamOS root filesystem is read-only by default.
+- The screen is 1280x800. Exported games take their window size from the
+  project's build settings; test that resolution and enable fullscreen.
+- The Deck presents its controls as a standard gamepad (Xbox layout), which the
+  engine's GLFW gamepad path already handles. Games should be playable without
+  a pointer: bind UI confirm/cancel to gamepad buttons.
+- No Vulkan SDK is needed at runtime, only for development.
 
 ### macOS
 
