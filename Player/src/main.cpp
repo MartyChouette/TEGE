@@ -3132,8 +3132,15 @@ Enjin::Application* CreateApplication() {
 }
 
 int main(int argc, char* argv[]) {
-    (void)argc;
-    (void)argv;
+    // --frames N: render N frames then exit cleanly (headless CI verification of
+    // an exported game — proves it boots, loads its scene, and survives a real
+    // render loop, without needing a window manager to close the window).
+    for (int i = 1; i < argc; i++) {
+        if (argv[i] && std::string(argv[i]) == "--frames" && i + 1 < argc && argv[i + 1]) {
+            int n = std::atoi(argv[++i]);
+            if (n > 0) Enjin::Application::s_HeadlessFrameLimit = static_cast<Enjin::u32>(n);
+        }
+    }
 
     // Set working directory to exe location so relative paths work
     Enjin::Platform::SetWorkingDirectoryToExecutableDirectory();

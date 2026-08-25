@@ -30,6 +30,8 @@ namespace Enjin {
 extern Window* CreateWindow(const WindowDesc& desc);
 extern void DestroyWindow(Window* window);
 
+u32 Application::s_HeadlessFrameLimit = 0;
+
 Application::Application() {
 }
 
@@ -225,6 +227,16 @@ void Application::RunOneFrame() {
 
     Update(deltaTime);
     Render();
+
+    // Headless frame cap: run exactly N frames then shut down cleanly. Lets CI
+    // verify an exported game survives a real render loop and exits with code 0.
+    if (s_HeadlessFrameLimit > 0) {
+        if (++m_FramesRendered >= s_HeadlessFrameLimit) {
+            ENJIN_LOG_INFO(Player, "Headless frame limit reached (%u frames), shutting down cleanly",
+                           s_HeadlessFrameLimit);
+            m_Running = false;
+        }
+    }
 
     // Frame rate limiting (skipped on web — browser controls frame pacing)
 #if !ENJIN_PLATFORM_WEB

@@ -57,6 +57,17 @@ public:
      */
     virtual void Render() {}
 
+    /**
+     * @brief Headless frame limit (0 = run until the window closes).
+     *
+     * When set to N > 0, the main loop renders exactly N frames and then
+     * requests a clean shutdown (exit code 0). This is the standalone player's
+     * equivalent of the editor's --golden-frames: it lets CI boot an exported
+     * game, prove it survives a real render loop (not just init), and exit,
+     * without needing a window manager or a human to close the window.
+     */
+    static u32 s_HeadlessFrameLimit;
+
 protected:
     /**
      * @brief Request application shutdown (sets m_Running = false)
@@ -119,6 +130,7 @@ private:
     f32 m_IdleTimer = 0.0f;
     bool m_IsIdle = false;
     FrameSettingsCallback m_TargetFPSCallback;
+    u32 m_FramesRendered = 0;
 };
 
 // User must implement this function
