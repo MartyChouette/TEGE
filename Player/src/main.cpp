@@ -2344,7 +2344,19 @@ private:
         // An AUTHORED "MainMenu" UICanvas in the scene takes precedence over the
         // built-in GameMenus title screen (one UI source; author it via the
         // editor's View -> UI Editor -> New Canvas -> Main Menu).
-        if (FindAuthoredMainMenu() != Enjin::ECS::INVALID_ENTITY) {
+        if (Enjin::Application::s_HeadlessFrameLimit > 0) {
+            // Headless CI/smoke run (--frames): no one clicks "Play", so a title
+            // screen would leave Update() gated on !m_GameStarted forever and the
+            // smoke would only exercise the menu. Auto-start into gameplay (the
+            // New Game action) so scripts, physics, controllers, and the camera
+            // director actually run and can be asserted.
+            m_GameMenu.HideAll();
+            if (Enjin::ECS::Entity menu = FindAuthoredMainMenu(); menu != Enjin::ECS::INVALID_ENTITY) {
+                if (auto* c = m_World->GetComponent<Enjin::GUI::UICanvasComponent>(menu)) c->visible = false;
+            }
+            m_GameStarted = true;
+            ENJIN_LOG_INFO(Player, "Headless mode: auto-started gameplay (skipped title screen)");
+        } else if (FindAuthoredMainMenu() != Enjin::ECS::INVALID_ENTITY) {
             Enjin::Input::SetMouseCaptured(false);
             ENJIN_LOG_INFO(Player, "Authored MainMenu canvas found — using it as the title screen");
         } else {

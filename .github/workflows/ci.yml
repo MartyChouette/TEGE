@@ -203,6 +203,11 @@ jobs:
           xvfb-run -a ./Game --frames 120 2>&1 | tee game.log
           grep -q "Loaded scene" game.log || { echo "exported game never loaded its scene"; exit 1; }
           grep -q "Headless frame limit reached" game.log || { echo "exported game did not survive its render loop (crash?)"; exit 1; }
+          # --frames auto-starts gameplay (skips the title screen), so the smoke
+          # exercises the actual game loop, not just the menu. Assert the canary
+          # script's OnStart ran: proves the SHIPPED player's AngelScript runtime
+          # compiles and executes scene scripts (the SysV ABI binding path).
+          grep -q "GoldenSmoke: script runtime is alive" game.log || { echo "exported game did not run scene scripts (script runtime broken in shipped player)"; exit 1; }
 
       - name: Package Linux build
         # Turns the CI build into a downloadable Linux build (editor + player).
