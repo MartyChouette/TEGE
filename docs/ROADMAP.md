@@ -168,13 +168,17 @@ input layer make them tractable.
 The goal: TEGE builds, ships, and *feels native* on Linux and is Steam Deck Verified.
 
 - **Linux desktop as a first-class build.** DONE (2026-08-25): builds under GCC 13 on
-  Ubuntu 24.04, and the `linux-desktop` CI job builds the engine AND runs the full
-  `ctest` suite (105/105) plus the lavapipe render smoke under xvfb on every push. The
-  port surfaced and fixed several MSVC-only-passing bugs (namespaced includes,
-  block-scope externs, AngelScript SysV ABI class flags, cross-platform path
-  validation). STILL TO DO: shipped Linux binaries in releases (not just source); an
-  exported-game Linux player target (`EnjinPlayer` for Linux, mirroring the Windows
-  prebuilt); packaging (AppImage or a tarball with the loose `assets/scripts/` layout).
+  Ubuntu 24.04, and the `linux-desktop` CI job builds the engine, runs the full `ctest`
+  suite (105/105), runs the lavapipe render smoke under xvfb, AND packs + boots an
+  exported Linux game (build pipeline -> `Game` binary + enjpak, then `--frames 120`
+  headless) on every push. The exported-game player target works: `CopyPlayer` already
+  finds the Linux `EnjinPlayer` and copies it executable. CI uploads a
+  `tege-linux-x86_64` tarball (stripped editor + player + runtime README) as a
+  downloadable build. The port surfaced and fixed several MSVC-only-passing bugs
+  (namespaced includes, block-scope externs, AngelScript SysV ABI class flags,
+  cross-platform path validation, and a shutdown dangling-renderer segfault in the
+  exported player). STILL TO DO: attach the Linux tarball to formal GitHub releases (not
+  just per-run artifacts); a nicer package (AppImage) if desired.
 - **Steamworks integration.** Wrap the Steamworks SDK behind an optional `ISteam`
   service: app-id init, achievements/stats, Steam Cloud saves (route the tiered save
   system through it), rich presence, the overlay, and Input API for controller glyphs.
