@@ -30,7 +30,7 @@ This document captures detailed technical plans, performance findings, and strat
 | **Renderer** | GPU-Driven Work Scheduling (indirect draw ✅, multi-draw ✅, async compute overlap ✅) | P3 |
 | ~~**Performance**~~ | ~~CPU Scalability Sprint — binary search keyframes, integer sprite sort, cache storage pointers, world matrix caching, bindless render path, batched material SSBO~~ | ~~P0~~ DONE |
 | **Release** | Splash screen (optional "Made with Enjin") | P2 |
-| **Platforms** | **Linux desktop — first-class build + CI + shipped binaries (see Big Platform Initiatives)** | **P1** |
+| **Platforms** | **Linux desktop — build + CI + ctest green on Ubuntu 24.04 (2026-08-25) ✅; shipped release binaries still to package** | **P1 IN PROGRESS** |
 | **Platforms** | **Steam — Steamworks SDK, achievements/cloud/overlay, store depot pipeline** | **P1** |
 | **Platforms** | **Steam Deck — Verified target: Proton/native Linux, gamepad-first UI, 1280x800, small-text a11y** | **P1** |
 | **Platforms** | **VR/XR/AR — OpenXR path, stereo/multiview renderer, motion controllers (elevated from P4)** | **P1** |
@@ -167,11 +167,14 @@ input layer make them tractable.
 
 The goal: TEGE builds, ships, and *feels native* on Linux and is Steam Deck Verified.
 
-- **Linux desktop as a first-class build.** It already compiles from source (GCC/Clang
-  + Vulkan). Elevate to: a CI job that builds AND runs `ctest` on Linux; shipped Linux
-  binaries in releases (not just source); an exported-game Linux player target
-  (`EnjinPlayer` for Linux, mirroring the Windows prebuilt); packaging (AppImage or a
-  tarball with the loose `assets/scripts/` layout).
+- **Linux desktop as a first-class build.** DONE (2026-08-25): builds under GCC 13 on
+  Ubuntu 24.04, and the `linux-desktop` CI job builds the engine AND runs the full
+  `ctest` suite (105/105) plus the lavapipe render smoke under xvfb on every push. The
+  port surfaced and fixed several MSVC-only-passing bugs (namespaced includes,
+  block-scope externs, AngelScript SysV ABI class flags, cross-platform path
+  validation). STILL TO DO: shipped Linux binaries in releases (not just source); an
+  exported-game Linux player target (`EnjinPlayer` for Linux, mirroring the Windows
+  prebuilt); packaging (AppImage or a tarball with the loose `assets/scripts/` layout).
 - **Steamworks integration.** Wrap the Steamworks SDK behind an optional `ISteam`
   service: app-id init, achievements/stats, Steam Cloud saves (route the tiered save
   system through it), rich presence, the overlay, and Input API for controller glyphs.
