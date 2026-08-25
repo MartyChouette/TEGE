@@ -172,6 +172,20 @@ public:
     static void BeginRealInputScope();
     static void EndRealInputScope();
 
+    // Web touch controls overlay: where to draw the virtual stick and jump
+    // button. Inactive until the first touch (and always inactive off-web), so
+    // desktop browsers never see the overlay.
+    struct TouchOverlayState {
+        bool active = false;
+        bool stickHeld = false;
+        f32 stickBaseX = 0, stickBaseY = 0;
+        f32 stickNubX = 0, stickNubY = 0;
+        f32 stickRadius = 0;
+        bool jumpHeld = false;
+        f32 jumpX = 0, jumpY = 0, jumpR = 0;
+    };
+    static TouchOverlayState GetTouchOverlay();
+
     // Mouse capture (hide cursor and lock to window)
     static void SetMouseCaptured(bool captured);
     static bool IsMouseCaptured();

@@ -212,6 +212,109 @@ namespace {
         s_ScrollAccumulator.y += static_cast<f32>(e->deltaY) * -0.01f;
         return EM_TRUE;
     }
+
+    // ---- Touch controls (phones and tablets in the browser) ----------------
+    // Left part of the canvas = a virtual move stick (maps to WASD), the rest
+    // = look drag (feeds the mouse-delta accumulator), a circle in the bottom
+    // right = jump (Space), and a quick tap anywhere clicks (UI + actions).
+    // The player draws the overlay; Input owns the zones and state.
+    struct WebTouch {
+        long id = -1;
+        f32 startX = 0, startY = 0;   // backing pixels
+        f32 curX = 0, curY = 0;
+        f32 lastX = 0, lastY = 0;
+        double startMs = 0;
+        int role = 0;                 // 0 none, 1 stick, 2 look, 3 jump
+    };
+    constexpr int MAX_WEB_TOUCHES = 4;
+    WebTouch s_Touches[MAX_WEB_TOUCHES];
+    bool s_TouchSeen = false;         // any touch ever -> show the overlay
+
+    void WebCanvasScale(f32& sx, f32& sy, int& bw, int& bh) {
+        double cssW = 0.0, cssH = 0.0;
+        bw = 0; bh = 0;
+        if (emscripten_get_element_css_size("#game-canvas", &cssW, &cssH) == EMSCRIPTEN_RESULT_SUCCESS &&
+            emscripten_get_canvas_element_size("#game-canvas", &bw, &bh) == EMSCRIPTEN_RESULT_SUCCESS &&
+            cssW > 0.0 && cssH > 0.0) {
+            sx = static_cast<f32>(bw) / static_cast<f32>(cssW);
+            sy = static_cast<f32>(bh) / static_cast<f32>(cssH);
+        } else {
+            f32 dpr = static_cast<f32>(emscripten_get_device_pixel_ratio());
+            if (dpr <= 0.0f) dpr = 1.0f;
+            sx = sy = dpr;
+        }
+    }
+
+    void WebJumpZone(int bw, int bh, f32& jx, f32& jy, f32& jr) {
+        jr = 0.085f * static_cast<f32>(bh);
+        jx = static_cast<f32>(bw) - jr * 1.6f;
+        jy = static_cast<f32>(bh) - jr * 1.8f;
+    }
+
+    WebTouch* FindTouch(long id) {
+        for (auto& t : s_Touches) if (t.id == id) return &t;
+        return nullptr;
+    }
+
+    EM_BOOL WebTouchCallback(int eventType, const EmscriptenTouchEvent* e, void* userData) {
+        (void)userData;
+        f32 sx, sy; int bw, bh;
+        WebCanvasScale(sx, sy, bw, bh);
+        f32 jx, jy, jr;
+        WebJumpZone(bw, bh, jx, jy, jr);
+
+        for (int i = 0; i < e->numTouches; ++i) {
+            const auto& tp = e->touches[i];
+            if (!tp.isChanged) continue;
+            f32 px = static_cast<f32>(tp.targetX) * sx;
+            f32 py = static_cast<f32>(tp.targetY) * sy;
+
+            if (eventType == EMSCRIPTEN_EVENT_TOUCHSTART) {
+                s_TouchSeen = true;
+                WebTouch* slot = FindTouch(tp.identifier);
+                if (!slot) slot = FindTouch(-1);
+                if (!slot) continue;
+                slot->id = tp.identifier;
+                slot->startX = slot->curX = slot->lastX = px;
+                slot->startY = slot->curY = slot->lastY = py;
+                slot->startMs = emscripten_get_now();
+                f32 djx = px - jx, djy = py - jy;
+                if (djx * djx + djy * djy < jr * jr) slot->role = 3;             // jump button
+                else if (px < static_cast<f32>(bw) * 0.45f) slot->role = 1;     // move stick
+                else slot->role = 2;                                            // look
+                // Touch position doubles as the pointer (hover, aim)
+                s_MousePosition = Math::Vector2(px, py);
+            } else if (eventType == EMSCRIPTEN_EVENT_TOUCHMOVE) {
+                WebTouch* slot = FindTouch(tp.identifier);
+                if (!slot) continue;
+                if (slot->role == 2) {
+                    constexpr f32 MAX_DELTA = 150.0f;
+                    f32 dx = px - slot->lastX, dy = py - slot->lastY;
+                    if (dx > -MAX_DELTA && dx < MAX_DELTA) s_WebMouseMovementAccum.x += dx;
+                    if (dy > -MAX_DELTA && dy < MAX_DELTA) s_WebMouseMovementAccum.y += dy;
+                    s_MousePosition = Math::Vector2(px, py);
+                }
+                slot->lastX = slot->curX; slot->lastY = slot->curY;
+                slot->curX = px; slot->curY = py;
+            } else {   // TOUCHEND / TOUCHCANCEL
+                WebTouch* slot = FindTouch(tp.identifier);
+                if (!slot) continue;
+                if (eventType == EMSCRIPTEN_EVENT_TOUCHEND && (slot->role == 1 || slot->role == 2)) {
+                    f32 mx = px - slot->startX, my = py - slot->startY;
+                    bool shortTap = (emscripten_get_now() - slot->startMs) < 300.0 &&
+                                    (mx * mx + my * my) < 16.0f * 16.0f;
+                    if (shortTap) {
+                        // Synthesize a click at the tap point (UI + actions)
+                        s_MousePosition = Math::Vector2(px, py);
+                        s_WebMouseDownLatch[0] = true;
+                    }
+                }
+                slot->id = -1;
+                slot->role = 0;
+            }
+        }
+        return EM_TRUE;   // preventDefault: no page scroll/zoom while playing
+    }
 #endif
 }
 
@@ -240,6 +343,10 @@ void Input::Initialize(Window* window) {
     emscripten_set_mousedown_callback(target, nullptr, false, WebMouseButtonCallback);
     emscripten_set_mouseup_callback(target, nullptr, false, WebMouseButtonCallback);
     emscripten_set_wheel_callback(target, nullptr, false, WebWheelCallback);
+    emscripten_set_touchstart_callback(target, nullptr, false, WebTouchCallback);
+    emscripten_set_touchmove_callback(target, nullptr, false, WebTouchCallback);
+    emscripten_set_touchend_callback(target, nullptr, false, WebTouchCallback);
+    emscripten_set_touchcancel_callback(target, nullptr, false, WebTouchCallback);
     // Enable Gamepad API (must be called before polling gamepad state)
     emscripten_sample_gamepad_data();
     s_FirstMouseMove = true;
@@ -281,6 +388,24 @@ void Input::Update() {
     for (i32 button = 0; button < MAX_MOUSE_BUTTONS; ++button) {
         s_MouseButtonsDown[button] = s_WebMouseLatest[button] || s_WebMouseDownLatch[button];
         s_WebMouseDownLatch[button] = false;
+    }
+
+    // Touch controls: the virtual stick maps onto WASD (8-way, with a dead
+    // zone) and a held jump-zone touch maps onto Space. ORed over the key
+    // state so a physical keyboard keeps working alongside.
+    for (const auto& t : s_Touches) {
+        if (t.id == -1) continue;
+        if (t.role == 1) {
+            f32 dx = t.curX - t.startX;
+            f32 dy = t.curY - t.startY;
+            constexpr f32 DEAD = 18.0f;
+            if (dx < -DEAD) s_KeysDown[65] = true;   // A
+            if (dx >  DEAD) s_KeysDown[68] = true;   // D
+            if (dy < -DEAD) s_KeysDown[87] = true;   // W
+            if (dy >  DEAD) s_KeysDown[83] = true;   // S
+        } else if (t.role == 3) {
+            s_KeysDown[32] = true;                   // Space
+        }
     }
     // For pointer-locked mode, prefer accumulated movementX/Y over position deltas.
 #else
@@ -522,6 +647,38 @@ void Input::SetReplayInjection(bool enabled) {
 }
 
 bool Input::IsReplayInjectionActive() { return s_ReplayInjection; }
+
+Input::TouchOverlayState Input::GetTouchOverlay() {
+    TouchOverlayState st;
+#if ENJIN_PLATFORM_WEB
+    if (!s_TouchSeen) return st;
+    st.active = true;
+    f32 sx, sy; int bw, bh;
+    WebCanvasScale(sx, sy, bw, bh);
+    WebJumpZone(bw, bh, st.jumpX, st.jumpY, st.jumpR);
+    st.stickRadius = 0.07f * static_cast<f32>(bh);
+    for (const auto& t : s_Touches) {
+        if (t.id == -1) continue;
+        if (t.role == 1) {
+            st.stickHeld = true;
+            st.stickBaseX = t.startX;
+            st.stickBaseY = t.startY;
+            // Clamp the nub inside the base circle
+            f32 dx = t.curX - t.startX, dy = t.curY - t.startY;
+            f32 len = std::sqrt(dx * dx + dy * dy);
+            if (len > st.stickRadius && len > 0.0f) {
+                dx = dx / len * st.stickRadius;
+                dy = dy / len * st.stickRadius;
+            }
+            st.stickNubX = t.startX + dx;
+            st.stickNubY = t.startY + dy;
+        } else if (t.role == 3) {
+            st.jumpHeld = true;
+        }
+    }
+#endif
+    return st;
+}
 
 void Input::BeginRealInputScope() { s_RealScope = true; }
 void Input::EndRealInputScope() { s_RealScope = false; }

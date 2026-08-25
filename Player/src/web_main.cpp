@@ -858,6 +858,24 @@ public:
     // Draw the game's authored UI (UICanvasComponent + HUDWidgetComponent) into the
     // swapchain via ImGui's WebGPU backend. This is the SAME UISystem code
     // the desktop player runs — one UI source, web/PC parity.
+    // Touch controls overlay: virtual stick + jump button, drawn only after
+    // the first touch so desktop browsers never see it.
+    void RenderTouchOverlay() {
+        auto st = Enjin::Input::GetTouchOverlay();
+        if (!st.active) return;
+        ImDrawList* dl = ImGui::GetForegroundDrawList();
+        const ImU32 ring = IM_COL32(255, 255, 255, 70);
+        const ImU32 fill = IM_COL32(255, 255, 255, 40);
+        const ImU32 nub  = IM_COL32(255, 255, 255, 150);
+        if (st.stickHeld) {
+            dl->AddCircle(ImVec2(st.stickBaseX, st.stickBaseY), st.stickRadius, ring, 32, 3.0f);
+            dl->AddCircleFilled(ImVec2(st.stickNubX, st.stickNubY), st.stickRadius * 0.4f, nub);
+        }
+        dl->AddCircleFilled(ImVec2(st.jumpX, st.jumpY), st.jumpR,
+                            st.jumpHeld ? nub : fill);
+        dl->AddCircle(ImVec2(st.jumpX, st.jumpY), st.jumpR, ring, 32, 3.0f);
+    }
+
     void RenderUIOverlay() {
         if (!m_Renderer || !m_Renderer->IsInitialized()) return;
 
@@ -1157,6 +1175,7 @@ public:
         // Authored game UI (UICanvas + HUD widgets) via ImGui — same systems and
         // draw code as the desktop player (UI unification: one source, parity).
         RenderUIOverlay();
+        RenderTouchOverlay();
 
         m_Renderer->EndFrame();
 
