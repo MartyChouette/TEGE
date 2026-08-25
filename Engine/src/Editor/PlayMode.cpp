@@ -223,6 +223,8 @@ void PlayMode::Play() {
     m_QuestSystem.SetEnabled(true);
     m_FootstepSystem.SetEnabled(true);
     m_CinematicSystem.SetEnabled(true);
+    m_CameraDirector.Reset();
+    m_CameraDirector.SetEnabled(true);
     m_StreamingManager.SetEnabled(true);
     m_AISystem.SetEnabled(true);
     ENJIN_LOG_INFO(Editor, "PlayMode: Gameplay systems enabled");
@@ -341,6 +343,7 @@ void PlayMode::Play() {
     Scripting::SetFlashShimSaveSystem(&m_TieredSaveSystem);
     Scripting::SetBindingsQuestSystem(&m_QuestSystem);
     Scripting::SetBindingsCinematicSystem(&m_CinematicSystem);
+    Scripting::SetBindingsCameraDirector(&m_CameraDirector);
     Scripting::SetBindingsObjectPool(&m_ObjectPool);
     Scripting::SetBindingsPhysics(m_Physics.get());
     Scripting::SetBindingsPhysics2D(m_Physics2D.get());
@@ -552,6 +555,7 @@ void PlayMode::Pause() {
     m_QuestSystem.SetEnabled(false);
     m_FootstepSystem.SetEnabled(false);
     m_CinematicSystem.SetEnabled(false);
+    m_CameraDirector.SetEnabled(false);
     m_StreamingManager.SetEnabled(false);
     m_AISystem.SetEnabled(false);
     m_TweenSystem.SetEnabled(false);
@@ -978,6 +982,14 @@ void PlayMode::Update(f32 deltaTime) {
 
         // Record & Rewind (Braid / Sands of Time mechanic)
         m_RecordRewindSystem.Update(deltaTime);
+
+        // Camera Director: the virtual-camera brain. Runs AFTER controllers and
+        // scripts (which may have re-prioritized vcams this frame) and BEFORE the
+        // audio-listener sync so the listener uses the final camera pose. When the
+        // scene has no VirtualCameraComponents it does nothing, leaving the
+        // controller/cinematic camera path untouched. Single-owner invariant: while
+        // it drives, it is the only writer of the camera transform.
+        m_CameraDirector.Update(m_World, m_Camera, deltaTime);
 
         // Sync the 3D audio listener to the game camera. Without this the
         // listener stays wherever it was initialized (world origin) and every

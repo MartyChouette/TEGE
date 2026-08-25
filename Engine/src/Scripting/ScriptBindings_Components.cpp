@@ -10,6 +10,8 @@
 #include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/ECS/Components/Camera.h"
+#include "Enjin/ECS/Components/VirtualCamera.h"
+#include "Enjin/Gameplay/CameraDirector.h"
 #include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/Notes.h"
@@ -522,6 +524,76 @@ static void Controller_SetMouseLook(u64 id, bool enabled) {
     if (auto* c = s_BindingsWorld->GetComponent<TopDown3DController>(entity)) { c->disableMouseLook = !enabled; return; }
     if (auto* c = s_BindingsWorld->GetComponent<TopDown2DController>(entity)) { c->disableMouseLook = !enabled; return; }
     if (auto* c = s_BindingsWorld->GetComponent<Platformer2DController>(entity)) { c->disableMouseLook = !enabled; return; }
+}
+
+// ============================================================================
+// Virtual Camera system (the CameraDirector "brain")
+// ============================================================================
+//
+// Tier 2 (directed, safe): drive VIRTUAL cameras. You change a vcam's priority
+// or enabled state; the Director still owns the real camera transform and
+// blends to whichever vcam wins. A camera "swap" is just raising a vcam's
+// priority. You cannot fight the camera because you never touch it.
+//
+// Tier 3 (manual, contract): TakeManualControl makes the Director YIELD the
+// transform to you until ReleaseManualControl, which blends back to the live
+// vcam. Control is a token you hold — the danger of fighting the director is
+// structurally impossible.
+
+Enjin::Gameplay::CameraDirector* s_BindingsCameraDirector = nullptr;
+
+static bool Camera_HasVCam(u64 id) {
+    return s_BindingsWorld && s_BindingsWorld->HasComponent<VirtualCameraComponent>(static_cast<Entity>(id));
+}
+
+static void Camera_SetVCamPriority(u64 id, int priority) {
+    if (!s_BindingsWorld) return;
+    if (auto* vc = s_BindingsWorld->GetComponent<VirtualCameraComponent>(static_cast<Entity>(id)))
+        vc->priority = priority;
+}
+
+static int Camera_GetVCamPriority(u64 id) {
+    if (!s_BindingsWorld) return 0;
+    if (auto* vc = s_BindingsWorld->GetComponent<VirtualCameraComponent>(static_cast<Entity>(id)))
+        return vc->priority;
+    return 0;
+}
+
+static void Camera_SetVCamEnabled(u64 id, bool enabled) {
+    if (!s_BindingsWorld) return;
+    if (auto* vc = s_BindingsWorld->GetComponent<VirtualCameraComponent>(static_cast<Entity>(id)))
+        vc->enabled = enabled;
+}
+
+static bool Camera_IsVCamLive(u64 id) {
+    if (!s_BindingsWorld) return false;
+    if (auto* vc = s_BindingsWorld->GetComponent<VirtualCameraComponent>(static_cast<Entity>(id)))
+        return vc->isLive;
+    return false;
+}
+
+static void Camera_SetVCamOffset(u64 id, f32 x, f32 y, f32 z) {
+    if (!s_BindingsWorld) return;
+    if (auto* vc = s_BindingsWorld->GetComponent<VirtualCameraComponent>(static_cast<Entity>(id)))
+        vc->offset = Math::Vector3(x, y, z);
+}
+
+static void Camera_SetVCamFOV(u64 id, f32 fov) {
+    if (!s_BindingsWorld) return;
+    if (auto* vc = s_BindingsWorld->GetComponent<VirtualCameraComponent>(static_cast<Entity>(id)))
+        vc->fov = fov;
+}
+
+static void Camera_TakeManualControl(u64 owner) {
+    if (s_BindingsCameraDirector) s_BindingsCameraDirector->TakeManualControl(static_cast<Entity>(owner));
+}
+
+static void Camera_ReleaseManualControl() {
+    if (s_BindingsCameraDirector) s_BindingsCameraDirector->ReleaseManualControl();
+}
+
+static bool Camera_IsManualControl() {
+    return s_BindingsCameraDirector && s_BindingsCameraDirector->IsManual();
 }
 
 // ============================================================================
@@ -1952,6 +2024,10 @@ static u64 Camera2D_GetFollowTarget(u64 id) {
 
 namespace Scripting {
 
+void SetBindingsCameraDirector(Gameplay::CameraDirector* director) {
+    s_BindingsCameraDirector = director;
+}
+
 void RegisterComponentBindings(asIScriptEngine* engine) {
     // Health
     AS_CHECK(engine->RegisterGlobalFunction("float Health_Get(uint64)", ENJIN_AS_FN(Health_Get), ENJIN_AS_CALL_CDECL));
@@ -2031,6 +2107,18 @@ void RegisterComponentBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction("void Controller_SetCameraYaw(uint64, float)", ENJIN_AS_FN(Controller_SetCameraYaw), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Controller_GetCameraYaw(uint64)", ENJIN_AS_FN(Controller_GetCameraYaw), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Controller_SetMouseLook(uint64, bool)", ENJIN_AS_FN(Controller_SetMouseLook), ENJIN_AS_CALL_CDECL));
+
+    // Virtual Camera system — Tier 2 (directed) + Tier 3 (manual token)
+    AS_CHECK(engine->RegisterGlobalFunction("bool Camera_HasVCam(uint64)", ENJIN_AS_FN(Camera_HasVCam), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Camera_SetVCamPriority(uint64, int)", ENJIN_AS_FN(Camera_SetVCamPriority), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int Camera_GetVCamPriority(uint64)", ENJIN_AS_FN(Camera_GetVCamPriority), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Camera_SetVCamEnabled(uint64, bool)", ENJIN_AS_FN(Camera_SetVCamEnabled), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Camera_IsVCamLive(uint64)", ENJIN_AS_FN(Camera_IsVCamLive), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Camera_SetVCamOffset(uint64, float, float, float)", ENJIN_AS_FN(Camera_SetVCamOffset), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Camera_SetVCamFOV(uint64, float)", ENJIN_AS_FN(Camera_SetVCamFOV), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Camera_TakeManualControl(uint64)", ENJIN_AS_FN(Camera_TakeManualControl), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Camera_ReleaseManualControl()", ENJIN_AS_FN(Camera_ReleaseManualControl), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Camera_IsManualControl()", ENJIN_AS_FN(Camera_IsManualControl), ENJIN_AS_CALL_CDECL));
 
     // HasComponent queries
     AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Health(uint64)", ENJIN_AS_FN(HasComponent_Health), ENJIN_AS_CALL_CDECL));

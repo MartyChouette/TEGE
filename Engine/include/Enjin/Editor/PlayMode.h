@@ -33,6 +33,7 @@
 #include "Enjin/Gameplay/FootstepSystem.h"
 #include "Enjin/Gameplay/ObjectPool.h"
 #include "Enjin/Gameplay/CinematicSystem.h"
+#include "Enjin/Gameplay/CameraDirector.h"
 #include "Enjin/Gameplay/TieredSaveSystem.h"
 #include "Enjin/Editor/PlayModeDiff.h"
 #include "Enjin/Editor/EditorSettings.h"
@@ -109,6 +110,7 @@ public:
     Gameplay::FootstepSystem* GetFootstepSystem() { return &m_FootstepSystem; }
     Gameplay::ObjectPool* GetObjectPool() { return &m_ObjectPool; }
     Gameplay::CinematicSystem* GetCinematicSystem() { return &m_CinematicSystem; }
+    Gameplay::CameraDirector* GetCameraDirector() { return &m_CameraDirector; }
     Gameplay::TieredSaveSystem* GetTieredSaveSystem() { return &m_TieredSaveSystem; }
     ECS::TweenSystem* GetTweenSystem() { return &m_TweenSystem; }
     ECS::StateMachineSystem* GetStateMachineSystem() { return &m_StateMachineSystem; }
@@ -228,6 +230,7 @@ private:
     Gameplay::FootstepSystem m_FootstepSystem;
     Gameplay::ObjectPool m_ObjectPool;
     Gameplay::CinematicSystem m_CinematicSystem;
+    Gameplay::CameraDirector m_CameraDirector;
 
     // Tween system
     ECS::TweenSystem m_TweenSystem;

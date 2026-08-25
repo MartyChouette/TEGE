@@ -8,6 +8,7 @@
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/ECS/Components/Notes.h"
 #include "Enjin/ECS/Components/Camera.h"
+#include "Enjin/ECS/Components/VirtualCamera.h"
 #include "Enjin/ECS/Components/WeatherZone.h"
 #include "Enjin/ECS/Components/WaterVolume.h"
 #include "Enjin/ECS/Components/Water3D.h"
@@ -5516,6 +5517,34 @@ ECS::ViewmodelComponent DeserializeViewmodelComponent(const json& j) {
     return v;
 }
 
+json SerializeVirtualCameraComponent(const ECS::VirtualCameraComponent& vc) {
+    json j;
+    j["enabled"] = vc.enabled;
+    j["priority"] = vc.priority;
+    j["follow"] = static_cast<u64>(vc.follow);
+    j["lookAt"] = static_cast<u64>(vc.lookAt);
+    j["offset"] = SerializeVector3(vc.offset);
+    j["lookOffset"] = SerializeVector3(vc.lookOffset);
+    j["fov"] = RF(vc.fov);
+    j["damping"] = RF(vc.damping);
+    j["blendTime"] = RF(vc.blendTime);
+    return j;
+}
+
+ECS::VirtualCameraComponent DeserializeVirtualCameraComponent(const json& j) {
+    ECS::VirtualCameraComponent vc;
+    if (j.contains("enabled")) vc.enabled = JB(j["enabled"]);
+    if (j.contains("priority")) vc.priority = j["priority"].get<i32>();
+    if (j.contains("follow")) vc.follow = static_cast<ECS::Entity>(j["follow"].get<u64>());
+    if (j.contains("lookAt")) vc.lookAt = static_cast<ECS::Entity>(j["lookAt"].get<u64>());
+    if (j.contains("offset")) vc.offset = DeserializeVector3(j["offset"]);
+    if (j.contains("lookOffset")) vc.lookOffset = DeserializeVector3(j["lookOffset"]);
+    if (j.contains("fov")) vc.fov = j["fov"].get<f32>();
+    if (j.contains("damping")) vc.damping = j["damping"].get<f32>();
+    if (j.contains("blendTime")) vc.blendTime = j["blendTime"].get<f32>();
+    return vc;
+}
+
 json SerializeDamageResistanceComponent(const ECS::DamageResistanceComponent& r) {
     json j;
     j["physicalMult"] = RF(r.physicalMult);
@@ -7663,6 +7692,7 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
         ENJIN_SERDES("vegetation", ECS::VegetationComponent, SerializeVegetationComponent, DeserializeVegetationComponent),
         ENJIN_SERDES("vehicle", ECS::VehicleController, SerializeVehicle, DeserializeVehicle),
         ENJIN_SERDES("viewmodel", ECS::ViewmodelComponent, SerializeViewmodelComponent, DeserializeViewmodelComponent),
+        ENJIN_SERDES("virtualCamera", ECS::VirtualCameraComponent, SerializeVirtualCameraComponent, DeserializeVirtualCameraComponent),
         ENJIN_SERDES("visualScript", ECS::VisualScriptComponent, SerializeVisualScriptComponent, DeserializeVisualScriptComponent),
         ENJIN_SERDES("water3D", ECS::Water3DComponent, SerializeWater3DComponent, DeserializeWater3DComponent),
         ENJIN_SERDES("waterInteractor", Effects::WaterInteractorComponent, SerializeWaterInteractorComponent, DeserializeWaterInteractorComponent),
@@ -8243,6 +8273,17 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
                     la->target = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
                 }
             }
+            if (m_World->HasComponent<ECS::VirtualCameraComponent>(entity)) {
+                auto* vc = m_World->GetComponent<ECS::VirtualCameraComponent>(entity);
+                if (vc->follow != 0 && vc->follow != ECS::INVALID_ENTITY) {
+                    auto it = oldToNew.find(static_cast<u64>(vc->follow));
+                    vc->follow = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
+                }
+                if (vc->lookAt != 0 && vc->lookAt != ECS::INVALID_ENTITY) {
+                    auto it = oldToNew.find(static_cast<u64>(vc->lookAt));
+                    vc->lookAt = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
+                }
+            }
         }
 
         // Rebuild ChildrenComponent from ParentComponent references
@@ -8578,6 +8619,17 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
                 if (la->target != 0 && la->target != ECS::INVALID_ENTITY) {
                     auto it = oldToNew.find(static_cast<u64>(la->target));
                     la->target = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
+                }
+            }
+            if (m_World->HasComponent<ECS::VirtualCameraComponent>(entity)) {
+                auto* vc = m_World->GetComponent<ECS::VirtualCameraComponent>(entity);
+                if (vc->follow != 0 && vc->follow != ECS::INVALID_ENTITY) {
+                    auto it = oldToNew.find(static_cast<u64>(vc->follow));
+                    vc->follow = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
+                }
+                if (vc->lookAt != 0 && vc->lookAt != ECS::INVALID_ENTITY) {
+                    auto it = oldToNew.find(static_cast<u64>(vc->lookAt));
+                    vc->lookAt = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
                 }
             }
         }

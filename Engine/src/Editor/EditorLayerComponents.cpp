@@ -18,6 +18,7 @@ extern char** environ;
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Camera.h"
+#include "Enjin/ECS/Components/VirtualCamera.h"
 #include "Enjin/ECS/Components/Notes.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/Gameplay.h"
@@ -5020,6 +5021,75 @@ void EditorLayer::DrawLookAtTargetComponent(ECS::Entity entity) {
         if (ImGui::BeginPopupContextItem("LookAtTargetContext")) {
             if (ImGui::MenuItem("Remove Component")) {
                 RemoveComponentWithUndo<ECS::LookAtTargetComponent>(entity, "lookAtTarget", "Look At Target");
+            }
+            ImGui::EndPopup();
+        }
+    }
+}
+
+void EditorLayer::DrawVirtualCameraComponent(ECS::Entity entity) {
+    if (UI::SectionHeader("Virtual Camera", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* vc = m_World->GetComponent<ECS::VirtualCameraComponent>(entity);
+        if (!vc) return;
+        DrawComponentHelp("virtualCamera", m_World, entity);
+
+        // Live indicator — the Director publishes isLive on the winning vcam.
+        if (vc->isLive) {
+            ImGui::TextColored(ImVec4(0.35f, 0.9f, 0.4f, 1.0f), "@ LIVE");
+        } else {
+            ImGui::TextColored(ImVec4(0.55f, 0.55f, 0.6f, 1.0f), "  standby");
+        }
+
+        InspectorUndo::Checkbox(m_UndoRedo, "Enabled", &vc->enabled);
+        InspectorUndo::DragInt(m_UndoRedo, "Priority", &vc->priority, 1, -1000, 1000);
+
+        // Entity-reference fields: drag an entity from the Hierarchy onto the slot.
+        auto entityField = [&](const char* label, ECS::Entity& ref) {
+            std::string slot = "(this entity)";
+            if (ref != 0 && m_World->IsValid(ref)) {
+                auto* nc = m_World->GetComponent<ECS::NameComponent>(ref);
+                slot = nc ? nc->name : ("Entity " + std::to_string((u64)ref));
+            } else if (ref != 0) {
+                slot = "(missing)";
+            }
+            ImGui::Text("%s", label);
+            ImGui::SameLine(120.0f);
+            ImGui::Button((slot + "##vcam_" + label).c_str(), ImVec2(150.0f, 0.0f));
+            if (ImGui::BeginDragDropTarget()) {
+                if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("ENTITY_REPARENT")) {
+                    if (pl->Data && pl->DataSize >= static_cast<int>(sizeof(ECS::Entity))) {
+                        ref = *static_cast<const ECS::Entity*>(pl->Data);
+                    }
+                }
+                ImGui::EndDragDropTarget();
+            }
+            if (ref != 0) {
+                ImGui::SameLine();
+                if (ImGui::SmallButton((std::string("x##clr_") + label).c_str())) ref = 0;
+            }
+        };
+        entityField("Follow", vc->follow);
+        entityField("Look At", vc->lookAt);
+        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.55f, 1.0f),
+                           "(drag an entity from the Hierarchy onto a slot)");
+
+        f32 off[3] = { vc->offset.x, vc->offset.y, vc->offset.z };
+        if (InspectorUndo::DragFloat3(m_UndoRedo, "Offset", off,
+                [vc](f32 x, f32 y, f32 z) { vc->offset = Math::Vector3(x, y, z); }, 0.1f)) {
+            vc->offset = Math::Vector3(off[0], off[1], off[2]);
+        }
+        f32 lo[3] = { vc->lookOffset.x, vc->lookOffset.y, vc->lookOffset.z };
+        if (InspectorUndo::DragFloat3(m_UndoRedo, "Look Offset", lo,
+                [vc](f32 x, f32 y, f32 z) { vc->lookOffset = Math::Vector3(x, y, z); }, 0.1f)) {
+            vc->lookOffset = Math::Vector3(lo[0], lo[1], lo[2]);
+        }
+        InspectorUndo::DragFloat(m_UndoRedo, "FOV", &vc->fov, 0.5f, 10.0f, 120.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Damping (s)", &vc->damping, 0.02f, 0.0f, 3.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Blend Time (s)", &vc->blendTime, 0.02f, 0.0f, 4.0f);
+
+        if (ImGui::BeginPopupContextItem("VirtualCameraContext")) {
+            if (ImGui::MenuItem("Remove Component")) {
+                RemoveComponentWithUndo<ECS::VirtualCameraComponent>(entity, "virtualCamera", "Virtual Camera");
             }
             ImGui::EndPopup();
         }

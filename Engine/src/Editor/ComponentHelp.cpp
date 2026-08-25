@@ -211,6 +211,15 @@ static const std::unordered_map<std::string, ComponentHelp>& Registry() {
             r["vehicle"]      = { "Drives a vehicle: steering, throttle, brake.",         "Tune handling. Reads player input.",                       nullptr, moveRel };
             r["surfaceAligned"] = { "Keeps the entity aligned to the surface it walks on.", "Good for planet-gravity and wall-walking.",              nullptr, moveRel };
         }
+        r["virtualCamera"] = {
+            "A camera shot. The Camera Director blends the real camera to the highest-priority vcam.",
+            "Drag an entity onto Follow, set an Offset and Priority. Two vcams + a priority swap = a camera cut. You never touch the real camera; the Director owns it.",
+            "// swap shots from a script (Tier 2, safe):\n"
+            "Camera_SetVCamPriority(shoulderCam, 20);   // raise -> Director blends to it\n"
+            "// take the wheel (Tier 3, contract):\n"
+            "Camera_TakeManualControl(self); /* ... */ Camera_ReleaseManualControl();",
+            {}
+        };
         r["aiController"] = {
             "Steers the entity with AI: pathfinding and behaviors.",
             "Give it a target or a behavior. It drives the entity's movement.",

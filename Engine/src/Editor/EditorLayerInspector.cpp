@@ -15,6 +15,7 @@
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Camera.h"
+#include "Enjin/ECS/Components/VirtualCamera.h"
 #include "Enjin/ECS/Components/Notes.h"
 #include "Enjin/ECS/Components/Swarm.h"
 #include "Enjin/ECS/Components/DungeonGenerator.h"
@@ -700,6 +701,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::WaypointComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::WaypointComponent>(e); },
             "waypoint"},
+        {"Virtual Camera", "Camera", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::VirtualCameraComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::VirtualCameraComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::VirtualCameraComponent>(e); },
+            "virtualCamera"},
 
         // -- Audio --
         {"Audio Source", "Audio", nullptr,
@@ -2634,6 +2640,9 @@ void EditorLayer::DrawInspectorPanel() {
         }
         if (m_World->HasComponent<ECS::FollowTargetComponent>(m_PrimarySelected)) {
             DrawFollowTargetComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::VirtualCameraComponent>(m_PrimarySelected)) {
+            DrawVirtualCameraComponent(m_PrimarySelected);
         }
         if (m_World->HasComponent<ECS::LookAtTargetComponent>(m_PrimarySelected)) {
             DrawLookAtTargetComponent(m_PrimarySelected);

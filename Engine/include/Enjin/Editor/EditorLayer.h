@@ -499,6 +499,7 @@ private:
     void DrawAIControllerComponent(ECS::Entity entity);
     void DrawFollowTargetComponent(ECS::Entity entity);
     void DrawLookAtTargetComponent(ECS::Entity entity);
+    void DrawVirtualCameraComponent(ECS::Entity entity);
     void DrawWaypointComponent(ECS::Entity entity);
 
     // Visual components
@@ -782,6 +783,9 @@ private:
     void FocusOnEntity(ECS::Entity entity);  // Center camera on entity
     void DrawMarqueeRect();                   // Draw rubber-band selection rectangle
     void DrawSelectionHighlight();            // Projected bounding boxes for selection + descendants
+    void DrawCameraGizmos();                  // Always-visible, clickable virtual-camera icons + frustums
+    // Screen positions of camera gizmo icons this frame, for click-selection.
+    std::vector<std::pair<ECS::Entity, ImVec2>> m_CameraGizmoScreenPos;
     ImDrawList* GetViewportOverlayDrawList(); // Scene window draw list so overlays layer under dialogs
     void DrawMultiSelectInspector();          // Inspector view when multiple entities selected
 
