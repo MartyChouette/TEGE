@@ -753,6 +753,17 @@ public:
             m_RTHybridApply.reset();
         }
 
+        // Release the scene post-process render target HERE, while the renderer
+        // and its Vulkan device are still alive. If left to ~GamePlayer, it is
+        // destroyed AFTER Application::ShutdownEngine has torn the renderer down,
+        // so RenderTarget::Destroy() dereferences a dangling m_Renderer and
+        // segfaults. That crash is intermittent by nature (dangling-pointer UB:
+        // it only faults once the freed renderer memory has been reused), which
+        // is why it surfaced under longer runs on lavapipe but not short ones.
+        if (m_ScenePPTarget) {
+            m_ScenePPTarget.reset();
+        }
+
         // Clear accessibility
         m_SubtitleSystem.Clear();
         m_AlternativeInput.ClearScanTargets();
