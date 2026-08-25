@@ -73,6 +73,12 @@ ENJIN_TEST(Init, ChemUStartsAtOne) {
     RDConfig cfg;
     cfg.width = 16;
     cfg.height = 16;
+    // Custom does no auto-seeding, so the substrate stays uniform. The default
+    // preset (MitosisSpots) scatters random seed circles with a time-based seed
+    // when cfg.seed == 0, and one occasionally lands on cell 0 and flips it to
+    // 0.5 - that made this assertion flaky (~2% of CI runs). Seeding behaviour
+    // has its own dedicated tests below; this one only checks the 1.0 substrate.
+    cfg.preset = RDPreset::Custom;
     rd.Initialize(cfg);
 
     // U should start at ~1.0 (uniform substrate)
