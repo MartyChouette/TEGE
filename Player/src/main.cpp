@@ -79,6 +79,7 @@
 #include "Enjin/Gameplay/QuestSystem.h"
 #include "Enjin/Gameplay/FootstepSystem.h"
 #include "Enjin/Gameplay/CinematicSystem.h"
+#include "Enjin/Gameplay/CameraDirector.h"
 #include "Enjin/Gameplay/ObjectPool.h"
 #include "Enjin/Gameplay/TieredSaveSystem.h"
 #include "Enjin/Gameplay/QuestFlow.h"
@@ -733,6 +734,7 @@ public:
         m_QuestSystem.SetEnabled(false);
         m_FootstepSystem.SetEnabled(false);
         m_CinematicSystem.SetEnabled(false);
+        m_CameraDirector.SetEnabled(false);
 
         // Shutdown script-bound systems
         m_AudioGraphRuntime.Shutdown();
@@ -783,6 +785,7 @@ public:
         Enjin::Scripting::SetBindingsScriptEngine(nullptr);
         Enjin::Scripting::SetBindingsQuestSystem(nullptr);
         Enjin::Scripting::SetBindingsCinematicSystem(nullptr);
+        Enjin::Scripting::SetBindingsCameraDirector(nullptr);
         Enjin::Scripting::SetBindingsObjectPool(nullptr);
         Enjin::Scripting::SetBindingsFlower(nullptr);
         Enjin::Scripting::SetBindingsSubtitles(nullptr);
@@ -987,6 +990,15 @@ public:
 
         // Cinematic, quests, footsteps, object pool, events
         m_CinematicSystem.Update(m_World.get(), m_Camera.get(), deltaTime);
+
+        // Camera Director: the virtual-camera brain. Runs AFTER controllers,
+        // scripts, and cinematics (which may have re-prioritized vcams this
+        // frame). It writes the active camera entity's transform, which the
+        // render-camera sync in Render() then reads onto m_Camera and the audio
+        // listener. No vcams = dormant = controller/cinematic camera untouched.
+        // Mirrors editor PlayMode so exported games get working virtual cameras.
+        m_CameraDirector.Update(m_World.get(), m_Camera.get(), deltaTime);
+
         m_QuestSystem.Update(m_World.get(), deltaTime);
 
         // Quest flow graphs
@@ -2098,6 +2110,7 @@ private:
         Enjin::Scripting::SetBindingsScriptEngine(&m_ScriptEngine);
         Enjin::Scripting::SetBindingsQuestSystem(&m_QuestSystem);
         Enjin::Scripting::SetBindingsCinematicSystem(&m_CinematicSystem);
+        Enjin::Scripting::SetBindingsCameraDirector(&m_CameraDirector);
         Enjin::Scripting::SetBindingsObjectPool(&m_ObjectPool);
         Enjin::Scripting::SetBindingsFlower(m_World.get());
         Enjin::Scripting::SetBindingsProcedural(nullptr);
@@ -2267,6 +2280,9 @@ private:
         m_QuestSystem.SetEnabled(true);
         m_FootstepSystem.SetEnabled(true);
         m_CinematicSystem.SetEnabled(true);
+        // Start the virtual-camera director clean and live (mirrors PlayMode).
+        m_CameraDirector.Reset();
+        m_CameraDirector.SetEnabled(true);
         m_StreamingManager.SetEnabled(true);
 
         // Initialize quest flow runtime state
@@ -2859,6 +2875,9 @@ private:
     Enjin::Gameplay::FootstepSystem m_FootstepSystem;
     Enjin::Gameplay::ObjectPool m_ObjectPool;
     Enjin::Gameplay::CinematicSystem m_CinematicSystem;
+    // Virtual-camera brain. Editor PlayMode ticks this; the shipped player must
+    // too, or vcams (VirtualCameraComponent) do nothing in exported games.
+    Enjin::Gameplay::CameraDirector m_CameraDirector;
     Enjin::Gameplay::TieredSaveSystem m_TieredSaveSystem;
 
     // Systems for script bindings
