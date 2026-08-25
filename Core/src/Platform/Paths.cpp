@@ -1,5 +1,6 @@
 #include "Enjin/Platform/Paths.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <cstdlib>
 
@@ -228,7 +229,18 @@ bool IsSafeRelativePath(const std::string& relative) {
     if (relative.empty()) {
         return false;
     }
-    std::filesystem::path p(relative);
+    // Validate identically on every platform: content files travel between
+    // platforms, so a path that is unsafe on Windows ("..\\x", "C:evil") must
+    // be rejected on Linux too, where '\\' is not a separator and "C:" is not
+    // a root. Treat backslashes as separators and refuse colons outright
+    // (':' is illegal in Windows file names, so no legitimate relative asset
+    // path contains one).
+    if (relative.find(':') != std::string::npos) {
+        return false;
+    }
+    std::string normalized = relative;
+    std::replace(normalized.begin(), normalized.end(), '\\', '/');
+    std::filesystem::path p(normalized);
     if (p.is_absolute() || p.has_root_name() || p.has_root_directory()) {
         return false;
     }

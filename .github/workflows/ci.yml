@@ -153,10 +153,14 @@ jobs:
             vulkan-tools xvfb
 
       - name: Configure
-        run: cmake -B build-linux -S . -G Ninja -DCMAKE_BUILD_TYPE=Release
+        run: cmake -B build-linux -S . -G Ninja -DCMAKE_BUILD_TYPE=Release -DENJIN_BUILD_TESTS=ON
 
       - name: Build
         run: cmake --build build-linux --parallel
+
+      - name: Run tests
+        working-directory: build-linux
+        run: ctest --output-on-failure -E "TestAudio|TestAudioTypes|TestAssetPack|TestAssetLoaders"
 
       - name: Render smoke test (golden capture on lavapipe)
         timeout-minutes: 15
