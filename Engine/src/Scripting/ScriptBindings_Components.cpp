@@ -484,6 +484,46 @@ static Vector3 Controller_GetVelocity(u64 id) {
     return Vector3();
 }
 
+// Third-person orbit camera control — lets scripts drive camera presets
+// (e.g. swap between an isometric top-down view and an over-the-shoulder view,
+// lerping the values for a smooth transition). The orbit is recomputed from
+// these fields every frame in ControllerSystem::UpdateThirdPerson.
+static void Controller_SetThirdPersonCamera(u64 id, f32 distance, f32 height, f32 pitch) {
+    if (!s_BindingsWorld) return;
+    auto* c = s_BindingsWorld->GetComponent<ThirdPersonController>(static_cast<Entity>(id));
+    if (!c) return;
+    c->cameraDistance = distance;
+    c->cameraHeight = height;
+    c->cameraPitch = pitch;
+    // Keep the mouse-look clamp range enclosing the scripted pitch so the next
+    // mouse input doesn't snap the camera back.
+    c->cameraMinPitch = Math::Min(c->cameraMinPitch, pitch);
+    c->cameraMaxPitch = Math::Max(c->cameraMaxPitch, pitch);
+    c->cameraMaxDistance = Math::Max(c->cameraMaxDistance, distance);
+    c->cameraMinDistance = Math::Min(c->cameraMinDistance, distance);
+}
+
+static void Controller_SetCameraYaw(u64 id, f32 yaw) {
+    if (!s_BindingsWorld) return;
+    if (auto* c = s_BindingsWorld->GetComponent<ThirdPersonController>(static_cast<Entity>(id))) c->cameraYaw = yaw;
+}
+
+static f32 Controller_GetCameraYaw(u64 id) {
+    if (!s_BindingsWorld) return 0.0f;
+    if (auto* c = s_BindingsWorld->GetComponent<ThirdPersonController>(static_cast<Entity>(id))) return c->cameraYaw;
+    return 0.0f;
+}
+
+static void Controller_SetMouseLook(u64 id, bool enabled) {
+    if (!s_BindingsWorld) return;
+    Entity entity = static_cast<Entity>(id);
+    if (auto* c = s_BindingsWorld->GetComponent<FirstPersonController>(entity)) { c->disableMouseLook = !enabled; return; }
+    if (auto* c = s_BindingsWorld->GetComponent<ThirdPersonController>(entity)) { c->disableMouseLook = !enabled; return; }
+    if (auto* c = s_BindingsWorld->GetComponent<TopDown3DController>(entity)) { c->disableMouseLook = !enabled; return; }
+    if (auto* c = s_BindingsWorld->GetComponent<TopDown2DController>(entity)) { c->disableMouseLook = !enabled; return; }
+    if (auto* c = s_BindingsWorld->GetComponent<Platformer2DController>(entity)) { c->disableMouseLook = !enabled; return; }
+}
+
 // ============================================================================
 // HasComponent queries
 // ============================================================================
@@ -1987,6 +2027,10 @@ void RegisterComponentBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction("void Viewmodel_Set(uint64, bool)", ENJIN_AS_FN(Viewmodel_Set), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Viewmodel_Get(uint64)", ENJIN_AS_FN(Viewmodel_Get), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("Vector3 Controller_GetVelocity(uint64)", ENJIN_AS_FN(Controller_GetVelocity), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Controller_SetThirdPersonCamera(uint64, float, float, float)", ENJIN_AS_FN(Controller_SetThirdPersonCamera), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Controller_SetCameraYaw(uint64, float)", ENJIN_AS_FN(Controller_SetCameraYaw), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Controller_GetCameraYaw(uint64)", ENJIN_AS_FN(Controller_GetCameraYaw), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Controller_SetMouseLook(uint64, bool)", ENJIN_AS_FN(Controller_SetMouseLook), ENJIN_AS_CALL_CDECL));
 
     // HasComponent queries
     AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Health(uint64)", ENJIN_AS_FN(HasComponent_Health), ENJIN_AS_CALL_CDECL));
