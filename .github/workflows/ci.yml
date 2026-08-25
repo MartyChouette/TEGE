@@ -123,6 +123,30 @@ jobs:
           }
           python Tests/GoldenScene/check_golden.py golden_out/smoke
 
+      - name: Exported-game smoke (pack + run the Windows player headless)
+        shell: pwsh
+        timeout-minutes: 15
+        # Covers the SHIPPED Windows player, not just the editor: pack GoldenScene
+        # into a Game.exe + enjpak with the build pipeline, then boot that game
+        # headless (--frames auto-starts gameplay past the title screen) and
+        # assert it loads its scene, survives a real render loop, and runs its
+        # scene scripts. Windows is the primary ship target, so its shipped
+        # player needs runtime coverage too.
+        env:
+          VK_DRIVER_FILES: ${{ github.workspace }}\mesa\x64\lvp_icd.x86_64.json
+        run: |
+          & build\bin\Release\EnjinEditor.exe "${{ github.workspace }}\Tests\GoldenScene\GoldenScene.enjinproject" --build-web "${{ github.workspace }}\Tests\GoldenScene\GoldenScene.enjinproject" "${{ github.workspace }}\game_out" 2>&1 | ForEach-Object { "$_" }
+          if (-not (Test-Path "${{ github.workspace }}\game_out\Game.exe")) { throw "no Game.exe was produced" }
+          # The exported Game.exe sits in game_out\ with no system Vulkan loader
+          # beside it (the runner has no GPU), so stage the same loader dll the
+          # editor smoke uses. The lavapipe ICD is already registered in HKLM.
+          Copy-Item build\bin\Release\vulkan-1.dll "${{ github.workspace }}\game_out\"
+          & "${{ github.workspace }}\game_out\Game.exe" --frames 120 2>&1 | Tee-Object -Variable gameLog | ForEach-Object { "$_" }
+          if ($LASTEXITCODE -ne 0) { throw "exported game exited with code $LASTEXITCODE" }
+          if (-not ($gameLog | Where-Object { "$_" -match "Loaded scene" })) { throw "exported game never loaded its scene" }
+          if (-not ($gameLog | Where-Object { "$_" -match "Headless frame limit reached" })) { throw "exported game did not survive its render loop (crash?)" }
+          if (-not ($gameLog | Where-Object { "$_" -match "GoldenSmoke: script runtime is alive" })) { throw "exported game did not run scene scripts (script runtime broken in shipped player)" }
+
       - name: Upload golden capture
         if: always()
         uses: actions/upload-artifact@v4
@@ -130,6 +154,7 @@ jobs:
           name: golden-capture
           path: |
             golden_out/
+            game_out/*.log
             enjin_crash.dmp
           if-no-files-found: ignore
 
