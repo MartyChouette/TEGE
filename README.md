@@ -335,6 +335,7 @@ All dependencies use permissive open-source licenses.
 | | |
 |:---|:---|
 | [Beginner's Guide](docs/BEGINNERS_GUIDE.md) | The end-to-end cheat sheet |
+| [FAQ and Mental Model](docs/FAQ.md) | How the whole thing works, and where you inject your own code |
 | [User Manual](docs/USER_MANUAL.md) | Editor walkthrough and component reference |
 | [Architecture](docs/ARCHITECTURE.md) | System design and diagrams |
 | [Build Guide](docs/BUILD.md) | Prerequisites and platform instructions |
