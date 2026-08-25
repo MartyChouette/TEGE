@@ -7,6 +7,20 @@
 #include <commdlg.h>
 #include <shlobj.h>
 #include <algorithm>
+#else
+// macOS / Linux implementations spawn native dialog tools (osascript /
+// zenity / kdialog). Includes live HERE, above the namespace: an include
+// inside namespace Enjin compiles on MSVC by include-order luck but lands
+// the whole standard library in Enjin::std under GCC.
+#include <cstdio>
+#include <cstdlib>
+#include <array>
+#include <spawn.h>
+#include <sys/wait.h>
+#include <unistd.h>
+// Global scope on purpose: a block-scope extern inside namespace Enjin
+// mangles as Enjin::environ under GCC (macOS never declares environ).
+extern char** environ;
 #endif
 
 namespace Enjin {
@@ -175,11 +189,6 @@ std::string FileDialog::OpenFolder(
 #elif defined(__APPLE__)
 // macOS implementation using osascript
 
-#include <cstdio>
-#include <array>
-#include <spawn.h>
-#include <sys/wait.h>
-#include <unistd.h>
 
 // Shell-escape a string for safe interpolation into single-quoted shell arguments.
 // Wraps the string in single quotes and escapes any embedded single quotes.
@@ -206,7 +215,6 @@ static std::string ExecuteCommand(const std::string& cmd) {
 
     const char* argv[] = { "/bin/sh", "-c", cmd.c_str(), nullptr };
     pid_t pid = 0;
-    extern char** environ;
     int spawnResult = posix_spawnp(&pid, "/bin/sh", &actions, nullptr,
                                    const_cast<char**>(argv), environ);
     posix_spawn_file_actions_destroy(&actions);
@@ -338,13 +346,6 @@ std::string FileDialog::OpenFolder(
 #else
 // Linux implementation using zenity (GTK dialog) or kdialog (KDE)
 
-#include <cstdio>
-#include <cstdlib>
-#include <array>
-#include <spawn.h>
-#include <sys/wait.h>
-#include <unistd.h>
-
 // Shell-escape a string for safe interpolation into single-quoted shell arguments.
 // Wraps the string in single quotes and escapes any embedded single quotes.
 static std::string ShellEscape(const std::string& s) {
@@ -370,7 +371,6 @@ static std::string ExecuteCommand(const std::string& cmd) {
 
     const char* argv[] = { "/bin/sh", "-c", cmd.c_str(), nullptr };
     pid_t pid = 0;
-    extern char** environ;
     int spawnResult = posix_spawnp(&pid, "/bin/sh", &actions, nullptr,
                                    const_cast<char**>(argv), environ);
     posix_spawn_file_actions_destroy(&actions);
@@ -412,7 +412,6 @@ static bool HasCommand(const char* cmd) {
     std::string which = "which " + std::string(cmd) + " >/dev/null 2>&1";
     const char* argv[] = { "/bin/sh", "-c", which.c_str(), nullptr };
     pid_t pid = 0;
-    extern char** environ;
     if (posix_spawnp(&pid, "/bin/sh", nullptr, nullptr, const_cast<char**>(argv), environ) != 0) return false;
     int status = 0;
     waitpid(pid, &status, 0);

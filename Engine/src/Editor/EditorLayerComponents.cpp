@@ -1,4 +1,9 @@
 #include "Enjin/Editor/EditorLayer.h"
+#ifndef _WIN32
+// POSIX environment for posix_spawn. Declared at GLOBAL scope: a block-scope
+// extern inside namespace Enjin mangles as a namespaced symbol under GCC.
+extern char** environ;
+#endif
 #include "Enjin/Editor/EditorWidgets.h"
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Editor/ScenePicker.h"
@@ -5998,7 +6003,6 @@ void EditorLayer::OpenInExternalIDE(const std::string& filePath) {
         {
             const char* argv[] = { "/bin/sh", "-c", cmd.c_str(), nullptr };
             pid_t pid = 0;
-            extern char** environ;
             posix_spawnp(&pid, "/bin/sh", nullptr, nullptr, const_cast<char**>(argv), environ);
             // Fire and forget — IDE runs in background
         }

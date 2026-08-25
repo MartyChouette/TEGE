@@ -712,7 +712,7 @@ namespace Scripting {
 void RegisterMathTypes(asIScriptEngine* engine) {
     // ---- Vector2 ----
     AS_CHECK(engine->RegisterObjectType("Vector2", sizeof(Vector2),
-        asOBJ_VALUE | asOBJ_POD | asGetTypeTraits<Vector2>()));
+        asOBJ_VALUE | asOBJ_POD | asGetTypeTraits<Vector2>() | asOBJ_APP_CLASS_ALLFLOATS));
 
     AS_CHECK(engine->RegisterObjectBehaviour("Vector2", asBEHAVE_CONSTRUCT,
         "void f()", ENJIN_AS_OBJ_LAST(Vector2_DefaultConstruct), ENJIN_AS_CALL_CDECL_OBJLAST));
@@ -744,7 +744,7 @@ void RegisterMathTypes(asIScriptEngine* engine) {
 
     // ---- Vector3 ----
     AS_CHECK(engine->RegisterObjectType("Vector3", sizeof(Vector3),
-        asOBJ_VALUE | asOBJ_POD | asGetTypeTraits<Vector3>()));
+        asOBJ_VALUE | asOBJ_POD | asGetTypeTraits<Vector3>() | asOBJ_APP_CLASS_ALLFLOATS));
 
     AS_CHECK(engine->RegisterObjectBehaviour("Vector3", asBEHAVE_CONSTRUCT,
         "void f()", ENJIN_AS_OBJ_LAST(Vector3_DefaultConstruct), ENJIN_AS_CALL_CDECL_OBJLAST));
@@ -779,7 +779,7 @@ void RegisterMathTypes(asIScriptEngine* engine) {
 
     // ---- Vector4 ----
     AS_CHECK(engine->RegisterObjectType("Vector4", sizeof(Vector4),
-        asOBJ_VALUE | asOBJ_POD | asGetTypeTraits<Vector4>()));
+        asOBJ_VALUE | asOBJ_POD | asGetTypeTraits<Vector4>() | asOBJ_APP_CLASS_ALLFLOATS));
 
     AS_CHECK(engine->RegisterObjectBehaviour("Vector4", asBEHAVE_CONSTRUCT,
         "void f()", ENJIN_AS_OBJ_LAST(Vector4_DefaultConstruct), ENJIN_AS_CALL_CDECL_OBJLAST));
@@ -795,7 +795,7 @@ void RegisterMathTypes(asIScriptEngine* engine) {
 
     // ---- Quaternion ----
     AS_CHECK(engine->RegisterObjectType("Quaternion", sizeof(Quaternion),
-        asOBJ_VALUE | asOBJ_POD | asGetTypeTraits<Quaternion>()));
+        asOBJ_VALUE | asOBJ_POD | asGetTypeTraits<Quaternion>() | asOBJ_APP_CLASS_ALLFLOATS));
 
     AS_CHECK(engine->RegisterObjectBehaviour("Quaternion", asBEHAVE_CONSTRUCT,
         "void f()", ENJIN_AS_OBJ_LAST(Quat_DefaultConstruct), ENJIN_AS_CALL_CDECL_OBJLAST));
@@ -902,7 +902,7 @@ void RegisterEntityTypes(asIScriptEngine* engine) {
 
     // TransformProxy - value type for transform access on TegeBehavior
     AS_CHECK(engine->RegisterObjectType("TransformProxy", sizeof(TransformProxy),
-        asOBJ_VALUE | asOBJ_POD | asGetTypeTraits<TransformProxy>()));
+        asOBJ_VALUE | asOBJ_POD | asGetTypeTraits<TransformProxy>() | asOBJ_APP_CLASS_ALLINTS));
 
     AS_CHECK(engine->RegisterObjectBehaviour("TransformProxy", asBEHAVE_CONSTRUCT,
         "void f()", ENJIN_AS_OBJ_LAST(TransformProxy_DefaultConstruct), ENJIN_AS_CALL_CDECL_OBJLAST));

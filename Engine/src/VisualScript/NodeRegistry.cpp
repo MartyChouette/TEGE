@@ -3486,7 +3486,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
             i32 slot = (inputs.size() > 1 && std::holds_alternative<i32>(inputs[1]))
                 ? std::get<i32>(inputs[1]) : 0;
             // Access save system via script engine bindings
-            extern Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
             bool ok = false;
             if (s_VisualScriptSaveSystem && ctx.world) {
                 ok = s_VisualScriptSaveSystem->SaveToSlot(static_cast<u32>(slot), ctx.world,
@@ -3519,7 +3518,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
                          std::vector<ECS::VariableValue>& outputs) {
             i32 slot = (inputs.size() > 1 && std::holds_alternative<i32>(inputs[1]))
                 ? std::get<i32>(inputs[1]) : 0;
-            extern Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
             bool ok = false;
             if (s_VisualScriptSaveSystem && ctx.world) {
                 ok = s_VisualScriptSaveSystem->LoadFromSlot(static_cast<u32>(slot), ctx.world);
@@ -3548,7 +3546,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
                          std::vector<ECS::VariableValue>& outputs) {
             i32 slot = (inputs.size() > 1 && std::holds_alternative<i32>(inputs[1]))
                 ? std::get<i32>(inputs[1]) : 0;
-            extern Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
             if (s_VisualScriptSaveSystem) {
                 s_VisualScriptSaveSystem->DeleteSlot(static_cast<u32>(slot));
             }
@@ -3571,7 +3568,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
-            extern Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
             if (s_VisualScriptSaveSystem && ctx.world) {
                 s_VisualScriptSaveSystem->Checkpoint(ctx.world,
                     s_VisualScriptSaveSystem->GetCurrentScene());
@@ -3603,7 +3599,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
                 ? std::get<std::string>(inputs[1]) : "";
             f32 val = (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2]))
                 ? std::get<f32>(inputs[2]) : 0.0f;
-            extern Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
             if (s_VisualScriptSaveSystem && !key.empty()) {
                 s_VisualScriptSaveSystem->SetMetaFloat(key, val);
                 s_VisualScriptSaveSystem->SaveMeta();
@@ -3634,7 +3629,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
                 ? std::get<std::string>(inputs[0]) : "";
             f32 fallback = (inputs.size() > 1 && std::holds_alternative<f32>(inputs[1]))
                 ? std::get<f32>(inputs[1]) : 0.0f;
-            extern Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
             if (s_VisualScriptSaveSystem && !key.empty()) {
                 return s_VisualScriptSaveSystem->GetMetaFloat(key, fallback);
             }
@@ -3664,7 +3658,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
-            extern Effects::WeatherSystem* s_VisualScriptWeather;
             i32 type = (inputs.size() > 1 && std::holds_alternative<i32>(inputs[1]))
                 ? std::get<i32>(inputs[1]) : 0;
             f32 transition = (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2]))
@@ -3695,7 +3688,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
-            extern Effects::WeatherSystem* s_VisualScriptWeather;
             f32 density = (inputs.size() > 1 && std::holds_alternative<f32>(inputs[1])) ? std::get<f32>(inputs[1]) : 0.5f;
             f32 start = (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2])) ? std::get<f32>(inputs[2]) : 20.0f;
             f32 end = (inputs.size() > 3 && std::holds_alternative<f32>(inputs[3])) ? std::get<f32>(inputs[3]) : 100.0f;
@@ -5426,7 +5418,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
-            extern Accessibility::SubtitleSystem* s_VisualScriptSubtitleSystem;
             if (s_VisualScriptSubtitleSystem) {
                 std::string text = (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1]))
                     ? std::get<std::string>(inputs[1]) : "";
@@ -5462,7 +5453,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
-            extern Accessibility::AccessibilityAnnouncer* s_VisualScriptAnnouncer;
             if (s_VisualScriptAnnouncer) {
                 std::string text = (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1]))
                     ? std::get<std::string>(inputs[1]) : "";
@@ -6505,7 +6495,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
-            extern Effects::Water3D* s_VisualScriptWater;
             i32 style = (inputs.size() > 1 && std::holds_alternative<i32>(inputs[1])) ? std::get<i32>(inputs[1]) : 2;
             if (s_VisualScriptWater && style >= 0 && style <= 4) {
                 s_VisualScriptWater->GetSettings().style = static_cast<Effects::WaterStyle>(style);
@@ -6528,7 +6517,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
-            extern Effects::Water3D* s_VisualScriptWater;
             f32 h = (inputs.size() > 1 && std::holds_alternative<f32>(inputs[1])) ? std::get<f32>(inputs[1]) : 0.3f;
             if (s_VisualScriptWater) s_VisualScriptWater->GetSettings().waveHeight = h;
             ctx.nextFlowIndex = 0;
@@ -6549,7 +6537,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
-            extern Effects::Water3D* s_VisualScriptWater;
             f32 s = (inputs.size() > 1 && std::holds_alternative<f32>(inputs[1])) ? std::get<f32>(inputs[1]) : 1.0f;
             if (s_VisualScriptWater) s_VisualScriptWater->GetSettings().waveSpeed = s;
             ctx.nextFlowIndex = 0;
@@ -6569,7 +6556,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.flags = NodeDefFlags::Pure;
         def.keywords = {"water", "wave", "height", "sample", "query"};
         def.evaluate = [](const ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
-            extern Effects::Water3D* s_VisualScriptWater;
             f32 x = (inputs.size() > 0 && std::holds_alternative<f32>(inputs[0])) ? std::get<f32>(inputs[0]) : 0.0f;
             f32 z = (inputs.size() > 1 && std::holds_alternative<f32>(inputs[1])) ? std::get<f32>(inputs[1]) : 0.0f;
             if (s_VisualScriptWater) return s_VisualScriptWater->GetWaveHeight(x, z);
@@ -6591,7 +6577,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
-            extern Effects::Water3D* s_VisualScriptWater;
             f32 o = (inputs.size() > 1 && std::holds_alternative<f32>(inputs[1])) ? std::get<f32>(inputs[1]) : 0.7f;
             if (s_VisualScriptWater) s_VisualScriptWater->GetSettings().opacity = Math::Clamp(o, 0.0f, 1.0f);
             ctx.nextFlowIndex = 0;
@@ -6612,7 +6597,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
-            extern Effects::Water3D* s_VisualScriptWater;
             Math::Vector3 c(0.1f, 0.4f, 0.5f);
             if (inputs.size() > 1 && std::holds_alternative<Math::Vector3>(inputs[1])) c = std::get<Math::Vector3>(inputs[1]);
             if (s_VisualScriptWater) s_VisualScriptWater->GetSettings().shallowColor = c;
@@ -6870,7 +6854,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
-            extern Renderer::PostProcessing* s_VisualScriptPostProcessing;
             bool enabled = (inputs.size() > 1 && std::holds_alternative<bool>(inputs[1])) ? std::get<bool>(inputs[1]) : true;
             if (s_VisualScriptPostProcessing) s_VisualScriptPostProcessing->GetSettings().ssaoEnabled = enabled ? 1u : 0u;
             ctx.nextFlowIndex = 0;
@@ -6891,7 +6874,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
-            extern Renderer::PostProcessing* s_VisualScriptPostProcessing;
             bool enabled = (inputs.size() > 1 && std::holds_alternative<bool>(inputs[1])) ? std::get<bool>(inputs[1]) : true;
             if (s_VisualScriptPostProcessing) s_VisualScriptPostProcessing->GetSettings().contactShadowsEnabled = enabled ? 1u : 0u;
             ctx.nextFlowIndex = 0;
@@ -6912,7 +6894,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
-            extern Renderer::PostProcessing* s_VisualScriptPostProcessing;
             bool enabled = (inputs.size() > 1 && std::holds_alternative<bool>(inputs[1])) ? std::get<bool>(inputs[1]) : true;
             if (s_VisualScriptPostProcessing) s_VisualScriptPostProcessing->GetSettings().godRaysEnabled = enabled ? 1u : 0u;
             ctx.nextFlowIndex = 0;
@@ -6933,7 +6914,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
-            extern Renderer::PostProcessing* s_VisualScriptPostProcessing;
             bool enabled = (inputs.size() > 1 && std::holds_alternative<bool>(inputs[1])) ? std::get<bool>(inputs[1]) : true;
             if (s_VisualScriptPostProcessing) s_VisualScriptPostProcessing->GetSettings().causticsEnabled = enabled ? 1u : 0u;
             ctx.nextFlowIndex = 0;
@@ -6954,7 +6934,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
-            extern Renderer::PostProcessing* s_VisualScriptPostProcessing;
             bool enabled = (inputs.size() > 1 && std::holds_alternative<bool>(inputs[1])) ? std::get<bool>(inputs[1]) : true;
             if (s_VisualScriptPostProcessing) s_VisualScriptPostProcessing->GetSettings().fogShaftsEnabled = enabled ? 1u : 0u;
             ctx.nextFlowIndex = 0;
@@ -7696,7 +7675,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
             if (!inputs.empty() && std::holds_alternative<std::string>(inputs[0])) {
                 poolId = std::get<std::string>(inputs[0]);
             }
-            extern Gameplay::ObjectPool* s_VisualScriptObjectPool;
             ECS::Entity entity = ECS::INVALID_ENTITY;
             if (s_VisualScriptObjectPool && !poolId.empty()) {
                 entity = s_VisualScriptObjectPool->Acquire(poolId);
@@ -7734,7 +7712,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
             if (inputs.size() > 1 && std::holds_alternative<ECS::Entity>(inputs[1])) {
                 entity = std::get<ECS::Entity>(inputs[1]);
             }
-            extern Gameplay::ObjectPool* s_VisualScriptObjectPool;
             if (s_VisualScriptObjectPool && !poolId.empty() && entity != ECS::INVALID_ENTITY) {
                 s_VisualScriptObjectPool->Release(poolId, entity);
             }
@@ -7955,7 +7932,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
-            extern Effects::ElementalSystem* s_VisualScriptElemental;
             Math::Vector3 pos = (inputs.size() > 1 && std::holds_alternative<Math::Vector3>(inputs[1]))
                 ? std::get<Math::Vector3>(inputs[1]) : Math::Vector3(0, 0, 0);
             f32 intensity = (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2]))
@@ -7988,7 +7964,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
-            extern Effects::ElementalSystem* s_VisualScriptElemental;
             Math::Vector3 pos = (inputs.size() > 1 && std::holds_alternative<Math::Vector3>(inputs[1]))
                 ? std::get<Math::Vector3>(inputs[1]) : Math::Vector3(0, 0, 0);
             Math::Vector3 vel = (inputs.size() > 2 && std::holds_alternative<Math::Vector3>(inputs[2]))
@@ -8020,7 +7995,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
-            extern Effects::ElementalSystem* s_VisualScriptElemental;
             Math::Vector3 pos = (inputs.size() > 1 && std::holds_alternative<Math::Vector3>(inputs[1]))
                 ? std::get<Math::Vector3>(inputs[1]) : Math::Vector3(0, 0, 0);
             f32 size = (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2]))
@@ -8050,7 +8024,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
-            extern Effects::ElementalSystem* s_VisualScriptElemental;
             Math::Vector3 pos = (inputs.size() > 1 && std::holds_alternative<Math::Vector3>(inputs[1]))
                 ? std::get<Math::Vector3>(inputs[1]) : Math::Vector3(0, 0, 0);
             f32 intensity = (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2]))
@@ -8081,7 +8054,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
-            extern Effects::ElementalSystem* s_VisualScriptElemental;
             Math::Vector3 center = (inputs.size() > 1 && std::holds_alternative<Math::Vector3>(inputs[1]))
                 ? std::get<Math::Vector3>(inputs[1]) : Math::Vector3(0, 0, 0);
             Math::Vector3 force = (inputs.size() > 2 && std::holds_alternative<Math::Vector3>(inputs[2]))
@@ -8112,7 +8084,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.keywords = {"elemental", "fire", "query", "intensity", "heat"};
         def.evaluate = [](const ExecutionContext& ctx,
                           const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
-            extern Effects::ElementalSystem* s_VisualScriptElemental;
             Math::Vector3 pos = (!inputs.empty() && std::holds_alternative<Math::Vector3>(inputs[0]))
                 ? std::get<Math::Vector3>(inputs[0]) : Math::Vector3(0, 0, 0);
             f32 radius = (inputs.size() > 1 && std::holds_alternative<f32>(inputs[1]))
@@ -8141,7 +8112,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.keywords = {"elemental", "water", "moisture", "query", "wet"};
         def.evaluate = [](const ExecutionContext& ctx,
                           const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
-            extern Effects::ElementalSystem* s_VisualScriptElemental;
             Math::Vector3 pos = (!inputs.empty() && std::holds_alternative<Math::Vector3>(inputs[0]))
                 ? std::get<Math::Vector3>(inputs[0]) : Math::Vector3(0, 0, 0);
             f32 radius = (inputs.size() > 1 && std::holds_alternative<f32>(inputs[1]))
@@ -8167,7 +8137,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.keywords = {"elemental", "count", "particles", "active"};
         def.evaluate = [](const ExecutionContext& ctx,
                           const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
-            extern Effects::ElementalSystem* s_VisualScriptElemental;
             if (s_VisualScriptElemental)
                 return static_cast<i32>(s_VisualScriptElemental->GetActiveCount());
             return 0;
@@ -8557,7 +8526,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
             std::string key = (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1]))
                 ? std::get<std::string>(inputs[1]) : "";
             bool val = (inputs.size() > 2 && std::holds_alternative<bool>(inputs[2])) && std::get<bool>(inputs[2]);
-            extern Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
             if (s_VisualScriptSaveSystem && !key.empty()) {
                 s_VisualScriptSaveSystem->SetMetaBool(key, val);
                 s_VisualScriptSaveSystem->SaveMeta();
@@ -8582,7 +8550,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
                           const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
             std::string key = (!inputs.empty() && std::holds_alternative<std::string>(inputs[0]))
                 ? std::get<std::string>(inputs[0]) : "";
-            extern Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
             if (s_VisualScriptSaveSystem && !key.empty())
                 return s_VisualScriptSaveSystem->GetMetaBool(key, false);
             return false;
@@ -8606,7 +8573,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
             std::string key = (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1]))
                 ? std::get<std::string>(inputs[1]) : "";
             i32 val = (inputs.size() > 2 && std::holds_alternative<i32>(inputs[2])) ? std::get<i32>(inputs[2]) : 0;
-            extern Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
             if (s_VisualScriptSaveSystem && !key.empty()) {
                 s_VisualScriptSaveSystem->SetMetaInt(key, val);
                 s_VisualScriptSaveSystem->SaveMeta();
@@ -8631,7 +8597,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
                           const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
             std::string key = (!inputs.empty() && std::holds_alternative<std::string>(inputs[0]))
                 ? std::get<std::string>(inputs[0]) : "";
-            extern Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
             if (s_VisualScriptSaveSystem && !key.empty())
                 return s_VisualScriptSaveSystem->GetMetaInt(key, 0);
             return static_cast<i32>(0);
@@ -8656,7 +8621,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
                 ? std::get<std::string>(inputs[1]) : "";
             std::string val = (inputs.size() > 2 && std::holds_alternative<std::string>(inputs[2]))
                 ? std::get<std::string>(inputs[2]) : "";
-            extern Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
             if (s_VisualScriptSaveSystem && !key.empty()) {
                 s_VisualScriptSaveSystem->SetMetaString(key, val);
                 s_VisualScriptSaveSystem->SaveMeta();
@@ -8681,7 +8645,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
                           const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
             std::string key = (!inputs.empty() && std::holds_alternative<std::string>(inputs[0]))
                 ? std::get<std::string>(inputs[0]) : "";
-            extern Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
             if (s_VisualScriptSaveSystem && !key.empty())
                 return s_VisualScriptSaveSystem->GetMetaString(key, "");
             return std::string("");
@@ -9753,7 +9716,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.outputs = {Float("Value", PK::Output)};
         def.keywords = {"weather", kw, "get"};
         def.evaluate = [read](const ExecutionContext&, const std::vector<ECS::VariableValue>&) -> ECS::VariableValue {
-            extern Effects::WeatherSystem* s_VisualScriptWeather;
             return s_VisualScriptWeather ? read(s_VisualScriptWeather) : 0.0f;
         };
         RegisterNode(def);
@@ -9779,7 +9741,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.outputs = {Int("Type", PK::Output)};
         def.keywords = {"weather", "type", "get", "current"};
         def.evaluate = [](const ExecutionContext&, const std::vector<ECS::VariableValue>&) -> ECS::VariableValue {
-            extern Effects::WeatherSystem* s_VisualScriptWeather;
             return s_VisualScriptWeather ? static_cast<i32>(s_VisualScriptWeather->GetWeather()) : static_cast<i32>(0);
         };
         RegisterNode(def);
@@ -9796,7 +9757,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.outputs = {Bool("Lightning", PK::Output)};
         def.keywords = {"weather", "lightning", "storm", "flash"};
         def.evaluate = [](const ExecutionContext&, const std::vector<ECS::VariableValue>&) -> ECS::VariableValue {
-            extern Effects::WeatherSystem* s_VisualScriptWeather;
             return s_VisualScriptWeather ? s_VisualScriptWeather->IsLightningActive() : false;
         };
         RegisterNode(def);
@@ -9813,7 +9773,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.outputs = {Vec3("Direction", PK::Output)};
         def.keywords = {"weather", "wind", "direction", "get"};
         def.evaluate = [](const ExecutionContext&, const std::vector<ECS::VariableValue>&) -> ECS::VariableValue {
-            extern Effects::WeatherSystem* s_VisualScriptWeather;
             return s_VisualScriptWeather ? s_VisualScriptWeather->GetWindDirection() : Math::Vector3(0, 0, 0);
         };
         RegisterNode(def);
@@ -9830,7 +9789,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.outputs = {FlowOut()};
         def.keywords = {"weather", "wind", "set", "direction", "strength"};
         def.execute = [](ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs, std::vector<ECS::VariableValue>&) {
-            extern Effects::WeatherSystem* s_VisualScriptWeather;
             if (s_VisualScriptWeather) {
                 Math::Vector3 dir = (inputs.size() > 1 && std::holds_alternative<Math::Vector3>(inputs[1]))
                     ? std::get<Math::Vector3>(inputs[1]) : Math::Vector3(1, 0, 0);

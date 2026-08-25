@@ -1,4 +1,9 @@
 #include "Enjin/Editor/EditorLayer.h"
+#ifndef _WIN32
+// POSIX environment for posix_spawn. Declared at GLOBAL scope: a block-scope
+// extern inside namespace Enjin mangles as a namespaced symbol under GCC.
+extern char** environ;
+#endif
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Assets/AssetPipeline.h"
 #include <thread>
@@ -1478,7 +1483,6 @@ void EditorLayer::DrawBuildDialog() {
             {
                 const char* argv[] = { "open", m_BuildConfig.outputDir.c_str(), nullptr };
                 pid_t pid = 0;
-                extern char** environ;
                 posix_spawnp(&pid, "open", nullptr, nullptr, const_cast<char**>(argv), environ);
             }
 #else
@@ -1486,7 +1490,6 @@ void EditorLayer::DrawBuildDialog() {
             {
                 const char* argv[] = { "xdg-open", m_BuildConfig.outputDir.c_str(), nullptr };
                 pid_t pid = 0;
-                extern char** environ;
                 posix_spawnp(&pid, "xdg-open", nullptr, nullptr, const_cast<char**>(argv), environ);
             }
 #endif

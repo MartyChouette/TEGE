@@ -34,8 +34,9 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(assimp)
 
-# Suppress Clang warnings in third-party assimp code (memcpy on non-trivial types)
-if(TARGET assimp AND NOT MSVC)
+# Suppress Clang warnings in third-party assimp code (memcpy on non-trivial
+# types). Clang-only flag: GCC hard-errors on unknown -Wno-error= options.
+if(TARGET assimp AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     target_compile_options(assimp PRIVATE -Wno-nontrivial-memcall -Wno-error=nontrivial-memcall)
 endif()
 

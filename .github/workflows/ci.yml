@@ -133,6 +133,55 @@ jobs:
             enjin_crash.dmp
           if-no-files-found: ignore
 
+  linux-desktop:
+    name: Linux (build + render smoke)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        # Same package set the port was validated against (Ubuntu 24.04, GCC 13).
+        # mesa-vulkan-drivers ships lavapipe; xvfb gives GLFW an X server on the
+        # headless runner (GLFW needs a live X connection to report Vulkan
+        # surface extensions).
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential cmake ninja-build pkg-config \
+            libvulkan-dev libglfw3-dev libx11-dev libxrandr-dev libxinerama-dev \
+            libxcursor-dev libxi-dev libcurl4-openssl-dev mesa-vulkan-drivers \
+            vulkan-tools xvfb
+
+      - name: Configure
+        run: cmake -B build-linux -S . -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build-linux --parallel
+
+      - name: Render smoke test (golden capture on lavapipe)
+        timeout-minutes: 15
+        # Same three gates as the Windows smoke: editor exits 0, the GoldenSmoke
+        # canary script ran (AngelScript native calling conventions differ per
+        # ABI, so this catches SysV-specific binding breaks like the ALLFLOATS
+        # return-type issue), and the capture is a real image.
+        env:
+          VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.json
+        run: |
+          set -o pipefail
+          mkdir -p golden_out
+          xvfb-run -a ./build-linux/bin/EnjinEditor "$GITHUB_WORKSPACE/Tests/GoldenScene/GoldenScene.enjinproject" \
+            --play --golden "$GITHUB_WORKSPACE/golden_out/smoke" --golden-frames 30 2>&1 | tee editor.log
+          grep -q "GoldenSmoke: script runtime is alive" editor.log || { echo "script canary never ran"; exit 1; }
+          python3 Tests/GoldenScene/check_golden.py golden_out/smoke
+
+      - name: Upload golden capture
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-capture-linux
+          path: golden_out/
+          if-no-files-found: ignore
+
   web:
     name: Web (WebAssembly build)
     runs-on: ubuntu-latest

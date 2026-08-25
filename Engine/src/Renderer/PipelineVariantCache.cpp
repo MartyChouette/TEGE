@@ -1,4 +1,5 @@
 #include "Enjin/Renderer/PipelineVariantCache.h"
+#include <vector>
 #include "Enjin/Logging/Log.h"
 
 #if !ENJIN_RENDERER_WEBGPU

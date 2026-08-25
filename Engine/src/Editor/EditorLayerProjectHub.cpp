@@ -1,4 +1,9 @@
 #include "Enjin/Editor/EditorLayer.h"
+#ifndef _WIN32
+// POSIX environment for posix_spawn. Declared at GLOBAL scope: a block-scope
+// extern inside namespace Enjin mangles as a namespaced symbol under GCC.
+extern char** environ;
+#endif
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Core/Version.h"
@@ -2288,7 +2293,6 @@ bool EditorLayer::CreateProjectOnDisk(const std::string& projectDir, const std::
         {
             const char* argv[] = { "git", "init", projRoot.string().c_str(), nullptr };
             pid_t pid = 0;
-            extern char** environ;
             if (posix_spawnp(&pid, "git", nullptr, nullptr, const_cast<char**>(argv), environ) == 0) {
                 int status = 0;
                 waitpid(pid, &status, 0);
