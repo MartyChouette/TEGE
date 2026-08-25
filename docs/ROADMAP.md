@@ -295,6 +295,23 @@ scanned reality rendered as toon, pixel art, or PS1.
 - **Why flagship:** "scan your room, make it a PS1 level" is a one-sentence pitch
   nobody else has.
 
+### 10. A tutorial — the guided first game (added 2026-08-25)
+
+A first-run tutorial that walks a new user from empty editor to a playable game,
+inside the editor itself. The three-clicks pitch needs a path that proves it.
+- **Already in place:** ComponentHelp registry (every panel already explains itself),
+  project templates in the hub, `docs/BEGINNERS_GUIDE.md` as the written version,
+  the wiring-board flip view for showing how components connect.
+- **To build:** a step-by-step in-editor tutorial overlay (highlight the next control,
+  advance on the user's action); a small authored tutorial project it builds toward
+  (move a character, add a light, drop a script, press Play, export); a "Start the
+  tutorial" entry on the hub for first launches.
+- **Risk:** low technical, high authoring care — the tone has to teach without
+  patronizing, and every step must survive UI changes (drive it from stable command
+  IDs, not pixel positions).
+- **Why flagship:** accessibility from the ground up is the identity; a guided first
+  game is that identity made concrete for someone who has never touched an engine.
+
 ---
 
 ## Art Style Rendering System (P0 — COMPLETE 2026-03-22)
