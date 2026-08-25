@@ -204,6 +204,46 @@ jobs:
           grep -q "Loaded scene" game.log || { echo "exported game never loaded its scene"; exit 1; }
           grep -q "Headless frame limit reached" game.log || { echo "exported game did not survive its render loop (crash?)"; exit 1; }
 
+      - name: Package Linux build
+        # Turns the CI build into a downloadable Linux build (editor + player).
+        # The binaries are self-contained apart from standard desktop system
+        # libraries (Vulkan loader, GLFW, X11), so this tarball runs on any
+        # Linux desktop or Steam Deck with those present. Not a formal release,
+        # just an artifact on each run so a Linux build always exists to grab.
+        run: |
+          STAGE="$GITHUB_WORKSPACE/tege-linux-x86_64"
+          mkdir -p "$STAGE/bin"
+          cp build-linux/bin/EnjinEditor build-linux/bin/EnjinPlayer "$STAGE/bin/"
+          strip "$STAGE/bin/EnjinEditor" "$STAGE/bin/EnjinPlayer" || true
+          cat > "$STAGE/README.txt" <<'EOF'
+          TEGE (Enjin) - Linux x86_64 build
+
+          Contents:
+            bin/EnjinEditor  - the editor
+            bin/EnjinPlayer  - the standalone game player (build export copies this)
+
+          These binaries embed their own shaders, fonts, and scripting API, so
+          there is nothing else to unpack. They need a Vulkan-capable system and
+          a few standard desktop libraries. On Debian/Ubuntu/SteamOS:
+
+            sudo apt-get install libvulkan1 libglfw3 mesa-vulkan-drivers
+
+          Run the editor:   ./bin/EnjinEditor
+          Open a project:   ./bin/EnjinEditor /path/to/Game.enjinproject
+
+          No GPU? Software rendering works via Mesa's lavapipe:
+            VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json ./bin/EnjinEditor
+          EOF
+          tar -C "$GITHUB_WORKSPACE" -czf tege-linux-x86_64.tar.gz tege-linux-x86_64
+          ls -lh tege-linux-x86_64.tar.gz
+
+      - name: Upload Linux build
+        uses: actions/upload-artifact@v4
+        with:
+          name: tege-linux-x86_64
+          path: tege-linux-x86_64.tar.gz
+          if-no-files-found: warn
+
       - name: Upload golden capture
         if: always()
         uses: actions/upload-artifact@v4
