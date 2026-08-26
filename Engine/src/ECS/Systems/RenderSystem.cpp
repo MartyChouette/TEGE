@@ -9449,12 +9449,19 @@ void RenderSystem::UpdateFrameUniforms() {
                 probe.probePosition.x, probe.probePosition.y, probe.probePosition.z, probe.intensity);
             lighting.reflectionProbeBoxMin = Math::Vector4(
                 probe.boxMin.x, probe.boxMin.y, probe.boxMin.z, probe.blendDistance);
-            // w = isBaked (1.0 = baked cubemap at binding 19, 0.0 = skybox gradient fallback)
+            // w encodes the baked cubemap's mip count: 0 = not baked (skybox
+            // gradient fallback), >=1 = baked cubemap at binding 19 with that many
+            // prefiltered mips. The shader reads baked = (w > 0.5) and maps
+            // material roughness across LOD 0..(w-1) for glossy reflections.
+            f32 bakedW = 0.0f;
+            if (probe.isBaked > 0.5f && m_ReflectionProbes->HasActiveBakedCubemap()) {
+                bakedW = static_cast<f32>(m_ReflectionProbes->GetActiveBakedMipLevels());
+            }
             lighting.reflectionProbeBoxMax = Math::Vector4(
-                probe.boxMax.x, probe.boxMax.y, probe.boxMax.z, probe.isBaked);
+                probe.boxMax.x, probe.boxMax.y, probe.boxMax.z, bakedW);
 
             // When the active probe has a baked cubemap, update the descriptor for binding 19
-            if (probe.isBaked > 0.5f && m_ReflectionProbes->HasActiveBakedCubemap()) {
+            if (bakedW > 0.5f) {
                 UpdateProbeCubemapDescriptor();
             }
         } else {

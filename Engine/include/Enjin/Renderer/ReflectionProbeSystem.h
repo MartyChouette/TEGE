@@ -39,6 +39,7 @@ struct BakedCubemap {
     VkImageView view = VK_NULL_HANDLE;
     VkSampler sampler = VK_NULL_HANDLE;
     u32 resolution = 0;
+    u32 mipLevels = 1;   // prefiltered chain: mip 0 = sharp, higher = rougher
 };
 
 // Reflection probe system — manages probe queries and cubemap baking for the renderer.
@@ -86,6 +87,10 @@ public:
     VkDescriptorImageInfo GetActiveBakedCubemapDescriptor() const { return m_ActiveBakedDescriptor; }
     bool HasActiveBakedCubemap() const { return m_ActiveBakedDescriptorValid; }
 
+    // Mip count of the most recently queried baked probe (set by FindNearestProbe).
+    // The shader maps material roughness across LOD 0..(mipLevels-1) for glossy blur.
+    u32 GetActiveBakedMipLevels() const { return m_ActiveBakedMipLevels; }
+
 private:
     bool BakeProbeInternal(ECS::World* world, ECS::RenderSystem* renderSystem, u64 probeEntity);
     bool CreateCubemapImage(u32 resolution, BakedCubemap& cubemap);
@@ -104,6 +109,7 @@ private:
     // Active baked cubemap descriptor (updated by FindNearestProbe)
     mutable VkDescriptorImageInfo m_ActiveBakedDescriptor{};
     mutable bool m_ActiveBakedDescriptorValid = false;
+    mutable u32 m_ActiveBakedMipLevels = 1;
 };
 
 } // namespace Renderer

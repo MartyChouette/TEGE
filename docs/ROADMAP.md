@@ -20,7 +20,7 @@ This document captures detailed technical plans, performance findings, and strat
 | ~~**Art Styles**~~ | ~~Material-Expression Worlds — matcap texture slot, procedural surface noise~~ | ~~P0~~ DONE |
 | ~~**Art Styles**~~ | ~~Analog/Degraded Polish — film gate weave, light leaks, tape dropout~~ | ~~P0~~ DONE |
 | ~~**Art Styles**~~ | ~~Art Style Presets — editor dropdown (7 presets)~~ | ~~P0~~ DONE |
-| **Renderer** | Reflection Probes — box projection done (component, system, shader, editor UI, serialization), baked cubemaps + SSR fallback pending | P1 |
+| **Renderer** | Reflection Probes — box projection, baked cubemaps (6-face capture + prefiltered mip chain), roughness-driven glossy sampling, and PBR metallic/roughness specular IBL all done; SSR fallback still pending | P1 IN PROGRESS |
 | ~~**Gameplay**~~ | ~~Dynamic Difficulty — read player stats (health, deaths, time, accuracy) + difficulty setting to auto-adjust AI aggression, damage, resources, hints~~ | ~~P1~~ DONE |
 | **Renderer** | ReSTIR — Reservoir-based light sampling (DI + temporal + spatial reuse complete, rt_shadow ReSTIR consumption done, settings serialization done, integrated into main pipeline) | P1 IN PROGRESS |
 | **Renderer** | Temporal RT Reuse — reprojection + history blend for shadow/AO/reflect/GI done, confidence map done, denoiser-aware feedback pending | P2 |

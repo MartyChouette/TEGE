@@ -555,6 +555,52 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0) {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
+// Roughness-aware Fresnel for ambient/IBL: rough surfaces reflect less at grazing
+// angles than the mirror-smooth Schlick term would suggest.
+vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness) {
+    vec3 Fr = max(vec3(1.0 - roughness), F0);
+    return F0 + (Fr - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+// Environment reflection for direction R at worldPos, roughness-filtered.
+// Box-projects R through the active reflection probe AABB for parallax-correct
+// reflections, then samples the baked cubemap at a roughness-driven mip (sharp
+// for smooth surfaces, blurry high mips for rough ones). Falls back to a skybox
+// gradient when no probe covers the fragment or the probe has no baked cubemap.
+// reflectionProbeBoxMax.w encodes the baked mip count (0 = not baked).
+vec3 sampleReflectionEnv(vec3 R, vec3 worldPos, float roughness) {
+    vec3 skyCol = lighting.skyReflectColor.xyz;
+    float probeIntensity = lighting.reflectionProbePosition.w;
+    if (probeIntensity <= 0.0) {
+        return mix(skyCol * 0.15, skyCol, clamp(R.y * 0.5 + 0.5, 0.0, 1.0));
+    }
+
+    vec3 probeCenter = lighting.reflectionProbePosition.xyz;
+    vec3 boxMin = lighting.reflectionProbeBoxMin.xyz;
+    vec3 boxMax = lighting.reflectionProbeBoxMax.xyz;
+
+    // Ray-box intersection: correct R so the sample matches what a cubemap
+    // captured at the probe center would see through this point on the box.
+    vec3 rbMin = (boxMin - worldPos) / R;
+    vec3 rbMax = (boxMax - worldPos) / R;
+    vec3 rbMaxT = max(rbMin, rbMax);
+    float tBox = min(rbMaxT.x, min(rbMaxT.y, rbMaxT.z));
+    vec3 cDir = normalize((worldPos + R * tBox) - probeCenter);
+
+    float bakedMips = lighting.reflectionProbeBoxMax.w;
+    vec3 env;
+    if (bakedMips > 0.5) {
+        float lod = clamp(roughness, 0.0, 1.0) * max(bakedMips - 1.0, 0.0);
+        env = textureLod(probeCubemap, cDir, lod).rgb;
+    } else {
+        env = mix(skyCol * 0.15, skyCol, clamp(cDir.y * 0.5 + 0.5, 0.0, 1.0));
+    }
+
+    // Blend toward the plain skybox at the probe's edge falloff (intensity < 1).
+    vec3 skyFallback = mix(skyCol * 0.15, skyCol, clamp(R.y * 0.5 + 0.5, 0.0, 1.0));
+    return mix(skyFallback, env, clamp(probeIntensity, 0.0, 1.0));
+}
+
 // --- GGX/Trowbridge-Reitz normal distribution ---
 float distributionGGX(float NdotH, float roughness) {
     float a = roughness * roughness;
@@ -1138,6 +1184,21 @@ void main() {
     // Start with ambient
     vec3 result = lighting.ambientColor * lighting.ambientIntensity * albedo;
 
+    // Specular IBL from the reflection probe. Metals (high metallic) and glossy
+    // dielectrics reflect the environment; without this a metal material only
+    // shows direct-light highlights and never mirrors the baked probe. Box-
+    // projected and roughness-filtered via the shared helper, skybox gradient
+    // fallback. Scaled by ambientIntensity so it tracks the scene's environment
+    // light level and can't blow out an unlit scene (tune with the Ambient control).
+    {
+        vec3 iblR = reflect(-viewDir, normal);
+        float iblNdotV = max(dot(normal, viewDir), 0.0);
+        vec3 iblF0 = mix(vec3(0.04), albedo, metallic);
+        vec3 iblF = fresnelSchlickRoughness(iblNdotV, iblF0, roughness);
+        vec3 iblEnv = sampleReflectionEnv(iblR, fragWorldPos, roughness);
+        result += iblEnv * iblF * lighting.ambientIntensity;
+    }
+
     // Blend SH light probe irradiance when available
     if (lighting.shProbeIrradiance.w > 0.0) {
         result += lighting.shProbeIrradiance.xyz * albedo;
@@ -1578,51 +1639,10 @@ void main() {
         vec3 reflectDir = reflect(-viewDir, normal);
         vec3 skyCol = lighting.skyReflectColor.xyz;
 
-        // Box-projected reflection: correct the reflection vector to account for probe AABB.
-        // When a reflection probe is active (intensity > 0), the reflection ray is intersected
-        // with the probe's bounding box to find the point on the box where the reflection
-        // "hits", producing parallax-correct reflections for enclosed spaces.
-        float probeIntensity = lighting.reflectionProbePosition.w;
-        vec3 envColor;
-        if (probeIntensity > 0.0) {
-            vec3 probeCenter = lighting.reflectionProbePosition.xyz;
-            vec3 boxMin = lighting.reflectionProbeBoxMin.xyz;
-            vec3 boxMax = lighting.reflectionProbeBoxMax.xyz;
-
-            // Ray-box intersection: find the intersection of the reflection ray with the AABB
-            // from the fragment's world position. We compute t for each slab and take the min
-            // positive t (first exit point), then use that to get the box-projected direction.
-            vec3 rbMin = (boxMin - fragWorldPos) / reflectDir;
-            vec3 rbMax = (boxMax - fragWorldPos) / reflectDir;
-            vec3 rbMaxT = max(rbMin, rbMax);
-            float tBox = min(rbMaxT.x, min(rbMaxT.y, rbMaxT.z));
-
-            // The corrected reflection direction points from the probe center to the
-            // intersection point on the box (this is what a cubemap captured at the
-            // probe center would see).
-            vec3 hitPoint = fragWorldPos + reflectDir * tBox;
-            vec3 correctedDir = hitPoint - probeCenter;
-
-            // Sample environment from the corrected reflection direction.
-            // When the probe has a baked cubemap (reflectionProbeBoxMax.w == 1.0),
-            // sample from the actual cubemap texture. Otherwise use gradient fallback.
-            vec3 cDir = normalize(correctedDir);
-            float probeBaked = lighting.reflectionProbeBoxMax.w;
-            if (probeBaked > 0.5) {
-                // Sample the baked cubemap with the box-projected direction
-                envColor = texture(probeCubemap, cDir).rgb;
-            } else {
-                // Gradient approximation of skybox
-                envColor = mix(skyCol * 0.15, skyCol, clamp(cDir.y * 0.5 + 0.5, 0.0, 1.0));
-            }
-
-            // Blend between probe result and skybox fallback based on probe intensity
-            vec3 skyFallback = mix(skyCol * 0.15, skyCol, clamp(reflectDir.y * 0.5 + 0.5, 0.0, 1.0));
-            envColor = mix(skyFallback, envColor, probeIntensity);
-        } else {
-            // No probe: skybox gradient fallback
-            envColor = mix(skyCol * 0.15, skyCol, clamp(reflectDir.y * 0.5 + 0.5, 0.0, 1.0));
-        }
+        // Roughness-aware, box-projected environment reflection (shared helper):
+        // parallax-corrects the reflection ray through the probe AABB and samples
+        // the prefiltered cubemap at a roughness-driven mip, skybox gradient fallback.
+        vec3 envColor = sampleReflectionEnv(reflectDir, fragWorldPos, roughness);
 
         // Add specular highlight from directional lights
         for (int i = 0; i < int(lighting.directionalLightCount); i++) {
