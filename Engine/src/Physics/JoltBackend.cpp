@@ -1801,6 +1801,17 @@ void JoltBackend::ForceSetBodyState(ECS::Entity entity, const Math::Vector3& pos
                                      const Math::Quaternion& rotation,
                                      const Math::Vector3& linearVel,
                                      const Math::Vector3& angularVel) {
+    // Character controllers are a separate Jolt object (CharacterVirtual) held in
+    // m_CharacterControllers, not m_EntityToBody. The CharacterVirtual is the
+    // position source of truth for a controller entity — setting the transform
+    // alone is overwritten by ExtendedUpdate the same step. Teleport it directly
+    // so respawns/rewinds land cleanly (no one-frame snap back to the old spot).
+    auto cit = m_CharacterControllers.find(entity);
+    if (cit != m_CharacterControllers.end() && cit->second) {
+        cit->second->SetPosition(JPH::RVec3(position.x, position.y, position.z));
+        cit->second->SetLinearVelocity(JPH::Vec3(linearVel.x, linearVel.y, linearVel.z));
+    }
+
     auto it = m_EntityToBody.find(entity);
     if (it == m_EntityToBody.end()) return;
 
