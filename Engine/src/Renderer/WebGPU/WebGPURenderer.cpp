@@ -22,6 +22,33 @@
 // Helper: create a WGPUStringView from a C string literal
 static WGPUStringView wgpuStr(const char* s) { return {s, WGPU_STRLEN}; }
 
+// When WebGPU is unavailable (older iOS Safari, in-app browsers, WebGPU disabled)
+// the canvas would otherwise just stay dark. Inject a plain HTML/CSS card into the
+// page so the player gets a clear message and knows what to do. This is pure DOM,
+// so it works precisely when the renderer does not. Idempotent, brand-neutral.
+EM_JS(void, EnjinShowWebGPUUnsupportedCard, (), {
+    if (typeof document === 'undefined') return;
+    if (document.getElementById('enjin-webgpu-card')) return;
+    var o = document.createElement('div');
+    o.id = 'enjin-webgpu-card';
+    o.setAttribute('style',
+        'position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;' +
+        'justify-content:center;background:#0d1017;color:#e6ebf2;text-align:center;' +
+        'padding:24px;box-sizing:border-box;' +
+        'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;');
+    o.innerHTML =
+        '<div style="max-width:440px;">' +
+        '<div style="font-size:46px;line-height:1;margin-bottom:18px;">⚠️</div>' +
+        '<h1 style="font-size:22px;margin:0 0 12px;font-weight:700;">This game needs WebGPU</h1>' +
+        '<p style="font-size:15px;line-height:1.55;color:#8b98a8;margin:0 0 10px;">' +
+        'Your browser can\'t run this game yet. It needs WebGPU, a newer graphics standard.</p>' +
+        '<p style="font-size:15px;line-height:1.55;color:#8b98a8;margin:0;">' +
+        'On iPhone or iPad: update to iOS 18 or newer and open it in Safari. ' +
+        'On a computer: use an up-to-date Chrome, Edge, or Safari 18+.</p>' +
+        '</div>';
+    (document.body || document.documentElement).appendChild(o);
+});
+
 namespace Enjin {
 namespace Renderer {
 
@@ -43,11 +70,24 @@ void WebGPURenderer::InitializeAsync(Window* window, std::function<void(bool)> o
     m_Window = window;
     m_InitCallback = std::move(onComplete);
 
+    // Proactive capability check: if the browser has no WebGPU at all (older iOS
+    // Safari, many in-app browsers), requesting an adapter can throw before the
+    // callback ever fires. Detect navigator.gpu first and show the guidance card
+    // instead of leaving a dark canvas.
+    int hasWebGPU = EM_ASM_INT({ return (typeof navigator !== 'undefined' && navigator.gpu) ? 1 : 0; });
+    if (!hasWebGPU) {
+        ENJIN_LOG_ERROR(Core, "WebGPURenderer: navigator.gpu is unavailable — this browser does not support WebGPU");
+        EnjinShowWebGPUUnsupportedCard();
+        CompleteInit(false);
+        return;
+    }
+
     // Create WebGPU instance
     WGPUInstanceDescriptor instanceDesc = {};
     m_Instance = wgpuCreateInstance(&instanceDesc);
     if (!m_Instance) {
         ENJIN_LOG_ERROR(Core, "WebGPURenderer: Failed to create WebGPU instance");
+        EnjinShowWebGPUUnsupportedCard();
         CompleteInit(false);
         return;
     }
@@ -64,6 +104,7 @@ void WebGPURenderer::InitializeAsync(Window* window, std::function<void(bool)> o
         auto* self = static_cast<WebGPURenderer*>(ud1);
         if (status != WGPURequestAdapterStatus_Success || !adapter) {
             ENJIN_LOG_ERROR(Core, "WebGPURenderer: Failed to get WebGPU adapter — browser may not support WebGPU");
+            EnjinShowWebGPUUnsupportedCard();
             self->CompleteInit(false);
             return;
         }
@@ -87,6 +128,7 @@ void WebGPURenderer::OnAdapterReady(WGPUAdapter adapter) {
         auto* self = static_cast<WebGPURenderer*>(ud1);
         if (status != WGPURequestDeviceStatus_Success || !device) {
             ENJIN_LOG_ERROR(Core, "WebGPURenderer: Failed to get WebGPU device");
+            EnjinShowWebGPUUnsupportedCard();
             self->CompleteInit(false);
             return;
         }
