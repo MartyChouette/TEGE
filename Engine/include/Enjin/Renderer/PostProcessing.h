@@ -323,6 +323,19 @@ struct alignas(16) PostProcessSettings {
     alignas(4) f32 _previewPad0 = 0.0f;
     alignas(4) f32 _previewPad1 = 0.0f;
 
+    // Screen-Space Reflections. GPU-uploaded; must stay in lockstep with the
+    // postprocess.frag settings block. Needs samplable scene color + depth, so
+    // it only runs where the offscreen post-process path is live (editor + web);
+    // exported desktop games wait on the disabled offscreen target being fixed.
+    alignas(4) u32 ssrEnabled = 0;          // 0 = off
+    alignas(4) f32 ssrIntensity = 0.6f;     // reflection blend weight
+    alignas(4) f32 ssrMaxDistance = 30.0f;  // world-space march distance
+    alignas(4) u32 ssrMaxSteps = 32;        // ray-march step count
+    alignas(4) f32 ssrThickness = 0.6f;     // linear-depth hit tolerance (world units)
+    alignas(4) f32 ssrEdgeFade = 0.1f;      // screen-edge fade width (0..0.5)
+    alignas(4) f32 _ssrPad0 = 0.0f;
+    alignas(4) f32 _ssrPad1 = 0.0f;
+
     // TAA config (CPU-side only — used by the TAA compute pass, not the post-process UBO)
     f32 taaSharpness   = 0.1f;     // Sharpening strength applied after TAA resolve (0 = off)
     f32 taaJitterScale = 1.0f;     // Jitter magnitude multiplier (1.0 = standard Halton)
@@ -366,6 +379,7 @@ struct alignas(16) PostProcessSettings {
         if (contactShadowsEnabled) return true;
         if (causticsEnabled) return true;
         if (fogShaftsEnabled) return true;
+        if (ssrEnabled) return true;
         if (aaComparisonEnabled) return true;
         if (colorblindMode != 0) return true;
         // Non-identity color grading
@@ -380,7 +394,7 @@ struct alignas(16) PostProcessSettings {
     bool NeedsDepthBuffer() const {
         return dofEnabled || tiltShiftEnabled || celOutlineEnabled ||
                ssaoEnabled || contactShadowsEnabled || causticsEnabled ||
-               fogShaftsEnabled || godRaysEnabled;
+               fogShaftsEnabled || godRaysEnabled || ssrEnabled;
     }
 };
 

@@ -1650,6 +1650,33 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
             if (!hasDepth) ImGui::EndDisabled();
         }
 
+        // SSR — Screen-Space Reflections
+        if (UI::SectionHeader("SSR (Screen-Space Reflections)")) {
+            if (!hasDepth) ImGui::BeginDisabled();
+            bool ssrOn = settings.ssrEnabled != 0;
+            if (ImGui::Checkbox("Enabled##SSR", &ssrOn)) {
+                settings.ssrEnabled = ssrOn ? 1 : 0;
+            }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                ImGui::SetTooltip("Screen-space reflections.\nMarches the reflection ray through the depth buffer and\nreflects on-screen geometry. Augments the reflection-probe\nand skybox reflection with real dynamic reflections.\nNo per-material roughness here (no G-buffer) — Intensity is\nthe global strength; off-screen rays fall back to the probe.");
+            if (settings.ssrEnabled) {
+                ImGui::DragFloat("Intensity##SSR", &settings.ssrIntensity, 0.01f, 0.0f, 1.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Reflection blend weight");
+                ImGui::DragFloat("Max Distance##SSR", &settings.ssrMaxDistance, 0.5f, 1.0f, 200.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("World-space ray-march distance");
+                int ssrSteps = static_cast<int>(settings.ssrMaxSteps);
+                if (ImGui::SliderInt("Steps##SSR", &ssrSteps, 8, 64)) {
+                    settings.ssrMaxSteps = static_cast<u32>(ssrSteps);
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("More steps = longer, more accurate reflections (costlier)");
+                ImGui::DragFloat("Thickness##SSR", &settings.ssrThickness, 0.01f, 0.05f, 5.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Depth hit tolerance (world units)");
+                ImGui::DragFloat("Edge Fade##SSR", &settings.ssrEdgeFade, 0.005f, 0.0f, 0.5f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Screen-edge fade width to hide reflection pop");
+            }
+            if (!hasDepth) ImGui::EndDisabled();
+        }
+
         // Contact Shadows
         if (UI::SectionHeader("Contact Shadows")) {
             if (!hasDepth) ImGui::BeginDisabled();

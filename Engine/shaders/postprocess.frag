@@ -256,6 +256,16 @@ layout(binding = 1) uniform PostProcessSettings {
     float previewSplitDivider;    // uv.x split point
     float _previewPad0;
     float _previewPad1;
+
+    // Screen-Space Reflections (lockstep with PostProcessing.h)
+    uint ssrEnabled;              // 0 = off
+    float ssrIntensity;           // reflection blend weight
+    float ssrMaxDistance;         // world-space march distance
+    uint ssrMaxSteps;             // ray-march step count
+    float ssrThickness;           // linear-depth hit tolerance (world units)
+    float ssrEdgeFade;            // screen-edge fade width (0..0.5)
+    float _ssrPad0;
+    float _ssrPad1;
 } settings;
 
 // LUT texture (binding 2)
@@ -1512,6 +1522,71 @@ vec3 applyContactShadows(vec3 color, vec2 uv) {
 }
 
 // ============================================================
+// SSR — Screen-Space Reflections
+// March the reflection ray in WORLD space, project each step to screen, and look
+// for the first step that lands behind the recorded scene depth (a hit). On hit,
+// blend in the reflected scene color weighted by intensity, Fresnel (stronger at
+// grazing angles), distance travelled, and a screen-edge fade. This is a fallback
+// that augments the forward-pass probe/skybox reflection: it has no per-material
+// roughness/reflectivity mask (no G-buffer in this pass), so ssrIntensity is the
+// global strength knob and grazing-angle Fresnel keeps it from looking painted-on.
+// ============================================================
+vec3 applySSR(vec3 color, vec2 uv) {
+    if (settings.ssrEnabled == 0) return color;
+
+    float depth = texture(depthTexture, uv).r;
+    if (depth >= 0.9999) return color; // Sky — nothing to reflect from
+
+    vec3 fragPos = reconstructWorldPos(uv, depth);
+    vec3 normal  = reconstructNormal(uv);
+
+    // Incident view ray (camera -> fragment), reconstructed without a camera-pos
+    // uniform: the near-plane point along THIS pixel ray, toward the fragment.
+    vec3 nearPt = reconstructWorldPos(uv, 0.0);
+    vec3 I = normalize(fragPos - nearPt);
+    vec3 R = reflect(I, normal);
+
+    float NdotV = max(dot(normal, -I), 0.0);
+
+    uint steps = min(settings.ssrMaxSteps, 64u);
+    float stepLen = settings.ssrMaxDistance / float(max(steps, 1u));
+    // Jitter the ray start to trade banding for noise.
+    float jitter = interleavedGradientNoise(uv * vec2(settings.screenWidth, settings.screenHeight));
+    vec3 rayPos = fragPos + normal * (stepLen * 0.5) + R * (stepLen * jitter);
+
+    for (uint i = 0u; i < steps; i++) {
+        rayPos += R * stepLen;
+
+        float clipW;
+        vec3 scr = projectWorldToScreen(rayPos, clipW);
+        if (clipW <= 0.0) break;                                   // behind camera
+        if (any(lessThan(scr.xy, vec2(0.0))) ||
+            any(greaterThan(scr.xy, vec2(1.0)))) break;            // off screen
+
+        float sceneDepth  = texture(depthTexture, scr.xy).r;
+        if (sceneDepth >= 0.9999) continue;                        // marched over sky
+        float sceneLinear = linearizeDepth(sceneDepth, settings.cameraNearPlane, settings.cameraFarPlane);
+        float rayLinear   = linearizeDepth(scr.z,      settings.cameraNearPlane, settings.cameraFarPlane);
+
+        // Hit: ray passed just behind the recorded surface, within thickness.
+        float diff = rayLinear - sceneLinear;
+        if (diff > 0.0 && diff < settings.ssrThickness) {
+            vec3 reflColor = texture(sceneTexture, scr.xy).rgb;
+
+            // Screen-edge fade so reflections don't pop at the borders.
+            vec2 ef = smoothstep(vec2(0.0), vec2(max(settings.ssrEdgeFade, 1e-3)), scr.xy)
+                    * smoothstep(vec2(0.0), vec2(max(settings.ssrEdgeFade, 1e-3)), vec2(1.0) - scr.xy);
+            float edge   = ef.x * ef.y;
+            float travel = 1.0 - float(i) / float(steps);          // nearer hits stronger
+            float fresnel = pow(1.0 - NdotV, 3.0);
+            float w = settings.ssrIntensity * edge * travel * clamp(fresnel + 0.15, 0.0, 1.0);
+            return mix(color, reflColor, clamp(w, 0.0, 1.0));
+        }
+    }
+    return color;
+}
+
+// ============================================================
 // Fake Caustics — Procedural animated Voronoi pattern below water plane
 // (Tomb Raider 2013 style)
 // ============================================================
@@ -1910,6 +1985,7 @@ void main() {
     }
 
     // Screen-space effects (HDR, before DoF/tone mapping)
+    color = applySSR(color, uv);
     color = applySSAO(color, uv);
     color = applyContactShadows(color, uv);
     color = applyCaustics(color, uv);

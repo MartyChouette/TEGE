@@ -807,6 +807,7 @@ void PostProcessing::UpdateUniformBuffer() {
         safeSettings.causticsEnabled = 0;
         safeSettings.fogShaftsEnabled = 0;
         safeSettings.godRaysEnabled = 0;
+        safeSettings.ssrEnabled = 0;
     }
 
     m_UniformBuffer->UploadData(&safeSettings, sizeof(PostProcessSettings));

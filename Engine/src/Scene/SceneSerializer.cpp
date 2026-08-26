@@ -1721,6 +1721,12 @@ json SerializePPSettings(const Renderer::PostProcessSettings& s) {
     j["ssaoIntensity"] = RF(s.ssaoIntensity);
     j["ssaoBias"] = RF(s.ssaoBias);
     j["ssaoSamples"] = s.ssaoSamples;
+    j["ssrEnabled"] = s.ssrEnabled;
+    j["ssrIntensity"] = RF(s.ssrIntensity);
+    j["ssrMaxDistance"] = RF(s.ssrMaxDistance);
+    j["ssrMaxSteps"] = s.ssrMaxSteps;
+    j["ssrThickness"] = RF(s.ssrThickness);
+    j["ssrEdgeFade"] = RF(s.ssrEdgeFade);
     j["contactShadowsEnabled"] = s.contactShadowsEnabled;
     j["contactShadowsLength"] = RF(s.contactShadowsLength);
     j["contactShadowsSteps"] = s.contactShadowsSteps;
@@ -1850,6 +1856,13 @@ Renderer::PostProcessSettings DeserializePPSettings(const json& j) {
     s.ssaoBias = GF("ssaoBias", 0.025f);
     s.ssaoSamples = GU("ssaoSamples");
     if (s.ssaoSamples == 0) s.ssaoSamples = 16;
+    s.ssrEnabled = GU("ssrEnabled");
+    s.ssrIntensity = GF("ssrIntensity", 0.6f);
+    s.ssrMaxDistance = GF("ssrMaxDistance", 30.0f);
+    s.ssrMaxSteps = GU("ssrMaxSteps");
+    if (s.ssrMaxSteps == 0) s.ssrMaxSteps = 32;
+    s.ssrThickness = GF("ssrThickness", 0.6f);
+    s.ssrEdgeFade = GF("ssrEdgeFade", 0.1f);
     s.contactShadowsEnabled = GU("contactShadowsEnabled");
     s.contactShadowsLength = GF("contactShadowsLength", 0.1f);
     s.contactShadowsSteps = GU("contactShadowsSteps");
