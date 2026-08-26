@@ -2,6 +2,7 @@
 #include "Enjin/ECS/Components/ParallaxMachine.h"
 #include "Enjin/ECS/Components/ParallaxLayer.h"
 #include "Enjin/ECS/Components/Transform.h"
+#include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Renderer/Camera.h"
 #include "Enjin/Renderer/Texture.h"
@@ -27,18 +28,26 @@ void ParallaxSystem::Update(f32 deltaTime) {
     }
 
     // Per-sprite parallax layers (see ApplyParallaxLayers).
-    ApplyParallaxLayers(m_World, m_Camera, deltaTime);
+    ApplyParallaxLayers(m_World, deltaTime);
 }
 
-void ParallaxSystem::ApplyParallaxLayers(World* world, const Renderer::Camera* camera, f32 deltaTime) {
-    if (!world || !camera) return;
+void ParallaxSystem::ApplyParallaxLayers(World* world, f32 deltaTime) {
+    if (!world) return;
+
+    // The view is authored by the active camera entity's transform, so read the
+    // parallax reference from there (not the render camera, whose sync timing
+    // differs between editor and player). No active camera = nothing to do.
+    ECS::Entity camEnt = ECS::CameraManager::GetActiveCamera(world);
+    if (camEnt == ECS::INVALID_ENTITY) return;
+    auto* camT = world->GetComponent<TransformComponent>(camEnt);
+    if (!camT) return;
 
     // Offset each layer's transform by a fraction of the camera's movement from a
     // captured anchor. This rides the ordinary 2D sprite pipeline (the layers ARE
     // sprites), so it batches, sorts, and renders on every backend with no
     // dedicated draw path. Play-mode stop restores the authored positions, so
     // mutating the transform here is safe.
-    Math::Vector3 camPos = camera->GetPosition();
+    Math::Vector3 camPos = camT->position;
     for (auto entity : world->GetEntitiesWithComponent<ParallaxLayerComponent>()) {
         auto* pl = world->GetComponent<ParallaxLayerComponent>(entity);
         auto* t = world->GetComponent<TransformComponent>(entity);

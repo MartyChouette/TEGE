@@ -994,7 +994,7 @@ void PlayMode::Update(f32 deltaTime) {
 
         // Parallax layers: offset ParallaxLayer sprites by a fraction of the
         // camera's movement. After the Director so it reads the final camera pose.
-        ECS::ParallaxSystem::ApplyParallaxLayers(m_World, m_Camera, deltaTime);
+        ECS::ParallaxSystem::ApplyParallaxLayers(m_World, deltaTime);
 
         // Sync the 3D audio listener to the game camera. Without this the
         // listener stays wherever it was initialized (world origin) and every

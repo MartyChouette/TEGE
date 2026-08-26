@@ -34,7 +34,10 @@ public:
     // (both have a World + camera) without owning a ParallaxSystem instance.
     // Runs during play only — it mutates transforms, which play-mode stop
     // restores. Rides the ordinary sprite pipeline, so it works on every backend.
-    static void ApplyParallaxLayers(World* world, const Renderer::Camera* camera, f32 deltaTime);
+    // Reads the active camera ENTITY's transform (the authoritative view source)
+    // so it tracks script/controller camera moves identically in the editor and
+    // the player, with no dependence on the render camera's sync timing.
+    static void ApplyParallaxLayers(World* world, f32 deltaTime);
 
     // Render all parallax layers (call during 2D render pass, before scene geometry)
     // Layers are sorted by sortOrder (lowest first = furthest back)

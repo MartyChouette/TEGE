@@ -1001,7 +1001,7 @@ public:
         m_CameraDirector.Update(m_World.get(), m_Camera.get(), deltaTime);
 
         // Parallax layers: scroll ParallaxLayer sprites relative to the camera.
-        Enjin::ECS::ParallaxSystem::ApplyParallaxLayers(m_World.get(), m_Camera.get(), deltaTime);
+        Enjin::ECS::ParallaxSystem::ApplyParallaxLayers(m_World.get(), deltaTime);
 
         m_QuestSystem.Update(m_World.get(), deltaTime);
 
