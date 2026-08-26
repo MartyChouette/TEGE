@@ -1,5 +1,6 @@
 #include "Enjin/ECS/Systems/ParallaxSystem.h"
 #include "Enjin/ECS/Components/ParallaxMachine.h"
+#include "Enjin/ECS/Components/ParallaxLayer.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Renderer/Camera.h"
@@ -23,6 +24,41 @@ void ParallaxSystem::Update(f32 deltaTime) {
         // Advance auto-scroll offset
         pm->autoScrollOffset.x += pm->autoScrollSpeed.x * deltaTime;
         pm->autoScrollOffset.y += pm->autoScrollSpeed.y * deltaTime;
+    }
+
+    // Per-sprite parallax layers (see ApplyParallaxLayers).
+    ApplyParallaxLayers(m_World, m_Camera, deltaTime);
+}
+
+void ParallaxSystem::ApplyParallaxLayers(World* world, const Renderer::Camera* camera, f32 deltaTime) {
+    if (!world || !camera) return;
+
+    // Offset each layer's transform by a fraction of the camera's movement from a
+    // captured anchor. This rides the ordinary 2D sprite pipeline (the layers ARE
+    // sprites), so it batches, sorts, and renders on every backend with no
+    // dedicated draw path. Play-mode stop restores the authored positions, so
+    // mutating the transform here is safe.
+    Math::Vector3 camPos = camera->GetPosition();
+    for (auto entity : world->GetEntitiesWithComponent<ParallaxLayerComponent>()) {
+        auto* pl = world->GetComponent<ParallaxLayerComponent>(entity);
+        auto* t = world->GetComponent<TransformComponent>(entity);
+        if (!pl || !t) continue;
+
+        if (!pl->anchorCaptured) {
+            pl->anchor = t->position;   // the authored position is the anchor
+            pl->camStart = camPos;      // reference so there is no start jump
+            pl->anchorCaptured = true;
+            pl->elapsed = 0.0f;
+        }
+        pl->elapsed += deltaTime;
+
+        // worldPos = anchor + camMovement * (1 - factor) + autoScroll * time.
+        // Screen position then moves at `factor` rate: factor 0 stays locked to
+        // the view (far backdrop), factor 1 scrolls fully with the world.
+        Math::Vector3 camDelta = camPos - pl->camStart;
+        t->position.x = pl->anchor.x + camDelta.x * (1.0f - pl->factor.x) + pl->autoScroll.x * pl->elapsed;
+        t->position.y = pl->anchor.y + camDelta.y * (1.0f - pl->factor.y) + pl->autoScroll.y * pl->elapsed;
+        // z is left alone — it carries the sprite's sorting-layer depth.
     }
 }
 

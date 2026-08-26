@@ -6,6 +6,7 @@
 #include "Enjin/ECS/Systems/DungeonGeneratorSystem.h"
 #include "Enjin/ECS/Systems/RandomBagSystem.h"
 #include "Enjin/ECS/Systems/ScatterSystem.h"
+#include "Enjin/ECS/Systems/ParallaxSystem.h"
 #include "Enjin/ECS/Systems/TerrainGeneratorSystem.h"
 #include "Enjin/ECS/Systems/WFCSystem.h"
 #include "Enjin/ECS/Components/Name.h"
@@ -990,6 +991,10 @@ void PlayMode::Update(f32 deltaTime) {
         // controller/cinematic camera path untouched. Single-owner invariant: while
         // it drives, it is the only writer of the camera transform.
         m_CameraDirector.Update(m_World, m_Camera, deltaTime);
+
+        // Parallax layers: offset ParallaxLayer sprites by a fraction of the
+        // camera's movement. After the Director so it reads the final camera pose.
+        ECS::ParallaxSystem::ApplyParallaxLayers(m_World, m_Camera, deltaTime);
 
         // Sync the 3D audio listener to the game camera. Without this the
         // listener stays wherever it was initialized (world origin) and every

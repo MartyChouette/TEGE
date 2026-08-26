@@ -64,6 +64,7 @@
 #include "Enjin/Scene/LevelStreaming.h"
 #include "Enjin/Effects/InteractiveWater.h"
 #include "Enjin/ECS/Components/ParallaxMachine.h"
+#include "Enjin/ECS/Components/ParallaxLayer.h"
 #include "Enjin/Physics/PhysicsTypes2D.h"
 #include "Enjin/Logging/Log.h"
 
@@ -4106,6 +4107,22 @@ ECS::ParallaxMachineComponent DeserializeParallaxMachineComponent(const json& j)
     return pm;
 }
 
+// Per-sprite parallax layer. Only the authored fields round-trip; the anchor /
+// camStart / elapsed are runtime state captured on play start.
+json SerializeParallaxLayerComponent(const ECS::ParallaxLayerComponent& pl) {
+    json j;
+    j["factor"] = SerializeVector2(pl.factor);
+    j["autoScroll"] = SerializeVector2(pl.autoScroll);
+    return j;
+}
+
+ECS::ParallaxLayerComponent DeserializeParallaxLayerComponent(const json& j) {
+    ECS::ParallaxLayerComponent pl;
+    if (j.contains("factor")) pl.factor = DeserializeVector2(j["factor"]);
+    if (j.contains("autoScroll")) pl.autoScroll = DeserializeVector2(j["autoScroll"]);
+    return pl;
+}
+
 // ============================================================================
 // Logic
 // ============================================================================
@@ -7635,6 +7652,7 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
         ENJIN_SERDES("networkTransform", ECS::NetworkTransformComponent, SerializeNetworkTransformComponent, DeserializeNetworkTransformComponent),
         ENJIN_SERDES("notes", ECS::NotesComponent, SerializeNotesComponent, DeserializeNotesComponent),
         ENJIN_SERDES("parallaxMachine", ECS::ParallaxMachineComponent, SerializeParallaxMachineComponent, DeserializeParallaxMachineComponent),
+        ENJIN_SERDES("parallaxLayer", ECS::ParallaxLayerComponent, SerializeParallaxLayerComponent, DeserializeParallaxLayerComponent),
         ENJIN_SERDES("particleEmitter", ECS::ParticleEmitterComponent, SerializeParticleEmitterComponent, DeserializeParticleEmitterComponent),
         ENJIN_SERDES("perFrameCollider", ECS::PerFrameColliderComponent, SerializePerFrameColliderComponent, DeserializePerFrameColliderComponent),
         ENJIN_SERDES("pickup", ECS::PickupComponent, SerializePickupComponent, DeserializePickupComponent),

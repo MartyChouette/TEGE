@@ -28,6 +28,14 @@ public:
     // Advance auto-scroll timers
     void Update(f32 deltaTime);
 
+    // Per-sprite parallax: offset every ParallaxLayerComponent entity by a
+    // fraction of the camera's movement so it scrolls with depth. Static so the
+    // editor's PlayMode and the standalone player can call it directly each frame
+    // (both have a World + camera) without owning a ParallaxSystem instance.
+    // Runs during play only — it mutates transforms, which play-mode stop
+    // restores. Rides the ordinary sprite pipeline, so it works on every backend.
+    static void ApplyParallaxLayers(World* world, const Renderer::Camera* camera, f32 deltaTime);
+
     // Render all parallax layers (call during 2D render pass, before scene geometry)
     // Layers are sorted by sortOrder (lowest first = furthest back)
     void Render(f32 viewportWidth, f32 viewportHeight);

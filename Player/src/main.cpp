@@ -80,6 +80,7 @@
 #include "Enjin/Gameplay/FootstepSystem.h"
 #include "Enjin/Gameplay/CinematicSystem.h"
 #include "Enjin/Gameplay/CameraDirector.h"
+#include "Enjin/ECS/Systems/ParallaxSystem.h"
 #include "Enjin/Gameplay/ObjectPool.h"
 #include "Enjin/Gameplay/TieredSaveSystem.h"
 #include "Enjin/Gameplay/QuestFlow.h"
@@ -998,6 +999,9 @@ public:
         // listener. No vcams = dormant = controller/cinematic camera untouched.
         // Mirrors editor PlayMode so exported games get working virtual cameras.
         m_CameraDirector.Update(m_World.get(), m_Camera.get(), deltaTime);
+
+        // Parallax layers: scroll ParallaxLayer sprites relative to the camera.
+        Enjin::ECS::ParallaxSystem::ApplyParallaxLayers(m_World.get(), m_Camera.get(), deltaTime);
 
         m_QuestSystem.Update(m_World.get(), deltaTime);
 

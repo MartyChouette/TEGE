@@ -119,6 +119,7 @@
 #include "Enjin/Effects/VoronoiMeshFracture.h"
 #include "Enjin/Effects/InteractiveWater.h"
 #include "Enjin/ECS/Components/ParallaxMachine.h"
+#include "Enjin/ECS/Components/ParallaxLayer.h"
 #include "Enjin/Math/Math.h"
 #include <stb_image.h>
 #include <imgui.h>
@@ -854,6 +855,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ParallaxMachineComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::ParallaxMachineComponent>(e); },
             "parallaxMachine", DimensionTag::Only2D},
+        {"Parallax Layer", "2D Graphics", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ParallaxLayerComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ParallaxLayerComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::ParallaxLayerComponent>(e); },
+            "parallaxLayer", DimensionTag::Only2D},
 
         // -- Scripting --
         {"Script", "Scripting", nullptr,
@@ -2834,6 +2840,27 @@ void EditorLayer::DrawInspectorPanel() {
         }
         if (m_World->HasComponent<ECS::Camera2DBoundsComponent>(m_PrimarySelected)) {
             DrawCamera2DBoundsComponent(m_PrimarySelected);
+        }
+
+        // Parallax Layer component (per-sprite parallax scroll)
+        if (m_World->HasComponent<ECS::ParallaxLayerComponent>(m_PrimarySelected)) {
+            bool plOpen = UI::SectionHeader("[//] Parallax Layer", ImGuiTreeNodeFlags_DefaultOpen);
+            if (ImGui::BeginPopupContextItem("ParallaxLayerCtx")) {
+                if (ImGui::MenuItem("Remove Component")) {
+                    RemoveComponentWithUndo<ECS::ParallaxLayerComponent>(m_PrimarySelected, "parallaxLayer", "Parallax Layer");
+                }
+                ImGui::EndPopup();
+            }
+            if (plOpen) {
+                auto* pl = m_World->GetComponent<ECS::ParallaxLayerComponent>(m_PrimarySelected);
+                if (pl) {
+                    DrawComponentHelp("parallaxLayer", m_World, m_PrimarySelected);
+                    ImGui::DragFloat2("Parallax Factor##PL", &pl->factor.x, 0.01f, 0.0f, 2.0f, "%.2f");
+                    ImGui::SetItemTooltip("Per-axis scroll fraction. 0 = locked to the camera (far backdrop), 1 = moves with the world (foreground). Distant layers use small values.");
+                    ImGui::DragFloat2("Auto-Scroll##PL", &pl->autoScroll.x, 0.05f, -50.0f, 50.0f, "%.2f");
+                    ImGui::SetItemTooltip("Constant drift in world units/second, on top of camera parallax. For endless skies / runners.");
+                }
+            }
         }
 
         // Parallax Machine component
