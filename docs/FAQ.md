@@ -113,7 +113,7 @@ write:
 ```angelscript
 class MyThing : TegeBehavior {
     void OnStart() {
-        Debug_Log("hello from " + Entity_GetName(entity));
+        Debug_Log("hello from " + Entity_GetName(GetEntity()));
     }
 
     void OnUpdate(float dt) {
@@ -123,8 +123,11 @@ class MyThing : TegeBehavior {
 ```
 
 `TegeBehavior` is embedded in the engine and injected automatically, so you do not
-`#include` it. Your class gets an `entity` member: the ID of the entity the script
-is attached to. That ID is the key to everything else (see the next section).
+`#include` it. `GetEntity()` returns the ID (`uint64`) of the entity the script is
+attached to, and that ID is the key to everything else (see the next section).
+`TegeBehavior` also gives you shorthands for your own entity: `GetPosition()` /
+`SetPosition()`, `GetRotation()` / `SetRotation()`, `GetScale()` / `SetScale()`,
+`GetName()`.
 
 You implement only the hooks you need. The engine calls the ones you define:
 
@@ -162,9 +165,9 @@ class Spinner : TegeBehavior {
     [Property, Range(0, 360)] float startAngle = 0; // with a slider range
 
     void OnUpdate(float dt) {
-        Vector3 r = Entity_GetRotation(entity);
+        Vector3 r = GetRotation();       // shorthand for this entity
         r.y += speed * dt;
-        Entity_SetRotation(entity, r);
+        SetRotation(r);
     }
 }
 ```
@@ -176,9 +179,10 @@ behavior once; whoever builds the level tunes it without opening the file.
 
 ## Manipulating components from code
 
-Everything is keyed off an entity ID (`uint64`). You get IDs from `entity` (your
-own), from `Scene_FindEntity("Name")`, from `Scene_FindEntityByTag("enemy")`, from
-a collision/trigger callback's `other`, or from spawning with `Scene_Instantiate*`.
+Everything is keyed off an entity ID (`uint64`). You get IDs from `GetEntity()`
+(your own), from `Scene_FindEntity("Name")`, from `Scene_FindEntityByTag("enemy")`,
+from a collision/trigger callback's `other`, or from spawning with
+`Scene_Instantiate*`.
 
 With an ID you read and write components through prefixed functions:
 
