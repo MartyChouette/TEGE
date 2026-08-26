@@ -53,6 +53,28 @@ struct SkyboxConfig {
     i32 cachedCloudTexIndex = -2;  // runtime bindless index (-2 unresolved), not serialized
 };
 
+// Water2DConfig — a scene-level water surface for 2D scenes, the water cousin of
+// the 2D sky. It is drawn as a full-screen overlay AFTER the 2D sprites, so
+// everything below the world-space waterline reads as submerged: a wavy surface
+// line with foam, a translucent tint that deepens with distance below the line,
+// and a gentle caustic shimmer. Off by default (enabled = false), so existing 2D
+// scenes are pixel-identical. Lives here beside SkyboxConfig because both are
+// scene-environment config the SceneSerializer round-trips on every platform.
+struct Water2DConfig {
+    bool enabled = false;
+    f32 waterLineY = 0.0f;                                  // world Y of the surface
+    Math::Vector3 surfaceColor = Math::Vector3(0.25f, 0.55f, 0.72f); // tint just under the line
+    Math::Vector3 deepColor = Math::Vector3(0.04f, 0.12f, 0.26f);    // tint far below
+    f32 opacity = 0.72f;                                    // max tint strength at depth
+    f32 depthFalloff = 6.0f;                                // world units to reach deep color/opacity
+    f32 waveAmplitude = 0.35f;                              // world-unit height of the surface waves
+    f32 waveLength = 6.0f;                                  // world-unit wavelength
+    f32 waveSpeed = 1.0f;                                   // drift rate of the surface
+    Math::Vector3 foamColor = Math::Vector3(0.9f, 0.96f, 1.0f);
+    f32 foamWidth = 0.35f;                                  // world-unit band of foam at the line
+    f32 causticStrength = 0.25f;                            // 0 = flat tint, 1 = strong shimmer
+};
+
 } // namespace Renderer
 } // namespace Enjin
 

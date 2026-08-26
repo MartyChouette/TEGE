@@ -3379,6 +3379,7 @@ void RenderSystem::Initialize() {
     CreateSkyboxCubeVBO();
     CreateSkyboxPipeline();
     CreateSky2DPipeline();   // full-screen authored sky for 2D scenes
+    CreateWater2DPipeline(); // full-screen authored water for 2D scenes
 
     // Set up shader hot-reload (editor-only)
     FindShaderDirectory();
@@ -3778,6 +3779,18 @@ void RenderSystem::Shutdown() {
             vkDestroyPipelineLayout(device, m_Sky2DPipelineLayout, nullptr);
             m_Sky2DPipelineLayout = VK_NULL_HANDLE;
         }
+        if (m_Water2DPipeline != VK_NULL_HANDLE) {
+            vkDestroyPipeline(device, m_Water2DPipeline, nullptr);
+            m_Water2DPipeline = VK_NULL_HANDLE;
+        }
+        if (m_Water2DPipelineOffscreen != VK_NULL_HANDLE) {
+            vkDestroyPipeline(device, m_Water2DPipelineOffscreen, nullptr);
+            m_Water2DPipelineOffscreen = VK_NULL_HANDLE;
+        }
+        if (m_Water2DPipelineLayout != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(device, m_Water2DPipelineLayout, nullptr);
+            m_Water2DPipelineLayout = VK_NULL_HANDLE;
+        }
         if (m_SkyboxPipelineLayoutHandle != VK_NULL_HANDLE) {
             vkDestroyPipelineLayout(device, m_SkyboxPipelineLayoutHandle, nullptr);
             m_SkyboxPipelineLayoutHandle = VK_NULL_HANDLE;
@@ -4154,6 +4167,11 @@ void RenderSystem::FlushPendingChanges() {
             m_VulkanRenderer->WaitForAllFrames();
         }
         m_Skybox.SetConfig(m_PendingSkybox);
+    }
+
+    if (m_PendingWater2DConfig) {
+        m_PendingWater2DConfig = false;
+        m_Water2DConfig = m_PendingWater2D;   // pure data (no GPU resources to recreate)
     }
 
     // Process pending reflection probe bakes — renders 6 faces per probe.
@@ -5309,6 +5327,11 @@ void RenderSystem::Update(f32 deltaTime) {
 
     // Sorted 2D sprite rendering pass (after 3D geometry)
     RenderSprites();
+
+    // 2D water: full-screen translucent overlay AFTER the sprites, so everything
+    // below the waterline reads as submerged. Particles/effects below draw on top.
+    if (m_SceneComposition.mode == SceneRenderMode::Scene2D)
+        Render2DWater(commandBuffer);
 
     // Render effect passes (grass, shrubs, trees, particles, fluid)
     RenderGrass(0, 0);
@@ -6491,6 +6514,10 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
 
     // Sorted 2D sprite rendering pass (after 3D geometry)
     RenderSprites();
+
+    // 2D water overlay in the game view / editor viewport (offscreen target).
+    if (m_SceneComposition.mode == SceneRenderMode::Scene2D)
+        Render2DWater(commandBuffer, &viewport, &scissor, /*offscreenPass=*/true);
 
     // Render effect passes (grass, shrubs, trees, particles, fluid)
     // Pass render target dimensions so vegetation renderers use the correct viewport
@@ -13536,6 +13563,15 @@ void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass)
         CreateSky2DPipelineVariant(renderPass, 1, VK_SAMPLE_COUNT_1_BIT, m_Sky2DPipelineOffscreen);
     }
 
+    // Offscreen 2D water variant (same pass-mismatch reason)
+    if (m_Water2DPipelineLayout != VK_NULL_HANDLE) {
+        if (m_Water2DPipelineOffscreen != VK_NULL_HANDLE) {
+            vkDestroyPipeline(m_VulkanRenderer->GetContext()->GetDevice(), m_Water2DPipelineOffscreen, nullptr);
+            m_Water2DPipelineOffscreen = VK_NULL_HANDLE;
+        }
+        CreateWater2DPipelineVariant(renderPass, 1, VK_SAMPLE_COUNT_1_BIT, m_Water2DPipelineOffscreen);
+    }
+
     // Note: skybox pipeline is NOT recreated here — it was created for the swapchain
     // render pass in Initialize() and works in both passes via driver-level render pass
     // compatibility (SRGB/UNORM same memory layout). Destroying and recreating it here
@@ -13889,6 +13925,206 @@ void RenderSystem::Render2DSky(VkCommandBuffer commandBuffer, const VkViewport* 
     vkCmdSetScissor(commandBuffer, 0, 1, &sc);
 
     vkCmdPushConstants(commandBuffer, m_Sky2DPipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT,
+                       0, sizeof(pc), &pc);
+    vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+}
+
+// ── 2D scene water: the alpha-blended cousin of Render2DSky ──────────────────
+
+void RenderSystem::SetWater2D(const Renderer::Water2DConfig& config) {
+    // Deferred like SetSkybox: the change lands at the top of the next Update()
+    // so it never mutates state the current command buffer still references.
+    m_PendingWater2D = config;
+    m_PendingWater2DConfig = true;
+}
+
+struct Water2DPushData {
+    Math::Vector4 surface;   // rgb surface tint, w opacity
+    Math::Vector4 deep;      // rgb deep tint, w depthFalloff
+    Math::Vector4 foam;      // rgb foam color, w foamWidth
+    Math::Vector4 waveParm;  // x waterLineY, y waveAmplitude, z waveLength, w waveSpeed
+    Math::Vector4 camParm;   // x camY, y orthoHalfHeight, z time, w causticStrength
+    Math::Vector4 spanParm;  // x camX, y worldWidth, zw reserved
+};
+
+void RenderSystem::CreateWater2DPipeline(VkRenderPass renderPass) {
+    if (!m_Renderer || !m_VulkanRenderer->GetContext()) return;
+    VkDevice device = m_VulkanRenderer->GetContext()->GetDevice();
+
+    if (m_Water2DPipelineLayout == VK_NULL_HANDLE) {
+        VkPushConstantRange pcRange{};
+        pcRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        pcRange.offset = 0;
+        pcRange.size = sizeof(Water2DPushData);   // 96 bytes, within the 128 min
+
+        // The water shader samples no textures, so the layout is push-constants
+        // only: no descriptor sets at all (unlike the 2D sky, which needs the
+        // bindless set for its optional cloud texture).
+        VkPipelineLayoutCreateInfo layoutInfo{};
+        layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        layoutInfo.setLayoutCount = 0;
+        layoutInfo.pushConstantRangeCount = 1;
+        layoutInfo.pPushConstantRanges = &pcRange;
+        if (vkCreatePipelineLayout(device, &layoutInfo, nullptr, &m_Water2DPipelineLayout) != VK_SUCCESS) {
+            ENJIN_LOG_WARN(Renderer, "Failed to create 2D water pipeline layout");
+            return;
+        }
+    }
+
+    VkRenderPass mainPass = (renderPass != VK_NULL_HANDLE) ? renderPass : m_VulkanRenderer->GetRenderPass();
+    if (m_Water2DPipeline == VK_NULL_HANDLE)
+        CreateWater2DPipelineVariant(mainPass, 2, m_VulkanRenderer->GetMSAASamples(), m_Water2DPipeline);
+    if (m_OffscreenRenderPass != VK_NULL_HANDLE && m_Water2DPipelineOffscreen == VK_NULL_HANDLE)
+        CreateWater2DPipelineVariant(m_OffscreenRenderPass, 1, VK_SAMPLE_COUNT_1_BIT, m_Water2DPipelineOffscreen);
+}
+
+bool RenderSystem::CreateWater2DPipelineVariant(VkRenderPass renderPass, u32 colorAttachmentCount,
+                                                VkSampleCountFlagBits samples, VkPipeline& outPipeline) {
+    if (!m_Renderer || renderPass == VK_NULL_HANDLE || m_Water2DPipelineLayout == VK_NULL_HANDLE)
+        return false;
+    auto* context = m_VulkanRenderer->GetContext();
+    VkDevice device = context->GetDevice();
+
+    Renderer::VulkanShader vert(context);
+    if (!vert.LoadFromSPIRV(reinterpret_cast<const u8*>(Renderer::ShaderData::FullscreenVertexShaderData),
+                            Renderer::ShaderData::FullscreenVertexShaderDataSize)) return false;
+    Renderer::VulkanShader frag(context);
+    if (!frag.LoadFromSPIRV(reinterpret_cast<const u8*>(Renderer::ShaderData::Water2DFragmentShaderData),
+                            Renderer::ShaderData::Water2DFragmentShaderDataSize)) return false;
+
+    VkPipelineVertexInputStateCreateInfo vertexInput{};   // fullscreen triangle: no vertex buffer
+    vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+    VkDynamicState dyn[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+    VkPipelineDynamicStateCreateInfo dynamicState{};
+    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicState.dynamicStateCount = 2;
+    dynamicState.pDynamicStates = dyn;
+
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.scissorCount = 1;
+
+    VkPipelineRasterizationStateCreateInfo rasterizer{};
+    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizer.lineWidth = 1.0f;
+    rasterizer.cullMode = VK_CULL_MODE_NONE;
+    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+
+    VkPipelineMultisampleStateCreateInfo multisampling{};
+    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampling.rasterizationSamples = samples;
+
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};   // overlay: no depth interaction
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = VK_FALSE;
+    depthStencil.depthWriteEnable = VK_FALSE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_ALWAYS;
+
+    // Alpha blend over the scene (this is the whole point of water vs sky). The
+    // main pass is MRT (color + velocity): attachment 0 blends, attachment 1
+    // (velocity) must be present with no color write (VUID-07609).
+    std::array<VkPipelineColorBlendAttachmentState, 2> blend{};
+    blend[0].blendEnable = VK_TRUE;
+    blend[0].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    blend[0].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    blend[0].colorBlendOp = VK_BLEND_OP_ADD;
+    blend[0].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    blend[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    blend[0].alphaBlendOp = VK_BLEND_OP_ADD;
+    blend[0].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                              VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    blend[1].colorWriteMask = 0;   // velocity attachment: present, no write
+    VkPipelineColorBlendStateCreateInfo colorBlending{};
+    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlending.attachmentCount = (colorAttachmentCount <= 2) ? colorAttachmentCount : 2;
+    colorBlending.pAttachments = blend.data();
+
+    VkPipelineShaderStageCreateInfo stages[2]{};
+    stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+    stages[0].module = vert.GetModule();
+    stages[0].pName = "main";
+    stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    stages[1].module = frag.GetModule();
+    stages[1].pName = "main";
+
+    VkGraphicsPipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipelineInfo.stageCount = 2;
+    pipelineInfo.pStages = stages;
+    pipelineInfo.pVertexInputState = &vertexInput;
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.pViewportState = &viewportState;
+    pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pDepthStencilState = &depthStencil;
+    pipelineInfo.pColorBlendState = &colorBlending;
+    pipelineInfo.pDynamicState = &dynamicState;
+    pipelineInfo.layout = m_Water2DPipelineLayout;
+    pipelineInfo.renderPass = renderPass;
+    pipelineInfo.subpass = 0;
+
+    VkResult r = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &outPipeline);
+    if (r != VK_SUCCESS) {
+        ENJIN_LOG_WARN(Renderer, "Failed to create 2D water pipeline variant (%d)", (int)r);
+        return false;
+    }
+    return true;
+}
+
+void RenderSystem::Render2DWater(VkCommandBuffer commandBuffer, const VkViewport* viewportOverride,
+                                 const VkRect2D* scissorOverride, bool offscreenPass) {
+    VkPipeline pipeline = offscreenPass ? m_Water2DPipelineOffscreen : m_Water2DPipeline;
+    if (pipeline == VK_NULL_HANDLE) return;
+    if (!m_Water2DConfig.enabled) return;
+
+    // Camera frame: where the waterline sits on screen and how the surface waves
+    // read in world units. Half-height comes from the active camera's orthoSize.
+    f32 camX = 0.0f, camY = 0.0f, halfH = 10.0f;
+    if (m_World) {
+        Entity camEnt = ECS::CameraManager::GetActiveCamera(m_World);
+        if (camEnt != ECS::INVALID_ENTITY) {
+            if (auto* t = m_World->GetComponent<TransformComponent>(camEnt)) {
+                camX = t->position.x; camY = t->position.y;
+            }
+            if (auto* c = m_World->GetComponent<CameraComponent>(camEnt)) {
+                if (c->orthoSize > 0.0f) halfH = c->orthoSize;
+            }
+        }
+    }
+    VkExtent2D extent = m_VulkanRenderer->GetSwapchainExtent();
+    f32 aspect = (extent.height > 0) ? (static_cast<f32>(extent.width) / static_cast<f32>(extent.height)) : (16.0f / 9.0f);
+    f32 time = m_WindSystem ? m_WindSystem->GetTime() : 0.0f;
+
+    const Renderer::Water2DConfig& cfg = m_Water2DConfig;
+    Water2DPushData pc{};
+    pc.surface  = {cfg.surfaceColor.x, cfg.surfaceColor.y, cfg.surfaceColor.z, cfg.opacity};
+    pc.deep     = {cfg.deepColor.x, cfg.deepColor.y, cfg.deepColor.z, cfg.depthFalloff};
+    pc.foam     = {cfg.foamColor.x, cfg.foamColor.y, cfg.foamColor.z, cfg.foamWidth};
+    pc.waveParm = {cfg.waterLineY, cfg.waveAmplitude, cfg.waveLength, cfg.waveSpeed};
+    pc.camParm  = {camY, halfH, time, cfg.causticStrength};
+    pc.spanParm = {camX, 2.0f * halfH * aspect, 0.0f, 0.0f};
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+
+    VkViewport vp{};
+    if (viewportOverride) { vp = *viewportOverride; }
+    else { vp.width = static_cast<f32>(extent.width); vp.height = static_cast<f32>(extent.height); vp.maxDepth = 1.0f; }
+    VkRect2D scr{};
+    if (scissorOverride) { scr = *scissorOverride; }
+    else { scr.extent = extent; }
+    vkCmdSetViewport(commandBuffer, 0, 1, &vp);
+    vkCmdSetScissor(commandBuffer, 0, 1, &scr);
+
+    vkCmdPushConstants(commandBuffer, m_Water2DPipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT,
                        0, sizeof(pc), &pc);
     vkCmdDraw(commandBuffer, 3, 1, 0, 0);
 }

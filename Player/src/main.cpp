@@ -2426,6 +2426,7 @@ private:
         // Apply skybox
         if (m_RenderSystem) {
             m_RenderSystem->SetSkybox(serializer.GetSkyboxConfig());
+            m_RenderSystem->SetWater2D(serializer.GetWater2DConfig());
         }
 
         // Apply scene render settings (shadows, ambient, cel shading, post-processing, etc.)

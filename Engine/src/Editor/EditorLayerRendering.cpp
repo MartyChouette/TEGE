@@ -2244,6 +2244,34 @@ void EditorLayer::DrawSettingsSection_Skybox() {
         if (changed) {
             m_RenderSystem->SetSkybox(config);
         }
+
+        // 2D Water: a scene-level water surface for 2D scenes, drawn as a
+        // translucent overlay so everything below a world-space waterline reads
+        // as submerged. Independent of the sky type (works with any / no sky).
+        ImGui::Separator();
+        ImGui::Text("2D Water:");
+        Renderer::Water2DConfig water = m_RenderSystem->GetWater2DConfig();
+        bool wchanged = false;
+        wchanged |= ImGui::Checkbox("Enable 2D Water", &water.enabled);
+        ImGui::SetItemTooltip("Full-screen water for 2D scenes: everything below the waterline looks submerged");
+        if (water.enabled) {
+            wchanged |= ImGui::DragFloat("Water Line Y", &water.waterLineY, 0.1f);
+            ImGui::SetItemTooltip("World-space Y of the water surface");
+            wchanged |= ImGui::ColorEdit3("Surface Color", &water.surfaceColor.x);
+            wchanged |= ImGui::ColorEdit3("Deep Color", &water.deepColor.x);
+            wchanged |= ImGui::SliderFloat("Water Opacity", &water.opacity, 0.0f, 1.0f);
+            wchanged |= ImGui::SliderFloat("Depth Falloff", &water.depthFalloff, 0.5f, 40.0f);
+            ImGui::SetItemTooltip("World units below the line to reach the deep color / full opacity");
+            wchanged |= ImGui::SliderFloat("Wave Amplitude", &water.waveAmplitude, 0.0f, 3.0f);
+            wchanged |= ImGui::SliderFloat("Wave Length", &water.waveLength, 0.5f, 40.0f);
+            wchanged |= ImGui::SliderFloat("Wave Speed", &water.waveSpeed, 0.0f, 5.0f);
+            wchanged |= ImGui::ColorEdit3("Foam Color", &water.foamColor.x);
+            wchanged |= ImGui::SliderFloat("Foam Width", &water.foamWidth, 0.0f, 3.0f);
+            wchanged |= ImGui::SliderFloat("Caustics", &water.causticStrength, 0.0f, 1.0f);
+        }
+        if (wchanged) {
+            m_RenderSystem->SetWater2D(water);
+        }
     }
 }
 

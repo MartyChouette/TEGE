@@ -326,6 +326,7 @@ void EditorLayer::SaveScene(const std::string& path) {
     Scene::SceneSerializer serializer(m_World);
     if (m_RenderSystem) {
         serializer.SetSkyboxConfig(m_RenderSystem->GetSkyboxConfig());
+        serializer.SetWater2DConfig(m_RenderSystem->GetWater2DConfig());
     }
     serializer.SetContentFlags(m_SceneContentFlags);
 
@@ -443,6 +444,7 @@ void EditorLayer::OpenSceneImmediate(const std::string& path) {
     // Apply loaded skybox config
     if (result.success && m_RenderSystem) {
         m_RenderSystem->SetSkybox(serializer.GetSkyboxConfig());
+        m_RenderSystem->SetWater2D(serializer.GetWater2DConfig());
     }
 
     // Adopt the scene's content warning flags (authored in Settings > Scene)
@@ -933,6 +935,7 @@ void EditorLayer::AutoSave() {
     Scene::SceneSerializer serializer(m_World);
     if (m_RenderSystem) {
         serializer.SetSkyboxConfig(m_RenderSystem->GetSkyboxConfig());
+        serializer.SetWater2DConfig(m_RenderSystem->GetWater2DConfig());
     }
     serializer.SetContentFlags(m_SceneContentFlags);
 

@@ -7993,6 +7993,25 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             sceneJson["skybox"] = skyboxJson;
         }
 
+        // Serialize 2D water (scene-level, only when enabled so old scenes stay clean)
+        if (m_Water2DConfig.enabled) {
+            const auto& wc = m_Water2DConfig;
+            json wj;
+            wj["enabled"] = true;
+            wj["waterLineY"] = RF(wc.waterLineY);
+            wj["surfaceColor"] = { RF(wc.surfaceColor.x), RF(wc.surfaceColor.y), RF(wc.surfaceColor.z) };
+            wj["deepColor"] = { RF(wc.deepColor.x), RF(wc.deepColor.y), RF(wc.deepColor.z) };
+            wj["opacity"] = RF(wc.opacity);
+            wj["depthFalloff"] = RF(wc.depthFalloff);
+            wj["waveAmplitude"] = RF(wc.waveAmplitude);
+            wj["waveLength"] = RF(wc.waveLength);
+            wj["waveSpeed"] = RF(wc.waveSpeed);
+            wj["foamColor"] = { RF(wc.foamColor.x), RF(wc.foamColor.y), RF(wc.foamColor.z) };
+            wj["foamWidth"] = RF(wc.foamWidth);
+            wj["causticStrength"] = RF(wc.causticStrength);
+            sceneJson["water2d"] = wj;
+        }
+
         // Serialize render settings
         sceneJson["renderSettings"] = Renderer::SerializeRenderSettings(m_RenderSettings);
 
@@ -8148,6 +8167,24 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             }
         } else {
             m_SkyboxConfig = Renderer::SkyboxConfig{};
+        }
+
+        // Deserialize 2D water configuration
+        m_Water2DConfig = Renderer::Water2DConfig{};
+        if (sceneJson.contains("water2d") && sceneJson["water2d"].is_object()) {
+            const auto& wj = sceneJson["water2d"];
+            m_Water2DConfig.enabled = wj.value("enabled", false);
+            if (wj.contains("waterLineY")) m_Water2DConfig.waterLineY = wj["waterLineY"].get<f32>();
+            if (wj.contains("surfaceColor") && wj["surfaceColor"].is_array() && wj["surfaceColor"].size() >= 3) { auto& a = wj["surfaceColor"]; m_Water2DConfig.surfaceColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
+            if (wj.contains("deepColor") && wj["deepColor"].is_array() && wj["deepColor"].size() >= 3) { auto& a = wj["deepColor"]; m_Water2DConfig.deepColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
+            if (wj.contains("opacity")) m_Water2DConfig.opacity = wj["opacity"].get<f32>();
+            if (wj.contains("depthFalloff")) m_Water2DConfig.depthFalloff = wj["depthFalloff"].get<f32>();
+            if (wj.contains("waveAmplitude")) m_Water2DConfig.waveAmplitude = wj["waveAmplitude"].get<f32>();
+            if (wj.contains("waveLength")) m_Water2DConfig.waveLength = wj["waveLength"].get<f32>();
+            if (wj.contains("waveSpeed")) m_Water2DConfig.waveSpeed = wj["waveSpeed"].get<f32>();
+            if (wj.contains("foamColor") && wj["foamColor"].is_array() && wj["foamColor"].size() >= 3) { auto& a = wj["foamColor"]; m_Water2DConfig.foamColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
+            if (wj.contains("foamWidth")) m_Water2DConfig.foamWidth = wj["foamWidth"].get<f32>();
+            if (wj.contains("causticStrength")) m_Water2DConfig.causticStrength = wj["causticStrength"].get<f32>();
         }
 
         // Deserialize render settings
@@ -8417,6 +8454,25 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             sceneJson["skybox"] = skyboxJson;
         }
 
+        // Serialize 2D water (scene-level, only when enabled so old scenes stay clean)
+        if (m_Water2DConfig.enabled) {
+            const auto& wc = m_Water2DConfig;
+            json wj;
+            wj["enabled"] = true;
+            wj["waterLineY"] = RF(wc.waterLineY);
+            wj["surfaceColor"] = { RF(wc.surfaceColor.x), RF(wc.surfaceColor.y), RF(wc.surfaceColor.z) };
+            wj["deepColor"] = { RF(wc.deepColor.x), RF(wc.deepColor.y), RF(wc.deepColor.z) };
+            wj["opacity"] = RF(wc.opacity);
+            wj["depthFalloff"] = RF(wc.depthFalloff);
+            wj["waveAmplitude"] = RF(wc.waveAmplitude);
+            wj["waveLength"] = RF(wc.waveLength);
+            wj["waveSpeed"] = RF(wc.waveSpeed);
+            wj["foamColor"] = { RF(wc.foamColor.x), RF(wc.foamColor.y), RF(wc.foamColor.z) };
+            wj["foamWidth"] = RF(wc.foamWidth);
+            wj["causticStrength"] = RF(wc.causticStrength);
+            sceneJson["water2d"] = wj;
+        }
+
         // Serialize render settings
         sceneJson["renderSettings"] = Renderer::SerializeRenderSettings(m_RenderSettings);
 
@@ -8506,6 +8562,24 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             }
         } else {
             m_SkyboxConfig = Renderer::SkyboxConfig{};
+        }
+
+        // Deserialize 2D water configuration
+        m_Water2DConfig = Renderer::Water2DConfig{};
+        if (sceneJson.contains("water2d") && sceneJson["water2d"].is_object()) {
+            const auto& wj = sceneJson["water2d"];
+            m_Water2DConfig.enabled = wj.value("enabled", false);
+            if (wj.contains("waterLineY")) m_Water2DConfig.waterLineY = wj["waterLineY"].get<f32>();
+            if (wj.contains("surfaceColor") && wj["surfaceColor"].is_array() && wj["surfaceColor"].size() >= 3) { auto& a = wj["surfaceColor"]; m_Water2DConfig.surfaceColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
+            if (wj.contains("deepColor") && wj["deepColor"].is_array() && wj["deepColor"].size() >= 3) { auto& a = wj["deepColor"]; m_Water2DConfig.deepColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
+            if (wj.contains("opacity")) m_Water2DConfig.opacity = wj["opacity"].get<f32>();
+            if (wj.contains("depthFalloff")) m_Water2DConfig.depthFalloff = wj["depthFalloff"].get<f32>();
+            if (wj.contains("waveAmplitude")) m_Water2DConfig.waveAmplitude = wj["waveAmplitude"].get<f32>();
+            if (wj.contains("waveLength")) m_Water2DConfig.waveLength = wj["waveLength"].get<f32>();
+            if (wj.contains("waveSpeed")) m_Water2DConfig.waveSpeed = wj["waveSpeed"].get<f32>();
+            if (wj.contains("foamColor") && wj["foamColor"].is_array() && wj["foamColor"].size() >= 3) { auto& a = wj["foamColor"]; m_Water2DConfig.foamColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
+            if (wj.contains("foamWidth")) m_Water2DConfig.foamWidth = wj["foamWidth"].get<f32>();
+            if (wj.contains("causticStrength")) m_Water2DConfig.causticStrength = wj["causticStrength"].get<f32>();
         }
 
         // Deserialize render settings

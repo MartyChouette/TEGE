@@ -133,6 +133,10 @@ public:
     void SetSkyboxConfig(const Renderer::SkyboxConfig& config) { m_SkyboxConfig = config; }
     const Renderer::SkyboxConfig& GetSkyboxConfig() const { return m_SkyboxConfig; }
 
+    // Scene-level 2D water configuration
+    void SetWater2DConfig(const Renderer::Water2DConfig& config) { m_Water2DConfig = config; }
+    const Renderer::Water2DConfig& GetWater2DConfig() const { return m_Water2DConfig; }
+
     // Scene-level render settings
     void SetRenderSettings(const Renderer::SceneRenderSettings& s) { m_RenderSettings = s; }
     const Renderer::SceneRenderSettings& GetRenderSettings() const { return m_RenderSettings; }
@@ -144,6 +148,7 @@ private:
     ECS::World* m_World = nullptr;
     Accessibility::SceneContentFlags m_ContentFlags;
     Renderer::SkyboxConfig m_SkyboxConfig;
+    Renderer::Water2DConfig m_Water2DConfig;
     Renderer::SceneRenderSettings m_RenderSettings;
 };
 

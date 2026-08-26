@@ -768,6 +768,8 @@ public:
     // lighting UBO's sky block)
     void SetSkybox(const Renderer::SkyboxConfig& config);
     const Renderer::SkyboxConfig& GetSkyboxConfig() const { return m_Skybox.GetConfig(); }
+    void SetWater2D(const Renderer::Water2DConfig& config);
+    const Renderer::Water2DConfig& GetWater2DConfig() const { return m_Water2DConfig; }
     Renderer::Skybox* GetSkybox() { return &m_Skybox; }
 
     // Ray tracing
@@ -1693,6 +1695,24 @@ private:
                      const VkViewport* viewportOverride = nullptr,
                      const VkRect2D* scissorOverride = nullptr,
                      bool offscreenPass = false);
+
+    // 2D scene water: a full-screen translucent overlay drawn AFTER the 2D
+    // sprites, submerging everything below a world-space waterline. Cousin of
+    // the 2D sky; alpha-blended (the sky is opaque), so its pipeline differs
+    // only in the blend state.
+    Renderer::Water2DConfig m_Water2DConfig;
+    bool m_PendingWater2DConfig = false;
+    Renderer::Water2DConfig m_PendingWater2D;
+    VkPipeline m_Water2DPipeline = VK_NULL_HANDLE;
+    VkPipeline m_Water2DPipelineOffscreen = VK_NULL_HANDLE;
+    VkPipelineLayout m_Water2DPipelineLayout = VK_NULL_HANDLE;
+    void CreateWater2DPipeline(VkRenderPass renderPass = VK_NULL_HANDLE);
+    bool CreateWater2DPipelineVariant(VkRenderPass renderPass, u32 colorAttachmentCount,
+                                      VkSampleCountFlagBits samples, VkPipeline& outPipeline);
+    void Render2DWater(VkCommandBuffer commandBuffer,
+                       const VkViewport* viewportOverride = nullptr,
+                       const VkRect2D* scissorOverride = nullptr,
+                       bool offscreenPass = false);
 
     // Water surface mesh generation
     void EnsureWaterMeshes();
