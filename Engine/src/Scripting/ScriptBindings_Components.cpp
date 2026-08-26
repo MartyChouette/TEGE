@@ -90,8 +90,9 @@ static void Health_Damage(u64 id, f32 amount) {
         amount -= shieldAbsorb;
     }
 
-    // Check invulnerability
-    if (hc->invulnerabilityTimer > 0.0f) return;
+    // Check invulnerability — timed i-frames (invulnerabilityTimer) or a held
+    // flag (isInvulnerable, e.g. a dodge roll or scripted invincibility).
+    if (hc->invulnerabilityTimer > 0.0f || hc->isInvulnerable) return;
 
     hc->currentHealth = Math::Max(hc->currentHealth - amount, 0.0f);
     if (amount > 0.0f) {
