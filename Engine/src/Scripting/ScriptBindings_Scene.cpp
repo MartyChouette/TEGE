@@ -28,6 +28,11 @@ extern Enjin::ECS::World* s_BindingsWorld;
 // Scene manager pointer for scene loading from scripts
 static Enjin::Scene::SceneManager* s_BindingsSceneManager = nullptr;
 
+// Startup-flow advance flag: Flow_Advance() from a scene script sets this so the
+// player can advance a Scene step whose advance mode is "script" (e.g. an intro
+// cutscene that ends itself). The player owns the bool and polls + clears it.
+static bool* s_FlowAdvanceFlag = nullptr;
+
 // Deferred entity destruction queue — entities are queued during script
 // execution and destroyed after the script update completes, preventing
 // invalidation of iterators and component pointers mid-frame.
@@ -36,6 +41,7 @@ static std::vector<ECS::Entity> s_DeferredDestroys;
 namespace Enjin {
 namespace Scripting {
 void SetBindingsSceneManager(Scene::SceneManager* mgr) { s_BindingsSceneManager = mgr; }
+void SetBindingsFlowAdvanceFlag(bool* flag) { s_FlowAdvanceFlag = flag; }
 
 void FlushDeferredEntityDestroys() {
     for (ECS::Entity e : s_DeferredDestroys) {
@@ -366,6 +372,13 @@ static std::string Scene_GetCurrentScene() {
     return s_BindingsSceneManager->GetCurrentSceneName();
 }
 
+// Advance the startup flow to its next step. Use from a scene set to advance on
+// "script" (an intro/cutscene that decides when it is done). No-op if no flow
+// is running or the current step does not advance on script.
+static void Flow_Advance() {
+    if (s_FlowAdvanceFlag) *s_FlowAdvanceFlag = true;
+}
+
 static void Scene_Restart() {
     if (!s_BindingsSceneManager) {
         ENJIN_LOG_WARN(Script, "Scene_Restart: no scene manager set");
@@ -519,6 +532,10 @@ void RegisterSceneBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction(
         "string Scene_GetCurrentScene()",
         ENJIN_AS_FN(Scene_GetCurrentScene), ENJIN_AS_CALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void Flow_Advance()",
+        ENJIN_AS_FN(Flow_Advance), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Scene_Restart()",

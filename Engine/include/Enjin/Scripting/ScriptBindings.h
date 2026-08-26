@@ -70,6 +70,7 @@ void SetBindingsWorld(ECS::World* world);
 void SetBindingsPhysics(Physics::IPhysicsBackend* physics);
 void SetBindingsAudio(Audio::SimpleAudio* audio);
 void SetBindingsSceneManager(Scene::SceneManager* mgr);
+void SetBindingsFlowAdvanceFlag(bool* flag);
 void SetBindingsCoroutineScheduler(CoroutineScheduler* scheduler);
 void SetBindingsEventBus(ScriptEventBus* bus);
 // Release every Events_Listen callback/object the bus holds. Call on script

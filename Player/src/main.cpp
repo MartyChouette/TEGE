@@ -276,7 +276,11 @@ public:
             if (menu != Enjin::ECS::INVALID_ENTITY) {
                 if (auto* c = m_World->GetComponent<Enjin::GUI::UICanvasComponent>(menu)) c->visible = false;
             }
-            m_GameStarted = true;
+            // If a startup flow is on a Menu step, New Game advances the flow
+            // (to the next step, e.g. the gameplay scene) rather than just
+            // flipping m_GameStarted on the current scene.
+            if (m_FlowActive) { AdvanceFlow(); }
+            else { m_GameStarted = true; }
             if (SceneWantsMouseCapture()) Enjin::Input::SetMouseCaptured(true);
         };
         m_UISystem.GetEventBus().Listen("menu_newgame",
@@ -319,7 +323,9 @@ public:
         m_GameMenu.SetCallback([this](const std::string& action) {
             if (action == "new_game" || action == "continue") {
                 m_GameMenu.HideAll();
-                m_GameStarted = true;
+                // On a Menu step, New Game advances the flow (see above).
+                if (m_FlowActive) { AdvanceFlow(); }
+                else { m_GameStarted = true; }
                 if (SceneWantsMouseCapture()) Enjin::Input::SetMouseCaptured(true);
             } else if (action == "resume") {
                 m_GameMenu.HideAll();
@@ -799,6 +805,7 @@ public:
         Enjin::Scripting::SetBindingsProcedural(nullptr);
         Enjin::Scripting::SetBindingsStreaming(nullptr);
         Enjin::Scripting::SetBindingsSceneManager(nullptr);
+        Enjin::Scripting::SetBindingsFlowAdvanceFlag(nullptr);
         Enjin::Scripting::SetBindingsPostProcessing(nullptr);
         Enjin::Scripting::SetBindingsPhysics2D(nullptr);
         Enjin::Scripting::SetBindingsNetworking(nullptr);
@@ -888,6 +895,12 @@ public:
             }
             return;
         }
+
+        // Startup flow: a pending scene swap runs here at the TOP of Update (a
+        // GPU-safe point, never during Render), then advance conditions are
+        // checked. Both no-op when no flow is running.
+        if (!m_PendingFlowScene.empty()) DoFlowTransition();
+        if (m_FlowActive) UpdateFlowAdvance(deltaTime);
 
         // Update audio
         m_SimpleAudio.Update(deltaTime);
@@ -2124,6 +2137,7 @@ private:
         Enjin::Scripting::SetBindingsRewindSystem(&m_RecordRewindSystem);
         Enjin::Scripting::SetBindingsStreaming(&m_StreamingManager);
         Enjin::Scripting::SetBindingsSceneManager(&m_SceneManager);
+        Enjin::Scripting::SetBindingsFlowAdvanceFlag(&m_FlowAdvanceRequested);
         // Initialize post-processing (settings object for script bindings)
         auto ppExtent = m_Renderer->GetSwapchainExtent();
         m_PostProcessing = std::make_unique<Enjin::Renderer::PostProcessing>();
@@ -2276,6 +2290,52 @@ private:
         // Initialize audio event graph runtime
         m_AudioGraphRuntime.Initialize(&m_SimpleAudio);
 
+        // Scene-dependent runtime setup (camera, quest, physics wiring, visual
+        // scripts, tweens, script lifecycle). Factored so a mid-flow scene swap
+        // (DoFlowTransition) can bring the new scene fully live the same way.
+        InitSceneRuntime();
+
+        // Show title screen — gameplay starts when player clicks New Game / Continue.
+        // An AUTHORED "MainMenu" UICanvas in the scene takes precedence over the
+        // built-in GameMenus title screen (one UI source; author it via the
+        // editor's View -> UI Editor -> New Canvas -> Main Menu).
+        // EndSplashScreen just loaded m_StartScene; the flow tracks it as the
+        // currently-loaded scene so its first step doesn't reload it needlessly.
+        m_CurrentFlowScene = m_StartScene;
+
+        if (Enjin::Application::s_HeadlessFrameLimit > 0) {
+            // Headless CI: always boot straight into gameplay so the smoke
+            // exercises the real game loop, not a title screen.
+            m_GameMenu.HideAll();
+            HideAuthoredMainMenu();
+            m_GameStarted = true;
+            ENJIN_LOG_INFO(Player, "Headless mode: booted straight into gameplay (skipped title screen)");
+        } else if (!m_StartupFlow.empty()) {
+            // Run the authored startup flow (splash/cutscene/menu/gameplay steps).
+            BeginStartupFlow();
+        } else if (FindAuthoredMainMenu() != Enjin::ECS::INVALID_ENTITY) {
+            Enjin::Input::SetMouseCaptured(false);
+            ENJIN_LOG_INFO(Player, "Authored MainMenu canvas found — using it as the title screen");
+        } else {
+            m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::MainMenu);
+        }
+
+        ENJIN_LOG_INFO(Player, "Splash screen ended, game loaded");
+    }
+
+    void HideAuthoredMainMenu() {
+        if (!m_World) return;
+        if (Enjin::ECS::Entity menu = FindAuthoredMainMenu(); menu != Enjin::ECS::INVALID_ENTITY) {
+            if (auto* c = m_World->GetComponent<Enjin::GUI::UICanvasComponent>(menu)) c->visible = false;
+        }
+    }
+
+    // Scene-dependent runtime setup: everything that must re-run whenever a new
+    // scene becomes live (the initial game scene from EndSplashScreen, or a
+    // mid-flow scene swap from DoFlowTransition). One-time engine setup
+    // (post-processing, resize callbacks, binding pointers) stays in
+    // EndSplashScreen and is NOT repeated here.
+    void InitSceneRuntime() {
         // Enable all gameplay systems
         m_ControllerSystem.SetEnabled(true);
         m_FlowerSystem.SetEnabled(true);
@@ -2305,8 +2365,9 @@ private:
                 m_FlowerSystem.SetGameCameraEntity(cameras[0]);
             }
 
-            // Disable the free-fly CameraController when the scene has character
-            // controllers that drive the camera — matches PlayMode behavior.
+            // Free-fly CameraController is on only when no character controller
+            // drives the camera. Symmetric so a cutscene->gameplay scene swap
+            // restores the right camera ownership either direction.
             bool hasGameController =
                 !m_World->GetEntitiesWithComponent<Enjin::ECS::FirstPersonController>().empty() ||
                 !m_World->GetEntitiesWithComponent<Enjin::ECS::ThirdPersonController>().empty() ||
@@ -2315,9 +2376,10 @@ private:
                 !m_World->GetEntitiesWithComponent<Enjin::ECS::TopDown3DController>().empty() ||
                 !m_World->GetEntitiesWithComponent<Enjin::ECS::VehicleController>().empty() ||
                 !m_World->GetEntitiesWithComponent<Enjin::ECS::SurfaceAlignedController>().empty();
-            if (hasGameController && m_CameraController) {
-                m_CameraController->SetEnabled(false);
-                ENJIN_LOG_INFO(Player, "Game controller found — free-fly camera disabled");
+            if (m_CameraController) {
+                m_CameraController->SetEnabled(!hasGameController);
+                if (hasGameController)
+                    ENJIN_LOG_INFO(Player, "Game controller found — free-fly camera disabled");
             }
         }
 
@@ -2343,40 +2405,113 @@ private:
             m_ScriptSystem.SetEnabled(true);
             m_ScriptSystem.InitializeAllScripts();
         }
+    }
 
-        // Show title screen — gameplay starts when player clicks New Game / Continue.
-        // An AUTHORED "MainMenu" UICanvas in the scene takes precedence over the
-        // built-in GameMenus title screen (one UI source; author it via the
-        // editor's View -> UI Editor -> New Canvas -> Main Menu).
-        // Decide the boot behaviour. A startup flow that begins with a
-        // Scene(Gameplay) step means "boot straight into gameplay, no title
-        // screen"; a flow that begins with a Menu step (or an empty flow) keeps
-        // the title screen. Headless --frames always boots straight in.
-        bool bootDirect = false;
-        if (!m_StartupFlow.empty()) {
-            const FlowStep& first = m_StartupFlow.front();
-            bootDirect = (first.type == FlowStepType::Scene && first.advance == FlowAdvance::Gameplay);
-        }
+    // ── Startup flow runner ──────────────────────────────────────────────────
+    // Walks m_StartupFlow. Scene steps play until their advance condition (a
+    // timer, any input, or a Flow_Advance() script call); a Gameplay step is
+    // terminal and the game lives there. A Menu step shows the built-in title
+    // menu (New Game advances). Scene changes go through DoFlowTransition, which
+    // reloads at a GPU-safe point.
+    void BeginStartupFlow() {
+        m_FlowActive = true;
+        m_FlowIndex = -1;
+        AdvanceFlow();
+    }
 
-        if (Enjin::Application::s_HeadlessFrameLimit > 0 || bootDirect) {
-            // No title screen: run the game immediately (the New Game action).
-            // Headless CI needs it so the smoke exercises real gameplay; an
-            // authored boot-direct flow wants it so the player lands in the game.
+    void AdvanceFlow() {
+        if (!m_FlowActive) return;
+        m_FlowIndex++;
+        if (m_FlowIndex >= static_cast<int>(m_StartupFlow.size())) {
+            // Ran off the end: whatever scene is loaded becomes gameplay.
+            m_FlowActive = false;
             m_GameMenu.HideAll();
-            if (Enjin::ECS::Entity menu = FindAuthoredMainMenu(); menu != Enjin::ECS::INVALID_ENTITY) {
-                if (auto* c = m_World->GetComponent<Enjin::GUI::UICanvasComponent>(menu)) c->visible = false;
-            }
+            HideAuthoredMainMenu();
             m_GameStarted = true;
-            ENJIN_LOG_INFO(Player, "%s: booted straight into gameplay (skipped title screen)",
-                           bootDirect ? "Startup flow" : "Headless mode");
-        } else if (FindAuthoredMainMenu() != Enjin::ECS::INVALID_ENTITY) {
-            Enjin::Input::SetMouseCaptured(false);
-            ENJIN_LOG_INFO(Player, "Authored MainMenu canvas found — using it as the title screen");
-        } else {
+            ENJIN_LOG_INFO(Player, "Startup flow complete — gameplay");
+            return;
+        }
+        ApplyCurrentFlowStep();
+    }
+
+    void ApplyCurrentFlowStep() {
+        const FlowStep& step = m_StartupFlow[static_cast<Enjin::usize>(m_FlowIndex)];
+        m_FlowAdvanceRequested = false;
+
+        if (step.type == FlowStepType::Menu) {
+            // Title menu over the current scene; New Game advances the flow.
+            m_GameStarted = false;
             m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::MainMenu);
+            ENJIN_LOG_INFO(Player, "Startup flow step %d: title menu", m_FlowIndex);
+            return;
         }
 
-        ENJIN_LOG_INFO(Player, "Splash screen ended, game loaded");
+        // Scene step: transition if it names a different scene than what's loaded.
+        if (!step.scene.empty() && step.scene != m_CurrentFlowScene) {
+            m_PendingFlowScene = step.scene;   // deferred to a GPU-safe point
+        }
+        m_GameMenu.HideAll();
+        HideAuthoredMainMenu();
+        m_GameStarted = true;
+        m_FlowTimer = step.duration;
+        const char* adv = step.advance == FlowAdvance::Gameplay ? "gameplay"
+                        : step.advance == FlowAdvance::Timer ? "timer"
+                        : step.advance == FlowAdvance::Input ? "input" : "script";
+        ENJIN_LOG_INFO(Player, "Startup flow step %d: scene '%s' (advance: %s)",
+                       m_FlowIndex, step.scene.c_str(), adv);
+    }
+
+    // Deferred, GPU-safe scene swap. Called at the TOP of Update (never during
+    // Render). Mirrors the editor's safe scene-open: idle the GPU, tell the
+    // render system the world is being torn down, then LoadSceneFromPack (which
+    // World::Clear()s first), and re-init the scripts for the new scene.
+    void DoFlowTransition() {
+        std::string next = m_PendingFlowScene;
+        m_PendingFlowScene.clear();
+        ENJIN_LOG_INFO(Player, "Startup flow: transitioning to scene '%s'", next.c_str());
+
+        if (m_Renderer) m_Renderer->WaitForAllFrames();   // no GPU work references the old entities
+        m_ScriptSystem.ShutdownAllScripts();
+        if (m_RenderSystem) m_RenderSystem->OnSceneClear(); // drop cached storage pointers before Clear
+
+        if (!LoadSceneFromPack(next)) {
+            ENJIN_LOG_ERROR(Player, "Startup flow: failed to load '%s'", next.c_str());
+            return;
+        }
+        m_CurrentFlowScene = next;
+
+        // Bring the new scene fully live (camera, quest, physics wiring, visual
+        // scripts, tweens, AngelScript lifecycle) exactly as the first scene.
+        InitSceneRuntime();
+    }
+
+    void UpdateFlowAdvance(Enjin::f32 deltaTime) {
+        if (!m_FlowActive || m_FlowIndex < 0 ||
+            m_FlowIndex >= static_cast<int>(m_StartupFlow.size())) return;
+        const FlowStep& step = m_StartupFlow[static_cast<Enjin::usize>(m_FlowIndex)];
+        if (step.type != FlowStepType::Scene) return;   // Menu advances via New Game
+        if (!m_PendingFlowScene.empty()) return;         // wait for a pending load to finish
+
+        switch (step.advance) {
+            case FlowAdvance::Timer:
+                m_FlowTimer -= deltaTime;
+                if (m_FlowTimer <= 0.0f) AdvanceFlow();
+                break;
+            case FlowAdvance::Input:
+                if (Enjin::Input::IsKeyPressed(Enjin::KeyCode::Space) ||
+                    Enjin::Input::IsKeyPressed(Enjin::KeyCode::Enter) ||
+                    Enjin::Input::IsKeyPressed(Enjin::KeyCode::Escape) ||
+                    Enjin::Input::IsMouseButtonPressed(Enjin::MouseButton::Left)) {
+                    AdvanceFlow();
+                }
+                break;
+            case FlowAdvance::Script:
+                if (m_FlowAdvanceRequested) { m_FlowAdvanceRequested = false; AdvanceFlow(); }
+                break;
+            case FlowAdvance::Gameplay:
+            default:
+                break;   // terminal — the game lives here
+        }
     }
 
     void ParseManifestJson(const nlohmann::json& manifest) {
@@ -2883,8 +3018,11 @@ private:
     };
     std::vector<FlowStep> m_StartupFlow;
     int m_FlowIndex = -1;                  // -1 = not running the flow
+    bool m_FlowActive = false;
     Enjin::f32 m_FlowTimer = 0.0f;         // countdown for Timer advance
     bool m_FlowAdvanceRequested = false;   // set by the Flow_Advance() script API
+    std::string m_CurrentFlowScene;        // scene currently loaded by the flow
+    std::string m_PendingFlowScene;        // deferred transition target ("" = none)
 
     // Frame rate settings
     Enjin::u32 m_TargetFPS = 60;
