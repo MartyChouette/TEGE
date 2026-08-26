@@ -82,6 +82,10 @@ private:
     u32 m_PhysicsBackendType = 0;    // 0 = Auto, 1 = Jolt, 2 = Box2D
     u32 m_ProjectMode = 1;           // 0 = 2D, 1 = 3D, 2 = Mixed
 
+    // Authorable startup flow, carried verbatim from the project to the game
+    // manifest as a JSON string (empty when the project has none).
+    std::string m_StartupFlowJson;
+
     ProgressCallback m_ProgressCallback;
 };
 

@@ -2348,18 +2348,27 @@ private:
         // An AUTHORED "MainMenu" UICanvas in the scene takes precedence over the
         // built-in GameMenus title screen (one UI source; author it via the
         // editor's View -> UI Editor -> New Canvas -> Main Menu).
-        if (Enjin::Application::s_HeadlessFrameLimit > 0) {
-            // Headless CI/smoke run (--frames): no one clicks "Play", so a title
-            // screen would leave Update() gated on !m_GameStarted forever and the
-            // smoke would only exercise the menu. Auto-start into gameplay (the
-            // New Game action) so scripts, physics, controllers, and the camera
-            // director actually run and can be asserted.
+        // Decide the boot behaviour. A startup flow that begins with a
+        // Scene(Gameplay) step means "boot straight into gameplay, no title
+        // screen"; a flow that begins with a Menu step (or an empty flow) keeps
+        // the title screen. Headless --frames always boots straight in.
+        bool bootDirect = false;
+        if (!m_StartupFlow.empty()) {
+            const FlowStep& first = m_StartupFlow.front();
+            bootDirect = (first.type == FlowStepType::Scene && first.advance == FlowAdvance::Gameplay);
+        }
+
+        if (Enjin::Application::s_HeadlessFrameLimit > 0 || bootDirect) {
+            // No title screen: run the game immediately (the New Game action).
+            // Headless CI needs it so the smoke exercises real gameplay; an
+            // authored boot-direct flow wants it so the player lands in the game.
             m_GameMenu.HideAll();
             if (Enjin::ECS::Entity menu = FindAuthoredMainMenu(); menu != Enjin::ECS::INVALID_ENTITY) {
                 if (auto* c = m_World->GetComponent<Enjin::GUI::UICanvasComponent>(menu)) c->visible = false;
             }
             m_GameStarted = true;
-            ENJIN_LOG_INFO(Player, "Headless mode: auto-started gameplay (skipped title screen)");
+            ENJIN_LOG_INFO(Player, "%s: booted straight into gameplay (skipped title screen)",
+                           bootDirect ? "Startup flow" : "Headless mode");
         } else if (FindAuthoredMainMenu() != Enjin::ECS::INVALID_ENTITY) {
             Enjin::Input::SetMouseCaptured(false);
             ENJIN_LOG_INFO(Player, "Authored MainMenu canvas found — using it as the title screen");
@@ -2377,6 +2386,27 @@ private:
         m_Fullscreen = manifest.value("fullscreen", false);
         m_EngineSplash = manifest.value("engineSplash", true);
         m_StartScene = manifest.value("startScene", "");
+
+        // Read the authorable startup flow (optional). Each entry:
+        //   { "type": "scene"|"menu", "scene": "scenes/X.enjin",
+        //     "advance": "gameplay"|"timer"|"input"|"script", "duration": 3.0 }
+        m_StartupFlow.clear();
+        if (manifest.contains("startupFlow") && manifest["startupFlow"].is_array()) {
+            for (const auto& sj : manifest["startupFlow"]) {
+                FlowStep step;
+                std::string t = sj.value("type", "scene");
+                step.type = (t == "menu") ? FlowStepType::Menu : FlowStepType::Scene;
+                step.scene = sj.value("scene", "");
+                std::string a = sj.value("advance", "gameplay");
+                if (a == "timer") step.advance = FlowAdvance::Timer;
+                else if (a == "input") step.advance = FlowAdvance::Input;
+                else if (a == "script") step.advance = FlowAdvance::Script;
+                else step.advance = FlowAdvance::Gameplay;
+                step.duration = sj.value("duration", 3.0f);
+                m_StartupFlow.push_back(step);
+            }
+            ENJIN_LOG_INFO(Player, "Startup flow: %zu steps", m_StartupFlow.size());
+        }
 
         // Read frame rate settings
         if (manifest.contains("frameSettings")) {
@@ -2834,6 +2864,27 @@ private:
     Enjin::u32 m_WindowHeight = 720;
     bool m_Fullscreen = false;
     std::string m_StartScene;
+
+    // ── Startup flow: an authorable boot sequence ──
+    // An ordered list of steps the game runs on boot instead of the fixed
+    // "engine splash -> start scene -> title menu". Each step is a Scene (play a
+    // scene, advance when its condition is met) or Menu (the built-in title menu;
+    // New Game advances). A splash is just a Scene with a Timer advance, a
+    // cutscene a Scene with Input/Script, gameplay a Scene with Gameplay (which
+    // never advances - the game lives there). Empty flow = the classic default,
+    // so existing games are unchanged.
+    enum class FlowStepType { Scene, Menu };
+    enum class FlowAdvance { Gameplay, Timer, Input, Script };  // Gameplay = terminal
+    struct FlowStep {
+        FlowStepType type = FlowStepType::Scene;
+        std::string scene;                 // scene path (Scene steps; optional backdrop for Menu)
+        FlowAdvance advance = FlowAdvance::Gameplay;
+        Enjin::f32 duration = 3.0f;        // seconds, for Timer advance
+    };
+    std::vector<FlowStep> m_StartupFlow;
+    int m_FlowIndex = -1;                  // -1 = not running the flow
+    Enjin::f32 m_FlowTimer = 0.0f;         // countdown for Timer advance
+    bool m_FlowAdvanceRequested = false;   // set by the Flow_Advance() script API
 
     // Frame rate settings
     Enjin::u32 m_TargetFPS = 60;

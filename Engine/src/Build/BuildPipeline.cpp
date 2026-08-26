@@ -248,6 +248,12 @@ bool BuildPipeline::ScanProject(const std::string& projectPath) {
         m_PhysicsBackendType = root.value("physicsBackend", 0u);  // 0 = Auto
         m_ProjectMode = root.value("projectMode", 1u);            // 1 = 3D
 
+        // Carry the authorable startup flow (boot sequence) through to the game
+        // manifest verbatim, so the player runs it. Absent = the classic default.
+        if (root.contains("startupFlow") && root["startupFlow"].is_array()) {
+            m_StartupFlowJson = root["startupFlow"].dump();
+        }
+
         AddMessage(MessageSeverity::Info, "Found " + std::to_string(m_Scenes.size()) + " scenes in project '" + m_ProjectName + "'");
         return true;
 
@@ -678,6 +684,11 @@ bool BuildPipeline::WriteBuildManifest(const BuildConfig& config, AssetPacker& p
     manifest["physicsBackend"] = m_PhysicsBackendType;
     manifest["projectMode"] = m_ProjectMode;
 
+    // Startup flow (if the project authored one)
+    if (!m_StartupFlowJson.empty()) {
+        manifest["startupFlow"] = nlohmann::json::parse(m_StartupFlowJson);
+    }
+
     std::string jsonStr = manifest.dump(2);
     if (!packer.AddData("_build/manifest.json",
                         jsonStr.data(),
@@ -867,6 +878,11 @@ bool BuildPipeline::WriteLooseManifest(const BuildConfig& config, const std::str
     // Physics backend and project mode
     manifest["physicsBackend"] = m_PhysicsBackendType;
     manifest["projectMode"] = m_ProjectMode;
+
+    // Startup flow (if the project authored one)
+    if (!m_StartupFlowJson.empty()) {
+        manifest["startupFlow"] = nlohmann::json::parse(m_StartupFlowJson);
+    }
 
     std::string manifestPath = (fs::path(outputDir) / "game.manifest").string();
     try {
