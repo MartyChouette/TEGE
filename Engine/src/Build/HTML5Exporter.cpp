@@ -121,7 +121,7 @@ HTML5ExportResult HTML5Exporter::Export(const HTML5ExportConfig& config,
     ENJIN_LOG_INFO(Build, "HTML5 export complete: %zu files to %s",
                    result.files.size(), config.outputDir.c_str());
 
-    // Package as .zip for itch.io / Newgrounds upload
+    // Package as .zip for upload to web hosting or a game portal
     if (config.zipOutput) {
         // Sanitize title for filename (replace non-alphanumeric with underscore)
         std::string safeFilename = config.title;
@@ -724,7 +724,7 @@ std::string HTML5Exporter::GenerateEmbedSnippet(const HTML5ExportConfig& config)
     std::string safeTitle = HtmlEscape(config.title);
     std::ostringstream embed;
 
-    // iframe embed (Newgrounds-compatible)
+    // iframe embed
     embed << "<!-- Embed Code (iframe) -->\n"
           << "<iframe src=\"index.html\" width=\"" << safeWidth
           << "\" height=\"" << safeHeight << "\" "
@@ -732,7 +732,7 @@ std::string HTML5Exporter::GenerateEmbedSnippet(const HTML5ExportConfig& config)
           << "allowfullscreen=\"true\" "
           << "allow=\"autoplay; fullscreen; gamepad\" "
           << "style=\"border:none;\"></iframe>\n\n"
-          << "<!-- Embed Code (Newgrounds-compatible) -->\n"
+          << "<!-- Embed Code (container div) -->\n"
           << "<div id=\"" << safeTitle << "\" style=\"width:" << safeWidth
           << "px;height:" << safeHeight << "px;\">\n"
           << "  <iframe src=\"index.html\" width=\"100%\" height=\"100%\" "

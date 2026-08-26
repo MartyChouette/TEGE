@@ -36,7 +36,7 @@ This document captures detailed technical plans, performance findings, and strat
 | **Platforms** | **VR/XR/AR — OpenXR path, stereo/multiview renderer, motion controllers (elevated from P4)** | **P1** |
 | **Platforms** | **Mobile (Android/iOS — render tiers, TBDR/tiled paths, touch input, on-screen controls) (elevated from P4)** | **P1** |
 | **Flagship** | **Reverse-step debugging + shareable replays (see Flagship Initiatives #5)** | **P1** |
-| **Flagship** | **One-click web link + itch.io publish + portal presets (#6)** | **P1** |
+| **Flagship** | **One-click shareable web link (#6) — storefront-neutral, no branded upload buttons** | **P1** |
 | **Flagship** | **MCP server for the editor (#7)** | **P1** |
 | **Flagship** | **Per-style splash + accessibility statement (#8)** | **P1** |
 | **Flagship** | **Gaussian splat import .ply/.spz with art styles (#9)** | **P1** |
@@ -237,20 +237,18 @@ reproduces a session anywhere.
 - **Why flagship:** reverse-step + shareable repro turns every playtester into a bug
   reporter with a perfect repro attached. No indie engine ships this.
 
-### 6. One-click shareable web link + itch.io publish + portal presets — the growth loop
+### 6. One-click shareable web link — the growth loop
 
 From editor to a URL someone can click, in one action.
 - **Already in place:** headless `--build-web` (project → game.enjpak), the web player
-  (WASM/WebGPU), and `HTML5Exporter` already packages a zip explicitly "for itch.io /
-  Newgrounds upload".
-- **To build:** itch.io publish via butler (bundle or detect the CLI; store the API key
-  in editor settings; Build → "Publish to itch.io" pushes the channel); a hosted
-  quick-share option (upload the web build to a TEGE share endpoint → short link, the
-  way the existing web demo is hosted); portal presets (itch / Newgrounds / Poki /
-  CrazyGames each want specific canvas sizing, SDK hooks, and cookie/audio autoplay
-  behavior — ship a preset dropdown that configures the export accordingly).
-- **Risk:** low technical, medium operational (hosting costs/abuse for quick-share;
-  butler auth UX). Start with itch.io butler — it is the 80% of the loop.
+  (WASM/WebGPU), `HTML5Exporter` packages a zip for web hosting, and the export dialog
+  serves the build on localhost ("Run in Browser") so a maker can play it without a
+  terminal.
+- **To build:** a hosted quick-share option (upload the web build to a TEGE share
+  endpoint → short link, the way the existing web demo is hosted). Keep publishing
+  storefront-neutral: no built-in branded upload buttons — a generic export the maker
+  can host or upload anywhere, plus a configurable publish-command hook if wanted.
+- **Risk:** low technical, medium operational (hosting costs/abuse for quick-share).
 
 ### 7. MCP server for the editor
 
