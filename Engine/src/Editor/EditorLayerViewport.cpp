@@ -733,9 +733,18 @@ void EditorLayer::DrawCameraGizmos() {
         if (vc->offsetInFollowSpace) {
             if (auto* at = m_World->GetComponent<ECS::TransformComponent>(anchorEnt)) {
                 Math::Vector3 fwd = at->rotation.GetForward();
-                f32 yaw = std::atan2(fwd.x, fwd.z);
-                Math::Quaternion yawQ(Math::Vector3(0, 1, 0), yaw);
-                worldOffset = yawQ.Rotate(vc->offset);
+                fwd.y = 0.0f;
+                f32 fl = fwd.Length();
+                if (fl > 1e-4f) {
+                    fwd = fwd * (1.0f / fl);
+                    Math::Vector3 right = at->rotation.GetRight();
+                    right.y = 0.0f;
+                    f32 rl = right.Length();
+                    right = (rl > 1e-4f) ? (right * (1.0f / rl)) : Math::Vector3(-fwd.z, 0.0f, fwd.x);
+                    worldOffset = right * vc->offset.x
+                                + Math::Vector3(0, 1, 0) * vc->offset.y
+                                + fwd * vc->offset.z;
+                }
             }
         }
         Math::Vector3 camPos = anchor + worldOffset;
