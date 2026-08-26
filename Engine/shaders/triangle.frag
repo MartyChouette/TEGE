@@ -1737,12 +1737,23 @@ void main() {
         vec3 vUp = cross(vForward, vRight);
         vec2 matcapUV = vec2(dot(normal, vRight), dot(normal, vUp)) * 0.5 + 0.5;
 
-        // Sample matcap texture — if it's the default white texture, fall back to procedural
+        // Detect whether a real matcap is bound. The "no matcap" fallback is a flat
+        // 1x1 white texture that reads identical at every UV, so a single "is it
+        // near-white" test missed light/white matcaps. A real matcap always varies
+        // across its face, so also compare a second fixed sample: if the two differ,
+        // a matcap is present even when it is bright.
         vec4 matcapSample = texture(matcapMap, matcapUV);
-        bool hasMatcapTexture = (matcapSample.r < 0.99 || matcapSample.g < 0.99 || matcapSample.b < 0.99);
+        vec4 matcapProbe  = textureLod(matcapMap, vec2(0.15, 0.15), 0.0);
+        bool matcapNearWhite = (matcapSample.r < 0.99 || matcapSample.g < 0.99 || matcapSample.b < 0.99);
+        bool matcapVaries = (abs(matcapSample.r - matcapProbe.r)
+                           + abs(matcapSample.g - matcapProbe.g)
+                           + abs(matcapSample.b - matcapProbe.b)) > 0.02;
+        bool hasMatcapTexture = matcapNearWhite || matcapVaries;
 
         if (hasMatcapTexture) {
-            // Per-material matcap texture: blend based on global strength (or full if no global env)
+            // Matcap blend strength from the global sphere-env control (per-material
+            // strength waits on a dedicated reflection-style field; reusing
+            // reflectivity here would double up with the artistic reflection path).
             float matcapStrength = max(lighting.sphereEnvStrength, 0.5);
             float envBlend = mix(0.3, 1.0, metallic) * matcapStrength;
             result = mix(result, result * matcapSample.rgb + matcapSample.rgb * 0.2, envBlend);

@@ -785,7 +785,12 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
             }
             textureDrop(material->emissiveTexturePath, material->emissiveTexture);
 
-            // Matcap (Material Capture) texture path
+            // Matcap (Material Capture) — a hand-painted reflection style. The sphere
+            // image is indexed by the view-space normal, so whatever is painted into
+            // it becomes the object's reflection and sheen. Tailored and deterministic:
+            // it renders the same every frame on every machine, no probe or SSR needed.
+            ImGui::Separator();
+            ImGui::TextUnformatted("Matcap Reflection (hand-painted)");
             char matcapPath[256];
             strncpy(matcapPath, material->matcapTexturePath.c_str(), sizeof(matcapPath) - 1);
             matcapPath[sizeof(matcapPath) - 1] = '\0';
@@ -798,7 +803,9 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
                 if (material->matcapTexturePath.empty()) material->matcapTexture = -1;
             }
             textureDrop(material->matcapTexturePath, material->matcapTexture);
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Material Capture texture: 2D image indexed by view-space normal for stylized lighting");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Matcap: a sphere image indexed by the view-space normal.\nPaint the reflection and sheen you want and it renders it back,\nidentically every frame. A hand-crafted reflection style — no\nreflection probe, no screen-space tricks.");
+            if (!material->matcapTexturePath.empty())
+                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.4f, 1.0f), "Matcap reflection active");
             ImGui::TreePop();
         }
 
