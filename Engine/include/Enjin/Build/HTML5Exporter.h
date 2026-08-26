@@ -35,6 +35,26 @@ struct HTML5ExportResult {
     std::string error;
 };
 
+// Web portal targets. Presets apply a portal's recommended canvas dimensions and
+// shell options so an export drops straight into that portal without fiddling.
+enum class WebPortal {
+    Generic = 0,   // plain shell, author's own dimensions
+    Itch,          // itch.io — 1280x720, fullscreen button, zip for upload
+    Newgrounds,    // Newgrounds — 800x600, iframe embed snippet
+    Poki,          // Poki — 1280x720 fullscreen, no preloader chrome
+    CrazyGames,    // CrazyGames — 1280x720 fullscreen
+    GameJolt,      // GameJolt — 800x600, zip for upload
+    Count
+};
+
+// itch.io publish settings (butler push target).
+struct ItchPublishConfig {
+    std::string user;              // itch.io account name (the part before the slash)
+    std::string game;              // game page slug (the part after the slash)
+    std::string channel = "html5"; // butler channel (html5 = playable-in-browser)
+    std::string userVersion;       // optional --userversion tag (empty = butler auto)
+};
+
 // Generates browser-ready HTML/JS/CSS templates for WASM builds
 class ENJIN_API HTML5Exporter {
 public:
@@ -49,6 +69,22 @@ public:
     // Returns true if the build succeeded.
     static bool InvokeEmscriptenBuild(const std::string& outputDir,
                                        const std::string& enjpakPath);
+
+    // Apply a web portal's recommended defaults (canvas size + shell options) to
+    // an export config. Only touches portal-driven fields; leaves title/paths.
+    static void ApplyPortalPreset(HTML5ExportConfig& config, WebPortal portal);
+
+    // Human-readable portal name (for UI dropdowns / logs).
+    static const char* PortalName(WebPortal portal);
+
+    // Publish an exported build to itch.io via the butler CLI. pathToPush is the
+    // export directory (or its .zip). Requires butler on PATH and an authenticated
+    // butler login (`butler login`). itch identifiers are validated to a safe
+    // charset before use. Returns true on a zero exit; outError carries the reason
+    // on failure. This uploads to an external service — caller must confirm intent.
+    static bool PublishToItch(const std::string& pathToPush,
+                              const ItchPublishConfig& itch,
+                              std::string& outError);
 
 private:
     // Generate individual files

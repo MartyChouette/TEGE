@@ -1985,6 +1985,20 @@ void EditorLayer::DrawHTML5ExportDialog() {
     ImGui::SameLine();
     if (ImGui::Button("1280x720")) { m_HTML5Config.width = 1280; m_HTML5Config.height = 720; }
 
+    // Portal preset: one click sets the canvas size + shell options a given web
+    // portal expects (itch.io, Newgrounds, Poki, CrazyGames, GameJolt).
+    {
+        static int portalIdx = 0;
+        const char* portals[] = { "Generic", "itch.io", "Newgrounds", "Poki", "CrazyGames", "GameJolt" };
+        ImGui::SetNextItemWidth(180);
+        if (ImGui::Combo("Portal preset", &portalIdx, portals, IM_ARRAYSIZE(portals))) {
+            Build::HTML5Exporter::ApplyPortalPreset(m_HTML5Config,
+                static_cast<Build::WebPortal>(portalIdx));
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Applies the target portal's recommended canvas size and\nshell options (fullscreen, preloader, zip, embed). Your title,\nfavicon, splash, and output folder are left untouched.");
+    }
+
     // Background color
     if (ImGui::InputText("Background", bgColorBuf, sizeof(bgColorBuf))) {
         m_HTML5Config.backgroundColor = bgColorBuf;
@@ -2104,6 +2118,57 @@ void EditorLayer::DrawHTML5ExportDialog() {
         if (ImGui::Button("Copy Zip Path")) {
             ImGui::SetClipboardText(lastZipPath.c_str());
         }
+    }
+
+    // ── Publish to itch.io (butler) ─────────────────────────────────────────
+    // One-click upload of the exported build straight to an itch.io game page.
+    // Needs the butler CLI on PATH and a one-time `butler login`.
+    ImGui::Separator();
+    if (ImGui::TreeNode("Publish to itch.io")) {
+        static char itchUser[128] = {};
+        static char itchGame[128] = {};
+        static char itchChannel[64] = "html5";
+        static std::string itchStatus;
+        static bool itchOk = false;
+
+        ImGui::TextWrapped("Uploads the exported build to itch.io via butler. Requires the "
+                           "butler CLI on PATH and a one-time 'butler login'.");
+        ImGui::SetNextItemWidth(200);
+        ImGui::InputText("Account", itchUser, sizeof(itchUser));
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(200);
+        ImGui::InputText("Game slug", itchGame, sizeof(itchGame));
+        ImGui::SetNextItemWidth(200);
+        ImGui::InputText("Channel", itchChannel, sizeof(itchChannel));
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("butler channel. 'html5' marks it playable in the browser.");
+
+        // What we push: the zip if we made one, else the export folder.
+        std::string pushPath = !lastZipPath.empty() ? lastZipPath : m_HTML5Config.outputDir;
+        const bool canPublish = !pushPath.empty() && itchUser[0] && itchGame[0];
+
+        if (!canPublish) ImGui::BeginDisabled();
+        if (ImGui::Button("Publish to itch.io", ImVec2(160, 28))) {
+            Build::ItchPublishConfig itch;
+            itch.user = itchUser;
+            itch.game = itchGame;
+            itch.channel = itchChannel[0] ? itchChannel : "html5";
+            std::string err;
+            itchOk = Build::HTML5Exporter::PublishToItch(pushPath, itch, err);
+            itchStatus = itchOk ? ("Pushed " + std::string(itchUser) + "/" + itchGame +
+                                   ":" + itch.channel)
+                                : ("Publish failed: " + err);
+        }
+        if (!canPublish) {
+            ImGui::EndDisabled();
+            ImGui::SameLine();
+            ImGui::TextDisabled("(export first, then fill account + game slug)");
+        }
+        if (!itchStatus.empty()) {
+            ImGui::TextColored(itchOk ? ImVec4(0.2f, 1.0f, 0.2f, 1.0f) : ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
+                               "%s", itchStatus.c_str());
+        }
+        ImGui::TreePop();
     }
 
     // Show embed code if available
