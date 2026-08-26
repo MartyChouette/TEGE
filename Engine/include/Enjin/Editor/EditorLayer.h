@@ -365,6 +365,7 @@ private:
     void DrawSettingsSection_Audio();
     void DrawSettingsSection_CollisionGroups();
     void DrawSettingsSection_BuildScenes();
+    void DrawSettingsSection_StartupFlow();
     void DrawSettingsSection_BuildConfig();
     void DrawSettingsSection_Networking();
     // Scene tab sections

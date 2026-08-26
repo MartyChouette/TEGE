@@ -70,6 +70,21 @@ struct GameFrameSettings {
     BackgroundBehavior backgroundBehavior = BackgroundBehavior::ReduceTo30;
 };
 
+// Startup flow: an authorable boot sequence the exported game runs instead of
+// the fixed "engine splash -> start scene -> title menu". Each step is a Scene
+// (played until its advance condition) or the built-in Menu. A splash is a Scene
+// with Timer, a cutscene a Scene with Input/Script, gameplay a Scene with
+// Gameplay (terminal). An empty flow = the classic default. The player runs this;
+// the SceneManager just authors and serializes it into the project.
+enum class StartupStepType : u8 { Scene = 0, Menu = 1 };
+enum class StartupAdvance  : u8 { Gameplay = 0, Timer = 1, Input = 2, Script = 3 };
+struct StartupFlowStep {
+    StartupStepType type = StartupStepType::Scene;
+    std::string scene;                                  // scene path (Scene steps)
+    StartupAdvance advance = StartupAdvance::Gameplay;
+    f32 duration = 3.0f;                                // seconds, for Timer advance
+};
+
 // Scene Manager - handles multi-scene projects and runtime scene switching
 class ENJIN_API SceneManager {
 public:
@@ -107,6 +122,10 @@ public:
 
     // Remove a scene by index
     void RemoveScene(usize index);
+
+    // Startup flow (authorable boot sequence; empty = classic default)
+    const std::vector<StartupFlowStep>& GetStartupFlow() const { return m_StartupFlow; }
+    std::vector<StartupFlowStep>& GetStartupFlow() { return m_StartupFlow; }
 
     // Get scenes
     const std::vector<SceneEntry>& GetScenes() const { return m_Scenes; }
@@ -223,6 +242,7 @@ private:
     std::string m_ManifestPath;    // Path to the .enjinproject file
     std::string m_ProjectRoot;     // Directory containing the manifest
     std::vector<SceneEntry> m_Scenes;
+    std::vector<StartupFlowStep> m_StartupFlow;
 
     // Collision group names (index = bit number, up to 32)
     std::vector<std::string> m_CollisionGroupNames;

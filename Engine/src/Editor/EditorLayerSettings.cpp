@@ -1984,6 +1984,7 @@ void EditorLayer::DrawSettingsWindow() {
             DrawSettingsSection_Audio();
             DrawSettingsSection_CollisionGroups();
             DrawSettingsSection_BuildScenes();
+            DrawSettingsSection_StartupFlow();
             DrawSettingsSection_BuildConfig();
             DrawSettingsSection_Networking();
             ImGui::PopID();
@@ -2198,6 +2199,97 @@ void EditorLayer::DrawSettingsWindow() {
 
     ImGui::PopItemWidth();
     ImGui::End();
+}
+
+void EditorLayer::DrawSettingsSection_StartupFlow() {
+    if (!UI::SectionHeader("Startup Flow")) return;
+
+    if (m_SceneManager.GetProjectPath().empty()) {
+        ImGui::TextDisabled("No project loaded.");
+        return;
+    }
+
+    auto& flow = m_SceneManager.GetStartupFlow();
+    const auto& scenes = m_SceneManager.GetScenes();
+
+    ImGui::TextWrapped("The boot sequence the exported game runs, top to bottom. "
+        "Leave it empty for the default (engine splash, then your start scene behind the "
+        "automatic title menu). Or author your own: a splash/intro Scene, the built-in Menu, "
+        "then your gameplay Scene. A Scene step plays until its advance condition; a step set "
+        "to \"Gameplay\" is where the game lives and never advances.");
+    ImGui::Spacing();
+
+    if (flow.empty()) {
+        ImGui::TextDisabled("(empty - using the default splash + automatic title menu)");
+    }
+
+    bool changed = false;
+    int moveFrom = -1, moveTo = -1, removeIdx = -1;
+    const char* typeNames[] = { "Scene", "Menu" };
+    const char* advNames[]  = { "Gameplay (stay here)", "Timer", "On Input", "Script signal" };
+
+    for (usize i = 0; i < flow.size(); ++i) {
+        auto& step = flow[i];
+        ImGui::PushID(static_cast<int>(i));
+        ImGui::Separator();
+        ImGui::Text("%zu.", i + 1); ImGui::SameLine();
+
+        int t = static_cast<int>(step.type);
+        ImGui::SetNextItemWidth(80);
+        if (ImGui::Combo("##type", &t, typeNames, 2)) { step.type = static_cast<Scene::StartupStepType>(t); changed = true; }
+
+        if (step.type == Scene::StartupStepType::Scene) {
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(170);
+            std::string cur = step.scene.empty() ? std::string("(pick scene)") : step.scene;
+            if (ImGui::BeginCombo("##scene", cur.c_str())) {
+                for (const auto& s : scenes) {
+                    bool sel = (s.path == step.scene);
+                    if (ImGui::Selectable(s.path.c_str(), sel)) { step.scene = s.path; changed = true; }
+                }
+                ImGui::EndCombo();
+            }
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(150);
+            int a = static_cast<int>(step.advance);
+            if (ImGui::Combo("##adv", &a, advNames, 4)) { step.advance = static_cast<Scene::StartupAdvance>(a); changed = true; }
+            if (step.advance == Scene::StartupAdvance::Timer) {
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(70);
+                if (ImGui::DragFloat("s##dur", &step.duration, 0.1f, 0.1f, 60.0f, "%.1f")) changed = true;
+            }
+        } else {
+            ImGui::SameLine();
+            ImGui::TextDisabled("built-in title menu (New Game advances)");
+        }
+
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Up")) { if (i > 0) { moveFrom = static_cast<int>(i); moveTo = static_cast<int>(i) - 1; } }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Dn")) { if (i + 1 < flow.size()) { moveFrom = static_cast<int>(i); moveTo = static_cast<int>(i) + 1; } }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("X")) removeIdx = static_cast<int>(i);
+
+        ImGui::PopID();
+    }
+
+    ImGui::Spacing();
+    if (ImGui::Button("+ Add Scene Step")) {
+        Scene::StartupFlowStep s;
+        s.type = Scene::StartupStepType::Scene;
+        if (!scenes.empty()) s.scene = scenes.front().path;
+        flow.push_back(s); changed = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("+ Add Menu Step")) {
+        Scene::StartupFlowStep s; s.type = Scene::StartupStepType::Menu;
+        flow.push_back(s); changed = true;
+    }
+
+    if (moveFrom >= 0 && moveTo >= 0) { std::swap(flow[static_cast<usize>(moveFrom)], flow[static_cast<usize>(moveTo)]); changed = true; }
+    if (removeIdx >= 0) { flow.erase(flow.begin() + removeIdx); changed = true; }
+
+    if (changed) m_SceneManager.SaveProject();
 }
 
 void EditorLayer::DrawSettingsSection_BuildScenes() {

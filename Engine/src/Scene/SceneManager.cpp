@@ -88,6 +88,24 @@ bool SceneManager::LoadProject(const std::string& manifestPath) {
             }
         }
 
+        // Load the startup flow (authorable boot sequence)
+        m_StartupFlow.clear();
+        if (root.contains("startupFlow") && root["startupFlow"].is_array()) {
+            for (const auto& sj : root["startupFlow"]) {
+                StartupFlowStep step;
+                std::string t = sj.value("type", "scene");
+                step.type = (t == "menu") ? StartupStepType::Menu : StartupStepType::Scene;
+                step.scene = sj.value("scene", "");
+                std::string a = sj.value("advance", "gameplay");
+                if (a == "timer")       step.advance = StartupAdvance::Timer;
+                else if (a == "input")  step.advance = StartupAdvance::Input;
+                else if (a == "script") step.advance = StartupAdvance::Script;
+                else                    step.advance = StartupAdvance::Gameplay;
+                step.duration = sj.value("duration", 3.0f);
+                m_StartupFlow.push_back(step);
+            }
+        }
+
         // Repair hand-edited or legacy manifests (duplicate start flags, etc.)
         u32 fixes = NormalizeSceneList();
         if (fixes > 0) {
@@ -199,6 +217,27 @@ bool SceneManager::SaveProject(const std::string& manifestPath) {
             scenesArray.push_back(sceneJson);
         }
         root["scenes"] = scenesArray;
+
+        // Save the startup flow (only when authored, so default projects stay clean)
+        if (!m_StartupFlow.empty()) {
+            nlohmann::json flowArr = nlohmann::json::array();
+            for (const auto& step : m_StartupFlow) {
+                nlohmann::json sj;
+                sj["type"] = (step.type == StartupStepType::Menu) ? "menu" : "scene";
+                sj["scene"] = step.scene;
+                const char* adv = "gameplay";
+                switch (step.advance) {
+                    case StartupAdvance::Timer:  adv = "timer";  break;
+                    case StartupAdvance::Input:  adv = "input";  break;
+                    case StartupAdvance::Script: adv = "script"; break;
+                    default:                     adv = "gameplay"; break;
+                }
+                sj["advance"] = adv;
+                sj["duration"] = step.duration;
+                flowArr.push_back(sj);
+            }
+            root["startupFlow"] = flowArr;
+        }
 
         // Save collision group names
         nlohmann::json groupsArray = nlohmann::json::array();
