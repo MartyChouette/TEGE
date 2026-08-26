@@ -36,7 +36,7 @@ This document captures detailed technical plans, performance findings, and strat
 | **Platforms** | **VR/XR/AR — OpenXR path, stereo/multiview renderer, motion controllers (elevated from P4)** | **P1** |
 | **Platforms** | **Mobile (Android/iOS — render tiers, TBDR/tiled paths, touch input, on-screen controls) (elevated from P4)** | **P1** |
 | **Flagship** | **Reverse-step debugging + shareable replays (see Flagship Initiatives #5)** | **P1** |
-| **Flagship** | **One-click web link + itch.io publish + portal presets (#6)** — one-click localhost preview (Run in Browser), portal presets (itch/Newgrounds/Poki/CrazyGames/GameJolt), and itch.io publish via butler all in the HTML5 export dialog | **P1 IN PROGRESS** |
+| **Flagship** | **One-click web link + itch.io publish + portal presets (#6)** | **P1** |
 | **Flagship** | **MCP server for the editor (#7)** | **P1** |
 | **Flagship** | **Per-style splash + accessibility statement (#8)** | **P1** |
 | **Flagship** | **Gaussian splat import .ply/.spz with art styles (#9)** | **P1** |
