@@ -45,6 +45,7 @@ extern char** environ;
 #include "Enjin/ECS/Components/TemperatureZone.h"
 #include "Enjin/ECS/Components/GravityZone.h"
 #include "Enjin/ECS/Components/ReflectionProbe.h"
+#include "Enjin/ECS/Components/ReflectivePlane.h"
 #include "Enjin/Renderer/ReflectionProbeSystem.h"
 #include "Enjin/ECS/Components/PostProcessVolume.h"
 #include "Enjin/ECS/Components/ArtStyle.h"
@@ -2610,6 +2611,40 @@ void EditorLayer::DrawReflectionProbeComponent(ECS::Entity entity) {
         // Remove component
         if (ImGui::Button("Remove##ReflectionProbe")) {
             RemoveComponentWithUndo<ECS::ReflectionProbeComponent>(entity, "reflectionProbe", "Reflection Probe");
+        }
+    }
+}
+
+void EditorLayer::DrawReflectivePlaneComponent(ECS::Entity entity) {
+    if (UI::SectionHeader("Reflective Floor", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* plane = m_World->GetComponent<ECS::ReflectivePlaneComponent>(entity);
+        if (!plane) return;
+        DrawComponentHelp("reflectivePlane", m_World, entity);
+
+        ImGui::TextWrapped("A glassy floor that mirrors the scene above it. The floor's "
+                           "MATERIAL must be semi-transparent (alpha mode Blend) for the "
+                           "reflection to show through.");
+        ImGui::Separator();
+
+        InspectorUndo::Checkbox(m_UndoRedo, "Active##ReflPlane", &plane->active);
+
+        InspectorUndo::DragFloat(m_UndoRedo, "Reflection Strength##ReflPlane",
+                                 &plane->reflectionStrength, 0.01f, 0.0f, 1.0f);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("How strongly the mirror shows (0 = off, 1 = full).");
+
+        f32 tint[3] = { plane->tint.x, plane->tint.y, plane->tint.z };
+        if (ImGui::ColorEdit3("Tint##ReflPlane", tint)) {
+            plane->tint = Math::Vector3(tint[0], tint[1], tint[2]);
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Colours the reflection — wet-asphalt blue, gold sheen, murky water.");
+
+        InspectorUndo::DragFloat(m_UndoRedo, "Clip Bias##ReflPlane",
+                                 &plane->clipBias, 0.005f, 0.0f, 1.0f);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Lifts the mirror plane a hair above the floor so the floor isn't caught in its own reflection.");
+
+        ImGui::Separator();
+        if (ImGui::Button("Remove##ReflectivePlane")) {
+            RemoveComponentWithUndo<ECS::ReflectivePlaneComponent>(entity, "reflectivePlane", "Reflective Floor");
         }
     }
 }

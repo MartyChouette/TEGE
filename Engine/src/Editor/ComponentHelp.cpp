@@ -315,6 +315,15 @@ static const std::unordered_map<std::string, ComponentHelp>& Registry() {
                 { RelationKind::FeedsRenderer, "Renderer",  nullptr, nullptr },
             }
         };
+        r["reflectivePlane"] = {
+            "A glassy floor that mirrors the scene above it (the PS2 wet-floor look).",
+            "Put it on a flat floor. The floor MATERIAL must be semi-transparent (alpha Blend) for the reflection to show through. Raise Reflection Strength for a sharper mirror; tint it for wet-asphalt blue or gold sheen.",
+            nullptr,
+            {
+                { RelationKind::PairsWith,     "Transform", Has<ECS::TransformComponent>, Add<ECS::TransformComponent> },
+                { RelationKind::FeedsRenderer, "Renderer",  nullptr, nullptr },
+            }
+        };
 
         // ---- Batch 3: audio zones, 2D physics, vegetation -----------------
         {

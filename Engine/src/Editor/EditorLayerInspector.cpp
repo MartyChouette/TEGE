@@ -58,6 +58,7 @@
 #include "Enjin/ECS/Components/TemperatureZone.h"
 #include "Enjin/ECS/Components/GravityZone.h"
 #include "Enjin/ECS/Components/ReflectionProbe.h"
+#include "Enjin/ECS/Components/ReflectivePlane.h"
 #include "Enjin/ECS/Components/PostProcessVolume.h"
 #include "Enjin/ECS/Components/ArtStyle.h"
 #include "Enjin/ECS/Components/FluidVolume.h"
@@ -813,6 +814,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ReflectionProbeComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::ReflectionProbeComponent>(e); },
             "reflectionProbe", DimensionTag::Only3D},
+        {"Reflective Floor", "Effects", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ReflectivePlaneComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ReflectivePlaneComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::ReflectivePlaneComponent>(e); },
+            "reflectivePlane", DimensionTag::Only3D},
         {"Elemental Surface", "Effects", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ElementalSurfaceComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ElementalSurfaceComponent>(e); },
@@ -1770,6 +1776,11 @@ void EditorLayer::DrawInspectorPanel() {
         // Reflection Probe component
         if (m_World->HasComponent<ECS::ReflectionProbeComponent>(m_PrimarySelected)) {
             DrawReflectionProbeComponent(m_PrimarySelected);
+        }
+
+        // Reflective Floor component (planar reflection)
+        if (m_World->HasComponent<ECS::ReflectivePlaneComponent>(m_PrimarySelected)) {
+            DrawReflectivePlaneComponent(m_PrimarySelected);
         }
 
         // Fluid Volume component
