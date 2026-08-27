@@ -10920,7 +10920,18 @@ void RenderSystem::RenderPlanarReflections() {
             if (tf->position.y < h - 0.001f) continue;   // only reflect what sits above the plane
 
             Math::Matrix4 reflected = mirror * ComputeWorldMatrix(m_World, e);
-            RenderEntityGhost(e, reflected, plane->tint, plane->reflectionStrength, nullptr, /*useRealMaterial=*/true);
+
+            // Reflect skinned characters in their live pose, not bind pose. (The
+            // ghost bone buffer is shared, so several skinned reflections in one
+            // frame would share the last pose — fine for the common single-hero
+            // case; a per-reflection bone buffer is the fix if that matters.)
+            const std::vector<Math::Matrix4>* bones = nullptr;
+            if (auto* animComp = ResolveAnimator(e)) {
+                const auto& sm = animComp->animator.GetSkinningMatrices();
+                if (!sm.empty()) bones = &sm;
+            }
+
+            RenderEntityGhost(e, reflected, plane->tint, plane->reflectionStrength, bones, /*useRealMaterial=*/true);
         }
     }
 }
