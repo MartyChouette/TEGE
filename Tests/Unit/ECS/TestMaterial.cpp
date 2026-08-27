@@ -11,7 +11,7 @@ using namespace Enjin::Math;
 // shaders. It is 112 bytes (base/emissive/metallic/roughness + SSS block +
 // six bindless texture indices + pad). If this changes, the matching shader
 // struct AND ShaderData.h must change too, or the GPU reads wrong offsets.
-static_assert(sizeof(MaterialGPU) == 112, "MaterialGPU stride must match the shader SSBO layout");
+static_assert(sizeof(MaterialGPU) == 128, "MaterialGPU stride must match the shader SSBO layout");
 
 // ===========================================================================
 // MaterialGPU layout invariant

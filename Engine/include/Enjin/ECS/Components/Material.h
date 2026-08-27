@@ -146,6 +146,15 @@ struct MaterialComponent {
     std::string matcapTexturePath;    // Matcap (Material Capture): 2D texture indexed by view-space normal
     std::string heightTexturePath;
 
+    // ── Scrolling reflection (hand-crafted N64 chrome/water fake reflection) ──
+    // When a scroll-reflection texture is assigned, it is sampled with time-scrolled
+    // UVs derived from the reflection direction and blended in by fresnel. A cheap,
+    // deterministic, painted reflection — no probe, no screen-space tracing.
+    std::string scrollReflectionTexturePath;
+    Math::Vector2 scrollReflectionSpeed = Math::Vector2(0.05f, 0.03f); // UV scroll per second
+    f32 scrollReflectionStrength = 0.5f;   // 0 = off, 1 = full
+    i32 scrollReflectionTexture = -1;      // runtime index (-1 = none)
+
     // ── Surface response (TotK-style): the sound + particle this surface makes ──
     // Footstep fires while a character controller walks/runs on an entity with this
     // material; impact fires when the surface is struck by a physics collision. Empty
@@ -165,6 +174,7 @@ struct MaterialComponent {
     mutable Renderer::Texture* cachedMetallicRoughnessTexture = nullptr;
     mutable Renderer::Texture* cachedEmissiveTexture = nullptr;
     mutable Renderer::Texture* cachedMatcapTexture = nullptr;
+    mutable Renderer::Texture* cachedScrollReflectionTexture = nullptr;
 
     // Lightweight key for comparing/sorting texture combinations by pointer identity.
     // Texture cache guarantees pointer stability, so pointer comparison is sufficient.
@@ -242,6 +252,7 @@ struct MaterialComponent {
         cachedMetallicRoughnessTexture = nullptr;
         cachedEmissiveTexture = nullptr;
         cachedMatcapTexture = nullptr;
+        cachedScrollReflectionTexture = nullptr;
         cachedTextureKey = {};
     }
 };
@@ -283,6 +294,15 @@ struct alignas(16) MaterialGPU {
     // Packed UV region (4 x u8: offX, offY, scaleX, scaleY in 1/255 steps).
     // 0 = identity (no atlas region).
     alignas(4) u32 uvRegionPacked = 0;
+
+    // Scrolling reflection (hand-crafted N64 chrome/water fake reflection): a
+    // texture sampled with time-scrolled UVs, masked by fresnel. Active when
+    // scrollReflTexIdx != UINT32_MAX. (Row 8, offset 112 — keep in lockstep with
+    // the shader MaterialEntry struct and the sizeof static_assert in TestMaterial.)
+    alignas(4) u32 scrollReflTexIdx = UINT32_MAX;
+    alignas(4) f32 scrollReflSpeedU = 0.0f;
+    alignas(4) f32 scrollReflSpeedV = 0.0f;
+    alignas(4) f32 scrollReflStrength = 0.0f;
 
     static MaterialGPU FromComponent(const MaterialComponent& mat) {
         MaterialGPU gpu;
@@ -345,6 +365,12 @@ struct alignas(16) MaterialGPU {
         gpu.sssIntensity = mat.sssIntensity;
         gpu.sssColor = mat.sssColor;
         gpu.sssRadius = mat.sssRadius;
+
+        // Scrolling reflection params (texIdx is filled by the renderer via the
+        // bindless lookup, like matcapTexIdx).
+        gpu.scrollReflSpeedU = mat.scrollReflectionSpeed.x;
+        gpu.scrollReflSpeedV = mat.scrollReflectionSpeed.y;
+        gpu.scrollReflStrength = mat.scrollReflectionStrength;
 
         return gpu;
     }

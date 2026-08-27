@@ -807,6 +807,32 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Matcap: a sphere image indexed by the view-space normal.\nPaint the reflection and sheen you want and it renders it back,\nidentically every frame. A hand-crafted reflection style — no\nreflection probe, no screen-space tricks.");
             if (!material->matcapTexturePath.empty())
                 ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.4f, 1.0f), "Matcap reflection active");
+
+            // Scrolling reflection — a hand-crafted fake reflection (N64 chrome/water):
+            // the texture scrolls over time, masked by fresnel. Deterministic and painted.
+            ImGui::Separator();
+            ImGui::TextUnformatted("Scrolling Reflection (N64 chrome/water)");
+            char scrollPath[256];
+            strncpy(scrollPath, material->scrollReflectionTexturePath.c_str(), sizeof(scrollPath) - 1);
+            scrollPath[sizeof(scrollPath) - 1] = '\0';
+            if (InspectorUndo::InputText(m_UndoRedo, "Scroll Reflection", scrollPath, sizeof(scrollPath),
+                    [material](const std::string& val) {
+                        material->scrollReflectionTexturePath = val;
+                        if (val.empty()) material->scrollReflectionTexture = -1;
+                    })) {
+                material->scrollReflectionTexturePath = scrollPath;
+                if (material->scrollReflectionTexturePath.empty()) material->scrollReflectionTexture = -1;
+            }
+            textureDrop(material->scrollReflectionTexturePath, material->scrollReflectionTexture);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("A texture scrolled over time and blended in by fresnel — a\ncheap, painted reflection. No probe, no screen-space tracing.");
+            if (!material->scrollReflectionTexturePath.empty()) {
+                f32 spd[2] = { material->scrollReflectionSpeed.x, material->scrollReflectionSpeed.y };
+                if (ImGui::DragFloat2("Scroll Speed##ScrollRefl", spd, 0.005f, -2.0f, 2.0f)) {
+                    material->scrollReflectionSpeed = Math::Vector2(spd[0], spd[1]);
+                }
+                ImGui::DragFloat("Strength##ScrollRefl", &material->scrollReflectionStrength, 0.01f, 0.0f, 2.0f);
+                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.4f, 1.0f), "Scrolling reflection active");
+            }
             ImGui::TreePop();
         }
 

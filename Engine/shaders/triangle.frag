@@ -123,7 +123,7 @@ layout(push_constant) uniform PushConstants {
 // per draw by v_MaterialIndex (direct draws pass the index via firstInstance,
 // adr-0003). No more dynamic offset: the descriptor is a plain STORAGE_BUFFER
 // covering the whole buffer, which is what makes UPDATE_AFTER_BIND legal on
-// set 0. Entry layout matches C++ MaterialGPU (std430, 112 bytes).
+// set 0. Entry layout matches C++ MaterialGPU (std430, 128 bytes).
 struct MaterialEntry {
     vec3  matBaseColor;
     float matMetallic;
@@ -148,6 +148,11 @@ struct MaterialEntry {
     uint  matMatcapTexIdx;
     uint  matSamplerIdx;
     uint  matUvRegion;   // packed atlas region (4 x u8), 0 = identity
+    // Scrolling reflection (row 8): texture idx + UV scroll speed + strength.
+    uint  matScrollReflTexIdx;
+    float matScrollReflSpeedU;
+    float matScrollReflSpeedV;
+    float matScrollReflStrength;
 };
 layout(std430, binding = 2) readonly buffer MaterialSSBO {
     MaterialEntry materialEntries[];
@@ -1772,6 +1777,21 @@ void main() {
             float envBlend = mix(ring * 0.3, 1.0, metallic) * lighting.sphereEnvStrength;
             result = mix(result, result + envColor, envBlend);
         }
+    }
+
+    // Scrolling reflection (hand-crafted N64 chrome/water fake reflection): sample a
+    // texture with time-scrolled UVs from the reflection direction, masked by fresnel,
+    // and add it on top. Deterministic and painted — no probe, no screen-space tracing.
+    if (materialData.matScrollReflTexIdx != 0xFFFFFFFFu) {
+        vec3 sV = normalize(lighting.cameraPos - fragWorldPos);
+        vec3 sR = reflect(-sV, normal);
+        float sTime = lighting.windData.w;   // shared scene time
+        vec2 sUv = sR.xz * 0.5 + 0.5
+                 + vec2(materialData.matScrollReflSpeedU, materialData.matScrollReflSpeedV) * sTime;
+        vec3 sCol = texture(BTEX(materialData.matScrollReflTexIdx), sUv).rgb;
+        float sNdotV = max(dot(normal, sV), 0.0);
+        float sFres = pow(1.0 - sNdotV, 3.0);
+        result += sCol * materialData.matScrollReflStrength * clamp(sFres + 0.25, 0.0, 1.0);
     }
 
     // Gamma correction

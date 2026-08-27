@@ -9698,6 +9698,12 @@ void RenderSystem::BuildMaterialSSBO() {
         MaterialGPU materialGPU;
         MaterialComponent* material = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
         if (material) {
+            // On-demand load of the scroll-reflection texture (GetOrLoadTexture
+            // auto-registers it in the bindless set, so the lookup below finds it).
+            if (!material->scrollReflectionTexturePath.empty() && !material->cachedScrollReflectionTexture) {
+                auto st = GetOrLoadTexture(material->scrollReflectionTexturePath);
+                if (st && st->IsValid()) material->cachedScrollReflectionTexture = st.get();
+            }
             materialGPU = MaterialGPU::FromComponent(*material);
             // Populate bindless texture indices from cached texture pointers
             const u8 ofm = material->textureFilterOverride;
@@ -9707,6 +9713,7 @@ void RenderSystem::BuildMaterialSSBO() {
             materialGPU.metallicRoughnessTexIdx = lookupBindless(material->cachedMetallicRoughnessTexture, ofm);
             materialGPU.emissiveTexIdx          = lookupBindless(material->cachedEmissiveTexture, ofm);
             materialGPU.matcapTexIdx            = lookupBindless(material->cachedMatcapTexture, ofm);
+            materialGPU.scrollReflTexIdx        = lookupBindless(material->cachedScrollReflectionTexture, ofm);
         } else {
             MaterialComponent defaultMat;
             defaultMat.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);

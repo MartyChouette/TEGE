@@ -265,6 +265,9 @@ json SerializeMaterialComponent(const ECS::MaterialComponent& material) {
     j["sssColor"] = SerializeVector3(material.sssColor);
     // Matcap texture
     j["matcapTexturePath"] = material.matcapTexturePath;
+    j["scrollReflectionTexturePath"] = material.scrollReflectionTexturePath;
+    j["scrollReflectionSpeed"] = SerializeVector2(material.scrollReflectionSpeed);
+    j["scrollReflectionStrength"] = RF(material.scrollReflectionStrength);
     // Procedural surface noise
     j["surfaceNoiseScale"] = RF(material.surfaceNoiseScale);
     j["surfaceNoiseStrength"] = RF(material.surfaceNoiseStrength);
@@ -546,6 +549,9 @@ ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
     if (j.contains("sssColor")) material.sssColor = DeserializeVector3(j["sssColor"]);
     // Matcap texture
     if (j.contains("matcapTexturePath")) material.matcapTexturePath = SafeStr(j["matcapTexturePath"], MAX_STR_PATH);
+    if (j.contains("scrollReflectionTexturePath")) material.scrollReflectionTexturePath = SafeStr(j["scrollReflectionTexturePath"], MAX_STR_PATH);
+    if (j.contains("scrollReflectionSpeed")) material.scrollReflectionSpeed = DeserializeVector2(j["scrollReflectionSpeed"]);
+    if (j.contains("scrollReflectionStrength")) material.scrollReflectionStrength = j["scrollReflectionStrength"].get<f32>();
     // Procedural surface noise
     if (j.contains("surfaceNoiseScale")) material.surfaceNoiseScale = j["surfaceNoiseScale"].get<f32>();
     if (j.contains("surfaceNoiseStrength")) material.surfaceNoiseStrength = j["surfaceNoiseStrength"].get<f32>();
