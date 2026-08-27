@@ -39,10 +39,14 @@ Output lands in `build/bin/Examples/`.
 
 ## Scene examples (no build — open in the editor)
 
-- **WaterShowcase** — all five 3D water styles (Flat, Animated, VertexWave,
-  Reflective, Refractive) side by side, with floating cubes so the reflective
-  styles have something to mirror. Open `WaterShowcase/WaterShowcase.enjinproject`
-  and press Play. See `WaterShowcase/README.md` for the layout.
+The engine has several water systems; each has its own example project:
+
+- **WaterVolume** — the full 3D water: Lake / Ocean / River / Pond presets with
+  shore foam and freeze/thaw. This scene is a lake. Open
+  `WaterVolume/WaterVolume.enjinproject`. See `WaterVolume/README.md`.
+- **WaterShowcase** — the lightweight `Water3D` plane in all five styles (Flat,
+  Animated, VertexWave, Reflective, Refractive), side by side. Press Play — some
+  styles only differ in motion. See `WaterShowcase/README.md`.
 
 ## The C++ API in one breath
 
