@@ -10893,53 +10893,67 @@ void RenderSystem::RenderOnionSkinGhosts() {
     }
 }
 
+void RenderSystem::MirrorSceneAcrossPlane(f32 planeY, const Math::Vector3& tint, f32 strength, Entity skipEntity) {
+    // Mirror across the horizontal plane Y=planeY: negate Y, translate by 2*planeY.
+    Math::Matrix4 mirror;
+    for (int i = 0; i < 16; ++i) mirror.m[i] = 0.0f;
+    mirror.m[0] = 1.0f; mirror.m[5] = -1.0f; mirror.m[10] = 1.0f; mirror.m[15] = 1.0f;
+    mirror.m[13] = 2.0f * planeY;
+
+    // Re-draw every mesh above the plane, mirrored, tinted and dimmed so it reads as
+    // a reflection below the surface. Full-material colour via the ghost draw.
+    for (Entity e : m_World->GetEntitiesWithComponent<MeshComponent>()) {
+        if (e == skipEntity) continue;
+        if (m_World->HasComponent<ReflectivePlaneComponent>(e)) continue;  // don't reflect reflectors
+        if (m_World->HasComponent<Water3DComponent>(e)) continue;          // nor water in water
+        auto* tf = m_World->GetComponent<TransformComponent>(e);
+        if (!tf) continue;
+        if (tf->position.y < planeY - 0.001f) continue;   // only what sits above the plane
+
+        Math::Matrix4 reflected = mirror * ComputeWorldMatrix(m_World, e);
+
+        // Reflect skinned characters in their live pose (shared ghost bone buffer,
+        // so multiple skinned reflections share the last pose — single-hero is fine).
+        const std::vector<Math::Matrix4>* bones = nullptr;
+        if (auto* animComp = ResolveAnimator(e)) {
+            const auto& sm = animComp->animator.GetSkinningMatrices();
+            if (!sm.empty()) bones = &sm;
+        }
+
+        RenderEntityGhost(e, reflected, tint, strength, bones, /*useRealMaterial=*/true);
+    }
+}
+
 void RenderSystem::RenderPlanarReflections() {
     if (!m_World || !m_Pipeline || !m_Renderer) return;
 
     auto planes = m_World->GetEntitiesWithComponent<ReflectivePlaneComponent>();
-    if (planes.empty()) return;
+    auto waters = m_World->GetEntitiesWithComponent<Water3DComponent>();
+    if (planes.empty() && waters.empty()) return;
 
     m_LastBound.Reset(); m_GeometryPoolBound = false;  // reset descriptor cache for this pass
 
+    // Reflective floors.
     for (Entity planeEnt : planes) {
         auto* plane = m_World->GetComponent<ReflectivePlaneComponent>(planeEnt);
         if (!plane || !plane->active || plane->reflectionStrength <= 0.001f) continue;
         auto* planeTf = m_World->GetComponent<TransformComponent>(planeEnt);
         if (!planeTf) continue;
+        MirrorSceneAcrossPlane(planeTf->position.y + plane->clipBias, plane->tint,
+                               plane->reflectionStrength, planeEnt);
+    }
 
-        // Reflection plane height (a hair above the surface so it isn't self-caught).
-        f32 h = planeTf->position.y + plane->clipBias;
-
-        // Mirror across the horizontal plane Y=h: negate Y, translate by 2h.
-        Math::Matrix4 mirror;
-        for (int i = 0; i < 16; ++i) mirror.m[i] = 0.0f;
-        mirror.m[0] = 1.0f; mirror.m[5] = -1.0f; mirror.m[10] = 1.0f; mirror.m[15] = 1.0f;
-        mirror.m[13] = 2.0f * h;
-
-        // Re-draw every mesh above the plane, mirrored, tinted and dimmed so it reads
-        // as a reflection below the floor. Reuses the ghost draw (matrix override +
-        // alpha blend). Full-material colour reflection is the next upgrade.
-        for (Entity e : m_World->GetEntitiesWithComponent<MeshComponent>()) {
-            if (e == planeEnt) continue;                                   // not the floor itself
-            if (m_World->HasComponent<ReflectivePlaneComponent>(e)) continue;  // nor other planes
-            auto* tf = m_World->GetComponent<TransformComponent>(e);
-            if (!tf) continue;
-            if (tf->position.y < h - 0.001f) continue;   // only reflect what sits above the plane
-
-            Math::Matrix4 reflected = mirror * ComputeWorldMatrix(m_World, e);
-
-            // Reflect skinned characters in their live pose, not bind pose. (The
-            // ghost bone buffer is shared, so several skinned reflections in one
-            // frame would share the last pose — fine for the common single-hero
-            // case; a per-reflection bone buffer is the fix if that matters.)
-            const std::vector<Math::Matrix4>* bones = nullptr;
-            if (auto* animComp = ResolveAnimator(e)) {
-                const auto& sm = animComp->animator.GetSkinningMatrices();
-                if (!sm.empty()) bones = &sm;
-            }
-
-            RenderEntityGhost(e, reflected, plane->tint, plane->reflectionStrength, bones, /*useRealMaterial=*/true);
-        }
+    // Reflective water (WaterStyle::Reflective, the PS2/GameCube "Baldur's Gate:
+    // Dark Alliance" glassy water): the water plane becomes a mirror using the same
+    // mechanic. The water material supplies the tint, waves, and foam on top.
+    for (Entity waterEnt : waters) {
+        auto* water = m_World->GetComponent<Water3DComponent>(waterEnt);
+        if (!water || water->settings.style != Effects::WaterStyle::Reflective) continue;
+        f32 s = Math::Clamp(water->settings.reflectionStrength, 0.0f, 1.0f);
+        if (s <= 0.001f) continue;
+        auto* wtf = m_World->GetComponent<TransformComponent>(waterEnt);
+        if (!wtf) continue;
+        MirrorSceneAcrossPlane(wtf->position.y + 0.02f, water->settings.shallowColor, s, waterEnt);
     }
 }
 

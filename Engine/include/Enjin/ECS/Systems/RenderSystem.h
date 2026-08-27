@@ -972,6 +972,9 @@ private:
     // plane, tinted and dimmed, so it reads as a reflection below the surface. Drawn
     // into the main pass after opaque geometry; no offscreen target.
     void RenderPlanarReflections();
+    // Mirror every mesh above a horizontal plane at planeY and re-draw it as a
+    // tinted, dimmed reflection. Shared by reflective floors and reflective water.
+    void MirrorSceneAcrossPlane(f32 planeY, const Math::Vector3& tint, f32 strength, Entity skipEntity);
     void CreateShadowPipeline();
     // Recreate all pipelines. If gpuAlreadyIdle is true, skips vkDeviceWaitIdle (caller guarantees GPU is idle).
     void RecreatePipelines(bool gpuAlreadyIdle = false);
