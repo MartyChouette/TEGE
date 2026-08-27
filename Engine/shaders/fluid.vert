@@ -10,8 +10,8 @@ layout(location = 1) in vec2 inQuadUV;    // [0, 1] UV coordinates
 // Per-instance data
 layout(location = 2) in vec3 inWorldPos;   // Cell world position
 layout(location = 3) in vec2 inSizeAlpha;  // x = size, y = alpha
-layout(location = 4) in vec2 inStretchDir; // unused for fluid (stores color RG)
-layout(location = 5) in float inStretch;   // unused for fluid (stores color B)
+layout(location = 4) in vec2 inStretchDir; // fluid: per-cell colour RG
+layout(location = 5) in float inStretch;   // fluid: per-cell colour B
 
 // View/Projection UBO
 layout(binding = 0) uniform UniformBufferObject {
@@ -21,6 +21,7 @@ layout(binding = 0) uniform UniformBufferObject {
 
 layout(location = 0) out vec2 fragUV;
 layout(location = 1) out float fragAlpha;
+layout(location = 2) out vec3 fragColor;   // per-cell fluid colour (from Fluid Volume's Color)
 
 void main() {
     float size = inSizeAlpha.x;
@@ -37,4 +38,5 @@ void main() {
 
     fragUV = inQuadUV;
     fragAlpha = inSizeAlpha.y;
+    fragColor = vec3(inStretchDir.x, inStretchDir.y, inStretch);
 }

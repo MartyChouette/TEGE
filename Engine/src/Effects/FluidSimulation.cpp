@@ -35,6 +35,26 @@ void FluidSimulation::Update(f32 dt, ECS::World* world) {
             vol->simulationInitialized = true;
         }
 
+        // Emit from the volume's source each frame. The sourceDensity / sourceRadius /
+        // sourceVelocityScale params existed but nothing ever injected density, so every
+        // fluid volume simulated an empty grid and rendered nothing. Emit a plume from
+        // the bottom-centre so buoyant types (smoke/steam/gas) billow up and dense types
+        // (water/lava) pool and spread.
+        if (vol->sourceDensity > 0.0f) {
+            f32 rate = vol->sourceDensity * dt;
+            f32 r = std::max(1.0f, vol->sourceRadius);
+            f32 up = vol->sourceVelocityScale;
+            if (is3D) {
+                Math::Vector3 c(clampedSize * 0.5f, clampedSize * 0.15f, clampedSize * 0.5f);
+                AddDensityAtWorldPos(entity, c, rate, r);
+                AddVelocityAtWorldPos(entity, c, Math::Vector3(0.0f, up, 0.0f), r);
+            } else {
+                Math::Vector3 c(clampedSize * 0.5f, clampedSize * 0.15f, 0.0f);
+                AddDensityAtWorldPos(entity, c, rate, r);
+                AddVelocityAtWorldPos(entity, c, Math::Vector3(0.0f, up, 0.0f), r);
+            }
+        }
+
         i32 iterations = vol->solverIterations;
         if (is3D && clampedSize > 32) iterations = std::min(iterations, 10);
 

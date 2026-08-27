@@ -5,6 +5,7 @@
 
 layout(location = 0) in vec2 fragUV;
 layout(location = 1) in float fragAlpha;
+layout(location = 2) in vec3 fragColor;   // per-cell fluid colour
 
 layout(location = 0) out vec4 outColor;
 
@@ -31,5 +32,8 @@ void main() {
         discard;
     }
 
-    outColor = vec4(material.baseColor, alpha);
+    // Use the per-cell fluid colour (from the Fluid Volume's Color knob). Falls back
+    // to white only if the instance colour is unset (near-black).
+    vec3 col = (dot(fragColor, fragColor) > 0.0001) ? fragColor : material.baseColor;
+    outColor = vec4(col, alpha);
 }

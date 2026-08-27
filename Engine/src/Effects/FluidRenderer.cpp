@@ -101,19 +101,22 @@ void FluidRenderer::RecreateForRenderPass(VkRenderPass renderPass, VkDescriptorS
 
 void FluidRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout, u32 colorAttachmentCount) {
     // Use particle shaders as a base — fluid cells are similar billboard quads
-    // Load the same particle shaders (reuse existing compiled SPIR-V)
+    // Fluid shaders: same vertex layout as particles, but the fragment reads the
+    // per-cell colour from the instance data instead of a flat white push constant,
+    // so the Fluid Volume's Color knob actually shows. Reusing the particle shaders
+    // routed the colour into an unused "stretch" attribute, so every fluid rendered white.
     m_VertexShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
     if (!m_VertexShader->LoadFromSPIRV(
-        reinterpret_cast<const u8*>(Renderer::ShaderData::ParticleVertexShaderData),
-        Renderer::ShaderData::ParticleVertexShaderDataSize)) {
+        reinterpret_cast<const u8*>(Renderer::ShaderData::FluidVertexShaderData),
+        Renderer::ShaderData::FluidVertexShaderDataSize)) {
         ENJIN_LOG_ERROR(Renderer, "FluidRenderer: Failed to load vertex shader");
         return;
     }
 
     m_FragmentShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
     if (!m_FragmentShader->LoadFromSPIRV(
-        reinterpret_cast<const u8*>(Renderer::ShaderData::ParticleFragmentShaderData),
-        Renderer::ShaderData::ParticleFragmentShaderDataSize)) {
+        reinterpret_cast<const u8*>(Renderer::ShaderData::FluidFragmentShaderData),
+        Renderer::ShaderData::FluidFragmentShaderDataSize)) {
         ENJIN_LOG_ERROR(Renderer, "FluidRenderer: Failed to load fragment shader");
         return;
     }
@@ -229,9 +232,9 @@ void FluidRenderer::Render(VkCommandBuffer commandBuffer,
                     inst.position.z = transform->position.z;
                     inst.size = cellSize;
                     f32 clamped = std::min(d, 1.0f);
-                    inst.colorR = vol->fluidColor.x * clamped;
-                    inst.colorG = vol->fluidColor.y * clamped;
-                    inst.colorB = vol->fluidColor.z * clamped;
+                    inst.colorR = vol->fluidColor.x;
+                    inst.colorG = vol->fluidColor.y;
+                    inst.colorB = vol->fluidColor.z;
                     inst.alpha = std::min(d, 1.0f) * vol->opacity;
 
                     m_InstanceDataCache.push_back(inst);
@@ -253,9 +256,9 @@ void FluidRenderer::Render(VkCommandBuffer commandBuffer,
                         inst.position.z = origin.z + (static_cast<f32>(k) - 0.5f) * cellSizeZ;
                         inst.size = cellSize;
                         f32 clamped = std::min(d, 1.0f);
-                        inst.colorR = vol->fluidColor.x * clamped;
-                        inst.colorG = vol->fluidColor.y * clamped;
-                        inst.colorB = vol->fluidColor.z * clamped;
+                        inst.colorR = vol->fluidColor.x;
+                        inst.colorG = vol->fluidColor.y;
+                        inst.colorB = vol->fluidColor.z;
                         inst.alpha = std::min(d, 1.0f) * vol->opacity;
 
                         m_InstanceDataCache.push_back(inst);
