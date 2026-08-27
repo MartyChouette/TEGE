@@ -1588,8 +1588,9 @@ void main() {
         // Frozen surface tints reflection slightly blue-white
         vec3 reflectColor = mix(skyColor, skyColor * vec3(0.85, 0.9, 1.0) + vec3(0.1), freezeProgress * 0.4);
 
-        // Reflection strength increases for ice
-        float reflectStrength = mix(0.6, 0.85, freezeProgress);
+        // Reflection strength increases for ice. Water is kept lower so grazing angles
+        // don't wash the surface out to the sky colour — it stays reading as water.
+        float reflectStrength = mix(0.4, 0.85, freezeProgress);
         result = mix(result, reflectColor, fresnel * reflectStrength);
 
         // Refractive water (WaterStyle::Refractive, the "late PS2" look): on top of the

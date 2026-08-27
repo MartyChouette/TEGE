@@ -5840,7 +5840,13 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 // Blended geometry uses the depth-write-OFF pipeline so it doesn't cull
                 // what's behind it; opaque uses the normal one. Switch only on change
                 // (or after a custom bind, which invalidates the tracked state).
-                bool wantTransparent = material && material->alphaMode == MaterialComponent::AlphaMode::Blend;
+                // Water blends but stays on the depth-writing pipeline: a water plane
+                // is one coherent translucent layer, so it must depth-cull its own
+                // overlapping wave fragments instead of stacking them (which washed the
+                // surface to white). The target pipeline already alpha-blends.
+                bool isWaterSurf = (m_CachedWater3DStorage && m_CachedWater3DStorage->Has(entity)) ||
+                                   (m_CachedWaterVolumeStorage && m_CachedWaterVolumeStorage->Has(entity));
+                bool wantTransparent = material && material->alphaMode == MaterialComponent::AlphaMode::Blend && !isWaterSurf;
                 if (rtCustomBound || wantTransparent != rtTransparentBound) {
                     (wantTransparent ? rtTransparentPipeline : targetPipeline)->Bind(commandBuffer);
                     rtTransparentBound = wantTransparent;
@@ -10401,7 +10407,11 @@ void RenderSystem::BindGeometryPipelineForMaterial(VkCommandBuffer cmd, Entity e
         return;
     }
     auto* mat = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
-    bool want = transparent && mat && mat->alphaMode == MaterialComponent::AlphaMode::Blend;
+    // Water blends but stays on the depth-writing pipeline (see the RT path): its own
+    // overlapping wave fragments must depth-cull, not stack up and wash out.
+    bool isWaterSurf = (m_CachedWater3DStorage && m_CachedWater3DStorage->Has(entity)) ||
+                       (m_CachedWaterVolumeStorage && m_CachedWaterVolumeStorage->Has(entity));
+    bool want = transparent && mat && mat->alphaMode == MaterialComponent::AlphaMode::Blend && !isWaterSurf;
     if (m_LastPipelineWasCustom || want != transparentBound) {
         Renderer::VulkanPipeline* target = want ? transparent : opaque;
         if (target) target->Bind(cmd);

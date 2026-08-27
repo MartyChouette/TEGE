@@ -49,14 +49,14 @@
    "transform": {
     "position": [
      0,
-     31,
-     23
+     33,
+     21
     ],
     "rotation": [
-     -0.45399049973954675,
-     0.0,
-     0.0,
-     0.8910065241883679
+     -0.49999999999999994,
+     0,
+     0,
+     0.8660254037844387
     ],
     "scale": [
      1,
@@ -66,7 +66,7 @@
    },
    "camera": {
     "projectionType": 0,
-    "fieldOfView": 64,
+    "fieldOfView": 62,
     "nearPlane": 0.1,
     "farPlane": 500,
     "isActive": true,
@@ -89,7 +89,7 @@
    "transform": {
     "position": [
      0,
-     -6.5,
+     -3.5,
      0
     ],
     "rotation": [
@@ -534,9 +534,9 @@
    },
    "material": {
     "baseColor": [
-     0.32,
-     0.34,
-     0.33
+     0.06,
+     0.12,
+     0.18
     ],
     "metallic": 0.0,
     "roughness": 0.9
@@ -571,16 +571,16 @@
     "tileSize": 1.5,
     "style": 0,
     "shallowColor": [
-     0.15,
-     0.42,
-     0.55
+     0.03,
+     0.2,
+     0.34
     ],
     "deepColor": [
-     0.04,
-     0.12,
-     0.28
+     0.0,
+     0.05,
+     0.13
     ],
-    "opacity": 0.5,
+    "opacity": 0.7,
     "waveSpeed": 1.0,
     "waveHeight": 0.12,
     "waveFrequency": 0.5,
@@ -1096,16 +1096,16 @@
     "tileSize": 1.5,
     "style": 1,
     "shallowColor": [
-     0.15,
-     0.42,
-     0.55
+     0.03,
+     0.2,
+     0.34
     ],
     "deepColor": [
-     0.04,
-     0.12,
-     0.28
+     0.0,
+     0.05,
+     0.13
     ],
-    "opacity": 0.5,
+    "opacity": 0.7,
     "waveSpeed": 1.0,
     "waveHeight": 0.12,
     "waveFrequency": 0.5,
@@ -1621,16 +1621,16 @@
     "tileSize": 1.5,
     "style": 2,
     "shallowColor": [
-     0.15,
-     0.42,
-     0.55
+     0.03,
+     0.2,
+     0.34
     ],
     "deepColor": [
-     0.04,
-     0.12,
-     0.28
+     0.0,
+     0.05,
+     0.13
     ],
-    "opacity": 0.5,
+    "opacity": 0.7,
     "waveSpeed": 1.0,
     "waveHeight": 0.35,
     "waveFrequency": 0.5,
@@ -2146,16 +2146,16 @@
     "tileSize": 1.5,
     "style": 3,
     "shallowColor": [
-     0.15,
-     0.42,
-     0.55
+     0.03,
+     0.2,
+     0.34
     ],
     "deepColor": [
-     0.04,
-     0.12,
-     0.28
+     0.0,
+     0.05,
+     0.13
     ],
-    "opacity": 0.5,
+    "opacity": 0.7,
     "waveSpeed": 1.0,
     "waveHeight": 0.12,
     "waveFrequency": 0.5,
@@ -2671,16 +2671,16 @@
     "tileSize": 1.5,
     "style": 4,
     "shallowColor": [
-     0.15,
-     0.42,
-     0.55
+     0.03,
+     0.2,
+     0.34
     ],
     "deepColor": [
-     0.04,
-     0.12,
-     0.28
+     0.0,
+     0.05,
+     0.13
     ],
-    "opacity": 0.5,
+    "opacity": 0.7,
     "waveSpeed": 1.0,
     "waveHeight": 0.12,
     "waveFrequency": 0.5,
@@ -3167,5 +3167,48 @@
     "castShadows": false
    }
   }
- ]
+ ],
+ "skybox": {
+  "type": 2,
+  "topColor": [
+   0.07,
+   0.13,
+   0.28
+  ],
+  "horizonColor": [
+   0.3,
+   0.4,
+   0.55
+  ],
+  "bottomColor": [
+   0.2,
+   0.24,
+   0.3
+  ],
+  "sunDirection": [
+   0.3,
+   -0.7,
+   0.4
+  ],
+  "sunIntensity": 1.0,
+  "sunSize": 0.02,
+  "sunColor": [
+   1.0,
+   0.95,
+   0.85
+  ],
+  "cloudCoverage": 0.15,
+  "cloudScale": 2.0,
+  "cloudColor": [
+   1.0,
+   1.0,
+   1.0
+  ]
+ },
+ "renderSettings": {
+  "bloomEnabled": true,
+  "bloomThreshold": 1.35,
+  "bloomIntensity": 0.22,
+  "bloomRadius": 0.004
+ }
 }

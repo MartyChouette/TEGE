@@ -182,11 +182,19 @@ void Water3D::BuildEntityMesh(ECS::World* world, ECS::Entity entity) const {
         ECS::MaterialComponent material;
         material.baseColor = m_Settings.shallowColor;
         material.opacity = m_Settings.opacity;
-        material.metallic = 0.3f;
-        material.roughness = 0.1f;
+        // Matte, non-metallic: a mirror-smooth metallic surface throws a blown-out
+        // specular/IBL sheen that reads as white once the water is translucent. Keep
+        // the fresnel reflection (handled in the water shader) but not the hard glare.
+        material.metallic = 0.0f;
+        material.roughness = 0.45f;
         material.doubleSided = true;
         material.castShadows = false;
-        material.alphaMode = ECS::MaterialComponent::AlphaMode::Opaque;
+        // Translucent: blend so the Opacity setting shows the bottom through the
+        // surface. Water still writes depth (the renderer keeps water surfaces on the
+        // depth-writing pipeline even though they blend), so its own overlapping wave
+        // fragments don't stack up and wash the plane out — that was why water was
+        // pinned to Opaque before.
+        material.alphaMode = ECS::MaterialComponent::AlphaMode::Blend;
         world->AddComponent<ECS::MaterialComponent>(entity, material);
     }
 }
