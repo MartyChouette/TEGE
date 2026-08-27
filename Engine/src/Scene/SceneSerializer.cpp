@@ -21,6 +21,7 @@
 #include "Enjin/ECS/Components/TemperatureZone.h"
 #include "Enjin/ECS/Components/GravityZone.h"
 #include "Enjin/ECS/Components/ReflectionProbe.h"
+#include "Enjin/ECS/Components/ReflectivePlane.h"
 #include "Enjin/ECS/Components/Elemental.h"
 #include "Enjin/ECS/Components/PostProcessVolume.h"
 #include "Enjin/ECS/Components/FluidVolume.h"
@@ -1095,6 +1096,30 @@ ECS::ReflectionProbeComponent DeserializeReflectionProbeComponent(const json& j)
     if (j.contains("isActive")) probe.isActive = JB(j["isActive"]);
     if (j.contains("blendDistance")) probe.blendDistance = j["blendDistance"].get<f32>();
     return probe;
+}
+
+json SerializeReflectivePlaneComponent(const ECS::ReflectivePlaneComponent& p) {
+    json j;
+    j["reflectionStrength"] = p.reflectionStrength;
+    j["tint"] = SerializeVector3(p.tint);
+    j["blur"] = p.blur;
+    j["fresnelPower"] = p.fresnelPower;
+    j["resolution"] = p.resolution;
+    j["clipBias"] = p.clipBias;
+    j["active"] = p.active;
+    return j;
+}
+
+ECS::ReflectivePlaneComponent DeserializeReflectivePlaneComponent(const json& j) {
+    ECS::ReflectivePlaneComponent p;
+    if (j.contains("reflectionStrength")) p.reflectionStrength = j["reflectionStrength"].get<f32>();
+    if (j.contains("tint")) p.tint = DeserializeVector3(j["tint"]);
+    if (j.contains("blur")) p.blur = j["blur"].get<f32>();
+    if (j.contains("fresnelPower")) p.fresnelPower = j["fresnelPower"].get<f32>();
+    if (j.contains("resolution")) p.resolution = j["resolution"].get<u32>();
+    if (j.contains("clipBias")) p.clipBias = j["clipBias"].get<f32>();
+    if (j.contains("active")) p.active = JB(j["active"]);
+    return p;
 }
 
 // Elemental components
@@ -7682,6 +7707,7 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
         ENJIN_SERDES("randomBag", ECS::RandomBagComponent, SerializeRandomBagComponent, DeserializeRandomBagComponent),
         ENJIN_SERDES("recordRewind", ECS::RecordRewindComponent, SerializeRecordRewindComponent, DeserializeRecordRewindComponent),
         ENJIN_SERDES("reflectionProbe", ECS::ReflectionProbeComponent, SerializeReflectionProbeComponent, DeserializeReflectionProbeComponent),
+        ENJIN_SERDES("reflectivePlane", ECS::ReflectivePlaneComponent, SerializeReflectivePlaneComponent, DeserializeReflectivePlaneComponent),
         ENJIN_SERDES("resource", ECS::ResourceComponent, SerializeResourceComponent, DeserializeResourceComponent),
         ENJIN_SERDES("reverbZone", ECS::ReverbZoneComponent, SerializeReverbZoneComponent, DeserializeReverbZoneComponent),
         ENJIN_SERDES("rigidbody", ECS::RigidbodyComponent, SerializeRigidbodyComponent, DeserializeRigidbodyComponent),

@@ -2956,6 +2956,7 @@ void RenderSystem::SetUpscalerQuality(u32 quality) { m_UpscalerQuality = quality
 #include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/ECS/Components/WaterVolume.h"
 #include "Enjin/ECS/Components/Water3D.h"
+#include "Enjin/ECS/Components/ReflectivePlane.h"
 #include "Enjin/ECS/Components/Vegetation.h"
 #include "Enjin/ECS/Components/ShrubVolume.h"
 #include "Enjin/ECS/Components/TreeVolume.h"
@@ -5325,6 +5326,9 @@ void RenderSystem::Update(f32 deltaTime) {
     // Render onion skin ghosts (editor viewport only, before sprites)
     RenderOnionSkinGhosts();
 
+    // Hand-crafted planar floor reflections (mirrored geometry), after opaque 3D.
+    RenderPlanarReflections();
+
     // Sorted 2D sprite rendering pass (after 3D geometry)
     RenderSprites();
 
@@ -6511,6 +6515,11 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     // Scene view only (viewportIndex 0): the game view (1) must show the game as
     // players will see it - no editor selection glow on particles or anything else.
     if (viewportIndex == 0) RenderSelectionHighlight();
+
+    // Hand-crafted planar floor reflections (mirrored geometry) — also in the
+    // offscreen path so the editor game view and golden capture show them, not
+    // just the player's main pass.
+    RenderPlanarReflections();
 
     // Sorted 2D sprite rendering pass (after 3D geometry)
     RenderSprites();
@@ -10850,6 +10859,45 @@ void RenderSystem::RenderOnionSkinGhosts() {
         // Pass skinning matrices for 3D skeletal onion skin ghosts (empty = non-skinned)
         const std::vector<Math::Matrix4>* bones = ghost.skinningMatrices.empty() ? nullptr : &ghost.skinningMatrices;
         RenderEntityGhost(ghost.entity, modelMatrix, ghost.tint, ghost.ghostOpacity * ghost.alpha, bones);
+    }
+}
+
+void RenderSystem::RenderPlanarReflections() {
+    if (!m_World || !m_Pipeline || !m_Renderer) return;
+
+    auto planes = m_World->GetEntitiesWithComponent<ReflectivePlaneComponent>();
+    if (planes.empty()) return;
+
+    m_LastBound.Reset(); m_GeometryPoolBound = false;  // reset descriptor cache for this pass
+
+    for (Entity planeEnt : planes) {
+        auto* plane = m_World->GetComponent<ReflectivePlaneComponent>(planeEnt);
+        if (!plane || !plane->active || plane->reflectionStrength <= 0.001f) continue;
+        auto* planeTf = m_World->GetComponent<TransformComponent>(planeEnt);
+        if (!planeTf) continue;
+
+        // Reflection plane height (a hair above the surface so it isn't self-caught).
+        f32 h = planeTf->position.y + plane->clipBias;
+
+        // Mirror across the horizontal plane Y=h: negate Y, translate by 2h.
+        Math::Matrix4 mirror;
+        for (int i = 0; i < 16; ++i) mirror.m[i] = 0.0f;
+        mirror.m[0] = 1.0f; mirror.m[5] = -1.0f; mirror.m[10] = 1.0f; mirror.m[15] = 1.0f;
+        mirror.m[13] = 2.0f * h;
+
+        // Re-draw every mesh above the plane, mirrored, tinted and dimmed so it reads
+        // as a reflection below the floor. Reuses the ghost draw (matrix override +
+        // alpha blend). Full-material colour reflection is the next upgrade.
+        for (Entity e : m_World->GetEntitiesWithComponent<MeshComponent>()) {
+            if (e == planeEnt) continue;                                   // not the floor itself
+            if (m_World->HasComponent<ReflectivePlaneComponent>(e)) continue;  // nor other planes
+            auto* tf = m_World->GetComponent<TransformComponent>(e);
+            if (!tf) continue;
+            if (tf->position.y < h - 0.001f) continue;   // only reflect what sits above the plane
+
+            Math::Matrix4 reflected = mirror * ComputeWorldMatrix(m_World, e);
+            RenderEntityGhost(e, reflected, plane->tint, plane->reflectionStrength, nullptr);
+        }
     }
 }
 

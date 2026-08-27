@@ -962,6 +962,11 @@ private:
                            const Math::Vector3& tint, f32 opacity,
                            const std::vector<Math::Matrix4>* skinningMatrices = nullptr);
     void RenderOnionSkinGhosts();
+    // Hand-crafted planar floor reflection (PS2/GameCube wet-floor look): for each
+    // active ReflectivePlaneComponent, re-draw the scene geometry mirrored across the
+    // plane, tinted and dimmed, so it reads as a reflection below the surface. Drawn
+    // into the main pass after opaque geometry; no offscreen target.
+    void RenderPlanarReflections();
     void CreateShadowPipeline();
     // Recreate all pipelines. If gpuAlreadyIdle is true, skips vkDeviceWaitIdle (caller guarantees GPU is idle).
     void RecreatePipelines(bool gpuAlreadyIdle = false);
