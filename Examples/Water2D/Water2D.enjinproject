@@ -1,0 +1,59 @@
+{
+  "audio": {
+    "enableHRTF": false,
+    "enableOcclusion": false,
+    "enableTransmission": false
+  },
+  "buildConfig": {
+    "fullscreen": false,
+    "windowHeight": 720,
+    "windowWidth": 1280,
+    "windowTitle": "2D Water"
+  },
+  "collisionGroups": [
+    "Default",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "physicsBackend": 0,
+  "projectMode": 1,
+  "projectName": "Water2D",
+  "scenes": [
+    {
+      "buildIndex": 0,
+      "isStartScene": true,
+      "name": "Main",
+      "path": "scenes/Main.enjin"
+    }
+  ],
+  "version": "1.0"
+}
