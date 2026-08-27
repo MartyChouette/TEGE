@@ -958,9 +958,14 @@ private:
     bool m_ViewmodelDepthActive = false;
     f32 m_PassViewportW = 0.0f;
     f32 m_PassViewportH = 0.0f;
+    // Draw an entity's mesh with a model-matrix override, tint, and opacity.
+    // useRealMaterial=false: flat-tint silhouette (onion-skin ghosts).
+    // useRealMaterial=true: the entity's real material + textures, tinted by `tint`
+    // and alpha-blended at `opacity` — used for full-colour planar reflections.
     void RenderEntityGhost(Entity entity, const Math::Matrix4& modelMatrix,
                            const Math::Vector3& tint, f32 opacity,
-                           const std::vector<Math::Matrix4>* skinningMatrices = nullptr);
+                           const std::vector<Math::Matrix4>* skinningMatrices = nullptr,
+                           bool useRealMaterial = false);
     void RenderOnionSkinGhosts();
     // Hand-crafted planar floor reflection (PS2/GameCube wet-floor look): for each
     // active ReflectivePlaneComponent, re-draw the scene geometry mirrored across the

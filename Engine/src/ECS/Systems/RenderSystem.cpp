@@ -10761,7 +10761,8 @@ void RenderSystem::RenderEntity(Entity entity) {
 
 void RenderSystem::RenderEntityGhost(Entity entity, const Math::Matrix4& modelMatrix,
                                       const Math::Vector3& tint, f32 opacity,
-                                      const std::vector<Math::Matrix4>* skinningMatrices) {
+                                      const std::vector<Math::Matrix4>* skinningMatrices,
+                                      bool useRealMaterial) {
     if (!m_Pipeline || !m_Renderer) return;
 
     MeshComponent* mesh = m_World->GetComponent<MeshComponent>(entity);
@@ -10774,22 +10775,45 @@ void RenderSystem::RenderEntityGhost(Entity entity, const Math::Matrix4& modelMa
     VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
-    // Build ghost push constants — override baseColor with tint, set opacity for transparency
+    MaterialComponent* mat = useRealMaterial ? m_World->GetComponent<MaterialComponent>(entity) : nullptr;
+
+    // Build push constants. Silhouette: flat tint. Real material (reflections): the
+    // entity's material, multiplied by `tint`, forced to alpha-blend at `opacity`.
     Renderer::PushConstants pushConstants{};
     pushConstants.model = modelMatrix;
-    pushConstants.baseColor = tint;
-    pushConstants.metallic = 0.0f;
-    pushConstants.emissiveColor = Math::Vector3(0, 0, 0);
-    pushConstants.roughness = 1.0f;
-    pushConstants.emissiveStrength = 0.0f;
+    if (mat) {
+        pushConstants.baseColor = Math::Vector3(mat->baseColor.x * tint.x,
+                                                mat->baseColor.y * tint.y,
+                                                mat->baseColor.z * tint.z);
+        pushConstants.metallic = mat->metallic;
+        pushConstants.emissiveColor = mat->emissiveColor;
+        pushConstants.roughness = mat->roughness;
+        pushConstants.emissiveStrength = mat->emissiveStrength;
+        pushConstants.parallaxScale = mat->parallaxScale;
+        // Real material flags, but force ALPHA_MODE_BLEND so the reflection composites.
+        i32 f = MaterialGPU::FromComponent(*mat).flags;
+        f = (f & ~(0x3 << 8)) | (2 << 8);
+        pushConstants.flags = f;
+    } else {
+        pushConstants.baseColor = tint;
+        pushConstants.metallic = 0.0f;
+        pushConstants.emissiveColor = Math::Vector3(0, 0, 0);
+        pushConstants.roughness = 1.0f;
+        pushConstants.emissiveStrength = 0.0f;
+        pushConstants.parallaxScale = 0.0f;
+        pushConstants.flags = (2 << 8);  // ALPHA_MODE_BLEND
+    }
     pushConstants.opacity = opacity;
     pushConstants.alphaCutoff = 0.0f;
-    // Set alpha blend flag (bit 9 = ALPHA_MODE_BLEND)
-    pushConstants.flags = (2 << 8);
-    pushConstants.parallaxScale = 0.0f;
 
-    // Bind default white texture for ghost (no texture lookups needed)
-    if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
+    // Textures: the entity's real maps for a full-colour reflection, else white.
+    if (mat) {
+        UpdateEntityTextureDescriptors(
+            mat->cachedBaseColorTexture ? mat->cachedBaseColorTexture : (m_DefaultWhiteTexture ? m_DefaultWhiteTexture.get() : nullptr),
+            mat->cachedHeightTexture, mat->cachedNormalTexture,
+            mat->cachedMetallicRoughnessTexture, mat->cachedEmissiveTexture,
+            mat->cachedMatcapTexture);
+    } else if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
         UpdateEntityTextureDescriptors(m_DefaultWhiteTexture.get(), nullptr, nullptr, nullptr, nullptr);
     }
 
@@ -10896,7 +10920,7 @@ void RenderSystem::RenderPlanarReflections() {
             if (tf->position.y < h - 0.001f) continue;   // only reflect what sits above the plane
 
             Math::Matrix4 reflected = mirror * ComputeWorldMatrix(m_World, e);
-            RenderEntityGhost(e, reflected, plane->tint, plane->reflectionStrength, nullptr);
+            RenderEntityGhost(e, reflected, plane->tint, plane->reflectionStrength, nullptr, /*useRealMaterial=*/true);
         }
     }
 }
