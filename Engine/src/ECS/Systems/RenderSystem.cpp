@@ -11316,6 +11316,11 @@ void RenderSystem::RenderSprites() {
                 if (tex && tex->IsValid()) {
                     UpdateTextureDescriptor(tex.get());
                 }
+            } else if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
+                // Textureless sprite: bind the 1x1 white texture so the quad renders
+                // as a flat tinted colour. Without this the descriptor kept whatever
+                // was previously bound and a plain coloured sprite drew nothing.
+                UpdateTextureDescriptor(m_DefaultWhiteTexture.get());
             }
             // Bind normal map for lit sprites (binding 6)
             if (litMode) {
