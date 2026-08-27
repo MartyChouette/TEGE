@@ -6098,6 +6098,13 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 if (water3d) {
                     pushConstants.baseColor = water3d->settings.shallowColor;
                     pushConstants.opacity = water3d->settings.opacity;
+                    // Refractive water: signal the shader (surfaceParam3 marker) and hand it
+                    // the reflection strength + fresnel power for the top-down refraction split.
+                    if (water3d->settings.style == Effects::WaterStyle::Refractive) {
+                        pushConstants.surfaceParam1 = Math::Clamp(water3d->settings.reflectionStrength, 0.0f, 1.0f);
+                        pushConstants.surfaceParam2 = water3d->settings.fresnelPower;
+                        pushConstants.surfaceParam3 = 1.0f;
+                    }
                 }
             }
 
@@ -6885,6 +6892,13 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                 if (water3d) {
                     pushConstants.baseColor = water3d->settings.shallowColor;
                     pushConstants.opacity = water3d->settings.opacity;
+                    // Refractive water: signal the shader (surfaceParam3 marker) and hand it
+                    // the reflection strength + fresnel power for the top-down refraction split.
+                    if (water3d->settings.style == Effects::WaterStyle::Refractive) {
+                        pushConstants.surfaceParam1 = Math::Clamp(water3d->settings.reflectionStrength, 0.0f, 1.0f);
+                        pushConstants.surfaceParam2 = water3d->settings.fresnelPower;
+                        pushConstants.surfaceParam3 = 1.0f;
+                    }
                 }
             }
 
@@ -10697,6 +10711,13 @@ void RenderSystem::RenderEntity(Entity entity) {
         if (water3d) {
             pushConstants.baseColor = water3d->settings.shallowColor;
             pushConstants.opacity = water3d->settings.opacity;
+            // Refractive water: signal the shader (surfaceParam3 marker) and hand it
+            // the reflection strength + fresnel power for the top-down refraction split.
+            if (water3d->settings.style == Effects::WaterStyle::Refractive) {
+                pushConstants.surfaceParam1 = Math::Clamp(water3d->settings.reflectionStrength, 0.0f, 1.0f);
+                pushConstants.surfaceParam2 = water3d->settings.fresnelPower;
+                pushConstants.surfaceParam3 = 1.0f;
+            }
         }
     }
 
@@ -10944,12 +10965,19 @@ void RenderSystem::RenderPlanarReflections() {
     }
 
     // Reflective water (WaterStyle::Reflective, the PS2/GameCube "Baldur's Gate:
-    // Dark Alliance" glassy water): the water plane becomes a mirror using the same
-    // mechanic. The water material supplies the tint, waves, and foam on top.
+    // Dark Alliance" glassy water) and Refractive water (the "late PS2" look) both
+    // become real mirrors via the same mechanic. The water material supplies the
+    // tint, waves, and foam on top; Refractive additionally layers a fresnel-split
+    // refraction shimmer in the shader, so its mirror is drawn a touch weaker to let
+    // the top-down refraction read through.
     for (Entity waterEnt : waters) {
         auto* water = m_World->GetComponent<Water3DComponent>(waterEnt);
-        if (!water || water->settings.style != Effects::WaterStyle::Reflective) continue;
+        if (!water) continue;
+        bool reflective = water->settings.style == Effects::WaterStyle::Reflective;
+        bool refractive = water->settings.style == Effects::WaterStyle::Refractive;
+        if (!reflective && !refractive) continue;
         f32 s = Math::Clamp(water->settings.reflectionStrength, 0.0f, 1.0f);
+        if (refractive) s *= 0.6f;   // refraction dominates top-down; keep grazing reflections
         if (s <= 0.001f) continue;
         auto* wtf = m_World->GetComponent<TransformComponent>(waterEnt);
         if (!wtf) continue;

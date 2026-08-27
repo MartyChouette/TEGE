@@ -1592,6 +1592,35 @@ void main() {
         float reflectStrength = mix(0.6, 0.85, freezeProgress);
         result = mix(result, reflectColor, fresnel * reflectStrength);
 
+        // Refractive water (WaterStyle::Refractive, the "late PS2" look): on top of the
+        // real mirror-geometry reflection drawn beneath the surface, add an animated
+        // refraction shimmer and a fresnel split — looking straight down shows the
+        // wobbling refracted deep colour, grazing angles keep the reflection. No
+        // screen-space scene sampling; the shimmer is a hand-crafted caustic pattern.
+        // Signalled by surfaceParam3 > 0.5 (Water3D refractive only); shore water sets
+        // WATER_SHORE and is excluded so its foamScale never trips this.
+        if (mat_surfaceParam3 > 0.5 && (mat_flags & FLAG_WATER_SHORE) == 0) {
+            float waterTime = lighting.windData.w;
+            vec2 wp = fragWorldPos.xz;
+            // Two crossing wobble waves make an animated caustic-like refraction field.
+            float w1 = sin(wp.x * 0.7 + waterTime * 1.3) * cos(wp.y * 0.6 - waterTime * 1.1);
+            float w2 = sin((wp.x + wp.y) * 1.3 - waterTime * 0.9);
+            float shimmer = (w1 + w2) * 0.5;                  // ~[-1, 1]
+            float caustic = smoothstep(0.55, 1.0, shimmer);   // bright glints at peaks only
+
+            // Refracted deep-water tint: darken toward the deep look, brighten at glints.
+            vec3 refractCol = mat_baseColor * (0.55 + 0.25 * (shimmer * 0.5 + 0.5));
+
+            // Fresnel split driven by the material's fresnel power (surfaceParam2):
+            // low fresnel (top-down) -> show refraction; high fresnel (grazing) -> keep reflection.
+            float refrFres = pow(1.0 - NdotV, max(mat_surfaceParam2, 1.0));
+            float refractMix = (1.0 - refrFres) * 0.4;
+            result = mix(result, refractCol, refractMix);
+
+            // Caustic glint on top, fading out at grazing angles.
+            result += vec3(0.05, 0.07, 0.09) * caustic * (1.0 - refrFres);
+        }
+
         // Shore foam: procedural noise foam near edges
         if ((mat_flags & FLAG_WATER_SHORE) != 0 && mat_surfaceParam2 > 0.0) {
             float edgeDist = fragVertColor.g;  // 0=edge, 1=center

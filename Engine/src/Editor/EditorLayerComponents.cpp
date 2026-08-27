@@ -1777,6 +1777,18 @@ void EditorLayer::DrawWater3DComponent(ECS::Entity entity) {
         if (InspectorUndo::Combo(m_UndoRedo, "Style", &style, styleNames, 5))
             w->settings.style = static_cast<Effects::WaterStyle>(style);
 
+        // Reflection controls: Reflective mirrors the scene; Refractive adds a
+        // fresnel-split refraction shimmer on top (grazing = reflect, top-down = refract).
+        if (w->settings.style == Effects::WaterStyle::Reflective ||
+            w->settings.style == Effects::WaterStyle::Refractive) {
+            InspectorUndo::SliderFloat(m_UndoRedo, "Reflection Strength", &w->settings.reflectionStrength, 0.0f, 1.0f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("How much of the mirrored scene shows in the water.\nHand-crafted mirror geometry, no screen-space tricks.");
+            if (w->settings.style == Effects::WaterStyle::Refractive) {
+                InspectorUndo::DragFloat(m_UndoRedo, "Fresnel Power", &w->settings.fresnelPower, 0.05f, 1.0f, 10.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Reflection/refraction split.\nHigher = reflection only at grazing angles,\nrefracted deep colour when looking straight down.");
+            }
+        }
+
         ImGui::Separator();
         f32 sc[3] = {w->settings.shallowColor.x, w->settings.shallowColor.y, w->settings.shallowColor.z};
         if (InspectorUndo::ColorEdit3(m_UndoRedo, "Shallow Color", sc,
