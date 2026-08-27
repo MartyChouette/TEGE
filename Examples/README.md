@@ -37,6 +37,13 @@ Output lands in `build/bin/Examples/`.
 - **Triangle** — the lowest level: raw `Enjin::Application` with your own
   renderer setup. For people who want to see the plumbing.
 
+## Scene examples (no build — open in the editor)
+
+- **WaterShowcase** — all five 3D water styles (Flat, Animated, VertexWave,
+  Reflective, Refractive) side by side, with floating cubes so the reflective
+  styles have something to mirror. Open `WaterShowcase/WaterShowcase.enjinproject`
+  and press Play. See `WaterShowcase/README.md` for the layout.
+
 ## The C++ API in one breath
 
 ```cpp
