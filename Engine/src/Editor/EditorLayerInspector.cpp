@@ -16,6 +16,7 @@
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Components/VirtualCamera.h"
+#include "Enjin/ECS/Components/Lens.h"
 #include "Enjin/ECS/Components/Notes.h"
 #include "Enjin/ECS/Components/Swarm.h"
 #include "Enjin/ECS/Components/DungeonGenerator.h"
@@ -708,6 +709,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::VirtualCameraComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::VirtualCameraComponent>(e); },
             "virtualCamera"},
+        {"Lens", "Camera", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::LensComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::LensComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::LensComponent>(e); },
+            "lens"},
 
         // -- Audio --
         {"Audio Source", "Audio", nullptr,
@@ -2675,6 +2681,9 @@ void EditorLayer::DrawInspectorPanel() {
         }
         if (m_World->HasComponent<ECS::VirtualCameraComponent>(m_PrimarySelected)) {
             DrawVirtualCameraComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::LensComponent>(m_PrimarySelected)) {
+            DrawLensComponent(m_PrimarySelected);
         }
         if (m_World->HasComponent<ECS::LookAtTargetComponent>(m_PrimarySelected)) {
             DrawLookAtTargetComponent(m_PrimarySelected);

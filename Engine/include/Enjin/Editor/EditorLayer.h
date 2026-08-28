@@ -503,6 +503,7 @@ private:
     void DrawFollowTargetComponent(ECS::Entity entity);
     void DrawLookAtTargetComponent(ECS::Entity entity);
     void DrawVirtualCameraComponent(ECS::Entity entity);
+    void DrawLensComponent(ECS::Entity entity);
     void DrawWaypointComponent(ECS::Entity entity);
 
     // Visual components

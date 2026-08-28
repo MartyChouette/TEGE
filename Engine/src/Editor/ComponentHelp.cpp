@@ -222,6 +222,11 @@ static const std::unordered_map<std::string, ComponentHelp>& Registry() {
             "Camera_TakeManualControl(self); /* ... */ Camera_ReleaseManualControl();",
             {}
         };
+        r["lens"] = {
+            "A camera lens for the active camera: distortion, chromatic aberration, vignette, anamorphic squeeze.",
+            "Add it to your camera entity, pick a preset (Fisheye, Vintage, Security...), then tweak any value - tweaking makes it a Custom lens.",
+            nullptr, {} };
+
         r["aiController"] = {
             "Steers the entity with AI: pathfinding and behaviors.",
             "Give it a target or a behavior. It drives the entity's movement.",

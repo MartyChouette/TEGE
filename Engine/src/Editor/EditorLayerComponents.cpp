@@ -19,6 +19,7 @@ extern char** environ;
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Components/VirtualCamera.h"
+#include "Enjin/ECS/Components/Lens.h"
 #include "Enjin/ECS/Components/Notes.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/Gameplay.h"
@@ -5240,6 +5241,46 @@ void EditorLayer::DrawLookAtTargetComponent(ECS::Entity entity) {
             }
             ImGui::EndPopup();
         }
+    }
+}
+
+void EditorLayer::DrawLensComponent(ECS::Entity entity) {
+    bool lensOpen = UI::SectionHeader("Lens", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("LensCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::LensComponent>(entity, "lens", "Lens");
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (lensOpen) {
+        auto* lens = m_World->GetComponent<ECS::LensComponent>(entity);
+        if (!lens) return;
+        DrawComponentHelp("lens", m_World, entity);
+
+        InspectorUndo::Checkbox(m_UndoRedo, "Enabled", &lens->enabled);
+
+        static const char* kLensTypes[] = { "Standard", "Wide Angle", "Fisheye", "Telephoto",
+                                            "Anamorphic", "Vintage", "Security", "Dreamy", "Custom" };
+        int type = static_cast<int>(lens->type);
+        if (ImGui::Combo("Preset", &type, kLensTypes, 9)) {
+            lens->ApplyPreset(static_cast<ECS::LensType>(type));
+        }
+        ImGui::SetItemTooltip("A preset seeds the values below; tweaking any of them makes it a Custom lens.");
+
+        auto markCustom = [lens]() { lens->type = ECS::LensType::Custom; };
+        if (InspectorUndo::DragFloat(m_UndoRedo, "Distortion", &lens->distortion, 0.005f, -0.6f, 0.4f)) markCustom();
+        ImGui::SetItemTooltip("Negative = barrel (edges bulge), positive = pincushion (edges pinch).");
+        if (InspectorUndo::DragFloat(m_UndoRedo, "Anamorphic Squeeze", &lens->anamorphicSqueeze, 0.005f, 0.7f, 1.6f)) markCustom();
+        ImGui::SetItemTooltip("1 = none. >1 stretches horizontally - the wide cinema look.");
+        if (InspectorUndo::DragFloat(m_UndoRedo, "Chromatic Aberration", &lens->chromaticAberration, 0.0005f, 0.0f, 0.02f)) markCustom();
+        ImGui::SetItemTooltip("Color fringing toward the edges, like real glass. 0.002-0.01 typical.");
+        if (InspectorUndo::SliderFloat(m_UndoRedo, "Vignette Intensity", &lens->vignetteIntensity, 0.0f, 1.0f)) markCustom();
+        if (lens->vignetteIntensity > 0.0f) {
+            if (InspectorUndo::SliderFloat(m_UndoRedo, "Vignette Softness", &lens->vignetteSoftness, 0.0f, 1.0f)) markCustom();
+        }
+        ImGui::TextDisabled("Applies when this entity is the active camera.");
     }
 }
 
