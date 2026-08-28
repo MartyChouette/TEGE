@@ -326,6 +326,22 @@ public:
     // Each ViewportCamera defines a normalized rect within the target.
     // The render pass must already be started by the caller.
     void RenderSplitscreen(Renderer::RenderTarget* target, const std::vector<ViewportCamera>& viewports);
+
+    // ── Script render targets (FR-4: live camera→texture from script) ──
+    // Create is DEFERRED: the Vulkan resources are built at the next
+    // FlushPendingChanges (the pre-recording safe point); the handle is valid
+    // immediately for SetCamera/Bind calls. One target renders per frame
+    // (round-robin) into offscreen viewport slot 2, so script targets never
+    // fight the editor viewport (slot 0) or game view (slot 1).
+    u64  CreateScriptRenderTarget(u32 width, u32 height);
+    void DestroyScriptRenderTarget(u64 handle);
+    void SetScriptRenderTargetCamera(u64 handle, u64 cameraEntity);
+    // Point an entity's material base-color at the target's live image.
+    bool BindScriptRenderTargetToEntity(u64 handle, Entity entity);
+    // Record this frame's script-target render (round-robin). Must be called
+    // OUTSIDE any render pass. Safe to call more than once per frame (no-ops).
+    void RenderScriptTargets(VkCommandBuffer commandBuffer);
+    bool HasScriptRenderTargets() const { return !m_ScriptRenderTargets.empty(); }
 #endif
 
     static constexpr u32 MAX_SPLITSCREEN_VIEWPORTS = 4;
@@ -1788,6 +1804,23 @@ private:
     std::vector<std::unique_ptr<Renderer::VulkanBuffer>> m_OffscreenUniformBuffers;
     std::vector<std::unique_ptr<Renderer::VulkanBuffer>> m_OffscreenLightingBuffers;
     std::vector<VkDescriptorSet> m_OffscreenDescriptorSets;
+
+    // Script render targets (FR-4). Resources are created in FlushPendingChanges
+    // (pre-recording safe point) and rendered round-robin, one per frame, into
+    // offscreen viewport slot 2. The external Texture aliases the target's color
+    // view/sampler so the normal material/bindless machinery samples it.
+    struct ScriptRenderTargetSlot {
+        std::unique_ptr<Renderer::RenderTarget> target;
+        std::unique_ptr<Renderer::Texture> aliasTexture;  // non-owning external wrap
+        u64 cameraEntity = 0;
+        u32 pendingWidth = 0, pendingHeight = 0;          // nonzero → create pending
+        std::vector<Entity> pendingBinds;                 // entities awaiting material bind
+    };
+    std::unordered_map<u64, ScriptRenderTargetSlot> m_ScriptRenderTargets;
+    u64 m_NextScriptRenderTargetHandle = 1;
+    u64 m_ScriptTargetRoundRobin = 0;                     // rotates which target renders this frame
+    bool m_ScriptTargetsRenderedThisFrame = false;        // reset in FlushPendingChanges
+    void ProcessPendingScriptRenderTargets();             // create + bind at the safe point
 
     // Active rendering target pointers — swapped for offscreen passes
     std::vector<VkDescriptorSet>* m_ActiveDescriptorSets = nullptr;

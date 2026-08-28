@@ -59,6 +59,50 @@ static f32 Render_GetShadowDistance() {
     return s_BindingsRenderSystem->GetShadowDistance();
 }
 
+// ============================================================================
+// Script render targets (FR-4) — live camera→texture from script.
+// Vulkan-only for now; on web these return 0/false so scripts degrade cleanly.
+// ============================================================================
+
+static u64 RenderTarget_Create(int width, int height) {
+#if !ENJIN_RENDERER_WEBGPU
+    if (!s_BindingsRenderSystem || width <= 0 || height <= 0) return 0;
+    return s_BindingsRenderSystem->CreateScriptRenderTarget(
+        static_cast<u32>(width), static_cast<u32>(height));
+#else
+    (void)width; (void)height;
+    return 0;
+#endif
+}
+
+static void RenderTarget_Destroy(u64 handle) {
+#if !ENJIN_RENDERER_WEBGPU
+    if (s_BindingsRenderSystem) s_BindingsRenderSystem->DestroyScriptRenderTarget(handle);
+#else
+    (void)handle;
+#endif
+}
+
+static void RenderTarget_SetCamera(u64 handle, u64 cameraEntity) {
+#if !ENJIN_RENDERER_WEBGPU
+    if (s_BindingsRenderSystem)
+        s_BindingsRenderSystem->SetScriptRenderTargetCamera(handle, cameraEntity);
+#else
+    (void)handle; (void)cameraEntity;
+#endif
+}
+
+static bool RenderTarget_BindToEntity(u64 handle, u64 entity) {
+#if !ENJIN_RENDERER_WEBGPU
+    if (!s_BindingsRenderSystem) return false;
+    return s_BindingsRenderSystem->BindScriptRenderTargetToEntity(
+        handle, static_cast<ECS::Entity>(entity));
+#else
+    (void)handle; (void)entity;
+    return false;
+#endif
+}
+
 static void Render_SetShadowStrength(f32 strength) {
     if (!s_BindingsRenderSystem) return;
     s_BindingsRenderSystem->SetShadowStrength(strength);
@@ -672,6 +716,20 @@ void RegisterRenderBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction(
         "float Render_GetShadowStrength()",
         ENJIN_AS_FN(Render_GetShadowStrength), ENJIN_AS_CALL_CDECL));
+
+    // ---- Script render targets (FR-4) ----
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "uint64 RenderTarget_Create(int width, int height)",
+        ENJIN_AS_FN(RenderTarget_Create), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void RenderTarget_Destroy(uint64 handle)",
+        ENJIN_AS_FN(RenderTarget_Destroy), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void RenderTarget_SetCamera(uint64 handle, uint64 cameraEntity)",
+        ENJIN_AS_FN(RenderTarget_SetCamera), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "bool RenderTarget_BindToEntity(uint64 handle, uint64 entity)",
+        ENJIN_AS_FN(RenderTarget_BindToEntity), ENJIN_AS_CALL_CDECL));
 
     // ---- Ambient ----
     AS_CHECK(engine->RegisterGlobalFunction(

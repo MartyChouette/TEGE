@@ -3613,6 +3613,12 @@ void RenderSystem::FlushSceneClear() {
     // GPU is idle — retired buffers from deleted entities can go now too
     m_BufferGraveyard.clear();
     m_EntityRenderData.clear();
+    // Script render targets are scene/session-scoped: their camera entities and
+    // bound materials died with the scene. Drop them (bindless handles too).
+    for (auto& [h, slot] : m_ScriptRenderTargets) {
+        if (slot.aliasTexture) m_TextureBindlessHandles.erase(slot.aliasTexture.get());
+    }
+    m_ScriptRenderTargets.clear();
     // Arena (step 2): shared bind-pose buffers key off the old scene's mesh hashes and the
     // arena bone slots are stale — drop them so the next frame rebuilds against the new scene.
     m_ArenaSharedMeshes.clear();
@@ -3956,6 +3962,11 @@ void RenderSystem::FlushPendingChanges() {
     // New frame is about to record — allow the compute pre-pass to run once
     m_ComputePrePassDone = false;
     m_FramePrepDone = false;
+
+    // Script render targets (FR-4): build queued targets / apply queued material
+    // binds at this pre-recording safe point, and re-arm the per-frame render.
+    m_ScriptTargetsRenderedThisFrame = false;
+    ProcessPendingScriptRenderTargets();
 
     // Gaussian splats: (re)load dirty components and run the throttled
     // back-to-front re-sort. Both create/write GPU buffers, so they live here
@@ -4911,6 +4922,13 @@ void RenderSystem::Update(f32 deltaTime) {
         }
     }
 
+    // Script render targets (FR-4): record before the main pass so the mirror
+    // quad samples this frame's offscreen view. Player path — the editor calls
+    // this from RenderOffscreen instead (Update never gets here in editor mode).
+    if (HasScriptRenderTargets()) {
+        RenderScriptTargets(m_VulkanRenderer->GetCurrentCommandBuffer());
+    }
+
     // Begin the main render pass (after any pre-passes like shadows)
     m_VulkanRenderer->BeginMainRenderPass();
 
@@ -5658,6 +5676,141 @@ void RenderSystem::TickGPUEmitters(f32 deltaTime) {
             }
         }
     }
+}
+
+// ── Script render targets (FR-4) ────────────────────────────────────────────
+
+u64 RenderSystem::CreateScriptRenderTarget(u32 width, u32 height) {
+    width = std::clamp(width, 16u, 2048u);
+    height = std::clamp(height, 16u, 2048u);
+    u64 handle = m_NextScriptRenderTargetHandle++;
+    auto& slot = m_ScriptRenderTargets[handle];
+    slot.pendingWidth = width;   // Vulkan resources built at the next
+    slot.pendingHeight = height; // FlushPendingChanges (pre-recording safe point)
+    return handle;
+}
+
+void RenderSystem::DestroyScriptRenderTarget(u64 handle) {
+    auto it = m_ScriptRenderTargets.find(handle);
+    if (it == m_ScriptRenderTargets.end()) return;
+    // The target's image may still be referenced by in-flight frames and by
+    // materials pointing at the alias texture. Wait for the GPU, then unhook.
+    if (m_VulkanRenderer) m_VulkanRenderer->WaitForAllFrames();
+    if (it->second.aliasTexture) {
+        m_TextureBindlessHandles.erase(it->second.aliasTexture.get());
+        if (m_World) {
+            for (Entity e : m_World->GetEntitiesWithComponent<MaterialComponent>()) {
+                auto* mat = m_World->GetComponent<MaterialComponent>(e);
+                if (mat && mat->cachedBaseColorTexture == it->second.aliasTexture.get()) {
+                    mat->cachedBaseColorTexture = nullptr;
+                    mat->baseColorTexture = -1;
+                }
+            }
+        }
+        m_MaterialSSBOBuilt = false;
+    }
+    m_ScriptRenderTargets.erase(it);
+}
+
+void RenderSystem::SetScriptRenderTargetCamera(u64 handle, u64 cameraEntity) {
+    auto it = m_ScriptRenderTargets.find(handle);
+    if (it != m_ScriptRenderTargets.end()) it->second.cameraEntity = cameraEntity;
+}
+
+bool RenderSystem::BindScriptRenderTargetToEntity(u64 handle, Entity entity) {
+    auto it = m_ScriptRenderTargets.find(handle);
+    if (it == m_ScriptRenderTargets.end()) return false;
+    // Defer to the safe point (also handles "created this frame, not built yet").
+    it->second.pendingBinds.push_back(entity);
+    return true;
+}
+
+void RenderSystem::ProcessPendingScriptRenderTargets() {
+    if (m_ScriptRenderTargets.empty()) return;
+    for (auto& [handle, slot] : m_ScriptRenderTargets) {
+        if (slot.pendingWidth != 0 && !slot.target) {
+            auto rt = std::make_unique<Renderer::RenderTarget>();
+            if (rt->Create(m_VulkanRenderer, slot.pendingWidth, slot.pendingHeight)) {
+                slot.target = std::move(rt);
+                auto alias = std::make_unique<Renderer::Texture>(m_VulkanRenderer->GetContext());
+                if (alias->CreateFromExternal(slot.target->GetColorImageView(),
+                                              slot.target->GetSampler(),
+                                              slot.target->GetWidth(), slot.target->GetHeight())) {
+                    slot.aliasTexture = std::move(alias);
+                    u32 h = m_BindlessManager
+                        ? m_BindlessManager->RegisterTexture(slot.aliasTexture->GetImageView(),
+                                                             slot.aliasTexture->GetSampler())
+                        : UINT32_MAX;
+                    if (h != UINT32_MAX) m_TextureBindlessHandles[slot.aliasTexture.get()] = h;
+                }
+                ENJIN_LOG_INFO(Renderer, "Script render target %llu created (%ux%u)",
+                               static_cast<unsigned long long>(handle),
+                               slot.pendingWidth, slot.pendingHeight);
+            } else {
+                ENJIN_LOG_ERROR(Renderer, "Script render target %llu: create failed",
+                                static_cast<unsigned long long>(handle));
+            }
+            slot.pendingWidth = slot.pendingHeight = 0;
+        }
+        if (!slot.pendingBinds.empty() && slot.aliasTexture && m_World) {
+            for (Entity e : slot.pendingBinds) {
+                if (!m_World->IsValid(e)) continue;
+                auto* mat = m_World->GetComponent<MaterialComponent>(e);
+                if (!mat) mat = &m_World->AddComponent<MaterialComponent>(e);
+                mat->cachedBaseColorTexture = slot.aliasTexture.get();
+                mat->baseColorTexture = 1;
+                mat->textureCacheDirty = false;  // no disk path behind this texture
+            }
+            slot.pendingBinds.clear();
+            m_MaterialSSBOBuilt = false;
+        }
+    }
+}
+
+void RenderSystem::RenderScriptTargets(VkCommandBuffer commandBuffer) {
+    if (m_ScriptTargetsRenderedThisFrame) return;
+    if (m_ScriptRenderTargets.empty() || !m_World || commandBuffer == VK_NULL_HANDLE) return;
+
+    // Round-robin: one target per frame. Collect ready targets in handle order.
+    std::vector<std::pair<u64, ScriptRenderTargetSlot*>> ready;
+    for (auto& [handle, slot] : m_ScriptRenderTargets) {
+        if (slot.target && slot.target->IsValid() && slot.cameraEntity != 0)
+            ready.push_back({handle, &slot});
+    }
+    if (ready.empty()) return;
+    std::sort(ready.begin(), ready.end(),
+              [](const auto& a, const auto& b) { return a.first < b.first; });
+    auto& [handle, slot] = ready[m_ScriptTargetRoundRobin++ % ready.size()];
+
+    Entity camEntity = static_cast<Entity>(slot->cameraEntity);
+    if (!m_World->IsValid(camEntity)) return;
+    auto* cc = m_World->GetComponent<CameraComponent>(camEntity);
+    auto* ct = m_World->GetComponent<TransformComponent>(camEntity);
+    if (!cc || !ct) return;
+
+    Renderer::Camera cam;
+    f32 aspect = static_cast<f32>(slot->target->GetWidth()) /
+                 static_cast<f32>(slot->target->GetHeight());
+    if (cc->projectionType == ProjectionType::Perspective) {
+        cam.SetPerspective(cc->fieldOfView, aspect, cc->nearPlane, cc->farPlane);
+    } else {
+        f32 halfH = cc->orthoSize;
+        f32 halfW = halfH * aspect;
+        cam.SetOrthographic(-halfW, halfW, -halfH, halfH, cc->nearPlane, cc->farPlane);
+    }
+    Math::Vector3 fwd = ct->rotation.Rotate(Math::Vector3(0.0f, 0.0f, -1.0f));
+    Math::Vector3 up = ct->rotation.Rotate(Math::Vector3(0.0f, 1.0f, 0.0f));
+    cam.SetPosition(ct->position);
+    cam.SetLookAt(ct->position, ct->position + fwd, up);
+
+    // Offscreen viewport slot 2: never collides with the editor viewport (0) or
+    // the game view (1). A 3+-way splitscreen recording later in the frame can
+    // overwrite this slot's UBO, showing one frame of the wrong view in the
+    // mirror — cosmetic, rare, accepted for v1.
+    slot->target->Begin(commandBuffer);
+    RenderToTarget(slot->target.get(), &cam, 2);
+    slot->target->End(commandBuffer);
+    m_ScriptTargetsRenderedThisFrame = true;
 }
 
 void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Camera* camera, u32 viewportIndex) {

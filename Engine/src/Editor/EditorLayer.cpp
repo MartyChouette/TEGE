@@ -2883,6 +2883,13 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     // single-queue path (no async compute) keeps ordering simple.
     m_RenderSystem->RecordRTFrame(false);
 
+    // Script render targets (FR-4): record before the game view so mirror quads
+    // in the scene sample this frame's offscreen view. Must be outside the
+    // scene target's render pass.
+    if (m_RenderSystem->HasScriptRenderTargets()) {
+        m_RenderSystem->RenderScriptTargets(commandBuffer);
+    }
+
     // Render scene + effects into the chosen target
     sceneTarget->Begin(commandBuffer);
     if (useSplitscreen && !splitViewports.empty()) {

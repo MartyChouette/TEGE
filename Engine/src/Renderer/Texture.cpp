@@ -59,9 +59,24 @@ bool Texture::CreateSolidColor(u8 r, u8 g, u8 b, u8 a) {
     return CreateFromData(pixels, 1, 1, 4, VK_FORMAT_R8G8B8A8_SRGB, VulkanSampler::Nearest());
 }
 
+bool Texture::CreateFromExternal(VkImageView view, VkSampler sampler, u32 width, u32 height) {
+    if (view == VK_NULL_HANDLE || sampler == VK_NULL_HANDLE) return false;
+    Destroy();  // release any owned resources; external mode holds none
+    m_ExternalView = view;
+    m_ExternalSampler = sampler;
+    m_ExternalWidth = width;
+    m_ExternalHeight = height;
+    return true;
+}
+
 void Texture::Destroy() {
     m_Sampler.reset();
     m_Image.reset();
+    // External handles are NOT owned — just forget them.
+    m_ExternalView = VK_NULL_HANDLE;
+    m_ExternalSampler = VK_NULL_HANDLE;
+    m_ExternalWidth = 0;
+    m_ExternalHeight = 0;
 }
 
 VkDescriptorImageInfo Texture::GetDescriptorInfo() const {

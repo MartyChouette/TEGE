@@ -175,6 +175,7 @@ camera path is untouched — adopting the system is opt-in per scene.
 - **Fog**: `Render_SetFogDensity/GetFogDensity(float)`, `Render_SetFogColor/GetFogColor(Vector3)`, `Render_SetFogStart/GetFogStart(float)`, `Render_SetFogEnd/GetFogEnd(float)`, `Render_SetFogHeightFalloff/GetFogHeightFalloff(float)`
 - **Weather**: `Render_SetSnowIntensity/GetSnowIntensity(float)`, `Render_SetRainActive/IsRainActive(bool)`
 - **Effects**: `Render_SetWorldCurvature/GetWorldCurvature(float)`, `Render_SetWireframeEnabled/IsWireframeEnabled(bool)`
+- **Render targets (live camera→texture)**: `uint64 RenderTarget_Create(int width, int height)`, `RenderTarget_SetCamera(uint64 handle, uint64 cameraEntity)`, `bool RenderTarget_BindToEntity(uint64 handle, uint64 entity)` (points the entity material's base color at the live target), `RenderTarget_Destroy(uint64 handle)`. The camera entity needs Camera + Transform components (leave it `isActive = false` so it doesn't take over the screen). One target renders per frame round-robin. Desktop only for now — on web `Create` returns 0 so scripts can degrade gracefully. Example: a hand mirror — point a second camera at the scene, bind the target to the mirror quad.
 
 ## Post-Processing
 

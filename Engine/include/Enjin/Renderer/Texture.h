@@ -33,24 +33,52 @@ public:
     // Create a solid color texture (useful for defaults)
     bool CreateSolidColor(u8 r, u8 g, u8 b, u8 a = 255);
 
+    // Alias an EXTERNALLY-owned image view + sampler (e.g. a RenderTarget's
+    // color attachment) so the material/bindless machinery can treat it like
+    // any other texture. Non-owning: Destroy() releases nothing for these;
+    // the caller must keep the underlying resources alive (and re-wrap after
+    // a RenderTarget::Resize, which recreates its views).
+    bool CreateFromExternal(VkImageView view, VkSampler sampler, u32 width, u32 height);
+
     void Destroy();
 
     // Getters
     VkImage GetImage() const { return m_Image ? m_Image->GetImage() : VK_NULL_HANDLE; }
-    VkImageView GetImageView() const { return m_Image ? m_Image->GetImageView() : VK_NULL_HANDLE; }
-    VkSampler GetSampler() const { return m_Sampler ? m_Sampler->GetSampler() : VK_NULL_HANDLE; }
-    u32 GetWidth() const { return m_Image ? m_Image->GetWidth() : 0; }
-    u32 GetHeight() const { return m_Image ? m_Image->GetHeight() : 0; }
+    VkImageView GetImageView() const {
+        if (m_ExternalView != VK_NULL_HANDLE) return m_ExternalView;
+        return m_Image ? m_Image->GetImageView() : VK_NULL_HANDLE;
+    }
+    VkSampler GetSampler() const {
+        if (m_ExternalSampler != VK_NULL_HANDLE) return m_ExternalSampler;
+        return m_Sampler ? m_Sampler->GetSampler() : VK_NULL_HANDLE;
+    }
+    u32 GetWidth() const {
+        if (m_ExternalView != VK_NULL_HANDLE) return m_ExternalWidth;
+        return m_Image ? m_Image->GetWidth() : 0;
+    }
+    u32 GetHeight() const {
+        if (m_ExternalView != VK_NULL_HANDLE) return m_ExternalHeight;
+        return m_Image ? m_Image->GetHeight() : 0;
+    }
 
     // Get descriptor info for shader binding
     VkDescriptorImageInfo GetDescriptorInfo() const;
 
-    bool IsValid() const { return m_Image && m_Sampler && GetImageView() != VK_NULL_HANDLE && GetSampler() != VK_NULL_HANDLE; }
+    bool IsValid() const {
+        if (m_ExternalView != VK_NULL_HANDLE) return m_ExternalSampler != VK_NULL_HANDLE;
+        return m_Image && m_Sampler && GetImageView() != VK_NULL_HANDLE && GetSampler() != VK_NULL_HANDLE;
+    }
 
 private:
     VulkanContext* m_Context = nullptr;
     std::unique_ptr<VulkanImage> m_Image;
     std::unique_ptr<VulkanSampler> m_Sampler;
+
+    // External (non-owning) mode — see CreateFromExternal.
+    VkImageView m_ExternalView = VK_NULL_HANDLE;
+    VkSampler m_ExternalSampler = VK_NULL_HANDLE;
+    u32 m_ExternalWidth = 0;
+    u32 m_ExternalHeight = 0;
 };
 
 } // namespace Renderer
