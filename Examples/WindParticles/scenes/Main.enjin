@@ -575,17 +575,17 @@
     "lifetimeVariance": 1.5,
     "startSpeed": 0.3,
     "speedVariance": 0.2,
-    "startSize": 0.35,
-    "endSize": 0.22,
+    "startSize": 0.6,
+    "endSize": 0.5,
     "startColor": [
      1,
      1,
      1
     ],
     "endColor": [
-     0.9,
-     0.93,
-     1.0
+     1,
+     1,
+     1
     ],
     "startAlpha": 0.8,
     "endAlpha": 0.0,
@@ -604,7 +604,8 @@
     "speedMultiplierEnd": 1.0,
     "maxParticles": 500,
     "simulationSpace": 0,
-    "renderMode": 0
+    "renderMode": 0,
+    "texturePath": "assets/leaf.png"
    }
   }
  ],

@@ -10,6 +10,8 @@
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/Renderer/Vulkan/VulkanRenderer.h"
 #include "Enjin/Renderer/Vulkan/VulkanPipeline.h"
+#include <functional>
+#include <string>
 #include "Enjin/Renderer/Vulkan/VulkanBuffer.h"
 #include "Enjin/Renderer/Vulkan/VulkanShader.h"
 #if !ENJIN_RENDERER_WEBGPU
@@ -43,12 +45,15 @@ public:
 
     // Gather all emitter pools into instance cache and render with a single instanced draw call.
     // viewportWidth/Height: 0 = use swapchain extent, >0 = override (for render targets)
+    // bindTexture: optional — called with an emitter's texturePath to bind it as the
+    // particle art asset (returns true if bound). Used for the common single-texture case.
     void Render(VkCommandBuffer commandBuffer,
                 const std::vector<VkDescriptorSet>& descriptorSets,
                 u32 currentFrame,
                 ECS::World* world,
                 u32 viewportWidth = 0,
-                u32 viewportHeight = 0);
+                u32 viewportHeight = 0,
+                const std::function<bool(const std::string&)>& bindTexture = {});
 
     // Render elemental particles from the ElementalSystem using the same pipeline.
     // Called after Render() to batch elemental particles alongside regular ones.

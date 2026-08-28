@@ -132,7 +132,7 @@ void WeatherRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescript
     bindings[1].stride = sizeof(ParticleInstanceData);
     bindings[1].inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
 
-    std::array<VkVertexInputAttributeDescription, 6> attrs{};
+    std::array<VkVertexInputAttributeDescription, 7> attrs{};
     // Quad position (location 0)
     attrs[0].binding = 0;
     attrs[0].location = 0;
@@ -163,6 +163,12 @@ void WeatherRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescript
     attrs[5].location = 5;
     attrs[5].format = VK_FORMAT_R32_SFLOAT;
     attrs[5].offset = offsetof(ParticleInstanceData, stretch);
+    // Instance colour (location 6) — the shared particle.vert declares it; weather's
+    // fragment ignores it, but the vertex input must be provided.
+    attrs[6].binding = 1;
+    attrs[6].location = 6;
+    attrs[6].format = VK_FORMAT_R32G32B32_SFLOAT;
+    attrs[6].offset = offsetof(ParticleInstanceData, color);
 
     VkPipelineVertexInputStateCreateInfo vertexInput{};
     vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -227,6 +233,7 @@ void WeatherRenderer::Render(VkCommandBuffer commandBuffer,
         m_InstanceDataCache[liveCount].position = p.position;
         m_InstanceDataCache[liveCount].size = p.size * 2.0f;
         m_InstanceDataCache[liveCount].alpha = p.alpha;
+        m_InstanceDataCache[liveCount].color = Math::Vector3(1.0f, 1.0f, 1.0f);  // weather frag ignores it
 
         if (isRain && !m_ReducedMotion) {
             m_InstanceDataCache[liveCount].stretch = 6.0f;

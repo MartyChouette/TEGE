@@ -13475,9 +13475,15 @@ void RenderSystem::RenderParticles(u32 viewportWidth, u32 viewportHeight) {
     if (commandBuffer == VK_NULL_HANDLE) return;
 
     u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
+    // Bind an emitter's art-asset texture (binding 3) so particles can render it.
+    auto bindParticleTexture = [this](const std::string& path) -> bool {
+        auto tex = GetOrLoadTexture(path);
+        if (tex && tex->IsValid()) { UpdateTextureDescriptor(tex.get()); return true; }
+        return false;
+    };
     m_ParticleRenderer->Render(commandBuffer, *m_ActiveDescriptorSets,
                                GetActiveBufferIndex(currentFrame), m_World,
-                               viewportWidth, viewportHeight);
+                               viewportWidth, viewportHeight, bindParticleTexture);
 }
 
 void RenderSystem::RenderElementalParticles(const Effects::ElementalSystem& elementalSystem,

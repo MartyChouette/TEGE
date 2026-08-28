@@ -26,11 +26,10 @@ Recipes:
 - **Dust / pollen:** warm tint, near-zero gravity, low wind, long lifetime.
 - **Embers:** orange→dark color-over-life, upward gravity, gusty wind.
 
-## Known limitation
+## Art asset
 
-The particle renderer currently draws soft round motes (a built-in soft-dot shape)
-and does not yet sample a custom **texture** per particle — so a bespoke leaf/art
-sprite won't show its own image yet (the shape is the soft dot; use the color
-settings to tint the look). Wiring per-particle texture + colour into the particle
-shader is a follow-up (same fix already done for the fluid renderer). The wind
-drift, and all the settings above, work today.
+Set the emitter's **Texture** to your own sprite (this scene uses a small orange
+leaf) and the particles render that image, tinted by the per-particle colour. With
+no texture they fall back to a built-in soft dot (great for snow/dust). One texture
+per pass covers the common single-emitter case; many distinct textures at once would
+need an atlas (like sprites).

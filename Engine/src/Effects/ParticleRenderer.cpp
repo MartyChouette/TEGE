@@ -127,7 +127,7 @@ void ParticleRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescrip
     bindings[1].stride = sizeof(ParticleInstanceData);
     bindings[1].inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
 
-    std::array<VkVertexInputAttributeDescription, 6> attrs{};
+    std::array<VkVertexInputAttributeDescription, 7> attrs{};
     attrs[0].binding = 0;
     attrs[0].location = 0;
     attrs[0].format = VK_FORMAT_R32G32_SFLOAT;
@@ -152,6 +152,10 @@ void ParticleRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescrip
     attrs[5].location = 5;
     attrs[5].format = VK_FORMAT_R32_SFLOAT;
     attrs[5].offset = offsetof(ParticleInstanceData, stretch);
+    attrs[6].binding = 1;
+    attrs[6].location = 6;
+    attrs[6].format = VK_FORMAT_R32G32B32_SFLOAT;
+    attrs[6].offset = offsetof(ParticleInstanceData, color);
 
     VkPipelineVertexInputStateCreateInfo vertexInput{};
     vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -188,8 +192,14 @@ void ParticleRenderer::Render(VkCommandBuffer commandBuffer,
                                u32 currentFrame,
                                ECS::World* world,
                                u32 viewportWidth,
-                               u32 viewportHeight) {
+                               u32 viewportHeight,
+                               const std::function<bool(const std::string&)>& bindTexture) {
     if (!m_Initialized || !m_Pipeline || !world) return;
+
+    // First non-empty emitter texture — the art asset for the particle billboards.
+    // (One texture for the pass; the common case is a single emitter. Mixed textures
+    // would need an atlas like sprites.)
+    std::string particleTexPath;
 
     // Gather all emitter pool particles into instance cache
     m_InstanceDataCache.clear();
@@ -205,6 +215,8 @@ void ParticleRenderer::Render(VkCommandBuffer commandBuffer,
         const auto& pool = emitter->pool;
         if (!pool.initialized || pool.activeCount == 0) continue;
 
+        if (particleTexPath.empty() && !emitter->texturePath.empty()) particleTexPath = emitter->texturePath;
+
         const bool velocityStretch = emitter->renderMode == ECS::ParticleEmitterComponent::RenderMode::VelocityStretch;
         const f32 stretchScale = emitter->velocityStretchScale;
 
@@ -214,6 +226,7 @@ void ParticleRenderer::Render(VkCommandBuffer commandBuffer,
             inst.position = p.position;
             inst.size = p.size * 2.0f;
             inst.alpha = p.alpha;
+            inst.color = p.color;
 
             if (velocityStretch && stretchScale > 0.0f) {
                 f32 velLen = p.velocity.Length();
@@ -272,15 +285,18 @@ void ParticleRenderer::Render(VkCommandBuffer commandBuffer,
     scissor.extent = extent;
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-    // Push constants — use white base color, particles get per-instance alpha
-    // Color tinting is baked into alpha channel; real color comes from push constants baseColor
-    // We use metallic=1.0 for radial falloff (soft dot), same as snow particles
+    // Bind the emitter art asset if there is one; flags bit 0 tells the shader to sample
+    // it. Otherwise particles fall back to the built-in soft dot (metallic=1). Colour is
+    // now per-particle (instance data), not the push-constant baseColor.
+    bool hasTexture = false;
+    if (!particleTexPath.empty() && bindTexture) hasTexture = bindTexture(particleTexPath);
+
     Renderer::PushConstants pc{};
     pc.model = Math::Matrix4::Identity();
     pc.baseColor = Math::Vector3(1.0f, 1.0f, 1.0f);
-    pc.metallic = 1.0f;  // Radial falloff for soft particles
+    pc.metallic = 1.0f;  // Radial falloff for soft particles (no-texture path)
     pc.opacity = 1.0f;
-    pc.flags = 0;
+    pc.flags = hasTexture ? 1 : 0;
 
     vkCmdPushConstants(commandBuffer, m_Pipeline->GetLayout(),
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
@@ -314,6 +330,7 @@ void ParticleRenderer::RenderElementalParticles(VkCommandBuffer commandBuffer,
         ParticleInstanceData inst;
         inst.position = pool.positions[i];
         inst.size = pool.sizes[i] * 2.0f;
+        inst.color = Math::Vector3(1.0f, 0.8f, 0.6f);  // warm elemental tint (was push-constant baseColor)
 
         // Alpha from lifetime ratio and intensity
         f32 ageRatio = (pool.maxLifetimes[i] > 0.0f)

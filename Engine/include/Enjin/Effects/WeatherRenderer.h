@@ -28,6 +28,7 @@ struct ParticleInstanceData {
     f32 stretchDirX;          // Stretch direction X (screen space)
     f32 stretchDirY;          // Stretch direction Y
     f32 stretch;              // Stretch factor (1.0 = circle, >1 = elongated)
+    Math::Vector3 color;      // Per-particle tint (from the emitter's colour over life)
 };
 
 // 3D billboard particle renderer for weather effects

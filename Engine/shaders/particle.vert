@@ -12,6 +12,7 @@ layout(location = 2) in vec3 inWorldPos;   // Particle world position
 layout(location = 3) in vec2 inSizeAlpha;  // x = size, y = alpha
 layout(location = 4) in vec2 inStretchDir; // xy = screen-space stretch direction (for rain elongation)
 layout(location = 5) in float inStretch;   // Stretch factor (1.0 = no stretch)
+layout(location = 6) in vec3 inColor;      // per-particle tint
 
 // View/Projection UBO
 layout(binding = 0) uniform UniformBufferObject {
@@ -21,6 +22,7 @@ layout(binding = 0) uniform UniformBufferObject {
 
 layout(location = 0) out vec2 fragUV;
 layout(location = 1) out float fragAlpha;
+layout(location = 2) out vec3 fragColor;
 
 void main() {
     float size = inSizeAlpha.x;
@@ -42,4 +44,5 @@ void main() {
 
     fragUV = inQuadUV;
     fragAlpha = alpha;
+    fragColor = inColor;
 }
