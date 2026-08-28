@@ -1,3 +1,4 @@
+#include <unordered_set>
 #include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Viewmodel.h"
@@ -8295,6 +8296,17 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
         // Map old entity IDs -> new entity IDs for remapping references
         std::unordered_map<u64, ECS::Entity> oldToNew;
 
+        // Recognized entity-level keys, so we can warn about unknown/mistyped
+        // ones. Unknown keys are silently ignored on load and erased on the next
+        // save (e.g. "script" instead of "scriptComponent"), an invisible way to
+        // lose authored data. Set = registry keys + the entity-level keys handled
+        // outside the registry below.
+        std::unordered_set<std::string> knownEntityKeys = {
+            "id", "stableId", "mesh", "parent", "morphTargets"
+        };
+        for (const auto& reg : ComponentRegistry()) knownEntityKeys.insert(reg.key);
+        constexpr usize kMaxLoadWarnings = 25;
+
         for (const auto& entityJson : sceneJson["entities"]) {
             ECS::Entity entity = m_World->CreateEntity();
             result.entities.push_back(entity);
@@ -8339,6 +8351,33 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             if (entityJson.contains("parent")) {
                 auto& pc = m_World->AddComponent<ECS::ParentComponent>(entity);
                 pc.parent = static_cast<ECS::Entity>(entityJson["parent"].get<u64>());
+            }
+
+            // Warn about unknown/mistyped entity keys that were silently dropped.
+            if (entityJson.is_object() && result.warnings.size() < kMaxLoadWarnings) {
+                std::string entName;
+                if (auto nit = entityJson.find("name"); nit != entityJson.end() && nit->is_string())
+                    entName = nit->get<std::string>();
+                for (auto kit = entityJson.begin(); kit != entityJson.end(); ++kit) {
+                    if (result.warnings.size() >= kMaxLoadWarnings) break;
+                    const std::string& key = kit.key();
+                    if (knownEntityKeys.count(key)) continue;
+                    // Suggest a near-miss key (e.g. script -> scriptComponent).
+                    std::string suggestion;
+                    for (const std::string& known : knownEntityKeys) {
+                        if (known == key + "Component" || key == known + "Component" ||
+                            (known.size() > key.size() && known.rfind(key, 0) == 0)) {
+                            suggestion = known;
+                            break;
+                        }
+                    }
+                    std::string who = entName.empty()
+                        ? ("entity " + std::to_string(static_cast<u64>(entity)))
+                        : ("'" + entName + "'");
+                    std::string msg = "Unknown key '" + key + "' on " + who + " was ignored";
+                    if (!suggestion.empty()) msg += " (did you mean '" + suggestion + "'?)";
+                    result.warnings.push_back(std::move(msg));
+                }
             }
 
         }

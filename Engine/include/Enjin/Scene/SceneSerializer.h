@@ -29,6 +29,9 @@ struct DeserializationResult {
     std::string filepath;
     std::vector<ECS::Entity> entities;
     ECS::Entity rootEntity = ECS::INVALID_ENTITY;
+    // Non-fatal load warnings (e.g. unknown/mistyped entity keys that were
+    // silently dropped). Surfaced by the editor; never fails the load.
+    std::vector<std::string> warnings;
 };
 
 // Maximum JSON nesting depth accepted from scene/layer files. nlohmann's

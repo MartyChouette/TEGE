@@ -629,6 +629,17 @@ void EditorLayer::OpenSceneImmediate(const std::string& path) {
         return;
     }
 
+    // Surface non-fatal load warnings (unknown/mistyped keys that were silently
+    // dropped). These otherwise vanish with no trace and get erased on next save.
+    if (!result.warnings.empty()) {
+        for (const auto& w : result.warnings)
+            ENJIN_LOG_WARN(Editor, "Scene load: %s", w.c_str());
+        ShowNotification(std::to_string(result.warnings.size()) +
+            " scene key warning(s) - see Console (some data may have been dropped)",
+            NotificationType::Warning);
+        SetPanelVisibility(EditorPanel::Console, true);
+    }
+
     // Apply loaded skybox config
     if (result.success && m_RenderSystem) {
         m_RenderSystem->SetSkybox(serializer.GetSkyboxConfig());
