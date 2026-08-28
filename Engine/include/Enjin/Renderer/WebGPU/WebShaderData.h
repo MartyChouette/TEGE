@@ -493,6 +493,10 @@ struct PostProcessParams {
     colorblindStrength: f32,
     brightness: f32,
     contrast: f32,
+    previewEffect: u32,
+    previewDivider: f32,
+    _pad0: f32,
+    _pad1: f32,
 };
 @group(0) @binding(2) var<uniform> params: PostProcessParams;
 
