@@ -1917,6 +1917,20 @@ void EditorLayer::DrawWater3DComponent(ECS::Entity entity) {
         InspectorUndo::DragFloat(m_UndoRedo, "Wave Speed", &w->settings.waveSpeed, 0.1f, 0.0f, 10.0f);
         InspectorUndo::DragFloat(m_UndoRedo, "Wave Height", &w->settings.waveHeight, 0.01f, 0.0f, 5.0f);
         InspectorUndo::DragFloat(m_UndoRedo, "Wave Frequency", &w->settings.waveFrequency, 0.01f, 0.01f, 5.0f);
+        if (w->settings.style == Effects::WaterStyle::VertexWave ||
+            w->settings.style == Effects::WaterStyle::Reflective ||
+            w->settings.style == Effects::WaterStyle::Refractive) {
+            InspectorUndo::Checkbox(m_UndoRedo, "Gerstner Waves", &w->settings.gerstnerWaves);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                "Trochoidal waves: vertices also move horizontally toward crests,\n"
+                "giving sharp peaks and flat troughs (open-ocean look) instead of\n"
+                "rounded sine swells. Uses the same speed/height/frequency.");
+            if (w->settings.gerstnerWaves) {
+                InspectorUndo::SliderFloat(m_UndoRedo, "Wave Steepness", &w->settings.waveSteepness, 0.0f, 1.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                    "0 = plain sine look, 1 = sharpest crests the math allows\nwithout the surface folding over itself.");
+            }
+        }
 
         ImGui::Separator();
         InspectorUndo::Checkbox(m_UndoRedo, "Enable Foam", &w->settings.enableFoam);

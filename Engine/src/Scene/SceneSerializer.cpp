@@ -832,6 +832,8 @@ json SerializeWater3DComponent(const ECS::Water3DComponent& w) {
     j["waveHeight"] = RF(w.settings.waveHeight);
     j["waveFrequency"] = RF(w.settings.waveFrequency);
     j["waveDirection"] = SerializeVector2(w.settings.waveDirection);
+    j["gerstnerWaves"] = w.settings.gerstnerWaves;
+    j["waveSteepness"] = RF(w.settings.waveSteepness);
     j["uvScrollSpeed"] = SerializeVector2(w.settings.uvScrollSpeed);
     j["reflectionStrength"] = RF(w.settings.reflectionStrength);
     j["fresnelPower"] = RF(w.settings.fresnelPower);
@@ -857,6 +859,8 @@ ECS::Water3DComponent DeserializeWater3DComponent(const json& j) {
     if (j.contains("waveHeight")) w.settings.waveHeight = j["waveHeight"].get<f32>();
     if (j.contains("waveFrequency")) w.settings.waveFrequency = j["waveFrequency"].get<f32>();
     if (j.contains("waveDirection")) w.settings.waveDirection = DeserializeVector2(j["waveDirection"]);
+    if (j.contains("gerstnerWaves")) w.settings.gerstnerWaves = JB(j["gerstnerWaves"]);
+    if (j.contains("waveSteepness")) w.settings.waveSteepness = Math::Clamp(j["waveSteepness"].get<f32>(), 0.0f, 1.0f);
     if (j.contains("uvScrollSpeed")) w.settings.uvScrollSpeed = DeserializeVector2(j["uvScrollSpeed"]);
     if (j.contains("reflectionStrength")) w.settings.reflectionStrength = j["reflectionStrength"].get<f32>();
     if (j.contains("fresnelPower")) w.settings.fresnelPower = j["fresnelPower"].get<f32>();

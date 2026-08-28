@@ -27,12 +27,62 @@ void Water3D::Update(f32 deltaTime) {
 }
 
 f32 Water3D::GetWaveHeight(f32 x, f32 z) const {
+    if (m_Settings.gerstnerWaves) {
+        // Vertical component of the trochoidal surface. Ignores the horizontal
+        // shift (inverting it needs iteration) — close enough for buoyancy.
+        return GetGerstnerOffset(x, z).y;
+    }
+
     // Simple sine wave combination (very PS1/N64)
     f32 wave1 = Math::Sin((x * m_Settings.waveFrequency + m_WaveTime) * m_Settings.waveDirection.x);
     f32 wave2 = Math::Sin((z * m_Settings.waveFrequency * 0.7f + m_WaveTime * 1.3f) * m_Settings.waveDirection.y);
     f32 wave3 = Math::Sin((x + z) * m_Settings.waveFrequency * 0.5f + m_WaveTime * 0.8f) * 0.5f;
 
     return (wave1 + wave2 + wave3) * m_Settings.waveHeight / 2.5f;
+}
+
+Math::Vector3 Water3D::GetGerstnerOffset(f32 x, f32 z) const {
+    // Three Gerstner waves derived from the sine-wave parameters: the primary
+    // wave follows waveDirection, plus two smaller waves at rotated headings
+    // and higher frequencies so the surface doesn't read as parallel rollers.
+    // Each wave moves a vertex ALONG its travel direction by Q*A*cos(phase)
+    // (bunching vertices at crests = sharp peaks, spreading them in troughs =
+    // flat valleys) and lifts it by A*sin(phase).
+    struct GerstnerWave { f32 dirX, dirZ, amplitude, frequency, phaseSpeed; };
+    Math::Vector2 d = m_Settings.waveDirection;
+    f32 dLen = Math::Sqrt(d.x * d.x + d.y * d.y);
+    if (dLen < 0.0001f) { d = Math::Vector2(1.0f, 0.0f); dLen = 1.0f; }
+    f32 dx = d.x / dLen, dz = d.y / dLen;
+
+    const f32 A = m_Settings.waveHeight;
+    const f32 w = Math::Max(m_Settings.waveFrequency, 0.0001f);
+    const GerstnerWave waves[3] = {
+        { dx, dz, A * 0.60f, w, 1.0f },
+        // ~60 degrees off the primary heading, tighter and faster
+        { dx * 0.5f - dz * 0.866f, dx * 0.866f + dz * 0.5f, A * 0.30f, w * 1.9f, 1.3f },
+        // ~-45 degrees, smallest ripple layer
+        { dx * 0.707f + dz * 0.707f, -dx * 0.707f + dz * 0.707f, A * 0.15f, w * 3.1f, 0.8f },
+    };
+
+    // Per-wave steepness Q_i = steepness / (w_i * A_i * numWaves) is the
+    // classic normalization that keeps the summed horizontal displacement
+    // below the self-intersection limit (loops forming at crests) at
+    // steepness <= 1 regardless of amplitude/frequency choices.
+    f32 steep = Math::Clamp(m_Settings.waveSteepness, 0.0f, 1.0f);
+
+    Math::Vector3 offset(0.0f, 0.0f, 0.0f);
+    for (const auto& gw : waves) {
+        f32 phase = gw.frequency * (gw.dirX * x + gw.dirZ * z) + m_WaveTime * gw.phaseSpeed;
+        f32 q = (gw.amplitude > 0.0001f)
+            ? steep / (gw.frequency * gw.amplitude * 3.0f)
+            : 0.0f;
+        f32 qa = q * gw.amplitude;
+        f32 c = Math::Cos(phase);
+        offset.x += gw.dirX * qa * c;
+        offset.z += gw.dirZ * qa * c;
+        offset.y += gw.amplitude * Math::Sin(phase);
+    }
+    return offset;
 }
 
 Math::Matrix4 Water3D::GetReflectionMatrix() const {
@@ -82,6 +132,15 @@ void Water3D::GenerateMesh(std::vector<Math::Vector3>& positions,
             if (m_Settings.style == WaterStyle::VertexWave ||
                 m_Settings.style == WaterStyle::Reflective ||
                 m_Settings.style == WaterStyle::Refractive) {
+                if (m_Settings.gerstnerWaves) {
+                    // Trochoidal: crests pull vertices horizontally too
+                    Math::Vector3 off = GetGerstnerOffset(xPos, zPos);
+                    positions.push_back(Math::Vector3(xPos + off.x, yPos + off.y, zPos + off.z));
+                    f32 u = static_cast<f32>(x) / xSegments;
+                    f32 v = static_cast<f32>(z) / zSegments;
+                    uvs.push_back(Math::Vector2(u + m_UVOffset.x, v + m_UVOffset.y));
+                    continue;
+                }
                 yPos += GetWaveHeight(xPos, zPos);
             }
 
@@ -215,9 +274,29 @@ void Water3D::UpdateEntityMesh(ECS::World* world, ECS::Entity entity) const {
     if (positions.size() != mesh->vertices.size()) return;
 
     f32 eps = m_Settings.tileSize * 0.1f;
+    bool gerstner = m_Settings.gerstnerWaves &&
+                    (m_Settings.style == WaterStyle::VertexWave ||
+                     m_Settings.style == WaterStyle::Reflective ||
+                     m_Settings.style == WaterStyle::Refractive);
     for (usize i = 0; i < positions.size(); ++i) {
         mesh->vertices[i].position = positions[i];
         mesh->vertices[i].uv = uvCoords[i];
+
+        if (gerstner) {
+            // Trochoidal surface: the horizontal displacement matters, so build
+            // the normal from displaced-surface tangents instead of a height
+            // gradient (which would soften the sharp crests this style is for).
+            f32 px = positions[i].x, pz = positions[i].z;
+            Math::Vector3 oL = GetGerstnerOffset(px - eps, pz);
+            Math::Vector3 oR = GetGerstnerOffset(px + eps, pz);
+            Math::Vector3 oD = GetGerstnerOffset(px, pz - eps);
+            Math::Vector3 oU = GetGerstnerOffset(px, pz + eps);
+            Math::Vector3 tx(2.0f * eps + oR.x - oL.x, oR.y - oL.y, oR.z - oL.z);
+            Math::Vector3 tz(oU.x - oD.x, oU.y - oD.y, 2.0f * eps + oU.z - oD.z);
+            // cross(tz, tx) points +Y for a flat surface
+            mesh->vertices[i].normal = tz.Cross(tx).Normalized();
+            continue;
+        }
 
         // Recompute normal from wave gradient
         f32 hL = GetWaveHeight(positions[i].x - eps, positions[i].z);

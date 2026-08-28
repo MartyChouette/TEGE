@@ -47,6 +47,12 @@ struct Water3DSettings {
     f32 waveFrequency = 0.5f;
     Math::Vector2 waveDirection = Math::Vector2(1.0f, 0.5f);
 
+    // Gerstner (trochoidal) waves: vertices also displace HORIZONTALLY toward
+    // crests, giving sharp peaks and flat troughs instead of rounded sine
+    // swells. Rides the same speed/height/frequency/direction parameters.
+    bool gerstnerWaves = false;
+    f32 waveSteepness = 0.6f;   // 0 = plain sine look, 1 = maximum crest sharpness
+
     // UV scrolling (texture animation)
     Math::Vector2 uvScrollSpeed = Math::Vector2(0.02f, 0.01f);
 
@@ -83,8 +89,15 @@ public:
     f32 GetWaveTime() const { return m_WaveTime; }
     Math::Vector2 GetUVOffset() const { return m_UVOffset; }
 
-    // For vertex wave calculation in shader or CPU
+    // For vertex wave calculation in shader or CPU.
+    // With gerstnerWaves on, this returns the trochoidal surface's vertical
+    // component at (x, z) — an approximation that keeps buoyancy and the
+    // Water_GetWaveHeight VS node bobbing at the visual surface.
     f32 GetWaveHeight(f32 x, f32 z) const;
+
+    // Full Gerstner displacement (horizontal + vertical) at grid point (x, z).
+    // Only meaningful when settings.gerstnerWaves is true.
+    Math::Vector3 GetGerstnerOffset(f32 x, f32 z) const;
 
     // Reflection matrix (for planar reflection)
     Math::Matrix4 GetReflectionMatrix() const;

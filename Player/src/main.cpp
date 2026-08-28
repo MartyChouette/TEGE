@@ -1050,12 +1050,14 @@ public:
             else
                 m_World->AddComponent<Enjin::ECS::MeshComponent>(entity, std::move(mesh));
         }
-        // Update Water3D animated surfaces
+        // Update Water3D animated surfaces. Assign settings WITHOUT Initialize():
+        // Initialize resets the wave clock to 0, and calling it per entity per
+        // frame kept snapping time back so the waves never visibly travelled.
         m_Water3D.Update(deltaTime);
         for (auto entity : m_World->GetEntitiesWithComponent<Enjin::ECS::Water3DComponent>()) {
             auto* water3d = m_World->GetComponent<Enjin::ECS::Water3DComponent>(entity);
             if (!water3d || !water3d->meshCreated) continue;
-            m_Water3D.Initialize(water3d->settings);
+            m_Water3D.GetSettings() = water3d->settings;
             m_Water3D.UpdateEntityMesh(m_World.get(), entity);
         }
         m_FluidSimulation.Update(deltaTime, m_World.get());
