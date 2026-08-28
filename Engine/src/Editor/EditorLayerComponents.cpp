@@ -63,6 +63,7 @@ extern char** environ;
 #include "Enjin/ECS/Components/LOD.h"
 #include "Enjin/ECS/Components/Script.h"
 #include "Enjin/ECS/Components/Tween.h"
+#include "Enjin/ECS/Components/ParallaxLayer.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/Animation/RagdollSystem.h"
@@ -214,6 +215,52 @@ void EditorLayer::DrawTransformComponent(ECS::Entity entity) {
         ECS::TransformComponent* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
         if (!transform) return;
         DrawComponentHelp("transform", m_World, entity);
+
+        // Runtime-driven note: several systems overwrite the transform every
+        // frame in Play, so the values here are a STARTING pose, not the live
+        // truth. Name the drivers so "I set it but it ignores me" has an answer.
+        {
+            std::vector<const char*> drivers;
+            if (auto* rb = m_World->GetComponent<ECS::RigidbodyComponent>(entity)) {
+                if (rb->bodyType == ECS::RigidbodyComponent::BodyType::Dynamic)
+                    drivers.push_back("Physics (dynamic rigidbody)");
+            }
+            if (m_World->HasComponent<ECS::Platformer2DController>(entity) ||
+                m_World->HasComponent<ECS::TopDown2DController>(entity) ||
+                m_World->HasComponent<ECS::TopDown3DController>(entity) ||
+                m_World->HasComponent<ECS::ThirdPersonController>(entity) ||
+                m_World->HasComponent<ECS::FirstPersonController>(entity)) {
+                drivers.push_back("Character Controller");
+            }
+            if (auto* tw = m_World->GetComponent<ECS::TweenComponent>(entity)) {
+                if (!tw->tweens.empty()) drivers.push_back("Tween");
+            }
+            if (m_World->HasComponent<ECS::ParallaxLayerComponent>(entity))
+                drivers.push_back("Parallax Layer");
+            if (m_World->HasComponent<ECS::VirtualCameraComponent>(entity))
+                drivers.push_back("Camera Director (when this vcam is live)");
+
+            if (!drivers.empty()) {
+                std::string list;
+                for (usize i = 0; i < drivers.size(); ++i) {
+                    if (i) list += ", ";
+                    list += drivers[i];
+                }
+                bool playing = !m_PlayMode.IsStopped();
+                ImGui::PushStyleColor(ImGuiCol_Text,
+                    playing ? ImVec4(1.0f, 0.70f, 0.20f, 1.0f) : ImVec4(0.55f, 0.65f, 0.85f, 1.0f));
+                ImGui::TextWrapped(playing ? "(!) Driven now by: %s" : "(i) Driven in Play by: %s",
+                                   list.c_str());
+                ImGui::PopStyleColor();
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip(playing
+                        ? "These systems are overwriting the transform every frame right now.\n"
+                          "Edits here will be stomped immediately."
+                        : "The values below are the STARTING pose. In Play mode these systems\n"
+                          "take over and overwrite the transform every frame.");
+                }
+            }
+        }
 
         InspectorUndo::Checkbox(m_UndoRedo, "Visible", &transform->visible);
         ImGui::SetItemTooltip("Toggle entity visibility in the scene");
