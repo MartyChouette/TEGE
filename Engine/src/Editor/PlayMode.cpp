@@ -145,6 +145,8 @@ void PlayMode::Initialize(ECS::World* world, Renderer::Camera* camera,
 }
 
 void PlayMode::Play() {
+    Scripting::SetTimeScale(1.0f);  // never leak slow-mo across sessions
+
     if (m_State.load(std::memory_order_relaxed) == PlayState::Playing) {
         return;
     }
@@ -839,6 +841,10 @@ void PlayMode::Stop() {
 }
 
 void PlayMode::Update(f32 deltaTime) {
+    // Global time scale (Time_SetScale): slow-mo/hitstop for gameplay. UI,
+    // editor, and the frame limiter are upstream and stay unscaled.
+    deltaTime *= Scripting::GetTimeScale();
+
     // Escape is now handled by EditorLayer (which manages focus mode exit vs stop).
 
     // Deferred restart from the game-over screen's "Play Again" button

@@ -849,6 +849,9 @@ public:
     }
 
     void Update(Enjin::f32 deltaTime) override {
+        // Global time scale (Time_SetScale): scales gameplay dt only.
+        deltaTime *= Enjin::Scripting::GetTimeScale();
+
         if (!m_Initialized) return;
         m_FrameDeltaTime = deltaTime;  // Render() needs it for the compute pre-pass
 
@@ -2348,6 +2351,8 @@ private:
     // (post-processing, resize callbacks, binding pointers) stays in
     // EndSplashScreen and is NOT repeated here.
     void InitSceneRuntime() {
+        Enjin::Scripting::SetTimeScale(1.0f);
+
         // Enable all gameplay systems
         m_ControllerSystem.SetEnabled(true);
         m_FlowerSystem.SetEnabled(true);

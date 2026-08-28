@@ -932,7 +932,18 @@ void RegisterEntityTypes(asIScriptEngine* engine) {
 // ---------------------------------------------------------------------------
 // RegisterTimeBindings
 // ---------------------------------------------------------------------------
+// Already inside namespace Enjin::Scripting here.
+static f32 s_TimeScale = 1.0f;
+f32  GetTimeScale() { return s_TimeScale; }
+void SetTimeScale(f32 scale) { s_TimeScale = (scale < 0.0f) ? 0.0f : (scale > 10.0f ? 10.0f : scale); }
+static void Time_SetScale(f32 s) { SetTimeScale(s); }
+static f32  Time_GetScale()      { return GetTimeScale(); }
+
 void RegisterTimeBindings(asIScriptEngine* engine) {
+    AS_CHECK(engine->RegisterGlobalFunction("void Time_SetScale(float)",
+        ENJIN_AS_FN(Time_SetScale), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Time_GetScale()",
+        ENJIN_AS_FN(Time_GetScale), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Time_GetDeltaTime()",
         ENJIN_AS_FN(Time_GetDeltaTime), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Time_GetFixedDeltaTime()",

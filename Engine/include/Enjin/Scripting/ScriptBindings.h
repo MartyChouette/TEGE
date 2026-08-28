@@ -178,6 +178,12 @@ void RegisterInputActionBindings(asIScriptEngine* engine);
 // Input action map setter
 void SetBindingsInputActionMap(InputSystem::InputActionMap* map);
 
+// Global time scale (slow-mo/hitstop). Runtimes multiply the dt they hand to
+// GAMEPLAY systems by this; UI/editor/frame limiter stay unscaled. Reset to 1
+// on play start so an effect never leaks across sessions.
+ENJIN_API f32  GetTimeScale();
+ENJIN_API void SetTimeScale(f32 scale);
+
 // Per-frame script binding housekeeping
 void FlushDeferredEntityDestroys();
 void ResetFrameEntityCreationCount();

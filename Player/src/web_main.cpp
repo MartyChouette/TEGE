@@ -671,6 +671,9 @@ public:
     }
 
     void Update(Enjin::f32 deltaTime) {
+        // Global time scale (Time_SetScale): scales gameplay dt only.
+        deltaTime *= Enjin::Scripting::GetTimeScale();
+
         if (!m_Initialized) return;
         m_LastDeltaTime = deltaTime;
 

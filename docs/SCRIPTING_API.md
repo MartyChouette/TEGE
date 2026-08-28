@@ -41,6 +41,8 @@ The `TegeBehavior` base class and the `enjin_api` helper scripts (Timer, Tween, 
 
 `Time_GetDeltaTime()`, `Time_GetFixedDeltaTime()`, `Time_GetTime()`, `Time_GetTimeScale()`, `Time_SetTimeScale(float)`, `Time_GetFrameCount()`
 
+- **Time scale**: `Time_SetScale(float)` / `float Time_GetScale()` — global slow-mo/hitstop (0..10, 1 = normal). Scales the dt gameplay systems receive (physics, scripts, tweens, animation); UI and the frame limiter stay real-time. Resets to 1 on play start.
+
 ## Debug
 
 `Debug_Log(string)`, `Debug_LogWarning(string)`, `Debug_LogError(string)`
