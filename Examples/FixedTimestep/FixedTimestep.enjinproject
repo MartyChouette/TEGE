@@ -1,0 +1,17 @@
+{
+  "name": "FixedTimestep",
+  "version": "1.0",
+  "scenes": [
+    {
+      "path": "scenes/Main.enjin",
+      "buildIndex": 0,
+      "isStartScene": true
+    }
+  ],
+  "frameSettings": {
+    "targetFrameRate": 0,
+    "vSync": false,
+    "fixedTimestep": true,
+    "physicsTicksPerSecond": 60
+  }
+}
