@@ -208,6 +208,7 @@ public:
                     const auto& fs = manifest["frameSettings"];
                     m_SimClock.Configure(fs.value("fixedTimestep", false),
                                          static_cast<Enjin::f32>(fs.value("physicsTicksPerSecond", 60u)));
+                    m_ScriptSystem.SetExternalFixedClock(m_SimClock.IsEnabled());
                 }
             } catch (...) {
                 ENJIN_LOG_WARN(Player, "Manifest parse failed — using defaults");
@@ -731,6 +732,8 @@ public:
         m_SimClock.Tick(m_World.get(), deltaTime, [this](Enjin::f32 stepDt) {
             if (m_Physics) m_Physics->Update(stepDt);
             if (m_Physics2D) m_Physics2D->Update(stepDt);
+            // OnFixedUpdate lands exactly once per physics tick
+            if (m_SimClock.IsEnabled()) m_ScriptSystem.FixedUpdate(stepDt);
         });
 
         m_ControllerSystem.Update(deltaTime);

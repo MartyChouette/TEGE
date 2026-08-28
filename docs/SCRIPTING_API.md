@@ -41,6 +41,7 @@ The `TegeBehavior` base class and the `enjin_api` helper scripts (Timer, Tween, 
 
 `Time_GetDeltaTime()`, `Time_GetFixedDeltaTime()`, `Time_GetTime()`, `Time_GetTimeScale()`, `Time_SetTimeScale(float)`, `Time_GetFrameCount()`
 
+- **OnFixedUpdate(float fixedDt)**: TegeBehavior lifecycle hook that runs once per physics tick. On fixed-timestep projects (Settings > Project > Fixed Physics Timestep) it lands exactly in step with the physics simulation - use it for forces and tick-locked gameplay. On classic projects it runs from a 60Hz accumulator. OnUpdate(dt) stays frame-paced either way.
 - **Time scale**: `Time_SetScale(float)` / `float Time_GetScale()` — global slow-mo/hitstop (0..10, 1 = normal). Scales the dt gameplay systems receive (physics, scripts, tweens, animation); UI and the frame limiter stay real-time. Resets to 1 on play start.
 
 ## Debug

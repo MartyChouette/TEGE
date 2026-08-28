@@ -966,6 +966,8 @@ public:
         m_SimClock.Tick(m_World.get(), deltaTime, [this](Enjin::f32 stepDt) {
             if (m_Physics) m_Physics->Update(stepDt);
             if (m_Physics2D) m_Physics2D->Update(stepDt);
+            // OnFixedUpdate lands exactly once per physics tick
+            if (m_SimClock.IsEnabled()) m_ScriptSystem.FixedUpdate(stepDt);
         });
 
         // Dispatch 3D collision events to visual scripts and gameplay systems
@@ -2359,6 +2361,7 @@ private:
     void InitSceneRuntime() {
         Enjin::Scripting::SetTimeScale(1.0f);
         m_SimClock.Reset();
+        m_ScriptSystem.SetExternalFixedClock(m_SimClock.IsEnabled());
 
         // Enable all gameplay systems
         m_ControllerSystem.SetEnabled(true);

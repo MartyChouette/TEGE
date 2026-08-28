@@ -420,11 +420,16 @@ void ScriptSystem::Update(f32 deltaTime) {
         }
     }
 
-    // 4. Fixed update (accumulate time, run at fixed intervals)
-    m_FixedTimeAccumulator += deltaTime;
-    while (m_FixedTimeAccumulator >= FIXED_TIMESTEP) {
-        FixedUpdate(FIXED_TIMESTEP);
-        m_FixedTimeAccumulator -= FIXED_TIMESTEP;
+    // 4. Fixed update (accumulate time, run at fixed intervals). When the
+    // SimulationClock drives ticks (fixed-timestep projects), the runtime calls
+    // FixedUpdate inside the physics step loop instead — skip the internal
+    // accumulator so scripts don't tick twice.
+    if (!m_ExternalFixedClock) {
+        m_FixedTimeAccumulator += deltaTime;
+        while (m_FixedTimeAccumulator >= FIXED_TIMESTEP) {
+            FixedUpdate(FIXED_TIMESTEP);
+            m_FixedTimeAccumulator -= FIXED_TIMESTEP;
+        }
     }
 
     // 5. OnUpdate

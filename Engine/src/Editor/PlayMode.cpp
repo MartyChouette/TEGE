@@ -152,6 +152,7 @@ void PlayMode::Play() {
         m_SimClock.Configure(gfs.fixedTimestep, static_cast<f32>(gfs.physicsTicksPerSecond));
     }
     m_SimClock.Reset();
+    m_ScriptSystem.SetExternalFixedClock(m_SimClock.IsEnabled());
 
     if (m_State.load(std::memory_order_relaxed) == PlayState::Playing) {
         return;
@@ -953,6 +954,8 @@ void PlayMode::Update(f32 deltaTime) {
             m_SimClock.Tick(m_World, deltaTime, [this](f32 stepDt) {
                 if (m_Physics) m_Physics->Update(stepDt);
                 if (m_Physics2D) m_Physics2D->Update(stepDt);
+                // OnFixedUpdate lands exactly once per physics tick
+                if (m_SimClock.IsEnabled()) m_ScriptSystem.FixedUpdate(stepDt);
             });
         }
 

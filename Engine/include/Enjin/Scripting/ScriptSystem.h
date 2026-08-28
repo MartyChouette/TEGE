@@ -44,6 +44,12 @@ public:
     // Fixed update — call from fixed timestep loop
     void FixedUpdate(f32 fixedDeltaTime);
 
+    // ADR-0005: when the project runs a fixed physics timestep, the runtime
+    // drives FixedUpdate from the SimulationClock's step loop so OnFixedUpdate
+    // lands exactly once per physics tick. This suppresses the internal
+    // 60Hz accumulator to avoid double-ticking.
+    void SetExternalFixedClock(bool external) { m_ExternalFixedClock = external; }
+
     // Late update — call after main Update
     void LateUpdate(f32 deltaTime);
 
@@ -97,6 +103,7 @@ private:
 
     // Fixed timestep accumulator
     f32 m_FixedTimeAccumulator = 0.0f;
+    bool m_ExternalFixedClock = false;
     static constexpr f32 FIXED_TIMESTEP = 1.0f / 60.0f;
 };
 
