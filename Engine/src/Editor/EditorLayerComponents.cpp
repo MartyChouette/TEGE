@@ -6125,25 +6125,58 @@ void EditorLayer::OpenInExternalIDE(const std::string& filePath) {
     std::string cmd;
 
 #ifdef ENJIN_PLATFORM_WINDOWS
+    // Launch via ShellExecuteA, not CreateProcessA("start ..."): "start" is a
+    // cmd.exe builtin, not an executable, so the old CreateProcessA path could
+    // never find it and silently opened nothing. ShellExecute launches the real
+    // program. For VS Code we resolve the actual Code.exe so it works even when
+    // `code` isn't on PATH; if the preferred IDE can't be launched we fall back
+    // to the OS default association, then the "Open With..." picker.
+    namespace fs = std::filesystem;
+    std::string quoted = "\"" + filePath + "\"";
+    auto shell = [](const std::string& exe, const std::string& args) -> bool {
+        return reinterpret_cast<INT_PTR>(ShellExecuteA(nullptr, "open", exe.c_str(),
+            args.empty() ? nullptr : args.c_str(), nullptr, SW_SHOWNORMAL)) > 32;
+    };
+    bool launched = false;
     switch (ide) {
-    case 1: // VS Code
-        cmd = "start \"\" code \"" + filePath + "\"";
-        break;
     case 2: // Visual Studio
-        cmd = "start \"\" devenv /edit \"" + filePath + "\"";
+        launched = shell("devenv.exe", "/edit " + quoted);
         break;
     case 3: // Rider
-        cmd = "start \"\" rider64 \"" + filePath + "\"";
+        launched = shell("rider64.exe", quoted);
         break;
     case 4: // Custom
         if (!m_EditorSettings.customIDEPath.empty()) {
-            cmd = "start \"\" \"" + m_EditorSettings.customIDEPath + "\" \"" + filePath + "\"";
+            launched = shell(m_EditorSettings.customIDEPath, quoted);
         }
         break;
-    default: // Auto - try VS Code
-        cmd = "start \"\" code \"" + filePath + "\"";
+    case 1: // VS Code
+    default: { // Auto - prefer VS Code
+        std::vector<std::string> vscode;
+        if (const char* lad = std::getenv("LOCALAPPDATA")) {
+            vscode.push_back(std::string(lad) + "\\Programs\\Microsoft VS Code\\Code.exe");
+            vscode.push_back(std::string(lad) + "\\Programs\\Microsoft VS Code Insiders\\Code - Insiders.exe");
+        }
+        vscode.push_back("C:\\Program Files\\Microsoft VS Code\\Code.exe");
+        vscode.push_back("C:\\Program Files (x86)\\Microsoft VS Code\\Code.exe");
+        for (const auto& exe : vscode) {
+            std::error_code ec;
+            if (fs::exists(exe, ec) && shell(exe, quoted)) { launched = true; break; }
+        }
+        if (!launched) launched = shell("code.cmd", quoted); // `code` on PATH
         break;
     }
+    }
+    if (!launched) {
+        // No IDE reachable: OS default app, then the explicit Open With dialog
+        // (source files like .as often have no default association).
+        if (reinterpret_cast<INT_PTR>(ShellExecuteA(nullptr, "open", filePath.c_str(),
+                nullptr, nullptr, SW_SHOWNORMAL)) <= 32) {
+            ShellExecuteA(nullptr, "openas", filePath.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        }
+    }
+    ENJIN_LOG_INFO(Editor, "Opening in IDE: %s", filePath.c_str());
+    return;
 #elif defined(ENJIN_PLATFORM_MACOS)
     // S19: Shell-escape paths to prevent command injection
     {
@@ -6217,6 +6250,47 @@ void EditorLayer::OpenInExternalIDE(const std::string& filePath) {
     }
 }
 
+void EditorLayer::OpenScriptAtLine(const std::string& filePath, int line) {
+    if (line <= 0) { OpenInExternalIDE(filePath); return; }
+    u32 ide = m_EditorSettings.externalIDE;
+    bool vscode = (ide == 0 /*Auto*/ || ide == 1 /*VS Code*/);
+#ifdef ENJIN_PLATFORM_WINDOWS
+    if (vscode) {
+        // VS Code jumps to a line with:  code -g "file:line"
+        namespace fs = std::filesystem;
+        std::string arg = "-g \"" + filePath + ":" + std::to_string(line) + "\"";
+        std::vector<std::string> exes;
+        if (const char* lad = std::getenv("LOCALAPPDATA"))
+            exes.push_back(std::string(lad) + "\\Programs\\Microsoft VS Code\\Code.exe");
+        exes.push_back("C:\\Program Files\\Microsoft VS Code\\Code.exe");
+        exes.push_back("C:\\Program Files (x86)\\Microsoft VS Code\\Code.exe");
+        for (const auto& exe : exes) {
+            std::error_code ec;
+            if (fs::exists(exe, ec) &&
+                reinterpret_cast<INT_PTR>(ShellExecuteA(nullptr, "open", exe.c_str(),
+                    arg.c_str(), nullptr, SW_SHOWNORMAL)) > 32) {
+                return;
+            }
+        }
+        if (reinterpret_cast<INT_PTR>(ShellExecuteA(nullptr, "open", "code.cmd",
+                arg.c_str(), nullptr, SW_SHOWNORMAL)) > 32) {
+            return;
+        }
+    }
+#else
+    if (vscode) {
+        std::string cmd = "code -g " + ShellEscape(filePath + ":" + std::to_string(line)) + " &";
+        const char* argv[] = { "/bin/sh", "-c", cmd.c_str(), nullptr };
+        pid_t pid = 0;
+        posix_spawnp(&pid, "/bin/sh", nullptr, nullptr, const_cast<char**>(argv), environ);
+        return;
+    }
+#endif
+    // Non-VS-Code IDE (or launch failed): just open the file; the error text
+    // still shows the line number.
+    OpenInExternalIDE(filePath);
+}
+
 // ============================================================================
 // Script Component Inspector
 // ============================================================================
@@ -6250,6 +6324,14 @@ void EditorLayer::AttachScriptFromAsset(ECS::Entity target, const std::string& a
 
 void EditorLayer::DrawScriptComponent(ECS::Entity entity) {
     bool scriptOpen = UI::SectionHeader("Scripts", ImGuiTreeNodeFlags_DefaultOpen);
+    // Drop an .as onto the Scripts header to append it (works even when the
+    // component has no scripts yet, so there is no per-slot node to target).
+    if (ImGui::BeginDragDropTarget()) {
+        if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("ASSET_PATH")) {
+            if (pl->Data) AttachScriptFromAsset(entity, std::string(static_cast<const char*>(pl->Data)));
+        }
+        ImGui::EndDragDropTarget();
+    }
     if (ImGui::BeginPopupContextItem("ScriptComponentCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::ScriptComponent>(entity, "scriptComponent", "Script");
@@ -6263,16 +6345,59 @@ void EditorLayer::DrawScriptComponent(ECS::Entity entity) {
         if (!sc) return;
         DrawComponentHelp("scriptComponent", m_World, entity);
 
+        // Resolve a project-relative script path (scripts/Foo.as) to absolute
+        // for opening — the process CWD is the exe dir, not the project.
+        auto resolveAbs = [&](const std::string& rel) -> std::string {
+            std::filesystem::path p(rel);
+            if (p.is_absolute()) return rel;
+            if (!m_SceneManager.GetProjectPath().empty())
+                return (std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path() / p).string();
+            return rel;
+        };
+        // Convert an absolute asset path to a project-relative one for storage.
+        auto toProjectRel = [&](const std::string& abs) -> std::string {
+            std::filesystem::path fp(abs);
+            std::string rel = abs;
+            const std::string& proj = m_SceneManager.GetProjectPath();
+            if (!proj.empty()) {
+                std::error_code ec;
+                auto r = std::filesystem::relative(fp, std::filesystem::path(proj).parent_path(), ec);
+                if (!ec && !r.empty() && r.generic_string().rfind("..", 0) != 0) rel = r.generic_string();
+            }
+            return rel;
+        };
+
         // Draw each script attachment
         int removeIdx = -1;
         for (int i = 0; i < static_cast<int>(sc->scripts.size()); i++) {
             auto& script = sc->scripts[i];
             ImGui::PushID(i);
 
-            // Script header with enabled toggle
-            bool nodeOpen = ImGui::TreeNodeEx(
-                script.className.empty() ? script.scriptPath.c_str() : script.className.c_str(),
+            // Header shows the script's NAME (its .as file), not an abstract
+            // path. Class name is a secondary field below.
+            std::string scriptName = std::filesystem::path(script.scriptPath).stem().string();
+            if (scriptName.empty()) scriptName = script.className;
+            if (scriptName.empty()) scriptName = "(no script assigned)";
+            bool nodeOpen = ImGui::TreeNodeEx(scriptName.c_str(),
                 ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_AllowOverlap);
+
+            // Drop an .as from the Asset Browser directly onto this slot in the
+            // chain to set/replace the script here.
+            if (ImGui::BeginDragDropTarget()) {
+                if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("ASSET_PATH")) {
+                    if (pl->Data) {
+                        std::string dropped(static_cast<const char*>(pl->Data));
+                        std::string dext = std::filesystem::path(dropped).extension().string();
+                        std::transform(dext.begin(), dext.end(), dext.begin(),
+                            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                        if (dext == ".as" || dext == ".angelscript") {
+                            script.scriptPath = toProjectRel(dropped);
+                            script.className = std::filesystem::path(dropped).stem().string();
+                        }
+                    }
+                }
+                ImGui::EndDragDropTarget();
+            }
 
             // Enabled checkbox on same line
             ImGui::SameLine(ImGui::GetWindowWidth() - 50);
@@ -6282,21 +6407,27 @@ void EditorLayer::DrawScriptComponent(ECS::Entity entity) {
                 if (ImGui::MenuItem("Remove Script")) {
                     removeIdx = i;
                 }
+                if (!script.scriptPath.empty() && ImGui::MenuItem("Open in IDE")) {
+                    OpenInExternalIDE(resolveAbs(script.scriptPath));
+                }
                 ImGui::EndPopup();
             }
 
             if (nodeOpen) {
-                // Script path
-                char pathBuf[256];
-                strncpy(pathBuf, script.scriptPath.c_str(), sizeof(pathBuf) - 1);
-                pathBuf[sizeof(pathBuf) - 1] = '\0';
-                if (ImGui::InputText("Script File", pathBuf, sizeof(pathBuf))) {
-                    script.scriptPath = pathBuf;
-                }
-                if (!script.scriptPath.empty() && std::filesystem::exists(script.scriptPath)) {
+                // Show the file by name with an Open button — no path typing.
+                ImGui::TextDisabled("File:");
+                ImGui::SameLine();
+                if (script.scriptPath.empty()) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f),
+                                       "none - drop a .as here or use Add Script");
+                } else {
+                    std::string fname = std::filesystem::path(script.scriptPath).filename().string();
+                    ImGui::TextUnformatted(fname.c_str());
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("%s", script.scriptPath.c_str());
                     ImGui::SameLine();
                     if (ImGui::SmallButton("Open")) {
-                        OpenInExternalIDE(script.scriptPath);
+                        OpenInExternalIDE(resolveAbs(script.scriptPath));
                     }
                 }
 
@@ -6313,6 +6444,14 @@ void EditorLayer::DrawScriptComponent(ECS::Entity entity) {
                     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
                     ImGui::TextWrapped("Error: %s", script.lastError.c_str());
                     ImGui::PopStyleColor();
+                    if (!script.scriptPath.empty() && ImGui::SmallButton("Open at error")) {
+                        // lastError is "file (row, col): message" — pull the row.
+                        int line = 0;
+                        auto lp = script.lastError.find('(');
+                        if (lp != std::string::npos)
+                            line = std::atoi(script.lastError.c_str() + lp + 1);
+                        OpenScriptAtLine(resolveAbs(script.scriptPath), line);
+                    }
                 }
 
                 // Status
@@ -6556,12 +6695,65 @@ void EditorLayer::DrawScriptComponent(ECS::Entity entity) {
             sc->scripts.erase(sc->scripts.begin() + removeIdx);
         }
 
-        // Add script button
+        // Add script: attach an existing one from scripts/, or create a new one.
         ImGui::Separator();
         if (ImGui::Button("Add Script")) {
+            ImGui::OpenPopup("Add Script");
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("(or drag a .as from the Asset Browser)");
+
+        if (ImGui::BeginPopup("Add Script")) {
+            ImGui::TextDisabled("Attach an existing script:");
+            ImGui::Separator();
+            // List scripts/*.as in the project, skipping the enjin_api headers.
+            std::vector<std::pair<std::string, std::string>> found; // (relative, absolute)
+            {
+                std::filesystem::path root;
+                if (!m_SceneManager.GetProjectPath().empty())
+                    root = std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path() / "scripts";
+                std::error_code ec;
+                if (!root.empty() && std::filesystem::exists(root, ec)) {
+                    for (auto it = std::filesystem::recursive_directory_iterator(root, ec);
+                         it != std::filesystem::recursive_directory_iterator(); it.increment(ec)) {
+                        if (ec) break;
+                        if (!it->is_regular_file(ec)) continue;
+                        std::filesystem::path p = it->path();
+                        std::string e = p.extension().string();
+                        std::transform(e.begin(), e.end(), e.begin(),
+                            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                        if (e != ".as") continue;
+                        std::string rel = std::filesystem::relative(p, root, ec).generic_string();
+                        if (rel.rfind("enjin_api/", 0) == 0) continue;
+                        found.push_back({rel, p.string()});
+                    }
+                }
+            }
+            if (found.empty()) {
+                ImGui::TextDisabled("(no scripts in scripts/ yet)");
+            } else {
+                for (auto& s : found) {
+                    if (ImGui::Selectable(s.first.c_str())) {
+                        AttachScriptFromAsset(entity, s.second);
+                        ImGui::CloseCurrentPopup();
+                    }
+                }
+            }
+            ImGui::Separator();
+            if (ImGui::Selectable("+ New Script...")) {
+                m_NewScriptNameBuf[0] = '\0';
+                m_NewScriptNameError.clear();
+                m_OpenCreateScriptPopup = true; // deferred: opened after this popup closes
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
+
+        // Deferred open of the Create Script modal — OpenPopup must run at this
+        // stack level, not from inside the Add Script popup above.
+        if (m_OpenCreateScriptPopup) {
+            m_OpenCreateScriptPopup = false;
             m_ShowCreateScriptPopup = true;
-            m_NewScriptNameBuf[0] = '\0';
-            m_NewScriptNameError.clear();
             ImGui::OpenPopup("Create Script");
         }
 

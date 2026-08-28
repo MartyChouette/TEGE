@@ -2,8 +2,12 @@
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Core/Version.h"
+#include "Enjin/Scripting/ScriptEngine.h"
+#include "Enjin/Scripting/ScriptBindings.h"
 #include <GLFW/glfw3.h>
 #include <chrono>
+#include <fstream>
+#include <filesystem>
 #include "Enjin/Logging/Log.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/GUI/UITemplates.h"
@@ -527,6 +531,15 @@ void EditorLayer::DrawMenuBar() {
                     bool dialogue = IsPanelVisible(EditorPanel::Dialogue);
                     if (ImGui::MenuItem("Dialogue Editor", nullptr, &dialogue)) {
                         SetPanelVisibility(EditorPanel::Dialogue, dialogue);
+                    }
+                    ImGui::Separator();
+                    if (ImGui::MenuItem("Export Script API (IntelliSense)")) {
+                        ExportScriptApiStub();
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Write an AngelScript stub of the whole TEGE API\n"
+                                          "(.tege/tege_api.as + as.predefined) so your code\n"
+                                          "editor can autocomplete engine functions.");
                     }
                     ImGui::EndMenu();
                 }
@@ -1502,6 +1515,68 @@ void EditorLayer::DrawMenuBar() {
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();
+    }
+}
+
+
+void EditorLayer::ExportScriptApiStub() {
+    // Build a throwaway, fully-bound AngelScript engine purely for reflection.
+    // This never touches play state — the real script engine (PlayMode) is left
+    // alone; we spin up a fresh one, register every binding, and dump it.
+    Scripting::ScriptEngine se;
+    if (!se.Initialize()) {
+        ShowNotification("Script API export failed: could not start AngelScript",
+                         NotificationType::Error);
+        return;
+    }
+    Scripting::RegisterAllBindings(se.GetASEngine());
+    std::string stub = Scripting::GenerateApiStub(se.GetASEngine());
+    se.Shutdown();
+
+    if (stub.empty()) {
+        ShowNotification("Script API export produced no output", NotificationType::Error);
+        return;
+    }
+
+    // Project root = folder holding the .enjinproject manifest; fall back to CWD.
+    namespace fs = std::filesystem;
+    fs::path root;
+    const std::string& manifest = m_SceneManager.GetProjectPath();
+    if (!manifest.empty()) {
+        root = fs::path(manifest).parent_path();
+    } else {
+        std::error_code cwdEc;
+        root = fs::current_path(cwdEc);
+    }
+
+    std::error_code ec;
+    fs::path apiDir = root / ".tege";
+    fs::create_directories(apiDir, ec);
+
+    // .tege/tege_api.as: reference + VS Code workspace-symbol index (kept out of
+    // scripts/ so it is never compiled into the game).
+    // as.predefined at the root: consumed by Sublime's AngelscriptCompletion.
+    fs::path stubPath = apiDir / "tege_api.as";
+    fs::path predefPath = root / "as.predefined";
+
+    bool ok = true;
+    {
+        std::ofstream f(stubPath, std::ios::binary | std::ios::trunc);
+        if (f) f << stub; else ok = false;
+    }
+    {
+        std::ofstream f(predefPath, std::ios::binary | std::ios::trunc);
+        if (f) f << stub; else ok = false;
+    }
+
+    if (ok) {
+        ShowNotification("Script API exported: .tege/tege_api.as + as.predefined",
+                         NotificationType::Success);
+        ENJIN_LOG_INFO(Script, "Exported script API stub (%zu bytes) to %s",
+                       stub.size(), stubPath.string().c_str());
+    } else {
+        ShowNotification("Script API export: could not write files (check project path)",
+                         NotificationType::Error);
     }
 }
 

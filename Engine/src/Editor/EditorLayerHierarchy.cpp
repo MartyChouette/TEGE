@@ -402,11 +402,32 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
     const char* icon = GetEntityIcon(m_World, entity);
     bool entityLockedByOther = m_SceneLockManager.IsEntityLockedByOther(entity);
     bool entityLockedByMe = m_SceneLockManager.IsEntityLocked(entity) && !entityLockedByOther;
+
+    // Flag entities whose scripts failed to compile / errored, so a broken
+    // script is obvious in the tree instead of failing silently at Play.
+    bool scriptError = false;
+    std::string scriptErrorMsg;
+    if (auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity)) {
+        for (const auto& att : sc->scripts) {
+            if (att.hasError) {
+                scriptError = true;
+                if (scriptErrorMsg.empty()) scriptErrorMsg = att.lastError;
+            }
+        }
+    }
+
     char labelBuf[256];
-    snprintf(labelBuf, sizeof(labelBuf), "%s%s%s", icon,
+    snprintf(labelBuf, sizeof(labelBuf), "%s%s%s%s", icon,
         entityLockedByOther ? "[X] " : (entityLockedByMe ? "[=] " : ""),
-        name.c_str());
+        name.c_str(),
+        scriptError ? "  (!) script error" : "");
+    if (scriptError) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.42f, 0.42f, 1.0f));
     bool opened = ImGui::TreeNodeEx((void*)(uintptr_t)entity, flags, "%s", labelBuf);
+    if (scriptError) ImGui::PopStyleColor();
+    if (scriptError && ImGui::IsItemHovered() && !scriptErrorMsg.empty()) {
+        ImGui::SetTooltip("Script error: %s\n(select this entity to see it on the Script component, or open the Console)",
+                          scriptErrorMsg.c_str());
+    }
 
     // If the selection just changed from outside the Hierarchy (viewport pick,
     // undo, script), scroll this row into view so the highlight is visible.

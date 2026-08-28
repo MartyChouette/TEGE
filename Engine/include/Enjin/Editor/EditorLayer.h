@@ -1501,10 +1501,14 @@ private:
 
     // Script creation popup state
     bool m_ShowCreateScriptPopup = false;
+    bool m_OpenCreateScriptPopup = false;  // deferred OpenPopup("Create Script") request
     char m_NewScriptNameBuf[128] = "";
     std::string m_NewScriptNameError;
     int m_NewScriptTemplate = 0;   // 0 Empty, 1 Rotator, 2 Interactable, 3 Spawner
     void OpenInExternalIDE(const std::string& filePath);
+    // Open a script in the IDE jumped to a specific line (VS Code `-g`); falls
+    // back to opening the file when the IDE has no line-jump form.
+    void OpenScriptAtLine(const std::string& filePath, int line);
 
     // Tilemap editor state
     bool m_TilemapEditMode = false;
@@ -1769,6 +1773,11 @@ private:
     std::vector<EditorNotification> m_Notifications;
     void ShowNotification(const std::string& message, NotificationType type = NotificationType::Info);
     void DrawNotifications(f32 deltaTime);
+
+    // Export an AngelScript API stub (declarations only) so external code
+    // editors can autocomplete the engine API. Writes .tege/tege_api.as and
+    // as.predefined into the open project's root. See Tools > Scripting & Logic.
+    void ExportScriptApiStub();
 
     // Accent Color Picker
     void DrawAccentColorPicker();

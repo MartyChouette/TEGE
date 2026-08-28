@@ -994,6 +994,8 @@ void EditorLayer::DrawAssetBrowserPanel() {
                         ImportModel(entry.fullPath);
                     } else if (IsScene(entry.extension)) {
                         OpenScene(entry.fullPath);
+                    } else if (IsScript(entry.extension) || IsShader(entry.extension)) {
+                        OpenInExternalIDE(entry.fullPath);
                     }
                 }
 
@@ -1027,6 +1029,27 @@ void EditorLayer::DrawAssetBrowserPanel() {
                         if (ImGui::MenuItem("Open Scene")) {
                             OpenScene(entry.fullPath);
                         }
+                    }
+                    if (IsScript(entry.extension) || IsShader(entry.extension)) {
+                        if (ImGui::MenuItem("Open in IDE")) {
+                            OpenInExternalIDE(entry.fullPath);
+                        }
+#ifdef _WIN32
+                        if (ImGui::MenuItem("Open With...")) {
+                            ShellExecuteA(nullptr, "openas", entry.fullPath.c_str(),
+                                          nullptr, nullptr, SW_SHOWNORMAL);
+                        }
+#endif
+                    }
+                    if (ImGui::MenuItem("Show in Explorer")) {
+#ifdef _WIN32
+                        std::string sel = "/select,\"" + entry.fullPath + "\"";
+                        ShellExecuteA(nullptr, "open", "explorer.exe", sel.c_str(),
+                                      nullptr, SW_SHOWNORMAL);
+#else
+                        OpenInExternalIDE(
+                            std::filesystem::path(entry.fullPath).parent_path().string());
+#endif
                     }
                     ImGui::EndPopup();
                 }
@@ -1104,6 +1127,8 @@ void EditorLayer::DrawAssetBrowserPanel() {
                             ImportModel(entry.fullPath);
                         } else if (IsScene(entry.extension)) {
                             OpenScene(entry.fullPath);
+                        } else if (IsScript(entry.extension) || IsShader(entry.extension)) {
+                            OpenInExternalIDE(entry.fullPath);
                         }
                     }
                 }
@@ -1157,6 +1182,27 @@ void EditorLayer::DrawAssetBrowserPanel() {
                         if (ImGui::MenuItem("Open Scene")) {
                             OpenScene(entry.fullPath);
                         }
+                    }
+                    if (IsScript(entry.extension) || IsShader(entry.extension)) {
+                        if (ImGui::MenuItem("Open in IDE")) {
+                            OpenInExternalIDE(entry.fullPath);
+                        }
+#ifdef _WIN32
+                        if (ImGui::MenuItem("Open With...")) {
+                            ShellExecuteA(nullptr, "openas", entry.fullPath.c_str(),
+                                          nullptr, nullptr, SW_SHOWNORMAL);
+                        }
+#endif
+                    }
+                    if (ImGui::MenuItem("Show in Explorer")) {
+#ifdef _WIN32
+                        std::string sel = "/select,\"" + entry.fullPath + "\"";
+                        ShellExecuteA(nullptr, "open", "explorer.exe", sel.c_str(),
+                                      nullptr, SW_SHOWNORMAL);
+#else
+                        OpenInExternalIDE(
+                            std::filesystem::path(entry.fullPath).parent_path().string());
+#endif
                     }
                     ImGui::EndPopup();
                 }

@@ -29,6 +29,12 @@ class ScriptEventBus;
 // Register all engine types and functions into the AngelScript engine
 ENJIN_API void RegisterAllBindings(asIScriptEngine* engine);
 
+// Walk every registered enum/type/function on a bound engine and emit an
+// AngelScript "stub" (declarations only, no bodies) for editor IntelliSense.
+// The real implementations stay in C++; this file just lets an editor index
+// the API. Call on an engine that has already had RegisterAllBindings() run.
+ENJIN_API std::string GenerateApiStub(asIScriptEngine* engine);
+
 // Individual registration functions
 void RegisterMathTypes(asIScriptEngine* engine);
 void RegisterEntityTypes(asIScriptEngine* engine);
