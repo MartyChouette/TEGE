@@ -907,6 +907,25 @@ public:
         if (!m_PendingFlowScene.empty()) DoFlowTransition();
         if (m_FlowActive) UpdateFlowAdvance(deltaTime);
 
+        // Script scene requests (Scene_LoadScene / Scene_Restart) are DEFERRED
+        // to this same safe point - loading synchronously from a script cleared
+        // the world while scripts were iterating it.
+        {
+            std::string reqScene;
+            auto req = m_SceneManager.TakeSceneRequest(reqScene);
+            if (req == Enjin::Scene::SceneManager::SceneRequest::Restart) {
+                RestartGameSession();
+            } else if (req == Enjin::Scene::SceneManager::SceneRequest::Load) {
+                const auto* entry = m_SceneManager.GetSceneByName(reqScene);
+                if (entry) {
+                    m_PendingFlowScene = entry->path;   // rides the GPU-safe transition
+                    DoFlowTransition();
+                } else {
+                    ENJIN_LOG_WARN(Player, "Scene request '%s' not in scene list", reqScene.c_str());
+                }
+            }
+        }
+
         // Update audio
         m_SimpleAudio.Update(deltaTime);
         m_SimpleAudio.UpdateAudioSources(deltaTime);

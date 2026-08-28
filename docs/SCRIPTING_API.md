@@ -35,7 +35,7 @@ The `TegeBehavior` base class and the `enjin_api` helper scripts (Timer, Tween, 
 - `Scene_IsValid(uint64)`, `Scene_GetEntityCount()`
 - `Scene_GetEntityName/SetEntityName(uint64, string)`
 - `Scene_AddTag/RemoveTag/HasTag(uint64, string)`
-- `Scene_LoadScene(string)`, `Scene_GetCurrentScene()`, `Scene_Restart()` — reload current scene
+- `Scene_LoadScene(string)`, `Scene_GetCurrentScene()`, `Scene_Restart()` — scene changes are DEFERRED to a safe point at the top of the next frame (never mid-script), and work in editor play AND exported games: the editor restarts/switches the play session, the player transitions scenes. Unknown scene names warn immediately.
 
 ## Time
 

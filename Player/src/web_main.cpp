@@ -727,6 +727,17 @@ public:
             for (auto e : m_World->GetEntitiesWithComponent<Enjin::ECS::MeshColliderComponent>()) colliderEntities.push_back(e);
             m_Physics->SetColliderEntities(colliderEntities);
         }
+        // Script scene requests: web has no mid-game scene-switch path yet, so
+        // consume the request (never let it sit) and say so clearly instead of
+        // failing silently. Scene flow testing happens in desktop exports.
+        {
+            std::string reqScene;
+            auto req = m_SceneManager.TakeSceneRequest(reqScene);
+            if (req != Enjin::Scene::SceneManager::SceneRequest::None) {
+                ENJIN_LOG_WARN(Player, "Scene_LoadScene/Scene_Restart not supported in the web player yet");
+            }
+        }
+
         // ADR-0005: SimulationClock owns stepping (fixed tick + interpolation
         // when the project enables it; legacy variable step otherwise).
         m_SimClock.Tick(m_World.get(), deltaTime, [this](Enjin::f32 stepDt) {

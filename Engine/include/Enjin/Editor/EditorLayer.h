@@ -1426,6 +1426,13 @@ private:
     // Deferred scene open (prevents World::Clear during Render-phase ImGui callbacks)
     std::string m_PendingSceneLoadPath;
 
+    // Script-requested play restart / scene switch (Scene_Restart /
+    // Scene_LoadScene during editor play): stop -> (open scene) -> re-play,
+    // via the same deferred plumbing the toolbar and --play-cycle use.
+    bool m_RestartPlayPending = false;
+    std::string m_RestartPlayScene;
+    int m_RestartPlayDelay = 0;
+
     // Wrong-project guard: set when OpenScene is asked to load a scene that
     // belongs to a different project than the one currently open.
     bool m_ShowWrongProjectDialog = false;

@@ -160,6 +160,26 @@ public:
     // Load a scene by name (clears current world)
     bool LoadScene(const std::string& name);
 
+    // ── Deferred scene requests (script-safe scene switching) ──
+    // Scripts must never load a scene synchronously: LoadScene clears the
+    // world WHILE scripts are iterating it. Bindings call Request* instead,
+    // and each runtime consumes the request at its safe point (top of frame,
+    // no scripts on the stack). Restart carries no name - the runtime decides
+    // what "current" means (the player's loaded scene; the editor's session).
+    enum class SceneRequest : u8 { None = 0, Load, Restart };
+    void RequestSceneChange(const std::string& name) {
+        m_PendingRequest = SceneRequest::Load;
+        m_PendingRequestName = name;
+    }
+    void RequestRestart() { m_PendingRequest = SceneRequest::Restart; }
+    SceneRequest TakeSceneRequest(std::string& outName) {
+        SceneRequest r = m_PendingRequest;
+        outName = m_PendingRequestName;
+        m_PendingRequest = SceneRequest::None;
+        m_PendingRequestName.clear();
+        return r;
+    }
+
     // Load a scene by build index
     bool LoadSceneByIndex(i32 buildIndex);
 
@@ -287,6 +307,8 @@ private:
     f32 m_TransitionDuration = 0.5f;
     f32 m_TransitionTimer = 0.0f;
     std::string m_PendingSceneName;  // Scene to load during transition
+    SceneRequest m_PendingRequest = SceneRequest::None;
+    std::string m_PendingRequestName;
 
     // Callbacks
     SceneLoadedCallback m_OnSceneLoaded;

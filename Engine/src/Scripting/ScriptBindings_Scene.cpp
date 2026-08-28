@@ -362,9 +362,15 @@ static void Scene_LoadScene(const std::string& sceneName) {
         ENJIN_LOG_WARN(Script, "Scene_LoadScene: no scene manager set");
         return;
     }
-    if (!s_BindingsSceneManager->LoadScene(sceneName)) {
-        ENJIN_LOG_WARN(Script, "Scene_LoadScene: failed to load scene '%s'", sceneName.c_str());
+    // DEFERRED (2026-08-28): loading synchronously here cleared the world while
+    // scripts were iterating it - a use-after-free waiting to fire. The request
+    // is consumed at the runtime's safe point (top of frame, no scripts on the
+    // stack). Unknown names still warn immediately for author feedback.
+    if (!s_BindingsSceneManager->GetSceneByName(sceneName)) {
+        ENJIN_LOG_WARN(Script, "Scene_LoadScene: scene '%s' is not in the project scene list", sceneName.c_str());
+        return;
     }
+    s_BindingsSceneManager->RequestSceneChange(sceneName);
 }
 
 static std::string Scene_GetCurrentScene() {
@@ -384,12 +390,10 @@ static void Scene_Restart() {
         ENJIN_LOG_WARN(Script, "Scene_Restart: no scene manager set");
         return;
     }
-    std::string current = s_BindingsSceneManager->GetCurrentSceneName();
-    if (current.empty()) {
-        ENJIN_LOG_WARN(Script, "Scene_Restart: no current scene");
-        return;
-    }
-    s_BindingsSceneManager->LoadScene(current);
+    // DEFERRED (2026-08-28): no current-name lookup here - the runtime decides
+    // what "current" means (the player restarts its loaded scene; editor play
+    // restarts the play session). This is what makes R-to-restart work in BOTH.
+    s_BindingsSceneManager->RequestRestart();
 }
 
 // ============================================================================

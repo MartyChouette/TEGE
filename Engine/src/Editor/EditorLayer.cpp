@@ -903,6 +903,42 @@ void EditorLayer::Update(f32 deltaTime) {
         }
     }
 
+    // Script scene requests during editor play (Scene_Restart / Scene_LoadScene):
+    // consumed here at a safe point, executed as deferred stop -> (open) -> play
+    // so a script can restart or switch scenes in the editor exactly like it
+    // does in an exported game. Same plumbing as the toolbar stop.
+    if (m_PlayMode.IsPlaying()) {
+        std::string reqScene;
+        auto req = m_SceneManager.TakeSceneRequest(reqScene);
+        if (req == Scene::SceneManager::SceneRequest::Restart) {
+            m_RestartPlayPending = true;
+            m_PendingPlayStop = true;
+            ENJIN_LOG_INFO(Editor, "Scene_Restart: restarting play session");
+        } else if (req == Scene::SceneManager::SceneRequest::Load) {
+            const auto* entry = m_SceneManager.GetSceneByName(reqScene);
+            if (entry) {
+                std::filesystem::path root =
+                    std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path();
+                m_RestartPlayScene = (root / entry->path).string();
+                m_RestartPlayPending = true;
+                m_PendingPlayStop = true;
+                ENJIN_LOG_INFO(Editor, "Scene_LoadScene: switching play session to '%s'", reqScene.c_str());
+            } else {
+                ENJIN_LOG_WARN(Editor, "Scene_LoadScene: '%s' not in the project scene list", reqScene.c_str());
+            }
+        }
+    } else if (m_RestartPlayPending && m_PlayMode.IsStopped() && !m_PendingPlayStop) {
+        if (!m_RestartPlayScene.empty()) {
+            OpenScene(m_RestartPlayScene);   // deferred load into the editor world
+            m_RestartPlayScene.clear();
+            m_RestartPlayDelay = 0;
+        } else if (m_PendingSceneLoadPath.empty() && ++m_RestartPlayDelay >= 10) {
+            m_RestartPlayPending = false;
+            m_RestartPlayDelay = 0;
+            StartPlayMode();
+        }
+    }
+
     // MCP server: reconcile with the setting, pump queued tool calls onto this
     // (the main) thread. adr-0004: all World mutation happens right here.
     {
