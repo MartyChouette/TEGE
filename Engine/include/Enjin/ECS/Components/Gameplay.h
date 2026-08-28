@@ -1155,6 +1155,12 @@ struct ParticleEmitterComponent {
     Math::Vector3 gravity = Math::Vector3(0, -9.8f, 0);
     f32 drag = 0.0f;
 
+    // Wind: when on, the scene's wind (WindSystem / WeatherZone) pushes particles so
+    // they drift and gust with the rest of the world (leaves, dust, snow, embers).
+    // Assign a texture + emit across an area and this becomes a wind visualizer.
+    bool useSceneWind = false;
+    f32 windInfluence = 1.0f;      // how strongly the scene wind pushes these particles
+
     // Max particles
     u32 maxParticles = 1024;
 

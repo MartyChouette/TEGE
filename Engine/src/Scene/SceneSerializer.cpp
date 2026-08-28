@@ -3847,6 +3847,8 @@ json SerializeParticleEmitterComponent(const ECS::ParticleEmitterComponent& pe) 
     j["coneAngle"] = RF(pe.coneAngle);
     j["gravity"] = SerializeVector3(pe.gravity);
     j["drag"] = RF(pe.drag);
+    j["useSceneWind"] = pe.useSceneWind;
+    j["windInfluence"] = RF(pe.windInfluence);
     j["texturePath"] = pe.texturePath;
     j["textureSheetX"] = RF(pe.textureSheetX);
     j["textureSheetY"] = RF(pe.textureSheetY);
@@ -3886,6 +3888,8 @@ ECS::ParticleEmitterComponent DeserializeParticleEmitterComponent(const json& j)
     if (j.contains("coneAngle")) pe.coneAngle = j["coneAngle"].get<f32>();
     if (j.contains("gravity")) pe.gravity = DeserializeVector3(j["gravity"]);
     if (j.contains("drag")) pe.drag = j["drag"].get<f32>();
+    if (j.contains("useSceneWind")) pe.useSceneWind = JB(j["useSceneWind"]);
+    if (j.contains("windInfluence")) pe.windInfluence = j["windInfluence"].get<f32>();
     if (j.contains("texturePath")) pe.texturePath = SafeStr(j["texturePath"], MAX_STR_PATH);
     if (j.contains("textureSheetX")) pe.textureSheetX = j["textureSheetX"].get<i32>();
     if (j.contains("textureSheetY")) pe.textureSheetY = j["textureSheetY"].get<i32>();

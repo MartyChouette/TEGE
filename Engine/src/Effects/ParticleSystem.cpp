@@ -204,6 +204,14 @@ void ParticleSystem::UpdateEmitter(ECS::ParticleEmitterComponent& emitter, const
         p.velocity.y += emitter.gravity.y * deltaTime;
         p.velocity.z += emitter.gravity.z * deltaTime;
 
+        // Apply scene wind: push particles toward the wind velocity so they gust and
+        // drift with the world instead of moving in a straight line.
+        if (emitter.useSceneWind) {
+            p.velocity.x += m_SceneWind.x * emitter.windInfluence * deltaTime;
+            p.velocity.y += m_SceneWind.y * emitter.windInfluence * deltaTime;
+            p.velocity.z += m_SceneWind.z * emitter.windInfluence * deltaTime;
+        }
+
         // Apply drag
         if (emitter.drag > 0.0f) {
             f32 dragFactor = 1.0f - emitter.drag * deltaTime;

@@ -5345,6 +5345,12 @@ void EditorLayer::DrawParticleEmitterComponent(ECS::Entity entity) {
                 emitter->gravity = Math::Vector3(gravity[0], gravity[1], gravity[2]);
             }
             InspectorUndo::DragFloat(m_UndoRedo, "Drag", &emitter->drag, 0.01f, 0.0f, 10.0f);
+            InspectorUndo::Checkbox(m_UndoRedo, "Use Scene Wind", &emitter->useSceneWind);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Push these particles with the world's wind (WindSystem / Weather),\nso they drift and gust like leaves, dust, snow, or embers.");
+            if (emitter->useSceneWind) {
+                InspectorUndo::DragFloat(m_UndoRedo, "Wind Influence", &emitter->windInfluence, 0.05f, 0.0f, 30.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("How strongly the scene wind pushes these particles.");
+            }
             ImGui::TreePop();
         }
 

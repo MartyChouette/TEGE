@@ -1062,7 +1062,11 @@ public:
         m_FluidTerrainCoupling.Update(deltaTime, m_World.get(), m_FluidSimulation);
         m_CurlNoiseSystem.Update(deltaTime);
 
-        // Particle emitter simulation
+        // Particle emitter simulation (push scene wind so wind-driven emitters drift)
+        if (auto* ws = m_RenderSystem ? m_RenderSystem->GetWindSystem() : nullptr) {
+            Enjin::Math::Vector4 w = ws->GetWindVector();
+            m_ParticleSystem.SetSceneWind(Enjin::Math::Vector3(w.x, w.y, w.z));
+        }
         m_ParticleSystem.Update(deltaTime, m_World.get());
 
         // Audio-reactive system (beat sync, FFT-driven parameters) — editor parity.

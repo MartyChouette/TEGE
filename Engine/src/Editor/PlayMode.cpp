@@ -16,6 +16,7 @@
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Effects/ParticleSystem.h"
+#include "Enjin/Effects/Wind.h"
 #include "Enjin/Effects/Water.h"
 #include "Enjin/ECS/Components/Water3D.h"
 #include "Enjin/Scene/SceneSerializer.h"
@@ -1097,8 +1098,12 @@ void PlayMode::Update(f32 deltaTime) {
             m_WeatherSystem->Update(deltaTime, m_Camera->GetPosition());
         }
 
-        // Particles
+        // Particles (push scene wind so wind-driven emitters drift with the world)
         if (m_ParticleSystem) {
+            if (auto* ws = m_RenderSystem ? m_RenderSystem->GetWindSystem() : nullptr) {
+                Math::Vector4 w = ws->GetWindVector();
+                m_ParticleSystem->SetSceneWind(Math::Vector3(w.x, w.y, w.z));
+            }
             m_ParticleSystem->Update(deltaTime, m_World);
         }
 

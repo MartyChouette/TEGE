@@ -70,6 +70,7 @@
 #include "Enjin/Renderer/SDFScene.h"
 #include "Enjin/Renderer/OITManager.h"
 #include "Enjin/Effects/TreeRenderer.h"
+#include "Enjin/Effects/Wind.h"
 #include "Enjin/Effects/Weather.h"
 #include "Enjin/Assets/SceneImporter.h"
 #include "Enjin/Assets/FontLibrary.h"
@@ -2718,7 +2719,11 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     // Notify render system whether rain is active (drives water ripple shader)
     m_RenderSystem->SetRainActive(isRain);
 
-    // Update particle emitter simulation
+    // Update particle emitter simulation (push scene wind so wind-driven emitters drift)
+    if (auto* ws = m_RenderSystem ? m_RenderSystem->GetWindSystem() : nullptr) {
+        Math::Vector4 w = ws->GetWindVector();
+        m_ParticleSystem.SetSceneWind(Math::Vector3(w.x, w.y, w.z));
+    }
     m_ParticleSystem.Update(m_LastDeltaTime, m_World);
 
     // Update parallax scrolling backgrounds (auto-scroll advance)
