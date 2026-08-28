@@ -93,6 +93,7 @@ private:
     void SyncJoltToECS();
     void SyncJointsToJolt();
     void ApplyGravityZones();
+    void ApplyBuoyancy();
     void ProcessContactEvents();
 
     // Body management

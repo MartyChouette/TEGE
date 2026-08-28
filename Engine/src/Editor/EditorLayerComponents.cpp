@@ -1707,6 +1707,17 @@ void EditorLayer::DrawWaterVolumeComponent(ECS::Entity entity) {
 
         ImGui::Separator();
 
+        // Buoyancy — floats dynamic rigidbodies that fall in
+        InspectorUndo::Checkbox(m_UndoRedo, "Enable Buoyancy", &volume->enableBuoyancy);
+        if (volume->enableBuoyancy) {
+            InspectorUndo::DragFloat(m_UndoRedo, "Buoyancy Strength", &volume->buoyancyStrength, 0.05f, 0.0f, 6.0f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("How hard the water pushes bodies up.\n1 = neutral, >1 floats (higher = rides higher).");
+            InspectorUndo::DragFloat(m_UndoRedo, "Buoyancy Drag", &volume->buoyancyDrag, 0.05f, 0.0f, 10.0f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Water resistance — damps bobbing and drift so things settle.");
+        }
+
+        ImGui::Separator();
+
         // Freeze Settings
         if (ImGui::TreeNodeEx("Freeze Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
             f32 iceCol[3] = { volume->iceColor.x, volume->iceColor.y, volume->iceColor.z };
@@ -1810,6 +1821,15 @@ void EditorLayer::DrawWater3DComponent(ECS::Entity entity) {
         if (w->settings.enableFoam) {
             InspectorUndo::SliderFloat(m_UndoRedo, "Foam Threshold", &w->settings.foamThreshold, 0.0f, 1.0f);
             InspectorUndo::DragFloat(m_UndoRedo, "Foam Scale", &w->settings.foamScale, 0.1f, 0.1f, 20.0f);
+        }
+
+        ImGui::Separator();
+        InspectorUndo::Checkbox(m_UndoRedo, "Enable Buoyancy", &w->settings.enableBuoyancy);
+        if (w->settings.enableBuoyancy) {
+            InspectorUndo::DragFloat(m_UndoRedo, "Buoyancy Strength", &w->settings.buoyancyStrength, 0.05f, 0.0f, 6.0f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("How hard the water pushes bodies up. 1 = neutral, >1 floats.");
+            InspectorUndo::DragFloat(m_UndoRedo, "Buoyancy Drag", &w->settings.buoyancyDrag, 0.05f, 0.0f, 10.0f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Water resistance — damps bobbing and drift.");
         }
 
         // Force mesh rebuild if size/tessellation changed

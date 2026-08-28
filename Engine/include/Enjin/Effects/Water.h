@@ -58,6 +58,12 @@ struct Water3DSettings {
     bool enableFoam = false;
     f32 foamThreshold = 0.5f;
     f32 foamScale = 1.0f;
+
+    // Buoyancy: dynamic rigidbodies below the surface within the plane's footprint get
+    // pushed up so they float. On by default so floating works out of the box.
+    bool enableBuoyancy = true;
+    f32 buoyancyStrength = 1.6f;   // >1 = floats
+    f32 buoyancyDrag = 2.5f;       // water resistance
 };
 
 // Lightweight 3D water system

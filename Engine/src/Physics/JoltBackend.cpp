@@ -45,6 +45,8 @@
 #include "Enjin/ECS/Components/Mesh.h"
 #include "Enjin/Assets/MeshAssetCache.h"   // reload freed CPU verts for collider gen (task #3)
 #include "Enjin/ECS/Components/GravityZone.h"
+#include "Enjin/ECS/Components/WaterVolume.h"
+#include "Enjin/ECS/Components/Water3D.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Math/Math.h"
 
@@ -315,6 +317,9 @@ void JoltBackend::Update(f32 deltaTime) {
 
     // 3. Apply gravity zone overrides
     ApplyGravityZones();
+
+    // 3b. Apply water buoyancy (float bodies submerged in water volumes)
+    ApplyBuoyancy();
 
     // 4. Step Jolt simulation (1 collision step)
     m_PhysicsSystem->Update(deltaTime, 1, m_TempAllocator.get(), m_JobSystem.get());
@@ -938,6 +943,86 @@ void JoltBackend::ApplyGravityZones() {
             // Restore normal gravity factor (P9 fix: clamp)
             bodyInterface.SetGravityFactor(bodyID, std::clamp(rb->gravityScale, -10.0f, 10.0f));
         }
+    }
+}
+
+// ============================================================================
+// Water Buoyancy — float dynamic bodies submerged in a water volume
+// ============================================================================
+
+void JoltBackend::ApplyBuoyancy() {
+    if (!m_PhysicsSystem || !m_World) return;
+
+    // Collect buoyant water regions once (surface Y, horizontal footprint, strength/drag).
+    // Both WaterVolume and Water3D surfaces float things, so "all water options" work.
+    struct BuoyZone {
+        f32 surfaceY, bottomY, minX, maxX, minZ, maxZ, strength, drag;
+        i32 priority;
+    };
+    static std::vector<BuoyZone> zones;   // reused (physics is single-threaded)
+    zones.clear();
+
+    auto* xformStorage = m_World->GetComponentStorage<ECS::TransformComponent>();
+
+    {
+        auto* wvStorage = m_World->GetComponentStorage<ECS::WaterVolumeComponent>();
+        for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::WaterVolumeComponent>()) {
+            auto* wv = wvStorage ? wvStorage->Get(e) : nullptr;
+            auto* tf = xformStorage ? xformStorage->Get(e) : nullptr;
+            if (!wv || !tf || !wv->enableBuoyancy) continue;
+            zones.push_back({ tf->position.y, tf->position.y - wv->halfExtents.y * 2.0f,
+                tf->position.x - wv->halfExtents.x, tf->position.x + wv->halfExtents.x,
+                tf->position.z - wv->halfExtents.z, tf->position.z + wv->halfExtents.z,
+                wv->buoyancyStrength, wv->buoyancyDrag, wv->priority });
+        }
+    }
+    {
+        auto* w3Storage = m_World->GetComponentStorage<ECS::Water3DComponent>();
+        for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::Water3DComponent>()) {
+            auto* w3 = w3Storage ? w3Storage->Get(e) : nullptr;
+            auto* tf = xformStorage ? xformStorage->Get(e) : nullptr;
+            if (!w3 || !tf || !w3->settings.enableBuoyancy) continue;
+            f32 hw = w3->settings.width * 0.5f, hd = w3->settings.depth * 0.5f;
+            zones.push_back({ tf->position.y, tf->position.y - 20.0f,
+                tf->position.x - hw, tf->position.x + hw,
+                tf->position.z - hd, tf->position.z + hd,
+                w3->settings.buoyancyStrength, w3->settings.buoyancyDrag, 0 });
+        }
+    }
+    if (zones.empty()) return;
+
+    auto& bi = m_PhysicsSystem->GetBodyInterface();
+    f32 g = m_Gravity.Length();
+    if (g < 0.01f) g = 9.81f;
+    const f32 kFloatDepth = 1.5f;   // depth at which submersion is "full"; equilibrium sits at ~1/strength of this
+
+    auto* rbStorage = m_World->GetComponentStorage<ECS::RigidbodyComponent>();
+    for (auto& [entity, bodyID] : m_EntityToBody) {
+        auto* rb = rbStorage ? rbStorage->Get(entity) : nullptr;
+        if (!rb || rb->bodyType != ECS::RigidbodyComponent::BodyType::Dynamic) continue;
+        auto* tf = xformStorage ? xformStorage->Get(entity) : nullptr;
+        if (!tf) continue;
+
+        const BuoyZone* best = nullptr;
+        for (const BuoyZone& z : zones) {
+            if (tf->position.x < z.minX || tf->position.x > z.maxX) continue;
+            if (tf->position.z < z.minZ || tf->position.z > z.maxZ) continue;
+            if (tf->position.y >= z.surfaceY || tf->position.y < z.bottomY) continue;  // must be under the surface, inside depth
+            if (!best || z.priority > best->priority) best = &z;
+        }
+        if (!best) continue;
+
+        f32 depth = best->surfaceY - tf->position.y;
+        f32 sub = std::clamp(depth / kFloatDepth, 0.0f, 1.0f);
+        f32 mass = std::max(rb->mass, 0.0001f);
+
+        // Net upward buoyancy (gravity still pulls down: net = g*mass*(strength*sub - 1)),
+        // plus water drag proportional to velocity so it settles instead of bobbing forever.
+        JPH::Vec3 v = bi.GetLinearVelocity(bodyID);
+        Math::Vector3 buoy(0.0f, g * mass * best->strength * sub, 0.0f);
+        Math::Vector3 drag(-v.GetX(), -v.GetY(), -v.GetZ());
+        drag = drag * (mass * best->drag * sub);
+        bi.AddForce(bodyID, ToJolt(buoy + drag));
     }
 }
 

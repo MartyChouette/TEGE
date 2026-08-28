@@ -41,6 +41,12 @@ struct ENJIN_API WaterVolumeComponent {
     f32 foamScale = 8.0f;         // Noise scale for foam pattern
     Math::Vector3 shoreColor = Math::Vector3(0.3f, 0.6f, 0.7f);  // Shallow water tint
 
+    // Buoyancy: dynamic rigidbodies inside the volume and below the surface get pushed
+    // up so they float. On by default so "things float in water" works out of the box.
+    bool enableBuoyancy = true;
+    f32 buoyancyStrength = 1.6f;   // >1 = net upward at full submersion (floats); 1 = neutral
+    f32 buoyancyDrag = 2.5f;       // water resistance (damps bobbing / horizontal drift)
+
     // Higher priority volumes override lower ones when overlapping
     i32 priority = 0;
 

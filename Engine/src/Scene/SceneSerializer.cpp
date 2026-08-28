@@ -783,6 +783,9 @@ json SerializeWaterVolumeComponent(const ECS::WaterVolumeComponent& volume) {
     j["foamIntensity"] = RF(volume.foamIntensity);
     j["foamScale"] = RF(volume.foamScale);
     j["shoreColor"] = SerializeVector3(volume.shoreColor);
+    j["enableBuoyancy"] = volume.enableBuoyancy;
+    j["buoyancyStrength"] = RF(volume.buoyancyStrength);
+    j["buoyancyDrag"] = RF(volume.buoyancyDrag);
     j["priority"] = volume.priority;
     j["iceColor"] = SerializeVector3(volume.iceColor);
     j["iceOpacity"] = RF(volume.iceOpacity);
@@ -804,6 +807,9 @@ ECS::WaterVolumeComponent DeserializeWaterVolumeComponent(const json& j) {
     if (j.contains("foamIntensity")) volume.foamIntensity = j["foamIntensity"].get<f32>();
     if (j.contains("foamScale")) volume.foamScale = j["foamScale"].get<f32>();
     if (j.contains("shoreColor")) volume.shoreColor = DeserializeVector3(j["shoreColor"]);
+    if (j.contains("enableBuoyancy")) volume.enableBuoyancy = JB(j["enableBuoyancy"]);
+    if (j.contains("buoyancyStrength")) volume.buoyancyStrength = j["buoyancyStrength"].get<f32>();
+    if (j.contains("buoyancyDrag")) volume.buoyancyDrag = j["buoyancyDrag"].get<f32>();
     if (j.contains("priority")) volume.priority = j["priority"].get<i32>();
     if (j.contains("iceColor")) volume.iceColor = DeserializeVector3(j["iceColor"]);
     if (j.contains("iceOpacity")) volume.iceOpacity = j["iceOpacity"].get<f32>();
@@ -831,6 +837,9 @@ json SerializeWater3DComponent(const ECS::Water3DComponent& w) {
     j["enableFoam"] = w.settings.enableFoam;
     j["foamThreshold"] = RF(w.settings.foamThreshold);
     j["foamScale"] = RF(w.settings.foamScale);
+    j["enableBuoyancy"] = w.settings.enableBuoyancy;
+    j["buoyancyStrength"] = RF(w.settings.buoyancyStrength);
+    j["buoyancyDrag"] = RF(w.settings.buoyancyDrag);
     return j;
 }
 
@@ -853,6 +862,9 @@ ECS::Water3DComponent DeserializeWater3DComponent(const json& j) {
     if (j.contains("enableFoam")) w.settings.enableFoam = JB(j["enableFoam"]);
     if (j.contains("foamThreshold")) w.settings.foamThreshold = j["foamThreshold"].get<f32>();
     if (j.contains("foamScale")) w.settings.foamScale = j["foamScale"].get<f32>();
+    if (j.contains("enableBuoyancy")) w.settings.enableBuoyancy = JB(j["enableBuoyancy"]);
+    if (j.contains("buoyancyStrength")) w.settings.buoyancyStrength = j["buoyancyStrength"].get<f32>();
+    if (j.contains("buoyancyDrag")) w.settings.buoyancyDrag = j["buoyancyDrag"].get<f32>();
     return w;
 }
 
