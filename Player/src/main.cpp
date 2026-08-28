@@ -196,11 +196,12 @@ public:
             }
         });
 
-        // Apply VSync setting
+        // Apply VSync setting. Honored independently of the fps cap: with an
+        // uncapped target, vsync IS the cap (present blocks on refresh). The
+        // old `(m_TargetFPS != 0) && m_VSync` silently disabled vsync for
+        // uncapped games, tearing against the author's explicit setting.
         if (m_Renderer->GetSwapchain()) {
-            // Only apply VSync if not uncapped
-            bool useVSync = (m_TargetFPS != 0) && m_VSync;
-            m_Renderer->GetSwapchain()->SetVSyncEnabled(useVSync);
+            m_Renderer->GetSwapchain()->SetVSyncEnabled(m_VSync);
         }
 
         // Set up frame rate limiting callback
