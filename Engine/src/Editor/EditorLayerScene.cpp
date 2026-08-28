@@ -404,9 +404,122 @@ void EditorLayer::SaveScene(const std::string& path) {
 }
 
 void EditorLayer::OpenScene(const std::string& path) {
+    // Guard: a scene resolves its scripts and assets against the open project's
+    // root, so loading a scene that belongs to a DIFFERENT project silently
+    // breaks every path. If we detect that, prompt the user to switch projects
+    // instead of quietly loading it wrong.
+    std::string owning = FindMismatchedProjectForScene(path);
+    if (!owning.empty()) {
+        m_WrongProjectScenePath = path;
+        m_WrongProjectManifest = owning;
+        m_ShowWrongProjectDialog = true;
+        return;
+    }
+
     // Defer to Update phase — World::Clear() must not run during Render
     // to avoid invalidating entity references used by the current frame.
     m_PendingSceneLoadPath = path;
+}
+
+std::string EditorLayer::FindMismatchedProjectForScene(const std::string& scenePath) {
+    namespace fs = std::filesystem;
+    if (scenePath.empty()) return {};
+    // No project loaded yet: let AutoDetectProjectForScene adopt/create one.
+    if (m_SceneManager.GetProjectPath().empty()) return {};
+
+    std::error_code ec;
+    fs::path sceneFile = fs::path(scenePath).lexically_normal();
+    if (!fs::exists(sceneFile, ec)) return {};
+
+    fs::path curManifest = fs::path(m_SceneManager.GetProjectPath()).lexically_normal();
+    fs::path curRoot = curManifest.parent_path();
+
+    // Under the current project root → fine.
+    fs::path rel = sceneFile.lexically_relative(curRoot);
+    if (!rel.empty() && rel.string().rfind("..", 0) != 0) return {};
+
+    // Walk up from the scene looking for its owning .enjinproject.
+    fs::path dir = sceneFile.parent_path();
+    for (int depth = 0; depth < 4 && !dir.empty(); ++depth) {
+        for (auto& entry : fs::directory_iterator(dir, ec)) {
+            if (ec) break;
+            if (entry.path().extension() == ".enjinproject" && entry.is_regular_file(ec)) {
+                fs::path found = entry.path().lexically_normal();
+                // Belongs to a different project → mismatch. Its own project is
+                // the current one → fine.
+                return (found != curManifest) ? found.string() : std::string{};
+            }
+        }
+        fs::path parent = dir.parent_path();
+        if (parent == dir) break;  // filesystem root
+        dir = parent;
+    }
+    // No owning project found (orphan scene): keep the current project. Low
+    // risk, and we must not fabricate a project switch out of nothing.
+    return {};
+}
+
+void EditorLayer::DrawWrongProjectDialog() {
+    if (m_ShowWrongProjectDialog) {
+        ImGui::OpenPopup("Different Project##wrongproj");
+        m_ShowWrongProjectDialog = false;
+    }
+
+    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal("Different Project##wrongproj", nullptr,
+                               ImGuiWindowFlags_AlwaysAutoResize)) {
+        std::string projName = std::filesystem::path(m_WrongProjectManifest).stem().string();
+        std::string sceneName = std::filesystem::path(m_WrongProjectScenePath).filename().string();
+
+        ImGui::Text("\"%s\" belongs to a different project.", sceneName.c_str());
+        ImGui::Separator();
+        ImGui::Text("Its project:   %s", projName.c_str());
+        ImGui::Text("Open project:  %s", m_SceneManager.GetProjectName().c_str());
+        ImGui::Spacing();
+        ImGui::TextWrapped("Loading it under the open project would break its scripts and "
+                           "assets, because those resolve against the project root.");
+
+        if (m_SceneDirty) {
+            ImGui::Spacing();
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.72f, 0.2f, 1.0f));
+            ImGui::TextWrapped("The current scene has unsaved changes that switching will discard.");
+            ImGui::PopStyleColor();
+        }
+
+        ImGui::Separator();
+        if (ImGui::Button("Switch Project & Open", ImVec2(190, 0))) {
+            std::string manifest = m_WrongProjectManifest;
+            std::string scene = m_WrongProjectScenePath;
+            ImGui::CloseCurrentPopup();
+            if (m_SceneManager.LoadProject(manifest)) {
+                MigrateEditorSettingsToProject();
+                m_EditorSettings.AddRecentProject(manifest);
+                m_EditorSettings.lastProjectDir =
+                    std::filesystem::path(manifest).parent_path().parent_path().string();
+                m_EditorSettings.Save();
+                ShowNotification("Switched to project '" + m_SceneManager.GetProjectName() + "'",
+                                 NotificationType::Info);
+                m_PendingSceneLoadPath = scene;  // now loads under the correct project
+            } else {
+                ShowNotification("Failed to load project '" + projName + "'",
+                                 NotificationType::Error);
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Open Anyway", ImVec2(120, 0))) {
+            ImGui::CloseCurrentPopup();
+            m_PendingSceneLoadPath = m_WrongProjectScenePath;  // override; paths may not resolve
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Load the scene under the CURRENT project.\n"
+                              "Its scripts and assets may not resolve.");
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(100, 0))) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
 }
 
 void EditorLayer::OpenSceneImmediate(const std::string& path) {

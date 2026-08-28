@@ -3741,6 +3741,9 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         DrawQuitFeedbackDialog();
     }
 
+    // Guard: opening a scene that belongs to a different project
+    DrawWrongProjectDialog();
+
     // Read render stats AFTER the render pass (counters are reset at start, incremented during draw)
     if (m_RenderSystem) {
         m_PerfMetrics.drawCallCount = m_RenderSystem->GetDrawCallCount();

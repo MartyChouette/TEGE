@@ -641,6 +641,11 @@ private:
     void EnsureProjectForScene(const std::string& scenePath);
     void OpenProjectFromPath(const std::string& projectPath);
     void AutoDetectProjectForScene(const std::string& scenePath);
+    // If scenePath belongs to a project other than the one currently loaded,
+    // return that project's .enjinproject path; otherwise "". Used to guard
+    // OpenScene from loading a scene under the wrong project root.
+    std::string FindMismatchedProjectForScene(const std::string& scenePath);
+    void DrawWrongProjectDialog();
 
     // Entity operations
     void DuplicateEntity(ECS::Entity entity);
@@ -1412,6 +1417,12 @@ private:
 
     // Deferred scene open (prevents World::Clear during Render-phase ImGui callbacks)
     std::string m_PendingSceneLoadPath;
+
+    // Wrong-project guard: set when OpenScene is asked to load a scene that
+    // belongs to a different project than the one currently open.
+    bool m_ShowWrongProjectDialog = false;
+    std::string m_WrongProjectScenePath;
+    std::string m_WrongProjectManifest;
 
     // Deferred auto-save recovery load (same reason — the recovery dialog is a
     // Render-phase ImGui modal; loading the world from inside it crashed)
