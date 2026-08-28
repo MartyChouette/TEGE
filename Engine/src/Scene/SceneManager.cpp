@@ -27,6 +27,9 @@ void SceneManager::NewProject(const std::string& projectName) {
     m_CurrentSceneName.clear();
     m_DefaultRenderSettings = Renderer::SceneRenderSettings{};
     m_GameFrameSettings = GameFrameSettings{};
+    // ADR-0005: NEW projects get frame-rate-independent physics from day one.
+    // Existing projects keep whatever their file says (missing key = off).
+    m_GameFrameSettings.fixedTimestep = true;
     m_ProjectMode = ProjectMode::Mode3D;
     m_PhysicsBackendType = Physics::PhysicsBackendType::Auto;
     m_CollisionGroupNames.clear();

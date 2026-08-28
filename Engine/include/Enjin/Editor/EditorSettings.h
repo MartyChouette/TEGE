@@ -127,7 +127,7 @@ struct EditorSettings {
     bool editorVSync = false;
     bool reduceFrameRateWhenUnfocused = true;
     u32 unfocusedFrameRate = 15;
-    bool reduceFrameRateWhenIdle = false;
+    bool reduceFrameRateWhenIdle = true;   // fps-audit 2026-08-28: idle editors should not burn a GPU
     f32 idleTimeoutSeconds = 30.0f;
     u32 idleFrameRate = 30;
 
