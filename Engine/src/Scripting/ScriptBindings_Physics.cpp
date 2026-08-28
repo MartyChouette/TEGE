@@ -8,7 +8,9 @@
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/Physics/IPhysicsBackend.h"
+#ifndef ENJIN_PLATFORM_WEB
 #include "Enjin/Editor/ScenePicker.h"
+#endif
 #include "Enjin/Renderer/Camera.h"
 #include <angelscript.h>
 #include <cassert>
@@ -111,6 +113,7 @@ static bool Physics_RaycastHit(const Vector3& origin, const Vector3& direction,
 // camera and return the first entity hit (0 = nothing). Pair with Input_GetMousePosition
 // for "is the cursor over this object" gameplay (hover-to-open, click-to-use).
 static u64 Physics_RaycastScreen(f32 screenX, f32 screenY) {
+#ifndef ENJIN_PLATFORM_WEB
     if (!s_BindingsPhysics || !s_BindingsRenderCamera) return 0;
     Editor::Ray r = Editor::ScenePicker::ScreenToRay(s_BindingsRenderCamera, screenX, screenY,
                                                      s_BindingsViewW, s_BindingsViewH);
@@ -120,6 +123,13 @@ static u64 Physics_RaycastScreen(f32 screenX, f32 screenY) {
     pr.direction = r.direction.Normalized();
     Physics::RaycastHit hit = s_BindingsPhysics->Raycast(pr, 1000.0f);
     return hit.hit ? static_cast<u64>(hit.entity) : 0;
+#else
+    // ScenePicker lives in the Editor module, which the web build excludes —
+    // linking it here broke the web player (found 2026-08-28). Scripts get a
+    // clean "nothing hit" until a web-side ray builder exists.
+    (void)screenX; (void)screenY;
+    return 0;
+#endif
 }
 
 static Vector2 Input_GetScreenSize() {

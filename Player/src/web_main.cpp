@@ -1336,6 +1336,20 @@ private:
             if (j.contains("switchAccessEnabled")) s.switchAccessEnabled = j["switchAccessEnabled"].get<bool>();
             if (j.contains("switchScanSpeed")) s.switchScanSpeed = j["switchScanSpeed"].get<Enjin::f32>();
             if (j.contains("stickyDragEnabled")) s.stickyDragEnabled = j["stickyDragEnabled"].get<bool>();
+            // Motion + input options (were desktop-only; audit 2026-08-28)
+            if (j.contains("disableScreenShake")) s.disableScreenShake = j["disableScreenShake"].get<bool>();
+            if (j.contains("disableFOVEffects")) s.disableFOVEffects = j["disableFOVEffects"].get<bool>();
+            if (j.contains("disableFlashingLights")) s.disableFlashingLights = j["disableFlashingLights"].get<bool>();
+            if (j.contains("mouseSensitivity")) s.mouseSensitivity = j["mouseSensitivity"].get<Enjin::f32>();
+            if (j.contains("invertMouseY")) s.invertMouseY = j["invertMouseY"].get<bool>();
+            if (j.contains("sprintMode")) s.sprintMode = j["sprintMode"].get<Enjin::u32>();
+            if (j.contains("crouchMode")) s.crouchMode = j["crouchMode"].get<Enjin::u32>();
+            // Subtitle sub-options (Apply read them but they never loaded on web)
+            if (j.contains("closedCaptionsEnabled")) s.closedCaptionsEnabled = j["closedCaptionsEnabled"].get<bool>();
+            if (j.contains("subtitleFontSize")) s.subtitleFontSize = j["subtitleFontSize"].get<Enjin::f32>();
+            if (j.contains("subtitleBgOpacity")) s.subtitleBgOpacity = j["subtitleBgOpacity"].get<Enjin::f32>();
+            if (j.contains("subtitleSpeakerNames")) s.subtitleSpeakerNames = j["subtitleSpeakerNames"].get<bool>();
+            if (j.contains("subtitleDirectionIndicators")) s.subtitleDirectionIndicators = j["subtitleDirectionIndicators"].get<bool>();
             ENJIN_LOG_INFO(Player, "Loaded accessibility settings from /saves/accessibility.json");
         } catch (const std::exception& e) {
             ENJIN_LOG_WARN(Player, "Failed to parse /saves/accessibility.json: %s", e.what());
@@ -1361,6 +1375,18 @@ private:
             j["switchAccessEnabled"] = s.switchAccessEnabled;
             j["switchScanSpeed"] = s.switchScanSpeed;
             j["stickyDragEnabled"] = s.stickyDragEnabled;
+            j["disableScreenShake"] = s.disableScreenShake;
+            j["disableFOVEffects"] = s.disableFOVEffects;
+            j["disableFlashingLights"] = s.disableFlashingLights;
+            j["mouseSensitivity"] = s.mouseSensitivity;
+            j["invertMouseY"] = s.invertMouseY;
+            j["sprintMode"] = s.sprintMode;
+            j["crouchMode"] = s.crouchMode;
+            j["closedCaptionsEnabled"] = s.closedCaptionsEnabled;
+            j["subtitleFontSize"] = s.subtitleFontSize;
+            j["subtitleBgOpacity"] = s.subtitleBgOpacity;
+            j["subtitleSpeakerNames"] = s.subtitleSpeakerNames;
+            j["subtitleDirectionIndicators"] = s.subtitleDirectionIndicators;
             {
                 std::ofstream f("/saves/accessibility.json");
                 f << j.dump(2);
@@ -1477,6 +1503,11 @@ private:
         subConfig.showSpeakerNames = s.subtitleSpeakerNames;
         subConfig.showDirectionIndicators = s.subtitleDirectionIndicators;
         m_Announcer.enabled = s.screenReaderEnabled;
+        // Motion + input (mirror of the desktop apply block)
+        m_ControllerSystem.SetReducedMotion(s.reducedMotion);
+        m_ControllerSystem.SetDisableScreenShake(s.disableScreenShake);
+        m_ControllerSystem.SetDisableFOVEffects(s.disableFOVEffects);
+        m_ControllerSystem.SetInvertMouseY(s.invertMouseY);
         m_UISystem.SetReducedMotion(s.reducedMotion);
         m_UISystem.SetFontScale(s.fontScale);
         m_UISystem.SetSwitchAccessEnabled(s.switchAccessEnabled, s.switchScanSpeed);

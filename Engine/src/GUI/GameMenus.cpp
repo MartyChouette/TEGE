@@ -459,6 +459,11 @@ void GameMenuSystem::RenderAccessibility(f32 w, f32 h) {
     ImGui::Text("Text & Reading");
     ImGui::Separator();
     changed |= ImGui::Checkbox("Dyslexia-Friendly Font", &a.dyslexiaFriendly);
+    // Text spacing: persisted and applied for years, but had no UI until the
+    // 2026-08-28 accessibility audit. Helps dyslexic and low-vision readers.
+    changed |= ImGui::SliderFloat("Letter Spacing", &a.letterSpacing, 0.0f, 8.0f, "%.1f px");
+    changed |= ImGui::SliderFloat("Word Spacing", &a.wordSpacing, 0.0f, 16.0f, "%.1f px");
+    changed |= ImGui::SliderFloat("Line Spacing", &a.lineSpacing, 1.0f, 3.0f, "%.2fx");
     changed |= ImGui::Checkbox("Subtitles", &a.subtitlesEnabled);
     if (a.subtitlesEnabled) {
         ImGui::Indent(16.0f);
