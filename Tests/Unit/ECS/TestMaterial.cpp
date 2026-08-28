@@ -8,9 +8,11 @@ using namespace Enjin::ECS;
 using namespace Enjin::Math;
 
 // The GPU upload struct stride must match the material SSBO layout in the
-// shaders. It is 112 bytes (base/emissive/metallic/roughness + SSS block +
-// six bindless texture indices + pad). If this changes, the matching shader
-// struct AND ShaderData.h must change too, or the GPU reads wrong offsets.
+// shaders. It is 128 bytes (base/emissive/metallic/roughness + SSS block +
+// bindless texture indices + the scrolling-reflection row). If this changes,
+// the matching shader struct AND ShaderData.h must change too, or the GPU
+// reads wrong offsets. Keep the static_assert AND the runtime test below in
+// lockstep - 7424305 updated only the static_assert and CI was red for 2 days.
 static_assert(sizeof(MaterialGPU) == 128, "MaterialGPU stride must match the shader SSBO layout");
 
 // ===========================================================================
@@ -19,7 +21,7 @@ static_assert(sizeof(MaterialGPU) == 128, "MaterialGPU stride must match the sha
 
 ENJIN_TEST(MaterialGPULayout, StrideMatchesShaderSSBO) {
     // Arrange / Act / Assert: guard the SSBO-offset invariant at runtime too.
-    ENJIN_EXPECT_EQ(sizeof(MaterialGPU), (size_t)112);
+    ENJIN_EXPECT_EQ(sizeof(MaterialGPU), (size_t)128);
 }
 
 // ===========================================================================
