@@ -89,6 +89,7 @@
 #include <unordered_set>
 #include <vector>
 #include <chrono>
+#include <filesystem>
 #include <vulkan/vulkan.h>
 
 namespace Enjin {
@@ -646,6 +647,12 @@ private:
     // OpenScene from loading a scene under the wrong project root.
     std::string FindMismatchedProjectForScene(const std::string& scenePath);
     void DrawWrongProjectDialog();
+
+    // Watch the open scene file for out-of-band edits (git pull, another tool,
+    // a second editor) so we prompt to reload instead of silently overwriting it.
+    void RecordOpenSceneDiskTime();
+    void CheckExternalSceneChange(f32 deltaTime);
+    void DrawExternalSceneChangeDialog();
 
     // Entity operations
     void DuplicateEntity(ECS::Entity entity);
@@ -1423,6 +1430,13 @@ private:
     bool m_ShowWrongProjectDialog = false;
     std::string m_WrongProjectScenePath;
     std::string m_WrongProjectManifest;
+
+    // External scene-change watch: baseline mtime of the open scene file,
+    // recorded on load/save; a mismatch means someone edited it out-of-band.
+    std::filesystem::file_time_type m_OpenSceneDiskTime{};
+    bool m_HasOpenSceneDiskTime = false;
+    f32  m_SceneWatchTimer = 0.0f;
+    bool m_ShowExternalSceneChangeDialog = false;
 
     // Deferred auto-save recovery load (same reason — the recovery dialog is a
     // Render-phase ImGui modal; loading the world from inside it crashed)

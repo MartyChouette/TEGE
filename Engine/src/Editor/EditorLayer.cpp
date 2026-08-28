@@ -1260,6 +1260,9 @@ void EditorLayer::Update(f32 deltaTime) {
         }
     }
 
+    // Watch the open scene file for out-of-band edits (git pull, another tool).
+    CheckExternalSceneChange(deltaTime);
+
     // Update input action map each frame
     m_InputMap.Update(deltaTime);
 
@@ -3743,6 +3746,9 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
 
     // Guard: opening a scene that belongs to a different project
     DrawWrongProjectDialog();
+
+    // Guard: the open scene file was changed on disk out-of-band
+    DrawExternalSceneChangeDialog();
 
     // Read render stats AFTER the render pass (counters are reset at start, incremented during draw)
     if (m_RenderSystem) {

@@ -341,6 +341,7 @@ void EditorLayer::SaveScene(const std::string& path) {
     if (result.success) {
         m_CurrentScenePath = path;
         ClearDirty();
+        RecordOpenSceneDiskTime();  // we just wrote it — this is the new baseline
 
         // Auto-create a project if none is loaded (project-first workflow)
         EnsureProjectForScene(path);
@@ -457,6 +458,80 @@ std::string EditorLayer::FindMismatchedProjectForScene(const std::string& sceneP
     // No owning project found (orphan scene): keep the current project. Low
     // risk, and we must not fabricate a project switch out of nothing.
     return {};
+}
+
+void EditorLayer::RecordOpenSceneDiskTime() {
+    m_HasOpenSceneDiskTime = false;
+    if (m_CurrentScenePath.empty()) return;
+    std::error_code ec;
+    auto t = std::filesystem::last_write_time(m_CurrentScenePath, ec);
+    if (!ec) {
+        m_OpenSceneDiskTime = t;
+        m_HasOpenSceneDiskTime = true;
+    }
+    m_SceneWatchTimer = 0.0f;
+}
+
+void EditorLayer::CheckExternalSceneChange(f32 deltaTime) {
+    // Only meaningful in edit mode with a known baseline. Play doesn't write the
+    // scene file, and we don't want to interrupt it.
+    if (!m_HasOpenSceneDiskTime || m_CurrentScenePath.empty()) return;
+    if (!m_PlayMode.IsStopped()) return;
+    if (m_ShowExternalSceneChangeDialog) return;  // already prompting
+
+    m_SceneWatchTimer += deltaTime;
+    if (m_SceneWatchTimer < 1.0f) return;  // throttle disk stat to ~1 Hz
+    m_SceneWatchTimer = 0.0f;
+
+    std::error_code ec;
+    if (!std::filesystem::exists(m_CurrentScenePath, ec)) return;
+    auto t = std::filesystem::last_write_time(m_CurrentScenePath, ec);
+    if (ec) return;
+    if (t != m_OpenSceneDiskTime) {
+        m_ShowExternalSceneChangeDialog = true;
+    }
+}
+
+void EditorLayer::DrawExternalSceneChangeDialog() {
+    const char* kPopup = "Scene Changed on Disk##extchg";
+    if (m_ShowExternalSceneChangeDialog && !ImGui::IsPopupOpen(kPopup)) {
+        ImGui::OpenPopup(kPopup);
+    }
+
+    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal(kPopup, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        std::string sceneName = std::filesystem::path(m_CurrentScenePath).filename().string();
+        ImGui::Text("\"%s\" was modified on disk outside the editor.", sceneName.c_str());
+        ImGui::TextWrapped("Another tool, a git operation, or a second editor changed the file. "
+                           "If you keep editing and save, your version overwrites theirs.");
+        if (m_SceneDirty) {
+            ImGui::Spacing();
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.72f, 0.2f, 1.0f));
+            ImGui::TextWrapped("Reloading discards the unsaved changes you have in the editor.");
+            ImGui::PopStyleColor();
+        }
+        ImGui::Separator();
+        if (ImGui::Button("Reload from Disk", ImVec2(160, 0))) {
+            m_ShowExternalSceneChangeDialog = false;
+            ImGui::CloseCurrentPopup();
+            OpenScene(m_CurrentScenePath);  // reloads; re-baselines mtime on load
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Keep My Version", ImVec2(150, 0))) {
+            m_ShowExternalSceneChangeDialog = false;
+            ImGui::CloseCurrentPopup();
+            RecordOpenSceneDiskTime();  // accept theirs as the new baseline; stop nagging
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Keep editing. Your next Save overwrites the on-disk version.");
+        ImGui::EndPopup();
+    } else if (m_ShowExternalSceneChangeDialog) {
+        // Dismissed (Escape) without choosing — treat as "keep mine" so we don't
+        // reopen every frame, and re-baseline to the on-disk mtime.
+        m_ShowExternalSceneChangeDialog = false;
+        RecordOpenSceneDiskTime();
+    }
 }
 
 void EditorLayer::DrawWrongProjectDialog() {
@@ -584,6 +659,7 @@ void EditorLayer::OpenSceneImmediate(const std::string& path) {
         m_UndoRedo.Clear();
         ClearDirty();
         UpdateWindowTitle();
+        RecordOpenSceneDiskTime();  // baseline the file mtime for external-edit detection
 
         // Auto-detect or auto-create a project (project-first workflow)
         AutoDetectProjectForScene(path);
