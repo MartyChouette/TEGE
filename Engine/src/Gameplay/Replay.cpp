@@ -13,6 +13,8 @@ std::string SerializeReplay(const ReplayData& replay) {
     j["engineVersion"] = replay.engineVersion;
     j["fixedDt"] = replay.fixedDt;
     if (replay.rngSeed != 0) j["rngSeed"] = replay.rngSeed;
+    j["simFixedTimestep"] = replay.simFixedTimestep;
+    j["simTicksPerSecond"] = replay.simTicksPerSecond;
     j["scene"] = replay.sceneJson;
     json frames = json::array();
     for (const auto& f : replay.frames) {
@@ -59,6 +61,8 @@ bool ParseReplay(const std::string& text, ReplayData& out) {
     out.fixedDt = j.value("fixedDt", 1.0f / 60.0f);
     if (out.fixedDt <= 0.0f || out.fixedDt > 1.0f) out.fixedDt = 1.0f / 60.0f;
     out.rngSeed = j.value("rngSeed", 0u);
+    out.simFixedTimestep = j.value("simFixedTimestep", false);
+    out.simTicksPerSecond = j.value("simTicksPerSecond", 60u);
     out.sceneJson = j.value("scene", std::string());
     out.frames.clear();
     out.frames.reserve(j["frames"].size());

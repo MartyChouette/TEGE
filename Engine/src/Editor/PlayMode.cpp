@@ -301,6 +301,11 @@ void PlayMode::Play() {
     if (!m_Replaying) {
         m_ActiveRecording = Gameplay::ReplayData{};
         m_ActiveRecording.engineVersion = "0.9.7";
+        if (m_SceneManager) {
+            const auto& gfs = m_SceneManager->GetGameFrameSettings();
+            m_ActiveRecording.simFixedTimestep = gfs.fixedTimestep;
+            m_ActiveRecording.simTicksPerSecond = gfs.physicsTicksPerSecond;
+        }
         if (m_World) {
             Scene::SceneSerializer ser(m_World);
             Scene::SerializationOptions opts;
@@ -628,6 +633,14 @@ void PlayMode::StartReplay(Gameplay::ReplayData&& data) {
     ENJIN_LOG_INFO(Editor, "Replay starting: %zu frames at %.4fs/frame",
                    m_ReplayData.frames.size(), m_ReplayData.fixedDt);
     Play();
+    // v2 (ADR-0005): the replay runs with the SIM-CLOCK CONFIG IT WAS RECORDED
+    // WITH, not the project's current settings - otherwise a settings change
+    // after recording diverges playback. The next normal Play() reconfigures
+    // from the project again.
+    m_SimClock.Configure(m_ReplayData.simFixedTimestep,
+                         static_cast<f32>(m_ReplayData.simTicksPerSecond));
+    m_SimClock.Reset();
+    m_ScriptSystem.SetExternalFixedClock(m_SimClock.IsEnabled());
 }
 
 void PlayMode::Stop() {

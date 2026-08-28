@@ -62,6 +62,24 @@ ENJIN_TEST(Replay, RngSeedRoundTripsAndDefaultsToZero) {
     ENJIN_EXPECT_EQ(legacy.rngSeed, 0u);
 }
 
+ENJIN_TEST(Replay, SimClockConfigRoundTripsAndLegacyDefaults) {
+    // v2: the sim-clock config the session ran with survives the round trip
+    Gameplay::ReplayData r;
+    r.simFixedTimestep = true;
+    r.simTicksPerSecond = 120;
+    std::string text = Gameplay::SerializeReplay(r);
+    Gameplay::ReplayData back;
+    ENJIN_ASSERT_TRUE(Gameplay::ParseReplay(text, back));
+    ENJIN_EXPECT_TRUE(back.simFixedTimestep);
+    ENJIN_EXPECT_EQ(back.simTicksPerSecond, 120u);
+
+    // v1 files (no sim-clock fields) parse as legacy variable stepping
+    Gameplay::ReplayData legacy;
+    ENJIN_ASSERT_TRUE(Gameplay::ParseReplay("{\"tege_replay\":1,\"frames\":[]}", legacy));
+    ENJIN_EXPECT_TRUE(!legacy.simFixedTimestep);
+    ENJIN_EXPECT_EQ(legacy.simTicksPerSecond, 60u);
+}
+
 ENJIN_TEST(Replay, EndStateRoundTrips) {
     // Arrange: a recording that ended with the player at a known spot.
     Gameplay::ReplayData r;

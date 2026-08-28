@@ -48,12 +48,18 @@ struct ReplayBookmark {
 };
 
 struct ReplayData {
-    u32 version = 1;
+    u32 version = 2;   // v2 adds the simulation-clock config (ADR-0005)
     std::string engineVersion;   // informational; mismatches warn, not reject
     f32 fixedDt = 1.0f / 60.0f;  // the timestep every frame was simulated with
     u32 rngSeed = 0;             // seed of the shared script-RNG stream for this
                                  // session (Math::SetRandomSeed); 0 = unseeded
                                  // legacy replay, stream state not reproduced
+    // v2: the SimulationClock config the session ran with (ADR-0005). Playback
+    // FORCES these, so a replay stays deterministic even if the project's
+    // settings changed after recording. v1 files parse as false/60 (legacy
+    // variable stepping, which the recorded dt stream reproduces exactly).
+    bool simFixedTimestep = false;
+    u32  simTicksPerSecond = 60;
     std::string sceneJson;       // full scene snapshot at record start (self-contained)
     std::vector<ReplayFrame> frames;
     std::vector<ReplayEndEntity> endState;   // final transforms of named entities
