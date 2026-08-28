@@ -201,6 +201,7 @@ enjin_add_test(TestUITheme            Unit/GUI/TestUITheme.cpp)
 # --- Gameplay ---
 enjin_add_test(TestQuestSystem        Unit/Gameplay/TestQuestSystem.cpp)
 enjin_add_test(TestCinematic          Unit/Gameplay/TestCinematic.cpp)
+enjin_add_test(TestSimulationClock    Unit/Gameplay/TestSimulationClock.cpp)
 enjin_add_test(TestElementalSystem    Unit/Gameplay/TestElementalSystem.cpp)
 enjin_add_test(TestInputAction        Unit/Gameplay/TestInputAction.cpp)
 enjin_add_test(TestInputActionMap     Unit/Gameplay/TestInputActionMap.cpp)

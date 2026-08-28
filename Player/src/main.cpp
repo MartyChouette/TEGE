@@ -80,6 +80,7 @@
 #include "Enjin/Gameplay/FootstepSystem.h"
 #include "Enjin/Gameplay/CinematicSystem.h"
 #include "Enjin/Gameplay/CameraDirector.h"
+#include "Enjin/Gameplay/SimulationClock.h"
 #include "Enjin/ECS/Systems/ParallaxSystem.h"
 #include "Enjin/Gameplay/ObjectPool.h"
 #include "Enjin/Gameplay/TieredSaveSystem.h"
@@ -959,8 +960,13 @@ public:
         if (m_ContentWarnings.IsVisible()) return;
 
         // --- Physics (must run first) ---
-        if (m_Physics) m_Physics->Update(deltaTime);
-        if (m_Physics2D) m_Physics2D->Update(deltaTime);
+        // ADR-0005: the SimulationClock owns stepping. Fixed-timestep projects
+        // get accumulator-driven ticks + interpolated dynamic-body transforms;
+        // others get the legacy single variable step, unchanged.
+        m_SimClock.Tick(m_World.get(), deltaTime, [this](Enjin::f32 stepDt) {
+            if (m_Physics) m_Physics->Update(stepDt);
+            if (m_Physics2D) m_Physics2D->Update(stepDt);
+        });
 
         // Dispatch 3D collision events to visual scripts and gameplay systems
         Enjin::Gameplay::GameplayLoop::DispatchCollisionEvents3D(
@@ -2352,6 +2358,7 @@ private:
     // EndSplashScreen and is NOT repeated here.
     void InitSceneRuntime() {
         Enjin::Scripting::SetTimeScale(1.0f);
+        m_SimClock.Reset();
 
         // Enable all gameplay systems
         m_ControllerSystem.SetEnabled(true);
@@ -2566,6 +2573,8 @@ private:
             m_TargetFPS = fs.value("targetFrameRate", 60u);
             m_VSync = fs.value("vSync", true);
             m_BackgroundBehavior = fs.value("backgroundBehavior", 1u);
+            m_SimClock.Configure(fs.value("fixedTimestep", false),
+                                 static_cast<Enjin::f32>(fs.value("physicsTicksPerSecond", 60u)));
         }
 
         // Read physics backend and project mode
@@ -3042,6 +3051,7 @@ private:
     std::string m_PendingFlowScene;        // deferred transition target ("" = none)
 
     // Frame rate settings
+    Enjin::Gameplay::SimulationClock m_SimClock;
     Enjin::u32 m_TargetFPS = 60;
     bool m_VSync = true;
     Enjin::u32 m_BackgroundBehavior = 1; // 0=RunNormally, 1=ReduceTo30, 2=Pause

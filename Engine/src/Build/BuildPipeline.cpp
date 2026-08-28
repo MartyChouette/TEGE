@@ -237,11 +237,15 @@ bool BuildPipeline::ScanProject(const std::string& projectPath) {
             m_TargetFrameRate = fs.value("targetFrameRate", 60u);
             m_VSync = fs.value("vSync", true);
             m_BackgroundBehavior = fs.value("backgroundBehavior", 1u);
+            m_FixedTimestep = fs.value("fixedTimestep", false);
+            m_PhysicsTicksPerSecond = fs.value("physicsTicksPerSecond", 60u);
         } else {
             // Defaults
             m_TargetFrameRate = 60;
             m_VSync = true;
             m_BackgroundBehavior = 1;
+            m_FixedTimestep = false;
+            m_PhysicsTicksPerSecond = 60;
         }
 
         // Read physics backend and project mode
@@ -678,6 +682,8 @@ bool BuildPipeline::WriteBuildManifest(const BuildConfig& config, AssetPacker& p
     frameSettings["targetFrameRate"] = m_TargetFrameRate;
     frameSettings["vSync"] = m_VSync;
     frameSettings["backgroundBehavior"] = m_BackgroundBehavior;
+    frameSettings["fixedTimestep"] = m_FixedTimestep;
+    frameSettings["physicsTicksPerSecond"] = m_PhysicsTicksPerSecond;
     manifest["frameSettings"] = frameSettings;
 
     // Physics backend and project mode
@@ -873,6 +879,8 @@ bool BuildPipeline::WriteLooseManifest(const BuildConfig& config, const std::str
     frameSettings["targetFrameRate"] = m_TargetFrameRate;
     frameSettings["vSync"] = m_VSync;
     frameSettings["backgroundBehavior"] = m_BackgroundBehavior;
+    frameSettings["fixedTimestep"] = m_FixedTimestep;
+    frameSettings["physicsTicksPerSecond"] = m_PhysicsTicksPerSecond;
     manifest["frameSettings"] = frameSettings;
 
     // Physics backend and project mode

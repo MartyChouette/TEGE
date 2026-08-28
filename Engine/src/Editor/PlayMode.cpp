@@ -146,6 +146,12 @@ void PlayMode::Initialize(ECS::World* world, Renderer::Camera* camera,
 
 void PlayMode::Play() {
     Scripting::SetTimeScale(1.0f);  // never leak slow-mo across sessions
+    // ADR-0005: fixed timestep per the project's frame settings.
+    if (m_SceneManager) {
+        const auto& gfs = m_SceneManager->GetGameFrameSettings();
+        m_SimClock.Configure(gfs.fixedTimestep, static_cast<f32>(gfs.physicsTicksPerSecond));
+    }
+    m_SimClock.Reset();
 
     if (m_State.load(std::memory_order_relaxed) == PlayState::Playing) {
         return;
@@ -942,8 +948,12 @@ void PlayMode::Update(f32 deltaTime) {
         auto t0 = std::chrono::high_resolution_clock::now();
         {
             ENJIN_PROFILE_SCOPE("Physics");
-            if (m_Physics) m_Physics->Update(deltaTime);
-            if (m_Physics2D) m_Physics2D->Update(deltaTime);
+            // ADR-0005: SimulationClock owns stepping (fixed tick + interpolation
+            // when the project enables it; legacy variable step otherwise).
+            m_SimClock.Tick(m_World, deltaTime, [this](f32 stepDt) {
+                if (m_Physics) m_Physics->Update(stepDt);
+                if (m_Physics2D) m_Physics2D->Update(stepDt);
+            });
         }
 
         // Dispatch 3D collision events to visual scripts and gameplay systems

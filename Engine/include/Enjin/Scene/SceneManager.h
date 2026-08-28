@@ -68,6 +68,10 @@ struct GameFrameSettings {
     FrameRateLimit targetFrameRate = FrameRateLimit::Uncapped;
     bool vSync = false;
     BackgroundBehavior backgroundBehavior = BackgroundBehavior::ReduceTo30;
+    // Fixed physics timestep (ADR-0005). Default OFF so existing projects keep
+    // their tuned variable-step behavior; new projects should enable it.
+    bool fixedTimestep = false;
+    u32 physicsTicksPerSecond = 60;
 };
 
 // Startup flow: an authorable boot sequence the exported game runs instead of

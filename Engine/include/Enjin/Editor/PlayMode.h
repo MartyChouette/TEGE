@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Enjin/Platform/Platform.h"
+#include "Enjin/Gameplay/SimulationClock.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/Renderer/Camera.h"
 #include "Enjin/Renderer/CameraController.h"
@@ -213,6 +214,7 @@ private:
     Gameplay::ClothSystem m_ClothSystem;
 
     // Physics systems (created via factory)
+    Gameplay::SimulationClock m_SimClock;
     std::unique_ptr<Physics::IPhysicsBackend> m_Physics;
     std::unique_ptr<Physics::IPhysicsBackend2D> m_Physics2D;
 

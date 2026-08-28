@@ -158,6 +158,11 @@ bool SceneManager::LoadProject(const std::string& manifestPath) {
                 u32 val = fs["backgroundBehavior"].get<u32>();
                 if (val <= 2) m_GameFrameSettings.backgroundBehavior = static_cast<BackgroundBehavior>(val);
             }
+            if (fs.contains("fixedTimestep")) m_GameFrameSettings.fixedTimestep = fs["fixedTimestep"].get<bool>();
+            if (fs.contains("physicsTicksPerSecond")) {
+                u32 val = fs["physicsTicksPerSecond"].get<u32>();
+                if (val >= 15 && val <= 240) m_GameFrameSettings.physicsTicksPerSecond = val;
+            }
         }
 
         // Load audio settings
@@ -259,6 +264,8 @@ bool SceneManager::SaveProject(const std::string& manifestPath) {
         nlohmann::json frameSettingsJson;
         frameSettingsJson["targetFrameRate"] = static_cast<u32>(m_GameFrameSettings.targetFrameRate);
         frameSettingsJson["vSync"] = m_GameFrameSettings.vSync;
+        frameSettingsJson["fixedTimestep"] = m_GameFrameSettings.fixedTimestep;
+        frameSettingsJson["physicsTicksPerSecond"] = m_GameFrameSettings.physicsTicksPerSecond;
         frameSettingsJson["backgroundBehavior"] = static_cast<u32>(m_GameFrameSettings.backgroundBehavior);
         root["frameSettings"] = frameSettingsJson;
 

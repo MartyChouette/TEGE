@@ -2,7 +2,19 @@
 
 ## Status
 
-Draft (2026-08-28). Not yet implemented.
+Accepted; core implemented 2026-08-28 (SimulationClock + settings + all three
+runtimes + interpolation + unit tests). Deliberate v1 deviations from the text
+below, each revisitable:
+
+- Character controllers stay frame-paced (they mostly write velocities that
+  the fixed steps then integrate); moving them to the tick requires input-edge
+  care and is deferred.
+- `OnFixedUpdate` script hook not yet added.
+- 2D bodies step fixed but render at tick pose (no interpolation) — fine at
+  60Hz, revisit if 144Hz 2D stutter is reported.
+- New projects do NOT yet default the setting on; it is opt-in for everyone
+  via Settings > Project > Fixed Physics Timestep.
+- Replay tick-indexing (.tegereplay v2) not started.
 
 ## Date
 

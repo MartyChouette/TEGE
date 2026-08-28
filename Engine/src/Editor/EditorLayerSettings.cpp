@@ -1572,22 +1572,35 @@ void EditorLayer::DrawSettingsSection_FrameRate() {
             ImGui::SetTooltip("Target frame rate for play mode and exported builds");
         }
 
-        // VSync (disabled when Uncapped)
-        bool isUncapped = frameSettings.targetFrameRate == Scene::FrameRateLimit::Uncapped;
-        if (isUncapped) {
-            ImGui::BeginDisabled();
-        }
         if (ImGui::Checkbox("VSync##Game", &frameSettings.vSync)) {
             changed = true;
         }
-        if (isUncapped) {
-            ImGui::EndDisabled();
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Synchronize to the monitor refresh rate.\n"
+                              "With an Uncapped frame rate, VSync becomes the cap.");
         }
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-            if (isUncapped) {
-                ImGui::SetTooltip("VSync is not available when frame rate is Uncapped");
-            } else {
-                ImGui::SetTooltip("Synchronize frame rate to monitor refresh rate");
+
+        // Fixed physics timestep (ADR-0005)
+        ImGui::Separator();
+        if (ImGui::Checkbox("Fixed Physics Timestep", &frameSettings.fixedTimestep)) {
+            changed = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Physics steps at a constant tick regardless of frame rate\n"
+                              "(accumulator + interpolated rendering). Frame-rate-independent\n"
+                              "gameplay and the foundation for deterministic replays.\n"
+                              "Off = classic per-frame stepping (existing projects' behavior).");
+        }
+        if (frameSettings.fixedTimestep) {
+            int ticks = static_cast<int>(frameSettings.physicsTicksPerSecond);
+            ImGui::SetNextItemWidth(120.0f);
+            if (ImGui::DragInt("Physics Ticks/Second", &ticks, 1, 15, 240)) {
+                frameSettings.physicsTicksPerSecond = static_cast<u32>(ticks < 15 ? 15 : (ticks > 240 ? 240 : ticks));
+                changed = true;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("60 is right for almost everything. Raise for fast\n"
+                                  "precision gameplay, lower only for heavy scenes on weak targets.");
             }
         }
 

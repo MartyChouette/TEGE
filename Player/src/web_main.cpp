@@ -60,6 +60,7 @@
 #include "Enjin/Gameplay/CameraDirector.h"
 #include "Enjin/Gameplay/RecordRewindSystem.h"
 #include "Enjin/Effects/InteractiveWater.h"
+#include "Enjin/Gameplay/SimulationClock.h"
 #include "Enjin/ECS/Systems/ParallaxSystem.h"
 #include "Enjin/ECS/Systems/TweenSystem.h"
 #include "Enjin/ECS/Systems/VisualScriptSystem.h"
@@ -203,6 +204,11 @@ public:
                 m_StartScene = manifest.value("startScene", "");
                 m_PhysicsBackendType = manifest.value("physicsBackend", 0u);
                 m_ProjectMode = manifest.value("projectMode", 1u);
+                if (manifest.contains("frameSettings")) {
+                    const auto& fs = manifest["frameSettings"];
+                    m_SimClock.Configure(fs.value("fixedTimestep", false),
+                                         static_cast<Enjin::f32>(fs.value("physicsTicksPerSecond", 60u)));
+                }
             } catch (...) {
                 ENJIN_LOG_WARN(Player, "Manifest parse failed — using defaults");
             }
@@ -719,9 +725,13 @@ public:
             for (auto e : m_World->GetEntitiesWithComponent<Enjin::ECS::CapsuleColliderComponent>()) colliderEntities.push_back(e);
             for (auto e : m_World->GetEntitiesWithComponent<Enjin::ECS::MeshColliderComponent>()) colliderEntities.push_back(e);
             m_Physics->SetColliderEntities(colliderEntities);
-            m_Physics->Update(deltaTime);
         }
-        if (m_Physics2D) m_Physics2D->Update(deltaTime);
+        // ADR-0005: SimulationClock owns stepping (fixed tick + interpolation
+        // when the project enables it; legacy variable step otherwise).
+        m_SimClock.Tick(m_World.get(), deltaTime, [this](Enjin::f32 stepDt) {
+            if (m_Physics) m_Physics->Update(stepDt);
+            if (m_Physics2D) m_Physics2D->Update(stepDt);
+        });
 
         m_ControllerSystem.Update(deltaTime);
 
@@ -1644,6 +1654,7 @@ private:
     Enjin::ECS::ControllerSystem m_ControllerSystem;
     Enjin::Gameplay::CameraDirector m_CameraDirector;
     Enjin::Gameplay::RecordRewindSystem m_RecordRewindSystem;
+    Enjin::Gameplay::SimulationClock m_SimClock;
     Enjin::Effects::InteractiveWaterSystem m_InteractiveWaterSystem;
     Enjin::ECS::TweenSystem m_TweenSystem;
     Enjin::ECS::VisualScriptSystem m_VisualScriptSystem;
