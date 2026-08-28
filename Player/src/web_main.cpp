@@ -449,6 +449,7 @@ public:
                     m_SceneRenderSettings = serializer.GetRenderSettings();
                     if (m_RenderSystem) m_RenderSystem->SetSkybox(serializer.GetSkyboxConfig());
                     sceneLoaded = true;
+                    m_CurrentWebScenePath = m_StartScene;
                     ENJIN_LOG_INFO(Player, "Loaded scene: %s", m_StartScene.c_str());
                     ShowWebContentWarnings(sceneStr);
                 }
@@ -478,53 +479,7 @@ public:
             CreateDemoScene();
         }
 
-        // Force initial physics sync while colliders still exist
-        // (GetEntitiesWithComponent<ColliderComponent> returns 0 after World::Update on WASM)
-        if (m_Physics) m_Physics->Update(0.001f);
-        if (m_Physics2D) m_Physics2D->Update(0.001f);
-
-        // Log loaded entities + collider diagnostic
-        if (m_World) {
-            auto boxCol = m_World->GetEntitiesWithComponent<Enjin::ECS::BoxColliderComponent>();
-            auto capsuleCol = m_World->GetEntitiesWithComponent<Enjin::ECS::CapsuleColliderComponent>();
-            printf("[SCENE] box_colliders=%zu capsule_colliders=%zu\n", boxCol.size(), capsuleCol.size());
-        }
-
-        // --- Post-scene-load system initialization ---
-        // VisualScript full init (desktop: main.cpp:1696-1704)
-        m_VisualScriptSystem.SetPhysics(m_Physics.get());
-        m_VisualScriptSystem.SetPhysics2D(m_Physics2D.get());
-        m_VisualScriptSystem.SetScriptEngine(&m_ScriptEngine);
-        m_VisualScriptSystem.SetDialogue(&m_DialogueSystem);
-        m_VisualScriptSystem.Initialize();
-        m_BehaviorTreeSystem.Initialize();
-
-        // Start auto-play tweens (desktop: main.cpp:1706)
-        m_TweenSystem.PlayAll(m_World.get());
-
-        // Enable and initialize scripts (desktop: main.cpp:1709-1712)
-        m_ScriptSystem.SetEnabled(true);
-        m_ScriptSystem.InitializeAllScripts();
-
-        // Set game camera entity for controller system (desktop: main.cpp:1668-1674)
-        {
-            auto cameras = Enjin::ECS::CameraManager::GetAllActiveCameras(m_World.get());
-            if (!cameras.empty()) {
-                m_ControllerSystem.SetGameCameraEntity(cameras[0]);
-            }
-        }
-
-        // Authored "MainMenu" canvas takes over the boot flow (one UI source):
-        // gameplay stays frozen and the mouse free until New Game / Continue.
-        for (auto e : m_World->GetEntitiesWithComponent<Enjin::GUI::UICanvasComponent>()) {
-            auto* c = m_World->GetComponent<Enjin::GUI::UICanvasComponent>(e);
-            if (c && c->visible && c->canvasName == "MainMenu") { m_AtMainMenu = true; break; }
-        }
-
-        // Capture mouse for look-around if any player controller exists
-        if (!m_AtMainMenu && SceneWantsMouseCapture()) {
-            Enjin::Input::SetMouseCaptured(true);
-        }
+        InitWebSceneRuntime();
 
         // --- RenderSystem (same system as desktop, uses abstract IRenderBackend) ---
         m_RenderSystem = m_World->RegisterSystem<Enjin::ECS::RenderSystem>(m_World.get(), m_Renderer.get());
@@ -727,14 +682,18 @@ public:
             for (auto e : m_World->GetEntitiesWithComponent<Enjin::ECS::MeshColliderComponent>()) colliderEntities.push_back(e);
             m_Physics->SetColliderEntities(colliderEntities);
         }
-        // Script scene requests: web has no mid-game scene-switch path yet, so
-        // consume the request (never let it sit) and say so clearly instead of
-        // failing silently. Scene flow testing happens in desktop exports.
+        // Script scene requests (Scene_LoadScene / Scene_Restart), consumed at
+        // this safe point - no scripts on the stack, nothing recorded yet.
         {
             std::string reqScene;
             auto req = m_SceneManager.TakeSceneRequest(reqScene);
-            if (req != Enjin::Scene::SceneManager::SceneRequest::None) {
-                ENJIN_LOG_WARN(Player, "Scene_LoadScene/Scene_Restart not supported in the web player yet");
+            if (req == Enjin::Scene::SceneManager::SceneRequest::Restart) {
+                if (!m_CurrentWebScenePath.empty()) DoWebSceneTransition(m_CurrentWebScenePath);
+                else ENJIN_LOG_WARN(Player, "Scene_Restart: no current scene to restart");
+            } else if (req == Enjin::Scene::SceneManager::SceneRequest::Load) {
+                const auto* entry = m_SceneManager.GetSceneByName(reqScene);
+                if (entry) DoWebSceneTransition(entry->path);
+                else ENJIN_LOG_WARN(Player, "Scene request '%s' not in scene list", reqScene.c_str());
             }
         }
 
@@ -1370,6 +1329,86 @@ private:
 
     // Web accessibility persistence: /saves/accessibility.json on the IDBFS
     // mount (StartBoot). Desktop uses accessibility.json next to the exe.
+    // Bring a freshly loaded scene fully live. Called after the initial boot
+    // load AND after every mid-game transition, so each scene comes up the same
+    // way (the desktop player's InitSceneRuntime pattern).
+    void InitWebSceneRuntime() {
+        // Force initial physics sync while colliders still exist
+        // (GetEntitiesWithComponent<ColliderComponent> returns 0 after World::Update on WASM)
+        if (m_Physics) m_Physics->Update(0.001f);
+        if (m_Physics2D) m_Physics2D->Update(0.001f);
+
+        // Log loaded entities + collider diagnostic
+        if (m_World) {
+            auto boxCol = m_World->GetEntitiesWithComponent<Enjin::ECS::BoxColliderComponent>();
+            auto capsuleCol = m_World->GetEntitiesWithComponent<Enjin::ECS::CapsuleColliderComponent>();
+            printf("[SCENE] box_colliders=%zu capsule_colliders=%zu\n", boxCol.size(), capsuleCol.size());
+        }
+
+        // --- Post-scene-load system initialization ---
+        // VisualScript full init (desktop: main.cpp:1696-1704)
+        m_VisualScriptSystem.SetPhysics(m_Physics.get());
+        m_VisualScriptSystem.SetPhysics2D(m_Physics2D.get());
+        m_VisualScriptSystem.SetScriptEngine(&m_ScriptEngine);
+        m_VisualScriptSystem.SetDialogue(&m_DialogueSystem);
+        m_VisualScriptSystem.Initialize();
+        m_BehaviorTreeSystem.Initialize();
+
+        // Start auto-play tweens (desktop: main.cpp:1706)
+        m_TweenSystem.PlayAll(m_World.get());
+
+        // Enable and initialize scripts (desktop: main.cpp:1709-1712)
+        m_ScriptSystem.SetEnabled(true);
+        m_ScriptSystem.InitializeAllScripts();
+
+        // Set game camera entity for controller system (desktop: main.cpp:1668-1674)
+        {
+            auto cameras = Enjin::ECS::CameraManager::GetAllActiveCameras(m_World.get());
+            if (!cameras.empty()) {
+                m_ControllerSystem.SetGameCameraEntity(cameras[0]);
+            }
+        }
+
+        // Authored "MainMenu" canvas takes over the boot flow (one UI source):
+        // gameplay stays frozen and the mouse free until New Game / Continue.
+        for (auto e : m_World->GetEntitiesWithComponent<Enjin::GUI::UICanvasComponent>()) {
+            auto* c = m_World->GetComponent<Enjin::GUI::UICanvasComponent>(e);
+            if (c && c->visible && c->canvasName == "MainMenu") { m_AtMainMenu = true; break; }
+        }
+
+        // Capture mouse for look-around if any player controller exists
+        if (!m_AtMainMenu && SceneWantsMouseCapture()) {
+            Enjin::Input::SetMouseCaptured(true);
+        }
+    }
+
+    // Mid-game scene swap, called ONLY from the safe point at the top of
+    // Update (no scripts on the stack, before any rendering). Mirrors the
+    // desktop player's DoFlowTransition.
+    void DoWebSceneTransition(const std::string& scenePath) {
+        ENJIN_LOG_INFO(Player, "Scene transition: '%s'", scenePath.c_str());
+        if (m_Renderer) m_Renderer->WaitForAllFrames();
+        m_ScriptSystem.ShutdownAllScripts();
+        Enjin::Scripting::ClearBindingsEventListeners();
+        if (m_RenderSystem) m_RenderSystem->OnSceneClear();
+
+        auto sceneData = m_AssetReader.ReadFile(scenePath);
+        if (sceneData.empty()) {
+            ENJIN_LOG_ERROR(Player, "Scene transition: cannot read '%s' from pack", scenePath.c_str());
+            return;
+        }
+        std::string sceneStr(sceneData.begin(), sceneData.end());
+        Enjin::Scene::SceneSerializer serializer(m_World.get());
+        serializer.LoadFromString(sceneStr, true);   // clears the world first
+        m_SceneRenderSettings = serializer.GetRenderSettings();
+        if (m_RenderSystem) m_RenderSystem->SetSkybox(serializer.GetSkyboxConfig());
+        m_CurrentWebScenePath = scenePath;
+        m_SimClock.Reset();
+        m_AtMainMenu = false;   // re-detected in InitWebSceneRuntime if the new scene has one
+
+        InitWebSceneRuntime();
+    }
+
     void LoadWebAccessibilitySettings() {
         std::ifstream f("/saves/accessibility.json");
         if (!f.is_open()) return;
@@ -1721,6 +1760,7 @@ private:
     Enjin::u32 m_WindowWidth = 1280;
     Enjin::u32 m_WindowHeight = 720;
     std::string m_StartScene;
+    std::string m_CurrentWebScenePath;   // for Scene_Restart
     Enjin::u32 m_PhysicsBackendType = 0;
     Enjin::u32 m_ProjectMode = 1;
 };
