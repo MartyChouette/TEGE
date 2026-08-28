@@ -372,6 +372,7 @@ public:
         Enjin::Scripting::SetBindingsSceneManager(&m_SceneManager);
         Enjin::Scripting::SetBindingsPhysics2D(m_Physics2D.get());
         Enjin::Scripting::SetBindingsNetworking(&m_NetworkSystem);
+        Enjin::Scripting::SetBindingsCinematicSystem(&m_CinematicSystem);
         Enjin::Scripting::SetBindingsInputActionMap(&m_InputMap);
         // Accessibility bindings — without these every Subtitle_/Announcer_/
         // Colorblind_/Accessibility_ script call is a silent no-op on web.
@@ -515,6 +516,10 @@ public:
 
         // --- RenderSystem (same system as desktop, uses abstract IRenderBackend) ---
         m_RenderSystem = m_World->RegisterSystem<Enjin::ECS::RenderSystem>(m_World.get(), m_Renderer.get());
+        // NOTE (wiring audit 2026-08-28): SetBindingsRenderSystem is deliberately
+        // NOT called here - ScriptBindings_Render.cpp is excluded from the web
+        // build (WebStubs.cpp no-ops RegisterRenderBindings), so no Render_*
+        // script functions exist on web. Porting them is a WebGPU-parity item.
         m_RenderSystem->SetCamera(m_Camera.get());
         m_RenderSystem->SetAssetReader(&m_AssetReader);
         m_RenderSystem->Initialize();
