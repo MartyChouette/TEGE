@@ -59,6 +59,7 @@
 #include "Enjin/ECS/Systems/ControllerSystem.h"
 #include "Enjin/Gameplay/CameraDirector.h"
 #include "Enjin/Gameplay/RecordRewindSystem.h"
+#include "Enjin/Effects/InteractiveWater.h"
 #include "Enjin/ECS/Systems/ParallaxSystem.h"
 #include "Enjin/ECS/Systems/TweenSystem.h"
 #include "Enjin/ECS/Systems/VisualScriptSystem.h"
@@ -300,6 +301,7 @@ public:
         Enjin::Scripting::SetBindingsCameraDirector(&m_CameraDirector);
         m_RecordRewindSystem.SetWorld(m_World.get());
         Enjin::Scripting::SetBindingsRewindSystem(&m_RecordRewindSystem);
+        m_InteractiveWaterSystem.SetEventBus(&m_EntityEventBus);
         m_ControllerSystem.SetInputActionMap(&m_InputMap);
         m_ControllerSystem.SetEnabled(true);
         m_TweenSystem.SetScriptEngine(&m_ScriptEngine);
@@ -759,6 +761,19 @@ public:
         m_CinematicSystem.Update(m_World.get(), m_Camera.get(), deltaTime);
         // Virtual cameras + parallax were editor/desktop-only until the 2026-08-28
         // wiring audit; dormant when the scene has no vcams / parallax layers.
+        // Interactive water: sim + water_enter events + regenerated surface mesh
+        // (plain MeshComponents, which the web renderer draws). Mirrors desktop.
+        m_InteractiveWaterSystem.Update(m_World.get(), deltaTime);
+        for (auto entity : m_World->GetEntitiesWithComponent<Enjin::Effects::InteractiveWaterComponent>()) {
+            auto* water = m_World->GetComponent<Enjin::Effects::InteractiveWaterComponent>(entity);
+            auto* transform = m_World->GetComponent<Enjin::ECS::TransformComponent>(entity);
+            if (!water || !transform || !water->initialized) continue;
+            auto mesh = m_InteractiveWaterSystem.GenerateMesh(*water, *transform);
+            if (m_World->HasComponent<Enjin::ECS::MeshComponent>(entity))
+                *m_World->GetComponent<Enjin::ECS::MeshComponent>(entity) = std::move(mesh);
+            else
+                m_World->AddComponent<Enjin::ECS::MeshComponent>(entity, std::move(mesh));
+        }
         m_RecordRewindSystem.Update(deltaTime);
         m_CameraDirector.Update(m_World.get(), m_Camera.get(), deltaTime);
         Enjin::ECS::ParallaxSystem::ApplyParallaxLayers(m_World.get(), deltaTime);
@@ -1629,6 +1644,7 @@ private:
     Enjin::ECS::ControllerSystem m_ControllerSystem;
     Enjin::Gameplay::CameraDirector m_CameraDirector;
     Enjin::Gameplay::RecordRewindSystem m_RecordRewindSystem;
+    Enjin::Effects::InteractiveWaterSystem m_InteractiveWaterSystem;
     Enjin::ECS::TweenSystem m_TweenSystem;
     Enjin::ECS::VisualScriptSystem m_VisualScriptSystem;
     Enjin::ECS::BehaviorTreeSystem m_BehaviorTreeSystem;
