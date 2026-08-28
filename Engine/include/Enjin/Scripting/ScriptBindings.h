@@ -13,7 +13,7 @@ namespace Networking { class NetworkSystem; }
 namespace Audio { class SimpleAudio; }
 namespace Accessibility { class SubtitleSystem; class AccessibilityAnnouncer; struct RuntimeAccessibilitySettings; }
 namespace Scene { class SceneManager; class StreamingManager; }
-namespace Renderer { class PostProcessing; }
+namespace Renderer { class PostProcessing; class Camera; }
 namespace Gameplay { class TieredSaveSystem; class QuestSystem; class CinematicSystem; class ObjectPool; class RecordRewindSystem; class CameraDirector; }
 namespace Effects { class WeatherSystem; class DestructibleSystem; class ElementalSystem; }
 namespace Procedural { class LevelGenerator; }
@@ -68,6 +68,8 @@ void RegisterAudioReactiveBindings(asIScriptEngine* engine);
 // Set subsystem pointers for script bindings
 void SetBindingsWorld(ECS::World* world);
 void SetBindingsPhysics(Physics::IPhysicsBackend* physics);
+// Push the active render camera + viewport so screen-space script queries (Physics_RaycastScreen) work.
+void SetBindingsRenderView(const Renderer::Camera* camera, f32 viewportWidth, f32 viewportHeight);
 void SetBindingsAudio(Audio::SimpleAudio* audio);
 void SetBindingsSceneManager(Scene::SceneManager* mgr);
 void SetBindingsFlowAdvanceFlag(bool* flag);

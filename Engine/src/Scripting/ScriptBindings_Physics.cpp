@@ -8,6 +8,8 @@
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/Physics/IPhysicsBackend.h"
+#include "Enjin/Editor/ScenePicker.h"
+#include "Enjin/Renderer/Camera.h"
 #include <angelscript.h>
 #include <cassert>
 
@@ -22,9 +24,20 @@ extern ECS::World* s_BindingsWorld;
 
 static Physics::IPhysicsBackend* s_BindingsPhysics = nullptr;
 
+// Render view for screen-space queries (mouse picking). The runtime pushes the active
+// render camera + viewport size each frame so scripts can raycast under the cursor.
+static const Renderer::Camera* s_BindingsRenderCamera = nullptr;
+static f32 s_BindingsViewW = 1280.0f;
+static f32 s_BindingsViewH = 720.0f;
+
 namespace Enjin {
 namespace Scripting {
 void SetBindingsPhysics(Physics::IPhysicsBackend* physics) { s_BindingsPhysics = physics; }
+void SetBindingsRenderView(const Renderer::Camera* camera, f32 viewportWidth, f32 viewportHeight) {
+    s_BindingsRenderCamera = camera;
+    if (viewportWidth > 0.0f) s_BindingsViewW = viewportWidth;
+    if (viewportHeight > 0.0f) s_BindingsViewH = viewportHeight;
+}
 } // namespace Scripting
 } // namespace Enjin
 
@@ -92,6 +105,25 @@ static bool Physics_RaycastHit(const Vector3& origin, const Vector3& direction,
 
     outHit = RaycastHit();
     return false;
+}
+
+// Screen-space pick: turn a mouse/screen position into a world ray through the active
+// camera and return the first entity hit (0 = nothing). Pair with Input_GetMousePosition
+// for "is the cursor over this object" gameplay (hover-to-open, click-to-use).
+static u64 Physics_RaycastScreen(f32 screenX, f32 screenY) {
+    if (!s_BindingsPhysics || !s_BindingsRenderCamera) return 0;
+    Editor::Ray r = Editor::ScenePicker::ScreenToRay(s_BindingsRenderCamera, screenX, screenY,
+                                                     s_BindingsViewW, s_BindingsViewH);
+    if (r.direction.LengthSquared() < 1e-12f) return 0;
+    Physics::Ray pr;
+    pr.origin = r.origin;
+    pr.direction = r.direction.Normalized();
+    Physics::RaycastHit hit = s_BindingsPhysics->Raycast(pr, 1000.0f);
+    return hit.hit ? static_cast<u64>(hit.entity) : 0;
+}
+
+static Vector2 Input_GetScreenSize() {
+    return Vector2(s_BindingsViewW, s_BindingsViewH);
 }
 
 static bool Physics_CheckSphere(const Vector3& center, f32 radius) {
@@ -418,6 +450,14 @@ void RegisterPhysicsBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool Physics_RaycastHit(const Vector3 &in, const Vector3 &in, float, RaycastHit &out)",
         ENJIN_AS_FN(Physics_RaycastHit), ENJIN_AS_CALL_CDECL));
+
+    // Screen-space pick + screen size (world-object hover/click from script)
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "uint64 Physics_RaycastScreen(float, float)",
+        ENJIN_AS_FN(Physics_RaycastScreen), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "Vector2 Input_GetScreenSize()",
+        ENJIN_AS_FN(Input_GetScreenSize), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool Physics_CheckSphere(const Vector3 &in, float)",

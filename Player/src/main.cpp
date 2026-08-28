@@ -2130,6 +2130,11 @@ private:
         Enjin::Scripting::SetBindingsCameraDirector(&m_CameraDirector);
         Enjin::Scripting::SetBindingsObjectPool(&m_ObjectPool);
         Enjin::Scripting::SetBindingsFlower(m_World.get());
+        // Render view for screen-space script picking (Physics_RaycastScreen). Camera
+        // pointer is stable; dims from the window (mouse coords are window-space).
+        Enjin::Scripting::SetBindingsRenderView(m_Camera.get(),
+            GetWindow() ? static_cast<Enjin::f32>(GetWindow()->GetWidth()) : 1280.0f,
+            GetWindow() ? static_cast<Enjin::f32>(GetWindow()->GetHeight()) : 720.0f);
         Enjin::Scripting::SetBindingsProcedural(nullptr);
         Enjin::Scripting::SetBindingsAudio(&m_SimpleAudio);
         Enjin::Scripting::SetBindingsWeather(&m_WeatherSystem);

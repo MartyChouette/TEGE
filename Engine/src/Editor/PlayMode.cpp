@@ -346,6 +346,9 @@ void PlayMode::Play() {
     Scripting::SetBindingsCinematicSystem(&m_CinematicSystem);
     Scripting::SetBindingsCameraDirector(&m_CameraDirector);
     Scripting::SetBindingsObjectPool(&m_ObjectPool);
+    // Screen-space script picking uses the game camera (0 dims = keep the default/last
+    // viewport; the standalone player pushes exact window dims).
+    Scripting::SetBindingsRenderView(m_Camera, 0.0f, 0.0f);
     Scripting::SetBindingsPhysics(m_Physics.get());
     Scripting::SetBindingsPhysics2D(m_Physics2D.get());
     Scripting::SetBindingsNetworking(&m_NetworkSystem);
