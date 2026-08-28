@@ -149,6 +149,27 @@ static void Material_SetIOR(u64 id, f32 val) {
     if (mc) mc->ior = val;
 }
 
+// Runtime texture assignment: set a material's texture by path and mark the cache
+// dirty so the render system reloads it next frame (GetOrLoadTexture caches by path,
+// so repeat swaps are cheap). Empty path clears the slot.
+static void Material_SetBaseColorTexture(u64 id, const std::string& path) {
+    if (!s_BindingsWorld) return;
+    auto* mc = s_BindingsWorld->GetComponent<MaterialComponent>(static_cast<Entity>(id));
+    if (mc && mc->baseColorTexturePath != path) { mc->baseColorTexturePath = path; mc->textureCacheDirty = true; }
+}
+
+static void Material_SetEmissiveTexture(u64 id, const std::string& path) {
+    if (!s_BindingsWorld) return;
+    auto* mc = s_BindingsWorld->GetComponent<MaterialComponent>(static_cast<Entity>(id));
+    if (mc && mc->emissiveTexturePath != path) { mc->emissiveTexturePath = path; mc->textureCacheDirty = true; }
+}
+
+static void Material_SetNormalTexture(u64 id, const std::string& path) {
+    if (!s_BindingsWorld) return;
+    auto* mc = s_BindingsWorld->GetComponent<MaterialComponent>(static_cast<Entity>(id));
+    if (mc && mc->normalTexturePath != path) { mc->normalTexturePath = path; mc->textureCacheDirty = true; }
+}
+
 static f32 Material_GetIOR(u64 id) {
     if (!s_BindingsWorld) return 1.5f;
     auto* mc = s_BindingsWorld->GetComponent<MaterialComponent>(static_cast<Entity>(id));
@@ -2051,6 +2072,9 @@ void RegisterComponentBindings(asIScriptEngine* engine) {
 
     // Material
     AS_CHECK(engine->RegisterGlobalFunction("void Material_SetBaseColor(uint64, const Vector3 &in)", ENJIN_AS_FN(Material_SetBaseColor), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Material_SetBaseColorTexture(uint64, const string &in)", ENJIN_AS_FN(Material_SetBaseColorTexture), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Material_SetEmissiveTexture(uint64, const string &in)", ENJIN_AS_FN(Material_SetEmissiveTexture), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Material_SetNormalTexture(uint64, const string &in)", ENJIN_AS_FN(Material_SetNormalTexture), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("Vector3 Material_GetBaseColor(uint64)", ENJIN_AS_FN(Material_GetBaseColor), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Material_SetMetallic(uint64, float)", ENJIN_AS_FN(Material_SetMetallic), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Material_SetRoughness(uint64, float)", ENJIN_AS_FN(Material_SetRoughness), ENJIN_AS_CALL_CDECL));
