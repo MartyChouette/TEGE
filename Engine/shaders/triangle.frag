@@ -100,6 +100,7 @@ layout(binding = 1) uniform LightingUBO {
     PointLight pointLights[MAX_POINT_LIGHTS];
     SpotLight spotLights[MAX_SPOT_LIGHTS];
     vec4 cloudShadowParams;      // x = coverage, y = scale, z = strength, w = speed
+    vec4 accessibilityParams;    // x = colorblind mode, y = strength, z = brightness, w = contrast
 } lighting;
 
 // Material via push constants (per-object data)
@@ -926,6 +927,53 @@ float CloudShadowFactor(vec2 xz) {
     return 1.0 - m * clamp(cp.z, 0.0, 1.0);
 }
 
+
+// Accessibility color transform (colorblind daltonization + brightness/contrast).
+// Runs here so exported desktop games get it without a post-process pass.
+// Same math as postprocess.frag's applyColorblindCorrection / color grading.
+vec3 applyAccessibilityColor(vec3 color) {
+    vec4 ap = lighting.accessibilityParams;
+    int mode = int(ap.x + 0.5);
+    if (mode > 0) {
+        float strength = ap.y;
+        if (mode == 7 || mode == 8) {
+            float lum = dot(color, vec3(0.2126, 0.7152, 0.0722));
+            float s = (mode == 8) ? strength * 0.5 : strength;
+            color = mix(color, vec3(lum), s);
+        } else {
+            int baseMode = mode;
+            if (baseMode >= 4 && baseMode <= 6) { baseMode -= 3; strength *= 0.6; }
+            mat3 simMatrix;
+            if (baseMode == 1) {
+                simMatrix = mat3(
+                    0.152286, 0.114503, -0.003882,
+                    1.052583, 0.786281, -0.048116,
+                   -0.204868, 0.099216,  1.051998);
+            } else if (baseMode == 2) {
+                simMatrix = mat3(
+                    0.367322, 0.280085, -0.011820,
+                    0.860646, 0.672501,  0.042940,
+                   -0.227968, 0.047413,  0.968881);
+            } else {
+                simMatrix = mat3(
+                    1.255528, -0.078411, 0.004733,
+                   -0.076749,  0.930809, 0.691367,
+                   -0.178779,  0.147602, 0.303900);
+            }
+            vec3 simColor = clamp(simMatrix * color, 0.0, 1.0);
+            vec3 error = color - simColor;
+            vec3 correction;
+            correction.r = error.g * 0.7 + error.b * 0.7;
+            correction.g = error.r * 0.7 + error.b * 0.7;
+            correction.b = error.r * 0.7 + error.g * 0.7;
+            color = clamp(color + correction * strength, 0.0, 1.0);
+        }
+    }
+    color += ap.z;                            // brightness
+    color = (color - 0.5) * ap.w + 0.5;       // contrast (caller guarantees w > 0)
+    return color;
+}
+
 void main() {
 
     // Select this draw's material entry (adr-0003). Direct draws encode the
@@ -1178,7 +1226,10 @@ void main() {
             if (alpha < threshold) discard;
             alpha = 1.0;
         }
-        outColor = vec4(result, alpha);
+        if (lighting.accessibilityParams.w > 0.001) {
+        result = applyAccessibilityColor(result);
+    }
+    outColor = vec4(result, alpha);
         return;
     }
 

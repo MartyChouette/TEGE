@@ -9611,6 +9611,15 @@ void RenderSystem::UpdateFrameUniforms() {
                                       skyC.cloudShadowStrength, skyC.cloudSpeed};
     }
 
+    // Accessibility color transform (colorblind/brightness/contrast) applied in
+    // the PBR shader — the exported player has no post-process pass, so this is
+    // its only path. w (contrast) == 0 means "not set" and the shader skips it.
+    lighting.accessibilityParams = {
+        static_cast<f32>(m_WebPPAccessibility.colorblindMode),
+        m_WebPPAccessibility.colorblindStrength,
+        m_WebPPAccessibility.brightness,
+        m_WebPPAccessibility.contrast};
+
     lighting.fogParams = Math::Vector4(m_FogDensity, m_FogStart, m_FogEnd, m_FogHeightFalloff);
     lighting.fogColorSnow = Math::Vector4(m_FogColor.x, m_FogColor.y, m_FogColor.z, m_SnowIntensity);
 

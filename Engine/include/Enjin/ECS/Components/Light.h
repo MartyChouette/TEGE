@@ -182,6 +182,13 @@ struct alignas(16) LightingUBO {
     // Appended LAST so every shader declaring the old block stays a valid
     // prefix of the bigger buffer (only triangle.frag reads this field).
     alignas(16) Math::Vector4 cloudShadowParams;
+
+    // Accessibility color transform, applied at the end of the PBR shader so it
+    // works WITHOUT the post-process pass (which exported desktop games lack).
+    // x = colorblind mode (0=off, 1..8 per postprocess.frag's CB_* order),
+    // y = colorblind strength, z = brightness (-0.5..0.5), w = contrast (0.5..2).
+    // Same append-last prefix rule as cloudShadowParams; only triangle.frag reads it.
+    alignas(16) Math::Vector4 accessibilityParams;
 };
 
 } // namespace ECS
