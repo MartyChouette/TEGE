@@ -14,7 +14,12 @@ below, each revisitable:
   60Hz, revisit if 144Hz 2D stutter is reported.
 - New projects do NOT yet default the setting on; it is opt-in for everyone
   via Settings > Project > Fixed Physics Timestep.
-- Replay tick-indexing (.tegereplay v2) not started.
+- Replay v2 SHIPPED (522a630) - but as CONFIG-CARRYING, not tick-indexing:
+  the recorded dt stream already removes all timing variance from playback, so
+  indexing inputs by tick bought nothing. What was actually missing was the
+  replay forcing the sim-clock config it was recorded with. With that, a
+  fixed-timestep replay is deterministic same-build across machines up to
+  floating-point differences; float hardening is the remaining frontier.
 
 ## Date
 
