@@ -4,6 +4,36 @@
 // more ticks per second of game time; the solver quality never changes.
 class FixedTimeDemo : TegeBehavior {
     int fixedTicks = 0;
+    array<uint64> bodies;
+    array<Vector3> startPos;
+    array<Vector3> startRot;
+
+    void OnStart() {
+        // Remember every dynamic body's starting pose so R can reset the scene
+        // instantly (Scene_Restart needs the SceneManager to own the scene,
+        // which is true in exported games but not in editor play).
+        for (int i = 0; i < 10; i++) {
+            uint64 c = Scene_FindEntity("Crate" + i);
+            if (c != 0) Remember(c);
+        }
+        uint64 ball = Scene_FindEntity("Wreckingball");
+        if (ball != 0) Remember(ball);
+    }
+
+    void Remember(uint64 e) {
+        bodies.insertLast(e);
+        startPos.insertLast(Entity_GetPosition(e));
+        startRot.insertLast(Entity_GetRotation(e));
+    }
+
+    void ResetBodies() {
+        for (uint i = 0; i < bodies.length(); i++) {
+            Physics_Teleport(bodies[i], startPos[i]);   // zeroes velocities too
+            Entity_SetRotation(bodies[i], startRot[i]);
+        }
+        Time_SetScale(1.0f);
+        Debug_Log("Reset " + bodies.length() + " bodies");
+    }
 
     void OnFixedUpdate(float dt) {
         // Runs exactly once per physics tick (60Hz of GAME time - slow-mo
@@ -37,8 +67,7 @@ class FixedTimeDemo : TegeBehavior {
             Debug_Log("Kicked the crates");
         }
         if (Input_GetKeyDown(Key::R)) {
-            Time_SetScale(1.0f);
-            Scene_Restart();
+            ResetBodies();
         }
     }
 }
