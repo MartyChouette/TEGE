@@ -57,6 +57,8 @@
 #include "Enjin/Scripting/CoroutineScheduler.h"
 #include "Enjin/Scripting/ScriptEvents.h"
 #include "Enjin/ECS/Systems/ControllerSystem.h"
+#include "Enjin/Gameplay/CameraDirector.h"
+#include "Enjin/ECS/Systems/ParallaxSystem.h"
 #include "Enjin/ECS/Systems/TweenSystem.h"
 #include "Enjin/ECS/Systems/VisualScriptSystem.h"
 #include "Enjin/ECS/Systems/BehaviorTreeSystem.h"
@@ -292,6 +294,9 @@ public:
         m_ControllerSystem.SetCamera(m_Camera.get());
         m_ControllerSystem.SetPhysics(m_Physics.get());
         m_ControllerSystem.SetPhysics2D(m_Physics2D.get());
+        m_CameraDirector.Reset();
+        m_CameraDirector.SetEnabled(true);
+        Enjin::Scripting::SetBindingsCameraDirector(&m_CameraDirector);
         m_ControllerSystem.SetInputActionMap(&m_InputMap);
         m_ControllerSystem.SetEnabled(true);
         m_TweenSystem.SetScriptEngine(&m_ScriptEngine);
@@ -741,6 +746,10 @@ public:
         m_StateMachineSystem.Update(m_World.get(), deltaTime);
         m_AISystem.Update(deltaTime);
         m_CinematicSystem.Update(m_World.get(), m_Camera.get(), deltaTime);
+        // Virtual cameras + parallax were editor/desktop-only until the 2026-08-28
+        // wiring audit; dormant when the scene has no vcams / parallax layers.
+        m_CameraDirector.Update(m_World.get(), m_Camera.get(), deltaTime);
+        Enjin::ECS::ParallaxSystem::ApplyParallaxLayers(m_World.get(), deltaTime);
         m_DialogueSystem.Update(m_World.get(), deltaTime);
 
         m_QuestSystem.Update(m_World.get(), deltaTime);
@@ -1606,6 +1615,7 @@ private:
     // Gameplay
     Enjin::InputSystem::InputActionMap m_InputMap;
     Enjin::ECS::ControllerSystem m_ControllerSystem;
+    Enjin::Gameplay::CameraDirector m_CameraDirector;
     Enjin::ECS::TweenSystem m_TweenSystem;
     Enjin::ECS::VisualScriptSystem m_VisualScriptSystem;
     Enjin::ECS::BehaviorTreeSystem m_BehaviorTreeSystem;
