@@ -1760,6 +1760,7 @@ private:
 
     // Batched material SSBO — collects all MaterialGPU data at frame start, uploads once
     void BuildMaterialSSBO();
+    void EnsureTextTextures();  // rasterize authored text + route its texture onto the material
     // Grow the per-frame material SSBOs + rebind descriptor binding 2 when the entity
     // count outgrows capacity. MUST run pre-recording (FlushPendingChanges) — never from
     // BuildMaterialSSBO, which records mid-frame and would invalidate the bound command buffer.

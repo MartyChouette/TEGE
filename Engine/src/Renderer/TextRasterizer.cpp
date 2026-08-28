@@ -3,6 +3,7 @@
 
 #include "Enjin/Renderer/TextRasterizer.h"
 #include "Enjin/Logging/Log.h"
+#include "Enjin/Accessibility/OpenDyslexicFont.h"  // bundled default font (embedded bytes)
 
 #include <fstream>
 #include <cstring>
@@ -20,6 +21,17 @@ const TextRasterizer::FontData* TextRasterizer::GetOrLoadFont(const std::string&
     auto it = m_FontCache.find(fontPath);
     if (it != m_FontCache.end()) {
         return &it->second;
+    }
+
+    // Empty path → bundled default font (embedded), so authored text renders on load
+    // without the author having to pick a font file first.
+    if (fontPath.empty()) {
+        FontData fontData;
+        fontData.fileData.assign(Accessibility::s_OpenDyslexicFontData,
+                                 Accessibility::s_OpenDyslexicFontData + Accessibility::s_OpenDyslexicFontDataSize);
+        auto [inserted, success] = m_FontCache.emplace(fontPath, std::move(fontData));
+        if (!success) return nullptr;
+        return &inserted->second;
     }
 
     // Read font file from disk
@@ -70,11 +82,11 @@ std::vector<u8> TextRasterizer::Rasterize(const ECS::TextComponent& textComp) {
         pixels[i * 4 + 3] = bgA;
     }
 
-    if (textComp.text.empty() || textComp.fontPath.empty()) {
+    if (textComp.text.empty()) {
         return pixels;
     }
 
-    // Load font
+    // Load font (empty path uses the bundled default font)
     const FontData* fontData = GetOrLoadFont(textComp.fontPath);
     if (!fontData || fontData->fileData.empty()) {
         return pixels;

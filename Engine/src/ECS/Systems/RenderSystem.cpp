@@ -4440,6 +4440,25 @@ void RenderSystem::Update(f32 deltaTime) {
             sprite->spriteDirty = false;
         }
 
+        // Auto-generate a quad for bare Text-component entities (no mesh) so authored text
+        // shows with zero setup. Done here (frame-safe mutation window), sized to the text
+        // aspect; the transform scales it. EnsureTextTextures then binds the text texture.
+        for (Entity entity : m_World->GetEntitiesWithComponent<TextComponent>()) {
+            if (m_World->HasComponent<MeshComponent>(entity)) continue;
+            auto* tc = m_World->GetComponent<TextComponent>(entity);
+            if (!tc || tc->text.empty()) continue;
+            f32 aspect = (tc->textureHeight > 0) ? static_cast<f32>(tc->textureWidth) / static_cast<f32>(tc->textureHeight) : 1.0f;
+            m_World->AddComponent<MeshComponent>(entity,
+                Renderer::MeshFactory::CreateSpriteQuad(aspect, 1.0f, 0.5f, 0.5f, 0.0f, 0.0f, 1.0f, 1.0f, false, false));
+            if (!m_World->HasComponent<MaterialComponent>(entity)) {
+                MaterialComponent tm;
+                tm.baseColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+                tm.alphaMode = MaterialComponent::AlphaMode::Blend;  // honour text bg alpha
+                tm.castShadows = false;
+                m_World->AddComponent<MaterialComponent>(entity, std::move(tm));
+            }
+        }
+
         // Auto-generate tilemap meshes when dirty
         for (Entity entity : m_World->GetEntitiesWithComponent<TilemapComponent>()) {
             auto* tilemap = m_World->GetComponent<TilemapComponent>(entity);
@@ -6193,7 +6212,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
 
             // Rasterize text texture if entity has a TextComponent (cached storage)
             TextComponent* textComp = m_CachedTextStorage ? m_CachedTextStorage->Get(entity) : nullptr;
-            if (textComp && textComp->dirty && !textComp->fontPath.empty() && !textComp->text.empty()) {
+            if (textComp && textComp->dirty && !textComp->text.empty()) {
                 auto pixels = m_TextRasterizer.Rasterize(*textComp);
                 if (!pixels.empty()) {
                     auto textTex = std::make_shared<Renderer::Texture>(m_VulkanRenderer->GetContext());
@@ -6910,7 +6929,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
 
             // Text rendering (cached storage)
             TextComponent* textComp = m_CachedTextStorage ? m_CachedTextStorage->Get(entity) : nullptr;
-            if (textComp && textComp->dirty && !textComp->fontPath.empty() && !textComp->text.empty()) {
+            if (textComp && textComp->dirty && !textComp->text.empty()) {
                 auto pixels = m_TextRasterizer.Rasterize(*textComp);
                 if (!pixels.empty()) {
                     auto textTex = std::make_shared<Renderer::Texture>(m_VulkanRenderer->GetContext());
@@ -7292,7 +7311,11 @@ void RenderSystem::BuildCullableObjectList() {
         // Entities with textures (flags bits 16-19) need per-entity descriptor updates
         // and must remain on the per-entity draw path. The indirectEligible flag on the
         // CullableObject controls whether the GPU cull shader emits an indirect draw command.
-        if (hasPoolAlloc) {
+        // Text entities look "untextured" (their rasterized texture lives in
+        // m_TextTextureCache, not on the material) but MUST stay per-entity so the render
+        // loop rasterizes and binds their text texture — otherwise authored text is invisible.
+        bool hasText = m_CachedTextStorage && m_CachedTextStorage->Has(entity);
+        if (hasPoolAlloc && !hasText) {
             auto* material = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
             bool hasTextures = false;
             if (material) {
@@ -7436,7 +7459,12 @@ void RenderSystem::UploadObjectData() {
             if (material->castShadows) flags |= 2;
             if (material->receiveShadows) flags |= 4;
             flags |= (static_cast<i32>(material->alphaMode) << 8);
-            if (material->baseColorTexture >= 0) flags |= (1 << 16);
+            // Text entities carry their rasterized texture in m_TextTextureCache (not on
+            // the material), so the material's baseColorTexture flag is unset — force the
+            // base-colour-texture bit so the pooled shader (which reads od.flags) samples
+            // the bound text texture. Without this, authored text is invisible.
+            bool hasTextTex = m_CachedTextStorage && m_CachedTextStorage->Has(entity);
+            if (material->baseColorTexture >= 0 || hasTextTex) flags |= (1 << 16);
             if (material->normalTexture >= 0) flags |= (1 << 17);
             if (material->metallicRoughnessTexture >= 0) flags |= (1 << 18);
             if (material->emissiveTexture >= 0) flags |= (1 << 19);
@@ -9645,7 +9673,48 @@ void RenderSystem::EnsureOverrideTextureHandles() {
     }
 }
 
+void RenderSystem::EnsureTextTextures() {
+    if (!m_World || !m_VulkanRenderer || !m_BindlessManager || !m_CachedMaterialStorage) return;
+    for (Entity entity : m_World->GetEntitiesWithComponent<TextComponent>()) {
+        auto* tc = m_CachedTextStorage ? m_CachedTextStorage->Get(entity) : m_World->GetComponent<TextComponent>(entity);
+        if (!tc || tc->text.empty()) continue;
+        // Text applies its texture to the entity's mesh surface, so it needs a material to
+        // carry it (a bare Text-component entity with no mesh is a separate auto-quad case).
+        MaterialComponent* mat = m_CachedMaterialStorage->Get(entity);
+        if (!mat) continue;
+
+        if (tc->dirty) {
+            auto pixels = m_TextRasterizer.Rasterize(*tc);
+            if (!pixels.empty()) {
+                auto textTex = std::make_shared<Renderer::Texture>(m_VulkanRenderer->GetContext());
+                if (textTex->CreateFromData(pixels.data(), tc->textureWidth, tc->textureHeight, 4)) {
+                    m_TextTextureCache[entity] = textTex;
+                    // Register in the bindless set so the pooled material shader can sample it.
+                    u32 h = m_BindlessManager->RegisterTexture(textTex->GetImageView(), textTex->GetSampler());
+                    if (h != UINT32_MAX) m_TextureBindlessHandles[textTex.get()] = h;
+                }
+            }
+            tc->dirty = false;
+            m_MaterialSSBOBuilt = false;  // rebuild the SSBO with the new bindless index
+        }
+
+        // Point the material's base colour at the text texture (idempotent).
+        auto tit = m_TextTextureCache.find(entity);
+        if (tit != m_TextTextureCache.end() && tit->second && tit->second->IsValid()
+            && mat->cachedBaseColorTexture != tit->second.get()) {
+            mat->cachedBaseColorTexture = tit->second.get();
+            mat->baseColorTexture = 1;
+            mat->textureCacheDirty = false;  // don't reload from a (usually empty) path
+            m_MaterialSSBOBuilt = false;
+        }
+    }
+}
+
 void RenderSystem::BuildMaterialSSBO() {
+    // Rasterize authored text and route its texture onto the material (bindless), so
+    // world text renders through the normal textured path — no setter required. Runs
+    // before the early-return so a text change re-dirties the SSBO.
+    EnsureTextTextures();
     if (m_MaterialSSBOBuilt) return;
     m_MaterialSSBOBuilt = true;
 
@@ -10733,7 +10802,7 @@ void RenderSystem::RenderEntity(Entity entity) {
 
     // Rasterize text texture if entity has a TextComponent (cached storage)
     TextComponent* textComp = m_CachedTextStorage ? m_CachedTextStorage->Get(entity) : nullptr;
-    if (textComp && textComp->dirty && !textComp->fontPath.empty() && !textComp->text.empty()) {
+    if (textComp && textComp->dirty && !textComp->text.empty()) {
         auto pixels = m_TextRasterizer.Rasterize(*textComp);
         if (!pixels.empty()) {
             auto textTex = std::make_shared<Renderer::Texture>(m_VulkanRenderer->GetContext());
