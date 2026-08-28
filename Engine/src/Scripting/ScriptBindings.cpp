@@ -452,14 +452,16 @@ static void TransformProxy_CopyConstruct(const TransformProxy& other, TransformP
 static f32 s_DeltaTime = 0.0f;
 static f32 s_FixedDeltaTime = 1.0f / 60.0f;
 static f32 s_TotalTime = 0.0f;
-static f32 s_TimeScale = 1.0f;
 static u32 s_FrameCount = 0;
 
 static f32 Time_GetDeltaTime()      { return s_DeltaTime; }
 static f32 Time_GetFixedDeltaTime() { return s_FixedDeltaTime; }
 static f32 Time_GetTime()           { return s_TotalTime; }
-static f32 Time_GetTimeScale()      { return s_TimeScale; }
-static void Time_SetTimeScale(f32 scale) { s_TimeScale = scale; }
+// Legacy names: these registered a scale for YEARS that nothing consumed (dead
+// knob, found by the 2026-08-28 fps audit). They now alias the live scale that
+// all three runtimes actually apply, so old scripts start working.
+static f32 Time_GetTimeScale()      { return Enjin::Scripting::GetTimeScale(); }
+static void Time_SetTimeScale(f32 scale) { Enjin::Scripting::SetTimeScale(scale); }
 static u32 Time_GetFrameCount()     { return s_FrameCount; }
 
 // ============================================================================
