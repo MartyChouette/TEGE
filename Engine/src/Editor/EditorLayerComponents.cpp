@@ -1350,6 +1350,61 @@ void EditorLayer::DrawTextComponent(ECS::Entity entity) {
         if (!text) return;
         DrawComponentHelp("text", m_World, entity);
 
+        // --- Silent-failure warnings ---
+        // Text can rasterize to nothing or render invisibly with no error in the
+        // log. Surface the common causes right at the top so "my text isn't
+        // showing" has an answer instead of being a mystery.
+        {
+            std::vector<std::pair<int, std::string>> warns;  // first: 1=warning, 0=info
+            auto colorClose = [](const Math::Vector3& a, const Math::Vector3& b) {
+                return std::fabs(a.x - b.x) < 0.04f && std::fabs(a.y - b.y) < 0.04f &&
+                       std::fabs(a.z - b.z) < 0.04f;
+            };
+
+            if (text->text.empty()) {
+                warns.push_back({0, "No text yet - nothing renders until you type content below."});
+            }
+            if (!text->fontPath.empty()) {
+                std::error_code ec;
+                bool found = std::filesystem::exists(text->fontPath, ec);
+                if (!found && !m_SceneManager.GetProjectPath().empty()) {
+                    auto root = std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path();
+                    found = std::filesystem::exists(root / text->fontPath, ec);
+                }
+                if (!found)
+                    warns.push_back({1, "Font not found: '" + text->fontPath +
+                                        "'. Falling back to the built-in font."});
+            }
+            if (!text->text.empty() && text->bgOpacity > 0.5f &&
+                colorClose(text->textColor, text->bgColor)) {
+                warns.push_back({1, "Text color matches the opaque background - the text will be invisible."});
+            }
+            f32 usableW = static_cast<f32>(text->textureWidth) - text->paddingX * 2.0f;
+            f32 usableH = static_cast<f32>(text->textureHeight) - text->paddingY * 2.0f;
+            if (usableW <= 0.0f || usableH <= 0.0f) {
+                warns.push_back({1, "Padding leaves no room in the texture - lower Padding or raise Texture Width/Height."});
+            } else if (!text->text.empty() && text->fontSize > usableH) {
+                warns.push_back({1, "Font Size is taller than the texture - text may be clipped. Raise Texture Height or lower Font Size."});
+            }
+            if (text->wrapWidth <= text->paddingX * 2.0f) {
+                warns.push_back({1, "Wrap Width sits inside the padding - no room for a line. Raise Wrap Width."});
+            }
+            if (auto* tr = m_World->GetComponent<ECS::TransformComponent>(entity)) {
+                if (std::fabs(tr->scale.x) < 1e-4f || std::fabs(tr->scale.y) < 1e-4f) {
+                    warns.push_back({1, "Entity scale is ~0 - the text surface has no size to draw on."});
+                }
+            }
+
+            for (const auto& w : warns) {
+                ImVec4 c = (w.first == 1) ? ImVec4(1.0f, 0.70f, 0.20f, 1.0f)
+                                          : ImVec4(0.60f, 0.70f, 0.90f, 1.0f);
+                ImGui::PushStyleColor(ImGuiCol_Text, c);
+                ImGui::TextWrapped("%s %s", (w.first == 1) ? "(!)" : "(i)", w.second.c_str());
+                ImGui::PopStyleColor();
+            }
+            if (!warns.empty()) ImGui::Separator();
+        }
+
         // Multi-line text input
         static char textBuffer[8192];
         strncpy(textBuffer, text->text.c_str(), sizeof(textBuffer) - 1);
