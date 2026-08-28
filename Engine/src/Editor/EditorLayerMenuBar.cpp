@@ -1132,6 +1132,21 @@ void EditorLayer::DrawMenuBar() {
             }
             if (ImGui::MenuItem("Keyboard Shortcuts", "Ctrl+Shift+/", &m_ShowShortcutsHelp)) {
             }
+            if (ImGui::MenuItem("Copy Scene JSON Key List")) {
+                // Every component key the serializer recognizes — the scene-file
+                // schema's vocabulary. Anything else in a .enjin is ignored.
+                std::string keys;
+                for (const auto& k : Scene::SceneSerializer::RegisteredComponentKeys()) {
+                    keys += k;
+                    keys += "\n";
+                }
+                ImGui::SetClipboardText(keys.c_str());
+                ShowNotification("Scene JSON key list copied to clipboard", NotificationType::Info);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Copy every component key the scene format recognizes.\n"
+                                  "Pair with the Inspector's 'Copy as JSON' to learn the schema.");
+            }
             ImGui::Separator();
             if (ImGui::MenuItem("Report Bug...", "Ctrl+Shift+B")) {
                 m_ShowDiscordBugDialog = true;

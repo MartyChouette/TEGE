@@ -1545,6 +1545,21 @@ void EditorLayer::DrawInspectorPanel() {
                 m_World->AddComponent<ECS::NameComponent>(m_PrimarySelected, "Unnamed");
             }
         }
+
+        // Copy the entity as scene-file JSON — the exact format .enjin scenes
+        // use, so authors can learn the schema from a working example (or paste
+        // it into a bug report). Vertex data is skipped to keep it readable.
+        if (ImGui::SmallButton("Copy as JSON")) {
+            std::string js = Scene::SceneSerializer::SerializeEntityToString(
+                m_World, m_PrimarySelected, /*includeVertexData=*/false);
+            ImGui::SetClipboardText(js.c_str());
+            ShowNotification("Entity JSON copied to clipboard", NotificationType::Info);
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Copy this entity in the .enjin scene-file JSON format\n"
+                              "(without vertex data). Great for learning the schema,\n"
+                              "diffing, or bug reports.");
+        }
         // Prefab instance indicator
         if (Assets::PrefabUtils::IsPrefabInstance(m_World, m_PrimarySelected)) {
             auto* prefabInst = m_World->GetComponent<Assets::PrefabInstanceComponent>(m_PrimarySelected);
