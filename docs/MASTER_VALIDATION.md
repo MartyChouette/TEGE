@@ -273,6 +273,32 @@ flipbook playback on ANY material.
       back via F1 at zero runtime cost. "Bake Loop" button in the editor;
       the baked-probes philosophy applied to motion.
 
+## 4e. Platform expansion (Marty 2026-08-29)
+
+The parity audit's one structural BEHIND. Ordered by cost-to-first-boot:
+
+- [ ] W3 Safari WebGPU parity: the web player must run as well on Safari 18+
+      (macOS + iOS) as on Chrome. Known landscape: Safari's WebGPU differs in
+      limits, some texture formats, and WGSL strictness corner cases; the
+      engine already shows the friendly WebGPU-unavailable card on old iOS.
+      Work: a Safari test matrix (macOS Safari, iPad, iPhone), fix WGSL/
+      limit divergences, and investigate a macOS CI runner smoke. Needs a
+      real Apple device/Mac for truth - Playwright WebKit is NOT Safari
+      WebGPU. This is also the fastest "TEGE on iPhone" story combined with
+      W2 (mobile overlay), since iOS App Store native is the longest road.
+- [ ] P1 Android build: the natural first native mobile target - the engine
+      is already C++20 + Vulkan, which Android speaks natively. Work: NDK
+      toolchain + Gradle shell, android_main window/lifecycle (suspend/
+      resume + GPU resource handling), touch input -> InputActionMap, asset
+      path via AAsset, render-tier defaults for mobile GPUs, keystore
+      packaging. Cross-compilable from the Windows machine.
+- [ ] P2 iOS build: requires a Metal path - either MoltenVK (Vulkan-on-
+      Metal, the macOS plan's route, far cheaper) or finishing the Metal
+      backend stubs. ALSO requires a Mac + Xcode + Apple developer account -
+      cannot be built from the current machine. Sequence AFTER W3+W2 give an
+      iPhone-playable web story and after P1 proves the mobile input/
+      lifecycle layer.
+
 ## 5. Release gates
 
 Beta gate: S1-S3 done; T1, T2, T4 running in CI green; D1-D2 fixed.
