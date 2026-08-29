@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Enjin/Platform/Platform.h"
+#include "Enjin/Platform/Types.h"
 #include <string>
 
 namespace Enjin::Platform {
@@ -63,6 +64,10 @@ ENJIN_API std::string ResolveWithinRoot(const std::string& root, const std::stri
 // Returns 'absolute' expressed relative to 'root' if it lies within root
 // after normalization; otherwise "" (caller keeps the original path).
 ENJIN_API std::string MakeRelativeToRoot(const std::string& root, const std::string& absolute);
+
+// Current process resident memory (working set) in bytes; 0 if unavailable.
+// Used by stress probes (T4 play-cycle) to assert bounded memory growth.
+ENJIN_API u64 GetProcessMemoryBytes();
 
 } // namespace Enjin::Platform
 

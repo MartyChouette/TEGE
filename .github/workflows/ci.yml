@@ -123,6 +123,21 @@ jobs:
           }
           python Tests/GoldenScene/check_golden.py golden_out/smoke
 
+      - name: Play-cycle stress (T4 - 15 play/stop cycles, memory bounded)
+        shell: pwsh
+        timeout-minutes: 15
+        # MASTER_VALIDATION T4: the play->stop->restore lifecycle must not leak.
+        # The probe destroys a skinned entity each cycle to force the full-reload
+        # restore path, counts 15 cycles, and exits nonzero if RSS grew past the
+        # post-warmup baseline + 50% + 128MB. Local baseline 2026-08-29: dead
+        # flat at ~562 MB over 25 cycles.
+        env:
+          VK_DRIVER_FILES: ${{ github.workspace }}\mesad\lvp_icd.x86_64.json
+          VK_ICD_FILENAMES: ${{ github.workspace }}\mesad\lvp_icd.x86_64.json
+        run: |
+          & buildin\Release\EnjinEditor.exe "${{ github.workspace }}\Tests\GoldenScene\GoldenScene.enjinproject" --play --play-cycle 40 15 2>&1 | ForEach-Object { "$_" }
+          if ($LASTEXITCODE -ne 0) { throw "play-cycle stress failed with code $LASTEXITCODE" }
+
       - name: Exported-game smoke (pack + run the Windows player headless)
         shell: pwsh
         timeout-minutes: 15

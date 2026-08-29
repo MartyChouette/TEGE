@@ -1,4 +1,11 @@
 #include "Enjin/Platform/Paths.h"
+#if defined(_WIN32)
+#include <windows.h>
+#include <psapi.h>
+#elif !defined(__EMSCRIPTEN__)
+#include <cstdio>
+#include <unistd.h>
+#endif
 
 #include <algorithm>
 #include <filesystem>
@@ -304,6 +311,27 @@ std::string MakeRelativeToRoot(const std::string& root, const std::string& absol
         return "";
     }
     return rel.string();
+}
+
+u64 GetProcessMemoryBytes() {
+#if defined(_WIN32)
+    PROCESS_MEMORY_COUNTERS pmc{};
+    if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc))) {
+        return static_cast<u64>(pmc.WorkingSetSize);
+    }
+    return 0;
+#elif defined(__EMSCRIPTEN__)
+    return 0;  // no meaningful RSS in wasm
+#else
+    // Linux: /proc/self/statm, second field = resident pages
+    FILE* f = std::fopen("/proc/self/statm", "r");
+    if (!f) return 0;
+    long size = 0, resident = 0;
+    int n = std::fscanf(f, "%ld %ld", &size, &resident);
+    std::fclose(f);
+    if (n < 2) return 0;
+    return static_cast<u64>(resident) * static_cast<u64>(sysconf(_SC_PAGESIZE));
+#endif
 }
 
 } // namespace Enjin::Platform

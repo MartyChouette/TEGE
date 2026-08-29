@@ -210,6 +210,10 @@ public:
     // Set by main() from --play-cycle <N>: stop/restart play mode every N
     // frames (skinned-mesh play-transition crash probe). 0 = off.
     static inline i32 s_PlayCycleFrames = 0;
+    // T4 stress: stop after this many play/stop cycles and exit with a code
+    // (0 = healthy). 0 = cycle forever (the original probe behavior).
+    static inline i32 s_PlayCycleMax = 0;
+    static inline i32 s_PlayCycleExitCode = 0;
     // Set by main() from --compute-skinning: force ADR-0002 compute skinning on
     // at boot. For automated verification probes.
     static inline bool s_ComputeSkinningOnLaunch = false;

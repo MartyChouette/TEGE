@@ -897,6 +897,28 @@ void EditorLayer::Update(f32 deltaTime) {
         } else if (m_PlayMode.IsStopped() && !m_PendingPlayStop && !s_AutoPlayOnLaunch) {
             if (++s_restartDelay >= 30) {  // let the restore settle half a second
                 s_restartDelay = 0;
+                // T4 stress accounting: one full play->stop->restore cycle done.
+                static i32 s_cyclesDone = 0;
+                static u64 s_warmupRSS = 0;
+                ++s_cyclesDone;
+                u64 rss = Platform::GetProcessMemoryBytes();
+                if (s_cyclesDone == 3) s_warmupRSS = rss;   // post-warmup baseline
+                if (s_PlayCycleMax > 0) {
+                    ENJIN_LOG_INFO(Editor, "--play-cycle: cycle %d/%d, rss %.1f MB",
+                                   s_cyclesDone, s_PlayCycleMax, rss / (1024.0 * 1024.0));
+                    if (s_cyclesDone >= s_PlayCycleMax) {
+                        // Pass: memory bounded (< baseline + 50% + 128MB slack).
+                        bool ok = (s_warmupRSS == 0) ||
+                                  (rss < s_warmupRSS + s_warmupRSS / 2 + 128ull * 1024 * 1024);
+                        s_PlayCycleExitCode = ok ? 0 : 2;
+                        ENJIN_LOG_INFO(Editor, "--play-cycle: DONE %d cycles, rss %.1f MB "
+                                       "(baseline %.1f MB) -> %s",
+                                       s_cyclesDone, rss / (1024.0 * 1024.0),
+                                       s_warmupRSS / (1024.0 * 1024.0), ok ? "PASS" : "FAIL");
+                        if (m_Window) m_Window->Close();
+                        return;
+                    }
+                }
                 StartPlayMode();
                 ENJIN_LOG_INFO(Editor, "--play-cycle: re-entered play mode");
             }

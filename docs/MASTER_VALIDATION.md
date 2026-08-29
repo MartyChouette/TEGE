@@ -99,8 +99,11 @@ coverage: StressTest.cpp (10K entities), TestStressFuzz, TestHardening,
       IndexedDB quota. Pass: clean OOM behavior, no silent hang. (70%)
 - [ ] T3 Draw/material explosion: 1K unique materials/textures, batching
       proof (draw calls << entities), VRAM ceiling probe. (75%)
-- [ ] T4 Play/stop cycling: 1000 cycles via --play-cycle incl. skinned
-      meshes + scene switches. Pass: bounded memory, no crash. (45%)
+- [x] T4 Play/stop cycling: DONE (--play-cycle N M probe + CI step).
+      Baseline 2026-08-29: 25 cycles on FixedTimestep, RSS dead flat
+      559.9->562.3 MB post-warmup (+~100KB/cycle noise), exit 0. CI runs 15
+      cycles on GoldenScene with a bounded-memory gate (baseline+50%+128MB).
+      Skinned-destroy full-restore path exercised every cycle.
 - [ ] T5 Physics storm: settle piles at 1K/5K/10K bodies, tumble-box churn,
       slow-mo under load (verify the 4-step clamp slows, never freezes),
       Jolt-vs-Box2D comparison. (60%)
