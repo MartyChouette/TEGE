@@ -479,7 +479,6 @@ Alternative render path: geometry-only pass writes triangle ID + instance ID to 
 - **Input**: InputActionMap remapping, sensitivity, presets (22 bindings)
 - **Rendering**: Post-processing, screen-space effects, post-process volumes
 - **Networking**: LAN multiplayer
-- **Flash**: ~40 bindings emulating Flash APIs (AS2/AS3 transpiler support)
 
 **Script Lifecycle**: `OnCreate()` → `OnUpdate(deltaTime)` per frame → `OnDestroy()`
 

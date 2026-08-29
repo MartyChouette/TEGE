@@ -124,7 +124,7 @@ This document captures detailed technical plans, performance findings, and strat
 | **RT** | RT Translucency (subsurface scattering) |
 | **RT** | Motion Vectors + TAA (per-pixel velocity, Halton jitter, neighborhood clamping) |
 | **RT** | Material SSBO for RT hit shaders (binding 9), OptiX denoiser CUDA interop |
-| **Flash** | Yarn Spinner / Twine dialogue import/export |
+| **Interop** | Yarn Spinner / Twine dialogue import/export |
 | **Scripting** | Expose template-only features (particle presets, HUD widget, text component) to AS/VS/inspector |
 | **Assets** | Assimp skeletal animation import (FBX/DAE/all formats) |
 | **QA** | Beta 0.8 hardening: ECS, Renderer, Serialization, Asset Pack, Physics, Audio, Build Pipeline, Scripting & Networking |
@@ -1073,9 +1073,9 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | Pre-built binary distribution | High | Medium | P2 | ✅ Complete (CMake install rules + CPack, Windows ZIP, scripts/package.bat + package.sh) |
 | Installer distribution | Medium | High | P3 | ✅ Complete (Inno Setup installer with icon, license page, component selection, file associations, Start Menu/Desktop shortcuts; NSIS via CPack as alternative) |
 | Hub application (launcher) | Medium | Very High | P4 | ✅ Done |
-| **— Flash Game Revival —** | | | | |
-| SWF import & conversion | Medium | Very High | P4 | ✅ Done |
-| ~~Flash-style timeline authoring~~ | Medium | High | P3 | ✅ Done |
+| **— Legacy Timeline Tools —** | | | | |
+| Legacy animation import & conversion | Medium | Very High | P4 | ✅ Done |
+| ~~Timeline-based authoring~~ | Medium | High | P3 | ✅ Done |
 | AS2/AS3 → AngelScript transpiler | Medium | Very High | P4 | ✅ Done |
 | **— Collaboration —** | | | | |
 | Collaborative editing (OT/CRDT) | Medium | Very High | P4 | ✅ Complete (EditorLayer wiring: remote edit callbacks, scene sync, edit recording at 5 points, status indicator) |
@@ -1110,7 +1110,7 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 ### Completed
 
 - ~~**Extended Model Format Support**~~ ✅ — PLY (ASCII/binary point cloud/mesh) and VOX (MagicaVoxel voxel with greedy face merging) import via custom loaders, routed through SceneImporter
-- ~~**Template Rebuild & Demo Scenes**~~ ✅ — Redesigned from 38 to 22 focused templates, then expanded to 51 total across 7 categories (Foundations, Genre Showcases, Systems Deep-Dives, Retro & Flash, Advanced, Multiplayer, Debug/Test), each showcasing real engine features. All templates polished with additional entities, components, atmosphere, HUD elements, and gameplay setups
+- ~~**Template Rebuild & Demo Scenes**~~ ✅ — Redesigned from 38 to 22 focused templates, then expanded to 51 total across 7 categories (Foundations, Genre Showcases, Systems Deep-Dives, Retro & Timeline, Advanced, Multiplayer, Debug/Test), each showcasing real engine features. All templates polished with additional entities, components, atmosphere, HUD elements, and gameplay setups
 - ~~**Planet Gravity Template**~~ ✅ — Super Mario Galaxy-style spherical gravity third-person platformer (GravityZoneComponent Point mode, SurfaceAlignedController, orbit camera, 4 surface platforms, 6 coins)
 - ~~**Editor Accent Color & Theming**~~ ✅ — ~~Replace blue accent with TEGE brand sage green~~ (done), ~~customizable accent colors in editor settings~~ (done), ~~accent color harmony presets~~ (done — 6 presets: Default Blue, Warm Orange, Forest Green, Royal Purple, Crimson Red, Teal, auto-derive 11 colors), ~~theme preview pane~~ (done — 250x160 live preview), ~~notification toasts~~ (done — 4 types, slide-in/fade-out), ~~keyboard shortcuts help~~ (done — Ctrl+Shift+/, searchable, categorized), rounded corners, softer panel borders, distinct visual identity
 - ~~**Curved Grid Snapping**~~ ✅ — Snap entity placement to curved/spherical grid surfaces with orientation alignment. Surface Snap mode projects entities onto terrain heightmaps and sphere gravity zones, with normal alignment (yaw-preserving) and settings persistence. `Quaternion::FromToRotation()` utility added
@@ -1968,9 +1968,9 @@ The following accessibility features exist as infrastructure/settings structs bu
 
 ---
 
-## Flash Game Revival & Retro Web Game Support
+## Legacy Timeline & Retro Web Game Support (unannounced - do not market)
 
-Target audience: Flash game creators and fans of the Flash era looking for modern tooling.
+Status: internal capability, deliberately unannounced. Marty will decide its positioning separately; keep it out of README/site/marketing copy until then.
 
 ### ~~SWF Import & Conversion~~ ✅ Done
 - ~~**SWF parser**~~ ✅ — `SWFLoader` + `SWFConverter` — parse SWF, rasterize shapes to PNG, extract bitmaps/sounds, convert to ECS entities with Sprite2DComponent

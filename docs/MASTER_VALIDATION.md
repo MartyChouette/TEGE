@@ -31,15 +31,15 @@ vs Godot 4, verified against source:
   manuals), community (bus factor = 1), engine maturity label (0.9.x).
 
 Top 5 reasons someone picks TEGE (differentiator audit, source-verified):
-1. Flash revival: SWF import + AS2/AS3→AngelScript transpiler + timeline
-   editor + one-click web export. No other engine has this path.
-2. Retro rendering as philosophy — dropdown-correct era looks, hand-crafted
+1. Retro rendering as philosophy — dropdown-correct era looks, hand-crafted
    reflections, anti-screen-space stance.
-3. Accessibility as compliance: switch access, dwell click, TTS announcer,
+2. Accessibility as compliance: switch access, dwell click, TTS announcer,
    colorblind GPU modes, dyslexia font — shipped in every exported game.
-4. Shareable deterministic replays (.tegereplay, plain JSON, auto-bookmarks).
-5. Time architecture: fixed tick + interpolation + Time_SetScale + per-entity
+3. Shareable deterministic replays (.tegereplay, plain JSON, auto-bookmarks).
+4. Time architecture: fixed tick + interpolation + Time_SetScale + per-entity
    bullet time as primitives.
+5. Gameplay batteries + procgen: save/quest/dialogue/BT/cinematics/rewind and
+   nine seeded procedural algorithms, all engine-core.
 
 ## 2. Stability actions (personally verified 2026-08-29)
 
@@ -117,8 +117,6 @@ coverage: StressTest.cpp (10K entities), TestStressFuzz, TestHardening,
 The June FEATURE_AUDIT_CHECKLIST procedure stands: every public claim gets
 verified against the running build before it appears in README/site copy.
 Additions from this audit needing a verification pass before marketing use:
-- [ ] Flash pipeline end-to-end: a real SWF through transpiler to playable web
-      export (files verified present; full-path run not yet exercised).
 - [ ] Collaborative editing: two-editor session (12 impl files verified;
       needs a live two-instance test).
 - [ ] Motion matching: code exists but is REFERENCED NOWHERE outside its own
@@ -154,8 +152,6 @@ document the limitation.
 Procedural / exotic imports:
 - [ ] I7 Gaussian splats: real .ply (INRIA) and .spz (Niantic) captures render
       and integrate with art styles.
-- [ ] I8 SWF: one real Flash game through loader + transpiler to playable
-      (this doubles as the §4 Flash claim verification).
 - [ ] I9 VOX / PLY meshes if claimed - verify or strike from format list.
 
 Custom art into house systems (the "my own grass" test):
@@ -177,7 +173,7 @@ Custom art into house systems (the "my own grass" test):
 
 Beta gate: S1-S3 done; T1, T2, T4 running in CI green; D1-D2 fixed.
 1.0 gate: all S-items done; T1-T8 green in CI; claim list §4 fully verified;
-import battery §4b fully run (I1-I9, H1-H8);
+import battery §4b fully run (I1-I7, I9, H1-H8);
 docs consolidated (D3); master checklist re-run against the release build.
 
 ## Rejected findings (do not re-report)

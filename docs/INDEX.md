@@ -45,7 +45,7 @@ See [About](../README.md#about) for the developer disclaimer.
 | Render Backend | `Enjin/Renderer/RenderBackend.h` | Platform abstraction interface |
 | Ray Tracing | `Enjin/Renderer/RayTracing/` | RT pipeline, acceleration structures, SVGF/OIDN/OptiX denoisers, path tracer, material SSBO (binding 9), motion vectors (binding 4) |
 | Feedback | `Enjin/Editor/FeedbackSystem.h` | Bug reporting, feedback collection, diagnostics capture, JSON persistence |
-| Vector Drawing | `Enjin/Editor/VectorDrawingEditor.h` | 7 shape types, layers, SVG export, Flash symbol library |
+| Vector Drawing | `Enjin/Editor/VectorDrawingEditor.h` | 7 shape types, layers, SVG export, symbol library |
 | HTML5 Export | `Enjin/Build/HTML5Exporter.h` | Canvas export, preloader, responsive scaling, web embed |
 | 2D Physics | `Enjin/Physics/Physics2D.h` | Circle/Box/Polygon shapes, 5 joint types, CCD, SAT collision |
 | Localization | `Enjin/GUI/Localization.h` | String tables, CSV/JSON I/O, LOC() macro, parameterized strings |
@@ -59,12 +59,10 @@ See [About](../README.md#about) for the developer disclaimer.
 | Reaction-Diffusion | `Enjin/Effects/ReactionDiffusion.h` | Gray-Scott model, 9 presets, bake-to-texture/heightmap |
 | Cellular Automata | `Enjin/Effects/CellularAutomataGeometry.h` | 7 CA rules, 3 mesh modes (Voxels/MarchingCubes/PointCloud) |
 | Physarum Sim | `Enjin/Effects/PhysarumSimulation.h` | Agent-based slime mold, 5 presets, trail diffusion/decay |
-| Timeline Editor | `Enjin/Animation/TimelineEditor.h` | Flash-style keyframe editor, layers, Bezier/CatmullRom curves, auto-key |
+| Timeline Editor | `Enjin/Animation/TimelineEditor.h` | Keyframe timeline editor, layers, Bezier/CatmullRom curves, auto-key |
 | Thumbnails | `Enjin/Assets/ThumbnailGenerator.h` | Asset preview generation with CPU rasterizer and caching |
 | Texture Compression | `Enjin/Assets/TextureCompressor.h` | BCn/ASTC compression with mipmap generation |
-| SWF Converter | `Enjin/Assets/SWFConverter.h` | SWF→ECS entity conversion (shapes, MovieClips, timelines) |
 | AS3 Transpiler | `Enjin/Scripting/AS3Transpiler.h` | Pattern-based ActionScript→AngelScript source transpilation |
-| Flash API Shim | `Enjin/Scripting/FlashAPIShim.h` | ~40 AngelScript bindings emulating Flash APIs |
 | Fourier Mesh | `Enjin/Effects/FourierMesh.h` | DFT contour decomposition, progressive reconstruction, 3D extrusion |
 | 4D Projection | `Enjin/Effects/Projection4D.h` | 5 polytopes, 6 rotation planes, stereographic 4D→3D projection |
 | Inverse Rendering | `Enjin/Renderer/InverseRendering.h` | CPU gradient descent scene parameter optimization |

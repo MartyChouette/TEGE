@@ -197,7 +197,7 @@
 ### M10. Missing TLS Certificate Validation
 **File:** `Engine/src/Networking/HTTPClient.cpp`
 **Risk:** Man-in-the-middle attacks
-**Description:** HTTP client connections to external APIs (e.g., Newgrounds) may not fully validate TLS certificates depending on the backend library configuration.
+**Description:** HTTP client connections to external APIs (e.g., a legacy web portal) may not fully validate TLS certificates depending on the backend library configuration.
 **Fix:** Ensure TLS certificate validation is enabled. Pin certificates for known APIs if feasible.
 
 ### M11. Form Parameter Injection in HTTP Client

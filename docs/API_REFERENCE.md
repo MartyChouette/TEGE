@@ -420,7 +420,7 @@ using namespace Enjin::Editor;
 // Supports 7 shape types: Line, Rect, Ellipse, Pen, Bezier, Star, Polygon
 // 8 tools: Select, Line, Rectangle, Ellipse, Pen, Bezier, Star, Polygon
 // Features: layers, undo/redo (50 levels), SVG export, snap-to-grid, zoom/pan
-// Flash symbol library integration for Flash game authoring
+// Symbol library integration for timeline authoring
 ```
 
 ## HTML5 Export

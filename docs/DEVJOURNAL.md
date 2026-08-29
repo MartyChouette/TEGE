@@ -752,8 +752,8 @@ New `CollaborativeEditingUI.h/cpp` (122+936 lines). Wires the existing Collabora
 ### Symbol Library Manager
 New `SymbolLibrary.h/cpp` (223+1160 lines). Catalog-based symbol management system built on PrefabManager + VectorDrawingEditor. SymbolEntry with id, name, category, type (VectorDrawing/EntityPrefab/SpriteSheet/Custom), tags, thumbnail, use count. Symbol CRUD: create from entity hierarchy or vector drawing, delete, rename. Instantiation via PrefabManager. Nested symbol editing: isolated ECS::World for editing symbol contents, breadcrumb navigation back to main scene. Symbol browser panel with grid/list view toggle, category tabs, search bar, thumbnail preview (128x128). Update propagation: modifying a symbol updates all PrefabInstanceComponent instances. FlashTimeline integration via SyncToTimeline(). Catalog persisted as symbols/catalog.json.
 
-### Newgrounds-Style Game Page
-New `NewgroundsGamePage.h/cpp` (93+1752 lines). Enhanced HTML5 export producing a full Newgrounds-aesthetic game page. GamePageConfig with title, author, description, tags, thumbnail, NG app ID + encryption key, medal/scoreboard toggles, theme colors, canvas size, controls text. Generated page: dark theme (#1a1a2e bg, #e94560 accent), header with title + author + version, centered canvas with glow border, right sidebar with medal progress (locked/unlocked icons with grayscale filter) and scoreboard (top 10), controls section, description panel, responsive layout. CSS: custom properties, flexbox, card components, toast notifications, @media collapse at 900px. JavaScript: NG.io API init, medal fetch/display/unlock toasts, scoreboard fetch/post, fullscreen toggle, preloader with "Click to Play" audio resume. Embed codes: standard iframe + Newgrounds container div. XSS protection on all user text. ImGui config panel for build dialog.
+### a legacy web portal-Style Game Page
+New `a legacy web portalGamePage.h/cpp` (93+1752 lines). Enhanced HTML5 export producing a full a legacy web portal-aesthetic game page. GamePageConfig with title, author, description, tags, thumbnail, NG app ID + encryption key, medal/scoreboard toggles, theme colors, canvas size, controls text. Generated page: dark theme (#1a1a2e bg, #e94560 accent), header with title + author + version, centered canvas with glow border, right sidebar with medal progress (locked/unlocked icons with grayscale filter) and scoreboard (top 10), controls section, description panel, responsive layout. CSS: custom properties, flexbox, card components, toast notifications, @media collapse at 900px. JavaScript: NG.io API init, medal fetch/display/unlock toasts, scoreboard fetch/post, fullscreen toggle, preloader with "Click to Play" audio resume. Embed codes: standard iframe + a legacy web portal container div. XSS protection on all user text. ImGui config panel for build dialog.
 
 ---
 
@@ -1013,9 +1013,9 @@ Applied fixes for 132 of 152 findings from `docs/AUDIT_2026_02_13.md` across 6 p
 - Collaborative editing: capped pending ops, string length, log entries, scene sync allocation (S-H10, S-M1, S-M2, S-M6)
 - WAV loader division-by-zero guards for bitsPerSample/channels/sampleRate (S-M3, S-M4)
 - VOX loader integer overflow check (S-M5), save file JSON type checks (S-M7)
-- Newgrounds ExtractString infinite loop fix (S-M8), HTTP truncation error flag (S-M9)
+- a legacy web portal ExtractString infinite loop fix (S-M8), HTTP truncation error flag (S-M9)
 - HTML5 width/height validation (S-M13), SceneLock getenv null check (S-M14)
-- Audio clip map cleanup, collab peer list bounds, network interpolation buffer cap, Newgrounds unescape (S-L1-L4)
+- Audio clip map cleanup, collab peer list bounds, network interpolation buffer cap, a legacy web portal unescape (S-L1-L4)
 
 **Stability (20 fixes):**
 - EntityEventBus copy-before-dispatch prevents use-after-free (T-C4)
@@ -1209,7 +1209,7 @@ Exposed all 9 procedural generation algorithms to AngelScript (~15 bindings) and
 
 Second pass addressing all remaining findings from audit #3. 38 more fixes across 31 files.
 
-**Security (13 fixes):** FileDialog shell escaping on macOS/Linux (S1), network payload size validation (S11), save slot range validation (S13), xorshift32 PRNG replacing rand() globally (S14), Newgrounds save metadata slot mapping eliminates hash collisions (S15), PixelEditor sheet export size_t (S16), snapshot count cap 1024 (S17), shader compiler fork/exec on Unix (S18), IDE/folder/git shell escaping on Unix (S19/S20/S23), SDFGenerator dimension validation (S22). TODO comments for network auth (S12) and replay protection (S21).
+**Security (13 fixes):** FileDialog shell escaping on macOS/Linux (S1), network payload size validation (S11), save slot range validation (S13), xorshift32 PRNG replacing rand() globally (S14), a legacy web portal save metadata slot mapping eliminates hash collisions (S15), PixelEditor sheet export size_t (S16), snapshot count cap 1024 (S17), shader compiler fork/exec on Unix (S18), IDE/folder/git shell escaping on Unix (S19/S20/S23), SDFGenerator dimension validation (S22). TODO comments for network auth (S12) and replay protection (S21).
 
 **Stability (5 fixes):** Network connections reserve(MAX_PLAYERS+1) prevents pointer invalidation (T10), spline length table size guard (T13), navmesh triangulate + terrain safer loop idioms (T14/T15).
 
@@ -1221,7 +1221,7 @@ Second pass addressing all remaining findings from audit #3. 38 more fixes acros
 
 Full codebase audit (83 findings documented in `docs/AUDIT_2026_02_12_R2.md`), 40 fixes applied across 31 files covering security, stability, performance, and feature gaps.
 
-**Security (9 fixes):** Plugin path traversal validation (PluginSystem + PluginRepository), HTML5 CSS XSS sanitization, Newgrounds JSON string escaping, HTTP form URL encoding, VulkanImage/PixelEditor integer overflow guards, HotReload/VulkanShader 60s compile timeout (was INFINITE), NetworkSystem MessageType range validation.
+**Security (9 fixes):** Plugin path traversal validation (PluginSystem + PluginRepository), HTML5 CSS XSS sanitization, a legacy web portal JSON string escaping, HTTP form URL encoding, VulkanImage/PixelEditor integer overflow guards, HotReload/VulkanShader 60s compile timeout (was INFINITE), NetworkSystem MessageType range validation.
 
 **Stability (10 fixes):** Dialogue recursion depth limit (128), Player Update() physics null guard (was early-returning and skipping all gameplay), animation keyframe div-by-zero + size mismatch guards, SWFLoader shape record iteration limit, navmesh polyPath underflow guard + cellSize div-by-zero, cone mesh height=0 guard, custom template stoi try-catch, script range attribute stof try-catch.
 
@@ -1281,7 +1281,7 @@ Second round of audit fixes across 18 files.
 ### Comprehensive Audit — 46 Fixes Applied
 Full codebase audit (96 findings documented in `docs/AUDIT_2026_02_12.md`), 46 fixes applied across 24 files covering security, stability, performance, and feature gaps.
 
-**Security (15 fixes):** Replaced std::system with CreateProcessA in shader compiler (command injection), validated NaN/Inf in network entity snapshots, HTML-escaped config fields in HTML5 export (XSS), fixed PlayerId u8 overflow, capped lobby player count, dropped malformed RPC packets, validated Newgrounds API parameters, added contains() checks for save file JSON, capped HTTP response at 16MB, replaced std::stoi with strtol, validated streaming paths against traversal, thread-safe CRC32 init via std::call_once, capped reliable outbox, fixed sequence wraparound arithmetic, replaced inet_addr with inet_pton.
+**Security (15 fixes):** Replaced std::system with CreateProcessA in shader compiler (command injection), validated NaN/Inf in network entity snapshots, HTML-escaped config fields in HTML5 export (XSS), fixed PlayerId u8 overflow, capped lobby player count, dropped malformed RPC packets, validated a legacy web portal API parameters, added contains() checks for save file JSON, capped HTTP response at 16MB, replaced std::stoi with strtol, validated streaming paths against traversal, thread-safe CRC32 init via std::call_once, capped reliable outbox, fixed sequence wraparound arithmetic, replaced inet_addr with inet_pton.
 
 **Stability (10 fixes):** Initialized Physics2D with World in PlayMode+Player, deferred entity destruction during script iteration, clear coroutines before hot-reload, per-entity baseOrthoSize (was static), null-guard physics after factory, index-based coroutine loop, vector division epsilon guard, Sequence node recursion limit, zero-length raycast guard, pure node evaluation depth limit, atomic reference counts.
 
@@ -1351,10 +1351,10 @@ Fixed `SpatialHashGrid::Insert()` inserting large colliders into ~170 cells per 
 ## 2026-02-10
 
 ### Tiered Save System
-Implemented a complete tiered save system with 20 slots (17 manual + 3 auto-save), three persistence tiers (SceneState/RunState/MetaProgression), pluggable backends (Local/Newgrounds/Steam), and an in-game save/load menu component. Added play mode diff dialog that shows entity changes on Stop with cherry-pick apply.
+Implemented a complete tiered save system with 20 slots (17 manual + 3 auto-save), three persistence tiers (SceneState/RunState/MetaProgression), pluggable backends (Local/a legacy web portal/Steam), and an in-game save/load menu component. Added play mode diff dialog that shows entity changes on Stop with cherry-pick apply.
 
 ### Feature Accessibility Fixes
-Wired up 14 missing runtime systems in the Player app. Extended the build pipeline to pack scripts, audio, dialogue, prefabs, and data assets. Added 6 new script binding files (Weather, Gameplay, UI, Particles, Prefab, Streaming) and 16 new visual script nodes. Connected Newgrounds bindings and level streaming into PlayMode.
+Wired up 14 missing runtime systems in the Player app. Extended the build pipeline to pack scripts, audio, dialogue, prefabs, and data assets. Added 6 new script binding files (Weather, Gameplay, UI, Particles, Prefab, Streaming) and 16 new visual script nodes. Connected a legacy web portal bindings and level streaming into PlayMode.
 
 ### Panel Reorganization
 Reorganized editor panels for better discoverability: Settings split into EditorSettings/ProjectSettings, Effects renamed to RetroEffects, Skybox expanded to Rendering panel. Moved collision groups, environment settings, and rendering settings to their logical homes.

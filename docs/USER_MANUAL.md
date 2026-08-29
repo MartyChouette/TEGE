@@ -3859,7 +3859,6 @@ A built-in vector drawing editor for creating 2D art assets directly in the engi
 - **Zoom and pan** with mouse wheel and middle mouse drag
 - **Property panel** for editing shape fill color, stroke color, stroke width
 - **SVG export** for use in web or other applications
-- **Flash symbol library** integration for Flash game revival workflow
 
 ---
 
