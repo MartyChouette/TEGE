@@ -256,14 +256,14 @@ flipbook playback on ANY material.
       static control quad shows ZERO drift, and the pre-F1 demo capture shows
       no material corruption. 112/112 tests. WEB: not yet (pbr.wgsl has its
       own material layout - WebGPU parity item).
-- [ ] F2 Waterfall 3D: sheet/strip authoring flow - user texture, scroll
+- [x] F2 Waterfall 3D (Examples/WaterFX, efdbbdc3): sheet/strip authoring flow - user texture, scroll
       rate, optional base-splash particle hookup + foam flipbook layer.
       Example scene with a curved fall.
-- [ ] F3 Waterfall/flow 2D: scrolling + flipbook sprites for side-view
+- [x] F3 Flow (Examples/WaterFX stream): scrolling + flipbook sprites for side-view
       falls and top-down streams.
-- [ ] F4 Spray/mist: looped flipbook billboards (particle emitter preset +
+- [x] F4 Spray/mist (WaterFX foam flipbook + mist emitter): looped flipbook billboards (particle emitter preset +
       authored sheet) - fountain spray, base mist, splash rings.
-- [ ] F5 Rain runoff: flow strips/emitters with a weather link - auto
+- [x] F5 Rain runoff (WaterFX, scripted weather link; component-level link still open): flow strips/emitters with a weather link - auto
       activate/scale with rain intensity (roof edges, gutters, drips).
       Works 2D and 3D.
 - [ ] F6 Canned simulation bake: run a REAL sim once at author time (the
