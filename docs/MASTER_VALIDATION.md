@@ -129,10 +129,55 @@ Additions from this audit needing a verification pass before marketing use:
       - the audit's "gated off" claim was false. Needs a correctness test,
       not enabling.
 
+## 4b. Import & house-system art verification (Marty 2026-08-29)
+
+Deep verification with REAL asset files, not synthetic data — a user's first
+hour is importing their own art. Each row: run it, record result, fix or
+document the limitation.
+
+3D import + rigging:
+- [ ] I1 GLTF/GLB: static mesh, multi-material submeshes, textures embedded +
+      external, correct scale/orientation.
+- [ ] I2 Rigged character end-to-end: skeleton import, skinning weights, GPU
+      skinning correctness, multiple animation clips, blend tree on imported
+      clips, retargeting between two rigs, morph targets.
+- [ ] I3 FBX / OBJ / DAE via Assimp: same battery as I1 on each format;
+      record which features survive each format (FBX units/axis quirks).
+- [ ] I4 Failure modes: corrupt file, missing textures, >10M-vert mesh (cap
+      message?), non-manifold geometry - clean errors, never crashes.
+
+2D import:
+- [ ] I5 Sprites: PNG with alpha, sprite sheet slicing, atlas packing round
+      trip, 9-slice, pixel-perfect at retro resolutions.
+- [ ] I6 Sprite animation from imported sheets (frame timing, flipping).
+
+Procedural / exotic imports:
+- [ ] I7 Gaussian splats: real .ply (INRIA) and .spz (Niantic) captures render
+      and integrate with art styles.
+- [ ] I8 SWF: one real Flash game through loader + transpiler to playable
+      (this doubles as the §4 Flash claim verification).
+- [ ] I9 VOX / PLY meshes if claimed - verify or strike from format list.
+
+Custom art into house systems (the "my own grass" test):
+- [ ] H1 Particle emitter with custom texture (the WindParticles leaf path) -
+      author texture, tint, verify on desktop AND web.
+- [ ] H2 Custom grass/shrub/tree appearance: what CAN a user author on
+      vegetation volumes (textures? colors? meshes?) - verify each knob,
+      document what is procedural-only.
+- [ ] H3 Water: custom scrolling-reflection texture, matcap texture on
+      materials, refl probe bake on user meshes.
+- [ ] H4 Skybox: user cubemap faces load (6-image set), procedural fallback.
+- [ ] H5 Terrain: user splat layer textures, heightmap import if claimed.
+- [ ] H6 Custom fonts: TTF/OTF in Text components + UI + subtitles.
+- [ ] H7 Audio: user WAV/OGG/MP3 in sources, footsteps, music channels.
+- [ ] H8 Wind interaction with user art: custom-texture particles + user
+      vegetation responding to WindSystem + Weather_SetWind from script.
+
 ## 5. Release gates
 
 Beta gate: S1-S3 done; T1, T2, T4 running in CI green; D1-D2 fixed.
 1.0 gate: all S-items done; T1-T8 green in CI; claim list §4 fully verified;
+import battery §4b fully run (I1-I9, H1-H8);
 docs consolidated (D3); master checklist re-run against the release build.
 
 ## Rejected findings (do not re-report)
