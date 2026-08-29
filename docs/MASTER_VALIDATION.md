@@ -131,6 +131,15 @@ Web improvement items (from T2):
       format change. Measured on the T2a mix: 257.5MB -> 124.2MB (52%
       smaller), byte-exact read-back, 112/112 tests, web player links.
 
+- [ ] W2 Mobile web gamepad overlay (Marty 2026-08-29): on mobile browsers
+      (pointer:coarse detection), the tap-to-start gesture requests
+      fullscreen + landscape orientation lock, and the existing touch
+      overlay (stick + jump, auto-appearing today) grows into a configurable
+      gamepad: stick + author-chosen action buttons + pause, driven through
+      InputActionMap so rebindable actions surface, not hardcoded keys.
+      Caveat recorded: iPhone Safari fullscreen is limited - overlay still
+      appears, fullscreen degrades gracefully.
+
 ## 4. Claim verification (rolling)
 
 The June FEATURE_AUDIT_CHECKLIST procedure stands: every public claim gets
