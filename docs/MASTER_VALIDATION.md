@@ -238,6 +238,12 @@ flipbook playback on ANY material.
 - [ ] F5 Rain runoff: flow strips/emitters with a weather link - auto
       activate/scale with rain intensity (roof edges, gutters, drips).
       Works 2D and 3D.
+- [ ] F6 Canned simulation bake: run a REAL sim once at author time (the
+      existing fluid sim / reaction-diffusion - already deterministic and
+      seeded), capture N frames, bake to a flipbook atlas (or mesh keyframe
+      sequence) with a seamless-loop pass (crossfade tail into head), play
+      back via F1 at zero runtime cost. "Bake Loop" button in the editor;
+      the baked-probes philosophy applied to motion.
 
 ## 5. Release gates
 
