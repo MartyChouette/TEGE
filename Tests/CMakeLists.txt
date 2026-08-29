@@ -94,6 +94,14 @@ target_link_libraries(StressTest PRIVATE
 
 target_compile_features(StressTest PRIVATE cxx_std_20)
 
+add_executable(TestEntityScale
+    Integration/TestEntityScale.cpp
+)
+target_link_libraries(TestEntityScale PRIVATE
+    EnjinEngine EnjinCore
+)
+target_compile_features(TestEntityScale PRIVATE cxx_std_20)
+
 # ---------------------------------------------------------------------------
 # Unit Test Framework
 # ---------------------------------------------------------------------------
@@ -259,3 +267,4 @@ add_test(NAME LayerPersistTest    COMMAND LayerPersistTest)
 add_test(NAME DungeonCrawlerTest  COMMAND DungeonCrawlerTest)
 add_test(NAME SMTTemplateTest     COMMAND SMTTemplateTest)
 add_test(NAME StressTest          COMMAND StressTest)
+add_test(NAME TestEntityScale     COMMAND TestEntityScale)

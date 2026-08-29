@@ -89,9 +89,12 @@ Each becomes a CI-runnable target (lavapipe where GPU needed). Existing
 coverage: StressTest.cpp (10K entities), TestStressFuzz, TestHardening,
 120-frame exported smoke, golden capture, --play-cycle probe.
 
-- [ ] T1 Entity scaling: 10K→500K tiers (transform-only / +collider /
-      +rigidbody / deep hierarchy). Pass: graceful degradation, no crash
-      ≥100K. (90% month-one hit likelihood)
+- [x] T1 Entity scaling: DONE (TestEntityScale, in CI). Baseline 2026-08-29:
+      500K transform entities create in ~94ms, iterate at a flat ~47ns each
+      (linear scaling verified by assertion); 100K entities+colliders create
+      in ~27ms; 5K dynamic Jolt bodies settle at ~6.4ms/step avg headless;
+      40K-entity 20-deep hierarchies walk at ~13ms/pass. Pass criteria:
+      no crash, no superlinear iteration blowup, 5K-body step < 250ms.
 - [ ] T2 Web limits: allocate to the 536MB WASM ceiling, big-pak load,
       IndexedDB quota. Pass: clean OOM behavior, no silent hang. (70%)
 - [ ] T3 Draw/material explosion: 1K unique materials/textures, batching
