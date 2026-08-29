@@ -140,6 +140,20 @@ Web improvement items (from T2):
       Caveat recorded: iPhone Safari fullscreen is limited - overlay still
       appears, fullscreen degrades gracefully.
 
+- [ ] R1 Record to GIF (Marty 2026-08-29): capture gameplay as a shareable
+      clip, two sources and two fidelities.
+      Sources: (a) GAME VIEW recording (editor button/hotkey, start-stop or
+      last-N-seconds), riding the existing RenderTarget::CaptureToPixels
+      readback the golden system already uses; (b) full editor window
+      ("record screen") as a second source option; (c) later, a
+      Gif_StartRecording script binding so exported GAMES can capture
+      player moments.
+      Fidelity options: GIF (fps 10-30, scale 100/50/25%%, 256-color
+      quantize - the shareable one) and PNG frame sequence (lossless full
+      fidelity, for trailers/editing). GIF89a+LZW encoder written in-engine
+      - no new dependency, plain open format per OPENNESS. Output to
+      project/captures/.
+
 ## 4. Claim verification (rolling)
 
 The June FEATURE_AUDIT_CHECKLIST procedure stands: every public claim gets
