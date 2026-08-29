@@ -1,4 +1,5 @@
 #include "Enjin/Build/AssetReader.h"
+#include <zlib.h>
 #include "Enjin/Build/AssetPacker.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Platform/Paths.h"
@@ -361,18 +362,28 @@ void AssetReader::XorDeobfuscate(std::vector<u8>& data) const {
 }
 
 std::vector<u8> AssetReader::DecompressData(const std::vector<u8>& compressed, u64 originalSize) const {
-    // Currently data is stored raw (no compression in AssetPacker yet).
-    // When compression is added to AssetPacker, add matching decompression here.
-    // The format distinguishes via compressedSize vs originalSize.
+    // W1 invariant (see AssetPacker::CompressData): equal sizes = raw bytes
+    // (including every pre-W1 pak), smaller = zlib deflate stream.
     if (compressed.size() == originalSize) {
         return compressed;  // stored raw
     }
-
-    // Size mismatch means data is compressed but we have no decompressor yet.
-    // Return empty to avoid silently returning corrupt (compressed) data.
-    ENJIN_LOG_ERROR(Build, "Compressed data detected (compressed=%zu, original=%llu) but decompression not implemented",
-                    compressed.size(), static_cast<unsigned long long>(originalSize));
-    return {};
+    if (compressed.size() > originalSize) {
+        ENJIN_LOG_ERROR(Build, "Pak entry larger than its original (%zu > %llu) - corrupt index",
+                        compressed.size(), static_cast<unsigned long long>(originalSize));
+        return {};
+    }
+    std::vector<u8> out(static_cast<usize>(originalSize));
+    uLongf outLen = static_cast<uLongf>(originalSize);
+    int rc = uncompress(out.data(), &outLen,
+                        compressed.data(), static_cast<uLong>(compressed.size()));
+    if (rc != Z_OK || outLen != originalSize) {
+        ENJIN_LOG_ERROR(Build, "Inflate failed (rc=%d, got %lu of %llu bytes)",
+                        rc, static_cast<unsigned long>(outLen),
+                        static_cast<unsigned long long>(originalSize));
+        return {};
+    }
+    return out;
 }
+
 
 } // namespace Enjin::Build

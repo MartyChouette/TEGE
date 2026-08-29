@@ -1,4 +1,5 @@
 #include "Enjin/Build/AssetPacker.h"
+#include <zlib.h>
 #include "Enjin/Logging/Log.h"
 #include <cstring>
 #include <fstream>
@@ -244,13 +245,29 @@ u32 AssetPacker::ComputeCRC32(const void* data, usize size) {
 }
 
 std::vector<u8> AssetPacker::CompressData(const void* data, usize size) const {
-    // Currently stores raw. To add zlib/miniz compression later,
-    // compress here and the format already supports it via
-    // compressedSize != originalSize in the index.
-    std::vector<u8> output(size);
+    // W1: zlib deflate with a STORE-IF-SMALLER invariant. A compressed entry
+    // is always strictly smaller than the original; anything else is stored
+    // raw. That makes the index self-describing with no format change:
+    // compressedSize < originalSize  -> deflate stream, inflate on read
+    // compressedSize == originalSize -> raw bytes (also every pre-W1 pak)
+    // A coincidental equal-size deflate result is stored raw instead, so the
+    // invariant can never lie.
+    std::vector<u8> output;
     if (size > 0) {
-        std::memcpy(output.data(), data, size);
+        uLongf bound = compressBound(static_cast<uLong>(size));
+        output.resize(static_cast<usize>(bound));
+        uLongf outLen = bound;
+        int rc = compress2(output.data(), &outLen,
+                           static_cast<const Bytef*>(data), static_cast<uLong>(size),
+                           Z_BEST_SPEED);
+        if (rc == Z_OK && outLen < size) {
+            output.resize(static_cast<usize>(outLen));
+            return output;
+        }
     }
+    // Incompressible (or empty, or zlib error): store raw
+    output.resize(size);
+    if (size > 0) std::memcpy(output.data(), data, size);
     return output;
 }
 

@@ -125,10 +125,11 @@ coverage: StressTest.cpp (10K entities), TestStressFuzz, TestHardening,
 - [ ] T11 Audio: 500 concurrent sources, 3D spatialization cost. (30%)
 
 Web improvement items (from T2):
-- [ ] W1 Pak compression: implement zlib deflate in AssetPacker::CompressData
-      + inflate in AssetReader (both sides; zlibstatic already linked; the
-      index already carries compressedSize/originalSize). Cuts web download
-      size substantially. Keep old raw paks readable (sizes equal = raw).
+- [x] W1 Pak compression: DONE. zlib deflate (Z_BEST_SPEED) with a
+      store-if-smaller invariant - compressed entries are strictly smaller,
+      equal sizes mean raw, so every pre-W1 pak stays readable with zero
+      format change. Measured on the T2a mix: 257.5MB -> 124.2MB (52%
+      smaller), byte-exact read-back, 112/112 tests, web player links.
 
 ## 4. Claim verification (rolling)
 

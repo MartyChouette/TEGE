@@ -114,6 +114,14 @@ target_link_libraries(EnjinEngine PUBLIC
     nanosvg
     nlohmann_json::nlohmann_json
     assimp::assimp
+    zlibstatic
+)
+
+# Pak compression (W1): zlib comes from assimp's bundled contrib copy.
+# zlib.h lives in the source tree, the generated zconf.h in the build tree.
+target_include_directories(EnjinEngine PRIVATE
+    ${assimp_SOURCE_DIR}/contrib/zlib
+    ${assimp_BINARY_DIR}/contrib/zlib
 )
 
 target_compile_features(EnjinEngine PUBLIC cxx_std_20)
