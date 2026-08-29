@@ -88,6 +88,7 @@
 #include "Enjin/Effects/ParticleSystem.h"
 #include <nlohmann/json.hpp>
 #include <emscripten.h>
+#include <emscripten/heap.h>
 #include <emscripten/html5.h>
 #include <string>
 #include <memory>
@@ -683,6 +684,26 @@ public:
             for (auto e : m_World->GetEntitiesWithComponent<Enjin::ECS::MeshColliderComponent>()) colliderEntities.push_back(e);
             m_Physics->SetColliderEntities(colliderEntities);
         }
+        // T2 web-limit guard: the wasm heap is hard-capped (536MB link max).
+        // Silent OOM near the ceiling is the worst failure mode on web, so
+        // check every ~5s and warn loudly at 80%/95% - once each.
+        if (++m_HeapCheckCounter >= 300) {
+            m_HeapCheckCounter = 0;
+            double used = static_cast<double>(emscripten_get_heap_size());
+            constexpr double kMax = 536870912.0;   // keep in sync with MAXIMUM_MEMORY
+            double frac = used / kMax;
+            if (frac > 0.95 && !m_Warned95) {
+                m_Warned95 = true;
+                ENJIN_LOG_ERROR(Player, "WASM heap at %.0f%% of the %dMB ceiling - "
+                                "out-of-memory crash imminent, reduce scene/assets",
+                                frac * 100.0, 512);
+            } else if (frac > 0.80 && !m_Warned80) {
+                m_Warned80 = true;
+                ENJIN_LOG_WARN(Player, "WASM heap at %.0f%% of the %dMB ceiling",
+                               frac * 100.0, 512);
+            }
+        }
+
         // Script scene requests (Scene_LoadScene / Scene_Restart), consumed at
         // this safe point - no scripts on the stack, nothing recorded yet.
         {
@@ -1767,6 +1788,9 @@ private:
     Enjin::u32 m_WindowHeight = 720;
     std::string m_StartScene;
     std::string m_CurrentWebScenePath;   // for Scene_Restart
+    int  m_HeapCheckCounter = 0;   // T2 heap-pressure guard
+    bool m_Warned80 = false;
+    bool m_Warned95 = false;
     Enjin::u32 m_PhysicsBackendType = 0;
     Enjin::u32 m_ProjectMode = 1;
 };

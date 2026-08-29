@@ -102,6 +102,14 @@ target_link_libraries(TestEntityScale PRIVATE
 )
 target_compile_features(TestEntityScale PRIVATE cxx_std_20)
 
+add_executable(TestPakScale
+    Integration/TestPakScale.cpp
+)
+target_link_libraries(TestPakScale PRIVATE
+    EnjinEngine EnjinCore
+)
+target_compile_features(TestPakScale PRIVATE cxx_std_20)
+
 # ---------------------------------------------------------------------------
 # Unit Test Framework
 # ---------------------------------------------------------------------------
@@ -268,3 +276,4 @@ add_test(NAME DungeonCrawlerTest  COMMAND DungeonCrawlerTest)
 add_test(NAME SMTTemplateTest     COMMAND SMTTemplateTest)
 add_test(NAME StressTest          COMMAND StressTest)
 add_test(NAME TestEntityScale     COMMAND TestEntityScale)
+add_test(NAME TestPakScale        COMMAND TestPakScale)

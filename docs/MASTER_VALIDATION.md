@@ -95,8 +95,14 @@ coverage: StressTest.cpp (10K entities), TestStressFuzz, TestHardening,
       in ~27ms; 5K dynamic Jolt bodies settle at ~6.4ms/step avg headless;
       40K-entity 20-deep hierarchies walk at ~13ms/pass. Pass criteria:
       no crash, no superlinear iteration blowup, 5K-body step < 250ms.
-- [ ] T2 Web limits: allocate to the 536MB WASM ceiling, big-pak load,
-      IndexedDB quota. Pass: clean OOM behavior, no silent hang. (70%)
+- [~] T2 Web limits: PARTIAL. Done: (a) TestPakScale in CI - 257MB pak
+      (2009 mixed files) packs in ~1.1s, reads back byte-exact in ~1.2s,
+      streaming memory verified; (b) the web player now warns loudly at
+      80%/95% of the wasm heap ceiling instead of silently dying near OOM.
+      FINDING: pak compression is NOT implemented (packer stores raw, reader
+      has no inflate; the index format supports it) - web games download
+      full-size. Improvement item W1 below. Remaining for browser eyeball:
+      allocation-storm to the actual ceiling, IndexedDB quota behavior.
 - [ ] T3 Draw/material explosion: 1K unique materials/textures, batching
       proof (draw calls << entities), VRAM ceiling probe. (75%)
 - [x] T4 Play/stop cycling: DONE (--play-cycle N M probe + CI step).
@@ -117,6 +123,12 @@ coverage: StressTest.cpp (10K entities), TestStressFuzz, TestHardening,
       10-scene cycle, request-during-load. (20%)
 - [ ] T10 UI canvas flood: 500 elements, 50-deep nesting, re-layout thrash. (25%)
 - [ ] T11 Audio: 500 concurrent sources, 3D spatialization cost. (30%)
+
+Web improvement items (from T2):
+- [ ] W1 Pak compression: implement zlib deflate in AssetPacker::CompressData
+      + inflate in AssetReader (both sides; zlibstatic already linked; the
+      index already carries compressedSize/originalSize). Cuts web download
+      size substantially. Keep old raw paks readable (sizes equal = raw).
 
 ## 4. Claim verification (rolling)
 
