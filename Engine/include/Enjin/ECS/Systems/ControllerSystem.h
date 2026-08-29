@@ -30,6 +30,17 @@ public:
     void SetInputActionMap(InputSystem::InputActionMap* map) { m_InputMap = map; }
     InputSystem::InputActionMap* GetInputActionMap() const { return m_InputMap; }
 
+    // ── Fixed-tick input latching (ADR-0005 controllers-on-tick) ──
+    // On fixed-timestep projects the runtime drives Update() from the
+    // SimulationClock step loop. Edge inputs (pressed-this-frame) and deltas
+    // are per-RENDER-frame concepts, so the runtime calls PumpFrameInput()
+    // once per rendered frame: edges latch ON, deltas accumulate. The first
+    // tick of the frame consumes them (cleared at end of Update), so a
+    // two-tick frame can't double-fire a jump and a zero-tick frame carries
+    // the press to the next tick instead of dropping it.
+    void SetExternalFixedClock(bool external) { m_ExternalFixedClock = external; }
+    void PumpFrameInput();
+
     // When set, controllers write to this entity's TransformComponent instead of the editor Camera.
     // The game view renders from CameraComponent entities, so this keeps the editor camera untouched.
     void SetGameCameraEntity(Entity entity) { m_GameCameraEntity = entity; }
@@ -81,6 +92,14 @@ private:
     bool IsSprintHeld();
     bool IsCrouchPressed();
     bool IsDashPressed();
+    // Latch-aware raw queries (used by PumpFrameInput and the non-latched path)
+    bool QueryJumpPressedNow();
+    bool QueryCrouchPressedNow();
+    bool QueryDashPressedNow();
+    // Look/zoom/click reads that respect the latch in external-clock mode
+    Math::Vector2 GetLookDelta();
+    Math::Vector2 GetZoomScroll();
+    bool IsPrimaryClickPressed();
     bool CheckGround(const Math::Vector3& position, f32& groundY, Entity selfEntity = 0);
     bool CheckGround2D(const Math::Vector3& position, f32& groundY, Entity& groundEntity,
                        f32 capsuleRadius = 0.3f, f32 capsuleHalfHeight = 0.5f);
@@ -107,6 +126,15 @@ private:
     bool m_DisableScreenShake = false;
     bool m_DisableFOVEffects = false;
     bool m_InvertMouseY = false;
+
+    // Fixed-tick input latches (see SetExternalFixedClock)
+    bool m_ExternalFixedClock = false;
+    bool m_LatchJump = false;
+    bool m_LatchCrouch = false;
+    bool m_LatchDash = false;
+    bool m_LatchPrimaryClick = false;
+    Math::Vector2 m_LatchMouseDelta{};
+    Math::Vector2 m_LatchScroll{};
 };
 
 } // namespace ECS

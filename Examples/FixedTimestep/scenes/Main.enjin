@@ -5880,7 +5880,7 @@
     "visible": true
    },
    "text": {
-    "text": "FIXED TIMESTEP DEMO\n1 = slow-mo (0.25x)   2 = hitstop (0.05x)\n3 = normal speed      E = kick the crates\nR = restart scene",
+    "text": "FIXED TIMESTEP DEMO\nWASD move   Space jump   mouse look (RMB)\n1 slow-mo  2 hitstop  3 normal  E kick  R reset\nTry different editor FPS caps - same feel",
     "fontSize": 40,
     "textureWidth": 1024,
     "textureHeight": 512,
@@ -5931,6 +5931,474 @@
       "enabled": true
      }
     ]
+   }
+  },
+  {
+   "id": 70,
+   "name": {
+    "name": "Player"
+   },
+   "transform": {
+    "position": [
+     0,
+     1.0,
+     6.0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     0.8,
+     1.6,
+     0.8
+    ],
+    "visible": true
+   },
+   "mesh": {
+    "vertexCount": 24,
+    "indexCount": 36,
+    "vertices": [
+     {
+      "position": [
+       -0.5,
+       -0.5,
+       0.5
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0,
+       0
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       -0.5,
+       0.5
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       1,
+       0
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       0.5,
+       0.5
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       1,
+       1
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       0.5,
+       0.5
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0,
+       1
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       -0.5,
+       -0.5
+      ],
+      "normal": [
+       0,
+       0,
+       -1
+      ],
+      "uv": [
+       0,
+       0
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       -0.5,
+       -0.5
+      ],
+      "normal": [
+       0,
+       0,
+       -1
+      ],
+      "uv": [
+       1,
+       0
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       0.5,
+       -0.5
+      ],
+      "normal": [
+       0,
+       0,
+       -1
+      ],
+      "uv": [
+       1,
+       1
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       0.5,
+       -0.5
+      ],
+      "normal": [
+       0,
+       0,
+       -1
+      ],
+      "uv": [
+       0,
+       1
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       -0.5,
+       0.5
+      ],
+      "normal": [
+       1,
+       0,
+       0
+      ],
+      "uv": [
+       0,
+       0
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       -0.5,
+       -0.5
+      ],
+      "normal": [
+       1,
+       0,
+       0
+      ],
+      "uv": [
+       1,
+       0
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       0.5,
+       -0.5
+      ],
+      "normal": [
+       1,
+       0,
+       0
+      ],
+      "uv": [
+       1,
+       1
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       0.5,
+       0.5
+      ],
+      "normal": [
+       1,
+       0,
+       0
+      ],
+      "uv": [
+       0,
+       1
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       -0.5,
+       -0.5
+      ],
+      "normal": [
+       -1,
+       0,
+       0
+      ],
+      "uv": [
+       0,
+       0
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       -0.5,
+       0.5
+      ],
+      "normal": [
+       -1,
+       0,
+       0
+      ],
+      "uv": [
+       1,
+       0
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       0.5,
+       0.5
+      ],
+      "normal": [
+       -1,
+       0,
+       0
+      ],
+      "uv": [
+       1,
+       1
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       0.5,
+       -0.5
+      ],
+      "normal": [
+       -1,
+       0,
+       0
+      ],
+      "uv": [
+       0,
+       1
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       0.5,
+       0.5
+      ],
+      "normal": [
+       0,
+       1,
+       0
+      ],
+      "uv": [
+       0,
+       0
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       0.5,
+       0.5
+      ],
+      "normal": [
+       0,
+       1,
+       0
+      ],
+      "uv": [
+       1,
+       0
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       0.5,
+       -0.5
+      ],
+      "normal": [
+       0,
+       1,
+       0
+      ],
+      "uv": [
+       1,
+       1
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       0.5,
+       -0.5
+      ],
+      "normal": [
+       0,
+       1,
+       0
+      ],
+      "uv": [
+       0,
+       1
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       -0.5,
+       -0.5
+      ],
+      "normal": [
+       0,
+       -1,
+       0
+      ],
+      "uv": [
+       0,
+       0
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       -0.5,
+       -0.5
+      ],
+      "normal": [
+       0,
+       -1,
+       0
+      ],
+      "uv": [
+       1,
+       0
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       -0.5,
+       0.5
+      ],
+      "normal": [
+       0,
+       -1,
+       0
+      ],
+      "uv": [
+       1,
+       1
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       -0.5,
+       0.5
+      ],
+      "normal": [
+       0,
+       -1,
+       0
+      ],
+      "uv": [
+       0,
+       1
+      ]
+     }
+    ],
+    "indices": [
+     0,
+     1,
+     2,
+     0,
+     2,
+     3,
+     4,
+     5,
+     6,
+     4,
+     6,
+     7,
+     8,
+     9,
+     10,
+     8,
+     10,
+     11,
+     12,
+     13,
+     14,
+     12,
+     14,
+     15,
+     16,
+     17,
+     18,
+     16,
+     18,
+     19,
+     20,
+     21,
+     22,
+     20,
+     22,
+     23
+    ]
+   },
+   "material": {
+    "baseColor": [
+     0.9,
+     0.85,
+     0.3
+    ],
+    "metallic": 0,
+    "roughness": 0.5
+   },
+   "thirdPerson": {
+    "moveSpeed": 6.0,
+    "jumpForce": 8.0,
+    "cameraDistance": 7.0,
+    "cameraHeight": 2.5
    }
   }
  ]

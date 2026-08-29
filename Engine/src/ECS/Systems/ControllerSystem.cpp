@@ -424,6 +424,15 @@ void ControllerSystem::Update(f32 deltaTime) {
             }
         }
     }
+
+    // Fixed-tick mode: this tick consumed the frame's latched edges/deltas.
+    // Later ticks in the same frame see nothing (no double-fired jumps, no
+    // double-applied mouse look); zero-tick frames keep latches for the next.
+    if (m_ExternalFixedClock) {
+        m_LatchJump = m_LatchCrouch = m_LatchDash = m_LatchPrimaryClick = false;
+        m_LatchMouseDelta = Math::Vector2(0.0f, 0.0f);
+        m_LatchScroll = Math::Vector2(0.0f, 0.0f);
+    }
 }
 
 Math::Vector2 ControllerSystem::GetMovementInput(const CharacterControllerBase& controller) {
@@ -470,7 +479,36 @@ Math::Vector2 ControllerSystem::GetMovementInput(const CharacterControllerBase& 
     return input;
 }
 
+void ControllerSystem::PumpFrameInput() {
+    if (!m_ExternalFixedClock) return;
+    // Once per RENDER frame: edges latch ON until a tick consumes them,
+    // deltas accumulate so no mouse movement is lost on zero-tick frames.
+    m_LatchJump   = m_LatchJump   || QueryJumpPressedNow();
+    m_LatchCrouch = m_LatchCrouch || QueryCrouchPressedNow();
+    m_LatchDash   = m_LatchDash   || QueryDashPressedNow();
+    m_LatchPrimaryClick = m_LatchPrimaryClick || Input::IsMouseButtonPressed(MouseButton::Left);
+    m_LatchMouseDelta = m_LatchMouseDelta + Input::GetMouseDelta();
+    m_LatchScroll = m_LatchScroll + Input::GetScrollDelta();
+}
+
+Math::Vector2 ControllerSystem::GetLookDelta() {
+    return m_ExternalFixedClock ? m_LatchMouseDelta : Input::GetMouseDelta();
+}
+
+Math::Vector2 ControllerSystem::GetZoomScroll() {
+    return m_ExternalFixedClock ? m_LatchScroll : Input::GetScrollDelta();
+}
+
+bool ControllerSystem::IsPrimaryClickPressed() {
+    return m_ExternalFixedClock ? m_LatchPrimaryClick : Input::IsMouseButtonPressed(MouseButton::Left);
+}
+
 bool ControllerSystem::IsJumpPressed() {
+    if (m_ExternalFixedClock) return m_LatchJump;
+    return QueryJumpPressedNow();
+}
+
+bool ControllerSystem::QueryJumpPressedNow() {
     if (m_InputMap) return m_InputMap->IsActionPressed(InputSystem::GameAction::Jump);
 
     bool pressed = Input::IsKeyPressed(KeyCode::Space);
@@ -500,6 +538,11 @@ bool ControllerSystem::IsSprintHeld() {
 }
 
 bool ControllerSystem::IsCrouchPressed() {
+    if (m_ExternalFixedClock) return m_LatchCrouch;
+    return QueryCrouchPressedNow();
+}
+
+bool ControllerSystem::QueryCrouchPressedNow() {
     if (m_InputMap) return m_InputMap->IsActionPressed(InputSystem::GameAction::Crouch);
 
     bool pressed = Input::IsKeyPressed(KeyCode::LeftControl) || Input::IsKeyPressed(KeyCode::C);
@@ -512,6 +555,11 @@ bool ControllerSystem::IsCrouchPressed() {
 }
 
 bool ControllerSystem::IsDashPressed() {
+    if (m_ExternalFixedClock) return m_LatchDash;
+    return QueryDashPressedNow();
+}
+
+bool ControllerSystem::QueryDashPressedNow() {
     if (m_InputMap) return m_InputMap->IsActionPressed(InputSystem::GameAction::Dash);
 
     bool pressed = Input::IsKeyPressed(KeyCode::LeftShift);
@@ -976,7 +1024,7 @@ void ControllerSystem::UpdateTopDown3D(Entity entity, TopDown3DController& ctrl,
     }
 
     // Handle click-to-move
-    if (ctrl.enableClickToMove && Input::IsMouseButtonPressed(MouseButton::Left)) {
+    if (ctrl.enableClickToMove && IsPrimaryClickPressed()) {
         // In a real implementation, you'd raycast to find world position
         // For now, we'll just use keyboard input
     }
@@ -1048,7 +1096,7 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
         // When mouse is captured (focus mode), orbit is always active.
         // When not captured (editor), requires RMB hold.
         if (Input::IsMouseCaptured() || Input::IsMouseButtonDown(MouseButton::Right)) {
-            Math::Vector2 mouseDelta = Input::GetMouseDelta();
+            Math::Vector2 mouseDelta = GetLookDelta();
             ctrl.cameraYaw += mouseDelta.x * ctrl.cameraSensitivity;
             f32 pitchSign = m_InvertMouseY ? 1.0f : -1.0f;
             ctrl.cameraPitch += mouseDelta.y * ctrl.cameraSensitivity * pitchSign;
@@ -1068,7 +1116,7 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
     }
 
     // Scroll to adjust camera distance
-    Math::Vector2 scroll = Input::GetScrollDelta();
+    Math::Vector2 scroll = GetZoomScroll();
     if (scroll.y != 0.0f) {
         ctrl.cameraDistance -= scroll.y * 0.5f;
         ctrl.cameraDistance = Math::Clamp(ctrl.cameraDistance, ctrl.cameraMinDistance, ctrl.cameraMaxDistance);
@@ -1289,7 +1337,7 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
     if (!ctrl.disableMouseLook) {
         bool lockYaw = ctrl.dungeonCrawlerMode && ctrl.gridMovement;
         if (Input::IsMouseCaptured() || Input::IsMouseButtonDown(MouseButton::Left)) {
-            Math::Vector2 mouseDelta = Input::GetMouseDelta();
+            Math::Vector2 mouseDelta = GetLookDelta();
 
             if (!lockYaw) {
                 ctrl.yaw -= mouseDelta.x * ctrl.mouseSensitivity;
@@ -1889,7 +1937,7 @@ void ControllerSystem::UpdateSurfaceAligned(Entity entity, SurfaceAlignedControl
     // Camera input: mouse/gamepad -> cameraYaw/cameraPitch (same as ThirdPerson)
     if (!ctrl.disableMouseLook) {
         if (Input::IsMouseCaptured() || Input::IsMouseButtonDown(MouseButton::Right)) {
-            Math::Vector2 mouseDelta = Input::GetMouseDelta();
+            Math::Vector2 mouseDelta = GetLookDelta();
             ctrl.cameraYaw += mouseDelta.x * ctrl.cameraSensitivity;
             f32 saPitchSign = m_InvertMouseY ? 1.0f : -1.0f;
             ctrl.cameraPitch += mouseDelta.y * ctrl.cameraSensitivity * saPitchSign;

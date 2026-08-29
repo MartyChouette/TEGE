@@ -982,11 +982,14 @@ public:
         // ADR-0005: the SimulationClock owns stepping. Fixed-timestep projects
         // get accumulator-driven ticks + interpolated dynamic-body transforms;
         // others get the legacy single variable step, unchanged.
+        m_ControllerSystem.PumpFrameInput();
         m_SimClock.Tick(m_World.get(), deltaTime, [this](Enjin::f32 stepDt) {
             if (m_Physics) m_Physics->Update(stepDt);
             if (m_Physics2D) m_Physics2D->Update(stepDt);
             // OnFixedUpdate lands exactly once per physics tick
             if (m_SimClock.IsEnabled()) m_ScriptSystem.FixedUpdate(stepDt);
+            // Controllers on the tick: deterministic movement/jumps
+            if (m_SimClock.IsEnabled()) m_ControllerSystem.Update(stepDt);
         });
 
         // Dispatch 3D collision events to visual scripts and gameplay systems
@@ -994,7 +997,8 @@ public:
             m_World.get(), m_Physics.get(), &m_VisualScriptSystem, deltaTime, m_DeferredDestroys);
 
         // --- Controllers & vegetation ---
-        m_ControllerSystem.Update(deltaTime);
+        // Fixed-timestep projects tick controllers inside the SimClock loop
+        if (!m_SimClock.IsEnabled()) m_ControllerSystem.Update(deltaTime);
         // TotK-style surface response: footstep/impact sound + particle from the
         // material of the surface walked on / struck (3D physics path).
         m_SurfaceResponseSystem.Initialize(&m_SimpleAudio, m_RenderSystem, m_Physics.get(), m_Physics2D.get());
@@ -2381,6 +2385,7 @@ private:
         Enjin::Scripting::SetTimeScale(1.0f);
         m_SimClock.Reset();
         m_ScriptSystem.SetExternalFixedClock(m_SimClock.IsEnabled());
+        m_ControllerSystem.SetExternalFixedClock(m_SimClock.IsEnabled());
 
         // Enable all gameplay systems
         m_ControllerSystem.SetEnabled(true);

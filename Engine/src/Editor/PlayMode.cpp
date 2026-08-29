@@ -153,6 +153,7 @@ void PlayMode::Play() {
     }
     m_SimClock.Reset();
     m_ScriptSystem.SetExternalFixedClock(m_SimClock.IsEnabled());
+    m_ControllerSystem.SetExternalFixedClock(m_SimClock.IsEnabled());
 
     if (m_State.load(std::memory_order_relaxed) == PlayState::Playing) {
         return;
@@ -641,6 +642,7 @@ void PlayMode::StartReplay(Gameplay::ReplayData&& data) {
                          static_cast<f32>(m_ReplayData.simTicksPerSecond));
     m_SimClock.Reset();
     m_ScriptSystem.SetExternalFixedClock(m_SimClock.IsEnabled());
+    m_ControllerSystem.SetExternalFixedClock(m_SimClock.IsEnabled());
 }
 
 void PlayMode::Stop() {
@@ -964,11 +966,15 @@ void PlayMode::Update(f32 deltaTime) {
             ENJIN_PROFILE_SCOPE("Physics");
             // ADR-0005: SimulationClock owns stepping (fixed tick + interpolation
             // when the project enables it; legacy variable step otherwise).
+            // Controllers pump per-frame input (edges/deltas latch) before ticks run
+            m_ControllerSystem.PumpFrameInput();
             m_SimClock.Tick(m_World, deltaTime, [this](f32 stepDt) {
                 if (m_Physics) m_Physics->Update(stepDt);
                 if (m_Physics2D) m_Physics2D->Update(stepDt);
                 // OnFixedUpdate lands exactly once per physics tick
                 if (m_SimClock.IsEnabled()) m_ScriptSystem.FixedUpdate(stepDt);
+                // Controllers on the tick: deterministic movement/jumps
+                if (m_SimClock.IsEnabled()) m_ControllerSystem.Update(stepDt);
             });
         }
 
@@ -980,7 +986,8 @@ void PlayMode::Update(f32 deltaTime) {
 
         {
             ENJIN_PROFILE_SCOPE("ECS");
-            m_ControllerSystem.Update(deltaTime);
+            // Fixed-timestep projects tick controllers inside the SimClock loop
+            if (!m_SimClock.IsEnabled()) m_ControllerSystem.Update(deltaTime);
             m_FlowerSystem.Update(deltaTime);
             // TotK-style surface response: footstep/impact sound + particle from
             // the material of the surface walked on / struck. 3D physics path.
