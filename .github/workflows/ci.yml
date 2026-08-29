@@ -132,10 +132,10 @@ jobs:
         # post-warmup baseline + 50% + 128MB. Local baseline 2026-08-29: dead
         # flat at ~562 MB over 25 cycles.
         env:
-          VK_DRIVER_FILES: ${{ github.workspace }}\mesad\lvp_icd.x86_64.json
-          VK_ICD_FILENAMES: ${{ github.workspace }}\mesad\lvp_icd.x86_64.json
+          VK_DRIVER_FILES: ${{ github.workspace }}\mesa\x64\lvp_icd.x86_64.json
+          VK_ICD_FILENAMES: ${{ github.workspace }}\mesa\x64\lvp_icd.x86_64.json
         run: |
-          & buildin\Release\EnjinEditor.exe "${{ github.workspace }}\Tests\GoldenScene\GoldenScene.enjinproject" --play --play-cycle 40 15 2>&1 | ForEach-Object { "$_" }
+          & build\bin\Release\EnjinEditor.exe "${{ github.workspace }}\Tests\GoldenScene\GoldenScene.enjinproject" --play --play-cycle 40 15 2>&1 | ForEach-Object { "$_" }
           if ($LASTEXITCODE -ne 0) { throw "play-cycle stress failed with code $LASTEXITCODE" }
 
       - name: Exported-game smoke (pack + run the Windows player headless)
