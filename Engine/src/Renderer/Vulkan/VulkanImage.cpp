@@ -330,6 +330,7 @@ bool VulkanImage::CreateFromData(
             vkDestroyCommandPool(m_Context->GetDevice(), tempPool, nullptr);
             vkFreeMemory(m_Context->GetDevice(), stagingBufferMemory, nullptr);
             vkDestroyBuffer(m_Context->GetDevice(), stagingBuffer, nullptr);
+            Destroy();   // S1: release m_Image/m_Memory too, not just staging
             return false;
         }
         vkQueueWaitIdle(m_Context->GetGraphicsQueue());

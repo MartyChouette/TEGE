@@ -3169,8 +3169,16 @@ void RenderSystem::Initialize() {
     } else {
         // Register default white texture so empty material slots have a valid fallback
         if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
-            m_DefaultBindlessHandle = m_BindlessManager->RegisterTexture(
+            u32 h = m_BindlessManager->RegisterTexture(
                 m_DefaultWhiteTexture->GetImageView(), m_DefaultWhiteTexture->GetSampler());
+            if (h != UINT32_MAX) {
+                m_DefaultBindlessHandle = h;
+            } else {
+                // First registration into a million-slot pool cannot realistically
+                // fail, but a garbage default handle would corrupt every fallback
+                // sample - keep the previous default (0) and say so loudly. (S3)
+                ENJIN_LOG_ERROR(Renderer, "Default white texture bindless registration failed");
+            }
         }
     }
 
