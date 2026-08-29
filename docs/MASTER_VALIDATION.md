@@ -187,11 +187,40 @@ Custom art into house systems (the "my own grass" test):
 - [ ] H8 Wind interaction with user art: custom-texture particles + user
       vegetation responding to WindSystem + Weather_SetWind from script.
 
+## 4c. Gameplay primitives battery (Marty 2026-08-29)
+
+Ladders, ropes, chains, doors - in BOTH 2D and 3D. Survey verdict: mostly to
+BUILD, not verify. Current state, honestly: no ladder/climb support in any
+controller; no rope/chain component (distance + hinge joints exist as script
+building blocks); doors exist only as the Lock component's key-gating (no
+motion). Acceptance for every item: a working example scene, editor-authored
+(component + inspector + help + serialization), working in editor play AND
+exported desktop AND web.
+
+- [ ] G1 Ladder 3D: climbable volume/component; FirstPerson + ThirdPerson
+      controllers gain a climb state (enter/exit, up/down, jump-off).
+- [ ] G2 Ladder 2D: Platformer2D climb state (the Mario/Mega Man ladder);
+      grid-movement variant for the dungeon crawler.
+- [ ] G3 Rope 3D: anchored rope the player/objects can hang from or that
+      objects dangle on - verlet or jointed-segment sim, renders as a curve,
+      interacts with physics (swing, cut?).
+- [ ] G4 Rope 2D: side-scroller swing rope (attach, pendulum swing with
+      momentum carry-off, release).
+- [ ] G5 Chain 3D: jointed rigid links (distinct from rope: rigid segments,
+      heavy sag) - hinge/distance-joint composition + a spawner component.
+- [ ] G6 Chain 2D: Box2D revolute-joint chain (drawbridge chains, flails).
+- [ ] G7 Door 3D: hinged door component (open/close/locked states, interact
+      to open, auto-close option, physics-blocking while shut) - integrates
+      the existing Lock component for keys.
+- [ ] G8 Door 2D: sliding/hinged 2D door + trigger-opened variant; same Lock
+      integration.
+
 ## 5. Release gates
 
 Beta gate: S1-S3 done; T1, T2, T4 running in CI green; D1-D2 fixed.
 1.0 gate: all S-items done; T1-T8 green in CI; claim list §4 fully verified;
-import battery §4b fully run (I1-I7, I9, H1-H8);
+import battery §4b fully run (I1-I7, I9, H1-H8); gameplay primitives G1-G8
+shipped with example scenes;
 docs consolidated (D3); master checklist re-run against the release build.
 
 ## Rejected findings (do not re-report)
