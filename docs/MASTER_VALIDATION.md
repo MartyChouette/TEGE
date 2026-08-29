@@ -225,10 +225,14 @@ mechanism), particle emitters take custom textures, and rain is queryable
 (Render_IsRainActive) - the missing core primitive is generic UV scroll +
 flipbook playback on ANY material.
 
-- [ ] F1 Material UV animation: per-material scroll speed (x/y) + flipbook
-      (atlas frame stepping: frame count, fps, loop) on the standard
-      material - the enabling primitive for everything below. Rides the
-      existing uvRegionOffset/uvRegionScale atlas fields.
+- [x] F1 Material UV animation: DONE (desktop). Per-material scroll (UV/s)
+      + flipbook (cols x rows sheet, fps) on the standard material, computed
+      in-shader from windData.w time - zero CPU cost. MaterialGPU 128->144
+      (row 9), full lockstep verified: pixel-measured probe shows the scroll
+      quad moving (2548px between t=10/t=60 captures) while an identical
+      static control quad shows ZERO drift, and the pre-F1 demo capture shows
+      no material corruption. 112/112 tests. WEB: not yet (pbr.wgsl has its
+      own material layout - WebGPU parity item).
 - [ ] F2 Waterfall 3D: sheet/strip authoring flow - user texture, scroll
       rate, optional base-splash particle hookup + foam flipbook layer.
       Example scene with a curved fall.

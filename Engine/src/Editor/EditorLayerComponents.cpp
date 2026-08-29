@@ -757,6 +757,30 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
                 ImGui::TreePop();
             }
 
+            // F1: authored UV animation - scrolling loops (waterfalls, conveyor
+            // belts, rain runoff) and flipbook playback on any material.
+            if (ImGui::TreeNode("UV Animation (scroll + flipbook)")) {
+                ImGui::DragFloat2("Scroll Speed (UV/s)", &material->uvScrollSpeed.x, 0.005f, -8.0f, 8.0f);
+                ImGui::SetItemTooltip("Slides the base texture continuously - the classic\n"
+                                      "waterfall trick. Negative = opposite direction.");
+                int fbCols = static_cast<int>(material->flipbookCols);
+                int fbRows = static_cast<int>(material->flipbookRows);
+                bool fbChanged = false;
+                fbChanged |= ImGui::DragInt("Flipbook Columns", &fbCols, 1, 0, 256);
+                fbChanged |= ImGui::DragInt("Flipbook Rows", &fbRows, 1, 0, 256);
+                if (fbChanged) {
+                    material->flipbookCols = static_cast<u32>(fbCols < 0 ? 0 : fbCols);
+                    material->flipbookRows = static_cast<u32>(fbRows < 0 ? 0 : fbRows);
+                }
+                if (material->flipbookCols > 0 && material->flipbookRows > 0) {
+                    ImGui::DragFloat("Flipbook FPS", &material->flipbookFps, 0.5f, 0.5f, 60.0f);
+                    ImGui::TextDisabled("%u frames looping", material->flipbookCols * material->flipbookRows);
+                }
+                ImGui::SetItemTooltip("Steps through a grid sheet of the base color texture -\n"
+                                      "baked water loops, fire, sprays. 0x0 = off.");
+                ImGui::TreePop();
+            }
+
             // Helper: accept image drag-drop on last widget
             auto textureDrop = [&](std::string& pathField, i32& cacheField) {
                 if (ImGui::BeginDragDropTarget()) {

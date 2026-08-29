@@ -154,6 +154,11 @@ struct MaterialEntry {
     float matScrollReflSpeedU;
     float matScrollReflSpeedV;
     float matScrollReflStrength;
+    // UV animation (row 9 - F1): base-UV scroll + flipbook, time = windData.w
+    float matUvScrollU;
+    float matUvScrollV;
+    uint  matFlipbookGrid;   // cols<<16|rows, 0 = off
+    float matFlipbookFps;
 };
 layout(std430, binding = 2) readonly buffer MaterialSSBO {
     MaterialEntry materialEntries[];
@@ -1019,6 +1024,21 @@ void main() {
 
     // Resolve UV for affine texturing (undo the w-multiply from vertex shader)
     vec2 uv = fragUV / fragClipW;
+
+    // F1 UV animation: authored looped motion (waterfalls, flows, conveyor
+    // belts). Scroll slides the UV continuously; flipbook steps through a
+    // cols x rows sheet. Time comes from windData.w (already uploaded).
+    if (materialData.matUvScrollU != 0.0 || materialData.matUvScrollV != 0.0) {
+        uv += vec2(materialData.matUvScrollU, materialData.matUvScrollV) * lighting.windData.w;
+    }
+    if (materialData.matFlipbookGrid != 0u) {
+        float cols = float(materialData.matFlipbookGrid >> 16);
+        float rows = float(materialData.matFlipbookGrid & 0xFFFFu);
+        float frameCount = cols * rows;
+        float frame = mod(floor(lighting.windData.w * materialData.matFlipbookFps), frameCount);
+        vec2 cell = vec2(mod(frame, cols), floor(frame / cols));
+        uv = (fract(uv) + cell) / vec2(cols, rows);
+    }
 
     // Trim sheet / atlas region: tile the mesh UVs inside the material's
     // atlas sub-rect (fract keeps tiling; the remap picks the strip).

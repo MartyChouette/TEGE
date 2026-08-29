@@ -133,6 +133,14 @@ struct MaterialComponent {
     mutable u64 cachedSortKey = 0;
 
     // Texture cache dirty flag (checked every frame in RenderEntity)
+    // F1 UV animation authoring: scroll speed in UV/sec, flipbook grid + fps.
+    // Scroll animates the base UV continuously; flipbook steps through a
+    // cols x rows sheet of the base color texture. Both zero-cost when unset.
+    Math::Vector2 uvScrollSpeed = Math::Vector2(0.0f, 0.0f);
+    u32 flipbookCols = 0;
+    u32 flipbookRows = 0;
+    f32 flipbookFps = 10.0f;
+
     mutable bool textureCacheDirty = true;
 
     // ── Cold data (only touched on texture load, serialization, or inspector) ──
@@ -304,9 +312,25 @@ struct alignas(16) MaterialGPU {
     alignas(4) f32 scrollReflSpeedV = 0.0f;
     alignas(4) f32 scrollReflStrength = 0.0f;
 
+    // UV animation (row 9, offset 128 - F1): base-UV scroll + flipbook atlas
+    // playback, both driven by shader time (windData.w). flipbookGrid packs
+    // cols<<16|rows; 0 = no flipbook. Keep in lockstep with the shader
+    // MaterialEntry struct and BOTH size checks in TestMaterial (the
+    // static_assert AND the runtime test - CI was red for two days when only
+    // one was updated).
+    alignas(4) f32 uvScrollU = 0.0f;
+    alignas(4) f32 uvScrollV = 0.0f;
+    alignas(4) u32 flipbookGrid = 0;
+    alignas(4) f32 flipbookFps = 0.0f;
+
     static MaterialGPU FromComponent(const MaterialComponent& mat) {
         MaterialGPU gpu;
         gpu.samplerIdx = (mat.textureFilterOverride <= 3u) ? mat.textureFilterOverride : 0u;
+        gpu.uvScrollU = mat.uvScrollSpeed.x;
+        gpu.uvScrollV = mat.uvScrollSpeed.y;
+        gpu.flipbookGrid = (mat.flipbookCols > 0 && mat.flipbookRows > 0)
+            ? ((mat.flipbookCols & 0xFFFFu) << 16) | (mat.flipbookRows & 0xFFFFu) : 0u;
+        gpu.flipbookFps = mat.flipbookFps;
         // Pack the atlas region (identity -> 0 so untouched materials skip it)
         if (mat.uvRegionOffset.x != 0.0f || mat.uvRegionOffset.y != 0.0f ||
             mat.uvRegionScale.x != 1.0f || mat.uvRegionScale.y != 1.0f) {

@@ -213,6 +213,14 @@ json SerializeMaterialComponent(const ECS::MaterialComponent& material) {
     j["baseColorTexturePath"] = material.baseColorTexturePath;
     j["uvRegionOffset"] = { RF(material.uvRegionOffset.x), RF(material.uvRegionOffset.y) };
     j["uvRegionScale"] = { RF(material.uvRegionScale.x), RF(material.uvRegionScale.y) };
+    if (material.uvScrollSpeed.x != 0.0f || material.uvScrollSpeed.y != 0.0f) {
+        j["uvScrollSpeed"] = { RF(material.uvScrollSpeed.x), RF(material.uvScrollSpeed.y) };
+    }
+    if (material.flipbookCols > 0 && material.flipbookRows > 0) {
+        j["flipbookCols"] = material.flipbookCols;
+        j["flipbookRows"] = material.flipbookRows;
+        j["flipbookFps"] = RF(material.flipbookFps);
+    }
     j["normalTexturePath"] = material.normalTexturePath;
     j["metallicRoughnessTexturePath"] = material.metallicRoughnessTexturePath;
     j["emissiveTexturePath"] = material.emissiveTexturePath;
@@ -477,6 +485,11 @@ ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
         material.uvRegionOffset = Math::Vector2(j["uvRegionOffset"][0].get<f32>(), j["uvRegionOffset"][1].get<f32>());
     if (j.contains("uvRegionScale") && j["uvRegionScale"].is_array() && j["uvRegionScale"].size() >= 2)
         material.uvRegionScale = Math::Vector2(j["uvRegionScale"][0].get<f32>(), j["uvRegionScale"][1].get<f32>());
+    if (j.contains("uvScrollSpeed") && j["uvScrollSpeed"].is_array() && j["uvScrollSpeed"].size() >= 2)
+        material.uvScrollSpeed = Math::Vector2(j["uvScrollSpeed"][0].get<f32>(), j["uvScrollSpeed"][1].get<f32>());
+    if (j.contains("flipbookCols")) { u32 v = j["flipbookCols"].get<u32>(); if (v <= 256) material.flipbookCols = v; }
+    if (j.contains("flipbookRows")) { u32 v = j["flipbookRows"].get<u32>(); if (v <= 256) material.flipbookRows = v; }
+    if (j.contains("flipbookFps")) material.flipbookFps = j["flipbookFps"].get<f32>();
     if (j.contains("baseColorTexturePath")) {
         material.baseColorTexturePath = SafeStr(j["baseColorTexturePath"], MAX_STR_PATH);
     }
