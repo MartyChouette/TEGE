@@ -41,32 +41,45 @@ Top 5 reasons someone picks TEGE (differentiator audit, source-verified):
 5. Time architecture: fixed tick + interpolation + Time_SetScale + per-entity
    bullet time as primitives.
 
-## 2. Stability actions (verified open, ranked)
+## 2. Stability actions (personally verified 2026-08-29)
 
-Ship-blockers for 1.0 — none are active crashes in default paths.
+The first draft of this section republished agent findings; line-by-line
+source verification then rejected most of them. What follows is only what a
+human-level read of the code confirms.
 
-- [ ] S1 (HIGH) VulkanImage layout stays UNDEFINED when the staging submit
-      fails; image is then marked valid and later sampled. Mark the image
-      invalid on submit failure. Renderer/Vulkan/VulkanImage.cpp ~155-360.
-- [ ] S2 (HIGH) adr-0004 contract hardening: GetStorage/GetStorageMut read
-      m_ComponentStorages unlocked; safe only while workers never mutate.
-      Add a debug-build owner-thread assert on the storage-map insert path and
-      a loud comment; flag any future job system as a redesign trigger.
-- [ ] S3 (MED) RegisterTexture return not checked at 3 of 6 call sites
-      (RenderSystem.cpp:3172, 9815, 12303 — the text/script-RT sites already
-      check). 1M-handle pool makes exhaustion pathological; add the checks.
-- [ ] S4 (MED) Material SSBO rebuilds on a coarse dirty flag; track
-      per-entity dirtiness (perf, not correctness).
-- [ ] S5 (MED) GetMaterialIndex is an unordered_map lookup per entity per
-      frame; replace with an EntityIndex-addressed vector.
-- [ ] S6 (LOW) Terrain splatmap size math unguarded (safe on 64-bit; add a
-      cap or a comment). SceneSerializer.cpp:824.
-- [ ] S7 (LOW) Play→stop→play skinned transition is mitigated but fragile;
-      covered by the stress battery below (T4) rather than code change now.
+Verified real, worth doing:
+- [ ] S1 (LOW) VulkanImage::CreateFromData leaks m_Image/m_Memory on the
+      submit-failure cleanup path (the failure itself is handled correctly:
+      checked submit, returns false, no view created). VulkanImage.cpp ~327.
+- [ ] S2 (LOW-MED, perf) GetMaterialIndex is an unordered_map find per
+      entity per draw; an EntityIndex-addressed vector is cheaper.
+      RenderSystem.cpp:10009.
+- [ ] S3 (TRIVIAL) One unchecked RegisterTexture at init (default white
+      texture, RenderSystem.cpp:3172); the other five sites check. Add the
+      check for symmetry.
+- [ ] S4 (TEST) Play->stop->play skinned transition: mitigated historically,
+      keep covered by stress test T4 rather than new code.
+
+Verified already-handled (first draft claimed otherwise):
+- VulkanImage UNDEFINED-layout-marked-valid: false — submit failure is
+  checked (VK-C3 fix) and the image is never marked valid.
+- adr-0004 storage races: mutation paths already call AssertOwnerThread()
+  (World.h:103,118) — the proposed guard exists.
+- Material SSBO "rebuilds every frame": false — a dirty-flag fast path
+  re-uploads a cached staging buffer on clean frames (RenderSystem.cpp:9901),
+  per-frame upload being required by frames-in-flight.
+- Terrain splatmap overflow: already guarded (kMaxGridElements cap + size
+  check, SceneSerializer.cpp:988-992).
+- Text texture cache growth: bounded — clears on scene load, erases on
+  entity destroy.
+
+Honest bottom line: no verified crash bugs or data-loss paths are currently
+open. The engine's stability posture is BETTER than the audit reports said.
+The real risks are the untested limits in section 3, not known defects.
 
 Documentation corrections (credibility, do with the next docs pass):
-- [ ] D1 `.enjscene` → `.enjin` in 4 doc locations.
-- [ ] D2 BUILD.md still calls ray tracing "placeholder stubs" — it ships.
+- [ ] D1 `.enjscene` -> `.enjin` in 4 doc locations.
+- [ ] D2 BUILD.md still calls ray tracing "placeholder stubs" - it ships.
 - [ ] D3 Three overlapping manuals; declare USER_MANUAL.md canonical.
 - [ ] D4 Binding/test counts inconsistent between README and site copy.
 
@@ -108,11 +121,13 @@ Additions from this audit needing a verification pass before marketing use:
       export (files verified present; full-path run not yet exercised).
 - [ ] Collaborative editing: two-editor session (12 impl files verified;
       needs a live two-instance test).
-- [ ] Motion matching: exercised in a scene (code present, maturity unknown).
+- [ ] Motion matching: code exists but is REFERENCED NOWHERE outside its own
+      files - currently unwired. Do not claim; wire it or park it.
 - [ ] Ragdoll/vehicle/soft-body: label as scaffolded/arcade/stub — do NOT
       claim as features.
-- [ ] GPU culling: written but gated off — either enable behind a flag and
-      test, or exclude from claims.
+- [ ] GPU culling: ENABLED by default with CPU fallback (RenderSystem.h:1638)
+      - the audit's "gated off" claim was false. Needs a correctness test,
+      not enabling.
 
 ## 5. Release gates
 
@@ -123,10 +138,15 @@ docs consolidated (D3); master checklist re-run against the release build.
 ## Rejected findings (do not re-report)
 
 Verified false during this audit cycle: cgltf strcpy RCE (bounded since
-April), per-frame water/parallax mesh regeneration (water displaces in
-shader; parallax moves transforms), "--play-cycle probe doesn't exist"
-(EditorLayer.cpp:877), "replay frames unbounded" (72,000-frame cap at the
-recording site), "text texture cache unbounded" (clears on scene load,
-erases on entity destroy), undo/redo unbounded (capped). Historic pattern
-holds: agent audit findings require targeted re-verification — this cycle's
-false-positive rate was ~15%.
+April), per-frame water/parallax mesh regeneration, "--play-cycle probe
+doesn't exist" (EditorLayer.cpp:877), "replay frames unbounded" (72,000-frame
+cap), "text texture cache unbounded" (scene-clear + destroy-erase), undo/redo
+unbounded (capped), VulkanImage UNDEFINED-marked-valid (submit checked, VK-C3),
+adr-0004 guard missing (AssertOwnerThread exists on all mutation paths),
+material SSBO rebuilt-every-frame (dirty fast path works), splatmap overflow
+(kMaxGridElements guard), RegisterTexture unchecked at 3 sites (only the
+init-time default is unchecked), GPU culling "gated off" (default ON with CPU
+fallback). Motion matching downgraded from "experimental feature" to UNWIRED.
+Final false-positive rate across the four reports: roughly a THIRD of
+actionable findings. The rule stands and is now doubly earned: no agent
+finding enters this document without a human-level read of the cited code.
