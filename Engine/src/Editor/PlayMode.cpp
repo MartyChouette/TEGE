@@ -988,6 +988,7 @@ void PlayMode::Update(f32 deltaTime) {
             ENJIN_PROFILE_SCOPE("ECS");
             // Fixed-timestep projects tick controllers inside the SimClock loop
             if (!m_SimClock.IsEnabled()) m_ControllerSystem.Update(deltaTime);
+            m_ControllerSystem.UpdateRealtime(deltaTime);  // bullet-time controllers
             m_FlowerSystem.Update(deltaTime);
             // TotK-style surface response: footstep/impact sound + particle from
             // the material of the surface walked on / struck. 3D physics path.

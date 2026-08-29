@@ -54,6 +54,14 @@ class FixedTimeDemo : TegeBehavior {
             Time_SetScale(1.0f);
             Debug_Log("Time scale 1.0x (normal) - fixed ticks so far: " + fixedTicks);
         }
+        if (Input_GetKeyDown(Key::Num4)) {
+            // BULLET TIME: world at 0.15x, the player at normal speed.
+            uint64 player = Scene_FindEntity("Player");
+            bool on = !Controller_GetIgnoreTimeScale(player);
+            Controller_SetIgnoreTimeScale(player, on);
+            Time_SetScale(on ? 0.15f : 1.0f);
+            Debug_Log(on ? "BULLET TIME: world 0.15x, you 1.0x" : "Bullet time off");
+        }
         if (Input_GetKeyDown(Key::E)) {
             // Kick every crate toward +Y with some sideways scatter
             for (int i = 0; i < 10; i++) {

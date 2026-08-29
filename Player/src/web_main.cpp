@@ -712,6 +712,7 @@ public:
 
         // Fixed-timestep projects tick controllers inside the SimClock loop
         if (!m_SimClock.IsEnabled()) m_ControllerSystem.Update(deltaTime);
+        m_ControllerSystem.UpdateRealtime(deltaTime);  // bullet-time controllers
 
         // Only use fly camera if no character controller exists in the scene
         if (m_CameraController && m_CameraController->IsEnabled()) {

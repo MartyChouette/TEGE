@@ -18,6 +18,11 @@ struct CharacterControllerBase {
 
     // State
     bool isEnabled = true;
+    // Bullet time: run THIS controller at wall-clock rate while Time_SetScale
+    // slows the world. The runtime updates flagged controllers per rendered
+    // frame with dt divided by the global scale, so movement, jumps, and
+    // gravity all integrate at normal speed - no compensation math needed.
+    bool ignoreGlobalTimeScale = false;
     bool isGrounded = true;
     Math::Vector3 velocity = Math::Vector3(0.0f, 0.0f, 0.0f);
 

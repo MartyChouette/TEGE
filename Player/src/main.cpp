@@ -999,6 +999,7 @@ public:
         // --- Controllers & vegetation ---
         // Fixed-timestep projects tick controllers inside the SimClock loop
         if (!m_SimClock.IsEnabled()) m_ControllerSystem.Update(deltaTime);
+        m_ControllerSystem.UpdateRealtime(deltaTime);  // bullet-time controllers
         // TotK-style surface response: footstep/impact sound + particle from the
         // material of the surface walked on / struck (3D physics path).
         m_SurfaceResponseSystem.Initialize(&m_SimpleAudio, m_RenderSystem, m_Physics.get(), m_Physics2D.get());

@@ -2994,6 +2994,11 @@ void EditorLayer::DrawPlatformer2DController(ECS::Entity entity) {
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("How fast the entity moves between grid cells");
             } else {
                 InspectorUndo::DragFloat(m_UndoRedo, "Move Speed", &ctrl->moveSpeed, 0.1f, 0.1f, 50.0f);
+                InspectorUndo::Checkbox(m_UndoRedo, "Ignore Time Scale (bullet time)", &ctrl->ignoreGlobalTimeScale);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                    "Run this controller at normal speed while Time_SetScale slows\n"
+                    "the world - Max Payne / Superhot bullet time. Movement, jumps,\n"
+                    "and gravity all stay wall-clock correct.");
                 InspectorUndo::DragFloat(m_UndoRedo, "Sprint Multiplier", &ctrl->sprintMultiplier, 0.1f, 1.0f, 5.0f);
                 InspectorUndo::DragFloat(m_UndoRedo, "Acceleration", &ctrl->acceleration, 1.0f, 1.0f, 200.0f);
                 InspectorUndo::DragFloat(m_UndoRedo, "Deceleration", &ctrl->deceleration, 1.0f, 1.0f, 200.0f);
@@ -3087,6 +3092,11 @@ void EditorLayer::DrawTopDown2DController(ECS::Entity entity) {
             InspectorUndo::DragFloat(m_UndoRedo, "Grid Move Speed##td2d", &ctrl->gridMoveSpeed, 0.5f, 1.0f, 30.0f);
         } else {
             InspectorUndo::DragFloat(m_UndoRedo, "Move Speed", &ctrl->moveSpeed, 0.1f, 0.1f, 50.0f);
+                InspectorUndo::Checkbox(m_UndoRedo, "Ignore Time Scale (bullet time)", &ctrl->ignoreGlobalTimeScale);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                    "Run this controller at normal speed while Time_SetScale slows\n"
+                    "the world - Max Payne / Superhot bullet time. Movement, jumps,\n"
+                    "and gravity all stay wall-clock correct.");
             InspectorUndo::DragFloat(m_UndoRedo, "Sprint Multiplier", &ctrl->sprintMultiplier, 0.1f, 1.0f, 5.0f);
             InspectorUndo::DragFloat(m_UndoRedo, "Acceleration", &ctrl->acceleration, 1.0f, 1.0f, 200.0f);
             InspectorUndo::DragFloat(m_UndoRedo, "Deceleration", &ctrl->deceleration, 1.0f, 1.0f, 200.0f);
@@ -3157,6 +3167,11 @@ void EditorLayer::DrawTopDown3DController(ECS::Entity entity) {
                 InspectorUndo::DragFloat3(m_UndoRedo, "Grid Origin##td3d", &ctrl->gridOrigin.x, [ctrl](f32 x, f32 y, f32 z) { ctrl->gridOrigin = Math::Vector3(x, y, z); }, 0.1f);
             } else {
                 InspectorUndo::DragFloat(m_UndoRedo, "Move Speed", &ctrl->moveSpeed, 0.1f, 0.1f, 50.0f);
+                InspectorUndo::Checkbox(m_UndoRedo, "Ignore Time Scale (bullet time)", &ctrl->ignoreGlobalTimeScale);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                    "Run this controller at normal speed while Time_SetScale slows\n"
+                    "the world - Max Payne / Superhot bullet time. Movement, jumps,\n"
+                    "and gravity all stay wall-clock correct.");
                 InspectorUndo::DragFloat(m_UndoRedo, "Sprint Multiplier", &ctrl->sprintMultiplier, 0.1f, 1.0f, 5.0f);
                 InspectorUndo::DragFloat(m_UndoRedo, "Acceleration##td3d", &ctrl->acceleration, 0.5f, 0.0f, 200.0f);
                 InspectorUndo::DragFloat(m_UndoRedo, "Deceleration##td3d", &ctrl->deceleration, 0.5f, 0.0f, 200.0f);
@@ -3235,6 +3250,11 @@ void EditorLayer::DrawThirdPersonController(ECS::Entity entity) {
                 InspectorUndo::DragFloat3(m_UndoRedo, "Grid Origin##tps", &ctrl->gridOrigin.x, [ctrl](f32 x, f32 y, f32 z) { ctrl->gridOrigin = Math::Vector3(x, y, z); }, 0.1f);
             } else {
                 InspectorUndo::DragFloat(m_UndoRedo, "Move Speed", &ctrl->moveSpeed, 0.1f, 0.1f, 50.0f);
+                InspectorUndo::Checkbox(m_UndoRedo, "Ignore Time Scale (bullet time)", &ctrl->ignoreGlobalTimeScale);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                    "Run this controller at normal speed while Time_SetScale slows\n"
+                    "the world - Max Payne / Superhot bullet time. Movement, jumps,\n"
+                    "and gravity all stay wall-clock correct.");
                 InspectorUndo::DragFloat(m_UndoRedo, "Sprint Multiplier", &ctrl->sprintMultiplier, 0.1f, 1.0f, 5.0f);
                 InspectorUndo::DragFloat(m_UndoRedo, "Acceleration##tps", &ctrl->acceleration, 0.5f, 0.0f, 200.0f);
                 InspectorUndo::DragFloat(m_UndoRedo, "Deceleration##tps", &ctrl->deceleration, 0.5f, 0.0f, 200.0f);
@@ -3334,6 +3354,11 @@ void EditorLayer::DrawFirstPersonController(ECS::Entity entity) {
                 InspectorUndo::DragFloat3(m_UndoRedo, "Grid Origin##fps", &ctrl->gridOrigin.x, [ctrl](f32 x, f32 y, f32 z) { ctrl->gridOrigin = Math::Vector3(x, y, z); }, 0.1f);
             } else {
                 InspectorUndo::DragFloat(m_UndoRedo, "Move Speed", &ctrl->moveSpeed, 0.1f, 0.1f, 50.0f);
+                InspectorUndo::Checkbox(m_UndoRedo, "Ignore Time Scale (bullet time)", &ctrl->ignoreGlobalTimeScale);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                    "Run this controller at normal speed while Time_SetScale slows\n"
+                    "the world - Max Payne / Superhot bullet time. Movement, jumps,\n"
+                    "and gravity all stay wall-clock correct.");
                 InspectorUndo::DragFloat(m_UndoRedo, "Sprint Multiplier", &ctrl->sprintMultiplier, 0.1f, 1.0f, 5.0f);
                 InspectorUndo::DragFloat(m_UndoRedo, "Acceleration##fps", &ctrl->acceleration, 0.5f, 0.0f, 200.0f);
                 InspectorUndo::DragFloat(m_UndoRedo, "Deceleration##fps", &ctrl->deceleration, 0.5f, 0.0f, 200.0f);
@@ -7154,6 +7179,11 @@ void EditorLayer::DrawVehicleController(ECS::Entity entity) {
 
         if (ImGui::TreeNode("Base Controller")) {
             InspectorUndo::DragFloat(m_UndoRedo, "Move Speed", &ctrl->moveSpeed, 0.1f, 0.1f, 50.0f);
+                InspectorUndo::Checkbox(m_UndoRedo, "Ignore Time Scale (bullet time)", &ctrl->ignoreGlobalTimeScale);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                    "Run this controller at normal speed while Time_SetScale slows\n"
+                    "the world - Max Payne / Superhot bullet time. Movement, jumps,\n"
+                    "and gravity all stay wall-clock correct.");
             InspectorUndo::Checkbox(m_UndoRedo, "WASD", &ctrl->useWASD);
             ImGui::SameLine();
             InspectorUndo::Checkbox(m_UndoRedo, "Arrow Keys##veh", &ctrl->useArrowKeys);

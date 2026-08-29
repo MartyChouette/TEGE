@@ -467,6 +467,33 @@ static void Controller_SetMoveSpeed(u64 id, f32 speed) {
     if (auto* c = s_BindingsWorld->GetComponent<Platformer2DController>(entity)) { c->moveSpeed = speed; return; }
 }
 
+static void Controller_SetIgnoreTimeScale(u64 id, bool ignore) {
+    if (!s_BindingsWorld) return;
+    Entity entity = static_cast<Entity>(id);
+    // Bullet time: this controller runs at wall-clock rate while
+    // Time_SetScale slows the rest of the world.
+    if (auto* c = s_BindingsWorld->GetComponent<FirstPersonController>(entity)) { c->ignoreGlobalTimeScale = ignore; return; }
+    if (auto* c = s_BindingsWorld->GetComponent<ThirdPersonController>(entity)) { c->ignoreGlobalTimeScale = ignore; return; }
+    if (auto* c = s_BindingsWorld->GetComponent<TopDown3DController>(entity)) { c->ignoreGlobalTimeScale = ignore; return; }
+    if (auto* c = s_BindingsWorld->GetComponent<TopDown2DController>(entity)) { c->ignoreGlobalTimeScale = ignore; return; }
+    if (auto* c = s_BindingsWorld->GetComponent<Platformer2DController>(entity)) { c->ignoreGlobalTimeScale = ignore; return; }
+    if (auto* c = s_BindingsWorld->GetComponent<SurfaceAlignedController>(entity)) { c->ignoreGlobalTimeScale = ignore; return; }
+    if (auto* c = s_BindingsWorld->GetComponent<VehicleController>(entity)) { c->ignoreGlobalTimeScale = ignore; return; }
+}
+
+static bool Controller_GetIgnoreTimeScale(u64 id) {
+    if (!s_BindingsWorld) return false;
+    Entity entity = static_cast<Entity>(id);
+    if (auto* c = s_BindingsWorld->GetComponent<FirstPersonController>(entity)) return c->ignoreGlobalTimeScale;
+    if (auto* c = s_BindingsWorld->GetComponent<ThirdPersonController>(entity)) return c->ignoreGlobalTimeScale;
+    if (auto* c = s_BindingsWorld->GetComponent<TopDown3DController>(entity)) return c->ignoreGlobalTimeScale;
+    if (auto* c = s_BindingsWorld->GetComponent<TopDown2DController>(entity)) return c->ignoreGlobalTimeScale;
+    if (auto* c = s_BindingsWorld->GetComponent<Platformer2DController>(entity)) return c->ignoreGlobalTimeScale;
+    if (auto* c = s_BindingsWorld->GetComponent<SurfaceAlignedController>(entity)) return c->ignoreGlobalTimeScale;
+    if (auto* c = s_BindingsWorld->GetComponent<VehicleController>(entity)) return c->ignoreGlobalTimeScale;
+    return false;
+}
+
 static void Controller_SetEnabled(u64 id, bool enabled) {
     if (!s_BindingsWorld) return;
     Entity entity = static_cast<Entity>(id);
@@ -2134,6 +2161,8 @@ void RegisterComponentBindings(asIScriptEngine* engine) {
 
     // CharacterController
     AS_CHECK(engine->RegisterGlobalFunction("void Controller_SetMoveSpeed(uint64, float)", ENJIN_AS_FN(Controller_SetMoveSpeed), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Controller_SetIgnoreTimeScale(uint64, bool)", ENJIN_AS_FN(Controller_SetIgnoreTimeScale), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Controller_GetIgnoreTimeScale(uint64)", ENJIN_AS_FN(Controller_GetIgnoreTimeScale), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Controller_SetEnabled(uint64, bool)", ENJIN_AS_FN(Controller_SetEnabled), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Viewmodel_Set(uint64, bool)", ENJIN_AS_FN(Viewmodel_Set), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Viewmodel_Get(uint64)", ENJIN_AS_FN(Viewmodel_Get), ENJIN_AS_CALL_CDECL));

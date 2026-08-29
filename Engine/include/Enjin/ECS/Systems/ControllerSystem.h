@@ -41,6 +41,11 @@ public:
     void SetExternalFixedClock(bool external) { m_ExternalFixedClock = external; }
     void PumpFrameInput();
 
+    // Bullet time (ignoreGlobalTimeScale controllers): run once per rendered
+    // frame at wall-clock rate. Call every frame in every mode; no-ops when
+    // no controller is flagged. Pass the SCALED frame dt (what Update gets).
+    void UpdateRealtime(f32 scaledFrameDt);
+
     // When set, controllers write to this entity's TransformComponent instead of the editor Camera.
     // The game view renders from CameraComponent entities, so this keeps the editor camera untouched.
     void SetGameCameraEntity(Entity entity) { m_GameCameraEntity = entity; }
@@ -129,6 +134,7 @@ private:
 
     // Fixed-tick input latches (see SetExternalFixedClock)
     bool m_ExternalFixedClock = false;
+    bool m_RealtimePass = false;
     bool m_LatchJump = false;
     bool m_LatchCrouch = false;
     bool m_LatchDash = false;

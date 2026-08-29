@@ -5880,7 +5880,7 @@
     "visible": true
    },
    "text": {
-    "text": "FIXED TIMESTEP DEMO\nWASD move   Space jump   mouse look (RMB)\n1 slow-mo  2 hitstop  3 normal  E kick  R reset\nTry different editor FPS caps - same feel",
+    "text": "FIXED TIMESTEP DEMO\nWASD move  Space jump  mouse look (RMB)\n1 slow-mo  2 hitstop  3 normal  4 BULLET TIME\nE kick crates   R reset",
     "fontSize": 40,
     "textureWidth": 1024,
     "textureHeight": 512,

@@ -1,4 +1,5 @@
 #include "Enjin/ECS/Systems/ControllerSystem.h"
+#include "Enjin/Scripting/ScriptBindings.h"
 #include "Enjin/Physics/PhysicsTypes.h"
 #include "Enjin/Physics/PhysicsTypes2D.h"
 #include "Enjin/ECS/Components/Gameplay.h"
@@ -100,6 +101,7 @@ void ControllerSystem::Update(f32 deltaTime) {
         if (!m_World->IsValid(entity)) continue;
         auto* controller = m_World->GetComponent<Platformer2DController>(entity);
         if (!controller || !controller->isEnabled) continue;
+        if (controller->ignoreGlobalTimeScale != m_RealtimePass) continue;
         auto* transform = m_World->GetComponent<TransformComponent>(entity);
         if (!transform) continue;
         auto* possess = m_World->GetComponent<PossessableComponent>(entity);
@@ -111,6 +113,7 @@ void ControllerSystem::Update(f32 deltaTime) {
         if (!m_World->IsValid(entity)) continue;
         auto* controller = m_World->GetComponent<TopDown2DController>(entity);
         if (!controller || !controller->isEnabled) continue;
+        if (controller->ignoreGlobalTimeScale != m_RealtimePass) continue;
         auto* transform = m_World->GetComponent<TransformComponent>(entity);
         if (!transform) continue;
         auto* possess = m_World->GetComponent<PossessableComponent>(entity);
@@ -122,6 +125,7 @@ void ControllerSystem::Update(f32 deltaTime) {
         if (!m_World->IsValid(entity)) continue;
         auto* controller = m_World->GetComponent<TopDown3DController>(entity);
         if (!controller || !controller->isEnabled) continue;
+        if (controller->ignoreGlobalTimeScale != m_RealtimePass) continue;
         auto* transform = m_World->GetComponent<TransformComponent>(entity);
         if (!transform) continue;
         auto* possess = m_World->GetComponent<PossessableComponent>(entity);
@@ -132,6 +136,7 @@ void ControllerSystem::Update(f32 deltaTime) {
     for (Entity entity : m_World->GetEntitiesWithComponent<ThirdPersonController>()) {
         auto* controller = m_World->GetComponent<ThirdPersonController>(entity);
         if (!controller || !controller->isEnabled) continue;
+        if (controller->ignoreGlobalTimeScale != m_RealtimePass) continue;
         auto* transform = m_World->GetComponent<TransformComponent>(entity);
         if (!transform) continue;
         auto* possess = m_World->GetComponent<PossessableComponent>(entity);
@@ -155,6 +160,7 @@ void ControllerSystem::Update(f32 deltaTime) {
         if (!m_World->IsValid(entity)) continue;
         auto* controller = m_World->GetComponent<FirstPersonController>(entity);
         if (!controller || !controller->isEnabled) continue;
+        if (controller->ignoreGlobalTimeScale != m_RealtimePass) continue;
         auto* transform = m_World->GetComponent<TransformComponent>(entity);
         if (!transform) continue;
         auto* possess = m_World->GetComponent<PossessableComponent>(entity);
@@ -179,6 +185,7 @@ void ControllerSystem::Update(f32 deltaTime) {
         if (!m_World->IsValid(entity)) continue;
         auto* controller = m_World->GetComponent<SurfaceAlignedController>(entity);
         if (!controller || !controller->isEnabled) continue;
+        if (controller->ignoreGlobalTimeScale != m_RealtimePass) continue;
         auto* transform = m_World->GetComponent<TransformComponent>(entity);
         if (!transform) continue;
         auto* possess = m_World->GetComponent<PossessableComponent>(entity);
@@ -190,6 +197,7 @@ void ControllerSystem::Update(f32 deltaTime) {
         if (!m_World->IsValid(entity)) continue;
         auto* controller = m_World->GetComponent<VehicleController>(entity);
         if (!controller || !controller->isEnabled) continue;
+        if (controller->ignoreGlobalTimeScale != m_RealtimePass) continue;
         auto* transform = m_World->GetComponent<TransformComponent>(entity);
         if (!transform) continue;
         auto* possess = m_World->GetComponent<PossessableComponent>(entity);
@@ -198,6 +206,11 @@ void ControllerSystem::Update(f32 deltaTime) {
     }
 
     // Process FollowTarget components (camera follow, companion follow, etc.)
+    // Camera-follow / look-at / 2D-camera work is per-frame presentation, not
+    // per-entity simulation - skip it in the realtime (bullet-time) pass so it
+    // never runs twice per frame.
+    if (m_RealtimePass) return;
+
     for (Entity entity : m_World->GetEntitiesWithComponent<FollowTargetComponent>()) {
         auto* transform = m_World->GetComponent<TransformComponent>(entity);
         if (!transform) continue;
@@ -428,7 +441,7 @@ void ControllerSystem::Update(f32 deltaTime) {
     // Fixed-tick mode: this tick consumed the frame's latched edges/deltas.
     // Later ticks in the same frame see nothing (no double-fired jumps, no
     // double-applied mouse look); zero-tick frames keep latches for the next.
-    if (m_ExternalFixedClock) {
+    if (m_ExternalFixedClock && !m_RealtimePass) {
         m_LatchJump = m_LatchCrouch = m_LatchDash = m_LatchPrimaryClick = false;
         m_LatchMouseDelta = Math::Vector2(0.0f, 0.0f);
         m_LatchScroll = Math::Vector2(0.0f, 0.0f);
@@ -479,6 +492,17 @@ Math::Vector2 ControllerSystem::GetMovementInput(const CharacterControllerBase& 
     return input;
 }
 
+void ControllerSystem::UpdateRealtime(f32 scaledFrameDt) {
+    // Bullet time: flagged controllers run once per RENDERED frame at
+    // wall-clock rate (frame dt with the global time scale divided back out),
+    // in every mode. At scale ~0 (hard hitstop) everyone freezes, flags or no.
+    f32 s = Scripting::GetTimeScale();
+    if (s < 0.0001f) return;
+    m_RealtimePass = true;
+    Update(scaledFrameDt / s);
+    m_RealtimePass = false;
+}
+
 void ControllerSystem::PumpFrameInput() {
     if (!m_ExternalFixedClock) return;
     // Once per RENDER frame: edges latch ON until a tick consumes them,
@@ -492,19 +516,19 @@ void ControllerSystem::PumpFrameInput() {
 }
 
 Math::Vector2 ControllerSystem::GetLookDelta() {
-    return m_ExternalFixedClock ? m_LatchMouseDelta : Input::GetMouseDelta();
+    return (m_ExternalFixedClock && !m_RealtimePass) ? m_LatchMouseDelta : Input::GetMouseDelta();
 }
 
 Math::Vector2 ControllerSystem::GetZoomScroll() {
-    return m_ExternalFixedClock ? m_LatchScroll : Input::GetScrollDelta();
+    return (m_ExternalFixedClock && !m_RealtimePass) ? m_LatchScroll : Input::GetScrollDelta();
 }
 
 bool ControllerSystem::IsPrimaryClickPressed() {
-    return m_ExternalFixedClock ? m_LatchPrimaryClick : Input::IsMouseButtonPressed(MouseButton::Left);
+    return (m_ExternalFixedClock && !m_RealtimePass) ? m_LatchPrimaryClick : Input::IsMouseButtonPressed(MouseButton::Left);
 }
 
 bool ControllerSystem::IsJumpPressed() {
-    if (m_ExternalFixedClock) return m_LatchJump;
+    if (m_ExternalFixedClock && !m_RealtimePass) return m_LatchJump;
     return QueryJumpPressedNow();
 }
 
@@ -538,7 +562,7 @@ bool ControllerSystem::IsSprintHeld() {
 }
 
 bool ControllerSystem::IsCrouchPressed() {
-    if (m_ExternalFixedClock) return m_LatchCrouch;
+    if (m_ExternalFixedClock && !m_RealtimePass) return m_LatchCrouch;
     return QueryCrouchPressedNow();
 }
 
@@ -555,7 +579,7 @@ bool ControllerSystem::QueryCrouchPressedNow() {
 }
 
 bool ControllerSystem::IsDashPressed() {
-    if (m_ExternalFixedClock) return m_LatchDash;
+    if (m_ExternalFixedClock && !m_RealtimePass) return m_LatchDash;
     return QueryDashPressedNow();
 }
 
