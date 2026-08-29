@@ -188,3 +188,5 @@ third_party/imgui/.gitignore
 third_party/imgui/docs/
 third_party/imgui/examples/
 third_party/imgui/misc/
+docs/MASTER_PLAN.html
+_audit_workflow.js
