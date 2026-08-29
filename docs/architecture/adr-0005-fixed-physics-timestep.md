@@ -6,10 +6,13 @@ Accepted; core implemented 2026-08-28 (SimulationClock + settings + all three
 runtimes + interpolation + unit tests). Deliberate v1 deviations from the text
 below, each revisitable:
 
-- Character controllers stay frame-paced (they mostly write velocities that
-  the fixed steps then integrate); moving them to the tick requires input-edge
-  care and is deferred.
-- `OnFixedUpdate` script hook not yet added.
+- Controllers ON the tick since 574a425: ControllerSystem runs in the step
+  loop with per-render-frame input latching (edges latch until a tick consumes
+  them; mouse/scroll deltas accumulate). Open feel question: camera look
+  advances at tick rate; if it reads rough on high-refresh monitors, split
+  look back to the frame phase (Unity's Update/FixedUpdate split).
+- `OnFixedUpdate` script hook shipped d8b92ba (tick-aligned, double-tick
+  suppressed).
 - 2D bodies step fixed but render at tick pose (no interpolation) — fine at
   60Hz, revisit if 144Hz 2D stutter is reported.
 - New projects do NOT yet default the setting on; it is opt-in for everyone
