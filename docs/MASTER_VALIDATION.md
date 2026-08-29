@@ -215,12 +215,36 @@ exported desktop AND web.
 - [ ] G8 Door 2D: sliding/hinged 2D door + trigger-opened variant; same Lock
       integration.
 
+## 4d. Authored water FX (Marty 2026-08-29)
+
+Cheap, good-looking, AUTHORED looped water motion - the OoT-waterfall
+technique family, matching the hand-crafted-not-simulated philosophy.
+Survey: materials already carry atlas UV region fields (the flipbook
+mechanism), particle emitters take custom textures, and rain is queryable
+(Render_IsRainActive) - the missing core primitive is generic UV scroll +
+flipbook playback on ANY material.
+
+- [ ] F1 Material UV animation: per-material scroll speed (x/y) + flipbook
+      (atlas frame stepping: frame count, fps, loop) on the standard
+      material - the enabling primitive for everything below. Rides the
+      existing uvRegionOffset/uvRegionScale atlas fields.
+- [ ] F2 Waterfall 3D: sheet/strip authoring flow - user texture, scroll
+      rate, optional base-splash particle hookup + foam flipbook layer.
+      Example scene with a curved fall.
+- [ ] F3 Waterfall/flow 2D: scrolling + flipbook sprites for side-view
+      falls and top-down streams.
+- [ ] F4 Spray/mist: looped flipbook billboards (particle emitter preset +
+      authored sheet) - fountain spray, base mist, splash rings.
+- [ ] F5 Rain runoff: flow strips/emitters with a weather link - auto
+      activate/scale with rain intensity (roof edges, gutters, drips).
+      Works 2D and 3D.
+
 ## 5. Release gates
 
 Beta gate: S1-S3 done; T1, T2, T4 running in CI green; D1-D2 fixed.
 1.0 gate: all S-items done; T1-T8 green in CI; claim list §4 fully verified;
 import battery §4b fully run (I1-I7, I9, H1-H8); gameplay primitives G1-G8
-shipped with example scenes;
+and water FX F1-F5 shipped with example scenes;
 docs consolidated (D3); master checklist re-run against the release build.
 
 ## Rejected findings (do not re-report)
