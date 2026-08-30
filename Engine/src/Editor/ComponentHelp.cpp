@@ -328,6 +328,14 @@ static const std::unordered_map<std::string, ComponentHelp>& Registry() {
                 { RelationKind::PairsWith, "Transform", Has<ECS::TransformComponent>, Add<ECS::TransformComponent> },
             }
         };
+        r["door"] = {
+            "A hinged door characters open with E.",
+            "Put it on the hinge PIVOT entity; the door mesh is a child offset sideways so the pivot sits at the hinge edge. Give the mesh child a kinematic rigidbody + box collider and physics follows the swing. Locked blocks it; Auto-Close shuts it behind you.",
+            nullptr,
+            {
+                { RelationKind::PairsWith, "Transform", Has<ECS::TransformComponent>, Add<ECS::TransformComponent> },
+            }
+        };
         r["rope"] = {
             "A simulated rope or chain hanging from the entity.",
             "Set length and segments; give the entity a material for the look. Style picks a smooth tube (rope) or rigid alternating links (chain). Name an End Attach entity to dangle it from the tip (lantern, tire), or turn on Pin Bottom to anchor the tip to that entity instead - it spans between them and sags (clothesline). Weather wind sways it.",

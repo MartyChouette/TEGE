@@ -62,6 +62,7 @@
 #include "Enjin/ECS/Components/ReflectivePlane.h"
 #include "Enjin/ECS/Components/Ladder.h"
 #include "Enjin/ECS/Components/Rope.h"
+#include "Enjin/ECS/Components/Door.h"
 #include "Enjin/ECS/Components/PostProcessVolume.h"
 #include "Enjin/ECS/Components/ArtStyle.h"
 #include "Enjin/ECS/Components/FluidVolume.h"
@@ -544,6 +545,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::RopeComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::RopeComponent>(e); },
             "rope", DimensionTag::Only3D},
+        {"Door", "Gameplay", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::DoorComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::DoorComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::DoorComponent>(e); },
+            "door", DimensionTag::Only3D},
         {"Chain", "Gameplay", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::RopeComponent>(e); },
             [](ECS::World* w, ECS::Entity e) {
@@ -1836,6 +1842,11 @@ void EditorLayer::DrawInspectorPanel() {
         // Rope component (G3 verlet rope)
         if (m_World->HasComponent<ECS::RopeComponent>(m_PrimarySelected)) {
             DrawRopeComponent(m_PrimarySelected);
+        }
+
+        // Door component (G7 hinged door)
+        if (m_World->HasComponent<ECS::DoorComponent>(m_PrimarySelected)) {
+            DrawDoorComponent(m_PrimarySelected);
         }
 
         // Fluid Volume component

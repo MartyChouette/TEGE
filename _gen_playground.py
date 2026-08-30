@@ -151,6 +151,20 @@ ent("Grove_Grass", (20, 0, -20),
     grassVolume={"halfExtents": [9, 0, 8], "density": 7000,
                  "bladeHeight": 0.35, "windSwayStrength": 1.2})
 
+# --- doorway (G7): frame + hinged door on a pivot parent ---------------------
+solid("DoorPostL", (7, 1.5, 16), (0.4, 3.0, 0.4), (0.45, 0.35, 0.25))
+solid("DoorPostR", (10, 1.5, 16), (0.4, 3.0, 0.4), (0.45, 0.35, 0.25))
+solid("DoorLintel", (8.5, 3.1, 16), (3.4, 0.35, 0.4), (0.45, 0.35, 0.25))
+_pivot = ent("DoorPivot", (7.25, 1.5, 16),
+             door={"openAngle": 110.0, "openSpeed": 240.0, "interactRadius": 2.5,
+                   "autoCloseDelay": 6.0, "locked": False, "startOpen": False})
+_leaf = ent("DoorLeaf", (1.25, 0, 0), (2.5, 2.8, 0.12),
+            mesh=copy.deepcopy(CUBE),
+            material={"baseColor": [0.55, 0.38, 0.2], "metallic": 0, "roughness": 0.8})
+_leaf["parent"] = _pivot["id"]
+_leaf["boxCollider"] = {**copy.deepcopy(BOXCOL), "size": [2.5, 2.8, 0.12]}
+_leaf["rigidbody"] = {"isStatic": False, "isKinematic": True, "mass": 0, "useGravity": False}
+
 # --- ladder station (G1, the component way) ---------------------------------
 solid("LadderTower", (27, 2.5, 4), (2, 5, 2), (0.55, 0.5, 0.62))
 deco("LadderRungs", (27, 2.5, 5.05), (0.8, 5.6, 0.12), (0.72, 0.5, 0.25))

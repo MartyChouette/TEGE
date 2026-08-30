@@ -453,6 +453,7 @@ private:
     void DrawReflectivePlaneComponent(ECS::Entity entity);
     void DrawLadderComponent(ECS::Entity entity);
     void DrawRopeComponent(ECS::Entity entity);
+    void DrawDoorComponent(ECS::Entity entity);
     void DrawFluidVolumeComponent(ECS::Entity entity);
     void DrawFluidTerrainCoupling(ECS::Entity entity);
     void DrawElementalSurfaceComponent(ECS::Entity entity);

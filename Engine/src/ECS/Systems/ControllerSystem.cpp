@@ -1,6 +1,7 @@
 #include "Enjin/ECS/Systems/ControllerSystem.h"
 #include "Enjin/ECS/Components/Ladder.h"
 #include "Enjin/ECS/Components/WaterVolume.h"
+#include "Enjin/ECS/Components/Door.h"
 #include "Enjin/Scripting/ScriptBindings.h"
 #include "Enjin/Physics/PhysicsTypes.h"
 #include "Enjin/Physics/PhysicsTypes2D.h"
@@ -14,6 +15,9 @@
 
 namespace Enjin {
 namespace ECS {
+
+// Defined further down with the other gameplay-primitive helpers (ladder/swim).
+static void UpdateDoors(World* world, f32 dt);
 
 void ControllerSystem::UpdateGameCameraTransform(const Math::Vector3& position, const Math::Vector3& target, const Math::Vector3& up) {
     // When a game camera entity is set, write to its TransformComponent so the
@@ -93,6 +97,10 @@ void ControllerSystem::Update(f32 deltaTime) {
     if (!m_Enabled || !m_World) {
         return;
     }
+
+    // Doors (G7): once per frame, normal pass only (the bullet-time realtime
+    // pass calls Update a second time and would double-step/double-toggle).
+    if (!m_RealtimePass) UpdateDoors(m_World, deltaTime);
 
     // Helper: skip non-possessed entities (possessed check is optional component)
     // Each loop queries by controller type (guaranteed to exist), then fetches
@@ -1132,6 +1140,67 @@ static bool FindLadderAt(World* world, const Math::Vector3& pos,
         }
     }
     return false;
+}
+
+// Doors (G7): swing animation + E-to-toggle for any controller in range.
+// Lives here because this system has input + world in every runtime. Called
+// once per ControllerSystem::Update (non-realtime pass only - the realtime
+// bullet-time pass runs Update a second time).
+static void UpdateDoors(World* world, f32 dt) {
+    // Gather controller positions once (any FP/TP character can open doors).
+    Math::Vector3 users[8];
+    u32 userCount = 0;
+    for (Entity e : world->GetEntitiesWithComponent<ThirdPersonController>()) {
+        if (userCount >= 8) break;
+        if (auto* tf = world->GetComponent<TransformComponent>(e)) users[userCount++] = tf->position;
+    }
+    for (Entity e : world->GetEntitiesWithComponent<FirstPersonController>()) {
+        if (userCount >= 8) break;
+        if (auto* tf = world->GetComponent<TransformComponent>(e)) users[userCount++] = tf->position;
+    }
+
+    bool interactPressed = Input::IsKeyPressed(KeyCode::E);
+
+    for (Entity e : world->GetEntitiesWithComponent<DoorComponent>()) {
+        auto* door = world->GetComponent<DoorComponent>(e);
+        auto* tf = world->GetComponent<TransformComponent>(e);
+        if (!door || !tf) continue;
+
+        if (!door->initialized) {
+            door->baseRotation = tf->rotation;
+            door->open = door->startOpen;
+            door->currentAngle = door->open ? door->openAngle : 0.0f;
+            door->initialized = true;
+        }
+
+        // Toggle when a character in range presses E.
+        if (interactPressed && !door->locked) {
+            for (u32 i = 0; i < userCount; ++i) {
+                Math::Vector3 d = users[i] - tf->position;
+                d.y = 0.0f;
+                if (d.LengthSquared() <= door->interactRadius * door->interactRadius) {
+                    door->open = !door->open;
+                    door->closeTimer = 0.0f;
+                    break;
+                }
+            }
+        }
+
+        // Auto-close countdown.
+        if (door->open && door->autoCloseDelay > 0.0f) {
+            door->closeTimer += dt;
+            if (door->closeTimer >= door->autoCloseDelay) door->open = false;
+        }
+
+        // Swing toward the target angle; the hinge is this entity's origin.
+        f32 target = door->open ? door->openAngle : 0.0f;
+        f32 step = door->openSpeed * dt;
+        f32 delta = target - door->currentAngle;
+        if (Math::Abs(delta) <= step) door->currentAngle = target;
+        else door->currentAngle += (delta > 0 ? step : -step);
+        tf->rotation = door->baseRotation *
+                       Math::Quaternion(Math::Vector3(0, 1, 0), Math::Radians(door->currentAngle));
+    }
 }
 
 // Swimming (the water ask, 2026-08-30): is this position inside a water

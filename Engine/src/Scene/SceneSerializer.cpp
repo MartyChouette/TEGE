@@ -25,6 +25,7 @@
 #include "Enjin/ECS/Components/ReflectivePlane.h"
 #include "Enjin/ECS/Components/Ladder.h"
 #include "Enjin/ECS/Components/Rope.h"
+#include "Enjin/ECS/Components/Door.h"
 #include "Enjin/ECS/Components/Elemental.h"
 #include "Enjin/ECS/Components/PostProcessVolume.h"
 #include "Enjin/ECS/Components/FluidVolume.h"
@@ -1177,6 +1178,29 @@ ECS::LadderComponent DeserializeLadderComponent(const json& j) {
     if (j.contains("topBoost")) l.topBoost = j["topBoost"].get<f32>();
     if (j.contains("allowJumpOff")) l.allowJumpOff = JB(j["allowJumpOff"]);
     return l;
+}
+
+// Door (G7)
+json SerializeDoorComponent(const ECS::DoorComponent& d) {
+    json j;
+    j["openAngle"] = d.openAngle;
+    j["openSpeed"] = d.openSpeed;
+    j["interactRadius"] = d.interactRadius;
+    j["autoCloseDelay"] = d.autoCloseDelay;
+    j["locked"] = d.locked;
+    j["startOpen"] = d.startOpen;
+    return j;
+}
+
+ECS::DoorComponent DeserializeDoorComponent(const json& j) {
+    ECS::DoorComponent d;
+    if (j.contains("openAngle")) d.openAngle = j["openAngle"].get<f32>();
+    if (j.contains("openSpeed")) d.openSpeed = j["openSpeed"].get<f32>();
+    if (j.contains("interactRadius")) d.interactRadius = j["interactRadius"].get<f32>();
+    if (j.contains("autoCloseDelay")) d.autoCloseDelay = j["autoCloseDelay"].get<f32>();
+    if (j.contains("locked")) d.locked = JB(j["locked"]);
+    if (j.contains("startOpen")) d.startOpen = JB(j["startOpen"]);
+    return d;
 }
 
 // Rope (G3)
@@ -7820,6 +7844,7 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
         ENJIN_SERDES("reflectivePlane", ECS::ReflectivePlaneComponent, SerializeReflectivePlaneComponent, DeserializeReflectivePlaneComponent),
         ENJIN_SERDES("ladder", ECS::LadderComponent, SerializeLadderComponent, DeserializeLadderComponent),
         ENJIN_SERDES("rope", ECS::RopeComponent, SerializeRopeComponent, DeserializeRopeComponent),
+        ENJIN_SERDES("door", ECS::DoorComponent, SerializeDoorComponent, DeserializeDoorComponent),
         ENJIN_SERDES("resource", ECS::ResourceComponent, SerializeResourceComponent, DeserializeResourceComponent),
         ENJIN_SERDES("reverbZone", ECS::ReverbZoneComponent, SerializeReverbZoneComponent, DeserializeReverbZoneComponent),
         ENJIN_SERDES("rigidbody", ECS::RigidbodyComponent, SerializeRigidbodyComponent, DeserializeRigidbodyComponent),

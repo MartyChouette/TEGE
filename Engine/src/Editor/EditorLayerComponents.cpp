@@ -49,6 +49,7 @@ extern char** environ;
 #include "Enjin/ECS/Components/ReflectivePlane.h"
 #include "Enjin/ECS/Components/Ladder.h"
 #include "Enjin/ECS/Components/Rope.h"
+#include "Enjin/ECS/Components/Door.h"
 #include "Enjin/Renderer/ReflectionProbeSystem.h"
 #include "Enjin/ECS/Components/PostProcessVolume.h"
 #include "Enjin/ECS/Components/ArtStyle.h"
@@ -2935,6 +2936,33 @@ void EditorLayer::DrawRopeComponent(ECS::Entity entity) {
         ImGui::Separator();
         if (ImGui::Button("Remove##Rope")) {
             RemoveComponentWithUndo<ECS::RopeComponent>(entity, "rope", "Rope");
+        }
+    }
+}
+
+void EditorLayer::DrawDoorComponent(ECS::Entity entity) {
+    if (UI::SectionHeader("Door", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* door = m_World->GetComponent<ECS::DoorComponent>(entity);
+        if (!door) return;
+        DrawComponentHelp("door", m_World, entity);
+
+        ImGui::TextWrapped("A hinged door. Put this on the HINGE PIVOT entity and make the "
+                           "door mesh a child offset sideways, so the pivot sits at the hinge "
+                           "edge. Characters press E in range to swing it.");
+        ImGui::Separator();
+
+        InspectorUndo::DragFloat(m_UndoRedo, "Open Angle##Door", &door->openAngle, 1.0f, -180.0f, 180.0f);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Degrees swung when open; negative swings the other way.");
+        InspectorUndo::DragFloat(m_UndoRedo, "Open Speed##Door", &door->openSpeed, 5.0f, 30.0f, 720.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Interact Radius##Door", &door->interactRadius, 0.1f, 0.5f, 10.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Auto-Close Delay##Door", &door->autoCloseDelay, 0.1f, 0.0f, 60.0f);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Seconds after opening before it closes itself. 0 = stays open.");
+        InspectorUndo::Checkbox(m_UndoRedo, "Locked##Door", &door->locked);
+        InspectorUndo::Checkbox(m_UndoRedo, "Start Open##Door", &door->startOpen);
+
+        ImGui::Separator();
+        if (ImGui::Button("Remove##Door")) {
+            RemoveComponentWithUndo<ECS::DoorComponent>(entity, "door", "Door");
         }
     }
 }
