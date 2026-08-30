@@ -4368,7 +4368,8 @@ void RenderSystem::Update(f32 deltaTime) {
                 if (static_cast<usize>(EntityIndex(entity)) < m_EntityRenderData.size())
                     RetireEntityBuffers(m_EntityRenderData[static_cast<usize>(EntityIndex(entity))]);
                 cloth->topologyDirty = false;
-                cloth->meshDirty = false;
+                cloth->meshDirty = true;    // see rope note below: fresh buffers need the follow-up upload
+                m_RenderListDirty = true;   // mesh may have just been added
             } else if (cloth->meshDirty) {
                 EntityRenderData* rd = GetRenderData(entity);
                 auto* clothMesh = m_World->GetComponent<MeshComponent>(entity);
@@ -4389,7 +4390,13 @@ void RenderSystem::Update(f32 deltaTime) {
                 if (static_cast<usize>(EntityIndex(entity)) < m_EntityRenderData.size())
                     RetireEntityBuffers(m_EntityRenderData[static_cast<usize>(EntityIndex(entity))]);
                 rope->topologyDirty = false;
-                rope->meshDirty = false;
+                // Keep meshDirty SET: the retire drops the buffers and the next
+                // draw recreates them, but in EDIT mode nothing re-dirties the
+                // mesh afterward (no sim running) - without a follow-up upload
+                // the fresh buffers never receive the rope's vertices and it
+                // draws invisibly. Next frame's meshDirty pass fills them.
+                rope->meshDirty = true;
+                m_RenderListDirty = true;   // mesh may have just been added
             } else if (rope->meshDirty) {
                 EntityRenderData* rd = GetRenderData(entity);
                 auto* ropeMesh = m_World->GetComponent<MeshComponent>(entity);
@@ -9045,6 +9052,7 @@ bool RenderSystem::IsPoolEligible(Entity entity) const {
     if (m_World->HasComponent<Terrain2DComponent>(entity)) return false;
     if (m_World->HasComponent<JellyMeshComponent>(entity)) return false;
     if (m_World->HasComponent<ClothComponent>(entity)) return false;
+    if (m_World->HasComponent<RopeComponent>(entity)) return false;   // verlet tube rewritten per frame
     if (m_World->HasComponent<WaterVolumeComponent>(entity)) return false;
     if ((m_CachedWater3DStorage ? m_CachedWater3DStorage->Has(entity) : m_World->HasComponent<Water3DComponent>(entity))) return false;
     // Skinned meshes stay per-entity (bone deformation updates vertex data)

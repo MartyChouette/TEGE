@@ -23,6 +23,7 @@
 #include "Enjin/ECS/Components/VisualScript.h"
 #include "Enjin/AI/BehaviorTree.h"
 #include "Enjin/Gameplay/QuestFlow.h"
+#include "Enjin/Gameplay/ClothSystem.h"   // EnsureBuilt: cloth/ropes visible in edit mode
 #include "Enjin/Gameplay/TieredSaveSystem.h"
 #include "Enjin/Editor/PlayModeDiff.h"
 #include "Enjin/Physics/PhysicsBackendType.h"
@@ -782,6 +783,11 @@ void EditorLayer::Shutdown() {
 }
 
 void EditorLayer::Update(f32 deltaTime) {
+
+    // Cloth/ropes need their generated mesh even in EDIT mode (the sim only
+    // runs during play) - build any uninitialized ones to rest pose so a
+    // freshly loaded scene shows them. Cheap flag check when nothing changed.
+    if (m_World) Gameplay::ClothSystem::EnsureBuilt(m_World);
 
     // Keep the mesh-reference cache pointed at the current project root so imported
     // meshes stored as project-relative references resolve on scene load/save. Cheap
@@ -1842,8 +1848,11 @@ void EditorLayer::Update(f32 deltaTime) {
                     m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
                 StartPlayMode();  // Auto-play when entering focus mode
             }
-            // Capture mouse for immersive gameplay (hides cursor, enables free look)
-            Input::SetMouseCaptured(true);
+            // Capture the mouse ONLY when the scene actually mouse-looks
+            // (FPS/TPS). Cursor-driven games (point-and-click, UI-heavy) keep
+            // the cursor visible in focus mode - a blanket capture left them
+            // cursorless (Marty 2026-08-30).
+            if (SceneHasMouseLookController()) Input::SetMouseCaptured(true);
         } else {
             // Leaving focus mode: release mouse capture
             Input::SetMouseCaptured(false);

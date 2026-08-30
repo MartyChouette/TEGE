@@ -3,12 +3,14 @@
 #include "Enjin/ECS/Components/Cloth.h"
 #include "Enjin/ECS/Components/Rope.h"
 #include "Enjin/ECS/Components/Name.h"
+#include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/Mesh.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/Components/WeatherZone.h"
 #include "Enjin/Effects/Wind.h"
+#include "Enjin/Logging/Log.h"
 #include "Enjin/Math/Matrix.h"
 #include <algorithm>
 #include <vector>
@@ -191,6 +193,28 @@ void GatherColliders(World* world, Entity skip, std::vector<ColliderShape>& out)
         s.halfHeight = col->height * 0.5f;   // height = cylinder section only
         out.push_back(s);
     }
+
+    // Character controllers collide through Jolt's CharacterVirtual, not a
+    // collider component - without this, cloth and ropes never feel the
+    // player. Synthesize the same upright capsule ControllerSystem creates
+    // (defaults, or the entity's CapsuleCollider override; transform = feet).
+    auto addCharacter = [&](Entity e) {
+        if (EntityIndex(e) == EntityIndex(skip)) return;
+        auto* xf = world->GetComponent<TransformComponent>(e);
+        if (!xf) return;
+        if (world->GetComponent<CapsuleColliderComponent>(e))
+            return;   // already added by the capsule loop above
+        const f32 radius = 0.3f, totalHalfH = 0.8f;   // ControllerSystem defaults
+        ColliderShape s;
+        s.kind = ColliderShape::Kind::Capsule;
+        s.rot = Math::Quaternion();   // upright
+        s.pos = xf->position + Math::Vector3(0.0f, totalHalfH, 0.0f);
+        s.radius = radius;
+        s.halfHeight = std::max(totalHalfH - radius, 0.0f);
+        out.push_back(s);
+    };
+    for (Entity e : world->GetEntitiesWithComponent<ThirdPersonController>()) addCharacter(e);
+    for (Entity e : world->GetEntitiesWithComponent<FirstPersonController>()) addCharacter(e);
 }
 
 // Push a point out of a shape if inside (returns true on contact).
@@ -287,6 +311,86 @@ inline usize RopeVertexCount(const RopeComponent& r) {
         : static_cast<usize>(r.segments + 1) * kRopeSides;
 }
 
+// Write the tube/link geometry for the CURRENT chain positions into the
+// entity's MeshComponent, local space via the inverse model (the renderer
+// applies the entity transform). A frame is parallel-transported down the
+// chain so the cross-section doesn't twist. Shared by BuildRope (rest pose)
+// and the per-frame sim - BuildRope MUST call it too: without the ring
+// expansion the mesh is all centerline points, every triangle is zero-area,
+// and the rope rasterizes NOTHING (the edit-mode invisible-rope bug; the sim
+// only runs in play, which is why play looked fine).
+void WriteRopeMesh(World* world, Entity entity, RopeComponent& r, const Math::Matrix4& model) {
+    const i32 n = static_cast<i32>(r.positions.size());
+    if (n < 2) return;
+    auto* mesh = world->GetComponent<MeshComponent>(entity);
+    if (!mesh || mesh->vertices.size() != RopeVertexCount(r)) return;
+    Math::Matrix4 inv = model.Inverse();
+    Math::Vector3 carry = r.frameNormal;
+
+    auto frameAt = [&](const Math::Vector3& rawTangent,
+                       Math::Vector3& tangent, Math::Vector3& normal, Math::Vector3& binormal) {
+        f32 tl = rawTangent.Length();
+        tangent = (tl > 1e-6f) ? rawTangent * (1.0f / tl) : Math::Vector3(0, -1, 0);
+        normal = carry - tangent * carry.Dot(tangent);
+        f32 nl = normal.Length();
+        if (nl < 1e-4f) {
+            normal = Math::Vector3(1, 0, 0) - tangent * tangent.x;
+            nl = normal.Length();
+            if (nl < 1e-4f) { normal = Math::Vector3(0, 0, 1); nl = 1.0f; }
+        }
+        normal = normal * (1.0f / nl);
+        carry = normal;
+        binormal = tangent.Cross(normal);
+    };
+
+    if (r.style == RopeStyle::Chain) {
+        // One rigid box per segment; odd links twist 90 degrees like real
+        // chain links. Corner bit layout matches the index table in Build.
+        const f32 halfLen = r.segmentRest * 0.5f * kLinkOverlap;
+        const f32 hw = r.thickness;
+        const f32 hd = r.thickness * 0.45f;
+        for (i32 s = 0; s < r.segments; ++s) {
+            Math::Vector3 t, nrm, bin;
+            frameAt(r.positions[s + 1] - r.positions[s], t, nrm, bin);
+            if (s == 0) r.frameNormal = nrm;
+            if (s & 1) std::swap(nrm, bin);   // the alternating twist
+            Math::Vector3 mid = (r.positions[s] + r.positions[s + 1]) * 0.5f;
+            for (i32 k = 0; k < kLinkVerts; ++k) {
+                Math::Vector3 off = nrm * ((k & 1) ? hw : -hw)
+                                  + bin * ((k & 2) ? hd : -hd)
+                                  + t   * ((k & 4) ? halfLen : -halfLen);
+                auto& v = mesh->vertices[static_cast<usize>(s) * kLinkVerts + k];
+                Math::Vector3 wp = mid + off;
+                v.position = XformPoint(inv, wp);
+                Math::Vector3 wn = wp + off;   // corner normal = corner direction
+                v.normal = XformPoint(inv, wn) - v.position;
+                f32 vnl = v.normal.Length();
+                v.normal = (vnl > 1e-6f) ? v.normal * (1.0f / vnl) : Math::Vector3(0, 0, 1);
+            }
+        }
+    } else {
+        for (i32 i = 0; i < n; ++i) {
+            Math::Vector3 t, nrm, bin;
+            frameAt(r.positions[std::min(i + 1, n - 1)] - r.positions[std::max(i - 1, 0)],
+                    t, nrm, bin);
+            if (i == 0) r.frameNormal = nrm;   // seed next frame from the top
+            for (i32 k = 0; k < kRopeSides; ++k) {
+                f32 a = (2.0f * 3.14159265f * k) / kRopeSides;
+                Math::Vector3 radial = nrm * std::cos(a) + bin * std::sin(a);
+                auto& v = mesh->vertices[static_cast<usize>(i) * kRopeSides + k];
+                Math::Vector3 wp = r.positions[i] + radial * r.thickness;
+                v.position = XformPoint(inv, wp);
+                // Rotate the radial into local space too (ignore non-uniform scale).
+                Math::Vector3 wn = wp + radial;
+                v.normal = (XformPoint(inv, wn) - v.position);
+                f32 vnl = v.normal.Length();
+                v.normal = (vnl > 1e-6f) ? v.normal * (1.0f / vnl) : Math::Vector3(0, 0, 1);
+            }
+        }
+    }
+    r.meshDirty = true;
+}
+
 // Build the chain (straight down from the entity) and the tube render mesh.
 void BuildRope(World* world, Entity entity, RopeComponent& r) {
     r.segments = std::clamp(r.segments, 1, 256);
@@ -358,6 +462,11 @@ void BuildRope(World* world, Entity entity, RopeComponent& r) {
     else
         world->AddComponent<MeshComponent>(entity, std::move(mesh));
 
+    // Expand the placeholder centerline vertices into the real rest-pose
+    // tube/links - see the WriteRopeMesh comment for why skipping this makes
+    // the rope invisible.
+    WriteRopeMesh(world, entity, r, model);
+
     r.initialized = true;
     r.topologyDirty = true;
 }
@@ -377,6 +486,18 @@ void ClothSystem::ResetAll(World* world) {
         if (!r) continue;
         r->initialized = false;
         BuildRope(world, entity, *r);
+    }
+}
+
+void ClothSystem::EnsureBuilt(World* world) {
+    if (!world) return;
+    for (Entity entity : world->GetEntitiesWithComponent<ClothComponent>()) {
+        auto* c = world->GetComponent<ClothComponent>(entity);
+        if (c && !c->initialized) BuildCloth(world, entity, *c);
+    }
+    for (Entity entity : world->GetEntitiesWithComponent<RopeComponent>()) {
+        auto* r = world->GetComponent<RopeComponent>(entity);
+        if (r && !r->initialized) BuildRope(world, entity, *r);
     }
 }
 
@@ -612,76 +733,8 @@ void ClothSystem::Update(World* world, f32 deltaTime, const Effects::WindSystem*
         if (attachXf && !r->pinBottom)
             attachXf->position = r->positions[n - 1];
 
-        // Rebuild the render mesh in local space via the inverse model (the
-        // renderer applies the entity transform). A frame is parallel-
-        // transported down the chain so the cross-section doesn't twist.
-        auto* mesh = world->GetComponent<MeshComponent>(entity);
-        if (!mesh || mesh->vertices.size() != RopeVertexCount(*r)) continue;
-        Math::Matrix4 inv = model.Inverse();
-        Math::Vector3 carry = r->frameNormal;
-
-        auto frameAt = [&](const Math::Vector3& rawTangent,
-                           Math::Vector3& tangent, Math::Vector3& normal, Math::Vector3& binormal) {
-            f32 tl = rawTangent.Length();
-            tangent = (tl > 1e-6f) ? rawTangent * (1.0f / tl) : Math::Vector3(0, -1, 0);
-            normal = carry - tangent * carry.Dot(tangent);
-            f32 nl = normal.Length();
-            if (nl < 1e-4f) {
-                normal = Math::Vector3(1, 0, 0) - tangent * tangent.x;
-                nl = normal.Length();
-                if (nl < 1e-4f) { normal = Math::Vector3(0, 0, 1); nl = 1.0f; }
-            }
-            normal = normal * (1.0f / nl);
-            carry = normal;
-            binormal = tangent.Cross(normal);
-        };
-
-        if (r->style == RopeStyle::Chain) {
-            // One rigid box per segment; odd links twist 90 degrees like real
-            // chain links. Corner bit layout matches the index table in Build.
-            const f32 halfLen = r->segmentRest * 0.5f * kLinkOverlap;
-            const f32 hw = r->thickness;
-            const f32 hd = r->thickness * 0.45f;
-            for (i32 s = 0; s < r->segments; ++s) {
-                Math::Vector3 t, nrm, bin;
-                frameAt(r->positions[s + 1] - r->positions[s], t, nrm, bin);
-                if (s == 0) r->frameNormal = nrm;
-                if (s & 1) std::swap(nrm, bin);   // the alternating twist
-                Math::Vector3 mid = (r->positions[s] + r->positions[s + 1]) * 0.5f;
-                for (i32 k = 0; k < kLinkVerts; ++k) {
-                    Math::Vector3 off = nrm * ((k & 1) ? hw : -hw)
-                                      + bin * ((k & 2) ? hd : -hd)
-                                      + t   * ((k & 4) ? halfLen : -halfLen);
-                    auto& v = mesh->vertices[static_cast<usize>(s) * kLinkVerts + k];
-                    Math::Vector3 wp = mid + off;
-                    v.position = XformPoint(inv, wp);
-                    Math::Vector3 wn = wp + off;   // corner normal = corner direction
-                    v.normal = XformPoint(inv, wn) - v.position;
-                    f32 vnl = v.normal.Length();
-                    v.normal = (vnl > 1e-6f) ? v.normal * (1.0f / vnl) : Math::Vector3(0, 0, 1);
-                }
-            }
-        } else {
-            for (i32 i = 0; i < n; ++i) {
-                Math::Vector3 t, nrm, bin;
-                frameAt(r->positions[std::min(i + 1, n - 1)] - r->positions[std::max(i - 1, 0)],
-                        t, nrm, bin);
-                if (i == 0) r->frameNormal = nrm;   // seed next frame from the top
-                for (i32 k = 0; k < kRopeSides; ++k) {
-                    f32 a = (2.0f * 3.14159265f * k) / kRopeSides;
-                    Math::Vector3 radial = nrm * std::cos(a) + bin * std::sin(a);
-                    auto& v = mesh->vertices[static_cast<usize>(i) * kRopeSides + k];
-                    Math::Vector3 wp = r->positions[i] + radial * r->thickness;
-                    v.position = XformPoint(inv, wp);
-                    // Rotate the radial into local space too (ignore non-uniform scale).
-                    Math::Vector3 wn = wp + radial;
-                    v.normal = (XformPoint(inv, wn) - v.position);
-                    f32 vnl = v.normal.Length();
-                    v.normal = (vnl > 1e-6f) ? v.normal * (1.0f / vnl) : Math::Vector3(0, 0, 1);
-                }
-            }
-        }
-        r->meshDirty = true;
+        // Write the tube/link geometry for the new chain positions.
+        WriteRopeMesh(world, entity, *r, model);
     }
 }
 

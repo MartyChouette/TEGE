@@ -30,6 +30,12 @@ public:
     // buffers still hold the last simulated/torn state, so the cloth must be
     // rebuilt (and its buffers retired) or the tear survives into edit mode.
     static void ResetAll(ECS::World* world);
+
+    // Build any uninitialized cloth/rope to its rest pose WITHOUT simulating.
+    // The editor calls this every frame so cloth and ropes are visible in
+    // EDIT mode too - Update only runs during play, and before this existed a
+    // freshly loaded rope had no mesh at all until the first play session.
+    static void EnsureBuilt(ECS::World* world);
 };
 
 } // namespace Gameplay
