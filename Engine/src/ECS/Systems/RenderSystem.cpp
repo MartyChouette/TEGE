@@ -11224,11 +11224,32 @@ void RenderSystem::RenderOnionSkinGhosts() {
 }
 
 void RenderSystem::MirrorSceneAcrossPlane(f32 planeY, const Math::Vector3& tint, f32 strength, Entity skipEntity) {
+    // The "reflection" is REAL mirrored geometry drawn below the plane - it
+    // only reads as a reflection when viewed from ABOVE through the
+    // semi-transparent surface. A camera at or below plane height sees the
+    // puppet show directly (Marty 2026-08-30: "double reflection objects"
+    // under the world), so skip the whole pass from below.
+    if (m_Camera && m_Camera->GetPosition().y <= planeY + 0.05f) return;
+
     // Mirror across the horizontal plane Y=planeY: negate Y, translate by 2*planeY.
     Math::Matrix4 mirror;
     for (int i = 0; i < 16; ++i) mirror.m[i] = 0.0f;
     mirror.m[0] = 1.0f; mirror.m[5] = -1.0f; mirror.m[10] = 1.0f; mirror.m[15] = 1.0f;
     mirror.m[13] = 2.0f * planeY;
+
+    // Footprint cull: mirrored copies only exist to be seen THROUGH the
+    // reflective surface, so anything whose mirrored position can't project
+    // onto the surface's XZ bounds (with a generous height-based margin for
+    // grazing angles) is skipped instead of floating under the world.
+    f32 fpMinX = -1e9f, fpMaxX = 1e9f, fpMinZ = -1e9f, fpMaxZ = 1e9f;
+    bool haveFootprint = false;
+    if (auto* stf = m_World->GetComponent<TransformComponent>(skipEntity)) {
+        fpMinX = stf->position.x - stf->scale.x;
+        fpMaxX = stf->position.x + stf->scale.x;
+        fpMinZ = stf->position.z - stf->scale.z;
+        fpMaxZ = stf->position.z + stf->scale.z;
+        haveFootprint = true;
+    }
 
     // Re-draw every mesh above the plane, mirrored, tinted and dimmed so it reads as
     // a reflection below the surface. Full-material colour via the ghost draw.
@@ -11239,6 +11260,15 @@ void RenderSystem::MirrorSceneAcrossPlane(f32 planeY, const Math::Vector3& tint,
         auto* tf = m_World->GetComponent<TransformComponent>(e);
         if (!tf) continue;
         if (tf->position.y < planeY - 0.001f) continue;   // only what sits above the plane
+        if (haveFootprint) {
+            // Margin grows with height above the plane: tall/high things can
+            // reflect into the surface from further away at grazing angles.
+            f32 margin = (tf->position.y - planeY) * 1.5f +
+                         std::max({tf->scale.x, tf->scale.y, tf->scale.z});
+            if (tf->position.x < fpMinX - margin || tf->position.x > fpMaxX + margin ||
+                tf->position.z < fpMinZ - margin || tf->position.z > fpMaxZ + margin)
+                continue;
+        }
 
         Math::Matrix4 reflected = mirror * ComputeWorldMatrix(m_World, e);
 

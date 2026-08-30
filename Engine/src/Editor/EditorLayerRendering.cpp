@@ -775,18 +775,22 @@ void EditorLayer::DrawGameViewPanel() {
             drawList->AddText(textPos, IM_COL32(200, 200, 200, 200), previewText);
 
 
-            // Debug: zone detection status at bottom of preview
-            char debugBuf[128];
-            if (activeWeatherZone) {
-                const char* wNames[] = {"Clear","Cloudy","Rain","HeavyRain","Snow","Fog","Storm"};
-                const char* wn = (activeWeatherZone->weatherType < 7) ? wNames[activeWeatherZone->weatherType] : "?";
-                snprintf(debugBuf, sizeof(debugBuf), "Zone: %s | Particles: %u", wn, m_WeatherSystem.GetActiveParticleCount());
-            } else {
-                snprintf(debugBuf, sizeof(debugBuf), "No weather zone at camera");
+            // Debug: zone detection status - GAME DEBUG (F1) ONLY. This drew
+            // over normal gameplay ("No weather zone at camera" burned into
+            // Marty's playground session 2026-08-30).
+            if (m_GameDebugActive) {
+                char debugBuf[128];
+                if (activeWeatherZone) {
+                    const char* wNames[] = {"Clear","Cloudy","Rain","HeavyRain","Snow","Fog","Storm"};
+                    const char* wn = (activeWeatherZone->weatherType < 7) ? wNames[activeWeatherZone->weatherType] : "?";
+                    snprintf(debugBuf, sizeof(debugBuf), "Zone: %s | Particles: %u", wn, m_WeatherSystem.GetActiveParticleCount());
+                } else {
+                    snprintf(debugBuf, sizeof(debugBuf), "No weather zone at camera");
+                }
+                ImVec2 dbgSize = ImGui::CalcTextSize(debugBuf);
+                ImVec2 dbgPos((p0.x + p1.x - dbgSize.x) * 0.5f, p1.y - 20);
+                drawList->AddText(dbgPos, IM_COL32(180, 180, 100, 200), debugBuf);
             }
-            ImVec2 dbgSize = ImGui::CalcTextSize(debugBuf);
-            ImVec2 dbgPos((p0.x + p1.x - dbgSize.x) * 0.5f, p1.y - 20);
-            drawList->AddText(dbgPos, IM_COL32(180, 180, 100, 200), debugBuf);
 
             // Render flower particles as projected shapes in game view
             // Liquid particles render as elongated streaks, burst particles as circles
