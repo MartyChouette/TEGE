@@ -806,6 +806,10 @@ void EditorLayer::Update(f32 deltaTime) {
     // freshly loaded scene shows them. Cheap flag check when nothing changed.
     if (m_World) Gameplay::ClothSystem::EnsureBuilt(m_World);
 
+    // Feed the weather sim's real-time accumulator (consumed in the game-view
+    // render path, which may run at a throttled rate - see RenderOffscreen).
+    m_WeatherDtAccum += deltaTime;
+
     // Keep the mesh-reference cache pointed at the current project root so imported
     // meshes stored as project-relative references resolve on scene load/save. Cheap
     // no-op once set; only re-clears the cache when the project actually changes.
@@ -2763,7 +2767,8 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
                 activeWeatherZone->lightningMaxInterval);
         }
 
-        m_WeatherSystem.Update(m_LastDeltaTime, cameraTransform->position);
+        // (weather sim update moved BELOW the zone if/else - it must run in
+        // the no-zone case too, and with real elapsed time.)
 
         hasWeatherParticles = (activeWeatherZone->weatherType == 2 ||
                                activeWeatherZone->weatherType == 3 ||
@@ -2805,6 +2810,19 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         m_RenderSystem->SetFogColor(Math::Vector3(0.5f, 0.5f, 0.6f));
         m_RenderSystem->SetSnowIntensity(0.0f);
     }
+
+    // Weather SIM step - two fixes in one (Marty 2026-08-30):
+    // 1. REAL elapsed time, not the editor's per-frame dt. This code runs in
+    //    the game-view render path, which the Game View FPS dropdown
+    //    throttles - at 30fps it ran 30x/sec with a full-rate dt, so rain
+    //    fell at a fraction of real speed ("why is speed of things changing
+    //    when I slow down fps"). The accumulator (fed every editor frame in
+    //    Update) makes sim time frame-rate independent.
+    // 2. Runs for the NO-ZONE case too - scripted weather
+    //    (Weather_SetRainIntensity with no WeatherZone entity) previously
+    //    never advanced the particle sim in the editor.
+    m_WeatherSystem.Update(m_WeatherDtAccum, cameraTransform->position);
+    m_WeatherDtAccum = 0.0f;
 
     // Water freeze/thaw driven by temperature zones
     for (ECS::Entity waterEntity : m_World->GetEntitiesWithComponent<ECS::WaterVolumeComponent>()) {

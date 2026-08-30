@@ -833,6 +833,10 @@ private:
     f32 m_FrameTimeP95 = 0.0f;
     f32 m_FrameTimeP99 = 0.0f;
     f32 m_LastDeltaTime = 0.0f;
+    // Real time accrued since the last weather sim step (fed in Update every
+    // frame, consumed in RenderOffscreen's throttled game-view path) - keeps
+    // rain speed independent of the Game View FPS setting.
+    f32 m_WeatherDtAccum = 0.0f;
 
     // Accumulated effects time (drives fire-light flicker) and the per-frame fire
     // light buffer reused to keep the injection allocation-free.
