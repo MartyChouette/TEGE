@@ -41,6 +41,7 @@ The `TegeBehavior` base class and the `enjin_api` helper scripts (Timer, Tween, 
 
 `Time_GetDeltaTime()`, `Time_GetFixedDeltaTime()`, `Time_GetTime()`, `Time_GetTimeScale()`, `Time_SetTimeScale(float)`, `Time_GetFrameCount()`
 
+- **OnMouseEnter() / OnMouseExit() / OnClick()**: TegeBehavior lifecycle hooks for cursor interaction. The engine raycasts under the mouse once per frame (same ray as `Physics_RaycastScreen`, only when some script defines one of these) — Enter/Exit fire on the hover edge, OnClick on left-press while hovered. The entity needs a collider to be hit; nothing fires while the mouse is captured (FPS look) or on the web player (no screen-pick there yet). `Physics_RaycastScreen` remains the manual alternative.
 - **OnFixedUpdate(float fixedDt)**: TegeBehavior lifecycle hook that runs once per physics tick. On fixed-timestep projects (Settings > Project > Fixed Physics Timestep) it lands exactly in step with the physics simulation - use it for forces and tick-locked gameplay. On classic projects it runs from a 60Hz accumulator. OnUpdate(dt) stays frame-paced either way.
 - **Bullet time**: `Controller_SetIgnoreTimeScale(uint64 entity, bool)` / `bool Controller_GetIgnoreTimeScale(uint64)` — the flagged entity's character controller runs at wall-clock rate while `Time_SetScale` slows the world (movement, jumps, gravity all stay normal; no compensation needed). Pair with `Animator_SetSpeed(player, 1/scale)` if the player is animated. Also an inspector checkbox on every controller.
 - **Time scale**: `Time_SetScale(float)` / `float Time_GetScale()` — global slow-mo/hitstop (0..10, 1 = normal). Scales the dt gameplay systems receive (physics, scripts, tweens, animation); UI and the frame limiter stay real-time. Resets to 1 on play start.
@@ -342,6 +343,8 @@ Accessors for components that previously had no script access (closing the scrip
 - `UI_SetImageAlpha(uint64, int, float)` — Image transparency (0-1).
 - `UI_SetBgColor(uint64, int, float r, g, b, float a)` — Element background color.
 - `UI_SetTextColor(uint64, int, float r, g, b)` — Text color (uniform, all characters).
+- `UI_SetFontSize(uint64, int, float)` — Font size in pixels for a Label/Button element. Pass a negative value to restore the theme default.
+- `UI_GetFontSize(uint64, int)` — Current per-element font size override (-1 = theme default).
 - `UI_SetCharColor(uint64, int elementId, int charIndex, float r, g, b)` — Set color for a single character by index. Enables per-character coloring on Label/Button elements. Characters beyond the charColors array use the element's textColor.
 - `UI_SetCharColorRange(uint64, int elementId, int startIdx, int endIdx, float r, g, b)` — Set color for a range of characters (inclusive).
 - `UI_ClearCharColors(uint64, int elementId)` — Remove all per-character colors, revert to uniform textColor.

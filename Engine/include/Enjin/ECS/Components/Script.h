@@ -79,6 +79,9 @@ struct ScriptAttachment {
     int methodOnTriggerEnter = -1;
     int methodOnTriggerExit = -1;
     int methodOnAnimationEvent = -1;   // void OnAnimationEvent(string) — optional
+    int methodOnMouseEnter = -1;       // void OnMouseEnter() — cursor ray first hits this entity
+    int methodOnMouseExit = -1;        // void OnMouseExit()  — cursor ray leaves this entity
+    int methodOnClick = -1;            // void OnClick()      — left click while hovered
 };
 
 // Component that holds all scripts attached to an entity

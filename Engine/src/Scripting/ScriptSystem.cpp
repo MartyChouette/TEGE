@@ -1,6 +1,7 @@
 #include "Enjin/Scripting/ScriptSystem.h"
 #include "Enjin/Scripting/ScriptEngine.h"
-#include "Enjin/Scripting/ScriptBindings.h"   // ClearBindingsEventListeners on teardown
+#include "Enjin/Scripting/ScriptBindings.h"   // ClearBindingsEventListeners on teardown + mouse pick
+#include "Enjin/Platform/Input.h"            // mouse position/buttons for OnMouseEnter/OnClick
 #include "Enjin/ECS/Components/Skeleton.h"   // AnimatorComponent — animation-event wiring
 #include "Enjin/Scripting/ScriptPropertyParser.h"
 #include "Enjin/Scripting/CoroutineScheduler.h"
@@ -43,6 +44,9 @@ void ScriptSystem::CacheMethodIds(ECS::ScriptAttachment& script) {
     script.methodOnAnimationEvent = findMethod("void OnAnimationEvent(string)");
     if (script.methodOnAnimationEvent < 0)
         script.methodOnAnimationEvent = findMethod("void OnAnimationEvent(const string&in)");
+    script.methodOnMouseEnter     = findMethod("void OnMouseEnter()");
+    script.methodOnMouseExit      = findMethod("void OnMouseExit()");
+    script.methodOnClick          = findMethod("void OnClick()");
 }
 
 void ScriptSystem::HandleScriptError(ECS::ScriptAttachment& script, const char* methodName) {
@@ -432,6 +436,10 @@ void ScriptSystem::Update(f32 deltaTime) {
         }
     }
 
+    // 4b. Mouse-over callbacks (before OnUpdate so enter/click state is
+    // visible to the same frame's OnUpdate)
+    UpdateMouseCallbacks();
+
     // 5. OnUpdate
     for (ECS::Entity entity : m_CachedScriptEntities) {
         auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
@@ -480,6 +488,52 @@ void ScriptSystem::LateUpdate(f32 deltaTime) {
                 CallLifecycleMethodFloat(script, script.methodOnLateUpdate, "OnLateUpdate", deltaTime);
             }
         }
+    }
+}
+
+void ScriptSystem::UpdateMouseCallbacks() {
+    // Only pay for the raycast when a loaded script actually listens.
+    bool anyListener = false;
+    for (ECS::Entity entity : m_CachedScriptEntities) {
+        auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
+        if (!sc) continue;
+        for (auto& script : sc->scripts) {
+            if (script.methodOnMouseEnter >= 0 || script.methodOnMouseExit >= 0 ||
+                script.methodOnClick >= 0) {
+                anyListener = true;
+                break;
+            }
+        }
+        if (anyListener) break;
+    }
+    if (!anyListener && m_MouseHoverEntity == ECS::INVALID_ENTITY) return;
+
+    ECS::Entity hovered = ECS::INVALID_ENTITY;
+    if (anyListener && !Input::IsMouseCaptured()) {
+        Math::Vector2 mouse = Input::GetMousePosition();
+        hovered = static_cast<ECS::Entity>(BindingsPickEntityAtScreen(mouse.x, mouse.y));
+        if (hovered != ECS::INVALID_ENTITY && !m_World->IsValid(hovered))
+            hovered = ECS::INVALID_ENTITY;
+    }
+
+    auto dispatch = [this](ECS::Entity entity, int ECS::ScriptAttachment::*method, const char* name) {
+        if (entity == ECS::INVALID_ENTITY || !m_World->IsValid(entity)) return;
+        auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
+        if (!sc) return;
+        for (auto& script : sc->scripts) {
+            if (script.initialized && script.started)
+                CallLifecycleMethod(script, script.*method, name);
+        }
+    };
+
+    if (hovered != m_MouseHoverEntity) {
+        dispatch(m_MouseHoverEntity, &ECS::ScriptAttachment::methodOnMouseExit, "OnMouseExit");
+        dispatch(hovered, &ECS::ScriptAttachment::methodOnMouseEnter, "OnMouseEnter");
+        m_MouseHoverEntity = hovered;
+    }
+
+    if (hovered != ECS::INVALID_ENTITY && Input::IsMouseButtonPressed(MouseButton::Left)) {
+        dispatch(hovered, &ECS::ScriptAttachment::methodOnClick, "OnClick");
     }
 }
 

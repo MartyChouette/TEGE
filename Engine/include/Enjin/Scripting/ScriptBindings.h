@@ -76,6 +76,10 @@ void SetBindingsWorld(ECS::World* world);
 void SetBindingsPhysics(Physics::IPhysicsBackend* physics);
 // Push the active render camera + viewport so screen-space script queries (Physics_RaycastScreen) work.
 void SetBindingsRenderView(const Renderer::Camera* camera, f32 viewportWidth, f32 viewportHeight);
+// Screen-point pick through that same render view (same ray as the script-facing
+// Physics_RaycastScreen). 0 = nothing hit / no camera / web. Drives the
+// OnMouseEnter/OnMouseExit/OnClick script callbacks in ScriptSystem.
+ENJIN_API u64 BindingsPickEntityAtScreen(f32 screenX, f32 screenY);
 void SetBindingsAudio(Audio::SimpleAudio* audio);
 void SetBindingsSceneManager(Scene::SceneManager* mgr);
 void SetBindingsFlowAdvanceFlag(bool* flag);

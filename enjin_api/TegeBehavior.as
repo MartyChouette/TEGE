@@ -75,4 +75,7 @@ class TegeBehavior {
     // void OnCollisionExit(uint64 other)  { }
     // void OnTriggerEnter(uint64 other)   { }
     // void OnTriggerExit(uint64 other)    { }
+    // void OnMouseEnter()                 { }  // cursor ray first hits this entity (needs a collider)
+    // void OnMouseExit()                  { }  // cursor ray leaves this entity
+    // void OnClick()                      { }  // left click while the cursor is on this entity
 }

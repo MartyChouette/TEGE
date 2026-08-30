@@ -89,6 +89,11 @@ private:
     // Cache method IDs for a script attachment
     void CacheMethodIds(ECS::ScriptAttachment& script);
 
+    // Mouse-over script callbacks: raycast under the cursor once per frame and
+    // dispatch OnMouseEnter/OnMouseExit/OnClick to the hit entity's scripts.
+    // Skipped entirely (no raycast) unless some loaded script defines one.
+    void UpdateMouseCallbacks();
+
     // Handle script error
     void HandleScriptError(ECS::ScriptAttachment& script, const char* methodName);
 
@@ -100,6 +105,9 @@ private:
 
     // Per-frame cached script entity list (shared between Update/FixedUpdate/LateUpdate)
     std::vector<ECS::Entity> m_CachedScriptEntities;
+
+    // Entity the cursor ray currently rests on (mouse callback edge tracking)
+    ECS::Entity m_MouseHoverEntity = ECS::INVALID_ENTITY;
 
     // Fixed timestep accumulator
     f32 m_FixedTimeAccumulator = 0.0f;

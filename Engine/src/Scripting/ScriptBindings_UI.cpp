@@ -177,6 +177,20 @@ static void UI_SetTextColor(u64 entity, int elementId, float r, float g, float b
     if (el) el->style.textColor = Math::Vector3(r, g, b);
 }
 
+static void UI_SetFontSize(u64 entity, int elementId, float size) {
+    auto* canvas = GetCanvas(entity);
+    if (!canvas) return;
+    auto* el = canvas->GetElement(static_cast<u32>(elementId));
+    if (el) el->style.fontSize = size; // < 0 restores the theme default
+}
+
+static float UI_GetFontSize(u64 entity, int elementId) {
+    auto* canvas = GetCanvas(entity);
+    if (!canvas) return -1.0f;
+    auto* el = canvas->GetElement(static_cast<u32>(elementId));
+    return el ? el->style.fontSize : -1.0f;
+}
+
 // -- Per-character text colors --
 
 static void UI_SetCharColor(u64 entity, int elementId, int charIndex, float r, float g, float b) {
@@ -357,6 +371,10 @@ void RegisterUIBindings(asIScriptEngine* engine) {
         ENJIN_AS_FN(UI_SetElementOffsets), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void UI_SetTextColor(uint64, int, float, float, float)",
         ENJIN_AS_FN(UI_SetTextColor), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void UI_SetFontSize(uint64, int, float)",
+        ENJIN_AS_FN(UI_SetFontSize), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float UI_GetFontSize(uint64, int)",
+        ENJIN_AS_FN(UI_GetFontSize), ENJIN_AS_CALL_CDECL));
 
     // -- Per-character text colors --
     AS_CHECK(engine->RegisterGlobalFunction("void UI_SetCharColor(uint64, int, int, float, float, float)",

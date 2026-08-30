@@ -132,6 +132,12 @@ static u64 Physics_RaycastScreen(f32 screenX, f32 screenY) {
 #endif
 }
 
+// Engine-side entry for the same pick (mouse-hover script callbacks). Lives here
+// because the camera/viewport/physics statics are file-local to this TU.
+u64 Enjin::Scripting::BindingsPickEntityAtScreen(f32 screenX, f32 screenY) {
+    return Physics_RaycastScreen(screenX, screenY);
+}
+
 static Vector2 Input_GetScreenSize() {
     return Vector2(s_BindingsViewW, s_BindingsViewH);
 }
