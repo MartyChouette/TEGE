@@ -833,10 +833,13 @@ private:
     f32 m_FrameTimeP95 = 0.0f;
     f32 m_FrameTimeP99 = 0.0f;
     f32 m_LastDeltaTime = 0.0f;
-    // Real time accrued since the last weather sim step (fed in Update every
-    // frame, consumed in RenderOffscreen's throttled game-view path) - keeps
-    // rain speed independent of the Game View FPS setting.
-    f32 m_WeatherDtAccum = 0.0f;
+    // Real time accrued since the game view last rendered (fed in Update
+    // every frame, consumed once per game-view render). EVERY simulation
+    // living in RenderOffscreen's throttled section must step by this, not
+    // by m_LastDeltaTime - the FPS dropdown early-returns the whole path,
+    // so per-frame dt there runs sims at a fraction of real speed (the
+    // 30fps-slow-rain bug, and its ten siblings).
+    f32 m_GameViewSimAccum = 0.0f;
 
     // Accumulated effects time (drives fire-light flicker) and the per-frame fire
     // light buffer reused to keep the injection allocation-free.

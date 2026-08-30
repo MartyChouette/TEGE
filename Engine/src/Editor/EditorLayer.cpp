@@ -806,9 +806,9 @@ void EditorLayer::Update(f32 deltaTime) {
     // freshly loaded scene shows them. Cheap flag check when nothing changed.
     if (m_World) Gameplay::ClothSystem::EnsureBuilt(m_World);
 
-    // Feed the weather sim's real-time accumulator (consumed in the game-view
-    // render path, which may run at a throttled rate - see RenderOffscreen).
-    m_WeatherDtAccum += deltaTime;
+    // Feed the game-view sim accumulator (consumed once per game-view render
+    // in RenderOffscreen, which the FPS dropdown throttles).
+    m_GameViewSimAccum += deltaTime;
 
     // Keep the mesh-reference cache pointed at the current project root so imported
     // meshes stored as project-relative references resolve on scene load/save. Cheap
@@ -2512,6 +2512,12 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
 
     auto renderTimingStart = std::chrono::high_resolution_clock::now();
 
+    // Real time since the game view last rendered - the ONE dt for every
+    // simulation below (the FPS-dropdown throttle early-returns above, so
+    // m_LastDeltaTime under-counts by the skip ratio).
+    const f32 simDt = m_GameViewSimAccum;
+    m_GameViewSimAccum = 0.0f;
+
     // Render target resize is handled by PrepareRenderTargets() before command buffer recording.
 
     // Find game camera entity (use user-selected camera, or fall back to active camera)
@@ -2821,8 +2827,7 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     // 2. Runs for the NO-ZONE case too - scripted weather
     //    (Weather_SetRainIntensity with no WeatherZone entity) previously
     //    never advanced the particle sim in the editor.
-    m_WeatherSystem.Update(m_WeatherDtAccum, cameraTransform->position);
-    m_WeatherDtAccum = 0.0f;
+    m_WeatherSystem.Update(simDt, cameraTransform->position);
 
     // Water freeze/thaw driven by temperature zones
     for (ECS::Entity waterEntity : m_World->GetEntitiesWithComponent<ECS::WaterVolumeComponent>()) {
@@ -2846,21 +2851,21 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
 
         if (waterTempZone && waterTempZone->IsFreezing()) {
             // Freezing: increase freeze progress
-            waterVol->freezeProgress += waterVol->freezeRate * m_LastDeltaTime;
+            waterVol->freezeProgress += waterVol->freezeRate * simDt;
             if (waterVol->freezeProgress > 1.0f) waterVol->freezeProgress = 1.0f;
         } else if (waterTempZone && waterTempZone->IsNearFreezing()) {
             // Near-freezing (0-5C): lerp toward partial freeze (0.3)
             f32 target = 0.3f;
             if (waterVol->freezeProgress < target) {
-                waterVol->freezeProgress += waterVol->freezeRate * 0.5f * m_LastDeltaTime;
+                waterVol->freezeProgress += waterVol->freezeRate * 0.5f * simDt;
                 if (waterVol->freezeProgress > target) waterVol->freezeProgress = target;
             } else {
-                waterVol->freezeProgress -= waterVol->thawRate * 0.5f * m_LastDeltaTime;
+                waterVol->freezeProgress -= waterVol->thawRate * 0.5f * simDt;
                 if (waterVol->freezeProgress < target) waterVol->freezeProgress = target;
             }
         } else {
             // Warm or no zone: thaw
-            waterVol->freezeProgress -= waterVol->thawRate * m_LastDeltaTime;
+            waterVol->freezeProgress -= waterVol->thawRate * simDt;
             if (waterVol->freezeProgress < 0.0f) waterVol->freezeProgress = 0.0f;
         }
         waterVol->isFrozen = (waterVol->freezeProgress >= 0.99f);
@@ -2868,7 +2873,7 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
 
     // World Time System: advance clock and update sun/ambient
     if (m_WorldTimeEnabled) {
-        m_WorldTime.Update(m_LastDeltaTime);
+        m_WorldTime.Update(simDt);
 
         const auto& timeState = m_WorldTime.GetState();
 
@@ -2902,7 +2907,7 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
 
     // Seasonal Weather System: temperature and weather transitions
     if (m_WorldTimeEnabled && m_SeasonalWeatherEnabled && !activeWeatherZone) {
-        m_SeasonalWeather.Update(m_LastDeltaTime, m_WorldTime.GetState(), m_WeatherSystem);
+        m_SeasonalWeather.Update(simDt, m_WorldTime.GetState(), m_WeatherSystem);
     }
 
     // World curvature
@@ -2928,10 +2933,10 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         Math::Vector4 w = ws->GetWindVector();
         m_ParticleSystem.SetSceneWind(Math::Vector3(w.x, w.y, w.z));
     }
-    m_ParticleSystem.Update(m_LastDeltaTime, m_World);
+    m_ParticleSystem.Update(simDt, m_World);
 
     // Update parallax scrolling backgrounds (auto-scroll advance)
-    m_ParallaxSystem.Update(m_LastDeltaTime);
+    m_ParallaxSystem.Update(simDt);
 
     // Update elemental system (fire/water/earth/air particle simulation)
     if (cameraTransform) {
@@ -2943,14 +2948,14 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
                 m_WindSystem.RegisterHeatSource(elemPool.positions[i], elemPool.intensities[i]);
             }
         }
-        m_ElementalSystem.Update(m_World, m_LastDeltaTime, cameraTransform->position);
+        m_ElementalSystem.Update(m_World, simDt, cameraTransform->position);
 
         // Feed fire emitters into the renderer as transient point lights. One
         // source lights both surfaces (PBR point lights) and participating media
         // (clustered lighting -> volumetric fog froxels), so fire glows on walls
         // and through nearby smoke/fog in lockstep.
         if (m_RenderSystem) {
-            m_EffectsTime += m_LastDeltaTime;
+            m_EffectsTime += simDt;
             m_ElementalSystem.BuildFireLights(m_EffectsTime, m_FireLights);
             m_RenderSystem->ClearTransientPointLights();
             for (const auto& fl : m_FireLights) {
@@ -2960,13 +2965,13 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     }
 
     // Update fluid simulation
-    m_FluidSimulation.Update(m_LastDeltaTime, m_World);
+    m_FluidSimulation.Update(simDt, m_World);
 
     // Update fluid-terrain coupling (erosion/deposition)
-    m_FluidTerrainCoupling.Update(m_LastDeltaTime, m_World, m_FluidSimulation);
+    m_FluidTerrainCoupling.Update(simDt, m_World, m_FluidSimulation);
 
     // Update curl noise flow fields
-    if (m_CurlNoiseSystem) m_CurlNoiseSystem->Update(m_LastDeltaTime);
+    if (m_CurlNoiseSystem) m_CurlNoiseSystem->Update(simDt);
 
     u32 rtWidth = m_GameViewRenderTarget->GetWidth();
     u32 rtHeight = m_GameViewRenderTarget->GetHeight();
