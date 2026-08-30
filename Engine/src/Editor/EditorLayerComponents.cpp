@@ -2241,6 +2241,11 @@ void EditorLayer::DrawTreeVolumeComponent(ECS::Entity entity) {
 
         ImGui::Separator();
         ImGui::DragFloat("Wind Sway", &tree->windSwayStrength, 0.05f, 0.0f, 5.0f);
+        ImGui::Checkbox("Generate Colliders", &tree->generateColliders);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("At play start, spawn a static capsule collider per trunk\n"
+                              "(transient - never saved into the scene). Characters bump\n"
+                              "into trees instead of walking through them.");
 
         ImGui::Separator();
         ImGui::Text("Textures");

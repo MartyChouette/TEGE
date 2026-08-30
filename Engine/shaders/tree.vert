@@ -141,8 +141,17 @@ void main() {
 
     vec3 windDisplacement;
     if (isCanopy) {
-        // Canopy sways with full wind
-        windDisplacement = windDir * windAngle;
+        // Pivot at the NECK (the canopy base, where crown meets trunk): sway
+        // grows with height above the pivot so the crown TIPS like a lever
+        // instead of the whole ball translating sideways (Marty 2026-08-30).
+        // The base displaces exactly like the trunk's tip (same 0.5 factor as
+        // the trunk branch at full height), keeping the crown glued on.
+        float canopySpan = max(cRadius * 2.0 * canopyScale, 0.01);
+        float neckY = cOffset - cRadius * canopyScale;
+        float lever = clamp((localPos.y - neckY) / canopySpan, 0.0, 1.0);
+        float tipBend = windAngle * 0.5;
+        windDisplacement = windDir * (tipBend + windAngle * lever);
+        windDisplacement.y = -abs(windAngle) * lever * 0.12;   // slight arc dip
     } else {
         // Trunk: height-based quadratic bend (smooth curve, not rigid sway)
         float trunkHeight = localPos.y / max(tHeight, 0.01);

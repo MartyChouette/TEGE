@@ -144,7 +144,8 @@ for i in range(3):
 ent("Grove_Trees", (20, 0, -20),
     treeVolume={"halfExtents": [7, 0, 6], "density": 10, "treeType": 0,
                 "trunkHeight": 2.4, "trunkWidth": 0.18, "canopyRadius": 1.3,
-                "canopyOffset": 2.0, "windSwayStrength": 0.5})
+                "canopyOffset": 2.0, "windSwayStrength": 0.5,
+                "generateColliders": True})
 ent("Grove_Shrubs", (20, 0, -20),
     shrubVolume={"halfExtents": [8, 0, 7], "density": 40})
 ent("Grove_Grass", (20, 0, -20),

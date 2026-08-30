@@ -46,6 +46,7 @@
 #include "Enjin/ECS/Components/TemperatureZone.h"
 #include <climits>
 #include "Enjin/Effects/Weather.h"
+#include "Enjin/Effects/TreeRenderer.h"
 #include "Enjin/Effects/Wind.h"
 #include "Enjin/Effects/WorldTime.h"
 #include "Enjin/Audio/AudioSystem.h"
@@ -1389,6 +1390,7 @@ private:
         m_VisualScriptSystem.SetPhysics(m_Physics.get());
         m_VisualScriptSystem.SetPhysics2D(m_Physics2D.get());
         m_VisualScriptSystem.SetScriptEngine(&m_ScriptEngine);
+        Enjin::Effects::TreeRenderer::GenerateAllColliders(m_World.get());
         m_VisualScriptSystem.SetDialogue(&m_DialogueSystem);
         m_VisualScriptSystem.Initialize();
         m_BehaviorTreeSystem.Initialize();

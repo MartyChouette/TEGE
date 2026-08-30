@@ -44,6 +44,12 @@ struct ENJIN_API TreeVolumeComponent {
     // Wind response
     f32 windSwayStrength = 0.3f;
 
+    // Generate a static capsule collider per trunk at PLAY START (opt-in) -
+    // instanced trees aren't entities, so the runtime spawns transient
+    // collider entities at the same hashed positions the shader uses. They
+    // are never saved (created in play, discarded with the play world).
+    bool generateColliders = false;
+
     // Number of intersecting quads for canopy
     u32 canopyQuads = 3;
 

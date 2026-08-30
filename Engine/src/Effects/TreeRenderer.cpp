@@ -426,14 +426,35 @@ void TreeRenderer::GenerateColliders(ECS::World* world, ECS::Entity volumeEntity
         xform.position = treePos + Math::Vector3(0, tHeight * 0.5f, 0);
         world->AddComponent<ECS::TransformComponent>(collider, xform);
 
-        ECS::BoxColliderComponent box;
-        box.center = Math::Vector3(0, 0, 0);
-        box.size = Math::Vector3(tWidth * 2.0f, tHeight, tWidth * 2.0f);
-        box.isTrigger = false;
-        world->AddComponent<ECS::BoxColliderComponent>(collider, box);
+        // Capsule (the "cylinder" ask): rounder pushback than a box, and the
+        // physics backends have a real capsule shape. height = cylinder
+        // section only (engine convention: total = height + 2*radius).
+        ECS::CapsuleColliderComponent cap;
+        cap.center = Math::Vector3(0, 0, 0);
+        cap.direction = ECS::CapsuleColliderComponent::Direction::Y;
+        cap.radius = tWidth;
+        cap.height = std::max(0.1f, tHeight - 2.0f * tWidth);
+        cap.isTrigger = false;
+        world->AddComponent<ECS::CapsuleColliderComponent>(collider, cap);
+
+        // Static body so the physics backend actually builds it (a bare
+        // collider component without a rigidbody never became a body - the
+        // reason this function sat dead and unwired).
+        ECS::RigidbodyComponent rb;
+        rb.bodyType = ECS::RigidbodyComponent::BodyType::Static;
+        rb.useGravity = false;
+        world->AddComponent<ECS::RigidbodyComponent>(collider, rb);
     }
 
     ENJIN_LOG_INFO(Renderer, "Generated %u tree trunk colliders", tree->density);
+}
+
+void TreeRenderer::GenerateAllColliders(ECS::World* world) {
+    if (!world) return;
+    for (ECS::Entity e : world->GetEntitiesWithComponent<ECS::TreeVolumeComponent>()) {
+        auto* tv = world->GetComponent<ECS::TreeVolumeComponent>(e);
+        if (tv && tv->generateColliders) GenerateColliders(world, e);
+    }
 }
 
 bool TreeRenderer::ReloadShaders(const std::string& shaderDir, VkDescriptorSetLayout sharedLayout) {

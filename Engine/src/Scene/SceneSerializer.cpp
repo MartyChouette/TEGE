@@ -927,6 +927,7 @@ json SerializeTreeVolumeComponent(const ECS::TreeVolumeComponent& tree) {
     j["trunkWidth"] = RF(tree.trunkWidth);
     j["canopyRadius"] = RF(tree.canopyRadius);
     j["canopyOffset"] = RF(tree.canopyOffset);
+    j["generateColliders"] = tree.generateColliders;
     j["trunkColor"] = SerializeVector3(tree.trunkColor);
     j["canopyBaseColor"] = SerializeVector3(tree.canopyBaseColor);
     j["canopyTipColor"] = SerializeVector3(tree.canopyTipColor);
@@ -951,6 +952,7 @@ ECS::TreeVolumeComponent DeserializeTreeVolumeComponent(const json& j) {
     if (j.contains("trunkWidth")) tree.trunkWidth = j["trunkWidth"].get<f32>();
     if (j.contains("canopyRadius")) tree.canopyRadius = j["canopyRadius"].get<f32>();
     if (j.contains("canopyOffset")) tree.canopyOffset = j["canopyOffset"].get<f32>();
+    if (j.contains("generateColliders")) tree.generateColliders = JB(j["generateColliders"]);
     if (j.contains("trunkColor")) tree.trunkColor = DeserializeVector3(j["trunkColor"]);
     if (j.contains("canopyBaseColor")) tree.canopyBaseColor = DeserializeVector3(j["canopyBaseColor"]);
     if (j.contains("canopyTipColor")) tree.canopyTipColor = DeserializeVector3(j["canopyTipColor"]);

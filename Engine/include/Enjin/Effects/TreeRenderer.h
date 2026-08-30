@@ -50,7 +50,13 @@ public:
                 VkDescriptorSet bindlessSet = VK_NULL_HANDLE);
 
     // Generate box colliders at each tree trunk position within a volume
-    void GenerateColliders(ECS::World* world, ECS::Entity volumeEntity);
+    // Spawn one static CAPSULE collider entity per trunk, at the same hashed
+    // positions the vertex shader places the instances. Static: no renderer
+    // state needed. Call at play start (never in edit - the entities would
+    // pollute the editable scene and get saved).
+    static void GenerateColliders(ECS::World* world, ECS::Entity volumeEntity);
+    // All volumes with generateColliders=true. The one call runtimes make.
+    static void GenerateAllColliders(ECS::World* world);
 
     // Seasonal state (driven by WorldTimeSystem)
     void SetSeasonState(Season season, f32 progress);

@@ -1,4 +1,5 @@
 #include "Enjin/Editor/PlayMode.h"
+#include "Enjin/Effects/TreeRenderer.h"
 #include <filesystem>
 #include <random>
 #include <type_traits>
@@ -508,6 +509,11 @@ void PlayMode::Play() {
     ENJIN_LOG_INFO(Editor, "PlayMode: DialogueSystem integrations wired");
     m_ScriptSystem.InitializeAllScripts();
     ENJIN_LOG_INFO(Editor, "PlayMode: Scripts initialized");
+
+    // Tree colliders (opt-in per TreeVolume): transient capsule entities at
+    // the shader's hashed trunk positions - created in the play world only,
+    // discarded by the stop-restore.
+    Effects::TreeRenderer::GenerateAllColliders(m_World);
 
     // Initialize visual script system
     m_VisualScriptSystem.SetPhysics(m_Physics.get());

@@ -6006,7 +6006,8 @@
     "trunkWidth": 0.18,
     "canopyRadius": 1.3,
     "canopyOffset": 2.0,
-    "windSwayStrength": 0.5
+    "windSwayStrength": 0.5,
+    "generateColliders": true
    }
   },
   {
