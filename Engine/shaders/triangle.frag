@@ -1028,8 +1028,11 @@ void main() {
     // F1 UV animation: authored looped motion (waterfalls, flows, conveyor
     // belts). Scroll slides the UV continuously; flipbook steps through a
     // cols x rows sheet. Time comes from windData.w (already uploaded).
+    // SIGN: subtract, so a positive value moves the visible PATTERN toward
+    // +UV (+V = down the mesh) — what artists expect. Adding shifts the
+    // sample window forward, which moves the pattern the opposite way.
     if (materialData.matUvScrollU != 0.0 || materialData.matUvScrollV != 0.0) {
-        uv += vec2(materialData.matUvScrollU, materialData.matUvScrollV) * lighting.windData.w;
+        uv -= vec2(materialData.matUvScrollU, materialData.matUvScrollV) * lighting.windData.w;
     }
     if (materialData.matFlipbookGrid != 0u) {
         float cols = float(materialData.matFlipbookGrid >> 16);
