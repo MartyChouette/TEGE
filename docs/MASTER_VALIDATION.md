@@ -25,8 +25,9 @@ vs Godot 4, verified against source:
   web export, play-mode diff, collaborative editing, MCP server.
 - AT PAR: core PBR/shadows/post, 2D, Box2D, blend trees/IK, asset import,
   LAN networking, desktop platforms, core editor UX.
-- BEHIND: visual-script node coverage (~261 nodes ≈ 25% of the ~1,023 script
-  bindings), UI canvas flexibility (8 fixed widgets vs scene-tree
+- BEHIND (visual-script coverage CLOSED 2026-08-30: reflection codegen
+  generates 940 Api_* nodes from the binding registry, ~95% coverage,
+  hand-made nodes kept for UX): UI canvas flexibility (8 fixed widgets vs scene-tree
   composition), macOS/mobile/console (absent), docs freshness (3 overlapping
   manuals), community (bus factor = 1), engine maturity label (0.9.x).
 

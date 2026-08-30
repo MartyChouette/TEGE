@@ -1,5 +1,7 @@
 #include "Enjin/ECS/Systems/VisualScriptSystem.h"
 #include "Enjin/ECS/Components/VisualScript.h"
+#include "Enjin/VisualScript/ScriptApiNodes.h"
+#include "Enjin/Scripting/ScriptEngine.h"
 #include "Enjin/Logging/Log.h"
 
 namespace Enjin {
@@ -8,6 +10,16 @@ namespace ECS {
 // ============================================================================
 // LIFECYCLE
 // ============================================================================
+
+void VisualScriptSystem::SetScriptEngine(Scripting::ScriptEngine* engine) {
+    m_Executor.SetScriptEngine(engine);
+    // One-time script-API node codegen: by the time a runtime hands the VS
+    // system its script engine, every binding is registered - reflect them
+    // into visual-script nodes (idempotent; editor boot may have done it
+    // already for the palette).
+    if (engine && engine->GetASEngine())
+        VisualScript::RegisterScriptApiNodes(engine->GetASEngine());
+}
 
 void VisualScriptSystem::Initialize() {
     if (!m_World) return;

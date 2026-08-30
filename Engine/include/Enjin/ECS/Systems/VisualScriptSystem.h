@@ -31,8 +31,10 @@ public:
     // Set 2D physics system for 2D physics query nodes
     void SetPhysics2D(Physics::IPhysicsBackend2D* physics2d) { m_Executor.SetPhysics2D(physics2d); }
 
-    // Set script engine for interop nodes
-    void SetScriptEngine(Scripting::ScriptEngine* engine) { m_Executor.SetScriptEngine(engine); }
+    // Set script engine for interop nodes. Also triggers the one-time
+    // script-API node codegen (the play engine is fully bound by this point)
+    // - see VisualScript::RegisterScriptApiNodes.
+    void SetScriptEngine(Scripting::ScriptEngine* engine);
 
     // Set networking system for multiplayer nodes
     void SetNetworking(Networking::NetworkSystem* net) { m_Executor.SetNetworking(net); }

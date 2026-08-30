@@ -100,6 +100,8 @@
 #include "Enjin/Assets/SWFLoader.h"
 #include "Enjin/Effects/CurlNoiseSystem.h"
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ScriptEngine.h"
+#include "Enjin/VisualScript/ScriptApiNodes.h"
 #include "Enjin/Scene/LevelStreaming.h"
 #include "Enjin/Effects/VoronoiMeshFracture.h"
 #include "Enjin/Effects/InteractiveWater.h"
@@ -611,6 +613,21 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
 
     // Record session start time for quit survey duration
     m_SessionStartTime = std::chrono::steady_clock::now();
+
+    // VS palette codegen: reflect the whole script API into visual-script
+    // nodes so the node menu has them BEFORE the first play session (play
+    // would register them too, but the palette would be bare until then).
+    // Same throwaway-engine pattern as ExportScriptApiStub; the generated
+    // nodes resolve functions by declaration at call time, so the reflection
+    // engine's lifetime doesn't matter.
+    {
+        Scripting::ScriptEngine se;
+        if (se.Initialize()) {
+            Scripting::RegisterAllBindings(se.GetASEngine());
+            VisualScript::RegisterScriptApiNodes(se.GetASEngine());
+            se.Shutdown();
+        }
+    }
 
     ENJIN_LOG_INFO(Editor, "EditorLayer initialized");
     return true;
