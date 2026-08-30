@@ -16286,18 +16286,45 @@ void RenderSystem::TransitionDepthImagesToReadable(const std::vector<VkImage>& i
 
         for (VkImage img : images) {
             if (img == VK_NULL_HANDLE) continue;
+            VkImageSubresourceRange range =
+                { VK_IMAGE_ASPECT_DEPTH_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS };
+
+            // CLEAR to far depth (1.0) before making the map readable. Freshly
+            // allocated depth memory is GARBAGE; a scene whose shadow pass
+            // never runs (no shadow-casting lights) samples it as real
+            // occlusion - a phantom dark rectangle on the ground in every
+            // unlit/no-caster scene (Marty 2026-08-30). 1.0 = nothing
+            // occludes = fully lit.
+            VkImageMemoryBarrier toClear{};
+            toClear.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            toClear.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            toClear.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            toClear.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            toClear.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            toClear.image = img;
+            toClear.subresourceRange = range;
+            toClear.srcAccessMask = 0;
+            toClear.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            vkCmdPipelineBarrier(cmd,
+                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                0, 0, nullptr, 0, nullptr, 1, &toClear);
+
+            VkClearDepthStencilValue farDepth{ 1.0f, 0 };
+            vkCmdClearDepthStencilImage(cmd, img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                        &farDepth, 1, &range);
+
             VkImageMemoryBarrier b{};
             b.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-            b.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            b.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
             b.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
             b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             b.image = img;
-            b.subresourceRange = { VK_IMAGE_ASPECT_DEPTH_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS };
-            b.srcAccessMask = 0;
+            b.subresourceRange = range;
+            b.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
             b.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
             vkCmdPipelineBarrier(cmd,
-                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
                 0, 0, nullptr, 0, nullptr, 1, &b);
         }
 

@@ -74,7 +74,7 @@
      0.9
     ],
     "intensity": 1.2,
-    "castShadows": false,
+    "castShadows": true,
     "range": 10,
     "innerConeAngle": 12.5,
     "outerConeAngle": 17.5,
@@ -2034,7 +2034,7 @@
    "transform": {
     "position": [
      0,
-     1.0,
+     0.8,
      2.0
     ],
     "rotation": [
