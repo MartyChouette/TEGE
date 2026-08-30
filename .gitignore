@@ -190,3 +190,4 @@ third_party/imgui/examples/
 third_party/imgui/misc/
 docs/MASTER_PLAN.html
 _audit_workflow.js
+Examples/*/Build/
