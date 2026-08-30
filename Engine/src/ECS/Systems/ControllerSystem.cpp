@@ -1,5 +1,6 @@
 #include "Enjin/ECS/Systems/ControllerSystem.h"
 #include "Enjin/ECS/Components/Ladder.h"
+#include "Enjin/ECS/Components/WaterVolume.h"
 #include "Enjin/Scripting/ScriptBindings.h"
 #include "Enjin/Physics/PhysicsTypes.h"
 #include "Enjin/Physics/PhysicsTypes2D.h"
@@ -1133,6 +1134,62 @@ static bool FindLadderAt(World* world, const Math::Vector3& pos,
     return false;
 }
 
+// Swimming (the water ask, 2026-08-30): is this position inside a water
+// volume, below its surface? Mirrors JoltBackend's buoyancy-zone rule:
+// WaterVolume surface = the entity's Y, bottom = Y - 2*halfY, footprint =
+// the XZ half extents.
+static bool FindWaterAt(World* world, const Math::Vector3& pos, f32* outSurfaceY) {
+    for (Entity e : world->GetEntitiesWithComponent<WaterVolumeComponent>()) {
+        auto* wv = world->GetComponent<WaterVolumeComponent>(e);
+        auto* tf = world->GetComponent<TransformComponent>(e);
+        if (!wv || !tf) continue;
+        if (pos.x < tf->position.x - wv->halfExtents.x || pos.x > tf->position.x + wv->halfExtents.x) continue;
+        if (pos.z < tf->position.z - wv->halfExtents.z || pos.z > tf->position.z + wv->halfExtents.z) continue;
+        f32 surf = tf->position.y;
+        f32 bottom = surf - wv->halfExtents.y * 2.0f;
+        if (pos.y >= bottom && pos.y <= surf) {
+            if (outSurfaceY) *outSurfaceY = surf;
+            return true;
+        }
+    }
+    return false;
+}
+
+// Shared swim step for FP/TP controllers. Returns true while swimming (the
+// caller skips its jump and gravity blocks). Space (held) rises, forward
+// input swims level, everything drags like water. Rising past the surface
+// hands back to normal movement, so you bob out at the shore.
+template <typename CtrlT>
+static bool UpdateSwim(World* world, CtrlT& ctrl, TransformComponent& tf,
+                       const Math::Vector3& moveDir, f32 moveMag, f32 dt) {
+    // Chest probe: swim engages when the chest is underwater, so wading
+    // stays walking and swimming starts where it should.
+    f32 surfaceY = 0.0f;
+    Math::Vector3 probe = tf.position + Math::Vector3(0.0f, 0.9f, 0.0f);
+    if (!world || !FindWaterAt(world, probe, &surfaceY)) {
+        ctrl.isSwimming = false;
+        return false;
+    }
+    ctrl.isSwimming = true;
+    ctrl.isGrounded = false;
+    ctrl.isJumping = false;
+    ctrl.isFalling = false;
+
+    // Water drag pulls all motion toward the swim target quickly.
+    const f32 kDrag = 4.0f;
+    f32 swimSpeed = ctrl.moveSpeed * 0.6f;
+    Math::Vector3 target = moveDir * (swimSpeed * moveMag);
+
+    // Vertical: Space rises, otherwise a gentle sink. Rising is capped at
+    // the surface (the FindWaterAt probe leaving the water exits the state).
+    bool rise = Input::IsKeyDown(KeyCode::Space);
+    target.y = rise ? swimSpeed : -0.5f;
+    if (rise && probe.y > surfaceY - 0.25f) target.y = 0.6f;   // gentle breach at the top
+
+    ctrl.velocity = ctrl.velocity + (target - ctrl.velocity) * Math::Min(kDrag * dt, 1.0f);
+    return true;
+}
+
 // G1: shared ladder-climb step for FP/TP controllers (same field names).
 // Returns true while the climb owns vertical motion this frame — the caller
 // must then skip its jump and gravity blocks. Rules: overlap + forward push
@@ -1335,6 +1392,9 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
 
     // G1 ladder: while climbing, the climb owns velocity.y (jump/gravity skip).
     bool climbing = UpdateLadderClimb(m_World, ctrl, transform, input, jumpInput, dt);
+    // Swimming: inside a water volume below its surface (ladder wins if both).
+    bool swimming = !climbing && UpdateSwim(m_World, ctrl, transform, moveDir, moveMag, dt);
+    if (climbing) ctrl.isSwimming = false;
 
     if (jumpInput && ctrl.isGrounded && !climbing) {
         ctrl.velocity.y = ctrl.jumpForce;
@@ -1343,7 +1403,7 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
     }
 
     // Gravity
-    if (!ctrl.isGrounded && !climbing) {
+    if (!ctrl.isGrounded && !climbing && !swimming) {
         ctrl.velocity.y -= ctrl.gravity * dt;
         ctrl.isFalling = ctrl.velocity.y < 0;
     }
@@ -1688,9 +1748,12 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
     // G1 ladder: while climbing, the climb owns velocity.y (jump/gravity skip).
     bool jumpInput = IsJumpPressed();
     bool climbing = UpdateLadderClimb(m_World, ctrl, transform, input, jumpInput, dt);
+    // Swimming: inside a water volume below its surface (ladder wins if both).
+    bool swimming = !climbing && UpdateSwim(m_World, ctrl, transform, moveDir, moveMag, dt);
+    if (climbing) ctrl.isSwimming = false;
 
     // Jumping (check stamina cost)
-    if (jumpInput && ctrl.isGrounded && !ctrl.isCrouching && !climbing) {
+    if (jumpInput && ctrl.isGrounded && !ctrl.isCrouching && !climbing && !swimming) {
         bool canJump = true;
         if (m_World) {
             auto* resource = m_World->GetComponent<ResourceComponent>(entity);
@@ -1706,7 +1769,7 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
     }
 
     // Gravity
-    if (!ctrl.isGrounded && !climbing) {
+    if (!ctrl.isGrounded && !climbing && !swimming) {
         ctrl.velocity.y -= ctrl.gravity * dt;
         ctrl.isFalling = ctrl.velocity.y < 0;
     }

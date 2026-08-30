@@ -16,6 +16,10 @@ struct CharacterControllerBase {
     f32 moveSpeed = 5.0f;
     f32 sprintMultiplier = 2.0f;
 
+    // Swim state (runtime): set while inside a water volume below its
+    // surface - gravity off, water drag, Space rises, forward swims level.
+    bool isSwimming = false;
+
     // State
     bool isEnabled = true;
     // Bullet time: run THIS controller at wall-clock rate while Time_SetScale

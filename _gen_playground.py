@@ -103,9 +103,11 @@ solid("Ground", (0, -0.5, 0), (64, 1, 64), (0.4, 0.52, 0.36))
 
 # --- NW: waterfall (F1 authored motion) -------------------------------------
 solid("FallCliff", (-22, 4, -20), (8, 8, 2), (0.42, 0.4, 0.44))
+# Cube-face UVs run V-up (opposite the WaterFX sheet meshes), so the fall
+# needs NEGATIVE V to flow down. Scroll direction is mesh-UV-dependent.
 deco("Waterfall", (-22, 4, -18.85), (7.0, 8.2, 0.1), (0.85, 0.92, 1.0),
      mat_extra={"opacity": 0.8, "alphaMode": 1, "doubleSided": True,
-                "baseColorTexturePath": "assets/water.png", "uvScrollSpeed": [0.0, 0.9]})
+                "baseColorTexturePath": "assets/water.png", "uvScrollSpeed": [0.0, -0.9]})
 deco("FallFoam", (-22, 0.25, -18.4), (7.4, 0.5, 1.4), (1, 1, 1),
      mat_extra={"opacity": 0.9, "alphaMode": 1, "baseColorTexturePath": "assets/foam.png",
                 "flipbookCols": 4, "flipbookRows": 1, "flipbookFps": 8.0})

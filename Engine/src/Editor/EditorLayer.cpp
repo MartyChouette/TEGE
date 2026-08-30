@@ -807,8 +807,12 @@ void EditorLayer::Update(f32 deltaTime) {
     if (m_World) Gameplay::ClothSystem::EnsureBuilt(m_World);
 
     // Feed the game-view sim accumulator (consumed once per game-view render
-    // in RenderOffscreen, which the FPS dropdown throttles).
-    m_GameViewSimAccum += deltaTime;
+    // in RenderOffscreen, which the FPS dropdown throttles). SCALED by the
+    // global time scale during play - these are gameplay sims, and bullet
+    // time must slow particles/weather/fluid too (Marty 2026-08-30; the
+    // player runtime scales its whole dt upstream, main.cpp:854).
+    m_GameViewSimAccum += deltaTime *
+        (m_PlayMode.IsPlaying() ? Scripting::GetTimeScale() : 1.0f);
 
     // Keep the mesh-reference cache pointed at the current project root so imported
     // meshes stored as project-relative references resolve on scene load/save. Cheap
