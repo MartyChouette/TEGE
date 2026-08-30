@@ -1045,6 +1045,13 @@ private:
         std::vector<std::unique_ptr<Renderer::VulkanBuffer>> buffers;
     };
     std::vector<RetiredBufferSet> m_BufferGraveyard;
+    // Replaced text textures parked until no in-flight frame references them
+    // (see the drain in FlushPendingChanges).
+    struct RetiredTexture {
+        u64 flushTick = 0;
+        std::shared_ptr<Renderer::Texture> texture;
+    };
+    std::vector<RetiredTexture> m_TextTextureGraveyard;
     u64 m_FlushTick = 0;
     // Move rd's GPU buffers into the graveyard, then Invalidate() it. Use this
     // instead of calling Invalidate() directly anywhere the GPU might still be
@@ -1777,6 +1784,12 @@ private:
     // Batched material SSBO — collects all MaterialGPU data at frame start, uploads once
     void BuildMaterialSSBO();
     void EnsureTextTextures();  // rasterize authored text + route its texture onto the material
+    // Swap an entity's cached text texture SAFELY: frees the old one's
+    // bindless slot and parks the old texture in the graveyard (in-flight
+    // frames still reference it in bound descriptor sets - immediate
+    // destruction is the mid-frame GPU crash class). Every Text_SetContent
+    // re-rasterize (typewriter, caret) goes through here.
+    void CacheTextTexture(Entity entity, std::shared_ptr<Renderer::Texture> tex);
     // Grow the per-frame material SSBOs + rebind descriptor binding 2 when the entity
     // count outgrows capacity. MUST run pre-recording (FlushPendingChanges) — never from
     // BuildMaterialSSBO, which records mid-frame and would invalidate the bound command buffer.

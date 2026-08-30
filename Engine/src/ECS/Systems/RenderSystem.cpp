@@ -3938,6 +3938,22 @@ void RenderSystem::ProcessPendingRecreation() {
     m_PendingFragmentShader.reset();
 }
 
+void RenderSystem::CacheTextTexture(Entity entity, std::shared_ptr<Renderer::Texture> tex) {
+    auto it = m_TextTextureCache.find(entity);
+    if (it != m_TextTextureCache.end() && it->second) {
+        // Free the old bindless slot (the pooled-material site registers one
+        // per rasterize - per-keystroke text used to grow the set unbounded)
+        // and park the old texture until no in-flight frame references it.
+        auto bh = m_TextureBindlessHandles.find(it->second.get());
+        if (bh != m_TextureBindlessHandles.end()) {
+            if (m_BindlessManager) m_BindlessManager->UnregisterTexture(bh->second);
+            m_TextureBindlessHandles.erase(bh);
+        }
+        m_TextTextureGraveyard.push_back({m_FlushTick, std::move(it->second)});
+    }
+    m_TextTextureCache[entity] = std::move(tex);
+}
+
 void RenderSystem::RetireEntityBuffers(EntityRenderData& rd) {
     RetiredBufferSet set;
     set.flushTick = m_FlushTick;
@@ -4062,6 +4078,17 @@ void RenderSystem::FlushPendingChanges() {
         constexpr u64 kRetireTicks = 4;
         std::erase_if(m_BufferGraveyard, [&](const RetiredBufferSet& s) {
             return m_FlushTick - s.flushTick >= kRetireTicks;
+        });
+    }
+    // Same protocol for replaced TEXT textures: a Text_SetContent re-rasterize
+    // swaps the cached texture, but frames in flight still reference the OLD
+    // one in bound descriptor sets - destroying it immediately is the classic
+    // mid-frame GPU crash. Park it here for the same conservative window.
+    // (Ink_Ribbon typewriter: one swap per keystroke, so this also caps churn.)
+    if (!m_TextTextureGraveyard.empty()) {
+        constexpr u64 kRetireTicks = 4;
+        std::erase_if(m_TextTextureGraveyard, [&](const RetiredTexture& t) {
+            return m_FlushTick - t.flushTick >= kRetireTicks;
         });
     }
 
@@ -6407,7 +6434,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 if (!pixels.empty()) {
                     auto textTex = std::make_shared<Renderer::Texture>(m_VulkanRenderer->GetContext());
                     if (textTex->CreateFromData(pixels.data(), textComp->textureWidth, textComp->textureHeight, 4)) {
-                        m_TextTextureCache[entity] = textTex;
+                        CacheTextTexture(entity, textTex);
                     }
                 }
                 textComp->dirty = false;
@@ -7124,7 +7151,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                 if (!pixels.empty()) {
                     auto textTex = std::make_shared<Renderer::Texture>(m_VulkanRenderer->GetContext());
                     if (textTex->CreateFromData(pixels.data(), textComp->textureWidth, textComp->textureHeight, 4)) {
-                        m_TextTextureCache[entity] = textTex;
+                        CacheTextTexture(entity, textTex);
                     }
                 }
                 textComp->dirty = false;
@@ -7267,6 +7294,9 @@ void RenderSystem::OnEntityRemoved(Entity entity) {
         // crash (2026-08-08).
         RetireEntityBuffers(rd);
     }
+    // Same deferred-destruction rule for the entity's text texture (parks the
+    // old texture + frees its bindless slot before the map entry goes away).
+    CacheTextTexture(entity, nullptr);
     m_TextTextureCache.erase(entity);
     m_PrevModelMatrices.erase(static_cast<u64>(entity));
 
@@ -9888,7 +9918,7 @@ void RenderSystem::EnsureTextTextures() {
             if (!pixels.empty()) {
                 auto textTex = std::make_shared<Renderer::Texture>(m_VulkanRenderer->GetContext());
                 if (textTex->CreateFromData(pixels.data(), tc->textureWidth, tc->textureHeight, 4)) {
-                    m_TextTextureCache[entity] = textTex;
+                    CacheTextTexture(entity, textTex);
                     // Register in the bindless set so the pooled material shader can sample it.
                     u32 h = m_BindlessManager->RegisterTexture(textTex->GetImageView(), textTex->GetSampler());
                     if (h != UINT32_MAX) m_TextureBindlessHandles[textTex.get()] = h;
@@ -11007,7 +11037,7 @@ void RenderSystem::RenderEntity(Entity entity) {
         if (!pixels.empty()) {
             auto textTex = std::make_shared<Renderer::Texture>(m_VulkanRenderer->GetContext());
             if (textTex->CreateFromData(pixels.data(), textComp->textureWidth, textComp->textureHeight, 4)) {
-                m_TextTextureCache[entity] = textTex;
+                CacheTextTexture(entity, textTex);
             }
         }
         textComp->dirty = false;
