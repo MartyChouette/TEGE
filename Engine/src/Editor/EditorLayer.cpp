@@ -1578,7 +1578,11 @@ void EditorLayer::Update(f32 deltaTime) {
     m_SceneManager.UpdateTransition(deltaTime);
 
     // Update wind system (always ticks, affects weather + vegetation + grass)
-    m_WindSystem.Update(deltaTime);
+    // Wind clock drives SHADER animation (waterfall UV scroll, flipbooks,
+    // vegetation sway, cloud drift, water effects) via windData.w - scale it
+    // during play so bullet time slows them too (player/web scale their whole
+    // dt upstream; the editor's raw dt must scale here).
+    m_WindSystem.Update(deltaTime * (m_PlayMode.IsPlaying() ? Scripting::GetTimeScale() : 1.0f));
     if (m_RenderSystem && !m_RenderSystem->GetWindSystem()) {
         m_RenderSystem->SetWindSystem(&m_WindSystem);
     }
