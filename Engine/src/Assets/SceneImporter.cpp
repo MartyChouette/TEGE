@@ -694,8 +694,10 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
                 }
             }
 
-            // Add collider from mesh AABB (shape from import options, world-scaled)
-            if (options.generateColliders) {
+            // Add collider from mesh AABB (shape from import options, world-scaled).
+            // Skinned scenes skip per-part colliders (same rule as the Assimp
+            // path) - ImportGLTF adds a single root capsule instead.
+            if (options.generateColliders && scene.skins.empty()) {
                 AddImportCollider(world, entity, minBounds, maxBounds, options);
             }
 
@@ -1517,6 +1519,21 @@ ImportResult SceneImporter::ImportAssimp(const std::string& filepath, ECS::World
     for (i32 rootIndex : scene.rootNodes) {
         CreateEntityFromAssimpNode(scene, rootIndex, world, effectiveOptions,
                                    result.entities, stats, skelCtx, importRoot);
+    }
+
+    // Skinned characters: ONE capsule on the import root (per-part colliders
+    // are skipped above). Sized from the whole model's bounds in world units;
+    // the radius leans slim because the raw bounds usually include a T-pose
+    // arm span. Collider sizes are WORLD SPACE (backends ignore scale).
+    if (effectiveOptions.generateColliders && scene.hasSkinning && boundsMeasurable) {
+        Math::Vector3 c = (boundsMin + boundsMax) * (0.5f * unitScale);
+        Math::Vector3 size = (boundsMax - boundsMin) * unitScale;
+        auto& cap = world->AddComponent<ECS::CapsuleColliderComponent>(importRoot);
+        cap.center = c;
+        cap.direction = ECS::CapsuleColliderComponent::Direction::Y;
+        cap.radius = std::min(0.3f * std::min(size.x, size.z), 0.25f * size.y);
+        cap.height = std::max(0.0f, size.y - 2.0f * cap.radius);   // cylinder section only
+        stats.warnings.push_back("Skinned model: single root capsule collider (per-part colliders skipped)");
     }
 
     // --- Mesh Validation (auto-fix NaN, normalize weights, detect degenerate triangles) ---

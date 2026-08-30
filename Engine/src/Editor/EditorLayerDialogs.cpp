@@ -483,6 +483,14 @@ void EditorLayer::ImportModel(const std::string& path) {
         m_ImportDialogOptions = Assets::ImportOptions{};
     }
 
+    // A modal decision needs the editor UI on screen: the focus-mode
+    // fullscreen path returns before dialogs draw, silently eating the
+    // import prompt (Marty 2026-08-30: "I used to get a prompt screen").
+    if (m_FocusMode) {
+        m_FocusMode = false;
+        Input::SetMouseCaptured(false);
+    }
+
     m_ImportDialogPath = path;
     m_ShowImportDialog = true;
 
