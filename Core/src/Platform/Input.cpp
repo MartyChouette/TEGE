@@ -251,6 +251,48 @@ namespace {
         jy = static_cast<f32>(bh) - jr * 1.8f;
     }
 
+    // W2 mobile gamepad: sprint (hold, above jump) and action (E, left of jump)
+    void WebSprintZone(int bw, int bh, f32& x, f32& y, f32& r) {
+        f32 jx, jy, jr; WebJumpZone(bw, bh, jx, jy, jr);
+        r = jr * 0.75f;
+        x = jx;
+        y = jy - jr * 2.4f;
+    }
+    void WebActionZone(int bw, int bh, f32& x, f32& y, f32& r) {
+        f32 jx, jy, jr; WebJumpZone(bw, bh, jx, jy, jr);
+        r = jr * 0.75f;
+        x = jx - jr * 2.4f;
+        y = jy;
+    }
+
+    // W2: on coarse-pointer (mobile) browsers, the FIRST touch is the user
+    // gesture we ride to request fullscreen + landscape lock. Attempted once;
+    // every failure path is swallowed (iPhone Safari has limited fullscreen -
+    // the overlay still works windowed).
+    bool s_TriedFullscreen = false;
+    void WebRequestMobileFullscreen() {
+        if (s_TriedFullscreen) return;
+        s_TriedFullscreen = true;
+        EM_ASM({
+            try {
+                if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches &&
+                    !document.fullscreenElement) {
+                    var c = document.getElementById('game-canvas') || document.body;
+                    var p = c.requestFullscreen ? c.requestFullscreen() : null;
+                    if (p && p.then) {
+                        p.then(function() {
+                            try {
+                                if (screen.orientation && screen.orientation.lock) {
+                                    screen.orientation.lock('landscape').catch(function(){});
+                                }
+                            } catch (e) {}
+                        }).catch(function(){});
+                    }
+                }
+            } catch (e) {}
+        });
+    }
+
     WebTouch* FindTouch(long id) {
         for (auto& t : s_Touches) if (t.id == id) return &t;
         return nullptr;
@@ -278,8 +320,15 @@ namespace {
                 slot->startX = slot->curX = slot->lastX = px;
                 slot->startY = slot->curY = slot->lastY = py;
                 slot->startMs = emscripten_get_now();
+                WebRequestMobileFullscreen();   // W2: first-touch gesture
+                f32 sx2, sy2, sr2; WebSprintZone(bw, bh, sx2, sy2, sr2);
+                f32 ax2, ay2, ar2; WebActionZone(bw, bh, ax2, ay2, ar2);
                 f32 djx = px - jx, djy = py - jy;
+                f32 dsx = px - sx2, dsy = py - sy2;
+                f32 dax = px - ax2, day = py - ay2;
                 if (djx * djx + djy * djy < jr * jr) slot->role = 3;             // jump button
+                else if (dsx * dsx + dsy * dsy < sr2 * sr2) slot->role = 4;     // sprint (hold)
+                else if (dax * dax + day * day < ar2 * ar2) slot->role = 5;     // action (E)
                 else if (px < static_cast<f32>(bw) * 0.45f) slot->role = 1;     // move stick
                 else slot->role = 2;                                            // look
                 // Touch position doubles as the pointer (hover, aim)
@@ -405,6 +454,10 @@ void Input::Update() {
             if (dy >  DEAD) s_KeysDown[83] = true;   // S
         } else if (t.role == 3) {
             s_KeysDown[32] = true;                   // Space
+        } else if (t.role == 4) {
+            s_KeysDown[340] = true;                  // LeftShift (sprint/dash)
+        } else if (t.role == 5) {
+            s_KeysDown[69] = true;                   // E (interact/action)
         }
     }
     // For pointer-locked mode, prefer accumulated movementX/Y over position deltas.
@@ -674,8 +727,14 @@ Input::TouchOverlayState Input::GetTouchOverlay() {
             st.stickNubY = t.startY + dy;
         } else if (t.role == 3) {
             st.jumpHeld = true;
+        } else if (t.role == 4) {
+            st.sprintHeld = true;
+        } else if (t.role == 5) {
+            st.actionHeld = true;
         }
     }
+    WebSprintZone(bw, bh, st.sprintX, st.sprintY, st.sprintR);
+    WebActionZone(bw, bh, st.actionX, st.actionY, st.actionR);
 #endif
     return st;
 }

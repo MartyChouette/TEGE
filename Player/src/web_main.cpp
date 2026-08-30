@@ -920,6 +920,16 @@ public:
         dl->AddCircleFilled(ImVec2(st.jumpX, st.jumpY), st.jumpR,
                             st.jumpHeld ? nub : fill);
         dl->AddCircle(ImVec2(st.jumpX, st.jumpY), st.jumpR, ring, 32, 3.0f);
+        // W2 mobile gamepad: sprint (hold) + action buttons with labels
+        const ImU32 label = IM_COL32(255, 255, 255, 190);
+        dl->AddCircleFilled(ImVec2(st.sprintX, st.sprintY), st.sprintR,
+                            st.sprintHeld ? nub : fill);
+        dl->AddCircle(ImVec2(st.sprintX, st.sprintY), st.sprintR, ring, 32, 2.5f);
+        dl->AddText(ImVec2(st.sprintX - st.sprintR * 0.55f, st.sprintY - 8.0f), label, "RUN");
+        dl->AddCircleFilled(ImVec2(st.actionX, st.actionY), st.actionR,
+                            st.actionHeld ? nub : fill);
+        dl->AddCircle(ImVec2(st.actionX, st.actionY), st.actionR, ring, 32, 2.5f);
+        dl->AddText(ImVec2(st.actionX - 4.0f, st.actionY - 8.0f), label, "E");
     }
 
     void RenderUIOverlay() {

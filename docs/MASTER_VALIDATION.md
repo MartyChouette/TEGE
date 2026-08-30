@@ -131,14 +131,14 @@ Web improvement items (from T2):
       format change. Measured on the T2a mix: 257.5MB -> 124.2MB (52%
       smaller), byte-exact read-back, 112/112 tests, web player links.
 
-- [ ] W2 Mobile web gamepad overlay (Marty 2026-08-29): on mobile browsers
-      (pointer:coarse detection), the tap-to-start gesture requests
-      fullscreen + landscape orientation lock, and the existing touch
-      overlay (stick + jump, auto-appearing today) grows into a configurable
-      gamepad: stick + author-chosen action buttons + pause, driven through
-      InputActionMap so rebindable actions surface, not hardcoded keys.
-      Caveat recorded: iPhone Safari fullscreen is limited - overlay still
-      appears, fullscreen degrades gracefully.
+- [x] W2 Mobile web gamepad overlay: DONE (v1). First touch on a
+      coarse-pointer browser requests fullscreen + landscape lock (user-
+      gesture-legal, every failure path swallowed - iPhone Safari degrades
+      to windowed). The overlay grew from stick+jump to a gamepad: RUN
+      (hold, LeftShift -> sprint/dash) and E (interact/action) buttons with
+      labels, ORed into key state so InputActionMap default bindings pick
+      them up. v2 idea kept open: author-chosen action buttons from the
+      action map instead of fixed keys. NEEDS PHONE EYEBALL (Marty).
 
 - [ ] R1 Record to GIF (Marty 2026-08-29): capture gameplay as a shareable
       clip, two sources and two fidelities.

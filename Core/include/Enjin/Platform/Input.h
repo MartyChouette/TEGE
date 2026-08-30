@@ -183,6 +183,11 @@ public:
         f32 stickRadius = 0;
         bool jumpHeld = false;
         f32 jumpX = 0, jumpY = 0, jumpR = 0;
+        // W2 mobile gamepad: sprint (hold) + action (E) buttons
+        bool sprintHeld = false;
+        f32 sprintX = 0, sprintY = 0, sprintR = 0;
+        bool actionHeld = false;
+        f32 actionX = 0, actionY = 0, actionR = 0;
     };
     static TouchOverlayState GetTouchOverlay();
 
