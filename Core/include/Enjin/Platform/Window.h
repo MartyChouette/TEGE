@@ -59,6 +59,11 @@ public:
 
     // Block until an event occurs (for use when minimized to avoid busy-spin)
     virtual void WaitEvents() = 0;
+
+    // Like WaitEvents but wakes after at most `seconds` even with no event -
+    // lets the minimized loop keep servicing background work (MCP server)
+    // instead of sleeping until the window is touched again.
+    virtual void WaitEventsTimeout(f64 seconds) { (void)seconds; WaitEvents(); }
 };
 
 // If Windows.h got included first, its CreateWindow macro would mangle this

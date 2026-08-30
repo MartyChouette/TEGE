@@ -66,6 +66,14 @@ public:
     // Call once per editor frame.
     void PumpMainThread();
 
+    // True when a request is queued and waiting for the main thread. The
+    // editor's frame limiter checks this to bypass unfocused/idle throttling
+    // so MCP stays responsive while TEGE is in the background.
+    bool HasPendingRequests() {
+        std::lock_guard<std::mutex> lock(m_QueueMutex);
+        return !m_Queue.empty();
+    }
+
     // JSON-RPC dispatcher: takes one request body, returns the response body
     // ("" for notifications). Public so tests can drive the whole tool surface
     // without sockets. Must be called on the thread that owns the World.

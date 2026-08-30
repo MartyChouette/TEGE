@@ -153,6 +153,10 @@ public:
         glfwWaitEvents();
     }
 
+    void WaitEventsTimeout(f64 seconds) override {
+        glfwWaitEventsTimeout(seconds);
+    }
+
     void SetTitle(const char* title) override {
         if (m_Window && title) {
             glfwSetWindowTitle(m_Window, title);

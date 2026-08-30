@@ -89,12 +89,27 @@ public:
 
         // Set up frame rate limiting callback
         // This callback is called each frame to determine the target FPS
+        // While MINIMIZED the main loop skips Update entirely - this keeps the
+        // MCP server pumped so AI tools work with TEGE in the tray.
+        SetBackgroundTickCallback([this]() {
+            if (m_EditorLayer && m_EditorLayer->GetMcpServer().IsRunning())
+                m_EditorLayer->GetMcpServer().PumpMainThread();
+        });
+
         SetTargetFPSCallback([this]() -> Enjin::f32 {
             if (!m_EditorLayer) return 0.0f;
 
             auto& settings = m_EditorLayer->GetEditorSettings();
             auto& playMode = m_EditorLayer->GetPlayMode();
             auto& sceneManager = m_EditorLayer->GetSceneManager();
+
+            // MCP requests waiting? Bypass every unfocused/idle throttle so AI
+            // tools stay responsive while TEGE is in the background (Marty
+            // 2026-08-30: MCP went dormant whenever the editor lost focus).
+            if (m_EditorLayer->GetMcpServer().IsRunning() &&
+                m_EditorLayer->GetMcpServer().HasPendingRequests()) {
+                return 0.0f;
+            }
 
             // Check if in play mode
             // NOTE: During play mode, the main loop runs uncapped.

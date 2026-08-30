@@ -104,6 +104,13 @@ protected:
     using FrameSettingsCallback = std::function<f32()>;
     void SetTargetFPSCallback(FrameSettingsCallback cb) { m_TargetFPSCallback = std::move(cb); }
 
+    // Runs even while the window is MINIMIZED (where Update/Render are
+    // skipped). The editor uses it to pump the MCP server so AI tools keep
+    // working when TEGE is in the tray. Keep it lightweight - it runs on the
+    // main thread between event waits.
+    using BackgroundTickCallback = std::function<void()>;
+    void SetBackgroundTickCallback(BackgroundTickCallback cb) { m_BackgroundTick = std::move(cb); }
+
     /**
      * @brief Execute a single frame (update + render + frame limiting).
      * Used directly by the Emscripten main loop callback, and called
@@ -130,6 +137,7 @@ private:
     f32 m_IdleTimer = 0.0f;
     bool m_IsIdle = false;
     FrameSettingsCallback m_TargetFPSCallback;
+    BackgroundTickCallback m_BackgroundTick;
     u32 m_FramesRendered = 0;
 };
 

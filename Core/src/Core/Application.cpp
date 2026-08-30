@@ -186,11 +186,16 @@ void Application::RunOneFrame() {
 
     m_FrameStart = std::chrono::high_resolution_clock::now();
 
-    // When minimized, wait for events instead of busy-spinning
+    // When minimized, wait for events instead of busy-spinning. The wait has
+    // a TIMEOUT (not a blocking glfwWaitEvents) so background services keep
+    // breathing - before this, the editor's MCP server went fully dormant the
+    // moment TEGE was minimized (the pump lives in Update, which is skipped
+    // here; the socket thread only queues and times out).
     if (m_Minimized && m_Window) {
 #if !ENJIN_PLATFORM_WEB
-        m_Window->WaitEvents();
+        m_Window->WaitEventsTimeout(0.05);
 #endif
+        if (m_BackgroundTick) m_BackgroundTick();
         // Reset m_LastTime so we don't get a huge delta spike on restore
         m_LastTime = std::chrono::high_resolution_clock::now();
         m_FrameStart = m_LastTime;

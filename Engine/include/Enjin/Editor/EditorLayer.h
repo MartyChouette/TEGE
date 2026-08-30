@@ -263,6 +263,7 @@ public:
     bool IsPlaying() const { return m_PlayMode.IsPlaying(); }
     bool IsPaused() const { return m_PlayMode.IsPaused(); }
     PlayMode& GetPlayMode() { return m_PlayMode; }
+    McpServer& GetMcpServer() { return m_McpServer; }
 
     // Settings access (for frame rate limiting)
     const EditorSettings& GetEditorSettings() const { return m_EditorSettings; }
