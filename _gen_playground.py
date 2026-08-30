@@ -126,18 +126,26 @@ for i in range(3):
     solid(f"Floater{i}", (-6 + i * 4, 1.5, -22), (1.2, 1.2, 1.2),
           (0.7, 0.5 + 0.1 * i, 0.3), static=False)
 
-# --- NE: vegetation grove (wind sway) ---------------------------------------
-SWAY = {"swayStrength": 1.0, "swayFrequency": 1.0, "useVertexColorWeight": False}
-for i, (tx, tz) in enumerate([(16, -20), (21, -16), (25, -22), (19, -25)]):
-    deco(f"Trunk{i}", (tx, 1.8, tz), (0.7, 3.6, 0.7), (0.45, 0.32, 0.2))
-    deco(f"Canopy{i}", (tx, 4.6, tz), (3.2, 2.8, 3.2), (0.18, 0.45, 0.2), veg=dict(SWAY))
-for i, (sx, sz) in enumerate([(14, -16), (23, -13), (27, -17), (17, -23), (24, -25)]):
-    deco(f"Shrub{i}", (sx, 0.55, sz), (1.2, 1.1, 1.2), (0.22, 0.5, 0.24),
-         veg={"swayStrength": 1.4, "swayFrequency": 1.6, "useVertexColorWeight": False})
-for i in range(14):
-    gx, gz = 13 + (i * 7919 % 15), -26 + (i * 104729 % 14)
-    deco(f"Grass{i}", (gx, 0.22, gz), (0.14, 0.45, 0.14), (0.3, 0.62, 0.25),
-         veg={"swayStrength": 2.2, "swayFrequency": 2.2, "useVertexColorWeight": False})
+# --- NE: vegetation grove - the REAL user-facing volume components ----------
+# GPU-instanced grass/shrub/tree renderers (Marty: "everything in the scene
+# should be easily-made user-facing components and volumes"). Deciduous trees
+# change canopy color with the seasons; everything sways in the weather wind.
+ent("Grove_Trees", (20, 0, -20),
+    treeVolume={"halfExtents": [7, 0, 6], "density": 10, "treeType": 0,
+                "trunkHeight": 2.4, "trunkWidth": 0.18, "canopyRadius": 1.3,
+                "canopyOffset": 2.0, "windSwayStrength": 0.5})
+ent("Grove_Shrubs", (20, 0, -20),
+    shrubVolume={"halfExtents": [8, 0, 7], "density": 40})
+ent("Grove_Grass", (20, 0, -20),
+    grassVolume={"halfExtents": [9, 0, 8], "density": 7000,
+                 "bladeHeight": 0.35, "windSwayStrength": 1.2})
+
+# --- ladder station (G1, the component way) ---------------------------------
+solid("LadderTower", (27, 2.5, 4), (2, 5, 2), (0.55, 0.5, 0.62))
+deco("LadderRungs", (27, 2.5, 5.05), (0.8, 5.6, 0.12), (0.72, 0.5, 0.25))
+ent("LadderVolume", (27, 2.9, 5.35),
+    ladder={"halfExtents": [0.6, 2.9, 0.7], "climbSpeed": 3.0, "topBoost": 4.5,
+            "allowJumpOff": True})
 
 # --- CW: cloth court --------------------------------------------------------
 solid("FlagPole", (-24, 3, 2), (0.3, 6, 0.3), (0.5, 0.45, 0.4))
@@ -243,7 +251,7 @@ PLAYER["transform"]["position"] = [0, 0.8, 14]
 eid[0] += 1; PLAYER["id"] = eid[0]
 E.append(PLAYER)
 ent("WelcomeSign", (0, 6.5, -6), (7, 3.4, 1),
-    text={"text": "TEGE PLAYGROUND\nWASD move - Space jump - climb the rope (W)\nWeather evolves (watch the SKY change) - C colorblind - B BULLET TIME\nTear the purple drape and the laundry by running through",
+    text={"text": "TEGE PLAYGROUND\nWASD move - Space jump - climb the ROPE and the LADDER (walk in + W)\nWeather evolves (watch the SKY change) - C colorblind - B BULLET TIME\nTear the purple drape and the laundry by running through",
           "fontSize": 38, "textureWidth": 1024, "textureHeight": 512,
           "textColor": [1, 1, 1], "bgColor": [0.05, 0.08, 0.12], "bgOpacity": 0.75,
           "horizontalAlign": 1, "wrapWidth": 1000})
