@@ -1731,6 +1731,22 @@ private:
     char m_DiscordBugDescBuf[4096] = {};
     bool m_DiscordBugIncludeScreenshot = true;
 
+    // MCP input injection (Ink_Ribbon Tier 0): synthetic key holds, clicks,
+    // and typed text driven by AI tools. Merged with LIVE hardware each frame
+    // (CaptureFrameState + overlay) while any action is active, so a human at
+    // the keyboard and the MCP can drive together. Play mode only.
+    struct McpInputAction {
+        enum class Kind : u8 { Key, Click, Text } kind = Kind::Key;
+        i32 code = 0;            // KeyCode (Key) / mouse button (Click)
+        f32 x = 0.0f, y = 0.0f;  // click position, window coords
+        f32 remainingMs = 0.0f;  // Key hold / Click press time left
+        std::string text;        // Text: remaining characters to type
+        f32 charTimer = 0.0f;
+    };
+    std::vector<McpInputAction> m_McpInputQueue;
+    bool m_McpInjecting = false;
+    void ProcessMcpInput(f32 deltaTime);
+
     // R1 GIF recorder: records the game view to an animated GIF. Fidelity
     // picks resolution + capture rate; frames stream to disk as they're taken.
     GifRecorder m_GifRecorder;

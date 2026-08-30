@@ -104,6 +104,17 @@ static json ToolList() {
              json::array({"path"})),
         tool("save_scene", "Save the open scene to its file.",
              json::object(), json::array()),
+        tool("press_key", "Inject a key press into the running game (merged with live input). key = single char or space/enter/escape/tab/shift/ctrl/up/down/left/right.",
+             {{"key", {{"type", "string"}}},
+              {"hold_ms", {{"type", "number"}, {"description", "how long the key stays down (default 120)"}}}},
+             json::array({"key"})),
+        tool("click_at", "Inject a mouse click at a normalized game-view position (0..1 from top-left).",
+             {{"x", {{"type", "number"}}}, {"y", {{"type", "number"}}},
+              {"button", {{"type", "string"}, {"enum", {"left", "right"}}}}},
+             json::array({"x", "y"})),
+        tool("type_text", "Type text into the running game (feeds the same character queue Input_GetTextInput reads, paced like a human).",
+             {{"text", {{"type", "string"}}}},
+             json::array({"text"})),
         tool("get_log", "Recent editor/runtime log lines (the console buffer). Filter by min_level and read incrementally with since_seq.",
              {{"lines", {{"type", "integer"}, {"description", "max lines to return (default 100)"}}},
               {"min_level", {{"type", "string"}, {"enum", {"info", "warn", "error"}},
@@ -135,7 +146,8 @@ json McpServerCallTool(McpServer* self, ECS::World* world,
     (void)self;
     auto needWorld = [&]() -> ECS::World* { return world; };
 
-    if (name == "list_scenes" || name == "open_scene" || name == "save_scene" || name == "get_log") {
+    if (name == "list_scenes" || name == "open_scene" || name == "save_scene" || name == "get_log" ||
+        name == "press_key" || name == "click_at" || name == "type_text") {
         if (!editorTool) return ToolText("editor tools not available in this context", true);
         std::string r = editorTool(name, args.dump());
         return ToolText(r, r.rfind("error", 0) == 0);

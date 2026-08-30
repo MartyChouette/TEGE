@@ -806,6 +806,9 @@ void EditorLayer::Update(f32 deltaTime) {
     // freshly loaded scene shows them. Cheap flag check when nothing changed.
     if (m_World) Gameplay::ClothSystem::EnsureBuilt(m_World);
 
+    // MCP-injected input (AI-driven testing) - merged with live hardware.
+    ProcessMcpInput(deltaTime);
+
     // Feed the game-view sim accumulator (consumed once per game-view render
     // in RenderOffscreen, which the FPS dropdown throttles). SCALED by the
     // global time scale during play - these are gameplay sims, and bullet
@@ -1072,6 +1075,64 @@ void EditorLayer::Update(f32 deltaTime) {
                     if (m_CurrentScenePath.empty()) return "error: no scene open";
                     SaveScene(m_CurrentScenePath);
                     return "saved " + m_CurrentScenePath;
+                }
+                if (op == "press_key") {
+                    if (!m_PlayMode.IsPlaying()) return std::string("error: start play mode first");
+                    std::string key = args.value("key", "");
+                    if (key.empty()) return std::string("error: 'key' is required");
+                    i32 code = -1;
+                    // Single character -> GLFW-style code; a few named keys.
+                    if (key.size() == 1) {
+                        char c = static_cast<char>(std::toupper(static_cast<unsigned char>(key[0])));
+                        if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) code = c;
+                    } else {
+                        std::string k = key;
+                        for (auto& ch : k) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+                        if (k == "space") code = 32;
+                        else if (k == "enter") code = 257;
+                        else if (k == "escape" || k == "esc") code = 256;
+                        else if (k == "tab") code = 258;
+                        else if (k == "shift") code = 340;
+                        else if (k == "ctrl") code = 341;
+                        else if (k == "up") code = 265;
+                        else if (k == "down") code = 264;
+                        else if (k == "left") code = 263;
+                        else if (k == "right") code = 262;
+                    }
+                    if (code < 0) return "error: unknown key '" + key + "'";
+                    McpInputAction a;
+                    a.kind = McpInputAction::Kind::Key;
+                    a.code = code;
+                    a.remainingMs = std::clamp(args.value("hold_ms", 120.0f), 16.0f, 10000.0f);
+                    m_McpInputQueue.push_back(std::move(a));
+                    return std::string("pressed");
+                }
+                if (op == "click_at") {
+                    if (!m_PlayMode.IsPlaying()) return std::string("error: start play mode first");
+                    if (!m_GameViewImageDrawnThisFrame && m_GameViewImageMaxX <= m_GameViewImageMinX)
+                        return std::string("error: game view not visible");
+                    f32 nx = args.value("x", -1.0f), ny = args.value("y", -1.0f);
+                    if (nx < 0.0f || nx > 1.0f || ny < 0.0f || ny > 1.0f)
+                        return std::string("error: x/y must be normalized 0..1 (game view space)");
+                    McpInputAction a;
+                    a.kind = McpInputAction::Kind::Click;
+                    a.code = (args.value("button", std::string("left")) == "right") ? 1 : 0;
+                    a.x = m_GameViewImageMinX + nx * (m_GameViewImageMaxX - m_GameViewImageMinX);
+                    a.y = m_GameViewImageMinY + ny * (m_GameViewImageMaxY - m_GameViewImageMinY);
+                    a.remainingMs = 100.0f;
+                    m_McpInputQueue.push_back(std::move(a));
+                    return std::string("clicked");
+                }
+                if (op == "type_text") {
+                    if (!m_PlayMode.IsPlaying()) return std::string("error: start play mode first");
+                    std::string text = args.value("text", "");
+                    if (text.empty()) return std::string("error: 'text' is required");
+                    if (text.size() > 4096) return std::string("error: text too long (4096 max)");
+                    McpInputAction a;
+                    a.kind = McpInputAction::Kind::Text;
+                    a.text = std::move(text);
+                    m_McpInputQueue.push_back(std::move(a));
+                    return std::string("typing");
                 }
                 if (op == "get_log") {
                     int maxLines = args.value("lines", 100);
@@ -5312,6 +5373,65 @@ void EditorLayer::WriteGoldenCapture() {
 
     // Done - exit so the harness can move to the next scene
     if (m_Window) m_Window->Close();
+}
+
+// MCP input injection: merge queued synthetic actions with the live hardware
+// state and feed the result through the replay-injection path each frame.
+// Edge semantics come free (injection keeps previous-frame bookkeeping), and
+// releasing is just the action expiring - the next frame's merge no longer
+// holds the key.
+void EditorLayer::ProcessMcpInput(f32 deltaTime) {
+    if (m_McpInputQueue.empty()) {
+        if (m_McpInjecting) {
+            Input::SetReplayInjection(false);
+            m_McpInjecting = false;
+        }
+        return;
+    }
+    if (!m_PlayMode.IsPlaying()) {   // queued while not playing: drop stale actions
+        m_McpInputQueue.clear();
+        return;
+    }
+
+    bool keys[512];
+    bool mouse[8];
+    Math::Vector2 mpos;
+    Input::CaptureFrameState(keys, mouse, mpos);
+
+    f32 ms = deltaTime * 1000.0f;
+    for (auto it = m_McpInputQueue.begin(); it != m_McpInputQueue.end();) {
+        bool done = false;
+        switch (it->kind) {
+            case McpInputAction::Kind::Key:
+                if (it->code >= 0 && it->code < 512) keys[it->code] = true;
+                it->remainingMs -= ms;
+                done = it->remainingMs <= 0.0f;
+                break;
+            case McpInputAction::Kind::Click:
+                if (it->code >= 0 && it->code < 8) mouse[it->code] = true;
+                mpos = Math::Vector2(it->x, it->y);
+                it->remainingMs -= ms;
+                done = it->remainingMs <= 0.0f;
+                break;
+            case McpInputAction::Kind::Text:
+                // Pace characters into ImGui's queue - the same queue the
+                // Input_GetTextInput binding reads (the typewriter path).
+                it->charTimer -= ms;
+                while (it->charTimer <= 0.0f && !it->text.empty()) {
+                    unsigned char c = static_cast<unsigned char>(it->text.front());
+                    it->text.erase(it->text.begin());
+                    if (c >= 32 && c < 128) ImGui::GetIO().AddInputCharacter(c);
+                    it->charTimer += 30.0f;   // ~33 chars/sec, human-ish
+                }
+                done = it->text.empty();
+                break;
+        }
+        it = done ? m_McpInputQueue.erase(it) : it + 1;
+    }
+
+    Input::SetReplayInjection(true);
+    m_McpInjecting = true;
+    Input::InjectFrameState(keys, mouse, mpos);
 }
 
 // R1: start/stop game-view GIF recording. Output lands in <project>/captures/
