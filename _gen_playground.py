@@ -116,12 +116,21 @@ ent("FallMist", (-22, 1.2, -18.2),
                      "startColor": [0.9, 0.95, 1.0], "startAlpha": 0.28, "endAlpha": 0.0,
                      "gravityScale": -0.02, "playing": True})
 
-# --- N: lake with buoyancy --------------------------------------------------
+# --- N: lake with buoyancy, in its OWN basin --------------------------------
+# The water doesn't float on the ground plane: a sunken basin (floor + rim
+# walls) gives it real depth below grade (Marty: "water needs to change where
+# the floor is"). Engine-side auto-basin on WaterVolume is a queued feature;
+# this is the authored version.
 ent("Lake", (-2, 0, -22),
     waterVolume={"halfExtents": [12, 3, 8], "waterType": 0,
                  "waterColor": [0.08, 0.28, 0.42], "opacity": 0.82,
                  "waveSpeed": 1.0, "waveHeight": 0.14, "enableShore": True,
                  "shoreWidth": 0.12, "foamIntensity": 0.6})
+solid("LakeBed", (-2, -2.2, -22), (24, 0.5, 16), (0.25, 0.3, 0.28))
+solid("LakeRimN", (-2, 0.6, -30.4), (25.6, 2.2, 0.8), (0.5, 0.48, 0.45))
+solid("LakeRimS", (-2, 0.6, -13.6), (25.6, 2.2, 0.8), (0.5, 0.48, 0.45))
+solid("LakeRimW", (-14.4, 0.6, -22), (0.8, 2.2, 17.6), (0.5, 0.48, 0.45))
+solid("LakeRimE", (10.4, 0.6, -22), (0.8, 2.2, 17.6), (0.5, 0.48, 0.45))
 for i in range(3):
     solid(f"Floater{i}", (-6 + i * 4, 1.5, -22), (1.2, 1.2, 1.2),
           (0.7, 0.5 + 0.1 * i, 0.3), static=False)
