@@ -97,6 +97,19 @@ static json ToolList() {
              json::array({"path", "content"})),
         tool("script_errors", "Last script compile error and the runtime exception count for this session.",
              json::object(), json::array()),
+        tool("list_scenes", "The project's scenes with paths, build order, start-scene flag, plus the open scene and play state.",
+             json::object(), json::array()),
+        tool("open_scene", "Load a scene by project-relative path (e.g. scenes/Main.enjin). Refused during play mode; unsaved edits to the current scene are NOT saved first.",
+             {{"path", {{"type", "string"}, {"description", "scene path relative to the project root"}}}},
+             json::array({"path"})),
+        tool("save_scene", "Save the open scene to its file.",
+             json::object(), json::array()),
+        tool("get_log", "Recent editor/runtime log lines (the console buffer). Filter by min_level and read incrementally with since_seq.",
+             {{"lines", {{"type", "integer"}, {"description", "max lines to return (default 100)"}}},
+              {"min_level", {{"type", "string"}, {"enum", {"info", "warn", "error"}},
+                             {"description", "minimum severity (default info)"}}},
+              {"since_seq", {{"type", "integer"}, {"description", "only lines with seq > this (seq resets when the console is cleared)"}}}},
+             json::array()),
     });
 }
 
@@ -117,9 +130,16 @@ json McpServerCallTool(McpServer* self, ECS::World* world,
                        const std::function<std::string(const std::string&, f32, f32, f32)>& spawnPrefab,
                        const std::function<std::string(const std::string&, bool)>& buildGame,
                        const std::function<std::string(const std::string&, const std::string&, const std::string&)>& scriptTool,
+                       const std::function<std::string(const std::string&, const std::string&)>& editorTool,
                        const std::string& name, const json& args) {
     (void)self;
     auto needWorld = [&]() -> ECS::World* { return world; };
+
+    if (name == "list_scenes" || name == "open_scene" || name == "save_scene" || name == "get_log") {
+        if (!editorTool) return ToolText("editor tools not available in this context", true);
+        std::string r = editorTool(name, args.dump());
+        return ToolText(r, r.rfind("error", 0) == 0);
+    }
 
     if (name == "spawn_prefab") {
         if (!spawnPrefab) return ToolText("prefab spawning not available in this context", true);
@@ -277,7 +297,7 @@ std::string McpServer::HandleJsonRpc(const std::string& body) {
         json args = params.value("arguments", json::object());
         try {
             json r = McpServerCallTool(this, m_World, m_SceneInfo, m_PlayControl, m_Capture,
-                                       m_SpawnPrefab, m_Build, m_ScriptTool, name, args);
+                                       m_SpawnPrefab, m_Build, m_ScriptTool, m_EditorTool, name, args);
             return result(std::move(r));
         } catch (const std::exception& e) {
             return result(ToolText(std::string("tool threw: ") + e.what(), true));

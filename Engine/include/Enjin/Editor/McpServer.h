@@ -54,6 +54,11 @@ public:
     // The editor contains paths inside <project>/scripts and restricts to .as
     // files; "write" compiles immediately and returns the diagnostics.
     void SetScriptToolHook(std::function<std::string(const std::string&, const std::string&, const std::string&)> hook) { m_ScriptTool = std::move(hook); }
+    // Generic editor-tool escape hatch: (toolName, argsJson) -> result string
+    // ("error: ..." on failure). Powers the Tier-0 tools from the Ink_Ribbon
+    // feature request (list_scenes/open_scene/save_scene/get_log) without a
+    // new std::function per tool.
+    void SetEditorToolHook(std::function<std::string(const std::string&, const std::string&)> hook) { m_EditorTool = std::move(hook); }
 
     // Bind 127.0.0.1 on preferredPort (tries the next few on conflict).
     // Returns the bound port, or 0 on failure.
@@ -97,6 +102,7 @@ private:
     std::function<std::string(const std::string&, f32, f32, f32)> m_SpawnPrefab;
     std::function<std::string(const std::string&, bool)> m_Build;
     std::function<std::string(const std::string&, const std::string&, const std::string&)> m_ScriptTool;
+    std::function<std::string(const std::string&, const std::string&)> m_EditorTool;
 
     std::thread m_Thread;
     std::atomic<bool> m_Running{false};

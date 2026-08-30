@@ -1019,6 +1019,81 @@ void EditorLayer::Update(f32 deltaTime) {
                 if (!CaptureGameViewToFile(base)) return "";
                 return base + ".png";
             });
+            // Tier-0 tools from the Ink_Ribbon feature request: scene
+            // switching, save, and log access (the console ring buffer -
+            // enjin.log on disk is write-buffered and useless mid-session).
+            m_McpServer.SetEditorToolHook([this](const std::string& op,
+                                                 const std::string& argsJson) -> std::string {
+                nlohmann::json args = nlohmann::json::parse(argsJson, nullptr, false);
+                if (args.is_discarded()) args = nlohmann::json::object();
+
+                if (op == "list_scenes") {
+                    nlohmann::json j;
+                    j["currentScene"] = m_CurrentScenePath;
+                    j["playState"] = m_PlayMode.IsPlaying() ? "playing"
+                                   : m_PlayMode.IsPaused() ? "paused" : "stopped";
+                    nlohmann::json scenes = nlohmann::json::array();
+                    for (const auto& s : m_SceneManager.GetScenes()) {
+                        scenes.push_back({{"path", s.path},
+                                          {"buildIndex", s.buildIndex},
+                                          {"isStartScene", s.isStartScene}});
+                    }
+                    j["scenes"] = std::move(scenes);
+                    return j.dump();
+                }
+                if (op == "open_scene") {
+                    if (!m_PlayMode.IsStopped())
+                        return "error: stop play mode first (play_control stop)";
+                    std::string rel = args.value("path", "");
+                    if (rel.empty()) return "error: 'path' is required";
+                    std::string projPath = m_SceneManager.GetProjectPath();
+                    if (projPath.empty()) return "error: no project open";
+                    std::string projDir = std::filesystem::path(projPath).parent_path().string();
+                    std::string resolved = Platform::ResolveWithinRoot(projDir, rel);
+                    if (resolved.empty()) return "error: path escapes the project root";
+                    if (!std::filesystem::exists(resolved))
+                        return "error: scene file not found: " + rel;
+                    OpenSceneImmediate(resolved);
+                    nlohmann::json j{{"opened", rel},
+                                     {"entityCount", m_World ? m_World->GetAllEntities().size() : 0}};
+                    return j.dump();
+                }
+                if (op == "save_scene") {
+                    if (!m_PlayMode.IsStopped())
+                        return "error: refusing to save during play mode (play-state would be baked into the file)";
+                    if (m_CurrentScenePath.empty()) return "error: no scene open";
+                    SaveScene(m_CurrentScenePath);
+                    return "saved " + m_CurrentScenePath;
+                }
+                if (op == "get_log") {
+                    int maxLines = args.value("lines", 100);
+                    maxLines = std::clamp(maxLines, 1, 2000);
+                    std::string minLevel = args.value("min_level", "info");
+                    i64 sinceSeq = args.value("since_seq", static_cast<i64>(-1));
+                    auto levelRank = [](LogLevel l) {
+                        return (l == LogLevel::Error || l == LogLevel::Fatal) ? 2
+                             : (l == LogLevel::Warn) ? 1 : 0;
+                    };
+                    int minRank = (minLevel == "error") ? 2 : (minLevel == "warn") ? 1 : 0;
+                    nlohmann::json lines = nlohmann::json::array();
+                    // seq = index into the console buffer (resets on console clear)
+                    i64 total = static_cast<i64>(m_ConsoleLog.size());
+                    for (i64 i = std::max<i64>(sinceSeq + 1, 0); i < total; ++i) {
+                        const auto& e = m_ConsoleLog[static_cast<usize>(i)];
+                        if (levelRank(e.level) < minRank) continue;
+                        lines.push_back({{"seq", i},
+                                         {"level", levelRank(e.level) == 2 ? "error"
+                                                 : levelRank(e.level) == 1 ? "warn" : "info"},
+                                         {"msg", e.message}});
+                    }
+                    // Keep the LAST maxLines (newest matter most)
+                    while (static_cast<int>(lines.size()) > maxLines)
+                        lines.erase(lines.begin());
+                    nlohmann::json j{{"totalSeq", total - 1}, {"lines", std::move(lines)}};
+                    return j.dump();
+                }
+                return "error: unknown editor tool '" + op + "'";
+            });
             m_McpServer.SetSpawnPrefabHook([this](const std::string& relPath,
                                                   f32 x, f32 y, f32 z) -> std::string {
                 if (!m_World) return "error: no world";
