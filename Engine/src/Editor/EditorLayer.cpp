@@ -113,6 +113,7 @@
 #include <fstream>
 #include <stb_image_write.h>  // --golden PNG capture (impl lives in the stb TU)
 #include <filesystem>
+#include <ctime>    // GIF clip timestamped filenames
 #include "Enjin/Gameplay/Replay.h"
 #include <cstdio>
 #include <cstdlib>
@@ -1135,6 +1136,29 @@ void EditorLayer::Update(f32 deltaTime) {
         if (!s_AutoPlayRequested || m_PlayMode.IsPlaying()) {
             if (++m_GoldenFrameCounter >= s_GoldenCaptureFrame) {
                 WriteGoldenCapture();
+            }
+        }
+    }
+
+    // R1 GIF recording: sample the game view at the fidelity's capture rate.
+    // The readback stalls the GPU briefly - acceptable while deliberately
+    // recording. A game-view resize mid-recording ends the clip (GIF frames
+    // must all share one size).
+    if (m_GifRecorder.IsRecording() && m_GameViewRenderTarget) {
+        static const f32 kGifFps[3] = { 20.0f, 15.0f, 10.0f };
+        f32 interval = 1.0f / kGifFps[std::clamp(m_GifFidelity, 0, 2)];
+        m_GifCaptureAccum += deltaTime;
+        if (m_GifCaptureAccum >= interval) {
+            std::vector<u8> pixels = m_GameViewRenderTarget->CaptureToPixels();
+            u32 w = m_GameViewRenderTarget->GetWidth();
+            u32 h = m_GameViewRenderTarget->GetHeight();
+            if (pixels.size() == static_cast<usize>(w) * h * 4) {
+                m_GifRecorder.AddFrame(pixels.data(), m_GifCaptureAccum * 1000.0f);
+                m_GifCaptureAccum = 0.0f;
+            } else {
+                m_GifRecorder.Stop();
+                ShowNotification("GIF recording stopped: game view was resized",
+                                 NotificationType::Warning);
             }
         }
     }
@@ -5148,6 +5172,55 @@ void EditorLayer::WriteGoldenCapture() {
 
     // Done - exit so the harness can move to the next scene
     if (m_Window) m_Window->Close();
+}
+
+// R1: start/stop game-view GIF recording. Output lands in <project>/captures/
+// (falls back to CWD with no project open - the editor CWD is the exe dir).
+void EditorLayer::ToggleGifRecording() {
+    if (m_GifRecorder.IsRecording()) {
+        u32 frames = m_GifRecorder.FrameCount();
+        std::string path = m_GifRecorder.Path();
+        m_GifRecorder.Stop();
+        ShowNotification("GIF saved (" + std::to_string(frames) + " frames): " + path,
+                         NotificationType::Success);
+        return;
+    }
+    if (!m_GameViewRenderTarget) {
+        ShowNotification("Nothing to record - no game view", NotificationType::Warning);
+        return;
+    }
+    namespace fs = std::filesystem;
+    fs::path dir;
+    const std::string& manifest = m_SceneManager.GetProjectPath();
+    if (!manifest.empty()) dir = fs::path(manifest).parent_path() / "captures";
+    else { std::error_code ec; dir = fs::current_path(ec) / "captures"; }
+    std::error_code mkEc;
+    fs::create_directories(dir, mkEc);
+
+    // Timestamped name so takes never overwrite each other.
+    std::time_t now = std::time(nullptr);
+    std::tm tmv{};
+#ifdef _WIN32
+    localtime_s(&tmv, &now);
+#else
+    localtime_r(&now, &tmv);
+#endif
+    char name[64];
+    std::snprintf(name, sizeof(name), "clip_%04d%02d%02d_%02d%02d%02d.gif",
+                  tmv.tm_year + 1900, tmv.tm_mon + 1, tmv.tm_mday,
+                  tmv.tm_hour, tmv.tm_min, tmv.tm_sec);
+
+    u32 shift = static_cast<u32>(std::clamp(m_GifFidelity, 0, 2));
+    if (m_GifRecorder.Start((dir / name).string(),
+                            m_GameViewRenderTarget->GetWidth(),
+                            m_GameViewRenderTarget->GetHeight(), shift)) {
+        m_GifCaptureAccum = 1e9f;   // capture the first frame immediately
+        ShowNotification("Recording game view GIF - use the Tools menu to stop",
+                         NotificationType::Info);
+    } else {
+        ShowNotification("Could not start GIF recording (file open failed)",
+                         NotificationType::Error);
+    }
 }
 
 // Readback the game view and write <basePath>.png/.ppm. Shared by the --golden

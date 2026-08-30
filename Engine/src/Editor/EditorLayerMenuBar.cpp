@@ -513,6 +513,27 @@ void EditorLayer::DrawMenuBar() {
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("Tools")) {
+                // R1: game-view GIF recording
+                if (m_GifRecorder.IsRecording()) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.35f, 0.35f, 1.0f));
+                    bool stop = ImGui::MenuItem(("* Stop GIF Recording (" +
+                        std::to_string(m_GifRecorder.FrameCount()) + " frames)").c_str());
+                    ImGui::PopStyleColor();
+                    if (stop) ToggleGifRecording();
+                } else {
+                    if (ImGui::MenuItem("Record Game View GIF")) ToggleGifRecording();
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Records the game view to an animated GIF in\n"
+                                          "<project>/captures/. Pick the fidelity below.\n"
+                                          "Stop from this menu when done.");
+                }
+                if (ImGui::BeginMenu("GIF Fidelity")) {
+                    ImGui::RadioButton("Full res, 20 fps (big files)", &m_GifFidelity, 0);
+                    ImGui::RadioButton("Half res, 15 fps", &m_GifFidelity, 1);
+                    ImGui::RadioButton("Quarter res, 10 fps (small)", &m_GifFidelity, 2);
+                    ImGui::EndMenu();
+                }
+                ImGui::Separator();
                 if (ImGui::MenuItem("Atlas Packer")) m_ShowAtlasPacker = true;
                 // --- Scripting & Logic ---
                 if (ImGui::BeginMenu("Scripting & Logic")) {

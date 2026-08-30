@@ -12,6 +12,7 @@
 #include "Enjin/GUI/ImGuiLayer.h"
 #include "Enjin/Editor/PlayMode.h"
 #include "Enjin/Editor/EditorSettings.h"
+#include "Enjin/Editor/GifRecorder.h"
 #include "Enjin/Editor/McpServer.h"
 #include "Enjin/Debug/Profiler.h"
 #include "Enjin/Logging/Log.h"
@@ -1714,6 +1715,13 @@ private:
     char m_DiscordBugTitleBuf[256] = {};
     char m_DiscordBugDescBuf[4096] = {};
     bool m_DiscordBugIncludeScreenshot = true;
+
+    // R1 GIF recorder: records the game view to an animated GIF. Fidelity
+    // picks resolution + capture rate; frames stream to disk as they're taken.
+    GifRecorder m_GifRecorder;
+    int m_GifFidelity = 1;          // 0 = full/20fps, 1 = half/15fps, 2 = quarter/10fps
+    f32 m_GifCaptureAccum = 0.0f;   // wall-clock seconds since last captured frame
+    void ToggleGifRecording();
     bool m_DiscordBugIncludeLog = true;
     i32 m_DiscordBugSeverity = 2;  // 0=Crash, 1=Major, 2=Minor, 3=Cosmetic
     enum class DiscordSendState : u8 { Idle, Sending, Sent, Failed };
