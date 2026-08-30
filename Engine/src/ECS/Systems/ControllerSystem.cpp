@@ -1133,6 +1133,58 @@ static bool FindLadderAt(World* world, const Math::Vector3& pos,
     return false;
 }
 
+// G1: shared ladder-climb step for FP/TP controllers (same field names).
+// Returns true while the climb owns vertical motion this frame — the caller
+// must then skip its jump and gravity blocks. Rules: overlap + forward push
+// grabs on; forward climbs, back descends; jump (if allowed) pushes off;
+// pushing past the top mantles with a boost; reaching the floor while
+// descending lets go. The probe point is chest height (feet + 1).
+template <typename CtrlT>
+static bool UpdateLadderClimb(World* world, CtrlT& ctrl, TransformComponent& transform,
+                              const Math::Vector2& input, bool jumpInput, f32 dt) {
+    const LadderComponent* ladder = nullptr;
+    f32 topY = 0.0f;
+    Math::Vector3 probe = transform.position + Math::Vector3(0.0f, 1.0f, 0.0f);
+    bool inLadder = world && FindLadderAt(world, probe, &ladder, &topY);
+
+    if (!ctrl.isClimbing) {
+        if (!(inLadder && input.y > 0.1f)) return false;
+        ctrl.isClimbing = true;
+    }
+    if (!inLadder) {                              // slid out the side or bottom
+        ctrl.isClimbing = false;
+        return false;
+    }
+    if (ctrl.isGrounded && input.y < -0.1f) {     // climbed down onto the floor
+        ctrl.isClimbing = false;
+        return false;
+    }
+    if (jumpInput && ladder->allowJumpOff) {      // push off
+        ctrl.isClimbing = false;
+        ctrl.velocity.y = ctrl.jumpForce * 0.7f;
+        ctrl.isJumping = true;
+        ctrl.isGrounded = false;
+        return true;
+    }
+    // Mantle: pushing up with the chest at the top edge. The window is wider
+    // than one climb step (climbSpeed*dt) so a frame can't tunnel past it.
+    if (input.y > 0.1f && probe.y >= topY - 0.2f) {
+        ctrl.isClimbing = false;
+        ctrl.velocity.y = ladder->topBoost;
+        ctrl.isJumping = false;
+        ctrl.isGrounded = false;
+        return true;
+    }
+    // Steady climb: vertical from forward/back input, horizontal damped out.
+    ctrl.velocity.x = Math::MoveTowards(ctrl.velocity.x, 0.0f, ctrl.deceleration * 2.0f * dt);
+    ctrl.velocity.z = Math::MoveTowards(ctrl.velocity.z, 0.0f, ctrl.deceleration * 2.0f * dt);
+    ctrl.velocity.y = input.y * ladder->climbSpeed;
+    ctrl.isGrounded = false;
+    ctrl.isJumping = false;
+    ctrl.isFalling = false;
+    return true;
+}
+
 void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& ctrl, TransformComponent& transform, f32 dt) {
     (void)entity;
 
@@ -1280,14 +1332,18 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
     if (spaceDown && !ctrl.jumpKeyWasDown) jumpInput = true;
     ctrl.jumpKeyWasDown = spaceDown;
 #endif
-    if (jumpInput && ctrl.isGrounded) {
+
+    // G1 ladder: while climbing, the climb owns velocity.y (jump/gravity skip).
+    bool climbing = UpdateLadderClimb(m_World, ctrl, transform, input, jumpInput, dt);
+
+    if (jumpInput && ctrl.isGrounded && !climbing) {
         ctrl.velocity.y = ctrl.jumpForce;
         ctrl.isJumping = true;
         ctrl.isGrounded = false;
     }
 
     // Gravity
-    if (!ctrl.isGrounded) {
+    if (!ctrl.isGrounded && !climbing) {
         ctrl.velocity.y -= ctrl.gravity * dt;
         ctrl.isFalling = ctrl.velocity.y < 0;
     }
@@ -1629,8 +1685,12 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
         ctrl.velocity.z = Math::MoveTowards(ctrl.velocity.z, 0.0f, ctrl.deceleration * dt);
     }
 
+    // G1 ladder: while climbing, the climb owns velocity.y (jump/gravity skip).
+    bool jumpInput = IsJumpPressed();
+    bool climbing = UpdateLadderClimb(m_World, ctrl, transform, input, jumpInput, dt);
+
     // Jumping (check stamina cost)
-    if (IsJumpPressed() && ctrl.isGrounded && !ctrl.isCrouching) {
+    if (jumpInput && ctrl.isGrounded && !ctrl.isCrouching && !climbing) {
         bool canJump = true;
         if (m_World) {
             auto* resource = m_World->GetComponent<ResourceComponent>(entity);
@@ -1646,7 +1706,7 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
     }
 
     // Gravity
-    if (!ctrl.isGrounded) {
+    if (!ctrl.isGrounded && !climbing) {
         ctrl.velocity.y -= ctrl.gravity * dt;
         ctrl.isFalling = ctrl.velocity.y < 0;
     }

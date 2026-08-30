@@ -320,6 +320,14 @@ static const std::unordered_map<std::string, ComponentHelp>& Registry() {
                 { RelationKind::FeedsRenderer, "Renderer",  nullptr, nullptr },
             }
         };
+        r["ladder"] = {
+            "A climbable volume: characters that walk into it and push forward climb up.",
+            "Stretch the volume over the ladder's rungs (half extents are world units). Forward climbs, back descends, jump hops off, and pushing past the top mantles onto the ledge. Works with First Person and Third Person controllers.",
+            nullptr,
+            {
+                { RelationKind::PairsWith, "Transform", Has<ECS::TransformComponent>, Add<ECS::TransformComponent> },
+            }
+        };
         r["reflectivePlane"] = {
             "A glassy floor that mirrors the scene above it (the PS2 wet-floor look).",
             "Put it on a flat floor. The floor MATERIAL must be semi-transparent (alpha Blend) for the reflection to show through. Raise Reflection Strength for a sharper mirror; tint it for wet-asphalt blue or gold sheen.",

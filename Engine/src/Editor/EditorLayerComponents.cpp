@@ -47,6 +47,7 @@ extern char** environ;
 #include "Enjin/ECS/Components/GravityZone.h"
 #include "Enjin/ECS/Components/ReflectionProbe.h"
 #include "Enjin/ECS/Components/ReflectivePlane.h"
+#include "Enjin/ECS/Components/Ladder.h"
 #include "Enjin/Renderer/ReflectionProbeSystem.h"
 #include "Enjin/ECS/Components/PostProcessVolume.h"
 #include "Enjin/ECS/Components/ArtStyle.h"
@@ -2844,6 +2845,39 @@ void EditorLayer::DrawReflectivePlaneComponent(ECS::Entity entity) {
         ImGui::Separator();
         if (ImGui::Button("Remove##ReflectivePlane")) {
             RemoveComponentWithUndo<ECS::ReflectivePlaneComponent>(entity, "reflectivePlane", "Reflective Floor");
+        }
+    }
+}
+
+void EditorLayer::DrawLadderComponent(ECS::Entity entity) {
+    if (UI::SectionHeader("Ladder", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* ladder = m_World->GetComponent<ECS::LadderComponent>(entity);
+        if (!ladder) return;
+        DrawComponentHelp("ladder", m_World, entity);
+
+        ImGui::TextWrapped("A climbable volume. A character controller that walks in and "
+                           "pushes forward climbs; back descends, jump hops off, and "
+                           "pushing past the top mantles onto the ledge.");
+        ImGui::Separator();
+
+        f32 he[3] = { ladder->halfExtents.x, ladder->halfExtents.y, ladder->halfExtents.z };
+        if (ImGui::DragFloat3("Half Extents##Ladder", he, 0.05f, 0.1f, 100.0f)) {
+            ladder->halfExtents = Math::Vector3(he[0], he[1], he[2]);
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("World-space half size of the climbable volume (entity scale does NOT multiply it). Y reaches from the base to the top rung.");
+
+        InspectorUndo::DragFloat(m_UndoRedo, "Climb Speed##Ladder", &ladder->climbSpeed, 0.05f, 0.5f, 20.0f);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Units per second up (forward input) or down (back input).");
+
+        InspectorUndo::DragFloat(m_UndoRedo, "Top Boost##Ladder", &ladder->topBoost, 0.05f, 0.0f, 20.0f);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Upward push when climbing off the top - enough to mantle onto the ledge.");
+
+        InspectorUndo::Checkbox(m_UndoRedo, "Allow Jump Off##Ladder", &ladder->allowJumpOff);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Jump releases the ladder with a hop.");
+
+        ImGui::Separator();
+        if (ImGui::Button("Remove##Ladder")) {
+            RemoveComponentWithUndo<ECS::LadderComponent>(entity, "ladder", "Ladder");
         }
     }
 }

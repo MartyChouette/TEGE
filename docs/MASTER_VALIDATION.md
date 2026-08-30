@@ -221,8 +221,13 @@ motion). Acceptance for every item: a working example scene, editor-authored
 (component + inspector + help + serialization), working in editor play AND
 exported desktop AND web.
 
-- [ ] G1 Ladder 3D: climbable volume/component; FirstPerson + ThirdPerson
-      controllers gain a climb state (enter/exit, up/down, jump-off).
+- [x] G1 Ladder 3D: SHIPPED (2026-08-29). LadderComponent volume; shared climb
+      step in ControllerSystem (UpdateLadderClimb) wired into FirstPerson +
+      ThirdPerson: forward grabs/climbs, back descends, jump hops off,
+      pushing past the top mantles (boost). Serialized ("ladder"), inspector +
+      add-menu + ComponentHelp, Examples/Ladders demo (loads + renders clean).
+      AUTHORING RULE: extend the volume ~1 unit past the ledge, like a real
+      ladder above a roofline, or the mantle can't clear it. Feel test = Marty.
 - [ ] G2 Ladder 2D: Platformer2D climb state (the Mario/Mega Man ladder);
       grid-movement variant for the dungeon crawler.
 - [ ] G3 Rope 3D: anchored rope the player/objects can hang from or that

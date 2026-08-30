@@ -60,6 +60,7 @@
 #include "Enjin/ECS/Components/GravityZone.h"
 #include "Enjin/ECS/Components/ReflectionProbe.h"
 #include "Enjin/ECS/Components/ReflectivePlane.h"
+#include "Enjin/ECS/Components/Ladder.h"
 #include "Enjin/ECS/Components/PostProcessVolume.h"
 #include "Enjin/ECS/Components/ArtStyle.h"
 #include "Enjin/ECS/Components/FluidVolume.h"
@@ -532,6 +533,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::InteractableComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::InteractableComponent>(e); },
             "interactable"},
+        {"Ladder", "Gameplay", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::LadderComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::LadderComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::LadderComponent>(e); },
+            "ladder", DimensionTag::Only3D},
         {"Pickup", "Gameplay", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::PickupComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::PickupComponent>(e); },
@@ -1802,6 +1808,11 @@ void EditorLayer::DrawInspectorPanel() {
         // Reflective Floor component (planar reflection)
         if (m_World->HasComponent<ECS::ReflectivePlaneComponent>(m_PrimarySelected)) {
             DrawReflectivePlaneComponent(m_PrimarySelected);
+        }
+
+        // Ladder component (G1 climbable volume)
+        if (m_World->HasComponent<ECS::LadderComponent>(m_PrimarySelected)) {
+            DrawLadderComponent(m_PrimarySelected);
         }
 
         // Fluid Volume component
