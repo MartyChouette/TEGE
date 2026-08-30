@@ -1,6 +1,8 @@
 #include "Enjin/Gameplay/ClothSystem.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Cloth.h"
+#include "Enjin/ECS/Components/Rope.h"
+#include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Mesh.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Gameplay.h"
@@ -234,6 +236,132 @@ bool ResolvePoint(const ColliderShape& s, Math::Vector3& p, f32 skin) {
     return false;
 }
 
+// Live weather wind at a world position: the highest-priority weather zone
+// covering it wins (indoor zone with windStrength 0 = calm interior); with no
+// zone, the global wind field supplies gusts + turbulence. Shared by cloth
+// and rope. time drives the gust phase.
+Math::Vector3 SampleWeatherWind(World* world, const Effects::WindSystem* wind,
+                                const Math::Vector3& pos, f32 time) {
+    bool inZone = false;
+    i32 bestPriority = 0;
+    Math::Vector3 zoneDir(1.0f, 0.0f, 0.0f);
+    f32 zoneStrength = 0.0f;
+    for (Entity ze : world->GetEntitiesWithComponent<WeatherZoneComponent>()) {
+        auto* zone = world->GetComponent<WeatherZoneComponent>(ze);
+        auto* zxf = world->GetComponent<TransformComponent>(ze);
+        if (!zone || !zxf) continue;
+        if (!zone->ContainsPoint(zxf->position, pos)) continue;
+        if (!inZone || zone->priority > bestPriority) {
+            inZone = true;
+            bestPriority = zone->priority;
+            zoneDir = zone->windDirection;
+            zoneStrength = zone->windStrength;
+        }
+    }
+    if (inZone) {
+        // Direction says WHERE, strength says HOW HARD (m/s^2 on the fabric).
+        // The raw windDirection is a small rain-slant vector; multiplying by
+        // it made zone wind ~5% of what anyone expects.
+        f32 len = zoneDir.Length();
+        Math::Vector3 d = (len > 1e-4f) ? zoneDir * (1.0f / len)
+                                        : Math::Vector3(1.0f, 0.0f, 0.0f);
+        // Gusts: a constant force just tilts fabric into a frozen angle;
+        // varying it (time + position phase) makes it actually flap.
+        f32 gust = 0.7f + 0.45f * std::sin(time * 1.9f + pos.x * 0.7f)
+                                * std::sin(time * 0.83f + pos.z * 0.5f);
+        return d * (zoneStrength * gust);
+    }
+    if (wind) return wind->GetWindAt(pos);
+    return Math::Vector3(0.0f, 0.0f, 0.0f);
+}
+
+// --- Rope (G3) / Chain (G5): 1D verlet chain, tube or rigid-link render ----
+
+constexpr i32 kRopeSides = 6;       // tube cross-section vertices per ring
+constexpr i32 kLinkVerts = 8;       // box corners per chain link
+constexpr f32 kLinkOverlap = 1.15f; // links slightly longer than a segment so they visually connect
+
+inline usize RopeVertexCount(const RopeComponent& r) {
+    return (r.style == RopeStyle::Chain)
+        ? static_cast<usize>(r.segments) * kLinkVerts
+        : static_cast<usize>(r.segments + 1) * kRopeSides;
+}
+
+// Build the chain (straight down from the entity) and the tube render mesh.
+void BuildRope(World* world, Entity entity, RopeComponent& r) {
+    r.segments = std::clamp(r.segments, 1, 256);
+    const i32 n = r.segments + 1;
+    r.segmentRest = r.length / static_cast<f32>(r.segments);
+
+    Math::Matrix4 model = ComputeWorldMatrix(world, entity);
+    r.positions.resize(n);
+    r.invMass.assign(n, 1.0f);
+    r.invMass[0] = 0.0f;                                     // top pinned to the entity
+    if (r.pinBottom && !r.endAttachName.empty())
+        r.invMass[n - 1] = 0.0f;                             // second anchor
+    else if (r.endMass > 0.0f)
+        r.invMass[n - 1] = 1.0f / (1.0f + r.endMass);        // tip weight
+    for (i32 i = 0; i < n; ++i)
+        r.positions[i] = XformPoint(model, Math::Vector3(0.0f, -r.segmentRest * i, 0.0f));
+    r.prevPositions = r.positions;
+    r.frameNormal = Math::Vector3(0, 0, 1);
+
+    // Render mesh: positions/normals rewritten per frame; UVs and indices fixed.
+    MeshComponent mesh;
+    mesh.vertices.resize(RopeVertexCount(r));
+    if (r.style == RopeStyle::Chain) {
+        // One box per segment (rigid link); corners placed per frame.
+        for (i32 s = 0; s < r.segments; ++s)
+            for (i32 k = 0; k < kLinkVerts; ++k) {
+                auto& v = mesh.vertices[static_cast<usize>(s) * kLinkVerts + k];
+                v.position = Math::Vector3(0.0f, -r.segmentRest * (s + 0.5f), 0.0f);
+                v.normal = Math::Vector3(0, 0, 1);
+                v.uv = Math::Vector2((k & 1) ? 1.0f : 0.0f,
+                                     s / static_cast<f32>(r.segments));
+            }
+        mesh.indices.clear();
+        mesh.indices.reserve(static_cast<usize>(r.segments) * 36);
+        // Corner layout per link: bit0 = +n, bit1 = +b, bit2 = +t (tip end).
+        static const u32 kBoxIdx[36] = {
+            0,4,6, 0,6,2,   1,3,7, 1,7,5,    // -n / +n faces
+            0,1,5, 0,5,4,   2,6,7, 2,7,3,    // -b / +b faces
+            0,2,3, 0,3,1,   4,5,7, 4,7,6 };  // -t / +t faces
+        for (i32 s = 0; s < r.segments; ++s)
+            for (u32 idx : kBoxIdx)
+                mesh.indices.push_back(static_cast<u32>(s * kLinkVerts) + idx);
+    } else {
+        // Tube: one ring per point, u around, v along.
+        const i32 nPts = r.segments + 1;
+        for (i32 i = 0; i < nPts; ++i)
+            for (i32 k = 0; k < kRopeSides; ++k) {
+                auto& v = mesh.vertices[static_cast<usize>(i) * kRopeSides + k];
+                v.position = Math::Vector3(0.0f, -r.segmentRest * i, 0.0f);
+                v.normal = Math::Vector3(0, 0, 1);
+                v.uv = Math::Vector2(k / static_cast<f32>(kRopeSides),
+                                     i / static_cast<f32>(r.segments));
+            }
+        mesh.indices.clear();
+        mesh.indices.reserve(static_cast<usize>(r.segments) * kRopeSides * 6);
+        for (i32 s = 0; s < r.segments; ++s)
+            for (i32 k = 0; k < kRopeSides; ++k) {
+                u32 a = static_cast<u32>(s * kRopeSides + k);
+                u32 b = static_cast<u32>(s * kRopeSides + (k + 1) % kRopeSides);
+                u32 c2 = static_cast<u32>((s + 1) * kRopeSides + k);
+                u32 d = static_cast<u32>((s + 1) * kRopeSides + (k + 1) % kRopeSides);
+                mesh.indices.push_back(a); mesh.indices.push_back(c2); mesh.indices.push_back(d);
+                mesh.indices.push_back(a); mesh.indices.push_back(d); mesh.indices.push_back(b);
+            }
+    }
+
+    if (world->HasComponent<MeshComponent>(entity))
+        *world->GetComponent<MeshComponent>(entity) = std::move(mesh);
+    else
+        world->AddComponent<MeshComponent>(entity, std::move(mesh));
+
+    r.initialized = true;
+    r.topologyDirty = true;
+}
+
 } // namespace
 
 void ClothSystem::ResetAll(World* world) {
@@ -243,6 +371,12 @@ void ClothSystem::ResetAll(World* world) {
         if (!c) continue;
         c->initialized = false;
         BuildCloth(world, entity, *c);   // fresh grid + topologyDirty -> buffers rebuild
+    }
+    for (Entity entity : world->GetEntitiesWithComponent<RopeComponent>()) {
+        auto* r = world->GetComponent<RopeComponent>(entity);
+        if (!r) continue;
+        r->initialized = false;
+        BuildRope(world, entity, *r);
     }
 }
 
@@ -260,44 +394,11 @@ void ClothSystem::Update(World* world, f32 deltaTime, const Effects::WindSystem*
 
         Math::Matrix4 model = ComputeWorldMatrix(world, entity);
 
-        // Weather wind: the highest-priority weather zone covering the cloth wins
-        // (an indoor zone with windStrength 0 = calm interior); with no zone, the
-        // global wind field supplies gusts + turbulence at the cloth's position.
+        // Weather wind: see SampleWeatherWind (zones override the global field).
         Math::Vector3 weatherWind(0.0f, 0.0f, 0.0f);
         if (c->useWeatherWind) {
             Math::Vector3 clothPos = XformPoint(model, Math::Vector3(0.0f, 0.0f, 0.0f));
-            bool inZone = false;
-            i32 bestPriority = 0;
-            Math::Vector3 zoneDir(1.0f, 0.0f, 0.0f);
-            f32 zoneStrength = 0.0f;
-            for (Entity ze : world->GetEntitiesWithComponent<WeatherZoneComponent>()) {
-                auto* zone = world->GetComponent<WeatherZoneComponent>(ze);
-                auto* zxf = world->GetComponent<TransformComponent>(ze);
-                if (!zone || !zxf) continue;
-                if (!zone->ContainsPoint(zxf->position, clothPos)) continue;
-                if (!inZone || zone->priority > bestPriority) {
-                    inZone = true;
-                    bestPriority = zone->priority;
-                    zoneDir = zone->windDirection;
-                    zoneStrength = zone->windStrength;
-                }
-            }
-            if (inZone) {
-                // Direction says WHERE, strength says HOW HARD (m/s^2 on the
-                // fabric). The raw windDirection is a small rain-slant vector;
-                // multiplying by it made zone wind ~5% of what anyone expects.
-                f32 len = zoneDir.Length();
-                Math::Vector3 d = (len > 1e-4f) ? zoneDir * (1.0f / len)
-                                                : Math::Vector3(1.0f, 0.0f, 0.0f);
-                // Gusts: a constant force just tilts cloth into a frozen angle;
-                // varying it (time + position phase) makes fabric actually flap.
-                f32 gust = 0.7f + 0.45f * std::sin(m_Time * 1.9f + clothPos.x * 0.7f)
-                                        * std::sin(m_Time * 0.83f + clothPos.z * 0.5f);
-                weatherWind = d * (zoneStrength * gust);
-            } else if (wind) {
-                weatherWind = wind->GetWindAt(clothPos);
-            }
-            weatherWind = weatherWind * c->weatherWindScale;
+            weatherWind = SampleWeatherWind(world, wind, clothPos, m_Time) * c->weatherWindScale;
         }
 
         // Verlet integrate free points; pinned points snap to the transform.
@@ -430,6 +531,157 @@ void ClothSystem::Update(World* world, f32 deltaTime, const Effects::WindSystem*
             c->topologyDirty = true;
         }
         c->meshDirty = true;
+    }
+
+    // --- Ropes (G3) --------------------------------------------------------
+    for (Entity entity : world->GetEntitiesWithComponent<RopeComponent>()) {
+        auto* r = world->GetComponent<RopeComponent>(entity);
+        if (!r) continue;
+        if (!r->initialized) BuildRope(world, entity, *r);
+        const i32 n = static_cast<i32>(r->positions.size());
+        if (n < 2) continue;
+
+        Math::Matrix4 model = ComputeWorldMatrix(world, entity);
+
+        // Resolve the optional end entity (dangling load or second anchor).
+        Entity attach = INVALID_ENTITY;
+        TransformComponent* attachXf = nullptr;
+        if (!r->endAttachName.empty()) {
+            attach = world->FindEntityByName(r->endAttachName);
+            if (attach != INVALID_ENTITY)
+                attachXf = world->GetComponent<TransformComponent>(attach);
+        }
+
+        Math::Vector3 weatherWind(0.0f, 0.0f, 0.0f);
+        if (r->useWeatherWind) {
+            Math::Vector3 topPos = XformPoint(model, Math::Vector3(0.0f, 0.0f, 0.0f));
+            weatherWind = SampleWeatherWind(world, wind, topPos, m_Time) * r->weatherWindScale;
+        }
+
+        // Verlet integrate; pinned ends snap to their anchors.
+        Math::Vector3 accel = Math::Vector3(0.0f, -9.81f * r->gravityScale, 0.0f) + r->wind + weatherWind;
+        const f32 keep = 1.0f - std::clamp(r->damping, 0.0f, 0.5f);
+        for (i32 i = 0; i < n; ++i) {
+            if (r->invMass[i] == 0.0f) {
+                Math::Vector3 target = (i == 0 || !attachXf)
+                    ? XformPoint(model, Math::Vector3(0.0f, 0.0f, 0.0f))
+                    : attachXf->position;
+                r->prevPositions[i] = r->positions[i] = target;
+                continue;
+            }
+            Math::Vector3 pos = r->positions[i];
+            Math::Vector3 vel = (pos - r->prevPositions[i]) * keep;
+            r->prevPositions[i] = pos;
+            r->positions[i] = pos + vel + accel * (dt * dt);
+        }
+
+        // Distance constraints along the chain.
+        for (i32 it = 0; it < std::max(r->iterations, 1); ++it) {
+            for (i32 i = 0; i + 1 < n; ++i) {
+                Math::Vector3 delta = r->positions[i + 1] - r->positions[i];
+                f32 dist = delta.Length();
+                if (dist < 1e-6f) continue;
+                f32 wA = r->invMass[i], wB = r->invMass[i + 1];
+                f32 wSum = wA + wB;
+                if (wSum <= 0.0f) continue;
+                Math::Vector3 corr = delta * ((dist - r->segmentRest) / (dist * wSum));
+                r->positions[i] = r->positions[i] + corr * wA;
+                r->positions[i + 1] = r->positions[i + 1] - corr * wB;
+            }
+        }
+
+        // Collider pushout (same shapes as cloth).
+        if (r->collide) {
+            static thread_local std::vector<ColliderShape> s_RopeShapes;
+            GatherColliders(world, entity, s_RopeShapes);
+            if (!s_RopeShapes.empty()) {
+                f32 fr = std::clamp(r->friction, 0.0f, 1.0f);
+                for (i32 i = 0; i < n; ++i) {
+                    if (r->invMass[i] == 0.0f) continue;
+                    for (const auto& s : s_RopeShapes) {
+                        if (ResolvePoint(s, r->positions[i], r->collisionSkin + r->thickness)) {
+                            r->prevPositions[i] = r->prevPositions[i] +
+                                (r->positions[i] - r->prevPositions[i]) * fr;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Dangling load: drag the attached entity to the rope tip.
+        if (attachXf && !r->pinBottom)
+            attachXf->position = r->positions[n - 1];
+
+        // Rebuild the render mesh in local space via the inverse model (the
+        // renderer applies the entity transform). A frame is parallel-
+        // transported down the chain so the cross-section doesn't twist.
+        auto* mesh = world->GetComponent<MeshComponent>(entity);
+        if (!mesh || mesh->vertices.size() != RopeVertexCount(*r)) continue;
+        Math::Matrix4 inv = model.Inverse();
+        Math::Vector3 carry = r->frameNormal;
+
+        auto frameAt = [&](const Math::Vector3& rawTangent,
+                           Math::Vector3& tangent, Math::Vector3& normal, Math::Vector3& binormal) {
+            f32 tl = rawTangent.Length();
+            tangent = (tl > 1e-6f) ? rawTangent * (1.0f / tl) : Math::Vector3(0, -1, 0);
+            normal = carry - tangent * carry.Dot(tangent);
+            f32 nl = normal.Length();
+            if (nl < 1e-4f) {
+                normal = Math::Vector3(1, 0, 0) - tangent * tangent.x;
+                nl = normal.Length();
+                if (nl < 1e-4f) { normal = Math::Vector3(0, 0, 1); nl = 1.0f; }
+            }
+            normal = normal * (1.0f / nl);
+            carry = normal;
+            binormal = tangent.Cross(normal);
+        };
+
+        if (r->style == RopeStyle::Chain) {
+            // One rigid box per segment; odd links twist 90 degrees like real
+            // chain links. Corner bit layout matches the index table in Build.
+            const f32 halfLen = r->segmentRest * 0.5f * kLinkOverlap;
+            const f32 hw = r->thickness;
+            const f32 hd = r->thickness * 0.45f;
+            for (i32 s = 0; s < r->segments; ++s) {
+                Math::Vector3 t, nrm, bin;
+                frameAt(r->positions[s + 1] - r->positions[s], t, nrm, bin);
+                if (s == 0) r->frameNormal = nrm;
+                if (s & 1) std::swap(nrm, bin);   // the alternating twist
+                Math::Vector3 mid = (r->positions[s] + r->positions[s + 1]) * 0.5f;
+                for (i32 k = 0; k < kLinkVerts; ++k) {
+                    Math::Vector3 off = nrm * ((k & 1) ? hw : -hw)
+                                      + bin * ((k & 2) ? hd : -hd)
+                                      + t   * ((k & 4) ? halfLen : -halfLen);
+                    auto& v = mesh->vertices[static_cast<usize>(s) * kLinkVerts + k];
+                    Math::Vector3 wp = mid + off;
+                    v.position = XformPoint(inv, wp);
+                    Math::Vector3 wn = wp + off;   // corner normal = corner direction
+                    v.normal = XformPoint(inv, wn) - v.position;
+                    f32 vnl = v.normal.Length();
+                    v.normal = (vnl > 1e-6f) ? v.normal * (1.0f / vnl) : Math::Vector3(0, 0, 1);
+                }
+            }
+        } else {
+            for (i32 i = 0; i < n; ++i) {
+                Math::Vector3 t, nrm, bin;
+                frameAt(r->positions[std::min(i + 1, n - 1)] - r->positions[std::max(i - 1, 0)],
+                        t, nrm, bin);
+                if (i == 0) r->frameNormal = nrm;   // seed next frame from the top
+                for (i32 k = 0; k < kRopeSides; ++k) {
+                    f32 a = (2.0f * 3.14159265f * k) / kRopeSides;
+                    Math::Vector3 radial = nrm * std::cos(a) + bin * std::sin(a);
+                    auto& v = mesh->vertices[static_cast<usize>(i) * kRopeSides + k];
+                    Math::Vector3 wp = r->positions[i] + radial * r->thickness;
+                    v.position = XformPoint(inv, wp);
+                    // Rotate the radial into local space too (ignore non-uniform scale).
+                    Math::Vector3 wn = wp + radial;
+                    v.normal = (XformPoint(inv, wn) - v.position);
+                    f32 vnl = v.normal.Length();
+                    v.normal = (vnl > 1e-6f) ? v.normal * (1.0f / vnl) : Math::Vector3(0, 0, 1);
+                }
+            }
+        }
+        r->meshDirty = true;
     }
 }
 

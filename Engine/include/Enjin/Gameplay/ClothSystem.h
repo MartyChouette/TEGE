@@ -9,11 +9,12 @@ namespace Effects { class WindSystem; }
 
 namespace Gameplay {
 
-// Position-based-dynamics grid cloth (see ECS::ClothComponent). Runs on the CPU
-// (a 16x16 sheet is 256 points — trivial); writes deformed vertices into the
-// entity's MeshComponent each step, which the renderer re-uploads via the cloth
-// dirty flags. Pinned points follow the entity's world transform, so moving the
-// entity drags the cloth.
+// Position-based-dynamics grid cloth (see ECS::ClothComponent) plus 1D verlet
+// ropes/chains (ECS::RopeComponent, G3/G5). Runs on the CPU (a 16x16 sheet is
+// 256 points — trivial); writes deformed vertices into the entity's
+// MeshComponent each step, which the renderer re-uploads via the dirty flags.
+// Pinned points follow the entity's world transform, so moving the entity
+// drags the cloth/rope.
 class ENJIN_API ClothSystem {
 public:
     // wind (optional) = the scene's live wind field; cloths with useWeatherWind

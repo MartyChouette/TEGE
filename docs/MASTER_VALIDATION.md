@@ -230,13 +230,23 @@ exported desktop AND web.
       ladder above a roofline, or the mantle can't clear it. Feel test = Marty.
 - [ ] G2 Ladder 2D: Platformer2D climb state (the Mario/Mega Man ladder);
       grid-movement variant for the dungeon crawler.
-- [ ] G3 Rope 3D: anchored rope the player/objects can hang from or that
-      objects dangle on - verlet or jointed-segment sim, renders as a curve,
-      interacts with physics (swing, cut?).
+- [x] G3 Rope 3D: SHIPPED (2026-08-30). RopeComponent - verlet chain pinned
+      to the entity, simulated by ClothSystem (all runtimes free), rendered
+      as a parallel-transported tube rewritten into the MeshComponent
+      (cloth's dirty-flag protocol). Collider pushout + weather wind shared
+      with cloth. endAttachName: dangle an entity from the tip (endMass
+      pulls taut) OR with pinBottom anchor the tip to it (clothesline sag).
+      Serialized ("rope"), inspector/add-menu/help, Examples/Ropes verified
+      by golden capture (wind sway + catenary sag visible). NOT yet: player
+      grab/swing (defer to the G4 swing work), cutting.
 - [ ] G4 Rope 2D: side-scroller swing rope (attach, pendulum swing with
       momentum carry-off, release).
-- [ ] G5 Chain 3D: jointed rigid links (distinct from rope: rigid segments,
-      heavy sag) - hinge/distance-joint composition + a spawner component.
+- [x] G5 Chain 3D: SHIPPED (2026-08-30) as RopeComponent style=Chain - the
+      same verlet sim drawn as rigid box links with alternating 90-degree
+      twist (hand-crafted route; no Jolt constraint rig). "Chain" add-menu
+      entry presets it (10 segments, thick, stiff iterations). Everything a
+      rope does (dangle load, span anchors, weather sway) works for chains.
+      In Examples/Ropes (HangingChain), golden-verified.
 - [ ] G6 Chain 2D: Box2D revolute-joint chain (drawbridge chains, flails).
 - [ ] G7 Door 3D: hinged door component (open/close/locked states, interact
       to open, auto-close option, physics-blocking while shut) - integrates

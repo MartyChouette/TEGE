@@ -61,6 +61,7 @@
 #include "Enjin/ECS/Components/ReflectionProbe.h"
 #include "Enjin/ECS/Components/ReflectivePlane.h"
 #include "Enjin/ECS/Components/Ladder.h"
+#include "Enjin/ECS/Components/Rope.h"
 #include "Enjin/ECS/Components/PostProcessVolume.h"
 #include "Enjin/ECS/Components/ArtStyle.h"
 #include "Enjin/ECS/Components/FluidVolume.h"
@@ -538,6 +539,23 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::LadderComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::LadderComponent>(e); },
             "ladder", DimensionTag::Only3D},
+        {"Rope", "Gameplay", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::RopeComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::RopeComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::RopeComponent>(e); },
+            "rope", DimensionTag::Only3D},
+        {"Chain", "Gameplay", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::RopeComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) {
+                ECS::RopeComponent chain;
+                chain.style = ECS::RopeStyle::Chain;
+                chain.segments = 10;
+                chain.thickness = 0.09f;
+                chain.iterations = 12;   // chains hang stiff, not stretchy
+                w->AddComponent<ECS::RopeComponent>(e, chain);
+            },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::RopeComponent>(e); },
+            "rope", DimensionTag::Only3D},
         {"Pickup", "Gameplay", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::PickupComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::PickupComponent>(e); },
@@ -1813,6 +1831,11 @@ void EditorLayer::DrawInspectorPanel() {
         // Ladder component (G1 climbable volume)
         if (m_World->HasComponent<ECS::LadderComponent>(m_PrimarySelected)) {
             DrawLadderComponent(m_PrimarySelected);
+        }
+
+        // Rope component (G3 verlet rope)
+        if (m_World->HasComponent<ECS::RopeComponent>(m_PrimarySelected)) {
+            DrawRopeComponent(m_PrimarySelected);
         }
 
         // Fluid Volume component

@@ -3017,6 +3017,7 @@ void RenderSystem::SetUpscalerQuality(u32 quality) { m_UpscalerQuality = quality
 #include "Enjin/Effects/Wind.h"
 #include "Enjin/ECS/Components/GPUParticleEmitter.h"
 #include "Enjin/ECS/Components/Cloth.h"
+#include "Enjin/ECS/Components/Rope.h"
 #endif
 #ifdef ENJIN_VISIBILITY_BUFFER
 #include "Enjin/Renderer/VisibilityBuffer/VisibilityBuffer.h"
@@ -4376,6 +4377,27 @@ void RenderSystem::Update(f32 deltaTime) {
                     rd->vertexBuffer->UploadData(clothMesh->vertices.data(), dataSize);
                 }
                 cloth->meshDirty = false;
+            }
+        }
+
+        // Rope (G3): same dirty protocol as cloth - vertex re-upload per sim
+        // step, full buffer retire when the tube was (re)built.
+        for (Entity entity : m_World->GetEntitiesWithComponent<RopeComponent>()) {
+            auto* rope = m_World->GetComponent<RopeComponent>(entity);
+            if (!rope) continue;
+            if (rope->topologyDirty) {
+                if (static_cast<usize>(EntityIndex(entity)) < m_EntityRenderData.size())
+                    RetireEntityBuffers(m_EntityRenderData[static_cast<usize>(EntityIndex(entity))]);
+                rope->topologyDirty = false;
+                rope->meshDirty = false;
+            } else if (rope->meshDirty) {
+                EntityRenderData* rd = GetRenderData(entity);
+                auto* ropeMesh = m_World->GetComponent<MeshComponent>(entity);
+                if (rd && rd->vertexBuffer && ropeMesh && !ropeMesh->vertices.empty()) {
+                    usize dataSize = ropeMesh->vertices.size() * sizeof(MeshComponent::Vertex);
+                    rd->vertexBuffer->UploadData(ropeMesh->vertices.data(), dataSize);
+                }
+                rope->meshDirty = false;
             }
         }
 

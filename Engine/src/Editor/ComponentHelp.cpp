@@ -328,6 +328,14 @@ static const std::unordered_map<std::string, ComponentHelp>& Registry() {
                 { RelationKind::PairsWith, "Transform", Has<ECS::TransformComponent>, Add<ECS::TransformComponent> },
             }
         };
+        r["rope"] = {
+            "A simulated rope or chain hanging from the entity.",
+            "Set length and segments; give the entity a material for the look. Style picks a smooth tube (rope) or rigid alternating links (chain). Name an End Attach entity to dangle it from the tip (lantern, tire), or turn on Pin Bottom to anchor the tip to that entity instead - it spans between them and sags (clothesline). Weather wind sways it.",
+            nullptr,
+            {
+                { RelationKind::PairsWith, "Transform", Has<ECS::TransformComponent>, Add<ECS::TransformComponent> },
+            }
+        };
         r["reflectivePlane"] = {
             "A glassy floor that mirrors the scene above it (the PS2 wet-floor look).",
             "Put it on a flat floor. The floor MATERIAL must be semi-transparent (alpha Blend) for the reflection to show through. Raise Reflection Strength for a sharper mirror; tint it for wet-asphalt blue or gold sheen.",

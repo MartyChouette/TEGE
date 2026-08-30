@@ -48,6 +48,7 @@ extern char** environ;
 #include "Enjin/ECS/Components/ReflectionProbe.h"
 #include "Enjin/ECS/Components/ReflectivePlane.h"
 #include "Enjin/ECS/Components/Ladder.h"
+#include "Enjin/ECS/Components/Rope.h"
 #include "Enjin/Renderer/ReflectionProbeSystem.h"
 #include "Enjin/ECS/Components/PostProcessVolume.h"
 #include "Enjin/ECS/Components/ArtStyle.h"
@@ -2878,6 +2879,62 @@ void EditorLayer::DrawLadderComponent(ECS::Entity entity) {
         ImGui::Separator();
         if (ImGui::Button("Remove##Ladder")) {
             RemoveComponentWithUndo<ECS::LadderComponent>(entity, "ladder", "Ladder");
+        }
+    }
+}
+
+void EditorLayer::DrawRopeComponent(ECS::Entity entity) {
+    if (UI::SectionHeader("Rope", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* rope = m_World->GetComponent<ECS::RopeComponent>(entity);
+        if (!rope) return;
+        DrawComponentHelp("rope", m_World, entity);
+
+        ImGui::TextWrapped("A simulated rope hanging from this entity, rendered as a tube. "
+                           "Give the entity a MATERIAL for the rope's look. Moving the "
+                           "entity swings it; wind and weather sway it.");
+        ImGui::Separator();
+
+        bool rebuild = false;
+        int style = static_cast<int>(rope->style);
+        if (ImGui::Combo("Style##Rope", &style, "Rope (tube)\0Chain (rigid links)\0")) {
+            rope->style = static_cast<ECS::RopeStyle>(style);
+            rebuild = true;
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Same simulation; Chain draws each segment as a rigid link with an alternating twist. Chains read best with ~8-12 segments and a bigger thickness.");
+        rebuild |= ImGui::DragFloat("Length##Rope", &rope->length, 0.05f, 0.2f, 100.0f);
+        rebuild |= ImGui::DragInt("Segments##Rope", &rope->segments, 1, 1, 256);
+        rebuild |= ImGui::DragFloat("Thickness##Rope", &rope->thickness, 0.005f, 0.005f, 2.0f);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Tube radius in world units.");
+
+        InspectorUndo::DragInt(m_UndoRedo, "Iterations##Rope", &rope->iterations, 1, 1, 32);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Solver passes - more = less stretch.");
+        InspectorUndo::DragFloat(m_UndoRedo, "Damping##Rope", &rope->damping, 0.005f, 0.0f, 0.5f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Gravity Scale##Rope", &rope->gravityScale, 0.05f, 0.0f, 5.0f);
+
+        InspectorUndo::Checkbox(m_UndoRedo, "Use Weather Wind##Rope", &rope->useWeatherWind);
+        if (rope->useWeatherWind)
+            InspectorUndo::DragFloat(m_UndoRedo, "Weather Wind Scale##Rope", &rope->weatherWindScale, 0.05f, 0.0f, 5.0f);
+        InspectorUndo::Checkbox(m_UndoRedo, "Collide##Rope", &rope->collide);
+
+        rebuild |= ImGui::DragFloat("End Mass##Rope", &rope->endMass, 0.1f, 0.0f, 100.0f);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Hangs a weight on the tip - the rope pulls taut and swings slower.");
+
+        char nameBuf[128];
+        std::snprintf(nameBuf, sizeof(nameBuf), "%s", rope->endAttachName.c_str());
+        if (ImGui::InputText("End Attach Entity##Rope", nameBuf, sizeof(nameBuf))) {
+            rope->endAttachName = nameBuf;
+            rebuild = true;
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Entity name. Normally it DANGLES from the rope tip (lantern, tire).\nWith Pin Bottom it becomes a second ANCHOR (clothesline).");
+        rebuild |= ImGui::Checkbox("Pin Bottom##Rope", &rope->pinBottom);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("The End Attach entity anchors the tip: the rope spans between the two entities and sags.");
+
+        if (rebuild) rope->initialized = false;   // re-run BuildRope next update
+        if (ImGui::Button("Reset##Rope")) rope->initialized = false;
+
+        ImGui::Separator();
+        if (ImGui::Button("Remove##Rope")) {
+            RemoveComponentWithUndo<ECS::RopeComponent>(entity, "rope", "Rope");
         }
     }
 }

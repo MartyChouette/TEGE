@@ -24,6 +24,7 @@
 #include "Enjin/ECS/Components/ReflectionProbe.h"
 #include "Enjin/ECS/Components/ReflectivePlane.h"
 #include "Enjin/ECS/Components/Ladder.h"
+#include "Enjin/ECS/Components/Rope.h"
 #include "Enjin/ECS/Components/Elemental.h"
 #include "Enjin/ECS/Components/PostProcessVolume.h"
 #include "Enjin/ECS/Components/FluidVolume.h"
@@ -1176,6 +1177,53 @@ ECS::LadderComponent DeserializeLadderComponent(const json& j) {
     if (j.contains("topBoost")) l.topBoost = j["topBoost"].get<f32>();
     if (j.contains("allowJumpOff")) l.allowJumpOff = JB(j["allowJumpOff"]);
     return l;
+}
+
+// Rope (G3)
+json SerializeRopeComponent(const ECS::RopeComponent& r) {
+    json j;
+    j["style"] = static_cast<i32>(r.style);
+    j["length"] = r.length;
+    j["segments"] = r.segments;
+    j["thickness"] = r.thickness;
+    j["iterations"] = r.iterations;
+    j["damping"] = r.damping;
+    j["gravityScale"] = r.gravityScale;
+    j["wind"] = SerializeVector3(r.wind);
+    j["useWeatherWind"] = r.useWeatherWind;
+    j["weatherWindScale"] = r.weatherWindScale;
+    j["collide"] = r.collide;
+    j["collisionSkin"] = r.collisionSkin;
+    j["friction"] = r.friction;
+    j["endMass"] = r.endMass;
+    j["endAttachName"] = r.endAttachName;
+    j["pinBottom"] = r.pinBottom;
+    return j;
+}
+
+ECS::RopeComponent DeserializeRopeComponent(const json& j) {
+    ECS::RopeComponent r;
+    if (j.contains("style")) {
+        i32 s = j["style"].get<i32>();
+        if (s >= 0 && s <= static_cast<i32>(ECS::RopeStyle::Chain))
+            r.style = static_cast<ECS::RopeStyle>(s);
+    }
+    if (j.contains("length")) r.length = j["length"].get<f32>();
+    if (j.contains("segments")) r.segments = j["segments"].get<i32>();
+    if (j.contains("thickness")) r.thickness = j["thickness"].get<f32>();
+    if (j.contains("iterations")) r.iterations = j["iterations"].get<i32>();
+    if (j.contains("damping")) r.damping = j["damping"].get<f32>();
+    if (j.contains("gravityScale")) r.gravityScale = j["gravityScale"].get<f32>();
+    if (j.contains("wind")) r.wind = DeserializeVector3(j["wind"]);
+    if (j.contains("useWeatherWind")) r.useWeatherWind = JB(j["useWeatherWind"]);
+    if (j.contains("weatherWindScale")) r.weatherWindScale = j["weatherWindScale"].get<f32>();
+    if (j.contains("collide")) r.collide = JB(j["collide"]);
+    if (j.contains("collisionSkin")) r.collisionSkin = j["collisionSkin"].get<f32>();
+    if (j.contains("friction")) r.friction = j["friction"].get<f32>();
+    if (j.contains("endMass")) r.endMass = j["endMass"].get<f32>();
+    if (j.contains("endAttachName")) r.endAttachName = SafeStr(j["endAttachName"]);
+    if (j.contains("pinBottom")) r.pinBottom = JB(j["pinBottom"]);
+    return r;
 }
 
 // Elemental components
@@ -7771,6 +7819,7 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
         ENJIN_SERDES("reflectionProbe", ECS::ReflectionProbeComponent, SerializeReflectionProbeComponent, DeserializeReflectionProbeComponent),
         ENJIN_SERDES("reflectivePlane", ECS::ReflectivePlaneComponent, SerializeReflectivePlaneComponent, DeserializeReflectivePlaneComponent),
         ENJIN_SERDES("ladder", ECS::LadderComponent, SerializeLadderComponent, DeserializeLadderComponent),
+        ENJIN_SERDES("rope", ECS::RopeComponent, SerializeRopeComponent, DeserializeRopeComponent),
         ENJIN_SERDES("resource", ECS::ResourceComponent, SerializeResourceComponent, DeserializeResourceComponent),
         ENJIN_SERDES("reverbZone", ECS::ReverbZoneComponent, SerializeReverbZoneComponent, DeserializeReverbZoneComponent),
         ENJIN_SERDES("rigidbody", ECS::RigidbodyComponent, SerializeRigidbodyComponent, DeserializeRigidbodyComponent),
