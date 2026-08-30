@@ -1,5 +1,6 @@
 #include "Enjin/Editor/VisualScriptEditor.h"
 #include "Enjin/ECS/Components/Name.h"
+#include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/VisualScript/NodeDefinition.h"
 #include "Enjin/Logging/Log.h"
 #include <imgui.h>
@@ -480,7 +481,17 @@ void VisualScriptEditor::Render(const EditorSettings& settings, bool isPlaying) 
 
         ImGui::EndChild();
     } else {
-        ImGui::TextDisabled("Select an entity with Visual Script component");
+        // Actionable empty state - the old single dim line read as a broken
+        // panel (Marty 2026-08-30).
+        ImGui::Dummy(ImVec2(0, 30));
+        ImGui::TextWrapped("No visual script open.");
+        ImGui::Spacing();
+        ImGui::TextDisabled("Pick a script on the left, or use the buttons there to add one\n"
+                            "to the selected entity or create a new script entity.");
+        ImGui::Spacing();
+        ImGui::TextDisabled("Once a graph is open: right-click the canvas (or the + Node\n"
+                            "button) to search all %zu nodes.",
+                            VisualScript::NodeRegistry::Instance().GetAllNodes().size());
     }
 
     ImGui::EndChild();
@@ -495,7 +506,13 @@ void VisualScriptEditor::Render(const EditorSettings& settings, bool isPlaying) 
     // Handle keyboard shortcuts (copy/paste/delete)
     HandleKeyboardShortcuts();
 
-    // Draw the node search popup (must be at window scope, not inside children)
+    // Draw the node search popup (must be at window scope, not inside children).
+    // The toolbar button requests the open via flag because it runs inside a
+    // child window - OpenPopup there would target the wrong ID scope.
+    if (m_OpenNodeSearch) {
+        ImGui::OpenPopup("NodeSearchPopup");
+        m_OpenNodeSearch = false;
+    }
     DrawNodeSearchPopup();
 
     // Breakpoint condition edit popup
@@ -556,7 +573,9 @@ void VisualScriptEditor::DrawEntitySidebar() {
     }
 
     // List all entities with VisualScriptComponent
+    bool anyScript = false;
     for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::VisualScriptComponent>()) {
+        anyScript = true;
         // Get name
         std::string name = "Entity " + std::to_string(entity);
         auto* nameComp = m_World->GetComponent<ECS::NameComponent>(entity);
@@ -569,6 +588,39 @@ void VisualScriptEditor::DrawEntitySidebar() {
             SetTarget(m_World, entity);
         }
     }
+
+    // A fresh scene has NO scripted entities, which used to leave this whole
+    // panel a dead end (empty list, no canvas, unreachable node search).
+    // Always offer the two ways in.
+    if (!anyScript) {
+        ImGui::TextDisabled("No visual scripts in\nthis scene yet.");
+    }
+    ImGui::Separator();
+
+    bool selValid = m_EditorSelected != ECS::INVALID_ENTITY && m_World->IsValid(m_EditorSelected);
+    bool selHasScript = selValid && m_World->HasComponent<ECS::VisualScriptComponent>(m_EditorSelected);
+    if (selValid && !selHasScript) {
+        std::string selName = "selected entity";
+        if (auto* nc = m_World->GetComponent<ECS::NameComponent>(m_EditorSelected))
+            if (!nc->name.empty()) selName = nc->name;
+        if (ImGui::Button(("+ Add to '" + selName + "'").c_str(), ImVec2(-1, 0))) {
+            m_World->AddComponent<ECS::VisualScriptComponent>(m_EditorSelected);
+            SetTarget(m_World, m_EditorSelected);
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Add a Visual Script component to the entity selected in the Hierarchy.");
+    }
+    if (ImGui::Button("+ New Script Entity", ImVec2(-1, 0))) {
+        ECS::Entity e = m_World->CreateEntity();
+        ECS::NameComponent name;
+        name.name = "Visual Script";
+        m_World->AddComponent<ECS::NameComponent>(e, name);
+        m_World->AddComponent<ECS::TransformComponent>(e);
+        m_World->AddComponent<ECS::VisualScriptComponent>(e);
+        SetTarget(m_World, e);
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Create a fresh entity carrying only a Visual Script - good for scene logic.");
 }
 
 // ============================================================================
@@ -576,6 +628,48 @@ void VisualScriptEditor::DrawEntitySidebar() {
 // ============================================================================
 
 void VisualScriptEditor::DrawToolbar() {
+    // Whose graph is this? The graph lives ON an entity (a VisualScript
+    // component) - name it so the panel visibly tracks the scene.
+    {
+        std::string targetName = "Entity " + std::to_string(m_TargetEntity);
+        if (auto* nc = m_World ? m_World->GetComponent<ECS::NameComponent>(m_TargetEntity) : nullptr)
+            if (!nc->name.empty()) targetName = nc->name;
+        ImGui::TextDisabled("Editing:");
+        ImGui::SameLine();
+        ImGui::Text("%s", targetName.c_str());
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("This graph is the Visual Script component on '%s'.\n"
+                              "Selecting another scripted entity switches to its graph.",
+                              targetName.c_str());
+        // Selection moved to an unscripted entity? Offer the one-click bridge.
+        if (m_EditorSelected != ECS::INVALID_ENTITY && m_EditorSelected != m_TargetEntity &&
+            m_World && m_World->IsValid(m_EditorSelected) &&
+            !m_World->HasComponent<ECS::VisualScriptComponent>(m_EditorSelected)) {
+            std::string selName = "selected";
+            if (auto* nc = m_World->GetComponent<ECS::NameComponent>(m_EditorSelected))
+                if (!nc->name.empty()) selName = nc->name;
+            ImGui::SameLine();
+            ImGui::TextDisabled("|");
+            ImGui::SameLine();
+            if (ImGui::SmallButton(("+ Add script to '" + selName + "'").c_str())) {
+                m_World->AddComponent<ECS::VisualScriptComponent>(m_EditorSelected);
+                SetTarget(m_World, m_EditorSelected);
+            }
+        }
+    }
+
+    // Discoverable node search - the same popup right-click opens, but
+    // findable without knowing the gesture.
+    if (ImGui::Button("+ Node")) {
+        m_ContextMenuPos = Math::Vector2(250, 150);
+        m_NodeSearchBuf[0] = '\0';
+        m_NodeSearchSelectedIndex = 0;
+        m_OpenNodeSearch = true;   // opened at window scope, where the popup lives
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Search every node (also: right-click the canvas).");
+    ImGui::SameLine();
+
     if (ImGui::Button("+ Event")) {
         ImGui::OpenPopup("AddEventPopup");
     }

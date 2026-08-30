@@ -1347,6 +1347,12 @@ private:
 
     // Game View mouse interaction during play mode
     bool m_GameViewMouseCaptured = false;
+    // True only on frames where the Game View panel actually submitted its
+    // image (visible + front tab). The play-mode game-UI overlay draws on the
+    // FOREGROUND list at the cached image rect - without this gate it painted
+    // the game's HUD over whatever panel was docked in that spot (Marty
+    // 2026-08-30: game text all over the Visual Script editor).
+    bool m_GameViewImageDrawnThisFrame = false;
     f32 m_GameViewImageMinX = 0.0f, m_GameViewImageMinY = 0.0f;
     f32 m_GameViewImageMaxX = 0.0f, m_GameViewImageMaxY = 0.0f;
     bool m_GameViewHovered = false;

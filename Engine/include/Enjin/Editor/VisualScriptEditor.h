@@ -40,7 +40,16 @@ public:
     // Set the undo manager for graph edits
     void SetUndoManager(UndoRedoManager* manager) { m_UndoManager = manager; }
 
+    // The editor's CURRENT hierarchy selection (may lack a VisualScript
+    // component) - powers the "Add to selected entity" empty-state button.
+    void SetEditorSelection(ECS::World* world, ECS::Entity e) {
+        if (!m_World) m_World = world;
+        m_EditorSelected = e;
+    }
+
 private:
+    ECS::Entity m_EditorSelected = ECS::INVALID_ENTITY;
+    bool m_OpenNodeSearch = false;   // toolbar "+ Node" requests the search popup
     // Sync graph from ECS component
     void SyncFromComponent();
 

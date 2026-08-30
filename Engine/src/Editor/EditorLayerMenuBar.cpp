@@ -512,29 +512,34 @@ void EditorLayer::DrawMenuBar() {
                 }
                 ImGui::EndMenu();
             }
+            // Tools menu organization (reorganized 2026-08-30, Marty's audit):
+            // themed submenus first (each tool lives with its discipline,
+            // exactly one home per tool), then the two direct ACTIONS at the
+            // bottom. Panel toggles show checkmarks; one-shot actions use
+            // plain items.
             if (ImGui::BeginMenu("Tools")) {
-                // R1: game-view GIF recording
-                if (m_GifRecorder.IsRecording()) {
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.35f, 0.35f, 1.0f));
-                    bool stop = ImGui::MenuItem(("* Stop GIF Recording (" +
-                        std::to_string(m_GifRecorder.FrameCount()) + " frames)").c_str());
-                    ImGui::PopStyleColor();
-                    if (stop) ToggleGifRecording();
-                } else {
-                    if (ImGui::MenuItem("Record Game View GIF")) ToggleGifRecording();
-                    if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip("Records the game view to an animated GIF in\n"
-                                          "<project>/captures/. Pick the fidelity below.\n"
-                                          "Stop from this menu when done.");
-                }
-                if (ImGui::BeginMenu("GIF Fidelity")) {
+                // --- Capture ---
+                if (ImGui::BeginMenu("Capture")) {
+                    if (m_GifRecorder.IsRecording()) {
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.35f, 0.35f, 1.0f));
+                        bool stop = ImGui::MenuItem(("* Stop GIF Recording (" +
+                            std::to_string(m_GifRecorder.FrameCount()) + " frames)").c_str());
+                        ImGui::PopStyleColor();
+                        if (stop) ToggleGifRecording();
+                    } else {
+                        if (ImGui::MenuItem("Record Game View GIF")) ToggleGifRecording();
+                        if (ImGui::IsItemHovered())
+                            ImGui::SetTooltip("Records the game view to an animated GIF in\n"
+                                              "<project>/captures/. Pick the fidelity below.\n"
+                                              "Stop from this menu when done.");
+                    }
+                    ImGui::Separator();
+                    ImGui::TextDisabled("GIF Fidelity");
                     ImGui::RadioButton("Full res, 20 fps (big files)", &m_GifFidelity, 0);
                     ImGui::RadioButton("Half res, 15 fps", &m_GifFidelity, 1);
                     ImGui::RadioButton("Quarter res, 10 fps (small)", &m_GifFidelity, 2);
                     ImGui::EndMenu();
                 }
-                ImGui::Separator();
-                if (ImGui::MenuItem("Atlas Packer")) m_ShowAtlasPacker = true;
                 // --- Scripting & Logic ---
                 if (ImGui::BeginMenu("Scripting & Logic")) {
                     bool visualScript = IsPanelVisible(EditorPanel::VisualScript);
@@ -586,17 +591,20 @@ void EditorLayer::DrawMenuBar() {
                     if (ImGui::MenuItem("Particle Editor", nullptr, &particleEditor)) {
                         SetPanelVisibility(EditorPanel::ParticleEditor, particleEditor);
                     }
-                    ImGui::EndMenu();
-                }
-                // --- Rendering & Shaders ---
-                if (ImGui::BeginMenu("Rendering & Shaders")) {
                     {
-                        bool sgOpen = m_ShaderGraphEditor.IsOpen();
-                        if (ImGui::MenuItem("Shader Graph", nullptr, &sgOpen)) {
-                            m_ShaderGraphEditor.SetGraph(&m_ShaderGraphData);
-                            m_ShaderGraphEditor.SetOpen(sgOpen);
+                        bool pgOpen = m_ParticleGraphEditor.IsOpen();
+                        if (ImGui::MenuItem("Particle Graph", nullptr, &pgOpen)) {
+                            m_ParticleGraphEditor.SetGraph(&m_ParticleGraphData);
+                            m_ParticleGraphEditor.SetOpen(pgOpen);
                         }
                     }
+                    ImGui::Separator();
+                    if (ImGui::MenuItem("Atlas Packer")) m_ShowAtlasPacker = true;
+                    ImGui::EndMenu();
+                }
+                // --- Audio ---
+                if (ImGui::BeginMenu("Audio")) {
+                    if (ImGui::MenuItem("Audio Mixer", nullptr, &m_ShowAudioMixer)) {}
                     {
                         bool agOpen = m_AudioGraphEditor.IsOpen();
                         if (ImGui::MenuItem("Audio Event Graph", nullptr, &agOpen)) {
@@ -604,9 +612,36 @@ void EditorLayer::DrawMenuBar() {
                             m_AudioGraphEditor.SetOpen(agOpen);
                         }
                     }
+                    ImGui::EndMenu();
+                }
+                // --- Rendering ---
+                if (ImGui::BeginMenu("Rendering")) {
+                    {
+                        bool sgOpen = m_ShaderGraphEditor.IsOpen();
+                        if (ImGui::MenuItem("Shader Graph", nullptr, &sgOpen)) {
+                            m_ShaderGraphEditor.SetGraph(&m_ShaderGraphData);
+                            m_ShaderGraphEditor.SetOpen(sgOpen);
+                        }
+                    }
+                    ImGui::EndMenu();
+                }
+                // --- World Building ---
+                if (ImGui::BeginMenu("World Building")) {
                     bool proceduralGen = IsPanelVisible(EditorPanel::ProceduralGen);
                     if (ImGui::MenuItem("Procedural Generation", nullptr, &proceduralGen)) {
                         SetPanelVisibility(EditorPanel::ProceduralGen, proceduralGen);
+                    }
+                    if (ImGui::MenuItem("Template Creator", nullptr, &m_ShowTemplateCreator)) {
+                        if (m_ShowTemplateCreator) m_TmplNeedsRescan = true;
+                    }
+                    {
+                        bool mpOpen = m_TemplateMarketplace.IsOpen();
+                        if (ImGui::MenuItem("Template Marketplace", nullptr, &mpOpen)) {
+                            if (mpOpen && m_TemplateMarketplace.GetCatalog().empty()) {
+                                m_TemplateMarketplace.Initialize("templates");
+                            }
+                            m_TemplateMarketplace.SetOpen(mpOpen);
+                        }
                     }
                     ImGui::EndMenu();
                 }
@@ -645,28 +680,6 @@ void EditorLayer::DrawMenuBar() {
                         SetPanelVisibility(EditorPanel::SaveDebug, saveDebug);
                     }
                     ImGui::EndMenu();
-                }
-                {
-                    bool pgOpen = m_ParticleGraphEditor.IsOpen();
-                    if (ImGui::MenuItem("Particle Graph", nullptr, &pgOpen)) {
-                        m_ParticleGraphEditor.SetGraph(&m_ParticleGraphData);
-                        m_ParticleGraphEditor.SetOpen(pgOpen);
-                    }
-                }
-                ImGui::Separator();
-                if (ImGui::MenuItem("Audio Mixer", nullptr, &m_ShowAudioMixer)) {}
-                ImGui::Separator();
-                if (ImGui::MenuItem("Template Creator", nullptr, &m_ShowTemplateCreator)) {
-                    if (m_ShowTemplateCreator) m_TmplNeedsRescan = true;
-                }
-                {
-                    bool mpOpen = m_TemplateMarketplace.IsOpen();
-                    if (ImGui::MenuItem("Template Marketplace", nullptr, &mpOpen)) {
-                        if (mpOpen && m_TemplateMarketplace.GetCatalog().empty()) {
-                            m_TemplateMarketplace.Initialize("templates");
-                        }
-                        m_TemplateMarketplace.SetOpen(mpOpen);
-                    }
                 }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Generate Documentation...")) {

@@ -670,6 +670,7 @@ void EditorLayer::DrawGameViewPanel() {
                 m_GameViewImageMinY = p0.y;
                 m_GameViewImageMaxX = p1.x;
                 m_GameViewImageMaxY = p1.y;
+                m_GameViewImageDrawnThisFrame = true;   // gates the game-UI overlay
                 m_GameViewHovered = ImGui::IsItemHovered();
                 // Drop target: accept asset drags onto Game View
                 if (ImGui::BeginDragDropTarget()) {

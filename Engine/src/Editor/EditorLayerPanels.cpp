@@ -3191,6 +3191,9 @@ void EditorLayer::DrawVisualScriptPanel() {
         m_World && m_World->HasComponent<ECS::VisualScriptComponent>(m_PrimarySelected)) {
         m_VisualScriptEditor.SetTarget(m_World, m_PrimarySelected);
     }
+    // The panel also needs the raw selection (with or without a VS component)
+    // for its "Add to selected entity" empty-state button.
+    m_VisualScriptEditor.SetEditorSelection(m_World, m_PrimarySelected);
 
     // Render the visual script editor
     m_VisualScriptEditor.Render(m_EditorSettings, isPlaying);

@@ -4852,7 +4852,11 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     // of it aligned with the game image. HUDSystem is retired: hudWidget data
     // migrates to UICanvas on load, so this is the ONE UI path. The camera
     // drives world-space elements (tags glued to entities).
-    if (m_PlayMode.IsPlaying()) {
+    // Only when the Game View actually drew this frame - the overlay uses the
+    // foreground draw list at the cached image rect, so with the Game View
+    // tab hidden it would paint the game's HUD over whatever panel is docked
+    // there (the VS-editor-covered-in-game-text bug).
+    if (m_PlayMode.IsPlaying() && m_GameViewImageDrawnThisFrame) {
         f32 gvW = m_GameViewImageMaxX - m_GameViewImageMinX;
         f32 gvH = m_GameViewImageMaxY - m_GameViewImageMinY;
         if (gvW > 0 && gvH > 0) {
@@ -4860,6 +4864,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                               m_GameViewImageMinX, m_GameViewImageMinY, m_Camera);
         }
     }
+    m_GameViewImageDrawnThisFrame = false;   // re-armed by DrawGameViewPanel next frame
 
     // Render UI editor overlay (design-time WYSIWYG preview in Game View)
     if (m_UIEditMode && m_PlayMode.IsStopped()) {
