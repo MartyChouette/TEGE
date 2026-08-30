@@ -169,6 +169,7 @@ enjin_add_test(TestSplatLoader        Unit/Assets/TestSplatLoader.cpp)
 # --- Editor ---
 enjin_add_test(TestEditorSettings     Unit/Editor/TestEditorSettings.cpp)
 enjin_add_test(TestGifRecorder        Unit/Editor/TestGifRecorder.cpp)
+enjin_add_test(TestFontAtlas          Unit/Renderer/TestFontAtlas.cpp)
 enjin_add_test(TestMarketplace        Unit/Editor/TestMarketplace.cpp)
 enjin_add_test(TestTemplateCreator    Unit/Editor/TestTemplateCreator.cpp)
 enjin_add_test(TestAccessibility      Unit/Editor/TestAccessibility.cpp)
