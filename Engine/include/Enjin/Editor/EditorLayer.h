@@ -1563,6 +1563,7 @@ private:
 
     // UI editor (viewport WYSIWYG) state
     bool m_UIEditMode = false;
+    ECS::Entity m_UIEditAutoFor = ECS::INVALID_ENTITY;  // auto-enable tracking (once per selected canvas)
     u32 m_UIEditSelectedElementId = 0;
     ECS::Entity m_UIEditCanvasEntity = ECS::INVALID_ENTITY;
     UIEditDragMode m_UIEditDragMode = UIEditDragMode::None;

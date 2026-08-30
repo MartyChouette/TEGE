@@ -2385,6 +2385,9 @@ private:
     void InitSceneRuntime() {
         Enjin::Scripting::SetTimeScale(1.0f);
         m_SimClock.Reset();
+        // Scripted weather must not leak across scene transitions
+        m_WeatherSystem.SetRainIntensity(0.0f);
+        m_WeatherSystem.SetSnowIntensity(0.0f);
         m_ScriptSystem.SetExternalFixedClock(m_SimClock.IsEnabled());
         m_ControllerSystem.SetExternalFixedClock(m_SimClock.IsEnabled());
 

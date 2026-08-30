@@ -646,6 +646,13 @@ void PlayMode::StartReplay(Gameplay::ReplayData&& data) {
 }
 
 void PlayMode::Stop() {
+    // Weather scripted during play (Weather_SetRainIntensity) must not
+    // outlive the session - stop returns to the editor's clear baseline;
+    // weather zones re-establish themselves next frame if authored.
+    if (m_WeatherSystem) {
+        m_WeatherSystem->SetRainIntensity(0.0f);
+        m_WeatherSystem->SetSnowIntensity(0.0f);
+    }
     const bool wasReplay = m_Replaying;
     if (m_Replaying) {
         Input::SetReplayInjection(false);

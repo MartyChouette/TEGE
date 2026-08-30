@@ -8610,7 +8610,17 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
         canvas->scaleMode = static_cast<GUI::UIScaleMode>(scaleMode);
     }
 
-    // UI Edit Mode toggle
+    // UI Edit Mode: ON by default when a canvas is selected (Marty 2026-08-29
+    // "edit in viewport should be normally on"). Selecting a canvas activates
+    // viewport editing for it immediately; unchecking sticks for THAT canvas
+    // until a different one is selected.
+    if (m_UIEditAutoFor != entity) {
+        m_UIEditAutoFor = entity;
+        m_UIEditMode = true;
+        m_UIEditCanvasEntity = entity;
+        m_TerrainEditMode = false;
+        m_TilemapEditMode = false;
+    }
     if (ImGui::Checkbox("Edit in Viewport", &m_UIEditMode)) {
         if (m_UIEditMode) {
             m_UIEditCanvasEntity = entity;

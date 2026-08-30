@@ -1441,6 +1441,8 @@ private:
         if (m_RenderSystem) m_RenderSystem->SetSkybox(serializer.GetSkyboxConfig());
         m_CurrentWebScenePath = scenePath;
         m_SimClock.Reset();
+        m_WeatherSystem.SetRainIntensity(0.0f);
+        m_WeatherSystem.SetSnowIntensity(0.0f);
         m_AtMainMenu = false;   // re-detected in InitWebSceneRuntime if the new scene has one
 
         InitWebSceneRuntime();

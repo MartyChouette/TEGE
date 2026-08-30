@@ -1,4 +1,5 @@
 #include "Enjin/ECS/Systems/ControllerSystem.h"
+#include "Enjin/ECS/Components/Ladder.h"
 #include "Enjin/Scripting/ScriptBindings.h"
 #include "Enjin/Physics/PhysicsTypes.h"
 #include "Enjin/Physics/PhysicsTypes2D.h"
@@ -1110,6 +1111,26 @@ void ControllerSystem::UpdateTopDown3D(Entity entity, TopDown3DController& ctrl,
         Math::Vector3 cameraPos = transform.position + cameraOffset;
         UpdateGameCameraTransform(cameraPos, transform.position, Math::Vector3(0, 1, 0));
     }
+}
+
+// G1: is this world position inside a ladder volume? Returns the ladder and
+// its top height so the climb code can mantle at the top.
+static bool FindLadderAt(World* world, const Math::Vector3& pos,
+                         const LadderComponent** outLadder, f32* outTopY) {
+    for (Entity e : world->GetEntitiesWithComponent<LadderComponent>()) {
+        auto* lad = world->GetComponent<LadderComponent>(e);
+        auto* lt = world->GetComponent<TransformComponent>(e);
+        if (!lad || !lt) continue;
+        Math::Vector3 d = pos - lt->position;
+        if (d.x >= -lad->halfExtents.x && d.x <= lad->halfExtents.x &&
+            d.y >= -lad->halfExtents.y && d.y <= lad->halfExtents.y &&
+            d.z >= -lad->halfExtents.z && d.z <= lad->halfExtents.z) {
+            if (outLadder) *outLadder = lad;
+            if (outTopY) *outTopY = lt->position.y + lad->halfExtents.y;
+            return true;
+        }
+    }
+    return false;
 }
 
 void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& ctrl, TransformComponent& transform, f32 dt) {

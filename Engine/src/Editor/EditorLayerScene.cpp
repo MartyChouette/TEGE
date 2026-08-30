@@ -672,6 +672,15 @@ void EditorLayer::OpenSceneImmediate(const std::string& path) {
         UpdateWindowTitle();
         RecordOpenSceneDiskTime();  // baseline the file mtime for external-edit detection
 
+        // House-cleaning (Marty 2026-08-29): weather PARTICLES live on the
+        // editor's WeatherSystem, not the scene - a previous project's
+        // scripted rain kept falling in the next one. The render-side
+        // rain/snow flags are already reset per scene by ApplyToRuntime
+        // above (unconditional), so only the particle system needs clearing.
+        // Scene-authored weather (zones, scripts) re-establishes itself.
+        m_WeatherSystem.SetRainIntensity(0.0f);
+        m_WeatherSystem.SetSnowIntensity(0.0f);
+
         // Auto-detect or auto-create a project (project-first workflow)
         AutoDetectProjectForScene(path);
 

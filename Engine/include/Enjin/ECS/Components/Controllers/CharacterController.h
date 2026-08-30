@@ -158,6 +158,8 @@ struct TopDown3DController : public CharacterControllerBase {
 
 // 3D Third Person Controller (camera follows behind player)
 struct ThirdPersonController : public CharacterControllerBase {
+    // G1 ladder climb state (runtime)
+    bool isClimbing = false;
     // Movement
     f32 acceleration = 30.0f;
     f32 deceleration = 25.0f;
@@ -207,6 +209,8 @@ struct ThirdPersonController : public CharacterControllerBase {
 
 // 3D First Person Controller (camera is the player's eyes)
 struct FirstPersonController : public CharacterControllerBase {
+    // G1 ladder climb state (runtime)
+    bool isClimbing = false;
     // Movement
     f32 acceleration = 50.0f;
     f32 deceleration = 40.0f;
