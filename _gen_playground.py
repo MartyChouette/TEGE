@@ -16,6 +16,14 @@ BOXCOL = by["Ground"]["boxCollider"]
 PLAYER = copy.deepcopy(by["Player"])
 
 # --- assets: waterfall textures from WaterFX + a generated matcap -----------
+# Rigged character (Quaternius robot, CC0) - kept across regens; sourced from
+# Downloads when present so a fresh checkout still regenerates everything else.
+_robot_src = os.path.join("C:", os.sep, "Users", "jerma", "Downloads",
+                          "Animated Robot by Quaternius", "FBX", "Robot.fbx")
+_robot_dst = os.path.join(OUT, "assets", "Robot.fbx")
+if os.path.exists(_robot_src) and not os.path.exists(_robot_dst):
+    shutil.copyfile(_robot_src, _robot_dst)
+
 for tex in ("water.png", "foam.png", "mist.png"):
     shutil.copyfile(os.path.join(ROOT, "Examples", "WaterFX", "assets", tex),
                     os.path.join(OUT, "assets", tex))
@@ -235,20 +243,26 @@ PLAYER["transform"]["position"] = [0, 0.8, 14]
 eid[0] += 1; PLAYER["id"] = eid[0]
 E.append(PLAYER)
 ent("WelcomeSign", (0, 6.5, -6), (7, 3.4, 1),
-    text={"text": "TEGE PLAYGROUND\nWASD move - Space jump - climb the rope (W)\nWeather evolves on its own - C cycles colorblind modes\nTear the purple drape and the laundry by running through",
+    text={"text": "TEGE PLAYGROUND\nWASD move - Space jump - climb the rope (W)\nWeather evolves (watch the SKY change) - C colorblind - B BULLET TIME\nTear the purple drape and the laundry by running through",
           "fontSize": 38, "textureWidth": 1024, "textureHeight": 512,
           "textColor": [1, 1, 1], "bgColor": [0.05, 0.08, 0.12], "bgOpacity": 0.75,
           "horizontalAlign": 1, "wrapWidth": 1000})
 ent("CharacterNote", (8, 2.2, 14), (4, 1.6, 1),
-    text={"text": "Drop a rigged .glb here for the\nanimated-character station",
+    text={"text": "Animated character station:\ndrag assets/Robot.fbx from the\nAsset Browser to HERE",
           "fontSize": 34, "textureWidth": 512, "textureHeight": 256,
           "textColor": [1, 0.95, 0.7], "bgColor": [0.1, 0.1, 0.05], "bgOpacity": 0.6,
           "horizontalAlign": 1, "wrapWidth": 480})
 ent("Director", (0, 0, 0), scriptComponent={"scripts": [{"path": "scripts/Playground.as",
                                                          "class": "Playground", "enabled": True}]})
 
-json.dump({"version": "1.0", "entities": E},
-          open(os.path.join(OUT, "scenes", "Main.enjin"), "w"), indent=1)
+SCENE = {"version": "1.0",
+         "skybox": {"type": 2, "topColor": [0.12, 0.24, 0.5],
+                    "horizonColor": [0.5, 0.65, 0.82], "bottomColor": [0.45, 0.5, 0.55],
+                    "sunDirection": [0.35, -0.7, 0.4], "sunIntensity": 1.0,
+                    "sunSize": 0.03, "sunColor": [1, 0.95, 0.82],
+                    "cloudCoverage": 0.35, "cloudScale": 2.0, "cloudColor": [1, 1, 1]},
+         "entities": E}
+json.dump(SCENE, open(os.path.join(OUT, "scenes", "Main.enjin"), "w"), indent=1)
 
 json.dump({"name": "Playground", "version": "1.0",
            "scenes": [{"path": "scenes/Main.enjin", "buildIndex": 0, "isStartScene": True}]},
@@ -259,6 +273,7 @@ class Playground : TegeBehavior {
     float t = 0.0f;
     int phase = -1;          // -1 forces the first announce
     int cbMode = 0;
+    bool bullet = false;
     float rain = 0.0f, snow = 0.0f;      // current, eased toward targets
     float rainT = 0.0f, snowT = 0.0f;    // targets per phase
 
@@ -273,16 +288,28 @@ class Playground : TegeBehavior {
         int p = int(t / 18.0f) % 4;
         if (p != phase) {
             phase = p;
-            if (p == 0) { rainT = 0.0f; snowT = 0.0f; Subtitle_Show("Weather: clear skies", "", 2.5f); }
-            if (p == 1) { rainT = 0.85f; snowT = 0.0f; Subtitle_Show("Weather: rain rolling in", "", 2.5f); Render_SetRainActive(true); }
-            if (p == 2) { rainT = 0.0f; snowT = 0.8f; Subtitle_Show("Weather: turning to snow", "", 2.5f); }
-            if (p == 3) { rainT = 0.0f; snowT = 0.0f; Subtitle_Show("Weather: clearing up", "", 2.5f); }
+            // Weather_Set drives the TYPE (the sim lerps intensities toward
+            // the type's profile - setting intensity alone fights Clear).
+            if (p == 0) { rainT = 0.0f; snowT = 0.0f; Weather_Set(0, 3.0f); Subtitle_Show("Weather: clear skies", "", 2.5f); }
+            if (p == 1) { rainT = 0.85f; snowT = 0.0f; Weather_Set(2, 3.0f); Subtitle_Show("Weather: rain rolling in", "", 2.5f); Render_SetRainActive(true); }
+            if (p == 2) { rainT = 0.0f; snowT = 0.8f; Weather_Set(4, 3.0f); Subtitle_Show("Weather: turning to snow", "", 2.5f); }
+            if (p == 3) { rainT = 0.0f; snowT = 0.0f; Weather_Set(0, 3.0f); Subtitle_Show("Weather: clearing up", "", 2.5f); }
         }
         rain += (rainT - rain) * min(dt * 0.6f, 1.0f);
         snow += (snowT - snow) * min(dt * 0.6f, 1.0f);
         Weather_SetRainIntensity(rain);
         Weather_SetSnowIntensity(snow);
         if (rain < 0.02f && rainT == 0.0f) Render_SetRainActive(false);
+
+        // ---- bullet time: B slows the world, the player stays at wall speed ----
+        if (Input_GetKeyDown(Key::B)) {
+            bullet = !bullet;
+            uint64 me = Scene_FindEntity("Player");
+            Time_SetScale(bullet ? 0.25f : 1.0f);
+            if (me != 0) Controller_SetIgnoreTimeScale(me, bullet);
+            Subtitle_Show(bullet ? "BULLET TIME - the world slows, you don't"
+                                 : "Bullet time off", "", 2.5f);
+        }
 
         // ---- accessibility: C cycles colorblind simulation modes ----
         if (Input_GetKeyDown(Key::C)) {

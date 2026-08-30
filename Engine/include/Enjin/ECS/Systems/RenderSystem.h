@@ -784,6 +784,16 @@ public:
     // lighting UBO's sky block)
     void SetSkybox(const Renderer::SkyboxConfig& config);
     const Renderer::SkyboxConfig& GetSkyboxConfig() const { return m_Skybox.GetConfig(); }
+
+    // Weather-driven sky: rain greys the gradient, snow pales it. Runtimes
+    // feed the live weather intensities each frame; every sky read site goes
+    // through WeatherSky() so the AUTHORED config never mutates (the editor
+    // UI keeps showing the authored colors).
+    void SetWeatherSkyBlend(f32 rain, f32 snow) {
+        m_WeatherSkyRain = std::clamp(rain, 0.0f, 1.0f);
+        m_WeatherSkySnow = std::clamp(snow, 0.0f, 1.0f);
+    }
+    Renderer::SkyboxConfig WeatherSky(const Renderer::SkyboxConfig& cfg) const;
     void SetWater2D(const Renderer::Water2DConfig& config);
     const Renderer::Water2DConfig& GetWater2DConfig() const { return m_Water2DConfig; }
     Renderer::Skybox* GetSkybox() { return &m_Skybox; }
@@ -1393,6 +1403,7 @@ private:
     bool m_WireframeMode = false;
     Effects::WindSystem* m_WindSystem = nullptr;
     Renderer::SkyboxConfig m_WebSkyConfig;   // web: scene sky (desktop uses m_Skybox)
+    f32 m_WeatherSkyRain = 0.0f, m_WeatherSkySnow = 0.0f;  // live weather sky blend
     bool m_WebSkyConfigured = false;
     std::vector<ParticleImpact> m_ParticleImpacts;
     std::vector<ECS::Entity> m_AnimFootsteps;

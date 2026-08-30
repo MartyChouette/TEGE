@@ -2828,6 +2828,9 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     //    (Weather_SetRainIntensity with no WeatherZone entity) previously
     //    never advanced the particle sim in the editor.
     m_WeatherSystem.Update(simDt, cameraTransform->position);
+    // Weather-driven sky: rain greys the gradient, snow pales it (live).
+    m_RenderSystem->SetWeatherSkyBlend(m_WeatherSystem.GetRainIntensity(),
+                                       m_WeatherSystem.GetSnowIntensity());
 
     // Water freeze/thaw driven by temperature zones
     for (ECS::Entity waterEntity : m_World->GetEntitiesWithComponent<ECS::WaterVolumeComponent>()) {

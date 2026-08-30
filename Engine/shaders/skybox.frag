@@ -14,6 +14,9 @@ layout(binding = 0) uniform SkyUBO {
     vec4 cloudColorHaze;  // xyz cloud color, w horizon haze
     vec4 misc;            // x sun intensity, y scale2, z/w wind drift dir
     vec4 cloudExtra;      // x cloud softness, y custom cloud tex index (-1 none), zw reserved
+    vec4 weatherOvercast; // xyz overcast sky color, w blend (0 = clear) - the
+                          // gradient itself is BAKED into the cubemap, so live
+                          // weather tints here instead of rebaking per frame
 } sky;
 layout(binding = 1) uniform samplerCube skybox;
 
@@ -109,6 +112,10 @@ void main() {
             col = mix(col, sky.cloudColorHaze.xyz * 0.92, m2 * 0.55);
         }
     }
+
+    // Weather overcast: rain greys the whole sky, snow pales it. Applied last
+    // so the sun disc and clouds dim with the sky instead of punching through.
+    col = mix(col, sky.weatherOvercast.xyz, sky.weatherOvercast.w);
 
     outColor = vec4(col, 1.0);
 }

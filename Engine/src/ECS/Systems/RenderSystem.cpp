@@ -1571,7 +1571,7 @@ void RenderSystem::Update(f32 deltaTime) {
 
         // Scene sky -> the sky shader's palette + atmosphere block
         {
-            const Renderer::SkyboxConfig& sc = m_WebSkyConfig;
+            const Renderer::SkyboxConfig sc = WeatherSky(m_WebSkyConfig);
             f32 configured = (m_WebSkyConfigured &&
                               sc.type != Renderer::SkyboxType::None) ? 1.0f : 0.0f;
             lit.skyTop = {sc.topColor.x, sc.topColor.y, sc.topColor.z, configured};
@@ -9674,7 +9674,7 @@ void RenderSystem::UpdateFrameUniforms() {
 
     {
         // Cloud shadows follow the sky's cloud layer
-        const Renderer::SkyboxConfig& skyC = m_Skybox.GetConfig();
+        const Renderer::SkyboxConfig skyC = WeatherSky(m_Skybox.GetConfig());
         lighting.cloudShadowParams = {skyC.cloudCoverage, skyC.cloudScale,
                                       skyC.cloudShadowStrength, skyC.cloudSpeed};
     }
@@ -9707,7 +9707,7 @@ void RenderSystem::UpdateFrameUniforms() {
 
     // Sky reflection color for water/ice fresnel
     {
-        const auto& skyConfig = m_Skybox.GetConfig();
+        const Renderer::SkyboxConfig skyConfig = WeatherSky(m_Skybox.GetConfig());
         Math::Vector3 skyCol(0.4f, 0.5f, 0.7f); // fallback matches old hardcoded value
         if (skyConfig.type == Renderer::SkyboxType::Procedural) {
             skyCol = Math::Vector3(
@@ -14037,6 +14037,30 @@ void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass)
     // would invalidate the descriptor set layout and break skybox rendering entirely.
 }
 
+Renderer::SkyboxConfig RenderSystem::WeatherSky(const Renderer::SkyboxConfig& cfg) const {
+    if (m_WeatherSkyRain <= 0.001f && m_WeatherSkySnow <= 0.001f) return cfg;
+    Renderer::SkyboxConfig out = cfg;
+    auto lerp3 = [](Math::Vector3& c, const Math::Vector3& to, f32 t) {
+        c = c + (to - c) * t;
+    };
+    // Rain: heavy grey overcast. Snow: pale bright overcast. Applied in
+    // sequence so mixed transitions (rain easing out while snow eases in)
+    // pass through a believable slate grey.
+    f32 r = m_WeatherSkyRain, s = m_WeatherSkySnow;
+    lerp3(out.topColor,     Math::Vector3(0.16f, 0.18f, 0.22f), r);
+    lerp3(out.horizonColor, Math::Vector3(0.38f, 0.40f, 0.44f), r);
+    lerp3(out.bottomColor,  Math::Vector3(0.14f, 0.15f, 0.17f), r);
+    lerp3(out.cloudColor,   Math::Vector3(0.30f, 0.32f, 0.35f), r);
+    lerp3(out.topColor,     Math::Vector3(0.55f, 0.58f, 0.66f), s);
+    lerp3(out.horizonColor, Math::Vector3(0.78f, 0.80f, 0.85f), s);
+    lerp3(out.bottomColor,  Math::Vector3(0.50f, 0.52f, 0.56f), s);
+    lerp3(out.cloudColor,   Math::Vector3(0.85f, 0.87f, 0.9f), s);
+    // Overcast thickens cloud cover under either weather.
+    f32 wet = std::min(1.0f, r + s);
+    out.cloudCoverage = out.cloudCoverage + (0.9f - out.cloudCoverage) * wet;
+    return out;
+}
+
 void RenderSystem::SetSkybox(const Renderer::SkyboxConfig& config) {
     // Defer skybox config change to the start of the next frame — the old cubemap
     // may still be referenced by the current frame's command buffer which is being
@@ -14341,7 +14365,7 @@ void RenderSystem::Render2DSky(VkCommandBuffer commandBuffer, const VkViewport* 
     VkPipeline pipeline = offscreenPass ? m_Sky2DPipelineOffscreen : m_Sky2DPipeline;
     if (pipeline == VK_NULL_HANDLE) return;
 
-    const Renderer::SkyboxConfig& cfg = m_Skybox.GetConfig();
+    const Renderer::SkyboxConfig cfg = WeatherSky(m_Skybox.GetConfig());
     // Only draw for procedural (gradient + atmosphere) skies — the authorable 2D
     // backdrop. Solid-color / cubemap / None 2D scenes keep their clear color.
     if (cfg.type != Renderer::SkyboxType::Procedural) return;
@@ -14690,7 +14714,9 @@ void RenderSystem::CreateSkyboxPipeline(VkRenderPass renderPass) {
     m_SkyboxUniformBuffers.resize(framesInFlight);
     for (u32 i = 0; i < framesInFlight; ++i) {
         m_SkyboxUniformBuffers[i] = std::make_unique<Renderer::VulkanBuffer>(m_VulkanRenderer->GetContext());
-        m_SkyboxUniformBuffers[i]->Create(sizeof(Math::Matrix4) + 6 * sizeof(Math::Vector4),
+        // 7 vec4s: keep in lockstep with SkyboxUBOData in RenderSkybox AND the
+        // SkyUBO block in skybox.frag (weatherOvercast added 2026-08-30).
+        m_SkyboxUniformBuffers[i]->Create(sizeof(Math::Matrix4) + 7 * sizeof(Math::Vector4),
                                           Renderer::BufferUsage::Uniform, true);
     }
 
@@ -14728,9 +14754,10 @@ void RenderSystem::RenderSkybox(VkCommandBuffer commandBuffer,
         Math::Vector4 cloudParams;
         Math::Vector4 cloudColorHaze;
         Math::Vector4 misc;
-        Math::Vector4 cloudExtra;   // x = cloud softness
+        Math::Vector4 cloudExtra;       // x = cloud softness
+        Math::Vector4 weatherOvercast;  // xyz overcast color, w blend (see skybox.frag)
     } skyData{};
-    const Renderer::SkyboxConfig& skyCfg = m_Skybox.GetConfig();
+    const Renderer::SkyboxConfig skyCfg = WeatherSky(m_Skybox.GetConfig());
     f32 skyTime = m_WindSystem ? m_WindSystem->GetTime() : 0.0f;
     Math::Vector4 skyWind = m_WindSystem ? m_WindSystem->GetWindVector()
                                          : Math::Vector4(1.0f, 0.0f, 0.35f, 0.0f);
@@ -14749,6 +14776,16 @@ void RenderSystem::RenderSkybox(VkCommandBuffer commandBuffer,
     f32 skyCloudTexIdx = (m_BindlessManager && m_CloudTexIndex >= 0)
                          ? static_cast<f32>(m_CloudTexIndex) : -1.0f;
     skyData.cloudExtra = {skyCfg.cloudSoftness, skyCloudTexIdx, 0.0f, 0.0f};
+    {
+        // The cubemap gradient is baked once, so live weather tints in-shader:
+        // overcast color mixes rain-grey and snow-pale by their proportions.
+        f32 r = m_WeatherSkyRain, s = m_WeatherSkySnow;
+        f32 wet = std::min(1.0f, r + s);
+        Math::Vector3 grey(0.30f, 0.32f, 0.36f), pale(0.72f, 0.75f, 0.80f);
+        f32 mixS = (r + s > 0.001f) ? s / (r + s) : 0.0f;
+        Math::Vector3 overcast = grey + (pale - grey) * mixS;
+        skyData.weatherOvercast = {overcast.x, overcast.y, overcast.z, wet * 0.85f};
+    }
     m_SkyboxUniformBuffers[currentFrame]->UploadData(&skyData, sizeof(skyData));
 
     // Rewrite the descriptor set ONLY when its contents actually changed (first use,

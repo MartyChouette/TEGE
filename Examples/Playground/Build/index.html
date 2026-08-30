@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Enjin Game</title>
+  <meta property="og:title" content="Enjin Game">
+  <meta property="og:type" content="game">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="game-container">
+    <canvas id="game-canvas" tabindex="0" oncontextmenu="return false"></canvas>
+    <div id="preloader">
+      <div id="tege-wordmark">TEGE</div>
+      <div id="progress-container">
+        <div id="progress-bar"></div>
+        <div id="tege-cube"></div>
+      </div>
+      <div id="progress-text">loading engine</div>
+      <div id="click-to-play" style="display:none;">&#9654; &nbsp;Click to Play</div>
+    </div>
+    <button id="fullscreen-btn" title="Fullscreen">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="white">
+        <path d="M3 3h5v2H5v3H3V3zm9 0h5v5h-2V5h-3V3zM3 12h2v3h3v2H3v-5zm12 3h-3v2h5v-5h-2v3z"/>
+      </svg>
+    </button>
+  </div>
+
+  <script src="preloader.js"></script>
+  <script>
+    // Emscripten module configuration (WebGPU)
+    var Module = {
+      canvas: (function() {
+        var c = document.getElementById('game-canvas');
+        // Request WebGPU context (Emscripten's USE_WEBGPU=1 expects this)
+        if (navigator.gpu) {
+          c.getContext('webgpu');
+        }
+        return c;
+      })(),
+      onRuntimeInitialized: function() {
+        _runtimeReady = true;
+        console.log('Enjin Game - Engine initialized');
+        if (typeof hidePreloader === 'function') hidePreloader();
+      },
+      setStatus: function(text) {
+        if (text) console.log(text);
+        if (typeof updateProgress === 'function') {
+          var m = text.match(/([\d.]+)\/([\d.]+)/);
+          if (m) updateProgress(parseInt(m[1]) / parseInt(m[2]));
+        }
+      }
+    };
+
+    var _runtimeReady = false;
+    var _ro = new ResizeObserver(function(entries) {
+      var r = entries[0].contentRect;
+      var dpr = window.devicePixelRatio || 1;
+      var w = Math.floor(r.width);
+      var h = Math.floor(r.height);
+      if (w <= 0 || h <= 0) return;
+      var c = document.getElementById('game-canvas');
+      c.width = Math.floor(w * dpr);
+      c.height = Math.floor(h * dpr);
+      if (_runtimeReady) Module._onCanvasResize(w, h, dpr);
+    });
+    _ro.observe(document.getElementById('game-container'));
+
+    document.getElementById('fullscreen-btn').addEventListener('click', function() {
+      var el = document.getElementById('game-container');
+      if (el.requestFullscreen) el.requestFullscreen();
+      else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+      else if (el.mozRequestFullScreen) el.mozRequestFullScreen();
+    });
+  </script>
+  <script src="EnjinPlayer.js"></script>
+</body>
+</html>

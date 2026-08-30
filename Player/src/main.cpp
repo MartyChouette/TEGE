@@ -1072,6 +1072,8 @@ public:
         UpdateWeatherZones(deltaTime);
         if (m_Camera) {
             m_WeatherSystem.Update(deltaTime, m_Camera->GetPosition());
+            m_RenderSystem->SetWeatherSkyBlend(m_WeatherSystem.GetRainIntensity(),
+                                               m_WeatherSystem.GetSnowIntensity());
             m_StreamingManager.Update(m_Camera->GetPosition(), deltaTime);
         }
         m_DestructibleSystem.Update(deltaTime);

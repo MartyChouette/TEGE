@@ -1,5 +1,42 @@
 {
  "version": "1.0",
+ "skybox": {
+  "type": 2,
+  "topColor": [
+   0.12,
+   0.24,
+   0.5
+  ],
+  "horizonColor": [
+   0.5,
+   0.65,
+   0.82
+  ],
+  "bottomColor": [
+   0.45,
+   0.5,
+   0.55
+  ],
+  "sunDirection": [
+   0.35,
+   -0.7,
+   0.4
+  ],
+  "sunIntensity": 1.0,
+  "sunSize": 0.03,
+  "sunColor": [
+   1,
+   0.95,
+   0.82
+  ],
+  "cloudCoverage": 0.35,
+  "cloudScale": 2.0,
+  "cloudColor": [
+   1,
+   1,
+   1
+  ]
+ },
  "entities": [
   {
    "id": 1,
@@ -30090,7 +30127,7 @@
     "visible": true
    },
    "text": {
-    "text": "TEGE PLAYGROUND\nWASD move - Space jump - climb the rope (W)\nWeather evolves on its own - C cycles colorblind modes\nTear the purple drape and the laundry by running through",
+    "text": "TEGE PLAYGROUND\nWASD move - Space jump - climb the rope (W)\nWeather evolves (watch the SKY change) - C colorblind - B BULLET TIME\nTear the purple drape and the laundry by running through",
     "fontSize": 38,
     "textureWidth": 1024,
     "textureHeight": 512,
@@ -30134,7 +30171,7 @@
     "visible": true
    },
    "text": {
-    "text": "Drop a rigged .glb here for the\nanimated-character station",
+    "text": "Animated character station:\ndrag assets/Robot.fbx from the\nAsset Browser to HERE",
     "fontSize": 34,
     "textureWidth": 512,
     "textureHeight": 256,

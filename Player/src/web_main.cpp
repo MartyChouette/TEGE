@@ -798,6 +798,8 @@ public:
         UpdateWeatherZones();
         if (m_Camera) {
             m_WeatherSystem.Update(deltaTime, m_Camera->GetPosition());
+            m_RenderSystem->SetWeatherSkyBlend(m_WeatherSystem.GetRainIntensity(),
+                                               m_WeatherSystem.GetSnowIntensity());
         }
 
         m_ParticleSystem.Update(deltaTime, m_World.get());
