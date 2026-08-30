@@ -246,7 +246,7 @@ exported desktop AND web.
       twist (hand-crafted route; no Jolt constraint rig). "Chain" add-menu
       entry presets it (10 segments, thick, stiff iterations). Everything a
       rope does (dangle load, span anchors, weather sway) works for chains.
-      In Examples/Ropes (HangingChain), golden-verified.
+      In Examples/Ropes (HangingChain), golden-verified; MARTY-VALIDATED 2026-08-30.
 - [ ] G6 Chain 2D: Box2D revolute-joint chain (drawbridge chains, flails).
 - [ ] G7 Door 3D: hinged door component (open/close/locked states, interact
       to open, auto-close option, physics-blocking while shut) - integrates
