@@ -757,6 +757,29 @@ public:
             }
         }
 
+        // Mobile touch overlay: adapt the on-screen control layout to the active
+        // controller. Applied only when the controller type changes (i.e. across
+        // scenes), so a game that authors its own scheme mid-scene isn't clobbered.
+        {
+            using namespace Enjin::ECS;
+            Enjin::Input::TouchPreset preset = Enjin::Input::TouchPreset::Generic;
+            if (!m_World->GetEntitiesWithComponent<FirstPersonController>().empty())
+                preset = Enjin::Input::TouchPreset::FirstPerson;
+            else if (!m_World->GetEntitiesWithComponent<ThirdPersonController>().empty())
+                preset = Enjin::Input::TouchPreset::ThirdPerson;
+            else if (!m_World->GetEntitiesWithComponent<TopDown3DController>().empty())
+                preset = Enjin::Input::TouchPreset::TopDown3D;
+            else if (!m_World->GetEntitiesWithComponent<TopDown2DController>().empty())
+                preset = Enjin::Input::TouchPreset::TopDown2D;
+            else if (!m_World->GetEntitiesWithComponent<Platformer2DController>().empty())
+                preset = Enjin::Input::TouchPreset::Platformer2D;
+            static int s_LastPreset = -1;
+            if (static_cast<int>(preset) != s_LastPreset) {
+                s_LastPreset = static_cast<int>(preset);
+                Enjin::Input::SetTouchControllerPreset(preset);
+            }
+        }
+
         m_ScriptSystem.Update(deltaTime);
         m_CoroutineScheduler.EndOfFrame();
         Enjin::Scripting::FlushDeferredEntityDestroys();
@@ -913,26 +936,26 @@ public:
         auto st = Enjin::Input::GetTouchOverlay();
         if (!st.active) return;
         ImDrawList* dl = ImGui::GetForegroundDrawList();
-        const ImU32 ring = IM_COL32(255, 255, 255, 70);
-        const ImU32 fill = IM_COL32(255, 255, 255, 40);
-        const ImU32 nub  = IM_COL32(255, 255, 255, 150);
-        if (st.stickHeld) {
+        const ImU32 ring  = IM_COL32(255, 255, 255, 70);
+        const ImU32 fill  = IM_COL32(255, 255, 255, 40);
+        const ImU32 nub   = IM_COL32(255, 255, 255, 150);
+        const ImU32 label = IM_COL32(255, 255, 255, 190);
+        // Floating move stick (drawn only while held, and only if the active
+        // scheme has one).
+        if (st.showStick && st.stickHeld) {
             dl->AddCircle(ImVec2(st.stickBaseX, st.stickBaseY), st.stickRadius, ring, 32, 3.0f);
             dl->AddCircleFilled(ImVec2(st.stickNubX, st.stickNubY), st.stickRadius * 0.4f, nub);
         }
-        dl->AddCircleFilled(ImVec2(st.jumpX, st.jumpY), st.jumpR,
-                            st.jumpHeld ? nub : fill);
-        dl->AddCircle(ImVec2(st.jumpX, st.jumpY), st.jumpR, ring, 32, 3.0f);
-        // W2 mobile gamepad: sprint (hold) + action buttons with labels
-        const ImU32 label = IM_COL32(255, 255, 255, 190);
-        dl->AddCircleFilled(ImVec2(st.sprintX, st.sprintY), st.sprintR,
-                            st.sprintHeld ? nub : fill);
-        dl->AddCircle(ImVec2(st.sprintX, st.sprintY), st.sprintR, ring, 32, 2.5f);
-        dl->AddText(ImVec2(st.sprintX - st.sprintR * 0.55f, st.sprintY - 8.0f), label, "RUN");
-        dl->AddCircleFilled(ImVec2(st.actionX, st.actionY), st.actionR,
-                            st.actionHeld ? nub : fill);
-        dl->AddCircle(ImVec2(st.actionX, st.actionY), st.actionR, ring, 32, 2.5f);
-        dl->AddText(ImVec2(st.actionX - 4.0f, st.actionY - 8.0f), label, "E");
+        // Anchored action buttons from the active (controller-adaptive) scheme.
+        for (int i = 0; i < st.buttonCount; ++i) {
+            const auto& b = st.buttons[i];
+            dl->AddCircleFilled(ImVec2(b.x, b.y), b.r, b.held ? nub : fill);
+            dl->AddCircle(ImVec2(b.x, b.y), b.r, ring, 32, 2.5f);
+            if (b.label[0]) {
+                ImVec2 ts = ImGui::CalcTextSize(b.label);
+                dl->AddText(ImVec2(b.x - ts.x * 0.5f, b.y - ts.y * 0.5f), label, b.label);
+            }
+        }
     }
 
     void RenderUIOverlay() {

@@ -172,22 +172,63 @@ public:
     static void BeginRealInputScope();
     static void EndRealInputScope();
 
-    // Web touch controls overlay: where to draw the virtual stick and jump
-    // button. Inactive until the first touch (and always inactive off-web), so
-    // desktop browsers never see the overlay.
+    // ---- Web mobile touch controls -----------------------------------------
+    // The on-screen overlay is a left-side floating move stick, an optional
+    // right-side look-drag region, and a set of anchored action buttons. The
+    // layout adapts to the active controller (SetTouchControllerPreset) or a
+    // game can author its own (SetTouchScheme). Safe-area insets keep it clear
+    // of notches/rounded corners. All scheme setters are harmless no-ops off
+    // web; GetTouchOverlay() is always inactive off web.
+    static constexpr int kMaxTouchButtons = 6;
+
+    // Layout presets, normally chosen from the active controller type.
+    enum class TouchPreset {
+        Platformer2D,   // stick + jump, no look region
+        TopDown2D,      // stick + action, no look region
+        TopDown3D,      // stick + look + jump + action
+        FirstPerson,    // stick + look + fire + jump + run + action
+        ThirdPerson,    // stick + look + jump + run + action
+        Generic,        // stick + look + jump + action (default)
+    };
+
+    // One anchored on-screen button. Position is a grid slot measured from the
+    // bottom-right of the SAFE area, in multiples of the button spacing, so a
+    // cluster scales together with the button size.
+    struct TouchButtonDef {
+        f32 radiusFrac = 0.075f;   // radius as a fraction of safe-area height
+        f32 colFromRight = 0.0f;   // 0 = rightmost column, grows leftward
+        f32 rowFromBottom = 0.0f;  // 0 = bottom row, grows upward
+        int keyCode = 0;           // key held while pressed; negative = mouse
+                                   // button (-1 => button 0, i.e. fire/click)
+        char label[8] = {0};
+    };
+
+    struct TouchScheme {
+        bool moveStick = true;
+        int  stickKeys[4] = {65, 68, 87, 83};   // Left,Right,Up,Down (A D W S)
+        bool lookRegion = true;                  // right side drags the camera
+        f32  moveZoneSplit = 0.45f;              // x fraction owned by the stick
+        TouchButtonDef buttons[kMaxTouchButtons];
+        int  buttonCount = 0;
+    };
+
+    static void SetTouchScheme(const TouchScheme& scheme);
+    static const TouchScheme& GetTouchScheme();
+    static void SetTouchControllerPreset(TouchPreset preset);
+
+    // Resolved, per-frame overlay geometry for the player to draw. Positions
+    // are in canvas BACKING pixels. Active on web once a touch is seen OR a
+    // coarse pointer (phone/tablet) is detected.
     struct TouchOverlayState {
         bool active = false;
+        bool showStick = true;
         bool stickHeld = false;
         f32 stickBaseX = 0, stickBaseY = 0;
         f32 stickNubX = 0, stickNubY = 0;
         f32 stickRadius = 0;
-        bool jumpHeld = false;
-        f32 jumpX = 0, jumpY = 0, jumpR = 0;
-        // W2 mobile gamepad: sprint (hold) + action (E) buttons
-        bool sprintHeld = false;
-        f32 sprintX = 0, sprintY = 0, sprintR = 0;
-        bool actionHeld = false;
-        f32 actionX = 0, actionY = 0, actionR = 0;
+        struct Button { f32 x = 0, y = 0, r = 0; bool held = false; char label[8] = {0}; };
+        Button buttons[kMaxTouchButtons];
+        int buttonCount = 0;
     };
     static TouchOverlayState GetTouchOverlay();
 
