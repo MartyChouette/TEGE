@@ -1,6 +1,8 @@
 #pragma once
-// WHOLE_FILE_WEBGPU_GUARD
-#if !ENJIN_RENDERER_WEBGPU
+// The RENDERER half of this class is Vulkan-only (guarded below); the
+// collider-generation statics are CPU-only and compiled on ALL platforms
+// (web draws the same hash-scattered trees via WebGPUVegetationSystem, so
+// web play needs the matching trunk colliders). Impl: TreeColliders.cpp.
 
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Math/Vector.h"
@@ -8,18 +10,21 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/TreeVolume.h"
 #include "Enjin/ECS/Components/Transform.h"
+
+#if !ENJIN_RENDERER_WEBGPU
 #include "Enjin/Renderer/Vulkan/VulkanRenderer.h"
 #include "Enjin/Renderer/Vulkan/VulkanPipeline.h"
 #include "Enjin/Renderer/Vulkan/VulkanBuffer.h"
 #include "Enjin/Renderer/Vulkan/VulkanShader.h"
 #include "Enjin/Effects/WorldTime.h"
-#if !ENJIN_RENDERER_WEBGPU
 #include <vulkan/vulkan.h>
-#endif
 #include <memory>
+#endif
 
 namespace Enjin {
 namespace Effects {
+
+#if !ENJIN_RENDERER_WEBGPU
 
 // GPU-instanced tree renderer (trunk + canopy)
 class ENJIN_API TreeRenderer {
@@ -82,6 +87,17 @@ private:
     bool m_Initialized = false;
 };
 
+#else // ENJIN_RENDERER_WEBGPU
+
+// Web: rendering is handled by WebGPUVegetationSystem; only the CPU-side
+// collider generation exists here (positions match - same integer hash).
+class ENJIN_API TreeRenderer {
+public:
+    static void GenerateColliders(ECS::World* world, ECS::Entity volumeEntity);
+    static void GenerateAllColliders(ECS::World* world);
+};
+
+#endif // !ENJIN_RENDERER_WEBGPU
+
 } // namespace Effects
 } // namespace Enjin
-#endif // !ENJIN_RENDERER_WEBGPU

@@ -24,6 +24,37 @@
 // ============================================================================
 #include "Enjin/Effects/Wind.h"
 #include "Enjin/ECS/Components/CustomShader.h"
+
+// Shared across backends (the file splits web/desktop below) — the web sky
+// path applies this to m_WebSkyConfig, the Vulkan path to m_Skybox's config.
+namespace Enjin {
+namespace ECS {
+Renderer::SkyboxConfig RenderSystem::WeatherSky(const Renderer::SkyboxConfig& cfg) const {
+    if (m_WeatherSkyRain <= 0.001f && m_WeatherSkySnow <= 0.001f) return cfg;
+    Renderer::SkyboxConfig out = cfg;
+    auto lerp3 = [](Math::Vector3& c, const Math::Vector3& to, f32 t) {
+        c = c + (to - c) * t;
+    };
+    // Rain: heavy grey overcast. Snow: pale bright overcast. Applied in
+    // sequence so mixed transitions (rain easing out while snow eases in)
+    // pass through a believable slate grey.
+    f32 r = m_WeatherSkyRain, s = m_WeatherSkySnow;
+    lerp3(out.topColor,     Math::Vector3(0.16f, 0.18f, 0.22f), r);
+    lerp3(out.horizonColor, Math::Vector3(0.38f, 0.40f, 0.44f), r);
+    lerp3(out.bottomColor,  Math::Vector3(0.14f, 0.15f, 0.17f), r);
+    lerp3(out.cloudColor,   Math::Vector3(0.30f, 0.32f, 0.35f), r);
+    lerp3(out.topColor,     Math::Vector3(0.55f, 0.58f, 0.66f), s);
+    lerp3(out.horizonColor, Math::Vector3(0.78f, 0.80f, 0.85f), s);
+    lerp3(out.bottomColor,  Math::Vector3(0.50f, 0.52f, 0.56f), s);
+    lerp3(out.cloudColor,   Math::Vector3(0.85f, 0.87f, 0.9f), s);
+    // Overcast thickens cloud cover under either weather.
+    f32 wet = std::min(1.0f, r + s);
+    out.cloudCoverage = out.cloudCoverage + (0.9f - out.cloudCoverage) * wet;
+    return out;
+}
+} // namespace ECS
+} // namespace Enjin
+
 #if ENJIN_RENDERER_WEBGPU
 
 #include "Enjin/Renderer/WebGPU/WebShaderData.h"
@@ -14067,29 +14098,8 @@ void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass)
     // would invalidate the descriptor set layout and break skybox rendering entirely.
 }
 
-Renderer::SkyboxConfig RenderSystem::WeatherSky(const Renderer::SkyboxConfig& cfg) const {
-    if (m_WeatherSkyRain <= 0.001f && m_WeatherSkySnow <= 0.001f) return cfg;
-    Renderer::SkyboxConfig out = cfg;
-    auto lerp3 = [](Math::Vector3& c, const Math::Vector3& to, f32 t) {
-        c = c + (to - c) * t;
-    };
-    // Rain: heavy grey overcast. Snow: pale bright overcast. Applied in
-    // sequence so mixed transitions (rain easing out while snow eases in)
-    // pass through a believable slate grey.
-    f32 r = m_WeatherSkyRain, s = m_WeatherSkySnow;
-    lerp3(out.topColor,     Math::Vector3(0.16f, 0.18f, 0.22f), r);
-    lerp3(out.horizonColor, Math::Vector3(0.38f, 0.40f, 0.44f), r);
-    lerp3(out.bottomColor,  Math::Vector3(0.14f, 0.15f, 0.17f), r);
-    lerp3(out.cloudColor,   Math::Vector3(0.30f, 0.32f, 0.35f), r);
-    lerp3(out.topColor,     Math::Vector3(0.55f, 0.58f, 0.66f), s);
-    lerp3(out.horizonColor, Math::Vector3(0.78f, 0.80f, 0.85f), s);
-    lerp3(out.bottomColor,  Math::Vector3(0.50f, 0.52f, 0.56f), s);
-    lerp3(out.cloudColor,   Math::Vector3(0.85f, 0.87f, 0.9f), s);
-    // Overcast thickens cloud cover under either weather.
-    f32 wet = std::min(1.0f, r + s);
-    out.cloudCoverage = out.cloudCoverage + (0.9f - out.cloudCoverage) * wet;
-    return out;
-}
+// WeatherSky is defined in the shared prelude at the top of this file
+// (both backends need it).
 
 void RenderSystem::SetSkybox(const Renderer::SkyboxConfig& config) {
     // Defer skybox config change to the start of the next frame — the old cubemap

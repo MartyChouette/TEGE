@@ -778,22 +778,23 @@ public:
     bool IsUpscalerActive() const { return false; }
 #endif
 
+    // Weather-driven sky: rain greys the gradient, snow pales it. Runtimes
+    // feed the live weather intensities each frame; every sky read site goes
+    // through WeatherSky() so the AUTHORED config never mutates (the editor
+    // UI keeps showing the authored colors). Shared across backends — the
+    // web path applies it to m_WebSkyConfig.
+    void SetWeatherSkyBlend(f32 rain, f32 snow) {
+        m_WeatherSkyRain = std::clamp(rain, 0.0f, 1.0f);
+        m_WeatherSkySnow = std::clamp(snow, 0.0f, 1.0f);
+    }
+    Renderer::SkyboxConfig WeatherSky(const Renderer::SkyboxConfig& cfg) const;
+
 #if !ENJIN_RENDERER_WEBGPU
     // Skybox
     // (impl differs per backend: Vulkan bakes/applies deferred; web feeds the
     // lighting UBO's sky block)
     void SetSkybox(const Renderer::SkyboxConfig& config);
     const Renderer::SkyboxConfig& GetSkyboxConfig() const { return m_Skybox.GetConfig(); }
-
-    // Weather-driven sky: rain greys the gradient, snow pales it. Runtimes
-    // feed the live weather intensities each frame; every sky read site goes
-    // through WeatherSky() so the AUTHORED config never mutates (the editor
-    // UI keeps showing the authored colors).
-    void SetWeatherSkyBlend(f32 rain, f32 snow) {
-        m_WeatherSkyRain = std::clamp(rain, 0.0f, 1.0f);
-        m_WeatherSkySnow = std::clamp(snow, 0.0f, 1.0f);
-    }
-    Renderer::SkyboxConfig WeatherSky(const Renderer::SkyboxConfig& cfg) const;
     void SetWater2D(const Renderer::Water2DConfig& config);
     const Renderer::Water2DConfig& GetWater2DConfig() const { return m_Water2DConfig; }
     Renderer::Skybox* GetSkybox() { return &m_Skybox; }
