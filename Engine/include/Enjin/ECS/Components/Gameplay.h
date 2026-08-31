@@ -16,6 +16,14 @@
 namespace Enjin {
 namespace ECS {
 
+// Tag: runtime-spawned entity that must NEVER be serialized into a scene
+// (generated tree colliders, pooled spawns, sim proxies). SceneSerializer
+// skips tagged entities, so a save taken mid-play (MCP save_scene, script
+// SaveScene) can't leak runtime junk into the authored scene file.
+struct TransientComponent {
+    u8 reserved = 0;   // tag component; no data
+};
+
 // ============================================================================
 // HEALTH & DAMAGE SYSTEM
 // ============================================================================

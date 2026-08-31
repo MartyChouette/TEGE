@@ -16,6 +16,10 @@ void ObjectPool::CreatePool(const std::string& poolId, ECS::World* world,
         ECS::Entity entity = world->CreateEntity();
         if (setupFunc) setupFunc(entity);
 
+        // Runtime-spawned: a mid-play save must not serialize pool entities
+        // into the scene file (same leak class as generated tree colliders).
+        world->AddComponent<ECS::TransientComponent>(entity, ECS::TransientComponent{});
+
         // Mark as pooled but inactive
         auto* poolable = world->GetComponent<ECS::PoolableComponent>(entity);
         if (!poolable) {

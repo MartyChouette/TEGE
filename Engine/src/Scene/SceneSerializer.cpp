@@ -8116,6 +8116,11 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             if (!m_World->IsValid(entity)) {
                 continue;
             }
+            // Runtime-spawned junk (generated colliders, pooled spawns) never
+            // belongs in a scene file - a mid-play save must not leak it.
+            if (m_World->HasComponent<ECS::TransientComponent>(entity)) {
+                continue;
+            }
 
             json entityJson;
             entityJson["id"] = static_cast<u64>(entity);
@@ -8613,6 +8618,11 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
 
         for (ECS::Entity entity : sortedEntities) {
             if (!m_World->IsValid(entity)) {
+                continue;
+            }
+            // Runtime-spawned junk (generated colliders, pooled spawns) never
+            // belongs in a scene file - a mid-play save must not leak it.
+            if (m_World->HasComponent<ECS::TransientComponent>(entity)) {
                 continue;
             }
 
