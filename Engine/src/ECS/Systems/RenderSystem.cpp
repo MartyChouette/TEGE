@@ -4751,7 +4751,10 @@ void RenderSystem::Update(f32 deltaTime) {
             }
 
             // Rasterized-texture fallback: one quad sized to the text aspect;
-            // EnsureTextTextures binds the texture. Only ever added once.
+            // EnsureTextTextures binds the texture. Only ever added once. An
+            // entity that leaves the SDF path (toggled off / font failed) must
+            // leave the owned set too, or the rasterizer stays locked out.
+            m_SDFTextMeshes.erase(entity);
             if (m_World->HasComponent<MeshComponent>(entity)) continue;
             f32 aspect = (tc->textureHeight > 0) ? static_cast<f32>(tc->textureWidth) / static_cast<f32>(tc->textureHeight) : 1.0f;
             m_World->AddComponent<MeshComponent>(entity,
