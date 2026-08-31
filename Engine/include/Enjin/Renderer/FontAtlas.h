@@ -2,6 +2,8 @@
 
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Platform/Types.h"
+#include "Enjin/ECS/Components/Mesh.h"
+#include "Enjin/ECS/Components/Text.h"
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -57,6 +59,14 @@ public:
     const std::vector<u8>& Pixels() const { return m_Pixels; }   // RGBA kAtlasSize^2
     u32 Width() const { return kAtlasSize; }
     u32 Height() const { return kAtlasSize; }
+
+    // Build a glyph-quad mesh for a TextComponent (the SDF text path). Layout
+    // honours \n, wrapWidth word-wrap (pixels at fontSize, same semantic as the
+    // rasterizer), horizontalAlign, and kerning. worldHeight maps ONE line to
+    // world units; the block's TOP-LEFT sits at the local origin, +x right,
+    // lines descending -y, quads facing +Z. Vertex color carries textColor so
+    // the shared white atlas tints per-entity with one material.
+    ECS::MeshComponent BuildTextMesh(const ECS::TextComponent& tc) const;
 
     ~FontAtlas();
 

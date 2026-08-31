@@ -203,6 +203,9 @@ layout(constant_id = 7) const uint SPEC_ALPHA_MODE = 0;  // 0=Opaque, 1=Mask, 2=
 #define FLAG_AFFINE_TEXTURING   (1 << 21)
 #define FLAG_VERTEX_SNAPPING    (1 << 22)
 #define FLAG_STIPPLE_TRANS      (1 << 23)
+// SDF text: base color alpha is a signed distance field (FontAtlas, on-edge
+// 180/255); threshold it with screen-space AA for crisp glyphs at any scale.
+#define FLAG_SDF_TEXT           (1 << 3)
 #define FLAG_UV_QUANTIZE        (1 << 12)
 #define FLAG_GOURAUD_ONLY       (1 << 13)
 
@@ -1203,6 +1206,14 @@ void main() {
 #endif
         albedo *= texColor.rgb;
         texAlpha = texColor.a;
+        // SDF text: alpha is a distance field, not coverage. Threshold at the
+        // atlas on-edge value (180/255) with fwidth-based AA so glyph edges
+        // stay crisp under any scale/perspective (vector-font behavior).
+        if ((mat_flags & FLAG_SDF_TEXT) != 0) {
+            float sdfEdge = 180.0 / 255.0;
+            float sdfW = max(fwidth(texAlpha), 1e-4);
+            texAlpha = smoothstep(sdfEdge - sdfW, sdfEdge + sdfW, texAlpha);
+        }
     }
 
     // Sample metallic-roughness texture if available (bindless or fallback)

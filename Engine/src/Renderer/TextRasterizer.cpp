@@ -4,11 +4,13 @@
 #include "Enjin/Renderer/TextRasterizer.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Accessibility/OpenDyslexicFont.h"  // bundled default font (embedded bytes)
+#include "Enjin/Assets/MeshAssetCache.h"           // game-root resolution for relative font paths
 
 #include <fstream>
 #include <cstring>
 #include <cmath>
 #include <algorithm>
+#include <filesystem>
 
 namespace Enjin {
 namespace Renderer {
@@ -34,8 +36,22 @@ const TextRasterizer::FontData* TextRasterizer::GetOrLoadFont(const std::string&
         return &inserted->second;
     }
 
-    // Read font file from disk
-    std::ifstream file(fontPath, std::ios::binary | std::ios::ate);
+    // Read font file from disk. Project-relative paths resolve against the
+    // same game root textures/models use (the CWD is the exe dir, not the
+    // project, so a raw relative open silently fails).
+    std::string loadPath = fontPath;
+    {
+        namespace fs = std::filesystem;
+        std::error_code ec;
+        if (fs::path(fontPath).is_relative() && !fs::exists(fontPath, ec)) {
+            const std::string& root = Assets::MeshAssetCache::Get().GetSearchRoot();
+            if (!root.empty()) {
+                std::string joined = (fs::path(root) / fontPath).string();
+                if (fs::exists(joined, ec)) loadPath = joined;
+            }
+        }
+    }
+    std::ifstream file(loadPath, std::ios::binary | std::ios::ate);
     if (!file.is_open()) {
         ENJIN_LOG_ERROR(Renderer, "TextRasterizer: Failed to open font file: %s", fontPath.c_str());
         return nullptr;

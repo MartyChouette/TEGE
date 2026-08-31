@@ -1571,6 +1571,32 @@ void EditorLayer::DrawTextComponent(ECS::Entity entity) {
         if (InspectorUndo::DragFloat(m_UndoRedo, "BG Opacity", &text->bgOpacity, 0.01f, 0.0f, 1.0f)) {
             text->dirty = true;
         }
+
+        // SDF glyph-mesh path (bare text entities only; text on an authored
+        // mesh always uses the rasterized-texture path)
+        ImGui::SeparatorText("SDF Text");
+        if (InspectorUndo::Checkbox(m_UndoRedo, "SDF Glyphs", &text->sdfText)) {
+            text->dirty = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Render as a mesh of glyph quads on the shared font atlas:\n"
+                              "crisp at any scale, and edits never re-rasterize a texture.\n"
+                              "Off = classic rasterize-to-texture quad.");
+        }
+        if (text->sdfText) {
+            if (InspectorUndo::DragFloat(m_UndoRedo, "World Height", &text->worldHeight, 0.01f, 0.01f, 100.0f)) {
+                text->dirty = true;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("World-space height of one text line (transform scale multiplies it).");
+            }
+            if (InspectorUndo::Checkbox(m_UndoRedo, "Lit", &text->lit)) {
+                text->dirty = true;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Off = flat, always readable. On = scene lights fall on the words.");
+            }
+        }
     }
 }
 

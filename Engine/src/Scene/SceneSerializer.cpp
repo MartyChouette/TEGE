@@ -246,6 +246,7 @@ json SerializeMaterialComponent(const ECS::MaterialComponent& material) {
     j["stippleTransparency"] = material.stippleTransparency;
     j["uvQuantize"] = material.uvQuantize;
     j["gouraudOnly"] = material.gouraudOnly;
+    j["sdfText"] = material.sdfText;
     j["vertexSnapResolution"] = material.vertexSnapResolution;
     j["shadowDitherMode"] = material.shadowDitherMode;
     j["shadowDitherPattern"] = material.shadowDitherPattern;
@@ -428,6 +429,9 @@ json SerializeTextComponent(const ECS::TextComponent& text) {
     j["horizontalAlign"] = static_cast<i32>(text.horizontalAlign);
     j["paddingX"] = RF(text.paddingX);
     j["paddingY"] = RF(text.paddingY);
+    j["sdfText"] = text.sdfText;
+    j["worldHeight"] = RF(text.worldHeight);
+    j["lit"] = text.lit;
     return j;
 }
 
@@ -526,6 +530,7 @@ ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
     if (j.contains("stippleTransparency")) material.stippleTransparency = JB(j["stippleTransparency"]);
     if (j.contains("uvQuantize")) material.uvQuantize = JB(j["uvQuantize"]);
     if (j.contains("gouraudOnly")) material.gouraudOnly = JB(j["gouraudOnly"]);
+    if (j.contains("sdfText")) material.sdfText = JB(j["sdfText"]);
     // Full u8 range: the field is the RAW grid resolution (80-320-ish); the old
     // <=31 guard confused it with the 5-bit packed shader value and silently
     // reverted every authored value to the default on load
@@ -719,6 +724,9 @@ ECS::TextComponent DeserializeTextComponent(const json& j) {
     }
     text.paddingX = j.value("paddingX", 16.0f);
     text.paddingY = j.value("paddingY", 16.0f);
+    text.sdfText = j.value("sdfText", true);
+    text.worldHeight = j.value("worldHeight", 0.5f);
+    text.lit = j.value("lit", false);
     text.dirty = true; // Re-rasterize on load
     return text;
 }

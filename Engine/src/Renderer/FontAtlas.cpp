@@ -111,6 +111,110 @@ bool FontAtlas::Build(const u8* fontFileData, usize fontFileSize) {
     return m_Built;
 }
 
+ECS::MeshComponent FontAtlas::BuildTextMesh(const ECS::TextComponent& tc) const {
+    ECS::MeshComponent mesh;
+    if (!m_Built || tc.text.empty()) return mesh;
+
+    // Layout happens in "authored pixels" (glyph metrics scaled from kBasePx to
+    // tc.fontSize) so wrapWidth keeps the same pixel semantic as the rasterizer
+    // path. worldHeight then maps one line height to world units - fontSize
+    // cancels out of the final size and only decides how much text fits a line.
+    const f32 glyphScale = (tc.fontSize > 0.0f ? tc.fontSize : kBasePx) / kBasePx;
+    const f32 lineHeightPx = m_LineHeight * glyphScale;
+    if (lineHeightPx <= 0.0f) return mesh;
+    const f32 world = (tc.worldHeight > 0.0f ? tc.worldHeight : 0.5f) / lineHeightPx;
+    const f32 wrapPx = tc.wrapWidth > 0.0f ? tc.wrapWidth : 0.0f;
+
+    // Pass 1: break the text into lines (explicit \n + word wrap at wrapPx).
+    struct Line { std::string s; f32 width; };
+    std::vector<Line> lines;
+    {
+        std::string cur;
+        f32 curW = 0.0f;
+        auto measure = [&](const std::string& s) {
+            f32 w = 0.0f;
+            for (usize i = 0; i < s.size(); ++i) {
+                const Glyph* g = Find(static_cast<u32>(static_cast<unsigned char>(s[i])));
+                if (!g) continue;
+                w += g->xadvance * glyphScale;
+                if (i + 1 < s.size())
+                    w += Kern(static_cast<unsigned char>(s[i]), static_cast<unsigned char>(s[i + 1])) * glyphScale;
+            }
+            return w;
+        };
+        auto flush = [&]() { lines.push_back({cur, curW}); cur.clear(); curW = 0.0f; };
+        std::string word;
+        for (usize i = 0; i <= tc.text.size(); ++i) {
+            char c = i < tc.text.size() ? tc.text[i] : '\n';
+            if (c == ' ' || c == '\n') {
+                if (!word.empty()) {
+                    f32 wordW = measure(word);
+                    f32 spaceW = cur.empty() ? 0.0f : measure(" ");
+                    if (wrapPx > 0.0f && !cur.empty() && curW + spaceW + wordW > wrapPx) flush();
+                    if (!cur.empty()) { cur += ' '; curW += measure(" "); }
+                    cur += word; curW += wordW;
+                    word.clear();
+                }
+                if (c == '\n' && i < tc.text.size()) flush();
+            } else {
+                word += c;
+            }
+        }
+        if (!cur.empty() || lines.empty()) flush();
+    }
+
+    // Alignment box: wrap width when set, else the widest line.
+    f32 maxW = wrapPx;
+    if (maxW <= 0.0f)
+        for (const Line& l : lines) maxW = std::max(maxW, l.width);
+
+    // Pass 2: emit one quad per visible glyph. Bitmap space (x right, y down,
+    // origin = block top-left) maps to world as (x*world, -y*world, 0).
+    mesh.vertices.reserve(tc.text.size() * 4);
+    mesh.indices.reserve(tc.text.size() * 6);
+    const Math::Vector3 normal(0.0f, 0.0f, 1.0f);
+    const Math::Vector4 color(tc.textColor.x, tc.textColor.y, tc.textColor.z, 1.0f);
+
+    f32 baselineY = m_Ascent * glyphScale;
+    for (const Line& line : lines) {
+        f32 penX = 0.0f;
+        if (tc.horizontalAlign == ECS::TextAlign::Center)      penX = (maxW - line.width) * 0.5f;
+        else if (tc.horizontalAlign == ECS::TextAlign::Right)  penX = maxW - line.width;
+        for (usize i = 0; i < line.s.size(); ++i) {
+            u32 cp = static_cast<u32>(static_cast<unsigned char>(line.s[i]));
+            const Glyph* g = Find(cp);
+            if (!g) continue;
+            if (g->w > 0.0f && g->h > 0.0f) {
+                f32 x0 = penX + g->xoff * glyphScale;
+                f32 y0 = baselineY + g->yoff * glyphScale;   // top (yoff < 0 above baseline)
+                f32 x1 = x0 + g->w * glyphScale;
+                f32 y1 = y0 + g->h * glyphScale;             // bottom
+                u32 base = static_cast<u32>(mesh.vertices.size());
+                // Match CreateSpriteQuad winding: bottom-left, bottom-right,
+                // top-right, top-left, indices {0,1,2, 0,2,3}, CCW from +Z.
+                // Atlas v grows downward, so bitmap bottom (y1) samples v1.
+                ECS::MeshComponent::Vertex v;
+                v.normal = normal; v.color = color;
+                v.position = Math::Vector3(x0 * world, -y1 * world, 0.0f); v.uv = Math::Vector2(g->u0, g->v1);
+                mesh.vertices.push_back(v);
+                v.position = Math::Vector3(x1 * world, -y1 * world, 0.0f); v.uv = Math::Vector2(g->u1, g->v1);
+                mesh.vertices.push_back(v);
+                v.position = Math::Vector3(x1 * world, -y0 * world, 0.0f); v.uv = Math::Vector2(g->u1, g->v0);
+                mesh.vertices.push_back(v);
+                v.position = Math::Vector3(x0 * world, -y0 * world, 0.0f); v.uv = Math::Vector2(g->u0, g->v0);
+                mesh.vertices.push_back(v);
+                mesh.indices.push_back(base + 0); mesh.indices.push_back(base + 1); mesh.indices.push_back(base + 2);
+                mesh.indices.push_back(base + 0); mesh.indices.push_back(base + 2); mesh.indices.push_back(base + 3);
+            }
+            penX += g->xadvance * glyphScale;
+            if (i + 1 < line.s.size())
+                penX += Kern(cp, static_cast<unsigned char>(line.s[i + 1])) * glyphScale;
+        }
+        baselineY += lineHeightPx;
+    }
+    return mesh;
+}
+
 f32 FontAtlas::Kern(u32 a, u32 b) const {
     if (!m_Built || !m_FontInfo) return 0.0f;
     const stbtt_fontinfo& font = *static_cast<const stbtt_fontinfo*>(m_FontInfo);

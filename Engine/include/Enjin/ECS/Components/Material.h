@@ -62,6 +62,12 @@ struct MaterialComponent {
     bool gouraudOnly = false;
     u8 vertexSnapResolution = 160; // PS1-style grid resolution (80-320)
 
+    // SDF text (unified display P1): the base color texture's alpha is a signed
+    // distance field (FontAtlas glyph atlas, on-edge = 180/255); the shader
+    // thresholds it with screen-space AA for crisp glyph edges at any scale.
+    // Set by the RenderSystem SDF text path; harmless on ordinary textures.
+    bool sdfText = false;
+
     // Shadow dither mode: 0=None, 1=By Darkness, 2=By Distance, 3=By Angle
     u8 shadowDitherMode = 0;
     // Shadow dither pattern: 0=Bayer4x4, 1=Bayer8x8, 2=BlueNoise, 3=Halftone, 4=Crosshatch, 5=Overlook
@@ -368,6 +374,7 @@ struct alignas(16) MaterialGPU {
         if (mat.stippleTransparency) gpu.flags |= (1 << 23);
         if (mat.uvQuantize) gpu.flags |= (1 << 12);
         if (mat.gouraudOnly) gpu.flags |= (1 << 13);
+        if (mat.sdfText) gpu.flags |= (1 << 3);
         // Shadow dither mode packed into bits 14-15
         gpu.flags |= (static_cast<i32>(mat.shadowDitherMode & 0x3) << 14);
         // Vertex snap resolution packed into bits 24-28 (5 bits, value/8)
@@ -411,6 +418,11 @@ struct alignas(16) MaterialGPU {
     static constexpr i32 FLAG_AFFINE_TEXTURING = (1 << 21);
     static constexpr i32 FLAG_VERTEX_SNAPPING = (1 << 22);
     static constexpr i32 FLAG_STIPPLE_TRANSPARENCY = (1 << 23);
+
+    // SDF text: base color alpha is a distance field, threshold it (bit 3 is
+    // the last free flag bit - 24-28 hold vertexSnapResolution, 29-31 the
+    // shadow dither pattern)
+    static constexpr i32 FLAG_SDF_TEXT = (1 << 3);
 
     // Dithered gradient: encoded in surfaceParam1 (values > 1.0 = dither gradient mode)
     // surfaceParam1 = 100.0 + bands + pattern * 0.1
