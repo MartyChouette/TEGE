@@ -76,6 +76,8 @@ WeatherType SeasonalWeatherSystem::PickWeather(Season season) {
 }
 
 void SeasonalWeatherSystem::Update(f32 dt, const WorldTimeState& time, WeatherSystem& weather) {
+    if (!m_Config.enabled) return;   // see SeasonalConfig::enabled — never stomp script weather by default
+
     // Compute temperature
     m_CurrentTemperature = ComputeTemperature(time);
 

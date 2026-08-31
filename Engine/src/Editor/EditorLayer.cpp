@@ -2737,8 +2737,13 @@ void EditorLayer::UpdateGameViewSims(f32 simDt) {
         m_RenderSystem->SetAmbientIntensity(m_WorldTime.GetAmbientIntensity());
     }
 
-    // Seasonal Weather System: temperature and weather transitions
-    if (m_WorldTimeEnabled && m_SeasonalWeatherEnabled && !activeWeatherZone) {
+    // Seasonal Weather System: temperature and weather transitions. The
+    // checkbox is the authority in the editor; it drives the system's own
+    // enabled flag (which defaults OFF so ungated hosts can't stomp script
+    // weather — the desktop player did, every frame).
+    m_SeasonalWeather.GetConfig().enabled =
+        (m_WorldTimeEnabled && m_SeasonalWeatherEnabled && !activeWeatherZone);
+    if (m_SeasonalWeather.GetConfig().enabled) {
         m_SeasonalWeather.Update(simDt, m_WorldTime.GetState(), m_WeatherSystem);
     }
 

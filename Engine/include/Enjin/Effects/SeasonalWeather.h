@@ -29,6 +29,13 @@ struct SeasonalConfig {
     WeatherProbability winterWeather  = {0.15f, 0.20f, 0.05f, 0.00f, 0.35f, 0.15f, 0.10f};
 
     f32 weatherChangeInterval = 300.0f;  // game seconds between weather transitions
+
+    // Master switch, default OFF (matches the editor's Seasonal Weather
+    // checkbox default). Update() early-returns when disabled — CRITICAL:
+    // its tail calls weather.SetWeather() every frame, which stomps script-
+    // driven weather (Weather_Set) in any host that ticks this unconditionally
+    // (the desktop player did exactly that — "no rain" in the Playground).
+    bool enabled = false;
 };
 
 class ENJIN_API SeasonalWeatherSystem {
