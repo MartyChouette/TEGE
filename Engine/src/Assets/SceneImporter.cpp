@@ -430,6 +430,32 @@ ImportResult SceneImporter::ImportGLTF(const std::string& filepath, ECS::World* 
         }
     }
 
+    // Skinned glTF: ONE capsule on the root (per-part colliders are skipped
+    // in CreateEntityFromNode - same rule as the Assimp path). Bounds come
+    // straight from the vertex data; glTF is meters by spec, no unit drama.
+    if (effectiveOptions.generateColliders && !scene.skins.empty() &&
+        result.rootEntity != ECS::INVALID_ENTITY) {
+        Math::Vector3 mn(1e9f, 1e9f, 1e9f), mx(-1e9f, -1e9f, -1e9f);
+        bool any = false;
+        for (const auto& mesh : scene.meshes)
+            for (const auto& prim : mesh.primitives)
+                for (const auto& v : prim.vertices) {
+                    mn.x = std::min(mn.x, v.position.x); mx.x = std::max(mx.x, v.position.x);
+                    mn.y = std::min(mn.y, v.position.y); mx.y = std::max(mx.y, v.position.y);
+                    mn.z = std::min(mn.z, v.position.z); mx.z = std::max(mx.z, v.position.z);
+                    any = true;
+                }
+        if (any) {
+            Math::Vector3 size = mx - mn;
+            auto& cap = world->AddComponent<ECS::CapsuleColliderComponent>(result.rootEntity);
+            cap.center = (mn + mx) * 0.5f;
+            cap.direction = ECS::CapsuleColliderComponent::Direction::Y;
+            cap.radius = std::min(0.3f * std::min(size.x, size.z), 0.25f * size.y);
+            cap.height = std::max(0.0f, size.y - 2.0f * cap.radius);
+            stats.warnings.push_back("Skinned model: single root capsule collider (per-part colliders skipped)");
+        }
+    }
+
     // --- Mesh Validation (auto-fix NaN, normalize weights, detect degenerate triangles) ---
     ValidateImportedMeshes(world, result, stats.warnings);
 
