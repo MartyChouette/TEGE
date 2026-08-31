@@ -52,6 +52,8 @@ struct ObjectData {
     alphaCutoff: f32,
     flags: i32,
     parallaxScale: f32,
+    uvScrollU: f32,
+    uvScrollV: f32,
 };
 struct ObjectDataArray {
     data: array<ObjectData>,
@@ -167,7 +169,12 @@ fn vs_main(in: VertexInput, @builtin(instance_index) instanceIdx: u32) -> Vertex
     out.world_normal = normalize(normal_mat * skinnedNormal);
     out.world_tangent = normalize(normal_mat * skinnedTangent);
     out.world_bitangent = cross(out.world_normal, out.world_tangent) * in.tangent.w;
-    out.uv = in.uv;
+    // Material UV scroll (waterfalls, conveyors): SUBTRACT scroll*time so a
+    // positive speed moves the pattern in +UV, matching triangle.frag. Wind
+    // clock drives it like desktop; calm scenes fall back to frame time.
+    var scrollT = lighting.windData.w;
+    if (scrollT == 0.0) { scrollT = viewProj.time; }
+    out.uv = in.uv - vec2<f32>(object.uvScrollU, object.uvScrollV) * scrollT;
     out.instanceIdx = instanceIdx;
     return out;
 }
@@ -463,6 +470,8 @@ struct ObjectData {
     alphaCutoff: f32,
     flags: i32,
     parallaxScale: f32,
+    uvScrollU: f32,
+    uvScrollV: f32,
 };
 @group(1) @binding(0) var<uniform> object: ObjectData;
 
@@ -1183,11 +1192,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         ground = lighting.skyBottom.xyz;
         horizon = lighting.skyHorizon.xyz;
     }
+    // Same ramp the desktop cubemap bake uses (Skybox::CreateProcedural):
+    // a tight 10% horizon band, then linear blends to zenith/ground. The old
+    // pow-curve + steep below-horizon mix painted a wide pale band of
+    // bottomColor across the horizon that desktop never shows.
     let t = clamp(worldDir.y * 0.5 + 0.5, 0.0, 1.0);
-    var sky = mix(horizon, zenith, pow(t, 0.8));
-    if (worldDir.y < 0.0) {
-        let gt = clamp(-worldDir.y * 2.0, 0.0, 1.0);
-        sky = mix(horizon, ground, gt);
+    var sky = horizon;
+    if (t > 0.55) {
+        sky = mix(horizon, zenith, (t - 0.55) / 0.45);
+    } else if (t < 0.45) {
+        sky = mix(horizon, ground, (0.45 - t) / 0.45);
     }
 
     if (configured) {

@@ -79,6 +79,9 @@ Renderer::SkyboxConfig RenderSystem::WeatherSky(const Renderer::SkyboxConfig& cf
 #include "Enjin/ECS/Components/GrassVolume.h"
 #include "Enjin/ECS/Components/TreeVolume.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
+#include "Enjin/ECS/Components/Cloth.h"   // cloth/rope meshDirty re-upload
+#include "Enjin/ECS/Components/Rope.h"
+#include "Enjin/Effects/Weather.h"        // weather particle draw
 #include "Enjin/Build/AssetReader.h"
 #include "Enjin/Math/Math.h"
 #include <algorithm>
@@ -135,7 +138,9 @@ struct WebObjectDataUBO {
     f32 alphaCutoff;                        // 4
     i32 flags;                              // 4
     f32 parallaxScale;                      // 4
-    f32 _pad[3];                            // 12
+    f32 uvScrollU;                          // 4  material UV scroll (waterfalls)
+    f32 uvScrollV;                          // 4
+    f32 _pad;                               // 4
 };                                          // Total: 128 bytes
 
 // Spot shadow VP UBO: 2 lights x (view + proj) = 4 matrices
@@ -2247,6 +2252,32 @@ void RenderSystem::Update(f32 deltaTime) {
             if (eid >= m_EntityRenderData.size()) m_EntityRenderData.resize(eid + 1);
             auto& rd = m_EntityRenderData[eid];
 
+            // Dynamic meshes (cloth/rope, simulated by ClothSystem in web_main):
+            // same dirty protocol as the Vulkan path - topologyDirty (a tear or
+            // tube rebuild changed the index list) drops the buffers so the
+            // create-block below rebuilds them at the new size; meshDirty
+            // (vertices moved this sim step) re-uploads into the live buffer.
+            {
+                auto* cloth = m_World->GetComponent<ClothComponent>(entity);
+                auto* rope  = m_World->GetComponent<RopeComponent>(entity);
+                bool topo = (cloth && cloth->topologyDirty) || (rope && rope->topologyDirty);
+                if (topo) {
+                    if (rd.valid) {
+                        if (rd.vertexBuffer.IsValid()) bufMgr->DestroyBuffer(rd.vertexBuffer);
+                        if (rd.indexBuffer.IsValid()) bufMgr->DestroyBuffer(rd.indexBuffer);
+                        rd.valid = false;
+                    }
+                    if (cloth) { cloth->topologyDirty = false; cloth->meshDirty = false; }
+                    if (rope)  { rope->topologyDirty = false;  rope->meshDirty = false; }
+                } else if (rd.valid && rd.owner == entity &&
+                           ((cloth && cloth->meshDirty) || (rope && rope->meshDirty))) {
+                    bufMgr->UploadData(rd.vertexBuffer, mesh->vertices.data(),
+                                       mesh->vertices.size() * sizeof(MeshComponent::Vertex));
+                    if (cloth) cloth->meshDirty = false;
+                    if (rope)  rope->meshDirty = false;
+                }
+            }
+
             if (!rd.valid || rd.owner != entity) {  // owner mismatch = slot recycled by a new entity
                 Renderer::GPUBufferDesc vbDesc;
                 vbDesc.size = mesh->vertices.size() * sizeof(MeshComponent::Vertex);
@@ -2335,6 +2366,8 @@ void RenderSystem::Update(f32 deltaTime) {
             obj.emissiveStrength = mat ? mat->emissiveStrength : 0.0f;
             obj.opacity = mat ? mat->opacity : 1.0f;
             obj.alphaCutoff = mat ? mat->alphaCutoff : 0.0f;
+            obj.uvScrollU = mat ? mat->uvScrollSpeed.x : 0.0f;
+            obj.uvScrollV = mat ? mat->uvScrollSpeed.y : 0.0f;
             if (animComp && rd.boneBuffer.IsValid()) obj.flags |= (1 << 3);  // FLAG_SKINNED
             std::memcpy(objDataBuf.data() + offset, &obj, sizeof(obj));
 
@@ -2716,6 +2749,56 @@ void RenderSystem::Update(f32 deltaTime) {
         wgpuRenderPassEncoderDraw(scenePassEncoder, 3, 1, 0, 0);  // Fullscreen triangle at z=1
     }
 
+    // Weather particles (rain streaks / snow flakes): the WeatherSystem's CPU
+    // particles drawn as camera-facing instances through the sprite pipeline.
+    // Drawn AFTER the sky so the alpha blend composites over it; the sprite
+    // pipeline depth-tests, so geometry still occludes precipitation. The web
+    // player wires the system via SetMainPassWeather each frame.
+    if (usePostProcess && m_WebSpritePipeline.IsValid() && scenePassEncoder && m_MainPassWeather) {
+        const auto& wparts = m_MainPassWeather->GetParticles();
+        const bool wIsRain = m_MainPassWeatherIsRain;
+        struct SpriteInst { f32 px, py, pz, sizeX, sizeY, rotation, tintR, tintG, tintB, tintA, uvL, uvT, uvR, uvB; };
+        std::vector<SpriteInst> winsts;
+        winsts.reserve(wparts.size());
+        for (const auto& p : wparts) {
+            if (p.lifetime <= 0.0f || p.alpha <= 0.01f) continue;
+            // Rain: thin vertical streak (size is the sim's streak width);
+            // snow: square flake at the sim's flake size.
+            f32 sx = wIsRain ? p.size : p.size;
+            f32 sy = wIsRain ? p.size * 12.0f : p.size;
+            f32 r = wIsRain ? 0.65f : 1.0f;
+            f32 g = wIsRain ? 0.75f : 1.0f;
+            f32 b = wIsRain ? 0.90f : 1.0f;
+            winsts.push_back({p.position.x, p.position.y, p.position.z,
+                              sx, sy, 0.0f, r, g, b, p.alpha,
+                              0.0f, 0.0f, 1.0f, 1.0f});
+        }
+        if (!winsts.empty()) {
+            auto* webBufMgrW = static_cast<Renderer::WebGPUBufferManager*>(bufMgr);
+            auto winstBuf = bufMgr->CreateBufferWithData(
+                {winsts.size() * sizeof(SpriteInst), Renderer::GPUBufferUsage::Vertex | Renderer::GPUBufferUsage::CopyDst, true},
+                winsts.data());
+            Renderer::GPUBindGroupDesc wTexBGD;
+            wTexBGD.layout = m_WebSpriteTexLayout;
+            wTexBGD.entries = {
+                {0, {}, 0, 0, m_WebDefaultWhiteTex, {}},
+                {1, {}, 0, 0, {}, m_WebDefaultWhiteTex},
+            };
+            auto wTexBG = webBindMgr->CreateBindGroup(wTexBGD);
+
+            wgpuRenderPassEncoderSetPipeline(scenePassEncoder, webPipeMgr->GetNativePipeline(m_WebSpritePipeline));
+            wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 0, webBindMgr->GetNativeGroup(m_WebFrameBindGroup), 0, nullptr);
+            wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 1, webBindMgr->GetNativeGroup(wTexBG), 0, nullptr);
+            wgpuRenderPassEncoderSetVertexBuffer(scenePassEncoder, 0, webBufMgrW->GetNativeBuffer(m_WebParticleQuadVB), 0, WGPU_WHOLE_SIZE);
+            wgpuRenderPassEncoderSetVertexBuffer(scenePassEncoder, 1, webBufMgrW->GetNativeBuffer(winstBuf), 0, WGPU_WHOLE_SIZE);
+            wgpuRenderPassEncoderSetIndexBuffer(scenePassEncoder, webBufMgrW->GetNativeBuffer(m_WebParticleQuadIB), WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
+            wgpuRenderPassEncoderDrawIndexed(scenePassEncoder, 6, static_cast<u32>(winsts.size()), 0, 0, 0);
+
+            webBindMgr->DestroyBindGroup(wTexBG);
+            bufMgr->DestroyBuffer(winstBuf);
+        }
+    }
+
     // End scene render pass
     if (usePostProcess) {
         // GPU particles draw INSIDE the scene pass (real depth occlusion + the same
@@ -3074,6 +3157,7 @@ void RenderSystem::SetUpscalerQuality(u32 quality) { m_UpscalerQuality = quality
 #include <filesystem>
 #include <fstream>
 #include <unordered_set>
+#include "Enjin/Accessibility/OpenDyslexicFont.h"  // bundled default font for the SDF atlas
 
 namespace Enjin {
 namespace ECS {
@@ -3888,6 +3972,8 @@ void RenderSystem::Shutdown() {
     // Clean up text texture cache and rasterizer
     m_TextTextureCache.clear();
     m_TextRasterizer.ClearFontCache();
+    m_SDFFonts.clear();
+    m_SDFTextMeshes.clear();
 
     // Clean up textures and bone buffers
     m_DefaultWhiteTexture.reset();
@@ -3990,6 +4076,54 @@ void RenderSystem::CacheTextTexture(Entity entity, std::shared_ptr<Renderer::Tex
         m_TextTextureGraveyard.push_back({m_FlushTick, std::move(it->second)});
     }
     m_TextTextureCache[entity] = std::move(tex);
+}
+
+Renderer::FontAtlas* RenderSystem::GetOrBuildFontAtlas(const std::string& fontPath, Renderer::Texture** outTexture) {
+    auto it = m_SDFFonts.find(fontPath);
+    if (it == m_SDFFonts.end()) {
+        SDFFont entry;
+        // Resolve the font bytes exactly like TextRasterizer: empty path = the
+        // bundled default font, so SDF text also renders with zero font setup.
+        std::vector<u8> fileData;
+        const u8* bytes = nullptr;
+        usize size = 0;
+        if (fontPath.empty()) {
+            bytes = Accessibility::s_OpenDyslexicFontData;
+            size = Accessibility::s_OpenDyslexicFontDataSize;
+        } else {
+            std::ifstream file(fontPath, std::ios::binary | std::ios::ate);
+            if (file.is_open()) {
+                auto sz = file.tellg();
+                if (sz > 0) {
+                    fileData.resize(static_cast<usize>(sz));
+                    file.seekg(0);
+                    file.read(reinterpret_cast<char*>(fileData.data()), sz);
+                    bytes = fileData.data();
+                    size = fileData.size();
+                }
+            }
+        }
+        auto atlas = std::make_unique<Renderer::FontAtlas>();
+        if (bytes && atlas->Build(bytes, size) && m_VulkanRenderer) {
+            auto tex = std::make_shared<Renderer::Texture>(m_VulkanRenderer->GetContext());
+            if (tex->CreateFromData(atlas->Pixels().data(), atlas->Width(), atlas->Height(), 4)) {
+                if (m_BindlessManager) {
+                    u32 h = m_BindlessManager->RegisterTexture(tex->GetImageView(), tex->GetSampler());
+                    if (h != UINT32_MAX) m_TextureBindlessHandles[tex.get()] = h;
+                }
+                entry.atlas = std::move(atlas);
+                entry.texture = std::move(tex);
+            }
+        }
+        if (!entry.atlas) {
+            ENJIN_LOG_WARN(Renderer, "SDF text: font atlas failed for '%s' - falling back to rasterized text",
+                           fontPath.empty() ? "<default>" : fontPath.c_str());
+        }
+        it = m_SDFFonts.emplace(fontPath, std::move(entry)).first;
+    }
+    if (!it->second.atlas) return nullptr;
+    if (outTexture) *outTexture = it->second.texture.get();
+    return it->second.atlas.get();
 }
 
 void RenderSystem::RetireEntityBuffers(EntityRenderData& rd) {
@@ -4553,13 +4687,54 @@ void RenderSystem::Update(f32 deltaTime) {
             sprite->spriteDirty = false;
         }
 
-        // Auto-generate a quad for bare Text-component entities (no mesh) so authored text
-        // shows with zero setup. Done here (frame-safe mutation window), sized to the text
-        // aspect; the transform scales it. EnsureTextTextures then binds the text texture.
+        // Auto-generate display geometry for bare Text-component entities (no
+        // authored mesh) so text shows with zero setup, done here in the
+        // frame-safe mutation window. SDF path (sdfText, the default): the text
+        // IS a mesh of glyph quads sampling the shared font atlas - crisp at
+        // any scale, and a text change only rebuilds vertices (zero texture
+        // churn). Fallback (sdfText=false, or the font failed to bake): one
+        // aspect quad that EnsureTextTextures paints with the rasterized text.
         for (Entity entity : m_World->GetEntitiesWithComponent<TextComponent>()) {
-            if (m_World->HasComponent<MeshComponent>(entity)) continue;
             auto* tc = m_World->GetComponent<TextComponent>(entity);
-            if (!tc || tc->text.empty()) continue;
+            if (!tc) continue;
+            const bool sdfOwned = m_SDFTextMeshes.count(entity) != 0;
+            if (m_World->HasComponent<MeshComponent>(entity) && !sdfOwned) continue;  // authored mesh -> text-on-surface path
+            if (tc->text.empty() && !sdfOwned) continue;
+
+            Renderer::Texture* atlasTex = nullptr;
+            Renderer::FontAtlas* atlas = tc->sdfText ? GetOrBuildFontAtlas(tc->fontPath, &atlasTex) : nullptr;
+            if (atlas) {
+                if (sdfOwned && !tc->dirty) continue;   // glyph mesh is up to date
+                auto mesh = atlas->BuildTextMesh(*tc);
+                if (m_World->HasComponent<MeshComponent>(entity)) {
+                    *m_World->GetComponent<MeshComponent>(entity) = std::move(mesh);
+                } else {
+                    m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
+                }
+                if (static_cast<usize>(EntityIndex(entity)) < m_EntityRenderData.size())
+                    RetireEntityBuffers(m_EntityRenderData[static_cast<usize>(EntityIndex(entity))]);
+                if (!m_World->HasComponent<MaterialComponent>(entity))
+                    m_World->AddComponent<MaterialComponent>(entity, MaterialComponent{});
+                if (MaterialComponent* mat = m_World->GetComponent<MaterialComponent>(entity)) {
+                    mat->baseColor = Math::Vector3(1.0f, 1.0f, 1.0f);   // glyph verts carry textColor
+                    mat->alphaMode = MaterialComponent::AlphaMode::Blend;
+                    mat->castShadows = false;
+                    mat->sdfText = true;                  // shader thresholds the distance field
+                    mat->gouraudOnly = !tc->lit;          // unlit (readable) unless the author wants scene light
+                    mat->cachedBaseColorTexture = atlasTex;
+                    mat->baseColorTexture = 1;
+                    mat->textureCacheDirty = false;       // never reload from a (empty) path
+                }
+                tc->dirty = false;                        // consumed by the mesh rebuild
+                m_SDFTextMeshes.insert(entity);
+                m_MaterialSSBOBuilt = false;
+                m_MaterialSSBODirty = true;
+                continue;
+            }
+
+            // Rasterized-texture fallback: one quad sized to the text aspect;
+            // EnsureTextTextures binds the texture. Only ever added once.
+            if (m_World->HasComponent<MeshComponent>(entity)) continue;
             f32 aspect = (tc->textureHeight > 0) ? static_cast<f32>(tc->textureWidth) / static_cast<f32>(tc->textureHeight) : 1.0f;
             m_World->AddComponent<MeshComponent>(entity,
                 Renderer::MeshFactory::CreateSpriteQuad(aspect, 1.0f, 0.5f, 0.5f, 0.0f, 0.0f, 1.0f, 1.0f, false, false));
@@ -6275,6 +6450,8 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 if (material->stippleTransparency) pushConstants.flags |= (1 << 23);
                 if (material->uvQuantize) pushConstants.flags |= (1 << 12);
                 if (material->gouraudOnly) pushConstants.flags |= (1 << 13);
+        if (material->sdfText) pushConstants.flags |= (1 << 3);
+                if (material->sdfText) pushConstants.flags |= (1 << 3);
                 pushConstants.flags |= (static_cast<i32>(material->shadowDitherMode & 0x3) << 14);
                 pushConstants.flags |= (static_cast<i32>((material->vertexSnapResolution / 8) & 0x1F) << 24);
                 pushConstants.flags |= (static_cast<i32>(material->shadowDitherPattern & 0x7) << 29);
@@ -6513,7 +6690,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
 
             // Rasterize text texture if entity has a TextComponent (cached storage)
             TextComponent* textComp = m_CachedTextStorage ? m_CachedTextStorage->Get(entity) : nullptr;
-            if (textComp && textComp->dirty && !textComp->text.empty()) {
+            if (textComp && textComp->dirty && !textComp->text.empty() && m_SDFTextMeshes.count(entity) == 0) {
                 auto pixels = m_TextRasterizer.Rasterize(*textComp);
                 if (!pixels.empty()) {
                     auto textTex = std::make_shared<Renderer::Texture>(m_VulkanRenderer->GetContext());
@@ -6698,6 +6875,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                     if (slotMat->stippleTransparency) subPC.flags |= (1 << 23);
                     if (slotMat->uvQuantize) subPC.flags |= (1 << 12);
                     if (slotMat->gouraudOnly) subPC.flags |= (1 << 13);
+                    if (slotMat->sdfText) subPC.flags |= (1 << 3);
                     subPC.flags |= (static_cast<i32>(slotMat->shadowDitherMode & 0x3) << 14);
                     subPC.flags |= (static_cast<i32>((slotMat->vertexSnapResolution / 8) & 0x1F) << 24);
                     subPC.flags |= (static_cast<i32>(slotMat->shadowDitherPattern & 0x7) << 29);
@@ -7120,6 +7298,8 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                 if (material->stippleTransparency) pushConstants.flags |= (1 << 23);
                 if (material->uvQuantize) pushConstants.flags |= (1 << 12);
                 if (material->gouraudOnly) pushConstants.flags |= (1 << 13);
+        if (material->sdfText) pushConstants.flags |= (1 << 3);
+                if (material->sdfText) pushConstants.flags |= (1 << 3);
                 pushConstants.flags |= (static_cast<i32>(material->shadowDitherMode & 0x3) << 14);
                 pushConstants.flags |= (static_cast<i32>((material->vertexSnapResolution / 8) & 0x1F) << 24);
                 pushConstants.flags |= (static_cast<i32>(material->shadowDitherPattern & 0x7) << 29);
@@ -7230,7 +7410,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
 
             // Text rendering (cached storage)
             TextComponent* textComp = m_CachedTextStorage ? m_CachedTextStorage->Get(entity) : nullptr;
-            if (textComp && textComp->dirty && !textComp->text.empty()) {
+            if (textComp && textComp->dirty && !textComp->text.empty() && m_SDFTextMeshes.count(entity) == 0) {
                 auto pixels = m_TextRasterizer.Rasterize(*textComp);
                 if (!pixels.empty()) {
                     auto textTex = std::make_shared<Renderer::Texture>(m_VulkanRenderer->GetContext());
@@ -7382,6 +7562,7 @@ void RenderSystem::OnEntityRemoved(Entity entity) {
     // old texture + frees its bindless slot before the map entry goes away).
     CacheTextTexture(entity, nullptr);
     m_TextTextureCache.erase(entity);
+    m_SDFTextMeshes.erase(entity);
     m_PrevModelMatrices.erase(static_cast<u64>(entity));
 
     // Invalidate scene composition cache (removed entity may change 2D/3D classification)
@@ -7779,6 +7960,7 @@ void RenderSystem::UploadObjectData() {
             if (material->stippleTransparency) flags |= (1 << 23);
             if (material->uvQuantize) flags |= (1 << 12);
             if (material->gouraudOnly) flags |= (1 << 13);
+            if (material->sdfText) flags |= (1 << 3);
             flags |= (static_cast<i32>(material->shadowDitherMode & 0x3) << 14);
             flags |= (static_cast<i32>((material->vertexSnapResolution / 8) & 0x1F) << 24);
             flags |= (static_cast<i32>(material->shadowDitherPattern & 0x7) << 29);
@@ -9992,6 +10174,9 @@ void RenderSystem::EnsureTextTextures() {
     for (Entity entity : m_World->GetEntitiesWithComponent<TextComponent>()) {
         auto* tc = m_CachedTextStorage ? m_CachedTextStorage->Get(entity) : m_World->GetComponent<TextComponent>(entity);
         if (!tc || tc->text.empty()) continue;
+        // SDF glyph-mesh entities never rasterize: their material samples the
+        // shared font atlas, and rasterizing here would clobber it.
+        if (m_SDFTextMeshes.count(entity) != 0) continue;
         // Text applies its texture to the entity's mesh surface, so it needs a material to
         // carry it (a bare Text-component entity with no mesh is a separate auto-quad case).
         MaterialComponent* mat = m_CachedMaterialStorage->Get(entity);
@@ -10989,6 +11174,7 @@ void RenderSystem::RenderEntity(Entity entity) {
         if (material->stippleTransparency) pushConstants.flags |= (1 << 23);
         if (material->uvQuantize) pushConstants.flags |= (1 << 12);
         if (material->gouraudOnly) pushConstants.flags |= (1 << 13);
+        if (material->sdfText) pushConstants.flags |= (1 << 3);
         pushConstants.flags |= (static_cast<i32>(material->shadowDitherMode & 0x3) << 14);
         pushConstants.flags |= (static_cast<i32>((material->vertexSnapResolution / 8) & 0x1F) << 24);
         pushConstants.flags |= (static_cast<i32>(material->shadowDitherPattern & 0x7) << 29);
@@ -11127,7 +11313,7 @@ void RenderSystem::RenderEntity(Entity entity) {
 
     // Rasterize text texture if entity has a TextComponent (cached storage)
     TextComponent* textComp = m_CachedTextStorage ? m_CachedTextStorage->Get(entity) : nullptr;
-    if (textComp && textComp->dirty && !textComp->text.empty()) {
+    if (textComp && textComp->dirty && !textComp->text.empty() && m_SDFTextMeshes.count(entity) == 0) {
         auto pixels = m_TextRasterizer.Rasterize(*textComp);
         if (!pixels.empty()) {
             auto textTex = std::make_shared<Renderer::Texture>(m_VulkanRenderer->GetContext());
@@ -13274,6 +13460,7 @@ static void FillArenaMaterial(ObjectDataGPU& od, const MaterialComponent* m, boo
     if (m->stippleTransparency) f |= (1 << 23);
     if (m->uvQuantize) f |= (1 << 12);
     if (m->gouraudOnly) f |= (1 << 13);
+    if (m->sdfText) f |= (1 << 3);
     f |= (static_cast<i32>(m->shadowDitherMode & 0x3) << 14);
     f |= (static_cast<i32>((m->vertexSnapResolution / 8) & 0x1F) << 24);
     f |= (static_cast<i32>(m->shadowDitherPattern & 0x7) << 29);

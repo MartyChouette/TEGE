@@ -70,6 +70,7 @@
 #include "Enjin/ECS/Systems/StateMachineSystem.h"
 #include "Enjin/ECS/Systems/DialogueSystem.h"
 #include "Enjin/Gameplay/CinematicSystem.h"
+#include "Enjin/Gameplay/ClothSystem.h"
 #include "Enjin/Effects/ElementalSystem.h"
 #include "Enjin/ECS/EntityEventBus.h"
 #include "Enjin/ECS/Components/Skeleton.h"
@@ -662,6 +663,11 @@ public:
             // World::Update still runs so deferred entity destroys flush (the
             // pause canvas removal on resume) -- gameplay systems stay skipped.
             m_World->Update(0.0f);
+            // The camera must keep tracking its entity while paused: the render
+            // pass runs every frame and reads m_Camera, and the normal sync at
+            // the tail of Update() is skipped by this early-out. Without this
+            // the scene renders from a stale/garbage view behind the menu.
+            SyncCameraToWorld();
             return;
         }
         m_InputMap.Update(deltaTime);
@@ -735,6 +741,11 @@ public:
         // Fixed-timestep projects tick controllers inside the SimClock loop
         if (!m_SimClock.IsEnabled()) m_ControllerSystem.Update(deltaTime);
         m_ControllerSystem.UpdateRealtime(deltaTime);  // bullet-time controllers
+
+        // Cloth/rope/chain simulation (desktop: main.cpp:1007). The sim writes
+        // MeshComponent vertices + meshDirty; the web render path re-uploads
+        // dirty meshes each frame.
+        m_ClothSystem.Update(m_World.get(), deltaTime, &m_WindSystem);
 
         // Only use fly camera if no character controller exists in the scene
         if (m_CameraController && m_CameraController->IsEnabled()) {
@@ -824,6 +835,10 @@ public:
             m_WeatherSystem.Update(deltaTime, m_Camera->GetPosition());
             m_RenderSystem->SetWeatherSkyBlend(m_WeatherSystem.GetRainIntensity(),
                                                m_WeatherSystem.GetSnowIntensity());
+            // Precipitation draw: the render pass pulls the particle list from
+            // here each frame (rain draws streaks, snow draws flakes).
+            m_RenderSystem->SetMainPassWeather(&m_WeatherSystem,
+                m_WeatherSystem.GetRainIntensity() >= m_WeatherSystem.GetSnowIntensity());
         }
 
         m_ParticleSystem.Update(deltaTime, m_World.get());
@@ -903,25 +918,29 @@ public:
 
         // Sync Camera to the first CameraComponent entity (character controller drives the entity,
         // camera follows it). This mirrors what the desktop Player does.
-        {
-            const auto& camEntities = m_World->GetEntitiesWithComponent<Enjin::ECS::CameraComponent>();
-            if (!camEntities.empty() && m_Camera) {
-                auto camEntity = camEntities[0];
-                auto* xf = m_World->GetComponent<Enjin::ECS::TransformComponent>(camEntity);
-                auto* cc = m_World->GetComponent<Enjin::ECS::CameraComponent>(camEntity);
-                if (xf && cc) {
-                    Enjin::Math::Vector3 pos = xf->position;
-                    Enjin::Math::Vector3 fwd = xf->rotation.GetForward();
-                    Enjin::Math::Vector3 up = xf->rotation.GetUp();
-                    m_Camera->SetLookAt(pos, pos + fwd, up);
-                    if (cc->fieldOfView > 0.0f) {
-                        Enjin::f32 aspect = static_cast<Enjin::f32>(m_Renderer->GetSwapChainWidth()) /
-                                     static_cast<Enjin::f32>(std::max(m_Renderer->GetSwapChainHeight(), 1u));
-                        // Options FOV override (desktop-menu parity): the slider
-                        // wins over the authored camera when the player set it.
-                        Enjin::f32 fov = (m_OptionsFov > 0.0f) ? m_OptionsFov : cc->fieldOfView;
-                        m_Camera->SetPerspective(fov, aspect, cc->nearPlane, cc->farPlane);
-                    }
+        SyncCameraToWorld();
+    }
+
+    // Camera-entity -> render camera sync. Runs every frame, INCLUDING while
+    // paused (the render pass always reads m_Camera).
+    void SyncCameraToWorld() {
+        const auto& camEntities = m_World->GetEntitiesWithComponent<Enjin::ECS::CameraComponent>();
+        if (!camEntities.empty() && m_Camera) {
+            auto camEntity = camEntities[0];
+            auto* xf = m_World->GetComponent<Enjin::ECS::TransformComponent>(camEntity);
+            auto* cc = m_World->GetComponent<Enjin::ECS::CameraComponent>(camEntity);
+            if (xf && cc) {
+                Enjin::Math::Vector3 pos = xf->position;
+                Enjin::Math::Vector3 fwd = xf->rotation.GetForward();
+                Enjin::Math::Vector3 up = xf->rotation.GetUp();
+                m_Camera->SetLookAt(pos, pos + fwd, up);
+                if (cc->fieldOfView > 0.0f) {
+                    Enjin::f32 aspect = static_cast<Enjin::f32>(m_Renderer->GetSwapChainWidth()) /
+                                 static_cast<Enjin::f32>(std::max(m_Renderer->GetSwapChainHeight(), 1u));
+                    // Options FOV override (desktop-menu parity): the slider
+                    // wins over the authored camera when the player set it.
+                    Enjin::f32 fov = (m_OptionsFov > 0.0f) ? m_OptionsFov : cc->fieldOfView;
+                    m_Camera->SetPerspective(fov, aspect, cc->nearPlane, cc->farPlane);
                 }
             }
         }
@@ -1774,6 +1793,7 @@ private:
     Enjin::Gameplay::CameraDirector m_CameraDirector;
     Enjin::Gameplay::RecordRewindSystem m_RecordRewindSystem;
     Enjin::Gameplay::SimulationClock m_SimClock;
+    Enjin::Gameplay::ClothSystem m_ClothSystem;
     Enjin::Effects::InteractiveWaterSystem m_InteractiveWaterSystem;
     Enjin::ECS::TweenSystem m_TweenSystem;
     Enjin::ECS::VisualScriptSystem m_VisualScriptSystem;
