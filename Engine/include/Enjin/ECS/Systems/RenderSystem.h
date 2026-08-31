@@ -36,6 +36,7 @@ namespace Enjin::Build { class AssetReader; }
 #include "Enjin/Renderer/Texture.h"
 #endif
 #include "Enjin/Renderer/TextRasterizer.h"
+#include "Enjin/Renderer/FontAtlas.h"
 #include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/ECS/Components/Viewmodel.h"
 #include "Enjin/ECS/Components/Material.h"
@@ -371,6 +372,15 @@ public:
     }
     // Call after shadow state changes to update offscreen descriptor bindings
     void RefreshDescriptorsIfDirty();
+#else
+    // Web: same script-facing surface (ScriptBindings_Render compiles on both
+    // platforms — every script symbol must exist everywhere). The web shadow
+    // pass has no runtime toggles yet, so these are fixed-value accessors that
+    // let scripts degrade cleanly rather than fail to compile.
+    bool IsShadowsEnabled() const { return true; }
+    void SetShadowsEnabled(bool) {}
+    f32 GetShadowStrength() const;
+    void SetShadowStrength(f32 s);
 #endif
 
     // Memory profiling queries
@@ -1468,6 +1478,19 @@ private:
 
     // Text rendering (TextRasterizer is platform-agnostic, but texture cache needs Vulkan Texture)
     std::unordered_map<Entity, std::shared_ptr<Renderer::Texture>> m_TextTextureCache;
+
+    // SDF text (unified display P1): one shared glyph atlas per font, uploaded
+    // once; its bindless handle rides m_TextureBindlessHandles like any other
+    // texture. A null atlas entry = the font failed to build (no per-frame retry).
+    struct SDFFont {
+        std::unique_ptr<Renderer::FontAtlas> atlas;
+        std::shared_ptr<Renderer::Texture> texture;
+    };
+    std::unordered_map<std::string, SDFFont> m_SDFFonts;
+    // Bare text entities whose MeshComponent the SDF path owns: rebuilt when the
+    // text dirties, and skipped by EnsureTextTextures (no rasterize, no churn).
+    std::unordered_set<Entity> m_SDFTextMeshes;
+    Renderer::FontAtlas* GetOrBuildFontAtlas(const std::string& fontPath, Renderer::Texture** outTexture);
 #endif
     Renderer::TextRasterizer m_TextRasterizer;
 

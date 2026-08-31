@@ -385,6 +385,11 @@ public:
         Enjin::Scripting::SetBindingsObjectPool(&m_ObjectPool);
         Enjin::Scripting::SetBindingsAudio(&m_SimpleAudio);
         Enjin::Scripting::SetBindingsWeather(&m_WeatherSystem);
+        // Render_* script functions (rain-active, fog, ambient, shadows...)
+        // and Dialogue_* — both systems exist on web; without this wiring the
+        // (now-registered) bindings silently no-op.
+        Enjin::Scripting::SetBindingsRenderSystem(m_RenderSystem);
+        Enjin::Scripting::SetBindingsDialogueSystem(&m_DialogueSystem);
         Enjin::Scripting::SetBindingsSceneManager(&m_SceneManager);
         Enjin::Scripting::SetBindingsPhysics2D(m_Physics2D.get());
         Enjin::Scripting::SetBindingsNetworking(&m_NetworkSystem);

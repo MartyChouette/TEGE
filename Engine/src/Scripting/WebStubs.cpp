@@ -7,11 +7,12 @@ class asIScriptEngine;
 
 namespace Enjin {
 
-// Script binding stubs
-namespace Scripting {
-    void RegisterRenderBindings(asIScriptEngine*) {}
-    void RegisterAudioGraphBindings(asIScriptEngine*) {}
-}
+// NOTE: RegisterRenderBindings / RegisterAudioGraphBindings are NO LONGER
+// stubbed here — the real ScriptBindings_Render.cpp / _AudioGraph.cpp compile
+// on web now. Stubbing a Register* function makes every script that MENTIONS
+// one of its symbols fail to compile wholesale on web (the Playground died on
+// "No matching symbol 'Render_SetRainActive'"). Register everything; let the
+// null-guarded wrappers no-op where the backend lacks the feature.
 
 // All VisualScript global system pointers (set by PlayMode on desktop)
 namespace VisualScript {

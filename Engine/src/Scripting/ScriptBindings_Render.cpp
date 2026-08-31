@@ -14,6 +14,25 @@
 using namespace Enjin;
 using namespace Enjin::Math;
 
+#if ENJIN_RENDERER_WEBGPU
+// The Vulkan PostProcessing manager class doesn't exist on web builds (only
+// PostProcessSettings does), but this file MUST compile there: every script-
+// visible symbol has to be registered on every platform or an .as module that
+// mentions one fails to compile wholesale (this exact failure shipped — the
+// Playground script died on web with "No matching symbol 'Render_SetRainActive'").
+// The wrappers only touch GetSettings(), and SetBindingsPostProcessing is never
+// wired on web (pointer stays null), so this stand-in exists purely to satisfy
+// the compiler. The settings type is the REAL struct, so there is no field drift.
+namespace Enjin { namespace Renderer {
+class PostProcessing {
+public:
+    PostProcessSettings& GetSettings() { return m_Settings; }
+private:
+    PostProcessSettings m_Settings;
+};
+}}
+#endif
+
 #define AS_CHECK(expr) \
     do { int _r = (expr); if (_r < 0) { ENJIN_LOG_ERROR(Script, "AS registration failed (code %d) at %s:%d", _r, __FILE__, __LINE__); } } while(0)
 
@@ -687,7 +706,7 @@ static void Particles_OneShot(const std::string& preset, float x, float y, float
     if (!s_BindingsRenderSystem || count <= 0) return;
     s_BindingsRenderSystem->SpawnGPUParticlePreset(
         static_cast<u32>(count), Math::Vector3(x, y, z), Math::Vector3(0.0f, 1.0f, 0.0f),
-        ParseParticlePreset(preset));
+        ParseParticlePreset(preset));   // web: RenderSystem stub, no-op
 }
 
 // Registration

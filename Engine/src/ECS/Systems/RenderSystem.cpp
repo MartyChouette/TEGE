@@ -3035,6 +3035,10 @@ u32  RenderSystem::GetTextureAnisotropy() const { return 8; }
 bool RenderSystem::GetTextureMipmaps() const { return true; }
 u32  RenderSystem::GetTextureWrap() const { return 0; }
 void RenderSystem::RequestPipelineRecreation() {}  // Vulkan-only heal; WebGPU rebuilds per-frame
+f32  RenderSystem::GetShadowStrength() const { return 1.0f; }  // web: fixed-strength shadows
+void RenderSystem::SetShadowStrength(f32) {}
+void RenderSystem::SpawnGPUParticlePreset(u32, const Math::Vector3&, const Math::Vector3&,
+                                          Effects::GPUParticlePreset) {}  // Vulkan-only (GPU compute)
 void RenderSystem::SetFluidSimulation(Effects::FluidSimulation* /*sim*/) {}
 void RenderSystem::RenderWeatherParticles(const Effects::WeatherSystem& /*w*/, bool /*r*/, u32, u32, bool, u32) {}
 void RenderSystem::RenderGPUParticles() {}  // Vulkan-only (needs WebGPU compute first)
@@ -4091,7 +4095,21 @@ Renderer::FontAtlas* RenderSystem::GetOrBuildFontAtlas(const std::string& fontPa
             bytes = Accessibility::s_OpenDyslexicFontData;
             size = Accessibility::s_OpenDyslexicFontDataSize;
         } else {
-            std::ifstream file(fontPath, std::ios::binary | std::ios::ate);
+            // Resolve project-relative font paths against the same game root
+            // textures/models use (the CWD is the exe dir, not the project).
+            std::string loadPath = fontPath;
+            {
+                namespace fs = std::filesystem;
+                std::error_code ec;
+                if (fs::path(fontPath).is_relative() && !fs::exists(fontPath, ec)) {
+                    const std::string& root = Assets::MeshAssetCache::Get().GetSearchRoot();
+                    if (!root.empty()) {
+                        std::string joined = (fs::path(root) / fontPath).string();
+                        if (fs::exists(joined, ec)) loadPath = joined;
+                    }
+                }
+            }
+            std::ifstream file(loadPath, std::ios::binary | std::ios::ate);
             if (file.is_open()) {
                 auto sz = file.tellg();
                 if (sz > 0) {

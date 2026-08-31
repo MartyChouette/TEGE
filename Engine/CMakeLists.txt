@@ -82,7 +82,9 @@ if(ENJIN_PLATFORM_WEB)
          "src/Effects/ShrubRenderer.cpp" "src/Effects/TreeRenderer.cpp"
          "src/Effects/SpriteBatchRenderer.cpp" "src/Effects/SpriteTextureAtlas.cpp"
          "src/GUI/ImGuiLayer.cpp" "src/GUI/ShaderGUI.cpp" "src/GUI/EngineSplash.cpp"
-         "src/Scripting/ScriptBindings_Render.cpp" "src/Scripting/ScriptBindings_AudioGraph.cpp"
+         # ScriptBindings_Render/_AudioGraph compile on web ON PURPOSE: every
+         # script-visible symbol must register on every platform or any .as
+         # module mentioning one fails to compile (Render_SetRainActive bug).
          "src/Editor/*.cpp" "src/App/*.cpp"
          "src/Water/WaterRenderer.cpp")
     list(REMOVE_ITEM ENGINE_SOURCES ${VULKAN_SOURCES})
