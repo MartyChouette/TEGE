@@ -901,6 +901,8 @@ public:
             Enjin::Gameplay::GameplayLoop::UpdateTriggerZones(m_World.get());
             (void)Enjin::Gameplay::GameplayLoop::UpdateGameOverState(m_World.get(), deltaTime);
             Enjin::Gameplay::GameplayLoop::FlushDeferredDestroys(m_World.get(), deferred);
+            // 2D collision callbacks queue into the long-lived member
+            Enjin::Gameplay::GameplayLoop::FlushDeferredDestroys(m_World.get(), m_DeferredDestroys);
 
             // Game-over UI is the UICanvas screen GameplayLoop spawns — rendered by
             // the same UISystem as desktop (one source). Release pointer lock so the
@@ -1433,6 +1435,14 @@ private:
         }
 
         // --- Post-scene-load system initialization ---
+        // 2D collision callbacks (desktop: main.cpp:2444): without this,
+        // Box2D sensor enter/exit events never reach visual scripts or
+        // gameplay on web — 2D triggers/hazards were silently dead here.
+        if (m_Physics2D) {
+            Enjin::Gameplay::GameplayLoop::Wire2DCollisionCallbacks(
+                m_Physics2D.get(), m_World.get(), &m_VisualScriptSystem, m_DeferredDestroys);
+        }
+
         // VisualScript full init (desktop: main.cpp:1696-1704)
         m_VisualScriptSystem.SetPhysics(m_Physics.get());
         m_VisualScriptSystem.SetPhysics2D(m_Physics2D.get());
@@ -1799,6 +1809,9 @@ private:
     Enjin::Gameplay::RecordRewindSystem m_RecordRewindSystem;
     Enjin::Gameplay::SimulationClock m_SimClock;
     Enjin::Gameplay::ClothSystem m_ClothSystem;
+    // Long-lived: Wire2DCollisionCallbacks captures a reference to this
+    // (desktop: main.cpp m_DeferredDestroys) — never pass it a frame-local.
+    std::vector<Enjin::ECS::Entity> m_DeferredDestroys;
     Enjin::Effects::InteractiveWaterSystem m_InteractiveWaterSystem;
     Enjin::ECS::TweenSystem m_TweenSystem;
     Enjin::ECS::VisualScriptSystem m_VisualScriptSystem;
