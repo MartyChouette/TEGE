@@ -71,6 +71,8 @@
 #include "Enjin/ECS/Systems/DialogueSystem.h"
 #include "Enjin/Gameplay/CinematicSystem.h"
 #include "Enjin/Gameplay/ClothSystem.h"
+#include "Enjin/Gameplay/SurfaceResponseSystem.h"
+#include "Enjin/Gameplay/QuestFlow.h"
 #include "Enjin/Effects/ElementalSystem.h"
 #include "Enjin/ECS/EntityEventBus.h"
 #include "Enjin/ECS/Components/Skeleton.h"
@@ -747,6 +749,12 @@ public:
         if (!m_SimClock.IsEnabled()) m_ControllerSystem.Update(deltaTime);
         m_ControllerSystem.UpdateRealtime(deltaTime);  // bullet-time controllers
 
+        // TotK-style surface response (desktop: main.cpp:1005): footstep/impact
+        // sound + particle from the surface material. Initialize is idempotent,
+        // same per-frame pattern as desktop.
+        m_SurfaceResponseSystem.Initialize(&m_SimpleAudio, m_RenderSystem, m_Physics.get(), m_Physics2D.get());
+        m_SurfaceResponseSystem.Update(m_World.get(), deltaTime);
+
         // Cloth/rope/chain simulation (desktop: main.cpp:1007). The sim writes
         // MeshComponent vertices + meshDirty; the web render path re-uploads
         // dirty meshes each frame.
@@ -800,13 +808,14 @@ public:
         m_CoroutineScheduler.EndOfFrame();
         Enjin::Scripting::FlushDeferredEntityDestroys();
 
+        // Ticking these is what makes NPCs move and dialogue advance on web.
+        // Order MATCHES the desktop Player (main.cpp:1029-1033): state machines
+        // BEFORE visual scripts, so graphs see this frame's FSM state, not last
+        // frame's (the web order was reversed until the 08-31 parity audit).
         m_TweenSystem.Update(m_World.get(), deltaTime);
+        m_StateMachineSystem.Update(m_World.get(), deltaTime);
         m_VisualScriptSystem.Update(deltaTime);
         m_BehaviorTreeSystem.Update(deltaTime);
-
-        // Ticking these is what makes NPCs move and dialogue advance on web
-        // (order mirrors the desktop Player).
-        m_StateMachineSystem.Update(m_World.get(), deltaTime);
         m_AISystem.Update(deltaTime);
         m_CinematicSystem.Update(m_World.get(), m_Camera.get(), deltaTime);
         // Virtual cameras + parallax were editor/desktop-only until the 2026-08-28
@@ -830,6 +839,18 @@ public:
         m_DialogueSystem.Update(m_World.get(), deltaTime);
 
         m_QuestSystem.Update(m_World.get(), deltaTime);
+        // Quest flow graphs (desktop: main.cpp:1059) — without this, authored
+        // quest flows never advanced on web.
+        for (auto entity : m_World->GetEntitiesWithComponent<Enjin::ECS::QuestFlowComponent>()) {
+            Enjin::Gameplay::AdvanceQuestFlow(m_World.get(), entity, deltaTime);
+        }
+        // Auto-save timer (desktop: main.cpp:1214); saves land in IDBFS.
+        m_TieredSaveSystem.Update(deltaTime, m_World.get(), m_StartScene);
+        // Resource (stamina/mana) regeneration (desktop: main.cpp:1241)
+        for (auto entity : m_World->GetEntitiesWithComponent<Enjin::ECS::ResourceComponent>()) {
+            auto* res = m_World->GetComponent<Enjin::ECS::ResourceComponent>(entity);
+            if (res) res->Regenerate(deltaTime);
+        }
         m_ObjectPool.Update(m_World.get(), deltaTime);
         m_EntityEventBus.ProcessDeferred();
 
@@ -1809,6 +1830,7 @@ private:
     Enjin::Gameplay::RecordRewindSystem m_RecordRewindSystem;
     Enjin::Gameplay::SimulationClock m_SimClock;
     Enjin::Gameplay::ClothSystem m_ClothSystem;
+    Enjin::Gameplay::SurfaceResponseSystem m_SurfaceResponseSystem;
     // Long-lived: Wire2DCollisionCallbacks captures a reference to this
     // (desktop: main.cpp m_DeferredDestroys) — never pass it a frame-local.
     std::vector<Enjin::ECS::Entity> m_DeferredDestroys;
