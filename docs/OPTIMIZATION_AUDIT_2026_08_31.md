@@ -42,7 +42,11 @@ change; transparent needs it only when the camera moves meaningfully.
 **Fix shape:** camera-delta threshold + entity-list dirty flag; sort transparent range
 separately from opaque range.
 
-### 3. Storage-pointer caching in per-frame system loops — MEDIUM, easy
+### 3. Storage-pointer caching in per-frame system loops — MEDIUM — **FIXED**
+ForEachActiveController template (ControllerSystem.cpp) hoists all three
+storages; AISystem loop hoisted the same way. Per-entity IsValid() now runs
+only on frames with deferred destructions pending, via the new lock-free
+`World::HasPendingDestructions()` (safe under adr-0004). Original finding:
 `ControllerSystem.cpp:110+` (6 controller loops) and `AISystem.cpp:62-68` call
 `GetComponent<T>` 2-3 times per entity per frame — each is a type-ID hash lookup.
 RenderSystem already demonstrates the fix (`m_CachedMeshStorage->Get(entity)`).
@@ -52,7 +56,11 @@ one lock-free pending-destruction check, or trust the flush ordering where prova
 N is small (controllers), so the win is hygiene + a pattern for hot systems, not
 frame-time headroom.
 
-### 4. GatherColliders / zone scans re-run per cloth entity — MEDIUM
+### 4. GatherColliders / zone scans re-run per cloth entity — MEDIUM — **FIXED**
+Colliders and wind zones now gather lazily ONCE per ClothSystem::Update and
+are shared by every cloth and rope; self-exclusion moved to resolve time via
+`ColliderShape.srcIndex`. Zone data snapshots only the POD fields (the
+component carries std::strings). Original finding:
 `ClothSystem.cpp:158-218`: 5 full component-type iterations (box/sphere/capsule
 colliders + both controller types) per cloth/rope entity per frame. `SampleWeatherWind`
 (`ClothSystem.cpp:267`) additionally iterates all weather zones once per cloth and once
@@ -62,26 +70,33 @@ becomes real cost with dozens of cloths.
 cloth entities that frame. Structural-change invalidation not even needed if gathered
 fresh once per frame.
 
-### 5. IsValid()/FindEntityByName take the world mutex per call — LOW-MEDIUM
-`World.cpp:111-117` and `World.cpp:154-164`. Documented/deliberate (CLAUDE.md: the read
-hot path is lock-free, IsValid keeps its lock). The cost is real only when called per
-entity per frame in loops (finding 3's loops do exactly that). Prefer removing the
-per-iteration calls over touching the locking design.
+### 5. IsValid()/FindEntityByName take the world mutex per call — RESOLVED via #3
+The locking design is untouched (deliberate per CLAUDE.md); the per-iteration
+IsValid() calls in hot loops are gone — they're gated behind the lock-free
+`World::HasPendingDestructions()` and only run on frames that queued destroys.
+FindEntityByName remains locked (called per rope per frame — few ropes, cached
+O(1) inside; not worth touching).
 
-### 6. Cluster light array rebuilt + unreserved every frame — LOW-MEDIUM
-`RenderSystem.cpp:5556-5595`: `std::vector<ClusterLight>` built fresh per frame with no
-`reserve` and no light-dirty gating. Trivial fixes: reserve
-`m_CachedLightEntities.size() + m_TransientPointLights.size()`, or promote to a member
-vector; optionally skip rebuild when the light set hasn't changed.
+### 6. Cluster light array rebuilt + unreserved every frame — reserve FIXED (8faffaa6)
+The reserve landed. The rebuild-gating half is deliberately NOT done: transient
+point lights (muzzle flashes, elemental effects) change every frame in the
+scenes where light count matters, so the dirty flag would rarely hold, and the
+rebuild is a few dozen structs. Revisit only if a profiler names it.
 
-### 7. Custom allocators are dead weight — VERIFIED UNUSED
+### 7. Custom allocators are dead weight — DECIDED: keep as library, no adoption
 `Core/include/Enjin/Memory/Memory.h:39-98`: StackAllocator/PoolAllocator/LinearAllocator
 are referenced by exactly one file outside their implementation — their unit test.
-`GetDefaultAllocator`/`SetDefaultAllocator` are never called. Either adopt them where a
-profiler shows malloc churn (particles, cloth constraints, per-frame scratch) or accept
-they're a library for future use. Don't leave them implied-in-use in docs.
+Adopting them without profiler evidence of malloc churn would be speculative churn in
+hot systems; the per-frame vectors that mattered are member/static-reused already.
+They stay as a tested library for when a profiler names a real malloc hotspot.
 
-### 8. Web shadow pass iterates all mesh entities — LOW (web only)
+### 8. Web shadow pass iterates all mesh entities — LOW — **FIXED**
+The web Update builds one lazily-gathered caster candidate list per frame
+(visible, non-empty, not a viewmodel); the fit/directional/spot/point passes
+all iterate it, keeping their pass-specific filters inline. One deliberate
+behavior tweak: viewmodels no longer contribute to the shadow-fit AABB (they
+never cast, so fitting the volume around them was wrong anyway).
+Original finding:
 `RenderSystem.cpp:~1900-1936` (web half): spot-shadow pass filters post-hoc over every
 MeshComponent entity; the Vulkan path uses the pre-built `m_FrameShadowCasters` list.
 Port the same list to the web half.

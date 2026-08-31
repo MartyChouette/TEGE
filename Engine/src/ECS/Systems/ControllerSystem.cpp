@@ -93,6 +93,31 @@ void ControllerSystem::UpdateGameCameraTransform(const Math::Vector3& position, 
     }
 }
 
+// Shared prologue for every controller loop, with the per-frame costs hoisted
+// (audit 2026-08-31): storage pointers are fetched ONCE per loop instead of
+// 2-3 type-ID hash lookups per entity, and the per-entity IsValid() (which
+// takes the world mutex) only runs on frames that actually have deferred
+// destructions pending. The body lambda gets (entity, controller&, transform&).
+template <typename TController, typename Fn>
+static void ForEachActiveController(World* world, bool realtimePass, Fn&& fn) {
+    auto* store = world->GetComponentStorage<TController>();
+    if (!store) return;
+    auto* xformStore = world->GetComponentStorage<TransformComponent>();
+    auto* possessStore = world->GetComponentStorage<PossessableComponent>();
+    const bool checkValid = world->HasPendingDestructions();
+    for (Entity entity : store->GetEntities()) {
+        if (checkValid && !world->IsValid(entity)) continue;
+        auto* controller = store->Get(entity);
+        if (!controller || !controller->isEnabled) continue;
+        if (controller->ignoreGlobalTimeScale != realtimePass) continue;
+        auto* transform = xformStore ? xformStore->Get(entity) : nullptr;
+        if (!transform) continue;
+        auto* possess = possessStore ? possessStore->Get(entity) : nullptr;
+        if (possess && !possess->isPossessed) continue;
+        fn(entity, *controller, *transform);
+    }
+}
+
 void ControllerSystem::Update(f32 deltaTime) {
     if (!m_Enabled || !m_World) {
         return;
@@ -102,118 +127,61 @@ void ControllerSystem::Update(f32 deltaTime) {
     // pass calls Update a second time and would double-step/double-toggle).
     if (!m_RealtimePass) UpdateDoors(m_World, deltaTime);
 
-    // Helper: skip non-possessed entities (possessed check is optional component)
-    // Each loop queries by controller type (guaranteed to exist), then fetches
-    // only transform (required) and possessable (optional). No redundant re-fetch
-    // of the controller component that the query already guarantees.
+    ForEachActiveController<Platformer2DController>(m_World, m_RealtimePass,
+        [&](Entity entity, Platformer2DController& controller, TransformComponent& transform) {
+            UpdatePlatformer2D(entity, controller, transform, deltaTime);
+        });
 
-    for (Entity entity : m_World->GetEntitiesWithComponent<Platformer2DController>()) {
-        if (!m_World->IsValid(entity)) continue;
-        auto* controller = m_World->GetComponent<Platformer2DController>(entity);
-        if (!controller || !controller->isEnabled) continue;
-        if (controller->ignoreGlobalTimeScale != m_RealtimePass) continue;
-        auto* transform = m_World->GetComponent<TransformComponent>(entity);
-        if (!transform) continue;
-        auto* possess = m_World->GetComponent<PossessableComponent>(entity);
-        if (possess && !possess->isPossessed) continue;
-        UpdatePlatformer2D(entity, *controller, *transform, deltaTime);
-    }
+    ForEachActiveController<TopDown2DController>(m_World, m_RealtimePass,
+        [&](Entity entity, TopDown2DController& controller, TransformComponent& transform) {
+            UpdateTopDown2D(entity, controller, transform, deltaTime);
+        });
 
-    for (Entity entity : m_World->GetEntitiesWithComponent<TopDown2DController>()) {
-        if (!m_World->IsValid(entity)) continue;
-        auto* controller = m_World->GetComponent<TopDown2DController>(entity);
-        if (!controller || !controller->isEnabled) continue;
-        if (controller->ignoreGlobalTimeScale != m_RealtimePass) continue;
-        auto* transform = m_World->GetComponent<TransformComponent>(entity);
-        if (!transform) continue;
-        auto* possess = m_World->GetComponent<PossessableComponent>(entity);
-        if (possess && !possess->isPossessed) continue;
-        UpdateTopDown2D(entity, *controller, *transform, deltaTime);
-    }
+    ForEachActiveController<TopDown3DController>(m_World, m_RealtimePass,
+        [&](Entity entity, TopDown3DController& controller, TransformComponent& transform) {
+            UpdateTopDown3D(entity, controller, transform, deltaTime);
+        });
 
-    for (Entity entity : m_World->GetEntitiesWithComponent<TopDown3DController>()) {
-        if (!m_World->IsValid(entity)) continue;
-        auto* controller = m_World->GetComponent<TopDown3DController>(entity);
-        if (!controller || !controller->isEnabled) continue;
-        if (controller->ignoreGlobalTimeScale != m_RealtimePass) continue;
-        auto* transform = m_World->GetComponent<TransformComponent>(entity);
-        if (!transform) continue;
-        auto* possess = m_World->GetComponent<PossessableComponent>(entity);
-        if (possess && !possess->isPossessed) continue;
-        UpdateTopDown3D(entity, *controller, *transform, deltaTime);
-    }
-
-    for (Entity entity : m_World->GetEntitiesWithComponent<ThirdPersonController>()) {
-        auto* controller = m_World->GetComponent<ThirdPersonController>(entity);
-        if (!controller || !controller->isEnabled) continue;
-        if (controller->ignoreGlobalTimeScale != m_RealtimePass) continue;
-        auto* transform = m_World->GetComponent<TransformComponent>(entity);
-        if (!transform) continue;
-        auto* possess = m_World->GetComponent<PossessableComponent>(entity);
-        if (possess && !possess->isPossessed) continue;
-
-        // Lazy-create Jolt CharacterVirtual on first use (requires physics backend)
-        // Skip on web — Jolt collider queries don't work on Emscripten, use fallback path
-        if (m_Physics && !m_Physics->HasCharacterController(entity)) {
-            f32 radius = 0.3f, totalHalfH = 0.8f;
-            if (auto* cap = m_World->GetComponent<CapsuleColliderComponent>(entity)) {
-                radius = cap->radius;
-                totalHalfH = cap->height * 0.5f + cap->radius;
+    ForEachActiveController<ThirdPersonController>(m_World, m_RealtimePass,
+        [&](Entity entity, ThirdPersonController& controller, TransformComponent& transform) {
+            // Lazy-create Jolt CharacterVirtual on first use (requires physics backend)
+            // Skip on web — Jolt collider queries don't work on Emscripten, use fallback path
+            if (m_Physics && !m_Physics->HasCharacterController(entity)) {
+                f32 radius = 0.3f, totalHalfH = 0.8f;
+                if (auto* cap = m_World->GetComponent<CapsuleColliderComponent>(entity)) {
+                    radius = cap->radius;
+                    totalHalfH = cap->height * 0.5f + cap->radius;
+                }
+                m_Physics->CreateCharacterController(entity, radius, totalHalfH, transform.position);
             }
-            m_Physics->CreateCharacterController(entity, radius, totalHalfH, transform->position);
-        }
+            UpdateThirdPerson(entity, controller, transform, deltaTime);
+        });
 
-        UpdateThirdPerson(entity, *controller, *transform, deltaTime);
-    }
-
-    for (Entity entity : m_World->GetEntitiesWithComponent<FirstPersonController>()) {
-        if (!m_World->IsValid(entity)) continue;
-        auto* controller = m_World->GetComponent<FirstPersonController>(entity);
-        if (!controller || !controller->isEnabled) continue;
-        if (controller->ignoreGlobalTimeScale != m_RealtimePass) continue;
-        auto* transform = m_World->GetComponent<TransformComponent>(entity);
-        if (!transform) continue;
-        auto* possess = m_World->GetComponent<PossessableComponent>(entity);
-        if (possess && !possess->isPossessed) continue;
-
+    ForEachActiveController<FirstPersonController>(m_World, m_RealtimePass,
+        [&](Entity entity, FirstPersonController& controller, TransformComponent& transform) {
 #if !ENJIN_PLATFORM_WEB
-        // Lazy-create Jolt CharacterVirtual on first use
-        if (m_Physics && !m_Physics->HasCharacterController(entity)) {
-            f32 radius = 0.3f, totalHalfH = 0.8f;
-            if (auto* cap = m_World->GetComponent<CapsuleColliderComponent>(entity)) {
-                radius = cap->radius;
-                totalHalfH = cap->height * 0.5f + cap->radius;
+            // Lazy-create Jolt CharacterVirtual on first use
+            if (m_Physics && !m_Physics->HasCharacterController(entity)) {
+                f32 radius = 0.3f, totalHalfH = 0.8f;
+                if (auto* cap = m_World->GetComponent<CapsuleColliderComponent>(entity)) {
+                    radius = cap->radius;
+                    totalHalfH = cap->height * 0.5f + cap->radius;
+                }
+                m_Physics->CreateCharacterController(entity, radius, totalHalfH, transform.position);
             }
-            m_Physics->CreateCharacterController(entity, radius, totalHalfH, transform->position);
-        }
 #endif
+            UpdateFirstPerson(entity, controller, transform, deltaTime);
+        });
 
-        UpdateFirstPerson(entity, *controller, *transform, deltaTime);
-    }
+    ForEachActiveController<SurfaceAlignedController>(m_World, m_RealtimePass,
+        [&](Entity entity, SurfaceAlignedController& controller, TransformComponent& transform) {
+            UpdateSurfaceAligned(entity, controller, transform, deltaTime);
+        });
 
-    for (Entity entity : m_World->GetEntitiesWithComponent<SurfaceAlignedController>()) {
-        if (!m_World->IsValid(entity)) continue;
-        auto* controller = m_World->GetComponent<SurfaceAlignedController>(entity);
-        if (!controller || !controller->isEnabled) continue;
-        if (controller->ignoreGlobalTimeScale != m_RealtimePass) continue;
-        auto* transform = m_World->GetComponent<TransformComponent>(entity);
-        if (!transform) continue;
-        auto* possess = m_World->GetComponent<PossessableComponent>(entity);
-        if (possess && !possess->isPossessed) continue;
-        UpdateSurfaceAligned(entity, *controller, *transform, deltaTime);
-    }
-
-    for (Entity entity : m_World->GetEntitiesWithComponent<VehicleController>()) {
-        if (!m_World->IsValid(entity)) continue;
-        auto* controller = m_World->GetComponent<VehicleController>(entity);
-        if (!controller || !controller->isEnabled) continue;
-        if (controller->ignoreGlobalTimeScale != m_RealtimePass) continue;
-        auto* transform = m_World->GetComponent<TransformComponent>(entity);
-        if (!transform) continue;
-        auto* possess = m_World->GetComponent<PossessableComponent>(entity);
-        if (possess && !possess->isPossessed) continue;
-        UpdateVehicle(entity, *controller, *transform, deltaTime);
-    }
+    ForEachActiveController<VehicleController>(m_World, m_RealtimePass,
+        [&](Entity entity, VehicleController& controller, TransformComponent& transform) {
+            UpdateVehicle(entity, controller, transform, deltaTime);
+        });
 
     // Process FollowTarget components (camera follow, companion follow, etc.)
     // Camera-follow / look-at / 2D-camera work is per-frame presentation, not

@@ -97,6 +97,16 @@ public:
      */
     bool IsPendingDestruction(Entity entity) const;
 
+    /**
+     * @brief True if any entity is queued for deferred destruction this frame.
+     *
+     * Lock-free read, safe under adr-0004: the pending set is mutated only on
+     * the owner thread, and every parallel region is fork-join. Hot per-frame
+     * loops use this to skip per-entity IsValid() (which takes the world
+     * mutex) in the common no-destructions frame.
+     */
+    bool HasPendingDestructions() const { return !m_PendingDestructionSet.empty(); }
+
     // Component management
     template<typename T>
     T& AddComponent(Entity entity, const T& component = T{}) {

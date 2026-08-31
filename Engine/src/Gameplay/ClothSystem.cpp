@@ -153,56 +153,69 @@ struct ColliderShape {
     Math::Vector3 half;         // box half extents
     f32 radius = 0.0f;          // sphere/capsule
     f32 halfHeight = 0.0f;      // capsule cylinder half-height
+    u32 srcIndex = 0xFFFFFFFFu; // EntityIndex of the source entity — each
+                                // cloth/rope skips its OWN shapes at resolve
+                                // time, so ONE gather serves the whole frame
 };
 
-void GatherColliders(World* world, Entity skip, std::vector<ColliderShape>& out) {
+// Gathered ONCE per ClothSystem::Update (audit 2026-08-31) — previously this
+// re-scanned five component types for every cloth and rope entity every frame.
+// Storage pointers hoisted; per-entity self-exclusion moved to the resolve
+// loop via srcIndex.
+void GatherColliders(World* world, std::vector<ColliderShape>& out) {
     out.clear();
-    for (Entity e : world->GetEntitiesWithComponent<BoxColliderComponent>()) {
-        if (EntityIndex(e) == EntityIndex(skip)) continue;
-        auto* col = world->GetComponent<BoxColliderComponent>(e);
-        auto* xf = world->GetComponent<TransformComponent>(e);
-        if (!col || !xf || col->isTrigger) continue;
-        ColliderShape s;
-        s.kind = ColliderShape::Kind::Box;
-        s.rot = xf->rotation;
-        s.pos = xf->position + xf->rotation.Rotate(col->center);
-        s.half = col->size * 0.5f;
-        out.push_back(s);
-    }
-    for (Entity e : world->GetEntitiesWithComponent<SphereColliderComponent>()) {
-        if (EntityIndex(e) == EntityIndex(skip)) continue;
-        auto* col = world->GetComponent<SphereColliderComponent>(e);
-        auto* xf = world->GetComponent<TransformComponent>(e);
-        if (!col || !xf || col->isTrigger) continue;
-        ColliderShape s;
-        s.kind = ColliderShape::Kind::Sphere;
-        s.pos = xf->position + xf->rotation.Rotate(col->center);
-        s.radius = col->radius;
-        out.push_back(s);
-    }
-    for (Entity e : world->GetEntitiesWithComponent<CapsuleColliderComponent>()) {
-        if (EntityIndex(e) == EntityIndex(skip)) continue;
-        auto* col = world->GetComponent<CapsuleColliderComponent>(e);
-        auto* xf = world->GetComponent<TransformComponent>(e);
-        if (!col || !xf || col->isTrigger) continue;
-        ColliderShape s;
-        s.kind = ColliderShape::Kind::Capsule;
-        s.rot = xf->rotation;
-        s.pos = xf->position + xf->rotation.Rotate(col->center);
-        s.radius = col->radius;
-        s.halfHeight = col->height * 0.5f;   // height = cylinder section only
-        out.push_back(s);
-    }
+    auto* xformStore = world->GetComponentStorage<TransformComponent>();
+    if (!xformStore) return;
+
+    if (auto* boxStore = world->GetComponentStorage<BoxColliderComponent>())
+        for (Entity e : boxStore->GetEntities()) {
+            auto* col = boxStore->Get(e);
+            auto* xf = xformStore->Get(e);
+            if (!col || !xf || col->isTrigger) continue;
+            ColliderShape s;
+            s.kind = ColliderShape::Kind::Box;
+            s.rot = xf->rotation;
+            s.pos = xf->position + xf->rotation.Rotate(col->center);
+            s.half = col->size * 0.5f;
+            s.srcIndex = EntityIndex(e);
+            out.push_back(s);
+        }
+    if (auto* sphereStore = world->GetComponentStorage<SphereColliderComponent>())
+        for (Entity e : sphereStore->GetEntities()) {
+            auto* col = sphereStore->Get(e);
+            auto* xf = xformStore->Get(e);
+            if (!col || !xf || col->isTrigger) continue;
+            ColliderShape s;
+            s.kind = ColliderShape::Kind::Sphere;
+            s.pos = xf->position + xf->rotation.Rotate(col->center);
+            s.radius = col->radius;
+            s.srcIndex = EntityIndex(e);
+            out.push_back(s);
+        }
+    auto* capStore = world->GetComponentStorage<CapsuleColliderComponent>();
+    if (capStore)
+        for (Entity e : capStore->GetEntities()) {
+            auto* col = capStore->Get(e);
+            auto* xf = xformStore->Get(e);
+            if (!col || !xf || col->isTrigger) continue;
+            ColliderShape s;
+            s.kind = ColliderShape::Kind::Capsule;
+            s.rot = xf->rotation;
+            s.pos = xf->position + xf->rotation.Rotate(col->center);
+            s.radius = col->radius;
+            s.halfHeight = col->height * 0.5f;   // height = cylinder section only
+            s.srcIndex = EntityIndex(e);
+            out.push_back(s);
+        }
 
     // Character controllers collide through Jolt's CharacterVirtual, not a
     // collider component - without this, cloth and ropes never feel the
     // player. Synthesize the same upright capsule ControllerSystem creates
     // (defaults, or the entity's CapsuleCollider override; transform = feet).
     auto addCharacter = [&](Entity e) {
-        if (EntityIndex(e) == EntityIndex(skip)) return;
-        auto* xf = world->GetComponent<TransformComponent>(e);
+        auto* xf = xformStore->Get(e);
         if (!xf) return;
-        if (world->GetComponent<CapsuleColliderComponent>(e))
+        if (capStore && capStore->Get(e))
             return;   // already added by the capsule loop above
         const f32 radius = 0.3f, totalHalfH = 0.8f;   // ControllerSystem defaults
         ColliderShape s;
@@ -211,10 +224,13 @@ void GatherColliders(World* world, Entity skip, std::vector<ColliderShape>& out)
         s.pos = xf->position + Math::Vector3(0.0f, totalHalfH, 0.0f);
         s.radius = radius;
         s.halfHeight = std::max(totalHalfH - radius, 0.0f);
+        s.srcIndex = EntityIndex(e);
         out.push_back(s);
     };
-    for (Entity e : world->GetEntitiesWithComponent<ThirdPersonController>()) addCharacter(e);
-    for (Entity e : world->GetEntitiesWithComponent<FirstPersonController>()) addCharacter(e);
+    if (auto* tp = world->GetComponentStorage<ThirdPersonController>())
+        for (Entity e : tp->GetEntities()) addCharacter(e);
+    if (auto* fp = world->GetComponentStorage<FirstPersonController>())
+        for (Entity e : fp->GetEntities()) addCharacter(e);
 }
 
 // Push a point out of a shape if inside (returns true on contact).
@@ -260,26 +276,53 @@ bool ResolvePoint(const ColliderShape& s, Math::Vector3& p, f32 skin) {
     return false;
 }
 
+// Per-frame snapshot of the POD fields the wind sampler needs (the component
+// itself carries std::strings — don't copy those per frame).
+struct FrameWindZone {
+    Math::Vector3 center;
+    Math::Vector3 halfExtents;
+    Math::Vector3 windDirection;
+    f32 windStrength = 0.0f;
+    i32 priority = 0;
+};
+
+// Gathered ONCE per ClothSystem::Update (audit 2026-08-31) — previously every
+// cloth and rope re-iterated all weather zones with two component lookups per
+// zone per entity per frame.
+void GatherWindZones(World* world, std::vector<FrameWindZone>& out) {
+    out.clear();
+    auto* zoneStore = world->GetComponentStorage<WeatherZoneComponent>();
+    auto* xformStore = world->GetComponentStorage<TransformComponent>();
+    if (!zoneStore || !xformStore) return;
+    for (Entity ze : zoneStore->GetEntities()) {
+        auto* zone = zoneStore->Get(ze);
+        auto* zxf = xformStore->Get(ze);
+        if (!zone || !zxf) continue;
+        out.push_back({ zxf->position, zone->halfExtents, zone->windDirection,
+                        zone->windStrength, zone->priority });
+    }
+}
+
 // Live weather wind at a world position: the highest-priority weather zone
 // covering it wins (indoor zone with windStrength 0 = calm interior); with no
 // zone, the global wind field supplies gusts + turbulence. Shared by cloth
 // and rope. time drives the gust phase.
-Math::Vector3 SampleWeatherWind(World* world, const Effects::WindSystem* wind,
+Math::Vector3 SampleWeatherWind(const std::vector<FrameWindZone>& zones,
+                                const Effects::WindSystem* wind,
                                 const Math::Vector3& pos, f32 time) {
     bool inZone = false;
     i32 bestPriority = 0;
     Math::Vector3 zoneDir(1.0f, 0.0f, 0.0f);
     f32 zoneStrength = 0.0f;
-    for (Entity ze : world->GetEntitiesWithComponent<WeatherZoneComponent>()) {
-        auto* zone = world->GetComponent<WeatherZoneComponent>(ze);
-        auto* zxf = world->GetComponent<TransformComponent>(ze);
-        if (!zone || !zxf) continue;
-        if (!zone->ContainsPoint(zxf->position, pos)) continue;
-        if (!inZone || zone->priority > bestPriority) {
+    for (const auto& z : zones) {
+        if (std::abs(pos.x - z.center.x) > z.halfExtents.x ||
+            std::abs(pos.y - z.center.y) > z.halfExtents.y ||
+            std::abs(pos.z - z.center.z) > z.halfExtents.z) continue;
+        if (!inZone || z.priority > bestPriority) {
             inZone = true;
-            bestPriority = zone->priority;
-            zoneDir = zone->windDirection;
-            zoneStrength = zone->windStrength;
+            bestPriority = z.priority;
+            zoneDir = z.windDirection;
+            zoneStrength = z.windStrength;
         }
     }
     if (inZone) {
@@ -506,6 +549,21 @@ void ClothSystem::Update(World* world, f32 deltaTime, const Effects::WindSystem*
     m_Time += deltaTime;
     f32 dt = std::min(deltaTime, 1.0f / 30.0f);   // clamp spiral-of-death steps
 
+    // Frame caches: colliders and wind zones are gathered lazily ONCE and
+    // shared by every cloth and rope this frame (self-exclusion via srcIndex).
+    static thread_local std::vector<ColliderShape> s_FrameShapes;
+    static thread_local std::vector<FrameWindZone> s_FrameZones;
+    bool shapesGathered = false;
+    bool zonesGathered = false;
+    auto frameShapes = [&]() -> const std::vector<ColliderShape>& {
+        if (!shapesGathered) { GatherColliders(world, s_FrameShapes); shapesGathered = true; }
+        return s_FrameShapes;
+    };
+    auto frameZones = [&]() -> const std::vector<FrameWindZone>& {
+        if (!zonesGathered) { GatherWindZones(world, s_FrameZones); zonesGathered = true; }
+        return s_FrameZones;
+    };
+
     for (Entity entity : world->GetEntitiesWithComponent<ClothComponent>()) {
         auto* c = world->GetComponent<ClothComponent>(entity);
         if (!c) continue;
@@ -519,7 +577,7 @@ void ClothSystem::Update(World* world, f32 deltaTime, const Effects::WindSystem*
         Math::Vector3 weatherWind(0.0f, 0.0f, 0.0f);
         if (c->useWeatherWind) {
             Math::Vector3 clothPos = XformPoint(model, Math::Vector3(0.0f, 0.0f, 0.0f));
-            weatherWind = SampleWeatherWind(world, wind, clothPos, m_Time) * c->weatherWindScale;
+            weatherWind = SampleWeatherWind(frameZones(), wind, clothPos, m_Time) * c->weatherWindScale;
         }
 
         // Verlet integrate free points; pinned points snap to the transform.
@@ -574,13 +632,14 @@ void ClothSystem::Update(World* world, f32 deltaTime, const Effects::WindSystem*
         // Collision: push free points out of world colliders. Friction pulls the
         // previous position toward the contact point, killing slide velocity.
         if (c->collide) {
-            static thread_local std::vector<ColliderShape> s_Shapes;
-            GatherColliders(world, entity, s_Shapes);
-            if (!s_Shapes.empty()) {
+            const auto& shapes = frameShapes();
+            if (!shapes.empty()) {
+                const u32 selfIdx = EntityIndex(entity);
                 f32 fr = std::clamp(c->friction, 0.0f, 1.0f);
                 for (i32 i = 0; i < count; ++i) {
                     if (c->invMass[i] == 0.0f) continue;
-                    for (const auto& s : s_Shapes) {
+                    for (const auto& s : shapes) {
+                        if (s.srcIndex == selfIdx) continue;
                         if (ResolvePoint(s, c->positions[i], c->collisionSkin)) {
                             c->prevPositions[i] = c->prevPositions[i] +
                                 (c->positions[i] - c->prevPositions[i]) * fr;
@@ -676,7 +735,7 @@ void ClothSystem::Update(World* world, f32 deltaTime, const Effects::WindSystem*
         Math::Vector3 weatherWind(0.0f, 0.0f, 0.0f);
         if (r->useWeatherWind) {
             Math::Vector3 topPos = XformPoint(model, Math::Vector3(0.0f, 0.0f, 0.0f));
-            weatherWind = SampleWeatherWind(world, wind, topPos, m_Time) * r->weatherWindScale;
+            weatherWind = SampleWeatherWind(frameZones(), wind, topPos, m_Time) * r->weatherWindScale;
         }
 
         // Verlet integrate; pinned ends snap to their anchors.
@@ -713,13 +772,14 @@ void ClothSystem::Update(World* world, f32 deltaTime, const Effects::WindSystem*
 
         // Collider pushout (same shapes as cloth).
         if (r->collide) {
-            static thread_local std::vector<ColliderShape> s_RopeShapes;
-            GatherColliders(world, entity, s_RopeShapes);
-            if (!s_RopeShapes.empty()) {
+            const auto& shapes = frameShapes();
+            if (!shapes.empty()) {
+                const u32 selfIdx = EntityIndex(entity);
                 f32 fr = std::clamp(r->friction, 0.0f, 1.0f);
                 for (i32 i = 0; i < n; ++i) {
                     if (r->invMass[i] == 0.0f) continue;
-                    for (const auto& s : s_RopeShapes) {
+                    for (const auto& s : shapes) {
+                        if (s.srcIndex == selfIdx) continue;
                         if (ResolvePoint(s, r->positions[i], r->collisionSkin + r->thickness)) {
                             r->prevPositions[i] = r->prevPositions[i] +
                                 (r->positions[i] - r->prevPositions[i]) * fr;

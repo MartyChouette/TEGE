@@ -58,14 +58,21 @@ void AISystem::Update(f32 deltaTime) {
         DrawNavmeshDebug();
     }
 
-    // Iterate all entities with AIControllerComponent + TransformComponent
-    for (Entity entity : m_World->GetEntitiesWithComponent<AIControllerComponent>()) {
-        if (!m_World->IsValid(entity)) continue;
-        if (!m_World->HasComponent<TransformComponent>(entity)) continue;
+    // Iterate all entities with AIControllerComponent + TransformComponent.
+    // Storage pointers hoisted out of the loop (audit 2026-08-31): direct
+    // sparse-set Get() instead of per-entity type-ID hash lookups, and the
+    // locked IsValid() only runs on frames with deferred destructions pending.
+    auto* aiStore = m_World->GetComponentStorage<AIControllerComponent>();
+    auto* xformStore = m_World->GetComponentStorage<TransformComponent>();
+    if (!aiStore || !xformStore) return;
+    const bool checkValid = m_World->HasPendingDestructions();
+    for (Entity entity : aiStore->GetEntities()) {
+        if (checkValid && !m_World->IsValid(entity)) continue;
 
-        auto* ai = m_World->GetComponent<AIControllerComponent>(entity);
+        auto* ai = aiStore->Get(entity);
         if (!ai) continue;
-        auto* transform = m_World->GetComponent<TransformComponent>(entity);
+        auto* transform = xformStore->Get(entity);
+        if (!transform) continue;
 
         // Get or create persistent agent state
         AgentState& state = m_AgentStates[entity];

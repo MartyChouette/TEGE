@@ -1395,6 +1395,31 @@ void RenderSystem::Update(f32 deltaTime) {
     RefreshStorageCache();
     ResetFrameCounters();
 
+    // Shadow-caster candidates, built lazily ONCE per frame (audit 2026-08-31):
+    // the fit/directional/spot/point shadow passes each re-iterated EVERY mesh
+    // entity. Common filter here (visible, non-empty, not a viewmodel);
+    // pass-specific filters (indices, ground-receiver heuristic) stay inline.
+    static std::vector<Entity> s_WebShadowCasters;
+    bool webShadowCastersBuilt = false;
+    auto webShadowCasters = [&]() -> const std::vector<Entity>& {
+        if (!webShadowCastersBuilt) {
+            webShadowCastersBuilt = true;
+            s_WebShadowCasters.clear();
+            const auto& meshEntities = m_World->GetEntitiesWithComponent<MeshComponent>();
+            s_WebShadowCasters.reserve(meshEntities.size());
+            for (Entity e : meshEntities) {
+                auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(e) : nullptr;
+                auto* xf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(e) : nullptr;
+                if (!mesh || !xf || !xf->visible || mesh->vertices.empty()) continue;
+                // Viewmodels cast no shadows (see Vulkan RenderEntityShadow)
+                auto* vmc = m_CachedViewmodelStorage ? m_CachedViewmodelStorage->Get(e) : nullptr;
+                if (vmc && vmc->enabled) continue;
+                s_WebShadowCasters.push_back(e);
+            }
+        }
+        return s_WebShadowCasters;
+    };
+
     // Mark all transform world-matrix caches dirty so each entity recomputes at
     // most once this frame — same contract as the Vulkan Update. Without this
     // the web path served every parented entity its FIRST frame's cached world
@@ -1677,12 +1702,11 @@ void RenderSystem::Update(f32 deltaTime) {
         Math::Vector3 casterMin(1e9f, 1e9f, 1e9f), casterMax(-1e9f, -1e9f, -1e9f);
         bool haveCasters = false;
         {
-            const auto& fitEnts = m_World->GetEntitiesWithComponent<MeshComponent>();
-            for (Entity fe : fitEnts) {
+            for (Entity fe : webShadowCasters()) {
                 auto* mx = m_CachedTransformStorage ? m_CachedTransformStorage->Get(fe) : nullptr;
                 auto* mm = m_CachedMeshStorage ? m_CachedMeshStorage->Get(fe) : nullptr;
-                if (!mx || !mm || !mx->visible) continue;
-                if (mm->vertices.empty() || mm->indices.empty()) continue;
+                if (!mx || !mm) continue;
+                if (mm->indices.empty()) continue;
                 Math::Vector3 he(std::abs(mx->scale.x), std::abs(mx->scale.y), std::abs(mx->scale.z));
                 if (std::max(he.x, he.z) * 2.0f > 30.0f && he.y * 2.0f < 1.0f) continue;  // ground-like receiver
                 Math::Vector3 lo = mx->position - he, hi = mx->position + he;
@@ -1797,19 +1821,12 @@ void RenderSystem::Update(f32 deltaTime) {
                 wgpuRenderPassEncoderSetBindGroup(shadowPass, 0, nativeShadowFrameBG, 0, nullptr);
 
                 // Draw each mesh entity into shadow map (per-entity buffer + bind group)
-                const auto& meshEntities = m_World->GetEntitiesWithComponent<MeshComponent>();
                 u32 shadowDrawCount = 0;
-                for (Entity entity : meshEntities) {
+                for (Entity entity : webShadowCasters()) {
                     auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
                     auto* xf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
-                    if (!mesh || !xf || !xf->visible) continue;
-                    if (mesh->vertices.empty() || mesh->indices.empty()) continue;
-
-                    // Viewmodels cast no shadows (see Vulkan RenderEntityShadow)
-                    {
-                        auto* vmcS = m_CachedViewmodelStorage ? m_CachedViewmodelStorage->Get(entity) : nullptr;
-                        if (vmcS && vmcS->enabled) continue;
-                    }
+                    if (!mesh || !xf) continue;
+                    if (mesh->indices.empty()) continue;
 
                     // Skip large flat receivers (ground planes) as shadow casters — same
                     // heuristic as the shadow FIT above. A big flat plane rendered into the
@@ -1927,15 +1944,10 @@ void RenderSystem::Update(f32 deltaTime) {
                             static_cast<f32>(WEB_SPOT_SHADOW_SIZE), static_cast<f32>(WEB_SPOT_SHADOW_SIZE), 0.0f, 1.0f);
                         wgpuRenderPassEncoderSetBindGroup(spotPass, 0, webBindMgr2->GetNativeGroup(spotFrameBG), 0, nullptr);
 
-                        const auto& meshEntities = m_World->GetEntitiesWithComponent<MeshComponent>();
-                        for (Entity entity : meshEntities) {
+                        for (Entity entity : webShadowCasters()) {
                             auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
                             auto* exf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
-                            if (!mesh || !exf || !exf->visible || mesh->vertices.empty()) continue;
-                            {   // Viewmodels cast no shadows (see Vulkan RenderEntityShadow)
-                                auto* vmcS = m_CachedViewmodelStorage ? m_CachedViewmodelStorage->Get(entity) : nullptr;
-                                if (vmcS && vmcS->enabled) continue;
-                            }
+                            if (!mesh || !exf) continue;
                             // Skip large flat receivers (ground) as casters — same as the
                             // directional pass; avoids flat-plane self-shadow acne.
                             {
@@ -2044,15 +2056,10 @@ void RenderSystem::Update(f32 deltaTime) {
                             static_cast<f32>(WEB_POINT_SHADOW_SIZE), static_cast<f32>(WEB_POINT_SHADOW_SIZE), 0.0f, 1.0f);
                         wgpuRenderPassEncoderSetBindGroup(facePass, 0, webBindMgr3->GetNativeGroup(faceFrameBG), 0, nullptr);
 
-                        const auto& meshEntities = m_World->GetEntitiesWithComponent<MeshComponent>();
-                        for (Entity entity : meshEntities) {
+                        for (Entity entity : webShadowCasters()) {
                             auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
                             auto* exf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
-                            if (!mesh || !exf || !exf->visible || mesh->vertices.empty()) continue;
-                            {   // Viewmodels cast no shadows (see Vulkan RenderEntityShadow)
-                                auto* vmcS = m_CachedViewmodelStorage ? m_CachedViewmodelStorage->Get(entity) : nullptr;
-                                if (vmcS && vmcS->enabled) continue;
-                            }
+                            if (!mesh || !exf) continue;
                             // Skip large flat receivers (ground) as casters — same as the
                             // directional pass; avoids flat-plane self-shadow acne.
                             {
