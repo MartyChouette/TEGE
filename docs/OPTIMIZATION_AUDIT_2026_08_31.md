@@ -16,7 +16,10 @@ Ground truth established during verification:
 
 ## Verified findings, priority order
 
-### 1. Per-entity descriptor set bind in RenderEntity — HIGH
+### 1. Per-entity descriptor set bind in RenderEntity — HIGH — **FIXED (2fbc13b8)**
+Bind cache armed/disarmed by the entity loops; RenderEntity now also binds the
+ACTIVE set, fixing latent wrong-camera uniforms for tilemap/sprite fallback
+draws in offscreen and splitscreen passes. Golden-verified byte-identical.
 `RenderSystem.cpp:~10786`: every `RenderEntity()` call re-binds set 0
 (`m_DescriptorSets[currentFrame]`) even though the main pass binds it once at setup
 (~5252) and consecutive entity draws don't change it. 100 entities = ~100 redundant
@@ -28,7 +31,10 @@ the parallel-shadow rule it must be passed per-CB, never a shared member. Do it
 carefully or not at all; a missed invalidation = wrong descriptors, which is worse than
 the redundant bind.
 
-### 2. Render list sorted every frame — HIGH (acknowledged in code)
+### 2. Render list sorted every frame — HIGH — **FIXED (2fbc13b8)**
+FNV hash over membership + static key bits, camera-delta threshold, blend
+draws hash their depth bits (movement correctness). Golden-verified.
+Original finding:
 `RenderSystem.cpp:5172-5228`: `m_SortedRenderList` is rebuilt and `std::sort`ed every
 frame; the comment at ~2194 already admits "skipping it would need movement
 dirty-tracking". Opaque geometry only needs re-sorting on entity add/remove or material
