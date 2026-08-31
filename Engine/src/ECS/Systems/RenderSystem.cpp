@@ -5583,9 +5583,10 @@ void RenderSystem::RecordComputePrePass(f32 deltaTime) {
     if (m_ClusteredLighting && m_SceneComposition.mode != SceneRenderMode::Scene2D && m_Camera) {
         VkCommandBuffer cmdBuf = m_VulkanRenderer->GetCurrentCommandBuffer();
         if (cmdBuf != VK_NULL_HANDLE) {
-            // Build ClusterLight array from cached light entities (reuse pre-allocated vector)
+            // Build ClusterLight array from cached light entities
             std::vector<Renderer::ClusterLight> clusterLights;
-            
+            clusterLights.reserve(m_CachedLightEntities.size() + m_TransientPointLights.size());
+
             auto* lightStorageCL = m_World->GetComponentStorage<LightComponent>();
             for (Entity e : m_CachedLightEntities) {
                 auto* light = lightStorageCL ? lightStorageCL->Get(e) : nullptr;
@@ -11954,6 +11955,7 @@ void RenderSystem::RenderShadowPass() {
 
             // Collect valid secondary buffers and execute
             std::vector<VkCommandBuffer> validBuffers;
+            validBuffers.reserve(secondaryBuffers.size());
             for (auto buf : secondaryBuffers) {
                 if (buf != VK_NULL_HANDLE) validBuffers.push_back(buf);
             }
