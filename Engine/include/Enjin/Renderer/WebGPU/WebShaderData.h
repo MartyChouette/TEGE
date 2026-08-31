@@ -938,23 +938,72 @@ fn vs_main(vert: VertexInput, @builtin(instance_index) instanceIdx: u32) -> Vert
     let seed = f32(instanceIdx);
     let rx = hash(seed * 1.0) * 2.0 - 1.0;
     let rz = hash(seed * 2.0) * 2.0 - 1.0;
-    let posX = volume.volumePos.x + rx * volume.halfExtents.x;
-    let posZ = volume.volumePos.z + rz * volume.halfExtents.z;
-    let posY = volume.volumePos.y;
+    let treeOrigin = vec3<f32>(
+        volume.volumePos.x + rx * volume.halfExtents.x,
+        volume.volumePos.y,
+        volume.volumePos.z + rz * volume.halfExtents.z);
 
-    let heightScale = 0.7 + hash(seed * 3.0) * 0.6;
-    var localPos = vert.position;
-    // Scale: trunk width for X/Z, full height scale for Y
-    localPos.x = localPos.x * volume.trunkWidth;
-    localPos.z = localPos.z * volume.trunkWidth;
-    localPos.y = localPos.y * heightScale;
+    // Per-instance size + rotation, matching desktop tree.vert so web trees
+    // don't all face the same way and vary in height.
+    let sizeVar = 0.7 + hash(seed * 3.0) * 0.6;
+    let rotAngle = hash(seed * 7.0 + 5.0) * 6.28318;
+    let cosR = cos(rotAngle);
+    let sinR = sin(rotAngle);
 
-    let worldPos = vec3<f32>(posX + localPos.x, posY + localPos.y, posZ + localPos.z);
+    let isCanopy = vert.uv.y > 0.5;
+
+    // Remap the baked template mesh into the volume's AUTHORED dimensions.
+    // The old shader scaled the whole tree (canopy included) by trunkWidth,
+    // collapsing the crown to a sliver and ignoring trunkHeight/canopyRadius.
+    //   trunk mesh: xz in [-0.5,0.5], y in [0,1]
+    //   canopy mesh: xz in [-1.5,1.5], y in [1.2,4.2]
+    var localPos: vec3<f32>;
+    if (isCanopy) {
+        let r = volume.canopyRadius * sizeVar;
+        let ny = (vert.position.y - 1.2) / 3.0;          // 0..1 up the crown
+        localPos = vec3<f32>(
+            (vert.position.x / 1.5) * r,
+            volume.canopyOffset * sizeVar + ny * r * 2.0,
+            (vert.position.z / 1.5) * r);
+    } else {
+        let w = volume.trunkWidth * 2.0 * sizeVar;
+        localPos = vec3<f32>(
+            vert.position.x * w,
+            vert.position.y * volume.trunkHeight * sizeVar,
+            vert.position.z * w);
+    }
+
+    // Rotate around Y
+    let rotated = vec3<f32>(
+        localPos.x * cosR - localPos.z * sinR,
+        localPos.y,
+        localPos.x * sinR + localPos.z * cosR);
+
+    // Gentle wind sway. Web trees carry no per-zone wind field, so use a fixed
+    // breeze with a per-instance phase: the canopy tips lever from the neck,
+    // the trunk bends quadratically with height (same shape as desktop).
+    let windDir = vec3<f32>(0.80, 0.0, 0.60);
+    let windPhase = dot(treeOrigin.xz, vec2<f32>(0.08, 0.15)) + viewProj.time;
+    let windAngle = sin(windPhase) * 0.12;
+    var windDisp = vec3<f32>(0.0, 0.0, 0.0);
+    if (isCanopy) {
+        let span = max(volume.canopyRadius * 2.0 * sizeVar, 0.01);
+        let lever = clamp((localPos.y - volume.canopyOffset * sizeVar) / span, 0.0, 1.0);
+        windDisp = windDir * (windAngle * 0.5 + windAngle * lever);
+    } else {
+        let t = localPos.y / max(volume.trunkHeight * sizeVar, 0.01);
+        windDisp = windDir * (t * t * windAngle * 0.5);
+    }
+
+    let worldPos = treeOrigin + rotated + windDisp;
 
     var out: VertexOutput;
     out.position = viewProj.proj * viewProj.view * vec4<f32>(worldPos, 1.0);
-    // UV.y > 0.5 = canopy, else trunk
-    out.color = select(volume.trunkColor, volume.canopyColor, vert.uv.y > 0.5);
+    // UV.y > 0.5 = canopy, else trunk; a little vertical shading gives the
+    // crude crossed billboards some depth.
+    let base = select(volume.trunkColor, volume.canopyColor, isCanopy);
+    let shade = select(0.8, 0.7 + (vert.uv.y - 0.6) * 0.75, isCanopy);
+    out.color = base * shade;
     return out;
 }
 
