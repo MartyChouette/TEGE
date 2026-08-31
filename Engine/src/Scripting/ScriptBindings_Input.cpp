@@ -133,6 +133,54 @@ static float Input_GetGamepadRightTrigger(int index) {
 }
 
 // ============================================================================
+// Mobile touch overlay scheme (web) — all no-ops on desktop, so scripts can
+// call these unconditionally. Presets: 0 Platformer2D, 1 TopDown2D,
+// 2 TopDown3D, 3 FirstPerson, 4 ThirdPerson, 5 Generic.
+// ============================================================================
+
+static void Touch_UsePreset(int preset) {
+    if (preset < 0 || preset > static_cast<int>(Input::TouchPreset::Generic)) return;
+    Input::SetTouchControllerPreset(static_cast<Input::TouchPreset>(preset));
+}
+
+static void Touch_ClearButtons() {
+    Input::TouchScheme s = Input::GetTouchScheme();
+    s.buttonCount = 0;
+    Input::SetTouchScheme(s);
+}
+
+// keyCode: GLFW key held while pressed; negative = mouse button (-1 = left
+// click, i.e. fire). col/row place the button on a grid growing up-left from
+// the bottom-right of the safe area; radiusFrac is relative to screen height.
+static void Touch_AddButton(const std::string& label, int keyCode,
+                            float col, float row, float radiusFrac) {
+    Input::TouchScheme s = Input::GetTouchScheme();
+    if (s.buttonCount >= Input::kMaxTouchButtons) return;
+    Input::TouchButtonDef& b = s.buttons[s.buttonCount++];
+    b.keyCode = keyCode;
+    b.colFromRight = col;
+    b.rowFromBottom = row;
+    b.radiusFrac = (radiusFrac > 0.01f && radiusFrac < 0.3f) ? radiusFrac : 0.075f;
+    for (int i = 0; i < 8; ++i) b.label[i] = '\0';
+    for (int i = 0; i < 7 && i < static_cast<int>(label.size()); ++i) b.label[i] = label[i];
+    Input::SetTouchScheme(s);
+}
+
+static void Touch_SetStick(bool enabled, int leftKey, int rightKey, int upKey, int downKey) {
+    Input::TouchScheme s = Input::GetTouchScheme();
+    s.moveStick = enabled;
+    s.stickKeys[0] = leftKey; s.stickKeys[1] = rightKey;
+    s.stickKeys[2] = upKey;   s.stickKeys[3] = downKey;
+    Input::SetTouchScheme(s);
+}
+
+static void Touch_SetLookRegion(bool enabled) {
+    Input::TouchScheme s = Input::GetTouchScheme();
+    s.lookRegion = enabled;
+    Input::SetTouchScheme(s);
+}
+
+// ============================================================================
 // Registration
 // ============================================================================
 
@@ -301,6 +349,19 @@ void RegisterInputBindings(asIScriptEngine* engine) {
         ENJIN_AS_FN(Input_GetGamepadLeftTrigger), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Input_GetGamepadRightTrigger(int)",
         ENJIN_AS_FN(Input_GetGamepadRightTrigger), ENJIN_AS_CALL_CDECL));
+
+    // Mobile touch overlay scheme (web; desktop no-ops)
+    AS_CHECK(engine->RegisterGlobalFunction("void Touch_UsePreset(int)",
+        ENJIN_AS_FN(Touch_UsePreset), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Touch_ClearButtons()",
+        ENJIN_AS_FN(Touch_ClearButtons), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void Touch_AddButton(const string &in, int, float, float, float)",
+        ENJIN_AS_FN(Touch_AddButton), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Touch_SetStick(bool, int, int, int, int)",
+        ENJIN_AS_FN(Touch_SetStick), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Touch_SetLookRegion(bool)",
+        ENJIN_AS_FN(Touch_SetLookRegion), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting

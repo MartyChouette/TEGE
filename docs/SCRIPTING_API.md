@@ -72,6 +72,18 @@ The `TegeBehavior` base class and the `enjin_api` helper scripts (Timer, Tween, 
 `Input_GetGamepadAxis(int, int)` — GamepadAx: LeftX/Y, RightX/Y, triggers
 `Input_GetGamepadLeftStick/RightStick(int)`, `Input_GetGamepadLeftTrigger/RightTrigger(int)`
 
+## Input — Mobile Touch Overlay (web builds; desktop no-ops)
+
+The web player shows on-screen touch controls on phones/tablets: a floating move stick, an optional look-drag region, and up to 6 anchored buttons. A layout preset is auto-selected from the scene's controller type; these calls let a game author its own.
+
+- `Touch_UsePreset(int)` — 0 Platformer2D, 1 TopDown2D, 2 TopDown3D, 3 FirstPerson, 4 ThirdPerson, 5 Generic
+- `Touch_ClearButtons()` — remove all buttons (stick/look unchanged)
+- `Touch_AddButton(const string &in label, int keyCode, float col, float row, float radiusFrac)` — label max 7 chars; keyCode is the key held while pressed, negative = mouse button (-1 = left click / fire); col/row place it on a grid growing up-left from the bottom-right of the safe area; radiusFrac is relative to screen height (~0.07-0.09, out-of-range falls back to 0.075)
+- `Touch_SetStick(bool enabled, int leftKey, int rightKey, int upKey, int downKey)` — remap the stick's 4 direction keys or hide it
+- `Touch_SetLookRegion(bool)` — enable/disable the right-side camera drag region
+
+Custom schemes survive within a scene; the auto-preset reapplies only when the controller type changes (e.g. across scenes), so re-author in `OnStart`.
+
 ## Physics
 
 - `Physics_Raycast(origin, dir, maxDist)`, `Physics_RaycastHit(origin, dir, maxDist, &hit)` — RaycastHit: `point`, `normal`, `distance`, `entity`
