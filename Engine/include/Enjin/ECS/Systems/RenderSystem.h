@@ -1852,6 +1852,17 @@ private:
     std::vector<std::unique_ptr<Renderer::VulkanBuffer>>* m_ActiveUniformBuffers = nullptr;
     std::vector<std::unique_ptr<Renderer::VulkanBuffer>>* m_ActiveLightingBuffers = nullptr;
 
+    // Set-0 bind cache: RenderEntity skips its per-entity descriptor bind when
+    // the same set is already bound on the same command buffer. The cache is
+    // trusted ONLY inside a contiguous run of RenderEntity draws (the entity
+    // loops bracket themselves with InvalidateBoundSet0) — pipeline switches
+    // in the loop are safe because every geometry pipeline shares the main
+    // layout (see BindGeometryPipelineForMaterial). A stale cache means wrong
+    // descriptors; when in doubt, invalidate — a redundant rebind is free.
+    VkCommandBuffer m_Set0BoundCB = VK_NULL_HANDLE;
+    VkDescriptorSet m_Set0BoundSet = VK_NULL_HANDLE;
+    void InvalidateBoundSet0() { m_Set0BoundCB = VK_NULL_HANDLE; m_Set0BoundSet = VK_NULL_HANDLE; }
+
     // When true, active buffer/descriptor indexing uses GetOffscreenBufferIndex
     bool m_OffscreenMode = false;
     u32 m_CurrentViewportIndex = 0;
@@ -1891,6 +1902,17 @@ private:
     bool m_GeometryPoolBound = false;  // Track if geometry pool buffers are bound this pass
 #endif
     std::vector<Entity> m_SortedRenderList;  // Reused per frame to avoid allocation
+
+    // Sort gating: the main-pass sort is skipped when the list's membership +
+    // static sort-key bits (pipeline/material/texture — everything but depth)
+    // are unchanged AND the camera moved less than the depth-order threshold.
+    // Hash 0 = cache invalid, always sort. ANY other writer of
+    // m_SortedRenderList (the splitscreen build) must zero the hash, or a
+    // later frame could keep its foreign order.
+    std::vector<Entity> m_RenderListScratch;
+    u64 m_RenderListStaticHash = 0;
+    Math::Vector3 m_LastSortCamPos{0.0f, 0.0f, 0.0f};
+    bool m_LastSortHadCam = false;
     bool m_RenderListDirty = true;            // Set when entities/materials/visibility change; cleared after sort
     Math::Vector3 m_PrevCameraPos{0, 0, 0};   // Track camera movement for sort key recalculation
     u32 m_PrevEntityCount = 0;                // Detect entity count changes

@@ -5066,6 +5066,9 @@ void RenderSystem::Update(f32 deltaTime) {
                     return keyA < keyB;
                 });
         }
+        // This build used depth=0 keys — the main pass's sort cache must not
+        // mistake it for its own sorted order on the next single-camera frame.
+        m_RenderListStaticHash = 0;
 
         u32 viewportCount = static_cast<u32>(m_MainPassViewports.size());
         if (viewportCount > MAX_SPLITSCREEN_VIEWPORTS) viewportCount = MAX_SPLITSCREEN_VIEWPORTS;
@@ -5140,6 +5143,7 @@ void RenderSystem::Update(f32 deltaTime) {
             auto* spriteStorageVP = m_World->GetComponentStorage<Sprite2DComponent>();
             bool vpTransparentBound = false;
             m_LastPipelineWasCustom = false;   // reset custom-shader pipeline tracking per loop
+            InvalidateBoundSet0();             // arm the set-0 cache fresh per viewport
             for (Entity entity : m_SortedRenderList) {
                 auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
                 if (!xform) continue;
@@ -5160,6 +5164,7 @@ void RenderSystem::Update(f32 deltaTime) {
                 RenderEntity(entity);
             }
             }
+            InvalidateBoundSet0();   // loop over — later passes bind their own sets
 
             // Geometry outline pass (after 3D geometry)
             RenderOutlinePass();
@@ -5200,9 +5205,13 @@ void RenderSystem::Update(f32 deltaTime) {
     // Update bindless descriptor set if any textures were registered/changed
     if (m_BindlessManager) m_BindlessManager->UpdateDescriptorSet();
 
-    // Build the sorted render list every frame (needed by RenderToTarget() offscreen path too)
+    // Build the render list every frame (needed by RenderToTarget() offscreen path too),
+    // but only SORT it when something order-relevant changed: membership, the static
+    // sort-key bits (pipeline/material/texture), or a camera move big enough to alter
+    // depth order. Skipping the sort keeps the previous frame's sorted list — same
+    // entities, still in sorted order.
     {
-        m_SortedRenderList.clear();
+        m_RenderListScratch.clear();
 
         // Multi-component view: iterates the smallest set (Transform or Mesh),
         // filters to entities that have both. Excludes 2D sprites (separate pass).
@@ -5218,7 +5227,15 @@ void RenderSystem::Update(f32 deltaTime) {
         bool haveCam = (m_Camera != nullptr);
         if (haveCam) camPos = m_Camera->GetPosition();
 
-        m_SortedRenderList.reserve(view.UpperBound());
+        m_RenderListScratch.reserve(view.UpperBound());
+
+        // FNV-1a over (entity id, static key bits): order-sensitive, so any
+        // membership, fill-order, pipeline, material, or texture change flips it.
+        u64 staticHash = 1469598103934665603ULL;
+        auto fnv = [&staticHash](u64 v) {
+            staticHash ^= v;
+            staticHash *= 1099511628211ULL;
+        };
 
         for (Entity entity : view) {
             auto* xform = view.Get<TransformComponent>(entity);
@@ -5235,27 +5252,53 @@ void RenderSystem::Update(f32 deltaTime) {
                 }
             }
 
-            // Compute 64-bit sort key (pipeline | material/texture hash | depth)
+            // Compute 64-bit sort key (pipeline | material/texture hash | depth).
+            // Always recomputed — cachedSortKey's texture bits feed pool batching too.
             auto* mat = matStorage ? matStorage->Get(entity) : nullptr;
             if (mat) {
                 f32 depth = haveCam ? (xform->position - camPos).Length() : 0.0f;
                 mat->ComputeSortKey(depth);
             }
 
-            m_SortedRenderList.push_back(entity);
+            {
+                u64 key = mat ? mat->cachedSortKey : 0ULL;
+                fnv(static_cast<u64>(entity));
+                // Static bits always; BLEND draws also hash their depth bits —
+                // back-to-front is a correctness requirement there, so a blend
+                // entity moving a depth quantum forces the re-sort even with a
+                // still camera. Stale opaque depth order only costs early-z.
+                fnv((key >> 56) == 2 ? key : (key >> 16));
+            }
+
+            m_RenderListScratch.push_back(entity);
         }
 
-        // Sort by 64-bit material sort key: groups by pipeline (opaque→mask→blend),
-        // then by material/texture hash (minimizes descriptor set updates),
-        // then by depth (front-to-back for opaque, back-to-front for blend).
-        std::sort(m_SortedRenderList.begin(), m_SortedRenderList.end(),
-            [matStorage](Entity a, Entity b) {
-                auto* matA = matStorage ? matStorage->Get(a) : nullptr;
-                auto* matB = matStorage ? matStorage->Get(b) : nullptr;
-                u64 keyA = matA ? matA->cachedSortKey : 0;
-                u64 keyB = matB ? matB->cachedSortKey : 0;
-                return keyA < keyB;
-            });
+        // Depth is quantized to ~0.15 world units in the key; re-sort once the
+        // camera has moved far enough to plausibly reorder blend draws.
+        constexpr f32 SORT_CAM_THRESHOLD = 0.25f;
+        bool needSort = (staticHash != m_RenderListStaticHash) ||
+                        m_RenderListStaticHash == 0 ||
+                        (haveCam != m_LastSortHadCam) ||
+                        (haveCam && (camPos - m_LastSortCamPos).Length() > SORT_CAM_THRESHOLD);
+
+        if (needSort) {
+            m_SortedRenderList.swap(m_RenderListScratch);
+            // Sort by 64-bit material sort key: groups by pipeline (opaque→mask→blend),
+            // then by material/texture hash (minimizes descriptor set updates),
+            // then by depth (front-to-back for opaque, back-to-front for blend).
+            std::sort(m_SortedRenderList.begin(), m_SortedRenderList.end(),
+                [matStorage](Entity a, Entity b) {
+                    auto* matA = matStorage ? matStorage->Get(a) : nullptr;
+                    auto* matB = matStorage ? matStorage->Get(b) : nullptr;
+                    u64 keyA = matA ? matA->cachedSortKey : 0;
+                    u64 keyB = matB ? matB->cachedSortKey : 0;
+                    return keyA < keyB;
+                });
+            m_RenderListStaticHash = staticHash;
+            m_LastSortCamPos = camPos;
+            m_LastSortHadCam = haveCam;
+        }
+        // else: m_SortedRenderList already holds these exact entities in sorted order
     }
 
     // GPU timestamp: main geometry begin
@@ -5357,6 +5400,7 @@ void RenderSystem::Update(f32 deltaTime) {
 
         bool mainTransparentBound = false; // opaque geometry pipeline currently bound
         m_LastPipelineWasCustom = false;   // reset custom-shader pipeline tracking per loop
+        InvalidateBoundSet0();             // arm the set-0 cache fresh for this loop
 
         // Bone arena: this is the player/main-pass twin of RenderToTarget's inline
         // accumulation. RenderEntity() diverts eligible skinned entities into
@@ -5438,6 +5482,7 @@ void RenderSystem::Update(f32 deltaTime) {
             BindGeometryPipelineForMaterial(commandBuffer, entity, m_Pipeline.get(), m_TransparentPipeline.get(), mainTransparentBound);
             RenderEntity(entity);
         }
+        InvalidateBoundSet0();   // loop over — later passes bind their own sets
         // Restore the full depth range if the last entity was a viewmodel
         SetViewmodelDepth(commandBuffer, false);
 
@@ -10815,8 +10860,19 @@ void RenderSystem::RenderEntity(Entity entity) {
     }
     {
         u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            m_Pipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 0, nullptr);
+        // Bind the ACTIVE set, not the main one — in offscreen/splitscreen
+        // passes (RenderToTarget sprites, per-viewport loops) the active
+        // pointer targets the per-viewport sets; hardcoding m_DescriptorSets
+        // here silently rendered those draws with the main camera's uniforms.
+        VkDescriptorSet set0 = m_ActiveDescriptorSets
+            ? (*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)]
+            : m_DescriptorSets[currentFrame];
+        if (commandBuffer != m_Set0BoundCB || set0 != m_Set0BoundSet) {
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                m_Pipeline->GetLayout(), 0, 1, &set0, 0, nullptr);
+            m_Set0BoundCB = commandBuffer;
+            m_Set0BoundSet = set0;
+        }
     }
 
     // Push model matrix — skinned meshes use identity (skinning already transforms to world space)
@@ -11645,12 +11701,14 @@ void RenderSystem::RenderSprites() {
 
     // Render tilemaps first (layer -1000, behind sprites) via the per-entity path
     // Tilemaps are complex meshes that don't benefit from instance batching — render directly
+    InvalidateBoundSet0();   // arm the set-0 cache fresh for this loop
     for (Entity entity : m_World->GetEntitiesWithComponent<TilemapComponent>()) {
         auto* xformTM = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
         if (!xformTM || !xformTM->visible) continue;
         if (!(m_CachedMeshStorage && m_CachedMeshStorage->Has(entity))) continue;
         RenderEntity(entity);
     }
+    InvalidateBoundSet0();   // batch renderer below binds its own state
 
     // Render sprites via batch renderer (instanced draw calls grouped by texture)
     if (m_SpriteBatchRenderer) {
@@ -11733,9 +11791,11 @@ void RenderSystem::RenderSprites() {
                 return a.orderInLayer < b.orderInLayer;
             });
 
+            InvalidateBoundSet0();   // batch renderer above bound its own state
             for (const auto& entry : sprites) {
                 RenderEntity(entry.entity);
             }
+            InvalidateBoundSet0();
         }
     }
 }
