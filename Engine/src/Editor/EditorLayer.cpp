@@ -809,13 +809,8 @@ void EditorLayer::Update(f32 deltaTime) {
     // MCP-injected input (AI-driven testing) - merged with live hardware.
     ProcessMcpInput(deltaTime);
 
-    // Feed the game-view sim accumulator (consumed once per game-view render
-    // in RenderOffscreen, which the FPS dropdown throttles). SCALED by the
-    // global time scale during play - these are gameplay sims, and bullet
-    // time must slow particles/weather/fluid too (Marty 2026-08-30; the
-    // player runtime scales its whole dt upstream, main.cpp:854).
-    m_GameViewSimAccum += deltaTime *
-        (m_PlayMode.IsPlaying() ? Scripting::GetTimeScale() : 1.0f);
+    // Game-view sims tick after PlayMode below (UpdateGameViewSims) - the
+    // old render-path accumulator (m_GameViewSimAccum) is gone.
 
     // Keep the mesh-reference cache pointed at the current project root so imported
     // meshes stored as project-relative references resolve on scene load/save. Cheap
@@ -2117,6 +2112,11 @@ void EditorLayer::Update(f32 deltaTime) {
     // Update play mode
     m_PlayMode.Update(deltaTime);
 
+    // Game-view sims: update path, AFTER gameplay ticked (fresh camera and
+    // player positions). Time-scaled so bullet time slows them (the player
+    // runtime scales its whole dt upstream; the editor scales per-clock).
+    UpdateGameViewSims(deltaTime * (m_PlayMode.IsPlaying() ? Scripting::GetTimeScale() : 1.0f));
+
     // Show game over screen when ready (player died or victory condition met)
     if (m_PlayMode.IsGameOverReady() && !m_GameMenu.IsGameOverScreen()) {
         // Find the GameOverComponent to get display parameters
@@ -2387,6 +2387,425 @@ void EditorLayer::PrepareRenderTargets() {
 }
 
 
+// Game-view simulations (weather zones, water freeze, world time, seasons,
+// particles, parallax, elemental, fluid, terrain coupling, curl noise) -
+// moved OUT of RenderOffscreen (the sim-in-render smell, audit 2026-08-31).
+// They tick once per editor frame with the time-scaled dt, so the Game View
+// FPS throttle only affects RENDERING and no future sim can couple to render
+// cadence again (the old m_GameViewSimAccum workaround is gone). Runs when
+// the game is playing OR the game view is live (edit-mode preview keeps
+// weather visible); a hidden panel during play no longer freezes the world.
+void EditorLayer::UpdateGameViewSims(f32 simDt) {
+    if (!m_World || !m_RenderSystem) return;
+    if (!m_RenderSystem->IsGameViewReady()) return;
+    if (!m_PlayMode.IsPlaying() && !m_GameViewVisiblePrev && s_GoldenCapturePath.empty()) return;
+
+    // Resolve the game camera by the same rules as RenderOffscreen
+    // (user selection -> active camera), then the zone-detection block
+    // below computes m_CameraZoneOverride, which the render pass reuses.
+    ECS::Entity gameCameraEntity = m_SelectedGameCamera;
+    if (gameCameraEntity != ECS::INVALID_ENTITY &&
+        !m_World->HasComponent<ECS::CameraComponent>(gameCameraEntity)) {
+        gameCameraEntity = ECS::INVALID_ENTITY;
+    }
+    if (gameCameraEntity == ECS::INVALID_ENTITY)
+        gameCameraEntity = ECS::CameraManager::GetActiveCamera(m_World);
+    if (gameCameraEntity == ECS::INVALID_ENTITY) return;
+
+    // Camera zone detection: find the player entity and check CameraTrigger zones
+    m_CameraZoneOverride = ECS::INVALID_ENTITY;
+    {
+        // Use cached player entity; re-scan only if invalid
+        if (m_CachedPlayerEntity == ECS::INVALID_ENTITY || !m_World->IsValid(m_CachedPlayerEntity) ||
+            (!m_World->HasComponent<ECS::Platformer2DController>(m_CachedPlayerEntity) &&
+             !m_World->HasComponent<ECS::TopDown2DController>(m_CachedPlayerEntity) &&
+             !m_World->HasComponent<ECS::TopDown3DController>(m_CachedPlayerEntity) &&
+             !m_World->HasComponent<ECS::ThirdPersonController>(m_CachedPlayerEntity) &&
+             !m_World->HasComponent<ECS::FirstPersonController>(m_CachedPlayerEntity))) {
+            m_CachedPlayerEntity = ECS::INVALID_ENTITY;
+            auto tryFindController = [&](auto entities) {
+                for (ECS::Entity entity : entities) {
+                    m_CachedPlayerEntity = entity;
+                    return;
+                }
+            };
+            tryFindController(m_World->GetEntitiesWithComponent<ECS::Platformer2DController>());
+            if (m_CachedPlayerEntity == ECS::INVALID_ENTITY)
+                tryFindController(m_World->GetEntitiesWithComponent<ECS::TopDown2DController>());
+            if (m_CachedPlayerEntity == ECS::INVALID_ENTITY)
+                tryFindController(m_World->GetEntitiesWithComponent<ECS::TopDown3DController>());
+            if (m_CachedPlayerEntity == ECS::INVALID_ENTITY)
+                tryFindController(m_World->GetEntitiesWithComponent<ECS::ThirdPersonController>());
+            if (m_CachedPlayerEntity == ECS::INVALID_ENTITY)
+                tryFindController(m_World->GetEntitiesWithComponent<ECS::FirstPersonController>());
+        }
+        ECS::Entity playerEntity = m_CachedPlayerEntity;
+
+        if (playerEntity != ECS::INVALID_ENTITY) {
+            auto* playerTransform = m_World->GetComponent<ECS::TransformComponent>(playerEntity);
+            if (playerTransform) {
+                i32 bestCamPriority = INT_MIN;
+                for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::CameraTriggerComponent>()) {
+                    auto* trigger = m_World->GetComponent<ECS::CameraTriggerComponent>(entity);
+                    auto* trigTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
+                    if (trigger && trigTransform && trigger->priority > bestCamPriority) {
+                        if (trigger->ContainsPoint(trigTransform->position, playerTransform->position)) {
+                            // Validate the target camera exists
+                            if (trigger->targetCamera != ECS::INVALID_ENTITY &&
+                                m_World->HasComponent<ECS::CameraComponent>(trigger->targetCamera)) {
+                                m_CameraZoneOverride = trigger->targetCamera;
+                                bestCamPriority = trigger->priority;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Override game camera if a zone-driven camera was found
+        if (m_CameraZoneOverride != ECS::INVALID_ENTITY) {
+            gameCameraEntity = m_CameraZoneOverride;
+        }
+    }
+
+    if (!m_World->IsValid(gameCameraEntity)) return;
+    auto* cameraTransform = m_World->GetComponent<ECS::TransformComponent>(gameCameraEntity);
+    if (!cameraTransform) return;
+
+    // Find active weather zone containing the game camera
+    ECS::WeatherZoneComponent* activeWeatherZone = nullptr;
+    i32 bestWeatherPriority = INT_MIN;
+
+    for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::WeatherZoneComponent>()) {
+        auto* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
+        auto* zoneTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
+        if (zone && zoneTransform && zone->priority > bestWeatherPriority) {
+            if (zone->ContainsPoint(zoneTransform->position, cameraTransform->position)) {
+                activeWeatherZone = zone;
+                bestWeatherPriority = zone->priority;
+            }
+        }
+    }
+
+    // Find active temperature zone containing the game camera
+    ECS::TemperatureZoneComponent* activeTempZone = nullptr;
+    i32 bestTempPriority = INT_MIN;
+
+    for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::TemperatureZoneComponent>()) {
+        auto* zone = m_World->GetComponent<ECS::TemperatureZoneComponent>(entity);
+        auto* zoneTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
+        if (zone && zoneTransform && zone->priority > bestTempPriority) {
+            if (zone->ContainsPoint(zoneTransform->position, cameraTransform->position)) {
+                activeTempZone = zone;
+                bestTempPriority = zone->priority;
+            }
+        }
+    }
+
+    // Configure weather system from active zone
+    m_GameViewWeatherParticles = false;
+    m_GameViewIsRain = false;
+
+    // 2D scenes get precipitation as an XY sheet falling down the screen
+    if (m_RenderSystem) {
+        m_WeatherSystem.SetMode2D(
+            m_RenderSystem->GetSceneComposition().mode != ECS::SceneRenderMode::Scene3D);
+    }
+
+    if (activeWeatherZone && activeWeatherZone->weatherType > 0) {
+        Effects::WeatherType wType = static_cast<Effects::WeatherType>(activeWeatherZone->weatherType);
+
+        // Check if temperature zone overrides precipitation type
+        // Weather types: 2=Rain, 3=HeavyRain, 4=Snow, 6=Storm
+        bool hasPrecipitation = (activeWeatherZone->weatherType == 2 ||
+                                  activeWeatherZone->weatherType == 3 ||
+                                  activeWeatherZone->weatherType == 4 ||
+                                  activeWeatherZone->weatherType == 6);
+
+        if (hasPrecipitation && activeTempZone) {
+            f32 temp = activeTempZone->temperature;
+            if (temp <= 0.0f) {
+                // Freezing: force snow regardless of weather zone type
+                wType = Effects::WeatherType::Snow;
+                m_WeatherSystem.SetWeather(wType, 0.1f);
+                m_WeatherSystem.SetRainIntensity(0.0f);
+                f32 snowInt = (activeWeatherZone->weatherType == 4)
+                    ? activeWeatherZone->snowIntensity
+                    : activeWeatherZone->rainIntensity;
+                m_WeatherSystem.SetSnowIntensity(snowInt);
+                m_GameViewIsRain = false;
+            } else if (temp <= 5.0f) {
+                // Near-freezing: sleet mix (both rain and snow at reduced intensity)
+                f32 blend = temp / 5.0f;  // 0 at 0C, 1 at 5C
+                f32 baseIntensity = (activeWeatherZone->weatherType == 4)
+                    ? activeWeatherZone->snowIntensity
+                    : activeWeatherZone->rainIntensity;
+                m_WeatherSystem.SetWeather(wType, 0.1f);
+                m_WeatherSystem.SetRainIntensity(baseIntensity * blend);
+                m_WeatherSystem.SetSnowIntensity(baseIntensity * (1.0f - blend));
+                m_GameViewIsRain = (blend > 0.5f);
+            } else {
+                // Warm: force rain regardless of weather zone type
+                wType = (activeWeatherZone->weatherType == 6)
+                    ? Effects::WeatherType::Storm
+                    : Effects::WeatherType::Rain;
+                m_WeatherSystem.SetWeather(wType, 0.1f);
+                f32 rainInt = (activeWeatherZone->weatherType == 4)
+                    ? activeWeatherZone->snowIntensity
+                    : activeWeatherZone->rainIntensity;
+                m_WeatherSystem.SetRainIntensity(rainInt);
+                m_WeatherSystem.SetSnowIntensity(0.0f);
+                m_GameViewIsRain = true;
+            }
+        } else {
+            // No temperature zone override - use weather zone as-is
+            m_WeatherSystem.SetWeather(wType, 0.1f);
+
+            if (activeWeatherZone->weatherType == 2 || activeWeatherZone->weatherType == 3 ||
+                activeWeatherZone->weatherType == 6) {
+                m_WeatherSystem.SetRainIntensity(activeWeatherZone->rainIntensity);
+                m_WeatherSystem.SetSnowIntensity(0.0f);
+                m_GameViewIsRain = true;
+            } else if (activeWeatherZone->weatherType == 4) {
+                m_WeatherSystem.SetRainIntensity(0.0f);
+                m_WeatherSystem.SetSnowIntensity(activeWeatherZone->snowIntensity);
+            } else {
+                m_WeatherSystem.SetRainIntensity(0.0f);
+                m_WeatherSystem.SetSnowIntensity(0.0f);
+            }
+        }
+        m_WeatherSystem.SetFogDensity(activeWeatherZone->fogDensity);
+        m_WeatherSystem.SetFogColor(activeWeatherZone->fogColor);
+        m_WeatherSystem.SetFogStart(activeWeatherZone->fogStart);
+        m_WeatherSystem.SetFogEnd(activeWeatherZone->fogEnd);
+
+        m_WindSystem.SetZoneOverride(activeWeatherZone->windDirection, activeWeatherZone->windStrength);
+        m_WeatherSystem.SetWindDirection(activeWeatherZone->windDirection);
+        m_WeatherSystem.SetWindStrength(activeWeatherZone->windStrength);
+
+        // Custom rain/snow sprites: resolve zone texture paths to bindless indices
+        // once (cached; -1 = none/failed → built-in procedural look)
+        if (m_RenderSystem) {
+            if (activeWeatherZone->cachedRainTexIndex == -2)
+                activeWeatherZone->cachedRainTexIndex =
+                    m_RenderSystem->ResolveBindlessTextureIndex(activeWeatherZone->rainTexturePath);
+            if (activeWeatherZone->cachedSnowTexIndex == -2)
+                activeWeatherZone->cachedSnowTexIndex =
+                    m_RenderSystem->ResolveBindlessTextureIndex(activeWeatherZone->snowTexturePath);
+        }
+        m_WeatherSystem.SetRainTextureIndex(activeWeatherZone->cachedRainTexIndex);
+        m_WeatherSystem.SetSnowTextureIndex(activeWeatherZone->cachedSnowTexIndex);
+
+        if (activeWeatherZone->lightningEnabled) {
+            m_WeatherSystem.SetLightningInterval(
+                activeWeatherZone->lightningMinInterval,
+                activeWeatherZone->lightningMaxInterval);
+        }
+
+        // (weather sim update moved BELOW the zone if/else - it must run in
+        // the no-zone case too, and with real elapsed time.)
+
+        m_GameViewWeatherParticles = (activeWeatherZone->weatherType == 2 ||
+                               activeWeatherZone->weatherType == 3 ||
+                               activeWeatherZone->weatherType == 4 ||
+                               activeWeatherZone->weatherType == 6);
+
+        // Feed fog parameters to render system for shader-based fog
+        m_RenderSystem->SetFogParams(activeWeatherZone->fogDensity,
+                                     activeWeatherZone->fogStart,
+                                     activeWeatherZone->fogEnd, 0.1f);
+        m_RenderSystem->SetFogColor(activeWeatherZone->fogColor);
+
+        // Feed snow intensity for surface accumulation (temperature-aware)
+        f32 snowAccum = 0.0f;
+        if (activeTempZone && hasPrecipitation) {
+            // Temperature zone drives whether snow accumulates
+            if (activeTempZone->temperature <= 0.0f) {
+                f32 intensity = (activeWeatherZone->weatherType == 4)
+                    ? activeWeatherZone->snowIntensity
+                    : activeWeatherZone->rainIntensity;
+                snowAccum = intensity;
+            } else if (activeTempZone->temperature <= 5.0f) {
+                f32 blend = activeTempZone->temperature / 5.0f;
+                f32 intensity = (activeWeatherZone->weatherType == 4)
+                    ? activeWeatherZone->snowIntensity
+                    : activeWeatherZone->rainIntensity;
+                snowAccum = intensity * (1.0f - blend);
+            }
+        } else if (activeWeatherZone->weatherType == 4) {
+            snowAccum = activeWeatherZone->snowIntensity;
+        }
+        m_RenderSystem->SetSnowIntensity(snowAccum);
+    } else {
+        m_WeatherSystem.SetWeather(Effects::WeatherType::Clear, 0.5f);
+        m_WeatherSystem.SetRainTextureIndex(-1);
+        m_WeatherSystem.SetSnowTextureIndex(-1);
+        m_WindSystem.ClearZoneOverride();
+        m_RenderSystem->SetFogParams(0.0f, 20.0f, 100.0f, 0.1f);
+        m_RenderSystem->SetFogColor(Math::Vector3(0.5f, 0.5f, 0.6f));
+        m_RenderSystem->SetSnowIntensity(0.0f);
+    }
+
+    // Weather SIM step - two fixes in one (Marty 2026-08-30):
+    // 1. REAL elapsed time, not the editor's per-frame dt. This code runs in
+    //    the game-view render path, which the Game View FPS dropdown
+    //    throttles - at 30fps it ran 30x/sec with a full-rate dt, so rain
+    //    fell at a fraction of real speed ("why is speed of things changing
+    //    when I slow down fps"). The accumulator (fed every editor frame in
+    //    Update) makes sim time frame-rate independent.
+    // 2. Runs for the NO-ZONE case too - scripted weather
+    //    (Weather_SetRainIntensity with no WeatherZone entity) previously
+    //    never advanced the particle sim in the editor.
+    m_WeatherSystem.Update(simDt, cameraTransform->position);
+    // Weather-driven sky: rain greys the gradient, snow pales it (live).
+    m_RenderSystem->SetWeatherSkyBlend(m_WeatherSystem.GetRainIntensity(),
+                                       m_WeatherSystem.GetSnowIntensity());
+
+    // Water freeze/thaw driven by temperature zones
+    for (ECS::Entity waterEntity : m_World->GetEntitiesWithComponent<ECS::WaterVolumeComponent>()) {
+        auto* waterVol = m_World->GetComponent<ECS::WaterVolumeComponent>(waterEntity);
+        auto* waterTransform = m_World->GetComponent<ECS::TransformComponent>(waterEntity);
+        if (!waterVol || !waterTransform) continue;
+
+        // Find highest-priority temperature zone containing this water entity
+        ECS::TemperatureZoneComponent* waterTempZone = nullptr;
+        i32 bestWaterTempPri = INT_MIN;
+        for (ECS::Entity tzEntity : m_World->GetEntitiesWithComponent<ECS::TemperatureZoneComponent>()) {
+            auto* tz = m_World->GetComponent<ECS::TemperatureZoneComponent>(tzEntity);
+            auto* tzTransform = m_World->GetComponent<ECS::TransformComponent>(tzEntity);
+            if (tz && tzTransform && tz->priority > bestWaterTempPri) {
+                if (tz->ContainsPoint(tzTransform->position, waterTransform->position)) {
+                    waterTempZone = tz;
+                    bestWaterTempPri = tz->priority;
+                }
+            }
+        }
+
+        if (waterTempZone && waterTempZone->IsFreezing()) {
+            // Freezing: increase freeze progress
+            waterVol->freezeProgress += waterVol->freezeRate * simDt;
+            if (waterVol->freezeProgress > 1.0f) waterVol->freezeProgress = 1.0f;
+        } else if (waterTempZone && waterTempZone->IsNearFreezing()) {
+            // Near-freezing (0-5C): lerp toward partial freeze (0.3)
+            f32 target = 0.3f;
+            if (waterVol->freezeProgress < target) {
+                waterVol->freezeProgress += waterVol->freezeRate * 0.5f * simDt;
+                if (waterVol->freezeProgress > target) waterVol->freezeProgress = target;
+            } else {
+                waterVol->freezeProgress -= waterVol->thawRate * 0.5f * simDt;
+                if (waterVol->freezeProgress < target) waterVol->freezeProgress = target;
+            }
+        } else {
+            // Warm or no zone: thaw
+            waterVol->freezeProgress -= waterVol->thawRate * simDt;
+            if (waterVol->freezeProgress < 0.0f) waterVol->freezeProgress = 0.0f;
+        }
+        waterVol->isFrozen = (waterVol->freezeProgress >= 0.99f);
+    }
+
+    // World Time System: advance clock and update sun/ambient
+    if (m_WorldTimeEnabled) {
+        m_WorldTime.Update(simDt);
+
+        const auto& timeState = m_WorldTime.GetState();
+
+        // Override sun direction on the first directional light
+        Math::Vector3 sunDir = m_WorldTime.GetSunDirection();
+        for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::LightComponent>()) {
+            auto* light = m_World->GetComponent<ECS::LightComponent>(entity);
+            auto* lightTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
+            if (light && light->type == ECS::LightType::Directional && lightTransform) {
+                // Encode sun direction into rotation
+                lightTransform->rotation = Math::Quaternion::FromEuler(
+                    Math::Vector3(
+                        std::asin(-sunDir.y) * 57.29578f,
+                        std::atan2(-sunDir.x, -sunDir.z) * 57.29578f,
+                        0.0f
+                    ));
+                light->intensity = m_WorldTime.GetAmbientIntensity() * 1.5f;
+                light->color = Math::Vector3(1.0f, 0.95f, 0.9f);
+                if (timeState.isNight) {
+                    light->color = Math::Vector3(0.3f, 0.35f, 0.5f);
+                    light->intensity = 0.3f;
+                }
+                break;
+            }
+        }
+
+        // Update ambient
+        m_RenderSystem->SetAmbientColor(m_WorldTime.GetAmbientColor());
+        m_RenderSystem->SetAmbientIntensity(m_WorldTime.GetAmbientIntensity());
+    }
+
+    // Seasonal Weather System: temperature and weather transitions
+    if (m_WorldTimeEnabled && m_SeasonalWeatherEnabled && !activeWeatherZone) {
+        m_SeasonalWeather.Update(simDt, m_WorldTime.GetState(), m_WeatherSystem);
+    }
+
+    // World curvature
+    if (m_WorldCurvatureEnabled) {
+        m_RenderSystem->SetWorldCurvature(m_WorldCurvature);
+    } else {
+        m_RenderSystem->SetWorldCurvature(0.0f);
+    }
+
+    // Pass season state to tree renderer
+    if (m_WorldTimeEnabled && m_RenderSystem) {
+        auto* treeRenderer = m_RenderSystem->GetTreeRenderer();
+        if (treeRenderer) {
+            treeRenderer->SetSeasonState(m_WorldTime.GetCurrentSeason(), m_WorldTime.GetSeasonProgress());
+        }
+    }
+
+    // Notify render system whether rain is active (drives water ripple shader)
+    m_RenderSystem->SetRainActive(m_GameViewIsRain);
+
+    // Update particle emitter simulation (push scene wind so wind-driven emitters drift)
+    if (auto* ws = m_RenderSystem ? m_RenderSystem->GetWindSystem() : nullptr) {
+        Math::Vector4 w = ws->GetWindVector();
+        m_ParticleSystem.SetSceneWind(Math::Vector3(w.x, w.y, w.z));
+    }
+    m_ParticleSystem.Update(simDt, m_World);
+
+    // Update parallax scrolling backgrounds (auto-scroll advance)
+    m_ParallaxSystem.Update(simDt);
+
+    // Update elemental system (fire/water/earth/air particle simulation)
+    if (cameraTransform) {
+        // Register fire thermal feedback to wind system
+        m_WindSystem.ClearHeatSources();
+        const auto& elemPool = m_ElementalSystem.GetPool();
+        for (u32 i = 0; i < elemPool.activeCount && i < 8192; ++i) {
+            if (elemPool.elements[i].x > 0.5f && elemPool.intensities[i] > 0.3f) {
+                m_WindSystem.RegisterHeatSource(elemPool.positions[i], elemPool.intensities[i]);
+            }
+        }
+        m_ElementalSystem.Update(m_World, simDt, cameraTransform->position);
+
+        // Feed fire emitters into the renderer as transient point lights. One
+        // source lights both surfaces (PBR point lights) and participating media
+        // (clustered lighting -> volumetric fog froxels), so fire glows on walls
+        // and through nearby smoke/fog in lockstep.
+        if (m_RenderSystem) {
+            m_EffectsTime += simDt;
+            m_ElementalSystem.BuildFireLights(m_EffectsTime, m_FireLights);
+            m_RenderSystem->ClearTransientPointLights();
+            for (const auto& fl : m_FireLights) {
+                m_RenderSystem->AddTransientPointLight(fl.position, fl.range, fl.color, fl.intensity);
+            }
+        }
+    }
+
+    // Update fluid simulation
+    m_FluidSimulation.Update(simDt, m_World);
+
+    // Update fluid-terrain coupling (erosion/deposition)
+    m_FluidTerrainCoupling.Update(simDt, m_World, m_FluidSimulation);
+
+    // Update curl noise flow fields
+    if (m_CurlNoiseSystem) m_CurlNoiseSystem->Update(simDt);
+}
+
 void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     ENJIN_PROFILE_SCOPE("Render");
 
@@ -2581,11 +3000,6 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
 
     auto renderTimingStart = std::chrono::high_resolution_clock::now();
 
-    // Real time since the game view last rendered - the ONE dt for every
-    // simulation below (the FPS-dropdown throttle early-returns above, so
-    // m_LastDeltaTime under-counts by the skip ratio).
-    const f32 simDt = m_GameViewSimAccum;
-    m_GameViewSimAccum = 0.0f;
 
     // Render target resize is handled by PrepareRenderTargets() before command buffer recording.
 
@@ -2610,60 +3024,11 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         return;
     }
 
-    // Camera zone detection: find the player entity and check CameraTrigger zones
-    m_CameraZoneOverride = ECS::INVALID_ENTITY;
-    {
-        // Use cached player entity; re-scan only if invalid
-        if (m_CachedPlayerEntity == ECS::INVALID_ENTITY || !m_World->IsValid(m_CachedPlayerEntity) ||
-            (!m_World->HasComponent<ECS::Platformer2DController>(m_CachedPlayerEntity) &&
-             !m_World->HasComponent<ECS::TopDown2DController>(m_CachedPlayerEntity) &&
-             !m_World->HasComponent<ECS::TopDown3DController>(m_CachedPlayerEntity) &&
-             !m_World->HasComponent<ECS::ThirdPersonController>(m_CachedPlayerEntity) &&
-             !m_World->HasComponent<ECS::FirstPersonController>(m_CachedPlayerEntity))) {
-            m_CachedPlayerEntity = ECS::INVALID_ENTITY;
-            auto tryFindController = [&](auto entities) {
-                for (ECS::Entity entity : entities) {
-                    m_CachedPlayerEntity = entity;
-                    return;
-                }
-            };
-            tryFindController(m_World->GetEntitiesWithComponent<ECS::Platformer2DController>());
-            if (m_CachedPlayerEntity == ECS::INVALID_ENTITY)
-                tryFindController(m_World->GetEntitiesWithComponent<ECS::TopDown2DController>());
-            if (m_CachedPlayerEntity == ECS::INVALID_ENTITY)
-                tryFindController(m_World->GetEntitiesWithComponent<ECS::TopDown3DController>());
-            if (m_CachedPlayerEntity == ECS::INVALID_ENTITY)
-                tryFindController(m_World->GetEntitiesWithComponent<ECS::ThirdPersonController>());
-            if (m_CachedPlayerEntity == ECS::INVALID_ENTITY)
-                tryFindController(m_World->GetEntitiesWithComponent<ECS::FirstPersonController>());
-        }
-        ECS::Entity playerEntity = m_CachedPlayerEntity;
-
-        if (playerEntity != ECS::INVALID_ENTITY) {
-            auto* playerTransform = m_World->GetComponent<ECS::TransformComponent>(playerEntity);
-            if (playerTransform) {
-                i32 bestCamPriority = INT_MIN;
-                for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::CameraTriggerComponent>()) {
-                    auto* trigger = m_World->GetComponent<ECS::CameraTriggerComponent>(entity);
-                    auto* trigTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
-                    if (trigger && trigTransform && trigger->priority > bestCamPriority) {
-                        if (trigger->ContainsPoint(trigTransform->position, playerTransform->position)) {
-                            // Validate the target camera exists
-                            if (trigger->targetCamera != ECS::INVALID_ENTITY &&
-                                m_World->HasComponent<ECS::CameraComponent>(trigger->targetCamera)) {
-                                m_CameraZoneOverride = trigger->targetCamera;
-                                bestCamPriority = trigger->priority;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Override game camera if a zone-driven camera was found
-        if (m_CameraZoneOverride != ECS::INVALID_ENTITY) {
-            gameCameraEntity = m_CameraZoneOverride;
-        }
+    // Zone-driven camera override was computed by UpdateGameViewSims this
+    // frame (sims live in the update path now); apply it for rendering.
+    if (m_CameraZoneOverride != ECS::INVALID_ENTITY &&
+        m_World->HasComponent<ECS::CameraComponent>(m_CameraZoneOverride)) {
+        gameCameraEntity = m_CameraZoneOverride;
     }
 
     if (!m_World->IsValid(gameCameraEntity)) return;
@@ -2712,338 +3077,8 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         m_RenderSystem->SetRTCameraOverride(&m_RTGameCamera);
     }
 
-    // Find active weather zone containing the game camera
-    ECS::WeatherZoneComponent* activeWeatherZone = nullptr;
-    i32 bestWeatherPriority = INT_MIN;
-
-    for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::WeatherZoneComponent>()) {
-        auto* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
-        auto* zoneTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
-        if (zone && zoneTransform && zone->priority > bestWeatherPriority) {
-            if (zone->ContainsPoint(zoneTransform->position, cameraTransform->position)) {
-                activeWeatherZone = zone;
-                bestWeatherPriority = zone->priority;
-            }
-        }
-    }
-
-    // Find active temperature zone containing the game camera
-    ECS::TemperatureZoneComponent* activeTempZone = nullptr;
-    i32 bestTempPriority = INT_MIN;
-
-    for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::TemperatureZoneComponent>()) {
-        auto* zone = m_World->GetComponent<ECS::TemperatureZoneComponent>(entity);
-        auto* zoneTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
-        if (zone && zoneTransform && zone->priority > bestTempPriority) {
-            if (zone->ContainsPoint(zoneTransform->position, cameraTransform->position)) {
-                activeTempZone = zone;
-                bestTempPriority = zone->priority;
-            }
-        }
-    }
-
-    // Configure weather system from active zone
-    bool hasWeatherParticles = false;
-    bool isRain = false;
-
-    // 2D scenes get precipitation as an XY sheet falling down the screen
-    if (m_RenderSystem) {
-        m_WeatherSystem.SetMode2D(
-            m_RenderSystem->GetSceneComposition().mode != ECS::SceneRenderMode::Scene3D);
-    }
-
-    if (activeWeatherZone && activeWeatherZone->weatherType > 0) {
-        Effects::WeatherType wType = static_cast<Effects::WeatherType>(activeWeatherZone->weatherType);
-
-        // Check if temperature zone overrides precipitation type
-        // Weather types: 2=Rain, 3=HeavyRain, 4=Snow, 6=Storm
-        bool hasPrecipitation = (activeWeatherZone->weatherType == 2 ||
-                                  activeWeatherZone->weatherType == 3 ||
-                                  activeWeatherZone->weatherType == 4 ||
-                                  activeWeatherZone->weatherType == 6);
-
-        if (hasPrecipitation && activeTempZone) {
-            f32 temp = activeTempZone->temperature;
-            if (temp <= 0.0f) {
-                // Freezing: force snow regardless of weather zone type
-                wType = Effects::WeatherType::Snow;
-                m_WeatherSystem.SetWeather(wType, 0.1f);
-                m_WeatherSystem.SetRainIntensity(0.0f);
-                f32 snowInt = (activeWeatherZone->weatherType == 4)
-                    ? activeWeatherZone->snowIntensity
-                    : activeWeatherZone->rainIntensity;
-                m_WeatherSystem.SetSnowIntensity(snowInt);
-                isRain = false;
-            } else if (temp <= 5.0f) {
-                // Near-freezing: sleet mix (both rain and snow at reduced intensity)
-                f32 blend = temp / 5.0f;  // 0 at 0C, 1 at 5C
-                f32 baseIntensity = (activeWeatherZone->weatherType == 4)
-                    ? activeWeatherZone->snowIntensity
-                    : activeWeatherZone->rainIntensity;
-                m_WeatherSystem.SetWeather(wType, 0.1f);
-                m_WeatherSystem.SetRainIntensity(baseIntensity * blend);
-                m_WeatherSystem.SetSnowIntensity(baseIntensity * (1.0f - blend));
-                isRain = (blend > 0.5f);
-            } else {
-                // Warm: force rain regardless of weather zone type
-                wType = (activeWeatherZone->weatherType == 6)
-                    ? Effects::WeatherType::Storm
-                    : Effects::WeatherType::Rain;
-                m_WeatherSystem.SetWeather(wType, 0.1f);
-                f32 rainInt = (activeWeatherZone->weatherType == 4)
-                    ? activeWeatherZone->snowIntensity
-                    : activeWeatherZone->rainIntensity;
-                m_WeatherSystem.SetRainIntensity(rainInt);
-                m_WeatherSystem.SetSnowIntensity(0.0f);
-                isRain = true;
-            }
-        } else {
-            // No temperature zone override - use weather zone as-is
-            m_WeatherSystem.SetWeather(wType, 0.1f);
-
-            if (activeWeatherZone->weatherType == 2 || activeWeatherZone->weatherType == 3 ||
-                activeWeatherZone->weatherType == 6) {
-                m_WeatherSystem.SetRainIntensity(activeWeatherZone->rainIntensity);
-                m_WeatherSystem.SetSnowIntensity(0.0f);
-                isRain = true;
-            } else if (activeWeatherZone->weatherType == 4) {
-                m_WeatherSystem.SetRainIntensity(0.0f);
-                m_WeatherSystem.SetSnowIntensity(activeWeatherZone->snowIntensity);
-            } else {
-                m_WeatherSystem.SetRainIntensity(0.0f);
-                m_WeatherSystem.SetSnowIntensity(0.0f);
-            }
-        }
-        m_WeatherSystem.SetFogDensity(activeWeatherZone->fogDensity);
-        m_WeatherSystem.SetFogColor(activeWeatherZone->fogColor);
-        m_WeatherSystem.SetFogStart(activeWeatherZone->fogStart);
-        m_WeatherSystem.SetFogEnd(activeWeatherZone->fogEnd);
-
-        m_WindSystem.SetZoneOverride(activeWeatherZone->windDirection, activeWeatherZone->windStrength);
-        m_WeatherSystem.SetWindDirection(activeWeatherZone->windDirection);
-        m_WeatherSystem.SetWindStrength(activeWeatherZone->windStrength);
-
-        // Custom rain/snow sprites: resolve zone texture paths to bindless indices
-        // once (cached; -1 = none/failed → built-in procedural look)
-        if (m_RenderSystem) {
-            if (activeWeatherZone->cachedRainTexIndex == -2)
-                activeWeatherZone->cachedRainTexIndex =
-                    m_RenderSystem->ResolveBindlessTextureIndex(activeWeatherZone->rainTexturePath);
-            if (activeWeatherZone->cachedSnowTexIndex == -2)
-                activeWeatherZone->cachedSnowTexIndex =
-                    m_RenderSystem->ResolveBindlessTextureIndex(activeWeatherZone->snowTexturePath);
-        }
-        m_WeatherSystem.SetRainTextureIndex(activeWeatherZone->cachedRainTexIndex);
-        m_WeatherSystem.SetSnowTextureIndex(activeWeatherZone->cachedSnowTexIndex);
-
-        if (activeWeatherZone->lightningEnabled) {
-            m_WeatherSystem.SetLightningInterval(
-                activeWeatherZone->lightningMinInterval,
-                activeWeatherZone->lightningMaxInterval);
-        }
-
-        // (weather sim update moved BELOW the zone if/else - it must run in
-        // the no-zone case too, and with real elapsed time.)
-
-        hasWeatherParticles = (activeWeatherZone->weatherType == 2 ||
-                               activeWeatherZone->weatherType == 3 ||
-                               activeWeatherZone->weatherType == 4 ||
-                               activeWeatherZone->weatherType == 6);
-
-        // Feed fog parameters to render system for shader-based fog
-        m_RenderSystem->SetFogParams(activeWeatherZone->fogDensity,
-                                     activeWeatherZone->fogStart,
-                                     activeWeatherZone->fogEnd, 0.1f);
-        m_RenderSystem->SetFogColor(activeWeatherZone->fogColor);
-
-        // Feed snow intensity for surface accumulation (temperature-aware)
-        f32 snowAccum = 0.0f;
-        if (activeTempZone && hasPrecipitation) {
-            // Temperature zone drives whether snow accumulates
-            if (activeTempZone->temperature <= 0.0f) {
-                f32 intensity = (activeWeatherZone->weatherType == 4)
-                    ? activeWeatherZone->snowIntensity
-                    : activeWeatherZone->rainIntensity;
-                snowAccum = intensity;
-            } else if (activeTempZone->temperature <= 5.0f) {
-                f32 blend = activeTempZone->temperature / 5.0f;
-                f32 intensity = (activeWeatherZone->weatherType == 4)
-                    ? activeWeatherZone->snowIntensity
-                    : activeWeatherZone->rainIntensity;
-                snowAccum = intensity * (1.0f - blend);
-            }
-        } else if (activeWeatherZone->weatherType == 4) {
-            snowAccum = activeWeatherZone->snowIntensity;
-        }
-        m_RenderSystem->SetSnowIntensity(snowAccum);
-    } else {
-        m_WeatherSystem.SetWeather(Effects::WeatherType::Clear, 0.5f);
-        m_WeatherSystem.SetRainTextureIndex(-1);
-        m_WeatherSystem.SetSnowTextureIndex(-1);
-        m_WindSystem.ClearZoneOverride();
-        m_RenderSystem->SetFogParams(0.0f, 20.0f, 100.0f, 0.1f);
-        m_RenderSystem->SetFogColor(Math::Vector3(0.5f, 0.5f, 0.6f));
-        m_RenderSystem->SetSnowIntensity(0.0f);
-    }
-
-    // Weather SIM step - two fixes in one (Marty 2026-08-30):
-    // 1. REAL elapsed time, not the editor's per-frame dt. This code runs in
-    //    the game-view render path, which the Game View FPS dropdown
-    //    throttles - at 30fps it ran 30x/sec with a full-rate dt, so rain
-    //    fell at a fraction of real speed ("why is speed of things changing
-    //    when I slow down fps"). The accumulator (fed every editor frame in
-    //    Update) makes sim time frame-rate independent.
-    // 2. Runs for the NO-ZONE case too - scripted weather
-    //    (Weather_SetRainIntensity with no WeatherZone entity) previously
-    //    never advanced the particle sim in the editor.
-    m_WeatherSystem.Update(simDt, cameraTransform->position);
-    // Weather-driven sky: rain greys the gradient, snow pales it (live).
-    m_RenderSystem->SetWeatherSkyBlend(m_WeatherSystem.GetRainIntensity(),
-                                       m_WeatherSystem.GetSnowIntensity());
-
-    // Water freeze/thaw driven by temperature zones
-    for (ECS::Entity waterEntity : m_World->GetEntitiesWithComponent<ECS::WaterVolumeComponent>()) {
-        auto* waterVol = m_World->GetComponent<ECS::WaterVolumeComponent>(waterEntity);
-        auto* waterTransform = m_World->GetComponent<ECS::TransformComponent>(waterEntity);
-        if (!waterVol || !waterTransform) continue;
-
-        // Find highest-priority temperature zone containing this water entity
-        ECS::TemperatureZoneComponent* waterTempZone = nullptr;
-        i32 bestWaterTempPri = INT_MIN;
-        for (ECS::Entity tzEntity : m_World->GetEntitiesWithComponent<ECS::TemperatureZoneComponent>()) {
-            auto* tz = m_World->GetComponent<ECS::TemperatureZoneComponent>(tzEntity);
-            auto* tzTransform = m_World->GetComponent<ECS::TransformComponent>(tzEntity);
-            if (tz && tzTransform && tz->priority > bestWaterTempPri) {
-                if (tz->ContainsPoint(tzTransform->position, waterTransform->position)) {
-                    waterTempZone = tz;
-                    bestWaterTempPri = tz->priority;
-                }
-            }
-        }
-
-        if (waterTempZone && waterTempZone->IsFreezing()) {
-            // Freezing: increase freeze progress
-            waterVol->freezeProgress += waterVol->freezeRate * simDt;
-            if (waterVol->freezeProgress > 1.0f) waterVol->freezeProgress = 1.0f;
-        } else if (waterTempZone && waterTempZone->IsNearFreezing()) {
-            // Near-freezing (0-5C): lerp toward partial freeze (0.3)
-            f32 target = 0.3f;
-            if (waterVol->freezeProgress < target) {
-                waterVol->freezeProgress += waterVol->freezeRate * 0.5f * simDt;
-                if (waterVol->freezeProgress > target) waterVol->freezeProgress = target;
-            } else {
-                waterVol->freezeProgress -= waterVol->thawRate * 0.5f * simDt;
-                if (waterVol->freezeProgress < target) waterVol->freezeProgress = target;
-            }
-        } else {
-            // Warm or no zone: thaw
-            waterVol->freezeProgress -= waterVol->thawRate * simDt;
-            if (waterVol->freezeProgress < 0.0f) waterVol->freezeProgress = 0.0f;
-        }
-        waterVol->isFrozen = (waterVol->freezeProgress >= 0.99f);
-    }
-
-    // World Time System: advance clock and update sun/ambient
-    if (m_WorldTimeEnabled) {
-        m_WorldTime.Update(simDt);
-
-        const auto& timeState = m_WorldTime.GetState();
-
-        // Override sun direction on the first directional light
-        Math::Vector3 sunDir = m_WorldTime.GetSunDirection();
-        for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::LightComponent>()) {
-            auto* light = m_World->GetComponent<ECS::LightComponent>(entity);
-            auto* lightTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
-            if (light && light->type == ECS::LightType::Directional && lightTransform) {
-                // Encode sun direction into rotation
-                lightTransform->rotation = Math::Quaternion::FromEuler(
-                    Math::Vector3(
-                        std::asin(-sunDir.y) * 57.29578f,
-                        std::atan2(-sunDir.x, -sunDir.z) * 57.29578f,
-                        0.0f
-                    ));
-                light->intensity = m_WorldTime.GetAmbientIntensity() * 1.5f;
-                light->color = Math::Vector3(1.0f, 0.95f, 0.9f);
-                if (timeState.isNight) {
-                    light->color = Math::Vector3(0.3f, 0.35f, 0.5f);
-                    light->intensity = 0.3f;
-                }
-                break;
-            }
-        }
-
-        // Update ambient
-        m_RenderSystem->SetAmbientColor(m_WorldTime.GetAmbientColor());
-        m_RenderSystem->SetAmbientIntensity(m_WorldTime.GetAmbientIntensity());
-    }
-
-    // Seasonal Weather System: temperature and weather transitions
-    if (m_WorldTimeEnabled && m_SeasonalWeatherEnabled && !activeWeatherZone) {
-        m_SeasonalWeather.Update(simDt, m_WorldTime.GetState(), m_WeatherSystem);
-    }
-
-    // World curvature
-    if (m_WorldCurvatureEnabled) {
-        m_RenderSystem->SetWorldCurvature(m_WorldCurvature);
-    } else {
-        m_RenderSystem->SetWorldCurvature(0.0f);
-    }
-
-    // Pass season state to tree renderer
-    if (m_WorldTimeEnabled && m_RenderSystem) {
-        auto* treeRenderer = m_RenderSystem->GetTreeRenderer();
-        if (treeRenderer) {
-            treeRenderer->SetSeasonState(m_WorldTime.GetCurrentSeason(), m_WorldTime.GetSeasonProgress());
-        }
-    }
-
-    // Notify render system whether rain is active (drives water ripple shader)
-    m_RenderSystem->SetRainActive(isRain);
-
-    // Update particle emitter simulation (push scene wind so wind-driven emitters drift)
-    if (auto* ws = m_RenderSystem ? m_RenderSystem->GetWindSystem() : nullptr) {
-        Math::Vector4 w = ws->GetWindVector();
-        m_ParticleSystem.SetSceneWind(Math::Vector3(w.x, w.y, w.z));
-    }
-    m_ParticleSystem.Update(simDt, m_World);
-
-    // Update parallax scrolling backgrounds (auto-scroll advance)
-    m_ParallaxSystem.Update(simDt);
-
-    // Update elemental system (fire/water/earth/air particle simulation)
-    if (cameraTransform) {
-        // Register fire thermal feedback to wind system
-        m_WindSystem.ClearHeatSources();
-        const auto& elemPool = m_ElementalSystem.GetPool();
-        for (u32 i = 0; i < elemPool.activeCount && i < 8192; ++i) {
-            if (elemPool.elements[i].x > 0.5f && elemPool.intensities[i] > 0.3f) {
-                m_WindSystem.RegisterHeatSource(elemPool.positions[i], elemPool.intensities[i]);
-            }
-        }
-        m_ElementalSystem.Update(m_World, simDt, cameraTransform->position);
-
-        // Feed fire emitters into the renderer as transient point lights. One
-        // source lights both surfaces (PBR point lights) and participating media
-        // (clustered lighting -> volumetric fog froxels), so fire glows on walls
-        // and through nearby smoke/fog in lockstep.
-        if (m_RenderSystem) {
-            m_EffectsTime += simDt;
-            m_ElementalSystem.BuildFireLights(m_EffectsTime, m_FireLights);
-            m_RenderSystem->ClearTransientPointLights();
-            for (const auto& fl : m_FireLights) {
-                m_RenderSystem->AddTransientPointLight(fl.position, fl.range, fl.color, fl.intensity);
-            }
-        }
-    }
-
-    // Update fluid simulation
-    m_FluidSimulation.Update(simDt, m_World);
-
-    // Update fluid-terrain coupling (erosion/deposition)
-    m_FluidTerrainCoupling.Update(simDt, m_World, m_FluidSimulation);
-
-    // Update curl noise flow fields
-    if (m_CurlNoiseSystem) m_CurlNoiseSystem->Update(simDt);
+    // (weather zones, world time, particles, elemental, fluid, parallax and
+    // curl-noise sims live in UpdateGameViewSims - update path, not render.)
 
     u32 rtWidth = m_GameViewRenderTarget->GetWidth();
     u32 rtHeight = m_GameViewRenderTarget->GetHeight();
@@ -3172,16 +3207,16 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     sceneTarget->Begin(commandBuffer);
     if (useSplitscreen && !splitViewports.empty()) {
         m_RenderSystem->RenderSplitscreen(sceneTarget, splitViewports);
-        if (hasWeatherParticles) {
-            m_RenderSystem->RenderWeatherParticles(m_WeatherSystem, isRain, rtWidth, rtHeight,
+        if (m_GameViewWeatherParticles) {
+            m_RenderSystem->RenderWeatherParticles(m_WeatherSystem, m_GameViewIsRain, rtWidth, rtHeight,
                                                    /*useOffscreenSets*/ true, /*viewport*/ 0);
         }
         m_RenderSystem->RenderElementalParticles(m_ElementalSystem, rtWidth, rtHeight,
                                                  /*useOffscreenSets*/ true, /*viewport*/ 0);
     } else {
         m_RenderSystem->RenderToTarget(sceneTarget, &gameCamera, 1);
-        if (hasWeatherParticles) {
-            m_RenderSystem->RenderWeatherParticles(m_WeatherSystem, isRain, rtWidth, rtHeight,
+        if (m_GameViewWeatherParticles) {
+            m_RenderSystem->RenderWeatherParticles(m_WeatherSystem, m_GameViewIsRain, rtWidth, rtHeight,
                                                    /*useOffscreenSets*/ true, /*viewport*/ 1);
         }
         m_RenderSystem->RenderElementalParticles(m_ElementalSystem, rtWidth, rtHeight,
@@ -3505,8 +3540,8 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     }
 
     // Set weather for main pass (editor viewport) so it renders weather particles too
-    if (hasWeatherParticles) {
-        m_RenderSystem->SetMainPassWeather(&m_WeatherSystem, isRain);
+    if (m_GameViewWeatherParticles) {
+        m_RenderSystem->SetMainPassWeather(&m_WeatherSystem, m_GameViewIsRain);
     } else {
         m_RenderSystem->ClearMainPassWeather();
     }

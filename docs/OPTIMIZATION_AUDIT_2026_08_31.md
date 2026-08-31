@@ -101,12 +101,20 @@ Original finding:
 MeshComponent entity; the Vulkan path uses the pre-built `m_FrameShadowCasters` list.
 Port the same list to the web half.
 
-### 9. Known architectural smell (pre-existing, queued): sim-in-render
-`EditorLayer::RenderOffscreen` still hosts ~11 simulation updates behind the FPS
-limiter (the source of the 30fps-slows-rain bug class and the simDt/wind-clock
-bullet-time rules). The durable fix is moving sim out of the render path entirely;
-every new editor-side clock keeps paying the "remember to scale by timeScale" tax
-until then.
+### 9. Sim-in-render — **FIXED**
+All game-view simulations (weather zones, water freeze, world time, seasons,
+particles, parallax, elemental, fluid, terrain coupling, curl noise) moved out
+of `RenderOffscreen` into `EditorLayer::UpdateGameViewSims`, called from the
+update path right after `PlayMode::Update` with the time-scaled dt. The Game
+View FPS throttle now only affects rendering; the `m_GameViewSimAccum`
+workaround is deleted, and no future sim can couple to render cadence. Bonus
+behavior fixes: sims no longer freeze when the Game View panel is hidden
+during play, and zone-driven fog/weather state updates every frame instead of
+at throttled render cadence. The weather flags the render pass consumes
+(`m_GameViewWeatherParticles`, `m_GameViewIsRain`) became members. Verified:
+same-binary captures byte-identical (deterministic), drift vs the pre-fix
+baseline bounded at <1% (sims start on frame one instead of the first
+successful render — the corrected schedule); goldens re-recorded.
 
 ## Claims that FAILED verification (do not act on these)
 - "ComputeWorldMatrix recomputed per call / hierarchy walked repeatedly" — false, it has
