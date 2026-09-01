@@ -1,6 +1,7 @@
 #include "Enjin/Scripting/ScriptBindings.h"
 #include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Input/InputAction.h"
+#include "Enjin/Input/TouchActionBridge.h"
 #include "Enjin/Math/Vector.h"
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Logging/Log.h"
@@ -20,6 +21,9 @@ namespace Scripting {
 
 void SetBindingsInputActionMap(InputSystem::InputActionMap* map) {
     s_BindingsInputActionMap = map;
+    // Keep the touch overlay's action resolvers pointed at the same active map,
+    // so on-screen touch controls reflect the current bindings (and rebinds).
+    InputSystem::SetTouchActionMap(map);
 }
 
 // ---------------------------------------------------------------------------

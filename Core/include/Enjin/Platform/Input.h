@@ -200,12 +200,19 @@ public:
         f32 rowFromBottom = 0.0f;  // 0 = bottom row, grows upward
         int keyCode = 0;           // key held while pressed; negative = mouse
                                    // button (-1 => button 0, i.e. fire/click)
+        int action = -1;           // InputSystem::GameAction id, or -1 for none.
+                                   // When >= 0 and an action resolver is set, the
+                                   // button presses the action's CURRENT binding
+                                   // (so rebinding updates touch), falling back to
+                                   // keyCode if the action has no key/mouse bind.
         char label[8] = {0};
     };
 
     struct TouchScheme {
         bool moveStick = true;
         int  stickKeys[4] = {65, 68, 87, 83};   // Left,Right,Up,Down (A D W S)
+        int  stickActions[4] = {-1,-1,-1,-1};    // MoveLeft/Right/Forward/Back action
+                                                 // ids, or -1; resolved like buttons.
         bool lookRegion = true;                  // right side drags the camera
         f32  moveZoneSplit = 0.45f;              // x fraction owned by the stick
         TouchButtonDef buttons[kMaxTouchButtons];
@@ -215,6 +222,19 @@ public:
     static void SetTouchScheme(const TouchScheme& scheme);
     static const TouchScheme& GetTouchScheme();
     static void SetTouchControllerPreset(TouchPreset preset);
+
+    // Binding reflection: the touch overlay lives in this platform layer but the
+    // action-binding map (InputActionMap) lives in Engine, which depends on Core
+    // (not the reverse). So Engine INJECTS resolvers here: given a GameAction id,
+    // return its current key code (negative = mouse button, Core's encoding) or
+    // kTouchNoBinding to fall back to the button's static keyCode; and a short
+    // label for the current binding (nullptr/empty = keep the static label).
+    // With these set, touch buttons/stick reflect live rebinds automatically.
+    static constexpr int kTouchNoBinding = (-2147483647 - 1);
+    using ActionKeyResolver = int (*)(int action);
+    using ActionLabelResolver = const char* (*)(int action);
+    static void SetActionKeyResolver(ActionKeyResolver resolver);
+    static void SetActionLabelResolver(ActionLabelResolver resolver);
 
     // Resolved, per-frame overlay geometry for the player to draw. Positions
     // are in canvas BACKING pixels. Active on web once a touch is seen OR a

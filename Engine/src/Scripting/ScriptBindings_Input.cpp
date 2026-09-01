@@ -166,11 +166,39 @@ static void Touch_AddButton(const std::string& label, int keyCode,
     Input::SetTouchScheme(s);
 }
 
+// Add a button bound to a GameAction, so it presses the action's CURRENT
+// binding and shows its label (rebinding the action updates the button). Pass
+// the action id from the InputAction enum; keyCode fallback stays 0.
+static void Touch_AddActionButton(const std::string& label, int action,
+                                  float col, float row, float radiusFrac) {
+    Input::TouchScheme s = Input::GetTouchScheme();
+    if (s.buttonCount >= Input::kMaxTouchButtons) return;
+    Input::TouchButtonDef& b = s.buttons[s.buttonCount++];
+    b.action = action;
+    b.colFromRight = col;
+    b.rowFromBottom = row;
+    b.radiusFrac = (radiusFrac > 0.01f && radiusFrac < 0.3f) ? radiusFrac : 0.075f;
+    for (int i = 0; i < 8; ++i) b.label[i] = '\0';
+    for (int i = 0; i < 7 && i < static_cast<int>(label.size()); ++i) b.label[i] = label[i];
+    Input::SetTouchScheme(s);
+}
+
 static void Touch_SetStick(bool enabled, int leftKey, int rightKey, int upKey, int downKey) {
     Input::TouchScheme s = Input::GetTouchScheme();
     s.moveStick = enabled;
     s.stickKeys[0] = leftKey; s.stickKeys[1] = rightKey;
     s.stickKeys[2] = upKey;   s.stickKeys[3] = downKey;
+    Input::SetTouchScheme(s);
+}
+
+// Bind the move stick to the four movement GameActions, so it reflects their
+// current bindings (defaults to MoveLeft/Right/Forward/Back if not customized).
+static void Touch_SetStickActions(bool enabled, int leftAction, int rightAction,
+                                  int fwdAction, int backAction) {
+    Input::TouchScheme s = Input::GetTouchScheme();
+    s.moveStick = enabled;
+    s.stickActions[0] = leftAction; s.stickActions[1] = rightAction;
+    s.stickActions[2] = fwdAction;  s.stickActions[3] = backAction;
     Input::SetTouchScheme(s);
 }
 
@@ -358,8 +386,13 @@ void RegisterInputBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Touch_AddButton(const string &in, int, float, float, float)",
         ENJIN_AS_FN(Touch_AddButton), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void Touch_AddActionButton(const string &in, int, float, float, float)",
+        ENJIN_AS_FN(Touch_AddActionButton), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Touch_SetStick(bool, int, int, int, int)",
         ENJIN_AS_FN(Touch_SetStick), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Touch_SetStickActions(bool, int, int, int, int)",
+        ENJIN_AS_FN(Touch_SetStickActions), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Touch_SetLookRegion(bool)",
         ENJIN_AS_FN(Touch_SetLookRegion), ENJIN_AS_CALL_CDECL));
 }

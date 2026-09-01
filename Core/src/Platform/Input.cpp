@@ -22,6 +22,12 @@ namespace {
     constexpr i32 MAX_GAMEPAD_AXES = 6;
     constexpr i32 MAX_GAMEPADS = 4;
 
+    // Injected by Engine (InputActionMap) so touch controls reflect live
+    // bindings. Null until a game/editor wires an action map. Compiled on all
+    // platforms; only read by the web touch path.
+    Input::ActionKeyResolver   s_ActionKeyResolver   = nullptr;
+    Input::ActionLabelResolver s_ActionLabelResolver = nullptr;
+
 #if !ENJIN_PLATFORM_WEB
     constexpr i32 GLFW_KEY_FIRST = 32;   // GLFW_KEY_SPACE is the first valid key
     constexpr i32 GLFW_KEY_LAST_VALID = 348;  // GLFW_KEY_LAST
@@ -546,19 +552,32 @@ void Input::Update() {
     constexpr int kKeyCount = static_cast<int>(sizeof(s_KeysDown) / sizeof(s_KeysDown[0]));
     for (const auto& t : s_Touches) {
         if (t.id == -1) continue;
+        // Resolve a slot's effective key code: prefer the action's CURRENT
+        // binding (so rebinding is reflected live) and fall back to the static
+        // key code when there's no action / no bound key/mouse for it.
+        auto effectiveKey = [](int staticKey, int action) -> int {
+            if (action >= 0 && s_ActionKeyResolver) {
+                int rk = s_ActionKeyResolver(action);
+                if (rk != Input::kTouchNoBinding) return rk;
+            }
+            return staticKey;
+        };
         if (t.role == 1 && s_TouchScheme.moveStick) {
             f32 dx = t.curX - t.startX;
             f32 dy = t.curY - t.startY;
             constexpr f32 DEAD = 18.0f;
-            auto press = [&](int k) { if (k >= 0 && k < kKeyCount) s_KeysDown[k] = true; };
-            if (dx < -DEAD) press(s_TouchScheme.stickKeys[0]);   // left
-            if (dx >  DEAD) press(s_TouchScheme.stickKeys[1]);   // right
-            if (dy < -DEAD) press(s_TouchScheme.stickKeys[2]);   // up
-            if (dy >  DEAD) press(s_TouchScheme.stickKeys[3]);   // down
+            auto press = [&](int idx) {
+                int k = effectiveKey(s_TouchScheme.stickKeys[idx], s_TouchScheme.stickActions[idx]);
+                if (k >= 0 && k < kKeyCount) s_KeysDown[k] = true;
+            };
+            if (dx < -DEAD) press(0);   // left
+            if (dx >  DEAD) press(1);   // right
+            if (dy < -DEAD) press(2);   // up / forward
+            if (dy >  DEAD) press(3);   // down / back
         } else if (t.role >= 100) {
             int bi = t.role - 100;
             if (bi < s_TouchScheme.buttonCount) {
-                int k = s_TouchScheme.buttons[bi].keyCode;
+                int k = effectiveKey(s_TouchScheme.buttons[bi].keyCode, s_TouchScheme.buttons[bi].action);
                 if (k < 0) {
                     int mb = -k - 1;                             // -1 => mouse button 0 (fire/click)
                     if (mb >= 0 && mb < MAX_MOUSE_BUTTONS) s_MouseButtonsDown[mb] = true;
@@ -841,8 +860,18 @@ Input::TouchOverlayState Input::GetTouchOverlay() {
     st.buttonCount = s_TouchScheme.buttonCount;
     for (int bi = 0; bi < s_TouchScheme.buttonCount; ++bi) {
         auto& out = st.buttons[bi];
-        WebResolveButton(s_TouchScheme.buttons[bi], bw, bh, out.x, out.y, out.r);
-        for (int k = 0; k < 8; ++k) out.label[k] = s_TouchScheme.buttons[bi].label[k];
+        const auto& def = s_TouchScheme.buttons[bi];
+        WebResolveButton(def, bw, bh, out.x, out.y, out.r);
+        // Prefer the current binding's label (so the glyph tracks a rebind);
+        // fall back to the static label. Truncated to fit the 8-char field.
+        const char* lbl = def.label;
+        if (def.action >= 0 && s_ActionLabelResolver) {
+            const char* rl = s_ActionLabelResolver(def.action);
+            if (rl && rl[0]) lbl = rl;
+        }
+        int k = 0;
+        for (; k < 7 && lbl[k]; ++k) out.label[k] = lbl[k];
+        out.label[k] = 0;
         for (const auto& t : s_Touches) {
             if (t.id != -1 && t.role == 100 + bi) { out.held = true; break; }
         }
@@ -870,42 +899,53 @@ const Input::TouchScheme& Input::GetTouchScheme() {
 #endif
 }
 
+void Input::SetActionKeyResolver(ActionKeyResolver resolver)   { s_ActionKeyResolver = resolver; }
+void Input::SetActionLabelResolver(ActionLabelResolver resolver) { s_ActionLabelResolver = resolver; }
+
 void Input::SetTouchControllerPreset(TouchPreset preset) {
 #if ENJIN_PLATFORM_WEB
     TouchScheme s;                              // WASD stick by default
-    auto btn = [](f32 radiusFrac, f32 col, f32 row, int key, const char* label) {
+    auto btn = [](f32 radiusFrac, f32 col, f32 row, int key, int action, const char* label) {
         TouchButtonDef b;
         b.radiusFrac = radiusFrac;
         b.colFromRight = col;
         b.rowFromBottom = row;
         b.keyCode = key;
+        b.action = action;
         for (int i = 0; i < 7 && label[i]; ++i) b.label[i] = label[i];
         return b;
     };
     const int SPACE = 32, SHIFT = 340, KEY_E = 69, KEY_F = 70;
+    // GameAction ordinals (InputSystem::GameAction; Core cannot include the enum).
+    // Buttons carry an action so rebinding updates them; keyCode is the fallback.
+    const int A_FWD = 0, A_BACK = 1, A_LEFT = 2, A_RIGHT = 3, A_JUMP = 4,
+              A_SPRINT = 5, A_INTERACT = 8, A_ATTACK = 9;
+    // The move stick maps its four directions to the movement actions.
+    s.stickActions[0] = A_LEFT; s.stickActions[1] = A_RIGHT;
+    s.stickActions[2] = A_FWD;  s.stickActions[3] = A_BACK;
     switch (preset) {
         case TouchPreset::Platformer2D:
             s.lookRegion = false;
-            s.buttons[s.buttonCount++] = btn(0.085f, 0, 0, SPACE, "JMP");
+            s.buttons[s.buttonCount++] = btn(0.085f, 0, 0, SPACE, A_JUMP, "JMP");
             break;
         case TouchPreset::TopDown2D:
             s.lookRegion = false;
-            s.buttons[s.buttonCount++] = btn(0.085f, 0, 0, KEY_E, "E");
-            s.buttons[s.buttonCount++] = btn(0.075f, 1, 0, KEY_F, "F");
+            s.buttons[s.buttonCount++] = btn(0.085f, 0, 0, KEY_E, A_INTERACT, "E");
+            s.buttons[s.buttonCount++] = btn(0.075f, 1, 0, KEY_F, -1, "F");
             break;
         case TouchPreset::FirstPerson:
-            s.buttons[s.buttonCount++] = btn(0.090f, 0, 0, -1,    "FIRE"); // left mouse
-            s.buttons[s.buttonCount++] = btn(0.075f, 1, 0, SPACE, "JMP");
-            s.buttons[s.buttonCount++] = btn(0.070f, 0, 1, SHIFT, "RUN");
-            s.buttons[s.buttonCount++] = btn(0.070f, 1, 1, KEY_E, "E");
+            s.buttons[s.buttonCount++] = btn(0.090f, 0, 0, -1,    A_ATTACK,   "FIRE"); // left mouse
+            s.buttons[s.buttonCount++] = btn(0.075f, 1, 0, SPACE, A_JUMP,     "JMP");
+            s.buttons[s.buttonCount++] = btn(0.070f, 0, 1, SHIFT, A_SPRINT,   "RUN");
+            s.buttons[s.buttonCount++] = btn(0.070f, 1, 1, KEY_E, A_INTERACT, "E");
             break;
         case TouchPreset::TopDown3D:
         case TouchPreset::ThirdPerson:
         case TouchPreset::Generic:
         default:
-            s.buttons[s.buttonCount++] = btn(0.085f, 0, 0, SPACE, "JMP");
-            s.buttons[s.buttonCount++] = btn(0.075f, 1, 0, KEY_E, "E");
-            s.buttons[s.buttonCount++] = btn(0.070f, 0, 1, SHIFT, "RUN");
+            s.buttons[s.buttonCount++] = btn(0.085f, 0, 0, SPACE, A_JUMP,     "JMP");
+            s.buttons[s.buttonCount++] = btn(0.075f, 1, 0, KEY_E, A_INTERACT, "E");
+            s.buttons[s.buttonCount++] = btn(0.070f, 0, 1, SHIFT, A_SPRINT,   "RUN");
             break;
     }
     s_TouchScheme = s;
