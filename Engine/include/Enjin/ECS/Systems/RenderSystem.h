@@ -37,6 +37,8 @@ namespace Enjin::Build { class AssetReader; }
 #endif
 #include "Enjin/Renderer/TextRasterizer.h"
 #include "Enjin/Renderer/FontAtlas.h"
+#include "Enjin/Renderer/VectorTessellator.h"
+#include "Enjin/ECS/Components/DisplayGraphic.h"
 #include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/ECS/Components/Viewmodel.h"
 #include "Enjin/ECS/Components/Material.h"
@@ -209,6 +211,8 @@ struct EntityRenderData {
     Renderer::GPUBufferHandle morphBuffer;
     Renderer::GPUBindGroupHandle texBindGroup;  // per-entity texture bind group (group 2)
     bool texBindGroupValid = false;             // true if textures loaded for this entity
+    bool hasMatcap = false;                     // matcap texture bound (drives ObjectData.matcapBlend)
+    bool hasScrollRefl = false;                 // scrolling-reflection texture bound
 #endif
     u32 indexCount = 0;
     bool valid = false;  // true if this slot is occupied
@@ -1491,6 +1495,14 @@ private:
     // text dirties, and skipped by EnsureTextTextures (no rasterize, no churn).
     std::unordered_set<Entity> m_SDFTextMeshes;
     Renderer::FontAtlas* GetOrBuildFontAtlas(const std::string& fontPath, Renderer::Texture** outTexture);
+
+    // Vector graphics (unified display P2): SVG tessellations shared across
+    // every DisplayGraphic entity using the same source (the UICanvas
+    // VectorGraphic element keeps its own cache on the UI side). Entities in
+    // the owned set get their MeshComponent rebuilt when the component dirties.
+    std::unordered_map<std::string, Renderer::TessellatedGraphic> m_VectorGraphicCache;
+    std::unordered_set<Entity> m_VectorGraphicMeshes;
+    const Renderer::TessellatedGraphic* GetOrTessellateGraphic(const std::string& path, f32 tolerance);
 #endif
     Renderer::TextRasterizer m_TextRasterizer;
 

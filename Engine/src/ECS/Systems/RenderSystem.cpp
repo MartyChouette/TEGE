@@ -140,8 +140,13 @@ struct WebObjectDataUBO {
     f32 parallaxScale;                      // 4
     f32 uvScrollU;                          // 4  material UV scroll (waterfalls)
     f32 uvScrollV;                          // 4
-    f32 _pad;                               // 4
-};                                          // Total: 128 bytes
+    f32 scrollReflSpeedU;                   // 4  hand-crafted scrolling reflection
+    f32 scrollReflSpeedV;                   // 4
+    f32 scrollReflStrength;                 // 4  0 = off (also when no texture)
+    f32 matcapBlend;                        // 4  1 = matcap texture bound, 0 = off
+};                                          // Total: 144 bytes — keep in lockstep
+                                            // with BOTH WGSL ObjectData structs
+                                            // (pbr + shadow) in WebShaderData.h
 
 // Spot shadow VP UBO: 2 lights x (view + proj) = 4 matrices
 struct WebSpotShadowVPUBO {
@@ -469,7 +474,8 @@ void RenderSystem::Initialize() {
     };
     m_WebObjectLayout = bindMgr->CreateBindGroupLayout(objectLayoutDesc);
 
-    // Group 2: Textures (3 texture + 3 sampler)
+    // Group 2: Textures (5 texture + 5 sampler: baseColor/normal/MR +
+    // matcap + scrolling-reflection for the hand-crafted reflection styles)
     Renderer::GPUBindGroupLayoutDesc texLayoutDesc;
     texLayoutDesc.entries = {
         {0, BType::SampledTexture, SStage::Fragment, 0},
@@ -478,6 +484,10 @@ void RenderSystem::Initialize() {
         {3, BType::Sampler, SStage::Fragment, 0},
         {4, BType::SampledTexture, SStage::Fragment, 0},
         {5, BType::Sampler, SStage::Fragment, 0},
+        {6, BType::SampledTexture, SStage::Fragment, 0},
+        {7, BType::Sampler, SStage::Fragment, 0},
+        {8, BType::SampledTexture, SStage::Fragment, 0},
+        {9, BType::Sampler, SStage::Fragment, 0},
     };
     m_WebTextureLayout = bindMgr->CreateBindGroupLayout(texLayoutDesc);
 
@@ -741,6 +751,10 @@ void RenderSystem::Initialize() {
         {3, {}, 0, 0, {}, m_WebDefaultNormalTex},
         {4, {}, 0, 0, m_WebDefaultBlackTex, {}},
         {5, {}, 0, 0, {}, m_WebDefaultBlackTex},
+        {6, {}, 0, 0, m_WebDefaultWhiteTex, {}},   // matcap (gated by matcapBlend=0)
+        {7, {}, 0, 0, {}, m_WebDefaultWhiteTex},
+        {8, {}, 0, 0, m_WebDefaultBlackTex, {}},   // scrollRefl (gated by strength=0)
+        {9, {}, 0, 0, {}, m_WebDefaultBlackTex},
     };
     m_WebDefaultTexBindGroup = bindMgr->CreateBindGroup(defTexBGDesc);
 
@@ -2312,12 +2326,20 @@ void RenderSystem::Update(f32 deltaTime) {
                 auto baseColorTex = WebGetOrLoadTexture(mat->baseColorTexturePath);
                 auto normalTex = WebGetOrLoadTexture(mat->normalTexturePath);
                 auto mrTex = WebGetOrLoadTexture(mat->metallicRoughnessTexturePath);
+                // Hand-crafted reflection styles: matcap + scrolling reflection
+                auto matcapT = WebGetOrLoadTexture(mat->matcapTexturePath);
+                auto scrollT = WebGetOrLoadTexture(mat->scrollReflectionTexturePath);
+                rd.hasMatcap = matcapT.IsValid();
+                rd.hasScrollRefl = scrollT.IsValid();
 
                 // Only create custom bind group if at least one texture loaded
-                if (baseColorTex.IsValid() || normalTex.IsValid() || mrTex.IsValid()) {
+                if (baseColorTex.IsValid() || normalTex.IsValid() || mrTex.IsValid() ||
+                    matcapT.IsValid() || scrollT.IsValid()) {
                     auto bc = baseColorTex.IsValid() ? baseColorTex : m_WebDefaultWhiteTex;
                     auto nm = normalTex.IsValid() ? normalTex : m_WebDefaultNormalTex;
                     auto mr = mrTex.IsValid() ? mrTex : m_WebDefaultBlackTex;
+                    auto mc = matcapT.IsValid() ? matcapT : m_WebDefaultWhiteTex;
+                    auto sr = scrollT.IsValid() ? scrollT : m_WebDefaultBlackTex;
 
                     Renderer::GPUBindGroupDesc texBGDesc;
                     texBGDesc.layout = m_WebTextureLayout;
@@ -2328,6 +2350,10 @@ void RenderSystem::Update(f32 deltaTime) {
                         {3, {}, 0, 0, {}, nm},
                         {4, {}, 0, 0, mr, {}},
                         {5, {}, 0, 0, {}, mr},
+                        {6, {}, 0, 0, mc, {}},
+                        {7, {}, 0, 0, {}, mc},
+                        {8, {}, 0, 0, sr, {}},
+                        {9, {}, 0, 0, {}, sr},
                     };
                     auto* bm = m_Renderer->GetBindGroupManager();
                     if (bm) rd.texBindGroup = bm->CreateBindGroup(texBGDesc);
@@ -2368,6 +2394,13 @@ void RenderSystem::Update(f32 deltaTime) {
             obj.alphaCutoff = mat ? mat->alphaCutoff : 0.0f;
             obj.uvScrollU = mat ? mat->uvScrollSpeed.x : 0.0f;
             obj.uvScrollV = mat ? mat->uvScrollSpeed.y : 0.0f;
+            // Reflection styles: only active when their texture actually bound
+            obj.matcapBlend = rd.hasMatcap ? 1.0f : 0.0f;
+            if (rd.hasScrollRefl && mat) {
+                obj.scrollReflSpeedU = mat->scrollReflectionSpeed.x;
+                obj.scrollReflSpeedV = mat->scrollReflectionSpeed.y;
+                obj.scrollReflStrength = mat->scrollReflectionStrength;
+            }
             if (animComp && rd.boneBuffer.IsValid()) obj.flags |= (1 << 3);  // FLAG_SKINNED
             std::memcpy(objDataBuf.data() + offset, &obj, sizeof(obj));
 
@@ -2541,6 +2574,12 @@ void RenderSystem::Update(f32 deltaTime) {
                                 {3, {}, 0, 0, {}, nm.IsValid() ? nm : m_WebDefaultNormalTex},
                                 {4, {}, 0, 0, mr.IsValid() ? mr : m_WebDefaultBlackTex, {}},
                                 {5, {}, 0, 0, {}, mr.IsValid() ? mr : m_WebDefaultBlackTex},
+                                // Sub-mesh slots: reflection styles not authored
+                                // per-slot yet — inert defaults keep the layout happy
+                                {6, {}, 0, 0, m_WebDefaultWhiteTex, {}},
+                                {7, {}, 0, 0, {}, m_WebDefaultWhiteTex},
+                                {8, {}, 0, 0, m_WebDefaultBlackTex, {}},
+                                {9, {}, 0, 0, {}, m_WebDefaultBlackTex},
                             };
                             subTexBG = bindMgr->CreateBindGroup(texBGD);
                         }
@@ -3978,6 +4017,8 @@ void RenderSystem::Shutdown() {
     m_TextRasterizer.ClearFontCache();
     m_SDFFonts.clear();
     m_SDFTextMeshes.clear();
+    m_VectorGraphicCache.clear();
+    m_VectorGraphicMeshes.clear();
 
     // Clean up textures and bone buffers
     m_DefaultWhiteTexture.reset();
@@ -4142,6 +4183,29 @@ Renderer::FontAtlas* RenderSystem::GetOrBuildFontAtlas(const std::string& fontPa
     if (!it->second.atlas) return nullptr;
     if (outTexture) *outTexture = it->second.texture.get();
     return it->second.atlas.get();
+}
+
+const Renderer::TessellatedGraphic* RenderSystem::GetOrTessellateGraphic(const std::string& path, f32 tolerance) {
+    auto it = m_VectorGraphicCache.find(path);
+    if (it == m_VectorGraphicCache.end()) {
+        // Resolve project-relative paths against the game root, same as
+        // textures and fonts (CWD is the exe dir, not the project).
+        std::string loadPath = path;
+        {
+            namespace fs = std::filesystem;
+            std::error_code ec;
+            if (fs::path(path).is_relative() && !fs::exists(path, ec)) {
+                const std::string& root = Assets::MeshAssetCache::Get().GetSearchRoot();
+                if (!root.empty()) {
+                    std::string joined = (fs::path(root) / path).string();
+                    if (fs::exists(joined, ec)) loadPath = joined;
+                }
+            }
+        }
+        // A failed parse caches an invalid entry so we don't re-parse per frame.
+        it = m_VectorGraphicCache.emplace(path, Renderer::TessellateSVG(loadPath, tolerance)).first;
+    }
+    return it->second.valid ? &it->second : nullptr;
 }
 
 void RenderSystem::RetireEntityBuffers(EntityRenderData& rd) {
@@ -4766,6 +4830,62 @@ void RenderSystem::Update(f32 deltaTime) {
                 tm.castShadows = false;
                 m_World->AddComponent<MaterialComponent>(entity, std::move(tm));
             }
+        }
+
+        // Vector graphics (unified display P2): a DisplayGraphic entity mounts
+        // its tessellated SVG as a real triangle mesh - crisp at any scale,
+        // vertex colors carry the fills/strokes, and each shape sits a hair
+        // closer to the camera than the one before it so paint order survives
+        // the depth test inside the single draw.
+        for (Entity entity : m_World->GetEntitiesWithComponent<DisplayGraphicComponent>()) {
+            auto* dg = m_World->GetComponent<DisplayGraphicComponent>(entity);
+            if (!dg) continue;
+            const bool owned = m_VectorGraphicMeshes.count(entity) != 0;
+            if (m_World->HasComponent<MeshComponent>(entity) && !owned) continue;  // authored mesh wins
+            if (!dg->dirty && owned) continue;
+            if (dg->sourcePath.empty()) { m_VectorGraphicMeshes.erase(entity); continue; }
+
+            const Renderer::TessellatedGraphic* g = GetOrTessellateGraphic(dg->sourcePath, dg->curveTolerance);
+            if (!g) { dg->dirty = false; continue; }   // parse failed (logged once)
+
+            const f32 docH = g->height > 0.0f ? g->height : 1.0f;
+            const f32 s = (dg->worldHeight > 0.0f ? dg->worldHeight : 1.0f) / docH;
+            // Per-shape depth bias: enough to win the depth test, small enough
+            // to be invisible as parallax.
+            const f32 zStep = 0.0005f * (dg->worldHeight > 0.0f ? dg->worldHeight : 1.0f);
+
+            MeshComponent mesh;
+            mesh.vertices.reserve(g->vertices.size());
+            mesh.indices = g->indices;
+            const Math::Vector3 normal(0.0f, 0.0f, 1.0f);
+            for (const auto& v : g->vertices) {
+                MeshComponent::Vertex vert;
+                vert.position = Math::Vector3(v.pos.x * s, -v.pos.y * s,
+                                              static_cast<f32>(v.shapeIndex) * zStep);
+                vert.normal = normal;
+                vert.uv = Math::Vector2(0.0f, 0.0f);
+                vert.color = v.color;
+                mesh.vertices.push_back(vert);
+            }
+            if (m_World->HasComponent<MeshComponent>(entity)) {
+                *m_World->GetComponent<MeshComponent>(entity) = std::move(mesh);
+            } else {
+                m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
+            }
+            if (static_cast<usize>(EntityIndex(entity)) < m_EntityRenderData.size())
+                RetireEntityBuffers(m_EntityRenderData[static_cast<usize>(EntityIndex(entity))]);
+            if (!m_World->HasComponent<MaterialComponent>(entity))
+                m_World->AddComponent<MaterialComponent>(entity, MaterialComponent{});
+            if (MaterialComponent* mat = m_World->GetComponent<MaterialComponent>(entity)) {
+                mat->baseColor = Math::Vector3(1.0f, 1.0f, 1.0f);   // verts carry the art's colors
+                mat->alphaMode = MaterialComponent::AlphaMode::Blend;
+                mat->castShadows = false;
+                mat->gouraudOnly = true;                            // flat 2D art, unlit
+            }
+            dg->dirty = false;
+            m_VectorGraphicMeshes.insert(entity);
+            m_MaterialSSBOBuilt = false;
+            m_MaterialSSBODirty = true;
         }
 
         // Auto-generate tilemap meshes when dirty
@@ -7584,6 +7704,7 @@ void RenderSystem::OnEntityRemoved(Entity entity) {
     CacheTextTexture(entity, nullptr);
     m_TextTextureCache.erase(entity);
     m_SDFTextMeshes.erase(entity);
+    m_VectorGraphicMeshes.erase(entity);
     m_PrevModelMatrices.erase(static_cast<u64>(entity));
 
     // Invalidate scene composition cache (removed entity may change 2D/3D classification)

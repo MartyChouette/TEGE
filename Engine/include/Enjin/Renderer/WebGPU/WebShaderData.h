@@ -54,6 +54,10 @@ struct ObjectData {
     parallaxScale: f32,
     uvScrollU: f32,
     uvScrollV: f32,
+    scrollReflSpeedU: f32,
+    scrollReflSpeedV: f32,
+    scrollReflStrength: f32,
+    matcapBlend: f32,
 };
 struct ObjectDataArray {
     data: array<ObjectData>,
@@ -71,6 +75,13 @@ struct BoneSSBO {
 @group(2) @binding(3) var normalSmp: sampler;
 @group(2) @binding(4) var mrTex: texture_2d<f32>;
 @group(2) @binding(5) var mrSmp: sampler;
+// Hand-crafted reflection styles (no SSR here on purpose): matcap sampled by
+// view-space normal, and the N64-chrome scrolling reflection. Defaults are
+// flat 1x1 textures; ObjectData.matcapBlend / scrollReflStrength gate use.
+@group(2) @binding(6) var matcapTex: texture_2d<f32>;
+@group(2) @binding(7) var matcapSmp: sampler;
+@group(2) @binding(8) var scrollReflTex: texture_2d<f32>;
+@group(2) @binding(9) var scrollReflSmp: sampler;
 
 struct ShadowViewProjection {
     view: mat4x4<f32>,
@@ -430,6 +441,33 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let emissive = object.emissiveColor * object.emissiveStrength;
     var color = ambient + Lo + emissive;
 
+    // Matcap (hand-painted reflection): sampled by view-space normal, blended
+    // by metallic like triangle.frag ~1850. Sampled unconditionally at LOD 0
+    // (uniform-control-flow rule); matcapBlend=0 (default white 1x1) is a no-op.
+    {
+        let vFwd = normalize(viewProj.viewPos - in.world_pos);
+        let vRight = normalize(cross(vec3<f32>(0.0, 1.0, 0.0), vFwd));
+        let vUp = cross(vFwd, vRight);
+        let mcUV = vec2<f32>(dot(N, vRight), -dot(N, vUp)) * 0.5 + 0.5;
+        let mc = textureSampleLevel(matcapTex, matcapSmp, mcUV, 0.0).rgb;
+        let mcBlend = mix(0.3, 1.0, metallic) * object.matcapBlend;
+        color = mix(color, color * mc + mc * 0.2, mcBlend);
+    }
+
+    // Scrolling reflection (N64 chrome/water fake): reflection-direction UVs
+    // scrolled by time, fresnel-masked, additive — mirrors triangle.frag ~1898.
+    {
+        let sV = normalize(viewProj.viewPos - in.world_pos);
+        let sR = reflect(-sV, N);
+        var sT = lighting.windData.w;
+        if (sT == 0.0) { sT = viewProj.time; }
+        let sUv = sR.xz * 0.5 + vec2<f32>(0.5, 0.5)
+                + vec2<f32>(object.scrollReflSpeedU, object.scrollReflSpeedV) * sT;
+        let sCol = textureSampleLevel(scrollReflTex, scrollReflSmp, sUv, 0.0).rgb;
+        let sFres = pow(1.0 - max(dot(N, sV), 0.0), 3.0);
+        color = color + sCol * object.scrollReflStrength * clamp(sFres + 0.25, 0.0, 1.0);
+    }
+
     // Height-based distance fog (matches Vulkan)
     let fogDensity = lighting.fogParams.x;
     if (fogDensity > 0.0) {
@@ -472,6 +510,10 @@ struct ObjectData {
     parallaxScale: f32,
     uvScrollU: f32,
     uvScrollV: f32,
+    scrollReflSpeedU: f32,
+    scrollReflSpeedV: f32,
+    scrollReflStrength: f32,
+    matcapBlend: f32,
 };
 @group(1) @binding(0) var<uniform> object: ObjectData;
 
