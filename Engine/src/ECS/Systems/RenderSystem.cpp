@@ -11477,6 +11477,15 @@ void RenderSystem::RenderEntity(Entity entity) {
                 material->cachedHeightTexture, material->cachedNormalTexture,
                 material->cachedMetallicRoughnessTexture, material->cachedEmissiveTexture,
                 material->cachedMatcapTexture };
+            // Textures just resolved to real bindless handles — the material SSBO
+            // was built BEFORE this (BuildMaterialSSBO runs at frame start) with
+            // the default index, so force a rebuild next frame or the material
+            // renders untextured until something else dirties it. This was the
+            // "waterfall untextured on first play, fixed after New Game" bug: the
+            // texture loads fine, but its bindless index never reached the SSBO.
+            // (The SDF/text path already does this; the regular path didn't.)
+            m_MaterialSSBODirty = true;
+            m_MaterialSSBOBuilt = false;
         }
 
         // Use cached texture pointers
