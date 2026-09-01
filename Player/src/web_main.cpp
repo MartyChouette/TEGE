@@ -1153,6 +1153,10 @@ public:
         m_SubtitleSystem.RenderOverlay(w, h);
         // Screen reader status bar (announcements also speak via Web Speech API)
         m_Announcer.RenderStatusBar();
+        // Touch controls: must draw INSIDE the ImGui frame (before Render), or
+        // its foreground-draw-list commands are submitted after the frame is
+        // already rendered and never appear (was called after RenderUIOverlay).
+        RenderTouchOverlay();
 
         ImGui::Render();
         ImDrawData* drawData = ImGui::GetDrawData();
@@ -1303,8 +1307,7 @@ public:
 
         // Authored game UI (UICanvas + HUD widgets) via ImGui — same systems and
         // draw code as the desktop player (UI unification: one source, parity).
-        RenderUIOverlay();
-        RenderTouchOverlay();
+        RenderUIOverlay();   // draws the touch overlay inside its ImGui frame
 
         m_Renderer->EndFrame();
 

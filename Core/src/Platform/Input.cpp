@@ -311,9 +311,13 @@ namespace {
         EM_ASM({
             try {
                 if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches &&
-                    !document.fullscreenElement) {
-                    var c = document.getElementById('game-canvas') || document.body;
-                    var p = c.requestFullscreen ? c.requestFullscreen() : null;
+                    !document.fullscreenElement && !document.webkitFullscreenElement) {
+                    // Container, not canvas — the ResizeObserver watches it (see
+                    // the touch-toggle button comment).
+                    var c = document.getElementById('game-container') ||
+                            document.getElementById('game-canvas') || document.body;
+                    var p = c.requestFullscreen ? c.requestFullscreen()
+                          : (c.webkitRequestFullscreen ? c.webkitRequestFullscreen() : null);
                     if (p && p.then) {
                         p.then(function() {
                             try {
@@ -473,8 +477,15 @@ void Input::Initialize(Window* window) {
                 if (Module && Module._enjin_enable_touch_controls) Module._enjin_enable_touch_controls();
                 b.remove();
                 try {
-                    var c = document.getElementById('game-canvas') || document.body;
-                    if (c.requestFullscreen && !document.fullscreenElement) c.requestFullscreen().catch(function(){});
+                    // Fullscreen the CONTAINER, not the canvas: the shell's
+                    // ResizeObserver watches #game-container, so fullscreening
+                    // the canvas alone never resizes the drawing buffer and the
+                    // render stays letterboxed.
+                    var c = document.getElementById('game-container') ||
+                            document.getElementById('game-canvas') || document.body;
+                    if (document.fullscreenElement || document.webkitFullscreenElement) return;
+                    if (c.requestFullscreen) c.requestFullscreen().catch(function(){});
+                    else if (c.webkitRequestFullscreen) c.webkitRequestFullscreen();
                 } catch (e) {}
             };
             document.body.appendChild(b);
