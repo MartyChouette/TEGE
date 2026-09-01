@@ -295,17 +295,17 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     let baseColorSample = textureSample(baseColorTex, baseColorSmp, in.uv);
 
-    // SDF text (flags bit 6): base-color alpha is a signed distance field
-    // (FontAtlas, on-edge 180/255). Threshold with fwidth AA and output the
-    // glyph's vertex color UNLIT — mirrors the desktop FLAG_SDF_TEXT path.
-    // Derivative computed BEFORE the per-instance branch (uniform control flow).
-    let sdfW = max(fwidth(baseColorSample.a), 1e-4);
-    if ((object.flags & 64) != 0) {
-        let sdfEdge = 180.0 / 255.0;
-        let cov = smoothstep(sdfEdge - sdfW, sdfEdge + sdfW, baseColorSample.a);
-        if (cov < 0.01) { discard; }
-        return vec4<f32>(in.color.rgb * object.baseColor, cov * in.color.a * object.opacity);
-    }
+    // SDF text coverage — the fwidth derivative and the smoothstep are computed
+    // here in UNIFORM control flow (no branch), then APPLIED at the very end of
+    // the shader. Doing the SDF early-return here instead would put the later
+    // shadow textureSampleCompare() calls in non-uniform control flow, which
+    // WGSL forbids (it invalidated the whole PBR pipeline). See the tail return.
+    let sdfEdge = 180.0 / 255.0;
+    // Clamp the AA half-width (matches triangle.frag): at small sizes fwidth
+    // blows up and, unclamped, the band reaches the edge value so each glyph
+    // quad's transparent interior picks up alpha and shows as a faint box.
+    let sdfW = clamp(fwidth(baseColorSample.a), 1e-4, sdfEdge * 0.5);
+    let sdfCov = smoothstep(sdfEdge - sdfW, sdfEdge + sdfW, baseColorSample.a);
 
     let albedo = baseColorSample.rgb * object.baseColor;
     let alpha = baseColorSample.a * object.opacity;
@@ -496,6 +496,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let heightFog = exp(-max(in.world_pos.y, 0.0) * fogHeightFalloff);
         fogFactor = fogFactor * heightFog;
         color = mix(color, lighting.fogColor.rgb, fogFactor);
+    }
+
+    // SDF text (flags bit 6): applied HERE, after all shadow textureSampleCompare
+    // calls, so the per-instance branch never makes them non-uniform. Output the
+    // glyph's vertex color UNLIT with the thresholded coverage as alpha.
+    if ((object.flags & 64) != 0) {
+        if (sdfCov < 0.01) { discard; }
+        return vec4<f32>(in.color.rgb * object.baseColor, sdfCov * in.color.a * object.opacity);
     }
 
     // Output linear HDR — post-process pass handles ACES tonemap + gamma

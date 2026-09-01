@@ -38,6 +38,8 @@
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/GUI/UISystem.h"
 #include "Enjin/GUI/UITemplates.h"
+#include "Enjin/GUI/EmbeddedFonts.h"    // web ImGui font (parity with desktop ImGuiLayer)
+#include "Enjin/GUI/EmbeddedPlayfair.h"
 #include "Enjin/Renderer/WebGPU/WebGPUTypes.h"
 #include <imgui.h>
 #include <imgui_impl_wgpu.h>
@@ -1015,6 +1017,17 @@ public:
             ImGuiIO& initIO = ImGui::GetIO();
             initIO.IniFilename = nullptr;  // no imgui.ini in the browser sandbox
             ImGui::StyleColorsDark();
+
+            // Load the same embedded font desktop uses (ImGuiLayer is web-excluded),
+            // so web UI isn't stuck on ASCII-only ProggyClean. FontDataOwnedByAtlas
+            // = false: the TTF is a static array, ImGui must not try to free it.
+            {
+                ImFontConfig cfg;
+                cfg.FontDataOwnedByAtlas = false;
+                initIO.Fonts->AddFontFromMemoryTTF(
+                    const_cast<unsigned char*>(Enjin::GUI::RobotoMediumTTF),
+                    static_cast<int>(Enjin::GUI::RobotoMediumTTFSize), 18.0f, &cfg);
+            }
 
             ImGui_ImplWGPU_InitInfo info;
             info.Device = m_Renderer->GetDevice();

@@ -1211,7 +1211,12 @@ void main() {
         // stay crisp under any scale/perspective (vector-font behavior).
         if ((mat_flags & FLAG_SDF_TEXT) != 0) {
             float sdfEdge = 180.0 / 255.0;
-            float sdfW = max(fwidth(texAlpha), 1e-4);
+            // At small sizes many texels fall under one pixel, so fwidth blows
+            // up; if the AA half-width reaches the edge value the transparent
+            // interior of each glyph quad picks up alpha and shows as a faint
+            // box. Clamp the band below sdfEdge so the field's zero background
+            // always maps to zero alpha (kills the halo, keeps the AA).
+            float sdfW = clamp(fwidth(texAlpha), 1e-4, sdfEdge * 0.5);
             texAlpha = smoothstep(sdfEdge - sdfW, sdfEdge + sdfW, texAlpha);
         }
     }
