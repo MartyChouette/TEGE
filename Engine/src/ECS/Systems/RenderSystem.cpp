@@ -81,7 +81,9 @@ Renderer::SkyboxConfig RenderSystem::WeatherSky(const Renderer::SkyboxConfig& cf
 #include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/Components/Cloth.h"   // cloth/rope meshDirty re-upload
 #include "Enjin/ECS/Components/Rope.h"
+#include "Enjin/ECS/Components/Text.h"    // web SDF text generation
 #include "Enjin/Effects/Weather.h"        // weather particle draw
+#include "Enjin/Accessibility/OpenDyslexicFont.h"  // bundled default SDF font
 #include "Enjin/Build/AssetReader.h"
 #include "Enjin/Math/Math.h"
 #include <algorithm>
@@ -1386,6 +1388,111 @@ Renderer::GPUTextureHandle RenderSystem::WebGetOrLoadTexture(const std::string& 
     return handle;
 }
 
+// Build (or fetch) the SDF glyph atlas for a font on web. The CPU atlas build
+// is portable (stb_truetype in FontAtlas); the difference from the Vulkan path
+// is the texture upload — a WebGPU texture via CreateTextureWithData, registered
+// in m_WebTextureCache under a synthetic key so the normal per-entity texture
+// bind picks it up by baseColorTexturePath. Returns null if the font fails.
+Renderer::FontAtlas* RenderSystem::WebGetOrBuildFontAtlas(const std::string& fontPath, std::string& outCacheKey) {
+    outCacheKey = "__sdf__" + fontPath;
+    auto it = m_WebSDFFonts.find(fontPath);
+    if (it == m_WebSDFFonts.end()) {
+        WebSDFFont entry;
+        entry.cacheKey = outCacheKey;
+        std::vector<u8> fileData;
+        const u8* bytes = nullptr; usize size = 0;
+        if (fontPath.empty()) {
+            bytes = Accessibility::s_OpenDyslexicFontData;
+            size = Accessibility::s_OpenDyslexicFontDataSize;
+        } else {
+            if (m_AssetReader && m_AssetReader->IsOpen() && m_AssetReader->HasFile(fontPath))
+                fileData = m_AssetReader->ReadFile(fontPath);
+            if (fileData.empty()) {
+                FILE* f = fopen(fontPath.c_str(), "rb");
+                if (f) {
+                    fseek(f, 0, SEEK_END); long sz = ftell(f); fseek(f, 0, SEEK_SET);
+                    if (sz > 0) { fileData.resize(static_cast<usize>(sz)); fread(fileData.data(), 1, static_cast<usize>(sz), f); }
+                    fclose(f);
+                }
+            }
+            if (!fileData.empty()) { bytes = fileData.data(); size = fileData.size(); }
+        }
+        auto atlas = std::make_unique<Renderer::FontAtlas>();
+        if (bytes && atlas->Build(bytes, size)) {
+            auto* texMgr = m_Renderer->GetTextureManager();
+            Renderer::GPUTextureDesc desc;
+            desc.width = atlas->Width();
+            desc.height = atlas->Height();
+            desc.format = Renderer::GPUTextureFormat::RGBA8Unorm;
+            desc.usage = Renderer::GPUTextureUsage::Sampled;
+            desc.label = "SDFAtlas";
+            Renderer::GPUTextureHandle tex = texMgr->CreateTextureWithData(desc, atlas->Pixels().data());
+            if (tex.IsValid()) {
+                m_WebTextureCache[outCacheKey] = tex;   // WebGetOrLoadTexture(key) now returns it
+                entry.texture = tex;
+                entry.atlas = std::move(atlas);
+            }
+        }
+        if (!entry.atlas)
+            ENJIN_LOG_WARN(Renderer, "web SDF text: font atlas failed for '%s'",
+                           fontPath.empty() ? "<default>" : fontPath.c_str());
+        it = m_WebSDFFonts.emplace(fontPath, std::move(entry)).first;
+    }
+    outCacheKey = it->second.cacheKey;
+    return it->second.atlas ? it->second.atlas.get() : nullptr;
+}
+
+// Web port of the Vulkan text-generation loop (RenderSystem::Update ~4779):
+// bare TextComponent entities (no authored mesh) become a mesh of SDF glyph
+// quads sampling the shared font atlas, rendered UNLIT through the PBR pipeline
+// with the sdfText flag. Runs at the top of the web Update, before the storage
+// cache refresh, so the new meshes render the same frame.
+void RenderSystem::WebEnsureTextMeshes() {
+    if (!m_World) return;
+    auto* bufMgr = m_Renderer ? m_Renderer->GetBufferManager() : nullptr;
+    for (Entity entity : m_World->GetEntitiesWithComponent<TextComponent>()) {
+        auto* tc = m_World->GetComponent<TextComponent>(entity);
+        if (!tc) continue;
+        const bool sdfOwned = m_WebSDFTextMeshes.count(entity) != 0;
+        if (m_World->HasComponent<MeshComponent>(entity) && !sdfOwned) continue;  // authored mesh = text-on-surface
+        if (tc->text.empty() && !sdfOwned) continue;
+        if (!tc->sdfText) continue;   // web has only the SDF path (no rasterizer fallback yet)
+        if (sdfOwned && !tc->dirty) continue;   // glyph mesh already current
+
+        std::string key;
+        Renderer::FontAtlas* atlas = WebGetOrBuildFontAtlas(tc->fontPath, key);
+        if (!atlas) continue;
+
+        auto mesh = atlas->BuildTextMesh(*tc);
+        if (m_World->HasComponent<MeshComponent>(entity))
+            *m_World->GetComponent<MeshComponent>(entity) = std::move(mesh);
+        else
+            m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
+
+        // Drop cached GPU buffers so they rebuild from the new mesh next draw.
+        u64 eid = EntityIndex(entity);
+        if (eid < m_EntityRenderData.size() && bufMgr) {
+            auto& rd = m_EntityRenderData[eid];
+            if (rd.vertexBuffer.IsValid()) bufMgr->DestroyBuffer(rd.vertexBuffer);
+            if (rd.indexBuffer.IsValid()) bufMgr->DestroyBuffer(rd.indexBuffer);
+            rd.valid = false;
+            rd.texBindGroupValid = false;
+        }
+
+        if (!m_World->HasComponent<MaterialComponent>(entity))
+            m_World->AddComponent<MaterialComponent>(entity, MaterialComponent{});
+        if (auto* mat = m_World->GetComponent<MaterialComponent>(entity)) {
+            mat->baseColor = Math::Vector3(1.0f, 1.0f, 1.0f);   // glyph verts carry textColor
+            mat->alphaMode = MaterialComponent::AlphaMode::Blend;
+            mat->castShadows = false;
+            mat->sdfText = true;                 // shader thresholds the distance field
+            mat->baseColorTexturePath = key;     // resolves to the atlas via m_WebTextureCache
+        }
+        tc->dirty = false;
+        m_WebSDFTextMeshes.insert(entity);
+    }
+}
+
 // ============================================================================
 // Frame rendering
 // ============================================================================
@@ -1411,6 +1518,12 @@ void RenderSystem::Update(f32 deltaTime) {
            m_WebShadowSampleBG.IsValid() ? 1 : 0,
            m_Camera ? 1 : 0);
     }
+
+    // Generate glyph meshes for bare TextComponent entities BEFORE the storage
+    // cache refresh, so the freshly-added MeshComponents are visible this frame.
+    // (Vulkan does this in FlushPendingChanges; web has no such split, and this
+    // runs before any pass is encoded, so the world mutation is frame-safe.)
+    WebEnsureTextMeshes();
 
     RefreshStorageCache();
     ResetFrameCounters();

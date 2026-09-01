@@ -1166,6 +1166,19 @@ private:
     std::unordered_set<std::string> m_WebFailedTextures;  // don't retry failed loads
     Renderer::GPUTextureHandle WebGetOrLoadTexture(const std::string& path);
 
+    // Web SDF text generation (unified display P1 on web): the CPU atlas build
+    // is shared (FontAtlas/stb_truetype); the texture is a WebGPU texture keyed
+    // into m_WebTextureCache so the normal per-entity bind resolves it by path.
+    struct WebSDFFont {
+        std::unique_ptr<Renderer::FontAtlas> atlas;
+        Renderer::GPUTextureHandle texture;
+        std::string cacheKey;
+    };
+    std::unordered_map<std::string, WebSDFFont> m_WebSDFFonts;
+    std::unordered_set<Entity> m_WebSDFTextMeshes;  // entities whose mesh the SDF path owns
+    Renderer::FontAtlas* WebGetOrBuildFontAtlas(const std::string& fontPath, std::string& outCacheKey);
+    void WebEnsureTextMeshes();
+
     // Web scene-pass hook: invoked with the scene WGPURenderPassEncoder (as void*)
     // right before the scene pass ends. The web player uses it to draw GPU particles
     // with real scene depth. Public setter below.
