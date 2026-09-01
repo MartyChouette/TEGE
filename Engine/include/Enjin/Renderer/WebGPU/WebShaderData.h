@@ -579,6 +579,20 @@ fn luminance(c: vec3<f32>) -> f32 {
     return dot(c, vec3<f32>(0.299, 0.587, 0.114));
 }
 
+// Exact sRGB OETF (linear -> sRGB display), the IEC 61966-2-1 piecewise curve.
+// Replaces the old pow(1/2.2) approximation, which diverged from true sRGB most
+// in the dark/indirect range — the exact spot GI and shadows live, and where
+// Safari's color management made it read differently from Chrome/desktop. The
+// desktop Vulkan swapchain is B8G8R8A8_SRGB (hardware does this exact curve);
+// this makes the web output byte-identical to that intent, deterministic across
+// every browser. Kept in-shader (not an sRGB swapchain view) so the ImGui/HUD
+// overlay that shares the canvas isn't double-encoded.
+fn linearToSrgb(c: vec3<f32>) -> vec3<f32> {
+    let lo = c * 12.92;
+    let hi = 1.055 * pow(max(c, vec3<f32>(0.0)), vec3<f32>(1.0 / 2.4)) - 0.055;
+    return select(hi, lo, c <= vec3<f32>(0.0031308));
+}
+
 fn fxaa(uv: vec2<f32>, texelSize: vec2<f32>) -> vec3<f32> {
     let rgbM = textureSample(sceneTexture, sceneSampler, uv).rgb;
     let rgbN = textureSample(sceneTexture, sceneSampler, uv + vec2<f32>(0.0, -texelSize.y)).rgb;
@@ -671,7 +685,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     if (!(previewLeft && params.previewEffect == 5u)) {
         color = applyColorblindCorrection(color);
     }
-    color = pow(color, vec3<f32>(1.0 / 2.2));
+    color = linearToSrgb(color);
     if (params.previewEffect != 0u && abs(in.uv.x - params.previewDivider) < texelSize.x) {
         color = vec3<f32>(1.0, 1.0, 1.0);
     }
