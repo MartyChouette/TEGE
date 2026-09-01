@@ -6,6 +6,7 @@
 #include "Enjin/Effects/TreeRenderer.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/Hierarchy.h"   // SetParent — nest trunk colliders under the volume
 #include "Enjin/Logging/Log.h"
 #include <algorithm>
 #include <string>
@@ -75,9 +76,19 @@ void TreeRenderer::GenerateColliders(ECS::World* world, ECS::Entity volumeEntity
         // Runtime-generated: a mid-play save must not write these into the
         // scene file (this exact leak polluted the Playground scene once).
         world->AddComponent<ECS::TransientComponent>(collider, ECS::TransientComponent{});
+
+        // Nest the collider under the volume so all trunk colliders live INSIDE the
+        // tree volume in the hierarchy instead of scattering across the scene root
+        // ("a ton shot out"). SetParent only wires the parent/children links — it does
+        // NOT touch the transform, so transform.position stays WORLD-space. That's
+        // deliberate: the physics backend places bodies from the local transform, and
+        // the collider debug draw reads it directly too, so leaving the world value in
+        // place keeps both correct with no physics change. (These entities have no mesh,
+        // so the parent-relative ComputeWorldMatrix is never consumed.)
+        ECS::SetParent(world, collider, volumeEntity);
     }
 
-    ENJIN_LOG_INFO(Renderer, "Generated %u tree trunk colliders", tree->density);
+    ENJIN_LOG_INFO(Renderer, "Generated %u tree trunk colliders under the volume", tree->density);
 }
 
 void TreeRenderer::GenerateAllColliders(ECS::World* world) {
