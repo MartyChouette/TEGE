@@ -1622,10 +1622,12 @@ public:
 
         Enjin::GUI::SplashOptions splashOpts;
         splashOpts.artStylePreset = m_SceneArtStylePreset;
-        splashOpts.a11yLine = "playable by every player: colorblind modes, screen reader, remappable input";
+        // (No accessibility tagline on the splash — removed at Marty's call.)
         splashOpts.reducedMotion = m_AccessibilitySettings.reducedMotion;
+        // Startup is just the three words ("Collaborate Compromise Create") under
+        // the title — no credit line, no tagline (Marty's call).
         Enjin::GUI::DrawEngineSplash(m_EngineSplashTimer, kEngineSplashDuration,
-                                     kFadeStart, "made with",
+                                     kFadeStart, /*creditLine*/ nullptr,
                                      m_ImGuiLayer ? m_ImGuiLayer->GetHeadingFont() : nullptr,
                                      splashOpts);
     }
