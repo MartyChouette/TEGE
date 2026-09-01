@@ -3256,7 +3256,7 @@ void RenderSystem::RenderSplats() {}       // Vulkan-only
 void RenderSystem::SpawnGPUParticles(u32, const Math::Vector3&, const Math::Vector3&) {}
 void RenderSystem::SpawnSurfaceBurst(u32, const Math::Vector3&, const Math::Vector3&, u8) {}
 void RenderSystem::TickGPUEmitters(f32) {}
-void RenderSystem::RenderParticles(u32, u32) {}
+void RenderSystem::RenderParticles(u32, u32, bool, u32) {}
 void RenderSystem::RenderElementalParticles(const Effects::ElementalSystem&, u32, u32, bool, u32) {}
 void RenderSystem::RenderFluid(u32, u32) {}
 void RenderSystem::RenderGrass(u32, u32) {}
@@ -14408,21 +14408,34 @@ void RenderSystem::SpawnGPUParticlePreset(u32 count, const Math::Vector3& positi
                                              Effects::PresetSpawnParams(preset));
 }
 
-void RenderSystem::RenderParticles(u32 viewportWidth, u32 viewportHeight) {
+void RenderSystem::RenderParticles(u32 viewportWidth, u32 viewportHeight,
+                                   bool useOffscreenSets, u32 offscreenViewportIndex) {
     if (!m_ParticleRenderer || !m_Renderer || !m_Initialized || !m_World || !m_ActiveDescriptorSets) return;
 
     VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
     u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
+
+    // Offscreen path (game view / exported-player PP target): bind the offscreen
+    // sets holding the game camera's view/proj — RenderToTarget restores the
+    // main/editor sets on return, so a plain call would draw with the wrong
+    // camera. Mirrors RenderElementalParticles.
+    const std::vector<VkDescriptorSet>* sets = m_ActiveDescriptorSets;
+    u32 setIndex = GetActiveBufferIndex(currentFrame);
+    if (useOffscreenSets && !m_OffscreenDescriptorSets.empty()) {
+        sets = &m_OffscreenDescriptorSets;
+        setIndex = GetOffscreenBufferIndex(currentFrame, offscreenViewportIndex);
+        if (setIndex >= m_OffscreenDescriptorSets.size()) return;
+    }
+
     // Bind an emitter's art-asset texture (binding 3) so particles can render it.
     auto bindParticleTexture = [this](const std::string& path) -> bool {
         auto tex = GetOrLoadTexture(path);
         if (tex && tex->IsValid()) { UpdateTextureDescriptor(tex.get()); return true; }
         return false;
     };
-    m_ParticleRenderer->Render(commandBuffer, *m_ActiveDescriptorSets,
-                               GetActiveBufferIndex(currentFrame), m_World,
+    m_ParticleRenderer->Render(commandBuffer, *sets, setIndex, m_World,
                                viewportWidth, viewportHeight, bindParticleTexture);
 }
 

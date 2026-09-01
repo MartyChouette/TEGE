@@ -611,7 +611,8 @@ public:
                            const Math::Vector3& direction, u8 surfaceParticle);
     // Spawn every frame from GPUParticleEmitterComponent entities (continuous + burst)
     void TickGPUEmitters(f32 deltaTime);
-    void RenderParticles(u32 viewportWidth = 0, u32 viewportHeight = 0);
+    void RenderParticles(u32 viewportWidth = 0, u32 viewportHeight = 0,
+                         bool useOffscreenSets = false, u32 offscreenViewportIndex = 0);
     // useOffscreenSets: bind the offscreen (game camera) uniforms — required when
     // drawing into a game-view render target after RenderToTarget restored the
     // main sets (same wrong-camera failure the weather draw had)

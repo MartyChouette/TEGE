@@ -1451,8 +1451,17 @@ public:
                     m_RenderSystem->RecordRTFrame(false);
                     m_ScenePPTarget->Begin(preCmd);
                     m_RenderSystem->RenderToTarget(m_ScenePPTarget.get(), m_Camera.get(), 1);
-                    m_RenderSystem->RenderElementalParticles(m_ElementalSystem,
-                        m_ScenePPTarget->GetWidth(), m_ScenePPTarget->GetHeight());
+                    // Particles into the SAME offscreen target, with the offscreen
+                    // viewport-1 descriptor sets (RenderToTarget restored the main
+                    // sets on return). Without the true,1 args these drew with the
+                    // wrong camera transform and landed off-screen (fire smoke
+                    // invisible); and CPU emitters (the fountain) weren't drawn in
+                    // the offscreen path at all. Matches the editor's RenderOffscreen.
+                    auto ppW = m_ScenePPTarget->GetWidth();
+                    auto ppH = m_ScenePPTarget->GetHeight();
+                    m_RenderSystem->RenderParticles(ppW, ppH, /*useOffscreenSets*/ true, /*viewport*/ 1);
+                    m_RenderSystem->RenderElementalParticles(m_ElementalSystem, ppW, ppH,
+                        /*useOffscreenSets*/ true, /*viewport*/ 1);
                     m_ScenePPTarget->End(preCmd);
                     m_RenderSystem->SetSkipMainPassRendering(true);
                     m_RasterPPThisFrame = true;

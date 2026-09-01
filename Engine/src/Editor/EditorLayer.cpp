@@ -3223,6 +3223,9 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
                                                  /*useOffscreenSets*/ true, /*viewport*/ 0);
     } else {
         m_RenderSystem->RenderToTarget(sceneTarget, &gameCamera, 1);
+        // CPU particle emitters (e.g. a fountain) into the offscreen target — was
+        // never drawn in the offscreen path, only in the direct main pass.
+        m_RenderSystem->RenderParticles(rtWidth, rtHeight, /*useOffscreenSets*/ true, /*viewport*/ 1);
         if (m_GameViewWeatherParticles) {
             m_RenderSystem->RenderWeatherParticles(m_WeatherSystem, m_GameViewIsRain, rtWidth, rtHeight,
                                                    /*useOffscreenSets*/ true, /*viewport*/ 1);
