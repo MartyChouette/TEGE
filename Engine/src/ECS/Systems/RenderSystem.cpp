@@ -4784,7 +4784,18 @@ void RenderSystem::Update(f32 deltaTime) {
             auto* tc = m_World->GetComponent<TextComponent>(entity);
             if (!tc) continue;
             const bool sdfOwned = m_SDFTextMeshes.count(entity) != 0;
-            if (m_World->HasComponent<MeshComponent>(entity) && !sdfOwned) continue;  // authored mesh -> text-on-surface path
+            if (m_World->HasComponent<MeshComponent>(entity) && !sdfOwned) {
+                // A pre-existing mesh normally means text on an authored surface
+                // (book, sign) -> texture path. BUT a saved scene serializes the
+                // auto-generated SDF glyph mesh too, and its atlas binding is
+                // runtime-only, so on load we must re-adopt it (rebuild + rebind)
+                // rather than render a mesh pointing at no atlas. A serialized
+                // SDF mesh is identifiable by its material's sdfText flag.
+                MaterialComponent* existing = m_World->GetComponent<MaterialComponent>(entity);
+                const bool serializedSdf = tc->sdfText && existing && existing->sdfText;
+                if (!serializedSdf) continue;   // genuinely authored mesh -> texture path
+                tc->dirty = true;               // force the rebuild below to rebind the atlas
+            }
             if (tc->text.empty() && !sdfOwned) continue;
 
             Renderer::Texture* atlasTex = nullptr;

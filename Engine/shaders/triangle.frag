@@ -1207,17 +1207,19 @@ void main() {
         albedo *= texColor.rgb;
         texAlpha = texColor.a;
         // SDF text: alpha is a distance field, not coverage. Threshold at the
-        // atlas on-edge value (180/255) with fwidth-based AA so glyph edges
-        // stay crisp under any scale/perspective (vector-font behavior).
+        // atlas on-edge value (180/255) with a narrow fwidth AA band so glyph
+        // edges stay crisp at any scale (vector-font behavior). Crucially,
+        // HARD-DISCARD any fragment outside the glyph so the glyph quad's
+        // background never contributes - that background (the padding ring of
+        // each quad, at full atlas RGB) was compositing into an opaque box
+        // behind every word. Discarding it kills the box at the source while
+        // the surviving edge keeps its anti-aliasing.
         if ((mat_flags & FLAG_SDF_TEXT) != 0) {
             float sdfEdge = 180.0 / 255.0;
-            // At small sizes many texels fall under one pixel, so fwidth blows
-            // up; if the AA half-width reaches the edge value the transparent
-            // interior of each glyph quad picks up alpha and shows as a faint
-            // box. Clamp the band below sdfEdge so the field's zero background
-            // always maps to zero alpha (kills the halo, keeps the AA).
-            float sdfW = clamp(fwidth(texAlpha), 1e-4, sdfEdge * 0.5);
-            texAlpha = smoothstep(sdfEdge - sdfW, sdfEdge + sdfW, texAlpha);
+            float sdfW = clamp(fwidth(texColor.a), 0.008, 0.10);
+            float a = smoothstep(sdfEdge - sdfW, sdfEdge + sdfW, texColor.a);
+            if (a < 0.03) discard;   // outside the glyph -> no box
+            texAlpha = a;
         }
     }
 
