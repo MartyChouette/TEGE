@@ -321,6 +321,30 @@ void EditorLayer::DrawTransformComponent(ECS::Entity entity) {
             transform->scale = Math::Vector3(scale[0], scale[1], scale[2]);
         }
         ImGui::SetItemTooltip("Scale multiplier per axis");
+
+        // Align to Parent: TransformComponent is LOCAL (parent-relative), so zeroing
+        // local position + rotation snaps this entity exactly onto its parent's
+        // origin/orientation. Fixes the common "a child collider/part drifted away
+        // from the mesh it's parented to" misalignment. Scale is kept.
+        {
+            auto* pc = m_World->GetComponent<ECS::ParentComponent>(entity);
+            bool hasParent = pc && pc->parent != ECS::INVALID_ENTITY && m_World->IsValid(pc->parent);
+            if (!hasParent) ImGui::BeginDisabled();
+            if (ImGui::Button("Align to Parent")) {
+                ECS::TransformComponent oldT = *transform;
+                transform->position = Math::Vector3(0.0f, 0.0f, 0.0f);
+                transform->rotation = Math::Quaternion::Identity();
+                transform->worldMatrixDirty = true;
+                m_RotEulerEntity = ECS::INVALID_ENTITY;  // force the euler cache to resync
+                m_UndoRedo.Execute(std::make_unique<TransformCommand>(m_World, entity, oldT, *transform));
+            }
+            if (!hasParent) ImGui::EndDisabled();
+            ImGui::SetItemTooltip(hasParent
+                ? "Snap onto the parent: zero local position + rotation (keeps scale).\n"
+                  "Use when a child collider/part has drifted off the mesh it belongs to."
+                : "No parent. Drag this entity onto another in the Hierarchy to parent it,\n"
+                  "then this snaps it into place.");
+        }
     }
 }
 
