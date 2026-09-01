@@ -332,6 +332,17 @@ namespace {
         for (auto& t : s_Touches) if (t.id == id) return &t;
         return nullptr;
     }
+}
+
+// JS-callable (the on-page "Touch controls" button): force the overlay on as
+// if a coarse pointer had been detected. Must be extern "C" + KEEPALIVE so
+// Module._enjin_enable_touch_controls survives dead-code elimination.
+extern "C" EMSCRIPTEN_KEEPALIVE void enjin_enable_touch_controls() {
+    s_CoarsePointer = true;
+    s_TouchSeen = true;
+}
+
+namespace {
 
     EM_BOOL WebTouchCallback(int eventType, const EmscriptenTouchEvent* e, void* userData) {
         (void)userData;
@@ -444,6 +455,31 @@ void Input::Initialize(Window* window) {
     s_CoarsePointer = EM_ASM_INT({
         return (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ? 1 : 0;
     }) != 0;
+
+    // Manual "go mobile": touch-capable laptops, tablets with mice, and DevTools
+    // emulation don't always report a coarse pointer — give every player a small
+    // on-page toggle that forces the overlay on (and hides itself). Injected
+    // from the engine so every export has it without touching the HTML shell.
+    EM_ASM({
+        try {
+            if (document.getElementById('enjin-touch-toggle')) return;
+            var b = document.createElement('button');
+            b.id = 'enjin-touch-toggle';
+            b.textContent = '📱 Touch controls';
+            b.style.cssText = 'position:fixed;top:8px;left:8px;z-index:1000;' +
+                'padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.35);' +
+                'background:rgba(0,0,0,0.45);color:#fff;font:13px sans-serif;cursor:pointer;opacity:0.7;';
+            b.onclick = function() {
+                if (Module && Module._enjin_enable_touch_controls) Module._enjin_enable_touch_controls();
+                b.remove();
+                try {
+                    var c = document.getElementById('game-canvas') || document.body;
+                    if (c.requestFullscreen && !document.fullscreenElement) c.requestFullscreen().catch(function(){});
+                } catch (e) {}
+            };
+            document.body.appendChild(b);
+        } catch (e) {}
+    });
     {
         f32 qsx, qsy; int qbw, qbh;
         WebCanvasScale(qsx, qsy, qbw, qbh);
