@@ -8,6 +8,7 @@
 #include "Enjin/ECS/Components/Mesh.h"
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/ECS/Components/Notes.h"
+#include "Enjin/ECS/Components/DisplayGraphic.h"
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Components/VirtualCamera.h"
 #include "Enjin/ECS/Components/WeatherZone.h"
@@ -706,6 +707,23 @@ ECS::NotesComponent DeserializeNotesComponent(const json& j) {
     ECS::NotesComponent notes;
     if (j.contains("notes")) notes.notes = SafeStr(j["notes"], MAX_STR_LARGE);
     return notes;
+}
+
+json SerializeDisplayGraphicComponent(const ECS::DisplayGraphicComponent& dg) {
+    json j;
+    j["sourcePath"] = dg.sourcePath;
+    j["worldHeight"] = RF(dg.worldHeight);
+    j["curveTolerance"] = RF(dg.curveTolerance);
+    return j;
+}
+
+ECS::DisplayGraphicComponent DeserializeDisplayGraphicComponent(const json& j) {
+    ECS::DisplayGraphicComponent dg;
+    dg.sourcePath = j.value("sourcePath", std::string(""));
+    dg.worldHeight = j.value("worldHeight", 1.0f);
+    dg.curveTolerance = j.value("curveTolerance", 0.25f);
+    dg.dirty = true;   // re-tessellate on load
+    return dg;
 }
 
 ECS::TextComponent DeserializeTextComponent(const json& j) {
@@ -7887,6 +7905,7 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
         ENJIN_SERDES("terrainGenerator", ECS::TerrainGeneratorComponent, SerializeTerrainGeneratorComponent, DeserializeTerrainGeneratorComponent),
         ENJIN_SERDES("tether", ECS::TetherComponent, SerializeTetherComponent, DeserializeTetherComponent),
         ENJIN_SERDES("text", ECS::TextComponent, SerializeTextComponent, DeserializeTextComponent),
+        ENJIN_SERDES("displayGraphic", ECS::DisplayGraphicComponent, SerializeDisplayGraphicComponent, DeserializeDisplayGraphicComponent),
         ENJIN_SERDES("thirdPerson", ECS::ThirdPersonController, SerializeThirdPerson, DeserializeThirdPerson),
         ENJIN_SERDES("tilemap", ECS::TilemapComponent, SerializeTilemapComponent, DeserializeTilemapComponent),
         ENJIN_SERDES("timer", ECS::TimerComponent, SerializeTimerComponent, DeserializeTimerComponent),

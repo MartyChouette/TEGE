@@ -437,6 +437,7 @@ private:
     void DrawCameraComponent(ECS::Entity entity);
     void DrawNotesComponent(ECS::Entity entity);
     void DrawTextComponent(ECS::Entity entity);
+    void DrawDisplayGraphicComponent(ECS::Entity entity);
     void DrawWeatherZoneComponent(ECS::Entity entity);
     void DrawWaterVolumeComponent(ECS::Entity entity);
     void DrawWater3DComponent(ECS::Entity entity);

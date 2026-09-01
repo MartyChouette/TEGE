@@ -1600,6 +1600,61 @@ void EditorLayer::DrawTextComponent(ECS::Entity entity) {
     }
 }
 
+void EditorLayer::DrawDisplayGraphicComponent(ECS::Entity entity) {
+    bool open = UI::SectionHeader("Vector Graphic", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("DisplayGraphicCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::DisplayGraphicComponent>(entity, "displayGraphic", "Vector Graphic");
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        ECS::DisplayGraphicComponent* dg = m_World->GetComponent<ECS::DisplayGraphicComponent>(entity);
+        if (!dg) return;
+        DrawComponentHelp("displayGraphic", m_World, entity);
+
+        if (dg->sourcePath.empty()) {
+            ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.5f, 1.0f),
+                               "No SVG yet - pick one to see it in the scene.");
+        }
+
+        char pathBuffer[512];
+        strncpy(pathBuffer, dg->sourcePath.c_str(), sizeof(pathBuffer) - 1);
+        pathBuffer[sizeof(pathBuffer) - 1] = '\0';
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 80);
+        if (InspectorUndo::InputText(m_UndoRedo, "##SVGPath", pathBuffer, sizeof(pathBuffer),
+                [dg](const std::string& val) { dg->sourcePath = val; dg->dirty = true; })) {
+            dg->sourcePath = pathBuffer;
+            dg->dirty = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Browse##SVG")) {
+            std::string path = FileDialog::OpenFile("Select SVG", {{ "SVG Files", "*.svg" }});
+            if (!path.empty()) {
+                dg->sourcePath = path;
+                dg->dirty = true;
+            }
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("SVG");
+
+        if (InspectorUndo::DragFloat(m_UndoRedo, "World Height", &dg->worldHeight, 0.01f, 0.01f, 100.0f)) {
+            dg->dirty = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("World-space height of the whole document (transform scale multiplies it).");
+        }
+        if (InspectorUndo::DragFloat(m_UndoRedo, "Curve Quality", &dg->curveTolerance, 0.01f, 0.01f, 4.0f)) {
+            dg->dirty = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Max curve-flattening error in SVG units. Lower = smoother curves, more triangles.");
+        }
+    }
+}
+
 // ============================================================================
 // Atlas Packer (Tools menu): shelf-packs a folder of images into one atlas +
 // a .atlas.json region map. Regions are aligned to a 1/256 UV grid so the
@@ -8875,6 +8930,8 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
     if (ImGui::SmallButton("+Label")) canvas->AddElement(GUI::UIWidgetType::Label, "Label");
     ImGui::SameLine();
     if (ImGui::SmallButton("+Image")) canvas->AddElement(GUI::UIWidgetType::Image, "Image");
+    ImGui::SameLine();
+    if (ImGui::SmallButton("+Vector")) canvas->AddElement(GUI::UIWidgetType::VectorGraphic, "Vector");
 
     if (ImGui::SmallButton("+Progress")) canvas->AddElement(GUI::UIWidgetType::ProgressBar, "ProgressBar");
     ImGui::SameLine();
@@ -9131,7 +9188,7 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
         }
     }
 
-    if (sel->type == GUI::UIWidgetType::Image) {
+    if (sel->type == GUI::UIWidgetType::Image || sel->type == GUI::UIWidgetType::VectorGraphic) {
         ImGui::TextDisabled("Image");
         char imgBuf[256];
         strncpy(imgBuf, sel->data.imagePath.c_str(), sizeof(imgBuf) - 1); imgBuf[sizeof(imgBuf) - 1] = '\0';

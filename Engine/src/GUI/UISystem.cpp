@@ -7,6 +7,8 @@
 #include "Enjin/Renderer/Camera.h"
 #include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/Logging/Log.h"
+#include "Enjin/Assets/MeshAssetCache.h"   // game-root resolution for SVG paths
+#include <filesystem>
 
 #include <imgui.h>
 #include <algorithm>
@@ -950,6 +952,7 @@ void UISystem::RenderElement(const UIElement& element, const UITheme& theme, u32
         case UIWidgetType::Tooltip:     break; // Tooltips are rendered in RenderCanvas overlay pass
         case UIWidgetType::Modal:       RenderModal(element, theme, canvas, focusedId); break;
         case UIWidgetType::ListView:    RenderListView(element, theme, canvas, isFocused); break;
+        case UIWidgetType::VectorGraphic: RenderVectorGraphic(element, theme); break;
         default:                        RenderPlaceholder(element, theme); break;
     }
 
@@ -1146,6 +1149,81 @@ void UISystem::RenderImage(const UIElement& element, const UITheme& theme) {
         dl->AddText(font, 12.0f, ImVec2(tx, ty),
             ImGui::ColorConvertFloat4ToU32(ImVec4(0.7f, 0.7f, 0.7f, alpha)), label.c_str());
     }
+}
+
+void UISystem::RenderVectorGraphic(const UIElement& element, const UITheme& theme) {
+    (void)theme;
+#if ENJIN_RENDERER_WEBGPU
+    // The tessellator (and nanosvg's implementation) are desktop-only for now.
+    RenderPlaceholder(element, theme);
+#else
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    const f32 alpha = element.data.imageAlpha;
+    const auto& tint = element.data.imageTint;
+
+    if (element.data.imagePath.empty()) return;
+
+    auto it = m_VectorGraphicCache.find(element.data.imagePath);
+    if (it == m_VectorGraphicCache.end()) {
+        // Resolve project-relative paths against the game root, same rule as
+        // textures and fonts.
+        std::string loadPath = element.data.imagePath;
+        {
+            namespace fs = std::filesystem;
+            std::error_code ec;
+            if (fs::path(loadPath).is_relative() && !fs::exists(loadPath, ec)) {
+                const std::string& root = Assets::MeshAssetCache::Get().GetSearchRoot();
+                if (!root.empty()) {
+                    std::string joined = (fs::path(root) / loadPath).string();
+                    if (fs::exists(joined, ec)) loadPath = joined;
+                }
+            }
+        }
+        it = m_VectorGraphicCache.emplace(element.data.imagePath,
+                                          Renderer::TessellateSVG(loadPath)).first;
+    }
+    const Renderer::TessellatedGraphic& g = it->second;
+    if (!g.valid || g.width <= 0.0f || g.height <= 0.0f) {
+        // Same fallback look as a missing image: dim rect + the path.
+        ImU32 color = ImGui::ColorConvertFloat4ToU32(ImVec4(0.3f, 0.1f, 0.1f, alpha * 0.5f));
+        DrawRoundedRect(dl, element.computedRect, color, 0.0f);
+        return;
+    }
+
+    // Fit the document into the element rect, preserving aspect, centered.
+    const auto& r = element.computedRect;
+    f32 scale = std::min(r.w / g.width, r.h / g.height);
+    f32 ox = r.x + (r.w - g.width * scale) * 0.5f;
+    f32 oy = r.y + (r.h - g.height * scale) * 0.5f;
+
+    // Raw triangles through the draw list. UVs pin to the font atlas' white
+    // pixel so the current texture (the atlas) samples solid white and the
+    // vertex color is the pixel color - the same trick ImGui's own filled
+    // shapes use.
+    const ImVec2 whiteUV = ImGui::GetIO().Fonts->TexUvWhitePixel;
+    const int idxCount = static_cast<int>(g.indices.size());
+    const int vtxCount = static_cast<int>(g.vertices.size());
+    // ImDrawIdx is 16-bit: refuse a graphic that would overflow the draw
+    // list's index space and corrupt every element after it.
+    if (dl->_VtxCurrentIdx + static_cast<u32>(vtxCount) >= 60000u) {
+        ENJIN_LOG_WARN(Renderer, "UI VectorGraphic '%s': too many vertices (%d) for the UI draw list",
+                       element.data.imagePath.c_str(), vtxCount);
+        return;
+    }
+    dl->PrimReserve(idxCount, vtxCount);
+    const ImDrawIdx baseIdx = static_cast<ImDrawIdx>(dl->_VtxCurrentIdx);
+    for (const auto& v : g.vertices) {
+        ImU32 col = IM_COL32(
+            static_cast<u8>(std::min(v.color.x * tint.x, 1.0f) * 255.0f),
+            static_cast<u8>(std::min(v.color.y * tint.y, 1.0f) * 255.0f),
+            static_cast<u8>(std::min(v.color.z * tint.z, 1.0f) * 255.0f),
+            static_cast<u8>(std::min(v.color.w * alpha, 1.0f) * 255.0f));
+        dl->PrimWriteVtx(ImVec2(ox + v.pos.x * scale, oy + v.pos.y * scale), whiteUV, col);
+    }
+    for (u32 i : g.indices) {
+        dl->PrimWriteIdx(static_cast<ImDrawIdx>(baseIdx + i));
+    }
+#endif
 }
 
 void UISystem::RenderProgressBar(const UIElement& element, const UITheme& theme) {

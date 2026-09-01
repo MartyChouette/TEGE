@@ -1935,6 +1935,7 @@ void EditorLayer::DrawUIEditorOverlay() {
         if (ImGui::MenuItem("Button"))      addAtPosition(GUI::UIWidgetType::Button,      "Button",      160, 40);
         if (ImGui::MenuItem("Label"))       addAtPosition(GUI::UIWidgetType::Label,       "Label",       200, 30);
         if (ImGui::MenuItem("Image"))       addAtPosition(GUI::UIWidgetType::Image,       "Image",       100, 100);
+        if (ImGui::MenuItem("Vector Graphic")) addAtPosition(GUI::UIWidgetType::VectorGraphic, "Vector", 100, 100);
         if (ImGui::MenuItem("ProgressBar")) addAtPosition(GUI::UIWidgetType::ProgressBar, "ProgressBar", 200, 24);
         if (ImGui::MenuItem("Slider"))      addAtPosition(GUI::UIWidgetType::Slider,      "Slider",      200, 30);
         if (ImGui::MenuItem("Checkbox"))    addAtPosition(GUI::UIWidgetType::Checkbox,    "Checkbox",    120, 24);

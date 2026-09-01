@@ -69,6 +69,7 @@
 #include "Enjin/ECS/Components/CineComponent.h"
 #include "Enjin/ECS/Components/Elemental.h"
 #include "Enjin/ECS/Components/Text.h"
+#include "Enjin/ECS/Components/DisplayGraphic.h"
 #include "Enjin/ECS/Components/IKComponents.h"
 #include "Enjin/ECS/Components/BoneAttachment.h"
 #include "Enjin/ECS/Components/Flower.h"
@@ -262,6 +263,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TextComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::TextComponent>(e); },
             "text"},
+        {"Vector Graphic (SVG)", "UI", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::DisplayGraphicComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::DisplayGraphicComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::DisplayGraphicComponent>(e); },
+            "displayGraphic"},
 
         // -- Character Controller --
         {"2D Platformer", "Character Controller", "Platformer2D",
@@ -1882,6 +1888,11 @@ void EditorLayer::DrawInspectorPanel() {
         // Text component
         if (m_World->HasComponent<ECS::TextComponent>(m_PrimarySelected)) {
             DrawTextComponent(m_PrimarySelected);
+        }
+
+        // Vector graphic component (unified display P2)
+        if (m_World->HasComponent<ECS::DisplayGraphicComponent>(m_PrimarySelected)) {
+            DrawDisplayGraphicComponent(m_PrimarySelected);
         }
 
         // Character Controller components

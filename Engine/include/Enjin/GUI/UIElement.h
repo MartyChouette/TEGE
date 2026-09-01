@@ -29,6 +29,10 @@ enum class UIWidgetType : u8 {
     Tooltip,
     Modal,
     ListView,
+    // Unified display P2: tessellated SVG drawn straight into the draw list
+    // (same source + tessellation as the world DisplayGraphicComponent).
+    // Reuses data.imagePath (the .svg) + imageTint + imageAlpha.
+    VectorGraphic,
     Count
 };
 

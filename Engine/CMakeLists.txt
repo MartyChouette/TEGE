@@ -70,7 +70,7 @@ if(ENJIN_PLATFORM_WEB)
          "src/Renderer/VirtualTexture/*.cpp" "src/Renderer/VirtualTextureSystem.cpp"
          "src/Renderer/ClusteredLighting*.cpp"
          "src/Renderer/Texture.cpp" "src/Renderer/RenderTarget.cpp"
-         "src/Renderer/SVGLoader.cpp" "src/Renderer/Materials/*.cpp"
+         "src/Renderer/SVGLoader.cpp" "src/Renderer/VectorTessellator.cpp" "src/Renderer/Materials/*.cpp"
          "src/Renderer/FrameGraph/*.cpp" "src/Renderer/RenderGraph/*.cpp"
          "src/Renderer/RenderPipeline/*.cpp" "src/Renderer/Techniques/*.cpp"
          "src/Renderer/VRS/*.cpp" "src/Renderer/HaltonSequence.cpp"
@@ -92,6 +92,11 @@ else()
     # Desktop build: exclude WebGPU-specific sources
     file(GLOB_RECURSE WEBGPU_SOURCES "src/Renderer/WebGPU/*.cpp")
     list(REMOVE_ITEM ENGINE_SOURCES ${WEBGPU_SOURCES})
+    # Explicit append beats stale GLOB caches (same trick as the Phase 4-5 files
+    # below). Web excludes this file: nanosvg's implementation lives in
+    # SVGLoader.cpp, which is also web-excluded.
+    list(APPEND ENGINE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/Renderer/VectorTessellator.cpp")
+    list(REMOVE_DUPLICATES ENGINE_SOURCES)
 endif()
 
 # Phase 4-5 files may not be found by GLOB_RECURSE due to CMake caching — add explicitly

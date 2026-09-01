@@ -5,8 +5,10 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/GUI/UICanvas.h"
 #include "Enjin/GUI/UIEvents.h"
+#include "Enjin/Renderer/VectorTessellator.h"
 
 #include <functional>
+#include <unordered_map>
 
 struct ImDrawList;
 
@@ -95,6 +97,9 @@ private:
     UIEventBus m_EventBus;
     bool m_HUDEnabled = true;  // HUD-tier canvas gate (see SetHUDEnabled)
     TextureResolver m_TextureResolver;
+    // Unified display P2: canvas-side cache of tessellated SVGs, keyed by path
+    // (invalid entries cached too, so a bad file isn't re-parsed every frame).
+    std::unordered_map<std::string, Renderer::TessellatedGraphic> m_VectorGraphicCache;
     AnnouncerCallback m_AnnouncerCallback;
     f32 m_FontScale = 1.0f;
     bool m_ReducedMotion = false;
@@ -158,6 +163,7 @@ private:
     void RenderButton(const UIElement& element, const UITheme& theme, bool focused);
     void RenderLabel(const UIElement& element, const UITheme& theme);
     void RenderImage(const UIElement& element, const UITheme& theme);
+    void RenderVectorGraphic(const UIElement& element, const UITheme& theme);
     void RenderProgressBar(const UIElement& element, const UITheme& theme);
     void RenderSlider(const UIElement& element, const UITheme& theme);
     void RenderCheckbox(const UIElement& element, const UITheme& theme);
