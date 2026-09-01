@@ -5889,6 +5889,32 @@ void RenderSystem::Update(f32 deltaTime) {
         CompositeRTResults(commandBuffer);
     }
 
+    // Opaque foliage (grass/shrubs/trees) belongs in the OPAQUE phase, BEFORE the
+    // blend meshes at the tail of the sorted loop below. Foliage writes depth; the
+    // transparent in-world text signs do NOT (depth-write-off pipeline). When
+    // foliage drew AFTER them (its old home past the loop) it overwrote the signs
+    // wherever a tree sat between the sign and the far background — trees painted
+    // over the text boxes (#22). Drawing foliage first lets the signs depth-test
+    // against it: foliage in front correctly occludes the sign, foliage behind
+    // shows through the sign's translucency AND its transparent margins (which a
+    // depth-writing sign would instead punch invisible rectangular holes into).
+    // Foliage binds its own pipelines, so rebind the main geometry pipeline + sets
+    // afterward for the entity loop.
+    RenderGrass(0, 0);
+    RenderShrubs(0, 0);
+    RenderTrees(0, 0);
+    m_Pipeline->Bind(commandBuffer);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        m_Pipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 0, nullptr);
+    if (m_BindlessManager) {
+        VkDescriptorSet bindlessSet = m_BindlessManager->GetDescriptorSet();
+        if (bindlessSet) {
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                m_Pipeline->GetLayout(), 1, 1, &bindlessSet, 0, nullptr);
+        }
+    }
+    m_LastBound.Reset(); m_GeometryPoolBound = false; InvalidateBoundSet0();
+
     {
         Math::Vector3 camPos;
         bool doLOD = (m_Camera != nullptr);
@@ -6019,10 +6045,9 @@ void RenderSystem::Update(f32 deltaTime) {
     if (m_SceneComposition.mode == SceneRenderMode::Scene2D)
         Render2DWater(commandBuffer);
 
-    // Render effect passes (grass, shrubs, trees, particles, fluid)
-    RenderGrass(0, 0);
-    RenderShrubs(0, 0);
-    RenderTrees(0, 0);
+    // Render effect passes (particles, fluid). Grass/shrubs/trees moved UP into the
+    // opaque phase (before the blend meshes) so foliage no longer overdraws the
+    // transparent in-world text signs (#22).
     RenderParticles(0, 0);
     RenderFluid(0, 0);
 
@@ -6579,6 +6604,25 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 targetPipeline->GetLayout(), 1, 1, &bs, 0, nullptr);
         }
     }
+
+    // Opaque foliage (grass/shrubs/trees) in the OPAQUE phase, BEFORE the blend
+    // meshes drawn in the entity loop below — same #22 fix as the main pass. Foliage
+    // writes depth; the transparent text signs don't, so foliage that drew after
+    // them (its old spot past the loop) overwrote the signs. Foliage binds its own
+    // pipelines, so rebind the target pipeline + sets afterward for the loop.
+    RenderGrass(target->GetWidth(), target->GetHeight());
+    RenderShrubs(target->GetWidth(), target->GetHeight());
+    RenderTrees(target->GetWidth(), target->GetHeight());
+    targetPipeline->Bind(commandBuffer);
+    m_BoundSpecKey.bits = 0xFFFFFFFF;
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        targetPipeline->GetLayout(), 0, 1, &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 0, nullptr);
+    if (m_BindlessManager) {
+        VkDescriptorSet bs = m_BindlessManager->GetDescriptorSet();
+        if (bs) vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            targetPipeline->GetLayout(), 1, 1, &bs, 0, nullptr);
+    }
+    m_LastBound.Reset(); m_GeometryPoolBound = false; InvalidateBoundSet0();
 
     // Use the sorted render list (sorted by cachedTextureKey) to maximize descriptor cache hits.
     // The main pass builds m_SortedRenderList each frame; reuse it for the offscreen path.
@@ -7369,13 +7413,11 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     if (m_SceneComposition.mode == SceneRenderMode::Scene2D)
         Render2DWater(commandBuffer, &viewport, &scissor, /*offscreenPass=*/true);
 
-    // Render effect passes (grass, shrubs, trees, particles, fluid)
-    // Pass render target dimensions so vegetation renderers use the correct viewport
+    // Render effect passes (particles, fluid). Grass/shrubs/trees moved UP into the
+    // opaque phase (before the blend meshes) — see the #22 fix above.
+    // Pass render target dimensions so effect renderers use the correct viewport
     u32 targetW = target->GetWidth();
     u32 targetH = target->GetHeight();
-    RenderGrass(targetW, targetH);
-    RenderShrubs(targetW, targetH);
-    RenderTrees(targetW, targetH);
     RenderParticles(targetW, targetH);
     RenderFluid(targetW, targetH);
     RenderSplats(target->GetRenderPass(), 1, static_cast<f32>(target->GetWidth()), static_cast<f32>(target->GetHeight()));
