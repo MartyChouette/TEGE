@@ -312,8 +312,9 @@ namespace {
             try {
                 if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches &&
                     !document.fullscreenElement && !document.webkitFullscreenElement) {
-                    // Container, not canvas — the ResizeObserver watches it (see
-                    // the touch-toggle button comment).
+                    // Prefer the shell helper (handles iPhone pseudo-fullscreen);
+                    // bare-shell fallback targets the container, never the canvas.
+                    if (window.enjinEnterFullscreen) { window.enjinEnterFullscreen(); return; }
                     var c = document.getElementById('game-container') ||
                             document.getElementById('game-canvas') || document.body;
                     var p = c.requestFullscreen ? c.requestFullscreen()
@@ -477,10 +478,11 @@ void Input::Initialize(Window* window) {
                 if (Module && Module._enjin_enable_touch_controls) Module._enjin_enable_touch_controls();
                 b.remove();
                 try {
-                    // Fullscreen the CONTAINER, not the canvas: the shell's
-                    // ResizeObserver watches #game-container, so fullscreening
-                    // the canvas alone never resizes the drawing buffer and the
-                    // render stays letterboxed.
+                    // Prefer the shell's helper: it fullscreens #game-container
+                    // (the ResizeObserver watches it) and falls back to CSS
+                    // pseudo-fullscreen on iPhone Safari. Bare-shell fallback
+                    // below still targets the container, never the canvas.
+                    if (window.enjinEnterFullscreen) { window.enjinEnterFullscreen(); return; }
                     var c = document.getElementById('game-container') ||
                             document.getElementById('game-canvas') || document.body;
                     if (document.fullscreenElement || document.webkitFullscreenElement) return;
