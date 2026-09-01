@@ -1122,6 +1122,29 @@ ImportResult SceneImporter::ImportAssimp(const std::string& filepath, ECS::World
                        preset.name, preset.zUpToYUp, preset.leftToRight, filepath.c_str());
     }
 
+    // Auto up-axis fix: the FBX metadata says whether the file is Z-up (Blender/Max)
+    // and the engine is Y-up. The preset-driven zToY above only converts SKINNED bone
+    // poses; static (non-skinned) meshes bake node transforms and were never axis-
+    // converted, so a Z-up static model imported lying on its side. When the file is
+    // Z-up and the user hasn't picked an explicit source-app preset, rotate the root
+    // nodes -90° about X (Z-up -> Y-up) so the whole hierarchy stands up correctly.
+    // Guarded on sourceApp==Auto so it never doubles with a chosen preset's zToY.
+    if (effectiveOptions.convertAxes && options.sourceApp == SourceApp::Auto &&
+        scene.sourceUpAxis == 2) {
+        const Math::Quaternion zToYQ = Math::Quaternion::FromEuler(
+            Math::Vector3(-1.57079633f, 0.0f, 0.0f));  // -90 deg about X
+        for (i32 rootIdx : scene.rootNodes) {
+            if (rootIdx < 0 || rootIdx >= static_cast<i32>(scene.nodes.size())) continue;
+            auto& rn = scene.nodes[rootIdx];
+            // Pre-multiply the root's local matrix by Rx(-90): rotate both its
+            // translation vector and its rotation. (x,y,z) -> (x, z, -y).
+            rn.translation = Math::Vector3(rn.translation.x, rn.translation.z, -rn.translation.y);
+            rn.rotation = zToYQ * rn.rotation;
+        }
+        ENJIN_LOG_INFO(Asset, "Auto axis fix: Z-up source -> Y-up (rotated root nodes) for %s",
+                       filepath.c_str());
+    }
+
     ImportStats stats;
     stats.sourceFilePath = filepath;
 

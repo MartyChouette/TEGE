@@ -145,6 +145,12 @@ bool AssimpLoader::Load(const std::string& filepath, AssimpScene& outScene) {
         if (scene->mMetaData->Get("UnitScaleFactor", unitScale)) {
             outScene.unitScaleFactor = static_cast<f32>(unitScale);
         }
+        // Up axis (FBX stores it; Blender/3ds Max export Z-up, Maya Y-up). 0=X,1=Y,2=Z.
+        // The engine is Y-up, so a Z-up file must be rotated or it imports on its side.
+        int upAxis = 1;
+        if (scene->mMetaData->Get("UpAxis", upAxis)) {
+            outScene.sourceUpAxis = static_cast<i32>(upAxis);
+        }
     }
 
     // Load materials

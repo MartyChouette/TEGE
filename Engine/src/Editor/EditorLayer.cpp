@@ -4435,6 +4435,11 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                         Math::Vector3 halfExt = box->size * 0.5f;
                         Math::Vector3 worldCenter = transform->position + transform->rotation.Rotate(box->center);
                         drawWireBox(bgDrawList, worldCenter, halfExt, color, thick, transform->rotation);
+                        if (sel) {
+                            ImVec2 lp;
+                            if (worldToScreen(worldCenter, lp))
+                                bgDrawList->AddText(ImVec2(lp.x + 6.0f, lp.y - 6.0f), color, "Box Collider");
+                        }
                     }
                 }
 
@@ -4518,6 +4523,20 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                         drawSemiCircle(top, r, axis, v, false, 12);
                         drawSemiCircle(bot, r, axis, u, true, 12);
                         drawSemiCircle(bot, r, axis, v, true, 12);
+                        if (sel) {
+                            ImVec2 lp;
+                            if (worldToScreen(c, lp)) {
+                                // A capsule wireframe is ambiguous: is it a plain collider
+                                // or a character controller? Say which so it's not guesswork.
+                                bool ctrl = m_World->HasComponent<ECS::Platformer2DController>(entity) ||
+                                            m_World->HasComponent<ECS::TopDown2DController>(entity) ||
+                                            m_World->HasComponent<ECS::TopDown3DController>(entity) ||
+                                            m_World->HasComponent<ECS::ThirdPersonController>(entity) ||
+                                            m_World->HasComponent<ECS::FirstPersonController>(entity);
+                                bgDrawList->AddText(ImVec2(lp.x + 6.0f, lp.y - 6.0f), color,
+                                    ctrl ? "Capsule Collider (Character Controller)" : "Capsule Collider");
+                            }
+                        }
                     }
                 }
 

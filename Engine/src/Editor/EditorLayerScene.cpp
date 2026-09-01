@@ -882,11 +882,13 @@ void EditorLayer::OnFileDrop(int count, const char** paths) {
         }
     }
 
-    // Dispatch the collected models. One model imports immediately (no dialog — it
-    // "just works"). A GROUP opens a single import dialog with an "apply to all"
-    // choice; the actual imports run from that dialog (see DrawImportDialog).
+    // Dispatch the collected models. A single dropped model now opens the import
+    // options dialog (axis/scale/etc.), same as every other import path — dropping
+    // a file into the viewport used to skip it (ImportModelImmediate), which is why
+    // "the import options don't always show up" and FBX axis fixes couldn't be set
+    // per-drop. A GROUP opens one dialog with an "apply to all" choice.
     if (modelPaths.size() == 1) {
-        ImportModelImmediate(modelPaths[0], Math::Vector3(0.0f, 0.0f, 0.0f));
+        ImportModel(modelPaths[0]);
     } else if (modelPaths.size() > 1) {
         BeginGroupImport(modelPaths);
     }

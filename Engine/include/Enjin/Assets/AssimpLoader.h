@@ -112,6 +112,7 @@ struct AssimpScene {
     std::string basePath;   // Directory containing the file
     std::string creator;    // DCC tool that created this file (from FBX metadata)
     f32 unitScaleFactor = 1.0f; // FBX UnitScaleFactor (cm=1, m=100). Convert: scale = 1/unitScale * 0.01
+    i32 sourceUpAxis = 1;   // FBX/scene up axis from metadata: 0=X, 1=Y, 2=Z. Engine is Y-up.
 
     // Skeletal animation data
     std::vector<AssimpBone> bones;           // Deduplicated across all meshes
