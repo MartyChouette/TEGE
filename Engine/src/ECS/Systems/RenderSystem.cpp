@@ -1157,10 +1157,16 @@ void RenderSystem::Initialize() {
             treeIndices.insert(treeIndices.end(), {base, base+1, base+2, base, base+2, base+3});
         };
 
-        // Trunk: 2 crossing quads along X and Z axes (uv.y < 0.5 = trunk)
-        f32 tw = 0.5f, th = 1.0f;
-        addQuad({-tw,0,0}, {tw,0,0}, {tw,th,0}, {-tw,th,0}, 0.0f, 0.4f);  // X-aligned
-        addQuad({0,0,-tw}, {0,0,tw}, {0,th,tw}, {0,th,-tw}, 0.0f, 0.4f);  // Z-aligned
+        // Trunk: 3 crossing quads (0/60/120 deg), TAPERED — narrower at the top
+        // like the desktop VegTemplates trunk. Two untapered crossing quads read
+        // as a flat slab from oblique angles (Marty: "trunks wrong"); a tapered
+        // 3-quad star gives a solid rounded trunk from any direction. uv.y < 0.5.
+        f32 tw = 0.5f, th = 1.0f, tt = 0.45f;   // tt = top taper fraction
+        for (int q = 0; q < 3; q++) {
+            f32 a = static_cast<f32>(q) * 3.14159f / 3.0f;
+            f32 dx = std::cos(a) * tw, dz = std::sin(a) * tw;
+            addQuad({-dx,0,-dz}, {dx,0,dz}, {dx*tt,th,dz*tt}, {-dx*tt,th,-dz*tt}, 0.0f, 0.4f);
+        }
         // Canopy: 3 crossing billboard quads at 0°, 60°, 120° (uv.y > 0.5 = canopy)
         f32 cr = 1.5f, co = 1.2f;  // canopy radius/offset
         for (int q = 0; q < 3; q++) {
@@ -2964,15 +2970,17 @@ void RenderSystem::Update(f32 deltaTime) {
         winsts.reserve(wparts.size());
         for (const auto& p : wparts) {
             if (p.lifetime <= 0.0f || p.alpha <= 0.01f) continue;
-            // Rain: thin vertical streak (size is the sim's streak width);
-            // snow: square flake at the sim's flake size.
-            f32 sx = wIsRain ? p.size : p.size;
-            f32 sy = wIsRain ? p.size * 12.0f : p.size;
-            f32 r = wIsRain ? 0.65f : 1.0f;
-            f32 g = wIsRain ? 0.75f : 1.0f;
-            f32 b = wIsRain ? 0.90f : 1.0f;
+            // Rain: a modest vertical streak (the old size*12 made long "strings").
+            // Snow: a bigger, softer flake (the sim's size is tiny — scale it up so
+            // flakes read as snow, not sparse hard dots). Alpha kept gentle.
+            f32 sx = wIsRain ? p.size * 1.5f : p.size * 3.5f;
+            f32 sy = wIsRain ? p.size * 6.0f : p.size * 3.5f;
+            f32 r = wIsRain ? 0.70f : 1.0f;
+            f32 g = wIsRain ? 0.80f : 1.0f;
+            f32 b = wIsRain ? 0.92f : 1.0f;
+            f32 a = p.alpha * (wIsRain ? 0.55f : 0.8f);   // softer so they disperse, not pop
             winsts.push_back({p.position.x, p.position.y, p.position.z,
-                              sx, sy, 0.0f, r, g, b, p.alpha,
+                              sx, sy, 0.0f, r, g, b, a,
                               0.0f, 0.0f, 1.0f, 1.0f});
         }
         if (!winsts.empty()) {
