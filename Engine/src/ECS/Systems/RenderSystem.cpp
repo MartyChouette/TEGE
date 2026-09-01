@@ -1450,13 +1450,54 @@ Renderer::FontAtlas* RenderSystem::WebGetOrBuildFontAtlas(const std::string& fon
 void RenderSystem::WebEnsureTextMeshes() {
     if (!m_World) return;
     auto* bufMgr = m_Renderer ? m_Renderer->GetBufferManager() : nullptr;
+    auto* texMgr = m_Renderer ? m_Renderer->GetTextureManager() : nullptr;
     for (Entity entity : m_World->GetEntitiesWithComponent<TextComponent>()) {
         auto* tc = m_World->GetComponent<TextComponent>(entity);
         if (!tc) continue;
         const bool sdfOwned = m_WebSDFTextMeshes.count(entity) != 0;
-        if (m_World->HasComponent<MeshComponent>(entity) && !sdfOwned) continue;  // authored mesh = text-on-surface
+        const bool hasMesh = m_World->HasComponent<MeshComponent>(entity);
+
+        // ---- Text-on-surface (raster): the entity has its OWN mesh (a sign or
+        // board). Rasterize the text to an RGBA texture and bind it as the
+        // mesh's base color, exactly like the desktop EnsureTextTextures path.
+        // These are the older "text on a plane" signs (bgColor panel baked in).
+        if (hasMesh && !sdfOwned) {
+            if (tc->text.empty()) continue;
+            if (!tc->dirty && m_WebTextTextures.count(entity)) continue;   // already current
+            if (!texMgr) continue;
+            auto pixels = m_TextRasterizer.Rasterize(*tc);
+            if (pixels.empty()) { tc->dirty = false; continue; }
+            std::string tkey = "__text__" + std::to_string(static_cast<unsigned long long>(EntityIndex(entity)));
+            auto old = m_WebTextureCache.find(tkey);
+            if (old != m_WebTextureCache.end()) { texMgr->DestroyTexture(old->second); m_WebTextureCache.erase(old); }
+            Renderer::GPUTextureDesc td;
+            td.width = tc->textureWidth; td.height = tc->textureHeight;
+            td.format = Renderer::GPUTextureFormat::RGBA8Unorm;
+            td.usage = Renderer::GPUTextureUsage::Sampled;
+            td.label = "TextRaster";
+            Renderer::GPUTextureHandle ttex = texMgr->CreateTextureWithData(td, pixels.data());
+            if (ttex.IsValid()) {
+                m_WebTextureCache[tkey] = ttex;
+                m_WebTextTextures.insert(entity);
+                if (auto* mat = m_World->GetComponent<MaterialComponent>(entity)) {
+                    mat->baseColor = Math::Vector3(1.0f, 1.0f, 1.0f);   // rasterized pixels carry the colors
+                    mat->alphaMode = MaterialComponent::AlphaMode::Blend;
+                    mat->baseColorTexturePath = tkey;
+                    mat->sdfText = false;                               // raster, not a distance field
+                }
+                u64 teid = EntityIndex(entity);
+                if (teid < m_EntityRenderData.size()) m_EntityRenderData[teid].texBindGroupValid = false;
+                static int s_RLog = 0;
+                if (s_RLog++ < 6) EM_ASM({ console.log('[TEXT] rasterized ' + $0 + 'x' + $1); },
+                                         tc->textureWidth, tc->textureHeight);
+            }
+            tc->dirty = false;
+            continue;
+        }
+
+        // ---- Bare SDF text: no authored mesh, build a glyph-quad mesh. ----
         if (tc->text.empty() && !sdfOwned) continue;
-        if (!tc->sdfText) continue;   // web has only the SDF path (no rasterizer fallback yet)
+        if (!tc->sdfText) continue;
         if (sdfOwned && !tc->dirty) continue;   // glyph mesh already current
 
         std::string key;
@@ -1464,6 +1505,11 @@ void RenderSystem::WebEnsureTextMeshes() {
         if (!atlas) continue;
 
         auto mesh = atlas->BuildTextMesh(*tc);
+        static int s_TextLog = 0;
+        if (s_TextLog++ < 6) {
+            EM_ASM({ console.log('[SDFTEXT] built glyph mesh: ' + $0 + ' verts, atlas ' + $1 + 'x' + $2); },
+                   static_cast<int>(mesh.vertices.size()), atlas->Width(), atlas->Height());
+        }
         if (m_World->HasComponent<MeshComponent>(entity))
             *m_World->GetComponent<MeshComponent>(entity) = std::move(mesh);
         else

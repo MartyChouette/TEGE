@@ -1175,7 +1175,8 @@ private:
         std::string cacheKey;
     };
     std::unordered_map<std::string, WebSDFFont> m_WebSDFFonts;
-    std::unordered_set<Entity> m_WebSDFTextMeshes;  // entities whose mesh the SDF path owns
+    std::unordered_set<Entity> m_WebSDFTextMeshes;   // entities whose mesh the SDF path owns
+    std::unordered_set<Entity> m_WebTextTextures;    // text-on-surface entities with a raster text texture
     Renderer::FontAtlas* WebGetOrBuildFontAtlas(const std::string& fontPath, std::string& outCacheKey);
     void WebEnsureTextMeshes();
 
