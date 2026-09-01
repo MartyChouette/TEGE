@@ -77,6 +77,7 @@ Renderer::SkyboxConfig RenderSystem::WeatherSky(const Renderer::SkyboxConfig& cf
 #include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/GrassVolume.h"
+#include "Enjin/ECS/Components/ShrubVolume.h"  // web shrub draw (reuses grass pipeline)
 #include "Enjin/ECS/Components/TreeVolume.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/Components/Cloth.h"   // cloth/rope meshDirty re-upload
@@ -2812,6 +2813,51 @@ void RenderSystem::Update(f32 deltaTime) {
 
             webBindMgr->DestroyBindGroup(gpBG);
             bufMgr->DestroyBuffer(gpBuf);
+        }
+    }
+
+    // ========================================================================
+    // Shrub volumes (instanced, opaque). Reuses the grass pipeline + blade mesh —
+    // shrubs were a stub on web (RenderShrubs no-op, no shrub pipeline), so the
+    // Playground's shrubVolume was invisible. Mapping ShrubVolume -> the grass
+    // volume UBO gives dense, wider, low foliage that reads as a bush stand-in
+    // (a dedicated tapered-dome shrub pipeline would match desktop more exactly).
+    // ========================================================================
+    if (usePostProcess && m_WebGrassPipeline.IsValid() && scenePassEncoder) {
+        auto* webBufMgrSh = static_cast<Renderer::WebGPUBufferManager*>(bufMgr);
+        const auto& shrubEntities = m_World->GetEntitiesWithComponent<ShrubVolumeComponent>();
+        for (Entity she : shrubEntities) {
+            auto* sv = m_World->GetComponent<ShrubVolumeComponent>(she);
+            auto* sxf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(she) : nullptr;
+            if (!sv || !sxf || sv->density == 0) continue;
+
+            // Same 64-byte layout as GrassParams (m_WebVolumeParamsLayout).
+            struct GrassParams { f32 data[16]; };
+            GrassParams sp = {};
+            sp.data[0] = sxf->position.x; sp.data[1] = sxf->position.y; sp.data[2] = sxf->position.z;
+            sp.data[3] = sv->shrubHeight;
+            sp.data[4] = sv->halfExtents.x; sp.data[5] = sv->halfExtents.y; sp.data[6] = sv->halfExtents.z;
+            sp.data[7] = sv->width;
+            sp.data[8] = sv->baseColor.x; sp.data[9] = sv->baseColor.y; sp.data[10] = sv->baseColor.z;
+            sp.data[11] = sv->windSwayStrength;
+            sp.data[12] = sv->tipColor.x; sp.data[13] = sv->tipColor.y; sp.data[14] = sv->tipColor.z;
+
+            auto spBuf = bufMgr->CreateBufferWithData(
+                {sizeof(GrassParams), Renderer::GPUBufferUsage::Uniform | Renderer::GPUBufferUsage::CopyDst, true}, &sp);
+            Renderer::GPUBindGroupDesc bgd;
+            bgd.layout = m_WebVolumeParamsLayout;
+            bgd.entries = {{0, spBuf, 0, sizeof(GrassParams), {}, {}}};
+            auto spBG = webBindMgr->CreateBindGroup(bgd);
+
+            wgpuRenderPassEncoderSetPipeline(scenePassEncoder, webPipeMgr->GetNativePipeline(m_WebGrassPipeline));
+            wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 0, webBindMgr->GetNativeGroup(m_WebFrameBindGroup), 0, nullptr);
+            wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 1, webBindMgr->GetNativeGroup(spBG), 0, nullptr);
+            wgpuRenderPassEncoderSetVertexBuffer(scenePassEncoder, 0, webBufMgrSh->GetNativeBuffer(m_WebGrassBladeVB), 0, WGPU_WHOLE_SIZE);
+            wgpuRenderPassEncoderSetIndexBuffer(scenePassEncoder, webBufMgrSh->GetNativeBuffer(m_WebGrassBladeIB), WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
+            wgpuRenderPassEncoderDrawIndexed(scenePassEncoder, m_WebGrassBladeIndexCount, sv->density, 0, 0, 0);
+
+            webBindMgr->DestroyBindGroup(spBG);
+            bufMgr->DestroyBuffer(spBuf);
         }
     }
 

@@ -76,6 +76,10 @@
 #include "Enjin/Gameplay/SurfaceResponseSystem.h"
 #include "Enjin/Gameplay/QuestFlow.h"
 #include "Enjin/Effects/ElementalSystem.h"
+#include "Enjin/Effects/SeasonalWeather.h"    // web parity: seasonal weather (Update no-ops unless a scene enables it)
+#include "Enjin/Effects/Destructible.h"       // web parity: destructible sim
+#include "Enjin/Effects/CurlNoiseSystem.h"    // web parity: curl-noise wind
+#include "Enjin/Scene/LevelStreaming.h"       // web parity: level streaming
 #include "Enjin/ECS/EntityEventBus.h"
 #include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/Gameplay/GameplayLoop.h"
@@ -315,6 +319,10 @@ public:
         m_CameraDirector.SetEnabled(true);
         Enjin::Scripting::SetBindingsCameraDirector(&m_CameraDirector);
         m_RecordRewindSystem.SetWorld(m_World.get());
+        // Wire the physics backends so rewind actually restores body transforms/velocities
+        // (desktop does this; web only set the world, so rewind couldn't move physics bodies).
+        m_RecordRewindSystem.SetPhysics(m_Physics.get());
+        m_RecordRewindSystem.SetPhysics2D(m_Physics2D.get());
         Enjin::Scripting::SetBindingsRewindSystem(&m_RecordRewindSystem);
         m_InteractiveWaterSystem.SetEventBus(&m_EntityEventBus);
         m_ControllerSystem.SetInputActionMap(&m_InputMap);
@@ -349,8 +357,17 @@ public:
         // Elemental fire/water/earth/air simulation. Its particle visuals aren't
         // rendered on web yet, but BuildFireLights feeds the renderer's transient
         // point lights (which the web PBR consumes), so fire lights the scene.
-        m_ElementalSystem.Initialize(&m_WindSystem, &m_WeatherSystem);
+        m_ElementalSystem.Initialize(&m_WindSystem, &m_WeatherSystem, &m_SeasonalWeather);
         m_FireLights.reserve(Enjin::Effects::ElementalSystem::MAX_FIRE_LIGHTS);
+        // Web parity: initialize + wire the CPU systems desktop already runs. Seasonal
+        // weather Update() no-ops unless a scene enables it (won't stomp scripted weather).
+        m_DestructibleSystem.Initialize(m_World.get());
+        m_CurlNoiseSystem.Initialize(m_World.get());
+        m_StreamingManager.SetWorld(m_World.get());
+        m_StreamingManager.SetEnabled(true);
+        m_VisualScriptSystem.SetStreaming(&m_StreamingManager);
+        Enjin::Scripting::SetBindingsDestructible(&m_DestructibleSystem);
+        Enjin::Scripting::SetBindingsStreaming(&m_StreamingManager);
         m_SceneManager.SetWorld(m_World.get());
         m_SceneManager.SetAssetReader(&m_AssetReader);
         m_NetworkSystem.SetWorld(m_World.get());
@@ -496,10 +513,11 @@ public:
 
         // --- RenderSystem (same system as desktop, uses abstract IRenderBackend) ---
         m_RenderSystem = m_World->RegisterSystem<Enjin::ECS::RenderSystem>(m_World.get(), m_Renderer.get());
-        // NOTE (wiring audit 2026-08-28): SetBindingsRenderSystem is deliberately
-        // NOT called here - ScriptBindings_Render.cpp is excluded from the web
-        // build (WebStubs.cpp no-ops RegisterRenderBindings), so no Render_*
-        // script functions exist on web. Porting them is a WebGPU-parity item.
+        // Render_* script bindings ARE wired on web (SetBindingsRenderSystem, above,
+        // once m_RenderSystem exists — see the binding block). ScriptBindings_Render.cpp
+        // now compiles on web; simple calls (rain-active, fog, ambient, shadows) drive
+        // the RenderSystem directly, render-target calls degrade to 0/false. (The old
+        // note here claiming they were excluded was stale — corrected.)
         m_RenderSystem->SetCamera(m_Camera.get());
         m_RenderSystem->SetAssetReader(&m_AssetReader);
         m_RenderSystem->Initialize();
@@ -858,8 +876,15 @@ public:
 
         m_WindSystem.Update(deltaTime);
         m_WorldTime.Update(deltaTime);
+        // Seasonal weather drives the WeatherSystem toward the season's profile — but
+        // only when a scene enabled it (Update early-returns otherwise), so the scripted
+        // Playground cycle is untouched. Runs before WeatherSystem.Update, like desktop.
+        m_SeasonalWeather.Update(deltaTime, m_WorldTime.GetState(), m_WeatherSystem);
+        m_CurlNoiseSystem.Update(deltaTime);
+        m_DestructibleSystem.Update(deltaTime);
         UpdateWeatherZones();
         if (m_Camera) {
+            m_StreamingManager.Update(m_Camera->GetPosition(), deltaTime);
             m_WeatherSystem.Update(deltaTime, m_Camera->GetPosition());
             m_RenderSystem->SetWeatherSkyBlend(m_WeatherSystem.GetRainIntensity(),
                                                m_WeatherSystem.GetSnowIntensity());
@@ -1893,6 +1918,11 @@ private:
     Enjin::Effects::ElementalSystem m_ElementalSystem;
     std::vector<Enjin::Effects::FireLight> m_FireLights;
     Enjin::f32 m_EffectsTime = 0.0f;
+    // Web parity: desktop-only CPU systems now ticked on web too.
+    Enjin::Effects::SeasonalWeatherSystem m_SeasonalWeather;
+    Enjin::Effects::DestructibleSystem m_DestructibleSystem;
+    Enjin::Effects::CurlNoiseSystem m_CurlNoiseSystem;
+    Enjin::Scene::StreamingManager m_StreamingManager;
 
     // Scene & networking
     Enjin::Scene::SceneManager m_SceneManager;
