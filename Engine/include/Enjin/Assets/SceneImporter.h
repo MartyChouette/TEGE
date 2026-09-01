@@ -60,7 +60,11 @@ struct ImportOptions {
     // Normalize the model to a sane on-screen size (~1.8 m largest dimension) when the
     // file's unit is unreliable or the result is absurd. OFF = import at the file's
     // real unit-converted size, no size magic (predictable, you scale it yourself).
-    bool normalizeScale = true;
+    // DEFAULT OFF: the ~1.8 m normalization forced every model to human height, which
+    // is wrong for props/coins/buildings/anything non-human-sized (Marty: "auto-scale
+    // is usually incorrect"). Trust the file's unit conversion by default; the user
+    // opts in to size-magic only when a file's units are genuinely unreliable.
+    bool normalizeScale = false;
     bool importMaterials = true;
     bool importLights = true;
     bool importAnimations = true;

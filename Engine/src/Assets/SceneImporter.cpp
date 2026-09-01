@@ -1616,7 +1616,10 @@ ImportResult SceneImporter::ImportAssimp(const std::string& filepath, ECS::World
                                       std::to_string(scene.animations.size()) + " animations");
         }
 
-        stats.warnings.push_back("Note: Morph targets / blend shapes are not imported (not yet supported)");
+        // (Morph targets ARE imported below — see the "Morph targets imported (FBX)"
+        // report. The old blanket "not imported" warning here was false and alarmed
+        // users who saw their blend shapes come through fine. FBX animation-DRIVEN
+        // morph weight tracks are the only unsupported part; static morphs import.)
         stats.warnings.push_back("Note: Only UV set 0 is imported (additional UV sets are dropped)");
 
         // Log summary
@@ -1750,7 +1753,16 @@ ImportResult SceneImporter::Import(const std::string& filepath, ECS::World* worl
     }
 
     ImportResult result;
-    result.errorMessage = "Unsupported file format: " + ext;
+    // Gaussian-splat and SWF loaders exist but aren't wired into scene import — give a
+    // specific message instead of the generic "unsupported" so it's clear WHY.
+    if (ext == ".splat" || ext == ".spz") {
+        result.errorMessage = "Gaussian-splat files (.splat/.spz) aren't imported as scene meshes yet "
+                              "(the splat renderer loads them separately).";
+    } else if (ext == ".swf") {
+        result.errorMessage = "SWF (.swf) is a vector/Flash format, not a 3D model — it can't be imported here.";
+    } else {
+        result.errorMessage = "Unsupported file format: " + ext;
+    }
     return result;
 }
 

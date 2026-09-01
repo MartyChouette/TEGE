@@ -725,21 +725,35 @@ void EditorLayer::DrawImportDialog() {
         // --- Import Options ---
         ImGui::Text("Import Options");
         ImGui::DragFloat("Scale", &m_ImportDialogOptions.scale, 0.01f, 0.001f, 100.0f, "%.3f");
-        ImGui::Checkbox("Normalize size (~1.8m)", &m_ImportDialogOptions.normalizeScale);
+        ImGui::Checkbox("Force ~1.8m size (only if units are wrong)", &m_ImportDialogOptions.normalizeScale);
         if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("ON: rescale to a sane on-screen size when the file's unit is unreliable.\n"
-                              "OFF: import at the file's true unit-converted size — no size magic, you scale it.");
+            ImGui::SetTooltip("OFF (default): import at the file's true unit-converted size — predictable,\n"
+                              "you scale it yourself. This is correct for most well-authored files.\n"
+                              "ON: force the model to ~1.8m. Only turn this on when a file's units are\n"
+                              "genuinely broken and it imports absurdly tiny or huge.");
         }
-        ImGui::Checkbox("Import Materials", &m_ImportDialogOptions.importMaterials);
-        ImGui::Checkbox("Import Animations", &m_ImportDialogOptions.importAnimations);
-        if (m_ImportDialogOptions.importAnimations) {
-            ImGui::Indent(16.0f);
-            ImGui::Checkbox("Auto-play on import", &m_ImportDialogOptions.autoPlayAnimation);
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Start the first animation immediately. OFF = import at the rest\n"
-                                  "pose (recommended while skinned animation is being fixed).");
+        // PLY (point cloud/mesh) and VOX (voxel) carry no materials/animations and have
+        // no LOD path — hide those options so they don't look available and silently
+        // do nothing (import-audit finding).
+        std::string dlgExt = m_ImportDialogExtension;
+        std::transform(dlgExt.begin(), dlgExt.end(), dlgExt.begin(),
+            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        const bool simpleFormat = (dlgExt == ".ply" || dlgExt == ".vox");
+
+        if (!simpleFormat) {
+            ImGui::Checkbox("Import Materials", &m_ImportDialogOptions.importMaterials);
+            ImGui::Checkbox("Import Animations", &m_ImportDialogOptions.importAnimations);
+            if (m_ImportDialogOptions.importAnimations) {
+                ImGui::Indent(16.0f);
+                ImGui::Checkbox("Auto-play on import", &m_ImportDialogOptions.autoPlayAnimation);
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Start the first animation immediately. OFF = import at the rest\n"
+                                      "pose (recommended while skinned animation is being fixed).");
+                }
+                ImGui::Unindent(16.0f);
             }
-            ImGui::Unindent(16.0f);
+        } else {
+            ImGui::TextDisabled("%s imports geometry + vertex colors only.", dlgExt.c_str());
         }
         ImGui::Checkbox("Generate Colliders", &m_ImportDialogOptions.generateColliders);
         if (m_ImportDialogOptions.generateColliders) {
@@ -757,9 +771,11 @@ void EditorLayer::DrawImportDialog() {
             }
             ImGui::Unindent(16.0f);
         }
-        ImGui::Checkbox("Generate LODs", &m_ImportDialogOptions.generateLODs);
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Generate Level-of-Detail meshes (can be slow for large models)");
+        if (!simpleFormat) {
+            ImGui::Checkbox("Generate LODs", &m_ImportDialogOptions.generateLODs);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Generate Level-of-Detail meshes (can be slow for large models)");
+            }
         }
 
         ImGui::Spacing();
