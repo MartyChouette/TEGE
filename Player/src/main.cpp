@@ -491,6 +491,10 @@ public:
         Enjin::Assets::MeshAssetCache::Get().SetSearchRoot(gameRoot);
         m_WeatherSystem.Initialize();
         m_ElementalSystem.Initialize(&m_WindSystem, &m_WeatherSystem, &m_SeasonalWeather);
+        // Draw elemental fire/smoke in the main pass too (cameras with post-
+        // processing OFF take the direct swapchain path, which otherwise never
+        // draws elemental — campfires showed no flames).
+        m_RenderSystem->SetMainPassElemental(&m_ElementalSystem);
         m_FireLights.reserve(Enjin::Effects::ElementalSystem::MAX_FIRE_LIGHTS);
         m_AudioReactiveSystem.SetWorld(m_World.get());
         m_AudioReactiveSystem.SetAudio(&m_SimpleAudio);

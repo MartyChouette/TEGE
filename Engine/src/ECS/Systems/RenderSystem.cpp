@@ -6026,6 +6026,13 @@ void RenderSystem::Update(f32 deltaTime) {
     RenderParticles(0, 0);
     RenderFluid(0, 0);
 
+    // Elemental particles (fire/smoke) in the main pass — the direct swapchain
+    // path taken when the camera has post-processing OFF. Was ONLY drawn in the
+    // offscreen PP path, so campfires showed no flames in PP-off games.
+    if (m_MainPassElemental) {
+        RenderElementalParticles(*m_MainPassElemental, 0, 0);
+    }
+
     // Render weather particles in main pass if set (editor viewport)
     if (m_MainPassWeather) {
         RenderWeatherParticles(*m_MainPassWeather, m_MainPassWeatherIsRain, 0, 0);

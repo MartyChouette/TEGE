@@ -535,6 +535,13 @@ public:
     Effects::WeatherSystem* GetMainPassWeather() const { return m_MainPassWeather; }
     bool GetMainPassWeatherIsRain() const { return m_MainPassWeatherIsRain; }
 
+    // Elemental particles (fire/water/etc) for the MAIN pass — the direct
+    // swapchain path used when the camera has post-processing OFF (the offscreen
+    // PP path draws them separately via RenderElementalParticles). Set once by
+    // the host; without it the main pass never draws fire/smoke and campfires
+    // render as lights only.
+    void SetMainPassElemental(const Effects::ElementalSystem* elemental) { m_MainPassElemental = elemental; }
+
     // Set fluid simulation (for FluidRenderer to read grid data)
     void SetFluidSimulation(Effects::FluidSimulation* sim);
 
@@ -1664,6 +1671,7 @@ private:
     std::unique_ptr<Effects::SpriteTextureAtlas> m_SpriteAtlas;
 #endif
     Effects::WeatherSystem* m_MainPassWeather = nullptr;  // Weather for main pass (editor viewport)
+    const Effects::ElementalSystem* m_MainPassElemental = nullptr;  // Elemental for main pass (PP-off path)
     bool m_MainPassWeatherIsRain = false;
 
     // Scene composition cache (auto-detected per frame, drives rendering decisions)
