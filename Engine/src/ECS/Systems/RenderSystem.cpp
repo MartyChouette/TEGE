@@ -536,6 +536,7 @@ void RenderSystem::Initialize() {
         {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(MeshComponent::Vertex, tangent)), 3},   // tangent
         {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(MeshComponent::Vertex, boneWeights)), 4}, // boneWeights
         {Renderer::GPUVertexFormat::Uint32x4,  static_cast<u32>(offsetof(MeshComponent::Vertex, boneIndices)), 5}, // boneIndices
+        {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(MeshComponent::Vertex, color)), 6},      // vertex color (SDF glyph textColor)
     };
     pipeDesc.vertexBuffers = {vertLayout};
 
@@ -2402,6 +2403,9 @@ void RenderSystem::Update(f32 deltaTime) {
                 obj.scrollReflStrength = mat->scrollReflectionStrength;
             }
             if (animComp && rd.boneBuffer.IsValid()) obj.flags |= (1 << 3);  // FLAG_SKINNED
+            // SDF text (bit 6): base-color alpha is a distance field; the shader
+            // thresholds it instead of rendering the raw field as a dark box.
+            if (mat && mat->sdfText) obj.flags |= (1 << 6);
             std::memcpy(objDataBuf.data() + offset, &obj, sizeof(obj));
 
             drawCmds.push_back({entity, offset});

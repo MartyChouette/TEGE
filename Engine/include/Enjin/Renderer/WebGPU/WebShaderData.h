@@ -115,6 +115,7 @@ struct VertexInput {
     @location(3) tangent: vec4<f32>,
     @location(4) boneWeights: vec4<f32>,
     @location(5) boneIndices: vec4<u32>,
+    @location(6) color: vec4<f32>,        // vertex color (SDF glyphs carry textColor here)
 };
 
 struct VertexOutput {
@@ -125,6 +126,7 @@ struct VertexOutput {
     @location(3) world_tangent: vec3<f32>,
     @location(4) world_bitangent: vec3<f32>,
     @location(5) @interpolate(flat) instanceIdx: u32,
+    @location(6) color: vec4<f32>,
 };
 
 @vertex
@@ -187,6 +189,7 @@ fn vs_main(in: VertexInput, @builtin(instance_index) instanceIdx: u32) -> Vertex
     if (scrollT == 0.0) { scrollT = viewProj.time; }
     out.uv = in.uv - vec2<f32>(object.uvScrollU, object.uvScrollV) * scrollT;
     out.instanceIdx = instanceIdx;
+    out.color = in.color;
     return out;
 }
 
@@ -291,6 +294,19 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let object = objects.data[in.instanceIdx];
 
     let baseColorSample = textureSample(baseColorTex, baseColorSmp, in.uv);
+
+    // SDF text (flags bit 6): base-color alpha is a signed distance field
+    // (FontAtlas, on-edge 180/255). Threshold with fwidth AA and output the
+    // glyph's vertex color UNLIT — mirrors the desktop FLAG_SDF_TEXT path.
+    // Derivative computed BEFORE the per-instance branch (uniform control flow).
+    let sdfW = max(fwidth(baseColorSample.a), 1e-4);
+    if ((object.flags & 64) != 0) {
+        let sdfEdge = 180.0 / 255.0;
+        let cov = smoothstep(sdfEdge - sdfW, sdfEdge + sdfW, baseColorSample.a);
+        if (cov < 0.01) { discard; }
+        return vec4<f32>(in.color.rgb * object.baseColor, cov * in.color.a * object.opacity);
+    }
+
     let albedo = baseColorSample.rgb * object.baseColor;
     let alpha = baseColorSample.a * object.opacity;
 
