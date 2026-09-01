@@ -871,8 +871,9 @@ public:
 
         m_ParticleSystem.Update(deltaTime, m_World.get());
 
-        // Elemental sim + fire lighting (particle visuals pending a web renderer
-        // path; the lights show now). Mirrors the desktop Player.
+        // Elemental sim + fire lighting. Mirrors the desktop Player: the sim drives
+        // fire/water/etc particles, the fire lights glow, and now the particle
+        // billboards draw on web too (the render pass pulls the pool from here).
         if (m_Camera && m_RenderSystem) {
             m_ElementalSystem.Update(m_World.get(), deltaTime, m_Camera->GetPosition());
             m_EffectsTime += deltaTime;
@@ -881,6 +882,7 @@ public:
             for (const auto& fl : m_FireLights) {
                 m_RenderSystem->AddTransientPointLight(fl.position, fl.range, fl.color, fl.intensity);
             }
+            m_RenderSystem->SetMainPassElemental(&m_ElementalSystem);
         }
 
         // --- Gameplay loop (web parity with editor PlayMode / desktop Player) ---

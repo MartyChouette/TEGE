@@ -83,6 +83,7 @@ Renderer::SkyboxConfig RenderSystem::WeatherSky(const Renderer::SkyboxConfig& cf
 #include "Enjin/ECS/Components/Rope.h"
 #include "Enjin/ECS/Components/Text.h"    // web SDF text generation
 #include "Enjin/Effects/Weather.h"        // weather particle draw
+#include "Enjin/Effects/ElementalSystem.h" // elemental (fire/water/etc) particle draw — web + desktop
 #include "Enjin/Accessibility/OpenDyslexicFont.h"  // bundled default SDF font
 #include "Enjin/Build/AssetReader.h"
 #include "Enjin/Math/Math.h"
@@ -3006,6 +3007,49 @@ void RenderSystem::Update(f32 deltaTime) {
 
             webBindMgr->DestroyBindGroup(wTexBG);
             bufMgr->DestroyBuffer(winstBuf);
+        }
+    }
+
+    // Elemental particles (campfire flames, water fountain, etc): the ElementalSystem
+    // pool drawn as camera-facing soft-dot billboards through the per-particle-colored
+    // particle pipeline. This was a no-op stub on web, so the campfire had light but no
+    // visible flames and the fountain emitted nothing. Color by dominant element to
+    // match the desktop ParticleRenderer (water=blue, fire=warm gold, earth=brown,
+    // air=pale) so the fountain reads as water, not reddish-gold. The web player wires
+    // the system via SetMainPassElemental each frame.
+    if (usePostProcess && m_WebParticlePipeline.IsValid() && scenePassEncoder && m_MainPassElemental) {
+        const auto& epool = m_MainPassElemental->GetPool();
+        struct ParticleInst { f32 px, py, pz, size, alpha, r, g, b; };
+        std::vector<ParticleInst> einsts;
+        einsts.reserve(epool.activeCount);
+        for (u32 i = 0; i < epool.activeCount && einsts.size() < WEB_MAX_PARTICLES; ++i) {
+            f32 ageRatio = (epool.maxLifetimes[i] > 0.0f) ? epool.lifetimes[i] / epool.maxLifetimes[i] : 0.0f;
+            f32 a = epool.intensities[i] * std::min(1.0f, ageRatio * 3.0f); // fade in fast, out at end
+            if (a <= 0.01f) continue;
+            Math::Vector4 el = epool.elements[i];
+            f32 wsum = el.x + el.y + el.z + el.w;
+            f32 cr, cg, cb;
+            if (wsum > 0.0001f) {
+                f32 inv = 1.0f / wsum;
+                cr = (1.00f * el.x + 0.45f * el.y + 0.50f * el.z + 0.85f * el.w) * inv;
+                cg = (0.55f * el.x + 0.65f * el.y + 0.35f * el.z + 0.90f * el.w) * inv;
+                cb = (0.20f * el.x + 1.00f * el.y + 0.20f * el.z + 1.00f * el.w) * inv;
+            } else { cr = 1.0f; cg = 0.8f; cb = 0.6f; }
+            einsts.push_back({epool.positions[i].x, epool.positions[i].y, epool.positions[i].z,
+                              epool.sizes[i] * 2.0f, a, cr, cg, cb});
+        }
+        if (!einsts.empty()) {
+            auto* webBufMgrE = static_cast<Renderer::WebGPUBufferManager*>(bufMgr);
+            auto einstBuf = bufMgr->CreateBufferWithData(
+                {einsts.size() * sizeof(ParticleInst), Renderer::GPUBufferUsage::Vertex | Renderer::GPUBufferUsage::CopyDst, true},
+                einsts.data());
+            wgpuRenderPassEncoderSetPipeline(scenePassEncoder, webPipeMgr->GetNativePipeline(m_WebParticlePipeline));
+            wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 0, webBindMgr->GetNativeGroup(m_WebFrameBindGroup), 0, nullptr);
+            wgpuRenderPassEncoderSetVertexBuffer(scenePassEncoder, 0, webBufMgrE->GetNativeBuffer(m_WebParticleQuadVB), 0, WGPU_WHOLE_SIZE);
+            wgpuRenderPassEncoderSetVertexBuffer(scenePassEncoder, 1, webBufMgrE->GetNativeBuffer(einstBuf), 0, WGPU_WHOLE_SIZE);
+            wgpuRenderPassEncoderSetIndexBuffer(scenePassEncoder, webBufMgrE->GetNativeBuffer(m_WebParticleQuadIB), WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
+            wgpuRenderPassEncoderDrawIndexed(scenePassEncoder, 6, static_cast<u32>(einsts.size()), 0, 0, 0);
+            bufMgr->DestroyBuffer(einstBuf);
         }
     }
 
