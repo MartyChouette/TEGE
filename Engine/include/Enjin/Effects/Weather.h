@@ -56,6 +56,10 @@ public:
 
     f32 GetRainIntensity() const { return m_RainIntensity; }
     f32 GetSnowIntensity() const { return m_SnowIntensity; }
+    // Snow settled on the ground: rises while snowing, melts slowly when clear.
+    // Drives shader surface-whitening so snow builds up then returns to clear/spring,
+    // instead of popping on/off with the precipitation intensity.
+    f32 GetSnowAccumulation() const { return m_SnowAccumulation; }
     f32 GetFogDensity() const { return m_FogDensity; }
     Math::Vector3 GetFogColor() const { return m_FogColor; }
     f32 GetFogStart() const { return m_FogStart; }
@@ -122,6 +126,7 @@ private:
     // Weather intensities
     f32 m_RainIntensity = 0.0f;
     f32 m_SnowIntensity = 0.0f;
+    f32 m_SnowAccumulation = 0.0f;  // settled ground snow (0..1), integrated from snow intensity
 
     // Fog settings (linear fog, very PS1/N64)
     f32 m_FogDensity = 0.0f;

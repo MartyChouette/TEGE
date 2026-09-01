@@ -102,6 +102,18 @@ void WeatherSystem::Update(f32 deltaTime, const Math::Vector3& cameraPos) {
         m_FogDensity = Math::Lerp(m_FogDensity, targetFog, t);
     }
 
+    // Snow accumulation: settle snow onto the ground while it's snowing, melt it
+    // slowly once it stops. This is what makes snow BUILD UP and then the world
+    // RETURN TO CLEAR/SPRING gradually, instead of the surface-whiten popping on and
+    // off with the instantaneous precipitation intensity.
+    if (m_SnowIntensity > 0.05f) {
+        m_SnowAccumulation += (1.0f - m_SnowAccumulation) * m_SnowIntensity
+                              * Math::Min(deltaTime * 0.15f, 1.0f);
+    } else {
+        m_SnowAccumulation -= deltaTime * 0.05f;  // ~20s to fully melt
+    }
+    m_SnowAccumulation = Math::Clamp(m_SnowAccumulation, 0.0f, 1.0f);
+
     // Update particles
     UpdateParticles(deltaTime, cameraPos);
 

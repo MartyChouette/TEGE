@@ -129,7 +129,8 @@ struct WebLightingUBO {
     WebLightVec4 skySunColor;              // xyz sun color, w = sun size
     WebLightVec4 skyClouds;                // x cov1, y scale1, z speed, w cov2
     WebLightVec4 skyCloudColor;            // xyz cloud color, w = scale2
-};                                         // Total: 848 bytes
+    WebLightVec4 snowParams;               // x = snow accumulation (0..1); yzw reserved
+};                                         // Total: 864 bytes (appended snowParams)
 
 struct WebObjectDataUBO {
     alignas(16) Math::Matrix4 model;       // 64
@@ -1824,6 +1825,13 @@ void RenderSystem::Update(f32 deltaTime) {
             lit.skySunColor = {sc.sunColor.x, sc.sunColor.y, sc.sunColor.z, sc.sunSize};
             lit.skyClouds = {sc.cloudCoverage, sc.cloudScale, sc.cloudSpeed, sc.cloud2Coverage};
             lit.skyCloudColor = {sc.cloudColor.x, sc.cloudColor.y, sc.cloudColor.z, sc.cloud2Scale};
+        }
+
+        // Settled snow accumulation -> shader surface-whitening (builds up, then melts).
+        {
+            f32 snowAccum = m_MainPassWeather ? m_MainPassWeather->GetSnowAccumulation()
+                                              : m_WeatherSkySnow;
+            lit.snowParams = {snowAccum, 0.0f, 0.0f, 0.0f};
         }
 
         bufMgr->UploadData(m_WebLightingBuffer, &lit, sizeof(lit));
@@ -10200,7 +10208,8 @@ void RenderSystem::UpdateFrameUniforms() {
         lighting.pointShadowCount = 0;
         lighting.spotShadowCount = 0;
         lighting.fogParams = Math::Vector4(m_FogDensity, m_FogStart, m_FogEnd, m_FogHeightFalloff);
-        lighting.fogColorSnow = Math::Vector4(m_FogColor.x, m_FogColor.y, m_FogColor.z, m_SnowIntensity);
+        lighting.fogColorSnow = Math::Vector4(m_FogColor.x, m_FogColor.y, m_FogColor.z,
+            m_MainPassWeather ? m_MainPassWeather->GetSnowAccumulation() : m_SnowIntensity);
         if (m_WindSystem) lighting.windData = m_WindSystem->GetWindVector();
         (*m_ActiveLightingBuffers)[GetActiveBufferIndex(currentFrame)]->UploadData(&lighting, sizeof(lighting));
         m_CachedLightingData = lighting;
@@ -10418,7 +10427,8 @@ void RenderSystem::UpdateFrameUniforms() {
         m_WebPPAccessibility.contrast};
 
     lighting.fogParams = Math::Vector4(m_FogDensity, m_FogStart, m_FogEnd, m_FogHeightFalloff);
-    lighting.fogColorSnow = Math::Vector4(m_FogColor.x, m_FogColor.y, m_FogColor.z, m_SnowIntensity);
+    lighting.fogColorSnow = Math::Vector4(m_FogColor.x, m_FogColor.y, m_FogColor.z,
+        m_MainPassWeather ? m_MainPassWeather->GetSnowAccumulation() : m_SnowIntensity);
 
     // Look up cached player entity position for vegetation stepping (O(1) instead of linear scan)
     lighting.playerPosition = Math::Vector4(0.0f, 0.0f, 0.0f, 0.0f);

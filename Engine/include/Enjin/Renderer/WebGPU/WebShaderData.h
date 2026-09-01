@@ -36,6 +36,7 @@ struct LightingUBO {
     skySunColor: vec4<f32>,              // w = sun size
     skyClouds: vec4<f32>,                // cov1, scale1, speed, cov2
     skyCloudColor: vec4<f32>,            // w = scale2
+    snowParams: vec4<f32>,               // x = snow accumulation (0..1); yzw reserved
 };
 
 @group(0) @binding(0) var<uniform> viewProj: ViewProjection;
@@ -482,6 +483,15 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let sCol = textureSampleLevel(scrollReflTex, scrollReflSmp, sUv, 0.0).rgb;
         let sFres = pow(1.0 - max(dot(N, sV), 0.0), 3.0);
         color = color + sCol * object.scrollReflStrength * clamp(sFres + 0.25, 0.0, 1.0);
+    }
+
+    // Snow accumulation: whiten upward-facing surfaces by settled snow (mirrors
+    // triangle.frag ~1832). snowParams.x builds up while snowing and melts slowly
+    // when clear, so snow accumulates and then the scene returns to clear/spring.
+    let snowAccum = lighting.snowParams.x;
+    if (snowAccum > 0.0) {
+        let snowCoverage = snowAccum * smoothstep(0.3, 0.8, N.y);
+        color = mix(color, vec3<f32>(0.95, 0.97, 1.0), snowCoverage);
     }
 
     // Height-based distance fog (matches Vulkan)
@@ -1197,6 +1207,7 @@ struct LightingUBO {
     skySunColor: vec4<f32>,              // w = sun size
     skyClouds: vec4<f32>,                // cov1, scale1, speed, cov2
     skyCloudColor: vec4<f32>,            // w = scale2
+    snowParams: vec4<f32>,               // x = snow accumulation (0..1); yzw reserved
 };
 @group(0) @binding(0) var<uniform> viewProj: ViewProjection;
 @group(0) @binding(1) var<uniform> lighting: LightingUBO;
