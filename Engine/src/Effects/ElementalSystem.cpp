@@ -462,6 +462,13 @@ void ElementalSystem::UpdateVolumes(ECS::World* world, f32 dt) {
 // ============================================================================
 
 void ElementalSystem::UpdatePhysics(f32 dt) {
+    // Rain/snow put fire OUT: weather damps every fire particle's intensity each
+    // frame, and KillExpired culls it once intensity hits 0 (Marty: fire should
+    // go out in rain/snow). 0 when clear or no weather system wired.
+    f32 fireExtinguish = 0.0f;
+    if (m_Weather)
+        fireExtinguish = (m_Weather->GetRainIntensity() + m_Weather->GetSnowIntensity()) * 0.7f;
+
     for (u32 i = 0; i < m_Pool.activeCount; ++i) {
         Math::Vector4 elem = m_Pool.elements[i];
         Math::Vector3& vel = m_Pool.velocities[i];
@@ -488,6 +495,7 @@ void ElementalSystem::UpdatePhysics(f32 dt) {
         // Fire buoyancy
         if (elem.x > 0.5f) {
             vel.y += m_Pool.intensities[i] * 2.0f * dt;
+            if (fireExtinguish > 0.0f) m_Pool.intensities[i] -= fireExtinguish * dt;  // rain/snow douses it
         }
 
         // Drag (light)

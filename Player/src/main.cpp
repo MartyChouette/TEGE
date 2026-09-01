@@ -2049,7 +2049,10 @@ private:
                 }
             }
 
-            if (waterTempZone && waterTempZone->IsFreezing()) {
+            // Snow weather freezes water even without a temperature zone
+            // (Marty: water should freeze in snow); a temp zone still overrides.
+            bool snowFreeze = m_WeatherSystem.GetSnowIntensity() > 0.25f;
+            if ((waterTempZone && waterTempZone->IsFreezing()) || snowFreeze) {
                 waterVol->freezeProgress += waterVol->freezeRate * deltaTime;
                 if (waterVol->freezeProgress > 1.0f) waterVol->freezeProgress = 1.0f;
             } else if (waterTempZone && waterTempZone->IsNearFreezing()) {

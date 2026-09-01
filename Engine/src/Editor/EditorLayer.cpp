@@ -2681,7 +2681,10 @@ void EditorLayer::UpdateGameViewSims(f32 simDt) {
             }
         }
 
-        if (waterTempZone && waterTempZone->IsFreezing()) {
+        // Snow weather freezes water even without a temperature zone (Marty:
+        // water should freeze in snow). A temperature zone still overrides.
+        bool snowFreeze = m_WeatherSystem.GetSnowIntensity() > 0.25f;
+        if ((waterTempZone && waterTempZone->IsFreezing()) || snowFreeze) {
             // Freezing: increase freeze progress
             waterVol->freezeProgress += waterVol->freezeRate * simDt;
             if (waterVol->freezeProgress > 1.0f) waterVol->freezeProgress = 1.0f;
