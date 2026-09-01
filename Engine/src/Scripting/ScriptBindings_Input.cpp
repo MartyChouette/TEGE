@@ -282,6 +282,20 @@ void RegisterInputBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterEnumValue("Key", "Insert",    static_cast<int>(KeyCode::Insert)));
     AS_CHECK(engine->RegisterEnumValue("Key", "Delete",    static_cast<int>(KeyCode::Delete)));
 
+    // Punctuation / symbol keys (US layout positions), so scripts that read the
+    // keyboard per-key (typewriters, text entry) can reach them.
+    AS_CHECK(engine->RegisterEnumValue("Key", "Apostrophe",   static_cast<int>(KeyCode::Apostrophe)));
+    AS_CHECK(engine->RegisterEnumValue("Key", "Comma",        static_cast<int>(KeyCode::Comma)));
+    AS_CHECK(engine->RegisterEnumValue("Key", "Minus",        static_cast<int>(KeyCode::Minus)));
+    AS_CHECK(engine->RegisterEnumValue("Key", "Period",       static_cast<int>(KeyCode::Period)));
+    AS_CHECK(engine->RegisterEnumValue("Key", "Slash",        static_cast<int>(KeyCode::Slash)));
+    AS_CHECK(engine->RegisterEnumValue("Key", "Semicolon",    static_cast<int>(KeyCode::Semicolon)));
+    AS_CHECK(engine->RegisterEnumValue("Key", "Equal",        static_cast<int>(KeyCode::Equal)));
+    AS_CHECK(engine->RegisterEnumValue("Key", "LeftBracket",  static_cast<int>(KeyCode::LeftBracket)));
+    AS_CHECK(engine->RegisterEnumValue("Key", "Backslash",    static_cast<int>(KeyCode::Backslash)));
+    AS_CHECK(engine->RegisterEnumValue("Key", "RightBracket", static_cast<int>(KeyCode::RightBracket)));
+    AS_CHECK(engine->RegisterEnumValue("Key", "GraveAccent",  static_cast<int>(KeyCode::GraveAccent)));
+
     // Arrow keys
     AS_CHECK(engine->RegisterEnumValue("Key", "Right", static_cast<int>(KeyCode::Right)));
     AS_CHECK(engine->RegisterEnumValue("Key", "Left",  static_cast<int>(KeyCode::Left)));
