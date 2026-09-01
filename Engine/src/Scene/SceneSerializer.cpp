@@ -6190,6 +6190,12 @@ json SerializeUIElement(const GUI::UIElement& e) {
     j["enabled"] = e.enabled;
     j["focusable"] = e.focusable;
     j["tabOrder"] = e.tabOrder;
+    // Container layout (unified display P3)
+    j["layoutMode"] = static_cast<u8>(e.layoutMode);
+    j["layoutSpacing"] = RF(e.layoutSpacing);
+    j["layoutPaddingX"] = RF(e.layoutPaddingX);
+    j["layoutPaddingY"] = RF(e.layoutPaddingY);
+    j["layoutAlign"] = static_cast<u8>(e.layoutAlign);
     j["parentId"] = e.parentId;
     j["childIds"] = e.childIds;
 
@@ -6279,6 +6285,17 @@ GUI::UIElement DeserializeUIElement(const json& j) {
     if (j.contains("enabled")) e.enabled = JB(j["enabled"]);
     if (j.contains("focusable")) e.focusable = JB(j["focusable"]);
     if (j.contains("tabOrder")) e.tabOrder = j["tabOrder"].get<i32>();
+    if (j.contains("layoutMode")) {
+        u8 v = j["layoutMode"].get<u8>();
+        if (v <= static_cast<u8>(GUI::UILayoutMode::Grid)) e.layoutMode = static_cast<GUI::UILayoutMode>(v);
+    }
+    e.layoutSpacing = j.value("layoutSpacing", -1.0f);
+    e.layoutPaddingX = j.value("layoutPaddingX", 0.0f);
+    e.layoutPaddingY = j.value("layoutPaddingY", 0.0f);
+    if (j.contains("layoutAlign")) {
+        u8 v = j["layoutAlign"].get<u8>();
+        if (v <= static_cast<u8>(GUI::UILayoutAlign::Stretch)) e.layoutAlign = static_cast<GUI::UILayoutAlign>(v);
+    }
     if (j.contains("parentId")) e.parentId = j["parentId"].get<u32>();
     if (j.contains("childIds") && j["childIds"].is_array()) {
         static constexpr usize MAX_CHILD_IDS = 10000;

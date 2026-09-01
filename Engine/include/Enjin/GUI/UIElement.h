@@ -203,6 +203,26 @@ inline bool IsFocusableType(UIWidgetType type) {
            type == UIWidgetType::RadioGroup || type == UIWidgetType::ListView;
 }
 
+// Unified display P3: any element can be a layout container. The rule
+// arranges the element's CHILDREN inside its rect during ComputeLayout, so
+// the arranged rects are what rendering, input, and focus all see (unlike
+// the old Grid widget's render-time repositioning, which drew children where
+// hit-testing couldn't find them).
+enum class UILayoutMode : u8 {
+    None = 0,     // children use their own anchors (classic behavior)
+    VStack,       // top-to-bottom, each child keeps its anchored height
+    HStack,       // left-to-right, each child keeps its anchored width
+    Grid          // fixed columns (data.gridColumns), equal cell widths
+};
+
+// Cross-axis alignment for stacks (ignored by Grid).
+enum class UILayoutAlign : u8 {
+    Start = 0,    // left (VStack) / top (HStack)
+    Center,
+    End,
+    Stretch       // child fills the container's cross axis minus padding
+};
+
 // A single UI element in the canvas
 struct UIElement {
     u32 id = 0;
@@ -215,6 +235,14 @@ struct UIElement {
 
     // Layout
     UIAnchor anchor;
+
+    // Container layout (unified display P3). Applies to this element's
+    // children; None preserves pure anchor layout for existing content.
+    UILayoutMode layoutMode = UILayoutMode::None;
+    f32 layoutSpacing = -1.0f;    // px between children; < 0 = theme.spacing
+    f32 layoutPaddingX = 0.0f;    // inner padding, px
+    f32 layoutPaddingY = 0.0f;
+    UILayoutAlign layoutAlign = UILayoutAlign::Stretch;
 
     // Style
     UIStyleOverride style;

@@ -164,6 +164,10 @@ private:
     void RenderLabel(const UIElement& element, const UITheme& theme);
     void RenderImage(const UIElement& element, const UITheme& theme);
     void RenderVectorGraphic(const UIElement& element, const UITheme& theme);
+
+    // Container layout (unified display P3)
+    void ArrangeContainer(UICanvasComponent& canvas, UIElement& container, f32 scaleFactor);
+    void RelayoutSubtree(UICanvasComponent& canvas, UIElement& element, f32 scaleFactor);
     void RenderProgressBar(const UIElement& element, const UITheme& theme);
     void RenderSlider(const UIElement& element, const UITheme& theme);
     void RenderCheckbox(const UIElement& element, const UITheme& theme);

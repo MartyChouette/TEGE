@@ -297,6 +297,116 @@ void UISystem::ComputeLayout(UICanvasComponent& canvas, f32 vpW, f32 vpH,
             }
         }
     }
+
+    // Container pass (unified display P3): elements with a layout mode arrange
+    // their children, overriding the children's anchors. Runs from the
+    // OUTERMOST container down (ArrangeContainer recurses), so only containers
+    // with no container ancestor start an arrangement here. Because this
+    // writes computedRect, the arranged positions are what rendering, input,
+    // and focus all agree on.
+    for (auto& element : canvas.elements) {
+        if (element.layoutMode == UILayoutMode::None) continue;
+        bool nested = false;
+        u32 pid = element.parentId;
+        int guard = 0;
+        while (pid != 0 && guard++ < 64) {
+            const UIElement* p = canvas.GetElement(pid);
+            if (!p) break;
+            if (p->layoutMode != UILayoutMode::None) { nested = true; break; }
+            pid = p->parentId;
+        }
+        if (!nested) ArrangeContainer(canvas, element, scaleFactor);
+    }
+}
+
+void UISystem::RelayoutSubtree(UICanvasComponent& canvas, UIElement& element, f32 scaleFactor) {
+    // The element was just moved by its container: re-anchor its descendants
+    // against the new rect. A child that is itself a container re-arranges.
+    if (element.layoutMode != UILayoutMode::None) {
+        ArrangeContainer(canvas, element, scaleFactor);   // recurses into children
+        return;
+    }
+    for (u32 cid : element.childIds) {
+        UIElement* child = canvas.GetElement(cid);
+        if (!child) continue;
+        ComputeElementRect(*child, element.computedRect, scaleFactor);
+        RelayoutSubtree(canvas, *child, scaleFactor);
+    }
+}
+
+void UISystem::ArrangeContainer(UICanvasComponent& canvas, UIElement& container, f32 scaleFactor) {
+    const UIRect r = container.computedRect;
+    const f32 spacing = (container.layoutSpacing >= 0.0f ? container.layoutSpacing
+                                                         : canvas.theme.spacing) * scaleFactor;
+    const f32 padX = container.layoutPaddingX * scaleFactor;
+    const f32 padY = container.layoutPaddingY * scaleFactor;
+    const f32 innerX = r.x + padX;
+    const f32 innerY = r.y + padY;
+    const f32 innerW = std::max(0.0f, r.w - padX * 2.0f);
+    const f32 innerH = std::max(0.0f, r.h - padY * 2.0f);
+
+    // Cross-axis placement for stacks: size = the child's anchored size along
+    // that axis (its "intrinsic" size), unless Stretch fills the container.
+    auto crossPlace = [&](f32 childSize, f32 lo, f32 span, f32& outPos, f32& outSize) {
+        switch (container.layoutAlign) {
+            case UILayoutAlign::Stretch: outPos = lo;                              outSize = span;      break;
+            case UILayoutAlign::Start:   outPos = lo;                              outSize = std::min(childSize, span); break;
+            case UILayoutAlign::Center:  outSize = std::min(childSize, span);      outPos = lo + (span - outSize) * 0.5f; break;
+            case UILayoutAlign::End:     outSize = std::min(childSize, span);      outPos = lo + span - outSize; break;
+        }
+    };
+
+    switch (container.layoutMode) {
+        case UILayoutMode::VStack: {
+            f32 y = innerY;
+            for (u32 cid : container.childIds) {
+                UIElement* child = canvas.GetElement(cid);
+                if (!child || !child->visible) continue;
+                f32 h = child->computedRect.h;
+                f32 x = innerX, w = innerW;
+                crossPlace(child->computedRect.w, innerX, innerW, x, w);
+                child->computedRect = {x, y, w, h};
+                y += h + spacing;
+                RelayoutSubtree(canvas, *child, scaleFactor);
+            }
+            break;
+        }
+        case UILayoutMode::HStack: {
+            f32 x = innerX;
+            for (u32 cid : container.childIds) {
+                UIElement* child = canvas.GetElement(cid);
+                if (!child || !child->visible) continue;
+                f32 w = child->computedRect.w;
+                f32 y = innerY, h = innerH;
+                crossPlace(child->computedRect.h, innerY, innerH, y, h);
+                child->computedRect = {x, y, w, h};
+                x += w + spacing;
+                RelayoutSubtree(canvas, *child, scaleFactor);
+            }
+            break;
+        }
+        case UILayoutMode::Grid: {
+            const i32 cols = std::max(1, container.data.gridColumns);
+            const f32 cellW = std::max(0.0f, (innerW - spacing * static_cast<f32>(cols - 1))
+                                             / static_cast<f32>(cols));
+            f32 y = innerY;
+            f32 rowH = 0.0f;
+            i32 col = 0;
+            for (u32 cid : container.childIds) {
+                UIElement* child = canvas.GetElement(cid);
+                if (!child || !child->visible) continue;
+                f32 h = child->computedRect.h > 0.0f ? child->computedRect.h : cellW;
+                f32 x = innerX + static_cast<f32>(col) * (cellW + spacing);
+                child->computedRect = {x, y, cellW, h};
+                rowH = std::max(rowH, h);
+                RelayoutSubtree(canvas, *child, scaleFactor);
+                if (++col >= cols) { col = 0; y += rowH + spacing; rowH = 0.0f; }
+            }
+            break;
+        }
+        case UILayoutMode::None:
+            break;
+    }
 }
 
 void UISystem::ComputeElementRect(UIElement& element, const UIRect& parentRect, f32 scaleFactor) {

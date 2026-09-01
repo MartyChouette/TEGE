@@ -9143,6 +9143,45 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
 
     ImGui::Spacing();
 
+    // --- Container layout (unified display P3): arrange this element's
+    // children with a rule instead of hand-placed anchors ---
+    {
+        ImGui::TextDisabled("Layout (children)");
+        const char* modes[] = { "None (anchors)", "Vertical Stack", "Horizontal Stack", "Grid" };
+        int mode = static_cast<int>(sel->layoutMode);
+        ImGui::SetNextItemWidth(160.0f);
+        if (ImGui::Combo("##LayoutMode", &mode, modes, 4)) {
+            sel->layoutMode = static_cast<GUI::UILayoutMode>(mode);
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Arranges CHILD elements inside this one.\nChildren keep their own size along the stack axis;\nanchors only matter for that size.");
+        }
+        if (sel->layoutMode != GUI::UILayoutMode::None) {
+            ImGui::SetNextItemWidth(90.0f);
+            ImGui::DragFloat("Spacing", &sel->layoutSpacing, 0.25f, -1.0f, 128.0f, "%.0f");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("-1 = theme spacing");
+            ImGui::SetNextItemWidth(90.0f);
+            ImGui::DragFloat("Pad X", &sel->layoutPaddingX, 0.25f, 0.0f, 256.0f, "%.0f");
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(90.0f);
+            ImGui::DragFloat("Pad Y", &sel->layoutPaddingY, 0.25f, 0.0f, 256.0f, "%.0f");
+            if (sel->layoutMode == GUI::UILayoutMode::Grid) {
+                ImGui::SetNextItemWidth(90.0f);
+                ImGui::DragInt("Columns", &sel->data.gridColumns, 0.1f, 1, 12);
+            } else {
+                const char* aligns[] = { "Start", "Center", "End", "Stretch" };
+                int align = static_cast<int>(sel->layoutAlign);
+                ImGui::SetNextItemWidth(110.0f);
+                if (ImGui::Combo("Align", &align, aligns, 4)) {
+                    sel->layoutAlign = static_cast<GUI::UILayoutAlign>(align);
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Cross-axis placement of children");
+            }
+        }
+    }
+
+    ImGui::Spacing();
+
     // --- Widget Data (shown directly, no TreeNode) ---
     if (sel->type == GUI::UIWidgetType::Button || sel->type == GUI::UIWidgetType::Label ||
         sel->type == GUI::UIWidgetType::Checkbox || sel->type == GUI::UIWidgetType::Toggle) {
