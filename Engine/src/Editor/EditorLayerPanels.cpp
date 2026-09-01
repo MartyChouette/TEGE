@@ -9318,6 +9318,62 @@ void EditorLayer::DrawUVPreviewPanel() {
     drawList->AddText(ImVec2(canvasPos.x + canvasSize.x - 20, canvasPos.y + canvasSize.y + 2), IM_COL32(150, 150, 150, 200), "1,1");
     drawList->AddText(ImVec2(canvasPos.x + 2, canvasPos.y - 14), IM_COL32(150, 150, 150, 200), "0,0");
 
+    // Advance the cursor past the canvas so the controls below don't overlap it.
+    ImGui::Dummy(ImVec2(canvasSize.x, canvasSize.y + 18.0f));
+
+    // --- Texture round-trip: paint the UV'd texture in a real app, hot-reload live ---
+    // Resolve a stored (possibly project-relative) texture path to something the OS
+    // shell can open.
+    auto resolveTexPath = [&](const std::string& p) -> std::string {
+        if (p.empty()) return p;
+        std::error_code ec;
+        if (std::filesystem::exists(p, ec)) return std::filesystem::absolute(p, ec).string();
+        std::string proj = m_SceneManager.GetProjectPath();
+        if (!proj.empty()) {
+            auto cand = std::filesystem::path(proj).parent_path() / p;
+            if (std::filesystem::exists(cand, ec)) return std::filesystem::absolute(cand, ec).string();
+        }
+        return p;
+    };
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    if (material) {
+        if (!material->baseColorTexturePath.empty()) {
+            ImGui::TextWrapped("Texture: %s", material->baseColorTexturePath.c_str());
+            if (ImGui::Button("Edit in external app")) {
+                OpenInExternalIDE(resolveTexPath(material->baseColorTexturePath));
+            }
+            ImGui::SetItemTooltip("Open this texture in your default image editor. The UV wireframe\n"
+                                  "above shows where each triangle lands. Save in the app and it\n"
+                                  "hot-reloads here and in the scene automatically (no re-import).");
+            ImGui::SameLine();
+            if (ImGui::Button("Replace...")) {
+                std::string picked = FileDialog::OpenFile("Replace Texture",
+                    {{ "Images", "*.png;*.jpg;*.jpeg;*.bmp;*.tga" }});
+                if (!picked.empty()) {
+                    material->baseColorTexturePath = picked;
+                    material->baseColorTexture = 1;
+                    material->InvalidateTextureCache();
+                }
+            }
+            ImGui::SetItemTooltip("Swap in a different image for this material's base color.");
+        } else {
+            ImGui::TextDisabled("This material uses the built-in look (no texture).");
+            if (ImGui::Button("Assign a texture...")) {
+                std::string picked = FileDialog::OpenFile("Assign Texture",
+                    {{ "Images", "*.png;*.jpg;*.jpeg;*.bmp;*.tga" }});
+                if (!picked.empty()) {
+                    material->baseColorTexturePath = picked;
+                    material->baseColorTexture = 1;
+                    material->InvalidateTextureCache();
+                }
+            }
+            ImGui::SetItemTooltip("Put your own 2D art on this object, then 'Edit in external app'\n"
+                                  "to paint on it using the UV layout, with live hot-reload.");
+        }
+    }
+
     ImGui::End();
 }
 
