@@ -6722,6 +6722,36 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     }
     m_LastBound.Reset(); m_GeometryPoolBound = false; InvalidateBoundSet0();
 
+    // Edit mode never calls Update(), which is where m_SortedRenderList is normally
+    // (re)built. So after entities were imported/added/removed in the editor the list
+    // went STALE: the color pass + bone-arena instancing kept drawing the OLD set
+    // while the shadow pass (which builds its caster list fresh) drew everything —
+    // e.g. the 200-copy stress grid showed one fox but 200 shadows, and only snapped
+    // in after play/stop (which runs Update). Rebuild the list here for the editor so
+    // newly-created entities join the color + arena passes immediately. Sorting a few
+    // hundred entities per frame is sub-millisecond and only happens in edit mode.
+    if (m_IsEditorMode && m_World) {
+        m_SortedRenderList.clear();
+        ECS::View<TransformComponent, MeshComponent> rlView(*m_World);
+        rlView.Exclude(m_World->GetComponentStorage<Sprite2DComponent>());
+        auto* rlMat = m_World->GetComponentStorage<MaterialComponent>();
+        Math::Vector3 rlCam; bool rlHaveCam = (m_Camera != nullptr);
+        if (rlHaveCam) rlCam = m_Camera->GetPosition();
+        for (Entity e : rlView) {
+            auto* xf = rlView.Get<TransformComponent>(e);
+            if (!xf || !xf->visible) continue;
+            auto* mat = rlMat ? rlMat->Get(e) : nullptr;
+            if (mat) mat->ComputeSortKey(rlHaveCam ? (xf->position - rlCam).Length() : 0.0f);
+            m_SortedRenderList.push_back(e);
+        }
+        std::sort(m_SortedRenderList.begin(), m_SortedRenderList.end(),
+            [rlMat](Entity a, Entity b) {
+                auto* ma = rlMat ? rlMat->Get(a) : nullptr;
+                auto* mb = rlMat ? rlMat->Get(b) : nullptr;
+                return (ma ? ma->cachedSortKey : 0ULL) < (mb ? mb->cachedSortKey : 0ULL);
+            });
+    }
+
     // Use the sorted render list (sorted by cachedTextureKey) to maximize descriptor cache hits.
     // The main pass builds m_SortedRenderList each frame; reuse it for the offscreen path.
     // If the list is empty (e.g. first frame), fall back to unsorted iteration.
