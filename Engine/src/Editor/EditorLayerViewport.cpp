@@ -1645,7 +1645,13 @@ void EditorLayer::ApplyBrush2D(ECS::Terrain2DComponent* terrain2d,
 
 void EditorLayer::HandleTerrainBrush(f32 deltaTime) {
     if (!m_World || !m_Camera || !m_Renderer) return;
-    if (WantsMouseInput()) return;
+    // Gate on the viewport-hover flag, NOT WantsMouseInput(): the viewport is an
+    // ImGui image inside a window, so ImGui::GetIO().WantCaptureMouse is TRUE
+    // whenever the cursor is over it — WantsMouseInput() made this early-return
+    // every frame and the brush never applied (Marty: "can't edit the terrain").
+    // Viewport picking already uses m_EditorViewportHovered for exactly this; it
+    // is false over panels/popups, so it still blocks the brush off the viewport.
+    if (!m_EditorViewportHovered) { m_BrushHitValid = false; return; }
 
     // Determine which terrain entity we're editing
     ECS::Entity target = m_PrimarySelected;
@@ -1791,7 +1797,9 @@ void EditorLayer::CleanupImGuiTextureCache() {
 
 void EditorLayer::HandleTilemapBrush() {
     if (!m_World || !m_Camera || !m_Renderer) return;
-    if (WantsMouseInput()) return;
+    // Same fix as HandleTerrainBrush: WantsMouseInput() is true over the viewport
+    // image, so it blocked the tilemap brush every frame. Gate on viewport hover.
+    if (!m_EditorViewportHovered) return;
 
     ECS::Entity target = m_PrimarySelected;
     if (target == ECS::INVALID_ENTITY) return;
