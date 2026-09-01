@@ -330,7 +330,24 @@ void ParticleRenderer::RenderElementalParticles(VkCommandBuffer commandBuffer,
         ParticleInstanceData inst;
         inst.position = pool.positions[i];
         inst.size = pool.sizes[i] * 2.0f;
-        inst.color = Math::Vector3(1.0f, 0.8f, 0.6f);  // warm elemental tint (was push-constant baseColor)
+        // Color by dominant element, blended by channel weight. A single flat warm
+        // tint made the water-fountain drops (element = water, full gravity) fall as
+        // reddish-gold streaks that read as a second kind of raindrop (Marty: "diff
+        // types of raindrops, should just be one"). Water now reads blue, fire warm.
+        {
+            Math::Vector4 el = pool.elements[i];
+            Math::Vector3 fireC (1.00f, 0.55f, 0.20f);  // fire: warm gold/orange
+            Math::Vector3 waterC(0.45f, 0.65f, 1.00f);  // water: blue, like rain
+            Math::Vector3 earthC(0.50f, 0.35f, 0.20f);  // earth: brown
+            Math::Vector3 airC  (0.85f, 0.90f, 1.00f);  // air: pale
+            f32 wsum = el.x + el.y + el.z + el.w;
+            if (wsum > 0.0001f) {
+                inst.color = (fireC * el.x + waterC * el.y + earthC * el.z + airC * el.w)
+                             * (1.0f / wsum);
+            } else {
+                inst.color = Math::Vector3(1.0f, 0.8f, 0.6f);
+            }
+        }
 
         // Alpha from lifetime ratio and intensity
         f32 ageRatio = (pool.maxLifetimes[i] > 0.0f)
