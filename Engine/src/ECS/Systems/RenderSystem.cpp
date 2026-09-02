@@ -1145,37 +1145,66 @@ void RenderSystem::Initialize() {
         pd.vertexBuffers = {treeLayout};
         m_WebTreePipeline = pipeMgr->CreateRenderPipeline(pd);
 
-        // Tree mesh: trunk (2 crossing quads) + canopy (3 crossing billboards)
+        // Tree mesh: low-poly tapered-cylinder trunk + low-poly sphere canopy.
         struct TreeVert { f32 px, py, pz, nx, ny, nz, u, v; };
         std::vector<TreeVert> treeVerts;
         std::vector<u32> treeIndices;
 
-        auto addQuad = [&](Math::Vector3 bl, Math::Vector3 br, Math::Vector3 tr, Math::Vector3 tl,
-                           f32 uvYBase, f32 uvYTop) {
-            u32 base = static_cast<u32>(treeVerts.size());
-            treeVerts.push_back({bl.x, bl.y, bl.z, 0,0,1, 0, uvYBase});
-            treeVerts.push_back({br.x, br.y, br.z, 0,0,1, 1, uvYBase});
-            treeVerts.push_back({tr.x, tr.y, tr.z, 0,0,1, 1, uvYTop});
-            treeVerts.push_back({tl.x, tl.y, tl.z, 0,0,1, 0, uvYTop});
-            treeIndices.insert(treeIndices.end(), {base, base+1, base+2, base, base+2, base+3});
-        };
-
-        // Trunk: 3 crossing quads (0/60/120 deg), TAPERED — narrower at the top
-        // like the desktop VegTemplates trunk. Two untapered crossing quads read
-        // as a flat slab from oblique angles (Marty: "trunks wrong"); a tapered
-        // 3-quad star gives a solid rounded trunk from any direction. uv.y < 0.5.
-        f32 tw = 0.5f, th = 1.0f, tt = 0.45f;   // tt = top taper fraction
-        for (int q = 0; q < 3; q++) {
-            f32 a = static_cast<f32>(q) * 3.14159f / 3.0f;
-            f32 dx = std::cos(a) * tw, dz = std::sin(a) * tw;
-            addQuad({-dx,0,-dz}, {dx,0,dz}, {dx*tt,th,dz*tt}, {-dx*tt,th,-dz*tt}, 0.0f, 0.4f);
+        // Trunk: low-poly tapered cylinder (6-sided prism, narrower at the top).
+        // Crossing quads read as a triangular slab from oblique/distant angles
+        // (Marty: "trunks hella deformed on some"); a real prism is solid from every
+        // direction. Base radius 0.5 matches the shader's trunkWidth scaling; uv.y
+        // stays < 0.5 so the shader's isCanopy test keeps it a trunk.
+        {
+            const int seg = 6;
+            const f32 tw = 0.5f, tt = 0.45f;   // base radius (mesh space), top taper
+            const u32 tbase = static_cast<u32>(treeVerts.size());
+            for (int s = 0; s <= seg; ++s) {
+                f32 a = static_cast<f32>(s) * 2.0f * 3.14159f / static_cast<f32>(seg);
+                f32 ca = std::cos(a), sa = std::sin(a);
+                treeVerts.push_back({ca * tw,      0.0f, sa * tw,      ca, 0.0f, sa, 0.0f, 0.1f}); // bottom ring
+                treeVerts.push_back({ca * tw * tt, 1.0f, sa * tw * tt, ca, 0.0f, sa, 0.0f, 0.4f}); // top ring
+            }
+            for (int s = 0; s < seg; ++s) {
+                u32 b0 = tbase + static_cast<u32>(s * 2);
+                u32 t0 = tbase + static_cast<u32>(s * 2 + 1);
+                u32 b1 = tbase + static_cast<u32>((s + 1) * 2);
+                u32 t1 = tbase + static_cast<u32>((s + 1) * 2 + 1);
+                treeIndices.insert(treeIndices.end(), {b0, b1, t1, b0, t1, t0});
+            }
         }
-        // Canopy: 3 crossing billboard quads at 0°, 60°, 120° (uv.y > 0.5 = canopy)
-        f32 cr = 1.5f, co = 1.2f;  // canopy radius/offset
-        for (int q = 0; q < 3; q++) {
-            f32 angle = static_cast<f32>(q) * 3.14159f / 3.0f;
-            f32 cx = std::cos(angle) * cr, cz = std::sin(angle) * cr;
-            addQuad({-cx, co, -cz}, {cx, co, cz}, {cx, co + cr*2, cz}, {-cx, co + cr*2, -cz}, 0.6f, 1.0f);
+        // Canopy: a low-poly UV sphere (unit sphere; the shader scales it by
+        // canopyRadius and lifts it by canopyOffset). Crossing vertical quads read as
+        // flat cardboard from oblique/top angles ("canopies not correct"); a rounded
+        // blob is the correct low-poly crown and looks right from every direction.
+        // uv.y encodes the vertical fraction (0.6 bottom .. 1.0 top) for shading, and
+        // stays > 0.5 so the shader's isCanopy test still picks it out. Cull mode is
+        // None, so winding doesn't matter.
+        {
+            const int latB = 4, lonB = 7;   // low-poly on purpose
+            const u32 cbase = static_cast<u32>(treeVerts.size());
+            for (int la = 0; la <= latB; ++la) {
+                f32 theta = static_cast<f32>(la) * 3.14159f / static_cast<f32>(latB);   // 0..PI
+                f32 sinT = std::sin(theta), cosT = std::cos(theta);
+                for (int lo = 0; lo <= lonB; ++lo) {
+                    f32 phi = static_cast<f32>(lo) * 2.0f * 3.14159f / static_cast<f32>(lonB);
+                    f32 x = sinT * std::cos(phi);
+                    f32 y = cosT;                      // +1 top .. -1 bottom
+                    f32 z = sinT * std::sin(phi);
+                    f32 uvY = 0.6f + 0.4f * ((y + 1.0f) * 0.5f);   // 0.6..1.0
+                    treeVerts.push_back({x, y, z, x, y, z, 0.0f, uvY});
+                }
+            }
+            const int stride = lonB + 1;
+            for (int la = 0; la < latB; ++la) {
+                for (int lo = 0; lo < lonB; ++lo) {
+                    u32 a = cbase + static_cast<u32>(la * stride + lo);
+                    u32 b = cbase + static_cast<u32>((la + 1) * stride + lo);
+                    u32 c = cbase + static_cast<u32>((la + 1) * stride + (lo + 1));
+                    u32 d = cbase + static_cast<u32>(la * stride + (lo + 1));
+                    treeIndices.insert(treeIndices.end(), {a, b, c, a, c, d});
+                }
+            }
         }
         m_WebTreeIndexCount = static_cast<u32>(treeIndices.size());
         Renderer::GPUBufferDesc tvb;
