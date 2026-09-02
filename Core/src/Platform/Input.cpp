@@ -777,6 +777,20 @@ bool Input::IsKeyReleased(KeyCode key) {
     return !s_KeysDown[keyIndex] && s_KeysDownPrev[keyIndex];
 }
 
+void Input::InjectKeyPress(KeyCode key) {
+    i32 keyIndex = static_cast<i32>(key);
+    if (keyIndex < 0 || keyIndex >= MAX_KEYS) return;
+#ifdef __EMSCRIPTEN__
+    // Ride the same down-latch a browser keydown sets. Update() ORs the latch into
+    // s_KeysDown for one frame and clears it, so IsKeyPressed fires exactly once.
+    s_WebKeysDownLatch[keyIndex] = true;
+#else
+    // Desktop rebuilds s_KeysDown from GLFW each Update, so a one-frame press can't
+    // be latched the same way; set it directly (edge computed against prev this frame).
+    s_KeysDown[keyIndex] = true;
+#endif
+}
+
 bool Input::IsMouseButtonDown(MouseButton button) {
     i32 buttonIndex = static_cast<i32>(button);
     if (buttonIndex < 0 || buttonIndex >= MAX_MOUSE_BUTTONS) return false;

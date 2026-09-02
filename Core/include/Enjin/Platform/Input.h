@@ -135,6 +135,11 @@ public:
     static bool IsKeyPressed(KeyCode key);   // True only on frame key was pressed
     static bool IsKeyReleased(KeyCode key);  // True only on frame key was released
 
+    // Synthesize a one-frame key press (e.g. a touch button standing in for a
+    // hardware key). On web it sets the same down-latch the browser keydown uses,
+    // so the next Update raises IsKeyPressed for exactly one frame.
+    static void InjectKeyPress(KeyCode key);
+
     // Mouse button queries
     static bool IsMouseButtonDown(MouseButton button);
     static bool IsMouseButtonPressed(MouseButton button);

@@ -3061,15 +3061,16 @@ void RenderSystem::Update(f32 deltaTime) {
         winsts.reserve(wparts.size());
         for (const auto& p : wparts) {
             if (p.lifetime <= 0.0f || p.alpha <= 0.01f) continue;
-            // Rain: a modest vertical streak (the old size*12 made long "strings").
-            // Snow: a bigger, softer flake (the sim's size is tiny — scale it up so
-            // flakes read as snow, not sparse hard dots). Alpha kept gentle.
-            f32 sx = wIsRain ? p.size * 1.5f : p.size * 3.5f;
-            f32 sy = wIsRain ? p.size * 6.0f : p.size * 3.5f;
+            // Rain: a short teardrop, only mildly elongated — NOT a long "stream"
+            // (old size*6 read as vertical strings, which the drops looked wrong next
+            // to). Snow: a bigger, softer flake (the sim's size is tiny — scale it up
+            // so flakes read as snow, not sparse hard dots). Alpha kept gentle.
+            f32 sx = wIsRain ? p.size * 2.2f : p.size * 3.5f;
+            f32 sy = wIsRain ? p.size * 3.4f : p.size * 3.5f;
             f32 r = wIsRain ? 0.70f : 1.0f;
             f32 g = wIsRain ? 0.80f : 1.0f;
             f32 b = wIsRain ? 0.92f : 1.0f;
-            f32 a = p.alpha * (wIsRain ? 0.55f : 0.8f);   // softer so they disperse, not pop
+            f32 a = p.alpha * (wIsRain ? 0.6f : 0.8f);    // softer so they disperse, not pop
             winsts.push_back({p.position.x, p.position.y, p.position.z,
                               sx, sy, 0.0f, r, g, b, a,
                               0.0f, 0.0f, 1.0f, 1.0f});
