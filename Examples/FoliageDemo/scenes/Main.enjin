@@ -1,7 +1,7 @@
 {
  "version": "1.0",
  "formatVersion": 1,
- "entityCount": 11,
+ "entityCount": 12,
  "entities": [
   {
    "boxCollider": {
@@ -45129,6 +45129,40 @@
     "swayStrength": 1.0,
     "swayFrequency": 1.0,
     "useVertexColorWeight": false
+   }
+  },
+  {
+   "id": 116,
+   "stableId": 1000000918604,
+   "name": {
+    "name": "WeatherController"
+   },
+   "transform": {
+    "position": [
+     0,
+     0,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "scriptComponent": {
+    "scripts": [
+     {
+      "class": "FoliageWeather",
+      "enabled": true,
+      "path": "scripts/FoliageWeather.as"
+     }
+    ]
    }
   }
  ],
