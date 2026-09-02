@@ -1161,8 +1161,8 @@ void RenderSystem::Initialize() {
         // direction. Base radius 0.5 matches the shader's trunkWidth scaling; uv.y
         // stays < 0.5 so the shader's isCanopy test keeps it a trunk.
         {
-            const int seg = 6;
-            const f32 tw = 0.5f, tt = 0.45f;   // base radius (mesh space), top taper
+            const int seg = 10;                // rounder trunk (was 6 = hexagonal/faceted)
+            const f32 tw = 0.5f, tt = 0.72f;   // base radius (mesh space); gentle taper (was 0.45 = cone/carrot)
             const u32 tbase = static_cast<u32>(treeVerts.size());
             for (int s = 0; s <= seg; ++s) {
                 f32 a = static_cast<f32>(s) * 2.0f * 3.14159f / static_cast<f32>(seg);

@@ -685,298 +685,6 @@
    }
   },
   {
-   "id": 104,
-   "stableId": 1000000823576,
-   "name": {
-    "name": "Oak"
-   },
-   "transform": {
-    "position": [
-     -18,
-     0,
-     0
-    ],
-    "rotation": [
-     0,
-     0,
-     0,
-     1
-    ],
-    "scale": [
-     1,
-     1,
-     1
-    ]
-   },
-   "treeVolume": {
-    "canopyBaseColor": [
-     0.16,
-     0.3,
-     0.12
-    ],
-    "canopyOffset": 2.5,
-    "canopyQuads": 3,
-    "canopyRadius": 1.7,
-    "canopyTipColor": [
-     0.45,
-     0.62,
-     0.28
-    ],
-    "density": 5,
-    "fallCanopyColor": [
-     0.6800000071525574,
-     0.41999998688697815,
-     0.11999999731779099
-    ],
-    "generateColliders": true,
-    "halfExtents": [
-     3.0,
-     0,
-     3.0
-    ],
-    "maxHeightScale": 1.399999976158142,
-    "minHeightScale": 0.6000000238418579,
-    "springCanopyColor": [
-     0.45,
-     0.62,
-     0.28
-    ],
-    "summerCanopyColor": [
-     0.16,
-     0.3,
-     0.12
-    ],
-    "treeType": 0,
-    "trunkColor": [
-     0.22,
-     0.15,
-     0.09
-    ],
-    "trunkHeight": 2.8,
-    "trunkWidth": 0.11,
-    "windSwayStrength": 0.6
-   }
-  },
-  {
-   "id": 105,
-   "stableId": 1000000831495,
-   "name": {
-    "name": "Autumn"
-   },
-   "transform": {
-    "position": [
-     -6,
-     0,
-     0
-    ],
-    "rotation": [
-     0,
-     0,
-     0,
-     1
-    ],
-    "scale": [
-     1,
-     1,
-     1
-    ]
-   },
-   "treeVolume": {
-    "canopyBaseColor": [
-     0.55,
-     0.28,
-     0.07
-    ],
-    "canopyOffset": 2.5,
-    "canopyQuads": 3,
-    "canopyRadius": 1.45,
-    "canopyTipColor": [
-     0.88,
-     0.58,
-     0.16
-    ],
-    "density": 5,
-    "fallCanopyColor": [
-     0.6800000071525574,
-     0.41999998688697815,
-     0.11999999731779099
-    ],
-    "generateColliders": true,
-    "halfExtents": [
-     3.0,
-     0,
-     3.0
-    ],
-    "maxHeightScale": 1.399999976158142,
-    "minHeightScale": 0.6000000238418579,
-    "springCanopyColor": [
-     0.88,
-     0.58,
-     0.16
-    ],
-    "summerCanopyColor": [
-     0.55,
-     0.28,
-     0.07
-    ],
-    "treeType": 0,
-    "trunkColor": [
-     0.25,
-     0.16,
-     0.08
-    ],
-    "trunkHeight": 2.8,
-    "trunkWidth": 0.1,
-    "windSwayStrength": 0.6
-   }
-  },
-  {
-   "id": 106,
-   "stableId": 1000000839414,
-   "name": {
-    "name": "Pine"
-   },
-   "transform": {
-    "position": [
-     6,
-     0,
-     0
-    ],
-    "rotation": [
-     0,
-     0,
-     0,
-     1
-    ],
-    "scale": [
-     1,
-     1,
-     1
-    ]
-   },
-   "treeVolume": {
-    "canopyBaseColor": [
-     0.07,
-     0.2,
-     0.1
-    ],
-    "canopyOffset": 3.3000000000000003,
-    "canopyQuads": 4,
-    "canopyRadius": 1.0,
-    "canopyTipColor": [
-     0.2,
-     0.4,
-     0.18
-    ],
-    "density": 5,
-    "fallCanopyColor": [
-     0.6800000071525574,
-     0.41999998688697815,
-     0.11999999731779099
-    ],
-    "generateColliders": true,
-    "halfExtents": [
-     3.0,
-     0,
-     3.0
-    ],
-    "maxHeightScale": 1.399999976158142,
-    "minHeightScale": 0.6000000238418579,
-    "springCanopyColor": [
-     0.2,
-     0.4,
-     0.18
-    ],
-    "summerCanopyColor": [
-     0.07,
-     0.2,
-     0.1
-    ],
-    "treeType": 0,
-    "trunkColor": [
-     0.2,
-     0.14,
-     0.08
-    ],
-    "trunkHeight": 3.6,
-    "trunkWidth": 0.1,
-    "windSwayStrength": 0.6
-   }
-  },
-  {
-   "id": 107,
-   "stableId": 1000000847333,
-   "name": {
-    "name": "Birch"
-   },
-   "transform": {
-    "position": [
-     18,
-     0,
-     0
-    ],
-    "rotation": [
-     0,
-     0,
-     0,
-     1
-    ],
-    "scale": [
-     1,
-     1,
-     1
-    ]
-   },
-   "treeVolume": {
-    "canopyBaseColor": [
-     0.32,
-     0.46,
-     0.18
-    ],
-    "canopyOffset": 2.9000000000000004,
-    "canopyQuads": 3,
-    "canopyRadius": 1.25,
-    "canopyTipColor": [
-     0.62,
-     0.76,
-     0.42
-    ],
-    "density": 5,
-    "fallCanopyColor": [
-     0.6800000071525574,
-     0.41999998688697815,
-     0.11999999731779099
-    ],
-    "generateColliders": true,
-    "halfExtents": [
-     3.0,
-     0,
-     3.0
-    ],
-    "maxHeightScale": 1.399999976158142,
-    "minHeightScale": 0.6000000238418579,
-    "springCanopyColor": [
-     0.62,
-     0.76,
-     0.42
-    ],
-    "summerCanopyColor": [
-     0.32,
-     0.46,
-     0.18
-    ],
-    "treeType": 0,
-    "trunkColor": [
-     0.78,
-     0.75,
-     0.68
-    ],
-    "trunkHeight": 3.2,
-    "trunkWidth": 0.08,
-    "windSwayStrength": 0.6
-   }
-  },
-  {
    "id": 108,
    "stableId": 1000000855252,
    "name": {
@@ -1165,6 +873,298 @@
      0.18
     ],
     "windSwayStrength": 1.2
+   }
+  },
+  {
+   "id": 112,
+   "stableId": 1000000886928,
+   "name": {
+    "name": "Oak"
+   },
+   "transform": {
+    "position": [
+     -18,
+     0,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "treeVolume": {
+    "canopyBaseColor": [
+     0.16,
+     0.3,
+     0.12
+    ],
+    "canopyOffset": 2.5,
+    "canopyQuads": 3,
+    "canopyRadius": 1.7,
+    "canopyTipColor": [
+     0.45,
+     0.62,
+     0.28
+    ],
+    "density": 2,
+    "fallCanopyColor": [
+     0.6800000071525574,
+     0.41999998688697815,
+     0.11999999731779099
+    ],
+    "generateColliders": true,
+    "halfExtents": [
+     4.0,
+     0.0,
+     4.0
+    ],
+    "maxHeightScale": 1.15,
+    "minHeightScale": 0.85,
+    "springCanopyColor": [
+     0.45,
+     0.62,
+     0.28
+    ],
+    "summerCanopyColor": [
+     0.16,
+     0.3,
+     0.12
+    ],
+    "treeType": 0,
+    "trunkColor": [
+     0.22,
+     0.15,
+     0.09
+    ],
+    "trunkHeight": 2.8,
+    "trunkWidth": 0.16,
+    "windSwayStrength": 0.6
+   }
+  },
+  {
+   "id": 113,
+   "stableId": 1000000894847,
+   "name": {
+    "name": "Autumn"
+   },
+   "transform": {
+    "position": [
+     -6,
+     0,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "treeVolume": {
+    "canopyBaseColor": [
+     0.55,
+     0.28,
+     0.07
+    ],
+    "canopyOffset": 2.5,
+    "canopyQuads": 3,
+    "canopyRadius": 1.5,
+    "canopyTipColor": [
+     0.88,
+     0.58,
+     0.16
+    ],
+    "density": 2,
+    "fallCanopyColor": [
+     0.6800000071525574,
+     0.41999998688697815,
+     0.11999999731779099
+    ],
+    "generateColliders": true,
+    "halfExtents": [
+     4.0,
+     0.0,
+     4.0
+    ],
+    "maxHeightScale": 1.15,
+    "minHeightScale": 0.85,
+    "springCanopyColor": [
+     0.88,
+     0.58,
+     0.16
+    ],
+    "summerCanopyColor": [
+     0.55,
+     0.28,
+     0.07
+    ],
+    "treeType": 0,
+    "trunkColor": [
+     0.25,
+     0.16,
+     0.08
+    ],
+    "trunkHeight": 2.8,
+    "trunkWidth": 0.15,
+    "windSwayStrength": 0.6
+   }
+  },
+  {
+   "id": 114,
+   "stableId": 1000000902766,
+   "name": {
+    "name": "Pine"
+   },
+   "transform": {
+    "position": [
+     6,
+     0,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "treeVolume": {
+    "canopyBaseColor": [
+     0.07,
+     0.2,
+     0.1
+    ],
+    "canopyOffset": 3.1,
+    "canopyQuads": 3,
+    "canopyRadius": 1.1,
+    "canopyTipColor": [
+     0.2,
+     0.4,
+     0.18
+    ],
+    "density": 2,
+    "fallCanopyColor": [
+     0.6800000071525574,
+     0.41999998688697815,
+     0.11999999731779099
+    ],
+    "generateColliders": true,
+    "halfExtents": [
+     4.0,
+     0.0,
+     4.0
+    ],
+    "maxHeightScale": 1.15,
+    "minHeightScale": 0.85,
+    "springCanopyColor": [
+     0.2,
+     0.4,
+     0.18
+    ],
+    "summerCanopyColor": [
+     0.07,
+     0.2,
+     0.1
+    ],
+    "treeType": 0,
+    "trunkColor": [
+     0.2,
+     0.14,
+     0.08
+    ],
+    "trunkHeight": 3.4,
+    "trunkWidth": 0.14,
+    "windSwayStrength": 0.6
+   }
+  },
+  {
+   "id": 115,
+   "stableId": 1000000910685,
+   "name": {
+    "name": "Birch"
+   },
+   "transform": {
+    "position": [
+     18,
+     0,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "treeVolume": {
+    "canopyBaseColor": [
+     0.32,
+     0.46,
+     0.18
+    ],
+    "canopyOffset": 2.9000000000000004,
+    "canopyQuads": 3,
+    "canopyRadius": 1.3,
+    "canopyTipColor": [
+     0.62,
+     0.76,
+     0.42
+    ],
+    "density": 2,
+    "fallCanopyColor": [
+     0.6800000071525574,
+     0.41999998688697815,
+     0.11999999731779099
+    ],
+    "generateColliders": true,
+    "halfExtents": [
+     4.0,
+     0.0,
+     4.0
+    ],
+    "maxHeightScale": 1.15,
+    "minHeightScale": 0.85,
+    "springCanopyColor": [
+     0.62,
+     0.76,
+     0.42
+    ],
+    "summerCanopyColor": [
+     0.32,
+     0.46,
+     0.18
+    ],
+    "treeType": 0,
+    "trunkColor": [
+     0.8,
+     0.77,
+     0.7
+    ],
+    "trunkHeight": 3.2,
+    "trunkWidth": 0.12,
+    "windSwayStrength": 0.6
    }
   }
  ],
