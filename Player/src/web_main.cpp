@@ -1193,6 +1193,21 @@ public:
         m_SubtitleSystem.RenderOverlay(w, h);
         // Screen reader status bar (announcements also speak via Web Speech API)
         m_Announcer.RenderStatusBar();
+        // Always-available pause button. A touchscreen has no Escape key, so without
+        // this you could never open the pause menu on mobile web (#37). Small, semi-
+        // transparent, top-right; works on desktop too (touch = click on web).
+        if (!m_AtMainMenu) {
+            const float pbSz = 44.0f, pbPad = 12.0f;
+            ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - pbSz - pbPad, pbPad));
+            ImGui::SetNextWindowBgAlpha(0.30f);
+            ImGui::Begin("##pausebtn", nullptr,
+                ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoNav);
+            if (ImGui::Button(m_Paused ? "|>" : "||", ImVec2(pbSz, pbSz)))
+                TogglePauseMenu();
+            ImGui::End();
+        }
+
         // Touch controls: must draw INSIDE the ImGui frame (before Render), or
         // its foreground-draw-list commands are submitted after the frame is
         // already rendered and never appear (was called after RenderUIOverlay).
