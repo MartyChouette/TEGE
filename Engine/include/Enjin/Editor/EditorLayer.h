@@ -1256,6 +1256,18 @@ private:
     bool m_BrushHitValid = false;
     i32 m_Dragging2DPoint = -1;  // Index of control point being dragged, -1 = none
 
+    // Creative mode: a SimCity/MS-Paint-style build palette. Pick a tool, then
+    // click-drag on the ground to place that object sized to the drag footprint.
+    enum class CreativeTool { None, Lake, TreeGrove, GrassPatch, ShrubPatch, Block };
+    bool m_ShowCreativePalette = false;
+    CreativeTool m_CreativeTool = CreativeTool::None;
+    bool m_CreativePlacing = false;         // mid drag-out
+    ECS::Entity m_CreativePlaceEntity = 0;  // the object being dragged out (its own live preview)
+    Math::Vector3 m_CreativeDragStart;      // world point where the drag began (ground)
+    Math::Vector3 m_CreativeDragEnd;        // current world point under the cursor
+    void DrawCreativePalette();
+    void HandleCreativePlacement(f32 deltaTime);
+
     void HandleTerrainBrush(f32 deltaTime);
     bool RaycastTerrain(const Ray& ray, ECS::TerrainComponent* terrain,
                         const ECS::TransformComponent* transform, Math::Vector3& hitPoint);

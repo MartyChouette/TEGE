@@ -2087,14 +2087,21 @@ void EditorLayer::Update(f32 deltaTime) {
         HandleUIEditorInput();
     }
 
+    // Creative-mode build placement (drag a lake/trees/grass/shrubs onto the ground).
+    // Intercepts the mouse before picking so a click places instead of selects.
+    if (m_CreativeTool != CreativeTool::None && m_PlayMode.IsStopped()) {
+        HandleCreativePlacement(deltaTime);
+    }
+
     // Deactivate UI edit mode when entering play mode
     if (!m_PlayMode.IsStopped() && m_UIEditMode) {
         m_UIEditMode = false;
     }
 
     // Handle viewport picking (left-click to select entities in editor viewport)
-    // Skip viewport picking while terrain/tilemap/UI edit mode is active to prevent entity deselection
-    if (!ImGuizmo::IsOver() && !m_TerrainEditMode && !m_TilemapEditMode && !m_UIEditMode) {
+    // Skip viewport picking while terrain/tilemap/UI/creative edit mode is active to prevent entity deselection
+    if (!ImGuizmo::IsOver() && !m_TerrainEditMode && !m_TilemapEditMode && !m_UIEditMode &&
+        m_CreativeTool == CreativeTool::None) {
         HandleViewportPicking();
     }
 
@@ -3907,6 +3914,9 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     }
     // UV Preview panel (bool-toggled, not in EditorPanel bitfield)
     DrawUVPreviewPanel();
+
+    // Creative-mode build palette (SimCity-style drag-to-place)
+    DrawCreativePalette();
 
     if (m_ShowDebugOverlay) {
         DrawDebugOverlay();

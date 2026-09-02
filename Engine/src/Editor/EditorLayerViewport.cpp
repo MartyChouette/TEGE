@@ -2346,5 +2346,126 @@ void EditorLayer::HandleKeyboardGizmoNudge() {
 // ============================================================================
 
 
+// ============================================================================
+// Creative mode — SimCity / MS-Paint build palette + drag-to-place
+// ============================================================================
+
+void EditorLayer::DrawCreativePalette() {
+    if (!m_ShowCreativePalette) return;
+    ImGui::SetNextWindowSize(ImVec2(190.0f, 320.0f), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Build", &m_ShowCreativePalette)) { ImGui::End(); return; }
+
+    ImGui::TextWrapped("Pick a tool, then drag on the ground to place it.");
+    ImGui::Spacing();
+
+    struct ToolDef { CreativeTool tool; const char* label; };
+    const ToolDef tools[] = {
+        { CreativeTool::Lake,       "~  Lake" },
+        { CreativeTool::TreeGrove,  "T  Trees" },
+        { CreativeTool::GrassPatch, ",  Grass" },
+        { CreativeTool::ShrubPatch, "*  Shrubs" },
+    };
+    for (const auto& td : tools) {
+        const bool sel = (m_CreativeTool == td.tool);
+        if (sel) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.50f, 0.80f, 1.0f));
+        if (ImGui::Button(td.label, ImVec2(-1.0f, 40.0f)))
+            m_CreativeTool = sel ? CreativeTool::None : td.tool;   // click again to deselect
+        if (sel) ImGui::PopStyleColor();
+    }
+
+    ImGui::Separator();
+    if (m_CreativeTool == CreativeTool::None)
+        ImGui::TextDisabled("No tool selected.");
+    else
+        ImGui::TextWrapped("Drag on the ground in the viewport. Release to finish; click the tool again to stop.");
+    ImGui::End();
+}
+
+void EditorLayer::HandleCreativePlacement(f32 /*deltaTime*/) {
+    if (!m_World || !m_Camera || m_CreativeTool == CreativeTool::None) return;
+
+    // Ground-plane (Y=0) point under the cursor — same ray/plane math the brushes use.
+    Math::Vector2 mousePos = Input::GetMousePosition();
+    f32 vpW = m_EditorViewportImageMaxX - m_EditorViewportImageMinX;
+    f32 vpH = m_EditorViewportImageMaxY - m_EditorViewportImageMinY;
+    if (vpW <= 0.0f || vpH <= 0.0f) return;
+    Ray ray = ScenePicker::ScreenToRay(m_Camera, mousePos.x - m_EditorViewportImageMinX,
+                                        mousePos.y - m_EditorViewportImageMinY, vpW, vpH);
+    bool haveHit = std::abs(ray.direction.y) > 1e-6f;
+    Math::Vector3 hit;
+    if (haveHit) {
+        f32 t = (0.0f - ray.origin.y) / ray.direction.y;
+        if (t <= 0.0f) haveHit = false; else hit = ray.origin + ray.direction * t;
+    }
+
+    // Begin placement on click over the viewport: spawn the object at zero size; it
+    // then acts as its own live preview while dragging.
+    if (!m_CreativePlacing && m_EditorViewportHovered && haveHit &&
+        Input::IsMouseButtonPressed(MouseButton::Left)) {
+        m_CreativePlacing = true;
+        m_CreativeDragStart = hit;
+        m_CreativeDragEnd = hit;
+        ECS::Entity e = m_World->CreateEntity();
+        m_World->AddComponent<ECS::TransformComponent>(e);
+        auto& nc = m_World->AddComponent<ECS::NameComponent>(e);
+        switch (m_CreativeTool) {
+            case CreativeTool::Lake:       nc.name = "Lake";        m_World->AddComponent<ECS::WaterVolumeComponent>(e); break;
+            case CreativeTool::TreeGrove:  nc.name = "Tree Grove";  m_World->AddComponent<ECS::TreeVolumeComponent>(e);  break;
+            case CreativeTool::GrassPatch: nc.name = "Grass Patch"; m_World->AddComponent<ECS::GrassVolumeComponent>(e); break;
+            case CreativeTool::ShrubPatch: nc.name = "Shrub Patch"; m_World->AddComponent<ECS::ShrubVolumeComponent>(e); break;
+            default: break;
+        }
+        m_CreativePlaceEntity = e;
+    }
+
+    // Resize live to the drag footprint (volumes render from halfExtents each frame,
+    // so updating them is an instant preview).
+    if (m_CreativePlacing && m_CreativePlaceEntity != ECS::INVALID_ENTITY) {
+        if (haveHit) m_CreativeDragEnd = hit;
+        const Math::Vector3 a = m_CreativeDragStart, b = m_CreativeDragEnd;
+        const Math::Vector3 center((a.x + b.x) * 0.5f, 0.0f, (a.z + b.z) * 0.5f);
+        const f32 hx = std::max(std::abs(b.x - a.x) * 0.5f, 0.5f);
+        const f32 hz = std::max(std::abs(b.z - a.z) * 0.5f, 0.5f);
+        if (auto* xf = m_World->GetComponent<ECS::TransformComponent>(m_CreativePlaceEntity))
+            xf->position = center;
+        auto areaDensity = [](f32 hX, f32 hZ, f32 perUnit, u32 lo, u32 hi) -> u32 {
+            u32 d = static_cast<u32>(hX * hZ * 4.0f * perUnit);
+            return std::max(lo, std::min(d, hi));
+        };
+        switch (m_CreativeTool) {
+            case CreativeTool::Lake:
+                if (auto* w = m_World->GetComponent<ECS::WaterVolumeComponent>(m_CreativePlaceEntity))
+                    w->halfExtents = Math::Vector3(hx, 5.0f, hz);
+                break;
+            case CreativeTool::TreeGrove:
+                if (auto* tv = m_World->GetComponent<ECS::TreeVolumeComponent>(m_CreativePlaceEntity)) {
+                    tv->halfExtents = Math::Vector3(hx, 0.0f, hz);
+                    tv->density = areaDensity(hx, hz, 0.08f, 1u, 120u);
+                }
+                break;
+            case CreativeTool::GrassPatch:
+                if (auto* gv = m_World->GetComponent<ECS::GrassVolumeComponent>(m_CreativePlaceEntity)) {
+                    gv->halfExtents = Math::Vector3(hx, 0.0f, hz);
+                    gv->density = areaDensity(hx, hz, 4.0f, 32u, 6000u);
+                }
+                break;
+            case CreativeTool::ShrubPatch:
+                if (auto* sv = m_World->GetComponent<ECS::ShrubVolumeComponent>(m_CreativePlaceEntity)) {
+                    sv->halfExtents = Math::Vector3(hx, 0.0f, hz);
+                    sv->density = areaDensity(hx, hz, 1.0f, 8u, 1500u);
+                }
+                break;
+            default: break;
+        }
+
+        if (!Input::IsMouseButtonDown(MouseButton::Left)) {
+            m_CreativePlacing = false;
+            ECS::Entity placed = m_CreativePlaceEntity;
+            m_CreativePlaceEntity = 0;
+            if (placed != ECS::INVALID_ENTITY) SelectEntity(placed);   // hand off to normal editing
+        }
+    }
+}
+
 } // namespace Editor
 } // namespace Enjin

@@ -714,6 +714,8 @@ void EditorLayer::DrawMenuBar() {
             ImGui::SetItemTooltip("Toggle Profiler, Rendering, PostProcessing, SaveDebug panels + colliders");
             ImGui::Separator();
             ImGui::MenuItem("UV Preview", nullptr, &m_ShowUVPreview);
+            ImGui::MenuItem("Build Palette (Creative)", nullptr, &m_ShowCreativePalette);
+            ImGui::SetItemTooltip("SimCity-style: pick a tool (lake/trees/grass/shrubs), drag on the ground to place it.");
             ImGui::MenuItem("Show Colliders", nullptr, &m_ShowColliderWireframes);
             ImGui::MenuItem("Gamepad Editor", nullptr, &m_GamepadEditorEnabled);
             ImGui::SetItemTooltip("RB=Tools, LB=File, Start=Play, Y=Create (radial menus)");
