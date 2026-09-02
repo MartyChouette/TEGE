@@ -12,7 +12,10 @@
 #include "Enjin/Editor/EditorLayer.h"
 #include "Enjin/Audio/AudioSystem.h"
 #include <iostream>
+#include <fstream>
 #include <filesystem>
+#include "Enjin/Assets/SceneImporter.h"
+#include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/Build/BuildPipeline.h"
 #include "Enjin/Build/BuildReport.h"
 #include <memory>
@@ -412,6 +415,44 @@ int main(int argc, char* argv[]) {
                              "[build-web]   emcmake cmake -B build-web -S . -DENJIN_PLATFORM_WEB=ON\n"
                              "[build-web]   emmake cmake --build build-web --target EnjinPlayer\n";
             }
+            return 0;
+        }
+    }
+
+    // --import <modelPath> <outProjectDir>: HEADLESS. Import an FBX/glTF/OBJ into a
+    // fresh scene + project and exit. Mesh geometry is written as SOURCE REFERENCES
+    // (path + mesh index), so a huge model (e.g. Sponza) stays out of the scene JSON
+    // and is reloaded from its file on play. This is the no-UI way to bring a model in.
+    for (int i = 1; i < argc; i++) {
+        if (argv[i] && std::string(argv[i]) == "--import" && i + 2 < argc && argv[i + 1] && argv[i + 2]) {
+            namespace fs = std::filesystem;
+            std::string model = argv[i + 1];
+            std::string outDir = argv[i + 2];
+            std::error_code ec; fs::create_directories(fs::path(outDir) / "scenes", ec);
+            Enjin::ECS::World world;
+            Enjin::Assets::ImportResult r = Enjin::Assets::SceneImporter::Import(model, &world);
+            if (!r.success) {
+                std::cout << "[import] FAILED: " << r.errorMessage << "\n";
+                return 1;
+            }
+            std::cout << "[import] " << r.meshCount << " meshes, " << r.totalVertexCount
+                      << " verts, " << r.entities.size() << " entities from " << model << "\n";
+            // --inline (any later arg): bake full geometry into the scene instead of a
+            // source reference. Needed for multi-material meshes (ref resolution only
+            // restores one submesh); costs a bigger scene file. Refs stay default for
+            // huge single-material models (Sponza).
+            bool inlineGeom = false;
+            for (int k = i + 3; k < argc; k++) if (argv[k] && std::string(argv[k]) == "--inline") inlineGeom = true;
+            Enjin::Scene::SceneSerializer ser(&world);
+            Enjin::Scene::SerializationOptions so; so.useMeshReferences = !inlineGeom;
+            std::string sceneJson = ser.SaveToString(so);
+            { std::ofstream f(fs::path(outDir) / "scenes" / "Main.enjin"); f << sceneJson; }
+            std::string name = fs::path(outDir).filename().string();
+            { std::ofstream f(fs::path(outDir) / (name + ".enjinproject"));
+              f << "{\n \"name\": \"" << name << "\",\n \"version\": \"1.0\",\n"
+                   " \"scenes\": [\n  { \"path\": \"scenes/Main.enjin\", \"buildIndex\": 0, \"isStartScene\": true }\n ]\n}\n"; }
+            std::cout << "[import] wrote " << outDir << "/scenes/Main.enjin (mesh refs -> "
+                      << model << ")\n";
             return 0;
         }
     }
