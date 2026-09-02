@@ -1328,20 +1328,26 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
             let plane = worldDir.xz / (worldDir.y + 0.18);
             let time = lighting.windData.w;
             let speed = lighting.skyClouds.z * 0.01;
+            // Cloud threshold must live in skyFbm's ACTUAL output range. skyFbm is 4
+            // octaves at 0.5/0.25/0.125/0.0625, so it centers near ~0.47 and seldom
+            // tops ~0.65 — the old threshold (1-cov = 0.65 at cov 0.35) sat above almost
+            // every sample, so clouds never appeared. Map coverage into ~[0.25,0.60].
             let cov1 = lighting.skyClouds.x;
             if (cov1 > 0.001) {
                 let p = plane * (2.0 * lighting.skyClouds.y) + drift * (time * speed);
                 let n = skyFbm(p);
-                let m = smoothstep(1.0 - cov1, 1.0 - cov1 + 0.28, n) * upness;
+                let thr1 = 0.60 - cov1 * 0.45;
+                let m = smoothstep(thr1, thr1 + 0.14, n) * upness;
                 let lit2 = 0.75 + 0.25 * clamp(normalize(lighting.skySunDir.xyz).y, 0.0, 1.0);
-                sky = mix(sky, lighting.skyCloudColor.xyz * lit2, m * 0.85);
+                sky = mix(sky, lighting.skyCloudColor.xyz * lit2, m * 0.9);
             }
             let cov2 = lighting.skyClouds.w;
             if (cov2 > 0.001) {
                 let p2 = plane * (2.0 * lighting.skyCloudColor.w) + drift * (time * speed * 1.7) + vec2<f32>(37.7, 11.3);
                 let n2 = skyFbm(p2);
-                let m2 = smoothstep(1.0 - cov2, 1.0 - cov2 + 0.22, n2) * upness;
-                sky = mix(sky, lighting.skyCloudColor.xyz * 0.92, m2 * 0.55);
+                let thr2 = 0.62 - cov2 * 0.45;
+                let m2 = smoothstep(thr2, thr2 + 0.14, n2) * upness;
+                sky = mix(sky, lighting.skyCloudColor.xyz * 0.92, m2 * 0.6);
             }
         }
     }
