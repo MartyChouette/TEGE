@@ -1058,12 +1058,13 @@ fn vs_main(vert: VertexInput, @builtin(instance_index) instanceIdx: u32) -> Vert
     //   canopy mesh: xz in [-1.5,1.5], y in [1.2,4.2]
     var localPos: vec3<f32>;
     if (isCanopy) {
+        // Canopy mesh is now a UNIT sphere (xyz in [-1,1]). Scale by canopyRadius and
+        // lift so the sphere sits centered at canopyOffset + r above the trunk.
         let r = volume.canopyRadius * sizeVar;
-        let ny = (vert.position.y - 1.2) / 3.0;          // 0..1 up the crown
         localPos = vec3<f32>(
-            (vert.position.x / 1.5) * r,
-            volume.canopyOffset * sizeVar + ny * r * 2.0,
-            (vert.position.z / 1.5) * r);
+            vert.position.x * r,
+            volume.canopyOffset * sizeVar + r + vert.position.y * r,
+            vert.position.z * r);
     } else {
         let w = volume.trunkWidth * 2.0 * sizeVar;
         localPos = vec3<f32>(
