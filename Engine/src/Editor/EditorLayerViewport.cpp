@@ -27,6 +27,7 @@
 #include "Enjin/Physics/PhysicsTypes2D.h"
 #include "Enjin/ECS/Components/WeatherZone.h"
 #include "Enjin/ECS/Components/WaterVolume.h"
+#include "Enjin/ECS/Components/BoundaryPolygon.h"
 #include "Enjin/ECS/Components/GrassVolume.h"
 #include "Enjin/ECS/Components/ShrubVolume.h"
 #include "Enjin/ECS/Components/TreeVolume.h"
@@ -2409,7 +2410,8 @@ void EditorLayer::HandleCreativePlacement(f32 /*deltaTime*/) {
         m_World->AddComponent<ECS::TransformComponent>(e);
         auto& nc = m_World->AddComponent<ECS::NameComponent>(e);
         switch (m_CreativeTool) {
-            case CreativeTool::Lake:       nc.name = "Lake";        m_World->AddComponent<ECS::WaterVolumeComponent>(e); break;
+            case CreativeTool::Lake:       nc.name = "Lake";        m_World->AddComponent<ECS::WaterVolumeComponent>(e);
+                                           m_World->AddComponent<ECS::BoundaryPolygonComponent>(e); break;
             case CreativeTool::TreeGrove:  nc.name = "Tree Grove";  m_World->AddComponent<ECS::TreeVolumeComponent>(e);  break;
             case CreativeTool::GrassPatch: nc.name = "Grass Patch"; m_World->AddComponent<ECS::GrassVolumeComponent>(e); break;
             case CreativeTool::ShrubPatch: nc.name = "Shrub Patch"; m_World->AddComponent<ECS::ShrubVolumeComponent>(e); break;
@@ -2436,6 +2438,13 @@ void EditorLayer::HandleCreativePlacement(f32 /*deltaTime*/) {
             case CreativeTool::Lake:
                 if (auto* w = m_World->GetComponent<ECS::WaterVolumeComponent>(m_CreativePlaceEntity))
                     w->halfExtents = Math::Vector3(hx, 5.0f, hz);
+                // Seed the editable boundary as the drag rectangle (local XZ corners).
+                // After release the user pulls/bends these points; the water mesh is
+                // triangulated from them.
+                if (auto* bp = m_World->GetComponent<ECS::BoundaryPolygonComponent>(m_CreativePlaceEntity)) {
+                    bp->points = { {-hx, -hz}, {hx, -hz}, {hx, hz}, {-hx, hz} };
+                    bp->dirty = true;
+                }
                 break;
             case CreativeTool::TreeGrove:
                 if (auto* tv = m_World->GetComponent<ECS::TreeVolumeComponent>(m_CreativePlaceEntity)) {

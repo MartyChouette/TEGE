@@ -1263,6 +1263,7 @@ private:
     CreativeTool m_CreativeTool = CreativeTool::None;
     bool m_CreativePlacing = false;         // mid drag-out
     ECS::Entity m_CreativePlaceEntity = 0;  // the object being dragged out (its own live preview)
+    i32 m_BoundaryDragPoint = -1;           // index of the boundary-polygon handle being dragged, -1 = none
     Math::Vector3 m_CreativeDragStart;      // world point where the drag began (ground)
     Math::Vector3 m_CreativeDragEnd;        // current world point under the cursor
     void DrawCreativePalette();

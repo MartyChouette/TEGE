@@ -32,6 +32,7 @@
 #include "Enjin/ECS/Components/WeatherZone.h"
 #include "Enjin/ECS/Components/CustomShader.h"
 #include "Enjin/ECS/Components/WaterVolume.h"
+#include "Enjin/ECS/Components/BoundaryPolygon.h"
 #include "Enjin/ECS/Components/GrassVolume.h"
 #include "Enjin/ECS/Components/ShrubVolume.h"
 #include "Enjin/ECS/Components/TreeVolume.h"
@@ -4545,6 +4546,84 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                                             m_World->HasComponent<ECS::FirstPersonController>(entity);
                                 bgDrawList->AddText(ImVec2(lp.x + 6.0f, lp.y - 6.0f), color,
                                     ctrl ? "Capsule Collider (Character Controller)" : "Capsule Collider");
+                            }
+                        }
+                    }
+                }
+
+                // Creative-mode editable boundary (lake outline): draggable handles on
+                // the selected entity's polygon points. Drag a handle on the ground to
+                // pull the shoreline; right-click a handle to remove it (min 3);
+                // double-click an edge to insert a point. Live: the water mesh rebuilds
+                // from the polygon (dirty flag).
+                if (m_PrimarySelected != ECS::INVALID_ENTITY) {
+                    auto* bpoly = m_World->GetComponent<ECS::BoundaryPolygonComponent>(m_PrimarySelected);
+                    auto* bxf   = m_World->GetComponent<ECS::TransformComponent>(m_PrimarySelected);
+                    if (bpoly && bxf && bpoly->points.size() >= 3) {
+                        const ImVec2 mp = ImGui::GetMousePos();
+                        auto ptWorld = [&](usize i) {
+                            return Math::Vector3(bxf->position.x + bpoly->points[i].x,
+                                                 bxf->position.y,
+                                                 bxf->position.z + bpoly->points[i].y);
+                        };
+                        // Edges
+                        for (usize i = 0; i < bpoly->points.size(); ++i)
+                            drawLine3D(bgDrawList, ptWorld(i), ptWorld((i + 1) % bpoly->points.size()),
+                                       IM_COL32(80, 160, 235, 160), 1.5f);
+                        // Handles + hover
+                        int hovered = -1;
+                        for (usize i = 0; i < bpoly->points.size(); ++i) {
+                            ImVec2 sp;
+                            if (!worldToScreen(ptWorld(i), sp)) continue;
+                            bool hov = (std::abs(sp.x - mp.x) + std::abs(sp.y - mp.y)) < 12.0f;
+                            if (hov) hovered = static_cast<int>(i);
+                            ImU32 col = (m_BoundaryDragPoint == static_cast<i32>(i))
+                                ? IM_COL32(255, 220, 50, 255)
+                                : (hov ? IM_COL32(150, 210, 255, 255) : IM_COL32(80, 150, 230, 230));
+                            bgDrawList->AddCircleFilled(sp, hov ? 7.0f : 5.0f, col);
+                            bgDrawList->AddCircle(sp, hov ? 7.0f : 5.0f, IM_COL32(20, 30, 50, 255), 0, 1.5f);
+                        }
+                        // Begin drag on a handle
+                        if (m_EditorViewportHovered && !ImGuizmo::IsOver() &&
+                            ImGui::IsMouseClicked(0) && hovered >= 0)
+                            m_BoundaryDragPoint = hovered;
+                        // Drag the grabbed handle across the ground plane (Y = entity Y)
+                        if (m_BoundaryDragPoint >= 0 && ImGui::IsMouseDown(0) &&
+                            m_BoundaryDragPoint < static_cast<i32>(bpoly->points.size())) {
+                            Ray r = ScenePicker::ScreenToRay(m_Camera, mp.x - m_EditorViewportImageMinX,
+                                                             mp.y - m_EditorViewportImageMinY, sw, sh);
+                            if (std::abs(r.direction.y) > 1e-6f) {
+                                f32 t = (bxf->position.y - r.origin.y) / r.direction.y;
+                                if (t > 0.0f) {
+                                    Math::Vector3 hit = r.origin + r.direction * t;
+                                    bpoly->points[static_cast<usize>(m_BoundaryDragPoint)] =
+                                        Math::Vector2(hit.x - bxf->position.x, hit.z - bxf->position.z);
+                                    bpoly->dirty = true;
+                                }
+                            }
+                        }
+                        if (!ImGui::IsMouseDown(0)) m_BoundaryDragPoint = -1;
+                        // Right-click a handle to delete it (keep at least a triangle)
+                        if (hovered >= 0 && ImGui::IsMouseClicked(1) && bpoly->points.size() > 3) {
+                            bpoly->points.erase(bpoly->points.begin() + hovered);
+                            bpoly->dirty = true;
+                        }
+                        // Double-click an edge midpoint to insert a new point there
+                        if (m_EditorViewportHovered && ImGui::IsMouseDoubleClicked(0) && hovered < 0) {
+                            int bestEdge = -1; f32 bestD = 14.0f;
+                            for (usize i = 0; i < bpoly->points.size(); ++i) {
+                                usize j = (i + 1) % bpoly->points.size();
+                                Math::Vector3 mid = (ptWorld(i) + ptWorld(j)) * 0.5f;
+                                ImVec2 sp;
+                                if (!worldToScreen(mid, sp)) continue;
+                                f32 d = std::abs(sp.x - mp.x) + std::abs(sp.y - mp.y);
+                                if (d < bestD) { bestD = d; bestEdge = static_cast<int>(i); }
+                            }
+                            if (bestEdge >= 0) {
+                                usize j = (static_cast<usize>(bestEdge) + 1) % bpoly->points.size();
+                                Math::Vector2 midXZ = (bpoly->points[static_cast<usize>(bestEdge)] + bpoly->points[j]) * 0.5f;
+                                bpoly->points.insert(bpoly->points.begin() + bestEdge + 1, midXZ);
+                                bpoly->dirty = true;
                             }
                         }
                     }

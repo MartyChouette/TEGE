@@ -78,6 +78,7 @@ Renderer::SkyboxConfig RenderSystem::WeatherSky(const Renderer::SkyboxConfig& cf
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/GrassVolume.h"
 #include "Enjin/ECS/Components/ShrubVolume.h"  // web shrub draw (reuses grass pipeline)
+#include "Enjin/ECS/Components/BoundaryPolygon.h"  // Creative-mode editable lake outline
 #include "Enjin/ECS/Components/TreeVolume.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/Components/Cloth.h"   // cloth/rope meshDirty re-upload
@@ -3418,6 +3419,7 @@ void RenderSystem::SetUpscalerQuality(u32 quality) { m_UpscalerQuality = quality
 #include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/ECS/Components/WaterVolume.h"
 #include "Enjin/ECS/Components/Water3D.h"
+#include "Enjin/ECS/Components/BoundaryPolygon.h"  // Creative-mode editable lake outline (EnsureWaterMeshes)
 #include "Enjin/ECS/Components/ReflectivePlane.h"
 #include "Enjin/ECS/Components/Vegetation.h"
 #include "Enjin/ECS/Components/ShrubVolume.h"
@@ -14354,12 +14356,46 @@ void RenderSystem::EnsureWaterMeshes() {
     for (Entity entity : m_World->GetEntitiesWithComponent<WaterVolumeComponent>()) {
         auto* waterVol = m_CachedWaterVolumeStorage ? m_CachedWaterVolumeStorage->Get(entity) : m_World->GetComponent<WaterVolumeComponent>(entity);
         if (!waterVol) continue;
-        if (waterVol->meshCreated && m_World->GetComponent<MeshComponent>(entity)) continue;
+        // Creative-mode editable outline: when present, the water surface is a polygon
+        // triangulated from these points (drag/pull/bend), and it regenerates whenever
+        // the boundary is dirty (live during drag + on edit).
+        auto* boundary = m_World->GetComponent<BoundaryPolygonComponent>(entity);
+        const bool usePolygon = boundary && boundary->points.size() >= 3;
+        const bool boundaryDirty = usePolygon && boundary->dirty;
+        if (waterVol->meshCreated && m_World->GetComponent<MeshComponent>(entity) && !boundaryDirty) continue;
+        const bool regen = waterVol->meshCreated;   // already existed -> this is a rebuild
 
-        // Create a subdivided plane mesh for the water surface
+        // Create the water surface mesh — polygon (Creative outline) or subdivided plane.
         MeshComponent mesh;
         f32 hx = waterVol->halfExtents.x;
         f32 hz = waterVol->halfExtents.z;
+
+        if (usePolygon) {
+            // Fan-triangulate from the centroid. Local XZ, Y=0. color.y carries the
+            // edge distance the water shader uses for shoreline foam (center=1, rim=0).
+            Math::Vector2 c(0.0f, 0.0f);
+            for (const auto& p : boundary->points) c = c + p;
+            c = c * (1.0f / static_cast<f32>(boundary->points.size()));
+            auto makeV = [&](Math::Vector2 xz, f32 edgeDist) {
+                MeshComponent::Vertex v;
+                v.position = Math::Vector3(xz.x, 0.0f, xz.y);
+                v.normal = Math::Vector3(0.0f, 1.0f, 0.0f);
+                v.uv = Math::Vector2(0.5f + xz.x * 0.02f, 0.5f + xz.y * 0.02f);
+                v.color = Math::Vector4(waterVol->waterColor.x, edgeDist, waterVol->waterColor.z, waterVol->opacity);
+                return v;
+            };
+            const u32 n = static_cast<u32>(boundary->points.size());
+            mesh.vertices.reserve(n + 1);
+            mesh.indices.reserve(n * 3);
+            mesh.vertices.push_back(makeV(c, 1.0f));                    // 0 = centroid
+            for (u32 i = 0; i < n; ++i) mesh.vertices.push_back(makeV(boundary->points[i], 0.0f));
+            for (u32 i = 0; i < n; ++i) {
+                mesh.indices.push_back(0);
+                mesh.indices.push_back(1 + i);
+                mesh.indices.push_back(1 + ((i + 1) % n));
+            }
+            boundary->dirty = false;
+        } else {
 
         const u32 segsX = 20;
         const u32 segsZ = 20;
@@ -14415,8 +14451,15 @@ void RenderSystem::EnsureWaterMeshes() {
                 mesh.indices.push_back(br);
             }
         }
+        }  // end else (subdivided-plane grid path)
 
-        m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
+        // Replace the mesh (rebuild-safe: retire old GPU buffers first on a regen).
+        if (regen && static_cast<usize>(EntityIndex(entity)) < m_EntityRenderData.size())
+            RetireEntityBuffers(m_EntityRenderData[static_cast<usize>(EntityIndex(entity))]);
+        if (m_World->HasComponent<MeshComponent>(entity))
+            *m_World->GetComponent<MeshComponent>(entity) = std::move(mesh);
+        else
+            m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
 
         // Add material with water visual properties based on water type
         MaterialComponent material;
