@@ -5259,11 +5259,54 @@ void EditorLayer::DrawQuickSetup(ECS::Entity entity) {
     ImGui::Spacing();
     if (UI::SectionHeader("Quick Setup")) {
         f32 buttonWidth = ImGui::GetContentRegionAvail().x;
+        (void)buttonWidth;
+
+        // Recipe card: title + one-line description + chips listing exactly what it
+        // adds + an Apply button, wrapped in a soft border. Returns true when Apply is
+        // clicked. Recognition-over-recall + visible outcome beats a flat button list.
+        auto quickCard = [&](const char* title, const char* desc,
+                             std::initializer_list<const char*> chips) -> bool {
+            ImGui::PushID(title);
+            const f32 w = ImGui::GetContentRegionAvail().x;
+            const ImVec2 startPos = ImGui::GetCursorScreenPos();
+            ImDrawList* dl = ImGui::GetWindowDrawList();
+            ImGui::BeginGroup();
+            ImGui::Dummy(ImVec2(2.0f, 1.0f));
+            ImGui::TextUnformatted(title);
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.62f, 0.66f, 0.74f, 1.0f));
+            ImGui::TextWrapped("%s", desc);
+            ImGui::PopStyleColor();
+            bool first = true;
+            for (const char* c : chips) {
+                if (!first) ImGui::SameLine();
+                first = false;
+                const ImVec2 sz = ImGui::CalcTextSize(c);
+                const ImVec2 p = ImGui::GetCursorScreenPos();
+                dl->AddRectFilled(p, ImVec2(p.x + sz.x + 10.0f, p.y + sz.y + 4.0f),
+                                  IM_COL32(70, 90, 130, 255), 4.0f);
+                dl->AddText(ImVec2(p.x + 5.0f, p.y + 2.0f), IM_COL32(230, 235, 245, 255), c);
+                ImGui::Dummy(ImVec2(sz.x + 10.0f, sz.y + 4.0f));
+            }
+            const bool clicked = ImGui::SmallButton("Apply");
+            ImGui::Dummy(ImVec2(2.0f, 1.0f));
+            ImGui::EndGroup();
+            ImVec2 mn = ImGui::GetItemRectMin();
+            ImVec2 mx = ImGui::GetItemRectMax();
+            mx.x = startPos.x + w;
+            const bool hov = ImGui::IsMouseHoveringRect(mn, mx, false);
+            dl->AddRect(ImVec2(mn.x - 6.0f, mn.y - 4.0f), ImVec2(mx.x, mx.y + 4.0f),
+                        hov ? IM_COL32(120, 160, 220, 220) : IM_COL32(74, 78, 90, 160),
+                        6.0f, 0, hov ? 2.0f : 1.0f);
+            ImGui::Dummy(ImVec2(0.0f, 10.0f));
+            ImGui::PopID();
+            return clicked;
+        };
 
         // Pattern 1: Add Basic Movement
         if (!hasController) {
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Adds controller + collider + camera");
-            if (ImGui::Button("Add Basic Movement", ImVec2(buttonWidth, 0))) {
+            if (quickCard("Basic Movement", "Walk, jump, and a follow camera.",
+                          {"Controller", "Collider", "Camera"})) {
                 if (is2D) {
                     m_World->AddComponent<ECS::Platformer2DController>(entity);
                     if (!hasCollider) m_World->AddComponent<ECS::BoxColliderComponent>(entity);
@@ -5285,7 +5328,8 @@ void EditorLayer::DrawQuickSetup(ECS::Entity entity) {
 
         // Pattern 2: Setup 2D Platformer (only in 2D mode)
         if (is2D && !hasPlatformer && !hasController) {
-            if (ImGui::Button("Setup 2D Platformer", ImVec2(buttonWidth, 0))) {
+            if (quickCard("2D Platformer", "Side-scroller movement with a follow camera.",
+                          {"Platformer2D", "Collider", "Sprite", "Camera2D"})) {
                 m_World->AddComponent<ECS::Platformer2DController>(entity);
                 if (!hasCollider) m_World->AddComponent<ECS::BoxColliderComponent>(entity);
                 if (!m_World->HasComponent<ECS::Sprite2DComponent>(entity)) {
@@ -5304,7 +5348,8 @@ void EditorLayer::DrawQuickSetup(ECS::Entity entity) {
 
         // Pattern 3: Make Patroller (has AI/BT but no Health)
         if ((hasAI || hasBT) && !hasHealth) {
-            if (ImGui::Button("Make Patroller", ImVec2(buttonWidth, 0))) {
+            if (quickCard("Patroller Enemy", "Patrols an area and can take damage.",
+                          {"AI", "Health", "Behavior Tree", "Collider"})) {
                 if (!hasAI) {
                     auto& ai = m_World->AddComponent<ECS::AIControllerComponent>(entity);
                     ai.currentState = ECS::AIControllerComponent::AIState::Patrol;
@@ -5336,7 +5381,8 @@ void EditorLayer::DrawQuickSetup(ECS::Entity entity) {
 
         // Pattern 4: Setup NPC
         if (!hasDialogue && !hasController) {
-            if (ImGui::Button("Setup NPC", ImVec2(buttonWidth, 0))) {
+            if (quickCard("Talkable NPC", "Walk up and interact to start a conversation.",
+                          {"Dialogue", "Dialogue Box", "Interactable", "Trigger"})) {
                 auto& dlg = m_World->AddComponent<ECS::DialogueComponent>(entity);
                 auto* nameComp = m_World->GetComponent<ECS::NameComponent>(entity);
                 if (nameComp && !nameComp->name.empty())
@@ -5366,7 +5412,8 @@ void EditorLayer::DrawQuickSetup(ECS::Entity entity) {
 
         // Pattern 5: Make Collectible
         if (!hasPickup && !hasController) {
-            if (ImGui::Button("Make Collectible", ImVec2(buttonWidth, 0))) {
+            if (quickCard("Collectible", "A bobbing pickup collected on touch.",
+                          {"Pickup", "Trigger", "Tween"})) {
                 auto& pickup = m_World->AddComponent<ECS::PickupComponent>(entity);
                 pickup.type = ECS::PickupComponent::PickupType::Coin;
                 pickup.value = 1.0f;
@@ -5398,7 +5445,8 @@ void EditorLayer::DrawQuickSetup(ECS::Entity entity) {
 
         // Pattern 6: Setup Destructible
         if (!hasDestructible && (hasMesh || hasHealth)) {
-            if (ImGui::Button("Setup Destructible", ImVec2(buttonWidth, 0))) {
+            if (quickCard("Destructible", "Takes damage and breaks apart.",
+                          {"Health", "Destructible", "Collider"})) {
                 if (!hasHealth) {
                     auto& hp = m_World->AddComponent<ECS::HealthComponent>(entity);
                     hp.maxHealth = 25.0f;
@@ -5418,7 +5466,8 @@ void EditorLayer::DrawQuickSetup(ECS::Entity entity) {
 
         // Pattern 7: Add Physics Object
         if (!hasRigidbody && hasMesh && !hasController) {
-            if (ImGui::Button("Add Physics Object", ImVec2(buttonWidth, 0))) {
+            if (quickCard("Physics Object", "Falls and collides under gravity.",
+                          {"Rigidbody", "Collider"})) {
                 auto& rb = m_World->AddComponent<ECS::RigidbodyComponent>(entity);
                 rb.bodyType = ECS::RigidbodyComponent::BodyType::Dynamic;
                 rb.useGravity = true;
