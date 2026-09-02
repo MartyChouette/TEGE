@@ -175,6 +175,25 @@ fn vs_main(in: VertexInput, @builtin(instance_index) instanceIdx: u32) -> Vertex
         }
         world_pos.y = world_pos.y + wave;
     }
+
+    // Wind sway (FLAG_WIND_SWAY = bit 4): ANY mesh with a VegetationComponent bends
+    // in the wind. Weight the sway by height above the object's base (model[3].y) so
+    // the trunk stays planted and the crown sways — this works for arbitrary imported
+    // meshes, not just engine foliage, which is what makes the foliage-replacement
+    // demo work on web: drop your own tree model, add VegetationComponent, it sways.
+    if ((object.flags & 16) != 0) {
+        var wt = lighting.windData.w;
+        if (wt == 0.0) { wt = viewProj.time; }
+        var wdir = lighting.windData.xz;
+        if (length(wdir) < 0.05) { wdir = vec2<f32>(0.80, 0.35); }
+        else { wdir = normalize(wdir); }
+        let wdir3 = vec3<f32>(wdir.x, 0.0, wdir.y);
+        let sw = clamp((world_pos.y - object.model[3].y) * 0.35, 0.0, 1.5);
+        let p1 = dot(world_pos.xz, vec2<f32>(0.1, 0.1)) + wt * 1.5;
+        let p2 = dot(world_pos.xz, vec2<f32>(0.3, 0.7)) + wt * 3.0;
+        world_pos = vec4<f32>(world_pos.xyz + wdir3 * sw * (sin(p1) * 0.35 + sin(p2) * 0.12), world_pos.w);
+    }
+
     out.clip_position = viewProj.proj * viewProj.view * world_pos;
     out.world_pos = world_pos.xyz;
     let normal_mat = mat3x3<f32>(
