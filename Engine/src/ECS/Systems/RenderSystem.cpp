@@ -2855,13 +2855,16 @@ void RenderSystem::Update(f32 deltaTime) {
     }
 
     // ========================================================================
-    // Shrub volumes (instanced, opaque). Reuses the grass pipeline + blade mesh —
-    // shrubs were a stub on web (RenderShrubs no-op, no shrub pipeline), so the
-    // Playground's shrubVolume was invisible. Mapping ShrubVolume -> the grass
-    // volume UBO gives dense, wider, low foliage that reads as a bush stand-in
-    // (a dedicated tapered-dome shrub pipeline would match desktop more exactly).
+    // Shrub volumes (instanced, opaque). Rendered as small ground-hugging green
+    // spheres by reusing the TREE pipeline's canopy: trunk collapsed to zero
+    // (trunkHeight/trunkWidth = 0 -> degenerate, invisible) and the canopy dropped
+    // to ground level (canopyOffset = 0 -> sphere bottom rests on the terrain).
+    // The old path abused the grass BLADE pipeline, so each shrub drew as ONE fat
+    // flat light-green billboard — sparse "grain blobs" that read as broken tree
+    // trunks beside the grove (reported 2026-09-02). A clump of small green domes
+    // reads as a bush and matches the desktop shrub silhouette far better.
     // ========================================================================
-    if (usePostProcess && m_WebGrassPipeline.IsValid() && scenePassEncoder) {
+    if (usePostProcess && m_WebTreePipeline.IsValid() && scenePassEncoder) {
         auto* webBufMgrSh = static_cast<Renderer::WebGPUBufferManager*>(bufMgr);
         const auto& shrubEntities = m_World->GetEntitiesWithComponent<ShrubVolumeComponent>();
         for (Entity she : shrubEntities) {
@@ -2869,30 +2872,33 @@ void RenderSystem::Update(f32 deltaTime) {
             auto* sxf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(she) : nullptr;
             if (!sv || !sxf || sv->density == 0) continue;
 
-            // Same 64-byte layout as GrassParams (m_WebVolumeParamsLayout).
-            struct GrassParams { f32 data[16]; };
-            GrassParams sp = {};
-            sp.data[0] = sxf->position.x; sp.data[1] = sxf->position.y; sp.data[2] = sxf->position.z;
-            sp.data[3] = sv->shrubHeight;
-            sp.data[4] = sv->halfExtents.x; sp.data[5] = sv->halfExtents.y; sp.data[6] = sv->halfExtents.z;
-            sp.data[7] = sv->width;
-            sp.data[8] = sv->baseColor.x; sp.data[9] = sv->baseColor.y; sp.data[10] = sv->baseColor.z;
-            sp.data[11] = sv->windSwayStrength;
-            sp.data[12] = sv->tipColor.x; sp.data[13] = sv->tipColor.y; sp.data[14] = sv->tipColor.z;
+            // Pack into the tree pipeline's params (m_WebVolumeParamsLayout, 64 bytes).
+            struct TreeParams { f32 data[16]; };
+            TreeParams tp = {};
+            tp.data[0] = sxf->position.x; tp.data[1] = sxf->position.y; tp.data[2] = sxf->position.z;
+            tp.data[3] = 0.0f;                          // trunkHeight = 0 -> trunk collapses
+            tp.data[4] = sv->halfExtents.x; tp.data[5] = sv->halfExtents.y; tp.data[6] = sv->halfExtents.z;
+            tp.data[7] = 0.0f;                          // trunkWidth = 0
+            // trunkColor (data[8..10]) unused — trunk verts are degenerate.
+            // Bush radius from the authored footprint: a compact dome, not a stalk.
+            f32 bushR = std::max(sv->width, sv->shrubHeight) * 0.75f + 0.15f;
+            tp.data[11] = bushR;                        // canopyRadius
+            tp.data[12] = sv->tipColor.x; tp.data[13] = sv->tipColor.y; tp.data[14] = sv->tipColor.z; // canopyColor
+            tp.data[15] = 0.0f;                         // canopyOffset = 0 -> dome sits on the ground
 
             auto spBuf = bufMgr->CreateBufferWithData(
-                {sizeof(GrassParams), Renderer::GPUBufferUsage::Uniform | Renderer::GPUBufferUsage::CopyDst, true}, &sp);
+                {sizeof(TreeParams), Renderer::GPUBufferUsage::Uniform | Renderer::GPUBufferUsage::CopyDst, true}, &tp);
             Renderer::GPUBindGroupDesc bgd;
             bgd.layout = m_WebVolumeParamsLayout;
-            bgd.entries = {{0, spBuf, 0, sizeof(GrassParams), {}, {}}};
+            bgd.entries = {{0, spBuf, 0, sizeof(TreeParams), {}, {}}};
             auto spBG = webBindMgr->CreateBindGroup(bgd);
 
-            wgpuRenderPassEncoderSetPipeline(scenePassEncoder, webPipeMgr->GetNativePipeline(m_WebGrassPipeline));
+            wgpuRenderPassEncoderSetPipeline(scenePassEncoder, webPipeMgr->GetNativePipeline(m_WebTreePipeline));
             wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 0, webBindMgr->GetNativeGroup(m_WebFrameBindGroup), 0, nullptr);
             wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 1, webBindMgr->GetNativeGroup(spBG), 0, nullptr);
-            wgpuRenderPassEncoderSetVertexBuffer(scenePassEncoder, 0, webBufMgrSh->GetNativeBuffer(m_WebGrassBladeVB), 0, WGPU_WHOLE_SIZE);
-            wgpuRenderPassEncoderSetIndexBuffer(scenePassEncoder, webBufMgrSh->GetNativeBuffer(m_WebGrassBladeIB), WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
-            wgpuRenderPassEncoderDrawIndexed(scenePassEncoder, m_WebGrassBladeIndexCount, sv->density, 0, 0, 0);
+            wgpuRenderPassEncoderSetVertexBuffer(scenePassEncoder, 0, webBufMgrSh->GetNativeBuffer(m_WebTreeMeshVB), 0, WGPU_WHOLE_SIZE);
+            wgpuRenderPassEncoderSetIndexBuffer(scenePassEncoder, webBufMgrSh->GetNativeBuffer(m_WebTreeMeshIB), WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
+            wgpuRenderPassEncoderDrawIndexed(scenePassEncoder, m_WebTreeIndexCount, sv->density, 0, 0, 0);
 
             webBindMgr->DestroyBindGroup(spBG);
             bufMgr->DestroyBuffer(spBuf);
