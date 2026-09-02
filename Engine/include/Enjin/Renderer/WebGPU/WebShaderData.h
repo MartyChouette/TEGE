@@ -1077,12 +1077,16 @@ fn vs_main(vert: VertexInput, @builtin(instance_index) instanceIdx: u32) -> Vert
     //   canopy mesh: xz in [-1.5,1.5], y in [1.2,4.2]
     var localPos: vec3<f32>;
     if (isCanopy) {
-        // Canopy mesh is now a UNIT sphere (xyz in [-1,1]). Scale by canopyRadius and
-        // lift so the sphere sits centered at canopyOffset + r above the trunk.
+        // Canopy is a UNIT sphere. Scale it OBLATE (wider than tall) so it reads as a
+        // rounded bushy crown, not a tall pointed lemon: a full-height sphere at big
+        // canopyRadius showed the UV-sphere's sharp top/bottom apex as a "pentagon"
+        // point (reported 2026-09-02). Squash Y and pull the whole crown down toward
+        // the trunk so there's no tall spike and the trunk stays visible below it.
         let r = volume.canopyRadius * sizeVar;
+        let ry = r * 0.62;                       // vertical radius: flattened crown
         localPos = vec3<f32>(
             vert.position.x * r,
-            volume.canopyOffset * sizeVar + r + vert.position.y * r,
+            volume.canopyOffset * sizeVar * 0.7 + ry + vert.position.y * ry,
             vert.position.z * r);
     } else {
         let w = volume.trunkWidth * 2.0 * sizeVar;
