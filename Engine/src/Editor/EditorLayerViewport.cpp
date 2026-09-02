@@ -2356,29 +2356,52 @@ void EditorLayer::DrawCreativePalette() {
     ImGui::SetNextWindowSize(ImVec2(190.0f, 320.0f), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Build", &m_ShowCreativePalette)) { ImGui::End(); return; }
 
-    ImGui::TextWrapped("Pick a tool, then drag on the ground to place it.");
+    ImGui::TextWrapped("Pick a tool, then work in the viewport.");
     ImGui::Spacing();
 
     struct ToolDef { CreativeTool tool; const char* label; };
-    const ToolDef tools[] = {
-        { CreativeTool::Lake,       "~  Lake" },
-        { CreativeTool::TreeGrove,  "T  Trees" },
-        { CreativeTool::GrassPatch, ",  Grass" },
-        { CreativeTool::ShrubPatch, "*  Shrubs" },
+    // A 2-column grid of tools, grouped. Area tools drag out a footprint; point tools
+    // click to drop one object.
+    auto toolGrid = [&](const char* header, std::initializer_list<ToolDef> defs) {
+        ImGui::Separator();
+        ImGui::TextDisabled("%s", header);
+        int col = 0;
+        const f32 w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+        for (const auto& td : defs) {
+            if (col == 1) ImGui::SameLine();
+            const bool sel = (m_CreativeTool == td.tool);
+            if (sel) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.50f, 0.80f, 1.0f));
+            if (ImGui::Button(td.label, ImVec2(w, 38.0f)))
+                m_CreativeTool = sel ? CreativeTool::None : td.tool;   // click again to deselect
+            if (sel) ImGui::PopStyleColor();
+            col = (col + 1) % 2;
+        }
     };
-    for (const auto& td : tools) {
-        const bool sel = (m_CreativeTool == td.tool);
-        if (sel) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.50f, 0.80f, 1.0f));
-        if (ImGui::Button(td.label, ImVec2(-1.0f, 40.0f)))
-            m_CreativeTool = sel ? CreativeTool::None : td.tool;   // click again to deselect
-        if (sel) ImGui::PopStyleColor();
-    }
+
+    toolGrid("Nature (drag to size)", {
+        { CreativeTool::Lake,       "~ Lake" },
+        { CreativeTool::TreeGrove,  "T Trees" },
+        { CreativeTool::GrassPatch, ", Grass" },
+        { CreativeTool::ShrubPatch, "* Shrubs" },
+    });
+    ImGui::Spacing();
+    toolGrid("Objects (click to place)", {
+        { CreativeTool::Block,      "# Block" },
+        { CreativeTool::Ball,       "o Ball" },
+        { CreativeTool::PointLight, "* Light" },
+        { CreativeTool::PhysicsBox, "= Physics Box" },
+        { CreativeTool::Barrel,     "B Barrel" },
+        { CreativeTool::SpawnPoint, "> Spawn Point" },
+    });
 
     ImGui::Separator();
     if (m_CreativeTool == CreativeTool::None)
         ImGui::TextDisabled("No tool selected.");
+    else if (m_CreativeTool == CreativeTool::Lake || m_CreativeTool == CreativeTool::TreeGrove ||
+             m_CreativeTool == CreativeTool::GrassPatch || m_CreativeTool == CreativeTool::ShrubPatch)
+        ImGui::TextWrapped("Drag on the ground to size it. Lakes: then pull the shoreline handles.");
     else
-        ImGui::TextWrapped("Drag on the ground in the viewport. Release to finish; click the tool again to stop.");
+        ImGui::TextWrapped("Click on the ground to drop one. Click the tool again to stop.");
     ImGui::End();
 }
 
@@ -2397,6 +2420,61 @@ void EditorLayer::HandleCreativePlacement(f32 /*deltaTime*/) {
     if (haveHit) {
         f32 t = (0.0f - ray.origin.y) / ray.direction.y;
         if (t <= 0.0f) haveHit = false; else hit = ray.origin + ray.direction * t;
+    }
+
+    // Point tools: a single click drops one object at the ground point (default size),
+    // no drag-out. Area tools (below) drag out a footprint.
+    const bool areaTool = (m_CreativeTool == CreativeTool::Lake ||
+                           m_CreativeTool == CreativeTool::TreeGrove ||
+                           m_CreativeTool == CreativeTool::GrassPatch ||
+                           m_CreativeTool == CreativeTool::ShrubPatch);
+    if (!areaTool) {
+        if (m_EditorViewportHovered && haveHit && Input::IsMouseButtonPressed(MouseButton::Left)) {
+            ECS::Entity e = m_World->CreateEntity();
+            auto& xf = m_World->AddComponent<ECS::TransformComponent>(e);
+            xf.position = hit;
+            auto& nc = m_World->AddComponent<ECS::NameComponent>(e);
+            switch (m_CreativeTool) {
+                case CreativeTool::Block:
+                    nc.name = "Block";
+                    m_World->AddComponent<ECS::MeshComponent>(e, Renderer::MeshFactory::CreateCube(1.0f));
+                    m_World->AddComponent<ECS::MaterialComponent>(e);
+                    xf.position.y += 0.5f; break;
+                case CreativeTool::Ball:
+                    nc.name = "Ball";
+                    m_World->AddComponent<ECS::MeshComponent>(e, Renderer::MeshFactory::CreateSphere(0.5f));
+                    m_World->AddComponent<ECS::MaterialComponent>(e);
+                    xf.position.y += 0.5f; break;
+                case CreativeTool::PointLight:
+                    nc.name = "Light";
+                    { auto& l = m_World->AddComponent<ECS::LightComponent>(e); l.type = ECS::LightType::Point; }
+                    xf.position.y += 2.0f; break;
+                case CreativeTool::PhysicsBox:
+                    nc.name = "Physics Box";
+                    m_World->AddComponent<ECS::MeshComponent>(e, Renderer::MeshFactory::CreateCube(1.0f));
+                    m_World->AddComponent<ECS::MaterialComponent>(e);
+                    { auto& rb = m_World->AddComponent<ECS::RigidbodyComponent>(e);
+                      rb.bodyType = ECS::RigidbodyComponent::BodyType::Dynamic; rb.useGravity = true;
+                      auto& bc = m_World->AddComponent<ECS::BoxColliderComponent>(e); bc.size = Math::Vector3(1.0f, 1.0f, 1.0f); }
+                    xf.position.y += 3.0f; break;
+                case CreativeTool::Barrel:
+                    nc.name = "Barrel";
+                    m_World->AddComponent<ECS::MeshComponent>(e, Renderer::MeshFactory::CreateCylinder(0.5f, 1.2f));
+                    m_World->AddComponent<ECS::MaterialComponent>(e);
+                    { auto& d = m_World->AddComponent<ECS::DestructibleComponent>(e); d.health = 1.0f; d.destroyOnHit = true;
+                      auto& bc = m_World->AddComponent<ECS::BoxColliderComponent>(e); bc.size = Math::Vector3(1.0f, 1.2f, 1.0f); }
+                    xf.position.y += 0.6f; break;
+                case CreativeTool::SpawnPoint:
+                    nc.name = "Spawn Point";
+                    m_World->AddComponent<ECS::MeshComponent>(e, Renderer::MeshFactory::CreateCone(0.4f, 1.0f));
+                    { auto& mat = m_World->AddComponent<ECS::MaterialComponent>(e);
+                      mat.baseColor = Math::Vector3(0.2f, 0.9f, 0.4f); mat.emissiveColor = Math::Vector3(0.1f, 0.5f, 0.2f); }
+                    xf.position.y += 0.5f; break;
+                default: break;
+            }
+            SelectEntity(e);
+        }
+        return;   // point tools place on click; no drag-resize
     }
 
     // Begin placement on click over the viewport: spawn the object at zero size; it

@@ -1258,7 +1258,10 @@ private:
 
     // Creative mode: a SimCity/MS-Paint-style build palette. Pick a tool, then
     // click-drag on the ground to place that object sized to the drag footprint.
-    enum class CreativeTool { None, Lake, TreeGrove, GrassPatch, ShrubPatch, Block };
+    // Area tools drag out a footprint; point tools click-place one object.
+    enum class CreativeTool { None,
+        Lake, TreeGrove, GrassPatch, ShrubPatch,        // area (drag to size)
+        Block, Ball, PointLight, PhysicsBox, Barrel, SpawnPoint };  // point (click to place)
     bool m_ShowCreativePalette = false;
     CreativeTool m_CreativeTool = CreativeTool::None;
     bool m_CreativePlacing = false;         // mid drag-out
