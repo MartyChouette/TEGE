@@ -1313,8 +1313,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
             let glow = pow(d, 48.0) * 0.35;
             sky = sky + lighting.skySunColor.xyz * (disc + glow) * sunI;
         }
-        // Cloud layers drifting with the wind
-        let upness = smoothstep(0.02, 0.18, worldDir.y);
+        // Cloud layers drifting with the wind. Fade in right from the horizon (not
+        // only high overhead) so clouds actually read at normal, near-level camera
+        // angles instead of hiding above the visible sky band.
+        let upness = smoothstep(0.0, 0.10, worldDir.y);
         if (upness > 0.0) {
             var drift = lighting.windData.xz;
             if (dot(drift, drift) < 1e-5) { drift = vec2<f32>(1.0, 0.35); }
