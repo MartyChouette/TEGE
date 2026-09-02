@@ -1077,16 +1077,14 @@ fn vs_main(vert: VertexInput, @builtin(instance_index) instanceIdx: u32) -> Vert
     //   canopy mesh: xz in [-1.5,1.5], y in [1.2,4.2]
     var localPos: vec3<f32>;
     if (isCanopy) {
-        // Canopy is a UNIT sphere. Scale it OBLATE (wider than tall) so it reads as a
-        // rounded bushy crown, not a tall pointed lemon: a full-height sphere at big
-        // canopyRadius showed the UV-sphere's sharp top/bottom apex as a "pentagon"
-        // point (reported 2026-09-02). Squash Y and pull the whole crown down toward
-        // the trunk so there's no tall spike and the trunk stays visible below it.
+        // Canopy is a UNIT sphere. Slightly oblate so shrub domes (which reuse this
+        // path) read as rounded bushes. (Procedural tree volumes are no longer used in
+        // the demos — imported meshes replaced them — but this stays valid for shrubs.)
         let r = volume.canopyRadius * sizeVar;
-        let ry = r * 0.62;                       // vertical radius: flattened crown
+        let ry = r * 0.85;
         localPos = vec3<f32>(
             vert.position.x * r,
-            volume.canopyOffset * sizeVar * 0.7 + ry + vert.position.y * ry,
+            volume.canopyOffset * sizeVar + ry + vert.position.y * ry,
             vert.position.z * r);
     } else {
         let w = volume.trunkWidth * 2.0 * sizeVar;
