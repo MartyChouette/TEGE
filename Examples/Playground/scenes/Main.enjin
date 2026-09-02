@@ -19502,7 +19502,7 @@
           0.18000000715255737,
           0.09000000357627869
         ],
-        "canopyOffset": 2.0,
+        "canopyOffset": 2.5,
         "canopyQuads": 3,
         "canopyRadius": 1.2999999523162842,
         "canopyTipColor": [
@@ -19540,8 +19540,8 @@
           0.15000000596046448,
           0.09000000357627869
         ],
-        "trunkHeight": 2.4000000953674316,
-        "trunkWidth": 0.18000000715255737,
+        "trunkHeight": 2.8,
+        "trunkWidth": 0.09,
         "windSwayStrength": 0.5
       }
     },
