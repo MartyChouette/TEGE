@@ -2,6 +2,7 @@
 #include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Effects/Weather.h"
+#include "Enjin/Effects/Wind.h"
 #include <angelscript.h>
 #include <cassert>
 
@@ -11,6 +12,10 @@ using namespace Enjin;
     do { int _r = (expr); if (_r < 0) { ENJIN_LOG_ERROR(Script, "AS registration failed (code %d) at %s:%d", _r, __FILE__, __LINE__); } } while(0)
 
 static Effects::WeatherSystem* s_BindingsWeather = nullptr;
+// The WindSystem is what actually drives foliage sway (its wind vector feeds the
+// shader windData). Weather_SetWind only slants precipitation; Wind_* here gusts
+// the trees/grass/vegetation-meshes.
+static Effects::WindSystem* s_BindingsWind = nullptr;
 
 namespace Enjin {
 namespace Scripting {
@@ -19,8 +24,30 @@ void SetBindingsWeather(Effects::WeatherSystem* weather) {
     s_BindingsWeather = weather;
 }
 
+void SetBindingsWind(Effects::WindSystem* wind) {
+    s_BindingsWind = wind;
+}
+
 } // namespace Scripting
 } // namespace Enjin
+
+// ============================================================================
+// Wind control (drives foliage sway via the WindSystem's global wind)
+// ============================================================================
+
+static void Wind_SetStrength(float strength) {
+    if (!s_BindingsWind) return;
+    Effects::WindParams p = s_BindingsWind->GetGlobalParams();
+    p.strength = strength;
+    s_BindingsWind->SetGlobalWind(p);
+}
+
+static void Wind_SetDirection(float x, float y, float z) {
+    if (!s_BindingsWind) return;
+    Effects::WindParams p = s_BindingsWind->GetGlobalParams();
+    p.direction = Math::Vector3(x, y, z);
+    s_BindingsWind->SetGlobalWind(p);
+}
 
 // ============================================================================
 // Weather control
@@ -135,6 +162,11 @@ void RegisterWeatherBindings(asIScriptEngine* engine) {
     // Wind
     AS_CHECK(engine->RegisterGlobalFunction("void Weather_SetWind(float, float, float, float)",
         ENJIN_AS_FN(Weather_SetWind), ENJIN_AS_CALL_CDECL));
+    // Wind that actually moves foliage (the WindSystem's global wind).
+    AS_CHECK(engine->RegisterGlobalFunction("void Wind_SetStrength(float)",
+        ENJIN_AS_FN(Wind_SetStrength), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Wind_SetDirection(float, float, float)",
+        ENJIN_AS_FN(Wind_SetDirection), ENJIN_AS_CALL_CDECL));
 
     // Lightning
     AS_CHECK(engine->RegisterGlobalFunction("bool Weather_IsLightning()",

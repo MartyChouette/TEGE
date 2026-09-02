@@ -406,6 +406,7 @@ public:
         Enjin::Scripting::SetBindingsObjectPool(&m_ObjectPool);
         Enjin::Scripting::SetBindingsAudio(&m_SimpleAudio);
         Enjin::Scripting::SetBindingsWeather(&m_WeatherSystem);
+        Enjin::Scripting::SetBindingsWind(&m_WindSystem);   // Wind_* -> foliage sway
         // Render_* script functions (rain-active, fog, ambient, shadows...)
         // and Dialogue_* — both systems exist on web; without this wiring the
         // (now-registered) bindings silently no-op.
@@ -576,6 +577,7 @@ public:
         Enjin::Scripting::SetBindingsObjectPool(nullptr);
         Enjin::Scripting::SetBindingsAudio(nullptr);
         Enjin::Scripting::SetBindingsWeather(nullptr);
+        Enjin::Scripting::SetBindingsWind(nullptr);
         Enjin::Scripting::SetBindingsSceneManager(nullptr);
         Enjin::Scripting::SetBindingsPhysics2D(nullptr);
         Enjin::Scripting::SetBindingsNetworking(nullptr);

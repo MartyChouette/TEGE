@@ -16,10 +16,12 @@ class FoliageWeather : TegeBehavior {
         int p = int(t / 15.0f) % 4;   // 15s per phase
         if (p != phase) {
             phase = p;
-            if (p == 0) { rainT = 0.0f; snowT = 0.0f; Weather_Set(0, 3.0f); Weather_SetWind(0.8, 0.0, 0.4, 2.0); Subtitle_Show("Clear", "", 2.0f); }
-            if (p == 1) { rainT = 0.0f; snowT = 0.0f; Weather_Set(1, 3.0f); Weather_SetWind(1.0, 0.0, 0.5, 8.0); Subtitle_Show("Wind picking up", "", 2.0f); }
-            if (p == 2) { rainT = 0.85f; snowT = 0.0f; Weather_Set(2, 3.0f); Weather_SetWind(0.9, 0.0, 0.6, 9.0); Render_SetRainActive(true); Subtitle_Show("Rain", "", 2.0f); }
-            if (p == 3) { rainT = 0.0f; snowT = 0.8f; Weather_Set(4, 3.0f); Weather_SetWind(0.5, 0.0, 0.3, 5.0); Subtitle_Show("Snow", "", 2.0f); }
+            // Weather_SetWind slants precipitation; Wind_SetStrength/Direction gusts the
+            // foliage (trees/grass/shrubs/imported meshes) via the wind system.
+            if (p == 0) { rainT = 0.0f; snowT = 0.0f; Weather_Set(0, 3.0f); Weather_SetWind(0.8, 0.0, 0.4, 2.0); Wind_SetDirection(0.8, 0.0, 0.4); Wind_SetStrength(1.0f); Subtitle_Show("Clear", "", 2.0f); }
+            if (p == 1) { rainT = 0.0f; snowT = 0.0f; Weather_Set(1, 3.0f); Weather_SetWind(1.0, 0.0, 0.5, 8.0); Wind_SetDirection(1.0, 0.0, 0.5); Wind_SetStrength(5.5f); Subtitle_Show("Wind picking up", "", 2.0f); }
+            if (p == 2) { rainT = 0.85f; snowT = 0.0f; Weather_Set(2, 3.0f); Weather_SetWind(0.9, 0.0, 0.6, 9.0); Wind_SetDirection(0.9, 0.0, 0.6); Wind_SetStrength(4.5f); Render_SetRainActive(true); Subtitle_Show("Rain", "", 2.0f); }
+            if (p == 3) { rainT = 0.0f; snowT = 0.8f; Weather_Set(4, 3.0f); Weather_SetWind(0.5, 0.0, 0.3, 5.0); Wind_SetDirection(0.5, 0.0, 0.3); Wind_SetStrength(2.0f); Subtitle_Show("Snow", "", 2.0f); }
         }
         rain += (rainT - rain) * min(dt * 0.6f, 1.0f);
         snow += (snowT - snow) * min(dt * 0.6f, 1.0f);

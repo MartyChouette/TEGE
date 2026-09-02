@@ -806,6 +806,7 @@ public:
         Enjin::Scripting::SetBindingsAccessibilitySettings(nullptr);
         Enjin::Scripting::SetBindingsAudio(nullptr);
         Enjin::Scripting::SetBindingsWeather(nullptr);
+        Enjin::Scripting::SetBindingsWind(nullptr);
         Enjin::Scripting::SetBindingsDestructible(nullptr);
         Enjin::Scripting::SetBindingsRewindSystem(nullptr);
         Enjin::Scripting::SetBindingsProcedural(nullptr);
@@ -2200,6 +2201,7 @@ private:
         Enjin::Scripting::SetBindingsProcedural(nullptr);
         Enjin::Scripting::SetBindingsAudio(&m_SimpleAudio);
         Enjin::Scripting::SetBindingsWeather(&m_WeatherSystem);
+        Enjin::Scripting::SetBindingsWind(&m_WindSystem);
         Enjin::Scripting::SetBindingsDestructible(&m_DestructibleSystem);
         Enjin::Scripting::SetBindingsRewindSystem(&m_RecordRewindSystem);
         Enjin::Scripting::SetBindingsStreaming(&m_StreamingManager);
@@ -3259,6 +3261,12 @@ private:
 
     void DrawDialogueOverlay() {
         if (!m_World || m_ActiveDialogueEntity == 0) return;
+
+        // Defer to the data-driven ECS dialogue box when this entity defines one:
+        // the DialogueSystem renders a styled, per-entity DialogueBoxComponent, and
+        // this built-in ImGui overlay is only the fallback for entities without a
+        // box. That keeps the two from doubling up on screen.
+        if (m_World->GetComponent<Enjin::ECS::DialogueBoxComponent>(m_ActiveDialogueEntity)) return;
 
         auto* dlg = m_World->GetComponent<Enjin::ECS::DialogueComponent>(m_ActiveDialogueEntity);
         if (!dlg) return;
