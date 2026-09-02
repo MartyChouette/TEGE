@@ -1288,12 +1288,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // a tight 10% horizon band, then linear blends to zenith/ground. The old
     // pow-curve + steep below-horizon mix painted a wide pale band of
     // bottomColor across the horizon that desktop never shows.
+    // Continuous horizon->zenith / horizon->ground blend with NO flat band. The old
+    // 10% flat band around the horizon meant a low, near-level camera (the Playground's
+    // third-person view) saw only that band = one flat color ("flat single color" sky).
+    // Blending right from the horizon makes the gradient read at any camera angle.
     let t = clamp(worldDir.y * 0.5 + 0.5, 0.0, 1.0);
-    var sky = horizon;
-    if (t > 0.55) {
-        sky = mix(horizon, zenith, (t - 0.55) / 0.45);
-    } else if (t < 0.45) {
-        sky = mix(horizon, ground, (0.45 - t) / 0.45);
+    var sky: vec3<f32>;
+    if (t > 0.5) {
+        sky = mix(horizon, zenith, (t - 0.5) / 0.5);
+    } else {
+        sky = mix(horizon, ground, (0.5 - t) / 0.5);
     }
 
     if (configured) {
