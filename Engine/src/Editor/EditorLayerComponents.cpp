@@ -2150,22 +2150,29 @@ void EditorLayer::DrawGrassVolumeComponent(ECS::Entity entity) {
 
         ImGui::Separator();
         ImGui::Text("Custom Texture");
-        if (!grass->customAssetPath.empty()) {
-            size_t lastSlash = grass->customAssetPath.find_last_of("/\\");
-            std::string filename = (lastSlash != std::string::npos) ? grass->customAssetPath.substr(lastSlash + 1) : grass->customAssetPath;
-            ImGui::Text("Texture: %s", filename.c_str());
-            ImGui::SameLine();
-            if (ImGui::SmallButton("X##GrassAsset")) {
-                grass->customAssetPath.clear();
-                grass->cachedTexIndex = -2;
-            }
-        } else {
-            if (ImGui::Button("Browse Custom Texture##Grass")) {
+        {
+            std::string fn = grass->customAssetPath.empty() ? std::string()
+                : std::filesystem::path(grass->customAssetPath).filename().string();
+            std::string label = fn.empty() ? "Drop image here / click to browse"
+                                            : ("Texture: " + fn);
+            if (ImGui::Button((label + "##GrassTex").c_str(), ImVec2(-1.0f, 0.0f))) {
                 std::string path = FileDialog::OpenFile("Custom Grass Texture", {{ "Images", "*.png;*.jpg;*.jpeg;*.bmp;*.tga" }});
-                if (!path.empty()) {
-                    grass->customAssetPath = path;
-                    grass->cachedTexIndex = -2;
+                if (!path.empty()) { grass->customAssetPath = path; grass->cachedTexIndex = -2; }
+            }
+            if (ImGui::BeginDragDropTarget()) {
+                if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("ASSET_PATH")) {
+                    std::string p(static_cast<const char*>(pl->Data));
+                    std::string e = std::filesystem::path(p).extension().string();
+                    std::transform(e.begin(), e.end(), e.begin(), [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
+                    if (e==".png"||e==".jpg"||e==".jpeg"||e==".tga"||e==".bmp") {
+                        grass->customAssetPath = p; grass->cachedTexIndex = -2;
+                        if (m_RenderSystem) m_RenderSystem->ClearFailedTexture(p);
+                    }
                 }
+                ImGui::EndDragDropTarget();
+            }
+            if (!grass->customAssetPath.empty() && ImGui::SmallButton("Clear##GrassAsset")) {
+                grass->customAssetPath.clear(); grass->cachedTexIndex = -2;
             }
         }
 
@@ -2230,22 +2237,29 @@ void EditorLayer::DrawShrubVolumeComponent(ECS::Entity entity) {
 
         ImGui::Separator();
         ImGui::Text("Custom Texture");
-        if (!shrub->customAssetPath.empty()) {
-            size_t lastSlash = shrub->customAssetPath.find_last_of("/\\");
-            std::string filename = (lastSlash != std::string::npos) ? shrub->customAssetPath.substr(lastSlash + 1) : shrub->customAssetPath;
-            ImGui::Text("Texture: %s", filename.c_str());
-            ImGui::SameLine();
-            if (ImGui::SmallButton("X##ShrubAsset")) {
-                shrub->customAssetPath.clear();
-                shrub->cachedTexIndex = -2;
-            }
-        } else {
-            if (ImGui::Button("Browse Custom Texture##Shrub")) {
+        {
+            std::string fn = shrub->customAssetPath.empty() ? std::string()
+                : std::filesystem::path(shrub->customAssetPath).filename().string();
+            std::string label = fn.empty() ? "Drop image here / click to browse"
+                                            : ("Texture: " + fn);
+            if (ImGui::Button((label + "##ShrubTex").c_str(), ImVec2(-1.0f, 0.0f))) {
                 std::string path = FileDialog::OpenFile("Custom Shrub Texture", {{ "Images", "*.png;*.jpg;*.jpeg;*.bmp;*.tga" }});
-                if (!path.empty()) {
-                    shrub->customAssetPath = path;
-                    shrub->cachedTexIndex = -2;
+                if (!path.empty()) { shrub->customAssetPath = path; shrub->cachedTexIndex = -2; }
+            }
+            if (ImGui::BeginDragDropTarget()) {
+                if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("ASSET_PATH")) {
+                    std::string p(static_cast<const char*>(pl->Data));
+                    std::string e = std::filesystem::path(p).extension().string();
+                    std::transform(e.begin(), e.end(), e.begin(), [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
+                    if (e==".png"||e==".jpg"||e==".jpeg"||e==".tga"||e==".bmp") {
+                        shrub->customAssetPath = p; shrub->cachedTexIndex = -2;
+                        if (m_RenderSystem) m_RenderSystem->ClearFailedTexture(p);
+                    }
                 }
+                ImGui::EndDragDropTarget();
+            }
+            if (!shrub->customAssetPath.empty() && ImGui::SmallButton("Clear##ShrubAsset")) {
+                shrub->customAssetPath.clear(); shrub->cachedTexIndex = -2;
             }
         }
 
@@ -2354,44 +2368,30 @@ void EditorLayer::DrawTreeVolumeComponent(ECS::Entity entity) {
 
         ImGui::Separator();
         ImGui::Text("Textures");
-        // Bark texture
-        if (!tree->barkTexturePath.empty()) {
-            size_t lastSlash = tree->barkTexturePath.find_last_of("/\\");
-            std::string filename = (lastSlash != std::string::npos) ? tree->barkTexturePath.substr(lastSlash + 1) : tree->barkTexturePath;
-            ImGui::Text("Bark: %s", filename.c_str());
-            ImGui::SameLine();
-            if (ImGui::SmallButton("X##BarkTex")) {
-                tree->barkTexturePath.clear();
-                tree->cachedBarkTexIndex = -2;
+        // Drag-and-drop (or click-to-browse) slot shared by bark + canopy.
+        auto treeTexSlot = [&](const char* id, const char* dlgTitle, std::string& path, i32& cache) {
+            std::string fn = path.empty() ? std::string() : std::filesystem::path(path).filename().string();
+            std::string label = fn.empty() ? (std::string("Drop / browse ") + dlgTitle) : (std::string(dlgTitle) + ": " + fn);
+            if (ImGui::Button((label + "##" + id).c_str(), ImVec2(-1.0f, 0.0f))) {
+                std::string p = FileDialog::OpenFile(dlgTitle, {{ "Images", "*.png;*.jpg;*.jpeg;*.bmp;*.tga" }});
+                if (!p.empty()) { path = p; cache = -2; }
             }
-        } else {
-            if (ImGui::Button("Load Bark Texture")) {
-                std::string path = FileDialog::OpenFile("Bark Texture", {{ "Images", "*.png;*.jpg;*.jpeg;*.bmp;*.tga" }});
-                if (!path.empty()) {
-                    tree->barkTexturePath = path;
-                    tree->cachedBarkTexIndex = -2;
+            if (ImGui::BeginDragDropTarget()) {
+                if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("ASSET_PATH")) {
+                    std::string p(static_cast<const char*>(pl->Data));
+                    std::string e = std::filesystem::path(p).extension().string();
+                    std::transform(e.begin(), e.end(), e.begin(), [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
+                    if (e==".png"||e==".jpg"||e==".jpeg"||e==".tga"||e==".bmp") {
+                        path = p; cache = -2;
+                        if (m_RenderSystem) m_RenderSystem->ClearFailedTexture(p);
+                    }
                 }
+                ImGui::EndDragDropTarget();
             }
-        }
-        // Canopy texture
-        if (!tree->canopyTexturePath.empty()) {
-            size_t lastSlash = tree->canopyTexturePath.find_last_of("/\\");
-            std::string filename = (lastSlash != std::string::npos) ? tree->canopyTexturePath.substr(lastSlash + 1) : tree->canopyTexturePath;
-            ImGui::Text("Canopy: %s", filename.c_str());
-            ImGui::SameLine();
-            if (ImGui::SmallButton("X##CanopyTex")) {
-                tree->canopyTexturePath.clear();
-                tree->cachedCanopyTexIndex = -2;
-            }
-        } else {
-            if (ImGui::Button("Load Canopy Texture")) {
-                std::string path = FileDialog::OpenFile("Canopy Texture", {{ "Images", "*.png;*.jpg;*.jpeg;*.bmp;*.tga" }});
-                if (!path.empty()) {
-                    tree->canopyTexturePath = path;
-                    tree->cachedCanopyTexIndex = -2;
-                }
-            }
-        }
+            if (!path.empty() && ImGui::SmallButton((std::string("Clear##") + id).c_str())) { path.clear(); cache = -2; }
+        };
+        treeTexSlot("BarkTex", "Bark", tree->barkTexturePath, tree->cachedBarkTexIndex);
+        treeTexSlot("CanopyTex", "Canopy", tree->canopyTexturePath, tree->cachedCanopyTexIndex);
 
         ImGui::Spacing();
         ImGui::TextDisabled("Trees sit on the XZ plane at entity's Y position");
