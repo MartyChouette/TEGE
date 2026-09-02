@@ -5266,13 +5266,15 @@ void EditorLayer::DrawQuickSetup(ECS::Entity entity) {
             if (ImGui::Button("Add Basic Movement", ImVec2(buttonWidth, 0))) {
                 if (is2D) {
                     m_World->AddComponent<ECS::Platformer2DController>(entity);
-                    m_World->AddComponent<ECS::BoxColliderComponent>(entity);
+                    if (!hasCollider) m_World->AddComponent<ECS::BoxColliderComponent>(entity);
                     SetupCameraForController(entity, "Platformer2D");
                 } else {
                     m_World->AddComponent<ECS::ThirdPersonController>(entity);
-                    auto& cap = m_World->AddComponent<ECS::CapsuleColliderComponent>(entity);
-                    cap.radius = 0.3f;
-                    cap.height = 1.8f;
+                    if (!hasCollider) {
+                        auto& cap = m_World->AddComponent<ECS::CapsuleColliderComponent>(entity);
+                        cap.radius = 0.3f;
+                        cap.height = 1.8f;
+                    }
                     SetupCameraForController(entity, "ThirdPerson");
                 }
             }
@@ -5285,7 +5287,7 @@ void EditorLayer::DrawQuickSetup(ECS::Entity entity) {
         if (is2D && !hasPlatformer && !hasController) {
             if (ImGui::Button("Setup 2D Platformer", ImVec2(buttonWidth, 0))) {
                 m_World->AddComponent<ECS::Platformer2DController>(entity);
-                m_World->AddComponent<ECS::BoxColliderComponent>(entity);
+                if (!hasCollider) m_World->AddComponent<ECS::BoxColliderComponent>(entity);
                 if (!m_World->HasComponent<ECS::Sprite2DComponent>(entity)) {
                     m_World->AddComponent<ECS::Sprite2DComponent>(entity);
                 }
@@ -5339,9 +5341,12 @@ void EditorLayer::DrawQuickSetup(ECS::Entity entity) {
                 auto* nameComp = m_World->GetComponent<ECS::NameComponent>(entity);
                 if (nameComp && !nameComp->name.empty())
                     dlg.speakerName = nameComp->name;
-                m_World->AddComponent<ECS::DialogueBoxComponent>(entity);
-                auto& interact = m_World->AddComponent<ECS::InteractableComponent>(entity);
-                interact.promptText = "Talk";
+                if (!m_World->HasComponent<ECS::DialogueBoxComponent>(entity))
+                    m_World->AddComponent<ECS::DialogueBoxComponent>(entity);
+                if (!m_World->HasComponent<ECS::InteractableComponent>(entity)) {
+                    auto& interact = m_World->AddComponent<ECS::InteractableComponent>(entity);
+                    interact.promptText = "Talk";
+                }
                 if (!hasCollider) {
                     if (is2D) {
                         auto& box = m_World->AddComponent<ECS::BoxColliderComponent>(entity);
@@ -5368,9 +5373,11 @@ void EditorLayer::DrawQuickSetup(ECS::Entity entity) {
                 pickup.destroyOnPickup = true;
                 pickup.bobSpeed = 2.0f;
                 pickup.bobHeight = 0.2f;
-                auto& trigger = m_World->AddComponent<ECS::TriggerZoneComponent>(entity);
-                trigger.shape = ECS::TriggerZoneComponent::Shape::Sphere;
-                trigger.sphereRadius = 1.0f;
+                if (!m_World->HasComponent<ECS::TriggerZoneComponent>(entity)) {
+                    auto& trigger = m_World->AddComponent<ECS::TriggerZoneComponent>(entity);
+                    trigger.shape = ECS::TriggerZoneComponent::Shape::Sphere;
+                    trigger.sphereRadius = 1.0f;
+                }
                 if (!m_World->HasComponent<ECS::TweenComponent>(entity)) {
                     auto& tween = m_World->AddComponent<ECS::TweenComponent>(entity);
                     tween.autoPlay = true;
