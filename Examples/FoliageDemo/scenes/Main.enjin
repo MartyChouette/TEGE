@@ -1,0 +1,1506 @@
+{
+ "version": "1.0",
+ "formatVersion": 1,
+ "entityCount": 11,
+ "entities": [
+  {
+   "boxCollider": {
+    "bounciness": 0.0,
+    "categoryBits": 1,
+    "center": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "collisionMask": 4294967295,
+    "friction": 0.6000000238418579,
+    "isTrigger": false,
+    "size": [
+     80.0,
+     1.0,
+     50.0
+    ]
+   },
+   "id": 101,
+   "material": {
+    "affineTexturing": false,
+    "alphaCutoff": 0.5,
+    "alphaMode": 0,
+    "baseColor": [
+     0.4000000059604645,
+     0.5199999809265137,
+     0.36000001430511475
+    ],
+    "baseColorTexture": -1,
+    "baseColorTexturePath": "",
+    "castShadows": true,
+    "ditherGradient": false,
+    "ditherGradientBands": 4,
+    "ditherGradientPattern": 0,
+    "ditherTransBlendColor": [
+     0.699999988079071,
+     0.8500000238418579,
+     1.0
+    ],
+    "ditherTransOpacity": 0.5,
+    "ditherTransPattern": 0,
+    "ditherTransparency": false,
+    "doubleSided": false,
+    "emissiveColor": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "emissiveStrength": 0.0,
+    "emissiveTexture": -1,
+    "emissiveTexturePath": "",
+    "excludeFromCelShading": false,
+    "flatShading": false,
+    "footstepVolume": 1.0,
+    "fresnelPower": 5.0,
+    "gouraudOnly": false,
+    "heightTexturePath": "",
+    "impactThreshold": 3.0,
+    "ior": 1.5,
+    "matcapTexturePath": "",
+    "metallic": 0.0,
+    "metallicRoughnessTexture": -1,
+    "metallicRoughnessTexturePath": "",
+    "normalTexture": -1,
+    "normalTexturePath": "",
+    "opacity": 1.0,
+    "outlineColor": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "outlineWidth": 0.0,
+    "parallaxMode": 0,
+    "parallaxScale": 0.05000000074505806,
+    "pomHeightScale": 0.05000000074505806,
+    "pomMaxSteps": 32,
+    "receiveShadows": true,
+    "reflectivity": 0.0,
+    "rimLightStrength": 0.0,
+    "roughness": 0.800000011920929,
+    "scrollReflectionSpeed": [
+     0.05000000074505806,
+     0.029999999329447746
+    ],
+    "scrollReflectionStrength": 0.5,
+    "scrollReflectionTexturePath": "",
+    "shadowDitherMode": 0,
+    "shadowDitherPattern": 0,
+    "specularTexturePath": "",
+    "sssColor": [
+     1.0,
+     0.20000000298023224,
+     0.10000000149011612
+    ],
+    "sssIntensity": 0.0,
+    "sssRadius": 1.0,
+    "stippleTransparency": false,
+    "surfaceNoiseScale": 0.0,
+    "surfaceNoiseStrength": 0.0,
+    "textureFilterOverride": 0,
+    "thickness": 0.0,
+    "transmission": 0.0,
+    "uvQuantize": false,
+    "uvRegionOffset": [
+     0.0,
+     0.0
+    ],
+    "uvRegionScale": [
+     1.0,
+     1.0
+    ],
+    "vertexSnapResolution": 160,
+    "vertexSnapping": false
+   },
+   "mesh": {
+    "indexCount": 36,
+    "indices": [
+     0,
+     1,
+     2,
+     0,
+     2,
+     3,
+     4,
+     5,
+     6,
+     4,
+     6,
+     7,
+     8,
+     9,
+     10,
+     8,
+     10,
+     11,
+     12,
+     13,
+     14,
+     12,
+     14,
+     15,
+     16,
+     17,
+     18,
+     16,
+     18,
+     19,
+     20,
+     21,
+     22,
+     20,
+     22,
+     23
+    ],
+    "vertexCount": 24,
+    "vertices": [
+     {
+      "normal": [
+       0.0,
+       0.0,
+       1.0
+      ],
+      "position": [
+       -0.5,
+       -0.5,
+       0.5
+      ],
+      "uv": [
+       0.0,
+       0.0
+      ]
+     },
+     {
+      "normal": [
+       0.0,
+       0.0,
+       1.0
+      ],
+      "position": [
+       0.5,
+       -0.5,
+       0.5
+      ],
+      "uv": [
+       1.0,
+       0.0
+      ]
+     },
+     {
+      "normal": [
+       0.0,
+       0.0,
+       1.0
+      ],
+      "position": [
+       0.5,
+       0.5,
+       0.5
+      ],
+      "uv": [
+       1.0,
+       1.0
+      ]
+     },
+     {
+      "normal": [
+       0.0,
+       0.0,
+       1.0
+      ],
+      "position": [
+       -0.5,
+       0.5,
+       0.5
+      ],
+      "uv": [
+       0.0,
+       1.0
+      ]
+     },
+     {
+      "normal": [
+       0.0,
+       0.0,
+       -1.0
+      ],
+      "position": [
+       0.5,
+       -0.5,
+       -0.5
+      ],
+      "uv": [
+       0.0,
+       0.0
+      ]
+     },
+     {
+      "normal": [
+       0.0,
+       0.0,
+       -1.0
+      ],
+      "position": [
+       -0.5,
+       -0.5,
+       -0.5
+      ],
+      "uv": [
+       1.0,
+       0.0
+      ]
+     },
+     {
+      "normal": [
+       0.0,
+       0.0,
+       -1.0
+      ],
+      "position": [
+       -0.5,
+       0.5,
+       -0.5
+      ],
+      "uv": [
+       1.0,
+       1.0
+      ]
+     },
+     {
+      "normal": [
+       0.0,
+       0.0,
+       -1.0
+      ],
+      "position": [
+       0.5,
+       0.5,
+       -0.5
+      ],
+      "uv": [
+       0.0,
+       1.0
+      ]
+     },
+     {
+      "normal": [
+       1.0,
+       0.0,
+       0.0
+      ],
+      "position": [
+       0.5,
+       -0.5,
+       0.5
+      ],
+      "uv": [
+       0.0,
+       0.0
+      ]
+     },
+     {
+      "normal": [
+       1.0,
+       0.0,
+       0.0
+      ],
+      "position": [
+       0.5,
+       -0.5,
+       -0.5
+      ],
+      "uv": [
+       1.0,
+       0.0
+      ]
+     },
+     {
+      "normal": [
+       1.0,
+       0.0,
+       0.0
+      ],
+      "position": [
+       0.5,
+       0.5,
+       -0.5
+      ],
+      "uv": [
+       1.0,
+       1.0
+      ]
+     },
+     {
+      "normal": [
+       1.0,
+       0.0,
+       0.0
+      ],
+      "position": [
+       0.5,
+       0.5,
+       0.5
+      ],
+      "uv": [
+       0.0,
+       1.0
+      ]
+     },
+     {
+      "normal": [
+       -1.0,
+       0.0,
+       0.0
+      ],
+      "position": [
+       -0.5,
+       -0.5,
+       -0.5
+      ],
+      "uv": [
+       0.0,
+       0.0
+      ]
+     },
+     {
+      "normal": [
+       -1.0,
+       0.0,
+       0.0
+      ],
+      "position": [
+       -0.5,
+       -0.5,
+       0.5
+      ],
+      "uv": [
+       1.0,
+       0.0
+      ]
+     },
+     {
+      "normal": [
+       -1.0,
+       0.0,
+       0.0
+      ],
+      "position": [
+       -0.5,
+       0.5,
+       0.5
+      ],
+      "uv": [
+       1.0,
+       1.0
+      ]
+     },
+     {
+      "normal": [
+       -1.0,
+       0.0,
+       0.0
+      ],
+      "position": [
+       -0.5,
+       0.5,
+       -0.5
+      ],
+      "uv": [
+       0.0,
+       1.0
+      ]
+     },
+     {
+      "normal": [
+       0.0,
+       1.0,
+       0.0
+      ],
+      "position": [
+       -0.5,
+       0.5,
+       0.5
+      ],
+      "uv": [
+       0.0,
+       0.0
+      ]
+     },
+     {
+      "normal": [
+       0.0,
+       1.0,
+       0.0
+      ],
+      "position": [
+       0.5,
+       0.5,
+       0.5
+      ],
+      "uv": [
+       1.0,
+       0.0
+      ]
+     },
+     {
+      "normal": [
+       0.0,
+       1.0,
+       0.0
+      ],
+      "position": [
+       0.5,
+       0.5,
+       -0.5
+      ],
+      "uv": [
+       1.0,
+       1.0
+      ]
+     },
+     {
+      "normal": [
+       0.0,
+       1.0,
+       0.0
+      ],
+      "position": [
+       -0.5,
+       0.5,
+       -0.5
+      ],
+      "uv": [
+       0.0,
+       1.0
+      ]
+     },
+     {
+      "normal": [
+       0.0,
+       -1.0,
+       0.0
+      ],
+      "position": [
+       -0.5,
+       -0.5,
+       -0.5
+      ],
+      "uv": [
+       0.0,
+       0.0
+      ]
+     },
+     {
+      "normal": [
+       0.0,
+       -1.0,
+       0.0
+      ],
+      "position": [
+       0.5,
+       -0.5,
+       -0.5
+      ],
+      "uv": [
+       1.0,
+       0.0
+      ]
+     },
+     {
+      "normal": [
+       0.0,
+       -1.0,
+       0.0
+      ],
+      "position": [
+       0.5,
+       -0.5,
+       0.5
+      ],
+      "uv": [
+       1.0,
+       1.0
+      ]
+     },
+     {
+      "normal": [
+       0.0,
+       -1.0,
+       0.0
+      ],
+      "position": [
+       -0.5,
+       -0.5,
+       0.5
+      ],
+      "uv": [
+       0.0,
+       1.0
+      ]
+     }
+    ]
+   },
+   "name": {
+    "name": "Ground"
+   },
+   "rigidbody": {
+    "angularDrag": 0.05000000074505806,
+    "angularVelocity": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "bodyType": 0,
+    "collisionMode": 0,
+    "drag": 0.0,
+    "freezePositionX": 0.0,
+    "freezePositionY": 0.0,
+    "freezePositionZ": 0.0,
+    "freezeRotationX": 0.0,
+    "freezeRotationY": 0.0,
+    "freezeRotationZ": 0.0,
+    "gravityScale": 1.0,
+    "isGrounded": false,
+    "isSleeping": false,
+    "mass": 0.0,
+    "maxAngularVelocity": 50.0,
+    "maxVelocity": 100.0,
+    "useGravity": false,
+    "velocity": [
+     0.0,
+     0.0,
+     0.0
+    ]
+   },
+   "stableId": 1000000799819,
+   "transform": {
+    "position": [
+     0,
+     0,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     80.0,
+     1.0,
+     50.0
+    ]
+   }
+  },
+  {
+   "id": 102,
+   "light": {
+    "castShadows": true,
+    "color": [
+     1.0,
+     0.9599999785423279,
+     0.8799999952316284
+    ],
+    "constantAttenuation": 1.0,
+    "innerConeAngle": 12.5,
+    "intensity": 1.25,
+    "linearAttenuation": 0.09000000357627869,
+    "outerConeAngle": 17.5,
+    "quadraticAttenuation": 0.03200000151991844,
+    "range": 10.0,
+    "type": 0
+   },
+   "name": {
+    "name": "Sun"
+   },
+   "stableId": 1000000807738,
+   "transform": {
+    "position": [
+     8.0,
+     22.0,
+     12.0
+    ],
+    "rotation": [
+     -0.3400000035762787,
+     -0.10000000149011612,
+     0.0,
+     0.9300000071525574
+    ],
+    "scale": [
+     1.0,
+     1.0,
+     1.0
+    ]
+   }
+  },
+  {
+   "id": 103,
+   "stableId": 1000000815657,
+   "name": {
+    "name": "MainCam"
+   },
+   "transform": {
+    "position": [
+     0.0,
+     7.0,
+     26.0
+    ],
+    "rotation": [
+     -0.1,
+     0.0,
+     0.0,
+     0.995
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "camera": {
+    "backgroundColor": [
+     0.5,
+     0.62,
+     0.8
+    ],
+    "clearColor": true,
+    "clearDepth": true,
+    "cullingMask": 4294967295,
+    "farPlane": 600.0,
+    "fieldOfView": 60.0,
+    "isActive": true,
+    "nearPlane": 0.1,
+    "orthoSize": 10.0,
+    "priority": 0,
+    "projectionType": 0,
+    "viewportHeight": 1.0,
+    "viewportWidth": 1.0,
+    "viewportX": 0.0,
+    "viewportY": 0.0
+   }
+  },
+  {
+   "id": 104,
+   "stableId": 1000000823576,
+   "name": {
+    "name": "Oak"
+   },
+   "transform": {
+    "position": [
+     -18,
+     0,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "treeVolume": {
+    "canopyBaseColor": [
+     0.16,
+     0.3,
+     0.12
+    ],
+    "canopyOffset": 2.5,
+    "canopyQuads": 3,
+    "canopyRadius": 1.7,
+    "canopyTipColor": [
+     0.45,
+     0.62,
+     0.28
+    ],
+    "density": 5,
+    "fallCanopyColor": [
+     0.6800000071525574,
+     0.41999998688697815,
+     0.11999999731779099
+    ],
+    "generateColliders": true,
+    "halfExtents": [
+     3.0,
+     0,
+     3.0
+    ],
+    "maxHeightScale": 1.399999976158142,
+    "minHeightScale": 0.6000000238418579,
+    "springCanopyColor": [
+     0.45,
+     0.62,
+     0.28
+    ],
+    "summerCanopyColor": [
+     0.16,
+     0.3,
+     0.12
+    ],
+    "treeType": 0,
+    "trunkColor": [
+     0.22,
+     0.15,
+     0.09
+    ],
+    "trunkHeight": 2.8,
+    "trunkWidth": 0.11,
+    "windSwayStrength": 0.6
+   }
+  },
+  {
+   "id": 105,
+   "stableId": 1000000831495,
+   "name": {
+    "name": "Autumn"
+   },
+   "transform": {
+    "position": [
+     -6,
+     0,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "treeVolume": {
+    "canopyBaseColor": [
+     0.55,
+     0.28,
+     0.07
+    ],
+    "canopyOffset": 2.5,
+    "canopyQuads": 3,
+    "canopyRadius": 1.45,
+    "canopyTipColor": [
+     0.88,
+     0.58,
+     0.16
+    ],
+    "density": 5,
+    "fallCanopyColor": [
+     0.6800000071525574,
+     0.41999998688697815,
+     0.11999999731779099
+    ],
+    "generateColliders": true,
+    "halfExtents": [
+     3.0,
+     0,
+     3.0
+    ],
+    "maxHeightScale": 1.399999976158142,
+    "minHeightScale": 0.6000000238418579,
+    "springCanopyColor": [
+     0.88,
+     0.58,
+     0.16
+    ],
+    "summerCanopyColor": [
+     0.55,
+     0.28,
+     0.07
+    ],
+    "treeType": 0,
+    "trunkColor": [
+     0.25,
+     0.16,
+     0.08
+    ],
+    "trunkHeight": 2.8,
+    "trunkWidth": 0.1,
+    "windSwayStrength": 0.6
+   }
+  },
+  {
+   "id": 106,
+   "stableId": 1000000839414,
+   "name": {
+    "name": "Pine"
+   },
+   "transform": {
+    "position": [
+     6,
+     0,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "treeVolume": {
+    "canopyBaseColor": [
+     0.07,
+     0.2,
+     0.1
+    ],
+    "canopyOffset": 3.3000000000000003,
+    "canopyQuads": 4,
+    "canopyRadius": 1.0,
+    "canopyTipColor": [
+     0.2,
+     0.4,
+     0.18
+    ],
+    "density": 5,
+    "fallCanopyColor": [
+     0.6800000071525574,
+     0.41999998688697815,
+     0.11999999731779099
+    ],
+    "generateColliders": true,
+    "halfExtents": [
+     3.0,
+     0,
+     3.0
+    ],
+    "maxHeightScale": 1.399999976158142,
+    "minHeightScale": 0.6000000238418579,
+    "springCanopyColor": [
+     0.2,
+     0.4,
+     0.18
+    ],
+    "summerCanopyColor": [
+     0.07,
+     0.2,
+     0.1
+    ],
+    "treeType": 0,
+    "trunkColor": [
+     0.2,
+     0.14,
+     0.08
+    ],
+    "trunkHeight": 3.6,
+    "trunkWidth": 0.1,
+    "windSwayStrength": 0.6
+   }
+  },
+  {
+   "id": 107,
+   "stableId": 1000000847333,
+   "name": {
+    "name": "Birch"
+   },
+   "transform": {
+    "position": [
+     18,
+     0,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "treeVolume": {
+    "canopyBaseColor": [
+     0.32,
+     0.46,
+     0.18
+    ],
+    "canopyOffset": 2.9000000000000004,
+    "canopyQuads": 3,
+    "canopyRadius": 1.25,
+    "canopyTipColor": [
+     0.62,
+     0.76,
+     0.42
+    ],
+    "density": 5,
+    "fallCanopyColor": [
+     0.6800000071525574,
+     0.41999998688697815,
+     0.11999999731779099
+    ],
+    "generateColliders": true,
+    "halfExtents": [
+     3.0,
+     0,
+     3.0
+    ],
+    "maxHeightScale": 1.399999976158142,
+    "minHeightScale": 0.6000000238418579,
+    "springCanopyColor": [
+     0.62,
+     0.76,
+     0.42
+    ],
+    "summerCanopyColor": [
+     0.32,
+     0.46,
+     0.18
+    ],
+    "treeType": 0,
+    "trunkColor": [
+     0.78,
+     0.75,
+     0.68
+    ],
+    "trunkHeight": 3.2,
+    "trunkWidth": 0.08,
+    "windSwayStrength": 0.6
+   }
+  },
+  {
+   "id": 108,
+   "stableId": 1000000855252,
+   "name": {
+    "name": "Shrub_Green"
+   },
+   "transform": {
+    "position": [
+     -12,
+     0,
+     8
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "shrubVolume": {
+    "baseColor": [
+     0.11,
+     0.18,
+     0.09
+    ],
+    "density": 18,
+    "halfExtents": [
+     3.0,
+     0,
+     2.0
+    ],
+    "heightVariance": 0.20000000298023224,
+    "quadsPerShrub": 3,
+    "shrubHeight": 0.6,
+    "tipColor": [
+     0.42,
+     0.58,
+     0.27
+    ],
+    "width": 0.4,
+    "windSwayStrength": 0.7
+   }
+  },
+  {
+   "id": 109,
+   "stableId": 1000000863171,
+   "name": {
+    "name": "Shrub_Gold"
+   },
+   "transform": {
+    "position": [
+     0,
+     0,
+     8
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "shrubVolume": {
+    "baseColor": [
+     0.3,
+     0.22,
+     0.06
+    ],
+    "density": 18,
+    "halfExtents": [
+     3.0,
+     0,
+     2.0
+    ],
+    "heightVariance": 0.20000000298023224,
+    "quadsPerShrub": 3,
+    "shrubHeight": 0.7,
+    "tipColor": [
+     0.78,
+     0.66,
+     0.28
+    ],
+    "width": 0.45,
+    "windSwayStrength": 0.7
+   }
+  },
+  {
+   "id": 110,
+   "stableId": 1000000871090,
+   "name": {
+    "name": "Shrub_Dark"
+   },
+   "transform": {
+    "position": [
+     12,
+     0,
+     8
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "shrubVolume": {
+    "baseColor": [
+     0.06,
+     0.12,
+     0.06
+    ],
+    "density": 18,
+    "halfExtents": [
+     3.0,
+     0,
+     2.0
+    ],
+    "heightVariance": 0.20000000298023224,
+    "quadsPerShrub": 3,
+    "shrubHeight": 0.55,
+    "tipColor": [
+     0.25,
+     0.42,
+     0.2
+    ],
+    "width": 0.4,
+    "windSwayStrength": 0.7
+   }
+  },
+  {
+   "id": 111,
+   "stableId": 1000000879009,
+   "name": {
+    "name": "Grass"
+   },
+   "transform": {
+    "position": [
+     0,
+     0,
+     2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "grassVolume": {
+    "baseColor": [
+     0.12,
+     0.2,
+     0.1
+    ],
+    "bladeHeight": 0.3499999940395355,
+    "bladeHeightVariance": 0.10000000149011612,
+    "bladeWidth": 0.029999999329447746,
+    "density": 12000,
+    "halfExtents": [
+     26.0,
+     0.0,
+     14.0
+    ],
+    "tipColor": [
+     0.28,
+     0.42,
+     0.18
+    ],
+    "windSwayStrength": 1.2
+   }
+  }
+ ],
+ "renderSettings": {
+  "aaComparisonDivider": 0.5,
+  "aaComparisonEnabled": false,
+  "aaComparisonModeLeft": 0,
+  "aaComparisonModeRight": 1,
+  "aaMode": 1,
+  "ambientColor": [
+   0.10000000149011612,
+   0.10000000149011612,
+   0.15000000596046448
+  ],
+  "ambientIntensity": 1.0,
+  "artStylePreset": 0,
+  "backfaceCulling": false,
+  "bloomEnabled": false,
+  "bloomIntensity": 0.5,
+  "bloomRadius": 0.004999999888241291,
+  "bloomThreshold": 1.0,
+  "brightness": 0.0,
+  "cascadeFarUpdateInterval": 2,
+  "cascadeProgressiveUpdate": false,
+  "causticsEnabled": false,
+  "causticsIntensity": 0.30000001192092896,
+  "causticsScale": 1.0,
+  "causticsSpeed": 1.0,
+  "causticsWaterY": 0.0,
+  "celDiffuseBands": 3.0,
+  "celOutlineColor": [
+   0.0,
+   0.0,
+   0.0
+  ],
+  "celOutlineCurvatureWeight": 0.0,
+  "celOutlineEnabled": false,
+  "celOutlineThickness": 1.0,
+  "celOutlineThreshold": 0.10000000149011612,
+  "celShadingEnabled": false,
+  "celShadowMode": 0.0,
+  "celSpecularCutoff": 0.5,
+  "chromaticAberrationEnabled": false,
+  "chromaticAberrationIntensity": 0.004999999888241291,
+  "colorBitDepth": 8,
+  "colorFilter": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "colorQuantEnabled": false,
+  "contactShadowsEnabled": false,
+  "contactShadowsIntensity": 1.0,
+  "contactShadowsLength": 0.10000000149011612,
+  "contactShadowsSteps": 16,
+  "contrast": 1.0,
+  "crtBloomRadius": 1.5,
+  "crtBloomSigma": 0.800000011920929,
+  "crtBloomStrength": 0.30000001192092896,
+  "crtCurvature": 0.0,
+  "crtEnabled": false,
+  "crtMaskPitch": 1.0,
+  "crtMaskType": 0,
+  "crtModelPreset": 0.0,
+  "crtPhosphorEnabled": false,
+  "crtTVL": 400.0,
+  "depthSortJitter": 0.0,
+  "ditherEnabled": false,
+  "ditherPattern": 0,
+  "ditherStrength": 1.0,
+  "dofApertureShape": 0,
+  "dofBokehSize": 4.0,
+  "dofDebugCoC": false,
+  "dofEnabled": false,
+  "dofFarBlurStrength": 1.0,
+  "dofFocalDistance": 10.0,
+  "dofFocalRange": 5.0,
+  "dofNearBlurStrength": 1.0,
+  "energyConservation": false,
+  "exposure": 1.0,
+  "filmGrainEnabled": false,
+  "filmGrainIntensity": 0.05000000074505806,
+  "fogColor": [
+   0.5,
+   0.5,
+   0.6000000238418579
+  ],
+  "fogDensity": 0.0,
+  "fogEnd": 100.0,
+  "fogHeightFalloff": 0.10000000149011612,
+  "fogShaftsDecay": 0.949999988079071,
+  "fogShaftsDensity": 0.05000000074505806,
+  "fogShaftsEnabled": false,
+  "fogShaftsIntensity": 0.30000001192092896,
+  "fogShaftsMaxDistance": 50.0,
+  "fogShaftsSamples": 16,
+  "fogStart": 20.0,
+  "fresnelEnabled": false,
+  "fxaaEnabled": true,
+  "fxaaReduceMin": 0.007813000120222569,
+  "fxaaReduceMul": 0.125,
+  "fxaaSpanMax": 8.0,
+  "gamma": 1.0,
+  "geometryOutlineColor": [
+   0.0,
+   0.0,
+   0.0
+  ],
+  "geometryOutlineWidth": 0.019999999552965164,
+  "geometryOutlinesEnabled": false,
+  "geometryTerm": false,
+  "globalAffineTexturing": false,
+  "globalFlatShading": false,
+  "globalGouraudOnly": false,
+  "globalStippleTransparency": false,
+  "globalUVQuantize": false,
+  "globalVertexSnapResolution": 160,
+  "globalVertexSnapping": false,
+  "godRaysDecay": 0.9700000286102295,
+  "godRaysDensity": 1.0,
+  "godRaysEnabled": false,
+  "godRaysIntensity": 0.5,
+  "godRaysSamples": 64,
+  "godRaysWeight": 0.009999999776482582,
+  "halfLambert": false,
+  "hdrOutput": false,
+  "internalHeight": 240,
+  "internalWidth": 320,
+  "lightRampMode": 0.0,
+  "lutEnabled": false,
+  "lutSize": 32,
+  "lutStrength": 1.0,
+  "normalQuantizeSteps": 0.0,
+  "paletteColors": 16,
+  "paletteEnabled": false,
+  "posterizeLevels": 0.0,
+  "radianceCacheDepthThreshold": 0.10000000149011612,
+  "radianceCacheEnabled": false,
+  "radianceCacheExcludeDirectional": true,
+  "radianceCacheHysteresis": 0.8999999761581421,
+  "radianceCacheMaxAge": 8.0,
+  "radianceCacheNormalThreshold": 0.8500000238418579,
+  "radianceCacheTileSize": 32,
+  "rainActive": false,
+  "resDownscaleEnabled": false,
+  "restirDistanceBias": 0.10000000149011612,
+  "restirEnabled": false,
+  "restirInitialCandidates": 8,
+  "restirSpatialDepthThreshold": 0.10000000149011612,
+  "restirSpatialNeighbors": 5,
+  "restirSpatialNormalThreshold": 0.8999999761581421,
+  "restirSpatialRadius": 30.0,
+  "restirSpatialReuse": false,
+  "restirTemporalDepthThreshold": 0.10000000149011612,
+  "restirTemporalMaxHistory": 20,
+  "restirTemporalNormalThreshold": 0.8999999761581421,
+  "restirTemporalReuse": false,
+  "rtAOEnabled": true,
+  "rtAOPower": 1.5,
+  "rtAORadius": 2.0,
+  "rtAOStrength": 1.0,
+  "rtDenoiserEnabled": true,
+  "rtDenoiserIterations": 5,
+  "rtDenoiserTemporalAlpha": 0.05000000074505806,
+  "rtDenoiserType": 0,
+  "rtEnabled": false,
+  "rtGIBounces": 1,
+  "rtGIEnabled": false,
+  "rtGIIntensity": 1.0,
+  "rtGIMaxDistance": 50.0,
+  "rtGIStrength": 0.5,
+  "rtMode": 0,
+  "rtOIDNQuality": 1,
+  "rtPathTracerFireflyClamp": 10.0,
+  "rtPathTracerMIS": true,
+  "rtPathTracerMaxBounces": 4,
+  "rtPathTracerNEE": true,
+  "rtPathTracerRRMinBounce": 3.0,
+  "rtPathTracerRRMinProb": 0.05000000074505806,
+  "rtPathTracerTargetSPP": 1024,
+  "rtReflectionMaxDistance": 50.0,
+  "rtReflectionRoughnessThreshold": 0.5,
+  "rtReflectionSDFFallback": true,
+  "rtReflectionSDFMaxDistance": 500.0,
+  "rtReflectionStrength": 0.5,
+  "rtReflectionsEnabled": true,
+  "rtShadowMaxDistance": 100.0,
+  "rtShadowRadius": 0.009999999776482582,
+  "rtShadowStrength": 1.0,
+  "rtShadowsEnabled": true,
+  "rtSimplifiedMaterials": true,
+  "rtSimplifyAfterBounce": 1,
+  "rtTemporalReuseAO": true,
+  "rtTemporalReuseDisocclusionThreshold": 0.10000000149011612,
+  "rtTemporalReuseEnabled": false,
+  "rtTemporalReuseGI": true,
+  "rtTemporalReuseHistoryLength": 0.8999999761581421,
+  "rtTemporalReuseNormalThreshold": 0.8999999761581421,
+  "rtTemporalReuseReflections": true,
+  "rtTemporalReuseShadows": true,
+  "saturation": 1.0,
+  "scanlineIntensity": 0.30000001192092896,
+  "scanlineWidth": 1.0,
+  "shadingModel": 0,
+  "shadowDistance": 100.0,
+  "shadowResolution": 2048,
+  "shadowSoftness": 0.0,
+  "shadowStrength": 1.0,
+  "shadowsEnabled": true,
+  "snowIntensity": 0.0,
+  "sphereEnvMapEnabled": false,
+  "sphereEnvStrength": 0.5,
+  "ssaoBias": 0.02500000037252903,
+  "ssaoEnabled": false,
+  "ssaoIntensity": 1.5,
+  "ssaoRadius": 0.5,
+  "ssaoSamples": 16,
+  "stippleBgColor": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "stippleColorMode": 0,
+  "stippleDensity": 0.5,
+  "stippleEnabled": false,
+  "stippleFgColor": [
+   0.0,
+   0.0,
+   0.0
+  ],
+  "stipplePatternMask": 1,
+  "stippleScale": 1.0,
+  "stippleStrength": 1.0,
+  "surfelCacheBlendWeight": 0.5,
+  "surfelCacheCameraRadius": 50.0,
+  "surfelCacheEnabled": false,
+  "surfelCacheExcludeDirectional": true,
+  "surfelCacheMaxAge": 32.0,
+  "surfelCacheMaxSurfels": 65536,
+  "surfelCacheNormalThreshold": 0.699999988079071,
+  "surfelCachePlacementInterval": 4,
+  "surfelCacheRadius": 0.5,
+  "surfelCacheRaysPerSurfel": 2,
+  "surfelCacheUpdateFraction": 0.125,
+  "taaFeedbackMax": 0.9700000286102295,
+  "taaFeedbackMin": 0.8799999952316284,
+  "taaJitterScale": 1.0,
+  "taaSharpness": 0.10000000149011612,
+  "textureAnisotropy": 8,
+  "textureFilter": 2,
+  "textureMipmaps": true,
+  "texturePageSize": 0.0,
+  "textureWrap": 0,
+  "tiltShiftBandWidth": 0.30000001192092896,
+  "tiltShiftBlurAmount": 3.0,
+  "tiltShiftEnabled": false,
+  "tiltShiftFocusY": 0.5,
+  "toneMappingMode": 3,
+  "upscalerQuality": 2,
+  "upscalerSharpness": 0.0,
+  "upscalerType": 0,
+  "usePointFiltering": true,
+  "useProjectDefaults": true,
+  "vhsBlueShift": 0.05000000074505806,
+  "vhsColorBleed": 0.003000000026077032,
+  "vhsEnabled": false,
+  "vhsInterlacing": false,
+  "vhsNoiseIntensity": 0.05000000074505806,
+  "vhsScreenTear": false,
+  "vhsTearOffset": 0.0,
+  "vhsTrackingIntensity": 0.30000001192092896,
+  "vhsTrackingSpeed": 1.0,
+  "vhsWobbleIntensity": 0.0020000000949949026,
+  "vhsWobbleSpeed": 2.0,
+  "vignetteEnabled": false,
+  "vignetteIntensity": 0.30000001192092896,
+  "vignetteSmoothness": 0.5,
+  "whitePoint": 4.0,
+  "wireframe": false,
+  "worldCurvature": 0.0
+ },
+ "skybox": {
+  "bottomColor": [
+   0.44999998807907104,
+   0.5,
+   0.550000011920929
+  ],
+  "cloud2Coverage": 0.0,
+  "cloud2Scale": 2.5,
+  "cloudColor": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "cloudCoverage": 0.3499999940395355,
+  "cloudScale": 2.0,
+  "cloudShadowStrength": 0.6000000238418579,
+  "cloudSoftness": 0.5,
+  "cloudSpeed": 1.0,
+  "cubemapPaths": [
+   "",
+   "",
+   "",
+   "",
+   "",
+   ""
+  ],
+  "horizonColor": [
+   0.5,
+   0.6499999761581421,
+   0.8199999928474426
+  ],
+  "horizonHaze": 0.0,
+  "rotation": 0.0,
+  "solidColor": [
+   0.20000000298023224,
+   0.30000001192092896,
+   0.4000000059604645
+  ],
+  "sunColor": [
+   1.0,
+   0.949999988079071,
+   0.8199999928474426
+  ],
+  "sunDirection": [
+   0.3499999940395355,
+   -0.699999988079071,
+   0.4000000059604645
+  ],
+  "sunIntensity": 1.0,
+  "sunSize": 0.029999999329447746,
+  "topColor": [
+   0.11999999731779099,
+   0.23999999463558197,
+   0.5
+  ],
+  "type": 2
+ }
+}
