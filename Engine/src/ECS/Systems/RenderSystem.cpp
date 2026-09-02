@@ -1186,7 +1186,7 @@ void RenderSystem::Initialize() {
         // stays > 0.5 so the shader's isCanopy test still picks it out. Cull mode is
         // None, so winding doesn't matter.
         {
-            const int latB = 4, lonB = 7;   // low-poly on purpose
+            const int latB = 7, lonB = 12;  // rounded crown (was 4x7 = hexagonal blob)
             const u32 cbase = static_cast<u32>(treeVerts.size());
             for (int la = 0; la <= latB; ++la) {
                 f32 theta = static_cast<f32>(la) * 3.14159f / static_cast<f32>(latB);   // 0..PI

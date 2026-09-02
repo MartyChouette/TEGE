@@ -1288,11 +1288,7 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
         // When not captured (editor), requires RMB hold.
         if (Input::IsMouseCaptured() || Input::IsMouseButtonDown(MouseButton::Right)) {
             Math::Vector2 mouseDelta = GetLookDelta();
-            // Mouse-right must turn the view right. The camera forward is derived from
-            // yaw as (-sin,0,-cos) (and the TP orbit uses +sin for the offset), so a
-            // positive yaw step actually swung the view LEFT — horizontal look read as
-            // inverted for both first- and third-person. Subtract to fix it.
-            ctrl.cameraYaw -= mouseDelta.x * ctrl.cameraSensitivity;
+            ctrl.cameraYaw += mouseDelta.x * ctrl.cameraSensitivity;  // horizontal look (Marty's preferred convention)
             f32 pitchSign = m_InvertMouseY ? 1.0f : -1.0f;
             ctrl.cameraPitch += mouseDelta.y * ctrl.cameraSensitivity * pitchSign;
             ctrl.cameraPitch = Math::Clamp(ctrl.cameraPitch, ctrl.cameraMinPitch, ctrl.cameraMaxPitch);
@@ -1302,7 +1298,7 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
         if (ctrl.useGamepad && Input::IsGamepadConnected(ctrl.gamepadIndex)) {
             Math::Vector2 rightStick = Input::GetGamepadRightStick(ctrl.gamepadIndex);
             if (rightStick.x != 0.0f || rightStick.y != 0.0f) {
-                ctrl.cameraYaw -= rightStick.x * ctrl.gamepadLookSensitivity * 100.0f * dt;  // match mouse: stick-right looks right
+                ctrl.cameraYaw += rightStick.x * ctrl.gamepadLookSensitivity * 100.0f * dt;
                 f32 gpPitchSign = m_InvertMouseY ? 1.0f : -1.0f;
                 ctrl.cameraPitch += rightStick.y * ctrl.gamepadLookSensitivity * 100.0f * dt * gpPitchSign;
                 ctrl.cameraPitch = Math::Clamp(ctrl.cameraPitch, ctrl.cameraMinPitch, ctrl.cameraMaxPitch);
