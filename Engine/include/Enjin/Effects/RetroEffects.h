@@ -279,7 +279,8 @@ public:
     void ApplyMasterSystemPreset();
     void ApplyPSPPreset();
     void ApplyDOSVGAPreset();
-    void ApplyVirtualBoyPreset();
+    // Virtual Boy has no RetroEffects preset — the editor drives its red cel-outline
+    // vector look through the post-process pipeline (see EditorLayerRendering.cpp).
     void ApplyNeoGeoPreset();
     void Apply3DOPreset();
     void ApplyXboxPreset();

@@ -1862,7 +1862,27 @@ void EditorLayer::DrawSettingsSection_RetroEffects() {
             ImGui::SameLine();
             if (ImGui::Button("PC Engine")) { m_RetroEffects.ApplyPCEnginePreset(); }
 
-            if (ImGui::Button("Virtual Boy")) { m_RetroEffects.ApplyVirtualBoyPreset(); }
+            if (ImGui::Button("Virtual Boy")) {
+                // Fake a red vector / laser-display screen: bright red cel outlines
+                // (Sobel edge detection on depth + normals) painted over a pure-black
+                // fill. The black fill rides color grading's colorFilter (the last
+                // multiply before clamp, so it crushes the whole scene to 0); the cel
+                // outline pass runs AFTER grading and paints the edges red. Retro
+                // low-res/monochrome would quantize the red away, so clear those first.
+                m_RetroEffects.ClearAllEffects();
+                if (m_PostProcessing) {
+                    auto& s = m_PostProcessing->GetSettings();
+                    s.colorFilter = Math::Vector3(0.0f, 0.0f, 0.0f);       // scene -> black
+                    s.brightness = 0.0f; s.contrast = 1.0f; s.saturation = 1.0f;
+                    s.celOutlineEnabled = 1;
+                    s.celOutlineColor = Math::Vector3(1.0f, 0.06f, 0.06f); // laser red
+                    s.celOutlineThickness = 1.0f;
+                    s.celOutlineThreshold = 0.03f;     // sensitive -> catch wireframe edges
+                    s.celOutlineDepthWeight = 1.0f;
+                    s.celOutlineNormalWeight = 0.7f;   // crease edges = interior wire lines
+                    s.celOutlineCurvatureWeight = 0.0f;
+                }
+            }
             ImGui::SameLine();
             if (ImGui::Button("Neo Geo")) { m_RetroEffects.ApplyNeoGeoPreset(); }
             ImGui::SameLine();

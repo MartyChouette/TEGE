@@ -110,7 +110,7 @@ void WeatherSystem::Update(f32 deltaTime, const Math::Vector3& cameraPos) {
         m_SnowAccumulation += (1.0f - m_SnowAccumulation) * m_SnowIntensity
                               * Math::Min(deltaTime * 0.15f, 1.0f);
     } else {
-        m_SnowAccumulation -= deltaTime * 0.05f;  // ~20s to fully melt
+        m_SnowAccumulation -= deltaTime * 0.12f;  // ~8s to fully melt (was 20s: looked stuck)
     }
     m_SnowAccumulation = Math::Clamp(m_SnowAccumulation, 0.0f, 1.0f);
 

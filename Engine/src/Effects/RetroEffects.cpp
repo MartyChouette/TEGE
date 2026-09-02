@@ -372,22 +372,9 @@ void RetroEffects::ApplyDOSVGAPreset() {
     m_Fog.enabled = false;
 }
 
-void RetroEffects::ApplyVirtualBoyPreset() {
-    ClearAllEffects(); // reset to neutral first so no field bleeds in from a prior preset
-    m_Enabled = true;
-    m_Resolution.renderWidth = 384;
-    m_Resolution.renderHeight = 224;
-    m_Resolution.pointFiltering = true;
-    m_Resolution.integerScaling = true;
-    m_DitherPattern = DitherPattern::None;
-    m_ColorMode = ColorMode::Monochrome;
-    m_ColorPreset = ColorPreset::None;
-    m_Affine.enabled = false;
-    m_VertexJitter.enabled = false;
-    m_GouraudOnly = false;
-    m_CRT.enabled = false;
-    m_Fog.enabled = false;
-}
+// Virtual Boy is handled by the editor button directly (red cel-outline vector look
+// via the post-process pipeline, not a RetroEffects raster preset) — see
+// EditorLayerRendering.cpp. It has no RetroEffects preset.
 
 void RetroEffects::ApplyNeoGeoPreset() {
     ClearAllEffects(); // reset to neutral first so no field bleeds in from a prior preset
