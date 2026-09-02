@@ -634,9 +634,13 @@ void RenderSystem::Initialize() {
         shadowPipeDesc.depthCompare = Renderer::GPUCompareFunction::Less;
         shadowPipeDesc.hasColorAttachment = false;
         shadowPipeDesc.depthFormat = Renderer::GPUTextureFormat::Depth32Float;
+        // Front-face culling ALREADY prevents self-shadow acne (only back faces are in
+        // the shadow map). Piling a big slope bias on top of it shoved shadows far down
+        // the light direction and detached them from their casters ("Peter Panning",
+        // worst at grazing sun). Keep only a tiny constant bias for depth-quantization.
         shadowPipeDesc.depthBiasEnable = true;
-        shadowPipeDesc.depthBiasConstant = 2.0f;
-        shadowPipeDesc.depthBiasSlope = 1.5f;
+        shadowPipeDesc.depthBiasConstant = 0.5f;
+        shadowPipeDesc.depthBiasSlope = 0.25f;
         shadowPipeDesc.label = "ShadowPipeline";
 
         // Shadow uses only position (location 0)

@@ -735,10 +735,23 @@ void EditorLayer::DrawMenuBar() {
         }
 
         if (ImGui::BeginMenu("Entity")) {
+            // Where a freshly-created object should land: in front of the editor
+            // camera at its orbit-pivot depth, so it's in view. Spawning at the world
+            // origin (the old default for everything not going through createPrimitive)
+            // put new objects behind the camera the moment it moved off origin.
+            auto viewSpawnPos = [&]() -> Math::Vector3 {
+                if (m_Camera) {
+                    f32 dist = m_CameraController ? m_CameraController->GetOrbitDistance() : 6.0f;
+                    if (!(dist > 0.5f)) dist = 6.0f;
+                    return m_Camera->GetPosition() + m_Camera->GetForward() * dist;
+                }
+                return Math::Vector3(0.0f, 0.0f, 0.0f);
+            };
             if (ImGui::MenuItem("Create Empty")) {
                 if (m_World) {
                     ECS::Entity entity = m_World->CreateEntity();
-                    m_World->AddComponent<ECS::TransformComponent>(entity);
+                    auto& tf = m_World->AddComponent<ECS::TransformComponent>(entity);
+                    tf.position = viewSpawnPos();
                     SelectEntity(entity); RecordLayerCreate(entity);
                     if (m_CollabSystem.IsActive()) {
                         m_CollabSystem.OnEntityCreated(entity,
@@ -802,6 +815,7 @@ void EditorLayer::DrawMenuBar() {
                         ECS::Entity entity = m_World->CreateEntity();
                         auto& transform = m_World->AddComponent<ECS::TransformComponent>(entity);
                         transform.rotation = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(-90.0f));  // Face camera by default
+                        transform.position = viewSpawnPos();
                         m_World->AddComponent<ECS::MeshComponent>(entity, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
                         auto& material = m_World->AddComponent<ECS::MaterialComponent>(entity);
                         material.alphaMode = ECS::MaterialComponent::AlphaMode::Blend;  // Support transparency for sprites
@@ -815,6 +829,7 @@ void EditorLayer::DrawMenuBar() {
                         m_World->AddComponent<ECS::NameComponent>(entity, "Circle");
                         auto& transform = m_World->AddComponent<ECS::TransformComponent>(entity);
                         transform.rotation = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(-90.0f));
+                        transform.position = viewSpawnPos();
                         m_World->AddComponent<ECS::MeshComponent>(entity, Renderer::MeshFactory::CreateSphere(0.5f, 32, 1));
                         m_World->AddComponent<ECS::MaterialComponent>(entity);
                         SelectEntity(entity); RecordLayerCreate(entity);
@@ -840,7 +855,7 @@ void EditorLayer::DrawMenuBar() {
                 if (ImGui::MenuItem("Panel (UI)")) {
                     if (m_World) {
                         ECS::Entity entity = m_World->CreateEntity();
-                        m_World->AddComponent<ECS::TransformComponent>(entity);
+                        { auto& tf = m_World->AddComponent<ECS::TransformComponent>(entity); tf.position = viewSpawnPos(); }
                         m_World->AddComponent<ECS::MeshComponent>(entity, Renderer::MeshFactory::CreateQuad(2.0f, 1.0f));
                         auto& material = m_World->AddComponent<ECS::MaterialComponent>(entity);
                         material.baseColor = Math::Vector3(0.2f, 0.2f, 0.2f);
