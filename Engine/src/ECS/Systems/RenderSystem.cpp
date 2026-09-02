@@ -2612,6 +2612,10 @@ void RenderSystem::Update(f32 deltaTime) {
                 obj.scrollReflStrength = mat->scrollReflectionStrength;
             }
             if (animComp && rd.boneBuffer.IsValid()) obj.flags |= (1 << 3);  // FLAG_SKINNED
+            // Wind sway (bit 4): a VegetationComponent mesh bends in the wind. The web
+            // vertex shader height-weights the sway so the trunk stays planted. Without
+            // this the imported trees rendered but never moved (reported 2026-09-02).
+            if (m_World->HasComponent<VegetationComponent>(entity)) obj.flags |= (1 << 4);
             // SDF text (bit 6): base-color alpha is a distance field; the shader
             // thresholds it instead of rendering the raw field as a dark box.
             if (mat && mat->sdfText) obj.flags |= (1 << 6);
