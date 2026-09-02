@@ -9157,12 +9157,20 @@ void EditorLayer::DrawUVPreviewPanel() {
     }
 
     auto* mesh = m_World->GetComponent<ECS::MeshComponent>(m_PrimarySelected);
-    if (!mesh || mesh->vertices.empty() || mesh->indices.empty()) {
-        ImGui::TextDisabled("Selected entity has no mesh data.");
+    auto* material = m_World->GetComponent<ECS::MaterialComponent>(m_PrimarySelected);
+    auto* grassVol = m_World->GetComponent<ECS::GrassVolumeComponent>(m_PrimarySelected);
+    auto* shrubVol = m_World->GetComponent<ECS::ShrubVolumeComponent>(m_PrimarySelected);
+    auto* treeVol  = m_World->GetComponent<ECS::TreeVolumeComponent>(m_PrimarySelected);
+    const bool hasMeshUV = mesh && !mesh->vertices.empty() && !mesh->indices.empty();
+    if (!hasMeshUV && !material && !grassVol && !shrubVol && !treeVol) {
+        ImGui::TextDisabled("Select an entity with a mesh, material, or a grass/shrub/tree volume.");
         ImGui::End();
         return;
     }
 
+    // The UV wireframe only exists for authored meshes; grass/shrub/tree volumes are
+    // procedural (no UV), so their block is skipped and only the texture controls show.
+    if (hasMeshUV) {
     const auto& verts = mesh->vertices;
     const auto& indices = mesh->indices;
 
@@ -9217,10 +9225,7 @@ void EditorLayer::DrawUVPreviewPanel() {
         ImVec2(canvasPos.x + canvasSize.x, canvasPos.y + canvasSize.y),
         IM_COL32(30, 30, 30, 255));
 
-    // Optional: show base color texture as background
-    // (Requires ImGui texture descriptor which we may not have for this entity)
-    // Check if material has a texture loaded in the ImGui cache
-    auto* material = m_World->GetComponent<ECS::MaterialComponent>(m_PrimarySelected);
+    // Optional: show base color texture as background (material declared above).
     if (material && !material->baseColorTexturePath.empty()) {
         VkDescriptorSet texDS = GetImGuiTexture(material->baseColorTexturePath);
         if (texDS) {
@@ -9320,10 +9325,12 @@ void EditorLayer::DrawUVPreviewPanel() {
 
     // Advance the cursor past the canvas so the controls below don't overlap it.
     ImGui::Dummy(ImVec2(canvasSize.x, canvasSize.y + 18.0f));
+    }  // end if (hasMeshUV) — the UV canvas only applies to authored meshes
 
-    // --- Texture round-trip: paint the UV'd texture in a real app, hot-reload live ---
-    // Resolve a stored (possibly project-relative) texture path to something the OS
-    // shell can open.
+    // --- Texture round-trip: paint the texture in a real app, hot-reload live ---
+    // Unified across authored meshes (material base color) AND procedural grass/
+    // shrub/tree volumes (their custom texture), so everything reskins from one panel.
+    // Resolve a stored (possibly project-relative) texture path for the OS shell.
     auto resolveTexPath = [&](const std::string& p) -> std::string {
         if (p.empty()) return p;
         std::error_code ec;
@@ -9336,42 +9343,60 @@ void EditorLayer::DrawUVPreviewPanel() {
         return p;
     };
 
-    ImGui::Spacing();
-    ImGui::Separator();
-    if (material) {
-        if (!material->baseColorTexturePath.empty()) {
-            ImGui::TextWrapped("Texture: %s", material->baseColorTexturePath.c_str());
-            if (ImGui::Button("Edit in external app")) {
-                OpenInExternalIDE(resolveTexPath(material->baseColorTexturePath));
+    // One texture source: thumbnail + Edit-externally / Replace / Assign. onChange
+    // runs after the path changes so each owner can invalidate its cached tex index.
+    auto textureControls = [&](const char* label, std::string& path, auto&& onChange) {
+        ImGui::PushID(label);
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::TextUnformatted(label);
+        if (!path.empty()) {
+            VkDescriptorSet ds = GetImGuiTexture(path);
+            if (ds) {
+                ImGui::Image(static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(ds)), ImVec2(64, 64));
+                ImGui::SameLine();
             }
-            ImGui::SetItemTooltip("Open this texture in your default image editor. The UV wireframe\n"
-                                  "above shows where each triangle lands. Save in the app and it\n"
-                                  "hot-reloads here and in the scene automatically (no re-import).");
+            ImGui::TextWrapped("%s", path.c_str());
+            if (ImGui::Button("Edit in external app")) OpenInExternalIDE(resolveTexPath(path));
+            ImGui::SetItemTooltip("Open in your default image editor; save there and it hot-reloads\n"
+                                  "here and in the scene automatically (no re-import).");
             ImGui::SameLine();
             if (ImGui::Button("Replace...")) {
                 std::string picked = FileDialog::OpenFile("Replace Texture",
                     {{ "Images", "*.png;*.jpg;*.jpeg;*.bmp;*.tga" }});
-                if (!picked.empty()) {
-                    material->baseColorTexturePath = picked;
-                    material->baseColorTexture = 1;
-                    material->InvalidateTextureCache();
-                }
+                if (!picked.empty()) { path = picked; onChange(); }
             }
-            ImGui::SetItemTooltip("Swap in a different image for this material's base color.");
         } else {
-            ImGui::TextDisabled("This material uses the built-in look (no texture).");
+            ImGui::TextDisabled("(procedural / no texture)");
             if (ImGui::Button("Assign a texture...")) {
                 std::string picked = FileDialog::OpenFile("Assign Texture",
                     {{ "Images", "*.png;*.jpg;*.jpeg;*.bmp;*.tga" }});
-                if (!picked.empty()) {
-                    material->baseColorTexturePath = picked;
-                    material->baseColorTexture = 1;
-                    material->InvalidateTextureCache();
-                }
+                if (!picked.empty()) { path = picked; onChange(); }
             }
-            ImGui::SetItemTooltip("Put your own 2D art on this object, then 'Edit in external app'\n"
-                                  "to paint on it using the UV layout, with live hot-reload.");
+            ImGui::SetItemTooltip("Put your own 2D art here, then 'Edit in external app' to paint it\n"
+                                  "with live hot-reload.");
         }
+        ImGui::PopID();
+    };
+
+    if (material) {
+        textureControls("Base Color (material)", material->baseColorTexturePath,
+            [&] { material->baseColorTexture = material->baseColorTexturePath.empty() ? -1 : 1;
+                  material->InvalidateTextureCache(); });
+    }
+    if (grassVol) {
+        textureControls("Grass Blade Texture", grassVol->customAssetPath,
+            [&] { grassVol->cachedTexIndex = -2; });   // -2 = re-resolve bindless index
+    }
+    if (shrubVol) {
+        textureControls("Shrub Texture", shrubVol->customAssetPath,
+            [&] { shrubVol->cachedTexIndex = -2; });
+    }
+    if (treeVol) {
+        textureControls("Tree Bark Texture", treeVol->barkTexturePath,
+            [&] { treeVol->cachedBarkTexIndex = -2; });
+        textureControls("Tree Canopy Texture", treeVol->canopyTexturePath,
+            [&] { treeVol->cachedCanopyTexIndex = -2; });
     }
 
     ImGui::End();
