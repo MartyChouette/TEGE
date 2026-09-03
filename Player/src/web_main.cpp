@@ -1350,6 +1350,16 @@ public:
         if (m_RenderSystem) m_RenderSystem->SetWebAccessibility(mode, strength, brightness, contrast);
     }
 
+    // Streaming telemetry for the page (memory stress harness + perf HUD).
+    Enjin::u32 GetStreamingChunkCount() const { return static_cast<Enjin::u32>(m_StreamingManager.GetChunks().size()); }
+    Enjin::u32 GetStreamingLoadedCount() const { return m_StreamingManager.GetLoadedChunkCount(); }
+    double GetStreamingResidentMB() const { return m_StreamingManager.GetResidentBytes() / (1024.0 * 1024.0); }
+    double GetStreamingBudgetMB() const { return m_StreamingManager.GetMemoryBudgetBytes() / (1024.0 * 1024.0); }
+    Enjin::u32 GetStreamingEvictions() const { return m_StreamingManager.GetBudgetEvictionCount(); }
+    void SetStreamingBudgetMB(int mb) {
+        m_StreamingManager.SetMemoryBudgetBytes(mb > 0 ? static_cast<Enjin::u64>(mb) * 1024ull * 1024ull : 0);
+    }
+
 private:
     // Zone-driven weather on web (mirrors desktop Player UpdateWeatherZones, minus
     // the pieces web can't render: season state has no web TreeRenderer, water
@@ -1947,6 +1957,46 @@ EMSCRIPTEN_KEEPALIVE int getDrawCallCount() {
 
 EMSCRIPTEN_KEEPALIVE int getEntityCount() {
     return g_Player ? static_cast<int>(g_Player->GetEntityCount()) : 0;
+}
+
+// --- Streaming / memory telemetry (memory stress harness) ---
+EMSCRIPTEN_KEEPALIVE int getStreamingChunkCount() {
+    return g_Player ? static_cast<int>(g_Player->GetStreamingChunkCount()) : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE int getStreamingLoadedCount() {
+    return g_Player ? static_cast<int>(g_Player->GetStreamingLoadedCount()) : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE double getStreamingResidentMB() {
+    return g_Player ? g_Player->GetStreamingResidentMB() : 0.0;
+}
+
+EMSCRIPTEN_KEEPALIVE double getStreamingBudgetMB() {
+    return g_Player ? g_Player->GetStreamingBudgetMB() : 0.0;
+}
+
+EMSCRIPTEN_KEEPALIVE int getStreamingEvictions() {
+    return g_Player ? static_cast<int>(g_Player->GetStreamingEvictions()) : 0;
+}
+
+// 0 = unlimited. Live-settable so a page can A/B the budget in one session.
+EMSCRIPTEN_KEEPALIVE void setStreamingBudgetMB(int mb) {
+    if (g_Player) g_Player->SetStreamingBudgetMB(mb);
+}
+
+EMSCRIPTEN_KEEPALIVE double getLazyFSResidentMB() {
+    return Enjin::Platform::WebLazyFS::GetMaterializedBytes() / (1024.0 * 1024.0);
+}
+
+EMSCRIPTEN_KEEPALIVE int getLazyFSEvictions() {
+    return static_cast<int>(Enjin::Platform::WebLazyFS::GetEvictionCount());
+}
+
+// WASM heap size in MB — the number that actually decides whether a mobile
+// browser kills the tab.
+EMSCRIPTEN_KEEPALIVE double getHeapMB() {
+    return static_cast<double>(emscripten_get_heap_size()) / (1024.0 * 1024.0);
 }
 
 EMSCRIPTEN_KEEPALIVE void setColorblindMode(int mode, float strength) {
