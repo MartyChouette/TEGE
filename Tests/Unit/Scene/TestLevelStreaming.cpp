@@ -1,6 +1,10 @@
 #include "EnjinTest.h"
 #include "Enjin/Scene/LevelStreaming.h"
 #include "Enjin/ECS/Components/Transform.h"
+#include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <thread>
 
 using namespace Enjin;
 using namespace Enjin::Scene;
@@ -254,6 +258,144 @@ ENJIN_TEST(RegisterChunks, NoWorldReturnsZero) {
 
     // Assert
     ENJIN_EXPECT_EQ(n, 0u);
+}
+
+// ===========================================================================
+// Chunk load path: SetSceneRoot resolution, staged integration, rejection
+// ===========================================================================
+
+namespace {
+
+const char* kChunkSceneJson =
+    "{\"version\":\"1.0\",\"entities\":[{\"id\":1,\"name\":{\"name\":\"StreamedProp\"},"
+    "\"transform\":{\"position\":[1,2,3],\"rotation\":[0,0,0,1],\"scale\":[1,1,1],\"visible\":true}}]}";
+
+std::filesystem::path MakeChunkRoot(const char* tag) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    fs::path root = fs::temp_directory_path(ec) / (std::string("enjin_streaming_") + tag);
+    fs::remove_all(root, ec);
+    fs::create_directories(root / "scenes", ec);
+    std::ofstream f((root / "scenes" / "chunk_a.enjin").string(), std::ios::binary);
+    f << kChunkSceneJson;
+    return root;
+}
+
+// Drive Update until the chunk leaves Loading (worker read + main-thread staged
+// integration both happen inside Update's pump), bounded by a timeout.
+void PumpUntilSettled(StreamingManager& sm, const std::string& id) {
+    for (int i = 0; i < 300; ++i) {
+        sm.Update(Vector3(0.0f), 0.016f);
+        if (sm.GetChunkState(id) != ChunkState::Loading) return;
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+}
+
+} // namespace
+
+ENJIN_TEST(ChunkLoad, SubSceneLoadsFromSceneRoot) {
+    // Arrange: a project-relative sub-scene under a temp scene root
+    auto root = MakeChunkRoot("root");
+    ECS::World world;
+    StreamingManager sm;
+    sm.SetWorld(&world);
+    sm.SetSceneRoot(root.string());
+    StreamingChunk c;
+    c.chunkId = "a";
+    c.scenePath = "scenes/chunk_a.enjin";   // as authored: relative, never absolute
+    sm.AddChunk(c);
+    usize before = world.GetAllEntities().size();
+
+    // Act
+    sm.ForceLoadChunk("a");
+    PumpUntilSettled(sm, "a");
+
+    // Assert: loaded from the root, entities integrated + tracked on the chunk
+    ENJIN_EXPECT_TRUE(sm.GetChunkState("a") == ChunkState::Loaded);
+    ENJIN_EXPECT_EQ(world.GetAllEntities().size(), before + 1);
+    ENJIN_EXPECT_TRUE(world.FindEntityByName("StreamedProp") != ECS::INVALID_ENTITY);
+    ENJIN_ASSERT_TRUE(sm.GetChunks().size() == (size_t)1);
+    ENJIN_EXPECT_EQ(sm.GetChunks()[0].entities.size(), (size_t)1);
+
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+}
+
+ENJIN_TEST(ChunkLoad, ClearChunksDestroysStreamedEntities) {
+    // Arrange: a loaded chunk
+    auto root = MakeChunkRoot("clear");
+    ECS::World world;
+    StreamingManager sm;
+    sm.SetWorld(&world);
+    sm.SetSceneRoot(root.string());
+    StreamingChunk c;
+    c.chunkId = "a";
+    c.scenePath = "scenes/chunk_a.enjin";
+    sm.AddChunk(c);
+    sm.ForceLoadChunk("a");
+    PumpUntilSettled(sm, "a");
+    ECS::Entity streamed = world.FindEntityByName("StreamedProp");
+    ENJIN_ASSERT_TRUE(streamed != ECS::INVALID_ENTITY);
+
+    // Act: scene teardown / play stop path
+    sm.ClearChunks();
+
+    // Assert: the streamed entity is gone (pending destruction reads as invalid)
+    ENJIN_EXPECT_FALSE(world.IsValid(streamed));
+    ENJIN_EXPECT_TRUE(sm.GetChunks().empty());
+
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+}
+
+ENJIN_TEST(ChunkLoad, PathEscapingRootIsRejected) {
+    // Arrange: a traversal path that would resolve outside the root
+    auto root = MakeChunkRoot("escape");
+    ECS::World world;
+    StreamingManager sm;
+    sm.SetWorld(&world);
+    sm.SetSceneRoot((root / "scenes").string());
+    StreamingChunk c;
+    c.chunkId = "evil";
+    c.scenePath = "../scenes/chunk_a.enjin";   // exists on disk, but escapes the root
+    sm.AddChunk(c);
+    usize before = world.GetAllEntities().size();
+
+    // Act
+    sm.ForceLoadChunk("evil");
+    PumpUntilSettled(sm, "evil");
+
+    // Assert: rejected, nothing integrated, slot released (state back to Unloaded)
+    ENJIN_EXPECT_TRUE(sm.GetChunkState("evil") == ChunkState::Unloaded);
+    ENJIN_EXPECT_EQ(world.GetAllEntities().size(), before);
+
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+}
+
+ENJIN_TEST(ChunkLoad, AbsolutePathIsRejected) {
+    // Arrange: an absolute path to a real file (must still be refused)
+    auto root = MakeChunkRoot("abs");
+    ECS::World world;
+    StreamingManager sm;
+    sm.SetWorld(&world);
+    sm.SetSceneRoot(root.string());
+    StreamingChunk c;
+    c.chunkId = "abs";
+    c.scenePath = (root / "scenes" / "chunk_a.enjin").string();
+    sm.AddChunk(c);
+    usize before = world.GetAllEntities().size();
+
+    // Act
+    sm.ForceLoadChunk("abs");
+    PumpUntilSettled(sm, "abs");
+
+    // Assert
+    ENJIN_EXPECT_TRUE(sm.GetChunkState("abs") == ChunkState::Unloaded);
+    ENJIN_EXPECT_EQ(world.GetAllEntities().size(), before);
+
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
 }
 
 ENJIN_TEST_MAIN()

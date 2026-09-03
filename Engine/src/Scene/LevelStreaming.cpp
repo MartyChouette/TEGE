@@ -2,6 +2,8 @@
 #include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/Logging/Log.h"
+#include "Enjin/Build/AssetReader.h"
+#include "Enjin/Platform/Paths.h"
 #include <imgui.h>
 #include <algorithm>
 #include <chrono>
@@ -233,6 +235,49 @@ void StreamingManager::ProcessUnloadQueue()
     }
 }
 
+bool StreamingManager::ReadChunkSource(const std::string& relPath, std::string& outJson) const
+{
+    // Chunk scene paths are authored project-root-relative. Validate lexically
+    // (no absolute path, no drive, no "..") before touching any source.
+    if (!Platform::IsSafeRelativePath(relPath)) {
+        ENJIN_LOG_ERROR(Game, "Streaming: unsafe chunk scene path rejected: %s", relPath.c_str());
+        return false;
+    }
+
+    // Packed source first (player .enjpak / web pak): sub-scenes live only there.
+    if (m_AssetReader && m_AssetReader->HasFile(relPath)) {
+        std::vector<u8> data = m_AssetReader->ReadFile(relPath);
+        if (data.empty()) return false;
+        outJson.assign(data.begin(), data.end());
+        return true;
+    }
+
+    // Disk: resolve against the scene root (project dir / loose game dir). The
+    // process CWD is never reliable; the bare-path fallback exists only for
+    // callers that never set a root (tests, tools).
+    std::string fullPath;
+    if (!m_SceneRoot.empty()) {
+        fullPath = Platform::ResolveWithinRoot(m_SceneRoot, relPath);
+        if (fullPath.empty()) {
+            ENJIN_LOG_ERROR(Game, "Streaming: chunk scene path escapes the scene root: %s", relPath.c_str());
+            return false;
+        }
+    } else {
+        ENJIN_LOG_WARN(Game, "Streaming: no scene root set, resolving '%s' against the process CWD", relPath.c_str());
+        fullPath = relPath;
+    }
+
+    std::ifstream file(fullPath, std::ios::binary);
+    if (!file.is_open()) {
+        ENJIN_LOG_ERROR(Game, "Streaming: cannot open chunk scene: %s", fullPath.c_str());
+        return false;
+    }
+    std::ostringstream ss;
+    ss << file.rdbuf();
+    outJson = ss.str();
+    return !outJson.empty();
+}
+
 void StreamingManager::LoadChunkAsync(StreamingChunk& chunk)
 {
     // Atomically claim a load slot to prevent races
@@ -245,49 +290,28 @@ void StreamingManager::LoadChunkAsync(StreamingChunk& chunk)
 
     ENJIN_LOG_INFO(Game, "Loading chunk '%s' from '%s'", chunk.chunkId.c_str(), chunk.scenePath.c_str());
 
-    // Phase 3 improvement: spawn worker thread for file I/O.
-    // JSON parsing happens off main thread; entity creation is deferred
-    // to ProcessStagedIntegration() which runs within 2ms budget on main thread.
+    // The pak/disk read (the expensive part) runs off the main thread; entity
+    // creation is deferred to ProcessStagedIntegration(), which runs on the main
+    // thread within the integration budget. The staged JSON is what gets
+    // integrated: nothing re-reads the path later.
     std::string chunkId = chunk.chunkId;
     std::string scenePath = chunk.scenePath;
-
-    std::thread worker([this, chunkId, scenePath]() {
-        std::string jsonData;
-
-        // Validate path (same checks as IntegrateLoadedChunk)
-        if (!scenePath.empty()) {
-            auto normalPath = std::filesystem::path(scenePath).lexically_normal().string();
-            if (normalPath.find("..") != std::string::npos ||
-                (scenePath.size() >= 2 && scenePath[1] == ':') ||
-                scenePath[0] == '/' || scenePath[0] == '\\') {
-                ENJIN_LOG_ERROR(Game, "Invalid path for chunk '%s': %s", chunkId.c_str(), scenePath.c_str());
-                m_ActiveLoads.fetch_sub(1);
-                return;
-            }
-        }
-
-        // Read file on worker thread (the expensive part)
-        if (!scenePath.empty() && std::filesystem::exists(scenePath)) {
-            std::ifstream file(scenePath);
-            if (file.is_open()) {
-                std::ostringstream ss;
-                ss << file.rdbuf();
-                jsonData = ss.str();
-            }
-        }
-
-        // Stage for main-thread integration
+    auto readAndStage = [this, chunkId, scenePath]() {
         StagedChunkData staged;
         staged.chunkId = chunkId;
-        staged.sceneJson = std::move(jsonData);
-        staged.jsonReady = true;
+        staged.jsonReady = ReadChunkSource(scenePath, staged.sceneJson);
+        std::lock_guard<std::mutex> lock(m_StagedMutex);
+        m_StagedChunks.push(std::move(staged));
+    };
 
-        {
-            std::lock_guard<std::mutex> lock(m_StagedMutex);
-            m_StagedChunks.push(std::move(staged));
-        }
-    });
+#if defined(__EMSCRIPTEN__) && !defined(__EMSCRIPTEN_PTHREADS__)
+    // Web builds link without pthreads: std::thread construction throws. Read
+    // inline (pak reads are in-memory) and stage through the same path.
+    readAndStage();
+#else
+    std::thread worker(readAndStage);
     worker.detach();
+#endif
 }
 
 void StreamingManager::ProcessStagedIntegration()
@@ -332,7 +356,7 @@ void StreamingManager::ProcessStagedIntegration()
         // Integrate via SceneSerializer (this is the main-thread-bound part).
         // For now, the full integration happens here. A further optimization would
         // split the entity creation loop itself and resume across frames.
-        IntegrateLoadedChunk(*chunk);
+        IntegrateLoadedChunk(*chunk, staged.sceneJson);
 
         // Check time budget
         auto now = std::chrono::high_resolution_clock::now();
@@ -346,7 +370,7 @@ void StreamingManager::ProcessStagedIntegration()
     }
 }
 
-void StreamingManager::IntegrateLoadedChunk(StreamingChunk& chunk)
+void StreamingManager::IntegrateLoadedChunk(StreamingChunk& chunk, const std::string& sceneJson)
 {
     if (!m_World) {
         ENJIN_LOG_ERROR(Game, "Cannot load chunk '%s': no world set", chunk.chunkId.c_str());
@@ -355,32 +379,10 @@ void StreamingManager::IntegrateLoadedChunk(StreamingChunk& chunk)
         return;
     }
 
-    // N16: Validate path to prevent directory traversal and absolute paths
-    if (!chunk.scenePath.empty()) {
-        auto normalPath = std::filesystem::path(chunk.scenePath).lexically_normal().string();
-        if (normalPath.find("..") != std::string::npos) {
-            ENJIN_LOG_ERROR(Game, "Path traversal in chunk '%s': %s", chunk.chunkId.c_str(), chunk.scenePath.c_str());
-            chunk.state = ChunkState::Unloaded;
-            m_ActiveLoads.fetch_sub(1);
-            return;
-        }
-        // Reject absolute paths
-        if (chunk.scenePath.size() >= 2 && chunk.scenePath[1] == ':') {
-            ENJIN_LOG_ERROR(Game, "Absolute path rejected in chunk '%s': %s", chunk.chunkId.c_str(), chunk.scenePath.c_str());
-            chunk.state = ChunkState::Unloaded;
-            m_ActiveLoads.fetch_sub(1);
-            return;
-        }
-        if (chunk.scenePath[0] == '/' || chunk.scenePath[0] == '\\') {
-            ENJIN_LOG_ERROR(Game, "Absolute path rejected in chunk '%s': %s", chunk.chunkId.c_str(), chunk.scenePath.c_str());
-            chunk.state = ChunkState::Unloaded;
-            m_ActiveLoads.fetch_sub(1);
-            return;
-        }
-    }
-
-    // Use SceneSerializer to load the scene file additively
-    if (!chunk.scenePath.empty()) {
+    // Integrate the JSON the worker already read and validated (ReadChunkSource:
+    // pak or scene root) additively into the live world. Re-reading the path here
+    // would resolve against the process CWD and miss pak-only sub-scenes.
+    if (!sceneJson.empty()) {
         SceneSerializer serializer(m_World);
 
         // Track entities before load to identify new ones
@@ -388,7 +390,7 @@ void StreamingManager::IntegrateLoadedChunk(StreamingChunk& chunk)
         auto entitiesBefore = m_World->GetAllEntities();
         std::unordered_set<ECS::Entity> beforeSet(entitiesBefore.begin(), entitiesBefore.end());
 
-        auto result = serializer.LoadAdditive(chunk.scenePath);
+        auto result = serializer.LoadFromString(sceneJson, /*clearExisting=*/false);
 
         if (result.success) {
             chunk.entities.clear();
@@ -402,8 +404,8 @@ void StreamingManager::IntegrateLoadedChunk(StreamingChunk& chunk)
             ENJIN_LOG_INFO(Game, "Chunk '%s' loaded with %u entities",
                 chunk.chunkId.c_str(), static_cast<u32>(chunk.entities.size()));
         } else {
-            ENJIN_LOG_ERROR(Game, "Failed to load scene file for chunk '%s': %s",
-                chunk.chunkId.c_str(), chunk.scenePath.c_str());
+            ENJIN_LOG_ERROR(Game, "Failed to load scene for chunk '%s' (%s): %s",
+                chunk.chunkId.c_str(), chunk.scenePath.c_str(), result.error.c_str());
         }
     }
 

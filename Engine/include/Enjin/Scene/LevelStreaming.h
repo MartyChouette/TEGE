@@ -16,6 +16,7 @@
 #include <queue>
 
 namespace Enjin {
+namespace Build { class AssetReader; }
 namespace Scene {
 
 // Load state for a streaming chunk
@@ -91,6 +92,17 @@ public:
     // the chunk resolves against the scene/asset root rather than the process CWD.
     u32 RegisterChunksFromWorld(const std::string& baseDir = "");
 
+    // Where relative chunk scenePaths resolve on disk: the absolute project dir
+    // (editor) or loose game dir (player). The process CWD is never reliable, so
+    // a chunk with neither a root nor an asset reader only falls back to the
+    // path as given (tests/tools) with a warning.
+    void SetSceneRoot(const std::string& absRoot) { m_SceneRoot = absRoot; }
+    const std::string& GetSceneRoot() const { return m_SceneRoot; }
+
+    // Packed source (player .enjpak / web pak). Tried before disk: sub-scenes
+    // are never extracted to disk in pak mode.
+    void SetAssetReader(const Build::AssetReader* reader) { m_AssetReader = reader; }
+
     // Update streaming based on camera position (call each frame)
     void Update(const Math::Vector3& cameraPosition, f32 deltaTime);
 
@@ -129,7 +141,10 @@ private:
     void ProcessLoadQueue();
     void ProcessUnloadQueue();
     void LoadChunkAsync(StreamingChunk& chunk);
-    void IntegrateLoadedChunk(StreamingChunk& chunk);
+    void IntegrateLoadedChunk(StreamingChunk& chunk, const std::string& sceneJson);
+    // Validates + reads a chunk's (relative) scene JSON from the pak or the scene
+    // root. Safe to call from a worker thread (read-only members).
+    bool ReadChunkSource(const std::string& relPath, std::string& outJson) const;
     void UnloadChunkEntities(StreamingChunk& chunk);
 
     // Time-sliced integration: process staged chunks within budget
@@ -144,6 +159,8 @@ private:
     };
 
     ECS::World* m_World = nullptr;
+    std::string m_SceneRoot;                          // absolute; see SetSceneRoot
+    const Build::AssetReader* m_AssetReader = nullptr; // optional pak source
     std::vector<StreamingChunk> m_Chunks;
     std::vector<std::string> m_LoadQueue;
     std::vector<std::string> m_UnloadQueue;

@@ -979,8 +979,10 @@ public:
             }
         }
 
-        // Skip gameplay updates when paused, on title screen, or content warning is shown
-        if (m_GameMenu.IsMenuOpen() || m_Paused || !m_GameStarted) return;
+        // Skip gameplay updates when paused, on title screen, in the console, or
+        // content warning is shown. The console reads ImGui keyboard but gameplay
+        // reads GLFW directly, so without this gate typing "wasd" walks the player.
+        if (m_GameMenu.IsMenuOpen() || m_Paused || !m_GameStarted || m_ShowConsole) return;
         if (m_ContentWarnings.IsVisible()) return;
 
         // --- Physics (must run first) ---
@@ -2425,6 +2427,12 @@ private:
         m_CameraDirector.Reset();
         m_CameraDirector.SetEnabled(true);
         m_StreamingManager.SetEnabled(true);
+        // Streaming: authored StreamingVolumeComponents become live chunks. Chunk
+        // sub-scenes resolve against the loose game dir on disk, or the .enjpak.
+        m_StreamingManager.ClearChunks();
+        m_StreamingManager.SetSceneRoot(m_LooseFilesMode ? m_LooseFilesDir : std::string());
+        m_StreamingManager.SetAssetReader(m_LooseFilesMode ? nullptr : &m_AssetReader);
+        m_StreamingManager.RegisterChunksFromWorld();
 
         // Initialize quest flow runtime state
         if (m_World) {
@@ -2550,6 +2558,7 @@ private:
 
         if (m_Renderer) m_Renderer->WaitForAllFrames();   // no GPU work references the old entities
         m_ScriptSystem.ShutdownAllScripts();
+        m_StreamingManager.ClearChunks();                  // drop streamed-in chunk entities with the old scene
         if (m_RenderSystem) m_RenderSystem->OnSceneClear(); // drop cached storage pointers before Clear
 
         if (!LoadSceneFromPack(next)) {
@@ -2977,6 +2986,19 @@ private:
             if (j.contains("invertMouseY"))
                 m_AccessibilitySettings.invertMouseY = j["invertMouseY"].get<bool>();
 
+            // The InputActionMap is what ControllerSystem actually reads for
+            // sprint/crouch mode and mouse sensitivity. bindings.json owns those
+            // once it exists; until then seed the map from this file so the
+            // values are not dead state.
+            {
+                std::string bindingsPath = (fs::path(exeDir) / "bindings.json").string();
+                if (!fs::exists(bindingsPath)) {
+                    m_InputMap.SetSprintToggle(m_AccessibilitySettings.sprintMode == 1);
+                    m_InputMap.SetCrouchToggle(m_AccessibilitySettings.crouchMode == 1);
+                    m_InputMap.SetMouseSensitivity(m_AccessibilitySettings.mouseSensitivity);
+                }
+            }
+
             ENJIN_LOG_INFO(Player, "Loaded accessibility settings (colorblind=%u, reducedMotion=%s, fontScale=%.1f, subtitles=%s, dyslexia=%s, dwellClick=%s, stickyDrag=%s, switchAccess=%s, audioIndicators=%s)",
                 static_cast<Enjin::u32>(m_AccessibilitySettings.colorblindMode),
                 m_AccessibilitySettings.reducedMotion ? "ON" : "OFF",
@@ -3025,6 +3047,11 @@ private:
             j["switchScanSpeed"] = m_AccessibilitySettings.switchScanSpeed;
             j["audioIndicatorsEnabled"] = m_AccessibilitySettings.audioIndicatorsEnabled;
             j["screenReaderEnabled"] = m_AccessibilitySettings.screenReaderEnabled;
+            // Mirror the live values (the map is the source of truth) so this
+            // file never contradicts bindings.json.
+            m_AccessibilitySettings.sprintMode = m_InputMap.IsSprintToggle() ? 1u : 0u;
+            m_AccessibilitySettings.crouchMode = m_InputMap.IsCrouchToggle() ? 1u : 0u;
+            m_AccessibilitySettings.mouseSensitivity = m_InputMap.GetMouseSensitivity();
             j["sprintMode"] = m_AccessibilitySettings.sprintMode;
             j["crouchMode"] = m_AccessibilitySettings.crouchMode;
             j["mouseSensitivity"] = m_AccessibilitySettings.mouseSensitivity;

@@ -6065,6 +6065,12 @@ void EditorLayer::DrawStreamingVolumeComponent(ECS::Entity entity) {
         strncpy(chunkBuf, vol->chunkId.c_str(), sizeof(chunkBuf) - 1);
         chunkBuf[sizeof(chunkBuf) - 1] = '\0';
         InspectorUndo::InputText(m_UndoRedo, "Chunk ID", chunkBuf, sizeof(chunkBuf), [vol](const std::string& val) { vol->chunkId = val; });
+        char sceneBuf[512];
+        strncpy(sceneBuf, vol->scenePath.c_str(), sizeof(sceneBuf) - 1);
+        sceneBuf[sizeof(sceneBuf) - 1] = '\0';
+        InspectorUndo::InputText(m_UndoRedo, "Scene Path", sceneBuf, sizeof(sceneBuf), [vol](const std::string& val) { vol->scenePath = val; });
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Project-relative .enjin sub-scene loaded when the camera enters Load Distance\n"
+                                                      "(e.g. scenes/chunks/zone_a.enjin). Empty = volume registers no chunk.");
 
         f32 halfExt[3] = { vol->halfExtents.x, vol->halfExtents.y, vol->halfExtents.z };
         if (InspectorUndo::DragFloat3(m_UndoRedo, "Half Extents", halfExt,

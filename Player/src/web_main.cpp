@@ -1554,6 +1554,12 @@ private:
         m_VisualScriptSystem.Initialize();
         m_BehaviorTreeSystem.Initialize();
 
+        // Streaming: authored StreamingVolumeComponents become live chunks. Chunk
+        // sub-scenes are read from the pak (they are not extracted to MEMFS).
+        m_StreamingManager.ClearChunks();
+        m_StreamingManager.SetAssetReader(m_HasPack ? &m_AssetReader : nullptr);
+        m_StreamingManager.RegisterChunksFromWorld();
+
         // Start auto-play tweens (desktop: main.cpp:1706)
         m_TweenSystem.PlayAll(m_World.get());
 
@@ -1589,6 +1595,7 @@ private:
         ENJIN_LOG_INFO(Player, "Scene transition: '%s'", scenePath.c_str());
         if (m_Renderer) m_Renderer->WaitForAllFrames();
         m_ScriptSystem.ShutdownAllScripts();
+        m_StreamingManager.ClearChunks();   // drop streamed-in chunk entities with the old scene
         Enjin::Scripting::ClearBindingsEventListeners();
         if (m_RenderSystem) m_RenderSystem->OnSceneClear();
 
@@ -1646,6 +1653,13 @@ private:
             if (j.contains("invertMouseY")) s.invertMouseY = j["invertMouseY"].get<bool>();
             if (j.contains("sprintMode")) s.sprintMode = j["sprintMode"].get<Enjin::u32>();
             if (j.contains("crouchMode")) s.crouchMode = j["crouchMode"].get<Enjin::u32>();
+            // Seed the InputActionMap (what ControllerSystem reads) until a
+            // bindings.json exists; after that bindings.json owns these.
+            if (!std::ifstream("/saves/bindings.json").is_open()) {
+                m_InputMap.SetSprintToggle(s.sprintMode == 1);
+                m_InputMap.SetCrouchToggle(s.crouchMode == 1);
+                m_InputMap.SetMouseSensitivity(s.mouseSensitivity);
+            }
             // Subtitle sub-options (Apply read them but they never loaded on web)
             if (j.contains("closedCaptionsEnabled")) s.closedCaptionsEnabled = j["closedCaptionsEnabled"].get<bool>();
             if (j.contains("subtitleFontSize")) s.subtitleFontSize = j["subtitleFontSize"].get<Enjin::f32>();
@@ -1680,10 +1694,12 @@ private:
             j["disableScreenShake"] = s.disableScreenShake;
             j["disableFOVEffects"] = s.disableFOVEffects;
             j["disableFlashingLights"] = s.disableFlashingLights;
-            j["mouseSensitivity"] = s.mouseSensitivity;
+            // Write the live map values (the map is what ControllerSystem reads)
+            // so this file never contradicts bindings.json.
+            j["mouseSensitivity"] = m_InputMap.GetMouseSensitivity();
             j["invertMouseY"] = s.invertMouseY;
-            j["sprintMode"] = s.sprintMode;
-            j["crouchMode"] = s.crouchMode;
+            j["sprintMode"] = m_InputMap.IsSprintToggle() ? 1u : 0u;
+            j["crouchMode"] = m_InputMap.IsCrouchToggle() ? 1u : 0u;
             j["closedCaptionsEnabled"] = s.closedCaptionsEnabled;
             j["subtitleFontSize"] = s.subtitleFontSize;
             j["subtitleBgOpacity"] = s.subtitleBgOpacity;

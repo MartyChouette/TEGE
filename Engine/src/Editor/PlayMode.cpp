@@ -220,6 +220,7 @@ void PlayMode::Play() {
         m_ScriptSystem.SetScriptRoot(projDir.string());
         m_ScriptEngine.SetScriptDirectory((projDir / "scripts").string());
         m_SimpleAudio.SetAssetRoot(projDir.string());
+        m_StreamingManager.SetSceneRoot(projDir.string());   // chunk sub-scenes are project-relative
     }
 
     // Enable controller system, flower system, scripting, and gameplay systems
@@ -239,6 +240,12 @@ void PlayMode::Play() {
     m_CameraDirector.Reset();
     m_CameraDirector.SetEnabled(true);
     m_StreamingManager.SetEnabled(true);
+    // Streaming: authored StreamingVolumeComponents become live chunks for this
+    // play session. Stop() clears them before the editor-state restore, and the
+    // destroy-observer ignores play-created entities, so streamed-in entities
+    // never leak into the edited scene.
+    m_StreamingManager.ClearChunks();
+    m_StreamingManager.RegisterChunksFromWorld();
     m_AISystem.SetEnabled(true);
     ENJIN_LOG_INFO(Editor, "PlayMode: Gameplay systems enabled");
 
