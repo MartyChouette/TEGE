@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Streaming memory stress</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:#0d1117; color:#e6edf3;
+         font:13px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; }
+  header { padding:10px 14px; border-bottom:1px solid #21262d; }
+  header h1 { margin:0; font-size:15px; font-weight:600; letter-spacing:.2px; }
+  header p { margin:3px 0 0; color:#8b949e; font-size:12px; }
+  .wrap { display:grid; grid-template-columns: minmax(0,1fr) 340px; gap:12px; padding:12px; align-items:start; }
+  @media (max-width: 900px) { .wrap { grid-template-columns: minmax(0,1fr); } }
+  #game-container { position:relative; aspect-ratio:16/9; background:#000;
+                    border:1px solid #21262d; border-radius:8px; overflow:hidden; }
+  #game-canvas { width:100%; height:100%; display:block; outline:none; }
+  #boot { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+          color:#8b949e; font-size:13px; }
+  .panel { border:1px solid #21262d; border-radius:8px; padding:12px; background:#0f141b; }
+  .panel + .panel { margin-top:12px; }
+  .panel h2 { margin:0 0 8px; font-size:12px; text-transform:uppercase; letter-spacing:.6px; color:#8b949e; font-weight:600; }
+  table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+  td { padding:3px 0; }
+  td.k { color:#8b949e; }
+  td.v { text-align:right; font-weight:600; }
+  .big { font-size:17px; }
+  .warn { color:#f0883e; }
+  .good { color:#3fb950; }
+  .btns { display:flex; gap:6px; flex-wrap:wrap; margin-top:4px; }
+  button { background:#21262d; color:#e6edf3; border:1px solid #30363d; border-radius:6px;
+           padding:6px 10px; font:inherit; font-size:12px; cursor:pointer; }
+  button:hover { background:#30363d; }
+  button.on { background:#1f6feb; border-color:#1f6feb; }
+  canvas#chart { width:100%; height:150px; display:block; }
+  .legend { display:flex; gap:12px; margin-top:6px; font-size:11px; color:#8b949e; }
+  .swatch { display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:4px; vertical-align:middle; }
+  #log { margin-top:12px; max-height:150px; overflow:auto; font:11px/1.45 ui-monospace,Menlo,Consolas,monospace;
+         color:#8b949e; white-space:pre-wrap; }
+  .note { color:#8b949e; font-size:11px; margin-top:8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Streaming memory stress &mdash; 49 chunks, distance-unload disabled</h1>
+  <p>The camera sweeps a 7&times;7 grid of streamed sub-scenes. Chunks never unload by distance,
+     so the memory budget is the only thing that can bound the resident set.</p>
+</header>
+
+<div class="wrap">
+  <div>
+    <div id="game-container">
+      <canvas id="game-canvas" tabindex="0" oncontextmenu="return false"></canvas>
+      <div id="boot">loading engine&hellip;</div>
+    </div>
+    <div class="panel" style="margin-top:12px">
+      <h2>Resident memory over time</h2>
+      <canvas id="chart"></canvas>
+      <div class="legend">
+        <span><i class="swatch" style="background:#f0883e"></i>chunk estimate</span>
+        <span><i class="swatch" style="background:#1f6feb"></i>WASM heap</span>
+        <span><i class="swatch" style="background:#3fb950"></i>budget</span>
+      </div>
+      <div class="note">Budget changes are applied live, mid-run. Switch to Unlimited and the
+        orange line climbs until every visited chunk is resident; cap it and the LRU evictor holds it flat.</div>
+    </div>
+  </div>
+
+  <div>
+    <div class="panel">
+      <h2>Memory budget</h2>
+      <div class="btns">
+        <button data-mb="0">Unlimited</button>
+        <button data-mb="8">8 MB</button>
+        <button data-mb="16">16 MB</button>
+        <button data-mb="24">24 MB</button>
+      </div>
+      <div class="note">Calls <code>setStreamingBudgetMB()</code> on the running engine.</div>
+    </div>
+
+    <div class="panel">
+      <h2>Streaming</h2>
+      <table>
+        <tr><td class="k">Chunks loaded</td><td class="v big" id="s-loaded">&mdash;</td></tr>
+        <tr><td class="k">Chunk estimate resident</td><td class="v big" id="s-res">&mdash;</td></tr>
+        <tr><td class="k">Budget</td><td class="v" id="s-budget">&mdash;</td></tr>
+        <tr><td class="k">Budget evictions</td><td class="v" id="s-evict">&mdash;</td></tr>
+        <tr><td class="k">Peak resident</td><td class="v" id="s-peak">&mdash;</td></tr>
+      </table>
+    </div>
+
+    <div class="panel">
+      <h2>Process</h2>
+      <table>
+        <tr><td class="k">WASM heap</td><td class="v big" id="s-heap">&mdash;</td></tr>
+        <tr><td class="k">Peak heap</td><td class="v" id="s-heappeak">&mdash;</td></tr>
+        <tr><td class="k">Pak files resident</td><td class="v" id="s-lazy">&mdash;</td></tr>
+        <tr><td class="k">Pak file evictions</td><td class="v" id="s-lazyevict">&mdash;</td></tr>
+        <tr><td class="k">Entities drawn</td><td class="v" id="s-ents">&mdash;</td></tr>
+        <tr><td class="k">Draw calls</td><td class="v" id="s-draws">&mdash;</td></tr>
+        <tr><td class="k">FPS</td><td class="v" id="s-fps">&mdash;</td></tr>
+        <tr><td class="k">Elapsed</td><td class="v" id="s-time">&mdash;</td></tr>
+      </table>
+      <div class="btns" style="margin-top:10px">
+        <button id="csv">Download CSV</button>
+        <button id="reset">Reset peaks</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Engine log</h2>
+      <div id="log"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---------------------------------------------------------------- boot
+var _ready = false;
+var _logEl = document.getElementById('log');
+function logLine(t) {
+  // Only the lines this harness is about; the engine is chatty at boot.
+  if (!/chunk|Chunk|Streaming|LazyFS|budget|StreamStress|error|Error/.test(t)) return;
+  _logEl.textContent += t.replace(/^\[[^\]]*\]\s*/, '') + '\n';
+  _logEl.scrollTop = _logEl.scrollHeight;
+}
+
+var Module = {
+  locateFile: function(path, prefix) { return (prefix || '') + path + '?v=1'; },
+  canvas: (function () {
+    var c = document.getElementById('game-canvas');
+    if (navigator.gpu) c.getContext('webgpu');
+    return c;
+  })(),
+  onRuntimeInitialized: function () {
+    _ready = true;
+    document.getElementById('boot').style.display = 'none';
+  },
+  print: function (t) { console.log(t); logLine(String(t)); },
+  printErr: function (t) { console.error(t); logLine(String(t)); }
+};
+
+function syncCanvas() {
+  var el = document.getElementById('game-container');
+  var dpr = window.devicePixelRatio || 1;
+  var w = Math.floor(el.clientWidth), h = Math.floor(el.clientHeight);
+  if (w <= 0 || h <= 0) return;
+  var eff = Math.max(1, Math.min(dpr, 1280 / Math.max(w, h)));
+  var c = document.getElementById('game-canvas');
+  c.width = Math.floor(w * eff);
+  c.height = Math.floor(h * eff);
+  if (_ready && Module._onCanvasResize) Module._onCanvasResize(w, h, eff);
+}
+new ResizeObserver(syncCanvas).observe(document.getElementById('game-container'));
+
+// ---------------------------------------------------------------- sampling
+var samples = [];        // {t, res, heap, budget, loaded, evict}
+var t0 = 0, peakRes = 0, peakHeap = 0;
+var frames = 0, fps = 0, lastFpsAt = 0;
+
+function num(fn, dflt) {
+  try { return Module[fn] ? Module[fn]() : dflt; } catch (e) { return dflt; }
+}
+function mb(v) { return v.toFixed(1) + ' MB'; }
+
+function sample() {
+  if (!_ready) return;
+  if (!t0) { t0 = performance.now(); lastFpsAt = t0; }
+  var now = performance.now();
+  var t = (now - t0) / 1000;
+
+  var loaded = num('_getStreamingLoadedCount', 0);
+  var total  = num('_getStreamingChunkCount', 0);
+  var res    = num('_getStreamingResidentMB', 0);
+  var budget = num('_getStreamingBudgetMB', 0);
+  var evict  = num('_getStreamingEvictions', 0);
+  var heap   = num('_getHeapMB', 0);
+  var lazy   = num('_getLazyFSResidentMB', 0);
+  var lazyEv = num('_getLazyFSEvictions', 0);
+
+  if (res > peakRes) peakRes = res;
+  if (heap > peakHeap) peakHeap = heap;
+
+  document.getElementById('s-loaded').textContent = loaded + ' / ' + total;
+  document.getElementById('s-res').textContent = mb(res);
+  document.getElementById('s-budget').textContent = budget > 0 ? mb(budget) : 'unlimited';
+  document.getElementById('s-evict').textContent = evict;
+  document.getElementById('s-peak').textContent = mb(peakRes);
+  document.getElementById('s-heap').textContent = mb(heap);
+  document.getElementById('s-heappeak').textContent = mb(peakHeap);
+  document.getElementById('s-lazy').textContent = mb(lazy);
+  document.getElementById('s-lazyevict').textContent = lazyEv;
+  document.getElementById('s-ents').textContent = num('_getEntityCount', 0);
+  document.getElementById('s-draws').textContent = num('_getDrawCallCount', 0);
+  document.getElementById('s-time').textContent = t.toFixed(0) + ' s';
+
+  var el = document.getElementById('s-res');
+  el.className = 'v big ' + (budget > 0 && res > budget * 1.02 ? 'warn' : 'good');
+
+  samples.push({ t: t, res: res, heap: heap, budget: budget, loaded: loaded, evict: evict });
+  if (samples.length > 3000) samples.shift();
+  draw();
+}
+
+function tickFps() {
+  frames++;
+  var now = performance.now();
+  if (now - lastFpsAt >= 1000) {
+    fps = Math.round(frames * 1000 / (now - lastFpsAt));
+    frames = 0; lastFpsAt = now;
+    document.getElementById('s-fps').textContent = fps;
+  }
+  requestAnimationFrame(tickFps);
+}
+requestAnimationFrame(tickFps);
+setInterval(sample, 250);
+
+// ---------------------------------------------------------------- chart
+function draw() {
+  var c = document.getElementById('chart');
+  var dpr = window.devicePixelRatio || 1;
+  var w = c.clientWidth, h = 150;
+  if (c.width !== Math.floor(w * dpr)) { c.width = Math.floor(w * dpr); c.height = Math.floor(h * dpr); }
+  var g = c.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+  if (samples.length < 2) return;
+
+  var maxY = 1;
+  for (var i = 0; i < samples.length; i++) {
+    maxY = Math.max(maxY, samples[i].res, samples[i].heap, samples[i].budget);
+  }
+  maxY *= 1.1;
+  var t1 = samples[samples.length - 1].t, t0s = samples[0].t;
+  var span = Math.max(1, t1 - t0s);
+  function X(t) { return ((t - t0s) / span) * (w - 44) + 40; }
+  function Y(v) { return h - 16 - (v / maxY) * (h - 26); }
+
+  g.strokeStyle = '#21262d'; g.lineWidth = 1;
+  g.fillStyle = '#8b949e'; g.font = '10px ui-monospace,monospace';
+  for (var k = 0; k <= 3; k++) {
+    var v = maxY * k / 3, y = Y(v);
+    g.beginPath(); g.moveTo(40, y); g.lineTo(w - 4, y); g.stroke();
+    g.fillText(v.toFixed(0), 4, y + 3);
+  }
+
+  function line(key, color, dash) {
+    g.strokeStyle = color; g.lineWidth = 1.7; g.setLineDash(dash || []);
+    g.beginPath();
+    for (var i = 0; i < samples.length; i++) {
+      var s = samples[i];
+      var v = s[key];
+      if (key === 'budget' && v <= 0) { g.stroke(); g.beginPath(); continue; }
+      var x = X(s.t), y = Y(v);
+      if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+    }
+    g.stroke(); g.setLineDash([]);
+  }
+  line('heap', '#1f6feb');
+  line('budget', '#3fb950', [4, 3]);
+  line('res', '#f0883e');
+}
+window.addEventListener('resize', draw);
+
+// ---------------------------------------------------------------- controls
+document.querySelectorAll('button[data-mb]').forEach(function (b) {
+  b.addEventListener('click', function () {
+    var mbv = parseInt(b.dataset.mb, 10);
+    if (Module._setStreamingBudgetMB) Module._setStreamingBudgetMB(mbv);
+    document.querySelectorAll('button[data-mb]').forEach(function (o) { o.classList.remove('on'); });
+    b.classList.add('on');
+    logLine('[page] budget -> ' + (mbv ? mbv + ' MB' : 'unlimited'));
+  });
+});
+document.getElementById('reset').addEventListener('click', function () {
+  peakRes = 0; peakHeap = 0; samples.length = 0; t0 = 0;
+});
+document.getElementById('csv').addEventListener('click', function () {
+  var rows = ['t_seconds,chunks_loaded,chunk_resident_mb,budget_mb,evictions,wasm_heap_mb'];
+  samples.forEach(function (s) {
+    rows.push([s.t.toFixed(2), s.loaded, s.res.toFixed(3), s.budget.toFixed(1), s.evict, s.heap.toFixed(2)].join(','));
+  });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([rows.join('\n')], { type: 'text/csv' }));
+  a.download = 'streamstress.csv';
+  a.click();
+});
+
+syncCanvas();
+
+// ---------------------------------------------------------------- auto A/B
+// ?auto runs the scripted comparison unattended and beacons one compact row per
+// second back to the dev server, so a headless browser run produces real data.
+// Phase 1: unlimited (resident climbs). Phase 2: capped (LRU holds it flat).
+(function () {
+  if (!location.search.includes('auto')) return;
+  var PHASE1 = 75, PHASE2 = 75, CAP = 16;
+  var started = 0, phase = 0, lastBeacon = -1;
+  function beacon(tag, s) {
+    try {
+      fetch('/__s?' + [tag, s.t.toFixed(1), s.loaded, s.res.toFixed(2),
+                       s.budget.toFixed(0), s.evict, s.heap.toFixed(1)].join('_'));
+    } catch (e) {}
+  }
+  setInterval(function () {
+    if (!_ready || !samples.length) return;
+    var s = samples[samples.length - 1];
+    if (!started) { started = 1; beacon('BEGIN', s); }
+    if (phase === 0 && s.t >= PHASE1) {
+      phase = 1;
+      beacon('PHASE1END', s);
+      if (Module._setStreamingBudgetMB) Module._setStreamingBudgetMB(CAP);
+      beacon('CAP' + CAP, s);
+    } else if (phase === 1 && s.t >= PHASE1 + PHASE2) {
+      phase = 2;
+      beacon('PHASE2END', s);
+      beacon('PEAK', { t: s.t, loaded: s.loaded, res: peakRes, budget: s.budget, evict: s.evict, heap: peakHeap });
+    }
+    var sec = Math.floor(s.t);
+    if (sec !== lastBeacon) { lastBeacon = sec; beacon('S', s); }
+  }, 250);
+})();
+</script>
+<script src="EnjinPlayer.js?v=1"></script>
+</body>
+</html>
