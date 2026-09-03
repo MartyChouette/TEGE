@@ -3,6 +3,7 @@
 #if ENJIN_PLATFORM_WEB
 
 #include "Enjin/Renderer/WebGPU/WebGPUVegetationSystem.h"
+#include "Enjin/Renderer/WebGPU/WebSceneTarget.h"
 #include "Enjin/Renderer/WebGPU/WebGPURenderer.h"
 #include "Enjin/Renderer/WebGPU/WebGPUPipelineManager.h"
 #include "Enjin/Renderer/WebGPU/WebGPUBindGroupManager.h"
@@ -228,7 +229,7 @@ bool WebGPUVegetationSystem::Initialize(WebGPURenderer* renderer) {
     rp.depthFormat = GPUTextureFormat::Depth24PlusStencil8;
     rp.colorAttachmentCount = 1;
     rp.colorFormat = GPUTextureFormat::RGBA16Float;
-    rp.sampleCount = 4;
+    rp.sampleCount = kWebSceneSampleCount;   // MUST match the scene target (see WebSceneTarget.h)
     rp.alphaBlend = false;
     rp.label = "veg-scene";
     m_Pipeline = pipeMgr->CreateRenderPipeline(rp);

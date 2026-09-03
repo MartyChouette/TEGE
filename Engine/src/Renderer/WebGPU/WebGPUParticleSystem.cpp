@@ -3,6 +3,7 @@
 #if ENJIN_PLATFORM_WEB
 
 #include "Enjin/Renderer/WebGPU/WebGPUParticleSystem.h"
+#include "Enjin/Renderer/WebGPU/WebSceneTarget.h"
 #include "Enjin/Renderer/WebGPU/WebGPURenderer.h"
 #include "Enjin/Renderer/WebGPU/WebGPUPipelineManager.h"
 #include "Enjin/Renderer/WebGPU/WebGPUBindGroupManager.h"
@@ -386,12 +387,12 @@ bool WebGPUParticleSystem::Initialize(const Effects::GPUEmitterConfig& config) {
         rp.label = "particle-draw";
         m_DrawPipeline = pipeMgr->CreateRenderPipeline(rp);
 
-        // Scene-pass variant: the web scene renders MSAA 4x into an RGBA16Float HDR
+        // Scene-pass variant: the web scene renders into an RGBA16Float HDR
         // target with its OWN depth. Drawing there gives particles real depth
         // occlusion and the same tonemapping as the rest of the scene.
         GPURenderPipelineDesc sp = rp;
         sp.colorFormat = GPUTextureFormat::RGBA16Float;
-        sp.sampleCount = 4;
+        sp.sampleCount = kWebSceneSampleCount;   // MUST match the scene target (see WebSceneTarget.h)
         sp.depthCompare = GPUCompareFunction::LessEqual;   // real scene depth here
         sp.label = "particle-draw-scene";
         m_ScenePipeline = pipeMgr->CreateRenderPipeline(sp);
