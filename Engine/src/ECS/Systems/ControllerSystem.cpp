@@ -144,8 +144,9 @@ void ControllerSystem::Update(f32 deltaTime) {
 
     ForEachActiveController<ThirdPersonController>(m_World, m_RealtimePass,
         [&](Entity entity, ThirdPersonController& controller, TransformComponent& transform) {
-            // Lazy-create Jolt CharacterVirtual on first use (requires physics backend)
-            // Skip on web — Jolt collider queries don't work on Emscripten, use fallback path
+            // Lazy-create Jolt CharacterVirtual on first use (requires physics backend).
+            // Runs on web too - the old "skip on web" note here described a guard
+            // that was never applied to this branch.
             if (m_Physics && !m_Physics->HasCharacterController(entity)) {
                 f32 radius = 0.3f, totalHalfH = 0.8f;
                 if (auto* cap = m_World->GetComponent<CapsuleColliderComponent>(entity)) {
@@ -159,8 +160,11 @@ void ControllerSystem::Update(f32 deltaTime) {
 
     ForEachActiveController<FirstPersonController>(m_World, m_RealtimePass,
         [&](Entity entity, FirstPersonController& controller, TransformComponent& transform) {
-#if !ENJIN_PLATFORM_WEB
-            // Lazy-create Jolt CharacterVirtual on first use
+            // Lazy-create Jolt CharacterVirtual on first use.
+            // This used to be #if !ENJIN_PLATFORM_WEB, which meant a first-person
+            // player on web got NO physical body: it walked through every wall and
+            // floor in the level. ThirdPerson has always done exactly the same
+            // thing on web and works, so the exclusion was obsolete.
             if (m_Physics && !m_Physics->HasCharacterController(entity)) {
                 f32 radius = 0.3f, totalHalfH = 0.8f;
                 if (auto* cap = m_World->GetComponent<CapsuleColliderComponent>(entity)) {
@@ -169,7 +173,6 @@ void ControllerSystem::Update(f32 deltaTime) {
                 }
                 m_Physics->CreateCharacterController(entity, radius, totalHalfH, transform.position);
             }
-#endif
             UpdateFirstPerson(entity, controller, transform, deltaTime);
         });
 

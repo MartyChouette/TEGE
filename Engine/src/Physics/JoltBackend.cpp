@@ -309,7 +309,7 @@ void JoltBackend::Update(f32 deltaTime) {
     static int s_PhysLog = 0;
     if (s_PhysLog++ < 5) {
         printf("[PHYSICS] bodies=%d entities_with_colliders=%d\n",
-            static_cast<int>(m_EntityToBody.size()), static_cast<int>(m_CurrentEntitiesCache.size()));
+            static_cast<int>(m_EntityToBody.size()), static_cast<int>(m_LastColliderCount));
     }
 
     // 2. Sync joint components to Jolt constraints
@@ -358,6 +358,7 @@ void JoltBackend::SyncECSToJolt() {
         addEntities(m_World->GetEntitiesWithComponent<ECS::CapsuleColliderComponent>());
         addEntities(m_World->GetEntitiesWithComponent<ECS::MeshColliderComponent>());
     }
+    m_LastColliderCount = m_CurrentEntitiesCache.size();   // survives the clear at the end
 
     auto& bodyInterface = m_PhysicsSystem->GetBodyInterface();
 

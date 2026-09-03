@@ -151,6 +151,12 @@ private:
 
     // Reusable per-frame temporaries (avoid per-frame heap allocation)
     std::unordered_set<ECS::Entity> m_CurrentEntitiesCache;
+    // Size of the collider set from the LAST sync. The cache itself is cleared
+    // at the end of SyncECSToJolt to release entity references, so anything
+    // reading it afterwards sees 0 -- which made the diagnostic below report
+    // "entities_with_colliders=0" on every scene and read as "physics found no
+    // colliders" when bodies were in fact being created normally.
+    usize m_LastColliderCount = 0;
     std::vector<ECS::Entity> m_ToRemoveCache;
     std::unordered_set<ECS::Entity> m_CurrentJointEntitiesCache;
     std::vector<ECS::Entity> m_JointToRemoveCache;
