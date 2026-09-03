@@ -38,6 +38,21 @@ struct RopeComponent {
     bool useWeatherWind = true;    // sample live weather wind (zones override)
     f32 weatherWindScale = 1.0f;
     bool collide = true;           // push points out of Box/Sphere/Capsule colliders
+    // Act AS a collider for OTHER cloth and ropes: each simulated segment is
+    // offered to the collision gather as a capsule, so a sheet can drape over
+    // this rope (a garment on a clothesline) instead of falling through it.
+    // Off by default -- a rope with 20-30 segments adds that many shapes to
+    // every cloth's resolve loop, so it is opt-in per rope.
+    // One-way: cloth resting on the rope does NOT weigh the rope down.
+    bool collidable = false;
+    // Radius used for those capsules, INDEPENDENT of the rendered thickness
+    // (0 = use thickness). A clothesline draws thin but must collide fat: cloth
+    // is a grid of POINTS, so a point can only be caught if it lands within the
+    // capsule radius. With a rope thinner than about half the cloth point
+    // spacing the sheet slips between the points and falls straight through
+    // (measured: radius 0.05 vs 0.12 spacing = no contact at all; 0.5 catches).
+    // Rule of thumb: keep this >= the cloth spacing (width/resX).
+    f32 collisionRadius = 0.0f;
     f32 collisionSkin = 0.04f;
     f32 friction = 0.5f;
     f32 endMass = 0.0f;            // >0 hangs a weight on the tip (taut, slow swing)

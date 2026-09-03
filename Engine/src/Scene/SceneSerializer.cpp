@@ -1293,6 +1293,7 @@ json SerializeRopeComponent(const ECS::RopeComponent& r) {
     j["weatherWindScale"] = r.weatherWindScale;
     j["collide"] = r.collide;
     j["collidable"] = r.collidable;
+    j["collisionRadius"] = r.collisionRadius;
     j["collisionSkin"] = r.collisionSkin;
     j["friction"] = r.friction;
     j["endMass"] = r.endMass;
@@ -1319,6 +1320,7 @@ ECS::RopeComponent DeserializeRopeComponent(const json& j) {
     if (j.contains("weatherWindScale")) r.weatherWindScale = j["weatherWindScale"].get<f32>();
     if (j.contains("collide")) r.collide = JB(j["collide"]);
     if (j.contains("collidable")) r.collidable = JB(j["collidable"]);
+    if (j.contains("collisionRadius")) r.collisionRadius = j["collisionRadius"].get<f32>();
     if (j.contains("collisionSkin")) r.collisionSkin = j["collisionSkin"].get<f32>();
     if (j.contains("friction")) r.friction = j["friction"].get<f32>();
     if (j.contains("endMass")) r.endMass = j["endMass"].get<f32>();

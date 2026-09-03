@@ -231,6 +231,39 @@ void GatherColliders(World* world, std::vector<ColliderShape>& out) {
         for (Entity e : tp->GetEntities()) addCharacter(e);
     if (auto* fp = world->GetComponentStorage<FirstPersonController>())
         for (Entity e : fp->GetEntities()) addCharacter(e);
+
+    // Ropes flagged `collidable` contribute one capsule per simulated segment,
+    // so cloth can DRAPE over a rope (laundry on a clothesline) instead of
+    // passing through it. Positions are last frame's -- ropes simulate after
+    // cloth in Update -- which is invisible for a settled line and keeps this
+    // to a single gather. A rope skips its own capsules at resolve time via
+    // srcIndex, so a collidable rope never fights itself.
+    if (auto* ropeStore = world->GetComponentStorage<RopeComponent>())
+        for (Entity e : ropeStore->GetEntities()) {
+            auto* r = ropeStore->Get(e);
+            if (!r || !r->collidable || !r->initialized) continue;
+            if (r->positions.size() < 2) continue;
+            // Collision proxy is deliberately allowed to be fatter than the
+            // rendered tube -- see RopeComponent::collisionRadius.
+            const f32 radius = std::max(r->collisionRadius > 0.0f ? r->collisionRadius
+                                                                  : r->thickness, 0.01f);
+            for (usize i = 0; i + 1 < r->positions.size(); ++i) {
+                const Math::Vector3 a = r->positions[i];
+                const Math::Vector3 b = r->positions[i + 1];
+                const Math::Vector3 d = b - a;
+                const f32 len = d.Length();
+                if (len < 1e-5f) continue;
+                ColliderShape sh;
+                sh.kind = ColliderShape::Kind::Capsule;
+                sh.pos = (a + b) * 0.5f;
+                // Capsule axis is local +Y (see ResolvePoint), so rotate +Y onto the segment.
+                sh.rot = Math::Quaternion::FromToRotation(Math::Vector3(0, 1, 0), d * (1.0f / len));
+                sh.radius = radius;
+                sh.halfHeight = len * 0.5f;
+                sh.srcIndex = EntityIndex(e);
+                out.push_back(sh);
+            }
+        }
 }
 
 // Push a point out of a shape if inside (returns true on contact).

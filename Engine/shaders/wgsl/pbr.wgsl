@@ -220,11 +220,22 @@ fn fresnelSchlick(cosTheta: f32, F0: vec3<f32>) -> vec3<f32> {
 
 // Directional shadow map lookup with 3x3 PCF (9 taps)
 fn sampleShadow(worldPos: vec3<f32>) -> f32 {
-    let lightClip = shadowVP.proj * shadowVP.view * vec4<f32>(worldPos, 1.0);
+    let shadowMat = shadowVP.proj * shadowVP.view;
+    let lightClip = shadowMat * vec4<f32>(worldPos, 1.0);
     let ndc = lightClip.xyz / lightClip.w;
     let shadowUV = vec2<f32>(ndc.x * 0.5 + 0.5, ndc.y * -0.5 + 0.5);
     let depth = ndc.z;
-    let bias = 0.002;
+    // Depth bias expressed in WORLD units, converted to this frame's NDC depth
+    // scale. The sun is orthographic, so the z-row of proj*view maps world
+    // distance to NDC depth and its length is 1/zRange. The old FIXED 0.002 NDC
+    // bias therefore grew with the shadow fit: at the ~162-unit zRange the
+    // caster-AABB fit produces in the playground it was a THIRD of a world unit,
+    // sliding every shadow away from its caster ("Peter Panning" - objects look
+    // like they float). Front-face culling in the shadow pass already keeps
+    // self-shadow acne away, so the world bias can stay small. Clamped so a
+    // degenerate fit can neither vanish the bias nor exceed the old value.
+    let depthScale = length(vec3<f32>(shadowMat[0][2], shadowMat[1][2], shadowMat[2][2]));
+    let bias = clamp(0.03 * depthScale, 0.00002, 0.002);
     let texelSize = 1.0 / 2048.0;
     var shadow = 0.0;
     // 3x3 PCF kernel
