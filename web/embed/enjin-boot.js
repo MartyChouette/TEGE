@@ -131,7 +131,7 @@
       function sync() {
         var host = canvas.parentElement || canvas;
         var w = Math.floor(host.clientWidth), h = Math.floor(host.clientHeight);
-        if (w <= 0 || h <= 0) return;
+        if (w < 64 || h < 64) return;   // collapsed layout: do not commit it
         var dpr = global.devicePixelRatio || 1;
         // Allow eff BELOW 1: flooring it at 1 meant any container wider than
         // maxPixels rendered at full resolution and the cap did nothing.

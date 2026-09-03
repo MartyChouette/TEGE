@@ -2346,8 +2346,22 @@ void RenderSystem::Update(f32 deltaTime) {
     {
         u32 swW = m_Renderer->GetSwapchainWidth();
         u32 swH = m_Renderer->GetSwapchainHeight();
-        if (usePostProcess && swW != 0 && swH != 0 &&
-            (swW != m_WebSceneTargetW || swH != m_WebSceneTargetH)) {
+        // A DEGENERATE canvas size must never drive a recreate. Page layout
+        // routinely reports a collapsed box for a frame or two (before CSS
+        // settles, during a fullscreen transition, inside a freshly inserted
+        // iframe), and the old code took it at face value: a real capture shows
+        // "recreating offscreen chain 2133x1193 -> 2133x42". Rebuilding the whole
+        // chain - scene colour, depth, bloom, scratch - at 42 pixels tall, and
+        // again when the layout snaps back, is pure cost, and if the box
+        // oscillates it happens every frame. Below this floor keep the targets we
+        // have; the viewport clamp underneath already keeps the frame valid.
+        constexpr u32 kMinTargetDim = 64;
+        const bool sane = swW >= kMinTargetDim && swH >= kMinTargetDim;
+        // Ignore sub-pixel churn too, so a resize that rounds differently frame
+        // to frame does not thrash the chain.
+        const bool changed = (swW > m_WebSceneTargetW ? swW - m_WebSceneTargetW : m_WebSceneTargetW - swW) > 1 ||
+                             (swH > m_WebSceneTargetH ? swH - m_WebSceneTargetH : m_WebSceneTargetH - swH) > 1;
+        if (usePostProcess && sane && changed) {
             // console.log, not ENJIN_LOG: stdout does not reach the browser
             // console, and this is the line that proves a resize recreated the
             // chain when debugging in the field.
