@@ -754,6 +754,10 @@ public:
         f32 colorQuantLevels = 0.0f;   // 0 = off
         f32 screenW = 1280.0f;
         f32 screenH = 720.0f;
+        f32 filmGrain = 0.0f;          // 0 = off
+        f32 crtScanline = 0.0f;        // 0 = off
+        f32 timeSec = 0.0f;            // set per-frame for animated grain
+        f32 _pad2 = 0.0f;              // 20 f32 = 80 bytes (16-multiple)
     };
     WebPPAccessibilityParams m_WebPPAccessibility;
     void SetWebAccessibility(u32 colorblindMode, f32 strength, f32 brightness, f32 contrast) {
@@ -770,7 +774,8 @@ public:
     // SceneRenderSettings (ApplyToRuntime passes null pp on web, so this is the path).
     void SetWebPostProcess(f32 saturation, f32 cfR, f32 cfG, f32 cfB,
                            f32 vignetteIntensity, f32 vignetteSmoothness,
-                           f32 chromaticAberration, f32 colorQuantLevels) {
+                           f32 chromaticAberration, f32 colorQuantLevels,
+                           f32 filmGrain, f32 crtScanline) {
         m_WebPPAccessibility.saturation = saturation;
         m_WebPPAccessibility.colorFilterR = cfR;
         m_WebPPAccessibility.colorFilterG = cfG;
@@ -779,6 +784,8 @@ public:
         m_WebPPAccessibility.vignetteSmoothness = vignetteSmoothness;
         m_WebPPAccessibility.chromaticAberration = chromaticAberration;
         m_WebPPAccessibility.colorQuantLevels = colorQuantLevels;
+        m_WebPPAccessibility.filmGrain = filmGrain;
+        m_WebPPAccessibility.crtScanline = crtScanline;
     }
 
     // Cel shading (lighting quantization)

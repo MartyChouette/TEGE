@@ -632,7 +632,9 @@ public:
             s.saturation, s.colorFilter.x, s.colorFilter.y, s.colorFilter.z,
             s.vignetteEnabled ? s.vignetteIntensity : 0.0f, s.vignetteSmoothness,
             s.chromaticAberrationEnabled ? s.chromaticAberrationIntensity : 0.0f,
-            s.colorQuantEnabled ? 8.0f : 0.0f);
+            s.colorQuantEnabled ? 8.0f : 0.0f,
+            s.filmGrainEnabled ? s.filmGrainIntensity : 0.0f,
+            s.crtEnabled ? s.scanlineIntensity : 0.0f);
     }
 
     void TogglePauseMenu() {

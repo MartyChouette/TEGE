@@ -624,6 +624,10 @@ struct PostProcessParams {
     colorQuantLevels: f32,
     screenW: f32,
     screenH: f32,
+    filmGrain: f32,
+    crtScanline: f32,
+    timeSec: f32,
+    _pad2: f32,
 };
 @group(0) @binding(2) var<uniform> params: PostProcessParams;
 
@@ -788,6 +792,19 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let d = distance(in.uv, vec2<f32>(0.5));
         let vig = smoothstep(0.75, 0.75 - max(params.vignetteSmoothness, 0.05), d);
         color = color * mix(1.0, vig, clamp(params.vignetteIntensity, 0.0, 1.0));
+    }
+
+    // CRT scanlines: soft horizontal dark bands (uv-based so it's resolution-agnostic).
+    if (params.crtScanline > 0.0) {
+        let line = 0.5 + 0.5 * sin(in.uv.y * 6.28318 * 240.0);
+        color = color * (1.0 - params.crtScanline * (1.0 - line));
+    }
+
+    // Film grain: animated hash noise driven by timeSec so it shimmers frame to frame.
+    if (params.filmGrain > 0.0) {
+        let seed = in.uv * vec2<f32>(1024.0, 768.0) + vec2<f32>(params.timeSec * 60.0, params.timeSec * 37.0);
+        let n = fract(sin(dot(seed, vec2<f32>(12.9898, 78.233))) * 43758.5453);
+        color = color + (n - 0.5) * params.filmGrain;
     }
 
     if (params.previewEffect != 0u && abs(in.uv.x - params.previewDivider) < texelSize.x) {

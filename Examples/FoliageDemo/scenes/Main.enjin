@@ -125354,8 +125354,8 @@
   "dofNearBlurStrength": 1.0,
   "energyConservation": false,
   "exposure": 1.0,
-  "filmGrainEnabled": false,
-  "filmGrainIntensity": 0.05000000074505806,
+  "filmGrainEnabled": true,
+  "filmGrainIntensity": 0.06,
   "fogColor": [
    0.5,
    0.5,

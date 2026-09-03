@@ -3237,7 +3237,9 @@ void RenderSystem::Update(f32 deltaTime) {
             // We use m_WebPostProcessBG which was set up to read scratch at init time.
         }
 
-        // Upload accessibility params to post-process UBO
+        // Upload accessibility + post-process params to the PP UBO. Stamp the clock so
+        // animated effects (film grain) move; wind clock, or frame time as fallback.
+        m_WebPPAccessibility.timeSec = m_WindSystem ? m_WindSystem->GetTime() : 0.0f;
         if (m_WebPPAccessibilityBuffer.IsValid() && bufMgr) {
             bufMgr->UploadData(m_WebPPAccessibilityBuffer, &m_WebPPAccessibility, sizeof(WebPPAccessibilityParams));
         }
