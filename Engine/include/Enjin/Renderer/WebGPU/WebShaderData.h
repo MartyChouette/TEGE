@@ -630,8 +630,8 @@ struct PostProcessParams {
     dither: f32,
     stipple: f32,
     stippleScale: f32,
-    _pad2: f32,
-    _pad3: f32,
+    ssao: f32,            // screen-space AO strength, 0 = off (color-space approximation)
+    ssaoRadius: f32,      // AO sample-ring radius scale
 };
 @group(0) @binding(2) var<uniform> params: PostProcessParams;
 
@@ -778,6 +778,31 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let r = textureSampleLevel(sceneTexture, sceneSampler, in.uv - dir, 0.0).r;
         let b = textureSampleLevel(sceneTexture, sceneSampler, in.uv + dir, 0.0).b;
         color = vec3<f32>(r, color.g, b);
+    }
+
+    // Screen-space AO (color-space approximation). Web has no sampleable depth
+    // buffer (the scene depth is 4x MSAA and can't be bound), so instead of a
+    // depth-based occlusion we darken pixels that sit in a local luminance valley
+    // — creases, contact points, and pockets where the surroundings are brighter.
+    // Not geometrically exact, but it grounds objects the way SSAO does. Operates
+    // on the pre-tonemap linear color; textureSampleLevel is required in a branch.
+    if (params.ssao > 0.0) {
+        let r = max(params.ssaoRadius, 0.05);
+        let s = texelSize * (2.0 + r * 6.0);
+        var acc = 0.0;
+        acc += luminance(textureSampleLevel(sceneTexture, sceneSampler, in.uv + vec2<f32>( s.x, 0.0), 0.0).rgb);
+        acc += luminance(textureSampleLevel(sceneTexture, sceneSampler, in.uv + vec2<f32>(-s.x, 0.0), 0.0).rgb);
+        acc += luminance(textureSampleLevel(sceneTexture, sceneSampler, in.uv + vec2<f32>( 0.0,  s.y), 0.0).rgb);
+        acc += luminance(textureSampleLevel(sceneTexture, sceneSampler, in.uv + vec2<f32>( 0.0, -s.y), 0.0).rgb);
+        acc += luminance(textureSampleLevel(sceneTexture, sceneSampler, in.uv + vec2<f32>( s.x,  s.y), 0.0).rgb);
+        acc += luminance(textureSampleLevel(sceneTexture, sceneSampler, in.uv + vec2<f32>(-s.x,  s.y), 0.0).rgb);
+        acc += luminance(textureSampleLevel(sceneTexture, sceneSampler, in.uv + vec2<f32>( s.x, -s.y), 0.0).rgb);
+        acc += luminance(textureSampleLevel(sceneTexture, sceneSampler, in.uv + vec2<f32>(-s.x, -s.y), 0.0).rgb);
+        let avg = acc / 8.0;
+        let centerL = luminance(color);
+        // Occluded when the surroundings are meaningfully brighter than the centre.
+        let occ = clamp((avg - centerL) * 2.0, 0.0, 1.0);
+        color = color * (1.0 - occ * clamp(params.ssao, 0.0, 1.0));
     }
 
     color = aces_tonemap(color);

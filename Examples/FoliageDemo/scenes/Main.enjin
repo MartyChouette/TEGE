@@ -125487,8 +125487,8 @@
   "sphereEnvMapEnabled": false,
   "sphereEnvStrength": 0.5,
   "ssaoBias": 0.02500000037252903,
-  "ssaoEnabled": false,
-  "ssaoIntensity": 1.5,
+  "ssaoEnabled": true,
+  "ssaoIntensity": 0.6,
   "ssaoRadius": 0.5,
   "ssaoSamples": 16,
   "stippleBgColor": [

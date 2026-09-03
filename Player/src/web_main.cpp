@@ -637,7 +637,8 @@ public:
             s.crtEnabled ? s.scanlineIntensity : 0.0f,
             s.ditherEnabled ? s.ditherStrength : 0.0f,
             s.stippleEnabled ? static_cast<float>(s.stippleColorMode + 1u) : 0.0f,
-            s.stippleScale);
+            s.stippleScale,
+            s.ssaoEnabled ? s.ssaoIntensity : 0.0f, s.ssaoRadius);
     }
 
     void TogglePauseMenu() {
