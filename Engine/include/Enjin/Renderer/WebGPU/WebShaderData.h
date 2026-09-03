@@ -475,7 +475,20 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         Lo = Lo + (kD * albedo + specular) * radiance * NdotL * spotShadow;
     }
 
-    let ambient = lighting.ambientColor.rgb * lighting.ambientColor.w * albedo;
+    // GI parity (web): hemispheric sky-dome ambient stands in for real GI/AO — there is
+    // no ray tracing in browsers, so instead of a flat ambient term every surface gets
+    // irradiance from the sky. Up-facing surfaces catch zenith/sky light, undersides
+    // catch the ground bounce; the result is soft directional fill that reads as global
+    // illumination. Automatic for EVERY web build, no bake, one extra mix. Falls back to
+    // the flat ambient color when the scene has no configured sky. Tempered by 0.5 so it
+    // fills rather than washes, and still scaled by the scene's ambientIntensity.
+    var ambIrr = lighting.ambientColor.rgb;
+    if (lighting.skyTop.w > 0.5) {
+        let upAmt = clamp(N.y * 0.5 + 0.5, 0.0, 1.0);
+        let aboveIrr = mix(lighting.skyHorizon.rgb, lighting.skyTop.rgb, upAmt);
+        ambIrr = mix(lighting.skyBottom.rgb * 0.6, aboveIrr, upAmt) * 0.5;
+    }
+    let ambient = ambIrr * lighting.ambientColor.w * albedo;
     let emissive = object.emissiveColor * object.emissiveStrength;
     var color = ambient + Lo + emissive;
 
