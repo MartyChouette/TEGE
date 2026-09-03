@@ -240,6 +240,13 @@ fn fresnelSchlick(cosTheta: f32, F0: vec3<f32>) -> vec3<f32> {
     return F0 + (1.0 - F0) * pow(saturate(1.0 - cosTheta), 5.0);
 }
 
+// Roughness-aware Fresnel for ambient/IBL (matches triangle.frag): rough surfaces
+// reflect less at grazing angles, so the environment term doesn't rim-blow-out.
+fn fresnelSchlickRoughness(cosTheta: f32, F0: vec3<f32>, roughness: f32) -> vec3<f32> {
+    let r = vec3<f32>(1.0 - roughness);
+    return F0 + (max(r, F0) - F0) * pow(saturate(1.0 - cosTheta), 5.0);
+}
+
 // Directional shadow map lookup with 3x3 PCF (9 taps)
 fn sampleShadow(worldPos: vec3<f32>) -> f32 {
     let lightClip = shadowVP.proj * shadowVP.view * vec4<f32>(worldPos, 1.0);
@@ -494,6 +501,22 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let ambient = ambIrr * lighting.ambientColor.w * albedo;
     let emissive = object.emissiveColor * object.emissiveStrength;
     var color = ambient + Lo + emissive;
+
+    // Specular IBL from the sky gradient — parity with the desktop reflection-probe
+    // gradient fallback (triangle.frag ~1290: result += iblEnv * iblF * ambientIntensity).
+    // Desktop ALWAYS adds an environment-reflection term; web added none, which is the
+    // main reason every web build read darker than desktop. We approximate the env with
+    // the same sky-dome gradient sampled along the reflection vector, roughness-Fresnel
+    // weighted and scaled by ambientIntensity so it tracks the scene and can't blow out.
+    // Gated on a configured sky (where we have gradient colors); no-sky scenes stay flat.
+    if (lighting.skyTop.w > 0.5) {
+        let R = reflect(-V, N);
+        let upR = clamp(R.y * 0.5 + 0.5, 0.0, 1.0);
+        let envAbove = mix(lighting.skyHorizon.rgb, lighting.skyTop.rgb, upR);
+        let iblEnv = mix(lighting.skyBottom.rgb * 0.6, envAbove, upR);
+        let iblF = fresnelSchlickRoughness(max(dot(N, V), 0.0), F0, roughness);
+        color = color + iblEnv * iblF * lighting.ambientColor.w;
+    }
 
     // Matcap (hand-painted reflection): sampled by view-space normal, blended
     // by metallic like triangle.frag ~1850. Sampled unconditionally at LOD 0
