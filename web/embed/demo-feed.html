@@ -7,13 +7,15 @@
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
-  body { margin:0; background:#0d1117; color:#e6edf3; font:15px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; }
-  .page { max-width:640px; margin:0 auto; padding:28px 18px 80px; }
+  body { margin:0; background:#0d1117; color:#e6edf3;
+         font:15px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; }
+  .page { max-width:640px; margin:0 auto; padding:28px 18px 90px; }
   h1 { font-size:20px; margin:0 0 6px; }
-  .sub { color:#8b949e; font-size:13px; margin:0 0 28px; }
+  .sub { color:#8b949e; font-size:13px; margin:0 0 26px; }
   .post { border:1px solid #21262d; border-radius:12px; padding:16px; margin:0 0 22px; background:#0f141b; }
   .who { display:flex; align-items:center; gap:9px; margin-bottom:10px; }
-  .dot { width:28px; height:28px; border-radius:50%; background:linear-gradient(135deg,#1f6feb,#8957e5); flex:0 0 auto; }
+  .dot { width:28px; height:28px; border-radius:50%; flex:0 0 auto;
+         background:linear-gradient(135deg,#1f6feb,#8957e5); }
   .who b { font-size:13px; }
   .who span { color:#8b949e; font-size:12px; }
   .post p { margin:0 0 12px; font-size:14px; }
@@ -26,33 +28,60 @@
 <body>
 <div class="page">
   <h1>Playable posts</h1>
-  <p class="sub">Each card below is a game, not a video. Nothing but the poster loads until you click one.
-     Closing a game frees it completely, so a page can carry as many as you like.</p>
+  <p class="sub">Every card below is a game, not a video. Nothing but a poster loads until you click one,
+     and closing a game frees it completely, so a page can carry as many as you like.</p>
 
   <div class="post">
     <div class="who"><div class="dot"></div><div><b>Marty</b> <span>· engine devlog</span></div></div>
-    <p>Weather, water and bullet-time all running in one sandbox scene. Click it.</p>
+    <p>Weather, water, cloth and bullet-time in one sandbox. Climb the ladder.</p>
     <div class="enjin-embed"
-         data-game="../../demoroom/playground/"
+         data-game="../demoroom/playground/"
+         data-poster="posters/playground.jpg"
+         data-version="20260903j"
          data-title="Playground"
-         data-hint="click to play · 3.4 MB"></div>
-    <div class="note">Streams a 3.4 MB engine on click instead of 11.6 MB.</div>
+         data-hint="click to play · 3.2 MB"></div>
   </div>
 
   <div class="post">
     <div class="who"><div class="dot"></div><div><b>Marty</b> <span>· foliage</span></div></div>
-    <p>Drop your own model in and it sways with everyone else's wind.</p>
+    <p>Swap in your own tree and it catches the same wind as everything else.</p>
     <div class="enjin-embed"
-         data-game="../../demoroom/foliage/"
+         data-game="../demoroom/foliage/"
+         data-poster="posters/foliage.jpg"
+         data-version="20260903j"
          data-title="Foliage"
          data-hint="click to play"></div>
   </div>
 
   <div class="post">
-    <div class="who"><div class="dot"></div><div><b>Marty</b> <span>· 2D</span></div></div>
-    <p>The 2D pipeline: Box2D, sprites, 2D controllers.</p>
+    <div class="who"><div class="dot"></div><div><b>Marty</b> <span>· art styles</span></div></div>
+    <p>Same renderer, different look. Cel shading over a whole city.</p>
     <div class="enjin-embed"
-         data-game="../../demoroom/potions/"
+         data-game="../demoroom/celshaded/"
+         data-poster="posters/celshaded.jpg"
+         data-version="20260903j"
+         data-title="Cel shaded"
+         data-hint="click to play"></div>
+  </div>
+
+  <div class="post">
+    <div class="who"><div class="dot"></div><div><b>Marty</b> <span>· 3D</span></div></div>
+    <p>A first-person prototype running the full 3D pipeline.</p>
+    <div class="enjin-embed"
+         data-game="../demoroom/shells/"
+         data-poster="posters/shells.jpg"
+         data-version="20260903j"
+         data-title="Shells"
+         data-hint="click to play"></div>
+  </div>
+
+  <div class="post">
+    <div class="who"><div class="dot"></div><div><b>Marty</b> <span>· 2D</span></div></div>
+    <p>The 2D side: Box2D, sprites, pixel art.</p>
+    <div class="enjin-embed"
+         data-game="../demoroom/potions/"
+         data-poster="posters/potions.jpg"
+         data-version="20260903j"
          data-title="Potions"
          data-hint="click to play · small"></div>
   </div>
@@ -61,13 +90,13 @@
     <b>How to put one in a post</b>
     <pre>&lt;div class="enjin-embed"
      data-game="/demoroom/playground/"
-     data-title="Playground"
-     data-poster="/posters/playground.jpg"&gt;&lt;/div&gt;
+     data-poster="/embed/posters/playground.jpg"
+     data-title="Playground"&gt;&lt;/div&gt;
 &lt;script src="/embed/enjin-embed.js" defer&gt;&lt;/script&gt;</pre>
     <div class="note">
       <code>data-poster</code> is optional; without it the card draws a gradient.
-      <code>data-hint</code> sets the caption, <code>data-aspect</code> the shape (default 16/9).
-      Press <code>Esc</code> to close a running game.
+      <code>data-hint</code> sets the caption, <code>data-aspect</code> the shape (default 16/9),
+      <code>data-version</code> the cache-buster. Press <code>Esc</code> to close a running game.
     </div>
   </div>
 </div>
