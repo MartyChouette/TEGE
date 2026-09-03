@@ -413,8 +413,6 @@ void DialogueSystem::Update(World* world, f32 deltaTime) {
 
 void DialogueSystem::BuildDialogueBoxUI(GUI::UICanvasComponent& canvas, DialogueBoxComponent& box) {
     // Build the UI element tree for the dialogue box
-    f32 dw = canvas.designWidth;
-    f32 dh = canvas.designHeight;
     f32 m = box.boxMargin;
 
     // Root panel (anchored to bottom of screen)
@@ -423,10 +421,14 @@ void DialogueSystem::BuildDialogueBoxUI(GUI::UICanvasComponent& canvas, Dialogue
     panel->anchor.anchorMin = Math::Vector2(0.0f, 1.0f);
     panel->anchor.anchorMax = Math::Vector2(1.0f, 1.0f);
     panel->anchor.pivot = Math::Vector2(0.5f, 1.0f);
+    // Edges resolve as: parentPos + anchorFrac*parentDim + offset (UISystem::
+    // ComputeElementRect). Full-width bottom bar of height boxHeight, margin m:
+    // left inset +m; right inset -m; top is boxHeight+m up from the bottom anchor;
+    // bottom is m up from the bottom anchor.
     panel->anchor.offsetLeft = m;
-    panel->anchor.offsetRight = m;
-    panel->anchor.offsetTop = -(dh - box.boxHeight - m);
-    panel->anchor.offsetBottom = m;
+    panel->anchor.offsetRight = -m;
+    panel->anchor.offsetTop = -(box.boxHeight + m);
+    panel->anchor.offsetBottom = -m;
     panel->style.bgColor = box.boxColor;
     panel->style.bgAlpha = box.boxAlpha;
     panel->style.borderRadius = box.boxBorderRadius;
@@ -445,8 +447,8 @@ void DialogueSystem::BuildDialogueBoxUI(GUI::UICanvasComponent& canvas, Dialogue
         portrait->anchor.pivot = Math::Vector2(0.0f, 0.0f);
         portrait->anchor.offsetLeft = pad;
         portrait->anchor.offsetTop = pad;
-        portrait->anchor.offsetRight = -(pad + box.portraitSize);
-        portrait->anchor.offsetBottom = -(pad + box.portraitSize);
+        portrait->anchor.offsetRight = pad + box.portraitSize;
+        portrait->anchor.offsetBottom = pad + box.portraitSize;
         box.portraitElementId = portraitId;
         textLeft = pad + box.portraitSize + pad;
     }
@@ -459,8 +461,8 @@ void DialogueSystem::BuildDialogueBoxUI(GUI::UICanvasComponent& canvas, Dialogue
     speaker->anchor.pivot = Math::Vector2(0.0f, 0.0f);
     speaker->anchor.offsetLeft = textLeft;
     speaker->anchor.offsetTop = pad;
-    speaker->anchor.offsetRight = pad;
-    speaker->anchor.offsetBottom = -(pad + box.speakerFontSize + 4.0f);
+    speaker->anchor.offsetRight = -pad;
+    speaker->anchor.offsetBottom = pad + box.speakerFontSize + 4.0f;
     speaker->style.fontSize = box.speakerFontSize;
     speaker->data.textAlignH = 0; // left
     speaker->data.textAlignV = 1;
@@ -475,8 +477,8 @@ void DialogueSystem::BuildDialogueBoxUI(GUI::UICanvasComponent& canvas, Dialogue
     text->anchor.pivot = Math::Vector2(0.0f, 0.0f);
     text->anchor.offsetLeft = textLeft;
     text->anchor.offsetTop = textTop;
-    text->anchor.offsetRight = pad;
-    text->anchor.offsetBottom = pad + 24.0f;
+    text->anchor.offsetRight = -pad;
+    text->anchor.offsetBottom = -(pad + 24.0f);
     text->style.fontSize = box.textFontSize;
     text->style.textColor = box.textColor;
     text->data.textAlignH = 0;
@@ -491,8 +493,8 @@ void DialogueSystem::BuildDialogueBoxUI(GUI::UICanvasComponent& canvas, Dialogue
     cont->anchor.pivot = Math::Vector2(1.0f, 1.0f);
     cont->anchor.offsetLeft = -(pad + 60.0f);
     cont->anchor.offsetTop = -(pad + 20.0f);
-    cont->anchor.offsetRight = pad;
-    cont->anchor.offsetBottom = pad;
+    cont->anchor.offsetRight = -pad;
+    cont->anchor.offsetBottom = -pad;
     cont->data.text = box.continueText;
     cont->data.textAlignH = 2; // right
     cont->data.textAlignV = 1;
@@ -510,8 +512,8 @@ void DialogueSystem::BuildDialogueBoxUI(GUI::UICanvasComponent& canvas, Dialogue
         btn->anchor.pivot = Math::Vector2(0.0f, 0.0f);
         btn->anchor.offsetLeft = textLeft;
         btn->anchor.offsetTop = btnTop;
-        btn->anchor.offsetRight = pad;
-        btn->anchor.offsetBottom = -(btnTop + box.textFontSize + 8.0f);
+        btn->anchor.offsetRight = -pad;
+        btn->anchor.offsetBottom = btnTop + box.textFontSize + 8.0f;
         btn->style.bgColor = box.choiceColor;
         btn->style.bgAlpha = 0.8f;
         btn->style.textColor = box.choiceTextColor;
