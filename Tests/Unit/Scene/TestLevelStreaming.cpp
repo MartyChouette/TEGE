@@ -1,5 +1,6 @@
 #include "EnjinTest.h"
 #include "Enjin/Scene/LevelStreaming.h"
+#include "Enjin/ECS/Components/Transform.h"
 
 using namespace Enjin;
 using namespace Enjin::Scene;
@@ -148,6 +149,111 @@ ENJIN_TEST(Hysteresis, LoadUnloadGap) {
     ENJIN_EXPECT_TRUE(chunk.unloadDistance > chunk.loadDistance);
     f32 gap = chunk.unloadDistance - chunk.loadDistance;
     ENJIN_EXPECT_FLOAT_EQ(gap, 50.0f);
+}
+
+// ===========================================================================
+// RegisterChunksFromWorld — the authoring bridge (volumes -> live chunks)
+// ===========================================================================
+
+ENJIN_TEST(RegisterChunks, VolumeBecomesChunkAtTransformCenter) {
+    // Arrange: one entity with a streaming volume + a transform
+    ECS::World world;
+    StreamingManager sm;
+    sm.SetWorld(&world);
+    ECS::Entity e = world.CreateEntity();
+    StreamingVolumeComponent vol;
+    vol.chunkId = "zone_a";
+    vol.scenePath = "chunks/zone_a.enjin";
+    vol.halfExtents = Vector3(80.0f, 40.0f, 80.0f);
+    vol.loadDistance = 120.0f;
+    world.AddComponent<StreamingVolumeComponent>(e, vol);
+    ECS::TransformComponent tf;
+    tf.position = Vector3(10.0f, 20.0f, 30.0f);
+    world.AddComponent<ECS::TransformComponent>(e, tf);
+
+    // Act
+    u32 n = sm.RegisterChunksFromWorld();
+
+    // Assert: one chunk, centered on the volume entity's transform
+    ENJIN_EXPECT_EQ(n, 1u);
+    ENJIN_ASSERT_TRUE(sm.GetChunks().size() == (size_t)1);
+    const auto& c = sm.GetChunks()[0];
+    ENJIN_EXPECT_TRUE(c.chunkId == "zone_a");
+    ENJIN_EXPECT_TRUE(c.scenePath == "chunks/zone_a.enjin");
+    ENJIN_EXPECT_FLOAT_EQ(c.center.x, 10.0f);
+    ENJIN_EXPECT_FLOAT_EQ(c.center.y, 20.0f);
+    ENJIN_EXPECT_FLOAT_EQ(c.center.z, 30.0f);
+    ENJIN_EXPECT_FLOAT_EQ(c.loadDistance, 120.0f);
+    ENJIN_EXPECT_FLOAT_EQ(c.halfExtents.x, 80.0f);
+}
+
+ENJIN_TEST(RegisterChunks, EmptyScenePathIsSkipped) {
+    // Arrange: a volume with a chunkId but no scenePath
+    ECS::World world;
+    StreamingManager sm;
+    sm.SetWorld(&world);
+    ECS::Entity e = world.CreateEntity();
+    StreamingVolumeComponent vol;
+    vol.chunkId = "no_scene";
+    world.AddComponent<StreamingVolumeComponent>(e, vol);
+
+    // Act
+    u32 n = sm.RegisterChunksFromWorld();
+
+    // Assert: nothing registered
+    ENJIN_EXPECT_EQ(n, 0u);
+    ENJIN_EXPECT_EQ(sm.GetChunks().size(), (size_t)0);
+}
+
+ENJIN_TEST(RegisterChunks, BaseDirIsPrefixed) {
+    // Arrange
+    ECS::World world;
+    StreamingManager sm;
+    sm.SetWorld(&world);
+    ECS::Entity e = world.CreateEntity();
+    StreamingVolumeComponent vol;
+    vol.chunkId = "zone_b";
+    vol.scenePath = "zone_b.enjin";
+    world.AddComponent<StreamingVolumeComponent>(e, vol);
+
+    // Act
+    sm.RegisterChunksFromWorld("scenes/chunks");
+
+    // Assert: baseDir is prefixed onto the relative scene path
+    ENJIN_ASSERT_TRUE(sm.GetChunks().size() == (size_t)1);
+    ENJIN_EXPECT_TRUE(sm.GetChunks()[0].scenePath == "scenes/chunks/zone_b.enjin");
+}
+
+ENJIN_TEST(RegisterChunks, DuplicateChunkIdRegisteredOnce) {
+    // Arrange: two volumes sharing one chunkId
+    ECS::World world;
+    StreamingManager sm;
+    sm.SetWorld(&world);
+    for (int i = 0; i < 2; ++i) {
+        ECS::Entity e = world.CreateEntity();
+        StreamingVolumeComponent vol;
+        vol.chunkId = "dup";
+        vol.scenePath = "dup.enjin";
+        world.AddComponent<StreamingVolumeComponent>(e, vol);
+    }
+
+    // Act
+    u32 n = sm.RegisterChunksFromWorld();
+
+    // Assert: AddChunk dedups by chunkId
+    ENJIN_EXPECT_EQ(n, 1u);
+    ENJIN_EXPECT_EQ(sm.GetChunks().size(), (size_t)1);
+}
+
+ENJIN_TEST(RegisterChunks, NoWorldReturnsZero) {
+    // Arrange: manager with no world set
+    StreamingManager sm;
+
+    // Act
+    u32 n = sm.RegisterChunksFromWorld();
+
+    // Assert
+    ENJIN_EXPECT_EQ(n, 0u);
 }
 
 ENJIN_TEST_MAIN()

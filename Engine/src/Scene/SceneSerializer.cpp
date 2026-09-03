@@ -5214,6 +5214,7 @@ ECS::SpawnPointComponent DeserializeSpawnPointComponent(const json& j) {
 json SerializeStreamingVolumeComponent(const Scene::StreamingVolumeComponent& sv) {
     json j;
     j["chunkId"] = sv.chunkId;
+    j["scenePath"] = sv.scenePath;
     j["halfExtents"] = {RF(sv.halfExtents.x), RF(sv.halfExtents.y), RF(sv.halfExtents.z)};
     j["loadDistance"] = RF(sv.loadDistance);
     j["unloadDistance"] = RF(sv.unloadDistance);
@@ -5224,6 +5225,7 @@ json SerializeStreamingVolumeComponent(const Scene::StreamingVolumeComponent& sv
 Scene::StreamingVolumeComponent DeserializeStreamingVolumeComponent(const json& j) {
     Scene::StreamingVolumeComponent sv;
     if (j.contains("chunkId")) sv.chunkId = j["chunkId"].get<std::string>();
+    if (j.contains("scenePath")) sv.scenePath = j["scenePath"].get<std::string>();
     if (j.contains("halfExtents") && j["halfExtents"].is_array() && j["halfExtents"].size() >= 3) {
         sv.halfExtents = Math::Vector3(j["halfExtents"][0].get<f32>(), j["halfExtents"][1].get<f32>(), j["halfExtents"][2].get<f32>());
     }

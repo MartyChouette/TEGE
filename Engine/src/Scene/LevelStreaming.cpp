@@ -1,5 +1,6 @@
 #include "Enjin/Scene/LevelStreaming.h"
 #include "Enjin/Scene/SceneSerializer.h"
+#include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/Logging/Log.h"
 #include <imgui.h>
 #include <algorithm>
@@ -71,6 +72,54 @@ void StreamingManager::ClearChunks()
     m_LoadQueueSet.clear();
     m_UnloadQueueSet.clear();
     ENJIN_LOG_INFO(Game, "Cleared all streaming chunks");
+}
+
+u32 StreamingManager::RegisterChunksFromWorld(const std::string& baseDir)
+{
+    if (!m_World) {
+        ENJIN_LOG_WARN(Game, "RegisterChunksFromWorld: no world set");
+        return 0;
+    }
+
+    u32 registered = 0;
+    for (ECS::Entity e : m_World->GetEntitiesWithComponent<StreamingVolumeComponent>()) {
+        const auto* vol = m_World->GetComponent<StreamingVolumeComponent>(e);
+        if (!vol) continue;
+        if (vol->chunkId.empty() || vol->scenePath.empty()) {
+            ENJIN_LOG_WARN(Game, "Streaming volume on entity %llu has empty chunkId/scenePath, skipping",
+                static_cast<unsigned long long>(e));
+            continue;
+        }
+
+        StreamingChunk chunk;
+        chunk.chunkId = vol->chunkId;
+        // Prefix the authored (relative) scene path with the scene/asset root so the
+        // chunk resolves independently of the process CWD. Kept relative so the
+        // loader's path-traversal / absolute-path guards still apply.
+        if (!baseDir.empty()) {
+            std::string sep = (baseDir.back() == '/' || baseDir.back() == '\\') ? "" : "/";
+            chunk.scenePath = baseDir + sep + vol->scenePath;
+        } else {
+            chunk.scenePath = vol->scenePath;
+        }
+
+        // Chunk center = the volume entity's world position (its transform).
+        chunk.center = Math::Vector3(0.0f);
+        if (const auto* tf = m_World->GetComponent<ECS::TransformComponent>(e)) {
+            chunk.center = tf->position;
+        }
+        chunk.halfExtents = vol->halfExtents;
+        chunk.loadDistance = vol->loadDistance;
+        chunk.unloadDistance = vol->unloadDistance;
+        chunk.priority = vol->priority;
+
+        usize before = m_Chunks.size();
+        AddChunk(chunk);  // dedups by chunkId + enforces the max-chunk cap
+        if (m_Chunks.size() > before) registered++;
+    }
+
+    ENJIN_LOG_INFO(Game, "RegisterChunksFromWorld: registered %u streaming chunk(s)", registered);
+    return registered;
 }
 
 void StreamingManager::Update(const Math::Vector3& cameraPosition, f32 deltaTime)

@@ -48,9 +48,13 @@ struct StreamingChunk {
     u32 lodLevel = 0;               // 0 = full detail, 1+ = lower detail
 };
 
-// Component marking an entity as a streaming volume boundary
+// Component marking an entity as a streaming volume boundary. The entity's world
+// position is the chunk center; `scenePath` names the (relative) .enjin sub-scene
+// that gets loaded/unloaded as the camera nears/leaves the volume. This is the
+// authoring hook the runtime scans to register chunks (RegisterChunksFromWorld).
 struct StreamingVolumeComponent {
     std::string chunkId;
+    std::string scenePath;          // Relative path to the chunk's .enjin sub-scene
     Math::Vector3 halfExtents = Math::Vector3(50.0f);
     f32 loadDistance = 100.0f;
     f32 unloadDistance = 150.0f;
@@ -77,6 +81,15 @@ public:
     void AddChunk(const StreamingChunk& chunk);
     void RemoveChunk(const std::string& chunkId);
     void ClearChunks();
+
+    // Scan the world for StreamingVolumeComponent entities and register a chunk for
+    // each (center = the volume entity's world position). This is the bridge that
+    // turns authored volumes into live streaming chunks; call it once at scene
+    // runtime init AFTER the scene is loaded. Volumes with an empty chunkId or
+    // scenePath are skipped. Returns the number of chunks registered.
+    // `baseDir`, if non-empty, is prefixed to each volume's relative scenePath so
+    // the chunk resolves against the scene/asset root rather than the process CWD.
+    u32 RegisterChunksFromWorld(const std::string& baseDir = "");
 
     // Update streaming based on camera position (call each frame)
     void Update(const Math::Vector3& cameraPosition, f32 deltaTime);
