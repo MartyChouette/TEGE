@@ -295,31 +295,25 @@ void RenderSystem::RecreateWebSizedTargets(u32 sceneW, u32 sceneH) {
     nativeSceneTex.sampler = MakeWebLinearClampSampler(device);
     m_WebSceneColorTex = webTexMgr->RegisterNativeTexture(nativeSceneTex);
 
-    // ---- MSAA 4x color (render target, resolved to scene color) ----
-    WGPUTextureDescriptor msaaColorDesc = {};
-    msaaColorDesc.usage = WGPUTextureUsage_RenderAttachment;
-    msaaColorDesc.dimension = WGPUTextureDimension_2D;
-    msaaColorDesc.size = {sceneW, sceneH, 1};
-    msaaColorDesc.format = WGPUTextureFormat_RGBA16Float;
-    msaaColorDesc.mipLevelCount = 1;
-    msaaColorDesc.sampleCount = 4;
-    WGPUTexture msaaTex = wgpuDeviceCreateTexture(device, &msaaColorDesc);
-    WGPUTextureViewDescriptor msaaViewDesc = {};
-    msaaViewDesc.format = WGPUTextureFormat_RGBA16Float;
-    msaaViewDesc.dimension = WGPUTextureViewDimension_2D;
-    msaaViewDesc.mipLevelCount = 1;
-    msaaViewDesc.arrayLayerCount = 1;
-    m_WebMSAAColorTex = msaaTex;
-    m_WebMSAAColorView = wgpuTextureCreateView(msaaTex, &msaaViewDesc);
+    // ---- MSAA color: DISABLED on web (sampleCount = 1) ----
+    // WebGPU only supports sampleCount 1 or 4 (there is no 2x). 4x MSAA at high-DPI
+    // mobile resolutions allocated the single largest render target (color + a 4x
+    // depth) and was a primary cause of "Not enough memory left" OOM on heavier
+    // scenes (Shells). With MSAA off we render the scene directly into the 1x
+    // samplable scene-color target — no separate MSAA buffer, no resolve step.
+    // (To re-enable AA later it MUST be 4x, not 2x, and the resolve path below must
+    // come back.) Edges are aliased; FXAA in the post-process pass softens them.
+    m_WebMSAAColorTex = {};
+    m_WebMSAAColorView = nullptr;
 
-    // ---- Offscreen depth (4x MSAA, matches pipeline sample count) ----
+    // ---- Offscreen depth (single-sample, matches the no-MSAA scene target) ----
     WGPUTextureDescriptor depthDesc = {};
     depthDesc.usage = WGPUTextureUsage_RenderAttachment;
     depthDesc.dimension = WGPUTextureDimension_2D;
     depthDesc.size = {sceneW, sceneH, 1};
     depthDesc.format = Renderer::GetDepthStencilFormat();
     depthDesc.mipLevelCount = 1;
-    depthDesc.sampleCount = 4;
+    depthDesc.sampleCount = 1;  // no MSAA (see MSAA note above)
     WGPUTexture depthTex = wgpuDeviceCreateTexture(device, &depthDesc);
     WGPUTextureViewDescriptor depthViewDesc = {};
     depthViewDesc.format = Renderer::GetDepthStencilFormat();
@@ -530,7 +524,7 @@ void RenderSystem::Initialize() {
     pipeDesc.blendState.dstAlpha = Renderer::GPUBlendFactor::OneMinusSrcAlpha;
     pipeDesc.colorFormat = Renderer::GPUTextureFormat::RGBA16Float;  // Render to HDR offscreen target
     pipeDesc.depthFormat = Renderer::GPUTextureFormat::Depth24PlusStencil8;
-    pipeDesc.sampleCount = 4;  // MSAA 4x
+    pipeDesc.sampleCount = 1;  // no MSAA on web (see MSAA note; WebGPU is 1 or 4 only)
     pipeDesc.label = "PBR_Pipeline";
 
     // Vertex layout: position(vec3), normal(vec3), uv(vec2), color(vec4), tangent(vec4), boneWeights(vec4), boneIndices(u32x4)
@@ -860,7 +854,7 @@ void RenderSystem::Initialize() {
         skyPipeDesc.hasColorAttachment = true;
         skyPipeDesc.colorFormat = Renderer::GPUTextureFormat::RGBA16Float;
         skyPipeDesc.depthFormat = Renderer::GPUTextureFormat::Depth24PlusStencil8;
-        skyPipeDesc.sampleCount = 4;  // Must match scene MSAA
+        skyPipeDesc.sampleCount = 1;  // no MSAA (must match scene target)
         skyPipeDesc.alphaBlend = false;
         skyPipeDesc.label = "SkyPipeline";
         m_WebSkyPipeline = pipeMgr->CreateRenderPipeline(skyPipeDesc);
@@ -995,7 +989,7 @@ void RenderSystem::Initialize() {
         pd.blendState.dstAlpha = Renderer::GPUBlendFactor::OneMinusSrcAlpha;
         pd.colorFormat = Renderer::GPUTextureFormat::RGBA16Float;
         pd.depthFormat = Renderer::GPUTextureFormat::Depth24PlusStencil8;
-        pd.sampleCount = 4;
+        pd.sampleCount = 1;  // no MSAA on web
         pd.label = "ParticlePipeline";
         // Vertex layout: slot 0 = quad (per-vertex), slot 1 = instance data (per-instance)
         Renderer::GPUVertexBufferLayoutDesc quadLayout;
@@ -1075,7 +1069,7 @@ void RenderSystem::Initialize() {
         pd.alphaBlend = false;
         pd.colorFormat = Renderer::GPUTextureFormat::RGBA16Float;
         pd.depthFormat = Renderer::GPUTextureFormat::Depth24PlusStencil8;
-        pd.sampleCount = 4;
+        pd.sampleCount = 1;  // no MSAA on web
         pd.label = "GrassPipeline";
         // Blade vertex: pos(vec3) + normal(vec3) + uv(vec2) = 8 floats
         Renderer::GPUVertexBufferLayoutDesc bladeLayout;
@@ -1138,7 +1132,7 @@ void RenderSystem::Initialize() {
         pd.alphaBlend = false;
         pd.colorFormat = Renderer::GPUTextureFormat::RGBA16Float;
         pd.depthFormat = Renderer::GPUTextureFormat::Depth24PlusStencil8;
-        pd.sampleCount = 4;
+        pd.sampleCount = 1;  // no MSAA on web
         pd.label = "TreePipeline";
         // Same vertex format as grass (pos+normal+uv)
         Renderer::GPUVertexBufferLayoutDesc treeLayout;
@@ -1263,7 +1257,7 @@ void RenderSystem::Initialize() {
         pd.blendState.dstAlpha = Renderer::GPUBlendFactor::OneMinusSrcAlpha;
         pd.colorFormat = Renderer::GPUTextureFormat::RGBA16Float;
         pd.depthFormat = Renderer::GPUTextureFormat::Depth24PlusStencil8;
-        pd.sampleCount = 4;
+        pd.sampleCount = 1;  // no MSAA on web
         pd.label = "SpritePipeline";
         // Vertex layout: slot 0 = quad, slot 1 = sprite instance
         Renderer::GPUVertexBufferLayoutDesc sprQuadLayout;
@@ -2337,7 +2331,7 @@ void RenderSystem::Update(f32 deltaTime) {
     auto* webRenderer = static_cast<Renderer::WebGPURenderer*>(m_Renderer);
     auto* webPipeMgr = static_cast<Renderer::WebGPUPipelineManager*>(m_Renderer->GetPipelineManager());
     auto* webBindMgr = static_cast<Renderer::WebGPUBindGroupManager*>(m_Renderer->GetBindGroupManager());
-    bool usePostProcess = m_WebPostProcessPipeline.IsValid() && m_WebSceneColorView && m_WebSceneDepthView && m_WebMSAAColorView;
+    bool usePostProcess = m_WebPostProcessPipeline.IsValid() && m_WebSceneColorView && m_WebSceneDepthView;
     WGPURenderPassEncoder scenePassEncoder = nullptr;
     Renderer::IRenderEncoder* encoder = nullptr;
 
@@ -2376,10 +2370,11 @@ void RenderSystem::Update(f32 deltaTime) {
     }
 
     if (usePostProcess) {
-        // Render scene to MSAA texture, resolve to HDR offscreen
+        // MSAA off: render the scene directly into the 1x samplable HDR target
+        // (no MSAA buffer, no resolve). See the MSAA note in RecreateWebSizedTargets.
         WGPURenderPassColorAttachment colorAtt = {};
-        colorAtt.view = static_cast<WGPUTextureView>(m_WebMSAAColorView);  // 4x MSAA render target
-        colorAtt.resolveTarget = static_cast<WGPUTextureView>(m_WebSceneColorView);  // 1x resolve target
+        colorAtt.view = static_cast<WGPUTextureView>(m_WebSceneColorView);  // 1x render target
+        colorAtt.resolveTarget = nullptr;                                    // no MSAA resolve
         colorAtt.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
         colorAtt.loadOp = WGPULoadOp_Clear;
         colorAtt.storeOp = WGPUStoreOp_Store;
