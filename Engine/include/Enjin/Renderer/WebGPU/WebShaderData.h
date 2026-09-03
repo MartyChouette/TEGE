@@ -480,13 +480,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // irradiance from the sky. Up-facing surfaces catch zenith/sky light, undersides
     // catch the ground bounce; the result is soft directional fill that reads as global
     // illumination. Automatic for EVERY web build, no bake, one extra mix. Falls back to
-    // the flat ambient color when the scene has no configured sky. Tempered by 0.5 so it
-    // fills rather than washes, and still scaled by the scene's ambientIntensity.
+    // the flat ambient color when the scene has no configured sky. Anchored to the
+    // scene's tuned flat ambient level (mix, not replace) so GI adds sky direction/tint
+    // WITHOUT darkening the scene — an earlier "* 0.5" temper halved the fill light and
+    // made sky-configured web builds read noticeably dimmer than the flat-ambient ones.
     var ambIrr = lighting.ambientColor.rgb;
     if (lighting.skyTop.w > 0.5) {
         let upAmt = clamp(N.y * 0.5 + 0.5, 0.0, 1.0);
         let aboveIrr = mix(lighting.skyHorizon.rgb, lighting.skyTop.rgb, upAmt);
-        ambIrr = mix(lighting.skyBottom.rgb * 0.6, aboveIrr, upAmt) * 0.5;
+        let hemi = mix(lighting.skyBottom.rgb * 0.6, aboveIrr, upAmt);
+        ambIrr = mix(lighting.ambientColor.rgb, hemi, 0.6);
     }
     let ambient = ambIrr * lighting.ambientColor.w * albedo;
     let emissive = object.emissiveColor * object.emissiveStrength;
@@ -524,7 +527,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // when clear, so snow accumulates and then the scene returns to clear/spring.
     let snowAccum = lighting.snowParams.x;
     if (snowAccum > 0.0) {
-        let snowCoverage = snowAccum * smoothstep(0.3, 0.8, N.y);
+        // Lower floor (0.15) so slopes catch snow too, not just dead-flat ground.
+        let snowCoverage = snowAccum * smoothstep(0.15, 0.7, N.y);
         color = mix(color, vec3<f32>(0.95, 0.97, 1.0), snowCoverage);
     }
 

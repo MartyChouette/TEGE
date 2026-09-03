@@ -108,9 +108,9 @@ void WeatherSystem::Update(f32 deltaTime, const Math::Vector3& cameraPos) {
     // off with the instantaneous precipitation intensity.
     if (m_SnowIntensity > 0.05f) {
         m_SnowAccumulation += (1.0f - m_SnowAccumulation) * m_SnowIntensity
-                              * Math::Min(deltaTime * 0.15f, 1.0f);
+                              * Math::Min(deltaTime * 0.30f, 1.0f);  // ~4s to blanket (was 0.15: too slow to read)
     } else {
-        m_SnowAccumulation -= deltaTime * 0.12f;  // ~8s to fully melt (was 20s: looked stuck)
+        m_SnowAccumulation -= deltaTime * 0.10f;  // ~10s to fully melt
     }
     m_SnowAccumulation = Math::Clamp(m_SnowAccumulation, 0.0f, 1.0f);
 
