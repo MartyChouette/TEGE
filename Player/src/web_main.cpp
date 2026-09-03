@@ -557,6 +557,10 @@ public:
         // Apply scene render settings (ambient, shadows, etc.)
         m_SceneRenderSettings.rtEnabled = false;
         m_SceneRenderSettings.ApplyToRuntime(m_RenderSystem, nullptr);
+        // ApplyToRuntime passes null pp on web, so feed the post-process effects
+        // (vignette, chromatic aberration, saturation, color filter, color quant) to
+        // the web PP pass directly from the scene settings.
+        ApplyWebPostProcess();
 
         m_Initialized = true;
         ENJIN_LOG_INFO(Player, "Web Player initialized");
@@ -616,6 +620,19 @@ public:
             if (c && c->captureMouseOnClick) return true;
         }
         return false;
+    }
+
+    // Push the scene's post-process settings to the web PP pass (vignette, chromatic
+    // aberration, saturation, color filter, color quantization). SceneRenderSettings
+    // carries these; ApplyToRuntime skips them on web (null pp), so this is the path.
+    void ApplyWebPostProcess() {
+        if (!m_RenderSystem) return;
+        const auto& s = m_SceneRenderSettings;
+        m_RenderSystem->SetWebPostProcess(
+            s.saturation, s.colorFilter.x, s.colorFilter.y, s.colorFilter.z,
+            s.vignetteEnabled ? s.vignetteIntensity : 0.0f, s.vignetteSmoothness,
+            s.chromaticAberrationEnabled ? s.chromaticAberrationIntensity : 0.0f,
+            s.colorQuantEnabled ? 8.0f : 0.0f);
     }
 
     void TogglePauseMenu() {
@@ -1557,6 +1574,7 @@ private:
         serializer.LoadFromString(sceneStr, true);   // clears the world first
         m_SceneRenderSettings = serializer.GetRenderSettings();
         if (m_RenderSystem) m_RenderSystem->SetSkybox(serializer.GetSkyboxConfig());
+        ApplyWebPostProcess();
         m_CurrentWebScenePath = scenePath;
         m_SimClock.Reset();
         m_WeatherSystem.SetRainIntensity(0.0f);

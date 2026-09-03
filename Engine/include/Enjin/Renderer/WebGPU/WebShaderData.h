@@ -614,8 +614,16 @@ struct PostProcessParams {
     contrast: f32,
     previewEffect: u32,
     previewDivider: f32,
-    _pad0: f32,
-    _pad1: f32,
+    saturation: f32,
+    colorFilterR: f32,
+    colorFilterG: f32,
+    colorFilterB: f32,
+    vignetteIntensity: f32,
+    vignetteSmoothness: f32,
+    chromaticAberration: f32,
+    colorQuantLevels: f32,
+    screenW: f32,
+    screenH: f32,
 };
 @group(0) @binding(2) var<uniform> params: PostProcessParams;
 
@@ -742,18 +750,46 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let texelSize = vec2<f32>(1.0 / texDim.x, 1.0 / texDim.y);
 
     var color = fxaa(in.uv, texelSize);
+
+    // Chromatic aberration: split R/B radially from the screen centre. textureSampleLevel
+    // (explicit LOD) is legal inside a branch; plain textureSample would not be.
+    if (params.chromaticAberration > 0.0) {
+        let dir = (in.uv - vec2<f32>(0.5)) * params.chromaticAberration * 4.0;
+        let r = textureSampleLevel(sceneTexture, sceneSampler, in.uv - dir, 0.0).r;
+        let b = textureSampleLevel(sceneTexture, sceneSampler, in.uv + dir, 0.0).b;
+        color = vec3<f32>(r, color.g, b);
+    }
+
     color = aces_tonemap(color);
 
     // Options preview split: left of the divider shows the frame WITHOUT the
-    // previewed effect (5 = colorblind, 6 = brightness/contrast).
+    // previewed effect (5 = colorblind, 6 = color grading).
     let previewLeft = params.previewEffect != 0u && in.uv.x < params.previewDivider;
     if (!(previewLeft && params.previewEffect == 6u)) {
+        // Color grading: brightness/contrast, then saturation, then color filter.
         color = (color - 0.5) * params.contrast + 0.5 + params.brightness;
+        let luma = dot(color, vec3<f32>(0.2126, 0.7152, 0.0722));
+        color = mix(vec3<f32>(luma), color, params.saturation);
+        color = color * vec3<f32>(params.colorFilterR, params.colorFilterG, params.colorFilterB);
     }
     if (!(previewLeft && params.previewEffect == 5u)) {
         color = applyColorblindCorrection(color);
     }
+
     color = linearToSrgb(color);
+
+    // Retro color quantization (posterize) on the display-space color.
+    if (params.colorQuantLevels > 0.5) {
+        color = floor(color * params.colorQuantLevels) / params.colorQuantLevels;
+    }
+
+    // Vignette: darken toward the frame edges.
+    if (params.vignetteIntensity > 0.0) {
+        let d = distance(in.uv, vec2<f32>(0.5));
+        let vig = smoothstep(0.75, 0.75 - max(params.vignetteSmoothness, 0.05), d);
+        color = color * mix(1.0, vig, clamp(params.vignetteIntensity, 0.0, 1.0));
+    }
+
     if (params.previewEffect != 0u && abs(in.uv.x - params.previewDivider) < texelSize.x) {
         color = vec3<f32>(1.0, 1.0, 1.0);
     }

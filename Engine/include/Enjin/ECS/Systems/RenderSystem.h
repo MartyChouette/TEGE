@@ -741,8 +741,19 @@ public:
         // 5 = colorblind, 6 = brightness/contrast (the effects this pass owns).
         u32 previewEffect = 0;
         f32 previewDivider = 0.5f;
-        f32 _pad0 = 0.0f;
-        f32 _pad1 = 0.0f;
+        // Post-process effects ported to web (was flat/accessibility-only). Layout
+        // must stay in lockstep with PostProcessParams in POSTPROCESS_WGSL. All
+        // scalars (no vec3) to avoid std140 alignment traps. 16 f32 = 64 bytes.
+        f32 saturation = 1.0f;
+        f32 colorFilterR = 1.0f;
+        f32 colorFilterG = 1.0f;
+        f32 colorFilterB = 1.0f;
+        f32 vignetteIntensity = 0.0f;
+        f32 vignetteSmoothness = 0.5f;
+        f32 chromaticAberration = 0.0f;
+        f32 colorQuantLevels = 0.0f;   // 0 = off
+        f32 screenW = 1280.0f;
+        f32 screenH = 720.0f;
     };
     WebPPAccessibilityParams m_WebPPAccessibility;
     void SetWebAccessibility(u32 colorblindMode, f32 strength, f32 brightness, f32 contrast) {
@@ -754,6 +765,20 @@ public:
     void SetWebAccessibilityPreview(u32 effect, f32 divider) {
         m_WebPPAccessibility.previewEffect = effect;
         m_WebPPAccessibility.previewDivider = divider;
+    }
+    // Ported post-process effects for the web PP pass. Fed from the scene's
+    // SceneRenderSettings (ApplyToRuntime passes null pp on web, so this is the path).
+    void SetWebPostProcess(f32 saturation, f32 cfR, f32 cfG, f32 cfB,
+                           f32 vignetteIntensity, f32 vignetteSmoothness,
+                           f32 chromaticAberration, f32 colorQuantLevels) {
+        m_WebPPAccessibility.saturation = saturation;
+        m_WebPPAccessibility.colorFilterR = cfR;
+        m_WebPPAccessibility.colorFilterG = cfG;
+        m_WebPPAccessibility.colorFilterB = cfB;
+        m_WebPPAccessibility.vignetteIntensity = vignetteIntensity;
+        m_WebPPAccessibility.vignetteSmoothness = vignetteSmoothness;
+        m_WebPPAccessibility.chromaticAberration = chromaticAberration;
+        m_WebPPAccessibility.colorQuantLevels = colorQuantLevels;
     }
 
     // Cel shading (lighting quantization)
