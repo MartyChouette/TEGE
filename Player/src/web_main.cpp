@@ -1244,13 +1244,17 @@ public:
             // Y/Triangle). Synthesizes a B press so the GAME'S OWN bullet-time logic
             // runs (Playground toggles on B); one source of truth, not a parallel
             // web-only toggle. Moved off the cramped top-right corner to a large,
-            // clearly-labelled amber button at the BOTTOM-LEFT — thumb-reachable and
-            // visually obvious, clear of the pause button and the floating move stick's
-            // usual right-thumb action buttons. Sits a little above the very bottom to
-            // clear the browser's edge-swipe gesture zone.
+            // clearly-labelled amber button on the RIGHT edge, vertically centred.
+            // It MUST NOT sit in the left half of the screen: that region is the
+            // floating move-stick zone (Input.cpp routes any touch there to movement
+            // BEFORE ImGui sees it), so a left-side button silently never registers.
+            // The right edge is the look-drag zone, where ImGui taps DO land (same as
+            // the working pause button). Centred vertically to clear the pause button
+            // (top-right) and the scheme's action buttons (bottom-right).
             if (Enjin::Input::GetTouchOverlay().active) {
                 const float slowW = 96.0f, slowH = 52.0f;
-                ImGui::SetNextWindowPos(ImVec2(pbPad, io.DisplaySize.y - slowH - pbPad * 3.0f));
+                ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - slowW - pbPad,
+                                               io.DisplaySize.y * 0.5f - slowH * 0.5f));
                 ImGui::SetNextWindowBgAlpha(0.0f);
                 ImGui::Begin("##bullettimebtn", nullptr,
                     ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
