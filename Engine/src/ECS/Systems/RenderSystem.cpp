@@ -76,6 +76,7 @@ Renderer::SkyboxConfig RenderSystem::WeatherSky(const Renderer::SkyboxConfig& cf
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/Vegetation.h"   // web section (before the #if split) needs it for the wind-sway flag
 #include "Enjin/ECS/Components/GrassVolume.h"
 #include "Enjin/ECS/Components/ShrubVolume.h"  // web shrub draw (reuses grass pipeline)
 #include "Enjin/ECS/Components/BoundaryPolygon.h"  // Creative-mode editable lake outline
