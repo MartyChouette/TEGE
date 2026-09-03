@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Playable posts</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:#0d1117; color:#e6edf3; font:15px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; }
+  .page { max-width:640px; margin:0 auto; padding:28px 18px 80px; }
+  h1 { font-size:20px; margin:0 0 6px; }
+  .sub { color:#8b949e; font-size:13px; margin:0 0 28px; }
+  .post { border:1px solid #21262d; border-radius:12px; padding:16px; margin:0 0 22px; background:#0f141b; }
+  .who { display:flex; align-items:center; gap:9px; margin-bottom:10px; }
+  .dot { width:28px; height:28px; border-radius:50%; background:linear-gradient(135deg,#1f6feb,#8957e5); flex:0 0 auto; }
+  .who b { font-size:13px; }
+  .who span { color:#8b949e; font-size:12px; }
+  .post p { margin:0 0 12px; font-size:14px; }
+  .note { color:#8b949e; font-size:12px; margin-top:10px; }
+  code { background:#161b22; padding:1px 5px; border-radius:4px; font-size:12px; }
+  .how { border:1px solid #21262d; border-radius:12px; padding:16px; background:#0f141b; }
+  pre { background:#161b22; padding:12px; border-radius:8px; overflow-x:auto; font-size:12px; margin:10px 0 0; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Playable posts</h1>
+  <p class="sub">Each card below is a game, not a video. Nothing but the poster loads until you click one.
+     Closing a game frees it completely, so a page can carry as many as you like.</p>
+
+  <div class="post">
+    <div class="who"><div class="dot"></div><div><b>Marty</b> <span>· engine devlog</span></div></div>
+    <p>Weather, water and bullet-time all running in one sandbox scene. Click it.</p>
+    <div class="enjin-embed"
+         data-game="../../demoroom/playground/"
+         data-title="Playground"
+         data-hint="click to play · 3.4 MB"></div>
+    <div class="note">Streams a 3.4 MB engine on click instead of 11.6 MB.</div>
+  </div>
+
+  <div class="post">
+    <div class="who"><div class="dot"></div><div><b>Marty</b> <span>· foliage</span></div></div>
+    <p>Drop your own model in and it sways with everyone else's wind.</p>
+    <div class="enjin-embed"
+         data-game="../../demoroom/foliage/"
+         data-title="Foliage"
+         data-hint="click to play"></div>
+  </div>
+
+  <div class="post">
+    <div class="who"><div class="dot"></div><div><b>Marty</b> <span>· 2D</span></div></div>
+    <p>The 2D pipeline: Box2D, sprites, 2D controllers.</p>
+    <div class="enjin-embed"
+         data-game="../../demoroom/potions/"
+         data-title="Potions"
+         data-hint="click to play · small"></div>
+  </div>
+
+  <div class="how">
+    <b>How to put one in a post</b>
+    <pre>&lt;div class="enjin-embed"
+     data-game="/demoroom/playground/"
+     data-title="Playground"
+     data-poster="/posters/playground.jpg"&gt;&lt;/div&gt;
+&lt;script src="/embed/enjin-embed.js" defer&gt;&lt;/script&gt;</pre>
+    <div class="note">
+      <code>data-poster</code> is optional; without it the card draws a gradient.
+      <code>data-hint</code> sets the caption, <code>data-aspect</code> the shape (default 16/9).
+      Press <code>Esc</code> to close a running game.
+    </div>
+  </div>
+</div>
+
+<script src="enjin-embed.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,58 @@
+# Apache config for serving Enjin web builds.
+#
+# THE PROBLEM THIS SOLVES
+# marty64.net was sending EnjinPlayer.wasm at its full 11.56 MB with no
+# Content-Encoding header at all (verified: Content-Length 12121999, Server:
+# Apache, no content-encoding in the response). Gzipped that same file is
+# 3.22 MB, so every visitor was downloading roughly 8.7 MB more than necessary.
+#
+# Copy this to the site root as `.htaccess` (or merge these blocks into an
+# existing one). Then re-check with:
+#   curl -sI -H 'Accept-Encoding: gzip' https://<site>/demoroom/playground/EnjinPlayer.wasm | grep -i content-
+# You want to see `content-encoding: gzip` and a much smaller content-length.
+#
+# If mod_deflate is unavailable on the host, the embed loader (enjin-boot.js)
+# already fetches a pre-built EnjinPlayer.wasm.gz and inflates it with the
+# browser's DecompressionStream, so the win does not depend on this file.
+
+# --- correct types ---------------------------------------------------------
+AddType application/wasm .wasm
+AddType application/octet-stream .enjpak
+
+# --- compression -----------------------------------------------------------
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE application/wasm
+  AddOutputFilterByType DEFLATE application/javascript text/javascript
+  AddOutputFilterByType DEFLATE text/html text/css text/plain
+  AddOutputFilterByType DEFLATE application/json image/svg+xml
+  # .enjpak is already compressed internally (1.56 MB -> 1.51 MB gzipped),
+  # so re-compressing it just burns CPU for ~3%.
+</IfModule>
+
+# Serve a pre-built .wasm.gz when the browser accepts gzip. This beats
+# mod_deflate because the file is compressed once at -9 rather than on every
+# request, and it works even where mod_deflate is off.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{HTTP:Accept-Encoding} \bgzip\b
+  RewriteCond %{REQUEST_FILENAME}\.gz -s
+  RewriteRule ^(.+)\.wasm$ $1.wasm.gz [QSA]
+
+  <FilesMatch "\.wasm\.gz$">
+    ForceType application/wasm
+    Header set Content-Encoding gzip
+    Header append Vary Accept-Encoding
+  </FilesMatch>
+</IfModule>
+
+# --- caching ---------------------------------------------------------------
+# Engine and pak URLs carry a ?v= cache-buster, so they can be cached hard.
+# HTML must not be, or a version bump never reaches anyone.
+<IfModule mod_headers.c>
+  <FilesMatch "\.(wasm|gz|enjpak)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+  <FilesMatch "\.html$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+</IfModule>
