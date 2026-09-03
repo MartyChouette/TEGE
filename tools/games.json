@@ -1,0 +1,42 @@
+{
+  "siteName": "TEGE",
+  "author": "Marty",
+  "version": "20260903j",
+  "games": [
+    {
+      "slug": "playground",
+      "dir": "playground",
+      "title": "Playground",
+      "description": "An engine sandbox: weather, water, cloth, bullet time and touch controls, running in the browser.",
+      "hint": "click to play"
+    },
+    {
+      "slug": "foliage",
+      "dir": "foliage",
+      "title": "Foliage",
+      "description": "Drop in your own tree and it catches the same wind as everything else in the scene.",
+      "hint": "click to play"
+    },
+    {
+      "slug": "celshaded",
+      "dir": "celshaded",
+      "title": "Cel Shaded",
+      "description": "The same renderer with a different look: cel shading across a whole city.",
+      "hint": "click to play"
+    },
+    {
+      "slug": "shells",
+      "dir": "shells",
+      "title": "Shells",
+      "description": "A first-person prototype running the full 3D pipeline in the browser.",
+      "hint": "click to play"
+    },
+    {
+      "slug": "potions",
+      "dir": "potions",
+      "title": "Potions",
+      "description": "The 2D side of the engine: Box2D physics, sprites and pixel art.",
+      "hint": "click to play"
+    }
+  ]
+}
