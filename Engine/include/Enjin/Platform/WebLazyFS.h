@@ -37,8 +37,18 @@ ENJIN_API void SetReader(ReadFn reader);
 // alone. Returns true when a lazy node was created.
 ENJIN_API bool RegisterLazyFile(const std::string& virtualPath, u64 size);
 
-// Diagnostics: how many lazy files have been materialized so far, and the
-// total bytes those materializations occupy.
+// Resident cap for materialized files (bytes, 0 = unlimited). When a
+// materialization would push the resident total past the cap, the least
+// recently read resident files are demoted back to lazy (their bytes dropped;
+// the next read re-materializes them from the pak) until it fits. A stream in
+// the middle of reading a demoted file simply re-materializes on its next read,
+// so eviction is always safe, just not free.
+ENJIN_API void SetBudgetBytes(u64 bytes);
+ENJIN_API u64 GetBudgetBytes();
+ENJIN_API u32 GetEvictionCount();
+
+// Diagnostics: how many lazy files are currently materialized (resident), and
+// the total bytes they occupy.
 ENJIN_API u32 GetMaterializedCount();
 ENJIN_API u64 GetMaterializedBytes();
 ENJIN_API u32 GetRegisteredCount();

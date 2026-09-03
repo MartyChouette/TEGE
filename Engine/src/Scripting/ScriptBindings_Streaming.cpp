@@ -52,6 +52,22 @@ static void Streaming_SetEnabled(bool enabled) {
     if (s_BindingsStreaming) s_BindingsStreaming->SetEnabled(enabled);
 }
 
+static void Streaming_SetMemoryBudgetMB(int mb) {
+    if (s_BindingsStreaming) s_BindingsStreaming->SetMemoryBudgetBytes(mb > 0 ? static_cast<u64>(mb) * 1024ull * 1024ull : 0);
+}
+
+static int Streaming_GetMemoryBudgetMB() {
+    return s_BindingsStreaming ? static_cast<int>(s_BindingsStreaming->GetMemoryBudgetBytes() / (1024ull * 1024ull)) : 0;
+}
+
+static float Streaming_GetResidentMB() {
+    return s_BindingsStreaming ? static_cast<float>(s_BindingsStreaming->GetResidentBytes() / (1024.0 * 1024.0)) : 0.0f;
+}
+
+static int Streaming_GetBudgetEvictions() {
+    return s_BindingsStreaming ? static_cast<int>(s_BindingsStreaming->GetBudgetEvictionCount()) : 0;
+}
+
 // ============================================================================
 // Registration
 // ============================================================================
@@ -79,6 +95,14 @@ void RegisterStreamingBindings(asIScriptEngine* engine) {
         ENJIN_AS_FN(Streaming_GetLoadedCount), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Streaming_SetEnabled(bool)",
         ENJIN_AS_FN(Streaming_SetEnabled), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Streaming_SetMemoryBudgetMB(int)",
+        ENJIN_AS_FN(Streaming_SetMemoryBudgetMB), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int Streaming_GetMemoryBudgetMB()",
+        ENJIN_AS_FN(Streaming_GetMemoryBudgetMB), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Streaming_GetResidentMB()",
+        ENJIN_AS_FN(Streaming_GetResidentMB), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int Streaming_GetBudgetEvictions()",
+        ENJIN_AS_FN(Streaming_GetBudgetEvictions), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting

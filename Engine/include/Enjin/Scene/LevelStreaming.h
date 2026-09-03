@@ -47,6 +47,8 @@ struct StreamingChunk {
     std::vector<ECS::Entity> entities;  // Entities in this chunk when loaded
     StreamPriority priority = StreamPriority::Normal;
     u32 lodLevel = 0;               // 0 = full detail, 1+ = lower detail
+    u64 residentBytes = 0;          // Estimated resident cost while Loaded (SetMemoryBudgetBytes)
+    f64 lastNearTime = 0.0;         // Streaming-clock time the camera was last within loadDistance (LRU key)
 };
 
 // Component marking an entity as a streaming volume boundary. The entity's world
@@ -120,6 +122,24 @@ public:
     void SetMaxConcurrentLoads(u32 max) { m_MaxConcurrentLoads = max; }
     void SetEnabled(bool enabled) { m_Enabled = enabled; }
 
+    // Memory budget (bytes, 0 = unlimited). Each loaded chunk carries an estimated
+    // resident cost (inline mesh geometry x2 for the CPU + GPU copies, a per-entity
+    // overhead, plus whatever the optional cost hook adds). When the total exceeds
+    // the budget, Update() unloads the least-recently-near loaded chunk that the
+    // camera is NOT within loadDistance of (evicting an in-range chunk would just
+    // reload next frame). If every loaded chunk is in range the budget is reported
+    // as blown (once) and nothing is evicted: content never disappears under the
+    // player.
+    void SetMemoryBudgetBytes(u64 bytes) { m_MemoryBudgetBytes = bytes; m_BudgetWarned = false; }
+    u64 GetMemoryBudgetBytes() const { return m_MemoryBudgetBytes; }
+    u64 GetResidentBytes() const { return m_ResidentBytes; }
+    u32 GetBudgetEvictionCount() const { return m_BudgetEvictions; }
+    // Extra per-chunk cost (e.g. texture bytes the runtime knows about), added on
+    // top of the built-in geometry estimate at integration time.
+    using ChunkCostFn = std::function<u64(const StreamingChunk& chunk)>;
+    void SetChunkCostFn(ChunkCostFn fn) { m_ChunkCostFn = std::move(fn); }
+    u64 EstimateChunkBytes(const StreamingChunk& chunk) const;
+
     // Time-sliced integration budget (microseconds per frame for main-thread entity creation)
     // Default 2000us = 2ms at 60fps. Glacier-inspired: no single call exceeds this budget.
     void SetIntegrationBudgetUs(u32 budgetUs) { m_IntegrationBudgetUs = budgetUs; }
@@ -146,6 +166,7 @@ private:
     // root. Safe to call from a worker thread (read-only members).
     bool ReadChunkSource(const std::string& relPath, std::string& outJson) const;
     void UnloadChunkEntities(StreamingChunk& chunk);
+    void EnforceMemoryBudget(const Math::Vector3& cameraPosition);
 
     // Time-sliced integration: process staged chunks within budget
     void ProcessStagedIntegration();
@@ -172,6 +193,12 @@ private:
     std::mutex m_StagedMutex;
 
     u32 m_MaxConcurrentLoads = 2;
+    u64 m_MemoryBudgetBytes = 0;      // 0 = unlimited
+    u64 m_ResidentBytes = 0;          // sum of residentBytes over Loaded chunks
+    u32 m_BudgetEvictions = 0;
+    f64 m_Clock = 0.0;                // accumulated Update() deltaTime (LRU clock)
+    bool m_BudgetWarned = false;
+    ChunkCostFn m_ChunkCostFn;
     u32 m_IntegrationBudgetUs = 2000; // 2ms default (Glacier-inspired)
     f32 m_LastIntegrationTimeMs = 0.0f;
     bool m_Enabled = true;

@@ -10,8 +10,10 @@ namespace {
 Enjin::Platform::WebLazyFS::ReadFn s_Reader;
 std::vector<std::string> s_Paths;          // index -> virtual path (JS nodes hold the index)
 std::vector<Enjin::u8> s_Buffer;           // bytes of the file being materialized (transient)
-Enjin::u32 s_Materialized = 0;
+Enjin::u32 s_Materialized = 0;             // currently resident
 Enjin::u64 s_MaterializedBytes = 0;
+Enjin::u64 s_BudgetBytes = 0;              // 0 = unlimited
+Enjin::u32 s_Evictions = 0;
 
 } // namespace
 
@@ -46,6 +48,21 @@ EMSCRIPTEN_KEEPALIVE void enjin_lazyfs_release() {
     std::vector<Enjin::u8>().swap(s_Buffer);
 }
 
+EMSCRIPTEN_KEEPALIVE double enjin_lazyfs_budget() {
+    return static_cast<double>(s_BudgetBytes);
+}
+
+// JS demoted a resident node back to lazy to make room under the budget.
+EMSCRIPTEN_KEEPALIVE void enjin_lazyfs_on_evict(int index, double bytes) {
+    const Enjin::u64 b = static_cast<Enjin::u64>(bytes);
+    s_MaterializedBytes = (s_MaterializedBytes >= b) ? s_MaterializedBytes - b : 0;
+    if (s_Materialized > 0) --s_Materialized;
+    ++s_Evictions;
+    const char* path = (index >= 0 && static_cast<size_t>(index) < s_Paths.size()) ? s_Paths[static_cast<size_t>(index)].c_str() : "?";
+    ENJIN_LOG_INFO(Player, "LazyFS: evicted '%s' (%.1f KB) for budget (%.1f / %.1f MB resident)",
+        path, bytes / 1024.0, s_MaterializedBytes / (1024.0 * 1024.0), s_BudgetBytes / (1024.0 * 1024.0));
+}
+
 } // extern "C"
 
 // Creates the lazy MEMFS node. No JS-library helpers (UTF8ToString, malloc)
@@ -65,12 +82,40 @@ EM_JS(int, enjin_lazyfs_js_register, (const char* vpathPtr, int index, double si
     var node;
     try { node = FS.createFile(dir, name, {}, true, false); } catch (e) { return 0; }
 
+    // Shared registry: resident nodes (for LRU eviction) + a use tick.
+    if (!Module.enjinLazy) Module.enjinLazy = { resident: [], residentBytes: 0, tick: 0 };
+    var reg = Module.enjinLazy;
+
     node.contents = null;
-    node.enjinLazyIndex = index;
+    node.enjinPakIndex = index;      // permanent: needed again after a demotion
+    node.enjinLazyIndex = index;     // undefined while resident
     node.enjinSize = size;
+    node.enjinLastUse = 0;
+
+    var demote = function(v) {
+        var bytes = v.contents ? v.contents.length : 0;
+        v.contents = null;
+        v.enjinLazyIndex = v.enjinPakIndex;
+        reg.residentBytes -= bytes;
+        _enjin_lazyfs_on_evict(v.enjinPakIndex, bytes);
+    };
 
     var ensure = function() {
+        node.enjinLastUse = ++reg.tick;
         if (node.enjinLazyIndex === undefined) return;
+        // Budget: demote least-recently-used resident files until this one fits.
+        var budget = _enjin_lazyfs_budget();
+        if (budget > 0) {
+            while (reg.residentBytes + node.enjinSize > budget && reg.resident.length > 0) {
+                var vi = 0;
+                for (var i = 1; i < reg.resident.length; i++) {
+                    if (reg.resident[i].enjinLastUse < reg.resident[vi].enjinLastUse) vi = i;
+                }
+                var v = reg.resident[vi];
+                reg.resident.splice(vi, 1);
+                demote(v);
+            }
+        }
         var idx = node.enjinLazyIndex;
         node.enjinLazyIndex = undefined;
         var n = _enjin_lazyfs_materialize(idx);
@@ -79,6 +124,8 @@ EM_JS(int, enjin_lazyfs_js_register, (const char* vpathPtr, int index, double si
         node.contents = n > 0 ? HEAPU8.slice(ptr, ptr + n) : new Uint8Array(0);
         _enjin_lazyfs_release();
         node.enjinSize = node.contents.length;
+        reg.resident.push(node);
+        reg.residentBytes += node.contents.length;
     };
 
     // stat() answers from the registered size without loading anything.
@@ -124,6 +171,9 @@ bool RegisterLazyFile(const std::string& virtualPath, u64 size) {
 #endif
 }
 
+void SetBudgetBytes(u64 bytes) { s_BudgetBytes = bytes; }
+u64 GetBudgetBytes() { return s_BudgetBytes; }
+u32 GetEvictionCount() { return s_Evictions; }
 u32 GetMaterializedCount() { return s_Materialized; }
 u64 GetMaterializedBytes() { return s_MaterializedBytes; }
 u32 GetRegisteredCount() { return static_cast<u32>(s_Paths.size()); }

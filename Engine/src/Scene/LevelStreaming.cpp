@@ -1,6 +1,7 @@
 #include "Enjin/Scene/LevelStreaming.h"
 #include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/ECS/Components/Transform.h"
+#include "Enjin/ECS/Components/Mesh.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Build/AssetReader.h"
 #include "Enjin/Platform/Paths.h"
@@ -73,6 +74,7 @@ void StreamingManager::ClearChunks()
     m_UnloadQueue.clear();
     m_LoadQueueSet.clear();
     m_UnloadQueueSet.clear();
+    m_ResidentBytes = 0;
     ENJIN_LOG_INFO(Game, "Cleared all streaming chunks");
 }
 
@@ -126,9 +128,8 @@ u32 StreamingManager::RegisterChunksFromWorld(const std::string& baseDir)
 
 void StreamingManager::Update(const Math::Vector3& cameraPosition, f32 deltaTime)
 {
-    (void)deltaTime;
-
     if (!m_Enabled || !m_World) return;
+    m_Clock += static_cast<f64>(deltaTime);
 
     for (auto& chunk : m_Chunks) {
         // Calculate distance from camera to chunk center
@@ -136,6 +137,7 @@ void StreamingManager::Update(const Math::Vector3& cameraPosition, f32 deltaTime
         f32 dy = cameraPosition.y - chunk.center.y;
         f32 dz = cameraPosition.z - chunk.center.z;
         f32 distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+        if (distance <= chunk.loadDistance) chunk.lastNearTime = m_Clock;   // LRU key for the budget
 
         switch (chunk.state) {
             case ChunkState::Unloaded:
@@ -187,6 +189,7 @@ void StreamingManager::Update(const Math::Vector3& cameraPosition, f32 deltaTime
     ProcessLoadQueue();
     ProcessStagedIntegration(); // Time-sliced: create entities within 2ms budget
     ProcessUnloadQueue();
+    EnforceMemoryBudget(cameraPosition);
 }
 
 void StreamingManager::ProcessLoadQueue()
@@ -401,8 +404,13 @@ void StreamingManager::IntegrateLoadedChunk(StreamingChunk& chunk, const std::st
                 }
             }
 
-            ENJIN_LOG_INFO(Game, "Chunk '%s' loaded with %u entities",
-                chunk.chunkId.c_str(), static_cast<u32>(chunk.entities.size()));
+            chunk.residentBytes = EstimateChunkBytes(chunk);
+            m_ResidentBytes += chunk.residentBytes;
+            chunk.lastNearTime = m_Clock;
+
+            ENJIN_LOG_INFO(Game, "Chunk '%s' loaded with %u entities (~%.1f KB resident, %.1f KB total)",
+                chunk.chunkId.c_str(), static_cast<u32>(chunk.entities.size()),
+                chunk.residentBytes / 1024.0, m_ResidentBytes / 1024.0);
         } else {
             ENJIN_LOG_ERROR(Game, "Failed to load scene for chunk '%s' (%s): %s",
                 chunk.chunkId.c_str(), chunk.scenePath.c_str(), result.error.c_str());
@@ -429,6 +437,67 @@ void StreamingManager::UnloadChunkEntities(StreamingChunk& chunk)
         static_cast<u32>(chunk.entities.size()), chunk.chunkId.c_str());
 
     chunk.entities.clear();
+    m_ResidentBytes = (m_ResidentBytes >= chunk.residentBytes) ? m_ResidentBytes - chunk.residentBytes : 0;
+    chunk.residentBytes = 0;
+}
+
+u64 StreamingManager::EstimateChunkBytes(const StreamingChunk& chunk) const
+{
+    // An estimate, not a measurement: inline geometry is what streamed content is
+    // mostly made of, and it exists twice while loaded (ECS copy + GPU upload).
+    // Textures/materials referenced by path are shared and cached elsewhere; the
+    // runtime can add them through the cost hook if it knows their sizes.
+    constexpr u64 kPerEntityOverhead = 256;
+    u64 bytes = 0;
+    if (m_World) {
+        for (auto e : chunk.entities) {
+            bytes += kPerEntityOverhead;
+            if (const auto* mesh = m_World->GetComponent<ECS::MeshComponent>(e)) {
+                const u64 geo = static_cast<u64>(mesh->vertices.size()) * sizeof(ECS::Vertex)
+                              + static_cast<u64>(mesh->indices.size()) * sizeof(u32);
+                bytes += geo * 2;
+            }
+        }
+    }
+    if (m_ChunkCostFn) bytes += m_ChunkCostFn(chunk);
+    return bytes;
+}
+
+void StreamingManager::EnforceMemoryBudget(const Math::Vector3& cameraPosition)
+{
+    if (m_MemoryBudgetBytes == 0) return;
+    while (m_ResidentBytes > m_MemoryBudgetBytes) {
+        // Victim = least-recently-near Loaded chunk the camera is outside the
+        // loadDistance of (i.e. sitting in the hysteresis band). In-range chunks
+        // are never evicted: they would reload next frame and thrash.
+        StreamingChunk* victim = nullptr;
+        for (auto& c : m_Chunks) {
+            if (c.state != ChunkState::Loaded) continue;
+            const f32 dx = cameraPosition.x - c.center.x;
+            const f32 dy = cameraPosition.y - c.center.y;
+            const f32 dz = cameraPosition.z - c.center.z;
+            if (std::sqrt(dx * dx + dy * dy + dz * dz) <= c.loadDistance) continue;
+            if (!victim || c.lastNearTime < victim->lastNearTime) victim = &c;
+        }
+        if (!victim) {
+            if (!m_BudgetWarned) {
+                ENJIN_LOG_WARN(Game, "Streaming memory budget exceeded (%.1f / %.1f MB) but every loaded chunk is "
+                    "within its load distance; nothing evicted. Raise the budget or shrink load distances.",
+                    m_ResidentBytes / (1024.0 * 1024.0), m_MemoryBudgetBytes / (1024.0 * 1024.0));
+                m_BudgetWarned = true;
+            }
+            return;
+        }
+        m_BudgetWarned = false;
+        const std::string id = victim->chunkId;
+        victim->state = ChunkState::Unloading;
+        UnloadChunkEntities(*victim);
+        victim->state = ChunkState::Unloaded;
+        ++m_BudgetEvictions;
+        ENJIN_LOG_INFO(Game, "Budget evicted chunk '%s' (resident now %.1f / %.1f MB)",
+            id.c_str(), m_ResidentBytes / (1024.0 * 1024.0), m_MemoryBudgetBytes / (1024.0 * 1024.0));
+        if (m_OnChunkUnloaded) m_OnChunkUnloaded(id);
+    }
 }
 
 void StreamingManager::ForceLoadChunk(const std::string& chunkId)
@@ -512,6 +581,12 @@ void StreamingManager::DrawDebugOverlay()
     ImGui::Text("Load Queue: %u", static_cast<u32>(m_LoadQueue.size()));
     ImGui::Text("Unload Queue: %u", static_cast<u32>(m_UnloadQueue.size()));
     ImGui::Text("Max Concurrent Loads: %u", m_MaxConcurrentLoads);
+    if (m_MemoryBudgetBytes > 0) {
+        ImGui::Text("Memory: %.1f / %.1f MB resident (%u budget evictions)",
+            m_ResidentBytes / (1024.0 * 1024.0), m_MemoryBudgetBytes / (1024.0 * 1024.0), m_BudgetEvictions);
+    } else {
+        ImGui::Text("Memory: %.1f MB resident (no budget)", m_ResidentBytes / (1024.0 * 1024.0));
+    }
 
     ImGui::Separator();
     ImGui::Text("Chunks:");

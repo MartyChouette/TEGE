@@ -72,17 +72,28 @@ The `TegeBehavior` base class and the `enjin_api` helper scripts (Timer, Tween, 
 `Input_GetGamepadAxis(int, int)` — GamepadAx: LeftX/Y, RightX/Y, triggers
 `Input_GetGamepadLeftStick/RightStick(int)`, `Input_GetGamepadLeftTrigger/RightTrigger(int)`
 
-## Input — Mobile Touch Overlay (web builds; desktop no-ops)
+## Input — Custom actions
 
-The web player shows on-screen touch controls on phones/tablets: a floating move stick, an optional look-drag region, and up to 6 anchored buttons. A layout preset is auto-selected from the scene's controller type; these calls let a game author its own.
+`GameAction::Custom0..Custom7` are game-defined slots. Name one at boot and bind it; from then on the controls menu, the bottom-left controls hint and touch treat it like a built-in action. Unnamed slots stay hidden.
+
+- `InputAction_SetName(int action, const string &in name)` — e.g. `InputAction_SetName(GameAction::Custom0, "SLO-MO")`
+- `InputAction_Rebind(int action, int keyCode)`, `InputAction_AddGamepadBinding(int action, int button)`, `InputAction_AddMouseBinding(int action, int button)`, `InputAction_ClearBindings(int action)`
+- Read it like any action: `InputAction_IsPressed(GameAction::Custom0)`
+- Menu/dialogue actions also exist: `UIConfirm`, `UICancel`, `UINavUp/Down/Left/Right`, `DialogueAdvance`
+
+## Input — Mobile Touch Overlay
+
+On-screen touch controls: a floating move stick, an optional look-drag region, and up to 6 anchored buttons. The layout is derived from the scene's controller type (one button per action that controller consumes, labelled with the LIVE binding), and the same layout is drawn on web, on desktop with `EnjinPlayer --touch` (mouse acts as one touch), and in the editor via View > Simulate Touch Controls. The bottom-left controls hint is built from the same list and hides while the touch overlay is on. These calls let a game author its own layout.
 
 - `Touch_UsePreset(int)` — 0 Platformer2D, 1 TopDown2D, 2 TopDown3D, 3 FirstPerson, 4 ThirdPerson, 5 Generic
 - `Touch_ClearButtons()` — remove all buttons (stick/look unchanged)
-- `Touch_AddButton(const string &in label, int keyCode, float col, float row, float radiusFrac)` — label max 7 chars; keyCode is the key held while pressed, negative = mouse button (-1 = left click / fire); col/row place it on a grid growing up-left from the bottom-right of the safe area; radiusFrac is relative to screen height (~0.07-0.09, out-of-range falls back to 0.075)
-- `Touch_SetStick(bool enabled, int leftKey, int rightKey, int upKey, int downKey)` — remap the stick's 4 direction keys or hide it
+- `Touch_AddActionButton(const string &in label, int action, float col, float row, float radiusFrac)` — preferred: the button presses the action's CURRENT binding and shows its label (a named Custom action shows its name). col/row place it on a grid growing up-left from the bottom-right of the safe area; radiusFrac is relative to safe-area height (~0.065-0.09, out-of-range falls back to 0.075)
+- `Touch_AddButton(const string &in label, int keyCode, float col, float row, float radiusFrac)` — raw key variant; keyCode is the key held while pressed, negative = mouse button (-1 = left click / fire). Not rebindable, so prefer the action variant
+- `Touch_SetStickActions(bool enabled, int leftAction, int rightAction, int fwdAction, int backAction)` — bind the stick to actions (default MoveLeft/Right/Forward/Back)
+- `Touch_SetStick(bool enabled, int leftKey, int rightKey, int upKey, int downKey)` — raw-key variant, or hide the stick
 - `Touch_SetLookRegion(bool)` — enable/disable the right-side camera drag region
 
-Custom schemes survive within a scene; the auto-preset reapplies only when the controller type changes (e.g. across scenes), so re-author in `OnStart`.
+The auto-preset is applied before scripts tick and reapplies only when the controller type changes (e.g. across scenes), so author additions in `OnStart`.
 
 ## Physics
 
@@ -391,6 +402,10 @@ Accessors for components that previously had no script access (closing the scrip
 - `Streaming_IsLoaded(const string& chunkId)` — Check if a chunk is currently loaded.
 - `Streaming_GetLoadedCount()` — Get the number of currently loaded chunks.
 - `Streaming_SetEnabled(bool)` — Enable or disable the streaming system.
+- `Streaming_SetMemoryBudgetMB(int)` — Cap the estimated resident memory of loaded chunks (0 = unlimited). Over budget, the least-recently-near chunk outside its load distance is unloaded; in-range chunks are never evicted.
+- `Streaming_GetMemoryBudgetMB()` — Current budget in MB (0 = unlimited).
+- `Streaming_GetResidentMB()` — Estimated resident MB of all loaded chunks.
+- `Streaming_GetBudgetEvictions()` — Number of chunks the budget has evicted so far.
 
 ## Physics 2D
 

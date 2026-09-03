@@ -1,6 +1,7 @@
 #include "EnjinTest.h"
 #include "Enjin/Scene/LevelStreaming.h"
 #include "Enjin/ECS/Components/Transform.h"
+#include "Enjin/ECS/Components/Mesh.h"
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -393,6 +394,166 @@ ENJIN_TEST(ChunkLoad, AbsolutePathIsRejected) {
     // Assert
     ENJIN_EXPECT_TRUE(sm.GetChunkState("abs") == ChunkState::Unloaded);
     ENJIN_EXPECT_EQ(world.GetAllEntities().size(), before);
+
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+}
+
+// ===========================================================================
+// Memory budget + LRU eviction
+// ===========================================================================
+
+namespace {
+
+// A chunk file whose entity carries inline geometry (3 verts / 3 indices) so
+// the built-in estimate has something to count.
+const char* kGeoChunkJson =
+    "{\"version\":\"1.0\",\"entities\":[{\"id\":1,\"name\":{\"name\":\"GeoProp\"},"
+    "\"transform\":{\"position\":[0,0,0],\"rotation\":[0,0,0,1],\"scale\":[1,1,1],\"visible\":true},"
+    "\"mesh\":{\"vertexCount\":3,\"indexCount\":3,\"vertices\":["
+    "{\"position\":[0,0,0],\"normal\":[0,1,0],\"uv\":[0,0]},"
+    "{\"position\":[1,0,0],\"normal\":[0,1,0],\"uv\":[1,0]},"
+    "{\"position\":[0,0,1],\"normal\":[0,1,0],\"uv\":[0,1]}],\"indices\":[0,1,2]}}]}";
+
+std::filesystem::path MakeBudgetRoot(const char* tag) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    fs::path root = fs::temp_directory_path(ec) / (std::string("enjin_streambudget_") + tag);
+    fs::remove_all(root, ec);
+    fs::create_directories(root, ec);
+    std::ofstream f((root / "geo.enjin").string(), std::ios::binary);
+    f << kGeoChunkJson;
+    return root;
+}
+
+StreamingChunk MakeChunk(const char* id, f32 x, f32 loadDist, f32 unloadDist) {
+    StreamingChunk c;
+    c.chunkId = id;
+    c.scenePath = "geo.enjin";
+    c.center = Vector3(x, 0.0f, 0.0f);
+    c.loadDistance = loadDist;
+    c.unloadDistance = unloadDist;
+    return c;
+}
+
+void PumpAt(StreamingManager& sm, const Vector3& cam, int frames) {
+    for (int i = 0; i < frames; ++i) {
+        sm.Update(cam, 0.016f);
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+}
+
+} // namespace
+
+ENJIN_TEST(Budget, EstimateCountsInlineGeometryTwice) {
+    // Arrange: one chunk with the 3-vertex mesh
+    auto root = MakeBudgetRoot("estimate");
+    ECS::World world;
+    StreamingManager sm;
+    sm.SetWorld(&world);
+    sm.SetSceneRoot(root.string());
+    sm.AddChunk(MakeChunk("a", 0.0f, 100.0f, 150.0f));
+
+    // Act
+    PumpAt(sm, Vector3(0.0f), 60);
+
+    // Assert: resident = per-entity overhead + geometry x2 (ECS copy + GPU copy)
+    ENJIN_ASSERT_TRUE(sm.GetChunkState("a") == ChunkState::Loaded);
+    const u64 geo = 3ull * sizeof(ECS::Vertex) + 3ull * sizeof(u32);
+    ENJIN_EXPECT_EQ(sm.GetResidentBytes(), 256ull + geo * 2ull);
+    ENJIN_EXPECT_EQ(sm.GetChunks()[0].residentBytes, sm.GetResidentBytes());
+
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+}
+
+ENJIN_TEST(Budget, EvictsLeastRecentlyNearChunkOutsideLoadDistance) {
+    // Arrange: two chunks, each costing 1000 via the cost hook, budget for one.
+    // Wide unload distance keeps A loaded (hysteresis band) once the camera moves on.
+    auto root = MakeBudgetRoot("evict");
+    ECS::World world;
+    StreamingManager sm;
+    sm.SetWorld(&world);
+    sm.SetSceneRoot(root.string());
+    sm.SetChunkCostFn([](const StreamingChunk&) { return 1000ull; });
+    sm.AddChunk(MakeChunk("a", 0.0f, 50.0f, 10000.0f));
+    sm.AddChunk(MakeChunk("b", 500.0f, 50.0f, 10000.0f));
+    const u64 perChunk = 256ull + (3ull * sizeof(ECS::Vertex) + 12ull) * 2ull + 1000ull;
+    sm.SetMemoryBudgetBytes(perChunk + perChunk / 2);   // room for one, not two
+
+    // Act: load A at the origin, then walk to B
+    PumpAt(sm, Vector3(0.0f), 60);
+    ENJIN_ASSERT_TRUE(sm.GetChunkState("a") == ChunkState::Loaded);
+    PumpAt(sm, Vector3(500.0f, 0.0f, 0.0f), 60);
+
+    // Assert: B loaded, A (outside its load distance, least recently near) evicted
+    ENJIN_EXPECT_TRUE(sm.GetChunkState("b") == ChunkState::Loaded);
+    ENJIN_EXPECT_TRUE(sm.GetChunkState("a") == ChunkState::Unloaded);
+    ENJIN_EXPECT_EQ(sm.GetBudgetEvictionCount(), 1u);
+    ENJIN_EXPECT_EQ(sm.GetResidentBytes(), perChunk);
+    ENJIN_EXPECT_TRUE(world.FindEntityByName("GeoProp") != ECS::INVALID_ENTITY);   // B's copy survives
+
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+}
+
+ENJIN_TEST(Budget, NeverEvictsChunkWithinLoadDistance) {
+    // Arrange: a single in-range chunk that alone blows the budget
+    auto root = MakeBudgetRoot("inrange");
+    ECS::World world;
+    StreamingManager sm;
+    sm.SetWorld(&world);
+    sm.SetSceneRoot(root.string());
+    sm.SetChunkCostFn([](const StreamingChunk&) { return 1000ull; });
+    sm.AddChunk(MakeChunk("a", 0.0f, 100.0f, 150.0f));
+    sm.SetMemoryBudgetBytes(10);
+
+    // Act
+    PumpAt(sm, Vector3(0.0f), 60);
+
+    // Assert: over budget, but content under the player is never pulled
+    ENJIN_EXPECT_TRUE(sm.GetChunkState("a") == ChunkState::Loaded);
+    ENJIN_EXPECT_EQ(sm.GetBudgetEvictionCount(), 0u);
+    ENJIN_EXPECT_TRUE(sm.GetResidentBytes() > sm.GetMemoryBudgetBytes());
+
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+}
+
+ENJIN_TEST(Budget, ZeroBudgetMeansUnlimited) {
+    auto root = MakeBudgetRoot("unlimited");
+    ECS::World world;
+    StreamingManager sm;
+    sm.SetWorld(&world);
+    sm.SetSceneRoot(root.string());
+    sm.SetChunkCostFn([](const StreamingChunk&) { return 1ull << 40; });   // 1 TB each
+    sm.AddChunk(MakeChunk("a", 0.0f, 50.0f, 10000.0f));
+    sm.AddChunk(MakeChunk("b", 500.0f, 50.0f, 10000.0f));
+
+    PumpAt(sm, Vector3(0.0f), 60);
+    PumpAt(sm, Vector3(500.0f, 0.0f, 0.0f), 60);
+
+    ENJIN_EXPECT_TRUE(sm.GetChunkState("a") == ChunkState::Loaded);
+    ENJIN_EXPECT_TRUE(sm.GetChunkState("b") == ChunkState::Loaded);
+    ENJIN_EXPECT_EQ(sm.GetBudgetEvictionCount(), 0u);
+
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+}
+
+ENJIN_TEST(Budget, ClearChunksResetsResident) {
+    auto root = MakeBudgetRoot("clear");
+    ECS::World world;
+    StreamingManager sm;
+    sm.SetWorld(&world);
+    sm.SetSceneRoot(root.string());
+    sm.AddChunk(MakeChunk("a", 0.0f, 100.0f, 150.0f));
+    PumpAt(sm, Vector3(0.0f), 60);
+    ENJIN_ASSERT_TRUE(sm.GetResidentBytes() > 0);
+
+    sm.ClearChunks();
+
+    ENJIN_EXPECT_EQ(sm.GetResidentBytes(), 0ull);
 
     std::error_code ec;
     std::filesystem::remove_all(root, ec);

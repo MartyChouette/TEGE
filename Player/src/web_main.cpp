@@ -182,6 +182,11 @@ public:
         Enjin::Platform::WebLazyFS::SetReader([this](const std::string& vpath) {
             return m_AssetReader.ReadFile(vpath);
         });
+        // Resident cap for materialized source files (models/textures/audio bytes
+        // before decode). Loaders decode into their own/GPU copies, so the source
+        // bytes only need to stay around while something is still reading them;
+        // least-recently-read files are demoted back to lazy past this cap.
+        Enjin::Platform::WebLazyFS::SetBudgetBytes(64ull * 1024ull * 1024ull);
         int registered = 0;
         for (const auto& vpath : m_AssetReader.ListFiles()) {
             if (vpath.rfind("_build/", 0) == 0) continue;   // manifest: reader-only
