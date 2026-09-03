@@ -127,13 +127,15 @@
       // Backing-store cap: raw devicePixelRatio on a dpr-3 phone allocates ~9x
       // the pixels and is a known cause of "Not enough memory left" on heavier
       // scenes. Cap the long edge instead.
-      var maxPixels = cfg.maxPixels || 1280;
+      var maxPixels = cfg.maxPixels || 1600;
       function sync() {
         var host = canvas.parentElement || canvas;
         var w = Math.floor(host.clientWidth), h = Math.floor(host.clientHeight);
         if (w <= 0 || h <= 0) return;
         var dpr = global.devicePixelRatio || 1;
-        var eff = Math.max(1, Math.min(dpr, maxPixels / Math.max(w, h)));
+        // Allow eff BELOW 1: flooring it at 1 meant any container wider than
+        // maxPixels rendered at full resolution and the cap did nothing.
+        var eff = Math.max(0.55, Math.min(dpr, maxPixels / Math.max(w, h)));
         canvas.width = Math.floor(w * eff);
         canvas.height = Math.floor(h * eff);
         if (Module._onCanvasResize) { try { Module._onCanvasResize(w, h, eff); } catch (e) {} }
