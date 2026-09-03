@@ -188,10 +188,12 @@ fn vs_main(in: VertexInput, @builtin(instance_index) instanceIdx: u32) -> Vertex
         if (length(wdir) < 0.05) { wdir = vec2<f32>(0.80, 0.35); }
         else { wdir = normalize(wdir); }
         let wdir3 = vec3<f32>(wdir.x, 0.0, wdir.y);
-        let sw = clamp((world_pos.y - object.model[3].y) * 0.35, 0.0, 1.5);
-        let p1 = dot(world_pos.xz, vec2<f32>(0.1, 0.1)) + wt * 1.5;
-        let p2 = dot(world_pos.xz, vec2<f32>(0.3, 0.7)) + wt * 3.0;
-        world_pos = vec4<f32>(world_pos.xyz + wdir3 * sw * (sin(p1) * 0.35 + sin(p2) * 0.12), world_pos.w);
+        // Gentler amplitude — was swaying too hard (reported 2026-09-02). Cap the
+        // height weight lower and halve the displacement so the crown drifts, not flails.
+        let sw = clamp((world_pos.y - object.model[3].y) * 0.28, 0.0, 1.0);
+        let p1 = dot(world_pos.xz, vec2<f32>(0.1, 0.1)) + wt * 1.4;
+        let p2 = dot(world_pos.xz, vec2<f32>(0.3, 0.7)) + wt * 2.6;
+        world_pos = vec4<f32>(world_pos.xyz + wdir3 * sw * (sin(p1) * 0.16 + sin(p2) * 0.06), world_pos.w);
     }
 
     out.clip_position = viewProj.proj * viewProj.view * world_pos;
