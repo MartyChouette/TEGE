@@ -2,6 +2,58 @@
 
 ---
 
+## 2026-09-02 — Web Post-Process: Color-Space AO + GI Parity Coverage
+
+**Branch:** `main`
+
+### Web screen-space AO (color-space approximation)
+
+Ported a screen-space AO into the WebGPU inline post-process pass. Web has no
+sampleable depth buffer, so this is a color-space approximation, not a
+depth-based SSAO: it darkens pixels that sit in a local luminance valley (an
+8-tap ring on the pre-tonemap color), which grounds objects at creases and
+contact points the way SSAO does. Pure WGSL, no new bindings/passes/pipelines —
+it reuses the two free UBO pad slots (`ssao`/`ssaoRadius`), so the
+`WebPPAccessibilityParams` size (96 B) and alignment are unchanged. Gated behind
+`SceneRenderSettings.ssaoEnabled`, fed through `SetWebPostProcess` from
+`ApplyWebPostProcess()`, so scenes with SSAO off are byte-for-byte unaffected.
+Enabled in FoliageDemo (intensity 0.6) as the test scene. Commit `9c3f44e3`.
+
+### Why real depth-based PP is still blocked on web
+
+True depth-accurate effects (real SSAO, DoF, cel outline, god rays, tilt-shift,
+SSR) need a sampleable depth buffer, and the web renderer can't produce one
+cheaply. Three confirmed blockers:
+1. The scene depth is 4× MSAA (`RenderSystem.cpp` ~322) — WebGPU can't sample a
+   multisampled depth as a normal texture.
+2. A depth-resolve shader would bind the MSAA depth as
+   `texture_depth_multisampled_2d`, but `GPUBindGroupLayoutEntry` has no
+   `multisampled` field (abstraction gap).
+3. Resolving to R32Float can't ride the existing PP layout: the web bind manager
+   maps `SampledTexture` → filterable `Float`, and R32F isn't filterable, so it
+   would be a validation error (no unfilterable-float option).
+
+Real depth PP therefore needs either a renderer-abstraction extension
+(multisampled / unfilterable-float bind entries) or a full single-sample depth
+pre-pass (Depth32Float, bindable via the already-supported `DepthTexture` type),
+which duplicates the web scene draw loop. Flagged, not built.
+
+### GI parity coverage
+
+The hemispheric sky-dome ambient (web GI parity, `WebShaderData.h` ~486, gated
+`skyTop.w > 0.5`) activates whenever a scene configures a skybox — the same
+`RenderSystem::SetSkybox` switch that drives the visible sky. Active on
+Playground, Foliage, and Shells (Level_01). celshaded is deliberately left flat
+(no skybox → flat ambientColor; cel shading wants banded flat lighting). Potions
+is 2D, so the lighting/GI path doesn't apply. All demos share the same engine
+wasm, so all carry the code regardless.
+
+### Demo-room refresh
+
+Rebuilt the Shells and Potions web packs from `D:\TEGE_Projects\{Shells,Potions}`
+via the editor's headless `--build-web`, and propagated the current engine wasm
+to all five demoroom demos plus the tege demo page (which hosts Playground).
+
 ## 2026-04-22 — WebGPU Shadow Pipeline & PBR Lighting Fix
 
 **Branch:** `main`
