@@ -919,6 +919,14 @@ public:
                 m_WeatherSystem.GetRainIntensity() >= m_WeatherSystem.GetSnowIntensity());
         }
 
+        // Bullet-time on a gamepad: Y / Triangle synthesizes a B press so the
+        // game's own bullet-time logic runs (same single source of truth as the
+        // keyboard B and the on-screen touch button). Web polls gamepads each frame.
+        if (!m_AtMainMenu &&
+            Enjin::Input::IsGamepadButtonPressed(Enjin::GamepadButton::Y)) {
+            Enjin::Input::InjectKeyPress(Enjin::KeyCode::B);
+        }
+
         m_ParticleSystem.Update(deltaTime, m_World.get());
 
         // Elemental sim + fire lighting. Mirrors the desktop Player: the sim drives
@@ -1232,18 +1240,28 @@ public:
                 TogglePauseMenu();
             ImGui::End();
 
-            // Bullet-time button (touch only — desktop has the B key). Synthesizes a
-            // B press so the GAME'S OWN bullet-time logic runs (Playground toggles on
-            // B); this keeps one source of truth instead of a parallel web-only toggle.
-            // Sits just below the pause button.
+            // Bullet-time button (touch only — desktop has the B key, gamepads have
+            // Y/Triangle). Synthesizes a B press so the GAME'S OWN bullet-time logic
+            // runs (Playground toggles on B); one source of truth, not a parallel
+            // web-only toggle. Moved off the cramped top-right corner to a large,
+            // clearly-labelled amber button at the BOTTOM-LEFT — thumb-reachable and
+            // visually obvious, clear of the pause button and the floating move stick's
+            // usual right-thumb action buttons. Sits a little above the very bottom to
+            // clear the browser's edge-swipe gesture zone.
             if (Enjin::Input::GetTouchOverlay().active) {
-                ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - pbSz - pbPad, pbPad + pbSz + pbPad));
-                ImGui::SetNextWindowBgAlpha(0.30f);
+                const float slowW = 96.0f, slowH = 52.0f;
+                ImGui::SetNextWindowPos(ImVec2(pbPad, io.DisplaySize.y - slowH - pbPad * 3.0f));
+                ImGui::SetNextWindowBgAlpha(0.0f);
                 ImGui::Begin("##bullettimebtn", nullptr,
                     ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
                     ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoNav);
-                if (ImGui::Button("BT", ImVec2(pbSz, pbSz)))
+                ImGui::PushStyleColor(ImGuiCol_Button,        IM_COL32(230, 150, 30, 200));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(255, 180, 60, 220));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive,  IM_COL32(255, 210, 100, 255));
+                ImGui::PushStyleColor(ImGuiCol_Text,          IM_COL32(25, 20, 5, 255));
+                if (ImGui::Button("SLO-MO", ImVec2(slowW, slowH)))
                     Enjin::Input::InjectKeyPress(Enjin::KeyCode::B);
+                ImGui::PopStyleColor(4);
                 ImGui::End();
             }
         }
