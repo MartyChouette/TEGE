@@ -43,8 +43,8 @@ EM_JS(void, EnjinShowWebGPUUnsupportedCard, (), {
         '<p style="font-size:15px;line-height:1.55;color:#8b98a8;margin:0 0 10px;">' +
         'Your browser can\'t run this game yet. It needs WebGPU, a newer graphics standard.</p>' +
         '<p style="font-size:15px;line-height:1.55;color:#8b98a8;margin:0;">' +
-        'On iPhone or iPad: update to iOS 18 or newer and open it in Safari. ' +
-        'On a computer: use an up-to-date Chrome, Edge, or Safari 18+.</p>' +
+        'On iPhone or iPad: update to iOS 26 or newer and open it in Safari. ' +
+        'On a computer: use an up-to-date Chrome or Edge, or Safari 26 or newer.</p>' +
         '</div>';
     (document.body || document.documentElement).appendChild(o);
 });

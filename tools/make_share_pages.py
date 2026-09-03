@@ -194,7 +194,7 @@ PAGE = '''<!DOCTYPE html>
     load.classList.add('on');
 
     if (!navigator.gpu) {{
-      fail('This game needs WebGPU. Update to iOS 18 with Safari, or open it in a recent Chrome, Edge or Safari.');
+      fail('This game needs WebGPU. On iPhone or iPad update to iOS 26 and open it in Safari; on a computer use a recent Chrome or Edge, or Safari 26.');
       return;
     }}
     EnjinBoot.boot({{

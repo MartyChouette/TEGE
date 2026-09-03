@@ -58,7 +58,7 @@
   }
 
   if (!navigator.gpu) {
-    fail('This game needs WebGPU. Update to iOS 18 + Safari, or use a recent version of Chrome, Edge or Safari.');
+    fail('This game needs WebGPU. On iPhone or iPad update to iOS 26 and open it in Safari; on a computer use a recent Chrome or Edge, or Safari 26.');
     post('error', { reason: 'no-webgpu' });
     return;
   }
