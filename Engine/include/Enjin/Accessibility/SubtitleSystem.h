@@ -41,6 +41,10 @@ struct SubtitleConfig {
     bool showDirectionIndicators = false;
     u32 maxVisibleLines = 4;
     f32 positionY = 0.85f;        // Vertical position (0=top, 1=bottom)
+    // Global accessibility text scale (RuntimeAccessibilitySettings::fontScale),
+    // multiplied into fontSize at draw time. Subtitles used to ignore it, so a
+    // player who scaled up the UI still got small subtitles.
+    f32 fontScale = 1.0f;
 };
 
 // Subtitle rendering system

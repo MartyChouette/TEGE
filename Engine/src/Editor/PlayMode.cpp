@@ -405,7 +405,7 @@ void PlayMode::Play() {
             sc.fontSize = m_AccessibilitySettings->subtitleFontSize;
         }
         if (m_UISystem) {
-            m_UISystem->SetFontScale(m_AccessibilitySettings->fontScale);
+            Accessibility::ApplyTextScale(*m_AccessibilitySettings, m_UISystem, m_SubtitleSystem, m_Announcer);
             m_UISystem->SetReducedMotion(m_AccessibilitySettings->reducedMotion);
             m_UISystem->SetSwitchAccessEnabled(m_AccessibilitySettings->switchAccessEnabled,
                                                m_AccessibilitySettings->switchScanSpeed);
@@ -493,7 +493,7 @@ void PlayMode::Play() {
                                           m_AccessibilitySettings->dwellClickTime);
         m_UISystem->SetStickyDragEnabled(m_AccessibilitySettings->stickyDragEnabled);
         m_UISystem->SetReducedMotion(m_AccessibilitySettings->reducedMotion);
-        m_UISystem->SetFontScale(m_AccessibilitySettings->fontScale);
+        Accessibility::ApplyTextScale(*m_AccessibilitySettings, m_UISystem, m_SubtitleSystem, m_Announcer);
     }
 
     // Wire audio visual indicators to SimpleAudio callbacks (Task #38)
@@ -1040,7 +1040,7 @@ void PlayMode::Update(f32 deltaTime) {
         }
         // Font scale too — game scripts (Accessibility Demo) change it live.
         if (m_AccessibilitySettings && m_UISystem) {
-            m_UISystem->SetFontScale(m_AccessibilitySettings->fontScale);
+            Accessibility::ApplyTextScale(*m_AccessibilitySettings, m_UISystem, m_SubtitleSystem, m_Announcer);
         }
 
         // Re-sync controller-driven positions to Box2D and fire sensor events.

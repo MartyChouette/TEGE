@@ -977,7 +977,7 @@ public:
                     m_RenderSystem->SetWebAccessibilityPreview(0u, 0.5f);
                 }
             }
-            m_UISystem.SetFontScale(m_AccessibilitySettings.fontScale);
+            Enjin::Accessibility::ApplyTextScale(m_AccessibilitySettings, &m_UISystem, &m_SubtitleSystem, &m_Announcer);
             Enjin::Gameplay::GameplayLoop::CheckHazardOverlaps(m_World.get(), deltaTime, deferred);
             Enjin::Gameplay::GameplayLoop::CheckHazardOverlaps3D(m_World.get(), deferred);
             Enjin::Gameplay::GameplayLoop::CheckEnemyOverlaps2D(m_World.get(), deltaTime, deferred);
@@ -1138,7 +1138,7 @@ public:
             m_UISystem.GetEventBus().Listen("options_dyslexia",
                 [this](const Enjin::GUI::UIEventData& e) {
                     m_AccessibilitySettings.dyslexiaFriendly = e.boolValue;
-                    m_UISystem.SetFontScale(m_AccessibilitySettings.fontScale);
+                    Enjin::Accessibility::ApplyTextScale(m_AccessibilitySettings, &m_UISystem, &m_SubtitleSystem, &m_Announcer);
                 });
             m_UISystem.GetEventBus().Listen("options_colorblind",
                 [this](const Enjin::GUI::UIEventData& e) {
@@ -1808,7 +1808,7 @@ private:
         m_ControllerSystem.SetDisableFOVEffects(s.disableFOVEffects);
         m_ControllerSystem.SetInvertMouseY(s.invertMouseY);
         m_UISystem.SetReducedMotion(s.reducedMotion);
-        m_UISystem.SetFontScale(s.fontScale);
+        Enjin::Accessibility::ApplyTextScale(s, &m_UISystem, &m_SubtitleSystem, &m_Announcer);
         m_UISystem.SetSwitchAccessEnabled(s.switchAccessEnabled, s.switchScanSpeed);
         m_UISystem.SetDwellClickEnabled(s.dwellClickEnabled, s.dwellClickTime);
         m_UISystem.SetStickyDragEnabled(s.stickyDragEnabled);

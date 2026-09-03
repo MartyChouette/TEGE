@@ -10,7 +10,12 @@ namespace Renderer {
     struct PostProcessSettings;
 }
 
+namespace GUI { class UISystem; }
+
 namespace Accessibility {
+
+class SubtitleSystem;
+class AccessibilityAnnouncer;
 
 // Colorblind mode enum matching shader values
 enum class ColorblindMode : u32 {
@@ -86,6 +91,15 @@ struct RuntimeAccessibilitySettings {
     // Apply visual settings to a PostProcessSettings struct
     void ApplyToPostProcessing(Renderer::PostProcessSettings& ppSettings) const;
 };
+
+// Push the text-scaling settings to everything that draws text. One call so a
+// player's font scale reaches the UI, subtitles AND the screen-reader bar;
+// before this it reached only the UI, and subtitles kept a separate size.
+// Any argument may be null.
+ENJIN_API void ApplyTextScale(const RuntimeAccessibilitySettings& settings,
+                              GUI::UISystem* ui,
+                              SubtitleSystem* subtitles,
+                              AccessibilityAnnouncer* announcer);
 
 } // namespace Accessibility
 } // namespace Enjin

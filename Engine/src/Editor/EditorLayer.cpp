@@ -360,11 +360,14 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
         }
         if (auto* uiSys = m_PlayMode.GetUISystem()) {
             uiSys->SetReducedMotion(a.reducedMotion);
-            uiSys->SetFontScale(a.fontScale);
             uiSys->SetSwitchAccessEnabled(a.switchAccessEnabled, a.switchScanSpeed);
             uiSys->SetDwellClickEnabled(a.dwellClickEnabled, a.dwellClickTime);
             uiSys->SetStickyDragEnabled(a.stickyDragEnabled);
         }
+        // Text scale reaches the UI, subtitles and the screen-reader bar
+        // together (it used to reach only the UI).
+        Accessibility::ApplyTextScale(a, m_PlayMode.GetUISystem(),
+                                      &m_SubtitleSystem, &m_Announcer);
     });
     m_GameMenu.SetCallback([this](const std::string& action) {
         if (action == "resume") {

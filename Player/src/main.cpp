@@ -1444,7 +1444,7 @@ public:
         if (m_PostProcessing) {
             m_AccessibilitySettings.ApplyToPostProcessing(m_PostProcessing->GetSettings());
         }
-        m_UISystem.SetFontScale(m_AccessibilitySettings.fontScale);
+        Enjin::Accessibility::ApplyTextScale(m_AccessibilitySettings, &m_UISystem, &m_SubtitleSystem, &m_Announcer);
 
         // Raster post-process path (editor game-view pattern): render the scene
         // into the offscreen target, let RenderSystem::Update open an EMPTY
@@ -2837,7 +2837,7 @@ private:
         m_UISystem.SetReducedMotion(m_AccessibilitySettings.reducedMotion);
 
         // Font scale + motor accessibility
-        m_UISystem.SetFontScale(m_AccessibilitySettings.fontScale);
+        Enjin::Accessibility::ApplyTextScale(m_AccessibilitySettings, &m_UISystem, &m_SubtitleSystem, &m_Announcer);
         m_UISystem.SetSwitchAccessEnabled(m_AccessibilitySettings.switchAccessEnabled,
                                            m_AccessibilitySettings.switchScanSpeed);
         m_UISystem.SetDwellClickEnabled(m_AccessibilitySettings.dwellClickEnabled,

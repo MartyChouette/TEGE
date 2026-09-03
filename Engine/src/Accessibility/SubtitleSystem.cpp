@@ -64,12 +64,16 @@ void SubtitleSystem::RenderOverlay(u32 viewportWidth, u32 viewportHeight) {
 
     f32 screenW = static_cast<f32>(viewportWidth);
     f32 screenH = static_cast<f32>(viewportHeight);
-    f32 scale = m_Config.fontSize / 24.0f;
+    // The subtitle size setting and the global accessibility text scale
+    // compound: a player can raise both.
+    const f32 effectiveFontSize =
+        m_Config.fontSize * ((m_Config.fontScale > 0.1f) ? m_Config.fontScale : 1.0f);
+    f32 scale = effectiveFontSize / 24.0f;
 
     // Calculate subtitle area
     f32 maxWidth = screenW * 0.7f;
     f32 padding = 8.0f * scale;
-    f32 lineHeight = m_Config.fontSize + 4.0f;
+    f32 lineHeight = effectiveFontSize + 4.0f;
     f32 totalHeight = static_cast<f32>(m_Entries.size()) * lineHeight + padding * 2.0f;
 
     f32 startY = screenH * m_Config.positionY - totalHeight;
@@ -117,7 +121,7 @@ void SubtitleSystem::RenderOverlay(u32 viewportWidth, u32 viewportHeight) {
         // fontSize but the glyphs were drawn with the size-less AddText —
         // the Subtitle Size setting moved the box and never the text.
         ImFont* font = ImGui::GetFont();
-        f32 fontSize = m_Config.fontSize;
+        f32 fontSize = effectiveFontSize;
 
         // Caption brackets
         if (entry.isCaption) {

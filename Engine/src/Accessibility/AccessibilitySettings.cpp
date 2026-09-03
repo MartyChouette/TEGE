@@ -1,8 +1,25 @@
 #include "Enjin/Accessibility/AccessibilitySettings.h"
 #include "Enjin/Renderer/PostProcessing.h"
+#include "Enjin/Accessibility/SubtitleSystem.h"
+#include "Enjin/Accessibility/Announcer.h"
+#include "Enjin/GUI/UISystem.h"
 
 namespace Enjin {
 namespace Accessibility {
+
+void ApplyTextScale(const RuntimeAccessibilitySettings& settings,
+                    GUI::UISystem* ui,
+                    SubtitleSystem* subtitles,
+                    AccessibilityAnnouncer* announcer) {
+    if (ui) ui->SetFontScale(settings.fontScale);
+    if (subtitles) {
+        // The subtitle size setting stays the player's own; the global scale
+        // multiplies it at draw time.
+        subtitles->GetConfig().fontSize = settings.subtitleFontSize;
+        subtitles->GetConfig().fontScale = settings.fontScale;
+    }
+    if (announcer) announcer->fontScale = settings.fontScale;
+}
 
 void RuntimeAccessibilitySettings::ApplyToPostProcessing(Renderer::PostProcessSettings& ppSettings) const {
     ppSettings.colorblindMode = static_cast<u32>(colorblindMode);

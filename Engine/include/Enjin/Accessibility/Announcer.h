@@ -52,6 +52,9 @@ public:
     bool enabled = false;             // Show visual status bar
     bool logToConsole = false;        // Also log announcements to console
     f32 displayDuration = 3.0f;       // How long each announcement shows
+    // Accessibility font scale (RuntimeAccessibilitySettings::fontScale). The
+    // runtimes push the same value they push to UISystem.
+    f32 fontScale = 1.0f;
 
 private:
     std::deque<Announcement> m_Queue;

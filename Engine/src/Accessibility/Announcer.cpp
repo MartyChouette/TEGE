@@ -132,9 +132,13 @@ void AccessibilityAnnouncer::RenderStatusBar() {
 
     const auto& current = m_Queue.front();
 
-    // Draw at bottom of screen
+    // Draw at bottom of screen. The bar scales with the accessibility font
+    // scale: a player who needs larger text needs it here most of all, since
+    // this bar is the screen reader's visible output.
     ImGuiIO& io = ImGui::GetIO();
-    f32 barHeight = ImGui::GetTextLineHeightWithSpacing() + 8.0f;
+    const f32 scale = (fontScale > 0.1f) ? fontScale : 1.0f;
+    const f32 fontSize = ImGui::GetFontSize() * scale;
+    f32 barHeight = fontSize + ImGui::GetStyle().ItemSpacing.y + 8.0f;
     ImVec2 barPos(0.0f, io.DisplaySize.y - barHeight);
     ImVec2 barEnd(io.DisplaySize.x, io.DisplaySize.y);
 
@@ -158,7 +162,8 @@ void AccessibilityAnnouncer::RenderStatusBar() {
 
     // Text
     ImU32 textCol = IM_COL32(220, 220, 220, static_cast<u8>(255 * alpha));
-    drawList->AddText(ImVec2(barPos.x + 12.0f, barPos.y + 4.0f), textCol, current.text.c_str());
+    drawList->AddText(ImGui::GetFont(), fontSize,
+                      ImVec2(barPos.x + 12.0f, barPos.y + 4.0f), textCol, current.text.c_str());
 }
 
 const std::string& AccessibilityAnnouncer::GetCurrentText() const {
