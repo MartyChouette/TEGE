@@ -1,3 +1,4 @@
+#include "Enjin/Input/TouchActionBridge.h"
 #include "Enjin/Editor/EditorLayer.h"
 #include "Enjin/Editor/EditorWidgets.h"
 #include "Enjin/Editor/InspectorUndo.h"
@@ -1998,6 +1999,7 @@ void EditorLayer::DrawSettingsWindow() {
             DrawSettingsSection_CollisionGroups();
             DrawSettingsSection_BuildScenes();
             DrawSettingsSection_StartupFlow();
+            DrawSettingsSection_InputTouch();
             DrawSettingsSection_BuildConfig();
             DrawSettingsSection_Networking();
             ImGui::PopID();
@@ -2212,6 +2214,223 @@ void EditorLayer::DrawSettingsWindow() {
 
     ImGui::PopItemWidth();
     ImGui::End();
+}
+
+namespace {
+    // Curated pick-lists for the project's control defaults. Real GLFW key
+    // codes and gamepad button ordinals, so what the panel stores is what the
+    // runtime compares against.
+    struct KeyChoice { const char* name; Enjin::i32 code; };
+
+    const std::vector<KeyChoice>& KeyChoices() {
+        static const std::vector<KeyChoice> choices = {
+            {"(none)", -1},
+            {"A", 65}, {"B", 66}, {"C", 67}, {"D", 68}, {"E", 69}, {"F", 70},
+            {"G", 71}, {"H", 72}, {"I", 73}, {"J", 74}, {"K", 75}, {"L", 76},
+            {"M", 77}, {"N", 78}, {"O", 79}, {"P", 80}, {"Q", 81}, {"R", 82},
+            {"S", 83}, {"T", 84}, {"U", 85}, {"V", 86}, {"W", 87}, {"X", 88},
+            {"Y", 89}, {"Z", 90},
+            {"0", 48}, {"1", 49}, {"2", 50}, {"3", 51}, {"4", 52},
+            {"5", 53}, {"6", 54}, {"7", 55}, {"8", 56}, {"9", 57},
+            {"Space", 32}, {"Tab", 258}, {"Enter", 257}, {"Escape", 256},
+            {"Backspace", 259},
+            {"Left Shift", 340}, {"Left Ctrl", 341}, {"Left Alt", 342},
+            {"Up", 265}, {"Down", 264}, {"Left", 263}, {"Right", 262},
+            {"F1", 290}, {"F2", 291}, {"F3", 292}, {"F4", 293},
+            {"F5", 294}, {"F6", 295}, {"F7", 296}, {"F8", 297},
+            {"F9", 298}, {"F10", 299}, {"F11", 300}, {"F12", 301},
+        };
+        return choices;
+    }
+
+    const std::vector<KeyChoice>& PadChoices() {
+        static std::vector<KeyChoice> v = {
+            {"(none)", -1}, {"A", 0}, {"B", 1}, {"X", 2}, {"Y", 3},
+            {"Left Bumper", 4}, {"Right Bumper", 5}, {"Back", 6}, {"Start", 7},
+            {"Left Stick", 9}, {"Right Stick", 10},
+            {"D-Pad Up", 11}, {"D-Pad Right", 12}, {"D-Pad Down", 13}, {"D-Pad Left", 14},
+        };
+        return v;
+    }
+
+    // A combo over one of the pick-lists. Returns true when the value changed.
+    bool ChoiceCombo(const char* label, const std::vector<KeyChoice>& choices, Enjin::i32& code) {
+        int cur = 0;
+        for (Enjin::usize i = 0; i < choices.size(); ++i) if (choices[i].code == code) cur = static_cast<int>(i);
+        std::vector<const char*> names;
+        names.reserve(choices.size());
+        for (const auto& c : choices) names.push_back(c.name);
+        if (ImGui::Combo(label, &cur, names.data(), static_cast<int>(names.size()))) {
+            code = choices[static_cast<Enjin::usize>(cur)].code;
+            return true;
+        }
+        return false;
+    }
+}
+
+void EditorLayer::DrawSettingsSection_InputTouch() {
+    if (!UI::SectionHeader("Input & Touch")) return;
+
+    if (m_SceneManager.GetProjectPath().empty()) {
+        ImGui::TextDisabled("No project loaded.");
+        return;
+    }
+
+    auto& settings = m_SceneManager.GetInputSettings();
+    bool changed = false;
+
+    ImGui::TextWrapped("Controls your game adds on top of the built-in ones. Name an action here, "
+                       "then wire it up in a scene with an Action Trigger component. Named actions "
+                       "show in the player's Controls menu, in the on-screen hint, and as touch "
+                       "buttons on mobile.");
+    ImGui::Spacing();
+
+    // ---- Custom actions -----------------------------------------------------
+    ImGui::TextColored(ImVec4(0.6f, 0.85f, 1.0f, 1.0f), "Your Actions");
+    ImGui::Separator();
+
+    if (settings.customActions.empty()) {
+        ImGui::TextDisabled("(none yet)");
+    }
+
+    int removeIdx = -1;
+    for (usize i = 0; i < settings.customActions.size(); ++i) {
+        auto& def = settings.customActions[i];
+        ImGui::PushID(static_cast<int>(i));
+
+        char nameBuf[64];
+        std::snprintf(nameBuf, sizeof(nameBuf), "%s", def.name.c_str());
+        ImGui::SetNextItemWidth(160);
+        if (ImGui::InputText("##name", nameBuf, sizeof(nameBuf))) { def.name = nameBuf; changed = true; }
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(110);
+        if (ChoiceCombo("##key", KeyChoices(), def.key)) changed = true;
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(130);
+        if (ChoiceCombo("##pad", PadChoices(), def.gamepad)) changed = true;
+        ImGui::SameLine();
+        {
+            const char* modeNames[] = { "Hold", "Toggle", "Press", "Release" };
+            int m = static_cast<int>(def.mode <= 3 ? def.mode : 2);
+            ImGui::SetNextItemWidth(90);
+            if (ImGui::Combo("##mode", &m, modeNames, 4)) { def.mode = static_cast<u32>(m); changed = true; }
+        }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("X")) removeIdx = static_cast<int>(i);
+        if (def.name.empty()) {
+            ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "  Unnamed actions stay hidden.");
+        }
+        ImGui::PopID();
+    }
+
+    if (removeIdx >= 0) {
+        settings.customActions.erase(settings.customActions.begin() + removeIdx);
+        changed = true;
+    }
+
+    // 8 slots exist; each row occupies one.
+    if (settings.customActions.size() < InputSystem::kCustomActionCount) {
+        if (ImGui::Button("+ Add Action")) {
+            InputSystem::CustomActionDef def;
+            // First free slot.
+            for (i32 slot = 0; slot < static_cast<i32>(InputSystem::kCustomActionCount); ++slot) {
+                bool used = false;
+                for (const auto& e : settings.customActions) if (e.slot == slot) used = true;
+                if (!used) { def.slot = slot; break; }
+            }
+            def.name = "New Action";
+            settings.customActions.push_back(def);
+            changed = true;
+        }
+    } else {
+        ImGui::TextDisabled("All 8 action slots are in use.");
+    }
+
+    // ---- Touch --------------------------------------------------------------
+    ImGui::Spacing();
+    ImGui::TextColored(ImVec4(0.6f, 0.85f, 1.0f, 1.0f), "Touch Controls");
+    ImGui::Separator();
+    ImGui::TextWrapped("By default the on-screen layout follows the scene: the player controller's "
+                       "actions plus any Action Trigger that asks for a button. Preview it with "
+                       "View > Simulate Touch Controls while playing.");
+    ImGui::Spacing();
+
+    if (ImGui::Checkbox("Left-handed layout", &settings.touchLeftHanded)) changed = true;
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Mirrors the layout: move stick on the right, buttons bottom-left.");
+
+    ImGui::SetNextItemWidth(200);
+    if (ImGui::SliderFloat("Button size", &settings.touchButtonScale, 0.5f, 2.0f, "%.2fx")) changed = true;
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Scales every on-screen button, for reach or low vision.");
+
+    {
+        const char* lookNames[] = { "Follow the controller", "Always on", "Always off" };
+        int look = static_cast<int>(settings.touchLook);
+        ImGui::SetNextItemWidth(200);
+        if (ImGui::Combo("Camera drag", &look, lookNames, 3)) {
+            settings.touchLook = static_cast<InputSystem::TouchLookMode>(look);
+            changed = true;
+        }
+    }
+
+    if (ImGui::Checkbox("Custom button layout", &settings.customTouchLayout)) changed = true;
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Replaces the automatic buttons with the list below.");
+
+    if (settings.customTouchLayout) {
+        if (ImGui::Checkbox("Show move stick", &settings.touchStick)) changed = true;
+
+        int removeBtn = -1;
+        for (usize i = 0; i < settings.touchButtons.size(); ++i) {
+            auto& b = settings.touchButtons[i];
+            ImGui::PushID(1000 + static_cast<int>(i));
+
+            std::vector<i32> ids;
+            std::vector<const char*> names;
+            for (i32 a = 0; a < m_InputMap.GetActionCount(); ++a) {
+                if (!m_InputMap.IsActionListed(a)) continue;
+                ids.push_back(a);
+                names.push_back(m_InputMap.GetActionName(a));
+            }
+            int cur = -1;
+            for (usize k = 0; k < ids.size(); ++k) if (ids[k] == b.action) cur = static_cast<int>(k);
+            ImGui::SetNextItemWidth(160);
+            if (ImGui::Combo("##act", &cur, names.data(), static_cast<int>(names.size()))) {
+                if (cur >= 0 && cur < static_cast<int>(ids.size())) { b.action = ids[cur]; changed = true; }
+            }
+            ImGui::SameLine(); ImGui::SetNextItemWidth(70);
+            if (ImGui::DragFloat("col", &b.col, 0.1f, 0.0f, 4.0f, "%.1f")) changed = true;
+            ImGui::SameLine(); ImGui::SetNextItemWidth(70);
+            if (ImGui::DragFloat("row", &b.row, 0.1f, 0.0f, 4.0f, "%.1f")) changed = true;
+            ImGui::SameLine(); ImGui::SetNextItemWidth(80);
+            if (ImGui::DragFloat("size", &b.size, 0.005f, 0.03f, 0.2f, "%.3f")) changed = true;
+            ImGui::SameLine();
+            if (ImGui::SmallButton("X")) removeBtn = static_cast<int>(i);
+
+            ImGui::PopID();
+        }
+        if (removeBtn >= 0) {
+            settings.touchButtons.erase(settings.touchButtons.begin() + removeBtn);
+            changed = true;
+        }
+        if (settings.touchButtons.size() < static_cast<usize>(Input::kMaxTouchButtons)) {
+            if (ImGui::Button("+ Add Touch Button")) {
+                InputSystem::TouchButtonLayout b;
+                b.row = static_cast<f32>(settings.touchButtons.size());
+                settings.touchButtons.push_back(b);
+                changed = true;
+            }
+        } else {
+            ImGui::TextDisabled("Touch layouts hold at most %d buttons.", Input::kMaxTouchButtons);
+        }
+    }
+
+    if (changed) {
+        // Take effect in the editor immediately, then persist. Resetting the
+        // touch fingerprint forces the overlay to rebuild with the new layout.
+        settings.ApplyTo(m_InputMap);
+        if (auto* playMap = m_PlayMode.GetInputActionMap()) settings.ApplyTo(*playMap);
+        InputSystem::SetTouchProjectSettings(&settings);
+        m_SceneManager.SaveProject();
+    }
 }
 
 void EditorLayer::DrawSettingsSection_StartupFlow() {

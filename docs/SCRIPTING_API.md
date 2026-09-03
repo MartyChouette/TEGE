@@ -74,6 +74,8 @@ The `TegeBehavior` base class and the `enjin_api` helper scripts (Timer, Tween, 
 
 ## Input — Custom actions
 
+> You do not need scripts for this. Name your actions in **Project Settings > Input & Touch**, then wire them up in a scene with an **Action Trigger** component (pick an action, pick what it does). The calls below are the optional scripted path.
+
 `GameAction::Custom0..Custom7` are game-defined slots. Name one at boot and bind it; from then on the controls menu, the bottom-left controls hint and touch treat it like a built-in action. Unnamed slots stay hidden.
 
 - `InputAction_SetName(int action, const string &in name)` — e.g. `InputAction_SetName(GameAction::Custom0, "SLO-MO")`

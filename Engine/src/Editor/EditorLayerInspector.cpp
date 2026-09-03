@@ -60,6 +60,7 @@
 #include "Enjin/ECS/Components/GravityZone.h"
 #include "Enjin/ECS/Components/ReflectionProbe.h"
 #include "Enjin/ECS/Components/ReflectivePlane.h"
+#include "Enjin/ECS/Components/ActionTrigger.h"
 #include "Enjin/ECS/Components/Ladder.h"
 #include "Enjin/ECS/Components/Rope.h"
 #include "Enjin/ECS/Components/Door.h"
@@ -856,6 +857,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ReflectionProbeComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::ReflectionProbeComponent>(e); },
             "reflectionProbe", DimensionTag::Only3D},
+        {"Action Trigger", "Gameplay", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ActionTriggerComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ActionTriggerComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::ActionTriggerComponent>(e); },
+            "actionTrigger"},
         {"Reflective Floor", "Effects", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ReflectivePlaneComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ReflectivePlaneComponent>(e); },
@@ -1838,6 +1844,11 @@ void EditorLayer::DrawInspectorPanel() {
         // Reflective Floor component (planar reflection)
         if (m_World->HasComponent<ECS::ReflectivePlaneComponent>(m_PrimarySelected)) {
             DrawReflectivePlaneComponent(m_PrimarySelected);
+        }
+
+        // Action Trigger (input action -> scene effect, no script)
+        if (m_World->HasComponent<ECS::ActionTriggerComponent>(m_PrimarySelected)) {
+            DrawActionTriggerComponent(m_PrimarySelected);
         }
 
         // Ladder component (G1 climbable volume)

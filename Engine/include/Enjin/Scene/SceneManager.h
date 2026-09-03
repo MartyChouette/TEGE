@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Enjin/Input/InputProjectSettings.h"
+
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/Scene/SceneSerializer.h"
@@ -130,6 +132,12 @@ public:
     // Startup flow (authorable boot sequence; empty = classic default)
     const std::vector<StartupFlowStep>& GetStartupFlow() const { return m_StartupFlow; }
     std::vector<StartupFlowStep>& GetStartupFlow() { return m_StartupFlow; }
+
+    // Project input settings: custom action names/bindings and the touch
+    // layout + touch accessibility defaults. Authored in the editor's
+    // Project Settings > Input & Touch tab and shipped with the game.
+    const InputSystem::InputProjectSettings& GetInputSettings() const { return m_InputSettings; }
+    InputSystem::InputProjectSettings& GetInputSettings() { return m_InputSettings; }
 
     // Get scenes
     const std::vector<SceneEntry>& GetScenes() const { return m_Scenes; }
@@ -267,6 +275,7 @@ private:
     std::string m_ProjectRoot;     // Directory containing the manifest
     std::vector<SceneEntry> m_Scenes;
     std::vector<StartupFlowStep> m_StartupFlow;
+    InputSystem::InputProjectSettings m_InputSettings;
 
     // Collision group names (index = bit number, up to 32)
     std::vector<std::string> m_CollisionGroupNames;

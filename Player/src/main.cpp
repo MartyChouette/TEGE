@@ -21,6 +21,8 @@
 #include "Enjin/Scene/LevelStreaming.h"
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/Input/TouchActionBridge.h"
+#include "Enjin/Input/InputProjectSettings.h"
+#include "Enjin/ECS/Systems/ActionTriggerSystem.h"
 
 // --touch: simulate the mobile touch overlay with the mouse (set in main()).
 static bool s_SimulateTouch = false;
@@ -1047,6 +1049,7 @@ public:
         Enjin::Scripting::FlushDeferredEntityDestroys();
 
         // --- Gameplay systems ---
+        m_ActionTriggerSystem.Update(m_World.get(), deltaTime);
         m_TweenSystem.Update(m_World.get(), deltaTime);
         m_StateMachineSystem.Update(m_World.get(), deltaTime);
         m_VisualScriptSystem.Update(deltaTime);
@@ -2314,6 +2317,12 @@ private:
         Enjin::Scripting::SetBindingsInputActionMap(&m_InputMap);
         Enjin::Input::SetTouchSimulation(s_SimulateTouch);
 
+        // ActionTrigger components: input actions wired to scene effects with
+        // no script (bullet time, show/hide, events, subtitles).
+        m_ActionTriggerSystem.SetInputActionMap(&m_InputMap);
+        m_ActionTriggerSystem.SetSubtitleSystem(&m_SubtitleSystem);
+        m_ActionTriggerSystem.SetEventBus(&m_EntityEventBus);
+
         // Wire visual script system externs (for VS nodes)
         {
             extern Enjin::Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
@@ -2651,6 +2660,19 @@ private:
             }
             ENJIN_LOG_INFO(Player, "Startup flow: %zu steps", m_StartupFlow.size());
         }
+
+        // Project input settings: custom action names/bindings and the touch
+        // layout the editor authored. Applied to the action map BEFORE any
+        // player bindings.json, so the project sets defaults and the player
+        // still owns their rebinds.
+        if (manifest.contains("input") && manifest["input"].is_object()) {
+            if (m_InputSettings.FromJson(manifest["input"].dump())) {
+                m_InputSettings.ApplyTo(m_InputMap);
+                ENJIN_LOG_INFO(Player, "Project input settings: %zu custom actions",
+                               m_InputSettings.customActions.size());
+            }
+        }
+        Enjin::InputSystem::SetTouchProjectSettings(&m_InputSettings);
 
         // Read frame rate settings
         if (manifest.contains("frameSettings")) {
@@ -3205,6 +3227,8 @@ private:
     Enjin::ECS::AISystem m_AISystem;
     Enjin::Gameplay::RecordRewindSystem m_RecordRewindSystem;
     Enjin::ECS::EntityEventBus m_EntityEventBus;
+    Enjin::ECS::ActionTriggerSystem m_ActionTriggerSystem;
+    Enjin::InputSystem::InputProjectSettings m_InputSettings;
     Enjin::ECS::DialogueSystem m_DialogueSystem;
     Enjin::ECS::Entity m_ActiveDialogueEntity = 0;
     Enjin::Gameplay::QuestSystem m_QuestSystem;

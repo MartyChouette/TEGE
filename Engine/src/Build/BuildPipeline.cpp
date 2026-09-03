@@ -258,6 +258,14 @@ bool BuildPipeline::ScanProject(const std::string& projectPath) {
             m_StartupFlowJson = root["startupFlow"].dump();
         }
 
+        // Carry the project's input settings (custom actions + touch layout) so
+        // the exported game has the controls the editor authored. Cleared first:
+        // a reused pipeline must not leak the previous project's settings.
+        m_InputSettingsJson.clear();
+        if (root.contains("input") && root["input"].is_object()) {
+            m_InputSettingsJson = root["input"].dump();
+        }
+
         AddMessage(MessageSeverity::Info, "Found " + std::to_string(m_Scenes.size()) + " scenes in project '" + m_ProjectName + "'");
         return true;
 
@@ -695,6 +703,11 @@ bool BuildPipeline::WriteBuildManifest(const BuildConfig& config, AssetPacker& p
         manifest["startupFlow"] = nlohmann::json::parse(m_StartupFlowJson);
     }
 
+    // Input settings (custom actions + touch layout) authored in the editor
+    if (!m_InputSettingsJson.empty()) {
+        manifest["input"] = nlohmann::json::parse(m_InputSettingsJson);
+    }
+
     std::string jsonStr = manifest.dump(2);
     if (!packer.AddData("_build/manifest.json",
                         jsonStr.data(),
@@ -890,6 +903,11 @@ bool BuildPipeline::WriteLooseManifest(const BuildConfig& config, const std::str
     // Startup flow (if the project authored one)
     if (!m_StartupFlowJson.empty()) {
         manifest["startupFlow"] = nlohmann::json::parse(m_StartupFlowJson);
+    }
+
+    // Input settings (custom actions + touch layout) authored in the editor
+    if (!m_InputSettingsJson.empty()) {
+        manifest["input"] = nlohmann::json::parse(m_InputSettingsJson);
     }
 
     std::string manifestPath = (fs::path(outputDir) / "game.manifest").string();

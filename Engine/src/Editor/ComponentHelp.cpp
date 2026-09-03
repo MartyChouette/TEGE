@@ -344,6 +344,19 @@ static const std::unordered_map<std::string, ComponentHelp>& Registry() {
                 { RelationKind::PairsWith, "Transform", Has<ECS::TransformComponent>, Add<ECS::TransformComponent> },
             }
         };
+        r["actionTrigger"] = {
+            "Makes an input action do something in the scene, with no script.",
+            "Pick an action and what it does. Name your own actions (SLO-MO, Horn, Torch) in "
+            "Project Settings > Input & Touch, then pick them here. The action is a real control "
+            "everywhere: it lists in the Controls menu, shows in the on-screen hint with its live "
+            "binding, and becomes a touch button on mobile. Preview the touch layout with "
+            "View > Simulate Touch Controls while playing.",
+            nullptr,
+            {
+                { RelationKind::PairsWith, "Transform", Has<ECS::TransformComponent>, Add<ECS::TransformComponent> },
+            }
+        };
+
         r["reflectivePlane"] = {
             "A glassy floor that mirrors the scene above it (the PS2 wet-floor look).",
             "Put it on a flat floor. The floor MATERIAL must be semi-transparent (alpha Blend) for the reflection to show through. Raise Reflection Strength for a sharper mirror; tint it for wet-asphalt blue or gold sheen.",

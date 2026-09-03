@@ -37,6 +37,8 @@
 #include "Enjin/Renderer/SceneRenderSettings.h"
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/Input/TouchActionBridge.h"
+#include "Enjin/Input/InputProjectSettings.h"
+#include "Enjin/ECS/Systems/ActionTriggerSystem.h"
 #include "Enjin/GUI/UISystem.h"
 #include "Enjin/GUI/UITemplates.h"
 #include "Enjin/GUI/EmbeddedFonts.h"    // web ImGui font (parity with desktop ImGuiLayer)
@@ -211,6 +213,17 @@ public:
                 m_StartScene = manifest.value("startScene", "");
                 m_PhysicsBackendType = manifest.value("physicsBackend", 0u);
                 m_ProjectMode = manifest.value("projectMode", 1u);
+                // Project input settings: custom action names/bindings and the
+                // touch layout the editor authored. Applied BEFORE the player's
+                // own bindings.json, so a rebind still wins.
+                if (manifest.contains("input") && manifest["input"].is_object()) {
+                    if (m_InputSettings.FromJson(manifest["input"].dump())) {
+                        m_InputSettings.ApplyTo(m_InputMap);
+                        ENJIN_LOG_INFO(Player, "Project input settings: %zu custom actions",
+                                       m_InputSettings.customActions.size());
+                    }
+                }
+                Enjin::InputSystem::SetTouchProjectSettings(&m_InputSettings);
                 if (manifest.contains("frameSettings")) {
                     const auto& fs = manifest["frameSettings"];
                     m_SimClock.Configure(fs.value("fixedTimestep", false),
@@ -413,6 +426,12 @@ public:
         Enjin::Scripting::SetBindingsNetworking(&m_NetworkSystem);
         Enjin::Scripting::SetBindingsCinematicSystem(&m_CinematicSystem);
         Enjin::Scripting::SetBindingsInputActionMap(&m_InputMap);
+
+        // ActionTrigger components: input actions wired to scene effects with
+        // no script (bullet time, show/hide, events, subtitles).
+        m_ActionTriggerSystem.SetInputActionMap(&m_InputMap);
+        m_ActionTriggerSystem.SetSubtitleSystem(&m_SubtitleSystem);
+        m_ActionTriggerSystem.SetEventBus(&m_EntityEventBus);
         // Accessibility bindings — without these every Subtitle_/Announcer_/
         // Colorblind_/Accessibility_ script call is a silent no-op on web.
         Enjin::Scripting::SetBindingsSubtitles(&m_SubtitleSystem);
@@ -836,6 +855,7 @@ public:
         // Order MATCHES the desktop Player (main.cpp:1029-1033): state machines
         // BEFORE visual scripts, so graphs see this frame's FSM state, not last
         // frame's (the web order was reversed until the 08-31 parity audit).
+        m_ActionTriggerSystem.Update(m_World.get(), deltaTime);
         m_TweenSystem.Update(m_World.get(), deltaTime);
         m_StateMachineSystem.Update(m_World.get(), deltaTime);
         m_VisualScriptSystem.Update(deltaTime);
@@ -1886,6 +1906,8 @@ private:
     Enjin::ECS::DialogueSystem m_DialogueSystem;
     Enjin::Gameplay::CinematicSystem m_CinematicSystem;
     Enjin::ECS::EntityEventBus m_EntityEventBus;
+    Enjin::ECS::ActionTriggerSystem m_ActionTriggerSystem;
+    Enjin::InputSystem::InputProjectSettings m_InputSettings;
     Enjin::Gameplay::FootstepSystem m_FootstepSystem;
     Enjin::Accessibility::SubtitleSystem m_SubtitleSystem;
     Enjin::Accessibility::AccessibilityAnnouncer m_Announcer;

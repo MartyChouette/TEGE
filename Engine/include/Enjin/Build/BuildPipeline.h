@@ -88,6 +88,10 @@ private:
     // manifest as a JSON string (empty when the project has none).
     std::string m_StartupFlowJson;
 
+    // Project input settings (custom actions + touch layout), carried the same
+    // verbatim way so an exported game ships the controls the editor authored.
+    std::string m_InputSettingsJson;
+
     ProgressCallback m_ProgressCallback;
 };
 

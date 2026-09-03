@@ -24,6 +24,7 @@
 #include "Enjin/ECS/Components/GravityZone.h"
 #include "Enjin/ECS/Components/ReflectionProbe.h"
 #include "Enjin/ECS/Components/ReflectivePlane.h"
+#include "Enjin/ECS/Components/ActionTrigger.h"
 #include "Enjin/ECS/Components/Ladder.h"
 #include "Enjin/ECS/Components/Rope.h"
 #include "Enjin/ECS/Components/Door.h"
@@ -1165,6 +1166,52 @@ ECS::ReflectionProbeComponent DeserializeReflectionProbeComponent(const json& j)
     return probe;
 }
 
+json SerializeActionTriggerComponent(const ECS::ActionTriggerComponent& t) {
+    json j;
+    j["action"] = t.action;
+    j["mode"] = static_cast<u32>(t.mode);
+    j["effect"] = static_cast<u32>(t.effect);
+    j["targetEntity"] = t.targetEntity;
+    j["timeScale"] = t.timeScale;
+    j["keepPlayerSpeed"] = t.keepPlayerSpeed;
+    j["eventName"] = t.eventName;
+    j["onText"] = t.onText;
+    j["offText"] = t.offText;
+    j["textDuration"] = t.textDuration;
+    j["touchButton"] = t.touchButton;
+    j["touchCol"] = t.touchCol;
+    j["touchRow"] = t.touchRow;
+    j["touchSize"] = t.touchSize;
+    return j;
+}
+
+ECS::ActionTriggerComponent DeserializeActionTriggerComponent(const json& j) {
+    ECS::ActionTriggerComponent t;
+    if (j.contains("action")) t.action = j["action"].get<i32>();
+    if (j.contains("mode")) {
+        u32 m = j["mode"].get<u32>();
+        if (m <= static_cast<u32>(ECS::ActionTriggerMode::Toggle))
+            t.mode = static_cast<ECS::ActionTriggerMode>(m);
+    }
+    if (j.contains("effect")) {
+        u32 e = j["effect"].get<u32>();
+        if (e <= static_cast<u32>(ECS::ActionEffect::ShowSubtitle))
+            t.effect = static_cast<ECS::ActionEffect>(e);
+    }
+    if (j.contains("targetEntity")) t.targetEntity = SafeStr(j["targetEntity"]);
+    if (j.contains("timeScale")) t.timeScale = j["timeScale"].get<f32>();
+    if (j.contains("keepPlayerSpeed")) t.keepPlayerSpeed = JB(j["keepPlayerSpeed"]);
+    if (j.contains("eventName")) t.eventName = SafeStr(j["eventName"]);
+    if (j.contains("onText")) t.onText = SafeStr(j["onText"]);
+    if (j.contains("offText")) t.offText = SafeStr(j["offText"]);
+    if (j.contains("textDuration")) t.textDuration = j["textDuration"].get<f32>();
+    if (j.contains("touchButton")) t.touchButton = JB(j["touchButton"]);
+    if (j.contains("touchCol")) t.touchCol = j["touchCol"].get<f32>();
+    if (j.contains("touchRow")) t.touchRow = j["touchRow"].get<f32>();
+    if (j.contains("touchSize")) t.touchSize = j["touchSize"].get<f32>();
+    return t;
+}
+
 json SerializeReflectivePlaneComponent(const ECS::ReflectivePlaneComponent& p) {
     json j;
     j["reflectionStrength"] = p.reflectionStrength;
@@ -1245,6 +1292,7 @@ json SerializeRopeComponent(const ECS::RopeComponent& r) {
     j["useWeatherWind"] = r.useWeatherWind;
     j["weatherWindScale"] = r.weatherWindScale;
     j["collide"] = r.collide;
+    j["collidable"] = r.collidable;
     j["collisionSkin"] = r.collisionSkin;
     j["friction"] = r.friction;
     j["endMass"] = r.endMass;
@@ -1270,6 +1318,7 @@ ECS::RopeComponent DeserializeRopeComponent(const json& j) {
     if (j.contains("useWeatherWind")) r.useWeatherWind = JB(j["useWeatherWind"]);
     if (j.contains("weatherWindScale")) r.weatherWindScale = j["weatherWindScale"].get<f32>();
     if (j.contains("collide")) r.collide = JB(j["collide"]);
+    if (j.contains("collidable")) r.collidable = JB(j["collidable"]);
     if (j.contains("collisionSkin")) r.collisionSkin = j["collisionSkin"].get<f32>();
     if (j.contains("friction")) r.friction = j["friction"].get<f32>();
     if (j.contains("endMass")) r.endMass = j["endMass"].get<f32>();
@@ -7889,6 +7938,7 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
         ENJIN_SERDES("recordRewind", ECS::RecordRewindComponent, SerializeRecordRewindComponent, DeserializeRecordRewindComponent),
         ENJIN_SERDES("reflectionProbe", ECS::ReflectionProbeComponent, SerializeReflectionProbeComponent, DeserializeReflectionProbeComponent),
         ENJIN_SERDES("reflectivePlane", ECS::ReflectivePlaneComponent, SerializeReflectivePlaneComponent, DeserializeReflectivePlaneComponent),
+    ENJIN_SERDES("actionTrigger", ECS::ActionTriggerComponent, SerializeActionTriggerComponent, DeserializeActionTriggerComponent),
         ENJIN_SERDES("ladder", ECS::LadderComponent, SerializeLadderComponent, DeserializeLadderComponent),
         ENJIN_SERDES("rope", ECS::RopeComponent, SerializeRopeComponent, DeserializeRopeComponent),
         ENJIN_SERDES("door", ECS::DoorComponent, SerializeDoorComponent, DeserializeDoorComponent),

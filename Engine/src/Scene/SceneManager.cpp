@@ -109,6 +109,13 @@ bool SceneManager::LoadProject(const std::string& manifestPath) {
             }
         }
 
+        // Project input settings: custom action names/bindings + touch layout.
+        // Absent = engine defaults (auto touch layout, no custom actions).
+        m_InputSettings = InputSystem::InputProjectSettings{};
+        if (root.contains("input") && root["input"].is_object()) {
+            m_InputSettings.FromJson(root["input"].dump());
+        }
+
         // Repair hand-edited or legacy manifests (duplicate start flags, etc.)
         u32 fixes = NormalizeSceneList();
         if (fixes > 0) {
@@ -245,6 +252,11 @@ bool SceneManager::SaveProject(const std::string& manifestPath) {
                 flowArr.push_back(sj);
             }
             root["startupFlow"] = flowArr;
+        }
+
+        // Project input settings (only when authored, so default projects stay clean)
+        if (!m_InputSettings.IsEmpty()) {
+            root["input"] = nlohmann::json::parse(m_InputSettings.ToJson());
         }
 
         // Save collision group names

@@ -740,6 +740,19 @@ void EditorLayer::InitializePlayMode() {
         if (m_EditorSettings.crouchMode == 1) {
             m_InputMap.SetActionMode(InputSystem::GameAction::Crouch, InputSystem::ActionMode::Toggle);
         }
+
+        // Project-authored input settings: the SAME data an exported game reads
+        // from its manifest, so the editor previews the real controls. Applied
+        // after the presets above, which reset bindings to defaults.
+        auto& inputSettings = m_SceneManager.GetInputSettings();
+        inputSettings.ApplyTo(m_InputMap);
+        if (auto* playMap = m_PlayMode.GetInputActionMap()) inputSettings.ApplyTo(*playMap);
+        InputSystem::SetTouchProjectSettings(&inputSettings);
+        // ControllerSystem reads THIS map (see above), so ActionTrigger
+        // components must read it too, not PlayMode's separate copy.
+        if (auto* triggers = m_PlayMode.GetActionTriggerSystem()) {
+            triggers->SetInputActionMap(&m_InputMap);
+        }
     }
 }
 

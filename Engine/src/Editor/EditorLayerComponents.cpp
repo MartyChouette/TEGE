@@ -47,6 +47,7 @@ extern char** environ;
 #include "Enjin/ECS/Components/GravityZone.h"
 #include "Enjin/ECS/Components/ReflectionProbe.h"
 #include "Enjin/ECS/Components/ReflectivePlane.h"
+#include "Enjin/ECS/Components/ActionTrigger.h"
 #include "Enjin/ECS/Components/Ladder.h"
 #include "Enjin/ECS/Components/Rope.h"
 #include "Enjin/ECS/Components/Door.h"
@@ -2923,6 +2924,118 @@ void EditorLayer::DrawReflectionProbeComponent(ECS::Entity entity) {
         // Remove component
         if (ImGui::Button("Remove##ReflectionProbe")) {
             RemoveComponentWithUndo<ECS::ReflectionProbeComponent>(entity, "reflectionProbe", "Reflection Probe");
+        }
+    }
+}
+
+void EditorLayer::DrawActionTriggerComponent(ECS::Entity entity) {
+    if (UI::SectionHeader("Action Trigger", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* t = m_World->GetComponent<ECS::ActionTriggerComponent>(entity);
+        if (!t) return;
+        DrawComponentHelp("actionTrigger", m_World, entity);
+
+        ImGui::TextWrapped("Runs something when an input action fires. The action appears in the "
+                           "Controls menu, in the on-screen controls hint with its live binding, "
+                           "and as a touch button on mobile.");
+        ImGui::Separator();
+
+        // Action picker: the real action list, including this project's custom
+        // actions, so the dropdown reads "SLO-MO" rather than a number.
+        {
+            std::vector<i32> ids;
+            std::vector<const char*> names;
+            for (i32 i = 0; i < m_InputMap.GetActionCount(); ++i) {
+                if (!m_InputMap.IsActionListed(i)) continue;
+                ids.push_back(i);
+                names.push_back(m_InputMap.GetActionName(i));
+            }
+            i32 cur = -1;
+            for (usize k = 0; k < ids.size(); ++k) if (ids[k] == t->action) cur = static_cast<i32>(k);
+            if (ImGui::Combo("Action##ActionTrigger", &cur, names.data(), static_cast<int>(names.size()))) {
+                if (cur >= 0 && cur < static_cast<i32>(ids.size())) t->action = ids[cur];
+            }
+            if (t->action >= 0) {
+                const char* bind = m_InputMap.GetBindingDisplayName(t->action);
+                ImGui::SameLine();
+                ImGui::TextDisabled("[%s]", (bind && bind[0]) ? bind : "unbound");
+            } else {
+                ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f),
+                                   "Pick an action. Name your own in Project Settings > Input & Touch.");
+            }
+        }
+
+        const char* modeNames[] = { "On Press", "On Release", "While Held", "Toggle" };
+        i32 mode = static_cast<i32>(t->mode);
+        if (ImGui::Combo("When##ActionTrigger", &mode, modeNames, 4)) {
+            t->mode = static_cast<ECS::ActionTriggerMode>(mode);
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Toggle: each press flips it on and off.");
+
+        const char* effectNames[] = { "Nothing", "Slow / speed time", "Show or hide an entity",
+                                      "Send an event", "Show a subtitle" };
+        i32 effect = static_cast<i32>(t->effect);
+        if (ImGui::Combo("Does##ActionTrigger", &effect, effectNames, 5)) {
+            t->effect = static_cast<ECS::ActionEffect>(effect);
+        }
+
+        ImGui::Spacing();
+        switch (t->effect) {
+            case ECS::ActionEffect::TimeScale: {
+                InspectorUndo::DragFloat(m_UndoRedo, "Time Scale##ActionTrigger",
+                                         &t->timeScale, 0.01f, 0.01f, 4.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("World speed while the trigger is on. 1.0 is normal.");
+                InspectorUndo::Checkbox(m_UndoRedo, "Player keeps full speed##ActionTrigger",
+                                        &t->keepPlayerSpeed);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("What makes bullet time feel like bullet time.");
+                break;
+            }
+            case ECS::ActionEffect::ToggleVisibility: {
+                char buf[128];
+                std::snprintf(buf, sizeof(buf), "%s", t->targetEntity.c_str());
+                if (ImGui::InputText("Target Entity##ActionTrigger", buf, sizeof(buf))) t->targetEntity = buf;
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Entity name. Empty = this entity.");
+                break;
+            }
+            case ECS::ActionEffect::EmitEvent: {
+                char buf[128];
+                std::snprintf(buf, sizeof(buf), "%s", t->eventName.c_str());
+                if (ImGui::InputText("Event Name##ActionTrigger", buf, sizeof(buf))) t->eventName = buf;
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Visual scripts and game systems can listen for this name.");
+                break;
+            }
+            case ECS::ActionEffect::ShowSubtitle: {
+                char on[192];
+                std::snprintf(on, sizeof(on), "%s", t->onText.c_str());
+                if (ImGui::InputText("Text (on)##ActionTrigger", on, sizeof(on))) t->onText = on;
+                char off[192];
+                std::snprintf(off, sizeof(off), "%s", t->offText.c_str());
+                if (ImGui::InputText("Text (off)##ActionTrigger", off, sizeof(off))) t->offText = off;
+                InspectorUndo::DragFloat(m_UndoRedo, "Seconds##ActionTrigger",
+                                         &t->textDuration, 0.1f, 0.5f, 15.0f);
+                break;
+            }
+            case ECS::ActionEffect::None:
+            default:
+                ImGui::TextDisabled("Pick what this action does.");
+                break;
+        }
+
+        ImGui::Separator();
+        InspectorUndo::Checkbox(m_UndoRedo, "On-screen touch button##ActionTrigger", &t->touchButton);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Adds this action to the mobile touch layout, labelled with its binding.\n"
+                              "Preview it with View > Simulate Touch Controls while playing.");
+        }
+        if (t->touchButton) {
+            InspectorUndo::DragFloat(m_UndoRedo, "Button Column##ActionTrigger", &t->touchCol, 0.1f, 0.0f, 4.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Button Row##ActionTrigger", &t->touchRow, 0.1f, 0.0f, 4.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Button Size##ActionTrigger", &t->touchSize, 0.005f, 0.03f, 0.2f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Radius as a fraction of screen height.");
+        }
+
+        ImGui::Separator();
+        if (ImGui::Button("Remove##ActionTrigger")) {
+            RemoveComponentWithUndo<ECS::ActionTriggerComponent>(entity, "actionTrigger", "Action Trigger");
         }
     }
 }

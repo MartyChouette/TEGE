@@ -1,7 +1,9 @@
 #include "Enjin/Input/TouchActionBridge.h"
 #include "Enjin/Input/InputAction.h"
+#include "Enjin/Input/InputProjectSettings.h"
 #include "Enjin/Platform/Input.h"
 #include "Enjin/ECS/World.h"
+#include "Enjin/ECS/Components/ActionTrigger.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include <imgui.h>
 #include <cctype>
@@ -15,7 +17,9 @@ namespace InputSystem {
 namespace {
     InputActionMap* s_TouchMap = nullptr;
     TouchPreset s_ActivePreset = TouchPreset::Generic;
-    int s_LastAppliedPreset = -1;
+    const InputProjectSettings* s_ProjectSettings = nullptr;
+    u64 s_LastFingerprint = 0;
+    bool s_HasFingerprint = false;
 
     // The actions each controller type consumes, in hint order. This ONE table
     // drives both the touch scheme and the controls hint, so a scene only ever
@@ -114,55 +118,145 @@ int PresetAction(TouchPreset preset, int index) {
 
 bool PresetHasLook(TouchPreset preset) { return Preset(preset).look; }
 
-void ApplyTouchPreset(TouchPreset preset) {
-    const PresetDef& d = Preset(preset);
-    Input::TouchScheme s;
-    s.moveStick = false;
-    s.lookRegion = d.look;
-    for (int i = 0; i < 4; ++i) { s.stickKeys[i] = -1; s.stickActions[i] = -1; }
-    for (int i = 0; i < d.count; ++i) {
-        GameAction a = d.actions[i];
-        const ActionInfo& info = GetActionInfo(a);
-        switch (info.touch) {
-            case TouchHint::Stick: {
-                s.moveStick = true;
-                int idx = -1;
-                if (a == GameAction::MoveLeft)    idx = 0;
-                if (a == GameAction::MoveRight)   idx = 1;
-                if (a == GameAction::MoveForward) idx = 2;
-                if (a == GameAction::MoveBack)    idx = 3;
-                if (idx >= 0) {
-                    s.stickActions[idx] = static_cast<int>(a);
-                    s.stickKeys[idx] = info.key1;   // fallback when no map is wired
-                }
-                break;
-            }
-            case TouchHint::Button: {
-                if (s.buttonCount >= Input::kMaxTouchButtons) break;
-                Input::TouchButtonDef b;
-                const Slot& slot = kSlots[s.buttonCount];
-                b.radiusFrac = slot.radiusFrac;
-                b.colFromRight = slot.col;
-                b.rowFromBottom = slot.row;
-                b.action = static_cast<int>(a);
-                // Static fallback: first default key, else the default mouse
-                // button in Core's negative encoding.
-                b.keyCode = info.key1 >= 0 ? info.key1 : (info.mouse >= 0 ? -(info.mouse) - 1 : 0);
-                CopyLabel(b.label, info.touchLabel);
-                s.buttons[s.buttonCount++] = b;
-                break;
-            }
-            case TouchHint::Look:
-            case TouchHint::NotShown:
-            default:
-                break;
-        }
+namespace {
+    // Add one action button in the next free cluster slot.
+    void AddActionButton(Input::TouchScheme& s, int action, const char* label,
+                         f32 radiusFrac, f32 col, f32 row, int fallbackKey) {
+        if (s.buttonCount >= Input::kMaxTouchButtons) return;
+        Input::TouchButtonDef b;
+        b.radiusFrac = radiusFrac;
+        b.colFromRight = col;
+        b.rowFromBottom = row;
+        b.action = action;
+        b.keyCode = fallbackKey;
+        CopyLabel(b.label, label ? label : "");
+        s.buttons[s.buttonCount++] = b;
     }
-    Input::SetTouchScheme(s);
-    s_ActivePreset = preset;
+
+    // The scheme for a preset, plus the scene's ActionTrigger buttons, plus any
+    // project override. World may be null (script-driven Touch_UsePreset).
+    void BuildScheme(TouchPreset preset, ECS::World* world) {
+        const PresetDef& d = Preset(preset);
+        Input::TouchScheme s;
+        s.moveStick = false;
+        s.lookRegion = d.look;
+        for (int i = 0; i < 4; ++i) { s.stickKeys[i] = -1; s.stickActions[i] = -1; }
+
+        for (int i = 0; i < d.count; ++i) {
+            GameAction a = d.actions[i];
+            const ActionInfo& info = GetActionInfo(a);
+            switch (info.touch) {
+                case TouchHint::Stick: {
+                    s.moveStick = true;
+                    int idx = -1;
+                    if (a == GameAction::MoveLeft)    idx = 0;
+                    if (a == GameAction::MoveRight)   idx = 1;
+                    if (a == GameAction::MoveForward) idx = 2;
+                    if (a == GameAction::MoveBack)    idx = 3;
+                    if (idx >= 0) {
+                        s.stickActions[idx] = static_cast<int>(a);
+                        s.stickKeys[idx] = info.key1;   // fallback when no map is wired
+                    }
+                    break;
+                }
+                case TouchHint::Button: {
+                    const Slot& slot = kSlots[s.buttonCount < Input::kMaxTouchButtons ? s.buttonCount : 0];
+                    // Static fallback: first default key, else the default mouse
+                    // button in Core's negative encoding.
+                    int fallback = info.key1 >= 0 ? info.key1
+                                 : (info.mouse >= 0 ? -(info.mouse) - 1 : 0);
+                    AddActionButton(s, static_cast<int>(a), info.touchLabel,
+                                    slot.radiusFrac, slot.col, slot.row, fallback);
+                    break;
+                }
+                case TouchHint::Look:
+                case TouchHint::NotShown:
+                default:
+                    break;
+            }
+        }
+
+        // Scene-authored buttons: an ActionTriggerComponent asking for one. This
+        // is what makes a game-specific control (bullet time, a horn, a torch)
+        // appear on mobile from dropping a component in the scene, no script.
+        if (world) {
+            for (ECS::Entity e : world->GetEntitiesWithComponent<ECS::ActionTriggerComponent>()) {
+                auto* t = world->GetComponent<ECS::ActionTriggerComponent>(e);
+                if (!t || !t->touchButton || t->action < 0) continue;
+                if (t->action >= static_cast<int>(GameAction::Count)) continue;
+                const char* label = s_TouchMap ? s_TouchMap->GetActionName(t->action)
+                                               : GetActionInfo(static_cast<GameAction>(t->action)).touchLabel;
+                AddActionButton(s, t->action, label, t->touchSize, t->touchCol, t->touchRow, 0);
+            }
+        }
+
+        // Project overrides last: a hand-authored layout replaces the buttons
+        // entirely, and the accessibility settings always apply.
+        if (s_ProjectSettings) {
+            const InputProjectSettings& p = *s_ProjectSettings;
+            if (p.customTouchLayout) {
+                s.buttonCount = 0;
+                for (const auto& b : p.touchButtons) {
+                    if (b.action < 0 || b.action >= static_cast<int>(GameAction::Count)) continue;
+                    const char* label = s_TouchMap ? s_TouchMap->GetActionName(b.action)
+                                                   : GetActionInfo(static_cast<GameAction>(b.action)).touchLabel;
+                    AddActionButton(s, b.action, label, b.size, b.col, b.row, 0);
+                }
+                s.moveStick = p.touchStick;
+            }
+            if (p.touchLook == TouchLookMode::AlwaysOn)  s.lookRegion = true;
+            if (p.touchLook == TouchLookMode::AlwaysOff) s.lookRegion = false;
+            s.leftHanded = p.touchLeftHanded;
+            s.buttonScale = p.touchButtonScale;
+        }
+
+        Input::SetTouchScheme(s);
+        s_ActivePreset = preset;
+    }
+
+    // Cheap fingerprint of everything BuildScheme reads, so the scheme is
+    // rebuilt when the scene's triggers or the project settings change, not
+    // only when the controller type does.
+    u64 SchemeFingerprint(TouchPreset preset, ECS::World* world) {
+        u64 h = 1469598103934665603ull;
+        auto mix = [&h](u64 v) { h ^= v; h *= 1099511628211ull; };
+        mix(static_cast<u64>(preset));
+        if (world) {
+            for (ECS::Entity e : world->GetEntitiesWithComponent<ECS::ActionTriggerComponent>()) {
+                auto* t = world->GetComponent<ECS::ActionTriggerComponent>(e);
+                if (!t || !t->touchButton || t->action < 0) continue;
+                mix(static_cast<u64>(t->action));
+                mix(static_cast<u64>(t->touchCol * 100.0f));
+                mix(static_cast<u64>(t->touchRow * 100.0f));
+                mix(static_cast<u64>(t->touchSize * 1000.0f));
+            }
+        }
+        if (s_ProjectSettings) {
+            const InputProjectSettings& p = *s_ProjectSettings;
+            mix(p.customTouchLayout ? 1u : 2u);
+            mix(p.touchStick ? 1u : 2u);
+            mix(static_cast<u64>(p.touchLook));
+            mix(static_cast<u64>(p.touchButtonScale * 1000.0f));
+            mix(p.touchLeftHanded ? 1u : 2u);
+            for (const auto& b : p.touchButtons) {
+                mix(static_cast<u64>(b.action));
+                mix(static_cast<u64>(b.col * 100.0f));
+                mix(static_cast<u64>(b.row * 100.0f));
+                mix(static_cast<u64>(b.size * 1000.0f));
+            }
+        }
+        return h;
+    }
 }
 
+void ApplyTouchPreset(TouchPreset preset) { BuildScheme(preset, nullptr); }
+
 TouchPreset GetActiveTouchPreset() { return s_ActivePreset; }
+
+void SetTouchProjectSettings(const InputProjectSettings* settings) {
+    s_ProjectSettings = settings;
+    ResetTouchPresetTracking();
+}
 
 TouchPreset TouchPresetForWorld(ECS::World* world) {
     if (!world) return TouchPreset::Generic;
@@ -176,14 +270,16 @@ TouchPreset TouchPresetForWorld(ECS::World* world) {
 }
 
 bool ApplyTouchPresetForWorld(ECS::World* world) {
-    int p = static_cast<int>(TouchPresetForWorld(world));
-    if (p == s_LastAppliedPreset) return false;
-    s_LastAppliedPreset = p;
-    ApplyTouchPreset(static_cast<TouchPreset>(p));
+    TouchPreset p = TouchPresetForWorld(world);
+    u64 fp = SchemeFingerprint(p, world);
+    if (s_HasFingerprint && fp == s_LastFingerprint) return false;
+    s_LastFingerprint = fp;
+    s_HasFingerprint = true;
+    BuildScheme(p, world);
     return true;
 }
 
-void ResetTouchPresetTracking() { s_LastAppliedPreset = -1; }
+void ResetTouchPresetTracking() { s_HasFingerprint = false; }
 
 // ---- Drawing -----------------------------------------------------------------
 

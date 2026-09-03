@@ -373,6 +373,7 @@ private:
     void DrawSettingsSection_CollisionGroups();
     void DrawSettingsSection_BuildScenes();
     void DrawSettingsSection_StartupFlow();
+    void DrawSettingsSection_InputTouch();
     void DrawSettingsSection_BuildConfig();
     void DrawSettingsSection_Networking();
     // Scene tab sections
@@ -452,6 +453,7 @@ private:
     void DrawGravityZoneComponent(ECS::Entity entity);
     void DrawReflectionProbeComponent(ECS::Entity entity);
     void DrawReflectivePlaneComponent(ECS::Entity entity);
+    void DrawActionTriggerComponent(ECS::Entity entity);
     void DrawLadderComponent(ECS::Entity entity);
     void DrawRopeComponent(ECS::Entity entity);
     void DrawDoorComponent(ECS::Entity entity);
@@ -1601,6 +1603,9 @@ private:
     // Play mode: draw the mobile touch overlay over the Game View and let the
     // mouse act as one touch (View > Simulate Touch Controls).
     bool m_SimulateTouch = false;
+
+    // Project Settings > Input & Touch: which custom-action slot is expanded.
+    i32 m_InputTouchEditSlot = -1;
 
     // UI editor (viewport WYSIWYG) state
     bool m_UIEditMode = false;

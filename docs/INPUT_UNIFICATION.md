@@ -168,7 +168,19 @@ Original scope:
 
 Descriptor table, UI actions, Custom0..7, preset construction moved to Engine, Playground's SLO-MO becomes Custom0. Touch overlay compiles on all platforms with editor simulate toggle.
 
-### Phase 2: project touch data
+### Phase 2: project data + components (DONE 2026-09-03)
+
+Reshaped after Marty's note that everything must be reachable from the editor by a user with components only, no scripts and no agent. Shipped:
+
+- `InputProjectSettings` (`input` block in `.enjinproject`): custom action names + bindings, touch layout, and touch accessibility (left-handed mirror, button scale, camera-drag override). BuildPipeline carries it verbatim into the game manifest; desktop, web and editor Play all load it before the player's `bindings.json`.
+- Project Settings > Input & Touch tab: name your own actions and bind them from pick-lists, set the touch accessibility defaults, and optionally hand-author the button layout.
+- `ActionTriggerComponent` + `ActionTriggerSystem`: pick an action, pick an effect (slow time, show/hide an entity, send an event, show a subtitle). Runs in all three runtimes; `Reset()` on stop so bullet time cannot strand the editor clock.
+- A trigger contributes its own touch button, and the scheme is rebuilt on a fingerprint of (preset + scene triggers + project settings), so dropping the component in makes the mobile button appear at once.
+- Left-handed touch mirroring and button scale in Core, the first touch accessibility settings the engine has had.
+
+Still script-only: nothing required. The `Touch_*` and `InputAction_*` bindings remain as the optional path.
+
+Original scope:
 
 `.enjinproject` block, editor tab with preview, BuildPipeline carry, web load. Script `Touch_*` accept action names.
 

@@ -868,6 +868,31 @@ Auto-match art style mode maps the scene's ArtStyleComponent to the appropriate 
 
 ### 5.5 Interaction and Item Components
 
+#### ActionTriggerComponent
+
+Wires an input action to something happening in the scene, with no scripting. Add it, pick an action, pick what it does.
+
+The action you pick becomes a real control everywhere at once: it lists in the player's Controls menu, it shows in the on-screen controls hint with whatever key or button it is currently bound to, and on mobile it becomes an on-screen touch button. Rebinding it updates all of those together.
+
+To use one of your own actions rather than a built-in one, name it first in **Project Settings > Input & Touch**, give it a key and a gamepad button, then pick it here.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `action` | action | none | Which input action fires this. Built-in actions and your named ones both appear in the dropdown. |
+| `mode` | enum | Toggle | On Press, On Release, While Held, or Toggle (each press flips it on and off). |
+| `effect` | enum | Nothing | What happens: slow/speed time, show or hide an entity, send an event, or show a subtitle. |
+| `targetEntity` | string | "" | Entity name the effect applies to. Empty means this entity. |
+| `timeScale` | f32 | 0.25 | World speed while on, for the time effect. 1.0 is normal. |
+| `keepPlayerSpeed` | bool | true | Character controllers keep running at full speed while the world slows. This is what makes bullet time feel right. |
+| `eventName` | string | "" | Event name to send. Visual scripts and game systems can listen for it. |
+| `onText` / `offText` | string | "" | Subtitle shown when the trigger turns on and off. |
+| `textDuration` | f32 | 2.5 | Seconds the subtitle stays up. |
+| `touchButton` | bool | true | Adds this action to the mobile touch layout. |
+| `touchCol` / `touchRow` | f32 | 0 / 2 | Grid position in the button cluster, counting inward and upward from the corner. |
+| `touchSize` | f32 | 0.065 | Button radius as a fraction of screen height. |
+
+**Bullet time in four clicks:** name an action "SLO-MO" in Project Settings and bind it to B and gamepad Y. Add an Action Trigger to any entity. Set the action to SLO-MO, mode to Toggle, effect to slow time. Leave the touch button on. It now works on keyboard, gamepad and phone, and appears in the controls menu. Check the phone layout without a phone using **View > Simulate Touch Controls** while playing.
+
 #### InteractableComponent
 
 Makes an entity interactable by the player (doors, NPCs, switches, etc.).

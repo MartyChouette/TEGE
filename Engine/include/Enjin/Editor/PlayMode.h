@@ -10,6 +10,7 @@
 #include "Enjin/Gameplay/ClothSystem.h"
 #include "Enjin/ECS/Systems/FlowerSystem.h"
 #include "Enjin/ECS/Systems/TweenSystem.h"
+#include "Enjin/ECS/Systems/ActionTriggerSystem.h"
 #include "Enjin/ECS/Systems/StateMachineSystem.h"
 #include "Enjin/ECS/Systems/SwarmSystem.h"
 #include "Enjin/ECS/Systems/DialogueSystem.h"
@@ -160,6 +161,7 @@ public:
     Effects::DestructibleSystem* GetDestructibleSystem() { return &m_DestructibleSystem; }
     Effects::InteractiveWaterSystem* GetInteractiveWaterSystem() { return &m_InteractiveWaterSystem; }
     InputSystem::InputActionMap* GetInputActionMap() { return &m_InputMap; }
+    ECS::ActionTriggerSystem* GetActionTriggerSystem() { return &m_ActionTriggerSystem; }
     Editor::AudioEventGraphRuntime* GetAudioGraphRuntime() { return &m_AudioGraphRuntime; }
 
     void SetRenderSystem(ECS::RenderSystem* rs) { m_RenderSystem = rs; }
@@ -236,6 +238,7 @@ private:
 
     // Tween system
     ECS::TweenSystem m_TweenSystem;
+    ECS::ActionTriggerSystem m_ActionTriggerSystem;
 
     // Swarm system (data-oriented crowd proxies)
     ECS::SwarmSystem m_SwarmSystem;

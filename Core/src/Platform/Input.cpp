@@ -184,9 +184,14 @@ namespace {
     void TouchResolveButton(const Input::TouchButtonDef& b, f32& cx, f32& cy, f32& r) {
         f32 x0, y0, w, h;
         TouchSafeRect(x0, y0, w, h);
-        r = b.radiusFrac * h;
+        f32 scale = (s_TouchScheme.buttonScale > 0.05f) ? s_TouchScheme.buttonScale : 1.0f;
+        r = b.radiusFrac * h * scale;
         f32 spacing = r * 2.4f;
-        cx = x0 + w - r * 1.6f - b.colFromRight * spacing;
+        // colFromRight counts inward from the button-cluster edge: the right
+        // edge normally, the LEFT edge when the layout is mirrored for
+        // left-handed play (which also moves the stick to the other side).
+        f32 inset = r * 1.6f + b.colFromRight * spacing;
+        cx = s_TouchScheme.leftHanded ? (x0 + inset) : (x0 + w - inset);
         cy = y0 + h - r * 1.8f - b.rowFromBottom * spacing;
     }
 
@@ -201,7 +206,12 @@ namespace {
         }
         f32 x0, y0, zw, zh;
         TouchSafeRect(x0, y0, zw, zh);
-        if (s_TouchScheme.moveStick && px < x0 + zw * s_TouchScheme.moveZoneSplit) return 1;
+        if (s_TouchScheme.moveStick) {
+            bool inStickZone = s_TouchScheme.leftHanded
+                ? (px > x0 + zw * (1.0f - s_TouchScheme.moveZoneSplit))
+                : (px < x0 + zw * s_TouchScheme.moveZoneSplit);
+            if (inStickZone) return 1;
+        }
         return 2;
     }
 

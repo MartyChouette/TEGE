@@ -52,13 +52,23 @@ ENJIN_API bool PresetHasLook(TouchPreset preset);
 ENJIN_API void ApplyTouchPreset(TouchPreset preset);
 ENJIN_API TouchPreset GetActiveTouchPreset();
 
+// Project-authored input settings (custom touch layout + touch accessibility
+// defaults such as left-handed mirroring and button scale). Set once when the
+// project/manifest loads; null restores engine defaults. Pointer is borrowed
+// and must outlive the bridge's use of it.
+struct InputProjectSettings;
+ENJIN_API void SetTouchProjectSettings(const InputProjectSettings* settings);
+
 // Preset for whatever player controller the world contains (Generic if none).
 ENJIN_API TouchPreset TouchPresetForWorld(ECS::World* world);
 
-// Apply TouchPresetForWorld only when the preset CHANGES (across scenes), so a
-// game that authors its own scheme mid-scene is not clobbered. Call once per
-// frame BEFORE scripts run, so a script's OnStart additions survive. Returns
-// true when a preset was applied. SetTouchActionMap(nullptr) resets tracking.
+// Build the scheme for a world: the controller preset's buttons PLUS a button
+// for every ActionTriggerComponent in the scene that asks for one, then any
+// project overrides. Rebuilt only when that set actually changes, so a game
+// that adds its own buttons mid-scene is not clobbered, while dropping an
+// ActionTrigger component into a scene makes its touch button appear at once.
+// Call once per frame BEFORE scripts run. Returns true when it rebuilt.
+// SetTouchActionMap(nullptr) resets tracking.
 ENJIN_API bool ApplyTouchPresetForWorld(ECS::World* world);
 ENJIN_API void ResetTouchPresetTracking();
 

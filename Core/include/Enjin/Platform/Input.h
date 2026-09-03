@@ -213,6 +213,11 @@ public:
                                                  // ids, or -1; resolved like buttons.
         bool lookRegion = true;                  // right side drags the camera
         f32  moveZoneSplit = 0.45f;              // x fraction owned by the stick
+        // Accessibility: mirror the whole layout for left-handed play (stick on
+        // the RIGHT, buttons growing from the bottom-LEFT), and scale every
+        // button for reach or low vision. Both are player/project settings.
+        bool leftHanded = false;
+        f32  buttonScale = 1.0f;                 // 0.5 - 2.0
         TouchButtonDef buttons[kMaxTouchButtons];
         int  buttonCount = 0;
     };
