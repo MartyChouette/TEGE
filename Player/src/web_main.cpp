@@ -54,6 +54,7 @@
 #include "Enjin/Audio/AudioSystem.h"
 #include "Enjin/Audio/SimpleAudio.h"
 #include "Enjin/Build/AssetReader.h"
+#include "Enjin/Platform/WebLazyFS.h"
 #include "Enjin/Scripting/ScriptEngine.h"
 #include "Enjin/Scripting/ScriptSystem.h"
 #include "Enjin/Scripting/ScriptBindings.h"
@@ -149,7 +150,7 @@ public:
                 if (f) { fwrite(buf, 1, static_cast<size_t>(len), f); fclose(f); }
                 self->m_HasPack = self->m_AssetReader.Open("game.enjpak", "");
                 if (!self->m_HasPack) self->m_HasPack = self->m_AssetReader.Open("game.enjpak", PACK_KEY);
-                self->ExtractPackAssetsToMemFS();
+                self->RegisterLazyPakFiles();
                 self->StartRendererInit();
             },
             [](void* arg) {
@@ -169,37 +170,26 @@ public:
             });
     }
 
-    // Extract model/texture/audio/font files from the pak to the WASM MEMFS so
-    // the disk-based loaders find them by path. GLTFLoader (cgltf_parse_file)
-    // and the raster texture/audio loaders read straight from disk; on web the
-    // game ships only as game.enjpak, so without this, models and textures
-    // never load. Scenes/scripts already load through the AssetReader directly.
-    void ExtractPackAssetsToMemFS() {
+    // Expose every pak entry as a LAZY MEMFS file (Platform::WebLazyFS). The
+    // disk-path loaders (cgltf, stb_image, miniaudio, fonts, VOX/PLY/SVG) keep
+    // fopen()ing project-relative paths unchanged, but bytes are pulled from the
+    // pak only when something actually reads a file. Until 2026-09-03 every
+    // model/texture/audio/font was extracted up front, which kept a second full
+    // copy of the pak's assets resident for the whole session (a real share of
+    // the mobile OOM budget). Scenes/scripts still load through the AssetReader.
+    void RegisterLazyPakFiles() {
         if (!m_HasPack) return;
-        static const std::set<std::string> kDiskExts = {
-            ".glb", ".gltf", ".fbx", ".obj", ".dae", ".3ds", ".ply", ".vox",
-            ".png", ".jpg", ".jpeg", ".tga", ".bmp", ".svg", ".hdr",
-            ".wav", ".ogg", ".mp3", ".flac", ".ttf", ".otf"
-        };
-        int extracted = 0;
+        Enjin::Platform::WebLazyFS::SetReader([this](const std::string& vpath) {
+            return m_AssetReader.ReadFile(vpath);
+        });
+        int registered = 0;
         for (const auto& vpath : m_AssetReader.ListFiles()) {
-            auto dot = vpath.find_last_of('.');
-            if (dot == std::string::npos) continue;
-            std::string ext = vpath.substr(dot);
-            for (auto& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-            if (kDiskExts.find(ext) == kDiskExts.end()) continue;
-
-            std::vector<Enjin::u8> data = m_AssetReader.ReadFile(vpath);
-            if (data.empty()) continue;
-
-            std::error_code ec;
-            std::filesystem::path p(vpath);
-            if (p.has_parent_path()) std::filesystem::create_directories(p.parent_path(), ec);
-            FILE* f = fopen(vpath.c_str(), "wb");
-            if (f) { fwrite(data.data(), 1, data.size(), f); fclose(f); ++extracted; }
+            if (vpath.rfind("_build/", 0) == 0) continue;   // manifest: reader-only
+            if (Enjin::Platform::WebLazyFS::RegisterLazyFile(vpath, m_AssetReader.GetFileSize(vpath))) ++registered;
         }
-        ENJIN_LOG_INFO(Player, "Extracted %d pak assets to MEMFS (models/textures/audio/fonts)", extracted);
+        ENJIN_LOG_INFO(Player, "Registered %d lazy pak files in MEMFS (materialize on first read)", registered);
     }
+
 
     void StartRendererInit() {
         // Read build manifest

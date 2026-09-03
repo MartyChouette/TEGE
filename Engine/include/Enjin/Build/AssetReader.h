@@ -25,6 +25,7 @@ public:
     bool VerifyIntegrity() const;  // check all CRC32s
 
     u32 GetFileCount() const { return static_cast<u32>(m_Index.size()); }
+    u64 GetFileSize(const std::string& virtualPath) const;   // decoded size, 0 if absent
 
 private:
     struct Entry {

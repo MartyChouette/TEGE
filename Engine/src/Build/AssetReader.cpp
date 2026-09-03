@@ -221,6 +221,11 @@ bool AssetReader::HasFile(const std::string& virtualPath) const {
     return m_Index.find(virtualPath) != m_Index.end();
 }
 
+u64 AssetReader::GetFileSize(const std::string& virtualPath) const {
+    auto it = m_Index.find(virtualPath);
+    return it == m_Index.end() ? 0 : it->second.originalSize;
+}
+
 std::vector<u8> AssetReader::ReadFile(const std::string& virtualPath) const {
     auto it = m_Index.find(virtualPath);
     if (it == m_Index.end()) {
