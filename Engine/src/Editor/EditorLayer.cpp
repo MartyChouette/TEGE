@@ -2408,6 +2408,12 @@ void EditorLayer::UpdateGameViewSims(f32 simDt) {
     if (!m_RenderSystem->IsGameViewReady()) return;
     if (!m_PlayMode.IsPlaying() && !m_GameViewVisiblePrev && s_GoldenCapturePath.empty()) return;
 
+    // Build water surface meshes here (a safe pre-render point). The player does this in
+    // RenderSystem::Update(), which the editor never calls, so without this the 3D water
+    // surface has no mesh and is invisible in the game view.
+    m_RenderSystem->EnsureWaterMeshes();
+    m_RenderSystem->EnsureWater3DMeshes();
+
     // Resolve the game camera by the same rules as RenderOffscreen
     // (user selection -> active camera), then the zone-detection block
     // below computes m_CameraZoneOverride, which the render pass reuses.

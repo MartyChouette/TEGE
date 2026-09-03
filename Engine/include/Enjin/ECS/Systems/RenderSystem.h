@@ -1820,9 +1820,14 @@ private:
                        const VkRect2D* scissorOverride = nullptr,
                        bool offscreenPass = false);
 
-    // Water surface mesh generation
+public:
+    // Water surface mesh generation. PUBLIC so the editor can build the water mesh at a
+    // safe pre-render point: the editor renders the game view via RenderToTarget and
+    // never calls Update() (where these run for the player), so without this 3D water
+    // never gets its mesh in the editor game view (reported 2026-09-02).
     void EnsureWaterMeshes();
     void EnsureWater3DMeshes();
+private:
 #endif
 
 #if !ENJIN_RENDERER_WEBGPU
