@@ -757,7 +757,11 @@ public:
         f32 filmGrain = 0.0f;          // 0 = off
         f32 crtScanline = 0.0f;        // 0 = off
         f32 timeSec = 0.0f;            // set per-frame for animated grain
-        f32 _pad2 = 0.0f;              // 20 f32 = 80 bytes (16-multiple)
+        f32 dither = 0.0f;             // ordered-dither strength, 0 = off
+        f32 stipple = 0.0f;            // 0 = off, 1 = mono, 2 = duotone, 3 = full-colour dither
+        f32 stippleScale = 1.0f;
+        f32 _pad2 = 0.0f;
+        f32 _pad3 = 0.0f;              // 24 f32 = 96 bytes (16-multiple)
     };
     WebPPAccessibilityParams m_WebPPAccessibility;
     void SetWebAccessibility(u32 colorblindMode, f32 strength, f32 brightness, f32 contrast) {
@@ -775,7 +779,11 @@ public:
     void SetWebPostProcess(f32 saturation, f32 cfR, f32 cfG, f32 cfB,
                            f32 vignetteIntensity, f32 vignetteSmoothness,
                            f32 chromaticAberration, f32 colorQuantLevels,
-                           f32 filmGrain, f32 crtScanline) {
+                           f32 filmGrain, f32 crtScanline,
+                           f32 dither, f32 stipple, f32 stippleScale) {
+        m_WebPPAccessibility.dither = dither;
+        m_WebPPAccessibility.stipple = stipple;
+        m_WebPPAccessibility.stippleScale = stippleScale;
         m_WebPPAccessibility.saturation = saturation;
         m_WebPPAccessibility.colorFilterR = cfR;
         m_WebPPAccessibility.colorFilterG = cfG;

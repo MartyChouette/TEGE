@@ -627,7 +627,11 @@ struct PostProcessParams {
     filmGrain: f32,
     crtScanline: f32,
     timeSec: f32,
+    dither: f32,
+    stipple: f32,
+    stippleScale: f32,
     _pad2: f32,
+    _pad3: f32,
 };
 @group(0) @binding(2) var<uniform> params: PostProcessParams;
 
@@ -748,6 +752,18 @@ fn applyColorblindCorrection(color: vec3<f32>) -> vec3<f32> {
     return mix(color, saturate(corrected), strength);
 }
 
+// Ordered 4x4 Bayer matrix (0..~0.94) for dithering + stipple thresholding.
+fn bayer4(p: vec2<i32>) -> f32 {
+    var m = array<f32, 16>(
+        0.0, 8.0, 2.0, 10.0,
+        12.0, 4.0, 14.0, 6.0,
+        3.0, 11.0, 1.0, 9.0,
+        15.0, 7.0, 13.0, 5.0);
+    let x = ((p.x % 4) + 4) % 4;
+    let y = ((p.y % 4) + 4) % 4;
+    return m[y * 4 + x] / 16.0;
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let texDim = vec2<f32>(textureDimensions(sceneTexture));
@@ -805,6 +821,26 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let seed = in.uv * vec2<f32>(1024.0, 768.0) + vec2<f32>(params.timeSec * 60.0, params.timeSec * 37.0);
         let n = fract(sin(dot(seed, vec2<f32>(12.9898, 78.233))) * 43758.5453);
         color = color + (n - 0.5) * params.filmGrain;
+    }
+
+    // Ordered dithering: retro banding-reduction / 8-bit look.
+    if (params.dither > 0.0) {
+        let pix = vec2<i32>(in.uv * vec2<f32>(640.0, 360.0));
+        color = color + (bayer4(pix) - 0.5) * params.dither * 0.08;
+    }
+
+    // Stipple / comic threshold: ink on/off vs the Bayer matrix by luminance.
+    if (params.stipple > 0.5) {
+        let sc = max(params.stippleScale, 0.1);
+        let pix = vec2<i32>(in.uv * vec2<f32>(640.0, 360.0) / sc);
+        let on = step(bayer4(pix), dot(color, vec3<f32>(0.299, 0.587, 0.114)));
+        if (params.stipple < 1.5) {
+            color = mix(vec3<f32>(0.05), vec3<f32>(0.95), on);                                   // mono
+        } else if (params.stipple < 2.5) {
+            color = mix(vec3<f32>(0.10, 0.12, 0.25), vec3<f32>(0.95, 0.92, 0.80), on);           // duotone
+        } else {
+            color = color * (0.55 + 0.45 * on);                                                  // full-colour dither
+        }
     }
 
     if (params.previewEffect != 0u && abs(in.uv.x - params.previewDivider) < texelSize.x) {

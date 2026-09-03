@@ -634,7 +634,10 @@ public:
             s.chromaticAberrationEnabled ? s.chromaticAberrationIntensity : 0.0f,
             s.colorQuantEnabled ? 8.0f : 0.0f,
             s.filmGrainEnabled ? s.filmGrainIntensity : 0.0f,
-            s.crtEnabled ? s.scanlineIntensity : 0.0f);
+            s.crtEnabled ? s.scanlineIntensity : 0.0f,
+            s.ditherEnabled ? s.ditherStrength : 0.0f,
+            s.stippleEnabled ? static_cast<float>(s.stippleColorMode + 1u) : 0.0f,
+            s.stippleScale);
     }
 
     void TogglePauseMenu() {
