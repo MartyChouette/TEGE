@@ -65,6 +65,25 @@ ENJIN_TEST(TouchActionBinding, OutOfRangeAndNoMapAreSafe) {
     SetTouchActionMap(nullptr);
 }
 
+ENJIN_TEST(TouchActionBinding, GamepadOnlyActionHasNoKeyAndNoLabel) {
+    // CameraZoomIn defaults to a gamepad button only. The key resolver reports
+    // "no binding" (touch falls back to the button's static key), so the label
+    // resolver must ALSO decline rather than show the gamepad glyph, or the
+    // button lies about what it presses.
+    InputActionMap map;
+    map.LoadDefaults();
+    SetTouchActionMap(&map);
+    const int ZOOM = static_cast<int>(GameAction::CameraZoomIn);
+    ENJIN_EXPECT_EQ(TouchActionKey(ZOOM), Input::kTouchNoBinding);
+    ENJIN_EXPECT_TRUE(TouchActionLabel(ZOOM) == nullptr);
+
+    // Give it a key and both resolvers agree again.
+    map.RebindAction(ZOOM, 90);   // 'Z'
+    ENJIN_EXPECT_EQ(TouchActionKey(ZOOM), 90);
+    ENJIN_EXPECT_TRUE(TouchActionLabel(ZOOM) != nullptr);
+    SetTouchActionMap(nullptr);
+}
+
 ENJIN_TEST(TouchActionBinding, PresetButtonsCarryActions) {
     // A preset must tag its buttons with GameActions (not just key codes), or
     // the resolver never runs. Verify the Generic preset's Jump button.

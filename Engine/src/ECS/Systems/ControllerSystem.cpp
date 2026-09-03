@@ -1287,7 +1287,7 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
         // When mouse is captured (focus mode), orbit is always active.
         // When not captured (editor), requires RMB hold.
         if (Input::IsMouseCaptured() || Input::IsMouseButtonDown(MouseButton::Right)) {
-            Math::Vector2 mouseDelta = GetLookDelta();
+            Math::Vector2 mouseDelta = GetLookDelta() * MouseSensitivityScale();
             ctrl.cameraYaw += mouseDelta.x * ctrl.cameraSensitivity;  // horizontal look (Marty's preferred convention)
             f32 pitchSign = m_InvertMouseY ? 1.0f : -1.0f;
             ctrl.cameraPitch += mouseDelta.y * ctrl.cameraSensitivity * pitchSign;
@@ -1535,7 +1535,7 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
     if (!ctrl.disableMouseLook) {
         bool lockYaw = ctrl.dungeonCrawlerMode && ctrl.gridMovement;
         if (Input::IsMouseCaptured() || Input::IsMouseButtonDown(MouseButton::Left)) {
-            Math::Vector2 mouseDelta = GetLookDelta();
+            Math::Vector2 mouseDelta = GetLookDelta() * MouseSensitivityScale();
 
             if (!lockYaw) {
                 ctrl.yaw -= mouseDelta.x * ctrl.mouseSensitivity;
@@ -2142,7 +2142,7 @@ void ControllerSystem::UpdateSurfaceAligned(Entity entity, SurfaceAlignedControl
     // Camera input: mouse/gamepad -> cameraYaw/cameraPitch (same as ThirdPerson)
     if (!ctrl.disableMouseLook) {
         if (Input::IsMouseCaptured() || Input::IsMouseButtonDown(MouseButton::Right)) {
-            Math::Vector2 mouseDelta = GetLookDelta();
+            Math::Vector2 mouseDelta = GetLookDelta() * MouseSensitivityScale();
             ctrl.cameraYaw += mouseDelta.x * ctrl.cameraSensitivity;
             f32 saPitchSign = m_InvertMouseY ? 1.0f : -1.0f;
             ctrl.cameraPitch += mouseDelta.y * ctrl.cameraSensitivity * saPitchSign;

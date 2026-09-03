@@ -124,6 +124,10 @@ private:
     Physics::IPhysicsBackend* m_Physics = nullptr;
     Physics::IPhysicsBackend2D* m_Physics2D = nullptr;
     InputSystem::InputActionMap* m_InputMap = nullptr;
+
+    // Player-facing mouse sensitivity (Controls menu / bindings.json) applied on
+    // top of the per-controller designer multiplier. 1.0 when no map is attached.
+    f32 MouseSensitivityScale() const { return m_InputMap ? m_InputMap->GetMouseSensitivity() : 1.0f; }
     Entity m_GameCameraEntity = INVALID_ENTITY;
     bool m_DriveEditorCameraFallback = true;  // editor sets false; see SetDriveEditorCameraFallback
     bool m_Enabled = false;  // Disabled by default (editor mode)

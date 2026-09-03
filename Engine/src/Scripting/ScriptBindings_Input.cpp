@@ -146,6 +146,9 @@ static void Touch_UsePreset(int preset) {
 static void Touch_ClearButtons() {
     Input::TouchScheme s = Input::GetTouchScheme();
     s.buttonCount = 0;
+    // Wipe the slots too: a later Touch_AddButton must not inherit a preset's
+    // action/keyCode (slot 0 used to keep Jump and press it under any label).
+    for (int i = 0; i < Input::kMaxTouchButtons; ++i) s.buttons[i] = Input::TouchButtonDef{};
     Input::SetTouchScheme(s);
 }
 
@@ -157,6 +160,7 @@ static void Touch_AddButton(const std::string& label, int keyCode,
     Input::TouchScheme s = Input::GetTouchScheme();
     if (s.buttonCount >= Input::kMaxTouchButtons) return;
     Input::TouchButtonDef& b = s.buttons[s.buttonCount++];
+    b = Input::TouchButtonDef{};   // fresh slot: no stale action from a preset
     b.keyCode = keyCode;
     b.colFromRight = col;
     b.rowFromBottom = row;
@@ -174,6 +178,7 @@ static void Touch_AddActionButton(const std::string& label, int action,
     Input::TouchScheme s = Input::GetTouchScheme();
     if (s.buttonCount >= Input::kMaxTouchButtons) return;
     Input::TouchButtonDef& b = s.buttons[s.buttonCount++];
+    b = Input::TouchButtonDef{};   // fresh slot: no stale keyCode fallback
     b.action = action;
     b.colFromRight = col;
     b.rowFromBottom = row;

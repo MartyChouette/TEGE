@@ -259,9 +259,20 @@ namespace {
         }
     }
 
+    void WebQuerySafeArea(f32 sx, f32 sy);
+
     // Safe-area rectangle in backing pixels (canvas minus notch/rounded-corner
     // insets). Falls back to the full canvas when insets are unknown/zero.
+    // Insets change on rotate / fullscreen / on-screen keyboard, all of which
+    // also change the canvas backing size, so re-query whenever that moves.
     void WebSafeRect(int bw, int bh, f32& x0, f32& y0, f32& w, f32& h) {
+        static int s_SafeForW = -1, s_SafeForH = -1;
+        if (bw != s_SafeForW || bh != s_SafeForH) {
+            f32 qsx, qsy; int qbw, qbh;
+            WebCanvasScale(qsx, qsy, qbw, qbh);
+            WebQuerySafeArea(qsx, qsy);
+            s_SafeForW = bw; s_SafeForH = bh;
+        }
         x0 = s_SafeInset[3];
         y0 = s_SafeInset[0];
         w = static_cast<f32>(bw) - s_SafeInset[1] - s_SafeInset[3];
@@ -397,10 +408,15 @@ namespace {
                 WebTouch* slot = FindTouch(tp.identifier);
                 if (!slot) continue;
                 if (slot->role == 2) {
-                    constexpr f32 MAX_DELTA = 150.0f;
-                    f32 dx = px - slot->lastX, dy = py - slot->lastY;
-                    if (dx > -MAX_DELTA && dx < MAX_DELTA) s_WebMouseMovementAccum.x += dx;
-                    if (dy > -MAX_DELTA && dy < MAX_DELTA) s_WebMouseMovementAccum.y += dy;
+                    // Only a scheme with a look region drags the camera; 2D
+                    // presets (lookRegion=false) still move the pointer so a
+                    // tap-click lands where the finger lifted.
+                    if (s_TouchScheme.lookRegion) {
+                        constexpr f32 MAX_DELTA = 150.0f;
+                        f32 dx = px - slot->lastX, dy = py - slot->lastY;
+                        if (dx > -MAX_DELTA && dx < MAX_DELTA) s_WebMouseMovementAccum.x += dx;
+                        if (dy > -MAX_DELTA && dy < MAX_DELTA) s_WebMouseMovementAccum.y += dy;
+                    }
                     s_MousePosition = Math::Vector2(px, py);
                 }
                 slot->lastX = slot->curX; slot->lastY = slot->curY;
@@ -852,7 +868,11 @@ Input::TouchOverlayState Input::GetTouchOverlay() {
     st.showStick = s_TouchScheme.moveStick;
     f32 sx, sy; int bw, bh;
     WebCanvasScale(sx, sy, bw, bh);
-    st.stickRadius = 0.07f * static_cast<f32>(bh);
+    // Same reference as the buttons (safe-area height), so stick and buttons
+    // scale together on notched devices.
+    f32 safeX0, safeY0, safeW, safeH;
+    WebSafeRect(bw, bh, safeX0, safeY0, safeW, safeH);
+    st.stickRadius = 0.07f * safeH;
     for (const auto& t : s_Touches) {
         if (t.id == -1) continue;
         if (t.role == 1) {
