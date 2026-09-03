@@ -79,6 +79,11 @@ These are hard-won lessons. Violating any of these will cause bugs.
 - **Editor auto-saves the open scene on a timer** — never modify scene files out-of-band while an editor instance is running; close it first
 - **The "parented entities render eulers with Y/Z swapped" bug is FIXED (2026-08-23)** — root cause was never the render path (ComputeWorldMatrix/FromEuler/script bindings all proven correct by tests): the viewport GIZMO write-back rebuilt rotations from ImGuizmo-decomposed angles with a hand-rolled Y*X*Z product instead of the engine's ZYX `FromEuler` (= ImGuizmo's exact convention), silently corrupting any compound LOCAL rotation (typically a child under a rotated parent) on every gizmo drag, including pure translations. Do NOT put yaw in the Z slot anymore; content authored with that workaround needs its rotations re-authored. Euler convention everywhere: `Quaternion::FromEuler` ZYX intrinsic (x=pitch applied first, then y=yaw, then z=roll); any new euler→quat site MUST use FromEuler, never hand-rolled axis products (test: GizmoEulerConvention)
 
+### Input / Touch
+- **`GameAction` is APPEND-ONLY** (ordinals persist in `bindings.json` and mirror the script enum). Every action is one row in `kActionInfo` (`InputActionMap.cpp`): name, category, defaults, touch hint, hint verb. `LoadDefaults`, menus, touch presets and the controls hint all read that table; a new action = a new row + a script enum value
+- **Touch presets live in Engine (`TouchActionBridge`), Core knows nothing about actions.** Core owns hit-zones/geometry/state only. Presets are lists of consumed actions per controller type and drive BOTH the touch buttons and the bottom-left controls hint, so a scene only shows controls it has. Apply via `ApplyTouchPresetForWorld` BEFORE scripts tick (OnStart additions must survive)
+- **The touch overlay compiles on all platforms.** `EnjinPlayer --touch` and editor View > Simulate Touch Controls make the mouse one touch. Game-specific buttons (Playground SLO-MO) are `Custom0..7` actions named+bound from script plus `Touch_AddActionButton`, never hardcoded ImGui windows in a player
+
 ### Windows C++ Gotchas
 - `near` and `far` are reserved macros (`windef.h`) — don't use as variable names
 

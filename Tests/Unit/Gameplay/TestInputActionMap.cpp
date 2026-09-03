@@ -33,7 +33,7 @@ ENJIN_TEST(GameActionEnum, LookAndCamera) {
 }
 
 ENJIN_TEST(GameActionEnum, Count) {
-    ENJIN_EXPECT_EQ((int)GameAction::Count, 18);
+    ENJIN_EXPECT_EQ((int)GameAction::Count, 33);
 }
 
 // ===========================================================================

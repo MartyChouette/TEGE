@@ -176,6 +176,37 @@ static void Input_ResetToDefaults() {
     s_BindingsInputActionMap->ResetToDefaults();
 }
 
+// Custom action slots (GameAction::Custom0..7): a game names one at boot, binds
+// it, and from then on menus, the controls hint and touch (via
+// Touch_AddActionButton) treat it like any built-in action.
+static void Input_SetActionName(i32 action, const std::string& name) {
+    if (!s_BindingsInputActionMap || action < 0 || action >= static_cast<i32>(InputSystem::GameAction::Count)) return;
+    s_BindingsInputActionMap->SetCustomActionName(static_cast<InputSystem::GameAction>(action), name);
+}
+
+static void Input_AddGamepadBinding(i32 action, i32 button) {
+    if (!s_BindingsInputActionMap || action < 0 || action >= static_cast<i32>(InputSystem::GameAction::Count)) return;
+    if (button < 0 || button >= static_cast<i32>(GamepadButton::Count)) return;
+    InputSystem::InputBinding b;
+    b.type = InputSystem::BindingType::GamepadButton;
+    b.code = button;
+    s_BindingsInputActionMap->AddBinding(static_cast<InputSystem::GameAction>(action), b);
+}
+
+static void Input_AddMouseBinding(i32 action, i32 button) {
+    if (!s_BindingsInputActionMap || action < 0 || action >= static_cast<i32>(InputSystem::GameAction::Count)) return;
+    if (button < 0 || button > 7) return;
+    InputSystem::InputBinding b;
+    b.type = InputSystem::BindingType::MouseButton;
+    b.code = button;
+    s_BindingsInputActionMap->AddBinding(static_cast<InputSystem::GameAction>(action), b);
+}
+
+static void Input_ClearBindings(i32 action) {
+    if (!s_BindingsInputActionMap || action < 0 || action >= static_cast<i32>(InputSystem::GameAction::Count)) return;
+    s_BindingsInputActionMap->ClearBindings(static_cast<InputSystem::GameAction>(action));
+}
+
 void RegisterInputActionBindings(asIScriptEngine* engine) {
     // GameAction enum constants
     AS_CHECK(engine->RegisterEnum("GameAction"));
@@ -197,6 +228,22 @@ void RegisterInputActionBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterEnumValue("GameAction", "LookRight", 15));
     AS_CHECK(engine->RegisterEnumValue("GameAction", "CameraZoomIn", 16));
     AS_CHECK(engine->RegisterEnumValue("GameAction", "CameraZoomOut", 17));
+    AS_CHECK(engine->RegisterEnumValue("GameAction", "UIConfirm", 18));
+    AS_CHECK(engine->RegisterEnumValue("GameAction", "UICancel", 19));
+    AS_CHECK(engine->RegisterEnumValue("GameAction", "UINavUp", 20));
+    AS_CHECK(engine->RegisterEnumValue("GameAction", "UINavDown", 21));
+    AS_CHECK(engine->RegisterEnumValue("GameAction", "UINavLeft", 22));
+    AS_CHECK(engine->RegisterEnumValue("GameAction", "UINavRight", 23));
+    AS_CHECK(engine->RegisterEnumValue("GameAction", "DialogueAdvance", 24));
+    AS_CHECK(engine->RegisterEnumValue("GameAction", "Custom0", 25));
+    AS_CHECK(engine->RegisterEnumValue("GameAction", "Custom1", 26));
+    AS_CHECK(engine->RegisterEnumValue("GameAction", "Custom2", 27));
+    AS_CHECK(engine->RegisterEnumValue("GameAction", "Custom3", 28));
+    AS_CHECK(engine->RegisterEnumValue("GameAction", "Custom4", 29));
+    AS_CHECK(engine->RegisterEnumValue("GameAction", "Custom5", 30));
+    AS_CHECK(engine->RegisterEnumValue("GameAction", "Custom6", 31));
+    AS_CHECK(engine->RegisterEnumValue("GameAction", "Custom7", 32));
+    static_assert(static_cast<int>(InputSystem::GameAction::Custom7) == 32, "script GameAction enum values drifted from the C++ enum");
 
     // Action query functions
     AS_CHECK(engine->RegisterGlobalFunction("bool InputAction_IsDown(int action)", ENJIN_AS_FN(Input_IsActionDown), ENJIN_AS_CALL_CDECL));
@@ -230,6 +277,12 @@ void RegisterInputActionBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction("void InputAction_ApplyRightHandOnly()", ENJIN_AS_FN(Input_ApplyRightHandOnly), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void InputAction_ApplyGamepadOnly()", ENJIN_AS_FN(Input_ApplyGamepadOnly), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void InputAction_ResetDefaults()", ENJIN_AS_FN(Input_ResetToDefaults), ENJIN_AS_CALL_CDECL));
+
+    // Custom actions + extra binding types
+    AS_CHECK(engine->RegisterGlobalFunction("void InputAction_SetName(int action, const string &in name)", ENJIN_AS_FN(Input_SetActionName), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void InputAction_AddGamepadBinding(int action, int button)", ENJIN_AS_FN(Input_AddGamepadBinding), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void InputAction_AddMouseBinding(int action, int button)", ENJIN_AS_FN(Input_AddMouseBinding), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void InputAction_ClearBindings(int action)", ENJIN_AS_FN(Input_ClearBindings), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting

@@ -20,6 +20,10 @@
 #include "Enjin/Scene/SceneManager.h"
 #include "Enjin/Scene/LevelStreaming.h"
 #include "Enjin/Input/InputAction.h"
+#include "Enjin/Input/TouchActionBridge.h"
+
+// --touch: simulate the mobile touch overlay with the mouse (set in main()).
+static bool s_SimulateTouch = false;
 #include "Enjin/Input/MIDIInput.h"
 #include "Enjin/GUI/GameMenus.h"
 #include "Enjin/GUI/ImGuiLayer.h"
@@ -985,6 +989,16 @@ public:
         if (m_GameMenu.IsMenuOpen() || m_Paused || !m_GameStarted || m_ShowConsole) return;
         if (m_ContentWarnings.IsVisible()) return;
 
+        // Touch overlay + controls hint follow the scene's controller type.
+        // Surface = the whole window; applied BEFORE scripts so OnStart
+        // additions (Touch_AddActionButton) survive the preset.
+        if (m_Renderer) {
+            auto touchExtent = m_Renderer->GetSwapchainExtent();
+            Enjin::Input::SetTouchSurface(0.0f, 0.0f,
+                static_cast<Enjin::f32>(touchExtent.width), static_cast<Enjin::f32>(touchExtent.height));
+        }
+        Enjin::InputSystem::ApplyTouchPresetForWorld(m_World.get());
+
         // --- Physics (must run first) ---
         // ADR-0005: the SimulationClock owns stepping. Fixed-timestep projects
         // get accumulator-driven ticks + interpolated dynamic-body transforms;
@@ -1569,6 +1583,13 @@ public:
                     static_cast<Enjin::f32>(extent.width),
                     static_cast<Enjin::f32>(extent.height), 0.0f,
                     0.0f, 0.0f, m_Camera.get());
+                // Touch overlay (--touch) and the bottom-left controls hint, both
+                // derived from the active preset + live bindings (shared with web).
+                if (m_GameStarted && !m_Paused) {
+                    Enjin::InputSystem::DrawTouchOverlay();
+                    Enjin::InputSystem::DrawControlsHint(0.0f, 0.0f,
+                        static_cast<Enjin::f32>(extent.width), static_cast<Enjin::f32>(extent.height));
+                }
             }
 
             // Accessibility overlays
@@ -2291,6 +2312,7 @@ private:
         m_MIDIInput.Initialize();
         Enjin::Scripting::SetBindingsMIDI(&m_MIDIInput);
         Enjin::Scripting::SetBindingsInputActionMap(&m_InputMap);
+        Enjin::Input::SetTouchSimulation(s_SimulateTouch);
 
         // Wire visual script system externs (for VS nodes)
         {
@@ -3489,6 +3511,11 @@ int main(int argc, char* argv[]) {
         if (argv[i] && std::string(argv[i]) == "--frames" && i + 1 < argc && argv[i + 1]) {
             int n = std::atoi(argv[++i]);
             if (n > 0) Enjin::Application::s_HeadlessFrameLimit = static_cast<Enjin::u32>(n);
+        }
+        // --touch: show the mobile touch overlay and let the mouse act as one
+        // touch, so a game's touch layout can be checked without a phone.
+        if (argv[i] && std::string(argv[i]) == "--touch") {
+            s_SimulateTouch = true;
         }
     }
 

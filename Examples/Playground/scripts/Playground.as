@@ -10,6 +10,14 @@ class Playground : TegeBehavior {
     void OnStart() {
         Subtitle_Show("Welcome to the TEGE Playground", "", 4.0f);
         Announcer_Announce("Playground loaded. Weather will evolve on its own.");
+
+        // Bullet time is a game action, not a hardcoded key: naming a Custom
+        // slot lists it in the controls menu + hint, and the touch button
+        // presses whatever it is bound to (rebinds included).
+        InputAction_SetName(GameAction::Custom0, "SLO-MO");
+        InputAction_Rebind(GameAction::Custom0, Key::B);
+        InputAction_AddGamepadBinding(GameAction::Custom0, GamepadBtn::Y);
+        Touch_AddActionButton("SLO-MO", GameAction::Custom0, 0, 2, 0.065f);
     }
 
     void OnUpdate(float dt) {
@@ -31,8 +39,8 @@ class Playground : TegeBehavior {
         Weather_SetSnowIntensity(snow);
         if (rain < 0.02f && rainT == 0.0f) Render_SetRainActive(false);
 
-        // ---- bullet time: B slows the world, the player stays at wall speed ----
-        if (Input_GetKeyDown(Key::B)) {
+        // ---- bullet time (Custom0: B / gamepad Y / touch SLO-MO) ----
+        if (InputAction_IsPressed(GameAction::Custom0)) {
             bullet = !bullet;
             uint64 me = Scene_FindEntity("Player");
             Time_SetScale(bullet ? 0.25f : 1.0f);

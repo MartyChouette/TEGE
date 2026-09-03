@@ -405,6 +405,14 @@ void EditorLayer::DrawMenuBar() {
         }
 
         if (ImGui::BeginMenu("View")) {
+            if (ImGui::MenuItem("Simulate Touch Controls", nullptr, m_SimulateTouch)) {
+                m_SimulateTouch = !m_SimulateTouch;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("In Play mode, draw the mobile touch overlay over the Game View\n"
+                                  "and let the mouse act as one touch (left-drag = stick / buttons).");
+            }
+            ImGui::Separator();
             if (ImGui::BeginMenu("Panels")) {
                 bool sceneView = IsPanelVisible(EditorPanel::Viewport);
                 bool gameView = IsPanelVisible(EditorPanel::GameView);

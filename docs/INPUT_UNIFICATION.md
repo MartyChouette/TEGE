@@ -160,7 +160,11 @@ Delete `sprintMode`, `crouchMode`, `mouseSensitivity`, `invertMouseY` from `Runt
 - Stick radius uses safe-area height like buttons.
 - `static_assert` or a desktop-compiled test tying the Core action ints to the enum until Phase 1 deletes them.
 
-### Phase 1: action table and Custom actions
+### Phase 1: action table and Custom actions (DONE 2026-09-03)
+
+Shipped: `kActionInfo` table in InputActionMap.cpp, UI + DialogueAdvance + Custom0..7 actions, presets built in Engine (TouchActionBridge) from consumed-action lists, overlay compiled on all platforms (`EnjinPlayer --touch`, editor View > Simulate Touch Controls), the bottom-left controls hint drawn by the engine from the active preset and live bindings (was a static div in the web shell), Playground SLO-MO as Custom0. Dropped the TopDown2D "F" button (no action, could never be relabelled or rebound). Still ad-hoc: the web pause button, which waits on Phase 3 pointer routing.
+
+Original scope:
 
 Descriptor table, UI actions, Custom0..7, preset construction moved to Engine, Playground's SLO-MO becomes Custom0. Touch overlay compiles on all platforms with editor simulate toggle.
 

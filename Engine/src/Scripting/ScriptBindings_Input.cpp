@@ -1,6 +1,7 @@
 #include "Enjin/Scripting/ScriptBindings.h"
 #include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Platform/Input.h"
+#include "Enjin/Input/TouchActionBridge.h"
 #include "Enjin/Math/Vector.h"
 #include "Enjin/Logging/Log.h"
 #include <imgui.h>
@@ -139,8 +140,8 @@ static float Input_GetGamepadRightTrigger(int index) {
 // ============================================================================
 
 static void Touch_UsePreset(int preset) {
-    if (preset < 0 || preset > static_cast<int>(Input::TouchPreset::Generic)) return;
-    Input::SetTouchControllerPreset(static_cast<Input::TouchPreset>(preset));
+    if (preset < 0 || preset >= static_cast<int>(InputSystem::TouchPreset::Count)) return;
+    InputSystem::ApplyTouchPreset(static_cast<InputSystem::TouchPreset>(preset));
 }
 
 static void Touch_ClearButtons() {

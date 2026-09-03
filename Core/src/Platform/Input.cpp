@@ -113,6 +113,111 @@ namespace {
     }
 #endif
 
+    // ---- Touch controls (all platforms) ------------------------------------
+    // The browser feeds real touches (web block below); desktop and the editor
+    // can SIMULATE one touch from the mouse (Input::SetTouchSimulation) so the
+    // layout is testable without a phone. Layout math is shared: a floating
+    // move stick on the left, an optional look-drag region on the right, and
+    // anchored action buttons growing up/left from the bottom-right of the safe
+    // area. Engine builds the scheme (TouchActionBridge); Core owns only the
+    // hit-zones, geometry and per-frame state.
+    struct TouchPoint {
+        long id = -1;
+        f32 startX = 0, startY = 0;   // surface pixels
+        f32 curX = 0, curY = 0;
+        f32 lastX = 0, lastY = 0;
+        double startMs = 0;
+        int role = 0;                 // 0 none, 1 stick, 2 look/tap, 100+i = button i
+    };
+    constexpr int MAX_TOUCHES = 6;
+    TouchPoint s_Touches[MAX_TOUCHES];
+    bool s_TouchSeen = false;          // web: any touch ever -> show the overlay
+    bool s_CoarsePointer = false;      // web: phone/tablet detected -> show at boot
+    f32 s_SafeInset[4] = {0, 0, 0, 0}; // top,right,bottom,left in surface pixels (web)
+    Input::TouchScheme s_TouchScheme;  // seeded empty; Engine applies a preset
+    bool s_TouchSim = false;           // desktop/editor: the mouse is one touch
+    f32 s_TouchSurfX = 0, s_TouchSurfY = 0, s_TouchSurfW = 0, s_TouchSurfH = 0;
+    constexpr long kSimTouchId = 1000000;
+
+#if ENJIN_PLATFORM_WEB
+    void WebCanvasScale(f32& sx, f32& sy, int& bw, int& bh);
+    void WebQuerySafeArea(f32 sx, f32 sy);
+#endif
+
+    // The rectangle touches live in: the canvas (web) or the rect the host
+    // registered via SetTouchSurface (desktop/editor game view).
+    void TouchSurfaceRect(f32& x0, f32& y0, f32& w, f32& h) {
+#if ENJIN_PLATFORM_WEB
+        f32 sx, sy; int bw, bh;
+        WebCanvasScale(sx, sy, bw, bh);
+        x0 = 0.0f; y0 = 0.0f; w = static_cast<f32>(bw); h = static_cast<f32>(bh);
+#else
+        x0 = s_TouchSurfX; y0 = s_TouchSurfY; w = s_TouchSurfW; h = s_TouchSurfH;
+#endif
+    }
+
+    // Safe area = surface minus notch/rounded-corner insets. On web the insets
+    // are re-queried whenever the canvas size changes (rotate / fullscreen /
+    // on-screen keyboard). Falls back to the full surface when unknown.
+    void TouchSafeRect(f32& x0, f32& y0, f32& w, f32& h) {
+        f32 sx0, sy0, sw, sh;
+        TouchSurfaceRect(sx0, sy0, sw, sh);
+#if ENJIN_PLATFORM_WEB
+        static int s_SafeForW = -1, s_SafeForH = -1;
+        if (static_cast<int>(sw) != s_SafeForW || static_cast<int>(sh) != s_SafeForH) {
+            f32 qsx, qsy; int qbw, qbh;
+            WebCanvasScale(qsx, qsy, qbw, qbh);
+            WebQuerySafeArea(qsx, qsy);
+            s_SafeForW = static_cast<int>(sw); s_SafeForH = static_cast<int>(sh);
+        }
+#endif
+        x0 = sx0 + s_SafeInset[3];
+        y0 = sy0 + s_SafeInset[0];
+        w = sw - s_SafeInset[1] - s_SafeInset[3];
+        h = sh - s_SafeInset[0] - s_SafeInset[2];
+        if (w < 1.0f) { x0 = sx0; w = sw; }
+        if (h < 1.0f) { y0 = sy0; h = sh; }
+    }
+
+    // Resolve one scheme button to a surface-pixel center + radius. The cluster
+    // grows up/left from the bottom-right corner of the safe area.
+    void TouchResolveButton(const Input::TouchButtonDef& b, f32& cx, f32& cy, f32& r) {
+        f32 x0, y0, w, h;
+        TouchSafeRect(x0, y0, w, h);
+        r = b.radiusFrac * h;
+        f32 spacing = r * 2.4f;
+        cx = x0 + w - r * 1.6f - b.colFromRight * spacing;
+        cy = y0 + h - r * 1.8f - b.rowFromBottom * spacing;
+    }
+
+    // Which control a touch landing at (px,py) belongs to: action buttons
+    // first (topmost slot wins), then the move-stick zone, else look/tap.
+    int AssignTouchRole(f32 px, f32 py) {
+        for (int bi = 0; bi < s_TouchScheme.buttonCount; ++bi) {
+            f32 cx, cy, cr;
+            TouchResolveButton(s_TouchScheme.buttons[bi], cx, cy, cr);
+            f32 ddx = px - cx, ddy = py - cy;
+            if (ddx * ddx + ddy * ddy < cr * cr) return 100 + bi;
+        }
+        f32 x0, y0, zw, zh;
+        TouchSafeRect(x0, y0, zw, zh);
+        if (s_TouchScheme.moveStick && px < x0 + zw * s_TouchScheme.moveZoneSplit) return 1;
+        return 2;
+    }
+
+    TouchPoint* FindTouch(long id) {
+        for (auto& t : s_Touches) if (t.id == id) return &t;
+        return nullptr;
+    }
+
+    bool TouchOverlayActive() {
+#if ENJIN_PLATFORM_WEB
+        return s_TouchSeen || s_CoarsePointer;
+#else
+        return s_TouchSim && s_TouchSurfW > 0.0f && s_TouchSurfH > 0.0f;
+#endif
+    }
+
 #if ENJIN_PLATFORM_WEB
     // Pointer-lock mouse delta accumulator (movementX/Y is relative)
     Math::Vector2 s_WebMouseMovementAccum = {};
@@ -219,31 +324,9 @@ namespace {
         return EM_TRUE;
     }
 
-    // ---- Touch controls (phones and tablets in the browser) ----------------
-    // Left part of the canvas = a floating move stick, the right = a look-drag
-    // region, plus a set of anchored action buttons. The button set and their
-    // key mappings come from a data-driven scheme (Input::TouchScheme) that
-    // adapts to the active controller. A quick tap anywhere still clicks (UI +
-    // actions). The player draws the overlay; Input owns the hit-zones, the
-    // scheme, and the resolved per-frame state.
-    struct WebTouch {
-        long id = -1;
-        f32 startX = 0, startY = 0;   // backing pixels
-        f32 curX = 0, curY = 0;
-        f32 lastX = 0, lastY = 0;
-        double startMs = 0;
-        int role = 0;                 // 0 none, 1 stick, 2 look, 100+i = button i
-    };
-    constexpr int MAX_WEB_TOUCHES = 6;
-    WebTouch s_Touches[MAX_WEB_TOUCHES];
-    bool s_TouchSeen = false;          // any touch ever -> show the overlay
-    bool s_CoarsePointer = false;      // phone/tablet detected -> show at boot
-    f32 s_SafeInset[4] = {0, 0, 0, 0}; // top,right,bottom,left in backing pixels
-
-    // Active control scheme. Initialize() seeds it with the Generic preset; the
-    // player overrides it per controller (SetTouchControllerPreset) or per game.
-    Input::TouchScheme s_TouchScheme;
-
+    // ---- Browser touch source ------------------------------------------------
+    // Real touches from the canvas. Shared touch state/geometry lives above.
+    // A quick tap anywhere still clicks (UI + actions).
     void WebCanvasScale(f32& sx, f32& sy, int& bw, int& bh) {
         double cssW = 0.0, cssH = 0.0;
         bw = 0; bh = 0;
@@ -259,40 +342,7 @@ namespace {
         }
     }
 
-    void WebQuerySafeArea(f32 sx, f32 sy);
-
-    // Safe-area rectangle in backing pixels (canvas minus notch/rounded-corner
-    // insets). Falls back to the full canvas when insets are unknown/zero.
-    // Insets change on rotate / fullscreen / on-screen keyboard, all of which
-    // also change the canvas backing size, so re-query whenever that moves.
-    void WebSafeRect(int bw, int bh, f32& x0, f32& y0, f32& w, f32& h) {
-        static int s_SafeForW = -1, s_SafeForH = -1;
-        if (bw != s_SafeForW || bh != s_SafeForH) {
-            f32 qsx, qsy; int qbw, qbh;
-            WebCanvasScale(qsx, qsy, qbw, qbh);
-            WebQuerySafeArea(qsx, qsy);
-            s_SafeForW = bw; s_SafeForH = bh;
-        }
-        x0 = s_SafeInset[3];
-        y0 = s_SafeInset[0];
-        w = static_cast<f32>(bw) - s_SafeInset[1] - s_SafeInset[3];
-        h = static_cast<f32>(bh) - s_SafeInset[0] - s_SafeInset[2];
-        if (w < 1.0f) { x0 = 0.0f; w = static_cast<f32>(bw); }
-        if (h < 1.0f) { y0 = 0.0f; h = static_cast<f32>(bh); }
-    }
-
-    // Resolve one scheme button to a backing-pixel center + radius. The cluster
-    // grows up/left from the bottom-right corner of the safe area.
-    void WebResolveButton(const Input::TouchButtonDef& b, int bw, int bh,
-                          f32& cx, f32& cy, f32& r) {
-        f32 x0, y0, w, h; WebSafeRect(bw, bh, x0, y0, w, h);
-        r = b.radiusFrac * h;
-        f32 spacing = r * 2.4f;
-        cx = x0 + w - r * 1.6f - b.colFromRight * spacing;
-        cy = y0 + h - r * 1.8f - b.rowFromBottom * spacing;
-    }
-
-    // Query CSS env(safe-area-inset-*) once and cache it (backing pixels).
+    // Query CSS env(safe-area-inset-*) and cache it (backing pixels).
     void WebQuerySafeArea(f32 sx, f32 sy) {
         double vals[4] = {0, 0, 0, 0};
         EM_ASM({
@@ -350,10 +400,6 @@ namespace {
         });
     }
 
-    WebTouch* FindTouch(long id) {
-        for (auto& t : s_Touches) if (t.id == id) return &t;
-        return nullptr;
-    }
 }
 
 // JS-callable (the on-page "Touch controls" button): force the overlay on as
@@ -379,7 +425,7 @@ namespace {
 
             if (eventType == EMSCRIPTEN_EVENT_TOUCHSTART) {
                 s_TouchSeen = true;
-                WebTouch* slot = FindTouch(tp.identifier);
+                TouchPoint* slot = FindTouch(tp.identifier);
                 if (!slot) slot = FindTouch(-1);
                 if (!slot) continue;
                 slot->id = tp.identifier;
@@ -387,25 +433,11 @@ namespace {
                 slot->startY = slot->curY = slot->lastY = py;
                 slot->startMs = emscripten_get_now();
                 WebRequestMobileFullscreen();   // W2: first-touch gesture
-                // Hit-test the scheme's action buttons first (topmost slot in a
-                // cluster wins), then the move-stick zone, then the look region.
-                slot->role = 0;
-                for (int bi = 0; bi < s_TouchScheme.buttonCount; ++bi) {
-                    f32 cx, cy, cr; WebResolveButton(s_TouchScheme.buttons[bi], bw, bh, cx, cy, cr);
-                    f32 ddx = px - cx, ddy = py - cy;
-                    if (ddx * ddx + ddy * ddy < cr * cr) { slot->role = 100 + bi; break; }
-                }
-                if (slot->role == 0) {
-                    f32 x0, y0, zw, zh; WebSafeRect(bw, bh, x0, y0, zw, zh);
-                    if (s_TouchScheme.moveStick && px < x0 + zw * s_TouchScheme.moveZoneSplit)
-                        slot->role = 1;                                          // move stick
-                    else
-                        slot->role = 2;                                          // look / tap-click
-                }
+                slot->role = AssignTouchRole(px, py);
                 // Touch position doubles as the pointer (hover, aim)
                 s_MousePosition = Math::Vector2(px, py);
             } else if (eventType == EMSCRIPTEN_EVENT_TOUCHMOVE) {
-                WebTouch* slot = FindTouch(tp.identifier);
+                TouchPoint* slot = FindTouch(tp.identifier);
                 if (!slot) continue;
                 if (slot->role == 2) {
                     // Only a scheme with a look region drags the camera; 2D
@@ -422,7 +454,7 @@ namespace {
                 slot->lastX = slot->curX; slot->lastY = slot->curY;
                 slot->curX = px; slot->curY = py;
             } else {   // TOUCHEND / TOUCHCANCEL
-                WebTouch* slot = FindTouch(tp.identifier);
+                TouchPoint* slot = FindTouch(tp.identifier);
                 if (!slot) continue;
                 if (eventType == EMSCRIPTEN_EVENT_TOUCHEND && (slot->role == 1 || slot->role == 2)) {
                     f32 mx = px - slot->startX, my = py - slot->startY;
@@ -458,6 +490,10 @@ void Input::Initialize(Window* window) {
     std::memset(s_KeysDownPrev, 0, sizeof(s_KeysDownPrev));
     std::memset(s_MouseButtonsDown, 0, sizeof(s_MouseButtonsDown));
     std::memset(s_MouseButtonsDownPrev, 0, sizeof(s_MouseButtonsDownPrev));
+    // Touch: empty scheme (stick + look, no buttons) until Engine applies a
+    // preset from the scene's controller (InputSystem::ApplyTouchPresetForWorld).
+    s_TouchScheme = TouchScheme{};
+    for (auto& t : s_Touches) t = TouchPoint{};
 
 #if ENJIN_PLATFORM_WEB
     // Register browser event handlers on the canvas
@@ -520,7 +556,6 @@ void Input::Initialize(Window* window) {
         WebCanvasScale(qsx, qsy, qbw, qbh);
         WebQuerySafeArea(qsx, qsy);
     }
-    SetTouchControllerPreset(TouchPreset::Generic);
 #else
     s_Window = static_cast<GLFWwindow*>(window->GetNativeHandle());
     if (!s_Window) {
@@ -561,49 +596,6 @@ void Input::Update() {
         s_WebMouseDownLatch[button] = false;
     }
 
-    // Touch controls: the move stick maps onto the scheme's 4 direction keys
-    // (8-way, with a dead zone); each held button maps onto its scheme key (or
-    // a mouse button for negative key codes, e.g. FPS fire). ORed over the key
-    // state so a physical keyboard keeps working alongside.
-    constexpr int kKeyCount = static_cast<int>(sizeof(s_KeysDown) / sizeof(s_KeysDown[0]));
-    for (const auto& t : s_Touches) {
-        if (t.id == -1) continue;
-        // Resolve a slot's effective key code: prefer the action's CURRENT
-        // binding (so rebinding is reflected live) and fall back to the static
-        // key code when there's no action / no bound key/mouse for it.
-        auto effectiveKey = [](int staticKey, int action) -> int {
-            if (action >= 0 && s_ActionKeyResolver) {
-                int rk = s_ActionKeyResolver(action);
-                if (rk != Input::kTouchNoBinding) return rk;
-            }
-            return staticKey;
-        };
-        if (t.role == 1 && s_TouchScheme.moveStick) {
-            f32 dx = t.curX - t.startX;
-            f32 dy = t.curY - t.startY;
-            constexpr f32 DEAD = 18.0f;
-            auto press = [&](int idx) {
-                int k = effectiveKey(s_TouchScheme.stickKeys[idx], s_TouchScheme.stickActions[idx]);
-                if (k >= 0 && k < kKeyCount) s_KeysDown[k] = true;
-            };
-            if (dx < -DEAD) press(0);   // left
-            if (dx >  DEAD) press(1);   // right
-            if (dy < -DEAD) press(2);   // up / forward
-            if (dy >  DEAD) press(3);   // down / back
-        } else if (t.role >= 100) {
-            int bi = t.role - 100;
-            if (bi < s_TouchScheme.buttonCount) {
-                int k = effectiveKey(s_TouchScheme.buttons[bi].keyCode, s_TouchScheme.buttons[bi].action);
-                if (k < 0) {
-                    int mb = -k - 1;                             // -1 => mouse button 0 (fire/click)
-                    if (mb >= 0 && mb < MAX_MOUSE_BUTTONS) s_MouseButtonsDown[mb] = true;
-                } else if (k < kKeyCount) {
-                    s_KeysDown[k] = true;
-                }
-            }
-        }
-    }
-    // For pointer-locked mode, prefer accumulated movementX/Y over position deltas.
 #else
     // Poll hardware only when a window exists; replay injection (below) and
     // headless tests still work without one.
@@ -623,7 +615,81 @@ void Input::Update() {
         glfwGetCursorPos(s_Window, &mx, &my);
         s_MousePosition = Math::Vector2(static_cast<f32>(mx), static_cast<f32>(my));
     }
+
+    // Touch simulation: the mouse stands in for ONE touch so the overlay layout
+    // can be exercised without a phone. Mirrors the browser: a touch claimed by
+    // the stick or an action button never reaches the game as a mouse button
+    // (preventDefault), while a look/tap touch passes LMB through (tap = click,
+    // hold-drag = look).
+    if (s_TouchSim && s_TouchSurfW > 0.0f && s_TouchSurfH > 0.0f) {
+        TouchPoint* t = FindTouch(kSimTouchId);
+        bool lmb = s_MouseButtonsDown[0];
+        f32 px = s_MousePosition.x, py = s_MousePosition.y;
+        if (lmb && !t) {
+            t = FindTouch(-1);
+            if (t) {
+                t->id = kSimTouchId;
+                t->startX = t->curX = t->lastX = px;
+                t->startY = t->curY = t->lastY = py;
+                t->startMs = glfwGetTime() * 1000.0;
+                t->role = AssignTouchRole(px, py);
+            }
+        } else if (lmb && t) {
+            t->lastX = t->curX; t->lastY = t->curY;
+            t->curX = px; t->curY = py;
+        } else if (!lmb && t) {
+            t->id = -1; t->role = 0; t = nullptr;
+        }
+        if (t && (t->role == 1 || t->role >= 100)) s_MouseButtonsDown[0] = false;
+    } else if (TouchPoint* t = FindTouch(kSimTouchId)) {
+        t->id = -1; t->role = 0;
+    }
 #endif
+
+    // Touch controls: the move stick maps onto the scheme's 4 direction keys
+    // (8-way, with a dead zone); each held button maps onto its scheme key (or
+    // a mouse button for negative key codes, e.g. FPS fire). ORed over the key
+    // state so a physical keyboard keeps working alongside.
+    {
+        constexpr int kKeyCount = static_cast<int>(sizeof(s_KeysDown) / sizeof(s_KeysDown[0]));
+        for (const auto& t : s_Touches) {
+            if (t.id == -1) continue;
+            // Resolve a slot's effective key code: prefer the action's CURRENT
+            // binding (so rebinding is reflected live) and fall back to the
+            // static key code when there's no action / no bound key/mouse.
+            auto effectiveKey = [](int staticKey, int action) -> int {
+                if (action >= 0 && s_ActionKeyResolver) {
+                    int rk = s_ActionKeyResolver(action);
+                    if (rk != Input::kTouchNoBinding) return rk;
+                }
+                return staticKey;
+            };
+            if (t.role == 1 && s_TouchScheme.moveStick) {
+                f32 dx = t.curX - t.startX;
+                f32 dy = t.curY - t.startY;
+                constexpr f32 DEAD = 18.0f;
+                auto press = [&](int idx) {
+                    int k = effectiveKey(s_TouchScheme.stickKeys[idx], s_TouchScheme.stickActions[idx]);
+                    if (k >= 0 && k < kKeyCount) s_KeysDown[k] = true;
+                };
+                if (dx < -DEAD) press(0);   // left
+                if (dx >  DEAD) press(1);   // right
+                if (dy < -DEAD) press(2);   // up / forward
+                if (dy >  DEAD) press(3);   // down / back
+            } else if (t.role >= 100) {
+                int bi = t.role - 100;
+                if (bi < s_TouchScheme.buttonCount) {
+                    int k = effectiveKey(s_TouchScheme.buttons[bi].keyCode, s_TouchScheme.buttons[bi].action);
+                    if (k < 0) {
+                        int mb = -k - 1;                             // -1 => mouse button 0 (fire/click)
+                        if (mb >= 0 && mb < MAX_MOUSE_BUTTONS) s_MouseButtonsDown[mb] = true;
+                    } else if (k < kKeyCount) {
+                        s_KeysDown[k] = true;
+                    }
+                }
+            }
+        }
+    }
 
     // Replay injection: the recorded snapshot wins over whatever the hardware
     // said this frame. Previous-frame state was already snapshotted above, so
@@ -860,18 +926,15 @@ bool Input::IsReplayInjectionActive() { return s_ReplayInjection; }
 
 Input::TouchOverlayState Input::GetTouchOverlay() {
     TouchOverlayState st;
-#if ENJIN_PLATFORM_WEB
-    // Show on any device that has ever touched OR that reports a coarse pointer
-    // (phones/tablets) so the controls are visible before the first tap.
-    if (!s_TouchSeen && !s_CoarsePointer) return st;
+    // Web: any device that has ever touched OR reports a coarse pointer, so the
+    // controls are visible before the first tap. Desktop: simulation + surface.
+    if (!TouchOverlayActive()) return st;
     st.active = true;
     st.showStick = s_TouchScheme.moveStick;
-    f32 sx, sy; int bw, bh;
-    WebCanvasScale(sx, sy, bw, bh);
     // Same reference as the buttons (safe-area height), so stick and buttons
     // scale together on notched devices.
     f32 safeX0, safeY0, safeW, safeH;
-    WebSafeRect(bw, bh, safeX0, safeY0, safeW, safeH);
+    TouchSafeRect(safeX0, safeY0, safeW, safeH);
     st.stickRadius = 0.07f * safeH;
     for (const auto& t : s_Touches) {
         if (t.id == -1) continue;
@@ -895,7 +958,7 @@ Input::TouchOverlayState Input::GetTouchOverlay() {
     for (int bi = 0; bi < s_TouchScheme.buttonCount; ++bi) {
         auto& out = st.buttons[bi];
         const auto& def = s_TouchScheme.buttons[bi];
-        WebResolveButton(def, bw, bh, out.x, out.y, out.r);
+        TouchResolveButton(def, out.x, out.y, out.r);
         // Prefer the current binding's label (so the glyph tracks a rebind);
         // fall back to the static label. Truncated to fit the 8-char field.
         const char* lbl = def.label;
@@ -910,82 +973,34 @@ Input::TouchOverlayState Input::GetTouchOverlay() {
             if (t.id != -1 && t.role == 100 + bi) { out.held = true; break; }
         }
     }
-#endif
     return st;
 }
 
 void Input::SetTouchScheme(const TouchScheme& scheme) {
-#if ENJIN_PLATFORM_WEB
     s_TouchScheme = scheme;
     if (s_TouchScheme.buttonCount < 0) s_TouchScheme.buttonCount = 0;
     if (s_TouchScheme.buttonCount > kMaxTouchButtons) s_TouchScheme.buttonCount = kMaxTouchButtons;
-#else
-    (void)scheme;
-#endif
 }
 
 const Input::TouchScheme& Input::GetTouchScheme() {
-#if ENJIN_PLATFORM_WEB
     return s_TouchScheme;
-#else
-    static TouchScheme s_empty;
-    return s_empty;
-#endif
 }
 
 void Input::SetActionKeyResolver(ActionKeyResolver resolver)   { s_ActionKeyResolver = resolver; }
 void Input::SetActionLabelResolver(ActionLabelResolver resolver) { s_ActionLabelResolver = resolver; }
 
-void Input::SetTouchControllerPreset(TouchPreset preset) {
+void Input::SetTouchSimulation(bool enabled) {
 #if ENJIN_PLATFORM_WEB
-    TouchScheme s;                              // WASD stick by default
-    auto btn = [](f32 radiusFrac, f32 col, f32 row, int key, int action, const char* label) {
-        TouchButtonDef b;
-        b.radiusFrac = radiusFrac;
-        b.colFromRight = col;
-        b.rowFromBottom = row;
-        b.keyCode = key;
-        b.action = action;
-        for (int i = 0; i < 7 && label[i]; ++i) b.label[i] = label[i];
-        return b;
-    };
-    const int SPACE = 32, SHIFT = 340, KEY_E = 69, KEY_F = 70;
-    // GameAction ordinals (InputSystem::GameAction; Core cannot include the enum).
-    // Buttons carry an action so rebinding updates them; keyCode is the fallback.
-    const int A_FWD = 0, A_BACK = 1, A_LEFT = 2, A_RIGHT = 3, A_JUMP = 4,
-              A_SPRINT = 5, A_INTERACT = 8, A_ATTACK = 9;
-    // The move stick maps its four directions to the movement actions.
-    s.stickActions[0] = A_LEFT; s.stickActions[1] = A_RIGHT;
-    s.stickActions[2] = A_FWD;  s.stickActions[3] = A_BACK;
-    switch (preset) {
-        case TouchPreset::Platformer2D:
-            s.lookRegion = false;
-            s.buttons[s.buttonCount++] = btn(0.085f, 0, 0, SPACE, A_JUMP, "JMP");
-            break;
-        case TouchPreset::TopDown2D:
-            s.lookRegion = false;
-            s.buttons[s.buttonCount++] = btn(0.085f, 0, 0, KEY_E, A_INTERACT, "E");
-            s.buttons[s.buttonCount++] = btn(0.075f, 1, 0, KEY_F, -1, "F");
-            break;
-        case TouchPreset::FirstPerson:
-            s.buttons[s.buttonCount++] = btn(0.090f, 0, 0, -1,    A_ATTACK,   "FIRE"); // left mouse
-            s.buttons[s.buttonCount++] = btn(0.075f, 1, 0, SPACE, A_JUMP,     "JMP");
-            s.buttons[s.buttonCount++] = btn(0.070f, 0, 1, SHIFT, A_SPRINT,   "RUN");
-            s.buttons[s.buttonCount++] = btn(0.070f, 1, 1, KEY_E, A_INTERACT, "E");
-            break;
-        case TouchPreset::TopDown3D:
-        case TouchPreset::ThirdPerson:
-        case TouchPreset::Generic:
-        default:
-            s.buttons[s.buttonCount++] = btn(0.085f, 0, 0, SPACE, A_JUMP,     "JMP");
-            s.buttons[s.buttonCount++] = btn(0.075f, 1, 0, KEY_E, A_INTERACT, "E");
-            s.buttons[s.buttonCount++] = btn(0.070f, 0, 1, SHIFT, A_SPRINT,   "RUN");
-            break;
-    }
-    s_TouchScheme = s;
+    (void)enabled;   // real touches drive the overlay in the browser
 #else
-    (void)preset;
+    s_TouchSim = enabled;
 #endif
+}
+
+bool Input::IsTouchSimulation() { return s_TouchSim; }
+
+void Input::SetTouchSurface(f32 x0, f32 y0, f32 w, f32 h) {
+    s_TouchSurfX = x0; s_TouchSurfY = y0; s_TouchSurfW = w; s_TouchSurfH = h;
 }
 
 void Input::BeginRealInputScope() { s_RealScope = true; }

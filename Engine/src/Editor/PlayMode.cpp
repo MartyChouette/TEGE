@@ -1,4 +1,5 @@
 #include "Enjin/Editor/PlayMode.h"
+#include "Enjin/Input/TouchActionBridge.h"
 #include "Enjin/Effects/TreeRenderer.h"
 #include <filesystem>
 #include <random>
@@ -900,6 +901,11 @@ void PlayMode::Update(f32 deltaTime) {
     // Update controller system when playing
     if (m_State.load(std::memory_order_relaxed) == PlayState::Playing) {
         auto frameStart = std::chrono::high_resolution_clock::now();
+
+        // Touch layout + controls hint follow the scene's controller type.
+        // Applied here, BEFORE scripts tick, so a script's OnStart additions
+        // (Touch_AddActionButton) are not clobbered by the first-frame preset.
+        InputSystem::ApplyTouchPresetForWorld(m_World);
 
         // Replay determinism: recorded and replayed sessions step at the
         // recording's fixed dt so the same input stream lands on the same

@@ -36,6 +36,7 @@
 #include "Enjin/Scene/SceneManager.h"
 #include "Enjin/Renderer/SceneRenderSettings.h"
 #include "Enjin/Input/InputAction.h"
+#include "Enjin/Input/TouchActionBridge.h"
 #include "Enjin/GUI/UISystem.h"
 #include "Enjin/GUI/UITemplates.h"
 #include "Enjin/GUI/EmbeddedFonts.h"    // web ImGui font (parity with desktop ImGuiLayer)
@@ -821,28 +822,11 @@ public:
             }
         }
 
-        // Mobile touch overlay: adapt the on-screen control layout to the active
-        // controller. Applied only when the controller type changes (i.e. across
-        // scenes), so a game that authors its own scheme mid-scene isn't clobbered.
-        {
-            using namespace Enjin::ECS;
-            Enjin::Input::TouchPreset preset = Enjin::Input::TouchPreset::Generic;
-            if (!m_World->GetEntitiesWithComponent<FirstPersonController>().empty())
-                preset = Enjin::Input::TouchPreset::FirstPerson;
-            else if (!m_World->GetEntitiesWithComponent<ThirdPersonController>().empty())
-                preset = Enjin::Input::TouchPreset::ThirdPerson;
-            else if (!m_World->GetEntitiesWithComponent<TopDown3DController>().empty())
-                preset = Enjin::Input::TouchPreset::TopDown3D;
-            else if (!m_World->GetEntitiesWithComponent<TopDown2DController>().empty())
-                preset = Enjin::Input::TouchPreset::TopDown2D;
-            else if (!m_World->GetEntitiesWithComponent<Platformer2DController>().empty())
-                preset = Enjin::Input::TouchPreset::Platformer2D;
-            static int s_LastPreset = -1;
-            if (static_cast<int>(preset) != s_LastPreset) {
-                s_LastPreset = static_cast<int>(preset);
-                Enjin::Input::SetTouchControllerPreset(preset);
-            }
-        }
+        // Mobile touch overlay + controls hint: the layout follows the scene's
+        // controller type (applied only when it changes, so a game that authors
+        // its own scheme mid-scene isn't clobbered). Runs BEFORE scripts so a
+        // script's OnStart additions (Touch_AddActionButton) survive.
+        Enjin::InputSystem::ApplyTouchPresetForWorld(m_World.get());
 
         m_ScriptSystem.Update(deltaTime);
         m_CoroutineScheduler.EndOfFrame();
@@ -912,14 +896,6 @@ public:
             // here each frame (rain draws streaks, snow draws flakes).
             m_RenderSystem->SetMainPassWeather(&m_WeatherSystem,
                 m_WeatherSystem.GetRainIntensity() >= m_WeatherSystem.GetSnowIntensity());
-        }
-
-        // Bullet-time on a gamepad: Y / Triangle synthesizes a B press so the
-        // game's own bullet-time logic runs (same single source of truth as the
-        // keyboard B and the on-screen touch button). Web polls gamepads each frame.
-        if (!m_AtMainMenu &&
-            Enjin::Input::IsGamepadButtonPressed(Enjin::GamepadButton::Y)) {
-            Enjin::Input::InjectKeyPress(Enjin::KeyCode::B);
         }
 
         m_ParticleSystem.Update(deltaTime, m_World.get());
@@ -1036,29 +1012,14 @@ public:
     // the desktop player runs — one UI source, web/PC parity.
     // Touch controls overlay: virtual stick + jump button, drawn only after
     // the first touch so desktop browsers never see it.
+    // Touch overlay (stick + action buttons) and, when the overlay is NOT
+    // active, the bottom-left controls hint. Both are drawn by Engine from the
+    // active preset + live bindings, so this player shares them with desktop.
     void RenderTouchOverlay() {
-        auto st = Enjin::Input::GetTouchOverlay();
-        if (!st.active) return;
-        ImDrawList* dl = ImGui::GetForegroundDrawList();
-        const ImU32 ring  = IM_COL32(255, 255, 255, 70);
-        const ImU32 fill  = IM_COL32(255, 255, 255, 40);
-        const ImU32 nub   = IM_COL32(255, 255, 255, 150);
-        const ImU32 label = IM_COL32(255, 255, 255, 190);
-        // Floating move stick (drawn only while held, and only if the active
-        // scheme has one).
-        if (st.showStick && st.stickHeld) {
-            dl->AddCircle(ImVec2(st.stickBaseX, st.stickBaseY), st.stickRadius, ring, 32, 3.0f);
-            dl->AddCircleFilled(ImVec2(st.stickNubX, st.stickNubY), st.stickRadius * 0.4f, nub);
-        }
-        // Anchored action buttons from the active (controller-adaptive) scheme.
-        for (int i = 0; i < st.buttonCount; ++i) {
-            const auto& b = st.buttons[i];
-            dl->AddCircleFilled(ImVec2(b.x, b.y), b.r, b.held ? nub : fill);
-            dl->AddCircle(ImVec2(b.x, b.y), b.r, ring, 32, 2.5f);
-            if (b.label[0]) {
-                ImVec2 ts = ImGui::CalcTextSize(b.label);
-                dl->AddText(ImVec2(b.x - ts.x * 0.5f, b.y - ts.y * 0.5f), label, b.label);
-            }
+        Enjin::InputSystem::DrawTouchOverlay();
+        if (!m_AtMainMenu && !m_Paused) {
+            ImGuiIO& hintIO = ImGui::GetIO();
+            Enjin::InputSystem::DrawControlsHint(0.0f, 0.0f, hintIO.DisplaySize.x, hintIO.DisplaySize.y);
         }
     }
 
@@ -1238,31 +1199,10 @@ public:
             // Bullet-time button (touch only — desktop has the B key, gamepads have
             // Y/Triangle). Synthesizes a B press so the GAME'S OWN bullet-time logic
             // runs (Playground toggles on B); one source of truth, not a parallel
-            // web-only toggle. Moved off the cramped top-right corner to a large,
-            // clearly-labelled amber button on the RIGHT edge, vertically centred.
-            // It MUST NOT sit in the left half of the screen: that region is the
-            // floating move-stick zone (Input.cpp routes any touch there to movement
-            // BEFORE ImGui sees it), so a left-side button silently never registers.
-            // The right edge is the look-drag zone, where ImGui taps DO land (same as
-            // the working pause button). Centred vertically to clear the pause button
-            // (top-right) and the scheme's action buttons (bottom-right).
-            if (Enjin::Input::GetTouchOverlay().active) {
-                const float slowW = 96.0f, slowH = 52.0f;
-                ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - slowW - pbPad,
-                                               io.DisplaySize.y * 0.5f - slowH * 0.5f));
-                ImGui::SetNextWindowBgAlpha(0.0f);
-                ImGui::Begin("##bullettimebtn", nullptr,
-                    ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
-                    ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoNav);
-                ImGui::PushStyleColor(ImGuiCol_Button,        IM_COL32(230, 150, 30, 200));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(255, 180, 60, 220));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive,  IM_COL32(255, 210, 100, 255));
-                ImGui::PushStyleColor(ImGuiCol_Text,          IM_COL32(25, 20, 5, 255));
-                if (ImGui::Button("SLO-MO", ImVec2(slowW, slowH)))
-                    Enjin::Input::InjectKeyPress(Enjin::KeyCode::B);
-                ImGui::PopStyleColor(4);
-                ImGui::End();
-            }
+            // Game-specific touch buttons (e.g. Playground's SLO-MO) are no longer
+            // hardcoded here: a game names a Custom action and adds a scheme
+            // button for it from script (Touch_AddActionButton), which then
+            // exists on web, desktop --touch and the editor's touch simulation.
         }
 
         // Touch controls: must draw INSIDE the ImGui frame (before Render), or

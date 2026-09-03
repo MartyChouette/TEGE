@@ -177,24 +177,17 @@ public:
     static void BeginRealInputScope();
     static void EndRealInputScope();
 
-    // ---- Web mobile touch controls -----------------------------------------
+    // ---- Mobile touch controls ---------------------------------------------
     // The on-screen overlay is a left-side floating move stick, an optional
     // right-side look-drag region, and a set of anchored action buttons. The
-    // layout adapts to the active controller (SetTouchControllerPreset) or a
-    // game can author its own (SetTouchScheme). Safe-area insets keep it clear
-    // of notches/rounded corners. All scheme setters are harmless no-ops off
-    // web; GetTouchOverlay() is always inactive off web.
+    // scheme is built by Engine (InputSystem::ApplyTouchPreset, from the
+    // GameAction table) or authored by a game (SetTouchScheme); Core owns only
+    // hit-zones, geometry and per-frame state. Real touches come from the
+    // browser; desktop and the editor can SIMULATE one touch from the mouse
+    // (SetTouchSimulation) inside a registered surface (SetTouchSurface), so a
+    // layout is testable without a phone. Safe-area insets keep it clear of
+    // notches/rounded corners on web.
     static constexpr int kMaxTouchButtons = 6;
-
-    // Layout presets, normally chosen from the active controller type.
-    enum class TouchPreset {
-        Platformer2D,   // stick + jump, no look region
-        TopDown2D,      // stick + action, no look region
-        TopDown3D,      // stick + look + jump + action
-        FirstPerson,    // stick + look + fire + jump + run + action
-        ThirdPerson,    // stick + look + jump + run + action
-        Generic,        // stick + look + jump + action (default)
-    };
 
     // One anchored on-screen button. Position is a grid slot measured from the
     // bottom-right of the SAFE area, in multiples of the button spacing, so a
@@ -226,7 +219,18 @@ public:
 
     static void SetTouchScheme(const TouchScheme& scheme);
     static const TouchScheme& GetTouchScheme();
-    static void SetTouchControllerPreset(TouchPreset preset);
+
+    // Desktop / editor: let the mouse stand in for one touch (LMB down = touch
+    // start at the cursor, drag = move, up = end). A touch claimed by the stick
+    // or an action button is swallowed (never reaches the game as LMB), like
+    // the browser's preventDefault; a look/tap touch passes LMB through. No-op
+    // on web, where real touches drive the overlay.
+    static void SetTouchSimulation(bool enabled);
+    static bool IsTouchSimulation();
+    // The rect (window pixels, same space as GetMousePosition) the game view
+    // occupies: whole window in the player, the Game View image in the editor.
+    // Touch geometry and the overlay live inside it. Ignored on web (canvas).
+    static void SetTouchSurface(f32 x0, f32 y0, f32 w, f32 h);
 
     // Binding reflection: the touch overlay lives in this platform layer but the
     // action-binding map (InputActionMap) lives in Engine, which depends on Core
@@ -241,9 +245,11 @@ public:
     static void SetActionKeyResolver(ActionKeyResolver resolver);
     static void SetActionLabelResolver(ActionLabelResolver resolver);
 
-    // Resolved, per-frame overlay geometry for the player to draw. Positions
-    // are in canvas BACKING pixels. Active on web once a touch is seen OR a
-    // coarse pointer (phone/tablet) is detected.
+    // Resolved, per-frame overlay geometry for the host to draw (Engine's
+    // InputSystem::DrawTouchOverlay does it). Positions are in canvas BACKING
+    // pixels on web, window pixels elsewhere. Active on web once a touch is
+    // seen OR a coarse pointer (phone/tablet) is detected; on desktop while
+    // simulation is on and a surface is registered.
     struct TouchOverlayState {
         bool active = false;
         bool showStick = true;

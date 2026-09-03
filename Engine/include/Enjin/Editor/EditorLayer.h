@@ -1598,6 +1598,10 @@ private:
     std::vector<f32> m_TerrainUndoHeightmapSnapshot;
     std::vector<f32> m_TerrainUndoSplatmapSnapshot;
 
+    // Play mode: draw the mobile touch overlay over the Game View and let the
+    // mouse act as one touch (View > Simulate Touch Controls).
+    bool m_SimulateTouch = false;
+
     // UI editor (viewport WYSIWYG) state
     bool m_UIEditMode = false;
     ECS::Entity m_UIEditAutoFor = ECS::INVALID_ENTITY;  // auto-enable tracking (once per selected canvas)

@@ -9,6 +9,73 @@ using json = nlohmann::json;
 namespace Enjin {
 namespace InputSystem {
 
+// ---------------------------------------------------------------------------
+// The action table. One row per GameAction, in enum order: display name,
+// menu category, DEFAULT bindings, trigger mode, and how touch/hints show it.
+// LoadDefaults, GetActionName, GetActionCategory, the touch presets and the
+// controls hint all read this, so adding an action is adding a row here.
+// ---------------------------------------------------------------------------
+namespace {
+    constexpr i32 N = -1;
+    constexpr i32 K(KeyCode k)        { return static_cast<i32>(k); }
+    constexpr i32 M(MouseButton b)    { return static_cast<i32>(b); }
+    constexpr i32 P(GamepadButton b)  { return static_cast<i32>(b); }
+    constexpr i32 AX(GamepadAxis a)   { return static_cast<i32>(a); }
+    constexpr u32 HOLD = 0, PRESS = 2;
+    using AC = ActionCategory;
+    using TH = TouchHint;
+
+    const ActionInfo kActionInfo[] = {
+        //  name               category      key1               key2               mouse          pad                pad2                axis                 axis+   thr   mode   touch         label   verb
+        { "Move Forward",      AC::Movement, K(KeyCode::W),     K(KeyCode::Up),    N,             N,                 N,                  AX(GamepadAxis::LeftY),  false, 0.5f, HOLD,  TH::Stick,    "",     "move" },
+        { "Move Back",         AC::Movement, K(KeyCode::S),     K(KeyCode::Down),  N,             N,                 N,                  AX(GamepadAxis::LeftY),  true,  0.5f, HOLD,  TH::Stick,    "",     "move" },
+        { "Move Left",         AC::Movement, K(KeyCode::A),     K(KeyCode::Left),  N,             N,                 N,                  AX(GamepadAxis::LeftX),  false, 0.5f, HOLD,  TH::Stick,    "",     "move" },
+        { "Move Right",        AC::Movement, K(KeyCode::D),     K(KeyCode::Right), N,             N,                 N,                  AX(GamepadAxis::LeftX),  true,  0.5f, HOLD,  TH::Stick,    "",     "move" },
+        { "Jump",              AC::Movement, K(KeyCode::Space), N,                 N,             P(GamepadButton::A),          N,                       N,       true,  0.5f, PRESS, TH::Button,   "JMP",  "jump" },
+        { "Sprint",            AC::Movement, K(KeyCode::LeftShift), K(KeyCode::RightShift), N,    P(GamepadButton::LeftStick),  P(GamepadButton::LeftBumper), N,  true,  0.5f, HOLD,  TH::Button,   "RUN",  "sprint" },
+        { "Crouch",            AC::Movement, K(KeyCode::LeftControl), K(KeyCode::C), N,           P(GamepadButton::B),          N,                       N,       true,  0.5f, PRESS, TH::NotShown, "",     "crouch" },
+        { "Dash",              AC::Movement, K(KeyCode::LeftShift), N,             N,             P(GamepadButton::RightBumper), N,                      N,       true,  0.5f, PRESS, TH::NotShown, "",     "dash" },
+        { "Interact",          AC::Actions,  K(KeyCode::E),     N,                 N,             P(GamepadButton::X),          N,                       N,       true,  0.5f, PRESS, TH::Button,   "USE",  "interact" },
+        { "Attack",            AC::Actions,  N,                 N,                 M(MouseButton::Left),  N,                    N,   AX(GamepadAxis::RightTrigger), true, 0.3f, PRESS, TH::Button,   "FIRE", "attack" },
+        { "Block",             AC::Actions,  N,                 N,                 M(MouseButton::Right), N,                    N,   AX(GamepadAxis::LeftTrigger),  true, 0.3f, HOLD,  TH::NotShown, "",     "block" },
+        { "Pause",             AC::Actions,  K(KeyCode::Escape), N,                N,             P(GamepadButton::Start),      N,                       N,       true,  0.5f, PRESS, TH::NotShown, "",     "pause" },
+        { "Look Up",           AC::Camera,   N,                 N,                 N,             N,                 N,                  AX(GamepadAxis::RightY), false, 0.5f, HOLD,  TH::Look,     "",     "look" },
+        { "Look Down",         AC::Camera,   N,                 N,                 N,             N,                 N,                  AX(GamepadAxis::RightY), true,  0.5f, HOLD,  TH::Look,     "",     "look" },
+        { "Look Left",         AC::Camera,   N,                 N,                 N,             N,                 N,                  AX(GamepadAxis::RightX), false, 0.5f, HOLD,  TH::Look,     "",     "look" },
+        { "Look Right",        AC::Camera,   N,                 N,                 N,             N,                 N,                  AX(GamepadAxis::RightX), true,  0.5f, HOLD,  TH::Look,     "",     "look" },
+        { "Camera Zoom In",    AC::Camera,   N,                 N,                 N,             P(GamepadButton::DPadUp),     N,                       N,       true,  0.5f, PRESS, TH::NotShown, "",     "zoom in" },
+        { "Camera Zoom Out",   AC::Camera,   N,                 N,                 N,             P(GamepadButton::DPadDown),   N,                       N,       true,  0.5f, PRESS, TH::NotShown, "",     "zoom out" },
+        { "Confirm",           AC::UI,       K(KeyCode::Enter), K(KeyCode::Space), N,             P(GamepadButton::A),          N,                       N,       true,  0.5f, PRESS, TH::NotShown, "",     "confirm" },
+        { "Cancel",            AC::UI,       K(KeyCode::Escape), K(KeyCode::Backspace), N,        P(GamepadButton::B),          N,                       N,       true,  0.5f, PRESS, TH::NotShown, "",     "cancel" },
+        { "Menu Up",           AC::UI,       K(KeyCode::Up),    K(KeyCode::W),     N,             P(GamepadButton::DPadUp),     N,                       N,       true,  0.5f, PRESS, TH::NotShown, "",     "up" },
+        { "Menu Down",         AC::UI,       K(KeyCode::Down),  K(KeyCode::S),     N,             P(GamepadButton::DPadDown),   N,                       N,       true,  0.5f, PRESS, TH::NotShown, "",     "down" },
+        { "Menu Left",         AC::UI,       K(KeyCode::Left),  K(KeyCode::A),     N,             P(GamepadButton::DPadLeft),   N,                       N,       true,  0.5f, PRESS, TH::NotShown, "",     "left" },
+        { "Menu Right",        AC::UI,       K(KeyCode::Right), K(KeyCode::D),     N,             P(GamepadButton::DPadRight),  N,                       N,       true,  0.5f, PRESS, TH::NotShown, "",     "right" },
+        { "Advance Dialogue",  AC::UI,       K(KeyCode::Space), K(KeyCode::Enter), M(MouseButton::Left), P(GamepadButton::A),   N,                       N,       true,  0.5f, PRESS, TH::NotShown, "",     "advance" },
+        { "Custom 1",          AC::Custom,   N, N, N, N, N, N, true, 0.5f, PRESS, TH::Button, "", "" },
+        { "Custom 2",          AC::Custom,   N, N, N, N, N, N, true, 0.5f, PRESS, TH::Button, "", "" },
+        { "Custom 3",          AC::Custom,   N, N, N, N, N, N, true, 0.5f, PRESS, TH::Button, "", "" },
+        { "Custom 4",          AC::Custom,   N, N, N, N, N, N, true, 0.5f, PRESS, TH::Button, "", "" },
+        { "Custom 5",          AC::Custom,   N, N, N, N, N, N, true, 0.5f, PRESS, TH::Button, "", "" },
+        { "Custom 6",          AC::Custom,   N, N, N, N, N, N, true, 0.5f, PRESS, TH::Button, "", "" },
+        { "Custom 7",          AC::Custom,   N, N, N, N, N, N, true, 0.5f, PRESS, TH::Button, "", "" },
+        { "Custom 8",          AC::Custom,   N, N, N, N, N, N, true, 0.5f, PRESS, TH::Button, "", "" },
+    };
+    static_assert(sizeof(kActionInfo) / sizeof(kActionInfo[0]) == static_cast<size_t>(GameAction::Count),
+                  "kActionInfo must have exactly one row per GameAction, in enum order");
+
+    bool IsCustomAction(u32 i) {
+        return i >= static_cast<u32>(GameAction::Custom0) &&
+               i <  static_cast<u32>(GameAction::Custom0) + kCustomActionCount;
+    }
+}
+
+const ActionInfo& GetActionInfo(GameAction action) {
+    u32 i = static_cast<u32>(action);
+    if (i >= static_cast<u32>(GameAction::Count)) i = 0;
+    return kActionInfo[i];
+}
+
 InputActionMap::InputActionMap() {
     LoadDefaults();
 }
@@ -45,120 +112,47 @@ void InputActionMap::LoadDefaults() {
         cfg.bindings.push_back(b);
     };
 
-    // MoveForward: W, Up, Left stick Y negative (GLFW: up = -Y)
-    auto& fwd = m_Actions[static_cast<u32>(GameAction::MoveForward)];
-    fwd.mode = ActionMode::Hold;
-    addKey(fwd, KeyCode::W);
-    addKey(fwd, KeyCode::Up);
-    addGamepadAxis(fwd, GamepadAxis::LeftY, false); // negative = forward
+    auto addMouse = [](ActionConfig& cfg, MouseButton mb) {
+        InputBinding b;
+        b.type = BindingType::MouseButton;
+        b.code = static_cast<i32>(mb);
+        cfg.bindings.push_back(b);
+    };
 
-    // MoveBack: S, Down, Left stick Y positive
-    auto& back = m_Actions[static_cast<u32>(GameAction::MoveBack)];
-    back.mode = ActionMode::Hold;
-    addKey(back, KeyCode::S);
-    addKey(back, KeyCode::Down);
-    addGamepadAxis(back, GamepadAxis::LeftY, true);
-
-    // MoveLeft: A, Left, Left stick X negative
-    auto& left = m_Actions[static_cast<u32>(GameAction::MoveLeft)];
-    left.mode = ActionMode::Hold;
-    addKey(left, KeyCode::A);
-    addKey(left, KeyCode::Left);
-    addGamepadAxis(left, GamepadAxis::LeftX, false);
-
-    // MoveRight: D, Right, Left stick X positive
-    auto& right = m_Actions[static_cast<u32>(GameAction::MoveRight)];
-    right.mode = ActionMode::Hold;
-    addKey(right, KeyCode::D);
-    addKey(right, KeyCode::Right);
-    addGamepadAxis(right, GamepadAxis::LeftX, true);
-
-    // Jump: Space, Gamepad A
-    auto& jump = m_Actions[static_cast<u32>(GameAction::Jump)];
-    jump.mode = ActionMode::Press;
-    addKey(jump, KeyCode::Space);
-    addGamepadBtn(jump, GamepadButton::A);
-
-    // Sprint: Shift, Left Bumper / Left Stick click
-    auto& sprint = m_Actions[static_cast<u32>(GameAction::Sprint)];
-    sprint.mode = ActionMode::Hold;
-    addKey(sprint, KeyCode::LeftShift);
-    addKey(sprint, KeyCode::RightShift);
-    addGamepadBtn(sprint, GamepadButton::LeftStick);
-    addGamepadBtn(sprint, GamepadButton::LeftBumper);
-
-    // Crouch: Ctrl/C, Gamepad B
-    auto& crouch = m_Actions[static_cast<u32>(GameAction::Crouch)];
-    crouch.mode = ActionMode::Press;
-    addKey(crouch, KeyCode::LeftControl);
-    addKey(crouch, KeyCode::C);
-    addGamepadBtn(crouch, GamepadButton::B);
-
-    // Dash: Shift, Right Bumper (E is reserved for Interact)
-    auto& dash = m_Actions[static_cast<u32>(GameAction::Dash)];
-    dash.mode = ActionMode::Press;
-    addKey(dash, KeyCode::LeftShift);
-    addGamepadBtn(dash, GamepadButton::RightBumper);
-
-    // Interact: E, Gamepad X
-    auto& interact = m_Actions[static_cast<u32>(GameAction::Interact)];
-    interact.mode = ActionMode::Press;
-    addKey(interact, KeyCode::E);
-    addGamepadBtn(interact, GamepadButton::X);
-
-    // Attack: Left Mouse, Right Trigger
-    {
-        auto& attack = m_Actions[static_cast<u32>(GameAction::Attack)];
-        attack.mode = ActionMode::Press;
-        InputBinding mb;
-        mb.type = BindingType::MouseButton;
-        mb.code = static_cast<i32>(MouseButton::Left);
-        attack.bindings.push_back(mb);
-        addGamepadAxis(attack, GamepadAxis::RightTrigger, true, 0.3f);
+    // Every default comes from the action table (keyboard first so
+    // GetBindingDisplayName / touch labels prefer the key, then mouse, then pad).
+    for (u32 i = 0; i < count; ++i) {
+        const ActionInfo& info = kActionInfo[i];
+        auto& cfg = m_Actions[i];
+        cfg.mode = static_cast<ActionMode>(info.mode);
+        if (info.key1  >= 0) addKey(cfg, static_cast<KeyCode>(info.key1));
+        if (info.key2  >= 0) addKey(cfg, static_cast<KeyCode>(info.key2));
+        if (info.mouse >= 0) addMouse(cfg, static_cast<MouseButton>(info.mouse));
+        if (info.pad   >= 0) addGamepadBtn(cfg, static_cast<GamepadButton>(info.pad));
+        if (info.pad2  >= 0) addGamepadBtn(cfg, static_cast<GamepadButton>(info.pad2));
+        if (info.axis  >= 0) addGamepadAxis(cfg, static_cast<GamepadAxis>(info.axis), info.axisPositive, info.axisThreshold);
     }
+}
 
-    // Block: Right Mouse, Left Trigger
-    {
-        auto& block = m_Actions[static_cast<u32>(GameAction::Block)];
-        block.mode = ActionMode::Hold;
-        InputBinding mb;
-        mb.type = BindingType::MouseButton;
-        mb.code = static_cast<i32>(MouseButton::Right);
-        block.bindings.push_back(mb);
-        addGamepadAxis(block, GamepadAxis::LeftTrigger, true, 0.3f);
-    }
+void InputActionMap::AddBinding(GameAction action, const InputBinding& binding) {
+    m_Actions[static_cast<u32>(action)].bindings.push_back(binding);
+}
 
-    // Pause: Escape, Start
-    auto& pause = m_Actions[static_cast<u32>(GameAction::Pause)];
-    pause.mode = ActionMode::Press;
-    addKey(pause, KeyCode::Escape);
-    addGamepadBtn(pause, GamepadButton::Start);
+void InputActionMap::ClearBindings(GameAction action) {
+    m_Actions[static_cast<u32>(action)].bindings.clear();
+}
 
-    // Look actions (gamepad right stick)
-    auto& lookUp = m_Actions[static_cast<u32>(GameAction::LookUp)];
-    lookUp.mode = ActionMode::Hold;
-    addGamepadAxis(lookUp, GamepadAxis::RightY, false);
+void InputActionMap::SetCustomActionName(GameAction action, const std::string& name) {
+    u32 i = static_cast<u32>(action);
+    if (!IsCustomAction(i)) return;
+    m_CustomNames[i - static_cast<u32>(GameAction::Custom0)] = name;
+}
 
-    auto& lookDown = m_Actions[static_cast<u32>(GameAction::LookDown)];
-    lookDown.mode = ActionMode::Hold;
-    addGamepadAxis(lookDown, GamepadAxis::RightY, true);
-
-    auto& lookLeft = m_Actions[static_cast<u32>(GameAction::LookLeft)];
-    lookLeft.mode = ActionMode::Hold;
-    addGamepadAxis(lookLeft, GamepadAxis::RightX, false);
-
-    auto& lookRight = m_Actions[static_cast<u32>(GameAction::LookRight)];
-    lookRight.mode = ActionMode::Hold;
-    addGamepadAxis(lookRight, GamepadAxis::RightX, true);
-
-    // Camera zoom (scroll wheel handled separately, gamepad D-pad as fallback)
-    auto& zoomIn = m_Actions[static_cast<u32>(GameAction::CameraZoomIn)];
-    zoomIn.mode = ActionMode::Press;
-    addGamepadBtn(zoomIn, GamepadButton::DPadUp);
-
-    auto& zoomOut = m_Actions[static_cast<u32>(GameAction::CameraZoomOut)];
-    zoomOut.mode = ActionMode::Press;
-    addGamepadBtn(zoomOut, GamepadButton::DPadDown);
+bool InputActionMap::IsActionListed(i32 index) const {
+    if (index < 0 || index >= static_cast<i32>(GameAction::Count)) return false;
+    u32 i = static_cast<u32>(index);
+    if (!IsCustomAction(i)) return true;
+    return !m_CustomNames[i - static_cast<u32>(GameAction::Custom0)].empty();
 }
 
 void InputActionMap::Update(f32 dt) {
@@ -454,14 +448,12 @@ i32 InputActionMap::GetActionCount() const {
 
 const char* InputActionMap::GetActionName(i32 index) const {
     if (index < 0 || index >= static_cast<i32>(GameAction::Count)) return "";
-    static const char* names[] = {
-        "Move Forward", "Move Back", "Move Left", "Move Right",
-        "Jump", "Sprint", "Crouch", "Dash",
-        "Interact", "Attack", "Block", "Pause",
-        "Look Up", "Look Down", "Look Left", "Look Right",
-        "Camera Zoom In", "Camera Zoom Out"
-    };
-    return names[index];
+    u32 i = static_cast<u32>(index);
+    if (IsCustomAction(i)) {
+        const std::string& custom = m_CustomNames[i - static_cast<u32>(GameAction::Custom0)];
+        if (!custom.empty()) return custom.c_str();
+    }
+    return kActionInfo[i].name;
 }
 
 static const char* KeyCodeToName(i32 code) {
@@ -562,33 +554,8 @@ const char* InputActionMap::GetGamepadBindingDisplayName(i32 index) const {
 }
 
 i32 InputActionMap::GetActionCategory(i32 index) const {
-    if (index < 0 || index >= static_cast<i32>(GameAction::Count)) return 3;
-    auto action = static_cast<GameAction>(index);
-    switch (action) {
-        case GameAction::MoveForward:
-        case GameAction::MoveBack:
-        case GameAction::MoveLeft:
-        case GameAction::MoveRight:
-        case GameAction::Jump:
-        case GameAction::Sprint:
-        case GameAction::Crouch:
-        case GameAction::Dash:
-            return 0; // Movement
-        case GameAction::Interact:
-        case GameAction::Attack:
-        case GameAction::Block:
-        case GameAction::Pause:
-            return 1; // Actions
-        case GameAction::LookUp:
-        case GameAction::LookDown:
-        case GameAction::LookLeft:
-        case GameAction::LookRight:
-        case GameAction::CameraZoomIn:
-        case GameAction::CameraZoomOut:
-            return 2; // Camera
-        default:
-            return 3; // Other
-    }
+    if (index < 0 || index >= static_cast<i32>(GameAction::Count)) return static_cast<i32>(ActionCategory::UI);
+    return static_cast<i32>(kActionInfo[index].category);
 }
 
 std::string InputActionMap::ToJson() const {

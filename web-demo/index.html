@@ -11,13 +11,6 @@ body { background:#111; display:flex; justify-content:center; align-items:center
 #loading { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:#fff; font-family:sans-serif; font-size:18px; z-index:10; }
 #error { color:#f44; font-family:sans-serif; font-size:16px; padding:20px; text-align:center; display:none; }
 #error a { color:#8af; }
-#hint {
-  position:fixed; bottom:12px; left:12px;
-  color:#aaa; font-family:monospace; font-size:13px;
-  background:rgba(0,0,0,0.55); padding:8px 12px; border-radius:6px;
-  pointer-events:none; user-select:none; z-index:5;
-}
-#hint b { color:#fff; }
 #perf-hud {
   position:fixed; top:8px; left:8px; color:#0f0; font:12px monospace;
   background:rgba(0,0,0,0.7); padding:6px 10px; z-index:999;
@@ -30,7 +23,6 @@ body { background:#111; display:flex; justify-content:center; align-items:center
   <div id="error"></div>
   <canvas id="game-canvas" tabindex="0"></canvas>
 </div>
-<div id="hint"><b>WASD</b> move &nbsp;·&nbsp; <b>Hold RMB</b> look &nbsp;·&nbsp; <b>Shift</b> sprint &nbsp;·&nbsp; <b>Gamepad</b> supported</div>
 <div id="perf-hud"></div>
 <script>
 // Check WebGPU support before loading WASM. Checking navigator.gpu alone is not

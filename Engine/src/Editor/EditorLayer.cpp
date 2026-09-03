@@ -1,4 +1,5 @@
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/Input/TouchActionBridge.h"
 #include <nlohmann/json.hpp>
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Editor/ScenePicker.h"
@@ -5192,7 +5193,17 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         if (gvW > 0 && gvH > 0) {
             m_UISystem.Update(m_World, gvW, gvH, m_LastDeltaTime,
                               m_GameViewImageMinX, m_GameViewImageMinY, m_Camera);
+            // Touch overlay simulation + controls hint over the Game View image,
+            // the same drawing the exported game does (parity check for layouts).
+            Input::SetTouchSimulation(m_SimulateTouch);
+            Input::SetTouchSurface(m_GameViewImageMinX, m_GameViewImageMinY, gvW, gvH);
+            if (!m_PlayMode.IsPaused()) {
+                InputSystem::DrawTouchOverlay();
+                InputSystem::DrawControlsHint(m_GameViewImageMinX, m_GameViewImageMinY, gvW, gvH);
+            }
         }
+    } else {
+        Input::SetTouchSimulation(false);
     }
     m_GameViewImageDrawnThisFrame = false;   // re-armed by DrawGameViewPanel next frame
 

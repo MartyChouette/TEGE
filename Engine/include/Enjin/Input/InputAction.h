@@ -9,7 +9,10 @@
 namespace Enjin {
 namespace InputSystem {
 
-// Semantic game actions
+// Semantic game actions. This enum is the spine of the input system: bindings,
+// touch buttons, menu navigation, dialogue advance and the controls hint all
+// derive from it. Ordinals are persisted in bindings.json and exposed to
+// scripts, so ONLY APPEND, never reorder.
 enum class GameAction : u32 {
     MoveForward = 0,
     MoveBack,
@@ -29,8 +32,69 @@ enum class GameAction : u32 {
     LookRight,
     CameraZoomIn,
     CameraZoomOut,
+    // UI / menu navigation (menus, dialogue choices, canvas focus nav)
+    UIConfirm,
+    UICancel,
+    UINavUp,
+    UINavDown,
+    UINavLeft,
+    UINavRight,
+    DialogueAdvance,
+    // Game-defined slots. A game names them (InputActionMap::SetCustomActionName)
+    // and binds them at boot; unnamed slots stay hidden from menus and touch.
+    Custom0,
+    Custom1,
+    Custom2,
+    Custom3,
+    Custom4,
+    Custom5,
+    Custom6,
+    Custom7,
     Count
 };
+
+constexpr u32 kCustomActionCount = 8;
+
+// Menu grouping (GetActionCategory). Ordinals are what GameMenus indexes.
+enum class ActionCategory : i32 {
+    Movement = 0,
+    Actions = 1,
+    Camera = 2,
+    UI = 3,
+    Custom = 4,
+    Count
+};
+
+// How the mobile touch overlay represents an action when a scene consumes it.
+enum class TouchHint : u8 {
+    NotShown = 0,   // no on-screen control (e.g. Pause, Block, Crouch)
+    Button,         // an anchored action button
+    Stick,          // part of the floating move stick
+    Look            // the look-drag region
+};
+
+// Static description of one GameAction: display name, category, DEFAULT
+// bindings (LoadDefaults reads these) and how touch/hints present it.
+// -1 in any code field means "none".
+struct ActionInfo {
+    const char* name;         // "Jump"
+    ActionCategory category;
+    i32 key1;                 // KeyCode or -1
+    i32 key2;                 // KeyCode or -1
+    i32 mouse;                // MouseButton or -1
+    i32 pad;                  // GamepadButton or -1
+    i32 pad2;                 // GamepadButton or -1
+    i32 axis;                 // GamepadAxis or -1
+    bool axisPositive;
+    f32 axisThreshold;
+    u32 mode;                 // ActionMode ordinal
+    TouchHint touch;
+    const char* touchLabel;   // fallback label when no binding label is available
+    const char* hintVerb;     // lowercase verb for the controls hint ("jump")
+};
+
+// Table lookup, valid for every GameAction below Count.
+ENJIN_API const ActionInfo& GetActionInfo(GameAction action);
 
 // Input binding type
 enum class BindingType : u32 {
@@ -71,7 +135,7 @@ public:
     InputActionMap();
     ~InputActionMap() = default;
 
-    // Load default bindings (mirrors current WASD+Space+Shift+gamepad)
+    // Load default bindings from the ActionInfo table
     void LoadDefaults();
 
     // Per-frame update: manages toggle state, reads hardware input
@@ -88,6 +152,8 @@ public:
 
     // Remapping
     void SetBinding(GameAction action, u32 bindingIndex, const InputBinding& binding);
+    void AddBinding(GameAction action, const InputBinding& binding);
+    void ClearBindings(GameAction action);
     void SetActionMode(GameAction action, ActionMode mode);
     void SetSensitivity(GameAction action, f32 sensitivity);
 
@@ -115,6 +181,13 @@ public:
     i32 PollNextKeyPress() const;
     void RebindAction(i32 actionIndex, i32 keyCode);
 
+    // Custom action slots: a game names Custom0..7 at boot. Names survive
+    // ResetToDefaults (they describe the game, not the player's bindings).
+    void SetCustomActionName(GameAction action, const std::string& name);
+    // Whether menus / hints should list this action: everything except
+    // unnamed Custom slots.
+    bool IsActionListed(i32 index) const;
+
     // Display helpers
     i32 GetActionCount() const;
     const char* GetActionName(i32 index) const;
@@ -132,6 +205,7 @@ private:
     bool IsBindingReleased(const InputBinding& binding) const;
 
     ActionConfig m_Actions[static_cast<u32>(GameAction::Count)];
+    std::string m_CustomNames[kCustomActionCount];
 
     // Toggle state tracking
     bool m_ToggleState[static_cast<u32>(GameAction::Count)] = {};

@@ -10,9 +10,9 @@ using namespace Enjin::InputSystem;
 // Construction & Defaults
 // ===========================================================================
 
-ENJIN_TEST(Defaults, ActionCountIs18) {
+ENJIN_TEST(Defaults, ActionCountIs33) {
     InputActionMap map;
-    ENJIN_EXPECT_EQ(map.GetActionCount(), 18);
+    ENJIN_EXPECT_EQ(map.GetActionCount(), 33);
 }
 
 ENJIN_TEST(Defaults, AllActionNamesNonNull) {
@@ -61,6 +61,7 @@ ENJIN_TEST(Defaults, DefaultSensitivityIsOne) {
 ENJIN_TEST(Defaults, AllActionsHaveBindings) {
     InputActionMap map;
     for (i32 i = 0; i < map.GetActionCount(); ++i) {
+        if (!map.IsActionListed(i)) continue;   // unnamed Custom slots ship unbound by design
         auto& config = map.GetActionConfig((GameAction)i);
         ENJIN_EXPECT_GT(config.bindings.size(), (size_t)0);
     }
@@ -129,8 +130,8 @@ ENJIN_TEST(Config, ResetToDefaults) {
 ENJIN_TEST(Presets, LeftHandOnly) {
     InputActionMap map;
     map.ApplyLeftHandOnly();
-    // Should still have 18 actions
-    ENJIN_EXPECT_EQ(map.GetActionCount(), 18);
+    // Should still have 33 actions
+    ENJIN_EXPECT_EQ(map.GetActionCount(), 33);
     // Movement should still have bindings
     ENJIN_EXPECT_GT(map.GetActionConfig(GameAction::MoveForward).bindings.size(), (size_t)0);
 }
@@ -138,14 +139,14 @@ ENJIN_TEST(Presets, LeftHandOnly) {
 ENJIN_TEST(Presets, RightHandOnly) {
     InputActionMap map;
     map.ApplyRightHandOnly();
-    ENJIN_EXPECT_EQ(map.GetActionCount(), 18);
+    ENJIN_EXPECT_EQ(map.GetActionCount(), 33);
     ENJIN_EXPECT_GT(map.GetActionConfig(GameAction::MoveForward).bindings.size(), (size_t)0);
 }
 
 ENJIN_TEST(Presets, GamepadOnly) {
     InputActionMap map;
     map.ApplyGamepadOnly();
-    ENJIN_EXPECT_EQ(map.GetActionCount(), 18);
+    ENJIN_EXPECT_EQ(map.GetActionCount(), 33);
     // All bindings should be gamepad types
     for (i32 i = 0; i < map.GetActionCount(); ++i) {
         auto& config = map.GetActionConfig((GameAction)i);
@@ -252,8 +253,59 @@ ENJIN_TEST(Remap, RemapSurvivesJsonRoundTrip) {
 // GameAction enum
 // ===========================================================================
 
-ENJIN_TEST(GameActionEnum, CountIs18) {
-    ENJIN_EXPECT_EQ((int)GameAction::Count, 18);
+ENJIN_TEST(GameActionEnum, CountIs33) {
+    // 18 original + 7 UI/dialogue + 8 Custom slots. Append-only: ordinals are
+    // persisted in bindings.json and mirrored in the script enum.
+    ENJIN_EXPECT_EQ((int)GameAction::Count, 33);
+    ENJIN_EXPECT_EQ((int)GameAction::UIConfirm, 18);
+    ENJIN_EXPECT_EQ((int)GameAction::Custom0, 25);
+}
+
+ENJIN_TEST(GameActionEnum, ActionInfoTableMatchesLegacyDefaults) {
+    // The table-driven LoadDefaults must reproduce the bindings the hand-rolled
+    // version shipped: these are what players' muscle memory and docs assume.
+    InputActionMap map;
+    map.LoadDefaults();
+    auto firstKey = [&](GameAction a) {
+        for (const auto& b : map.GetActionConfig(a).bindings)
+            if (b.type == BindingType::Key) return b.code;
+        return -1;
+    };
+    ENJIN_EXPECT_EQ(firstKey(GameAction::MoveForward), (int)KeyCode::W);
+    ENJIN_EXPECT_EQ(firstKey(GameAction::Jump), (int)KeyCode::Space);
+    ENJIN_EXPECT_EQ(firstKey(GameAction::Interact), (int)KeyCode::E);
+    ENJIN_EXPECT_EQ(firstKey(GameAction::Pause), (int)KeyCode::Escape);
+    ENJIN_EXPECT_EQ(firstKey(GameAction::Attack), -1);   // mouse-bound
+    ENJIN_EXPECT_TRUE(map.GetActionConfig(GameAction::Sprint).mode == ActionMode::Hold);
+    ENJIN_EXPECT_TRUE(map.GetActionConfig(GameAction::Jump).mode == ActionMode::Press);
+    ENJIN_EXPECT_EQ((int)map.GetActionConfig(GameAction::Sprint).bindings.size(), 4);   // 2 keys + 2 pad
+    ENJIN_EXPECT_TRUE(std::string(map.GetActionName((int)GameAction::MoveForward)) == "Move Forward");
+    ENJIN_EXPECT_EQ(map.GetActionCategory((int)GameAction::LookUp), (int)ActionCategory::Camera);
+    ENJIN_EXPECT_EQ(map.GetActionCategory((int)GameAction::UIConfirm), (int)ActionCategory::UI);
+    // Every row has a name.
+    for (int i = 0; i < (int)GameAction::Count; ++i)
+        ENJIN_EXPECT_TRUE(GetActionInfo((GameAction)i).name[0] != '\0');
+}
+
+ENJIN_TEST(GameActionEnum, CustomActionsHiddenUntilNamed) {
+    InputActionMap map;
+    map.LoadDefaults();
+    const int c0 = (int)GameAction::Custom0;
+    ENJIN_EXPECT_FALSE(map.IsActionListed(c0));
+    ENJIN_EXPECT_TRUE(map.IsActionListed((int)GameAction::Jump));
+    ENJIN_EXPECT_TRUE(map.GetActionConfig(GameAction::Custom0).bindings.empty());
+
+    map.SetCustomActionName(GameAction::Custom0, "SLO-MO");
+    ENJIN_EXPECT_TRUE(map.IsActionListed(c0));
+    ENJIN_EXPECT_TRUE(std::string(map.GetActionName(c0)) == "SLO-MO");
+    // Names describe the game, so a player's "Reset Defaults" keeps them.
+    map.RebindAction(c0, (int)KeyCode::B);
+    map.ResetToDefaults();
+    ENJIN_EXPECT_TRUE(std::string(map.GetActionName(c0)) == "SLO-MO");
+    ENJIN_EXPECT_TRUE(map.GetActionConfig(GameAction::Custom0).bindings.empty());
+    // Naming a non-custom action is ignored.
+    map.SetCustomActionName(GameAction::Jump, "Hop");
+    ENJIN_EXPECT_TRUE(std::string(map.GetActionName((int)GameAction::Jump)) == "Jump");
 }
 
 ENJIN_TEST(GameActionEnum, ValuesAreSequential) {

@@ -649,6 +649,7 @@ void GameMenuSystem::RenderControls(f32 w, f32 h) {
     if (ImGui::BeginChild("##BindingsList", ImVec2(0, -50), true)) {
         i32 actionCount = m_InputMap->GetActionCount();
         for (i32 i = 0; i < actionCount; ++i) {
+            if (!m_InputMap->IsActionListed(i)) continue;   // unnamed Custom slots
             const char* actionName = m_InputMap->GetActionName(i);
             const char* bindingName = m_InputMap->GetBindingDisplayName(i);
 
@@ -744,8 +745,9 @@ void GameMenuSystem::RenderHowToPlay(f32 w, f32 h) {
     } else {
         if (ImGui::BeginChild("##HowToPlayList", ImVec2(0, -44), true)) {
             // Group actions by category
-            static const char* categories[] = { "Movement", "Actions", "Camera", "Other" };
-            static const i32 categoryCount = 4;
+            // Ordinals match InputSystem::ActionCategory.
+            static const char* categories[] = { "Movement", "Actions", "Camera", "Menus", "Game" };
+            static const i32 categoryCount = static_cast<i32>(InputSystem::ActionCategory::Count);
 
             for (i32 cat = 0; cat < categoryCount; ++cat) {
                 i32 actionsInCategory = 0;
@@ -753,7 +755,7 @@ void GameMenuSystem::RenderHowToPlay(f32 w, f32 h) {
                 // First pass: count actions in this category
                 i32 actionCount = m_InputMap->GetActionCount();
                 for (i32 i = 0; i < actionCount; ++i) {
-                    if (m_InputMap->GetActionCategory(i) == cat) {
+                    if (m_InputMap->GetActionCategory(i) == cat && m_InputMap->IsActionListed(i)) {
                         ++actionsInCategory;
                     }
                 }
@@ -765,6 +767,7 @@ void GameMenuSystem::RenderHowToPlay(f32 w, f32 h) {
 
                 for (i32 i = 0; i < actionCount; ++i) {
                     if (m_InputMap->GetActionCategory(i) != cat) continue;
+                    if (!m_InputMap->IsActionListed(i)) continue;
 
                     const char* actionName = m_InputMap->GetActionName(i);
                     const char* bindingName = m_InputMap->GetBindingDisplayName(i);
