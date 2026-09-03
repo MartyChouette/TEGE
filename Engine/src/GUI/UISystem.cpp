@@ -202,19 +202,44 @@ void UISystem::Update(ECS::World* world, f32 vpW, f32 vpH, f32 deltaTime,
     clipDL->PushClipRect(ImVec2(originX, originY),
                          ImVec2(originX + vpW, originY + vpH), false);
 
+    // Three passes, because input must resolve top-down while drawing stays
+    // bottom-up. Before this split, every canvas processed its own clicks with
+    // no shared state, so a menu button drawn over a HUD button fired BOTH.
+    // 1) Layout + world anchors: everything needs final rects before hit tests.
     for (auto& entry : m_CachedCanvases) {
         auto* canvas = world->GetComponent<UICanvasComponent>(entry.entity);
         if (!canvas) continue;
-
         ComputeLayout(*canvas, vpW, vpH, originX, originY);
         ApplyWorldSpaceAnchors(*canvas, world, entry.entity, camera,
                                originX, originY, vpW, vpH);
+    }
+
+    // 2) Input, topmost canvas first. The first interactive element under the
+    // pointer takes it and everything below sees nothing.
+    m_PointerConsumed = false;
+    m_InteractiveRects.clear();
+    for (auto it = m_CachedCanvases.rbegin(); it != m_CachedCanvases.rend(); ++it) {
+        auto* canvas = world->GetComponent<UICanvasComponent>(it->entity);
+        if (!canvas) continue;
         ProcessInput(*canvas, vpW, vpH);
         ProcessFocusNavigation(*canvas, deltaTime);
+    }
+
+    // 3) Draw back to front.
+    for (auto& entry : m_CachedCanvases) {
+        auto* canvas = world->GetComponent<UICanvasComponent>(entry.entity);
+        if (!canvas) continue;
         RenderCanvas(*canvas);
     }
 
     clipDL->PopClipRect();
+}
+
+bool UISystem::HitTestInteractive(f32 x, f32 y) const {
+    for (const auto& r : m_InteractiveRects) {
+        if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return true;
+    }
+    return false;
 }
 
 void UISystem::ApplyWorldSpaceAnchors(UICanvasComponent& canvas, ECS::World* world,
@@ -490,11 +515,24 @@ void UISystem::ProcessInput(UICanvasComponent& canvas, f32 /*vpW*/, f32 /*vpH*/)
             continue;
         }
 
+        // Every interactive element's rect is remembered for the frame, so a
+        // touch can be routed to the UI as a real pointer before the move
+        // stick or an action button claims it (Input::SetUIHitTestResolver).
+        const bool interactive = IsInteractiveElement(element);
+        if (interactive) m_InteractiveRects.push_back(element.computedRect);
+
+        // Something above already took the pointer this frame.
+        if (m_PointerConsumed) { element.interaction = {}; continue; }
+
         bool hit = element.computedRect.Contains(mouseX, mouseY);
         element.interaction.hovered = hit;
         element.interaction.pressed = hit && mouseDown;
 
         if (!hit) continue;
+
+        // A hit on anything interactive (a modal panel included, which is what
+        // makes it actually block) stops the pointer here.
+        if (interactive) m_PointerConsumed = true;
 
         // Track hovered focusable element for dwell-click
         if (IsElementFocusable(element) && hoveredFocusableId == 0) {
@@ -2297,6 +2335,29 @@ void UISystem::SetFocus(UICanvasComponent& canvas, u32 elementId) {
 
 void UISystem::ClearFocus(UICanvasComponent& canvas) {
     canvas.focusedElementId = 0;
+}
+
+bool UISystem::IsInteractiveElement(const UIElement& element) const {
+    if (!element.visible || !element.enabled || element.worldCulled) return false;
+    switch (element.type) {
+        case UIWidgetType::Button:
+        case UIWidgetType::Slider:
+        case UIWidgetType::Checkbox:
+        case UIWidgetType::Toggle:
+        case UIWidgetType::Dropdown:
+        case UIWidgetType::TextInput:
+        case UIWidgetType::RadioGroup:
+        case UIWidgetType::ScrollArea:
+        case UIWidgetType::TabGroup:
+        case UIWidgetType::ListView:
+            return true;
+        // A modal is meant to block what is behind it. Treating it as
+        // interactive is what finally makes that true rather than cosmetic.
+        case UIWidgetType::Modal:
+            return true;
+        default:
+            return false;
+    }
 }
 
 bool UISystem::IsElementFocusable(const UIElement& element) const {

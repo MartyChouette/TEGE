@@ -432,6 +432,11 @@ public:
         m_ActionTriggerSystem.SetInputActionMap(&m_InputMap);
         m_ActionTriggerSystem.SetSubtitleSystem(&m_SubtitleSystem);
         m_ActionTriggerSystem.SetEventBus(&m_EntityEventBus);
+
+        // Touches that land on interactive UI become real pointers (press,
+        // drag, release). Without this the move stick owns the left half of the
+        // canvas and on-screen sliders cannot be dragged at all.
+        Enjin::InputSystem::SetUIHitTestSystem(&m_UISystem);
         // Accessibility bindings — without these every Subtitle_/Announcer_/
         // Colorblind_/Accessibility_ script call is a silent no-op on web.
         Enjin::Scripting::SetBindingsSubtitles(&m_SubtitleSystem);
@@ -711,6 +716,13 @@ public:
 
         if (!m_Initialized) return;
         m_LastDeltaTime = deltaTime;
+
+        // Who owns input this frame. One flag, read by InputActionMap, so
+        // gameplay actions go quiet while a menu is up. Matches the desktop
+        // player, and is what stops a pause-menu tap also firing in the world.
+        Enjin::Input::SetInputFocus((m_Paused || m_AtMainMenu)
+            ? Enjin::Input::InputFocus::Menu
+            : Enjin::Input::InputFocus::Gameplay);
 
         // Pause menu (UI unification: the same UITemplates pause canvas as any
         // platform). Escape toggles; gameplay freezes while the menu is up but
@@ -1198,6 +1210,10 @@ public:
         // so this is the ONE UI path on web too (camera = world-space tags).
         m_UISystem.Update(m_World.get(), static_cast<Enjin::f32>(w), static_cast<Enjin::f32>(h),
                           io.DeltaTime, 0.0f, 0.0f, m_Camera.get());
+        // One flag for "the UI took the pointer", from the UI's own hit test
+        // plus ImGui (the pause button lives in an ImGui window). This is what
+        // stops a tap on either from ALSO reaching gameplay underneath.
+        Enjin::Input::SetUIConsumedPointer(m_UISystem.WasPointerConsumed() || io.WantCaptureMouse);
         // Subtitle overlay (accessibility) -- same draw code as desktop
         m_SubtitleSystem.RenderOverlay(w, h);
         // Screen reader status bar (announcements also speak via Web Speech API)

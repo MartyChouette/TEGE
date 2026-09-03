@@ -5,6 +5,7 @@
 
 namespace Enjin {
 namespace ECS { class World; }
+namespace GUI { class UISystem; }
 namespace InputSystem {
 
 class InputActionMap;
@@ -71,6 +72,13 @@ ENJIN_API TouchPreset TouchPresetForWorld(ECS::World* world);
 // SetTouchActionMap(nullptr) resets tracking.
 ENJIN_API bool ApplyTouchPresetForWorld(ECS::World* world);
 ENJIN_API void ResetTouchPresetTracking();
+
+// ---- UI pointer routing ------------------------------------------------------
+// Give Core the UI's hit test, so a touch landing on an interactive element
+// (button, slider, scroll area, modal) reaches the UI as a real pointer with
+// press/drag/release instead of being claimed by the move stick or an action
+// button. Call once with the runtime's UISystem; null detaches.
+ENJIN_API void SetUIHitTestSystem(GUI::UISystem* ui);
 
 // ---- Drawing (ImGui foreground draw list; call inside an ImGui frame) --------
 // The on-screen stick + buttons. No-op when Input::GetTouchOverlay is inactive.

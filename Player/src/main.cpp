@@ -985,6 +985,19 @@ public:
             }
         }
 
+        // Who owns input this frame. One flag, read by InputActionMap, so every
+        // gameplay action goes quiet while a menu, the console or a warning is
+        // up without each system checking its own boolean.
+        {
+            Enjin::Input::InputFocus focus = Enjin::Input::InputFocus::Gameplay;
+            if (m_ShowConsole)                                   focus = Enjin::Input::InputFocus::Console;
+            else if (m_GameMenu.IsMenuOpen() || m_Paused ||
+                     !m_GameStarted || m_ContentWarnings.IsVisible())
+                                                                 focus = Enjin::Input::InputFocus::Menu;
+            else if (m_ActiveDialogueEntity != 0)                focus = Enjin::Input::InputFocus::Dialogue;
+            Enjin::Input::SetInputFocus(focus);
+        }
+
         // Skip gameplay updates when paused, on title screen, in the console, or
         // content warning is shown. The console reads ImGui keyboard but gameplay
         // reads GLFW directly, so without this gate typing "wasd" walks the player.
@@ -1586,6 +1599,12 @@ public:
                     static_cast<Enjin::f32>(extent.width),
                     static_cast<Enjin::f32>(extent.height), 0.0f,
                     0.0f, 0.0f, m_Camera.get());
+                // One flag for "the UI took the pointer", from the UI's own hit
+                // test plus ImGui, so a click on a button never also fires in
+                // the world (attack, camera drag).
+                Enjin::Input::SetUIConsumedPointer(m_UISystem.WasPointerConsumed() ||
+                                                   ImGui::GetIO().WantCaptureMouse);
+
                 // Touch overlay (--touch) and the bottom-left controls hint, both
                 // derived from the active preset + live bindings (shared with web).
                 if (m_GameStarted && !m_Paused) {
@@ -2322,6 +2341,10 @@ private:
         m_ActionTriggerSystem.SetInputActionMap(&m_InputMap);
         m_ActionTriggerSystem.SetSubtitleSystem(&m_SubtitleSystem);
         m_ActionTriggerSystem.SetEventBus(&m_EntityEventBus);
+
+        // Touches that land on interactive UI become real pointers (press,
+        // drag, release) instead of being claimed by the move stick.
+        Enjin::InputSystem::SetUIHitTestSystem(&m_UISystem);
 
         // Wire visual script system externs (for VS nodes)
         {

@@ -177,6 +177,31 @@ public:
     static void BeginRealInputScope();
     static void EndRealInputScope();
 
+    // ---- Input focus and UI capture ----------------------------------------
+    // Which layer owns input right now. InputActionMap suppresses every
+    // non-UI action unless focus is Gameplay, so opening a menu, a dialogue or
+    // the console stops the player moving without each system checking a
+    // different flag. UI actions (confirm/cancel/navigate) always pass.
+    enum class InputFocus : u32 { Gameplay = 0, Menu, Dialogue, Console };
+    static void SetInputFocus(InputFocus focus);
+    static InputFocus GetInputFocus();
+    static bool IsGameplayFocused();
+
+    // True when the pointer is over UI that took it this frame. Set once per
+    // frame by whoever runs the UI (from the UI's own hit test plus ImGui's
+    // WantCaptureMouse); read by gameplay so clicking a button does not also
+    // fire in the world, and so a menu tap does not shoot.
+    static void SetUIConsumedPointer(bool consumed);
+    static bool IsUIConsumedPointer();
+
+    // Engine injects a UI hit test so a touch landing on an interactive UI
+    // element becomes a real pointer (press, drag, release) instead of being
+    // claimed by the move stick or an action button. Without this, sliders and
+    // scroll areas are unusable by touch and anything under the stick zone is
+    // unreachable. Null detaches (touch falls back to stick/look only).
+    using UIHitTestResolver = bool (*)(f32 x, f32 y);
+    static void SetUIHitTestResolver(UIHitTestResolver resolver);
+
     // ---- Mobile touch controls ---------------------------------------------
     // The on-screen overlay is a left-side floating move stick, an optional
     // right-side look-drag region, and a set of anchored action buttons. The

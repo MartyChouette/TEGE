@@ -1286,7 +1286,9 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
     if (!ctrl.disableMouseLook) {
         // When mouse is captured (focus mode), orbit is always active.
         // When not captured (editor), requires RMB hold.
-        if (Input::IsMouseCaptured() || Input::IsMouseButtonDown(MouseButton::Right)) {
+        // A drag the UI took must not also spin the camera.
+        if (Input::IsMouseCaptured() ||
+            (Input::IsMouseButtonDown(MouseButton::Right) && !Input::IsUIConsumedPointer())) {
             Math::Vector2 mouseDelta = GetLookDelta() * MouseSensitivityScale();
             ctrl.cameraYaw += mouseDelta.x * ctrl.cameraSensitivity;  // horizontal look (Marty's preferred convention)
             f32 pitchSign = m_InvertMouseY ? 1.0f : -1.0f;
@@ -1534,7 +1536,9 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
     // In dungeon crawler mode, yaw is locked to snap turns — only allow pitch
     if (!ctrl.disableMouseLook) {
         bool lockYaw = ctrl.dungeonCrawlerMode && ctrl.gridMovement;
-        if (Input::IsMouseCaptured() || Input::IsMouseButtonDown(MouseButton::Left)) {
+        // A drag the UI took must not also spin the camera.
+        if (Input::IsMouseCaptured() ||
+            (Input::IsMouseButtonDown(MouseButton::Left) && !Input::IsUIConsumedPointer())) {
             Math::Vector2 mouseDelta = GetLookDelta() * MouseSensitivityScale();
 
             if (!lockYaw) {
@@ -2141,7 +2145,9 @@ void ControllerSystem::UpdateSurfaceAligned(Entity entity, SurfaceAlignedControl
 
     // Camera input: mouse/gamepad -> cameraYaw/cameraPitch (same as ThirdPerson)
     if (!ctrl.disableMouseLook) {
-        if (Input::IsMouseCaptured() || Input::IsMouseButtonDown(MouseButton::Right)) {
+        // A drag the UI took must not also spin the camera.
+        if (Input::IsMouseCaptured() ||
+            (Input::IsMouseButtonDown(MouseButton::Right) && !Input::IsUIConsumedPointer())) {
             Math::Vector2 mouseDelta = GetLookDelta() * MouseSensitivityScale();
             ctrl.cameraYaw += mouseDelta.x * ctrl.cameraSensitivity;
             f32 saPitchSign = m_InvertMouseY ? 1.0f : -1.0f;

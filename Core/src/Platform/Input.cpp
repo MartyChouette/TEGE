@@ -28,6 +28,13 @@ namespace {
     Input::ActionKeyResolver   s_ActionKeyResolver   = nullptr;
     Input::ActionLabelResolver s_ActionLabelResolver = nullptr;
 
+    // Input focus + UI pointer capture. One flag each, read by InputActionMap
+    // and the controllers, so every runtime suppresses gameplay input the same
+    // way instead of each keeping its own boolean.
+    Input::InputFocus s_InputFocus = Input::InputFocus::Gameplay;
+    bool s_UIConsumedPointer = false;
+    Input::UIHitTestResolver s_UIHitTestResolver = nullptr;
+
 #if !ENJIN_PLATFORM_WEB
     constexpr i32 GLFW_KEY_FIRST = 32;   // GLFW_KEY_SPACE is the first valid key
     constexpr i32 GLFW_KEY_LAST_VALID = 348;  // GLFW_KEY_LAST
@@ -198,6 +205,10 @@ namespace {
     // Which control a touch landing at (px,py) belongs to: action buttons
     // first (topmost slot wins), then the move-stick zone, else look/tap.
     int AssignTouchRole(f32 px, f32 py) {
+        // UI first: a finger on a button or slider must reach the UI as a real
+        // pointer, or the stick zone silently swallows the left half of the
+        // screen and sliders are undraggable.
+        if (s_UIHitTestResolver && s_UIHitTestResolver(px, py)) return 3;
         for (int bi = 0; bi < s_TouchScheme.buttonCount; ++bi) {
             f32 cx, cy, cr;
             TouchResolveButton(s_TouchScheme.buttons[bi], cx, cy, cr);
@@ -444,12 +455,22 @@ namespace {
                 slot->startMs = emscripten_get_now();
                 WebRequestMobileFullscreen();   // W2: first-touch gesture
                 slot->role = AssignTouchRole(px, py);
+                if (slot->role == 3) {
+                    // UI pointer: a real held press, so drags (sliders, scroll)
+                    // work rather than only taps. Latest carries the hold, the
+                    // latch guarantees the press edge survives the frame gap.
+                    s_MousePosition = Math::Vector2(px, py);
+                    s_WebMouseLatest[0] = true;
+                    s_WebMouseDownLatch[0] = true;
+                }
                 // Touch position doubles as the pointer (hover, aim)
                 s_MousePosition = Math::Vector2(px, py);
             } else if (eventType == EMSCRIPTEN_EVENT_TOUCHMOVE) {
                 TouchPoint* slot = FindTouch(tp.identifier);
                 if (!slot) continue;
-                if (slot->role == 2) {
+                if (slot->role == 3) {
+                    s_MousePosition = Math::Vector2(px, py);   // UI drag
+                } else if (slot->role == 2) {
                     // Only a scheme with a look region drags the camera; 2D
                     // presets (lookRegion=false) still move the pointer so a
                     // tap-click lands where the finger lifted.
@@ -466,6 +487,12 @@ namespace {
             } else {   // TOUCHEND / TOUCHCANCEL
                 TouchPoint* slot = FindTouch(tp.identifier);
                 if (!slot) continue;
+                if (slot->role == 3) {
+                    // UI pointer released. No tap synthesis: it already had a
+                    // real press, so a second click here would double-fire.
+                    s_MousePosition = Math::Vector2(px, py);
+                    s_WebMouseLatest[0] = false;
+                }
                 if (eventType == EMSCRIPTEN_EVENT_TOUCHEND && (slot->role == 1 || slot->role == 2)) {
                     f32 mx = px - slot->startX, my = py - slot->startY;
                     bool shortTap = (emscripten_get_now() - slot->startMs) < 300.0 &&
@@ -998,6 +1025,15 @@ const Input::TouchScheme& Input::GetTouchScheme() {
 
 void Input::SetActionKeyResolver(ActionKeyResolver resolver)   { s_ActionKeyResolver = resolver; }
 void Input::SetActionLabelResolver(ActionLabelResolver resolver) { s_ActionLabelResolver = resolver; }
+
+void Input::SetInputFocus(InputFocus focus) { s_InputFocus = focus; }
+Input::InputFocus Input::GetInputFocus() { return s_InputFocus; }
+bool Input::IsGameplayFocused() { return s_InputFocus == InputFocus::Gameplay; }
+
+void Input::SetUIConsumedPointer(bool consumed) { s_UIConsumedPointer = consumed; }
+bool Input::IsUIConsumedPointer() { return s_UIConsumedPointer; }
+
+void Input::SetUIHitTestResolver(UIHitTestResolver resolver) { s_UIHitTestResolver = resolver; }
 
 void Input::SetTouchSimulation(bool enabled) {
 #if ENJIN_PLATFORM_WEB

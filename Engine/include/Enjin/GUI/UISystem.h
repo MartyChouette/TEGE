@@ -39,6 +39,16 @@ public:
     // Access the event bus for registering listeners
     UIEventBus& GetEventBus() { return m_EventBus; }
 
+    // Did an interactive element take the pointer this frame? Runtimes feed
+    // this into Input::SetUIConsumedPointer so a click on a button does not
+    // also fire in the world.
+    bool WasPointerConsumed() const { return m_PointerConsumed; }
+
+    // Is this screen point over an interactive element (rects from the last
+    // Update)? Installed into Core as the touch UI hit test, so a finger on a
+    // slider becomes a real pointer instead of being eaten by the move stick.
+    bool HitTestInteractive(f32 x, f32 y) const;
+
     // HUD-tier gate (replaces the retired HUDSystem's SetEnabled): canvases
     // with sortOrder >= HUD_SORT_ORDER (the tier the hudWidget migration
     // assigns) are skipped while disabled. Menus and dialogue canvases below
@@ -118,6 +128,11 @@ private:
     u32 m_DwellHoverElementId = 0;   // Element being hovered for dwell
 
     // Sticky drag state (motor accessibility)
+    // Pointer capture for the frame: set by the first interactive element hit
+    // (topmost canvas first), plus every interactive rect for the touch router.
+    bool m_PointerConsumed = false;
+    std::vector<UIRect> m_InteractiveRects;
+
     bool m_StickyDragEnabled = false;
     bool m_StickyDragActive = false;   // Currently locked in a drag
     u32 m_StickyDragElementId = 0;     // Element being dragged
@@ -201,6 +216,7 @@ private:
 
     // Input pass: hit test and process interactions
     void ProcessInput(UICanvasComponent& canvas, f32 vpW, f32 vpH);
+    bool IsInteractiveElement(const UIElement& element) const;
 
     // Focus navigation: Tab/DPad/Arrow key navigation with repeat
     void ProcessFocusNavigation(UICanvasComponent& canvas, f32 deltaTime);

@@ -206,19 +206,34 @@ void InputActionMap::Update(f32 dt) {
     }
 }
 
+namespace {
+    // A menu, a dialogue or the console owns input while it is up. Rather than
+    // every gameplay system checking a different flag, gameplay actions simply
+    // read as inactive unless focus is on gameplay. UI actions always pass, so
+    // the thing that took focus can still be navigated and dismissed.
+    bool ActionPassesFocus(GameAction action) {
+        if (Input::IsGameplayFocused()) return true;
+        return GetActionInfo(action).category == ActionCategory::UI;
+    }
+}
+
 bool InputActionMap::IsActionDown(GameAction action) const {
+    if (!ActionPassesFocus(action)) return false;
     return m_ActionDown[static_cast<u32>(action)];
 }
 
 bool InputActionMap::IsActionPressed(GameAction action) const {
+    if (!ActionPassesFocus(action)) return false;
     return m_ActionPressed[static_cast<u32>(action)];
 }
 
 bool InputActionMap::IsActionReleased(GameAction action) const {
+    if (!ActionPassesFocus(action)) return false;
     return m_ActionReleased[static_cast<u32>(action)];
 }
 
 f32 InputActionMap::GetActionValue(GameAction action) const {
+    if (!ActionPassesFocus(action)) return 0.0f;
     return m_ActionValue[static_cast<u32>(action)];
 }
 
@@ -330,6 +345,8 @@ bool InputActionMap::IsBindingActive(const InputBinding& binding) const {
         case BindingType::Key:
             return ::Enjin::Input::IsKeyDown(static_cast<KeyCode>(binding.code));
         case BindingType::MouseButton:
+            // A click the UI took is not also a click in the world.
+            if (::Enjin::Input::IsUIConsumedPointer()) return false;
             return ::Enjin::Input::IsMouseButtonDown(static_cast<MouseButton>(binding.code));
         case BindingType::GamepadButton:
             for (i32 gp = 0; gp < 4; ++gp) {
@@ -357,6 +374,7 @@ bool InputActionMap::IsBindingPressed(const InputBinding& binding) const {
         case BindingType::Key:
             return ::Enjin::Input::IsKeyPressed(static_cast<KeyCode>(binding.code));
         case BindingType::MouseButton:
+            if (::Enjin::Input::IsUIConsumedPointer()) return false;
             return ::Enjin::Input::IsMouseButtonPressed(static_cast<MouseButton>(binding.code));
         case BindingType::GamepadButton:
             for (i32 gp = 0; gp < 4; ++gp) {
@@ -378,6 +396,7 @@ bool InputActionMap::IsBindingReleased(const InputBinding& binding) const {
         case BindingType::Key:
             return ::Enjin::Input::IsKeyReleased(static_cast<KeyCode>(binding.code));
         case BindingType::MouseButton:
+            if (::Enjin::Input::IsUIConsumedPointer()) return false;
             return ::Enjin::Input::IsMouseButtonReleased(static_cast<MouseButton>(binding.code));
         case BindingType::GamepadButton:
             // No "released" API for gamepad in the current Input system

@@ -5,6 +5,7 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/ActionTrigger.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
+#include "Enjin/GUI/UISystem.h"
 #include <imgui.h>
 #include <cctype>
 #include <cstring>
@@ -18,6 +19,7 @@ namespace {
     InputActionMap* s_TouchMap = nullptr;
     TouchPreset s_ActivePreset = TouchPreset::Generic;
     const InputProjectSettings* s_ProjectSettings = nullptr;
+    GUI::UISystem* s_UISystem = nullptr;
     u64 s_LastFingerprint = 0;
     bool s_HasFingerprint = false;
 
@@ -252,6 +254,19 @@ namespace {
 void ApplyTouchPreset(TouchPreset preset) { BuildScheme(preset, nullptr); }
 
 TouchPreset GetActiveTouchPreset() { return s_ActivePreset; }
+
+namespace {
+    // Core calls this at touchstart, before it decides whether the finger
+    // belongs to the stick, a button, or the camera.
+    bool UIHitTestForTouch(f32 x, f32 y) {
+        return s_UISystem && s_UISystem->HitTestInteractive(x, y);
+    }
+}
+
+void SetUIHitTestSystem(GUI::UISystem* ui) {
+    s_UISystem = ui;
+    Input::SetUIHitTestResolver(ui ? &UIHitTestForTouch : nullptr);
+}
 
 void SetTouchProjectSettings(const InputProjectSettings* settings) {
     s_ProjectSettings = settings;

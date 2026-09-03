@@ -312,6 +312,9 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
 
     // Initialize in-game pause menu system
     m_GameMenu.SetInputMap(&m_InputMap);
+    // Touches (View > Simulate Touch Controls) that land on interactive UI
+    // become real pointers instead of being claimed by the move stick.
+    InputSystem::SetUIHitTestSystem(&m_UISystem);
     m_GameMenu.SetEditorSettings(&m_EditorSettings);
     // Accessibility tab (same tab exported games get). The menu edits
     // m_RuntimeAccessibility in place; reverse-sync the editor-settings twins
@@ -5206,6 +5209,9 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         if (gvW > 0 && gvH > 0) {
             m_UISystem.Update(m_World, gvW, gvH, m_LastDeltaTime,
                               m_GameViewImageMinX, m_GameViewImageMinY, m_Camera);
+            // One flag for "the UI took the pointer", so a click on a game-view
+            // UI button does not also fire in the world (matches both players).
+            Input::SetUIConsumedPointer(m_UISystem.WasPointerConsumed());
             // Touch overlay simulation + controls hint over the Game View image,
             // the same drawing the exported game does (parity check for layouts).
             Input::SetTouchSimulation(m_SimulateTouch);
@@ -5217,7 +5223,15 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         }
     } else {
         Input::SetTouchSimulation(false);
+        Input::SetUIConsumedPointer(false);
     }
+
+    // Gameplay input belongs to the game only while it is actually playing.
+    // Editing or paused reads as Menu, so a scene's actions cannot fire while
+    // the user is building the level.
+    Input::SetInputFocus((m_PlayMode.IsPlaying() && !m_PlayMode.IsPaused())
+        ? Input::InputFocus::Gameplay
+        : Input::InputFocus::Menu);
     m_GameViewImageDrawnThisFrame = false;   // re-armed by DrawGameViewPanel next frame
 
     // Render UI editor overlay (design-time WYSIWYG preview in Game View)

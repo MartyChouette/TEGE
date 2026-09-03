@@ -184,7 +184,16 @@ Original scope:
 
 `.enjinproject` block, editor tab with preview, BuildPipeline carry, web load. Script `Touch_*` accept action names.
 
-### Phase 3: pointer routing and focus
+### Phase 3: pointer routing and focus (DONE 2026-09-03)
+
+Shipped:
+
+- `Input::InputFocus` (Gameplay / Menu / Dialogue / Console), enforced inside `InputActionMap`: every non-UI action reads inactive unless focus is Gameplay, while UI actions always pass so whatever took focus stays navigable. One flag replaces the per-runtime booleans.
+- `Input::SetUIConsumedPointer` / `IsUIConsumedPointer`, set once per frame from the UI's own hit test plus ImGui. Mouse-bound actions and the camera-drag paths ignore a click the UI took, so pressing a button no longer also swings the sword or spins the camera.
+- `Input::SetUIHitTestResolver` + `InputSystem::SetUIHitTestSystem`: a touch landing on an interactive element becomes a real pointer with press, drag and release. Sliders and scroll areas are usable by touch, and elements under the move-stick zone are reachable at all.
+- `UISystem::Update` split into layout, input (topmost canvas first, stopping at the first interactive hit) and draw passes. Overlapping canvases no longer both receive the same click, and `UIWidgetType::Modal` actually blocks instead of only dimming.
+
+Original scope:
 
 UI-hit callback into Core, one consumed flag, `InputFocus`, single-pass UISystem input with sortOrder priority.
 
