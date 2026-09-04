@@ -3456,6 +3456,8 @@ json SerializeAudioCollisionComponent(const ECS::AudioCollisionComponent& ac) {
     j["hollowness"] = RF(ac.hollowness);
     j["mass"] = RF(ac.mass);
     j["detailDistance"] = RF(ac.detailDistance);
+    j["scrapeMinVelocity"] = RF(ac.scrapeMinVelocity);
+    j["scrapePitchScale"] = RF(ac.scrapePitchScale);
     j["cullDistance"] = RF(ac.cullDistance);
     j["enabled"] = ac.enabled;
     return j;
@@ -3475,6 +3477,8 @@ ECS::AudioCollisionComponent DeserializeAudioCollisionComponent(const json& j) {
     if (j.contains("hollowness")) ac.hollowness = j["hollowness"].get<f32>();
     if (j.contains("mass")) ac.mass = j["mass"].get<f32>();
     if (j.contains("detailDistance")) ac.detailDistance = j["detailDistance"].get<f32>();
+    if (j.contains("scrapeMinVelocity")) ac.scrapeMinVelocity = j["scrapeMinVelocity"].get<f32>();
+    if (j.contains("scrapePitchScale")) ac.scrapePitchScale = j["scrapePitchScale"].get<f32>();
     if (j.contains("cullDistance")) ac.cullDistance = j["cullDistance"].get<f32>();
     if (j.contains("enabled")) ac.enabled = JB(j["enabled"]);
     return ac;
@@ -3543,6 +3547,7 @@ json SerializeMusicZoneComponent(const ECS::MusicZoneComponent& mz) {
     json j;
     j["trackPath"] = mz.trackPath;
     j["fadeInTime"] = RF(mz.fadeInTime);
+    j["blendRadius"] = RF(mz.blendRadius);
     j["fadeOutTime"] = RF(mz.fadeOutTime);
     j["priority"] = mz.priority;
     j["halfExtents"] = {RF(mz.halfExtents.x), RF(mz.halfExtents.y), RF(mz.halfExtents.z)};
@@ -3553,6 +3558,7 @@ ECS::MusicZoneComponent DeserializeMusicZoneComponent(const json& j) {
     ECS::MusicZoneComponent mz;
     if (j.contains("trackPath")) mz.trackPath = j["trackPath"].get<std::string>();
     if (j.contains("fadeInTime")) mz.fadeInTime = j["fadeInTime"].get<f32>();
+    if (j.contains("blendRadius")) mz.blendRadius = j["blendRadius"].get<f32>();
     if (j.contains("fadeOutTime")) mz.fadeOutTime = j["fadeOutTime"].get<f32>();
     if (j.contains("priority")) mz.priority = j["priority"].get<i32>();
     if (j.contains("halfExtents") && j["halfExtents"].is_array() && j["halfExtents"].size() == 3)
@@ -3931,6 +3937,7 @@ json SerializeInteractableComponent(const ECS::InteractableComponent& ic) {
     json j;
     j["promptText"] = ic.promptText;
     j["interactionRange"] = RF(ic.interactionRange);
+    j["onInteractNotify"] = static_cast<u64>(ic.onInteractNotify);
     j["requiresLookAt"] = RF(ic.requiresLookAt);
     j["lookAtAngle"] = RF(ic.lookAtAngle);
     j["isEnabled"] = RF(ic.isEnabled);
@@ -3944,6 +3951,7 @@ ECS::InteractableComponent DeserializeInteractableComponent(const json& j) {
     ECS::InteractableComponent ic;
     if (j.contains("promptText")) ic.promptText = SafeStr(j["promptText"], MAX_STR_NAME);
     if (j.contains("interactionRange")) ic.interactionRange = j["interactionRange"].get<f32>();
+    if (j.contains("onInteractNotify")) ic.onInteractNotify = static_cast<ECS::Entity>(j["onInteractNotify"].get<u64>());
     if (j.contains("requiresLookAt")) ic.requiresLookAt = JB(j["requiresLookAt"]);
     if (j.contains("lookAtAngle")) ic.lookAtAngle = j["lookAtAngle"].get<f32>();
     if (j.contains("isEnabled")) ic.isEnabled = JB(j["isEnabled"]);
@@ -5291,6 +5299,123 @@ ECS::SpawnPointComponent DeserializeSpawnPointComponent(const json& j) {
 // SaveSystemComponent — the save system's OWN configuration. Its header says it
 // is exposed to the editor inspector, serialization and scripting; serialization
 // was the missing third. Runtime timers and the rotation index stay out.
+
+// AmbientSoundLayerComponent — a layered ambience zone. layerHandles are live
+// sound handles and stay out.
+json SerializeAmbientSoundLayerComponent(const ECS::AmbientSoundLayerComponent& c) {
+    json j;
+    json layers = json::array();
+    for (const auto& l : c.layers) {
+        json lj;
+        lj["clipPath"] = l.clipPath;
+        lj["volume"] = RF(l.volume);
+        lj["pitch"] = RF(l.pitch);
+        lj["loop"] = l.loop;
+        lj["caption"] = l.caption;
+        lj["minTimeOfDay"] = RF(l.minTimeOfDay);
+        lj["maxTimeOfDay"] = RF(l.maxTimeOfDay);
+        lj["minWeatherIntensity"] = RF(l.minWeatherIntensity);
+        lj["maxWeatherIntensity"] = RF(l.maxWeatherIntensity);
+        layers.push_back(lj);
+    }
+    j["layers"] = layers;
+    j["halfExtents"] = SerializeVector3(c.halfExtents);
+    j["blendRadius"] = RF(c.blendRadius);
+    j["isActive"] = c.isActive;
+    return j;
+}
+
+ECS::AmbientSoundLayerComponent DeserializeAmbientSoundLayerComponent(const json& j) {
+    ECS::AmbientSoundLayerComponent c;
+    if (j.contains("layers") && j["layers"].is_array()) {
+        constexpr usize kMaxLayers = 64;   // scene data is untrusted
+        for (const auto& lj : j["layers"]) {
+            if (c.layers.size() >= kMaxLayers) break;
+            if (!lj.is_object()) continue;
+            ECS::AmbientSoundLayerComponent::Layer l;
+            if (lj.contains("clipPath")) l.clipPath = SafeStr(lj["clipPath"], MAX_STR_PATH);
+            if (lj.contains("volume")) l.volume = lj["volume"].get<f32>();
+            if (lj.contains("pitch")) l.pitch = lj["pitch"].get<f32>();
+            if (lj.contains("loop")) l.loop = JB(lj["loop"]);
+            if (lj.contains("caption")) l.caption = SafeStr(lj["caption"], MAX_STR_NAME);
+            if (lj.contains("minTimeOfDay")) l.minTimeOfDay = lj["minTimeOfDay"].get<f32>();
+            if (lj.contains("maxTimeOfDay")) l.maxTimeOfDay = lj["maxTimeOfDay"].get<f32>();
+            if (lj.contains("minWeatherIntensity")) l.minWeatherIntensity = lj["minWeatherIntensity"].get<f32>();
+            if (lj.contains("maxWeatherIntensity")) l.maxWeatherIntensity = lj["maxWeatherIntensity"].get<f32>();
+            c.layers.push_back(l);
+        }
+    }
+    if (j.contains("halfExtents")) c.halfExtents = DeserializeVector3(j["halfExtents"]);
+    if (j.contains("blendRadius")) c.blendRadius = j["blendRadius"].get<f32>();
+    if (j.contains("isActive")) c.isActive = JB(j["isActive"]);
+    return c;
+}
+
+// LipSyncComponent — viseme track plus the viseme-to-morph-target mapping table,
+// which is the part that takes real authoring effort. Current viseme, smoothed
+// amplitude and the autoMapped latch are runtime.
+json SerializeLipSyncComponent(const ECS::LipSyncComponent& c) {
+    json j;
+    json keys = json::array();
+    for (const auto& k : c.visemeData) {
+        keys.push_back({{"time", RF(k.time)},
+                        {"viseme", static_cast<u32>(k.viseme)},
+                        {"weight", RF(k.weight)}});
+    }
+    j["visemeData"] = keys;
+    j["blendSpeed"] = RF(c.blendSpeed);
+    j["autoFromAmplitude"] = c.autoFromAmplitude;
+    j["autoMapVisemes"] = c.autoMapVisemes;
+
+    json morphs = json::array();
+    for (usize v = 0; v < static_cast<usize>(ECS::Viseme::Count); ++v) {
+        json entries = json::array();
+        for (const auto& m : c.visemeMorphMap[v])
+            entries.push_back({{"morphTargetName", m.morphTargetName}, {"weight", RF(m.weight)}});
+        morphs.push_back(entries);
+    }
+    j["visemeMorphMap"] = morphs;
+    return j;
+}
+
+ECS::LipSyncComponent DeserializeLipSyncComponent(const json& j) {
+    ECS::LipSyncComponent c;
+    constexpr u32 kVisemeCount = static_cast<u32>(ECS::Viseme::Count);
+    if (j.contains("visemeData") && j["visemeData"].is_array()) {
+        constexpr usize kMaxKeys = 8192;
+        for (const auto& kj : j["visemeData"]) {
+            if (c.visemeData.size() >= kMaxKeys) break;
+            if (!kj.is_object()) continue;
+            ECS::LipSyncComponent::VisemeKey k;
+            if (kj.contains("time")) k.time = kj["time"].get<f32>();
+            if (kj.contains("viseme")) {
+                u32 v = kj["viseme"].get<u32>();
+                if (v < kVisemeCount) k.viseme = static_cast<ECS::Viseme>(v);
+            }
+            if (kj.contains("weight")) k.weight = kj["weight"].get<f32>();
+            c.visemeData.push_back(k);
+        }
+    }
+    if (j.contains("blendSpeed")) c.blendSpeed = j["blendSpeed"].get<f32>();
+    if (j.contains("autoFromAmplitude")) c.autoFromAmplitude = JB(j["autoFromAmplitude"]);
+    if (j.contains("autoMapVisemes")) c.autoMapVisemes = JB(j["autoMapVisemes"]);
+
+    if (j.contains("visemeMorphMap") && j["visemeMorphMap"].is_array()) {
+        const auto& morphs = j["visemeMorphMap"];
+        for (usize v = 0; v < kVisemeCount && v < morphs.size(); ++v) {
+            if (!morphs[v].is_array()) continue;
+            for (const auto& mj : morphs[v]) {
+                if (!mj.is_object()) continue;
+                ECS::LipSyncComponent::VisemeMorphMapping m;
+                if (mj.contains("morphTargetName")) m.morphTargetName = SafeStr(mj["morphTargetName"], MAX_STR_NAME);
+                if (mj.contains("weight")) m.weight = mj["weight"].get<f32>();
+                c.visemeMorphMap[v].push_back(m);
+            }
+        }
+    }
+    return c;
+}
+
 json SerializeSaveSystemComponent(const ECS::SaveSystemComponent& c) {
     json j;
     j["maxManualSlots"] = c.maxManualSlots;
@@ -8097,6 +8222,8 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
         ENJIN_SERDES("sprite2D", ECS::Sprite2DComponent, SerializeSprite2DComponent, DeserializeSprite2DComponent),
         ENJIN_SERDES("stateMachine", ECS::StateMachineComponent, SerializeStateMachineComponent, DeserializeStateMachineComponent),
         ENJIN_SERDES("streamingPortal", Scene::StreamingPortalComponent, SerializeStreamingPortalComponent, DeserializeStreamingPortalComponent),
+        ENJIN_SERDES("ambientSoundLayer", ECS::AmbientSoundLayerComponent, SerializeAmbientSoundLayerComponent, DeserializeAmbientSoundLayerComponent),
+        ENJIN_SERDES("lipSync", ECS::LipSyncComponent, SerializeLipSyncComponent, DeserializeLipSyncComponent),
         ENJIN_SERDES("saveSystem", ECS::SaveSystemComponent, SerializeSaveSystemComponent, DeserializeSaveSystemComponent),
         ENJIN_SERDES("savePoint", ECS::SavePointComponent, SerializeSavePointComponent, DeserializeSavePointComponent),
         ENJIN_SERDES("boundaryPolygon", ECS::BoundaryPolygonComponent, SerializeBoundaryPolygonComponent, DeserializeBoundaryPolygonComponent),

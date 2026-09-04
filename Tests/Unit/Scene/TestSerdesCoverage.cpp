@@ -175,4 +175,77 @@ ENJIN_TEST(SerdesCoverage, WaypointLinkSurvivesASave) {
     ENJIN_EXPECT_TRUE(r->nextWaypoint != INVALID_ENTITY);
 }
 
+ENJIN_TEST(SerdesCoverage, AmbientSoundLayersSurviveASave) {
+    // A layered ambience zone: clips, captions and the time-of-day and weather
+    // conditions that decide when each layer plays.
+    World src;
+    Entity e = Base(src);
+    AmbientSoundLayerComponent c;
+    AmbientSoundLayerComponent::Layer birds;
+    birds.clipPath = "assets/sfx/birds.wav";
+    birds.volume = 0.65f;
+    birds.pitch = 1.1f;
+    birds.caption = "[Birds chirping]";
+    birds.minTimeOfDay = 6.0f;
+    birds.maxTimeOfDay = 18.0f;
+    AmbientSoundLayerComponent::Layer rain;
+    rain.clipPath = "assets/sfx/rain.wav";
+    rain.minWeatherIntensity = 0.4f;
+    rain.loop = false;
+    c.layers = {birds, rain};
+    c.halfExtents = Vector3(12.0f, 4.0f, 9.0f);
+    c.blendRadius = 6.5f;
+    src.AddComponent<AmbientSoundLayerComponent>(e, c);
+
+    World dst;
+    Entity loaded = RoundTrip(src, e, dst);
+
+    const auto* r = dst.GetComponent<AmbientSoundLayerComponent>(loaded);
+    ENJIN_ASSERT_TRUE(r != nullptr);
+    ENJIN_ASSERT_TRUE(r->layers.size() == 2);
+    ENJIN_EXPECT_TRUE(r->layers[0].clipPath == "assets/sfx/birds.wav");
+    ENJIN_EXPECT_TRUE(r->layers[0].caption == "[Birds chirping]");
+    ENJIN_EXPECT_TRUE(Near(r->layers[0].volume, 0.65f));
+    ENJIN_EXPECT_TRUE(Near(r->layers[0].minTimeOfDay, 6.0f));
+    ENJIN_EXPECT_TRUE(Near(r->layers[1].minWeatherIntensity, 0.4f));
+    ENJIN_EXPECT_FALSE(r->layers[1].loop);
+    ENJIN_EXPECT_TRUE(Near(r->blendRadius, 6.5f));
+    ENJIN_EXPECT_TRUE(Near(r->halfExtents.x, 12.0f));
+}
+
+ENJIN_TEST(SerdesCoverage, LipSyncMorphMappingSurvivesASave) {
+    // The viseme-to-morph-target table is the part that takes real authoring
+    // effort, and it was indexed per viseme, so the array shape matters.
+    World src;
+    Entity e = Base(src);
+    LipSyncComponent c;
+    c.blendSpeed = 14.0f;
+    c.autoFromAmplitude = false;
+    LipSyncComponent::VisemeKey k;
+    k.time = 0.25f; k.viseme = Viseme::AA; k.weight = 0.8f;
+    c.visemeData.push_back(k);
+    c.visemeMorphMap[static_cast<usize>(Viseme::AA)].push_back({"jawOpen", 0.8f});
+    c.visemeMorphMap[static_cast<usize>(Viseme::AA)].push_back({"mouthOpen", 0.6f});
+    c.visemeMorphMap[static_cast<usize>(Viseme::OH)].push_back({"mouthRound", 0.9f});
+    src.AddComponent<LipSyncComponent>(e, c);
+
+    World dst;
+    Entity loaded = RoundTrip(src, e, dst);
+
+    const auto* r = dst.GetComponent<LipSyncComponent>(loaded);
+    ENJIN_ASSERT_TRUE(r != nullptr);
+    ENJIN_EXPECT_TRUE(Near(r->blendSpeed, 14.0f));
+    ENJIN_EXPECT_FALSE(r->autoFromAmplitude);
+    ENJIN_ASSERT_TRUE(r->visemeData.size() == 1);
+    ENJIN_EXPECT_TRUE(r->visemeData[0].viseme == Viseme::AA);
+    ENJIN_EXPECT_TRUE(Near(r->visemeData[0].time, 0.25f));
+    const auto& aa = r->visemeMorphMap[static_cast<usize>(Viseme::AA)];
+    ENJIN_ASSERT_TRUE(aa.size() == 2);
+    ENJIN_EXPECT_TRUE(aa[0].morphTargetName == "jawOpen");
+    ENJIN_EXPECT_TRUE(Near(aa[1].weight, 0.6f));
+    ENJIN_EXPECT_TRUE(r->visemeMorphMap[static_cast<usize>(Viseme::OH)].size() == 1);
+    // A viseme nobody mapped must stay empty rather than pick up a neighbour's.
+    ENJIN_EXPECT_TRUE(r->visemeMorphMap[static_cast<usize>(Viseme::FF)].empty());
+}
+
 ENJIN_TEST_MAIN()
