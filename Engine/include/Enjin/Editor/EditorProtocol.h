@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Platform/Types.h"
 #include "Enjin/ECS/Entity.h"
@@ -85,6 +86,14 @@ public:
     virtual bool Receive(EditorMessage& outMsg) = 0; // Non-blocking, returns false if no message
     virtual bool HasPendingMessages() const = 0;
 };
+
+// Same-machine editor-to-runtime transport over shared memory.
+//
+// Both ends call Connect with the same endpoint string; whichever gets there
+// first creates and sizes the segment, and that side unlinks it on Disconnect.
+// Declared here because the implementation was only ever defined in its own
+// .cpp, so nothing outside that file could reach it.
+ENJIN_API std::unique_ptr<IEditorTransport> CreateSharedMemoryTransport();
 
 // Callback-based message handler
 using MessageHandler = std::function<void(const EditorMessage&)>;

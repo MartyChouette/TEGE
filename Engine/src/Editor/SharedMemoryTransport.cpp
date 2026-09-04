@@ -8,6 +8,13 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#else
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <cctype>
+#include <cerrno>
 #endif
 
 namespace Enjin {
@@ -57,10 +64,72 @@ public:
                        m_MapName.c_str(), BUFFER_SIZE / 1024);
         return true;
 #else
-        // TODO: POSIX shm_open implementation
-        ENJIN_LOG_WARN(Editor, "SharedMemoryTransport: not implemented on this platform");
-        (void)endpoint;
-        return false;
+        // POSIX shared memory. A name must start with a single slash and contain
+        // no others, and the endpoint comes from a caller, so anything outside
+        // [A-Za-z0-9_-] becomes an underscore rather than a path separator or a
+        // way out of /dev/shm.
+        m_MapName = "/EnjinEditorBridge_";
+        for (char c : endpoint) {
+            const unsigned char u = static_cast<unsigned char>(c);
+            m_MapName += (std::isalnum(u) || c == '_' || c == '-') ? c : '_';
+        }
+        // POSIX caps the name at NAME_MAX; keep well under it.
+        if (m_MapName.size() > 200) m_MapName.resize(200);
+
+        // O_EXCL first tells us whether we are the one creating it, which
+        // decides who sizes it and who unlinks it at the end.
+        m_OwnsSegment = true;
+        int fd = shm_open(m_MapName.c_str(), O_CREAT | O_EXCL | O_RDWR, 0600);
+        if (fd < 0 && errno == EEXIST) {
+            m_OwnsSegment = false;
+            fd = shm_open(m_MapName.c_str(), O_RDWR, 0600);
+        }
+        if (fd < 0) {
+            ENJIN_LOG_ERROR(Editor, "SharedMemoryTransport: shm_open('%s') failed (errno %d)",
+                            m_MapName.c_str(), errno);
+            return false;
+        }
+        if (m_OwnsSegment && ftruncate(fd, static_cast<off_t>(BUFFER_SIZE)) != 0) {
+            ENJIN_LOG_ERROR(Editor, "SharedMemoryTransport: ftruncate failed (errno %d)", errno);
+            close(fd);
+            shm_unlink(m_MapName.c_str());
+            return false;
+        }
+        // The peer may have created the object but not sized it yet; mapping a
+        // short segment would fault on first touch rather than fail here.
+        struct stat st = {};
+        if (fstat(fd, &st) != 0 || static_cast<u64>(st.st_size) < BUFFER_SIZE) {
+            ENJIN_LOG_ERROR(Editor, "SharedMemoryTransport: segment is %lld bytes, need %u",
+                            static_cast<long long>(st.st_size), BUFFER_SIZE);
+            close(fd);
+            if (m_OwnsSegment) shm_unlink(m_MapName.c_str());
+            return false;
+        }
+
+        void* mapped = mmap(nullptr, BUFFER_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+        // The mapping keeps the segment alive on its own, so the descriptor is
+        // not needed past this point.
+        close(fd);
+        if (mapped == MAP_FAILED) {
+            ENJIN_LOG_ERROR(Editor, "SharedMemoryTransport: mmap failed (errno %d)", errno);
+            if (m_OwnsSegment) shm_unlink(m_MapName.c_str());
+            return false;
+        }
+        m_Buffer = static_cast<u8*>(mapped);
+
+        auto* header = reinterpret_cast<RingHeader*>(m_Buffer);
+        if (header->magic != MAGIC) {
+            // Whoever gets here first initializes the ring, same as Windows.
+            memset(m_Buffer, 0, BUFFER_SIZE);
+            header->magic = MAGIC;
+            header->writePos = 0;
+            header->readPos = 0;
+        }
+
+        m_Connected = true;
+        ENJIN_LOG_INFO(Editor, "SharedMemoryTransport: connected to '%s' (%u KB)",
+                       m_MapName.c_str(), BUFFER_SIZE / 1024);
+        return true;
 #endif
     }
 
@@ -68,6 +137,16 @@ public:
 #ifdef _WIN32
         if (m_Buffer) { UnmapViewOfFile(m_Buffer); m_Buffer = nullptr; }
         if (m_MapHandle) { CloseHandle(m_MapHandle); m_MapHandle = nullptr; }
+#else
+        if (m_Buffer) { munmap(m_Buffer, BUFFER_SIZE); m_Buffer = nullptr; }
+        // Unlink only from the side that created it. A POSIX shared-memory
+        // object outlives every process that mapped it, so without this a
+        // crashed editor leaves a megabyte in /dev/shm until reboot. Unlinking
+        // removes the name; a peer that still has it mapped keeps working.
+        if (m_OwnsSegment && !m_MapName.empty()) {
+            shm_unlink(m_MapName.c_str());
+            m_OwnsSegment = false;
+        }
 #endif
         m_Connected = false;
     }
@@ -159,6 +238,8 @@ private:
 
 #ifdef _WIN32
     HANDLE m_MapHandle = nullptr;
+#else
+    bool m_OwnsSegment = false;   // only the creator unlinks the name
 #endif
 };
 
