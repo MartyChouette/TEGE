@@ -353,6 +353,7 @@ jobs:
         run: |
           npm install --no-audit --no-fund
           node check_wgsl.mjs
+          node check_instancing.mjs
 
       - name: Install Emscripten
         uses: mymindstorm/setup-emsdk@v14
