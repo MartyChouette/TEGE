@@ -1393,6 +1393,7 @@ json SerializeGPUParticleEmitterComponent(const ECS::GPUParticleEmitterComponent
     j["angle2D"] = RF(e.angle2D);
     j["sortingLayer"] = e.sortingLayer;
     j["orderInLayer"] = e.orderInLayer;
+    j["burstCount"] = e.burstCount;
     j["color"] = SerializeVector4(e.customColor);
     j["size"] = RF(e.customSize);
     j["lifetime"] = RF(e.customLifetime);
@@ -1428,6 +1429,7 @@ ECS::GPUParticleEmitterComponent DeserializeGPUParticleEmitterComponent(const js
     if (j.contains("angle2D")) e.angle2D = j["angle2D"].get<f32>();
     if (j.contains("sortingLayer")) e.sortingLayer = j["sortingLayer"].get<i32>();
     if (j.contains("orderInLayer")) e.orderInLayer = j["orderInLayer"].get<i32>();
+    if (j.contains("burstCount")) e.burstCount = j["burstCount"].get<u32>();
     if (j.contains("shape")) { u32 v = j["shape"].get<u32>(); if (v <= 6) e.shape = static_cast<ECS::EmitShape>(v); }
     if (j.contains("shapeSize")) e.shapeSize = j["shapeSize"].get<f32>();
     if (j.contains("color")) e.customColor = DeserializeVector4(j["color"]);
@@ -3167,6 +3169,9 @@ json SerializeHealthComponent(const ECS::HealthComponent& h) {
     j["isDead"] = h.isDead;
     j["invulnerabilityTimer"] = RF(h.invulnerabilityTimer);
     j["timeSinceLastDamage"] = RF(h.timeSinceLastDamage);
+    j["onDamageNotify"] = static_cast<u64>(h.onDamageNotify);
+    j["onDeathNotify"] = static_cast<u64>(h.onDeathNotify);
+    j["onHealNotify"] = static_cast<u64>(h.onHealNotify);
     return j;
 }
 
@@ -3188,6 +3193,9 @@ ECS::HealthComponent DeserializeHealthComponent(const json& j) {
     if (j.contains("isDead")) h.isDead = JB(j["isDead"]);
     if (j.contains("invulnerabilityTimer")) h.invulnerabilityTimer = j["invulnerabilityTimer"].get<f32>();
     if (j.contains("timeSinceLastDamage")) h.timeSinceLastDamage = j["timeSinceLastDamage"].get<f32>();
+    if (j.contains("onDamageNotify")) h.onDamageNotify = static_cast<ECS::Entity>(j["onDamageNotify"].get<u64>());
+    if (j.contains("onDeathNotify")) h.onDeathNotify = static_cast<ECS::Entity>(j["onDeathNotify"].get<u64>());
+    if (j.contains("onHealNotify")) h.onHealNotify = static_cast<ECS::Entity>(j["onHealNotify"].get<u64>());
     return h;
 }
 
@@ -5490,6 +5498,38 @@ ECS::LipSyncComponent DeserializeLipSyncComponent(const json& j) {
     return c;
 }
 
+
+// FaceCardComponent — portrait expressions keyed by name. transitionTimer and
+// previousExpression are runtime.
+json SerializeFaceCardComponent(const ECS::FaceCardComponent& c) {
+    json j;
+    json ex = json::object();
+    for (const auto& [name, path] : c.expressions) ex[name] = path;
+    j["expressions"] = ex;
+    j["currentExpression"] = c.currentExpression;
+    j["transitionDuration"] = RF(c.transitionDuration);
+    j["flipX"] = c.flipX;
+    j["enabled"] = c.enabled;
+    return j;
+}
+
+ECS::FaceCardComponent DeserializeFaceCardComponent(const json& j) {
+    ECS::FaceCardComponent c;
+    if (j.contains("expressions") && j["expressions"].is_object()) {
+        constexpr usize kMaxExpressions = 256;
+        for (auto it = j["expressions"].begin(); it != j["expressions"].end(); ++it) {
+            if (c.expressions.size() >= kMaxExpressions) break;
+            if (it.value().is_string())
+                c.expressions[SafeStr(json(it.key()), MAX_STR_NAME)] = SafeStr(it.value(), MAX_STR_PATH);
+        }
+    }
+    if (j.contains("currentExpression")) c.currentExpression = SafeStr(j["currentExpression"], MAX_STR_NAME);
+    if (j.contains("transitionDuration")) c.transitionDuration = j["transitionDuration"].get<f32>();
+    if (j.contains("flipX")) c.flipX = JB(j["flipX"]);
+    if (j.contains("enabled")) c.enabled = JB(j["enabled"]);
+    return c;
+}
+
 json SerializeSaveSystemComponent(const ECS::SaveSystemComponent& c) {
     json j;
     j["maxManualSlots"] = c.maxManualSlots;
@@ -5736,6 +5776,7 @@ json SerializeTimerComponent(const ECS::TimerComponent& t) {
     j["duration"] = RF(t.duration);
     j["loop"] = t.loop;
     j["autoStart"] = t.autoStart;
+    j["onCompleteNotify"] = static_cast<u64>(t.onCompleteNotify);
     return j;
 }
 
@@ -5744,6 +5785,7 @@ ECS::TimerComponent DeserializeTimerComponent(const json& j) {
     if (j.contains("duration")) t.duration = j["duration"].get<f32>();
     if (j.contains("loop")) t.loop = JB(j["loop"]);
     if (j.contains("autoStart")) t.autoStart = JB(j["autoStart"]);
+    if (j.contains("onCompleteNotify")) t.onCompleteNotify = static_cast<ECS::Entity>(j["onCompleteNotify"].get<u64>());
     return t;
 }
 
@@ -5895,6 +5937,14 @@ json SerializeTetherComponent(const ECS::TetherComponent& t) {
     j["autoDamping"] = RF(t.autoDamping);
     j["autoDrag"] = RF(t.autoDrag);
     j["driveMaxForce"] = RF(t.driveMaxForce);
+    j["pluckDwellThreshold"] = RF(t.pluckDwellThreshold);
+    j["pluckDwellSeconds"] = RF(t.pluckDwellSeconds);
+    j["releasePopHighThreshold"] = RF(t.releasePopHighThreshold);
+    j["releasePopLowThreshold"] = RF(t.releasePopLowThreshold);
+    j["adaptiveMinSpringMult"] = RF(t.adaptiveMinSpringMult);
+    j["adaptiveMaxSpringMult"] = RF(t.adaptiveMaxSpringMult);
+    j["adaptiveMinDamperMult"] = RF(t.adaptiveMinDamperMult);
+    j["adaptiveMaxDamperMult"] = RF(t.adaptiveMaxDamperMult);
     return j;
 }
 
@@ -5916,6 +5966,14 @@ ECS::TetherComponent DeserializeTetherComponent(const json& j) {
     if (j.contains("autoDamping")) t.autoDamping = j["autoDamping"].get<f32>();
     if (j.contains("autoDrag")) t.autoDrag = j["autoDrag"].get<f32>();
     if (j.contains("driveMaxForce")) t.driveMaxForce = j["driveMaxForce"].get<f32>();
+    if (j.contains("pluckDwellThreshold")) t.pluckDwellThreshold = j["pluckDwellThreshold"].get<f32>();
+    if (j.contains("pluckDwellSeconds")) t.pluckDwellSeconds = j["pluckDwellSeconds"].get<f32>();
+    if (j.contains("releasePopHighThreshold")) t.releasePopHighThreshold = j["releasePopHighThreshold"].get<f32>();
+    if (j.contains("releasePopLowThreshold")) t.releasePopLowThreshold = j["releasePopLowThreshold"].get<f32>();
+    if (j.contains("adaptiveMinSpringMult")) t.adaptiveMinSpringMult = j["adaptiveMinSpringMult"].get<f32>();
+    if (j.contains("adaptiveMaxSpringMult")) t.adaptiveMaxSpringMult = j["adaptiveMaxSpringMult"].get<f32>();
+    if (j.contains("adaptiveMinDamperMult")) t.adaptiveMinDamperMult = j["adaptiveMinDamperMult"].get<f32>();
+    if (j.contains("adaptiveMaxDamperMult")) t.adaptiveMaxDamperMult = j["adaptiveMaxDamperMult"].get<f32>();
     // Backward compat: if connectedEntity missing, default to stemEntity
     if (!j.contains("connectedEntity") && t.connectedEntity == ECS::INVALID_ENTITY) {
         t.connectedEntity = t.stemEntity;
@@ -6021,6 +6079,8 @@ json SerializeLODComponent(const ECS::LODComponent& lod) {
     j["enabled"] = lod.enabled;
     j["autoGenerated"] = RF(lod.autoGenerated);
     j["sourceMaxExtent"] = RF(lod.sourceMaxExtent);
+    j["hysteresisRatio"] = RF(lod.hysteresisRatio);
+    j["useScreenSize"] = lod.useScreenSize;
     json ratios = json::array();
     for (int i = 0; i < ECS::LODComponent::MAX_LEVELS; ++i) {
         ratios.push_back(lod.reductionRatios[i]);
@@ -6046,6 +6106,8 @@ ECS::LODComponent DeserializeLODComponent(const json& j) {
     if (j.contains("enabled")) lod.enabled = JB(j["enabled"]);
     if (j.contains("autoGenerated")) lod.autoGenerated = JB(j["autoGenerated"]);
     if (j.contains("sourceMaxExtent")) lod.sourceMaxExtent = j["sourceMaxExtent"].get<f32>();
+    if (j.contains("hysteresisRatio")) lod.hysteresisRatio = j["hysteresisRatio"].get<f32>();
+    if (j.contains("useScreenSize")) lod.useScreenSize = JB(j["useScreenSize"]);
     if (j.contains("reductionRatios") && j["reductionRatios"].is_array()) {
         for (int i = 0; i < ECS::LODComponent::MAX_LEVELS && i < static_cast<int>(j["reductionRatios"].size()); ++i) {
             lod.reductionRatios[i] = j["reductionRatios"][i].get<f32>();
@@ -6298,6 +6360,7 @@ json SerializeDynamicDifficultyComponent(const ECS::DynamicDifficultyComponent& 
     j["resourceDropRange"] = RF(dd.resourceDropRange);
     j["adjustHintFrequency"] = dd.adjustHintFrequency;
     j["deathsBeforeHint"] = dd.deathsBeforeHint;
+    j["hintCooldown"] = RF(dd.hintCooldown);
     j["adjustCheckpointFrequency"] = dd.adjustCheckpointFrequency;
     j["checkpointRange"] = RF(dd.checkpointRange);
     return j;
@@ -6337,6 +6400,7 @@ ECS::DynamicDifficultyComponent DeserializeDynamicDifficultyComponent(const json
     if (j.contains("resourceDropRange")) dd.resourceDropRange = j["resourceDropRange"].get<f32>();
     if (j.contains("adjustHintFrequency")) dd.adjustHintFrequency = JB(j["adjustHintFrequency"]);
     if (j.contains("deathsBeforeHint")) dd.deathsBeforeHint = j["deathsBeforeHint"].get<u32>();
+    if (j.contains("hintCooldown")) dd.hintCooldown = j["hintCooldown"].get<f32>();
     if (j.contains("adjustCheckpointFrequency")) dd.adjustCheckpointFrequency = JB(j["adjustCheckpointFrequency"]);
     if (j.contains("checkpointRange")) dd.checkpointRange = j["checkpointRange"].get<f32>();
     return dd;
@@ -7547,6 +7611,9 @@ json SerializeDestructibleComponent(const ECS::DestructibleComponent& dc) {
     j["canRespawn"] = RF(dc.canRespawn);
     j["respawnTime"] = RF(dc.respawnTime);
     j["shakeOnHit"] = RF(dc.shakeOnHit);
+    j["showDamageOverlay"] = dc.showDamageOverlay;
+    if (!dc.crackTexturePath.empty()) j["crackTexturePath"] = dc.crackTexturePath;
+    j["damageTint"] = SerializeVector3(dc.damageTint);
     return j;
 }
 
@@ -7560,6 +7627,9 @@ ECS::DestructibleComponent DeserializeDestructibleComponent(const json& j) {
     if (j.contains("canRespawn")) dc.canRespawn = JB(j["canRespawn"]);
     if (j.contains("respawnTime")) dc.respawnTime = j["respawnTime"].get<f32>();
     if (j.contains("shakeOnHit")) dc.shakeOnHit = j["shakeOnHit"].get<f32>();
+    if (j.contains("showDamageOverlay")) dc.showDamageOverlay = JB(j["showDamageOverlay"]);
+    if (j.contains("crackTexturePath")) dc.crackTexturePath = SafeStr(j["crackTexturePath"], MAX_STR_PATH);
+    if (j.contains("damageTint")) dc.damageTint = DeserializeVector3(j["damageTint"]);
     return dc;
 }
 
@@ -8298,6 +8368,7 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
         ENJIN_SERDES("streamingPortal", Scene::StreamingPortalComponent, SerializeStreamingPortalComponent, DeserializeStreamingPortalComponent),
         ENJIN_SERDES("ambientSoundLayer", ECS::AmbientSoundLayerComponent, SerializeAmbientSoundLayerComponent, DeserializeAmbientSoundLayerComponent),
         ENJIN_SERDES("lipSync", ECS::LipSyncComponent, SerializeLipSyncComponent, DeserializeLipSyncComponent),
+        ENJIN_SERDES("faceCard", ECS::FaceCardComponent, SerializeFaceCardComponent, DeserializeFaceCardComponent),
         ENJIN_SERDES("saveSystem", ECS::SaveSystemComponent, SerializeSaveSystemComponent, DeserializeSaveSystemComponent),
         ENJIN_SERDES("savePoint", ECS::SavePointComponent, SerializeSavePointComponent, DeserializeSavePointComponent),
         ENJIN_SERDES("boundaryPolygon", ECS::BoundaryPolygonComponent, SerializeBoundaryPolygonComponent, DeserializeBoundaryPolygonComponent),

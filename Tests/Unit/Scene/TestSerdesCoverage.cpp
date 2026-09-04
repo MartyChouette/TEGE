@@ -17,6 +17,10 @@
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/BoundaryPolygon.h"
 #include "Enjin/ECS/Components/VisualScript.h"
+#include "Enjin/ECS/Components/LOD.h"
+#include "Enjin/ECS/Components/DynamicDifficulty.h"
+#include "Enjin/ECS/Components/GPUParticleEmitter.h"
+#include "Enjin/ECS/Components/Flower.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/Scene/SceneSerializer.h"
 #include <cmath>
@@ -300,6 +304,186 @@ ENJIN_TEST(SerdesCoverage, VisualScriptFunctionsSurviveASave) {
     ENJIN_EXPECT_TRUE(std::get<bool>(r->functions[0].inputParams[1].defaultValue));
     ENJIN_ASSERT_TRUE(r->functions[0].outputParams.size() == 1);
     ENJIN_EXPECT_TRUE(r->functions[0].outputParams[0].name == "applied");
+}
+
+
+// A second audit pass found tuning fields dropped from serializers that already
+// existed - worse than a missing serializer, because the component looks saved.
+// Each of these is a value a designer sets in the inspector and never sees again.
+
+ENJIN_TEST(SerdesCoverage, TetherFeelTuningSurvivesASave) {
+    // Arrange: the pluck/release/adaptive block, which sits above the runtime
+    // divider next to an already-serialized spring block.
+    World src;
+    Entity e = Base(src);
+    TetherComponent t;
+    t.pluckDwellThreshold = 0.42f;
+    t.pluckDwellSeconds = 1.75f;
+    t.releasePopHighThreshold = 0.9f;
+    t.releasePopLowThreshold = 0.15f;
+    t.adaptiveMinSpringMult = 0.3f;
+    t.adaptiveMaxSpringMult = 2.4f;
+    t.adaptiveMinDamperMult = 0.6f;
+    t.adaptiveMaxDamperMult = 1.9f;
+    src.AddComponent<TetherComponent>(e, t);
+
+    // Act
+    World dst;
+    Entity loaded = RoundTrip(src, e, dst);
+
+    // Assert
+    const auto* r = dst.GetComponent<TetherComponent>(loaded);
+    ENJIN_ASSERT_TRUE(r != nullptr);
+    ENJIN_EXPECT_TRUE(Near(r->pluckDwellThreshold, 0.42f));
+    ENJIN_EXPECT_TRUE(Near(r->pluckDwellSeconds, 1.75f));
+    ENJIN_EXPECT_TRUE(Near(r->releasePopHighThreshold, 0.9f));
+    ENJIN_EXPECT_TRUE(Near(r->releasePopLowThreshold, 0.15f));
+    ENJIN_EXPECT_TRUE(Near(r->adaptiveMinSpringMult, 0.3f));
+    ENJIN_EXPECT_TRUE(Near(r->adaptiveMaxSpringMult, 2.4f));
+    ENJIN_EXPECT_TRUE(Near(r->adaptiveMinDamperMult, 0.6f));
+    ENJIN_EXPECT_TRUE(Near(r->adaptiveMaxDamperMult, 1.9f));
+}
+
+ENJIN_TEST(SerdesCoverage, FaceCardExpressionsSurviveASave) {
+    // Arrange: the portrait set is authored art paths, the expensive part.
+    World src;
+    Entity e = Base(src);
+    FaceCardComponent c;
+    c.expressions["neutral"] = "art/faces/neutral.png";
+    c.expressions["angry"] = "art/faces/angry.png";
+    c.currentExpression = "angry";
+    c.transitionDuration = 0.35f;
+    c.flipX = true;
+    c.enabled = false;
+    src.AddComponent<FaceCardComponent>(e, c);
+
+    // Act
+    World dst;
+    Entity loaded = RoundTrip(src, e, dst);
+
+    // Assert
+    const auto* r = dst.GetComponent<FaceCardComponent>(loaded);
+    ENJIN_ASSERT_TRUE(r != nullptr);
+    ENJIN_ASSERT_TRUE(r->expressions.size() == 2);
+    ENJIN_EXPECT_TRUE(r->expressions.at("neutral") == "art/faces/neutral.png");
+    ENJIN_EXPECT_TRUE(r->expressions.at("angry") == "art/faces/angry.png");
+    ENJIN_EXPECT_TRUE(r->currentExpression == "angry");
+    ENJIN_EXPECT_TRUE(Near(r->transitionDuration, 0.35f));
+    ENJIN_EXPECT_TRUE(r->flipX);
+    ENJIN_EXPECT_TRUE(!r->enabled);
+}
+
+ENJIN_TEST(SerdesCoverage, LODHysteresisAndScreenSizeSurviveASave) {
+    // Arrange: useScreenSize defaults ON, so a designer turning it OFF is the
+    // case a missing field silently reverts.
+    World src;
+    Entity e = Base(src);
+    LODComponent lod;
+    lod.hysteresisRatio = 0.25f;
+    lod.useScreenSize = false;
+    src.AddComponent<LODComponent>(e, lod);
+
+    // Act
+    World dst;
+    Entity loaded = RoundTrip(src, e, dst);
+
+    // Assert
+    const auto* r = dst.GetComponent<LODComponent>(loaded);
+    ENJIN_ASSERT_TRUE(r != nullptr);
+    ENJIN_EXPECT_TRUE(Near(r->hysteresisRatio, 0.25f));
+    ENJIN_EXPECT_TRUE(!r->useScreenSize);
+}
+
+ENJIN_TEST(SerdesCoverage, DynamicDifficultyHintCooldownSurvivesASave) {
+    // Arrange
+    World src;
+    Entity e = Base(src);
+    DynamicDifficultyComponent dd;
+    dd.adjustHintFrequency = true;
+    dd.hintCooldown = 12.0f;
+    src.AddComponent<DynamicDifficultyComponent>(e, dd);
+
+    // Act
+    World dst;
+    Entity loaded = RoundTrip(src, e, dst);
+
+    // Assert
+    const auto* r = dst.GetComponent<DynamicDifficultyComponent>(loaded);
+    ENJIN_ASSERT_TRUE(r != nullptr);
+    ENJIN_EXPECT_TRUE(r->adjustHintFrequency);
+    ENJIN_EXPECT_TRUE(Near(r->hintCooldown, 12.0f));
+}
+
+ENJIN_TEST(SerdesCoverage, GPUParticleBurstCountSurvivesASave) {
+    // Arrange: burstCount is authored, burstNow is a runtime trigger and is
+    // deliberately not saved.
+    World src;
+    Entity e = Base(src);
+    GPUParticleEmitterComponent em;
+    em.burstCount = 250;
+    src.AddComponent<GPUParticleEmitterComponent>(e, em);
+
+    // Act
+    World dst;
+    Entity loaded = RoundTrip(src, e, dst);
+
+    // Assert
+    const auto* r = dst.GetComponent<GPUParticleEmitterComponent>(loaded);
+    ENJIN_ASSERT_TRUE(r != nullptr);
+    ENJIN_EXPECT_TRUE(r->burstCount == 250u);
+    ENJIN_EXPECT_TRUE(!r->burstNow);
+}
+
+ENJIN_TEST(SerdesCoverage, DestructibleDamageOverlaySurvivesASave) {
+    // Arrange
+    World src;
+    Entity e = Base(src);
+    DestructibleComponent dc;
+    dc.showDamageOverlay = false;
+    dc.crackTexturePath = "art/cracks/stone.png";
+    dc.damageTint = Vector3(0.8f, 0.1f, 0.05f);
+    src.AddComponent<DestructibleComponent>(e, dc);
+
+    // Act
+    World dst;
+    Entity loaded = RoundTrip(src, e, dst);
+
+    // Assert
+    const auto* r = dst.GetComponent<DestructibleComponent>(loaded);
+    ENJIN_ASSERT_TRUE(r != nullptr);
+    ENJIN_EXPECT_TRUE(!r->showDamageOverlay);
+    ENJIN_EXPECT_TRUE(r->crackTexturePath == "art/cracks/stone.png");
+    ENJIN_EXPECT_TRUE(Near(r->damageTint.x, 0.8f));
+    ENJIN_EXPECT_TRUE(Near(r->damageTint.z, 0.05f));
+}
+
+ENJIN_TEST(SerdesCoverage, HealthAndTimerNotifyLinksSurviveASave) {
+    // Arrange: the wiring that makes a health bar or a trap actually do
+    // something. TriggerZone already saved its links; these two did not.
+    World src;
+    Entity e = Base(src);
+    HealthComponent h;
+    h.onDamageNotify = 11;
+    h.onDeathNotify = 22;
+    h.onHealNotify = 33;
+    src.AddComponent<HealthComponent>(e, h);
+    TimerComponent t;
+    t.onCompleteNotify = 44;
+    src.AddComponent<TimerComponent>(e, t);
+
+    // Act
+    World dst;
+    Entity loaded = RoundTrip(src, e, dst);
+
+    // Assert
+    const auto* rh = dst.GetComponent<HealthComponent>(loaded);
+    ENJIN_ASSERT_TRUE(rh != nullptr);
+    ENJIN_EXPECT_TRUE(rh->onDamageNotify == 11);
+    ENJIN_EXPECT_TRUE(rh->onDeathNotify == 22);
+    ENJIN_EXPECT_TRUE(rh->onHealNotify == 33);
+    const auto* rt = dst.GetComponent<TimerComponent>(loaded);
+    ENJIN_ASSERT_TRUE(rt != nullptr);
+    ENJIN_EXPECT_TRUE(rt->onCompleteNotify == 44);
 }
 
 ENJIN_TEST_MAIN()
