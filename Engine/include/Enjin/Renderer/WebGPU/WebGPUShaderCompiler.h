@@ -11,8 +11,16 @@
 namespace Enjin {
 namespace Renderer {
 
-// Loads WGSL shader source and creates WGPUShaderModule objects.
-// Shaders are maintained as .wgsl files in Engine/shaders/wgsl/.
+// Compiles WGSL source into WGPUShaderModule objects.
+//
+// The WGSL the web build actually ships is embedded in WebShaderData.h and in
+// the few systems that carry their own (WebGPUParticleSystem,
+// WebGPUVegetationSystem). There is no .wgsl tree on disk: there used to be
+// one, this header claimed it was the source, and it had drifted 233 lines
+// from what shipped -- missing snowParams, uvScrollU, matcapTex and
+// scrollReflStrength, and using @group(2) @binding(6) for something else
+// entirely. Editing it changed nothing, which is the worst way for a file to
+// be wrong. Run tools/check_wgsl.mjs after editing the embedded strings.
 class ENJIN_API WebGPUShaderCompiler {
 public:
     explicit WebGPUShaderCompiler(WGPUDevice device);
@@ -21,9 +29,6 @@ public:
     // Compile WGSL source code into a shader module.
     // Returns null handle on failure (error logged).
     WGPUShaderModule CompileWGSL(const std::string& source, const char* label = nullptr);
-
-    // Load a .wgsl file from disk and compile it.
-    WGPUShaderModule CompileFile(const std::string& path, const char* label = nullptr);
 
     // Get the last compilation error message (empty if none).
     const std::string& GetLastError() const { return m_LastError; }

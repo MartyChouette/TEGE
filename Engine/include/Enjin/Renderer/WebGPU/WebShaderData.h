@@ -6,7 +6,9 @@
 
 namespace Enjin::Renderer::WebShaderData {
 
-// Embedded PBR shader (matches Engine/shaders/wgsl/pbr.wgsl)
+// Embedded PBR shader. This IS the shipped source -- there is no .wgsl tree
+// on disk. Validate edits with tools/check_wgsl.mjs (compiles all 12 through
+// Dawn, the compiler Chrome uses); a green C++ build proves nothing about WGSL.
 static const char* PBR_WGSL = R"(
 struct ViewProjection {
     view: mat4x4<f32>,
@@ -593,7 +595,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 )";
 
-// Embedded shadow depth shader (matches Engine/shaders/wgsl/shadow.wgsl)
+// Embedded shadow depth shader. This IS the shipped source.
 static const char* SHADOW_WGSL = R"(
 struct ViewProjection {
     view: mat4x4<f32>,
@@ -1251,8 +1253,12 @@ struct VolumeParams {
     trunkWidth: f32,
     trunkColor: vec3<f32>,
     canopyRadius: f32,
-    canopyColor: vec3<f32>,
+    canopyBaseColor: vec3<f32>,
     canopyOffset: f32,
+    canopyTipColor: vec3<f32>,
+    ambient: f32,
+    sunDir: vec3<f32>,          // TOWARDS the light
+    _volPad: f32,
 };
 @group(1) @binding(0) var<uniform> volume: VolumeParams;
 
@@ -1339,11 +1345,25 @@ fn vs_main(vert: VertexInput, @builtin(instance_index) instanceIdx: u32) -> Vert
 
     var out: VertexOutput;
     out.position = viewProj.proj * viewProj.view * vec4<f32>(worldPos, 1.0);
-    // UV.y > 0.5 = canopy, else trunk; a little vertical shading gives the
-    // crude crossed billboards some depth.
-    let base = select(volume.trunkColor, volume.canopyColor, isCanopy);
-    let shade = select(0.8, 0.7 + (vert.uv.y - 0.6) * 0.75, isCanopy);
-    out.color = base * shade;
+
+    // Crown colour blends base (underneath) to tip (on top) across the sphere,
+    // the way the desktop renderer has always done it. uv.y is 0.6 at the bottom
+    // of the crown and 1.0 at the top. The trunk is one colour.
+    let crownT = clamp((vert.uv.y - 0.6) / 0.4, 0.0, 1.0);
+    let albedo = select(volume.trunkColor,
+                        mix(volume.canopyBaseColor, volume.canopyTipColor, crownT),
+                        isCanopy);
+
+    // Lit, like everything else in the scene. This pass has no lighting buffer
+    // bound, so the sun arrives in the volume params. Per-vertex is enough for a
+    // 7x12 crown sphere and keeps the shared bind-group layout vertex-only.
+    // Without it the grove was flat cut-paper against a lit world.
+    let nRot = normalize(vec3<f32>(
+        vert.normal.x * cosR - vert.normal.z * sinR,
+        vert.normal.y,
+        vert.normal.x * sinR + vert.normal.z * cosR));
+    let ndl = max(dot(nRot, volume.sunDir), 0.0);
+    out.color = albedo * (volume.ambient + (1.0 - volume.ambient) * ndl);
     return out;
 }
 

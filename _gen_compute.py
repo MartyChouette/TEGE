@@ -10,7 +10,8 @@
 # SkinningComputeShaderData.h, RTShaderData.h) stay as they are.
 import os
 
-BASE = "D:/GitHub/enjin"
+# Repo root, derived rather than hardcoded -- see _repo.py.
+from _repo import ROOT as BASE
 SHADERS = BASE + "/Engine/shaders"
 HEADER = BASE + "/Engine/include/Enjin/Renderer/EmbeddedComputeShaders.h"
 SOURCE = BASE + "/Engine/src/Renderer/EmbeddedComputeShaders.cpp"

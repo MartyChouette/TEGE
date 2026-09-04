@@ -4,8 +4,6 @@
 
 #include "Enjin/Renderer/WebGPU/WebGPUShaderCompiler.h"
 #include "Enjin/Logging/Log.h"
-#include <fstream>
-#include <sstream>
 
 namespace Enjin {
 namespace Renderer {
@@ -36,24 +34,6 @@ WGPUShaderModule WebGPUShaderCompiler::CompileWGSL(const std::string& source, co
     return module;
 }
 
-WGPUShaderModule WebGPUShaderCompiler::CompileFile(const std::string& path, const char* label) {
-    std::ifstream file(path);
-    if (!file.is_open()) {
-        m_LastError = "Cannot open shader file: " + path;
-        ENJIN_LOG_ERROR(Core, "%s", m_LastError.c_str());
-        return nullptr;
-    }
-
-    std::ostringstream ss;
-    ss << file.rdbuf();
-
-    const char* effectiveLabel = label;
-    if (!effectiveLabel) {
-        effectiveLabel = path.c_str();
-    }
-
-    return CompileWGSL(ss.str(), effectiveLabel);
-}
 
 } // namespace Renderer
 } // namespace Enjin

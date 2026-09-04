@@ -5,7 +5,8 @@
 # Then: python _gen_rt.py
 import struct
 
-BASE = "D:/GitHub/enjin"
+# Repo root, derived rather than hardcoded -- see _repo.py.
+from _repo import ROOT as BASE
 SHADERS = BASE + "/Engine/shaders"
 OUTPUT = BASE + "/Engine/include/Enjin/Renderer/RayTracing/RTShaderData.h"
 NL = chr(10)

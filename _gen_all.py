@@ -1,6 +1,7 @@
 import struct, os
 
-BASE = "D:/GitHub/enjin"
+# Repo root, derived rather than hardcoded -- see _repo.py.
+from _repo import ROOT as BASE
 SHADERS = BASE + "/Engine/shaders"
 OUTPUT = BASE + "/Engine/include/Enjin/Renderer/Vulkan/ShaderData.h"
 OUTPUT_CPP = BASE + "/Engine/src/Renderer/Vulkan/ShaderDataGenerated.cpp"

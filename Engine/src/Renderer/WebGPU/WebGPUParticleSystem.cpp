@@ -22,8 +22,8 @@
 namespace Enjin {
 namespace Renderer {
 
-// Embedded WGSL. Keep in sync with Engine/shaders/wgsl/particle_sim.wgsl and
-// particle_draw.wgsl (LoadShader takes source; there is no on-disk load on web).
+// Embedded WGSL. This IS the shipped source -- the .wgsl tree this used to
+// point at is gone; it had drifted and nothing ever read it.
 static const char* kSimWGSL = R"WGSL(
 struct Particle {
     position : vec3<f32>, lifetime : f32,

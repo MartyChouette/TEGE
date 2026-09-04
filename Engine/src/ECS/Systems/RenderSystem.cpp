@@ -1838,7 +1838,6 @@ void RenderSystem::Update(f32 deltaTime) {
 
                 if (lc->type == LightType::Directional && dirCount < 4) {
                     Math::Vector3 fwd = xf->rotation.GetForward();
-                    if (dirCount == 0) m_WebPrimaryLightDir = fwd;
                     lit.lightDir[dirCount] = {fwd.x, fwd.y, fwd.z, 0.0f};
                     lit.lightColor[dirCount] = {lc->color.x, lc->color.y, lc->color.z, lc->intensity};
                     dirCount++;
