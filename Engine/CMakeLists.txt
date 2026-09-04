@@ -173,6 +173,12 @@ if(MSVC)
     target_compile_options(EnjinEngine PRIVATE ${ENJIN_PDB_COMPILE_OPTIONS})
 endif()
 
+# Precompiled header. The candidates are the headers nearly every translation
+# unit already includes and that almost never change — Log.h alone is in 306
+# files. See EnginePCH.h for what is deliberately kept OUT of it and why.
+target_precompile_headers(EnjinEngine PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/Enjin/EnginePCH.h)
+
 # --- Renderer backend selection (Vulkan vs WebGPU) ---
 if(ENJIN_PLATFORM_WEB)
     # WebGPU backend — Emscripten provides <webgpu/webgpu.h> via -sUSE_WEBGPU=1
