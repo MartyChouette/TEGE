@@ -12,6 +12,14 @@ Enjin is an open-source (BSL 1.1) game engine built from scratch using C++20. It
 
 These are hard-won lessons. Violating any of these will cause bugs.
 
+### Engine bug or project bug?
+A symptom shows up in a project, so the project is where you look, and project data is fast to change while an engine change needs three builds. That asymmetry quietly biases every decision toward the local fix. Two questions, not one:
+1. **Would a second project hit this?** If yes it is an ENGINE bug — stop editing the project.
+2. **If it is data: should the engine have prevented, defaulted, or warned?** This is the one that gets skipped, and skipping it is what makes a data fix feel finished when it is not. The project stops looking broken and the engine keeps its ability to break the next one the same way. The answer is almost always yes, and that is also an engine fix.
+- **Reproduce with DEFAULTS first.** Smallest possible scene, component defaults only. Wrong there = the engine is guilty and the project was never the issue.
+- **A fix landing under `Examples/` must carry a one-line justification for why the engine is NOT at fault.** If you cannot write that line, you have not finished.
+- **Where fields constrain each other, validate the combination, not the field.** Worked example: Playground authored `trunkWidth 0.09` against `canopyRadius 1.3` (1:14). The engine rendered it as a hairline under a floating ball and said nothing. The data was wrong AND the engine had no opinion; only fixing the data left the trap armed (2026-09-04)
+
 ### Naming & API
 - **`InputSystem` namespace**, not `Input` — `Enjin::Input` is an existing class
 - **`NotesComponent` field is `.notes`**, not `.text`

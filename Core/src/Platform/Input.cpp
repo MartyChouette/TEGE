@@ -583,7 +583,16 @@ void Input::Initialize(Window* window) {
             if (document.getElementById('enjin-touch-toggle')) return;
             var b = document.createElement('button');
             b.id = 'enjin-touch-toggle';
-            b.textContent = '📱 Touch controls';
+            // A pointing finger, drawn inline so it inherits the button's own
+            // colour. The platform emoji here was a full-colour phone, which sat
+            // in the corner of every export looking like a stray app icon.
+            b.innerHTML =
+                '<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" ' +
+                'style="vertical-align:-2px;margin-right:6px" aria-hidden="true">' +
+                '<path d="M11 2a2 2 0 0 0-2 2v9.2L7.5 11.6a2 2 0 0 0-2.9 2.7l4.7 5.2A5 5 0 0 0 13 21h3' +
+                'a5 5 0 0 0 5-5v-4a2 2 0 0 0-4 0 2 2 0 0 0-4 0V4a2 2 0 0 0-2-2z"/></svg>' +
+                'Touch controls';
+            b.setAttribute('aria-label', 'Touch controls');
             b.style.cssText = 'position:fixed;top:8px;left:8px;z-index:1000;' +
                 'padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.35);' +
                 'background:rgba(0,0,0,0.45);color:#fff;font:13px sans-serif;cursor:pointer;opacity:0.7;';
