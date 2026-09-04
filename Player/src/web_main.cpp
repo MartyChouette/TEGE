@@ -339,6 +339,34 @@ public:
         m_TweenSystem.SetScriptEngine(&m_ScriptEngine);
         m_VisualScriptSystem.SetWorld(m_World.get());
         m_BehaviorTreeSystem.SetWorld(m_World.get());
+
+        // Visual-script node system pointers. The generated nodes reach their
+        // subsystems through these file-scope globals (NodeRegistry.cpp), and the
+        // desktop Player sets them (main.cpp) while web never did — so every node
+        // touching weather, UI, audio, saves, quests or cinematics resolved to
+        // nullptr and did nothing, with the graph still reporting as running.
+        // Web has no PostProcessing (the pointer is #if'd out of the registry) and
+        // no Water3D or AudioGraphRuntime member, so those stay unset here.
+        {
+            extern Enjin::Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
+            extern Enjin::Effects::WeatherSystem* s_VisualScriptWeather;
+            extern Enjin::GUI::UISystem* s_VisualScriptUI;
+            extern Enjin::Accessibility::SubtitleSystem* s_VisualScriptSubtitleSystem;
+            extern Enjin::Accessibility::AccessibilityAnnouncer* s_VisualScriptAnnouncer;
+            extern Enjin::Audio::SimpleAudio* s_VisualScriptAudio;
+            extern Enjin::Gameplay::ObjectPool* s_VisualScriptObjectPool;
+            extern Enjin::Gameplay::QuestSystem* s_VisualScriptQuestSystem;
+            extern Enjin::Gameplay::CinematicSystem* s_VisualScriptCinematic;
+            s_VisualScriptSaveSystem = &m_TieredSaveSystem;
+            s_VisualScriptWeather = &m_WeatherSystem;
+            s_VisualScriptUI = &m_UISystem;
+            s_VisualScriptSubtitleSystem = &m_SubtitleSystem;
+            s_VisualScriptAnnouncer = &m_Announcer;
+            s_VisualScriptAudio = &m_SimpleAudio;
+            s_VisualScriptObjectPool = &m_ObjectPool;
+            s_VisualScriptQuestSystem = &m_QuestSystem;
+            s_VisualScriptCinematic = &m_CinematicSystem;
+        }
         // AI, state machines, dialogue, and cinematics — previously desktop-only,
         // so NPCs froze and dialogue never advanced on web. Same wiring as the
         // desktop Player (main.cpp): AISystem drives navigation/perception,
