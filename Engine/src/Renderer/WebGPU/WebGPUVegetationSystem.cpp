@@ -41,6 +41,12 @@ struct VolumeParams {
     misc : vec4<f32>,            // x heightVariance, y width, z windSway, w kind (2 = tree)
     trunkColorIdxOff : vec4<f32>,// xyz trunk color,   w template index offset
     wind : vec4<f32>,            // xyz wind dir*strength, w time
+    // Trees only. A tree is not a tall blade of grass: it has four authored
+    // dimensions that scale two different parts of the template, and collapsing
+    // them into one height and one width is what made web trees giant
+    // translucent slabs while the editor drew them correctly.
+    treeDims : vec4<f32>,        // trunkWidth, trunkHeight, canopyRadius, canopyOffset
+    treeScale : vec4<f32>,       // minHeightScale, maxHeightScale, unused, unused
 };
 @group(0) @binding(0) var<uniform> ubo : ViewProj;
 @group(0) @binding(1) var<storage, read> verts : array<f32>;    // 5 floats per vertex
@@ -81,11 +87,38 @@ fn vs_main(@builtin(vertex_index) vid : u32, @builtin(instance_index) ii : u32) 
     let height = vol.tipColorHeight.w + heightVar * vol.misc.x;
     let width = vol.misc.y;
 
-    lp.x = lp.x * width;
-    lp.y = lp.y * height;
-    lp.z = lp.z * height;
-    // Rest tilt so a patch reads as plants, not stamped copies
-    lp.z = lp.z + (hashU(blade * 5u) * 0.06 - 0.03) * uv.y * height;
+    let isTree = vol.misc.w > 1.5;
+    var plantHeight = height;
+
+    if (isTree) {
+        // Trunk and canopy scale by DIFFERENT authored dimensions -- the same
+        // rule tree.vert uses, so web and desktop draw the same tree.
+        //   trunk  (uv.y < 0.5): xz by trunkWidth*2, y by trunkHeight
+        //   canopy (uv.y >= 0.5): xz by canopyRadius*2, y about canopyOffset
+        // The template's canopy spans y 0.5..1.5, which is why the canopy y term
+        // subtracts 0.5 before scaling.
+        let sizeVar = mix(vol.treeScale.x, vol.treeScale.y, hashU(blade * 3u + 2u));
+        let tW = vol.treeDims.x * sizeVar;
+        let tH = vol.treeDims.y * sizeVar;
+        let cR = vol.treeDims.z * sizeVar;
+        let cO = vol.treeDims.w * sizeVar;
+        if (uv.y >= 0.5) {
+            lp.x = lp.x * cR * 2.0;
+            lp.z = lp.z * cR * 2.0;
+            lp.y = (lp.y - 0.5) * cR * 2.0 + cO;
+        } else {
+            lp.x = lp.x * tW * 2.0;
+            lp.z = lp.z * tW * 2.0;
+            lp.y = lp.y * tH;
+        }
+        plantHeight = cO + cR * 2.0;
+    } else {
+        lp.x = lp.x * width;
+        lp.y = lp.y * height;
+        lp.z = lp.z * height;
+        // Rest tilt so a patch reads as plants, not stamped copies
+        lp.z = lp.z + (hashU(blade * 5u) * 0.06 - 0.03) * uv.y * height;
+    }
 
     let c = cos(rotAngle); let s = sin(rotAngle);
     let rp = vec3<f32>(lp.x * c - lp.z * s, lp.y, lp.x * s + lp.z * c);
@@ -96,7 +129,7 @@ fn vs_main(@builtin(vertex_index) vid : u32, @builtin(instance_index) ii : u32) 
     let t = vol.wind.w;
     let w1 = sin(dot(origin.xz, vec2<f32>(0.15, 0.25)) + t * 2.0) * hf * hf * sway;
     let w2 = sin(dot(origin.xz, vec2<f32>(0.4, 0.6)) + t * 4.5) * hf * hf * sway * 0.3;
-    let wtot = clamp(w1 + w2, -0.35 * height, 0.35 * height);
+    let wtot = clamp(w1 + w2, -0.35 * plantHeight, 0.35 * plantHeight);
     let worldPos = origin + rp + vol.wind.xyz * wtot;
 
     var out : VSOut;
@@ -104,10 +137,18 @@ fn vs_main(@builtin(vertex_index) vid : u32, @builtin(instance_index) ii : u32) 
     out.heightFrac = hf;
     out.normal = normalize(vec3<f32>(s, 0.5, c));
 
-    // Trees: bark below the canopy line, gradient foliage above
+    // Trees: bark below the canopy line, gradient foliage above. The template
+    // splits at uv.y 0.5 (trunk verts carry 0.0 and 0.4), so testing 0.3 left
+    // the TOP of every trunk shaded as foliage -- the brown-to-green trunks.
     var col = mix(vol.baseColorHalfZ.xyz, vol.tipColorHeight.xyz, hf);
-    if (vol.misc.w > 1.5 && hf < 0.3) {
-        col = vol.trunkColorIdxOff.xyz;
+    if (isTree) {
+        if (uv.y < 0.5) {
+            col = vol.trunkColorIdxOff.xyz;
+        } else {
+            // Crown blends base (underneath) to tip (on top) across 0.5..1.0.
+            col = mix(vol.baseColorHalfZ.xyz, vol.tipColorHeight.xyz,
+                      clamp((uv.y - 0.5) * 2.0, 0.0, 1.0));
+        }
     }
     out.color = col;
     return out;
@@ -122,7 +163,9 @@ fn fs_main(in : VSOut) -> @location(0) vec4<f32> {
 }
 )WGSL";
 
-// Mirrors the volume-params struct above (96 bytes).
+// Mirrors the volume-params struct above (128 bytes). Keep the two in lockstep:
+// nothing else checks them against each other, so this static_assert and the
+// field order are the whole contract.
 struct VolumeParamsCPU {
     f32 posHalfX[4];
     f32 baseColorHalfZ[4];
@@ -130,8 +173,10 @@ struct VolumeParamsCPU {
     f32 misc[4];
     f32 trunkColorIdxOff[4];
     f32 wind[4];
+    f32 treeDims[4];    // trunkWidth, trunkHeight, canopyRadius, canopyOffset
+    f32 treeScale[4];   // minHeightScale, maxHeightScale, unused, unused
 };
-static_assert(sizeof(VolumeParamsCPU) == 96, "must match the WGSL VolumeParams");
+static_assert(sizeof(VolumeParamsCPU) == 128, "must match the WGSL VolumeParams");
 
 bool WebGPUVegetationSystem::Initialize(WebGPURenderer* renderer) {
     if (m_Initialized) return true;
@@ -303,10 +348,24 @@ void WebGPUVegetationSystem::RenderScene(WGPURenderPassEncoder pass, const Math:
         put3(p.posHalfX, t->position); p.posHalfX[3] = g->halfExtents.x;
         put3(p.baseColorHalfZ, g->canopyBaseColor); p.baseColorHalfZ[3] = g->halfExtents.z;
         put3(p.tipColorHeight, g->canopyTipColor);
-        p.tipColorHeight[3] = g->trunkHeight + g->canopyOffset;   // overall plant height
-        p.misc[0] = 0.3f; p.misc[1] = g->trunkWidth + g->canopyRadius;
+        // Overall extent, used only for the wind clamp; the shader scales trunk
+        // and canopy from treeDims below. Summing the four authored dimensions
+        // into one height and one width -- which is what this used to do -- gave
+        // a canopy spanning 0.5x to 1.5x the WHOLE tree height, so web trees were
+        // giant slabs while the editor drew them correctly from the same data.
+        p.tipColorHeight[3] = g->trunkHeight + g->canopyOffset;
+        p.misc[0] = 0.0f;
+        p.misc[1] = g->trunkWidth;
         p.misc[2] = g->windSwayStrength * 0.25f;   // trees barely sway
         p.misc[3] = 2.0f;
+        p.treeDims[0] = g->trunkWidth;
+        p.treeDims[1] = g->trunkHeight;
+        p.treeDims[2] = g->canopyRadius;
+        p.treeDims[3] = g->canopyOffset;
+        p.treeScale[0] = g->minHeightScale;
+        p.treeScale[1] = g->maxHeightScale;
+        p.treeScale[2] = 0.0f;
+        p.treeScale[3] = 0.0f;
         put3(p.trunkColorIdxOff, g->trunkColor);
         p.trunkColorIdxOff[3] = static_cast<f32>(m_Tree.indexOffset);
         put3(p.wind, m_Wind); p.wind[3] = m_WindTime;

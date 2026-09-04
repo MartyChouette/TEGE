@@ -7,9 +7,14 @@
 // front of a player, not as a build failure. This closes that gap by running the
 // same compiler (Dawn) over the same source, from Node.
 //
+// It scans every file that embeds WGSL, not just WebShaderData.h. Systems that
+// carry their own shader string in a .cpp were invisible to this tool: the
+// vegetation shader was edited and shipped without ever being compiled here,
+// which is exactly the gap this exists to close.
+//
 // Usage:
 //   cd tools && npm install --no-save webgpu
-//   node check_wgsl.mjs [path/to/WebShaderData.h]
+//   node check_wgsl.mjs [file ...]
 //
 // Exits non-zero if any shader fails to compile.
 
@@ -18,20 +23,33 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const headerPath = process.argv[2]
-  ? resolve(process.argv[2])
-  : resolve(here, '..', 'Engine', 'include', 'Enjin', 'Renderer', 'WebGPU', 'WebShaderData.h');
+const repo = resolve(here, '..');
 
-// Each shader is `static const char* NAME = R"( ... )";` — a C++ raw string with
-// an empty delimiter, so the body ends at the first `)"`.
+// Every file that embeds WGSL. Add one here when a new system starts carrying
+// its own shader string, or it ships uncompiled.
+const DEFAULT_SOURCES = [
+  'Engine/include/Enjin/Renderer/WebGPU/WebShaderData.h',
+  'Engine/src/Renderer/WebGPU/WebGPUVegetationSystem.cpp',
+  'Engine/src/Renderer/WebGPU/WebGPUParticleSystem.cpp',
+];
+
+const sourcePaths = process.argv.length > 2
+  ? process.argv.slice(2).map((p) => resolve(p))
+  : DEFAULT_SOURCES.map((p) => resolve(repo, p));
+
+// Each shader is `static const char* NAME = R"DELIM( ... )DELIM";` - a C++ raw
+// string. The delimiter is usually empty but not always (the particle and
+// vegetation systems use R"WGSL(...)WGSL"), so it is captured and used to find
+// the matching terminator.
 function extractShaders(source) {
   const out = [];
-  const decl = /static\s+const\s+char\*\s+(\w+)\s*=\s*R"\(/g;
+  const decl = /static\s+const\s+char\*\s+(\w+)\s*=\s*R"(\w*)\(/g;
   let m;
   while ((m = decl.exec(source)) !== null) {
     const name = m[1];
+    const term = ')' + m[2] + '"';
     const start = m.index + m[0].length;
-    const end = source.indexOf(')"', start);
+    const end = source.indexOf(term, start);
     if (end === -1) {
       out.push({ name, code: null, error: 'unterminated raw string' });
       continue;
@@ -42,10 +60,21 @@ function extractShaders(source) {
   return out;
 }
 
-const source = readFileSync(headerPath, 'utf8');
-const shaders = extractShaders(source);
+// A .cpp may embed non-WGSL raw strings (HTML, JS). Only compile what declares
+// itself a shader.
+function looksLikeWGSL(code) {
+  return /@(vertex|fragment|compute)\b/.test(code);
+}
+
+const shaders = [];
+for (const path of sourcePaths) {
+  const found = extractShaders(readFileSync(path, 'utf8'))
+    .filter((s) => s.code === null || looksLikeWGSL(s.code));
+  const rel = path.startsWith(repo) ? path.slice(repo.length + 1) : path;
+  for (const s of found) shaders.push({ ...s, file: rel });
+}
 if (shaders.length === 0) {
-  console.error(`no WGSL found in ${headerPath}`);
+  console.error(`no WGSL found in ${sourcePaths.join(', ')}`);
   process.exit(2);
 }
 
