@@ -1359,6 +1359,13 @@ void RenderSystem::Shutdown() {
         if (m_WebLightingBuffer.IsValid()) bufMgr->DestroyBuffer(m_WebLightingBuffer);
         if (m_WebObjectBuffer.IsValid()) bufMgr->DestroyBuffer(m_WebObjectBuffer);
         if (m_WebDefaultBoneBuffer.IsValid()) bufMgr->DestroyBuffer(m_WebDefaultBoneBuffer);
+        if (m_WebWeatherInstBuf.IsValid()) bufMgr->DestroyBuffer(m_WebWeatherInstBuf);
+        m_WebWeatherInstCapacity = 0;
+    }
+
+    if (bindMgr && m_WebWhiteSpriteBindGroup.IsValid()) {
+        bindMgr->DestroyBindGroup(m_WebWhiteSpriteBindGroup);
+        m_WebWhiteSpriteBindGroup = {};
     }
 
     // Destroy cached textures
@@ -3226,27 +3233,38 @@ void RenderSystem::Update(f32 deltaTime) {
         }
         if (!winsts.empty()) {
             auto* webBufMgrW = static_cast<Renderer::WebGPUBufferManager*>(bufMgr);
-            auto winstBuf = bufMgr->CreateBufferWithData(
-                {winsts.size() * sizeof(SpriteInst), Renderer::GPUBufferUsage::Vertex | Renderer::GPUBufferUsage::CopyDst, true},
-                winsts.data());
-            Renderer::GPUBindGroupDesc wTexBGD;
-            wTexBGD.layout = m_WebSpriteTexLayout;
-            wTexBGD.entries = {
-                {0, {}, 0, 0, m_WebDefaultWhiteTex, {}},
-                {1, {}, 0, 0, {}, m_WebDefaultWhiteTex},
-            };
-            auto wTexBG = webBindMgr->CreateBindGroup(wTexBGD);
+
+            // Grow-and-keep, rather than create-and-destroy every frame. At the
+            // 8000-particle pool this is ~450 KB of GPU allocation per frame
+            // saved, and the bind group below never changes at all.
+            const usize needBytes = winsts.size() * sizeof(SpriteInst);
+            if (!m_WebWeatherInstBuf.IsValid() || m_WebWeatherInstCapacity < needBytes) {
+                if (m_WebWeatherInstBuf.IsValid()) bufMgr->DestroyBuffer(m_WebWeatherInstBuf);
+                m_WebWeatherInstCapacity = needBytes + needBytes / 2;  // headroom
+                m_WebWeatherInstBuf = bufMgr->CreateBuffer(
+                    {m_WebWeatherInstCapacity,
+                     Renderer::GPUBufferUsage::Vertex | Renderer::GPUBufferUsage::CopyDst, true});
+            }
+            bufMgr->UploadData(m_WebWeatherInstBuf, winsts.data(), needBytes);
+
+            // Untextured white sprite: the same two entries every frame.
+            if (!m_WebWhiteSpriteBindGroup.IsValid()) {
+                Renderer::GPUBindGroupDesc wTexBGD;
+                wTexBGD.layout = m_WebSpriteTexLayout;
+                wTexBGD.entries = {
+                    {0, {}, 0, 0, m_WebDefaultWhiteTex, {}},
+                    {1, {}, 0, 0, {}, m_WebDefaultWhiteTex},
+                };
+                m_WebWhiteSpriteBindGroup = webBindMgr->CreateBindGroup(wTexBGD);
+            }
 
             wgpuRenderPassEncoderSetPipeline(scenePassEncoder, webPipeMgr->GetNativePipeline(m_WebSpritePipeline));
             wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 0, webBindMgr->GetNativeGroup(m_WebFrameBindGroup), 0, nullptr);
-            wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 1, webBindMgr->GetNativeGroup(wTexBG), 0, nullptr);
+            wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 1, webBindMgr->GetNativeGroup(m_WebWhiteSpriteBindGroup), 0, nullptr);
             wgpuRenderPassEncoderSetVertexBuffer(scenePassEncoder, 0, webBufMgrW->GetNativeBuffer(m_WebParticleQuadVB), 0, WGPU_WHOLE_SIZE);
-            wgpuRenderPassEncoderSetVertexBuffer(scenePassEncoder, 1, webBufMgrW->GetNativeBuffer(winstBuf), 0, WGPU_WHOLE_SIZE);
+            wgpuRenderPassEncoderSetVertexBuffer(scenePassEncoder, 1, webBufMgrW->GetNativeBuffer(m_WebWeatherInstBuf), 0, WGPU_WHOLE_SIZE);
             wgpuRenderPassEncoderSetIndexBuffer(scenePassEncoder, webBufMgrW->GetNativeBuffer(m_WebParticleQuadIB), WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
             wgpuRenderPassEncoderDrawIndexed(scenePassEncoder, 6, static_cast<u32>(winsts.size()), 0, 0, 0);
-
-            webBindMgr->DestroyBindGroup(wTexBG);
-            bufMgr->DestroyBuffer(winstBuf);
         }
     }
 

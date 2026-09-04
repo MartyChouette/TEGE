@@ -1414,6 +1414,17 @@ private:
     Renderer::GPUPipelineHandle m_WebSpritePipeline;
     Renderer::GPUBindGroupLayoutHandle m_WebSpriteTexLayout;
 
+    // Persistent instance buffer for the weather draw, and the bind group for
+    // the untextured white sprite it uses.
+    //
+    // Both used to be created and destroyed EVERY frame -- a GPU allocation and
+    // a bind group, for a texture pair that never changes, at 8000 particles
+    // about 450 KB of buffer churn per frame. The buffer grows when a denser
+    // scene needs more and is never shrunk; the bind group is built once.
+    Renderer::GPUBufferHandle m_WebWeatherInstBuf;
+    usize m_WebWeatherInstCapacity = 0;
+    Renderer::GPUBindGroupHandle m_WebWhiteSpriteBindGroup;
+
     // Procedural sky
     Renderer::GPUShaderHandle m_WebSkyShader;
     Renderer::GPUPipelineHandle m_WebSkyPipeline;

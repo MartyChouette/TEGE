@@ -37,7 +37,12 @@ public:
     WeatherSystem() = default;
     ~WeatherSystem() = default;
 
-    void Initialize(u32 maxParticles = 500);
+    // 8000 is what dense rain and snow actually need. The editor passed 8000
+    // explicitly, with a comment saying 500 was too sparse to see, while both
+    // players took the 500 default -- so every shipped game rendered rain 16x
+    // thinner than the scene you authored it in. The number belongs in one
+    // place, and that place is the default.
+    void Initialize(u32 maxParticles = 8000);
     void Shutdown();
 
     void Update(f32 deltaTime, const Math::Vector3& cameraPos);
@@ -120,7 +125,7 @@ private:
 
     // Particle pool
     std::vector<WeatherParticle> m_Particles;
-    u32 m_MaxParticles = 500;
+    u32 m_MaxParticles = 8000;   // matches the Initialize() default
     u32 m_ActiveParticles = 0;
 
     // Weather intensities

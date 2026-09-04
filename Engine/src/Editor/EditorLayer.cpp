@@ -203,8 +203,8 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
 
     // Initialize play mode (will be fully set up when SetWorld/SetCamera are called)
 
-    // Initialize weather system with more particles for better visibility
-    m_WeatherSystem.Initialize(8000);  // Large pool for dense rain/snow
+    // Count comes from the default, so the editor and a shipped game agree.
+    m_WeatherSystem.Initialize();
 
     // Initialize elemental system (connects to wind + weather for particle interactions)
     m_ElementalSystem.Initialize(&m_WindSystem, &m_WeatherSystem, &m_SeasonalWeather);
