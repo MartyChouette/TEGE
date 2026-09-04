@@ -106,9 +106,27 @@ ENJIN_TEST(PlayModeSystems, SimpleAudio) {
     ENJIN_ASSERT_NOT_NULL(pm.GetSimpleAudio());
 }
 
-ENJIN_TEST(PlayModeSystems, InputActionMap) {
+ENJIN_TEST(PlayModeSystems, InputActionMapIsBorrowedNotOwned) {
+    // PlayMode no longer keeps its own action map. The editor owns ONE map and
+    // injects it, so ControllerSystem, the Controls menu, script bindings,
+    // ActionTriggers and the touch overlay cannot drift apart on a rebind.
     PlayMode pm;
+    ENJIN_EXPECT_TRUE(pm.GetInputActionMap() == nullptr);   // nothing injected yet
+
+    InputSystem::InputActionMap map;
+    map.LoadDefaults();
+    pm.SetInputActionMap(&map);
     ENJIN_ASSERT_NOT_NULL(pm.GetInputActionMap());
+    ENJIN_EXPECT_TRUE(pm.GetInputActionMap() == &map);
+
+    // A rebind through the owner is visible through PlayMode: one map.
+    map.RebindAction(static_cast<i32>(InputSystem::GameAction::Jump),
+                     static_cast<i32>(KeyCode::K));
+    const auto& cfg = pm.GetInputActionMap()->GetActionConfig(InputSystem::GameAction::Jump);
+    bool sawK = false;
+    for (const auto& b : cfg.bindings)
+        if (b.type == InputSystem::BindingType::Key && b.code == static_cast<i32>(KeyCode::K)) sawK = true;
+    ENJIN_EXPECT_TRUE(sawK);
 }
 
 // ===========================================================================

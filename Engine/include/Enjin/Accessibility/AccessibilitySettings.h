@@ -82,11 +82,11 @@ struct RuntimeAccessibilitySettings {
     // Screen reader (announcer TTS + status bar) in exported games
     bool screenReaderEnabled = false;
 
-    // Input
-    u32 sprintMode = 0;   // 0=Hold, 1=Toggle
-    u32 crouchMode = 0;   // 0=Hold, 1=Toggle
-    f32 mouseSensitivity = 1.0f;
-    bool invertMouseY = false;
+    // NOTE: sprint/crouch toggle, mouse sensitivity and invert-Y are NOT here.
+    // They live on InputActionMap (persisted in bindings.json), which is what
+    // ControllerSystem actually reads. Keeping copies here meant the Controls
+    // menu and the Accessibility menu edited different state and the file
+    // round-tripped values the game never applied.
 
     // Apply visual settings to a PostProcessSettings struct
     void ApplyToPostProcessing(Renderer::PostProcessSettings& ppSettings) const;

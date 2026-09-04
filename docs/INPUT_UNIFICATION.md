@@ -197,7 +197,24 @@ Original scope:
 
 UI-hit callback into Core, one consumed flag, `InputFocus`, single-pass UISystem input with sortOrder priority.
 
-### Phase 4: accessibility collapse and menu unification
+### Phase 4: accessibility collapse (IN PROGRESS 2026-09-03)
+
+Done:
+
+- Font scale reaches the UI, subtitles AND the screen-reader bar, through one `Accessibility::ApplyTextScale` helper instead of nine scattered pushes. Subtitles multiply their own size setting by it; the announcer bar scales text and height.
+- Sprint mode, crouch mode, mouse sensitivity and invert-Y deleted from `RuntimeAccessibilitySettings` and `EditorSettings`. They live only on `InputActionMap`, persisted in `bindings.json`. An old `accessibility.json` migrates once, only when no bindings file exists.
+- Invert-Y is a real, reachable setting for the first time: on the map next to sensitivity, with a checkbox in the in-game Controls menu and in the editor. It previously existed in three structs, was exposed by no menu, and the editor hardcoded it to false.
+- The editor's TWO action maps are one. `PlayMode` borrows `EditorLayer`'s. This also fixed a live bug: play start re-pointed `ActionTriggerSystem` back at PlayMode's map, so a rebind moved the controllers and the Controls menu but not the touch labels or the triggers. PlayMode no longer ticks the map (a second tick per frame would eat pressed edges).
+- The editor's control preset and sprint/crouch toggles edit the map directly, so the editor previews the controls an exported game gets.
+
+Remaining:
+
+- BuildPipeline still writes a hardcoded `accessibility.json`; it should export project-level defaults the editor authored.
+- DialogueSystem and UISystem focus nav still read hardcoded keys instead of the UI actions.
+- Dwell-click exists three times and switch-scanning twice (UISystem vs AlternativeInputManager, different flags and speeds, both can run at once). AlternativeInput should feed UISystem; it has 11 editor call sites for editor chrome that must survive.
+- The editor's docked pause menu is still bespoke rather than the shipped UICanvas template.
+
+Original scope:
 
 Fields deleted from accessibility structs, editor persists bindings, dwell/switch single implementation, DialogueSystem and UISystem on actions, editor pause menu replaced, BuildPipeline exports project defaults, fontScale everywhere.
 

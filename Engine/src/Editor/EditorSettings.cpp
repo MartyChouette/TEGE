@@ -361,11 +361,6 @@ bool EditorSettings::Save(const std::string& path) const {
         j["idleTimeoutSeconds"] = idleTimeoutSeconds;
         j["idleFrameRate"] = idleFrameRate;
 
-        // Input
-        j["sprintMode"] = sprintMode;
-        j["crouchMode"] = crouchMode;
-        j["mouseSensitivity"] = mouseSensitivity;
-        j["inputPreset"] = inputPreset;
         j["rawMouseInput"] = rawMouseInput;
         j["mouseSmoothing"] = mouseSmoothing;
 
@@ -548,10 +543,6 @@ bool EditorSettings::Load(const std::string& path) {
         if (j.contains("idleFrameRate")) idleFrameRate = j["idleFrameRate"].get<u32>();
 
         // Input
-        if (j.contains("sprintMode")) sprintMode = j["sprintMode"].get<u32>();
-        if (j.contains("crouchMode")) crouchMode = j["crouchMode"].get<u32>();
-        if (j.contains("mouseSensitivity")) mouseSensitivity = j["mouseSensitivity"].get<f32>();
-        if (j.contains("inputPreset")) inputPreset = j["inputPreset"].get<u32>();
         if (j.contains("rawMouseInput")) rawMouseInput = j["rawMouseInput"].get<bool>();
         if (j.contains("mouseSmoothing")) mouseSmoothing = j["mouseSmoothing"].get<f32>();
 

@@ -50,10 +50,6 @@ ENJIN_TEST(Defaults, SubtitleDefaults) {
 
 ENJIN_TEST(Defaults, InputDefaults) {
     EditorSettings settings;
-    ENJIN_EXPECT_EQ(settings.sprintMode, 0u);
-    ENJIN_EXPECT_EQ(settings.crouchMode, 0u);
-    ENJIN_EXPECT_FLOAT_EQ(settings.mouseSensitivity, 1.0f);
-    ENJIN_EXPECT_EQ(settings.inputPreset, 0u);
     ENJIN_EXPECT_TRUE(settings.rawMouseInput);
 }
 
@@ -106,7 +102,6 @@ ENJIN_TEST(JSONRoundTrip, SaveAndLoadPreservesTheme) {
     s1.subtitlesEnabled = true;
     s1.subtitleFontSize = 32.0f;
     s1.colorblindMode = 3;
-    s1.mouseSensitivity = 2.0f;
     s1.dwellClickEnabled = true;
     s1.dwellClickDelay = 2.0f;
     s1.keyboardNavEnabled = true;
@@ -127,7 +122,6 @@ ENJIN_TEST(JSONRoundTrip, SaveAndLoadPreservesTheme) {
     ENJIN_EXPECT_TRUE(s2.subtitlesEnabled);
     ENJIN_EXPECT_FLOAT_EQ(s2.subtitleFontSize, 32.0f);
     ENJIN_EXPECT_EQ(s2.colorblindMode, 3u);
-    ENJIN_EXPECT_FLOAT_EQ(s2.mouseSensitivity, 2.0f);
     ENJIN_EXPECT_TRUE(s2.dwellClickEnabled);
     ENJIN_EXPECT_FLOAT_EQ(s2.dwellClickDelay, 2.0f);
     ENJIN_EXPECT_TRUE(s2.keyboardNavEnabled);

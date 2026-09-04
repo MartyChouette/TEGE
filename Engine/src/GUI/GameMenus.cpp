@@ -612,6 +612,11 @@ void GameMenuSystem::RenderControls(f32 w, f32 h) {
         m_InputMap->SetMouseSensitivity(sensitivity);
     }
 
+    bool invertY = m_InputMap->GetInvertY();
+    if (ImGui::Checkbox("Invert Look Y", &invertY)) {
+        m_InputMap->SetInvertY(invertY);
+    }
+
     // Sprint / Crouch mode
     static const char* toggleModes[] = { "Hold", "Toggle" };
 

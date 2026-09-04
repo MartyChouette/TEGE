@@ -418,6 +418,15 @@ void InputActionMap::SetMouseSensitivity(f32 sens) {
     m_Actions[static_cast<u32>(GameAction::LookRight)].sensitivity = sens;
 }
 
+bool InputActionMap::GetInvertY() const {
+    return m_Actions[static_cast<u32>(GameAction::LookUp)].invertAxis;
+}
+
+void InputActionMap::SetInvertY(bool invert) {
+    m_Actions[static_cast<u32>(GameAction::LookUp)].invertAxis = invert;
+    m_Actions[static_cast<u32>(GameAction::LookDown)].invertAxis = invert;
+}
+
 bool InputActionMap::IsSprintToggle() const {
     return m_Actions[static_cast<u32>(GameAction::Sprint)].mode == ActionMode::Toggle;
 }

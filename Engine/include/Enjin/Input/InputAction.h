@@ -171,6 +171,11 @@ public:
     f32 GetMouseSensitivity() const;
     void SetMouseSensitivity(f32 sens);
 
+    // Invert the vertical look axis. Lives here with sensitivity so both
+    // persist in bindings.json and there is one home for "how looking feels".
+    bool GetInvertY() const;
+    void SetInvertY(bool invert);
+
     // Sprint/Crouch toggle convenience
     bool IsSprintToggle() const;
     void SetSprintToggle(bool toggle);

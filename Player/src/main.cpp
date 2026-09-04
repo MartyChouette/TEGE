@@ -2833,7 +2833,6 @@ private:
         m_ControllerSystem.SetReducedMotion(m_AccessibilitySettings.reducedMotion);
         m_ControllerSystem.SetDisableScreenShake(m_AccessibilitySettings.disableScreenShake);
         m_ControllerSystem.SetDisableFOVEffects(m_AccessibilitySettings.disableFOVEffects);
-        m_ControllerSystem.SetInvertMouseY(m_AccessibilitySettings.invertMouseY);
         m_UISystem.SetReducedMotion(m_AccessibilitySettings.reducedMotion);
 
         // Font scale + motor accessibility
@@ -2911,6 +2910,19 @@ private:
         } catch (const std::exception& e) {
             ENJIN_LOG_WARN(Player, "Failed to save bindings.json: %s", e.what());
         }
+    }
+
+    // accessibility.json used to carry sprint/crouch mode, mouse sensitivity and
+    // invert-Y. Those now live on the InputActionMap (bindings.json). Migrate an
+    // old file once, so a player's existing settings survive the move, and only
+    // when they have not already rebound anything.
+    void MigrateLegacyInputKeys(const nlohmann::json& j) {
+        std::string exeDir = Enjin::Platform::GetExecutableDirectory();
+        if (fs::exists(fs::path(exeDir) / "bindings.json")) return;
+        if (j.contains("sprintMode")) m_InputMap.SetSprintToggle(j["sprintMode"].get<Enjin::u32>() == 1);
+        if (j.contains("crouchMode")) m_InputMap.SetCrouchToggle(j["crouchMode"].get<Enjin::u32>() == 1);
+        if (j.contains("mouseSensitivity")) m_InputMap.SetMouseSensitivity(j["mouseSensitivity"].get<Enjin::f32>());
+        if (j.contains("invertMouseY")) m_InputMap.SetInvertY(j["invertMouseY"].get<bool>());
     }
 
     void LoadAccessibilitySettings() {
@@ -3043,28 +3055,10 @@ private:
                 }
             }
 
-            // Input settings
-            if (j.contains("sprintMode"))
-                m_AccessibilitySettings.sprintMode = j["sprintMode"].get<Enjin::u32>();
-            if (j.contains("crouchMode"))
-                m_AccessibilitySettings.crouchMode = j["crouchMode"].get<Enjin::u32>();
-            if (j.contains("mouseSensitivity"))
-                m_AccessibilitySettings.mouseSensitivity = j["mouseSensitivity"].get<Enjin::f32>();
-            if (j.contains("invertMouseY"))
-                m_AccessibilitySettings.invertMouseY = j["invertMouseY"].get<bool>();
-
-            // The InputActionMap is what ControllerSystem actually reads for
-            // sprint/crouch mode and mouse sensitivity. bindings.json owns those
-            // once it exists; until then seed the map from this file so the
-            // values are not dead state.
-            {
-                std::string bindingsPath = (fs::path(exeDir) / "bindings.json").string();
-                if (!fs::exists(bindingsPath)) {
-                    m_InputMap.SetSprintToggle(m_AccessibilitySettings.sprintMode == 1);
-                    m_InputMap.SetCrouchToggle(m_AccessibilitySettings.crouchMode == 1);
-                    m_InputMap.SetMouseSensitivity(m_AccessibilitySettings.mouseSensitivity);
-                }
-            }
+            // Sprint/crouch mode, sensitivity and invert-Y are owned by
+            // bindings.json (InputActionMap), not this file. Legacy keys here
+            // are migrated once, so an existing accessibility.json is not lost.
+            MigrateLegacyInputKeys(j);
 
             ENJIN_LOG_INFO(Player, "Loaded accessibility settings (colorblind=%u, reducedMotion=%s, fontScale=%.1f, subtitles=%s, dyslexia=%s, dwellClick=%s, stickyDrag=%s, switchAccess=%s, audioIndicators=%s)",
                 static_cast<Enjin::u32>(m_AccessibilitySettings.colorblindMode),
@@ -3114,15 +3108,6 @@ private:
             j["switchScanSpeed"] = m_AccessibilitySettings.switchScanSpeed;
             j["audioIndicatorsEnabled"] = m_AccessibilitySettings.audioIndicatorsEnabled;
             j["screenReaderEnabled"] = m_AccessibilitySettings.screenReaderEnabled;
-            // Mirror the live values (the map is the source of truth) so this
-            // file never contradicts bindings.json.
-            m_AccessibilitySettings.sprintMode = m_InputMap.IsSprintToggle() ? 1u : 0u;
-            m_AccessibilitySettings.crouchMode = m_InputMap.IsCrouchToggle() ? 1u : 0u;
-            m_AccessibilitySettings.mouseSensitivity = m_InputMap.GetMouseSensitivity();
-            j["sprintMode"] = m_AccessibilitySettings.sprintMode;
-            j["crouchMode"] = m_AccessibilitySettings.crouchMode;
-            j["mouseSensitivity"] = m_AccessibilitySettings.mouseSensitivity;
-            j["invertMouseY"] = m_AccessibilitySettings.invertMouseY;
 
             std::ofstream file(settingsPath);
             file << j.dump(2);

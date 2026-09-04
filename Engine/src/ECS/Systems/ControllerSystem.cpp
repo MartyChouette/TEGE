@@ -1294,7 +1294,7 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
             (Input::IsMouseButtonDown(MouseButton::Right) && !Input::IsUIConsumedPointer())) {
             Math::Vector2 mouseDelta = GetLookDelta() * MouseSensitivityScale();
             ctrl.cameraYaw += mouseDelta.x * ctrl.cameraSensitivity;  // horizontal look (Marty's preferred convention)
-            f32 pitchSign = m_InvertMouseY ? 1.0f : -1.0f;
+            f32 pitchSign = InvertYFromMap() ? 1.0f : -1.0f;
             ctrl.cameraPitch += mouseDelta.y * ctrl.cameraSensitivity * pitchSign;
             ctrl.cameraPitch = Math::Clamp(ctrl.cameraPitch, ctrl.cameraMinPitch, ctrl.cameraMaxPitch);
         }
@@ -1304,7 +1304,7 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
             Math::Vector2 rightStick = Input::GetGamepadRightStick(ctrl.gamepadIndex);
             if (rightStick.x != 0.0f || rightStick.y != 0.0f) {
                 ctrl.cameraYaw += rightStick.x * ctrl.gamepadLookSensitivity * 100.0f * dt;
-                f32 gpPitchSign = m_InvertMouseY ? 1.0f : -1.0f;
+                f32 gpPitchSign = InvertYFromMap() ? 1.0f : -1.0f;
                 ctrl.cameraPitch += rightStick.y * ctrl.gamepadLookSensitivity * 100.0f * dt * gpPitchSign;
                 ctrl.cameraPitch = Math::Clamp(ctrl.cameraPitch, ctrl.cameraMinPitch, ctrl.cameraMaxPitch);
             }
@@ -1550,7 +1550,7 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
             // XOR per-controller invertY with global accessibility invertMouseY.
             // Mouse delta is screen-space (y grows downward), pitch is positive-up,
             // so the non-inverted default must subtract.
-            bool effectiveInvertY = ctrl.invertY != m_InvertMouseY;
+            bool effectiveInvertY = ctrl.invertY != InvertYFromMap();
             if (effectiveInvertY) {
                 ctrl.pitch += mouseDelta.y * ctrl.mouseSensitivity;
             } else {
@@ -1568,7 +1568,7 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
                 }
                 // XOR per-controller invertY with global accessibility invertMouseY
                 // (same sign convention as mouse — see above)
-                bool effectiveInvertYGP = ctrl.invertY != m_InvertMouseY;
+                bool effectiveInvertYGP = ctrl.invertY != InvertYFromMap();
                 if (effectiveInvertYGP) {
                     ctrl.pitch += rightStick.y * ctrl.gamepadLookSensitivity * 100.0f * dt;
                 } else {
@@ -2153,7 +2153,7 @@ void ControllerSystem::UpdateSurfaceAligned(Entity entity, SurfaceAlignedControl
             (Input::IsMouseButtonDown(MouseButton::Right) && !Input::IsUIConsumedPointer())) {
             Math::Vector2 mouseDelta = GetLookDelta() * MouseSensitivityScale();
             ctrl.cameraYaw += mouseDelta.x * ctrl.cameraSensitivity;
-            f32 saPitchSign = m_InvertMouseY ? 1.0f : -1.0f;
+            f32 saPitchSign = InvertYFromMap() ? 1.0f : -1.0f;
             ctrl.cameraPitch += mouseDelta.y * ctrl.cameraSensitivity * saPitchSign;
             ctrl.cameraPitch = Math::Clamp(ctrl.cameraPitch, ctrl.cameraMinPitch, ctrl.cameraMaxPitch);
         }
@@ -2162,7 +2162,7 @@ void ControllerSystem::UpdateSurfaceAligned(Entity entity, SurfaceAlignedControl
             Math::Vector2 rightStick = Input::GetGamepadRightStick(ctrl.gamepadIndex);
             if (rightStick.x != 0.0f || rightStick.y != 0.0f) {
                 ctrl.cameraYaw += rightStick.x * ctrl.gamepadLookSensitivity * 100.0f * dt;
-                f32 saGpPitchSign = m_InvertMouseY ? 1.0f : -1.0f;
+                f32 saGpPitchSign = InvertYFromMap() ? 1.0f : -1.0f;
                 ctrl.cameraPitch += rightStick.y * ctrl.gamepadLookSensitivity * 100.0f * dt * saGpPitchSign;
                 ctrl.cameraPitch = Math::Clamp(ctrl.cameraPitch, ctrl.cameraMinPitch, ctrl.cameraMaxPitch);
             }

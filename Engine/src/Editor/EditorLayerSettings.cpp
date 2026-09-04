@@ -675,7 +675,7 @@ void EditorLayer::DrawSettingsSection_EditorPerformance() {
         }
 
         if (ImGui::TreeNode("Mouse Settings")) {
-            ImGui::Text("Sensitivity: %.2f", m_EditorSettings.mouseSensitivity);
+            ImGui::Text("Sensitivity: %.2f", m_InputMap.GetMouseSensitivity());
             ImGui::Text("Raw Input: %s", m_EditorSettings.rawMouseInput ? "Enabled" : "Disabled");
             ImGui::Text("Smoothing: %.2f", m_EditorSettings.mouseSmoothing);
             ImGui::Text("Mouse Captured: %s", Input::IsMouseCaptured() ? "Yes" : "No");
@@ -1092,24 +1092,31 @@ void EditorLayer::DrawSettingsSection_Accessibility() {
         if (ImGui::TreeNode("Input")) {
             const char* holdToggle[] = { "Hold", "Toggle" };
 
-            int sprintMode = static_cast<int>(m_EditorSettings.sprintMode);
+            // These edit the ACTION MAP, which is the same object play mode,
+            // the Controls menu and the touch overlay read. There is no second
+            // editor-only copy any more.
+            int sprintMode = m_InputMap.IsSprintToggle() ? 1 : 0;
             if (ImGui::Combo("Sprint Mode", &sprintMode, holdToggle, 2)) {
-                m_EditorSettings.sprintMode = static_cast<u32>(sprintMode);
-                settingsChanged = true;
+                m_InputMap.SetSprintToggle(sprintMode == 1);
             }
 
-            int crouchMode = static_cast<int>(m_EditorSettings.crouchMode);
+            int crouchMode = m_InputMap.IsCrouchToggle() ? 1 : 0;
             if (ImGui::Combo("Crouch Mode", &crouchMode, holdToggle, 2)) {
-                m_EditorSettings.crouchMode = static_cast<u32>(crouchMode);
-                settingsChanged = true;
+                m_InputMap.SetCrouchToggle(crouchMode == 1);
             }
 
-            if (ImGui::SliderFloat("Mouse Sensitivity", &m_EditorSettings.mouseSensitivity, 0.1f, 3.0f)) {
-                settingsChanged = true;
-                // Apply to editor camera controller
+            f32 sensitivity = m_InputMap.GetMouseSensitivity();
+            if (ImGui::SliderFloat("Mouse Sensitivity", &sensitivity, 0.1f, 3.0f)) {
+                m_InputMap.SetMouseSensitivity(sensitivity);
+                // The editor fly camera follows the same setting.
                 if (m_CameraController) {
-                    m_CameraController->SetLookSensitivity(m_EditorSettings.mouseSensitivity * 0.1f);
+                    m_CameraController->SetLookSensitivity(sensitivity * 0.1f);
                 }
+            }
+
+            bool invertY = m_InputMap.GetInvertY();
+            if (ImGui::Checkbox("Invert Look Y", &invertY)) {
+                m_InputMap.SetInvertY(invertY);
             }
 
             if (ImGui::Checkbox("Raw Mouse Input", &m_EditorSettings.rawMouseInput)) {
@@ -1125,19 +1132,13 @@ void EditorLayer::DrawSettingsSection_Accessibility() {
 
             ImGui::Separator();
             ImGui::TextDisabled("Input Presets");
-            const char* presetNames[] = { "Default", "Left Hand Only", "Right Hand Only", "Gamepad Only" };
-            int preset = static_cast<int>(m_EditorSettings.inputPreset);
-            if (ImGui::Combo("Preset", &preset, presetNames, 4)) {
-                m_EditorSettings.inputPreset = static_cast<u32>(preset);
-                settingsChanged = true;
-                // Apply the input preset to the action map
-                switch (m_EditorSettings.inputPreset) {
-                case 1: m_InputMap.ApplyLeftHandOnly(); break;
-                case 2: m_InputMap.ApplyRightHandOnly(); break;
-                case 3: m_InputMap.ApplyGamepadOnly(); break;
-                default: m_InputMap.ResetToDefaults(); break;
-                }
-            }
+            if (ImGui::Button("Default")) m_InputMap.ResetToDefaults();
+            ImGui::SameLine();
+            if (ImGui::Button("Left Hand Only")) m_InputMap.ApplyLeftHandOnly();
+            ImGui::SameLine();
+            if (ImGui::Button("Right Hand Only")) m_InputMap.ApplyRightHandOnly();
+            ImGui::SameLine();
+            if (ImGui::Button("Gamepad Only")) m_InputMap.ApplyGamepadOnly();
 
             ImGui::TreePop();
         }
@@ -1233,9 +1234,9 @@ void EditorLayer::DrawSettingsSection_Accessibility() {
         }
         ImGui::SameLine();
         if (ImGui::Button("Motor Impaired")) {
-            m_EditorSettings.inputPreset = 3; // Gamepad only
-            m_EditorSettings.sprintMode = 1;  // Toggle
-            m_EditorSettings.crouchMode = 1;  // Toggle
+            m_InputMap.ApplyGamepadOnly();
+            m_InputMap.SetSprintToggle(true);
+            m_InputMap.SetCrouchToggle(true);
             m_EditorSettings.clickThreshold = 12.0f;
             m_EditorSettings.dragThreshold = 15.0f;
             m_EditorSettings.dwellClickEnabled = true;
@@ -2426,8 +2427,7 @@ void EditorLayer::DrawSettingsSection_InputTouch() {
     if (changed) {
         // Take effect in the editor immediately, then persist. Resetting the
         // touch fingerprint forces the overlay to rebuild with the new layout.
-        settings.ApplyTo(m_InputMap);
-        if (auto* playMap = m_PlayMode.GetInputActionMap()) settings.ApplyTo(*playMap);
+        settings.ApplyTo(m_InputMap);   // the editor's ONE map; PlayMode borrows it
         InputSystem::SetTouchProjectSettings(&settings);
         m_SceneManager.SaveProject();
     }

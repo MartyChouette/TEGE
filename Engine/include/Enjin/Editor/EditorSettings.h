@@ -131,11 +131,10 @@ struct EditorSettings {
     f32 idleTimeoutSeconds = 30.0f;
     u32 idleFrameRate = 30;
 
-    // Accessibility: Input
-    u32 sprintMode = 0;      // 0=Hold, 1=Toggle
-    u32 crouchMode = 0;      // 0=Hold, 1=Toggle
-    f32 mouseSensitivity = 1.0f;
-    u32 inputPreset = 0;     // 0=Default, 1=LeftHand, 2=RightHand, 3=GamepadOnly
+    // NOTE: sprint/crouch mode, mouse sensitivity and the control preset are
+    // NOT here. They live on the editor's InputActionMap (persisted in the
+    // editor's bindings.json), which is the same map play mode uses, so the
+    // editor previews the controls a player would actually get.
     bool rawMouseInput = true;
     f32 mouseSmoothing = 0.0f; // 0.0 = none, 1.0 = heavy
 

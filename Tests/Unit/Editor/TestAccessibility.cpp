@@ -1,4 +1,5 @@
 #include "EnjinTest.h"
+#include "Enjin/Input/InputAction.h"
 #include "Enjin/Accessibility/AccessibilitySettings.h"
 #include "Enjin/Accessibility/SubtitleSystem.h"
 #include "Enjin/Accessibility/ContentWarning.h"
@@ -52,12 +53,32 @@ ENJIN_TEST(AccessSettings, MotorDefaults) {
     ENJIN_EXPECT_FALSE(settings.switchAccessEnabled);
 }
 
-ENJIN_TEST(AccessSettings, InputDefaults) {
-    RuntimeAccessibilitySettings settings;
-    ENJIN_EXPECT_EQ(settings.sprintMode, 0u);
-    ENJIN_EXPECT_EQ(settings.crouchMode, 0u);
-    ENJIN_EXPECT_FLOAT_EQ(settings.mouseSensitivity, 1.0f);
-    ENJIN_EXPECT_FALSE(settings.invertMouseY);
+ENJIN_TEST(AccessSettings, InputSettingsLiveOnTheActionMapNotHere) {
+    // Sprint/crouch mode, mouse sensitivity and invert-Y used to be duplicated
+    // into RuntimeAccessibilitySettings, where nothing read them: the Controls
+    // menu and the Accessibility menu edited different state, and the file
+    // round-tripped values the game never applied. They now have one home.
+    InputSystem::InputActionMap map;
+    map.LoadDefaults();
+
+    ENJIN_EXPECT_FALSE(map.IsSprintToggle());
+    ENJIN_EXPECT_FALSE(map.IsCrouchToggle());
+    ENJIN_EXPECT_FLOAT_EQ(map.GetMouseSensitivity(), 1.0f);
+    ENJIN_EXPECT_FALSE(map.GetInvertY());
+
+    map.SetSprintToggle(true);
+    map.SetInvertY(true);
+    map.SetMouseSensitivity(2.5f);
+    ENJIN_EXPECT_TRUE(map.IsSprintToggle());
+    ENJIN_EXPECT_TRUE(map.GetInvertY());
+    ENJIN_EXPECT_FLOAT_EQ(map.GetMouseSensitivity(), 2.5f);
+
+    // And they persist with the bindings, so a player keeps them.
+    InputSystem::InputActionMap loaded;
+    ENJIN_ASSERT_TRUE(loaded.FromJson(map.ToJson()));
+    ENJIN_EXPECT_TRUE(loaded.IsSprintToggle());
+    ENJIN_EXPECT_TRUE(loaded.GetInvertY());
+    ENJIN_EXPECT_FLOAT_EQ(loaded.GetMouseSensitivity(), 2.5f);
 }
 
 // ===========================================================================

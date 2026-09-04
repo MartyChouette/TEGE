@@ -87,7 +87,7 @@ void PlayMode::Initialize(ECS::World* world, Renderer::Camera* camera,
     m_ControllerSystem.SetCamera(camera);
     m_ControllerSystem.SetPhysics(m_Physics.get());
     m_ControllerSystem.SetPhysics2D(m_Physics2D.get());
-    m_ControllerSystem.SetInputActionMap(&m_InputMap);
+    m_ControllerSystem.SetInputActionMap(m_InputMap);
     m_ControllerSystem.SetEnabled(false);
 
     m_FlowerSystem.SetWorld(world);
@@ -419,7 +419,7 @@ void PlayMode::Play() {
     Scripting::SetBindingsAudioGraphRuntime(&m_AudioGraphRuntime);
     m_MIDIInput.Initialize();
     Scripting::SetBindingsMIDI(&m_MIDIInput);
-    Scripting::SetBindingsInputActionMap(&m_InputMap);
+    Scripting::SetBindingsInputActionMap(m_InputMap);
     s_VisualScriptSaveSystem = &m_TieredSaveSystem;
     s_VisualScriptWeather = m_WeatherSystem;
     s_VisualScriptElemental = m_ElementalSystem;
@@ -513,7 +513,7 @@ void PlayMode::Play() {
     m_DialogueSystem.SetSubtitleSystem(m_SubtitleSystem);
     // ActionTrigger components: input actions wired to scene effects with no
     // script, so the editor previews exactly what the exported game runs.
-    m_ActionTriggerSystem.SetInputActionMap(&m_InputMap);
+    m_ActionTriggerSystem.SetInputActionMap(m_InputMap);
     m_ActionTriggerSystem.SetSubtitleSystem(m_SubtitleSystem);
     m_ActionTriggerSystem.SetEventBus(&m_EntityEventBus);
     m_DialogueSystem.SetQuestSystem(&m_QuestSystem);
@@ -990,8 +990,9 @@ void PlayMode::Update(f32 deltaTime) {
             }
         }
 
-        // Update input action map (polls input state for remappable actions)
-        m_InputMap.Update(deltaTime);
+        // NOTE: the action map is ticked by its owner (EditorLayer), once per
+        // frame. Ticking it again here would advance toggle state twice and
+        // eat every pressed edge before gameplay saw it.
         m_MIDIInput.Update();
 
         // Physics runs first to update rigidbody positions, then controllers overlay input

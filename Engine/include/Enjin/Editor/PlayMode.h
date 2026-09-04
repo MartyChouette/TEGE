@@ -160,7 +160,8 @@ public:
     Audio::SimpleAudio* GetSimpleAudio() { return &m_SimpleAudio; }
     Effects::DestructibleSystem* GetDestructibleSystem() { return &m_DestructibleSystem; }
     Effects::InteractiveWaterSystem* GetInteractiveWaterSystem() { return &m_InteractiveWaterSystem; }
-    InputSystem::InputActionMap* GetInputActionMap() { return &m_InputMap; }
+    void SetInputActionMap(InputSystem::InputActionMap* map) { m_InputMap = map; }
+    InputSystem::InputActionMap* GetInputActionMap() { return m_InputMap; }
     ECS::ActionTriggerSystem* GetActionTriggerSystem() { return &m_ActionTriggerSystem; }
     Editor::AudioEventGraphRuntime* GetAudioGraphRuntime() { return &m_AudioGraphRuntime; }
 
@@ -309,7 +310,13 @@ private:
     Effects::InteractiveWaterSystem m_InteractiveWaterSystem;
 
     // Input action map for remappable input
-    InputSystem::InputActionMap m_InputMap;
+    // The action map is OWNED BY EditorLayer and injected here. PlayMode used to
+    // keep its own, so script bindings and the touch overlay read one map while
+    // ControllerSystem and the Controls menu read another: a rebind moved one
+    // and not the other. EditorLayer also drives Update(), so PlayMode must
+    // never tick it (a second Update in the same frame eats every pressed edge,
+    // which would break Toggle actions and one-shot presses).
+    InputSystem::InputActionMap* m_InputMap = nullptr;
 
     // Audio event graph runtime
     Editor::AudioEventGraphRuntime m_AudioGraphRuntime;

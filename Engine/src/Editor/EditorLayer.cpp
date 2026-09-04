@@ -686,6 +686,11 @@ void EditorLayer::StartPlayMode() {
 
 void EditorLayer::InitializePlayMode() {
     if (m_World && m_Camera && m_CameraController) {
+        // ONE action map for the whole editor. PlayMode borrows it, so the
+        // Controls menu, ControllerSystem, script bindings, ActionTriggers
+        // and the touch overlay all read the same bindings. Injected before
+        // Initialize, which hands it to ControllerSystem.
+        m_PlayMode.SetInputActionMap(&m_InputMap);
         m_PlayMode.Initialize(m_World, m_Camera, m_CameraController, &m_SceneManager);
         m_PlayMode.SetRenderSystem(m_RenderSystem);
         m_PlayMode.SetPostProcessing(m_PostProcessing.get());
@@ -731,34 +736,16 @@ void EditorLayer::InitializePlayMode() {
             m_PlayMode.GetUISystem()->SetReducedMotion(m_EditorSettings.reducedMotion);
         }
 
-        // Apply input preset from settings
-        switch (m_EditorSettings.inputPreset) {
-        case 1: m_InputMap.ApplyLeftHandOnly(); break;
-        case 2: m_InputMap.ApplyRightHandOnly(); break;
-        case 3: m_InputMap.ApplyGamepadOnly(); break;
-        default: break; // Default bindings already loaded
-        }
-
-        // Apply sprint/crouch toggle modes from settings
-        if (m_EditorSettings.sprintMode == 1) {
-            m_InputMap.SetActionMode(InputSystem::GameAction::Sprint, InputSystem::ActionMode::Toggle);
-        }
-        if (m_EditorSettings.crouchMode == 1) {
-            m_InputMap.SetActionMode(InputSystem::GameAction::Crouch, InputSystem::ActionMode::Toggle);
-        }
+        // Control preset and sprint/crouch modes are properties of the action
+        // map itself now, set from the in-editor Controls menu and persisted
+        // with the rest of the bindings.
 
         // Project-authored input settings: the SAME data an exported game reads
         // from its manifest, so the editor previews the real controls. Applied
         // after the presets above, which reset bindings to defaults.
         auto& inputSettings = m_SceneManager.GetInputSettings();
         inputSettings.ApplyTo(m_InputMap);
-        if (auto* playMap = m_PlayMode.GetInputActionMap()) inputSettings.ApplyTo(*playMap);
         InputSystem::SetTouchProjectSettings(&inputSettings);
-        // ControllerSystem reads THIS map (see above), so ActionTrigger
-        // components must read it too, not PlayMode's separate copy.
-        if (auto* triggers = m_PlayMode.GetActionTriggerSystem()) {
-            triggers->SetInputActionMap(&m_InputMap);
-        }
     }
 }
 
@@ -5453,10 +5440,6 @@ void EditorLayer::SyncRuntimeAccessibility() {
     a.dwellClickTime = s.dwellClickDelay;
     a.stickyDragEnabled = s.stickyDragEnabled;
     a.switchAccessEnabled = false; // Switch access configured separately
-    a.mouseSensitivity = s.mouseSensitivity;
-    a.invertMouseY = false;
-    a.sprintMode = s.sprintMode;
-    a.crouchMode = s.crouchMode;
 }
 
 // ============================================================================

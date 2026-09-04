@@ -1630,16 +1630,14 @@ private:
             if (j.contains("disableScreenShake")) s.disableScreenShake = j["disableScreenShake"].get<bool>();
             if (j.contains("disableFOVEffects")) s.disableFOVEffects = j["disableFOVEffects"].get<bool>();
             if (j.contains("disableFlashingLights")) s.disableFlashingLights = j["disableFlashingLights"].get<bool>();
-            if (j.contains("mouseSensitivity")) s.mouseSensitivity = j["mouseSensitivity"].get<Enjin::f32>();
-            if (j.contains("invertMouseY")) s.invertMouseY = j["invertMouseY"].get<bool>();
-            if (j.contains("sprintMode")) s.sprintMode = j["sprintMode"].get<Enjin::u32>();
-            if (j.contains("crouchMode")) s.crouchMode = j["crouchMode"].get<Enjin::u32>();
-            // Seed the InputActionMap (what ControllerSystem reads) until a
-            // bindings.json exists; after that bindings.json owns these.
+            // Sprint/crouch mode, sensitivity and invert-Y now live on the
+            // InputActionMap (bindings.json). Migrate an old accessibility.json
+            // once, only when the player has not rebound anything yet.
             if (!std::ifstream("/saves/bindings.json").is_open()) {
-                m_InputMap.SetSprintToggle(s.sprintMode == 1);
-                m_InputMap.SetCrouchToggle(s.crouchMode == 1);
-                m_InputMap.SetMouseSensitivity(s.mouseSensitivity);
+                if (j.contains("sprintMode")) m_InputMap.SetSprintToggle(j["sprintMode"].get<Enjin::u32>() == 1);
+                if (j.contains("crouchMode")) m_InputMap.SetCrouchToggle(j["crouchMode"].get<Enjin::u32>() == 1);
+                if (j.contains("mouseSensitivity")) m_InputMap.SetMouseSensitivity(j["mouseSensitivity"].get<Enjin::f32>());
+                if (j.contains("invertMouseY")) m_InputMap.SetInvertY(j["invertMouseY"].get<bool>());
             }
             // Subtitle sub-options (Apply read them but they never loaded on web)
             if (j.contains("closedCaptionsEnabled")) s.closedCaptionsEnabled = j["closedCaptionsEnabled"].get<bool>();
@@ -1675,12 +1673,6 @@ private:
             j["disableScreenShake"] = s.disableScreenShake;
             j["disableFOVEffects"] = s.disableFOVEffects;
             j["disableFlashingLights"] = s.disableFlashingLights;
-            // Write the live map values (the map is what ControllerSystem reads)
-            // so this file never contradicts bindings.json.
-            j["mouseSensitivity"] = m_InputMap.GetMouseSensitivity();
-            j["invertMouseY"] = s.invertMouseY;
-            j["sprintMode"] = m_InputMap.IsSprintToggle() ? 1u : 0u;
-            j["crouchMode"] = m_InputMap.IsCrouchToggle() ? 1u : 0u;
             j["closedCaptionsEnabled"] = s.closedCaptionsEnabled;
             j["subtitleFontSize"] = s.subtitleFontSize;
             j["subtitleBgOpacity"] = s.subtitleBgOpacity;
@@ -1806,7 +1798,6 @@ private:
         m_ControllerSystem.SetReducedMotion(s.reducedMotion);
         m_ControllerSystem.SetDisableScreenShake(s.disableScreenShake);
         m_ControllerSystem.SetDisableFOVEffects(s.disableFOVEffects);
-        m_ControllerSystem.SetInvertMouseY(s.invertMouseY);
         m_UISystem.SetReducedMotion(s.reducedMotion);
         Enjin::Accessibility::ApplyTextScale(s, &m_UISystem, &m_SubtitleSystem, &m_Announcer);
         m_UISystem.SetSwitchAccessEnabled(s.switchAccessEnabled, s.switchScanSpeed);

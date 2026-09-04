@@ -245,9 +245,10 @@ public:
     void SetCamera(Renderer::Camera* camera) { m_Camera = camera; m_ParallaxSystem.SetCamera(camera); InitializePlayMode(); }
     void SetCameraController(Renderer::CameraController* controller) {
         m_CameraController = controller;
-        // Apply persisted mouse sensitivity to the camera controller
-        if (m_CameraController && m_EditorSettings.mouseSensitivity != 1.0f) {
-            m_CameraController->SetLookSensitivity(m_EditorSettings.mouseSensitivity * 0.1f);
+        // The fly camera follows the action map's mouse sensitivity, the same
+        // value play mode and the Controls menu use.
+        if (m_CameraController && m_InputMap.GetMouseSensitivity() != 1.0f) {
+            m_CameraController->SetLookSensitivity(m_InputMap.GetMouseSensitivity() * 0.1f);
         }
         InitializePlayMode();
     }

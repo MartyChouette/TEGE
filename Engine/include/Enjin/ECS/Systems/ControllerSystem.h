@@ -70,9 +70,10 @@ public:
     void SetDisableFOVEffects(bool disabled) { m_DisableFOVEffects = disabled; }
     bool GetDisableFOVEffects() const { return m_DisableFOVEffects; }
 
-    // Invert mouse Y axis (accessibility override, XORs with per-controller invertY)
-    void SetInvertMouseY(bool invert) { m_InvertMouseY = invert; }
-    bool GetInvertMouseY() const { return m_InvertMouseY; }
+    // Invert mouse Y is a player setting and lives on the InputActionMap
+    // (persisted in bindings.json) rather than in a second copy here. Still
+    // XORs with the per-controller designer flag.
+    bool GetInvertMouseY() const { return m_InputMap && m_InputMap->GetInvertY(); }
 
     // Enable/disable all controller updates (e.g., when in editor mode vs play mode)
     void SetEnabled(bool enabled) { m_Enabled = enabled; }
@@ -128,13 +129,13 @@ private:
     // Player-facing mouse sensitivity (Controls menu / bindings.json) applied on
     // top of the per-controller designer multiplier. 1.0 when no map is attached.
     f32 MouseSensitivityScale() const { return m_InputMap ? m_InputMap->GetMouseSensitivity() : 1.0f; }
+    bool InvertYFromMap() const { return m_InputMap && m_InputMap->GetInvertY(); }
     Entity m_GameCameraEntity = INVALID_ENTITY;
     bool m_DriveEditorCameraFallback = true;  // editor sets false; see SetDriveEditorCameraFallback
     bool m_Enabled = false;  // Disabled by default (editor mode)
     bool m_ReducedMotion = false;
     bool m_DisableScreenShake = false;
     bool m_DisableFOVEffects = false;
-    bool m_InvertMouseY = false;
 
     // Fixed-tick input latches (see SetExternalFixedClock)
     bool m_ExternalFixedClock = false;
