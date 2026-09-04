@@ -38,6 +38,17 @@ jobs:
           vulkan-components: Vulkan-Headers, Vulkan-Loader
           vulkan-use-cache: true
 
+      # assimp, Jolt, Box2D, nlohmann and miniaudio are all pinned to tags, so
+      # a run fetches and builds the identical bytes every time. The key covers
+      # the CMake files that choose the versions; change one and the cache
+      # rebuilds.
+      - name: Cache fetched dependencies
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: deps-windows-${{ hashFiles('Engine/CMakeLists.txt', 'CMakeLists.txt', 'Core/CMakeLists.txt') }}
+          restore-keys: deps-windows-
+
       - name: Configure
         run: cmake -B build -S . -DENJIN_BUILD_TESTS=ON
 
@@ -192,6 +203,13 @@ jobs:
             libxcursor-dev libxi-dev libcurl4-openssl-dev mesa-vulkan-drivers \
             vulkan-tools xvfb
 
+      - name: Cache fetched dependencies
+        uses: actions/cache@v4
+        with:
+          path: build-linux/_deps
+          key: deps-linux-${{ hashFiles('Engine/CMakeLists.txt', 'CMakeLists.txt', 'Core/CMakeLists.txt') }}
+          restore-keys: deps-linux-
+
       - name: Configure
         run: cmake -B build-linux -S . -G Ninja -DCMAKE_BUILD_TYPE=Release -DENJIN_BUILD_TESTS=ON
 
@@ -312,10 +330,22 @@ jobs:
           version: 5.0.5   # matches the local D:/emsdk toolchain
           actions-cache-folder: emsdk-cache
 
+      - name: Cache fetched dependencies
+        uses: actions/cache@v4
+        with:
+          path: build-web-ci/_deps
+          key: deps-web-${{ hashFiles('Engine/CMakeLists.txt', 'CMakeLists.txt', 'Core/CMakeLists.txt') }}
+          restore-keys: deps-web-
+
       - name: Configure
         run: emcmake cmake -B build-web-ci -S . -DENJIN_PLATFORM_WEB=ON
 
       - name: Build
-        # Capped at 2 jobs: unbounded parallelism OOM-kills clang on the 4-core
-        # runner (exit 137) - the engine's big translation units eat RAM per job.
-        run: cmake --build build-web-ci --parallel 2
+        # Was capped at 2: unbounded parallelism OOM-killed clang on the 4-core
+        # runner (exit 137), because the engine's big translation units each ate
+        # gigabytes. The largest single cause of that was 3.2 MB of hex literal
+        # in ShaderData.h being lexed by all 28 files that included it; those
+        # bytes now live in one source file the web build excludes. 4 is the
+        # runner's core count. If exit 137 comes back, put it to 3, not 2, and
+        # find out which translation unit grew.
+        run: cmake --build build-web-ci --parallel 4
