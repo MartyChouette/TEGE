@@ -2933,54 +2933,6 @@ void RenderSystem::Update(f32 deltaTime) {
                 });
         }
 
-        // Re-emit the object data in DRAW order, so a run of consecutive draw
-        // commands is a contiguous run of ObjectData and an instanced draw can
-        // simply say where it starts. Collection order is entity order and the
-        // sort above reorders it; without this pass the batch loop below had to
-        // gather each batch's instances into a scratch vector by hand, then
-        // create a GPU buffer AND a bind group for them, every batch, every
-        // frame.
-        //
-        // One memcpy per visible entity, replacing a GPU allocation per batch.
-        static std::vector<u8> objDataSorted;
-        objDataSorted.resize(drawCmds.size() * OBJ_ALIGN);
-        for (usize n = 0; n < drawCmds.size(); ++n) {
-            std::memcpy(objDataSorted.data() + n * OBJ_ALIGN,
-                        objDataBuf.data() + drawCmds[n].offset, sizeof(WebObjectDataUBO));
-            drawCmds[n].offset = static_cast<u32>(n);   // now the INSTANCE INDEX
-        }
-        objDataBuf.swap(objDataSorted);
-
-        // One storage buffer for the whole frame's ObjectData, uploaded once and
-        // bound once. The shader reads objects.data[instance_index], so a draw
-        // says which instance it starts at rather than getting its own buffer.
-        Renderer::GPUBindGroupHandle sharedObjBG;
-        if (!objDataBuf.empty()) {
-            if (!m_WebObjectArrayBuf.IsValid() || m_WebObjectArrayCapacity < objDataBuf.size()) {
-                if (m_WebObjectArrayBuf.IsValid()) bufMgr->DestroyBuffer(m_WebObjectArrayBuf);
-                if (m_WebObjectArrayBG.IsValid()) {
-                    m_Renderer->GetBindGroupManager()->DestroyBindGroup(m_WebObjectArrayBG);
-                    m_WebObjectArrayBG = {};
-                }
-                m_WebObjectArrayCapacity = objDataBuf.size() + objDataBuf.size() / 2;
-                ++m_WebObjectArrayGen;   // cached per-entity bind groups must rebuild
-                m_WebObjectArrayBuf = bufMgr->CreateBuffer(
-                    {m_WebObjectArrayCapacity,
-                     Renderer::GPUBufferUsage::Storage | Renderer::GPUBufferUsage::CopyDst, true});
-            }
-            bufMgr->UploadData(m_WebObjectArrayBuf, objDataBuf.data(), objDataBuf.size());
-            if (!m_WebObjectArrayBG.IsValid()) {
-                Renderer::GPUBindGroupDesc obgd;
-                obgd.layout = m_WebObjectLayout;
-                obgd.entries = {
-                    {0, m_WebObjectArrayBuf, 0, m_WebObjectArrayCapacity, {}, {}},
-                    {1, m_WebDefaultBoneBuffer, 0, 0, {}, {}},
-                };
-                m_WebObjectArrayBG = m_Renderer->GetBindGroupManager()->CreateBindGroup(obgd);
-            }
-            sharedObjBG = m_WebObjectArrayBG;
-        }
-
         // Phase 2: Batch entities by mesh+texture, draw instanced where possible
         auto* bindMgr = m_Renderer->GetBindGroupManager();
 
@@ -3043,42 +2995,51 @@ void RenderSystem::Update(f32 deltaTime) {
                 }
                 u32 instanceCount = static_cast<u32>(batchEnd - i);
 
-                // The batch's instances are already contiguous in the shared
-                // buffer, so the draw just says where it starts.
-                encoder->SetBindGroup(1, sharedObjBG);
+                // Pack ObjectData for all instances into one contiguous SSBO
+                std::vector<u8> batchData(instanceCount * sizeof(WebObjectDataUBO));
+                for (usize j = 0; j < instanceCount; j++) {
+                    std::memcpy(batchData.data() + j * sizeof(WebObjectDataUBO),
+                        objDataBuf.data() + drawCmds[i + j].offset, sizeof(WebObjectDataUBO));
+                }
+                auto batchBuf = bufMgr->CreateBufferWithData(
+                    {batchData.size(), Renderer::GPUBufferUsage::Storage | Renderer::GPUBufferUsage::CopyDst, true},
+                    batchData.data());
+                Renderer::GPUBindGroupDesc bgd;
+                bgd.layout = m_WebObjectLayout;
+                bgd.entries = {
+                    {0, batchBuf, 0, batchData.size(), {}, {}},
+                    {1, m_WebDefaultBoneBuffer, 0, 0, {}, {}},
+                };
+                auto batchBG = bindMgr->CreateBindGroup(bgd);
+                encoder->SetBindGroup(1, batchBG);
                 auto texBG = rd.texBindGroup.IsValid() ? rd.texBindGroup : m_WebDefaultTexBindGroup;
                 encoder->SetBindGroup(2, texBG);
                 encoder->SetVertexBuffer(0, rd.vertexBuffer);
                 encoder->SetIndexBuffer(rd.indexBuffer, Renderer::GPUIndexFormat::Uint32);
-                encoder->DrawIndexed(rd.indexCount, instanceCount, 0, 0, cmd.offset);
+                encoder->DrawIndexed(rd.indexCount, instanceCount);
 
                 m_DrawCallCount++;
                 m_TriangleCount += (rd.indexCount / 3) * instanceCount;
+
+                bindMgr->DestroyBindGroup(batchBG);
+                bufMgr->DestroyBuffer(batchBuf);
                 i = batchEnd;
             } else {
                 // Non-batchable: skinned or multi-material — draw individually
-                // Same shared buffer, indexed by instance. A skinned mesh still
-                // needs its own bind group because binding 1 is its bone buffer,
-                // but that group is cached on the entity and rebuilt only when
-                // the shared buffer moves -- not created and destroyed per frame.
-                Renderer::GPUBindGroupHandle objBG = sharedObjBG;
-                if (rd.boneBuffer.IsValid()) {
-                    if (!rd.objBoneBindGroup.IsValid() ||
-                        rd.objBoneBindGroupGen != m_WebObjectArrayGen) {
-                        if (rd.objBoneBindGroup.IsValid()) bindMgr->DestroyBindGroup(rd.objBoneBindGroup);
-                        Renderer::GPUBindGroupDesc bgd;
-                        bgd.layout = m_WebObjectLayout;
-                        bgd.entries = {
-                            {0, m_WebObjectArrayBuf, 0, m_WebObjectArrayCapacity, {}, {}},
-                            {1, rd.boneBuffer, 0, 0, {}, {}},
-                        };
-                        rd.objBoneBindGroup = bindMgr->CreateBindGroup(bgd);
-                        rd.objBoneBindGroupGen = m_WebObjectArrayGen;
-                    }
-                    objBG = rd.objBoneBindGroup;
-                }
+                auto perEntityBuf = bufMgr->CreateBufferWithData(
+                    {sizeof(WebObjectDataUBO), Renderer::GPUBufferUsage::Storage | Renderer::GPUBufferUsage::CopyDst, true},
+                    objDataBuf.data() + cmd.offset);
 
-                encoder->SetBindGroup(1, objBG);
+                auto boneBuf = rd.boneBuffer.IsValid() ? rd.boneBuffer : m_WebDefaultBoneBuffer;
+                Renderer::GPUBindGroupDesc bgd;
+                bgd.layout = m_WebObjectLayout;
+                bgd.entries = {
+                    {0, perEntityBuf, 0, sizeof(WebObjectDataUBO), {}, {}},
+                    {1, boneBuf, 0, 0, {}, {}},
+                };
+                auto perEntityBG = bindMgr->CreateBindGroup(bgd);
+
+                encoder->SetBindGroup(1, perEntityBG);
                 encoder->SetVertexBuffer(0, rd.vertexBuffer);
                 encoder->SetIndexBuffer(rd.indexBuffer, Renderer::GPUIndexFormat::Uint32);
 
@@ -3106,7 +3067,7 @@ void RenderSystem::Update(f32 deltaTime) {
                             auto cached = m_WebSubMeshTexCache.find(texKey);
                             if (cached != m_WebSubMeshTexCache.end()) {
                                 encoder->SetBindGroup(2, cached->second);
-                                encoder->DrawIndexed(subMesh.indexCount, 1, subMesh.indexOffset, 0, cmd.offset);
+                                encoder->DrawIndexed(subMesh.indexCount, 1, subMesh.indexOffset);
                                 m_DrawCallCount++;
                                 m_TriangleCount += subMesh.indexCount / 3;
                                 continue;
@@ -3131,17 +3092,19 @@ void RenderSystem::Update(f32 deltaTime) {
                             if (subTexBG.IsValid()) m_WebSubMeshTexCache[texKey] = subTexBG;
                         }
                         encoder->SetBindGroup(2, subTexBG.IsValid() ? subTexBG : m_WebDefaultTexBindGroup);
-                        encoder->DrawIndexed(subMesh.indexCount, 1, subMesh.indexOffset, 0, cmd.offset);
+                        encoder->DrawIndexed(subMesh.indexCount, 1, subMesh.indexOffset);
                         m_DrawCallCount++;
                         m_TriangleCount += subMesh.indexCount / 3;
                     }
                 } else {
                     encoder->SetBindGroup(2, rd.texBindGroup.IsValid() ? rd.texBindGroup : m_WebDefaultTexBindGroup);
-                    encoder->DrawIndexed(rd.indexCount, 1, 0, 0, cmd.offset);
+                    encoder->DrawIndexed(rd.indexCount);
                     m_DrawCallCount++;
                     m_TriangleCount += rd.indexCount / 3;
                 }
 
+                bindMgr->DestroyBindGroup(perEntityBG);
+                bufMgr->DestroyBuffer(perEntityBuf);
                 i++;
             }
         }
