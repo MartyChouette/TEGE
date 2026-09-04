@@ -535,8 +535,7 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
             }
             case Editor::EditOpType::RenameEntity: {
                 auto entity = static_cast<ECS::Entity>(op.entityId);
-                auto* name = m_World->GetComponent<ECS::NameComponent>(entity);
-                if (name) name->name = op.dataJson;
+                m_World->SetEntityName(entity, op.dataJson);
                 break;
             }
             case Editor::EditOpType::SetComponent: {

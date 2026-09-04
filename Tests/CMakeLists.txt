@@ -138,6 +138,7 @@ enjin_add_test(TestSwarm              Unit/Sim/TestSwarm.cpp)
 
 # --- ECS ---
 enjin_add_test(TestECS                Unit/ECS/TestECS.cpp)
+enjin_add_test(TestEntityNameCache    Unit/ECS/TestEntityNameCache.cpp)
 enjin_add_test(TestCollisionFiltering Unit/ECS/TestCollisionFiltering.cpp)
 enjin_add_test(TestCamera             Unit/ECS/TestCamera.cpp)
 enjin_add_test(TestLOD                Unit/ECS/TestLOD.cpp)

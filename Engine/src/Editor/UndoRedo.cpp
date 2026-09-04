@@ -264,15 +264,13 @@ RenameEntityCommand::RenameEntityCommand(ECS::World* world, ECS::Entity entity,
 
 void RenameEntityCommand::Execute() {
     if (m_World->HasComponent<ECS::NameComponent>(m_Entity)) {
-        auto* nameComp = m_World->GetComponent<ECS::NameComponent>(m_Entity);
-        nameComp->name = m_NewName;
+        m_World->SetEntityName(m_Entity, m_NewName);
     }
 }
 
 void RenameEntityCommand::Undo() {
     if (m_World->HasComponent<ECS::NameComponent>(m_Entity)) {
-        auto* nameComp = m_World->GetComponent<ECS::NameComponent>(m_Entity);
-        nameComp->name = m_OldName;
+        m_World->SetEntityName(m_Entity, m_OldName);
     }
 }
 

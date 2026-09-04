@@ -1574,7 +1574,7 @@ void EditorLayer::DrawInspectorPanel() {
             ImGui::SetNextItemWidth(-1);
             if (ImGui::InputText("##EntityName", nameBuffer, sizeof(nameBuffer))) {
                 std::string oldName = nameComp->name;
-                nameComp->name = nameBuffer;
+                m_World->SetEntityName(m_PrimarySelected, nameBuffer);
                 if (m_CollabSystem.IsActive()) {
                     m_CollabSystem.OnEntityRenamed(m_PrimarySelected, oldName, nameComp->name);
                 }

@@ -142,25 +142,83 @@ void World::Clear() {
 
 void World::RebuildNameCache() {
     m_NameCache.clear();
-    for (Entity e : GetEntitiesWithComponent<NameComponent>()) {
+    const auto& named = GetEntitiesWithComponent<NameComponent>();
+    for (Entity e : named) {
         auto* nc = GetComponent<NameComponent>(e);
         if (nc && !nc->name.empty()) {
             m_NameCache[nc->name] = e;
         }
     }
     m_NameCacheDirty = false;
+    // Remember what the cache was built against, so the next lookup can tell
+    // whether it is still describing the same world.
+    m_NameCacheEpoch = m_StorageEpoch;
+    m_NameCacheCount = named.size();
+}
+
+void World::SetEntityName(Entity e, const std::string& name) {
+    AssertOwnerThread();
+    std::lock_guard<std::recursive_mutex> lock(m_Mutex);
+    if (!IsValid(e)) return;
+
+    auto* nc = GetComponent<NameComponent>(e);
+    if (!nc) {
+        // AddComponent changes the NameComponent count, which is what the next
+        // lookup checks, so the cache repairs itself without a flag.
+        NameComponent added;
+        added.name = name;
+        AddComponent<NameComponent>(e, added);
+        return;
+    }
+    if (nc->name == name) return;
+
+    // Patch the cache in place rather than dropping it. A rename is invisible
+    // to the storage count, so this is the one mutation the cache cannot
+    // detect on its own.
+    if (!m_NameCacheDirty) {
+        auto old = m_NameCache.find(nc->name);
+        if (old != m_NameCache.end() && old->second == e) {
+            m_NameCache.erase(old);
+        }
+        if (!name.empty()) {
+            m_NameCache[name] = e;
+        }
+    }
+    nc->name = name;
 }
 
 Entity World::FindEntityByName(const std::string& name) {
     std::lock_guard<std::recursive_mutex> lock(m_Mutex);
-    if (m_NameCacheDirty) {
+
+    // Derive validity instead of trusting anyone to have invalidated: the epoch
+    // catches Clear(), the count catches every add and remove of a
+    // NameComponent. Both are O(1).
+    const usize namedCount = GetEntitiesWithComponent<NameComponent>().size();
+    if (m_NameCacheDirty || m_NameCacheEpoch != m_StorageEpoch ||
+        m_NameCacheCount != namedCount) {
         RebuildNameCache();
     }
+
     auto it = m_NameCache.find(name);
-    if (it != m_NameCache.end()) {
-        return it->second;
+    if (it == m_NameCache.end()) return INVALID_ENTITY;
+
+    // A cached entry can still be stale if someone wrote NameComponent::name
+    // directly instead of calling SetEntityName. Confirm before handing it back;
+    // this is O(1) and stops a lookup returning an entity that no longer holds
+    // the name that was asked for.
+    const Entity cached = it->second;
+    if (!IsValid(cached)) {
+        RebuildNameCache();
+        auto again = m_NameCache.find(name);
+        return again != m_NameCache.end() ? again->second : INVALID_ENTITY;
     }
-    return INVALID_ENTITY;
+    auto* nc = GetComponent<NameComponent>(cached);
+    if (!nc || nc->name != name) {
+        RebuildNameCache();
+        auto again = m_NameCache.find(name);
+        return again != m_NameCache.end() ? again->second : INVALID_ENTITY;
+    }
+    return cached;
 }
 
 } // namespace ECS

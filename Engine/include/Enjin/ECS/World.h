@@ -275,7 +275,21 @@ public:
     Entity FindEntityByName(const std::string& name);
 
     /**
-     * @brief Invalidate the name cache (call when NameComponents change)
+     * @brief Rename an entity. THE way to rename -- see FindEntityByName.
+     *
+     * Adds a NameComponent if the entity has none. Writing NameComponent::name
+     * directly still works, but the name cache cannot see it, so a lookup by
+     * the new name will miss until something structural forces a rebuild.
+     */
+    void SetEntityName(Entity e, const std::string& name);
+
+    /**
+     * @brief Invalidate the name cache.
+     *
+     * Almost never needed: FindEntityByName derives its own validity from the
+     * NameComponent storage, so adds, removes and Clear are all handled without
+     * anyone calling this. It remains for a caller that has written
+     * NameComponent::name directly instead of using SetEntityName.
      */
     void InvalidateNameCache() { m_NameCacheDirty = true; }
 
@@ -470,9 +484,22 @@ private:
     std::unique_ptr<SystemManager> m_SystemManager;
     std::unordered_map<ComponentTypeId, std::unique_ptr<StorageBase>> m_ComponentStorages;
 
-    // Name cache for O(1) entity lookup by name
+    // Name cache for O(1) entity lookup by name.
+    //
+    // This used to be invalidated by hand, and it was maintained at 3 of the
+    // 210 sites that add a NameComponent -- so once the cache had been built,
+    // anything spawned afterwards (a prefab instance, for one) was invisible to
+    // FindEntityByName, and a rename left a stale entry. It read as
+    // intermittent because any entity destroyed that frame masked it.
+    //
+    // Validity is now derived from state the engine already owns rather than
+    // from anyone remembering: the storage epoch catches Clear(), and the
+    // NameComponent entity count catches every add and remove. Renames go
+    // through SetEntityName, which patches the cache in place.
     std::unordered_map<std::string, Entity> m_NameCache;
     bool m_NameCacheDirty = true;
+    u32 m_NameCacheEpoch = 0;
+    usize m_NameCacheCount = 0;
 
     // Bumped by Clear() -- see GetStorageEpoch()
     u32 m_StorageEpoch = 1;

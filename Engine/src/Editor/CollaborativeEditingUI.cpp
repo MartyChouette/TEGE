@@ -560,14 +560,8 @@ void CollaborativeEditingUI::ApplyRenameEntity(const EditOperation& op) {
         return;
     }
 
-    auto* nc = m_World->GetComponent<ECS::NameComponent>(entity);
-    if (nc) {
-        nc->name = op.dataJson;
-    } else {
-        m_World->AddComponent<ECS::NameComponent>(entity, ECS::NameComponent(op.dataJson));
-    }
+    m_World->SetEntityName(entity, op.dataJson);
 
-    m_World->InvalidateNameCache();
 
     ENJIN_LOG_INFO(Editor, "CollabUI: Renamed entity %llu to '%s' from remote peer '%s'",
                    (unsigned long long)op.entityId, op.dataJson.c_str(),
@@ -625,7 +619,6 @@ void CollaborativeEditingUI::ApplyRemoveComponent(const EditOperation& op) {
         m_World->RemoveComponent<ECS::TransformComponent>(entity);
     } else if (op.componentKey == "name") {
         m_World->RemoveComponent<ECS::NameComponent>(entity);
-        m_World->InvalidateNameCache();
     } else if (op.componentKey == "parent") {
         ECS::RemoveParent(m_World, entity);
     } else {

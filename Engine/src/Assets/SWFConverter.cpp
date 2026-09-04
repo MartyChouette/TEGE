@@ -629,10 +629,7 @@ SWFConversionResult SWFConverter::ConvertToEntities(
 
             // Apply instance name
             if (placement.hasName && !placement.name.empty()) {
-                auto* nameComp = world->GetComponent<ECS::NameComponent>(entity);
-                if (nameComp) {
-                    nameComp->name = placement.name;
-                }
+                world->SetEntityName(entity, placement.name);
             }
         }
     }

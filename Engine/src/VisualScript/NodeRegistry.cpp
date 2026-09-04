@@ -2034,9 +2034,7 @@ void NodeRegistry::RegisterBuiltinNodes() {
                 ctx.world->AddComponent<ECS::TransformComponent>(newEntity);
                 auto* transform = ctx.world->GetComponent<ECS::TransformComponent>(newEntity);
                 if (transform) transform->position = pos;
-                ctx.world->AddComponent<ECS::NameComponent>(newEntity);
-                auto* nameComp = ctx.world->GetComponent<ECS::NameComponent>(newEntity);
-                if (nameComp) nameComp->name = name;
+                ctx.world->SetEntityName(newEntity, name);
             }
             outputs.resize(1);
             outputs[0] = newEntity;

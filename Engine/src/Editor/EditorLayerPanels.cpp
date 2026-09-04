@@ -2077,12 +2077,7 @@ void EditorLayer::ExecuteConsoleCommand(const std::string& command) {
             return;
         }
         ECS::Entity e = m_PrimarySelected;
-        auto* nc = m_World->GetComponent<ECS::NameComponent>(e);
-        if (!nc) {
-            m_World->AddComponent<ECS::NameComponent>(e, name);
-        } else {
-            nc->name = name;
-        }
+        m_World->SetEntityName(e, name);
         m_ConsoleLog.push_back("Set name to '" + name + "'");
     } else if (cmdLower == "setnotes") {
         if (m_SelectedEntities.empty() || !m_World) {

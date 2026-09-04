@@ -315,13 +315,7 @@ static void Scene_SetEntityName(u64 id, const std::string& name) {
     Entity entity = static_cast<Entity>(id);
     if (!s_BindingsWorld->IsValid(entity)) return;
 
-    auto* nc = s_BindingsWorld->GetComponent<NameComponent>(entity);
-    if (nc) {
-        nc->name = name;
-    } else {
-        s_BindingsWorld->AddComponent<NameComponent>(entity, NameComponent(name));
-    }
-    s_BindingsWorld->InvalidateNameCache();
+    s_BindingsWorld->SetEntityName(entity, name);
 }
 
 static void Scene_AddTag(u64 id, const std::string& tag) {
