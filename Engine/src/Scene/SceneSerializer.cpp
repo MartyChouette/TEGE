@@ -2511,6 +2511,10 @@ json SerializeVehicle(const ECS::VehicleController& ctrl) {
     j["grip"] = RF(ctrl.grip);
     j["driftFactor"] = RF(ctrl.driftFactor);
     j["downforceMultiplier"] = RF(ctrl.downforceMultiplier);
+    j["handbrakeScale"] = RF(ctrl.handbrakeScale);
+    j["reverseAccelScale"] = RF(ctrl.reverseAccelScale);
+    j["reverseSpeedThreshold"] = RF(ctrl.reverseSpeedThreshold);
+    j["highSpeedSteerReduction"] = RF(ctrl.highSpeedSteerReduction);
     j["mass"] = RF(ctrl.mass);
     j["cameraDistance"] = RF(ctrl.cameraDistance);
     j["cameraHeight"] = RF(ctrl.cameraHeight);
@@ -2537,6 +2541,10 @@ ECS::VehicleController DeserializeVehicle(const json& j) {
     if (j.contains("grip")) ctrl.grip = j["grip"].get<f32>();
     if (j.contains("driftFactor")) ctrl.driftFactor = j["driftFactor"].get<f32>();
     if (j.contains("downforceMultiplier")) ctrl.downforceMultiplier = j["downforceMultiplier"].get<f32>();
+    if (j.contains("handbrakeScale")) ctrl.handbrakeScale = j["handbrakeScale"].get<f32>();
+    if (j.contains("reverseAccelScale")) ctrl.reverseAccelScale = j["reverseAccelScale"].get<f32>();
+    if (j.contains("reverseSpeedThreshold")) ctrl.reverseSpeedThreshold = j["reverseSpeedThreshold"].get<f32>();
+    if (j.contains("highSpeedSteerReduction")) ctrl.highSpeedSteerReduction = j["highSpeedSteerReduction"].get<f32>();
     if (j.contains("mass")) ctrl.mass = j["mass"].get<f32>();
     if (j.contains("cameraDistance")) ctrl.cameraDistance = j["cameraDistance"].get<f32>();
     if (j.contains("cameraHeight")) ctrl.cameraHeight = j["cameraHeight"].get<f32>();

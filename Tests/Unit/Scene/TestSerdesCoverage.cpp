@@ -783,4 +783,32 @@ ENJIN_TEST(SerdesCoverage, FootstepMovementThresholdSurvivesASave) {
     ENJIN_EXPECT_TRUE(Near(r->movementThreshold, 0.05f));
 }
 
+
+ENJIN_TEST(SerdesCoverage, VehicleHandlingSurvivesASave) {
+    // Arrange: top speed, acceleration, brake force, grip and drift were all
+    // authored. How hard the handbrake bites, how fast it reverses, when
+    // reverse input reverses instead of braking, and how much steering is taken
+    // away at speed were literals in the update.
+    World src;
+    Entity e = Base(src);
+    VehicleController v;
+    v.handbrakeScale = 3.0f;
+    v.reverseAccelScale = 0.25f;
+    v.reverseSpeedThreshold = 2.0f;
+    v.highSpeedSteerReduction = 0.85f;
+    src.AddComponent<VehicleController>(e, v);
+
+    // Act
+    World dst;
+    Entity loaded = RoundTrip(src, e, dst);
+
+    // Assert
+    const auto* r = dst.GetComponent<VehicleController>(loaded);
+    ENJIN_ASSERT_TRUE(r != nullptr);
+    ENJIN_EXPECT_TRUE(Near(r->handbrakeScale, 3.0f));
+    ENJIN_EXPECT_TRUE(Near(r->reverseAccelScale, 0.25f));
+    ENJIN_EXPECT_TRUE(Near(r->reverseSpeedThreshold, 2.0f));
+    ENJIN_EXPECT_TRUE(Near(r->highSpeedSteerReduction, 0.85f));
+}
+
 ENJIN_TEST_MAIN()

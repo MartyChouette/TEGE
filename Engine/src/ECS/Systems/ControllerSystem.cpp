@@ -1941,7 +1941,7 @@ void ControllerSystem::UpdateVehicle(Entity entity, VehicleController& ctrl, Tra
     if (ctrl.handbrake) {
         // Handbrake: strong deceleration, reduced drift factor for skidding
         ctrl.isBraking = true;
-        ctrl.currentSpeed = Math::MoveTowards(ctrl.currentSpeed, 0.0f, ctrl.brakeForce * 1.5f * dt);
+        ctrl.currentSpeed = Math::MoveTowards(ctrl.currentSpeed, 0.0f, ctrl.brakeForce * ctrl.handbrakeScale * dt);
     } else if (throttle > 0.01f) {
         // Forward throttle
         if (ctrl.currentSpeed < 0.0f) {
@@ -1953,14 +1953,15 @@ void ControllerSystem::UpdateVehicle(Entity entity, VehicleController& ctrl, Tra
         }
     } else if (throttle < -0.01f) {
         // Reverse / brake
-        if (ctrl.currentSpeed > 0.5f) {
+        if (ctrl.currentSpeed > ctrl.reverseSpeedThreshold) {
             // Moving forward: treat as brake
             ctrl.isBraking = true;
             ctrl.currentSpeed = Math::MoveTowards(ctrl.currentSpeed, 0.0f, ctrl.brakeForce * dt);
         } else {
             // Slow enough: allow reverse
             ctrl.isReversing = true;
-            ctrl.currentSpeed = Math::MoveTowards(ctrl.currentSpeed, -ctrl.reverseMaxSpeed * (-throttle), ctrl.acceleration * 0.5f * dt);
+            ctrl.currentSpeed = Math::MoveTowards(ctrl.currentSpeed, -ctrl.reverseMaxSpeed * (-throttle),
+                                                  ctrl.acceleration * ctrl.reverseAccelScale * dt);
         }
     } else {
         // No input: engine brake (coast to stop)
@@ -1978,7 +1979,7 @@ void ControllerSystem::UpdateVehicle(Entity entity, VehicleController& ctrl, Tra
 
     // Reduce max steer at high speed for stability
     f32 speedFactor = Math::Clamp(Math::Abs(ctrl.currentSpeed) / ctrl.maxSpeed, 0.0f, 1.0f);
-    f32 effectiveSteer = ctrl.currentSteerAngle * (1.0f - speedFactor * 0.5f);
+    f32 effectiveSteer = ctrl.currentSteerAngle * (1.0f - speedFactor * ctrl.highSpeedSteerReduction);
 
     // --- Bicycle model (Ackermann approximation) ---
     // turning radius = wheelBase / tan(steerAngle)

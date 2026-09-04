@@ -315,6 +315,15 @@ struct VehicleController : public CharacterControllerBase {
     f32 downforceMultiplier = 0.5f; // Speed-dependent downforce
     f32 mass = 1000.0f;             // Vehicle mass (kg)
 
+    // Handling numbers that were literals in the update. Everything else about
+    // this vehicle was authored; these four decide how it actually drives.
+    f32 handbrakeScale = 1.5f;       // handbrake deceleration, as a multiple of brakeForce
+    f32 reverseAccelScale = 0.5f;    // reverse acceleration, as a fraction of acceleration
+    f32 reverseSpeedThreshold = 0.5f;// below this forward speed, reverse input reverses
+                                     // instead of braking (units/sec)
+    f32 highSpeedSteerReduction = 0.5f; // how much steering is taken away at top
+                                        // speed: 0 = none, 1 = no steering at all
+
     // Camera
     f32 cameraDistance = 8.0f;
     f32 cameraHeight = 3.5f;
