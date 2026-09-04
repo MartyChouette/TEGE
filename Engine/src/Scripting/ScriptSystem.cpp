@@ -405,6 +405,9 @@ void ScriptSystem::ShutdownAllScripts() {
     // delegates survive at ref count 1 to the engine's shutdown GC ("GC cannot
     // destroy $func" spam + a close hitch), and listeners leak across Play/Stop.
     Scripting::ClearBindingsEventListeners();
+    // The script clock restarts with the scripts. Without this a second Play in
+    // the editor continues the first run's Time_GetTime().
+    Scripting::ResetBindingsTime();
 
     ENJIN_LOG_INFO(Script, "All scripts shut down");
 }
@@ -413,6 +416,11 @@ void ScriptSystem::Update(f32 deltaTime) {
     if (!m_Enabled || !m_World || !m_ScriptEngine) return;
 
     // Query script entities once per frame — reused by all phases including FixedUpdate/LateUpdate
+    // Advance the script-visible clock first, so anything a script reads this
+    // frame already reflects this frame. Doing it here means every runtime gets
+    // it -- all three call Update -- rather than three places remembering to.
+    Scripting::TickBindingsTime(deltaTime);
+
     m_CachedScriptEntities = m_World->GetEntitiesWithComponent<ECS::ScriptComponent>();
 
     // 1. Poll for file changes and process hot reload
@@ -500,6 +508,10 @@ void ScriptSystem::Update(f32 deltaTime) {
 
 void ScriptSystem::FixedUpdate(f32 fixedDeltaTime) {
     if (!m_Enabled || !m_World) return;
+
+    // Time_GetFixedDeltaTime() should report the step actually being run, not
+    // the 1/60 the binding was initialised with.
+    Scripting::TickBindingsTime(0.0f, fixedDeltaTime);
 
     for (ECS::Entity entity : m_CachedScriptEntities) {
         auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);

@@ -89,6 +89,12 @@ void SetBindingsEventBus(ScriptEventBus* bus);
 // teardown (Play->Stop) so the AddRef'd delegates don't survive to the engine's
 // shutdown GC (which then can't collect them: "GC cannot destroy $func") and so
 // listeners don't leak across play sessions.
+// Advance the script-visible clock. ScriptSystem::Update calls this, so every
+// runtime gets it without another hand-maintained list. Without it
+// Time_GetTime(), Time_GetDeltaTime() and Time_GetFrameCount() return 0 forever.
+void TickBindingsTime(f32 deltaTime, f32 fixedDeltaTime = 0.0f);
+void ResetBindingsTime();
+
 void ClearBindingsEventListeners();
 
 // Drop just one entity's listeners, for a despawn. ScriptSystem's destroy

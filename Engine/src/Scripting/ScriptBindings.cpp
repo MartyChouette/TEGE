@@ -460,6 +460,31 @@ static f32 s_FixedDeltaTime = 1.0f / 60.0f;
 static f32 s_TotalTime = 0.0f;
 static u32 s_FrameCount = 0;
 
+// Advanced once per frame by ScriptSystem::Update. These three were read by
+// the bindings below and written NOWHERE in the repo, so Time_GetTime(),
+// Time_GetDeltaTime() and Time_GetFrameCount() returned 0 forever in every
+// runtime. A script driving an animation phase from Time_GetTime() simply
+// froze, with no error to explain it.
+//
+// This is the same defect the comment on Time_GetTimeScale below records: a
+// binding registered against state nothing maintains.
+namespace Enjin { namespace Scripting {
+
+void TickBindingsTime(f32 deltaTime, f32 fixedDeltaTime) {
+    s_DeltaTime = deltaTime;
+    s_TotalTime += deltaTime;
+    s_FrameCount++;
+    if (fixedDeltaTime > 0.0f) s_FixedDeltaTime = fixedDeltaTime;
+}
+
+void ResetBindingsTime() {
+    s_DeltaTime = 0.0f;
+    s_TotalTime = 0.0f;
+    s_FrameCount = 0;
+}
+
+}}  // namespace Enjin::Scripting
+
 static f32 Time_GetDeltaTime()      { return s_DeltaTime; }
 static f32 Time_GetFixedDeltaTime() { return s_FixedDeltaTime; }
 static f32 Time_GetTime()           { return s_TotalTime; }
