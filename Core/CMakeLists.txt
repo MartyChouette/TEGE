@@ -1,8 +1,14 @@
 cmake_minimum_required(VERSION 3.20)
 
 # Core library - Foundation components
-file(GLOB_RECURSE CORE_SOURCES
-    "src/**/*.cpp"
+# GLOB_RECURSE already recurses, so the pattern must be "src/*.cpp". CMake does
+# not read "**" as "zero or more directories" — it requires at least one
+# intervening directory, so "src/**/*.cpp" silently drops any .cpp sitting
+# directly in src/, even after a clean reconfigure. CONFIGURE_DEPENDS makes CMake
+# re-glob when the directory listing changes, so a new file is not invisible
+# until someone remembers to reconfigure.
+file(GLOB_RECURSE CORE_SOURCES CONFIGURE_DEPENDS
+    "src/*.cpp"
     "include/*.h"
     "include/*.hpp"
 )
@@ -23,7 +29,10 @@ target_include_directories(EnjinCore PUBLIC
 target_compile_features(EnjinCore PUBLIC cxx_std_20)
 
 if(MSVC)
-    target_compile_options(EnjinCore PRIVATE /utf-8)
+    # /MP: the Visual Studio generator parallelizes across projects, not across
+    # the files inside one. Without this the whole library compiles serially.
+    target_compile_options(EnjinCore PRIVATE /utf-8 /MP)
+    target_compile_options(EnjinCore PRIVATE ${ENJIN_PDB_COMPILE_OPTIONS})
 endif()
 
 # Find GLFW for windowing

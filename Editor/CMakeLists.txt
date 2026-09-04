@@ -24,6 +24,9 @@ target_link_libraries(EnjinEditor PRIVATE
 )
 
 target_compile_features(EnjinEditor PUBLIC cxx_std_20)
+# A user can be holding this binary when it crashes, so it keeps its symbols.
+target_compile_options(EnjinEditor PRIVATE ${ENJIN_PDB_COMPILE_OPTIONS})
+target_link_options(EnjinEditor PRIVATE ${ENJIN_PDB_LINK_OPTIONS})
 
 # Find Dear ImGui (MIT licensed)
 # Note: You'll need to add ImGui as a submodule or download it

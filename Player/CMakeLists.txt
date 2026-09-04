@@ -21,6 +21,9 @@ target_link_libraries(EnjinPlayer PRIVATE
 )
 
 target_compile_features(EnjinPlayer PRIVATE cxx_std_20)
+# A user can be holding this binary when it crashes, so it keeps its symbols.
+target_compile_options(EnjinPlayer PRIVATE ${ENJIN_PDB_COMPILE_OPTIONS})
+target_link_options(EnjinPlayer PRIVATE ${ENJIN_PDB_LINK_OPTIONS})
 
 target_compile_definitions(EnjinPlayer PRIVATE ENJIN_PLAYER=1)
 

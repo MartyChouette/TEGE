@@ -50,10 +50,14 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(miniaudio)
 
 # Engine library - Rendering, ECS, Asset system, etc.
-file(GLOB_RECURSE ENGINE_SOURCES
-    "src/**/*.cpp"
-    "include/**/*.h"
-    "include/**/*.hpp"
+# See the note in Core/CMakeLists.txt: "src/**/*.cpp" requires an intervening
+# directory and silently drops depth-1 files. CONFIGURE_DEPENDS re-globs when the
+# directory changes — the two explicit appends further down this file are scars
+# from exactly the staleness it prevents.
+file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS
+    "src/*.cpp"
+    "include/*.h"
+    "include/*.hpp"
 )
 
 # Exclude the wrong renderer backend's source files
@@ -154,7 +158,11 @@ endif()
 # EditorLayer.cpp exceeds the default MSVC section limit due to heavy template use
 # /utf-8 ensures source files with UTF-8 encoded characters compile correctly
 if(MSVC)
-    target_compile_options(EnjinEngine PRIVATE /bigobj /utf-8)
+    # /MP compiles this target's ~390 files in parallel. MSBuild's own --parallel
+    # only spans projects, and the engine is one project, so without /MP the
+    # largest target in the build is also the one that never uses more than a core.
+    target_compile_options(EnjinEngine PRIVATE /bigobj /utf-8 /MP)
+    target_compile_options(EnjinEngine PRIVATE ${ENJIN_PDB_COMPILE_OPTIONS})
 endif()
 
 # --- Renderer backend selection (Vulkan vs WebGPU) ---

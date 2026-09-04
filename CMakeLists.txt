@@ -12,13 +12,28 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-# Release builds carry full debug info (PDBs). The editor writes a minidump on
-# crash (enjin_crash.dmp) but without symbols every user crash report has been
-# an unreadable RVA. /Zi + /DEBUG costs nothing at runtime; the PDB just has to
-# ship alongside dev builds (it is NOT packaged into the distribution zip).
+# Release builds carry full debug info (PDBs) for OUR code. The editor writes a
+# minidump on crash (enjin_crash.dmp) but without symbols every user crash report
+# has been an unreadable RVA. /Zi + /DEBUG costs nothing at runtime; the PDB just
+# has to ship alongside dev builds (it is NOT packaged into the distribution zip).
+#
+# This is opt-in per target rather than a blanket add_compile_options, which
+# applied to every target added afterwards: the vendored libraries (whose PDBs
+# nobody has ever symbolized) and all 113 test executables, each of which wrote
+# a PDB spanning the whole engine archive. That was gigabytes of disk and link
+# time per build for symbols no one reads. Apply ENJIN_PDB_* to a target when a
+# user could be holding the binary when it crashes.
 if(MSVC)
-    add_compile_options("$<$<CONFIG:Release>:/Zi>" "$<$<CONFIG:Release>:/FS>")
-    add_link_options("$<$<CONFIG:Release>:/DEBUG>" "$<$<CONFIG:Release>:/OPT:REF>" "$<$<CONFIG:Release>:/OPT:ICF>")
+    set(ENJIN_PDB_COMPILE_OPTIONS "$<$<CONFIG:Release>:/Zi>" "$<$<CONFIG:Release>:/FS>")
+    set(ENJIN_PDB_LINK_OPTIONS "$<$<CONFIG:Release>:/DEBUG>")
+    # /OPT:REF and /OPT:ICF below can only strip at the granularity the compiler
+    # gives them. Without /Gy (per-function COMDATs) and /Gw (per-datum COMDATs)
+    # most unreferenced code and data is welded to whatever else shares its
+    # section and survives the link. /Zc:inline discards unreferenced
+    # internal-linkage COMDATs at compile time, which is exactly the shape of
+    # the static shader-byte arrays that headers paste into every includer.
+    add_compile_options("$<$<CONFIG:Release>:/Gy>" "$<$<CONFIG:Release>:/Gw>" /Zc:inline)
+    add_link_options("$<$<CONFIG:Release>:/OPT:REF>" "$<$<CONFIG:Release>:/OPT:ICF>")
 endif()
 
 # Sanitizer options (for development builds)
