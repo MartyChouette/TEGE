@@ -2278,6 +2278,9 @@ json SerializePlatformer2D(const ECS::Platformer2DController& ctrl) {
     j["enableWallSlide"] = ctrl.enableWallSlide;
     j["wallSlideSpeed"] = RF(ctrl.wallSlideSpeed);
     j["wallJumpForce"] = RF(ctrl.wallJumpForce);
+    j["stompMinFallSpeed"] = RF(ctrl.stompMinFallSpeed);
+    j["stompMinHeight"] = RF(ctrl.stompMinHeight);
+    j["stompBounceScale"] = RF(ctrl.stompBounceScale);
     j["collisionRadius"] = RF(ctrl.collisionRadius);
     j["collisionHeight"] = RF(ctrl.collisionHeight);
     j["groundCheckDistance"] = RF(ctrl.groundCheckDistance);
@@ -2299,6 +2302,9 @@ ECS::Platformer2DController DeserializePlatformer2D(const json& j) {
     if (j.contains("enableWallSlide")) ctrl.enableWallSlide = JB(j["enableWallSlide"]);
     if (j.contains("wallSlideSpeed")) ctrl.wallSlideSpeed = j["wallSlideSpeed"].get<f32>();
     if (j.contains("wallJumpForce")) ctrl.wallJumpForce = j["wallJumpForce"].get<f32>();
+    if (j.contains("stompMinFallSpeed")) ctrl.stompMinFallSpeed = j["stompMinFallSpeed"].get<f32>();
+    if (j.contains("stompMinHeight")) ctrl.stompMinHeight = j["stompMinHeight"].get<f32>();
+    if (j.contains("stompBounceScale")) ctrl.stompBounceScale = j["stompBounceScale"].get<f32>();
     if (j.contains("collisionRadius")) ctrl.collisionRadius = j["collisionRadius"].get<f32>();
     if (j.contains("collisionHeight")) ctrl.collisionHeight = j["collisionHeight"].get<f32>();
     if (j.contains("groundCheckDistance")) ctrl.groundCheckDistance = j["groundCheckDistance"].get<f32>();

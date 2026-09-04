@@ -36,10 +36,11 @@ void ProcessContactDamage(ECS::World* world, ECS::Entity entityA,
         // they always damage the player and cannot be stomped.
         auto* targetCtrl = world->GetComponent<ECS::Platformer2DController>(target);
         auto* enemyHp = world->GetComponent<ECS::HealthComponent>(damager);
-        if (targetCtrl && enemyHp && targetCtrl->velocity.y < -1.0f) {
+        if (targetCtrl && enemyHp && targetCtrl->velocity.y < -targetCtrl->stompMinFallSpeed) {
             auto* targetT = world->GetComponent<ECS::TransformComponent>(target);
             auto* damagerT = world->GetComponent<ECS::TransformComponent>(damager);
-            if (targetT && damagerT && targetT->position.y > damagerT->position.y + 0.3f) {
+            if (targetT && damagerT &&
+                targetT->position.y > damagerT->position.y + targetCtrl->stompMinHeight) {
                 // Stomp! Kill the enemy, bounce the player
                 enemyHp->currentHealth = 0.0f;
                 enemyHp->isDead = true;
@@ -47,7 +48,7 @@ void ProcessContactDamage(ECS::World* world, ECS::Entity entityA,
                 ENJIN_LOG_INFO(Game, "STOMP: entity %llu stomped entity %llu",
                     (unsigned long long)target, (unsigned long long)damager);
                 // Bounce the player upward (small hop after stomp)
-                targetCtrl->velocity.y = targetCtrl->jumpForce * 0.6f;
+                targetCtrl->velocity.y = targetCtrl->jumpForce * targetCtrl->stompBounceScale;
                 targetCtrl->isGrounded = false;
                 return;  // Stomp replaces damage — player is not hurt
             }
@@ -308,13 +309,13 @@ void CheckEnemyOverlaps2D(ECS::World* world, f32 deltaTime,
             if (dx >= pr + ex || dy >= ph + ey) continue;
 
             // Overlap detected — stomp check
-            if (playerCtrl && playerCtrl->velocity.y < -1.0f &&
-                playerT->position.y > enemyT->position.y + 0.3f) {
+            if (playerCtrl && playerCtrl->velocity.y < -playerCtrl->stompMinFallSpeed &&
+                playerT->position.y > enemyT->position.y + playerCtrl->stompMinHeight) {
                 // Stomp! Kill enemy, bounce player
                 enemyHp->currentHealth = 0.0f;
                 enemyHp->isDead = true;
                 deferredDestroys.push_back(enemy);
-                playerCtrl->velocity.y = playerCtrl->jumpForce * 0.6f;
+                playerCtrl->velocity.y = playerCtrl->jumpForce * playerCtrl->stompBounceScale;
                 playerCtrl->isGrounded = false;
                 ENJIN_LOG_INFO(Game, "STOMP: entity %llu stomped entity %llu",
                     (unsigned long long)player, (unsigned long long)enemy);

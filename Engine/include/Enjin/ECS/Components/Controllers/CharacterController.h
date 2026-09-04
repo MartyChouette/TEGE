@@ -100,6 +100,14 @@ struct Platformer2DController : public CharacterControllerBase {
     f32 jumpBufferTime = 0.1f;
     f32 jumpBufferTimer = 0.0f;
 
+    // Stomp: landing on an enemy from above kills it and bounces the player.
+    // These were literals written into two separate code paths that both have
+    // to agree - the damage-event route and the direct overlap sweep - so the
+    // feel could not be tuned and the two could drift apart.
+    f32 stompMinFallSpeed = 1.0f;   // downward speed required, world units/sec
+    f32 stompMinHeight = 0.3f;      // how far above the enemy the player must be
+    f32 stompBounceScale = 0.6f;    // bounce height as a fraction of jumpForce
+
     // Wall mechanics (optional)
     bool enableWallJump = false;
     bool enableWallSlide = false;

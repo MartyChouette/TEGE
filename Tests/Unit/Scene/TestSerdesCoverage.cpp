@@ -698,4 +698,29 @@ ENJIN_TEST(SerdesCoverage, TimelineTracksSurviveASave) {
     ENJIN_EXPECT_TRUE(r->playOnAwake);
 }
 
+
+ENJIN_TEST(SerdesCoverage, PlatformerStompFeelSurvivesASave) {
+    // Arrange: stomp feel used to be three literals written into two separate
+    // code paths, so there was nothing to tune. Now it is authored, which means
+    // it has to come back.
+    World src;
+    Entity e = Base(src);
+    Platformer2DController ctrl;
+    ctrl.stompMinFallSpeed = 3.25f;
+    ctrl.stompMinHeight = 0.75f;
+    ctrl.stompBounceScale = 1.2f;
+    src.AddComponent<Platformer2DController>(e, ctrl);
+
+    // Act
+    World dst;
+    Entity loaded = RoundTrip(src, e, dst);
+
+    // Assert
+    const auto* r = dst.GetComponent<Platformer2DController>(loaded);
+    ENJIN_ASSERT_TRUE(r != nullptr);
+    ENJIN_EXPECT_TRUE(Near(r->stompMinFallSpeed, 3.25f));
+    ENJIN_EXPECT_TRUE(Near(r->stompMinHeight, 0.75f));
+    ENJIN_EXPECT_TRUE(Near(r->stompBounceScale, 1.2f));
+}
+
 ENJIN_TEST_MAIN()
