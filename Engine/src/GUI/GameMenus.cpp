@@ -1,4 +1,5 @@
 #include "Enjin/GUI/GameMenus.h"
+#include "Enjin/Platform/Input.h"
 #include "Enjin/Renderer/PostProcessing.h"
 
 #include <algorithm>
@@ -331,8 +332,21 @@ void GameMenuSystem::RenderGraphics(f32 w, f32 h) {
         m_Graphics.resolutionHeight = resolutions[currentRes].h;
     }
 
+#if !ENJIN_PLATFORM_WEB
     ImGui::Checkbox("Fullscreen", &m_Graphics.fullscreen);
     ImGui::Checkbox("VSync", &m_Graphics.vsync);
+#else
+    // In a browser there is no vsync to choose: presentation is the browser's,
+    // on its own cadence through requestAnimationFrame, and nothing here can
+    // change it. Offering the toggle offers a control that does nothing.
+    //
+    // Fullscreen is still worth offering on a desktop browser, but not on a
+    // phone -- there the browser grants it on its own terms and the game is
+    // already filling the screen.
+    if (!Input::IsCoarsePointerDevice()) {
+        ImGui::Checkbox("Fullscreen", &m_Graphics.fullscreen);
+    }
+#endif
 
     // Field of View
     ImGui::SliderFloat("Field of View", &m_Graphics.fieldOfView, 40.0f, 120.0f, "%.0f");

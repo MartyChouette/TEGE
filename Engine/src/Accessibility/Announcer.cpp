@@ -89,11 +89,30 @@ void AccessibilityAnnouncer::Announce(const std::string& text, AnnouncePriority 
     // High/Critical announcements interrupt whatever is being spoken.
     if (enabled) {
         EM_ASM({
-            if (window.speechSynthesis) {
-                if ($1) { window.speechSynthesis.cancel(); }
-                var u = new SpeechSynthesisUtterance(UTF8ToString($0));
-                window.speechSynthesis.speak(u);
+            if (!window.speechSynthesis) return;
+            // Safari (and Chrome's autoplay policy) keep speech muted until a
+            // user gesture has unlocked it, and iOS never unlocks it on its
+            // own. Without this the screen reader is silent for the whole
+            // session on an iPhone with no error anywhere. Speaking an empty
+            // utterance from the first touch is the unlock; it is armed once
+            // and removes itself.
+            if (!window.__enjinSpeechUnlocked) {
+                window.__enjinSpeechUnlocked = true;
+                var unlock = function () {
+                    try { window.speechSynthesis.speak(new SpeechSynthesisUtterance('')); } catch (e) {}
+                    window.removeEventListener('touchend', unlock, true);
+                    window.removeEventListener('pointerup', unlock, true);
+                    window.removeEventListener('keydown', unlock, true);
+                };
+                window.addEventListener('touchend', unlock, true);
+                window.addEventListener('pointerup', unlock, true);
+                window.addEventListener('keydown', unlock, true);
             }
+            if ($1) { window.speechSynthesis.cancel(); }
+            var u = new SpeechSynthesisUtterance(UTF8ToString($0));
+            u.rate = 1.0;
+            u.volume = 1.0;
+            window.speechSynthesis.speak(u);
         }, text.c_str(), priority >= AnnouncePriority::High ? 1 : 0);
     }
 #endif

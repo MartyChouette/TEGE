@@ -257,6 +257,34 @@ public:
     // on web, where real touches drive the overlay.
     static void SetTouchSimulation(bool enabled);
     static bool IsTouchSimulation();
+
+    /**
+     * @brief Is this a touch device -- a phone or tablet -- rather than a
+     *        desktop browser?
+     *
+     * On web this is the browser's own (pointer: coarse) answer, which the
+     * touch overlay already relies on. Menus use it to stop offering options
+     * that mean nothing on a phone: there is no window to resize, no vsync to
+     * pick, and fullscreen is the browser's to grant.
+     *
+     * Always false on desktop builds.
+     */
+    static bool IsCoarsePointerDevice();
+
+    /**
+     * @brief Enter or leave fullscreen on web. The one way to do it.
+     *
+     * Targets the game CONTAINER, never the canvas: fullscreening a canvas
+     * leaves its backing store at the old size while the browser stretches it,
+     * which on a phone reads as the game locking up. Prefers the page's own
+     * helper when the shell provides one, and swallows every failure -- a
+     * browser that refuses must leave the game running windowed.
+     *
+     * @param enable      true to enter, false to leave.
+     * @param coarseOnly  only act on a touch device (used by the first-touch
+     *                    auto-fullscreen; menus pass false).
+     */
+    static void SetWebFullscreen(bool enable, bool coarseOnly = false);
     // The rect (window pixels, same space as GetMousePosition) the game view
     // occupies: whole window in the player, the Game View image in the editor.
     // Touch geometry and the overlay live inside it. Ignored on web (canvas).

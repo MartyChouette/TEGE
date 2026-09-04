@@ -90,6 +90,7 @@
 #include "Enjin/Gameplay/GameplayLoop.h"
 #include "Enjin/Gameplay/FootstepSystem.h"
 #include "Enjin/Accessibility/SubtitleSystem.h"
+#include "Enjin/Accessibility/AlternativeInput.h"
 #include "Enjin/Accessibility/Announcer.h"
 #include "Enjin/Accessibility/AccessibilitySettings.h"
 #include "Enjin/Gameplay/QuestSystem.h"
@@ -1050,6 +1051,7 @@ public:
             }
             m_FootstepSystem.Update(m_World.get(), deltaTime);
             m_SubtitleSystem.Update(deltaTime);
+            m_AlternativeInput.Update(deltaTime);
             m_Announcer.Update(deltaTime);
 
             // Live accessibility sync: scripts change these mid-game (Accessibility
@@ -1214,12 +1216,12 @@ public:
                 });
             m_UISystem.GetEventBus().Listen("options_fullscreen",
                 [](const Enjin::GUI::UIEventData& e) {
-                    if (e.boolValue) {
-                        EM_ASM({ var c = Module.canvas || document.getElementById('canvas');
-                                 if (c && c.requestFullscreen) c.requestFullscreen(); });
-                    } else {
-                        EM_ASM({ if (document.exitFullscreen) document.exitFullscreen(); });
-                    }
+                    // Through the one shared routine. This used to call
+                    // requestFullscreen() on the CANVAS, which leaves its
+                    // backing store at the old size while the browser stretches
+                    // it -- on a phone that reads as the game locking up -- and
+                    // had no webkit fallback, so on iOS the call did not exist.
+                    Enjin::Input::SetWebFullscreen(e.boolValue);
                 });
             // Accessibility toggles — write the runtime settings; colorblind/font
             // re-apply every frame, and we apply colorblind immediately so it shows
@@ -1309,6 +1311,8 @@ public:
         Enjin::Input::SetUIConsumedPointer(m_UISystem.WasPointerConsumed() || io.WantCaptureMouse);
         // Subtitle overlay (accessibility) -- same draw code as desktop
         m_SubtitleSystem.RenderOverlay(w, h);
+        // Switch-scanning highlight / dwell cursor
+        m_AlternativeInput.RenderOverlay();
         // Screen reader status bar (announcements also speak via Web Speech API)
         m_Announcer.RenderStatusBar();
         // Always-available pause button. A touchscreen has no Escape key, so without
@@ -1893,6 +1897,9 @@ private:
         m_ControllerSystem.SetDisableFOVEffects(s.disableFOVEffects);
         m_UISystem.SetReducedMotion(s.reducedMotion);
         Enjin::Accessibility::ApplyTextScale(s, &m_UISystem, &m_SubtitleSystem, &m_Announcer);
+        // Two scan lists on purpose: this one is app chrome, UISystem's is game
+        // UI. Both take the same authored values.
+        m_AlternativeInput.ApplyAccessibilitySettings(s.switchAccessEnabled, s.switchScanSpeed);
         m_UISystem.SetSwitchAccessEnabled(s.switchAccessEnabled, s.switchScanSpeed);
         m_UISystem.SetDwellClickEnabled(s.dwellClickEnabled, s.dwellClickTime);
         m_UISystem.SetStickyDragEnabled(s.stickyDragEnabled);
@@ -2010,6 +2017,11 @@ private:
     Enjin::InputSystem::InputProjectSettings m_InputSettings;
     Enjin::Gameplay::FootstepSystem m_FootstepSystem;
     Enjin::Accessibility::SubtitleSystem m_SubtitleSystem;
+    // Switch scanning, dwell click and eye tracking -- the motor-accessibility
+    // pillar. The desktop player has had this since it was built; the web
+    // player had NO reference to it at all, so every web build shipped without
+    // the half of accessibility that a player using switches actually needs.
+    Enjin::Accessibility::AlternativeInputManager m_AlternativeInput;
     Enjin::Accessibility::AccessibilityAnnouncer m_Announcer;
     Enjin::Accessibility::RuntimeAccessibilitySettings m_AccessibilitySettings;
     Enjin::f32 m_OptionsFov = 0.0f;   // options menu override; 0 = use the authored camera

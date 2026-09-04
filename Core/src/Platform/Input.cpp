@@ -411,39 +411,25 @@ namespace {
     // every failure path is swallowed (iPhone Safari has limited fullscreen -
     // the overlay still works windowed).
     bool s_TriedFullscreen = false;
-    void WebRequestMobileFullscreen() {
-        if (s_TriedFullscreen) return;
-        s_TriedFullscreen = true;
-        EM_ASM({
-            try {
-                if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches &&
-                    !document.fullscreenElement && !document.webkitFullscreenElement) {
-                    // Prefer the shell helper (handles iPhone pseudo-fullscreen);
-                    // bare-shell fallback targets the container, never the canvas.
-                    if (window.enjinEnterFullscreen) { window.enjinEnterFullscreen(); return; }
-                    var c = document.getElementById('game-container') ||
-                            document.getElementById('game-canvas') || document.body;
-                    var p = c.requestFullscreen ? c.requestFullscreen()
-                          : (c.webkitRequestFullscreen ? c.webkitRequestFullscreen() : null);
-                    if (p && p.then) {
-                        p.then(function() {
-                            try {
-                                if (screen.orientation && screen.orientation.lock) {
-                                    screen.orientation.lock('landscape').catch(function(){});
-                                }
-                            } catch (e) {}
-                        }).catch(function(){});
-                    }
-                }
-            } catch (e) {}
-        });
-    }
+    void WebRequestMobileFullscreen() { Input::SetWebFullscreen(true, true); }
 
 }
 
 // JS-callable (the on-page "Touch controls" button): force the overlay on as
 // if a coarse pointer had been detected. Must be extern "C" + KEEPALIVE so
 // Module._enjin_enable_touch_controls survives dead-code elimination.
+// The ONE way to go fullscreen on web.
+//
+// There were two: this behaviour, and a second copy behind the Options menu's
+// Fullscreen checkbox that called requestFullscreen() on the CANVAS. Putting a
+// canvas fullscreen leaves its backing store at the old size while the browser
+// CSS-stretches it, and on a phone that reads as the game locking up. It also
+// had no webkit fallback, so on iOS the call simply did not exist.
+//
+// Targets the CONTAINER, prefers the page's own helper when the shell provides
+// one (that is what handles iPhone pseudo-fullscreen), locks landscape when it
+// can, and swallows every failure -- a browser refusing fullscreen must leave
+// the game running windowed, not wedged.
 extern "C" EMSCRIPTEN_KEEPALIVE void enjin_enable_touch_controls() {
     s_CoarsePointer = true;
     s_TouchSeen = true;
@@ -528,7 +514,55 @@ namespace {
         return EM_TRUE;   // preventDefault: no page scroll/zoom while playing
     }
 #endif
+
 }
+
+// Both of these exist on every platform so callers do not need a guard; on
+// desktop there is no browser to ask and no fullscreen to request this way.
+#if ENJIN_PLATFORM_WEB
+bool Input::IsCoarsePointerDevice() {
+#if ENJIN_PLATFORM_WEB
+    return s_CoarsePointer;
+#else
+    return false;
+#endif
+}
+
+void Input::SetWebFullscreen(bool enable, bool coarseOnly) {
+    EM_ASM({
+        try {
+            var coarseOnly = $0;
+            var enable = $1;
+            if (!enable) {
+                if (window.enjinExitFullscreen) { window.enjinExitFullscreen(); return; }
+                if (document.exitFullscreen) { document.exitFullscreen().catch(function(){}); }
+                else if (document.webkitExitFullscreen) { document.webkitExitFullscreen(); }
+                return;
+            }
+            if (coarseOnly && !(window.matchMedia &&
+                                window.matchMedia('(pointer: coarse)').matches)) return;
+            if (document.fullscreenElement || document.webkitFullscreenElement) return;
+            if (window.enjinEnterFullscreen) { window.enjinEnterFullscreen(); return; }
+            var c = document.getElementById('game-container') ||
+                    document.getElementById('game-canvas') || document.body;
+            var p = c.requestFullscreen ? c.requestFullscreen()
+                  : (c.webkitRequestFullscreen ? c.webkitRequestFullscreen() : null);
+            if (p && p.then) {
+                p.then(function() {
+                    try {
+                        if (screen.orientation && screen.orientation.lock) {
+                            screen.orientation.lock('landscape').catch(function(){});
+                        }
+                    } catch (e) {}
+                }).catch(function(){});
+            }
+        } catch (e) {}
+    }, coarseOnly ? 1 : 0, enable ? 1 : 0);
+}
+#else
+bool Input::IsCoarsePointerDevice() { return false; }
+void Input::SetWebFullscreen(bool, bool) {}
+#endif
 
 void Input::Initialize(Window* window) {
 #if !ENJIN_PLATFORM_WEB
