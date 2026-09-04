@@ -1664,6 +1664,64 @@ void RenderSystem::Update(f32 deltaTime) {
         return s_WebShadowCasters;
     };
 
+    // One signature over every shadow caster, for the spot and point caches
+    // below. Computed at most once per frame and only if something asks.
+    //
+    // Deliberately separate from the directional pass's own sum: that one is
+    // built inside the loop that also fits the shadow volume, and is only
+    // available when the directional map exists at all. The quantisation is the
+    // same, to one shadow texel, because the reason for it is the same - a
+    // resting rigid body jitters by a fraction of a millimetre on every physics
+    // step, and calling that a change redraws an identical texture forever.
+    u64 s_WebCasterSig = 0;
+    bool webCasterSigBuilt = false;
+    auto webCasterSignature = [&]() -> u64 {
+        if (webCasterSigBuilt) return s_WebCasterSig;
+        webCasterSigBuilt = true;
+        const f32 texel = std::max(m_WebShadowTexelWorld > 0.0f ? m_WebShadowTexelWorld : 0.05f, 1e-4f);
+        auto hashF = [](u64 h, f32 v) {
+            u32 bits;
+            std::memcpy(&bits, &v, sizeof(bits));
+            return (h ^ bits) * 1099511628211ull;
+        };
+        u64 sum = 0;
+        for (Entity ce : webShadowCasters()) {
+            auto* cx = m_CachedTransformStorage ? m_CachedTransformStorage->Get(ce) : nullptr;
+            if (!cx) continue;
+            // Same ground-receiver skip the passes themselves apply, so an
+            // entity that is never drawn cannot dirty the cache.
+            const Math::Vector3 he(std::abs(cx->scale.x), std::abs(cx->scale.y), std::abs(cx->scale.z));
+            if (std::max(he.x, he.z) * 2.0f > 30.0f && he.y * 2.0f < 1.0f) continue;
+            auto qp = [texel](f32 v) { return std::round(v / texel); };
+            auto qr = [](f32 v) { return std::round(v * 256.0f); };
+            u64 eh = 1469598103934665603ull;
+            eh = hashF(eh, qp(cx->position.x)); eh = hashF(eh, qp(cx->position.y)); eh = hashF(eh, qp(cx->position.z));
+            eh = hashF(eh, qr(cx->rotation.x)); eh = hashF(eh, qr(cx->rotation.y));
+            eh = hashF(eh, qr(cx->rotation.z)); eh = hashF(eh, qr(cx->rotation.w));
+            eh = hashF(eh, qp(cx->scale.x)); eh = hashF(eh, qp(cx->scale.y)); eh = hashF(eh, qp(cx->scale.z));
+            // Index count catches a mesh rebuilt into a different topology, which
+            // moves no transform at all.
+            const u64 eid = EntityIndex(ce);
+            if (eid < m_EntityRenderData.size())
+                eh = hashF(eh, static_cast<f32>(m_EntityRenderData[eid].indexCount));
+            // Added, not chained, so iteration order cannot look like a change.
+            sum += eh;
+        }
+        // Geometry that deforms in place. A verlet rope or a cloth sheet rewrites
+        // its vertices every frame while its transform never moves, so a
+        // signature built from transforms alone would hold a frozen shadow of
+        // the first frame's shape. Mixing a frame counter in makes any scene
+        // containing one of these redraw every frame, which is the honest
+        // answer: there is nothing to cache there.
+        if (!m_World->GetEntitiesWithComponent<ClothComponent>().empty() ||
+            !m_World->GetEntitiesWithComponent<RopeComponent>().empty()) {
+            static u32 s_DeformFrame = 0;
+            sum += ++s_DeformFrame;
+        }
+        s_WebCasterSig = sum;
+        return s_WebCasterSig;
+    };
+
     // Mark all transform world-matrix caches dirty so each entity recomputes at
     // most once this frame — same contract as the Vulkan Update. Without this
     // the web path served every parented entity its FIRST frame's cached world
@@ -2246,9 +2304,28 @@ void RenderSystem::Update(f32 deltaTime) {
                 spotVPs.viewProj[idx * 2] = spotView;
                 spotVPs.viewProj[idx * 2 + 1] = spotProj;
 
+                // The matrices above go out every frame regardless; only the
+                // depth texture is cached. It is written by nothing but this
+                // pass, so its contents stay valid until a caster or the light
+                // moves.
+                u64 spotSig = webCasterSignature();
+                {
+                    auto mixF = [](u64 h, f32 v) {
+                        u32 bits;
+                        std::memcpy(&bits, &v, sizeof(bits));
+                        return (h ^ bits) * 1099511628211ull;
+                    };
+                    spotSig = mixF(spotSig, static_cast<f32>(EntityIndex(lightEntity)));
+                    spotSig = mixF(spotSig, pos.x); spotSig = mixF(spotSig, pos.y); spotSig = mixF(spotSig, pos.z);
+                    spotSig = mixF(spotSig, dir.x); spotSig = mixF(spotSig, dir.y); spotSig = mixF(spotSig, dir.z);
+                    spotSig = mixF(spotSig, fov); spotSig = mixF(spotSig, range);
+                }
+                const bool spotDirty = !m_WebSpotShadowValid[idx] || spotSig != m_WebSpotShadowSig[idx];
+                m_WebSpotShadowSig[idx] = spotSig;
+
                 // Render shadow pass for this spot light
                 const auto* spotTexNative = webTexMgr->GetNativeTexture(m_WebSpotShadowTex[idx]);
-                if (spotTexNative && spotTexNative->view) {
+                if (spotDirty && spotTexNative && spotTexNative->view) {
                     // Create per-pass VP buffer (can't reuse — wgpuQueueWriteBuffer last-write-wins)
                     WebViewProjectionUBO spotShadowVP{};
                     spotShadowVP.view = spotView;
@@ -2308,6 +2385,15 @@ void RenderSystem::Update(f32 deltaTime) {
                     }
                     webBindMgr2->DestroyBindGroup(spotFrameBG);
                     bufMgr->DestroyBuffer(spotVPBuf);
+                    m_WebSpotShadowValid[idx] = true;
+                }
+                {
+                    static u32 s_SpFrames = 0, s_SpRedraws = 0;
+                    if (spotDirty) ++s_SpRedraws;
+                    if (++s_SpFrames % 300 == 0) {
+                        EM_ASM({ console.log('[SPOT_SHADOW] redraws=' + $0 + '/300'); }, s_SpRedraws);
+                        s_SpRedraws = 0;
+                    }
                 }
                 activeSpotShadows++;
             }
@@ -2357,10 +2443,31 @@ void RenderSystem::Update(f32 deltaTime) {
                     {{pos.x, pos.y, pos.z-1}, {0,-1,0}},  // -Z
                 };
 
+                // Six full passes over every caster, every frame, for six
+                // textures that usually already hold the right depth. The
+                // matrices still go out each frame; only the rendering is
+                // skipped.
+                const u32 pidx = activePointShadows;
+                u64 pointSig = webCasterSignature();
+                {
+                    auto mixF = [](u64 h, f32 v) {
+                        u32 bits;
+                        std::memcpy(&bits, &v, sizeof(bits));
+                        return (h ^ bits) * 1099511628211ull;
+                    };
+                    pointSig = mixF(pointSig, static_cast<f32>(EntityIndex(lightEntity)));
+                    pointSig = mixF(pointSig, pos.x); pointSig = mixF(pointSig, pos.y); pointSig = mixF(pointSig, pos.z);
+                    pointSig = mixF(pointSig, range);
+                }
+                const bool pointDirty = !m_WebPointShadowValid[pidx] || pointSig != m_WebPointShadowSig[pidx];
+                m_WebPointShadowSig[pidx] = pointSig;
+                u32 pointFacesDrawn = 0;
+
                 for (u32 face = 0; face < 6; face++) {
                     Math::Matrix4 faceView = Math::Matrix4::LookAt(pos, faces[face].target, faces[face].up);
                     pointVPs.viewProj[face * 2] = faceView;
                     pointVPs.viewProj[face * 2 + 1] = faceProj;
+                    if (!pointDirty) continue;
 
                     // Create per-face VP buffer (can't reuse — wgpuQueueWriteBuffer last-write-wins)
                     WebViewProjectionUBO faceShadowVP{};
@@ -2378,6 +2485,7 @@ void RenderSystem::Update(f32 deltaTime) {
                     WGPURenderPassEncoder facePass = webRenderer->BeginDepthOnlyPass(
                         static_cast<WGPUTextureView>(m_WebPointShadowFaceViews[face]), WEB_POINT_SHADOW_SIZE, WEB_POINT_SHADOW_SIZE);
                     if (facePass) {
+                        ++pointFacesDrawn;
                         wgpuRenderPassEncoderSetPipeline(facePass, pipeMgr3->GetNativePipeline(m_WebShadowPipeline));
                         wgpuRenderPassEncoderSetViewport(facePass, 0, 0,
                             static_cast<f32>(WEB_POINT_SHADOW_SIZE), static_cast<f32>(WEB_POINT_SHADOW_SIZE), 0.0f, 1.0f);
@@ -2420,6 +2528,20 @@ void RenderSystem::Update(f32 deltaTime) {
                     }
                     webBindMgr3->DestroyBindGroup(faceFrameBG);
                     bufMgr->DestroyBuffer(faceVPBuf);
+                }
+                // Only claim the cube is cached when all six faces actually
+                // rendered; a pass that failed to begin leaves a stale face.
+                if (pointDirty && pointFacesDrawn == 6) m_WebPointShadowValid[pidx] = true;
+                // Same proof the directional pass prints: on a settled scene this
+                // falls to zero. A number that keeps climbing means something is
+                // perturbing a caster or the light every frame.
+                {
+                    static u32 s_PtFrames = 0, s_PtRedraws = 0;
+                    if (pointDirty) ++s_PtRedraws;
+                    if (++s_PtFrames % 300 == 0) {
+                        EM_ASM({ console.log('[PT_SHADOW] cube redraws=' + $0 + '/300 (6 passes each)'); }, s_PtRedraws);
+                        s_PtRedraws = 0;
+                    }
                 }
                 activePointShadows++;
             }

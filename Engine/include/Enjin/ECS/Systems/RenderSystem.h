@@ -1301,6 +1301,11 @@ private:
     static constexpr u32 WEB_MAX_SPOT_SHADOWS = 2;
     Renderer::GPUTextureHandle m_WebSpotShadowTex[WEB_MAX_SPOT_SHADOWS];
     Renderer::GPUBufferHandle m_WebSpotShadowVPBuffer;   // 2 lights worth of VP pairs
+    // Per-slot cache, same idea as m_WebShadowSignature for the directional map.
+    // The light's own entity is part of the signature, so a slot that changes
+    // hands redraws rather than serving the previous light's depth.
+    u64 m_WebSpotShadowSig[WEB_MAX_SPOT_SHADOWS] = {};
+    bool m_WebSpotShadowValid[WEB_MAX_SPOT_SHADOWS] = {};
 
     // Point light shadows (max 1, cubemap)
     static constexpr u32 WEB_POINT_SHADOW_SIZE = 512;
@@ -1308,6 +1313,8 @@ private:
     Renderer::GPUTextureHandle m_WebPointShadowCubemap;  // managed by WebGPURenderer
     void* m_WebPointShadowFaceViews[6] = {};              // WGPUTextureView per face (cast at use)
     Renderer::GPUBufferHandle m_WebPointShadowVPBuffer;   // 6 face VPs
+    u64 m_WebPointShadowSig[WEB_MAX_POINT_SHADOWS] = {};
+    bool m_WebPointShadowValid[WEB_MAX_POINT_SHADOWS] = {};
 
     // WebGPU post-process accessibility uniform buffer (uploads from m_WebPPAccessibility)
     Renderer::GPUBufferHandle m_WebPPAccessibilityBuffer;
