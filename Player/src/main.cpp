@@ -430,6 +430,9 @@ public:
                 m_PostProcessing->GetSettings().fxaaEnabled = gfx.fxaa;
             }
 
+            // --- Render scale (picks the upscaler preset that matches) ---
+            m_RenderSystem->ApplyRenderScale(gfx.renderScale);
+
             // --- FOV (applied to the active camera next frame) ---
             m_PendingFOV = gfx.fieldOfView;
 

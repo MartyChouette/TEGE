@@ -451,6 +451,10 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
             m_PostProcessing->GetSettings().fxaaEnabled = gfx.fxaa;
         }
 
+        // Render scale. The slider and the quality presets have always written
+        // this field and nothing ever read it, so the whole control was inert.
+        m_RenderSystem->ApplyRenderScale(gfx.renderScale);
+
         // FOV — update the active game camera component
         if (m_World && gfx.fieldOfView >= 40.0f && gfx.fieldOfView <= 120.0f) {
             auto cam = ECS::CameraManager::GetActiveCamera(m_World);

@@ -84,6 +84,7 @@ Renderer::SkyboxConfig RenderSystem::WeatherSky(const Renderer::SkyboxConfig& cf
 #include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/Components/Cloth.h"   // cloth/rope meshDirty re-upload
 #include "Enjin/ECS/Components/ProceduralMesh.h"  // generic runtime-generated geometry upload
+#include "Enjin/ECS/Components/ProceduralTexture.h"  // generic CPU-generated texture upload
 #include "Enjin/ECS/Components/Rope.h"
 #include "Enjin/ECS/Components/Text.h"    // web SDF text generation
 #include "Enjin/Effects/Weather.h"        // weather particle draw
@@ -3669,6 +3670,22 @@ void RenderSystem::SetAAMode(u32 mode) {
     m_AAMode = mode;
 }
 void RenderSystem::SetUpscalerType(u32 type) { m_UpscalerType = type; }
+f32 RenderSystem::ApplyRenderScale(f32 scale) {
+    // Clamp to what the implementation can deliver. The menu used to offer
+    // 0.25 - 2.0; nothing in the engine has ever rendered at either end, and
+    // 2.0 in particular promised supersampling that does not exist.
+    if (scale < 0.5f) scale = 0.5f;
+    if (scale > 1.0f) scale = 1.0f;
+
+    // Web renders the scene into a target sized by this and the post-process
+    // pass resolves it back up, so the number is taken literally. Sharpening
+    // compensates for the softness the upscale introduces, and is pointless at
+    // native resolution.
+    SetWebRenderScale(scale);
+    SetWebSharpness(scale < 0.999f ? 0.5f : 0.0f);
+    return GetWebRenderScale();
+}
+
 void RenderSystem::SetUpscalerQuality(u32 quality) { m_UpscalerQuality = quality; }
 
 } // namespace ECS
@@ -3750,6 +3767,7 @@ void RenderSystem::SetUpscalerQuality(u32 quality) { m_UpscalerQuality = quality
 // and Rope.h get away with being in there only because they also arrive
 // transitively; a brand new component header has no such luck.
 #include "Enjin/ECS/Components/ProceduralMesh.h"  // generic runtime-generated geometry upload
+#include "Enjin/ECS/Components/ProceduralTexture.h"  // generic CPU-generated texture upload
 #ifdef ENJIN_CLUSTERED_LIGHTING
 #include "Enjin/Renderer/ClusteredLighting.h"
 #include "Enjin/Renderer/DDGIProbeSystem.h"
@@ -4601,6 +4619,7 @@ void RenderSystem::Shutdown() {
 
     // Clean up text texture cache and rasterizer
     m_TextTextureCache.clear();
+    m_ProcTextureCache.clear();
     m_TextRasterizer.ClearFontCache();
     m_SDFFonts.clear();
     m_SDFTextMeshes.clear();
@@ -4708,6 +4727,55 @@ void RenderSystem::CacheTextTexture(Entity entity, std::shared_ptr<Renderer::Tex
         m_TextTextureGraveyard.push_back({m_FlushTick, std::move(it->second)});
     }
     m_TextTextureCache[entity] = std::move(tex);
+}
+
+void RenderSystem::CacheProcTexture(Entity entity, std::shared_ptr<Renderer::Texture> tex) {
+    auto it = m_ProcTextureCache.find(entity);
+    if (it != m_ProcTextureCache.end() && it->second) {
+        auto bh = m_TextureBindlessHandles.find(it->second.get());
+        if (bh != m_TextureBindlessHandles.end()) {
+            if (m_BindlessManager) m_BindlessManager->UnregisterTexture(bh->second);
+            m_TextureBindlessHandles.erase(bh);
+        }
+        m_ProcTextureCache[entity] = std::move(tex);
+        // Park the replaced texture: in-flight frames still reference it from
+        // bound descriptor sets. This runs every other frame at 30 Hz, which is
+        // exactly why it cannot be an inline Destroy().
+        m_TextTextureGraveyard.push_back({m_FlushTick, std::move(it->second)});
+        return;
+    }
+    m_ProcTextureCache[entity] = std::move(tex);
+}
+
+// Upload CPU-generated pixels for every ProceduralTextureComponent that changed.
+// Creation is safe mid-frame (the text path does it at the draw site); it is
+// DESTRUCTION of a texture an in-flight frame still samples that kills the
+// driver, and CacheProcTexture handles that.
+void RenderSystem::EnsureProceduralTextures() {
+    if (!m_World || !m_VulkanRenderer) return;
+    for (Entity entity : m_World->GetEntitiesWithComponent<ProceduralTextureComponent>()) {
+        auto* pt = m_World->GetComponent<ProceduralTextureComponent>(entity);
+        if (!pt || !pt->dirty) continue;
+        if (!pt->Valid()) {
+            // A producer raised dirty with a mismatched buffer. Drop the flag so
+            // it does not retry every frame, and say so once.
+            ENJIN_LOG_WARN(Renderer,
+                "ProceduralTexture on entity %llu is %ux%u but holds %zu bytes (expected %zu)",
+                static_cast<unsigned long long>(entity), pt->width, pt->height,
+                pt->pixels.size(),
+                static_cast<usize>(pt->width) * pt->height * 4u);
+            pt->dirty = false;
+            continue;
+        }
+        auto tex = std::make_shared<Renderer::Texture>(m_VulkanRenderer->GetContext());
+        // UNORM, not SRGB: these are authored colour ramps baked on the CPU and
+        // double-gamma washes them out.
+        if (tex->CreateFromData(pt->pixels.data(), pt->width, pt->height, 4,
+                                VK_FORMAT_R8G8B8A8_UNORM)) {
+            CacheProcTexture(entity, tex);
+        }
+        pt->dirty = false;
+    }
 }
 
 Renderer::FontAtlas* RenderSystem::GetOrBuildFontAtlas(const std::string& fontPath, Renderer::Texture** outTexture) {
@@ -7572,6 +7640,14 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 pushConstants.flags |= (1 << 16); // HAS_BASE_COLOR_TEXTURE
             }
 
+            // CPU-generated texture (reaction-diffusion, Physarum, script pixels)
+            // overrides the material base colour the same way text does.
+            auto procTexIt = m_ProcTextureCache.find(entity);
+            if (procTexIt != m_ProcTextureCache.end() && procTexIt->second && procTexIt->second->IsValid()) {
+                boundTexture = procTexIt->second.get();
+                pushConstants.flags |= (1 << 16); // HAS_BASE_COLOR_TEXTURE
+            }
+
             // Batched texture descriptor update (1 vkUpdateDescriptorSets call instead of 6)
             UpdateEntityTextureDescriptors(boundTexture, texHeight, texNormal, texMR, texEmissive, texMatcap);
 
@@ -8286,6 +8362,14 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
             if (textComp && textTexIt != m_TextTextureCache.end() && textTexIt->second && textTexIt->second->IsValid()) {
                 boundTexture = textTexIt->second.get();
                 pushConstants.flags |= (1 << 16);
+            }
+
+            // CPU-generated texture (reaction-diffusion, Physarum, script pixels)
+            // overrides the material base colour the same way text does.
+            auto procTexIt = m_ProcTextureCache.find(entity);
+            if (procTexIt != m_ProcTextureCache.end() && procTexIt->second && procTexIt->second->IsValid()) {
+                boundTexture = procTexIt->second.get();
+                pushConstants.flags |= (1 << 16); // HAS_BASE_COLOR_TEXTURE
             }
 
             // Batched texture descriptor update (1 vkUpdateDescriptorSets call instead of 6)
@@ -11083,6 +11167,10 @@ void RenderSystem::BuildMaterialSSBO() {
     // world text renders through the normal textured path — no setter required. Runs
     // before the early-return so a text change re-dirties the SSBO.
     EnsureTextTextures();
+    // Same for CPU-generated pixels: upload whatever a producing system
+    // wrote into ProceduralTextureComponent this frame, before the SSBO is
+    // built, so the material picks up the new texture in the same frame.
+    EnsureProceduralTextures();
     if (m_MaterialSSBOBuilt) return;
     m_MaterialSSBOBuilt = true;
 
@@ -12206,6 +12294,14 @@ void RenderSystem::RenderEntity(Entity entity) {
     auto textTexIt = m_TextTextureCache.find(entity);
     if (textComp && textTexIt != m_TextTextureCache.end() && textTexIt->second && textTexIt->second->IsValid()) {
         boundTexture = textTexIt->second.get();
+        pushConstants.flags |= (1 << 16); // HAS_BASE_COLOR_TEXTURE
+    }
+
+    // CPU-generated texture (reaction-diffusion, Physarum, script pixels)
+    // overrides the material base colour the same way text does.
+    auto procTexIt = m_ProcTextureCache.find(entity);
+    if (procTexIt != m_ProcTextureCache.end() && procTexIt->second && procTexIt->second->IsValid()) {
+        boundTexture = procTexIt->second.get();
         pushConstants.flags |= (1 << 16); // HAS_BASE_COLOR_TEXTURE
     }
 
@@ -19495,6 +19591,27 @@ void RenderSystem::SetUpscalerType(u32 type) {
 
     ENJIN_LOG_INFO(Renderer, "%s upscaler active (%ux%u -> %ux%u)",
                    m_Upscaler->GetName(), renderW, renderH, extent.width, extent.height);
+}
+
+f32 RenderSystem::ApplyRenderScale(f32 scale) {
+    if (scale < 0.5f) scale = 0.5f;
+    if (scale > 1.0f) scale = 1.0f;
+
+    // Desktop reaches a lower render resolution through the temporal upscaler,
+    // which quantises to four presets. Near native there is no preset worth
+    // picking: turning the upscaler off is both cheaper and sharper than
+    // running it at its lightest setting.
+    if (scale >= Renderer::IUpscaler::kNativeRenderScale) {
+        SetUpscalerType(0);
+        return 1.0f;
+    }
+
+    const Renderer::UpscalerQuality q = Renderer::IUpscaler::GetQualityForRenderScale(scale);
+    SetUpscalerQuality(static_cast<u32>(q));
+    // FSR 2 is built in and always available, so a request for a lower scale
+    // can always be honoured. SetUpscalerType returns early when unchanged.
+    if (m_UpscalerType == 0) SetUpscalerType(1);
+    return Renderer::IUpscaler::GetRenderScaleForQuality(q);
 }
 
 void RenderSystem::SetUpscalerQuality(u32 quality) {

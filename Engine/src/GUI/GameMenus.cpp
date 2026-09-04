@@ -391,7 +391,14 @@ void GameMenuSystem::RenderGraphics(f32 w, f32 h) {
         }
     }
 
-    ImGui::SliderFloat("Render Scale", &m_Graphics.renderScale, 0.25f, 2.0f, "%.2f");
+    // 0.5 - 1.0 is the range the engine can actually render: below that no
+    // path exists, and the old 2.0 upper bound promised supersampling that was
+    // never implemented. 1.0 means native, which is why it is the right end.
+    ImGui::SliderFloat("Render Scale", &m_Graphics.renderScale, 0.5f, 1.0f, "%.2f");
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Renders the scene below screen resolution and upscales it.\n"
+                          "Lower is faster. 1.00 renders at native resolution.");
+    }
 
     ImGui::Separator();
     ImGui::Text("Post-Processing");

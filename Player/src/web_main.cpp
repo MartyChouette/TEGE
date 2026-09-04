@@ -758,11 +758,11 @@ public:
                 var m = /[?&]sharp=([0-9.]+)/.exec(location.search);
                 return m ? parseFloat(m[1]) : -1.0;
             }));
-            m_RenderSystem->SetWebRenderScale(scale);
-            // Below native, sharpening is what makes the upscale hold up, so it
-            // defaults on in proportion to how far down we are rendering.
-            m_RenderSystem->SetWebSharpness(sharp >= 0.0f ? sharp
-                                                          : (scale < 0.999f ? 0.5f : 0.0f));
+            // Through the shared apply, which also sets the default sharpening
+            // (below native, sharpening is what makes the upscale hold up).
+            m_RenderSystem->ApplyRenderScale(scale);
+            // An explicit ?sharp= still wins over that default.
+            if (sharp >= 0.0f) m_RenderSystem->SetWebSharpness(sharp);
         }
         m_RenderSystem->SetWebPostProcess(
             s.saturation, s.colorFilter.x, s.colorFilter.y, s.colorFilter.z,
@@ -1252,6 +1252,21 @@ public:
                     // it -- on a phone that reads as the game locking up -- and
                     // had no webkit fallback, so on iOS the call did not exist.
                     Enjin::Input::SetWebFullscreen(e.boolValue);
+                });
+            m_UISystem.GetEventBus().Listen("options_render_scale",
+                [this](const Enjin::GUI::UIEventData& e) {
+                    // Slider fraction 0..1 -> 0.5..1.0. Through the one shared
+                    // apply so this menu, the desktop menu and the ?scale= URL
+                    // all mean the same thing.
+                    if (m_RenderSystem) {
+                        m_RenderSystem->ApplyRenderScale(0.5f + e.floatValue * 0.5f);
+                    }
+                });
+            m_UISystem.GetEventBus().Listen("options_shadows",
+                [this](const Enjin::GUI::UIEventData& e) {
+                    // The toggle has been in this panel since it was written
+                    // with nothing listening for it.
+                    if (m_RenderSystem) m_RenderSystem->SetShadowsEnabled(e.boolValue);
                 });
             // Accessibility toggles — write the runtime settings; colorblind/font
             // re-apply every frame, and we apply colorblind immediately so it shows

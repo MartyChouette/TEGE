@@ -282,17 +282,29 @@ UICanvasComponent CreateOptionsMenu() {
         s->onValueChangedEvent = "options_fov";
     }
 
-    // VSync checkbox
-    u32 vsyncCheck = canvas.AddElement(UIWidgetType::Checkbox, "VSync", panel);
+    // Render Scale label + slider. The scene renders below screen resolution
+    // and the post-process pass resolves it back up, which is the single
+    // biggest thing a player on a weak GPU or a dense phone screen can change.
+    // Slider fraction 0..1 maps to 0.5..1.0; 1.0 is native.
+    u32 scaleLabel = canvas.AddElement(UIWidgetType::Label, "RenderScaleLabel", panel);
     {
-        auto* c = canvas.GetElement(vsyncCheck);
-        c->anchor.anchorMin = Math::Vector2(0.05f, 0.55f);
-        c->anchor.anchorMax = Math::Vector2(0.5f, 0.55f);
-        c->anchor.offsetLeft = 0; c->anchor.offsetRight = 0;
-        c->anchor.offsetTop = -12.0f; c->anchor.offsetBottom = 12.0f;
-        c->data.text = "VSync";
-        c->data.checked = true;
-        c->onValueChangedEvent = "options_vsync";
+        auto* l = canvas.GetElement(scaleLabel);
+        l->anchor.anchorMin = Math::Vector2(0.05f, 0.55f);
+        l->anchor.anchorMax = Math::Vector2(0.35f, 0.55f);
+        l->anchor.offsetLeft = 0; l->anchor.offsetRight = 0;
+        l->anchor.offsetTop = -10.0f; l->anchor.offsetBottom = 10.0f;
+        l->data.text = "Render Scale";
+        l->data.textAlignH = 0;
+    }
+    u32 scaleSlider = canvas.AddElement(UIWidgetType::Slider, "RenderScaleSlider", panel);
+    {
+        auto* s = canvas.GetElement(scaleSlider);
+        s->anchor.anchorMin = Math::Vector2(0.38f, 0.55f);
+        s->anchor.anchorMax = Math::Vector2(0.92f, 0.55f);
+        s->anchor.offsetLeft = 0; s->anchor.offsetRight = 0;
+        s->anchor.offsetTop = -12.0f; s->anchor.offsetBottom = 12.0f;
+        s->data.sliderValue = 1.0f;     // native
+        s->onValueChangedEvent = "options_render_scale";
     }
 
     // Shadows toggle
@@ -391,7 +403,7 @@ UICanvasComponent CreateOptionsMenu() {
 
     // Suppress unused variable warnings
     (void)volLabel; (void)sfxLabel; (void)fullscreenCheck;
-    (void)vsyncCheck; (void)shadowsToggle;
+    (void)scaleLabel; (void)scaleSlider; (void)shadowsToggle;
     (void)a11yLabel; (void)reducedMotion; (void)subtitlesChk;
     (void)dyslexiaChk; (void)cbLabel; (void)cbSlider;
 

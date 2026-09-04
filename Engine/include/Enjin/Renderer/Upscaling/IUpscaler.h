@@ -84,6 +84,33 @@ public:
         }
     }
 
+    // The inverse: pick the preset closest to a requested render scale.
+    //
+    // The player-facing control is one Render Scale number, because that is
+    // what a player understands and what the web runtime already takes. The
+    // desktop path reaches the same resolution through these four presets, so
+    // the number has to land on one of them. Anything at or above the top
+    // preset means "render native" and is the caller's cue to switch the
+    // upscaler off entirely rather than pick UltraQuality.
+    static UpscalerQuality GetQualityForRenderScale(f32 scale) {
+        const UpscalerQuality all[] = {
+            UpscalerQuality::Performance, UpscalerQuality::Balanced,
+            UpscalerQuality::Quality,     UpscalerQuality::UltraQuality
+        };
+        UpscalerQuality best = all[0];
+        f32 bestErr = -1.0f;
+        for (UpscalerQuality q : all) {
+            const f32 d = GetRenderScaleForQuality(q) - scale;
+            const f32 err = d < 0.0f ? -d : d;
+            if (bestErr < 0.0f || err < bestErr) { bestErr = err; best = q; }
+        }
+        return best;
+    }
+
+    // Below this the presets can represent the request; at or above it the
+    // only honest answer is a native-resolution frame with no upscaler.
+    static constexpr f32 kNativeRenderScale = 0.85f;
+
     // Compute optimal render resolution for a given display resolution and quality
     static void GetRenderResolution(u32 displayWidth, u32 displayHeight,
                                     UpscalerQuality quality,

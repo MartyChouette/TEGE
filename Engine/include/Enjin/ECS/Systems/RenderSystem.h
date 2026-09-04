@@ -886,6 +886,13 @@ public:
     void SetUpscalerType(u32 type);
     u32 GetUpscalerQuality() const { return m_UpscalerQuality; }
     void SetUpscalerQuality(u32 quality);
+    // One player-facing Render Scale, honoured by whichever path this build
+    // has. The menus set a single number; how it is reached (FSR 2 presets on
+    // desktop, the scaled scene target on web) is the renderer's business, not
+    // the menu's. Returns the scale actually adopted, which may be snapped to
+    // the nearest preset the desktop upscaler can express.
+    f32 ApplyRenderScale(f32 scale);
+
     f32 GetUpscalerSharpness() const { return m_UpscalerSharpness; }
     void SetUpscalerSharpness(f32 s) { m_UpscalerSharpness = s; }
 #if !ENJIN_RENDERER_WEBGPU
@@ -1687,6 +1694,11 @@ private:
 
     // Text rendering (TextRasterizer is platform-agnostic, but texture cache needs Vulkan Texture)
     std::unordered_map<Entity, std::shared_ptr<Renderer::Texture>> m_TextTextureCache;
+    // CPU-generated textures (ProceduralTextureComponent): reaction-diffusion,
+    // Physarum, script-authored pixels. Same lifetime protocol as the text
+    // cache above - a replacement frees the old bindless slot and parks the old
+    // texture in the graveyard, never destroys it inline.
+    std::unordered_map<Entity, std::shared_ptr<Renderer::Texture>> m_ProcTextureCache;
 
     // SDF text (unified display P1): one shared glyph atlas per font, uploaded
     // once; its bindless handle rides m_TextureBindlessHandles like any other
@@ -2048,6 +2060,12 @@ private:
     // destruction is the mid-frame GPU crash class). Every Text_SetContent
     // re-rasterize (typewriter, caret) goes through here.
     void CacheTextTexture(Entity entity, std::shared_ptr<Renderer::Texture> tex);
+    // Same swap for CPU-generated textures. Reaction-diffusion at 30 Hz means a
+    // replacement every other frame, so going through the graveyard is not
+    // optional here - it is the difference between running and a device loss.
+    void CacheProcTexture(Entity entity, std::shared_ptr<Renderer::Texture> tex);
+    // Upload any ProceduralTextureComponent whose pixels changed this frame.
+    void EnsureProceduralTextures();
     // Grow the per-frame material SSBOs + rebind descriptor binding 2 when the entity
     // count outgrows capacity. MUST run pre-recording (FlushPendingChanges) — never from
     // BuildMaterialSSBO, which records mid-frame and would invalidate the bound command buffer.
