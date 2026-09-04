@@ -1,15 +1,16 @@
-// Evolving weather + accessibility for the TEGE Playground.
+// Accessibility and bullet time for the TEGE Playground.
+//
+// Weather is NOT driven from here any more. The scene turns on world time and
+// seasonal weather, so the season and the temperature choose it -- which is
+// what a scene with seasons should do, rather than every project hand-rolling
+// its own cycle.
 class Playground : TegeBehavior {
-    float t = 0.0f;
-    int phase = -1;          // -1 forces the first announce
     int cbMode = 0;
     bool bullet = false;
-    float rain = 0.0f, snow = 0.0f;      // current, eased toward targets
-    float rainT = 0.0f, snowT = 0.0f;    // targets per phase
 
     void OnStart() {
         Subtitle_Show("Welcome to the TEGE Playground", "", 4.0f);
-        Announcer_Announce("Playground loaded. Weather will evolve on its own.");
+        Announcer_Announce("Playground loaded. Weather follows the season.");
 
         // Bullet time is a game action, not a hardcoded key: naming a Custom
         // slot lists it in the controls menu + hint, and the touch button
@@ -21,23 +22,12 @@ class Playground : TegeBehavior {
     }
 
     void OnUpdate(float dt) {
-        // ---- evolving weather: 18s phases, intensities EASE between them ----
-        t += dt;
-        int p = int(t / 18.0f) % 4;
-        if (p != phase) {
-            phase = p;
-            // Weather_Set drives the TYPE (the sim lerps intensities toward
-            // the type's profile - setting intensity alone fights Clear).
-            if (p == 0) { rainT = 0.0f; snowT = 0.0f; Weather_Set(0, 3.0f); Subtitle_Show("Weather: clear skies", "", 2.5f); }
-            if (p == 1) { rainT = 0.85f; snowT = 0.0f; Weather_Set(2, 3.0f); Subtitle_Show("Weather: rain rolling in", "", 2.5f); Render_SetRainActive(true); }
-            if (p == 2) { rainT = 0.0f; snowT = 0.8f; Weather_Set(4, 3.0f); Subtitle_Show("Weather: turning to snow", "", 2.5f); }
-            if (p == 3) { rainT = 0.0f; snowT = 0.0f; Weather_Set(0, 3.0f); Subtitle_Show("Weather: clearing up", "", 2.5f); }
-        }
-        rain += (rainT - rain) * min(dt * 0.6f, 1.0f);
-        snow += (snowT - snow) * min(dt * 0.6f, 1.0f);
-        Weather_SetRainIntensity(rain);
-        Weather_SetSnowIntensity(snow);
-        if (rain < 0.02f && rainT == 0.0f) Render_SetRainActive(false);
+        // Weather comes from the SEASONS now. The scene enables world time and
+        // seasonal weather, so SeasonalWeatherSystem picks a type from the
+        // season's probabilities and the temperature, and the rain-active flag
+        // follows whatever it chose. This used to be a hand-rolled 18-second
+        // cycle here, which is the kind of thing a scene should not have to own.
+        Render_SetRainActive(Weather_GetRainIntensity() > 0.02f);
 
         // ---- bullet time (Custom0: B / gamepad Y / touch SLO-MO) ----
         if (InputAction_IsPressed(GameAction::Custom0)) {

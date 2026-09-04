@@ -55,6 +55,9 @@ struct SceneRenderSettings {
     // Off by default: a scene with a scripted weather cycle (the Playground has
     // one) must not have it overwritten every frame.
     bool seasonalWeatherEnabled = false;
+    // Real seconds between seasonal weather transitions. The default suits a
+    // long session; a demo that shows a whole day in minutes wants it far lower.
+    f32 seasonalChangeInterval = 300.0f;
     f32 fogDensity = 0.0f;
     f32 fogStart = 20.0f;
     f32 fogEnd = 100.0f;

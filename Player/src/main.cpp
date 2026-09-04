@@ -2785,6 +2785,8 @@ private:
                                 m_SceneRenderSettings.startMonth, 1);
             m_SeasonalWeather.GetConfig().enabled =
                 m_SceneRenderSettings.seasonalWeatherEnabled;
+            m_SeasonalWeather.GetConfig().weatherChangeInterval =
+                m_SceneRenderSettings.seasonalChangeInterval;
         }
 
         // Read content warning flags from scene JSON if present (Task #39).

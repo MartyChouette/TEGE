@@ -991,6 +991,7 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     j["secondsPerGameHour"]     = RF(s.secondsPerGameHour);
     j["startMonth"]             = s.startMonth;
     j["seasonalWeatherEnabled"] = s.seasonalWeatherEnabled;
+    j["seasonalChangeInterval"] = RF(s.seasonalChangeInterval);
     j["ambientColor"]      = SerializeVec3(s.ambientColor);
     j["fogDensity"]        = RF(s.fogDensity);
     j["fogStart"]          = RF(s.fogStart);
@@ -1297,6 +1298,7 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("secondsPerGameHour"))     s.secondsPerGameHour     = j["secondsPerGameHour"].get<f32>();
     if (j.contains("startMonth"))             s.startMonth             = j["startMonth"].get<u32>();
     if (j.contains("seasonalWeatherEnabled")) s.seasonalWeatherEnabled = j["seasonalWeatherEnabled"].get<bool>();
+    if (j.contains("seasonalChangeInterval")) s.seasonalChangeInterval = j["seasonalChangeInterval"].get<f32>();
 
     // RenderSystem
     if (j.contains("shadowsEnabled"))    s.shadowsEnabled    = JB(j["shadowsEnabled"]);

@@ -61,6 +61,11 @@ private:
     f32 m_CurrentTemperature = 20.0f;
     f32 m_WeatherTimer = 0.0f;
     WeatherType m_CurrentWeatherType = WeatherType::Clear;
+    // Seasonal picks weather on an interval but used to WRITE it every frame,
+    // so anything else that set weather was overwritten within one frame. This
+    // makes the write happen at the transition, which is the only moment
+    // seasonal has actually decided anything.
+    bool m_HasAppliedOnce = false;
     u32 m_RandomSeed = 12345;
 };
 

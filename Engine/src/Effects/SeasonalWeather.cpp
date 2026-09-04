@@ -76,25 +76,41 @@ WeatherType SeasonalWeatherSystem::PickWeather(Season season) {
 }
 
 void SeasonalWeatherSystem::Update(f32 dt, const WorldTimeState& time, WeatherSystem& weather) {
-    if (!m_Config.enabled) return;   // see SeasonalConfig::enabled — never stomp script weather by default
+    if (!m_Config.enabled) {
+        // Re-arm, so switching seasons back on applies immediately rather than
+        // waiting out a whole interval first.
+        m_HasAppliedOnce = false;
+        return;
+    }
 
-    // Compute temperature
+    // Temperature is a read-only output others sample, so it tracks every frame.
     m_CurrentTemperature = ComputeTemperature(time);
 
-    // Advance weather change timer
+    // Seasonal owns the AMBIENT weather, and it decides on an interval -- so it
+    // WRITES on the interval too, not every frame. Writing every frame is what
+    // made this system unusable beside anything else: a script, a trigger or a
+    // designer's own SetWeather was silently overwritten within one frame, and
+    // the only defence the engine had was leaving the whole system switched off
+    // by default.
+    //
+    // Between transitions, whatever set the weather last keeps it. A game with
+    // weather and no seasons simply never enables this.
     m_WeatherTimer += dt;
-    if (m_WeatherTimer >= m_Config.weatherChangeInterval) {
-        m_WeatherTimer = 0.0f;
+    const bool transition = !m_HasAppliedOnce ||
+                            m_WeatherTimer >= m_Config.weatherChangeInterval;
+    if (!transition) return;
 
-        // Pick new weather from seasonal probabilities
-        m_CurrentWeatherType = PickWeather(time.season);
+    m_WeatherTimer = 0.0f;
+    m_HasAppliedOnce = true;
 
-        // If temperature < 0, force rain -> snow
-        if (m_CurrentTemperature < 0.0f) {
-            if (m_CurrentWeatherType == WeatherType::Rain ||
-                m_CurrentWeatherType == WeatherType::HeavyRain) {
-                m_CurrentWeatherType = WeatherType::Snow;
-            }
+    // Pick weather from this season's probabilities.
+    m_CurrentWeatherType = PickWeather(time.season);
+
+    // Below freezing, rain falls as snow.
+    if (m_CurrentTemperature < 0.0f) {
+        if (m_CurrentWeatherType == WeatherType::Rain ||
+            m_CurrentWeatherType == WeatherType::HeavyRain) {
+            m_CurrentWeatherType = WeatherType::Snow;
         }
     }
 

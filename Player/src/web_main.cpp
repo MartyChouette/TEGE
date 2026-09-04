@@ -621,6 +621,7 @@ public:
             m_WorldTime.GetCalendarConfig().secondsPerGameHour = srs.secondsPerGameHour;
             m_WorldTime.SetTime(srs.startTimeOfDay, 1, srs.startMonth, 1);
             m_SeasonalWeather.GetConfig().enabled = srs.seasonalWeatherEnabled;
+            m_SeasonalWeather.GetConfig().weatherChangeInterval = srs.seasonalChangeInterval;
         }
 
         // ApplyToRuntime passes null pp on web, so feed the post-process effects
