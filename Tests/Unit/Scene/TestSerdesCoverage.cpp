@@ -16,9 +16,11 @@
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/BoundaryPolygon.h"
+#include "Enjin/ECS/Components/VisualScript.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/Scene/SceneSerializer.h"
 #include <cmath>
+#include <variant>
 
 using namespace Enjin;
 using namespace Enjin::ECS;
@@ -246,6 +248,58 @@ ENJIN_TEST(SerdesCoverage, LipSyncMorphMappingSurvivesASave) {
     ENJIN_EXPECT_TRUE(r->visemeMorphMap[static_cast<usize>(Viseme::OH)].size() == 1);
     // A viseme nobody mapped must stay empty rather than pick up a neighbour's.
     ENJIN_EXPECT_TRUE(r->visemeMorphMap[static_cast<usize>(Viseme::FF)].empty());
+}
+
+ENJIN_TEST(SerdesCoverage, VisualScriptFunctionsSurviveASave) {
+    // User-defined subgraphs. This is authored work with no other copy: if the
+    // save drops it, it is gone.
+    World src;
+    Entity e = Base(src);
+    VisualScriptComponent vs;
+
+    VisualScriptFunction fn;
+    fn.name = "ApplyKnockback";
+    VisualScriptFunction::Parameter force;
+    force.name = "force";
+    force.type = Enjin::Editor::PinType::Float;
+    force.defaultValue = 12.5f;
+    VisualScriptFunction::Parameter flag;
+    flag.name = "ignoreArmour";
+    flag.type = Enjin::Editor::PinType::Bool;
+    flag.defaultValue = true;
+    fn.inputParams = {force, flag};
+    VisualScriptFunction::Parameter out;
+    out.name = "applied";
+    out.type = Enjin::Editor::PinType::Bool;
+    out.defaultValue = false;
+    fn.outputParams = {out};
+    vs.functions.push_back(fn);
+
+    VisualScriptFunction fn2;
+    fn2.name = "Heal";
+    vs.functions.push_back(fn2);
+    src.AddComponent<VisualScriptComponent>(e, vs);
+
+    World dst;
+    Entity loaded = RoundTrip(src, e, dst);
+
+    const auto* r = dst.GetComponent<VisualScriptComponent>(loaded);
+    ENJIN_ASSERT_TRUE(r != nullptr);
+    ENJIN_ASSERT_TRUE(r->functions.size() == 2);
+    ENJIN_EXPECT_TRUE(r->functions[0].name == "ApplyKnockback");
+    ENJIN_EXPECT_TRUE(r->functions[1].name == "Heal");
+
+    // Parameters, including their default VALUES, which is the part that would
+    // quietly come back as zero if only names and types were written.
+    ENJIN_ASSERT_TRUE(r->functions[0].inputParams.size() == 2);
+    ENJIN_EXPECT_TRUE(r->functions[0].inputParams[0].name == "force");
+    ENJIN_EXPECT_TRUE(std::holds_alternative<f32>(r->functions[0].inputParams[0].defaultValue));
+    ENJIN_EXPECT_TRUE(Near(std::get<f32>(r->functions[0].inputParams[0].defaultValue), 12.5f));
+    ENJIN_EXPECT_TRUE(r->functions[0].inputParams[1].name == "ignoreArmour");
+    ENJIN_EXPECT_TRUE(std::holds_alternative<bool>(r->functions[0].inputParams[1].defaultValue));
+    ENJIN_EXPECT_TRUE(std::get<bool>(r->functions[0].inputParams[1].defaultValue));
+    ENJIN_ASSERT_TRUE(r->functions[0].outputParams.size() == 1);
+    ENJIN_EXPECT_TRUE(r->functions[0].outputParams[0].name == "applied");
 }
 
 ENJIN_TEST_MAIN()

@@ -4781,6 +4781,66 @@ ECS::VisualScriptNodeMeta DeserializeVisualScriptNodeMeta(const json& j) {
     return meta;
 }
 
+
+// A user-defined subgraph. Reuses the variable encoder for parameter defaults so
+// there is ONE encoding for a VariableValue rather than a second copy that can
+// drift from it.
+json SerializeVisualScriptFunction(const ECS::VisualScriptFunction& fn) {
+    json j;
+    j["name"] = fn.name;
+    j["graph"] = fn.graph.ToJson();
+
+    json meta = json::object();
+    for (const auto& [nodeId, m] : fn.nodeMeta)
+        meta[std::to_string(nodeId)] = SerializeVisualScriptNodeMeta(m);
+    j["nodeMeta"] = meta;
+
+    auto encodeParams = [](const std::vector<ECS::VisualScriptFunction::Parameter>& src) {
+        json arr = json::array();
+        for (const auto& p : src) {
+            ECS::VisualScriptVariable tmp;
+            tmp.name = p.name;
+            tmp.type = p.type;
+            tmp.value = p.defaultValue;
+            arr.push_back(SerializeVisualScriptVariable(tmp));
+        }
+        return arr;
+    };
+    j["inputParams"] = encodeParams(fn.inputParams);
+    j["outputParams"] = encodeParams(fn.outputParams);
+    return j;
+}
+
+ECS::VisualScriptFunction DeserializeVisualScriptFunction(const json& j) {
+    ECS::VisualScriptFunction fn;
+    if (j.contains("name")) fn.name = SafeStr(j["name"], MAX_STR_NAME);
+    if (j.contains("graph") && j["graph"].is_object()) fn.graph.FromJson(j["graph"]);
+    if (j.contains("nodeMeta") && j["nodeMeta"].is_object()) {
+        for (auto it = j["nodeMeta"].begin(); it != j["nodeMeta"].end(); ++it) {
+            try {
+                Editor::NodeId id = static_cast<Editor::NodeId>(std::stoul(it.key()));
+                fn.nodeMeta[id] = DeserializeVisualScriptNodeMeta(it.value());
+            } catch (...) {}
+        }
+    }
+    auto decodeParams = [](const json& arr, std::vector<ECS::VisualScriptFunction::Parameter>& out) {
+        if (!arr.is_array()) return;
+        constexpr usize kMaxParams = 64;
+        for (const auto& pj : arr) {
+            if (out.size() >= kMaxParams) break;
+            ECS::VisualScriptVariable tmp = DeserializeVisualScriptVariable(pj);
+            ECS::VisualScriptFunction::Parameter p;
+            p.name = tmp.name;
+            p.type = tmp.type;
+            p.defaultValue = tmp.value;
+            out.push_back(p);
+        }
+    };
+    if (j.contains("inputParams")) decodeParams(j["inputParams"], fn.inputParams);
+    if (j.contains("outputParams")) decodeParams(j["outputParams"], fn.outputParams);
+    return fn;
+}
+
 json SerializeVisualScriptComponent(const ECS::VisualScriptComponent& vs) {
     json j;
 
@@ -4817,6 +4877,11 @@ json SerializeVisualScriptComponent(const ECS::VisualScriptComponent& vs) {
     }
     j["nodeMeta"] = nodeMeta;
 
+    // User-defined subgraphs. Losing these loses authored work outright.
+    json fnArr = json::array();
+    for (const auto& fn : vs.functions) fnArr.push_back(SerializeVisualScriptFunction(fn));
+    j["functions"] = fnArr;
+
     j["enabled"] = vs.enabled;
 
     return j;
@@ -4828,6 +4893,15 @@ ECS::VisualScriptComponent DeserializeVisualScriptComponent(const json& j) {
     // Deserialize graph data
     if (j.contains("graph") && j["graph"].is_object()) {
         vs.graph.FromJson(j["graph"]);
+    }
+
+    // User-defined subgraphs.
+    if (j.contains("functions") && j["functions"].is_array()) {
+        constexpr usize kMaxFunctions = 256;
+        for (const auto& fj : j["functions"]) {
+            if (vs.functions.size() >= kMaxFunctions) break;
+            if (fj.is_object()) vs.functions.push_back(DeserializeVisualScriptFunction(fj));
+        }
     }
 
     // Deserialize variables
