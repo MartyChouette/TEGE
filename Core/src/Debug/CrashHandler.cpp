@@ -265,7 +265,13 @@ void UninstallCrashHandler() {
 // ============================================================================
 #elif defined(ENJIN_PLATFORM_LINUX) || defined(ENJIN_PLATFORM_MACOS)
 
+// Emscripten reports itself as Linux but ships no execinfo.h, and a wasm module
+// has no native call stack to walk in the first place — the browser prints its
+// own on a trap.
+#if !defined(__EMSCRIPTEN__)
 #include <execinfo.h>   // backtrace, backtrace_symbols_fd
+#define ENJIN_HAVE_BACKTRACE 1
+#endif
 
 static struct sigaction s_PrevSIGSEGV = {};
 static struct sigaction s_PrevSIGABRT = {};
@@ -301,6 +307,7 @@ static void CrashSignalHandler(int sig) {
         // addr2line can resolve against a matching build.
         fprintf(f, "Call Stack:\n");
         fflush(f);
+#ifdef ENJIN_HAVE_BACKTRACE
         {
             void* frames[64];
             const int count = backtrace(frames, static_cast<int>(sizeof(frames) / sizeof(frames[0])));
@@ -311,6 +318,10 @@ static void CrashSignalHandler(int sig) {
                 fflush(f);
             }
         }
+#else
+        fprintf(f, "  (no native stack on this platform)\n");
+        fflush(f);
+#endif
         fprintf(f, "\n");
 
         fprintf(f, "Last Log Lines:\n");
