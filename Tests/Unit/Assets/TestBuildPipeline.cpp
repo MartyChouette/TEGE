@@ -803,4 +803,149 @@ ENJIN_TEST(NestedBuildOutput, StaleOutputIsNotPackedAsProjectContent) {
     fs::remove_all(out, ec);
 }
 
+// ============================================================================
+// A build is not a build without its runtime
+// ============================================================================
+//
+// Phase 5 used to verify game.enjpak and nothing else, then set success = true.
+// InvokeEmscriptenBuild's failure was a Warning, and it can only succeed in a
+// source checkout -- its own comment says so -- so on an installed editor every
+// web build reported "Build complete!", started the dev server and opened a
+// browser on a page that 404s EnjinPlayer.js. The desktop half had the same
+// shape: a missing player executable was a warning.
+
+// A project the pipeline actually accepts: projectPath is the .enjinproject
+// FILE, the scenes array must be non-empty, and each entry's path must resolve
+// to a loadable scene. Without all of that the build fails at the project scan
+// and never reaches the verify phase -- which would make these tests pass for
+// the wrong reason.
+//
+// Scene "version" is the STRING "1.0" here on purpose; a bare number fails the
+// whole scene load.
+static std::string MakeMinimalProject(const char* leaf) {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "enjin_runtime_verify" / leaf;
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    fs::create_directories(dir / "scenes", ec);
+
+    std::ofstream scene(dir / "scenes" / "Main.enjin");
+    scene << R"({"version":"1.0","entities":[]})";
+    scene.close();
+
+    const fs::path projFile = dir / "Test.enjinproject";
+    std::ofstream proj(projFile);
+    proj << R"({"projectName":"Test","scenes":[)"
+         << R"({"name":"Main","path":"scenes/Main.enjin","buildIndex":0,"isStartScene":true}]})";
+    proj.close();
+    return projFile.string();
+}
+
+static std::string MakeEmptyOutput(const char* leaf) {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "enjin_runtime_verify_out" / leaf;
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    fs::create_directories(dir, ec);
+    return dir.string();
+}
+
+ENJIN_TEST(RuntimeVerification, WebOutputWithNoWasmIsNotRunnable) {
+    // Arrange: the exact shape an installed editor produces -- assets packed,
+    // no WASM, because InvokeEmscriptenBuild can only succeed in a source
+    // checkout.
+    namespace fs = std::filesystem;
+    const std::string out = MakeEmptyOutput("web_none");
+    std::ofstream(fs::path(out) / "game.enjpak") << "pak";
+
+    // Act
+    std::string why;
+    const bool ok = VerifyRuntimePresent(out, BuildTargetPlatform::Web, &why);
+
+    // Assert: this is what used to report "Build complete!" and open a browser.
+    ENJIN_EXPECT_FALSE(ok);
+    ENJIN_EXPECT_TRUE(why.find("EnjinPlayer.js") != std::string::npos);
+}
+
+ENJIN_TEST(RuntimeVerification, WebOutputMissingOnlyTheWasmIsNotRunnable) {
+    // Arrange: a half-copied runtime is just as dead as no runtime.
+    namespace fs = std::filesystem;
+    const std::string out = MakeEmptyOutput("web_half");
+    std::ofstream(fs::path(out) / "EnjinPlayer.js") << "js";
+
+    // Act
+    std::string why;
+    const bool ok = VerifyRuntimePresent(out, BuildTargetPlatform::Web, &why);
+
+    // Assert
+    ENJIN_EXPECT_FALSE(ok);
+    ENJIN_EXPECT_TRUE(why.find("EnjinPlayer.wasm") != std::string::npos);
+}
+
+ENJIN_TEST(RuntimeVerification, WebOutputWithBothRuntimeFilesIsRunnable) {
+    // Arrange
+    namespace fs = std::filesystem;
+    const std::string out = MakeEmptyOutput("web_ok");
+    std::ofstream(fs::path(out) / "EnjinPlayer.js") << "js";
+    std::ofstream(fs::path(out) / "EnjinPlayer.wasm") << "wasm";
+
+    // Act / Assert
+    ENJIN_EXPECT_TRUE(VerifyRuntimePresent(out, BuildTargetPlatform::Web, nullptr));
+}
+
+ENJIN_TEST(RuntimeVerification, DesktopOutputWithNoExecutableIsNotRunnable) {
+    // Arrange: packed assets and nothing to run them.
+    namespace fs = std::filesystem;
+    const std::string out = MakeEmptyOutput("desktop_none");
+    std::ofstream(fs::path(out) / "game.enjpak") << "pak";
+
+    // Act
+    std::string why;
+    const bool ok = VerifyRuntimePresent(out, BuildTargetPlatform::Desktop, &why);
+
+    // Assert
+    ENJIN_EXPECT_FALSE(ok);
+    ENJIN_EXPECT_TRUE(why.find("player executable") != std::string::npos);
+}
+
+ENJIN_TEST(RuntimeVerification, DesktopOutputWithAnExecutableIsRunnable) {
+    // Arrange: CopyPlayer names the exe after the window title, so the check
+    // must not re-derive that name -- any executable counts.
+    namespace fs = std::filesystem;
+    const std::string out = MakeEmptyOutput("desktop_ok");
+#ifdef ENJIN_PLATFORM_WINDOWS
+    std::ofstream(fs::path(out) / "My Weird Game Name.exe") << "exe";
+#else
+    std::ofstream(fs::path(out) / "My Weird Game Name") << "elf";
+#endif
+
+    // Act / Assert
+    ENJIN_EXPECT_TRUE(VerifyRuntimePresent(out, BuildTargetPlatform::Desktop, nullptr));
+}
+
+ENJIN_TEST(RuntimeVerification, AWebBuildThatCannotRunFailsTheWholePipeline) {
+    // Arrange: end to end, to prove Phase 5 actually consults the rule rather
+    // than the rule merely existing beside it. Output dir is read-only-empty,
+    // and this machine's repo may well have a built web player to copy, so the
+    // assertion is on the wiring: if the runtime IS present the build may
+    // succeed, and if it is NOT present the build must fail.
+    BuildConfig cfg;
+    cfg.projectPath = MakeMinimalProject("pipeline");
+    cfg.outputDir   = MakeEmptyOutput("pipeline");
+    cfg.target      = BuildTargetPlatform::Web;
+
+    // Act
+    BuildPipeline pipeline;
+    BuildResult result = pipeline.Execute(cfg);
+
+    // Assert
+    const bool runtimeThere =
+        VerifyRuntimePresent(cfg.outputDir, BuildTargetPlatform::Web, nullptr);
+    if (!runtimeThere) {
+        ENJIN_EXPECT_FALSE(result.success);
+    } else {
+        ENJIN_EXPECT_TRUE(result.success);
+    }
+}
+
 ENJIN_TEST_MAIN()

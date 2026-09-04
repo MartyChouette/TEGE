@@ -12,6 +12,24 @@
 namespace Enjin::Build {
 
 // Orchestrates the full build: scan -> validate -> collect -> pack -> verify
+/**
+ * @brief Is there a runnable runtime in this output directory?
+ *
+ * A build is the assets AND the thing that runs them. Verifying only
+ * game.enjpak is what let a web build with no WASM report "Build complete!",
+ * start the dev server and open a browser on a page that 404s EnjinPlayer.js --
+ * InvokeEmscriptenBuild can only succeed in a source checkout, so on an
+ * installed editor that was every web build. The desktop half had the same
+ * shape: a missing player executable was only a warning.
+ *
+ * @param outputDir Build output directory.
+ * @param target    Which runtime to look for.
+ * @param whyNot    Optional; set to a user-facing explanation on failure.
+ */
+ENJIN_API bool VerifyRuntimePresent(const std::string& outputDir,
+                                    BuildTargetPlatform target,
+                                    std::string* whyNot = nullptr);
+
 class ENJIN_API BuildPipeline {
 public:
     BuildPipeline() = default;

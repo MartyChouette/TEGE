@@ -83,7 +83,9 @@ BuildResult BuildPipeline::Execute(const BuildConfig& config) {
     if (config.target == BuildTargetPlatform::Web) {
         std::string pakPath = (fs::path(config.outputDir) / "game.enjpak").string();
         if (!HTML5Exporter::InvokeEmscriptenBuild(config.outputDir, pakPath)) {
-            AddMessage(MessageSeverity::Warning, "Emscripten build failed — WASM output may be missing. Ensure Emscripten SDK is installed.");
+            AddMessage(MessageSeverity::Warning,
+                       "Emscripten build step failed. Ensure the Emscripten SDK is installed "
+                       "and build-web has been built.");
         }
 
         // Generate HTML shell
@@ -105,14 +107,25 @@ BuildResult BuildPipeline::Execute(const BuildConfig& config) {
         // scripts from the .enjpak asset pack (ScriptEngine::SetAssetReader) as
         // a fallback, but the loose copies are what the runtime loads today.
         EmitLooseRuntimeFiles(config.outputDir);
-        if (!CopyPlayer(config.outputDir)) {
-            // Non-fatal: warn but continue (user may not have built the player)
-            AddMessage(MessageSeverity::Warning, "Player executable not found. Build the player target (EnjinPlayer) separately.");
-        }
+        CopyPlayer(config.outputDir);  // reports its own failure; Phase 5 decides
     }
 
     // Phase 5: Verify
     ReportProgress("Verifying build", 0.9f);
+
+    // The runtime is half the build. Verifying only the asset pack is what let
+    // a web build with no WASM report "Build complete!" and open a browser on
+    // a page that 404s EnjinPlayer.js -- InvokeEmscriptenBuild can only
+    // succeed in a source checkout, so on an installed editor that was every
+    // web build.
+    {
+        std::string whyNot;
+        if (!VerifyRuntimePresent(config.outputDir, config.target, &whyNot)) {
+            m_Result.success = false;
+            AddMessage(MessageSeverity::Error, "Build failed: " + whyNot);
+            return m_Result;
+        }
+    }
     if (config.packagingMode == PackagingMode::LooseFiles) {
         if (!VerifyLooseBuild(config.outputDir)) {
             m_Result.success = false;
@@ -670,6 +683,46 @@ bool BuildPipeline::CopyPlayer(const std::string& outputDir) {
 
     AddMessage(MessageSeverity::Warning,
                "Player executable not found. Build the EnjinPlayer CMake target first.");
+    return false;
+}
+
+bool VerifyRuntimePresent(const std::string& outputDir, BuildTargetPlatform target,
+                          std::string* whyNot) {
+    const fs::path out(outputDir);
+
+    if (target == BuildTargetPlatform::Web) {
+        // The HTML shell loads these two by name. Either one missing is a page
+        // that cannot start.
+        const bool js = fs::exists(out / "EnjinPlayer.js");
+        const bool wasm = fs::exists(out / "EnjinPlayer.wasm");
+        if (js && wasm) return true;
+        if (whyNot) {
+            *whyNot = std::string("the web runtime is missing (") +
+                      (js ? "" : "EnjinPlayer.js ") + (wasm ? "" : "EnjinPlayer.wasm ") +
+                      "not in the output). Build the web player first: "
+                      "emcmake cmake -B build-web -S . -DENJIN_PLATFORM_WEB=ON "
+                      "&& cmake --build build-web";
+        }
+        return false;
+    }
+
+    // Desktop: CopyPlayer names the executable after the window title, so look
+    // for any file the copy could have produced rather than re-deriving the
+    // sanitized name here and having the two drift.
+    std::error_code ec;
+    for (const auto& e : fs::directory_iterator(out, ec)) {
+        if (!e.is_regular_file(ec)) continue;
+        const std::string ext = e.path().extension().string();
+#ifdef ENJIN_PLATFORM_WINDOWS
+        if (ext == ".exe") return true;
+#else
+        if (ext.empty()) return true;
+#endif
+    }
+    if (whyNot) {
+        *whyNot = "no player executable in the output. Build the EnjinPlayer CMake "
+                  "target, then build the game again.";
+    }
     return false;
 }
 

@@ -1378,9 +1378,16 @@ void EditorLayer::DrawSceneListPanel() {
         bool selected = false;
         if (ImGui::Selectable(scene.name.c_str(), &selected, ImGuiSelectableFlags_AllowDoubleClick)) {
             if (ImGui::IsMouseDoubleClicked(0)) {
-                // Double click to load scene
-                m_SceneManager.LoadScene(scene.name);
-                ShowNotification("Scene loaded: " + scene.name, NotificationType::Success);
+                // Double click to load scene. LoadScene has four failure
+                // returns and the serializer clears the world before it can
+                // fail, so an unchecked call leaves an empty viewport under a
+                // green toast.
+                if (m_SceneManager.LoadScene(scene.name)) {
+                    ShowNotification("Scene loaded: " + scene.name, NotificationType::Success);
+                } else {
+                    ShowNotification("Could not load scene: " + scene.name + " (see Console)",
+                                     NotificationType::Error);
+                }
             }
         }
         if (isCurrent) {
@@ -1395,12 +1402,20 @@ void EditorLayer::DrawSceneListPanel() {
         // Context menu
         if (ImGui::BeginPopupContextItem("SceneContextMenu")) {
             if (ImGui::MenuItem("Load")) {
-                m_SceneManager.LoadScene(scene.name);
-                ShowNotification("Scene loaded: " + scene.name, NotificationType::Success);
+                if (m_SceneManager.LoadScene(scene.name)) {
+                    ShowNotification("Scene loaded: " + scene.name, NotificationType::Success);
+                } else {
+                    ShowNotification("Could not load scene: " + scene.name + " (see Console)",
+                                     NotificationType::Error);
+                }
             }
             if (ImGui::MenuItem("Load Additive")) {
-                m_SceneManager.LoadSceneAdditive(scene.name);
-                ShowNotification("Scene loaded (additive): " + scene.name, NotificationType::Success);
+                if (m_SceneManager.LoadSceneAdditive(scene.name)) {
+                    ShowNotification("Scene loaded (additive): " + scene.name, NotificationType::Success);
+                } else {
+                    ShowNotification("Could not load scene: " + scene.name + " (see Console)",
+                                     NotificationType::Error);
+                }
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Set as Start Scene")) {
