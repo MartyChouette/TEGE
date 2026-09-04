@@ -1,3 +1,4 @@
+#include "Enjin/Platform/Desktop.h"
 #include "Enjin/Editor/EditorLayer.h"
 #ifndef _WIN32
 // POSIX environment for posix_spawn. Declared at GLOBAL scope: a block-scope
@@ -185,21 +186,7 @@ static void DrawCenteredClippedText(ImDrawList* dl, const char* text, f32 cardX,
 // Open a folder in the platform file explorer
 static void OpenInExplorer(const std::string& folderPath) {
     if (folderPath.empty() || !std::filesystem::exists(folderPath)) return;
-#ifdef _WIN32
-    ShellExecuteA(nullptr, "open", folderPath.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-#elif defined(__APPLE__)
-    pid_t pid = fork();
-    if (pid == 0) {
-        execlp("open", "open", folderPath.c_str(), nullptr);
-        _exit(1);
-    }
-#else
-    pid_t pid = fork();
-    if (pid == 0) {
-        execlp("xdg-open", "xdg-open", folderPath.c_str(), nullptr);
-        _exit(1);
-    }
-#endif
+    Platform::OpenInDesktop(folderPath);
 }
 
 // Duplicate an entire project folder: copies to ProjectName_Copy, renames the .enjinproject file inside

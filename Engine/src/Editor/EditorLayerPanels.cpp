@@ -1,3 +1,4 @@
+#include "Enjin/Platform/Desktop.h"
 #include "Enjin/Editor/EditorLayer.h"
 #include "Enjin/Editor/EditorWidgets.h"
 #include "Enjin/Editor/EditorTheme.h"
@@ -1042,14 +1043,10 @@ void EditorLayer::DrawAssetBrowserPanel() {
 #endif
                     }
                     if (ImGui::MenuItem("Show in Explorer")) {
-#ifdef _WIN32
-                        std::string sel = "/select,\"" + entry.fullPath + "\"";
-                        ShellExecuteA(nullptr, "open", "explorer.exe", sel.c_str(),
-                                      nullptr, SW_SHOWNORMAL);
-#else
-                        OpenInExternalIDE(
-                            std::filesystem::path(entry.fullPath).parent_path().string());
-#endif
+                        // The non-Windows branch routed into the IDE launcher, so
+                        // this opened the folder in VS Code, or did nothing at all
+                        // when VS Code was not installed.
+                        Platform::RevealInFileManager(entry.fullPath);
                     }
                     ImGui::EndPopup();
                 }
@@ -1195,14 +1192,10 @@ void EditorLayer::DrawAssetBrowserPanel() {
 #endif
                     }
                     if (ImGui::MenuItem("Show in Explorer")) {
-#ifdef _WIN32
-                        std::string sel = "/select,\"" + entry.fullPath + "\"";
-                        ShellExecuteA(nullptr, "open", "explorer.exe", sel.c_str(),
-                                      nullptr, SW_SHOWNORMAL);
-#else
-                        OpenInExternalIDE(
-                            std::filesystem::path(entry.fullPath).parent_path().string());
-#endif
+                        // The non-Windows branch routed into the IDE launcher, so
+                        // this opened the folder in VS Code, or did nothing at all
+                        // when VS Code was not installed.
+                        Platform::RevealInFileManager(entry.fullPath);
                     }
                     ImGui::EndPopup();
                 }
@@ -3745,23 +3738,7 @@ void EditorLayer::DrawUserManualPanel() {
         ExportManualAsHTML(outputPath);
         m_ConsoleLog.push_back("[Manual] Exported to " + outputPath);
         // Open in default browser without invoking a shell
-        std::string absPath = std::filesystem::absolute(outputPath).string();
-#ifdef _WIN32
-        ShellExecuteA(nullptr, "open", absPath.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-#else
-        auto spawnOpen = [](const char* opener, const std::string& path) {
-            pid_t pid = fork();
-            if (pid == 0) {
-                execlp(opener, opener, path.c_str(), (char*)nullptr);
-                _exit(1);
-            }
-        };
-#ifdef __APPLE__
-        spawnOpen("open", absPath);
-#else
-        spawnOpen("xdg-open", absPath);
-#endif
-#endif
+        Platform::OpenInDesktop(std::filesystem::absolute(outputPath).string());
     }
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Export the user manual as an HTML file.\nOpen in a browser and use Print > Save as PDF.");

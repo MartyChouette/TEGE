@@ -1,3 +1,4 @@
+#include "Enjin/Platform/Desktop.h"
 #include "Enjin/Editor/EditorLayer.h"
 #ifndef _WIN32
 // POSIX environment for posix_spawn. Declared at GLOBAL scope: a block-scope
@@ -142,30 +143,11 @@ namespace Editor {
 // WebGPU runs best on Chromium browsers. The system default may be Firefox
 // (spotty WebGPU on Windows), so web previews prefer Chrome, then Edge, then
 // fall back to whatever the OS default is.
-static void OpenUrlPreferChromium(const std::string& url) {
-#ifdef _WIN32
-    namespace fs = std::filesystem;
-    std::vector<std::string> candidates;
-    const char* localAppData = std::getenv("LOCALAPPDATA");
-    if (localAppData) {
-        candidates.push_back(std::string(localAppData) + "\\Google\\Chrome\\Application\\chrome.exe");
-    }
-    candidates.push_back("C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe");
-    candidates.push_back("C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe");
-    candidates.push_back("C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe");
-    candidates.push_back("C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe");
-    for (const auto& exe : candidates) {
-        if (fs::exists(exe)) {
-            if (reinterpret_cast<INT_PTR>(ShellExecuteA(nullptr, "open", exe.c_str(),
-                    url.c_str(), nullptr, SW_SHOWNORMAL)) > 32) {
-                return;
-            }
-        }
-    }
-    ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-#else
-    (void)url;
-#endif
+// The candidate list and the POSIX equivalent now live in Platform::Desktop, so
+// every caller in the editor gets the same behaviour. This #else used to be
+// "(void)url;" — Run in Browser started the preview server and opened nothing.
+static bool OpenUrlPreferChromium(const std::string& url) {
+    return Platform::OpenUrlPreferChromium(url);
 }
 
 void EditorLayer::DrawStatsOverlay() {
@@ -1490,33 +1472,15 @@ void EditorLayer::DrawBuildDialog() {
         if (ImGui::Button("Run")) {
             std::string exePath = builtExePath();
             if (std::filesystem::exists(exePath)) {
-#ifdef ENJIN_PLATFORM_WINDOWS
-                ShellExecuteA(nullptr, "open", exePath.c_str(), nullptr,
-                              m_BuildConfig.outputDir.c_str(), SW_SHOWNORMAL);
-#endif
+                if (!Platform::LaunchDetached(exePath, m_BuildConfig.outputDir))
+                    ShowNotification("Could not start the game", NotificationType::Error);
             } else {
                 ShowNotification("Game exe not found — rebuild first", NotificationType::Warning);
             }
         }
         ImGui::SameLine();
         if (ImGui::Button("Open Folder")) {
-#ifdef ENJIN_PLATFORM_WINDOWS
-            ShellExecuteA(nullptr, "open", m_BuildConfig.outputDir.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-#elif defined(ENJIN_PLATFORM_MACOS)
-            // S20: Use posix_spawn to avoid shell command injection
-            {
-                const char* argv[] = { "open", m_BuildConfig.outputDir.c_str(), nullptr };
-                pid_t pid = 0;
-                posix_spawnp(&pid, "open", nullptr, nullptr, const_cast<char**>(argv), environ);
-            }
-#else
-            // S20: Use posix_spawn to avoid shell command injection
-            {
-                const char* argv[] = { "xdg-open", m_BuildConfig.outputDir.c_str(), nullptr };
-                pid_t pid = 0;
-                posix_spawnp(&pid, "xdg-open", nullptr, nullptr, const_cast<char**>(argv), environ);
-            }
-#endif
+            Platform::OpenInDesktop(m_BuildConfig.outputDir);
         }
     }
 
@@ -1660,11 +1624,13 @@ void EditorLayer::PollBuildThread() {
 #endif
     std::string exePath = (std::filesystem::path(m_BuildConfig.outputDir) / destName).string();
     if (std::filesystem::exists(exePath)) {
-#ifdef ENJIN_PLATFORM_WINDOWS
-        ShellExecuteA(nullptr, "open", exePath.c_str(), nullptr,
-                      m_BuildConfig.outputDir.c_str(), SW_SHOWNORMAL);
-#endif
-        ShowNotification("Launching game...", NotificationType::Info);
+        // The notification used to fire unconditionally while the launch itself
+        // sat inside a Windows-only guard, so on Linux the editor reported
+        // "Launching game..." and launched nothing.
+        if (Platform::LaunchDetached(exePath, m_BuildConfig.outputDir))
+            ShowNotification("Launching game...", NotificationType::Info);
+        else
+            ShowNotification("Could not start the game", NotificationType::Error);
     } else {
         ShowNotification("Build succeeded but the game exe was not found", NotificationType::Warning);
     }
@@ -2105,9 +2071,7 @@ void EditorLayer::DrawHTML5ExportDialog() {
     }
     ImGui::SameLine();
     if (ImGui::Button("Open Output Folder") && !m_HTML5Config.outputDir.empty()) {
-#ifdef _WIN32
-        ShellExecuteA(nullptr, "explore", m_HTML5Config.outputDir.c_str(), nullptr, nullptr, SW_SHOWDEFAULT);
-#endif
+        Platform::OpenInDesktop(m_HTML5Config.outputDir);
     }
     if (m_DevWebServer.IsRunning()) {
         ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.4f, 1.0f),

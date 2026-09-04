@@ -1,3 +1,4 @@
+#include "Enjin/Platform/Desktop.h"
 #include "Enjin/Editor/EditorLayer.h"
 #include "Enjin/Editor/EditorWidgets.h"
 #include "Enjin/Editor/InspectorUndo.h"
@@ -1665,14 +1666,7 @@ void EditorLayer::DrawInspectorPanel() {
                     ? std::filesystem::current_path()
                     : std::filesystem::path(proj).parent_path();
                 std::filesystem::path full = root / wiringPayload;
-                std::string abs = std::filesystem::absolute(full).string();
-#ifdef _WIN32
-                ShellExecuteA(nullptr, "open", abs.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-#elif defined(__APPLE__)
-                if (fork() == 0) { execlp("open", "open", abs.c_str(), (char*)nullptr); _exit(1); }
-#else
-                if (fork() == 0) { execlp("xdg-open", "xdg-open", abs.c_str(), (char*)nullptr); _exit(1); }
-#endif
+                Platform::OpenInDesktop(std::filesystem::absolute(full).string());
             }
         } else {
 
