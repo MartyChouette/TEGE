@@ -271,8 +271,7 @@ void DialogueSystem::ProcessLegacy(World* world, Entity entity, DialogueComponen
 
     // Input: advance dialogue
     if (d.waitingForInput) {
-        if (Input::IsKeyPressed(KeyCode::Space) || Input::IsKeyPressed(KeyCode::Enter) ||
-            Input::IsMouseButtonPressed(MouseButton::Left)) {
+        if (AdvancePressed()) {
             if (d.currentLine + 1 >= d.dialogueLines.size() && !d.choices.empty()) {
                 // Wait for choice selection
             } else {
@@ -289,7 +288,7 @@ void DialogueSystem::ProcessLegacy(World* world, Entity entity, DialogueComponen
 
     // Skip to end of line while typing
     if (d.isTyping) {
-        if (Input::IsKeyPressed(KeyCode::Space) || Input::IsKeyPressed(KeyCode::Enter)) {
+        if (AdvancePressed()) {
             d.currentChar = static_cast<u32>(d.dialogueLines[d.currentLine].size());
             d.isTyping = false;
             d.waitingForInput = true;
@@ -299,19 +298,47 @@ void DialogueSystem::ProcessLegacy(World* world, Entity entity, DialogueComponen
     // Choice navigation
     if (d.waitingForInput && !d.choices.empty() &&
         d.currentLine + 1 >= d.dialogueLines.size()) {
-        if (Input::IsKeyPressed(KeyCode::Up) || Input::IsKeyPressed(KeyCode::W)) {
+        if (NavUpPressed()) {
             d.selectedChoice--;
             if (d.selectedChoice < 0) d.selectedChoice = static_cast<i32>(d.choices.size()) - 1;
         }
-        if (Input::IsKeyPressed(KeyCode::Down) || Input::IsKeyPressed(KeyCode::S)) {
+        if (NavDownPressed()) {
             d.selectedChoice++;
             if (d.selectedChoice >= static_cast<i32>(d.choices.size())) d.selectedChoice = 0;
         }
-        if (Input::IsKeyPressed(KeyCode::Enter) || Input::IsKeyPressed(KeyCode::Space)) {
+        if (ConfirmPressed()) {
             d.currentLine = static_cast<u32>(d.dialogueLines.size());
             d.waitingForInput = false;
         }
     }
+}
+
+namespace {
+    // Historic hardcoded keys, used only when no action map is attached
+    // (headless tests, tools). Gameplay always has one.
+    bool RawAdvance() {
+        return Input::IsKeyPressed(KeyCode::Space) || Input::IsKeyPressed(KeyCode::Enter);
+    }
+}
+
+bool DialogueSystem::AdvancePressed() const {
+    if (m_InputMap) return m_InputMap->IsActionPressed(InputSystem::GameAction::DialogueAdvance);
+    return RawAdvance() || Input::IsMouseButtonPressed(MouseButton::Left);
+}
+
+bool DialogueSystem::ConfirmPressed() const {
+    if (m_InputMap) return m_InputMap->IsActionPressed(InputSystem::GameAction::UIConfirm);
+    return RawAdvance();
+}
+
+bool DialogueSystem::NavUpPressed() const {
+    if (m_InputMap) return m_InputMap->IsActionPressed(InputSystem::GameAction::UINavUp);
+    return Input::IsKeyPressed(KeyCode::Up) || Input::IsKeyPressed(KeyCode::W);
+}
+
+bool DialogueSystem::NavDownPressed() const {
+    if (m_InputMap) return m_InputMap->IsActionPressed(InputSystem::GameAction::UINavDown);
+    return Input::IsKeyPressed(KeyCode::Down) || Input::IsKeyPressed(KeyCode::S);
 }
 
 void DialogueSystem::Update(World* world, f32 deltaTime) {
@@ -352,7 +379,7 @@ void DialogueSystem::Update(World* world, f32 deltaTime) {
 
             if (dlg->isTyping) {
                 // Skip to end of text
-                if (Input::IsKeyPressed(KeyCode::Space) || Input::IsKeyPressed(KeyCode::Enter)) {
+                if (AdvancePressed()) {
                     dlg->currentChar = static_cast<u32>(dlg->currentText.size());
                     dlg->isTyping = false;
                     dlg->waitingForInput = true;
@@ -360,22 +387,22 @@ void DialogueSystem::Update(World* world, f32 deltaTime) {
             } else if (dlg->waitingForInput) {
                 if (currentNode->type == GUI::DialogueNodeType::Text) {
                     // Advance to next node
-                    if (Input::IsKeyPressed(KeyCode::Space) || Input::IsKeyPressed(KeyCode::Enter)) {
+                    if (AdvancePressed()) {
                         Advance(world, entity);
                     }
                 } else if (currentNode->type == GUI::DialogueNodeType::Choice) {
                     // Choice navigation
-                    if (Input::IsKeyPressed(KeyCode::Up) || Input::IsKeyPressed(KeyCode::W)) {
+                    if (NavUpPressed()) {
                         dlg->selectedChoice--;
                         if (dlg->selectedChoice < 0)
                             dlg->selectedChoice = static_cast<i32>(dlg->currentChoices.size()) - 1;
                     }
-                    if (Input::IsKeyPressed(KeyCode::Down) || Input::IsKeyPressed(KeyCode::S)) {
+                    if (NavDownPressed()) {
                         dlg->selectedChoice++;
                         if (dlg->selectedChoice >= static_cast<i32>(dlg->currentChoices.size()))
                             dlg->selectedChoice = 0;
                     }
-                    if (Input::IsKeyPressed(KeyCode::Enter) || Input::IsKeyPressed(KeyCode::Space)) {
+                    if (ConfirmPressed()) {
                         if (dlg->selectedChoice >= 0 &&
                             dlg->selectedChoice < static_cast<i32>(dlg->currentChoices.size())) {
                             SelectChoice(world, entity, static_cast<u32>(dlg->selectedChoice));

@@ -2376,6 +2376,8 @@ private:
 
         // Wire dialogue system event bus, subtitle system, and narrative systems
         m_DialogueSystem.SetEventBus(&m_EntityEventBus);
+        m_DialogueSystem.SetInputActionMap(&m_InputMap);
+        m_UISystem.SetInputActionMap(&m_InputMap);
         m_InteractiveWaterSystem.SetEventBus(&m_EntityEventBus);  // water_enter events
         m_DialogueSystem.SetSubtitleSystem(&m_SubtitleSystem);
         m_DialogueSystem.SetQuestSystem(&m_QuestSystem);
@@ -2837,6 +2839,8 @@ private:
 
         // Font scale + motor accessibility
         Enjin::Accessibility::ApplyTextScale(m_AccessibilitySettings, &m_UISystem, &m_SubtitleSystem, &m_Announcer);
+        m_AlternativeInput.ApplyAccessibilitySettings(m_AccessibilitySettings.switchAccessEnabled,
+                                                     m_AccessibilitySettings.switchScanSpeed);
         m_UISystem.SetSwitchAccessEnabled(m_AccessibilitySettings.switchAccessEnabled,
                                            m_AccessibilitySettings.switchScanSpeed);
         m_UISystem.SetDwellClickEnabled(m_AccessibilitySettings.dwellClickEnabled,

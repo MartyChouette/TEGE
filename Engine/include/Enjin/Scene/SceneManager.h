@@ -139,6 +139,11 @@ public:
     const InputSystem::InputProjectSettings& GetInputSettings() const { return m_InputSettings; }
     InputSystem::InputProjectSettings& GetInputSettings() { return m_InputSettings; }
 
+    // Accessibility settings an exported game STARTS with (a player can still
+    // change them). Authored in the editor; empty = engine defaults.
+    const std::string& GetAccessibilityDefaultsJson() const { return m_AccessibilityDefaultsJson; }
+    void SetAccessibilityDefaultsJson(const std::string& json) { m_AccessibilityDefaultsJson = json; }
+
     // Get scenes
     const std::vector<SceneEntry>& GetScenes() const { return m_Scenes; }
     std::vector<SceneEntry>& GetScenes() { return m_Scenes; }
@@ -276,6 +281,7 @@ private:
     std::vector<SceneEntry> m_Scenes;
     std::vector<StartupFlowStep> m_StartupFlow;
     InputSystem::InputProjectSettings m_InputSettings;
+    std::string m_AccessibilityDefaultsJson;
 
     // Collision group names (index = bit number, up to 32)
     std::vector<std::string> m_CollisionGroupNames;

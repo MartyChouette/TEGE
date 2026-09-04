@@ -93,6 +93,16 @@ public:
 
     // Switch access
     void SetSwitchConfig(const SwitchAccessConfig& config) { m_SwitchConfig = config; }
+
+    // Drive the switch scanner from the ONE accessibility setting the player
+    // sees. This scanner covers editor/app chrome while UISystem covers game
+    // UI elements; they are different target lists on purpose, but they must
+    // never disagree about being on or scan at different speeds.
+    // Device-specific fields (switch count, key mapping) stay in the config.
+    void ApplyAccessibilitySettings(bool switchEnabled, f32 scanSpeed) {
+        m_SwitchConfig.enabled = switchEnabled;
+        if (scanSpeed > 0.1f) m_SwitchConfig.scanSpeed = scanSpeed;
+    }
     const SwitchAccessConfig& GetSwitchConfig() const { return m_SwitchConfig; }
 
     // Eye tracking

@@ -508,6 +508,8 @@ void PlayMode::Play() {
 
     // Wire EntityEventBus and SubtitleSystem to DialogueSystem
     m_DialogueSystem.SetEventBus(&m_EntityEventBus);
+    m_DialogueSystem.SetInputActionMap(m_InputMap);
+    if (m_UISystem) m_UISystem->SetInputActionMap(m_InputMap);
     // Water-enter events (splash VFX / sound / score) go through the same bus.
     m_InteractiveWaterSystem.SetEventBus(&m_EntityEventBus);
     m_DialogueSystem.SetSubtitleSystem(m_SubtitleSystem);
@@ -1191,7 +1193,10 @@ void PlayMode::Update(f32 deltaTime) {
         m_AudioGraphRuntime.Update(deltaTime);
 
         // Accessibility systems update (Tasks #37, #38)
-        if (m_AlternativeInput) m_AlternativeInput->Update(deltaTime);
+        // NOTE: the alternative-input scanner is ticked by its owner
+        // (EditorLayer) every frame, play or not. Ticking it here too made it
+        // scan at double speed during play, which is exactly the setting a
+        // switch-access user needs to be correct.
         if (m_AudioIndicators) m_AudioIndicators->Update(deltaTime);
         if (m_Announcer) m_Announcer->Update(deltaTime);
         if (m_SubtitleSystem) m_SubtitleSystem->Update(deltaTime);

@@ -2001,6 +2001,7 @@ void EditorLayer::DrawSettingsWindow() {
             DrawSettingsSection_BuildScenes();
             DrawSettingsSection_StartupFlow();
             DrawSettingsSection_InputTouch();
+            DrawSettingsSection_AccessibilityDefaults();
             DrawSettingsSection_BuildConfig();
             DrawSettingsSection_Networking();
             ImGui::PopID();
@@ -2266,6 +2267,45 @@ namespace {
             return true;
         }
         return false;
+    }
+}
+
+void EditorLayer::DrawSettingsSection_AccessibilityDefaults() {
+    if (!UI::SectionHeader("Accessibility Defaults")) return;
+
+    if (m_SceneManager.GetProjectPath().empty()) {
+        ImGui::TextDisabled("No project loaded.");
+        return;
+    }
+
+    ImGui::TextWrapped("The accessibility settings your game STARTS with. Players can still "
+                       "change them in the game's own Accessibility menu. Set them up the way "
+                       "you want using the editor's Accessibility settings, then save them here.");
+    ImGui::Spacing();
+
+    const bool hasDefaults = !m_SceneManager.GetAccessibilityDefaultsJson().empty();
+    if (hasDefaults) {
+        ImGui::TextColored(ImVec4(0.6f, 0.9f, 0.6f, 1.0f),
+                           "This project ships its own accessibility defaults.");
+    } else {
+        ImGui::TextDisabled("Using engine defaults (nothing accessible turned on).");
+    }
+    ImGui::Spacing();
+
+    if (ImGui::Button("Save current settings as game defaults")) {
+        m_SceneManager.SetAccessibilityDefaultsJson(m_RuntimeAccessibility.ToJson());
+        m_SceneManager.SaveProject();
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Copies the editor's current accessibility settings into the project, "
+                          "so an exported game starts with them.");
+    }
+    if (hasDefaults) {
+        ImGui::SameLine();
+        if (ImGui::Button("Clear")) {
+            m_SceneManager.SetAccessibilityDefaultsJson(std::string());
+            m_SceneManager.SaveProject();
+        }
     }
 }
 

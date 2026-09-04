@@ -375,6 +375,7 @@ private:
     void DrawSettingsSection_BuildScenes();
     void DrawSettingsSection_StartupFlow();
     void DrawSettingsSection_InputTouch();
+    void DrawSettingsSection_AccessibilityDefaults();
     void DrawSettingsSection_BuildConfig();
     void DrawSettingsSection_Networking();
     // Scene tab sections

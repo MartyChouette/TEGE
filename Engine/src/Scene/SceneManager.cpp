@@ -116,6 +116,12 @@ bool SceneManager::LoadProject(const std::string& manifestPath) {
             m_InputSettings.FromJson(root["input"].dump());
         }
 
+        // Accessibility defaults an exported game starts with.
+        m_AccessibilityDefaultsJson.clear();
+        if (root.contains("accessibilityDefaults") && root["accessibilityDefaults"].is_object()) {
+            m_AccessibilityDefaultsJson = root["accessibilityDefaults"].dump();
+        }
+
         // Repair hand-edited or legacy manifests (duplicate start flags, etc.)
         u32 fixes = NormalizeSceneList();
         if (fixes > 0) {
@@ -257,6 +263,10 @@ bool SceneManager::SaveProject(const std::string& manifestPath) {
         // Project input settings (only when authored, so default projects stay clean)
         if (!m_InputSettings.IsEmpty()) {
             root["input"] = nlohmann::json::parse(m_InputSettings.ToJson());
+        }
+
+        if (!m_AccessibilityDefaultsJson.empty()) {
+            root["accessibilityDefaults"] = nlohmann::json::parse(m_AccessibilityDefaultsJson);
         }
 
         // Save collision group names

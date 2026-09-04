@@ -1,4 +1,6 @@
 #pragma once
+
+#include "Enjin/Input/InputAction.h"
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Gameplay.h"
@@ -59,6 +61,12 @@ public:
     // EntityEventBus integration (broadcasts Dialogue_<eventName> events)
     void SetEventBus(EntityEventBus* bus) { m_EventBus = bus; }
 
+    // Dialogue reads ACTIONS (DialogueAdvance / UINavUp / UINavDown /
+    // UIConfirm), so a player's rebind moves it, a gamepad works with no extra
+    // code, and it goes quiet with the rest of gameplay when focus is elsewhere.
+    // With no map attached it falls back to the historic Space/Enter/W/S keys.
+    void SetInputActionMap(InputSystem::InputActionMap* map) { m_InputMap = map; }
+
     // SubtitleSystem integration (routes text to accessibility subtitles)
     void SetSubtitleSystem(Accessibility::SubtitleSystem* subs) { m_SubtitleSystem = subs; }
 
@@ -68,6 +76,13 @@ public:
     void SetTieredSaveSystem(Gameplay::TieredSaveSystem* tss) { m_TieredSaveSystem = tss; }
 
 private:
+    // Action-or-fallback input helpers (see SetInputActionMap).
+    bool AdvancePressed() const;    // advance / skip typing
+    bool ConfirmPressed() const;    // choose the highlighted option
+    bool NavUpPressed() const;
+    bool NavDownPressed() const;
+
+    InputSystem::InputActionMap* m_InputMap = nullptr;
     bool m_Enabled = true;
     std::unordered_map<Entity, GUI::DialoguePlayer> m_Players;
     Entity m_ActiveEntity = INVALID_ENTITY;

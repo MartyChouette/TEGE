@@ -266,6 +266,11 @@ bool BuildPipeline::ScanProject(const std::string& projectPath) {
             m_InputSettingsJson = root["input"].dump();
         }
 
+        m_AccessibilityDefaultsJson.clear();
+        if (root.contains("accessibilityDefaults") && root["accessibilityDefaults"].is_object()) {
+            m_AccessibilityDefaultsJson = root["accessibilityDefaults"].dump();
+        }
+
         AddMessage(MessageSeverity::Info, "Found " + std::to_string(m_Scenes.size()) + " scenes in project '" + m_ProjectName + "'");
         return true;
 
@@ -715,7 +720,16 @@ bool BuildPipeline::WriteBuildManifest(const BuildConfig& config, AssetPacker& p
         return false;
     }
 
-    // Pack a default accessibility.json so the player can load and save settings
+    // Ship the accessibility settings the PROJECT authored, so configuring
+    // "Motor Impaired" (or larger subtitles, or reduced motion) in the editor
+    // is what players actually get. Only when the project has none do we fall
+    // back to engine defaults.
+    if (!m_AccessibilityDefaultsJson.empty()) {
+        packer.AddData("accessibility.json",
+                       m_AccessibilityDefaultsJson.data(), m_AccessibilityDefaultsJson.size());
+        return true;
+    }
+
     nlohmann::json accessDefaults;
     accessDefaults["colorblindMode"] = 0;
     accessDefaults["colorblindStrength"] = 1.0f;

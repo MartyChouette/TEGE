@@ -207,12 +207,16 @@ Done:
 - The editor's TWO action maps are one. `PlayMode` borrows `EditorLayer`'s. This also fixed a live bug: play start re-pointed `ActionTriggerSystem` back at PlayMode's map, so a rebind moved the controllers and the Controls menu but not the touch labels or the triggers. PlayMode no longer ticks the map (a second tick per frame would eat pressed edges).
 - The editor's control preset and sprint/crouch toggles edit the map directly, so the editor previews the controls an exported game gets.
 
+- DialogueSystem reads `DialogueAdvance`, `UINavUp/Down` and `UIConfirm` instead of hardcoded Space/Enter/W/S, so a rebind moves dialogue and a gamepad works with no extra code. Falls back to the old keys with no map attached.
+- UISystem focus navigation reads the UI actions the same way (confirm, four directions), with the ImGui keys as the fallback.
+- BuildPipeline ships the PROJECT's accessibility defaults instead of a hardcoded 15-key file. `RuntimeAccessibilitySettings` gained the one `ToJson`/`FromJson` both the export and the players use, and Project Settings has an Accessibility Defaults section with a button to save the editor's current settings as the game's starting point.
+- Switch scanning no longer double-ticks during editor play (EditorLayer and PlayMode both ticked it, so it scanned at double speed, which is exactly what a switch-access user cannot have), and the chrome scanner takes its enable + speed from the same accessibility setting the game UI scanner uses.
+
 Remaining:
 
-- BuildPipeline still writes a hardcoded `accessibility.json`; it should export project-level defaults the editor authored.
-- DialogueSystem and UISystem focus nav still read hardcoded keys instead of the UI actions.
-- Dwell-click exists three times and switch-scanning twice (UISystem vs AlternativeInputManager, different flags and speeds, both can run at once). AlternativeInput should feed UISystem; it has 11 editor call sites for editor chrome that must survive.
 - The editor's docked pause menu is still bespoke rather than the shipped UICanvas template.
+- `AlternativeInputManager` and `UISystem` still keep separate scan target lists. That part is deliberate: one covers editor/app chrome (ImGui toolbar, gizmo modes, panels), the other covers game UI elements. They now share the enable flag and speed, which was the part that silently disagreed.
+- Eye-gaze dwell in `AlternativeInputManager` is still its own timer, but nothing feeds it: no gaze driver exists, and `UpdateGazePosition` has no caller.
 
 Original scope:
 

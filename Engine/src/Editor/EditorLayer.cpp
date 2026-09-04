@@ -361,6 +361,9 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
         if (auto* uiSys = m_PlayMode.GetUISystem()) {
             uiSys->SetReducedMotion(a.reducedMotion);
             uiSys->SetSwitchAccessEnabled(a.switchAccessEnabled, a.switchScanSpeed);
+            // Same setting drives the editor-chrome scanner, so the two
+            // never disagree about being on or scan at different speeds.
+            m_AlternativeInput.ApplyAccessibilitySettings(a.switchAccessEnabled, a.switchScanSpeed);
             uiSys->SetDwellClickEnabled(a.dwellClickEnabled, a.dwellClickTime);
             uiSys->SetStickyDragEnabled(a.stickyDragEnabled);
         }

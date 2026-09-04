@@ -90,6 +90,13 @@ struct RuntimeAccessibilitySettings {
 
     // Apply visual settings to a PostProcessSettings struct
     void ApplyToPostProcessing(Renderer::PostProcessSettings& ppSettings) const;
+
+    // The ONE serializer for these settings. Used for the player's
+    // accessibility.json and for the project-level defaults an exported game
+    // ships with, so "what the editor configured" and "what the game loads"
+    // cannot drift into different key sets.
+    std::string ToJson() const;
+    bool FromJson(const std::string& jsonStr);
 };
 
 // Push the text-scaling settings to everything that draws text. One call so a

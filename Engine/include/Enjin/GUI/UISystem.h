@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Enjin/Input/InputAction.h"
+
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Platform/Types.h"
 #include "Enjin/ECS/World.h"
@@ -48,6 +50,12 @@ public:
     // Update)? Installed into Core as the touch UI hit test, so a finger on a
     // slider becomes a real pointer instead of being eaten by the move stick.
     bool HitTestInteractive(f32 x, f32 y) const;
+
+    // Menu navigation reads ACTIONS (UIConfirm / UINavUp / UINavDown /
+    // UINavLeft / UINavRight), so rebinding moves the menus too and a gamepad
+    // works with no extra code. With no map attached it falls back to the
+    // arrow keys, Enter/Space and the ImGui gamepad keys.
+    void SetInputActionMap(InputSystem::InputActionMap* map) { m_InputMap = map; }
 
     // HUD-tier gate (replaces the retired HUDSystem's SetEnabled): canvases
     // with sortOrder >= HUD_SORT_ORDER (the tier the hudWidget migration
@@ -217,6 +225,11 @@ private:
     // Input pass: hit test and process interactions
     void ProcessInput(UICanvasComponent& canvas, f32 vpW, f32 vpH);
     bool IsInteractiveElement(const UIElement& element) const;
+    // Action-or-fallback navigation input (see SetInputActionMap).
+    bool NavConfirmPressed() const;
+    bool NavPressed(InputSystem::GameAction action, bool fallback) const;
+
+    InputSystem::InputActionMap* m_InputMap = nullptr;
 
     // Focus navigation: Tab/DPad/Arrow key navigation with repeat
     void ProcessFocusNavigation(UICanvasComponent& canvas, f32 deltaTime);

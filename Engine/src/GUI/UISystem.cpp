@@ -2385,6 +2385,18 @@ std::vector<UIElement*> UISystem::BuildTabOrder(UICanvasComponent& canvas) {
     return focusable;
 }
 
+bool UISystem::NavConfirmPressed() const {
+    if (m_InputMap) return m_InputMap->IsActionPressed(InputSystem::GameAction::UIConfirm);
+    return ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_Space) ||
+           ImGui::IsKeyPressed(ImGuiKey_GamepadFaceDown);
+}
+
+// `fallback` is the historic ImGui key/gamepad test, used when no map is wired.
+bool UISystem::NavPressed(InputSystem::GameAction action, bool fallback) const {
+    if (m_InputMap) return m_InputMap->IsActionPressed(action);
+    return fallback;
+}
+
 void UISystem::ProcessFocusNavigation(UICanvasComponent& canvas, f32 deltaTime) {
     ImGuiIO& io = ImGui::GetIO();
 
@@ -2439,8 +2451,7 @@ void UISystem::ProcessFocusNavigation(UICanvasComponent& canvas, f32 deltaTime) 
             }
         }
         // Check for activation (single input)
-        if (ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_Space) ||
-            ImGui::IsKeyPressed(ImGuiKey_GamepadFaceDown)) {
+        if (NavConfirmPressed()) {
             ActivateFocusedElement(canvas);
         }
         return; // Skip normal navigation in switch access mode
@@ -2451,10 +2462,14 @@ void UISystem::ProcessFocusNavigation(UICanvasComponent& canvas, f32 deltaTime) 
     bool shiftHeld = io.KeyShift;
 
     // Check for DPad / Arrow keys with repeat
-    bool navDown  = ImGui::IsKeyPressed(ImGuiKey_DownArrow)  || ImGui::IsKeyPressed(ImGuiKey_GamepadDpadDown);
-    bool navUp    = ImGui::IsKeyPressed(ImGuiKey_UpArrow)    || ImGui::IsKeyPressed(ImGuiKey_GamepadDpadUp);
-    bool navRight = ImGui::IsKeyPressed(ImGuiKey_RightArrow) || ImGui::IsKeyPressed(ImGuiKey_GamepadDpadRight);
-    bool navLeft  = ImGui::IsKeyPressed(ImGuiKey_LeftArrow)  || ImGui::IsKeyPressed(ImGuiKey_GamepadDpadLeft);
+    bool navDown  = NavPressed(InputSystem::GameAction::UINavDown,
+                               ImGui::IsKeyPressed(ImGuiKey_DownArrow)  || ImGui::IsKeyPressed(ImGuiKey_GamepadDpadDown));
+    bool navUp    = NavPressed(InputSystem::GameAction::UINavUp,
+                               ImGui::IsKeyPressed(ImGuiKey_UpArrow)    || ImGui::IsKeyPressed(ImGuiKey_GamepadDpadUp));
+    bool navRight = NavPressed(InputSystem::GameAction::UINavRight,
+                               ImGui::IsKeyPressed(ImGuiKey_RightArrow) || ImGui::IsKeyPressed(ImGuiKey_GamepadDpadRight));
+    bool navLeft  = NavPressed(InputSystem::GameAction::UINavLeft,
+                               ImGui::IsKeyPressed(ImGuiKey_LeftArrow)  || ImGui::IsKeyPressed(ImGuiKey_GamepadDpadLeft));
 
     // Key repeat for held keys
     bool anyNavHeld = ImGui::IsKeyDown(ImGuiKey_DownArrow) || ImGui::IsKeyDown(ImGuiKey_UpArrow) ||
@@ -2514,8 +2529,7 @@ void UISystem::ProcessFocusNavigation(UICanvasComponent& canvas, f32 deltaTime) 
     }
 
     // Activation: Enter / Space / Gamepad A
-    bool activate = ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_Space) ||
-                    ImGui::IsKeyPressed(ImGuiKey_GamepadFaceDown);
+    bool activate = NavConfirmPressed();
     if (activate && canvas.focusedElementId != 0) {
         ActivateFocusedElement(canvas);
     }

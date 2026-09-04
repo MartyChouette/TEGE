@@ -92,6 +92,10 @@ private:
     // verbatim way so an exported game ships the controls the editor authored.
     std::string m_InputSettingsJson;
 
+    // Accessibility settings the exported game starts with (empty = engine
+    // defaults). Authored in the editor, shipped as accessibility.json.
+    std::string m_AccessibilityDefaultsJson;
+
     ProgressCallback m_ProgressCallback;
 };
 

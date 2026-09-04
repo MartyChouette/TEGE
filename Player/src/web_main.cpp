@@ -350,6 +350,8 @@ public:
         m_StateMachineSystem.SetScriptEngine(&m_ScriptEngine);
         m_CinematicSystem.SetEnabled(true);
         m_DialogueSystem.SetEventBus(&m_EntityEventBus);
+        m_DialogueSystem.SetInputActionMap(&m_InputMap);
+        m_UISystem.SetInputActionMap(&m_InputMap);
         // NOTE: the web player does not run InteractiveWaterSystem (no member); water
         // simulation/events are desktop-only for now. (Was erroneously wired here.)
         m_DialogueSystem.SetQuestSystem(&m_QuestSystem);
