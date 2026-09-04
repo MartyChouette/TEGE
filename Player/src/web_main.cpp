@@ -650,6 +650,25 @@ public:
     void ApplyWebPostProcess() {
         if (!m_RenderSystem) return;
         const auto& s = m_SceneRenderSettings;
+        // Spatial upscaling, opt-in per page via ?scale= and ?sharp= so a demo
+        // can trade resolution for framerate without a rebuild. Defaults are
+        // native rendering with a light sharpen, which changes nothing for
+        // anyone who does not ask.
+        {
+            const float scale = static_cast<float>(EM_ASM_DOUBLE({
+                var m = /[?&]scale=([0-9.]+)/.exec(location.search);
+                return m ? parseFloat(m[1]) : 1.0;
+            }));
+            const float sharp = static_cast<float>(EM_ASM_DOUBLE({
+                var m = /[?&]sharp=([0-9.]+)/.exec(location.search);
+                return m ? parseFloat(m[1]) : -1.0;
+            }));
+            m_RenderSystem->SetWebRenderScale(scale);
+            // Below native, sharpening is what makes the upscale hold up, so it
+            // defaults on in proportion to how far down we are rendering.
+            m_RenderSystem->SetWebSharpness(sharp >= 0.0f ? sharp
+                                                          : (scale < 0.999f ? 0.5f : 0.0f));
+        }
         m_RenderSystem->SetWebPostProcess(
             s.saturation, s.colorFilter.x, s.colorFilter.y, s.colorFilter.z,
             s.vignetteEnabled ? s.vignetteIntensity : 0.0f, s.vignetteSmoothness,

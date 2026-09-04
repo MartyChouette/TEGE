@@ -670,6 +670,10 @@ struct PostProcessParams {
     stippleScale: f32,
     ssao: f32,            // screen-space AO strength, 0 = off (color-space approximation)
     ssaoRadius: f32,      // AO sample-ring radius scale
+    sharpness: f32,       // contrast-adaptive sharpening, 0 = off
+    ppPad0: f32,
+    ppPad1: f32,
+    ppPad2: f32,          // 28 f32 = 112 bytes; must match WebPPAccessibilityParams
 };
 @group(0) @binding(2) var<uniform> params: PostProcessParams;
 
@@ -713,6 +717,29 @@ fn linearToSrgb(c: vec3<f32>) -> vec3<f32> {
     let lo = c * 12.92;
     let hi = 1.055 * pow(max(c, vec3<f32>(0.0)), vec3<f32>(1.0 / 2.4)) - 0.055;
     return select(hi, lo, c <= vec3<f32>(0.0031308));
+}
+
+// Contrast-adaptive sharpening (the RCAS half of FSR1). Sharpen each pixel
+// against its four neighbours, but limit the amount by the local contrast and
+// clamp the result into the neighbourhood range, so edges get their definition
+// back without the bright haloes naive sharpening produces. Cheap: four taps.
+fn sharpenCAS(uv: vec2<f32>, texelSize: vec2<f32>, amount: f32, c: vec3<f32>) -> vec3<f32> {
+    let n = textureSampleLevel(sceneTexture, sceneSampler, uv + vec2<f32>(0.0, -texelSize.y), 0.0).rgb;
+    let s = textureSampleLevel(sceneTexture, sceneSampler, uv + vec2<f32>(0.0,  texelSize.y), 0.0).rgb;
+    let e = textureSampleLevel(sceneTexture, sceneSampler, uv + vec2<f32>( texelSize.x, 0.0), 0.0).rgb;
+    let w = textureSampleLevel(sceneTexture, sceneSampler, uv + vec2<f32>(-texelSize.x, 0.0), 0.0).rgb;
+
+    let mn = min(min(min(n, s), min(e, w)), c);
+    let mx = max(max(max(n, s), max(e, w)), c);
+
+    // Headroom on both sides: a pixel already near black or near white cannot
+    // take much sharpening without clipping, so it gets less.
+    let headroom = min(mn, max(vec3<f32>(0.0), vec3<f32>(1.0) - mx));
+    let limit = clamp(min(min(headroom.r, headroom.g), headroom.b), 0.0, 1.0);
+
+    let blur = (n + s + e + w) * 0.25;
+    let sharpened = c + (c - blur) * (amount * (0.35 + 0.65 * limit));
+    return clamp(sharpened, mn, mx);
 }
 
 fn fxaa(uv: vec2<f32>, texelSize: vec2<f32>) -> vec3<f32> {
@@ -808,6 +835,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let texelSize = vec2<f32>(1.0 / texDim.x, 1.0 / texDim.y);
 
     var color = fxaa(in.uv, texelSize);
+
+    // Applied on the SOURCE resolution texels, so when the scene target is
+    // smaller than the swapchain this is what puts the edges back after the
+    // upscale. Harmless at render scale 1.0, where it is a plain sharpen.
+    if (params.sharpness > 0.0) {
+        color = sharpenCAS(in.uv, texelSize, params.sharpness, color);
+    }
 
     // Chromatic aberration: split R/B radially from the screen centre. textureSampleLevel
     // (explicit LOD) is legal inside a branch; plain textureSample would not be.

@@ -222,6 +222,14 @@ static WGPUSampler MakeWebLinearClampSampler(WGPUDevice device) {
     return wgpuDeviceCreateSampler(device, &smpDesc);
 }
 
+// Swapchain dimension -> scene-target dimension. Never below 64 so a collapsed
+// or tiny canvas cannot produce a degenerate target.
+u32 RenderSystem::WebScaledDim(u32 v) const {
+    const f32 s = (m_WebRenderScale < 0.5f) ? 0.5f : (m_WebRenderScale > 1.0f ? 1.0f : m_WebRenderScale);
+    const u32 out = static_cast<u32>(static_cast<f32>(v) * s + 0.5f);
+    return out < 64u ? 64u : out;
+}
+
 void RenderSystem::RecreateWebSizedTargets(u32 sceneW, u32 sceneH) {
     if (sceneW == 0 || sceneH == 0) return;
 
@@ -943,7 +951,11 @@ void RenderSystem::Initialize() {
 
         // All swapchain-sized textures (scene color, MSAA, depth, bloom chain,
         // scratch) + the bind groups that reference them:
-        RecreateWebSizedTargets(m_Renderer->GetSwapchainWidth(), m_Renderer->GetSwapchainHeight());
+        {   // Scene targets are sized at renderScale; the swapchain stays native.
+            const u32 sw = m_Renderer->GetSwapchainWidth();
+            const u32 sh = m_Renderer->GetSwapchainHeight();
+            RecreateWebSizedTargets(WebScaledDim(sw), WebScaledDim(sh));
+        }
 
         if (m_WebPostProcessPipeline.IsValid() && m_WebPostProcessBG.IsValid()) {
             ENJIN_LOG_INFO(Renderer, "RenderSystem: Post-processing initialized (ACES tonemap)");
@@ -2433,15 +2445,18 @@ void RenderSystem::Update(f32 deltaTime) {
         const bool sane = swW >= kMinTargetDim && swH >= kMinTargetDim;
         // Ignore sub-pixel churn too, so a resize that rounds differently frame
         // to frame does not thrash the chain.
-        const bool changed = (swW > m_WebSceneTargetW ? swW - m_WebSceneTargetW : m_WebSceneTargetW - swW) > 1 ||
-                             (swH > m_WebSceneTargetH ? swH - m_WebSceneTargetH : m_WebSceneTargetH - swH) > 1;
+        // Compare against the SCALED size: the targets are not swapchain-sized
+        // when renderScale < 1, and comparing raw would recreate them every frame.
+        const u32 wantW = WebScaledDim(swW), wantH = WebScaledDim(swH);
+        const bool changed = (wantW > m_WebSceneTargetW ? wantW - m_WebSceneTargetW : m_WebSceneTargetW - wantW) > 1 ||
+                             (wantH > m_WebSceneTargetH ? wantH - m_WebSceneTargetH : m_WebSceneTargetH - wantH) > 1;
         if (usePostProcess && sane && changed) {
             // console.log, not ENJIN_LOG: stdout does not reach the browser
             // console, and this is the line that proves a resize recreated the
             // chain when debugging in the field.
             EM_ASM({ console.log('[RESIZE] recreating offscreen chain ' + $0 + 'x' + $1 + ' -> ' + $2 + 'x' + $3); },
                    m_WebSceneTargetW, m_WebSceneTargetH, swW, swH);
-            RecreateWebSizedTargets(swW, swH);
+            RecreateWebSizedTargets(WebScaledDim(swW), WebScaledDim(swH));
         }
     }
 

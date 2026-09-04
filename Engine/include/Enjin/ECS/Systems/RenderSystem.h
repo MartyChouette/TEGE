@@ -761,7 +761,14 @@ public:
         f32 stipple = 0.0f;            // 0 = off, 1 = mono, 2 = duotone, 3 = full-colour dither
         f32 stippleScale = 1.0f;
         f32 ssao = 0.0f;              // screen-space AO strength, 0 = off (color-space approx)
-        f32 ssaoRadius = 0.5f;        // 24 f32 = 96 bytes (16-multiple)
+        f32 ssaoRadius = 0.5f;
+        // Contrast-adaptive sharpening, the RCAS half of FSR-style upscaling.
+        // 0 = off. Pads keep the block a 16-byte multiple and must match the
+        // WGSL struct exactly: 28 f32 = 112 bytes.
+        f32 sharpness = 0.0f;
+        f32 ppPad0 = 0.0f;
+        f32 ppPad1 = 0.0f;
+        f32 ppPad2 = 0.0f;            // 28 f32 = 112 bytes (16-multiple)
     };
     WebPPAccessibilityParams m_WebPPAccessibility;
     void SetWebAccessibility(u32 colorblindMode, f32 strength, f32 brightness, f32 contrast) {
@@ -797,6 +804,13 @@ public:
         m_WebPPAccessibility.colorQuantLevels = colorQuantLevels;
         m_WebPPAccessibility.filmGrain = filmGrain;
         m_WebPPAccessibility.crtScanline = crtScanline;
+        // Sharpening is driven by SetWebSharpness rather than this call, so a
+        // scene's post-process settings never silently switch off the pass that
+        // makes upscaled rendering look right. The scale/sharpness members are
+        // WebGPU-only, so the guard has to match theirs.
+#if ENJIN_RENDERER_WEBGPU
+        m_WebPPAccessibility.sharpness = m_WebSharpness;
+#endif
     }
 
     // Cel shading (lighting quantization)
@@ -1257,6 +1271,20 @@ private:
     // signature quantises to it: a caster movement smaller than one texel
     // cannot alter the rendered depth map.
     f32 m_WebShadowTexelWorld = 0.0f;
+
+    // Spatial upscaling. The scene renders at renderScale x the swapchain and
+    // the post-process pass resolves it back up, so cost falls with the square
+    // of the scale while the UI and the final image stay at native resolution.
+    // sharpness feeds the contrast-adaptive pass that restores the edge
+    // definition the upscale softens. 1.0 = render native (no upscale).
+    f32 m_WebRenderScale = 1.0f;     // 0.5 - 1.0
+    f32 m_WebSharpness = 0.0f;       // 0 = off
+public:
+    void SetWebRenderScale(f32 scale) { m_WebRenderScale = (scale < 0.5f) ? 0.5f : (scale > 1.0f ? 1.0f : scale); }
+    f32 GetWebRenderScale() const { return m_WebRenderScale; }
+    void SetWebSharpness(f32 s) { m_WebSharpness = (s < 0.0f) ? 0.0f : (s > 1.0f ? 1.0f : s); }
+    f32 GetWebSharpness() const { return m_WebSharpness; }
+private:
     Renderer::GPUBindGroupLayoutHandle m_WebShadowFrameLayout;
     Renderer::GPUBindGroupLayoutHandle m_WebShadowObjectLayout;
     Renderer::GPUBufferHandle m_WebShadowVPBuffer;       // light VP UBO
@@ -1330,6 +1358,7 @@ private:
     // color, depth, bloom chain, bloom scratch — plus the bind groups that
     // reference them. Shaders/layouts/pipelines are size-independent and are
     // created once in Initialize.
+    u32 WebScaledDim(u32 v) const;
     void RecreateWebSizedTargets(u32 sceneW, u32 sceneH);
 
     // Particle rendering (instanced billboard quads)
