@@ -479,7 +479,7 @@ ENJIN_TEST(EntityDestroyObserver, FiresWithIntactDataBeforeComponentRemoval) {
 
     int fireCount = 0;
     bool sawIntactData = false;
-    world.SetEntityDestroyObserver([&](Entity observed) {
+    world.AddEntityDestroyObserver([&](Entity observed) {
         ++fireCount;
         auto* t = world.GetComponent<TransformComponent>(observed);
         auto* n = world.GetComponent<NameComponent>(observed);
@@ -500,7 +500,7 @@ ENJIN_TEST(EntityDestroyObserver, FiresOnDeferredFlushNotOnQueue) {
     Entity e = world.CreateEntity();
     world.AddComponent<TransformComponent>(e);
     int fireCount = 0;
-    world.SetEntityDestroyObserver([&](Entity) { ++fireCount; });
+    world.AddEntityDestroyObserver([&](Entity) { ++fireCount; });
 
     world.DestroyEntity(e);            // queued only
     ENJIN_EXPECT_EQ(fireCount, 0);
@@ -508,15 +508,50 @@ ENJIN_TEST(EntityDestroyObserver, FiresOnDeferredFlushNotOnQueue) {
     ENJIN_EXPECT_EQ(fireCount, 1);
 }
 
-ENJIN_TEST(EntityDestroyObserver, ClearStopsObservation) {
+ENJIN_TEST(EntityDestroyObserver, RemovingByTokenStopsObservation) {
     World world;
     Entity e = world.CreateEntity();
     world.AddComponent<TransformComponent>(e);
     int fireCount = 0;
-    world.SetEntityDestroyObserver([&](Entity) { ++fireCount; });
-    world.ClearEntityDestroyObserver();
+    auto token = world.AddEntityDestroyObserver([&](Entity) { ++fireCount; });
+    world.RemoveEntityDestroyObserver(token);
     world.DestroyEntityImmediate(e);
     ENJIN_EXPECT_EQ(fireCount, 0);
+}
+
+ENJIN_TEST(EntityDestroyObserver, TwoObserversBothFire) {
+    // The list exists because two systems need it at once: PlayMode serializes
+    // pre-play entities as they die, and ScriptSystem runs the script teardown.
+    // It used to be a single slot, PlayMode held it, and every despawn during
+    // play leaked its AngelScript object.
+    World world;
+    Entity e = world.CreateEntity();
+    world.AddComponent<TransformComponent>(e);
+
+    int a = 0, b = 0;
+    world.AddEntityDestroyObserver([&](Entity) { ++a; });
+    world.AddEntityDestroyObserver([&](Entity) { ++b; });
+
+    world.DestroyEntityImmediate(e);
+
+    ENJIN_EXPECT_EQ(a, 1);
+    ENJIN_EXPECT_EQ(b, 1);
+}
+
+ENJIN_TEST(EntityDestroyObserver, RemovingOneLeavesTheOther) {
+    World world;
+    Entity e = world.CreateEntity();
+    world.AddComponent<TransformComponent>(e);
+
+    int a = 0, b = 0;
+    auto tokenA = world.AddEntityDestroyObserver([&](Entity) { ++a; });
+    world.AddEntityDestroyObserver([&](Entity) { ++b; });
+    world.RemoveEntityDestroyObserver(tokenA);
+
+    world.DestroyEntityImmediate(e);
+
+    ENJIN_EXPECT_EQ(a, 0);
+    ENJIN_EXPECT_EQ(b, 1);
 }
 
 // ===========================================================================

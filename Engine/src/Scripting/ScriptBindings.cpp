@@ -92,6 +92,12 @@ void ClearBindingsEventListeners() {
     if (s_BindingsEventBus) s_BindingsEventBus->Clear();
 }
 
+void RemoveBindingsEventListenersForEntity(u64 entityId) {
+    // Releases the callback/object refs the bus AddRef'd on Events_Listen, so a
+    // despawned entity's delegates do not survive to the engine's shutdown GC.
+    if (s_BindingsEventBus) s_BindingsEventBus->RemoveAllForEntity(entityId);
+}
+
 void SetBindingsScriptEngine(ScriptEngine* engine) {
     s_BindingsScriptEngine = engine;
 }

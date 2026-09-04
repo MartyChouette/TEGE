@@ -57,8 +57,13 @@ void World::DestroyEntityInternal(Entity entity) {
     // Notify any observer while the entity's data is still fully intact (before the
     // hierarchy fix-up and component removal below). Single choke point for both the
     // deferred flush and DestroyEntityImmediate. See SetEntityDestroyObserver().
-    if (m_DestroyObserver) {
-        m_DestroyObserver(entity);
+    // Copied: an observer is allowed to unregister itself, and PlayMode's
+    // does exactly that on the last pre-play entity.
+    if (!m_DestroyObservers.empty()) {
+        const auto observers = m_DestroyObservers;
+        for (const auto& o : observers) {
+            if (o.fn) o.fn(entity);
+        }
     }
 
     // Clean up hierarchy: reparent children to root

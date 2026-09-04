@@ -1315,7 +1315,7 @@ void PlayMode::SaveEditorState() {
     // destroy-observer that serializes ONLY the pre-play entities that actually die
     // during play, at the moment they die. Stop recreates exactly these. The common
     // case (nothing destroyed) pays zero serialization cost on Play.
-    m_World->SetEntityDestroyObserver([this](ECS::Entity e) {
+    m_DestroyObserverToken = m_World->AddEntityDestroyObserver([this](ECS::Entity e) {
         const u64 id = static_cast<u64>(e);
         // Only pre-play entities are restorable; play-created ones must stay gone.
         if (m_SavedEntityState.find(id) == m_SavedEntityState.end()) return;
@@ -1336,7 +1336,10 @@ void PlayMode::RestoreEditorState() {
     // is still installed (their data is intact until the flush actually runs), then
     // stop observing so nothing captures during the restore mutations below.
     m_World->FlushPendingDestructions();
-    m_World->ClearEntityDestroyObserver();
+    if (m_DestroyObserverToken != 0) {
+        m_World->RemoveEntityDestroyObserver(m_DestroyObserverToken);
+        m_DestroyObserverToken = 0;
+    }
 
     // Restore each SURVIVING tracked entity's gameplay-mutable state in place
     // (transform + visible). Static asset data (mesh, skeleton, animator) is left

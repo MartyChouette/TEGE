@@ -199,6 +199,7 @@ enjin_add_test(TestSerdesCoverage  Unit/Scene/TestSerdesCoverage.cpp)
 # --- Scripting ---
 enjin_add_test(TestScriptEngine       Unit/Scripting/TestScriptEngine.cpp)
 enjin_add_test(TestScriptHotReload    Unit/Scripting/TestScriptHotReload.cpp)
+enjin_add_test(TestScriptTeardown     Unit/Scripting/TestScriptTeardown.cpp)
 enjin_add_test(TestScriptProperties   Unit/Scripting/TestScriptProperties.cpp)
 enjin_add_test(TestScriptBindings     Unit/Scripting/TestScriptBindings.cpp)
 enjin_add_test(TestVisualScript       Unit/Scripting/TestVisualScript.cpp)

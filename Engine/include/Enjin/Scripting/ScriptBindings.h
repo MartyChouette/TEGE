@@ -90,6 +90,10 @@ void SetBindingsEventBus(ScriptEventBus* bus);
 // shutdown GC (which then can't collect them: "GC cannot destroy $func") and so
 // listeners don't leak across play sessions.
 void ClearBindingsEventListeners();
+
+// Drop just one entity's listeners, for a despawn. ScriptSystem's destroy
+// observer calls this; without it a dead entity's callbacks kept firing.
+void RemoveBindingsEventListenersForEntity(u64 entityId);
 void SetBindingsScriptEngine(ScriptEngine* engine);
 void SetBindingsDialogueSystem(ECS::DialogueSystem* system);
 void SetBindingsRenderSystem(ECS::RenderSystem* renderSystem);

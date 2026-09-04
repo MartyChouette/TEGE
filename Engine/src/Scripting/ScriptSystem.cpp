@@ -14,7 +14,11 @@ namespace Enjin {
 namespace Scripting {
 
 ScriptSystem::ScriptSystem() = default;
-ScriptSystem::~ScriptSystem() = default;
+ScriptSystem::~ScriptSystem() {
+    // The destroy observer captures `this`; leaving it registered on a World
+    // that outlives this system is a dangling call on the next despawn.
+    RemoveDestroyObserver();
+}
 
 void ScriptSystem::CacheMethodIds(ECS::ScriptAttachment& script) {
     if (!script.instance) return;
@@ -334,32 +338,56 @@ void ScriptSystem::InitializeAllScripts() {
     ENJIN_LOG_INFO(Script, "All scripts initialized");
 }
 
+void ScriptSystem::InstallDestroyObserver() {
+    if (!m_World || m_DestroyObserverToken != 0) return;
+    m_DestroyObserverToken = m_World->AddEntityDestroyObserver([this](ECS::Entity e) {
+        TeardownEntityScripts(e);
+    });
+}
+
+void ScriptSystem::RemoveDestroyObserver() {
+    if (!m_World || m_DestroyObserverToken == 0) return;
+    m_World->RemoveEntityDestroyObserver(m_DestroyObserverToken);
+    m_DestroyObserverToken = 0;
+}
+
+void ScriptSystem::TeardownEntityScripts(ECS::Entity entity) {
+    if (!m_World) return;
+    auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
+    if (!sc) return;
+
+    for (auto& script : sc->scripts) {
+        if (script.initialized && script.instance && !script.hasError) {
+            if (script.enabled) {
+                CallLifecycleMethod(script, script.methodOnDisable, "OnDisable");
+            }
+            CallLifecycleMethod(script, script.methodOnDestroy, "OnDestroy");
+        }
+
+        if (script.instance && m_ScriptEngine) {
+            m_ScriptEngine->ReleaseInstance(static_cast<asIScriptObject*>(script.instance));
+        }
+        script.instance = nullptr;
+        script.initialized = false;
+        script.started = false;
+        script.hasError = false;
+        script.lastError.clear();
+    }
+
+    // A dead entity's coroutines and event listeners must go with it. Both of
+    // these functions existed with zero callers: coroutines kept ticking on a
+    // destroyed entity, and its listeners kept firing until the 1024-per-event
+    // cap started rejecting new registrations.
+    const u64 id = static_cast<u64>(entity);
+    if (m_Scheduler) m_Scheduler->StopAllForEntity(id);
+    Scripting::RemoveBindingsEventListenersForEntity(id);
+}
+
 void ScriptSystem::ShutdownAllScripts() {
     if (!m_World) return;
 
     for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::ScriptComponent>()) {
-        auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
-        if (!sc) continue;
-
-        for (auto& script : sc->scripts) {
-            if (script.initialized && script.instance && !script.hasError) {
-                // Call OnDisable then OnDestroy
-                if (script.enabled) {
-                    CallLifecycleMethod(script, script.methodOnDisable, "OnDisable");
-                }
-                CallLifecycleMethod(script, script.methodOnDestroy, "OnDestroy");
-            }
-
-            // Release instance
-            if (script.instance && m_ScriptEngine) {
-                m_ScriptEngine->ReleaseInstance(static_cast<asIScriptObject*>(script.instance));
-            }
-            script.instance = nullptr;
-            script.initialized = false;
-            script.started = false;
-            script.hasError = false;
-            script.lastError.clear();
-        }
+        TeardownEntityScripts(entity);
     }
 
     m_FixedTimeAccumulator = 0.0f;

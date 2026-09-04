@@ -26,7 +26,11 @@ public:
     ScriptSystem();
     ~ScriptSystem();
 
-    void SetWorld(ECS::World* world) { m_World = world; }
+    void SetWorld(ECS::World* world) {
+        RemoveDestroyObserver();
+        m_World = world;
+        InstallDestroyObserver();
+    }
     void SetScriptEngine(ScriptEngine* engine) { m_ScriptEngine = engine; }
     void SetCoroutineScheduler(CoroutineScheduler* scheduler) { m_Scheduler = scheduler; }
     void SetEnabled(bool enabled) { m_Enabled = enabled; }
@@ -37,6 +41,18 @@ public:
     // the exe directory, so without a root those paths never resolve.
     // Empty = resolve against CWD (legacy behavior, used by the Player).
     void SetScriptRoot(const std::string& root) { m_ScriptRoot = root; }
+
+    // Tear down one entity's scripts: OnDisable, OnDestroy, release the
+    // AngelScript instance, stop its coroutines, drop its event listeners.
+    //
+    // This is what a despawn needs and never got. ReleaseInstance ran only from
+    // ShutdownAllScripts, so a spawn-heavy game leaked an asIScriptObject per
+    // despawn, kept its coroutines ticking and left its listeners firing on a
+    // dead entity until the 1024-per-event cap started rejecting new ones --
+    // and OnDestroy never fired during play at all.
+    //
+    // Safe to call on an entity with no ScriptComponent.
+    void TeardownEntityScripts(ECS::Entity entity);
 
     // Main update — call once per frame
     void Update(f32 deltaTime);
@@ -97,9 +113,15 @@ private:
     // Handle script error
     void HandleScriptError(ECS::ScriptAttachment& script, const char* methodName);
 
+    // Registered on the World so a despawn during play runs the teardown above.
+    // Removed in SetWorld and the destructor -- the observer captures `this`.
+    void InstallDestroyObserver();
+    void RemoveDestroyObserver();
+
     ECS::World* m_World = nullptr;
     ScriptEngine* m_ScriptEngine = nullptr;
     CoroutineScheduler* m_Scheduler = nullptr;
+    ECS::World::DestroyObserverToken m_DestroyObserverToken = 0;
     bool m_Enabled = false;
     std::string m_ScriptRoot;
 

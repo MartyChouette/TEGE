@@ -298,16 +298,37 @@ public:
      *
      * The callback fires inside DestroyEntityInternal, the single choke point for ALL
      * destruction (deferred flush and DestroyEntityImmediate alike), while the entity's
-     * data is still fully intact. It runs on the owner thread. Set to null to clear.
+     * data is still fully intact. It runs on the owner thread.
      *
-     * Used by PlayMode to serialize each pre-play entity the moment it dies during play,
-     * so Stop can recreate exactly the entities that were destroyed without snapshotting
-     * the whole scene up front (the play-start hitch). Keep observers cheap and
-     * read-only; do not mutate the World from inside one.
+     * Two systems need this and they must not have to know about each other, so
+     * it is a list: PlayMode serializes each pre-play entity the moment it dies
+     * so Stop can recreate exactly what was destroyed, and ScriptSystem runs the
+     * script teardown (OnDestroy, instance release, coroutines, listeners) that
+     * otherwise only ever ran at Stop. It was a single slot, PlayMode held it,
+     * and every despawn during play leaked its AngelScript object.
+     *
+     * Keep observers cheap and read-only; do not mutate the World from inside one.
+     *
+     * @return A token to pass to RemoveEntityDestroyObserver. Registering is the
+     *         caller's to undo -- an observer that outlives its owner is a
+     *         dangling capture.
      */
     using EntityDestroyObserver = std::function<void(Entity)>;
-    void SetEntityDestroyObserver(EntityDestroyObserver observer) { m_DestroyObserver = std::move(observer); }
-    void ClearEntityDestroyObserver() { m_DestroyObserver = nullptr; }
+    using DestroyObserverToken = u32;
+
+    DestroyObserverToken AddEntityDestroyObserver(EntityDestroyObserver observer) {
+        const DestroyObserverToken token = ++m_NextDestroyObserverToken;
+        m_DestroyObservers.push_back({token, std::move(observer)});
+        return token;
+    }
+    void RemoveEntityDestroyObserver(DestroyObserverToken token) {
+        for (usize i = 0; i < m_DestroyObservers.size(); ++i) {
+            if (m_DestroyObservers[i].token == token) {
+                m_DestroyObservers.erase(m_DestroyObservers.begin() + static_cast<ssize>(i));
+                return;
+            }
+        }
+    }
 
     /**
      * @brief Storage epoch — incremented every time Clear() destroys the
@@ -522,9 +543,14 @@ private:
     std::vector<Entity> m_PendingDestructions;
     std::unordered_set<Entity> m_PendingDestructionSet;  // O(1) lookup companion
 
-    // Optional observer fired just before an entity's components are removed. See
-    // SetEntityDestroyObserver(). Null when nothing is watching.
-    EntityDestroyObserver m_DestroyObserver;
+    // Observers fired just before an entity's components are removed. See
+    // AddEntityDestroyObserver(). Empty when nothing is watching.
+    struct DestroyObserverEntry {
+        DestroyObserverToken token;
+        EntityDestroyObserver fn;
+    };
+    std::vector<DestroyObserverEntry> m_DestroyObservers;
+    DestroyObserverToken m_NextDestroyObserverToken = 0;
 };
 
 } // namespace ECS

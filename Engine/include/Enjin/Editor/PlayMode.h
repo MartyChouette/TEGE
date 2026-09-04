@@ -359,6 +359,11 @@ private:
         bool hadRigidbody = false;
     };
     std::unordered_map<u64, EntitySnapshot> m_SavedEntityState;
+
+    // Token for the destroy observer installed at Play. The observer list is
+    // shared with ScriptSystem, so this must be removed by token rather than
+    // by clearing the whole list.
+    ECS::World::DestroyObserverToken m_DestroyObserverToken = 0;
     // Incremental capture (adr-0004 sibling — kills the play-start hitch): instead of
     // serializing the whole scene to JSON on every Play, a World destroy-observer
     // serializes ONLY the pre-play entities that actually die during play, keyed by
