@@ -330,9 +330,24 @@ namespace {
         return EM_TRUE;
     }
 
+    // The DOM numbers mouse buttons 0=left, 1=MIDDLE, 2=RIGHT. The engine (and
+    // GLFW, which desktop follows) uses 0=Left, 1=Right, 2=Middle. Passing the
+    // browser's number through unmapped therefore swapped right and middle on
+    // web: MouseButton::Right never fired, so anything held on RMB was dead in
+    // the browser while working on desktop -- aim-down-sights in Shells, and
+    // hold-RMB-to-look everywhere else.
+    i32 WebMouseButtonToEngine(i32 domButton) {
+        switch (domButton) {
+            case 0: return static_cast<i32>(MouseButton::Left);
+            case 1: return static_cast<i32>(MouseButton::Middle);
+            case 2: return static_cast<i32>(MouseButton::Right);
+            default: return domButton;   // 3/4 = back/forward, same order both sides
+        }
+    }
+
     EM_BOOL WebMouseButtonCallback(int eventType, const EmscriptenMouseEvent* e, void* userData) {
         (void)userData;
-        i32 button = static_cast<i32>(e->button);
+        i32 button = WebMouseButtonToEngine(static_cast<i32>(e->button));
         if (button >= 0 && button < MAX_MOUSE_BUTTONS) {
             bool down = (eventType == EMSCRIPTEN_EVENT_MOUSEDOWN);
             s_WebMouseLatest[button] = down;

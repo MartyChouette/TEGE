@@ -212,6 +212,7 @@ enjin_add_test(TestWorldTimeSystem    Unit/Effects/TestWorldTimeSystem.cpp)
 
 # --- GUI ---
 enjin_add_test(TestUISystem           Unit/GUI/TestUISystem.cpp)
+enjin_add_test(TestDialogueLayout   Unit/GUI/TestDialogueLayout.cpp)
 enjin_add_test(TestDialogue           Unit/GUI/TestDialogue.cpp)
 enjin_add_test(TestUICanvas           Unit/GUI/TestUICanvas.cpp)
 enjin_add_test(TestUILayout           Unit/GUI/TestUILayout.cpp)
