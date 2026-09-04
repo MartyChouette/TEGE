@@ -2694,7 +2694,18 @@ void RenderSystem::Update(f32 deltaTime) {
 
         // Phase 1: Collect visible entities, ensure GPU buffers, build ObjectData array
         constexpr u32 OBJ_ALIGN = 256;  // WebGPU minUniformBufferOffsetAlignment
-        struct DrawCmd { Entity entity; u32 offset; };
+        // The sort key travels with the command. It used to be recomputed inside
+        // the comparator, which meant six sparse-set lookups per comparison - two
+        // material, two render-data, two transform - so ordering a thousand
+        // entities cost tens of thousands of lookups per frame. Everything here
+        // is already in hand at the point the command is built.
+        struct DrawCmd {
+            Entity entity;
+            u32 offset;
+            u64 meshKey;        // vertex+index buffer identity, groups instancing batches
+            f32 distSq;         // to the camera
+            bool transparent;
+        };
         // Reused across frames (render = single thread) — avoids re-allocating these two vectors
         // every frame. (#4: the per-frame heap alloc is gone; the sort below still runs each frame
         // because it depends on camera position — skipping it would need movement dirty-tracking.)
@@ -2702,6 +2713,9 @@ void RenderSystem::Update(f32 deltaTime) {
         static std::vector<u8> objDataBuf;
         drawCmds.clear();
         objDataBuf.clear();
+        // Camera position for the per-command distance key. Read once, not per
+        // comparison, and not per entity.
+        const Math::Vector3 sortCamPos = m_Camera ? m_Camera->GetPosition() : Math::Vector3(0.0f, 0.0f, 0.0f);
 
         for (Entity entity : meshEntities) {
             auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
@@ -2720,8 +2734,8 @@ void RenderSystem::Update(f32 deltaTime) {
             // create-block below rebuilds them at the new size; meshDirty
             // (vertices moved this sim step) re-uploads into the live buffer.
             {
-                auto* cloth = m_World->GetComponent<ClothComponent>(entity);
-                auto* rope  = m_World->GetComponent<RopeComponent>(entity);
+                auto* cloth = m_CachedClothStorage ? m_CachedClothStorage->Get(entity) : nullptr;
+                auto* rope  = m_CachedRopeStorage ? m_CachedRopeStorage->Get(entity) : nullptr;
                 bool topo = (cloth && cloth->topologyDirty) || (rope && rope->topologyDirty);
                 if (topo) {
                     if (rd.valid) {
@@ -2853,44 +2867,28 @@ void RenderSystem::Update(f32 deltaTime) {
             // Wind sway (bit 4): a VegetationComponent mesh bends in the wind. The web
             // vertex shader height-weights the sway so the trunk stays planted. Without
             // this the imported trees rendered but never moved (reported 2026-09-02).
-            if (m_World->HasComponent<VegetationComponent>(entity)) obj.flags |= (1 << 4);
+            if (m_CachedVegetationStorage && m_CachedVegetationStorage->Has(entity)) obj.flags |= (1 << 4);
             // SDF text (bit 6): base-color alpha is a distance field; the shader
             // thresholds it instead of rendering the raw field as a dark box.
             if (mat && mat->sdfText) obj.flags |= (1 << 6);
             std::memcpy(objDataBuf.data() + offset, &obj, sizeof(obj));
 
-            drawCmds.push_back({entity, offset});
+            const u64 meshKey = rd.vertexBuffer.id ^ (static_cast<u64>(rd.indexBuffer.id) << 16);
+            const f32 distSq = (xf->position - sortCamPos).LengthSquared();
+            drawCmds.push_back({entity, offset, meshKey, distSq, obj.opacity < 1.0f});
         }
 
         // Sort draw commands: opaque grouped by mesh+texture (for instancing), then front-to-back
         // Transparent sorted back-to-front (no batching)
         if (m_Camera) {
-            Math::Vector3 camPos = m_Camera->GetPosition();
             std::sort(drawCmds.begin(), drawCmds.end(),
-                [this, &camPos](const DrawCmd& a, const DrawCmd& b) {
-                    auto* matA = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(a.entity) : nullptr;
-                    auto* matB = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(b.entity) : nullptr;
-                    bool transA = matA && matA->opacity < 1.0f;
-                    bool transB = matB && matB->opacity < 1.0f;
+                [](const DrawCmd& a, const DrawCmd& b) {
                     // Opaque before transparent
-                    if (transA != transB) return !transA;
-                    // For opaque: group by mesh identity (VB+IB) for instancing batches
-                    if (!transA) {
-                        u64 eidA = EntityIndex(a.entity), eidB = EntityIndex(b.entity);
-                        if (eidA < m_EntityRenderData.size() && eidB < m_EntityRenderData.size()) {
-                            auto& rdA = m_EntityRenderData[eidA];
-                            auto& rdB = m_EntityRenderData[eidB];
-                            u64 keyA = rdA.vertexBuffer.id ^ (rdA.indexBuffer.id << 16);
-                            u64 keyB = rdB.vertexBuffer.id ^ (rdB.indexBuffer.id << 16);
-                            if (keyA != keyB) return keyA < keyB;
-                        }
-                    }
-                    auto* xfA = m_CachedTransformStorage ? m_CachedTransformStorage->Get(a.entity) : nullptr;
-                    auto* xfB = m_CachedTransformStorage ? m_CachedTransformStorage->Get(b.entity) : nullptr;
-                    if (!xfA || !xfB) return false;
-                    f32 distA = (xfA->position - camPos).LengthSquared();
-                    f32 distB = (xfB->position - camPos).LengthSquared();
-                    return transA ? distA > distB : distA < distB;
+                    if (a.transparent != b.transparent) return !a.transparent;
+                    // Opaque: group by mesh identity so batches form
+                    if (!a.transparent && a.meshKey != b.meshKey) return a.meshKey < b.meshKey;
+                    // Opaque front-to-back, transparent back-to-front
+                    return a.transparent ? a.distSq > b.distSq : a.distSq < b.distSq;
                 });
         }
 
@@ -3219,7 +3217,10 @@ void RenderSystem::Update(f32 deltaTime) {
 
         // Collect all active particles into instance buffer
         struct ParticleInst { f32 px, py, pz, size, alpha, r, g, b; };
-        std::vector<ParticleInst> instances;
+        // Reused across frames like drawCmds above: render is single-threaded,
+        // and a fresh heap allocation every frame for the same list is waste.
+        static std::vector<ParticleInst> instances;
+        instances.clear();
         instances.reserve(1024);
 
         for (Entity pe : particleEntities) {
@@ -3259,7 +3260,10 @@ void RenderSystem::Update(f32 deltaTime) {
         const auto& spriteEntities = m_World->GetEntitiesWithComponent<Sprite2DComponent>();
 
         struct SpriteInst { f32 px, py, pz, sizeX, sizeY, rotation, tintR, tintG, tintB, tintA, uvL, uvT, uvR, uvB; };
-        std::vector<SpriteInst> spriteInsts;
+        // Reused across frames like drawCmds above: render is single-threaded,
+        // and a fresh heap allocation every frame for the same list is waste.
+        static std::vector<SpriteInst> spriteInsts;
+        spriteInsts.clear();
         spriteInsts.reserve(spriteEntities.size());
 
         for (Entity se : spriteEntities) {
@@ -3314,7 +3318,10 @@ void RenderSystem::Update(f32 deltaTime) {
         const auto& wparts = m_MainPassWeather->GetParticles();
         const bool wIsRain = m_MainPassWeatherIsRain;
         struct SpriteInst { f32 px, py, pz, sizeX, sizeY, rotation, tintR, tintG, tintB, tintA, uvL, uvT, uvR, uvB; };
-        std::vector<SpriteInst> winsts;
+        // Reused across frames like drawCmds above: render is single-threaded,
+        // and a fresh heap allocation every frame for the same list is waste.
+        static std::vector<SpriteInst> winsts;
+        winsts.clear();
         winsts.reserve(wparts.size());
         for (const auto& p : wparts) {
             if (p.lifetime <= 0.0f || p.alpha <= 0.01f) continue;
@@ -3368,7 +3375,10 @@ void RenderSystem::Update(f32 deltaTime) {
     if (usePostProcess && m_WebParticlePipeline.IsValid() && scenePassEncoder && m_MainPassElemental) {
         const auto& epool = m_MainPassElemental->GetPool();
         struct ParticleInst { f32 px, py, pz, size, alpha, r, g, b; };
-        std::vector<ParticleInst> einsts;
+        // Reused across frames like drawCmds above: render is single-threaded,
+        // and a fresh heap allocation every frame for the same list is waste.
+        static std::vector<ParticleInst> einsts;
+        einsts.clear();
         einsts.reserve(epool.activeCount);
         for (u32 i = 0; i < epool.activeCount && einsts.size() < WEB_MAX_PARTICLES; ++i) {
             f32 ageRatio = (epool.maxLifetimes[i] > 0.0f) ? epool.lifetimes[i] / epool.maxLifetimes[i] : 0.0f;
@@ -3579,6 +3589,9 @@ void RenderSystem::RefreshStorageCache() {
     m_CachedMaterialSlotsStorage = m_World->GetComponentStorage<MaterialSlotsComponent>();
     m_CachedAnimatorStorage = m_World->GetComponentStorage<AnimatorComponent>();
     m_CachedViewmodelStorage = m_World->GetComponentStorage<ViewmodelComponent>();
+    m_CachedClothStorage = m_World->GetComponentStorage<ClothComponent>();
+    m_CachedRopeStorage = m_World->GetComponentStorage<RopeComponent>();
+    m_CachedVegetationStorage = m_World->GetComponentStorage<VegetationComponent>();
 
     // Rebuild light entity list if dirty
     if (m_LightListDirty) {
@@ -3815,6 +3828,9 @@ void RenderSystem::RefreshStorageCache() {
         m_CachedSpriteStorage = nullptr;
         m_CachedWaterVolumeStorage = nullptr;
         m_CachedWater3DStorage = nullptr;
+        m_CachedClothStorage = nullptr;
+        m_CachedRopeStorage = nullptr;
+        m_CachedVegetationStorage = nullptr;
         return;
     }
     m_CachedStorageEpoch = m_World->GetStorageEpoch();
@@ -3828,6 +3844,9 @@ void RenderSystem::RefreshStorageCache() {
     m_CachedArtStyleStorage = m_World->GetComponentStorage<ArtStyleComponent>();
     m_CachedSpriteStorage = m_World->GetComponentStorage<Sprite2DComponent>();
     m_CachedWaterVolumeStorage = m_World->GetComponentStorage<WaterVolumeComponent>();
+    m_CachedClothStorage = m_World->GetComponentStorage<ClothComponent>();
+    m_CachedRopeStorage = m_World->GetComponentStorage<RopeComponent>();
+    m_CachedVegetationStorage = m_World->GetComponentStorage<VegetationComponent>();
     m_CachedWater3DStorage = m_World->GetComponentStorage<Water3DComponent>();
 }
 

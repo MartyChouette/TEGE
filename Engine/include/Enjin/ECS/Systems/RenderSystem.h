@@ -13,6 +13,9 @@ namespace Enjin::ECS {
     struct Sprite2DComponent;
     struct WaterVolumeComponent;
     struct Water3DComponent;
+    struct ClothComponent;
+    struct RopeComponent;
+    struct VegetationComponent;
 }
 namespace Enjin::Build { class AssetReader; }
 
@@ -1183,6 +1186,11 @@ private:
     ComponentStorage<ArtStyleComponent>* m_CachedArtStyleStorage = nullptr;
     ComponentStorage<Sprite2DComponent>* m_CachedSpriteStorage = nullptr;
     ComponentStorage<WaterVolumeComponent>* m_CachedWaterVolumeStorage = nullptr;
+    // Probed for every mesh entity every frame by the draw-collection loop.
+    // Without these each probe went through GetStorage<T>() and a typeid hash.
+    ComponentStorage<ClothComponent>* m_CachedClothStorage = nullptr;
+    ComponentStorage<RopeComponent>* m_CachedRopeStorage = nullptr;
+    ComponentStorage<VegetationComponent>* m_CachedVegetationStorage = nullptr;
     ComponentStorage<Water3DComponent>* m_CachedWater3DStorage = nullptr;
 
     World* m_World = nullptr;
