@@ -95,19 +95,22 @@ bool ScriptEngine::Initialize()
     ENJIN_LOG_INFO(Script, "AngelScript %s initialized", asGetLibraryVersion());
 
     // ------------------------------------------------------------------
-    // Pre-create a small pool of execution contexts
+    // The execution-context pool is filled on first use, NOT here.
+    //
+    // Creating a context is what makes AngelScript work out how each
+    // registered native function returns its value - whether a float comes
+    // back in a floating-point register or an integer one, among other things.
+    // Every registration after that marks the answer stale, and nothing
+    // recomputes it, because recomputing is tied to creating a context and one
+    // already exists.
+    //
+    // The engine registers its bindings on the AngelScript engine AFTER
+    // Initialize returns. Pre-creating contexts here therefore froze the
+    // answer while only the standard add-ons were registered, and the first
+    // call into an engine binding read its float return out of the integer
+    // register - so, on the SysV ABI, a leftover address rather than a number.
     // ------------------------------------------------------------------
-    static constexpr u32 INITIAL_POOL_SIZE = 4;
-    m_ContextPool.reserve(INITIAL_POOL_SIZE);
-    for (u32 i = 0; i < INITIAL_POOL_SIZE; ++i) {
-        asIScriptContext* ctx = m_Engine->CreateContext();
-        if (ctx) {
-            m_ContextPool.push_back(ctx);
-        }
-    }
-
-    ENJIN_LOG_INFO(Script, "Context pool created with %u contexts",
-                   static_cast<u32>(m_ContextPool.size()));
+    m_ContextPoolPrimed = false;
 
     return true;
 }
@@ -124,13 +127,10 @@ void ScriptEngine::Shutdown()
 
     ENJIN_LOG_INFO(Script, "Shutting down ScriptEngine...");
 
-    // Release all pooled contexts
-    for (asIScriptContext* ctx : m_ContextPool) {
-        if (ctx) {
-            ctx->Release();
-        }
-    }
-    m_ContextPool.clear();
+    // Release all pooled contexts. Clearing the primed flag matters for a
+    // ScriptEngine that is initialized again: the next pool must be built
+    // against the bindings registered on the NEW AngelScript engine.
+    InvalidateContextPool();
 
     // Clear module tracking (modules are owned by the engine, released below)
     m_Modules.clear();
@@ -555,6 +555,10 @@ asIScriptContext* ScriptEngine::AcquireContext()
         return nullptr;
     }
 
+    if (!m_ContextPoolPrimed) {
+        PrimeContextPool();
+    }
+
     asIScriptContext* ctx = nullptr;
     if (!m_ContextPool.empty()) {
         ctx = m_ContextPool.back();
@@ -581,6 +585,36 @@ asIScriptContext* ScriptEngine::AcquireContext()
     }
 
     return ctx;
+}
+
+void ScriptEngine::PrimeContextPool()
+{
+    static constexpr u32 INITIAL_POOL_SIZE = 4;
+    m_ContextPoolPrimed = true;
+    if (!m_Engine) {
+        return;
+    }
+    m_ContextPool.reserve(INITIAL_POOL_SIZE);
+    for (u32 i = 0; i < INITIAL_POOL_SIZE; ++i) {
+        asIScriptContext* ctx = m_Engine->CreateContext();
+        if (!ctx) {
+            break;
+        }
+        m_ContextPool.push_back(ctx);
+    }
+    ENJIN_LOG_INFO(Script, "Context pool created with %u contexts",
+                   static_cast<u32>(m_ContextPool.size()));
+}
+
+void ScriptEngine::InvalidateContextPool()
+{
+    for (asIScriptContext* ctx : m_ContextPool) {
+        if (ctx) {
+            ctx->Release();
+        }
+    }
+    m_ContextPool.clear();
+    m_ContextPoolPrimed = false;
 }
 
 void ScriptEngine::ReturnContext(asIScriptContext* ctx)

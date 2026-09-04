@@ -48,6 +48,15 @@ public:
     asIScriptContext* AcquireContext();
     void ReturnContext(asIScriptContext* ctx);
 
+    // Call after registering bindings on GetASEngine() outside Initialize().
+    // AngelScript resolves each native function's return-value ABI once, when
+    // the first context is created, and marks that work stale on every later
+    // registration without ever redoing it. Retiring the pool means the next
+    // context is a new one, which is what makes AngelScript redo it. Calling
+    // this is cheap and safe at any time; not calling it after a late
+    // registration means those functions return garbage.
+    void InvalidateContextPool();
+
     // Find a method on a script object type
     asIScriptFunction* FindMethod(asIScriptObject* obj, const std::string& decl);
 
@@ -100,7 +109,11 @@ private:
     static int IncludeCallback(const char* include, const char* from, CScriptBuilder* builder, void* userParam);
 
     asIScriptEngine* m_Engine = nullptr;
+    // Filled on first use, never in Initialize: a context created before the
+    // application's bindings are registered carries a stale view of them.
     std::vector<asIScriptContext*> m_ContextPool;
+    bool m_ContextPoolPrimed = false;
+    void PrimeContextPool();
 
     // Module tracking
     struct ModuleInfo {

@@ -1,6 +1,9 @@
 #include "EnjinTest.h"
 #include "Enjin/Scripting/ScriptEngine.h"
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ASCallConv.h"
+#include <angelscript.h>
+#include <cmath>
 
 #include <filesystem>
 #include <fstream>
@@ -370,6 +373,116 @@ ENJIN_TEST(PathValidation, IncludeInsideScriptDirectoryStillWorks) {
     ENJIN_EXPECT_TRUE(ok);
     engine.Shutdown();
     fs::remove_all(root, ec);
+}
+
+
+// ===========================================================================
+// Bindings registered after Initialize
+// ===========================================================================
+
+// AngelScript decides how each registered native function hands its return
+// value back - for a float, whether it arrives in a floating-point register or
+// an integer one - the first time a context is created, and marks that decision
+// stale on every later registration without ever redoing it.
+//
+// ScriptEngine used to create its context pool inside Initialize, before the
+// engine's own bindings were registered. The first call through a pooled
+// context then read a float return out of the integer register and returned
+// whatever address was left in it: on Linux a large or tiny nonsense number
+// that changed with every process start, on Windows a value that happened to
+// look right. This is the shape of that bug, in miniature.
+namespace {
+f32 g_ProbeValue = 0.0f;
+f32 ProbeGetValue() { return g_ProbeValue; }
+void ProbeSetValue(f32 v) { g_ProbeValue = v; }
+bool NearEq(f32 a, f32 b) { return std::fabs(a - b) < 0.0001f; }
+} // namespace
+
+ENJIN_TEST(ContextPool, FloatReturnFromABindingRegisteredAfterInit) {
+    // Arrange: initialize first, register second — the order every host uses,
+    // because you need the engine before you can register anything on it.
+    ScriptEngine engine;
+    ENJIN_ASSERT_TRUE(engine.Initialize());
+    asIScriptEngine* as = engine.GetASEngine();
+    ENJIN_ASSERT_TRUE(as != nullptr);
+    ENJIN_ASSERT_TRUE(as->RegisterGlobalFunction("float Probe_GetValue()",
+        ENJIN_AS_FN(ProbeGetValue), ENJIN_AS_CALL_CDECL) >= 0);
+    ENJIN_ASSERT_TRUE(as->RegisterGlobalFunction("void Probe_SetValue(float)",
+        ENJIN_AS_FN(ProbeSetValue), ENJIN_AS_CALL_CDECL) >= 0);
+
+    asIScriptFunction* get = as->GetGlobalFunctionByDecl("float Probe_GetValue()");
+    asIScriptFunction* set = as->GetGlobalFunctionByDecl("void Probe_SetValue(float)");
+    ENJIN_ASSERT_TRUE(get != nullptr);
+    ENJIN_ASSERT_TRUE(set != nullptr);
+
+    // Act: read a known value back through a pooled context. This is the very
+    // first execution on this engine, which is exactly when the bug fired.
+    g_ProbeValue = 1.0f;
+    asIScriptContext* c = engine.AcquireContext();
+    ENJIN_ASSERT_TRUE(c != nullptr);
+    ENJIN_ASSERT_TRUE(c->Prepare(get) >= 0);
+    ENJIN_ASSERT_TRUE(c->Execute() == asEXECUTION_FINISHED);
+    const f32 first = c->GetReturnFloat();
+    engine.ReturnContext(c);
+
+    // Assert
+    ENJIN_EXPECT_TRUE(NearEq(first, 1.0f));
+
+    // And an argument travels in the same direction: set through the binding,
+    // read it back, so a half-working marshaling path cannot pass.
+    c = engine.AcquireContext();
+    ENJIN_ASSERT_TRUE(c != nullptr);
+    ENJIN_ASSERT_TRUE(c->Prepare(set) >= 0);
+    c->SetArgFloat(0, 0.5f);
+    ENJIN_ASSERT_TRUE(c->Execute() == asEXECUTION_FINISHED);
+    engine.ReturnContext(c);
+    ENJIN_EXPECT_TRUE(NearEq(g_ProbeValue, 0.5f));
+
+    c = engine.AcquireContext();
+    ENJIN_ASSERT_TRUE(c != nullptr);
+    ENJIN_ASSERT_TRUE(c->Prepare(get) >= 0);
+    ENJIN_ASSERT_TRUE(c->Execute() == asEXECUTION_FINISHED);
+    const f32 second = c->GetReturnFloat();
+    engine.ReturnContext(c);
+    ENJIN_EXPECT_TRUE(NearEq(second, 0.5f));
+
+    g_ProbeValue = 0.0f;
+    engine.Shutdown();
+}
+
+ENJIN_TEST(ContextPool, InvalidateLetsALateBindingWork) {
+    // Arrange: run a script call first, so the pool is already full of contexts
+    // created before this binding exists.
+    ScriptEngine engine;
+    ENJIN_ASSERT_TRUE(engine.Initialize());
+    asIScriptEngine* as = engine.GetASEngine();
+    ENJIN_ASSERT_TRUE(as != nullptr);
+    ENJIN_ASSERT_TRUE(as->RegisterGlobalFunction("float Probe_GetValue()",
+        ENJIN_AS_FN(ProbeGetValue), ENJIN_AS_CALL_CDECL) >= 0);
+    asIScriptContext* warm = engine.AcquireContext();
+    ENJIN_ASSERT_TRUE(warm != nullptr);
+    engine.ReturnContext(warm);
+
+    // Act: register another float-returning function afterwards, then tell the
+    // engine the bindings changed.
+    ENJIN_ASSERT_TRUE(as->RegisterGlobalFunction("float Probe_GetValue2()",
+        ENJIN_AS_FN(ProbeGetValue), ENJIN_AS_CALL_CDECL) >= 0);
+    engine.InvalidateContextPool();
+
+    g_ProbeValue = 2.5f;
+    asIScriptFunction* get2 = as->GetGlobalFunctionByDecl("float Probe_GetValue2()");
+    ENJIN_ASSERT_TRUE(get2 != nullptr);
+    asIScriptContext* c = engine.AcquireContext();
+    ENJIN_ASSERT_TRUE(c != nullptr);
+    ENJIN_ASSERT_TRUE(c->Prepare(get2) >= 0);
+    ENJIN_ASSERT_TRUE(c->Execute() == asEXECUTION_FINISHED);
+    const f32 v = c->GetReturnFloat();
+    engine.ReturnContext(c);
+
+    // Assert
+    ENJIN_EXPECT_TRUE(NearEq(v, 2.5f));
+    g_ProbeValue = 0.0f;
+    engine.Shutdown();
 }
 
 ENJIN_TEST_MAIN()
