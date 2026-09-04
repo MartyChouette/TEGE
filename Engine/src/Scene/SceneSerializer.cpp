@@ -1257,6 +1257,8 @@ json SerializeLadderComponent(const ECS::LadderComponent& l) {
     j["climbSpeed"] = l.climbSpeed;
     j["topBoost"] = l.topBoost;
     j["allowJumpOff"] = l.allowJumpOff;
+    j["mantleWindow"] = RF(l.mantleWindow);
+    j["pushOffScale"] = RF(l.pushOffScale);
     return j;
 }
 
@@ -1266,6 +1268,8 @@ ECS::LadderComponent DeserializeLadderComponent(const json& j) {
     if (j.contains("climbSpeed")) l.climbSpeed = j["climbSpeed"].get<f32>();
     if (j.contains("topBoost")) l.topBoost = j["topBoost"].get<f32>();
     if (j.contains("allowJumpOff")) l.allowJumpOff = JB(j["allowJumpOff"]);
+    if (j.contains("mantleWindow")) l.mantleWindow = j["mantleWindow"].get<f32>();
+    if (j.contains("pushOffScale")) l.pushOffScale = j["pushOffScale"].get<f32>();
     return l;
 }
 
@@ -2402,6 +2406,7 @@ json SerializeThirdPerson(const ECS::ThirdPersonController& ctrl) {
     j["enableLockOn"] = ctrl.enableLockOn;
     j["frameSide"] = static_cast<u8>(ctrl.frameSide);
     j["frameHorizontalBias"] = RF(ctrl.frameHorizontalBias);
+    j["ladderGrabHeight"] = RF(ctrl.ladderGrabHeight);
     return j;
 }
 
@@ -2431,6 +2436,7 @@ ECS::ThirdPersonController DeserializeThirdPerson(const json& j) {
     if (j.contains("enableLockOn")) ctrl.enableLockOn = JB(j["enableLockOn"]);
     if (j.contains("frameSide")) { u8 v = j["frameSide"].get<u8>(); if (v <= 2) ctrl.frameSide = static_cast<ECS::ThirdPersonController::FrameSide>(v); }
     if (j.contains("frameHorizontalBias")) ctrl.frameHorizontalBias = j["frameHorizontalBias"].get<f32>();
+    if (j.contains("ladderGrabHeight")) ctrl.ladderGrabHeight = j["ladderGrabHeight"].get<f32>();
     return ctrl;
 }
 
@@ -2458,6 +2464,7 @@ json SerializeFirstPerson(const ECS::FirstPersonController& ctrl) {
     j["dashSpeed"] = RF(ctrl.dashSpeed);
     j["dashDuration"] = RF(ctrl.dashDuration);
     j["dashCooldown"] = RF(ctrl.dashCooldown);
+    j["ladderGrabHeight"] = RF(ctrl.ladderGrabHeight);
     return j;
 }
 
@@ -2486,6 +2493,7 @@ ECS::FirstPersonController DeserializeFirstPerson(const json& j) {
     if (j.contains("dashSpeed")) ctrl.dashSpeed = j["dashSpeed"].get<f32>();
     if (j.contains("dashDuration")) ctrl.dashDuration = j["dashDuration"].get<f32>();
     if (j.contains("dashCooldown")) ctrl.dashCooldown = j["dashCooldown"].get<f32>();
+    if (j.contains("ladderGrabHeight")) ctrl.ladderGrabHeight = j["ladderGrabHeight"].get<f32>();
     return ctrl;
 }
 

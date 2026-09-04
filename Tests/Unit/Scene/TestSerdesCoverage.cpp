@@ -21,6 +21,7 @@
 #include "Enjin/ECS/Components/DynamicDifficulty.h"
 #include "Enjin/ECS/Components/GPUParticleEmitter.h"
 #include "Enjin/ECS/Components/Flower.h"
+#include "Enjin/ECS/Components/Ladder.h"
 #include "Enjin/ECS/Components/Mesh.h"
 #include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/Physics/PhysicsTypes2D.h"
@@ -721,6 +722,43 @@ ENJIN_TEST(SerdesCoverage, PlatformerStompFeelSurvivesASave) {
     ENJIN_EXPECT_TRUE(Near(r->stompMinFallSpeed, 3.25f));
     ENJIN_EXPECT_TRUE(Near(r->stompMinHeight, 0.75f));
     ENJIN_EXPECT_TRUE(Near(r->stompBounceScale, 1.2f));
+}
+
+
+ENJIN_TEST(SerdesCoverage, LadderAndClimberFeelSurviveASave) {
+    // Arrange: climbSpeed, topBoost and allowJumpOff were already authored on
+    // the ladder while the rest of the climb's feel was literals in the shared
+    // step. The grab height belongs to the climber, not the ladder: a tall
+    // character reaches a rung a short one cannot.
+    World src;
+    Entity ladderEntity = Base(src);
+    LadderComponent ladder;
+    ladder.mantleWindow = 0.55f;
+    ladder.pushOffScale = 1.1f;
+    src.AddComponent<LadderComponent>(ladderEntity, ladder);
+
+    Entity climber = src.CreateEntity();
+    src.AddComponent<NameComponent>(climber, NameComponent{"Climber"});
+    src.AddComponent<TransformComponent>(climber, TransformComponent{});
+    FirstPersonController fp;
+    fp.ladderGrabHeight = 1.6f;
+    src.AddComponent<FirstPersonController>(climber, fp);
+
+    // Act
+    World dst;
+    Entity loadedLadder = RoundTrip(src, ladderEntity, dst);
+    World dst2;
+    Entity loadedClimber = RoundTrip(src, climber, dst2);
+
+    // Assert
+    const auto* rl = dst.GetComponent<LadderComponent>(loadedLadder);
+    ENJIN_ASSERT_TRUE(rl != nullptr);
+    ENJIN_EXPECT_TRUE(Near(rl->mantleWindow, 0.55f));
+    ENJIN_EXPECT_TRUE(Near(rl->pushOffScale, 1.1f));
+
+    const auto* rc = dst2.GetComponent<FirstPersonController>(loadedClimber);
+    ENJIN_ASSERT_TRUE(rc != nullptr);
+    ENJIN_EXPECT_TRUE(Near(rc->ladderGrabHeight, 1.6f));
 }
 
 ENJIN_TEST_MAIN()

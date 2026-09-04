@@ -183,6 +183,9 @@ struct TopDown3DController : public CharacterControllerBase {
 struct ThirdPersonController : public CharacterControllerBase {
     // G1 ladder climb state (runtime)
     bool isClimbing = false;
+    // Height above the feet at which this character grabs a ladder rung. Was a
+    // literal in the shared climb step, so every character reached the same way.
+    f32 ladderGrabHeight = 1.0f;
     // Movement
     f32 acceleration = 30.0f;
     f32 deceleration = 25.0f;
@@ -234,6 +237,9 @@ struct ThirdPersonController : public CharacterControllerBase {
 struct FirstPersonController : public CharacterControllerBase {
     // G1 ladder climb state (runtime)
     bool isClimbing = false;
+    // Height above the feet at which this character grabs a ladder rung. Was a
+    // literal in the shared climb step, so every character reached the same way.
+    f32 ladderGrabHeight = 1.0f;
     // Movement
     f32 acceleration = 50.0f;
     f32 deceleration = 40.0f;

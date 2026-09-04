@@ -1252,7 +1252,9 @@ static bool UpdateLadderClimb(World* world, CtrlT& ctrl, TransformComponent& tra
                               const Math::Vector2& input, bool jumpInput, f32 dt) {
     const LadderComponent* ladder = nullptr;
     f32 topY = 0.0f;
-    Math::Vector3 probe = transform.position + Math::Vector3(0.0f, 1.0f, 0.0f);
+    // Where on the climber the grab point sits. This belongs to the climber, not
+    // the ladder: a tall character reaches a rung a crouching one cannot.
+    Math::Vector3 probe = transform.position + Math::Vector3(0.0f, ctrl.ladderGrabHeight, 0.0f);
     bool inLadder = world && FindLadderAt(world, probe, &ladder, &topY);
 
     if (!ctrl.isClimbing) {
@@ -1269,14 +1271,14 @@ static bool UpdateLadderClimb(World* world, CtrlT& ctrl, TransformComponent& tra
     }
     if (jumpInput && ladder->allowJumpOff) {      // push off
         ctrl.isClimbing = false;
-        ctrl.velocity.y = ctrl.jumpForce * 0.7f;
+        ctrl.velocity.y = ctrl.jumpForce * ladder->pushOffScale;
         ctrl.isJumping = true;
         ctrl.isGrounded = false;
         return true;
     }
     // Mantle: pushing up with the chest at the top edge. The window is wider
     // than one climb step (climbSpeed*dt) so a frame can't tunnel past it.
-    if (input.y > 0.1f && probe.y >= topY - 0.2f) {
+    if (input.y > 0.1f && probe.y >= topY - ladder->mantleWindow) {
         ctrl.isClimbing = false;
         ctrl.velocity.y = ladder->topBoost;
         ctrl.isJumping = false;
