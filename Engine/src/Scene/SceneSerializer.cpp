@@ -37,6 +37,7 @@
 #include "Enjin/ECS/Components/IKComponents.h"
 #include "Enjin/ECS/Components/BoneAttachment.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/BoundaryPolygon.h"
 #include "Enjin/ECS/Components/GPUParticleEmitter.h"
 #include "Enjin/ECS/Components/Cloth.h"
 #include "Enjin/ECS/Components/Swarm.h"
@@ -251,6 +252,7 @@ json SerializeMaterialComponent(const ECS::MaterialComponent& material) {
     j["sdfText"] = material.sdfText;
     j["vertexSnapResolution"] = material.vertexSnapResolution;
     j["shadowDitherMode"] = material.shadowDitherMode;
+    j["lightRampOverride"] = material.lightRampOverride;
     j["shadowDitherPattern"] = material.shadowDitherPattern;
     j["textureFilterOverride"] = material.textureFilterOverride;
     if (!material.footstepSound.empty()) j["footstepSound"] = material.footstepSound;
@@ -538,6 +540,7 @@ ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
     // reverted every authored value to the default on load
     if (j.contains("vertexSnapResolution")) material.vertexSnapResolution = j["vertexSnapResolution"].get<u8>();
     if (j.contains("shadowDitherMode")) { u8 v = j["shadowDitherMode"].get<u8>(); if (v <= 3) material.shadowDitherMode = v; }
+    if (j.contains("lightRampOverride")) { u32 v = j["lightRampOverride"].get<u32>(); if (v <= 4) material.lightRampOverride = v; }
     if (j.contains("shadowDitherPattern")) { u8 v = j["shadowDitherPattern"].get<u8>(); if (v <= 7) material.shadowDitherPattern = v; }
     if (j.contains("textureFilterOverride")) { u8 v = j["textureFilterOverride"].get<u8>(); if (v <= 3) material.textureFilterOverride = v; }
     if (j.contains("footstepSound")) material.footstepSound = j["footstepSound"].get<std::string>();
@@ -2368,6 +2371,8 @@ json SerializeThirdPerson(const ECS::ThirdPersonController& ctrl) {
     j["cameraHeight"] = RF(ctrl.cameraHeight);
     j["cameraMinDistance"] = RF(ctrl.cameraMinDistance);
     j["cameraMaxDistance"] = RF(ctrl.cameraMaxDistance);
+    j["cameraCollisionRadius"] = RF(ctrl.cameraCollisionRadius);
+    j["lockOnRange"] = RF(ctrl.lockOnRange);
     j["cameraPitch"] = RF(ctrl.cameraPitch);
     j["cameraYaw"] = RF(ctrl.cameraYaw);
     j["cameraMinPitch"] = RF(ctrl.cameraMinPitch);
@@ -2395,6 +2400,8 @@ ECS::ThirdPersonController DeserializeThirdPerson(const json& j) {
     if (j.contains("cameraHeight")) ctrl.cameraHeight = j["cameraHeight"].get<f32>();
     if (j.contains("cameraMinDistance")) ctrl.cameraMinDistance = j["cameraMinDistance"].get<f32>();
     if (j.contains("cameraMaxDistance")) ctrl.cameraMaxDistance = j["cameraMaxDistance"].get<f32>();
+    if (j.contains("cameraCollisionRadius")) ctrl.cameraCollisionRadius = j["cameraCollisionRadius"].get<f32>();
+    if (j.contains("lockOnRange")) ctrl.lockOnRange = j["lockOnRange"].get<f32>();
     if (j.contains("cameraPitch")) ctrl.cameraPitch = j["cameraPitch"].get<f32>();
     if (j.contains("cameraYaw")) ctrl.cameraYaw = j["cameraYaw"].get<f32>();
     if (j.contains("cameraMinPitch")) ctrl.cameraMinPitch = j["cameraMinPitch"].get<f32>();
@@ -3108,6 +3115,7 @@ json SerializeMeshRendererComponent(const ECS::MeshRendererComponent& mr) {
     j["shadowMode"] = static_cast<u8>(mr.shadowMode);
     j["contributeMotionVectors"] = mr.contributeMotionVectors;
     j["allowInstancing"] = mr.allowInstancing;
+    j["lightmapUVChannel"] = mr.lightmapUVChannel;
     j["wireframe"] = mr.wireframe;
     if (mr.wireframe) {
         j["wireframeColor"] = { RF(mr.wireframeColor.x), RF(mr.wireframeColor.y), RF(mr.wireframeColor.z) };
@@ -3129,6 +3137,7 @@ ECS::MeshRendererComponent DeserializeMeshRendererComponent(const json& j) {
     if (j.contains("shadowMode")) mr.shadowMode = static_cast<ECS::MeshRendererComponent::ShadowMode>(j["shadowMode"].get<u8>());
     if (j.contains("contributeMotionVectors")) mr.contributeMotionVectors = JB(j["contributeMotionVectors"]);
     if (j.contains("allowInstancing")) mr.allowInstancing = JB(j["allowInstancing"]);
+    if (j.contains("lightmapUVChannel")) mr.lightmapUVChannel = j["lightmapUVChannel"].get<u32>();
     if (j.contains("wireframe")) mr.wireframe = JB(j["wireframe"]);
     if (j.contains("wireframeColor") && j["wireframeColor"].is_array() && j["wireframeColor"].size() == 3) {
         mr.wireframeColor = Math::Vector3(j["wireframeColor"][0].get<f32>(), j["wireframeColor"][1].get<f32>(), j["wireframeColor"][2].get<f32>());
@@ -3390,6 +3399,7 @@ json SerializeConductorComponent(const ECS::ConductorComponent& c) {
     j["crossfadeTime"] = RF(c.crossfadeTime);
     j["autoDetect"] = c.autoDetect;
     j["combatRadius"] = RF(c.combatRadius);
+    j["stealthThreshold"] = RF(c.stealthThreshold);
     j["stateChangeDelay"] = RF(c.stateChangeDelay);
     json stems = json::array();
     for (const auto& s : c.stems) {
@@ -3413,6 +3423,7 @@ ECS::ConductorComponent DeserializeConductorComponent(const json& j) {
     if (j.contains("crossfadeTime")) c.crossfadeTime = j["crossfadeTime"].get<f32>();
     if (j.contains("autoDetect")) c.autoDetect = JB(j["autoDetect"]);
     if (j.contains("combatRadius")) c.combatRadius = j["combatRadius"].get<f32>();
+    if (j.contains("stealthThreshold")) c.stealthThreshold = j["stealthThreshold"].get<f32>();
     if (j.contains("stateChangeDelay")) c.stateChangeDelay = j["stateChangeDelay"].get<f32>();
     if (j.contains("stems") && j["stems"].is_array()) {
         for (const auto& sj : j["stems"]) {
@@ -5227,6 +5238,7 @@ json SerializeWaypointComponent(const ECS::WaypointComponent& wp) {
     j["waypointId"] = wp.waypointId;
     j["index"] = wp.index;
     j["waitTime"] = RF(wp.waitTime);
+    j["nextWaypoint"] = static_cast<u64>(wp.nextWaypoint);
     j["radius"] = RF(wp.radius);
     return j;
 }
@@ -5236,6 +5248,7 @@ ECS::WaypointComponent DeserializeWaypointComponent(const json& j) {
     if (j.contains("waypointId")) wp.waypointId = j["waypointId"].get<std::string>();
     if (j.contains("index")) wp.index = j["index"].get<i32>();
     if (j.contains("waitTime")) wp.waitTime = j["waitTime"].get<f32>();
+    if (j.contains("nextWaypoint")) wp.nextWaypoint = static_cast<ECS::Entity>(j["nextWaypoint"].get<u64>());
     if (j.contains("radius")) wp.radius = j["radius"].get<f32>();
     return wp;
 }
@@ -5273,6 +5286,115 @@ ECS::SpawnPointComponent DeserializeSpawnPointComponent(const json& j) {
 // ============================================================================
 // Streaming
 // ============================================================================
+
+
+// SaveSystemComponent — the save system's OWN configuration. Its header says it
+// is exposed to the editor inspector, serialization and scripting; serialization
+// was the missing third. Runtime timers and the rotation index stay out.
+json SerializeSaveSystemComponent(const ECS::SaveSystemComponent& c) {
+    json j;
+    j["maxManualSlots"] = c.maxManualSlots;
+    j["allowManualSave"] = c.allowManualSave;
+    j["allowManualLoad"] = c.allowManualLoad;
+    j["allowDeleteSlot"] = c.allowDeleteSlot;
+    j["showSaveMenuOnPause"] = c.showSaveMenuOnPause;
+    j["autoSaveEnabled"] = c.autoSaveEnabled;
+    j["autoSaveOnSceneTransition"] = c.autoSaveOnSceneTransition;
+    j["autoSaveOnCheckpoint"] = c.autoSaveOnCheckpoint;
+    j["autoSaveOnInterval"] = c.autoSaveOnInterval;
+    j["autoSaveIntervalSeconds"] = RF(c.autoSaveIntervalSeconds);
+    j["autoSaveSlotCount"] = c.autoSaveSlotCount;
+    j["allowInWorldSavePoints"] = c.allowInWorldSavePoints;
+    j["savePointRadius"] = RF(c.savePointRadius);
+    j["savePointRequiresInput"] = c.savePointRequiresInput;
+    j["savePointKey"] = c.savePointKey;
+    j["savePointShowPrompt"] = c.savePointShowPrompt;
+    j["enableMetaProgression"] = c.enableMetaProgression;
+    j["autoSaveMeta"] = c.autoSaveMeta;
+    j["enableCloudSync"] = c.enableCloudSync;
+    j["syncOnSave"] = c.syncOnSave;
+    j["syncOnLoad"] = c.syncOnLoad;
+    j["showSaveIndicator"] = c.showSaveIndicator;
+    j["saveIndicatorDuration"] = RF(c.saveIndicatorDuration);
+    j["showAutoSaveWarning"] = c.showAutoSaveWarning;
+    return j;
+}
+
+ECS::SaveSystemComponent DeserializeSaveSystemComponent(const json& j) {
+    ECS::SaveSystemComponent c;
+    if (j.contains("maxManualSlots")) c.maxManualSlots = j["maxManualSlots"].get<u32>();
+    if (j.contains("allowManualSave")) c.allowManualSave = JB(j["allowManualSave"]);
+    if (j.contains("allowManualLoad")) c.allowManualLoad = JB(j["allowManualLoad"]);
+    if (j.contains("allowDeleteSlot")) c.allowDeleteSlot = JB(j["allowDeleteSlot"]);
+    if (j.contains("showSaveMenuOnPause")) c.showSaveMenuOnPause = JB(j["showSaveMenuOnPause"]);
+    if (j.contains("autoSaveEnabled")) c.autoSaveEnabled = JB(j["autoSaveEnabled"]);
+    if (j.contains("autoSaveOnSceneTransition")) c.autoSaveOnSceneTransition = JB(j["autoSaveOnSceneTransition"]);
+    if (j.contains("autoSaveOnCheckpoint")) c.autoSaveOnCheckpoint = JB(j["autoSaveOnCheckpoint"]);
+    if (j.contains("autoSaveOnInterval")) c.autoSaveOnInterval = JB(j["autoSaveOnInterval"]);
+    if (j.contains("autoSaveIntervalSeconds")) c.autoSaveIntervalSeconds = j["autoSaveIntervalSeconds"].get<f32>();
+    if (j.contains("autoSaveSlotCount")) c.autoSaveSlotCount = j["autoSaveSlotCount"].get<u32>();
+    if (j.contains("allowInWorldSavePoints")) c.allowInWorldSavePoints = JB(j["allowInWorldSavePoints"]);
+    if (j.contains("savePointRadius")) c.savePointRadius = j["savePointRadius"].get<f32>();
+    if (j.contains("savePointRequiresInput")) c.savePointRequiresInput = JB(j["savePointRequiresInput"]);
+    if (j.contains("savePointKey")) c.savePointKey = j["savePointKey"].get<i32>();
+    if (j.contains("savePointShowPrompt")) c.savePointShowPrompt = JB(j["savePointShowPrompt"]);
+    if (j.contains("enableMetaProgression")) c.enableMetaProgression = JB(j["enableMetaProgression"]);
+    if (j.contains("autoSaveMeta")) c.autoSaveMeta = JB(j["autoSaveMeta"]);
+    if (j.contains("enableCloudSync")) c.enableCloudSync = JB(j["enableCloudSync"]);
+    if (j.contains("syncOnSave")) c.syncOnSave = JB(j["syncOnSave"]);
+    if (j.contains("syncOnLoad")) c.syncOnLoad = JB(j["syncOnLoad"]);
+    if (j.contains("showSaveIndicator")) c.showSaveIndicator = JB(j["showSaveIndicator"]);
+    if (j.contains("saveIndicatorDuration")) c.saveIndicatorDuration = j["saveIndicatorDuration"].get<f32>();
+    if (j.contains("showAutoSaveWarning")) c.showAutoSaveWarning = JB(j["showAutoSaveWarning"]);
+    return c;
+}
+
+// SavePointComponent — a save trigger placed in the world. `used` and
+// playerInRange are runtime.
+json SerializeSavePointComponent(const ECS::SavePointComponent& c) {
+    json j;
+    j["slotTarget"] = c.slotTarget;
+    j["saveOnEnter"] = c.saveOnEnter;
+    j["oneTimeUse"] = c.oneTimeUse;
+    j["radius"] = RF(c.radius);
+    j["saveMessage"] = c.saveMessage;
+    return j;
+}
+
+ECS::SavePointComponent DeserializeSavePointComponent(const json& j) {
+    ECS::SavePointComponent c;
+    if (j.contains("slotTarget")) c.slotTarget = j["slotTarget"].get<i32>();
+    if (j.contains("saveOnEnter")) c.saveOnEnter = JB(j["saveOnEnter"]);
+    if (j.contains("oneTimeUse")) c.oneTimeUse = JB(j["oneTimeUse"]);
+    if (j.contains("radius")) c.radius = j["radius"].get<f32>();
+    if (j.contains("saveMessage")) c.saveMessage = SafeStr(j["saveMessage"], MAX_STR_NAME);
+    return c;
+}
+
+// BoundaryPolygonComponent — a ground outline the designer drags out in the
+// viewport. Losing it on save means re-shaping the lake by hand every session.
+// `dirty` is deliberately forced true on load so the dependent mesh rebuilds.
+json SerializeBoundaryPolygonComponent(const ECS::BoundaryPolygonComponent& c) {
+    json j;
+    json pts = json::array();
+    for (const auto& p : c.points) pts.push_back({RF(p.x), RF(p.y)});
+    j["points"] = pts;
+    return j;
+}
+
+ECS::BoundaryPolygonComponent DeserializeBoundaryPolygonComponent(const json& j) {
+    ECS::BoundaryPolygonComponent c;
+    if (j.contains("points") && j["points"].is_array()) {
+        constexpr usize kMaxPoints = 4096;   // untrusted scene data
+        for (const auto& p : j["points"]) {
+            if (c.points.size() >= kMaxPoints) break;
+            if (p.is_array() && p.size() >= 2)
+                c.points.push_back(Math::Vector2(p[0].get<f32>(), p[1].get<f32>()));
+        }
+    }
+    c.dirty = true;
+    return c;
+}
 
 json SerializeStreamingVolumeComponent(const Scene::StreamingVolumeComponent& sv) {
     json j;
@@ -7975,6 +8097,9 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
         ENJIN_SERDES("sprite2D", ECS::Sprite2DComponent, SerializeSprite2DComponent, DeserializeSprite2DComponent),
         ENJIN_SERDES("stateMachine", ECS::StateMachineComponent, SerializeStateMachineComponent, DeserializeStateMachineComponent),
         ENJIN_SERDES("streamingPortal", Scene::StreamingPortalComponent, SerializeStreamingPortalComponent, DeserializeStreamingPortalComponent),
+        ENJIN_SERDES("saveSystem", ECS::SaveSystemComponent, SerializeSaveSystemComponent, DeserializeSaveSystemComponent),
+        ENJIN_SERDES("savePoint", ECS::SavePointComponent, SerializeSavePointComponent, DeserializeSavePointComponent),
+        ENJIN_SERDES("boundaryPolygon", ECS::BoundaryPolygonComponent, SerializeBoundaryPolygonComponent, DeserializeBoundaryPolygonComponent),
         ENJIN_SERDES("streamingVolume", Scene::StreamingVolumeComponent, SerializeStreamingVolumeComponent, DeserializeStreamingVolumeComponent),
         ENJIN_SERDES("surfaceAligned", ECS::SurfaceAlignedController, SerializeSurfaceAligned, DeserializeSurfaceAligned),
         ENJIN_SERDES("swarm", ECS::SwarmComponent, SerializeSwarmComponent, DeserializeSwarmComponent),

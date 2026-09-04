@@ -1,0 +1,178 @@
+// Components a designer configures must survive a save.
+//
+// An audit found six components with full editor UI, live systems and no
+// serializer at all: set a value, save, reload, it is gone. SaveSystemComponent
+// was the sharpest case - its own header says it is exposed to "the editor
+// inspector, serialization, and scripting", and serialization was the missing
+// third. BoundaryPolygonComponent holds an outline the designer drags out in the
+// viewport by hand.
+//
+// These tests round-trip each component through the real SceneSerializer, so a
+// field added to the struct and forgotten in the serializer fails here rather
+// than silently discarding someone's work.
+#include "EnjinTest.h"
+#include "Enjin/ECS/World.h"
+#include "Enjin/ECS/Components/Transform.h"
+#include "Enjin/ECS/Components/Name.h"
+#include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/BoundaryPolygon.h"
+#include "Enjin/ECS/Components/Controllers/CharacterController.h"
+#include "Enjin/Scene/SceneSerializer.h"
+#include <cmath>
+
+using namespace Enjin;
+using namespace Enjin::ECS;
+using namespace Enjin::Math;
+
+namespace {
+
+bool Near(f32 a, f32 b, f32 eps = 0.001f) { return std::fabs(a - b) < eps; }
+
+// Save one entity to a string and load it into a fresh world.
+Entity RoundTrip(World& src, Entity e, World& dst) {
+    const std::string json = Scene::SceneSerializer::SerializeEntityToString(&src, e, false);
+    return Scene::SceneSerializer::DeserializeEntityFromString(&dst, json);
+}
+
+Entity Base(World& w) {
+    Entity e = w.CreateEntity();
+    w.AddComponent<NameComponent>(e, NameComponent{"Subject"});
+    w.AddComponent<TransformComponent>(e, TransformComponent{});
+    return e;
+}
+
+} // namespace
+
+ENJIN_TEST(SerdesCoverage, SaveSystemConfigSurvivesASave) {
+    // Arrange: a non-default configuration, the kind someone actually sets.
+    World src;
+    Entity e = Base(src);
+    SaveSystemComponent c;
+    c.maxManualSlots = 5;
+    c.allowManualSave = false;
+    c.autoSaveEnabled = true;
+    c.autoSaveIntervalSeconds = 90.0f;
+    c.autoSaveSlotCount = 7;
+    c.savePointRadius = 3.5f;
+    c.savePointKey = 70;
+    c.enableCloudSync = true;
+    c.saveIndicatorDuration = 4.25f;
+    src.AddComponent<SaveSystemComponent>(e, c);
+
+    // Act
+    World dst;
+    Entity loaded = RoundTrip(src, e, dst);
+
+    // Assert
+    const auto* r = dst.GetComponent<SaveSystemComponent>(loaded);
+    ENJIN_ASSERT_TRUE(r != nullptr);
+    ENJIN_EXPECT_EQ(r->maxManualSlots, 5u);
+    ENJIN_EXPECT_FALSE(r->allowManualSave);
+    ENJIN_EXPECT_TRUE(r->autoSaveEnabled);
+    ENJIN_EXPECT_TRUE(Near(r->autoSaveIntervalSeconds, 90.0f));
+    ENJIN_EXPECT_EQ(r->autoSaveSlotCount, 7u);
+    ENJIN_EXPECT_TRUE(Near(r->savePointRadius, 3.5f));
+    ENJIN_EXPECT_EQ(r->savePointKey, 70);
+    ENJIN_EXPECT_TRUE(r->enableCloudSync);
+    ENJIN_EXPECT_TRUE(Near(r->saveIndicatorDuration, 4.25f));
+}
+
+ENJIN_TEST(SerdesCoverage, SavePointSurvivesASave) {
+    World src;
+    Entity e = Base(src);
+    SavePointComponent c;
+    c.slotTarget = 3;
+    c.saveOnEnter = true;
+    c.oneTimeUse = true;
+    c.radius = 4.5f;
+    c.saveMessage = "Rest here";
+    src.AddComponent<SavePointComponent>(e, c);
+
+    World dst;
+    Entity loaded = RoundTrip(src, e, dst);
+
+    const auto* r = dst.GetComponent<SavePointComponent>(loaded);
+    ENJIN_ASSERT_TRUE(r != nullptr);
+    ENJIN_EXPECT_EQ(r->slotTarget, 3);
+    ENJIN_EXPECT_TRUE(r->saveOnEnter);
+    ENJIN_EXPECT_TRUE(r->oneTimeUse);
+    ENJIN_EXPECT_TRUE(Near(r->radius, 4.5f));
+    ENJIN_EXPECT_TRUE(r->saveMessage == "Rest here");
+}
+
+ENJIN_TEST(SerdesCoverage, BoundaryPolygonPointsSurviveASave) {
+    // The hand-dragged outline. Losing this means re-shaping it every session.
+    World src;
+    Entity e = Base(src);
+    BoundaryPolygonComponent c;
+    c.points = {Vector2(0.0f, 0.0f), Vector2(4.0f, 0.5f),
+                Vector2(3.25f, -2.75f), Vector2(-1.5f, -2.0f)};
+    src.AddComponent<BoundaryPolygonComponent>(e, c);
+
+    World dst;
+    Entity loaded = RoundTrip(src, e, dst);
+
+    const auto* r = dst.GetComponent<BoundaryPolygonComponent>(loaded);
+    ENJIN_ASSERT_TRUE(r != nullptr);
+    ENJIN_ASSERT_TRUE(r->points.size() == 4);
+    ENJIN_EXPECT_TRUE(Near(r->points[1].x, 4.0f));
+    ENJIN_EXPECT_TRUE(Near(r->points[1].y, 0.5f));
+    ENJIN_EXPECT_TRUE(Near(r->points[2].x, 3.25f));
+    ENJIN_EXPECT_TRUE(Near(r->points[3].y, -2.0f));
+    // The dependent mesh must rebuild on load.
+    ENJIN_EXPECT_TRUE(r->dirty);
+}
+
+ENJIN_TEST(SerdesCoverage, SwimTuningSurvivesASave) {
+    // The swim feel fields, so a heavy character keeps its weaker stroke.
+    World src;
+    Entity e = Base(src);
+    ThirdPersonController c;
+    c.swimSpeedScale = 0.35f;
+    c.swimStrokeImpulse = 5.5f;
+    c.swimSinkRate = -1.25f;
+    c.swimDrag = 6.0f;
+    c.swimSurfaceBand = 0.4f;
+    c.swimSurfaceStrokeScale = 0.15f;
+    // and the two camera fields the audit found dropped
+    c.cameraCollisionRadius = 0.75f;
+    c.lockOnRange = 22.0f;
+    src.AddComponent<ThirdPersonController>(e, c);
+
+    World dst;
+    Entity loaded = RoundTrip(src, e, dst);
+
+    const auto* r = dst.GetComponent<ThirdPersonController>(loaded);
+    ENJIN_ASSERT_TRUE(r != nullptr);
+    ENJIN_EXPECT_TRUE(Near(r->swimSpeedScale, 0.35f));
+    ENJIN_EXPECT_TRUE(Near(r->swimStrokeImpulse, 5.5f));
+    ENJIN_EXPECT_TRUE(Near(r->swimSinkRate, -1.25f));
+    ENJIN_EXPECT_TRUE(Near(r->swimDrag, 6.0f));
+    ENJIN_EXPECT_TRUE(Near(r->swimSurfaceBand, 0.4f));
+    ENJIN_EXPECT_TRUE(Near(r->swimSurfaceStrokeScale, 0.15f));
+    ENJIN_EXPECT_TRUE(Near(r->cameraCollisionRadius, 0.75f));
+    ENJIN_EXPECT_TRUE(Near(r->lockOnRange, 22.0f));
+}
+
+ENJIN_TEST(SerdesCoverage, WaypointLinkSurvivesASave) {
+    // nextWaypoint is the field that makes a path a path, and it was the one
+    // waypoint field not saved.
+    World src;
+    Entity target = Base(src);
+    Entity e = Base(src);
+    WaypointComponent c;
+    c.waypointId = 2;
+    c.waitTime = 1.5f;
+    c.nextWaypoint = target;
+    src.AddComponent<WaypointComponent>(e, c);
+
+    World dst;
+    Entity loaded = RoundTrip(src, e, dst);
+
+    const auto* r = dst.GetComponent<WaypointComponent>(loaded);
+    ENJIN_ASSERT_TRUE(r != nullptr);
+    ENJIN_EXPECT_TRUE(Near(r->waitTime, 1.5f));
+    ENJIN_EXPECT_TRUE(r->nextWaypoint != INVALID_ENTITY);
+}
+
+ENJIN_TEST_MAIN()

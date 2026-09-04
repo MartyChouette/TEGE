@@ -188,6 +188,7 @@ enjin_add_test(TestPrefab             Unit/Scene/TestPrefab.cpp)
 enjin_add_test(TestSceneManager       Unit/Scene/TestSceneManager.cpp)
 enjin_add_test(TestSceneAssetValidator Unit/Scene/TestSceneAssetValidator.cpp)
 enjin_add_test(TestLevelStreaming      Unit/Scene/TestLevelStreaming.cpp)
+enjin_add_test(TestSerdesCoverage  Unit/Scene/TestSerdesCoverage.cpp)
 
 # --- Scripting ---
 enjin_add_test(TestScriptEngine       Unit/Scripting/TestScriptEngine.cpp)
