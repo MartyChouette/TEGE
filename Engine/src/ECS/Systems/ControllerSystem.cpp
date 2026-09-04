@@ -1201,7 +1201,8 @@ static bool FindWaterAt(World* world, const Math::Vector3& pos, f32* outSurfaceY
 // hands back to normal movement, so you bob out at the shore.
 template <typename CtrlT>
 static bool UpdateSwim(World* world, CtrlT& ctrl, TransformComponent& tf,
-                       const Math::Vector3& moveDir, f32 moveMag, f32 dt) {
+                       const Math::Vector3& moveDir, f32 moveMag, f32 dt,
+                       bool strokePressed) {
     // Chest probe: swim engages when the chest is underwater, so wading
     // stays walking and swimming starts where it should.
     f32 surfaceY = 0.0f;
@@ -1215,18 +1216,28 @@ static bool UpdateSwim(World* world, CtrlT& ctrl, TransformComponent& tf,
     ctrl.isJumping = false;
     ctrl.isFalling = false;
 
-    // Water drag pulls all motion toward the swim target quickly.
-    const f32 kDrag = 4.0f;
-    f32 swimSpeed = ctrl.moveSpeed * 0.6f;
+    // All tuning comes off the controller (see CharacterControllerBase), so a
+    // designer changes how a character swims in the inspector.
+    const f32 kDrag = ctrl.swimDrag;
+    f32 swimSpeed = ctrl.moveSpeed * ctrl.swimSpeedScale;
     Math::Vector3 target = moveDir * (swimSpeed * moveMag);
 
-    // Vertical: Space rises, otherwise a gentle sink. Rising is capped at
-    // the surface (the FindWaterAt probe leaving the water exits the state).
-    bool rise = Input::IsKeyDown(KeyCode::Space);
-    target.y = rise ? swimSpeed : -0.5f;
-    if (rise && probe.y > surfaceY - 0.25f) target.y = 0.6f;   // gentle breach at the top
-
+    // Vertical: each JUMP PRESS is a stroke that kicks you upward, and you sink
+    // gently between strokes, so staying up means keeping a rhythm. Holding the
+    // key used to pin you at the surface, which read as floating rather than
+    // swimming. The stroke comes in as the jump ACTION, not a hardcoded Space:
+    // reading the raw key meant a rebound key never swam and the on-screen touch
+    // jump button did nothing in water.
+    target.y = ctrl.swimSinkRate;
     ctrl.velocity = ctrl.velocity + (target - ctrl.velocity) * Math::Min(kDrag * dt, 1.0f);
+
+    if (strokePressed) {
+        // Near the surface a stroke only breaches gently, so repeated presses
+        // bob you at the top instead of launching you out of the water.
+        const bool atSurface = probe.y > surfaceY - ctrl.swimSurfaceBand;
+        ctrl.velocity.y = atSurface ? ctrl.swimStrokeImpulse * ctrl.swimSurfaceStrokeScale
+                                    : ctrl.swimStrokeImpulse;
+    }
     return true;
 }
 
@@ -1435,7 +1446,7 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
     // G1 ladder: while climbing, the climb owns velocity.y (jump/gravity skip).
     bool climbing = UpdateLadderClimb(m_World, ctrl, transform, input, jumpInput, dt);
     // Swimming: inside a water volume below its surface (ladder wins if both).
-    bool swimming = !climbing && UpdateSwim(m_World, ctrl, transform, moveDir, moveMag, dt);
+    bool swimming = !climbing && UpdateSwim(m_World, ctrl, transform, moveDir, moveMag, dt, jumpInput);
     if (climbing) ctrl.isSwimming = false;
 
     if (jumpInput && ctrl.isGrounded && !climbing) {
@@ -1793,7 +1804,7 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
     bool jumpInput = IsJumpPressed();
     bool climbing = UpdateLadderClimb(m_World, ctrl, transform, input, jumpInput, dt);
     // Swimming: inside a water volume below its surface (ladder wins if both).
-    bool swimming = !climbing && UpdateSwim(m_World, ctrl, transform, moveDir, moveMag, dt);
+    bool swimming = !climbing && UpdateSwim(m_World, ctrl, transform, moveDir, moveMag, dt, jumpInput);
     if (climbing) ctrl.isSwimming = false;
 
     // Jumping (check stamina cost)

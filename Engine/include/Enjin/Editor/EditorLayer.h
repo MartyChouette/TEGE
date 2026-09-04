@@ -469,6 +469,9 @@ private:
     void DrawPlatformer2DController(ECS::Entity entity);
     void DrawTopDown2DController(ECS::Entity entity);
     void DrawTopDown3DController(ECS::Entity entity);
+    // Swim tuning lives on CharacterControllerBase, so every controller that
+    // can swim draws the SAME section instead of each repeating the fields.
+    void DrawSwimSettings(ECS::CharacterControllerBase& ctrl, const char* idSuffix);
     void DrawThirdPersonController(ECS::Entity entity);
     void DrawFirstPersonController(ECS::Entity entity);
 

@@ -16,8 +16,19 @@ struct CharacterControllerBase {
     f32 moveSpeed = 5.0f;
     f32 sprintMultiplier = 2.0f;
 
-    // Swim state (runtime): set while inside a water volume below its
-    // surface - gravity off, water drag, Space rises, forward swims level.
+    // Swimming. Entering a water volume below its surface turns gravity off and
+    // hands vertical motion to these: each JUMP PRESS is a stroke that kicks you
+    // up, and you sink gently between strokes, so staying afloat means keeping a
+    // rhythm. Tunable per controller rather than baked into the system, so a
+    // heavy character can be given a weaker stroke and a faster sink without
+    // touching engine code.
+    f32 swimSpeedScale = 0.6f;      // fraction of moveSpeed while swimming
+    f32 swimStrokeImpulse = 3.2f;   // upward kick per jump press
+    f32 swimSinkRate = -0.5f;       // drift while not stroking (negative = down)
+    f32 swimDrag = 4.0f;            // how fast motion converges on the target
+    f32 swimSurfaceBand = 0.25f;    // depth below the surface that counts as "at the top"
+    f32 swimSurfaceStrokeScale = 0.28f;  // stroke strength there, so you bob instead of launching
+    // Runtime: true while the chest probe is under a water surface.
     bool isSwimming = false;
 
     // State

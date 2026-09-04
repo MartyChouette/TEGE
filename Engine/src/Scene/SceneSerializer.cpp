@@ -2195,6 +2195,12 @@ ECS::FluidVolumeComponent DeserializeFluidVolumeComponent(const json& j) {
 json SerializeControllerBase(const ECS::CharacterControllerBase& base) {
     json j;
     j["moveSpeed"] = RF(base.moveSpeed);
+    j["swimSpeedScale"] = RF(base.swimSpeedScale);
+    j["swimStrokeImpulse"] = RF(base.swimStrokeImpulse);
+    j["swimSinkRate"] = RF(base.swimSinkRate);
+    j["swimDrag"] = RF(base.swimDrag);
+    j["swimSurfaceBand"] = RF(base.swimSurfaceBand);
+    j["swimSurfaceStrokeScale"] = RF(base.swimSurfaceStrokeScale);
     j["sprintMultiplier"] = RF(base.sprintMultiplier);
     j["isEnabled"] = base.isEnabled;
     j["ignoreGlobalTimeScale"] = base.ignoreGlobalTimeScale;
@@ -2217,6 +2223,12 @@ json SerializeControllerBase(const ECS::CharacterControllerBase& base) {
 
 void DeserializeControllerBase(const json& j, ECS::CharacterControllerBase& base) {
     if (j.contains("moveSpeed")) base.moveSpeed = j["moveSpeed"].get<f32>();
+    if (j.contains("swimSpeedScale")) base.swimSpeedScale = j["swimSpeedScale"].get<f32>();
+    if (j.contains("swimStrokeImpulse")) base.swimStrokeImpulse = j["swimStrokeImpulse"].get<f32>();
+    if (j.contains("swimSinkRate")) base.swimSinkRate = j["swimSinkRate"].get<f32>();
+    if (j.contains("swimDrag")) base.swimDrag = j["swimDrag"].get<f32>();
+    if (j.contains("swimSurfaceBand")) base.swimSurfaceBand = j["swimSurfaceBand"].get<f32>();
+    if (j.contains("swimSurfaceStrokeScale")) base.swimSurfaceStrokeScale = j["swimSurfaceStrokeScale"].get<f32>();
     if (j.contains("sprintMultiplier")) base.sprintMultiplier = j["sprintMultiplier"].get<f32>();
     if (j.contains("isEnabled")) base.isEnabled = JB(j["isEnabled"]);
     if (j.contains("ignoreGlobalTimeScale")) base.ignoreGlobalTimeScale = JB(j["ignoreGlobalTimeScale"]);

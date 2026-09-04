@@ -3568,6 +3568,38 @@ void EditorLayer::DrawTopDown3DController(ECS::Entity entity) {
     }
 }
 
+// Shared by every controller that can swim: the behaviour is on the shared base,
+// so the UI is too. Entering water hands vertical motion to these values.
+void EditorLayer::DrawSwimSettings(ECS::CharacterControllerBase& ctrl, const char* idSuffix) {
+    char id[64];
+    if (ImGui::TreeNode("Swimming")) {
+        std::snprintf(id, sizeof(id), "Speed Scale##swim%s", idSuffix);
+        InspectorUndo::DragFloat(m_UndoRedo, id, &ctrl.swimSpeedScale, 0.01f, 0.05f, 2.0f);
+        ImGui::SetItemTooltip("Fraction of Move Speed while swimming.");
+
+        std::snprintf(id, sizeof(id), "Stroke Impulse##swim%s", idSuffix);
+        InspectorUndo::DragFloat(m_UndoRedo, id, &ctrl.swimStrokeImpulse, 0.1f, 0.0f, 20.0f);
+        ImGui::SetItemTooltip("Upward kick per jump press. Staying afloat means stroking repeatedly.");
+
+        std::snprintf(id, sizeof(id), "Sink Rate##swim%s", idSuffix);
+        InspectorUndo::DragFloat(m_UndoRedo, id, &ctrl.swimSinkRate, 0.05f, -5.0f, 5.0f);
+        ImGui::SetItemTooltip("Vertical drift between strokes. Negative sinks, positive floats.");
+
+        std::snprintf(id, sizeof(id), "Water Drag##swim%s", idSuffix);
+        InspectorUndo::DragFloat(m_UndoRedo, id, &ctrl.swimDrag, 0.1f, 0.1f, 20.0f);
+        ImGui::SetItemTooltip("How quickly motion settles toward the target. Higher feels thicker.");
+
+        std::snprintf(id, sizeof(id), "Surface Band##swim%s", idSuffix);
+        InspectorUndo::DragFloat(m_UndoRedo, id, &ctrl.swimSurfaceBand, 0.01f, 0.0f, 2.0f);
+        ImGui::SetItemTooltip("Depth below the water surface that counts as being at the top.");
+
+        std::snprintf(id, sizeof(id), "Surface Stroke##swim%s", idSuffix);
+        InspectorUndo::DragFloat(m_UndoRedo, id, &ctrl.swimSurfaceStrokeScale, 0.01f, 0.0f, 1.0f);
+        ImGui::SetItemTooltip("Stroke strength at the surface, so repeated presses bob instead of launching you out.");
+        ImGui::TreePop();
+    }
+}
+
 void EditorLayer::DrawThirdPersonController(ECS::Entity entity) {
     bool ctrlOpen = UI::SectionHeader("3D Third Person Controller", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("ThirdPersonCtx")) {
@@ -3629,6 +3661,7 @@ void EditorLayer::DrawThirdPersonController(ECS::Entity entity) {
             InspectorUndo::DragFloat(m_UndoRedo, "Gravity", &ctrl->gravity, 0.5f, 1.0f, 100.0f);
             ImGui::TreePop();
         }
+        DrawSwimSettings(*ctrl, "3d");
 
         if (ImGui::TreeNode("Rotation")) {
             InspectorUndo::Checkbox(m_UndoRedo, "Rotate To Face Movement", &ctrl->rotateToFaceMovement);
@@ -3733,6 +3766,7 @@ void EditorLayer::DrawFirstPersonController(ECS::Entity entity) {
             InspectorUndo::DragFloat(m_UndoRedo, "Gravity", &ctrl->gravity, 0.5f, 1.0f, 100.0f);
             ImGui::TreePop();
         }
+        DrawSwimSettings(*ctrl, "3d");
 
         if (ImGui::TreeNode("Mouse Look")) {
             InspectorUndo::Checkbox(m_UndoRedo, "Disable Mouse Look##fps", &ctrl->disableMouseLook);
