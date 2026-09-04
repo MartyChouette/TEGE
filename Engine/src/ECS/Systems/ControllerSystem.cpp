@@ -19,6 +19,60 @@ namespace ECS {
 // Defined further down with the other gameplay-primitive helpers (ladder/swim).
 static void UpdateDoors(World* world, f32 dt);
 
+// Pull the camera in so the world never gets between it and the player.
+//
+// enableCameraCollision and cameraCollisionRadius are authored on the
+// controller, shown in the inspector, serialized both ways, and default to ON.
+// Nothing read either of them, so the checkbox has always been on and has
+// always done nothing: back a third-person camera into a wall and the view goes
+// inside the geometry.
+//
+// Cast from the look target out to where the camera wants to be. On a hit, sit
+// just short of it by the collision radius, so the near plane stays outside the
+// surface instead of clipping through it.
+Math::Vector3 PullCameraToHit(const Math::Vector3& lookTarget,
+                              const Math::Vector3& desiredPos,
+                              bool hasHit, f32 hitDistance, f32 radius) {
+    if (!hasHit) return desiredPos;
+
+    Math::Vector3 toCam = desiredPos - lookTarget;
+    const f32 dist = toCam.Length();
+    // Camera already sitting on the look target: there is no direction to pull
+    // along, and normalizing would divide by zero.
+    if (dist < 1e-4f) return desiredPos;
+    toCam = toCam * (1.0f / dist);
+
+    // Never pull PAST the look target -- the camera ending up behind the
+    // player's eyes is worse than clipping. 0.05 keeps it just in front.
+    const f32 pulled = Math::Max(hitDistance - radius, 0.05f);
+    // A hit further away than the camera wanted to be is not in the way.
+    if (pulled >= dist) return desiredPos;
+    return lookTarget + toCam * pulled;
+}
+
+Math::Vector3 ControllerSystem::ResolveCameraCollision(const Math::Vector3& lookTarget,
+                                                       const Math::Vector3& desiredPos,
+                                                       bool enabled, f32 radius,
+                                                       Entity ignore) const {
+    if (!enabled || !m_Physics) return desiredPos;
+
+    Math::Vector3 toCam = desiredPos - lookTarget;
+    const f32 dist = toCam.Length();
+    if (dist < 1e-4f) return desiredPos;
+    toCam = toCam * (1.0f / dist);
+
+    Physics::Ray ray;
+    ray.origin = lookTarget;
+    ray.direction = toCam;
+
+    Physics::RaycastHit hit = m_Physics->Raycast(ray, dist);
+    // The player's own body is between the look target and the camera by
+    // definition; hitting it would jam the camera against the character.
+    const bool blocking = hit.hit && hit.entity != ignore;
+
+    return PullCameraToHit(lookTarget, desiredPos, blocking, hit.distance, radius);
+}
+
 void ControllerSystem::UpdateGameCameraTransform(const Math::Vector3& position, const Math::Vector3& target, const Math::Vector3& up) {
     // When a game camera entity is set, write to its TransformComponent so the
     // game view (which renders from CameraComponent entities) sees the update.
@@ -1357,6 +1411,9 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
                     currentPos = m_Camera->GetPosition();
                 }
                 Math::Vector3 newPos = currentPos + (targetCameraPos - currentPos) * Math::Min(ctrl.cameraLerpSpeed * dt, 1.0f);
+                newPos = ResolveCameraCollision(lookTarget, newPos,
+                                                ctrl.enableCameraCollision,
+                                                ctrl.cameraCollisionRadius, entity);
                 UpdateGameCameraTransform(newPos, lookTarget, Math::Vector3(0, 1, 0));
             }
             // Rotate character to face movement direction
@@ -1541,6 +1598,9 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
         Math::Vector3 cameraPos = transform.position + cameraOffset + camRight * hBias;
         Math::Vector3 lookTarget = transform.position + Math::Vector3(0, ctrl.cameraHeight * 0.5f, 0) + camRight * hBias * 0.3f;
 
+        cameraPos = ResolveCameraCollision(lookTarget, cameraPos,
+                                           ctrl.enableCameraCollision,
+                                           ctrl.cameraCollisionRadius, entity);
         UpdateGameCameraTransform(cameraPos, lookTarget, Math::Vector3(0, 1, 0));
     }
 }

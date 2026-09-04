@@ -14,6 +14,15 @@ namespace Enjin {
 namespace ECS {
 
 // System that updates all character controllers based on input
+// The geometry half of third-person camera collision, free of the physics
+// backend so it can be tested directly. Given where the camera wants to be and
+// what a ray from the look target hit on the way there, return where the camera
+// actually goes: pulled in short of the hit by `radius`, never through the
+// look target itself.
+ENJIN_API Math::Vector3 PullCameraToHit(const Math::Vector3& lookTarget,
+                                        const Math::Vector3& desiredPos,
+                                        bool hasHit, f32 hitDistance, f32 radius);
+
 class ENJIN_API ControllerSystem {
 public:
     ControllerSystem() = default;
@@ -122,6 +131,14 @@ private:
 
     World* m_World = nullptr;
     Renderer::Camera* m_Camera = nullptr;
+    // Keep the world from getting between the camera and the player. The
+    // controller's enableCameraCollision / cameraCollisionRadius fields have
+    // always been authored, serialized and defaulted ON, and read by nothing.
+    Math::Vector3 ResolveCameraCollision(const Math::Vector3& lookTarget,
+                                         const Math::Vector3& desiredPos,
+                                         bool enabled, f32 radius,
+                                         Entity ignore) const;
+
     Physics::IPhysicsBackend* m_Physics = nullptr;
     Physics::IPhysicsBackend2D* m_Physics2D = nullptr;
     InputSystem::InputActionMap* m_InputMap = nullptr;
