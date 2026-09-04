@@ -150,8 +150,16 @@ elseif(UNIX)
         target_link_libraries(EnjinEngine PUBLIC CURL::libcurl)
         target_compile_definitions(EnjinEngine PUBLIC ENJIN_HAS_CURL)
         message(STATUS "Found libcurl for HTTP client")
+    elseif(ENJIN_PLATFORM_WEB)
+        # The browser is the HTTP client here; libcurl would be meaningless.
+        message(STATUS "HTTP client uses the browser's fetch (web build)")
     else()
-        message(STATUS "libcurl not found — HTTP client features disabled")
+        # A STATUS line scrolls past in a normal configure, and then every HTTP
+        # call returns "HTTP not available on this platform" at runtime, taking
+        # the marketplace, telemetry and feedback paths with it. Install
+        # libcurl4-openssl-dev (Debian/Ubuntu) or libcurl-devel (Fedora).
+        message(WARNING "libcurl not found — the HTTP client is compiled out, so "
+                        "marketplace, telemetry and feedback will fail at runtime")
     endif()
 endif()
 

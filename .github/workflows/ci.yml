@@ -195,13 +195,16 @@ jobs:
         # Same package set the port was validated against (Ubuntu 24.04, GCC 13).
         # mesa-vulkan-drivers ships lavapipe; xvfb gives GLFW an X server on the
         # headless runner (GLFW needs a live X connection to report Vulkan
-        # surface extensions).
+        # surface extensions). zenity is what FileDialog drives on Linux — without
+        # it every dialog returns an empty string, which is indistinguishable from
+        # the user cancelling, so the whole Open/Save/Browse path was unreachable
+        # here and the breakage that shipped for it could not have been caught.
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq build-essential cmake ninja-build pkg-config \
             libvulkan-dev libglfw3-dev libx11-dev libxrandr-dev libxinerama-dev \
             libxcursor-dev libxi-dev libcurl4-openssl-dev mesa-vulkan-drivers \
-            vulkan-tools xvfb
+            vulkan-tools xvfb zenity
 
       - name: Cache fetched dependencies
         uses: actions/cache@v4

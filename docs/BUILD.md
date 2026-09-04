@@ -60,8 +60,15 @@ sudo apt-get install -y \
     libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev \
     libcurl4-openssl-dev \
     mesa-vulkan-drivers \
-    glslang-tools
+    glslang-tools \
+    zenity
 ```
+
+Two of those are easy to skip and expensive to skip. Without `libcurl4-openssl-dev`
+the HTTP client compiles out and every request returns "HTTP not available on this
+platform" at runtime. Without `zenity` — or one of its drop-in replacements,
+`qarma`, `yad` or `matedialog`, or KDE's `kdialog` — no file dialog can be shown,
+so Open, Save and Browse do nothing.
 
 On Ubuntu 20.04 or Debian 11, if `glslang-tools` is not available, try `glslang-dev` instead, or install the Vulkan SDK directly from LunarG which includes `glslc`.
 
