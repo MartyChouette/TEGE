@@ -32,16 +32,34 @@ void UpdateAndApplyWorldTime(ECS::World* world,
     // Sun: drive the first directional light. The light has no direction field
     // of its own -- direction comes from the transform rotation -- so the sun
     // vector is encoded there.
-    const Math::Vector3 sunDir = time.GetSunDirection();
+    //
+    // GetSunDirection returns the direction light TRAVELS, so above the horizon
+    // its y is negative (downward). Below the horizon it flips positive and the
+    // light shines UP through the ground, lighting the underside of every
+    // object and the floor itself -- light bleeding out from under things.
+    //
+    // Night is lit by a moon, and a moon is in the sky. Mirror the direction
+    // back below the horizon so it always arrives from above; the colour and
+    // intensity below already make it read as moonlight rather than sun.
+    Math::Vector3 sunDir = time.GetSunDirection();
+    if (sunDir.y > -0.15f) {
+        sunDir.y = -0.15f - std::fabs(sunDir.y) * 0.5f;
+        const f32 len = std::sqrt(sunDir.x * sunDir.x + sunDir.y * sunDir.y + sunDir.z * sunDir.z);
+        if (len > 1e-5f) sunDir = sunDir / len;
+    }
     for (ECS::Entity e : world->GetEntitiesWithComponent<ECS::LightComponent>()) {
         auto* light = world->GetComponent<ECS::LightComponent>(e);
         auto* xf = world->GetComponent<ECS::TransformComponent>(e);
         if (!light || !xf || light->type != ECS::LightType::Directional) continue;
 
-        xf->rotation = Math::Quaternion::FromEuler(Math::Vector3(
-            std::asin(-sunDir.y) * kRadToDeg,
-            std::atan2(-sunDir.x, -sunDir.z) * kRadToDeg,
-            0.0f));
+        // Set the rotation so GetForward() IS the sun direction. This was a
+        // hand-rolled asin/atan2 euler, which inverted the pitch: the clamp
+        // above kept the direction pointing down and the euler turned it back
+        // up again. LookRotation puts its argument on local +Z and GetForward
+        // reads local -Z, hence the negation -- the same convention
+        // ApplyCameraPose uses.
+        xf->rotation = Math::Quaternion::LookRotation(sunDir * -1.0f,
+                                                      Math::Vector3(0.0f, 1.0f, 0.0f));
 
         if (state.isNight) {
             light->color = Math::Vector3(0.3f, 0.35f, 0.5f);   // cool moonlight

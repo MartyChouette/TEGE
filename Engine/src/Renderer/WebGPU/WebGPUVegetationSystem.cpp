@@ -191,6 +191,18 @@ struct VolumeParamsCPU {
 };
 static_assert(sizeof(VolumeParamsCPU) == 128, "must match the WGSL VolumeParams");
 
+// Mirrors the WGSL ViewProj. Its size feeds the buffer, the layout's minimum
+// and the bind group's range -- three places that were three separate literal
+// 128s, so growing the struct silently left all three describing the old one
+// and the bind group became invalid.
+struct VegFrameUBO {
+    Math::Matrix4 view, proj;
+    f32 sunDir[4];
+    f32 sunColor[4];
+    f32 ambient[4];
+};
+static_assert(sizeof(VegFrameUBO) == 176, "must match the WGSL ViewProj");
+
 bool WebGPUVegetationSystem::Initialize(WebGPURenderer* renderer) {
     if (m_Initialized) return true;
     m_Renderer = renderer;
@@ -239,7 +251,7 @@ bool WebGPUVegetationSystem::Initialize(WebGPURenderer* renderer) {
     m_VolumeParams = bufMgr->CreateBuffer(pd);
 
     GPUBufferDesc ud;
-    ud.size = 176;   // 2 matrices (128) + sunDir/sunColor/ambient (48)
+    ud.size = sizeof(VegFrameUBO);
     ud.usage = GPUBufferUsage::Uniform | GPUBufferUsage::CopyDst;
     ud.label = "veg-viewproj";
     m_ViewProjUBO = bufMgr->CreateBuffer(ud);
@@ -254,7 +266,12 @@ bool WebGPUVegetationSystem::Initialize(WebGPURenderer* renderer) {
     }
 
     GPUBindGroupLayoutDesc ld;
-    ld.entries.push_back({0, GPUBindingType::UniformBuffer, GPUShaderStage::Vertex, 128});
+    // Vertex AND fragment: the fragment reads the sun and ambient from this now.
+    // Leaving it vertex-only made the bind group invalid, and an invalid bind
+    // group makes the whole pass invalid -- the screen goes to the clear colour.
+    ld.entries.push_back({0, GPUBindingType::UniformBuffer,
+                          GPUShaderStage::Vertex | GPUShaderStage::Fragment,
+                          sizeof(VegFrameUBO)});
     ld.entries.push_back({1, GPUBindingType::StorageBufferReadOnly, GPUShaderStage::Vertex, vd.size});
     ld.entries.push_back({2, GPUBindingType::StorageBufferReadOnly, GPUShaderStage::Vertex, id.size});
     ld.entries.push_back({3, GPUBindingType::StorageBufferReadOnly, GPUShaderStage::Vertex, pd.size});
@@ -263,7 +280,8 @@ bool WebGPUVegetationSystem::Initialize(WebGPURenderer* renderer) {
 
     GPUBindGroupDesc gd;
     gd.layout = m_Layout;
-    GPUBindGroupEntry e0; e0.binding = 0; e0.buffer = m_ViewProjUBO; e0.bufferSize = 128;
+    GPUBindGroupEntry e0; e0.binding = 0; e0.buffer = m_ViewProjUBO;
+    e0.bufferSize = sizeof(VegFrameUBO);
     GPUBindGroupEntry e1; e1.binding = 1; e1.buffer = m_TemplateVerts; e1.bufferSize = vd.size;
     GPUBindGroupEntry e2; e2.binding = 2; e2.buffer = m_TemplateIndices; e2.bufferSize = id.size;
     GPUBindGroupEntry e3; e3.binding = 3; e3.buffer = m_VolumeParams; e3.bufferSize = pd.size;
@@ -395,12 +413,7 @@ void WebGPUVegetationSystem::RenderScene(WGPURenderPassEncoder pass, const Math:
     // match or its layer is vertically mirrored and swims with camera pitch.
     // Matches the WGSL ViewProj: two matrices then the scene's light. The
     // buffer is 128 bytes for the matrices plus 48 for the three vec4s.
-    struct FrameUBO {
-        Math::Matrix4 view, proj;
-        f32 sunDir[4];
-        f32 sunColor[4];
-        f32 ambient[4];
-    } vp{};
+    VegFrameUBO vp{};
     vp.view = view;
     vp.proj = proj;
     vp.proj.m[5] = -vp.proj.m[5];
