@@ -1361,12 +1361,29 @@ void RenderSystem::Shutdown() {
         if (m_WebDefaultBoneBuffer.IsValid()) bufMgr->DestroyBuffer(m_WebDefaultBoneBuffer);
         if (m_WebWeatherInstBuf.IsValid()) bufMgr->DestroyBuffer(m_WebWeatherInstBuf);
         m_WebWeatherInstCapacity = 0;
+        if (m_WebObjectArrayBuf.IsValid()) bufMgr->DestroyBuffer(m_WebObjectArrayBuf);
+        m_WebObjectArrayCapacity = 0;
+        for (auto& ib : m_WebInstanceBuffers) {
+            if (ib.buffer.IsValid()) bufMgr->DestroyBuffer(ib.buffer);
+            ib.buffer = {};
+            ib.capacity = 0;
+        }
     }
 
     if (bindMgr && m_WebWhiteSpriteBindGroup.IsValid()) {
         bindMgr->DestroyBindGroup(m_WebWhiteSpriteBindGroup);
         m_WebWhiteSpriteBindGroup = {};
     }
+    if (bindMgr && m_WebObjectArrayBG.IsValid()) {
+        bindMgr->DestroyBindGroup(m_WebObjectArrayBG);
+        m_WebObjectArrayBG = {};
+    }
+    if (bindMgr) {
+        for (auto& [key, bg] : m_WebSubMeshTexCache) {
+            if (bg.IsValid()) bindMgr->DestroyBindGroup(bg);
+        }
+    }
+    m_WebSubMeshTexCache.clear();
 
     // Destroy cached textures
     if (texMgr) {
@@ -1540,7 +1557,19 @@ void RenderSystem::WebEnsureTextMeshes() {
             if (pixels.empty()) { tc->dirty = false; continue; }
             std::string tkey = "__text__" + std::to_string(static_cast<unsigned long long>(EntityIndex(entity)));
             auto old = m_WebTextureCache.find(tkey);
-            if (old != m_WebTextureCache.end()) { texMgr->DestroyTexture(old->second); m_WebTextureCache.erase(old); }
+            if (old != m_WebTextureCache.end()) {
+                texMgr->DestroyTexture(old->second);
+                m_WebTextureCache.erase(old);
+                // A destroyed texture may be referenced by a cached sub-mesh
+                // bind group. Rebuilding a handful of them is far cheaper than
+                // holding one that points at freed GPU memory.
+                if (auto* bm = m_Renderer->GetBindGroupManager()) {
+                    for (auto& [k, bg] : m_WebSubMeshTexCache) {
+                        if (bg.IsValid()) bm->DestroyBindGroup(bg);
+                    }
+                }
+                m_WebSubMeshTexCache.clear();
+            }
             Renderer::GPUTextureDesc td;
             td.width = tc->textureWidth; td.height = tc->textureHeight;
             td.format = Renderer::GPUTextureFormat::RGBA8Unorm;
@@ -2904,6 +2933,54 @@ void RenderSystem::Update(f32 deltaTime) {
                 });
         }
 
+        // Re-emit the object data in DRAW order, so a run of consecutive draw
+        // commands is a contiguous run of ObjectData and an instanced draw can
+        // simply say where it starts. Collection order is entity order and the
+        // sort above reorders it; without this pass the batch loop below had to
+        // gather each batch's instances into a scratch vector by hand, then
+        // create a GPU buffer AND a bind group for them, every batch, every
+        // frame.
+        //
+        // One memcpy per visible entity, replacing a GPU allocation per batch.
+        static std::vector<u8> objDataSorted;
+        objDataSorted.resize(drawCmds.size() * OBJ_ALIGN);
+        for (usize n = 0; n < drawCmds.size(); ++n) {
+            std::memcpy(objDataSorted.data() + n * OBJ_ALIGN,
+                        objDataBuf.data() + drawCmds[n].offset, sizeof(WebObjectDataUBO));
+            drawCmds[n].offset = static_cast<u32>(n);   // now the INSTANCE INDEX
+        }
+        objDataBuf.swap(objDataSorted);
+
+        // One storage buffer for the whole frame's ObjectData, uploaded once and
+        // bound once. The shader reads objects.data[instance_index], so a draw
+        // says which instance it starts at rather than getting its own buffer.
+        Renderer::GPUBindGroupHandle sharedObjBG;
+        if (!objDataBuf.empty()) {
+            if (!m_WebObjectArrayBuf.IsValid() || m_WebObjectArrayCapacity < objDataBuf.size()) {
+                if (m_WebObjectArrayBuf.IsValid()) bufMgr->DestroyBuffer(m_WebObjectArrayBuf);
+                if (m_WebObjectArrayBG.IsValid()) {
+                    m_Renderer->GetBindGroupManager()->DestroyBindGroup(m_WebObjectArrayBG);
+                    m_WebObjectArrayBG = {};
+                }
+                m_WebObjectArrayCapacity = objDataBuf.size() + objDataBuf.size() / 2;
+                ++m_WebObjectArrayGen;   // cached per-entity bind groups must rebuild
+                m_WebObjectArrayBuf = bufMgr->CreateBuffer(
+                    {m_WebObjectArrayCapacity,
+                     Renderer::GPUBufferUsage::Storage | Renderer::GPUBufferUsage::CopyDst, true});
+            }
+            bufMgr->UploadData(m_WebObjectArrayBuf, objDataBuf.data(), objDataBuf.size());
+            if (!m_WebObjectArrayBG.IsValid()) {
+                Renderer::GPUBindGroupDesc obgd;
+                obgd.layout = m_WebObjectLayout;
+                obgd.entries = {
+                    {0, m_WebObjectArrayBuf, 0, m_WebObjectArrayCapacity, {}, {}},
+                    {1, m_WebDefaultBoneBuffer, 0, 0, {}, {}},
+                };
+                m_WebObjectArrayBG = m_Renderer->GetBindGroupManager()->CreateBindGroup(obgd);
+            }
+            sharedObjBG = m_WebObjectArrayBG;
+        }
+
         // Phase 2: Batch entities by mesh+texture, draw instanced where possible
         auto* bindMgr = m_Renderer->GetBindGroupManager();
 
@@ -2966,54 +3043,42 @@ void RenderSystem::Update(f32 deltaTime) {
                 }
                 u32 instanceCount = static_cast<u32>(batchEnd - i);
 
-                // Pack ObjectData for all instances into one contiguous SSBO
-                std::vector<u8> batchData(instanceCount * sizeof(WebObjectDataUBO));
-                for (usize j = 0; j < instanceCount; j++) {
-                    std::memcpy(batchData.data() + j * sizeof(WebObjectDataUBO),
-                        objDataBuf.data() + drawCmds[i + j].offset, sizeof(WebObjectDataUBO));
-                }
-
-                auto batchBuf = bufMgr->CreateBufferWithData(
-                    {batchData.size(), Renderer::GPUBufferUsage::Storage | Renderer::GPUBufferUsage::CopyDst, true},
-                    batchData.data());
-
-                Renderer::GPUBindGroupDesc bgd;
-                bgd.layout = m_WebObjectLayout;
-                bgd.entries = {
-                    {0, batchBuf, 0, batchData.size(), {}, {}},
-                    {1, m_WebDefaultBoneBuffer, 0, 0, {}, {}},
-                };
-                auto batchBG = bindMgr->CreateBindGroup(bgd);
-
-                encoder->SetBindGroup(1, batchBG);
+                // The batch's instances are already contiguous in the shared
+                // buffer, so the draw just says where it starts.
+                encoder->SetBindGroup(1, sharedObjBG);
                 auto texBG = rd.texBindGroup.IsValid() ? rd.texBindGroup : m_WebDefaultTexBindGroup;
                 encoder->SetBindGroup(2, texBG);
                 encoder->SetVertexBuffer(0, rd.vertexBuffer);
                 encoder->SetIndexBuffer(rd.indexBuffer, Renderer::GPUIndexFormat::Uint32);
-                encoder->DrawIndexed(rd.indexCount, instanceCount);
+                encoder->DrawIndexed(rd.indexCount, instanceCount, 0, 0, cmd.offset);
 
                 m_DrawCallCount++;
                 m_TriangleCount += (rd.indexCount / 3) * instanceCount;
-
-                bindMgr->DestroyBindGroup(batchBG);
-                bufMgr->DestroyBuffer(batchBuf);
                 i = batchEnd;
             } else {
                 // Non-batchable: skinned or multi-material — draw individually
-                auto perEntityBuf = bufMgr->CreateBufferWithData(
-                    {sizeof(WebObjectDataUBO), Renderer::GPUBufferUsage::Storage | Renderer::GPUBufferUsage::CopyDst, true},
-                    objDataBuf.data() + cmd.offset);
+                // Same shared buffer, indexed by instance. A skinned mesh still
+                // needs its own bind group because binding 1 is its bone buffer,
+                // but that group is cached on the entity and rebuilt only when
+                // the shared buffer moves -- not created and destroyed per frame.
+                Renderer::GPUBindGroupHandle objBG = sharedObjBG;
+                if (rd.boneBuffer.IsValid()) {
+                    if (!rd.objBoneBindGroup.IsValid() ||
+                        rd.objBoneBindGroupGen != m_WebObjectArrayGen) {
+                        if (rd.objBoneBindGroup.IsValid()) bindMgr->DestroyBindGroup(rd.objBoneBindGroup);
+                        Renderer::GPUBindGroupDesc bgd;
+                        bgd.layout = m_WebObjectLayout;
+                        bgd.entries = {
+                            {0, m_WebObjectArrayBuf, 0, m_WebObjectArrayCapacity, {}, {}},
+                            {1, rd.boneBuffer, 0, 0, {}, {}},
+                        };
+                        rd.objBoneBindGroup = bindMgr->CreateBindGroup(bgd);
+                        rd.objBoneBindGroupGen = m_WebObjectArrayGen;
+                    }
+                    objBG = rd.objBoneBindGroup;
+                }
 
-                auto boneBuf = rd.boneBuffer.IsValid() ? rd.boneBuffer : m_WebDefaultBoneBuffer;
-                Renderer::GPUBindGroupDesc bgd;
-                bgd.layout = m_WebObjectLayout;
-                bgd.entries = {
-                    {0, perEntityBuf, 0, sizeof(WebObjectDataUBO), {}, {}},
-                    {1, boneBuf, 0, 0, {}, {}},
-                };
-                auto perEntityBG = bindMgr->CreateBindGroup(bgd);
-
-                encoder->SetBindGroup(1, perEntityBG);
+                encoder->SetBindGroup(1, objBG);
                 encoder->SetVertexBuffer(0, rd.vertexBuffer);
                 encoder->SetIndexBuffer(rd.indexBuffer, Renderer::GPUIndexFormat::Uint32);
 
@@ -3030,6 +3095,22 @@ void RenderSystem::Update(f32 deltaTime) {
                             auto bc = WebGetOrLoadTexture(slotMat->baseColorTexturePath);
                             auto nm = WebGetOrLoadTexture(slotMat->normalTexturePath);
                             auto mr = WebGetOrLoadTexture(slotMat->metallicRoughnessTexturePath);
+
+                            // Keyed by the textures it binds: sub-meshes sharing
+                            // a material share the group, and it survives across
+                            // frames instead of being rebuilt for every sub-mesh
+                            // of every multi-material mesh, every frame.
+                            const u64 texKey = (static_cast<u64>(bc.id) * 0x9E3779B97F4A7C15ull)
+                                             ^ (static_cast<u64>(nm.id) * 0xC2B2AE3D27D4EB4Full)
+                                             ^ (static_cast<u64>(mr.id) * 0x165667B19E3779F9ull);
+                            auto cached = m_WebSubMeshTexCache.find(texKey);
+                            if (cached != m_WebSubMeshTexCache.end()) {
+                                encoder->SetBindGroup(2, cached->second);
+                                encoder->DrawIndexed(subMesh.indexCount, 1, subMesh.indexOffset, 0, cmd.offset);
+                                m_DrawCallCount++;
+                                m_TriangleCount += subMesh.indexCount / 3;
+                                continue;
+                            }
                             Renderer::GPUBindGroupDesc texBGD;
                             texBGD.layout = m_WebTextureLayout;
                             texBGD.entries = {
@@ -3047,22 +3128,20 @@ void RenderSystem::Update(f32 deltaTime) {
                                 {9, {}, 0, 0, {}, m_WebDefaultBlackTex},
                             };
                             subTexBG = bindMgr->CreateBindGroup(texBGD);
+                            if (subTexBG.IsValid()) m_WebSubMeshTexCache[texKey] = subTexBG;
                         }
                         encoder->SetBindGroup(2, subTexBG.IsValid() ? subTexBG : m_WebDefaultTexBindGroup);
-                        encoder->DrawIndexed(subMesh.indexCount, 1, subMesh.indexOffset);
+                        encoder->DrawIndexed(subMesh.indexCount, 1, subMesh.indexOffset, 0, cmd.offset);
                         m_DrawCallCount++;
                         m_TriangleCount += subMesh.indexCount / 3;
-                        if (subTexBG.IsValid()) bindMgr->DestroyBindGroup(subTexBG);
                     }
                 } else {
                     encoder->SetBindGroup(2, rd.texBindGroup.IsValid() ? rd.texBindGroup : m_WebDefaultTexBindGroup);
-                    encoder->DrawIndexed(rd.indexCount);
+                    encoder->DrawIndexed(rd.indexCount, 1, 0, 0, cmd.offset);
                     m_DrawCallCount++;
                     m_TriangleCount += rd.indexCount / 3;
                 }
 
-                bindMgr->DestroyBindGroup(perEntityBG);
-                bufMgr->DestroyBuffer(perEntityBuf);
                 i++;
             }
         }
@@ -3129,9 +3208,8 @@ void RenderSystem::Update(f32 deltaTime) {
         }
 
         if (!instances.empty()) {
-            auto instBuf = bufMgr->CreateBufferWithData(
-                {instances.size() * sizeof(ParticleInst), Renderer::GPUBufferUsage::Vertex | Renderer::GPUBufferUsage::CopyDst, true},
-                instances.data());
+            auto instBuf = UploadWebInstances(WebInstanceSlot::Particle,
+                instances.data(), instances.size() * sizeof(ParticleInst));
 
             wgpuRenderPassEncoderSetPipeline(scenePassEncoder, webPipeMgr->GetNativePipeline(m_WebParticlePipeline));
             wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 0, webBindMgr->GetNativeGroup(m_WebFrameBindGroup), 0, nullptr);
@@ -3140,7 +3218,6 @@ void RenderSystem::Update(f32 deltaTime) {
             wgpuRenderPassEncoderSetIndexBuffer(scenePassEncoder, webBufMgrP->GetNativeBuffer(m_WebParticleQuadIB), WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
             wgpuRenderPassEncoderDrawIndexed(scenePassEncoder, 6, static_cast<u32>(instances.size()), 0, 0, 0);
 
-            bufMgr->DestroyBuffer(instBuf);
         }
     }
 
@@ -3175,9 +3252,8 @@ void RenderSystem::Update(f32 deltaTime) {
         }
 
         if (!spriteInsts.empty()) {
-            auto instBuf = bufMgr->CreateBufferWithData(
-                {spriteInsts.size() * sizeof(SpriteInst), Renderer::GPUBufferUsage::Vertex | Renderer::GPUBufferUsage::CopyDst, true},
-                spriteInsts.data());
+            auto instBuf = UploadWebInstances(WebInstanceSlot::Sprite,
+                spriteInsts.data(), spriteInsts.size() * sizeof(SpriteInst));
 
             // Use default white texture for now (per-sprite texturing would need batching)
             Renderer::GPUBindGroupDesc sprTexBGD;
@@ -3186,7 +3262,10 @@ void RenderSystem::Update(f32 deltaTime) {
                 {0, {}, 0, 0, m_WebDefaultWhiteTex, {}},
                 {1, {}, 0, 0, {}, m_WebDefaultWhiteTex},
             };
-            auto sprTexBG = webBindMgr->CreateBindGroup(sprTexBGD);
+            if (!m_WebWhiteSpriteBindGroup.IsValid()) {
+                m_WebWhiteSpriteBindGroup = webBindMgr->CreateBindGroup(sprTexBGD);
+            }
+            auto sprTexBG = m_WebWhiteSpriteBindGroup;
 
             wgpuRenderPassEncoderSetPipeline(scenePassEncoder, webPipeMgr->GetNativePipeline(m_WebSpritePipeline));
             wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 0, webBindMgr->GetNativeGroup(m_WebFrameBindGroup), 0, nullptr);
@@ -3196,8 +3275,6 @@ void RenderSystem::Update(f32 deltaTime) {
             wgpuRenderPassEncoderSetIndexBuffer(scenePassEncoder, webBufMgrS->GetNativeBuffer(m_WebParticleQuadIB), WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
             wgpuRenderPassEncoderDrawIndexed(scenePassEncoder, 6, static_cast<u32>(spriteInsts.size()), 0, 0, 0);
 
-            webBindMgr->DestroyBindGroup(sprTexBG);
-            bufMgr->DestroyBuffer(instBuf);
         }
     }
 
@@ -3301,16 +3378,14 @@ void RenderSystem::Update(f32 deltaTime) {
         }
         if (!einsts.empty()) {
             auto* webBufMgrE = static_cast<Renderer::WebGPUBufferManager*>(bufMgr);
-            auto einstBuf = bufMgr->CreateBufferWithData(
-                {einsts.size() * sizeof(ParticleInst), Renderer::GPUBufferUsage::Vertex | Renderer::GPUBufferUsage::CopyDst, true},
-                einsts.data());
+            auto einstBuf = UploadWebInstances(WebInstanceSlot::Elemental,
+                einsts.data(), einsts.size() * sizeof(ParticleInst));
             wgpuRenderPassEncoderSetPipeline(scenePassEncoder, webPipeMgr->GetNativePipeline(m_WebParticlePipeline));
             wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 0, webBindMgr->GetNativeGroup(m_WebFrameBindGroup), 0, nullptr);
             wgpuRenderPassEncoderSetVertexBuffer(scenePassEncoder, 0, webBufMgrE->GetNativeBuffer(m_WebParticleQuadVB), 0, WGPU_WHOLE_SIZE);
             wgpuRenderPassEncoderSetVertexBuffer(scenePassEncoder, 1, webBufMgrE->GetNativeBuffer(einstBuf), 0, WGPU_WHOLE_SIZE);
             wgpuRenderPassEncoderSetIndexBuffer(scenePassEncoder, webBufMgrE->GetNativeBuffer(m_WebParticleQuadIB), WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
             wgpuRenderPassEncoderDrawIndexed(scenePassEncoder, 6, static_cast<u32>(einsts.size()), 0, 0, 0);
-            bufMgr->DestroyBuffer(einstBuf);
         }
     }
 
@@ -3560,6 +3635,22 @@ void RenderSystem::SetShadowStrength(f32 s) { m_WebShadowStrength = (s < 0.0f) ?
 void RenderSystem::SpawnGPUParticlePreset(u32, const Math::Vector3&, const Math::Vector3&,
                                           Effects::GPUParticlePreset) {}  // Vulkan-only (GPU compute)
 void RenderSystem::SetFluidSimulation(Effects::FluidSimulation* /*sim*/) {}
+Renderer::GPUBufferHandle RenderSystem::UploadWebInstances(WebInstanceSlot slot,
+                                                          const void* data, usize bytes) {
+    auto* bufMgr = m_Renderer ? m_Renderer->GetBufferManager() : nullptr;
+    if (!bufMgr || bytes == 0) return {};
+
+    WebInstanceBuffer& b = m_WebInstanceBuffers[static_cast<u32>(slot)];
+    if (!b.buffer.IsValid() || b.capacity < bytes) {
+        if (b.buffer.IsValid()) bufMgr->DestroyBuffer(b.buffer);
+        b.capacity = bytes + bytes / 2;   // headroom, so a busy frame does not realloc
+        b.buffer = bufMgr->CreateBuffer(
+            {b.capacity, Renderer::GPUBufferUsage::Vertex | Renderer::GPUBufferUsage::CopyDst, true});
+    }
+    bufMgr->UploadData(b.buffer, data, bytes);
+    return b.buffer;
+}
+
 void RenderSystem::RenderWeatherParticles(const Effects::WeatherSystem& /*w*/, bool /*r*/, u32, u32, bool, u32) {}
 void RenderSystem::RenderGPUParticles() {}  // Vulkan-only (needs WebGPU compute first)
 void RenderSystem::RenderSplats() {}       // Vulkan-only

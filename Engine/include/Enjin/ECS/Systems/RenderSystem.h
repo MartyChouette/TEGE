@@ -216,6 +216,12 @@ struct EntityRenderData {
     bool texBindGroupValid = false;             // true if textures loaded for this entity
     bool hasMatcap = false;                     // matcap texture bound (drives ObjectData.matcapBlend)
     bool hasScrollRefl = false;                 // scrolling-reflection texture bound
+    // Skinned meshes cannot share the frame's object bind group, because
+    // binding 1 is their own bone buffer. Cached here and rebuilt only when the
+    // shared object buffer is reallocated, rather than created and destroyed
+    // every frame.
+    Renderer::GPUBindGroupHandle objBoneBindGroup;
+    u32 objBoneBindGroupGen = 0;
 #endif
     u32 indexCount = 0;
     bool valid = false;  // true if this slot is occupied
@@ -245,6 +251,8 @@ struct EntityRenderData {
         morphBuffer = {};
         texBindGroup = {};
         texBindGroupValid = false;
+        objBoneBindGroup = {};
+        objBoneBindGroupGen = 0;
 #endif
         indexCount = 0;
         valid = false;
@@ -1423,6 +1431,39 @@ private:
     // scene needs more and is never shrunk; the bind group is built once.
     Renderer::GPUBufferHandle m_WebWeatherInstBuf;
     usize m_WebWeatherInstCapacity = 0;
+
+    // The whole frame's ObjectData, in draw order. One buffer, uploaded once,
+    // bound once, indexed by the draw's firstInstance. This replaced a GPU
+    // buffer and bind group created per BATCH and per non-batchable ENTITY,
+    // every frame. The generation bumps whenever the buffer is reallocated, so
+    // cached per-entity bind groups referencing it know to rebuild.
+    // Per-frame instance data for the sprite, particle and elemental draws.
+    // Each had its own CreateBufferWithData/DestroyBuffer pair every frame; one
+    // persistent buffer per slot, grown on demand, replaces all of them. Slots
+    // are separate rather than one shared buffer because all three record into
+    // the same encoder before it is submitted, so a shared buffer would have
+    // each draw overwrite the last.
+    enum class WebInstanceSlot : u32 { Sprite = 0, Particle, Elemental, Count };
+    struct WebInstanceBuffer {
+        Renderer::GPUBufferHandle buffer;
+        usize capacity = 0;
+    };
+    WebInstanceBuffer m_WebInstanceBuffers[static_cast<u32>(WebInstanceSlot::Count)];
+
+    // Upload `bytes` of instance data into the slot's buffer, growing it if
+    // needed, and return it ready to bind as a vertex buffer.
+    Renderer::GPUBufferHandle UploadWebInstances(WebInstanceSlot slot,
+                                                 const void* data, usize bytes);
+
+    // Texture bind groups for multi-material sub-meshes, keyed by the textures
+    // they bind. One was created and destroyed for EVERY sub-mesh of every
+    // multi-material mesh, every frame, even though the textures rarely change.
+    std::unordered_map<u64, Renderer::GPUBindGroupHandle> m_WebSubMeshTexCache;
+
+    Renderer::GPUBufferHandle m_WebObjectArrayBuf;
+    Renderer::GPUBindGroupHandle m_WebObjectArrayBG;
+    usize m_WebObjectArrayCapacity = 0;
+    u32 m_WebObjectArrayGen = 1;
     Renderer::GPUBindGroupHandle m_WebWhiteSpriteBindGroup;
 
     // Procedural sky
