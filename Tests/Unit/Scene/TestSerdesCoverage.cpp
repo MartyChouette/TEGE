@@ -761,4 +761,26 @@ ENJIN_TEST(SerdesCoverage, LadderAndClimberFeelSurviveASave) {
     ENJIN_EXPECT_TRUE(Near(rc->ladderGrabHeight, 1.6f));
 }
 
+
+ENJIN_TEST(SerdesCoverage, FootstepMovementThresholdSurvivesASave) {
+    // Arrange: every other number on this component was already authored. The
+    // speed at which a character counts as moving was a literal written into
+    // the system twice, so a slow walker made no sound and there was nothing
+    // to change.
+    World src;
+    Entity e = Base(src);
+    FootstepComponent fs;
+    fs.movementThreshold = 0.05f;
+    src.AddComponent<FootstepComponent>(e, fs);
+
+    // Act
+    World dst;
+    Entity loaded = RoundTrip(src, e, dst);
+
+    // Assert
+    const auto* r = dst.GetComponent<FootstepComponent>(loaded);
+    ENJIN_ASSERT_TRUE(r != nullptr);
+    ENJIN_EXPECT_TRUE(Near(r->movementThreshold, 0.05f));
+}
+
 ENJIN_TEST_MAIN()

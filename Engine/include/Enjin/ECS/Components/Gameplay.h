@@ -2294,6 +2294,11 @@ struct FootstepComponent {
     f32 stepTimer = 0.0f;
     f32 volume = 0.8f;
     f32 pitchVariance = 0.1f;      // Random pitch variation
+    // Speed above which the character counts as moving. Was a literal written
+    // into the system twice, once per controller, so a character who walks
+    // slower than it made no footstep sound at all and there was nothing to
+    // change.
+    f32 movementThreshold = 0.5f;  // world units/sec
 
     bool isMoving = false;
     bool isRunning = false;

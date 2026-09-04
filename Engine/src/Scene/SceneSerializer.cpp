@@ -6490,6 +6490,7 @@ json SerializeFootstepComponent(const ECS::FootstepComponent& f) {
     j["runStepInterval"] = RF(f.runStepInterval);
     j["volume"] = RF(f.volume);
     j["pitchVariance"] = RF(f.pitchVariance);
+    j["movementThreshold"] = RF(f.movementThreshold);
     j["currentSurface"] = f.currentSurface;
     json surfaces = json::array();
     for (const auto& s : f.surfaceSounds) {
@@ -6512,6 +6513,7 @@ ECS::FootstepComponent DeserializeFootstepComponent(const json& j) {
     if (j.contains("runStepInterval")) f.runStepInterval = j["runStepInterval"].get<f32>();
     if (j.contains("volume")) f.volume = j["volume"].get<f32>();
     if (j.contains("pitchVariance")) f.pitchVariance = j["pitchVariance"].get<f32>();
+    if (j.contains("movementThreshold")) f.movementThreshold = j["movementThreshold"].get<f32>();
     if (j.contains("currentSurface")) f.currentSurface = SafeStr(j["currentSurface"], MAX_STR_NAME);
     if (j.contains("surfaceSounds") && j["surfaceSounds"].is_array()) {
         for (const auto& sj : j["surfaceSounds"]) {

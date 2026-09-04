@@ -30,7 +30,7 @@ void FootstepSystem::Update(ECS::World* world, f32 deltaTime) {
         // Check FPS controller
         auto* fps = world->GetComponent<ECS::FirstPersonController>(entity);
         if (fps) {
-            isMoving = fps->velocity.Length() > 0.5f;
+            isMoving = fps->velocity.Length() > footstep->movementThreshold;
             isRunning = fps->isSprinting;
         }
 
@@ -38,7 +38,7 @@ void FootstepSystem::Update(ECS::World* world, f32 deltaTime) {
         if (!isMoving) {
             auto* tps = world->GetComponent<ECS::ThirdPersonController>(entity);
             if (tps) {
-                isMoving = tps->velocity.Length() > 0.5f;
+                isMoving = tps->velocity.Length() > footstep->movementThreshold;
                 isRunning = tps->isSprinting;
             }
         }
