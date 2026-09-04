@@ -316,6 +316,17 @@ public:
     using EntityDestroyObserver = std::function<void(Entity)>;
     using DestroyObserverToken = u32;
 
+    /**
+     * @brief A handle that expires when this World is destroyed.
+     *
+     * Anything holding a raw World* AND planning to call back into it from its
+     * own destructor needs this, because a World is routinely destroyed by an
+     * explicit reset() long before the systems pointing at it go away --
+     * GamePlayer::Shutdown does exactly that, then lets its members destruct
+     * afterwards. Check expired() before dereferencing a World* at teardown.
+     */
+    std::weak_ptr<const void> LifeToken() const { return m_LifeToken; }
+
     DestroyObserverToken AddEntityDestroyObserver(EntityDestroyObserver observer) {
         const DestroyObserverToken token = ++m_NextDestroyObserverToken;
         m_DestroyObservers.push_back({token, std::move(observer)});
@@ -551,6 +562,10 @@ private:
     };
     std::vector<DestroyObserverEntry> m_DestroyObservers;
     DestroyObserverToken m_NextDestroyObserverToken = 0;
+
+    // Destroyed with this World; every weak copy handed out by LifeToken()
+    // expires with it. See LifeToken().
+    std::shared_ptr<const void> m_LifeToken = std::make_shared<const char>('w');
 };
 
 } // namespace ECS

@@ -198,4 +198,50 @@ ENJIN_TEST(ScriptTeardown, DetachingTheWorldRemovesTheObserver) {
     ENJIN_EXPECT_TRUE(!world.IsValid(e));
 }
 
+ENJIN_TEST(ScriptTeardown, OutlivingTheWorldIsNotACrash) {
+    // The shape that crashed every exported game on shutdown.
+    //
+    // GamePlayer::Shutdown destroys the World with an explicit m_World.reset()
+    // and only then lets its members destruct. So ~ScriptSystem ran with
+    // m_World pointing at freed memory, and unregistering the destroy observer
+    // dereferenced it -- an access violation after "Player shutting down...",
+    // reproducible in the exported-game smoke and in nothing else, because the
+    // editor never resets the World out from under its systems.
+    //
+    // ScriptSystem holds a weak handle from World::LifeToken() and skips the
+    // unregister when it has expired, so no caller has to remember an ordering
+    // rule.
+    ScriptSystem sys;
+    {
+        auto world = std::make_unique<ECS::World>();
+        const ECS::Entity e = world->CreateEntity();
+        world->AddComponent<ECS::TransformComponent>(e);
+        sys.SetWorld(world.get());
+        world.reset();          // the World dies first, as the player does it
+    }
+
+    // Act / Assert: the destructor must not touch the dead World. Reaching the
+    // end of this test at all is the assertion.
+    ENJIN_EXPECT_TRUE(true);
+}
+
+ENJIN_TEST(ScriptTeardown, ANewWorldReplacesTheObserverCleanly) {
+    // A scene load can hand the system a different World. The old registration
+    // must go without touching a World that may already be gone.
+    ScriptSystem sys;
+    auto first = std::make_unique<ECS::World>();
+    sys.SetWorld(first.get());
+    first.reset();
+
+    ECS::World second;
+    sys.SetWorld(&second);      // must not deref the freed first world
+
+    const ECS::Entity e = second.CreateEntity();
+    second.AddComponent<ECS::TransformComponent>(e);
+    second.DestroyEntityImmediate(e);
+
+    ENJIN_EXPECT_TRUE(!second.IsValid(e));
+    sys.SetWorld(nullptr);
+}
+
 ENJIN_TEST_MAIN()

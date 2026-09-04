@@ -122,6 +122,10 @@ private:
     ScriptEngine* m_ScriptEngine = nullptr;
     CoroutineScheduler* m_Scheduler = nullptr;
     ECS::World::DestroyObserverToken m_DestroyObserverToken = 0;
+    // Expires when m_World is destroyed. GamePlayer::Shutdown resets the World
+    // explicitly and lets its members destruct afterwards, so by the time this
+    // system's destructor runs, m_World can already be freed memory.
+    std::weak_ptr<const void> m_WorldLife;
     bool m_Enabled = false;
     std::string m_ScriptRoot;
 

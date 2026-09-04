@@ -340,15 +340,24 @@ void ScriptSystem::InitializeAllScripts() {
 
 void ScriptSystem::InstallDestroyObserver() {
     if (!m_World || m_DestroyObserverToken != 0) return;
+    m_WorldLife = m_World->LifeToken();
     m_DestroyObserverToken = m_World->AddEntityDestroyObserver([this](ECS::Entity e) {
         TeardownEntityScripts(e);
     });
 }
 
 void ScriptSystem::RemoveDestroyObserver() {
-    if (!m_World || m_DestroyObserverToken == 0) return;
-    m_World->RemoveEntityDestroyObserver(m_DestroyObserverToken);
+    if (m_DestroyObserverToken == 0) return;
+    const ECS::World::DestroyObserverToken token = m_DestroyObserverToken;
     m_DestroyObserverToken = 0;
+
+    // The World may already be gone. GamePlayer::Shutdown calls m_World.reset()
+    // and only then lets its members destruct, so this system's destructor runs
+    // with m_World pointing at freed memory -- dereferencing it to unregister
+    // crashed the exported game on shutdown. There is nothing to unregister
+    // from a World that no longer exists.
+    if (m_WorldLife.expired()) return;
+    if (m_World) m_World->RemoveEntityDestroyObserver(token);
 }
 
 void ScriptSystem::TeardownEntityScripts(ECS::Entity entity) {
