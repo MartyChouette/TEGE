@@ -8,6 +8,8 @@
 #include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/Logging/Log.h"
 #include <nlohmann/json.hpp>
+#include "Enjin/Platform/Paths.h"
+#include <filesystem>
 #include <fstream>
 
 namespace Enjin {
@@ -604,6 +606,14 @@ bool PrefabManager::SavePrefab(const Prefab& prefab, const std::string& filepath
     return true;
 }
 
+void PrefabManager::SetAssetRoot(const std::string& root) {
+    if (m_AssetRoot == root) return;
+    m_AssetRoot = root;
+    // A different project means the cached prefabs were loaded against a
+    // different root; keeping them would serve the old project's geometry.
+    m_PathCache.clear();
+}
+
 std::shared_ptr<Prefab> PrefabManager::LoadPrefab(const std::string& filepath) {
     // Check cache first
     auto cacheIt = m_PathCache.find(filepath);
@@ -611,9 +621,25 @@ std::shared_ptr<Prefab> PrefabManager::LoadPrefab(const std::string& filepath) {
         return cacheIt->second;
     }
 
-    std::ifstream file(filepath);
+    // Resolve a relative path against the asset root. Callers like ScatterSystem
+    // and WFCSystem hand over exactly what the component holds, which is a path
+    // relative to the project, while the working directory is the exe folder.
+    // Containment-checked, so a component cannot reach outside the project.
+    std::string resolved = filepath;
+    if (!m_AssetRoot.empty() && std::filesystem::path(filepath).is_relative()) {
+        resolved = Platform::ResolveWithinRoot(m_AssetRoot, filepath);
+        if (resolved.empty()) {
+            ENJIN_LOG_ERROR(Assets, "Prefab path '%s' escapes the asset root '%s'",
+                            filepath.c_str(), m_AssetRoot.c_str());
+            return nullptr;
+        }
+    }
+
+    std::ifstream file(resolved);
     if (!file.is_open()) {
-        ENJIN_LOG_ERROR(Assets, "Failed to load prefab from '%s'", filepath.c_str());
+        ENJIN_LOG_ERROR(Assets, "Failed to load prefab from '%s' (resolved '%s', root '%s')",
+                        filepath.c_str(), resolved.c_str(),
+                        m_AssetRoot.empty() ? "<unset>" : m_AssetRoot.c_str());
         return nullptr;
     }
 

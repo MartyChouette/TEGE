@@ -1,4 +1,5 @@
 #include "Enjin/Editor/PlayMode.h"
+#include "Enjin/Assets/Prefab.h"
 #include "Enjin/Input/TouchActionBridge.h"
 #include "Enjin/Effects/TreeRenderer.h"
 #include <filesystem>
@@ -132,6 +133,13 @@ void PlayMode::Initialize(ECS::World* world, Renderer::Camera* camera,
         m_AudioReactiveSystem.SetAudio(&m_SimpleAudio);
         m_AudioReactiveSystem.SetMIDI(&m_MIDIInput);
 
+        // Dynamic difficulty and face cards. Both gate per-entity on their own
+        // component's `enabled` flag; the system-level switch just turns the
+        // whole feature on for the session.
+        m_DynamicDifficulty.SetWorld(world);
+        m_DynamicDifficulty.SetEnabled(true);
+        m_FaceCardSystem.SetWorld(world);
+
         // Initialize network system
         m_NetworkSystem.SetWorld(world);
 
@@ -218,6 +226,10 @@ void PlayMode::Play() {
     if (m_SceneManager && !m_SceneManager->GetProjectPath().empty()) {
         std::filesystem::path projDir =
             std::filesystem::path(m_SceneManager->GetProjectPath()).parent_path();
+        // Prefab root, alongside the script and audio roots. Without it a
+        // Scatter or WFC component holding "prefabs/Rock.prefab" resolves
+        // against the exe directory and silently places nothing.
+        Assets::PrefabManager::Get().SetAssetRoot(projDir.string());
         m_ScriptSystem.SetScriptRoot(projDir.string());
         m_ScriptEngine.SetScriptDirectory((projDir / "scripts").string());
         m_SimpleAudio.SetAssetRoot(projDir.string());
@@ -274,8 +286,13 @@ void PlayMode::Play() {
 
     ECS::DungeonGeneratorSystem::GenerateAll(m_World);   // fresh dungeons on play (generateOnStart)
     ECS::RandomBagSystem::ResetAll(m_World);             // fresh bags on play (clears editor test-draw state)
-    ECS::ScatterSystem::GenerateAll(m_World);            // fresh scatter batches on play (generateOnStart)
+    // Terrain BEFORE scatter: a scatter with conformToTerrain samples the
+    // terrain heightmap, and a terrain that bakes at play start has an empty
+    // heightmap until its generator runs. In the other order every sample
+    // falls off the terrain and the whole batch is culled, silently, with
+    // "placed 0" as the only trace.
     ECS::TerrainGeneratorSystem::GenerateAll(m_World);   // fresh terrain bakes on play (generateOnStart)
+    ECS::ScatterSystem::GenerateAll(m_World);            // fresh scatter batches on play (generateOnStart)
     ECS::WFCSystem::GenerateAll(m_World);                // fresh WFC layouts on play (generateOnStart)
 
     // Freshly generated terrain must reach physics THIS frame: the renderer's
@@ -720,6 +737,7 @@ void PlayMode::Stop() {
 
     // Tear down swarm proxy entities so they don't leak into the restored scene
     m_SwarmSystem.Reset(m_World);
+    m_GeneratedGeometry.Reset();
 
     // Shutdown quest flows, behavior trees, visual scripts, and scripts first (before scene restore destroys entities)
     {
@@ -1099,6 +1117,9 @@ void PlayMode::Update(f32 deltaTime) {
         m_ActionTriggerSystem.Update(m_World, deltaTime);
         m_TweenSystem.Update(m_World, deltaTime);
         m_SwarmSystem.Update(m_World, deltaTime);
+        m_GeneratedGeometry.Update(m_World, deltaTime);
+        m_DynamicDifficulty.Update(m_World, deltaTime);
+        m_FaceCardSystem.Update(deltaTime);
         m_StateMachineSystem.Update(m_World, deltaTime);
         m_VisualScriptSystem.Update(deltaTime);
 

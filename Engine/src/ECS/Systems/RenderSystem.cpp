@@ -83,6 +83,7 @@ Renderer::SkyboxConfig RenderSystem::WeatherSky(const Renderer::SkyboxConfig& cf
 #include "Enjin/ECS/Components/TreeVolume.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/Components/Cloth.h"   // cloth/rope meshDirty re-upload
+#include "Enjin/ECS/Components/ProceduralMesh.h"  // generic runtime-generated geometry upload
 #include "Enjin/ECS/Components/Rope.h"
 #include "Enjin/ECS/Components/Text.h"    // web SDF text generation
 #include "Enjin/Effects/Weather.h"        // weather particle draw
@@ -2785,7 +2786,11 @@ void RenderSystem::Update(f32 deltaTime) {
             {
                 auto* cloth = m_CachedClothStorage ? m_CachedClothStorage->Get(entity) : nullptr;
                 auto* rope  = m_CachedRopeStorage ? m_CachedRopeStorage->Get(entity) : nullptr;
-                bool topo = (cloth && cloth->topologyDirty) || (rope && rope->topologyDirty);
+                // Runtime-generated geometry rides the same protocol on web.
+                auto* proc  = m_World->HasComponent<ProceduralMeshComponent>(entity)
+                                ? m_World->GetComponent<ProceduralMeshComponent>(entity) : nullptr;
+                bool topo = (cloth && cloth->topologyDirty) || (rope && rope->topologyDirty)
+                            || (proc && proc->topologyDirty);
                 if (topo) {
                     if (rd.valid) {
                         if (rd.vertexBuffer.IsValid()) bufMgr->DestroyBuffer(rd.vertexBuffer);
@@ -2794,12 +2799,18 @@ void RenderSystem::Update(f32 deltaTime) {
                     }
                     if (cloth) { cloth->topologyDirty = false; cloth->meshDirty = false; }
                     if (rope)  { rope->topologyDirty = false;  rope->meshDirty = false; }
+                    // Keep the procedural flag SET: the buffers are gone and the
+                    // create-block below rebuilds them, but nothing re-dirties a
+                    // generated mesh afterwards, so it needs the follow-up upload.
+                    if (proc) { proc->topologyDirty = false; proc->meshDirty = true; }
                 } else if (rd.valid && rd.owner == entity &&
-                           ((cloth && cloth->meshDirty) || (rope && rope->meshDirty))) {
+                           ((cloth && cloth->meshDirty) || (rope && rope->meshDirty)
+                            || (proc && proc->meshDirty))) {
                     bufMgr->UploadData(rd.vertexBuffer, mesh->vertices.data(),
                                        mesh->vertices.size() * sizeof(MeshComponent::Vertex));
                     if (cloth) cloth->meshDirty = false;
                     if (rope)  rope->meshDirty = false;
+                    if (proc)  proc->meshDirty = false;
                 }
             }
 
@@ -3734,6 +3745,11 @@ void RenderSystem::SetUpscalerQuality(u32 quality) { m_UpscalerQuality = quality
 #include "Enjin/Renderer/ReflectionProbeSystem.h"
 #include "Enjin/Renderer/SDFScene.h"
 #include "Enjin/Renderer/OITManager.h"
+// The Vulkan half's ProceduralMeshComponent loop is unconditional, so its
+// header cannot sit inside the ENJIN_CLUSTERED_LIGHTING block below. Cloth.h
+// and Rope.h get away with being in there only because they also arrive
+// transitively; a brand new component header has no such luck.
+#include "Enjin/ECS/Components/ProceduralMesh.h"  // generic runtime-generated geometry upload
 #ifdef ENJIN_CLUSTERED_LIGHTING
 #include "Enjin/Renderer/ClusteredLighting.h"
 #include "Enjin/Renderer/DDGIProbeSystem.h"
@@ -4818,6 +4834,30 @@ void RenderSystem::FlushPendingChanges() {
     m_ScriptTargetsRenderedThisFrame = false;
     ProcessPendingScriptRenderTargets();
 
+    // Asset hot-reload: textures repainted on disk (Pixel Editor Save, or any
+    // external image editor) and shader source edits. Both watchers are polled
+    // HERE rather than in Update() because the editor never calls Update() - it
+    // drives RenderOffscreen plus this flush - so hot-reload could not fire in
+    // the one runtime you are editing in. Wall-clock rather than a dt
+    // accumulator because there is no dt at this point.
+    //
+    // This is also the correct home for the shader callbacks: the main/skybox/
+    // shadow ones only set m_PendingRecreation (processed just below), but the
+    // grass/shrub/tree ones build pipelines inline, and this pre-recording
+    // point is the only place that is safe.
+    {
+        const auto nowTp = std::chrono::steady_clock::now();
+        if (m_LastAssetPoll.time_since_epoch().count() == 0 ||
+            nowTp - m_LastAssetPoll >= std::chrono::seconds(2)) {
+            m_LastAssetPoll = nowTp;
+            m_TextureWatcher.Poll();      // callbacks only queue; no GPU work
+            if (m_ShaderHotReloadEnabled && !m_ShaderDir.empty()) {
+                m_ShaderWatcher.Poll();
+            }
+        }
+    }
+    ProcessPendingTextureReloads();
+
     // Gaussian splats: (re)load dirty components and run the throttled
     // back-to-front re-sort. Both create/write GPU buffers, so they live here
     // in the pre-recording flush per the frame-safety contract.
@@ -5137,15 +5177,10 @@ void RenderSystem::Update(f32 deltaTime) {
     // caster parallel threshold). The reset now lives in FlushPendingChanges,
     // which only executes at the pre-recording flush points in both loops.
 
-    // Poll texture and shader file watchers every 5 seconds (time-based, not frame-count).
-    m_WatcherPollTimer += deltaTime;
-    if (m_WatcherPollTimer >= 5.0f) {
-        m_WatcherPollTimer = 0.0f;
-        m_TextureWatcher.Poll();
-        if (m_ShaderHotReloadEnabled && !m_ShaderDir.empty()) {
-            m_ShaderWatcher.Poll();
-        }
-    }
+    // The texture AND shader watchers used to be polled here. The editor never
+    // calls Update() at all — it drives RenderOffscreen and FlushPendingChanges
+    // — so neither hot-reload could fire in the one runtime you edit in. Both
+    // polls now live in FlushPendingChanges, which every loop calls each frame.
 
     // Auto-create meshes for water volume entities that don't have one yet
     EnsureWaterMeshes();
@@ -5190,6 +5225,31 @@ void RenderSystem::Update(f32 deltaTime) {
                 terrain2d->meshDirty = false;
             }
         }
+        // Procedural mesh dirty check. One loop for every system that writes
+        // MeshComponent geometry at runtime (metaballs, cellular automata,
+        // Fourier contours, 4D projection, spline IK, script). Same protocol as
+        // cloth/rope: topologyDirty retires the buffers so they rebuild at the
+        // new index count, meshDirty re-uploads vertices into the live buffer.
+        for (Entity entity : m_World->GetEntitiesWithComponent<ProceduralMeshComponent>()) {
+            auto* pm = m_World->GetComponent<ProceduralMeshComponent>(entity);
+            if (!pm) continue;
+            if (pm->topologyDirty) {
+                if (static_cast<usize>(EntityIndex(entity)) < m_EntityRenderData.size())
+                    RetireEntityBuffers(m_EntityRenderData[static_cast<usize>(EntityIndex(entity))]);
+                pm->topologyDirty = false;
+                pm->meshDirty = true;       // fresh buffers still need the vertex upload
+                m_RenderListDirty = true;   // a mesh may have just appeared
+            } else if (pm->meshDirty) {
+                EntityRenderData* rd = GetRenderData(entity);
+                auto* pmMesh = m_World->GetComponent<MeshComponent>(entity);
+                if (rd && rd->vertexBuffer && pmMesh && !pmMesh->vertices.empty()) {
+                    usize dataSize = pmMesh->vertices.size() * sizeof(MeshComponent::Vertex);
+                    rd->vertexBuffer->UploadData(pmMesh->vertices.data(), dataSize);
+                }
+                pm->meshDirty = false;
+            }
+        }
+
         // JellyMesh dirty check (flower system vertex deformation)
         // Re-upload vertex data to existing buffer instead of erase/recreate,
         // because destroying buffers while the GPU is still reading them crashes the driver.
@@ -10152,6 +10212,10 @@ bool RenderSystem::IsPoolEligible(Entity entity) const {
     if (m_World->HasComponent<JellyMeshComponent>(entity)) return false;
     if (m_World->HasComponent<ClothComponent>(entity)) return false;
     if (m_World->HasComponent<RopeComponent>(entity)) return false;   // verlet tube rewritten per frame
+    // Runtime-generated geometry is rewritten wholesale every rebuild. The merged
+    // pool has no free list, so a 30 Hz regeneration exhausts it in seconds
+    // ("vertex space exhausted") and the mesh stops drawing. Per-entity buffers.
+    if (m_World->HasComponent<ProceduralMeshComponent>(entity)) return false;
     if (m_World->HasComponent<WaterVolumeComponent>(entity)) return false;
     if ((m_CachedWater3DStorage ? m_CachedWater3DStorage->Has(entity) : m_World->HasComponent<Water3DComponent>(entity))) return false;
     // Skinned meshes stay per-entity (bone deformation updates vertex data)
@@ -13433,6 +13497,74 @@ void RenderSystem::RenderSpotShadowPass() {
     }
 }
 
+// Swap in textures whose files changed on disk. Called only from
+// FlushPendingChanges: this destroys a live texture, and frames in flight still
+// reference the old image view from bound descriptor sets, so it follows the
+// same protocol as a replaced text texture — unregister the bindless slot, park
+// the old texture in the graveyard, register the new one.
+void RenderSystem::ProcessPendingTextureReloads() {
+    if (m_PendingTextureReloads.empty() || !m_VulkanRenderer) return;
+
+    std::vector<std::string> pending;
+    pending.swap(m_PendingTextureReloads);
+
+    for (const std::string& key : pending) {
+        auto idIt = m_TexturePathToId.find(key);
+        if (idIt == m_TexturePathToId.end()) continue;
+        const u32 texId = idIt->second;
+
+        // key is the canonical absolute path GetOrLoadTexture watched, so it
+        // needs no re-rooting.
+        auto newTex = std::make_shared<Renderer::Texture>(m_VulkanRenderer->GetContext());
+        if (!newTex->LoadFromFile(key)) {
+            ENJIN_LOG_WARN(Renderer, "Texture reload failed, keeping the old one: %s", key.c_str());
+            continue;
+        }
+
+        std::shared_ptr<Renderer::Texture>& slot = m_TextureById[texId];
+        if (slot) {
+            auto bh = m_TextureBindlessHandles.find(slot.get());
+            if (bh != m_TextureBindlessHandles.end()) {
+                if (m_BindlessManager) m_BindlessManager->UnregisterTexture(bh->second);
+                m_TextureBindlessHandles.erase(bh);
+            }
+            m_TextTextureGraveyard.push_back({m_FlushTick, std::move(slot)});
+        }
+        slot = newTex;
+
+        if (m_BindlessManager && newTex->IsValid()) {
+            auto handle = m_BindlessManager->RegisterTexture(newTex->GetImageView(), VK_NULL_HANDLE);
+            if (handle != UINT32_MAX) m_TextureBindlessHandles[newTex.get()] = handle;
+        }
+
+        // Materials cache a raw texture pointer and store their OWN spelling of
+        // the path ("assets/foo.png"), which is not the canonical key. Resolve
+        // each material path through the alias map instead of comparing strings,
+        // or nothing gets invalidated and the repaint never reaches the surface.
+        if (m_World) {
+            auto refersToThis = [&](const std::string& p) {
+                if (p.empty()) return false;
+                auto it = m_TexturePathToId.find(p);
+                return it != m_TexturePathToId.end() && it->second == texId;
+            };
+            for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::MaterialComponent>()) {
+                auto* mat = m_World->GetComponent<ECS::MaterialComponent>(e);
+                if (!mat) continue;
+                if (refersToThis(mat->baseColorTexturePath) ||
+                    refersToThis(mat->normalTexturePath) ||
+                    refersToThis(mat->heightTexturePath) ||
+                    refersToThis(mat->metallicRoughnessTexturePath) ||
+                    refersToThis(mat->emissiveTexturePath)) {
+                    mat->textureCacheDirty = true;
+                }
+            }
+        }
+        if (m_SpriteAtlas) m_SpriteAtlas->Invalidate();
+
+        ENJIN_LOG_INFO(Renderer, "Texture reloaded: %s", key.c_str());
+    }
+}
+
 std::shared_ptr<Renderer::Texture> RenderSystem::GetOrLoadTexture(const std::string& path) {
     if (path.empty()) {
         return nullptr;
@@ -13467,6 +13599,26 @@ std::shared_ptr<Renderer::Texture> RenderSystem::GetOrLoadTexture(const std::str
         }
     }
 
+    // Collapse spellings of the same file onto one cache entry. A material asks
+    // for "assets/foo.png" while the asset browser hands over the absolute path,
+    // and joining a Windows root to a posix-style relative path yields mixed
+    // separators ("D:\proj\assets/foo.png"). Each spelling used to load the file
+    // again, register a second bindless slot, and add a second file watch — so a
+    // repaint reloaded the same texture twice. One canonical key fixes all three.
+    const std::string canonical = [&] {
+        namespace fs = std::filesystem;
+        std::error_code ec;
+        fs::path p(loadPath);
+        fs::path abs = fs::absolute(p, ec);
+        return (ec ? p : abs).lexically_normal().make_preferred().string();
+    }();
+
+    auto canonIt = m_TexturePathToId.find(canonical);
+    if (canonIt != m_TexturePathToId.end()) {
+        m_TexturePathToId[path] = canonIt->second;   // alias, so next call is O(1)
+        return m_TextureById[canonIt->second];
+    }
+
     // Load new texture (SVG or raster)
     std::shared_ptr<Renderer::Texture> texture;
     if (Renderer::SVGLoader::IsSVGFile(loadPath)) {
@@ -13487,11 +13639,13 @@ std::shared_ptr<Renderer::Texture> RenderSystem::GetOrLoadTexture(const std::str
     ENJIN_LOG_INFO(Renderer, "Loaded texture: %s (%dx%d)",
         path.c_str(), texture->GetWidth(), texture->GetHeight());
 
-    // Cache with integer ID and watch for hot-reload
+    // Cache with integer ID and watch for hot-reload. The canonical path owns
+    // the entry; the spelling the caller used is an alias onto the same id.
     u32 texId = static_cast<u32>(m_TextureById.size());
-    m_TexturePathToId[path] = texId;
+    m_TexturePathToId[canonical] = texId;
+    if (path != canonical) m_TexturePathToId[path] = texId;
     m_TextureById.push_back(texture);
-    m_TextureIdToPath.push_back(path);
+    m_TextureIdToPath.push_back(canonical);
 
     // Register in bindless descriptor set for indexed texture access.
     // Pass VK_NULL_HANDLE so the texture binds the shared global sampler and follows
@@ -13505,30 +13659,18 @@ std::shared_ptr<Renderer::Texture> RenderSystem::GetOrLoadTexture(const std::str
         }
     }
 
-    m_TextureWatcher.Watch(path, [this](const std::string& changedPath) {
-        ENJIN_LOG_INFO(Renderer, "Texture changed, reloading: %s", changedPath.c_str());
-        auto pathIt = m_TexturePathToId.find(changedPath);
-        if (pathIt != m_TexturePathToId.end()) {
-            auto newTex = std::make_shared<Renderer::Texture>(m_VulkanRenderer->GetContext());
-            if (newTex->LoadFromFile(changedPath)) {
-                m_TextureById[pathIt->second] = newTex;
-                // Invalidate cached raw pointers on all materials referencing this texture
-                if (m_World) {
-                    for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::MaterialComponent>()) {
-                        auto* mat = m_World->GetComponent<ECS::MaterialComponent>(e);
-                        if (!mat) continue;
-                        if (mat->baseColorTexturePath == changedPath ||
-                            mat->normalTexturePath == changedPath ||
-                            mat->heightTexturePath == changedPath ||
-                            mat->metallicRoughnessTexturePath == changedPath ||
-                            mat->emissiveTexturePath == changedPath) {
-                            mat->textureCacheDirty = true;
-                        }
-                    }
-                }
-                // Invalidate sprite atlas so it rebuilds with the new texture data
-                if (m_SpriteAtlas) m_SpriteAtlas->Invalidate();
-            }
+    // Watch the RESOLVED path, not the stored one. The cache is keyed by the
+    // material's (project-relative) path but the file only exists at loadPath,
+    // and the process CWD is the exe directory — watching `path` made
+    // FileWatcher log "file does not exist" at load and never fire again, so
+    // texture hot-reload was dead for every texture a project authors. The
+    // callback only queues: the swap is GPU-resource work and belongs in
+    // FlushPendingChanges, not in the middle of Update().
+    m_TextureWatcher.Watch(canonical, [this, key = canonical](const std::string& changedPath) {
+        ENJIN_LOG_INFO(Renderer, "Texture changed on disk, queuing reload: %s", changedPath.c_str());
+        if (std::find(m_PendingTextureReloads.begin(), m_PendingTextureReloads.end(), key)
+            == m_PendingTextureReloads.end()) {
+            m_PendingTextureReloads.push_back(key);
         }
     });
     return texture;

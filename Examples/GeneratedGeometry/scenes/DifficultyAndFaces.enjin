@@ -1,0 +1,1097 @@
+{
+ "version": "1.0",
+ "formatVersion": 1,
+ "entities": [
+  {
+   "id": 1,
+   "name": {
+    "name": "MainCam"
+   },
+   "transform": {
+    "position": [
+     0,
+     4.0,
+     12
+    ],
+    "rotation": [
+     -0.10452846326765347,
+     0.0,
+     0.0,
+     0.9945218953682733
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "visible": true
+   },
+   "camera": {
+    "projectionType": 0,
+    "fieldOfView": 55,
+    "nearPlane": 0.1,
+    "farPlane": 500,
+    "isActive": true,
+    "priority": 0,
+    "clearColor": true,
+    "clearDepth": true,
+    "backgroundColor": [
+     0.04,
+     0.05,
+     0.07
+    ],
+    "orthoSize": 10
+   }
+  },
+  {
+   "id": 2,
+   "name": {
+    "name": "Sun"
+   },
+   "transform": {
+    "position": [
+     6,
+     16,
+     10
+    ],
+    "rotation": [
+     -0.34,
+     -0.1,
+     0,
+     0.93
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "visible": true
+   },
+   "light": {
+    "type": 0,
+    "color": [
+     1,
+     0.97,
+     0.92
+    ],
+    "intensity": 1.3,
+    "castShadows": true,
+    "range": 10,
+    "innerConeAngle": 12.5,
+    "outerConeAngle": 17.5,
+    "constantAttenuation": 1,
+    "linearAttenuation": 0.09,
+    "quadraticAttenuation": 0.032
+   }
+  },
+  {
+   "id": 3,
+   "name": {
+    "name": "Ground"
+   },
+   "transform": {
+    "position": [
+     0,
+     -0.5,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     30.0,
+     0.5,
+     30.0
+    ],
+    "visible": true
+   },
+   "mesh": {
+    "vertexCount": 24,
+    "indexCount": 36,
+    "vertices": [
+     {
+      "position": [
+       -0.5,
+       -0.5,
+       0.5
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0,
+       0
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       -0.5,
+       0.5
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       1,
+       0
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       0.5,
+       0.5
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       1,
+       1
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       0.5,
+       0.5
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0,
+       1
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       -0.5,
+       -0.5
+      ],
+      "normal": [
+       0,
+       0,
+       -1
+      ],
+      "uv": [
+       0,
+       0
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       -0.5,
+       -0.5
+      ],
+      "normal": [
+       0,
+       0,
+       -1
+      ],
+      "uv": [
+       1,
+       0
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       0.5,
+       -0.5
+      ],
+      "normal": [
+       0,
+       0,
+       -1
+      ],
+      "uv": [
+       1,
+       1
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       0.5,
+       -0.5
+      ],
+      "normal": [
+       0,
+       0,
+       -1
+      ],
+      "uv": [
+       0,
+       1
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       -0.5,
+       0.5
+      ],
+      "normal": [
+       1,
+       0,
+       0
+      ],
+      "uv": [
+       0,
+       0
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       -0.5,
+       -0.5
+      ],
+      "normal": [
+       1,
+       0,
+       0
+      ],
+      "uv": [
+       1,
+       0
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       0.5,
+       -0.5
+      ],
+      "normal": [
+       1,
+       0,
+       0
+      ],
+      "uv": [
+       1,
+       1
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       0.5,
+       0.5
+      ],
+      "normal": [
+       1,
+       0,
+       0
+      ],
+      "uv": [
+       0,
+       1
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       -0.5,
+       -0.5
+      ],
+      "normal": [
+       -1,
+       0,
+       0
+      ],
+      "uv": [
+       0,
+       0
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       -0.5,
+       0.5
+      ],
+      "normal": [
+       -1,
+       0,
+       0
+      ],
+      "uv": [
+       1,
+       0
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       0.5,
+       0.5
+      ],
+      "normal": [
+       -1,
+       0,
+       0
+      ],
+      "uv": [
+       1,
+       1
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       0.5,
+       -0.5
+      ],
+      "normal": [
+       -1,
+       0,
+       0
+      ],
+      "uv": [
+       0,
+       1
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       0.5,
+       0.5
+      ],
+      "normal": [
+       0,
+       1,
+       0
+      ],
+      "uv": [
+       0,
+       0
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       0.5,
+       0.5
+      ],
+      "normal": [
+       0,
+       1,
+       0
+      ],
+      "uv": [
+       1,
+       0
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       0.5,
+       -0.5
+      ],
+      "normal": [
+       0,
+       1,
+       0
+      ],
+      "uv": [
+       1,
+       1
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       0.5,
+       -0.5
+      ],
+      "normal": [
+       0,
+       1,
+       0
+      ],
+      "uv": [
+       0,
+       1
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       -0.5,
+       -0.5
+      ],
+      "normal": [
+       0,
+       -1,
+       0
+      ],
+      "uv": [
+       0,
+       0
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       -0.5,
+       -0.5
+      ],
+      "normal": [
+       0,
+       -1,
+       0
+      ],
+      "uv": [
+       1,
+       0
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       -0.5,
+       0.5
+      ],
+      "normal": [
+       0,
+       -1,
+       0
+      ],
+      "uv": [
+       1,
+       1
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       -0.5,
+       0.5
+      ],
+      "normal": [
+       0,
+       -1,
+       0
+      ],
+      "uv": [
+       0,
+       1
+      ]
+     }
+    ],
+    "indices": [
+     0,
+     1,
+     2,
+     0,
+     2,
+     3,
+     4,
+     5,
+     6,
+     4,
+     6,
+     7,
+     8,
+     9,
+     10,
+     8,
+     10,
+     11,
+     12,
+     13,
+     14,
+     12,
+     14,
+     15,
+     16,
+     17,
+     18,
+     16,
+     18,
+     19,
+     20,
+     21,
+     22,
+     20,
+     22,
+     23
+    ]
+   },
+   "material": {
+    "baseColor": [
+     0.16,
+     0.18,
+     0.2
+    ],
+    "metallic": 0.0,
+    "roughness": 0.9
+   }
+  },
+  {
+   "id": 4,
+   "name": {
+    "name": "Caption"
+   },
+   "transform": {
+    "position": [
+     0,
+     6.6,
+     -5
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "visible": true
+   },
+   "text": {
+    "text": "DYNAMIC DIFFICULTY + FACE CARDS\nBoth systems shipped complete and were never called by any runtime.\nPress 1 to record a death, 2 to record a hit, 3 to take damage.\nThe struggle score recomputes once a second and the face reacts to it.",
+    "fontSize": 29,
+    "textureWidth": 1400,
+    "textureHeight": 300,
+    "textColor": [
+     0.9,
+     0.97,
+     0.96
+    ],
+    "bgColor": [
+     0.04,
+     0.07,
+     0.08
+    ],
+    "bgOpacity": 0.72,
+    "horizontalAlign": 1,
+    "wrapWidth": 1376
+   }
+  },
+  {
+   "id": 5,
+   "name": {
+    "name": "Player"
+   },
+   "transform": {
+    "position": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "visible": true
+   },
+   "mesh": {
+    "vertexCount": 24,
+    "indexCount": 36,
+    "vertices": [
+     {
+      "position": [
+       -0.5,
+       -0.5,
+       0.5
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0,
+       0
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       -0.5,
+       0.5
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       1,
+       0
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       0.5,
+       0.5
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       1,
+       1
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       0.5,
+       0.5
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0,
+       1
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       -0.5,
+       -0.5
+      ],
+      "normal": [
+       0,
+       0,
+       -1
+      ],
+      "uv": [
+       0,
+       0
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       -0.5,
+       -0.5
+      ],
+      "normal": [
+       0,
+       0,
+       -1
+      ],
+      "uv": [
+       1,
+       0
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       0.5,
+       -0.5
+      ],
+      "normal": [
+       0,
+       0,
+       -1
+      ],
+      "uv": [
+       1,
+       1
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       0.5,
+       -0.5
+      ],
+      "normal": [
+       0,
+       0,
+       -1
+      ],
+      "uv": [
+       0,
+       1
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       -0.5,
+       0.5
+      ],
+      "normal": [
+       1,
+       0,
+       0
+      ],
+      "uv": [
+       0,
+       0
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       -0.5,
+       -0.5
+      ],
+      "normal": [
+       1,
+       0,
+       0
+      ],
+      "uv": [
+       1,
+       0
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       0.5,
+       -0.5
+      ],
+      "normal": [
+       1,
+       0,
+       0
+      ],
+      "uv": [
+       1,
+       1
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       0.5,
+       0.5
+      ],
+      "normal": [
+       1,
+       0,
+       0
+      ],
+      "uv": [
+       0,
+       1
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       -0.5,
+       -0.5
+      ],
+      "normal": [
+       -1,
+       0,
+       0
+      ],
+      "uv": [
+       0,
+       0
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       -0.5,
+       0.5
+      ],
+      "normal": [
+       -1,
+       0,
+       0
+      ],
+      "uv": [
+       1,
+       0
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       0.5,
+       0.5
+      ],
+      "normal": [
+       -1,
+       0,
+       0
+      ],
+      "uv": [
+       1,
+       1
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       0.5,
+       -0.5
+      ],
+      "normal": [
+       -1,
+       0,
+       0
+      ],
+      "uv": [
+       0,
+       1
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       0.5,
+       0.5
+      ],
+      "normal": [
+       0,
+       1,
+       0
+      ],
+      "uv": [
+       0,
+       0
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       0.5,
+       0.5
+      ],
+      "normal": [
+       0,
+       1,
+       0
+      ],
+      "uv": [
+       1,
+       0
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       0.5,
+       -0.5
+      ],
+      "normal": [
+       0,
+       1,
+       0
+      ],
+      "uv": [
+       1,
+       1
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       0.5,
+       -0.5
+      ],
+      "normal": [
+       0,
+       1,
+       0
+      ],
+      "uv": [
+       0,
+       1
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       -0.5,
+       -0.5
+      ],
+      "normal": [
+       0,
+       -1,
+       0
+      ],
+      "uv": [
+       0,
+       0
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       -0.5,
+       -0.5
+      ],
+      "normal": [
+       0,
+       -1,
+       0
+      ],
+      "uv": [
+       1,
+       0
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       -0.5,
+       0.5
+      ],
+      "normal": [
+       0,
+       -1,
+       0
+      ],
+      "uv": [
+       1,
+       1
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       -0.5,
+       0.5
+      ],
+      "normal": [
+       0,
+       -1,
+       0
+      ],
+      "uv": [
+       0,
+       1
+      ]
+     }
+    ],
+    "indices": [
+     0,
+     1,
+     2,
+     0,
+     2,
+     3,
+     4,
+     5,
+     6,
+     4,
+     6,
+     7,
+     8,
+     9,
+     10,
+     8,
+     10,
+     11,
+     12,
+     13,
+     14,
+     12,
+     14,
+     15,
+     16,
+     17,
+     18,
+     16,
+     18,
+     19,
+     20,
+     21,
+     22,
+     20,
+     22,
+     23
+    ]
+   },
+   "material": {
+    "baseColor": [
+     0.3,
+     0.6,
+     0.95
+    ],
+    "metallic": 0.0,
+    "roughness": 0.75
+   },
+   "health": {
+    "currentHealth": 100.0,
+    "maxHealth": 100.0
+   }
+  },
+  {
+   "id": 6,
+   "name": {
+    "name": "DifficultyDirector"
+   },
+   "transform": {
+    "position": [
+     0,
+     0,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "visible": true
+   },
+   "dynamicDifficulty": {
+    "enabled": true
+   },
+   "scriptComponent": {
+    "scripts": [
+     {
+      "path": "scripts/DifficultyProbe.as",
+      "class": "DifficultyProbe",
+      "enabled": true
+     }
+    ]
+   }
+  }
+ ]
+}

@@ -1,5 +1,8 @@
 #include <unordered_set>
 #include "Enjin/Scene/SceneSerializer.h"
+#include "Enjin/ECS/Components/GeneratedGeometry.h"
+#include "Enjin/ECS/Components/ProceduralMesh.h"
+#include "Enjin/Effects/Metaballs.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Viewmodel.h"
 #include "Enjin/ECS/Components/StableId.h"
@@ -1589,6 +1592,215 @@ ECS::SwarmComponent DeserializeSwarmComponent(const json& j) {
     if (j.contains("cubeSize")) s.cubeSize = j["cubeSize"].get<f32>();
     if (j.contains("color")) s.color = DeserializeVector3(j["color"]);
     return s;
+}
+
+
+// --- Generated geometry (metaballs, cellular automata, 4D, Fourier) ---------
+// These four generators shipped with complete implementations and no authoring
+// surface at all: no component, no inspector, no serializer, no tick. The
+// components live in ECS/Components/GeneratedGeometry.h; GeneratedGeometrySystem
+// runs them. Runtime readback fields (generation, liveCells, elapsed,
+// activeTerms) are deliberately NOT serialized - they are outputs.
+
+json SerializeProceduralMeshComponent(const ECS::ProceduralMeshComponent& p) {
+    json j;
+    j["source"] = static_cast<u8>(p.source);
+    j["regenerate"] = p.regenerate;
+    // meshDirty / topologyDirty are frame-local upload flags, never persisted.
+    // A loaded procedural mesh is re-dirtied by its owning system on first tick.
+    return j;
+}
+
+ECS::ProceduralMeshComponent DeserializeProceduralMeshComponent(const json& j) {
+    ECS::ProceduralMeshComponent p;
+    if (j.contains("source")) {
+        u8 v = j["source"].get<u8>();
+        if (v < static_cast<u8>(ECS::ProceduralMeshComponent::Source::Count))
+            p.source = static_cast<ECS::ProceduralMeshComponent::Source>(v);
+    }
+    if (j.contains("regenerate")) p.regenerate = j["regenerate"].get<bool>();
+    p.topologyDirty = true;   // force a rebuild+upload after load
+    return p;
+}
+
+json SerializeMetaballComponent(const Effects::MetaballComponent& m) {
+    json j;
+    j["radius"] = RF(m.radius);
+    j["strength"] = RF(m.strength);
+    j["threshold"] = RF(m.threshold);
+    j["groupId"] = m.groupId;
+    j["color"] = SerializeVector3(m.color);
+    return j;
+}
+
+Effects::MetaballComponent DeserializeMetaballComponent(const json& j) {
+    Effects::MetaballComponent m;
+    if (j.contains("radius")) m.radius = std::clamp(j["radius"].get<f32>(), 0.001f, 1000.0f);
+    if (j.contains("strength")) m.strength = j["strength"].get<f32>();
+    if (j.contains("threshold")) m.threshold = j["threshold"].get<f32>();
+    if (j.contains("groupId")) m.groupId = j["groupId"].get<i32>();
+    if (j.contains("color")) m.color = DeserializeVector3(j["color"]);
+    return m;
+}
+
+json SerializeMetaballSurfaceComponent(const ECS::MetaballSurfaceComponent& s) {
+    json j;
+    j["groupId"] = s.groupId;
+    j["gridResolution"] = s.gridResolution;
+    j["gridSize"] = RF(s.gridSize);
+    j["smoothNormals"] = s.smoothNormals;
+    j["autoCenter"] = s.autoCenter;
+    j["updateRate"] = RF(s.updateRate);
+    j["useBlobColors"] = s.useBlobColors;
+    return j;
+}
+
+ECS::MetaballSurfaceComponent DeserializeMetaballSurfaceComponent(const json& j) {
+    ECS::MetaballSurfaceComponent s;
+    if (j.contains("groupId")) s.groupId = j["groupId"].get<i32>();
+    // Clamped here as well as in the system: a hand-authored 512 would allocate
+    // a 134M-voxel grid before the system ever saw it.
+    if (j.contains("gridResolution")) s.gridResolution = std::clamp(j["gridResolution"].get<i32>(), 16, 64);
+    if (j.contains("gridSize")) s.gridSize = std::clamp(j["gridSize"].get<f32>(), 0.1f, 10000.0f);
+    if (j.contains("smoothNormals")) s.smoothNormals = j["smoothNormals"].get<bool>();
+    if (j.contains("autoCenter")) s.autoCenter = j["autoCenter"].get<bool>();
+    if (j.contains("updateRate")) s.updateRate = std::clamp(j["updateRate"].get<f32>(), 0.0f, 240.0f);
+    if (j.contains("useBlobColors")) s.useBlobColors = j["useBlobColors"].get<bool>();
+    return s;
+}
+
+json SerializeCellularAutomataComponent(const ECS::CellularAutomataComponent& c) {
+    json j;
+    j["rule"] = static_cast<u8>(c.rule);
+    j["meshMode"] = static_cast<u8>(c.meshMode);
+    j["width"] = c.width;
+    j["height"] = c.height;
+    j["depth"] = c.depth;
+    j["cellSize"] = RF(c.cellSize);
+    j["updateInterval"] = RF(c.updateInterval);
+    j["initialFillPercent"] = RF(c.initialFillPercent);
+    j["seed"] = c.seed;
+    j["wrapEdges"] = c.wrapEdges;
+    j["isoLevel"] = RF(c.isoLevel);
+    j["liveColor"] = SerializeVector3(c.liveColor);
+    j["dyingColor"] = SerializeVector3(c.dyingColor);
+    j["stampPattern"] = SafeStr(c.stampPattern);
+    j["running"] = c.running;
+    return j;
+}
+
+ECS::CellularAutomataComponent DeserializeCellularAutomataComponent(const json& j) {
+    ECS::CellularAutomataComponent c;
+    if (j.contains("rule")) {
+        u8 v = j["rule"].get<u8>();
+        if (v <= static_cast<u8>(Effects::CARule::Custom)) c.rule = static_cast<Effects::CARule>(v);
+    }
+    if (j.contains("meshMode")) {
+        u8 v = j["meshMode"].get<u8>();
+        if (v <= static_cast<u8>(Effects::CAMeshMode::PointCloud)) c.meshMode = static_cast<Effects::CAMeshMode>(v);
+    }
+    // A grid is width*height*depth cells and every live cell can emit a cube.
+    // 256^3 would be 16M cells before a single triangle exists, so the caps are
+    // part of the format, not a suggestion.
+    if (j.contains("width")) c.width = std::clamp(j["width"].get<u32>(), 2u, 256u);
+    if (j.contains("height")) c.height = std::clamp(j["height"].get<u32>(), 2u, 256u);
+    if (j.contains("depth")) c.depth = std::clamp(j["depth"].get<u32>(), 1u, 64u);
+    if (j.contains("cellSize")) c.cellSize = std::clamp(j["cellSize"].get<f32>(), 0.001f, 100.0f);
+    if (j.contains("updateInterval")) c.updateInterval = std::clamp(j["updateInterval"].get<f32>(), 0.0f, 60.0f);
+    if (j.contains("initialFillPercent")) c.initialFillPercent = std::clamp(j["initialFillPercent"].get<f32>(), 0.0f, 100.0f);
+    if (j.contains("seed")) c.seed = j["seed"].get<u32>();
+    if (j.contains("wrapEdges")) c.wrapEdges = j["wrapEdges"].get<bool>();
+    if (j.contains("isoLevel")) c.isoLevel = std::clamp(j["isoLevel"].get<f32>(), 0.0f, 1.0f);
+    if (j.contains("liveColor")) c.liveColor = DeserializeVector3(j["liveColor"]);
+    if (j.contains("dyingColor")) c.dyingColor = DeserializeVector3(j["dyingColor"]);
+    if (j.contains("stampPattern")) c.stampPattern = SafeStr(j["stampPattern"].get<std::string>());
+    if (j.contains("running")) c.running = j["running"].get<bool>();
+    return c;
+}
+
+json SerializeProjection4DComponent(const ECS::Projection4DComponent& p) {
+    json j;
+    j["polytope"] = static_cast<u8>(p.polytope);
+    j["speedXY"] = RF(p.rotation.speedXY);
+    j["speedXZ"] = RF(p.rotation.speedXZ);
+    j["speedXW"] = RF(p.rotation.speedXW);
+    j["speedYZ"] = RF(p.rotation.speedYZ);
+    j["speedYW"] = RF(p.rotation.speedYW);
+    j["speedZW"] = RF(p.rotation.speedZW);
+    j["lineWidth"] = RF(p.lineWidth);
+    j["projectionDistance"] = RF(p.projectionDistance);
+    j["tubeSegments"] = p.tubeSegments;
+    j["scale"] = RF(p.scale);
+    j["animate"] = p.animate;
+    j["updateRate"] = RF(p.updateRate);
+    return j;
+}
+
+ECS::Projection4DComponent DeserializeProjection4DComponent(const json& j) {
+    ECS::Projection4DComponent p;
+    if (j.contains("polytope")) {
+        u8 v = j["polytope"].get<u8>();
+        if (v < static_cast<u8>(ECS::Projection4DComponent::Polytope::Count))
+            p.polytope = static_cast<ECS::Projection4DComponent::Polytope>(v);
+    }
+    if (j.contains("speedXY")) p.rotation.speedXY = j["speedXY"].get<f32>();
+    if (j.contains("speedXZ")) p.rotation.speedXZ = j["speedXZ"].get<f32>();
+    if (j.contains("speedXW")) p.rotation.speedXW = j["speedXW"].get<f32>();
+    if (j.contains("speedYZ")) p.rotation.speedYZ = j["speedYZ"].get<f32>();
+    if (j.contains("speedYW")) p.rotation.speedYW = j["speedYW"].get<f32>();
+    if (j.contains("speedZW")) p.rotation.speedZW = j["speedZW"].get<f32>();
+    if (j.contains("lineWidth")) p.lineWidth = std::clamp(j["lineWidth"].get<f32>(), 0.0005f, 10.0f);
+    if (j.contains("projectionDistance")) p.projectionDistance = j["projectionDistance"].get<f32>();
+    // 1200 edges (120-cell) x tubeSegments x 2 triangles: the cap keeps a bad
+    // value from turning one entity into a multi-million-triangle rebuild.
+    if (j.contains("tubeSegments")) p.tubeSegments = std::clamp(j["tubeSegments"].get<u32>(), 3u, 32u);
+    if (j.contains("scale")) p.scale = std::clamp(j["scale"].get<f32>(), 0.001f, 1000.0f);
+    if (j.contains("animate")) p.animate = j["animate"].get<bool>();
+    if (j.contains("updateRate")) p.updateRate = std::clamp(j["updateRate"].get<f32>(), 0.0f, 240.0f);
+    return p;
+}
+
+json SerializeFourierMeshComponent(const ECS::FourierMeshComponent& f) {
+    json j;
+    j["source"] = static_cast<u8>(f.source);
+    j["coefficients"] = f.coefficients;
+    j["terms"] = f.terms;
+    j["samples"] = f.samples;
+    j["animateTerms"] = f.animateTerms;
+    j["animationSeconds"] = RF(f.animationSeconds);
+    j["extrudeDepth"] = RF(f.extrudeDepth);
+    j["scale"] = RF(f.scale);
+    if (f.source == ECS::FourierMeshComponent::ContourSource::Custom && !f.customContour.empty()) {
+        json pts = json::array();
+        for (const auto& pt : f.customContour) { pts.push_back(RF(pt.x)); pts.push_back(RF(pt.y)); }
+        j["customContour"] = pts;
+    }
+    return j;
+}
+
+ECS::FourierMeshComponent DeserializeFourierMeshComponent(const json& j) {
+    ECS::FourierMeshComponent f;
+    if (j.contains("source")) {
+        u8 v = j["source"].get<u8>();
+        if (v < static_cast<u8>(ECS::FourierMeshComponent::ContourSource::Count))
+            f.source = static_cast<ECS::FourierMeshComponent::ContourSource>(v);
+    }
+    if (j.contains("coefficients")) f.coefficients = std::clamp(j["coefficients"].get<i32>(), 0, 1024);
+    if (j.contains("terms")) f.terms = std::clamp(j["terms"].get<i32>(), 1, 1024);
+    if (j.contains("samples")) f.samples = std::clamp(j["samples"].get<i32>(), 16, 4096);
+    if (j.contains("animateTerms")) f.animateTerms = j["animateTerms"].get<bool>();
+    if (j.contains("animationSeconds")) f.animationSeconds = std::clamp(j["animationSeconds"].get<f32>(), 0.0f, 600.0f);
+    if (j.contains("extrudeDepth")) f.extrudeDepth = std::clamp(j["extrudeDepth"].get<f32>(), 0.0f, 1000.0f);
+    if (j.contains("scale")) f.scale = std::clamp(j["scale"].get<f32>(), 0.001f, 1000.0f);
+    if (j.contains("customContour") && j["customContour"].is_array()) {
+        const auto& pts = j["customContour"];
+        const usize maxPts = 8192;   // paired floats; cap before reserving
+        usize n = std::min(pts.size() / 2, maxPts);
+        f.customContour.reserve(n);
+        for (usize i = 0; i < n; ++i)
+            f.customContour.push_back(Math::Vector2(pts[i * 2].get<f32>(), pts[i * 2 + 1].get<f32>()));
+    }
+    return f;
 }
 
 json SerializeDungeonGeneratorComponent(const ECS::DungeonGeneratorComponent& d) {
@@ -8558,6 +8770,12 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
         ENJIN_SERDES("dialogue", ECS::DialogueComponent, SerializeDialogueComponent, DeserializeDialogueComponent),
         ENJIN_SERDES("dialogueBox", ECS::DialogueBoxComponent, SerializeDialogueBoxComponent, DeserializeDialogueBoxComponent),
         ENJIN_SERDES("distanceJoint", ECS::DistanceJointComponent, SerializeDistanceJointComponent, DeserializeDistanceJointComponent),
+        ENJIN_SERDES("cellularAutomata", ECS::CellularAutomataComponent, SerializeCellularAutomataComponent, DeserializeCellularAutomataComponent),
+        ENJIN_SERDES("fourierMesh", ECS::FourierMeshComponent, SerializeFourierMeshComponent, DeserializeFourierMeshComponent),
+        ENJIN_SERDES("metaball", Effects::MetaballComponent, SerializeMetaballComponent, DeserializeMetaballComponent),
+        ENJIN_SERDES("metaballSurface", ECS::MetaballSurfaceComponent, SerializeMetaballSurfaceComponent, DeserializeMetaballSurfaceComponent),
+        ENJIN_SERDES("proceduralMesh", ECS::ProceduralMeshComponent, SerializeProceduralMeshComponent, DeserializeProceduralMeshComponent),
+        ENJIN_SERDES("projection4D", ECS::Projection4DComponent, SerializeProjection4DComponent, DeserializeProjection4DComponent),
         ENJIN_SERDES("dungeonGenerator", ECS::DungeonGeneratorComponent, SerializeDungeonGeneratorComponent, DeserializeDungeonGeneratorComponent),
         ENJIN_SERDES("dynamicDifficulty", ECS::DynamicDifficultyComponent, SerializeDynamicDifficultyComponent, DeserializeDynamicDifficultyComponent),
         ENJIN_SERDES("elementalEmitter", ECS::ElementalEmitterComponent, SerializeElementalEmitterComponent, DeserializeElementalEmitterComponent),

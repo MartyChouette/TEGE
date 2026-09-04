@@ -13,6 +13,7 @@
 #include "Enjin/ECS/Systems/ActionTriggerSystem.h"
 #include "Enjin/ECS/Systems/StateMachineSystem.h"
 #include "Enjin/ECS/Systems/SwarmSystem.h"
+#include "Enjin/ECS/Systems/GeneratedGeometrySystem.h"
 #include "Enjin/ECS/Systems/DialogueSystem.h"
 #include "Enjin/ECS/Systems/VisualScriptSystem.h"
 #include "Enjin/ECS/Systems/BehaviorTreeSystem.h"
@@ -36,6 +37,8 @@
 #include "Enjin/Gameplay/ObjectPool.h"
 #include "Enjin/Gameplay/CinematicSystem.h"
 #include "Enjin/Gameplay/CameraDirector.h"
+#include "Enjin/Gameplay/DynamicDifficultySystem.h"
+#include "Enjin/Gameplay/FaceCardSystem.h"
 #include "Enjin/Gameplay/TieredSaveSystem.h"
 #include "Enjin/Editor/PlayModeDiff.h"
 #include "Enjin/Editor/EditorSettings.h"
@@ -243,6 +246,15 @@ private:
 
     // Swarm system (data-oriented crowd proxies)
     ECS::SwarmSystem m_SwarmSystem;
+
+    // Runtime-generated geometry (metaballs, cellular automata, 4D, Fourier)
+    ECS::GeneratedGeometrySystem m_GeneratedGeometry;
+
+    // Dynamic difficulty (struggle score -> output multipliers, 1 Hz recompute)
+    Gameplay::DynamicDifficultySystem m_DynamicDifficulty;
+
+    // Face cards (expression -> material/sprite texture swap with crossfade)
+    Gameplay::FaceCardSystem m_FaceCardSystem;
 
     // Record & Rewind (Braid / Sands of Time mechanic)
     Gameplay::RecordRewindSystem m_RecordRewindSystem;

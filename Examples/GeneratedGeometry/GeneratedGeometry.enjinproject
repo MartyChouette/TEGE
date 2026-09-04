@@ -1,0 +1,56 @@
+{
+ "name": "GeneratedGeometry",
+ "version": "1.0",
+ "scenes": [
+  {
+   "path": "scenes/Lab.enjin",
+   "buildIndex": 0,
+   "isStartScene": true
+  },
+  {
+   "path": "scenes/Metaballs.enjin",
+   "buildIndex": 1,
+   "isStartScene": false
+  },
+  {
+   "path": "scenes/CellularAutomata.enjin",
+   "buildIndex": 2,
+   "isStartScene": false
+  },
+  {
+   "path": "scenes/Projection4D.enjin",
+   "buildIndex": 3,
+   "isStartScene": false
+  },
+  {
+   "path": "scenes/FourierMesh.enjin",
+   "buildIndex": 4,
+   "isStartScene": false
+  },
+  {
+   "path": "scenes/DifficultyAndFaces.enjin",
+   "buildIndex": 5,
+   "isStartScene": false
+  },
+  {
+   "path": "scenes/Dungeons.enjin",
+   "buildIndex": 6,
+   "isStartScene": false
+  },
+  {
+   "path": "scenes/TerrainAndScatter.enjin",
+   "buildIndex": 7,
+   "isStartScene": false
+  },
+  {
+   "path": "scenes/Scatter.enjin",
+   "buildIndex": 8,
+   "isStartScene": false
+  },
+  {
+   "path": "scenes/RandomBag.enjin",
+   "buildIndex": 9,
+   "isStartScene": false
+  }
+ ]
+}

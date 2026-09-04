@@ -96,6 +96,16 @@
 #include "Enjin/Gameplay/QuestSystem.h"
 #include "Enjin/Gameplay/ObjectPool.h"
 #include "Enjin/Gameplay/TieredSaveSystem.h"
+#include "Enjin/Gameplay/DynamicDifficultySystem.h"
+#include "Enjin/Gameplay/FaceCardSystem.h"
+#include "Enjin/ECS/Systems/SwarmSystem.h"
+#include "Enjin/ECS/Systems/GeneratedGeometrySystem.h"
+#include "Enjin/ECS/Systems/DungeonGeneratorSystem.h"
+#include "Enjin/ECS/Systems/ScatterSystem.h"
+#include "Enjin/ECS/Systems/TerrainGeneratorSystem.h"
+#include "Enjin/ECS/Systems/WFCSystem.h"
+#include "Enjin/ECS/Systems/RandomBagSystem.h"
+#include "Enjin/Assets/Prefab.h"
 #include "Enjin/Physics/IPhysicsBackend.h"
 #include "Enjin/Physics/IPhysicsBackend2D.h"
 #include "Enjin/Physics/PhysicsBackendFactory.h"
@@ -376,6 +386,9 @@ public:
         // advances conversations (wired to the event bus, quest, cinematic, and
         // save systems the web build has), CinematicSystem plays cutscenes.
         m_AISystem.SetWorld(m_World.get());
+        m_DynamicDifficulty.SetWorld(m_World.get());
+        m_DynamicDifficulty.SetEnabled(true);
+        m_FaceCardSystem.SetWorld(m_World.get());
         m_AISystem.SetEnabled(true);
         m_StateMachineSystem.SetScriptEngine(&m_ScriptEngine);
         m_CinematicSystem.SetEnabled(true);
@@ -972,6 +985,10 @@ public:
         // frame's (the web order was reversed until the 08-31 parity audit).
         m_ActionTriggerSystem.Update(m_World.get(), deltaTime);
         m_TweenSystem.Update(m_World.get(), deltaTime);
+        m_SwarmSystem.Update(m_World.get(), deltaTime);
+        m_GeneratedGeometry.Update(m_World.get(), deltaTime);
+        m_DynamicDifficulty.Update(m_World.get(), deltaTime);
+        m_FaceCardSystem.Update(deltaTime);
         m_StateMachineSystem.Update(m_World.get(), deltaTime);
         m_VisualScriptSystem.Update(deltaTime);
         m_BehaviorTreeSystem.Update(deltaTime);
@@ -1636,6 +1653,25 @@ private:
                 m_Physics2D.get(), m_World.get(), &m_VisualScriptSystem, m_DeferredDestroys);
         }
 
+        // Procedural generation (desktop: main.cpp:2835-2841). All four ran on
+        // desktop and none of them on web, so a scene whose layout, terrain,
+        // scatter or WFC tiles are generated at load came up empty in a browser
+        // while looking correct in the editor and in an exported desktop build.
+        // Prefab root first: Scatter and WFC resolve their prefab paths
+        // through it, and web has no meaningful working directory at all.
+        Enjin::Assets::PrefabManager::Get().SetAssetRoot(".");
+        Enjin::ECS::DungeonGeneratorSystem::GenerateAll(m_World.get());
+        // Terrain BEFORE scatter: a scatter with conformToTerrain samples the
+        // terrain heightmap, and a terrain that bakes at play start has an empty
+        // heightmap until its generator runs. In the other order every sample
+        // falls off the terrain and the whole batch is culled, silently, with
+        // "placed 0" as the only trace.
+        Enjin::ECS::TerrainGeneratorSystem::GenerateAll(m_World.get());
+        Enjin::ECS::ScatterSystem::GenerateAll(m_World.get());
+        Enjin::ECS::WFCSystem::GenerateAll(m_World.get());
+        // Random bags start a fresh shuffle per scene, same as the editor.
+        Enjin::ECS::RandomBagSystem::ResetAll(m_World.get());
+
         // VisualScript full init (desktop: main.cpp:1696-1704)
         m_VisualScriptSystem.SetPhysics(m_Physics.get());
         m_VisualScriptSystem.SetPhysics2D(m_Physics2D.get());
@@ -2023,6 +2059,10 @@ private:
     Enjin::ECS::TweenSystem m_TweenSystem;
     Enjin::ECS::VisualScriptSystem m_VisualScriptSystem;
     Enjin::ECS::BehaviorTreeSystem m_BehaviorTreeSystem;
+    Enjin::ECS::SwarmSystem m_SwarmSystem;
+    Enjin::ECS::GeneratedGeometrySystem m_GeneratedGeometry;
+    Enjin::Gameplay::DynamicDifficultySystem m_DynamicDifficulty;
+    Enjin::Gameplay::FaceCardSystem m_FaceCardSystem;
     Enjin::ECS::StateMachineSystem m_StateMachineSystem;
     Enjin::ECS::AISystem m_AISystem;
     Enjin::ECS::DialogueSystem m_DialogueSystem;

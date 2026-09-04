@@ -38,6 +38,8 @@ static bool s_SimulateTouch = false;
 #include "Enjin/ECS/Systems/ScatterSystem.h"
 #include "Enjin/ECS/Systems/TerrainGeneratorSystem.h"
 #include "Enjin/ECS/Systems/WFCSystem.h"
+#include "Enjin/ECS/Systems/RandomBagSystem.h"
+#include "Enjin/Assets/Prefab.h"
 #include "Enjin/ECS/Components/WaterVolume.h"
 #include "Enjin/Effects/TreeRenderer.h"
 #include <climits>
@@ -92,6 +94,10 @@ static bool s_SimulateTouch = false;
 #include "Enjin/ECS/Systems/ParallaxSystem.h"
 #include "Enjin/Gameplay/ObjectPool.h"
 #include "Enjin/Gameplay/TieredSaveSystem.h"
+#include "Enjin/Gameplay/DynamicDifficultySystem.h"
+#include "Enjin/Gameplay/FaceCardSystem.h"
+#include "Enjin/ECS/Systems/SwarmSystem.h"
+#include "Enjin/ECS/Systems/GeneratedGeometrySystem.h"
 #include "Enjin/Gameplay/QuestFlow.h"
 #include "Enjin/Networking/NetworkSystem.h"
 #include "Enjin/Effects/ParticleSystem.h"
@@ -492,6 +498,7 @@ public:
         m_SimpleAudio.Initialize();
         m_SimpleAudio.SetWorld(m_World.get());
         m_SimpleAudio.SetAssetRoot(gameRoot);
+        Enjin::Assets::PrefabManager::Get().SetAssetRoot(gameRoot);
         // Resolve project-relative mesh references against the game root (loose assets
         // ship next to the exe). NOTE: for this to work in an exported game the source
         // mesh files must ship with the build; otherwise reference-mode scenes need to
@@ -508,6 +515,10 @@ public:
         m_AudioReactiveSystem.SetAudio(&m_SimpleAudio);
         m_AudioReactiveSystem.SetMIDI(&m_MIDIInput);
         m_DestructibleSystem.Initialize(m_World.get());
+        m_DynamicDifficulty.SetWorld(m_World.get());
+        m_DynamicDifficulty.SetEnabled(true);
+        m_FaceCardSystem.SetWorld(m_World.get());
+        m_FaceCardSystem.SetRenderSystem(m_RenderSystem);
         m_StreamingManager.SetWorld(m_World.get());
         m_SceneManager.SetWorld(m_World.get());
         if (!m_LooseFilesMode) {
@@ -1068,6 +1079,10 @@ public:
         // --- Gameplay systems ---
         m_ActionTriggerSystem.Update(m_World.get(), deltaTime);
         m_TweenSystem.Update(m_World.get(), deltaTime);
+        m_SwarmSystem.Update(m_World.get(), deltaTime);
+        m_GeneratedGeometry.Update(m_World.get(), deltaTime);
+        m_DynamicDifficulty.Update(m_World.get(), deltaTime);
+        m_FaceCardSystem.Update(deltaTime);
         m_StateMachineSystem.Update(m_World.get(), deltaTime);
         m_VisualScriptSystem.Update(deltaTime);
         m_BehaviorTreeSystem.Update(deltaTime);
@@ -2821,12 +2836,21 @@ private:
 
         // Procedural dungeons: paint tilemaps for any generateOnStart generators
         Enjin::ECS::DungeonGeneratorSystem::GenerateAll(m_World.get());
-        // Procedural scatter: stamp prefab batches for any generateOnStart scatterers
-        Enjin::ECS::ScatterSystem::GenerateAll(m_World.get());
+        // Terrain BEFORE scatter: a scatter with conformToTerrain samples the
+        // terrain heightmap, and a terrain that bakes at play start has an empty
+        // heightmap until its generator runs. In the other order every sample
+        // falls off the terrain and the whole batch is culled, silently, with
+        // "placed 0" as the only trace.
         // Procedural terrain: bake heightmaps for any generateOnStart terrain generators
         Enjin::ECS::TerrainGeneratorSystem::GenerateAll(m_World.get());
+        // Procedural scatter: stamp prefab batches for any generateOnStart scatterers
+        Enjin::ECS::ScatterSystem::GenerateAll(m_World.get());
         // Procedural WFC: resolve tile layouts for any generateOnStart WFC components
         Enjin::ECS::WFCSystem::GenerateAll(m_World.get());
+        // Random bags: shuffle fresh per scene. Only the editor did this, so a
+        // bag in an exported game kept whatever draw order the scene was saved
+        // mid-sequence with.
+        Enjin::ECS::RandomBagSystem::ResetAll(m_World.get());
 
         // Build audio occlusion scene from colliders
 #ifdef ENJIN_AUDIO_STEAM_AUDIO
@@ -3258,6 +3282,10 @@ private:
     Enjin::Gameplay::ClothSystem m_ClothSystem;
     Enjin::ECS::FlowerSystem m_FlowerSystem;
     Enjin::ECS::TweenSystem m_TweenSystem;
+    Enjin::ECS::SwarmSystem m_SwarmSystem;
+    Enjin::ECS::GeneratedGeometrySystem m_GeneratedGeometry;
+    Enjin::Gameplay::DynamicDifficultySystem m_DynamicDifficulty;
+    Enjin::Gameplay::FaceCardSystem m_FaceCardSystem;
     Enjin::ECS::StateMachineSystem m_StateMachineSystem;
     Enjin::ECS::VisualScriptSystem m_VisualScriptSystem;
     Enjin::ECS::BehaviorTreeSystem m_BehaviorTreeSystem;

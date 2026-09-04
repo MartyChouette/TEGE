@@ -7,6 +7,7 @@
 #include "Enjin/ECS/Components/TemperatureZone.h"
 #include "Enjin/ECS/Components/ReflectionProbe.h"
 #include "Enjin/ECS/Components/Lens.h"
+#include "Enjin/ECS/Components/DynamicDifficulty.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include <angelscript.h>
 #include <string>
@@ -25,6 +26,77 @@ extern ECS::World* s_BindingsWorld;
 // up the component on the entity and returns/sets a field, matching the existing
 // component-binding style. Missing component = safe no-op / default return.
 // ============================================================================
+
+
+// --- DynamicDifficulty ------------------------------------------------------
+// docs/SCRIPTING_API.md has documented this whole surface for a long time, but
+// nothing ever registered it: the names existed only as a comment block in
+// DynamicDifficultySystem.h. These are the real registrations. They read and
+// write the component directly, so they work regardless of whether the system
+// has recomputed yet; DynamicDifficultySystem recomputes the score once a
+// second from whatever the record calls have accumulated.
+static ECS::DynamicDifficultyComponent* DifficultyOf(u64 self) {
+    if (!s_BindingsWorld) return nullptr;
+    return s_BindingsWorld->GetComponent<ECS::DynamicDifficultyComponent>(self);
+}
+static float Difficulty_GetScore(u64 self) {
+    auto* d = DifficultyOf(self);
+    return d ? d->smoothedScore : 0.5f;
+}
+static float Difficulty_GetMultiplier(u64 self, const std::string& which) {
+    auto* d = DifficultyOf(self);
+    if (!d) return 1.0f;
+    if (which == "enemyDamage")   return d->enemyDamageMultiplier;
+    if (which == "enemyHealth")   return d->enemyHealthMultiplier;
+    if (which == "aiAggression")  return d->aiAggressionMultiplier;
+    if (which == "resourceDrops") return d->resourceDropMultiplier;
+    if (which == "checkpoint")    return d->checkpointMultiplier;
+    ENJIN_LOG_WARN(Script, "Difficulty_GetMultiplier: unknown output '%s' "
+                   "(enemyDamage, enemyHealth, aiAggression, resourceDrops, checkpoint)",
+                   which.c_str());
+    return 1.0f;
+}
+static void Difficulty_RecordDeath(u64 self) {
+    if (auto* d = DifficultyOf(self)) d->recentDeaths++;
+}
+static void Difficulty_RecordShot(u64 self) {
+    if (auto* d = DifficultyOf(self)) d->shotsFired++;
+}
+static void Difficulty_RecordHit(u64 self) {
+    if (auto* d = DifficultyOf(self)) d->shotsHit++;
+}
+static void Difficulty_RecordCheckpointHealth(u64 self, float healthPercent) {
+    if (auto* d = DifficultyOf(self)) {
+        d->lastCheckpointHealthPercent = healthPercent < 0.0f ? 0.0f
+                                       : (healthPercent > 1.0f ? 1.0f : healthPercent);
+    }
+}
+static void Difficulty_SetBaseDifficulty(u64 self, u32 level) {
+    if (auto* d = DifficultyOf(self)) d->baseDifficulty = level;
+}
+static u32 Difficulty_GetBaseDifficulty(u64 self) {
+    auto* d = DifficultyOf(self);
+    return d ? d->baseDifficulty : 1u;
+}
+static void Difficulty_SetEnabled(u64 self, bool enabled) {
+    if (auto* d = DifficultyOf(self)) d->enabled = enabled;
+}
+static void Difficulty_SetPlayerEntity(u64 self, u64 player) {
+    if (auto* d = DifficultyOf(self)) d->playerEntity = static_cast<ECS::Entity>(player);
+}
+static void Difficulty_SetResourceRatio(u64 self, float ratio) {
+    if (auto* d = DifficultyOf(self)) {
+        d->resourceRatio = ratio < 0.0f ? 0.0f : (ratio > 1.0f ? 1.0f : ratio);
+    }
+}
+static void Difficulty_Reset(u64 self) {
+    if (auto* d = DifficultyOf(self)) {
+        d->recentDeaths = 0;
+        d->shotsFired = 0;
+        d->shotsHit = 0;
+        d->elapsedTime = 0.0f;
+    }
+}
 
 // --- LookAtTarget: make an entity rotate to face a target -------------------
 static void LookAt_SetTarget(u64 self, u64 target) {
@@ -417,6 +489,20 @@ void RegisterGameplayComponentBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction("void Lens_SetVignette(uint64, float, float)", ENJIN_AS_FN(Lens_SetVignette), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Lens_SetAnamorphicSqueeze(uint64, float)", ENJIN_AS_FN(Lens_SetAnamorphicSqueeze), ENJIN_AS_CALL_CDECL));
 
+
+    // DynamicDifficulty (documented in SCRIPTING_API.md, never registered until now)
+    AS_CHECK(engine->RegisterGlobalFunction("float Difficulty_GetScore(uint64)", ENJIN_AS_FN(Difficulty_GetScore), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Difficulty_GetMultiplier(uint64, const string &in)", ENJIN_AS_FN(Difficulty_GetMultiplier), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Difficulty_RecordDeath(uint64)", ENJIN_AS_FN(Difficulty_RecordDeath), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Difficulty_RecordShot(uint64)", ENJIN_AS_FN(Difficulty_RecordShot), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Difficulty_RecordHit(uint64)", ENJIN_AS_FN(Difficulty_RecordHit), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Difficulty_RecordCheckpointHealth(uint64, float)", ENJIN_AS_FN(Difficulty_RecordCheckpointHealth), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Difficulty_SetBaseDifficulty(uint64, uint)", ENJIN_AS_FN(Difficulty_SetBaseDifficulty), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("uint Difficulty_GetBaseDifficulty(uint64)", ENJIN_AS_FN(Difficulty_GetBaseDifficulty), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Difficulty_SetEnabled(uint64, bool)", ENJIN_AS_FN(Difficulty_SetEnabled), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Difficulty_SetPlayerEntity(uint64, uint64)", ENJIN_AS_FN(Difficulty_SetPlayerEntity), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Difficulty_SetResourceRatio(uint64, float)", ENJIN_AS_FN(Difficulty_SetResourceRatio), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Difficulty_Reset(uint64)", ENJIN_AS_FN(Difficulty_Reset), ENJIN_AS_CALL_CDECL));
     // Physics joints
     AS_CHECK(engine->RegisterGlobalFunction("void SpringJoint_SetRestLength(uint64, float)", ENJIN_AS_FN(SpringJoint_SetRestLength), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void SpringJoint_SetStiffness(uint64, float)", ENJIN_AS_FN(SpringJoint_SetStiffness), ENJIN_AS_CALL_CDECL));

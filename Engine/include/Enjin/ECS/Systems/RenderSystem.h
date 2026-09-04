@@ -97,6 +97,7 @@ namespace Enjin { namespace Effects {
 #include "Enjin/Renderer/HaltonSequence.h"
 
 #include <algorithm>
+#include <chrono>
 #include <unordered_map>
 #include <unordered_set>
 #include <memory>
@@ -2181,9 +2182,21 @@ private:
     // Updated in OnEntityAdded/OnEntityRemoved to avoid linear search each frame.
     Entity m_CachedPlayerEntity = INVALID_ENTITY;
 
-    // Asset hot-reload watcher (polls texture files for changes)
+    // Asset hot-reload watcher (polls texture files for changes). Polled from
+    // FlushPendingChanges, not Update - see the comment at the poll site.
     Assets::FileWatcher m_TextureWatcher;
-    f32 m_WatcherPollTimer = 0.0f;
+
+    // Textures whose file changed on disk, by CACHE KEY (the path the material
+    // stores), queued by the watcher callback. The watcher polls from Update(),
+    // and swapping a live texture destroys a GPU resource that frames in flight
+    // still reference, so the actual reload runs in FlushPendingChanges - the
+    // only safe home for it - and the replaced texture goes to the same
+    // graveyard the text-texture path uses.
+    std::vector<std::string> m_PendingTextureReloads;
+    void ProcessPendingTextureReloads();
+    // Shared gate for the texture AND shader watchers (both polled from
+    // FlushPendingChanges, which has no delta time).
+    std::chrono::steady_clock::time_point m_LastAssetPoll{};
 
 #if !ENJIN_RENDERER_WEBGPU
     // Shader hot-reload (editor-only)

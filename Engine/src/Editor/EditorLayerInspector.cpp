@@ -20,6 +20,9 @@
 #include "Enjin/ECS/Components/Lens.h"
 #include "Enjin/ECS/Components/Notes.h"
 #include "Enjin/ECS/Components/Swarm.h"
+#include "Enjin/ECS/Components/GeneratedGeometry.h"
+#include "Enjin/ECS/Components/ProceduralMesh.h"
+#include "Enjin/Effects/Metaballs.h"
 #include "Enjin/ECS/Components/DungeonGenerator.h"
 #include "Enjin/ECS/Systems/DungeonGeneratorSystem.h"
 #include "Enjin/ECS/Components/RandomBag.h"
@@ -393,6 +396,31 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::HealthComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::HealthComponent>(e); },
             "health"},
+        {"Metaball Blob", "Generated Geometry", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<Effects::MetaballComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<Effects::MetaballComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<Effects::MetaballComponent>(e); },
+            "metaball blob isosurface marching cubes goo"},
+        {"Metaball Surface", "Generated Geometry", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::MetaballSurfaceComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::MetaballSurfaceComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::MetaballSurfaceComponent>(e); },
+            "metaball surface isosurface mesh receiver"},
+        {"Cellular Automata", "Generated Geometry", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::CellularAutomataComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::CellularAutomataComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::CellularAutomataComponent>(e); },
+            "cellular automata life conway voxel geometry"},
+        {"4D Projection", "Generated Geometry", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::Projection4DComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::Projection4DComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::Projection4DComponent>(e); },
+            "4d tesseract polytope stereographic hypercube"},
+        {"Fourier Mesh", "Generated Geometry", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::FourierMeshComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::FourierMeshComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::FourierMeshComponent>(e); },
+            "fourier dft epicycle contour decomposition"},
         {"Swarm (crowd demo)", "Effects", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::SwarmComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::SwarmComponent>(e); },
@@ -2113,6 +2141,204 @@ void EditorLayer::DrawInspectorPanel() {
                 }
                 if (ImGui::Button("Reset Cloth") || rebuild) cl->initialized = false;
                 ImGui::TextDisabled("(simulates in Play mode; pinned points follow the entity)");
+            }
+        }
+        // --- Generated geometry -------------------------------------------
+        // The four CPU generators. GeneratedGeometrySystem writes the result
+        // into this entity's MeshComponent during play; the readouts below are
+        // live values from the running generator, not authored fields.
+        if (auto* mb = m_World->GetComponent<Effects::MetaballComponent>(m_PrimarySelected)) {
+            bool mbOpen = ImGui::CollapsingHeader("Metaball Blob", ImGuiTreeNodeFlags_DefaultOpen);
+            bool mbRemoved = false;
+            if (ImGui::BeginPopupContextItem("MetaballCtx")) {
+                if (ImGui::MenuItem("Remove Component")) {
+                    RemoveComponentWithUndo<Effects::MetaballComponent>(m_PrimarySelected, "metaball", "Metaball Blob");
+                    mbRemoved = true;
+                }
+                ImGui::EndPopup();
+            }
+            if (!mbRemoved && mbOpen) {
+                DrawComponentHelp("metaball", m_World, m_PrimarySelected);
+                ImGui::DragFloat("Radius", &mb->radius, 0.05f, 0.01f, 100.0f);
+                ImGui::SetItemTooltip("Influence radius of this blob in the scalar field");
+                ImGui::DragFloat("Strength", &mb->strength, 0.05f, -10.0f, 10.0f);
+                ImGui::SetItemTooltip("Negative strength carves a hole out of the surface");
+                ImGui::DragFloat("Threshold", &mb->threshold, 0.01f, 0.01f, 10.0f);
+                ImGui::DragInt("Group", &mb->groupId, 1, 0, 64);
+                ImGui::SetItemTooltip("Blobs merge only with others in the same group.\nA Metaball Surface with this group renders the result.");
+                f32 mbCol[3] = { mb->color.x, mb->color.y, mb->color.z };
+                if (ImGui::ColorEdit3("Color", mbCol)) mb->color = Math::Vector3(mbCol[0], mbCol[1], mbCol[2]);
+                if (m_World->GetEntitiesWithComponent<ECS::MetaballSurfaceComponent>().empty())
+                    ImGui::TextColored(ImVec4(0.95f, 0.65f, 0.20f, 1.0f),
+                        "No Metaball Surface in the scene - nothing will render.");
+            }
+        }
+        if (auto* ms = m_World->GetComponent<ECS::MetaballSurfaceComponent>(m_PrimarySelected)) {
+            bool msOpen = ImGui::CollapsingHeader("Metaball Surface", ImGuiTreeNodeFlags_DefaultOpen);
+            bool msRemoved = false;
+            if (ImGui::BeginPopupContextItem("MetaballSurfCtx")) {
+                if (ImGui::MenuItem("Remove Component")) {
+                    RemoveComponentWithUndo<ECS::MetaballSurfaceComponent>(m_PrimarySelected, "metaballSurface", "Metaball Surface");
+                    msRemoved = true;
+                }
+                ImGui::EndPopup();
+            }
+            if (!msRemoved && msOpen) {
+                DrawComponentHelp("metaballSurface", m_World, m_PrimarySelected);
+                ImGui::DragInt("Group", &ms->groupId, 1, 0, 64);
+                ImGui::DragInt("Grid Resolution", &ms->gridResolution, 1, 16, 64);
+                ImGui::SetItemTooltip("Marching cubes voxels per axis. Cost is cubic: 64 is 262144 cells per rebuild.");
+                ImGui::DragFloat("Grid Size", &ms->gridSize, 0.25f, 0.1f, 500.0f);
+                ImGui::SetItemTooltip("World extent of the evaluation grid. Blobs outside it are not captured.");
+                ImGui::Checkbox("Smooth Normals", &ms->smoothNormals);
+                ImGui::Checkbox("Auto Center", &ms->autoCenter);
+                ImGui::SetItemTooltip("Keep the grid centred on the group centroid as blobs move");
+                ImGui::DragFloat("Update Rate (Hz)", &ms->updateRate, 1.0f, 0.0f, 240.0f);
+                ImGui::SetItemTooltip("0 = rebuild every frame");
+                ImGui::Checkbox("Use Blob Colors", &ms->useBlobColors);
+                i32 blobCount = 0;
+                for (ECS::Entity be : m_World->GetEntitiesWithComponent<Effects::MetaballComponent>()) {
+                    auto* b = m_World->GetComponent<Effects::MetaballComponent>(be);
+                    if (b && b->groupId == ms->groupId) ++blobCount;
+                }
+                ImGui::TextDisabled("%d blob(s) in group %d", blobCount, ms->groupId);
+                if (blobCount == 0)
+                    ImGui::TextColored(ImVec4(0.95f, 0.65f, 0.20f, 1.0f),
+                        "No Metaball Blob uses this group.");
+            }
+        }
+        if (auto* ca = m_World->GetComponent<ECS::CellularAutomataComponent>(m_PrimarySelected)) {
+            bool caOpen = ImGui::CollapsingHeader("Cellular Automata", ImGuiTreeNodeFlags_DefaultOpen);
+            bool caRemoved = false;
+            if (ImGui::BeginPopupContextItem("CellularAutomataCtx")) {
+                if (ImGui::MenuItem("Remove Component")) {
+                    RemoveComponentWithUndo<ECS::CellularAutomataComponent>(m_PrimarySelected, "cellularAutomata", "Cellular Automata");
+                    caRemoved = true;
+                }
+                ImGui::EndPopup();
+            }
+            if (!caRemoved && caOpen) {
+                DrawComponentHelp("cellularAutomata", m_World, m_PrimarySelected);
+                const char* rules[] = { "Game of Life (B3/S23)", "HighLife (B36/S23)", "Day and Night",
+                                        "Seeds (B2/S)", "Brian's Brain", "Rule 110", "Diamoeba", "Custom" };
+                int r = static_cast<int>(ca->rule);
+                if (ImGui::Combo("Rule", &r, rules, IM_ARRAYSIZE(rules)))
+                    ca->rule = static_cast<Effects::CARule>(r);
+                const char* modes[] = { "Voxels", "Marching Cubes", "Point Cloud" };
+                int mm = static_cast<int>(ca->meshMode);
+                if (ImGui::Combo("Mesh Mode", &mm, modes, IM_ARRAYSIZE(modes)))
+                    ca->meshMode = static_cast<Effects::CAMeshMode>(mm);
+                i32 w = static_cast<i32>(ca->width), h = static_cast<i32>(ca->height), d = static_cast<i32>(ca->depth);
+                if (ImGui::DragInt("Width", &w, 1, 2, 256)) ca->width = static_cast<u32>(w);
+                if (ImGui::DragInt("Height", &h, 1, 2, 256)) ca->height = static_cast<u32>(h);
+                if (ImGui::DragInt("Depth", &d, 1, 1, 64)) ca->depth = static_cast<u32>(d);
+                ImGui::SetItemTooltip("Depth > 1 layers the automaton into 3D");
+                ImGui::DragFloat("Cell Size", &ca->cellSize, 0.01f, 0.001f, 10.0f);
+                ImGui::DragFloat("Step Interval", &ca->updateInterval, 0.01f, 0.0f, 10.0f, "%.3f s");
+                ImGui::DragFloat("Initial Fill %%", &ca->initialFillPercent, 1.0f, 0.0f, 100.0f);
+                i32 seed = static_cast<i32>(ca->seed);
+                if (ImGui::DragInt("Seed", &seed, 1, 0, 1000000)) ca->seed = static_cast<u32>(seed < 0 ? 0 : seed);
+                ImGui::Checkbox("Wrap Edges", &ca->wrapEdges);
+                if (ca->meshMode == Effects::CAMeshMode::MarchingCubes)
+                    ImGui::SliderFloat("Iso Level", &ca->isoLevel, 0.0f, 1.0f, "%.2f");
+                f32 lc[3] = { ca->liveColor.x, ca->liveColor.y, ca->liveColor.z };
+                if (ImGui::ColorEdit3("Live Color", lc)) ca->liveColor = Math::Vector3(lc[0], lc[1], lc[2]);
+                f32 dc[3] = { ca->dyingColor.x, ca->dyingColor.y, ca->dyingColor.z };
+                if (ImGui::ColorEdit3("Dying Color", dc)) ca->dyingColor = Math::Vector3(dc[0], dc[1], dc[2]);
+                const char* stamps[] = { "Random fill", "Glider", "Pulsar", "Gosper Glider Gun" };
+                int si = 0;
+                if (ca->stampPattern == "glider") si = 1;
+                else if (ca->stampPattern == "pulsar") si = 2;
+                else if (ca->stampPattern == "gospergun") si = 3;
+                if (ImGui::Combo("Start Pattern", &si, stamps, IM_ARRAYSIZE(stamps))) {
+                    ca->stampPattern = (si == 1) ? "glider" : (si == 2) ? "pulsar" : (si == 3) ? "gospergun" : "";
+                    ca->resetRequested = true;
+                }
+                ImGui::Checkbox("Running", &ca->running);
+                ImGui::SameLine();
+                if (ImGui::Button("Reset")) ca->resetRequested = true;
+                ImGui::TextDisabled("generation %u, %u live cell(s)", ca->generation, ca->liveCells);
+            }
+        }
+        if (auto* p4 = m_World->GetComponent<ECS::Projection4DComponent>(m_PrimarySelected)) {
+            bool p4Open = ImGui::CollapsingHeader("4D Projection", ImGuiTreeNodeFlags_DefaultOpen);
+            bool p4Removed = false;
+            if (ImGui::BeginPopupContextItem("Projection4DCtx")) {
+                if (ImGui::MenuItem("Remove Component")) {
+                    RemoveComponentWithUndo<ECS::Projection4DComponent>(m_PrimarySelected, "projection4D", "4D Projection");
+                    p4Removed = true;
+                }
+                ImGui::EndPopup();
+            }
+            if (!p4Removed && p4Open) {
+                DrawComponentHelp("projection4D", m_World, m_PrimarySelected);
+                const char* polys[] = { "Tesseract (8-cell)", "5-cell (simplex)", "16-cell", "24-cell", "120-cell" };
+                int pi = static_cast<int>(p4->polytope);
+                if (ImGui::Combo("Polytope", &pi, polys, IM_ARRAYSIZE(polys)))
+                    p4->polytope = static_cast<ECS::Projection4DComponent::Polytope>(pi);
+                if (p4->polytope == ECS::Projection4DComponent::Polytope::Cell120)
+                    ImGui::TextColored(ImVec4(0.95f, 0.65f, 0.20f, 1.0f),
+                        "1200 edges. Lower Tube Segments or Update Rate if this stutters.");
+                ImGui::SeparatorText("Rotation (radians/second)");
+                ImGui::DragFloat("XY", &p4->rotation.speedXY, 0.01f, -10.0f, 10.0f);
+                ImGui::DragFloat("XZ", &p4->rotation.speedXZ, 0.01f, -10.0f, 10.0f);
+                ImGui::DragFloat("XW", &p4->rotation.speedXW, 0.01f, -10.0f, 10.0f);
+                ImGui::SetItemTooltip("Rotations involving W are the ones that look impossible in 3D");
+                ImGui::DragFloat("YZ", &p4->rotation.speedYZ, 0.01f, -10.0f, 10.0f);
+                ImGui::DragFloat("YW", &p4->rotation.speedYW, 0.01f, -10.0f, 10.0f);
+                ImGui::DragFloat("ZW", &p4->rotation.speedZW, 0.01f, -10.0f, 10.0f);
+                ImGui::SeparatorText("Projection");
+                ImGui::DragFloat("Line Width", &p4->lineWidth, 0.002f, 0.0005f, 1.0f, "%.4f");
+                ImGui::DragFloat("Projection Distance", &p4->projectionDistance, 0.05f, 0.5f, 20.0f);
+                i32 ts = static_cast<i32>(p4->tubeSegments);
+                if (ImGui::DragInt("Tube Segments", &ts, 1, 3, 32)) p4->tubeSegments = static_cast<u32>(ts);
+                ImGui::DragFloat("Scale", &p4->scale, 0.05f, 0.01f, 100.0f);
+                ImGui::Checkbox("Animate", &p4->animate);
+                ImGui::DragFloat("Update Rate (Hz)", &p4->updateRate, 1.0f, 0.0f, 240.0f);
+            }
+        }
+        if (auto* fm = m_World->GetComponent<ECS::FourierMeshComponent>(m_PrimarySelected)) {
+            bool fmOpen = ImGui::CollapsingHeader("Fourier Mesh", ImGuiTreeNodeFlags_DefaultOpen);
+            bool fmRemoved = false;
+            if (ImGui::BeginPopupContextItem("FourierMeshCtx")) {
+                if (ImGui::MenuItem("Remove Component")) {
+                    RemoveComponentWithUndo<ECS::FourierMeshComponent>(m_PrimarySelected, "fourierMesh", "Fourier Mesh");
+                    fmRemoved = true;
+                }
+                ImGui::EndPopup();
+            }
+            if (!fmRemoved && fmOpen) {
+                DrawComponentHelp("fourierMesh", m_World, m_PrimarySelected);
+                const char* srcs[] = { "Circle", "Square", "Star", "Heart", "Custom" };
+                int si = static_cast<int>(fm->source);
+                if (ImGui::Combo("Contour", &si, srcs, IM_ARRAYSIZE(srcs)))
+                    fm->source = static_cast<ECS::FourierMeshComponent::ContourSource>(si);
+                if (fm->source == ECS::FourierMeshComponent::ContourSource::Custom && fm->customContour.size() < 3)
+                    ImGui::TextColored(ImVec4(0.95f, 0.65f, 0.20f, 1.0f),
+                        "Custom contour needs at least 3 points (set from script).");
+                ImGui::DragInt("Coefficients", &fm->coefficients, 1, 0, 1024);
+                ImGui::SetItemTooltip("DFT terms computed. 0 = one per sample.");
+                ImGui::DragInt("Terms", &fm->terms, 1, 1, 1024);
+                ImGui::SetItemTooltip("Terms used in the reconstruction. Fewer terms = rounder approximation.");
+                ImGui::DragInt("Samples", &fm->samples, 8, 16, 4096);
+                ImGui::Checkbox("Animate Terms", &fm->animateTerms);
+                if (fm->animateTerms)
+                    ImGui::DragFloat("Animation Seconds", &fm->animationSeconds, 0.1f, 0.0f, 600.0f);
+                ImGui::DragFloat("Extrude Depth", &fm->extrudeDepth, 0.01f, 0.0f, 100.0f);
+                ImGui::SetItemTooltip("0 = flat triangulated contour, above 0 = extruded solid");
+                ImGui::DragFloat("Scale", &fm->scale, 0.05f, 0.01f, 100.0f);
+                ImGui::TextDisabled("%d of %d term(s) active", fm->activeTerms, fm->terms);
+            }
+        }
+        if (auto* pm = m_World->GetComponent<ECS::ProceduralMeshComponent>(m_PrimarySelected)) {
+            if (ImGui::CollapsingHeader("Procedural Mesh")) {
+                ImGui::TextDisabled("Generated by: %s", ECS::ProceduralMeshSourceName(pm->source));
+                ImGui::Checkbox("Regenerate", &pm->regenerate);
+                ImGui::SetItemTooltip("Uncheck to freeze the current geometry and stop the owning system rebuilding it");
+                if (auto* pmMesh = m_World->GetComponent<ECS::MeshComponent>(m_PrimarySelected))
+                    ImGui::TextDisabled("%zu vertices, %zu triangles",
+                                        pmMesh->vertices.size(), pmMesh->indices.size() / 3);
+                ImGui::TextDisabled("Added automatically. Removing it stops GPU uploads.");
             }
         }
         if (auto* sw = m_World->GetComponent<ECS::SwarmComponent>(m_PrimarySelected)) {

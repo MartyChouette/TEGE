@@ -132,6 +132,14 @@ public:
                                                const std::vector<ECS::Entity>& entities,
                                                const std::string& name = "Prefab");
 
+    /// Root that relative prefab paths resolve against. The process working
+    /// directory is never the project directory (it is the exe folder for both
+    /// the editor and the player, and does not exist at all on web), so a
+    /// component holding "prefabs/Rock.prefab" cannot be opened without one.
+    /// Set at play start / boot alongside the script and audio roots.
+    void SetAssetRoot(const std::string& root);
+    const std::string& GetAssetRoot() const { return m_AssetRoot; }
+
     /// Instantiate prefab into world
     ECS::Entity Instantiate(ECS::World* world, const Prefab& prefab,
                            const Math::Vector3& position = Math::Vector3(0, 0, 0),
@@ -195,6 +203,7 @@ private:
 
     std::unordered_map<u64, std::shared_ptr<Prefab>> m_Prefabs;
     std::unordered_map<std::string, std::shared_ptr<Prefab>> m_PathCache;
+    std::string m_AssetRoot;
 
     struct ComponentCallbacks {
         ComponentSerializer serializer;
