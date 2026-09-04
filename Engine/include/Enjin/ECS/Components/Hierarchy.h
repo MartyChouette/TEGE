@@ -144,5 +144,38 @@ inline Math::Matrix4 ComputeWorldMatrix(World* world, Entity entity) {
     return transform->cachedWorldMatrix;
 }
 
+// World-space position and rotation, for systems that must place something in
+// the WORLD rather than relative to a parent -- physics bodies above all. An
+// entity's TransformComponent holds its LOCAL transform, so reading
+// transform->position directly puts a parented entity's body wherever its offset
+// from the parent happens to land near the origin. FromMatrix strips scale, so a
+// scaled parent does not skew the rotation.
+inline void GetWorldTransform(World* world, Entity entity,
+                              Math::Vector3& outPos, Math::Quaternion& outRot) {
+    const Math::Matrix4 m = ComputeWorldMatrix(world, entity);
+    outPos = Math::Vector3(m.m[12], m.m[13], m.m[14]);
+    outRot = Math::Quaternion::FromMatrix(m);
+}
+
+// Inverse: express a WORLD position/rotation in the entity's parent space, so a
+// value produced in world terms (a physics body's resting place) can be written
+// back into a local TransformComponent without teleporting it by the parent's
+// offset. A root entity's parent space IS world space.
+inline void WorldToLocalTransform(World* world, Entity entity,
+                                  const Math::Vector3& worldPos, const Math::Quaternion& worldRot,
+                                  Math::Vector3& outLocalPos, Math::Quaternion& outLocalRot) {
+    auto* pc = world->GetComponent<ParentComponent>(entity);
+    if (!pc || pc->parent == INVALID_ENTITY) {
+        outLocalPos = worldPos;
+        outLocalRot = worldRot;
+        return;
+    }
+    const Math::Matrix4 parentWorld = ComputeWorldMatrix(world, pc->parent);
+    const Math::Matrix4 inv = parentWorld.Inverse();
+    const Math::Vector4 p = inv * Math::Vector4(worldPos.x, worldPos.y, worldPos.z, 1.0f);
+    outLocalPos = Math::Vector3(p.x, p.y, p.z);
+    outLocalRot = Math::Quaternion::FromMatrix(inv) * worldRot;
+}
+
 } // namespace ECS
 } // namespace Enjin

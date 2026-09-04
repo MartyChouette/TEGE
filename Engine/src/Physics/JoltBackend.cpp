@@ -426,7 +426,10 @@ void JoltBackend::SyncECSToJolt() {
             // Kinematic (or network-driven) bodies: drive position from the ECS transform. For a
             // network-controlled body the snapshot stream wrote that transform this frame, so
             // MoveKinematic carries it to the sim (and generates contact velocities for collisions).
-            bodyInterface.MoveKinematic(bodyID, ToJoltR(transform->position), ToJolt(transform->rotation), m_LastDeltaTime);
+            // World space for the same reason the body was CREATED in world space.
+            Math::Vector3 kWorldPos; Math::Quaternion kWorldRot;
+            ECS::GetWorldTransform(m_World, entity, kWorldPos, kWorldRot);
+            bodyInterface.MoveKinematic(bodyID, ToJoltR(kWorldPos), ToJolt(kWorldRot), m_LastDeltaTime);
         } else if (rb && rb->bodyType == ECS::RigidbodyComponent::BodyType::Dynamic) {
             // Dynamic bodies: sync gravity and velocity from ECS when externally modified
             // (e.g. FlowerSystem applies pull force via rb->velocity)
@@ -441,8 +444,10 @@ void JoltBackend::SyncECSToJolt() {
             }
         } else if (!rb || rb->bodyType == ECS::RigidbodyComponent::BodyType::Static) {
             // Static bodies: just set position if it changed
-            bodyInterface.SetPosition(bodyID, ToJoltR(transform->position), JPH::EActivation::DontActivate);
-            bodyInterface.SetRotation(bodyID, ToJolt(transform->rotation), JPH::EActivation::DontActivate);
+            Math::Vector3 sWorldPos; Math::Quaternion sWorldRot;
+            ECS::GetWorldTransform(m_World, entity, sWorldPos, sWorldRot);
+            bodyInterface.SetPosition(bodyID, ToJoltR(sWorldPos), JPH::EActivation::DontActivate);
+            bodyInterface.SetRotation(bodyID, ToJolt(sWorldRot), JPH::EActivation::DontActivate);
         }
 
         // Update collision filter data
@@ -682,8 +687,15 @@ void JoltBackend::CreateBodyForEntity(ECS::Entity entity) {
     }
 
     // Build body creation settings
-    JPH::BodyCreationSettings bodySettings(shape, ToJoltR(transform->position),
-        ToJolt(transform->rotation), motionType, objectLayer);
+    // WORLD space, not local. A parented entity (a door leaf under its pivot, a
+    // prop under a rig) stores an offset from its parent, so creating the body
+    // at transform->position dropped its collider near the origin instead of
+    // where the thing visibly is -- the Playground door leaf sat 8 units from
+    // its own doorway.
+    Math::Vector3 bodyWorldPos; Math::Quaternion bodyWorldRot;
+    ECS::GetWorldTransform(m_World, entity, bodyWorldPos, bodyWorldRot);
+    JPH::BodyCreationSettings bodySettings(shape, ToJoltR(bodyWorldPos),
+        ToJolt(bodyWorldRot), motionType, objectLayer);
 
     // P5 fix: Clamp material properties to valid ranges
     bodySettings.mFriction = std::clamp(friction, 0.0f, 1.0f);
@@ -816,9 +828,15 @@ void JoltBackend::SyncJoltToECS() {
         // snapshot stream owns its transform, so writing the local (kinematic) sim result back
         // would clobber the replicated position and desync it.
         if (rb && rb->bodyType == ECS::RigidbodyComponent::BodyType::Dynamic && !rb->networkControlled) {
-            // Position and rotation
-            transform->position = FromJoltR(bodyInterface.GetPosition(bodyID));
-            transform->rotation = FromJolt(bodyInterface.GetRotation(bodyID));
+            // Position and rotation. Jolt answers in WORLD space and the
+            // TransformComponent holds a LOCAL one, so a parented dynamic body
+            // has to come back through its parent or it jumps by the parent's
+            // offset every single frame. Root entities take the cheap path.
+            const Math::Vector3 solvedPos = FromJoltR(bodyInterface.GetPosition(bodyID));
+            const Math::Quaternion solvedRot = FromJolt(bodyInterface.GetRotation(bodyID));
+            ECS::WorldToLocalTransform(m_World, entity, solvedPos, solvedRot,
+                                       transform->position, transform->rotation);
+            transform->worldMatrixDirty = true;
 
             // Velocity
             rb->velocity = FromJolt(bodyInterface.GetLinearVelocity(bodyID));
