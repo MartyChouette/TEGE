@@ -246,6 +246,7 @@ enjin_add_test(TestInputFocus Unit/Input/TestInputFocus.cpp)
 enjin_add_test(TestActionDrivenUI Unit/Input/TestActionDrivenUI.cpp)
 enjin_add_test(TestRewindSystem       Unit/Gameplay/TestRewindSystem.cpp)
 enjin_add_test(TestRewindSimulation   Unit/Gameplay/TestRewindSimulation.cpp)
+enjin_add_test(TestRewindPlayback     Unit/Gameplay/TestRewindPlayback.cpp)
 enjin_add_test(TestReplay             Unit/Gameplay/TestReplay.cpp)
 enjin_add_test(TestFlagshipCoinRush   Unit/Gameplay/TestFlagshipCoinRush.cpp)
 

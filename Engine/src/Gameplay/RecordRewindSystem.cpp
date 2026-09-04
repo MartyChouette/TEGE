@@ -2,6 +2,7 @@
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Skeleton.h"
+#include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/Physics/IPhysicsBackend.h"
 #include "Enjin/Physics/IPhysicsBackend2D.h"
@@ -76,6 +77,26 @@ void RecordRewindSystem::CaptureEntitySnapshot(ECS::Entity entity, EntitySnapsho
             out.animNormalizedTime = anim->animator.GetNormalizedTime();
         }
     }
+
+    // Physics and Material were declared in RewindChannelFlags, drawn in the
+    // inspector and serialized, and never captured by anything -- so the
+    // Physics checkbox restored zeroed velocity (RestoreEntitySnapshot reads
+    // these two fields) and the Material checkbox did nothing at all.
+    if (HasChannel(channelMask, RewindChannelFlags::Physics)) {
+        auto* rb = m_World->GetComponent<ECS::RigidbodyComponent>(entity);
+        if (rb) {
+            out.linearVelocity = rb->velocity;
+            out.angularVelocity = rb->angularVelocity;
+        }
+    }
+
+    if (HasChannel(channelMask, RewindChannelFlags::Material)) {
+        auto* mat = m_World->GetComponent<ECS::MaterialComponent>(entity);
+        if (mat) {
+            out.opacity = mat->opacity;
+            out.baseColor = mat->baseColor;
+        }
+    }
 }
 
 void RecordRewindSystem::RestoreEntitySnapshot(ECS::Entity entity, const EntitySnapshot& snap) {
@@ -112,6 +133,22 @@ void RecordRewindSystem::RestoreEntitySnapshot(ECS::Entity entity, const EntityS
     // Animation restore: seek the animator to the recorded time
     // (SkeletalAnimator doesn't expose a time setter, so we skip restore for now —
     //  the animator will naturally resume from its current state after rewind stops)
+
+    if (HasChannel(snap.channelMask, RewindChannelFlags::Material)) {
+        auto* mat = m_World->GetComponent<ECS::MaterialComponent>(entity);
+        if (mat) {
+            mat->opacity = snap.opacity;
+            mat->baseColor = snap.baseColor;
+        }
+    }
+
+    if (HasChannel(snap.channelMask, RewindChannelFlags::Physics)) {
+        auto* rb = m_World->GetComponent<ECS::RigidbodyComponent>(entity);
+        if (rb) {
+            rb->velocity = snap.linearVelocity;
+            rb->angularVelocity = snap.angularVelocity;
+        }
+    }
 
     // Sync physics body state if physics channel or transform was restored
     if (HasChannel(snap.channelMask, RewindChannelFlags::Transform)) {
@@ -237,16 +274,22 @@ void RecordRewindSystem::UpdateEntityRewind(f32 deltaTime) {
             rr->rewindPlayhead += deltaTime * rr->rewindSpeed;
             m_AnyRewinding = true;
 
-            f32 latestTime = rr->history.Back().position.x; // timestamp stored in EntitySnapshot
-            // We store timestamp as currentRecordedTime at capture time
-            // Find surrounding frames for interpolation
-            f32 targetTime = rr->currentRecordedTime - rr->rewindPlayhead;
+            // The playhead is an offset from a FIXED anchor: the recording head
+            // as it stood when the hold began. currentRecordedTime is that
+            // anchor, and recording lives in the else branch below, so nothing
+            // advances it while the key is down.
+            //
+            // The anchor must not be re-read from the buffer each frame either.
+            // Both of those are the same bug: an offset measured against
+            // something the pop loop moves compounds, so hold-to-rewind
+            // accelerated instead of playing at rewindSpeed and a five second
+            // buffer emptied in a fraction of a second.
+            const f32 targetTime = rr->currentRecordedTime - rr->rewindPlayhead;
 
+            // Newest-first walk to the pair of frames straddling targetTime.
             i32 frameA = 0, frameB = 0;
             for (i32 i = static_cast<i32>(rr->history.Count()) - 1; i >= 0; --i) {
-                // We need timestamps — stored in a separate way. Use index * interval as approximation.
-                f32 frameTime = rr->currentRecordedTime - (rr->history.Count() - 1 - i) * rr->recordInterval;
-                if (frameTime <= targetTime) {
+                if (rr->history.At(i).timestamp <= targetTime) {
                     frameA = i;
                     frameB = (i + 1 < static_cast<i32>(rr->history.Count())) ? i + 1 : i;
                     break;
@@ -256,22 +299,19 @@ void RecordRewindSystem::UpdateEntityRewind(f32 deltaTime) {
             if (frameA == frameB) {
                 RestoreEntitySnapshot(entity, rr->history.At(frameA));
             } else {
-                f32 timeA = rr->currentRecordedTime - (rr->history.Count() - 1 - frameA) * rr->recordInterval;
-                f32 timeB = rr->currentRecordedTime - (rr->history.Count() - 1 - frameB) * rr->recordInterval;
-                f32 span = timeB - timeA;
-                f32 t = (span > 0.0001f) ? Math::Clamp((targetTime - timeA) / span, 0.0f, 1.0f) : 0.0f;
+                const f32 timeA = rr->history.At(frameA).timestamp;
+                const f32 timeB = rr->history.At(frameB).timestamp;
+                const f32 span = timeB - timeA;
+                const f32 t = (span > 0.0001f)
+                    ? Math::Clamp((targetTime - timeA) / span, 0.0f, 1.0f) : 0.0f;
                 RestoreEntitySnapshotInterpolated(entity, rr->history.At(frameA), rr->history.At(frameB), t);
             }
 
-            // Pop consumed frames from the back
-            while (!rr->history.Empty()) {
-                f32 backTime = rr->currentRecordedTime - 0 * rr->recordInterval;  // newest
-                if (backTime > targetTime + 0.001f) {
-                    rr->history.PopBack();
-                    rr->currentRecordedTime -= rr->recordInterval;
-                } else {
-                    break;
-                }
+            // Drop frames the playhead has already passed, by their own
+            // timestamps. currentRecordedTime stays put -- it is the anchor.
+            while (rr->history.Count() > 1 &&
+                   rr->history.Back().timestamp > targetTime + 0.001f) {
+                rr->history.PopBack();
             }
 
         } else {
@@ -279,6 +319,12 @@ void RecordRewindSystem::UpdateEntityRewind(f32 deltaTime) {
                 rr->rewinding = false;
                 rr->rewindPlayhead = 0.0f;
                 rr->cooldownTimer = rr->cooldown;
+                // Recording resumes from wherever the rewind left the buffer.
+                // Doing this on release rather than per frame is what keeps the
+                // anchor fixed for the whole hold.
+                if (!rr->history.Empty()) {
+                    rr->currentRecordedTime = rr->history.Back().timestamp;
+                }
             }
 
             // Record
@@ -289,6 +335,7 @@ void RecordRewindSystem::UpdateEntityRewind(f32 deltaTime) {
 
                 EntitySnapshot snap;
                 CaptureEntitySnapshot(entity, snap, rr->channels);
+                snap.timestamp = rr->currentRecordedTime;
                 rr->history.Push(std::move(snap));
             }
         }
@@ -410,32 +457,32 @@ void RecordRewindSystem::UpdateSceneRewind(f32 deltaTime) {
                 frame.timestamp = sr->currentRecordedTime;
                 frame.isKeyframe = isKeyframe;
 
-                // Snapshot ALL entities with TransformComponent
+                // Snapshot ALL entities with TransformComponent.
+                //
+                // Captured ONCE per entity. This used to capture every entity a
+                // second time to refill prevFrameCache, discarding the first
+                // result -- and with deltaCompression off it built a cache
+                // nothing reads, holding a second full copy of the scene that
+                // GetMemoryUsageBytes does not count.
                 for (auto entity : m_World->GetEntitiesWithComponent<ECS::TransformComponent>()) {
                     if (entity == manager) continue;
 
                     EntitySnapshot snap;
                     CaptureEntitySnapshot(entity, snap, sr->channels);
+                    snap.timestamp = sr->currentRecordedTime;
 
-                    if (isKeyframe) {
-                        // Keyframe: store all entities
-                        frame.snapshots.push_back(std::move(snap));
-                    } else {
-                        // Delta: only store changed entities
+                    bool keep = isKeyframe;
+                    if (!keep) {
                         auto it = sr->prevFrameCache.find(entity);
-                        if (it == sr->prevFrameCache.end() ||
-                            HasEntityChanged(snap, it->second, sr->channels)) {
-                            frame.snapshots.push_back(std::move(snap));
-                        }
+                        keep = (it == sr->prevFrameCache.end() ||
+                                HasEntityChanged(snap, it->second, sr->channels));
                     }
-                }
+                    if (keep) frame.snapshots.push_back(snap);
 
-                // Update previous-frame cache in-place (avoids clear+rebuild rehashing).
-                // Overwrite existing entries; new entities get inserted; stale entries are harmless.
-                for (auto entity : m_World->GetEntitiesWithComponent<ECS::TransformComponent>()) {
-                    if (entity == manager) continue;
-                    auto& cached = sr->prevFrameCache[entity]; // insert-or-access, no rehash if exists
-                    CaptureEntitySnapshot(entity, cached, sr->channels);
+                    // Only the delta path reads this cache.
+                    if (sr->deltaCompression) {
+                        sr->prevFrameCache[entity] = std::move(snap);
+                    }
                 }
 
                 sr->history.Push(std::move(frame));

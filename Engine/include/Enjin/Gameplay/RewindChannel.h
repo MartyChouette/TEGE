@@ -37,6 +37,15 @@ struct EntitySnapshot {
     ECS::Entity entity = ECS::INVALID_ENTITY;
     u32 channelMask = 0;
 
+    // When this was captured, in the recorder's own timebase.
+    //
+    // Without it, entity rewind reconstructed frame times from index arithmetic
+    // in three places, and one of those sites read position.x under a comment
+    // calling it a timestamp. Scene rewind, which pops by DeltaFrame::timestamp,
+    // was correct -- which is what made the entity path's drift look like a
+    // mystery rather than a missing field.
+    f32 timestamp = 0.0f;
+
     // Transform channel
     Math::Vector3 position;
     Math::Quaternion rotation;
