@@ -1,3 +1,4 @@
+#include "Enjin/Logging/Log.h"
 #include "Enjin/Platform/FileDialog.h"
 
 #ifdef _WIN32
@@ -26,6 +27,11 @@ extern char** environ;
 namespace Enjin {
 
 void* FileDialog::s_OwnerWindow = nullptr;
+
+#if defined(_WIN32) || defined(__APPLE__)
+// The OS provides these; there is nothing to install and nothing to detect.
+bool FileDialog::IsAvailable() { return true; }
+#endif
 
 void FileDialog::SetOwnerWindow(void* handle) {
     s_OwnerWindow = handle;
@@ -418,13 +424,48 @@ static bool HasCommand(const char* cmd) {
     return WIFEXITED(status) && WEXITSTATUS(status) == 0;
 }
 
+// The dialog helper to drive, or nullptr if none is installed.
+//
+// qarma, yad and matedialog are drop-in zenity forks — same flags, same output —
+// and are what several desktops ship in place of zenity. Only zenity and kdialog
+// were ever tried, so those desktops got no dialogs at all.
+//
+// Resolved once: each probe spawns a shell, and these calls sit behind buttons a
+// user can hammer.
+static const char* DetectDialogTool() {
+    static const char* s_Tool = nullptr;
+    static bool s_Resolved = false;
+    if (s_Resolved) return s_Tool;
+    s_Resolved = true;
+    for (const char* candidate : {"zenity", "qarma", "yad", "matedialog", "kdialog"}) {
+        if (HasCommand(candidate)) {
+            s_Tool = candidate;
+            return s_Tool;
+        }
+    }
+    ENJIN_LOG_ERROR(Editor,
+        "No file-dialog helper found. Install zenity (or qarma, yad, matedialog, "
+        "or kdialog) — without one, Open, Save and Browse cannot show a dialog.");
+    return nullptr;
+}
+
+// kdialog is the only one of the five that does not speak zenity's command line.
+static bool ToolIsZenityLike(const char* tool) {
+    return tool != nullptr && std::string(tool) != "kdialog";
+}
+
+bool FileDialog::IsAvailable() {
+    return DetectDialogTool() != nullptr;
+}
+
 std::string FileDialog::OpenFile(
     const std::string& title,
     const std::vector<FileFilter>& filters,
     const std::string& defaultPath
 ) {
-    if (HasCommand("zenity")) {
-        std::string cmd = "zenity --file-selection";
+    const char* tool = DetectDialogTool();
+    if (ToolIsZenityLike(tool)) {
+        std::string cmd = std::string(tool) + " --file-selection";
         if (!title.empty()) cmd += " --title=" + ShellEscape(title);
         if (!defaultPath.empty()) cmd += " --filename=" + ShellEscape(defaultPath + "/");
         for (const auto& filter : filters) {
@@ -433,7 +474,7 @@ std::string FileDialog::OpenFile(
         cmd += " 2>/dev/null";
         return ExecuteCommand(cmd);
     }
-    if (HasCommand("kdialog")) {
+    if (tool) {   // kdialog
         std::string cmd = "kdialog --getopenfilename";
         cmd += " " + ShellEscape(defaultPath.empty() ? "." : defaultPath);
         if (!filters.empty()) {
@@ -456,8 +497,9 @@ std::string FileDialog::SaveFile(
     const std::string& defaultPath,
     const std::string& defaultName
 ) {
-    if (HasCommand("zenity")) {
-        std::string cmd = "zenity --file-selection --save --confirm-overwrite";
+    const char* tool = DetectDialogTool();
+    if (ToolIsZenityLike(tool)) {
+        std::string cmd = std::string(tool) + " --file-selection --save --confirm-overwrite";
         if (!title.empty()) cmd += " --title=" + ShellEscape(title);
         std::string initPath = defaultPath.empty() ? "." : defaultPath;
         if (!defaultName.empty()) initPath += "/" + defaultName;
@@ -468,7 +510,7 @@ std::string FileDialog::SaveFile(
         cmd += " 2>/dev/null";
         return ExecuteCommand(cmd);
     }
-    if (HasCommand("kdialog")) {
+    if (tool) {   // kdialog
         std::string cmd = "kdialog --getsavefilename";
         std::string initPath = defaultPath.empty() ? "." : defaultPath;
         if (!defaultName.empty()) initPath += "/" + defaultName;
@@ -484,14 +526,15 @@ std::string FileDialog::OpenFolder(
     const std::string& title,
     const std::string& defaultPath
 ) {
-    if (HasCommand("zenity")) {
-        std::string cmd = "zenity --file-selection --directory";
+    const char* tool = DetectDialogTool();
+    if (ToolIsZenityLike(tool)) {
+        std::string cmd = std::string(tool) + " --file-selection --directory";
         if (!title.empty()) cmd += " --title=" + ShellEscape(title);
         if (!defaultPath.empty()) cmd += " --filename=" + ShellEscape(defaultPath + "/");
         cmd += " 2>/dev/null";
         return ExecuteCommand(cmd);
     }
-    if (HasCommand("kdialog")) {
+    if (tool) {   // kdialog
         std::string cmd = "kdialog --getexistingdirectory";
         cmd += " " + ShellEscape(defaultPath.empty() ? "." : defaultPath);
         if (!title.empty()) cmd += " --title " + ShellEscape(title);

@@ -1653,6 +1653,13 @@ void EditorLayer::DrawNewProjectDialog() {
     ImGui::InputText("Location", m_NewProjDlgLocation, sizeof(m_NewProjDlgLocation));
     ImGui::SameLine();
     if (ImGui::Button("Browse##NewProjLoc")) {
+        // A missing dialog helper and a cancelled dialog both come back empty,
+        // so without this check the button just looks broken.
+        if (!FileDialog::IsAvailable()) {
+            ShowNotification("No file dialog available — install zenity or kdialog, "
+                             "or type the path into the Location field",
+                             NotificationType::Warning);
+        }
         std::string folder = FileDialog::OpenFolder("Select Project Location",
                                                      m_NewProjDlgLocation);
         if (!folder.empty()) {

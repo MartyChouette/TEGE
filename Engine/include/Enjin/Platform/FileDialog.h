@@ -41,6 +41,17 @@ public:
         const std::string& defaultPath = ""
     );
 
+    // Whether a native file dialog can actually be shown.
+    //
+    // All three calls above return an empty string when the user cancels. On a
+    // Linux desktop with no dialog helper installed they return an empty string
+    // too, and the caller cannot tell the difference: the button appears to do
+    // nothing. Check this before offering a dialog, and say so plainly when it
+    // is false rather than opening one that will never appear.
+    //
+    // Always true on Windows and macOS, whose dialogs are part of the OS.
+    static bool IsAvailable();
+
 private:
     static void* s_OwnerWindow;
 };

@@ -1155,6 +1155,13 @@ void EditorLayer::DrawHubWizardSetup(ImDrawList* dl, const ImVec2& area, f32 con
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.2f, 0.26f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.28f, 0.35f, 1.0f));
     if (ImGui::Button("Browse...", ImVec2(100, 0))) {
+        // A missing dialog helper and a cancelled dialog both come back empty,
+        // so without this check the button just looks broken.
+        if (!FileDialog::IsAvailable()) {
+            ShowNotification("No file dialog available — install zenity or kdialog, "
+                             "or type the path into the field",
+                             NotificationType::Warning);
+        }
         std::string folder = FileDialog::OpenFolder("Select Project Location", m_NewProjectPath);
         if (!folder.empty()) {
             std::strncpy(m_NewProjectPath, folder.c_str(), sizeof(m_NewProjectPath) - 1);
