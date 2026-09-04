@@ -803,38 +803,26 @@ bool ScriptEngine::ProcessHotReload()
         // Discard the old module
         m_Engine->DiscardModule(modName.c_str());
 
-        // Recompile from file
-        CScriptBuilder builder;
-        builder.SetIncludeCallback(IncludeCallback, this);
-
-        i32 r = builder.StartNewModule(m_Engine, modName.c_str());
-        if (r < 0) {
-            ENJIN_LOG_ERROR(Script, "Hot-reload: failed to start module '%s'", modName.c_str());
-            m_LastError = "Hot-reload: failed to start module '" + modName + "'";
+        // Recompile through the ONE compile path.
+        //
+        // This used to re-implement the compile with a bare AddSectionFromFile,
+        // which skips the TegeBehavior base-class injection CompileScript does.
+        // Every script in the repo extends TegeBehavior without mentioning
+        // TegeBehavior.as, so every hot reload failed with "Identifier
+        // 'TegeBehavior' is not a data type", discarded the module while live
+        // instances kept running the old bytecode, and — because the timestamp
+        // below only advanced on the success path — re-detected and re-failed on
+        // every poll thereafter. It also skipped ReadScriptSource, so it could
+        // not see pak-backed sources at all.
+        //
+        // filePath is copied first: CompileScript writes m_Modules, which can
+        // invalidate `info`.
+        const std::string filePath = info.filePath;
+        if (!CompileScript(filePath)) {
+            ENJIN_LOG_ERROR(Script, "Hot-reload: recompile failed for '%s': %s",
+                            modName.c_str(), m_LastError.c_str());
             continue;
         }
-
-        r = builder.AddSectionFromFile(info.filePath.c_str());
-        if (r < 0) {
-            ENJIN_LOG_ERROR(Script, "Hot-reload: failed to load file '%s'",
-                            info.filePath.c_str());
-            m_LastError = "Hot-reload: failed to load file '" + info.filePath + "'";
-            m_Engine->DiscardModule(modName.c_str());
-            continue;
-        }
-
-        r = builder.BuildModule();
-        if (r < 0) {
-            ENJIN_LOG_ERROR(Script, "Hot-reload: compilation failed for '%s'",
-                            modName.c_str());
-            m_LastError = "Hot-reload: compilation failed for '" + modName + "'";
-            m_Engine->DiscardModule(modName.c_str());
-            continue;
-        }
-
-        // Update timestamp
-        std::error_code ec;
-        info.lastModified = std::filesystem::last_write_time(info.filePath, ec);
 
         ENJIN_LOG_INFO(Script, "Hot-reload: module '%s' recompiled successfully",
                        modName.c_str());
