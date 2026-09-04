@@ -1,4 +1,5 @@
 #include "Enjin/Gameplay/CinematicSystem.h"
+#include "Enjin/Gameplay/CameraPose.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/Logging/Log.h"
 #include <cmath>
@@ -57,14 +58,7 @@ void CinematicSystem::Update(ECS::World* world, Renderer::Camera* gameCamera, f3
                 cine->segmentProgress = 0.0f;
             }
             // Use fromWP position during hold
-            if (gameCamera) {
-                gameCamera->SetPosition(fromWP.position);
-                Math::Vector3 dir = fromWP.lookAt - fromWP.position;
-                if (dir.Length() > 1e-6f) {
-                    gameCamera->SetLookAt(fromWP.position, fromWP.lookAt, Math::Vector3(0, 1, 0));
-                }
-                gameCamera->SetPerspective(fromWP.fov, 16.0f / 9.0f, 0.1f, 1000.0f);
-            }
+            ApplyCameraPose(world, gameCamera, fromWP.position, fromWP.lookAt, fromWP.fov);
             continue;
         }
 
@@ -89,17 +83,14 @@ void CinematicSystem::Update(ECS::World* world, Renderer::Camera* gameCamera, f3
         Math::Vector3 lookAt = fromWP.lookAt + (toWP.lookAt - fromWP.lookAt) * easedT;
         f32 fov = fromWP.fov + (toWP.fov - fromWP.fov) * easedT;
 
-        // Apply to camera
-        if (gameCamera) {
-            gameCamera->SetPosition(pos);
-            Math::Vector3 dir = lookAt - pos;
-            if (dir.Length() > 1e-6f) {
-                gameCamera->SetLookAt(pos, lookAt, Math::Vector3(0, 1, 0));
-            }
-            gameCamera->SetPerspective(fov, 16.0f / 9.0f, 0.1f, 1000.0f);
-        }
+        // Apply to the camera. This used to write only the Renderer::Camera and
+        // then the CINEMATIC entity's own transform -- which nothing renders
+        // from -- so every runtime rebuilt the view from the active camera
+        // entity immediately afterwards and the shot never moved.
+        ApplyCameraPose(world, gameCamera, pos, lookAt, fov);
 
-        // Also update entity transform
+        // Keep the cinematic entity itself on the path too, so its gizmo and
+        // any child rig follow the shot in the viewport.
         auto* transform = world->GetComponent<ECS::TransformComponent>(entity);
         if (transform) {
             transform->position = pos;

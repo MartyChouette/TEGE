@@ -1,4 +1,5 @@
 #include "Enjin/Gameplay/CameraDirector.h"
+#include "Enjin/Gameplay/CameraPose.h"
 #include "Enjin/ECS/Components/VirtualCamera.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Camera.h"
@@ -173,32 +174,10 @@ void CameraDirector::Update(ECS::World* world, Renderer::Camera* gameCamera, f32
         m_Current.fov = SmoothTo(m_Current.fov, target.fov, liveDamping, deltaTime);
     }
 
-    // --- write the real camera (the single owner) ---
-    gameCamera->SetPosition(m_Current.position);
-    Math::Vector3 dir = m_Current.lookPoint - m_Current.position;
-    if (dir.Length() > 1e-5f) {
-        gameCamera->SetLookAt(m_Current.position, m_Current.lookPoint, Math::Vector3(0, 1, 0));
-    }
-    gameCamera->SetPerspective(m_Current.fov, 16.0f / 9.0f, 0.1f, 1000.0f);
-
-    // Mirror onto the active camera ENTITY transform — the GAME VIEW renders
-    // from the CameraComponent entity's transform, not from the Renderer::Camera
-    // above, so this write is what actually shows on screen (same path the
-    // ThirdPersonController uses). Camera looks down its local -Z, and
-    // LookRotation puts its `forward` arg on local +Z, so we pass -viewDir.
-    ECS::Entity camEnt = ECS::CameraManager::GetActiveCamera(world);
-    if (camEnt != ECS::INVALID_ENTITY) {
-        if (auto* ct = world->GetComponent<ECS::TransformComponent>(camEnt)) {
-            ct->position = m_Current.position;
-            if (dir.Length() > 1e-5f) {
-                Math::Vector3 fwd = dir.Normalized();
-                ct->rotation = Math::Quaternion::LookRotation(fwd * -1.0f, Math::Vector3(0, 1, 0));
-            }
-        }
-        if (auto* cc = world->GetComponent<ECS::CameraComponent>(camEnt)) {
-            cc->fieldOfView = m_Current.fov;
-        }
-    }
+    // Write the render camera AND mirror onto the active camera entity, which
+    // is the half that reaches the screen. See CameraPose.h.
+    ApplyCameraPose(world, gameCamera, m_Current.position, m_Current.lookPoint,
+                    m_Current.fov);
 
     // Publish isLive flags for the editor panel.
     for (ECS::Entity e : world->GetEntitiesWithComponent<ECS::VirtualCameraComponent>()) {
