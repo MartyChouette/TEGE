@@ -1,3 +1,6 @@
+#include <string>
+#include <vector>
+#include "Enjin/Renderer/ShaderPaths.h"
 #include "Enjin/Renderer/VRS/VariableRateShading.h"
 #include "Enjin/Renderer/Vulkan/VulkanContext.h"
 #include "Enjin/Renderer/Vulkan/VulkanBuffer.h"
@@ -279,14 +282,9 @@ bool VariableRateShading::CreateComputePipeline() {
 
     // Load compute shader
     VulkanShader shader(m_Context);
-    const char* shaderPaths[] = {
-        "shaders/vrs_generate.comp.spv",
-        "Engine/shaders/vrs_generate.comp.spv",
-        "../Engine/shaders/vrs_generate.comp.spv",
-        "../../Engine/shaders/vrs_generate.comp.spv"
-    };
+    const std::vector<std::string> shaderPaths = Renderer::ShaderSearchPaths("vrs_generate.comp.spv");
     bool loaded = false;
-    for (const char* path : shaderPaths) {
+    for (const std::string& path : shaderPaths) {
         if (shader.LoadFromFile(path, false) && shader.GetModule() != VK_NULL_HANDLE) {
             loaded = true;
             break;

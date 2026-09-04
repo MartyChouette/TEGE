@@ -1,3 +1,6 @@
+#include <string>
+#include <vector>
+#include "Enjin/Renderer/ShaderPaths.h"
 #include "Enjin/Renderer/Upscaling/FSR2Upscaler.h"
 #include "Enjin/Renderer/Vulkan/VulkanContext.h"
 #include "Enjin/Renderer/Vulkan/VulkanShader.h"
@@ -745,8 +748,7 @@ bool FSR2Upscaler::CreateComputePipelines() {
     // --- Helper: create a compute pipeline with 2 bindings (sampler + storage image) ---
     auto createPipeline = [&](
         const char* shaderName,
-        const char* shaderPaths[],
-        u32 pathCount,
+        const std::vector<std::string>& shaderPaths,
         u32 pushConstantSize,
         VkDescriptorSetLayout& descSetLayout,
         VkDescriptorPool& descPool,
@@ -827,8 +829,8 @@ bool FSR2Upscaler::CreateComputePipelines() {
         // Load compute shader from SPIR-V
         VulkanShader shader(m_Context);
         bool loaded = false;
-        for (u32 i = 0; i < pathCount; i++) {
-            if (shader.LoadFromFile(shaderPaths[i], false) && shader.GetModule() != VK_NULL_HANDLE) {
+        for (const std::string& candidate : shaderPaths) {
+            if (shader.LoadFromFile(candidate, false) && shader.GetModule() != VK_NULL_HANDLE) {
                 loaded = true;
                 break;
             }
@@ -862,14 +864,9 @@ bool FSR2Upscaler::CreateComputePipelines() {
     };
 
     // --- Lanczos pipeline ---
-    const char* lanczosPaths[] = {
-        "shaders/upscale_lanczos.comp.spv",
-        "Engine/shaders/upscale_lanczos.comp.spv",
-        "../Engine/shaders/upscale_lanczos.comp.spv",
-        "../../Engine/shaders/upscale_lanczos.comp.spv"
-    };
+    const std::vector<std::string> lanczosPaths = Renderer::ShaderSearchPaths("upscale_lanczos.comp.spv");
 
-    if (!createPipeline("upscale_lanczos.comp", lanczosPaths, 4,
+    if (!createPipeline("upscale_lanczos.comp", lanczosPaths,
                          sizeof(LanczosPushConstants),
                          m_LanczosDescSetLayout, m_LanczosDescPool,
                          m_LanczosDescSet, m_LanczosPipelineLayout, m_LanczosPipeline)) {
@@ -877,14 +874,9 @@ bool FSR2Upscaler::CreateComputePipelines() {
     }
 
     // --- CAS pipeline ---
-    const char* casPaths[] = {
-        "shaders/upscale_cas.comp.spv",
-        "Engine/shaders/upscale_cas.comp.spv",
-        "../Engine/shaders/upscale_cas.comp.spv",
-        "../../Engine/shaders/upscale_cas.comp.spv"
-    };
+    const std::vector<std::string> casPaths = Renderer::ShaderSearchPaths("upscale_cas.comp.spv");
 
-    if (!createPipeline("upscale_cas.comp", casPaths, 4,
+    if (!createPipeline("upscale_cas.comp", casPaths,
                          sizeof(CASPushConstants),
                          m_CASDescSetLayout, m_CASDescPool,
                          m_CASDescSet, m_CASPipelineLayout, m_CASPipeline)) {
@@ -892,14 +884,9 @@ bool FSR2Upscaler::CreateComputePipelines() {
     }
 
     // --- EASU pipeline (optional — edge-adaptive spatial upscale) ---
-    const char* easuPaths[] = {
-        "shaders/upscale_easu.comp.spv",
-        "Engine/shaders/upscale_easu.comp.spv",
-        "../Engine/shaders/upscale_easu.comp.spv",
-        "../../Engine/shaders/upscale_easu.comp.spv"
-    };
+    const std::vector<std::string> easuPaths = Renderer::ShaderSearchPaths("upscale_easu.comp.spv");
 
-    if (createPipeline("upscale_easu.comp", easuPaths, 4,
+    if (createPipeline("upscale_easu.comp", easuPaths,
                          sizeof(LanczosPushConstants),
                          m_EASUDescSetLayout, m_EASUDescPool,
                          m_EASUDescSet, m_EASUPipelineLayout, m_EASUPipeline)) {
@@ -909,14 +896,9 @@ bool FSR2Upscaler::CreateComputePipelines() {
     }
 
     // --- RCAS pipeline (optional — robust contrast adaptive sharpening) ---
-    const char* rcasPaths[] = {
-        "shaders/upscale_rcas.comp.spv",
-        "Engine/shaders/upscale_rcas.comp.spv",
-        "../Engine/shaders/upscale_rcas.comp.spv",
-        "../../Engine/shaders/upscale_rcas.comp.spv"
-    };
+    const std::vector<std::string> rcasPaths = Renderer::ShaderSearchPaths("upscale_rcas.comp.spv");
 
-    if (createPipeline("upscale_rcas.comp", rcasPaths, 4,
+    if (createPipeline("upscale_rcas.comp", rcasPaths,
                          sizeof(CASPushConstants),
                          m_RCASDescSetLayout, m_RCASDescPool,
                          m_RCASDescSet, m_RCASPipelineLayout, m_RCASPipeline)) {
@@ -929,12 +911,7 @@ bool FSR2Upscaler::CreateComputePipelines() {
     // This uses a 5-binding descriptor set (4 samplers + 1 storage image) and
     // 32 bytes of push constants, so we create it manually (not via createPipeline).
     {
-        const char* temporalPaths[] = {
-            "shaders/upscale_temporal_accumulate.comp.spv",
-            "Engine/shaders/upscale_temporal_accumulate.comp.spv",
-            "../Engine/shaders/upscale_temporal_accumulate.comp.spv",
-            "../../Engine/shaders/upscale_temporal_accumulate.comp.spv"
-        };
+        const std::vector<std::string> temporalPaths = Renderer::ShaderSearchPaths("upscale_temporal_accumulate.comp.spv");
 
         // 5-binding descriptor set: 4 combined image samplers + 1 storage image
         VkDescriptorSetLayoutBinding tempBindings[5]{};

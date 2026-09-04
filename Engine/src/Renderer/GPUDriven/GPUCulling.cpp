@@ -1,3 +1,6 @@
+#include <string>
+#include <vector>
+#include "Enjin/Renderer/ShaderPaths.h"
 #include "Enjin/Renderer/GPUDriven/GPUCulling.h"
 #include "Enjin/Renderer/GPUDriven/HiZPyramid.h"
 #include "Enjin/Renderer/Vulkan/VulkanBuffer.h"
@@ -470,17 +473,10 @@ bool GPUCullingSystem::CreateComputePipeline() {
     // Load compute shader - try multiple paths
     VulkanShader computeShader(m_Context);
 
-    const char* shaderPaths[] = {
-        "shaders/cull.comp.spv",
-        "Engine/shaders/cull.comp.spv",
-        "../Engine/shaders/cull.comp.spv",
-        "../../Engine/shaders/cull.comp.spv",
-        "../../../Engine/shaders/cull.comp.spv",
-        "bin/shaders/cull.comp.spv"
-    };
+    const std::vector<std::string> shaderPaths = Renderer::ShaderSearchPaths("cull.comp.spv");
     
     bool shaderLoaded = false;
-    for (const char* path : shaderPaths) {
+    for (const std::string& path : shaderPaths) {
         // logMissing=false: these are candidate probes, most will not exist —
         // the loop logs the real outcome (loaded / CPU fallback) below.
         if (computeShader.LoadFromFile(path, false)) {
@@ -692,16 +688,10 @@ bool GPUCullingSystem::CreateHiZComputePipeline() {
 
     // Load cull_hiz.comp shader
     VulkanShader computeShader(m_Context);
-    const char* shaderPaths[] = {
-        "shaders/cull_hiz.comp.spv",
-        "Engine/shaders/cull_hiz.comp.spv",
-        "../Engine/shaders/cull_hiz.comp.spv",
-        "../../Engine/shaders/cull_hiz.comp.spv",
-        "bin/shaders/cull_hiz.comp.spv"
-    };
+    const std::vector<std::string> shaderPaths = Renderer::ShaderSearchPaths("cull_hiz.comp.spv");
 
     bool loaded = false;
-    for (const char* path : shaderPaths) {
+    for (const std::string& path : shaderPaths) {
         if (computeShader.LoadFromFile(path, false) && computeShader.GetModule() != VK_NULL_HANDLE) {
             loaded = true;
             ENJIN_LOG_INFO(Renderer, "Loaded HiZ cull shader from: %s", path);

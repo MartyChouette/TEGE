@@ -1,3 +1,6 @@
+#include <string>
+#include <vector>
+#include "Enjin/Renderer/ShaderPaths.h"
 #include "Enjin/Renderer/GPUDriven/DeviceGeneratedCommands.h"
 #include "Enjin/Renderer/GPUDriven/GPUCulling.h"
 #include "Enjin/Renderer/Vulkan/VulkanBuffer.h"
@@ -265,16 +268,10 @@ bool DeviceGeneratedCommands::CreateComputePipeline() {
 
     // Load compute shader
     VulkanShader computeShader(m_Context);
-    const char* shaderPaths[] = {
-        "shaders/dgc_generate.comp.spv",
-        "Engine/shaders/dgc_generate.comp.spv",
-        "../Engine/shaders/dgc_generate.comp.spv",
-        "../../Engine/shaders/dgc_generate.comp.spv",
-        "bin/shaders/dgc_generate.comp.spv"
-    };
+    const std::vector<std::string> shaderPaths = Renderer::ShaderSearchPaths("dgc_generate.comp.spv");
 
     bool loaded = false;
-    for (const char* path : shaderPaths) {
+    for (const std::string& path : shaderPaths) {
         if (computeShader.LoadFromFile(path, false) && computeShader.GetModule() != VK_NULL_HANDLE) {
             loaded = true;
             ENJIN_LOG_INFO(Renderer, "DGC: Loaded command generation shader from: %s", path);

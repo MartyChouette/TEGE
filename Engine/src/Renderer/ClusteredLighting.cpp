@@ -1,3 +1,6 @@
+#include <string>
+#include <vector>
+#include "Enjin/Renderer/ShaderPaths.h"
 #include "Enjin/Renderer/ClusteredLighting.h"
 #include "Enjin/Renderer/Vulkan/VulkanBuffer.h"
 #include "Enjin/Renderer/Vulkan/VulkanShader.h"
@@ -312,13 +315,8 @@ bool ClusteredLightingSystem::CreateComputePipelines() {
                                                    LightClusterBoundsComputeShaderDataSize)
                         && boundsShader.GetModule() != VK_NULL_HANDLE;
     if (!boundsLoaded) {
-        const char* boundsPaths[] = {
-            "shaders/light_cluster_bounds.comp.spv",
-            "Engine/shaders/light_cluster_bounds.comp.spv",
-            "../Engine/shaders/light_cluster_bounds.comp.spv",
-            "../../Engine/shaders/light_cluster_bounds.comp.spv"
-        };
-        for (const char* path : boundsPaths) {
+        const std::vector<std::string> boundsPaths = Renderer::ShaderSearchPaths("light_cluster_bounds.comp.spv");
+        for (const std::string& path : boundsPaths) {
             if (boundsShader.LoadFromFile(path, false) && boundsShader.GetModule() != VK_NULL_HANDLE) {
                 boundsLoaded = true;
                 break;
@@ -353,13 +351,8 @@ bool ClusteredLightingSystem::CreateComputePipelines() {
                                                    LightClusterAssignComputeShaderDataSize)
                         && assignShader.GetModule() != VK_NULL_HANDLE;
     if (!assignLoaded) {
-        const char* assignPaths[] = {
-            "shaders/light_cluster_assign.comp.spv",
-            "Engine/shaders/light_cluster_assign.comp.spv",
-            "../Engine/shaders/light_cluster_assign.comp.spv",
-            "../../Engine/shaders/light_cluster_assign.comp.spv"
-        };
-        for (const char* path : assignPaths) {
+        const std::vector<std::string> assignPaths = Renderer::ShaderSearchPaths("light_cluster_assign.comp.spv");
+        for (const std::string& path : assignPaths) {
             if (assignShader.LoadFromFile(path, false) && assignShader.GetModule() != VK_NULL_HANDLE) {
                 assignLoaded = true;
                 break;

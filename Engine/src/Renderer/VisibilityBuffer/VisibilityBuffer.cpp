@@ -1,3 +1,6 @@
+#include <string>
+#include <vector>
+#include "Enjin/Renderer/ShaderPaths.h"
 #include "Enjin/Renderer/VisibilityBuffer/VisibilityBuffer.h"
 #include "Enjin/Renderer/VisibilityBuffer/MaterialResolve.h"
 #include "Enjin/Renderer/Vulkan/VulkanBuffer.h"
@@ -285,21 +288,11 @@ bool VisibilityBufferRenderer::CreateVisibilityPipeline() {
     VulkanShader vertShader(m_Context);
     VulkanShader fragShader(m_Context);
 
-    const char* vertPaths[] = {
-        "shaders/visibility.vert.spv",
-        "Engine/shaders/visibility.vert.spv",
-        "../Engine/shaders/visibility.vert.spv",
-        "../../Engine/shaders/visibility.vert.spv"
-    };
-    const char* fragPaths[] = {
-        "shaders/visibility.frag.spv",
-        "Engine/shaders/visibility.frag.spv",
-        "../Engine/shaders/visibility.frag.spv",
-        "../../Engine/shaders/visibility.frag.spv"
-    };
+    const std::vector<std::string> vertPaths = Renderer::ShaderSearchPaths("visibility.vert.spv");
+    const std::vector<std::string> fragPaths = Renderer::ShaderSearchPaths("visibility.frag.spv");
 
     bool vertLoaded = false;
-    for (const char* path : vertPaths) {
+    for (const std::string& path : vertPaths) {
         if (vertShader.LoadFromFile(path, false) && vertShader.GetModule() != VK_NULL_HANDLE) {
             vertLoaded = true;
             break;
@@ -311,7 +304,7 @@ bool VisibilityBufferRenderer::CreateVisibilityPipeline() {
     }
 
     bool fragLoaded = false;
-    for (const char* path : fragPaths) {
+    for (const std::string& path : fragPaths) {
         if (fragShader.LoadFromFile(path, false) && fragShader.GetModule() != VK_NULL_HANDLE) {
             fragLoaded = true;
             break;
@@ -548,14 +541,9 @@ bool VisibilityBufferRenderer::CreateResolvePipeline() {
 
     // Load resolve compute shader
     VulkanShader shader(m_Context);
-    const char* shaderPaths[] = {
-        "shaders/material_resolve.comp.spv",
-        "Engine/shaders/material_resolve.comp.spv",
-        "../Engine/shaders/material_resolve.comp.spv",
-        "../../Engine/shaders/material_resolve.comp.spv"
-    };
+    const std::vector<std::string> shaderPaths = Renderer::ShaderSearchPaths("material_resolve.comp.spv");
     bool loaded = false;
-    for (const char* path : shaderPaths) {
+    for (const std::string& path : shaderPaths) {
         if (shader.LoadFromFile(path, false) && shader.GetModule() != VK_NULL_HANDLE) {
             loaded = true;
             break;

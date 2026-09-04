@@ -1,3 +1,6 @@
+#include <string>
+#include <vector>
+#include "Enjin/Renderer/ShaderPaths.h"
 #include "Enjin/Renderer/Upscaling/DLSSUpscaler.h"
 #include "Enjin/Renderer/Vulkan/VulkanContext.h"
 #include "Enjin/Renderer/Vulkan/VulkanShader.h"
@@ -631,8 +634,7 @@ bool DLSSUpscaler::CreateComputePipelines() {
 
     auto createPipeline = [&](
         const char* shaderName,
-        const char* shaderPaths[],
-        u32 pathCount,
+        const std::vector<std::string>& shaderPaths,
         u32 pushConstantSize,
         VkDescriptorSetLayout& descSetLayout,
         VkDescriptorPool& descPool,
@@ -708,8 +710,8 @@ bool DLSSUpscaler::CreateComputePipelines() {
 
         VulkanShader shader(m_Context);
         bool loaded = false;
-        for (u32 i = 0; i < pathCount; i++) {
-            if (shader.LoadFromFile(shaderPaths[i], false) && shader.GetModule() != VK_NULL_HANDLE) {
+        for (const std::string& candidate : shaderPaths) {
+            if (shader.LoadFromFile(candidate, false) && shader.GetModule() != VK_NULL_HANDLE) {
                 loaded = true;
                 break;
             }
@@ -742,14 +744,9 @@ bool DLSSUpscaler::CreateComputePipelines() {
     };
 
     // Lanczos pipeline — uses same SPIR-V as FSR2
-    const char* lanczosPaths[] = {
-        "shaders/upscale_lanczos.comp.spv",
-        "Engine/shaders/upscale_lanczos.comp.spv",
-        "../Engine/shaders/upscale_lanczos.comp.spv",
-        "../../Engine/shaders/upscale_lanczos.comp.spv"
-    };
+    const std::vector<std::string> lanczosPaths = Renderer::ShaderSearchPaths("upscale_lanczos.comp.spv");
 
-    if (!createPipeline("upscale_lanczos.comp", lanczosPaths, 4,
+    if (!createPipeline("upscale_lanczos.comp", lanczosPaths,
                          sizeof(DLSSLanczosPushConstants),
                          m_LanczosDescSetLayout, m_LanczosDescPool,
                          m_LanczosDescSet, m_LanczosPipelineLayout, m_LanczosPipeline)) {
@@ -757,14 +754,9 @@ bool DLSSUpscaler::CreateComputePipelines() {
     }
 
     // CAS pipeline — uses same SPIR-V as FSR2
-    const char* casPaths[] = {
-        "shaders/upscale_cas.comp.spv",
-        "Engine/shaders/upscale_cas.comp.spv",
-        "../Engine/shaders/upscale_cas.comp.spv",
-        "../../Engine/shaders/upscale_cas.comp.spv"
-    };
+    const std::vector<std::string> casPaths = Renderer::ShaderSearchPaths("upscale_cas.comp.spv");
 
-    if (!createPipeline("upscale_cas.comp", casPaths, 4,
+    if (!createPipeline("upscale_cas.comp", casPaths,
                          sizeof(DLSSCASPushConstants),
                          m_CASDescSetLayout, m_CASDescPool,
                          m_CASDescSet, m_CASPipelineLayout, m_CASPipeline)) {

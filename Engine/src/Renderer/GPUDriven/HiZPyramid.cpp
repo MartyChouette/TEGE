@@ -1,3 +1,6 @@
+#include <string>
+#include <vector>
+#include "Enjin/Renderer/ShaderPaths.h"
 #include "Enjin/Renderer/GPUDriven/HiZPyramid.h"
 #include "Enjin/Renderer/Vulkan/VulkanBuffer.h"
 #include "Enjin/Renderer/Vulkan/VulkanShader.h"
@@ -199,15 +202,9 @@ bool HiZPyramid::CreateComputePipeline() {
 
     // Load compute shader
     VulkanShader computeShader(m_Context);
-    const char* shaderPaths[] = {
-        "shaders/hiz_generate.comp.spv",
-        "Engine/shaders/hiz_generate.comp.spv",
-        "../Engine/shaders/hiz_generate.comp.spv",
-        "../../Engine/shaders/hiz_generate.comp.spv",
-        "../../../Engine/shaders/hiz_generate.comp.spv"
-    };
+    const std::vector<std::string> shaderPaths = Renderer::ShaderSearchPaths("hiz_generate.comp.spv");
     bool loaded = false;
-    for (const char* path : shaderPaths) {
+    for (const std::string& path : shaderPaths) {
         if (computeShader.LoadFromFile(path, false)) { loaded = true; break; }
     }
     if (!loaded) {
