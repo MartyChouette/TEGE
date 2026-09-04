@@ -43,6 +43,25 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND NOT ENJIN_PLATFORM_WEB)
     set(ENJIN_PDB_LINK_OPTIONS "$<$<CONFIG:Release>:-rdynamic>")
 endif()
 
+# Two warnings, chosen because they catch bug classes this codebase has actually
+# shipped, and because the tree is clean for both today so they stay meaningful.
+#
+#   -Wswitch / C4062: a switch over an enum with no default that misses an
+#     enumerator. This found three dialogue node types absent from both
+#     exporters, which silently truncated every tree containing one, and a
+#     depth-cubemap binding translating to the wrong Vulkan descriptor type.
+#   -Wunused-result: an ignored return that the callee marked as needing a
+#     check. This found posix_memalign's result being dropped.
+#
+# NOT enabled: -Wswitch-enum, which fires on every switch that legitimately uses
+# a default (1213 of them here), and -Wmissing-field-initializers (124). Both are
+# noise at this size and would train people to ignore the output.
+if(MSVC)
+    add_compile_options(/w14062)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    add_compile_options(-Wswitch -Wunused-result)
+endif()
+
 # Sanitizer options (for development builds)
 option(ENJIN_ENABLE_ASAN  "Enable AddressSanitizer"                        OFF)
 option(ENJIN_ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer (GCC/Clang)"  OFF)

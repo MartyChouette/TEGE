@@ -501,6 +501,32 @@ std::string YarnSpinnerIO::ExportToString(const DialogueTreeData& tree) {
                 out << "<<" << node->eventName << ">>\n";
                 walk(node->nextNodeId);
                 break;
+            // These three were in the enum and in neither exporter's switch, so
+            // they wrote nothing AND never advanced — the rest of the branch
+            // after one of them was dropped from the file. Written as Yarn
+            // commands, the same shape the Event case above already uses.
+            case DialogueNodeType::QuestAction: {
+                const char* verb = "start";
+                switch (node->questAction) {
+                    case DialogueNode::QuestActionType::StartQuest:       verb = "start"; break;
+                    case DialogueNode::QuestActionType::CompleteObjective: verb = "complete"; break;
+                    case DialogueNode::QuestActionType::FailQuest:         verb = "fail"; break;
+                }
+                out << "<<quest " << verb << " " << node->questId;
+                if (node->questAction == DialogueNode::QuestActionType::CompleteObjective)
+                    out << " " << node->questObjectiveIndex;
+                out << ">>\n";
+                walk(node->nextNodeId);
+                break;
+            }
+            case DialogueNodeType::PlayCinematic:
+                out << "<<cinematic " << node->cinematicEntityName << ">>\n";
+                walk(node->nextNodeId);
+                break;
+            case DialogueNodeType::SetGameFlag:
+                out << "<<flag " << node->gameFlagKey << " " << node->gameFlagValue << ">>\n";
+                walk(node->nextNodeId);
+                break;
             case DialogueNodeType::End:
                 break;
         }
@@ -1117,6 +1143,31 @@ std::string TwineIO::ExportToString(const DialogueTreeData& tree) {
                 }
                 case DialogueNodeType::Event:
                     out << "<!-- event: " << node->eventName << " -->\n";
+                    current = node->nextNodeId;
+                    break;
+                // Same omission as the Yarn exporter above. Leaving `current`
+                // untouched also ended the passage, because the loop's visited
+                // check then stopped it, so everything downstream was lost.
+                case DialogueNodeType::QuestAction: {
+                    const char* verb = "start";
+                    switch (node->questAction) {
+                        case DialogueNode::QuestActionType::StartQuest:        verb = "start"; break;
+                        case DialogueNode::QuestActionType::CompleteObjective: verb = "complete"; break;
+                        case DialogueNode::QuestActionType::FailQuest:         verb = "fail"; break;
+                    }
+                    out << "<!-- quest: " << verb << " " << node->questId;
+                    if (node->questAction == DialogueNode::QuestActionType::CompleteObjective)
+                        out << " objective " << node->questObjectiveIndex;
+                    out << " -->\n";
+                    current = node->nextNodeId;
+                    break;
+                }
+                case DialogueNodeType::PlayCinematic:
+                    out << "<!-- cinematic: " << node->cinematicEntityName << " -->\n";
+                    current = node->nextNodeId;
+                    break;
+                case DialogueNodeType::SetGameFlag:
+                    out << "<!-- flag: " << node->gameFlagKey << " = " << node->gameFlagValue << " -->\n";
                     current = node->nextNodeId;
                     break;
                 case DialogueNodeType::End:

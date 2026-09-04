@@ -59,6 +59,11 @@ static ECS::ScriptPropertyValue ParseDefaultValue(const std::string& literal, EC
 
     try {
         switch (type) {
+            case ECS::ScriptPropertyType::EntityArray:
+                // A list of entity references has no literal default in script
+                // source; it is filled by dragging entities onto it. Listed so a
+                // new property type cannot slip through here unnoticed.
+                break;
             case ECS::ScriptPropertyType::Int:
             case ECS::ScriptPropertyType::Enum:
                 val.intVal = std::stoi(literal);

@@ -3955,7 +3955,7 @@ void EditorLayer::DrawUserManualPanel() {
                                     if (cs != std::string::npos)
                                         ImGui::TextWrapped("%s", cell.substr(cs, ce - cs + 1).c_str());
                                     else
-                                        ImGui::TextWrapped("");
+                                        ImGui::TextUnformatted("");
                                     rp = rnext + 1;
                                 }
                             }

@@ -18,7 +18,9 @@ void* Allocate(usize size, usize alignment) {
     return _aligned_malloc(size, alignment);
 #else
     void* ptr = nullptr;
-    posix_memalign(&ptr, alignment, size);
+    // POSIX leaves *memptr unspecified when this fails, so the result has to be
+    // checked rather than returned blind.
+    if (posix_memalign(&ptr, alignment, size) != 0) return nullptr;
     return ptr;
 #endif
 }

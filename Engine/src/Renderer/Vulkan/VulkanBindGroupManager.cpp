@@ -47,6 +47,10 @@ VkDescriptorType VulkanBindGroupManager::TranslateBindingType(GPUBindingType typ
         case GPUBindingType::Sampler:               return VK_DESCRIPTOR_TYPE_SAMPLER;
         case GPUBindingType::ComparisonSampler:     return VK_DESCRIPTOR_TYPE_SAMPLER;
         case GPUBindingType::DepthTexture:          return VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+        // A depth cubemap is sampled like any other depth texture. This case was
+        // missing, so it fell to the uniform-buffer fallback below and the point
+        // shadow cubemap's binding was declared as the wrong descriptor type.
+        case GPUBindingType::DepthTextureCube:      return VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
     }
     return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 }

@@ -221,6 +221,7 @@ enjin_add_test(TestDialogue           Unit/GUI/TestDialogue.cpp)
 enjin_add_test(TestUICanvas           Unit/GUI/TestUICanvas.cpp)
 enjin_add_test(TestUILayout           Unit/GUI/TestUILayout.cpp)
 enjin_add_test(TestDialogueTree       Unit/GUI/TestDialogueTree.cpp)
+enjin_add_test(TestDialogueExport     Unit/GUI/TestDialogueExport.cpp)
 enjin_add_test(TestUITheme            Unit/GUI/TestUITheme.cpp)
 
 # --- Gameplay ---
