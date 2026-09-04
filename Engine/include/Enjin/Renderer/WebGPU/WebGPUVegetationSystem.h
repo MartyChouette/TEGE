@@ -33,6 +33,17 @@ public:
     // Wind for sway (direction * strength, plus a running clock).
     void SetWind(const Math::Vector3& wind, f32 time) { m_Wind = wind; m_WindTime = time; }
 
+    // The scene's light. This pass has its own pipeline with no lighting
+    // buffer bound, so without this the shader lit every plant from a
+    // hardcoded direction and the grove kept flat noon light while the sun
+    // moved and everything around it changed.
+    void SetSun(const Math::Vector3& dirToLight, const Math::Vector3& color, f32 intensity) {
+        m_SunDir = dirToLight; m_SunColor = color; m_SunIntensity = intensity;
+    }
+    void SetAmbient(const Math::Vector3& color, f32 intensity) {
+        m_Ambient = color; m_AmbientIntensity = intensity;
+    }
+
     // Draw every Grass/Shrub/Tree volume into the scene pass. view/proj are the
     // scene camera's (the WebGPU Y-flip is applied internally, like particles).
     void RenderScene(WGPURenderPassEncoder pass, const Math::Matrix4& view,
@@ -59,6 +70,11 @@ private:
     TemplateRange m_Grass, m_Shrub, m_Tree;
 
     Math::Vector3 m_Wind{0.0f, 0.0f, 0.0f};
+    Math::Vector3 m_SunDir{0.4f, 0.8f, 0.45f};
+    Math::Vector3 m_SunColor{1.0f, 0.97f, 0.92f};
+    f32 m_SunIntensity = 0.65f;
+    Math::Vector3 m_Ambient{0.35f, 0.38f, 0.42f};
+    f32 m_AmbientIntensity = 1.0f;
     f32 m_WindTime = 0.0f;
 };
 

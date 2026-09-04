@@ -130,6 +130,9 @@ struct VertexOutput {
     @location(4) world_bitangent: vec3<f32>,
     @location(5) @interpolate(flat) instanceIdx: u32,
     @location(6) color: vec4<f32>,
+    // Affine texturing divides UV back out by this. 1.0 when off, so the
+    // fragment does the same maths either way and stays uniform.
+    @location(7) clipW: f32,
 };
 
 @vertex
@@ -212,6 +215,33 @@ fn vs_main(in: VertexInput, @builtin(instance_index) instanceIdx: u32) -> Vertex
     var scrollT = lighting.windData.w;
     if (scrollT == 0.0) { scrollT = viewProj.time; }
     out.uv = in.uv - vec2<f32>(object.uvScrollU, object.uvScrollV) * scrollT;
+
+    // PS1 look, ported from triangle.vert so web and desktop agree.
+    //
+    // Vertex snapping (bit 22): quantise NDC xy to a coarse grid, resolution in
+    // bits 24-28 as value*8. This is the wobble a PlayStation had because it
+    // had no sub-pixel precision.
+    if ((object.flags & 4194304) != 0) {
+        let snapRes = (object.flags >> 24u) & 31;
+        if (snapRes > 0) {
+            let grid = f32(snapRes) * 8.0;
+            let w = out.clip_position.w;
+            let ndc = out.clip_position.xy / w;
+            let snapped = (floor(ndc * grid + 0.5) / grid) * w;
+            out.clip_position = vec4<f32>(snapped.x, snapped.y,
+                                          out.clip_position.z, w);
+        }
+    }
+
+    // Affine texturing (bit 21): pre-multiply UV by w so the rasteriser
+    // interpolates it WITHOUT perspective correction, then divide it back out
+    // in the fragment. That swim across a face is the other half of the look.
+    if ((object.flags & 2097152) != 0) {
+        out.uv = out.uv * out.clip_position.w;
+        out.clipW = out.clip_position.w;
+    } else {
+        out.clipW = 1.0;
+    }
     out.instanceIdx = instanceIdx;
     out.color = in.color;
     return out;
@@ -335,7 +365,21 @@ fn samplePointShadow(worldPos: vec3<f32>, lightPos: vec3<f32>, range: f32) -> f3
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let object = objects.data[in.instanceIdx];
 
-    let baseColorSample = textureSample(baseColorTex, baseColorSmp, in.uv);
+    // Affine texturing divides the w the vertex stage multiplied in. clipW is
+    // 1.0 when the flag is off, so this is one unconditional divide either way
+    // and the sample below stays in uniform control flow.
+    let uv = in.uv / in.clipW;
+
+    // Stipple transparency (bit 23): a 4x4 Bayer screen-door instead of alpha
+    // blending, so a transparent surface stays sorted and cheap. Same matrix
+    // and the same rule as triangle.frag.
+    let bayer = array<f32, 16>(
+         0.0,  8.0,  2.0, 10.0,
+        12.0,  4.0, 14.0,  6.0,
+         3.0, 11.0,  1.0,  9.0,
+        15.0,  7.0, 13.0,  5.0);
+
+    let baseColorSample = textureSample(baseColorTex, baseColorSmp, uv);
 
     // SDF text coverage — the fwidth derivative and the smoothstep are computed
     // here in UNIFORM control flow (no branch), then APPLIED at the very end of
@@ -356,12 +400,12 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         discard;
     }
 
-    let mr = textureSample(mrTex, mrSmp, in.uv);
+    let mr = textureSample(mrTex, mrSmp, uv);
     let metallic = mr.b * object.metallic;
     let roughness = mr.g * object.roughness;
 
     // Normal mapping — always sample (WGSL uniform control flow), skip TBN if tangents are zero
-    let tangentNormal = textureSample(normalTex, normalSmp, in.uv).rgb * 2.0 - 1.0;
+    let tangentNormal = textureSample(normalTex, normalSmp, uv).rgb * 2.0 - 1.0;
     let tangentLen = dot(in.world_tangent, in.world_tangent);
     var N = normalize(in.world_normal);
     if (tangentLen > 0.001) {
@@ -591,6 +635,17 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     // Output linear HDR — post-process pass handles ACES tonemap + gamma
+    // Stipple transparency (bit 23): a 4x4 screen-door instead of blending,
+    // so a transparent surface stays sorted and cheap. Done last, after every
+    // shadow sample, for the same uniform-control-flow reason the SDF branch
+    // above is.
+    if ((object.flags & 8388608) != 0 && alpha < 1.0) {
+        let px = vec2<i32>(in.clip_position.xy);
+        let threshold = bayer[(px.x % 4) + (px.y % 4) * 4] / 16.0;
+        if (alpha < threshold) { discard; }
+        return vec4<f32>(color, 1.0);   // survivors are fully opaque
+    }
+
     return vec4<f32>(color, alpha);
 }
 )";

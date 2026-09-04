@@ -600,6 +600,29 @@ public:
             if (m_Vegetation && m_Camera) {
                 Enjin::Math::Vector4 wv = m_WindSystem.GetWindVector();
                 m_Vegetation->SetWind(Enjin::Math::Vector3(wv.x, wv.y, wv.z), wv.w);
+
+                // Feed the vegetation pass the scene's own light, so the grove
+                // darkens at dusk and takes the sun's colour like everything
+                // else. Its pipeline has no lighting buffer bound, so this is
+                // the only way it can know.
+                Enjin::Math::Vector3 sunDir(0.4f, 0.8f, 0.45f);
+                Enjin::Math::Vector3 sunCol(1.0f, 0.97f, 0.92f);
+                float sunI = 0.65f;
+                for (auto le : m_World->GetEntitiesWithComponent<Enjin::ECS::LightComponent>()) {
+                    auto* lc = m_World->GetComponent<Enjin::ECS::LightComponent>(le);
+                    auto* lxf = m_World->GetComponent<Enjin::ECS::TransformComponent>(le);
+                    if (!lc || !lxf || lc->type != Enjin::ECS::LightType::Directional) continue;
+                    // A light points along its forward; the shader wants the
+                    // direction TOWARDS it.
+                    Enjin::Math::Vector3 fwd = lxf->rotation.GetForward();
+                    sunDir = Enjin::Math::Vector3(-fwd.x, -fwd.y, -fwd.z);
+                    sunCol = lc->color;
+                    sunI = lc->intensity * 0.5f;
+                    break;
+                }
+                m_Vegetation->SetSun(sunDir, sunCol, sunI);
+                m_Vegetation->SetAmbient(m_RenderSystem->GetAmbientColor(),
+                                         m_RenderSystem->GetAmbientIntensity());
                 m_Vegetation->RenderScene(static_cast<WGPURenderPassEncoder>(scenePass),
                                           m_Camera->GetViewMatrix(), m_Camera->GetProjectionMatrix(),
                                           m_World.get());

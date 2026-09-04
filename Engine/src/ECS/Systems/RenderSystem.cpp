@@ -2912,6 +2912,22 @@ void RenderSystem::Update(f32 deltaTime) {
             // SDF text (bit 6): base-color alpha is a distance field; the shader
             // thresholds it instead of rendering the raw field as a dark box.
             if (mat && mat->sdfText) obj.flags |= (1 << 6);
+            // The PS1 look, the same bits MaterialGPU packs for Vulkan. The web
+            // shader reads all three now; before this it read nothing, because
+            // nothing here ever set them -- a material with affine texturing,
+            // vertex snapping or stipple transparency rendered as a plain cube
+            // on web while looking correct in the editor.
+            if (mat) {
+                if (mat->affineTexturing)     obj.flags |= (1 << 21);
+                if (mat->stippleTransparency) obj.flags |= (1 << 23);
+                if (mat->vertexSnapping) {
+                    obj.flags |= (1 << 22);
+                    // Resolution rides in bits 24-28 as value/8, matching
+                    // triangle.vert's (flags >> 24) & 0x1F then * 8.
+                    const i32 snapRes = static_cast<i32>(mat->vertexSnapResolution) / 8;
+                    obj.flags |= ((snapRes < 1 ? 1 : (snapRes > 31 ? 31 : snapRes)) << 24);
+                }
+            }
             std::memcpy(objDataBuf.data() + offset, &obj, sizeof(obj));
 
             const u64 meshKey = rd.vertexBuffer.id ^ (static_cast<u64>(rd.indexBuffer.id) << 16);

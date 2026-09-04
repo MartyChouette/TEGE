@@ -33,7 +33,17 @@ namespace Renderer {
 // curvature are desktop-only for now. Volume selection: firstInstance encodes
 // the volume slot in the high bits (vol = ii >> 16, blade = ii & 0xFFFF).
 static const char* kVegWGSL = R"WGSL(
-struct ViewProj { view : mat4x4<f32>, proj : mat4x4<f32>, };
+struct ViewProj {
+    view : mat4x4<f32>,
+    proj : mat4x4<f32>,
+    // The scene's real sun and ambient. This pass has no lighting buffer bound,
+    // so without these the shader lit every plant from a hardcoded direction
+    // with a hardcoded ambient -- the grove kept the same flat noon light while
+    // the sun moved across the sky and everything around it changed.
+    sunDir : vec4<f32>,        // xyz = direction TO the light, w unused
+    sunColor : vec4<f32>,      // rgb, w = intensity
+    ambient : vec4<f32>,       // rgb, w = intensity
+};
 struct VolumeParams {
     posHalfX : vec4<f32>,        // xyz volume center, w halfExtentX
     baseColorHalfZ : vec4<f32>,  // xyz base color,    w halfExtentZ
@@ -156,10 +166,13 @@ fn vs_main(@builtin(vertex_index) vid : u32, @builtin(instance_index) ii : u32) 
 
 @fragment
 fn fs_main(in : VSOut) -> @location(0) vec4<f32> {
-    let sun = normalize(vec3<f32>(0.4, 0.8, 0.45));
-    let ndl = clamp(dot(normalize(in.normal), sun), 0.0, 1.0) * 0.5 + 0.5;   // half-lambert
-    let lit = in.color * (0.35 + 0.65 * ndl);
-    return vec4<f32>(lit, 1.0);
+    // Half-lambert against the SCENE's sun, so foliage darkens at dusk and
+    // picks up the light's colour like every other surface.
+    let sun = normalize(ubo.sunDir.xyz);
+    let ndl = clamp(dot(normalize(in.normal), sun), 0.0, 1.0) * 0.5 + 0.5;
+    let ambient = ubo.ambient.rgb * ubo.ambient.w;
+    let direct = ubo.sunColor.rgb * ubo.sunColor.w * ndl;
+    return vec4<f32>(in.color * (ambient + direct), 1.0);
 }
 )WGSL";
 
@@ -226,7 +239,7 @@ bool WebGPUVegetationSystem::Initialize(WebGPURenderer* renderer) {
     m_VolumeParams = bufMgr->CreateBuffer(pd);
 
     GPUBufferDesc ud;
-    ud.size = 128;
+    ud.size = 176;   // 2 matrices (128) + sunDir/sunColor/ambient (48)
     ud.usage = GPUBufferUsage::Uniform | GPUBufferUsage::CopyDst;
     ud.label = "veg-viewproj";
     m_ViewProjUBO = bufMgr->CreateBuffer(ud);
@@ -380,8 +393,22 @@ void WebGPUVegetationSystem::RenderScene(WGPURenderPassEncoder pass, const Math:
     // Same Y-flip the particle scene draw applies: the scene UBO negates
     // proj.m[5] (Vulkan Y-down -> WebGPU Y-up); any custom scene-pass draw must
     // match or its layer is vertically mirrored and swims with camera pitch.
-    struct { Math::Matrix4 view, proj; } vp{ view, proj };
+    // Matches the WGSL ViewProj: two matrices then the scene's light. The
+    // buffer is 128 bytes for the matrices plus 48 for the three vec4s.
+    struct FrameUBO {
+        Math::Matrix4 view, proj;
+        f32 sunDir[4];
+        f32 sunColor[4];
+        f32 ambient[4];
+    } vp{};
+    vp.view = view;
+    vp.proj = proj;
     vp.proj.m[5] = -vp.proj.m[5];
+    vp.sunDir[0] = m_SunDir.x; vp.sunDir[1] = m_SunDir.y; vp.sunDir[2] = m_SunDir.z;
+    vp.sunColor[0] = m_SunColor.x; vp.sunColor[1] = m_SunColor.y;
+    vp.sunColor[2] = m_SunColor.z; vp.sunColor[3] = m_SunIntensity;
+    vp.ambient[0] = m_Ambient.x; vp.ambient[1] = m_Ambient.y;
+    vp.ambient[2] = m_Ambient.z; vp.ambient[3] = m_AmbientIntensity;
     bufMgr->UploadData(m_ViewProjUBO, &vp, sizeof(vp));
 
     auto* pipeMgrN = static_cast<WebGPUPipelineManager*>(m_Renderer->GetPipelineManager());
