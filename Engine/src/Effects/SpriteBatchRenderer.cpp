@@ -113,21 +113,43 @@ void SpriteBatchRenderer::RecreateForRenderPass(VkRenderPass renderPass, VkDescr
 }
 
 void SpriteBatchRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout, u32 colorAttachmentCount) {
+    // Remember it, so a later ReloadShaders rebuilds against this pass
+    // rather than blindly against the swapchain.
+    m_LastRenderPass = renderPass;
+    m_LastColorAttachmentCount = colorAttachmentCount;
     // Load sprite shaders
-    m_VertexShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
-    if (!m_VertexShader->LoadFromSPIRV(
-        reinterpret_cast<const u8*>(Renderer::ShaderData::SpriteVertexShaderData),
-        Renderer::ShaderData::SpriteVertexShaderDataSize)) {
-        ENJIN_LOG_ERROR(Renderer, "SpriteBatchRenderer: Failed to load sprite vertex shader");
-        return;
+    // Only load the baked SPIR-V into an EMPTY slot. ReloadShaders puts the
+    // freshly compiled GLSL here before calling us; overwriting it is what
+    // made every shader hot reload silently do nothing while reporting
+    // success.
+    if (!m_VertexShader) {
+        m_VertexShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+        if (!m_VertexShader->LoadFromSPIRV(
+                reinterpret_cast<const u8*>(Renderer::ShaderData::SpriteVertexShaderData),
+                Renderer::ShaderData::SpriteVertexShaderDataSize)) {
+            ENJIN_LOG_ERROR(Renderer, "SpriteBatchRenderer: Failed to load sprite vertex shader");
+            // A failed load must leave the slot EMPTY, or the guard above
+            // skips the retry on every later call.
+            m_VertexShader.reset();
+            return;
+        }
     }
 
-    m_FragmentShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
-    if (!m_FragmentShader->LoadFromSPIRV(
-        reinterpret_cast<const u8*>(Renderer::ShaderData::SpriteFragmentShaderData),
-        Renderer::ShaderData::SpriteFragmentShaderDataSize)) {
-        ENJIN_LOG_ERROR(Renderer, "SpriteBatchRenderer: Failed to load sprite fragment shader");
-        return;
+    // Only load the baked SPIR-V into an EMPTY slot. ReloadShaders puts the
+    // freshly compiled GLSL here before calling us; overwriting it is what
+    // made every shader hot reload silently do nothing while reporting
+    // success.
+    if (!m_FragmentShader) {
+        m_FragmentShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+        if (!m_FragmentShader->LoadFromSPIRV(
+                reinterpret_cast<const u8*>(Renderer::ShaderData::SpriteFragmentShaderData),
+                Renderer::ShaderData::SpriteFragmentShaderDataSize)) {
+            ENJIN_LOG_ERROR(Renderer, "SpriteBatchRenderer: Failed to load sprite fragment shader");
+            // A failed load must leave the slot EMPTY, or the guard above
+            // skips the retry on every later call.
+            m_FragmentShader.reset();
+            return;
+        }
     }
 
     // Custom vertex input: binding 0 = quad vertex, binding 1 = instance data
@@ -219,6 +241,7 @@ void SpriteBatchRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDesc
 }
 
 void SpriteBatchRenderer::CreatePipeline(VkDescriptorSetLayout sharedLayout) {
+    // Delegates, so CreatePipelineWithPass is what records the pass.
     CreatePipelineWithPass(m_Renderer->GetRenderPass(), sharedLayout);
 }
 
@@ -228,20 +251,38 @@ void SpriteBatchRenderer::CreateLitPipeline(VkDescriptorSetLayout sharedLayout) 
 
 void SpriteBatchRenderer::CreateLitPipelineWithPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout, u32 colorAttachmentCount) {
     // Load lit sprite shaders
-    m_LitVertexShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
-    if (!m_LitVertexShader->LoadFromSPIRV(
-        reinterpret_cast<const u8*>(Renderer::ShaderData::SpriteLitVertexShaderData),
-        Renderer::ShaderData::SpriteLitVertexShaderDataSize)) {
-        ENJIN_LOG_ERROR(Renderer, "SpriteBatchRenderer: Failed to load lit sprite vertex shader");
-        return;
+    // Only load the baked SPIR-V into an EMPTY slot. ReloadShaders puts the
+    // freshly compiled GLSL here before calling us; overwriting it is what
+    // made every shader hot reload silently do nothing while reporting
+    // success.
+    if (!m_LitVertexShader) {
+        m_LitVertexShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+        if (!m_LitVertexShader->LoadFromSPIRV(
+                reinterpret_cast<const u8*>(Renderer::ShaderData::SpriteLitVertexShaderData),
+                Renderer::ShaderData::SpriteLitVertexShaderDataSize)) {
+            ENJIN_LOG_ERROR(Renderer, "SpriteBatchRenderer: Failed to load lit sprite vertex shader");
+            // A failed load must leave the slot EMPTY, or the guard above
+            // skips the retry on every later call.
+            m_LitVertexShader.reset();
+            return;
+        }
     }
 
-    m_LitFragmentShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
-    if (!m_LitFragmentShader->LoadFromSPIRV(
-        reinterpret_cast<const u8*>(Renderer::ShaderData::SpriteLitFragmentShaderData),
-        Renderer::ShaderData::SpriteLitFragmentShaderDataSize)) {
-        ENJIN_LOG_ERROR(Renderer, "SpriteBatchRenderer: Failed to load lit sprite fragment shader");
-        return;
+    // Only load the baked SPIR-V into an EMPTY slot. ReloadShaders puts the
+    // freshly compiled GLSL here before calling us; overwriting it is what
+    // made every shader hot reload silently do nothing while reporting
+    // success.
+    if (!m_LitFragmentShader) {
+        m_LitFragmentShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+        if (!m_LitFragmentShader->LoadFromSPIRV(
+                reinterpret_cast<const u8*>(Renderer::ShaderData::SpriteLitFragmentShaderData),
+                Renderer::ShaderData::SpriteLitFragmentShaderDataSize)) {
+            ENJIN_LOG_ERROR(Renderer, "SpriteBatchRenderer: Failed to load lit sprite fragment shader");
+            // A failed load must leave the slot EMPTY, or the guard above
+            // skips the retry on every later call.
+            m_LitFragmentShader.reset();
+            return;
+        }
     }
 
     // Same vertex input as unlit pipeline (same SpriteInstanceData struct)
@@ -789,8 +830,16 @@ bool SpriteBatchRenderer::ReloadShaders(const std::string& shaderDir, VkDescript
     m_FragmentShader = std::move(tempFrag);
     m_LitVertexShader = std::move(tempLitVert);
     m_LitFragmentShader = std::move(tempLitFrag);
-    CreatePipeline(sharedLayout);
-    CreateLitPipeline(sharedLayout);
+    // Rebuild against whichever pass the pipelines are currently targeted at.
+    // Always rebuilding against the swapchain meant a hot reload while the
+    // editor had us on its offscreen pass produced the wrong attachment count.
+    if (m_LastRenderPass != VK_NULL_HANDLE) {
+        CreatePipelineWithPass(m_LastRenderPass, sharedLayout, m_LastColorAttachmentCount);
+        CreateLitPipelineWithPass(m_LastRenderPass, sharedLayout, m_LastColorAttachmentCount);
+    } else {
+        CreatePipeline(sharedLayout);
+        CreateLitPipeline(sharedLayout);
+    }
     return m_Pipeline != nullptr && m_LitPipeline != nullptr;
 }
 

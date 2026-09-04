@@ -73,6 +73,14 @@ private:
     void CreatePipeline(VkDescriptorSetLayout sharedLayout);
     void CreatePipelineWithPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout, u32 colorAttachmentCount = 2);
 
+    // The render pass the pipeline was last built for. VK_NULL_HANDLE means the
+    // swapchain pass. ReloadShaders always rebuilt against the swapchain, so
+    // hot-reloading a shader while the editor had retargeted this renderer at
+    // its offscreen pass produced a pipeline with the wrong attachment count
+    // (VUID-07609) instead of the reload you asked for.
+    VkRenderPass m_LastRenderPass = VK_NULL_HANDLE;
+    u32 m_LastColorAttachmentCount = 2;
+
     Renderer::VulkanRenderer* m_Renderer = nullptr;
     VkDescriptorSetLayout m_BindlessLayout = VK_NULL_HANDLE;
 

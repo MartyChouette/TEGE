@@ -104,21 +104,43 @@ void WeatherRenderer::RecreateForRenderPass(VkRenderPass renderPass, VkDescripto
 }
 
 void WeatherRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout, u32 colorAttachmentCount) {
+    // Remember it, so a later ReloadShaders rebuilds against this pass
+    // rather than blindly against the swapchain.
+    m_LastRenderPass = renderPass;
+    m_LastColorAttachmentCount = colorAttachmentCount;
     // Load shaders
-    m_VertexShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
-    if (!m_VertexShader->LoadFromSPIRV(
-        reinterpret_cast<const u8*>(Renderer::ShaderData::ParticleVertexShaderData),
-        Renderer::ShaderData::ParticleVertexShaderDataSize)) {
-        ENJIN_LOG_ERROR(Renderer, "WeatherRenderer: Failed to load particle vertex shader");
-        return;
+    // Only load the baked SPIR-V into an EMPTY slot. ReloadShaders puts the
+    // freshly compiled GLSL here before calling us; overwriting it is what
+    // made every shader hot reload silently do nothing while reporting
+    // success.
+    if (!m_VertexShader) {
+        m_VertexShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+        if (!m_VertexShader->LoadFromSPIRV(
+                reinterpret_cast<const u8*>(Renderer::ShaderData::ParticleVertexShaderData),
+                Renderer::ShaderData::ParticleVertexShaderDataSize)) {
+            ENJIN_LOG_ERROR(Renderer, "WeatherRenderer: Failed to load particle vertex shader");
+            // A failed load must leave the slot EMPTY, or the guard above
+            // skips the retry on every later call.
+            m_VertexShader.reset();
+            return;
+        }
     }
 
-    m_FragmentShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
-    if (!m_FragmentShader->LoadFromSPIRV(
-        reinterpret_cast<const u8*>(Renderer::ShaderData::WeatherParticleFragmentShaderData),
-        Renderer::ShaderData::WeatherParticleFragmentShaderDataSize)) {
-        ENJIN_LOG_ERROR(Renderer, "WeatherRenderer: Failed to load weather particle fragment shader");
-        return;
+    // Only load the baked SPIR-V into an EMPTY slot. ReloadShaders puts the
+    // freshly compiled GLSL here before calling us; overwriting it is what
+    // made every shader hot reload silently do nothing while reporting
+    // success.
+    if (!m_FragmentShader) {
+        m_FragmentShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+        if (!m_FragmentShader->LoadFromSPIRV(
+                reinterpret_cast<const u8*>(Renderer::ShaderData::WeatherParticleFragmentShaderData),
+                Renderer::ShaderData::WeatherParticleFragmentShaderDataSize)) {
+            ENJIN_LOG_ERROR(Renderer, "WeatherRenderer: Failed to load weather particle fragment shader");
+            // A failed load must leave the slot EMPTY, or the guard above
+            // skips the retry on every later call.
+            m_FragmentShader.reset();
+            return;
+        }
     }
 
     // Custom vertex input: binding 0 = quad vertex, binding 1 = instance data
@@ -198,6 +220,10 @@ void WeatherRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescript
 }
 
 void WeatherRenderer::CreatePipeline(VkDescriptorSetLayout sharedLayout) {
+    // The swapchain build. Clearing this keeps ReloadShaders honest
+    // about which pass the live pipeline belongs to.
+    m_LastRenderPass = VK_NULL_HANDLE;
+    m_LastColorAttachmentCount = 2;
     CreatePipelineWithPass(m_Renderer->GetRenderPass(), sharedLayout);
 }
 
@@ -348,7 +374,11 @@ bool WeatherRenderer::ReloadShaders(const std::string& shaderDir, VkDescriptorSe
     m_Pipeline.reset();
     m_VertexShader = std::move(tempVert);
     m_FragmentShader = std::move(tempFrag);
-    CreatePipeline(sharedLayout);
+    if (m_LastRenderPass != VK_NULL_HANDLE) {
+        CreatePipelineWithPass(m_LastRenderPass, sharedLayout, m_LastColorAttachmentCount);
+    } else {
+        CreatePipeline(sharedLayout);
+    }
     return m_Pipeline != nullptr;
 }
 

@@ -92,20 +92,42 @@ void ShrubRenderer::RecreateForRenderPass(VkRenderPass renderPass, VkDescriptorS
 }
 
 void ShrubRenderer::CreatePipeline(VkDescriptorSetLayout sharedLayout) {
-    m_VertexShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
-    if (!m_VertexShader->LoadFromSPIRV(
-        reinterpret_cast<const u8*>(Renderer::ShaderData::ShrubVertexShaderData),
-        Renderer::ShaderData::ShrubVertexShaderDataSize)) {
-        ENJIN_LOG_ERROR(Renderer, "ShrubRenderer: Failed to load shrub vertex shader");
-        return;
+    // The swapchain build. Clearing this keeps ReloadShaders honest
+    // about which pass the live pipeline belongs to.
+    m_LastRenderPass = VK_NULL_HANDLE;
+    m_LastColorAttachmentCount = 2;
+    // Only load the baked SPIR-V into an EMPTY slot. ReloadShaders puts the
+    // freshly compiled GLSL here before calling us; overwriting it is what
+    // made every shader hot reload silently do nothing while reporting
+    // success.
+    if (!m_VertexShader) {
+        m_VertexShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+        if (!m_VertexShader->LoadFromSPIRV(
+                reinterpret_cast<const u8*>(Renderer::ShaderData::ShrubVertexShaderData),
+                Renderer::ShaderData::ShrubVertexShaderDataSize)) {
+            ENJIN_LOG_ERROR(Renderer, "ShrubRenderer: Failed to load shrub vertex shader");
+            // A failed load must leave the slot EMPTY, or the guard above
+            // skips the retry on every later call.
+            m_VertexShader.reset();
+            return;
+        }
     }
 
-    m_FragmentShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
-    if (!m_FragmentShader->LoadFromSPIRV(
-        reinterpret_cast<const u8*>(Renderer::ShaderData::ShrubFragmentShaderData),
-        Renderer::ShaderData::ShrubFragmentShaderDataSize)) {
-        ENJIN_LOG_ERROR(Renderer, "ShrubRenderer: Failed to load shrub fragment shader");
-        return;
+    // Only load the baked SPIR-V into an EMPTY slot. ReloadShaders puts the
+    // freshly compiled GLSL here before calling us; overwriting it is what
+    // made every shader hot reload silently do nothing while reporting
+    // success.
+    if (!m_FragmentShader) {
+        m_FragmentShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+        if (!m_FragmentShader->LoadFromSPIRV(
+                reinterpret_cast<const u8*>(Renderer::ShaderData::ShrubFragmentShaderData),
+                Renderer::ShaderData::ShrubFragmentShaderDataSize)) {
+            ENJIN_LOG_ERROR(Renderer, "ShrubRenderer: Failed to load shrub fragment shader");
+            // A failed load must leave the slot EMPTY, or the guard above
+            // skips the retry on every later call.
+            m_FragmentShader.reset();
+            return;
+        }
     }
 
     VkVertexInputBindingDescription binding{};
@@ -151,21 +173,39 @@ void ShrubRenderer::CreatePipeline(VkDescriptorSetLayout sharedLayout) {
 }
 
 void ShrubRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout, u32 colorAttachmentCount) {
+    // Remember it, so a later ReloadShaders rebuilds against this pass
+    // rather than blindly against the swapchain.
+    m_LastRenderPass = renderPass;
+    m_LastColorAttachmentCount = colorAttachmentCount;
+    // Only load the baked SPIR-V into an EMPTY slot. ReloadShaders puts the
+    // freshly compiled GLSL here before calling us; overwriting it is what
+    // made every shader hot reload silently do nothing while reporting
+    // success.
     if (!m_VertexShader) {
         m_VertexShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
         if (!m_VertexShader->LoadFromSPIRV(
-            reinterpret_cast<const u8*>(Renderer::ShaderData::ShrubVertexShaderData),
-            Renderer::ShaderData::ShrubVertexShaderDataSize)) {
+                reinterpret_cast<const u8*>(Renderer::ShaderData::ShrubVertexShaderData),
+                Renderer::ShaderData::ShrubVertexShaderDataSize)) {
             ENJIN_LOG_ERROR(Renderer, "ShrubRenderer: Failed to load shrub vertex shader");
+            // A failed load must leave the slot EMPTY, or the guard above
+            // skips the retry on every later call.
+            m_VertexShader.reset();
             return;
         }
     }
+    // Only load the baked SPIR-V into an EMPTY slot. ReloadShaders puts the
+    // freshly compiled GLSL here before calling us; overwriting it is what
+    // made every shader hot reload silently do nothing while reporting
+    // success.
     if (!m_FragmentShader) {
         m_FragmentShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
         if (!m_FragmentShader->LoadFromSPIRV(
-            reinterpret_cast<const u8*>(Renderer::ShaderData::ShrubFragmentShaderData),
-            Renderer::ShaderData::ShrubFragmentShaderDataSize)) {
+                reinterpret_cast<const u8*>(Renderer::ShaderData::ShrubFragmentShaderData),
+                Renderer::ShaderData::ShrubFragmentShaderDataSize)) {
             ENJIN_LOG_ERROR(Renderer, "ShrubRenderer: Failed to load shrub fragment shader");
+            // A failed load must leave the slot EMPTY, or the guard above
+            // skips the retry on every later call.
+            m_FragmentShader.reset();
             return;
         }
     }
@@ -336,7 +376,11 @@ bool ShrubRenderer::ReloadShaders(const std::string& shaderDir, VkDescriptorSetL
     m_Pipeline.reset();
     m_VertexShader = std::move(tempVert);
     m_FragmentShader = std::move(tempFrag);
-    CreatePipeline(sharedLayout);
+    if (m_LastRenderPass != VK_NULL_HANDLE) {
+        CreatePipelineWithPass(m_LastRenderPass, sharedLayout, m_LastColorAttachmentCount);
+    } else {
+        CreatePipeline(sharedLayout);
+    }
     return m_Pipeline != nullptr;
 }
 

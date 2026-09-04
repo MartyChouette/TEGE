@@ -91,20 +91,42 @@ void GrassRenderer::RecreateForRenderPass(VkRenderPass renderPass, VkDescriptorS
 }
 
 void GrassRenderer::CreatePipeline(VkDescriptorSetLayout sharedLayout) {
-    m_VertexShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
-    if (!m_VertexShader->LoadFromSPIRV(
-        reinterpret_cast<const u8*>(Renderer::ShaderData::GrassVertexShaderData),
-        Renderer::ShaderData::GrassVertexShaderDataSize)) {
-        ENJIN_LOG_ERROR(Renderer, "GrassRenderer: Failed to load grass vertex shader");
-        return;
+    // The swapchain build. Clearing this keeps ReloadShaders honest
+    // about which pass the live pipeline belongs to.
+    m_LastRenderPass = VK_NULL_HANDLE;
+    m_LastColorAttachmentCount = 2;
+    // Only load the baked SPIR-V into an EMPTY slot. ReloadShaders puts the
+    // freshly compiled GLSL here before calling us; overwriting it is what
+    // made every shader hot reload silently do nothing while reporting
+    // success.
+    if (!m_VertexShader) {
+        m_VertexShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+        if (!m_VertexShader->LoadFromSPIRV(
+                reinterpret_cast<const u8*>(Renderer::ShaderData::GrassVertexShaderData),
+                Renderer::ShaderData::GrassVertexShaderDataSize)) {
+            ENJIN_LOG_ERROR(Renderer, "GrassRenderer: Failed to load grass vertex shader");
+            // A failed load must leave the slot EMPTY, or the guard above
+            // skips the retry on every later call.
+            m_VertexShader.reset();
+            return;
+        }
     }
 
-    m_FragmentShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
-    if (!m_FragmentShader->LoadFromSPIRV(
-        reinterpret_cast<const u8*>(Renderer::ShaderData::GrassFragmentShaderData),
-        Renderer::ShaderData::GrassFragmentShaderDataSize)) {
-        ENJIN_LOG_ERROR(Renderer, "GrassRenderer: Failed to load grass fragment shader");
-        return;
+    // Only load the baked SPIR-V into an EMPTY slot. ReloadShaders puts the
+    // freshly compiled GLSL here before calling us; overwriting it is what
+    // made every shader hot reload silently do nothing while reporting
+    // success.
+    if (!m_FragmentShader) {
+        m_FragmentShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+        if (!m_FragmentShader->LoadFromSPIRV(
+                reinterpret_cast<const u8*>(Renderer::ShaderData::GrassFragmentShaderData),
+                Renderer::ShaderData::GrassFragmentShaderDataSize)) {
+            ENJIN_LOG_ERROR(Renderer, "GrassRenderer: Failed to load grass fragment shader");
+            // A failed load must leave the slot EMPTY, or the guard above
+            // skips the retry on every later call.
+            m_FragmentShader.reset();
+            return;
+        }
     }
 
     // Custom vertex input: single binding for blade mesh (pos + UV = 5 floats)
@@ -153,22 +175,40 @@ void GrassRenderer::CreatePipeline(VkDescriptorSetLayout sharedLayout) {
 }
 
 void GrassRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout, u32 colorAttachmentCount) {
-    // Reuse existing shaders if loaded, otherwise load them
+    // Remember it, so a later ReloadShaders rebuilds against this pass
+    // rather than blindly against the swapchain.
+    m_LastRenderPass = renderPass;
+    m_LastColorAttachmentCount = colorAttachmentCount;
+
+    // Only load the baked SPIR-V into an EMPTY slot. ReloadShaders puts the
+    // freshly compiled GLSL here before calling us; overwriting it is what
+    // made every shader hot reload silently do nothing while reporting
+    // success.
     if (!m_VertexShader) {
         m_VertexShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
         if (!m_VertexShader->LoadFromSPIRV(
-            reinterpret_cast<const u8*>(Renderer::ShaderData::GrassVertexShaderData),
-            Renderer::ShaderData::GrassVertexShaderDataSize)) {
+                reinterpret_cast<const u8*>(Renderer::ShaderData::GrassVertexShaderData),
+                Renderer::ShaderData::GrassVertexShaderDataSize)) {
             ENJIN_LOG_ERROR(Renderer, "GrassRenderer: Failed to load grass vertex shader");
+            // A failed load must leave the slot EMPTY, or the guard above
+            // skips the retry on every later call.
+            m_VertexShader.reset();
             return;
         }
     }
+    // Only load the baked SPIR-V into an EMPTY slot. ReloadShaders puts the
+    // freshly compiled GLSL here before calling us; overwriting it is what
+    // made every shader hot reload silently do nothing while reporting
+    // success.
     if (!m_FragmentShader) {
         m_FragmentShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
         if (!m_FragmentShader->LoadFromSPIRV(
-            reinterpret_cast<const u8*>(Renderer::ShaderData::GrassFragmentShaderData),
-            Renderer::ShaderData::GrassFragmentShaderDataSize)) {
+                reinterpret_cast<const u8*>(Renderer::ShaderData::GrassFragmentShaderData),
+                Renderer::ShaderData::GrassFragmentShaderDataSize)) {
             ENJIN_LOG_ERROR(Renderer, "GrassRenderer: Failed to load grass fragment shader");
+            // A failed load must leave the slot EMPTY, or the guard above
+            // skips the retry on every later call.
+            m_FragmentShader.reset();
             return;
         }
     }
@@ -337,7 +377,11 @@ bool GrassRenderer::ReloadShaders(const std::string& shaderDir, VkDescriptorSetL
     m_Pipeline.reset();
     m_VertexShader = std::move(tempVert);
     m_FragmentShader = std::move(tempFrag);
-    CreatePipeline(sharedLayout);
+    if (m_LastRenderPass != VK_NULL_HANDLE) {
+        CreatePipelineWithPass(m_LastRenderPass, sharedLayout, m_LastColorAttachmentCount);
+    } else {
+        CreatePipeline(sharedLayout);
+    }
     return m_Pipeline != nullptr;
 }
 

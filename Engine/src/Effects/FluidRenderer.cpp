@@ -100,25 +100,47 @@ void FluidRenderer::RecreateForRenderPass(VkRenderPass renderPass, VkDescriptorS
 }
 
 void FluidRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout, u32 colorAttachmentCount) {
+    // Remember it, so a later ReloadShaders rebuilds against this pass
+    // rather than blindly against the swapchain.
+    m_LastRenderPass = renderPass;
+    m_LastColorAttachmentCount = colorAttachmentCount;
     // Use particle shaders as a base — fluid cells are similar billboard quads
     // Fluid shaders: same vertex layout as particles, but the fragment reads the
     // per-cell colour from the instance data instead of a flat white push constant,
     // so the Fluid Volume's Color knob actually shows. Reusing the particle shaders
     // routed the colour into an unused "stretch" attribute, so every fluid rendered white.
-    m_VertexShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
-    if (!m_VertexShader->LoadFromSPIRV(
-        reinterpret_cast<const u8*>(Renderer::ShaderData::FluidVertexShaderData),
-        Renderer::ShaderData::FluidVertexShaderDataSize)) {
-        ENJIN_LOG_ERROR(Renderer, "FluidRenderer: Failed to load vertex shader");
-        return;
+    // Only load the baked SPIR-V into an EMPTY slot. ReloadShaders puts the
+    // freshly compiled GLSL here before calling us; overwriting it is what
+    // made every shader hot reload silently do nothing while reporting
+    // success.
+    if (!m_VertexShader) {
+        m_VertexShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+        if (!m_VertexShader->LoadFromSPIRV(
+                reinterpret_cast<const u8*>(Renderer::ShaderData::FluidVertexShaderData),
+                Renderer::ShaderData::FluidVertexShaderDataSize)) {
+            ENJIN_LOG_ERROR(Renderer, "FluidRenderer: Failed to load vertex shader");
+            // A failed load must leave the slot EMPTY, or the guard above
+            // skips the retry on every later call.
+            m_VertexShader.reset();
+            return;
+        }
     }
 
-    m_FragmentShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
-    if (!m_FragmentShader->LoadFromSPIRV(
-        reinterpret_cast<const u8*>(Renderer::ShaderData::FluidFragmentShaderData),
-        Renderer::ShaderData::FluidFragmentShaderDataSize)) {
-        ENJIN_LOG_ERROR(Renderer, "FluidRenderer: Failed to load fragment shader");
-        return;
+    // Only load the baked SPIR-V into an EMPTY slot. ReloadShaders puts the
+    // freshly compiled GLSL here before calling us; overwriting it is what
+    // made every shader hot reload silently do nothing while reporting
+    // success.
+    if (!m_FragmentShader) {
+        m_FragmentShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+        if (!m_FragmentShader->LoadFromSPIRV(
+                reinterpret_cast<const u8*>(Renderer::ShaderData::FluidFragmentShaderData),
+                Renderer::ShaderData::FluidFragmentShaderDataSize)) {
+            ENJIN_LOG_ERROR(Renderer, "FluidRenderer: Failed to load fragment shader");
+            // A failed load must leave the slot EMPTY, or the guard above
+            // skips the retry on every later call.
+            m_FragmentShader.reset();
+            return;
+        }
     }
 
     // Custom vertex input: binding 0 = quad vertex, binding 1 = instance data
@@ -183,6 +205,10 @@ void FluidRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescriptor
 }
 
 void FluidRenderer::CreatePipeline(VkDescriptorSetLayout sharedLayout) {
+    // The swapchain build. Clearing this keeps ReloadShaders honest
+    // about which pass the live pipeline belongs to.
+    m_LastRenderPass = VK_NULL_HANDLE;
+    m_LastColorAttachmentCount = 2;
     CreatePipelineWithPass(m_Renderer->GetRenderPass(), sharedLayout);
 }
 
@@ -348,7 +374,11 @@ bool FluidRenderer::ReloadShaders(const std::string& shaderDir, VkDescriptorSetL
     m_Pipeline.reset();
     m_VertexShader = std::move(tempVert);
     m_FragmentShader = std::move(tempFrag);
-    CreatePipeline(sharedLayout);
+    if (m_LastRenderPass != VK_NULL_HANDLE) {
+        CreatePipelineWithPass(m_LastRenderPass, sharedLayout, m_LastColorAttachmentCount);
+    } else {
+        CreatePipeline(sharedLayout);
+    }
     return m_Pipeline != nullptr;
 }
 
