@@ -21,6 +21,11 @@
 #include "Enjin/ECS/Components/DynamicDifficulty.h"
 #include "Enjin/ECS/Components/GPUParticleEmitter.h"
 #include "Enjin/ECS/Components/Flower.h"
+#include "Enjin/ECS/Components/Mesh.h"
+#include "Enjin/ECS/Components/Skeleton.h"
+#include "Enjin/Physics/PhysicsTypes2D.h"
+#include "Enjin/Effects/InteractiveWater.h"
+#include "Enjin/Animation/Timeline.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/Scene/SceneSerializer.h"
 #include <cmath>
@@ -37,6 +42,13 @@ bool Near(f32 a, f32 b, f32 eps = 0.001f) { return std::fabs(a - b) < eps; }
 // Save one entity to a string and load it into a fresh world.
 Entity RoundTrip(World& src, Entity e, World& dst) {
     const std::string json = Scene::SceneSerializer::SerializeEntityToString(&src, e, false);
+    return Scene::SceneSerializer::DeserializeEntityFromString(&dst, json);
+}
+
+// Vertex data is off in RoundTrip so the component tests stay small; a mesh test
+// has to ask for it.
+Entity RoundTripWithVertices(World& src, Entity e, World& dst) {
+    const std::string json = Scene::SceneSerializer::SerializeEntityToString(&src, e, true);
     return Scene::SceneSerializer::DeserializeEntityFromString(&dst, json);
 }
 
@@ -484,6 +496,206 @@ ENJIN_TEST(SerdesCoverage, HealthAndTimerNotifyLinksSurviveASave) {
     const auto* rt = dst.GetComponent<TimerComponent>(loaded);
     ENJIN_ASSERT_TRUE(rt != nullptr);
     ENJIN_EXPECT_TRUE(rt->onCompleteNotify == 44);
+}
+
+
+// A third audit pass, over all 166 serializers. These five are what it found.
+
+ENJIN_TEST(SerdesCoverage, SecondUVChannelSurvivesASave) {
+    // Arrange: a mesh written inline, which is what a copy/paste, an undo, or a
+    // mesh whose source file moved all fall back to. glTF TEXCOORD_1 and Assimp
+    // texCoord1 fill uv1, and it is a real vertex attribute the shader reads.
+    World src;
+    Entity e = Base(src);
+    MeshComponent mesh;
+    MeshComponent::Vertex v{};
+    v.position = Vector3(1.0f, 2.0f, 3.0f);
+    v.uv = Vector2(0.25f, 0.5f);
+    v.uv1 = Vector2(0.75f, 0.125f);
+    mesh.vertices.push_back(v);
+    mesh.indices = {0};
+    src.AddComponent<MeshComponent>(e, mesh);
+
+    // Act
+    World dst;
+    Entity loaded = RoundTripWithVertices(src, e, dst);
+
+    // Assert
+    const auto* r = dst.GetComponent<MeshComponent>(loaded);
+    ENJIN_ASSERT_TRUE(r != nullptr);
+    ENJIN_ASSERT_TRUE(r->vertices.size() == 1);
+    ENJIN_EXPECT_TRUE(Near(r->vertices[0].uv.x, 0.25f));
+    ENJIN_EXPECT_TRUE(Near(r->vertices[0].uv1.x, 0.75f));
+    ENJIN_EXPECT_TRUE(Near(r->vertices[0].uv1.y, 0.125f));
+}
+
+ENJIN_TEST(SerdesCoverage, Body2DPolygonGeometrySurvivesASave) {
+    // Arrange: the shape type round-tripped already, so a polygon body used to
+    // come back declaring itself a polygon with no vertices at all.
+    World src;
+    Entity e = Base(src);
+    Enjin::Physics::Body2DComponent body;
+    body.shapeType = Enjin::Physics::Shape2DType::Polygon;
+    body.polygon.vertices = { Vector2(0.0f, 0.0f), Vector2(1.0f, 0.0f), Vector2(0.5f, 1.5f) };
+    body.polygon.offset = Vector2(0.25f, -0.5f);
+    src.AddComponent<Enjin::Physics::Body2DComponent>(e, body);
+
+    // Act
+    World dst;
+    Entity loaded = RoundTrip(src, e, dst);
+
+    // Assert
+    const auto* r = dst.GetComponent<Enjin::Physics::Body2DComponent>(loaded);
+    ENJIN_ASSERT_TRUE(r != nullptr);
+    ENJIN_EXPECT_TRUE(r->shapeType == Enjin::Physics::Shape2DType::Polygon);
+    ENJIN_ASSERT_TRUE(r->polygon.vertices.size() == 3);
+    ENJIN_EXPECT_TRUE(Near(r->polygon.vertices[2].x, 0.5f));
+    ENJIN_EXPECT_TRUE(Near(r->polygon.vertices[2].y, 1.5f));
+    ENJIN_EXPECT_TRUE(Near(r->polygon.offset.x, 0.25f));
+    ENJIN_EXPECT_TRUE(Near(r->polygon.offset.y, -0.5f));
+}
+
+ENJIN_TEST(SerdesCoverage, AnimatorOnionSkinSurvivesASave) {
+    // Arrange: seven inspector controls set these and the viewport reads them.
+    World src;
+    Entity e = Base(src);
+    AnimatorComponent anim;
+    anim.onionSkin.enabled = true;
+    anim.onionSkin.framesBefore = 5;
+    anim.onionSkin.framesAfter = 2;
+    anim.onionSkin.opacity = 0.4f;
+    anim.onionSkin.opacityFalloff = 0.8f;
+    anim.onionSkin.beforeTint = Vector3(0.1f, 0.2f, 0.9f);
+    anim.onionSkin.afterTint = Vector3(0.9f, 0.2f, 0.1f);
+    src.AddComponent<AnimatorComponent>(e, anim);
+
+    // Act
+    World dst;
+    Entity loaded = RoundTrip(src, e, dst);
+
+    // Assert
+    const auto* r = dst.GetComponent<AnimatorComponent>(loaded);
+    ENJIN_ASSERT_TRUE(r != nullptr);
+    ENJIN_EXPECT_TRUE(r->onionSkin.enabled);
+    ENJIN_EXPECT_TRUE(r->onionSkin.framesBefore == 5);
+    ENJIN_EXPECT_TRUE(r->onionSkin.framesAfter == 2);
+    ENJIN_EXPECT_TRUE(Near(r->onionSkin.opacity, 0.4f));
+    ENJIN_EXPECT_TRUE(Near(r->onionSkin.opacityFalloff, 0.8f));
+    ENJIN_EXPECT_TRUE(Near(r->onionSkin.beforeTint.z, 0.9f));
+    ENJIN_EXPECT_TRUE(Near(r->onionSkin.afterTint.x, 0.9f));
+}
+
+ENJIN_TEST(SerdesCoverage, InteractiveWaterAppearanceSurvivesASave) {
+    // Arrange: enableShoreline defaults on, so turning it off is the case a
+    // missing field silently reverts.
+    World src;
+    Entity e = Base(src);
+    Enjin::Effects::InteractiveWaterComponent water;
+    water.uvScrollDir = Vector2(-0.3f, 0.8f);
+    water.enableShoreline = false;
+    water.shorelineDistance = 2.75f;
+    src.AddComponent<Enjin::Effects::InteractiveWaterComponent>(e, water);
+
+    // Act
+    World dst;
+    Entity loaded = RoundTrip(src, e, dst);
+
+    // Assert
+    const auto* r = dst.GetComponent<Enjin::Effects::InteractiveWaterComponent>(loaded);
+    ENJIN_ASSERT_TRUE(r != nullptr);
+    ENJIN_EXPECT_TRUE(Near(r->uvScrollDir.x, -0.3f));
+    ENJIN_EXPECT_TRUE(Near(r->uvScrollDir.y, 0.8f));
+    ENJIN_EXPECT_TRUE(!r->enableShoreline);
+    ENJIN_EXPECT_TRUE(Near(r->shorelineDistance, 2.75f));
+}
+
+ENJIN_TEST(SerdesCoverage, TimelineTracksSurviveASave) {
+    // Arrange: the Flash panel's Convert button fills one of these with
+    // per-keyframe property tracks, and there was no serializer at all — nor any
+    // save path for the Flash data it was converted from, so the keyframes were
+    // simply gone.
+    World src;
+    Entity e = Base(src);
+    Enjin::Animation::TimelineComponent tl;
+
+    Enjin::Animation::PropertyTrack pt;
+    pt.targetProperty = "position.y";
+    pt.targetEntity = 12;
+    Enjin::Animation::PropertyKeyframe k0;
+    k0.time = 0.0f;
+    k0.value = 1.5f;
+    k0.easing = Enjin::Animation::TimelineEasing::EaseInOut;
+    Enjin::Animation::PropertyKeyframe k1;
+    k1.time = 2.0f;
+    k1.value = Vector3(1.0f, 2.0f, 3.0f);
+    Enjin::Animation::PropertyKeyframe k2;
+    k2.time = 3.0f;
+    k2.value = std::string("open");
+    pt.keyframes = {k0, k1, k2};
+    tl.propertyTracks.push_back(pt);
+
+    Enjin::Animation::EventTrack et;
+    et.name = "sfx";
+    Enjin::Animation::TimelineEvent ev;
+    ev.time = 1.25f;
+    ev.eventName = "Footstep";
+    ev.eventData = "{\"foot\":\"left\"}";
+    et.events.push_back(ev);
+    tl.eventTracks.push_back(et);
+
+    Enjin::Animation::AnimationTrack at;
+    at.startTime = 0.5f;
+    at.duration = 1.75f;
+    at.animationName = "Wave";
+    at.targetEntity = 9;
+    at.blendWeight = 0.6f;
+    tl.animationTracks.push_back(at);
+
+    tl.duration = 4.0f;
+    tl.playbackSpeed = 1.5f;
+    tl.loop = true;
+    tl.pingPong = true;
+    tl.playOnAwake = true;
+    src.AddComponent<Enjin::Animation::TimelineComponent>(e, tl);
+
+    // Act
+    World dst;
+    Entity loaded = RoundTrip(src, e, dst);
+
+    // Assert
+    const auto* r = dst.GetComponent<Enjin::Animation::TimelineComponent>(loaded);
+    ENJIN_ASSERT_TRUE(r != nullptr);
+    ENJIN_ASSERT_TRUE(r->propertyTracks.size() == 1);
+    ENJIN_EXPECT_TRUE(r->propertyTracks[0].targetProperty == "position.y");
+    ENJIN_EXPECT_TRUE(r->propertyTracks[0].targetEntity == 12);
+    ENJIN_ASSERT_TRUE(r->propertyTracks[0].keyframes.size() == 3);
+
+    // Each keyframe keeps its own type. Without the type tag every value would
+    // read back as the variant's first alternative, turning a position into a
+    // number and a string cue into zero.
+    const auto& keys = r->propertyTracks[0].keyframes;
+    ENJIN_EXPECT_TRUE(std::holds_alternative<f32>(keys[0].value));
+    ENJIN_EXPECT_TRUE(Near(std::get<f32>(keys[0].value), 1.5f));
+    ENJIN_EXPECT_TRUE(keys[0].easing == Enjin::Animation::TimelineEasing::EaseInOut);
+    ENJIN_EXPECT_TRUE(std::holds_alternative<Vector3>(keys[1].value));
+    ENJIN_EXPECT_TRUE(Near(std::get<Vector3>(keys[1].value).z, 3.0f));
+    ENJIN_EXPECT_TRUE(std::holds_alternative<std::string>(keys[2].value));
+    ENJIN_EXPECT_TRUE(std::get<std::string>(keys[2].value) == "open");
+
+    ENJIN_ASSERT_TRUE(r->eventTracks.size() == 1);
+    ENJIN_ASSERT_TRUE(r->eventTracks[0].events.size() == 1);
+    ENJIN_EXPECT_TRUE(r->eventTracks[0].events[0].eventName == "Footstep");
+    ENJIN_EXPECT_TRUE(Near(r->eventTracks[0].events[0].time, 1.25f));
+
+    ENJIN_ASSERT_TRUE(r->animationTracks.size() == 1);
+    ENJIN_EXPECT_TRUE(r->animationTracks[0].animationName == "Wave");
+    ENJIN_EXPECT_TRUE(Near(r->animationTracks[0].blendWeight, 0.6f));
+
+    ENJIN_EXPECT_TRUE(Near(r->duration, 4.0f));
+    ENJIN_EXPECT_TRUE(Near(r->playbackSpeed, 1.5f));
+    ENJIN_EXPECT_TRUE(r->loop);
+    ENJIN_EXPECT_TRUE(r->pingPong);
+    ENJIN_EXPECT_TRUE(r->playOnAwake);
 }
 
 ENJIN_TEST_MAIN()

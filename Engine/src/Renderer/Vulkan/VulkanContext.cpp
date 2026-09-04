@@ -1,3 +1,4 @@
+#include <cstdio>
 #include "Enjin/Renderer/Vulkan/VulkanContext.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Core/Assert.h"
@@ -33,6 +34,24 @@ VulkanContext::~VulkanContext() {
     Shutdown();
 }
 
+namespace {
+// The startup failures below already had a message written for them; it just
+// never reached anyone outside Windows, where the #ifdef ended and a Linux user
+// got an exit code and a log line they had no reason to look for. Same text,
+// through whatever this platform has.
+void ShowStartupError(const char* title, const char* body) {
+#ifdef _WIN32
+    MessageBoxA(nullptr, body, title, MB_OK | MB_ICONERROR);
+#else
+    std::fprintf(stderr, "%s%s%s%s", title, "
+
+", body, "
+");
+    std::fflush(stderr);
+#endif
+}
+} // namespace
+
 bool VulkanContext::Initialize() {
     ENJIN_LOG_INFO(Renderer, "Initializing Vulkan context...");
 
@@ -41,29 +60,21 @@ bool VulkanContext::Initialize() {
     // If it fails, any vkCreateInstance call would crash or return an error.
     if (!glfwVulkanSupported()) {
         ENJIN_LOG_FATAL(Renderer, "Vulkan is not available on this system");
-#ifdef _WIN32
-        MessageBoxA(nullptr,
+        ShowStartupError("TEGE - Startup Error",
             "Vulkan is not available on this system.\n\n"
             "This usually means your GPU drivers are outdated or your graphics card does not support Vulkan.\n\n"
             "Please update your GPU drivers and try again.\n\n"
-            "Check 'enjin.log' for details.",
-            "TEGE - Startup Error",
-            MB_OK | MB_ICONERROR);
-#endif
+            "Check 'enjin.log' for details.");
         return false;
     }
 
     if (!CreateInstance()) {
         ENJIN_LOG_ERROR(Renderer, "Failed to create Vulkan instance");
-#ifdef _WIN32
-        MessageBoxA(nullptr,
+        ShowStartupError("TEGE - Startup Error",
             "Failed to initialize Vulkan.\n\n"
             "Your GPU drivers may be outdated or your system may not fully support Vulkan 1.3.\n\n"
             "Please update your GPU drivers and try again.\n\n"
-            "Check 'enjin.log' for details.",
-            "TEGE - Startup Error",
-            MB_OK | MB_ICONERROR);
-#endif
+            "Check 'enjin.log' for details.");
         return false;
     }
 
@@ -75,29 +86,21 @@ bool VulkanContext::Initialize() {
 
     if (!SelectPhysicalDevice()) {
         ENJIN_LOG_ERROR(Renderer, "Failed to select physical device");
-#ifdef _WIN32
-        MessageBoxA(nullptr,
+        ShowStartupError("TEGE - Startup Error",
             "No compatible GPU found.\n\n"
             "TEGE requires a Vulkan-capable graphics card with swapchain support.\n\n"
             "Please ensure your GPU drivers are up to date.\n\n"
-            "Check 'enjin.log' for details.",
-            "TEGE - Startup Error",
-            MB_OK | MB_ICONERROR);
-#endif
+            "Check 'enjin.log' for details.");
         return false;
     }
 
     if (!CreateLogicalDevice()) {
         ENJIN_LOG_ERROR(Renderer, "Failed to create logical device");
-#ifdef _WIN32
-        MessageBoxA(nullptr,
+        ShowStartupError("TEGE - Startup Error",
             "Failed to create a Vulkan device.\n\n"
             "Your GPU may not support the required Vulkan features.\n\n"
             "Please update your GPU drivers and try again.\n\n"
-            "Check 'enjin.log' for details.",
-            "TEGE - Startup Error",
-            MB_OK | MB_ICONERROR);
-#endif
+            "Check 'enjin.log' for details.");
         return false;
     }
 

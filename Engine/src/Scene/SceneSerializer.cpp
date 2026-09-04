@@ -71,6 +71,7 @@
 #include "Enjin/GUI/UICanvas.h"
 #include "Enjin/Scene/LevelStreaming.h"
 #include "Enjin/Effects/InteractiveWater.h"
+#include "Enjin/Animation/Timeline.h"
 #include "Enjin/ECS/Components/ParallaxMachine.h"
 #include "Enjin/ECS/Components/ParallaxLayer.h"
 #include "Enjin/Physics/PhysicsTypes2D.h"
@@ -340,6 +341,15 @@ json SerializeMeshComponent(const ECS::MeshComponent& mesh, bool includeVertexDa
             vertex["position"] = SerializeVector3(v.position);
             vertex["normal"] = SerializeVector3(v.normal);
             vertex["uv"] = SerializeVector2(v.uv);
+            // Second UV channel (lightmap/detail). Written only when it carries
+            // something, like the other appended fields. Dropping it is the same
+            // shape of loss as boneWeights2 below: glTF TEXCOORD_1 and Assimp
+            // texCoord1 fill it, the vertex layout has it at location 7 and
+            // triangle.vert reads it, so every inline mesh write was quietly
+            // flattening lightmap UVs to (0,0).
+            if (v.uv1.x != 0.0f || v.uv1.y != 0.0f) {
+                vertex["uv1"] = SerializeVector2(v.uv1);
+            }
             // Only serialize color if non-default (white)
             if (v.color.x != 1.0f || v.color.y != 1.0f || v.color.z != 1.0f || v.color.w != 1.0f) {
                 vertex["color"] = SerializeVector4(v.color);
@@ -600,6 +610,7 @@ ECS::MeshComponent DeserializeMeshComponent(const json& j) {
             if (v.contains("position")) vertex.position = DeserializeVector3(v["position"]);
             if (v.contains("normal")) vertex.normal = DeserializeVector3(v["normal"]);
             if (v.contains("uv")) vertex.uv = DeserializeVector2(v["uv"]);
+            if (v.contains("uv1")) vertex.uv1 = DeserializeVector2(v["uv1"]);
             if (v.contains("color")) {
                 vertex.color = DeserializeVector4(v["color"]);
             }
@@ -2845,6 +2856,15 @@ json SerializeBody2DComponent(const Physics::Body2DComponent& body) {
     j["boxOffset"] = json::array({RF(body.box.offset.x), RF(body.box.offset.y)});
     j["boxRotation"] = RF(body.box.rotation);
     // Capsule
+    // Polygon geometry. shapeType round-tripped fine, so a polygon body came
+    // back declaring itself a polygon with no vertices, and Box2DBackend builds
+    // its shape straight out of these.
+    {
+        json poly = json::array();
+        for (const auto& v : body.polygon.vertices) poly.push_back(json::array({RF(v.x), RF(v.y)}));
+        j["polygonVertices"] = poly;
+        j["polygonOffset"] = json::array({RF(body.polygon.offset.x), RF(body.polygon.offset.y)});
+    }
     j["capsuleRadius"] = RF(body.capsule.radius);
     j["capsuleHeight"] = RF(body.capsule.height);
     j["capsuleOffset"] = json::array({RF(body.capsule.offset.x), RF(body.capsule.offset.y)});
@@ -2880,6 +2900,18 @@ Physics::Body2DComponent DeserializeBody2DComponent(const json& j) {
         body.box.offset = Math::Vector2(j["boxOffset"][0].get<f32>(), j["boxOffset"][1].get<f32>());
     }
     if (j.contains("boxRotation")) body.box.rotation = j["boxRotation"].get<f32>();
+    if (j.contains("polygonVertices") && j["polygonVertices"].is_array()) {
+        // Box2D caps a polygon at 8 vertices; scene data is untrusted, so stop there.
+        constexpr usize kMaxPolygonVertices = 8;
+        for (const auto& v : j["polygonVertices"]) {
+            if (body.polygon.vertices.size() >= kMaxPolygonVertices) break;
+            if (v.is_array() && v.size() >= 2)
+                body.polygon.vertices.push_back(Math::Vector2(v[0].get<f32>(), v[1].get<f32>()));
+        }
+    }
+    if (j.contains("polygonOffset") && j["polygonOffset"].is_array() && j["polygonOffset"].size() >= 2) {
+        body.polygon.offset = Math::Vector2(j["polygonOffset"][0].get<f32>(), j["polygonOffset"][1].get<f32>());
+    }
     if (j.contains("capsuleRadius")) body.capsule.radius = j["capsuleRadius"].get<f32>();
     if (j.contains("capsuleHeight")) body.capsule.height = j["capsuleHeight"].get<f32>();
     if (j.contains("capsuleOffset") && j["capsuleOffset"].is_array() && j["capsuleOffset"].size() >= 2) {
@@ -5530,6 +5562,169 @@ ECS::FaceCardComponent DeserializeFaceCardComponent(const json& j) {
     return c;
 }
 
+
+// TimelineComponent — property, event and animation tracks. The keyframe value
+// is a variant, so each one carries a type tag; anything else would read back as
+// the variant's first alternative and silently turn a colour fade into a number.
+// currentTime, direction, isPlaying, isComplete and each event's `fired` latch
+// are playback state and stay out.
+json SerializeTimelineComponent(const Animation::TimelineComponent& tl) {
+    json j;
+
+    json props = json::array();
+    for (const auto& track : tl.propertyTracks) {
+        json t;
+        t["targetProperty"] = track.targetProperty;
+        t["targetEntity"] = static_cast<u64>(track.targetEntity);
+        t["enabled"] = track.enabled;
+        json keys = json::array();
+        for (const auto& k : track.keyframes) {
+            json kj;
+            kj["time"] = RF(k.time);
+            kj["easing"] = static_cast<u32>(k.easing);
+            if (std::holds_alternative<f32>(k.value)) {
+                kj["type"] = "float";
+                kj["value"] = RF(std::get<f32>(k.value));
+            } else if (std::holds_alternative<Math::Vector3>(k.value)) {
+                kj["type"] = "vec3";
+                kj["value"] = SerializeVector3(std::get<Math::Vector3>(k.value));
+            } else if (std::holds_alternative<bool>(k.value)) {
+                kj["type"] = "bool";
+                kj["value"] = std::get<bool>(k.value);
+            } else {
+                kj["type"] = "string";
+                kj["value"] = std::get<std::string>(k.value);
+            }
+            keys.push_back(kj);
+        }
+        t["keyframes"] = keys;
+        props.push_back(t);
+    }
+    j["propertyTracks"] = props;
+
+    json events = json::array();
+    for (const auto& track : tl.eventTracks) {
+        json t;
+        t["name"] = track.name;
+        t["enabled"] = track.enabled;
+        json evs = json::array();
+        for (const auto& e : track.events) {
+            evs.push_back({{"time", RF(e.time)},
+                           {"eventName", e.eventName},
+                           {"eventData", e.eventData}});
+        }
+        t["events"] = evs;
+        events.push_back(t);
+    }
+    j["eventTracks"] = events;
+
+    json anims = json::array();
+    for (const auto& a : tl.animationTracks) {
+        anims.push_back({{"startTime", RF(a.startTime)},
+                         {"duration", RF(a.duration)},
+                         {"animationName", a.animationName},
+                         {"targetEntity", static_cast<u64>(a.targetEntity)},
+                         {"blendWeight", RF(a.blendWeight)},
+                         {"enabled", a.enabled}});
+    }
+    j["animationTracks"] = anims;
+
+    j["duration"] = RF(tl.duration);
+    j["playbackSpeed"] = RF(tl.playbackSpeed);
+    j["loop"] = tl.loop;
+    j["pingPong"] = tl.pingPong;
+    j["playOnAwake"] = tl.playOnAwake;
+    j["onCompleteNotify"] = tl.onCompleteNotify;
+    j["onLoopNotify"] = tl.onLoopNotify;
+    return j;
+}
+
+Animation::TimelineComponent DeserializeTimelineComponent(const json& j) {
+    Animation::TimelineComponent tl;
+    // Scene data is untrusted; cap every array.
+    constexpr usize kMaxTracks = 512;
+    constexpr usize kMaxKeys = 8192;
+    constexpr u32 kEasingCount = static_cast<u32>(Animation::TimelineEasing::Step) + 1;
+
+    if (j.contains("propertyTracks") && j["propertyTracks"].is_array()) {
+        for (const auto& tj : j["propertyTracks"]) {
+            if (tl.propertyTracks.size() >= kMaxTracks) break;
+            if (!tj.is_object()) continue;
+            Animation::PropertyTrack track;
+            if (tj.contains("targetProperty")) track.targetProperty = SafeStr(tj["targetProperty"], MAX_STR_NAME);
+            if (tj.contains("targetEntity")) track.targetEntity = static_cast<ECS::Entity>(tj["targetEntity"].get<u64>());
+            if (tj.contains("enabled")) track.enabled = JB(tj["enabled"]);
+            if (tj.contains("keyframes") && tj["keyframes"].is_array()) {
+                for (const auto& kj : tj["keyframes"]) {
+                    if (track.keyframes.size() >= kMaxKeys) break;
+                    if (!kj.is_object()) continue;
+                    Animation::PropertyKeyframe k;
+                    if (kj.contains("time")) k.time = kj["time"].get<f32>();
+                    if (kj.contains("easing")) {
+                        const u32 e = kj["easing"].get<u32>();
+                        if (e < kEasingCount) k.easing = static_cast<Animation::TimelineEasing>(e);
+                    }
+                    const std::string type = kj.contains("type") ? kj["type"].get<std::string>() : "float";
+                    if (kj.contains("value")) {
+                        if (type == "vec3")        k.value = DeserializeVector3(kj["value"]);
+                        else if (type == "bool")   k.value = JB(kj["value"]);
+                        else if (type == "string") k.value = SafeStr(kj["value"], MAX_STR_NAME);
+                        else                       k.value = kj["value"].get<f32>();
+                    }
+                    track.keyframes.push_back(std::move(k));
+                }
+            }
+            tl.propertyTracks.push_back(std::move(track));
+        }
+    }
+
+    if (j.contains("eventTracks") && j["eventTracks"].is_array()) {
+        for (const auto& tj : j["eventTracks"]) {
+            if (tl.eventTracks.size() >= kMaxTracks) break;
+            if (!tj.is_object()) continue;
+            Animation::EventTrack track;
+            if (tj.contains("name")) track.name = SafeStr(tj["name"], MAX_STR_NAME);
+            if (tj.contains("enabled")) track.enabled = JB(tj["enabled"]);
+            if (tj.contains("events") && tj["events"].is_array()) {
+                for (const auto& ej : tj["events"]) {
+                    if (track.events.size() >= kMaxKeys) break;
+                    if (!ej.is_object()) continue;
+                    Animation::TimelineEvent e;
+                    if (ej.contains("time")) e.time = ej["time"].get<f32>();
+                    if (ej.contains("eventName")) e.eventName = SafeStr(ej["eventName"], MAX_STR_NAME);
+                    if (ej.contains("eventData")) e.eventData = SafeStr(ej["eventData"], MAX_STR_PATH);
+                    track.events.push_back(std::move(e));
+                }
+            }
+            tl.eventTracks.push_back(std::move(track));
+        }
+    }
+
+    if (j.contains("animationTracks") && j["animationTracks"].is_array()) {
+        for (const auto& aj : j["animationTracks"]) {
+            if (tl.animationTracks.size() >= kMaxTracks) break;
+            if (!aj.is_object()) continue;
+            Animation::AnimationTrack a;
+            if (aj.contains("startTime")) a.startTime = aj["startTime"].get<f32>();
+            if (aj.contains("duration")) a.duration = aj["duration"].get<f32>();
+            if (aj.contains("animationName")) a.animationName = SafeStr(aj["animationName"], MAX_STR_NAME);
+            if (aj.contains("targetEntity")) a.targetEntity = static_cast<ECS::Entity>(aj["targetEntity"].get<u64>());
+            if (aj.contains("blendWeight")) a.blendWeight = aj["blendWeight"].get<f32>();
+            if (aj.contains("enabled")) a.enabled = JB(aj["enabled"]);
+            tl.animationTracks.push_back(std::move(a));
+        }
+    }
+
+    if (j.contains("duration")) tl.duration = j["duration"].get<f32>();
+    if (j.contains("playbackSpeed")) tl.playbackSpeed = j["playbackSpeed"].get<f32>();
+    if (j.contains("loop")) tl.loop = JB(j["loop"]);
+    if (j.contains("pingPong")) tl.pingPong = JB(j["pingPong"]);
+    if (j.contains("playOnAwake")) tl.playOnAwake = JB(j["playOnAwake"]);
+    if (j.contains("onCompleteNotify")) tl.onCompleteNotify = JB(j["onCompleteNotify"]);
+    if (j.contains("onLoopNotify")) tl.onLoopNotify = JB(j["onLoopNotify"]);
+    return tl;
+}
+
 json SerializeSaveSystemComponent(const ECS::SaveSystemComponent& c) {
     json j;
     j["maxManualSlots"] = c.maxManualSlots;
@@ -5697,6 +5892,9 @@ json SerializeInteractiveWaterComponent(const Effects::InteractiveWaterComponent
     j["foamThreshold"] = RF(iw.foamThreshold);
     j["opacity"] = RF(iw.opacity);
     j["uvScrollSpeed"] = RF(iw.uvScrollSpeed);
+    j["uvScrollDir"] = json::array({RF(iw.uvScrollDir.x), RF(iw.uvScrollDir.y)});
+    j["enableShoreline"] = iw.enableShoreline;
+    j["shorelineDistance"] = RF(iw.shorelineDistance);
     j["uvTiling"] = RF(iw.uvTiling);
     j["interactionRadius"] = RF(iw.interactionRadius);
     j["interactionStrength"] = RF(iw.interactionStrength);
@@ -5729,6 +5927,10 @@ Effects::InteractiveWaterComponent DeserializeInteractiveWaterComponent(const js
     if (j.contains("foamThreshold")) iw.foamThreshold = j["foamThreshold"].get<f32>();
     if (j.contains("opacity")) iw.opacity = j["opacity"].get<f32>();
     if (j.contains("uvScrollSpeed")) iw.uvScrollSpeed = j["uvScrollSpeed"].get<f32>();
+    if (j.contains("uvScrollDir") && j["uvScrollDir"].is_array() && j["uvScrollDir"].size() >= 2)
+        iw.uvScrollDir = Math::Vector2(j["uvScrollDir"][0].get<f32>(), j["uvScrollDir"][1].get<f32>());
+    if (j.contains("enableShoreline")) iw.enableShoreline = JB(j["enableShoreline"]);
+    if (j.contains("shorelineDistance")) iw.shorelineDistance = j["shorelineDistance"].get<f32>();
     if (j.contains("uvTiling")) iw.uvTiling = j["uvTiling"].get<f32>();
     if (j.contains("interactionRadius")) iw.interactionRadius = j["interactionRadius"].get<f32>();
     if (j.contains("interactionStrength")) iw.interactionStrength = j["interactionStrength"].get<f32>();
@@ -7827,6 +8029,28 @@ json SerializeAnimatorComponent(const ECS::AnimatorComponent& animComp) {
     j["speed"] = RF(animator.GetSpeed());
     j["currentAnimation"] = animator.GetCurrentAnimationName();
 
+    // Onion-skin preview. Seven inspector controls set these and the viewport
+    // reads them, and none of it survived a reload. Written only when enabled or
+    // moved off defaults, so an animator that never touched it stays compact.
+    {
+        const auto& os = animComp.onionSkin;
+        const ECS::SkeletalOnionSkinSettings def{};
+        const bool moved = os.enabled ||
+            os.framesBefore != def.framesBefore || os.framesAfter != def.framesAfter ||
+            os.opacity != def.opacity || os.opacityFalloff != def.opacityFalloff;
+        if (moved) {
+            json onion;
+            onion["enabled"] = os.enabled;
+            onion["framesBefore"] = os.framesBefore;
+            onion["framesAfter"] = os.framesAfter;
+            onion["opacity"] = RF(os.opacity);
+            onion["opacityFalloff"] = RF(os.opacityFalloff);
+            onion["beforeTint"] = SerializeVector3(os.beforeTint);
+            onion["afterTint"] = SerializeVector3(os.afterTint);
+            j["onionSkin"] = onion;
+        }
+    }
+
     // Movement drive (only when configured — keeps clip-less animators compact)
     if (animComp.movement.HasAnyClip() || !animComp.movement.enabled) {
         json mv;
@@ -8002,6 +8226,18 @@ ECS::AnimatorComponent DeserializeAnimatorComponent(const json& j, std::shared_p
     f32 speed = 1.0f;
     if (j.contains("speed")) speed = j["speed"].get<f32>();
     animComp.animator.SetSpeed(speed);
+
+    if (j.contains("onionSkin") && j["onionSkin"].is_object()) {
+        const auto& o = j["onionSkin"];
+        auto& os = animComp.onionSkin;
+        if (o.contains("enabled")) os.enabled = JB(o["enabled"]);
+        if (o.contains("framesBefore")) os.framesBefore = o["framesBefore"].get<i32>();
+        if (o.contains("framesAfter")) os.framesAfter = o["framesAfter"].get<i32>();
+        if (o.contains("opacity")) os.opacity = o["opacity"].get<f32>();
+        if (o.contains("opacityFalloff")) os.opacityFalloff = o["opacityFalloff"].get<f32>();
+        if (o.contains("beforeTint")) os.beforeTint = DeserializeVector3(o["beforeTint"]);
+        if (o.contains("afterTint")) os.afterTint = DeserializeVector3(o["afterTint"]);
+    }
 
     if (j.contains("movement") && j["movement"].is_object()) {
         const auto& mv = j["movement"];
@@ -8369,6 +8605,7 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
         ENJIN_SERDES("ambientSoundLayer", ECS::AmbientSoundLayerComponent, SerializeAmbientSoundLayerComponent, DeserializeAmbientSoundLayerComponent),
         ENJIN_SERDES("lipSync", ECS::LipSyncComponent, SerializeLipSyncComponent, DeserializeLipSyncComponent),
         ENJIN_SERDES("faceCard", ECS::FaceCardComponent, SerializeFaceCardComponent, DeserializeFaceCardComponent),
+        ENJIN_SERDES("timeline", Animation::TimelineComponent, SerializeTimelineComponent, DeserializeTimelineComponent),
         ENJIN_SERDES("saveSystem", ECS::SaveSystemComponent, SerializeSaveSystemComponent, DeserializeSaveSystemComponent),
         ENJIN_SERDES("savePoint", ECS::SavePointComponent, SerializeSavePointComponent, DeserializeSavePointComponent),
         ENJIN_SERDES("boundaryPolygon", ECS::BoundaryPolygonComponent, SerializeBoundaryPolygonComponent, DeserializeBoundaryPolygonComponent),
