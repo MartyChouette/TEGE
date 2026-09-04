@@ -5047,6 +5047,19 @@ void EditorLayer::DrawDialogueComponent(ECS::Entity entity) {
         // --- Dialogue Tree section ---
         ImGui::Separator();
         if (ImGui::TreeNode("Dialogue Tree")) {
+            // Point the dialogue editor at THIS character's tree and bring the
+            // panel up. SetOpen alone is not enough: the tree editor is drawn
+            // inside DrawDialoguePanel, which only runs when the Dialogue panel
+            // bit is set, so a button that only called SetOpen looked like it
+            // did nothing at all. Every other "open the editor for this
+            // component" button (anim graph, behaviour tree, quest flow) sets
+            // its panel; this one was the outlier.
+            auto openDialogueEditor = [this, dialogue]() {
+                m_DialogueTreeEditor.SetTree(&dialogue->dialogueTree);
+                m_DialogueTreeEditor.SetOpen(true);
+                SetPanelVisibility(EditorPanel::Dialogue, true);
+            };
+
             if (dialogue->dialogueTree.nodes.empty()) {
                 ImGui::TextWrapped("No dialogue tree. Add a root node to enable tree-based dialogue.");
                 if (ImGui::Button("Add Root Node")) {
@@ -5054,14 +5067,17 @@ void EditorLayer::DrawDialogueComponent(ECS::Entity entity) {
                     dialogue->dialogueTree.rootNodeId = rootId;
                     auto* rootNode = dialogue->dialogueTree.GetNode(rootId);
                     if (rootNode) rootNode->editorPosition = Math::Vector2(50, 100);
+                    // Authoring a tree means you want to author it: go straight
+                    // into the editor rather than making the next click find it.
+                    openDialogueEditor();
                 }
             } else {
                 ImGui::Text("Nodes: %zu", dialogue->dialogueTree.nodes.size());
                 ImGui::Text("Tree Name: %s", dialogue->dialogueTree.treeName.empty() ? "(unnamed)" : dialogue->dialogueTree.treeName.c_str());
-                if (dlgOpen && ImGui::Button("Open Dialogue Editor")) {
-                    m_DialogueTreeEditor.SetTree(&dialogue->dialogueTree);
-                    m_DialogueTreeEditor.SetOpen(true);
+                if (ImGui::Button("Open Dialogue Editor")) {
+                    openDialogueEditor();
                 }
+                ImGui::SetItemTooltip("Edit this character's dialogue tree in the Dialogue panel.");
             }
             ImGui::TreePop();
         }
