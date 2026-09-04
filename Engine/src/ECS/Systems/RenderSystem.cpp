@@ -591,6 +591,7 @@ void RenderSystem::Initialize() {
         smDesc.usage = Renderer::GPUTextureUsage::RenderAttachment | Renderer::GPUTextureUsage::Sampled;
         smDesc.label = "ShadowMap";
         m_WebShadowMapTex = texMgr->CreateTexture(smDesc);
+        m_WebShadowValid = false;   // fresh texture: the cache must redraw once
         if (!m_WebShadowMapTex.IsValid()) {
             ENJIN_LOG_WARN(Renderer, "RenderSystem: Shadow map texture creation failed — shadows disabled");
         }
@@ -1925,6 +1926,22 @@ void RenderSystem::Update(f32 deltaTime) {
         // plane at y=0) is exactly the region that needs coverage.
         Math::Vector3 casterMin(1e9f, 1e9f, 1e9f), casterMax(-1e9f, -1e9f, -1e9f);
         bool haveCasters = false;
+        // FNV-1a over the light direction and every caster transform. Cheap
+        // enough to run unconditionally; it rides the loop that already reads
+        // each transform for the AABB.
+        u64 shadowSig = 1469598103934665603ull;
+        // Per-entity hashes are COMBINED WITH ADDITION, not chained, so the
+        // signature does not depend on the order casters come back in. A
+        // sequential chain made a stable scene look like it changed whenever the
+        // iteration order shifted.
+        auto shadowHashF = [](u64 h, f32 v) {
+            u32 bits;
+            std::memcpy(&bits, &v, sizeof(bits));
+            return (h ^ bits) * 1099511628211ull;
+        };
+        auto shadowSigMix = [&shadowSig, &shadowHashF](f32 v) { shadowSig = shadowHashF(shadowSig, v); };
+        shadowSigMix(shadowLightDir.x); shadowSigMix(shadowLightDir.y); shadowSigMix(shadowLightDir.z);
+        u64 casterSigSum = 0;
         {
             for (Entity fe : webShadowCasters()) {
                 auto* mx = m_CachedTransformStorage ? m_CachedTransformStorage->Get(fe) : nullptr;
@@ -1937,6 +1954,16 @@ void RenderSystem::Update(f32 deltaTime) {
                 casterMin = Math::Vector3(std::min(casterMin.x, lo.x), std::min(casterMin.y, lo.y), std::min(casterMin.z, lo.z));
                 casterMax = Math::Vector3(std::max(casterMax.x, hi.x), std::max(casterMax.y, hi.y), std::max(casterMax.z, hi.z));
                 haveCasters = true;
+                // Fold this caster into the change signature (see m_WebShadowSignature).
+                // Quantised: a transform that jitters in the last bits of a float
+                // is not a reason to redraw a 2048x2048 depth map.
+                u64 eh = 1469598103934665603ull;
+                auto q = [](f32 v) { return std::round(v * 512.0f) / 512.0f; };
+                eh = shadowHashF(eh, q(mx->position.x)); eh = shadowHashF(eh, q(mx->position.y)); eh = shadowHashF(eh, q(mx->position.z));
+                eh = shadowHashF(eh, q(mx->rotation.x)); eh = shadowHashF(eh, q(mx->rotation.y));
+                eh = shadowHashF(eh, q(mx->rotation.z)); eh = shadowHashF(eh, q(mx->rotation.w));
+                eh = shadowHashF(eh, q(mx->scale.x)); eh = shadowHashF(eh, q(mx->scale.y)); eh = shadowHashF(eh, q(mx->scale.z));
+                casterSigSum += eh;
             }
         }
 
@@ -2030,8 +2057,27 @@ void RenderSystem::Update(f32 deltaTime) {
         auto* webBufMgr = static_cast<Renderer::WebGPUBufferManager*>(bufMgr);
         auto* webBindMgr = static_cast<Renderer::WebGPUBindGroupManager*>(m_Renderer->GetBindGroupManager());
 
+        // Nothing that feeds the shadow map moved: keep the texture we already
+        // have. It is only ever written by this pass, and it was cleared to far
+        // depth at creation, so the contents stay valid indefinitely.
+        shadowSig ^= casterSigSum;
+        const bool shadowDirty = !m_WebShadowValid || shadowSig != m_WebShadowSignature;
+        m_WebShadowSignature = shadowSig;
+
+        // Periodic proof the cache is holding: redraws should fall to 0 once a
+        // static scene settles. A number that keeps climbing means something is
+        // perturbing a caster transform every frame.
+        {
+            static u32 s_Frames = 0, s_Redraws = 0;
+            if (shadowDirty) ++s_Redraws;
+            if (++s_Frames % 300 == 0) {
+                EM_ASM({ console.log('[SHADOW] redraws in last 300 frames: ' + $0); }, s_Redraws);
+                s_Redraws = 0;
+            }
+        }
+
         const auto* shadowNative = texMgr->GetNativeTexture(m_WebShadowMapTex);
-        if (shadowNative && shadowNative->view) {
+        if (shadowDirty && shadowNative && shadowNative->view) {
             WGPURenderPassEncoder shadowPass = webRenderer->BeginDepthOnlyPass(
                 shadowNative->view, WEB_SHADOW_MAP_SIZE, WEB_SHADOW_MAP_SIZE);
 
@@ -2099,11 +2145,14 @@ void RenderSystem::Update(f32 deltaTime) {
 
                 static int s_ShadowLog = 0;
                 if (s_ShadowLog++ < 5) {
-                    EM_ASM({ console.log('[SHADOW] drew ' + $0 + ' entities into shadow map'); }, shadowDrawCount);
+                    EM_ASM({ console.log('[SHADOW] drew ' + $0 + ' entities into shadow map (cached until something moves)'); }, shadowDrawCount);
                 }
 
                 wgpuRenderPassEncoderEnd(shadowPass);
                 wgpuRenderPassEncoderRelease(shadowPass);
+                // The map now matches m_WebShadowSignature: reuse it until
+                // a caster or the sun moves.
+                m_WebShadowValid = true;
             }
         }
     }

@@ -1244,6 +1244,15 @@ private:
     Renderer::GPUPipelineHandle m_WebShadowPipeline;
     Renderer::GPUShaderHandle m_WebShadowShader;
     Renderer::GPUTextureHandle m_WebShadowMapTex;
+    // Directional shadow cache. The web shadow fit is built from the CASTER
+    // AABB, not the camera frustum, so for a scene of static geometry under a
+    // static sun the depth map is bit-identical every frame -- and redrawing it
+    // meant 100+ draw calls, each with its own uniform write and bind group,
+    // for a texture that never changes. m_WebShadowSignature folds the light
+    // direction and every caster's transform into one value during the fit loop
+    // that already walks them, so detecting "nothing moved" is free.
+    u64 m_WebShadowSignature = 0;
+    bool m_WebShadowValid = false;      // false = must redraw (boot, resize, scene change)
     Renderer::GPUBindGroupLayoutHandle m_WebShadowFrameLayout;
     Renderer::GPUBindGroupLayoutHandle m_WebShadowObjectLayout;
     Renderer::GPUBufferHandle m_WebShadowVPBuffer;       // light VP UBO
