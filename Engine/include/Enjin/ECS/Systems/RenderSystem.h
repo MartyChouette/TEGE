@@ -1253,6 +1253,10 @@ private:
     // that already walks them, so detecting "nothing moved" is free.
     u64 m_WebShadowSignature = 0;
     bool m_WebShadowValid = false;      // false = must redraw (boot, resize, scene change)
+    // World size of one shadow-map texel, from the last fit. The change
+    // signature quantises to it: a caster movement smaller than one texel
+    // cannot alter the rendered depth map.
+    f32 m_WebShadowTexelWorld = 0.0f;
     Renderer::GPUBindGroupLayoutHandle m_WebShadowFrameLayout;
     Renderer::GPUBindGroupLayoutHandle m_WebShadowObjectLayout;
     Renderer::GPUBufferHandle m_WebShadowVPBuffer;       // light VP UBO

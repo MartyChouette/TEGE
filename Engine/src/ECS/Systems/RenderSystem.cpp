@@ -1942,6 +1942,9 @@ void RenderSystem::Update(f32 deltaTime) {
         auto shadowSigMix = [&shadowSig, &shadowHashF](f32 v) { shadowSig = shadowHashF(shadowSig, v); };
         shadowSigMix(shadowLightDir.x); shadowSigMix(shadowLightDir.y); shadowSigMix(shadowLightDir.z);
         u64 casterSigSum = 0;
+        // World size of one shadow texel, from the PREVIOUS frame's fit (this
+        // frame's is not known until the AABB is built, and it barely changes).
+        const f32 shadowTexelWorld = m_WebShadowTexelWorld > 0.0f ? m_WebShadowTexelWorld : 0.05f;
         {
             for (Entity fe : webShadowCasters()) {
                 auto* mx = m_CachedTransformStorage ? m_CachedTransformStorage->Get(fe) : nullptr;
@@ -1954,15 +1957,22 @@ void RenderSystem::Update(f32 deltaTime) {
                 casterMin = Math::Vector3(std::min(casterMin.x, lo.x), std::min(casterMin.y, lo.y), std::min(casterMin.z, lo.z));
                 casterMax = Math::Vector3(std::max(casterMax.x, hi.x), std::max(casterMax.y, hi.y), std::max(casterMax.z, hi.z));
                 haveCasters = true;
-                // Fold this caster into the change signature (see m_WebShadowSignature).
-                // Quantised: a transform that jitters in the last bits of a float
-                // is not a reason to redraw a 2048x2048 depth map.
+                // Fold this caster into the change signature (see m_WebShadowSignature),
+                // quantised to the SHADOW MAP's own resolution. A movement smaller
+                // than one texel cannot change the rendered depth map, so treating
+                // it as a change just redraws an identical texture. Physics
+                // writeback jitters resting bodies by tiny amounts every step, and
+                // at finer quantisation that alone kept the map dirty on every
+                // other frame with a completely static scene (measured: caster
+                // count and fit AABB both dead stable, redraws still 150/300).
+                const f32 texel = std::max(shadowTexelWorld, 1e-4f);
+                auto qp = [texel](f32 v) { return std::round(v / texel); };
+                auto qr = [](f32 v) { return std::round(v * 256.0f); };
                 u64 eh = 1469598103934665603ull;
-                auto q = [](f32 v) { return std::round(v * 512.0f) / 512.0f; };
-                eh = shadowHashF(eh, q(mx->position.x)); eh = shadowHashF(eh, q(mx->position.y)); eh = shadowHashF(eh, q(mx->position.z));
-                eh = shadowHashF(eh, q(mx->rotation.x)); eh = shadowHashF(eh, q(mx->rotation.y));
-                eh = shadowHashF(eh, q(mx->rotation.z)); eh = shadowHashF(eh, q(mx->rotation.w));
-                eh = shadowHashF(eh, q(mx->scale.x)); eh = shadowHashF(eh, q(mx->scale.y)); eh = shadowHashF(eh, q(mx->scale.z));
+                eh = shadowHashF(eh, qp(mx->position.x)); eh = shadowHashF(eh, qp(mx->position.y)); eh = shadowHashF(eh, qp(mx->position.z));
+                eh = shadowHashF(eh, qr(mx->rotation.x)); eh = shadowHashF(eh, qr(mx->rotation.y));
+                eh = shadowHashF(eh, qr(mx->rotation.z)); eh = shadowHashF(eh, qr(mx->rotation.w));
+                eh = shadowHashF(eh, qp(mx->scale.x)); eh = shadowHashF(eh, qp(mx->scale.y)); eh = shadowHashF(eh, qp(mx->scale.z));
                 casterSigSum += eh;
             }
         }
@@ -2030,6 +2040,9 @@ void RenderSystem::Update(f32 deltaTime) {
         lightProj.m[13] = -(maxY + minY) / (maxY - minY);
         lightProj.m[14] =  maxZ / (maxZ - minZ);
 
+        // Feeds next frame's signature quantisation.
+        m_WebShadowTexelWorld = std::max(maxX - minX, maxY - minY) / static_cast<f32>(WEB_SHADOW_MAP_SIZE);
+
         static int s_ShadowFitLog = 0;
         if (s_ShadowFitLog++ < 3) {
             EM_ASM({
@@ -2069,10 +2082,22 @@ void RenderSystem::Update(f32 deltaTime) {
         // perturbing a caster transform every frame.
         {
             static u32 s_Frames = 0, s_Redraws = 0;
+            static u32 s_MinCasters = 0xFFFFFFFFu, s_MaxCasters = 0;
+            static f32 s_MinFitY = 1e9f, s_MaxFitY = -1e9f;
             if (shadowDirty) ++s_Redraws;
+            {   // membership vs movement: does the caster SET change, or just transforms?
+                const u32 nc = static_cast<u32>(webShadowCasters().size());
+                if (nc < s_MinCasters) s_MinCasters = nc;
+                if (nc > s_MaxCasters) s_MaxCasters = nc;
+                if (casterMax.y < s_MinFitY) s_MinFitY = casterMax.y;
+                if (casterMax.y > s_MaxFitY) s_MaxFitY = casterMax.y;
+            }
             if (++s_Frames % 300 == 0) {
-                EM_ASM({ console.log('[SHADOW] redraws in last 300 frames: ' + $0); }, s_Redraws);
-                s_Redraws = 0;
+                EM_ASM({ console.log('[SHADOW] redraws=' + $0 + '/300  casters min=' + $1 + ' max=' + $2
+                         + '  fitY min=' + $3.toFixed(1) + ' max=' + $4.toFixed(1)); },
+                       s_Redraws, s_MinCasters, s_MaxCasters, s_MinFitY, s_MaxFitY);
+                s_Redraws = 0; s_MinCasters = 0xFFFFFFFFu; s_MaxCasters = 0;
+                s_MinFitY = 1e9f; s_MaxFitY = -1e9f;
             }
         }
 
