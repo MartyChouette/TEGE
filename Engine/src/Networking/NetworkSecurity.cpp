@@ -32,11 +32,20 @@ SessionKey GenerateSessionKey() {
 #else
     // POSIX: read from /dev/urandom
     std::ifstream urandom("/dev/urandom", std::ios::binary);
-    if (urandom.good()) {
-        urandom.read(reinterpret_cast<char*>(key.data()), SESSION_KEY_SIZE);
-    } else {
+    if (!urandom.good()) {
         // C2 fix: fail hard instead of using weak predictable fallback.
         ENJIN_LOG_FATAL(Network, "Failed to open /dev/urandom — cannot generate secure session key");
+        return key; // Returns zero key; caller must check and refuse to authenticate
+    }
+    urandom.read(reinterpret_cast<char*>(key.data()), SESSION_KEY_SIZE);
+    // The open succeeding is not the same as the read filling the buffer. A
+    // short read leaves the tail of the key zero, and every byte we did not get
+    // is a byte an attacker does not have to guess. The Windows branch checks
+    // its status and fails hard; this one only checked before reading.
+    if (urandom.gcount() != static_cast<std::streamsize>(SESSION_KEY_SIZE)) {
+        ENJIN_LOG_FATAL(Network, "Short read from /dev/urandom (%lld of %u bytes) — cannot generate secure session key",
+                        static_cast<long long>(urandom.gcount()), SESSION_KEY_SIZE);
+        key = {};
         return key; // Returns zero key; caller must check and refuse to authenticate
     }
 #endif

@@ -1,6 +1,8 @@
 #include "Enjin/Scene/GameSaveSystem.h"
 
 #include <fstream>
+#include <filesystem>
+#include <system_error>
 #include <chrono>
 #include <ctime>
 #include <iomanip>
@@ -62,20 +64,34 @@ namespace Enjin::Scene
         }
         basePath = std::string(home) + "/Library/Application Support/enjin/saves/";
 #else
-        const char* configDir = getenv("XDG_CONFIG_HOME");
-        if (configDir)
+        // Save files are user data, so they belong under XDG_DATA_HOME
+        // (~/.local/share), which is what Platform::GetAppUserDataDirectory
+        // already returns for everything else the engine writes. They used to go
+        // to XDG_CONFIG_HOME (~/.config), which is for configuration and is what
+        // a "reset my settings" tool or a dotfile manager will happily delete.
+        //
+        // Existing saves are not abandoned: if the old location has a directory
+        // and the new one does not, we keep reading and writing the old one. A
+        // player who already has saves keeps them; a new install gets the
+        // correct path.
+        const char* home = getenv("HOME");
+        if (!home)
         {
-            basePath = std::string(configDir) + "/enjin/saves/";
+            struct passwd* pw = getpwuid(getuid());
+            home = pw ? pw->pw_dir : "/tmp";
         }
-        else
+        const char* dataDir = getenv("XDG_DATA_HOME");
+        basePath = dataDir ? (std::string(dataDir) + "/enjin/saves/")
+                           : (std::string(home) + "/.local/share/enjin/saves/");
+
+        const char* configDir = getenv("XDG_CONFIG_HOME");
+        const std::string legacy = configDir
+            ? (std::string(configDir) + "/enjin/saves/")
+            : (std::string(home) + "/.config/enjin/saves/");
+        std::error_code ec;
+        if (!std::filesystem::exists(basePath, ec) && std::filesystem::exists(legacy, ec))
         {
-            const char* home = getenv("HOME");
-            if (!home)
-            {
-                struct passwd* pw = getpwuid(getuid());
-                home = pw ? pw->pw_dir : "/tmp";
-            }
-            basePath = std::string(home) + "/.config/enjin/saves/";
+            basePath = legacy;
         }
 #endif
 

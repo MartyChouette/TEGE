@@ -5,12 +5,26 @@
 #include <cstring>
 #include <cstdio>
 #include <filesystem>
+#include <atomic>
+#include <string>
 #ifdef _WIN32
 #include <windows.h>
 #else
 #include <unistd.h>
 #include <sys/wait.h>
 #endif
+
+namespace {
+// Process id, for naming scratch files that must not collide between two
+// editors sharing a temp directory.
+unsigned long long EnjinCurrentProcessId() {
+#ifdef _WIN32
+    return static_cast<unsigned long long>(::GetCurrentProcessId());
+#else
+    return static_cast<unsigned long long>(::getpid());
+#endif
+}
+} // namespace
 
 namespace Enjin {
 namespace Renderer {
@@ -85,11 +99,22 @@ bool CompileGLSL(const std::string& source, VkShaderStageFlagBits stage, std::ve
         default: break;
     }
 
-    // Create temp files for source and output
+    // Create temp files for source and output.
+    //
+    // The name used to be fixed. On Windows the temp directory is per-user so
+    // that was merely racy between two editors; on Linux it is /tmp, shared and
+    // world-writable, where a fixed name means two editors overwrite each
+    // other's SPIR-V and anyone on the box can pre-place a file or a symlink at
+    // the output path. Compilation would still report success and we would load
+    // whatever was there. A per-process, per-call name closes both.
     namespace fs = std::filesystem;
     fs::path tempDir = fs::temp_directory_path();
-    fs::path srcPath = tempDir / ("enjin_shader_temp" + std::string(ext));
-    fs::path spvPath = tempDir / "enjin_shader_temp.spv";
+    static std::atomic<u32> s_ShaderTempCounter{0};
+    const std::string unique = "enjin_shader_" +
+        std::to_string(static_cast<unsigned long long>(EnjinCurrentProcessId())) + "_" +
+        std::to_string(s_ShaderTempCounter.fetch_add(1));
+    fs::path srcPath = tempDir / (unique + std::string(ext));
+    fs::path spvPath = tempDir / (unique + ".spv");
 
     // Write GLSL source to temp file
     {

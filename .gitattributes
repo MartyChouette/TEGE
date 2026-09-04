@@ -1,0 +1,68 @@
+# Line endings.
+#
+# Git normalizes text to LF in the repository and checks it out in the
+# platform's native form. Without this file that behaviour depends on each
+# contributor's core.autocrlf setting, so a Windows contributor can commit CRLF
+# into a file that a Linux runtime then reads literally.
+#
+# That is not hypothetical for this engine: several parsers compare whole
+# tokens after trimming only spaces and tabs, so a trailing carriage return
+# turns "on" into something that is not "on". The loaders that strip \r do so
+# individually, one at a time, as each bug was found.
+* text=auto
+
+# Files a runtime or a tool parses line by line. These stay LF in the working
+# tree on every platform, so a Windows checkout cannot introduce a carriage
+# return that only shows up as a misparse on Linux or in the browser.
+*.as          text eol=lf
+*.enjin       text eol=lf
+*.enjinproject text eol=lf
+*.vert        text eol=lf
+*.frag        text eol=lf
+*.comp        text eol=lf
+*.geom        text eol=lf
+*.tesc        text eol=lf
+*.tese        text eol=lf
+*.rgen        text eol=lf
+*.rchit       text eol=lf
+*.rmiss       text eol=lf
+*.rahit       text eol=lf
+*.glsl        text eol=lf
+*.wgsl        text eol=lf
+*.json        text eol=lf
+*.yml         text eol=lf
+*.yaml        text eol=lf
+*.sh          text eol=lf
+*.py          text eol=lf
+
+# Scripts Windows runs directly need CRLF; cmd.exe mishandles LF-only batch
+# files that use labels or multi-line blocks.
+*.bat         text eol=crlf
+*.cmd         text eol=crlf
+
+# Binary. Never normalized, never diffed as text.
+*.png         binary
+*.jpg         binary
+*.jpeg        binary
+*.gif         binary
+*.ico         binary
+*.ttf         binary
+*.otf         binary
+*.wav         binary
+*.mp3         binary
+*.ogg         binary
+*.spv         binary
+*.enjpak      binary
+*.wasm        binary
+*.dll         binary
+*.so          binary
+*.dylib       binary
+*.lib         binary
+*.a           binary
+*.exe         binary
+*.pdb         binary
+*.glb         binary
+*.gltf        text eol=lf
+*.fbx         binary
+# .obj is left to "text=auto": Wavefront OBJ is a text mesh format, and MSVC
+# object files of the same extension are ignored anyway.
