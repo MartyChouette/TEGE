@@ -139,6 +139,9 @@ namespace {
     constexpr int MAX_TOUCHES = 6;
     TouchPoint s_Touches[MAX_TOUCHES];
     bool s_TouchSeen = false;          // web: any touch ever -> show the overlay
+    f32 s_PinchDelta = 0.0f;           // this frame's two-finger distance change
+    f32 s_PinchPrevDist = -1.0f;       // <0 = no gesture in progress
+    int s_ActiveTouchCount = 0;
     bool s_CoarsePointer = false;      // web: phone/tablet detected -> show at boot
     f32 s_SafeInset[4] = {0, 0, 0, 0}; // top,right,bottom,left in surface pixels (web)
     Input::TouchScheme s_TouchScheme;  // seeded empty; Engine applies a preset
@@ -614,7 +617,42 @@ void Input::Initialize(Window* window) {
     ENJIN_LOG_INFO(Core, "Input system initialized");
 }
 
+// Two-finger pinch, rebuilt each frame from the live touch slots. Roles 1/2
+// (stick and look) both take part: a player pinching to zoom does not care
+// which half of the screen their fingers happen to be on. UI drags (role 3) are
+// excluded so a two-finger scroll inside a panel is not read as a zoom.
+static void UpdatePinchState() {
+    const Enjin::f32* xs[2] = {nullptr, nullptr};
+    const Enjin::f32* ys[2] = {nullptr, nullptr};
+    int n = 0, active = 0;
+    for (int i = 0; i < MAX_TOUCHES; ++i) {
+        if (s_Touches[i].id < 0) continue;
+        if (s_Touches[i].role == 3) continue;      // owned by UI
+        ++active;
+        if (n < 2) { xs[n] = &s_Touches[i].curX; ys[n] = &s_Touches[i].curY; ++n; }
+    }
+    s_ActiveTouchCount = active;
+
+    if (n < 2) {                     // gesture over (or never started)
+        s_PinchDelta = 0.0f;
+        s_PinchPrevDist = -1.0f;
+        return;
+    }
+    const Enjin::f32 dx = *xs[1] - *xs[0];
+    const Enjin::f32 dy = *ys[1] - *ys[0];
+    const Enjin::f32 dist = std::sqrt(dx * dx + dy * dy);
+    // First frame of a gesture reports no movement: the delta is only
+    // meaningful once there is a previous distance to compare against.
+    s_PinchDelta = (s_PinchPrevDist >= 0.0f) ? (dist - s_PinchPrevDist) : 0.0f;
+    s_PinchPrevDist = dist;
+}
+
+f32 Input::GetPinchDelta() { return s_PinchDelta; }
+int Input::GetActiveTouchCount() { return s_ActiveTouchCount; }
+
 void Input::Update() {
+    UpdatePinchState();
+
     // Copy current state to previous
     std::memcpy(s_KeysDownPrev, s_KeysDown, sizeof(s_KeysDown));
     std::memcpy(s_MouseButtonsDownPrev, s_MouseButtonsDown, sizeof(s_MouseButtonsDown));

@@ -293,6 +293,21 @@ public:
     };
     static TouchOverlayState GetTouchOverlay();
 
+    // ---- Multi-touch gestures ----------------------------------------------
+    // Core already tracks up to six simultaneous touches for the overlay; these
+    // expose the two-finger gesture built from them, which single-touch
+    // stick/look/button handling cannot express. Zero on desktop unless touch
+    // simulation is driving a touch.
+    //
+    // Change in distance between the two active touches since last frame, in
+    // surface pixels: positive = fingers moving apart (zoom in). Zero on the
+    // frame a second finger lands or lifts, so a gesture never starts or ends
+    // with a jump.
+    static f32 GetPinchDelta();
+    // Touches currently down that are not owned by UI, so a game can tell a
+    // one-finger drag from a two-finger gesture before acting on either.
+    static int GetActiveTouchCount();
+
     // Mouse capture (hide cursor and lock to window)
     static void SetMouseCaptured(bool captured);
     static bool IsMouseCaptured();

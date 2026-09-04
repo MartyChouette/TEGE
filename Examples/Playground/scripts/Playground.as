@@ -17,7 +17,7 @@ class Playground : TegeBehavior {
         InputAction_SetName(GameAction::Custom0, "SLO-MO");
         InputAction_Rebind(GameAction::Custom0, Key::B);
         InputAction_AddGamepadBinding(GameAction::Custom0, GamepadBtn::Y);
-        Touch_AddActionButton("SLO-MO", GameAction::Custom0, 0, 2, 0.065f);
+        Touch_AddActionButton("SLO-MO", GameAction::Custom0, 0, 2, 0.115f);
     }
 
     void OnUpdate(float dt) {

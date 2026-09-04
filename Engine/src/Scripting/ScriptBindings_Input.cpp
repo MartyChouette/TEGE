@@ -88,6 +88,9 @@ static Vector2 Input_GetMouseDelta() {
     return Input::GetMouseDelta();
 }
 
+static float Input_GetPinchDelta() { return Input::GetPinchDelta(); }
+static int Input_GetTouchCount() { return Input::GetActiveTouchCount(); }
+
 static Vector2 Input_GetScrollDelta() {
     return Input::GetScrollDelta();
 }
@@ -373,6 +376,12 @@ void RegisterInputBindings(asIScriptEngine* engine) {
         ENJIN_AS_FN(Input_GetMouseDelta), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("Vector2 Input_GetScrollDelta()",
         ENJIN_AS_FN(Input_GetScrollDelta), ENJIN_AS_CALL_CDECL));
+    // Two-finger pinch (touch). Positive = fingers apart = zoom in. Pair with
+    // Input_GetScrollDelta so one script handles wheel and touch alike.
+    AS_CHECK(engine->RegisterGlobalFunction("float Input_GetPinchDelta()",
+        ENJIN_AS_FN(Input_GetPinchDelta), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int Input_GetTouchCount()",
+        ENJIN_AS_FN(Input_GetTouchCount), ENJIN_AS_CALL_CDECL));
 
     // ---- Mouse capture ----
     AS_CHECK(engine->RegisterGlobalFunction("bool Input_IsMouseCaptured()",
