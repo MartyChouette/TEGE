@@ -393,9 +393,17 @@ void RenderSystem::RecreateWebSizedTargets(u32 sceneW, u32 sceneH) {
     if (m_WebPostProcessLayout.IsValid() && m_WebPPAccessibilityBuffer.IsValid()) {
         Renderer::GPUBindGroupDesc ppBGDesc;
         ppBGDesc.layout = m_WebPostProcessLayout;
+        // When bloom is running, the tonemap must sample the SCRATCH texture the
+        // bloom composite writes, not raw scene colour. Initialize used to make
+        // that correction after calling this function, and the resize path did
+        // not, so from the first canvas resize onward the whole bloom chain still
+        // ran and its result was thrown away. Decide it here, once, and both
+        // callers get it right.
+        const bool bloomComposites = m_WebBloomThresholdPipeline.IsValid() && m_WebBloomScratchTex.IsValid();
+        const Renderer::GPUTextureHandle ppSource = bloomComposites ? m_WebBloomScratchTex : m_WebSceneColorTex;
         ppBGDesc.entries = {
-            {0, {}, 0, 0, m_WebSceneColorTex, {}},
-            {1, {}, 0, 0, {}, m_WebSceneColorTex},
+            {0, {}, 0, 0, ppSource, {}},
+            {1, {}, 0, 0, {}, ppSource},
             {2, m_WebPPAccessibilityBuffer, 0, sizeof(WebPPAccessibilityParams), {}, {}},
         };
         m_WebPostProcessBG = bindMgr->CreateBindGroup(ppBGDesc);
@@ -1644,6 +1652,12 @@ void RenderSystem::Update(f32 deltaTime) {
                 // Viewmodels cast no shadows (see Vulkan RenderEntityShadow)
                 auto* vmc = m_CachedViewmodelStorage ? m_CachedViewmodelStorage->Get(e) : nullptr;
                 if (vmc && vmc->enabled) continue;
+                // Materials that opt out of casting: glass, decals, FX planes, and
+                // the SDF text meshes, which set castShadows=false and were still
+                // throwing a shadow of their quad on web. Vulkan's
+                // RebuildShadowCasterCache has always filtered on this.
+                auto* smat = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(e) : nullptr;
+                if (smat && !smat->castShadows) continue;
                 s_WebShadowCasters.push_back(e);
             }
         }
@@ -1837,7 +1851,10 @@ void RenderSystem::Update(f32 deltaTime) {
                 if (lcc->type == LightType::Point && pointShadowCount < WEB_MAX_POINT_SHADOWS) pointShadowCount++;
             }
         }
-        lit.shadowParams = {1.0f, static_cast<f32>(spotShadowCount), static_cast<f32>(pointShadowCount), 0.0f};
+        // x is the shadow-strength the shader multiplies the occlusion by. It was
+        // pinned at 1.0, so the options slider moved a value nothing read.
+        lit.shadowParams = {m_WebShadowStrength, static_cast<f32>(spotShadowCount),
+                            static_cast<f32>(pointShadowCount), 0.0f};
 
         static int s_ShadowLog = 0;
         if (s_ShadowLog++ < 5) {
@@ -2921,6 +2938,24 @@ void RenderSystem::Update(f32 deltaTime) {
     }
 
     // ========================================================================
+    // Procedural sky
+    // ========================================================================
+    // Drawn here: after the opaque meshes, before anything alpha-blended.
+    //
+    // It is a fullscreen triangle at z = 1 with a LessEqual depth test, so at
+    // any pixel the opaque pass did not cover, the depth is still the cleared
+    // 1.0 and the sky passes its own test. Particles and sprites do not write
+    // depth, so when the sky came last it painted straight over every particle
+    // and sprite silhouetted against open sky — only the ones in front of solid
+    // geometry survived. The weather and elemental passes further down were
+    // already moved after the sky for exactly this reason; these two were not.
+    if (usePostProcess && m_WebSkyPipeline.IsValid() && scenePassEncoder) {
+        wgpuRenderPassEncoderSetPipeline(scenePassEncoder, webPipeMgr->GetNativePipeline(m_WebSkyPipeline));
+        wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 0, webBindMgr->GetNativeGroup(m_WebFrameBindGroup), 0, nullptr);
+        wgpuRenderPassEncoderDraw(scenePassEncoder, 3, 1, 0, 0);  // Fullscreen triangle at z=1
+    }
+
+    // ========================================================================
     // Grass volumes (instanced blades, opaque)
     // ========================================================================
     if (usePostProcess && m_WebGrassPipeline.IsValid() && scenePassEncoder) {
@@ -3146,13 +3181,6 @@ void RenderSystem::Update(f32 deltaTime) {
             webBindMgr->DestroyBindGroup(sprTexBG);
             bufMgr->DestroyBuffer(instBuf);
         }
-    }
-
-    // Draw procedural sky (after scene, before ending pass)
-    if (usePostProcess && m_WebSkyPipeline.IsValid() && scenePassEncoder) {
-        wgpuRenderPassEncoderSetPipeline(scenePassEncoder, webPipeMgr->GetNativePipeline(m_WebSkyPipeline));
-        wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 0, webBindMgr->GetNativeGroup(m_WebFrameBindGroup), 0, nullptr);
-        wgpuRenderPassEncoderDraw(scenePassEncoder, 3, 1, 0, 0);  // Fullscreen triangle at z=1
     }
 
     // Weather particles (rain streaks / snow flakes): the WeatherSystem's CPU
@@ -3489,8 +3517,8 @@ u32  RenderSystem::GetTextureAnisotropy() const { return 8; }
 bool RenderSystem::GetTextureMipmaps() const { return true; }
 u32  RenderSystem::GetTextureWrap() const { return 0; }
 void RenderSystem::RequestPipelineRecreation() {}  // Vulkan-only heal; WebGPU rebuilds per-frame
-f32  RenderSystem::GetShadowStrength() const { return 1.0f; }  // web: fixed-strength shadows
-void RenderSystem::SetShadowStrength(f32) {}
+f32  RenderSystem::GetShadowStrength() const { return m_WebShadowStrength; }
+void RenderSystem::SetShadowStrength(f32 s) { m_WebShadowStrength = (s < 0.0f) ? 0.0f : (s > 1.0f ? 1.0f : s); }
 void RenderSystem::SpawnGPUParticlePreset(u32, const Math::Vector3&, const Math::Vector3&,
                                           Effects::GPUParticlePreset) {}  // Vulkan-only (GPU compute)
 void RenderSystem::SetFluidSimulation(Effects::FluidSimulation* /*sim*/) {}

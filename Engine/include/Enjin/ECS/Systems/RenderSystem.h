@@ -1527,6 +1527,9 @@ private:
     Renderer::SkyboxConfig m_WebSkyConfig;   // web: scene sky (desktop uses m_Skybox)
     f32 m_WeatherSkyRain = 0.0f, m_WeatherSkySnow = 0.0f;  // live weather sky blend
     bool m_WebSkyConfigured = false;
+    // Vulkan stores this on the ShadowMap object; the web path has no such
+    // object, so the slider needs somewhere to live.
+    f32 m_WebShadowStrength = 1.0f;
     std::vector<ParticleImpact> m_ParticleImpacts;
     std::vector<ECS::Entity> m_AnimFootsteps;
     bool m_RainActive = false;
