@@ -378,6 +378,10 @@ int main(int argc, char* argv[]) {
             cfg.outputDir = outDir;
             cfg.target = Enjin::Build::BuildTargetPlatform::Desktop;   // pak only
             cfg.packagingMode = Enjin::Build::PackagingMode::Packed;
+            // The pak is all that is asked for here; the web player is copied
+            // in below, so the pipeline must not demand a runtime it was never
+            // told to produce.
+            cfg.assetsOnly = true;
             Enjin::Build::BuildPipeline pipeline;
             pipeline.SetProgressCallback([](const std::string& phase, float p) {
                 std::cout << "[build-web] " << phase << " " << int(p * 100.0f) << "%\n";

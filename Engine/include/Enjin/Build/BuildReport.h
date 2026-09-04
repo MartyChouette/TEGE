@@ -43,6 +43,13 @@ struct BuildConfig {
     bool engineSplash = true;    // "Made with TEGE" intro card at game start
     BuildTargetPlatform target = BuildTargetPlatform::Desktop;
     PackagingMode packagingMode = PackagingMode::Packed;
+
+    // Pack the assets and skip the runtime check, because the CALLER supplies
+    // the runtime. Set by tooling that packs a pak on its own and copies the
+    // player itself (EnjinEditor --build-web does this to avoid a full
+    // Emscripten rebuild). A normal build leaves this false, so a missing
+    // runtime fails the build instead of shipping a folder nothing can run.
+    bool assetsOnly = false;
 };
 
 struct BuildResult {

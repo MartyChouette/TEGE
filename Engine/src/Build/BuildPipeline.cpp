@@ -120,7 +120,9 @@ BuildResult BuildPipeline::Execute(const BuildConfig& config) {
     // web build.
     {
         std::string whyNot;
-        if (!VerifyRuntimePresent(config.outputDir, config.target, &whyNot)) {
+        if (config.assetsOnly) {
+            // The caller is supplying the runtime; only the pak was asked for.
+        } else if (!VerifyRuntimePresent(config.outputDir, config.target, &whyNot)) {
             m_Result.success = false;
             AddMessage(MessageSeverity::Error, "Build failed: " + whyNot);
             return m_Result;
