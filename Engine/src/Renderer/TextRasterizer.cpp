@@ -3,7 +3,7 @@
 
 #include "Enjin/Renderer/TextRasterizer.h"
 #include "Enjin/Logging/Log.h"
-#include "Enjin/Accessibility/OpenDyslexicFont.h"  // bundled default font (embedded bytes)
+#include "Enjin/Accessibility/TextFont.h"  // bundled default font (embedded bytes)
 #include "Enjin/Assets/MeshAssetCache.h"           // game-root resolution for relative font paths
 
 #include <fstream>
@@ -20,20 +20,28 @@ TextRasterizer::~TextRasterizer() {
 }
 
 const TextRasterizer::FontData* TextRasterizer::GetOrLoadFont(const std::string& fontPath) {
-    auto it = m_FontCache.find(fontPath);
+    // Keyed by the accessibility choice as well as the path: the same path
+    // answers with a different face once the dyslexia font is on, and a cache
+    // keyed on the path alone would keep returning the face baked before it.
+    const std::string cacheKey = Accessibility::FontCacheKey(fontPath);
+    auto it = m_FontCache.find(cacheKey);
     if (it != m_FontCache.end()) {
         return &it->second;
     }
 
-    // Empty path → bundled default font (embedded), so authored text renders on load
-    // without the author having to pick a font file first.
-    if (fontPath.empty()) {
-        FontData fontData;
-        fontData.fileData.assign(Accessibility::s_OpenDyslexicFontData,
-                                 Accessibility::s_OpenDyslexicFontData + Accessibility::s_OpenDyslexicFontDataSize);
-        auto [inserted, success] = m_FontCache.emplace(fontPath, std::move(fontData));
-        if (!success) return nullptr;
-        return &inserted->second;
+    // An embedded face answers for an empty path (so authored text renders on
+    // load without the author picking a font first) and for any path at all
+    // while the dyslexia font is on.
+    {
+        usize embeddedSize = 0;
+        const u8* embedded = Accessibility::ResolveFontBytes(fontPath, embeddedSize);
+        if (embedded && embeddedSize > 0) {
+            FontData fontData;
+            fontData.fileData.assign(embedded, embedded + embeddedSize);
+            auto [inserted, success] = m_FontCache.emplace(cacheKey, std::move(fontData));
+            if (!success) return nullptr;
+            return &inserted->second;
+        }
     }
 
     // Read font file from disk. Project-relative paths resolve against the
@@ -69,7 +77,7 @@ const TextRasterizer::FontData* TextRasterizer::GetOrLoadFont(const std::string&
     file.read(reinterpret_cast<char*>(fontData.fileData.data()), fileSize);
     file.close();
 
-    auto [inserted, success] = m_FontCache.emplace(fontPath, std::move(fontData));
+    auto [inserted, success] = m_FontCache.emplace(cacheKey, std::move(fontData));
     if (!success) {
         return nullptr;
     }

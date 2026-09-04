@@ -1,3 +1,4 @@
+#include "Enjin/Accessibility/TextFont.h"
 #include "Enjin/Accessibility/AccessibilitySettings.h"
 #include "Enjin/Renderer/PostProcessing.h"
 #include "Enjin/Accessibility/SubtitleSystem.h"
@@ -100,6 +101,12 @@ void ApplyTextScale(const RuntimeAccessibilitySettings& settings,
                     GUI::UISystem* ui,
                     SubtitleSystem* subtitles,
                     AccessibilityAnnouncer* announcer) {
+    // The font FACE, not just the size. This is the call every runtime already
+    // makes for text settings, so it is where the choice has to be pushed --
+    // it used to reach only ImGui's atlas via FontLibrary, which is why the
+    // toggle never changed a word the game drew.
+    SetDyslexiaFontEnabled(settings.dyslexiaFriendly);
+
     if (ui) ui->SetFontScale(settings.fontScale);
     if (subtitles) {
         // The subtitle size setting stays the player's own; the global scale

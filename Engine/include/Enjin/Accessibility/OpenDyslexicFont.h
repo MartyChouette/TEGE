@@ -10,8 +10,12 @@
 namespace Enjin {
 namespace Accessibility {
 
-static const unsigned int s_OpenDyslexicFontDataSize = 138312;
-static const unsigned char s_OpenDyslexicFontData[] = {
+// inline, not static: at namespace scope in a header, static gives every
+// translation unit its own 138 KB copy of the font, and two TUs comparing
+// pointers to "the" font data disagree. EmbeddedFonts.h next door already
+// does it this way.
+inline constexpr unsigned int s_OpenDyslexicFontDataSize = 138312;
+inline const unsigned char s_OpenDyslexicFontData[] = {
 0,1,0,0,0,20,1,0,0,4,0,64,71,68,69,70,15,148,16,221,0,2,6,40,0,0,0,150,71,80,79,83,
 232,41,56,106,0,2,6,192,0,0,17,106,71,83,85,66,226,219,218,244,0,2,24,44,0,0,4,26,76,84,83,72,
 8,127,80,177,0,0,10,120,0,0,2,24,79,83,47,50,124,154,181,17,0,0,1,200,0,0,0,96,86,68,77,88,

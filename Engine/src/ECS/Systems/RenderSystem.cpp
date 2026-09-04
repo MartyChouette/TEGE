@@ -89,7 +89,7 @@ Renderer::SkyboxConfig RenderSystem::WeatherSky(const Renderer::SkyboxConfig& cf
 #include "Enjin/ECS/Components/Text.h"    // web SDF text generation
 #include "Enjin/Effects/Weather.h"        // weather particle draw
 #include "Enjin/Effects/ElementalSystem.h" // elemental (fire/water/etc) particle draw — web + desktop
-#include "Enjin/Accessibility/OpenDyslexicFont.h"  // bundled default SDF font
+#include "Enjin/Accessibility/TextFont.h"  // the one font-choice resolver
 #include "Enjin/Build/AssetReader.h"
 #include "Enjin/Math/Math.h"
 #include <algorithm>
@@ -1484,17 +1484,18 @@ Renderer::GPUTextureHandle RenderSystem::WebGetOrLoadTexture(const std::string& 
 // in m_WebTextureCache under a synthetic key so the normal per-entity texture
 // bind picks it up by baseColorTexturePath. Returns null if the font fails.
 Renderer::FontAtlas* RenderSystem::WebGetOrBuildFontAtlas(const std::string& fontPath, std::string& outCacheKey) {
-    outCacheKey = "__sdf__" + fontPath;
-    auto it = m_WebSDFFonts.find(fontPath);
+    // The GPU texture cache is keyed off this string too, so the accessibility
+    // choice has to be in it or a toggle keeps sampling the old atlas.
+    const std::string sdfKey = Accessibility::FontCacheKey(fontPath);
+    outCacheKey = "__sdf__" + sdfKey;
+    auto it = m_WebSDFFonts.find(sdfKey);
     if (it == m_WebSDFFonts.end()) {
         WebSDFFont entry;
         entry.cacheKey = outCacheKey;
         std::vector<u8> fileData;
-        const u8* bytes = nullptr; usize size = 0;
-        if (fontPath.empty()) {
-            bytes = Accessibility::s_OpenDyslexicFontData;
-            size = Accessibility::s_OpenDyslexicFontDataSize;
-        } else {
+        usize size = 0;
+        const u8* bytes = Accessibility::ResolveFontBytes(fontPath, size);
+        if (!bytes) {
             if (m_AssetReader && m_AssetReader->IsOpen() && m_AssetReader->HasFile(fontPath))
                 fileData = m_AssetReader->ReadFile(fontPath);
             if (fileData.empty()) {
@@ -1526,7 +1527,7 @@ Renderer::FontAtlas* RenderSystem::WebGetOrBuildFontAtlas(const std::string& fon
         if (!entry.atlas)
             ENJIN_LOG_WARN(Renderer, "web SDF text: font atlas failed for '%s'",
                            fontPath.empty() ? "<default>" : fontPath.c_str());
-        it = m_WebSDFFonts.emplace(fontPath, std::move(entry)).first;
+        it = m_WebSDFFonts.emplace(sdfKey, std::move(entry)).first;
     }
     outCacheKey = it->second.cacheKey;
     return it->second.atlas ? it->second.atlas.get() : nullptr;
@@ -3799,7 +3800,7 @@ void RenderSystem::SetUpscalerQuality(u32 quality) { m_UpscalerQuality = quality
 #include <filesystem>
 #include <fstream>
 #include <unordered_set>
-#include "Enjin/Accessibility/OpenDyslexicFont.h"  // bundled default font for the SDF atlas
+#include "Enjin/Accessibility/TextFont.h"  // the one font-choice resolver
 
 namespace Enjin {
 namespace ECS {
@@ -4734,7 +4735,10 @@ void RenderSystem::CacheProcTexture(Entity entity, std::shared_ptr<Renderer::Tex
     if (it != m_ProcTextureCache.end() && it->second) {
         auto bh = m_TextureBindlessHandles.find(it->second.get());
         if (bh != m_TextureBindlessHandles.end()) {
-            if (m_BindlessManager) m_BindlessManager->UnregisterTexture(bh->second);
+            // Defer the slot release for the same window as the texture. Freeing
+            // it here is what lost the device: the material SSBO of a frame still
+            // in flight holds this index.
+            m_BindlessGraveyard.push_back({m_FlushTick, bh->second});
             m_TextureBindlessHandles.erase(bh);
         }
         m_ProcTextureCache[entity] = std::move(tex);
@@ -4752,45 +4756,70 @@ void RenderSystem::CacheProcTexture(Entity entity, std::shared_ptr<Renderer::Tex
 // DESTRUCTION of a texture an in-flight frame still samples that kills the
 // driver, and CacheProcTexture handles that.
 void RenderSystem::EnsureProceduralTextures() {
-    if (!m_World || !m_VulkanRenderer) return;
+    if (!m_World || !m_VulkanRenderer || !m_BindlessManager || !m_CachedMaterialStorage) return;
     for (Entity entity : m_World->GetEntitiesWithComponent<ProceduralTextureComponent>()) {
         auto* pt = m_World->GetComponent<ProceduralTextureComponent>(entity);
-        if (!pt || !pt->dirty) continue;
-        if (!pt->Valid()) {
-            // A producer raised dirty with a mismatched buffer. Drop the flag so
-            // it does not retry every frame, and say so once.
-            ENJIN_LOG_WARN(Renderer,
-                "ProceduralTexture on entity %llu is %ux%u but holds %zu bytes (expected %zu)",
-                static_cast<unsigned long long>(entity), pt->width, pt->height,
-                pt->pixels.size(),
-                static_cast<usize>(pt->width) * pt->height * 4u);
+        if (!pt) continue;
+
+        // The pixels land on the entity's surface, so a material has to carry
+        // them. Without one there is nothing to point at.
+        MaterialComponent* mat = m_CachedMaterialStorage->Get(entity);
+        if (!mat) continue;
+
+        if (pt->dirty) {
+            if (!pt->Valid()) {
+                // A producer raised dirty with a mismatched buffer. Clear the
+                // flag so it does not retry every frame, and say so once.
+                ENJIN_LOG_WARN(Renderer,
+                    "ProceduralTexture on entity %llu is %ux%u but holds %zu bytes (expected %zu)",
+                    static_cast<unsigned long long>(entity), pt->width, pt->height,
+                    pt->pixels.size(),
+                    static_cast<usize>(pt->width) * pt->height * 4u);
+                pt->dirty = false;
+                continue;
+            }
+            auto tex = std::make_shared<Renderer::Texture>(m_VulkanRenderer->GetContext());
+            // UNORM, not SRGB: these are colour ramps already baked on the CPU,
+            // and a second gamma pass washes them out.
+            if (tex->CreateFromData(pt->pixels.data(), pt->width, pt->height, 4,
+                                    VK_FORMAT_R8G8B8A8_UNORM)) {
+                CacheProcTexture(entity, tex);
+                // Register in the bindless set, or the pooled material shader has
+                // no index to sample and the surface renders as flat base colour.
+                // This is the step that makes it visible at all.
+                u32 h = m_BindlessManager->RegisterTexture(tex->GetImageView(), tex->GetSampler());
+                if (h != UINT32_MAX) m_TextureBindlessHandles[tex.get()] = h;
+                m_MaterialSSBOBuilt = false;  // rebuild with the new bindless index
+            }
             pt->dirty = false;
-            continue;
         }
-        auto tex = std::make_shared<Renderer::Texture>(m_VulkanRenderer->GetContext());
-        // UNORM, not SRGB: these are authored colour ramps baked on the CPU and
-        // double-gamma washes them out.
-        if (tex->CreateFromData(pt->pixels.data(), pt->width, pt->height, 4,
-                                VK_FORMAT_R8G8B8A8_UNORM)) {
-            CacheProcTexture(entity, tex);
+
+        // Point the material's base colour at the generated texture (idempotent).
+        auto it = m_ProcTextureCache.find(entity);
+        if (it != m_ProcTextureCache.end() && it->second && it->second->IsValid()
+            && mat->cachedBaseColorTexture != it->second.get()) {
+            mat->cachedBaseColorTexture = it->second.get();
+            mat->baseColorTexture = 1;
+            mat->textureCacheDirty = false;  // never reload from the (empty) path
+            m_MaterialSSBOBuilt = false;
         }
-        pt->dirty = false;
     }
 }
 
 Renderer::FontAtlas* RenderSystem::GetOrBuildFontAtlas(const std::string& fontPath, Renderer::Texture** outTexture) {
-    auto it = m_SDFFonts.find(fontPath);
+    // Keyed by the accessibility font choice too, so toggling it rebuilds
+    // rather than returning the atlas baked in the previous face.
+    const std::string sdfKey = Accessibility::FontCacheKey(fontPath);
+    auto it = m_SDFFonts.find(sdfKey);
     if (it == m_SDFFonts.end()) {
         SDFFont entry;
-        // Resolve the font bytes exactly like TextRasterizer: empty path = the
-        // bundled default font, so SDF text also renders with zero font setup.
+        // Resolve the font bytes exactly like TextRasterizer, through the one
+        // shared resolver: an embedded face answers for an empty path and for
+        // any path while the dyslexia font is on.
         std::vector<u8> fileData;
-        const u8* bytes = nullptr;
         usize size = 0;
-        if (fontPath.empty()) {
-            bytes = Accessibility::s_OpenDyslexicFontData;
-            size = Accessibility::s_OpenDyslexicFontDataSize;
-        } else {
+        const u8* bytes = Accessibility::ResolveFontBytes(fontPath, size);
+        if (!bytes) {
             // Resolve project-relative font paths against the same game root
             // textures/models use (the CWD is the exe dir, not the project).
             std::string loadPath = fontPath;
@@ -4833,7 +4862,7 @@ Renderer::FontAtlas* RenderSystem::GetOrBuildFontAtlas(const std::string& fontPa
             ENJIN_LOG_WARN(Renderer, "SDF text: font atlas failed for '%s' - falling back to rasterized text",
                            fontPath.empty() ? "<default>" : fontPath.c_str());
         }
-        it = m_SDFFonts.emplace(fontPath, std::move(entry)).first;
+        it = m_SDFFonts.emplace(sdfKey, std::move(entry)).first;
     }
     if (!it->second.atlas) return nullptr;
     if (outTexture) *outTexture = it->second.texture.get();
@@ -4892,6 +4921,15 @@ void RenderSystem::FlushPendingChanges() {
     if (m_SkipMainPassRendering) {
         return;
     }
+
+    // CPU-generated textures (reaction-diffusion, Physarum, script pixels).
+    // This creates a texture, registers a bindless slot and retires the
+    // previous one, at whatever rate the producing system runs. That is GPU
+    // resource churn, so it belongs here and nowhere else: doing it from
+    // BuildMaterialSSBO (which records mid-frame, next to the text path that
+    // only rasterizes on an edit) lost the device on the first scene that
+    // regenerated every frame.
+    EnsureProceduralTextures();
 
     // New frame is about to record — allow the compute pre-pass to run once
     m_ComputePrePassDone = false;
@@ -5022,6 +5060,18 @@ void RenderSystem::FlushPendingChanges() {
         constexpr u64 kRetireTicks = 4;
         std::erase_if(m_TextTextureGraveyard, [&](const RetiredTexture& t) {
             return m_FlushTick - t.flushTick >= kRetireTicks;
+        });
+    }
+
+    // Same window for bindless slots retired by a procedural texture swap.
+    // Released here rather than at swap time so no in-flight frame is still
+    // sampling the index when it goes back on the free list.
+    if (!m_BindlessGraveyard.empty() && m_BindlessManager) {
+        constexpr u64 kRetireTicks = 4;
+        std::erase_if(m_BindlessGraveyard, [&](const RetiredBindless& b) {
+            if (m_FlushTick - b.flushTick < kRetireTicks) return false;
+            m_BindlessManager->UnregisterTexture(b.handle);
+            return true;
         });
     }
 
@@ -11167,10 +11217,6 @@ void RenderSystem::BuildMaterialSSBO() {
     // world text renders through the normal textured path — no setter required. Runs
     // before the early-return so a text change re-dirties the SSBO.
     EnsureTextTextures();
-    // Same for CPU-generated pixels: upload whatever a producing system
-    // wrote into ProceduralTextureComponent this frame, before the SSBO is
-    // built, so the material picks up the new texture in the same frame.
-    EnsureProceduralTextures();
     if (m_MaterialSSBOBuilt) return;
     m_MaterialSSBOBuilt = true;
 
