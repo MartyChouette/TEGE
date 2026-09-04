@@ -695,67 +695,25 @@ void ElementalSystem::UpdateSurfaceAccumulation(ECS::World* world, f32 dt) {
 // ============================================================================
 
 void ElementalSystem::UpdateWeatherInput(f32 dt, const Math::Vector3& cameraPos) {
+    (void)dt; (void)cameraPos;
     if (!m_Weather) return;
 
-    f32 rainIntensity = m_Weather->GetRainIntensity();
-    f32 snowIntensity = m_Weather->GetSnowIntensity();
-
-    // Spawn rain particles
-    if (rainIntensity > 0.01f) {
-        f32 spawnRate = rainIntensity * 30.0f; // max 30/sec at full intensity
-        m_RainSpawnAccumulator += spawnRate * dt;
-        u32 maxRainParticles = 200;
-        u32 currentWater = CountElementParticles(1);
-
-        while (m_RainSpawnAccumulator >= 1.0f && currentWater < maxRainParticles) {
-            m_RainSpawnAccumulator -= 1.0f;
-            // Random position around camera
-            f32 t = m_RainSpawnAccumulator * 1.618f + static_cast<f32>(m_Pool.activeCount) * 0.37f;
-            f32 angle = t * Math::PI * 2.0f;
-            f32 dist = 10.0f + std::sin(t * 7.3f) * 8.0f;
-            Math::Vector3 pos = cameraPos + Math::Vector3(
-                std::cos(angle) * dist,
-                15.0f + std::sin(t * 3.1f) * 5.0f,
-                std::sin(angle) * dist
-            );
-
-            Math::Vector3 vel(0.0f, -8.0f - rainIntensity * 4.0f, 0.0f);
-            if (m_Wind) {
-                vel += m_Wind->GetWindAt(pos) * 0.3f;
-            }
-            SpawnWater(pos, vel, rainIntensity * 0.6f);
-            currentWater++;
-        }
-    } else {
-        m_RainSpawnAccumulator = 0.0f;
-    }
-
-    // Spawn snow particles
-    if (snowIntensity > 0.01f) {
-        f32 spawnRate = snowIntensity * 20.0f;
-        m_SnowSpawnAccumulator += spawnRate * dt;
-        u32 maxSnowParticles = 150;
-        u32 snowCount = 0;
-        for (u32 i = 0; i < m_Pool.activeCount; ++i) {
-            if (m_Pool.elements[i].w > 0.4f && m_Pool.elements[i].y > 0.2f) snowCount++;
-        }
-
-        while (m_SnowSpawnAccumulator >= 1.0f && snowCount < maxSnowParticles) {
-            m_SnowSpawnAccumulator -= 1.0f;
-            f32 t = m_SnowSpawnAccumulator * 2.718f + static_cast<f32>(m_Pool.activeCount) * 0.53f;
-            f32 angle = t * Math::PI * 2.0f;
-            f32 dist = 8.0f + std::sin(t * 5.1f) * 7.0f;
-            Math::Vector3 pos = cameraPos + Math::Vector3(
-                std::cos(angle) * dist,
-                12.0f + std::sin(t * 2.3f) * 3.0f,
-                std::sin(angle) * dist
-            );
-            SpawnSnow(pos, 0.05f + std::sin(t * 11.0f) * 0.03f);
-            snowCount++;
-        }
-    } else {
-        m_SnowSpawnAccumulator = 0.0f;
-    }
+    // Precipitation belongs to WeatherSystem. This used to spawn its OWN rain
+    // and snow around the camera from the same intensity WeatherSystem reads,
+    // so every rainy scene simulated and drew two independent sets of drops:
+    // WeatherSystem's through the sprite pipeline, which is a textured quad and
+    // reads as a hard drop, and these through the elemental particle pipeline,
+    // whose fragment is a soft circle and reads as a round blob. Both fell at
+    // once, at different rates, in different shapes.
+    //
+    // Nothing is lost by dropping them. Rain putting fire out does not depend on
+    // water particles touching flames: UpdateElementalPhysics damps every fire
+    // particle by GetRainIntensity() + GetSnowIntensity() directly, which is
+    // both cheaper and more reliable than waiting for a collision. Deliberate
+    // water bursts still come from SpawnRainBurst() and SpawnWater(), which
+    // gameplay and scripts call.
+    m_RainSpawnAccumulator = 0.0f;
+    m_SnowSpawnAccumulator = 0.0f;
 }
 
 // ============================================================================

@@ -262,26 +262,70 @@ ENJIN_TEST(ElementalSurface, DecayOverTime) {
 // Weather Input Tests
 // ============================================================================
 
-ENJIN_TEST(ElementalWeather, RainSpawnsWater) {
+ENJIN_TEST(ElementalWeather, RainDoesNotSpawnASecondSetOfDrops) {
+    // Precipitation belongs to WeatherSystem. ElementalSystem used to spawn its
+    // own rain from the same intensity, so a rainy scene simulated and drew two
+    // independent sets of drops -- WeatherSystem's through the sprite pipeline
+    // (a textured quad, a hard drop) and these through the elemental particle
+    // pipeline (a soft circle, a round blob). Both fell at once, in different
+    // shapes, at different rates.
+    //
+    // This test used to assert the opposite. It was encoding the duplicate.
     WindSystem wind;
     WeatherSystem weather;
     weather.Initialize(500);
     weather.SetWeather(WeatherType::Rain, 0.0f);
     weather.SetRainIntensity(1.0f);
-    // Pump the weather system once so it transitions
     weather.Update(0.1f, Vector3(0.0f));
 
     ElementalSystem system;
     system.Initialize(&wind, &weather);
 
     ECS::World world;
-    // Multiple updates to accumulate spawns
     for (int i = 0; i < 10; ++i) {
         system.Update(&world, 0.1f, Vector3(0.0f));
     }
 
-    // At full rain intensity (30/sec), 10 updates of 0.1s = 1s = ~30 water particles
-    ENJIN_ASSERT_TRUE(system.GetWaterCount() > 0u);
+    ENJIN_EXPECT_TRUE(system.GetWaterCount() == 0u);
+}
+
+ENJIN_TEST(ElementalWeather, DeliberateWaterStillSpawns) {
+    // Dropping the ambient spawn must not disarm the explicit API that gameplay
+    // and scripts call.
+    WindSystem wind;
+    WeatherSystem weather;
+    weather.Initialize(500);
+
+    ElementalSystem system;
+    system.Initialize(&wind, &weather);
+
+    system.SpawnRainBurst(Vector3(0.0f, 5.0f, 0.0f), 3.0f, 12);
+
+    ENJIN_EXPECT_TRUE(system.GetWaterCount() > 0u);
+}
+
+ENJIN_TEST(ElementalWeather, RainStillPutsFireOut) {
+    // The reason the ambient drops are not missed: fire is damped by rain
+    // intensity directly, not by waiting for a water particle to collide with
+    // it. That path is what actually extinguishes campfires.
+    WindSystem wind;
+    WeatherSystem weather;
+    weather.Initialize(500);
+    weather.SetWeather(WeatherType::Rain, 0.0f);
+    weather.SetRainIntensity(1.0f);
+    weather.Update(0.1f, Vector3(0.0f));
+
+    ElementalSystem system;
+    system.Initialize(&wind, &weather);
+    system.SpawnFire(Vector3(0.0f, 1.0f, 0.0f), 1.0f, 30.0f);
+    ENJIN_ASSERT_TRUE(system.GetFireCount() > 0u);
+
+    ECS::World world;
+    for (int i = 0; i < 60; ++i) {
+        system.Update(&world, 0.1f, Vector3(0.0f));
+    }
+
+    ENJIN_EXPECT_TRUE(system.GetFireCount() == 0u);
 }
 
 ENJIN_TEST(ElementalWeather, NoRainNoSpawn) {

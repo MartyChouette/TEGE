@@ -1063,7 +1063,12 @@ void RenderSystem::Initialize() {
     {
         Renderer::GPUBindGroupLayoutDesc volLD;
         volLD.entries = {
-            {0, BType::UniformBuffer, SStage::Vertex, 64},  // VolumeParams UBO
+            // 96, not 64: the tree/shrub shader declares 24 floats. Dawn rejects a
+            // pipeline whose shader reads more than the layout's minBindingSize
+            // guarantees, so a 64 here makes the tree pipeline invalid and the whole
+            // grove disappears. Grass declares less but shares this layout, so its
+            // buffer is padded to match.
+            {0, BType::UniformBuffer, SStage::Vertex, 96},  // VolumeParams UBO
         };
         m_WebVolumeParamsLayout = bindMgr->CreateBindGroupLayout(volLD);
     }
@@ -1833,6 +1838,7 @@ void RenderSystem::Update(f32 deltaTime) {
 
                 if (lc->type == LightType::Directional && dirCount < 4) {
                     Math::Vector3 fwd = xf->rotation.GetForward();
+                    if (dirCount == 0) m_WebPrimaryLightDir = fwd;
                     lit.lightDir[dirCount] = {fwd.x, fwd.y, fwd.z, 0.0f};
                     lit.lightColor[dirCount] = {lc->color.x, lc->color.y, lc->color.z, lc->intensity};
                     dirCount++;
@@ -3076,137 +3082,17 @@ void RenderSystem::Update(f32 deltaTime) {
     }
 
     // ========================================================================
-    // Grass volumes (instanced blades, opaque)
+    // Grass / shrub / tree volumes
     // ========================================================================
-    if (usePostProcess && m_WebGrassPipeline.IsValid() && scenePassEncoder) {
-        auto* webBufMgrG = static_cast<Renderer::WebGPUBufferManager*>(bufMgr);
-        const auto& grassEntities = m_World->GetEntitiesWithComponent<GrassVolumeComponent>();
-        for (Entity ge : grassEntities) {
-            auto* gv = m_World->GetComponent<GrassVolumeComponent>(ge);
-            auto* gxf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(ge) : nullptr;
-            if (!gv || !gxf || gv->density == 0) continue;
-
-            // Volume params UBO: pos(3)+bladeHeight(1) + halfExtents(3)+bladeWidth(1) + baseColor(3)+wind(1) + tipColor(3)+pad(1) = 64 bytes
-            struct GrassParams { f32 data[16]; };
-            GrassParams gp = {};
-            gp.data[0] = gxf->position.x; gp.data[1] = gxf->position.y; gp.data[2] = gxf->position.z;
-            gp.data[3] = gv->bladeHeight;
-            gp.data[4] = gv->halfExtents.x; gp.data[5] = gv->halfExtents.y; gp.data[6] = gv->halfExtents.z;
-            gp.data[7] = gv->bladeWidth;
-            gp.data[8] = gv->baseColor.x; gp.data[9] = gv->baseColor.y; gp.data[10] = gv->baseColor.z;
-            gp.data[11] = gv->windSwayStrength;
-            gp.data[12] = gv->tipColor.x; gp.data[13] = gv->tipColor.y; gp.data[14] = gv->tipColor.z;
-
-            auto gpBuf = bufMgr->CreateBufferWithData(
-                {sizeof(GrassParams), Renderer::GPUBufferUsage::Uniform | Renderer::GPUBufferUsage::CopyDst, true}, &gp);
-            Renderer::GPUBindGroupDesc bgd;
-            bgd.layout = m_WebVolumeParamsLayout;
-            bgd.entries = {{0, gpBuf, 0, sizeof(GrassParams), {}, {}}};
-            auto gpBG = webBindMgr->CreateBindGroup(bgd);
-
-            wgpuRenderPassEncoderSetPipeline(scenePassEncoder, webPipeMgr->GetNativePipeline(m_WebGrassPipeline));
-            wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 0, webBindMgr->GetNativeGroup(m_WebFrameBindGroup), 0, nullptr);
-            wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 1, webBindMgr->GetNativeGroup(gpBG), 0, nullptr);
-            wgpuRenderPassEncoderSetVertexBuffer(scenePassEncoder, 0, webBufMgrG->GetNativeBuffer(m_WebGrassBladeVB), 0, WGPU_WHOLE_SIZE);
-            wgpuRenderPassEncoderSetIndexBuffer(scenePassEncoder, webBufMgrG->GetNativeBuffer(m_WebGrassBladeIB), WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
-            wgpuRenderPassEncoderDrawIndexed(scenePassEncoder, m_WebGrassBladeIndexCount, gv->density, 0, 0, 0);
-
-            webBindMgr->DestroyBindGroup(gpBG);
-            bufMgr->DestroyBuffer(gpBuf);
-        }
-    }
-
-    // ========================================================================
-    // Shrub volumes (instanced, opaque). Rendered as small ground-hugging green
-    // spheres by reusing the TREE pipeline's canopy: trunk collapsed to zero
-    // (trunkHeight/trunkWidth = 0 -> degenerate, invisible) and the canopy dropped
-    // to ground level (canopyOffset = 0 -> sphere bottom rests on the terrain).
-    // The old path abused the grass BLADE pipeline, so each shrub drew as ONE fat
-    // flat light-green billboard — sparse "grain blobs" that read as broken tree
-    // trunks beside the grove (reported 2026-09-02). A clump of small green domes
-    // reads as a bush and matches the desktop shrub silhouette far better.
-    // ========================================================================
-    if (usePostProcess && m_WebTreePipeline.IsValid() && scenePassEncoder) {
-        auto* webBufMgrSh = static_cast<Renderer::WebGPUBufferManager*>(bufMgr);
-        const auto& shrubEntities = m_World->GetEntitiesWithComponent<ShrubVolumeComponent>();
-        for (Entity she : shrubEntities) {
-            auto* sv = m_World->GetComponent<ShrubVolumeComponent>(she);
-            auto* sxf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(she) : nullptr;
-            if (!sv || !sxf || sv->density == 0) continue;
-
-            // Pack into the tree pipeline's params (m_WebVolumeParamsLayout, 64 bytes).
-            struct TreeParams { f32 data[16]; };
-            TreeParams tp = {};
-            tp.data[0] = sxf->position.x; tp.data[1] = sxf->position.y; tp.data[2] = sxf->position.z;
-            tp.data[3] = 0.0f;                          // trunkHeight = 0 -> trunk collapses
-            tp.data[4] = sv->halfExtents.x; tp.data[5] = sv->halfExtents.y; tp.data[6] = sv->halfExtents.z;
-            tp.data[7] = 0.0f;                          // trunkWidth = 0
-            // trunkColor (data[8..10]) unused — trunk verts are degenerate.
-            // Bush radius from the authored footprint: a compact dome, not a stalk.
-            f32 bushR = std::max(sv->width, sv->shrubHeight) * 0.75f + 0.15f;
-            tp.data[11] = bushR;                        // canopyRadius
-            tp.data[12] = sv->tipColor.x; tp.data[13] = sv->tipColor.y; tp.data[14] = sv->tipColor.z; // canopyColor
-            tp.data[15] = 0.0f;                         // canopyOffset = 0 -> dome sits on the ground
-
-            auto spBuf = bufMgr->CreateBufferWithData(
-                {sizeof(TreeParams), Renderer::GPUBufferUsage::Uniform | Renderer::GPUBufferUsage::CopyDst, true}, &tp);
-            Renderer::GPUBindGroupDesc bgd;
-            bgd.layout = m_WebVolumeParamsLayout;
-            bgd.entries = {{0, spBuf, 0, sizeof(TreeParams), {}, {}}};
-            auto spBG = webBindMgr->CreateBindGroup(bgd);
-
-            wgpuRenderPassEncoderSetPipeline(scenePassEncoder, webPipeMgr->GetNativePipeline(m_WebTreePipeline));
-            wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 0, webBindMgr->GetNativeGroup(m_WebFrameBindGroup), 0, nullptr);
-            wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 1, webBindMgr->GetNativeGroup(spBG), 0, nullptr);
-            wgpuRenderPassEncoderSetVertexBuffer(scenePassEncoder, 0, webBufMgrSh->GetNativeBuffer(m_WebTreeMeshVB), 0, WGPU_WHOLE_SIZE);
-            wgpuRenderPassEncoderSetIndexBuffer(scenePassEncoder, webBufMgrSh->GetNativeBuffer(m_WebTreeMeshIB), WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
-            wgpuRenderPassEncoderDrawIndexed(scenePassEncoder, m_WebTreeIndexCount, sv->density, 0, 0, 0);
-
-            webBindMgr->DestroyBindGroup(spBG);
-            bufMgr->DestroyBuffer(spBuf);
-        }
-    }
-
-    // ========================================================================
-    // Tree volumes (instanced trunk+canopy, opaque)
-    // ========================================================================
-    if (usePostProcess && m_WebTreePipeline.IsValid() && scenePassEncoder) {
-        auto* webBufMgrT = static_cast<Renderer::WebGPUBufferManager*>(bufMgr);
-        const auto& treeEntities = m_World->GetEntitiesWithComponent<TreeVolumeComponent>();
-        for (Entity te : treeEntities) {
-            auto* tv = m_World->GetComponent<TreeVolumeComponent>(te);
-            auto* txf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(te) : nullptr;
-            if (!tv || !txf || tv->density == 0) continue;
-
-            struct TreeParams { f32 data[16]; };
-            TreeParams tp = {};
-            tp.data[0] = txf->position.x; tp.data[1] = txf->position.y; tp.data[2] = txf->position.z;
-            tp.data[3] = tv->trunkHeight;
-            tp.data[4] = tv->halfExtents.x; tp.data[5] = tv->halfExtents.y; tp.data[6] = tv->halfExtents.z;
-            tp.data[7] = tv->trunkWidth;
-            tp.data[8] = tv->trunkColor.x; tp.data[9] = tv->trunkColor.y; tp.data[10] = tv->trunkColor.z;
-            tp.data[11] = tv->canopyRadius;
-            tp.data[12] = tv->canopyBaseColor.x; tp.data[13] = tv->canopyBaseColor.y; tp.data[14] = tv->canopyBaseColor.z;
-            tp.data[15] = tv->canopyOffset;
-
-            auto tpBuf = bufMgr->CreateBufferWithData(
-                {sizeof(TreeParams), Renderer::GPUBufferUsage::Uniform | Renderer::GPUBufferUsage::CopyDst, true}, &tp);
-            Renderer::GPUBindGroupDesc bgd;
-            bgd.layout = m_WebVolumeParamsLayout;
-            bgd.entries = {{0, tpBuf, 0, sizeof(TreeParams), {}, {}}};
-            auto tpBG = webBindMgr->CreateBindGroup(bgd);
-
-            wgpuRenderPassEncoderSetPipeline(scenePassEncoder, webPipeMgr->GetNativePipeline(m_WebTreePipeline));
-            wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 0, webBindMgr->GetNativeGroup(m_WebFrameBindGroup), 0, nullptr);
-            wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 1, webBindMgr->GetNativeGroup(tpBG), 0, nullptr);
-            wgpuRenderPassEncoderSetVertexBuffer(scenePassEncoder, 0, webBufMgrT->GetNativeBuffer(m_WebTreeMeshVB), 0, WGPU_WHOLE_SIZE);
-            wgpuRenderPassEncoderSetIndexBuffer(scenePassEncoder, webBufMgrT->GetNativeBuffer(m_WebTreeMeshIB), WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
-            wgpuRenderPassEncoderDrawIndexed(scenePassEncoder, m_WebTreeIndexCount, tv->density, 0, 0, 0);
-
-            webBindMgr->DestroyBindGroup(tpBG);
-            bufMgr->DestroyBuffer(tpBuf);
-        }
-    }
+    // Drawn by WebGPUVegetationSystem, through the scene-pass hook the player
+    // installs. RenderSystem used to draw them here as well, from its own
+    // hand-rolled prism-and-sphere mesh, while the vegetation system drew the
+    // same volumes from VegTemplates -- the geometry desktop and the ray-tracer
+    // share. Both ran, into this same scene pass, scattering with the same hash
+    // to the same positions, so every tree and shrub was two interpenetrating
+    // meshes of different shape. That is the artifact that appeared only in web
+    // builds while the editor looked correct: the editor has one path, web had
+    // two.
 
     // ========================================================================
     // Particles (instanced billboard quads, alpha-blended)

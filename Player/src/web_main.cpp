@@ -584,25 +584,30 @@ public:
         if (!m_Particles->Initialize()) {
             ENJIN_LOG_WARN(Player, "WebGPU particle system init failed — GPU particles disabled");
             m_Particles.reset();
-        } else {
-            // Draw particles inside the scene pass (real depth + scene tonemap). The
-            // overlay draw in RenderUIOverlay stays as the fallback for the direct-to-
-            // swapchain path and no-ops when this ran.
-            m_RenderSystem->SetWebScenePassHook([this](void* scenePass) {
-                // Vegetation first (opaque, depth-writing), then particles over it.
-                if (m_Vegetation && m_Camera) {
-                    Enjin::Math::Vector4 wv = m_WindSystem.GetWindVector();
-                    m_Vegetation->SetWind(Enjin::Math::Vector3(wv.x, wv.y, wv.z), wv.w);
-                    m_Vegetation->RenderScene(static_cast<WGPURenderPassEncoder>(scenePass),
-                                              m_Camera->GetViewMatrix(), m_Camera->GetProjectionMatrix(),
-                                              m_World.get());
-                }
-                if (m_Particles && m_Camera) {
-                    m_Particles->RenderScene(static_cast<WGPURenderPassEncoder>(scenePass),
-                                             m_Camera->GetViewMatrix(), m_Camera->GetProjectionMatrix());
-                }
-            });
         }
+
+        // Draw vegetation and particles inside the scene pass (real depth + scene
+        // tonemap). The overlay draw in RenderUIOverlay stays as the fallback for
+        // the direct-to-swapchain path and no-ops when this ran.
+        //
+        // The hook is installed unconditionally. It used to live in the else of
+        // the PARTICLE init check, so a machine where particles failed to start
+        // also silently lost every grass, shrub and tree volume -- two unrelated
+        // features tied together by nothing but nesting.
+        m_RenderSystem->SetWebScenePassHook([this](void* scenePass) {
+            // Vegetation first (opaque, depth-writing), then particles over it.
+            if (m_Vegetation && m_Camera) {
+                Enjin::Math::Vector4 wv = m_WindSystem.GetWindVector();
+                m_Vegetation->SetWind(Enjin::Math::Vector3(wv.x, wv.y, wv.z), wv.w);
+                m_Vegetation->RenderScene(static_cast<WGPURenderPassEncoder>(scenePass),
+                                          m_Camera->GetViewMatrix(), m_Camera->GetProjectionMatrix(),
+                                          m_World.get());
+            }
+            if (m_Particles && m_Camera) {
+                m_Particles->RenderScene(static_cast<WGPURenderPassEncoder>(scenePass),
+                                         m_Camera->GetViewMatrix(), m_Camera->GetProjectionMatrix());
+            }
+        });
 
         // Apply scene render settings (ambient, shadows, etc.)
         m_SceneRenderSettings.rtEnabled = false;
