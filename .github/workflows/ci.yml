@@ -327,6 +327,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The WGSL in WebShaderData.h is compiled by the BROWSER at run time, so a
+      # green Emscripten build says nothing about it: a syntax error, a type
+      # error or a uniformity violation reaches a player as a black canvas, not
+      # as a build failure. This step runs Dawn — the same compiler Chrome uses —
+      # over the same source. Dawn's node bindings ship prebuilt and fall back to
+      # a software device, which is why the two graphics packages are enough.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install shader-check dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libvulkan1 mesa-vulkan-drivers
+
+      - name: Cache shader-check node modules
+        uses: actions/cache@v4
+        with:
+          path: tools/node_modules
+          key: wgslcheck-${{ hashFiles('tools/package.json') }}
+
+      - name: Validate web shaders (WGSL)
+        working-directory: tools
+        run: |
+          npm install --no-audit --no-fund
+          node check_wgsl.mjs
+
       - name: Install Emscripten
         uses: mymindstorm/setup-emsdk@v14
         with:

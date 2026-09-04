@@ -854,8 +854,15 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         color = sharpenCAS(in.uv, texelSize, params.sharpness, color);
     }
 
-    // Chromatic aberration: split R/B radially from the screen centre. textureSampleLevel
-    // (explicit LOD) is legal inside a branch; plain textureSample would not be.
+    // Chromatic aberration: split R/B radially from the screen centre.
+    //
+    // This used to claim plain textureSample is illegal inside a branch. It is
+    // not: the rule is that implicit-LOD sampling needs UNIFORM control flow,
+    // and a condition read from a uniform buffer is uniform. Checked against
+    // Dawn with tools/check_wgsl.mjs — the implicit form compiles here. Explicit
+    // LOD is kept because this target has one mip and level 0 is what implicit
+    // sampling resolves to anyway, not because the branch requires it. What is
+    // genuinely illegal is branching on per-fragment data.
     if (params.chromaticAberration > 0.0) {
         let dir = (in.uv - vec2<f32>(0.5)) * params.chromaticAberration * 4.0;
         let r = textureSampleLevel(sceneTexture, sceneSampler, in.uv - dir, 0.0).r;

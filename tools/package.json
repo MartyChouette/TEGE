@@ -1,0 +1,12 @@
+{
+  "name": "enjin-tools",
+  "private": true,
+  "type": "module",
+  "description": "Dev tooling. check_wgsl compiles the web renderer's WGSL through Dawn, which is what a browser does at run time and what no C++ or Emscripten build can tell you.",
+  "scripts": {
+    "check-wgsl": "node check_wgsl.mjs"
+  },
+  "devDependencies": {
+    "webgpu": "^0.6.0"
+  }
+}
