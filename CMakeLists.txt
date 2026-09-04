@@ -34,6 +34,13 @@ if(MSVC)
     # the static shader-byte arrays that headers paste into every includer.
     add_compile_options("$<$<CONFIG:Release>:/Gy>" "$<$<CONFIG:Release>:/Gw>" /Zc:inline)
     add_link_options("$<$<CONFIG:Release>:/OPT:REF>" "$<$<CONFIG:Release>:/OPT:ICF>")
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND NOT ENJIN_PLATFORM_WEB)
+    # Same intent on GCC and Clang, which had no equivalent: -g so a Release
+    # binary carries line information, and -rdynamic so the crash handler's
+    # backtrace resolves to function names instead of bare addresses. Applied to
+    # the same four targets as the MSVC pair, not at root scope.
+    set(ENJIN_PDB_COMPILE_OPTIONS "$<$<CONFIG:Release>:-g>")
+    set(ENJIN_PDB_LINK_OPTIONS "$<$<CONFIG:Release>:-rdynamic>")
 endif()
 
 # Sanitizer options (for development builds)

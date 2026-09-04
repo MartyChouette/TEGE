@@ -261,9 +261,11 @@ void UninstallCrashHandler() {
 }
 
 // ============================================================================
-// Linux / macOS implementation (stub — ring buffer dump only)
+// Linux / macOS implementation
 // ============================================================================
 #elif defined(ENJIN_PLATFORM_LINUX) || defined(ENJIN_PLATFORM_MACOS)
+
+#include <execinfo.h>   // backtrace, backtrace_symbols_fd
 
 static struct sigaction s_PrevSIGSEGV = {};
 static struct sigaction s_PrevSIGABRT = {};
@@ -288,6 +290,28 @@ static void CrashSignalHandler(int sig) {
             fprintf(f, "Entities:   %u\n", s_CrashContext.entityCount());
         }
         fprintf(f, "\nSignal:     %d (%s)\n\n", sig, sig == SIGSEGV ? "SIGSEGV" : "SIGABRT");
+
+        // Call stack. backtrace_symbols_fd writes straight to the descriptor and
+        // allocates nothing, unlike backtrace_symbols, which calls malloc — and
+        // a crash inside the allocator is exactly when this handler runs.
+        //
+        // The frames come back as names only when the dynamic symbol table is
+        // exported (-rdynamic) and line numbers only with -g; both are set for
+        // the shipping binaries. Without them this still gives addresses, which
+        // addr2line can resolve against a matching build.
+        fprintf(f, "Call Stack:\n");
+        fflush(f);
+        {
+            void* frames[64];
+            const int count = backtrace(frames, static_cast<int>(sizeof(frames) / sizeof(frames[0])));
+            if (count > 0) {
+                backtrace_symbols_fd(frames, count, fileno(f));
+            } else {
+                fprintf(f, "  (unavailable)\n");
+                fflush(f);
+            }
+        }
+        fprintf(f, "\n");
 
         fprintf(f, "Last Log Lines:\n");
         WriteRingBufferToFile(f);
