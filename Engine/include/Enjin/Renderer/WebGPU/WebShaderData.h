@@ -671,7 +671,7 @@ struct PostProcessParams {
     ssao: f32,            // screen-space AO strength, 0 = off (color-space approximation)
     ssaoRadius: f32,      // AO sample-ring radius scale
     sharpness: f32,       // contrast-adaptive sharpening, 0 = off
-    ppPad0: f32,
+    fxaaEnabled: f32,     // 1 = run FXAA, 0 = skip it entirely
     ppPad1: f32,
     ppPad2: f32,          // 28 f32 = 112 bytes; must match WebPPAccessibilityParams
 };
@@ -742,12 +742,16 @@ fn sharpenCAS(uv: vec2<f32>, texelSize: vec2<f32>, amount: f32, c: vec3<f32>) ->
     return clamp(sharpened, mn, mx);
 }
 
+// Explicit LOD, not implicit. The scene texture has one mip, so level 0 is what
+// implicit sampling resolved to anyway — but textureSample may only appear in
+// uniform control flow, and this is now called from inside the AA gate. Same
+// rule the chromatic-aberration branch below already follows.
 fn fxaa(uv: vec2<f32>, texelSize: vec2<f32>) -> vec3<f32> {
-    let rgbM = textureSample(sceneTexture, sceneSampler, uv).rgb;
-    let rgbN = textureSample(sceneTexture, sceneSampler, uv + vec2<f32>(0.0, -texelSize.y)).rgb;
-    let rgbS = textureSample(sceneTexture, sceneSampler, uv + vec2<f32>(0.0,  texelSize.y)).rgb;
-    let rgbE = textureSample(sceneTexture, sceneSampler, uv + vec2<f32>( texelSize.x, 0.0)).rgb;
-    let rgbW = textureSample(sceneTexture, sceneSampler, uv + vec2<f32>(-texelSize.x, 0.0)).rgb;
+    let rgbM = textureSampleLevel(sceneTexture, sceneSampler, uv, 0.0).rgb;
+    let rgbN = textureSampleLevel(sceneTexture, sceneSampler, uv + vec2<f32>(0.0, -texelSize.y), 0.0).rgb;
+    let rgbS = textureSampleLevel(sceneTexture, sceneSampler, uv + vec2<f32>(0.0,  texelSize.y), 0.0).rgb;
+    let rgbE = textureSampleLevel(sceneTexture, sceneSampler, uv + vec2<f32>( texelSize.x, 0.0), 0.0).rgb;
+    let rgbW = textureSampleLevel(sceneTexture, sceneSampler, uv + vec2<f32>(-texelSize.x, 0.0), 0.0).rgb;
 
     let lumM = luminance(pow(aces_tonemap(rgbM), vec3<f32>(1.0 / 2.2)));
     let lumN = luminance(pow(aces_tonemap(rgbN), vec3<f32>(1.0 / 2.2)));
@@ -767,7 +771,7 @@ fn fxaa(uv: vec2<f32>, texelSize: vec2<f32>) -> vec3<f32> {
     let vDir = select(vec2<f32>(texelSize.x, 0.0), vec2<f32>(-texelSize.x, 0.0), abs(lumW - lumM) > abs(lumE - lumM));
     let blendDir = select(vDir, hDir, isHorizontal);
 
-    let rgbNeighbor = textureSample(sceneTexture, sceneSampler, uv + blendDir).rgb;
+    let rgbNeighbor = textureSampleLevel(sceneTexture, sceneSampler, uv + blendDir, 0.0).rgb;
     let needsAA = lumRange >= max(0.0312, lumMax * 0.125);
     let blendFactor = select(0.0, clamp(lumRange / lumMax, 0.0, 0.75) * 0.5, needsAA);
     return mix(rgbM, rgbNeighbor, blendFactor);
@@ -834,7 +838,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let texDim = vec2<f32>(textureDimensions(sceneTexture));
     let texelSize = vec2<f32>(1.0 / texDim.x, 1.0 / texDim.y);
 
-    var color = fxaa(in.uv, texelSize);
+    // FXAA used to run unconditionally, so turning anti-aliasing off in the
+    // options still paid for the pass and still blurred the image.
+    var color: vec3<f32>;
+    if (params.fxaaEnabled > 0.5) {
+        color = fxaa(in.uv, texelSize);
+    } else {
+        color = textureSampleLevel(sceneTexture, sceneSampler, in.uv, 0.0).rgb;
+    }
 
     // Applied on the SOURCE resolution texels, so when the scene target is
     // smaller than the swapchain this is what puts the edges back after the

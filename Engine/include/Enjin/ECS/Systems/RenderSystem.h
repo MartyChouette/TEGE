@@ -769,7 +769,12 @@ public:
         // 0 = off. Pads keep the block a 16-byte multiple and must match the
         // WGSL struct exactly: 28 f32 = 112 bytes.
         f32 sharpness = 0.0f;
-        f32 ppPad0 = 0.0f;
+        // Anti-aliasing: 1 = run FXAA, 0 = do not. Takes the first of the three
+        // pads, so the block stays 112 bytes and in lockstep with the WGSL
+        // struct. The shader used to run FXAA unconditionally, which made the
+        // options menu's AA setting inert in both directions: "None" still paid
+        // for the pass, and nothing else changed anything.
+        f32 fxaaEnabled = 1.0f;
         f32 ppPad1 = 0.0f;
         f32 ppPad2 = 0.0f;            // 28 f32 = 112 bytes (16-multiple)
     };
@@ -813,6 +818,12 @@ public:
         // WebGPU-only, so the guard has to match theirs.
 #if ENJIN_RENDERER_WEBGPU
         m_WebPPAccessibility.sharpness = m_WebSharpness;
+        // AA mode 0 is None; everything else falls back to FXAA, which is the
+        // only anti-aliasing the web path actually has. MSAA needs a
+        // multi-sample swapchain the web target fixed at one sample, TAA needs
+        // motion vectors this path does not produce, and SMAA is not
+        // implemented anywhere.
+        m_WebPPAccessibility.fxaaEnabled = (m_AAMode == 0) ? 0.0f : 1.0f;
 #endif
     }
 

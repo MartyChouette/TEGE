@@ -3670,7 +3670,12 @@ void RenderSystem::RenderGrass(u32, u32) {}
 void RenderSystem::RenderShrubs(u32, u32) {}
 void RenderSystem::RenderTrees(u32, u32) {}
 u32 RenderSystem::GetMaxMSAASamples() const { return 4; }
-void RenderSystem::SetAAMode(u32 mode) { m_AAMode = mode; }
+void RenderSystem::SetAAMode(u32 mode) {
+    // Stored as asked so the menu reflects the user's choice, but only None and
+    // FXAA differ here; ApplyPostProcessSettings turns it into the one bit the
+    // shader reads. See the comment there for why the other modes cannot apply.
+    m_AAMode = mode;
+}
 void RenderSystem::SetUpscalerType(u32 type) { m_UpscalerType = type; }
 void RenderSystem::SetUpscalerQuality(u32 quality) { m_UpscalerQuality = quality; }
 
