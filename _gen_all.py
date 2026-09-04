@@ -3,6 +3,7 @@ import struct, os
 BASE = "D:/GitHub/enjin"
 SHADERS = BASE + "/Engine/shaders"
 OUTPUT = BASE + "/Engine/include/Enjin/Renderer/Vulkan/ShaderData.h"
+OUTPUT_CPP = BASE + "/Engine/src/Renderer/Vulkan/ShaderDataGenerated.cpp"
 NL = chr(10)
 
 def uchar(p):
@@ -21,22 +22,41 @@ def u32fmt(p):
         c = V[i:i+5]; L.append("    " + ", ".join(c))
     return ("," + NL).join(L), s, w
 
+# The bytes go in ONE translation unit and the header only declares them.
+# They used to be static arrays in the header, so 3.2 MB of hex literal was
+# pasted into each of 28 files that include it, every build, and each of those
+# files materialized its own copy of whatever it referenced. Same treatment
+# EmbeddedComputeShaders.cpp already gives its own SPIR-V.
+def decl_uchar(spv, name, sz, wd):
+    r = []
+    r.append("// {} ({} bytes, {} words)".format(spv, sz, wd))
+    r.append("extern const unsigned char {}[];".format(name))
+    r.append("extern const size_t {}Size;".format(name))
+    return NL.join(r)
+
+def decl_u32(spv, name, sz, wd):
+    r = []
+    r.append("// {} ({} bytes, {} words)".format(spv, sz, wd))
+    r.append("extern const uint32_t {}[];".format(name))
+    r.append("extern const size_t {}Size;".format(name))
+    return NL.join(r)
+
 def sblock_uchar(spv, name, content, sz, wd):
     r = []
     r.append("// {} ({} bytes, {} words)".format(spv, sz, wd))
-    r.append("alignas(4) static const unsigned char {}[] = {{".format(name))
+    r.append("alignas(4) extern const unsigned char {}[] = {{".format(name))
     r.append(content)
     r.append("};")
-    r.append("static constexpr size_t {}Size = sizeof({});".format(name, name))
+    r.append("extern const size_t {}Size = sizeof({});".format(name, name))
     return NL.join(r)
 
 def sblock_u32(spv, name, content, sz, wd):
     r = []
     r.append("// {} ({} bytes, {} words)".format(spv, sz, wd))
-    r.append("static const uint32_t {}[] = {{".format(name))
+    r.append("extern const uint32_t {}[] = {{".format(name))
     r.append(content)
     r.append("};")
-    r.append("static constexpr size_t {}Size = sizeof({});".format(name, name))
+    r.append("extern const size_t {}Size = sizeof({});".format(name, name))
     return NL.join(r)
 
 # All shaders in order matching the existing ShaderData.h layout
@@ -81,14 +101,17 @@ SHADERS_LIST = [
 ]
 
 BL = []
+DL = []
 for spv, name, fmt in SHADERS_LIST:
     path = SHADERS + "/" + spv
     if fmt == "u32":
         c, s, w = u32fmt(path)
         BL.append(sblock_u32(spv, name, c, s, w))
+        DL.append(decl_u32(spv, name, s, w))
     else:
         c, s, w = uchar(path)
         BL.append(sblock_uchar(spv, name, c, s, w))
+        DL.append(decl_uchar(spv, name, s, w))
     print("Done: {} ({} bytes)".format(spv, s))
 
 H = []
@@ -111,11 +134,28 @@ F.append("} // namespace Renderer")
 F.append("} // namespace Enjin")
 F.append("")
 hdr_str = NL.join(H)
-body_str = (NL + NL).join(BL)
 ftr_str = NL.join(F)
-full = hdr_str + NL + NL + body_str + NL + ftr_str
+
+# Header: declarations only.
+decl_str = (NL + NL).join(DL)
 f = open(OUTPUT, "w")
-f.write(full)
+f.write(hdr_str + NL + NL + decl_str + NL + ftr_str)
 f.close()
 print("Wrote: " + OUTPUT)
+
+# Source: the bytes, once.
+C = []
+C.append("// Auto-generated SPIR-V shader data")
+C.append("// Do not edit manually - regenerate with: python _gen_all.py")
+C.append("")
+C.append(chr(35) + "include " + chr(34) + "Enjin/Renderer/Vulkan/ShaderData.h" + chr(34))
+C.append("")
+C.append("namespace Enjin {")
+C.append("namespace Renderer {")
+C.append("namespace ShaderData {")
+body_str = (NL + NL).join(BL)
+f = open(OUTPUT_CPP, "w")
+f.write(NL.join(C) + NL + NL + body_str + NL + ftr_str)
+f.close()
+print("Wrote: " + OUTPUT_CPP)
 print("ALL COMPLETE")

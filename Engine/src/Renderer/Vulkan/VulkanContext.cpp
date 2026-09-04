@@ -43,10 +43,7 @@ void ShowStartupError(const char* title, const char* body) {
 #ifdef _WIN32
     MessageBoxA(nullptr, body, title, MB_OK | MB_ICONERROR);
 #else
-    std::fprintf(stderr, "%s%s%s%s", title, "
-
-", body, "
-");
+    std::fprintf(stderr, "%s\n\n%s\n", title, body);
     std::fflush(stderr);
 #endif
 }

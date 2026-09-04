@@ -50,6 +50,12 @@ set(ENJIN_EM_LINK_FLAGS
     -sNO_DISABLE_EXCEPTION_CATCHING
     -fexceptions
     -O2
+    # emmalloc is a much smaller allocator than dlmalloc and fragments less,
+    # which is what matters with ALLOW_MEMORY_GROWTH on: the heap only ever
+    # grows, so fragmentation is permanent.
+    -sMALLOC=emmalloc
+    # Decode strings with the browser's TextDecoder instead of the JS fallback.
+    -sTEXTDECODER=2
     -lidbfs.js   # IndexedDB-backed FS for persistent saves (web_main mounts /saves)
     --post-js=${CMAKE_SOURCE_DIR}/cmake/miniaudio_shim.js
 )
