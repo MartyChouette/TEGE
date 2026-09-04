@@ -1007,6 +1007,27 @@ ECS::TreeVolumeComponent DeserializeTreeVolumeComponent(const json& j) {
     if (j.contains("fallCanopyColor")) tree.fallCanopyColor = DeserializeVector3(j["fallCanopyColor"]);
     if (j.contains("barkTexturePath")) tree.barkTexturePath = SafeStr(j["barkTexturePath"], MAX_STR_PATH);
     if (j.contains("canopyTexturePath")) tree.canopyTexturePath = SafeStr(j["canopyTexturePath"], MAX_STR_PATH);
+
+    // trunkWidth and canopyRadius are meaningless apart: the trunk is drawn at
+    // trunkWidth and the crown at canopyRadius, so it is their RATIO that decides
+    // whether the result reads as a tree. The component defaults are 0.15 against
+    // 1.0, about 1:7. Playground shipped 0.09 against 1.3 — 1:14 — and the engine
+    // rendered a hairline under a floating ball without a word, which cost real
+    // time to track down by eye (2026-09-04).
+    //
+    // A warning, not a clamp: a stylised scene may genuinely want a spindly trunk,
+    // and silently overriding authored data is its own kind of bug. This just
+    // makes the combination visible at the point it enters the engine.
+    if (tree.canopyRadius > 0.0f && tree.trunkWidth > 0.0f) {
+        const f32 ratio = tree.canopyRadius / tree.trunkWidth;
+        if (ratio > 10.0f) {
+            ENJIN_LOG_WARN(Asset,
+                "TreeVolume: trunkWidth %.3f against canopyRadius %.3f is 1:%.0f — the trunk "
+                "will render as a hairline under the crown. The default proportion is about "
+                "1:7 (0.15 / 1.0); try trunkWidth ~%.2f.",
+                tree.trunkWidth, tree.canopyRadius, ratio, tree.canopyRadius * 0.15f);
+        }
+    }
     return tree;
 }
 
@@ -3823,6 +3844,7 @@ json SerializeDamageComponent(const ECS::DamageComponent& d) {
     json j;
     j["damage"] = RF(d.damage);
     j["knockbackForce"] = RF(d.knockbackForce);
+    j["knockbackUpScale"] = RF(d.knockbackUpScale);
     j["destroyOnHit"] = RF(d.destroyOnHit);
     j["damageOnce"] = RF(d.damageOnce);
     j["damageInterval"] = RF(d.damageInterval);
@@ -3840,6 +3862,7 @@ ECS::DamageComponent DeserializeDamageComponent(const json& j) {
     ECS::DamageComponent d;
     if (j.contains("damage")) d.damage = j["damage"].get<f32>();
     if (j.contains("knockbackForce")) d.knockbackForce = j["knockbackForce"].get<f32>();
+    if (j.contains("knockbackUpScale")) d.knockbackUpScale = j["knockbackUpScale"].get<f32>();
     if (j.contains("destroyOnHit")) d.destroyOnHit = JB(j["destroyOnHit"]);
     if (j.contains("damageOnce")) d.damageOnce = JB(j["damageOnce"]);
     if (j.contains("damageInterval")) d.damageInterval = j["damageInterval"].get<f32>();

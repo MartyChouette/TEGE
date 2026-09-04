@@ -229,6 +229,7 @@ enjin_add_test(TestDialogueExport     Unit/GUI/TestDialogueExport.cpp)
 enjin_add_test(TestUITheme            Unit/GUI/TestUITheme.cpp)
 
 # --- Gameplay ---
+enjin_add_test(TestApplyDamage        Unit/Gameplay/TestApplyDamage.cpp)
 enjin_add_test(TestQuestSystem        Unit/Gameplay/TestQuestSystem.cpp)
 enjin_add_test(TestCinematic          Unit/Gameplay/TestCinematic.cpp)
 enjin_add_test(TestSimulationClock    Unit/Gameplay/TestSimulationClock.cpp)

@@ -16,6 +16,83 @@ namespace Enjin {
 namespace Gameplay {
 namespace GameplayLoop {
 
+bool TryStomp(ECS::World* world, ECS::Entity stomper, ECS::Entity victim,
+              std::vector<ECS::Entity>& deferredDestroys) {
+    if (!world) return false;
+
+    auto* ctrl = world->GetComponent<ECS::Platformer2DController>(stomper);
+    auto* victimHp = world->GetComponent<ECS::HealthComponent>(victim);
+    if (!ctrl || !victimHp || victimHp->isDead) return false;
+
+    // Must be falling fast enough.
+    if (ctrl->velocity.y >= -ctrl->stompMinFallSpeed) return false;
+
+    // ...and be far enough above the victim.
+    auto* stomperT = world->GetComponent<ECS::TransformComponent>(stomper);
+    auto* victimT = world->GetComponent<ECS::TransformComponent>(victim);
+    if (!stomperT || !victimT) return false;
+    if (stomperT->position.y <= victimT->position.y + ctrl->stompMinHeight) return false;
+
+    victimHp->currentHealth = 0.0f;
+    victimHp->isDead = true;
+    deferredDestroys.push_back(victim);
+
+    // Bounce the stomper upward.
+    ctrl->velocity.y = ctrl->jumpForce * ctrl->stompBounceScale;
+    ctrl->isGrounded = false;
+
+    ENJIN_LOG_INFO(Game, "STOMP: entity %llu stomped entity %llu",
+        (unsigned long long)stomper, (unsigned long long)victim);
+    return true;
+}
+
+bool ApplyDamage(ECS::World* world, ECS::Entity target, f32 damage,
+                 ECS::Entity damager, const ECS::DamageComponent* src) {
+    if (!world) return false;
+    auto* hp = world->GetComponent<ECS::HealthComponent>(target);
+    if (!hp || hp->isDead) return false;
+
+    // I-frames block the hit ENTIRELY. Checking this before the shield is the
+    // point: the script binding used to drain shield first, so an invulnerable
+    // player still bled shield on every contact.
+    if (hp->isInvulnerable || hp->invulnerabilityTimer > 0.0f) return false;
+
+    // Shield absorbs before health.
+    f32 remaining = damage;
+    if (hp->currentShield > 0.0f) {
+        const f32 absorbed = Math::Min(remaining, hp->currentShield);
+        hp->currentShield -= absorbed;
+        remaining -= absorbed;
+    }
+    hp->currentHealth -= remaining;
+    hp->timeSinceLastDamage = 0.0f;
+
+    if (hp->invulnerabilityTime > 0.0f) {
+        hp->invulnerabilityTimer = hp->invulnerabilityTime;
+    }
+
+    // Knockback, when the damage carried an authored push and the target is a
+    // 2D character. Direction is away from the damager on X.
+    if (src && src->knockbackForce > 0.0f) {
+        if (auto* ctrl = world->GetComponent<ECS::Platformer2DController>(target)) {
+            auto* dmgT = world->GetComponent<ECS::TransformComponent>(damager);
+            auto* tgtT = world->GetComponent<ECS::TransformComponent>(target);
+            if (dmgT && tgtT) {
+                const f32 dir = (tgtT->position.x > dmgT->position.x) ? 1.0f : -1.0f;
+                ctrl->velocity.x = dir * src->knockbackForce;
+                ctrl->velocity.y = src->knockbackForce * src->knockbackUpScale;
+                ctrl->isGrounded = false;
+            }
+        }
+    }
+
+    if (hp->currentHealth <= 0.0f) {
+        hp->currentHealth = 0.0f;
+        hp->isDead = true;
+    }
+    return true;
+}
+
 void ProcessContactDamage(ECS::World* world, ECS::Entity entityA,
                           ECS::Entity entityB,
                           std::vector<ECS::Entity>& deferredDestroys) {
@@ -29,30 +106,8 @@ void ProcessContactDamage(ECS::World* world, ECS::Entity entityA,
         }
         if (hp->isDead) return;
 
-        // Mario-style stomp check: if the TARGET (player) is above the DAMAGER
-        // (enemy) and falling, it's a stomp — kill the enemy instead of damaging
-        // the player. Only stompable if the damager HAS a HealthComponent (enemies).
-        // Hazards (spikes, lava) have DamageComponent but no HealthComponent —
-        // they always damage the player and cannot be stomped.
-        auto* targetCtrl = world->GetComponent<ECS::Platformer2DController>(target);
-        auto* enemyHp = world->GetComponent<ECS::HealthComponent>(damager);
-        if (targetCtrl && enemyHp && targetCtrl->velocity.y < -targetCtrl->stompMinFallSpeed) {
-            auto* targetT = world->GetComponent<ECS::TransformComponent>(target);
-            auto* damagerT = world->GetComponent<ECS::TransformComponent>(damager);
-            if (targetT && damagerT &&
-                targetT->position.y > damagerT->position.y + targetCtrl->stompMinHeight) {
-                // Stomp! Kill the enemy, bounce the player
-                enemyHp->currentHealth = 0.0f;
-                enemyHp->isDead = true;
-                deferredDestroys.push_back(damager);
-                ENJIN_LOG_INFO(Game, "STOMP: entity %llu stomped entity %llu",
-                    (unsigned long long)target, (unsigned long long)damager);
-                // Bounce the player upward (small hop after stomp)
-                targetCtrl->velocity.y = targetCtrl->jumpForce * targetCtrl->stompBounceScale;
-                targetCtrl->isGrounded = false;
-                return;  // Stomp replaces damage — player is not hurt
-            }
-        }
+        // A stomp replaces the damage entirely -- the player is not hurt.
+        if (TryStomp(world, target, damager, deferredDestroys)) return;
 
         // Check damageOnce -- skip if already damaged this entity
         if (dmg->damageOnce) {
@@ -62,48 +117,12 @@ void ProcessContactDamage(ECS::World* world, ECS::Entity entityA,
             dmg->damagedEntities.push_back(target);
         }
 
-        // Check invulnerability
-        if (hp->isInvulnerable || hp->invulnerabilityTimer > 0.0f) return;
+        if (!ApplyDamage(world, target, dmg->damage, damager, dmg)) return;
 
-        // Apply damage (shield absorbs first)
-        f32 remaining = dmg->damage;
-        if (hp->currentShield > 0.0f) {
-            f32 absorbed = Math::Min(remaining, hp->currentShield);
-            hp->currentShield -= absorbed;
-            remaining -= absorbed;
-        }
-        hp->currentHealth -= remaining;
-        hp->timeSinceLastDamage = 0.0f;
         // Diagnostic: log damage application for debugging sensor interactions
         ENJIN_LOG_INFO(Game, "DAMAGE: entity %llu dealt %.1f to entity %llu (hp: %.1f/%.1f)",
             (unsigned long long)damager, dmg->damage,
             (unsigned long long)target, hp->currentHealth, hp->maxHealth);
-
-        // Start invulnerability window
-        if (hp->invulnerabilityTime > 0.0f) {
-            hp->invulnerabilityTimer = hp->invulnerabilityTime;
-        }
-
-        // Knockback (apply to character controller velocity if present)
-        if (dmg->knockbackForce > 0.0f) {
-            auto* ctrl = world->GetComponent<ECS::Platformer2DController>(target);
-            if (ctrl) {
-                auto* dmgT = world->GetComponent<ECS::TransformComponent>(damager);
-                auto* tgtT = world->GetComponent<ECS::TransformComponent>(target);
-                if (dmgT && tgtT) {
-                    f32 dir = (tgtT->position.x > dmgT->position.x) ? 1.0f : -1.0f;
-                    ctrl->velocity.x = dir * dmg->knockbackForce;
-                    ctrl->velocity.y = dmg->knockbackForce * 0.5f;
-                    ctrl->isGrounded = false;
-                }
-            }
-        }
-
-        // Check death
-        if (hp->currentHealth <= 0.0f) {
-            hp->currentHealth = 0.0f;
-            hp->isDead = true;
-        }
 
         // Destroy damager if configured
         if (dmg->destroyOnHit) {
@@ -231,34 +250,11 @@ void CheckHazardOverlaps(ECS::World* world, f32 deltaTime,
                     hazardDmg->damagedEntities.push_back(player);
                 }
 
-                f32 remaining = hazardDmg->damage;
-                if (playerHp->currentShield > 0.0f) {
-                    f32 absorbed = Math::Min(remaining, playerHp->currentShield);
-                    playerHp->currentShield -= absorbed;
-                    remaining -= absorbed;
-                }
-                playerHp->currentHealth -= remaining;
-                playerHp->timeSinceLastDamage = 0.0f;
+                if (!ApplyDamage(world, player, hazardDmg->damage, hazard, hazardDmg)) continue;
+
                 ENJIN_LOG_INFO(Game, "HAZARD: entity %llu dealt %.1f to player %llu (hp: %.1f/%.1f)",
                     (unsigned long long)hazard, hazardDmg->damage,
                     (unsigned long long)player, playerHp->currentHealth, playerHp->maxHealth);
-
-                if (playerHp->invulnerabilityTime > 0.0f) {
-                    playerHp->invulnerabilityTimer = playerHp->invulnerabilityTime;
-                }
-
-                // Knockback: push player away from hazard
-                if (hazardDmg->knockbackForce > 0.0f && playerCtrl) {
-                    f32 dir = (playerT->position.x > hazardT->position.x) ? 1.0f : -1.0f;
-                    playerCtrl->velocity.x = dir * hazardDmg->knockbackForce;
-                    playerCtrl->velocity.y = hazardDmg->knockbackForce * 0.5f;
-                    playerCtrl->isGrounded = false;
-                }
-
-                if (playerHp->currentHealth <= 0.0f) {
-                    playerHp->currentHealth = 0.0f;
-                    playerHp->isDead = true;
-                }
             }
         }
     };
@@ -308,50 +304,13 @@ void CheckEnemyOverlaps2D(ECS::World* world, f32 deltaTime,
             f32 dy = Math::Abs(playerT->position.y - enemyT->position.y);
             if (dx >= pr + ex || dy >= ph + ey) continue;
 
-            // Overlap detected — stomp check
-            if (playerCtrl && playerCtrl->velocity.y < -playerCtrl->stompMinFallSpeed &&
-                playerT->position.y > enemyT->position.y + playerCtrl->stompMinHeight) {
-                // Stomp! Kill enemy, bounce player
-                enemyHp->currentHealth = 0.0f;
-                enemyHp->isDead = true;
-                deferredDestroys.push_back(enemy);
-                playerCtrl->velocity.y = playerCtrl->jumpForce * playerCtrl->stompBounceScale;
-                playerCtrl->isGrounded = false;
-                ENJIN_LOG_INFO(Game, "STOMP: entity %llu stomped entity %llu",
-                    (unsigned long long)player, (unsigned long long)enemy);
-                continue;
-            }
+            // Overlap detected -- a stomp replaces the damage.
+            if (TryStomp(world, player, enemy, deferredDestroys)) continue;
 
-            // Not a stomp — apply damage to player
-            // Invulnerability window prevents rapid-fire hits (damageOnce not used
-            // for enemies — they should hurt repeatedly until killed or avoided)
-            if (playerHp->isInvulnerable || playerHp->invulnerabilityTimer > 0.0f) continue;
-
-            f32 remaining = enemyDmg->damage;
-            if (playerHp->currentShield > 0.0f) {
-                f32 absorbed = Math::Min(remaining, playerHp->currentShield);
-                playerHp->currentShield -= absorbed;
-                remaining -= absorbed;
-            }
-            playerHp->currentHealth -= remaining;
-            playerHp->timeSinceLastDamage = 0.0f;
-
-            if (playerHp->invulnerabilityTime > 0.0f) {
-                playerHp->invulnerabilityTimer = playerHp->invulnerabilityTime;
-            }
-
-            // Knockback
-            if (enemyDmg->knockbackForce > 0.0f && playerCtrl) {
-                f32 dir = (playerT->position.x > enemyT->position.x) ? 1.0f : -1.0f;
-                playerCtrl->velocity.x = dir * enemyDmg->knockbackForce;
-                playerCtrl->velocity.y = enemyDmg->knockbackForce * 0.5f;
-                playerCtrl->isGrounded = false;
-            }
-
-            if (playerHp->currentHealth <= 0.0f) {
-                playerHp->currentHealth = 0.0f;
-                playerHp->isDead = true;
-            }
+            // Not a stomp — apply damage to player. damageOnce is deliberately
+            // not used for enemies; they hurt repeatedly until killed or avoided,
+            // and the i-frame window inside ApplyDamage is what paces that.
+            if (!ApplyDamage(world, player, enemyDmg->damage, enemy, enemyDmg)) continue;
 
             ENJIN_LOG_INFO(Game, "ENEMY DAMAGE: entity %llu dealt %.1f to player %llu (hp: %.1f/%.1f)",
                 (unsigned long long)enemy, enemyDmg->damage,

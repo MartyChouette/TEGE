@@ -5236,6 +5236,8 @@ void EditorLayer::DrawDamageComponent(ECS::Entity entity) {
 
         InspectorUndo::DragFloat(m_UndoRedo, "Damage", &dmg->damage, 0.5f, 0.0f, 10000.0f);
         InspectorUndo::DragFloat(m_UndoRedo, "Knockback Force", &dmg->knockbackForce, 0.5f, 0.0f, 1000.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Knockback Lift", &dmg->knockbackUpScale, 0.05f, 0.0f, 2.0f);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("How much of the knockback goes upward.\n0 = pure horizontal push, 1 = equal lift.");
 
         const char* types[] = { "Physical", "Fire", "Ice", "Electric", "Poison", "Magic" };
         int type = static_cast<int>(dmg->type);

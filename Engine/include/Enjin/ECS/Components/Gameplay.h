@@ -62,6 +62,10 @@ struct HealthComponent {
 struct DamageComponent {
     f32 damage = 10.0f;
     f32 knockbackForce = 0.0f;
+    // How much of the knockback goes upward. Was the literal 0.5f in three
+    // separate copies of the damage rule, so a designer could author the push
+    // but not the lift.
+    f32 knockbackUpScale = 0.5f;
     bool destroyOnHit = true;      // Destroy this entity after dealing damage
     bool damageOnce = true;        // Only damage once per entity
     f32 damageInterval = 0.0f;     // For continuous damage (lava, poison)

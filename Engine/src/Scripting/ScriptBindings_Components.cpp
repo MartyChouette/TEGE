@@ -16,6 +16,7 @@
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/Notes.h"
 #include "Enjin/ECS/Components/LOD.h"
+#include "Enjin/Gameplay/GameplayLoop.h"
 #include <angelscript.h>
 #include <string>
 #include <cassert>
@@ -80,27 +81,13 @@ static void Health_SetCurrent(u64 id, f32 val) {
 
 static void Health_Damage(u64 id, f32 amount) {
     if (!s_BindingsWorld) return;
-    auto* hc = s_BindingsWorld->GetComponent<HealthComponent>(static_cast<Entity>(id));
-    if (!hc) return;
-
-    // Apply to shield first
-    if (hc->currentShield > 0.0f) {
-        f32 shieldAbsorb = Math::Min(amount, hc->currentShield);
-        hc->currentShield -= shieldAbsorb;
-        amount -= shieldAbsorb;
-    }
-
-    // Check invulnerability — timed i-frames (invulnerabilityTimer) or a held
-    // flag (isInvulnerable, e.g. a dodge roll or scripted invincibility).
-    if (hc->invulnerabilityTimer > 0.0f || hc->isInvulnerable) return;
-
-    hc->currentHealth = Math::Max(hc->currentHealth - amount, 0.0f);
-    if (amount > 0.0f) {
-        hc->onDamageNotify = true;
-    }
-    if (hc->currentHealth <= 0.0f) {
-        hc->onDeathNotify = true;
-    }
+    // One damage rule for scripts and for contact damage. This used to be its
+    // own fourth copy, and it had diverged twice: it drained shield before
+    // checking i-frames, and it never set isDead — it wrote onDeathNotify, an
+    // Entity field meant to hold the id of an entity to notify, assigned true,
+    // which nothing reads. A game dealing damage from script reached 0 HP with
+    // no death, no respawn and no game over.
+    Gameplay::GameplayLoop::ApplyDamage(s_BindingsWorld, static_cast<Entity>(id), amount);
 }
 
 // ============================================================================

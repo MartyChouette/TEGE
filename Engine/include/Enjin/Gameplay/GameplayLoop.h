@@ -3,6 +3,7 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Entity.h"
+#include "Enjin/ECS/Components/Gameplay.h"
 #include <vector>
 
 namespace Enjin {
@@ -19,6 +20,36 @@ namespace GameplayLoop {
     // Process contact damage between two colliding entities.
     // Checks both orderings (A damages B, B damages A).
     // Entities marked destroyOnHit are appended to deferredDestroys.
+    // The one place damage is applied. Shield absorbs first, i-frames block,
+    // knockback pushes, and zero health sets isDead — in that order, once.
+    //
+    // This existed five times: three copies in this file plus the AngelScript
+    // Health_Damage binding, which had already diverged in two ways. It absorbed
+    // shield BEFORE checking i-frames, so an invulnerable player still lost
+    // shield; and it never set isDead, only writing onDeathNotify (an Entity
+    // field, assigned true) that nothing reads — so a game dealing damage from
+    // script dropped the player to 0 HP with no death, no respawn and no game
+    // over.
+    //
+    // `src` supplies the authored knockback when the damage came from a
+    // DamageComponent; pass nullptr for script or scripted damage. Returns true
+    // if the damage actually landed.
+    ENJIN_API bool ApplyDamage(ECS::World* world, ECS::Entity target, f32 damage,
+                               ECS::Entity damager = 0,
+                               const ECS::DamageComponent* src = nullptr);
+
+    // Mario-style stomp: a 2D character falling onto something above a minimum
+    // height kills it and bounces instead of taking damage. Only stompable if
+    // the victim HAS a HealthComponent -- hazards (spikes, lava) carry a
+    // DamageComponent without one and can never be stomped.
+    //
+    // Written twice, in the contact-damage path and the enemy-overlap path.
+    // Its three magic numbers had already been correctly promoted to authored
+    // fields on Platformer2DController -- in one copy. Returns true if the
+    // stomp happened, in which case no damage should be applied.
+    ENJIN_API bool TryStomp(ECS::World* world, ECS::Entity stomper, ECS::Entity victim,
+                            std::vector<ECS::Entity>& deferredDestroys);
+
     ENJIN_API void ProcessContactDamage(ECS::World* world, ECS::Entity entityA,
                                          ECS::Entity entityB,
                                          std::vector<ECS::Entity>& deferredDestroys);
