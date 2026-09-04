@@ -906,6 +906,15 @@ private:
     Math::Vector2 m_RadialMenuCenter; // Screen position
 
     void UpdateGamepadEditor(f32 deltaTime);
+    // One entry per wedge. Drawing and release-to-select both read this table;
+    // they used to disagree, which is why the radial menus could be opened and
+    // never chosen from.
+    struct RadialItem {
+        const char* label;
+        const char* icon;
+        GamepadAction action;
+    };
+    std::vector<RadialItem> GetRadialItems(RadialMenuType type) const;
     void DrawRadialMenu(RadialMenuType type);
     void ExecuteGamepadAction(GamepadAction action);
     void HandleGamepadViewportNavigation(f32 deltaTime);

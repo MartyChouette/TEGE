@@ -137,11 +137,13 @@ void EditorLayer::UpdateGamepadEditor(f32 deltaTime) {
             m_RadialMenuCenter = Math::Vector2(extent.width * 0.5f, extent.height * 0.5f);
         }
         if (m_RadialMenuActive == type && Input::IsGamepadButtonReleased(btn, 0)) {
-            if (m_RadialMenuHovered >= 0) {
-                // Execute selected action
-                DrawRadialMenu(type); // Ensure action is resolved
+            const auto items = GetRadialItems(type);
+            if (m_RadialMenuHovered >= 0 &&
+                m_RadialMenuHovered < static_cast<i32>(items.size())) {
+                ExecuteGamepadAction(items[m_RadialMenuHovered].action);
             }
             m_RadialMenuActive = RadialMenuType::None;
+            return;
         }
     };
 
@@ -222,16 +224,12 @@ void EditorLayer::HandleGamepadViewportNavigation(f32 deltaTime) {
     }
 }
 
-void EditorLayer::DrawRadialMenu(RadialMenuType type) {
-    if (type == RadialMenuType::None) return;
-
-    // Define menu items per type
-    struct RadialItem {
-        const char* label;
-        const char* icon;
-        GamepadAction action;
-    };
-
+// The items in each radial menu. Drawing and selecting both read this, because
+// they used to disagree: the release handler called DrawRadialMenu "to resolve
+// the action", but that only executed on a separate A press, so hold-to-open /
+// release-to-select -- the documented interaction, and the only way to reach
+// these menus -- never did anything at all.
+std::vector<EditorLayer::RadialItem> EditorLayer::GetRadialItems(RadialMenuType type) const {
     std::vector<RadialItem> items;
     switch (type) {
         case RadialMenuType::Tools:
@@ -270,9 +268,15 @@ void EditorLayer::DrawRadialMenu(RadialMenuType type) {
                 {"Sprite", "[S]", GamepadAction::CreateSprite}
             };
             break;
-        default: return;
+        default: break;
     }
+    return items;
+}
 
+void EditorLayer::DrawRadialMenu(RadialMenuType type) {
+    if (type == RadialMenuType::None) return;
+
+    std::vector<RadialItem> items = GetRadialItems(type);
     if (items.empty()) return;
 
     // Draw the radial menu using ImGui overlay
