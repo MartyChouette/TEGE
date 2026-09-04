@@ -54,6 +54,7 @@
 #include "Enjin/Effects/TreeRenderer.h"
 #include "Enjin/Effects/Wind.h"
 #include "Enjin/Effects/WorldTime.h"
+#include "Enjin/Effects/WorldTimeApply.h"
 #include "Enjin/Audio/AudioSystem.h"
 #include "Enjin/Audio/SimpleAudio.h"
 #include "Enjin/Build/AssetReader.h"
@@ -612,6 +613,16 @@ public:
         // Apply scene render settings (ambient, shadows, etc.)
         m_SceneRenderSettings.rtEnabled = false;
         m_SceneRenderSettings.ApplyToRuntime(m_RenderSystem, nullptr);
+        // World time is authored per scene. Seed the clock from it, and let the
+        // scene decide whether it runs at all -- an editor checkbox was the only
+        // source before, so a shipped game could never turn day and night on.
+        {
+            const auto& srs = m_SceneRenderSettings;
+            m_WorldTime.GetCalendarConfig().secondsPerGameHour = srs.secondsPerGameHour;
+            m_WorldTime.SetTime(srs.startTimeOfDay, 1, srs.startMonth, 1);
+            m_SeasonalWeather.GetConfig().enabled = srs.seasonalWeatherEnabled;
+        }
+
         // ApplyToRuntime passes null pp on web, so feed the post-process effects
         // (vignette, chromatic aberration, saturation, color filter, color quant) to
         // the web PP pass directly from the scene settings.
@@ -965,11 +976,15 @@ public:
         m_EntityEventBus.ProcessDeferred();
 
         m_WindSystem.Update(deltaTime);
-        m_WorldTime.Update(deltaTime);
-        // Seasonal weather drives the WeatherSystem toward the season's profile — but
-        // only when a scene enabled it (Update early-returns otherwise), so the scripted
-        // Playground cycle is untouched. Runs before WeatherSystem.Update, like desktop.
-        m_SeasonalWeather.Update(deltaTime, m_WorldTime.GetState(), m_WeatherSystem);
+        // Advance the clock AND apply it — sun, ambient, season — through the
+        // same function the editor and the desktop player use. Seasonal weather
+        // only runs when a scene enabled it, so a scripted weather cycle like
+        // the Playground's is untouched.
+        if (m_SceneRenderSettings.worldTimeEnabled) {
+            Enjin::Effects::UpdateAndApplyWorldTime(m_World.get(), m_WorldTime,
+                                                    m_RenderSystem, &m_SeasonalWeather,
+                                                    &m_WeatherSystem, deltaTime);
+        }
         m_CurlNoiseSystem.Update(deltaTime);
         m_DestructibleSystem.Update(deltaTime);
         UpdateWeatherZones();

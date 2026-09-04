@@ -52,7 +52,9 @@ static bool s_SimulateTouch = false;
 #include "Enjin/Effects/CurlNoiseSystem.h"
 #include "Enjin/Effects/ElementalSystem.h"
 #include "Enjin/Audio/AudioReactiveSystem.h"
+#include "Enjin/Renderer/SceneRenderSettings.h"
 #include "Enjin/Effects/WorldTime.h"
+#include "Enjin/Effects/WorldTimeApply.h"
 #include "Enjin/Effects/SeasonalWeather.h"
 #include "Enjin/Effects/Water.h"
 #include "Enjin/ECS/Components/Water3D.h"
@@ -1104,8 +1106,14 @@ public:
 
         // Weather, destructible, wind, world time, seasonal weather, and streaming
         m_WindSystem.Update(deltaTime);
-        m_WorldTime.Update(deltaTime);
-        m_SeasonalWeather.Update(deltaTime, m_WorldTime.GetState(), m_WeatherSystem);
+        // Advance the clock AND apply it: sun rotation, light colour and
+        // intensity, ambient, season. Ticking alone left day and night working
+        // in the editor and doing nothing in a shipped game.
+        if (m_SceneRenderSettings.worldTimeEnabled) {
+            Enjin::Effects::UpdateAndApplyWorldTime(m_World.get(), m_WorldTime,
+                                                    m_RenderSystem, &m_SeasonalWeather,
+                                                    &m_WeatherSystem, deltaTime);
+        }
         UpdateWeatherZones(deltaTime);
         if (m_Camera) {
             m_WeatherSystem.Update(deltaTime, m_Camera->GetPosition());
@@ -2762,10 +2770,21 @@ private:
         // all RT/compute shaders are real embedded SPIR-V now, and unsupported GPUs
         // bail out gracefully in InitializeRayTracing (IsRayTracingSupported check).
         if (m_RenderSystem) {
-            auto renderSettings = serializer.GetRenderSettings();
-            renderSettings.ApplyToRuntime(m_RenderSystem,
+            m_SceneRenderSettings = serializer.GetRenderSettings();
+            m_SceneRenderSettings.ApplyToRuntime(m_RenderSystem,
                 m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
-            m_SceneArtStylePreset = renderSettings.artStylePreset;   // splash restyles to match
+            m_SceneArtStylePreset = m_SceneRenderSettings.artStylePreset;   // splash restyles to match
+
+            // World time is authored per scene. Seed the clock from it, and let
+            // the scene decide whether it runs at all -- an editor checkbox was
+            // the only source before, so a shipped game could never turn day and
+            // night on.
+            m_WorldTime.GetCalendarConfig().secondsPerGameHour =
+                m_SceneRenderSettings.secondsPerGameHour;
+            m_WorldTime.SetTime(m_SceneRenderSettings.startTimeOfDay, 1,
+                                m_SceneRenderSettings.startMonth, 1);
+            m_SeasonalWeather.GetConfig().enabled =
+                m_SceneRenderSettings.seasonalWeatherEnabled;
         }
 
         // Read content warning flags from scene JSON if present (Task #39).
@@ -3270,6 +3289,7 @@ private:
     Enjin::Effects::CurlNoiseSystem m_CurlNoiseSystem;
     Enjin::Effects::WindSystem m_WindSystem;
     Enjin::Effects::WorldTimeSystem m_WorldTime;
+    Enjin::Renderer::SceneRenderSettings m_SceneRenderSettings;
     Enjin::Effects::SeasonalWeatherSystem m_SeasonalWeather;
 
     // Elemental system (fire/water/earth/air) + fire-light injection buffers.

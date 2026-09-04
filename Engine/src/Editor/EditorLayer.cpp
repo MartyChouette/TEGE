@@ -1,4 +1,5 @@
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/Effects/WorldTimeApply.h"
 #include "Enjin/Input/TouchActionBridge.h"
 #include <nlohmann/json.hpp>
 #include "Enjin/Editor/InspectorUndo.h"
@@ -2729,48 +2730,19 @@ void EditorLayer::UpdateGameViewSims(f32 simDt) {
         waterVol->isFrozen = (waterVol->freezeProgress >= 0.99f);
     }
 
-    // World Time System: advance clock and update sun/ambient
-    if (m_WorldTimeEnabled) {
-        m_WorldTime.Update(simDt);
-
-        const auto& timeState = m_WorldTime.GetState();
-
-        // Override sun direction on the first directional light
-        Math::Vector3 sunDir = m_WorldTime.GetSunDirection();
-        for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::LightComponent>()) {
-            auto* light = m_World->GetComponent<ECS::LightComponent>(entity);
-            auto* lightTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
-            if (light && light->type == ECS::LightType::Directional && lightTransform) {
-                // Encode sun direction into rotation
-                lightTransform->rotation = Math::Quaternion::FromEuler(
-                    Math::Vector3(
-                        std::asin(-sunDir.y) * 57.29578f,
-                        std::atan2(-sunDir.x, -sunDir.z) * 57.29578f,
-                        0.0f
-                    ));
-                light->intensity = m_WorldTime.GetAmbientIntensity() * 1.5f;
-                light->color = Math::Vector3(1.0f, 0.95f, 0.9f);
-                if (timeState.isNight) {
-                    light->color = Math::Vector3(0.3f, 0.35f, 0.5f);
-                    light->intensity = 0.3f;
-                }
-                break;
-            }
-        }
-
-        // Update ambient
-        m_RenderSystem->SetAmbientColor(m_WorldTime.GetAmbientColor());
-        m_RenderSystem->SetAmbientIntensity(m_WorldTime.GetAmbientIntensity());
-    }
-
-    // Seasonal Weather System: temperature and weather transitions. The
-    // checkbox is the authority in the editor; it drives the system's own
-    // enabled flag (which defaults OFF so ungated hosts can't stomp script
-    // weather — the desktop player did, every frame).
+    // Seasonal Weather: the checkbox is the authority in the editor; it drives
+    // the system's own enabled flag (which defaults OFF so ungated hosts can't
+    // stomp script weather -- the desktop player did, every frame).
     m_SeasonalWeather.GetConfig().enabled =
         (m_WorldTimeEnabled && m_SeasonalWeatherEnabled && !activeWeatherZone);
-    if (m_SeasonalWeather.GetConfig().enabled) {
-        m_SeasonalWeather.Update(simDt, m_WorldTime.GetState(), m_WeatherSystem);
+
+    // World Time: advance the clock and apply it -- sun rotation, light colour
+    // and intensity, ambient, season. This block used to live here in full,
+    // which is why day and night worked in the editor and did nothing in a
+    // shipped game: both players only ticked the clock.
+    if (m_WorldTimeEnabled) {
+        Effects::UpdateAndApplyWorldTime(m_World, m_WorldTime, m_RenderSystem,
+                                         &m_SeasonalWeather, &m_WeatherSystem, simDt);
     }
 
     // World curvature
@@ -2778,14 +2750,6 @@ void EditorLayer::UpdateGameViewSims(f32 simDt) {
         m_RenderSystem->SetWorldCurvature(m_WorldCurvature);
     } else {
         m_RenderSystem->SetWorldCurvature(0.0f);
-    }
-
-    // Pass season state to tree renderer
-    if (m_WorldTimeEnabled && m_RenderSystem) {
-        auto* treeRenderer = m_RenderSystem->GetTreeRenderer();
-        if (treeRenderer) {
-            treeRenderer->SetSeasonState(m_WorldTime.GetCurrentSeason(), m_WorldTime.GetSeasonProgress());
-        }
     }
 
     // Notify render system whether rain is active (drives water ripple shader)

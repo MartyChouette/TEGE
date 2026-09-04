@@ -38,6 +38,23 @@ struct SceneRenderSettings {
     bool wireframe = false;
     f32 ambientIntensity = 1.0f;
     Math::Vector3 ambientColor = Math::Vector3(0.1f, 0.1f, 0.15f);
+
+    // --- World time: day/night and seasons ---
+    // Whether the clock runs was an editor-only checkbox, so day and night could
+    // be switched on while authoring and there was no way to say so in a scene.
+    // A shipped game had no source for it at all. These are that source, read by
+    // the editor and both players alike.
+    //
+    // While the clock runs it OWNS the sun's rotation and the ambient values
+    // above, so a scene that authors both will see the clock win.
+    bool worldTimeEnabled = false;
+    f32 startTimeOfDay = 8.0f;         // hours, 0..24
+    f32 secondsPerGameHour = 60.0f;    // real seconds per in-game hour
+    u32 startMonth = 6;                // 1..12; picks the starting season
+    // Seasonal weather steers the WeatherSystem from season and temperature.
+    // Off by default: a scene with a scripted weather cycle (the Playground has
+    // one) must not have it overwritten every frame.
+    bool seasonalWeatherEnabled = false;
     f32 fogDensity = 0.0f;
     f32 fogStart = 20.0f;
     f32 fogEnd = 100.0f;
