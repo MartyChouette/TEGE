@@ -36,6 +36,11 @@ std::string RuntimeAccessibilitySettings::ToJson() const {
     j["stickyDragEnabled"] = stickyDragEnabled;
     j["switchAccessEnabled"] = switchAccessEnabled;
     j["switchScanSpeed"] = switchScanSpeed;
+    j["eyeTrackingEnabled"] = eyeTrackingEnabled;
+    j["eyeDwellTime"] = eyeDwellTime;
+    j["eyeSmoothing"] = eyeSmoothing;
+    j["eyeDeadZone"] = eyeDeadZone;
+    j["eyeShowGazeIndicator"] = eyeShowGazeIndicator;
     j["audioIndicatorsEnabled"] = audioIndicatorsEnabled;
     j["screenReaderEnabled"] = screenReaderEnabled;
     return j.dump(2);
@@ -75,6 +80,11 @@ bool RuntimeAccessibilitySettings::FromJson(const std::string& jsonStr) {
         stickyDragEnabled = j.value("stickyDragEnabled", false);
         switchAccessEnabled = j.value("switchAccessEnabled", false);
         switchScanSpeed = j.value("switchScanSpeed", 1.5f);
+        eyeTrackingEnabled = j.value("eyeTrackingEnabled", false);
+        eyeDwellTime = j.value("eyeDwellTime", 1.0f);
+        eyeSmoothing = j.value("eyeSmoothing", 0.3f);
+        eyeDeadZone = j.value("eyeDeadZone", 5.0f);
+        eyeShowGazeIndicator = j.value("eyeShowGazeIndicator", true);
         audioIndicatorsEnabled = j.value("audioIndicatorsEnabled", false);
         screenReaderEnabled = j.value("screenReaderEnabled", false);
         return true;

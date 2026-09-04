@@ -107,6 +107,17 @@ public:
 
     // Eye tracking
     void SetEyeTrackingConfig(const EyeTrackingConfig& config) { m_EyeConfig = config; }
+
+    // Apply the authored gaze settings. Kept beside the switch-access apply so
+    // the runtimes push accessibility through one call each, not five.
+    void ApplyGazeSettings(bool enabled, f32 dwellTime, f32 smoothing,
+                           f32 deadZone, bool showIndicator) {
+        m_EyeConfig.enabled = enabled;
+        m_EyeConfig.dwellTime = dwellTime;
+        m_EyeConfig.smoothingFactor = smoothing;
+        m_EyeConfig.deadZone = deadZone;
+        m_EyeConfig.showGazeIndicator = showIndicator;
+    }
     const EyeTrackingConfig& GetEyeTrackingConfig() const { return m_EyeConfig; }
     void UpdateGazePosition(f32 x, f32 y); // Called by eye tracker driver/API
 

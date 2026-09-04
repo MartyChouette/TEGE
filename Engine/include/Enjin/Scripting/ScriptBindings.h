@@ -15,7 +15,7 @@ namespace Accessibility { class SubtitleSystem; class AccessibilityAnnouncer; st
 namespace Scene { class SceneManager; class StreamingManager; }
 namespace Renderer { class PostProcessing; class Camera; }
 namespace Gameplay { class TieredSaveSystem; class QuestSystem; class CinematicSystem; class ObjectPool; class RecordRewindSystem; class CameraDirector; }
-namespace Effects { class WeatherSystem; class WindSystem; class DestructibleSystem; class ElementalSystem; }
+namespace Effects { class WeatherSystem; class WindSystem; class DestructibleSystem; class ElementalSystem; class WorldTimeSystem; class SeasonalWeatherSystem; }
 namespace Procedural { class LevelGenerator; }
 namespace Plugin { class PluginSystem; }
 namespace Audio { class AudioEventGraphRuntime; }
@@ -107,6 +107,8 @@ void SetBindingsPostProcessing(Renderer::PostProcessing* postProcessing);
 void SetBindingsSaveSystem(Gameplay::TieredSaveSystem* sys);
 void SetBindingsWeather(Effects::WeatherSystem* weather);
 void SetBindingsWind(Effects::WindSystem* wind);
+void SetBindingsWorldTime(Effects::WorldTimeSystem* time,
+                          Effects::SeasonalWeatherSystem* seasonal);
 void SetBindingsQuestSystem(Gameplay::QuestSystem* quest);
 void SetBindingsCinematicSystem(Gameplay::CinematicSystem* cinematic);
 void SetBindingsCameraDirector(Gameplay::CameraDirector* director);

@@ -814,6 +814,8 @@ public:
         Enjin::Scripting::SetBindingsAccessibilitySettings(nullptr);
         Enjin::Scripting::SetBindingsAudio(nullptr);
         Enjin::Scripting::SetBindingsWeather(nullptr);
+        // Day/night + seasons reachable from script (buttons, cutscenes, HUD).
+        Enjin::Scripting::SetBindingsWorldTime(&m_WorldTime, &m_SeasonalWeather);
         Enjin::Scripting::SetBindingsWind(nullptr);
         Enjin::Scripting::SetBindingsDestructible(nullptr);
         Enjin::Scripting::SetBindingsRewindSystem(nullptr);
@@ -2862,6 +2864,8 @@ private:
         Enjin::Accessibility::ApplyTextScale(m_AccessibilitySettings, &m_UISystem, &m_SubtitleSystem, &m_Announcer);
         m_AlternativeInput.ApplyAccessibilitySettings(m_AccessibilitySettings.switchAccessEnabled,
                                                      m_AccessibilitySettings.switchScanSpeed);
+        m_AlternativeInput.ApplyGazeSettings(m_AccessibilitySettings.eyeTrackingEnabled, m_AccessibilitySettings.eyeDwellTime, m_AccessibilitySettings.eyeSmoothing,
+                                              m_AccessibilitySettings.eyeDeadZone, m_AccessibilitySettings.eyeShowGazeIndicator);
         m_UISystem.SetSwitchAccessEnabled(m_AccessibilitySettings.switchAccessEnabled,
                                            m_AccessibilitySettings.switchScanSpeed);
         m_UISystem.SetDwellClickEnabled(m_AccessibilitySettings.dwellClickEnabled,

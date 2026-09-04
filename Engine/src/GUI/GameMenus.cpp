@@ -514,6 +514,17 @@ void GameMenuSystem::RenderAccessibility(f32 w, f32 h) {
         changed |= ImGui::SliderFloat("Scan Speed", &a.switchScanSpeed, 0.5f, 5.0f, "%.1f s");
         ImGui::Unindent(16.0f);
     }
+    // Gaze / head pointing. Works with any device that moves the pointer, which
+    // is how assistive head pointers and eye-gaze systems present themselves.
+    changed |= ImGui::Checkbox("Gaze / Head Pointing (dwell to select)", &a.eyeTrackingEnabled);
+    if (a.eyeTrackingEnabled) {
+        ImGui::Indent(16.0f);
+        changed |= ImGui::SliderFloat("Gaze Dwell Time", &a.eyeDwellTime, 0.3f, 3.0f, "%.1f s");
+        changed |= ImGui::SliderFloat("Gaze Smoothing", &a.eyeSmoothing, 0.0f, 0.9f, "%.2f");
+        changed |= ImGui::SliderFloat("Gaze Dead Zone", &a.eyeDeadZone, 0.0f, 40.0f, "%.0f px");
+        changed |= ImGui::Checkbox("Show Gaze Indicator", &a.eyeShowGazeIndicator);
+        ImGui::Unindent(16.0f);
+    }
     changed |= ImGui::Checkbox("Sticky Slider Drag", &a.stickyDragEnabled);
     if (m_InputMap) {
         ImGui::Dummy(ImVec2(0, 4));

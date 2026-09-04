@@ -3,6 +3,9 @@
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Effects/Weather.h"
 #include "Enjin/Effects/Wind.h"
+#include <string>
+#include "Enjin/Effects/SeasonalWeather.h"
+#include "Enjin/Effects/WorldTime.h"
 #include <angelscript.h>
 #include <cassert>
 
@@ -16,6 +19,11 @@ static Effects::WeatherSystem* s_BindingsWeather = nullptr;
 // shader windData). Weather_SetWind only slants precipitation; Wind_* here gusts
 // the trees/grass/vegetation-meshes.
 static Effects::WindSystem* s_BindingsWind = nullptr;
+// The world clock. Day/night and the seasons had NO script access at all, so a
+// game could run them but never set the hour, skip to a season, or tell the
+// player what season it was in.
+static Effects::WorldTimeSystem* s_BindingsWorldTime = nullptr;
+static Effects::SeasonalWeatherSystem* s_BindingsSeasonal = nullptr;
 
 namespace Enjin {
 namespace Scripting {
@@ -26,6 +34,12 @@ void SetBindingsWeather(Effects::WeatherSystem* weather) {
 
 void SetBindingsWind(Effects::WindSystem* wind) {
     s_BindingsWind = wind;
+}
+
+void SetBindingsWorldTime(Effects::WorldTimeSystem* time,
+                          Effects::SeasonalWeatherSystem* seasonal) {
+    s_BindingsWorldTime = time;
+    s_BindingsSeasonal = seasonal;
 }
 
 } // namespace Scripting
@@ -122,6 +136,51 @@ static void Weather_SetLightningInterval(float minSec, float maxSec) {
 namespace Enjin {
 namespace Scripting {
 
+// --- World time: the hour, the season, and what to call them ---------------
+
+static const char* kSeasonNames[4] = { "Spring", "Summer", "Fall", "Winter" };
+
+static f32 WorldTime_GetTimeOfDay() {
+    return s_BindingsWorldTime ? s_BindingsWorldTime->GetState().timeOfDay : 12.0f;
+}
+static void WorldTime_SetTimeOfDay(f32 hour) {
+    if (!s_BindingsWorldTime) return;
+    const auto& st = s_BindingsWorldTime->GetState();
+    s_BindingsWorldTime->SetTime(hour, st.day, st.month, st.year);
+}
+static bool WorldTime_IsNight() {
+    return s_BindingsWorldTime ? s_BindingsWorldTime->GetState().isNight : false;
+}
+static int WorldTime_GetSeason() {
+    return s_BindingsWorldTime ? static_cast<int>(s_BindingsWorldTime->GetState().season) : 1;
+}
+static std::string WorldTime_GetSeasonName() {
+    const int i = WorldTime_GetSeason();
+    return kSeasonNames[(i < 0 || i > 3) ? 1 : i];
+}
+// Seasons follow the calendar, so moving to one means moving the month. Each
+// season is three months starting at March.
+static void WorldTime_SetSeason(int season) {
+    if (!s_BindingsWorldTime) return;
+    const int s = (season % 4 + 4) % 4;
+    const u32 month = static_cast<u32>(3 + s * 3);   // Spring=3, Summer=6, Fall=9, Winter=12
+    const auto& st = s_BindingsWorldTime->GetState();
+    s_BindingsWorldTime->SetTime(st.timeOfDay, 1, month, st.year);
+}
+static void WorldTime_AdvanceSeason() {
+    WorldTime_SetSeason(WorldTime_GetSeason() + 1);
+}
+static void WorldTime_SetSecondsPerHour(f32 seconds) {
+    if (!s_BindingsWorldTime) return;
+    s_BindingsWorldTime->GetCalendarConfig().secondsPerGameHour = seconds;
+}
+static bool WorldTime_GetSeasonalWeather() {
+    return s_BindingsSeasonal ? s_BindingsSeasonal->GetConfig().enabled : false;
+}
+static void WorldTime_SetSeasonalWeather(bool on) {
+    if (s_BindingsSeasonal) s_BindingsSeasonal->GetConfig().enabled = on;
+}
+
 void RegisterWeatherBindings(asIScriptEngine* engine) {
     // Weather type enum constants
     AS_CHECK(engine->RegisterEnum("WeatherType"));
@@ -138,6 +197,30 @@ void RegisterWeatherBindings(asIScriptEngine* engine) {
         ENJIN_AS_FN(Weather_Set), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("int Weather_Get()",
         ENJIN_AS_FN(Weather_Get), ENJIN_AS_CALL_CDECL));
+
+    // World time. Day/night and seasons ran with no script access at all, so
+    // a game could not set the hour, jump to a season, or even tell the
+    // player which season it was in.
+    AS_CHECK(engine->RegisterGlobalFunction("float WorldTime_GetTimeOfDay()",
+        ENJIN_AS_FN(WorldTime_GetTimeOfDay), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void WorldTime_SetTimeOfDay(float)",
+        ENJIN_AS_FN(WorldTime_SetTimeOfDay), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool WorldTime_IsNight()",
+        ENJIN_AS_FN(WorldTime_IsNight), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int WorldTime_GetSeason()",
+        ENJIN_AS_FN(WorldTime_GetSeason), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("string WorldTime_GetSeasonName()",
+        ENJIN_AS_FN(WorldTime_GetSeasonName), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void WorldTime_SetSeason(int)",
+        ENJIN_AS_FN(WorldTime_SetSeason), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void WorldTime_AdvanceSeason()",
+        ENJIN_AS_FN(WorldTime_AdvanceSeason), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void WorldTime_SetSecondsPerHour(float)",
+        ENJIN_AS_FN(WorldTime_SetSecondsPerHour), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool WorldTime_GetSeasonalWeather()",
+        ENJIN_AS_FN(WorldTime_GetSeasonalWeather), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void WorldTime_SetSeasonalWeather(bool)",
+        ENJIN_AS_FN(WorldTime_SetSeasonalWeather), ENJIN_AS_CALL_CDECL));
 
     // Intensity
     AS_CHECK(engine->RegisterGlobalFunction("void Weather_SetRainIntensity(float)",

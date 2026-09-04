@@ -76,6 +76,20 @@ struct RuntimeAccessibilitySettings {
     bool switchAccessEnabled = false; // One-button scanning mode
     f32 switchScanSpeed = 1.5f;      // Seconds per element (0.5-5.0)
 
+    // Gaze / head pointing. AlternativeInputManager has always had the whole
+    // path -- smoothing, dead zone, dwell-to-select, indicator -- but nothing
+    // could switch it on because it had no entry here, so it never appeared in
+    // any menu and never saved.
+    //
+    // Assistive head pointers and eye-gaze systems present to the OS as a
+    // mouse, which is what the manager reads, so this works with the hardware
+    // people own rather than requiring a specific SDK.
+    bool eyeTrackingEnabled = false;
+    f32 eyeDwellTime = 1.0f;         // Seconds of gaze before a click (0.3-3.0)
+    f32 eyeSmoothing = 0.3f;         // 0 = raw and jittery, 1 = very laggy
+    f32 eyeDeadZone = 5.0f;          // Pixels of movement ignored
+    bool eyeShowGazeIndicator = true;
+
     // Audio visual indicators
     bool audioIndicatorsEnabled = false;
 

@@ -447,6 +447,8 @@ public:
         Enjin::Scripting::SetBindingsObjectPool(&m_ObjectPool);
         Enjin::Scripting::SetBindingsAudio(&m_SimpleAudio);
         Enjin::Scripting::SetBindingsWeather(&m_WeatherSystem);
+        // Day/night + seasons reachable from script (buttons, cutscenes, HUD).
+        Enjin::Scripting::SetBindingsWorldTime(&m_WorldTime, &m_SeasonalWeather);
         Enjin::Scripting::SetBindingsWind(&m_WindSystem);   // Wind_* -> foliage sway
         // Render_* script functions (rain-active, fog, ambient, shadows...)
         // and Dialogue_* — both systems exist on web; without this wiring the
@@ -1911,6 +1913,8 @@ private:
         // Two scan lists on purpose: this one is app chrome, UISystem's is game
         // UI. Both take the same authored values.
         m_AlternativeInput.ApplyAccessibilitySettings(s.switchAccessEnabled, s.switchScanSpeed);
+        m_AlternativeInput.ApplyGazeSettings(s.eyeTrackingEnabled, s.eyeDwellTime, s.eyeSmoothing,
+                                              s.eyeDeadZone, s.eyeShowGazeIndicator);
         m_UISystem.SetSwitchAccessEnabled(s.switchAccessEnabled, s.switchScanSpeed);
         m_UISystem.SetDwellClickEnabled(s.dwellClickEnabled, s.dwellClickTime);
         m_UISystem.SetStickyDragEnabled(s.stickyDragEnabled);
