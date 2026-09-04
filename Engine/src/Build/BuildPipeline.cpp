@@ -1008,9 +1008,51 @@ void BuildPipeline::ScanProjectDirectory() {
         { ".enjparticle", &m_DataAssetPaths },
     };
 
+    // A build output directory nested inside the project must never be
+    // scanned. Its copied scripts and assets would be ingested as project
+    // files and re-emitted one level deeper on the next build, nesting
+    // forever (Build/Build/Build/...) and bloating the pack with duplicates.
+    std::error_code oec;
+    fs::path outputDir;
+    if (!m_Config.outputDir.empty()) {
+        outputDir = fs::weakly_canonical(fs::path(m_Config.outputDir), oec);
+        if (oec) {
+            outputDir = fs::absolute(fs::path(m_Config.outputDir), oec);
+            oec.clear();
+        }
+    }
+
+    auto isBuildOutput = [&](const fs::path& dir) {
+        std::error_code lec;
+        if (!outputDir.empty()) {
+            fs::path canon = fs::weakly_canonical(dir, lec);
+            if (lec) {
+                canon = dir;
+                lec.clear();
+            }
+            if (canon == outputDir) return true;
+        }
+        // Output directories from earlier builds, under any name, are
+        // identified by the artifacts only a build writes.
+        return fs::exists(dir / "game.enjpak", lec) ||
+               fs::exists(dir / "game.manifest", lec);
+    };
+
     try {
-        for (auto& entry : fs::recursive_directory_iterator(m_ProjectDir,
-                 fs::directory_options::skip_permission_denied)) {
+        for (fs::recursive_directory_iterator
+                 it(m_ProjectDir, fs::directory_options::skip_permission_denied), end;
+             it != end; ++it) {
+            const auto& entry = *it;
+
+            if (entry.is_directory()) {
+                if (isBuildOutput(entry.path())) {
+                    AddMessage(MessageSeverity::Info,
+                               "Skipping build output directory: " + entry.path().string());
+                    it.disable_recursion_pending();
+                }
+                continue;
+            }
+
             if (!entry.is_regular_file()) continue;
 
             std::string ext = entry.path().extension().string();

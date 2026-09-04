@@ -720,4 +720,87 @@ ENJIN_TEST(BuildConfigFullscreen, CanClearFullscreen) {
     ENJIN_EXPECT_FALSE(cfg.fullscreen);
 }
 
+// ============================================================================
+// Nested Build Output
+// ============================================================================
+//
+// A build directory sitting inside the project it was built from must never
+// be scanned as project content. When it was, its copied scripts and assets
+// came back as project files and were re-emitted one level deeper on the next
+// build, nesting without limit (Build/Build/Build/...) and filling the pack
+// with duplicates.
+
+// Writes a minimal buildable project into dir, plus a leftover output folder
+// that looks exactly like a previous build.
+static void MakeProjectWithStaleOutput(const std::filesystem::path& dir) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+
+    fs::remove_all(dir, ec);
+    fs::create_directories(dir / "scenes", ec);
+    fs::create_directories(dir / "scripts", ec);
+
+    {
+        std::ofstream proj(dir / "Nested.enjinproject");
+        proj << R"({"projectName":"Nested","version":"1.0",)"
+                R"("scenes":[{"name":"Main","path":"scenes/Main.enjin",)"
+                R"("buildIndex":0,"isStartScene":true}]})";
+    }
+    { std::ofstream scene(dir / "scenes" / "Main.enjin");      scene  << "{}"; }
+    { std::ofstream script(dir / "scripts" / "Player.as");     script << "// project script\n"; }
+
+    // The leftover output of an earlier build, still inside the project.
+    fs::create_directories(dir / "Build" / "scripts", ec);
+    { std::ofstream man(dir / "Build" / "game.manifest");      man    << "{}"; }
+    { std::ofstream copy(dir / "Build" / "scripts" / "Player.as"); copy << "// stale copy\n"; }
+}
+
+ENJIN_TEST(NestedBuildOutput, OutputDirIsNotCopiedIntoItself) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+
+    fs::path root = fs::temp_directory_path() / "enjin_nested_output_test";
+    MakeProjectWithStaleOutput(root);
+
+    BuildConfig cfg;
+    cfg.projectPath   = (root / "Nested.enjinproject").string();
+    cfg.outputDir     = (root / "Build").string();
+    cfg.packagingMode = PackagingMode::LooseFiles;
+
+    BuildPipeline pipeline;
+    // The player executable may be absent in a test environment, which the
+    // pipeline treats as non-fatal. Only the on-disk shape matters here.
+    pipeline.Execute(cfg);
+
+    ENJIN_EXPECT_FALSE(fs::exists(root / "Build" / "Build"));
+
+    fs::remove_all(root, ec);
+}
+
+ENJIN_TEST(NestedBuildOutput, StaleOutputIsNotPackedAsProjectContent) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+
+    fs::path root = fs::temp_directory_path() / "enjin_nested_output_test2";
+    MakeProjectWithStaleOutput(root);
+
+    // Build somewhere else entirely. The stale Build/ folder still sitting in
+    // the project must be skipped on its game.manifest marker alone.
+    fs::path out = fs::temp_directory_path() / "enjin_nested_output_test2_out";
+    fs::remove_all(out, ec);
+
+    BuildConfig cfg;
+    cfg.projectPath   = (root / "Nested.enjinproject").string();
+    cfg.outputDir     = out.string();
+    cfg.packagingMode = PackagingMode::LooseFiles;
+
+    BuildPipeline pipeline;
+    pipeline.Execute(cfg);
+
+    ENJIN_EXPECT_FALSE(fs::exists(out / "Build"));
+
+    fs::remove_all(root, ec);
+    fs::remove_all(out, ec);
+}
+
 ENJIN_TEST_MAIN()
