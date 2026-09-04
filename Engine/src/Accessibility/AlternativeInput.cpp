@@ -3,6 +3,7 @@
 #include <imgui.h>
 #include <algorithm>
 #include <cmath>
+#include <cfloat>
 
 namespace Enjin {
 namespace Accessibility {
@@ -12,6 +13,27 @@ void AlternativeInputManager::Update(f32 dt) {
         UpdateSwitchScanning(dt);
     }
     if (m_EyeConfig.enabled) {
+        // Feed the gaze from the pointer unless a real tracker has already
+        // pushed a position this frame.
+        //
+        // UpdateGazePosition had ZERO callers anywhere in the repo, so the whole
+        // eye-tracking path -- smoothing, dead zone, dwell-to-select, the gaze
+        // indicator -- was complete and could never run, because nothing gave
+        // it a position. Turning the setting on did nothing at all.
+        //
+        // The pointer is not a consolation prize here: assistive head pointers,
+        // eye-gaze systems and most AAC devices present to the operating system
+        // AS A MOUSE. Reading the pointer is what makes this work with the
+        // hardware people actually own, on every platform, with no SDK. A
+        // dedicated tracker that wants to bypass it just calls
+        // UpdateGazePosition itself and this defers for the rest of the frame.
+        if (!m_GazeFedThisFrame) {
+            const ImGuiIO& io = ImGui::GetIO();
+            if (io.MousePos.x > -FLT_MAX * 0.5f) {
+                UpdateGazePosition(io.MousePos.x, io.MousePos.y);
+            }
+        }
+        m_GazeFedThisFrame = false;
         UpdateEyeTracking(dt);
     }
 }
@@ -35,6 +57,8 @@ void AlternativeInputManager::ClearScanTargets() {
 }
 
 void AlternativeInputManager::UpdateGazePosition(f32 x, f32 y) {
+    // A real tracker calling this wins over the pointer fallback for this frame.
+    m_GazeFedThisFrame = true;
     m_GazeX = x;
     m_GazeY = y;
 }

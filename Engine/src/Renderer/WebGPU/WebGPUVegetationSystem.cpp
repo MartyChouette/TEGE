@@ -314,6 +314,54 @@ bool WebGPUVegetationSystem::Initialize(WebGPURenderer* renderer) {
         return false;
     }
 
+    // Depth-only pipeline for the shadow pass. Same vertex shader, so the
+    // shadow scatters the identical plants to the identical places -- anything
+    // else and the shadows would not line up with the grove casting them.
+    // Its own frame UBO because both passes run in the same frame and one
+    // buffer would have the shadow's light matrices overwrite the camera's.
+    {
+        GPUBufferDesc sd;
+        sd.size = sizeof(VegFrameUBO);
+        sd.usage = GPUBufferUsage::Uniform | GPUBufferUsage::CopyDst;
+        sd.label = "veg-shadow-viewproj";
+        m_ShadowUBO = bufMgr->CreateBuffer(sd);
+
+        GPUBindGroupDesc sg;
+        sg.layout = m_Layout;
+        GPUBindGroupEntry s0; s0.binding = 0; s0.buffer = m_ShadowUBO;
+        s0.bufferSize = sizeof(VegFrameUBO);
+        GPUBindGroupEntry s1; s1.binding = 1; s1.buffer = m_TemplateVerts; s1.bufferSize = vd.size;
+        GPUBindGroupEntry s2; s2.binding = 2; s2.buffer = m_TemplateIndices; s2.bufferSize = id.size;
+        GPUBindGroupEntry s3; s3.binding = 3; s3.buffer = m_VolumeParams; s3.bufferSize = pd.size;
+        sg.entries.push_back(s0); sg.entries.push_back(s1);
+        sg.entries.push_back(s2); sg.entries.push_back(s3);
+        sg.label = "veg-shadow-bindgroup";
+        m_ShadowBindGroup = bgMgr->CreateBindGroup(sg);
+
+        GPURenderPipelineDesc sp;
+        sp.vertexShader = m_Shader;
+        sp.fragmentShader = {};             // depth only
+        sp.bindGroupLayouts.push_back(m_Layout);
+        sp.topology = GPUPrimitiveTopology::TriangleList;
+        // Plants are single-sided cards; culling front faces the way the mesh
+        // shadow pipeline does would erase half of every blade.
+        sp.cullMode = GPUCullMode::None;
+        sp.depthTest = true;
+        sp.depthWrite = true;
+        sp.depthCompare = GPUCompareFunction::Less;
+        sp.hasColorAttachment = false;
+        sp.depthFormat = GPUTextureFormat::Depth32Float;
+        sp.sampleCount = 1;                 // the shadow map is not multisampled
+        sp.depthBiasEnable = true;
+        sp.depthBiasConstant = 0.5f;
+        sp.depthBiasSlope = 0.25f;
+        sp.label = "veg-shadow";
+        m_ShadowPipeline = pipeMgr->CreateRenderPipeline(sp);
+        if (!m_ShadowPipeline.IsValid()) {
+            ENJIN_LOG_WARN(Renderer, "WebGPUVegetation: shadow pipeline unavailable - plants will not cast");
+        }
+    }
+
     m_Initialized = true;
     ENJIN_LOG_INFO(Renderer, "WebGPUVegetation initialized (%zu template verts, %zu indices)",
                    verts.size(), indices.size());
@@ -324,16 +372,12 @@ void WebGPUVegetationSystem::Shutdown() {
     m_Initialized = false;
 }
 
-void WebGPUVegetationSystem::RenderScene(WGPURenderPassEncoder pass, const Math::Matrix4& view,
-                                         const Math::Matrix4& proj, ECS::World* world) {
-    if (!m_Initialized || !pass || !world || !m_Pipeline.IsValid()) return;
+u32 WebGPUVegetationSystem::BuildVolumeParams(ECS::World* world,
+                                              VolumeParamsCPU* params,
+                                              DrawInfo* draws) const {
     using namespace Enjin::ECS;
-
     // Gather volumes -> params array. Each entry also records its template
     // range + density for the draw loop below.
-    struct DrawInfo { u32 indexCount; u32 density; };
-    VolumeParamsCPU params[kMaxVolumes]{};
-    DrawInfo draws[kMaxVolumes]{};
     u32 count = 0;
 
     auto put3 = [](f32* dst, const Math::Vector3& v) { dst[0] = v.x; dst[1] = v.y; dst[2] = v.z; };
@@ -403,6 +447,17 @@ void WebGPUVegetationSystem::RenderScene(WGPURenderPassEncoder pass, const Math:
         draws[count] = { m_Tree.indexCount, std::min(g->density, 20000u) };
         ++count;
     }
+    return count;
+}
+
+void WebGPUVegetationSystem::RenderScene(WGPURenderPassEncoder pass, const Math::Matrix4& view,
+                                         const Math::Matrix4& proj, ECS::World* world) {
+    if (!m_Initialized || !pass || !world || !m_Pipeline.IsValid()) return;
+    using namespace Enjin::ECS;
+
+    VolumeParamsCPU params[kMaxVolumes]{};
+    DrawInfo draws[kMaxVolumes]{};
+    const u32 count = BuildVolumeParams(world, params, draws);
     if (count == 0) return;
 
     auto* bufMgr = m_Renderer->GetBufferManager();
@@ -435,6 +490,45 @@ void WebGPUVegetationSystem::RenderScene(WGPURenderPassEncoder pass, const Math:
     for (u32 v = 0; v < count; ++v) {
         // firstInstance carries the volume slot in the high bits; the shader
         // splits it back into (volume, blade).
+        wgpuRenderPassEncoderDraw(pass, draws[v].indexCount, draws[v].density, 0, v << 16);
+    }
+}
+
+void WebGPUVegetationSystem::RenderShadow(WGPURenderPassEncoder pass,
+                                          const Math::Matrix4& lightViewProj,
+                                          ECS::World* world) {
+    if (!m_Initialized || !pass || !world || !m_ShadowPipeline.IsValid()) return;
+
+    // Rebuild the volume table exactly as the scene pass does, so the shadow
+    // scatters the identical plants to the identical places. It also re-uploads
+    // m_VolumeParams, which both bind groups point at -- the shadow pass runs
+    // first, so the scene pass overwrites it with the same content moments
+    // later and both see what they expect.
+    VolumeParamsCPU params[kMaxVolumes]{};
+    DrawInfo draws[kMaxVolumes]{};
+    const u32 count = BuildVolumeParams(world, params, draws);
+    if (count == 0) return;
+
+    auto* bufMgr = m_Renderer->GetBufferManager();
+    bufMgr->UploadData(m_VolumeParams, params, count * sizeof(VolumeParamsCPU));
+
+    // The light's matrices, unflipped: the shadow map is rendered with the same
+    // convention RenderSystem uploads for the mesh casters, not the scene
+    // target's Y-flipped one.
+    VegFrameUBO vp{};
+    vp.view = Math::Matrix4::Identity();
+    vp.proj = lightViewProj;
+    bufMgr->UploadData(m_ShadowUBO, &vp, sizeof(vp));
+
+    auto* pipeMgrN = static_cast<WebGPUPipelineManager*>(m_Renderer->GetPipelineManager());
+    auto* bgMgrN = static_cast<WebGPUBindGroupManager*>(m_Renderer->GetBindGroupManager());
+    WGPURenderPipeline pipeline = pipeMgrN->GetNativePipeline(m_ShadowPipeline);
+    WGPUBindGroup bindGroup = bgMgrN->GetNativeGroup(m_ShadowBindGroup);
+    if (!pipeline || !bindGroup) return;
+
+    wgpuRenderPassEncoderSetPipeline(pass, pipeline);
+    wgpuRenderPassEncoderSetBindGroup(pass, 0, bindGroup, 0, nullptr);
+    for (u32 v = 0; v < count; ++v) {
         wgpuRenderPassEncoderDraw(pass, draws[v].indexCount, draws[v].density, 0, v << 16);
     }
 }

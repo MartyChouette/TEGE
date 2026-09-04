@@ -596,6 +596,17 @@ public:
         // the PARTICLE init check, so a machine where particles failed to start
         // also silently lost every grass, shrub and tree volume -- two unrelated
         // features tied together by nothing but nesting.
+        // Plants have no MeshComponent for the shadow pass to walk, so without
+        // this a whole grove is lit and shadowless while every crate beside it
+        // casts. Depth only, from the light's point of view, same scatter.
+        m_RenderSystem->SetWebShadowPassHook(
+            [this](void* shadowPass, const Enjin::Math::Matrix4& lightViewProj) {
+                if (m_Vegetation) {
+                    m_Vegetation->RenderShadow(static_cast<WGPURenderPassEncoder>(shadowPass),
+                                               lightViewProj, m_World.get());
+                }
+            });
+
         m_RenderSystem->SetWebScenePassHook([this](void* scenePass) {
             // Vegetation first (opaque, depth-writing), then particles over it.
             if (m_Vegetation && m_Camera) {

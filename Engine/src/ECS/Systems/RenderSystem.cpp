@@ -2296,6 +2296,14 @@ void RenderSystem::Update(f32 deltaTime) {
                     shadowDrawCount++;
                 }
 
+                // Procedural geometry that has no MeshComponent to walk --
+                // grass, shrubs and trees are a volume plus a scatter hash, so
+                // the loop above cannot see them and a whole grove cast no
+                // shadow while every crate beside it did.
+                if (m_WebShadowPassHook) {
+                    m_WebShadowPassHook(shadowPass, lightProj * lightView);
+                }
+
                 static int s_ShadowLog = 0;
                 if (s_ShadowLog++ < 5) {
                     EM_ASM({ console.log('[SHADOW] drew ' + $0 + ' entities into shadow map (cached until something moves)'); }, shadowDrawCount);

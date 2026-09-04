@@ -463,6 +463,21 @@ public:
     // Web: register a callback that draws into the scene pass (arg = the scene
     // WGPURenderPassEncoder as void*) right before it ends — used for GPU particles.
     void SetWebScenePassHook(std::function<void(void*)> hook) { m_WebScenePassHook = std::move(hook); }
+
+    /**
+     * @brief Draw into the directional SHADOW pass.
+     *
+     * The shadow pass walks entities with a MeshComponent, so anything drawn
+     * procedurally from its own shader is invisible to it -- grass, shrubs and
+     * trees exist only as a volume plus a scatter hash, so a whole grove cast
+     * no shadow at all while every crate beside it did.
+     *
+     * The callback receives the pass encoder and the light's view-projection,
+     * and should render depth only.
+     */
+    void SetWebShadowPassHook(std::function<void(void*, const Math::Matrix4&)> hook) {
+        m_WebShadowPassHook = std::move(hook);
+    }
 #endif
 
 #if !ENJIN_RENDERER_WEBGPU
@@ -1276,6 +1291,7 @@ private:
     // right before the scene pass ends. The web player uses it to draw GPU particles
     // with real scene depth. Public setter below.
     std::function<void(void*)> m_WebScenePassHook;
+    std::function<void(void*, const Math::Matrix4&)> m_WebShadowPassHook;
 
     // Default bone buffer (single identity matrix for non-skinned meshes)
     Renderer::GPUBufferHandle m_WebDefaultBoneBuffer;

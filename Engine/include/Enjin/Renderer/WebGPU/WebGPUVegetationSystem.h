@@ -31,6 +31,13 @@ public:
     void Shutdown();
 
     // Wind for sway (direction * strength, plus a running clock).
+    // Draw the same scattered plants into a DEPTH-only pass from the light's
+    // point of view, so a grove casts a shadow. The scene shadow pass walks
+    // entities with a MeshComponent and these have none -- they are a volume
+    // plus a scatter hash -- so without this every tree was lit but shadowless.
+    void RenderShadow(WGPURenderPassEncoder pass, const Math::Matrix4& lightViewProj,
+                      ECS::World* world);
+
     void SetWind(const Math::Vector3& wind, f32 time) { m_Wind = wind; m_WindTime = time; }
 
     // The scene's light. This pass has its own pipeline with no lighting
@@ -60,7 +67,20 @@ private:
     GPUShaderHandle m_Shader;
     GPUBindGroupLayoutHandle m_Layout;
     GPUBindGroupHandle m_BindGroup;
+    // One entry per volume, plus what to draw for it. Built once and used by
+    // BOTH passes, so the shadow scatters the identical plants to the identical
+    // places as the scene -- two copies of this would drift and the shadows
+    // would stop matching the grove casting them.
+    struct DrawInfo { u32 indexCount; u32 density; };
+    u32 BuildVolumeParams(ECS::World* world, struct VolumeParamsCPU* params,
+                          DrawInfo* draws) const;
+
     GPUPipelineHandle m_Pipeline;
+    // Depth-only twin of the above, so the grove casts a shadow. Separate UBO
+    // and bind group because both passes run in one frame.
+    GPUPipelineHandle m_ShadowPipeline;
+    GPUBufferHandle m_ShadowUBO;
+    GPUBindGroupHandle m_ShadowBindGroup;
 
     GPUBufferHandle m_ViewProjUBO;      // 128B: view + (Y-flipped) proj
     GPUBufferHandle m_TemplateVerts;    // storage: concatenated VegVertex (5 f32 each)

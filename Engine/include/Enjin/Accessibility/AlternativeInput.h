@@ -140,6 +140,9 @@ private:
 
     // Eye tracking state
     f32 m_GazeX = 0.0f, m_GazeY = 0.0f;
+    // Set by UpdateGazePosition so a real tracker overrides the pointer
+    // fallback for that frame; cleared each Update.
+    bool m_GazeFedThisFrame = false;
     f32 m_SmoothedGazeX = 0.0f, m_SmoothedGazeY = 0.0f;
     f32 m_GazeDwellTimer = 0.0f;
     i32 m_GazeDwellTarget = -1;  // Index of scan target being dwelled on
