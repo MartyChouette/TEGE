@@ -1,4 +1,6 @@
 #include "Enjin/GUI/ImGuiLayer.h"
+#include "Enjin/GUI/Localization.h"
+#include "Enjin/GUI/FontScripts.h"
 #include "Enjin/GUI/EmbeddedFonts.h"
 #include "Enjin/GUI/EmbeddedPlayfair.h"
 #include "Enjin/Platform/Window.h"
@@ -246,14 +248,75 @@ void ImGuiLayer::DestroyDescriptorPool() {
     }
 }
 
+// Which codepoints the atlas bakes.
+//
+// Every font here was added with no GlyphRanges, so ImGui used its default:
+// Basic Latin and Latin-1, about 190 glyphs. That threw away most of what the
+// embedded face already contains -- Roboto-Medium carries the full Latin
+// Extended-A block, 75 Greek glyphs and 255 Cyrillic ones -- so Polish, Czech,
+// Turkish, Greek and Russian rendered as blank boxes from a font that had the
+// glyphs sitting in it. This atlas is also the one every runtime draws game
+// UI, subtitles and the announcer from, so the gap was never editor-only.
+//
+// Scripts outside Latin are NOT in any embedded face, so a project wanting
+// them ships a font (Settings > Font Library / bodyFontPath). The ranges below
+// still have to ask for those codepoints or the supplied font would be clipped
+// the same way. ImGui silently skips codepoints a face lacks, so asking is
+// free for fonts that do not have them.
+//
+// CJK is the one range with a real cost -- thousands of glyphs, and a much
+// bigger atlas texture, which matters most on web. It is therefore requested
+// only when the active locale actually needs it.
+static const ImWchar* AtlasGlyphRanges(ImFontAtlas* atlas) {
+    // ImGui reads this pointer at Build() time, well after the AddFont calls,
+    // so it has to outlive them. One shared static, built once.
+    static ImVector<ImWchar> s_Ranges;
+    if (!s_Ranges.empty()) return s_Ranges.Data;
+
+    ImFontGlyphRangesBuilder builder;
+    builder.AddRanges(atlas->GetGlyphRangesDefault());     // Basic Latin + Latin-1
+
+    static const ImWchar kEuropean[] = {
+        0x0100, 0x024F,   // Latin Extended-A and -B
+        0x0370, 0x03FF,   // Greek and Coptic
+        0x0400, 0x04FF,   // Cyrillic
+        0x2000, 0x206F,   // General Punctuation: curly quotes, dashes, ellipsis
+        0x20A0, 0x20BF,   // Currency symbols
+        0,
+    };
+    builder.AddRanges(kEuropean);
+
+    // Locale-gated scripts. Which one the locale needs is decided in
+    // GUI::ScriptForLocale so the rule is testable without an ImGui context.
+    switch (GUI::ScriptForLocale(GUI::LocalizationManager::Get().GetCurrentLocale())) {
+        case GUI::AtlasScript::Japanese:   builder.AddRanges(atlas->GetGlyphRangesJapanese()); break;
+        case GUI::AtlasScript::ChineseFull: builder.AddRanges(atlas->GetGlyphRangesChineseFull()); break;
+        case GUI::AtlasScript::Korean:     builder.AddRanges(atlas->GetGlyphRangesKorean()); break;
+        case GUI::AtlasScript::Thai:       builder.AddRanges(atlas->GetGlyphRangesThai()); break;
+        case GUI::AtlasScript::Vietnamese: builder.AddRanges(atlas->GetGlyphRangesVietnamese()); break;
+        case GUI::AtlasScript::EuropeanOnly: break;   // already added above
+    }
+
+    builder.BuildRanges(&s_Ranges);
+    return s_Ranges.Data;
+}
+
 // Embedded-font loader: the TTF data lives in the engine, so the atlas must
 // not free it (FontDataOwnedByAtlas=false). const_cast is safe — ImGui only
 // reads the data when ownership is off.
 static ImFont* AddEmbeddedFont(ImGuiIO& io, const unsigned char* data, unsigned int size, f32 sizePx) {
     ImFontConfig cfg;
     cfg.FontDataOwnedByAtlas = false;
+    cfg.GlyphRanges = AtlasGlyphRanges(io.Fonts);
     return io.Fonts->AddFontFromMemoryTTF(
         const_cast<unsigned char*>(data), static_cast<int>(size), sizePx, &cfg);
+}
+
+// A font from disk, with the same ranges. A project ships a face precisely
+// because it needs glyphs the embedded ones lack; loading it on the default
+// range would clip it right back down.
+static ImFont* AddFileFont(ImGuiIO& io, const char* path, f32 sizePx) {
+    return io.Fonts->AddFontFromFileTTF(path, sizePx, nullptr, AtlasGlyphRanges(io.Fonts));
 }
 
 void ImGuiLayer::LoadFonts(const EditorFontConfig& fontConfig) {
@@ -267,7 +330,7 @@ void ImGuiLayer::LoadFonts(const EditorFontConfig& fontConfig) {
 
     // Load body font (becomes the default ImGui font if loaded first)
     if (!fontConfig.bodyFontPath.empty()) {
-        m_BodyFont = io.Fonts->AddFontFromFileTTF(fontConfig.bodyFontPath.c_str(), fontConfig.bodyFontSize);
+        m_BodyFont = AddFileFont(io, fontConfig.bodyFontPath.c_str(), fontConfig.bodyFontSize);
         if (!m_BodyFont) {
             ENJIN_LOG_WARN(Editor, "Failed to load body font: %s, using default", fontConfig.bodyFontPath.c_str());
         }
@@ -287,7 +350,7 @@ void ImGuiLayer::LoadFonts(const EditorFontConfig& fontConfig) {
 
     // Load heading font (H1)
     if (!fontConfig.headingFontPath.empty()) {
-        m_HeadingFont = io.Fonts->AddFontFromFileTTF(fontConfig.headingFontPath.c_str(), fontConfig.headingFontSize);
+        m_HeadingFont = AddFileFont(io, fontConfig.headingFontPath.c_str(), fontConfig.headingFontSize);
         if (!m_HeadingFont) {
             ENJIN_LOG_WARN(Editor, "Failed to load heading font: %s, falling back to body font", fontConfig.headingFontPath.c_str());
         }
@@ -308,7 +371,7 @@ void ImGuiLayer::LoadFonts(const EditorFontConfig& fontConfig) {
     // Load H2 font (section titles — uses heading font at smaller size)
     const std::string& h2Path = !fontConfig.headingFontPath.empty() ? fontConfig.headingFontPath : fontConfig.bodyFontPath;
     if (!h2Path.empty()) {
-        m_H2Font = io.Fonts->AddFontFromFileTTF(h2Path.c_str(), fontConfig.h2FontSize);
+        m_H2Font = AddFileFont(io, h2Path.c_str(), fontConfig.h2FontSize);
         if (!m_H2Font) {
             ENJIN_LOG_WARN(Editor, "Failed to load H2 font from: %s", h2Path.c_str());
         }
@@ -319,7 +382,7 @@ void ImGuiLayer::LoadFonts(const EditorFontConfig& fontConfig) {
 
     // Load small font (labels/hints — uses body font at smaller size)
     if (!fontConfig.bodyFontPath.empty()) {
-        m_SmallFont = io.Fonts->AddFontFromFileTTF(fontConfig.bodyFontPath.c_str(), fontConfig.smallFontSize);
+        m_SmallFont = AddFileFont(io, fontConfig.bodyFontPath.c_str(), fontConfig.smallFontSize);
         if (!m_SmallFont) {
             ENJIN_LOG_WARN(Editor, "Failed to load small font from: %s", fontConfig.bodyFontPath.c_str());
         }
@@ -331,7 +394,7 @@ void ImGuiLayer::LoadFonts(const EditorFontConfig& fontConfig) {
     // Load monospace font (embedded Cousine when unconfigured — console,
     // script errors, and numeric readouts deserve a real mono face too)
     if (!fontConfig.monoFontPath.empty()) {
-        m_MonoFont = io.Fonts->AddFontFromFileTTF(fontConfig.monoFontPath.c_str(), fontConfig.monoFontSize);
+        m_MonoFont = AddFileFont(io, fontConfig.monoFontPath.c_str(), fontConfig.monoFontSize);
         if (!m_MonoFont) {
             ENJIN_LOG_WARN(Editor, "Failed to load monospace font: %s", fontConfig.monoFontPath.c_str());
         }
