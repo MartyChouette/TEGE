@@ -439,6 +439,7 @@ private:
     void DrawLightComponent(ECS::Entity entity);
     void DrawCameraComponent(ECS::Entity entity);
     void DrawNotesComponent(ECS::Entity entity);
+    void DrawHoverHighlightComponent(ECS::Entity entity);
     void DrawTextComponent(ECS::Entity entity);
     void DrawDisplayGraphicComponent(ECS::Entity entity);
     void DrawWeatherZoneComponent(ECS::Entity entity);
@@ -1599,6 +1600,17 @@ private:
     // Open a script in the IDE jumped to a specific line (VS Code `-g`); falls
     // back to opening the file when the IDE has no line-jump form.
     void OpenScriptAtLine(const std::string& filePath, int line);
+
+    // Load an image into the built-in Pixel Editor and bring that panel up.
+    // The path may be project-relative (as material texture paths are) or
+    // absolute; it is rooted against the open project the same way the material
+    // inspector's external-editor button does it. One entry point so the asset
+    // browser, the material inspector and anything added later all behave the
+    // same. Returns false and toasts if the image will not load.
+    bool OpenTextureInPixelEditor(const std::string& path);
+    // Set by OpenTextureInPixelEditor so the panel focuses itself on the next
+    // draw - ImGui can only focus a window from inside its own Begin/End.
+    bool m_FocusPixelEditor = false;
 
     // Tilemap editor state
     bool m_TilemapEditMode = false;

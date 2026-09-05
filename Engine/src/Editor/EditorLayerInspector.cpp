@@ -19,8 +19,11 @@
 #include "Enjin/ECS/Components/VirtualCamera.h"
 #include "Enjin/ECS/Components/Lens.h"
 #include "Enjin/ECS/Components/Notes.h"
+#include "Enjin/ECS/Components/HoverHighlight.h"
 #include "Enjin/ECS/Components/Swarm.h"
 #include "Enjin/ECS/Components/GeneratedGeometry.h"
+#include "Enjin/ECS/Components/GeneratedTexture.h"
+#include "Enjin/ECS/Components/ProceduralTexture.h"
 #include "Enjin/ECS/Components/ProceduralMesh.h"
 #include "Enjin/Effects/Metaballs.h"
 #include "Enjin/ECS/Components/DungeonGenerator.h"
@@ -396,6 +399,16 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::HealthComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::HealthComponent>(e); },
             "health"},
+        {"Reaction-Diffusion", "Generated Geometry", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ReactionDiffusionComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ReactionDiffusionComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::ReactionDiffusionComponent>(e); },
+            "reaction diffusion gray scott turing pattern texture"},
+        {"Physarum (slime mould)", "Generated Geometry", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::PhysarumComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::PhysarumComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::PhysarumComponent>(e); },
+            "physarum slime mould agents trail network texture"},
         {"Metaball Blob", "Generated Geometry", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<Effects::MetaballComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<Effects::MetaballComponent>(e); },
@@ -955,6 +968,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::NotesComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::NotesComponent>(e); },
             "notes"},
+        {"Hover Highlight", "Other", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::HoverHighlightComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::HoverHighlightComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::HoverHighlightComponent>(e); },
+            "hoverHighlight"},
 
         // -- Networking --
         {"Network Identity", "Networking", nullptr,
@@ -1916,6 +1934,7 @@ void EditorLayer::DrawInspectorPanel() {
         // Notes component
         if (m_World->HasComponent<ECS::NotesComponent>(m_PrimarySelected)) {
             DrawNotesComponent(m_PrimarySelected);
+            DrawHoverHighlightComponent(m_PrimarySelected);
         }
 
         // Text component
@@ -2143,6 +2162,152 @@ void EditorLayer::DrawInspectorPanel() {
                 ImGui::TextDisabled("(simulates in Play mode; pinned points follow the entity)");
             }
         }
+        // --- Generated textures -------------------------------------------
+        // Both simulations bake RGBA8 into ProceduralTextureComponent, which the
+        // renderer uploads and binds as this entity's base colour. Give the
+        // entity a mesh (a quad or a cube) to see the result on.
+        if (auto* rd = m_World->GetComponent<ECS::ReactionDiffusionComponent>(m_PrimarySelected)) {
+            bool rdOpen = ImGui::CollapsingHeader("Reaction-Diffusion", ImGuiTreeNodeFlags_DefaultOpen);
+            bool rdRemoved = false;
+            if (ImGui::BeginPopupContextItem("ReactionDiffusionCtx")) {
+                if (ImGui::MenuItem("Remove Component")) {
+                    RemoveComponentWithUndo<ECS::ReactionDiffusionComponent>(m_PrimarySelected, "reactionDiffusion", "Reaction-Diffusion");
+                    rdRemoved = true;
+                }
+                ImGui::EndPopup();
+            }
+            if (!rdRemoved && rdOpen) {
+                DrawComponentHelp("reactionDiffusion", m_World, m_PrimarySelected);
+                const char* presets[] = { "Mitosis Spots", "Coral Growth", "Fingerprints",
+                                          "Leopard", "Labyrinth", "Worm Holes",
+                                          "Bubble Packing", "Spirals", "Custom" };
+                int pi = static_cast<int>(rd->preset);
+                if (ImGui::Combo("Preset", &pi, presets, IM_ARRAYSIZE(presets)))
+                    rd->preset = static_cast<Effects::RDPreset>(pi);
+                i32 w = static_cast<i32>(rd->width), h = static_cast<i32>(rd->height);
+                if (ImGui::DragInt("Width", &w, 8, 16, 1024)) rd->width = static_cast<u32>(w);
+                if (ImGui::DragInt("Height", &h, 8, 16, 1024)) rd->height = static_cast<u32>(h);
+                ImGui::SetItemTooltip("The grid is stepped on the CPU and the whole image re-uploaded.\nCost is quadratic in resolution.");
+
+                const bool custom = (rd->preset == Effects::RDPreset::Custom);
+                if (!custom) ImGui::BeginDisabled();
+                ImGui::DragFloat("Feed Rate", &rd->feedRate, 0.001f, 0.0f, 0.12f, "%.4f");
+                ImGui::DragFloat("Kill Rate", &rd->killRate, 0.001f, 0.0f, 0.10f, "%.4f");
+                ImGui::DragFloat("Diffusion U", &rd->diffusionU, 0.01f, 0.0f, 2.0f);
+                ImGui::DragFloat("Diffusion V", &rd->diffusionV, 0.01f, 0.0f, 2.0f);
+                if (!custom) {
+                    ImGui::EndDisabled();
+                    ImGui::TextDisabled("Feed/kill come from the preset. Choose Custom to edit them.");
+                }
+
+                i32 steps = static_cast<i32>(rd->stepsPerFrame);
+                if (ImGui::DragInt("Steps Per Update", &steps, 1, 1, 64)) rd->stepsPerFrame = static_cast<u32>(steps);
+                ImGui::SetItemTooltip("How fast the pattern grows. This is simulation sub-steps, not frames.");
+                ImGui::Checkbox("Wrap Edges", &rd->wrapEdges);
+                ImGui::SeparatorText("Seeding");
+                ImGui::Checkbox("Centre Circle", &rd->seedCentreCircle);
+                ImGui::SetItemTooltip("A uniform Gray-Scott field never develops anything.\nWithout a seed the texture stays flat forever.");
+                ImGui::SliderFloat("Seed Radius", &rd->seedRadius, 0.0f, 0.5f, "%.3f");
+                i32 spots = static_cast<i32>(rd->seedRandomSpots);
+                if (ImGui::DragInt("Random Spots", &spots, 1, 0, 512)) rd->seedRandomSpots = static_cast<u32>(spots);
+                if (!rd->seedCentreCircle && rd->seedRandomSpots == 0)
+                    ImGui::TextColored(ImVec4(0.95f, 0.65f, 0.20f, 1.0f),
+                        "No seeding: this will stay a flat colour.");
+                ImGui::SeparatorText("Look");
+                f32 lo[3] = { rd->colorLow.x, rd->colorLow.y, rd->colorLow.z };
+                if (ImGui::ColorEdit3("Color Low", lo)) rd->colorLow = Math::Vector3(lo[0], lo[1], lo[2]);
+                f32 hi[3] = { rd->colorHigh.x, rd->colorHigh.y, rd->colorHigh.z };
+                if (ImGui::ColorEdit3("Color High", hi)) rd->colorHigh = Math::Vector3(hi[0], hi[1], hi[2]);
+                i32 settle = static_cast<i32>(rd->settleSteps);
+                if (ImGui::DragInt("Settle Steps", &settle, 25, 0, 20000))
+                    rd->settleSteps = static_cast<u32>(settle < 0 ? 0 : settle);
+                ImGui::SetItemTooltip("Simulation steps run before the single bake.\nThese all happen in one frame, so a large value stalls the load.");
+                if (ImGui::Button("Re-bake")) rd->resetRequested = true;
+                ImGui::SameLine();
+                ImGui::TextDisabled("bakes once, does not animate");
+                ImGui::TextDisabled("%u step(s) simulated", rd->stepCount);
+                if (!m_World->HasComponent<ECS::MeshComponent>(m_PrimarySelected))
+                    ImGui::TextColored(ImVec4(0.95f, 0.65f, 0.20f, 1.0f),
+                        "No mesh on this entity - the texture has nothing to draw on.");
+            }
+        }
+        if (auto* ph = m_World->GetComponent<ECS::PhysarumComponent>(m_PrimarySelected)) {
+            bool phOpen = ImGui::CollapsingHeader("Physarum", ImGuiTreeNodeFlags_DefaultOpen);
+            bool phRemoved = false;
+            if (ImGui::BeginPopupContextItem("PhysarumCtx")) {
+                if (ImGui::MenuItem("Remove Component")) {
+                    RemoveComponentWithUndo<ECS::PhysarumComponent>(m_PrimarySelected, "physarum", "Physarum");
+                    phRemoved = true;
+                }
+                ImGui::EndPopup();
+            }
+            if (!phRemoved && phOpen) {
+                DrawComponentHelp("physarum", m_World, m_PrimarySelected);
+                const char* presets[] = { "Classic Slime", "Branching Network", "Dense Web",
+                                          "Tendrils", "Pulsating", "Custom" };
+                int pi = static_cast<int>(ph->preset);
+                if (ImGui::Combo("Preset", &pi, presets, IM_ARRAYSIZE(presets)))
+                    ph->preset = static_cast<Effects::PhysarumPreset>(pi);
+                i32 w = static_cast<i32>(ph->width), h = static_cast<i32>(ph->height);
+                if (ImGui::DragInt("Width", &w, 16, 32, 2048)) ph->width = static_cast<u32>(w);
+                if (ImGui::DragInt("Height", &h, 16, 32, 2048)) ph->height = static_cast<u32>(h);
+                i32 agents = static_cast<i32>(ph->agentCount);
+                if (ImGui::DragInt("Agents", &agents, 500, 1, 500000)) ph->agentCount = static_cast<u32>(agents < 1 ? 1 : agents);
+                ImGui::SetItemTooltip("Every agent is sensed and moved on the main thread each step");
+
+                const bool custom = (ph->preset == Effects::PhysarumPreset::Custom);
+                if (!custom) ImGui::BeginDisabled();
+                ImGui::DragFloat("Sensor Angle", &ph->sensorAngle, 0.5f, 0.0f, 180.0f, "%.1f deg");
+                ImGui::DragFloat("Sensor Distance", &ph->sensorDistance, 0.5f, 0.0f, 128.0f, "%.1f px");
+                ImGui::DragFloat("Turn Speed", &ph->turnSpeed, 1.0f, 0.0f, 360.0f, "%.1f deg/step");
+                ImGui::DragFloat("Move Speed", &ph->moveSpeed, 0.05f, 0.0f, 32.0f, "%.2f px/step");
+                ImGui::DragFloat("Trail Decay", &ph->trailDecay, 0.002f, 0.0f, 1.0f, "%.3f");
+                ImGui::DragFloat("Trail Deposit", &ph->trailDeposit, 0.1f, 0.0f, 128.0f);
+                ImGui::DragFloat("Diffuse Radius", &ph->diffuseRadius, 0.1f, 0.0f, 4.0f);
+                if (!custom) {
+                    ImGui::EndDisabled();
+                    ImGui::TextDisabled("Behaviour comes from the preset. Choose Custom to edit it.");
+                }
+
+                ImGui::Checkbox("Wrap Edges", &ph->wrapEdges);
+                i32 steps = static_cast<i32>(ph->stepsPerFrame);
+                if (ImGui::DragInt("Steps Per Update", &steps, 1, 1, 16)) ph->stepsPerFrame = static_cast<u32>(steps);
+                ImGui::SeparatorText("Seeding");
+                const char* seedings[] = { "Ring", "Circle", "Point" };
+                int si = static_cast<int>(ph->seeding);
+                if (ImGui::Combo("Start Shape", &si, seedings, IM_ARRAYSIZE(seedings)))
+                    ph->seeding = static_cast<ECS::PhysarumComponent::Seeding>(si);
+                ImGui::SetItemTooltip("Ring is the classic start: agents walk inward and the network forms where they collide");
+                ImGui::SliderFloat("Inner Radius", &ph->seedInnerRadius, 0.0f, 1.0f, "%.2f");
+                ImGui::SliderFloat("Outer Radius", &ph->seedOuterRadius, 0.0f, 1.0f, "%.2f");
+                ImGui::SeparatorText("Look");
+                f32 tc[3] = { ph->trailColor.x, ph->trailColor.y, ph->trailColor.z };
+                if (ImGui::ColorEdit3("Trail Color", tc)) ph->trailColor = Math::Vector3(tc[0], tc[1], tc[2]);
+                f32 bc[3] = { ph->backgroundColor.x, ph->backgroundColor.y, ph->backgroundColor.z };
+                if (ImGui::ColorEdit3("Background", bc)) ph->backgroundColor = Math::Vector3(bc[0], bc[1], bc[2]);
+                i32 settle = static_cast<i32>(ph->settleSteps);
+                if (ImGui::DragInt("Settle Steps", &settle, 25, 0, 20000))
+                    ph->settleSteps = static_cast<u32>(settle < 0 ? 0 : settle);
+                ImGui::SetItemTooltip("Steps run before the single bake. Every agent moves on\neach one, so cost is settleSteps x agentCount.");
+                if (ImGui::Button("Re-bake")) ph->resetRequested = true;
+                ImGui::SameLine();
+                ImGui::TextDisabled("bakes once, does not animate");
+                ImGui::TextDisabled("%u step(s) simulated", ph->stepCount);
+                if (!m_World->HasComponent<ECS::MeshComponent>(m_PrimarySelected))
+                    ImGui::TextColored(ImVec4(0.95f, 0.65f, 0.20f, 1.0f),
+                        "No mesh on this entity - the texture has nothing to draw on.");
+            }
+        }
+        if (auto* pt = m_World->GetComponent<ECS::ProceduralTextureComponent>(m_PrimarySelected)) {
+            if (ImGui::CollapsingHeader("Procedural Texture")) {
+                ImGui::TextDisabled("Generated by: %s", ECS::ProceduralTextureSourceName(pt->source));
+                ImGui::TextDisabled("%u x %u, %zu KB", pt->width, pt->height, pt->pixels.size() / 1024);
+                ImGui::Checkbox("Regenerate", &pt->regenerate);
+                ImGui::SetItemTooltip("Uncheck to freeze the current image and stop the owning system rebuilding it");
+                ImGui::TextDisabled("Added automatically. Pixels are runtime data and are not saved.");
+            }
+        }
+
         // --- Generated geometry -------------------------------------------
         // The four CPU generators. GeneratedGeometrySystem writes the result
         // into this entity's MeshComponent during play; the readouts below are

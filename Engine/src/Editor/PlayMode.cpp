@@ -91,6 +91,11 @@ void PlayMode::Initialize(ECS::World* world, Renderer::Camera* camera,
     m_ControllerSystem.SetInputActionMap(m_InputMap);
     m_ControllerSystem.SetEnabled(false);
 
+    // Hover highlight: same physics backend the controllers pick against, so
+    // what lights up is what a raycast would hit.
+    m_HoverHighlightSystem.SetWorld(world);
+    m_HoverHighlightSystem.SetPhysics(m_Physics.get());
+
     m_FlowerSystem.SetWorld(world);
     m_FlowerSystem.SetCamera(camera);
     m_FlowerSystem.SetEnabled(false);
@@ -401,6 +406,12 @@ void PlayMode::Play() {
     Scripting::SetBindingsFlower(m_World);
     Scripting::SetBindingsProcedural(nullptr);
     Scripting::SetBindingsWeather(m_WeatherSystem);
+    // The WindSystem pointer the Wind_* bindings need. SetBindingsWind was
+    // declared and defined but never called from anywhere, so s_BindingsWind was
+    // permanently null and Wind_SetDirection / Wind_SetStrength were silent
+    // no-ops: a game could not touch the wind that drives foliage, cloth and
+    // wind-driven particles, and the field just sat on its defaults forever.
+    Scripting::SetBindingsWind(m_RenderSystem ? m_RenderSystem->GetWindSystem() : nullptr);
     Scripting::SetBindingsSceneManager(m_SceneManager);
     Scripting::SetBindingsCoroutineScheduler(&m_CoroutineScheduler);
     Scripting::SetBindingsEventBus(&m_EventBus);
@@ -808,6 +819,7 @@ void PlayMode::Stop() {
     Scripting::SetBindingsPhysics2D(nullptr);
     Scripting::SetBindingsNetworking(nullptr);
     Scripting::SetBindingsWeather(nullptr);
+    Scripting::SetBindingsWind(nullptr);
     Scripting::SetBindingsSceneManager(nullptr);
     Scripting::SetBindingsStreaming(nullptr);
     Scripting::SetBindingsAudio(nullptr);
@@ -1185,6 +1197,9 @@ void PlayMode::Update(f32 deltaTime) {
                 if (!water3d || !water3d->meshCreated) continue;
                 m_Water3D->GetSettings() = water3d->settings;
                 m_Water3D->UpdateEntityMesh(m_World, entity);
+                // The vertices just moved on the CPU; tell the renderer to send
+                // them, or the surface stays flat no matter what the waves say.
+                water3d->meshDirty = true;
             }
         }
         m_EntityEventBus.ProcessDeferred();

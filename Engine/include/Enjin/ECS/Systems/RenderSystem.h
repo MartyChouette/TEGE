@@ -266,6 +266,15 @@ struct EntityRenderData {
 
 // Render system - renders entities with Transform and Mesh components
 class ENJIN_API RenderSystem : public ISystem {
+    // Clock for hover-highlight styles, ticked from Update in BOTH renderer
+    // halves. m_WebTime cannot serve: it is incremented only in the WebGPU
+    // block, so a desktop highlight would never animate.
+    f32 m_HighlightTimeValue = 0.0f;
+public:
+    f32 GetHighlightTime() const { return m_HighlightTimeValue; }
+    void TickHighlightTime(f32 dt) { m_HighlightTimeValue += dt; }
+private:
+
 public:
     RenderSystem(World* world, Renderer::IRenderBackend* renderer);
     ~RenderSystem();
@@ -376,6 +385,13 @@ public:
     // The shadow pass uses its own framebuffer, so it must not be inside another render pass.
     void RenderShadowPassForCamera(Renderer::Camera* camera);
 #endif
+
+    // Where a character of an entity's text sits, in the text block's own local
+    // space (top-left anchored, +x right, lines descending -y). Returns the
+    // origin when the entity has no text or the font atlas is unavailable.
+    // A caret, a highlight box and a click target all ride on this instead of
+    // each caller re-deriving font metrics by hand.
+    Math::Vector3 MeasureTextTo(Entity entity, i32 codepointIndex);
 
 #if !ENJIN_RENDERER_WEBGPU
     // Runtime rendering settings
@@ -1187,6 +1203,16 @@ private:
         std::shared_ptr<Renderer::Texture> texture;
     };
     std::vector<RetiredTexture> m_TextTextureGraveyard;
+    // Bindless SLOTS also have to outlive the frames that sample them. Parking
+    // the texture but freeing its descriptor slot immediately still hands a
+    // recycled or dead slot to an in-flight frame, which is a device loss. The
+    // text path gets away with it because a rasterize is rare; a texture
+    // regenerating at 30 Hz does not.
+    struct RetiredBindless {
+        u64 flushTick = 0;
+        u32 handle = 0;
+    };
+    std::vector<RetiredBindless> m_BindlessGraveyard;
     u64 m_FlushTick = 0;
     // Move rd's GPU buffers into the graveyard, then Invalidate() it. Use this
     // instead of calling Invalidate() directly anywhere the GPU might still be

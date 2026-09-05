@@ -21,6 +21,7 @@ extern char** environ;
 #include "Enjin/ECS/Components/VirtualCamera.h"
 #include "Enjin/ECS/Components/Lens.h"
 #include "Enjin/ECS/Components/Notes.h"
+#include "Enjin/ECS/Components/HoverHighlight.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/DynamicDifficulty.h"
@@ -1404,6 +1405,72 @@ void EditorLayer::DrawCameraComponent(ECS::Entity entity) {
         }
 
     }
+}
+
+void EditorLayer::DrawHoverHighlightComponent(ECS::Entity entity) {
+    if (!m_World || !m_World->HasComponent<ECS::HoverHighlightComponent>(entity)) return;
+
+    bool open = ImGui::CollapsingHeader("Hover Highlight", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("HoverHighlightCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::HoverHighlightComponent>(entity, "hoverHighlight", "Hover Highlight");
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (!open) return;
+
+    ECS::HoverHighlightComponent* h = m_World->GetComponent<ECS::HoverHighlightComponent>(entity);
+    if (!h) return;
+
+    ImGui::Checkbox("Enabled##Hover", &h->enabled);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Off means this entity is not highlightable at all.");
+
+    ImGui::BeginDisabled(!h->enabled);
+
+    ImGui::ColorEdit3("Color##Hover", &h->color.x);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Outline colour while the cursor is on this entity.");
+
+    ImGui::DragFloat("Thickness##Hover", &h->thickness, 0.002f, 0.0f, 1.0f, "%.3f");
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("World units, the same scale the cel outline uses.\n"
+                          "Not affected by transform scale, so it agrees with the\n"
+                          "collider being picked.");
+    }
+
+    static const char* kStyles[] = { "Solid", "Pulse", "Flash" };
+    int style = static_cast<int>(h->style);
+    if (style < 0 || style > 2) style = 0;
+    if (ImGui::Combo("Style##Hover", &style, kStyles, 3)) {
+        h->style = static_cast<ECS::HighlightStyle>(style);
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Solid: constant.\nPulse: breathes, for something asking to be used.\n"
+                          "Flash: hard on/off, for a warning or a forbidden target.");
+    }
+
+    if (h->style != ECS::HighlightStyle::Solid) {
+        ImGui::DragFloat("Speed##Hover", &h->speed, 0.05f, 0.0f, 20.0f, "%.2f Hz");
+        if (h->style == ECS::HighlightStyle::Pulse) {
+            ImGui::SliderFloat("Pulse Depth##Hover", &h->pulseDepth, 0.0f, 1.0f, "%.2f");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("How far the outline thins at the bottom of the cycle.");
+        }
+    }
+
+    ImGui::Checkbox("Include Children##Hover", &h->includeChildren);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Highlight this whole prop when a child is pointed at,\n"
+                          "rather than the one sub-mesh the ray happened to hit.\n"
+                          "Pointing at a chair leg lights the chair.");
+    }
+
+    // Live state, read-only. Useful when a highlight is not appearing: it says
+    // whether the pick found the entity or the drawing is at fault.
+    ImGui::Separator();
+    ImGui::TextDisabled(h->hovered ? "Cursor is on this entity" : "Not hovered");
+
+    ImGui::EndDisabled();
 }
 
 void EditorLayer::DrawNotesComponent(ECS::Entity entity) {

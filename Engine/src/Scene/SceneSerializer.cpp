@@ -13,6 +13,7 @@
 #include "Enjin/ECS/Components/Mesh.h"
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/ECS/Components/Notes.h"
+#include "Enjin/ECS/Components/HoverHighlight.h"
 #include "Enjin/ECS/Components/DisplayGraphic.h"
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Components/VirtualCamera.h"
@@ -445,6 +446,34 @@ json SerializeLightComponent(const ECS::LightComponent& light) {
     j["outerConeAngle"] = RF(light.outerConeAngle);
     j["castShadows"] = light.castShadows;
     return j;
+}
+
+json SerializeHoverHighlightComponent(const ECS::HoverHighlightComponent& h) {
+    json j;
+    j["enabled"] = h.enabled;
+    j["color"] = SerializeVector3(h.color);
+    j["thickness"] = h.thickness;
+    j["style"] = static_cast<u32>(h.style);
+    j["speed"] = h.speed;
+    j["pulseDepth"] = h.pulseDepth;
+    j["includeChildren"] = h.includeChildren;
+    // `hovered` is deliberately NOT written: it is this frame's answer to
+    // "is the cursor on it", not authored data. Saving it would restore a
+    // scene with something lit up and nothing pointing at it.
+    return j;
+}
+
+ECS::HoverHighlightComponent DeserializeHoverHighlightComponent(const json& j) {
+    ECS::HoverHighlightComponent h;
+    h.enabled = j.value("enabled", true);
+    if (j.contains("color")) h.color = DeserializeVector3(j["color"]);
+    h.thickness = j.value("thickness", 0.04f);
+    const u32 style = j.value("style", 0u);
+    h.style = static_cast<ECS::HighlightStyle>(style <= 2u ? style : 0u);
+    h.speed = j.value("speed", 2.0f);
+    h.pulseDepth = j.value("pulseDepth", 0.5f);
+    h.includeChildren = j.value("includeChildren", true);
+    return h;
 }
 
 json SerializeNotesComponent(const ECS::NotesComponent& notes) {
@@ -9105,6 +9134,7 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
         ENJIN_SERDES("networkIdentity", ECS::NetworkIdentityComponent, SerializeNetworkIdentityComponent, DeserializeNetworkIdentityComponent),
         ENJIN_SERDES("networkTransform", ECS::NetworkTransformComponent, SerializeNetworkTransformComponent, DeserializeNetworkTransformComponent),
         ENJIN_SERDES("notes", ECS::NotesComponent, SerializeNotesComponent, DeserializeNotesComponent),
+        ENJIN_SERDES("hoverHighlight", ECS::HoverHighlightComponent, SerializeHoverHighlightComponent, DeserializeHoverHighlightComponent),
         ENJIN_SERDES("parallaxMachine", ECS::ParallaxMachineComponent, SerializeParallaxMachineComponent, DeserializeParallaxMachineComponent),
         ENJIN_SERDES("parallaxLayer", ECS::ParallaxLayerComponent, SerializeParallaxLayerComponent, DeserializeParallaxLayerComponent),
         ENJIN_SERDES("particleEmitter", ECS::ParticleEmitterComponent, SerializeParticleEmitterComponent, DeserializeParticleEmitterComponent),

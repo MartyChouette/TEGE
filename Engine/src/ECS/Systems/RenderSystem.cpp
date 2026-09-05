@@ -82,7 +82,13 @@ Renderer::SkyboxConfig RenderSystem::WeatherSky(const Renderer::SkyboxConfig& cf
 #include "Enjin/ECS/Components/BoundaryPolygon.h"  // Creative-mode editable lake outline
 #include "Enjin/ECS/Components/TreeVolume.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
+#include "Enjin/ECS/Components/HoverHighlight.h"
 #include "Enjin/ECS/Components/Cloth.h"   // cloth/rope meshDirty re-upload
+// Water3D needs the COMPLETE type up here, not at its old line 3719: the web
+// render path re-uploads dirty water meshes around line 2795, well above that,
+// and RenderSystem.h only forward-declares it. Desktop built because its use
+// site happens to sit below the late include.
+#include "Enjin/ECS/Components/Water3D.h"
 #include "Enjin/ECS/Components/ProceduralMesh.h"  // generic runtime-generated geometry upload
 #include "Enjin/ECS/Components/ProceduralTexture.h"  // generic CPU-generated texture upload
 #include "Enjin/ECS/Components/Rope.h"
@@ -1533,6 +1539,25 @@ Renderer::FontAtlas* RenderSystem::WebGetOrBuildFontAtlas(const std::string& fon
     return it->second.atlas ? it->second.atlas.get() : nullptr;
 }
 
+// Web definition of MeasureTextTo.
+//
+// The other one lives in the !ENJIN_RENDERER_WEBGPU branch (~line 4880) even
+// though its body already #ifs between the web and desktop atlas getters, so on
+// a web build there was NO definition at all and ScriptBindings_Text.cpp failed
+// to link with "undefined symbol: RenderSystem::MeasureTextTo". Nothing else was
+// wrong with the web target; this one symbol broke the whole build.
+Math::Vector3 RenderSystem::MeasureTextTo(Entity entity, i32 codepointIndex) {
+    const Math::Vector3 none(0.0f, 0.0f, 0.0f);
+    if (!m_World) return none;
+    TextComponent* tc = m_World->GetComponent<TextComponent>(entity);
+    if (!tc) return none;
+    std::string key;
+    Renderer::FontAtlas* atlas = WebGetOrBuildFontAtlas(tc->fontPath, key);
+    if (!atlas) return none;
+    return atlas->MeasureTo(*tc, codepointIndex);
+}
+
+
 // Web port of the Vulkan text-generation loop (RenderSystem::Update ~4779):
 // bare TextComponent entities (no authored mesh) become a mesh of SDF glyph
 // quads sampling the shared font atlas, rendered UNLIT through the PBR pipeline
@@ -1647,6 +1672,7 @@ void RenderSystem::WebEnsureTextMeshes() {
 // ============================================================================
 
 void RenderSystem::Update(f32 deltaTime) {
+    TickHighlightTime(deltaTime);   // drives hover-highlight Pulse/Flash
     if (!m_Renderer || !m_Initialized || !m_MainPipeline.IsValid()) {
         return;
     }
@@ -2791,6 +2817,9 @@ void RenderSystem::Update(f32 deltaTime) {
                 // Runtime-generated geometry rides the same protocol on web.
                 auto* proc  = m_World->HasComponent<ProceduralMeshComponent>(entity)
                                 ? m_World->GetComponent<ProceduralMeshComponent>(entity) : nullptr;
+                // Water3D animates by rewriting its mesh on the CPU each frame.
+                auto* w3d = m_World->HasComponent<Water3DComponent>(entity)
+                                ? m_World->GetComponent<Water3DComponent>(entity) : nullptr;
                 bool topo = (cloth && cloth->topologyDirty) || (rope && rope->topologyDirty)
                             || (proc && proc->topologyDirty);
                 if (topo) {
@@ -2807,12 +2836,13 @@ void RenderSystem::Update(f32 deltaTime) {
                     if (proc) { proc->topologyDirty = false; proc->meshDirty = true; }
                 } else if (rd.valid && rd.owner == entity &&
                            ((cloth && cloth->meshDirty) || (rope && rope->meshDirty)
-                            || (proc && proc->meshDirty))) {
+                            || (proc && proc->meshDirty) || (w3d && w3d->meshDirty))) {
                     bufMgr->UploadData(rd.vertexBuffer, mesh->vertices.data(),
                                        mesh->vertices.size() * sizeof(MeshComponent::Vertex));
                     if (cloth) cloth->meshDirty = false;
                     if (rope)  rope->meshDirty = false;
                     if (proc)  proc->meshDirty = false;
+                    if (w3d)   w3d->meshDirty = false;
                 }
             }
 
@@ -3707,6 +3737,7 @@ void RenderSystem::SetUpscalerQuality(u32 quality) { m_UpscalerQuality = quality
 #include "Enjin/Effects/TreeRenderer.h"
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
+#include "Enjin/ECS/Components/HoverHighlight.h"
 #include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/ECS/Components/Name.h"
@@ -5412,6 +5443,24 @@ void RenderSystem::Update(f32 deltaTime) {
                     // No existing buffer — will be created on next render via SetupEntityBuffers
                 }
                 jelly->meshDirty = false;
+            }
+        }
+
+        // Water3D dirty check: the surface is re-displaced on the CPU every
+        // frame (PlayMode), so the vertex buffer has to be re-sent or the water
+        // renders as the flat plane it was built as.
+        for (Entity entity : m_World->GetEntitiesWithComponent<Water3DComponent>()) {
+            auto* w3d = m_World->GetComponent<Water3DComponent>(entity);
+            if (w3d && w3d->meshDirty) {
+                EntityRenderData* rd = GetRenderData(entity);
+                if (rd && rd->vertexBuffer) {
+                    auto* mesh = m_World->GetComponent<MeshComponent>(entity);
+                    if (mesh && !mesh->vertices.empty()) {
+                        usize dataSize = mesh->vertices.size() * sizeof(MeshComponent::Vertex);
+                        rd->vertexBuffer->UploadData(mesh->vertices.data(), dataSize);
+                    }
+                }
+                w3d->meshDirty = false;
             }
         }
 
@@ -7610,6 +7659,19 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 if (water3d) {
                     pushConstants.baseColor = water3d->settings.shallowColor;
                     pushConstants.opacity = water3d->settings.opacity;
+                    // Foam and the shallow tint. waterVolume asks for these and
+                    // water3D never did, which is why a water3D surface rendered
+                    // as one flat colour however its foam settings were authored.
+                    // The vertex G channel now carries crest height as well as
+                    // edge distance (see Water3D::GenerateMesh), so this puts
+                    // foam on the wave tops rather than only at the plane border.
+                    if (water3d->settings.enableFoam &&
+                        water3d->settings.style != Effects::WaterStyle::Refractive) {
+                        pushConstants.flags |= (1 << 7); // FLAG_WATER_SHORE
+                        pushConstants.surfaceParam1 = water3d->settings.foamThreshold;
+                        pushConstants.surfaceParam2 = 1.0f;
+                        pushConstants.surfaceParam3 = water3d->settings.foamScale;
+                    }
                     // Refractive water: signal the shader (surfaceParam3 marker) and hand it
                     // the reflection strength + fresnel power for the top-down refraction split.
                     if (water3d->settings.style == Effects::WaterStyle::Refractive) {
@@ -8413,6 +8475,19 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                 if (water3d) {
                     pushConstants.baseColor = water3d->settings.shallowColor;
                     pushConstants.opacity = water3d->settings.opacity;
+                    // Foam and the shallow tint. waterVolume asks for these and
+                    // water3D never did, which is why a water3D surface rendered
+                    // as one flat colour however its foam settings were authored.
+                    // The vertex G channel now carries crest height as well as
+                    // edge distance (see Water3D::GenerateMesh), so this puts
+                    // foam on the wave tops rather than only at the plane border.
+                    if (water3d->settings.enableFoam &&
+                        water3d->settings.style != Effects::WaterStyle::Refractive) {
+                        pushConstants.flags |= (1 << 7); // FLAG_WATER_SHORE
+                        pushConstants.surfaceParam1 = water3d->settings.foamThreshold;
+                        pushConstants.surfaceParam2 = 1.0f;
+                        pushConstants.surfaceParam3 = water3d->settings.foamScale;
+                    }
                     // Refractive water: signal the shader (surfaceParam3 marker) and hand it
                     // the reflection strength + fresnel power for the top-down refraction split.
                     if (water3d->settings.style == Effects::WaterStyle::Refractive) {
@@ -12653,7 +12728,19 @@ void RenderSystem::RenderPlanarReflections() {
 }
 
 void RenderSystem::RenderOutlinePass() {
-    if (!m_OutlinePipeline || !m_GeometryOutlinesEnabled || !m_Renderer || !m_World) return;
+    if (!m_OutlinePipeline || !m_Renderer || !m_World) return;
+    // Hover highlights draw through this pass, so it cannot be gated on the
+    // cel-shading toggle alone: a project with outlines off still expects an
+    // entity to light up under the cursor.
+    const auto* hoverStorage = m_World->GetComponentStorage<HoverHighlightComponent>();
+    bool anyHovered = false;
+    if (hoverStorage) {
+        for (Entity e : m_World->GetEntitiesWithComponent<HoverHighlightComponent>()) {
+            const auto* h = hoverStorage->Get(e);
+            if (h && h->enabled && h->hovered) { anyHovered = true; break; }
+        }
+    }
+    if (!m_GeometryOutlinesEnabled && !anyHovered) return;
 
     VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
@@ -12698,6 +12785,40 @@ void RenderSystem::RenderOutlinePass() {
             outlineWidth = artStyleOutline->cel_outlineWidth;
             outlineColor = artStyleOutline->cel_outlineColor;
         }
+
+        // Hover highlight wins over all of the above: it is transient feedback
+        // about what the cursor is on, and it has to be visible against
+        // whatever the object normally looks like.
+        const HoverHighlightComponent* hover = hoverStorage ? hoverStorage->Get(entity) : nullptr;
+        const bool highlighted = hover && hover->enabled && hover->hovered;
+        if (highlighted) {
+            outlineColor = hover->color;
+            outlineWidth = hover->thickness;
+
+            // Style. The clock comes from the render system's own accumulated
+            // time, so a paused game holds its highlight steady rather than
+            // freezing mid-blink.
+            if (hover->style != HighlightStyle::Solid && hover->speed > 0.0f) {
+                const f32 phase = GetHighlightTime() * hover->speed;
+                if (hover->style == HighlightStyle::Pulse) {
+                    // 1 at the top of the cycle, down by pulseDepth at the bottom.
+                    const f32 wave = 0.5f + 0.5f * std::sin(phase * 6.2831853f);
+                    const f32 depth = (hover->pulseDepth < 0.0f) ? 0.0f
+                                    : (hover->pulseDepth > 1.0f ? 1.0f : hover->pulseDepth);
+                    outlineWidth *= 1.0f - depth * (1.0f - wave);
+                } else {
+                    // Flash: hard on/off, for a warning or a forbidden target.
+                    const f32 t = phase - std::floor(phase);
+                    if (t > 0.5f) outlineWidth = 0.0f;
+                }
+            }
+        } else if (!m_GeometryOutlinesEnabled) {
+            // Outlines are off globally and this entity is not highlighted, so
+            // it has no business drawing one just because the pass is running.
+            continue;
+        }
+
+        if (outlineWidth <= 0.0f) continue;   // a Flash in its off half
 
         // Build push constants — repurpose baseColor for outlineColor, metallic for outlineWidth
         Renderer::PushConstants pc{};

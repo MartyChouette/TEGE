@@ -6,6 +6,7 @@
 #include "Enjin/Renderer/Camera.h"
 #include "Enjin/Renderer/CameraController.h"
 #include "Enjin/ECS/Systems/ControllerSystem.h"
+#include "Enjin/ECS/Systems/HoverHighlightSystem.h"
 #include "Enjin/Gameplay/SurfaceResponseSystem.h"
 #include "Enjin/Gameplay/ClothSystem.h"
 #include "Enjin/ECS/Systems/FlowerSystem.h"
@@ -71,6 +72,9 @@ enum class PlayState {
 // Manages transitioning between editor and play mode
 class ENJIN_API PlayMode {
 public:
+    // Hover highlight. Ticked by whoever presents the game view, since only
+    // that caller knows the rect and camera being presented through.
+    ECS::HoverHighlightSystem& GetHoverHighlightSystem() { return m_HoverHighlightSystem; }
     PlayMode() = default;
     ~PlayMode() = default;
 
@@ -209,6 +213,7 @@ private:
 
     // Controller system for runtime
     ECS::ControllerSystem m_ControllerSystem;
+    ECS::HoverHighlightSystem m_HoverHighlightSystem;
 
     // Flower system for runtime
     ECS::FlowerSystem m_FlowerSystem;

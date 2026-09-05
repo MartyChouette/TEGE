@@ -1,4 +1,6 @@
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/Renderer/Camera.h"
+#include "Enjin/ECS/CameraMath.h"
 #include "Enjin/GUI/LocalizationBoot.h"
 #include "Enjin/GUI/Localization.h"
 #include "Enjin/Effects/WorldTimeApply.h"
@@ -2144,6 +2146,40 @@ void EditorLayer::Update(f32 deltaTime) {
         flowerSys->SetRenderSystem(m_RenderSystem);
         flowerSys->SetGameCameraEntity(m_SelectedGameCamera);
         flowerSys->SetWindSystem(&m_WindSystem);
+    }
+
+    // Hover highlight, picked against the GAME VIEW rect and the game camera.
+    // Not the editor viewport: they are different rectangles presenting
+    // different cameras, and picking against the wrong one puts the highlight
+    // somewhere the cursor is not.
+    {
+        auto& hover = m_PlayMode.GetHoverHighlightSystem();
+        const f32 gvW = m_GameViewImageMaxX - m_GameViewImageMinX;
+        const f32 gvH = m_GameViewImageMaxY - m_GameViewImageMinY;
+        const bool playing = !m_PlayMode.IsStopped() && !m_PlayMode.IsPaused();
+
+        Math::Matrix4 vp;
+        const bool haveCamera =
+            playing && m_World && m_SelectedGameCamera != ECS::INVALID_ENTITY && gvW > 0.0f && gvH > 0.0f &&
+            [&]() {
+                Renderer::Camera cam;
+                if (!ECS::BuildCameraFromEntity(m_World, m_SelectedGameCamera, gvW / gvH, cam)) return false;
+                vp = cam.GetProjectionMatrix() * cam.GetViewMatrix();
+                return true;
+            }();
+
+        if (haveCamera) {
+            const ImVec2 mouse = ImGui::GetMousePos();
+            const Math::Vector2 local(mouse.x - m_GameViewImageMinX, mouse.y - m_GameViewImageMinY);
+            const bool outsideView = local.x < 0.0f || local.y < 0.0f || local.x > gvW || local.y > gvH;
+            hover.Update(vp, local, gvW, gvH,
+                         outsideView || Input::IsUIConsumedPointer());
+        } else {
+            // Not playing, no camera, or a collapsed panel: nothing is being
+            // pointed at, and a stale highlight would sit lit with no cursor
+            // on it.
+            hover.Clear();
+        }
     }
 
     // Update play mode
