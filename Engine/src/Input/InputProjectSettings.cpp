@@ -1,4 +1,5 @@
 #include "Enjin/Input/InputProjectSettings.h"
+#include "Enjin/Input/TouchActionBridge.h"
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/Logging/Log.h"
 #include <nlohmann/json.hpp>
@@ -9,6 +10,11 @@ namespace Enjin {
 namespace InputSystem {
 
 void InputProjectSettings::ApplyTo(InputActionMap& map) const {
+    // Every runtime calls ApplyTo with the project block, so pushing the
+    // hint switch here is what makes the editor, the desktop player and the
+    // web player agree without three separate wirings.
+    SetControlsHintEnabled(showControlsHint);
+
     for (const auto& def : customActions) {
         if (def.slot < 0 || def.slot >= static_cast<i32>(kCustomActionCount)) continue;
         GameAction action = static_cast<GameAction>(
@@ -60,6 +66,9 @@ std::string InputProjectSettings::ToJson() const {
     touch["look"] = static_cast<u32>(touchLook);
     touch["buttonScale"] = touchButtonScale;
     touch["leftHanded"] = touchLeftHanded;
+    // Written unconditionally beside the rest: a field written but never read
+    // back is erased by the next save with no warning anywhere.
+    j["showControlsHint"] = showControlsHint;
     json buttons = json::array();
     for (const auto& b : touchButtons) {
         json bj;
@@ -96,6 +105,10 @@ bool InputProjectSettings::FromJson(const std::string& jsonStr) {
                 customActions.push_back(def);
             }
         }
+
+        // Read back beside the write above. CLAUDE.md: a key written and
+        // not read is silently erased by the next save.
+        showControlsHint = j.value("showControlsHint", true);
 
         touchButtons.clear();
         if (j.contains("touch") && j["touch"].is_object()) {

@@ -90,5 +90,19 @@ ENJIN_API void DrawTouchOverlay();
 // action map is wired. The rect is the game surface in ImGui coordinates.
 ENJIN_API void DrawControlsHint(f32 x0, f32 y0, f32 w, f32 h);
 
+// Whether the engine draws its own controls hint at all.
+//
+// The hint is built from the active touch PRESET, so it describes the controls
+// a preset implies rather than the ones a particular game uses. A game that
+// draws its own hint line got both, stacked on top of each other -- and the
+// engine's line can be wrong for that game besides: a sailing game steering on
+// A/D rudder and W/S sheet was told "W/A/S/D move".
+//
+// On by default, so nothing changes for a project that never sets it. A game
+// with its own on-screen controls turns it off, from script or from the
+// project's input settings.
+ENJIN_API void SetControlsHintEnabled(bool enabled);
+ENJIN_API bool IsControlsHintEnabled();
+
 } // namespace InputSystem
 } // namespace Enjin

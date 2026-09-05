@@ -324,7 +324,16 @@ void DrawTouchOverlay() {
     }
 }
 
+namespace {
+// Default ON: a project that never touches this keeps the hint it has always had.
+bool s_ControlsHintEnabled = true;
+}
+
+void SetControlsHintEnabled(bool enabled) { s_ControlsHintEnabled = enabled; }
+bool IsControlsHintEnabled() { return s_ControlsHintEnabled; }
+
 void DrawControlsHint(f32 x0, f32 y0, f32 w, f32 h) {
+    if (!s_ControlsHintEnabled) return;   // the game draws its own
     if (!s_TouchMap) return;
     if (Input::GetTouchOverlay().active) return;   // touch buttons carry their own labels
     if (w <= 0.0f || h <= 0.0f) return;

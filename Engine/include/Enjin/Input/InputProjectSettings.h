@@ -56,10 +56,16 @@ struct InputProjectSettings {
     f32 touchButtonScale = 1.0f;   // 0.5 - 2.0
     bool touchLeftHanded = false;  // mirror: stick right, buttons bottom-left
 
+    // The engine's own controls hint, bottom-left. It is built from the touch
+    // preset, so it describes what a preset implies rather than what this game
+    // does -- a game that draws its own hint line ends up with both, and the
+    // engine's can be wrong for it besides. On unless a project says otherwise.
+    bool showControlsHint = true;
+
     bool IsEmpty() const {
         return customActions.empty() && !customTouchLayout && touchStick &&
                touchLook == TouchLookMode::Auto && touchButtonScale == 1.0f &&
-               !touchLeftHanded;
+               !touchLeftHanded && showControlsHint;
     }
 
     // Name and bind the custom actions on a map. Called at boot, before any

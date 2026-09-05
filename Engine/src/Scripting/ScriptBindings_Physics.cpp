@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Input/TouchActionBridge.h"
 #include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/ECS/CameraMath.h"
 #include "Enjin/Logging/Log.h"
@@ -136,6 +137,18 @@ static u64 Physics_RaycastScreen(f32 screenX, f32 screenY) {
 // because the camera/viewport/physics statics are file-local to this TU.
 u64 Enjin::Scripting::BindingsPickEntityAtScreen(f32 screenX, f32 screenY) {
     return Physics_RaycastScreen(screenX, screenY);
+}
+
+// The engine's bottom-left controls hint. It is built from the touch PRESET,
+// so it describes what a preset implies rather than what this game does: a
+// game that draws its own hint line ends up with both stacked, and the
+// engine's can be wrong for it besides.
+static void Controls_SetHintVisible(bool visible) {
+    InputSystem::SetControlsHintEnabled(visible);
+}
+
+static bool Controls_IsHintVisible() {
+    return InputSystem::IsControlsHintEnabled();
 }
 
 static Vector2 Input_GetScreenSize() {
@@ -518,6 +531,13 @@ void RegisterPhysicsBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction(
         "Vector2 Input_GetScreenSize()",
         ENJIN_AS_FN(Input_GetScreenSize), ENJIN_AS_CALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void Controls_SetHintVisible(bool)",
+        ENJIN_AS_FN(Controls_SetHintVisible), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "bool Controls_IsHintVisible()",
+        ENJIN_AS_FN(Controls_IsHintVisible), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "Vector3 Camera_ScreenToWorld(uint64 camera, const Vector2 &in screen)",
