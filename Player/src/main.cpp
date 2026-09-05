@@ -2131,11 +2131,15 @@ private:
             m_RenderSystem->SetSnowIntensity(snow);
         }
 
-        if (hasWeatherParticles) {
-            m_RenderSystem->SetMainPassWeather(&m_WeatherSystem, isRain);
-        } else {
-            m_RenderSystem->ClearMainPassWeather();
-        }
+        // Bind the weather system EVERY frame, not only while precipitation is
+        // falling. The render system reads the snow ACCUMULATION through this
+        // pointer, and accumulation matters most after the snow stops - clearing
+        // it the moment the last flake spawned made ground snow snap from full
+        // to bare in one frame, so the melt curve never ran. It also let flakes
+        // already in the air pop out of existence instead of landing.
+        // RenderWeatherParticles draws whatever is in the list, which is empty
+        // once the last flake finishes, so binding costs nothing when clear.
+        m_RenderSystem->SetMainPassWeather(&m_WeatherSystem, isRain);
 
         // Rain drives the water ripple shader (editor parity)
         m_RenderSystem->SetRainActive(hasWeatherParticles && isRain);

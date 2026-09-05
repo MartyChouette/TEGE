@@ -11,11 +11,11 @@ namespace Enjin {
 namespace Renderer {
 namespace ShaderData {
 
-// triangle.vert.spv (25580 bytes, 6395 words)
+// triangle.vert.spv (25668 bytes, 6417 words)
 extern const unsigned char TriangleVertexShaderData[];
 extern const size_t TriangleVertexShaderDataSize;
 
-// triangle.frag.spv (140812 bytes, 35203 words)
+// triangle.frag.spv (141528 bytes, 35382 words)
 extern const unsigned char TriangleFragmentShaderData[];
 extern const size_t TriangleFragmentShaderDataSize;
 

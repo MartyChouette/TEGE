@@ -57,28 +57,30 @@ ENJIN_TEST(WeatherInit, NoParticles) {
 // WeatherSystem Setters
 // ===========================================================================
 
+// The setters take a TARGET that Update ramps toward, so these assert the
+// clamp on what was asked for. RampReachesItsTarget below covers the ramp.
 ENJIN_TEST(WeatherSetter, RainIntensityClamped) {
     WeatherSystem ws;
     ws.SetRainIntensity(1.5f);
-    ENJIN_EXPECT_FLOAT_EQ(ws.GetRainIntensity(), 1.0f);
+    ENJIN_EXPECT_FLOAT_EQ(ws.GetTargetRainIntensity(), 1.0f);
     ws.SetRainIntensity(-0.5f);
-    ENJIN_EXPECT_FLOAT_EQ(ws.GetRainIntensity(), 0.0f);
+    ENJIN_EXPECT_FLOAT_EQ(ws.GetTargetRainIntensity(), 0.0f);
     ws.SetRainIntensity(0.7f);
-    ENJIN_EXPECT_FLOAT_EQ(ws.GetRainIntensity(), 0.7f);
+    ENJIN_EXPECT_FLOAT_EQ(ws.GetTargetRainIntensity(), 0.7f);
 }
 
 ENJIN_TEST(WeatherSetter, SnowIntensityClamped) {
     WeatherSystem ws;
     ws.SetSnowIntensity(2.0f);
-    ENJIN_EXPECT_FLOAT_EQ(ws.GetSnowIntensity(), 1.0f);
+    ENJIN_EXPECT_FLOAT_EQ(ws.GetTargetSnowIntensity(), 1.0f);
 }
 
 ENJIN_TEST(WeatherSetter, FogDensityClamped) {
     WeatherSystem ws;
     ws.SetFogDensity(0.5f);
-    ENJIN_EXPECT_FLOAT_EQ(ws.GetFogDensity(), 0.5f);
+    ENJIN_EXPECT_FLOAT_EQ(ws.GetTargetFogDensity(), 0.5f);
     ws.SetFogDensity(5.0f);
-    ENJIN_EXPECT_FLOAT_EQ(ws.GetFogDensity(), 1.0f);
+    ENJIN_EXPECT_FLOAT_EQ(ws.GetTargetFogDensity(), 1.0f);
 }
 
 ENJIN_TEST(WeatherSetter, FogColor) {
@@ -226,3 +228,43 @@ ENJIN_TEST(WeatherEnum, AllTypes) {
 }
 
 ENJIN_TEST_MAIN()
+
+// ===========================================================================
+// Intensity ramp
+// ===========================================================================
+
+// The engine has always had a transition time; until now nothing ramped toward
+// it, because the intensity setters wrote the live value and every per-frame
+// caller (SeasonalWeather, weather zones) overwrote the transition on the same
+// frame it was computed. Weather changed in one frame whatever was asked for.
+ENJIN_TEST(WeatherRamp, RampReachesItsTargetAndNotBefore) {
+    WeatherSystem ws;
+    ws.Initialize(64);
+    ws.SetIntensityBlendSeconds(1.0f);
+    ws.SetRainIntensity(1.0f);
+
+    // Not there yet: a single short frame must not arrive.
+    ws.Update(0.1f, Math::Vector3(0.0f, 0.0f, 0.0f));
+    const f32 afterOneFrame = ws.GetRainIntensity();
+    ENJIN_EXPECT_TRUE(afterOneFrame > 0.0f);
+    ENJIN_EXPECT_TRUE(afterOneFrame < 1.0f);
+
+    // And it does arrive, exactly, rather than approaching forever.
+    for (int i = 0; i < 200; ++i) ws.Update(0.05f, Math::Vector3(0.0f, 0.0f, 0.0f));
+    ENJIN_EXPECT_FLOAT_EQ(ws.GetRainIntensity(), 1.0f);
+}
+
+// Teardown has to be immediate: nothing updates the weather after a scene
+// stops, so a ramped zero would freeze part-way and strand snow on the ground.
+ENJIN_TEST(WeatherRamp, ResetPrecipitationIsImmediate) {
+    WeatherSystem ws;
+    ws.Initialize(64);
+    ws.SetSnowIntensity(1.0f);
+    for (int i = 0; i < 200; ++i) ws.Update(0.05f, Math::Vector3(0.0f, 0.0f, 0.0f));
+    ENJIN_EXPECT_TRUE(ws.GetSnowAccumulation() > 0.0f);
+
+    ws.ResetPrecipitation();
+    ENJIN_EXPECT_FLOAT_EQ(ws.GetSnowIntensity(), 0.0f);
+    ENJIN_EXPECT_FLOAT_EQ(ws.GetTargetSnowIntensity(), 0.0f);
+    ENJIN_EXPECT_FLOAT_EQ(ws.GetSnowAccumulation(), 0.0f);
+}

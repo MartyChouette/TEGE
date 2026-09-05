@@ -35,6 +35,26 @@ void WeatherSystem::SetWeather(WeatherType type, f32 transitionTime) {
     m_TransitionDuration = transitionTime;
     m_TransitionProgress = 0.0f;
 
+    // Seed this type's intensities as TARGETS, once, here - not every frame in
+    // Update. A caller that wants something other than the type's defaults
+    // (SeasonalWeather, a weather zone) sets its own intensity straight after
+    // this call and that value must survive; re-deriving the type's numbers on
+    // every later frame would overwrite it forever.
+    m_IntensityBlendSeconds = (transitionTime < 0.0f) ? 0.0f : transitionTime;
+    f32 typeRain = 0.0f, typeSnow = 0.0f, typeFog = 0.0f;
+    switch (type) {
+        case WeatherType::Clear:                                        break;
+        case WeatherType::Cloudy:    typeFog = 0.2f;                    break;
+        case WeatherType::Rain:      typeRain = 0.6f; typeFog = 0.3f;   break;
+        case WeatherType::HeavyRain: typeRain = 1.0f; typeFog = 0.6f;   break;
+        case WeatherType::Snow:      typeSnow = 1.0f; typeFog = 0.4f;   break;
+        case WeatherType::Fog:                        typeFog = 0.8f;   break;
+        case WeatherType::Storm:     typeRain = 1.0f; typeFog = 0.7f;   break;
+    }
+    m_TargetRainIntensity = typeRain;
+    m_TargetSnowIntensity = typeSnow;
+    m_TargetFogDensity    = typeFog;
+
     // Cap existing particle lifetimes so old weather fades out quickly
     // instead of lingering (e.g., snow particles living 10s during rain transition)
     constexpr f32 kFadeOutTime = 0.5f;
@@ -43,6 +63,14 @@ void WeatherSystem::SetWeather(WeatherType type, f32 transitionTime) {
             m_Particles[i].lifetime = kFadeOutTime;
         }
     }
+}
+
+void WeatherSystem::ResetPrecipitation() {
+    m_RainIntensity = m_TargetRainIntensity = 0.0f;
+    m_SnowIntensity = m_TargetSnowIntensity = 0.0f;
+    m_FogDensity = m_TargetFogDensity = 0.0f;
+    m_SnowAccumulation = 0.0f;
+    m_ActiveParticles = 0;
 }
 
 void WeatherSystem::Update(f32 deltaTime, const Math::Vector3& cameraPos) {
@@ -67,39 +95,31 @@ void WeatherSystem::Update(f32 deltaTime, const Math::Vector3& cameraPos) {
         // Smooth step for nicer transitions
         t = t * t * (3.0f - 2.0f * t);
 
-        // Update intensities based on target weather
-        f32 targetRain = 0.0f, targetSnow = 0.0f, targetFog = 0.0f;
+        // Intensity targets are seeded once by SetWeather and may have been
+        // overridden by the caller since; the single ramp below moves the live
+        // values toward whatever they currently are.
+        (void)t;
+    }
 
-        switch (m_TargetWeather) {
-            case WeatherType::Clear:
-                break;
-            case WeatherType::Cloudy:
-                targetFog = 0.2f;
-                break;
-            case WeatherType::Rain:
-                targetRain = 0.6f;
-                targetFog = 0.3f;
-                break;
-            case WeatherType::HeavyRain:
-                targetRain = 1.0f;
-                targetFog = 0.6f;
-                break;
-            case WeatherType::Snow:
-                targetSnow = 1.0f;
-                targetFog = 0.4f;
-                break;
-            case WeatherType::Fog:
-                targetFog = 0.8f;
-                break;
-            case WeatherType::Storm:
-                targetRain = 1.0f;
-                targetFog = 0.7f;
-                break;
-        }
-
-        m_RainIntensity = Math::Lerp(m_RainIntensity, targetRain, t);
-        m_SnowIntensity = Math::Lerp(m_SnowIntensity, targetSnow, t);
-        m_FogDensity = Math::Lerp(m_FogDensity, targetFog, t);
+    // ONE ramp toward the targets. Every intensity change in the engine goes
+    // through here, so a transition takes the time the caller asked for whether
+    // it came from a weather type, a zone, or a season change.
+    {
+        const f32 k = (m_IntensityBlendSeconds <= 0.0f)
+            ? 1.0f
+            : Math::Min(deltaTime / m_IntensityBlendSeconds, 1.0f);
+        m_RainIntensity += (m_TargetRainIntensity - m_RainIntensity) * k;
+        m_SnowIntensity += (m_TargetSnowIntensity - m_SnowIntensity) * k;
+        m_FogDensity    += (m_TargetFogDensity    - m_FogDensity)    * k;
+        // Land exactly on the target. An approach like this never quite arrives,
+        // and a snow intensity that sits at 0.004 forever keeps spawning flakes
+        // and keeps the ground white.
+        auto settle = [](f32& v, f32 target) {
+            if (std::fabs(target - v) < 0.002f) v = target;
+        };
+        settle(m_RainIntensity, m_TargetRainIntensity);
+        settle(m_SnowIntensity, m_TargetSnowIntensity);
+        settle(m_FogDensity, m_TargetFogDensity);
     }
 
     // Snow accumulation: settle snow onto the ground while it's snowing, melt it
@@ -109,8 +129,32 @@ void WeatherSystem::Update(f32 deltaTime, const Math::Vector3& cameraPos) {
     if (m_SnowIntensity > 0.05f) {
         m_SnowAccumulation += (1.0f - m_SnowAccumulation) * m_SnowIntensity
                               * Math::Min(deltaTime * 0.30f, 1.0f);  // ~4s to blanket (was 0.15: too slow to read)
-    } else {
-        m_SnowAccumulation -= deltaTime * 0.10f;  // ~10s to fully melt
+        // While it is snowing the ground is at least as covered as the falling
+        // rate implies. Without this the thaw could start BELOW the coverage
+        // that was on screen a frame earlier - the renderer whitens by the
+        // greater of rate and accumulation, so a short snowfall showed the rate,
+        // then dropped to a much smaller accumulation the instant it stopped.
+        // Absorbing the rate here means the melt always begins from exactly what
+        // the player was looking at.
+        if (m_SnowAccumulation < m_SnowIntensity) m_SnowAccumulation = m_SnowIntensity;
+    } else if (m_SnowAccumulation > 0.0f) {
+        // EASED melt, not a constant rate.
+        //
+        // A linear melt begins at full speed the instant the snow stops and
+        // then stops dead at zero, which reads as a switch rather than a
+        // thaw. Real snow is slow to start going (the surface has to warm),
+        // quickest through the middle, and lingers in the last patches.
+        //
+        // 4a(1-a) is that shape: zero at a full blanket and at bare ground,
+        // peaking halfway. The floor keeps it finishing in bounded time -
+        // without it the curve approaches zero at both ends and the last of
+        // the snow never actually clears.
+        const f32 a = m_SnowAccumulation;
+        const f32 shape = 4.0f * a * (1.0f - a);
+        const f32 eased = (shape < 0.22f) ? 0.22f : shape;
+        // Normalised so m_SnowMeltSeconds is the real wall-clock time for a
+        // full blanket to reach bare ground under this curve.
+        m_SnowAccumulation -= deltaTime * (1.0f / m_SnowMeltSeconds) * eased * 2.4f;
     }
     m_SnowAccumulation = Math::Clamp(m_SnowAccumulation, 0.0f, 1.0f);
 

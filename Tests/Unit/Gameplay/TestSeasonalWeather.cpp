@@ -54,7 +54,10 @@ ENJIN_TEST(SeasonalWeather, DisabledSeasonsNeverTouchTheWeather) {
     for (int i = 0; i < 600; ++i) seasonal.Update(0.1f, t, weather);
 
     // Assert
-    ENJIN_EXPECT_TRUE(weather.GetRainIntensity() > 0.8f);
+    // The target: nothing here calls weather.Update(), so the ramp toward it
+    // never runs. What matters is that the disabled seasonal system left the
+    // caller's value alone.
+    ENJIN_EXPECT_TRUE(weather.GetTargetRainIntensity() > 0.8f);
 }
 
 ENJIN_TEST(SeasonalWeather, EnabledSeasonsTakeOverImmediately) {

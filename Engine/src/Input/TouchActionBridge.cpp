@@ -35,8 +35,23 @@ namespace {
                                          GameAction::Attack, GameAction::Jump, GameAction::Sprint, GameAction::Interact };
     const GameAction kThirdPerson[]  = { GameAction::MoveForward, GameAction::MoveBack, GameAction::MoveLeft, GameAction::MoveRight,
                                          GameAction::Jump, GameAction::Interact, GameAction::Sprint };
-    const GameAction kGeneric[]      = { GameAction::MoveForward, GameAction::MoveBack, GameAction::MoveLeft, GameAction::MoveRight,
-                                         GameAction::Sprint };
+    // Generic is the NO-CONTROLLER case: the scene has no FirstPerson,
+    // ThirdPerson, TopDown or Platformer controller, so nothing in it consumes
+    // a movement action. It used to advertise all four move directions plus
+    // Sprint anyway, which meant a scene that is only a camera told the player
+    // to move and sprint - FoliageDemo does exactly that.
+    //
+    // Empty. Look stays enabled below because a camera the player can turn is
+    // real in these scenes; anything else the scene can do arrives from its own
+    // ActionTriggers or from script (Touch_AddActionButton), both of which are
+    // already in the scheme fingerprint and appear in the hint on their own.
+    //
+    // A game that drives movement from script with no controller component
+    // should set its touch layout in Project Settings > Input & Touch rather
+    // than relying on this guess.
+    // A zero-length array is not legal C++, so the COUNT in the table below is
+    // what makes this empty. The entry itself is never read.
+    const GameAction kGeneric[]      = { GameAction::MoveForward };
 
     struct PresetDef { const GameAction* actions; int count; bool look; };
     const PresetDef kPresets[static_cast<int>(TouchPreset::Count)] = {
@@ -45,7 +60,7 @@ namespace {
         { kTopDown3D,    7, true  },
         { kFirstPerson,  8, true  },
         { kThirdPerson,  7, true  },
-        { kGeneric,      5, true  },
+        { kGeneric,      0, true  },   // no movement; look only
     };
 
     const PresetDef& Preset(TouchPreset p) {

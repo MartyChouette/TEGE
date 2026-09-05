@@ -398,6 +398,20 @@ public:
     // Run the shadow pass for an offscreen camera (call BEFORE the render target's Begin()).
     // The shadow pass uses its own framebuffer, so it must not be inside another render pass.
     void RenderShadowPassForCamera(Renderer::Camera* camera);
+
+    // Shadows for the NEXT pass rendered, independent of whether the engine has
+    // shadows at all.
+    //
+    // The editor's viewport view modes (Lit, Lit+Shadows, Full) are a display
+    // choice for THAT panel, but they used to apply it with SetShadowsEnabled -
+    // a global that also feeds the game view's lighting UBO and gates
+    // RenderShadowPassForCamera. The default viewport mode is "Lit" (lighting,
+    // no shadows), so out of the box shadows were off EVERYWHERE: game view,
+    // play mode and golden captures, whatever the scene's shadowsEnabled said.
+    // Offscreen passes have per-viewport lighting buffers, so the viewport can
+    // drop shadows without the game view losing them.
+    void SetPassShadowsEnabled(bool enabled) { m_PassShadowsEnabled = enabled; }
+    bool GetPassShadowsEnabled() const { return m_PassShadowsEnabled; }
 #endif
 
     // Where a character of an entity's text sits, in the text block's own local
@@ -1698,6 +1712,7 @@ private:
     std::unique_ptr<Renderer::VulkanPipeline> m_ShadowMaskPipeline;  // alpha-cutout variant (same pass/config + frag)
     Math::Matrix4 m_CurrentCascadeVP;  // Set per-cascade in RenderShadowPass, read by RenderEntityShadow
     bool m_ShadowsEnabled = true;
+    bool m_PassShadowsEnabled = true;   // per-pass; see SetPassShadowsEnabled
     bool m_ShadowDescriptorsDirty = false;
     bool m_EditorWireframe = false;
     bool m_EditorUnlit = false;
@@ -2226,6 +2241,31 @@ private:
     // Total SSBO entries: one per mesh entity, plus one per material slot.
     // Capacity and the rebuild check both need it and must agree.
     u32 CountMaterialSSBOEntries() const;
+
+    // Load the textures every material SLOT references.
+    //
+    // This only ever happened inside RenderToTarget, the EDITOR's game-view
+    // path, so in an exported game no slot texture was ever loaded: every slot
+    // entry in the material SSBO carried a default handle and a multi-material
+    // model rendered untextured. Runs pre-recording from FlushPendingChanges,
+    // because GetOrLoadTexture registers into the bindless set and doing that
+    // mid-command-buffer invalidates the in-flight recording.
+    void EnsureMaterialSlotTextures();
+
+    // Derive a sub-mesh draw's push constants from its material SLOT.
+    //
+    // The material SSBO entry selected by firstInstance carries only the
+    // bindless texture indices and the extended fields; alphaMode, alphaCutoff,
+    // opacity and the retro/render flags all reach the shader through PUSH
+    // CONSTANTS. A sub-mesh loop that changes only the material index therefore
+    // samples the right texture and then shades it with the ENTITY's material -
+    // which is how a birch drew its cut-out leaf cards as solid rectangles.
+    //
+    // `base` supplies the flags that belong to the draw rather than the material
+    // (skinning, wind, water); everything else comes from the slot.
+    void BuildSlotPushConstants(const MaterialComponent& slotMat,
+                                const Renderer::PushConstants& base,
+                                Renderer::PushConstants& out) const;
 
     // Uniform buffers (one per frame in flight)
     std::vector<std::unique_ptr<Renderer::VulkanBuffer>> m_UniformBuffers;

@@ -2,6 +2,7 @@
 #include "Enjin/Scene/SceneAssetValidator.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Material.h"
+#include "Enjin/ECS/Components/Mesh.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/Platform/Paths.h"
 
@@ -126,3 +127,66 @@ ENJIN_TEST(AssetValidator, EmptyPathFields_Skipped) {
 }
 
 ENJIN_TEST_MAIN()
+
+
+// A mesh imported from outside the project keeps an absolute source path. It
+// resolves on the authoring machine and nowhere else, the packer never sees it
+// because the packer walks the project, and the build used to succeed and ship
+// a game with that geometry missing - which reads as a black screen, with
+// nothing anywhere saying why.
+ENJIN_TEST(AssetValidator, AbsoluteMeshSource_IsReported) {
+    // Arrange: a mesh imported from outside the project keeps an absolute path.
+    TempRoot root("enjin_test_av_meshabs");
+    ECS::World world;
+    ECS::Entity e = world.CreateEntity();
+    auto& mesh = world.AddComponent<ECS::MeshComponent>(e);
+#ifdef _WIN32
+    mesh.source.sourcePath = "C:/Users/someone/Downloads/city/model.obj";
+#else
+    mesh.source.sourcePath = "/home/someone/Downloads/city/model.obj";
+#endif
+    mesh.source.meshIndex = 0;
+
+    // Act
+    auto warnings = Scene::FindMissingAssetPaths(&world, { root.path.string() });
+
+    // Assert
+    ENJIN_ASSERT_TRUE(warnings.size() == 1);
+    ENJIN_EXPECT_TRUE(warnings[0].find("outside the project") != std::string::npos);
+}
+
+// The same mesh, once it lives in the project, is silent.
+ENJIN_TEST(AssetValidator, RelativeMeshSourceInProject_NoWarning) {
+    // Arrange
+    TempRoot root("enjin_test_av_meshrel");
+    root.CreateFile("assets/model.obj");
+    ECS::World world;
+    ECS::Entity e = world.CreateEntity();
+    auto& mesh = world.AddComponent<ECS::MeshComponent>(e);
+    mesh.source.sourcePath = "assets/model.obj";
+    mesh.source.meshIndex = 0;
+
+    // Act
+    auto warnings = Scene::FindMissingAssetPaths(&world, { root.path.string() });
+
+    // Assert
+    ENJIN_EXPECT_TRUE(warnings.empty());
+}
+
+// A project-relative path that does not exist is still a plain missing asset.
+ENJIN_TEST(AssetValidator, RelativeMeshSourceMissing_IsReported) {
+    // Arrange
+    TempRoot root("enjin_test_av_meshmiss");
+    ECS::World world;
+    ECS::Entity e = world.CreateEntity();
+    auto& mesh = world.AddComponent<ECS::MeshComponent>(e);
+    mesh.source.sourcePath = "assets/nope.obj";
+    mesh.source.meshIndex = 0;
+
+    // Act
+    auto warnings = Scene::FindMissingAssetPaths(&world, { root.path.string() });
+
+    // Assert
+    ENJIN_ASSERT_TRUE(warnings.size() == 1);
+    ENJIN_EXPECT_TRUE(warnings[0].find("mesh source") != std::string::npos);
+}

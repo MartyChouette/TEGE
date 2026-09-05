@@ -1256,16 +1256,23 @@ void main() {
         // Alpha handling
         float alpha = mat_opacity * fragVertColor.a * texAlpha;
         int alphaMode = (mat_flags >> 8) & 0x3;
-        if (alphaMode == 0) {
-            alpha = 1.0; // Opaque: ignore opacity so the now-blending pipeline can't make it see-through
-        } else if (alphaMode == 1) {
+        if (alphaMode == 1) {
             if (alpha < mat_alphaCutoff) discard;
-            alpha = 1.0;
         }
-        if ((mat_flags & FLAG_STIPPLE_TRANS) != 0 && alpha < 1.0) {
-            float threshold = bayerDither4x4(ivec2(gl_FragCoord.xy));
-            if (alpha < threshold) discard;
-            alpha = 1.0;
+        // Stipple transparency: a screen-door dither that fakes transparency WITHOUT
+        // blending, so it is authored on opaque materials. It reads the authored
+        // opacity directly - it used to test the post-alphaMode value, which Opaque
+        // and Mask both force to 1.0 two lines earlier, so the flag could never do
+        // anything on the very materials it exists for.
+        if ((mat_flags & FLAG_STIPPLE_TRANS) != 0) {
+            float stippleAlpha = mat_opacity * fragVertColor.a;
+            if (stippleAlpha < 1.0) {
+                float threshold = bayerDither4x4(ivec2(gl_FragCoord.xy));
+                if (stippleAlpha < threshold) discard;   // survivors stay fully opaque
+            }
+        }
+        if (alphaMode == 0 || alphaMode == 1) {
+            alpha = 1.0;   // neither blends; opacity must not make them see-through
         }
         if (lighting.accessibilityParams.w > 0.001) {
         result = applyAccessibilityColor(result);
@@ -1353,6 +1360,12 @@ void main() {
         }
     }
 
+    // The sun's shadow term, kept past the lighting loop. Snow accumulation is
+    // applied further down as a colour OVER the lit result, so without this it
+    // painted bright white straight over every shadow on the ground - a
+    // snowfall erased the scene's shadows as it settled.
+    float sunShadow = 1.0;
+
     // Process directional lights
     for (uint i = 0u; i < lighting.directionalLightCount && i < MAX_DIRECTIONAL_LIGHTS; ++i) {
         // Negate direction: stored as "where light points", we need "toward light source"
@@ -1391,6 +1404,8 @@ void main() {
                 shadow *= CloudShadowFactor(fragWorldPos.xz);
             }
         }
+
+        if (i == 0u) sunShadow = shadow;   // the sun; snow below is shaded by it
 
         bool useCel = (lighting.celDiffuseBands >= 2.0) && ((mat_flags & FLAG_EXCLUDE_CEL) == 0);
         result += shadow * (useCel
@@ -1833,7 +1848,12 @@ void main() {
     float snowIntensity = lighting.fogColorSnow.w;
     if (snowIntensity > 0.0) {
         float snowCoverage = snowIntensity * smoothstep(0.3, 0.8, normal.y);
-        result = mix(result, vec3(0.95, 0.97, 1.0), snowCoverage);
+        // Settled snow is a SURFACE and takes the sun's shadow like any other.
+        // Mixing flat white over the lit result made shadows vanish under the
+        // snow instead of falling across it. Shadowed snow goes bluish rather
+        // than grey, which is how snow in shade actually reads.
+        vec3 snowColor = mix(vec3(0.62, 0.68, 0.82), vec3(0.95, 0.97, 1.0), sunShadow);
+        result = mix(result, snowColor, snowCoverage);
     }
 
     // === PROCEDURAL SURFACE NOISE (Material-Expression art style) ===
@@ -1975,22 +1995,27 @@ void main() {
     // Alpha handling
     float alpha = mat_opacity * fragVertColor.a * texAlpha;
     int alphaMode = (mat_flags >> 8) & 0x3;
-    if (alphaMode == 0) {
-        alpha = 1.0; // Opaque: ignore opacity so the now-blending pipeline can't make it see-through
-    } else if (alphaMode == 1) { // Mask mode
+    if (alphaMode == 1) { // Mask mode
         if (alpha < mat_alphaCutoff) {
             discard;
         }
-        alpha = 1.0;
     }
 
-    // Stipple transparency: screen-door dither pattern for alpha
-    if ((mat_flags & FLAG_STIPPLE_TRANS) != 0 && alpha < 1.0) {
-        float threshold = bayerDither4x4(ivec2(gl_FragCoord.xy));
-        if (alpha < threshold) {
-            discard;
+    // Stipple transparency: a screen-door dither that fakes transparency WITHOUT
+    // blending, so it is authored on opaque materials. It reads the authored
+    // opacity directly - it used to test the post-alphaMode value, which Opaque
+    // and Mask both force to 1.0 two lines earlier, so the flag could never do
+    // anything on the very materials it exists for.
+    if ((mat_flags & FLAG_STIPPLE_TRANS) != 0) {
+        float stippleAlpha = mat_opacity * fragVertColor.a;
+        if (stippleAlpha < 1.0) {
+            float threshold = bayerDither4x4(ivec2(gl_FragCoord.xy));
+            if (stippleAlpha < threshold) discard;   // survivors stay fully opaque
         }
-        alpha = 1.0; // surviving fragments are fully opaque
+    }
+
+    if (alphaMode == 0 || alphaMode == 1) {
+        alpha = 1.0;   // neither blends; opacity must not make them see-through
     }
 
     outColor = vec4(result, alpha);

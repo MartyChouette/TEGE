@@ -52,9 +52,33 @@ public:
     WeatherType GetWeather() const { return m_CurrentWeather; }
 
     // Individual settings
-    void SetRainIntensity(f32 intensity) { m_RainIntensity = Math::Clamp(intensity, 0.0f, 1.0f); }
-    void SetSnowIntensity(f32 intensity) { m_SnowIntensity = Math::Clamp(intensity, 0.0f, 1.0f); }
-    void SetFogDensity(f32 density) { m_FogDensity = Math::Clamp(density, 0.0f, 1.0f); }
+    // These set a TARGET; Update ramps the live value toward it.
+    //
+    // They used to write the live value directly. SeasonalWeather and every
+    // weather zone call them EVERY frame, so the transition lerp in Update was
+    // computed and then overwritten on the same frame - the engine had a blend
+    // ramp that could never blend, and weather changed in one frame no matter
+    // what transition time the caller asked for.
+    void SetRainIntensity(f32 intensity) { m_TargetRainIntensity = Math::Clamp(intensity, 0.0f, 1.0f); }
+    void SetSnowIntensity(f32 intensity) { m_TargetSnowIntensity = Math::Clamp(intensity, 0.0f, 1.0f); }
+    void SetFogDensity(f32 density) { m_TargetFogDensity = Math::Clamp(density, 0.0f, 1.0f); }
+
+    // How long a change of intensity takes. SetWeather sets this from its own
+    // transitionTime; this is the value used when nothing asked for one.
+    // What the intensity is heading FOR. The plain getters return what is on
+    // screen this frame, which is what the renderer wants; this is what the
+    // caller last asked for.
+    f32 GetTargetRainIntensity() const { return m_TargetRainIntensity; }
+    f32 GetTargetSnowIntensity() const { return m_TargetSnowIntensity; }
+    f32 GetTargetFogDensity() const { return m_TargetFogDensity; }
+
+    void SetIntensityBlendSeconds(f32 seconds) { m_IntensityBlendSeconds = (seconds < 0.0f) ? 0.0f : seconds; }
+    f32 GetIntensityBlendSeconds() const { return m_IntensityBlendSeconds; }
+
+    // Teardown only: stop the weather NOW, with no ramp and no leftover snow on
+    // the ground. Update is not running after a scene stop, so a ramped zero
+    // would freeze part-way and leave the scene permanently snowed in.
+    void ResetPrecipitation();
     void SetFogColor(const Math::Vector3& color) { m_FogColor = color; }
     void SetFogStart(f32 start) { m_FogStart = start; }
     void SetFogEnd(f32 end) { m_FogEnd = end; }
@@ -65,6 +89,12 @@ public:
     // Drives shader surface-whitening so snow builds up then returns to clear/spring,
     // instead of popping on/off with the precipitation intensity.
     f32 GetSnowAccumulation() const { return m_SnowAccumulation; }
+
+    // How long a full blanket takes to melt away, in seconds. The melt is
+    // EASED rather than linear (see Weather.cpp), so this is the total time,
+    // not a constant rate.
+    void SetSnowMeltSeconds(f32 seconds) { m_SnowMeltSeconds = (seconds < 0.5f) ? 0.5f : seconds; }
+    f32 GetSnowMeltSeconds() const { return m_SnowMeltSeconds; }
     f32 GetFogDensity() const { return m_FogDensity; }
     Math::Vector3 GetFogColor() const { return m_FogColor; }
     f32 GetFogStart() const { return m_FogStart; }
@@ -131,7 +161,12 @@ private:
     // Weather intensities
     f32 m_RainIntensity = 0.0f;
     f32 m_SnowIntensity = 0.0f;
+    f32 m_TargetRainIntensity = 0.0f;
+    f32 m_TargetSnowIntensity = 0.0f;
+    f32 m_TargetFogDensity = 0.0f;
+    f32 m_IntensityBlendSeconds = 2.0f;
     f32 m_SnowAccumulation = 0.0f;  // settled ground snow (0..1), integrated from snow intensity
+    f32 m_SnowMeltSeconds = 14.0f;  // total time for a full blanket to clear
 
     // Fog settings (linear fog, very PS1/N64)
     f32 m_FogDensity = 0.0f;

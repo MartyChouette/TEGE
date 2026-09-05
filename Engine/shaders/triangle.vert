@@ -228,7 +228,19 @@ void main() {
     if ((objFlags & FLAG_WIND_SWAY) != 0) {
         vec3 windDir = lighting.windData.xyz;
         float windTime = lighting.windData.w;
-        float swayWeight = inColor.r;  // red = sway amplitude
+        // Red = sway amplitude, 0 at the trunk and 1 at the leaves.
+        //
+        // An IMPORTED mesh usually has no vertex colours, and absent colours
+        // read as white - so red is 1 everywhere and the whole tree sways at
+        // full amplitude, base included. A tree whose roots move is the most
+        // obvious tell there is.
+        //
+        // Gate it on height above the object origin, which for a tree is the
+        // ground it stands on. The base is planted whether or not anyone
+        // authored weights, and a mesh that DOES carry them still gets them.
+        // The 2-unit ramp is an approximation: MeshComponent does not carry
+        // its own height yet, so there is nothing to normalise against.
+        float swayWeight = inColor.r * smoothstep(0.0, 2.0, inPosition.y);
 
         // Primary sway (slow, large movement)
         float phase = dot(worldPos.xz, vec2(0.1)) + windTime * 1.5;

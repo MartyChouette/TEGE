@@ -745,10 +745,6 @@ private:
     bool m_MSAAImGuiUpdatePending = false;  // Deferred ImGui pipeline update after MSAA change
     bool m_HDRImGuiUpdatePending = false;   // Deferred ImGui pipeline + PP hdrOutputMode update after HDR change
     bool m_PendingWireframe = false;       // Deferred wireframe toggle (pipeline recreation unsafe mid-render)
-    bool m_EditorShadowsApplied = false;   // Last shadow state the editor view-mode toggle applied (avoids per-frame descriptor pool churn)
-    bool m_EditorShadowsTracked = false;   // Whether m_EditorShadowsApplied has been initialized
-    bool m_PendingShadowRefresh = false;   // Deferred shadow-state descriptor refresh (pool recreation unsafe mid-render)
-    bool m_PendingShadowState = false;     // The shadow state to apply on the deferred refresh
     bool m_PendingQuit = false;            // Deferred quit (Close() unsafe mid-ImGui-render)
     bool m_PrePlayFullscreen = false;      // Window fullscreen state before play mode changed it
     bool m_PrePlayFullscreenSaved = false;  // Whether we captured pre-play fullscreen state

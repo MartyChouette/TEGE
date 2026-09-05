@@ -2,6 +2,7 @@
 
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Material.h"
+#include "Enjin/ECS/Components/Mesh.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Script.h"
 #include "Enjin/ECS/Components/TreeVolume.h"
@@ -51,6 +52,25 @@ std::vector<std::string> FindMissingAssetPaths(
                 " (entity " + std::to_string(entity) + ", " + componentName + ")");
         }
     };
+
+    // Imported mesh sources. An absolute path here resolves on the authoring
+    // machine and nowhere else: it fails containment against every search root,
+    // the packer never sees it because the packer walks the project, and the
+    // build ships a game with that geometry missing. Nothing reported it at save
+    // time or at build time, so it surfaced as a black screen in a browser.
+    for (ECS::Entity entity : world->GetEntitiesWithComponent<ECS::MeshComponent>()) {
+        const auto* mesh = world->GetComponent<ECS::MeshComponent>(entity);
+        if (!mesh || !mesh->source.Valid()) continue;
+        const std::string& src = mesh->source.sourcePath;
+        if (src.empty()) continue;
+        if (std::filesystem::path(src).is_absolute()) {
+            warnings.push_back("Mesh source is outside the project and will not ship: " + src +
+                " (entity " + std::to_string(entity) + ", Mesh). Copy it into the project's "
+                "assets folder and re-import.");
+        } else {
+            check(src, entity, "mesh source", "Mesh");
+        }
+    }
 
     for (ECS::Entity entity : world->GetEntitiesWithComponent<ECS::MaterialComponent>()) {
         const auto* mat = world->GetComponent<ECS::MaterialComponent>(entity);

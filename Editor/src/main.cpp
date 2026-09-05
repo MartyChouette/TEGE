@@ -390,8 +390,19 @@ int main(int argc, char* argv[]) {
                       << outDir << "/game.enjpak\n";
             Enjin::Build::BuildResult r = pipeline.Execute(cfg);
             if (!r.success) {
-                std::cout << "[build-web] FAILED to pack the project (see messages above)\n";
+                // Print WHY. This said "see messages above" while printing only
+                // progress percentages, so a failed pack gave the user nothing to
+                // act on - the actual reason sat unread in the result.
+                for (const auto& m : r.messages) {
+                    if (m.severity != Enjin::Build::MessageSeverity::Error) continue;
+                    std::cout << "[build-web] error: " << m.text << "\n";
+                }
+                std::cout << "[build-web] FAILED to pack the project\n";
                 return 1;
+            }
+            for (const auto& m : r.messages) {
+                if (m.severity == Enjin::Build::MessageSeverity::Warning)
+                    std::cout << "[build-web] warning: " << m.text << "\n";
             }
             std::cout << "[build-web] packed " << r.filesPacked << " files -> "
                       << outDir << "/game.enjpak\n";

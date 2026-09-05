@@ -344,11 +344,17 @@ bool BuildPipeline::ValidateAssets() {
 
                 // Path traversal guard — validates and resolves an asset path
                 fs::path projectNorm = fs::path(m_ProjectDir).lexically_normal();
+                // One report per unique bad path. A single shared model is
+                // referenced by every entity that uses it (645 of them in the
+                // scene that exposed this), and repeating the same line 645
+                // times buries every other message in the build log.
+                std::set<std::string> reportedBadPaths;
                 auto validateAssetPath = [&](const std::string& relPath,
                                              std::set<std::string>& destSet,
                                              const char* assetType,
                                              bool required = false) {
                     if (relPath.empty()) return;
+                    const bool alreadyReported = !reportedBadPaths.insert(relPath).second;
                     std::string absPath = (fs::path(m_ProjectDir) / relPath).string();
                     if (!fs::exists(absPath)) {
                         // Try relative to scene file
@@ -358,15 +364,31 @@ bool BuildPipeline::ValidateAssets() {
                     fs::path normalized = fs::path(absPath).lexically_normal();
                     auto rel = normalized.lexically_relative(projectNorm);
                     if (rel.string().find("..") == 0) {
-                        AddMessage(MessageSeverity::Error,
-                                   "Path traversal blocked: " + relPath +
-                                   " resolves outside project directory (in " + scene.name + ")", relPath);
+                        // An ABSOLUTE reference is almost never an attack - it is an
+                        // asset the author picked from somewhere else on their disk.
+                        // It resolves on that machine and nowhere else, and the packer
+                        // only walks the project, so the build would otherwise succeed
+                        // and ship a game missing that asset entirely. Say what is
+                        // actually wrong and how to fix it.
+                        if (alreadyReported) { allValid = false; return; }
+                        if (fs::path(relPath).is_absolute()) {
+                            AddMessage(MessageSeverity::Error,
+                                       std::string(assetType) + " lives outside the project and cannot be "
+                                       "packed: " + relPath + " (in " + scene.name + "). Copy it into the "
+                                       "project's assets folder and re-import, so the reference is "
+                                       "project-relative and ships with the game.", relPath);
+                        } else {
+                            AddMessage(MessageSeverity::Error,
+                                       "Path traversal blocked: " + relPath +
+                                       " resolves outside project directory (in " + scene.name + ")", relPath);
+                        }
                         allValid = false;
                         return;
                     }
                     if (fs::exists(absPath)) {
                         destSet.insert(absPath);
                     } else if (required) {
+                        if (alreadyReported) { allValid = false; return; }
                         AddMessage(MessageSeverity::Error,
                                    std::string("Missing ") + assetType + ": " + relPath +
                                    " (referenced in " + scene.name + ")", relPath);
@@ -374,7 +396,25 @@ bool BuildPipeline::ValidateAssets() {
                     }
                 };
 
+                // Imported mesh sources. This was the one asset reference nothing
+                // checked, at save time or at build time, which is how a scene
+                // pointing 645 meshes at a model in the author's Downloads folder
+                // built clean and produced a pak with no geometry in it: correct on
+                // the authoring machine, a black screen everywhere else. Validated
+                // only - the file itself is picked up by the normal project walk
+                // once it lives inside the project.
+                std::set<std::string> meshSourcePaths;
+
                 for (const auto& entity : entities) {
+                    if (entity.contains("mesh") && entity["mesh"].is_object()) {
+                        const auto& meshJson = entity["mesh"];
+                        if (meshJson.contains("source") && meshJson["source"].is_object()
+                            && meshJson["source"].contains("path")) {
+                            validateAssetPath(meshJson["source"]["path"].get<std::string>(),
+                                              meshSourcePaths, "mesh source", true);
+                        }
+                    }
+
                     // Material texture paths
                     if (entity.contains("material")) {
                         const auto& mat = entity["material"];

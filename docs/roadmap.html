@@ -63,8 +63,8 @@ on desktop.</p>
     <div><div class="k">Ship</div><div class="v">October 2026</div></div>
     <div><div class="k">Price</div><div class="v">$30</div></div>
     <div><div class="k">Source</div><div class="v">BSL 1.1</div></div>
-    <div><div class="k">Items</div><div class="v">81</div></div>
-    <div><div class="k">Done</div><div class="v">4</div></div>
+    <div><div class="k">Items</div><div class="v">87</div></div>
+    <div><div class="k">Done</div><div class="v">7</div></div>
     <div><div class="k">Suite</div><div class="v">149/149</div></div>
   </div>
 <p class="note">Everything before 1.0, everything known broken, everything after. One place.</p>
@@ -118,6 +118,39 @@ on desktop.</p>
 <li class=""><span class="n">31</span><span class="t">Rewind, MIDI, Accessibility, AudioReactive</span></li>
 <li class=""><span class="n">32</span><span class="t">Graph readability at scale — functions, subgraphs, groups</span></li>
 </ul>
+<h2>Single-instance vegetation</h2>
+<p class="note">A volume scatters plants procedurally. Placing ONE tree means importing a mesh</p>
+<p class="note">and adding a VegetationComponent, which is a different code path with different</p>
+<p class="note">art, so a lone tree does not match the grove behind it.</p>
+<ul class="items">
+<li class="done"><span class="n">82</span><span class="t">Single tree placement that matches the tree volume - same template</span></li>
+</ul>
+<p class="note">mesh, same wind, same seasonal response, one instance</p>
+<ul class="items">
+<li class="done"><span class="n">83</span><span class="t">Single shrub placement, same rule</span></li>
+</ul>
+<h2>Model and texture authoring</h2>
+<ul class="items">
+<li class=""><span class="n">84</span><span class="t">Direct UV texture painting - paint onto a model&#x27;s texture in the</span></li>
+</ul>
+<p class="note">viewport, through the existing PixelEditor canvas</p>
+<ul class="items">
+<li class=""><span class="n">85</span><span class="t">In-editor vertex weight painting. This is not only a rigging tool:</span></li>
+</ul>
+<p class="note">wind sway reads its amplitude from vertex colour red (trunk 0, leaves 1),</p>
+<p class="note">and an imported mesh carries no vertex colours, so there is currently no</p>
+<p class="note">way to author that weight without going back to Blender</p>
+<ul class="items">
+<li class=""><span class="n">86</span><span class="t">MeshComponent should carry its own height, so sway can normalise</span></li>
+</ul>
+<p class="note">against the mesh instead of the fixed 2-unit ramp it uses now</p>
+<h2>Controls hint</h2>
+<ul class="items">
+<li class="done"><span class="n">87</span><span class="t">The on-screen controls hint should list only what the scene can</span></li>
+</ul>
+<p class="note">actually do. FoliageDemo has no character controller and still advertises</p>
+<p class="note">sprint and move; the touch preset drives the hint and defaults to a</p>
+<p class="note">character set regardless of what the scene contains</p>
 <h2>Editor authoring tools</h2>
 <ul class="items">
 <li class=""><span class="n">33</span><span class="t">Terrain sculpting</span></li>

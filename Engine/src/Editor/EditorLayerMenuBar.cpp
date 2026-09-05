@@ -1003,12 +1003,50 @@ void EditorLayer::DrawMenuBar() {
                         SelectEntity(entity); RecordLayerCreate(entity);
                     }
                 }
+                // Same rule as Single Tree: one instance of the volume's own
+                // shrub. Zero height variance so the shrub is the authored
+                // height rather than a hashed offset from it.
+                if (ImGui::MenuItem("Single Shrub")) {
+                    if (m_World) {
+                        ECS::Entity entity = m_World->CreateEntity();
+                        m_World->AddComponent<ECS::TransformComponent>(entity);
+                        auto& shrub = m_World->AddComponent<ECS::ShrubVolumeComponent>(entity);
+                        shrub.density = 1;
+                        shrub.halfExtents = Math::Vector3(0.0f, 0.0f, 0.0f);
+                        shrub.heightVariance = 0.0f;
+                        m_World->AddComponent<ECS::NameComponent>(entity, "Shrub");
+                        SelectEntity(entity); RecordLayerCreate(entity);
+                    }
+                }
                 if (ImGui::MenuItem("Tree Volume")) {
                     if (m_World) {
                         ECS::Entity entity = m_World->CreateEntity();
                         m_World->AddComponent<ECS::TransformComponent>(entity);
                         m_World->AddComponent<ECS::TreeVolumeComponent>(entity);
                         m_World->AddComponent<ECS::NameComponent>(entity, "Tree Volume");
+                        SelectEntity(entity); RecordLayerCreate(entity);
+                    }
+                }
+                // A single tree is the SAME component and the same renderer as the
+                // volume, constrained to one instance - same template mesh, same
+                // wind, same seasonal response. Placing a lone tree by hand from a
+                // mesh would not match the grove behind it, which is the whole
+                // reason this exists.
+                //
+                // Zero extents put instance 0 exactly on the entity (tree.vert
+                // offsets by hash * halfExtents), and an equal min/max height scale
+                // makes its size the authored one instead of a hashed pick out of
+                // the variance range. Widen either field and it becomes a grove.
+                if (ImGui::MenuItem("Single Tree")) {
+                    if (m_World) {
+                        ECS::Entity entity = m_World->CreateEntity();
+                        m_World->AddComponent<ECS::TransformComponent>(entity);
+                        auto& tree = m_World->AddComponent<ECS::TreeVolumeComponent>(entity);
+                        tree.density = 1;
+                        tree.halfExtents = Math::Vector3(0.0f, 0.0f, 0.0f);
+                        tree.minHeightScale = 1.0f;
+                        tree.maxHeightScale = 1.0f;
+                        m_World->AddComponent<ECS::NameComponent>(entity, "Tree");
                         SelectEntity(entity); RecordLayerCreate(entity);
                     }
                 }

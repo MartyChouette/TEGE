@@ -1366,15 +1366,6 @@ void EditorLayer::Update(f32 deltaTime) {
     // After scene view renders (in RenderOffscreen), wireframe is turned off
     // so the game view always renders in fill mode. See restore block at line ~1540.
 
-    // Apply deferred shadow-state descriptor refresh here, before any frame command
-    // buffer begins recording. Doing it mid-render recreates the descriptor pool and
-    // invalidates bound sets (validation: "commandBuffer not in recording state").
-    if (m_PendingShadowRefresh && m_RenderSystem) {
-        m_RenderSystem->SetShadowsEnabled(m_PendingShadowState);
-        m_RenderSystem->RefreshDescriptorsIfDirty();
-        m_PendingShadowRefresh = false;
-    }
-
     // In pure edit mode the World tick never runs, so deferred entity destructions
     // (m_World->DestroyEntity) are never flushed. OnEntityRemoved -- which rebuilds
     // the shadow caster cache, material SSBO, scene composition, etc. -- would not
@@ -2930,23 +2921,14 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             m_PendingWireframe = (m_SceneViewMode == SceneViewMode::Wireframe);
             m_RenderSystem->SetEditorUnlit(m_SceneViewMode == SceneViewMode::Solid);
 
-            // Only flip the renderer's shadow state when the editor view mode actually
-            // changes — the previous code restored prevShadows at the end of every
-            // frame, which marked the descriptor pool dirty every frame, which
-            // recreated the entire VkDescriptorPool every frame and orphaned the
-            // offscreen render-target descriptor sets (use-after-free crash).
-            if (!m_EditorShadowsTracked || m_EditorShadowsApplied != wantShadows) {
-                // Defer the actual SetShadowsEnabled + descriptor refresh to Update().
-                // RefreshDescriptorsIfDirty recreates the whole VkDescriptorPool, which
-                // invalidates any descriptor set bound to a command buffer already
-                // recording this frame (the cascade of "commandBuffer not in recording
-                // state" validation errors). Update() runs before any command buffer
-                // records, same as the wireframe toggle above.
-                m_PendingShadowState = wantShadows;
-                m_PendingShadowRefresh = true;
-                m_EditorShadowsApplied = wantShadows;
-                m_EditorShadowsTracked = true;
-            }
+            // The view mode is applied PER PASS at the viewport's RenderToTarget
+            // below, not by flipping the renderer's global shadow state. That
+            // global also feeds the game view and gates the shadow pass, so the
+            // default "Lit" mode used to switch shadows off everywhere - game
+            // view, play mode and captures - whatever the scene asked for.
+            // Per-pass also costs no descriptor pool churn, which is what the
+            // deferred toggle here existed to avoid.
+            (void)wantShadows;
         }
 
         // Shadow pass for editor camera (only in shadow modes)
@@ -2970,7 +2952,13 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         // Render scene to editor viewport RT
         m_EditorViewportRT->Begin(commandBuffer);
         if (m_RenderSystem && m_Camera) {
+            // Viewport-only: "Lit" draws without shadows here while the game
+            // view (viewport index 1, its own lighting buffer) keeps them.
+            const bool viewportShadows = (m_SceneViewMode == SceneViewMode::LitShadows
+                                          || m_SceneViewMode == SceneViewMode::Full);
+            m_RenderSystem->SetPassShadowsEnabled(viewportShadows);
             m_RenderSystem->RenderToTarget(m_EditorViewportRT.get(), m_Camera, 0);
+            m_RenderSystem->SetPassShadowsEnabled(true);
 
             // Render grid lines into the RT (uses offscreen descriptors written by RenderToTarget)
             if (m_ShowGrid && m_GridVertexBuffer && m_GridVertexCount > 0) {
@@ -3604,12 +3592,11 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         }
     }
 
-    // Set weather for main pass (editor viewport) so it renders weather particles too
-    if (m_GameViewWeatherParticles) {
-        m_RenderSystem->SetMainPassWeather(&m_WeatherSystem, m_GameViewIsRain);
-    } else {
-        m_RenderSystem->ClearMainPassWeather();
-    }
+    // Bind the weather system every frame, not only while precipitation falls.
+    // The render system reads snow ACCUMULATION through this pointer and that
+    // value is what drives the thaw, so unbinding when the snow stops froze the
+    // melt out of the picture and the ground went bare in a single frame.
+    m_RenderSystem->SetMainPassWeather(&m_WeatherSystem, m_GameViewIsRain);
 
     // Render profiling: log average CPU-side render time during play mode
     if (!m_PlayMode.IsStopped()) {

@@ -702,8 +702,9 @@ void PlayMode::Stop() {
     // outlive the session - stop returns to the editor's clear baseline;
     // weather zones re-establish themselves next frame if authored.
     if (m_WeatherSystem) {
-        m_WeatherSystem->SetRainIntensity(0.0f);
-        m_WeatherSystem->SetSnowIntensity(0.0f);
+        // Immediate, not a ramp: nothing updates the weather after stop, so a
+        // ramped zero would freeze part-way and strand snow on the ground.
+        m_WeatherSystem->ResetPrecipitation();
     }
     const bool wasReplay = m_Replaying;
     if (m_Replaying) {

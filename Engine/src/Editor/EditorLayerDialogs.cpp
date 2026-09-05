@@ -7,6 +7,8 @@ extern char** environ;
 #endif
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Assets/AssetPipeline.h"
+#include <unordered_map>
+#include <vector>
 #include <thread>
 
 // Webhook URLs — compiled in, not user-configurable. File is .gitignored.
@@ -1075,27 +1077,42 @@ void EditorLayer::ExecuteImport(const std::string& path, const Assets::ImportOpt
     Assets::ImportResult result = Assets::SceneImporter::Import(path, m_World, options);
 
     if (result.success) {
-        // Make imported mesh source references portable: store the source path
-        // relative to the project root so the reference survives moving/shipping the
-        // project. Assets outside the project keep their absolute path (still works
-        // locally). The cache's search root (set each frame in Update) resolves the
-        // relative form back to a real file on load.
+        // Bring the model INTO the project and store a project-relative source
+        // path, the same way imported textures are already handled.
+        //
+        // This used to make the path relative only when the model already sat
+        // inside the project, and leave anything else absolute because it
+        // "still works locally". Locally is the trap: it resolves forever on
+        // the authoring machine, the packer only walks the project so the file
+        // never ships, and the game renders nothing with no error anywhere. One
+        // scene here pointed 645 meshes at a folder in Downloads and built
+        // clean. CopyModelToProjectAssets takes the sidecars too - an .obj
+        // without its .mtl would just be a quieter version of the same failure.
         {
             std::string projPath = m_SceneManager.GetProjectPath();
             if (!projPath.empty()) {
-                std::filesystem::path root = std::filesystem::path(projPath).parent_path();
-                std::error_code ec;
+                const std::string root =
+                    std::filesystem::path(projPath).parent_path().string();
+                // One copy per unique model, not one per entity: a single mesh
+                // is typically shared by every entity the import created.
+                std::unordered_map<std::string, std::string> remapped;
                 for (ECS::Entity e : result.entities) {
                     if (!m_World->IsValid(e)) continue;
                     auto* mc = m_World->GetComponent<ECS::MeshComponent>(e);
                     if (!mc || !mc->source.Valid()) continue;
-                    std::filesystem::path rel =
-                        std::filesystem::relative(mc->source.sourcePath, root, ec);
-                    bool escapes = ec || rel.empty();
-                    if (!escapes) {
-                        for (const auto& part : rel) { if (part == "..") { escapes = true; break; } }
+                    const std::string original = mc->source.sourcePath;
+                    auto it = remapped.find(original);
+                    if (it == remapped.end()) {
+                        std::vector<std::string> copied;
+                        std::string portable =
+                            Assets::CopyModelToProjectAssets(original, root, "assets/models", &copied);
+                        if (portable != original && !copied.empty()) {
+                            ENJIN_LOG_INFO(Assets, "Imported model copied into the project: %s (%zu file(s))",
+                                           portable.c_str(), copied.size());
+                        }
+                        it = remapped.emplace(original, portable).first;
                     }
-                    if (!escapes) mc->source.sourcePath = rel.generic_string();
+                    mc->source.sourcePath = it->second;
                 }
             }
         }

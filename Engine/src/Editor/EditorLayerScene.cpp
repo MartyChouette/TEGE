@@ -678,8 +678,9 @@ void EditorLayer::OpenSceneImmediate(const std::string& path) {
         // rain/snow flags are already reset per scene by ApplyToRuntime
         // above (unconditional), so only the particle system needs clearing.
         // Scene-authored weather (zones, scripts) re-establishes itself.
-        m_WeatherSystem.SetRainIntensity(0.0f);
-        m_WeatherSystem.SetSnowIntensity(0.0f);
+        // Immediate: a newly opened scene must not inherit the last one's
+        // precipitation, and a ramp would carry it across the load.
+        m_WeatherSystem.ResetPrecipitation();
 
         // Auto-detect or auto-create a project (project-first workflow)
         AutoDetectProjectForScene(path);

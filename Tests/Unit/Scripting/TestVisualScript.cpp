@@ -1239,9 +1239,16 @@ ENJIN_TEST(NetworkingNodes, RegisterAndSafeWithoutSession) {
 ENJIN_TEST(WeatherNodes, ReadsAndWindThroughRealSystem) {
     extern Effects::WeatherSystem* s_VisualScriptWeather;
 
-    Effects::WeatherSystem weather;   // default-constructible; no Initialize needed for state reads
+    // Intensity is a TARGET the system ramps toward, and these nodes read the
+    // LIVE value - what the weather looks like right now, which is what a graph
+    // asking "how hard is it raining" wants. So drive it the way a runtime does:
+    // a zero blend time makes the first update land straight on the target.
+    Effects::WeatherSystem weather;
+    weather.Initialize(16);
+    weather.SetIntensityBlendSeconds(0.0f);
     weather.SetRainIntensity(0.7f);
     weather.SetFogDensity(0.3f);
+    weather.Update(0.016f, Math::Vector3(0.0f, 0.0f, 0.0f));
     s_VisualScriptWeather = &weather;
 
     auto& reg = NodeRegistry::Instance();

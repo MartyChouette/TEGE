@@ -287,7 +287,9 @@ void RenderSystem::RecreateWebSizedTargets(u32 sceneW, u32 sceneH) {
         m_WebBloomScratchTex = {};
         m_WebBloomScratchView = nullptr;
 
-        // MSAA + depth are raw (never registered) — release directly.
+        // MSAA + depth textures are raw - release directly. The depth SAMPLING
+        // entry is registered, but it carries only its own view, so destroying
+        // it does not touch the texture these lines own.
         if (m_WebMSAAColorView) { wgpuTextureViewRelease(static_cast<WGPUTextureView>(m_WebMSAAColorView)); m_WebMSAAColorView = nullptr; }
         if (m_WebMSAAColorTex)  { wgpuTextureRelease(static_cast<WGPUTexture>(m_WebMSAAColorTex)); m_WebMSAAColorTex = nullptr; }
         if (m_WebSceneDepthSampleTex.IsValid()) { texMgr->DestroyTexture(m_WebSceneDepthSampleTex); m_WebSceneDepthSampleTex = {}; }
@@ -360,7 +362,18 @@ void RenderSystem::RecreateWebSizedTargets(u32 sceneW, u32 sceneH) {
         depthSampleDesc.arrayLayerCount = 1;
         depthSampleDesc.aspect = WGPUTextureAspect_DepthOnly;
         Renderer::WebGPUTextureHandle nativeDepth;
-        nativeDepth.texture = depthTex;
+        // View ONLY - the texture pointer deliberately stays null.
+        //
+        // m_WebSceneDepthTex already owns depthTex and releases it directly in
+        // the teardown above. Handing the same pointer to the manager as well
+        // made two owners of one texture: the manager queued it for destroy and
+        // the raw release freed its entry in Emscripten's shared object table,
+        // which is keyed by pointer for every WebGPU type. The next frame's
+        // drain then called destroy() on whatever object had since taken that
+        // slot - a view or a sampler - and "destroy is not a function" threw
+        // inside the main loop, so the frame died and the canvas went black.
+        // Only the view is needed here; nothing samples through the texture.
+        nativeDepth.texture = nullptr;
         nativeDepth.view = wgpuTextureCreateView(depthTex, &depthSampleDesc);
         nativeDepth.width = sceneW;
         nativeDepth.height = sceneH;
@@ -5575,7 +5588,43 @@ void RenderSystem::RetireEntityBuffers(EntityRenderData& rd) {
     rd.Invalidate();
 }
 
+void RenderSystem::EnsureMaterialSlotTextures() {
+#if !ENJIN_RENDERER_WEBGPU
+    if (!m_World) return;
+    for (Entity entity : m_World->GetEntitiesWithComponent<MaterialSlotsComponent>()) {
+        auto* slots = m_World->GetComponent<MaterialSlotsComponent>(entity);
+        if (!slots) continue;
+        for (auto& slotMat : slots->slots) {
+            if (!slotMat.textureCacheDirty) continue;
+            auto grab = [&](const std::string& path, Renderer::Texture*& cached, i32& flag) {
+                if (path.empty()) return;
+                auto tex = GetOrLoadTexture(path);
+                if (tex && tex->IsValid()) { cached = tex.get(); flag = 1; }
+            };
+            grab(slotMat.baseColorTexturePath, slotMat.cachedBaseColorTexture, slotMat.baseColorTexture);
+            grab(slotMat.heightTexturePath, slotMat.cachedHeightTexture, slotMat.heightTexture);
+            grab(slotMat.normalTexturePath, slotMat.cachedNormalTexture, slotMat.normalTexture);
+            grab(slotMat.metallicRoughnessTexturePath, slotMat.cachedMetallicRoughnessTexture,
+                 slotMat.metallicRoughnessTexture);
+            grab(slotMat.specularTexturePath, slotMat.cachedMetallicRoughnessTexture,
+                 slotMat.metallicRoughnessTexture);
+            grab(slotMat.emissiveTexturePath, slotMat.cachedEmissiveTexture, slotMat.emissiveTexture);
+            grab(slotMat.matcapTexturePath, slotMat.cachedMatcapTexture, slotMat.matcapTexture);
+            slotMat.textureCacheDirty = false;
+            slotMat.cachedTextureKey = { slotMat.cachedBaseColorTexture,
+                slotMat.cachedHeightTexture, slotMat.cachedNormalTexture,
+                slotMat.cachedMetallicRoughnessTexture, slotMat.cachedEmissiveTexture,
+                slotMat.cachedMatcapTexture };
+            // The slot's SSBO entry was written before these resolved.
+            m_MaterialSSBODirty = true;
+        }
+    }
+#endif
+}
+
+
 void RenderSystem::FlushPendingChanges() {
+    EnsureMaterialSlotTextures();   // pre-recording: safe place to register bindless textures
     if (!m_Renderer || !m_Initialized) return;
 
     // MID-FRAME GUARD: in the editor, Update()'s fallback call to this function
@@ -11575,7 +11624,9 @@ void RenderSystem::UpdateFrameUniforms() {
         lighting.directionalLightCount = 1;
     }
 
-    if (m_ShadowsEnabled && m_ShadowMap) {
+    // m_PassShadowsEnabled is the PER-PASS gate (the editor viewport turns
+    // shadows off for its own panel without taking them from the game view).
+    if (m_ShadowsEnabled && m_PassShadowsEnabled && m_ShadowMap) {
         for (u32 i = 0; i < Renderer::MAX_SHADOW_CASCADES; ++i) {
             lighting.cascadeViewProj[i] = m_ShadowMap->GetCascadeViewProj(i);
         }
@@ -12111,6 +12162,54 @@ void RenderSystem::BuildMaterialSSBO() {
 u32 RenderSystem::GetMaterialIndex(Entity entity) const {
     auto it = m_EntityMaterialIndex.find(static_cast<u64>(entity));
     return (it != m_EntityMaterialIndex.end()) ? it->second : 0;
+}
+
+void RenderSystem::BuildSlotPushConstants(const MaterialComponent& slotMat,
+                                          const Renderer::PushConstants& base,
+                                          Renderer::PushConstants& out) const {
+    out = base;
+    out.baseColor        = slotMat.baseColor;
+    out.metallic         = slotMat.metallic;
+    out.emissiveColor    = slotMat.emissiveColor;
+    out.roughness        = slotMat.roughness;
+    out.emissiveStrength = slotMat.emissiveStrength;
+    out.opacity          = slotMat.opacity;
+    out.alphaCutoff      = slotMat.alphaCutoff;
+    out.parallaxScale    = slotMat.parallaxScale;
+
+    // Keep only the flags that describe the DRAW (skinning, wind, water); every
+    // material-owned bit is rebuilt from the slot below.
+    out.flags = base.flags & ((1 << 3) | (1 << 4) | (1 << 5) | (1 << 6) | (1 << 7) | (1 << 11));
+
+    if (slotMat.doubleSided)    out.flags |= 1;
+    if (slotMat.castShadows)    out.flags |= 2;
+    if (slotMat.receiveShadows) out.flags |= 4;
+    out.flags |= (static_cast<i32>(slotMat.alphaMode) << 8);   // bits 8-9: the alpha test
+    if (slotMat.sdfText)              out.flags |= (1 << 3);
+    if (slotMat.flatShading)          out.flags |= (1 << 20);
+    if (slotMat.affineTexturing)      out.flags |= (1 << 21);
+    if (slotMat.vertexSnapping)       out.flags |= (1 << 22);
+    if (slotMat.stippleTransparency)  out.flags |= (1 << 23);
+    if (slotMat.uvQuantize)           out.flags |= (1 << 12);
+    if (slotMat.gouraudOnly)          out.flags |= (1 << 13);
+    out.flags |= (static_cast<i32>(slotMat.shadowDitherMode & 0x3) << 14);
+    out.flags |= (static_cast<i32>((slotMat.vertexSnapResolution / 8) & 0x1F) << 24);
+    out.flags |= (static_cast<i32>(slotMat.shadowDitherPattern & 0x7) << 29);
+
+    // Texture-presence bits. These gate the samples in the shader, so a slot
+    // whose texture has not resolved yet must NOT claim one.
+    if (slotMat.cachedBaseColorTexture)        out.flags |= (1 << 16);
+    if (slotMat.normalTexture >= 0)            out.flags |= (1 << 17);
+    if (slotMat.metallicRoughnessTexture >= 0) out.flags |= (1 << 18);
+    if (slotMat.emissiveTexture >= 0)          out.flags |= (1 << 19);
+    if (slotMat.heightTexture >= 0)            out.flags |= (1 << 10);
+
+    if (m_GlobalFlatShading)         out.flags |= (1 << 20);
+    if (m_GlobalAffineTexturing)     out.flags |= (1 << 21);
+    if (m_GlobalVertexSnapping)      out.flags |= (1 << 22);
+    if (m_GlobalStippleTransparency) out.flags |= (1 << 23);
+    if (m_GlobalUVQuantize)          out.flags |= (1 << 12);
+    if (m_GlobalGouraudOnly)         out.flags |= (1 << 13);
 }
 
 u32 RenderSystem::GetSlotMaterialIndex(Entity entity, i32 slot) const {
@@ -13161,12 +13260,45 @@ void RenderSystem::RenderEntity(Entity entity) {
     vkCmdPushConstants(commandBuffer, m_Pipeline->GetLayout(),
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Renderer::PushConstants), &pushConstants);
 
+    // A multi-material mesh is one draw PER SUB-MESH, each with its own slot's
+    // material entry, because that entry carries the bindless texture index.
+    //
+    // This pass had no sub-mesh handling at all: it drew the whole mesh with the
+    // entity's material, so an imported model wore its first material
+    // everywhere. RenderToTarget - the editor's game view - does handle slots,
+    // which is exactly why this only showed up in an exported game: a birch had
+    // textured leaves in the editor and bark-coloured leaves in the build.
+    const MeshComponent* subMeshMesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
+    const MaterialSlotsComponent* subMeshSlots =
+        m_CachedMaterialSlotsStorage ? m_CachedMaterialSlotsStorage->Get(entity) : nullptr;
+    const bool drawSubMeshes = subMeshMesh && subMeshMesh->HasSubMeshes()
+                               && subMeshSlots && !subMeshSlots->slots.empty();
+
     // Bind and draw — pool-allocated entities use merged buffer with offsets
     // (firstInstance = material index, adr-0003)
     if (renderData.poolAlloc.valid && m_GeometryPool) {
         if (!m_GeometryPoolBound) {
             m_GeometryPool->BindBuffers(commandBuffer);
             m_GeometryPoolBound = true;
+        }
+        if (drawSubMeshes) {
+            for (const auto& sm : subMeshMesh->subMeshes) {
+                if (sm.indexCount == 0) continue;
+                if (const MaterialComponent* slotMat = subMeshSlots->GetSlot(sm.materialSlot)) {
+                    Renderer::PushConstants slotPC;
+                    BuildSlotPushConstants(*slotMat, pushConstants, slotPC);
+                    vkCmdPushConstants(commandBuffer, m_Pipeline->GetLayout(),
+                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                        sizeof(Renderer::PushConstants), &slotPC);
+                }
+                vkCmdDrawIndexed(commandBuffer, sm.indexCount, 1,
+                                 renderData.poolAlloc.indexOffset + sm.indexOffset,
+                                 renderData.poolAlloc.vertexOffset,
+                                 GetSlotMaterialIndex(entity, sm.materialSlot));
+                m_DrawCallCount++;
+                m_TriangleCount += sm.indexCount / 3;
+            }
+            return;
         }
         vkCmdDrawIndexed(commandBuffer, renderData.poolAlloc.indexCount, 1,
                          renderData.poolAlloc.indexOffset, renderData.poolAlloc.vertexOffset, matIdx);
@@ -13175,6 +13307,25 @@ void RenderSystem::RenderEntity(Entity entity) {
         VkDeviceSize offsets[] = { 0 };
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
         vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
+        if (drawSubMeshes) {
+            m_GeometryPoolBound = false;
+            for (const auto& sm : subMeshMesh->subMeshes) {
+                if (sm.indexCount == 0) continue;
+                if (sm.indexOffset + sm.indexCount > renderData.indexCount) continue;
+                if (const MaterialComponent* slotMat = subMeshSlots->GetSlot(sm.materialSlot)) {
+                    Renderer::PushConstants slotPC;
+                    BuildSlotPushConstants(*slotMat, pushConstants, slotPC);
+                    vkCmdPushConstants(commandBuffer, m_Pipeline->GetLayout(),
+                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                        sizeof(Renderer::PushConstants), &slotPC);
+                }
+                vkCmdDrawIndexed(commandBuffer, sm.indexCount, 1, sm.indexOffset, 0,
+                                 GetSlotMaterialIndex(entity, sm.materialSlot));
+                m_DrawCallCount++;
+                m_TriangleCount += sm.indexCount / 3;
+            }
+            return;
+        }
         vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, matIdx);
         m_GeometryPoolBound = false;  // Non-pool entity invalidates pool binding
     }
@@ -13931,7 +14082,6 @@ void RenderSystem::RenderShadowPass() {
     // Render each cascade
     // Distance-cull skinned casters once for all cascades (skinned shadow LOD)
     BuildFrameShadowCasterList();
-
     for (u32 cascade = 0; cascade < m_ShadowMap->GetCascadeCount(); ++cascade) {
         // Progressive update: skip far cascades on non-update frames
         if (!forceFullUpdate && !ShouldUpdateCascade(cascade)) continue;

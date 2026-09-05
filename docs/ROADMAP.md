@@ -78,6 +78,34 @@ what the generator skips.
 - [ ] 31. Rewind, MIDI, Accessibility, AudioReactive
 - [ ] 32. Graph readability at scale — functions, subgraphs, groups
 
+### Single-instance vegetation
+
+A volume scatters plants procedurally. Placing ONE tree means importing a mesh
+and adding a VegetationComponent, which is a different code path with different
+art, so a lone tree does not match the grove behind it.
+
+- [x] 82. Single tree placement that matches the tree volume - same template
+      mesh, same wind, same seasonal response, one instance
+- [x] 83. Single shrub placement, same rule
+
+### Model and texture authoring
+
+- [ ] 84. Direct UV texture painting - paint onto a model's texture in the
+      viewport, through the existing PixelEditor canvas
+- [ ] 85. In-editor vertex weight painting. This is not only a rigging tool:
+      wind sway reads its amplitude from vertex colour red (trunk 0, leaves 1),
+      and an imported mesh carries no vertex colours, so there is currently no
+      way to author that weight without going back to Blender
+- [ ] 86. MeshComponent should carry its own height, so sway can normalise
+      against the mesh instead of the fixed 2-unit ramp it uses now
+
+### Controls hint
+
+- [x] 87. The on-screen controls hint should list only what the scene can
+      actually do. FoliageDemo has no character controller and still advertises
+      sprint and move; the touch preset drives the hint and defaults to a
+      character set regardless of what the scene contains
+
 ### Editor authoring tools
 
 - [ ] 33. Terrain sculpting
