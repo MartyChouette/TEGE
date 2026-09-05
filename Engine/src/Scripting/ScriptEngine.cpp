@@ -1244,6 +1244,15 @@ void ScriptEngine::ReadProperties(asIScriptObject* obj,
 // MessageCallback (static)
 // ---------------------------------------------------------------------------
 
+void ScriptEngine::BeginDiagnosticCapture() {
+    m_CapturingDiagnostics = true;
+    m_Diagnostics.clear();
+}
+
+void ScriptEngine::EndDiagnosticCapture() {
+    m_CapturingDiagnostics = false;
+}
+
 void ScriptEngine::MessageCallback(const asSMessageInfo* msg, void* param)
 {
     if (!msg) {
@@ -1251,6 +1260,20 @@ void ScriptEngine::MessageCallback(const asSMessageInfo* msg, void* param)
     }
 
     ScriptEngine* self = reinterpret_cast<ScriptEngine*>(param);
+
+    // Collect BEFORE the switch below, so warnings are captured too: a warning
+    // is often the actual explanation for a runtime surprise, and a checker
+    // that only reported errors would hide it.
+    if (self && self->m_CapturingDiagnostics &&
+        (msg->type == asMSGTYPE_ERROR || msg->type == asMSGTYPE_WARNING)) {
+        Diagnostic d;
+        d.file = (msg->section && msg->section[0]) ? msg->section : "<unknown>";
+        d.row = msg->row;
+        d.col = msg->col;
+        d.message = msg->message ? msg->message : "<no message>";
+        d.isError = (msg->type == asMSGTYPE_ERROR);
+        self->m_Diagnostics.push_back(std::move(d));
+    }
 
     // Build a formatted message: "file (line, col): message"
     std::ostringstream oss;

@@ -81,6 +81,31 @@ public:
     // Get last compilation error
     const std::string& GetLastError() const { return m_LastError; }
 
+    // ---- diagnostic capture ----
+    //
+    // Compile errors reach the console and nowhere else, so a broken script
+    // surfaces at PLAY time as "class not found" in whatever scene referenced
+    // it -- often a different file from the one with the error. There was no
+    // way to ask "do these scripts compile" without launching the editor,
+    // which is why one project ships its own linter that cannot catch a type
+    // error.
+    //
+    // While capture is on, every message the compiler emits is collected here
+    // as well as logged. m_LastError only ever held the LAST one, which is no
+    // use when a file has six errors.
+    struct Diagnostic {
+        std::string file;      // the script section, i.e. the source path
+        i32 row = 0;
+        i32 col = 0;
+        std::string message;
+        bool isError = false;  // false = warning
+    };
+
+    void BeginDiagnosticCapture();
+    void EndDiagnosticCapture();
+    const std::vector<Diagnostic>& GetDiagnostics() const { return m_Diagnostics; }
+    void ClearDiagnostics() { m_Diagnostics.clear(); }
+
     // Monotonic count of runtime script exceptions this session. Pollable:
     // the replay recorder auto-bookmarks the frame where the count rises.
     u32 GetExceptionCount() const { return m_ExceptionCount; }
@@ -126,6 +151,8 @@ private:
 
     std::string m_ScriptDirectory;
     std::string m_LastError;
+    std::vector<Diagnostic> m_Diagnostics;
+    bool m_CapturingDiagnostics = false;
     u32 m_ExceptionCount = 0;
     u32 m_PollCounter = 0;
     static constexpr u32 POLL_INTERVAL = 30; // Check every 30 frames

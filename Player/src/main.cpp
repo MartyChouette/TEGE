@@ -1,4 +1,6 @@
 #include "Enjin/Core/Application.h"
+#include <cstdio>
+#include "Enjin/Scripting/ScriptChecker.h"
 #include "Enjin/Core/Version.h"
 #include "Enjin/Debug/CrashHandler.h"
 #include "Enjin/Logging/Log.h"
@@ -3621,6 +3623,38 @@ Enjin::Application* CreateApplication() {
 }
 
 int main(int argc, char* argv[]) {
+    // --check-scripts <project>: compile every script in a project and exit,
+    // printing "file (line, col): message" and a non-zero status on any error.
+    //
+    // Script errors used to reach the console and nowhere else, so a broken
+    // script surfaced at PLAY time as "class not found" in whatever scene
+    // referenced it -- usually a different file from the one with the mistake.
+    // There was no way to ask the question offline, which is why a project
+    // ended up shipping its own linter that cannot catch a real type error.
+    //
+    // Handled FIRST, before the working directory is moved and before anything
+    // creates a window: this has to run on a CI box with no display.
+    for (int i = 1; i < argc; i++) {
+        if (!argv[i] || std::string(argv[i]) != "--check-scripts") continue;
+
+        const std::string project = (i + 1 < argc && argv[i + 1]) ? argv[i + 1] : ".";
+        const Enjin::Scripting::ScriptCheckResult r =
+            Enjin::Scripting::CheckProjectScripts(project);
+
+        if (!r.fatal.empty()) {
+            std::fprintf(stderr, "check-scripts: %s\n", r.fatal.c_str());
+            return 2;   // could not run, as distinct from ran-and-found-errors
+        }
+        for (const auto& issue : r.issues) {
+            std::fprintf(issue.isError ? stderr : stdout, "%s (%d, %d): %s: %s\n",
+                         issue.file.c_str(), issue.row, issue.col,
+                         issue.isError ? "error" : "warning", issue.message.c_str());
+        }
+        std::fprintf(stdout, "check-scripts: %u module(s), %u error(s), %u warning(s)\n",
+                     r.modulesChecked, r.errorCount, r.warningCount);
+        return r.Ok() ? 0 : 1;
+    }
+
     // --frames N: render N frames then exit cleanly (headless CI verification of
     // an exported game — proves it boots, loads its scene, and survives a real
     // render loop, without needing a window manager to close the window).
