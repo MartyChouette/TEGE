@@ -1,4 +1,5 @@
 #include "Enjin/GUI/GameMenus.h"
+#include "Enjin/GUI/Localization.h"
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Renderer/PostProcessing.h"
 
@@ -152,7 +153,13 @@ void GameMenuSystem::RenderMainMenu(f32 w, f32 h) {
     // Center buttons
     auto CenterButton = [&](const char* label, const char* action) {
         ImGui::SetCursorPosX((cardW - buttonW) * 0.5f);
-        if (RenderMenuButton(label, buttonW)) {
+        // The callback id is already a stable name for this button, so it
+        // doubles as the localization key -- no second naming scheme to
+        // agree on. The English literal is the fallback, so an
+        // untranslated project renders exactly as it did.
+        const std::string text =
+            LocalizationManager::Get().GetString(std::string("menu.") + action, label);
+        if (RenderMenuButton(text.c_str(), buttonW)) {
             if (m_Callback) m_Callback(action);
         }
         ImGui::Dummy(ImVec2(0, 6));
@@ -204,7 +211,13 @@ void GameMenuSystem::RenderPauseMenu(f32 w, f32 h) {
 
     auto CenterButton = [&](const char* label, const char* action) {
         ImGui::SetCursorPosX((buttonW + 60.0f - buttonW) * 0.5f);
-        if (RenderMenuButton(label, buttonW)) {
+        // The callback id is already a stable name for this button, so it
+        // doubles as the localization key -- no second naming scheme to
+        // agree on. The English literal is the fallback, so an
+        // untranslated project renders exactly as it did.
+        const std::string text =
+            LocalizationManager::Get().GetString(std::string("menu.") + action, label);
+        if (RenderMenuButton(text.c_str(), buttonW)) {
             if (m_Callback) m_Callback(action);
         }
         ImGui::Dummy(ImVec2(0, 6));
@@ -910,7 +923,13 @@ void GameMenuSystem::RenderGameOver(f32 w, f32 h) {
 
     auto CenterButton = [&](const char* label, const char* action) {
         ImGui::SetCursorPosX((panelW - buttonW) * 0.5f);
-        if (RenderMenuButton(label, buttonW)) {
+        // The callback id is already a stable name for this button, so it
+        // doubles as the localization key -- no second naming scheme to
+        // agree on. The English literal is the fallback, so an
+        // untranslated project renders exactly as it did.
+        const std::string text =
+            LocalizationManager::Get().GetString(std::string("menu.") + action, label);
+        if (RenderMenuButton(text.c_str(), buttonW)) {
             if (m_Callback) m_Callback(action);
         }
         ImGui::Dummy(ImVec2(0, 6));
