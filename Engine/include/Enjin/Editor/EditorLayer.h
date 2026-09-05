@@ -1261,6 +1261,8 @@ private:
 
     // Per-scene render settings
     bool m_CurrentSceneUsesProjectDefaults = true;
+    // Drawn at the top of every per-scene render settings section.
+    void DrawProjectDefaultsBanner();
     u32 m_ArtStylePreset = 0;  // Tracks the Art Style Preset dropdown index
     Renderer::SceneRenderSettings m_PrePlayRenderSettings;
 

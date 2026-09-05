@@ -39,8 +39,6 @@ PAIRS = {
     "SHADOW":          ["shadow"],
     "POSTPROCESS":     ["postprocess"],
     "PARTICLE":        ["particle"],
-    "GRASS":           ["grass"],
-    "TREE":            ["tree"],
     "SPRITE":          ["sprite"],
     "SKY":             ["skybox"],
     "OUTLINE":         ["outline"],

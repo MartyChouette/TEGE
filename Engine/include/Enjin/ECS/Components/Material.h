@@ -166,7 +166,11 @@ struct MaterialComponent {
     // deterministic, painted reflection — no probe, no screen-space tracing.
     std::string scrollReflectionTexturePath;
     Math::Vector2 scrollReflectionSpeed = Math::Vector2(0.05f, 0.03f); // UV scroll per second
-    f32 scrollReflectionStrength = 0.5f;   // 0 = off, 1 = full
+    // 0 = off, 1 = full. Defaults to OFF, because a strength that defaults
+    // non-zero cannot be told apart from one nobody set: every material in
+    // every scene then looks like it asked for the effect, which makes the
+    // field unusable for validation and misleading in the inspector.
+    f32 scrollReflectionStrength = 0.0f;
     i32 scrollReflectionTexture = -1;      // runtime index (-1 = none)
 
     // ── Surface response (TotK-style): the sound + particle this surface makes ──

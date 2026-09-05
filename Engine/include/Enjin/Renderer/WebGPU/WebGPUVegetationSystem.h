@@ -18,6 +18,9 @@
 #include "Enjin/Math/Matrix.h"
 #include "Enjin/Renderer/GPUTypes.h"
 #include <webgpu/webgpu.h>
+#include <functional>
+#include <string>
+#include <unordered_map>
 
 namespace Enjin {
 namespace ECS { class World; }
@@ -56,6 +59,14 @@ public:
         m_Ambient = color; m_AmbientIntensity = intensity;
     }
 
+    // Turn an authored texture path into something bindable. The volumes carry
+    // paths (TreeVolume bark/canopy, Grass/Shrub customAssetPath) and this
+    // system cannot load them itself, so the owner supplies the resolver -
+    // same shape as the wind and sun feeds above.
+    void SetTextureResolver(std::function<GPUTextureHandle(const std::string&)> fn) {
+        m_ResolveTexture = std::move(fn);
+    }
+
     // Draw every Grass/Shrub/Tree volume into the scene pass. view/proj are the
     // scene camera's (the WebGPU Y-flip is applied internally, like particles).
     void RenderScene(WGPURenderPassEncoder pass, const Math::Matrix4& view,
@@ -72,6 +83,26 @@ private:
     GPUShaderHandle m_Shader;
     GPUBindGroupLayoutHandle m_Layout;
     GPUBindGroupHandle m_BindGroup;
+
+    // Group 1: this volume's two textures. Trees want bark AND canopy, so the
+    // slot is a pair; grass and shrubs put their one texture in both. Kept off
+    // group 0 so the shared per-frame group stays a single bind for the pass.
+    GPUBindGroupLayoutHandle m_TexLayout;
+    GPUTextureHandle m_DefaultTex;              // 1x1 white, for a volume with no texture
+    GPUBindGroupHandle m_DefaultTexGroup;
+    std::function<GPUTextureHandle(const std::string&)> m_ResolveTexture;
+    // Cached per texture pair, not per frame: a volume's textures rarely change
+    // and a bind group per volume per frame is exactly the churn that exhausted
+    // the GPU budget elsewhere.
+    std::unordered_map<u64, GPUBindGroupHandle> m_TexGroups;
+    GPUBindGroupHandle TexGroupFor(GPUTextureHandle a, GPUTextureHandle b);
+    // Filled by BuildVolumeParams alongside the GPU params, indexed the same
+    // way, so the draw loop can bind volume v's art without resolving paths
+    // again. Not in VolumeParamsCPU because that struct is the GPU layout.
+    // mutable: BuildVolumeParams is const (it produces the GPU params rather
+    // than changing state) and these are a cache filled on the way through.
+    mutable GPUTextureHandle m_VolumeTexA[kMaxVolumes];
+    mutable GPUTextureHandle m_VolumeTexB[kMaxVolumes];
     // One entry per volume, plus what to draw for it. Built once and used by
     // BOTH passes, so the shadow scatters the identical plants to the identical
     // places as the scene -- two copies of this would drift and the shadows

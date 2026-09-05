@@ -2,179 +2,152 @@
 
 This document captures detailed technical plans, performance findings, and strategic initiatives identified through codebase audits. It complements CLAUDE.md's feature roadmap with implementation-specific details.
 
-## Status Summary
+## Status
 
-> **Read this first.** The tables below are kept current; this summary is the
-> part that goes stale, so it carries its own date. Last reconciled against the
-> tree on **2026-09-05**.
->
-> Windows and Linux both build and ship; the Linux CI job runs the full suite,
-> a lavapipe render smoke, and an exported-game boot on every push. Web is a
-> real target, not a demo: PBR, shadows, particles, vegetation, weather,
-> inverted-hull outlines, weighted-blended OIT and a depth-driven post-process
-> pass all run in the browser. Ray tracing displays end to end on desktop.
-> Of the ten flagship initiatives, four have shipped (replays, MCP server,
-> per-style splash, Linux), one is held by choice (#6 web share, no
-> commercial-platform branding), and five have not started.
->
-> The four platform tracks that have not started - Steam, Steam Deck, VR/XR/AR,
-> mobile - share one prerequisite: the renderer assumes a single view and
-> projection. Doing the multiview refactor once unblocks three of them.
+Windows and Linux both build and ship. The Linux CI job builds the engine, runs
+the full ctest suite, runs a lavapipe render smoke under xvfb, and packs and
+boots an exported Linux game on every push. Test suite: 149/149.
 
-### Superseded summary (2026-04-12)
+Web is a real target. PBR, shadows, particles, vegetation, weather, inverted-hull
+outlines, weighted-blended order-independent transparency and a depth-driven
+post-process pass all run in the browser. Ray tracing displays end to end on
+desktop: shadows, AO, reflections, GI and path tracing.
 
-**210+ features complete.** Full engine audit completed 2026-04-12 — 55 findings across memory safety, thread safety, Vulkan renderer, security, logic, and performance (see `docs/AUDIT_2026_04_12.md`). 5 critical/high fixes applied: VulkanImage staging buffer copy (textures were never transferred to GPU), atomic ECS component type IDs, audio channel thread safety (mutex on all m_Channels access), command injection removal (system() → fork/exec), cascade shadow stagger fix. 7 initially flagged issues verified as false positives (existing guards already sufficient). Full record & rewind system (per-entity Braid-style + scene-wide Sands of Time-style) with delta compression, ring buffers, physics sync, editor timeline scrubber, and 11 AngelScript bindings. Dialogue-to-gameplay integration — 3 new dialogue node types (QuestAction, PlayCinematic, SetGameFlag) let designers wire narrative → quest → cinematic without visual script glue. Condition nodes can check quest status and game flags. In-editor dialogue preview. Per-entity wireframe overlay. Accessible bone rig editing — auto-detected body regions (face, hands, spine, etc.), hierarchical bone tree, pose library for saving expressions/gestures, 15px pick threshold for dense clusters. Import robustness — mesh validation (NaN fix, degenerate triangle detection, bone weight normalization, scale sanity), vertex colors from FBX/glTF, glTF matrix decomposition, import result dialog with undo, structured validation report. Animation editor UX — visual timeline ruler with click-to-seek events, 1D blend tree axis visualization, onion skin opacity preview strip, tooltips on all controls. 82/82 tests passing.
+Shipped flagship initiatives: reverse-step debugging and shareable replays, the
+editor MCP server, per-style splash screens, Linux as a first-class build.
+Held by choice: one-click web share (no commercial-platform branding).
+Not started: Gaussian splat import, the tutorial.
 
-### Still Remaining
+Steam, Steam Deck, VR/XR/AR and mobile all require the renderer to stop assuming
+a single view and projection. One multiview refactor serves all four.
 
-| Category | Item | Priority |
-|----------|------|----------|
-| ~~**Renderer**~~ | ~~Path Tracer Polish (NEE, MIS, Russian Roulette, firefly clamping)~~ | ~~P1~~ DONE |
-| ~~**Art Styles**~~ | ~~Shared Infrastructure — light ramp, normal-based outlines, specular map slot~~ | ~~P0~~ DONE |
-| ~~**Art Styles**~~ | ~~Pre-PBR Realism — half-Lambert wrap, specular map slot~~ | ~~P0~~ DONE |
-| ~~**Art Styles**~~ | ~~Hand-Painted Stylization — light ramp (4 modes), wrap lighting, per-material ramp override~~ | ~~P0~~ DONE |
-| ~~**Art Styles**~~ | ~~Enhanced Cel/Toon — inverted-hull geometry outlines~~ | ~~P0~~ DONE |
-| ~~**Art Styles**~~ | ~~NPR Illustrative — pen/ink curvature-driven outline variation~~ | ~~P0~~ DONE |
-| ~~**Art Styles**~~ | ~~Pixel Art Polish — PICO-8, Game Boy, NES, CGA, C64 palettes, normal quantization~~ | ~~P0~~ DONE |
-| ~~**Art Styles**~~ | ~~Material-Expression Worlds — matcap texture slot, procedural surface noise~~ | ~~P0~~ DONE |
-| ~~**Art Styles**~~ | ~~Analog/Degraded Polish — film gate weave, light leaks, tape dropout~~ | ~~P0~~ DONE |
-| ~~**Art Styles**~~ | ~~Art Style Presets — editor dropdown (7 presets)~~ | ~~P0~~ DONE |
-| **Renderer** | Reflection Probes — box projection, baked cubemaps (6-face + prefiltered mips), roughness glossy sampling, and PBR specular IBL done. SSR done in the post-process pass (editor + web). BLOCKER CLEARED (verified 2026-09-05): the exported player's offscreen target is no longer disabled - main.cpp renders the scene into m_ScenePPTarget and composites the post-process quad into an empty swapchain pass, which is what made postprocess.frag apply in exported games at all. Whether SSR specifically is wired through that path is UNVERIFIED; the thing it was waiting for exists | P1 IN PROGRESS |
-| **Renderer (Web)** | Web post-process port — ~16 effects now run in the WebGPU inline PP pass (tonemap, bloom, FXAA, colorblind, brightness/contrast, saturation, color filter, gamma, vignette, chromatic aberration, color quant, film grain, CRT scanlines, ordered dither, stipple, color-space AO). GI parity via hemispheric sky-dome ambient (active on any sky-configured scene). UNBLOCKED 2026-09-05: the 4x MSAA that made scene depth unbindable came off on 09-03, so the depth buffer is a plain single-sample texture. It now carries TextureBinding usage and a depth-aspect view bound to the PP pass as texture_depth_2d (read with textureLoad, no sampler). SSAO is now REAL depth occlusion rather than the luminance approximation it shipped as, and the cel outline (Sobel on linear depth) is live off the celOutline* fields that were already in SceneRenderSettings and inert on web. DoF, god rays and tilt-shift are now unblocked and unbuilt. LUT/light-leak/palette-lock need new SceneRenderSettings fields | P1 IN PROGRESS |
-| ~~**Gameplay**~~ | ~~Dynamic Difficulty — read player stats (health, deaths, time, accuracy) + difficulty setting to auto-adjust AI aggression, damage, resources, hints~~ | ~~P1~~ DONE |
-| **Renderer** | ReSTIR — Reservoir-based light sampling (DI + temporal + spatial reuse complete, rt_shadow ReSTIR consumption done, settings serialization done, integrated into main pipeline) | P1 IN PROGRESS |
-| **Renderer** | Temporal RT Reuse — reprojection + history blend for shadow/AO/reflect/GI done, confidence map done, denoiser-aware feedback pending | P2 |
-| **Renderer** | Radiance Caching — screen-space tiled cache (32x32) done, surfel radiance cache done, world-space irradiance cache done | P2 IN PROGRESS |
-| **Renderer** | DLSS / FSR / XeSS Upscaling (IUpscaler interface, FSR built-in ✅ with EASU+RCAS+temporal, DLSS implemented (requires Streamline SDK), XeSS implemented (requires XeSS SDK)) | P2 IN PROGRESS |
-| **Renderer** | Additional AA (SMAA ✅, MSAA runtime toggle, comparison mode) | P3 |
-| **Renderer** | GPU-Driven Work Scheduling (indirect draw ✅, multi-draw ✅, async compute overlap ✅) | P3 |
-| ~~**Performance**~~ | ~~CPU Scalability Sprint — binary search keyframes, integer sprite sort, cache storage pointers, world matrix caching, bindless render path, batched material SSBO~~ | ~~P0~~ DONE |
-| **Release** | Splash screen (optional "Made with Enjin") | P2 |
-| **Platforms** | **Linux desktop — build + CI + ctest green on Ubuntu 24.04 (2026-08-25) ✅; shipped release binaries still to package** | **P1 IN PROGRESS** |
-| **Platforms** | **Steam — Steamworks SDK, achievements/cloud/overlay, store depot pipeline** | **P1** |
-| **Platforms** | **Steam Deck — Verified target: Proton/native Linux, gamepad-first UI, 1280x800, small-text a11y** | **P1** |
-| **Platforms** | **VR/XR/AR — OpenXR path, stereo/multiview renderer, motion controllers (elevated from P4)** | **P1** |
-| **Platforms** | **Mobile (Android/iOS — render tiers, TBDR/tiled paths, touch input, on-screen controls) (elevated from P4)** | **P1** |
-| **Flagship** | **Reverse-step debugging + shareable replays (see Flagship Initiatives #5)** | **P1** |
-| **Flagship** | **One-click shareable web link (#6) — storefront-neutral, no branded upload buttons** | **P1** |
-| **Flagship** | **MCP server for the editor (#7)** | **P1** |
-| **Flagship** | **Per-style splash + accessibility statement (#8)** | **P1** |
-| **Flagship** | **Gaussian splat import .ply/.spz with art styles (#9)** | **P1** |
-| **Platforms** | macOS (MoltenVK) | P2 |
-| **Platforms** | Xbox Series X/S (GDK/D3D12) | P2 |
-| **Platforms** | PlayStation 5 (PSDK/AGC) | P3 |
-| **Platforms** | Nintendo Switch 2 (Vulkan 1.3) | P3 |
+1.0 ships October 2026 at $30 one-time. Paid binaries, source stays BSL 1.1.
 
-### Recently Completed
+## The list
 
-| Category | Item |
-|----------|------|
-| **Audit** | Full 6-dimension engine audit (2026-04-12) — 55 findings across memory safety, thread safety, Vulkan, security, logic, performance. 5 fixes applied, 7 false positives verified, 42 remaining tracked in `docs/AUDIT_2026_04_12.md` |
-| **Renderer** | VulkanImage::CreateFromData — staging buffer now properly transferred to device image (was silently producing garbage textures for text, sprites, SVG, thumbnails) |
-| **ECS** | ComponentRegistry::s_NextComponentId changed to std::atomic — prevents type ID collision under concurrent component registration |
-| **Audio** | MiniaudioBackend thread safety — added std::mutex protecting all m_Channels map access (Update, Play, Stop, Pause, Resume, Shutdown, all SetChannel methods) |
-| **Security** | Command injection fix — replaced system() with fork/execlp in OpenInExplorer (macOS/Linux). Second system() removal after HTML5Exporter fix in Feb 2026 |
-| **Renderer** | Cascade shadow stagger fix — far cascades now properly distribute across frames instead of all updating together |
-| **Gameplay** | Record & Rewind system — StateRingBuffer (O(1) eviction), delta-compressed scene snapshots, 6 channel types (transform/velocity/health/animation/physics/material), per-entity + scene-wide modes, physics state sync (Jolt/Box2D ForceSetBodyState), programmatic seek API, editor timeline scrubber, 11 AngelScript bindings |
-| **Narrative** | Dialogue→Gameplay integration — 3 new node types (QuestAction, PlayCinematic, SetGameFlag), DialogueCondition::Source enum (Variable/QuestStatus/GameFlag), ActionCallback + ConditionResolver on DialoguePlayer, wired in PlayMode + Player, quest-gated dialogue choices |
-| **Narrative** | Dialogue editor UX — in-editor preview panel (walk through tree without play mode), auto-connect (new nodes link to selected), categorized right-click menu, node body previews for all types, validation warnings (red border on broken links/empty fields) |
-| **Editor** | Per-entity wireframe overlay — VK_POLYGON_MODE_LINE pipeline, per-entity color/opacity, MeshRendererComponent::wireframe toggle, inspector UI, serialization |
-| **Editor** | Bone selection improvements — diamond joint markers, bone name tooltips on hover, parent chain highlighting (cyan path to root, dimmed non-chain), 15px pick threshold for dense clusters |
-| **Editor** | Accessible bone region picker — auto-detect 12 body regions from bone names, large 2-column button grid, filtered bone list per region, keyboard navigable |
-| **Editor** | Pose library component — save/recall named bone poses (expressions, gestures), auto-categorize by region, large accessible buttons, blend weight control |
-| **Editor** | Animation editor UX — visual timeline ruler (second ticks, click-to-seek event markers, red playhead), 1D blend tree axis (crossfade regions, node labels, parameter indicator), onion skin opacity preview strip, bone hierarchy tree (expandable parent-child), tooltips on all controls |
-| **Editor** | Import result dialog — modal popup with stats, color-coded warnings, missing textures, Undo Import button |
-| **Import** | Mesh validation — auto-fix NaN/Inf vertices, detect degenerate triangles, normalize bone weights, scale sanity warnings (>1000 or <0.001 units) |
-| **Import** | Vertex colors from FBX/glTF — reads aiMesh::mColors[0] and COLOR_0 attribute into Vertex.color |
-| **Import** | glTF matrix decomposition — nodes with has_matrix now decomposed to T/R/S (previously silently skipped) |
-| **Import** | Import validation report — structured log summary after every import (stats, resolved/missing textures, warnings, skipped features) |
-| **Editor** | Gizmo modal fix — ImGuizmo hidden when any ImGui popup/modal is open (prevents bleeding through dialogs) |
-| **QA** | New tests — TestRewindSystem (27 tests: ring buffer, channels, snapshots), TestBlendTree (11 tests: evaluate, edge cases), TestDialogueTree expanded (+14 tests: new nodes, condition sources, serialization). 80→82 tests |
-| **Build** | Player build pipeline — 5 crash/render fixes (nested shadow pass, camera sync, GPU indirect draw, RT re-enable, clustered lighting), all entities render correctly in built games |
-| **Build** | Options menu fully functional — fullscreen, VSync, FOV, shadows, bloom, FXAA, audio volumes, all deferred-safe |
-| **Build** | Restart button in pause menu with full physics state reset (recreates Jolt/Box2D backends) |
-| **Editor** | Tilde console (Quake-style) — slides up from bottom, 10+ commands (god, kill, heal, speed, tp, restart, fps, stats), command history |
-| **Editor** | Deferred MSAA toggle — prevents NVIDIA driver crash from mid-frame swapchain recreation |
-| **Editor** | F1/F2 mutual exclusion — pressing one closes the other, debug overlay at bottom-left with 1.4x font |
-| **Editor** | Scene view Wire mode — uses real VK_POLYGON_MODE_LINE pipeline; Solid mode disables all lighting |
-| **Editor** | Fix recent project remove/delete crash — deferred vector modification to prevent iterator invalidation |
-| **Renderer** | PBR horizon flicker fix — NdotV guard 0.001→0.01, shadow cascade blend 10%→25%, fade start 80%→70% |
-| **Renderer** | Smooth point/spot light range falloff — smoothstep 75%-100% replaces hard binary cutoff |
-| **Renderer** | Parallax machine texture rendering — layers load textures via RenderSystem, fallback to colored rectangles |
-| **Gameplay** | 2D pickup overlap — manual AABB check for Platformer2D/TopDown2D controllers (Box2D sensor workaround) |
-| **Gameplay** | 2D enemy contact damage — manual AABB overlap with Mario-style stomp detection + invulnerability window |
-| **Gameplay** | Enemy repeat damage fix — invulnerability timer replaces damageOnce for enemies, player gets 1s i-frames |
-| **DevTools** | TelemetrySystem — per-session metrics (scenes, builds, play mode, bug reports), aggregate persistence, Discord upload |
-| **DevTools** | Quit feedback survey — 5 ratings + 3 text questions → Discord webhook on editor exit |
-| **DevTools** | Bug report severity dropdown (Crash/Major/Minor/Cosmetic), hardcoded webhook URLs (gitignored) |
-| **DevTools** | GitHub infrastructure — issue templates (bug/feature), PR template, CONTRIBUTING.md |
-| **QA** | ImGui ID collision audit — fixed material slots loop + animation names loop, 80+ other loops verified safe |
-| **Renderer** | Path Tracer Polish — NEE (uniform light selection, shadow rays), MIS (power heuristic), Russian Roulette (configurable min bounce/probability), firefly clamping (per-bounce + final), Cook-Torrance BRDF with GGX importance sampling, simplified material fallback for deep bounces |
-| **Editor** | Game Debug Panel (F1) — 5-tab game-focused debug window (Scene/Physics/Scripts/Audio/Gameplay) with entity lists, physics body details, script status indicators, audio source state |
-| **Editor** | Debug Workstation (F2) — 5-tab engine-focused debug window (Performance/Renderer/ECS/Scene/System) with FPS/frame time graphs, percentile stats, render pipeline state, GPU/Vulkan info |
-| **Editor** | Drop-down Console (backtick) — Quake-style slide-down console with 60+ commands, command history, color-coded output, smooth animation |
-| **Editor** | PrepareRenderTargets — pre-command-buffer render target resizing, fixes 4:3 aspect ratio crash with Vulkan hooks (OBS, RenderDoc) |
-| **Release** | App icon — `installer/enjin.ico` (7 sizes: 16-256px) with PNG assets, wired into Inno Setup installer and editor exe |
-| **Release** | BSL 1.1 licensing — `LICENSE` file in place (4-year change date to Apache 2.0, free game use, no competing engine forks) |
-| **Release** | Inno Setup installer (`installer/EnjinSetup.iss`) — icon, license page, `.enjin` file associations, component selection, Start Menu/Desktop shortcuts |
-| **Renderer** | Clustered Forward Lighting — 16x9x24 grid, light assignment/bounds compute shaders (bindings 14-15), CMake `ENJIN_CLUSTERED_LIGHTING` (ON) |
-| **Renderer** | GPU Two-Phase HiZ Occlusion Culling — `GPUCullingSystem::ExecuteTwoPhase()`, HiZ pyramid, phase 0 frustum+HiZ cull, partial pyramid regen, phase 1 re-test |
-| **Renderer** | Variable Rate Shading — `VK_KHR_fragment_shading_rate`, content-adaptive and motion-based modes, CMake `ENJIN_VRS` (OFF) |
-| **Renderer** | Virtual Texturing — page-based streaming pipeline (`PageCache`, `FeedbackBuffer`, `VirtualTextureSystem`), indirection texture + physical atlas (bindings 16-17), CMake `ENJIN_VIRTUAL_TEXTURING` (OFF) |
-| **Renderer** | Visibility Buffer — deferred material resolve pipeline (`VisibilityBuffer`, `MaterialResolve`), CMake `ENJIN_VISIBILITY_BUFFER` (OFF) |
-| **Renderer** | LOD hysteresis + screen-space sizing, 64-bit material sort keys, per-frame linear allocator (`FrameAllocator`) |
-| **Renderer** | Material enhancements: transmission, IOR, thickness, SSS intensity/radius/color fields on `MaterialComponent` |
-| **Physics** | Box2D sensor body sync: ECS→Box2D push for sensor bodies, skip Box2D→ECS writeback — enables collision callbacks for controller/AI/tween-driven entities |
-| **Templates** | 2D platformer: fixed 12 entities (player, 8 coins, 3 pickups, 4 enemies) missing sensor bodies for collision detection |
-| **Renderer** | Fixed particle double-rendering in editor game view (wrong camera descriptor set after RenderToTarget restore) |
-| **QA** | 4-week hardening sprint: command injection fix, collab auth, VkResult checks, 255+ new tests, all audit items resolved |
-| **Audio** | Audio fidelity system — 8 sound chip emulation presets (Modern, LoFi, Retro16Bit, Retro8Bit, ChipTune, FMSynth, PSOne, Cassette) with per-parameter tweaking, auto-match art style option, full serialization |
-| **Audio** | MIDI→property binding — MIDIBindingComponent maps CC/NoteVelocity/PitchBend to entity properties (light intensity, scale, opacity, etc.), smoothed interpolation, full serialization |
-| **Audio** | Material interaction table inspector — coverage matrix grid, per-interaction editing (material pairs, soft/hard/scrape clips, pitch offset, volume multiplier), add/remove, full serialization |
-| **Audio** | Audio reactive system — AudioReactiveComponent, AudioThresholdTriggerComponent, RTPCComponent, BeatClockComponent, BeatSyncComponent, ConductorComponent (AI-driven dynamic music), AudioCollisionComponent (TOTK-style), SidechainComponent, ReverbZoneComponent, AmbientSoundLayerComponent, MusicZoneComponent, AudioSnapshotTriggerComponent, AudioOcclusionComponent, LipSyncComponent |
-| **Audio** | Audio bus hierarchy — Master→SFX/Music/UI/Voice with per-bus VU metering, 3-band EQ, snapshot system (Dialogue/Pause/Combat/Cutscene), music crossfader with 3 transition modes |
-| **Editor** | Settings conflict detection — 7 conflict types auto-detected (MSAA+TAA, MSAA+upscaler, TAA+upscaler, path tracer+MSAA, path tracer+SSAO, dual shadows, downscale+CRT), color-coded warnings with tooltips |
-| **QA** | Template scrub — fixed duplicate invulnerabilityTime in platformer/topdown2d, fixed AddComponent/GetComponent anti-pattern in uicanvas |
-| **Platforms** | WebAssembly/WebGPU export |
-| **Editor** | Settings UX restructure (System/Project/Scene tiers) |
-| **Editor** | Networking config editor UI |
-| **Editor** | Context-aware collider selection & expanded smart suggestions |
-| **RT** | OptiX AI Denoiser integration (NVIDIA) |
-| **RT** | RT Caustics (photon mapping / path traced) |
-| **RT** | RT Translucency (subsurface scattering) |
-| **RT** | Motion Vectors + TAA (per-pixel velocity, Halton jitter, neighborhood clamping) |
-| **RT** | Material SSBO for RT hit shaders (binding 9), OptiX denoiser CUDA interop |
-| **Interop** | Yarn Spinner / Twine dialogue import/export |
-| **Scripting** | Expose template-only features (particle presets, HUD widget, text component) to AS/VS/inspector |
-| **Assets** | Assimp skeletal animation import (FBX/DAE/all formats) |
-| **QA** | Beta 0.8 hardening: ECS, Renderer, Serialization, Asset Pack, Physics, Audio, Build Pipeline, Scripting & Networking |
-| **Bug Fix** | RT pipeline crash on pool-allocated entity BLAS builds |
-| **Art Styles** | Art Style Rendering System complete — 9 visual styles (PrePBR, HandPainted, CelToon, NPR, Retro, PixelArt, MaterialExpression, Analog + Inherit), per-entity `ArtStyleComponent`, 7 one-click presets |
-| **Renderer** | Multi-material sub-mesh rendering — `MaterialSlotsComponent`, `MeshComponent::SubMesh`, per-sub-mesh draw calls |
-| **Renderer** | MeshRendererComponent — per-entity render control (culling, LOD bias, shadow mode, render layers, instancing) |
-| **Renderer** | ReSTIR integration into main pipeline, upscaling pipeline wired |
-| **Renderer** | Skinned mesh shadow shader — shadow pass now handles skinned meshes correctly |
-| **Assets** | FBX/Mixamo import — auto-scale, multi-material, embedded texture extraction, mesh hierarchy merging, bone ordering fix |
-| **Animation** | Blend trees — 1D parameter-driven animation blending on AnimatorComponent |
-| **Animation** | Animation events — timed events on SkeletalAnimation for sound/particle/script sync |
-| **Animation** | Animation retargeting — bone name auto-mapping (Mixamo prefix stripping), height scaling |
-| **Animation** | Two-bone IK — analytic arm/leg IK (TwoBoneIKComponent), LookAtIK, InteractionIK |
-| **Animation** | Ragdoll — RagdollComponent with per-bone joints, death auto-activation, animation blend |
-| **Animation** | Animation recorder — AnimationRecorderComponent captures bone transforms to create new clips |
-| **Animation** | 3D skeletal onion skinning — ghost meshes at past/future frames with tint and opacity falloff |
-| **Animation** | Bone visualization and viewport selection — wireframe skeleton, click-to-select bones, weight heat map |
-| **Animation** | BoneAttachmentComponent — parent entities to skeleton bones with local offsets |
-| **Editor** | Project-first workflow — Project Hub, create/delete/duplicate projects, auto-create on disk |
-| **Editor** | File association — `.enjinproject` opens directly in editor |
-| **Editor** | Viewport shading modes — Wire/Solid/Lit/Shadows/Full (Blender-style toolbar buttons) |
-| **Editor** | Bug report Discord webhook — screenshot + log capture posted to Discord channel |
-| **Editor** | F1/F2 debug panel grouping — only one debug panel shown at a time |
-| **Editor** | Default 16:9 aspect ratio for Scene View and Game View |
-| **Gameplay** | GameOverComponent — victory/defeat conditions, delay, restart/menu buttons |
-| **Gameplay** | MeshColliderComponent — convex hull or triangle mesh collision from mesh vertices |
-| **Gameplay** | ParallaxMachineComponent — multi-layer parallax backgrounds for 2D scenes |
+Everything before 1.0, everything known broken, everything after. One place.
 
----
+### Ship gate
+
+- [ ] 1. Cut the template roster below 16
+- [ ] 2. Every surviving template boots and plays (play-probe + golden harness)
+- [x] 3. Test suite green — 149/149
+- [ ] 4. Installer: ISCC compile + double-click test of both file associations
+- [ ] 5. Linux tarball or AppImage attached to the release
+- [ ] 6. Disable-with-reason across the settings surface
+- [ ] 7. Fix or disable: TAA on garbage velocity in the editor game view; MSAA modes against 1-sample offscreen targets; clustered lighting never dispatching in the editor; HDR only on the real surface; LUT needs an asset
+- [ ] 8. Web demos verified in a browser (OIT, depth SSAO, cel outline all unwatched)
+- [ ] 9. Pricing page and licence wording — $30 one-time, BSL 1.1 source
+- [ ] 10. Version bump, changelog, release
+
+### Tutorial
+
+- [ ] 11. Guided first game — in-editor overlay, highlights the next control
+
+### Particle system
+
+- [ ] 12. Audit the CPU path for correctness and perf; good defaults on a fresh emitter
+- [ ] 13. Inspector with live preview
+- [ ] 14. Fire/Start/Stop/Loop/Burst from nodes and script, 2D and 3D
+- [ ] 15. Primitives: mesh particles, ribbons/trails, point sprites, soft particles
+- [ ] 16. Emitter shapes: sphere, box, circle, edge, mesh-surface (cone exists)
+- [ ] 17. Preset library: mist, spray, blood, sparks, smoke, fire, dust, rain-splash, magic
+- [ ] 18. GPU-compute scale path for huge counts
+
+### Traversal
+
+- [x] 19. Ropes and swinging — `Rope.h`, verlet ropes and chains
+- [x] 20. Ladders — `Ladder.h`
+- [x] 21. Doors — `Door.h`
+- [ ] 22. Cover — volume, controller state, snap to edge, peek, corner detection
+- [ ] 23. Ledge climb / mantle — sweep detect, translate up and over
+- [ ] 24. Ledge hang and shimmy — shares ledge detection with mantle
+- [ ] 25. `Interactable` + interaction prompt — the substrate the others register with
+- [ ] 26. Click-to-move — `ControllerSystem.cpp:979` is empty; needs raycast-to-ground + FindPath
+
+### Node coverage
+
+`NodeRegistry.cpp` carries ~705 node definitions and `ScriptApiNodes` reflects the
+AngelScript registry (1,268 registered functions) into nodes at boot. The gap is
+what the generator skips.
+
+- [ ] 27. Count the generator's `skippedTypes` and `skippedDup` lists
+- [ ] 28. Generic accessors for the bound component types
+- [ ] 29. AI, behaviour-tree and navmesh nodes
+- [ ] 30. Input and UI nodes
+- [ ] 31. Rewind, MIDI, Accessibility, AudioReactive
+- [ ] 32. Graph readability at scale — functions, subgraphs, groups
+
+### Editor authoring tools
+
+- [ ] 33. Terrain sculpting
+- [ ] 34. Tilemap painter
+- [ ] 35. Visual UI layout editor
+- [ ] 36. Navmesh generation and visualisation UI
+- [ ] 37. Template preview images
+
+### Pipeline honesty
+
+- [ ] 38. Real `.enjpak` compression — currently passthrough
+- [ ] 39. Pak-only exports — loose files ship and take precedence
+- [ ] 40. Quest custom conditions — always return true
+- [ ] 41. Navmesh `agentRadius` — documented, ignored
+- [ ] 42. Server authority — allow-all
+- [ ] 43. Collab component-removal sync — 3 of 140 types
+
+### Navmesh
+
+- [ ] 44. Off-mesh links (jumps, portals)
+- [ ] 45. Spline-path nav — `Math/Spline.h` unwired to nav
+- [ ] 46. Painted-region authoring UI
+
+### Web
+
+- [ ] 47. Texture volume vegetation — `TREE_WGSL` and the shrub shader have no texture bindings
+- [ ] 48. Cross-backend vegetation texture paths — `ResolveBindlessTextureIndex` is Vulkan-only
+- [ ] 49. Scatter a custom mesh across a volume — one custom tree works, a field does not
+- [ ] 50. Textured sprites, UI/text render path, accessibility overlays
+- [ ] 51. Depth of field
+- [ ] 52. God rays — also drop the hardcoded 0.5 luminance threshold
+- [ ] 53. Tilt-shift
+
+### Simulation and scale
+
+- [ ] 54. Spline-path water current (lazy river) — last open item in the buoyancy spec
+- [ ] 55. Swarm fork-join across cores
+- [ ] 56. GPU-instanced Swarm draw — position buffer to one draw
+- [ ] 57. Tier-2 GPU-compute agents
+
+### Known broken
+
+- [ ] 58. Hybrid rchit uses fake normals and fake N·L
+- [ ] 59. RT goldens never blessed — nothing regression-guards RT
+- [ ] 60. Async RT forced off — compute raced the G-buffer and overlay
+- [ ] 61. Skinned meshes ray-trace in bind pose
+- [ ] 62. LightBVH never constructed
+- [ ] 63. `rtEnabled` under `useProjectDefaults` has no warning
+- [ ] 64. Editor and player render through two code paths
+- [ ] 65. Physics has no automated coverage
+- [ ] 66. Component serializers ~7% round-trip tested
+- [ ] 67. World.h Stage B — hoist `GetComponentStorage` out of hot loops
+- [ ] 68. ~35 components unbound to script
+- [ ] 69. ARCHITECTURE.md drift — MaterialGPU is 144 bytes
+- [ ] 70. `_pgweb` held open by a process
+
+### After 1.0
+
+- [ ] 71. Multiview / stereo refactor — unblocks Steam Deck, VR/XR/AR, mobile split-screen
+- [ ] 72. Steam + Steamworks behind an `ISteam` service
+- [ ] 73. Steam Deck Verified
+- [ ] 74. VR/XR via OpenXR, then AR
+- [ ] 75. Android (Vulkan), iOS (Metal — backend empty)
+- [ ] 76. Gaussian splat import
+- [ ] 77. One-click web share — held, no commercial-platform branding
+- [ ] 78. Sprite editor through UICanvas + imported-art round-trip
+- [ ] 79. Refractive indices — IOR is in MaterialGPU, no render consumer
+- [ ] 80. Glacier phases 1 and 3
+- [ ] 81. Nanite-style cluster streaming, virtual texturing revival
+
 
 ## Big Platform Initiatives (added 2026-08-21, P1)
 
@@ -894,7 +867,7 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | # | System | Issue | Fix |
 |---|--------|-------|-----|
 | 1 | **Player App — Physics** | ~~Player doesn't create/update PhysicsWorld or PhysicsWorld2D~~ ✅ Fixed | Player now uses `IPhysicsBackend` via `PhysicsBackendFactory` |
-| 2 | ~~**Player App — Weather/Water**~~ | ~~No WeatherSystem or Water3D init in Player~~ ✅ Fixed | WeatherSystem initialized, updated, wired to script bindings. Water3D SHIPPED (label was stale, corrected 2026-09-05). The premise was wrong as well as out of date: 3D water needs no dedicated pipeline, it renders through the normal PBR path on Gerstner-displaced meshes. RenderSystem references Water3DComponent in 20 places, the player updates animated surfaces each frame, and EnsureWaterMeshes generates the surface for both backends. water2d.frag is the 2D case and is separate |
+| 2 | ~~**Player App — Weather/Water**~~ | ~~No WeatherSystem or Water3D init in Player~~ ✅ Fixed | WeatherSystem initialized, updated, wired to script bindings. Water3D renders through the PBR path on Gerstner-displaced meshes. EnsureWaterMeshes generates the surface for both backends; the player animates it each frame. 2D water is separate (water2d.frag) |
 | 3 | ~~**Player App — Particles**~~ | ~~ParticleSystem not created in Player~~ ✅ Fixed | Player now creates and updates ParticleSystem |
 | 4 | ~~**Player App — Post-Processing**~~ | ~~No bloom/vignette/FXAA/film grain/color grading/retro effects~~ ✅ Wired | PostProcessing initialized from swapchain, wired to script bindings |
 | 5 | ~~**Player App — Save System**~~ | ~~TieredSaveSystem not initialized in Player~~ ✅ Fixed | Default LocalSaveBackend, LoadMeta/SaveMeta, Update, script bindings, VS extern all wired |
@@ -2286,3 +2259,762 @@ All 24 previously-tracked stubs have been resolved (Audit #4, 2026-02-14). Notab
 No outstanding stubs remain.
 
 *Last updated: 2026-03-18 — ReSTIR DI foundation: per-pixel reservoir struct, importance-weighted light selection compute shader (binding 19), editor toggle. Temporal/spatial reuse planned. Phases 1-3 complete.*
+
+---
+
+# Reference: release detail and backlogs
+
+Merged from MASTER_PLAN.md.
+
+Living document. Master list of all known unfinished work, ordered to carry 0.9.7 to release and then to 1.0.
+Compiled 2026-08-06 from the full audit backlog (2026-03-14), the whole-engine review (2026-07-17), all session earmarks, and the RT/settings campaigns of 2026-08-03 through 08-06.
+Last updated 2026-08-06 (evening): RT batch committed and pushed through `d53f464`; the mixed-RT set is functionally complete.
+
+## Timeline
+
+| Date | Milestone |
+|---|---|
+| Wed Aug 6 (done) | RT batch committed + pushed (`a52fb5e9..d53f464`). Mixed RT complete: all four hybrid effects display in editor + player, PT displays end-to-end, veg/water/sky in the TLAS, per-frame descriptor rewrites killed (player probe 0 validation errors). |
+| Wed Aug 6 (remaining) | Regenerate 0.9.7 artifacts from current build. Marty eyeball pass. Installer double-click test. |
+| Thu Aug 7, before 5PM ET | Upload zip to site, publish GitHub release v0.9.7, post publicly. Submit GDFL application. |
+| Aug 8 - Sep 2 | 0.9.8 sprint: template QA (all 48), settings verification matrix + honest-feedback UI, editor redesign wave 4, hybrid rchit real shading, web runtime smoke. |
+| Wed Sep 3 | GDFL Pitch Day (in person, 20-minute slot, live demo). |
+| September | 0.9.9 stabilization: test backlog, VWS runtime verify, UI unification leftovers, FBX polish, doc refresh. |
+| October 2026 | 1.0 commercial launch. $20 one-time, paid official binaries, source stays BSL 1.1. Scope = QA + packaging + pricing page, not new features. |
+| Nov 2, 2026 | GDFL program start (if accepted): present real launch numbers. |
+| Feb / May / Oct 2027 | GDFL milestones M1-M3 (see application answers). |
+
+## Recently landed (pushed, part of 0.9.7)
+
+The whole ray-tracing campaign plus the run-up to it, in order:
+- Ray tracing made real: it runs, shows, and shades right (`d68c7d2`). NES palette rebuilt from real 2C02 values (`0979389`).
+- The whole world into ray tracing, then art-directed: vegetation / water / sky in the TLAS, procedural placeholder effects given a real look (`dc35a0f`).
+- Mixed RT built end to end: RT-native G-buffer (`de3230c`), shadows on the raster scene (`66955f0`), reflections + GI (`57c17e5`), live strength sliders (`8e5a37e`), and hybrid in exported games via the player overlay (`4d5389c`).
+- Per-frame RT descriptor rewrites killed, player probe 0 validation errors (`d53f464`).
+
+Before the RT work, also shipped and pushed:
+- Editor redesign waves 1-3: fonts, themes, transport bar, the 185-header type sweep, viewport toolbar, hub cards, console (`950864c` and the wave commits).
+- Test audit: suite to 101/101, five zero-coverage criticals closed (undo, anchor API, HUD migration, Rigidbody, script round-trips) (`a52fb5e9`).
+- Fly-cam whip fixed at the input layer. The February scene-save crash fixed. HUDSystem retired, UICanvas is the only UI.
+- Compute skinning activated (ADR-0002 Phase 1), Vulkan default on.
+
+## RT status (where the ray-tracing campaign actually stands)
+
+Done and on screen now (committed + pushed through `d53f464`):
+- Path tracing, full: raw, SVGF-denoised, OIDN. Displays end to end at swapchain res, converges ~300spp.
+- Mixed (hybrid) RT: shadows, AO, reflections, GI all DISPLAY. Editor uses an RT-native G-buffer + a post-process overlay; player uses fixed-function blend passes. All four differ from the raster baseline.
+- Vegetation (grass/shrub/tree), water, and sky are in the TLAS, so PT metal reflects the greenery and the sky matches raster.
+- Stable and clean: RT matrix 14/14 validation-clean, player probe 0 validation errors (was 8), suite 101/101, no crash. TLAS in-place refit, per-frame descriptor rewrites killed.
+
+Unfinished, and what it means when you look:
+- Hybrid rchit real shading: reflections / GI / caustics / translucency still use fake normals and fake NdotL. Only the path tracer reads true geometry normals. So in the hybrid variants the reflection and GI color is approximate, not physically correct. That is expected, not a bug.
+- Goldens not blessed yet: the captures in `goldens/rt/_candidates` are candidates, not references. Nothing regression-guards RT until you `-Record` after the eyeball.
+- Async RT is forced off (the compute path raced the G-buffer + overlay). Single-queue only for now.
+- Skinned meshes ray-trace in bind pose (the TLAS uses unskinned vertex buffers).
+
+How to check it: open the per-variant PNGs in `goldens/rt/_candidates` (one per variant, fastest), or open the RT probe project (`D:\TEGE_Projects\_RTProbe`) in the editor and toggle modes in Scene Settings. Compare each `rt_*` against `raster_base`: shadows/AO should darken contact areas, reflections/GI should add bounce, path tracer should look fully lit and converged. Judge whether the approximate hybrid color is good enough to ship; the rest is correctness polish scheduled for 0.9.8.
+
+## A. Release gate: 0.9.7 (this week)
+
+1. ~~Commit the RT batch.~~ DONE + pushed (`d53f464`): suite 101/101, RT matrix 14/14 validation-clean, player probe 0 errors, mixed RT displaying in editor + player.
+2. Marty eyeball pass, one editor session: Shells PT floor, NES preset, redesign waves 1-3, shadow rotation-flicker fix, HUD scaling, undo History panel, compute-skinning look, the now-visible hybrid RT effects.
+3. Regenerate artifacts: current TEGESetup-0.9.7.exe and TEGE-0.9.7.zip predate the RT work, redesign, and this week's fixes. Rebuild Release, ISCC, re-zip.
+4. Installer test: double-click install, .enjinproject and .enjin associations.
+5. Ship: upload zip (replace the stale one on the site), publish the GitHub release with the drafted notes, post publicly.
+6. Submit GDFL before Thu 5PM ET.
+7. Push and deploy marty64-net (3 commits ahead plus uncommitted).
+
+Not release-blocking: goldens blessing, settings A/B matrix.
+
+## B. 0.9.8 - before Pitch Day (Sep 3)
+
+### Render options truth
+- Finish the settings A/B pixel matrix (loader keys extracted, harness design settled): stamp each setting, capture, diff vs baseline. Proves every option changes pixels or flags it.
+- Editor feedback UI: disable-with-reason for anything inert, incompatible, or content-dependent (the rtSimplifiedMaterials "(planned)" pattern, applied everywhere).
+- Known gaps to encode: TAA uses garbage velocity in the editor game view; MSAA modes dead in editor (offscreen targets 1-sample); clustered lighting never dispatches in editor; HDR only visible on the real window surface; LUT needs an asset; shading-model toggle invisible on matte materials.
+
+### RT track
+- ~~Hybrid effects consumption: real G-buffer, apply shadows/AO/GI/reflections to the lit image.~~ DONE (RT-native G-buffer + PP overlay in editor, fixed-function blend in player; all four effects display).
+- ~~Per-frame RT descriptor rewrites (VUID-03047).~~ DONE (`d53f464`): handle-gated rewrites + vkCmdUpdateBuffer for the light/NEE buffers; player probe 0 errors.
+- Hybrid rchit real shading (reflect/gi/caustics/translucency still use fake normals and fake NdotL; the rchit-side geometry infra exists, only rt_pathtrace uses it so far).
+- Bless RT goldens (-Record after eyeball; probe ambient lowered so effects read).
+- Re-enable async RT (forced off; the rework must account for the G-buffer + overlay ordering).
+- Exercise player pak-script loading (loose files still take precedence).
+- LightBVH build wiring (class, shader traversal, and UI exist; never constructed).
+- rtEnabled-under-useProjectDefaults UX warning.
+- RT sees bind pose on skinned meshes (TLAS uses unskinned vertex buffers).
+- Custom-asset FBX inheritance for vegetation (drop-in tree/shrub meshes that inherit wind + seasonal systems; currently stubbed).
+
+### Editor
+- Redesign wave 4: default dockspace declutter, remaining toolbar and panel polish, tooltip sweep on icon-only buttons (draw-list vector icons only; the font atlas has no emoji).
+- ~~Cross-project scene open keeps the wrong script root silently~~ **FIXED 2026-08-14 (warn)**: AutoDetectProjectForScene early-returned whenever any project was loaded, so opening a scene from a different project kept the old script/asset roots silently. Now, if the opened scene isn't under the current project root and has its own .enjinproject, it warns + logs (does not auto-switch — that could discard unsaved work).
+
+### Template QA
+- Roster cut to 16 templates on 08-07 (the old 48-entry catalog is gone for good). Most of the 16 still untested — biggest user-facing risk for anyone downloading 0.9.7. The play-probe and golden harness can automate the boots-and-plays tier.
+
+### Earmarked latent bugs (diagnosed, unfixed)
+- ~~Progressive cascade update: forceFullUpdate checks position only, never rotation~~ **FIXED 2026-08-14**: also forces a full cascade update when the camera's view direction changes appreciably (fwd dot < 0.9998, ~1 deg/frame), so far cascades no longer lag/show stale shadows while turning in place. Wants an eyeball (turn the camera with progressive cascades on).
+- God rays: hardcoded 0.5 luminance threshold.
+- Cel outline: distance-dependent Sobel threshold on raw depth.
+
+### Tests
+- Component round-trip batch: ~~ParticleEmitter, AudioSource~~ DONE 2026-08-14 (also fixed AudioSource pitchMin/pitchMax not serializing); Animator + Skeleton remain (complex nested data; partly covered by TestGoldenVerification).
+- ~~Negative-path serializer suite~~ DONE 2026-08-14 (empty/garbage/non-object/truncated JSON fail gracefully).
+- ShadowMap::UpdateCascades unit test (rotation invariance).
+- Input mock seam, then CameraController behavioral tests.
+
+### VWS layers
+- Runtime-verify the whole flow: capture, toggle, save, reopen-resume, merge-down.
+- Marty decisions: base-vs-resolved save semantics; PlayModeDiff stableId migration.
+
+### UI unification phase 2 leftovers
+- Options screen as UICanvas (GameMenus options still bespoke).
+- Wire-or-cut dead utilities: InventoryUI, MinimapRenderer, ScreenTransition, SaveLoadMenu.
+- WYSIWYG anchor drag handles; canvas scaler match-width/height modes.
+- Web runtime smoke of the rebuilt WASM.
+
+### FBX import polish
+- Material auto-apply on Mixamo models, scale calibration, auto mesh collider generation.
+
+## C. To 1.0 (October 2026)
+
+### Rendering
+- Hybrid RT + DDGI + surfel GI visually complete and demo-able.
+- Editor/player render parity: one code path. Every latent bug this week (shadow binds, TLAS lifetime, clustered, fog usage flags) hid in whichever loop does not run. This is the structural fix.
+- SMAA shaders; VRS content-adaptive and motion modes; player post-process chain parity.
+
+### Platforms
+- Web parity completion: textured sprites, UI/text render path, accessibility overlays.
+- Then Android (Vulkan), then iOS/Metal (backend currently empty).
+
+### Architecture consolidation
+- Retire AudioManager (SimpleAudio is the system). Retire legacy AIAgent. ConstraintSolver decision.
+- Visual-script globals into ExecutionContext.
+- World.h per-GetComponent recursive_mutex: Stage A DONE (2026-08-13, adr-0004) — GetComponent/HasComponent are lock-free reads under the single-writer / fork-join model, writes keep the recursive_mutex + debug owner-thread assert, fork-join concurrency test added. Stage B (hoist GetComponentStorage into the hottest per-entity loops = remove calls not just locks) still open.
+- Per-frame DrawCmd alloc and sort; ECS archetype storage evaluation.
+
+### Pipeline honesty
+- Real .enjpak compression (currently passthrough). Pak-only exports (loose files still ship).
+- Quest custom conditions (always return true). Navmesh agentRadius (documented, ignored). Click-to-move.
+- Server authority (currently allow-all). Collab component-removal sync (3 of 140 types).
+
+### Editor authoring tools
+- Navmesh generation + visualization UI. Terrain sculpting. Tilemap painter. Visual UI layout editor. Template preview images.
+- **Sprite / pixel-art editor upgrade (Marty backlog, added 2026-08-15)**: a `PixelEditor` already exists (`Engine/*/Editor/PixelEditor.{h,cpp}` — NewCanvas, LoadImage, ExportPNG, layers, named palettes, drawing tools, Render). TODO: (1) **pass it through the unified UICanvas UI** (per the UI unification charter — it's currently ImGui) so it's consistent + web-capable; (2) **upgrade the workflow so people can easily edit IMPORTED pixel art** — open an imported sprite/texture straight into the editor, edit + save back to the asset (round-trip), palette extraction from the imported image, per-layer editing, zoom/grid/onion-skin niceties. Make "right-click a sprite asset → Edit" a first-class flow.
+
+### Particle system overhaul (Marty backlog, added 2026-08-15)
+Goal: a particle system that is robust, user-friendly, cool, and dead-easy to fire/start/stop/loop from nodes OR script, in 2D or 3D, with a good variety of particle PRIMITIVES and a preset library so you can make mist/spray/blood/sparks/smoke/etc. without fiddling.
+- **What exists**: CPU `ParticleSystem` + `ParticleRenderer` + `GPUParticleSystem` (compute, dormant — see the DOTS/GPU-compute note); `ParticleEmitterComponent` has loop, `EmitterShape` (Cone + others), shapeRadius, `RenderMode` (Billboard/VelocityStretch), texture sheet animation; nodes exist: Play Particles / Stop Particles / Particle Burst / Apply Particle Preset. So the bones are there.
+- **Robustness + UX**: audit the CPU path for correctness/perf; make emitters reliable and cheap; clear inspector with live preview; sensible defaults so a fresh emitter looks good immediately.
+- **Control parity (node + script, 2D + 3D)**: easy Fire/Start/Stop/Loop/Burst from BOTH VisualScript nodes and AngelScript (some particle nodes exist; fill gaps + ensure script bindings match; works the same in 2D and 3D scenes). This ties into the node-coverage + scripting-parity work.
+- **Primitive variety**: billboard (have), stretched/velocity (have), plus mesh particles (spawn a mesh per particle), ribbons/trails, point sprites, soft particles; multiple emitter shapes (cone/sphere/box/circle/edge/mesh-surface).
+- **Preset library**: ship ready-made presets — mist, spray, blood, sparks, smoke, fire, dust, rain-splash, magic — selectable in inspector and via `Apply Particle Preset`. This is the "easily make anything" payoff.
+- **GPU scale path**: for huge counts, route through the GPU-compute particle system once its draw path is revived (shared work with the DOTS-competitor).
+- ~~Entity-reference script property drag-assign (Marty)~~ **DONE 2026-08-14**: `[Property] uint64`/`[Property] Entity` script properties existed (ScriptPropertyType::Entity) but the inspector only drew a raw DragInt (type the numeric ID). Now a proper object slot — shows the assigned entity's name (or None/missing), drop an entity from the Hierarchy to assign it (accepts the existing ENTITY_REPARENT payload), with a clear button. This is the static entity-reference assignment mechanism.
+
+### Scripting and serialization surface
+- Remaining unbound/partially-bound components (joints, colliders, tilemap, and hierarchy were bound in the May cleanup; ~35 remain).
+- Component serializer coverage from ~7% round-trip-tested toward full; mid-play save state (AI, audio, tweens).
+- SCRIPTING_API doc gaps (HasComponent coverage, AI bindings, Camera_ApplyPreset).
+
+### Docs
+- ARCHITECTURE.md drift (MaterialGPU 80 to 112, backend phases). Dual-system explanations. RT shader workflow. ROADMAP refresh against this document.
+
+### Simulation and materials (Marty backlog, added 2026-08-13)
+- Buoyancy volumes: water zones that float/sink bodies via depth-based buoyancy + drag, with a 2D-heightfield wave sim. **Full spec (Gobliny-driven, canonical): `D:\TEGE_Projects\goblin\design\tech\tege-buoyancy-spec.md`.**
+  - **~70% ALREADY BUILT as `InteractiveWaterSystem` (Engine/*/Effects/InteractiveWater.{h,cpp}), wired into PlayMode:743 + Player:976 + tested (TestInteractiveWater).** This answers the spec's open Q1 (reuse this heightfield, don't build a new one). Done: grid heightfield + spring-damper `PropagateWaves`, `GetWaterHeight` bilinear sample (= spec `get_surface_height`), `CreateSplash` (= `apply_displacement`), `CreateWake`, depth-based upward buoyancy + water drag on `RigidbodyComponent.velocity` (InteractiveWater.cpp:343-362), `WaterInteractorComponent` marker (= `BuoyancyBody`), absorbing/reflecting boundaries, mesh gen. NOTE a separate simpler `WaterVolumeComponent` (Components/WaterVolume.h) also exists (visual/freeze water, ContainsPoint) — the heightfield sim is the InteractiveWater one.
+  - **GAPS vs spec (the real remaining work):** (1) ~~per-object DENSITY~~ **DONE 2026-08-13**: `WaterInteractorComponent` now has density (<1 floats, >1 sinks), volume, waterlogRate/waterlogMaxDensity; buoyancy force = `buoyancyForce * submergedDepth * volume * (1 - effectiveDensity)`; serialized + inspector controls + tests (light rises / dense sinks / waterlog accumulates). (2) ~~game-subscribable `WaterEnterEvent`~~ **DONE 2026-08-13**: an interactor crossing the surface downward faster than the water's `entryVelocityThreshold` fires a deferred `water_enter` event on the `EntityEventBus` (target=interactor, sender=water, floats impactForce/velocityY/x/y/z), edge-detected so it fires once on entry; wired PlayMode+Player+web; serialized threshold; tests. (3) ~~VERIFY the buoyancy `rb->velocity` writes reach Jolt~~ **VERIFIED 2026-08-13**: they reach Jolt via `SyncECSToJolt`'s external-velocity override (JoltBackend.cpp:413-422), one-frame latency. So the MVP (heightfield + density buoyancy + WaterEnterEvent + player drag) is COMPLETE. REMAINING: (4) ~~`WaterCurrent` (lazy-river flow)~~ **DONE 2026-08-13**: `InteractiveWaterComponent` carries `currentDirection`/`currentSpeed`/`currentPull`; floating interactors have their horizontal velocity lerped toward the flow (carried at flow speed, a swimmer can fight it); serialized + inspector + tests (carried up to flow speed / no-current-no-drift). Spline-path current still Alpha-tier. (5) ~~`apply_sustained_pressure`~~ **DONE 2026-08-13**: `InteractiveWaterSystem::ApplySustainedPressure(water, transform, x, z, radius, force)` eases the surface toward a held depression each call (vs CreateSplash's one-shot impulse), so a continuously-applied source holds a standing wave and relaxes when it stops; tests. Water interaction API is now SCRIPT-BOUND (2026-08-13): `Water_Splash`/`Water_Wake`/`Water_SustainedPressure`/`Water_GetHeight` in `ScriptBindings_Water.cpp` (RegisterWaterBindings, available in editor/Player/web), documented in SCRIPTING_API.md, tested. **Buoyancy spec is now feature-complete except one Alpha-tier item: spline-path current (curved lazy river).** Four components: `WaterVolume` (bounds/rest_height/heightfield resolution/damping/wave_speed + `get_surface_height`/`apply_displacement`/`apply_sustained_pressure`), `BuoyancyBody` (density, waterlog_rate, submerged/surface drag, displaced volume; polls the volume per physics tick), `WaterEnterEvent` (velocity-threshold splash → auto-displacement + game-subscribable), `WaterCurrent` (directional/spline flow for lazy river). MVP = WaterVolume heightfield + BuoyancyBody upward force + WaterEnterEvent + player submersion drag. Explicitly OUT: full 3D fluid, underwater refraction (separate render concern), boat pitch/roll, inter-object wave interaction. Physics side is Jolt 3D / Box2D 2D per the strict separation; net-sync the displacement EVENTS not the heightfield (deterministic local sim). 5 open impl questions in the spec (reuse a heightfield struct? tick rate? non-rect bounds? rigidbody drag controls? shader sampling of the heightfield).
+- Refractive indices: real refraction through transparent/glass/water materials. Material already carries IOR (extended MaterialGPU: SSS/transmission/IOR/thickness), so this is the render consumer — screen-space refraction / IOR-based bending, and the RT path can read true IOR for path-traced glass.
+
+### Tooling, scripting parity, adaptive graphics (Marty backlog, added 2026-08-13)
+- Scripting parity (charter, Marty 2026-08-13): a creator should be able to build a WHOLE game in ANY one surface — all nodes, all C++, or all AngelScript — and each surface's runtime strengths/weaknesses + readability should be documented so the choice is informed. **AUDITED + DOC WRITTEN: `docs/SCRIPTING_PARITY.md`** (three-surface coverage table, node-vs-script + script-vs-C++ gap lists, runtime/readability tradeoff matrix, same-behavior-in-3-surfaces example, path to parity). FINDING: AngelScript (~1023 bound fns) is near-parity with C++; **VisualScript nodes (~261) are THE bottleneck (~25% of the bound surface)** — thin on AI/behavior-tree/generic-component-access/UI/input, ABSENT on Rewind/MIDI/Accessibility/AudioReactive. So a nodes-only game hits walls today.
+  - Node editor: work on the VisualScript graph editor + node COVERAGE. The dominant parity work = generate/author nodes to match the AngelScript surface area-by-area (biggest hole first: generic accessors for the ~40 bound component types, then AI/BT/navmesh, then input/UI, then the absent areas). Much can be code-genned from the same registration data the bindings use. Plus graph-readability-at-scale (functions/subgraphs, groups) so big graphs don't become spaghetti.
+  - Script-vs-C++ gap: bind the ~35 still-unbound components/systems; new engine features should ship a binding + a node in the same change (keep the three in lockstep).
+- Review adaptive graphics (the 120-FPS-No-Matter-What pillar). **REVIEWED 2026-08-13: `AdaptiveQualitySystem` (Renderer/AdaptiveQuality.{h,cpp}) is FULLY IMPLEMENTED but 100% DORMANT — never instantiated, never Update()d, no QualityChangeCallback ever registered anywhere in the tree. The pillar's adaptive mechanism is dead code.** The algorithm is correct (FPS avg/variance, hysteresis, up/down cooldowns, emergency downgrade < minFPS, per-level recommendations for shadow res/render scale/LOD/particles/SSAO/bloom/volumetrics/cascades). SteamDeckSupport has its OWN separate STATIC recommendations, not this dynamic loop. Levers: `RenderSystem::SetShadowResolution` is frame-safe (defers to FlushPendingChanges) = ready; render-scale/dynamic-resolution = the crash-historied offscreen-resize path (risky). FPS input = 1/deltaTime at the call site. **FIX — SAFE SUBSET WIRED 2026-08-13**: RenderSystem now owns an AdaptiveQualitySystem, ticks it in Update() with 1/deltaTime, and a change-callback applies the frame-safe shadow levers (SetShadowResolution [deferred/GPU-idle], shadows-off at the floor, progressive far cascades below High). API: `SetAdaptiveQualityEnabled`/`SetAdaptiveQualityTargetFPS`/`GetAdaptiveQualityLevel`. Default OFF (editor never stomps authoring); the desktop **Player enables it** (target 60). Does NOT force levers on enable — only changes them when it decides to (no boot-time settings stomp). Vulkan-only for now (WebGPU shadow levers are a follow-up). Unit tests: TestAdaptiveQuality 6/6 (downgrade under sustained low FPS, emergency downgrade < minFPS, callback fires, recommendations track level, disabled = no-op). **PHASE 2 = render-scale (dynamic resolution — the big GPU lever, but the crash-historied offscreen-resize path) + cross-system levers (post-process toggles, particle cap) + WebGPU.**
+
+### Traversal & interaction mechanics (Marty backlog, added 2026-08-15)
+Standard character-action building blocks. Most need a component + controller-state + a bit of physics/animation glue; none exist yet.
+- **Ropes / swinging**: verlet or physics-joint rope (Jolt distance/point constraints for 3D, Box2D for 2D); attach/detach, climb up/down, swing momentum. Ties to grapple.
+- **Ladders**: climb volume + controller ladder-state (gravity off, vertical input = climb, snap to ladder axis), mount/dismount at top/bottom.
+- **Doors**: openable component (hinged swing / sliding), locked/unlocked + key check (hook to Inventory keys), trigger or interact-to-open, one/two-way, auto-close timer.
+- **Cover**: cover-volume + controller cover-state (snap to edge, peek, blind-fire hook, move along cover), corner detection. Pairs with AI (AI uses cover points).
+- **Ledge climb (mantle)**: detect a climbable ledge ahead+above (raycast/capsule sweep), play mantle, translate up-and-over. Root-motion or scripted curve.
+- **Ledge hang / shimmy**: grab a ledge edge (hang state, gravity off), shimmy left/right along the edge, climb up (→ mantle) or drop. Ledge-detection shared with mantle.
+- Shared substrate: a small "interaction/traversal" state machine on the character controller + an `Interactable`/interaction-prompt system (raycast for the nearest interactable, show prompt, fire on button). Doors/ladders/ropes/cover all register as interactables. **Also unblocks: click-to-move is currently a STUB (ControllerSystem.cpp:979 empty) — wire raycast-to-ground + straight-line or navmesh FindPath first.**
+
+### Performance & world scale (Marty backlog, added 2026-08-15)
+- **DOTS-competitive batch type**: Tier-1 SoA `Swarm` PROTOTYPED (`Core/include/Enjin/Sim/Swarm.h`, TestSwarm ~300M agent-updates/sec single-thread; editor `SwarmComponent`+`SwarmSystem` visualizes via instanced cube proxies). NEXT: (a) fork-join split across cores, (b) a real GPU-instanced draw (position buffer → one draw, replaces proxy entities), (c) **Tier-2 GPU-compute agents = the actual DOTS-beater, esp. on web where DOTS can't run.** The WebGPU backend has compute pipelines: WebGPUPipelineManager::CreateComputePipeline is used by WebGPUComputeSmokeTest and by WebGPUParticleSystem, which runs a live @compute simulation shader on web. Honest verdict: TEGE ECS does NOT match DOTS on raw million-entity throughput and doesn't need to (200-dog test was GPU/draw-bound); the Swarm type is the escape hatch for the cases that do need scale.
+- **Bleeding-edge world streaming**: existing = classic chunk streamer (LevelStreaming.h). Target = continuous virtualized streaming: Nanite-style geometry-cluster streaming on the existing GPUCulling/HiZ/DeviceGeneratedCommands substrate; revive the gated-OFF virtual texturing; streaming surfel GI tied to the sparse-reconstruction thesis. TEGE-specific hooks: frame-budget-bounded time-sliced streaming (never hitch = 120fps pillar), accessibility-aware cross-fade LOD (no pop-in / motion-sickness), origin-rebasing for large worlds. Phase 1 (contained, do first) = make StreamingManager time-sliced + hitch-free + predictive prefetch along camera velocity.
+- **Navmesh variety**: area costs + areaType already exist (painted-regions data model half-built, needs authoring UI); MISSING off-mesh links (jumps/portals) and spline-path nav (Math/Spline.h exists but unwired to nav).
+
+### Parked (1.0+ or cut, Marty's call)
+- DLSS/XeSS vendor SDKs. FMOD/Wwise/NVN stubs (cut candidates). SteamAudio default-on decision.
+- VR/OpenXR. Nanite/Lumen-style tech. Frame generation. Vulkan video decode.
+
+---
+
+# Reference: Glacier phases (post-1.0)
+
+Merged from ROADMAP_GLACIER.md.
+
+> Post-1.0. Unowned, and no phase here is tracked against the engine.
+> Volumetric fog (phase 5) and GPU particles (phase 6) have shipped work.
+
+## Context
+
+After analyzing IO Interactive's Glacier engine advances (Digital Foundry interview, 007 First Light), this plan addresses 8 major capability gaps in Enjin. The goal: bring Enjin's rendering, streaming, ECS, animation, and editor architecture to the same caliber as a AAA in-house engine — while maintaining the cross-platform story (Vulkan + WebGPU + future Metal) and the "120 FPS No Matter What" pillar.
+
+**Key user requirement:** All particles, transparents, and volumetrics must integrate with EVERY lighting system (clustered lights, shadows, GI probes, volumetric fog). Artists must be able to build effects however they want without worrying about which lighting features apply.
+
+---
+
+## Phase 1: Shader Specialization + Shadow Budget (6-8 weeks)
+
+**Why:** Every subsequent phase depends on efficient shader variants and a dynamic shadow system. The current monolithic push-constant flags cause unnecessary GPU ALU waste; fixed shadow allocations can't scale.
+
+**Deliverables:**
+1. **Vulkan specialization constants** — Replace 32-bit push-constant feature flags with `VkSpecializationInfo`. Cache SPIR-V permutations keyed by constant values in `ShaderManager`.
+2. **WGSL override constants** — WebGPU equivalent using `override` declarations in all 4 WGSL shaders.
+3. **Shadow atlas pool** — Unify `ShadowMap`, `PointLightShadowMap`, `SpotLightShadowMap` into a single tiled depth atlas. Dynamic tile allocation replaces fixed per-light resources.
+4. **Dynamic shadow budget** — Cluster-pixel-count priority: the `ClusteredLighting` compute pass outputs per-light pixel-weight via atomics. Top N lights get shadow tiles per frame; rest fall back to SH probe irradiance.
+
+**Key files:** `ShaderManager.h`, `ShadowMap.h`, `PointLightShadowMap.h`, `SpotLightShadowMap.h`, `ClusteredLighting.h`, all `.wgsl` shaders
+**New:** `ShadowAtlas.h`, `ShadowBudget.cpp`
+
+**Scalability:** One shadow atlas, one budget knob. Low-end = 4 tiles at 512x512. High-end = 16+ tiles at 2048x2048. `AdaptiveQualitySystem` feeds tile size/count.
+
+---
+
+## Phase 2: Software-Traced DDGI via SDF (8-10 weeks)
+
+**Why:** Glacier's crown jewel — GI that works on ALL platforms including Switch 2 class hardware, no hardware RT required. The engine already has SH probes, analytic SDFs, VCT, and RT GI — but nothing connects them into a unified software-traced probe system.
+
+**Deliverables:**
+1. **GPU mesh voxelization** — Move `VoxelGrid::Voxelize()` from CPU to compute shader. Read from `MergedGeometryBuffer`, output 3D texture (R16F) for SDF storage.
+2. **GPU SDF volumes from mesh data** — Extend `MeshToSDF` to output GPU-resident 3D textures for probe tracing.
+3. **DDGI probe system** — Grid of irradiance probes updated via SDF ray marching in compute. Octahedral encoding in probe texture atlas. Stores both irradiance and radiance (for volumetric sampling).
+4. **Temporal amortization** — Update 1/8th of probes per frame, cycling over 8 frames. Keeps GI within 2ms budget.
+5. **Fallback cascade** — VCT or existing SH probes fill in at distance where DDGI grid is sparse.
+
+**Key files:** `VoxelConeTracing.h`, `SDFRenderer.h`, `SDFScene.h`, `SHLightProbe.h`
+**New:** `DDGIProbeSystem.h`, `ddgi_probe_update.comp`, `ddgi_sample.comp`, `gpu_voxelize.comp` + WGSL equivalents
+
+**Scalability:** Low-end: 8x4x8 grid, 32 rays/probe, update 1/16 per frame. High-end: 16x8x16, 128 rays/probe, update 1/4. WebGPU: CPU voxelization at 32^3, update once/second.
+
+---
+
+## Phase 3: Async Streaming with 2ms Frame Budget (6-8 weeks)
+
+**Why:** Glacier enforces that no single streaming function exceeds 2ms on main thread at 60fps. Current `StreamingManager` is main-thread-blocking. This is critical for open-world and driving sequences.
+
+**Deliverables:**
+1. **Time-sliced entity integration** — Deserialize on worker thread into staging buffer. Integrate entities in batches on main thread, yield after 2ms wall-clock.
+2. **Priority queue scheduling** — Replace flat load queue with distance + `StreamPriority` heap. Critical chunks always first.
+3. **Predictive loading** — Camera velocity analysis to pre-fetch chunks 1-2 seconds ahead.
+4. **Brick layer composition** — Glacier-style stacking: base layer + additive/override layers. Higher layers can override or remove entities from lower layers. Enables mission-specific scene variants without duplicating content.
+5. **Memory budget** — Track resident memory; evict lowest-priority chunks approaching limits.
+
+**Key files:** `LevelStreaming.h/.cpp`, `SceneSerializer.cpp`, `World.h`
+**New:** `BrickComposition.h`, `StreamingBudget.h`
+
+**Scalability:** Fixed 2ms budget is absolute. Low-end CPUs integrate fewer entities/frame (more pop-in, never frame drops). Web: staged integration within requestAnimationFrame, no worker threads.
+
+---
+
+## Phase 4: ECS Optimization for 2M Entities (5-7 weeks)
+
+**Why:** Glacier achieves 32 bytes per entity with 2M loaded (70% logic, 30% visual). Enjin's current overhead is ~104 bytes per entity with 3 components, mostly from `unordered_set` hash buckets.
+
+**Deliverables:**
+1. **Eliminate `m_ActiveEntitySet`** — Replace with `vector<u8>` validity array indexed by entity ID. Saves ~48 bytes/entity.
+2. **Generation-packed entity IDs** — Upper 32 bits = generation, lower 32 = index. `IsValid()` becomes single array lookup. Eliminates separate active entity vector.
+3. **Archetype fast path** — For logic-only entities (no mesh/transform), contiguous archetype storage. Bulk insertion/iteration. Coexists with existing sparse-dense storage for visual entities.
+4. **Component memory pools** — Chunked allocator for `ComponentStorage<T>::Add()` instead of per-entity `push_back` reallocation.
+5. **Parallel system update** — System dependency graph allows independent systems to run concurrently.
+
+**Key files:** `Entity.h`, `Component.h`, `World.h`, `System.h`
+
+**Scalability:** Editing cost is O(visible), not O(total). Scene hierarchy uses virtual scrolling. Generation-packed IDs make `IsValid()` constant-time regardless of entity count.
+
+---
+
+## Phase 5: Volumetric Fog, Clouds, and Froxel Lighting (8-10 weeks)
+
+**Why:** The engine currently only has linear distance fog. Glacier uses volumetric fog as both atmosphere AND a lighting medium. This phase adds true 3D volumetric rendering integrated with clustered lighting and DDGI.
+
+**Deliverables:**
+1. **Froxel volume** — 3D texture (160x90x64) in view space. Reuses cluster grid concept from `ClusteredLightingSystem`.
+2. **Volumetric fog compute** — Per-froxel: sample noise-driven density, accumulate in-scattered light from ALL clustered lights (using Phase 1's shadow atlas for shadow testing), sample DDGI probes (Phase 2) for indirect light contribution.
+3. **Temporal reprojection** — Reproject previous frame's volume to reduce noise. Uses existing `HaltonSequence.h` for jitter.
+4. **Volumetric clouds** — Separate ray-march pass driven by `WeatherSystem` coverage parameters.
+5. **Full lighting integration for fog** — Every direct light, every shadow, DDGI irradiance, all affect the fog volume. No exceptions.
+6. **God ray upgrade** — Replace screen-space `fogShafts` with volumetric-aware light shafts reading from froxel volume.
+
+**Key files:** `ClusteredLighting.h`, `PostProcessing.h`, `OITManager.h`, `Weather.h`
+**New:** `VolumetricFog.h`, `volumetric_fog.comp`, `volumetric_clouds.frag` + WGSL equivalents
+
+**Scalability:** Low-end: 80x45x32 froxels, 4 temporal samples, no clouds. High-end: 160x90x128, 16 samples, full clouds.
+
+---
+
+## Phase 6: GPU Particles + Volumetric Particles + Full Lighting Integration (8-10 weeks)
+
+**Why:** This is the "Smolder" equivalent. Glacier renders 400+ volumetric particle instances with full lighting integration. **Every particle and transparent object must receive light from every system — no exceptions.** Artists build effects however they want.
+
+**Deliverables:**
+1. **GPU particle simulation** — Compute shader replaces `ParticleSystem::Update()`. Position, velocity, lifetime, forces (gravity, wind via `WindSystem`) all GPU-side. Emitter config as uniform buffer, particle state in SSBOs.
+2. **Indirect draw from compute** — Eliminates CPU readback. WebGPU fallback: read count, issue direct draw.
+3. **Volumetric particle shapes** — Pre-baked 3D density textures (OpenVDB import or SDF-generated). Rendered as view-aligned volume slice stacks with ray marching.
+4. **FULL lighting integration for ALL particles and transparents:**
+   - Every clustered light affects every particle (point, spot, directional)
+   - Shadow atlas lookup per particle (Phase 1's budget system)
+   - DDGI probe sampling for indirect light (Phase 2)
+   - Volumetric fog in-scattering applied to particles (Phase 5's froxel volume)
+   - Self-shadowing within volumetric particles via density accumulation
+   - Emissive particles contribute back to the froxel volume (two-way coupling)
+5. **OIT compositing for everything** — Upgrade `OITManager` so volumetric particles, billboard particles, transparent meshes, and volumetric fog ALL composite through the same order-independent pipeline. No sorting artifacts, no special cases. Artists drop any effect anywhere and it just works.
+6. **Particle ↔ volumetric fog interaction** — Particles inside fog receive fog scattering. Volumetric particles contribute density to the froxel grid. Explosions thicken local fog.
+7. **100K+ particle cap** — GPU simulation enables massive counts. Display cap configurable per platform.
+
+**Key files:** `ParticleSystem.h`, `ParticleRenderer.h`, `OITManager.h`, `VolumetricFog.h` (Phase 5), `ClusteredLighting.h`
+**New:** `GPUParticleSystem.h`, `particle_simulate.comp`, `volumetric_particle.frag`, `VolumetricParticleRenderer.h`
+
+**Scalability:** CPU particle fallback remains for min-spec. GPU compute with 32K cap on GTX 1660 class. Volumetric particles are high-end only; billboards remain default on low-end. But the LIGHTING integration applies to ALL particles regardless of rendering mode — even billboard particles on low-end receive clustered light + shadows + GI.
+
+**The principle:** "One lighting path for everything." The fragment shader for particles (billboard or volumetric) calls the same `EvaluateLighting()` function as opaque geometry. It reads from the same clustered light grid, the same shadow atlas, the same DDGI probes, the same froxel volume. No separate "particle lighting" system. No "transparent lighting" system. One system. Every light. Every shadow. Every particle.
+
+---
+
+## Phase 7: Motion Matching + Animation Pipeline (8-10 weeks)
+
+**Why:** Glacier ships 10x the animation count of Hitman via motion matching. Enjin has solid animation foundations but no motion matching. This is the difference between "functional" and "AAA feel."
+
+**Deliverables:**
+1. **Motion matching database** — Offline tool processes clips into searchable pose database. Features: foot positions, hip velocity, trajectory prediction (0.2s intervals). Flat float arrays for SIMD search.
+2. **Runtime pose search** — Per-frame: compute current features + desired trajectory, search database for best match. `SkeletalAnimator` gains motion matching mode alongside state machine mode.
+3. **Inertialization blending** — Spring-damper decay of pose difference at clip transitions. Eliminates foot-sliding that crossfades cause.
+4. **Motion warping** — Warp root motion to align with gameplay targets (vault hand → ledge, punch → enemy position). Builds on existing bone manipulation API.
+5. **Data-driven ragdoll** — Animation-driven joint limits. Sample current pose for per-joint limit ranges → more natural ragdoll falls.
+6. **Blend tree integration** — Motion matching handles locomotion base layer; blend trees/state machines handle upper body, combat, interaction overlays.
+
+**Key files:** `Animation.h/.cpp`, `RagdollSystem.cpp`
+**New:** `MotionMatching.h`, `Inertialization.h`, `MotionWarping.h`
+
+**Scalability:** Search budget, not search space. Low-end: 10K poses, 6 features. High-end: 100K poses, 12 features. KD-tree with early termination. Memory-limited platforms: fewer clips, fall back to existing blend trees.
+
+---
+
+## Phase 8: Editor Process Isolation (6-8 weeks)
+
+**Why:** Glacier separates editor and engine into different processes. Engine crash → restart child process, no work lost. This comes last because all systems must be stable first.
+
+**Deliverables:**
+1. **Editor-runtime protocol** — Cross-process IPC (shared memory on desktop, WebSocket for Web/remote). Messages: entity CRUD, component modification, play/pause/stop, viewport camera sync, asset reload.
+2. **Runtime child process** — Rendering loop in standalone child. Editor owns ImGui + scene editing state. Crash → restart child, resend scene.
+3. **Viewport sharing** — Vulkan: `VK_KHR_external_memory` for zero-copy. Fallback: compress via shared memory.
+4. **Multi-platform runtime connection** — Editor connects to runtime on different machine/platform (browser WebGPU, Android device) via WebSocket transport.
+5. **Scene state persistence** — Editor maintains shadow JSON copy. On crash, shadow copy → new runtime. Zero data loss.
+6. **Play mode hot-switch** — Edit/play mode without restarting runtime. Edit = paused physics + continued rendering.
+
+**Key files:** `Editor/src/main.cpp`, `Player/`, `SceneSerializer.cpp`, `RenderTarget.h`
+**New:** `EditorProtocol.h`, `RuntimeProcess.cpp`, `EditorBridge.h`
+
+**Scalability:** Communication cost is O(changes), not O(scene). Delta protocol. 2M entities ≠ 2M messages. Low-bandwidth: downscaled viewport frames.
+
+---
+
+## Phase Dependency Graph
+
+```
+Phase 1 (Shaders + Shadows)
+    │
+    ▼
+Phase 2 (Software DDGI) ────────────┐
+    │                                │
+    ▼                                ▼
+Phase 3 (Async Streaming)    Phase 5 (Volumetric Fog)
+    │                                │
+    ▼                                ▼
+Phase 4 (ECS 2M Entities)   Phase 6 (GPU Particles + Full Lighting)
+    │                                │
+    └────────────────┬───────────────┘
+                     ▼
+             Phase 7 (Motion Matching)
+                     │
+                     ▼
+             Phase 8 (Editor Isolation)
+```
+
+Phases 3-4 (streaming/ECS track) and 5-6 (rendering/effects track) run in parallel after Phase 2.
+
+## Timeline
+
+| Phase | Effort | Cumulative |
+|-------|--------|------------|
+| 1. Shaders + Shadows | 6-8 weeks | 6-8 weeks |
+| 2. Software DDGI | 8-10 weeks | 14-18 weeks |
+| 3. Async Streaming | 6-8 weeks | 20-26 weeks (parallel with 5) |
+| 4. ECS 2M Entities | 5-7 weeks | 25-33 weeks (parallel with 6) |
+| 5. Volumetric Fog | 8-10 weeks | 22-28 weeks (parallel with 3) |
+| 6. GPU Particles + Lighting | 8-10 weeks | 30-38 weeks (parallel with 4) |
+| 7. Motion Matching | 8-10 weeks | 38-48 weeks |
+| 8. Editor Isolation | 6-8 weeks | 44-56 weeks |
+
+**Critical path:** ~44-56 weeks (~10-13 months) with parallel tracks.
+
+## Verification
+
+Each phase ships with:
+- New test suites added to CTest (existing 82 targets + ~1100 cases must continue passing)
+- Visual regression screenshots for rendering changes
+- Performance benchmark capturing frame time before/after
+- WebGPU build verified (no Vulkan-only regressions)
+- `docs/ROADMAP.md` updated with completed items
+
+---
+
+# Reference: recreating desktop effects on web
+
+Merged from WEB_EFFECT_RECREATION.md.
+
+> Measured 2026-09-05. `build-web` had **no CMAKE_BUILD_TYPE**, so every web
+> build shipped unoptimised. Setting Release took the wasm from 12.0 MB to
+> **11.25 MB** - only 6%, far less than the 3-5 MB that was predicted, because
+> the binary is dominated by what is LINKED, not by codegen. `assimp` (FBX,
+> Collada, glTF parsers) and `imgui` are both live in the player wasm; strings
+> for `Deformer.Fbx`, `Collada: Found unsupported <bind>` and `imgui_log.txt`
+> are all in the shipped binary. A player that loads pre-packed assets needs
+> neither. That, and `-Os` over `-O3`, are the real size levers. The Release
+> switch is still worth keeping for the runtime speed.
+
+`python tools/shader_parity.py` reports the split:
+
+```
+GLSL (desktop / Vulkan) : 60 effects, 74 stage files
+WGSL (web / WebGPU)     : 13 effects, 25 stages
+compute shaders         : desktop 36, web 0
+```
+
+Fifty-one effects have no web implementation (fifty-two before `outline`
+landed). The instinct is to port them. That is the wrong instinct, and this
+document is the argument for why plus what to do instead.
+
+## The reframe
+
+Most of the 52 exist to make **physically based rendering fast at scale**: ray
+traced GI, visibility buffers, GPU culling of a hundred thousand draws, virtual
+texturing, variable rate shading. They are answers to problems a stylised game
+does not have.
+
+Whistland packs to **130 KB**. Its scene is 79 entities, 3,162 triangles, flat
+shaded vertex colour, one directional light. Porting ReSTIR to that is not an
+optimisation, it is a category error.
+
+Thirty-six of the desktop shaders are compute. WebGPU compute exists but the web
+renderer has none, and the effects that need it are exactly the ones a cel-shaded
+game does not want. So the useful question is not "how do we port these" but
+**"which of these is the art direction actually asking for, and what is the
+cheapest thing that reads the same?"**
+
+The answer is about nine of them, and every one is fragment or vertex only.
+
+---
+
+## Bucket 1 — art direction critical
+
+These change how the game LOOKS. Missing them is why web would not match.
+
+### `outline` -> inverted hull. SHIPPED
+The single most important one. A Wind Waker read needs outlines and there was no
+web implementation at all.
+
+Worse than missing: `SceneRenderSettings::ApplyToRuntime` already wrote
+`geometryOutlinesEnabled` / `Width` / `Color` into the web RenderSystem, and the
+scene file already round-tripped them. Nothing on web read them. A cel-shaded
+project exported to the browser lost its outlines and no runtime said a word.
+
+What shipped is the inverted hull: `OUTLINE_WGSL` draws the mesh again with
+front faces culled, vertices pushed along their object-space normal by the
+outline width, in flat colour. Vertex shader only, no postprocess pass, no depth
+prepass, no new render target, and it follows the skeleton so an animated
+character's outline does not stay behind in the bind pose. It reuses the main
+pass's frame and object bind group layouts by repurposing `ObjectData.baseColor`
+as the outline colour and `.metallic` as the width, which is the same trick
+outline.vert plays with push constants on Vulkan, so the two paths cannot drift
+apart in what they read. Consecutive entities sharing a mesh instance into one
+draw, so an outlined crowd costs one call, not one per body.
+
+Priority order matches RenderOutlinePass exactly: per-material, then a cel
+ArtStyle override, then the global setting, with a hover highlight beating all
+three. That last one means `HoverHighlightComponent` now works on web.
+
+The other route, **edge detect** in the postprocess pass, is still open and
+still worth it later: it catches the interior edges a hull misses. It needs a
+normal target, which the web MRT pass does not have yet.
+
+### `skinning` -> vertex shader skinning. ALREADY TRUE
+Listed here first time round as missing. It is not. `PBR_WGSL` already does the
+four-weight matrix palette in the vertex shader, gated on FLAG_SKINNED, and the
+web vertex layout carries `boneWeights` / `boneIndices`.
+
+What the parity report counts is `skinning.comp`, and that is a compute shader
+with no web path (`--compute-skinning` is a desktop flag). The report is
+counting files, so a desktop effect implemented inline on web reads as a gap.
+Worth remembering when reading the 52: some of them are already answered under a
+different name, which is the same trap the 2026-08-28 audit hit.
+
+Vulkan skins with eight weights (two sets of four), web with four. That is a
+real difference and it will show on a mesh authored past four influences.
+
+### `oit_composite` -> weighted blended OIT. WIRED
+Sails, water, foam and spray all need transparency that does not pop when it
+sorts wrong. Two blended surfaces that intersect have no correct per-object
+order, so the order flips as the camera moves and the image jumps. Weighted
+blended OIT (McGuire/Bavoil) accumulates instead of sorting, and cannot pop
+because there is no order to get wrong.
+
+PBR_WGSL's fragment entry point was five hundred lines with the shading inline.
+It is now `shadeSurface()`, with `fs_main` a one-line delegate and `fs_oit`
+the second entry point, so a transparent surface is lit by the same code as an
+opaque one and the two cannot drift.
+
+The frame gained two passes after the scene pass. Accumulation writes
+premultiplied colour times the paper's depth weight into an RGBA16Float target
+(additive) and alpha into an R8Unorm revealage target (dst *= 1 - src, cleared
+to 1). The composite resolves the pair back over the opaque scene with
+src = OneMinusSrcAlpha, dst = SrcAlpha, which is the paper's formula evaluated
+by the blender. Depth is loaded and never written, so transparency is hidden by
+opaque geometry in front of it and never hides other transparency.
+
+Three things worth knowing:
+
+- **It is lazy.** The targets and pipelines are built the first frame a scene
+  actually contains a blended entity. A fully opaque scene allocates nothing
+  and renders exactly as before. If the targets fail to build, the draw loop
+  keeps drawing blended entities the old sorted way rather than dropping them.
+- **Pass order is load-bearing.** It runs after the scene pass, which is after
+  the sky. The sky is a z = 1 fullscreen triangle, so transparency drawn before
+  it is painted over.
+- **`GPURenderPipelineDesc` had to grow.** It hardcoded `fs_main` and carried
+  one `colorFormat` and one `blendState`, and OIT's two targets blend
+  differently by definition. It now takes a `fragmentEntryPoint` and a list of
+  extra colour targets. Note for whoever touches the pipeline manager next: a
+  `WGPUColorTargetState` holds a POINTER to its blend state, so the vector of
+  blend states is reserved up front - a reallocation there would leave every
+  target pointing at freed memory.
+
+**Unverified.** It compiles, it boots, and no demo scene has been checked with
+real transparency in front of a human yet.
+
+---
+
+## Bucket 2 — the perf levers
+
+### `upscale_*` -> render scale + CAS. ALREADY SHIPPED
+The biggest web performance win available, and it was already in the tree before
+this document was written. `RenderSystem::ApplyRenderScale` clamps to 0.5 - 1.0,
+sizes the web scene target through `WebScaledDim`, and turns the sharpener on
+below 1.0; `sharpenCAS` in POSTPROCESS_WGSL is a four tap contrast adaptive
+sharpen with a clamp to the local min/max, so it does not halo.
+
+EASU is a complex gather and is still not worth porting. At 0.7x you draw half
+the pixels, which is why nothing else on this list comes close.
+
+### `cull`, `cull_hiz`, `hiz_generate`, `light_cluster_*` -> CPU cull
+GPU culling exists so a hundred thousand draws can be culled in a compute pass.
+Web scenes will not have a hundred thousand draws. A CPU frustum cull over a
+coarse spatial grid costs microseconds at these counts and needs no shader at
+all. Light clustering matters past a few dozen lights; until then, a plain loop.
+
+### `taa_resolve` -> FXAA, or supersample
+TAA needs motion vectors, a history buffer and a reprojection pass, and it ghosts
+badly on high contrast stylised content, which is exactly what a cel look is.
+Use FXAA (one fragment shader) or, where there is headroom, render scale above
+1.0 and downsample. The second is better looking and simpler.
+
+---
+
+## Bucket 3 — mood, with analytic stand ins
+
+### `volumetric_fog` -> analytic height fog + radial blur
+A raymarched froxel volume is compute. Analytic exponential height fog is a few
+lines in the fragment shader and **is already there**: PBR_WGSL reads
+`fogParams` and applies height-based distance fog, matching Vulkan.
+
+What is missing is the god rays. A radial blur from the projected sun position
+over a bright pass, fragment only, and for open water it reads better than a
+froxel grid anyway.
+
+### The GI stack -> hemisphere ambient
+`ddgi_probe_update`, `ddgi_sample`, `restir_initial/spatial/temporal`,
+`surfel_lookup/placement/update`, `radiance_cache_read/update`,
+`svgf_atrous/temporal/variance`, `rt_composite`, `rt_hybrid_apply`,
+`rt_temporal_reuse`, `adaptive_ray_budget`, `adaptive_ray_variance`.
+
+**Seventeen of the fifty-two are one feature**: ray traced global illumination
+with denoising. A cel shaded game does not want it. Physically correct bounce
+light fights flat colour and hard shading bands; it is the opposite of the look.
+
+Replaced with **hemisphere ambient**, already shipped: PBR_WGSL builds a sky
+dome irradiance from the scene's configured sky and mixes it into the flat
+ambient term by the surface normal's Y. It mixes rather than replaces, anchored
+to the scene's tuned ambient level, because replacing it made sky-configured
+builds read dimmer than flat-ambient ones. No probes, no rays, no denoiser. If
+more is wanted later, bake spherical harmonic probes on the CPU at load time.
+
+### `weather_particle` -> instanced billboards
+Rain and snow through the existing particle system, which already runs on web
+(`WebGPUParticleSystem`, max 65,536 particles). No new shader.
+
+---
+
+## Bucket 4 — do not port
+
+`gpu_voxelize`, `vt_feedback`, `vt_resolve`, `vrs_generate`, `dgc_generate`,
+`material_resolve`, `visibility`, `splat`, and everything already folded into the
+GI item above.
+
+Virtual texturing, visibility buffers, variable rate shading and device generated
+commands are answers to scale problems. They cost more to maintain on a second
+backend than they can possibly return on a game that fits in 130 KB.
+
+---
+
+## Order of work
+
+1. ~~**Render scale + CAS.**~~ DONE, and it was done before this document was
+   written. `RenderSystem::ApplyRenderScale` sizes the web scene target and
+   turns the sharpener on below 1.0; `sharpenCAS` is in POSTPROCESS_WGSL.
+2. ~~**Outline (inverted hull).**~~ DONE. See the bucket 1 entry.
+3. ~~**Hemisphere ambient.**~~ DONE, also before this document. PBR_WGSL mixes a
+   sky-dome irradiance into the flat ambient term when the scene has a
+   configured sky.
+4. ~~**Weighted blended OIT.**~~ WIRED. See the bucket 1 entry.
+5. ~~**Vertex skinning.**~~ ALREADY TRUE, see above. Eight-weight parity is the
+   only piece left and no content needs it yet.
+6. ~~**Analytic fog.**~~ DONE, height-based distance fog is in PBR_WGSL.
+   **Radial god rays** are not, and are still worth one fragment pass.
+7. **CPU cull.** Only when draw counts justify it.
+
+So the list was three items long, not seven, and all three are closed.
+Check what the web renderer already does before adding to it: the audit habit of
+grepping for the FEATURE rather than the SHADER NAME would have caught three of
+these before they were written down as work.
+
+Every one is fragment or vertex only. None needs compute. Together they are
+perhaps a tenth of the work of porting the 52, and they get closer to the
+intended look than the 52 would, because the 52 are built for a different look.
+
+## The web renderer never freed GPU memory
+
+Found 2026-09-05, chasing a live demo that froze in Firefox with:
+
+```
+Uncaptured WebGPU error: Not enough memory left.
+Uncaptured WebGPU error: In a set_bind_group command, caused by: BindGroup with '' label is invalid
+Uncaptured WebGPU error: Buffer with '' label is invalid
+```
+
+`WebGPURenderer::DestroyBuffer` called `wgpuBufferRelease` and
+`DestroyTexture` called `wgpuTextureRelease`. Neither `wgpuBufferDestroy` nor
+`wgpuTextureDestroy` appeared anywhere in the engine. Release only drops the
+JavaScript reference; the GPU allocation behind it survives until the garbage
+collector runs, and the collector is looking at a tiny wrapper object rather
+than the megabytes it owns, so it is in no hurry.
+
+A web frame creates on the order of a hundred transient buffers, one per shadow
+caster and one per draw batch, each with a bind group. The GPU budget is gone
+long before anything triggers a collection, allocations start failing, and
+every bind group built on a failed buffer is invalid. That is the cascade
+above, in order.
+
+The fix cannot destroy in place. Measured against Dawn:
+
+```
+ok     destroy AFTER submit
+ERROR  destroy BEFORE submit: [Buffer (unlabeled)] used in submit while destroyed.
+```
+
+and the transient buffers are destroyed mid-frame by design. So destroys are
+queued and drained at the top of the next frame, once the submit that used them
+has happened. `RenderSystem`'s web `Update` now also logs live and created
+buffer counts once a second, because the report arrived with no way to tell a
+leak from ordinary churn: a flat live count next to a large total is recycling
+working as intended, a climbing live count is a leak.
+
+Not yet confirmed against the original failure. The mechanism is proven and the
+fix is deployed; whether it is the whole of what froze that session is open
+until someone runs it again.
+
+### The other half: not allocating in the first place
+
+Reclaiming properly still left the frame creating and destroying roughly a
+hundred buffers and a hundred bind groups. `m_WebObjectArrayBuf` /
+`m_WebObjectArrayBG` / `m_WebObjectArrayGen` were sitting in the header with a
+comment describing exactly the design that removes it, alongside
+`EntityRenderData::objBoneBindGroup` and `objBoneBindGroupGen` for the skinned
+case, and not one of the five was referenced anywhere but shutdown. The
+optimisation had been written, documented, and then lost.
+
+It is back. The frame's ObjectData is packed into one persistent storage
+buffer, grown on demand, uploaded once, bound once. Records are reordered into
+draw order first so an instanced batch is contiguous, and each draw addresses
+its slice with `firstInstance`. Skinned entities are the one case that cannot
+share the bind group, because binding 1 is their own bone buffer; theirs is
+cached on the entity and rebuilt only when the shared buffer moves, which is
+what the generation counter is for.
+
+Two things this rests on, both measured against Dawn rather than assumed:
+
+```
+ok    firstInstance=0 -> instance_index=0
+ok    firstInstance=3 -> instance_index=3
+ok    firstInstance=7 -> instance_index=7
+```
+
+and the destroy-ordering result above. If `instance_index` had been 0-based per
+draw, every entity would have read row zero and the whole scene would have
+collapsed onto one transform.
+
+The padding had to go with it. ObjectData was stride-256 because each entity
+had its own uniform binding and 256 is `minUniformBufferOffsetAlignment`. A
+storage array's stride is the struct size, so 256 would have made every index
+read the wrong row.
+
+The shadow passes went the same way. They were the worse offender: a buffer
+and a bind group per caster for the directional pass, again per caster for
+every spot light, and six more times per caster for a point light. Fifty-six
+casters and one point light is over four hundred of each, per frame.
+SHADOW_WGSL now reads a storage array of model matrices - the depth pass only
+ever wanted the model matrix, so it carries matrices rather than a copy of the
+full ObjectData - and the caster list is identical and identically ordered in
+all three passes, so one upload serves every one of them and the row is just
+the caster's index.
+
+**Unverified.** This one is behaviour-visible: get `firstInstance` wrong and
+every object renders with another object's transform. Dawn confirms the
+semantics but nothing here has rendered a frame of it.
+
+## Depth-driven post-processing
+
+Scene depth is single-sample and readable by the post-process pass. The depth texture
+carries TextureBinding usage alongside RenderAttachment, plus a second view with
+`aspect = DepthOnly` - a depth-stencil format is viewed one aspect at a time to be read
+in a shader. The pass binds it as `texture_depth_2d` and reads it with `textureLoad`, so
+it needs no sampler.
+
+Depth is linearised against the camera near and far planes, fed per frame.
+
+- **SSAO** samples an eight-point ring in depth: a nearer neighbour is an occluder.
+- **Cel outline** is a Sobel on linear depth, driven by the `celOutline*` fields in
+  `SceneRenderSettings`. It catches interior edges; the inverted hull draws silhouettes.
+
+**DoF, god rays and tilt-shift are unbuilt.**
+
+## Keep the parity report honest
+
+`python tools/shader_parity.py --strict` exits non-zero when a shared effect has
+a stage on one backend and not the other. Run it before hand writing another
+WGSL shader. The twelve shared effects are maintained twice by hand and nothing
+else in the build compares them; two real divergences were found on 2026-09-04
+and neither was deliberate.

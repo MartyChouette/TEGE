@@ -253,6 +253,7 @@ GPUPipelineHandle WebGPUPipelineManager::CreateRenderPipeline(const GPURenderPip
     auto handle = m_Pool.Allocate();
     auto* slot = m_Pool.Get(handle);
     slot->pipeline = pipeline;
+    m_PipelineLabels[handle] = desc.label ? desc.label : "(unlabelled render)";
     return GPUPipelineHandle{handle};
 }
 
@@ -296,6 +297,7 @@ GPUPipelineHandle WebGPUPipelineManager::CreateComputePipeline(const GPUComputeP
     auto handle = m_Pool.Allocate();
     auto* slot = m_Pool.Get(handle);
     slot->computePipeline = pipeline;
+    m_PipelineLabels[handle] = desc.label ? desc.label : "(unlabelled compute)";
     return GPUPipelineHandle{handle};
 }
 
@@ -311,12 +313,27 @@ bool WebGPUPipelineManager::IsValid(GPUPipelineHandle handle) const {
     return m_Pool.IsValid(handle.id);
 }
 
+void WebGPUPipelineManager::ReportUnusedPipelines() const {
+    u32 unused = 0;
+    for (const auto& kv : m_PipelineLabels) {
+        if (m_UsedPipelines.count(kv.first)) continue;
+        ++unused;
+        ENJIN_LOG_WARN(Renderer, "Pipeline never bound: %s", kv.second.c_str());
+    }
+    if (unused == 0) {
+        ENJIN_LOG_INFO(Renderer, "Pipelines: all %zu bound at least once",
+                       m_PipelineLabels.size());
+    }
+}
+
 WGPURenderPipeline WebGPUPipelineManager::GetNativePipeline(GPUPipelineHandle handle) {
+    m_UsedPipelines.insert(handle.id);
     auto* slot = m_Pool.Get(handle.id);
     return slot ? slot->pipeline : nullptr;
 }
 
 WGPUComputePipeline WebGPUPipelineManager::GetNativeComputePipeline(GPUPipelineHandle handle) {
+    m_UsedPipelines.insert(handle.id);
     auto* slot = m_Pool.Get(handle.id);
     return slot ? slot->computePipeline : nullptr;
 }

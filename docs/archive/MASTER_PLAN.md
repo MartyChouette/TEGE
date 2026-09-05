@@ -1,15 +1,5 @@
 # TEGE Master Plan
 
-> **Both release gates in this document have expired.** Reviewed 2026-09-05.
-> Gate A was 0.9.7 "this week"; gate B was 0.9.8 "before Pitch Day (Sep 3)".
-> The dates are past and the plan was not re-cut.
->
-> What is still live here is the *content*, not the schedule: the RT status
-> section, the known gaps to encode, the earmarked latent bugs, and the
-> template QA risk (16 templates, most still untested - the largest
-> user-facing risk for anyone downloading a release). Those belong in
-> `ROADMAP.md` and a backlog; this file should not be read as a timetable.
-
 Living document. Master list of all known unfinished work, ordered to carry 0.9.7 to release and then to 1.0.
 Compiled 2026-08-06 from the full audit backlog (2026-03-14), the whole-engine review (2026-07-17), all session earmarks, and the RT/settings campaigns of 2026-08-03 through 08-06.
 Last updated 2026-08-06 (evening): RT batch committed and pushed through `d53f464`; the mixed-RT set is functionally complete.
@@ -187,7 +177,7 @@ Standard character-action building blocks. Most need a component + controller-st
 - Shared substrate: a small "interaction/traversal" state machine on the character controller + an `Interactable`/interaction-prompt system (raycast for the nearest interactable, show prompt, fire on button). Doors/ladders/ropes/cover all register as interactables. **Also unblocks: click-to-move is currently a STUB (ControllerSystem.cpp:979 empty) — wire raycast-to-ground + straight-line or navmesh FindPath first.**
 
 ### Performance & world scale (Marty backlog, added 2026-08-15)
-- **DOTS-competitive batch type**: Tier-1 SoA `Swarm` PROTOTYPED (`Core/include/Enjin/Sim/Swarm.h`, TestSwarm ~300M agent-updates/sec single-thread; editor `SwarmComponent`+`SwarmSystem` visualizes via instanced cube proxies). NEXT: (a) fork-join split across cores, (b) a real GPU-instanced draw (position buffer → one draw, replaces proxy entities), (c) **Tier-2 GPU-compute agents = the actual DOTS-beater, esp. on web where DOTS can't run.** BLOCKER CLEARED (verified 2026-09-05): the WebGPU backend has compute pipelines. WebGPUPipelineManager::CreateComputePipeline is called by both WebGPUComputeSmokeTest (browser-verified) and WebGPUParticleSystem, which runs a live @compute simulation shader on web today. The "only Vulkan has them" claim has been false since the 08-17 compute port. Honest verdict: TEGE ECS does NOT match DOTS on raw million-entity throughput and doesn't need to (200-dog test was GPU/draw-bound); the Swarm type is the escape hatch for the cases that do need scale.
+- **DOTS-competitive batch type**: Tier-1 SoA `Swarm` PROTOTYPED (`Core/include/Enjin/Sim/Swarm.h`, TestSwarm ~300M agent-updates/sec single-thread; editor `SwarmComponent`+`SwarmSystem` visualizes via instanced cube proxies). NEXT: (a) fork-join split across cores, (b) a real GPU-instanced draw (position buffer → one draw, replaces proxy entities), (c) **Tier-2 GPU-compute agents = the actual DOTS-beater, esp. on web where DOTS can't run.** The WebGPU backend has compute pipelines: WebGPUPipelineManager::CreateComputePipeline is used by WebGPUComputeSmokeTest and by WebGPUParticleSystem, which runs a live @compute simulation shader on web. Honest verdict: TEGE ECS does NOT match DOTS on raw million-entity throughput and doesn't need to (200-dog test was GPU/draw-bound); the Swarm type is the escape hatch for the cases that do need scale.
 - **Bleeding-edge world streaming**: existing = classic chunk streamer (LevelStreaming.h). Target = continuous virtualized streaming: Nanite-style geometry-cluster streaming on the existing GPUCulling/HiZ/DeviceGeneratedCommands substrate; revive the gated-OFF virtual texturing; streaming surfel GI tied to the sparse-reconstruction thesis. TEGE-specific hooks: frame-budget-bounded time-sliced streaming (never hitch = 120fps pillar), accessibility-aware cross-fade LOD (no pop-in / motion-sickness), origin-rebasing for large worlds. Phase 1 (contained, do first) = make StreamingManager time-sliced + hitch-free + predictive prefetch along camera velocity.
 - **Navmesh variety**: area costs + areaType already exist (painted-regions data model half-built, needs authoring UI); MISSING off-mesh links (jumps/portals) and spline-path nav (Math/Spline.h exists but unwired to nav).
 

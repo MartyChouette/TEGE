@@ -656,6 +656,11 @@ public:
 
         // GPU particles on web: same emitter component as desktop, driven each frame.
         m_Vegetation = std::make_unique<Enjin::Renderer::WebGPUVegetationSystem>();
+        m_Vegetation->SetTextureResolver(
+            [this](const std::string& path) -> Enjin::Renderer::GPUTextureHandle {
+                return m_RenderSystem ? m_RenderSystem->ResolveWebTexture(path)
+                                      : Enjin::Renderer::GPUTextureHandle{};
+            });
         if (!m_Vegetation->Initialize(m_Renderer.get())) {
             ENJIN_LOG_WARN(Player, "Web vegetation unavailable (init failed) - flora volumes will not draw");
             m_Vegetation.reset();
@@ -1733,9 +1738,16 @@ private:
             f32 snow = m_WeatherSystem.GetSnowIntensity();
             hasPrecip = (rain > 0.01f || snow > 0.01f);
             isRain = rain >= snow;
-            m_RenderSystem->SetFogParams(m_WeatherSystem.GetFogDensity(),
-                                         m_WeatherSystem.GetFogStart(), m_WeatherSystem.GetFogEnd(), 0.1f);
-            m_RenderSystem->SetFogColor(m_WeatherSystem.GetFogColor());
+            // Same rule as the desktop player: the weather system only drives
+            // fog while it is weathering, otherwise its defaults overwrite the
+            // scene's authored fog on every frame.
+            if (hasPrecip || m_WeatherSystem.GetFogDensity() > 0.0f) {
+                m_RenderSystem->SetFogParams(m_WeatherSystem.GetFogDensity(),
+                                             m_WeatherSystem.GetFogStart(), m_WeatherSystem.GetFogEnd(), 0.1f);
+                m_RenderSystem->SetFogColor(m_WeatherSystem.GetFogColor());
+            } else {
+                m_RenderSystem->RestoreAuthoredFog();
+            }
         }
 
         m_RenderSystem->SetRainActive(hasPrecip && isRain);

@@ -7,6 +7,9 @@
 #include "Enjin/Renderer/GPUPipeline.h"
 #include "Enjin/Renderer/GPUResourcePool.h"
 #include <webgpu/webgpu.h>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace Enjin::Renderer {
 
@@ -35,6 +38,15 @@ public:
     // Access native WGPUComputePipeline (for handles created via CreateComputePipeline)
     WGPUComputePipeline GetNativeComputePipeline(GPUPipelineHandle handle);
 
+    // Say which pipelines were built and never drawn with.
+    //
+    // A pipeline that is created, logged as initialized, and never bound looks
+    // exactly like a working feature from the outside - m_WebGrassPipeline and
+    // m_WebTreePipeline were built every boot for months while the vegetation
+    // actually came from somewhere else, and edits to their shaders changed
+    // nothing. Anything in this report is either dead or not reached yet.
+    void ReportUnusedPipelines() const;
+
     void Shutdown();
 
 private:
@@ -46,6 +58,10 @@ private:
     WGPUTextureFormat TranslateTextureFormat(GPUTextureFormat fmt);
     WGPUBlendFactor TranslateBlendFactor(GPUBlendFactor f);
     WGPUBlendOperation TranslateBlendOp(GPUBlendOp op);
+
+    // label by handle id, and the ids that have been bound at least once
+    std::unordered_map<u64, std::string> m_PipelineLabels;
+    mutable std::unordered_set<u64> m_UsedPipelines;
 
     WebGPURenderer* m_Renderer = nullptr;
     WebGPUShaderManager* m_ShaderMgr = nullptr;

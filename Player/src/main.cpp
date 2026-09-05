@@ -2116,10 +2116,18 @@ private:
             hasWeatherParticles = (rain > 0.01f || snow > 0.01f);
             isRain = rain >= snow;
 
-            m_RenderSystem->SetFogParams(m_WeatherSystem.GetFogDensity(),
-                                         m_WeatherSystem.GetFogStart(),
-                                         m_WeatherSystem.GetFogEnd(), 0.1f);
-            m_RenderSystem->SetFogColor(m_WeatherSystem.GetFogColor());
+            // Only let the weather system drive fog while it is ACTUALLY
+            // weathering. With no zone and clear skies its values are its own
+            // defaults, and writing them every frame overwrote whatever the
+            // scene authored before the first frame was drawn.
+            if (hasWeatherParticles || m_WeatherSystem.GetFogDensity() > 0.0f) {
+                m_RenderSystem->SetFogParams(m_WeatherSystem.GetFogDensity(),
+                                             m_WeatherSystem.GetFogStart(),
+                                             m_WeatherSystem.GetFogEnd(), 0.1f);
+                m_RenderSystem->SetFogColor(m_WeatherSystem.GetFogColor());
+            } else {
+                m_RenderSystem->RestoreAuthoredFog();
+            }
             m_RenderSystem->SetSnowIntensity(snow);
         }
 

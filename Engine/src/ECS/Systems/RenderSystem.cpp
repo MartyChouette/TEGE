@@ -1341,200 +1341,6 @@ void RenderSystem::Initialize() {
     }
 
     // ========================================================================
-    // Grass + Tree volume params bind group layout (shared)
-    // ========================================================================
-    {
-        Renderer::GPUBindGroupLayoutDesc volLD;
-        volLD.entries = {
-            // 96, not 64: the tree/shrub shader declares 24 floats. Dawn rejects a
-            // pipeline whose shader reads more than the layout's minBindingSize
-            // guarantees, so a 64 here makes the tree pipeline invalid and the whole
-            // grove disappears. Grass declares less but shares this layout, so its
-            // buffer is padded to match.
-            {0, BType::UniformBuffer, SStage::Vertex, 96},  // VolumeParams UBO
-        };
-        m_WebVolumeParamsLayout = bindMgr->CreateBindGroupLayout(volLD);
-    }
-
-    // ========================================================================
-    // Grass pipeline + blade mesh
-    // ========================================================================
-    {
-        m_WebGrassShader = shaderMgr->LoadShader(
-            Renderer::WebShaderData::GRASS_WGSL,
-            std::strlen(Renderer::WebShaderData::GRASS_WGSL),
-            Renderer::GPUShaderStage::Vertex, "Grass");
-
-        Renderer::GPURenderPipelineDesc pd;
-        pd.vertexShader = m_WebGrassShader;
-        pd.fragmentShader = m_WebGrassShader;
-        pd.bindGroupLayouts = {m_WebFrameLayout, m_WebVolumeParamsLayout};
-        pd.topology = Renderer::GPUPrimitiveTopology::TriangleList;
-        pd.cullMode = Renderer::GPUCullMode::None;
-        pd.frontFace = Renderer::GPUFrontFace::CCW;
-        pd.depthTest = true;
-        pd.depthWrite = true;
-        pd.depthCompare = Renderer::GPUCompareFunction::Less;
-        pd.alphaBlend = false;
-        pd.colorFormat = Renderer::GPUTextureFormat::RGBA16Float;
-        pd.depthFormat = Renderer::GPUTextureFormat::Depth24PlusStencil8;
-        pd.sampleCount = Renderer::kWebSceneSampleCount;  // no MSAA on web
-        pd.label = "GrassPipeline";
-        // Blade vertex: pos(vec3) + normal(vec3) + uv(vec2) = 8 floats
-        Renderer::GPUVertexBufferLayoutDesc bladeLayout;
-        bladeLayout.stride = 8 * sizeof(f32);
-        bladeLayout.attributes = {
-            {Renderer::GPUVertexFormat::Float32x3, 0, 0},
-            {Renderer::GPUVertexFormat::Float32x3, 3 * sizeof(f32), 1},
-            {Renderer::GPUVertexFormat::Float32x2, 6 * sizeof(f32), 2},
-        };
-        pd.vertexBuffers = {bladeLayout};
-        m_WebGrassPipeline = pipeMgr->CreateRenderPipeline(pd);
-
-        // 7-vertex blade mesh (tapered triangle strip)
-        struct BladeVert { f32 px, py, pz, nx, ny, nz, u, v; };
-        BladeVert bladeVerts[] = {
-            {-0.5f, 0.0f, 0.0f,  0,0,1,  0.0f, 0.0f},  // v0 base-left
-            { 0.5f, 0.0f, 0.0f,  0,0,1,  1.0f, 0.0f},  // v1 base-right
-            {-0.4f, 0.33f, 0.0f, 0,0,1,  0.1f, 0.33f}, // v2 mid-lower-left
-            { 0.4f, 0.33f, 0.0f, 0,0,1,  0.9f, 0.33f}, // v3 mid-lower-right
-            {-0.2f, 0.66f, 0.0f, 0,0,1,  0.3f, 0.66f}, // v4 mid-upper-left
-            { 0.2f, 0.66f, 0.0f, 0,0,1,  0.7f, 0.66f}, // v5 mid-upper-right
-            { 0.0f, 1.0f, 0.0f,  0,0,1,  0.5f, 1.0f},  // v6 tip
-        };
-        u32 bladeIndices[] = {0,1,3, 0,3,2, 2,3,5, 2,5,4, 4,5,6};
-        m_WebGrassBladeIndexCount = 15;
-        Renderer::GPUBufferDesc bvb;
-        bvb.size = sizeof(bladeVerts);
-        bvb.usage = Renderer::GPUBufferUsage::Vertex | Renderer::GPUBufferUsage::CopyDst;
-        bvb.hostVisible = true;
-        m_WebGrassBladeVB = bufMgr->CreateBufferWithData(bvb, bladeVerts);
-        Renderer::GPUBufferDesc bib;
-        bib.size = sizeof(bladeIndices);
-        bib.usage = Renderer::GPUBufferUsage::Index | Renderer::GPUBufferUsage::CopyDst;
-        bib.hostVisible = true;
-        m_WebGrassBladeIB = bufMgr->CreateBufferWithData(bib, bladeIndices);
-
-        if (m_WebGrassPipeline.IsValid())
-            ENJIN_LOG_INFO(Renderer, "RenderSystem: Grass pipeline initialized");
-    }
-
-    // ========================================================================
-    // Tree pipeline + mesh (trunk quads + canopy billboards)
-    // ========================================================================
-    {
-        m_WebTreeShader = shaderMgr->LoadShader(
-            Renderer::WebShaderData::TREE_WGSL,
-            std::strlen(Renderer::WebShaderData::TREE_WGSL),
-            Renderer::GPUShaderStage::Vertex, "Tree");
-
-        Renderer::GPURenderPipelineDesc pd;
-        pd.vertexShader = m_WebTreeShader;
-        pd.fragmentShader = m_WebTreeShader;
-        pd.bindGroupLayouts = {m_WebFrameLayout, m_WebVolumeParamsLayout};
-        pd.topology = Renderer::GPUPrimitiveTopology::TriangleList;
-        pd.cullMode = Renderer::GPUCullMode::None;
-        pd.frontFace = Renderer::GPUFrontFace::CCW;
-        pd.depthTest = true;
-        pd.depthWrite = true;
-        pd.depthCompare = Renderer::GPUCompareFunction::Less;
-        pd.alphaBlend = false;
-        pd.colorFormat = Renderer::GPUTextureFormat::RGBA16Float;
-        pd.depthFormat = Renderer::GPUTextureFormat::Depth24PlusStencil8;
-        pd.sampleCount = Renderer::kWebSceneSampleCount;  // no MSAA on web
-        pd.label = "TreePipeline";
-        // Same vertex format as grass (pos+normal+uv)
-        Renderer::GPUVertexBufferLayoutDesc treeLayout;
-        treeLayout.stride = 8 * sizeof(f32);
-        treeLayout.attributes = {
-            {Renderer::GPUVertexFormat::Float32x3, 0, 0},
-            {Renderer::GPUVertexFormat::Float32x3, 3 * sizeof(f32), 1},
-            {Renderer::GPUVertexFormat::Float32x2, 6 * sizeof(f32), 2},
-        };
-        pd.vertexBuffers = {treeLayout};
-        m_WebTreePipeline = pipeMgr->CreateRenderPipeline(pd);
-
-        // Tree mesh: low-poly tapered-cylinder trunk + low-poly sphere canopy.
-        struct TreeVert { f32 px, py, pz, nx, ny, nz, u, v; };
-        std::vector<TreeVert> treeVerts;
-        std::vector<u32> treeIndices;
-
-        // Trunk: low-poly tapered cylinder (6-sided prism, narrower at the top).
-        // Crossing quads read as a triangular slab from oblique/distant angles
-        // (Marty: "trunks hella deformed on some"); a real prism is solid from every
-        // direction. Base radius 0.5 matches the shader's trunkWidth scaling; uv.y
-        // stays < 0.5 so the shader's isCanopy test keeps it a trunk.
-        {
-            const int seg = 10;                // rounder trunk (was 6 = hexagonal/faceted)
-            const f32 tw = 0.5f, tt = 0.72f;   // base radius (mesh space); gentle taper (was 0.45 = cone/carrot)
-            const u32 tbase = static_cast<u32>(treeVerts.size());
-            for (int s = 0; s <= seg; ++s) {
-                f32 a = static_cast<f32>(s) * 2.0f * 3.14159f / static_cast<f32>(seg);
-                f32 ca = std::cos(a), sa = std::sin(a);
-                treeVerts.push_back({ca * tw,      0.0f, sa * tw,      ca, 0.0f, sa, 0.0f, 0.1f}); // bottom ring
-                treeVerts.push_back({ca * tw * tt, 1.0f, sa * tw * tt, ca, 0.0f, sa, 0.0f, 0.4f}); // top ring
-            }
-            for (int s = 0; s < seg; ++s) {
-                u32 b0 = tbase + static_cast<u32>(s * 2);
-                u32 t0 = tbase + static_cast<u32>(s * 2 + 1);
-                u32 b1 = tbase + static_cast<u32>((s + 1) * 2);
-                u32 t1 = tbase + static_cast<u32>((s + 1) * 2 + 1);
-                treeIndices.insert(treeIndices.end(), {b0, b1, t1, b0, t1, t0});
-            }
-        }
-        // Canopy: a low-poly UV sphere (unit sphere; the shader scales it by
-        // canopyRadius and lifts it by canopyOffset). Crossing vertical quads read as
-        // flat cardboard from oblique/top angles ("canopies not correct"); a rounded
-        // blob is the correct low-poly crown and looks right from every direction.
-        // uv.y encodes the vertical fraction (0.6 bottom .. 1.0 top) for shading, and
-        // stays > 0.5 so the shader's isCanopy test still picks it out. Cull mode is
-        // None, so winding doesn't matter.
-        {
-            const int latB = 7, lonB = 12;  // rounded crown (was 4x7 = hexagonal blob)
-            const u32 cbase = static_cast<u32>(treeVerts.size());
-            for (int la = 0; la <= latB; ++la) {
-                f32 theta = static_cast<f32>(la) * 3.14159f / static_cast<f32>(latB);   // 0..PI
-                f32 sinT = std::sin(theta), cosT = std::cos(theta);
-                for (int lo = 0; lo <= lonB; ++lo) {
-                    f32 phi = static_cast<f32>(lo) * 2.0f * 3.14159f / static_cast<f32>(lonB);
-                    f32 x = sinT * std::cos(phi);
-                    f32 y = cosT;                      // +1 top .. -1 bottom
-                    f32 z = sinT * std::sin(phi);
-                    f32 uvY = 0.6f + 0.4f * ((y + 1.0f) * 0.5f);   // 0.6..1.0
-                    treeVerts.push_back({x, y, z, x, y, z, 0.0f, uvY});
-                }
-            }
-            const int stride = lonB + 1;
-            for (int la = 0; la < latB; ++la) {
-                for (int lo = 0; lo < lonB; ++lo) {
-                    u32 a = cbase + static_cast<u32>(la * stride + lo);
-                    u32 b = cbase + static_cast<u32>((la + 1) * stride + lo);
-                    u32 c = cbase + static_cast<u32>((la + 1) * stride + (lo + 1));
-                    u32 d = cbase + static_cast<u32>(la * stride + (lo + 1));
-                    treeIndices.insert(treeIndices.end(), {a, b, c, a, c, d});
-                }
-            }
-        }
-        m_WebTreeIndexCount = static_cast<u32>(treeIndices.size());
-        Renderer::GPUBufferDesc tvb;
-        tvb.size = treeVerts.size() * sizeof(TreeVert);
-        tvb.usage = Renderer::GPUBufferUsage::Vertex | Renderer::GPUBufferUsage::CopyDst;
-        tvb.hostVisible = true;
-        m_WebTreeMeshVB = bufMgr->CreateBufferWithData(tvb, treeVerts.data());
-        Renderer::GPUBufferDesc tib;
-        tib.size = treeIndices.size() * sizeof(u32);
-        tib.usage = Renderer::GPUBufferUsage::Index | Renderer::GPUBufferUsage::CopyDst;
-        tib.hostVisible = true;
-        m_WebTreeMeshIB = bufMgr->CreateBufferWithData(tib, treeIndices.data());
-
-        if (m_WebTreePipeline.IsValid())
-            ENJIN_LOG_INFO(Renderer, "RenderSystem: Tree pipeline initialized (%u verts, %u indices)",
-                static_cast<u32>(treeVerts.size()), m_WebTreeIndexCount);
-    }
-
-    // ========================================================================
-    // Sprite pipeline
-    // ========================================================================
     {
         m_WebSpriteShader = shaderMgr->LoadShader(
             Renderer::WebShaderData::SPRITE_WGSL,
@@ -1998,6 +1804,22 @@ void RenderSystem::Update(f32 deltaTime) {
     {
         static f32 gpuLogAccum = 0.0f;
         static u64 gpuLogLastTotal = 0;
+        // Once, a few seconds in, name any pipeline that was built and never
+        // bound. A dead pipeline is indistinguishable from a working feature
+        // until someone edits its shader and nothing happens.
+        static bool pipelineReportDone = false;
+        static f32 pipelineReportAccum = 0.0f;
+        if (!pipelineReportDone) {
+            pipelineReportAccum += deltaTime;
+            if (pipelineReportAccum > 5.0f) {
+                pipelineReportDone = true;
+                if (auto* pm = static_cast<Renderer::WebGPUPipelineManager*>(
+                        m_Renderer->GetPipelineManager())) {
+                    pm->ReportUnusedPipelines();
+                }
+            }
+        }
+
         gpuLogAccum += deltaTime;
         if (gpuLogAccum >= 1.0f) {
             if (auto* wr = static_cast<Renderer::WebGPURenderer*>(m_Renderer)) {
@@ -2805,13 +2627,20 @@ void RenderSystem::Update(f32 deltaTime) {
                     spotShadowVP.view = spotView;
                     spotShadowVP.proj = spotProj;
                     spotShadowVP.viewPos = pos;
-                    auto spotVPBuf = bufMgr->CreateBufferWithData(
-                        {sizeof(WebViewProjectionUBO), Renderer::GPUBufferUsage::Uniform | Renderer::GPUBufferUsage::CopyDst, true},
-                        &spotShadowVP);
-                    Renderer::GPUBindGroupDesc spotFrameBGD;
-                    spotFrameBGD.layout = m_WebShadowFrameLayout;
-                    spotFrameBGD.entries = {{0, spotVPBuf, 0, sizeof(WebViewProjectionUBO), {}, {}}};
-                    auto spotFrameBG = webBindMgr2->CreateBindGroup(spotFrameBGD);
+                    // Built once per spot slot, then written each frame.
+                    if (!m_WebSpotVPBuffer[idx].IsValid()) {
+                        m_WebSpotVPBuffer[idx] = bufMgr->CreateBuffer(
+                            {sizeof(WebViewProjectionUBO),
+                             Renderer::GPUBufferUsage::Uniform | Renderer::GPUBufferUsage::CopyDst, true});
+                        Renderer::GPUBindGroupDesc spotFrameBGD;
+                        spotFrameBGD.layout = m_WebShadowFrameLayout;
+                        spotFrameBGD.entries = {{0, m_WebSpotVPBuffer[idx], 0,
+                                                 sizeof(WebViewProjectionUBO), {}, {}}};
+                        m_WebSpotVPBindGroup[idx] = webBindMgr2->CreateBindGroup(spotFrameBGD);
+                    }
+                    bufMgr->UploadData(m_WebSpotVPBuffer[idx], &spotShadowVP,
+                                       sizeof(WebViewProjectionUBO));
+                    auto spotFrameBG = m_WebSpotVPBindGroup[idx];
 
                     WGPURenderPassEncoder spotPass = webRenderer->BeginDepthOnlyPass(
                         spotTexNative->view, WEB_SPOT_SHADOW_SIZE, WEB_SPOT_SHADOW_SIZE);
@@ -2851,8 +2680,6 @@ void RenderSystem::Update(f32 deltaTime) {
                         wgpuRenderPassEncoderEnd(spotPass);
                         wgpuRenderPassEncoderRelease(spotPass);
                     }
-                    webBindMgr2->DestroyBindGroup(spotFrameBG);
-                    bufMgr->DestroyBuffer(spotVPBuf);
                     m_WebSpotShadowValid[idx] = true;
                 }
                 {
@@ -2942,13 +2769,20 @@ void RenderSystem::Update(f32 deltaTime) {
                     faceShadowVP.view = faceView;
                     faceShadowVP.proj = faceProj;
                     faceShadowVP.viewPos = pos;
-                    auto faceVPBuf = bufMgr->CreateBufferWithData(
-                        {sizeof(WebViewProjectionUBO), Renderer::GPUBufferUsage::Uniform | Renderer::GPUBufferUsage::CopyDst, true},
-                        &faceShadowVP);
-                    Renderer::GPUBindGroupDesc faceFrameBGD;
-                    faceFrameBGD.layout = m_WebShadowFrameLayout;
-                    faceFrameBGD.entries = {{0, faceVPBuf, 0, sizeof(WebViewProjectionUBO), {}, {}}};
-                    auto faceFrameBG = webBindMgr3->CreateBindGroup(faceFrameBGD);
+                    // Built once per cube face, then written each frame.
+                    if (!m_WebPointFaceVPBuffer[face].IsValid()) {
+                        m_WebPointFaceVPBuffer[face] = bufMgr->CreateBuffer(
+                            {sizeof(WebViewProjectionUBO),
+                             Renderer::GPUBufferUsage::Uniform | Renderer::GPUBufferUsage::CopyDst, true});
+                        Renderer::GPUBindGroupDesc faceFrameBGD;
+                        faceFrameBGD.layout = m_WebShadowFrameLayout;
+                        faceFrameBGD.entries = {{0, m_WebPointFaceVPBuffer[face], 0,
+                                                 sizeof(WebViewProjectionUBO), {}, {}}};
+                        m_WebPointFaceVPBindGroup[face] = webBindMgr3->CreateBindGroup(faceFrameBGD);
+                    }
+                    bufMgr->UploadData(m_WebPointFaceVPBuffer[face], &faceShadowVP,
+                                       sizeof(WebViewProjectionUBO));
+                    auto faceFrameBG = m_WebPointFaceVPBindGroup[face];
 
                     WGPURenderPassEncoder facePass = webRenderer->BeginDepthOnlyPass(
                         static_cast<WGPUTextureView>(m_WebPointShadowFaceViews[face]), WEB_POINT_SHADOW_SIZE, WEB_POINT_SHADOW_SIZE);
@@ -2988,8 +2822,6 @@ void RenderSystem::Update(f32 deltaTime) {
                         wgpuRenderPassEncoderEnd(facePass);
                         wgpuRenderPassEncoderRelease(facePass);
                     }
-                    webBindMgr3->DestroyBindGroup(faceFrameBG);
-                    bufMgr->DestroyBuffer(faceVPBuf);
                 }
                 // Only claim the cube is cached when all six faces actually
                 // rendered; a pass that failed to begin leaves a stale face.
@@ -3714,6 +3546,40 @@ void RenderSystem::Update(f32 deltaTime) {
                 }
 
                 if (!outlineCmds.empty()) {
+                    // One buffer for every outline record this frame, uploaded
+                    // once and addressed per batch with firstInstance, the same
+                    // way the opaque pass works. This was a GPU buffer and a
+                    // bind group per batch, created and destroyed every frame
+                    // the outlines were switched on.
+                    {
+                        const usize needBytes = outlineData.size();
+                        if (!m_WebOutlineObjectBuf.IsValid() || m_WebOutlineObjectCapacity < needBytes) {
+                            if (m_WebOutlineObjectBuf.IsValid()) bufMgr->DestroyBuffer(m_WebOutlineObjectBuf);
+                            if (m_WebOutlineObjectBG.IsValid()) {
+                                bindMgr->DestroyBindGroup(m_WebOutlineObjectBG);
+                                m_WebOutlineObjectBG = {};
+                            }
+                            m_WebOutlineObjectCapacity = needBytes + needBytes / 2;
+                            m_WebOutlineObjectBuf = bufMgr->CreateBuffer(
+                                {m_WebOutlineObjectCapacity,
+                                 Renderer::GPUBufferUsage::Storage | Renderer::GPUBufferUsage::CopyDst, true});
+                            m_WebOutlineObjectGen++;   // cached per-entity groups must rebuild
+                        }
+                        if (m_WebOutlineObjectBuf.IsValid()) {
+                            bufMgr->UploadData(m_WebOutlineObjectBuf, outlineData.data(), outlineData.size());
+                        }
+                        if (!m_WebOutlineObjectBG.IsValid() && m_WebOutlineObjectBuf.IsValid()) {
+                            Renderer::GPUBindGroupDesc obgd;
+                            obgd.layout = m_WebObjectLayout;
+                            obgd.entries = {
+                                {0, m_WebOutlineObjectBuf, 0, m_WebOutlineObjectCapacity, {}, {}},
+                                {1, m_WebDefaultBoneBuffer, 0, 0, {}, {}},
+                            };
+                            m_WebOutlineObjectBG = bindMgr->CreateBindGroup(obgd);
+                        }
+                    }
+
+                    if (m_WebOutlineObjectBG.IsValid()) {
                     encoder->BindPipeline(m_WebOutlinePipeline);
                     encoder->SetBindGroup(0, m_WebFrameBindGroup);
 
@@ -3741,30 +3607,37 @@ void RenderSystem::Update(f32 deltaTime) {
                         }
 
                         const u32 olInstances = static_cast<u32>(olEnd - oi);
-                        const usize olBytes = olInstances * sizeof(WebObjectDataUBO);
-                        auto olBuf = bufMgr->CreateBufferWithData(
-                            {olBytes, Renderer::GPUBufferUsage::Storage | Renderer::GPUBufferUsage::CopyDst, true},
-                            outlineData.data() + outlineCmds[oi].offset);
+                        const u32 olFirst = outlineCmds[oi].offset / static_cast<u32>(sizeof(WebObjectDataUBO));
 
-                        Renderer::GPUBindGroupDesc olBGD;
-                        olBGD.layout = m_WebObjectLayout;
-                        olBGD.entries = {
-                            {0, olBuf, 0, olBytes, {}, {}},
-                            {1, olRD.boneBuffer.IsValid() ? olRD.boneBuffer : m_WebDefaultBoneBuffer, 0, 0, {}, {}},
-                        };
-                        auto olBG = bindMgr->CreateBindGroup(olBGD);
+                        // Only a skinned hull needs a group of its own, for its bones.
+                        Renderer::GPUBindGroupHandle olBG = m_WebOutlineObjectBG;
+                        if (olRD.boneBuffer.IsValid()) {
+                            if (!olRD.outlineBoneBindGroup.IsValid()
+                                || olRD.outlineBoneBindGroupGen != m_WebOutlineObjectGen) {
+                                if (olRD.outlineBoneBindGroup.IsValid())
+                                    bindMgr->DestroyBindGroup(olRD.outlineBoneBindGroup);
+                                Renderer::GPUBindGroupDesc olBGD;
+                                olBGD.layout = m_WebObjectLayout;
+                                olBGD.entries = {
+                                    {0, m_WebOutlineObjectBuf, 0, m_WebOutlineObjectCapacity, {}, {}},
+                                    {1, olRD.boneBuffer, 0, 0, {}, {}},
+                                };
+                                olRD.outlineBoneBindGroup = bindMgr->CreateBindGroup(olBGD);
+                                olRD.outlineBoneBindGroupGen = m_WebOutlineObjectGen;
+                            }
+                            if (olRD.outlineBoneBindGroup.IsValid()) olBG = olRD.outlineBoneBindGroup;
+                        }
 
                         encoder->SetBindGroup(1, olBG);
                         encoder->SetVertexBuffer(0, olRD.vertexBuffer);
                         encoder->SetIndexBuffer(olRD.indexBuffer, Renderer::GPUIndexFormat::Uint32);
-                        encoder->DrawIndexed(olRD.indexCount, olInstances);
+                        encoder->DrawIndexed(olRD.indexCount, olInstances, 0, 0, olFirst);
 
                         m_DrawCallCount++;
                         m_TriangleCount += (olRD.indexCount / 3) * olInstances;
 
-                        bindMgr->DestroyBindGroup(olBG);
-                        bufMgr->DestroyBuffer(olBuf);
                         oi = olEnd;
+                    }
                     }
                 }
             }
@@ -4285,6 +4158,7 @@ void RenderSystem::OnEntityRemoved(Entity entity) {
         }
         if (bindMgr && rd.texBindGroup.IsValid()) bindMgr->DestroyBindGroup(rd.texBindGroup);
         if (bindMgr && rd.objBoneBindGroup.IsValid()) bindMgr->DestroyBindGroup(rd.objBoneBindGroup);
+        if (bindMgr && rd.outlineBoneBindGroup.IsValid()) bindMgr->DestroyBindGroup(rd.outlineBoneBindGroup);
         rd.Invalidate();
     }
 }
@@ -4307,6 +4181,7 @@ void RenderSystem::FlushSceneClear() {
                 // entity for the life of the tab.
                 if (bindMgr && rd.texBindGroup.IsValid()) bindMgr->DestroyBindGroup(rd.texBindGroup);
                 if (bindMgr && rd.objBoneBindGroup.IsValid()) bindMgr->DestroyBindGroup(rd.objBoneBindGroup);
+        if (bindMgr && rd.outlineBoneBindGroup.IsValid()) bindMgr->DestroyBindGroup(rd.outlineBoneBindGroup);
                 rd.Invalidate();
             }
         }
@@ -20507,6 +20382,16 @@ namespace ECS {
 // Settled snow, 0..1 - the same number the lighting UBO carries, so nothing
 // that reads it can disagree with the ground. Defined here, outside the
 // backend split, because it is declared unconditionally in the header.
+Renderer::GPUTextureHandle RenderSystem::ResolveWebTexture(const std::string& path) {
+#if ENJIN_RENDERER_WEBGPU
+    if (path.empty()) return {};
+    return WebGetOrLoadTexture(path);
+#else
+    (void)path;
+    return {};
+#endif
+}
+
 f32 RenderSystem::GetSnowAccumulation() const {
     const f32 weatherSnow = m_MainPassWeather ? m_MainPassWeather->GetSnowAccumulation() : 0.0f;
     const f32 live = std::max(std::max(weatherSnow, m_WeatherSkySnow), m_SnowIntensity);

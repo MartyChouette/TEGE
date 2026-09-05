@@ -318,41 +318,21 @@ the caster's index.
 every object renders with another object's transform. Dawn confirms the
 semantics but nothing here has rendered a frame of it.
 
-## The depth buffer, which unblocked five more effects
+## Depth-driven post-processing
 
-The roadmap carried web depth-accurate post-processing as BLOCKED: "web scene
-depth is 4x MSAA and the renderer bind abstraction can't bind a multisampled or
-unfilterable-float texture; needs a depth pre-pass or abstraction work."
+Scene depth is single-sample and readable by the post-process pass. The depth texture
+carries TextureBinding usage alongside RenderAttachment, plus a second view with
+`aspect = DepthOnly` - a depth-stencil format is viewed one aspect at a time to be read
+in a shader. The pass binds it as `texture_depth_2d` and reads it with `textureLoad`, so
+it needs no sampler.
 
-That was true when it was written and stopped being true on 2026-09-03, when
-MSAA came off the web scene target. The depth buffer has been a plain
-single-sample texture ever since, and the bind abstraction has had a
-`DepthTexture` binding type all along - the shadow sampler uses it. What
-actually remained was one usage flag and a binding.
+Depth is linearised against the camera near and far planes, fed per frame.
 
-It now carries `TextureBinding` alongside `RenderAttachment`, plus a second view
-of the same texture with `aspect = DepthOnly`, because a depth-stencil format
-has to be viewed one aspect at a time to be read in a shader. The post-process
-pass binds it as `texture_depth_2d` and reads it with `textureLoad`, so it needs
-no sampler at all.
+- **SSAO** samples an eight-point ring in depth: a nearer neighbour is an occluder.
+- **Cel outline** is a Sobel on linear depth, driven by the `celOutline*` fields in
+  `SceneRenderSettings`. It catches interior edges; the inverted hull draws silhouettes.
 
-Two effects went in on top of it:
-
-- **SSAO is now real.** It shipped as a LUMINANCE approximation - darken
-  whatever sits in a local brightness valley - which grounded objects but also
-  darkened any dark patch of texture whether or not anything was occluding it.
-  It now asks the geometry: a neighbour nearer than this pixel is an occluder.
-- **Cel outline**, Sobel on linear depth. This is the edge-detect route this
-  document left open beside the inverted hull: the hull draws the silhouette,
-  this catches the interior edges a hull cannot. It runs off the `celOutline*`
-  fields that were already in `SceneRenderSettings` and inert on web, so it
-  needed no new setting.
-
-Depth is linearised against the camera's near and far planes, fed per frame. A
-wrong pair does not make the effects inaccurate, it makes every depth
-comparison meaningless, which is why they are passed rather than assumed.
-
-**DoF, god rays and tilt-shift are now unblocked and unbuilt.**
+**DoF, god rays and tilt-shift are unbuilt.**
 
 ## Keep the parity report honest
 

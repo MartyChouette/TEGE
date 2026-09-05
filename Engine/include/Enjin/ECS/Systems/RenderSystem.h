@@ -223,6 +223,10 @@ struct EntityRenderData {
     // every frame.
     Renderer::GPUBindGroupHandle objBoneBindGroup;
     u32 objBoneBindGroupGen = 0;
+    // The same idea against the OUTLINE buffer: a skinned entity's hull needs
+    // its bones bound alongside the outline records, not the main ones.
+    Renderer::GPUBindGroupHandle outlineBoneBindGroup;
+    u32 outlineBoneBindGroupGen = 0;
 #endif
     u32 indexCount = 0;
     bool valid = false;  // true if this slot is occupied
@@ -276,6 +280,12 @@ public:
     // vegetation system is owned by the player and cannot read that buffer,
     // so it asks for the value instead.
     f32 GetSnowAccumulation() const;
+
+    // Load (or fetch from cache) a texture by project-relative path, for code
+    // outside RenderSystem that needs to resolve an authored path. The web
+    // vegetation system is owned by the player, so it has no other way to turn
+    // a TreeVolume's barkTexturePath into something it can bind.
+    Renderer::GPUTextureHandle ResolveWebTexture(const std::string& path);
     void TickHighlightTime(f32 dt) { m_HighlightTimeValue += dt; }
 private:
 
@@ -1515,21 +1525,6 @@ private:
     Renderer::GPUBufferHandle m_WebParticleQuadIB;
     static constexpr u32 WEB_MAX_PARTICLES = 8192;
 
-    // Grass rendering (instanced blades)
-    Renderer::GPUShaderHandle m_WebGrassShader;
-    Renderer::GPUPipelineHandle m_WebGrassPipeline;
-    Renderer::GPUBufferHandle m_WebGrassBladeVB;
-    Renderer::GPUBufferHandle m_WebGrassBladeIB;
-    Renderer::GPUBindGroupLayoutHandle m_WebVolumeParamsLayout;
-    u32 m_WebGrassBladeIndexCount = 0;
-
-    // Tree rendering (instanced trunk+canopy)
-    Renderer::GPUShaderHandle m_WebTreeShader;
-    Renderer::GPUPipelineHandle m_WebTreePipeline;
-    Renderer::GPUBufferHandle m_WebTreeMeshVB;
-    Renderer::GPUBufferHandle m_WebTreeMeshIB;
-    u32 m_WebTreeIndexCount = 0;
-
     // Sprite rendering (instanced textured billboards)
     Renderer::GPUShaderHandle m_WebSpriteShader;
     Renderer::GPUPipelineHandle m_WebSpritePipeline;
@@ -1587,6 +1582,16 @@ private:
     // tell whether the existing buffer is still big enough.
     usize m_WebShadowObjectCapacity = 0;
 
+    // One view-projection buffer and bind group per spot slot and per cube
+    // face, built once. These were created and destroyed EVERY FRAME - one pair
+    // per spot light, six per point light - for a uniform holding two matrices
+    // that only changes value, never size. Same grow-and-keep rule the rest of
+    // the frame now follows; here nothing even has to grow.
+    Renderer::GPUBufferHandle m_WebSpotVPBuffer[WEB_MAX_SPOT_SHADOWS];
+    Renderer::GPUBindGroupHandle m_WebSpotVPBindGroup[WEB_MAX_SPOT_SHADOWS];
+    Renderer::GPUBufferHandle m_WebPointFaceVPBuffer[6];
+    Renderer::GPUBindGroupHandle m_WebPointFaceVPBindGroup[6];
+
     // Weighted-blended OIT. Two scene-sized targets: accum sums premultiplied
     // colour times a depth weight, reveal multiplies down by (1 - alpha). The
     // composite divides one by the other back over the opaque scene, so
@@ -1614,6 +1619,13 @@ private:
 
     Renderer::GPUShaderHandle m_WebOutlineShader;
     Renderer::GPUPipelineHandle m_WebOutlinePipeline;
+    // The outline pass's own packed ObjectData, same grow-and-keep rule as the
+    // main pass. It cannot share the main buffer because every record differs:
+    // baseColor and metallic carry the outline colour and width instead.
+    Renderer::GPUBufferHandle m_WebOutlineObjectBuf;
+    Renderer::GPUBindGroupHandle m_WebOutlineObjectBG;
+    usize m_WebOutlineObjectCapacity = 0;
+    u32 m_WebOutlineObjectGen = 1;
 
     // Procedural sky
     Renderer::GPUShaderHandle m_WebSkyShader;

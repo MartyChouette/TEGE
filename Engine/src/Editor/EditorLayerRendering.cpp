@@ -1026,7 +1026,36 @@ void EditorLayer::DrawRewindTimeline() {
 // Section drawer methods for Rendering, Post Processing, and Retro Effects
 // ============================================================================
 
+// Warn, where the editing happens, that this scene will not keep these values.
+//
+// A scene with useProjectDefaults set loads the PROJECT's render settings and
+// throws its own away. The toggle for that lived at the bottom of the panel,
+// under everything it affects, so every control above it silently edited a
+// value that would not survive a reload.
+void EditorLayer::DrawProjectDefaultsBanner() {
+    if (!m_CurrentSceneUsesProjectDefaults) return;
+
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.32f, 0.24f, 0.06f, 0.55f));
+    ImGui::BeginChild("##projdefaults", ImVec2(0, 0),
+                      ImGuiChildFlags_AutoResizeY, ImGuiWindowFlags_None);
+    ImGui::TextColored(ImVec4(1.0f, 0.82f, 0.35f, 1.0f),
+                       "This scene uses PROJECT DEFAULTS");
+    ImGui::TextWrapped(
+        "Changes here apply to the running scene but are not saved with it - "
+        "reloading restores the project defaults.");
+    if (ImGui::SmallButton("Override for this scene")) {
+        m_CurrentSceneUsesProjectDefaults = false;
+        MarkDirty();
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("(same as unchecking Use Project Defaults below)");
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
+    ImGui::Spacing();
+}
+
 void EditorLayer::DrawSettingsSection_PostProcessing() {
+    DrawProjectDefaultsBanner();
     if (!m_PostProcessing) {
         ImGui::TextDisabled("Post-processing not initialized");
         return;
@@ -1820,6 +1849,7 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
 }
 
 void EditorLayer::DrawSettingsSection_RetroEffects() {
+    DrawProjectDefaultsBanner();
     // === RETRO EFFECTS (PS1/N64/PS2/GameCube presets) ===
     if (UI::SectionHeader("Retro Effects", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::TextDisabled("Vertex snapping, affine textures, scanlines, dithering, color reduction");
@@ -2203,6 +2233,7 @@ void EditorLayer::DrawSettingsSection_ArtStylePreset() {
 }
 
 void EditorLayer::DrawSettingsSection_Skybox() {
+    DrawProjectDefaultsBanner();
     if (!m_RenderSystem) return;
 
     // === SKYBOX ===
@@ -2379,6 +2410,7 @@ void EditorLayer::DrawSettingsSection_Skybox() {
 }
 
 void EditorLayer::DrawSettingsSection_Shadows() {
+    DrawProjectDefaultsBanner();
     if (!m_RenderSystem) return;
 
     // === SHADOWS ===

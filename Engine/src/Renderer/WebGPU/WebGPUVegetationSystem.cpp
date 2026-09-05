@@ -4,6 +4,7 @@
 
 #include "Enjin/Renderer/WebGPU/WebGPUVegetationSystem.h"
 #include "Enjin/Renderer/WebGPU/WebSceneTarget.h"
+#include "Enjin/Renderer/GPUTexture.h"
 #include "Enjin/Renderer/WebGPU/WebGPURenderer.h"
 #include "Enjin/Renderer/WebGPU/WebGPUPipelineManager.h"
 #include "Enjin/Renderer/WebGPU/WebGPUBindGroupManager.h"
@@ -63,6 +64,15 @@ struct VolumeParams {
 @group(0) @binding(2) var<storage, read> indices : array<u32>;
 @group(0) @binding(3) var<storage, read> volumes : array<VolumeParams>;
 
+// This volume's art. A tree needs two - bark on the trunk, leaves on the crown
+// - so the slot is a pair; grass and shrubs put their one texture in both. A
+// volume with no authored texture gets a 1x1 white, which multiplies out to the
+// vertex colour the shader already computed.
+@group(1) @binding(0) var texA : texture_2d<f32>;
+@group(1) @binding(1) var smpA : sampler;
+@group(1) @binding(2) var texB : texture_2d<f32>;
+@group(1) @binding(3) var smpB : sampler;
+
 fn hashU(n0 : u32) -> f32 {
     var n = n0;
     n = (n << 13u) ^ n;
@@ -75,6 +85,7 @@ struct VSOut {
     @location(0) color : vec3<f32>,
     @location(1) heightFrac : f32,
     @location(2) normal : vec3<f32>,
+    @location(4) uv : vec2<f32>,
     // Settled snow for this card, 0..1. Computed per vertex because the volume
     // params are only in scope there, applied per fragment because snow sits on
     // top of the lighting.
@@ -165,6 +176,7 @@ fn vs_main(@builtin(vertex_index) vid : u32, @builtin(instance_index) ii : u32) 
         }
     }
     out.color = col;
+    out.uv = uv;
     // treeScale.z carries the scene's snow accumulation (see VolumeParamsCPU).
     // Same curve as the ground and the grass, so a snowed-in scene agrees with
     // itself instead of leaving the bushes green on a white field.
@@ -180,7 +192,22 @@ fn fs_main(in : VSOut) -> @location(0) vec4<f32> {
     let ndl = clamp(dot(normalize(in.normal), sun), 0.0, 1.0) * 0.5 + 0.5;
     let ambient = ubo.ambient.rgb * ubo.ambient.w;
     let direct = ubo.sunColor.rgb * ubo.sunColor.w * ndl;
-    let base = in.color * (ambient + direct);
+
+    // uv.y > 0.5 is the crown half of the template, the same split the vertex
+    // stage uses to choose canopy geometry. Trees sample leaves there and bark
+    // below; grass and shrubs have the same texture bound in both slots.
+    // BOTH sampled unconditionally, then selected: textureSample has to be
+    // called from uniform control flow, and in.uv is per-fragment, so putting
+    // the second sample inside the branch is a compile error in the browser.
+    let bark = textureSample(texA, smpA, in.uv);
+    let leaf = textureSample(texB, smpB, in.uv);
+    let texel = select(bark, leaf, in.uv.y > 0.5);
+    // Alpha-cut, so a leaf card is a leaf and not a rectangle.
+    if (texel.a < 0.35) {
+        discard;
+    }
+
+    let base = in.color * texel.rgb * (ambient + direct);
     return vec4<f32>(mix(base, vec3<f32>(0.95, 0.97, 1.0), clamp(in.snow, 0.0, 1.0)), 1.0);
 }
 )WGSL";
@@ -299,6 +326,29 @@ bool WebGPUVegetationSystem::Initialize(WebGPURenderer* renderer) {
     gd.label = "veg-bindgroup";
     m_BindGroup = bgMgr->CreateBindGroup(gd);
 
+    // Group 1: per-volume art.
+    {
+        GPUBindGroupLayoutDesc td;
+        td.entries.push_back({0, GPUBindingType::SampledTexture, GPUShaderStage::Fragment, 0});
+        td.entries.push_back({1, GPUBindingType::Sampler, GPUShaderStage::Fragment, 0});
+        td.entries.push_back({2, GPUBindingType::SampledTexture, GPUShaderStage::Fragment, 0});
+        td.entries.push_back({3, GPUBindingType::Sampler, GPUShaderStage::Fragment, 0});
+        td.label = "veg-tex-layout";
+        m_TexLayout = bgMgr->CreateBindGroupLayout(td);
+
+        // 1x1 white: an untextured volume still needs a valid group, and white
+        // multiplies out to exactly the colour the shader computed before.
+        const u32 whitePixel = 0xFFFFFFFFu;
+        GPUTextureDesc wd;
+        wd.width = 1; wd.height = 1;
+        wd.format = GPUTextureFormat::RGBA8Unorm;
+        wd.usage = GPUTextureUsage::Sampled | GPUTextureUsage::CopyDst;
+        wd.label = "veg-default-white";
+        auto* texMgr = m_Renderer->GetTextureManager();
+        m_DefaultTex = texMgr->CreateTextureWithData(wd, &whitePixel);
+        m_DefaultTexGroup = TexGroupFor(m_DefaultTex, m_DefaultTex);
+    }
+
     // Scene-pass pipeline only (RGBA16Float MSAA 4x offscreen with real depth,
     // same target the particles' scene path draws into). Vegetation is opaque:
     // depth-write ON so blades occlude each other and the scene correctly.
@@ -306,6 +356,7 @@ bool WebGPUVegetationSystem::Initialize(WebGPURenderer* renderer) {
     rp.vertexShader = m_Shader;
     rp.fragmentShader = m_Shader;
     rp.bindGroupLayouts.push_back(m_Layout);
+    rp.bindGroupLayouts.push_back(m_TexLayout);
     rp.topology = GPUPrimitiveTopology::TriangleList;
     rp.cullMode = GPUCullMode::None;
     rp.depthTest = true;
@@ -381,6 +432,26 @@ void WebGPUVegetationSystem::Shutdown() {
     m_Initialized = false;
 }
 
+GPUBindGroupHandle WebGPUVegetationSystem::TexGroupFor(GPUTextureHandle a, GPUTextureHandle b) {
+    if (!a.IsValid()) a = m_DefaultTex;
+    if (!b.IsValid()) b = m_DefaultTex;
+    const u64 key = (a.id * 0x9E3779B97F4A7C15ull) ^ (b.id * 0xC2B2AE3D27D4EB4Full);
+    auto it = m_TexGroups.find(key);
+    if (it != m_TexGroups.end()) return it->second;
+
+    auto* bgMgr = m_Renderer->GetBindGroupManager();
+    GPUBindGroupDesc d;
+    d.layout = m_TexLayout;
+    d.entries.push_back({0, {}, 0, 0, a, {}});
+    d.entries.push_back({1, {}, 0, 0, {}, a});
+    d.entries.push_back({2, {}, 0, 0, b, {}});
+    d.entries.push_back({3, {}, 0, 0, {}, b});
+    d.label = "veg-tex";
+    GPUBindGroupHandle h = bgMgr->CreateBindGroup(d);
+    if (h.IsValid()) m_TexGroups[key] = h;
+    return h;
+}
+
 u32 WebGPUVegetationSystem::BuildVolumeParams(ECS::World* world,
                                               VolumeParamsCPU* params,
                                               DrawInfo* draws) const {
@@ -403,6 +474,8 @@ u32 WebGPUVegetationSystem::BuildVolumeParams(ECS::World* world,
         put3(p.tipColorHeight, g->tipColor); p.tipColorHeight[3] = g->bladeHeight;
         p.misc[0] = g->bladeHeightVariance; p.misc[1] = g->bladeWidth;
         p.misc[2] = g->windSwayStrength; p.misc[3] = 0.0f;
+        m_VolumeTexA[count] = m_ResolveTexture ? m_ResolveTexture(g->customAssetPath) : GPUTextureHandle{};
+        m_VolumeTexB[count] = m_VolumeTexA[count];
         p.trunkColorIdxOff[3] = static_cast<f32>(m_Grass.indexOffset);
         put3(p.wind, m_Wind); p.wind[3] = m_WindTime;
         draws[count] = { m_Grass.indexCount, std::min(g->density, 60000u) };
@@ -420,6 +493,8 @@ u32 WebGPUVegetationSystem::BuildVolumeParams(ECS::World* world,
         put3(p.tipColorHeight, g->tipColor); p.tipColorHeight[3] = g->shrubHeight;
         p.misc[0] = g->heightVariance; p.misc[1] = g->width;
         p.misc[2] = g->windSwayStrength; p.misc[3] = 1.0f;
+        m_VolumeTexA[count] = m_ResolveTexture ? m_ResolveTexture(g->customAssetPath) : GPUTextureHandle{};
+        m_VolumeTexB[count] = m_VolumeTexA[count];
         p.trunkColorIdxOff[3] = static_cast<f32>(m_Shrub.indexOffset);
         put3(p.wind, m_Wind); p.wind[3] = m_WindTime;
         draws[count] = { m_Shrub.indexCount, std::min(g->density, 60000u) };
@@ -445,6 +520,9 @@ u32 WebGPUVegetationSystem::BuildVolumeParams(ECS::World* world,
         p.misc[1] = g->trunkWidth;
         p.misc[2] = g->windSwayStrength * 0.25f;   // trees barely sway
         p.misc[3] = 2.0f;
+        // Bark on the trunk half of the template, canopy on the crown half.
+        m_VolumeTexA[count] = m_ResolveTexture ? m_ResolveTexture(g->barkTexturePath) : GPUTextureHandle{};
+        m_VolumeTexB[count] = m_ResolveTexture ? m_ResolveTexture(g->canopyTexturePath) : GPUTextureHandle{};
         p.treeDims[0] = g->trunkWidth;
         p.treeDims[1] = g->trunkHeight;
         p.treeDims[2] = g->canopyRadius;
@@ -499,6 +577,13 @@ void WebGPUVegetationSystem::RenderScene(WGPURenderPassEncoder pass, const Math:
     wgpuRenderPassEncoderSetPipeline(pass, pipeline);
     wgpuRenderPassEncoderSetBindGroup(pass, 0, bindGroup, 0, nullptr);
     for (u32 v = 0; v < count; ++v) {
+        // This volume's art. Cached by texture pair, so a scene of volumes
+        // sharing one texture set makes one bind group between them.
+        GPUBindGroupHandle texGroup = TexGroupFor(m_VolumeTexA[v], m_VolumeTexB[v]);
+        WGPUBindGroup nativeTex = bgMgrN->GetNativeGroup(
+            texGroup.IsValid() ? texGroup : m_DefaultTexGroup);
+        if (nativeTex) wgpuRenderPassEncoderSetBindGroup(pass, 1, nativeTex, 0, nullptr);
+
         // firstInstance carries the volume slot in the high bits; the shader
         // splits it back into (volume, blade).
         wgpuRenderPassEncoderDraw(pass, draws[v].indexCount, draws[v].density, 0, v << 16);

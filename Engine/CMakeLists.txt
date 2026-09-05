@@ -433,3 +433,65 @@ if(ENJIN_STEAM)
         message(WARNING "ENJIN_STEAM enabled but Steamworks SDK not found at third_party/steamworks/")
     endif()
 endif()
+
+# ============================================================================
+# Shader codegen: GLSL -> SPIR-V -> ShaderData.h/.cpp
+# ============================================================================
+# This was a two-step manual ritual - glslangValidator by hand, then
+# `python _gen_all.py` by hand - and skipping either step leaves the engine
+# running SPIR-V that does not match its source. The failure is silent: the GPU
+# reads the old struct offsets and produces dark scenes, wrong colours or a
+# crash, with a shader file on disk that looks correct. Making it a build step
+# means it cannot be forgotten.
+#
+# The Vulkan-only shaders build here. RT shaders still go through _gen_rt.py:
+# they #include rt_common.glsl, which glslangValidator rejects, so they need
+# glslc with an include path.
+#
+# If no compiler is on PATH the checked-in generated files are used as-is, so a
+# machine without the Vulkan SDK still builds (CI containers, contributors).
+if(NOT ENJIN_PLATFORM_WEB)
+    find_program(ENJIN_GLSLANG NAMES glslangValidator glslangValidator.exe)
+    find_program(ENJIN_PYTHON NAMES python python3)
+
+    if(ENJIN_GLSLANG AND ENJIN_PYTHON)
+        file(GLOB ENJIN_SHADER_SRCS
+             "${CMAKE_SOURCE_DIR}/Engine/shaders/*.vert"
+             "${CMAKE_SOURCE_DIR}/Engine/shaders/*.frag"
+             "${CMAKE_SOURCE_DIR}/Engine/shaders/*.comp")
+
+        # RT shaders include rt_common.glsl and are handled by _gen_rt.py.
+        list(FILTER ENJIN_SHADER_SRCS EXCLUDE REGEX "/rt_")
+
+        set(ENJIN_SPV_OUTPUTS "")
+        foreach(SHADER ${ENJIN_SHADER_SRCS})
+            set(SPV "${SHADER}.spv")
+            add_custom_command(
+                OUTPUT "${SPV}"
+                COMMAND "${ENJIN_GLSLANG}" -V "${SHADER}" -o "${SPV}"
+                DEPENDS "${SHADER}"
+                COMMENT "SPIR-V: ${SHADER}"
+                VERBATIM)
+            list(APPEND ENJIN_SPV_OUTPUTS "${SPV}")
+        endforeach()
+
+        set(ENJIN_SHADERDATA_H "${CMAKE_SOURCE_DIR}/Engine/include/Enjin/Renderer/Vulkan/ShaderData.h")
+        set(ENJIN_SHADERDATA_CPP "${CMAKE_SOURCE_DIR}/Engine/src/Renderer/Vulkan/ShaderDataGenerated.cpp")
+
+        add_custom_command(
+            OUTPUT "${ENJIN_SHADERDATA_H}" "${ENJIN_SHADERDATA_CPP}"
+            COMMAND "${ENJIN_PYTHON}" "${CMAKE_SOURCE_DIR}/_gen_all.py"
+            DEPENDS ${ENJIN_SPV_OUTPUTS} "${CMAKE_SOURCE_DIR}/_gen_all.py"
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+            COMMENT "Packing SPIR-V into ShaderData"
+            VERBATIM)
+
+        add_custom_target(EnjinShaderCodegen
+                          DEPENDS "${ENJIN_SHADERDATA_H}" "${ENJIN_SHADERDATA_CPP}")
+        add_dependencies(EnjinEngine EnjinShaderCodegen)
+        message(STATUS "Shader codegen wired: ${ENJIN_GLSLANG}")
+    else()
+        message(STATUS "Shader codegen SKIPPED (glslangValidator or python not found) "
+                       "- building against the checked-in ShaderData")
+    endif()
+endif()

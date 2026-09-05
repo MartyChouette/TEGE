@@ -104,12 +104,17 @@ std::vector<std::string> FindMissingAssetPaths(
         if (mat->uvQuantize) inert("UV quantize");
     }
 
-    // A scrolling-reflection check belongs here too, but NOT on strength alone:
-    // scrollReflectionStrength defaults to 0.5, so "strength set, no texture"
-    // is true of every default material in every scene and the warning fires on
-    // all of them. TestSceneAssetValidator caught that immediately. It needs a
-    // signal that the author actually asked for the effect - an explicit enable
-    // flag, or a non-default strength - which the component does not carry yet.
+    // Now that scrollReflectionStrength defaults to 0, a non-zero value means
+    // somebody asked for the effect, and asking for it without a texture to
+    // reflect does nothing.
+    for (ECS::Entity entity : world->GetEntitiesWithComponent<ECS::MaterialComponent>()) {
+        const auto* mat = world->GetComponent<ECS::MaterialComponent>(entity);
+        if (!mat) continue;
+        if (mat->scrollReflectionStrength > 0.0f && mat->scrollReflectionTexturePath.empty()) {
+            warnings.push_back("Scrolling reflection has strength but no reflection texture"
+                " (entity " + std::to_string(entity) + ", Material)");
+        }
+    }
 
     for (ECS::Entity entity : world->GetEntitiesWithComponent<ECS::ScriptComponent>()) {
         const auto* script = world->GetComponent<ECS::ScriptComponent>(entity);
