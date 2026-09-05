@@ -230,90 +230,99 @@ json SerializeTransformComponent(const ECS::TransformComponent& transform) {
 }
 
 json SerializeMaterialComponent(const ECS::MaterialComponent& material) {
+    // Only write what differs from a fresh MaterialComponent.
+    //
+    // Writing all 73 fields unconditionally is why opening a scene in the editor
+    // and saving it inflated OpenSea.enjin from 0.88 MB to 22.21 MB: same
+    // entities, same meshes, every material expanded from the three fields that
+    // were authored to its full default set. DeserializeMaterialComponent guards
+    // every read with contains(), so an omitted field simply keeps its default.
+    static const ECS::MaterialComponent kDefaultMaterial{};
+
     json j;
-    j["baseColor"] = SerializeVector3(material.baseColor);
-    j["opacity"] = RF(material.opacity);
-    j["metallic"] = RF(material.metallic);
-    j["roughness"] = RF(material.roughness);
-    j["emissiveColor"] = SerializeVector3(material.emissiveColor);
-    j["emissiveStrength"] = RF(material.emissiveStrength);
-    j["baseColorTexture"] = material.baseColorTexture;
-    j["normalTexture"] = material.normalTexture;
-    j["metallicRoughnessTexture"] = material.metallicRoughnessTexture;
-    j["emissiveTexture"] = material.emissiveTexture;
+    if (material.baseColor != kDefaultMaterial.baseColor) j["baseColor"] = SerializeVector3(material.baseColor);
+    if (material.opacity != kDefaultMaterial.opacity) j["opacity"] = RF(material.opacity);
+    if (material.metallic != kDefaultMaterial.metallic) j["metallic"] = RF(material.metallic);
+    if (material.roughness != kDefaultMaterial.roughness) j["roughness"] = RF(material.roughness);
+    if (material.emissiveColor != kDefaultMaterial.emissiveColor) j["emissiveColor"] = SerializeVector3(material.emissiveColor);
+    if (material.emissiveStrength != kDefaultMaterial.emissiveStrength) j["emissiveStrength"] = RF(material.emissiveStrength);
+    if (material.baseColorTexture != kDefaultMaterial.baseColorTexture) j["baseColorTexture"] = material.baseColorTexture;
+    if (material.normalTexture != kDefaultMaterial.normalTexture) j["normalTexture"] = material.normalTexture;
+    if (material.metallicRoughnessTexture != kDefaultMaterial.metallicRoughnessTexture) j["metallicRoughnessTexture"] = material.metallicRoughnessTexture;
+    if (material.emissiveTexture != kDefaultMaterial.emissiveTexture) j["emissiveTexture"] = material.emissiveTexture;
     // Texture paths
-    j["baseColorTexturePath"] = material.baseColorTexturePath;
-    j["uvRegionOffset"] = { RF(material.uvRegionOffset.x), RF(material.uvRegionOffset.y) };
-    j["uvRegionScale"] = { RF(material.uvRegionScale.x), RF(material.uvRegionScale.y) };
+    if (material.baseColorTexturePath != kDefaultMaterial.baseColorTexturePath) j["baseColorTexturePath"] = material.baseColorTexturePath;
+    if (material.uvRegionOffset != kDefaultMaterial.uvRegionOffset) j["uvRegionOffset"] = { RF(material.uvRegionOffset.x), RF(material.uvRegionOffset.y) };
+    if (material.uvRegionScale != kDefaultMaterial.uvRegionScale) j["uvRegionScale"] = { RF(material.uvRegionScale.x), RF(material.uvRegionScale.y) };
     if (material.uvScrollSpeed.x != 0.0f || material.uvScrollSpeed.y != 0.0f) {
-        j["uvScrollSpeed"] = { RF(material.uvScrollSpeed.x), RF(material.uvScrollSpeed.y) };
+        if (material.uvScrollSpeed != kDefaultMaterial.uvScrollSpeed) j["uvScrollSpeed"] = { RF(material.uvScrollSpeed.x), RF(material.uvScrollSpeed.y) };
     }
     if (material.flipbookCols > 0 && material.flipbookRows > 0) {
-        j["flipbookCols"] = material.flipbookCols;
-        j["flipbookRows"] = material.flipbookRows;
-        j["flipbookFps"] = RF(material.flipbookFps);
+        if (material.flipbookCols != kDefaultMaterial.flipbookCols) j["flipbookCols"] = material.flipbookCols;
+        if (material.flipbookRows != kDefaultMaterial.flipbookRows) j["flipbookRows"] = material.flipbookRows;
+        if (material.flipbookFps != kDefaultMaterial.flipbookFps) j["flipbookFps"] = RF(material.flipbookFps);
     }
-    j["normalTexturePath"] = material.normalTexturePath;
-    j["metallicRoughnessTexturePath"] = material.metallicRoughnessTexturePath;
-    j["emissiveTexturePath"] = material.emissiveTexturePath;
-    j["specularTexturePath"] = material.specularTexturePath;
-    j["doubleSided"] = material.doubleSided;
-    j["castShadows"] = material.castShadows;
-    j["receiveShadows"] = material.receiveShadows;
-    j["alphaMode"] = static_cast<i32>(material.alphaMode);
-    j["alphaCutoff"] = RF(material.alphaCutoff);
+    if (material.normalTexturePath != kDefaultMaterial.normalTexturePath) j["normalTexturePath"] = material.normalTexturePath;
+    if (material.metallicRoughnessTexturePath != kDefaultMaterial.metallicRoughnessTexturePath) j["metallicRoughnessTexturePath"] = material.metallicRoughnessTexturePath;
+    if (material.emissiveTexturePath != kDefaultMaterial.emissiveTexturePath) j["emissiveTexturePath"] = material.emissiveTexturePath;
+    if (material.specularTexturePath != kDefaultMaterial.specularTexturePath) j["specularTexturePath"] = material.specularTexturePath;
+    if (material.doubleSided != kDefaultMaterial.doubleSided) j["doubleSided"] = material.doubleSided;
+    if (material.castShadows != kDefaultMaterial.castShadows) j["castShadows"] = material.castShadows;
+    if (material.receiveShadows != kDefaultMaterial.receiveShadows) j["receiveShadows"] = material.receiveShadows;
+    if (material.alphaMode != kDefaultMaterial.alphaMode) j["alphaMode"] = static_cast<i32>(material.alphaMode);
+    if (material.alphaCutoff != kDefaultMaterial.alphaCutoff) j["alphaCutoff"] = RF(material.alphaCutoff);
     // Height/parallax mapping
-    j["heightTexturePath"] = material.heightTexturePath;
-    j["parallaxScale"] = RF(material.parallaxScale);
-    j["parallaxMode"] = material.parallaxMode;
-    j["pomMaxSteps"] = material.pomMaxSteps;
-    j["pomHeightScale"] = RF(material.pomHeightScale);
+    if (material.heightTexturePath != kDefaultMaterial.heightTexturePath) j["heightTexturePath"] = material.heightTexturePath;
+    if (material.parallaxScale != kDefaultMaterial.parallaxScale) j["parallaxScale"] = RF(material.parallaxScale);
+    if (material.parallaxMode != kDefaultMaterial.parallaxMode) j["parallaxMode"] = material.parallaxMode;
+    if (material.pomMaxSteps != kDefaultMaterial.pomMaxSteps) j["pomMaxSteps"] = material.pomMaxSteps;
+    if (material.pomHeightScale != kDefaultMaterial.pomHeightScale) j["pomHeightScale"] = RF(material.pomHeightScale);
     // Retro rendering flags
-    j["flatShading"] = material.flatShading;
-    j["affineTexturing"] = material.affineTexturing;
-    j["vertexSnapping"] = material.vertexSnapping;
-    j["stippleTransparency"] = material.stippleTransparency;
-    j["uvQuantize"] = material.uvQuantize;
-    j["gouraudOnly"] = material.gouraudOnly;
-    j["sdfText"] = material.sdfText;
-    j["vertexSnapResolution"] = material.vertexSnapResolution;
-    j["shadowDitherMode"] = material.shadowDitherMode;
-    j["lightRampOverride"] = material.lightRampOverride;
-    j["shadowDitherPattern"] = material.shadowDitherPattern;
-    j["textureFilterOverride"] = material.textureFilterOverride;
+    if (material.flatShading != kDefaultMaterial.flatShading) j["flatShading"] = material.flatShading;
+    if (material.affineTexturing != kDefaultMaterial.affineTexturing) j["affineTexturing"] = material.affineTexturing;
+    if (material.vertexSnapping != kDefaultMaterial.vertexSnapping) j["vertexSnapping"] = material.vertexSnapping;
+    if (material.stippleTransparency != kDefaultMaterial.stippleTransparency) j["stippleTransparency"] = material.stippleTransparency;
+    if (material.uvQuantize != kDefaultMaterial.uvQuantize) j["uvQuantize"] = material.uvQuantize;
+    if (material.gouraudOnly != kDefaultMaterial.gouraudOnly) j["gouraudOnly"] = material.gouraudOnly;
+    if (material.sdfText != kDefaultMaterial.sdfText) j["sdfText"] = material.sdfText;
+    if (material.vertexSnapResolution != kDefaultMaterial.vertexSnapResolution) j["vertexSnapResolution"] = material.vertexSnapResolution;
+    if (material.shadowDitherMode != kDefaultMaterial.shadowDitherMode) j["shadowDitherMode"] = material.shadowDitherMode;
+    if (material.lightRampOverride != kDefaultMaterial.lightRampOverride) j["lightRampOverride"] = material.lightRampOverride;
+    if (material.shadowDitherPattern != kDefaultMaterial.shadowDitherPattern) j["shadowDitherPattern"] = material.shadowDitherPattern;
+    if (material.textureFilterOverride != kDefaultMaterial.textureFilterOverride) j["textureFilterOverride"] = material.textureFilterOverride;
     if (!material.footstepSound.empty()) j["footstepSound"] = material.footstepSound;
     if (!material.impactSound.empty())   j["impactSound"] = material.impactSound;
     if (material.surfaceParticle != 0)   j["surfaceParticle"] = material.surfaceParticle;
-    j["footstepVolume"] = material.footstepVolume;
-    j["impactThreshold"] = material.impactThreshold;
-    j["reflectivity"] = material.reflectivity;
-    j["fresnelPower"] = material.fresnelPower;
-    j["rimLightStrength"] = material.rimLightStrength;
-    j["excludeFromCelShading"] = material.excludeFromCelShading;
-    j["outlineWidth"] = material.outlineWidth;
-    j["outlineColor"] = SerializeVector3(material.outlineColor);
-    j["ditherGradient"] = material.ditherGradient;
-    j["ditherGradientBands"] = material.ditherGradientBands;
-    j["ditherGradientPattern"] = material.ditherGradientPattern;
-    j["ditherTransparency"] = material.ditherTransparency;
-    j["ditherTransPattern"] = material.ditherTransPattern;
-    j["ditherTransBlendColor"] = { material.ditherTransBlendColor.x, material.ditherTransBlendColor.y, material.ditherTransBlendColor.z };
-    j["ditherTransOpacity"] = material.ditherTransOpacity;
+    if (material.footstepVolume != kDefaultMaterial.footstepVolume) j["footstepVolume"] = material.footstepVolume;
+    if (material.impactThreshold != kDefaultMaterial.impactThreshold) j["impactThreshold"] = material.impactThreshold;
+    if (material.reflectivity != kDefaultMaterial.reflectivity) j["reflectivity"] = material.reflectivity;
+    if (material.fresnelPower != kDefaultMaterial.fresnelPower) j["fresnelPower"] = material.fresnelPower;
+    if (material.rimLightStrength != kDefaultMaterial.rimLightStrength) j["rimLightStrength"] = material.rimLightStrength;
+    if (material.excludeFromCelShading != kDefaultMaterial.excludeFromCelShading) j["excludeFromCelShading"] = material.excludeFromCelShading;
+    if (material.outlineWidth != kDefaultMaterial.outlineWidth) j["outlineWidth"] = material.outlineWidth;
+    if (material.outlineColor != kDefaultMaterial.outlineColor) j["outlineColor"] = SerializeVector3(material.outlineColor);
+    if (material.ditherGradient != kDefaultMaterial.ditherGradient) j["ditherGradient"] = material.ditherGradient;
+    if (material.ditherGradientBands != kDefaultMaterial.ditherGradientBands) j["ditherGradientBands"] = material.ditherGradientBands;
+    if (material.ditherGradientPattern != kDefaultMaterial.ditherGradientPattern) j["ditherGradientPattern"] = material.ditherGradientPattern;
+    if (material.ditherTransparency != kDefaultMaterial.ditherTransparency) j["ditherTransparency"] = material.ditherTransparency;
+    if (material.ditherTransPattern != kDefaultMaterial.ditherTransPattern) j["ditherTransPattern"] = material.ditherTransPattern;
+    if (material.ditherTransBlendColor != kDefaultMaterial.ditherTransBlendColor) j["ditherTransBlendColor"] = { material.ditherTransBlendColor.x, material.ditherTransBlendColor.y, material.ditherTransBlendColor.z };
+    if (material.ditherTransOpacity != kDefaultMaterial.ditherTransOpacity) j["ditherTransOpacity"] = material.ditherTransOpacity;
     // Transmission / SSS
-    j["transmission"] = RF(material.transmission);
-    j["ior"] = RF(material.ior);
-    j["thickness"] = RF(material.thickness);
-    j["sssIntensity"] = RF(material.sssIntensity);
-    j["sssRadius"] = RF(material.sssRadius);
-    j["sssColor"] = SerializeVector3(material.sssColor);
+    if (material.transmission != kDefaultMaterial.transmission) j["transmission"] = RF(material.transmission);
+    if (material.ior != kDefaultMaterial.ior) j["ior"] = RF(material.ior);
+    if (material.thickness != kDefaultMaterial.thickness) j["thickness"] = RF(material.thickness);
+    if (material.sssIntensity != kDefaultMaterial.sssIntensity) j["sssIntensity"] = RF(material.sssIntensity);
+    if (material.sssRadius != kDefaultMaterial.sssRadius) j["sssRadius"] = RF(material.sssRadius);
+    if (material.sssColor != kDefaultMaterial.sssColor) j["sssColor"] = SerializeVector3(material.sssColor);
     // Matcap texture
-    j["matcapTexturePath"] = material.matcapTexturePath;
-    j["scrollReflectionTexturePath"] = material.scrollReflectionTexturePath;
-    j["scrollReflectionSpeed"] = SerializeVector2(material.scrollReflectionSpeed);
-    j["scrollReflectionStrength"] = RF(material.scrollReflectionStrength);
+    if (material.matcapTexturePath != kDefaultMaterial.matcapTexturePath) j["matcapTexturePath"] = material.matcapTexturePath;
+    if (material.scrollReflectionTexturePath != kDefaultMaterial.scrollReflectionTexturePath) j["scrollReflectionTexturePath"] = material.scrollReflectionTexturePath;
+    if (material.scrollReflectionSpeed != kDefaultMaterial.scrollReflectionSpeed) j["scrollReflectionSpeed"] = SerializeVector2(material.scrollReflectionSpeed);
+    if (material.scrollReflectionStrength != kDefaultMaterial.scrollReflectionStrength) j["scrollReflectionStrength"] = RF(material.scrollReflectionStrength);
     // Procedural surface noise
-    j["surfaceNoiseScale"] = RF(material.surfaceNoiseScale);
-    j["surfaceNoiseStrength"] = RF(material.surfaceNoiseStrength);
+    if (material.surfaceNoiseScale != kDefaultMaterial.surfaceNoiseScale) j["surfaceNoiseScale"] = RF(material.surfaceNoiseScale);
+    if (material.surfaceNoiseStrength != kDefaultMaterial.surfaceNoiseStrength) j["surfaceNoiseStrength"] = RF(material.surfaceNoiseStrength);
     return j;
 }
 

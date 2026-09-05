@@ -613,9 +613,68 @@ void ClothSystem::Update(World* world, f32 deltaTime, const Effects::WindSystem*
             weatherWind = SampleWeatherWind(frameZones(), wind, clothPos, m_Time) * c->weatherWindScale;
         }
 
+        // Carry the whole sheet with its anchor before integrating.
+        //
+        // Without this, cloth on anything that moves tears itself apart: the
+        // pinned points teleport to the new transform each frame with their
+        // velocity forced to zero, the free points stay behind, and the distance
+        // constraints yank them across the gap. In Verlet a positional
+        // correction is indistinguishable from velocity, so that yank comes back
+        // as speed on the next step and compounds. A flag on a pole was fine, a
+        // cape on a running character or a sail on a boat was not.
+        //
+        // Fix: move the free points by the same rigid motion the anchor made, so
+        // the solver only ever sees the small RELATIVE motion it was designed
+        // for. Rotation is handled as well as translation, because a boat that
+        // turns rotates its rig about the mast without translating much.
+        if (c->hasPrevModel) {
+            const Math::Matrix4& A = c->prevModel;   // old frame
+            const Math::Matrix4& B = model;          // new frame
+            // Orthonormal basis of each frame (column-major, translation at 12..14).
+            Math::Vector3 a0(A.m[0], A.m[1], A.m[2]), a1(A.m[4], A.m[5], A.m[6]), a2(A.m[8], A.m[9], A.m[10]);
+            Math::Vector3 b0(B.m[0], B.m[1], B.m[2]), b1(B.m[4], B.m[5], B.m[6]), b2(B.m[8], B.m[9], B.m[10]);
+            auto norm = [](Math::Vector3 v) {
+                f32 l = v.Length();
+                return (l > 1e-6f) ? v * (1.0f / l) : Math::Vector3(0.0f, 0.0f, 0.0f);
+            };
+            a0 = norm(a0); a1 = norm(a1); a2 = norm(a2);
+            b0 = norm(b0); b1 = norm(b1); b2 = norm(b2);
+            Math::Vector3 ta(A.m[12], A.m[13], A.m[14]);
+            Math::Vector3 tb(B.m[12], B.m[13], B.m[14]);
+
+            // R_rel = R_new * R_old^T, applied about the old origin, then
+            // translated onto the new one.
+            auto carry = [&](const Math::Vector3& p) {
+                Math::Vector3 d = p - ta;
+                // into the old frame (transpose = inverse for an orthonormal basis)
+                f32 lx = d.Dot(a0), ly = d.Dot(a1), lz = d.Dot(a2);
+                // back out through the new frame
+                return tb + b0 * lx + b1 * ly + b2 * lz;
+            };
+            for (i32 i = 0; i < count; ++i) {
+                if (c->invMass[i] == 0.0f) continue;   // pinned points are placed below
+                c->positions[i] = carry(c->positions[i]);
+                c->prevPositions[i] = carry(c->prevPositions[i]);
+            }
+        }
+        c->prevModel = model;
+        c->hasPrevModel = true;
+
         // Verlet integrate free points; pinned points snap to the transform.
         Math::Vector3 accel = Math::Vector3(0.0f, -9.81f * c->gravityScale, 0.0f) + c->wind + weatherWind;
         const f32 keep = 1.0f - std::clamp(c->damping, 0.0f, 0.5f);
+
+        // Ceiling on how far a point may travel in one step, in units of the
+        // grid spacing. Position-based dynamics assumes corrections are small
+        // relative to the constraint rest length; hand it a step larger than a
+        // cell and the solver overshoots, the overshoot reads back as velocity
+        // next frame, and the sheet turns itself inside out. A gust spike or a
+        // frame hitch is enough to trigger it, which is why cloth could not be
+        // driven from the live wind field at any scale.
+        const f32 cellW = (c->resX > 1) ? (c->width / static_cast<f32>(c->resX - 1)) : c->width;
+        const f32 cellH = (c->resY > 1) ? (c->height / static_cast<f32>(c->resY - 1)) : c->height;
+        const f32 maxStep = std::max(0.001f, std::min(cellW, cellH) * 1.5f);
+
         for (i32 i = 0; i < count; ++i) {
             if (c->invMass[i] == 0.0f) {
                 Math::Vector3 target = XformPoint(model, c->restLocal[i]);
@@ -624,8 +683,21 @@ void ClothSystem::Update(World* world, f32 deltaTime, const Effects::WindSystem*
             }
             Math::Vector3 pos = c->positions[i];
             Math::Vector3 vel = (pos - c->prevPositions[i]) * keep;
+            Math::Vector3 step = vel + accel * (dt * dt);
+            f32 len = step.Length();
+            if (len > maxStep) step = step * (maxStep / len);
             c->prevPositions[i] = pos;
-            c->positions[i] = pos + vel + accel * (dt * dt);
+            Math::Vector3 next = pos + step;
+
+            // Once a point goes non-finite it poisons every constraint it takes
+            // part in, and the NaN reaches the MeshComponent, where it silently
+            // drops the whole parented subtree from rendering. Put the point
+            // back on its rest position rather than let that spread.
+            if (!std::isfinite(next.x) || !std::isfinite(next.y) || !std::isfinite(next.z)) {
+                next = XformPoint(model, c->restLocal[i]);
+                c->prevPositions[i] = next;
+            }
+            c->positions[i] = next;
         }
 
         // Satisfy distance constraints; tear the overstretched when allowed.

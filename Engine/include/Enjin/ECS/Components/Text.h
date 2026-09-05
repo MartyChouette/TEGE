@@ -3,6 +3,7 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Math/Vector.h"
 #include <string>
+#include <vector>
 
 namespace Enjin {
 namespace ECS {
@@ -12,6 +13,21 @@ enum class TextAlign : i32 {
     Left = 0,
     Center = 1,
     Right = 2
+};
+
+// One coloured stretch of a TextComponent's string. A game that colours part of
+// a line (a charged word in a dictated letter, a matched prefix, a spelling
+// error) used to need ONE ENTITY PER COLOUR, because a TextComponent carried a
+// single textColor. Every such layout then had to do its own font arithmetic to
+// place the pieces, and a piece changing length moved everything after it.
+//
+// start/length count CODEPOINTS, not bytes, so they mean the same thing for
+// accented text. length <= 0 runs to the end of the string. Runs are applied in
+// order and may overlap; the last one covering a codepoint wins.
+struct ENJIN_API TextRun {
+    i32 start = 0;
+    i32 length = 0;
+    Math::Vector3 color = Math::Vector3(1.0f, 1.0f, 1.0f);
 };
 
 // Text component - rasterizes text to a texture that can be applied to any mesh surface
@@ -45,6 +61,16 @@ struct ENJIN_API TextComponent {
     // so scene light falls on the words (candlelit pages). Texture-path text is
     // always lit by its material, as before.
     bool lit = false;
+
+    // Coloured stretches of `text`. Empty (the default) = the whole string
+    // takes textColor, exactly as before. SDF path only.
+    std::vector<TextRun> runs;
+
+    // Draw only the first N codepoints; -1 (the default) draws everything.
+    // Layout always runs over the WHOLE string, so revealing does not reflow -
+    // a word that will wrap is already on its final line before it appears.
+    // This is the typing primitive: one entity, one string, revealCount++.
+    i32 revealCount = -1;
 
     TextComponent() = default;
     TextComponent(const std::string& content) : text(content) {}

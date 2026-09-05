@@ -36,7 +36,9 @@ private:
 #define AS_CHECK(expr) \
     do { int _r = (expr); if (_r < 0) { ENJIN_LOG_ERROR(Script, "AS registration failed (code %d) at %s:%d", _r, __FILE__, __LINE__); } } while(0)
 
-static ECS::RenderSystem* s_BindingsRenderSystem = nullptr;
+// Not static: the text bindings need it too, for Text_MeasureTo. Same pattern
+// as s_BindingsWorld.
+ECS::RenderSystem* s_BindingsRenderSystem = nullptr;
 static Renderer::PostProcessing* s_BindingsPostProcessing = nullptr;
 extern ECS::World* s_BindingsWorld;
 

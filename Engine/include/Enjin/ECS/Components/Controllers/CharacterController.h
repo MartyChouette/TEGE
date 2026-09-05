@@ -355,6 +355,129 @@ struct VehicleController : public CharacterControllerBase {
 };
 
 // Surface Aligned Controller (spherical/planet gravity, Super Mario Galaxy style)
+// ============================================================================
+// Water Vehicle Controller
+//
+// Anything that floats and is steered by a rudder: powered boats, jet skis,
+// paddled craft, sailing dinghies. This is NOT the car controller with the
+// wheels taken off, and the difference is the rudder. A wheel grips the road
+// whether or not you are moving; a rudder is a foil in flowing water, so a
+// stopped boat does not steer at all. That single fact is most of what makes a
+// boat feel like a boat, and it is why lateral grip here is low and deliberate
+// (a boat always slips sideways a little) where a car's is near total.
+//
+// Propulsion is a mode rather than three components:
+//   Motor    - throttle and reverse, optionally planing
+//   Paddle   - impulse per stroke, no reverse gear
+//   External - a script writes externalDrive/externalSide each frame
+//
+// External exists for sails. A sail model is all apparent wind, trim angle and
+// point-of-sail curves, and it wants tuning in seconds. Compiled into the engine
+// every tweak costs a rebuild, so the hull lives here (buoyancy, drag, the hull
+// speed wall, rudder authority, leeway, heel, wake) and the wind stays in script
+// where it can be hot-reloaded. See Whistland's SailingProto.as.
+// ============================================================================
+
+enum class WaterPropulsion : u8 { Motor = 0, Paddle = 1, External = 2 };
+
+struct WaterVehicleController : public CharacterControllerBase {
+    WaterPropulsion propulsion = WaterPropulsion::Motor;
+
+    // --- Hull ---
+    // Displacement hulls have a hard speed limit set by waterline length. Past
+    // it the boat is climbing its own bow wave, which is what hullSpeedWall
+    // models. Raising hullSpeed is the classic boat upgrade.
+    f32 hullSpeed = 9.0f;
+    f32 hullDragLinear = 0.09f;     // skin friction
+    f32 hullDragQuad = 0.030f;      // wave making
+    f32 hullSpeedWall = 0.90f;      // 0 = no wall, higher = flatter top end
+    f32 lateralGrip = 6.0f;         // keel/skeg resistance to sideways slip
+    f32 mass = 1.0f;                // forces are accelerations at 1
+
+    // --- Planing ---
+    // A motorboat lifts onto its bow wave and leaves hull speed behind. A
+    // displacement dinghy never does. Off by default because most boats do not.
+    bool canPlane = false;
+    f32 planeThreshold = 0.75f;     // fraction of hullSpeed where the bow lifts
+    f32 planeDragCut = 0.55f;       // drag multiplier once planing
+
+    // --- Propulsion (Motor / Paddle) ---
+    f32 maxThrust = 12.0f;
+    f32 reverseThrustScale = 0.40f;
+    f32 throttleRate = 2.0f;
+    f32 paddleImpulse = 3.2f;       // Paddle: speed added per stroke
+    f32 paddleCooldown = 0.65f;
+    f32 currentThrottle = 0.0f;
+
+    // --- Rudder ---
+    f32 rudderAuthority = 62.0f;    // deg/sec at full steerage
+    f32 rudderFullSpeed = 2.2f;     // water speed at which authority is reached
+    f32 rudderMinAuthority = 0.16f; // floor, so dead in the water is a setback, not a softlock
+    f32 rudderRate = 3.4f;          // how fast the blade swings to the input
+    f32 rudderDrag = 0.022f;        // cost of steering hard; smooth is fast
+    f32 currentRudder = 0.0f;
+
+    // --- Heel and trim ---
+    f32 righting = 11.0f;           // stability; low = tippy dinghy
+    f32 heelDrag = 0.14f;           // a heeled hull drags its rail. This, not
+                                    // spilled thrust, is what makes heel cost speed
+    f32 maxHeel = 40.0f;
+    f32 turnHeel = 0.55f;           // degrees of lean per deg/sec of turn
+    f32 trimPitch = 1.4f;           // bow lift under thrust
+
+    // --- Buoyancy ---
+    // Rides the surface of a water volume rather than being a rigidbody, so the
+    // motion is authored and predictable. Set followWaterSurface false to own Y.
+    bool followWaterSurface = true;
+    f32 waterLine = 0.0f;           // hull origin height relative to the surface
+    f32 bobAmplitude = 0.10f;
+    f32 bobRate = 1.35f;
+    f32 buoyancyResponse = 6.0f;
+
+    // --- Current ---
+    // Moving water CARRIES a boat, it does not push it: drag is computed against
+    // the water and this is added to position. That is what makes a tide read as
+    // a tide instead of as a mysterious force, and it is why you can make hull
+    // speed through the water and go backwards over the ground.
+    Math::Vector3 current = Math::Vector3(0.0f, 0.0f, 0.0f);
+
+    // --- External drive (WaterPropulsion::External) ---
+    f32 externalDrive = 0.0f;       // force along forward
+    f32 externalSide = 0.0f;        // force along right, + = to starboard
+    f32 externalHeel = 0.0f;        // extra heeling moment, e.g. from a sail
+
+    // --- Wake ---
+    bool emitWake = true;
+    f32 wakeWidth = 1.6f;
+    f32 wakeMinSpeed = 0.6f;
+    Entity waterEntity = 0;         // entity carrying interactiveWater; 0 = auto-find
+
+    // --- Camera ---
+    f32 cameraDistance = 9.0f;
+    f32 cameraHeight = 3.4f;
+    f32 cameraLerpSpeed = 6.5f;
+    f32 cameraLookAhead = 5.0f;
+    f32 cameraSpeedPull = 0.52f;    // extra distance per unit of speed
+
+    // Model alignment: engine forward is -Z. Spin the visual body by this yaw if
+    // the hull was authored facing another axis.
+    f32 modelForwardYaw = 0.0f;
+
+    // --- State ---
+    f32 heading = 0.0f;
+    f32 heel = 0.0f;
+    f32 heelVel = 0.0f;
+    f32 pitch = 0.0f;
+    f32 speedThroughWater = 0.0f;   // what the hull and rudder feel
+    f32 speedOverGround = 0.0f;     // what the racing line cares about
+    f32 leeway = 0.0f;              // sideways slip
+    f32 paddleTimer = 0.0f;
+    f32 bobPhase = 0.0f;            // own clock, so bob is deterministic and needs no global time
+    bool isPlaning = false;
+    Math::Vector3 forwardDir = Math::Vector3(0.0f, 0.0f, -1.0f);
+    Math::Vector3 groundVelocity = Math::Vector3(0.0f, 0.0f, 0.0f);
+};
+
 struct SurfaceAlignedController : public CharacterControllerBase {
     // Movement
     f32 acceleration = 30.0f;

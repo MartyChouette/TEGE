@@ -997,6 +997,8 @@ void EditorLayer::DrawAssetBrowserPanel() {
                         OpenScene(entry.fullPath);
                     } else if (IsScript(entry.extension) || IsShader(entry.extension)) {
                         OpenInExternalIDE(entry.fullPath);
+                    } else if (IsImage(entry.extension)) {
+                        OpenTextureInPixelEditor(entry.fullPath);
                     }
                 }
 
@@ -1011,6 +1013,13 @@ void EditorLayer::DrawAssetBrowserPanel() {
                 // Right-click context menu
                 if (ImGui::BeginPopupContextItem("##AssetCtxGrid")) {
                     if (IsImage(entry.extension)) {
+                        if (ImGui::MenuItem("Open in Pixel Editor")) {
+                            OpenTextureInPixelEditor(entry.fullPath);
+                        }
+                        if (ImGui::MenuItem("Edit in external app")) {
+                            OpenInExternalIDE(entry.fullPath);
+                        }
+                        ImGui::Separator();
                         if (ImGui::MenuItem("Compress Texture...")) {
                             m_ShowCompressionSettings = true;
                             m_CompressionTargetPath = entry.fullPath;
@@ -1126,6 +1135,8 @@ void EditorLayer::DrawAssetBrowserPanel() {
                             OpenScene(entry.fullPath);
                         } else if (IsScript(entry.extension) || IsShader(entry.extension)) {
                             OpenInExternalIDE(entry.fullPath);
+                        } else if (IsImage(entry.extension)) {
+                            OpenTextureInPixelEditor(entry.fullPath);
                         }
                     }
                 }
@@ -1161,6 +1172,13 @@ void EditorLayer::DrawAssetBrowserPanel() {
                 // Right-click context menu
                 if (ImGui::BeginPopupContextItem("##AssetCtxList")) {
                     if (IsImage(entry.extension)) {
+                        if (ImGui::MenuItem("Open in Pixel Editor")) {
+                            OpenTextureInPixelEditor(entry.fullPath);
+                        }
+                        if (ImGui::MenuItem("Edit in external app")) {
+                            OpenInExternalIDE(entry.fullPath);
+                        }
+                        ImGui::Separator();
                         if (ImGui::MenuItem("Compress Texture...")) {
                             m_ShowCompressionSettings = true;
                             m_CompressionTargetPath = entry.fullPath;
@@ -3206,12 +3224,32 @@ void EditorLayer::DrawVisualScriptPanel() {
 
 void EditorLayer::DrawPixelEditorPanel() {
     bool panelOpen = true;
+    // Opening a texture from an object docks you straight into the paint panel
+    // instead of leaving it behind whatever was on top.
+    if (m_FocusPixelEditor) {
+        ImGui::SetNextWindowFocus();
+        m_FocusPixelEditor = false;
+    }
     if (!ImGui::Begin("Pixel Editor", &panelOpen)) {
         if (!panelOpen) SetPanelVisibility(EditorPanel::PixelEditorPanel, false);
         ImGui::End();
         return;
     }
     if (!panelOpen) { SetPanelVisibility(EditorPanel::PixelEditorPanel, false); ImGui::End(); return; }
+
+    // Which file is on the easel. Without this, Save is a button with no
+    // visible object.
+    if (m_PixelEditor.HasCanvas()) {
+        const std::string& src = m_PixelEditor.GetSourcePath();
+        if (src.empty()) {
+            ImGui::TextDisabled("Unsaved canvas (no source file)");
+        } else {
+            ImGui::TextDisabled("%s%s", src.c_str(),
+                                m_PixelEditor.HasUnsavedEdits() ? "   * unsaved" : "");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", src.c_str());
+        }
+        ImGui::Separator();
+    }
 
     // Export as Prefab button (top toolbar)
     if (m_PixelEditor.HasCanvas()) {
@@ -3240,6 +3278,40 @@ void EditorLayer::DrawPixelEditorPanel() {
     m_PixelEditor.Render(m_EditorSettings);
 
     ImGui::End();
+}
+
+// One way in for "paint this image", used by the asset browser (double-click
+// or context menu) and by every texture slot in the material inspector.
+bool EditorLayer::OpenTextureInPixelEditor(const std::string& path) {
+    if (path.empty()) return false;
+
+    // Material texture paths are stored project-relative, and the editor's CWD
+    // is the exe directory, so a bare path has to be rooted against the open
+    // project before anything on disk will find it.
+    std::string resolved = path;
+    std::error_code ec;
+    if (!std::filesystem::exists(resolved, ec)) {
+        const std::string proj = m_SceneManager.GetProjectPath();
+        if (!proj.empty()) {
+            auto cand = std::filesystem::path(proj).parent_path() / path;
+            if (std::filesystem::exists(cand, ec)) resolved = cand.string();
+        }
+    }
+    if (std::filesystem::exists(resolved, ec)) {
+        resolved = std::filesystem::absolute(resolved, ec).string();
+    }
+
+    if (!m_PixelEditor.LoadImage(resolved)) {
+        ShowNotification("Could not open image: " + path, NotificationType::Error);
+        return false;
+    }
+
+    SetPanelVisibility(EditorPanel::PixelEditorPanel, true);
+    m_FocusPixelEditor = true;
+    ShowNotification("Painting " + std::filesystem::path(resolved).filename().string()
+                         + " - Save writes straight back to it",
+                     NotificationType::Info);
+    return true;
 }
 
 void EditorLayer::DrawSpriteSheetImporterPanel() {
@@ -9338,12 +9410,47 @@ void EditorLayer::DrawUVPreviewPanel() {
         ImGui::Separator();
         ImGui::TextUnformatted(label);
         if (!path.empty()) {
+            // Double-clicking the thumbnail or the path opens the texture in the
+            // built-in Pixel Editor, and right-click gives the same choices. The
+            // texture an object is wearing should be one gesture away from the
+            // brush, not a panel plus a retyped path.
+            bool openHere = false;
+            // Order matters: a tooltip opens its own window and clobbers ImGui's
+            // last-item state, so the double-click read and BeginPopupContextItem
+            // both have to happen BEFORE the tooltip is submitted or the context
+            // menu silently fails to attach (same trap as the asset browser's
+            // drag source).
+            auto texItemActions = [&](const char* popupId) {
+                bool hovered = ImGui::IsItemHovered();
+                if (hovered && ImGui::IsMouseDoubleClicked(0)) openHere = true;
+                if (ImGui::BeginPopupContextItem(popupId)) {
+                    if (ImGui::MenuItem("Open in Pixel Editor")) openHere = true;
+                    if (ImGui::MenuItem("Edit in external app")) OpenInExternalIDE(resolveTexPath(path));
+                    ImGui::Separator();
+                    if (ImGui::MenuItem("Copy path")) ImGui::SetClipboardText(path.c_str());
+                    if (ImGui::MenuItem("Show in Explorer")) Platform::RevealInFileManager(resolveTexPath(path));
+                    ImGui::EndPopup();
+                }
+                if (hovered) {
+                    ImGui::SetTooltip("Double-click to paint this texture\nRight-click for more");
+                }
+            };
+
             VkDescriptorSet ds = GetImGuiTexture(path);
             if (ds) {
                 ImGui::Image(static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(ds)), ImVec2(64, 64));
+                texItemActions("##texctx_thumb");
                 ImGui::SameLine();
             }
             ImGui::TextWrapped("%s", path.c_str());
+            texItemActions("##texctx_path");
+
+            if (ImGui::Button("Paint")) openHere = true;
+            ImGui::SetItemTooltip("Open this texture in the built-in Pixel Editor.\n"
+                                  "Save there writes straight back over the same file.");
+            ImGui::SameLine();
+            if (openHere) OpenTextureInPixelEditor(path);
+
             if (ImGui::Button("Edit in external app")) OpenInExternalIDE(resolveTexPath(path));
             ImGui::SetItemTooltip("Open in your default image editor; save there and it hot-reloads\n"
                                   "here and in the scene automatically (no re-import).");

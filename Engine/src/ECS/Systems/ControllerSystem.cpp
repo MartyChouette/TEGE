@@ -1,6 +1,7 @@
 #include "Enjin/ECS/Systems/ControllerSystem.h"
 #include "Enjin/ECS/Components/Ladder.h"
 #include "Enjin/ECS/Components/WaterVolume.h"
+#include "Enjin/Effects/InteractiveWater.h"
 #include "Enjin/ECS/Components/Door.h"
 #include "Enjin/Scripting/ScriptBindings.h"
 #include "Enjin/Physics/PhysicsTypes.h"
@@ -9,6 +10,7 @@
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Math/Math.h"
+
 #include "Enjin/Logging/Log.h"
 #include <cmath>
 #include <algorithm>
@@ -238,6 +240,11 @@ void ControllerSystem::Update(f32 deltaTime) {
     ForEachActiveController<VehicleController>(m_World, m_RealtimePass,
         [&](Entity entity, VehicleController& controller, TransformComponent& transform) {
             UpdateVehicle(entity, controller, transform, deltaTime);
+        });
+
+    ForEachActiveController<WaterVehicleController>(m_World, m_RealtimePass,
+        [&](Entity entity, WaterVehicleController& controller, TransformComponent& transform) {
+            UpdateWaterVehicle(entity, controller, transform, deltaTime);
         });
 
     // Process FollowTarget components (camera follow, companion follow, etc.)
@@ -1249,6 +1256,28 @@ static bool FindWaterAt(World* world, const Math::Vector3& pos, f32* outSurfaceY
     return false;
 }
 
+// A boat sits ON the surface, so unlike FindWaterAt this ignores Y entirely and
+// just asks "is there water under this XZ, and how high is it".
+static bool FindWaterSurfaceXZ(World* world, f32 x, f32 z, f32* outSurfaceY, Entity* outEntity) {
+    bool found = false;
+    f32 best = 0.0f;
+    Entity bestE = 0;
+    i32 bestPriority = 0;
+    for (Entity e : world->GetEntitiesWithComponent<WaterVolumeComponent>()) {
+        auto* wv = world->GetComponent<WaterVolumeComponent>(e);
+        auto* tf = world->GetComponent<TransformComponent>(e);
+        if (!wv || !tf) continue;
+        if (x < tf->position.x - wv->halfExtents.x || x > tf->position.x + wv->halfExtents.x) continue;
+        if (z < tf->position.z - wv->halfExtents.z || z > tf->position.z + wv->halfExtents.z) continue;
+        // Overlapping volumes resolve by priority, the same rule buoyancy uses.
+        if (!found || wv->priority > bestPriority) {
+            found = true; best = tf->position.y; bestE = e; bestPriority = wv->priority;
+        }
+    }
+    if (found) { if (outSurfaceY) *outSurfaceY = best; if (outEntity) *outEntity = bestE; }
+    return found;
+}
+
 // Shared swim step for FP/TP controllers. Returns true while swimming (the
 // caller skips its jump and gravity blocks). Space (held) rises, forward
 // input swims level, everything drags like water. Rising past the surface
@@ -1981,6 +2010,176 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
 
     // Update entity rotation to match yaw (body rotation)
     transform.rotation = Math::Quaternion(Math::Vector3(0, 1, 0), Math::Radians(ctrl.yaw));
+}
+
+// ============================================================================
+// Water vehicle
+//
+// The order here matters and is not the obvious one. Drag resolves against the
+// WATER, propulsion and position against the GROUND, and the two differ by the
+// current. Getting that backwards is what makes a tide feel like a bug.
+// ============================================================================
+void ControllerSystem::UpdateWaterVehicle(Entity entity, WaterVehicleController& ctrl,
+                                          TransformComponent& transform, f32 dt) {
+    (void)entity;
+    if (dt <= 0.0f) return;
+    if (dt > 0.25f) dt = 0.25f;   // a hitch must not launch the boat
+
+    Math::Vector2 input = GetMovementInput(ctrl);
+
+    // --- Rudder ---------------------------------------------------------
+    // A rudder is a foil. Its authority comes from water flowing past the blade,
+    // so it scales with speed THROUGH THE WATER, not over the ground: drifting
+    // sideways on a tide steers you nothing. rudderMinAuthority keeps being dead
+    // in the water a setback rather than a softlock.
+    ctrl.currentRudder = Math::MoveTowards(ctrl.currentRudder, input.x, ctrl.rudderRate * dt);
+    f32 fullSpeed = (ctrl.rudderFullSpeed > 0.001f) ? ctrl.rudderFullSpeed : 0.001f;
+    f32 steerAuth = Math::Clamp(ctrl.speedThroughWater / fullSpeed, 0.0f, 1.35f);
+    if (steerAuth < ctrl.rudderMinAuthority) steerAuth = ctrl.rudderMinAuthority;
+
+    // Engine convention: forward is -Z and increasing euler Y turns to PORT, so
+    // a positive (starboard) helm SUBTRACTS from heading.
+    f32 turnStbd = ctrl.rudderAuthority * ctrl.currentRudder * steerAuth;
+    ctrl.heading -= turnStbd * dt;
+    while (ctrl.heading < 0.0f) ctrl.heading += 360.0f;
+    while (ctrl.heading >= 360.0f) ctrl.heading -= 360.0f;
+
+    f32 hRad = Math::Radians(ctrl.heading);
+    ctrl.forwardDir = Math::Vector3(-Math::Sin(hRad), 0.0f, -Math::Cos(hRad));
+    Math::Vector3 right(Math::Cos(hRad), 0.0f, -Math::Sin(hRad));
+
+    // --- Velocity through the water --------------------------------------
+    Math::Vector3 waterVel(ctrl.groundVelocity.x - ctrl.current.x, 0.0f,
+                           ctrl.groundVelocity.z - ctrl.current.z);
+    f32 vFwd = waterVel.x * ctrl.forwardDir.x + waterVel.z * ctrl.forwardDir.z;
+    f32 vSide = waterVel.x * right.x + waterVel.z * right.z;
+    ctrl.speedThroughWater = std::sqrt(vFwd * vFwd + vSide * vSide);
+    ctrl.leeway = vSide;
+
+    // --- Propulsion -------------------------------------------------------
+    f32 thrust = 0.0f;
+    if (ctrl.propulsion == WaterPropulsion::Motor) {
+        ctrl.currentThrottle = Math::MoveTowards(ctrl.currentThrottle, input.y, ctrl.throttleRate * dt);
+        thrust = ctrl.maxThrust * ctrl.currentThrottle;
+        if (ctrl.currentThrottle < 0.0f) thrust *= ctrl.reverseThrustScale;
+    } else if (ctrl.propulsion == WaterPropulsion::Paddle) {
+        // A stroke, not a throttle. No reverse gear.
+        ctrl.paddleTimer -= dt;
+        if (input.y > 0.5f && ctrl.paddleTimer <= 0.0f) {
+            ctrl.paddleTimer = ctrl.paddleCooldown;
+            ctrl.groundVelocity = ctrl.groundVelocity + ctrl.forwardDir * ctrl.paddleImpulse;
+        }
+    } else {
+        // External: a script owns the drive this frame. See the sail note on the
+        // struct for why a sail model does not belong in compiled code.
+        thrust = ctrl.externalDrive;
+    }
+
+    // --- Planing ----------------------------------------------------------
+    // A powerboat climbs onto its bow wave and the hull speed wall stops
+    // applying. A displacement boat never does, so this is off by default.
+    // Hysteresis, or it chatters at the threshold.
+    if (ctrl.canPlane) {
+        f32 planeOn = ctrl.planeThreshold * ctrl.hullSpeed;
+        if (!ctrl.isPlaning && vFwd > planeOn) ctrl.isPlaning = true;
+        else if (ctrl.isPlaning && vFwd < planeOn * 0.85f) ctrl.isPlaning = false;
+    } else {
+        ctrl.isPlaning = false;
+    }
+
+    // --- Resistance -------------------------------------------------------
+    f32 av = Math::Abs(vFwd);
+    f32 sgn = (vFwd >= 0.0f) ? 1.0f : -1.0f;
+    f32 wall = 0.0f;
+    if (!ctrl.isPlaning && ctrl.hullSpeed > 0.001f) {
+        // Displacement limit. Steep, so it reads as a ceiling you press against
+        // rather than a number you slide past.
+        //
+        // Expressed as a FRACTION OF maxThrust, not as an absolute force. An
+        // absolute coefficient only walls at the power level it was tuned for:
+        // a value that stops a sail dead lets a motor sail straight through it.
+        // External propulsion should set maxThrust to roughly its peak drive so
+        // the ceiling lands where hullSpeed says it should.
+        f32 thrustRef = (ctrl.maxThrust > 0.001f) ? ctrl.maxThrust : 1.0f;
+        wall = ctrl.hullSpeedWall * thrustRef * std::pow(Math::Clamp(av / ctrl.hullSpeed, 0.0f, 2.5f), 8.0f);
+    }
+    f32 heelDragTerm = ctrl.heelDrag * std::pow(Math::Abs(ctrl.heel) / 30.0f, 2.0f) * av;
+    f32 dragScale = ctrl.isPlaning ? ctrl.planeDragCut : 1.0f;
+    f32 rFwd = (ctrl.hullDragLinear * av + ctrl.hullDragQuad * av * av) * dragScale;
+    rFwd = (rFwd + wall + heelDragTerm) * sgn;
+    rFwd += ctrl.rudderDrag * Math::Abs(ctrl.currentRudder) * av * av * sgn;
+
+    // Lateral: a keel or skeg resists sideways slip but never removes it. What
+    // is left over is leeway, and a boat that cannot slip sideways is a car.
+    f32 rSide = ctrl.lateralGrip * vSide + 0.35f * vSide * Math::Abs(vSide);
+
+    f32 invMass = (ctrl.mass > 0.001f) ? (1.0f / ctrl.mass) : 1.0f;
+    f32 accFwd = (thrust - rFwd) * invMass;
+    f32 accSide = (ctrl.externalSide - rSide) * invMass;
+
+    ctrl.groundVelocity.x += (accFwd * ctrl.forwardDir.x + accSide * right.x) * dt;
+    ctrl.groundVelocity.z += (accFwd * ctrl.forwardDir.z + accSide * right.z) * dt;
+    ctrl.groundVelocity.y = 0.0f;
+    ctrl.speedOverGround = std::sqrt(ctrl.groundVelocity.x * ctrl.groundVelocity.x +
+                                     ctrl.groundVelocity.z * ctrl.groundVelocity.z);
+    ctrl.velocity = ctrl.groundVelocity;
+
+    // --- Heel -------------------------------------------------------------
+    // Signed, + = heeled to starboard. A displacement hull heels OUTWARD in a
+    // turn (thrown to port when turning to starboard); a planing boat banks
+    // inward, which a negative turnHeel gives you.
+    f32 speedFrac = (ctrl.hullSpeed > 0.001f) ? Math::Clamp(av / ctrl.hullSpeed, 0.0f, 1.5f) : 0.0f;
+    f32 heelFromTurn = -ctrl.turnHeel * turnStbd * speedFrac;
+    f32 rightingArm = (ctrl.righting > 0.001f) ? ctrl.righting : 0.001f;
+    f32 heelFromExternal = Math::Degrees(std::atan2(ctrl.externalHeel, rightingArm));
+    f32 heelTarget = Math::Clamp(heelFromTurn + heelFromExternal, -ctrl.maxHeel, ctrl.maxHeel);
+    ctrl.heelVel += (heelTarget - ctrl.heel) * 9.0f * dt - ctrl.heelVel * 4.6f * dt;
+    ctrl.heel = Math::Clamp(ctrl.heel + ctrl.heelVel * dt, -ctrl.maxHeel, ctrl.maxHeel);
+
+    // Bow lifts under thrust and settles when you back off.
+    f32 maxT = (ctrl.maxThrust > 0.001f) ? ctrl.maxThrust : 0.001f;
+    f32 pitchTarget = -ctrl.trimPitch * Math::Clamp(thrust / maxT, -1.0f, 1.0f);
+    if (ctrl.isPlaning) pitchTarget -= ctrl.trimPitch * 0.8f;
+    ctrl.pitch = Math::Lerp(ctrl.pitch, pitchTarget, Math::Clamp(dt * 3.0f, 0.0f, 1.0f));
+
+    // --- Move -------------------------------------------------------------
+    // Current is ADDED to position, never to the force budget. Moving water
+    // carries a boat the way a walkway carries a person: it changes where you
+    // end up, not how you handle.
+    transform.position.x += (ctrl.groundVelocity.x + ctrl.current.x) * dt;
+    transform.position.z += (ctrl.groundVelocity.z + ctrl.current.z) * dt;
+
+    Entity waterE = ctrl.waterEntity;
+    if (ctrl.followWaterSurface && m_World) {
+        f32 surf = 0.0f;
+        Entity found = 0;
+        if (FindWaterSurfaceXZ(m_World, transform.position.x, transform.position.z, &surf, &found)) {
+            if (waterE == 0) waterE = found;
+            ctrl.bobPhase += dt;
+            f32 phase = ctrl.bobPhase;
+            f32 bob = Math::Sin(phase * ctrl.bobRate) * ctrl.bobAmplitude
+                    + Math::Sin(phase * ctrl.bobRate * 2.0f + 1.1f) * ctrl.bobAmplitude * 0.5f;
+            f32 targetY = surf + ctrl.waterLine + bob;
+            transform.position.y = Math::Lerp(transform.position.y, targetY,
+                                              Math::Clamp(dt * ctrl.buoyancyResponse, 0.0f, 1.0f));
+        }
+    }
+
+    transform.rotation = Math::Quaternion::FromEuler(Math::Vector3(
+        Math::Radians(ctrl.pitch),
+        Math::Radians(ctrl.heading + ctrl.modelForwardYaw),
+        Math::Radians(-ctrl.heel)));   // +euler Z tips to port; heel is + to starboard
+
+    // --- Wake -------------------------------------------------------------
+    if (ctrl.emitWake && waterE != 0 && m_World && ctrl.speedOverGround > ctrl.wakeMinSpeed) {
+        auto* iw = m_World->GetComponent<Effects::InteractiveWaterComponent>(waterE);
+        auto* wt = m_World->GetComponent<TransformComponent>(waterE);
+        if (iw && wt) {
+            Effects::InteractiveWaterSystem sys;
+            sys.CreateWake(*iw, *wt, transform.position.x, transform.position.z,
+                           ctrl.groundVelocity.x, ctrl.groundVelocity.z, ctrl.wakeWidth);
+        }
+    }
 }
 
 void ControllerSystem::UpdateVehicle(Entity entity, VehicleController& ctrl, TransformComponent& transform, f32 dt) {

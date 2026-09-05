@@ -42,6 +42,8 @@ void PixelEditor::NewCanvas(u32 width, u32 height) {
     m_Layers.clear();
     m_UndoStack.clear();
     m_RedoStack.clear();
+    m_SourcePath.clear();      // a fresh canvas belongs to no file yet
+    m_DirtySinceSave = false;
 
     // Create initial layer
     PixelLayer layer;
@@ -90,6 +92,11 @@ bool PixelEditor::LoadImage(const std::string& path) {
     std::memcpy(m_Layers[0].pixels.data(), data, pixelDataSize);
     stbi_image_free(data);
 
+    // Remember where it came from. NewCanvas above cleared it, so this has to
+    // land after that call, not before.
+    m_SourcePath = path;
+    m_DirtySinceSave = false;
+
     ENJIN_LOG_INFO(Editor, "PixelEditor: Loaded '%s' (%dx%d)", path.c_str(), w, h);
     return true;
 }
@@ -105,10 +112,22 @@ bool PixelEditor::ExportPNG(const std::string& path) {
 
     if (result) {
         ENJIN_LOG_INFO(Editor, "PixelEditor: Exported to '%s'", path.c_str());
+        // Exporting adopts the destination: the next Save goes back to the file
+        // the artist just chose, not the one they originally opened.
+        m_SourcePath = path;
+        m_DirtySinceSave = false;
     } else {
         ENJIN_LOG_ERROR(Editor, "PixelEditor: Failed to export to '%s'", path.c_str());
     }
     return result != 0;
+}
+
+bool PixelEditor::SaveOverSource() {
+    if (m_SourcePath.empty()) {
+        ENJIN_LOG_WARN(Editor, "PixelEditor: Save with no source file - use Export instead");
+        return false;
+    }
+    return ExportPNG(m_SourcePath);
 }
 
 // ============================================================================
@@ -198,12 +217,41 @@ void PixelEditor::DrawToolbar() {
         ImGui::EndPopup();
     }
 
+    // Save goes back over the file this canvas came from - the whole reason a
+    // texture opened from an object is worth opening from the object. Only
+    // Export asks for a path.
+    ImGui::SameLine();
+    const bool hasSource = !m_SourcePath.empty();
+    ImGui::BeginDisabled(!hasSource || !HasCanvas());
+    if (ImGui::Button(m_DirtySinceSave ? "Save *" : "Save")) {
+        SaveOverSource();
+    }
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered()) {
+        if (hasSource) {
+            ImGui::SetTooltip("Overwrite %s\nThe viewport reloads it within 5 seconds.",
+                              m_SourcePath.c_str());
+        } else {
+            ImGui::SetTooltip("This canvas has no source file yet - use Export.");
+        }
+    }
+
     ImGui::SameLine();
     if (ImGui::Button("Export")) {
         ImGui::OpenPopup("ExportPopup");
     }
     if (ImGui::BeginPopup("ExportPopup")) {
         static char exportBuf[512] = "sprite.png";
+        // Seed the field with the current file the first time the popup opens,
+        // so "save a copy next to it" is an edit, not a retype.
+        if (ImGui::IsWindowAppearing() && !m_SourcePath.empty()) {
+#ifdef _MSC_VER
+            strncpy_s(exportBuf, sizeof(exportBuf), m_SourcePath.c_str(), _TRUNCATE);
+#else
+            std::strncpy(exportBuf, m_SourcePath.c_str(), sizeof(exportBuf) - 1);
+            exportBuf[sizeof(exportBuf) - 1] = '\0';
+#endif
+        }
         ImGui::InputText("Path", exportBuf, sizeof(exportBuf));
         if (ImGui::Button("Save PNG")) {
             ExportPNG(exportBuf);
@@ -765,6 +813,7 @@ void PixelEditor::PushUndoState() {
     }
 
     m_RedoStack.clear();
+    m_DirtySinceSave = true;   // every edit routes through here
 }
 
 void PixelEditor::Undo() {

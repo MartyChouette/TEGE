@@ -126,7 +126,14 @@ A symptom shows up in a project, so the project is where you look, and project d
 
 ```bash
 # Build on Windows (Visual Studio)
-cd build && cmake .. && cmake --build . --config Release
+# /nodeReuse:false matters: MSBuild leaves a pool of worker processes alive
+# after a build, and they keep handles on .obj files. Two builds in a row (or a
+# build started while an editor session is still shutting down) then die with
+# "Permission denied" / "cannot access the file ... because it is being used by
+# another process" on a random .obj. Without the flag the recovery is
+# `Get-Process MSBuild | Stop-Process -Force`, which is safe but easy to
+# misread as a real compile error.
+cd build && cmake .. && cmake --build . --config Release -- /nodeReuse:false
 
 # Build on Linux/Mac
 cd build && cmake .. && make -j$(nproc)

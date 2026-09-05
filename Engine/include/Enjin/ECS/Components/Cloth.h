@@ -3,6 +3,7 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Platform/Types.h"
 #include "Enjin/Math/Vector.h"
+#include "Enjin/Math/Matrix.h"
 #include <vector>
 
 namespace Enjin {
@@ -65,6 +66,13 @@ struct ClothComponent {
     struct Constraint { i32 a; i32 b; f32 rest; f32 strength = 1.0f; };
     struct Tri { u32 i0, i1, i2; bool alive; };
     bool initialized = false;      // set false (or press Reset) to rebuild
+    // The world transform this cloth was last simulated in. Verlet stores
+    // velocity as (pos - prevPos), so when the anchor moves the free points have
+    // to be carried with it; otherwise the distance constraints do the carrying,
+    // and a constraint correction IS velocity, which makes the sheet accelerate
+    // away from a moving object. See ClothSystem::Update.
+    Math::Matrix4 prevModel;
+    bool hasPrevModel = false;
     std::vector<Math::Vector3> positions;      // world space
     std::vector<Math::Vector3> prevPositions;  // Verlet
     std::vector<f32> invMass;                  // 0 = pinned

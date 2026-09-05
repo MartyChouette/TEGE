@@ -136,6 +136,61 @@ Math::Vector3 Water3D::GetGerstnerOffset(f32 x, f32 z) const {
     return offset;
 }
 
+void Water3D::GerstnerSurface(f32 x, f32 z, Math::Vector3& outOffset,
+                              Math::Vector3& outNormal) const {
+    // Same three waves as GetGerstnerOffset, but the partial derivatives fall
+    // out of the same sines the position already needs, so position AND normal
+    // together cost what the position alone used to.
+    //
+    // The normal previously came from four EXTRA GetGerstnerOffset calls per
+    // vertex (differencing neighbours), making every vertex five evaluations -
+    // thirty sin/cos. On a 161x161 grid that was 777,000 trig calls per frame
+    // and measured as 96% of the frame time.
+    struct GW { f32 dirX, dirZ, amplitude, frequency, phaseSpeed; };
+    Math::Vector2 d = m_Effective.waveDirection;
+    f32 dLen = Math::Sqrt(d.x * d.x + d.y * d.y);
+    if (dLen < 0.0001f) { d = Math::Vector2(1.0f, 0.0f); dLen = 1.0f; }
+    f32 dx = d.x / dLen, dz = d.y / dLen;
+
+    const f32 A = m_Effective.waveHeight;
+    const f32 w = Math::Max(m_Effective.waveFrequency, 0.0001f);
+    const GW waves[3] = {
+        { dx, dz, A * 0.60f, w, 1.0f },
+        { dx * 0.5f - dz * 0.866f, dx * 0.866f + dz * 0.5f, A * 0.30f, w * 1.9f, 1.3f },
+        { dx * 0.707f + dz * 0.707f, -dx * 0.707f + dz * 0.707f, A * 0.15f, w * 3.1f, 0.8f },
+    };
+    f32 steep = Math::Clamp(m_Effective.waveSteepness, 0.0f, 1.0f);
+
+    Math::Vector3 off(0.0f, 0.0f, 0.0f);
+    Math::Vector3 tanX(1.0f, 0.0f, 0.0f);
+    Math::Vector3 tanZ(0.0f, 0.0f, 1.0f);
+
+    for (const auto& gw : waves) {
+        f32 phase = gw.frequency * (gw.dirX * x + gw.dirZ * z) + m_WaveTime * gw.phaseSpeed;
+        f32 q = (gw.amplitude > 0.0001f) ? steep / (gw.frequency * gw.amplitude * 3.0f) : 0.0f;
+        f32 qa = q * gw.amplitude;
+        f32 c = Math::Cos(phase);
+        f32 sn = Math::Sin(phase);
+
+        off.x += gw.dirX * qa * c;
+        off.z += gw.dirZ * qa * c;
+        off.y += gw.amplitude * sn;
+
+        f32 wa = gw.frequency * gw.amplitude;
+        f32 wq = gw.frequency * qa;
+        tanX.x -= wq * gw.dirX * gw.dirX * sn;
+        tanX.y += wa * gw.dirX * c;
+        tanX.z -= wq * gw.dirX * gw.dirZ * sn;
+
+        tanZ.x -= wq * gw.dirX * gw.dirZ * sn;
+        tanZ.y += wa * gw.dirZ * c;
+        tanZ.z -= wq * gw.dirZ * gw.dirZ * sn;
+    }
+    outOffset = off;
+    // Same winding as the old four-sample path: cross(tanZ, tanX) is +Y flat.
+    outNormal = tanZ.Cross(tanX).Normalized();
+}
+
 Math::Matrix4 Water3D::GetReflectionMatrix() const {
     // Reflection matrix for planar reflection at water surface
     // Reflects across the XZ plane at water Y position
@@ -153,7 +208,9 @@ Math::Matrix4 Water3D::GetReflectionMatrix() const {
 
 void Water3D::GenerateMesh(std::vector<Math::Vector3>& positions,
                            std::vector<Math::Vector2>& uvs,
-                           std::vector<u32>& indices) const {
+                           std::vector<u32>& indices,
+                           std::vector<Math::Vector3>* outNormals) const {
+    if (outNormals) outNormals->clear();
     positions.clear();
     uvs.clear();
     indices.clear();
@@ -184,8 +241,11 @@ void Water3D::GenerateMesh(std::vector<Math::Vector3>& positions,
                 m_Settings.style == WaterStyle::Reflective ||
                 m_Settings.style == WaterStyle::Refractive) {
                 if (m_Effective.gerstnerWaves) {
-                    // Trochoidal: crests pull vertices horizontally too
-                    Math::Vector3 off = GetGerstnerOffset(xPos, zPos);
+                    // Trochoidal: crests pull vertices horizontally too.
+                    // The normal falls out of the same sines when asked for.
+                    Math::Vector3 off, nrm;
+                    if (outNormals) { GerstnerSurface(xPos, zPos, off, nrm); outNormals->push_back(nrm); }
+                    else            { off = GetGerstnerOffset(xPos, zPos); }
                     positions.push_back(Math::Vector3(xPos + off.x, yPos + off.y, zPos + off.z));
                     f32 u = static_cast<f32>(x) / xSegments;
                     f32 v = static_cast<f32>(z) / zSegments;
@@ -230,7 +290,13 @@ void Water3D::BuildEntityMesh(ECS::World* world, ECS::Entity entity) const {
     std::vector<Math::Vector3> positions;
     std::vector<Math::Vector2> uvCoords;
     std::vector<u32> meshIndices;
-    GenerateMesh(positions, uvCoords, meshIndices);
+    std::vector<Math::Vector3> genNormals;
+    const bool wantAnalyticNormals = m_Effective.gerstnerWaves &&
+                    (m_Effective.style == WaterStyle::VertexWave ||
+                     m_Effective.style == WaterStyle::Reflective ||
+                     m_Effective.style == WaterStyle::Refractive);
+    GenerateMesh(positions, uvCoords, meshIndices,
+                 wantAnalyticNormals ? &genNormals : nullptr);
 
     // Build MeshComponent with full vertex attributes
     ECS::MeshComponent mesh;
@@ -346,7 +412,13 @@ void Water3D::UpdateEntityMesh(ECS::World* world, ECS::Entity entity) const {
     std::vector<Math::Vector3> positions;
     std::vector<Math::Vector2> uvCoords;
     std::vector<u32> meshIndices;
-    GenerateMesh(positions, uvCoords, meshIndices);
+    std::vector<Math::Vector3> genNormals;
+    const bool wantAnalyticNormals = m_Effective.gerstnerWaves &&
+                    (m_Effective.style == WaterStyle::VertexWave ||
+                     m_Effective.style == WaterStyle::Reflective ||
+                     m_Effective.style == WaterStyle::Refractive);
+    GenerateMesh(positions, uvCoords, meshIndices,
+                 wantAnalyticNormals ? &genNormals : nullptr);
 
     // Update only positions, normals, and UVs (indices don't change)
     if (positions.size() != mesh->vertices.size()) return;
@@ -361,18 +433,10 @@ void Water3D::UpdateEntityMesh(ECS::World* world, ECS::Entity entity) const {
         mesh->vertices[i].uv = uvCoords[i];
 
         if (gerstner) {
-            // Trochoidal surface: the horizontal displacement matters, so build
-            // the normal from displaced-surface tangents instead of a height
-            // gradient (which would soften the sharp crests this style is for).
-            f32 px = positions[i].x, pz = positions[i].z;
-            Math::Vector3 oL = GetGerstnerOffset(px - eps, pz);
-            Math::Vector3 oR = GetGerstnerOffset(px + eps, pz);
-            Math::Vector3 oD = GetGerstnerOffset(px, pz - eps);
-            Math::Vector3 oU = GetGerstnerOffset(px, pz + eps);
-            Math::Vector3 tx(2.0f * eps + oR.x - oL.x, oR.y - oL.y, oR.z - oL.z);
-            Math::Vector3 tz(oU.x - oD.x, oU.y - oD.y, 2.0f * eps + oU.z - oD.z);
-            // cross(tz, tx) points +Y for a flat surface
-            mesh->vertices[i].normal = tz.Cross(tx).Normalized();
+            // Analytic. GenerateMesh produced this from the same sines it used
+            // for the position; the old path re-evaluated the whole three-wave
+            // sum four more times per vertex to difference neighbours.
+            if (i < genNormals.size()) mesh->vertices[i].normal = genNormals[i];
             continue;
         }
 

@@ -57,6 +57,12 @@ public:
     bool LoadImage(const std::string& path);
     bool ExportPNG(const std::string& path);
 
+    // Write straight back over the file this canvas came from. This is the
+    // point of opening a texture from an object: paint, hit Save, and the
+    // texture watcher picks the change up in the viewport. Returns false when
+    // the canvas has no source (a New canvas) - use ExportPNG for those.
+    bool SaveOverSource();
+
     // Main render (called every frame when panel is visible)
     void Render(const EditorSettings& settings);
 
@@ -64,6 +70,10 @@ public:
     bool HasCanvas() const { return m_Width > 0 && m_Height > 0 && !m_Layers.empty(); }
     u32 GetCanvasWidth() const { return m_Width; }
     u32 GetCanvasHeight() const { return m_Height; }
+
+    // Absolute path this canvas was loaded from or last saved to ("" if none).
+    const std::string& GetSourcePath() const { return m_SourcePath; }
+    bool HasUnsavedEdits() const { return m_DirtySinceSave; }
 
 private:
     // Rendering
@@ -98,6 +108,11 @@ private:
     u32 m_Height = 0;
     std::vector<PixelLayer> m_Layers;
     i32 m_ActiveLayer = 0;
+
+    // Where this canvas came from, so Save can go back to the same file
+    // instead of asking the artist to retype the path every time.
+    std::string m_SourcePath;
+    bool m_DirtySinceSave = false;
 
     // Tool state
     PixelTool m_CurrentTool = PixelTool::Pencil;

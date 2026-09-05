@@ -146,7 +146,19 @@ public:
     // Returns vertex positions for a water plane grid
     void GenerateMesh(std::vector<Math::Vector3>& positions,
                       std::vector<Math::Vector2>& uvs,
-                      std::vector<u32>& indices) const;
+                      std::vector<u32>& indices,
+                      std::vector<Math::Vector3>* outNormals = nullptr) const;
+
+    // Gerstner position AND normal in one pass.
+    //
+    // The normal used to come from four EXTRA GetGerstnerOffset calls per vertex
+    // (sampling left/right/up/down and crossing the tangents), which made every
+    // vertex cost five evaluations - thirty sin/cos - when the surface
+    // derivative is closed form and shares the sines the position already
+    // computes. On a 161x161 grid that was 777,000 trig calls per frame and it
+    // was 96% of the frame time.
+    void GerstnerSurface(f32 x, f32 z, Math::Vector3& outOffset,
+                         Math::Vector3& outNormal) const;
 
     // ECS Integration — build and update water entity mesh for Vulkan rendering
     // Creates a MeshComponent + MaterialComponent on the given entity
