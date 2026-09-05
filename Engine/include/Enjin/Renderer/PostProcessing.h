@@ -173,6 +173,16 @@ struct alignas(16) PostProcessSettings {
     alignas(4) f32 lightLeakSpeed = 0.3f;              // Drift speed
     alignas(4) u32 tamHatchingEnabled = 0;    // Tonal Art Map hatching
     alignas(4) u32 watercolorEnabled = 0;     // Watercolor post-process
+    // The effect was four hardcoded constants with no controls, so it could
+    // only ever be a faint wash. These are what make it a look rather than a
+    // tint. Defaults are deliberately stronger than the old fixed values.
+    alignas(4) f32 watercolorStrength = 1.0f;     // Overall mix, 0 = off
+    alignas(4) f32 watercolorEdge = 0.7f;         // Dark rim where pigment dries at a boundary
+    alignas(4) f32 watercolorBleed = 1.0f;        // Wet diffusion radius, in texels
+    alignas(4) f32 watercolorGranulation = 0.5f;  // Paper tooth
+    alignas(4) f32 watercolorPaperScale = 1.0f;   // Paper grain size
+    alignas(4) f32 watercolorWobble = 0.5f;       // Hand-painted boundary waver
+    alignas(4) u32 watercolorLevels = 6;          // Flat washes; 0 = continuous
 
     // Color palette lock
     alignas(4) u32 paletteEnabled = 0;

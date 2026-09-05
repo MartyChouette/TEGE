@@ -2082,7 +2082,58 @@ void EditorLayer::DrawSettingsSection_RetroEffects() {
                 if (ImGui::Checkbox("Enabled##Watercolor", &wcOn)) {
                     settings.watercolorEnabled = wcOn ? 1u : 0u;
                 }
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Watercolor post-process: edge darkening,\npigment pooling, color granulation, wet-edge diffusion");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Painted look: hand-drawn boundary waver, wet\ndiffusion, flat washes, dried edges and paper tooth");
+
+                ImGui::BeginDisabled(!wcOn);
+                ImGui::SliderFloat("Strength##WC", &settings.watercolorStrength, 0.0f, 2.0f, "%.2f");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Mix against the untouched image. Above 1 pushes past the painted result.");
+
+                ImGui::SliderFloat("Boundary Waver##WC", &settings.watercolorWobble, 0.0f, 2.0f, "%.2f");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Displaces the image along a soft noise field so edges\nwaver like a brush stroke instead of following the polygon.\nThis is what stops it reading as a filter over a 3D render.");
+
+                ImGui::SliderFloat("Wet Bleed##WC", &settings.watercolorBleed, 0.0f, 4.0f, "%.2f");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("How far pigment creeps outward while the paper is wet.");
+
+                int levels = static_cast<int>(settings.watercolorLevels);
+                if (ImGui::SliderInt("Wash Levels##WC", &levels, 0, 16)) {
+                    settings.watercolorLevels = static_cast<u32>(levels < 0 ? 0 : levels);
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Pools brightness into flat washes. 0 keeps a continuous ramp.\nHue is left alone, so this reads as washes rather than posterisation.");
+
+                ImGui::SliderFloat("Dried Edge##WC", &settings.watercolorEdge, 0.0f, 1.0f, "%.2f");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("The dark rim left where a wash dries against a boundary.\nFollows colour edges as well as depth, so it also draws\ndetail inside a silhouette.");
+
+                ImGui::SliderFloat("Paper Tooth##WC", &settings.watercolorGranulation, 0.0f, 1.0f, "%.2f");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Granulation: pigment settling into the paper's texture,\nstrongest in the darks. Static, so a still scene does not shimmer.");
+
+                ImGui::SliderFloat("Paper Scale##WC", &settings.watercolorPaperScale, 0.1f, 6.0f, "%.2f");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Grain size of the paper, and of the boundary waver.");
+
+                if (ImGui::SmallButton("Loose##WC")) {
+                    settings.watercolorStrength = 1.0f; settings.watercolorWobble = 1.2f;
+                    settings.watercolorBleed = 2.2f;    settings.watercolorLevels = 5u;
+                    settings.watercolorEdge = 0.85f;    settings.watercolorGranulation = 0.7f;
+                    settings.watercolorPaperScale = 1.6f;
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Tight##WC")) {
+                    settings.watercolorStrength = 0.8f; settings.watercolorWobble = 0.3f;
+                    settings.watercolorBleed = 0.8f;    settings.watercolorLevels = 8u;
+                    settings.watercolorEdge = 0.6f;     settings.watercolorGranulation = 0.35f;
+                    settings.watercolorPaperScale = 0.8f;
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Reset##WC")) {
+                    Renderer::PostProcessSettings d{};
+                    settings.watercolorStrength = d.watercolorStrength;
+                    settings.watercolorWobble = d.watercolorWobble;
+                    settings.watercolorBleed = d.watercolorBleed;
+                    settings.watercolorLevels = d.watercolorLevels;
+                    settings.watercolorEdge = d.watercolorEdge;
+                    settings.watercolorGranulation = d.watercolorGranulation;
+                    settings.watercolorPaperScale = d.watercolorPaperScale;
+                }
+                ImGui::EndDisabled();
                 ImGui::TreePop();
             }
 

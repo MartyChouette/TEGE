@@ -125,6 +125,13 @@ layout(binding = 1) uniform PostProcessSettings {
     float lightLeakSpeed;
     uint tamHatchingEnabled;   // Tonal Art Map hatching
     uint watercolorEnabled;    // Watercolor post-process
+    float watercolorStrength;
+    float watercolorEdge;
+    float watercolorBleed;
+    float watercolorGranulation;
+    float watercolorPaperScale;
+    float watercolorWobble;
+    uint watercolorLevels;
 
     // Color palette lock
     uint paletteEnabled;
@@ -1109,40 +1116,108 @@ vec3 applyTAMHatching(vec3 color, vec2 uv) {
 // ============================================================
 // Watercolor Post-Process
 // ============================================================
+// Value noise, for paper and for the boundary waver. Deliberately NOT a
+// function of time: the old granulation multiplied its noise by settings.time,
+// so the paper crawled and a still scene shimmered like TV static. Paper does
+// not move.
+float wcHash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+float wcNoise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);          // smoothstep, so the grain has tooth rather than static
+    float a = wcHash(i);
+    float b = wcHash(i + vec2(1.0, 0.0));
+    float c = wcHash(i + vec2(0.0, 1.0));
+    float d = wcHash(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
 vec3 applyWatercolor(vec3 color, vec2 uv) {
     vec2 texelSize = 1.0 / vec2(settings.screenWidth, settings.screenHeight);
+    vec3 original = color;
 
-    // Edge darkening: darken where depth/color discontinuities exist
+    float strength = clamp(settings.watercolorStrength, 0.0, 2.0);
+    if (strength <= 0.0) return color;
+
+    vec2 res = vec2(settings.screenWidth, settings.screenHeight);
+    float paperScale = max(settings.watercolorPaperScale, 0.05);
+
+    // --- 1. Boundary waver -------------------------------------------------
+    // A brush does not follow a polygon edge. Displacing the lookup by a
+    // low-frequency noise field is what reads as hand-painted, and it was the
+    // single biggest thing missing: without it every silhouette stays
+    // render-sharp however much pigment sits on top.
+    vec2 wob = vec2(wcNoise(uv * res / (48.0 * paperScale)),
+                    wcNoise(uv * res / (48.0 * paperScale) + 31.7)) - 0.5;
+    vec2 suv = uv + wob * texelSize * (settings.watercolorWobble * 12.0);
+
+    color = texture(sceneTexture, suv).rgb;
+
+    // --- 2. Wet diffusion --------------------------------------------------
+    // Pigment creeps outward while the paper is wet. Sampled on a ring rather
+    // than a 3x3 box so the radius can grow without the tap count exploding.
+    float bleed = max(settings.watercolorBleed, 0.0);
+    if (bleed > 0.0) {
+        vec3 wet = color;
+        float wsum = 1.0;
+        for (int i = 0; i < 8; i++) {
+            float a = float(i) * 0.7853981634;          // 2pi / 8
+            vec2 off = vec2(cos(a), sin(a)) * texelSize * bleed * 3.0;
+            wet += texture(sceneTexture, suv + off).rgb;
+            wsum += 1.0;
+        }
+        color = wet / wsum;
+    }
+
+    // --- 3. Flat washes ----------------------------------------------------
+    // Watercolour pools into a few flat values rather than a smooth ramp.
+    // Quantising LUMINANCE keeps hue continuous, so this reads as washes
+    // instead of posterisation.
+    if (settings.watercolorLevels > 0u) {
+        float n = float(settings.watercolorLevels);
+        float lum = dot(color, vec3(0.299, 0.587, 0.114));
+        float q = floor(lum * n + 0.5) / n;
+        color *= (lum > 0.0001) ? (q / lum) : 1.0;
+    }
+
+    // --- 4. Edge darkening -------------------------------------------------
+    // The dark rim left where a wash dries against a boundary. Driven by BOTH
+    // depth and colour gradients: depth alone misses every edge inside a
+    // silhouette, which is most of the drawing.
     float dC = texture(depthTexture, uv).r;
     float dR = texture(depthTexture, uv + vec2(texelSize.x, 0.0)).r;
     float dD = texture(depthTexture, uv + vec2(0.0, texelSize.y)).r;
-    float edge = abs(dC - dR) + abs(dC - dD);
-    edge = smoothstep(0.0, 0.02, edge);
-    color *= 1.0 - edge * 0.4; // darken edges
+    float depthEdge = abs(dC - dR) + abs(dC - dD);
 
-    // Pigment pooling: slightly saturate and shift hue in dark areas
-    float lum = dot(color, vec3(0.299, 0.587, 0.114));
-    float pool = smoothstep(0.4, 0.0, lum) * 0.3;
-    color = mix(color, color * vec3(0.9, 0.85, 1.1), pool); // slight blue shift in darks
+    vec3 cR = texture(sceneTexture, uv + vec2(texelSize.x, 0.0) * 2.0).rgb;
+    vec3 cD = texture(sceneTexture, uv + vec2(0.0, texelSize.y) * 2.0).rgb;
+    float colorEdge = length(original - cR) + length(original - cD);
 
-    // Color granulation: noise-modulated saturation
-    float t = settings.time;
-    float grain = fract(sin(dot(uv * 500.0 + t * 0.1, vec2(12.9898, 78.233))) * 43758.5453);
-    float sat = dot(color, vec3(0.299, 0.587, 0.114));
-    color = mix(vec3(sat), color, 0.85 + grain * 0.15);
+    float edge = smoothstep(0.0, 0.02, depthEdge) + smoothstep(0.05, 0.5, colorEdge);
+    edge = clamp(edge, 0.0, 1.0);
+    color *= 1.0 - edge * clamp(settings.watercolorEdge, 0.0, 1.0);
 
-    // Wet edge diffusion: subtle blur at color boundaries
-    vec3 blur = vec3(0.0);
-    for (int x = -1; x <= 1; x++) {
-        for (int y = -1; y <= 1; y++) {
-            blur += texture(sceneTexture, uv + vec2(x, y) * texelSize * 1.5).rgb;
-        }
+    // --- 5. Pigment pooling ------------------------------------------------
+    float lum2 = dot(color, vec3(0.299, 0.587, 0.114));
+    float pool = smoothstep(0.45, 0.0, lum2) * 0.35;
+    color = mix(color, color * vec3(0.88, 0.84, 1.12), pool);
+
+    // --- 6. Paper ----------------------------------------------------------
+    // Static, and modulating VALUE rather than saturation: paper tooth shows
+    // as light and dark flecks where pigment settles, not as colour shifts.
+    float gran = clamp(settings.watercolorGranulation, 0.0, 1.0);
+    if (gran > 0.0) {
+        float paper = wcNoise(uv * res / (2.5 * paperScale));
+        float tooth = 1.0 + (paper - 0.5) * gran * 0.5;
+        color *= tooth;
+        // Pigment settles more in the darks, which is where granulation shows.
+        color = mix(color, color * (0.85 + paper * 0.3), gran * (1.0 - lum2) * 0.5);
     }
-    blur /= 9.0;
-    float edgeMix = smoothstep(0.0, 0.01, edge) * 0.3;
-    color = mix(color, blur, edgeMix);
 
-    return color;
+    return mix(original, color, strength);
 }
 
 vec3 applyPaletteLock(vec3 color) {
