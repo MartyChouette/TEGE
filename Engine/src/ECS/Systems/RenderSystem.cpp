@@ -4806,6 +4806,22 @@ void RenderSystem::EnsureProceduralTextures() {
     }
 }
 
+Math::Vector3 RenderSystem::MeasureTextTo(Entity entity, i32 codepointIndex) {
+    const Math::Vector3 none(0.0f, 0.0f, 0.0f);
+    if (!m_World) return none;
+    TextComponent* tc = m_World->GetComponent<TextComponent>(entity);
+    if (!tc) return none;
+#if ENJIN_RENDERER_WEBGPU
+    std::string key;
+    Renderer::FontAtlas* atlas = WebGetOrBuildFontAtlas(tc->fontPath, key);
+#else
+    Renderer::Texture* tex = nullptr;
+    Renderer::FontAtlas* atlas = GetOrBuildFontAtlas(tc->fontPath, &tex);
+#endif
+    if (!atlas) return none;
+    return atlas->MeasureTo(*tc, codepointIndex);
+}
+
 Renderer::FontAtlas* RenderSystem::GetOrBuildFontAtlas(const std::string& fontPath, Renderer::Texture** outTexture) {
     // Keyed by the accessibility font choice too, so toggling it rebuilds
     // rather than returning the atlas baked in the previous face.
@@ -4844,6 +4860,17 @@ Renderer::FontAtlas* RenderSystem::GetOrBuildFontAtlas(const std::string& fontPa
                     bytes = fileData.data();
                     size = fileData.size();
                 }
+            }
+            if (!bytes) {
+                // An authored font that will not load falls back to the
+                // embedded face. Without this the atlas failed to build, the
+                // entity dropped to the rasterized path, that failed for the
+                // same reason, and the entity rendered as a blank grey quad --
+                // the words gone, with the cause only in the log.
+                ENJIN_LOG_WARN(Renderer,
+                               "SDF text: font '%s' could not be read - using the built-in face",
+                               fontPath.c_str());
+                bytes = Accessibility::ResolveFontBytes(std::string(), size);
             }
         }
         auto atlas = std::make_unique<Renderer::FontAtlas>();

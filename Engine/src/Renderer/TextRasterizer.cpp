@@ -61,15 +61,24 @@ const TextRasterizer::FontData* TextRasterizer::GetOrLoadFont(const std::string&
         }
     }
     std::ifstream file(loadPath, std::ios::binary | std::ios::ate);
-    if (!file.is_open()) {
-        ENJIN_LOG_ERROR(Renderer, "TextRasterizer: Failed to open font file: %s", fontPath.c_str());
-        return nullptr;
-    }
-
-    auto fileSize = file.tellg();
-    if (fileSize <= 0) {
-        ENJIN_LOG_ERROR(Renderer, "TextRasterizer: Empty font file: %s", fontPath.c_str());
-        return nullptr;
+    const auto fileSize = file.is_open() ? file.tellg() : std::streampos(0);
+    if (!file.is_open() || fileSize <= 0) {
+        // Fall back to the embedded body face rather than returning nothing.
+        // Returning nullptr here left the text unbaked, and the caller drew an
+        // empty quad -- a blank grey box on screen with the reason only in the
+        // log. The authored words in the readable default face are a far better
+        // answer to a missing font than a box, and the warning still says why.
+        ENJIN_LOG_WARN(Renderer,
+                       "TextRasterizer: font '%s' could not be read - using the built-in face",
+                       fontPath.c_str());
+        usize embeddedSize = 0;
+        const u8* embedded = Accessibility::ResolveFontBytes(std::string(), embeddedSize);
+        if (!embedded || embeddedSize == 0) return nullptr;
+        FontData fallback;
+        fallback.fileData.assign(embedded, embedded + embeddedSize);
+        auto [ins, okIns] = m_FontCache.emplace(cacheKey, std::move(fallback));
+        if (!okIns) return nullptr;
+        return &ins->second;
     }
 
     FontData fontData;
