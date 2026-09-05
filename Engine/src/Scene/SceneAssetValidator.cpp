@@ -80,6 +80,41 @@ std::vector<std::string> FindMissingAssetPaths(
         }
     }
 
+    // Settings whose effect only exists ON A TEXTURE, with no texture bound.
+    //
+    // These render as a plain coloured surface and say nothing, which is how two
+    // exhibits in the Playground showcase sat there for months demonstrating
+    // nothing: a PS1 cube whose affine warp had no texture to warp, and a
+    // conveyor whose UV scroll had no texture to scroll. The values were set,
+    // the material was valid, and the engine had no opinion.
+    //
+    // This is the "validate the COMBINATION, not the field" rule: each field is
+    // individually fine, and it is the pairing that is inert.
+    for (ECS::Entity entity : world->GetEntitiesWithComponent<ECS::MaterialComponent>()) {
+        const auto* mat = world->GetComponent<ECS::MaterialComponent>(entity);
+        if (!mat || !mat->baseColorTexturePath.empty()) continue;
+
+        auto inert = [&](const char* setting) {
+            warnings.push_back(std::string(setting) + " does nothing without a base colour texture"
+                " (entity " + std::to_string(entity) + ", Material)");
+        };
+
+        if (mat->uvScrollSpeed.x != 0.0f || mat->uvScrollSpeed.y != 0.0f) inert("UV scroll");
+        if (mat->affineTexturing) inert("Affine texturing");
+        if (mat->uvQuantize) inert("UV quantize");
+    }
+
+    // A matcap or a scrolling reflection is sampled by the surface NORMAL, so it
+    // needs its own texture rather than a base colour one.
+    for (ECS::Entity entity : world->GetEntitiesWithComponent<ECS::MaterialComponent>()) {
+        const auto* mat = world->GetComponent<ECS::MaterialComponent>(entity);
+        if (!mat) continue;
+        if (mat->scrollReflectionStrength > 0.0f && mat->scrollReflectionTexturePath.empty()) {
+            warnings.push_back("Scrolling reflection has strength but no reflection texture"
+                " (entity " + std::to_string(entity) + ", Material)");
+        }
+    }
+
     for (ECS::Entity entity : world->GetEntitiesWithComponent<ECS::ScriptComponent>()) {
         const auto* script = world->GetComponent<ECS::ScriptComponent>(entity);
         if (!script) continue;

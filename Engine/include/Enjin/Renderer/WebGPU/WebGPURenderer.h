@@ -102,6 +102,34 @@ public:
     void UploadTexture(const WebGPUTextureHandle& texture, const void* data, u32 width, u32 height);
     void DestroyTexture(WebGPUTextureHandle& texture);
 
+    // --- GPU memory reclamation ---
+    //
+    // wgpuBufferRelease / wgpuTextureRelease only drop the JS-side reference.
+    // The GPU allocation behind it survives until the JavaScript garbage
+    // collector runs, and the collector is looking at a tiny wrapper object,
+    // not at the megabytes it owns, so it is in no hurry. A web frame creates
+    // on the order of a hundred transient buffers (one per shadow caster, one
+    // per draw batch), which means the GPU memory budget is exhausted long
+    // before anything triggers a collection. The browser then starts refusing
+    // allocations, and every bind group built on a buffer that failed to
+    // allocate is invalid:
+    //
+    //     Uncaptured WebGPU error: Not enough memory left.
+    //     ... BindGroup with '' label is invalid
+    //     ... Buffer with '' label is invalid
+    //
+    // wgpuBufferDestroy frees immediately, but a buffer destroyed BEFORE the
+    // submit that references it fails submit validation, and the transient
+    // buffers are destroyed mid-frame by design. So the destroy is queued and
+    // drained at the top of the NEXT frame, after this frame's submit. That is
+    // legal at any point after submit: the implementation keeps the memory
+    // alive internally until the GPU is finished with it.
+    void DrainPendingDestroys();
+
+    // Live = created minus destroyed. Flat means churn, climbing means a leak.
+    u64 GetLiveBufferCount() const { return m_LiveBufferCount; }
+    u64 GetBuffersCreatedTotal() const { return m_BuffersCreatedTotal; }
+
     // --- Pipeline ---
     WGPURenderPipeline CreatePipeline(WGPUShaderModule vertexShader, WGPUShaderModule fragmentShader,
                                        WGPUPipelineLayout layout);
@@ -206,6 +234,13 @@ private:
 
     // True once anything rendered to the swapchain view this frame
     bool m_SwapchainWritten = false;
+    // Queued GPU-memory frees, drained at the top of the next frame.
+    // See DrainPendingDestroys above for why this cannot happen in place.
+    std::vector<WGPUBuffer> m_PendingBufferDestroy;
+    std::vector<WGPUTexture> m_PendingTextureDestroy;
+    u64 m_LiveBufferCount = 0;
+    u64 m_BuffersCreatedTotal = 0;
+
     bool m_Initialized = false;
 
     // --- IRenderBackend sub-managers (owned, created in Initialize) ---

@@ -47,6 +47,13 @@ set(ENJIN_EM_LINK_FLAGS
     -sEXPORTED_FUNCTIONS=['_main','_onCanvasResize','_getDrawCallCount','_getEntityCount','_enjin_enable_touch_controls','_getStreamingChunkCount','_getStreamingLoadedCount','_getStreamingResidentMB','_getStreamingBudgetMB','_getStreamingEvictions','_setStreamingBudgetMB','_getLazyFSResidentMB','_getLazyFSEvictions','_getHeapMB','_enjin_lazyfs_materialize','_enjin_lazyfs_buffer','_enjin_lazyfs_release','_enjin_lazyfs_budget','_enjin_lazyfs_on_evict']
     -sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','HEAPF32']
     -sENVIRONMENT=web
+    # The Fetch API, for one thing: game.enjpak has to be requested with
+    # Cache-Control: no-cache so the browser revalidates it instead of serving
+    # a stale copy. emscripten_async_wget_data cannot set a request header, and
+    # the pak URL carries no cache-buster, so a redeployed pak was being paired
+    # with a fresh engine - the stale-pairing bug one level below the one
+    # tools/check_demoroom.py watches for.
+    -sFETCH
     -sNO_DISABLE_EXCEPTION_CATCHING
     -fexceptions
     -O2

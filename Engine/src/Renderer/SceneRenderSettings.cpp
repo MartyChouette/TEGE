@@ -61,7 +61,7 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
         s.fogEnd               = rs->GetFogEnd();
         s.fogHeightFalloff     = rs->GetFogHeightFalloff();
         s.fogColor             = rs->GetFogColor();
-        s.snowIntensity        = rs->GetSnowIntensity();
+        s.snowIntensity        = rs->GetAuthoredSnowIntensity();
         s.worldCurvature       = rs->GetWorldCurvature();
         s.rainActive           = rs->IsRainActive();
         // Global retro overrides
@@ -397,7 +397,12 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
         rs->SetAmbientColor(ambientColor);
         rs->SetFogParams(fogDensity, fogStart, fogEnd, fogHeightFalloff);
         rs->SetFogColor(fogColor);
-        rs->SetSnowIntensity(snowIntensity);
+        // Remembered separately so the per-frame weather updater can restore it
+        // instead of overwriting it with hardcoded defaults.
+        rs->SetAuthoredFog(fogDensity, fogStart, fogEnd, fogHeightFalloff, fogColor);
+        // The AUTHORED channel. Writing the live one here is pointless: the
+        // per-frame weather updater overwrites it before the first frame.
+        rs->SetAuthoredSnowIntensity(snowIntensity);
         rs->SetWorldCurvature(worldCurvature);
         rs->SetRainActive(rainActive);
         // Global retro overrides

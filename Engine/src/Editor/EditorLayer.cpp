@@ -2730,8 +2730,10 @@ void EditorLayer::UpdateGameViewSims(f32 simDt) {
         m_WeatherSystem.SetRainTextureIndex(-1);
         m_WeatherSystem.SetSnowTextureIndex(-1);
         m_WindSystem.ClearZoneOverride();
-        m_RenderSystem->SetFogParams(0.0f, 20.0f, 100.0f, 0.1f);
-        m_RenderSystem->SetFogColor(Math::Vector3(0.5f, 0.5f, 0.6f));
+        // No weather zone: put the SCENE's fog back. This used to write
+        // hardcoded defaults, which meant an authored fog was overwritten on
+        // every frame and could never be seen - the same way authored snow was.
+        m_RenderSystem->RestoreAuthoredFog();
         m_RenderSystem->SetSnowIntensity(0.0f);
     }
 
@@ -5716,7 +5718,7 @@ bool EditorLayer::CaptureGameViewToFile(const std::string& basePath) {
         stbi_write_png(pngPath.c_str(), static_cast<int>(w), static_cast<int>(h), 4,
                        pixels.data(), static_cast<int>(w * 4));
 
-        // P6 PPM for the dependency-free comparer (_golden_compare.py, stdlib only)
+        // P6 PPM for the dependency-free comparer (tools/probes/golden_compare.py, stdlib only)
         std::string ppmPath = basePath + ".ppm";
         std::ofstream ppm(ppmPath, std::ios::binary);
         if (ppm.is_open()) {

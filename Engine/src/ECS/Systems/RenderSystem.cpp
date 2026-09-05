@@ -57,6 +57,7 @@ Renderer::SkyboxConfig RenderSystem::WeatherSky(const Renderer::SkyboxConfig& cf
 
 #if ENJIN_RENDERER_WEBGPU
 
+#include "Enjin/Renderer/WebGPU/WebSceneTarget.h"   // kWebSceneSampleCount
 #include "Enjin/Renderer/WebGPU/WebShaderData.h"
 #include "Enjin/Renderer/WebGPU/WebGPURenderer.h"
 #include "Enjin/Renderer/WebGPU/WebGPURenderEncoder.h"
@@ -82,6 +83,7 @@ Renderer::SkyboxConfig RenderSystem::WeatherSky(const Renderer::SkyboxConfig& cf
 #include "Enjin/ECS/Components/BoundaryPolygon.h"  // Creative-mode editable lake outline
 #include "Enjin/ECS/Components/TreeVolume.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
+#include "Enjin/ECS/Components/ArtStyle.h"
 #include "Enjin/ECS/Components/HoverHighlight.h"
 #include "Enjin/ECS/Components/Cloth.h"   // cloth/rope meshDirty re-upload
 // Water3D needs the COMPLETE type up here, not at its old line 3719: the web
@@ -89,6 +91,10 @@ Renderer::SkyboxConfig RenderSystem::WeatherSky(const Renderer::SkyboxConfig& cf
 // and RenderSystem.h only forward-declares it. Desktop built because its use
 // site happens to sit below the late include.
 #include "Enjin/ECS/Components/Water3D.h"
+// Needed up here too: the shared EnsureWaterMeshes lives after the final
+// #endif and cannot see includes that sit inside the desktop branch.
+#include "Enjin/ECS/Components/WaterVolume.h"
+#include "Enjin/ECS/Components/BoundaryPolygon.h"
 #include "Enjin/ECS/Components/ProceduralMesh.h"  // generic runtime-generated geometry upload
 #include "Enjin/ECS/Components/ProceduralTexture.h"  // generic CPU-generated texture upload
 #include "Enjin/ECS/Components/Rope.h"
@@ -284,6 +290,7 @@ void RenderSystem::RecreateWebSizedTargets(u32 sceneW, u32 sceneH) {
         // MSAA + depth are raw (never registered) — release directly.
         if (m_WebMSAAColorView) { wgpuTextureViewRelease(static_cast<WGPUTextureView>(m_WebMSAAColorView)); m_WebMSAAColorView = nullptr; }
         if (m_WebMSAAColorTex)  { wgpuTextureRelease(static_cast<WGPUTexture>(m_WebMSAAColorTex)); m_WebMSAAColorTex = nullptr; }
+        if (m_WebSceneDepthSampleTex.IsValid()) { texMgr->DestroyTexture(m_WebSceneDepthSampleTex); m_WebSceneDepthSampleTex = {}; }
         if (m_WebSceneDepthView) { wgpuTextureViewRelease(static_cast<WGPUTextureView>(m_WebSceneDepthView)); m_WebSceneDepthView = nullptr; }
         if (m_WebSceneDepthTex)  { wgpuTextureRelease(static_cast<WGPUTexture>(m_WebSceneDepthTex)); m_WebSceneDepthTex = nullptr; }
     }
@@ -295,7 +302,7 @@ void RenderSystem::RecreateWebSizedTargets(u32 sceneW, u32 sceneH) {
     sceneTexDesc.size = {sceneW, sceneH, 1};
     sceneTexDesc.format = WGPUTextureFormat_RGBA16Float;
     sceneTexDesc.mipLevelCount = 1;
-    sceneTexDesc.sampleCount = 1;
+    sceneTexDesc.sampleCount = Renderer::kWebSceneSampleCount;
     WGPUTexture sceneTex = wgpuDeviceCreateTexture(device, &sceneTexDesc);
     WGPUTextureViewDescriptor sceneViewDesc = {};
     sceneViewDesc.format = WGPUTextureFormat_RGBA16Float;
@@ -325,12 +332,15 @@ void RenderSystem::RecreateWebSizedTargets(u32 sceneW, u32 sceneH) {
 
     // ---- Offscreen depth (single-sample, matches the no-MSAA scene target) ----
     WGPUTextureDescriptor depthDesc = {};
-    depthDesc.usage = WGPUTextureUsage_RenderAttachment;
+    // TextureBinding is what lets the post-process pass read it. Without it the
+    // depth buffer is write-only and every depth-driven effect (SSAO, cel
+    // outline, DoF, god rays, tilt-shift) is impossible.
+    depthDesc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
     depthDesc.dimension = WGPUTextureDimension_2D;
     depthDesc.size = {sceneW, sceneH, 1};
     depthDesc.format = Renderer::GetDepthStencilFormat();
     depthDesc.mipLevelCount = 1;
-    depthDesc.sampleCount = 1;  // no MSAA (see MSAA note above)
+    depthDesc.sampleCount = Renderer::kWebSceneSampleCount;  // no MSAA (see MSAA note above)
     WGPUTexture depthTex = wgpuDeviceCreateTexture(device, &depthDesc);
     WGPUTextureViewDescriptor depthViewDesc = {};
     depthViewDesc.format = Renderer::GetDepthStencilFormat();
@@ -339,6 +349,25 @@ void RenderSystem::RecreateWebSizedTargets(u32 sceneW, u32 sceneH) {
     depthViewDesc.arrayLayerCount = 1;
     m_WebSceneDepthTex = depthTex;
     m_WebSceneDepthView = wgpuTextureCreateView(depthTex, &depthViewDesc);
+
+    // Sampling view: depth aspect only. Registered as a native texture so the
+    // post-process bind group can carry it like any other.
+    {
+        WGPUTextureViewDescriptor depthSampleDesc = {};
+        depthSampleDesc.format = Renderer::GetDepthStencilFormat();
+        depthSampleDesc.dimension = WGPUTextureViewDimension_2D;
+        depthSampleDesc.mipLevelCount = 1;
+        depthSampleDesc.arrayLayerCount = 1;
+        depthSampleDesc.aspect = WGPUTextureAspect_DepthOnly;
+        Renderer::WebGPUTextureHandle nativeDepth;
+        nativeDepth.texture = depthTex;
+        nativeDepth.view = wgpuTextureCreateView(depthTex, &depthSampleDesc);
+        nativeDepth.width = sceneW;
+        nativeDepth.height = sceneH;
+        nativeDepth.format = Renderer::GetDepthStencilFormat();
+        nativeDepth.sampler = nullptr;   // read with textureLoad; no sampler needed
+        m_WebSceneDepthSampleTex = webTexMgr->RegisterNativeTexture(nativeDepth);
+    }
 
     // ---- Bloom mip chain (half-res each level) ----
     u32 bw = sceneW / 2, bh = sceneH / 2;
@@ -414,6 +443,7 @@ void RenderSystem::RecreateWebSizedTargets(u32 sceneW, u32 sceneH) {
             {0, {}, 0, 0, ppSource, {}},
             {1, {}, 0, 0, {}, ppSource},
             {2, m_WebPPAccessibilityBuffer, 0, sizeof(WebPPAccessibilityParams), {}, {}},
+            {3, {}, 0, 0, m_WebSceneDepthSampleTex, {}},
         };
         m_WebPostProcessBG = bindMgr->CreateBindGroup(ppBGDesc);
     }
@@ -457,6 +487,196 @@ void RenderSystem::RecreateWebSizedTargets(u32 sceneW, u32 sceneH) {
     if (!firstCreate) {
         ENJIN_LOG_INFO(Renderer, "RenderSystem: offscreen chain recreated at %ux%u (resize)", sceneW, sceneH);
     }
+}
+
+// Weighted-blended OIT targets and pipelines, built the first time a scene
+// actually has something transparent in it and rebuilt when the scene target
+// resizes. A fully opaque scene never calls this and allocates nothing.
+bool RenderSystem::EnsureWebOITTargets(u32 w, u32 h) {
+    if (w == 0 || h == 0) return false;
+
+    auto* webRenderer = static_cast<Renderer::WebGPURenderer*>(m_Renderer);
+    auto* texMgr = m_Renderer ? m_Renderer->GetTextureManager() : nullptr;
+    auto* bindMgr = m_Renderer ? m_Renderer->GetBindGroupManager() : nullptr;
+    auto* pipeMgr = m_Renderer ? m_Renderer->GetPipelineManager() : nullptr;
+    auto* shaderMgr = m_Renderer ? m_Renderer->GetShaderManager() : nullptr;
+    if (!webRenderer || !texMgr || !bindMgr || !pipeMgr || !shaderMgr) return false;
+    auto* webTexMgr = static_cast<Renderer::WebGPUTextureManager*>(texMgr);
+    WGPUDevice device = webRenderer->GetDevice();
+    if (!device) return false;
+
+    // ---- Pipelines. Size independent, so built once. ----
+    if (!m_WebOITPipeline.IsValid() && m_MainVertexShader.IsValid()) {
+        Renderer::GPURenderPipelineDesc od;
+        od.vertexShader = m_MainVertexShader;      // same module as the opaque pass
+        od.fragmentShader = m_MainVertexShader;
+        od.fragmentEntryPoint = "fs_oit";
+        od.bindGroupLayouts = {m_WebFrameLayout, m_WebObjectLayout,
+                               m_WebTextureLayout, m_WebShadowSampleLayout};
+        od.topology = Renderer::GPUPrimitiveTopology::TriangleList;
+        od.cullMode = Renderer::GPUCullMode::None;
+        od.frontFace = Renderer::GPUFrontFace::CCW;
+        od.depthTest = true;
+        od.depthWrite = false;    // transparency must not occlude transparency
+        od.depthCompare = Renderer::GPUCompareFunction::Less;
+        od.depthFormat = Renderer::GPUTextureFormat::Depth24PlusStencil8;
+        od.sampleCount = Renderer::kWebSceneSampleCount;
+
+        // Attachment 0, accum: straight addition. Every fragment that lands on
+        // a pixel contributes; that is the whole idea.
+        od.colorFormat = Renderer::GPUTextureFormat::RGBA16Float;
+        od.alphaBlend = true;
+        od.blendState.srcColor = Renderer::GPUBlendFactor::One;
+        od.blendState.dstColor = Renderer::GPUBlendFactor::One;
+        od.blendState.colorOp = Renderer::GPUBlendOp::Add;
+        od.blendState.srcAlpha = Renderer::GPUBlendFactor::One;
+        od.blendState.dstAlpha = Renderer::GPUBlendFactor::One;
+        od.blendState.alphaOp = Renderer::GPUBlendOp::Add;
+
+        // Attachment 1, revealage: dst *= (1 - src). Cleared to 1, so after N
+        // fragments it holds the product of every (1 - alpha) - how much of the
+        // opaque scene is still visible through the stack.
+        Renderer::GPUExtraColorTarget reveal;
+        reveal.format = Renderer::GPUTextureFormat::R8Unorm;
+        reveal.alphaBlend = true;
+        reveal.blendState.srcColor = Renderer::GPUBlendFactor::Zero;
+        reveal.blendState.dstColor = Renderer::GPUBlendFactor::OneMinusSrcColor;
+        reveal.blendState.colorOp = Renderer::GPUBlendOp::Add;
+        reveal.blendState.srcAlpha = Renderer::GPUBlendFactor::Zero;
+        reveal.blendState.dstAlpha = Renderer::GPUBlendFactor::OneMinusSrcAlpha;
+        reveal.blendState.alphaOp = Renderer::GPUBlendOp::Add;
+        od.extraColorTargets = {reveal};
+        od.colorAttachmentCount = 2;
+
+        Renderer::GPUVertexBufferLayoutDesc vl;
+        vl.stride = sizeof(MeshComponent::Vertex);
+        vl.attributes = {
+            {Renderer::GPUVertexFormat::Float32x3, 0, 0},
+            {Renderer::GPUVertexFormat::Float32x3, static_cast<u32>(offsetof(MeshComponent::Vertex, normal)), 1},
+            {Renderer::GPUVertexFormat::Float32x2, static_cast<u32>(offsetof(MeshComponent::Vertex, uv)), 2},
+            {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(MeshComponent::Vertex, tangent)), 3},
+            {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(MeshComponent::Vertex, boneWeights)), 4},
+            {Renderer::GPUVertexFormat::Uint32x4,  static_cast<u32>(offsetof(MeshComponent::Vertex, boneIndices)), 5},
+            {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(MeshComponent::Vertex, color)), 6},
+        };
+        od.vertexBuffers = {vl};
+        od.label = "OITAccumPipeline";
+        m_WebOITPipeline = pipeMgr->CreateRenderPipeline(od);
+        if (!m_WebOITPipeline.IsValid())
+            ENJIN_LOG_WARN(Renderer, "RenderSystem: OIT accumulate pipeline failed - transparency stays sorted");
+    }
+
+    if (!m_WebOITCompositePipeline.IsValid()) {
+        if (!m_WebOITCompositeShader.IsValid()) {
+            m_WebOITCompositeShader = shaderMgr->LoadShader(
+                Renderer::WebShaderData::OIT_COMPOSITE_WGSL,
+                std::strlen(Renderer::WebShaderData::OIT_COMPOSITE_WGSL),
+                Renderer::GPUShaderStage::Vertex, "OITComposite");
+        }
+        if (!m_WebOITCompositeLayout.IsValid()) {
+            using BType = Renderer::GPUBindingType;
+            using SStage = Renderer::GPUShaderStage;
+            Renderer::GPUBindGroupLayoutDesc ld;
+            ld.entries = {
+                {0, BType::SampledTexture, SStage::Fragment, 0},
+                {1, BType::Sampler, SStage::Fragment, 0},
+                {2, BType::SampledTexture, SStage::Fragment, 0},
+                {3, BType::Sampler, SStage::Fragment, 0},
+            };
+            m_WebOITCompositeLayout = bindMgr->CreateBindGroupLayout(ld);
+        }
+
+        Renderer::GPURenderPipelineDesc cd;
+        cd.vertexShader = m_WebOITCompositeShader;
+        cd.fragmentShader = m_WebOITCompositeShader;
+        cd.bindGroupLayouts = {m_WebOITCompositeLayout};
+        cd.topology = Renderer::GPUPrimitiveTopology::TriangleList;
+        cd.cullMode = Renderer::GPUCullMode::None;
+        cd.frontFace = Renderer::GPUFrontFace::CCW;
+        cd.depthTest = false;
+        cd.depthWrite = false;
+        cd.hasColorAttachment = true;
+        cd.colorFormat = Renderer::GPUTextureFormat::RGBA16Float;   // the scene target
+        cd.sampleCount = Renderer::kWebSceneSampleCount;
+        // result = src * (1 - reveal) + dst * reveal, with revealage carried in
+        // the fragment's alpha. The hardware does the composite from the paper.
+        cd.alphaBlend = true;
+        cd.blendState.srcColor = Renderer::GPUBlendFactor::OneMinusSrcAlpha;
+        cd.blendState.dstColor = Renderer::GPUBlendFactor::SrcAlpha;
+        cd.blendState.colorOp = Renderer::GPUBlendOp::Add;
+        cd.blendState.srcAlpha = Renderer::GPUBlendFactor::OneMinusSrcAlpha;
+        cd.blendState.dstAlpha = Renderer::GPUBlendFactor::SrcAlpha;
+        cd.blendState.alphaOp = Renderer::GPUBlendOp::Add;
+        cd.label = "OITCompositePipeline";
+        m_WebOITCompositePipeline = pipeMgr->CreateRenderPipeline(cd);
+        if (!m_WebOITCompositePipeline.IsValid())
+            ENJIN_LOG_WARN(Renderer, "RenderSystem: OIT composite pipeline failed - transparency stays sorted");
+    }
+
+    if (!m_WebOITPipeline.IsValid() || !m_WebOITCompositePipeline.IsValid()) return false;
+
+    // ---- Targets. Rebuilt on resize. ----
+    if (m_WebOITAccumTex.IsValid() && m_WebOITTargetW == w && m_WebOITTargetH == h) return true;
+
+    if (m_WebOITCompositeBG.IsValid()) {
+        bindMgr->DestroyBindGroup(m_WebOITCompositeBG);
+        m_WebOITCompositeBG = {};
+    }
+    if (m_WebOITAccumTex.IsValid()) {
+        texMgr->DestroyTexture(m_WebOITAccumTex);
+        m_WebOITAccumTex = {};
+        m_WebOITAccumView = nullptr;
+    }
+    if (m_WebOITRevealTex.IsValid()) {
+        texMgr->DestroyTexture(m_WebOITRevealTex);
+        m_WebOITRevealTex = {};
+        m_WebOITRevealView = nullptr;
+    }
+
+    auto makeTarget = [&](WGPUTextureFormat fmt, void*& outView) -> Renderer::GPUTextureHandle {
+        WGPUTextureDescriptor td = {};
+        td.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
+        td.dimension = WGPUTextureDimension_2D;
+        td.size = {w, h, 1};
+        td.format = fmt;
+        td.mipLevelCount = 1;
+        td.sampleCount = Renderer::kWebSceneSampleCount;
+        WGPUTexture tex = wgpuDeviceCreateTexture(device, &td);
+        if (!tex) return {};
+        WGPUTextureViewDescriptor vd = {};
+        vd.format = fmt;
+        vd.dimension = WGPUTextureViewDimension_2D;
+        vd.mipLevelCount = 1;
+        vd.arrayLayerCount = 1;
+        WGPUTextureView view = wgpuTextureCreateView(tex, &vd);
+        outView = view;
+        Renderer::WebGPUTextureHandle nt;
+        nt.texture = tex;
+        nt.view = view;
+        nt.width = w;
+        nt.height = h;
+        nt.format = fmt;
+        nt.sampler = MakeWebLinearClampSampler(device);
+        return webTexMgr->RegisterNativeTexture(nt);
+    };
+
+    m_WebOITAccumTex = makeTarget(WGPUTextureFormat_RGBA16Float, m_WebOITAccumView);
+    m_WebOITRevealTex = makeTarget(WGPUTextureFormat_R8Unorm, m_WebOITRevealView);
+    if (!m_WebOITAccumTex.IsValid() || !m_WebOITRevealTex.IsValid()) return false;
+
+    Renderer::GPUBindGroupDesc cbg;
+    cbg.layout = m_WebOITCompositeLayout;
+    cbg.entries = {
+        {0, {}, 0, 0, m_WebOITAccumTex, {}},
+        {1, {}, 0, 0, {}, m_WebOITAccumTex},
+        {2, {}, 0, 0, m_WebOITRevealTex, {}},
+        {3, {}, 0, 0, {}, m_WebOITRevealTex},
+    };
+    m_WebOITCompositeBG = bindMgr->CreateBindGroup(cbg);
+
+    m_WebOITTargetW = w;
+    m_WebOITTargetH = h;
+    return m_WebOITCompositeBG.IsValid();
 }
 
 void RenderSystem::Initialize() {
@@ -549,7 +769,7 @@ void RenderSystem::Initialize() {
     pipeDesc.blendState.dstAlpha = Renderer::GPUBlendFactor::OneMinusSrcAlpha;
     pipeDesc.colorFormat = Renderer::GPUTextureFormat::RGBA16Float;  // Render to HDR offscreen target
     pipeDesc.depthFormat = Renderer::GPUTextureFormat::Depth24PlusStencil8;
-    pipeDesc.sampleCount = 1;  // no MSAA on web (see MSAA note; WebGPU is 1 or 4 only)
+    pipeDesc.sampleCount = Renderer::kWebSceneSampleCount;  // no MSAA on web (see MSAA note; WebGPU is 1 or 4 only)
     pipeDesc.label = "PBR_Pipeline";
 
     // Vertex layout: position(vec3), normal(vec3), uv(vec2), color(vec4), tangent(vec4), boneWeights(vec4), boneIndices(u32x4)
@@ -570,6 +790,52 @@ void RenderSystem::Initialize() {
     if (!m_MainPipeline.IsValid()) {
         ENJIN_LOG_ERROR(Renderer, "RenderSystem: Pipeline creation failed");
         return;
+    }
+
+    // ---- Inverted-hull outline pipeline ----
+    // Front-face culling is the whole trick: the hull is the mesh again, pushed
+    // out along its normals, with only its BACK faces kept. Where the real mesh
+    // covers it the depth test throws it away; what survives is a rim.
+    //
+    // It is not fatal if this fails - the scene still renders, just without
+    // outlines - so it does not take the early return the main pipeline does.
+    {
+        m_WebOutlineShader = shaderMgr->LoadShader(
+            Renderer::WebShaderData::OUTLINE_WGSL,
+            std::strlen(Renderer::WebShaderData::OUTLINE_WGSL),
+            Renderer::GPUShaderStage::Vertex, "Outline_VS");
+
+        Renderer::GPURenderPipelineDesc olDesc;
+        olDesc.vertexShader = m_WebOutlineShader;
+        olDesc.fragmentShader = m_WebOutlineShader;
+        olDesc.bindGroupLayouts = {m_WebFrameLayout, m_WebObjectLayout};
+        olDesc.topology = Renderer::GPUPrimitiveTopology::TriangleList;
+        olDesc.cullMode = Renderer::GPUCullMode::Front;
+        olDesc.frontFace = Renderer::GPUFrontFace::CCW;
+        olDesc.depthTest = true;
+        olDesc.depthWrite = true;
+        olDesc.depthCompare = Renderer::GPUCompareFunction::Less;
+        olDesc.alphaBlend = false;
+        olDesc.colorFormat = Renderer::GPUTextureFormat::RGBA16Float;
+        olDesc.depthFormat = Renderer::GPUTextureFormat::Depth24PlusStencil8;
+        olDesc.sampleCount = Renderer::kWebSceneSampleCount;
+        olDesc.label = "OutlinePipeline";
+
+        // Position + normal + the skinning pair, at the shared vertex stride,
+        // so the outline draw binds the mesh's own vertex buffer unchanged.
+        Renderer::GPUVertexBufferLayoutDesc olVert;
+        olVert.stride = sizeof(MeshComponent::Vertex);
+        olVert.attributes = {
+            {Renderer::GPUVertexFormat::Float32x3, 0, 0},
+            {Renderer::GPUVertexFormat::Float32x3, static_cast<u32>(offsetof(MeshComponent::Vertex, normal)), 1},
+            {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(MeshComponent::Vertex, boneWeights)), 4},
+            {Renderer::GPUVertexFormat::Uint32x4,  static_cast<u32>(offsetof(MeshComponent::Vertex, boneIndices)), 5},
+        };
+        olDesc.vertexBuffers = {olVert};
+
+        m_WebOutlinePipeline = pipeMgr->CreateRenderPipeline(olDesc);
+        if (!m_WebOutlinePipeline.IsValid())
+            ENJIN_LOG_WARN(Renderer, "RenderSystem: Outline pipeline creation failed - geometry outlines disabled on web");
     }
 
     // Create uniform buffers
@@ -637,9 +903,11 @@ void RenderSystem::Initialize() {
         m_WebShadowFrameLayout = bindMgr->CreateBindGroupLayout(shadowFrameLD);
 
         // Shadow object layout (group 1: model matrix)
+        // Every caster's model matrix in one array, indexed by the draw's
+        // firstInstance, rather than one uniform binding per caster per pass.
         Renderer::GPUBindGroupLayoutDesc shadowObjLD;
         shadowObjLD.entries = {
-            {0, BType::UniformBuffer, SStage::Vertex, sizeof(WebObjectDataUBO)},
+            {0, BType::StorageBufferReadOnly, SStage::Vertex, 0},
         };
         m_WebShadowObjectLayout = bindMgr->CreateBindGroupLayout(shadowObjLD);
 
@@ -682,8 +950,11 @@ void RenderSystem::Initialize() {
         svpDesc.label = "ShadowVP_UBO";
         m_WebShadowVPBuffer = bufMgr->CreateBuffer(svpDesc);
 
-        svpDesc.size = sizeof(WebObjectDataUBO);
-        svpDesc.label = "ShadowObj_UBO";
+        // The caster matrix array is sized and filled per frame (see
+        // webShadowObjects in the web Update); one row is enough to start.
+        svpDesc.size = sizeof(Math::Matrix4);
+        svpDesc.usage = Renderer::GPUBufferUsage::Storage | Renderer::GPUBufferUsage::CopyDst;
+        svpDesc.label = "ShadowObjArray";
         m_WebShadowObjectBuffer = bufMgr->CreateBuffer(svpDesc);
 
         // Shadow bind groups
@@ -694,7 +965,8 @@ void RenderSystem::Initialize() {
 
         Renderer::GPUBindGroupDesc sobg;
         sobg.layout = m_WebShadowObjectLayout;
-        sobg.entries = {{0, m_WebShadowObjectBuffer, 0, sizeof(WebObjectDataUBO), {}, {}}};
+        m_WebShadowObjectCapacity = sizeof(Math::Matrix4);
+        sobg.entries = {{0, m_WebShadowObjectBuffer, 0, m_WebShadowObjectCapacity, {}, {}}};
         m_WebShadowObjectBG = bindMgr->CreateBindGroup(sobg);
     }
 
@@ -838,6 +1110,7 @@ void RenderSystem::Initialize() {
             {0, BType::SampledTexture, SStage::Fragment, 0},
             {1, BType::Sampler, SStage::Fragment, 0},
             {2, BType::UniformBuffer, SStage::Fragment, sizeof(WebPPAccessibilityParams)},
+            {3, BType::DepthTexture, SStage::Fragment, 0},   // scene depth, read with textureLoad
         };
         m_WebPostProcessLayout = bindMgr->CreateBindGroupLayout(ppLayoutDesc);
 
@@ -880,7 +1153,7 @@ void RenderSystem::Initialize() {
         skyPipeDesc.hasColorAttachment = true;
         skyPipeDesc.colorFormat = Renderer::GPUTextureFormat::RGBA16Float;
         skyPipeDesc.depthFormat = Renderer::GPUTextureFormat::Depth24PlusStencil8;
-        skyPipeDesc.sampleCount = 1;  // no MSAA (must match scene target)
+        skyPipeDesc.sampleCount = Renderer::kWebSceneSampleCount;  // no MSAA (must match scene target)
         skyPipeDesc.alphaBlend = false;
         skyPipeDesc.label = "SkyPipeline";
         m_WebSkyPipeline = pipeMgr->CreateRenderPipeline(skyPipeDesc);
@@ -988,6 +1261,7 @@ void RenderSystem::Initialize() {
                 {0, {}, 0, 0, m_WebBloomScratchTex, {}},
                 {1, {}, 0, 0, {}, m_WebBloomScratchTex},
                 {2, m_WebPPAccessibilityBuffer, 0, sizeof(WebPPAccessibilityParams), {}, {}},
+                {3, {}, 0, 0, m_WebSceneDepthSampleTex, {}},
             };
             m_WebPostProcessBG = bindMgr->CreateBindGroup(ppBG2);
         }
@@ -1019,7 +1293,7 @@ void RenderSystem::Initialize() {
         pd.blendState.dstAlpha = Renderer::GPUBlendFactor::OneMinusSrcAlpha;
         pd.colorFormat = Renderer::GPUTextureFormat::RGBA16Float;
         pd.depthFormat = Renderer::GPUTextureFormat::Depth24PlusStencil8;
-        pd.sampleCount = 1;  // no MSAA on web
+        pd.sampleCount = Renderer::kWebSceneSampleCount;  // no MSAA on web
         pd.label = "ParticlePipeline";
         // Vertex layout: slot 0 = quad (per-vertex), slot 1 = instance data (per-instance)
         Renderer::GPUVertexBufferLayoutDesc quadLayout;
@@ -1104,7 +1378,7 @@ void RenderSystem::Initialize() {
         pd.alphaBlend = false;
         pd.colorFormat = Renderer::GPUTextureFormat::RGBA16Float;
         pd.depthFormat = Renderer::GPUTextureFormat::Depth24PlusStencil8;
-        pd.sampleCount = 1;  // no MSAA on web
+        pd.sampleCount = Renderer::kWebSceneSampleCount;  // no MSAA on web
         pd.label = "GrassPipeline";
         // Blade vertex: pos(vec3) + normal(vec3) + uv(vec2) = 8 floats
         Renderer::GPUVertexBufferLayoutDesc bladeLayout;
@@ -1167,7 +1441,7 @@ void RenderSystem::Initialize() {
         pd.alphaBlend = false;
         pd.colorFormat = Renderer::GPUTextureFormat::RGBA16Float;
         pd.depthFormat = Renderer::GPUTextureFormat::Depth24PlusStencil8;
-        pd.sampleCount = 1;  // no MSAA on web
+        pd.sampleCount = Renderer::kWebSceneSampleCount;  // no MSAA on web
         pd.label = "TreePipeline";
         // Same vertex format as grass (pos+normal+uv)
         Renderer::GPUVertexBufferLayoutDesc treeLayout;
@@ -1292,7 +1566,7 @@ void RenderSystem::Initialize() {
         pd.blendState.dstAlpha = Renderer::GPUBlendFactor::OneMinusSrcAlpha;
         pd.colorFormat = Renderer::GPUTextureFormat::RGBA16Float;
         pd.depthFormat = Renderer::GPUTextureFormat::Depth24PlusStencil8;
-        pd.sampleCount = 1;  // no MSAA on web
+        pd.sampleCount = Renderer::kWebSceneSampleCount;  // no MSAA on web
         pd.label = "SpritePipeline";
         // Vertex layout: slot 0 = quad, slot 1 = sprite instance
         Renderer::GPUVertexBufferLayoutDesc sprQuadLayout;
@@ -1422,6 +1696,9 @@ void RenderSystem::Shutdown() {
     if (texMgr && m_WebShadowMapTex.IsValid()) texMgr->DestroyTexture(m_WebShadowMapTex);
     if (pipeMgr && m_WebShadowPipeline.IsValid()) pipeMgr->DestroyPipeline(m_WebShadowPipeline);
     if (shaderMgr && m_WebShadowShader.IsValid()) shaderMgr->DestroyShader(m_WebShadowShader);
+
+    if (pipeMgr && m_WebOutlinePipeline.IsValid()) pipeMgr->DestroyPipeline(m_WebOutlinePipeline);
+    if (shaderMgr && m_WebOutlineShader.IsValid()) shaderMgr->DestroyShader(m_WebOutlineShader);
 
     // Destroy pipeline and shaders
     if (pipeMgr && m_MainPipeline.IsValid()) pipeMgr->DestroyPipeline(m_MainPipeline);
@@ -1561,6 +1838,39 @@ Math::Vector3 RenderSystem::MeasureTextTo(Entity entity, i32 codepointIndex) {
     return atlas->MeasureTo(*tc, codepointIndex);
 }
 
+// Web definition of EnsureWater3DMeshes.
+//
+// The desktop one lives in the !ENJIN_RENDERER_WEBGPU branch and is the ONLY
+// call site of itself, so on a web build no water entity ever got a mesh:
+// meshCreated stayed false, every downstream water path skipped, and the web
+// target simply had no water surface at all. Nothing logged, nothing drew.
+//
+// Identical to the desktop body minus SetupEntityBuffers, which is itself
+// desktop-only and unnecessary here: the web draw loop creates a vertex buffer
+// for any entity whose render data is not valid yet, so writing the
+// MeshComponent is enough.
+void RenderSystem::EnsureWater3DMeshes() {
+    if (!m_World) return;
+    for (Entity entity : m_World->GetEntitiesWithComponent<Water3DComponent>()) {
+        if (!m_World->IsValid(entity)) continue;
+        auto* water3d = m_CachedWater3DStorage ? m_CachedWater3DStorage->Get(entity)
+                                               : m_World->GetComponent<Water3DComponent>(entity);
+        if (!water3d) continue;
+        if (water3d->meshCreated && m_World->GetComponent<MeshComponent>(entity)) continue;
+        if (water3d->settings.width < 0.01f || water3d->settings.depth < 0.01f) continue;
+
+        Effects::Water3D builder;
+        builder.Initialize(water3d->settings);
+        builder.BuildEntityMesh(m_World, entity);
+        water3d->meshCreated = true;
+        water3d->meshDirty = true;   // first upload
+
+        ENJIN_LOG_INFO(Renderer, "Created Water3D surface mesh for entity %llu (%.0f x %.0f) [web]",
+            entity, water3d->settings.width, water3d->settings.depth);
+    }
+}
+
+
 
 // Web port of the Vulkan text-generation loop (RenderSystem::Update ~4779):
 // bare TextComponent entities (no authored mesh) become a mesh of SDF glyph
@@ -1677,6 +1987,30 @@ void RenderSystem::WebEnsureTextMeshes() {
 
 void RenderSystem::Update(f32 deltaTime) {
     TickHighlightTime(deltaTime);   // drives hover-highlight Pulse/Flash
+
+    // Once a second, say how much GPU memory the frame is actually holding.
+    //
+    // "Not enough memory left" was reported from a live demo with no way to
+    // tell a leak from ordinary churn, so this prints both: live is created
+    // minus destroyed, and a flat live count next to a large total means the
+    // frame is recycling buffers as designed. A live count that climbs is a
+    // leak and the number to quote when reporting it.
+    {
+        static f32 gpuLogAccum = 0.0f;
+        static u64 gpuLogLastTotal = 0;
+        gpuLogAccum += deltaTime;
+        if (gpuLogAccum >= 1.0f) {
+            if (auto* wr = static_cast<Renderer::WebGPURenderer*>(m_Renderer)) {
+                const u64 total = wr->GetBuffersCreatedTotal();
+                ENJIN_LOG_INFO(Renderer, "web gpu buffers: %llu live, %llu created this second, %llu total",
+                               static_cast<unsigned long long>(wr->GetLiveBufferCount()),
+                               static_cast<unsigned long long>(total - gpuLogLastTotal),
+                               static_cast<unsigned long long>(total));
+                gpuLogLastTotal = total;
+            }
+            gpuLogAccum = 0.0f;
+        }
+    }
     if (!m_Renderer || !m_Initialized || !m_MainPipeline.IsValid()) {
         return;
     }
@@ -1687,6 +2021,11 @@ void RenderSystem::Update(f32 deltaTime) {
     m_WebTime += deltaTime;
     auto* bufMgr = m_Renderer->GetBufferManager();
     if (!bufMgr) return;
+
+    // Desktop parity (the desktop path does this in RenderSystem::Update too):
+    // auto-create surface meshes for water entities that do not have one.
+    EnsureWaterMeshes();
+    EnsureWater3DMeshes();
 
     static int s_BuildCheck = 0;
     if (s_BuildCheck++ < 3) {
@@ -1736,6 +2075,62 @@ void RenderSystem::Update(f32 deltaTime) {
             }
         }
         return s_WebShadowCasters;
+    };
+
+    // What the OIT pass will draw: entity, and its row in the frame's ObjectData.
+    // The mesh block's DrawCmd type is local to that block, so only these two
+    // values travel out to the pass that runs after the scene pass has ended.
+    static std::vector<std::pair<Entity, u32>> webOITDraws;
+    webOITDraws.clear();
+    bool webOITActive = false;
+
+    // The casters' model matrices, packed once and shared by every shadow pass.
+    //
+    // This replaced a uniform buffer AND a bind group built per caster per
+    // pass: once each for the directional pass, again for every spot light,
+    // and six more times per caster for a point light. A scene with 56 casters
+    // and one point light was allocating over four hundred of each per frame,
+    // and on web nothing was freeing them (see WebGPURenderer::DrainPendingDestroys).
+    //
+    // The caster list is the same, in the same order, in all three passes, so
+    // one upload serves all of them and the row is just the caster's index.
+    bool webShadowObjectsReady = false;
+    auto webShadowObjects = [&]() -> bool {
+        if (webShadowObjectsReady) return m_WebShadowObjectBG.IsValid();
+        webShadowObjectsReady = true;
+
+        auto* sBindMgr = m_Renderer->GetBindGroupManager();
+        if (!bufMgr || !sBindMgr) return false;
+
+        const auto& casters = webShadowCasters();
+        static std::vector<Math::Matrix4> models;
+        models.clear();
+        models.reserve(casters.size());
+        for (Entity ce : casters) models.push_back(ECS::ComputeWorldMatrix(m_World, ce));
+
+        const usize needBytes = (models.empty() ? 1 : models.size()) * sizeof(Math::Matrix4);
+        if (!m_WebShadowObjectBuffer.IsValid() || m_WebShadowObjectCapacity < needBytes) {
+            if (m_WebShadowObjectBuffer.IsValid()) bufMgr->DestroyBuffer(m_WebShadowObjectBuffer);
+            if (m_WebShadowObjectBG.IsValid()) {
+                sBindMgr->DestroyBindGroup(m_WebShadowObjectBG);
+                m_WebShadowObjectBG = {};
+            }
+            m_WebShadowObjectCapacity = needBytes + needBytes / 2;   // headroom
+            m_WebShadowObjectBuffer = bufMgr->CreateBuffer(
+                {m_WebShadowObjectCapacity,
+                 Renderer::GPUBufferUsage::Storage | Renderer::GPUBufferUsage::CopyDst, true});
+        }
+        if (!models.empty() && m_WebShadowObjectBuffer.IsValid()) {
+            bufMgr->UploadData(m_WebShadowObjectBuffer, models.data(),
+                               models.size() * sizeof(Math::Matrix4));
+        }
+        if (!m_WebShadowObjectBG.IsValid() && m_WebShadowObjectBuffer.IsValid()) {
+            Renderer::GPUBindGroupDesc sobgd;
+            sobgd.layout = m_WebShadowObjectLayout;
+            sobgd.entries = {{0, m_WebShadowObjectBuffer, 0, m_WebShadowObjectCapacity, {}, {}}};
+            m_WebShadowObjectBG = sBindMgr->CreateBindGroup(sobgd);
+        }
+        return m_WebShadowObjectBG.IsValid();
     };
 
     // One signature over every shadow caster, for the spot and point caches
@@ -2020,9 +2415,19 @@ void RenderSystem::Update(f32 deltaTime) {
 
         // Settled snow accumulation -> shader surface-whitening (builds up, then melts).
         {
-            f32 snowAccum = m_MainPassWeather ? m_MainPassWeather->GetSnowAccumulation()
-                                              : m_WeatherSkySnow;
-            lit.snowParams = {snowAccum, 0.0f, 0.0f, 0.0f};
+            // Three things can want snow on the ground and they used to fight:
+            // a live WeatherSystem's accumulation, the live weather-sky blend,
+            // and the scene's authored snowIntensity. The web path read only
+            // the sky blend, so a scene that authored snowIntensity got nothing
+            // - SceneRenderSettings::ApplyToRuntime writes m_SnowIntensity, and
+            // nothing here ever looked at it. Desktop had the same shape with a
+            // different miss: a weather system, once attached, OVERRODE the
+            // authored value rather than adding to it, so an authored snowy
+            // scene silently thawed the moment weather existed.
+            //
+            // The most snow anything asks for wins. Authored snow is a floor,
+            // live weather can only add.
+            lit.snowParams = {GetSnowAccumulation(), 0.0f, 0.0f, 0.0f};
         }
 
         bufMgr->UploadData(m_WebLightingBuffer, &lit, sizeof(lit));
@@ -2276,9 +2681,17 @@ void RenderSystem::Update(f32 deltaTime) {
                     static_cast<f32>(WEB_SHADOW_MAP_SIZE), static_cast<f32>(WEB_SHADOW_MAP_SIZE), 0.0f, 1.0f);
                 wgpuRenderPassEncoderSetBindGroup(shadowPass, 0, nativeShadowFrameBG, 0, nullptr);
 
-                // Draw each mesh entity into shadow map (per-entity buffer + bind group)
+                // Draw each mesh entity into the shadow map. One bind group for
+                // the whole pass; the caster's row is its index in the list.
                 u32 shadowDrawCount = 0;
-                for (Entity entity : webShadowCasters()) {
+                const bool shadowObjOK = webShadowObjects();
+                if (shadowObjOK) {
+                    wgpuRenderPassEncoderSetBindGroup(shadowPass, 1,
+                        webBindMgr->GetNativeGroup(m_WebShadowObjectBG), 0, nullptr);
+                }
+                const auto& dirCasters = webShadowCasters();
+                for (usize ci = 0; shadowObjOK && ci < dirCasters.size(); ci++) {
+                    Entity entity = dirCasters[ci];
                     auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
                     auto* xf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
                     if (!mesh || !xf) continue;
@@ -2299,33 +2712,12 @@ void RenderSystem::Update(f32 deltaTime) {
                     auto& rd = m_EntityRenderData[eid];
                     if (!rd.valid || !rd.vertexBuffer.IsValid() || !rd.indexBuffer.IsValid()) continue;
 
-                    // Create per-entity buffer with model matrix (can't reuse one buffer —
-                    // wgpuQueueWriteBuffer runs before the command buffer, so last write wins)
-                    WebObjectDataUBO shadowObj{};
-                    shadowObj.model = ECS::ComputeWorldMatrix(m_World, entity);
-
-                    Renderer::GPUBufferDesc perEntDesc;
-                    perEntDesc.size = sizeof(WebObjectDataUBO);
-                    perEntDesc.usage = Renderer::GPUBufferUsage::Uniform | Renderer::GPUBufferUsage::CopyDst;
-                    perEntDesc.hostVisible = true;
-                    auto perEntBuf = bufMgr->CreateBufferWithData(perEntDesc, &shadowObj);
-
-                    Renderer::GPUBindGroupDesc perEntBGD;
-                    perEntBGD.layout = m_WebShadowObjectLayout;
-                    perEntBGD.entries = {{0, perEntBuf, 0, sizeof(WebObjectDataUBO), {}, {}}};
-                    auto perEntBG = webBindMgr->CreateBindGroup(perEntBGD);
-
-                    WGPUBindGroup nativeBG = webBindMgr->GetNativeGroup(perEntBG);
-                    wgpuRenderPassEncoderSetBindGroup(shadowPass, 1, nativeBG, 0, nullptr);
-
                     WGPUBuffer vb = webBufMgr->GetNativeBuffer(rd.vertexBuffer);
                     WGPUBuffer ib = webBufMgr->GetNativeBuffer(rd.indexBuffer);
                     wgpuRenderPassEncoderSetVertexBuffer(shadowPass, 0, vb, 0, WGPU_WHOLE_SIZE);
                     wgpuRenderPassEncoderSetIndexBuffer(shadowPass, ib, WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
-                    wgpuRenderPassEncoderDrawIndexed(shadowPass, rd.indexCount, 1, 0, 0, 0);
-
-                    webBindMgr->DestroyBindGroup(perEntBG);
-                    bufMgr->DestroyBuffer(perEntBuf);
+                    wgpuRenderPassEncoderDrawIndexed(shadowPass, rd.indexCount, 1, 0, 0,
+                                                     static_cast<u32>(ci));
                     shadowDrawCount++;
                 }
 
@@ -2430,7 +2822,14 @@ void RenderSystem::Update(f32 deltaTime) {
                             static_cast<f32>(WEB_SPOT_SHADOW_SIZE), static_cast<f32>(WEB_SPOT_SHADOW_SIZE), 0.0f, 1.0f);
                         wgpuRenderPassEncoderSetBindGroup(spotPass, 0, webBindMgr2->GetNativeGroup(spotFrameBG), 0, nullptr);
 
-                        for (Entity entity : webShadowCasters()) {
+                        const bool spotObjOK = webShadowObjects();
+                        if (spotObjOK) {
+                            wgpuRenderPassEncoderSetBindGroup(spotPass, 1,
+                                webBindMgr2->GetNativeGroup(m_WebShadowObjectBG), 0, nullptr);
+                        }
+                        const auto& spotCasters = webShadowCasters();
+                        for (usize ci = 0; spotObjOK && ci < spotCasters.size(); ci++) {
+                            Entity entity = spotCasters[ci];
                             auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
                             auto* exf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
                             if (!mesh || !exf) continue;
@@ -2444,23 +2843,10 @@ void RenderSystem::Update(f32 deltaTime) {
                             if (eid >= m_EntityRenderData.size()) continue;
                             auto& rd = m_EntityRenderData[eid];
                             if (!rd.valid || !rd.vertexBuffer.IsValid() || !rd.indexBuffer.IsValid()) continue;
-
-                            WebObjectDataUBO shadowObj{};
-                            shadowObj.model = ECS::ComputeWorldMatrix(m_World, entity);
-                            auto perBuf = bufMgr->CreateBufferWithData(
-                                {sizeof(WebObjectDataUBO), Renderer::GPUBufferUsage::Uniform | Renderer::GPUBufferUsage::CopyDst, true},
-                                &shadowObj);
-                            Renderer::GPUBindGroupDesc bgd;
-                            bgd.layout = m_WebShadowObjectLayout;
-                            bgd.entries = {{0, perBuf, 0, sizeof(WebObjectDataUBO), {}, {}}};
-                            auto perBG = webBindMgr2->CreateBindGroup(bgd);
-
-                            wgpuRenderPassEncoderSetBindGroup(spotPass, 1, webBindMgr2->GetNativeGroup(perBG), 0, nullptr);
                             wgpuRenderPassEncoderSetVertexBuffer(spotPass, 0, webBufMgr2->GetNativeBuffer(rd.vertexBuffer), 0, WGPU_WHOLE_SIZE);
                             wgpuRenderPassEncoderSetIndexBuffer(spotPass, webBufMgr2->GetNativeBuffer(rd.indexBuffer), WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
-                            wgpuRenderPassEncoderDrawIndexed(spotPass, rd.indexCount, 1, 0, 0, 0);
-                            webBindMgr2->DestroyBindGroup(perBG);
-                            bufMgr->DestroyBuffer(perBuf);
+                            wgpuRenderPassEncoderDrawIndexed(spotPass, rd.indexCount, 1, 0, 0,
+                                                             static_cast<u32>(ci));
                         }
                         wgpuRenderPassEncoderEnd(spotPass);
                         wgpuRenderPassEncoderRelease(spotPass);
@@ -2573,7 +2959,14 @@ void RenderSystem::Update(f32 deltaTime) {
                             static_cast<f32>(WEB_POINT_SHADOW_SIZE), static_cast<f32>(WEB_POINT_SHADOW_SIZE), 0.0f, 1.0f);
                         wgpuRenderPassEncoderSetBindGroup(facePass, 0, webBindMgr3->GetNativeGroup(faceFrameBG), 0, nullptr);
 
-                        for (Entity entity : webShadowCasters()) {
+                        const bool faceObjOK = webShadowObjects();
+                        if (faceObjOK) {
+                            wgpuRenderPassEncoderSetBindGroup(facePass, 1,
+                                webBindMgr3->GetNativeGroup(m_WebShadowObjectBG), 0, nullptr);
+                        }
+                        const auto& faceCasters = webShadowCasters();
+                        for (usize ci = 0; faceObjOK && ci < faceCasters.size(); ci++) {
+                            Entity entity = faceCasters[ci];
                             auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
                             auto* exf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
                             if (!mesh || !exf) continue;
@@ -2587,23 +2980,10 @@ void RenderSystem::Update(f32 deltaTime) {
                             if (eid >= m_EntityRenderData.size()) continue;
                             auto& rd = m_EntityRenderData[eid];
                             if (!rd.valid || !rd.vertexBuffer.IsValid() || !rd.indexBuffer.IsValid()) continue;
-
-                            WebObjectDataUBO shadowObj{};
-                            shadowObj.model = ECS::ComputeWorldMatrix(m_World, entity);
-                            auto perBuf = bufMgr->CreateBufferWithData(
-                                {sizeof(WebObjectDataUBO), Renderer::GPUBufferUsage::Uniform | Renderer::GPUBufferUsage::CopyDst, true},
-                                &shadowObj);
-                            Renderer::GPUBindGroupDesc bgd;
-                            bgd.layout = m_WebShadowObjectLayout;
-                            bgd.entries = {{0, perBuf, 0, sizeof(WebObjectDataUBO), {}, {}}};
-                            auto perBG = webBindMgr3->CreateBindGroup(bgd);
-
-                            wgpuRenderPassEncoderSetBindGroup(facePass, 1, webBindMgr3->GetNativeGroup(perBG), 0, nullptr);
                             wgpuRenderPassEncoderSetVertexBuffer(facePass, 0, webBufMgr3->GetNativeBuffer(rd.vertexBuffer), 0, WGPU_WHOLE_SIZE);
                             wgpuRenderPassEncoderSetIndexBuffer(facePass, webBufMgr3->GetNativeBuffer(rd.indexBuffer), WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
-                            wgpuRenderPassEncoderDrawIndexed(facePass, rd.indexCount, 1, 0, 0, 0);
-                            webBindMgr3->DestroyBindGroup(perBG);
-                            bufMgr->DestroyBuffer(perBuf);
+                            wgpuRenderPassEncoderDrawIndexed(facePass, rd.indexCount, 1, 0, 0,
+                                                             static_cast<u32>(ci));
                         }
                         wgpuRenderPassEncoderEnd(facePass);
                         wgpuRenderPassEncoderRelease(facePass);
@@ -2775,7 +3155,12 @@ void RenderSystem::Update(f32 deltaTime) {
         }
 
         // Phase 1: Collect visible entities, ensure GPU buffers, build ObjectData array
-        constexpr u32 OBJ_ALIGN = 256;  // WebGPU minUniformBufferOffsetAlignment
+        // ObjectData packs TIGHTLY, one record after another. It used to be
+        // padded to 256 (minUniformBufferOffsetAlignment) because each entity
+        // got its own uniform binding; the whole frame is now one storage
+        // buffer indexed by instance_index, and a storage array's stride is the
+        // struct size. Padding here would make every index read the wrong row.
+        constexpr u32 OBJ_STRIDE = static_cast<u32>(sizeof(WebObjectDataUBO));
         // The sort key travels with the command. It used to be recomputed inside
         // the comparator, which meant six sparse-set lookups per comparison - two
         // material, two render-data, two transform - so ordering a thousand
@@ -2921,7 +3306,7 @@ void RenderSystem::Update(f32 deltaTime) {
 
             // Build per-entity ObjectData at aligned offset
             u32 offset = static_cast<u32>(objDataBuf.size());
-            objDataBuf.resize(offset + OBJ_ALIGN, 0);
+            objDataBuf.resize(offset + OBJ_STRIDE, 0);
 
             // Upload bone matrices for skinned meshes (resolve shared animator for follower meshes)
             auto* animComp = ResolveAnimator(entity);
@@ -3007,6 +3392,59 @@ void RenderSystem::Update(f32 deltaTime) {
         // Phase 2: Batch entities by mesh+texture, draw instanced where possible
         auto* bindMgr = m_Renderer->GetBindGroupManager();
 
+        // ------------------------------------------------------------------
+        // One ObjectData buffer for the whole frame.
+        //
+        // Every batch and every non-batchable entity used to create a GPU
+        // buffer and a bind group and destroy them again, ~100 of each per
+        // frame in Playground. On web those destroys only dropped a JS
+        // reference, so the memory sat there until a garbage collection: the
+        // churn is what exhausted the GPU budget. Reclaiming properly was half
+        // the fix; not allocating in the first place is the other half.
+        //
+        // The records are reordered into draw order first, so an instanced
+        // batch is contiguous and can be addressed with firstInstance. That is
+        // sound because @builtin(instance_index) equals firstInstance + i
+        // (checked against Dawn, not assumed).
+        {
+            static std::vector<u8> objSorted;
+            objSorted.resize(drawCmds.size() * OBJ_STRIDE);
+            for (usize k = 0; k < drawCmds.size(); k++) {
+                std::memcpy(objSorted.data() + k * OBJ_STRIDE,
+                            objDataBuf.data() + drawCmds[k].offset, OBJ_STRIDE);
+                drawCmds[k].offset = static_cast<u32>(k * OBJ_STRIDE);
+            }
+            objDataBuf.swap(objSorted);   // downstream reads it in draw order
+
+            const usize needBytes = objDataBuf.empty() ? OBJ_STRIDE : objDataBuf.size();
+            if (!m_WebObjectArrayBuf.IsValid() || m_WebObjectArrayCapacity < needBytes) {
+                if (m_WebObjectArrayBuf.IsValid()) bufMgr->DestroyBuffer(m_WebObjectArrayBuf);
+                if (m_WebObjectArrayBG.IsValid()) {
+                    bindMgr->DestroyBindGroup(m_WebObjectArrayBG);
+                    m_WebObjectArrayBG = {};
+                }
+                m_WebObjectArrayCapacity = needBytes + needBytes / 2;   // headroom
+                m_WebObjectArrayBuf = bufMgr->CreateBuffer(
+                    {m_WebObjectArrayCapacity,
+                     Renderer::GPUBufferUsage::Storage | Renderer::GPUBufferUsage::CopyDst, true});
+                // Every cached per-entity bind group points at the old buffer.
+                // The generation is how they find out.
+                m_WebObjectArrayGen++;
+            }
+            if (!objDataBuf.empty() && m_WebObjectArrayBuf.IsValid()) {
+                bufMgr->UploadData(m_WebObjectArrayBuf, objDataBuf.data(), objDataBuf.size());
+            }
+            if (!m_WebObjectArrayBG.IsValid() && m_WebObjectArrayBuf.IsValid()) {
+                Renderer::GPUBindGroupDesc arrBGD;
+                arrBGD.layout = m_WebObjectLayout;
+                arrBGD.entries = {
+                    {0, m_WebObjectArrayBuf, 0, m_WebObjectArrayCapacity, {}, {}},
+                    {1, m_WebDefaultBoneBuffer, 0, 0, {}, {}},
+                };
+                m_WebObjectArrayBG = bindMgr->CreateBindGroup(arrBGD);
+            }
+        }
+
         // Build batch key for each draw command: entities with same VB+IB+textures can be instanced
         struct BatchKey {
             u32 vbId, ibId, texBGId;
@@ -3036,12 +3474,31 @@ void RenderSystem::Update(f32 deltaTime) {
             return true;
         };
 
+        // Order-independent transparency, if the scene has any transparency at
+        // all and the targets can be built. Deciding here, before a single draw,
+        // is deliberate: if the targets fail the loop must keep drawing blended
+        // entities the old sorted way rather than dropping them.
+        {
+            bool anyTransparent = false;
+            for (const auto& c : drawCmds) { if (c.transparent) { anyTransparent = true; break; } }
+            webOITActive = anyTransparent && EnsureWebOITTargets(
+                static_cast<u32>(sceneW), static_cast<u32>(sceneH));
+        }
+
         usize i = 0;
         bool vmDepthActive = false;
         while (i < drawCmds.size()) {
             const auto& cmd = drawCmds[i];
             u64 eid = EntityIndex(cmd.entity);
             auto& rd = m_EntityRenderData[eid];
+
+            // Blended entities are accumulated after the scene pass instead.
+            // They sort to the end of drawCmds, so this never splits a batch.
+            if (webOITActive && cmd.transparent) {
+                webOITDraws.emplace_back(cmd.entity, cmd.offset / OBJ_STRIDE);
+                i++;
+                continue;
+            }
 
             // Viewmodel entities render in the compressed near depth slice so
             // they stay in front of world geometry (same trick as the Vulkan
@@ -3066,51 +3523,43 @@ void RenderSystem::Update(f32 deltaTime) {
                 }
                 u32 instanceCount = static_cast<u32>(batchEnd - i);
 
-                // Pack ObjectData for all instances into one contiguous SSBO
-                std::vector<u8> batchData(instanceCount * sizeof(WebObjectDataUBO));
-                for (usize j = 0; j < instanceCount; j++) {
-                    std::memcpy(batchData.data() + j * sizeof(WebObjectDataUBO),
-                        objDataBuf.data() + drawCmds[i + j].offset, sizeof(WebObjectDataUBO));
-                }
-                auto batchBuf = bufMgr->CreateBufferWithData(
-                    {batchData.size(), Renderer::GPUBufferUsage::Storage | Renderer::GPUBufferUsage::CopyDst, true},
-                    batchData.data());
-                Renderer::GPUBindGroupDesc bgd;
-                bgd.layout = m_WebObjectLayout;
-                bgd.entries = {
-                    {0, batchBuf, 0, batchData.size(), {}, {}},
-                    {1, m_WebDefaultBoneBuffer, 0, 0, {}, {}},
-                };
-                auto batchBG = bindMgr->CreateBindGroup(bgd);
-                encoder->SetBindGroup(1, batchBG);
+                // The batch is already contiguous in the frame buffer, so it
+                // needs no buffer of its own - just the index of its first row.
+                encoder->SetBindGroup(1, m_WebObjectArrayBG);
                 auto texBG = rd.texBindGroup.IsValid() ? rd.texBindGroup : m_WebDefaultTexBindGroup;
                 encoder->SetBindGroup(2, texBG);
                 encoder->SetVertexBuffer(0, rd.vertexBuffer);
                 encoder->SetIndexBuffer(rd.indexBuffer, Renderer::GPUIndexFormat::Uint32);
-                encoder->DrawIndexed(rd.indexCount, instanceCount);
+                encoder->DrawIndexed(rd.indexCount, instanceCount, 0, 0, cmd.offset / OBJ_STRIDE);
 
                 m_DrawCallCount++;
                 m_TriangleCount += (rd.indexCount / 3) * instanceCount;
 
-                bindMgr->DestroyBindGroup(batchBG);
-                bufMgr->DestroyBuffer(batchBuf);
                 i = batchEnd;
             } else {
-                // Non-batchable: skinned or multi-material — draw individually
-                auto perEntityBuf = bufMgr->CreateBufferWithData(
-                    {sizeof(WebObjectDataUBO), Renderer::GPUBufferUsage::Storage | Renderer::GPUBufferUsage::CopyDst, true},
-                    objDataBuf.data() + cmd.offset);
+                // Non-batchable: skinned or multi-material — draw individually,
+                // still out of the frame buffer. A skinned entity is the one
+                // case that cannot share the frame's bind group, because
+                // binding 1 is its own bone buffer; that group is cached on the
+                // entity and rebuilt only when the frame buffer moves.
+                const u32 firstInstance = cmd.offset / OBJ_STRIDE;
+                Renderer::GPUBindGroupHandle objBG = m_WebObjectArrayBG;
+                if (rd.boneBuffer.IsValid() && m_WebObjectArrayBuf.IsValid()) {
+                    if (!rd.objBoneBindGroup.IsValid() || rd.objBoneBindGroupGen != m_WebObjectArrayGen) {
+                        if (rd.objBoneBindGroup.IsValid()) bindMgr->DestroyBindGroup(rd.objBoneBindGroup);
+                        Renderer::GPUBindGroupDesc bgd;
+                        bgd.layout = m_WebObjectLayout;
+                        bgd.entries = {
+                            {0, m_WebObjectArrayBuf, 0, m_WebObjectArrayCapacity, {}, {}},
+                            {1, rd.boneBuffer, 0, 0, {}, {}},
+                        };
+                        rd.objBoneBindGroup = bindMgr->CreateBindGroup(bgd);
+                        rd.objBoneBindGroupGen = m_WebObjectArrayGen;
+                    }
+                    if (rd.objBoneBindGroup.IsValid()) objBG = rd.objBoneBindGroup;
+                }
 
-                auto boneBuf = rd.boneBuffer.IsValid() ? rd.boneBuffer : m_WebDefaultBoneBuffer;
-                Renderer::GPUBindGroupDesc bgd;
-                bgd.layout = m_WebObjectLayout;
-                bgd.entries = {
-                    {0, perEntityBuf, 0, sizeof(WebObjectDataUBO), {}, {}},
-                    {1, boneBuf, 0, 0, {}, {}},
-                };
-                auto perEntityBG = bindMgr->CreateBindGroup(bgd);
-
-                encoder->SetBindGroup(1, perEntityBG);
+                encoder->SetBindGroup(1, objBG);
                 encoder->SetVertexBuffer(0, rd.vertexBuffer);
                 encoder->SetIndexBuffer(rd.indexBuffer, Renderer::GPUIndexFormat::Uint32);
 
@@ -3138,7 +3587,7 @@ void RenderSystem::Update(f32 deltaTime) {
                             auto cached = m_WebSubMeshTexCache.find(texKey);
                             if (cached != m_WebSubMeshTexCache.end()) {
                                 encoder->SetBindGroup(2, cached->second);
-                                encoder->DrawIndexed(subMesh.indexCount, 1, subMesh.indexOffset);
+                                encoder->DrawIndexed(subMesh.indexCount, 1, subMesh.indexOffset, 0, firstInstance);
                                 m_DrawCallCount++;
                                 m_TriangleCount += subMesh.indexCount / 3;
                                 continue;
@@ -3163,23 +3612,163 @@ void RenderSystem::Update(f32 deltaTime) {
                             if (subTexBG.IsValid()) m_WebSubMeshTexCache[texKey] = subTexBG;
                         }
                         encoder->SetBindGroup(2, subTexBG.IsValid() ? subTexBG : m_WebDefaultTexBindGroup);
-                        encoder->DrawIndexed(subMesh.indexCount, 1, subMesh.indexOffset);
+                        encoder->DrawIndexed(subMesh.indexCount, 1, subMesh.indexOffset, 0, firstInstance);
                         m_DrawCallCount++;
                         m_TriangleCount += subMesh.indexCount / 3;
                     }
                 } else {
                     encoder->SetBindGroup(2, rd.texBindGroup.IsValid() ? rd.texBindGroup : m_WebDefaultTexBindGroup);
-                    encoder->DrawIndexed(rd.indexCount);
+                    encoder->DrawIndexed(rd.indexCount, 1, 0, 0, firstInstance);
                     m_DrawCallCount++;
                     m_TriangleCount += rd.indexCount / 3;
                 }
 
-                bindMgr->DestroyBindGroup(perEntityBG);
-                bufMgr->DestroyBuffer(perEntityBuf);
                 i++;
             }
         }
         if (vmDepthActive) encoder->SetViewport(0, 0, sceneW, sceneH, 0.0f, 1.0f);
+
+        // ====================================================================
+        // Inverted-hull outlines
+        // ====================================================================
+        // The web half of RenderOutlinePass, and it follows the same priority:
+        // per-material width/colour, then a cel ArtStyle override on the
+        // entity, then the global scene setting, with a hover highlight
+        // beating all three. Runs here, after the opaque meshes and before the
+        // sky, because the hull is opaque geometry that writes depth - drawn
+        // after the sky it would be silhouetted against nothing, and drawn
+        // after the transparent passes it would punch through them.
+        //
+        // Transparent entities get no hull: behind glass a rim reads as a
+        // smear rather than a line, which is the call Vulkan makes too.
+        if (m_WebOutlinePipeline.IsValid() && !drawCmds.empty()) {
+            const auto* hoverStorage = m_World->GetComponentStorage<HoverHighlightComponent>();
+            bool anyHovered = false;
+            if (hoverStorage) {
+                for (Entity e : m_World->GetEntitiesWithComponent<HoverHighlightComponent>()) {
+                    const auto* h = hoverStorage->Get(e);
+                    if (h && h->enabled && h->hovered) { anyHovered = true; break; }
+                }
+            }
+
+            if (m_GeometryOutlinesEnabled || anyHovered) {
+                // ObjectData for the outlined subset, in draw order. It is the
+                // main pass's own ObjectData copied and edited, so the model
+                // matrix and the skinned flag are already right and the hull
+                // cannot drift away from the mesh it belongs to.
+                struct OutlineCmd { Entity entity; u32 offset; };
+                static std::vector<u8> outlineData;
+                static std::vector<OutlineCmd> outlineCmds;
+                outlineData.clear();
+                outlineCmds.clear();
+
+                for (const auto& cmd : drawCmds) {
+                    if (cmd.transparent) continue;
+
+                    auto* olMat = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(cmd.entity) : nullptr;
+                    if (olMat && olMat->excludeFromCelShading) continue;
+
+                    f32 outlineWidth = m_GeometryOutlineWidth;
+                    Math::Vector3 outlineColor = m_GeometryOutlineColor;
+                    if (olMat && olMat->outlineWidth > 0.0f) {
+                        outlineWidth = olMat->outlineWidth;
+                        outlineColor = olMat->outlineColor;
+                    }
+                    auto* olArt = m_CachedArtStyleStorage ? m_CachedArtStyleStorage->Get(cmd.entity) : nullptr;
+                    if (olArt && olArt->style == ArtStyleType::CelToon && olArt->cel_outlineWidth > 0.0f) {
+                        outlineWidth = olArt->cel_outlineWidth;
+                        outlineColor = olArt->cel_outlineColor;
+                    }
+
+                    const HoverHighlightComponent* hov = hoverStorage ? hoverStorage->Get(cmd.entity) : nullptr;
+                    const bool highlighted = hov && hov->enabled && hov->hovered;
+                    if (highlighted) {
+                        outlineColor = hov->color;
+                        outlineWidth = hov->thickness;
+                        if (hov->style != HighlightStyle::Solid && hov->speed > 0.0f) {
+                            const f32 phase = GetHighlightTime() * hov->speed;
+                            if (hov->style == HighlightStyle::Pulse) {
+                                const f32 wave = 0.5f + 0.5f * std::sin(phase * 6.2831853f);
+                                const f32 depth = (hov->pulseDepth < 0.0f) ? 0.0f
+                                                : (hov->pulseDepth > 1.0f ? 1.0f : hov->pulseDepth);
+                                outlineWidth *= 1.0f - depth * (1.0f - wave);
+                            } else {
+                                const f32 t = phase - std::floor(phase);
+                                if (t > 0.5f) outlineWidth = 0.0f;
+                            }
+                        }
+                    } else if (!m_GeometryOutlinesEnabled) {
+                        continue;   // outlines off globally, and this one is not lit up
+                    }
+                    if (outlineWidth <= 0.0f) continue;   // a Flash in its off half
+
+                    WebObjectDataUBO ol{};
+                    std::memcpy(&ol, objDataBuf.data() + cmd.offset, sizeof(ol));
+                    ol.baseColor = outlineColor;   // repurposed, exactly as outline.vert does
+                    ol.metallic = outlineWidth;
+
+                    const u32 olOffset = static_cast<u32>(outlineData.size());
+                    outlineData.resize(olOffset + sizeof(ol));
+                    std::memcpy(outlineData.data() + olOffset, &ol, sizeof(ol));
+                    outlineCmds.push_back({cmd.entity, olOffset});
+                }
+
+                if (!outlineCmds.empty()) {
+                    encoder->BindPipeline(m_WebOutlinePipeline);
+                    encoder->SetBindGroup(0, m_WebFrameBindGroup);
+
+                    // Consecutive entries sharing a mesh instance into one draw.
+                    // drawCmds is already grouped by mesh for the main pass and
+                    // the outline list keeps that order, so the batches survive.
+                    // A skinned entity owns its bone buffer and cannot share one.
+                    usize oi = 0;
+                    while (oi < outlineCmds.size()) {
+                        auto& olRD = m_EntityRenderData[EntityIndex(outlineCmds[oi].entity)];
+                        if (!olRD.vertexBuffer.IsValid() || !olRD.indexBuffer.IsValid() || olRD.indexCount == 0) {
+                            oi++;
+                            continue;
+                        }
+
+                        usize olEnd = oi + 1;
+                        if (!olRD.boneBuffer.IsValid()) {
+                            while (olEnd < outlineCmds.size()) {
+                                auto& nextRD = m_EntityRenderData[EntityIndex(outlineCmds[olEnd].entity)];
+                                if (nextRD.boneBuffer.IsValid()) break;
+                                if (nextRD.vertexBuffer.id != olRD.vertexBuffer.id) break;
+                                if (nextRD.indexBuffer.id != olRD.indexBuffer.id) break;
+                                olEnd++;
+                            }
+                        }
+
+                        const u32 olInstances = static_cast<u32>(olEnd - oi);
+                        const usize olBytes = olInstances * sizeof(WebObjectDataUBO);
+                        auto olBuf = bufMgr->CreateBufferWithData(
+                            {olBytes, Renderer::GPUBufferUsage::Storage | Renderer::GPUBufferUsage::CopyDst, true},
+                            outlineData.data() + outlineCmds[oi].offset);
+
+                        Renderer::GPUBindGroupDesc olBGD;
+                        olBGD.layout = m_WebObjectLayout;
+                        olBGD.entries = {
+                            {0, olBuf, 0, olBytes, {}, {}},
+                            {1, olRD.boneBuffer.IsValid() ? olRD.boneBuffer : m_WebDefaultBoneBuffer, 0, 0, {}, {}},
+                        };
+                        auto olBG = bindMgr->CreateBindGroup(olBGD);
+
+                        encoder->SetBindGroup(1, olBG);
+                        encoder->SetVertexBuffer(0, olRD.vertexBuffer);
+                        encoder->SetIndexBuffer(olRD.indexBuffer, Renderer::GPUIndexFormat::Uint32);
+                        encoder->DrawIndexed(olRD.indexCount, olInstances);
+
+                        m_DrawCallCount++;
+                        m_TriangleCount += (olRD.indexCount / 3) * olInstances;
+
+                        bindMgr->DestroyBindGroup(olBG);
+                        bufMgr->DestroyBuffer(olBuf);
+                        oi = olEnd;
+                    }
+                }
+            }
+        }
     }
 
     // ========================================================================
@@ -3434,6 +4023,132 @@ void RenderSystem::Update(f32 deltaTime) {
         wgpuRenderPassEncoderEnd(scenePassEncoder);
         wgpuRenderPassEncoderRelease(scenePassEncoder);
 
+        // ====================================================================
+        // Weighted blended OIT
+        // ====================================================================
+        // Runs after the scene pass, which is also after the sky: the sky is a
+        // z = 1 fullscreen triangle, so anything transparent drawn before it is
+        // painted over.
+        //
+        // Depth is loaded, not cleared, and the pipeline does not write it, so
+        // transparency is hidden by opaque geometry in front of it and never
+        // hides other transparency. That is what makes the accumulation
+        // order-independent.
+        if (webOITActive && !webOITDraws.empty() && webRenderer->GetCommandEncoder()) {
+            WGPURenderPassColorAttachment oitAtts[2] = {};
+            oitAtts[0].view = static_cast<WGPUTextureView>(m_WebOITAccumView);
+            oitAtts[0].depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+            oitAtts[0].loadOp = WGPULoadOp_Clear;
+            oitAtts[0].storeOp = WGPUStoreOp_Store;
+            oitAtts[0].clearValue = {0.0, 0.0, 0.0, 0.0};
+            // Revealage starts fully revealed: nothing transparent has covered
+            // the pixel yet, so all of the opaque scene shows through.
+            oitAtts[1].view = static_cast<WGPUTextureView>(m_WebOITRevealView);
+            oitAtts[1].depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+            oitAtts[1].loadOp = WGPULoadOp_Clear;
+            oitAtts[1].storeOp = WGPUStoreOp_Store;
+            oitAtts[1].clearValue = {1.0, 1.0, 1.0, 1.0};
+
+            WGPURenderPassDepthStencilAttachment oitDepth = {};
+            oitDepth.view = static_cast<WGPUTextureView>(m_WebSceneDepthView);
+            oitDepth.depthLoadOp = WGPULoadOp_Load;
+            oitDepth.depthStoreOp = WGPUStoreOp_Store;
+            oitDepth.stencilLoadOp = WGPULoadOp_Load;
+            oitDepth.stencilStoreOp = WGPUStoreOp_Store;
+
+            WGPURenderPassDescriptor oitPassDesc = {};
+            oitPassDesc.colorAttachmentCount = 2;
+            oitPassDesc.colorAttachments = oitAtts;
+            oitPassDesc.depthStencilAttachment = &oitDepth;
+
+            WGPURenderPassEncoder oitPass =
+                wgpuCommandEncoderBeginRenderPass(webRenderer->GetCommandEncoder(), &oitPassDesc);
+            if (oitPass) {
+                auto* oitBufMgr = static_cast<Renderer::WebGPUBufferManager*>(bufMgr);
+                wgpuRenderPassEncoderSetPipeline(oitPass, webPipeMgr->GetNativePipeline(m_WebOITPipeline));
+                wgpuRenderPassEncoderSetBindGroup(oitPass, 0,
+                    webBindMgr->GetNativeGroup(m_WebFrameBindGroup), 0, nullptr);
+                if (m_WebShadowSampleBG.IsValid()) {
+                    wgpuRenderPassEncoderSetBindGroup(oitPass, 3,
+                        webBindMgr->GetNativeGroup(m_WebShadowSampleBG), 0, nullptr);
+                }
+
+                for (const auto& od : webOITDraws) {
+                    const u64 oeid = EntityIndex(od.first);
+                    if (oeid >= m_EntityRenderData.size()) continue;
+                    auto& ord = m_EntityRenderData[oeid];
+                    if (!ord.valid || !ord.vertexBuffer.IsValid() || !ord.indexBuffer.IsValid()) continue;
+                    if (ord.indexCount == 0) continue;
+
+                    // Same rule as the opaque pass: only a skinned entity needs
+                    // its own object bind group, because binding 1 is its bones.
+                    //
+                    // It has to be BUILT here, not just looked up. Transparent
+                    // entities skip the opaque loop entirely now, so nothing
+                    // else would ever create it, and falling back to the shared
+                    // group would bind the default single identity bone - which
+                    // for a mesh flagged skinned collapses it onto the origin.
+                    Renderer::GPUBindGroupHandle objBG = m_WebObjectArrayBG;
+                    if (ord.boneBuffer.IsValid() && m_WebObjectArrayBuf.IsValid()) {
+                        auto* oitBindMgr = m_Renderer->GetBindGroupManager();
+                        if (oitBindMgr && (!ord.objBoneBindGroup.IsValid()
+                                           || ord.objBoneBindGroupGen != m_WebObjectArrayGen)) {
+                            if (ord.objBoneBindGroup.IsValid())
+                                oitBindMgr->DestroyBindGroup(ord.objBoneBindGroup);
+                            Renderer::GPUBindGroupDesc obgd;
+                            obgd.layout = m_WebObjectLayout;
+                            obgd.entries = {
+                                {0, m_WebObjectArrayBuf, 0, m_WebObjectArrayCapacity, {}, {}},
+                                {1, ord.boneBuffer, 0, 0, {}, {}},
+                            };
+                            ord.objBoneBindGroup = oitBindMgr->CreateBindGroup(obgd);
+                            ord.objBoneBindGroupGen = m_WebObjectArrayGen;
+                        }
+                        if (ord.objBoneBindGroup.IsValid()) objBG = ord.objBoneBindGroup;
+                    }
+                    if (!objBG.IsValid()) continue;
+
+                    auto texBG = ord.texBindGroup.IsValid() ? ord.texBindGroup : m_WebDefaultTexBindGroup;
+                    wgpuRenderPassEncoderSetBindGroup(oitPass, 1, webBindMgr->GetNativeGroup(objBG), 0, nullptr);
+                    wgpuRenderPassEncoderSetBindGroup(oitPass, 2, webBindMgr->GetNativeGroup(texBG), 0, nullptr);
+                    wgpuRenderPassEncoderSetVertexBuffer(oitPass, 0,
+                        oitBufMgr->GetNativeBuffer(ord.vertexBuffer), 0, WGPU_WHOLE_SIZE);
+                    wgpuRenderPassEncoderSetIndexBuffer(oitPass,
+                        oitBufMgr->GetNativeBuffer(ord.indexBuffer), WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
+                    wgpuRenderPassEncoderDrawIndexed(oitPass, ord.indexCount, 1, 0, 0, od.second);
+
+                    m_DrawCallCount++;
+                    m_TriangleCount += ord.indexCount / 3;
+                }
+
+                wgpuRenderPassEncoderEnd(oitPass);
+                wgpuRenderPassEncoderRelease(oitPass);
+
+                // Resolve the pair back over the opaque scene. Loading, not
+                // clearing: the opaque image is what it composites onto.
+                WGPURenderPassColorAttachment compAtt = {};
+                compAtt.view = static_cast<WGPUTextureView>(m_WebSceneColorView);
+                compAtt.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+                compAtt.loadOp = WGPULoadOp_Load;
+                compAtt.storeOp = WGPUStoreOp_Store;
+                WGPURenderPassDescriptor compDesc = {};
+                compDesc.colorAttachmentCount = 1;
+                compDesc.colorAttachments = &compAtt;
+
+                WGPURenderPassEncoder compPass =
+                    wgpuCommandEncoderBeginRenderPass(webRenderer->GetCommandEncoder(), &compDesc);
+                if (compPass) {
+                    wgpuRenderPassEncoderSetPipeline(compPass,
+                        webPipeMgr->GetNativePipeline(m_WebOITCompositePipeline));
+                    wgpuRenderPassEncoderSetBindGroup(compPass, 0,
+                        webBindMgr->GetNativeGroup(m_WebOITCompositeBG), 0, nullptr);
+                    wgpuRenderPassEncoderDraw(compPass, 3, 1, 0, 0);
+                    wgpuRenderPassEncoderEnd(compPass);
+                    wgpuRenderPassEncoderRelease(compPass);
+                }
+            }
+        }
+
         // Bloom chain (between scene and final tonemap)
         if (m_WebBloomThresholdPipeline.IsValid()) {
             auto bloomPass = [&](WGPUTextureView target, u32 tw, u32 th, WGPURenderPipeline pipe, WGPUBindGroup bg) {
@@ -3510,6 +4225,12 @@ void RenderSystem::Update(f32 deltaTime) {
         // Upload accessibility + post-process params to the PP UBO. Stamp the clock so
         // animated effects (film grain) move; wind clock, or frame time as fallback.
         m_WebPPAccessibility.timeSec = m_WindSystem ? m_WindSystem->GetTime() : 0.0f;
+        // The depth effects linearise with these; a wrong pair does not make
+        // them inaccurate, it makes every depth comparison meaningless.
+        if (m_Camera) {
+            m_WebPPAccessibility.nearPlane = m_Camera->GetNearPlane();
+            m_WebPPAccessibility.farPlane = m_Camera->GetFarPlane();
+        }
         if (m_WebPPAccessibilityBuffer.IsValid() && bufMgr) {
             bufMgr->UploadData(m_WebPPAccessibilityBuffer, &m_WebPPAccessibility, sizeof(WebPPAccessibilityParams));
         }
@@ -3563,6 +4284,7 @@ void RenderSystem::OnEntityRemoved(Entity entity) {
             if (rd.indexBuffer.IsValid()) bufMgr->DestroyBuffer(rd.indexBuffer);
         }
         if (bindMgr && rd.texBindGroup.IsValid()) bindMgr->DestroyBindGroup(rd.texBindGroup);
+        if (bindMgr && rd.objBoneBindGroup.IsValid()) bindMgr->DestroyBindGroup(rd.objBoneBindGroup);
         rd.Invalidate();
     }
 }
@@ -3574,11 +4296,17 @@ void RenderSystem::FlushSceneClear() {
     m_SceneClearPending = false;
 
     auto* bufMgr = m_Renderer ? m_Renderer->GetBufferManager() : nullptr;
+    auto* bindMgr = m_Renderer ? m_Renderer->GetBindGroupManager() : nullptr;
     if (bufMgr) {
         for (auto& rd : m_EntityRenderData) {
             if (rd.valid) {
                 if (rd.vertexBuffer.IsValid()) bufMgr->DestroyBuffer(rd.vertexBuffer);
                 if (rd.indexBuffer.IsValid()) bufMgr->DestroyBuffer(rd.indexBuffer);
+                // The bind groups used to be left behind here, so every scene
+                // change leaked one texture group and one object group per
+                // entity for the life of the tab.
+                if (bindMgr && rd.texBindGroup.IsValid()) bindMgr->DestroyBindGroup(rd.texBindGroup);
+                if (bindMgr && rd.objBoneBindGroup.IsValid()) bindMgr->DestroyBindGroup(rd.objBoneBindGroup);
                 rd.Invalidate();
             }
         }
@@ -5285,6 +6013,11 @@ void RenderSystem::FlushPendingChanges() {
 
 void RenderSystem::Update(f32 deltaTime) {
     ENJIN_PROFILE_SCOPE("RenderSys/Update");   // CPU update: skeletal animation, IK, culling, buffer setup (editor skips main-pass draw)
+    // Drives hover-highlight Pulse/Flash. The web Update ticked this and the
+    // Vulkan one did not, so the only runtime with an outline pass to read the
+    // clock was reading a clock that never moved: Pulse held at half depth and
+    // Flash stayed permanently on.
+    TickHighlightTime(deltaTime);
     if (!m_Renderer || !m_Initialized) {
         return;
     }
@@ -8006,6 +8739,9 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                             if (tex && tex->IsValid()) { slotMat->cachedMatcapTexture = tex.get(); slotMat->matcapTexture = 1; }
                         }
                         slotMat->textureCacheDirty = false;
+                        // The slot's SSBO entry was built before these resolved,
+                        // so it still holds default handles. Rebuild next frame.
+                        m_MaterialSSBODirty = true;
                         slotMat->cachedTextureKey = { slotMat->cachedBaseColorTexture,
                             slotMat->cachedHeightTexture, slotMat->cachedNormalTexture,
                             slotMat->cachedMetallicRoughnessTexture, slotMat->cachedEmissiveTexture,
@@ -8039,14 +8775,17 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                         sizeof(Renderer::PushConstants), &subPC);
 
-                    // Draw this sub-mesh range (firstInstance = material index, adr-0003;
-                    // sub-meshes share the entity's extended-material entry as before)
+                    // firstInstance = THIS SLOT's material entry (adr-0003), not the
+                    // entity's. The entry carries the bindless texture index, so
+                    // passing the entity's made every sub-mesh sample the entity's
+                    // texture no matter what the slot said.
+                    const u32 slotMatIdx = GetSlotMaterialIndex(entity, subMesh.materialSlot);
                     if (poolPath) {
                         vkCmdDrawIndexed(commandBuffer, subMesh.indexCount, 1,
                                          renderData.poolAlloc.indexOffset + subMesh.indexOffset,
-                                         renderData.poolAlloc.vertexOffset, matIdx);
+                                         renderData.poolAlloc.vertexOffset, slotMatIdx);
                     } else {
-                        vkCmdDrawIndexed(commandBuffer, subMesh.indexCount, 1, subMesh.indexOffset, 0, matIdx);
+                        vkCmdDrawIndexed(commandBuffer, subMesh.indexCount, 1, subMesh.indexOffset, 0, slotMatIdx);
                     }
                     m_DrawCallCount++;
                     m_TriangleCount += subMesh.indexCount / 3;
@@ -10851,7 +11590,7 @@ void RenderSystem::UpdateFrameUniforms() {
         lighting.spotShadowCount = 0;
         lighting.fogParams = Math::Vector4(m_FogDensity, m_FogStart, m_FogEnd, m_FogHeightFalloff);
         lighting.fogColorSnow = Math::Vector4(m_FogColor.x, m_FogColor.y, m_FogColor.z,
-            m_MainPassWeather ? m_MainPassWeather->GetSnowAccumulation() : m_SnowIntensity);
+            GetSnowAccumulation());   // authored snow is a floor; weather adds to it
         if (m_WindSystem) lighting.windData = m_WindSystem->GetWindVector();
         (*m_ActiveLightingBuffers)[GetActiveBufferIndex(currentFrame)]->UploadData(&lighting, sizeof(lighting));
         m_CachedLightingData = lighting;
@@ -11070,7 +11809,7 @@ void RenderSystem::UpdateFrameUniforms() {
 
     lighting.fogParams = Math::Vector4(m_FogDensity, m_FogStart, m_FogEnd, m_FogHeightFalloff);
     lighting.fogColorSnow = Math::Vector4(m_FogColor.x, m_FogColor.y, m_FogColor.z,
-        m_MainPassWeather ? m_MainPassWeather->GetSnowAccumulation() : m_SnowIntensity);
+        GetSnowAccumulation());   // authored snow is a floor; weather adds to it
 
     // Look up cached player entity position for vegetation stepping (O(1) instead of linear scan)
     lighting.playerPosition = Math::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
@@ -11182,7 +11921,8 @@ void RenderSystem::EnsureMaterialSSBOCapacity() {
     if (!m_Renderer || !m_Initialized || !m_World) return;
     if (m_MaterialBuffers.empty() || m_MaterialSSBOStride == 0) return;
 
-    u32 entityCount = static_cast<u32>(m_World->GetEntitiesWithComponent<MeshComponent>().size());
+    // Entries, not entities: a multi-material mesh contributes one per slot.
+    u32 entityCount = CountMaterialSSBOEntries();
     if (entityCount <= m_MaterialSSBOCapacity) return;  // buffers already large enough
 
     u32 newCapacity = entityCount + (entityCount / 2);  // 1.5x growth headroom
@@ -11336,7 +12076,9 @@ void RenderSystem::BuildMaterialSSBO() {
 
     // Collect all renderable entities and build material data
     const auto& meshEntities = m_World->GetEntitiesWithComponent<MeshComponent>();
-    u32 entityCount = static_cast<u32>(meshEntities.size());
+    // ENTRIES, not entities: every material slot needs its own, because the
+    // entry is what carries the bindless texture index the shader samples.
+    u32 entityCount = CountMaterialSSBOEntries();
     if (entityCount == 0) {
         // Upload a single default material so the SSBO is never empty
         MaterialComponent defaultMat;
@@ -11359,6 +12101,7 @@ void RenderSystem::BuildMaterialSSBO() {
 
     // Full rebuild path: entity count changed or materials are dirty
     m_EntityMaterialIndex.clear();
+    m_EntitySlotMaterialBase.clear();
     m_MaterialSSBOCount = 0;
 
     // GPU buffer growth happens ahead of recording in EnsureMaterialSSBOCapacity()
@@ -11447,6 +12190,38 @@ void RenderSystem::BuildMaterialSSBO() {
 
         m_EntityMaterialIndex[static_cast<u64>(entity)] = index;
         ++index;
+
+        // One entry per material slot, straight after the entity's own. The
+        // sub-mesh draw selects its slot with firstInstance; before this every
+        // sub-mesh was drawn with the entity's index and therefore sampled the
+        // entity's texture, so an imported tree wore its bark on its leaves.
+        //
+        // Slot textures are loaded lazily by the sub-mesh draw, so on the first
+        // frame a slot resolves to the default handle; that draw marks the SSBO
+        // dirty once it has them, and the next rebuild picks them up. Loading
+        // them HERE is not an option - this runs mid command-buffer recording,
+        // and GetOrLoadTexture registers into the bindless set.
+        auto* ssboSlots = m_CachedMaterialSlotsStorage
+            ? m_CachedMaterialSlotsStorage->Get(entity) : nullptr;
+        if (ssboSlots && !ssboSlots->slots.empty()) {
+            m_EntitySlotMaterialBase[static_cast<u64>(entity)] = index;
+            for (auto& slotMat : ssboSlots->slots) {
+                if (index >= entityCount) break;
+                MaterialGPU slotGPU = MaterialGPU::FromComponent(slotMat);
+                const u8 sfm = slotMat.textureFilterOverride;
+                slotGPU.baseColorTexIdx         = lookupBindless(slotMat.cachedBaseColorTexture, sfm);
+                slotGPU.heightTexIdx            = lookupBindless(slotMat.cachedHeightTexture, sfm);
+                slotGPU.normalTexIdx            = lookupBindless(slotMat.cachedNormalTexture, sfm);
+                slotGPU.metallicRoughnessTexIdx = lookupBindless(slotMat.cachedMetallicRoughnessTexture, sfm);
+                slotGPU.emissiveTexIdx          = lookupBindless(slotMat.cachedEmissiveTexture, sfm);
+                slotGPU.matcapTexIdx            = lookupBindless(slotMat.cachedMatcapTexture, sfm);
+                slotGPU.scrollReflTexIdx        = lookupBindless(slotMat.cachedScrollReflectionTexture, sfm);
+
+                usize slotOffset = static_cast<usize>(m_MaterialSSBOStride) * index;
+                std::memcpy(m_MaterialSSBOData.data() + slotOffset, &slotGPU, sizeof(MaterialGPU));
+                ++index;
+            }
+        }
     }
 
     m_MaterialSSBOCount = index;
@@ -11461,6 +12236,29 @@ void RenderSystem::BuildMaterialSSBO() {
 u32 RenderSystem::GetMaterialIndex(Entity entity) const {
     auto it = m_EntityMaterialIndex.find(static_cast<u64>(entity));
     return (it != m_EntityMaterialIndex.end()) ? it->second : 0;
+}
+
+u32 RenderSystem::GetSlotMaterialIndex(Entity entity, i32 slot) const {
+    if (slot < 0) return GetMaterialIndex(entity);
+    auto it = m_EntitySlotMaterialBase.find(static_cast<u64>(entity));
+    if (it == m_EntitySlotMaterialBase.end()) return GetMaterialIndex(entity);
+    const auto* slots = m_CachedMaterialSlotsStorage
+        ? m_CachedMaterialSlotsStorage->Get(entity) : nullptr;
+    if (!slots || slot >= static_cast<i32>(slots->slots.size())) return GetMaterialIndex(entity);
+    return it->second + static_cast<u32>(slot);
+}
+
+u32 RenderSystem::CountMaterialSSBOEntries() const {
+    if (!m_World) return 0;
+    const auto& meshEntities = m_World->GetEntitiesWithComponent<MeshComponent>();
+    u32 total = static_cast<u32>(meshEntities.size());
+    if (m_CachedMaterialSlotsStorage) {
+        for (Entity e : meshEntities) {
+            const auto* slots = m_CachedMaterialSlotsStorage->Get(e);
+            if (slots) total += static_cast<u32>(slots->slots.size());
+        }
+    }
+    return total;
 }
 
 void RenderSystem::UpdateMaterialBuffer(Entity entity) {
@@ -15065,153 +15863,6 @@ void RenderSystem::UploadMorphTargetSSBO(Entity entity, ECS::MorphTargetComponen
     }
 }
 
-void RenderSystem::EnsureWaterMeshes() {
-    for (Entity entity : m_World->GetEntitiesWithComponent<WaterVolumeComponent>()) {
-        auto* waterVol = m_CachedWaterVolumeStorage ? m_CachedWaterVolumeStorage->Get(entity) : m_World->GetComponent<WaterVolumeComponent>(entity);
-        if (!waterVol) continue;
-        // Creative-mode editable outline: when present, the water surface is a polygon
-        // triangulated from these points (drag/pull/bend), and it regenerates whenever
-        // the boundary is dirty (live during drag + on edit).
-        auto* boundary = m_World->GetComponent<BoundaryPolygonComponent>(entity);
-        const bool usePolygon = boundary && boundary->points.size() >= 3;
-        const bool boundaryDirty = usePolygon && boundary->dirty;
-        if (waterVol->meshCreated && m_World->GetComponent<MeshComponent>(entity) && !boundaryDirty) continue;
-        const bool regen = waterVol->meshCreated;   // already existed -> this is a rebuild
-
-        // Create the water surface mesh — polygon (Creative outline) or subdivided plane.
-        MeshComponent mesh;
-        f32 hx = waterVol->halfExtents.x;
-        f32 hz = waterVol->halfExtents.z;
-
-        if (usePolygon) {
-            // Fan-triangulate from the centroid. Local XZ, Y=0. color.y carries the
-            // edge distance the water shader uses for shoreline foam (center=1, rim=0).
-            Math::Vector2 c(0.0f, 0.0f);
-            for (const auto& p : boundary->points) c = c + p;
-            c = c * (1.0f / static_cast<f32>(boundary->points.size()));
-            auto makeV = [&](Math::Vector2 xz, f32 edgeDist) {
-                MeshComponent::Vertex v;
-                v.position = Math::Vector3(xz.x, 0.0f, xz.y);
-                v.normal = Math::Vector3(0.0f, 1.0f, 0.0f);
-                v.uv = Math::Vector2(0.5f + xz.x * 0.02f, 0.5f + xz.y * 0.02f);
-                v.color = Math::Vector4(waterVol->waterColor.x, edgeDist, waterVol->waterColor.z, waterVol->opacity);
-                return v;
-            };
-            const u32 n = static_cast<u32>(boundary->points.size());
-            mesh.vertices.reserve(n + 1);
-            mesh.indices.reserve(n * 3);
-            mesh.vertices.push_back(makeV(c, 1.0f));                    // 0 = centroid
-            for (u32 i = 0; i < n; ++i) mesh.vertices.push_back(makeV(boundary->points[i], 0.0f));
-            for (u32 i = 0; i < n; ++i) {
-                mesh.indices.push_back(0);
-                mesh.indices.push_back(1 + i);
-                mesh.indices.push_back(1 + ((i + 1) % n));
-            }
-            boundary->dirty = false;
-        } else {
-
-        const u32 segsX = 20;
-        const u32 segsZ = 20;
-        mesh.vertices.reserve((segsX + 1) * (segsZ + 1));
-        mesh.indices.reserve(segsX * segsZ * 6);
-
-        for (u32 zi = 0; zi <= segsZ; ++zi) {
-            for (u32 xi = 0; xi <= segsX; ++xi) {
-                MeshComponent::Vertex v;
-                f32 u = static_cast<f32>(xi) / segsX;
-                f32 vt = static_cast<f32>(zi) / segsZ;
-                v.position = Math::Vector3(
-                    -hx + u * 2.0f * hx,
-                    0.0f,
-                    -hz + vt * 2.0f * hz
-                );
-                v.normal = Math::Vector3(0.0f, 1.0f, 0.0f);
-                v.uv = Math::Vector2(u, vt);
-
-                // Compute minimum distance to any edge (normalized 0=edge, 1=center)
-                f32 distLeft = u;
-                f32 distRight = 1.0f - u;
-                f32 distTop = vt;
-                f32 distBottom = 1.0f - vt;
-                f32 minEdgeDist = std::min(std::min(distLeft, distRight), std::min(distTop, distBottom));
-                // Normalize so center = 1.0 (max edge dist is 0.5)
-                f32 edgeDist = std::min(minEdgeDist * 2.0f, 1.0f);
-
-                // R = water color red (unused by shader for water), G = edge distance, B = unused, A = opacity
-                v.color = Math::Vector4(
-                    waterVol->waterColor.x,
-                    edgeDist,
-                    waterVol->waterColor.z,
-                    waterVol->opacity
-                );
-                mesh.vertices.push_back(v);
-            }
-        }
-
-        for (u32 zi = 0; zi < segsZ; ++zi) {
-            for (u32 xi = 0; xi < segsX; ++xi) {
-                u32 tl = zi * (segsX + 1) + xi;
-                u32 tr = tl + 1;
-                u32 bl = (zi + 1) * (segsX + 1) + xi;
-                u32 br = bl + 1;
-
-                mesh.indices.push_back(tl);
-                mesh.indices.push_back(bl);
-                mesh.indices.push_back(tr);
-
-                mesh.indices.push_back(tr);
-                mesh.indices.push_back(bl);
-                mesh.indices.push_back(br);
-            }
-        }
-        }  // end else (subdivided-plane grid path)
-
-        // Replace the mesh (rebuild-safe: retire old GPU buffers first on a regen).
-        if (regen && static_cast<usize>(EntityIndex(entity)) < m_EntityRenderData.size())
-            RetireEntityBuffers(m_EntityRenderData[static_cast<usize>(EntityIndex(entity))]);
-        if (m_World->HasComponent<MeshComponent>(entity))
-            *m_World->GetComponent<MeshComponent>(entity) = std::move(mesh);
-        else
-            m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
-
-        // Add material with water visual properties based on water type
-        MaterialComponent material;
-        material.baseColor = waterVol->waterColor;
-        material.opacity = waterVol->opacity;
-        material.doubleSided = true;
-        material.castShadows = false;
-        material.alphaMode = static_cast<MaterialComponent::AlphaMode>(0);  // Opaque — writes depth
-
-        // Water type presets for material properties
-        switch (waterVol->waterType) {
-            case WaterType::Ocean:
-                material.metallic = 0.4f;
-                material.roughness = 0.05f;
-                break;
-            case WaterType::River:
-                material.metallic = 0.25f;
-                material.roughness = 0.15f;
-                break;
-            case WaterType::Pond:
-                material.metallic = 0.2f;
-                material.roughness = 0.2f;
-                break;
-            case WaterType::Lake:
-            default:
-                material.metallic = 0.3f;
-                material.roughness = 0.1f;
-                break;
-        }
-
-        m_World->AddComponent<MaterialComponent>(entity, material);
-
-        SetupEntityBuffers(entity);
-        waterVol->meshCreated = true;
-
-        ENJIN_LOG_INFO(Renderer, "Created water surface mesh for entity %llu (%.0f x %.0f)",
-            entity, hx * 2.0f, hz * 2.0f);
-    }
-}
 
 void RenderSystem::EnsureWater3DMeshes() {
     if (!m_World) return;
@@ -19839,3 +20490,184 @@ void RenderSystem::SetUpscalerQuality(u32 quality) {
 } // namespace Enjin
 
 #endif // !ENJIN_RENDERER_WEBGPU
+
+
+// ============================================================================
+// Shared: water surface mesh generation.
+//
+// This lived inside the !ENJIN_RENDERER_WEBGPU branch, as did its declaration
+// and its only call site, so a web build never generated a mesh for ANY water
+// volume: meshCreated stayed false and the surface simply did not exist. It is
+// 147 lines whose only desktop-specific dependency is one SetupEntityBuffers
+// call, so it moves here whole rather than being copied per backend.
+// ============================================================================
+namespace Enjin {
+namespace ECS {
+
+// Settled snow, 0..1 - the same number the lighting UBO carries, so nothing
+// that reads it can disagree with the ground. Defined here, outside the
+// backend split, because it is declared unconditionally in the header.
+f32 RenderSystem::GetSnowAccumulation() const {
+    const f32 weatherSnow = m_MainPassWeather ? m_MainPassWeather->GetSnowAccumulation() : 0.0f;
+    const f32 live = std::max(std::max(weatherSnow, m_WeatherSkySnow), m_SnowIntensity);
+    return std::max(live, m_AuthoredSnowIntensity);
+}
+
+void RenderSystem::EnsureWaterMeshes() {
+    for (Entity entity : m_World->GetEntitiesWithComponent<WaterVolumeComponent>()) {
+        auto* waterVol = m_CachedWaterVolumeStorage ? m_CachedWaterVolumeStorage->Get(entity) : m_World->GetComponent<WaterVolumeComponent>(entity);
+        if (!waterVol) continue;
+        // Creative-mode editable outline: when present, the water surface is a polygon
+        // triangulated from these points (drag/pull/bend), and it regenerates whenever
+        // the boundary is dirty (live during drag + on edit).
+        auto* boundary = m_World->GetComponent<BoundaryPolygonComponent>(entity);
+        const bool usePolygon = boundary && boundary->points.size() >= 3;
+        const bool boundaryDirty = usePolygon && boundary->dirty;
+        if (waterVol->meshCreated && m_World->GetComponent<MeshComponent>(entity) && !boundaryDirty) continue;
+        const bool regen = waterVol->meshCreated;   // already existed -> this is a rebuild
+
+        // Create the water surface mesh — polygon (Creative outline) or subdivided plane.
+        MeshComponent mesh;
+        f32 hx = waterVol->halfExtents.x;
+        f32 hz = waterVol->halfExtents.z;
+
+        if (usePolygon) {
+            // Fan-triangulate from the centroid. Local XZ, Y=0. color.y carries the
+            // edge distance the water shader uses for shoreline foam (center=1, rim=0).
+            Math::Vector2 c(0.0f, 0.0f);
+            for (const auto& p : boundary->points) c = c + p;
+            c = c * (1.0f / static_cast<f32>(boundary->points.size()));
+            auto makeV = [&](Math::Vector2 xz, f32 edgeDist) {
+                MeshComponent::Vertex v;
+                v.position = Math::Vector3(xz.x, 0.0f, xz.y);
+                v.normal = Math::Vector3(0.0f, 1.0f, 0.0f);
+                v.uv = Math::Vector2(0.5f + xz.x * 0.02f, 0.5f + xz.y * 0.02f);
+                v.color = Math::Vector4(waterVol->waterColor.x, edgeDist, waterVol->waterColor.z, waterVol->opacity);
+                return v;
+            };
+            const u32 n = static_cast<u32>(boundary->points.size());
+            mesh.vertices.reserve(n + 1);
+            mesh.indices.reserve(n * 3);
+            mesh.vertices.push_back(makeV(c, 1.0f));                    // 0 = centroid
+            for (u32 i = 0; i < n; ++i) mesh.vertices.push_back(makeV(boundary->points[i], 0.0f));
+            for (u32 i = 0; i < n; ++i) {
+                mesh.indices.push_back(0);
+                mesh.indices.push_back(1 + i);
+                mesh.indices.push_back(1 + ((i + 1) % n));
+            }
+            boundary->dirty = false;
+        } else {
+
+        const u32 segsX = 20;
+        const u32 segsZ = 20;
+        mesh.vertices.reserve((segsX + 1) * (segsZ + 1));
+        mesh.indices.reserve(segsX * segsZ * 6);
+
+        for (u32 zi = 0; zi <= segsZ; ++zi) {
+            for (u32 xi = 0; xi <= segsX; ++xi) {
+                MeshComponent::Vertex v;
+                f32 u = static_cast<f32>(xi) / segsX;
+                f32 vt = static_cast<f32>(zi) / segsZ;
+                v.position = Math::Vector3(
+                    -hx + u * 2.0f * hx,
+                    0.0f,
+                    -hz + vt * 2.0f * hz
+                );
+                v.normal = Math::Vector3(0.0f, 1.0f, 0.0f);
+                v.uv = Math::Vector2(u, vt);
+
+                // Compute minimum distance to any edge (normalized 0=edge, 1=center)
+                f32 distLeft = u;
+                f32 distRight = 1.0f - u;
+                f32 distTop = vt;
+                f32 distBottom = 1.0f - vt;
+                f32 minEdgeDist = std::min(std::min(distLeft, distRight), std::min(distTop, distBottom));
+                // Normalize so center = 1.0 (max edge dist is 0.5)
+                f32 edgeDist = std::min(minEdgeDist * 2.0f, 1.0f);
+
+                // R = water color red (unused by shader for water), G = edge distance, B = unused, A = opacity
+                v.color = Math::Vector4(
+                    waterVol->waterColor.x,
+                    edgeDist,
+                    waterVol->waterColor.z,
+                    waterVol->opacity
+                );
+                mesh.vertices.push_back(v);
+            }
+        }
+
+        for (u32 zi = 0; zi < segsZ; ++zi) {
+            for (u32 xi = 0; xi < segsX; ++xi) {
+                u32 tl = zi * (segsX + 1) + xi;
+                u32 tr = tl + 1;
+                u32 bl = (zi + 1) * (segsX + 1) + xi;
+                u32 br = bl + 1;
+
+                mesh.indices.push_back(tl);
+                mesh.indices.push_back(bl);
+                mesh.indices.push_back(tr);
+
+                mesh.indices.push_back(tr);
+                mesh.indices.push_back(bl);
+                mesh.indices.push_back(br);
+            }
+        }
+        }  // end else (subdivided-plane grid path)
+
+        // Replace the mesh (rebuild-safe: retire old GPU buffers first on a regen).
+        if (regen && static_cast<usize>(EntityIndex(entity)) < m_EntityRenderData.size())
+            #if !ENJIN_RENDERER_WEBGPU
+            // Desktop-only buffer lifetime; the web path recreates lazily.
+            RetireEntityBuffers(m_EntityRenderData[static_cast<usize>(EntityIndex(entity))]);
+            #endif
+        if (m_World->HasComponent<MeshComponent>(entity))
+            *m_World->GetComponent<MeshComponent>(entity) = std::move(mesh);
+        else
+            m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
+
+        // Add material with water visual properties based on water type
+        MaterialComponent material;
+        material.baseColor = waterVol->waterColor;
+        material.opacity = waterVol->opacity;
+        material.doubleSided = true;
+        material.castShadows = false;
+        material.alphaMode = static_cast<MaterialComponent::AlphaMode>(0);  // Opaque — writes depth
+
+        // Water type presets for material properties
+        switch (waterVol->waterType) {
+            case WaterType::Ocean:
+                material.metallic = 0.4f;
+                material.roughness = 0.05f;
+                break;
+            case WaterType::River:
+                material.metallic = 0.25f;
+                material.roughness = 0.15f;
+                break;
+            case WaterType::Pond:
+                material.metallic = 0.2f;
+                material.roughness = 0.2f;
+                break;
+            case WaterType::Lake:
+            default:
+                material.metallic = 0.3f;
+                material.roughness = 0.1f;
+                break;
+        }
+
+        m_World->AddComponent<MaterialComponent>(entity, material);
+
+        #if !ENJIN_RENDERER_WEBGPU
+        // Desktop creates the GPU buffers here. The web draw loop makes them
+        // lazily for any entity whose render data is not valid yet, and
+        // SetupEntityBuffers does not exist on that path at all.
+        SetupEntityBuffers(entity);
+        #endif
+        waterVol->meshCreated = true;
+
+        ENJIN_LOG_INFO(Renderer, "Created water surface mesh for entity %llu (%.0f x %.0f)",
+            entity, hx * 2.0f, hz * 2.0f);
+    }
+}
+
+} // namespace ECS
+} // namespace Enjin

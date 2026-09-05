@@ -209,6 +209,11 @@ void WebGPURenderer::Shutdown() {
     m_ShaderCompiler.reset();
     m_PipelineFactory.reset();
 
+    // The sub-managers above queued every buffer and texture they owned.
+    // Drain before the device goes, or the queue outlives the thing that
+    // can free it.
+    DrainPendingDestroys();
+
     if (m_DepthTextureView) { wgpuTextureViewRelease(m_DepthTextureView); m_DepthTextureView = nullptr; }
     if (m_DepthTexture) { wgpuTextureRelease(m_DepthTexture); m_DepthTexture = nullptr; }
     if (m_Surface) { wgpuSurfaceRelease(m_Surface); m_Surface = nullptr; }
@@ -225,6 +230,11 @@ void WebGPURenderer::Shutdown() {
 // ============================================================================
 
 bool WebGPURenderer::BeginFrameWebGPU() {
+    // Hand back the GPU memory queued by last frame. Safe here and nowhere
+    // earlier: last frame's submit has happened, so nothing being destroyed is
+    // still waiting to be validated into a command buffer.
+    DrainPendingDestroys();
+
     // Clear encoder from any previous frame — callers must not use a stale encoder
     // if this function returns false.
     m_CommandEncoder = nullptr;
@@ -439,6 +449,8 @@ void WebGPURenderer::Resize(u32 width, u32 height) {
 // ============================================================================
 
 WebGPUBufferHandle WebGPURenderer::CreateBuffer(u64 size, WGPUBufferUsage usage, const void* data) {
+    m_BuffersCreatedTotal++;
+    m_LiveBufferCount++;
     WebGPUBufferHandle handle;
     handle.size = size;
     handle.usage = usage;
@@ -467,10 +479,29 @@ void WebGPURenderer::UpdateBuffer(const WebGPUBufferHandle& buffer, const void* 
 
 void WebGPURenderer::DestroyBuffer(WebGPUBufferHandle& buffer) {
     if (buffer.buffer) {
-        wgpuBufferRelease(buffer.buffer);
+        // Queued, not released: the reference is what keeps the object alive
+        // long enough to call wgpuBufferDestroy on it next frame, which is the
+        // only thing that actually hands the memory back. See the comment on
+        // DrainPendingDestroys.
+        m_PendingBufferDestroy.push_back(buffer.buffer);
         buffer.buffer = nullptr;
+        if (m_LiveBufferCount > 0) m_LiveBufferCount--;
     }
     buffer.size = 0;
+}
+
+void WebGPURenderer::DrainPendingDestroys() {
+    for (WGPUBuffer b : m_PendingBufferDestroy) {
+        wgpuBufferDestroy(b);   // frees the GPU allocation now
+        wgpuBufferRelease(b);   // drops the wrapper
+    }
+    m_PendingBufferDestroy.clear();
+
+    for (WGPUTexture t : m_PendingTextureDestroy) {
+        wgpuTextureDestroy(t);
+        wgpuTextureRelease(t);
+    }
+    m_PendingTextureDestroy.clear();
 }
 
 // ============================================================================
@@ -603,7 +634,11 @@ void WebGPURenderer::UploadTexture(const WebGPUTextureHandle& texture, const voi
 void WebGPURenderer::DestroyTexture(WebGPUTextureHandle& texture) {
     if (texture.sampler) { wgpuSamplerRelease(texture.sampler); texture.sampler = nullptr; }
     if (texture.view) { wgpuTextureViewRelease(texture.view); texture.view = nullptr; }
-    if (texture.texture) { wgpuTextureRelease(texture.texture); texture.texture = nullptr; }
+    // The texture itself carries the memory, so it takes the deferred path the
+    // buffers take. This matters most on resize, where RecreateWebSizedTargets
+    // drops the scene colour, the depth buffer and the whole bloom chain at
+    // once - megabytes that used to sit there until a collection happened.
+    if (texture.texture) { m_PendingTextureDestroy.push_back(texture.texture); texture.texture = nullptr; }
     texture.width = 0;
     texture.height = 0;
 }

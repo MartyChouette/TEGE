@@ -15,7 +15,7 @@
 //
 // Then drive the capability matrix:
 //
-//   pwsh -File _rt_matrix.ps1          (stamps variants, captures, validates)
+//   pwsh -File tools/probes/rt_matrix.ps1          (stamps variants, captures, validates)
 
 #include "EnjinTest.h"
 

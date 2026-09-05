@@ -18,7 +18,7 @@
 // Then probe:
 //
 //   EnjinEditor.exe D:\TEGE_Projects\_Adr3Probe\Adr3Probe.enjinproject --play
-//   (under validation via the _play_probe.ps1 pattern)
+//   (under validation via the tools/probes/play_probe.ps1 pattern)
 
 #include "EnjinTest.h"
 

@@ -38,6 +38,11 @@ public:
     void RenderShadow(WGPURenderPassEncoder pass, const Math::Matrix4& lightViewProj,
                       ECS::World* world);
 
+    // Settled snow, 0..1, from the scene's weather. Fed in per frame like the
+    // wind and the sun: this system is owned by the player, not the render
+    // system, so it cannot reach the lighting buffer the ground reads.
+    void SetSnowAccumulation(f32 v) { m_SnowAccumulation = v; }
+
     void SetWind(const Math::Vector3& wind, f32 time) { m_Wind = wind; m_WindTime = time; }
 
     // The scene's light. This pass has its own pipeline with no lighting
@@ -95,6 +100,7 @@ private:
     f32 m_SunIntensity = 0.65f;
     Math::Vector3 m_Ambient{0.35f, 0.38f, 0.42f};
     f32 m_AmbientIntensity = 1.0f;
+    f32 m_SnowAccumulation = 0.0f;
     f32 m_WindTime = 0.0f;
 };
 

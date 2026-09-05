@@ -162,27 +162,46 @@ GPUPipelineHandle WebGPUPipelineManager::CreateRenderPipeline(const GPURenderPip
         vbLayouts.push_back(layout);
     }
 
-    // Color target
-    WGPUColorTargetState colorTarget = {};
-    colorTarget.format = TranslateTextureFormat(desc.colorFormat);
-    colorTarget.writeMask = WGPUColorWriteMask_All;
+    // Colour targets. The blend states live in their own vector rather than as
+    // locals because WGPUColorTargetState holds a POINTER to one: a vector that
+    // reallocated, or a local that went out of scope, would leave every target
+    // pointing at freed memory. Both are reserved up front for that reason.
+    const usize targetCount = desc.hasColorAttachment ? (1 + desc.extraColorTargets.size()) : 0;
+    std::vector<WGPUColorTargetState> colorTargets;
+    std::vector<WGPUBlendState> blendStates;
+    colorTargets.reserve(targetCount);
+    blendStates.reserve(targetCount);
 
-    WGPUBlendState blend = {};
-    if (desc.alphaBlend) {
-        blend.color.srcFactor = TranslateBlendFactor(desc.blendState.srcColor);
-        blend.color.dstFactor = TranslateBlendFactor(desc.blendState.dstColor);
-        blend.color.operation = TranslateBlendOp(desc.blendState.colorOp);
-        blend.alpha.srcFactor = TranslateBlendFactor(desc.blendState.srcAlpha);
-        blend.alpha.dstFactor = TranslateBlendFactor(desc.blendState.dstAlpha);
-        blend.alpha.operation = TranslateBlendOp(desc.blendState.alphaOp);
-        colorTarget.blend = &blend;
+    auto pushTarget = [&](GPUTextureFormat format, bool alphaBlend, const GPUBlendState& bs) {
+        WGPUColorTargetState target = {};
+        target.format = TranslateTextureFormat(format);
+        target.writeMask = WGPUColorWriteMask_All;
+        if (alphaBlend) {
+            WGPUBlendState blend = {};
+            blend.color.srcFactor = TranslateBlendFactor(bs.srcColor);
+            blend.color.dstFactor = TranslateBlendFactor(bs.dstColor);
+            blend.color.operation = TranslateBlendOp(bs.colorOp);
+            blend.alpha.srcFactor = TranslateBlendFactor(bs.srcAlpha);
+            blend.alpha.dstFactor = TranslateBlendFactor(bs.dstAlpha);
+            blend.alpha.operation = TranslateBlendOp(bs.alphaOp);
+            blendStates.push_back(blend);
+            target.blend = &blendStates.back();
+        }
+        colorTargets.push_back(target);
+    };
+
+    if (desc.hasColorAttachment) {
+        pushTarget(desc.colorFormat, desc.alphaBlend, desc.blendState);
+        for (const auto& extra : desc.extraColorTargets) {
+            pushTarget(extra.format, extra.alphaBlend, extra.blendState);
+        }
     }
 
     WGPUFragmentState fragmentState = {};
     fragmentState.module = fsModule;
-    fragmentState.entryPoint = wgpuStr("fs_main");
-    fragmentState.targetCount = desc.hasColorAttachment ? 1 : 0;
-    fragmentState.targets = desc.hasColorAttachment ? &colorTarget : nullptr;
+    fragmentState.entryPoint = wgpuStr(desc.fragmentEntryPoint ? desc.fragmentEntryPoint : "fs_main");
+    fragmentState.targetCount = static_cast<u32>(colorTargets.size());
+    fragmentState.targets = colorTargets.empty() ? nullptr : colorTargets.data();
 
     WGPUDepthStencilState depthStencil = {};
     depthStencil.format = TranslateTextureFormat(desc.depthFormat);

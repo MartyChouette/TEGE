@@ -222,7 +222,7 @@ public:
     // frames, the game view render target is read back and written as
     // <basePath>.png (human diffing) + <basePath>.ppm (dependency-free
     // comparer), then the editor exits. Golden-image regression harness
-    // (_golden.ps1). Combine with --play to capture play-mode frames.
+    // (tools/probes/golden.ps1). Combine with --play to capture play-mode frames.
     static inline std::string s_GoldenCapturePath;
     static inline i32 s_GoldenCaptureFrame = 180;
 

@@ -12,7 +12,7 @@
 //   $env:ENJIN_RT_EXPORT_DIR = 'D:\TEGE_Projects\_RTProbe\_export'
 //   ctest -C Release -R TestRTPlayerExport
 //
-// Then boot the player under validation: pwsh -File _rt_player_probe.ps1
+// Then boot the player under validation: pwsh -File tools/probes/rt_player_probe.ps1
 // (copies EnjinPlayer.exe next to game.enjpak — the pipeline's player lookup
 // does not know the test-exe directory layout, which is fine: it warns and
 // packs everything else).

@@ -272,6 +272,10 @@ class ENJIN_API RenderSystem : public ISystem {
     f32 m_HighlightTimeValue = 0.0f;
 public:
     f32 GetHighlightTime() const { return m_HighlightTimeValue; }
+    // Settled snow, 0..1, the same number the lighting UBO carries. The web
+    // vegetation system is owned by the player and cannot read that buffer,
+    // so it asks for the value instead.
+    f32 GetSnowAccumulation() const;
     void TickHighlightTime(f32 dt) { m_HighlightTimeValue += dt; }
 private:
 
@@ -712,7 +716,39 @@ public:
         m_FogDensity = density; m_FogStart = start; m_FogEnd = end; m_FogHeightFalloff = heightFalloff;
     }
     void SetFogColor(const Math::Vector3& color) { m_FogColor = color; }
+    // LIVE snow, rewritten every frame by the weather-zone updater in the
+    // editor and the player. Do not author into this: with no weather zone the
+    // updater writes 0 here on every single frame.
     void SetSnowIntensity(f32 intensity) { m_SnowIntensity = intensity; }
+
+    // AUTHORED snow, from the scene's render settings. It needs to be a
+    // separate member from the live one: both used to share m_SnowIntensity,
+    // and since the per-frame weather updater runs after the scene loads, a
+    // scene that authored snowIntensity had it overwritten with 0 before the
+    // first frame was ever drawn. One value, two writers, and the frequent
+    // writer always won.
+    void SetAuthoredSnowIntensity(f32 intensity) { m_AuthoredSnowIntensity = intensity; }
+
+    // Fog has the same two-writer problem snow had. A weather zone drives fog
+    // while it is active, and when none is the updater used to write HARDCODED
+    // defaults (density 0, 20..100, colour 0.5/0.5/0.6) over whatever the scene
+    // authored - every frame, so an authored fog never survived to be drawn.
+    // Remembering the authored values lets the updater put them back instead of
+    // inventing numbers.
+    void SetAuthoredFog(f32 density, f32 start, f32 end, f32 heightFalloff,
+                        const Math::Vector3& color) {
+        m_AuthoredFogDensity = density;
+        m_AuthoredFogStart = start;
+        m_AuthoredFogEnd = end;
+        m_AuthoredFogHeightFalloff = heightFalloff;
+        m_AuthoredFogColor = color;
+    }
+    void RestoreAuthoredFog() {
+        SetFogParams(m_AuthoredFogDensity, m_AuthoredFogStart,
+                     m_AuthoredFogEnd, m_AuthoredFogHeightFalloff);
+        SetFogColor(m_AuthoredFogColor);
+    }
+    f32 GetAuthoredSnowIntensity() const { return m_AuthoredSnowIntensity; }
 
     // Fog and snow getters
     f32 GetFogDensity() const { return m_FogDensity; }
@@ -815,8 +851,23 @@ public:
         // options menu's AA setting inert in both directions: "None" still paid
         // for the pass, and nothing else changed anything.
         f32 fxaaEnabled = 1.0f;
+        // Depth-driven effects. These were impossible while the web scene depth
+        // was 4x MSAA and could not be bound; MSAA came off on 2026-09-03 and
+        // the depth buffer is now a plain single-sample texture the pass can
+        // read, so the roadmap's "needs a depth pre-pass or abstraction work"
+        // reduced to one usage flag and a binding.
+        f32 celOutline = 0.0f;         // Sobel-on-depth outline thickness, 0 = off
+        f32 celOutlineThreshold = 0.1f;
+        f32 celOutlineR = 0.0f;
+        f32 celOutlineG = 0.0f;
+        f32 celOutlineB = 0.0f;
+        // Needed to linearise the depth sample. A reversed or wrong pair makes
+        // every depth comparison meaningless rather than merely inaccurate.
+        f32 nearPlane = 0.1f;
+        f32 farPlane = 1000.0f;
         f32 ppPad1 = 0.0f;
-        f32 ppPad2 = 0.0f;            // 28 f32 = 112 bytes (16-multiple)
+        f32 ppPad2 = 0.0f;
+        f32 ppPad3 = 0.0f;            // 36 f32 = 144 bytes (16-multiple)
     };
     WebPPAccessibilityParams m_WebPPAccessibility;
     void SetWebAccessibility(u32 colorblindMode, f32 strength, f32 brightness, f32 contrast) {
@@ -836,9 +887,16 @@ public:
                            f32 chromaticAberration, f32 colorQuantLevels,
                            f32 filmGrain, f32 crtScanline,
                            f32 dither, f32 stipple, f32 stippleScale,
-                           f32 ssao = 0.0f, f32 ssaoRadius = 0.5f) {
+                           f32 ssao = 0.0f, f32 ssaoRadius = 0.5f,
+                           f32 celOutline = 0.0f, f32 celOutlineThreshold = 0.1f,
+                           const Math::Vector3& celOutlineColor = Math::Vector3(0.0f, 0.0f, 0.0f)) {
         m_WebPPAccessibility.ssao = ssao;
         m_WebPPAccessibility.ssaoRadius = ssaoRadius;
+        m_WebPPAccessibility.celOutline = celOutline;
+        m_WebPPAccessibility.celOutlineThreshold = celOutlineThreshold;
+        m_WebPPAccessibility.celOutlineR = celOutlineColor.x;
+        m_WebPPAccessibility.celOutlineG = celOutlineColor.y;
+        m_WebPPAccessibility.celOutlineB = celOutlineColor.z;
         m_WebPPAccessibility.dither = dither;
         m_WebPPAccessibility.stipple = stipple;
         m_WebPPAccessibility.stippleScale = stippleScale;
@@ -1403,7 +1461,12 @@ private:
     Renderer::GPUBindGroupHandle m_WebPostProcessBG;
     Renderer::GPUTextureHandle m_WebSceneColorTex;           // offscreen RGBA16Float (resolve target)
     void* m_WebSceneColorView = nullptr;                      // WGPUTextureView (for resolve / post-process read)
-    void* m_WebSceneDepthView = nullptr;                      // WGPUTextureView (offscreen depth, 4x MSAA)
+    void* m_WebSceneDepthView = nullptr;
+    // A SECOND view of the same depth texture, depth aspect only, registered so
+    // it can be bound as texture_depth_2d. The attachment view above cannot be
+    // used for sampling: a depth-stencil format has to be viewed one aspect at
+    // a time to be read in a shader.
+    Renderer::GPUTextureHandle m_WebSceneDepthSampleTex;                      // WGPUTextureView (offscreen depth, 4x MSAA)
     void* m_WebSceneDepthTex = nullptr;                       // WGPUTexture (offscreen depth)
 
     // MSAA 4x intermediate textures
@@ -1515,6 +1578,42 @@ private:
     usize m_WebObjectArrayCapacity = 0;
     u32 m_WebObjectArrayGen = 1;
     Renderer::GPUBindGroupHandle m_WebWhiteSpriteBindGroup;
+
+    // Inverted-hull geometry outlines (the web half of RenderOutlinePass).
+    // Reuses the main pass's frame + object bind group layouts: an outline draw
+    // is the same ObjectData with baseColor/metallic read as outline colour and
+    // width, so it needs a shader and a pipeline and nothing else.
+    // Byte size of the packed shadow-caster matrix array, so the frame can
+    // tell whether the existing buffer is still big enough.
+    usize m_WebShadowObjectCapacity = 0;
+
+    // Weighted-blended OIT. Two scene-sized targets: accum sums premultiplied
+    // colour times a depth weight, reveal multiplies down by (1 - alpha). The
+    // composite divides one by the other back over the opaque scene, so
+    // transparency never has to be sorted and therefore cannot pop.
+    //
+    // Allocated lazily, the first frame a scene actually has a blended entity.
+    // A fully opaque scene pays nothing and renders exactly as it did before.
+    Renderer::GPUTextureHandle m_WebOITAccumTex;
+    void* m_WebOITAccumView = nullptr;          // WGPUTextureView
+    Renderer::GPUTextureHandle m_WebOITRevealTex;
+    void* m_WebOITRevealView = nullptr;         // WGPUTextureView
+    Renderer::GPUPipelineHandle m_WebOITPipeline;          // accumulate (fs_oit)
+    Renderer::GPUShaderHandle m_WebOITCompositeShader;
+    Renderer::GPUPipelineHandle m_WebOITCompositePipeline;
+    Renderer::GPUBindGroupLayoutHandle m_WebOITCompositeLayout;
+    Renderer::GPUBindGroupHandle m_WebOITCompositeBG;
+    u32 m_WebOITTargetW = 0;
+    u32 m_WebOITTargetH = 0;
+
+    // Build (or rebuild at a new size) the OIT targets and their bind group.
+    // Returns false if anything failed, in which case the caller falls back to
+    // the sorted-blend path rather than dropping transparency on the floor.
+    bool EnsureWebOITTargets(u32 w, u32 h);
+
+
+    Renderer::GPUShaderHandle m_WebOutlineShader;
+    Renderer::GPUPipelineHandle m_WebOutlinePipeline;
 
     // Procedural sky
     Renderer::GPUShaderHandle m_WebSkyShader;
@@ -1670,7 +1769,14 @@ private:
     f32 m_FogEnd = 100.0f;
     f32 m_FogHeightFalloff = 0.1f;
     Math::Vector3 m_FogColor = Math::Vector3(0.5f, 0.5f, 0.6f);
-    f32 m_SnowIntensity = 0.0f;
+    f32 m_SnowIntensity = 0.0f;          // live, per-frame from weather zones
+    f32 m_AuthoredSnowIntensity = 0.0f;  // from the scene's render settings
+    // Authored fog, so the weather updater can restore it rather than guess.
+    f32 m_AuthoredFogDensity = 0.0f;
+    f32 m_AuthoredFogStart = 20.0f;
+    f32 m_AuthoredFogEnd = 100.0f;
+    f32 m_AuthoredFogHeightFalloff = 0.1f;
+    Math::Vector3 m_AuthoredFogColor = Math::Vector3(0.5f, 0.5f, 0.6f);
     f32 m_WorldCurvature = 0.0f;
 
     // Shading model
@@ -2046,7 +2152,6 @@ public:
     // safe pre-render point: the editor renders the game view via RenderToTarget and
     // never calls Update() (where these run for the player), so without this 3D water
     // never gets its mesh in the editor game view (reported 2026-09-02).
-    void EnsureWaterMeshes();
 private:
 #endif
 
@@ -2097,6 +2202,19 @@ private:
     void EnsureMaterialSSBOCapacity();
     u32 GetMaterialIndex(Entity entity) const;
 
+    // A multi-material mesh needs ONE SSBO ENTRY PER SLOT, not one per entity.
+    // The shader reads its material through the entry selected by the draw's
+    // firstInstance (adr-0003), and that entry carries the BINDLESS TEXTURE
+    // INDEX. Every sub-mesh used to be drawn with the entity's own index, so
+    // every sub-mesh sampled the entity's base texture: an imported tree drew
+    // its leaves with its bark. Falls back to the entity's entry when the slot
+    // has none.
+    u32 GetSlotMaterialIndex(Entity entity, i32 slot) const;
+
+    // Total SSBO entries: one per mesh entity, plus one per material slot.
+    // Capacity and the rebuild check both need it and must agree.
+    u32 CountMaterialSSBOEntries() const;
+
     // Uniform buffers (one per frame in flight)
     std::vector<std::unique_ptr<Renderer::VulkanBuffer>> m_UniformBuffers;
     std::vector<std::unique_ptr<Renderer::VulkanBuffer>> m_LightingBuffers;
@@ -2107,7 +2225,9 @@ private:
 
     // Material SSBO batching state
     std::vector<u8> m_MaterialSSBOData;                 // CPU-side buffer (aligned MaterialGPU entries)
-    std::unordered_map<u64, u32> m_EntityMaterialIndex;  // Entity -> index into SSBO
+    std::unordered_map<u64, u32> m_EntityMaterialIndex;
+    // entity -> index of its FIRST slot entry; slot n is base + n.
+    std::unordered_map<u64, u32> m_EntitySlotMaterialBase;  // Entity -> index into SSBO
     u32 m_MaterialSSBOCount = 0;                         // Number of materials this frame
     u32 m_MaterialSSBOStride = 0;                        // Bytes per material entry (aligned to device minimum)
     u32 m_MaterialSSBOCapacity = 0;                      // Max materials the GPU buffer can hold
@@ -2331,6 +2451,7 @@ private:
     // from UpdateGameViewSims, since Update() is never called there and the
     // surface would otherwise be invisible in the game view (0adaa966).
 public:
+    void EnsureWaterMeshes();
     void EnsureWater3DMeshes();
 private:
 

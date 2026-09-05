@@ -220,6 +220,17 @@ struct GPUBlendState {
     GPUBlendOp alphaOp = GPUBlendOp::Add;
 };
 
+// One colour attachment past the first. A pipeline that writes several targets
+// usually wants them blended DIFFERENTLY: weighted-blended OIT accumulates
+// additively into one and multiplies down another, which a single blendState
+// cannot express. The first attachment keeps using the desc's own
+// colorFormat/alphaBlend/blendState so nothing existing has to change.
+struct GPUExtraColorTarget {
+    GPUTextureFormat format = GPUTextureFormat::RGBA16Float;
+    bool alphaBlend = false;
+    GPUBlendState blendState;
+};
+
 struct GPURenderPipelineDesc {
     GPUShaderHandle vertexShader;
     GPUShaderHandle fragmentShader;
@@ -242,6 +253,12 @@ struct GPURenderPipelineDesc {
     GPUBlendState blendState;
     u32 sampleCount = 1;
     bool hasColorAttachment = true;
+    // Attachments 1..N. colorAttachmentCount stays the count the render pass
+    // was built with; this carries the per-target state for the extras.
+    std::vector<GPUExtraColorTarget> extraColorTargets;
+    // Fragment entry point. Null means "fs_main", which is every pipeline that
+    // existed before a shader needed two of them in one module.
+    const char* fragmentEntryPoint = nullptr;
     const char* label = nullptr;
 };
 

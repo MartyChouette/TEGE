@@ -361,8 +361,12 @@ fn samplePointShadow(worldPos: vec3<f32>, lightPos: vec3<f32>, range: f32) -> f3
     return mix(1.0, shadow, rangeFade);
 }
 
-@fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+// The shading itself, lifted out of the fragment entry point so the opaque
+// pass and the order-independent-transparency pass can share it. Two entry
+// points calling one function is the only way to guarantee a transparent
+// surface is lit identically to an opaque one; a second copy of five hundred
+// lines would drift the first time either was edited.
+fn shadeSurface(in: VertexOutput) -> vec4<f32> {
     let object = objects.data[in.instanceIdx];
 
     // Affine texturing divides the w the vertex stage multiplied in. clipW is
@@ -648,6 +652,49 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     return vec4<f32>(color, alpha);
 }
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    return shadeSurface(in);
+}
+
+// ---------------------------------------------------------------------------
+// Weighted blended order-independent transparency (McGuire/Bavoil).
+//
+// Sorted transparency pops: two blended surfaces that intersect, or a sail
+// passing through spray, have no correct per-object order, so the order flips
+// as the camera moves and the image jumps. This accumulates instead of
+// sorting. Every transparent fragment adds its premultiplied colour weighted
+// by how near and how opaque it is, and separately multiplies down a
+// revealage channel; the composite divides one by the other. No sorting, no
+// compute, and it cannot pop because there is no order to get wrong.
+//
+// The weight is the depth-based one from the paper. It has to fall off with
+// view depth or distant transparency drowns out near transparency, and it is
+// clamped at both ends because the accumulation buffer is finite.
+// ---------------------------------------------------------------------------
+struct OITOutput {
+    @location(0) accum: vec4<f32>,
+    @location(1) reveal: f32,
+};
+
+@fragment
+fn fs_oit(in: VertexOutput) -> OITOutput {
+    let shaded = shadeSurface(in);
+    let a = clamp(shaded.a, 0.0, 1.0);
+
+    // View-space depth, not the NDC z: the weight curve is written against
+    // linear distance from the eye.
+    let viewZ = abs((viewProj.view * vec4<f32>(in.world_pos, 1.0)).z);
+
+    let w = clamp(pow(min(1.0, a * 10.0 + 0.01) / (0.00001 + viewZ / 200.0), 3.0),
+                  0.01, 3000.0);
+
+    var out: OITOutput;
+    out.accum = vec4<f32>(shaded.rgb * a, a) * w;
+    out.reveal = a;
+    return out;
+}
 )";
 
 // Embedded shadow depth shader. This IS the shipped source.
@@ -660,10 +707,65 @@ struct ViewProjection {
 };
 @group(0) @binding(0) var<uniform> lightVP: ViewProjection;
 
+// Every shadow caster in the frame, in caster order, as one array. The depth
+// pass only ever needed the model matrix, so this carries matrices rather than
+// a copy of the full ObjectData it used to bind one entity at a time.
+//
+// It replaced a uniform buffer and a bind group created per caster PER PASS -
+// once for the directional pass, again for every spot light, and six more
+// times per caster for a point light. The row is selected by the draw's
+// firstInstance, and the caster order is the same in every pass, so one upload
+// serves all of them.
+struct ShadowObjects {
+    models: array<mat4x4<f32>>,
+};
+@group(1) @binding(0) var<storage, read> objects: ShadowObjects;
+
+struct VertexInput {
+    @location(0) position: vec3<f32>,
+};
+
+struct VertexOutput {
+    @builtin(position) clip_position: vec4<f32>,
+};
+
+@vertex
+fn vs_main(in: VertexInput, @builtin(instance_index) instanceIdx: u32) -> VertexOutput {
+    var out: VertexOutput;
+    let world_pos = objects.models[instanceIdx] * vec4<f32>(in.position, 1.0);
+    out.clip_position = lightVP.proj * lightVP.view * world_pos;
+    return out;
+}
+)";
+
+// Inverted-hull outline. The web half of outline.vert/outline.frag.
+//
+// The scene render settings already carried geometryOutlines* to every runtime
+// and SceneRenderSettings::ApplyToRuntime already wrote them into the web
+// RenderSystem - there was simply no pipeline reading them, so a cel-shaded
+// project exported to the browser lost its outlines with no warning anywhere.
+//
+// Same trick as the Vulkan pass: no dedicated outline uniform block. ObjectData
+// is reused with baseColor repurposed as the outline colour and metallic as the
+// outline width, so the outline draw shares group 1 with the main pass and
+// needs no second layout. The extrusion happens in OBJECT space, before the
+// model matrix, which is what makes a scaled entity get a proportionally scaled
+// outline - matching outline.vert exactly.
+static const char* OUTLINE_WGSL = R"(
+struct ViewProjection {
+    view: mat4x4<f32>,
+    proj: mat4x4<f32>,
+    viewPos: vec3<f32>,
+    time: f32,
+};
+@group(0) @binding(0) var<uniform> viewProj: ViewProjection;
+
+// Must stay field-for-field identical to the ObjectData in PBR_WGSL: both are
+// views of the same WebObjectDataUBO bytes.
 struct ObjectData {
     model: mat4x4<f32>,
-    baseColor: vec3<f32>,
-    metallic: f32,
+    baseColor: vec3<f32>,       // repurposed: outline colour
+    metallic: f32,              // repurposed: outline width (object space)
     emissiveColor: vec3<f32>,
     roughness: f32,
     emissiveStrength: f32,
@@ -678,22 +780,112 @@ struct ObjectData {
     scrollReflStrength: f32,
     matcapBlend: f32,
 };
-@group(1) @binding(0) var<uniform> object: ObjectData;
+struct ObjectDataArray {
+    data: array<ObjectData>,
+};
+@group(1) @binding(0) var<storage, read> objects: ObjectDataArray;
 
+struct BoneSSBO {
+    matrices: array<mat4x4<f32>>,
+};
+@group(1) @binding(1) var<storage, read> bones: BoneSSBO;
+
+// Position and normal only, plus the skinning pair. The pipeline declares the
+// same locations against the shared vertex stride, so the outline draw reads
+// the mesh's own vertex buffer with no repacking.
 struct VertexInput {
     @location(0) position: vec3<f32>,
+    @location(1) normal: vec3<f32>,
+    @location(4) boneWeights: vec4<f32>,
+    @location(5) boneIndices: vec4<u32>,
 };
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
+    @location(0) color: vec3<f32>,
 };
 
 @vertex
-fn vs_main(in: VertexInput) -> VertexOutput {
+fn vs_main(in: VertexInput, @builtin(instance_index) instanceIdx: u32) -> VertexOutput {
+    let object = objects.data[instanceIdx];
+
+    var pos = in.position;
+    var nrm = in.normal;
+
+    // FLAG_SKINNED. The hull has to follow the skeleton or an animated
+    // character's outline stays behind in the bind pose.
+    if ((object.flags & 8) != 0) {
+        let skinMatrix = in.boneWeights.x * bones.matrices[in.boneIndices.x]
+                       + in.boneWeights.y * bones.matrices[in.boneIndices.y]
+                       + in.boneWeights.z * bones.matrices[in.boneIndices.z]
+                       + in.boneWeights.w * bones.matrices[in.boneIndices.w];
+        pos = (skinMatrix * vec4<f32>(pos, 1.0)).xyz;
+        nrm = mat3x3<f32>(skinMatrix[0].xyz, skinMatrix[1].xyz, skinMatrix[2].xyz) * nrm;
+    }
+
+    // A degenerate normal must not become a NaN vertex: one NaN position takes
+    // the whole triangle out, and on a hull that reads as a hole in the line.
+    let nlen = length(nrm);
+    var dir = vec3<f32>(0.0, 0.0, 0.0);
+    if (nlen > 1e-6) {
+        dir = nrm / nlen;
+    }
+
+    let extruded = pos + dir * object.metallic;
+
     var out: VertexOutput;
-    let world_pos = object.model * vec4<f32>(in.position, 1.0);
-    out.clip_position = lightVP.proj * lightVP.view * world_pos;
+    out.clip_position = viewProj.proj * viewProj.view * (object.model * vec4<f32>(extruded, 1.0));
+    out.color = object.baseColor;
     return out;
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    // The scene target is linear HDR; the post-process pass tonemaps. Emitting
+    // the authored colour straight through is what the Vulkan outline.frag does.
+    return vec4<f32>(in.color, 1.0);
+}
+)";
+
+// Resolves the two OIT targets back over the opaque scene colour.
+//
+// Drawn as a fullscreen triangle into the scene target with
+// src = OneMinusSrcAlpha, dst = SrcAlpha, so the hardware evaluates
+//     result = srcColor * (1 - reveal) + sceneColor * reveal
+// which is the composite from the paper with revealage carried in the alpha
+// channel. Where nothing transparent was drawn, reveal is still its cleared
+// 1.0 and the opaque colour passes through untouched.
+static const char* OIT_COMPOSITE_WGSL = R"(
+@group(0) @binding(0) var accumTex: texture_2d<f32>;
+@group(0) @binding(1) var accumSmp: sampler;
+@group(0) @binding(2) var revealTex: texture_2d<f32>;
+@group(0) @binding(3) var revealSmp: sampler;
+
+struct VertexOutput {
+    @builtin(position) clip_position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn vs_main(@builtin(vertex_index) idx: u32) -> VertexOutput {
+    var out: VertexOutput;
+    let x = f32((idx << 1u) & 2u);
+    let y = f32(idx & 2u);
+    out.uv = vec2<f32>(x, y);
+    out.clip_position = vec4<f32>(x * 2.0 - 1.0, 1.0 - y * 2.0, 0.0, 1.0);
+    return out;
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    let accum = textureSample(accumTex, accumSmp, in.uv);
+    let reveal = textureSample(revealTex, revealSmp, in.uv).r;
+
+    // accum.a is the summed weight, not an alpha. Dividing by it is what turns
+    // the weighted sum back into an average colour; the epsilon is there
+    // because an untouched pixel sums to exactly zero.
+    let color = accum.rgb / max(accum.a, 0.00001);
+    return vec4<f32>(color, reveal);
 }
 )";
 
@@ -729,10 +921,38 @@ struct PostProcessParams {
     ssaoRadius: f32,      // AO sample-ring radius scale
     sharpness: f32,       // contrast-adaptive sharpening, 0 = off
     fxaaEnabled: f32,     // 1 = run FXAA, 0 = skip it entirely
+    celOutline: f32,      // Sobel-on-depth outline thickness, 0 = off
+    celOutlineThreshold: f32,
+    celOutlineR: f32,
+    celOutlineG: f32,
+    celOutlineB: f32,
+    nearPlane: f32,
+    farPlane: f32,
     ppPad1: f32,
-    ppPad2: f32,          // 28 f32 = 112 bytes; must match WebPPAccessibilityParams
+    ppPad2: f32,
+    ppPad3: f32,          // 36 f32 = 144 bytes; must match WebPPAccessibilityParams
 };
 @group(0) @binding(2) var<uniform> params: PostProcessParams;
+
+// Scene depth, the same texture the scene pass wrote, viewed depth-aspect only.
+// Read with textureLoad rather than sampled: a depth texture needs a
+// non-filtering or comparison sampler to be sampled, and every effect below
+// wants exact texels anyway.
+@group(0) @binding(3) var depthTex: texture_depth_2d;
+
+// Depth comes back non-linear - near values crowd the whole range - so raw
+// differences are meaningless past a few metres. This puts it back into view
+// space, where a difference is a distance in world units.
+fn linearDepth(d: f32) -> f32 {
+    let n = params.nearPlane;
+    let f = params.farPlane;
+    return (n * f) / max(f - d * (f - n), 0.0001);
+}
+
+fn depthAt(px: vec2<i32>, dim: vec2<i32>) -> f32 {
+    let c = clamp(px, vec2<i32>(0, 0), dim - vec2<i32>(1, 1));
+    return linearDepth(textureLoad(depthTex, c, 0));
+}
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -927,29 +1147,59 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         color = vec3<f32>(r, color.g, b);
     }
 
-    // Screen-space AO (color-space approximation). Web has no sampleable depth
-    // buffer (the scene depth is 4x MSAA and can't be bound), so instead of a
-    // depth-based occlusion we darken pixels that sit in a local luminance valley
-    // — creases, contact points, and pockets where the surroundings are brighter.
-    // Not geometrically exact, but it grounds objects the way SSAO does. Operates
-    // on the pre-tonemap linear color; textureSampleLevel is required in a branch.
+    // Screen-space AO, from the depth buffer.
+    //
+    // This used to be a LUMINANCE approximation - darken whatever sits in a
+    // local brightness valley - because the web scene depth was 4x MSAA and
+    // could not be bound. It grounded objects, but it darkened any dark patch
+    // of texture whether or not something was occluding it. Now it asks the
+    // geometry: a neighbour NEARER than this pixel is something standing
+    // between it and the light, and eight of them around a ring is an estimate.
+    let dim = vec2<i32>(textureDimensions(depthTex));
+    let px = vec2<i32>(in.uv * vec2<f32>(dim));
     if (params.ssao > 0.0) {
-        let r = max(params.ssaoRadius, 0.05);
-        let s = texelSize * (2.0 + r * 6.0);
-        var acc = 0.0;
-        acc += luminance(textureSampleLevel(sceneTexture, sceneSampler, in.uv + vec2<f32>( s.x, 0.0), 0.0).rgb);
-        acc += luminance(textureSampleLevel(sceneTexture, sceneSampler, in.uv + vec2<f32>(-s.x, 0.0), 0.0).rgb);
-        acc += luminance(textureSampleLevel(sceneTexture, sceneSampler, in.uv + vec2<f32>( 0.0,  s.y), 0.0).rgb);
-        acc += luminance(textureSampleLevel(sceneTexture, sceneSampler, in.uv + vec2<f32>( 0.0, -s.y), 0.0).rgb);
-        acc += luminance(textureSampleLevel(sceneTexture, sceneSampler, in.uv + vec2<f32>( s.x,  s.y), 0.0).rgb);
-        acc += luminance(textureSampleLevel(sceneTexture, sceneSampler, in.uv + vec2<f32>(-s.x,  s.y), 0.0).rgb);
-        acc += luminance(textureSampleLevel(sceneTexture, sceneSampler, in.uv + vec2<f32>( s.x, -s.y), 0.0).rgb);
-        acc += luminance(textureSampleLevel(sceneTexture, sceneSampler, in.uv + vec2<f32>(-s.x, -s.y), 0.0).rgb);
-        let avg = acc / 8.0;
-        let centerL = luminance(color);
-        // Occluded when the surroundings are meaningfully brighter than the centre.
-        let occ = clamp((avg - centerL) * 2.0, 0.0, 1.0);
+        let centreD = depthAt(px, dim);
+        let step = max(i32(params.ssaoRadius * 8.0), 1);
+        var occ = 0.0;
+        let offs = array<vec2<i32>, 8>(
+            vec2<i32>( 1,  0), vec2<i32>(-1,  0), vec2<i32>( 0,  1), vec2<i32>( 0, -1),
+            vec2<i32>( 1,  1), vec2<i32>(-1,  1), vec2<i32>( 1, -1), vec2<i32>(-1, -1));
+        for (var i = 0; i < 8; i = i + 1) {
+            let d = depthAt(px + offs[i] * step, dim);
+            // Nearer neighbour = occluder. The upper bound stops a silhouette
+            // against the far distance from haloing the whole object.
+            let diff = centreD - d;
+            if (diff > 0.02 && diff < 1.0) {
+                occ = occ + 1.0;
+            }
+        }
+        occ = occ / 8.0;
         color = color * (1.0 - occ * clamp(params.ssao, 0.0, 1.0));
+    }
+
+    // Cel outline: Sobel on linear depth. This is the edge-detect counterpart
+    // to the inverted-hull outline in the scene pass. The hull draws the
+    // silhouette; this catches the INTERIOR edges a hull cannot, where two
+    // surfaces of the same object meet at a depth step.
+    if (params.celOutline > 0.0) {
+        let t = max(i32(params.celOutline), 1);
+        let tl = depthAt(px + vec2<i32>(-t, -t), dim);
+        let tc = depthAt(px + vec2<i32>( 0, -t), dim);
+        let tr = depthAt(px + vec2<i32>( t, -t), dim);
+        let ml = depthAt(px + vec2<i32>(-t,  0), dim);
+        let mr = depthAt(px + vec2<i32>( t,  0), dim);
+        let bl = depthAt(px + vec2<i32>(-t,  t), dim);
+        let bc = depthAt(px + vec2<i32>( 0,  t), dim);
+        let br = depthAt(px + vec2<i32>( t,  t), dim);
+        let gx = (tr + 2.0 * mr + br) - (tl + 2.0 * ml + bl);
+        let gy = (bl + 2.0 * bc + br) - (tl + 2.0 * tc + tr);
+        let edge = sqrt(gx * gx + gy * gy);
+        // Relative to distance, so a far surface does not outline its own gentle
+        // slope: the same gradient is a much smaller real step up close.
+        let centre = depthAt(px, dim);
+        let rel = edge / max(centre, 0.001);
+        let line = smoothstep(params.celOutlineThreshold, params.celOutlineThreshold * 2.0, rel);
+        color = mix(color, vec3<f32>(params.celOutlineR, params.celOutlineG, params.celOutlineB), line);
     }
 
     color = aces_tonemap(color);
@@ -1224,6 +1474,36 @@ struct ViewProjection {
 };
 @group(0) @binding(0) var<uniform> viewProj: ViewProjection;
 
+// Weather has to reach the vegetation too. The ground whitens under settled
+// snow (see the snow block in PBR_WGSL) and the grass, shrubs and trees standing
+// on it did not, because these pipelines never declared the lighting buffer -
+// it was already BOUND to them, group 0 binding 1, through the shared frame
+// layout, just never read. Same formula as the ground so they agree.
+struct LightingUBO {
+    lightDir: array<vec4<f32>, 8>,
+    lightColor: array<vec4<f32>, 8>,
+    lightParams: array<vec4<f32>, 8>,
+    ambientColor: vec4<f32>,
+    fogColor: vec4<f32>,
+    fogParams: vec4<f32>,
+    shadowParams: vec4<f32>,
+    lightCount: vec4<f32>,
+    spotPos: array<vec4<f32>, 4>,
+    spotDir: array<vec4<f32>, 4>,
+    spotColor: array<vec4<f32>, 4>,
+    spotParams: array<vec4<f32>, 4>,
+    windData: vec4<f32>,                 // xyz = wind dir * strength, w = wind clock
+    skyTop: vec4<f32>,                   // xyz zenith, w = configured flag
+    skyBottom: vec4<f32>,
+    skyHorizon: vec4<f32>,               // w = horizon haze
+    skySunDir: vec4<f32>,                // w = sun intensity
+    skySunColor: vec4<f32>,              // w = sun size
+    skyClouds: vec4<f32>,                // cov1, scale1, speed, cov2
+    skyCloudColor: vec4<f32>,            // w = scale2
+    snowParams: vec4<f32>,               // x = snow accumulation (0..1); yzw reserved
+};
+@group(0) @binding(1) var<uniform> lighting: LightingUBO;
+
 struct VolumeParams {
     volumePos: vec3<f32>,
     bladeHeight: f32,
@@ -1287,7 +1567,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Simple directional lighting
     let lightDir = normalize(vec3<f32>(0.5, -0.8, 0.3));
     let NdotL = max(dot(in.normal, -lightDir), 0.0) * 0.6 + 0.4;
-    return vec4<f32>(in.color * NdotL, 1.0);
+    var lit = in.color * NdotL;
+
+    // A blade's normal is straight up, so settled snow covers it fully - which
+    // is what should happen: grass this short is buried, not dusted.
+    let snowAccum = lighting.snowParams.x;
+    if (snowAccum > 0.0) {
+        let snowCoverage = snowAccum * smoothstep(0.15, 0.7, in.normal.y);
+        lit = mix(lit, vec3<f32>(0.95, 0.97, 1.0), snowCoverage);
+    }
+    return vec4<f32>(lit, 1.0);
 }
 )";
 
@@ -1300,6 +1589,36 @@ struct ViewProjection {
     time: f32,
 };
 @group(0) @binding(0) var<uniform> viewProj: ViewProjection;
+
+// Weather has to reach the vegetation too. The ground whitens under settled
+// snow (see the snow block in PBR_WGSL) and the grass, shrubs and trees standing
+// on it did not, because these pipelines never declared the lighting buffer -
+// it was already BOUND to them, group 0 binding 1, through the shared frame
+// layout, just never read. Same formula as the ground so they agree.
+struct LightingUBO {
+    lightDir: array<vec4<f32>, 8>,
+    lightColor: array<vec4<f32>, 8>,
+    lightParams: array<vec4<f32>, 8>,
+    ambientColor: vec4<f32>,
+    fogColor: vec4<f32>,
+    fogParams: vec4<f32>,
+    shadowParams: vec4<f32>,
+    lightCount: vec4<f32>,
+    spotPos: array<vec4<f32>, 4>,
+    spotDir: array<vec4<f32>, 4>,
+    spotColor: array<vec4<f32>, 4>,
+    spotParams: array<vec4<f32>, 4>,
+    windData: vec4<f32>,                 // xyz = wind dir * strength, w = wind clock
+    skyTop: vec4<f32>,                   // xyz zenith, w = configured flag
+    skyBottom: vec4<f32>,
+    skyHorizon: vec4<f32>,               // w = horizon haze
+    skySunDir: vec4<f32>,                // w = sun intensity
+    skySunColor: vec4<f32>,              // w = sun size
+    skyClouds: vec4<f32>,                // cov1, scale1, speed, cov2
+    skyCloudColor: vec4<f32>,            // w = scale2
+    snowParams: vec4<f32>,               // x = snow accumulation (0..1); yzw reserved
+};
+@group(0) @binding(1) var<uniform> lighting: LightingUBO;
 
 struct VolumeParams {
     volumePos: vec3<f32>,
@@ -1418,7 +1737,18 @@ fn vs_main(vert: VertexInput, @builtin(instance_index) instanceIdx: u32) -> Vert
         vert.normal.y,
         vert.normal.x * sinR + vert.normal.z * cosR));
     let ndl = max(dot(nRot, volume.sunDir), 0.0);
-    out.color = albedo * (volume.ambient + (1.0 - volume.ambient) * ndl);
+    var shaded = albedo * (volume.ambient + (1.0 - volume.ambient) * ndl);
+
+    // The canopy is a sphere, so its normal is real and snow lands on the
+    // upper half of the crown and along the top of the trunk, rather than
+    // washing the whole tree. Per-vertex like the lighting above it: a 7x12
+    // crown has plenty of vertices for a soft line between snowy and clear.
+    let snowAccum = lighting.snowParams.x;
+    if (snowAccum > 0.0) {
+        let snowCoverage = snowAccum * smoothstep(0.15, 0.7, nRot.y);
+        shaded = mix(shaded, vec3<f32>(0.95, 0.97, 1.0), snowCoverage);
+    }
+    out.color = shaded;
     return out;
 }
 

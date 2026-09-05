@@ -117,6 +117,8 @@
 #include "Enjin/Effects/ParticleSystem.h"
 #include <nlohmann/json.hpp>
 #include <emscripten.h>
+#include <emscripten/fetch.h>
+#include <cstring>
 #include <emscripten/heap.h>
 #include <emscripten/html5.h>
 #include <string>
@@ -128,6 +130,54 @@
 static constexpr const char* PACK_KEY = "enjin_default_pack_key";
 
 // Forward declare for extern "C" callbacks
+// Fetch a file the way a redeployed asset needs to be fetched.
+//
+// The pak URL has no cache-buster and cannot easily get one: the engine, not
+// the page, asks for it, and the engine has no idea what the deploy called
+// itself. So instead of busting the cache, revalidate it. Cache-Control:
+// no-cache on the REQUEST means the browser must check with the server before
+// reusing what it has; an unchanged pak comes back 304 with no body, so the
+// common case costs one conditional request and no download.
+//
+// This replaced emscripten_async_wget_data, which cannot set a request header.
+// With it, a redeployed pak was served from cache against a freshly deployed
+// engine for as long as the browser felt like it - the same stale-pairing
+// failure tools/check_demoroom.py exists to catch between the JS and the wasm,
+// one level down where nothing was watching.
+static void FetchRevalidated(const char* url, void* userData,
+                             void (*onOk)(void*, void*, int),
+                             void (*onFail)(void*)) {
+    struct Ctx {
+        void* user;
+        void (*ok)(void*, void*, int);
+        void (*fail)(void*);
+    };
+    auto* ctx = new Ctx{userData, onOk, onFail};
+
+    // Must outlive the request, so not a local. Terminated by a null entry.
+    static const char* kHeaders[] = {"Cache-Control", "no-cache", nullptr};
+
+    emscripten_fetch_attr_t attr;
+    emscripten_fetch_attr_init(&attr);
+    std::strcpy(attr.requestMethod, "GET");
+    attr.attributes = EMSCRIPTEN_FETCH_LOAD_TO_MEMORY;
+    attr.requestHeaders = kHeaders;
+    attr.userData = ctx;
+    attr.onsuccess = [](emscripten_fetch_t* f) {
+        auto* c = static_cast<Ctx*>(f->userData);
+        c->ok(c->user, const_cast<char*>(f->data), static_cast<int>(f->numBytes));
+        delete c;
+        emscripten_fetch_close(f);
+    };
+    attr.onerror = [](emscripten_fetch_t* f) {
+        auto* c = static_cast<Ctx*>(f->userData);
+        c->fail(c->user);
+        delete c;
+        emscripten_fetch_close(f);
+    };
+    emscripten_fetch(&attr, url);
+}
+
 class WebGamePlayer;
 static WebGamePlayer* g_Player = nullptr;
 
@@ -161,7 +211,7 @@ public:
 
         // Fetch game.enjpak from the server into the WASM virtual filesystem.
         // The download buffer is freed when onload returns, so persist it first.
-        emscripten_async_wget_data("game.enjpak", this,
+        FetchRevalidated("game.enjpak", this,
             [](void* arg, void* buf, int len) {
                 auto* self = static_cast<WebGamePlayer*>(arg);
                 FILE* f = fopen("game.enjpak", "wb");
@@ -175,7 +225,7 @@ public:
                 auto* self = static_cast<WebGamePlayer*>(arg);
                 ENJIN_LOG_WARN(Player, "No game.enjpak available on server");
                 // Fallback: try fetching a loose scene file
-                emscripten_async_wget_data("scene.enjin", self,
+                FetchRevalidated("scene.enjin", self,
                     [](void* arg2, void* buf, int len) {
                         auto* self2 = static_cast<WebGamePlayer*>(arg2);
                         FILE* f = fopen("scene.enjin", "wb");
@@ -661,6 +711,8 @@ public:
                     break;
                 }
                 m_Vegetation->SetSun(sunDir, sunCol, sunI);
+                // Weather reaches the vegetation the same way wind and sun do.
+                m_Vegetation->SetSnowAccumulation(m_RenderSystem->GetSnowAccumulation());
                 m_Vegetation->SetAmbient(m_RenderSystem->GetAmbientColor(),
                                          m_RenderSystem->GetAmbientIntensity());
                 m_Vegetation->RenderScene(static_cast<WGPURenderPassEncoder>(scenePass),
@@ -788,7 +840,11 @@ public:
             s.ditherEnabled ? s.ditherStrength : 0.0f,
             s.stippleEnabled ? static_cast<float>(s.stippleColorMode + 1u) : 0.0f,
             s.stippleScale,
-            s.ssaoEnabled ? s.ssaoIntensity : 0.0f, s.ssaoRadius);
+            s.ssaoEnabled ? s.ssaoIntensity : 0.0f, s.ssaoRadius,
+            // Authored in SceneRenderSettings since the cel work and inert on
+            // web until the depth buffer became readable.
+            s.celOutlineEnabled ? s.celOutlineThickness : 0.0f,
+            s.celOutlineThreshold, s.celOutlineColor);
     }
 
     void TogglePauseMenu() {

@@ -75,6 +75,10 @@ struct VSOut {
     @location(0) color : vec3<f32>,
     @location(1) heightFrac : f32,
     @location(2) normal : vec3<f32>,
+    // Settled snow for this card, 0..1. Computed per vertex because the volume
+    // params are only in scope there, applied per fragment because snow sits on
+    // top of the lighting.
+    @location(3) snow : f32,
 };
 
 @vertex
@@ -161,6 +165,10 @@ fn vs_main(@builtin(vertex_index) vid : u32, @builtin(instance_index) ii : u32) 
         }
     }
     out.color = col;
+    // treeScale.z carries the scene's snow accumulation (see VolumeParamsCPU).
+    // Same curve as the ground and the grass, so a snowed-in scene agrees with
+    // itself instead of leaving the bushes green on a white field.
+    out.snow = vol.treeScale.z * smoothstep(0.15, 0.7, out.normal.y);
     return out;
 }
 
@@ -172,7 +180,8 @@ fn fs_main(in : VSOut) -> @location(0) vec4<f32> {
     let ndl = clamp(dot(normalize(in.normal), sun), 0.0, 1.0) * 0.5 + 0.5;
     let ambient = ubo.ambient.rgb * ubo.ambient.w;
     let direct = ubo.sunColor.rgb * ubo.sunColor.w * ndl;
-    return vec4<f32>(in.color * (ambient + direct), 1.0);
+    let base = in.color * (ambient + direct);
+    return vec4<f32>(mix(base, vec3<f32>(0.95, 0.97, 1.0), clamp(in.snow, 0.0, 1.0)), 1.0);
 }
 )WGSL";
 
@@ -388,6 +397,7 @@ u32 WebGPUVegetationSystem::BuildVolumeParams(ECS::World* world,
         auto* t = world->GetComponent<TransformComponent>(e);
         if (!g || !t || !t->visible) continue;
         VolumeParamsCPU& p = params[count];
+        p.treeScale[2] = m_SnowAccumulation;   // shared with grass and shrubs
         put3(p.posHalfX, t->position); p.posHalfX[3] = g->halfExtents.x;
         put3(p.baseColorHalfZ, g->baseColor); p.baseColorHalfZ[3] = g->halfExtents.z;
         put3(p.tipColorHeight, g->tipColor); p.tipColorHeight[3] = g->bladeHeight;
@@ -404,6 +414,7 @@ u32 WebGPUVegetationSystem::BuildVolumeParams(ECS::World* world,
         auto* t = world->GetComponent<TransformComponent>(e);
         if (!g || !t || !t->visible) continue;
         VolumeParamsCPU& p = params[count];
+        p.treeScale[2] = m_SnowAccumulation;   // shared with grass and shrubs
         put3(p.posHalfX, t->position); p.posHalfX[3] = g->halfExtents.x;
         put3(p.baseColorHalfZ, g->baseColor); p.baseColorHalfZ[3] = g->halfExtents.z;
         put3(p.tipColorHeight, g->tipColor); p.tipColorHeight[3] = g->shrubHeight;
@@ -420,6 +431,7 @@ u32 WebGPUVegetationSystem::BuildVolumeParams(ECS::World* world,
         auto* t = world->GetComponent<TransformComponent>(e);
         if (!g || !t || !t->visible) continue;
         VolumeParamsCPU& p = params[count];
+        p.treeScale[2] = m_SnowAccumulation;   // shared with grass and shrubs
         put3(p.posHalfX, t->position); p.posHalfX[3] = g->halfExtents.x;
         put3(p.baseColorHalfZ, g->canopyBaseColor); p.baseColorHalfZ[3] = g->halfExtents.z;
         put3(p.tipColorHeight, g->canopyTipColor);
@@ -439,7 +451,6 @@ u32 WebGPUVegetationSystem::BuildVolumeParams(ECS::World* world,
         p.treeDims[3] = g->canopyOffset;
         p.treeScale[0] = g->minHeightScale;
         p.treeScale[1] = g->maxHeightScale;
-        p.treeScale[2] = 0.0f;
         p.treeScale[3] = 0.0f;
         put3(p.trunkColorIdxOff, g->trunkColor);
         p.trunkColorIdxOff[3] = static_cast<f32>(m_Tree.indexOffset);
