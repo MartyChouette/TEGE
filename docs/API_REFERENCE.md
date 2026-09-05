@@ -138,6 +138,85 @@ RenderSystem* render = world.RegisterSystem<RenderSystem>(&world, &renderer);
 world.Update(deltaTime);
 ```
 
+## Generated Geometry System
+
+`ECS::GeneratedGeometrySystem` drives six CPU generators and writes their output
+onto the entity that carries the authoring component. It ticks in all three
+runtimes (editor play mode, the desktop player, the web build).
+
+```cpp
+ECS::GeneratedGeometrySystem generated;
+generated.SetWorld(&world);
+
+// Per frame, on the owner thread. It adds MeshComponent /
+// ProceduralMeshComponent / ProceduralTextureComponent where missing, which is
+// structural mutation and therefore main-thread only (adr-0004).
+generated.Update(&world, deltaTime);
+
+// Drop cached generator state so a second play session starts an automaton at
+// generation zero instead of mid-run.
+generated.Reset();
+```
+
+Geometry generators write vertices and indices into the entity's
+`MeshComponent` and raise `ProceduralMeshComponent`:
+
+| Component | Produces |
+|---|---|
+| `MetaballComponent` + `MetaballSurfaceComponent` | marching-cubes isosurface over a shared scalar field |
+| `CellularAutomataComponent` | voxels, marching cubes or a point cloud from a 2D/3D automaton |
+| `Projection4DComponent` | wireframe tube mesh of a 4D polytope projected stereographically |
+| `FourierMeshComponent` | triangulated or extruded contour rebuilt from a truncated DFT |
+
+Texture generators bake RGBA8 into `ProceduralTextureComponent`:
+
+| Component | Produces |
+|---|---|
+| `ReactionDiffusionComponent` | Gray-Scott pattern, eight presets |
+| `PhysarumComponent` | agent trail network, five presets |
+
+### ProceduralMeshComponent
+
+One upload path for every system that writes mesh data at runtime. Attach it
+beside the `MeshComponent` you write and raise a flag; the renderer handles all
+producers in one loop, on both the Vulkan and WebGPU paths.
+
+```cpp
+mesh->vertices = std::move(verts);
+mesh->indices  = std::move(inds);
+
+auto* pm = world.GetComponent<ECS::ProceduralMeshComponent>(entity);
+pm->topologyDirty = true;   // index count changed, or first write: buffers rebuild
+pm->meshDirty     = true;   // vertices moved only: re-upload in place
+```
+
+The renderer clears both flags. Entities carrying this component are excluded
+from the merged geometry pool, which has no free list and would be exhausted in
+seconds by a mesh that regenerates each frame.
+
+### ProceduralTextureComponent
+
+The texture counterpart. A system writes RGBA8 and raises `dirty`; the renderer
+uploads it, registers it in the bindless set and points the material's base
+colour at it. The entity needs a `MaterialComponent` to carry the result.
+
+```cpp
+pt->pixels = std::move(rgba);   // width * height * 4
+pt->width  = w;
+pt->height = h;
+pt->dirty  = true;
+```
+
+Two limits worth knowing before relying on it:
+
+- **Vulkan only.** The upload runs in `RenderSystem::FlushPendingChanges`; the
+  WebGPU path has no equivalent yet, so the component is inert on web.
+- **Bake once, not per frame.** `VulkanImage::CreateFromData` ends in
+  `vkQueueWaitIdle` on the graphics queue: it is a load-time path. Driving it
+  every frame stalls against frames in flight and loses the device. Animating a
+  generated texture needs a per-frame upload that records a staging copy into
+  the frame's own command buffer, which does not exist yet.
+
 ## Animation System
 
 ```cpp

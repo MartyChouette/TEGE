@@ -164,8 +164,84 @@ camera path is untouched — adopting the system is opt-in per scene.
 - **Tilemap**: `HasComponent_Tilemap(uint64)`, `Tilemap_GetTile(uint64, int x, int y)`, `Tilemap_SetTile(uint64, int x, int y, int tileIndex)`, `Tilemap_GetWidth/GetHeight(uint64)`
 - **Existence checks**: `HasComponent_Health/Light/Camera/Material/AudioSource/Rigidbody/BoxCollider/Animator/Tilemap(uint64)`
 - **ReflectionProbe**: `ReflectionProbe_SetIntensity/GetIntensity(uint64, float)`, `ReflectionProbe_SetBoxMin/SetBoxMax(uint64, Vector3)`, `ReflectionProbe_Bake(uint64)`
-- **DynamicDifficulty**: `Difficulty_GetScore(uint64)`, `Difficulty_GetMultiplier(uint64, string)` — "enemyDamage"/"enemyHealth"/"aiAggression"/"resourceDrops", `Difficulty_SetBaseDifficulty/GetBaseDifficulty(uint64, uint)`, `Difficulty_RecordDeath(uint64)`, `Difficulty_RecordShot(uint64)`, `Difficulty_RecordHit(uint64)`, `Difficulty_RecordCheckpointHealth(uint64, float)`
+- **DynamicDifficulty**: `Difficulty_GetScore(uint64)`, `Difficulty_GetMultiplier(uint64, string)` — "enemyDamage"/"enemyHealth"/"aiAggression"/"resourceDrops"/"checkpoint", `Difficulty_SetBaseDifficulty/GetBaseDifficulty(uint64, uint)`, `Difficulty_RecordDeath(uint64)`, `Difficulty_RecordShot(uint64)`, `Difficulty_RecordHit(uint64)`, `Difficulty_RecordCheckpointHealth(uint64, float)`, `Difficulty_SetEnabled(uint64, bool)`, `Difficulty_SetPlayerEntity(uint64, uint64)` — the entity whose HealthComponent the health metric reads, `Difficulty_SetResourceRatio(uint64, float)`, `Difficulty_Reset(uint64)`
 - **State Machine**: `SM_AddState(uint64, string)`, `SM_AddTransition(uint64, from, to)`, `SM_SetState/GetCurrentState/GetPreviousState(uint64)`, `SM_GetStateTime(uint64)`, `SM_SendTrigger(uint64, string)`, `SM_SetBool/GetBool(uint64, string, bool)`, `SM_SetFloat/GetFloat(uint64, string, float)`, `SM_SetInt/GetInt(uint64, string, int)`, `SM_HasState(uint64, string)`, `SM_SetOnEnter/SetOnUpdate/SetOnExit(uint64, stateName, funcName)`, `SM_GetOnEnter/GetOnUpdate/GetOnExit(uint64, stateName)`
+
+
+## Generated Geometry and Textures
+
+Six CPU generators that build geometry or pixels at runtime. Each is authored as
+a component (Add Component > Generated Geometry) and driven by
+`GeneratedGeometrySystem`, which runs in the editor, the desktop player and the
+web build. The functions below retune a generator that is already on the entity;
+changing a value the generator hashes makes it rebuild on the next tick.
+
+Every function is a no-op (or returns a default) when the entity does not carry
+the matching component.
+
+### Metaballs
+
+Blobs share a scalar field per `group`; one Metaball Surface entity per group
+receives the marching-cubes isosurface into its MeshComponent.
+
+`Metaball_SetRadius(uint64, float)`, `Metaball_SetStrength(uint64, float)` —
+negative strength carves instead of adds, `Metaball_SetGroup(uint64, int)`,
+`Metaball_SetColor(uint64, float r, float g, float b)`
+
+`MetaballSurface_SetGroup(uint64, int)`,
+`MetaballSurface_SetGridResolution(uint64, int)` — clamped 16-64, cost is cubic,
+`MetaballSurface_SetGridSize(uint64, float)`
+
+### Cellular automata
+
+`CA_SetRunning(uint64, bool)`, `CA_Reset(uint64)`, `CA_SetRule(uint64, int)` —
+0 Game of Life, 1 HighLife, 2 Day and Night, 3 Seeds, 4 Brian's Brain,
+5 Rule 110, 6 Diamoeba, 7 Custom,
+`CA_SetStampPattern(uint64, string)` — "", "glider", "pulsar", "gospergun"
+(resets the grid, since a stamp only applies to a fresh one),
+`CA_GetGeneration(uint64)`, `CA_GetLiveCells(uint64)`
+
+### 4D projection
+
+`P4D_SetPolytope(uint64, int)` — 0 tesseract, 1 5-cell, 2 16-cell, 3 24-cell,
+4 120-cell, `P4D_SetRotation(uint64, float xy, float xz, float xw, float yz,
+float yw, float zw)` — radians/second; the W planes are the ones with no 3D
+equivalent, `P4D_SetScale(uint64, float)`, `P4D_SetAnimate(uint64, bool)`
+
+### Fourier contours
+
+`Fourier_SetContour(uint64, int)` — 0 circle, 1 square, 2 star, 3 heart,
+4 custom, `Fourier_SetTerms(uint64, int)`, `Fourier_SetExtrude(uint64, float)` —
+0 is a flat triangulated contour, `Fourier_GetActiveTerms(uint64)`
+
+### Reaction-diffusion and Physarum (textures)
+
+These two bake RGBA8 into `ProceduralTextureComponent`, which the renderer
+uploads and binds as the entity's base colour. They **bake once** per
+configuration rather than animating: the only texture upload path in the engine
+ends in a graphics-queue idle, so driving it per frame loses the device.
+`settleSteps` decides how developed the pattern is when it lands, and every one
+of those steps runs in a single frame.
+
+`RD_SetPreset(uint64, int)` — 0 mitosis spots, 1 coral, 2 fingerprints,
+3 leopard, 4 labyrinth, 5 worm holes, 6 bubble packing, 7 spirals, 8 custom,
+`RD_SetSettleSteps(uint64, uint)`, `RD_Rebake(uint64)`, `RD_GetStepCount(uint64)`
+
+`Physarum_SetPreset(uint64, int)` — 0 classic slime, 1 branching network,
+2 dense web, 3 tendrils, 4 pulsating, 5 custom,
+`Physarum_SetAgentCount(uint64, uint)` — capped at 500000, every agent moves on
+the CPU each step, `Physarum_SetSettleSteps(uint64, uint)`,
+`Physarum_Rebake(uint64)`, `Physarum_GetStepCount(uint64)`
+
+Known limits: the texture upload is Vulkan-only, so on web these two components
+are inert. Reaction-diffusion currently floods to a uniform field with every
+shipped preset and renders as one flat colour; Physarum works.
+
+### Freezing a generator
+
+`ProceduralMesh_SetRegenerate(uint64, bool)`,
+`ProceduralTexture_SetRegenerate(uint64, bool)` — false keeps the current
+geometry or image and stops the owning system rebuilding it.
 
 ## Coroutines
 

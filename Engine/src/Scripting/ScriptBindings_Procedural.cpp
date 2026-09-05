@@ -16,6 +16,11 @@
 #include "Enjin/ECS/Components/WFC.h"
 #include "Enjin/ECS/Components/Gameplay.h"   // TilemapComponent
 #include "Enjin/ECS/Systems/WFCSystem.h"
+#include "Enjin/ECS/Components/GeneratedGeometry.h"
+#include "Enjin/ECS/Components/GeneratedTexture.h"
+#include "Enjin/ECS/Components/ProceduralMesh.h"
+#include "Enjin/ECS/Components/ProceduralTexture.h"
+#include "Enjin/Effects/Metaballs.h"
 #include <angelscript.h>
 #include <cassert>
 
@@ -414,6 +419,175 @@ static int WFC_Generate(u64 self) {
 namespace Enjin {
 namespace Scripting {
 
+
+// ---------------------------------------------------------------------------
+// Generated geometry and textures
+// ---------------------------------------------------------------------------
+// The six CPU generators. Each writes into the entity's MeshComponent or
+// ProceduralTextureComponent; these bindings expose the authored parameters so
+// a script can retune a generator at runtime rather than only in the inspector.
+// Setters that change a generator's configuration cause it to rebuild on the
+// next tick, because the system hashes the authored fields and re-initialises
+// when the hash moves. Missing component = safe no-op / default return.
+
+template <typename T>
+static T* GenComp(u64 self) {
+    if (!s_BindingsWorld) return nullptr;
+    return s_BindingsWorld->GetComponent<T>(self);
+}
+
+// --- Metaballs -------------------------------------------------------------
+static void Metaball_SetRadius(u64 self, float r) {
+    if (auto* c = GenComp<Effects::MetaballComponent>(self)) c->radius = r;
+}
+static void Metaball_SetStrength(u64 self, float v) {
+    // Negative strength carves a hole out of the surface instead of adding to it.
+    if (auto* c = GenComp<Effects::MetaballComponent>(self)) c->strength = v;
+}
+static void Metaball_SetGroup(u64 self, int group) {
+    if (auto* c = GenComp<Effects::MetaballComponent>(self)) c->groupId = group;
+}
+static void Metaball_SetColor(u64 self, float r, float g, float b) {
+    if (auto* c = GenComp<Effects::MetaballComponent>(self)) c->color = Math::Vector3(r, g, b);
+}
+static void MetaballSurface_SetGroup(u64 self, int group) {
+    if (auto* c = GenComp<ECS::MetaballSurfaceComponent>(self)) c->groupId = group;
+}
+static void MetaballSurface_SetGridResolution(u64 self, int res) {
+    // Clamped to the same 16-64 the system and serializer use: cost is cubic.
+    if (auto* c = GenComp<ECS::MetaballSurfaceComponent>(self))
+        c->gridResolution = res < 16 ? 16 : (res > 64 ? 64 : res);
+}
+static void MetaballSurface_SetGridSize(u64 self, float size) {
+    if (auto* c = GenComp<ECS::MetaballSurfaceComponent>(self)) c->gridSize = size;
+}
+
+// --- Cellular automata -----------------------------------------------------
+static void CA_SetRunning(u64 self, bool running) {
+    if (auto* c = GenComp<ECS::CellularAutomataComponent>(self)) c->running = running;
+}
+static void CA_Reset(u64 self) {
+    if (auto* c = GenComp<ECS::CellularAutomataComponent>(self)) c->resetRequested = true;
+}
+static void CA_SetRule(u64 self, int rule) {
+    if (auto* c = GenComp<ECS::CellularAutomataComponent>(self)) {
+        if (rule >= 0 && rule <= static_cast<int>(Effects::CARule::Custom))
+            c->rule = static_cast<Effects::CARule>(rule);
+    }
+}
+static void CA_SetStampPattern(u64 self, const std::string& pattern) {
+    if (auto* c = GenComp<ECS::CellularAutomataComponent>(self)) {
+        c->stampPattern = pattern;
+        c->resetRequested = true;   // the stamp only applies on a fresh grid
+    }
+}
+static u32 CA_GetGeneration(u64 self) {
+    auto* c = GenComp<ECS::CellularAutomataComponent>(self);
+    return c ? c->generation : 0u;
+}
+static u32 CA_GetLiveCells(u64 self) {
+    auto* c = GenComp<ECS::CellularAutomataComponent>(self);
+    return c ? c->liveCells : 0u;
+}
+
+// --- 4D projection ---------------------------------------------------------
+static void P4D_SetPolytope(u64 self, int polytope) {
+    if (auto* c = GenComp<ECS::Projection4DComponent>(self)) {
+        if (polytope >= 0 && polytope < static_cast<int>(ECS::Projection4DComponent::Polytope::Count))
+            c->polytope = static_cast<ECS::Projection4DComponent::Polytope>(polytope);
+    }
+}
+static void P4D_SetRotation(u64 self, float xy, float xz, float xw,
+                            float yz, float yw, float zw) {
+    // The W planes are the ones with no 3D equivalent: they are what makes the
+    // projection appear to turn inside out.
+    if (auto* c = GenComp<ECS::Projection4DComponent>(self)) {
+        c->rotation.speedXY = xy; c->rotation.speedXZ = xz; c->rotation.speedXW = xw;
+        c->rotation.speedYZ = yz; c->rotation.speedYW = yw; c->rotation.speedZW = zw;
+    }
+}
+static void P4D_SetScale(u64 self, float scale) {
+    if (auto* c = GenComp<ECS::Projection4DComponent>(self)) c->scale = scale;
+}
+static void P4D_SetAnimate(u64 self, bool animate) {
+    if (auto* c = GenComp<ECS::Projection4DComponent>(self)) c->animate = animate;
+}
+
+// --- Fourier contours ------------------------------------------------------
+static void Fourier_SetContour(u64 self, int source) {
+    if (auto* c = GenComp<ECS::FourierMeshComponent>(self)) {
+        if (source >= 0 && source < static_cast<int>(ECS::FourierMeshComponent::ContourSource::Count))
+            c->source = static_cast<ECS::FourierMeshComponent::ContourSource>(source);
+    }
+}
+static void Fourier_SetTerms(u64 self, int terms) {
+    if (auto* c = GenComp<ECS::FourierMeshComponent>(self)) c->terms = terms < 1 ? 1 : terms;
+}
+static void Fourier_SetExtrude(u64 self, float depth) {
+    if (auto* c = GenComp<ECS::FourierMeshComponent>(self)) c->extrudeDepth = depth < 0.0f ? 0.0f : depth;
+}
+static int Fourier_GetActiveTerms(u64 self) {
+    auto* c = GenComp<ECS::FourierMeshComponent>(self);
+    return c ? c->activeTerms : 0;
+}
+
+// --- Reaction-diffusion ----------------------------------------------------
+static void RD_SetPreset(u64 self, int preset) {
+    if (auto* c = GenComp<ECS::ReactionDiffusionComponent>(self)) {
+        if (preset >= 0 && preset <= static_cast<int>(Effects::RDPreset::Custom)) {
+            c->preset = static_cast<Effects::RDPreset>(preset);
+            c->resetRequested = true;
+        }
+    }
+}
+static void RD_SetSettleSteps(u64 self, u32 steps) {
+    // These all run in one frame at bake time, so a large value stalls.
+    if (auto* c = GenComp<ECS::ReactionDiffusionComponent>(self))
+        c->settleSteps = steps > 20000u ? 20000u : steps;
+}
+static void RD_Rebake(u64 self) {
+    if (auto* c = GenComp<ECS::ReactionDiffusionComponent>(self)) c->resetRequested = true;
+}
+static u32 RD_GetStepCount(u64 self) {
+    auto* c = GenComp<ECS::ReactionDiffusionComponent>(self);
+    return c ? c->stepCount : 0u;
+}
+
+// --- Physarum --------------------------------------------------------------
+static void Physarum_SetPreset(u64 self, int preset) {
+    if (auto* c = GenComp<ECS::PhysarumComponent>(self)) {
+        if (preset >= 0 && preset <= static_cast<int>(Effects::PhysarumPreset::Custom)) {
+            c->preset = static_cast<Effects::PhysarumPreset>(preset);
+            c->resetRequested = true;
+        }
+    }
+}
+static void Physarum_SetAgentCount(u64 self, u32 count) {
+    if (auto* c = GenComp<ECS::PhysarumComponent>(self)) {
+        c->agentCount = count < 1u ? 1u : (count > 500000u ? 500000u : count);
+        c->resetRequested = true;
+    }
+}
+static void Physarum_SetSettleSteps(u64 self, u32 steps) {
+    if (auto* c = GenComp<ECS::PhysarumComponent>(self))
+        c->settleSteps = steps > 20000u ? 20000u : steps;
+}
+static void Physarum_Rebake(u64 self) {
+    if (auto* c = GenComp<ECS::PhysarumComponent>(self)) c->resetRequested = true;
+}
+static u32 Physarum_GetStepCount(u64 self) {
+    auto* c = GenComp<ECS::PhysarumComponent>(self);
+    return c ? c->stepCount : 0u;
+}
+
+// --- Freeze switches -------------------------------------------------------
+static void ProceduralMesh_SetRegenerate(u64 self, bool regen) {
+    if (auto* c = GenComp<ECS::ProceduralMeshComponent>(self)) c->regenerate = regen;
+}
+static void ProceduralTexture_SetRegenerate(u64 self, bool regen) {
+    if (auto* c = GenComp<ECS::ProceduralTextureComponent>(self)) c->regenerate = regen;
+}
+
 void RegisterProceduralBindings(asIScriptEngine* engine) {
     // WFC constraint solver (author tiles+sockets in the editor, resolve from script)
     AS_CHECK(engine->RegisterGlobalFunction(
@@ -507,6 +681,47 @@ void RegisterProceduralBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction(
         "void ProceduralGen_SpawnGrid(float cellSize, int wallValue, int floorValue)",
         ENJIN_AS_FN(ProceduralGen_SpawnGrid), ENJIN_AS_CALL_CDECL));
+
+    // --- Generated geometry and textures ---
+    AS_CHECK(engine->RegisterGlobalFunction("void Metaball_SetRadius(uint64, float)", ENJIN_AS_FN(Metaball_SetRadius), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Metaball_SetStrength(uint64, float)", ENJIN_AS_FN(Metaball_SetStrength), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Metaball_SetGroup(uint64, int)", ENJIN_AS_FN(Metaball_SetGroup), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Metaball_SetColor(uint64, float, float, float)", ENJIN_AS_FN(Metaball_SetColor), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void MetaballSurface_SetGroup(uint64, int)", ENJIN_AS_FN(MetaballSurface_SetGroup), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void MetaballSurface_SetGridResolution(uint64, int)", ENJIN_AS_FN(MetaballSurface_SetGridResolution), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void MetaballSurface_SetGridSize(uint64, float)", ENJIN_AS_FN(MetaballSurface_SetGridSize), ENJIN_AS_CALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction("void CA_SetRunning(uint64, bool)", ENJIN_AS_FN(CA_SetRunning), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void CA_Reset(uint64)", ENJIN_AS_FN(CA_Reset), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void CA_SetRule(uint64, int)", ENJIN_AS_FN(CA_SetRule), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void CA_SetStampPattern(uint64, const string &in)", ENJIN_AS_FN(CA_SetStampPattern), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("uint CA_GetGeneration(uint64)", ENJIN_AS_FN(CA_GetGeneration), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("uint CA_GetLiveCells(uint64)", ENJIN_AS_FN(CA_GetLiveCells), ENJIN_AS_CALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction("void P4D_SetPolytope(uint64, int)", ENJIN_AS_FN(P4D_SetPolytope), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void P4D_SetRotation(uint64, float, float, float, float, float, float)", ENJIN_AS_FN(P4D_SetRotation), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void P4D_SetScale(uint64, float)", ENJIN_AS_FN(P4D_SetScale), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void P4D_SetAnimate(uint64, bool)", ENJIN_AS_FN(P4D_SetAnimate), ENJIN_AS_CALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction("void Fourier_SetContour(uint64, int)", ENJIN_AS_FN(Fourier_SetContour), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Fourier_SetTerms(uint64, int)", ENJIN_AS_FN(Fourier_SetTerms), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Fourier_SetExtrude(uint64, float)", ENJIN_AS_FN(Fourier_SetExtrude), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int Fourier_GetActiveTerms(uint64)", ENJIN_AS_FN(Fourier_GetActiveTerms), ENJIN_AS_CALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction("void RD_SetPreset(uint64, int)", ENJIN_AS_FN(RD_SetPreset), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void RD_SetSettleSteps(uint64, uint)", ENJIN_AS_FN(RD_SetSettleSteps), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void RD_Rebake(uint64)", ENJIN_AS_FN(RD_Rebake), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("uint RD_GetStepCount(uint64)", ENJIN_AS_FN(RD_GetStepCount), ENJIN_AS_CALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction("void Physarum_SetPreset(uint64, int)", ENJIN_AS_FN(Physarum_SetPreset), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Physarum_SetAgentCount(uint64, uint)", ENJIN_AS_FN(Physarum_SetAgentCount), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Physarum_SetSettleSteps(uint64, uint)", ENJIN_AS_FN(Physarum_SetSettleSteps), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Physarum_Rebake(uint64)", ENJIN_AS_FN(Physarum_Rebake), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("uint Physarum_GetStepCount(uint64)", ENJIN_AS_FN(Physarum_GetStepCount), ENJIN_AS_CALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction("void ProceduralMesh_SetRegenerate(uint64, bool)", ENJIN_AS_FN(ProceduralMesh_SetRegenerate), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void ProceduralTexture_SetRegenerate(uint64, bool)", ENJIN_AS_FN(ProceduralTexture_SetRegenerate), ENJIN_AS_CALL_CDECL));
+
 }
 
 } // namespace Scripting
