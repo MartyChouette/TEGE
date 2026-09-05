@@ -14,7 +14,8 @@ LocalizationManager& LocalizationManager::Get() {
     return instance;
 }
 
-void LocalizationManager::SetLocale(const std::string& localeCode) {
+void LocalizationManager::SetLocale(const std::string& localeCode) {
+    std::unique_lock<std::shared_mutex> lock(m_Mutex);
     // Validate that the locale exists in our registered locales or string tables
     bool found = false;
     for (const auto& locale : m_Locales) {
@@ -34,11 +35,13 @@ void LocalizationManager::SetLocale(const std::string& localeCode) {
     ENJIN_LOG_INFO(Editor, "Locale set to '%s'", localeCode.c_str());
 }
 
-std::vector<Locale> LocalizationManager::GetAvailableLocales() const {
+std::vector<Locale> LocalizationManager::GetAvailableLocales() const {
+    std::shared_lock<std::shared_mutex> lock(m_Mutex);
     return m_Locales;
 }
 
-void LocalizationManager::AddLocale(const Locale& locale) {
+void LocalizationManager::AddLocale(const Locale& locale) {
+    std::unique_lock<std::shared_mutex> lock(m_Mutex);
     // Don't add duplicates
     for (const auto& existing : m_Locales) {
         if (existing.code == locale.code) {
@@ -51,10 +54,12 @@ void LocalizationManager::AddLocale(const Locale& locale) {
 void LocalizationManager::SetString(const std::string& localeCode,
                                      const std::string& key,
                                      const std::string& value) {
+    std::unique_lock<std::shared_mutex> lock(m_Mutex);
     m_StringTables[localeCode][key] = value;
 }
 
-std::string LocalizationManager::GetString(const std::string& key) const {
+std::string LocalizationManager::GetString(const std::string& key) const {
+    std::shared_lock<std::shared_mutex> lock(m_Mutex);
     // Try current locale
     auto localeIt = m_StringTables.find(m_CurrentLocale);
     if (localeIt != m_StringTables.end()) {
@@ -81,6 +86,7 @@ std::string LocalizationManager::GetString(const std::string& key) const {
 
 std::string LocalizationManager::GetString(const std::string& key,
                                             const std::string& fallback) const {
+    std::shared_lock<std::shared_mutex> lock(m_Mutex);
     // Try current locale
     auto localeIt = m_StringTables.find(m_CurrentLocale);
     if (localeIt != m_StringTables.end()) {
@@ -104,7 +110,8 @@ std::string LocalizationManager::GetString(const std::string& key,
     return fallback;
 }
 
-bool LocalizationManager::HasString(const std::string& key) const {
+bool LocalizationManager::HasString(const std::string& key) const {
+    std::shared_lock<std::shared_mutex> lock(m_Mutex);
     auto localeIt = m_StringTables.find(m_CurrentLocale);
     if (localeIt != m_StringTables.end()) {
         return localeIt->second.find(key) != localeIt->second.end();
@@ -116,6 +123,8 @@ std::string LocalizationManager::Format(
     const std::string& key,
     const std::unordered_map<std::string, std::string>& params) const {
 
+    // No lock here on purpose: GetString takes the shared lock, and
+    // re-entering a shared_mutex on one thread is undefined.
     std::string result = GetString(key);
 
     // Replace {paramName} patterns
@@ -137,10 +146,16 @@ bool LocalizationManager::LoadFromJSON(const std::string& filepath) {
         ENJIN_LOG_ERROR(Editor, "Localization: failed to open JSON file '%s'", filepath.c_str());
         return false;
     }
+    return LoadJSONStream(file, filepath);
+}
+
+bool LocalizationManager::LoadJSONStream(std::istream& in, const std::string& label) {
+    std::unique_lock<std::shared_mutex> lock(m_Mutex);
+    const std::string& filepath = label;   // keep the existing log wording
 
     nlohmann::json j;
     try {
-        file >> j;
+        in >> j;
     } catch (const nlohmann::json::parse_error& e) {
         ENJIN_LOG_ERROR(Editor, "Localization: JSON parse error in '%s': %s",
                         filepath.c_str(), e.what());
@@ -185,7 +200,8 @@ bool LocalizationManager::LoadFromJSON(const std::string& filepath) {
     return true;
 }
 
-bool LocalizationManager::SaveToJSON(const std::string& filepath) const {
+bool LocalizationManager::SaveToJSON(const std::string& filepath) const {
+    std::shared_lock<std::shared_mutex> lock(m_Mutex);
     nlohmann::json j = nlohmann::json::object();
 
     for (const auto& [localeCode, strings] : m_StringTables) {
@@ -271,12 +287,31 @@ static std::string QuoteCSVField(const std::string& field) {
     return quoted;
 }
 
+bool LocalizationManager::LoadFromMemory(const u8* data, usize size, TableFormat format,
+                                         const std::string& label) {
+    if (!data || size == 0) {
+        ENJIN_LOG_ERROR(Editor, "Localization: empty table buffer for '%s'", label.c_str());
+        return false;
+    }
+    // istringstream copies, which is fine: a string table is kilobytes and
+    // this runs once at boot, not per frame.
+    std::istringstream in(std::string(reinterpret_cast<const char*>(data), size));
+    return (format == TableFormat::Json) ? LoadJSONStream(in, label)
+                                         : LoadCSVStream(in, label);
+}
+
 bool LocalizationManager::LoadFromCSV(const std::string& filepath) {
     std::ifstream file(filepath);
     if (!file.is_open()) {
         ENJIN_LOG_ERROR(Editor, "Localization: failed to open CSV file '%s'", filepath.c_str());
         return false;
     }
+    return LoadCSVStream(file, filepath);
+}
+
+bool LocalizationManager::LoadCSVStream(std::istream& file, const std::string& label) {
+    std::unique_lock<std::shared_mutex> lock(m_Mutex);
+    const std::string& filepath = label;   // keep the existing log wording
 
     std::string line;
 
@@ -349,7 +384,8 @@ bool LocalizationManager::LoadFromCSV(const std::string& filepath) {
     return true;
 }
 
-bool LocalizationManager::SaveToCSV(const std::string& filepath) const {
+bool LocalizationManager::SaveToCSV(const std::string& filepath) const {
+    std::shared_lock<std::shared_mutex> lock(m_Mutex);
     std::ofstream file(filepath);
     if (!file.is_open()) {
         ENJIN_LOG_ERROR(Editor, "Localization: failed to open CSV file for writing '%s'",
@@ -407,13 +443,15 @@ bool LocalizationManager::SaveToCSV(const std::string& filepath) const {
     return true;
 }
 
-void LocalizationManager::Clear() {
+void LocalizationManager::Clear() {
+    std::unique_lock<std::shared_mutex> lock(m_Mutex);
     m_StringTables.clear();
     m_Locales.clear();
     m_CurrentLocale = "en";
 }
 
-std::vector<std::string> LocalizationManager::GetAllKeys() const {
+std::vector<std::string> LocalizationManager::GetAllKeys() const {
+    std::shared_lock<std::shared_mutex> lock(m_Mutex);
     std::vector<std::string> keys;
     auto localeIt = m_StringTables.find(m_CurrentLocale);
     if (localeIt != m_StringTables.end()) {
@@ -426,7 +464,8 @@ std::vector<std::string> LocalizationManager::GetAllKeys() const {
     return keys;
 }
 
-u32 LocalizationManager::GetStringCount(const std::string& localeCode) const {
+u32 LocalizationManager::GetStringCount(const std::string& localeCode) const {
+    std::shared_lock<std::shared_mutex> lock(m_Mutex);
     auto it = m_StringTables.find(localeCode);
     if (it != m_StringTables.end()) {
         return static_cast<u32>(it->second.size());

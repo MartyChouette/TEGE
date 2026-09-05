@@ -1,4 +1,6 @@
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/GUI/LocalizationBoot.h"
+#include "Enjin/GUI/Localization.h"
 #include "Enjin/Effects/WorldTimeApply.h"
 #include "Enjin/Input/TouchActionBridge.h"
 #include <nlohmann/json.hpp>
@@ -753,6 +755,19 @@ void EditorLayer::InitializePlayMode() {
         auto& inputSettings = m_SceneManager.GetInputSettings();
         inputSettings.ApplyTo(m_InputMap);
         InputSystem::SetTouchProjectSettings(&inputSettings);
+
+        // Project string tables, from the same block an exported game reads,
+        // so play-in-editor shows the text the player will see. Cleared first:
+        // opening a second project must not inherit the first one's strings.
+        GUI::LocalizationManager::Get().Clear();
+        const std::string& locJson = m_SceneManager.GetLocalizationJson();
+        if (!locJson.empty()) {
+            // Tables are authored relative to the project, and GetProjectPath
+            // is the .enjinproject FILE.
+            const std::string projDir =
+                std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path().string();
+            GUI::ApplyLocalizationSettings(locJson, projDir);
+        }
     }
 }
 

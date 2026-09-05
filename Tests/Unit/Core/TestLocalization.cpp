@@ -1,4 +1,6 @@
 #include "EnjinTest.h"
+#include "Enjin/GUI/LocalizationBoot.h"
+#include <fstream>
 #include "Enjin/GUI/Localization.h"
 
 #include <cstdio>
@@ -274,6 +276,179 @@ ENJIN_TEST(CSV, SaveAndLoadRoundTrip) {
 ENJIN_TEST(CSV, LoadNonexistentFails) {
     ResetLocalization();
     ENJIN_EXPECT_FALSE(LocalizationManager::Get().LoadFromCSV("nonexistent_12345.csv"));
+}
+
+
+// ===========================================================================
+// Loading a table that is not a loose file, and booting from a project block.
+//
+// LocalizationManager looked complete and had ZERO consumers: nothing in the
+// editor or either player ever called SetLocale or a loader, so the table was
+// always empty and every lookup returned its own key back. Two things blocked
+// it.
+//
+// First, both loaders were std::ifstream-only. The web player has no loose
+// files and AssetReader hands back a byte vector, not a path, so a shipped
+// game physically could not load a table however good the table was.
+//
+// Second, nothing read a project's localization settings at all.
+// ApplyLocalizationSettings is now the single boot call all three runtimes make.
+// ===========================================================================
+
+namespace {
+
+// The manager is a process-wide singleton, so a test that changes the locale
+// has to put it back or it leaks into the next one.
+struct LocalizationScope {
+    LocalizationScope() { ResetLocalization(); }
+    ~LocalizationScope() { ResetLocalization(); }
+};
+
+bool LoadCsvFromMemory(const std::string& csv) {
+    return LocalizationManager::Get().LoadFromMemory(
+        reinterpret_cast<const Enjin::u8*>(csv.data()), csv.size(),
+        LocalizationManager::TableFormat::Csv, "<test>");
+}
+
+} // namespace
+
+ENJIN_TEST(Memory, ACsvTableLoadsWithoutTouchingTheFilesystem) {
+    // Arrange: exactly the bytes AssetReader hands back inside a packed game.
+    LocalizationScope scope;
+    const std::string csv = "key,en,fr\ngreeting,Hello,Bonjour\nquit,Quit,Quitter\n";
+
+    // Act
+    const bool ok = LoadCsvFromMemory(csv);
+
+    // Assert
+    ENJIN_ASSERT_TRUE(ok);
+    LocalizationManager& mgr = LocalizationManager::Get();
+    mgr.SetLocale("fr");
+    ENJIN_EXPECT_STR_EQ(mgr.GetString("greeting").c_str(), "Bonjour");
+    ENJIN_EXPECT_STR_EQ(mgr.GetString("quit").c_str(), "Quitter");
+}
+
+ENJIN_TEST(Memory, AJsonTableLoadsWithoutTouchingTheFilesystem) {
+    // Arrange
+    LocalizationScope scope;
+    const std::string json = "{\"en\":{\"greeting\":\"Hello\"},\"fr\":{\"greeting\":\"Bonjour\"}}";
+
+    // Act
+    const bool ok = LocalizationManager::Get().LoadFromMemory(
+        reinterpret_cast<const Enjin::u8*>(json.data()), json.size(),
+        LocalizationManager::TableFormat::Json, "<test>");
+
+    // Assert
+    ENJIN_ASSERT_TRUE(ok);
+    LocalizationManager::Get().SetLocale("fr");
+    ENJIN_EXPECT_STR_EQ(LocalizationManager::Get().GetString("greeting").c_str(), "Bonjour");
+}
+
+ENJIN_TEST(Memory, AnEmptyBufferIsRejectedRatherThanParsedAsAnEmptyTable) {
+    // Arrange: a missing pak entry reads back empty, and silently "succeeding"
+    // there would look like a project with no strings rather than a load error.
+    LocalizationScope scope;
+
+    // Act / Assert
+    ENJIN_EXPECT_FALSE(LocalizationManager::Get().LoadFromMemory(
+        nullptr, 0, LocalizationManager::TableFormat::Csv, "<test>"));
+}
+
+ENJIN_TEST(Memory, TheFileAndMemoryLoadersAgree) {
+    // Arrange: both entry points must run the same parser, or one table would
+    // mean one thing in the editor and another in a shipped game.
+    const std::string csv = "key,en,fr\ngreeting,Hello,Bonjour\n";
+    const std::string path = "loc_agree_test.csv";
+    {
+        std::ofstream f(path);
+        f << csv;
+    }
+
+    // Act
+    ResetLocalization();
+    ENJIN_ASSERT_TRUE(LocalizationManager::Get().LoadFromCSV(path));
+    LocalizationManager::Get().SetLocale("fr");
+    const std::string fromFile = LocalizationManager::Get().GetString("greeting");
+
+    ResetLocalization();
+    ENJIN_ASSERT_TRUE(LoadCsvFromMemory(csv));
+    LocalizationManager::Get().SetLocale("fr");
+    const std::string fromMemory = LocalizationManager::Get().GetString("greeting");
+
+    std::remove(path.c_str());
+    ResetLocalization();
+
+    // Assert
+    ENJIN_EXPECT_STR_EQ(fromFile.c_str(), fromMemory.c_str());
+    ENJIN_EXPECT_STR_EQ(fromFile.c_str(), "Bonjour");
+}
+
+ENJIN_TEST(ProjectBoot, ALocalizationBlockRegistersItsLocalesAndSelectsTheDefault) {
+    // Arrange: the block as it appears in a .enjinproject, and verbatim in an
+    // exported game's manifest.
+    LocalizationScope scope;
+
+    // Act
+    Enjin::GUI::ApplyLocalizationSettings("{\"defaultLocale\":\"fr\",\"locales\":[{\"code\":\"en\",\"name\":\"English\"},{\"code\":\"fr\",\"name\":\"Francais\"}]}", std::string(), nullptr);
+
+    // Assert
+    ENJIN_EXPECT_STR_EQ(LocalizationManager::Get().GetCurrentLocale().c_str(), "fr");
+    const std::vector<Locale> locales = LocalizationManager::Get().GetAvailableLocales();
+    bool sawFrenchName = false;
+    for (const auto& l : locales) {
+        if (l.code == "fr" && l.name == "Francais") sawFrenchName = true;
+    }
+    ENJIN_EXPECT_TRUE(sawFrenchName);
+}
+
+ENJIN_TEST(ProjectBoot, TheLocaleIsSelectedAfterTablesLoad) {
+    // Arrange: order matters. Selecting the locale before the tables exist
+    // would leave the first frame resolving against an empty table.
+    LocalizationScope scope;
+    const std::string path = "loc_boot_test.csv";
+    {
+        std::ofstream f(path);
+        f << "key,en,fr\ngreeting,Hello,Bonjour\n";
+    }
+
+    // Act
+    const Enjin::u32 loaded =
+        Enjin::GUI::ApplyLocalizationSettings("{\"defaultLocale\":\"fr\",\"tables\":[\"loc_boot_test.csv\"]}", std::string(), nullptr);
+    const std::string got = LocalizationManager::Get().GetString("greeting");
+    std::remove(path.c_str());
+
+    // Assert
+    ENJIN_EXPECT_TRUE(loaded == 1u);
+    ENJIN_EXPECT_STR_EQ(got.c_str(), "Bonjour");
+}
+
+ENJIN_TEST(ProjectBoot, AnAbsentBlockLeavesEveryLookupOnItsFallback) {
+    // Arrange: this is every existing untranslated project, and it must behave
+    // exactly as it did before any of this existed.
+    LocalizationScope scope;
+
+    // Act
+    const Enjin::u32 loaded = Enjin::GUI::ApplyLocalizationSettings("", std::string(), nullptr);
+
+    // Assert: the call-site literal survives, and a bare key returns itself.
+    ENJIN_EXPECT_TRUE(loaded == 0u);
+    ENJIN_EXPECT_STR_EQ(
+        LocalizationManager::Get().GetString("menu.new_game", "New Game").c_str(), "New Game");
+    ENJIN_EXPECT_STR_EQ(
+        LocalizationManager::Get().GetString("menu.new_game").c_str(), "menu.new_game");
+}
+
+ENJIN_TEST(ProjectBoot, AMalformedBlockIsIgnoredRatherThanCrashing) {
+    // Arrange: a hand-edited .enjinproject is a real thing.
+    LocalizationScope scope;
+
+    // Act / Assert
+    ENJIN_EXPECT_TRUE(
+        Enjin::GUI::ApplyLocalizationSettings("{not json", std::string(), nullptr) == 0u);
+    ENJIN_EXPECT_TRUE(
+        Enjin::GUI::ApplyLocalizationSettings("[]", std::string(), nullptr) == 0u);
+    ENJIN_EXPECT_TRUE(
+        Enjin::GUI::ApplyLocalizationSettings("{\"tables\":[\"missing_98765.csv\"]}", std::string(), nullptr) == 0u);
 }
 
 ENJIN_TEST_MAIN()

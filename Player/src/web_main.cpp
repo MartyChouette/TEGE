@@ -38,6 +38,7 @@
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/Input/TouchActionBridge.h"
 #include "Enjin/Input/InputProjectSettings.h"
+#include "Enjin/GUI/LocalizationBoot.h"
 #include "Enjin/ECS/Systems/ActionTriggerSystem.h"
 #include "Enjin/GUI/UISystem.h"
 #include "Enjin/GUI/UITemplates.h"
@@ -236,6 +237,13 @@ public:
                     }
                 }
                 Enjin::InputSystem::SetTouchProjectSettings(&m_InputSettings);
+                // Project string tables + starting locale. Web has no loose
+                // files, so this MUST go through the asset reader -- the same
+                // reason ScriptEngine takes one.
+                if (manifest.contains("localization") && manifest["localization"].is_object()) {
+                    Enjin::GUI::ApplyLocalizationSettings(manifest["localization"].dump(),
+                                                          std::string(), &m_AssetReader);
+                }
                 if (manifest.contains("frameSettings")) {
                     const auto& fs = manifest["frameSettings"];
                     m_SimClock.Configure(fs.value("fixedTimestep", false),

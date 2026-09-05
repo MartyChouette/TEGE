@@ -113,6 +113,7 @@ private:
     // Accessibility settings the exported game starts with (empty = engine
     // defaults). Authored in the editor, shipped as accessibility.json.
     std::string m_AccessibilityDefaultsJson;
+    std::string m_LocalizationJson;
 
     ProgressCallback m_ProgressCallback;
 };

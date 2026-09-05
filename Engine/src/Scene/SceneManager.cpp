@@ -122,6 +122,14 @@ bool SceneManager::LoadProject(const std::string& manifestPath) {
             m_AccessibilityDefaultsJson = root["accessibilityDefaults"].dump();
         }
 
+        // Localization: default locale + the string tables to load. Absent =
+        // no tables, and every lookup returns its own fallback, which is what
+        // an untranslated project has always done.
+        m_LocalizationJson.clear();
+        if (root.contains("localization") && root["localization"].is_object()) {
+            m_LocalizationJson = root["localization"].dump();
+        }
+
         // Repair hand-edited or legacy manifests (duplicate start flags, etc.)
         u32 fixes = NormalizeSceneList();
         if (fixes > 0) {
@@ -267,6 +275,10 @@ bool SceneManager::SaveProject(const std::string& manifestPath) {
 
         if (!m_AccessibilityDefaultsJson.empty()) {
             root["accessibilityDefaults"] = nlohmann::json::parse(m_AccessibilityDefaultsJson);
+        }
+
+        if (!m_LocalizationJson.empty()) {
+            root["localization"] = nlohmann::json::parse(m_LocalizationJson);
         }
 
         // Save collision group names

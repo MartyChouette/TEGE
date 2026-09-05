@@ -144,6 +144,12 @@ public:
     const std::string& GetAccessibilityDefaultsJson() const { return m_AccessibilityDefaultsJson; }
     void SetAccessibilityDefaultsJson(const std::string& json) { m_AccessibilityDefaultsJson = json; }
 
+    // Localization: which locale a game starts in and which string tables to
+    // load. Carried verbatim into the exported game manifest like `input` and
+    // `accessibilityDefaults`, so all three runtimes read the same block.
+    const std::string& GetLocalizationJson() const { return m_LocalizationJson; }
+    void SetLocalizationJson(const std::string& json) { m_LocalizationJson = json; }
+
     // Get scenes
     const std::vector<SceneEntry>& GetScenes() const { return m_Scenes; }
     std::vector<SceneEntry>& GetScenes() { return m_Scenes; }
@@ -282,6 +288,7 @@ private:
     std::vector<StartupFlowStep> m_StartupFlow;
     InputSystem::InputProjectSettings m_InputSettings;
     std::string m_AccessibilityDefaultsJson;
+    std::string m_LocalizationJson;
 
     // Collision group names (index = bit number, up to 32)
     std::vector<std::string> m_CollisionGroupNames;

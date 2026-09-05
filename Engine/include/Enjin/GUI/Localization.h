@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <iosfwd>
+#include <shared_mutex>
 
 namespace Enjin {
 namespace GUI {
@@ -43,6 +45,18 @@ public:
     bool LoadFromCSV(const std::string& filepath);  // Columns: key, locale1, locale2, ...
     bool SaveToCSV(const std::string& filepath) const;
 
+    enum class TableFormat { Json, Csv };
+
+    // Load a table already in memory.
+    //
+    // The file loaders open an ifstream, which the web player and any packed
+    // game cannot use: on web there are no loose files, and AssetReader hands
+    // back a byte vector, not a path. Without this entry point a shipped game
+    // physically could not load a string table, whatever the table said.
+    // `label` is only used in log messages to name the source.
+    bool LoadFromMemory(const u8* data, usize size, TableFormat format,
+                        const std::string& label = "<memory>");
+
     // Clear all data
     void Clear();
 
@@ -54,6 +68,18 @@ public:
 
 private:
     LocalizationManager() = default;
+
+    // The stream parsers both loaders share. The file and memory entry points
+    // are thin wrappers so a table cannot parse differently depending on where
+    // it came from.
+    bool LoadJSONStream(std::istream& in, const std::string& label);
+    bool LoadCSVStream(std::istream& in, const std::string& label);
+
+    // Strings are read while a frame is composing text and written when a
+    // locale is switched or a table loads, so every access is guarded. Reads
+    // are shared: one lookup per drawn string is not hot-path work, but a
+    // SetLocale landing mid-frame is a real data race.
+    mutable std::shared_mutex m_Mutex;
 
     std::string m_CurrentLocale = "en";
     std::vector<Locale> m_Locales;

@@ -286,6 +286,11 @@ bool BuildPipeline::ScanProject(const std::string& projectPath) {
             m_AccessibilityDefaultsJson = root["accessibilityDefaults"].dump();
         }
 
+        m_LocalizationJson.clear();
+        if (root.contains("localization") && root["localization"].is_object()) {
+            m_LocalizationJson = root["localization"].dump();
+        }
+
         AddMessage(MessageSeverity::Info, "Found " + std::to_string(m_Scenes.size()) + " scenes in project '" + m_ProjectName + "'");
         return true;
 
@@ -766,6 +771,14 @@ bool BuildPipeline::WriteBuildManifest(const BuildConfig& config, AssetPacker& p
     // Input settings (custom actions + touch layout) authored in the editor
     if (!m_InputSettingsJson.empty()) {
         manifest["input"] = nlohmann::json::parse(m_InputSettingsJson);
+    }
+
+    // Localization: default locale + string tables. Rides the manifest like
+    // `input` so a shipped game reads its locale from the same one file.
+    // The tables themselves are already packed: BuildPipeline routes .csv and
+    // .json under assets/ into the data assets.
+    if (!m_LocalizationJson.empty()) {
+        manifest["localization"] = nlohmann::json::parse(m_LocalizationJson);
     }
 
     std::string jsonStr = manifest.dump(2);

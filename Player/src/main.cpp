@@ -22,6 +22,7 @@
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/Input/TouchActionBridge.h"
 #include "Enjin/Input/InputProjectSettings.h"
+#include "Enjin/GUI/LocalizationBoot.h"
 #include "Enjin/ECS/Systems/ActionTriggerSystem.h"
 
 // --touch: simulate the mobile touch overlay with the mouse (set in main()).
@@ -2726,6 +2727,14 @@ private:
             }
         }
         Enjin::InputSystem::SetTouchProjectSettings(&m_InputSettings);
+
+        // Project string tables + starting locale. The exe directory is the
+        // asset root here (the CWD is whatever launched us), matching how
+        // scripts and assets resolve.
+        if (manifest.contains("localization") && manifest["localization"].is_object()) {
+            Enjin::GUI::ApplyLocalizationSettings(manifest["localization"].dump(),
+                                                  Enjin::Platform::GetExecutableDirectory());
+        }
 
         // Read frame rate settings
         if (manifest.contains("frameSettings")) {
