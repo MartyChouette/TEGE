@@ -7,6 +7,8 @@
 #include "Enjin/Effects/CellularAutomataGeometry.h"
 #include "Enjin/Effects/Projection4D.h"
 #include "Enjin/Effects/FourierMesh.h"
+#include "Enjin/Effects/ReactionDiffusion.h"
+#include "Enjin/Effects/PhysarumSimulation.h"
 #include <memory>
 #include <unordered_map>
 
@@ -43,6 +45,8 @@ private:
     void UpdateCellularAutomata(World* world, f32 deltaTime);
     void UpdateProjection4D(World* world, f32 deltaTime);
     void UpdateFourierMeshes(World* world, f32 deltaTime);
+    void UpdateReactionDiffusion(World* world, f32 deltaTime);
+    void UpdatePhysarum(World* world, f32 deltaTime);
 
     // Per-entity generator state.
     struct CAState {
@@ -59,6 +63,19 @@ private:
         Effects::FourierMeshDecomposition dft;
         u64 configHash = 0;
     };
+    // The two texture simulations. Both hold a whole grid (and 50k agents for
+    // Physarum), so they are kept per entity and dropped with the entity rather
+    // than rebuilt each frame.
+    struct RDState {
+        Effects::ReactionDiffusion sim;
+        u64 configHash = 0;
+        bool baked = false;   // one upload per configuration, see the note below
+    };
+    struct PhysarumState {
+        Effects::PhysarumSimulation sim;
+        u64 configHash = 0;
+        bool baked = false;
+    };
 
     World* m_World = nullptr;
     Effects::MetaballSystem m_Metaballs;
@@ -67,6 +84,8 @@ private:
     std::unordered_map<u32, CAState> m_CAStates;
     std::unordered_map<u32, P4DState> m_P4DStates;
     std::unordered_map<u32, FourierState> m_FourierStates;
+    std::unordered_map<u32, RDState> m_RDStates;
+    std::unordered_map<u32, PhysarumState> m_PhysarumStates;
 };
 
 } // namespace ECS

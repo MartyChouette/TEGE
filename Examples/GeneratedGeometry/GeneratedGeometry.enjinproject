@@ -28,28 +28,33 @@
    "isStartScene": false
   },
   {
-   "path": "scenes/DifficultyAndFaces.enjin",
+   "path": "scenes/GeneratedTextures.enjin",
    "buildIndex": 5,
    "isStartScene": false
   },
   {
-   "path": "scenes/Dungeons.enjin",
+   "path": "scenes/DifficultyAndFaces.enjin",
    "buildIndex": 6,
    "isStartScene": false
   },
   {
-   "path": "scenes/TerrainAndScatter.enjin",
+   "path": "scenes/Dungeons.enjin",
    "buildIndex": 7,
    "isStartScene": false
   },
   {
-   "path": "scenes/Scatter.enjin",
+   "path": "scenes/TerrainAndScatter.enjin",
    "buildIndex": 8,
    "isStartScene": false
   },
   {
-   "path": "scenes/RandomBag.enjin",
+   "path": "scenes/Scatter.enjin",
    "buildIndex": 9,
+   "isStartScene": false
+  },
+  {
+   "path": "scenes/RandomBag.enjin",
+   "buildIndex": 10,
    "isStartScene": false
   }
  ]

@@ -1,6 +1,8 @@
 #include "Enjin/ECS/Systems/GeneratedGeometrySystem.h"
 #include "Enjin/ECS/Components/GeneratedGeometry.h"
 #include "Enjin/ECS/Components/ProceduralMesh.h"
+#include "Enjin/ECS/Components/ProceduralTexture.h"
+#include "Enjin/ECS/Components/GeneratedTexture.h"
 #include "Enjin/ECS/Components/Mesh.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/Math/Math.h"
@@ -158,17 +160,22 @@ void GeneratedGeometrySystem::Update(World* world, f32 deltaTime) {
     UpdateCellularAutomata(world, deltaTime);
     UpdateProjection4D(world, deltaTime);
     UpdateFourierMeshes(world, deltaTime);
+    UpdateReactionDiffusion(world, deltaTime);
+    UpdatePhysarum(world, deltaTime);
 }
 
 void GeneratedGeometrySystem::Reset() {
     m_CAStates.clear();
     m_P4DStates.clear();
     m_FourierStates.clear();
+    m_RDStates.clear();
+    m_PhysarumStates.clear();
     m_MetaballAccum = 0.0f;
 }
 
 usize GeneratedGeometrySystem::ActiveCount() const {
-    return m_CAStates.size() + m_P4DStates.size() + m_FourierStates.size();
+    return m_CAStates.size() + m_P4DStates.size() + m_FourierStates.size()
+         + m_RDStates.size() + m_PhysarumStates.size();
 }
 
 // --- Metaballs -------------------------------------------------------------
@@ -446,6 +453,218 @@ void GeneratedGeometrySystem::UpdateFourierMeshes(World* world, f32 deltaTime) {
 
     for (auto it = m_FourierStates.begin(); it != m_FourierStates.end(); ) {
         it = (alive.count(it->first) == 0) ? m_FourierStates.erase(it) : std::next(it);
+    }
+}
+
+
+// --- Texture simulations ---------------------------------------------------
+// Both write RGBA8 into ProceduralTextureComponent; the renderer uploads it and
+// binds it as the entity's base colour. Neither had any way to reach a surface
+// before that component existed.
+//
+// These BAKE ONCE per configuration rather than animating, and that is a
+// deliberate limit, not an oversight. The only texture upload path in the engine
+// is VulkanImage::CreateFromData, which ends in vkQueueWaitIdle on the graphics
+// queue: a load-time path. Driving it every frame stalls the queue against
+// frames already in flight and loses the device after about twenty seconds
+// (measured, four panels at 30 Hz). Animating these needs a per-frame upload
+// that records a staging copy into the frame's own command buffer instead of
+// submitting and idling. Until that exists, a settled pattern is the honest
+// feature: run the simulation for settleSteps, bake, upload once.
+
+namespace {
+
+// Attach or refresh the texture component holding a simulation's baked pixels.
+void WriteTexture(World* world, Entity entity, std::vector<u8>&& rgba,
+                  u32 w, u32 h, ProceduralTextureComponent::Source source) {
+    if (rgba.size() != static_cast<usize>(w) * h * 4u) return;
+    if (!world->HasComponent<ProceduralTextureComponent>(entity)) {
+        ProceduralTextureComponent pt;
+        pt.source = source;
+        pt.width = w;
+        pt.height = h;
+        pt.pixels = std::move(rgba);
+        pt.dirty = true;
+        world->AddComponent<ProceduralTextureComponent>(entity, std::move(pt));
+        return;
+    }
+    auto* pt = world->GetComponent<ProceduralTextureComponent>(entity);
+    pt->source = source;
+    pt->width = w;
+    pt->height = h;
+    pt->pixels = std::move(rgba);
+    pt->dirty = true;
+}
+
+} // namespace
+
+void GeneratedGeometrySystem::UpdateReactionDiffusion(World* world, f32 deltaTime) {
+    std::unordered_set<u32> alive;
+
+    for (Entity e : world->GetEntitiesWithComponent<ReactionDiffusionComponent>()) {
+        auto* rd = world->GetComponent<ReactionDiffusionComponent>(e);
+        if (!rd) continue;
+        const u32 key = EntityIndex(e);
+        alive.insert(key);
+
+        u64 h = 1469598103934665603ULL;
+        HashVal(h, rd->preset);  HashVal(h, rd->width);   HashVal(h, rd->height);
+        HashVal(h, rd->feedRate); HashVal(h, rd->killRate);
+        HashVal(h, rd->diffusionU); HashVal(h, rd->diffusionV);
+        HashVal(h, rd->wrapEdges); HashVal(h, rd->seed);
+        HashVal(h, rd->seedCentreCircle); HashVal(h, rd->seedRadius);
+        HashVal(h, rd->seedRandomSpots);
+
+        auto& st = m_RDStates[key];
+        if (st.configHash != h || rd->resetRequested) {
+            // ReactionDiffusion::Initialize copies the config verbatim; it does
+            // NOT apply the preset. The feed/kill pair has to be fetched from
+            // GetPresetConfig or every preset runs on whatever raw numbers the
+            // component happens to hold, which floods the grid to a uniform
+            // field and renders as one flat colour.
+            Effects::RDConfig cfg = (rd->preset == Effects::RDPreset::Custom)
+                                      ? Effects::RDConfig{}
+                                      : Effects::ReactionDiffusion::GetPresetConfig(rd->preset);
+            cfg.width = std::clamp(rd->width, 16u, 1024u);
+            cfg.height = std::clamp(rd->height, 16u, 1024u);
+            if (rd->preset == Effects::RDPreset::Custom) {
+                cfg.feedRate = rd->feedRate;
+                cfg.killRate = rd->killRate;
+                cfg.diffusionU = rd->diffusionU;
+                cfg.diffusionV = rd->diffusionV;
+            }
+            cfg.deltaTime = rd->deltaTime;
+            cfg.stepsPerFrame = std::clamp(rd->stepsPerFrame, 1u, 64u);
+            cfg.preset = rd->preset;
+            cfg.wrapEdges = rd->wrapEdges;
+            cfg.seed = rd->seed;
+            st.sim.Initialize(cfg);
+
+            // A uniform Gray-Scott field never develops anything: without a
+            // perturbation to grow from it stays flat forever and the component
+            // looks broken rather than empty.
+            if (rd->seedCentreCircle) {
+                f32 r = std::max(1.0f, rd->seedRadius *
+                                 static_cast<f32>(std::min(cfg.width, cfg.height)));
+                st.sim.SeedCircle(cfg.width * 0.5f, cfg.height * 0.5f, r);
+            }
+            if (rd->seedRandomSpots > 0) {
+                st.sim.SeedRandom(std::min(rd->seedRandomSpots, 512u),
+                                  std::max(1.0f, rd->seedRadius * 0.5f *
+                                           static_cast<f32>(std::min(cfg.width, cfg.height))));
+            }
+            // Settle the pattern before baking. Gray-Scott needs a few hundred
+            // steps to develop anything recognisable from its seed; baking at
+            // step zero would upload a flat field with a dot in it.
+            const u32 settle = std::clamp(rd->settleSteps, 0u, 20000u);
+            for (u32 i = 0; i < settle; ++i) st.sim.Step();
+
+            st.configHash = h;
+            st.baked = false;
+            rd->resetRequested = false;
+        }
+
+        rd->stepCount = st.sim.GetState().stepCount;
+        if (st.baked) continue;   // one upload per configuration
+
+        if (auto* pt = world->GetComponent<ProceduralTextureComponent>(e))
+            if (!pt->regenerate) continue;
+
+        const auto& state = st.sim.GetState();
+        if (state.width == 0 || state.height == 0) continue;
+        WriteTexture(world, e, st.sim.BakeToRGBA8(rd->colorLow, rd->colorHigh),
+                     state.width, state.height,
+                     ProceduralTextureComponent::Source::ReactionDiffusion);
+        st.baked = true;
+    }
+
+    for (auto it = m_RDStates.begin(); it != m_RDStates.end(); ) {
+        it = (alive.count(it->first) == 0) ? m_RDStates.erase(it) : std::next(it);
+    }
+}
+
+void GeneratedGeometrySystem::UpdatePhysarum(World* world, f32 deltaTime) {
+    std::unordered_set<u32> alive;
+
+    for (Entity e : world->GetEntitiesWithComponent<PhysarumComponent>()) {
+        auto* ph = world->GetComponent<PhysarumComponent>(e);
+        if (!ph) continue;
+        const u32 key = EntityIndex(e);
+        alive.insert(key);
+
+        u64 h = 1469598103934665603ULL;
+        HashVal(h, ph->preset);   HashVal(h, ph->width);  HashVal(h, ph->height);
+        HashVal(h, ph->agentCount);
+        HashVal(h, ph->sensorAngle);   HashVal(h, ph->sensorDistance);
+        HashVal(h, ph->turnSpeed);     HashVal(h, ph->moveSpeed);
+        HashVal(h, ph->trailDecay);    HashVal(h, ph->trailDeposit);
+        HashVal(h, ph->diffuseRadius); HashVal(h, ph->wrapEdges);
+        HashVal(h, ph->seed);          HashVal(h, ph->seeding);
+        HashVal(h, ph->seedInnerRadius); HashVal(h, ph->seedOuterRadius);
+
+        auto& st = m_PhysarumStates[key];
+        if (st.configHash != h || ph->resetRequested) {
+            Effects::PhysarumConfig cfg;
+            cfg.width = std::clamp(ph->width, 32u, 2048u);
+            cfg.height = std::clamp(ph->height, 32u, 2048u);
+            // 50k agents is the documented default; the cap keeps an authored
+            // typo from stepping ten million agents on the main thread.
+            cfg.agentCount = std::clamp(ph->agentCount, 1u, 500000u);
+            cfg.sensorAngle = ph->sensorAngle;
+            cfg.sensorDistance = ph->sensorDistance;
+            cfg.turnSpeed = ph->turnSpeed;
+            cfg.moveSpeed = ph->moveSpeed;
+            cfg.trailDecay = ph->trailDecay;
+            cfg.trailDeposit = ph->trailDeposit;
+            cfg.diffuseRadius = ph->diffuseRadius;
+            cfg.wrapEdges = ph->wrapEdges;
+            cfg.preset = ph->preset;
+            cfg.stepsPerFrame = std::clamp(ph->stepsPerFrame, 1u, 16u);
+            cfg.seed = ph->seed;
+            st.sim.Initialize(cfg);
+
+            const f32 cx = cfg.width * 0.5f, cy = cfg.height * 0.5f;
+            const f32 shortAxis = static_cast<f32>(std::min(cfg.width, cfg.height));
+            switch (ph->seeding) {
+                case PhysarumComponent::Seeding::Circle:
+                    st.sim.SeedCircle(cx, cy, ph->seedOuterRadius * shortAxis, cfg.agentCount);
+                    break;
+                case PhysarumComponent::Seeding::Point:
+                    st.sim.SeedPoint(cx, cy, cfg.agentCount);
+                    break;
+                case PhysarumComponent::Seeding::Ring:
+                default:
+                    st.sim.SeedRing(cx, cy,
+                                    ph->seedInnerRadius * shortAxis,
+                                    ph->seedOuterRadius * shortAxis, cfg.agentCount);
+                    break;
+            }
+            // Let the network form before baking. A freshly seeded ring is just
+            // a ring; the trails only become a network after a few hundred steps.
+            const u32 settle = std::clamp(ph->settleSteps, 0u, 20000u);
+            for (u32 i = 0; i < settle; ++i) st.sim.Step();
+
+            st.configHash = h;
+            st.baked = false;
+            ph->resetRequested = false;
+        }
+
+        ph->stepCount = st.sim.GetState().stepCount;
+        if (st.baked) continue;   // one upload per configuration
+
+        if (auto* pt = world->GetComponent<ProceduralTextureComponent>(e))
+            if (!pt->regenerate) continue;
+
+        const auto& state = st.sim.GetState();
+        if (state.width == 0 || state.height == 0) continue;
+        WriteTexture(world, e, st.sim.BakeToRGBA8(ph->trailColor, ph->backgroundColor),
+                     state.width, state.height,
+                     ProceduralTextureComponent::Source::Physarum);
+        st.baked = true;
+    }
+
+    for (auto it = m_PhysarumStates.begin(); it != m_PhysarumStates.end(); ) {
+        it = (alive.count(it->first) == 0) ? m_PhysarumStates.erase(it) : std::next(it);
     }
 }
 

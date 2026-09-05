@@ -15,6 +15,7 @@ of the three runtimes.
 | `CellularAutomata.enjin` | Gosper glider gun in Game of Life, HighLife from a random seed, and a 3D stack meshed with marching cubes. |
 | `Projection4D.enjin` | Tesseract, 16-cell and 24-cell, projected stereographically from 4D and tubed into real geometry. |
 | `FourierMesh.enjin` | Star, square and heart contours rebuilt from a truncated DFT, with the term count ramping up. |
+| `GeneratedTextures.enjin` | Reaction-diffusion and Physarum baked to RGBA8 and bound as a material's base colour. |
 | `DifficultyAndFaces.enjin` | The dynamic difficulty system and the `Difficulty_*` script bindings. |
 | `Dungeons.enjin` | All three dungeon algorithms side by side: drunkard walk, cellular caves, BSP rooms. |
 | `TerrainAndScatter.enjin` | fBm terrain baked at play start, with a scatter conforming its instances to the surface. |
@@ -53,6 +54,32 @@ They are registered now, and `scripts/DifficultyProbe.as` calls them.
 
 **Swarms outside editor play.** `SwarmSystem` ticked in `PlayMode` only, so a
 swarm animated in the editor and froze in an exported game and on web.
+
+## Generated textures, and why they bake instead of animate
+
+`ProceduralTextureComponent` is the texture counterpart of the procedural mesh
+path: a system writes RGBA8 into it, the renderer uploads it, registers it in
+the bindless set and points the material's base colour at it. Before this there
+was no route for CPU-generated pixels onto a surface at all.
+
+These bake once per configuration rather than animating, and that is a measured
+limit rather than a shortcut. The only texture upload path in the engine is
+`VulkanImage::CreateFromData`, which ends in `vkQueueWaitIdle` on the graphics
+queue: a load-time path. Driving it every frame stalls against frames already in
+flight and loses the device after about twenty seconds (four panels at 30 Hz).
+Animating these needs a per-frame upload that records a staging copy into the
+frame's own command buffer. Until that exists, `settleSteps` runs the simulation
+to a developed state and the result is uploaded once.
+
+Two limits worth knowing:
+
+- **Desktop only.** The upload runs in the Vulkan `FlushPendingChanges`. The
+  WebGPU path has no equivalent yet, so on web the component is inert.
+- **Reaction-diffusion floods to a uniform field** with every shipped preset, so
+  its panels render as one flat colour. Physarum works and is the proof the
+  pipeline is sound. The Gray-Scott simulation itself needs a look, and note
+  that `TestReactionDiffusion` is the one test in the suite that cannot run on
+  this machine, so that sim has never actually been verified.
 
 ## Procedural generation coverage
 
