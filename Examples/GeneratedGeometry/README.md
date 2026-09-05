@@ -90,11 +90,29 @@ Two limits worth knowing:
   suite that will not start on this machine, because Windows Defender
   quarantines the binary.
 
-- **Physarum's Classic Slime preset collapses to a point.** The Branching
-  Network preset forms a proper trail network; Classic Slime's decay and
-  deposit balance leaves almost nothing after settling. Its preset handling is
-  correct (unlike reaction-diffusion, `Initialize` does consult
-  `GetPresetConfig`), so this is preset tuning rather than a wiring fault.
+- **Physarum's Classic Slime, Tendrils, DenseWeb and Pulsating presets collapse
+  to a single blob.** Branching Network is the only one that forms a trail
+  network, and the demo uses it for both panels rather than shipping a picture
+  of the bug.
+
+  This is characterised but NOT fixed. Measured on Classic Slime at 192x192:
+  every agent ends up inside a 20x16 pixel box (positional spread 3.4 px) with
+  the trail peaking at 102442 against a single-agent steady state of 250. Five
+  candidate causes were tested and each ruled out by measurement:
+
+  | Hypothesis | Test | Result |
+  |---|---|---|
+  | Peak-normalised bake hiding the network | tone curve on occupied mean | display improved, blob unchanged |
+  | Seeding funnel (all agents aimed at one pixel) | spread the inward headings | no change |
+  | Agent density too high (163% of cells) | dropped to 11% | no change |
+  | Unbounded trail feedback | saturated at 20x steady state | cap verified working, no change |
+  | Rotation angle exceeding sensor angle | capped turn at sensor angle on all presets | no change |
+
+  The last one correlated perfectly across the preset table (every collapsing
+  preset has turn > sensor, the working one does not) and still made no
+  difference when tested, so the correlation is coincidental. Whatever drives
+  the collapse is in the agent/field interaction and has not been isolated. The
+  shipped preset values are untouched.
 
 ## Procedural generation coverage
 

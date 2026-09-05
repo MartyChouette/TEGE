@@ -1571,7 +1571,7 @@
   {
    "id": 7,
    "name": {
-    "name": "Phys_Classic"
+    "name": "Phys_Branching2"
    },
    "transform": {
     "position": [
@@ -2030,10 +2030,10 @@
     "roughness": 0.9
    },
    "physarum": {
-    "preset": 0,
+    "preset": 1,
     "width": 192,
     "height": 192,
-    "agentCount": 60000,
+    "agentCount": 8000,
     "sensorAngle": 22.5,
     "sensorDistance": 9.0,
     "turnSpeed": 45.0,
@@ -2044,7 +2044,7 @@
     "wrapEdges": true,
     "stepsPerFrame": 1,
     "seed": 20260904,
-    "seeding": 0,
+    "seeding": 1,
     "seedInnerRadius": 0.25,
     "seedOuterRadius": 0.45,
     "trailColor": [
@@ -2525,7 +2525,7 @@
     "preset": 1,
     "width": 192,
     "height": 192,
-    "agentCount": 60000,
+    "agentCount": 8000,
     "sensorAngle": 22.5,
     "sensorDistance": 9.0,
     "turnSpeed": 45.0,
