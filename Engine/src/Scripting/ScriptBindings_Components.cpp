@@ -16,6 +16,7 @@
 #include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/Notes.h"
+#include "Enjin/ECS/Components/Text.h"
 #include "Enjin/ECS/Components/LOD.h"
 #include "Enjin/Gameplay/GameplayLoop.h"
 #include <angelscript.h>
@@ -2144,6 +2145,179 @@ void SetBindingsCameraDirector(Gameplay::CameraDirector* director) {
     s_BindingsCameraDirector = director;
 }
 
+// ---------------------------------------------------------------------------
+// Creating components at runtime.
+//
+// Scene_InstantiateNamed handed back an entity carrying only a Transform, and
+// there was no way to add anything to it: three dozen HasComponent_* queries
+// existed and not one AddComponent_*. A script could ask whether a component
+// was there and could never put one there, so every quad a game draws had to
+// exist in the scene file before play. One project generates 62 sprite
+// entities from a Python tool for exactly this reason, and then needs a second
+// tool to check those generated positions still agree with the script's own
+// hit-test constants, because the two now live in different files.
+//
+// It was a silent trap too. The intuitive version:
+//
+//     uint64 tile = Scene_InstantiateNamed(tileName);
+//     Material_SetBaseColor(tile, tileColor);   // no material component
+//
+// produced an invisible board and no error of any kind.
+//
+// Structural mutation is main-thread only (adr-0004); scripts tick on the
+// owner thread, and AddComponent asserts it in every build. Component storages
+// live behind unique_ptr in the world's map, so a storage pointer cached
+// elsewhere stays valid when a new component type first appears.
+//
+// Adding a component that is already there is a no-op that reports success.
+// These get called from OnUpdate, and a second call must not wipe the values
+// the first one set.
+// ---------------------------------------------------------------------------
+
+static bool AddComponent_Sprite2D(u64 id) {
+    if (!s_BindingsWorld) return false;
+    const Entity e = static_cast<Entity>(id);
+    if (!s_BindingsWorld->IsValid(e)) return false;
+    if (s_BindingsWorld->HasComponent<Sprite2DComponent>(e)) return true;
+    s_BindingsWorld->AddComponent<Sprite2DComponent>(e, Sprite2DComponent{});
+    return true;
+}
+
+static bool AddComponent_Text(u64 id) {
+    if (!s_BindingsWorld) return false;
+    const Entity e = static_cast<Entity>(id);
+    if (!s_BindingsWorld->IsValid(e)) return false;
+    if (s_BindingsWorld->HasComponent<TextComponent>(e)) return true;
+    s_BindingsWorld->AddComponent<TextComponent>(e, TextComponent{});
+    return true;
+}
+
+static bool AddComponent_Material(u64 id) {
+    if (!s_BindingsWorld) return false;
+    const Entity e = static_cast<Entity>(id);
+    if (!s_BindingsWorld->IsValid(e)) return false;
+    if (s_BindingsWorld->HasComponent<MaterialComponent>(e)) return true;
+    s_BindingsWorld->AddComponent<MaterialComponent>(e, MaterialComponent{});
+    return true;
+}
+
+static bool AddComponent_Light(u64 id) {
+    if (!s_BindingsWorld) return false;
+    const Entity e = static_cast<Entity>(id);
+    if (!s_BindingsWorld->IsValid(e)) return false;
+    if (s_BindingsWorld->HasComponent<LightComponent>(e)) return true;
+    s_BindingsWorld->AddComponent<LightComponent>(e, LightComponent{});
+    return true;
+}
+
+static bool AddComponent_AudioSource(u64 id) {
+    if (!s_BindingsWorld) return false;
+    const Entity e = static_cast<Entity>(id);
+    if (!s_BindingsWorld->IsValid(e)) return false;
+    if (s_BindingsWorld->HasComponent<AudioSourceComponent>(e)) return true;
+    s_BindingsWorld->AddComponent<AudioSourceComponent>(e, AudioSourceComponent{});
+    return true;
+}
+
+static bool AddComponent_Rigidbody(u64 id) {
+    if (!s_BindingsWorld) return false;
+    const Entity e = static_cast<Entity>(id);
+    if (!s_BindingsWorld->IsValid(e)) return false;
+    if (s_BindingsWorld->HasComponent<RigidbodyComponent>(e)) return true;
+    s_BindingsWorld->AddComponent<RigidbodyComponent>(e, RigidbodyComponent{});
+    return true;
+}
+
+static bool AddComponent_BoxCollider(u64 id) {
+    if (!s_BindingsWorld) return false;
+    const Entity e = static_cast<Entity>(id);
+    if (!s_BindingsWorld->IsValid(e)) return false;
+    if (s_BindingsWorld->HasComponent<BoxColliderComponent>(e)) return true;
+    s_BindingsWorld->AddComponent<BoxColliderComponent>(e, BoxColliderComponent{});
+    return true;
+}
+
+static bool AddComponent_SphereCollider(u64 id) {
+    if (!s_BindingsWorld) return false;
+    const Entity e = static_cast<Entity>(id);
+    if (!s_BindingsWorld->IsValid(e)) return false;
+    if (s_BindingsWorld->HasComponent<SphereColliderComponent>(e)) return true;
+    s_BindingsWorld->AddComponent<SphereColliderComponent>(e, SphereColliderComponent{});
+    return true;
+}
+
+static bool AddComponent_CapsuleCollider(u64 id) {
+    if (!s_BindingsWorld) return false;
+    const Entity e = static_cast<Entity>(id);
+    if (!s_BindingsWorld->IsValid(e)) return false;
+    if (s_BindingsWorld->HasComponent<CapsuleColliderComponent>(e)) return true;
+    s_BindingsWorld->AddComponent<CapsuleColliderComponent>(e, CapsuleColliderComponent{});
+    return true;
+}
+
+static bool AddComponent_Health(u64 id) {
+    if (!s_BindingsWorld) return false;
+    const Entity e = static_cast<Entity>(id);
+    if (!s_BindingsWorld->IsValid(e)) return false;
+    if (s_BindingsWorld->HasComponent<HealthComponent>(e)) return true;
+    s_BindingsWorld->AddComponent<HealthComponent>(e, HealthComponent{});
+    return true;
+}
+
+static bool AddComponent_Inventory(u64 id) {
+    if (!s_BindingsWorld) return false;
+    const Entity e = static_cast<Entity>(id);
+    if (!s_BindingsWorld->IsValid(e)) return false;
+    if (s_BindingsWorld->HasComponent<InventoryComponent>(e)) return true;
+    s_BindingsWorld->AddComponent<InventoryComponent>(e, InventoryComponent{});
+    return true;
+}
+
+static bool AddComponent_Timer(u64 id) {
+    if (!s_BindingsWorld) return false;
+    const Entity e = static_cast<Entity>(id);
+    if (!s_BindingsWorld->IsValid(e)) return false;
+    if (s_BindingsWorld->HasComponent<TimerComponent>(e)) return true;
+    s_BindingsWorld->AddComponent<TimerComponent>(e, TimerComponent{});
+    return true;
+}
+
+static bool AddComponent_Interactable(u64 id) {
+    if (!s_BindingsWorld) return false;
+    const Entity e = static_cast<Entity>(id);
+    if (!s_BindingsWorld->IsValid(e)) return false;
+    if (s_BindingsWorld->HasComponent<InteractableComponent>(e)) return true;
+    s_BindingsWorld->AddComponent<InteractableComponent>(e, InteractableComponent{});
+    return true;
+}
+
+static bool AddComponent_TriggerZone(u64 id) {
+    if (!s_BindingsWorld) return false;
+    const Entity e = static_cast<Entity>(id);
+    if (!s_BindingsWorld->IsValid(e)) return false;
+    if (s_BindingsWorld->HasComponent<TriggerZoneComponent>(e)) return true;
+    s_BindingsWorld->AddComponent<TriggerZoneComponent>(e, TriggerZoneComponent{});
+    return true;
+}
+
+static bool AddComponent_Tag(u64 id) {
+    if (!s_BindingsWorld) return false;
+    const Entity e = static_cast<Entity>(id);
+    if (!s_BindingsWorld->IsValid(e)) return false;
+    if (s_BindingsWorld->HasComponent<TagComponent>(e)) return true;
+    s_BindingsWorld->AddComponent<TagComponent>(e, TagComponent{});
+    return true;
+}
+
+static bool AddComponent_Notes(u64 id) {
+    if (!s_BindingsWorld) return false;
+    const Entity e = static_cast<Entity>(id);
+    if (!s_BindingsWorld->IsValid(e)) return false;
+    if (s_BindingsWorld->HasComponent<NotesComponent>(e)) return true;
+    s_BindingsWorld->AddComponent<NotesComponent>(e, NotesComponent{});
+    return true;
+}
+
 void RegisterComponentBindings(asIScriptEngine* engine) {
     // Health
     AS_CHECK(engine->RegisterGlobalFunction("float Health_Get(uint64)", ENJIN_AS_FN(Health_Get), ENJIN_AS_CALL_CDECL));
@@ -2264,6 +2438,25 @@ void RegisterComponentBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction("void Camera_TakeManualControl(uint64)", ENJIN_AS_FN(Camera_TakeManualControl), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Camera_ReleaseManualControl()", ENJIN_AS_FN(Camera_ReleaseManualControl), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Camera_IsManualControl()", ENJIN_AS_FN(Camera_IsManualControl), ENJIN_AS_CALL_CDECL));
+
+
+    // Runtime component creation, mirroring the HasComponent_ queries above.
+    AS_CHECK(engine->RegisterGlobalFunction("bool AddComponent_Sprite2D(uint64)", ENJIN_AS_FN(AddComponent_Sprite2D), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool AddComponent_Text(uint64)", ENJIN_AS_FN(AddComponent_Text), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool AddComponent_Material(uint64)", ENJIN_AS_FN(AddComponent_Material), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool AddComponent_Light(uint64)", ENJIN_AS_FN(AddComponent_Light), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool AddComponent_AudioSource(uint64)", ENJIN_AS_FN(AddComponent_AudioSource), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool AddComponent_Rigidbody(uint64)", ENJIN_AS_FN(AddComponent_Rigidbody), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool AddComponent_BoxCollider(uint64)", ENJIN_AS_FN(AddComponent_BoxCollider), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool AddComponent_SphereCollider(uint64)", ENJIN_AS_FN(AddComponent_SphereCollider), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool AddComponent_CapsuleCollider(uint64)", ENJIN_AS_FN(AddComponent_CapsuleCollider), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool AddComponent_Health(uint64)", ENJIN_AS_FN(AddComponent_Health), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool AddComponent_Inventory(uint64)", ENJIN_AS_FN(AddComponent_Inventory), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool AddComponent_Timer(uint64)", ENJIN_AS_FN(AddComponent_Timer), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool AddComponent_Interactable(uint64)", ENJIN_AS_FN(AddComponent_Interactable), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool AddComponent_TriggerZone(uint64)", ENJIN_AS_FN(AddComponent_TriggerZone), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool AddComponent_Tag(uint64)", ENJIN_AS_FN(AddComponent_Tag), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool AddComponent_Notes(uint64)", ENJIN_AS_FN(AddComponent_Notes), ENJIN_AS_CALL_CDECL));
 
     // HasComponent queries
     AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Health(uint64)", ENJIN_AS_FN(HasComponent_Health), ENJIN_AS_CALL_CDECL));
