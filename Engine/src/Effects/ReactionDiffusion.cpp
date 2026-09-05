@@ -308,37 +308,64 @@ f32 ReactionDiffusion::LaplacianU(u32 x, u32 y) const {
     u32 w = m_State.width;
     u32 idx = y * w + x;
 
-    // 5-point stencil: weights = [0, 1, 0; 1, -4, 1; 0, 1, 0] (normalized)
+    // Standard Gray-Scott convolution kernel:
+    //   [0.05 0.20 0.05]
+    //   [0.20 -1.0 0.20]
+    //   [0.05 0.20 0.05]
+    //
+    // This is the raw 5-point (-4, +1) stencil scaled to a unit centre weight,
+    // plus the diagonal terms. The scaling is not cosmetic. Explicit Euler on a
+    // 2D diffusion term is stable only while D*dt/h^2 <= 1/4, and the shipped
+    // defaults are D=1.0 with dt=1.0 on a unit grid. Against the unscaled
+    // stencil that is four times over the limit, so adjacent cells alternate
+    // and the field collapses into a checkerboard that reads as flat colour at
+    // any distance. Every preset's feed/kill pair is calibrated against this
+    // kernel, which is why they are the values the literature uses.
     u32 xLeft  = WrapX(static_cast<i32>(x) - 1);
     u32 xRight = WrapX(static_cast<i32>(x) + 1);
     u32 yUp    = WrapY(static_cast<i32>(y) - 1);
     u32 yDown  = WrapY(static_cast<i32>(y) + 1);
 
-    f32 center = m_State.chemU[idx];
-    f32 left   = m_State.chemU[y * w + xLeft];
-    f32 right  = m_State.chemU[y * w + xRight];
-    f32 up     = m_State.chemU[yUp * w + x];
-    f32 down   = m_State.chemU[yDown * w + x];
+    const auto& c = m_State.chemU;
 
-    return left + right + up + down - 4.0f * center;
+    f32 orthogonal = c[y * w + xLeft] + c[y * w + xRight]
+                   + c[yUp * w + x]   + c[yDown * w + x];
+    f32 diagonal   = c[yUp * w + xLeft]   + c[yUp * w + xRight]
+                   + c[yDown * w + xLeft] + c[yDown * w + xRight];
+
+    return 0.20f * orthogonal + 0.05f * diagonal - c[idx];
 }
 
 f32 ReactionDiffusion::LaplacianV(u32 x, u32 y) const {
     u32 w = m_State.width;
     u32 idx = y * w + x;
 
+    // Standard Gray-Scott convolution kernel:
+    //   [0.05 0.20 0.05]
+    //   [0.20 -1.0 0.20]
+    //   [0.05 0.20 0.05]
+    //
+    // This is the raw 5-point (-4, +1) stencil scaled to a unit centre weight,
+    // plus the diagonal terms. The scaling is not cosmetic. Explicit Euler on a
+    // 2D diffusion term is stable only while D*dt/h^2 <= 1/4, and the shipped
+    // defaults are D=1.0 with dt=1.0 on a unit grid. Against the unscaled
+    // stencil that is four times over the limit, so adjacent cells alternate
+    // and the field collapses into a checkerboard that reads as flat colour at
+    // any distance. Every preset's feed/kill pair is calibrated against this
+    // kernel, which is why they are the values the literature uses.
     u32 xLeft  = WrapX(static_cast<i32>(x) - 1);
     u32 xRight = WrapX(static_cast<i32>(x) + 1);
     u32 yUp    = WrapY(static_cast<i32>(y) - 1);
     u32 yDown  = WrapY(static_cast<i32>(y) + 1);
 
-    f32 center = m_State.chemV[idx];
-    f32 left   = m_State.chemV[y * w + xLeft];
-    f32 right  = m_State.chemV[y * w + xRight];
-    f32 up     = m_State.chemV[yUp * w + x];
-    f32 down   = m_State.chemV[yDown * w + x];
+    const auto& c = m_State.chemV;
 
-    return left + right + up + down - 4.0f * center;
+    f32 orthogonal = c[y * w + xLeft] + c[y * w + xRight]
+                   + c[yUp * w + x]   + c[yDown * w + x];
+    f32 diagonal   = c[yUp * w + xLeft]   + c[yUp * w + xRight]
+                   + c[yDown * w + xLeft] + c[yDown * w + xRight];
+
+    return 0.20f * orthogonal + 0.05f * diagonal - c[idx];
 }
 
 u32 ReactionDiffusion::WrapX(i32 x) const {

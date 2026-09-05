@@ -75,11 +75,26 @@ Two limits worth knowing:
 
 - **Desktop only.** The upload runs in the Vulkan `FlushPendingChanges`. The
   WebGPU path has no equivalent yet, so on web the component is inert.
-- **Reaction-diffusion floods to a uniform field** with every shipped preset, so
-  its panels render as one flat colour. Physarum works and is the proof the
-  pipeline is sound. The Gray-Scott simulation itself needs a look, and note
-  that `TestReactionDiffusion` is the one test in the suite that cannot run on
-  this machine, so that sim has never actually been verified.
+- **Reaction-diffusion was numerically unstable and is now fixed.** Its Laplacian
+  used the raw 5-point `(-4, +1)` stencil while the comment claimed it was
+  normalised. Explicit Euler on a 2D diffusion term is stable only while
+  `D*dt/h^2 <= 1/4`, and the shipped defaults are `D=1.0, dt=1.0` on a unit
+  grid: four times over the limit. The field collapsed into a checkerboard that
+  reads as flat colour at any distance. The kernel is now the standard
+  Gray-Scott convolution the presets were calibrated against, and every preset
+  produces its documented pattern.
+
+  Worth noting how long that survived: `TestReactionDiffusion` asserts config
+  defaults, preset names and initial grid values, and nothing about the
+  numerics, so it could never have caught this. It is also the one test in the
+  suite that will not start on this machine, because Windows Defender
+  quarantines the binary.
+
+- **Physarum's Classic Slime preset collapses to a point.** The Branching
+  Network preset forms a proper trail network; Classic Slime's decay and
+  deposit balance leaves almost nothing after settling. Its preset handling is
+  correct (unlike reaction-diffusion, `Initialize` does consult
+  `GetPresetConfig`), so this is preset tuning rather than a wiring fault.
 
 ## Procedural generation coverage
 

@@ -1073,6 +1073,40 @@
      }
     ]
    }
+  },
+  {
+   "id": 17,
+   "name": {
+    "name": "ApiProbe"
+   },
+   "transform": {
+    "position": [
+     0,
+     0,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "visible": true
+   },
+   "scriptComponent": {
+    "scripts": [
+     {
+      "path": "scripts/ApiProbe.as",
+      "class": "ApiProbe",
+      "enabled": true
+     }
+    ]
+   }
   }
  ]
 }

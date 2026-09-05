@@ -571,7 +571,7 @@
     "visible": true
    },
    "text": {
-    "text": "GENERATED TEXTURES\nLeft: Gray-Scott reaction-diffusion. Right: Physarum slime mould,\n20k agents leaving trails. Both are simulated on the CPU and\nuploaded as this panel's base colour every frame.",
+    "text": "GENERATED TEXTURES\nLeft: Gray-Scott reaction-diffusion. Right: Physarum slime mould,\n60k agents leaving trails. Both simulate on the CPU and bake once\ninto this panel's base colour.",
     "fontSize": 44,
     "textureWidth": 1500,
     "textureHeight": 300,
@@ -2033,7 +2033,7 @@
     "preset": 0,
     "width": 192,
     "height": 192,
-    "agentCount": 20000,
+    "agentCount": 60000,
     "sensorAngle": 22.5,
     "sensorDistance": 9.0,
     "turnSpeed": 45.0,
@@ -2057,7 +2057,7 @@
      0.03,
      0.05
     ],
-    "settleSteps": 2500
+    "settleSteps": 4000
    }
   },
   {
@@ -2525,7 +2525,7 @@
     "preset": 1,
     "width": 192,
     "height": 192,
-    "agentCount": 20000,
+    "agentCount": 60000,
     "sensorAngle": 22.5,
     "sensorDistance": 9.0,
     "turnSpeed": 45.0,
@@ -2549,7 +2549,7 @@
      0.03,
      0.05
     ],
-    "settleSteps": 2500
+    "settleSteps": 4000
    }
   }
  ]
