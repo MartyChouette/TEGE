@@ -2,6 +2,8 @@
 #include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/ECS/Components/GeneratedGeometry.h"
 #include "Enjin/ECS/Components/ProceduralMesh.h"
+#include "Enjin/ECS/Components/ProceduralTexture.h"
+#include "Enjin/ECS/Components/GeneratedTexture.h"
 #include "Enjin/Effects/Metaballs.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Viewmodel.h"
@@ -154,13 +156,32 @@ json SerializeQuaternion(const Math::Quaternion& q) {
     return json::array({RF(q.x), RF(q.y), RF(q.z), RF(q.w)});
 }
 
+// A vector that is the wrong shape used to become the ORIGIN, silently.
+//
+// A generated scene writing a 2-element "position" left the entity at 0,0,0
+// with nothing on screen or in the log to say why -- it reads exactly like a
+// rendering bug, and is why this comment exists. Scenes are written by tools
+// and by hand far more often than by the editor, so the shape is worth a word.
+//
+// Still returns the zero value: refusing to load the scene over one bad field
+// would be worse. The point is that it stops being invisible.
+static void WarnBadVector(const json& j, int expected, const char* what) {
+    if (!j.is_array()) {
+        ENJIN_LOG_WARN(Asset, "Scene: %s must be an array of %d numbers, got %s - using zero",
+                       what, expected, j.type_name());
+    } else {
+        ENJIN_LOG_WARN(Asset, "Scene: %s needs %d numbers, got %d - using zero",
+                       what, expected, static_cast<int>(j.size()));
+    }
+}
+
 Math::Vector2 DeserializeVector2(const json& j) {
-    if (!j.is_array() || j.size() < 2) return Math::Vector2(0.0f, 0.0f);
+    if (!j.is_array() || j.size() < 2) { WarnBadVector(j, 2, "a Vector2"); return Math::Vector2(0.0f, 0.0f); }
     return Math::Vector2(j[0].get<f32>(), j[1].get<f32>());
 }
 
 Math::Vector3 DeserializeVector3(const json& j) {
-    if (!j.is_array() || j.size() < 3) return Math::Vector3(0.0f, 0.0f, 0.0f);
+    if (!j.is_array() || j.size() < 3) { WarnBadVector(j, 3, "a Vector3"); return Math::Vector3(0.0f, 0.0f, 0.0f); }
     return Math::Vector3(j[0].get<f32>(), j[1].get<f32>(), j[2].get<f32>());
 }
 
@@ -169,12 +190,12 @@ json SerializeVector4(const Math::Vector4& v) {
 }
 
 Math::Vector4 DeserializeVector4(const json& j) {
-    if (!j.is_array() || j.size() < 4) return Math::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
+    if (!j.is_array() || j.size() < 4) { WarnBadVector(j, 4, "a Vector4"); return Math::Vector4(0.0f, 0.0f, 0.0f, 0.0f); }
     return Math::Vector4(j[0].get<f32>(), j[1].get<f32>(), j[2].get<f32>(), j[3].get<f32>());
 }
 
 Math::Quaternion DeserializeQuaternion(const json& j) {
-    if (!j.is_array() || j.size() < 4) return Math::Quaternion(0.0f, 0.0f, 0.0f, 1.0f);
+    if (!j.is_array() || j.size() < 4) { WarnBadVector(j, 4, "a Quaternion"); return Math::Quaternion(0.0f, 0.0f, 0.0f, 1.0f); }
     return Math::Quaternion(j[0].get<f32>(), j[1].get<f32>(), j[2].get<f32>(), j[3].get<f32>());
 }
 
@@ -449,6 +470,20 @@ json SerializeTextComponent(const ECS::TextComponent& text) {
     j["sdfText"] = text.sdfText;
     j["worldHeight"] = RF(text.worldHeight);
     j["lit"] = text.lit;
+    // Coloured stretches and the reveal cut. Written only when they carry
+    // something, so every existing scene round-trips byte-identical.
+    if (!text.runs.empty()) {
+        json runs = json::array();
+        for (const ECS::TextRun& r : text.runs) {
+            json rj;
+            rj["start"] = r.start;
+            rj["length"] = r.length;
+            rj["color"] = SerializeVector3(r.color);
+            runs.push_back(rj);
+        }
+        j["runs"] = runs;
+    }
+    if (text.revealCount >= 0) j["revealCount"] = text.revealCount;
     return j;
 }
 
@@ -763,6 +798,16 @@ ECS::TextComponent DeserializeTextComponent(const json& j) {
     text.sdfText = j.value("sdfText", true);
     text.worldHeight = j.value("worldHeight", 0.5f);
     text.lit = j.value("lit", false);
+    if (j.contains("runs") && j["runs"].is_array()) {
+        for (const auto& rj : j["runs"]) {
+            ECS::TextRun r;
+            r.start = rj.value("start", 0);
+            r.length = rj.value("length", 0);
+            if (rj.contains("color")) r.color = DeserializeVector3(rj["color"]);
+            text.runs.push_back(r);
+        }
+    }
+    text.revealCount = j.value("revealCount", -1);
     text.dirty = true; // Re-rasterize on load
     return text;
 }
@@ -1803,6 +1848,144 @@ ECS::FourierMeshComponent DeserializeFourierMeshComponent(const json& j) {
     return f;
 }
 
+
+// --- Generated textures (reaction-diffusion, Physarum) ---------------------
+// Both simulations bake to RGBA8 and had nowhere to send it before
+// ProceduralTextureComponent existed. The pixel buffer itself is an OUTPUT and
+// is deliberately not serialized: a 512x512 Physarum trail map is 1MB of base64
+// per entity, and the system regenerates it from the authored parameters on the
+// first tick anyway.
+
+json SerializeProceduralTextureComponent(const ECS::ProceduralTextureComponent& p) {
+    json j;
+    j["source"] = static_cast<u8>(p.source);
+    j["regenerate"] = p.regenerate;
+    return j;
+}
+
+ECS::ProceduralTextureComponent DeserializeProceduralTextureComponent(const json& j) {
+    ECS::ProceduralTextureComponent p;
+    if (j.contains("source")) {
+        u8 v = j["source"].get<u8>();
+        if (v < static_cast<u8>(ECS::ProceduralTextureComponent::Source::Count))
+            p.source = static_cast<ECS::ProceduralTextureComponent::Source>(v);
+    }
+    if (j.contains("regenerate")) p.regenerate = j["regenerate"].get<bool>();
+    return p;
+}
+
+json SerializeReactionDiffusionComponent(const ECS::ReactionDiffusionComponent& r) {
+    json j;
+    j["preset"] = static_cast<u8>(r.preset);
+    j["width"] = r.width;
+    j["height"] = r.height;
+    j["feedRate"] = RF(r.feedRate);
+    j["killRate"] = RF(r.killRate);
+    j["diffusionU"] = RF(r.diffusionU);
+    j["diffusionV"] = RF(r.diffusionV);
+    j["deltaTime"] = RF(r.deltaTime);
+    j["stepsPerFrame"] = r.stepsPerFrame;
+    j["wrapEdges"] = r.wrapEdges;
+    j["seed"] = r.seed;
+    j["seedCentreCircle"] = r.seedCentreCircle;
+    j["seedRadius"] = RF(r.seedRadius);
+    j["seedRandomSpots"] = r.seedRandomSpots;
+    j["colorLow"] = SerializeVector3(r.colorLow);
+    j["colorHigh"] = SerializeVector3(r.colorHigh);
+    j["settleSteps"] = r.settleSteps;
+    return j;
+}
+
+ECS::ReactionDiffusionComponent DeserializeReactionDiffusionComponent(const json& j) {
+    ECS::ReactionDiffusionComponent r;
+    if (j.contains("preset")) {
+        u8 v = j["preset"].get<u8>();
+        if (v <= static_cast<u8>(Effects::RDPreset::Custom))
+            r.preset = static_cast<Effects::RDPreset>(v);
+    }
+    // The grid is stepped on the CPU stepsPerFrame times per update and the whole
+    // image is re-uploaded, so the resolution cap is a real budget, not a guard.
+    if (j.contains("width")) r.width = std::clamp(j["width"].get<u32>(), 16u, 1024u);
+    if (j.contains("height")) r.height = std::clamp(j["height"].get<u32>(), 16u, 1024u);
+    if (j.contains("feedRate")) r.feedRate = std::clamp(j["feedRate"].get<f32>(), 0.0f, 1.0f);
+    if (j.contains("killRate")) r.killRate = std::clamp(j["killRate"].get<f32>(), 0.0f, 1.0f);
+    if (j.contains("diffusionU")) r.diffusionU = std::clamp(j["diffusionU"].get<f32>(), 0.0f, 4.0f);
+    if (j.contains("diffusionV")) r.diffusionV = std::clamp(j["diffusionV"].get<f32>(), 0.0f, 4.0f);
+    if (j.contains("deltaTime")) r.deltaTime = std::clamp(j["deltaTime"].get<f32>(), 0.0f, 4.0f);
+    if (j.contains("stepsPerFrame")) r.stepsPerFrame = std::clamp(j["stepsPerFrame"].get<u32>(), 1u, 64u);
+    if (j.contains("wrapEdges")) r.wrapEdges = j["wrapEdges"].get<bool>();
+    if (j.contains("seed")) r.seed = j["seed"].get<u32>();
+    if (j.contains("seedCentreCircle")) r.seedCentreCircle = j["seedCentreCircle"].get<bool>();
+    if (j.contains("seedRadius")) r.seedRadius = std::clamp(j["seedRadius"].get<f32>(), 0.0f, 1.0f);
+    if (j.contains("seedRandomSpots")) r.seedRandomSpots = std::clamp(j["seedRandomSpots"].get<u32>(), 0u, 512u);
+    if (j.contains("colorLow")) r.colorLow = DeserializeVector3(j["colorLow"]);
+    if (j.contains("colorHigh")) r.colorHigh = DeserializeVector3(j["colorHigh"]);
+    // Capped: this many CPU grid steps happen in one frame at load, so an
+    // authored 500000 would stall the first frame for minutes.
+    if (j.contains("settleSteps")) r.settleSteps = std::clamp(j["settleSteps"].get<u32>(), 0u, 20000u);
+    return r;
+}
+
+json SerializePhysarumComponent(const ECS::PhysarumComponent& p) {
+    json j;
+    j["preset"] = static_cast<u8>(p.preset);
+    j["width"] = p.width;
+    j["height"] = p.height;
+    j["agentCount"] = p.agentCount;
+    j["sensorAngle"] = RF(p.sensorAngle);
+    j["sensorDistance"] = RF(p.sensorDistance);
+    j["turnSpeed"] = RF(p.turnSpeed);
+    j["moveSpeed"] = RF(p.moveSpeed);
+    j["trailDecay"] = RF(p.trailDecay);
+    j["trailDeposit"] = RF(p.trailDeposit);
+    j["diffuseRadius"] = RF(p.diffuseRadius);
+    j["wrapEdges"] = p.wrapEdges;
+    j["stepsPerFrame"] = p.stepsPerFrame;
+    j["seed"] = p.seed;
+    j["seeding"] = static_cast<u8>(p.seeding);
+    j["seedInnerRadius"] = RF(p.seedInnerRadius);
+    j["seedOuterRadius"] = RF(p.seedOuterRadius);
+    j["trailColor"] = SerializeVector3(p.trailColor);
+    j["backgroundColor"] = SerializeVector3(p.backgroundColor);
+    j["settleSteps"] = p.settleSteps;
+    return j;
+}
+
+ECS::PhysarumComponent DeserializePhysarumComponent(const json& j) {
+    ECS::PhysarumComponent p;
+    if (j.contains("preset")) {
+        u8 v = j["preset"].get<u8>();
+        if (v <= static_cast<u8>(Effects::PhysarumPreset::Custom))
+            p.preset = static_cast<Effects::PhysarumPreset>(v);
+    }
+    if (j.contains("width")) p.width = std::clamp(j["width"].get<u32>(), 32u, 2048u);
+    if (j.contains("height")) p.height = std::clamp(j["height"].get<u32>(), 32u, 2048u);
+    // Every agent is sensed and moved on the main thread each step. 500k is the
+    // ceiling an authored typo cannot cross.
+    if (j.contains("agentCount")) p.agentCount = std::clamp(j["agentCount"].get<u32>(), 1u, 500000u);
+    if (j.contains("sensorAngle")) p.sensorAngle = std::clamp(j["sensorAngle"].get<f32>(), 0.0f, 180.0f);
+    if (j.contains("sensorDistance")) p.sensorDistance = std::clamp(j["sensorDistance"].get<f32>(), 0.0f, 256.0f);
+    if (j.contains("turnSpeed")) p.turnSpeed = std::clamp(j["turnSpeed"].get<f32>(), 0.0f, 360.0f);
+    if (j.contains("moveSpeed")) p.moveSpeed = std::clamp(j["moveSpeed"].get<f32>(), 0.0f, 64.0f);
+    if (j.contains("trailDecay")) p.trailDecay = std::clamp(j["trailDecay"].get<f32>(), 0.0f, 1.0f);
+    if (j.contains("trailDeposit")) p.trailDeposit = std::clamp(j["trailDeposit"].get<f32>(), 0.0f, 255.0f);
+    if (j.contains("diffuseRadius")) p.diffuseRadius = std::clamp(j["diffuseRadius"].get<f32>(), 0.0f, 4.0f);
+    if (j.contains("wrapEdges")) p.wrapEdges = j["wrapEdges"].get<bool>();
+    if (j.contains("stepsPerFrame")) p.stepsPerFrame = std::clamp(j["stepsPerFrame"].get<u32>(), 1u, 16u);
+    if (j.contains("seed")) p.seed = j["seed"].get<u32>();
+    if (j.contains("seeding")) {
+        u8 v = j["seeding"].get<u8>();
+        if (v < static_cast<u8>(ECS::PhysarumComponent::Seeding::Count))
+            p.seeding = static_cast<ECS::PhysarumComponent::Seeding>(v);
+    }
+    if (j.contains("seedInnerRadius")) p.seedInnerRadius = std::clamp(j["seedInnerRadius"].get<f32>(), 0.0f, 1.0f);
+    if (j.contains("seedOuterRadius")) p.seedOuterRadius = std::clamp(j["seedOuterRadius"].get<f32>(), 0.0f, 1.0f);
+    if (j.contains("trailColor")) p.trailColor = DeserializeVector3(j["trailColor"]);
+    if (j.contains("backgroundColor")) p.backgroundColor = DeserializeVector3(j["backgroundColor"]);
+    if (j.contains("settleSteps")) p.settleSteps = std::clamp(j["settleSteps"].get<u32>(), 0u, 20000u);
+    return p;
+}
+
 json SerializeDungeonGeneratorComponent(const ECS::DungeonGeneratorComponent& d) {
     json j;
     j["algorithm"] = static_cast<u8>(d.algorithm);
@@ -2786,6 +2969,100 @@ ECS::VehicleController DeserializeVehicle(const json& j) {
     if (j.contains("bodyRollAmount")) ctrl.bodyRollAmount = j["bodyRollAmount"].get<f32>();
     if (j.contains("bodyPitchAmount")) ctrl.bodyPitchAmount = j["bodyPitchAmount"].get<f32>();
     if (j.contains("modelForwardYaw")) ctrl.modelForwardYaw = j["modelForwardYaw"].get<f32>();
+    return ctrl;
+}
+
+json SerializeWaterVehicle(const ECS::WaterVehicleController& ctrl) {
+    json j = SerializeControllerBase(ctrl);
+    j["propulsion"] = static_cast<u8>(ctrl.propulsion);
+    j["hullSpeed"] = RF(ctrl.hullSpeed);
+    j["hullDragLinear"] = RF(ctrl.hullDragLinear);
+    j["hullDragQuad"] = RF(ctrl.hullDragQuad);
+    j["hullSpeedWall"] = RF(ctrl.hullSpeedWall);
+    j["lateralGrip"] = RF(ctrl.lateralGrip);
+    j["mass"] = RF(ctrl.mass);
+    j["planeThreshold"] = RF(ctrl.planeThreshold);
+    j["planeDragCut"] = RF(ctrl.planeDragCut);
+    j["maxThrust"] = RF(ctrl.maxThrust);
+    j["reverseThrustScale"] = RF(ctrl.reverseThrustScale);
+    j["throttleRate"] = RF(ctrl.throttleRate);
+    j["paddleImpulse"] = RF(ctrl.paddleImpulse);
+    j["paddleCooldown"] = RF(ctrl.paddleCooldown);
+    j["rudderAuthority"] = RF(ctrl.rudderAuthority);
+    j["rudderFullSpeed"] = RF(ctrl.rudderFullSpeed);
+    j["rudderMinAuthority"] = RF(ctrl.rudderMinAuthority);
+    j["rudderRate"] = RF(ctrl.rudderRate);
+    j["rudderDrag"] = RF(ctrl.rudderDrag);
+    j["righting"] = RF(ctrl.righting);
+    j["heelDrag"] = RF(ctrl.heelDrag);
+    j["maxHeel"] = RF(ctrl.maxHeel);
+    j["turnHeel"] = RF(ctrl.turnHeel);
+    j["trimPitch"] = RF(ctrl.trimPitch);
+    j["waterLine"] = RF(ctrl.waterLine);
+    j["bobAmplitude"] = RF(ctrl.bobAmplitude);
+    j["bobRate"] = RF(ctrl.bobRate);
+    j["buoyancyResponse"] = RF(ctrl.buoyancyResponse);
+    j["wakeWidth"] = RF(ctrl.wakeWidth);
+    j["wakeMinSpeed"] = RF(ctrl.wakeMinSpeed);
+    j["cameraDistance"] = RF(ctrl.cameraDistance);
+    j["cameraHeight"] = RF(ctrl.cameraHeight);
+    j["cameraLerpSpeed"] = RF(ctrl.cameraLerpSpeed);
+    j["cameraLookAhead"] = RF(ctrl.cameraLookAhead);
+    j["cameraSpeedPull"] = RF(ctrl.cameraSpeedPull);
+    j["modelForwardYaw"] = RF(ctrl.modelForwardYaw);
+    j["canPlane"] = ctrl.canPlane;
+    j["followWaterSurface"] = ctrl.followWaterSurface;
+    j["emitWake"] = ctrl.emitWake;
+    j["current"] = SerializeVector3(ctrl.current);
+    return j;
+}
+
+ECS::WaterVehicleController DeserializeWaterVehicle(const json& j) {
+    ECS::WaterVehicleController ctrl;
+    DeserializeControllerBase(j, ctrl);
+    if (j.contains("propulsion")) {
+        u8 v = j["propulsion"].get<u8>();
+        if (v <= 2) ctrl.propulsion = static_cast<ECS::WaterPropulsion>(v);
+    }
+    if (j.contains("hullSpeed")) ctrl.hullSpeed = j["hullSpeed"].get<f32>();
+    if (j.contains("hullDragLinear")) ctrl.hullDragLinear = j["hullDragLinear"].get<f32>();
+    if (j.contains("hullDragQuad")) ctrl.hullDragQuad = j["hullDragQuad"].get<f32>();
+    if (j.contains("hullSpeedWall")) ctrl.hullSpeedWall = j["hullSpeedWall"].get<f32>();
+    if (j.contains("lateralGrip")) ctrl.lateralGrip = j["lateralGrip"].get<f32>();
+    if (j.contains("mass")) ctrl.mass = j["mass"].get<f32>();
+    if (j.contains("planeThreshold")) ctrl.planeThreshold = j["planeThreshold"].get<f32>();
+    if (j.contains("planeDragCut")) ctrl.planeDragCut = j["planeDragCut"].get<f32>();
+    if (j.contains("maxThrust")) ctrl.maxThrust = j["maxThrust"].get<f32>();
+    if (j.contains("reverseThrustScale")) ctrl.reverseThrustScale = j["reverseThrustScale"].get<f32>();
+    if (j.contains("throttleRate")) ctrl.throttleRate = j["throttleRate"].get<f32>();
+    if (j.contains("paddleImpulse")) ctrl.paddleImpulse = j["paddleImpulse"].get<f32>();
+    if (j.contains("paddleCooldown")) ctrl.paddleCooldown = j["paddleCooldown"].get<f32>();
+    if (j.contains("rudderAuthority")) ctrl.rudderAuthority = j["rudderAuthority"].get<f32>();
+    if (j.contains("rudderFullSpeed")) ctrl.rudderFullSpeed = j["rudderFullSpeed"].get<f32>();
+    if (j.contains("rudderMinAuthority")) ctrl.rudderMinAuthority = j["rudderMinAuthority"].get<f32>();
+    if (j.contains("rudderRate")) ctrl.rudderRate = j["rudderRate"].get<f32>();
+    if (j.contains("rudderDrag")) ctrl.rudderDrag = j["rudderDrag"].get<f32>();
+    if (j.contains("righting")) ctrl.righting = j["righting"].get<f32>();
+    if (j.contains("heelDrag")) ctrl.heelDrag = j["heelDrag"].get<f32>();
+    if (j.contains("maxHeel")) ctrl.maxHeel = j["maxHeel"].get<f32>();
+    if (j.contains("turnHeel")) ctrl.turnHeel = j["turnHeel"].get<f32>();
+    if (j.contains("trimPitch")) ctrl.trimPitch = j["trimPitch"].get<f32>();
+    if (j.contains("waterLine")) ctrl.waterLine = j["waterLine"].get<f32>();
+    if (j.contains("bobAmplitude")) ctrl.bobAmplitude = j["bobAmplitude"].get<f32>();
+    if (j.contains("bobRate")) ctrl.bobRate = j["bobRate"].get<f32>();
+    if (j.contains("buoyancyResponse")) ctrl.buoyancyResponse = j["buoyancyResponse"].get<f32>();
+    if (j.contains("wakeWidth")) ctrl.wakeWidth = j["wakeWidth"].get<f32>();
+    if (j.contains("wakeMinSpeed")) ctrl.wakeMinSpeed = j["wakeMinSpeed"].get<f32>();
+    if (j.contains("cameraDistance")) ctrl.cameraDistance = j["cameraDistance"].get<f32>();
+    if (j.contains("cameraHeight")) ctrl.cameraHeight = j["cameraHeight"].get<f32>();
+    if (j.contains("cameraLerpSpeed")) ctrl.cameraLerpSpeed = j["cameraLerpSpeed"].get<f32>();
+    if (j.contains("cameraLookAhead")) ctrl.cameraLookAhead = j["cameraLookAhead"].get<f32>();
+    if (j.contains("cameraSpeedPull")) ctrl.cameraSpeedPull = j["cameraSpeedPull"].get<f32>();
+    if (j.contains("modelForwardYaw")) ctrl.modelForwardYaw = j["modelForwardYaw"].get<f32>();
+    if (j.contains("canPlane")) ctrl.canPlane = JB(j["canPlane"]);
+    if (j.contains("followWaterSurface")) ctrl.followWaterSurface = JB(j["followWaterSurface"]);
+    if (j.contains("emitWake")) ctrl.emitWake = JB(j["emitWake"]);
+    if (j.contains("current")) ctrl.current = DeserializeVector3(j["current"]);
     return ctrl;
 }
 
@@ -8776,6 +9053,9 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
         ENJIN_SERDES("metaballSurface", ECS::MetaballSurfaceComponent, SerializeMetaballSurfaceComponent, DeserializeMetaballSurfaceComponent),
         ENJIN_SERDES("proceduralMesh", ECS::ProceduralMeshComponent, SerializeProceduralMeshComponent, DeserializeProceduralMeshComponent),
         ENJIN_SERDES("projection4D", ECS::Projection4DComponent, SerializeProjection4DComponent, DeserializeProjection4DComponent),
+        ENJIN_SERDES("physarum", ECS::PhysarumComponent, SerializePhysarumComponent, DeserializePhysarumComponent),
+        ENJIN_SERDES("proceduralTexture", ECS::ProceduralTextureComponent, SerializeProceduralTextureComponent, DeserializeProceduralTextureComponent),
+        ENJIN_SERDES("reactionDiffusion", ECS::ReactionDiffusionComponent, SerializeReactionDiffusionComponent, DeserializeReactionDiffusionComponent),
         ENJIN_SERDES("dungeonGenerator", ECS::DungeonGeneratorComponent, SerializeDungeonGeneratorComponent, DeserializeDungeonGeneratorComponent),
         ENJIN_SERDES("dynamicDifficulty", ECS::DynamicDifficultyComponent, SerializeDynamicDifficultyComponent, DeserializeDynamicDifficultyComponent),
         ENJIN_SERDES("elementalEmitter", ECS::ElementalEmitterComponent, SerializeElementalEmitterComponent, DeserializeElementalEmitterComponent),
@@ -8900,6 +9180,7 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
         ENJIN_SERDES("uiCanvas", GUI::UICanvasComponent, SerializeUICanvasComponent, DeserializeUICanvasComponent),
         ENJIN_SERDES("vegetation", ECS::VegetationComponent, SerializeVegetationComponent, DeserializeVegetationComponent),
         ENJIN_SERDES("vehicle", ECS::VehicleController, SerializeVehicle, DeserializeVehicle),
+        ENJIN_SERDES("waterVehicle", ECS::WaterVehicleController, SerializeWaterVehicle, DeserializeWaterVehicle),
         ENJIN_SERDES("viewmodel", ECS::ViewmodelComponent, SerializeViewmodelComponent, DeserializeViewmodelComponent),
         ENJIN_SERDES("virtualCamera", ECS::VirtualCameraComponent, SerializeVirtualCameraComponent, DeserializeVirtualCameraComponent),
         ENJIN_SERDES("visualScript", ECS::VisualScriptComponent, SerializeVisualScriptComponent, DeserializeVisualScriptComponent),
