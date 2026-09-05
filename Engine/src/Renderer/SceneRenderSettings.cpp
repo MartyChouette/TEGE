@@ -1090,6 +1090,7 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     j["lutEnabled"]        = s.lutEnabled;
     j["lutStrength"]       = RF(s.lutStrength);
     j["lutSize"]           = s.lutSize;
+    if (!s.lutPath.empty()) j["lutPath"] = s.lutPath;
 
     // CRT Phosphor
     j["crtPhosphorEnabled"]  = s.crtPhosphorEnabled;
@@ -1409,6 +1410,7 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("lutEnabled"))        s.lutEnabled        = JB(j["lutEnabled"]);
     if (j.contains("lutStrength"))       s.lutStrength       = j["lutStrength"].get<f32>();
     if (j.contains("lutSize"))           s.lutSize           = j["lutSize"].get<u32>();
+    if (j.contains("lutPath"))           s.lutPath           = j["lutPath"].get<std::string>();
 
     // CRT Phosphor
     if (j.contains("crtPhosphorEnabled"))  s.crtPhosphorEnabled  = JB(j["crtPhosphorEnabled"]);

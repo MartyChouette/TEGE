@@ -889,16 +889,36 @@ public:
         // every depth comparison meaningless rather than merely inaccurate.
         f32 nearPlane = 0.1f;
         f32 farPlane = 1000.0f;
-        f32 ppPad1 = 0.0f;
-        f32 ppPad2 = 0.0f;
-        f32 ppPad3 = 0.0f;            // 36 f32 = 144 bytes (16-multiple)
+        f32 toneMapMode = 0.0f;   // 0 = none, 3 = ACES. Matches SceneRenderSettings.
+        f32 lutStrength = 0.0f;   // 0 = no LUT
+        f32 lutSize = 32.0f;          // 36 f32 = 144 bytes (16-multiple)
     };
     WebPPAccessibilityParams m_WebPPAccessibility;
+    // Beside the params rather than in the WebGPU-only block below: the
+    // SetWebLUT setter is not inside that guard, so a desktop build must still
+    // see these.
+    Renderer::GPUTextureHandle m_WebLUTTex;   // scene LUT, invalid when none
+    bool m_WebPPBindGroupDirty = false;
     void SetWebAccessibility(u32 colorblindMode, f32 strength, f32 brightness, f32 contrast) {
         m_WebPPAccessibility.colorblindMode = colorblindMode;
         m_WebPPAccessibility.colorblindStrength = strength;
         m_WebPPAccessibility.brightness = brightness;
         m_WebPPAccessibility.contrast = contrast;
+    }
+    // Tone mapping mode for the web post-process pass, from the scene settings.
+    // The shader applied ACES unconditionally before this, so a scene that
+    // asked for none still got it.
+    // Scene LUT for the web post-process pass. The handle is resolved from the
+    // scene's lutPath; strength 0 leaves grading untouched, and the bind group
+    // still needs a valid texture, so it falls back to the default white one.
+    void SetWebLUT(const Renderer::GPUTextureHandle& lut, f32 strength, u32 size) {
+        m_WebLUTTex = lut;
+        m_WebPPAccessibility.lutStrength = lut.IsValid() ? strength : 0.0f;
+        m_WebPPAccessibility.lutSize = static_cast<f32>(size ? size : 32u);
+        m_WebPPBindGroupDirty = true;
+    }
+    void SetWebToneMapMode(u32 mode) {
+        m_WebPPAccessibility.toneMapMode = static_cast<f32>(mode);
     }
     void SetWebAccessibilityPreview(u32 effect, f32 divider) {
         m_WebPPAccessibility.previewEffect = effect;

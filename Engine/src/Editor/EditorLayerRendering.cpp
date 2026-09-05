@@ -105,6 +105,7 @@
 #include <vulkan/vulkan.h>
 #include <sstream>
 #include <fstream>
+#include "Enjin/Assets/AssetPipeline.h"
 #include <filesystem>
 #include <cstdio>
 #include <cstdlib>
@@ -1266,11 +1267,29 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
                 ImGui::SliderFloat("Feedback Max", &settings.taaFeedbackMax, 0.0f, 1.0f, "%.2f");
             }
 
+            // TAA needs a velocity buffer, and the editor's offscreen scene target
+            // does not have one, so it is skipped here. Say so rather than let the
+            // dropdown imply it is running.
+            if (settings.aaMode == 2) {
+                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f),
+                    "No effect in the editor: the offscreen scene target writes no "
+                    "velocity buffer. Applies to a standalone build.");
+            }
+
             // MSAA info
             if (settings.aaMode >= 4 && settings.aaMode <= 6) {
                 int sampleCount = 1 << (settings.aaMode - 3);  // 4->2x, 5->4x, 6->8x
                 ImGui::TextDisabled("Hardware multisampling at %dx", sampleCount);
-                ImGui::TextDisabled("Resolves to single-sample for post-processing");
+                // Be honest about where this applies. Every offscreen RenderTarget
+                // is created VK_SAMPLE_COUNT_1_BIT, and the editor draws both the
+                // viewport and the game view into one, so MSAA cannot show here at
+                // all. It is still worth authoring: a standalone build renders to
+                // the swapchain, where it does apply. Saying "Hardware
+                // multisampling at 4x" and nothing else read as though the setting
+                // were live in the panel you are looking at.
+                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f),
+                    "No effect in the editor: the viewport and game view render to a "
+                    "single-sample offscreen target. Applies to a standalone build.");
                 if (m_RenderSystem) {
                     u32 maxSamples = m_RenderSystem->GetMaxMSAASamples();
                     if (static_cast<u32>(sampleCount) > maxSamples) {
@@ -1524,10 +1543,30 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
                     }
                 }
 
+                if (!m_PostProcessing->IsLUTLoaded()) {
+                    // Enabled with nothing to grade with. The setting is saved and
+                    // the image is not: lutEnabled, lutStrength and lutSize all
+                    // serialize, the LUT path does not. So a scene reopens with this
+                    // ticked and no LUT, and an exported build has no way to get one.
+                    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f),
+                        "No LUT loaded, so this does nothing. The LUT image is not saved "
+                        "with the scene and has to be loaded each session.");
+                }
+
                 ImGui::SameLine();
                 if (ImGui::Button("Load LUT")) {
                     std::string path = FileDialog::OpenFile("Load LUT", {{ "PNG Images", "*.png" }});
                     if (!path.empty()) {
+                        // Copy it into the project first, the same as an imported
+                        // texture. A LUT picked from somewhere else on disk resolves
+                        // on this machine and nowhere else, and the packer only walks
+                        // the project.
+                        const std::string projPath = m_SceneManager.GetProjectPath();
+                        if (!projPath.empty()) {
+                            path = Assets::CopyToProjectAssets(
+                                path, std::filesystem::path(projPath).parent_path().string(),
+                                "assets/luts");
+                        }
                         m_PostProcessing->LoadLUT(path);
                     }
                 }
@@ -2697,6 +2736,13 @@ void EditorLayer::DrawSettingsSection_DisplayOptions() {
                     mode < 3 ? modeNames[mode] : "Unknown");
             } else if (!hdrAvailable) {
                 ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "No HDR formats detected");
+            }
+            if (m_RenderSystem->IsHDREnabled()) {
+                // The scene is rendered into an 8-bit UNORM offscreen target and
+                // composited into the frame, so the viewport preview stays SDR
+                // whatever the surface is doing. Worth saying, or the panel reads
+                // as though the picture in it were the HDR one.
+                ImGui::TextDisabled("Applies to the output surface. The viewport preview stays SDR.");
             }
         }
     }

@@ -744,6 +744,10 @@ private:
     // Panel state
     bool m_MSAAImGuiUpdatePending = false;  // Deferred ImGui pipeline update after MSAA change
     bool m_HDRImGuiUpdatePending = false;   // Deferred ImGui pipeline + PP hdrOutputMode update after HDR change
+    // Load the scene's LUT image, resolved against the project root.
+    // ApplyToRuntime cannot do it: the image belongs to PostProcessing and the
+    // settings struct only carries the path.
+    void ApplySceneLUT(const Renderer::SceneRenderSettings& settings);
     bool m_PendingWireframe = false;       // Deferred wireframe toggle (pipeline recreation unsafe mid-render)
     bool m_PendingQuit = false;            // Deferred quit (Close() unsafe mid-ImGui-render)
     bool m_PrePlayFullscreen = false;      // Window fullscreen state before play mode changed it

@@ -928,9 +928,10 @@ struct PostProcessParams {
     celOutlineB: f32,
     nearPlane: f32,
     farPlane: f32,
-    ppPad1: f32,
-    ppPad2: f32,
-    ppPad3: f32,          // 36 f32 = 144 bytes; must match WebPPAccessibilityParams
+    toneMapMode: f32,     // 0 = none, 3 = ACES (was ppPad1)
+    lutStrength: f32,     // 0 = no LUT (was ppPad2)
+    lutSize: f32,         // edge size of the strip, e.g. 32 (was ppPad3)
+                          // 36 f32 = 144 bytes; must match WebPPAccessibilityParams
 };
 @group(0) @binding(2) var<uniform> params: PostProcessParams;
 
@@ -939,6 +940,25 @@ struct PostProcessParams {
 // non-filtering or comparison sampler to be sampled, and every effect below
 // wants exact texels anyway.
 @group(0) @binding(3) var depthTex: texture_depth_2d;
+@group(0) @binding(4) var lutTex: texture_2d<f32>;
+@group(0) @binding(5) var lutSmp: sampler;
+
+// LUT colour grading from a strip: `lutSize` cells across, each cell one blue
+// slice. Matches applyLUT in postprocess.frag so a scene grades the same on
+// both backends. Blends between the two nearest blue slices, or the strip
+// banding shows on gradients.
+fn applyLUT(c: vec3<f32>) -> vec3<f32> {
+    let n = max(params.lutSize, 2.0);
+    let col = clamp(c, vec3<f32>(0.0), vec3<f32>(1.0));
+    let b = col.b * (n - 1.0);
+    let b0 = floor(b);
+    let b1 = min(b0 + 1.0, n - 1.0);
+    let u = (col.r + 0.5 / n) / n;
+    let v = col.g;
+    let s0 = textureSample(lutTex, lutSmp, vec2<f32>(u + b0 / n, v)).rgb;
+    let s1 = textureSample(lutTex, lutSmp, vec2<f32>(u + b1 / n, v)).rgb;
+    return mix(s0, s1, b - b0);
+}
 
 // Depth comes back non-linear - near values crowd the whole range - so raw
 // differences are meaningless past a few metres. This puts it back into view
@@ -1177,7 +1197,18 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         color = color * (1.0 - occ * clamp(params.ssao, 0.0, 1.0));
     }
 
-    color = aces_tonemap(color);
+    // Tone mapping is a CHOICE, and this used to apply ACES unconditionally,
+    // so a scene that asked for none still got it and the web picture never
+    // matched the desktop one.
+    if (params.toneMapMode > 0.5) {
+        color = aces_tonemap(color);
+    }
+
+    // LUT grading runs before the brightness/contrast/saturation block, the
+    // same order applyLUT has in postprocess.frag.
+    if (params.lutStrength > 0.001) {
+        color = mix(color, applyLUT(color), clamp(params.lutStrength, 0.0, 1.0));
+    }
 
     // Options preview split: left of the divider shows the frame WITHOUT the
     // previewed effect (5 = colorblind, 6 = color grading).

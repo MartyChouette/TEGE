@@ -2,6 +2,7 @@
 #include "Enjin/Logging/Log.h"
 #include <fstream>
 #include <sstream>
+#include "Enjin/Platform/Paths.h"
 #include <filesystem>
 #include <algorithm>
 
@@ -24,6 +25,31 @@ static int RunProcess(const std::string& cmdLine);
 // ============================================================================
 // Export
 // ============================================================================
+
+namespace {
+
+// The favicon an export should ship: the project's choice, or the engine's own
+// icon when it has none.
+//
+// Nothing ever set faviconPath, so every export shipped a page with no icon and
+// a 404 for favicon.ico in the console. Resolved in one place because the copy
+// and the <link> have to agree; linking a file that was never written is what
+// produced the 404 in the first place.
+std::string ResolveFaviconPath(const std::string& configured) {
+    if (!configured.empty() && std::filesystem::exists(configured)) return configured;
+
+    const std::string exeDir = Enjin::Platform::GetExecutableDirectory();
+    for (const char* rel : { "enjin.ico",
+                             "../installer/enjin.ico",
+                             "../../installer/enjin.ico",
+                             "../share/enjin/enjin.ico" }) {
+        std::filesystem::path candidate = std::filesystem::path(exeDir) / rel;
+        if (std::filesystem::exists(candidate)) return candidate.lexically_normal().string();
+    }
+    return {};
+}
+
+} // namespace
 
 HTML5ExportResult HTML5Exporter::Export(const HTML5ExportConfig& config,
                                         const BuildConfig& buildConfig) {
@@ -98,12 +124,13 @@ HTML5ExportResult HTML5Exporter::Export(const HTML5ExportConfig& config,
         result.embedCode = GenerateEmbedSnippet(config);
     }
 
-    // Copy favicon if specified
-    if (!config.faviconPath.empty() && std::filesystem::exists(config.faviconPath)) {
-        std::string dest = config.outputDir + "/favicon.ico";
-        std::filesystem::copy_file(config.faviconPath, dest,
-                                    std::filesystem::copy_options::overwrite_existing);
-        result.files.push_back("favicon.ico");
+    // Favicon, defaulting to the engine icon (see ResolveFaviconPath).
+    const std::string faviconSrc = ResolveFaviconPath(config.faviconPath);
+    if (!faviconSrc.empty()) {
+        std::error_code favEc;
+        std::filesystem::copy_file(faviconSrc, config.outputDir + "/favicon.ico",
+                                   std::filesystem::copy_options::overwrite_existing, favEc);
+        if (!favEc) result.files.push_back("favicon.ico");
     }
 
     // Copy splash image if specified
@@ -350,8 +377,8 @@ std::string HTML5Exporter::GenerateHTML(const HTML5ExportConfig& config,
     html << "  <meta property=\"og:title\" content=\"" << safeTitle << "\">\n"
          << "  <meta property=\"og:type\" content=\"game\">\n";
 
-    // Favicon
-    if (!config.faviconPath.empty()) {
+    // Favicon: emitted only when one actually resolves, so the link never 404s.
+    if (!ResolveFaviconPath(config.faviconPath).empty()) {
         html << "  <link rel=\"icon\" href=\"favicon.ico\" type=\"image/x-icon\">\n";
     }
 

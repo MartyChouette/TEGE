@@ -2847,6 +2847,25 @@ private:
             }
             m_SceneRenderSettings.ApplyToRuntime(m_RenderSystem,
                 m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+
+            // The LUT image belongs to PostProcessing, not to the settings struct,
+            // so ApplyToRuntime cannot load it. Without this an exported game
+            // honoured lutEnabled and had no LUT to grade with.
+            if (m_PostProcessing) {
+                if (m_SceneRenderSettings.lutPath.empty()) {
+                    if (m_PostProcessing->IsLUTLoaded()) m_PostProcessing->ClearLUT();
+                } else if (m_PostProcessing->GetLUTPath() != m_SceneRenderSettings.lutPath) {
+                    // Loose files sit next to the exe; the pack path is relative too.
+                    std::string lut = m_SceneRenderSettings.lutPath;
+                    if (!std::filesystem::path(lut).is_absolute()) {
+                        lut = (std::filesystem::path(Enjin::Platform::GetExecutableDirectory()) / lut).string();
+                    }
+                    if (!m_PostProcessing->LoadLUT(lut)) {
+                        ENJIN_LOG_WARN(Player, "LUT not found: %s (colour grading stays off)",
+                                       m_SceneRenderSettings.lutPath.c_str());
+                    }
+                }
+            }
             m_SceneArtStylePreset = m_SceneRenderSettings.artStylePreset;   // splash restyles to match
 
             // World time is authored per scene. Seed the clock from it, and let

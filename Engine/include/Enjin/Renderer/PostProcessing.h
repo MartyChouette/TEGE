@@ -61,7 +61,7 @@ enum class ToneMappingMode : u32 {
 // Post-processing settings (GPU-aligned)
 struct alignas(16) PostProcessSettings {
     // Tone mapping
-    alignas(4) u32 toneMappingMode = static_cast<u32>(ToneMappingMode::ACES);
+    alignas(4) u32 toneMappingMode = static_cast<u32>(ToneMappingMode::None);   // off until asked for
     alignas(4) f32 exposure = 1.0f;
     alignas(4) f32 gamma = 1.0f;  // Main shader already applies gamma; 1.0 = no double correction
     alignas(4) f32 whitePoint = 4.0f;

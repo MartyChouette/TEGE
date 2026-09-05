@@ -310,6 +310,29 @@ void EditorLayer::OpenProjectFromPath(const std::string& projectPath) {
 
 // ---------------------------------------------------------------------------
 
+void EditorLayer::ApplySceneLUT(const Renderer::SceneRenderSettings& settings) {
+    if (!m_PostProcessing) return;
+
+    if (settings.lutPath.empty()) {
+        // A scene with no LUT must not inherit the last scene's.
+        if (m_PostProcessing->IsLUTLoaded()) m_PostProcessing->ClearLUT();
+        return;
+    }
+    if (m_PostProcessing->GetLUTPath() == settings.lutPath) return;   // already current
+
+    // The stored path is project-relative; the process CWD is never reliable
+    // (it is the exe directory), so resolve against the project root.
+    std::string full = settings.lutPath;
+    const std::string projPath = m_SceneManager.GetProjectPath();
+    if (!projPath.empty() && !std::filesystem::path(full).is_absolute()) {
+        full = (std::filesystem::path(projPath).parent_path() / full).string();
+    }
+    if (!m_PostProcessing->LoadLUT(full)) {
+        ENJIN_LOG_WARN(Editor, "LUT not found: %s (colour grading stays off)",
+                       settings.lutPath.c_str());
+    }
+}
+
 void EditorLayer::SaveScene(const std::string& path) {
     if (!m_World) {
         ENJIN_LOG_ERROR(Editor, "Cannot save scene: no world loaded");
@@ -334,6 +357,10 @@ void EditorLayer::SaveScene(const std::string& path) {
     auto renderSettings = Renderer::SceneRenderSettings::CaptureFromRuntime(
         m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
     renderSettings.useProjectDefaults = m_CurrentSceneUsesProjectDefaults;
+    // The LUT image itself is owned by PostProcessing, not by the settings
+    // struct, so capture its path here or the scene saves the flag without the
+    // picture.
+    if (m_PostProcessing) renderSettings.lutPath = m_PostProcessing->GetLUTPath();
     serializer.SetRenderSettings(renderSettings);
 
     auto result = serializer.Save(path);
@@ -663,9 +690,11 @@ void EditorLayer::OpenSceneImmediate(const std::string& path) {
         if (loaded.useProjectDefaults) {
             m_SceneManager.GetDefaultRenderSettings().ApplyToRuntime(
                 m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+            ApplySceneLUT(m_SceneManager.GetDefaultRenderSettings());
         } else {
             loaded.ApplyToRuntime(
                 m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+            ApplySceneLUT(loaded);
         }
     }
 
@@ -1159,6 +1188,10 @@ void EditorLayer::AutoSave() {
     auto renderSettings = Renderer::SceneRenderSettings::CaptureFromRuntime(
         m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
     renderSettings.useProjectDefaults = m_CurrentSceneUsesProjectDefaults;
+    // The LUT image itself is owned by PostProcessing, not by the settings
+    // struct, so capture its path here or the scene saves the flag without the
+    // picture.
+    if (m_PostProcessing) renderSettings.lutPath = m_PostProcessing->GetLUTPath();
     serializer.SetRenderSettings(renderSettings);
 
     auto result = serializer.Save(autoSavePath);

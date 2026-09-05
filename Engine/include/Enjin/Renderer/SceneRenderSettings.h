@@ -3,6 +3,7 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Math/Vector.h"
 #include <nlohmann/json_fwd.hpp>
+#include <string>
 
 namespace Enjin {
 
@@ -72,7 +73,9 @@ struct SceneRenderSettings {
     bool hdrOutput = false;        // Enable HDR swapchain output
 
     // Tone mapping
-    u32 toneMappingMode = 3;  // Default to ACES (0=None, 1=Reinhard, 2=ReinhardExt, 3=ACES)
+    // Off by default. ACES is a strong look and it was being applied to every
+    // new scene before anyone asked for it (0=None, 1=Reinhard, 2=ReinhardExt, 3=ACES).
+    u32 toneMappingMode = 0;
     f32 exposure = 1.0f;
     f32 gamma = 1.0f;
     f32 whitePoint = 4.0f;
@@ -159,6 +162,14 @@ struct SceneRenderSettings {
     bool lutEnabled = false;
     f32 lutStrength = 1.0f;
     u32 lutSize = 32;
+    // Project-relative path to the LUT image.
+    //
+    // Without this the flag and the strength were saved and the picture was
+    // not: a scene reopened with LUT grading ticked and no LUT behind it, and
+    // an exported build had no way to ever get one. The path lives here
+    // rather than in PostProcessSettings because that struct is uploaded to
+    // the GPU verbatim and cannot hold a string.
+    std::string lutPath;
 
     // CRT Phosphor
     bool crtPhosphorEnabled = false;

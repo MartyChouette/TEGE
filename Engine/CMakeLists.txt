@@ -303,11 +303,20 @@ endif()
 
 # --- Performance Optimization Features ---
 
-# Clustered forward lighting — replaces brute-force light loop with spatial cluster lookup (ON by default)
-option(ENJIN_CLUSTERED_LIGHTING "Enable clustered forward lighting" ON)
+# Cluster light grid (ON by default).
+#
+# This builds the grid and dispatches the compute pass. It does NOT switch
+# surface shading over to it: triangle.frag guards that path with the SHADER
+# macro CLUSTERED_LIGHTING, and nothing defines it, so the one compiled
+# triangle.frag.spv still uses the brute-force light loop.
+#
+# The grid is not wasted work: the volumetric fog compute shader reads the
+# cluster light buffer, the grid and the index list. Turning this off turns
+# off lit fog with it.
+option(ENJIN_CLUSTERED_LIGHTING "Build the cluster light grid (consumed by volumetric fog)" ON)
 if(ENJIN_CLUSTERED_LIGHTING)
     target_compile_definitions(EnjinEngine PUBLIC ENJIN_CLUSTERED_LIGHTING)
-    message(STATUS "Clustered forward lighting enabled")
+    message(STATUS "Cluster light grid enabled (fog consumer; surface shading still brute-force)")
 endif()
 
 # Variable Rate Shading — per-tile shading rate control via VK_KHR_fragment_shading_rate (OFF by default)

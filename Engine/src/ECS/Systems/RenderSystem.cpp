@@ -460,6 +460,10 @@ void RenderSystem::RecreateWebSizedTargets(u32 sceneW, u32 sceneH) {
             {1, {}, 0, 0, {}, ppSource},
             {2, m_WebPPAccessibilityBuffer, 0, sizeof(WebPPAccessibilityParams), {}, {}},
             {3, {}, 0, 0, m_WebSceneDepthSampleTex, {}},
+            // A bind group entry cannot be empty, so an unset LUT binds the
+            // default white texture and lutStrength stays 0, which skips it.
+            {4, {}, 0, 0, m_WebLUTTex.IsValid() ? m_WebLUTTex : m_WebDefaultWhiteTex, {}},
+            {5, {}, 0, 0, {}, m_WebLUTTex.IsValid() ? m_WebLUTTex : m_WebDefaultWhiteTex},
         };
         m_WebPostProcessBG = bindMgr->CreateBindGroup(ppBGDesc);
     }
@@ -1127,6 +1131,8 @@ void RenderSystem::Initialize() {
             {1, BType::Sampler, SStage::Fragment, 0},
             {2, BType::UniformBuffer, SStage::Fragment, sizeof(WebPPAccessibilityParams)},
             {3, BType::DepthTexture, SStage::Fragment, 0},   // scene depth, read with textureLoad
+            {4, BType::SampledTexture, SStage::Fragment, 0}, // scene LUT (white when none)
+            {5, BType::Sampler, SStage::Fragment, 0},
         };
         m_WebPostProcessLayout = bindMgr->CreateBindGroupLayout(ppLayoutDesc);
 
@@ -1278,6 +1284,10 @@ void RenderSystem::Initialize() {
                 {1, {}, 0, 0, {}, m_WebBloomScratchTex},
                 {2, m_WebPPAccessibilityBuffer, 0, sizeof(WebPPAccessibilityParams), {}, {}},
                 {3, {}, 0, 0, m_WebSceneDepthSampleTex, {}},
+            // A bind group entry cannot be empty, so an unset LUT binds the
+            // default white texture and lutStrength stays 0, which skips it.
+            {4, {}, 0, 0, m_WebLUTTex.IsValid() ? m_WebLUTTex : m_WebDefaultWhiteTex, {}},
+            {5, {}, 0, 0, {}, m_WebLUTTex.IsValid() ? m_WebLUTTex : m_WebDefaultWhiteTex},
             };
             m_WebPostProcessBG = bindMgr->CreateBindGroup(ppBG2);
         }
@@ -4109,6 +4119,33 @@ void RenderSystem::Update(f32 deltaTime) {
             }
             // The post-process will read from the scratch texture (scene + bloom composited)
             // We use m_WebPostProcessBG which was set up to read scratch at init time.
+        }
+
+        // The LUT can be set after the bind group was built (it arrives with the
+        // scene), and a bind group holds the texture it was created with, so it has
+        // to be rebuilt when the LUT changes or the pass keeps sampling white.
+        if (m_WebPPBindGroupDirty && m_WebPostProcessBG.IsValid() && m_WebPostProcessLayout.IsValid()) {
+            m_WebPPBindGroupDirty = false;
+            const Renderer::GPUTextureHandle lutTex =
+                m_WebLUTTex.IsValid() ? m_WebLUTTex : m_WebDefaultWhiteTex;
+            const Renderer::GPUTextureHandle ppSrc =
+                m_WebBloomScratchTex.IsValid() ? m_WebBloomScratchTex : m_WebSceneColorTex;
+            Renderer::GPUBindGroupDesc rebuilt;
+            rebuilt.layout = m_WebPostProcessLayout;
+            rebuilt.entries = {
+                {0, {}, 0, 0, ppSrc, {}},
+                {1, {}, 0, 0, {}, ppSrc},
+                {2, m_WebPPAccessibilityBuffer, 0, sizeof(WebPPAccessibilityParams), {}, {}},
+                {3, {}, 0, 0, m_WebSceneDepthSampleTex, {}},
+                {4, {}, 0, 0, lutTex, {}},
+                {5, {}, 0, 0, {}, lutTex},
+            };
+            Renderer::GPUBindGroupHandle next = webBindMgr->CreateBindGroup(rebuilt);
+            if (next.IsValid()) {
+                // Replace only on success: the old group is still bound this frame.
+                webBindMgr->DestroyBindGroup(m_WebPostProcessBG);
+                m_WebPostProcessBG = next;
+            }
         }
 
         // Upload accessibility + post-process params to the PP UBO. Stamp the clock so
@@ -7481,7 +7518,19 @@ void RenderSystem::RecordComputePrePass(f32 deltaTime) {
     if (!m_VulkanRenderer || !m_World) return;
     m_ComputePrePassDone = true;
 
-    // Clustered forward lighting: build light list and assign to spatial clusters before main render pass
+    // Build the cluster light grid before the main render pass.
+    //
+    // Who reads it: the volumetric fog compute shader. NOT the surface
+    // shader - triangle.frag guards its clustered path with the shader macro
+    // CLUSTERED_LIGHTING, nothing defines it, and only one variant is
+    // compiled, so lighting is still the brute-force loop. The C++ define
+    // ENJIN_CLUSTERED_LIGHTING controls only whether the grid gets built.
+    //
+    // The grid is built ONCE per frame from m_Camera. The editor then renders
+    // its viewport and its game view from two different cameras against that
+    // one grid, so the game view samples clusters built for the fly camera.
+    // Harmless while only fog reads it; it has to be rebuilt per target
+    // before surface shading can use it.
 #ifdef ENJIN_CLUSTERED_LIGHTING
     // Clustered lighting now runs in Player builds too: the compute SPIR-V is
     // embedded (ClusterComputeShaderData.h), so m_ClusteredLighting is only

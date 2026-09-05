@@ -1423,9 +1423,11 @@ void EditorLayer::Update(f32 deltaTime) {
                 if (loaded.useProjectDefaults) {
                     m_SceneManager.GetDefaultRenderSettings().ApplyToRuntime(
                         m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+                    ApplySceneLUT(m_SceneManager.GetDefaultRenderSettings());
                 } else {
                     loaded.ApplyToRuntime(
                         m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+                    ApplySceneLUT(loaded);
                 }
                 MarkDirty(); // Recovered scene has unsaved changes
                 ENJIN_LOG_INFO(Editor, "Recovered from auto-save: %s", recoveryPath.c_str());
@@ -3361,9 +3363,26 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
 
         // TAA resolve pass (runs at render resolution — same as scene target)
         if (cameraPPEnabled && m_PostProcessing->IsTAAEnabled() && m_Renderer && !upscalerActive) {
-            auto* swapchain = m_Renderer->GetSwapchain();
-            if (swapchain) {
-                m_PostProcessing->SetVelocityImageView(swapchain->GetVelocityImageView());
+            // No velocity source here, so TAA does not run.
+            //
+            // This used to hand TAA the SWAPCHAIN velocity view. The editor
+            // skips the main pass and renders the scene into an offscreen
+            // target that has a single colour attachment and no velocity
+            // buffer, so that view holds whatever the swapchain last wrote,
+            // or nothing at all. Reprojecting against it is reprojecting
+            // against garbage: smearing and ghosting that look like a TAA
+            // tuning problem and are not.
+            //
+            // ApplyTAA early-returns on a null velocity view, so passing null
+            // skips it cleanly and the frame falls through to the scene colour.
+            // A standalone build is unaffected: it renders through the
+            // swapchain main pass, which does write velocity.
+            m_PostProcessing->SetVelocityImageView(VK_NULL_HANDLE);
+            static bool s_taaNoticeLogged = false;
+            if (!s_taaNoticeLogged) {
+                s_taaNoticeLogged = true;
+                ENJIN_LOG_INFO(Editor, "TAA is skipped in the editor: the offscreen "
+                               "scene target writes no velocity buffer. It applies in a build.");
             }
             if (m_SceneRenderTarget && m_SceneRenderTarget->IsValid()) {
                 m_PostProcessing->SetDepthImageView(m_SceneRenderTarget->GetDepthImageView());
@@ -3388,11 +3407,10 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
                 // Determine input: use TAA output if TAA ran, else scene color directly
                 VkImageView colorInput = VK_NULL_HANDLE;
                 if (m_PostProcessing->IsTAAEnabled()) {
-                    // TAA already ran at low res — use its output
-                    auto* swapchain = m_Renderer->GetSwapchain();
-                    if (swapchain) {
-                        m_PostProcessing->SetVelocityImageView(swapchain->GetVelocityImageView());
-                    }
+                    // Same as above: no velocity is written offscreen, so TAA
+                    // is skipped and colorInput stays null, which falls back to
+                    // the scene colour below.
+                    m_PostProcessing->SetVelocityImageView(VK_NULL_HANDLE);
                     m_PostProcessing->SetDepthImageView(m_SceneRenderTarget->GetDepthImageView());
                     m_PostProcessing->ApplyTAA(commandBuffer);
                     colorInput = m_PostProcessing->GetTAAOutputImageView();

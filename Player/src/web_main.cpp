@@ -834,6 +834,16 @@ public:
     void ApplyWebPostProcess() {
         if (!m_RenderSystem) return;
         const auto& s = m_SceneRenderSettings;
+        m_RenderSystem->SetWebToneMapMode(s.toneMappingMode);
+        // Scene LUT. ApplyToRuntime passes null pp on web, so the LUT would
+        // otherwise be the one graded effect that worked in the editor and in a
+        // desktop build and silently did nothing in a browser.
+        if (s.lutEnabled && !s.lutPath.empty()) {
+            m_RenderSystem->SetWebLUT(m_RenderSystem->ResolveWebTexture(s.lutPath),
+                                      s.lutStrength, s.lutSize);
+        } else {
+            m_RenderSystem->SetWebLUT({}, 0.0f, s.lutSize);
+        }
         // Spatial upscaling, opt-in per page via ?scale= and ?sharp= so a demo
         // can trade resolution for framerate without a rebuild. Defaults are
         // native rendering with a light sharpen, which changes nothing for
