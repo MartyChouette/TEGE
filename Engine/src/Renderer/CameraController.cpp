@@ -73,7 +73,10 @@ void CameraController::UpdateFlyMode(f32 deltaTime) {
 
     if (wantLook) {
         if (!m_MouseCapturedByUs) {
-            Input::SetMouseCaptured(true);
+            // VisibleWrapped, not hidden: this is the editor's scene view.
+            // The cursor stays on screen and wraps at the window edge, so a
+            // long drag never runs out of room.
+            Input::SetMouseCaptureMode(Input::MouseCaptureMode::VisibleWrapped);
             m_MouseCapturedByUs = true;
             SyncFromCamera();
             // Input::SetMouseCaptured resets the delta origin, so the frame
@@ -108,7 +111,7 @@ void CameraController::UpdateFlyMode(f32 deltaTime) {
             ApplyRotation();
         }
     } else if (m_MouseCapturedByUs) {
-        Input::SetMouseCaptured(false);
+        Input::SetMouseCaptureMode(Input::MouseCaptureMode::Free);
         m_MouseCapturedByUs = false;
     }
 
@@ -256,7 +259,7 @@ void CameraController::UpdateOrbitMode(f32 deltaTime) {
 
     if (rightMouseDown) {
         if (!m_MouseCapturedByUs) {
-            Input::SetMouseCaptured(true);
+            Input::SetMouseCaptureMode(Input::MouseCaptureMode::VisibleWrapped);
             m_MouseCapturedByUs = true;
             SyncFromCamera();
             m_LookWarmupFrames = 1;  // capture transition: same guard as fly mode
@@ -272,7 +275,7 @@ void CameraController::UpdateOrbitMode(f32 deltaTime) {
             m_Pitch = Math::Clamp(m_Pitch, -89.0f, 89.0f);
         }
     } else if (m_MouseCapturedByUs) {
-        Input::SetMouseCaptured(false);
+        Input::SetMouseCaptureMode(Input::MouseCaptureMode::Free);
         m_MouseCapturedByUs = false;
     }
 

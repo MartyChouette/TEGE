@@ -340,6 +340,27 @@ public:
     static void SetMouseCaptured(bool captured);
     static bool IsMouseCaptured();
 
+    // How the cursor behaves while something is driving a camera with it.
+    //
+    // There was only ever ONE answer -- GLFW_CURSOR_DISABLED, which hides the
+    // cursor, locks it, and reports an unbounded virtual position. That is
+    // right for an FPS in the game view and wrong for the editor's scene
+    // viewport, where the cursor vanishing while you orbit is disorienting and
+    // you want to see what you are pointing at.
+    //
+    // VisibleWrapped is the missing middle: the cursor stays VISIBLE and is
+    // warped to the opposite edge when it reaches one, so a long drag never
+    // runs out of screen. GLFW 3.4's GLFW_CURSOR_CAPTURED would do this
+    // natively; this codebase is on 3.3, and edge-wrapping is the standard
+    // technique that predates it.
+    enum class MouseCaptureMode {
+        Free = 0,        // normal cursor, no camera driving it
+        Hidden,          // hidden + locked + unbounded: FPS look in a game
+        VisibleWrapped   // visible, wrapped at the window edge: editor orbiting
+    };
+    static void SetMouseCaptureMode(MouseCaptureMode mode);
+    static MouseCaptureMode GetMouseCaptureMode();
+
     // Cursor visibility
     static void SetCursorVisible(bool visible);
     static bool IsCursorVisible();

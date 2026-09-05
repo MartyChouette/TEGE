@@ -1391,6 +1391,11 @@ private:
 
     // Game View mouse interaction during play mode
     bool m_GameViewMouseCaptured = false;
+    // Game view click-to-capture wants a DOUBLE click, so the time of the last
+    // one has to be remembered. Starts far in the past so the first click of a
+    // session is never treated as the second half of a pair.
+    f32 m_GameViewLastClickTime = -1000.0f;
+    static constexpr f32 kGameViewDoubleClickSeconds = 0.4f;
     // True only on frames where the Game View panel actually submitted its
     // image (visible + front tab). The play-mode game-UI overlay draws on the
     // FOREGROUND list at the cached image rect - without this gate it painted

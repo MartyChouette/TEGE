@@ -2098,7 +2098,17 @@ void EditorLayer::Update(f32 deltaTime) {
     if (!m_FocusMode && !m_GameViewMouseCaptured && !m_GameScriptReleasedCursor &&
         m_PlayMode.IsPlaying() &&
         m_GameViewHovered && Input::IsMouseButtonPressed(MouseButton::Left)) {
-        if (SceneHasMouseLookController()) {
+        // DOUBLE click, not single. A single click captured the cursor, so a
+        // click meant to select or aim also took it away -- and getting it back
+        // needs Escape, which pauses the game. A double click is a deliberate
+        // "I am playing now".
+        const f32 now = static_cast<f32>(ImGui::GetTime());
+        const bool isDoubleClick =
+            (now - m_GameViewLastClickTime) <= kGameViewDoubleClickSeconds;
+        m_GameViewLastClickTime = now;
+
+        if (isDoubleClick && SceneHasMouseLookController()) {
+            m_GameViewLastClickTime = -1000.0f;   // consumed: a third click starts over
             m_GameViewMouseCaptured = true;
             Input::SetMouseCaptured(true);
         }

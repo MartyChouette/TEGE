@@ -81,6 +81,13 @@ namespace {
     bool s_InjectedMouse[MAX_MOUSE_BUTTONS] = {};
     Math::Vector2 s_InjectedMousePos = {};
     Math::Vector2 s_MouseDelta = {};
+namespace {
+// Current capture mode. SetMouseCaptured maps onto it so every existing caller
+// keeps working: true = Hidden, false = Free.
+Input::MouseCaptureMode s_CaptureMode = Input::MouseCaptureMode::Free;
+// How close to the window edge counts as "about to run out of room".
+constexpr f32 kWrapMargin = 8.0f;
+}
 
     // Scroll delta (accumulated between frames)
     Math::Vector2 s_ScrollDelta = {};
@@ -845,6 +852,31 @@ void Input::Update() {
         s_RealFirstMove = true;
     }
 
+#if !ENJIN_PLATFORM_WEB
+    // VisibleWrapped: the cursor stays on screen, so a drag would otherwise
+    // stop looking the moment it reaches the edge. Warp it across and skip
+    // this frame's delta -- reading it would report the width of the window as
+    // a flick.
+    if (s_CaptureMode == MouseCaptureMode::VisibleWrapped && s_Window) {
+        int ww = 0, wh = 0;
+        glfwGetWindowSize(s_Window, &ww, &wh);
+        if (ww > 0 && wh > 0) {
+            f64 cx = 0.0, cy = 0.0;
+            glfwGetCursorPos(s_Window, &cx, &cy);
+            f64 nx = cx, ny = cy;
+            if (cx <= kWrapMargin)                 nx = static_cast<f64>(ww) - kWrapMargin * 2.0;
+            else if (cx >= ww - kWrapMargin)       nx = kWrapMargin * 2.0;
+            if (cy <= kWrapMargin)                 ny = static_cast<f64>(wh) - kWrapMargin * 2.0;
+            else if (cy >= wh - kWrapMargin)       ny = kWrapMargin * 2.0;
+            if (nx != cx || ny != cy) {
+                glfwSetCursorPos(s_Window, nx, ny);
+                s_MousePosition = Math::Vector2(static_cast<f32>(nx), static_cast<f32>(ny));
+                s_FirstMouseMove = true;   // suppress the delta across the warp
+            }
+        }
+    }
+#endif
+
     // Calculate mouse delta
     if (s_FirstMouseMove) {
         s_MouseDelta = Math::Vector2(0.0f, 0.0f);
@@ -1161,37 +1193,56 @@ void Input::CaptureFrameState(bool* keysDown, bool* mouseDown, Math::Vector2& mo
     mousePos = s_MousePosition;
 }
 
-void Input::SetMouseCaptured(bool captured) {
-    s_MouseCaptured = captured;
+Input::MouseCaptureMode Input::GetMouseCaptureMode() { return s_CaptureMode; }
+
+void Input::SetMouseCaptureMode(MouseCaptureMode mode) {
+    if (mode == s_CaptureMode) return;
+    s_CaptureMode = mode;
+
 #if ENJIN_PLATFORM_WEB
     // Mirror intent to JS: the canvas click handler re-locks the pointer only
     // while the game WANTS capture. Without this, releasing the cursor for
-    // on-screen UI (Web Demo's Tab menu mode) re-locked on the first menu
-    // click and made the UI unusable.
-    EM_ASM({ Module.tegeWantPointerLock = $0 ? true : false; }, captured ? 1 : 0);
-    if (captured) {
-        emscripten_request_pointerlock("#game-canvas", true);
-    } else {
-        emscripten_exit_pointerlock();
-    }
-    s_FirstMouseMove = true;
-#else
-    if (!s_Window) return;
-    if (captured) {
-        glfwSetInputMode(s_Window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-        if (s_UseRawInput && glfwRawMouseMotionSupported()) {
-            glfwSetInputMode(s_Window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
+    // on-screen UI (the Tab menu) re-locked on the first menu click and made
+    // the UI unusable. VisibleWrapped has no meaning under pointer lock -- the
+    // browser owns the cursor -- so it is treated as free.
+    {
+        const bool wantLock = (mode == MouseCaptureMode::Hidden);
+        EM_ASM({ Module.tegeWantPointerLock = $0 ? true : false; }, wantLock ? 1 : 0);
+        if (wantLock) {
+            emscripten_request_pointerlock("#game-canvas", true);
+        } else {
+            emscripten_exit_pointerlock();
         }
-    } else {
-        glfwSetInputMode(s_Window, GLFW_RAW_MOUSE_MOTION, GLFW_FALSE);
-        glfwSetInputMode(s_Window, GLFW_CURSOR, s_CursorVisible ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_HIDDEN);
     }
-    // BOTH transitions change the coordinate source (physical cursor vs the
-    // unbounded virtual position of GLFW_CURSOR_DISABLED). Releasing without
-    // resetting left the next frame's delta = physical - virtual: a massive
-    // spike that whipped any camera reading GetMouseDelta that frame.
-    s_FirstMouseMove = true;
+#else
+    if (s_Window) {
+        if (mode == MouseCaptureMode::Hidden) {
+            glfwSetInputMode(s_Window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            if (s_UseRawInput && glfwRawMouseMotionSupported()) {
+                glfwSetInputMode(s_Window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
+            }
+        } else {
+            // Both Free and VisibleWrapped show a real cursor. The difference
+            // is only whether Update wraps it at the edges.
+            glfwSetInputMode(s_Window, GLFW_RAW_MOUSE_MOTION, GLFW_FALSE);
+            glfwSetInputMode(s_Window, GLFW_CURSOR,
+                             s_CursorVisible ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_HIDDEN);
+        }
+    }
 #endif
+    s_MouseCaptured = (mode == MouseCaptureMode::Hidden);
+    // Any mode change moves the coordinate source, so the next frame must not
+    // read a delta across the discontinuity.
+    s_FirstMouseMove = true;
+}
+
+void Input::SetMouseCaptured(bool captured) {
+    // The legacy entry point, kept because dozens of call sites use it. It is
+    // now just a name for two of the modes -- routing it through
+    // SetMouseCaptureMode is what stops the boolean and the mode disagreeing,
+    // which would leave half the engine thinking the cursor was free while the
+    // other half had hidden it.
+    SetMouseCaptureMode(captured ? MouseCaptureMode::Hidden : MouseCaptureMode::Free);
 }
 
 bool Input::IsMouseCaptured() {
