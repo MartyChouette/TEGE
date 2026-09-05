@@ -1276,21 +1276,22 @@ namespace {
         { "stresstest",   "Stress Test",        "Perf benchmark\n64 falling bodies + 16 point lights",   ImVec4(0.9f, 0.45f, 0.2f, 1.0f), kTMPL_3D, Editor::MaturityTier::Stable },
         { "platformer",   "2D Platformer",      "4-zone adventure\nMeadow + cave + tower + sky boss",    ImVec4(0.3f, 0.8f, 0.3f, 1.0f), kTMPL_2D, Editor::MaturityTier::Stable },
         { "thirdperson",  "3D Third Person",    "Over-the-shoulder\nShadows + obstacles + point light",  ImVec4(0.8f, 0.3f, 0.3f, 1.0f), kTMPL_3D, Editor::MaturityTier::Stable },
-        { "firstperson",  "3D First Person",    "Eye-level FPS\nCorridor walls + warm lighting",         ImVec4(0.7f, 0.3f, 0.8f, 1.0f), kTMPL_3D, Editor::MaturityTier::Stable },
         // -- Genre showcases --
         { "narrative",    "Dialogue & Narrative","NPC conversations\nQuests + dialogue box + branching",  ImVec4(0.7f, 0.6f, 0.85f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
         { "pointclick",   "Point & Click",      "Adventure game\nClick hotspots + inventory + dialogue", ImVec4(1.0f, 0.55f, 0.2f, 1.0f), kTMPL_2D, Editor::MaturityTier::Beta },
         { "idleclicker",  "Idle/Clicker",       "Incremental game\nUI canvas + meta saves + tweens",    ImVec4(0.4f, 0.8f, 0.4f, 1.0f), kTMPL_2D, Editor::MaturityTier::Beta },
         { "planetgravity","Planet Gravity",     "Spherical gravity\nWalk on a planet surface",           ImVec4(0.3f, 0.6f, 0.95f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
         { "isometric",   "3D Isometric",    "45-degree CRPG\nPerspective + player",               ImVec4(0.9f, 0.6f, 0.2f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
-        { "teamsports",  "Team Sports",    "3D soccer/basketball\n2 teams + ball + goals",         ImVec4(0.2f, 0.8f, 0.3f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
         { "flower",      "Flower Garden", "Procedural flower\nPluckable petals + score",             ImVec4(0.9f, 0.4f, 0.6f, 1.0f), kTMPL_3D, Editor::MaturityTier::Stable },
         // -- Accessibility showcase --
         { "accessibility","Accessibility Demo","Live settings demo\nColorblind + font + screen reader",    ImVec4(0.3f, 0.75f, 0.9f, 1.0f), kTMPL_ALL, Editor::MaturityTier::Beta },
         // -- The website's browser demo: third person + live accessibility --
         { "webdemo",      "Web Demo",           "Site browser demo\nThird person + live accessibility menu", ImVec4(0.25f, 0.85f, 0.75f, 1.0f), kTMPL_3D, Editor::MaturityTier::Stable },
     };
-    constexpr int s_BuiltinCount = 17;
+    // Cut firstperson and teamsports: both are the 3D character template with a
+    // different camera or ruleset, and planetgravity and isometric already cover
+    // that ground more distinctly.
+    constexpr int s_BuiltinCount = 15;
 } // anonymous namespace
 
 // Draw a procedural mini-preview for template cards (first 4 templates get custom art)
@@ -2235,6 +2236,30 @@ void EditorLayer::DrawHubDemosTab(ImDrawList* dl, const ImVec2& area, f32 conten
 // --------------------------------------------------
 // Create project folder structure on disk
 // --------------------------------------------------
+void EditorLayer::TickTemplateExport() {
+    if (s_ExportTemplateIndex < 0 || s_ExportTemplatesDir.empty()) return;
+
+    // CreateProjectOnDisk defers the template build and the scene save to the
+    // next Update, so only start the next one once the previous has landed.
+    if (!m_PendingTemplateId.empty() || !m_PendingSceneLoadPath.empty()) return;
+
+    if (s_ExportTemplateIndex >= s_BuiltinCount) {
+        ENJIN_LOG_INFO(Editor, "Exported %d templates to %s",
+                       s_BuiltinCount, s_ExportTemplatesDir.c_str());
+        s_ExportTemplateIndex = -1;
+        if (m_Window) m_Window->Close();
+        return;
+    }
+
+    const char* id = s_BuiltinTemplates[s_ExportTemplateIndex].id;
+    ++s_ExportTemplateIndex;
+    ENJIN_LOG_INFO(Editor, "Exporting template %d/%d: %s",
+                   s_ExportTemplateIndex, s_BuiltinCount, id);
+    if (!CreateProjectOnDisk(s_ExportTemplatesDir, id, "Main", id)) {
+        ENJIN_LOG_ERROR(Editor, "Template export failed: %s", id);
+    }
+}
+
 bool EditorLayer::CreateProjectOnDisk(const std::string& projectDir, const std::string& projectName,
                                       const std::string& sceneName, const std::string& templateId) {
     namespace fs = std::filesystem;

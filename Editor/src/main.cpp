@@ -360,6 +360,11 @@ int main(int argc, char* argv[]) {
             Enjin::Editor::EditorLayer::s_GoldenCapturePath = argv[++i];
         } else if (flag == "--golden-frames" && i + 1 < argc && argv[i + 1]) {
             Enjin::Editor::EditorLayer::s_GoldenCaptureFrame = std::atoi(argv[++i]);
+        } else if (flag == "--export-templates" && i + 1 < argc && argv[i + 1]) {
+            // Run every built-in template generator and write each out as a
+            // project folder, so templates can become data instead of code.
+            Enjin::Editor::EditorLayer::s_ExportTemplatesDir = argv[++i];
+            Enjin::Editor::EditorLayer::s_ExportTemplateIndex = 0;
         }
     }
 

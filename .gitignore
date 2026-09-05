@@ -217,3 +217,7 @@ node_modules/
 
 # Internal docs: business, roadmap, journals, audits, contribution policy
 _docs_internal/
+
+# Exported game archives and build output inside example projects
+Examples/*/Build/
+Examples/*/*.zip

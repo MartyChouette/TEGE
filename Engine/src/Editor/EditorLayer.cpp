@@ -1326,6 +1326,8 @@ void EditorLayer::Update(f32 deltaTime) {
     // the auto-play countdown is 120 frames, so counting from boot meant short
     // captures (CI uses 30) grabbed the EDIT-mode game view with scripts,
     // physics, and controllers never having run.
+    TickTemplateExport();
+
     if (!s_GoldenCapturePath.empty() && m_RenderSystem && m_GameViewRenderTarget) {
         if (!s_AutoPlayRequested || m_PlayMode.IsPlaying()) {
             if (++m_GoldenFrameCounter >= s_GoldenCaptureFrame) {

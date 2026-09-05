@@ -1,0 +1,31 @@
+{
+ "projectName": "BiscuitBird",
+ "version": "1.0",
+ "projectMode": 1,
+ "physicsBackend": 0,
+ "buildConfig": {
+  "windowTitle": "Biscuit Bird",
+  "windowWidth": 1280,
+  "windowHeight": 720,
+  "fullscreen": false
+ },
+ "frameSettings": {
+  "targetFrameRate": 0,
+  "vSync": true,
+  "backgroundBehavior": 1
+ },
+ "scenes": [
+  {
+   "name": "Main",
+   "path": "scenes/Main.enjin",
+   "buildIndex": 0,
+   "isStartScene": true
+  },
+  {
+   "name": "PaintTest",
+   "path": "scenes/PaintTest.enjin",
+   "buildIndex": -1,
+   "isStartScene": false
+  }
+ ]
+}
