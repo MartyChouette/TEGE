@@ -378,6 +378,11 @@ void EditorLayer::SaveScene(const std::string& path) {
         }
         searchRoots.push_back(std::filesystem::path(path).parent_path().string());
         result.warnings = Scene::FindMissingAssetPaths(m_World, searchRoots);
+        // Scene-wide settings whose COMBINATION renders nothing, reported
+        // beside the missing-asset warnings so one save reports both.
+        for (auto& w : Scene::FindRenderSettingsWarnings(renderSettings)) {
+            result.warnings.push_back(std::move(w));
+        }
 
         std::string filename = std::filesystem::path(path).filename().string();
         if (!result.warnings.empty()) {

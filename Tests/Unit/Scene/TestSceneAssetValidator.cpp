@@ -3,6 +3,7 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Mesh.h"
+#include "Enjin/Renderer/SceneRenderSettings.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/Platform/Paths.h"
 
@@ -124,6 +125,50 @@ ENJIN_TEST(AssetValidator, EmptyPathFields_Skipped) {
     auto warnings = Scene::FindMissingAssetPaths(&world, { root.path.string() });
 
     ENJIN_EXPECT_EQ(warnings.size(), (usize)0);
+}
+
+// A black colour filter is the last multiply in colour grading, so on its own it
+// renders a black frame with no error anywhere.
+ENJIN_TEST(RenderSettingsValidator, BlackColourFilterWithoutOutline_IsReported) {
+    // Arrange
+    Renderer::SceneRenderSettings s;
+    s.colorFilter = Math::Vector3(0.0f, 0.0f, 0.0f);
+    s.celOutlineEnabled = false;
+
+    // Act
+    auto warnings = Scene::FindRenderSettingsWarnings(s);
+
+    // Assert
+    ENJIN_ASSERT_TRUE(warnings.size() == 1);
+    ENJIN_EXPECT_TRUE(warnings[0].find("black") != std::string::npos);
+}
+
+// The same filter WITH a cel outline is the Virtual Boy preset: the scene is
+// crushed to black on purpose and the outline draws over it. Warning here would
+// be a false positive on a deliberate look, which is worse than silence.
+ENJIN_TEST(RenderSettingsValidator, BlackColourFilterWithOutline_IsSilent) {
+    // Arrange
+    Renderer::SceneRenderSettings s;
+    s.colorFilter = Math::Vector3(0.0f, 0.0f, 0.0f);
+    s.celOutlineEnabled = true;
+
+    // Act
+    auto warnings = Scene::FindRenderSettingsWarnings(s);
+
+    // Assert
+    ENJIN_EXPECT_TRUE(warnings.empty());
+}
+
+// Default settings say nothing.
+ENJIN_TEST(RenderSettingsValidator, DefaultSettings_AreSilent) {
+    // Arrange
+    Renderer::SceneRenderSettings s;
+
+    // Act
+    auto warnings = Scene::FindRenderSettingsWarnings(s);
+
+    // Assert
+    ENJIN_EXPECT_TRUE(warnings.empty());
 }
 
 ENJIN_TEST_MAIN()

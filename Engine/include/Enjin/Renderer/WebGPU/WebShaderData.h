@@ -1177,6 +1177,29 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         color = color * (1.0 - occ * clamp(params.ssao, 0.0, 1.0));
     }
 
+    color = aces_tonemap(color);
+
+    // Options preview split: left of the divider shows the frame WITHOUT the
+    // previewed effect (5 = colorblind, 6 = color grading).
+    let previewLeft = params.previewEffect != 0u && in.uv.x < params.previewDivider;
+    if (!(previewLeft && params.previewEffect == 6u)) {
+        // Color grading: brightness/contrast, then saturation, then color filter.
+        color = (color - 0.5) * params.contrast + 0.5 + params.brightness;
+        let luma = dot(color, vec3<f32>(0.2126, 0.7152, 0.0722));
+        color = mix(vec3<f32>(luma), color, params.saturation);
+        color = color * vec3<f32>(params.colorFilterR, params.colorFilterG, params.colorFilterB);
+    }
+    if (!(previewLeft && params.previewEffect == 5u)) {
+        color = applyColorblindCorrection(color);
+    }
+
+    // Cel outline goes AFTER colour grading, matching postprocess.frag, where
+    // applyCelOutline runs after applyColorGrading and applyColorblindCorrection.
+    // Order is not cosmetic here: the Virtual Boy preset crushes the scene to
+    // black with a colorFilter of (0,0,0) and then draws red outlines over it.
+    // Running the outline first, as this did, multiplied those red lines by zero
+    // along with everything else, so the look that reads as red-on-black on
+    // desktop was a pure black frame on web.
     // Cel outline: Sobel on linear depth. This is the edge-detect counterpart
     // to the inverted-hull outline in the scene pass. The hull draws the
     // silhouette; this catches the INTERIOR edges a hull cannot, where two
@@ -1200,22 +1223,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let rel = edge / max(centre, 0.001);
         let line = smoothstep(params.celOutlineThreshold, params.celOutlineThreshold * 2.0, rel);
         color = mix(color, vec3<f32>(params.celOutlineR, params.celOutlineG, params.celOutlineB), line);
-    }
-
-    color = aces_tonemap(color);
-
-    // Options preview split: left of the divider shows the frame WITHOUT the
-    // previewed effect (5 = colorblind, 6 = color grading).
-    let previewLeft = params.previewEffect != 0u && in.uv.x < params.previewDivider;
-    if (!(previewLeft && params.previewEffect == 6u)) {
-        // Color grading: brightness/contrast, then saturation, then color filter.
-        color = (color - 0.5) * params.contrast + 0.5 + params.brightness;
-        let luma = dot(color, vec3<f32>(0.2126, 0.7152, 0.0722));
-        color = mix(vec3<f32>(luma), color, params.saturation);
-        color = color * vec3<f32>(params.colorFilterR, params.colorFilterG, params.colorFilterB);
-    }
-    if (!(previewLeft && params.previewEffect == 5u)) {
-        color = applyColorblindCorrection(color);
     }
 
     color = linearToSrgb(color);

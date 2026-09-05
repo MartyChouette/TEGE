@@ -10,6 +10,7 @@
 #include "Enjin/ECS/Components/GrassVolume.h"
 #include "Enjin/ECS/Components/WeatherZone.h"
 #include "Enjin/Platform/Paths.h"
+#include "Enjin/Renderer/SceneRenderSettings.h"
 
 #include <filesystem>
 
@@ -32,6 +33,32 @@ bool AssetExists(const std::string& path, const std::vector<std::string>& search
 }
 
 } // namespace
+
+std::vector<std::string> FindRenderSettingsWarnings(
+    const Renderer::SceneRenderSettings& settings) {
+
+    std::vector<std::string> warnings;
+
+    // A colour filter of zero is the LAST multiply in colour grading, so it
+    // crushes the whole frame to black. That is a real authored look - the
+    // Virtual Boy preset does exactly this and then paints red cel outlines
+    // over the black - so the filter alone is not a mistake and must not warn.
+    //
+    // Without the outline there is nothing drawn back over it, and the result
+    // is a black screen with no error anywhere. That is the combination worth
+    // reporting, and it cost a long hunt to find by eye: a scene carrying this
+    // pairing rendered correctly in the editor and black everywhere else.
+    const auto& cf = settings.colorFilter;
+    const bool filterIsBlack = cf.x <= 0.0001f && cf.y <= 0.0001f && cf.z <= 0.0001f;
+    if (filterIsBlack && !settings.celOutlineEnabled) {
+        warnings.push_back(
+            "Colour filter is black with no cel outline: colour grading multiplies "
+            "every pixel to zero and nothing draws over it, so the frame renders "
+            "black (Scene render settings)");
+    }
+
+    return warnings;
+}
 
 std::vector<std::string> FindMissingAssetPaths(
     ECS::World* world,

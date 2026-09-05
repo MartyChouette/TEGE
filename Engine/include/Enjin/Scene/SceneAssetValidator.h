@@ -8,6 +8,7 @@
 namespace Enjin {
 
 namespace ECS { class World; }
+namespace Renderer { struct SceneRenderSettings; }
 
 namespace Scene {
 
@@ -27,6 +28,12 @@ namespace Scene {
 ENJIN_API std::vector<std::string> FindMissingAssetPaths(
     ECS::World* world,
     const std::vector<std::string>& searchRoots);
+
+// Scene-wide render settings that combine into something inert or invisible.
+// Same rule as the component checks above: each field is individually valid and
+// it is the PAIRING that is wrong, so only the combination can be judged.
+ENJIN_API std::vector<std::string> FindRenderSettingsWarnings(
+    const Renderer::SceneRenderSettings& settings);
 
 } // namespace Scene
 } // namespace Enjin
