@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs><clipPath id="disc"><circle cx="256.0" cy="256.0" r="255.0"/></clipPath><radialGradient id="glow"><stop offset="0%" stop-color="#7A857F" stop-opacity="0.55"/><stop offset="100%" stop-color="#7A857F" stop-opacity="0"/></radialGradient></defs>
+  <g clip-path="url(#disc)">
+  <rect width="512" height="512" fill="#40404F"/>
+  <circle cx="256.0" cy="256.0" r="585.0" fill="url(#glow)"/>
+  <path d="M 30.0 58.2 L 30.0 30.0 M 30.0 30.0 L 58.2 30.0" stroke="#A9AEB6" stroke-width="1.6" fill="none" opacity="0.300"/>
+    <path d="M 482.0 58.2 L 482.0 30.0 M 482.0 30.0 L 453.8 30.0" stroke="#A9AEB6" stroke-width="1.6" fill="none" opacity="0.300"/>
+    <path d="M 30.0 453.8 L 30.0 482.0 M 30.0 482.0 L 58.2 482.0" stroke="#A9AEB6" stroke-width="1.6" fill="none" opacity="0.300"/>
+    <path d="M 482.0 453.8 L 482.0 482.0 M 482.0 482.0 L 453.8 482.0" stroke="#A9AEB6" stroke-width="1.6" fill="none" opacity="0.300"/>
+  <g fill="#E5EEE3">
+    <g transform="translate(162.850 362.500) scale(0.300000 -0.300000)"><path d="M592 708Q588 670 586.5 634.5Q585 599 585 580Q585 556 586.0 535.0Q587 514 588 498H565Q558 568 546.0 608.5Q534 649 504.0 667.0Q474 685 411 685H357V116Q357 76 364.5 56.0Q372 36 394.0 29.0Q416 22 458 20V0Q432 2 392.0 2.5Q352 3 311 3Q266 3 226.5 2.5Q187 2 163 0V20Q205 22 227.0 29.0Q249 36 256.5 56.0Q264 76 264 116V685H210Q148 685 117.5 667.0Q87 649 75.0 608.5Q63 568 56 498H33Q35 514 35.5 535.0Q36 556 36 580Q36 599 34.5 634.5Q33 670 29 708Q71 707 120.5 706.0Q170 705 220.0 705.0Q270 705 311 705Q352 705 401.5 705.0Q451 705 501.0 706.0Q551 707 592 708Z"/></g>
+  </g>
+  </g>
+  <circle cx="256.0" cy="256.0" r="255.0" fill="none" stroke="#A9AEB6" stroke-width="5" opacity="0.85"/>
+</svg>
