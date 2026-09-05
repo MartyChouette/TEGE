@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ScriptComponentAccess.h"
 #include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/ECS/World.h"
@@ -21,55 +22,55 @@ extern ECS::World* s_BindingsWorld;
 
 static void Particle_Play(u64 entity) {
     if (!s_BindingsWorld) return;
-    auto* emitter = s_BindingsWorld->GetComponent<ECS::ParticleEmitterComponent>(entity);
+    auto* emitter = ENJIN_SCRIPT_COMPONENT(ECS::ParticleEmitterComponent, entity);
     if (emitter) emitter->isPlaying = true;
 }
 
 static void Particle_Stop(u64 entity) {
     if (!s_BindingsWorld) return;
-    auto* emitter = s_BindingsWorld->GetComponent<ECS::ParticleEmitterComponent>(entity);
+    auto* emitter = ENJIN_SCRIPT_COMPONENT(ECS::ParticleEmitterComponent, entity);
     if (emitter) emitter->isPlaying = false;
 }
 
 static bool Particle_IsPlaying(u64 entity) {
     if (!s_BindingsWorld) return false;
-    auto* emitter = s_BindingsWorld->GetComponent<ECS::ParticleEmitterComponent>(entity);
+    auto* emitter = ENJIN_SCRIPT_COMPONENT(ECS::ParticleEmitterComponent, entity);
     return emitter ? emitter->isPlaying : false;
 }
 
 static void Particle_SetEmissionRate(u64 entity, float rate) {
     if (!s_BindingsWorld) return;
-    auto* emitter = s_BindingsWorld->GetComponent<ECS::ParticleEmitterComponent>(entity);
+    auto* emitter = ENJIN_SCRIPT_COMPONENT(ECS::ParticleEmitterComponent, entity);
     if (emitter) emitter->emissionRate = Math::Max(0.0f, rate);
 }
 
 static float Particle_GetEmissionRate(u64 entity) {
     if (!s_BindingsWorld) return 0.0f;
-    auto* emitter = s_BindingsWorld->GetComponent<ECS::ParticleEmitterComponent>(entity);
+    auto* emitter = ENJIN_SCRIPT_COMPONENT(ECS::ParticleEmitterComponent, entity);
     return emitter ? emitter->emissionRate : 0.0f;
 }
 
 static void Particle_Burst(u64 entity, int count) {
     if (!s_BindingsWorld || count <= 0) return;
-    auto* emitter = s_BindingsWorld->GetComponent<ECS::ParticleEmitterComponent>(entity);
+    auto* emitter = ENJIN_SCRIPT_COMPONENT(ECS::ParticleEmitterComponent, entity);
     if (emitter) emitter->burstCount = count;
 }
 
 static void Particle_SetLifetime(u64 entity, float lifetime) {
     if (!s_BindingsWorld) return;
-    auto* emitter = s_BindingsWorld->GetComponent<ECS::ParticleEmitterComponent>(entity);
+    auto* emitter = ENJIN_SCRIPT_COMPONENT(ECS::ParticleEmitterComponent, entity);
     if (emitter) emitter->lifetime = Math::Max(0.01f, lifetime);
 }
 
 static void Particle_SetSpeed(u64 entity, float speed) {
     if (!s_BindingsWorld) return;
-    auto* emitter = s_BindingsWorld->GetComponent<ECS::ParticleEmitterComponent>(entity);
+    auto* emitter = ENJIN_SCRIPT_COMPONENT(ECS::ParticleEmitterComponent, entity);
     if (emitter) emitter->startSpeed = speed;
 }
 
 static void Particle_SetSize(u64 entity, float startSize, float endSize) {
     if (!s_BindingsWorld) return;
-    auto* emitter = s_BindingsWorld->GetComponent<ECS::ParticleEmitterComponent>(entity);
+    auto* emitter = ENJIN_SCRIPT_COMPONENT(ECS::ParticleEmitterComponent, entity);
     if (!emitter) return;
     emitter->startSize = startSize;
     emitter->endSize = endSize;
@@ -77,7 +78,7 @@ static void Particle_SetSize(u64 entity, float startSize, float endSize) {
 
 static void Particle_SetColor(u64 entity, float sr, float sg, float sb, float er, float eg, float eb) {
     if (!s_BindingsWorld) return;
-    auto* emitter = s_BindingsWorld->GetComponent<ECS::ParticleEmitterComponent>(entity);
+    auto* emitter = ENJIN_SCRIPT_COMPONENT(ECS::ParticleEmitterComponent, entity);
     if (!emitter) return;
     emitter->startColor = Math::Vector3(sr, sg, sb);
     emitter->endColor = Math::Vector3(er, eg, eb);
@@ -85,7 +86,7 @@ static void Particle_SetColor(u64 entity, float sr, float sg, float sb, float er
 
 static void Particle_SetAlpha(u64 entity, float startAlpha, float endAlpha) {
     if (!s_BindingsWorld) return;
-    auto* emitter = s_BindingsWorld->GetComponent<ECS::ParticleEmitterComponent>(entity);
+    auto* emitter = ENJIN_SCRIPT_COMPONENT(ECS::ParticleEmitterComponent, entity);
     if (!emitter) return;
     emitter->startAlpha = Math::Clamp(startAlpha, 0.0f, 1.0f);
     emitter->endAlpha = Math::Clamp(endAlpha, 0.0f, 1.0f);
@@ -93,26 +94,26 @@ static void Particle_SetAlpha(u64 entity, float startAlpha, float endAlpha) {
 
 static void Particle_SetLoop(u64 entity, bool loop) {
     if (!s_BindingsWorld) return;
-    auto* emitter = s_BindingsWorld->GetComponent<ECS::ParticleEmitterComponent>(entity);
+    auto* emitter = ENJIN_SCRIPT_COMPONENT(ECS::ParticleEmitterComponent, entity);
     if (emitter) emitter->loop = loop;
 }
 
 static void Particle_SetGravity(u64 entity, float gx, float gy, float gz) {
     if (!s_BindingsWorld) return;
-    auto* emitter = s_BindingsWorld->GetComponent<ECS::ParticleEmitterComponent>(entity);
+    auto* emitter = ENJIN_SCRIPT_COMPONENT(ECS::ParticleEmitterComponent, entity);
     if (emitter) emitter->gravity = Math::Vector3(gx, gy, gz);
 }
 
 static void Particle_ApplyPreset(u64 entity, const std::string& preset) {
     if (!s_BindingsWorld) return;
-    auto* emitter = s_BindingsWorld->GetComponent<ECS::ParticleEmitterComponent>(entity);
+    auto* emitter = ENJIN_SCRIPT_COMPONENT(ECS::ParticleEmitterComponent, entity);
     if (emitter) ECS::ApplyParticlePreset(*emitter, preset);
 }
 
 // Fire a one-shot burst from an entity's GPU particle emitter (hits, sparks).
 static void GPUParticle_Burst(u64 entity, int count) {
     if (!s_BindingsWorld || count <= 0) return;
-    auto* em = s_BindingsWorld->GetComponent<ECS::GPUParticleEmitterComponent>(entity);
+    auto* em = ENJIN_SCRIPT_COMPONENT(ECS::GPUParticleEmitterComponent, entity);
     if (em) { em->burstCount = static_cast<u32>(count); em->burstNow = true; }
 }
 

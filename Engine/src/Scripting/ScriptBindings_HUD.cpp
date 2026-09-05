@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ScriptComponentAccess.h"
 #include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/ECS/World.h"
@@ -47,7 +48,14 @@ static bool HUD_IsVisible(u64 entity) {
 }
 
 static void HUD_SetText(u64 entity, const std::string& text) {
-    if (auto* el = FirstOfType(HudCanvas(entity), GUI::UIWidgetType::Label)) el->data.text = text;
+    // Warn rather than return in silence. An entity carrying a uiCanvas
+    // instead of a hudWidget took this call, did nothing, and reported
+    // nothing -- which is exactly what a broken interact prompt looks like.
+    if (auto* el = FirstOfType(HudCanvas(entity), GUI::UIWidgetType::Label)) {
+        el->data.text = text;
+    } else {
+        ::Enjin::Scripting::WarnMissingScriptComponent(entity, "hudWidget Label", __func__);
+    }
 }
 
 static std::string HUD_GetText(u64 entity) {

@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ScriptComponentAccess.h"
 #include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Math/Vector.h"
@@ -39,7 +40,7 @@ extern ECS::World* s_BindingsWorld;
 // fail states). GameplayLoop shows the unified UICanvas game-over screen.
 static void GameOver_Trigger(u64 id, bool won) {
     if (!s_BindingsWorld) return;
-    auto* go = s_BindingsWorld->GetComponent<GameOverComponent>(static_cast<Entity>(id));
+    auto* go = ENJIN_SCRIPT_COMPONENT(GameOverComponent, id);
     if (!go || go->triggered) return;
     go->triggered = true;
     go->won = won;
@@ -49,13 +50,13 @@ static void GameOver_Trigger(u64 id, bool won) {
 
 static bool GameOver_IsTriggered(u64 id) {
     if (!s_BindingsWorld) return false;
-    auto* go = s_BindingsWorld->GetComponent<GameOverComponent>(static_cast<Entity>(id));
+    auto* go = ENJIN_SCRIPT_COMPONENT(GameOverComponent, id);
     return go && go->triggered;
 }
 
 static void GameOver_SetMessages(u64 id, const std::string& victory, const std::string& defeat) {
     if (!s_BindingsWorld) return;
-    auto* go = s_BindingsWorld->GetComponent<GameOverComponent>(static_cast<Entity>(id));
+    auto* go = ENJIN_SCRIPT_COMPONENT(GameOverComponent, id);
     if (!go) return;
     go->victoryMessage = victory;
     go->defeatMessage = defeat;
@@ -63,19 +64,19 @@ static void GameOver_SetMessages(u64 id, const std::string& victory, const std::
 
 static f32 Health_Get(u64 id) {
     if (!s_BindingsWorld) return 0.0f;
-    auto* hc = s_BindingsWorld->GetComponent<HealthComponent>(static_cast<Entity>(id));
+    auto* hc = ENJIN_SCRIPT_COMPONENT(HealthComponent, id);
     return hc ? hc->currentHealth : 0.0f;
 }
 
 static f32 Health_GetMax(u64 id) {
     if (!s_BindingsWorld) return 0.0f;
-    auto* hc = s_BindingsWorld->GetComponent<HealthComponent>(static_cast<Entity>(id));
+    auto* hc = ENJIN_SCRIPT_COMPONENT(HealthComponent, id);
     return hc ? hc->maxHealth : 0.0f;
 }
 
 static void Health_SetCurrent(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* hc = s_BindingsWorld->GetComponent<HealthComponent>(static_cast<Entity>(id));
+    auto* hc = ENJIN_SCRIPT_COMPONENT(HealthComponent, id);
     if (hc) hc->currentHealth = Math::Clamp(val, 0.0f, hc->maxHealth);
 }
 
@@ -96,43 +97,43 @@ static void Health_Damage(u64 id, f32 amount) {
 
 static void Material_SetBaseColor(u64 id, const Vector3& color) {
     if (!s_BindingsWorld) return;
-    auto* mc = s_BindingsWorld->GetComponent<MaterialComponent>(static_cast<Entity>(id));
+    auto* mc = ENJIN_SCRIPT_COMPONENT(MaterialComponent, id);
     if (mc) mc->baseColor = color;
 }
 
 static Vector3 Material_GetBaseColor(u64 id) {
     if (!s_BindingsWorld) return Vector3(1.0f);
-    auto* mc = s_BindingsWorld->GetComponent<MaterialComponent>(static_cast<Entity>(id));
+    auto* mc = ENJIN_SCRIPT_COMPONENT(MaterialComponent, id);
     return mc ? mc->baseColor : Vector3(1.0f);
 }
 
 static void Material_SetMetallic(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* mc = s_BindingsWorld->GetComponent<MaterialComponent>(static_cast<Entity>(id));
+    auto* mc = ENJIN_SCRIPT_COMPONENT(MaterialComponent, id);
     if (mc) mc->metallic = val;
 }
 
 static void Material_SetRoughness(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* mc = s_BindingsWorld->GetComponent<MaterialComponent>(static_cast<Entity>(id));
+    auto* mc = ENJIN_SCRIPT_COMPONENT(MaterialComponent, id);
     if (mc) mc->roughness = val;
 }
 
 static void Material_SetTransmission(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* mc = s_BindingsWorld->GetComponent<MaterialComponent>(static_cast<Entity>(id));
+    auto* mc = ENJIN_SCRIPT_COMPONENT(MaterialComponent, id);
     if (mc) mc->transmission = val;
 }
 
 static f32 Material_GetTransmission(u64 id) {
     if (!s_BindingsWorld) return 0.0f;
-    auto* mc = s_BindingsWorld->GetComponent<MaterialComponent>(static_cast<Entity>(id));
+    auto* mc = ENJIN_SCRIPT_COMPONENT(MaterialComponent, id);
     return mc ? mc->transmission : 0.0f;
 }
 
 static void Material_SetIOR(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* mc = s_BindingsWorld->GetComponent<MaterialComponent>(static_cast<Entity>(id));
+    auto* mc = ENJIN_SCRIPT_COMPONENT(MaterialComponent, id);
     if (mc) mc->ior = val;
 }
 
@@ -141,73 +142,73 @@ static void Material_SetIOR(u64 id, f32 val) {
 // so repeat swaps are cheap). Empty path clears the slot.
 static void Material_SetBaseColorTexture(u64 id, const std::string& path) {
     if (!s_BindingsWorld) return;
-    auto* mc = s_BindingsWorld->GetComponent<MaterialComponent>(static_cast<Entity>(id));
+    auto* mc = ENJIN_SCRIPT_COMPONENT(MaterialComponent, id);
     if (mc && mc->baseColorTexturePath != path) { mc->baseColorTexturePath = path; mc->textureCacheDirty = true; }
 }
 
 static void Material_SetEmissiveTexture(u64 id, const std::string& path) {
     if (!s_BindingsWorld) return;
-    auto* mc = s_BindingsWorld->GetComponent<MaterialComponent>(static_cast<Entity>(id));
+    auto* mc = ENJIN_SCRIPT_COMPONENT(MaterialComponent, id);
     if (mc && mc->emissiveTexturePath != path) { mc->emissiveTexturePath = path; mc->textureCacheDirty = true; }
 }
 
 static void Material_SetNormalTexture(u64 id, const std::string& path) {
     if (!s_BindingsWorld) return;
-    auto* mc = s_BindingsWorld->GetComponent<MaterialComponent>(static_cast<Entity>(id));
+    auto* mc = ENJIN_SCRIPT_COMPONENT(MaterialComponent, id);
     if (mc && mc->normalTexturePath != path) { mc->normalTexturePath = path; mc->textureCacheDirty = true; }
 }
 
 static f32 Material_GetIOR(u64 id) {
     if (!s_BindingsWorld) return 1.5f;
-    auto* mc = s_BindingsWorld->GetComponent<MaterialComponent>(static_cast<Entity>(id));
+    auto* mc = ENJIN_SCRIPT_COMPONENT(MaterialComponent, id);
     return mc ? mc->ior : 1.5f;
 }
 
 static void Material_SetThickness(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* mc = s_BindingsWorld->GetComponent<MaterialComponent>(static_cast<Entity>(id));
+    auto* mc = ENJIN_SCRIPT_COMPONENT(MaterialComponent, id);
     if (mc) mc->thickness = val;
 }
 
 static f32 Material_GetThickness(u64 id) {
     if (!s_BindingsWorld) return 0.0f;
-    auto* mc = s_BindingsWorld->GetComponent<MaterialComponent>(static_cast<Entity>(id));
+    auto* mc = ENJIN_SCRIPT_COMPONENT(MaterialComponent, id);
     return mc ? mc->thickness : 0.0f;
 }
 
 static void Material_SetSSSIntensity(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* mc = s_BindingsWorld->GetComponent<MaterialComponent>(static_cast<Entity>(id));
+    auto* mc = ENJIN_SCRIPT_COMPONENT(MaterialComponent, id);
     if (mc) mc->sssIntensity = val;
 }
 
 static f32 Material_GetSSSIntensity(u64 id) {
     if (!s_BindingsWorld) return 0.0f;
-    auto* mc = s_BindingsWorld->GetComponent<MaterialComponent>(static_cast<Entity>(id));
+    auto* mc = ENJIN_SCRIPT_COMPONENT(MaterialComponent, id);
     return mc ? mc->sssIntensity : 0.0f;
 }
 
 static void Material_SetSSSRadius(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* mc = s_BindingsWorld->GetComponent<MaterialComponent>(static_cast<Entity>(id));
+    auto* mc = ENJIN_SCRIPT_COMPONENT(MaterialComponent, id);
     if (mc) mc->sssRadius = val;
 }
 
 static f32 Material_GetSSSRadius(u64 id) {
     if (!s_BindingsWorld) return 1.0f;
-    auto* mc = s_BindingsWorld->GetComponent<MaterialComponent>(static_cast<Entity>(id));
+    auto* mc = ENJIN_SCRIPT_COMPONENT(MaterialComponent, id);
     return mc ? mc->sssRadius : 1.0f;
 }
 
 static void Material_SetSSSColor(u64 id, const Vector3& color) {
     if (!s_BindingsWorld) return;
-    auto* mc = s_BindingsWorld->GetComponent<MaterialComponent>(static_cast<Entity>(id));
+    auto* mc = ENJIN_SCRIPT_COMPONENT(MaterialComponent, id);
     if (mc) mc->sssColor = color;
 }
 
 static Vector3 Material_GetSSSColor(u64 id) {
     if (!s_BindingsWorld) return Vector3(1.0f, 0.2f, 0.1f);
-    auto* mc = s_BindingsWorld->GetComponent<MaterialComponent>(static_cast<Entity>(id));
+    auto* mc = ENJIN_SCRIPT_COMPONENT(MaterialComponent, id);
     return mc ? mc->sssColor : Vector3(1.0f, 0.2f, 0.1f);
 }
 
@@ -217,68 +218,68 @@ static Vector3 Material_GetSSSColor(u64 id) {
 
 static void Light_SetColor(u64 id, const Vector3& color) {
     if (!s_BindingsWorld) return;
-    auto* lc = s_BindingsWorld->GetComponent<LightComponent>(static_cast<Entity>(id));
+    auto* lc = ENJIN_SCRIPT_COMPONENT(LightComponent, id);
     if (lc) lc->color = color;
 }
 
 static Vector3 Light_GetColor(u64 id) {
     if (!s_BindingsWorld) return Vector3(1, 1, 1);
-    auto* lc = s_BindingsWorld->GetComponent<LightComponent>(static_cast<Entity>(id));
+    auto* lc = ENJIN_SCRIPT_COMPONENT(LightComponent, id);
     return lc ? lc->color : Vector3(1, 1, 1);
 }
 
 static void Light_SetIntensity(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* lc = s_BindingsWorld->GetComponent<LightComponent>(static_cast<Entity>(id));
+    auto* lc = ENJIN_SCRIPT_COMPONENT(LightComponent, id);
     if (lc) lc->intensity = val;
 }
 
 static f32 Light_GetIntensity(u64 id) {
     if (!s_BindingsWorld) return 1.0f;
-    auto* lc = s_BindingsWorld->GetComponent<LightComponent>(static_cast<Entity>(id));
+    auto* lc = ENJIN_SCRIPT_COMPONENT(LightComponent, id);
     return lc ? lc->intensity : 1.0f;
 }
 
 static void Light_SetRange(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* lc = s_BindingsWorld->GetComponent<LightComponent>(static_cast<Entity>(id));
+    auto* lc = ENJIN_SCRIPT_COMPONENT(LightComponent, id);
     if (lc) lc->range = val;
 }
 
 static f32 Light_GetRange(u64 id) {
     if (!s_BindingsWorld) return 10.0f;
-    auto* lc = s_BindingsWorld->GetComponent<LightComponent>(static_cast<Entity>(id));
+    auto* lc = ENJIN_SCRIPT_COMPONENT(LightComponent, id);
     return lc ? lc->range : 10.0f;
 }
 
 static void Light_SetType(u64 id, i32 type) {
     if (!s_BindingsWorld) return;
     if (type < 0 || type > 2) return;
-    auto* lc = s_BindingsWorld->GetComponent<LightComponent>(static_cast<Entity>(id));
+    auto* lc = ENJIN_SCRIPT_COMPONENT(LightComponent, id);
     if (lc) lc->type = static_cast<LightType>(type);
 }
 
 static i32 Light_GetType(u64 id) {
     if (!s_BindingsWorld) return 1;
-    auto* lc = s_BindingsWorld->GetComponent<LightComponent>(static_cast<Entity>(id));
+    auto* lc = ENJIN_SCRIPT_COMPONENT(LightComponent, id);
     return lc ? static_cast<i32>(lc->type) : 1;
 }
 
 static void Light_SetCastShadows(u64 id, bool val) {
     if (!s_BindingsWorld) return;
-    auto* lc = s_BindingsWorld->GetComponent<LightComponent>(static_cast<Entity>(id));
+    auto* lc = ENJIN_SCRIPT_COMPONENT(LightComponent, id);
     if (lc) lc->castShadows = val;
 }
 
 static bool Light_GetCastShadows(u64 id) {
     if (!s_BindingsWorld) return true;
-    auto* lc = s_BindingsWorld->GetComponent<LightComponent>(static_cast<Entity>(id));
+    auto* lc = ENJIN_SCRIPT_COMPONENT(LightComponent, id);
     return lc ? lc->castShadows : true;
 }
 
 static void Light_SetSpotAngles(u64 id, f32 inner, f32 outer) {
     if (!s_BindingsWorld) return;
-    auto* lc = s_BindingsWorld->GetComponent<LightComponent>(static_cast<Entity>(id));
+    auto* lc = ENJIN_SCRIPT_COMPONENT(LightComponent, id);
     if (lc) { lc->innerConeAngle = inner; lc->outerConeAngle = outer; }
 }
 
@@ -288,24 +289,24 @@ static void Light_SetSpotAngles(u64 id, f32 inner, f32 outer) {
 
 static void Camera_SetFOV(u64 id, f32 fov) {
     if (!s_BindingsWorld) return;
-    auto* cc = s_BindingsWorld->GetComponent<CameraComponent>(static_cast<Entity>(id));
+    auto* cc = ENJIN_SCRIPT_COMPONENT(CameraComponent, id);
     if (cc) cc->fieldOfView = fov;
 }
 
 static f32 Camera_GetFOV(u64 id) {
     if (!s_BindingsWorld) return 60.0f;
-    auto* cc = s_BindingsWorld->GetComponent<CameraComponent>(static_cast<Entity>(id));
+    auto* cc = ENJIN_SCRIPT_COMPONENT(CameraComponent, id);
     return cc ? cc->fieldOfView : 60.0f;
 }
 
 static void Camera_ApplyPreset(u64 id, int presetIndex) {
     if (!s_BindingsWorld) return;
     if (presetIndex < 0 || presetIndex >= static_cast<int>(CameraPreset::Count)) return;
-    auto* cc = s_BindingsWorld->GetComponent<CameraComponent>(static_cast<Entity>(id));
+    auto* cc = ENJIN_SCRIPT_COMPONENT(CameraComponent, id);
     if (!cc) return;
     auto result = ApplyCameraPreset(static_cast<CameraPreset>(presetIndex));
     *cc = result.camera;
-    auto* tc = s_BindingsWorld->GetComponent<TransformComponent>(static_cast<Entity>(id));
+    auto* tc = ENJIN_SCRIPT_COMPONENT(TransformComponent, id);
     if (tc) tc->rotation = Math::Quaternion::FromEuler(result.rotation);
 }
 
@@ -316,38 +317,38 @@ static std::string Camera_GetPresetName(int presetIndex) {
 
 static void Animator_CrossFade(u64 id, const std::string& animName, f32 fadeTime) {
     if (!s_BindingsWorld) return;
-    auto* ac = s_BindingsWorld->GetComponent<AnimatorComponent>(static_cast<Entity>(id));
+    auto* ac = ENJIN_SCRIPT_COMPONENT(AnimatorComponent, id);
     if (ac) ac->animator.CrossFade(animName, fadeTime);
 }
 
 static void Camera_SetOrthoSize(u64 id, f32 size) {
     if (!s_BindingsWorld) return;
-    auto* cc = s_BindingsWorld->GetComponent<CameraComponent>(static_cast<Entity>(id));
+    auto* cc = ENJIN_SCRIPT_COMPONENT(CameraComponent, id);
     if (cc) cc->orthoSize = size;
 }
 
 static f32 Camera_GetOrthoSize(u64 id) {
     if (!s_BindingsWorld) return 10.0f;
-    auto* cc = s_BindingsWorld->GetComponent<CameraComponent>(static_cast<Entity>(id));
+    auto* cc = ENJIN_SCRIPT_COMPONENT(CameraComponent, id);
     return cc ? cc->orthoSize : 10.0f;
 }
 
 static void Camera_SetNearFar(u64 id, f32 nearPlane, f32 farPlane) {
     if (!s_BindingsWorld) return;
-    auto* cc = s_BindingsWorld->GetComponent<CameraComponent>(static_cast<Entity>(id));
+    auto* cc = ENJIN_SCRIPT_COMPONENT(CameraComponent, id);
     if (cc) { cc->nearPlane = nearPlane; cc->farPlane = farPlane; }
 }
 
 static void Camera_SetProjectionType(u64 id, i32 type) {
     if (!s_BindingsWorld) return;
     if (type < 0 || type > 1) return;
-    auto* cc = s_BindingsWorld->GetComponent<CameraComponent>(static_cast<Entity>(id));
+    auto* cc = ENJIN_SCRIPT_COMPONENT(CameraComponent, id);
     if (cc) cc->projectionType = static_cast<ProjectionType>(type);
 }
 
 static i32 Camera_GetProjectionType(u64 id) {
     if (!s_BindingsWorld) return 0;
-    auto* cc = s_BindingsWorld->GetComponent<CameraComponent>(static_cast<Entity>(id));
+    auto* cc = ENJIN_SCRIPT_COMPONENT(CameraComponent, id);
     return cc ? static_cast<i32>(cc->projectionType) : 0;
 }
 
@@ -357,13 +358,13 @@ static i32 Camera_GetProjectionType(u64 id) {
 
 static void AudioSource_Play(u64 id) {
     if (!s_BindingsWorld) return;
-    auto* asc = s_BindingsWorld->GetComponent<AudioSourceComponent>(static_cast<Entity>(id));
+    auto* asc = ENJIN_SCRIPT_COMPONENT(AudioSourceComponent, id);
     if (asc) asc->isPlaying = true;
 }
 
 static void AudioSource_Stop(u64 id) {
     if (!s_BindingsWorld) return;
-    auto* asc = s_BindingsWorld->GetComponent<AudioSourceComponent>(static_cast<Entity>(id));
+    auto* asc = ENJIN_SCRIPT_COMPONENT(AudioSourceComponent, id);
     if (asc) {
         asc->isPlaying = false;
         asc->soundHandle = 0;
@@ -372,13 +373,13 @@ static void AudioSource_Stop(u64 id) {
 
 static void AudioSource_SetClip(u64 id, const std::string& path) {
     if (!s_BindingsWorld) return;
-    auto* asc = s_BindingsWorld->GetComponent<AudioSourceComponent>(static_cast<Entity>(id));
+    auto* asc = ENJIN_SCRIPT_COMPONENT(AudioSourceComponent, id);
     if (asc) asc->clipPath = path;
 }
 
 static void AudioSource_SetVolume(u64 id, f32 vol) {
     if (!s_BindingsWorld) return;
-    auto* asc = s_BindingsWorld->GetComponent<AudioSourceComponent>(static_cast<Entity>(id));
+    auto* asc = ENJIN_SCRIPT_COMPONENT(AudioSourceComponent, id);
     if (asc) asc->volume = vol;
 }
 
@@ -388,7 +389,7 @@ static void AudioSource_SetVolume(u64 id, f32 vol) {
 
 static void Animator_Play(u64 id, const std::string& animName) {
     if (!s_BindingsWorld) return;
-    auto* ac = s_BindingsWorld->GetComponent<AnimatorComponent>(static_cast<Entity>(id));
+    auto* ac = ENJIN_SCRIPT_COMPONENT(AnimatorComponent, id);
     if (ac) {
         ac->animator.Play(animName);
     }
@@ -396,7 +397,7 @@ static void Animator_Play(u64 id, const std::string& animName) {
 
 static void Animator_SetSpeed(u64 id, f32 speed) {
     if (!s_BindingsWorld) return;
-    auto* ac = s_BindingsWorld->GetComponent<AnimatorComponent>(static_cast<Entity>(id));
+    auto* ac = ENJIN_SCRIPT_COMPONENT(AnimatorComponent, id);
     if (ac) {
         ac->animator.SetSpeed(speed);
     }
@@ -404,37 +405,37 @@ static void Animator_SetSpeed(u64 id, f32 speed) {
 
 static void Animator_Stop(u64 id) {
     if (!s_BindingsWorld) return;
-    auto* ac = s_BindingsWorld->GetComponent<AnimatorComponent>(static_cast<Entity>(id));
+    auto* ac = ENJIN_SCRIPT_COMPONENT(AnimatorComponent, id);
     if (ac) ac->animator.Stop();
 }
 
 static void Animator_Pause(u64 id) {
     if (!s_BindingsWorld) return;
-    auto* ac = s_BindingsWorld->GetComponent<AnimatorComponent>(static_cast<Entity>(id));
+    auto* ac = ENJIN_SCRIPT_COMPONENT(AnimatorComponent, id);
     if (ac) ac->animator.Pause();
 }
 
 static void Animator_Resume(u64 id) {
     if (!s_BindingsWorld) return;
-    auto* ac = s_BindingsWorld->GetComponent<AnimatorComponent>(static_cast<Entity>(id));
+    auto* ac = ENJIN_SCRIPT_COMPONENT(AnimatorComponent, id);
     if (ac) ac->animator.Resume();
 }
 
 static bool Animator_IsPlaying(u64 id) {
     if (!s_BindingsWorld) return false;
-    auto* ac = s_BindingsWorld->GetComponent<AnimatorComponent>(static_cast<Entity>(id));
+    auto* ac = ENJIN_SCRIPT_COMPONENT(AnimatorComponent, id);
     return ac ? ac->animator.IsPlaying() : false;
 }
 
 static std::string Animator_GetCurrentAnimation(u64 id) {
     if (!s_BindingsWorld) return "";
-    auto* ac = s_BindingsWorld->GetComponent<AnimatorComponent>(static_cast<Entity>(id));
+    auto* ac = ENJIN_SCRIPT_COMPONENT(AnimatorComponent, id);
     return ac ? ac->animator.GetCurrentAnimationName() : "";
 }
 
 static f32 Animator_GetSpeed(u64 id) {
     if (!s_BindingsWorld) return 1.0f;
-    auto* ac = s_BindingsWorld->GetComponent<AnimatorComponent>(static_cast<Entity>(id));
+    auto* ac = ENJIN_SCRIPT_COMPONENT(AnimatorComponent, id);
     return ac ? ac->animator.GetSpeed() : 1.0f;
 }
 
@@ -466,7 +467,75 @@ static void Controller_SetIgnoreTimeScale(u64 id, bool ignore) {
     if (auto* c = s_BindingsWorld->GetComponent<Platformer2DController>(entity)) { c->ignoreGlobalTimeScale = ignore; return; }
     if (auto* c = s_BindingsWorld->GetComponent<SurfaceAlignedController>(entity)) { c->ignoreGlobalTimeScale = ignore; return; }
     if (auto* c = s_BindingsWorld->GetComponent<VehicleController>(entity)) { c->ignoreGlobalTimeScale = ignore; return; }
+    if (auto* c = s_BindingsWorld->GetComponent<WaterVehicleController>(entity)) { c->ignoreGlobalTimeScale = ignore; return; }
 }
+
+// ============================================================================
+// Water vehicle
+//
+// The hull lives in C++ because it is stable; the thing driving it often does
+// not. A sail model is all apparent wind and trim curves and wants tuning in
+// seconds, so WaterPropulsion::External lets a script write the drive each frame
+// and read back what the hull did with it.
+// ============================================================================
+
+static ECS::WaterVehicleController* WaterVeh(u64 id) {
+    // Explicitly the GLOBAL pointer. ScriptComponentAccess.h declares an
+    // Enjin::Scripting::s_BindingsWorld that nothing defines, and with
+    // "using namespace Enjin" in scope an unqualified name binds to that one
+    // and fails to link.
+    if (!::s_BindingsWorld) return nullptr;
+    return ::s_BindingsWorld->GetComponent<ECS::WaterVehicleController>(static_cast<Entity>(id));
+}
+
+// Drive along forward, side force to starboard, and a heeling moment. Set every
+// frame; nothing decays them for you.
+static void WaterVehicle_SetDrive(u64 id, f32 drive, f32 side, f32 heelMoment) {
+    if (auto* c = WaterVeh(id)) { c->externalDrive = drive; c->externalSide = side; c->externalHeel = heelMoment; }
+}
+
+// The water this hull is sitting in is moving. Carried, not pushed: see the
+// note in ControllerSystem::UpdateWaterVehicle.
+static void WaterVehicle_SetCurrent(u64 id, f32 x, f32 z) {
+    if (auto* c = WaterVeh(id)) c->current = Math::Vector3(x, 0.0f, z);
+}
+
+static void WaterVehicle_SetThrottle(u64 id, f32 t) {
+    if (auto* c = WaterVeh(id)) c->currentThrottle = Math::Clamp(t, -1.0f, 1.0f);
+}
+
+static f32 WaterVehicle_GetThrottle(u64 id) { auto* c = WaterVeh(id); return c ? c->currentThrottle : 0.0f; }
+static void WaterVehicle_SetRudder(u64 id, f32 r) { if (auto* c = WaterVeh(id)) c->currentRudder = Math::Clamp(r, -1.0f, 1.0f); }
+static f32 WaterVehicle_GetRudder(u64 id) { auto* c = WaterVeh(id); return c ? c->currentRudder : 0.0f; }
+
+static f32 WaterVehicle_GetHeading(u64 id) { auto* c = WaterVeh(id); return c ? c->heading : 0.0f; }
+static void WaterVehicle_SetHeading(u64 id, f32 deg) { if (auto* c = WaterVeh(id)) c->heading = deg; }
+
+// Through the water is what the hull and the rudder feel. Over the ground is
+// what the racing line cares about. In a tide they are different numbers and
+// showing both is most of what makes current legible to a player.
+static f32 WaterVehicle_GetSpeedThroughWater(u64 id) { auto* c = WaterVeh(id); return c ? c->speedThroughWater : 0.0f; }
+static f32 WaterVehicle_GetSpeedOverGround(u64 id) { auto* c = WaterVeh(id); return c ? c->speedOverGround : 0.0f; }
+static f32 WaterVehicle_GetHeel(u64 id) { auto* c = WaterVeh(id); return c ? c->heel : 0.0f; }
+static f32 WaterVehicle_GetLeeway(u64 id) { auto* c = WaterVeh(id); return c ? c->leeway : 0.0f; }
+static bool WaterVehicle_IsPlaning(u64 id) { auto* c = WaterVeh(id); return c ? c->isPlaning : false; }
+static Math::Vector3 WaterVehicle_GetForward(u64 id) {
+    auto* c = WaterVeh(id);
+    return c ? c->forwardDir : Math::Vector3(0.0f, 0.0f, -1.0f);
+}
+static Math::Vector3 WaterVehicle_GetVelocity(u64 id) {
+    auto* c = WaterVeh(id);
+    return c ? c->groundVelocity : Math::Vector3(0.0f, 0.0f, 0.0f);
+}
+
+// Upgrade hooks. A longer hull raises the ceiling, a better keel cuts leeway so
+// the boat points higher.
+static void WaterVehicle_SetHullSpeed(u64 id, f32 v) { if (auto* c = WaterVeh(id)) c->hullSpeed = v; }
+static f32 WaterVehicle_GetHullSpeed(u64 id) { auto* c = WaterVeh(id); return c ? c->hullSpeed : 0.0f; }
+static void WaterVehicle_SetLateralGrip(u64 id, f32 v) { if (auto* c = WaterVeh(id)) c->lateralGrip = v; }
+static void WaterVehicle_SetRighting(u64 id, f32 v) { if (auto* c = WaterVeh(id)) c->righting = v; }
+static void WaterVehicle_SetMaxThrust(u64 id, f32 v) { if (auto* c = WaterVeh(id)) c->maxThrust = v; }
+static bool WaterVehicle_Has(u64 id) { return WaterVeh(id) != nullptr; }
 
 static bool Controller_GetIgnoreTimeScale(u64 id) {
     if (!s_BindingsWorld) return false;
@@ -478,6 +547,7 @@ static bool Controller_GetIgnoreTimeScale(u64 id) {
     if (auto* c = s_BindingsWorld->GetComponent<Platformer2DController>(entity)) return c->ignoreGlobalTimeScale;
     if (auto* c = s_BindingsWorld->GetComponent<SurfaceAlignedController>(entity)) return c->ignoreGlobalTimeScale;
     if (auto* c = s_BindingsWorld->GetComponent<VehicleController>(entity)) return c->ignoreGlobalTimeScale;
+    if (auto* c = s_BindingsWorld->GetComponent<WaterVehicleController>(entity)) return c->ignoreGlobalTimeScale;
     return false;
 }
 
@@ -506,7 +576,7 @@ static void Viewmodel_Set(u64 id, bool enabled) {
 
 static bool Viewmodel_Get(u64 id) {
     if (!s_BindingsWorld) return false;
-    auto* vm = s_BindingsWorld->GetComponent<ViewmodelComponent>(static_cast<Entity>(id));
+    auto* vm = ENJIN_SCRIPT_COMPONENT(ViewmodelComponent, id);
     return vm && vm->enabled;
 }
 
@@ -528,7 +598,7 @@ static Vector3 Controller_GetVelocity(u64 id) {
 // these fields every frame in ControllerSystem::UpdateThirdPerson.
 static void Controller_SetThirdPersonCamera(u64 id, f32 distance, f32 height, f32 pitch) {
     if (!s_BindingsWorld) return;
-    auto* c = s_BindingsWorld->GetComponent<ThirdPersonController>(static_cast<Entity>(id));
+    auto* c = ENJIN_SCRIPT_COMPONENT(ThirdPersonController, id);
     if (!c) return;
     c->cameraDistance = distance;
     c->cameraHeight = height;
@@ -692,103 +762,103 @@ static bool HasComponent_Animator(u64 id) {
 
 static Vector3 Rigidbody_GetVelocity(u64 id) {
     if (!s_BindingsWorld) return Vector3();
-    auto* rb = s_BindingsWorld->GetComponent<RigidbodyComponent>(static_cast<Entity>(id));
+    auto* rb = ENJIN_SCRIPT_COMPONENT(RigidbodyComponent, id);
     return rb ? rb->velocity : Vector3();
 }
 
 static void Rigidbody_SetVelocity(u64 id, float x, float y, float z) {
     if (!s_BindingsWorld) return;
-    auto* rb = s_BindingsWorld->GetComponent<RigidbodyComponent>(static_cast<Entity>(id));
+    auto* rb = ENJIN_SCRIPT_COMPONENT(RigidbodyComponent, id);
     if (rb) rb->velocity = Vector3(x, y, z);
 }
 
 static Vector3 Rigidbody_GetAngularVelocity(u64 id) {
     if (!s_BindingsWorld) return Vector3();
-    auto* rb = s_BindingsWorld->GetComponent<RigidbodyComponent>(static_cast<Entity>(id));
+    auto* rb = ENJIN_SCRIPT_COMPONENT(RigidbodyComponent, id);
     return rb ? rb->angularVelocity : Vector3();
 }
 
 static void Rigidbody_SetAngularVelocity(u64 id, float x, float y, float z) {
     if (!s_BindingsWorld) return;
-    auto* rb = s_BindingsWorld->GetComponent<RigidbodyComponent>(static_cast<Entity>(id));
+    auto* rb = ENJIN_SCRIPT_COMPONENT(RigidbodyComponent, id);
     if (rb) rb->angularVelocity = Vector3(x, y, z);
 }
 
 static f32 Rigidbody_GetMass(u64 id) {
     if (!s_BindingsWorld) return 1.0f;
-    auto* rb = s_BindingsWorld->GetComponent<RigidbodyComponent>(static_cast<Entity>(id));
+    auto* rb = ENJIN_SCRIPT_COMPONENT(RigidbodyComponent, id);
     return rb ? rb->mass : 1.0f;
 }
 
 static void Rigidbody_SetMass(u64 id, f32 mass) {
     if (!s_BindingsWorld) return;
-    auto* rb = s_BindingsWorld->GetComponent<RigidbodyComponent>(static_cast<Entity>(id));
+    auto* rb = ENJIN_SCRIPT_COMPONENT(RigidbodyComponent, id);
     if (rb) rb->mass = mass;
 }
 
 static bool Rigidbody_GetUseGravity(u64 id) {
     if (!s_BindingsWorld) return true;
-    auto* rb = s_BindingsWorld->GetComponent<RigidbodyComponent>(static_cast<Entity>(id));
+    auto* rb = ENJIN_SCRIPT_COMPONENT(RigidbodyComponent, id);
     return rb ? rb->useGravity : true;
 }
 
 static void Rigidbody_SetUseGravity(u64 id, bool val) {
     if (!s_BindingsWorld) return;
-    auto* rb = s_BindingsWorld->GetComponent<RigidbodyComponent>(static_cast<Entity>(id));
+    auto* rb = ENJIN_SCRIPT_COMPONENT(RigidbodyComponent, id);
     if (rb) rb->useGravity = val;
 }
 
 static bool Rigidbody_IsKinematic(u64 id) {
     if (!s_BindingsWorld) return false;
-    auto* rb = s_BindingsWorld->GetComponent<RigidbodyComponent>(static_cast<Entity>(id));
+    auto* rb = ENJIN_SCRIPT_COMPONENT(RigidbodyComponent, id);
     return rb ? (rb->bodyType == RigidbodyComponent::BodyType::Kinematic) : false;
 }
 
 static void Rigidbody_SetKinematic(u64 id, bool val) {
     if (!s_BindingsWorld) return;
-    auto* rb = s_BindingsWorld->GetComponent<RigidbodyComponent>(static_cast<Entity>(id));
+    auto* rb = ENJIN_SCRIPT_COMPONENT(RigidbodyComponent, id);
     if (rb) rb->bodyType = val ? RigidbodyComponent::BodyType::Kinematic : RigidbodyComponent::BodyType::Dynamic;
 }
 
 static f32 Rigidbody_GetDrag(u64 id) {
     if (!s_BindingsWorld) return 0.0f;
-    auto* rb = s_BindingsWorld->GetComponent<RigidbodyComponent>(static_cast<Entity>(id));
+    auto* rb = ENJIN_SCRIPT_COMPONENT(RigidbodyComponent, id);
     return rb ? rb->drag : 0.0f;
 }
 
 static void Rigidbody_SetDrag(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* rb = s_BindingsWorld->GetComponent<RigidbodyComponent>(static_cast<Entity>(id));
+    auto* rb = ENJIN_SCRIPT_COMPONENT(RigidbodyComponent, id);
     if (rb) rb->drag = val;
 }
 
 static f32 Rigidbody_GetAngularDrag(u64 id) {
     if (!s_BindingsWorld) return 0.05f;
-    auto* rb = s_BindingsWorld->GetComponent<RigidbodyComponent>(static_cast<Entity>(id));
+    auto* rb = ENJIN_SCRIPT_COMPONENT(RigidbodyComponent, id);
     return rb ? rb->angularDrag : 0.05f;
 }
 
 static void Rigidbody_SetAngularDrag(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* rb = s_BindingsWorld->GetComponent<RigidbodyComponent>(static_cast<Entity>(id));
+    auto* rb = ENJIN_SCRIPT_COMPONENT(RigidbodyComponent, id);
     if (rb) rb->angularDrag = val;
 }
 
 static bool Rigidbody_IsGrounded(u64 id) {
     if (!s_BindingsWorld) return false;
-    auto* rb = s_BindingsWorld->GetComponent<RigidbodyComponent>(static_cast<Entity>(id));
+    auto* rb = ENJIN_SCRIPT_COMPONENT(RigidbodyComponent, id);
     return rb ? rb->isGrounded : false;
 }
 
 static f32 Rigidbody_GetGravityScale(u64 id) {
     if (!s_BindingsWorld) return 1.0f;
-    auto* rb = s_BindingsWorld->GetComponent<RigidbodyComponent>(static_cast<Entity>(id));
+    auto* rb = ENJIN_SCRIPT_COMPONENT(RigidbodyComponent, id);
     return rb ? rb->gravityScale : 1.0f;
 }
 
 static void Rigidbody_SetGravityScale(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* rb = s_BindingsWorld->GetComponent<RigidbodyComponent>(static_cast<Entity>(id));
+    auto* rb = ENJIN_SCRIPT_COMPONENT(RigidbodyComponent, id);
     if (rb) rb->gravityScale = val;
 }
 
@@ -798,85 +868,85 @@ static void Rigidbody_SetGravityScale(u64 id, f32 val) {
 
 static Vector3 BoxCollider_GetSize(u64 id) {
     if (!s_BindingsWorld) return Vector3(1, 1, 1);
-    auto* bc = s_BindingsWorld->GetComponent<BoxColliderComponent>(static_cast<Entity>(id));
+    auto* bc = ENJIN_SCRIPT_COMPONENT(BoxColliderComponent, id);
     return bc ? bc->size : Vector3(1, 1, 1);
 }
 
 static void BoxCollider_SetSize(u64 id, float x, float y, float z) {
     if (!s_BindingsWorld) return;
-    auto* bc = s_BindingsWorld->GetComponent<BoxColliderComponent>(static_cast<Entity>(id));
+    auto* bc = ENJIN_SCRIPT_COMPONENT(BoxColliderComponent, id);
     if (bc) bc->size = Vector3(x, y, z);
 }
 
 static Vector3 BoxCollider_GetCenter(u64 id) {
     if (!s_BindingsWorld) return Vector3();
-    auto* bc = s_BindingsWorld->GetComponent<BoxColliderComponent>(static_cast<Entity>(id));
+    auto* bc = ENJIN_SCRIPT_COMPONENT(BoxColliderComponent, id);
     return bc ? bc->center : Vector3();
 }
 
 static void BoxCollider_SetCenter(u64 id, float x, float y, float z) {
     if (!s_BindingsWorld) return;
-    auto* bc = s_BindingsWorld->GetComponent<BoxColliderComponent>(static_cast<Entity>(id));
+    auto* bc = ENJIN_SCRIPT_COMPONENT(BoxColliderComponent, id);
     if (bc) bc->center = Vector3(x, y, z);
 }
 
 static bool BoxCollider_IsTrigger(u64 id) {
     if (!s_BindingsWorld) return false;
-    auto* bc = s_BindingsWorld->GetComponent<BoxColliderComponent>(static_cast<Entity>(id));
+    auto* bc = ENJIN_SCRIPT_COMPONENT(BoxColliderComponent, id);
     return bc ? bc->isTrigger : false;
 }
 
 static void BoxCollider_SetTrigger(u64 id, bool val) {
     if (!s_BindingsWorld) return;
-    auto* bc = s_BindingsWorld->GetComponent<BoxColliderComponent>(static_cast<Entity>(id));
+    auto* bc = ENJIN_SCRIPT_COMPONENT(BoxColliderComponent, id);
     if (bc) bc->isTrigger = val;
 }
 
 static u32 BoxCollider_GetCategoryBits(u64 id) {
     if (!s_BindingsWorld) return 1;
-    auto* bc = s_BindingsWorld->GetComponent<BoxColliderComponent>(static_cast<Entity>(id));
+    auto* bc = ENJIN_SCRIPT_COMPONENT(BoxColliderComponent, id);
     return bc ? bc->categoryBits : 1;
 }
 
 static void BoxCollider_SetCategoryBits(u64 id, u32 val) {
     if (!s_BindingsWorld) return;
-    auto* bc = s_BindingsWorld->GetComponent<BoxColliderComponent>(static_cast<Entity>(id));
+    auto* bc = ENJIN_SCRIPT_COMPONENT(BoxColliderComponent, id);
     if (bc) bc->categoryBits = val;
 }
 
 static u32 BoxCollider_GetCollisionMask(u64 id) {
     if (!s_BindingsWorld) return 0xFFFFFFFF;
-    auto* bc = s_BindingsWorld->GetComponent<BoxColliderComponent>(static_cast<Entity>(id));
+    auto* bc = ENJIN_SCRIPT_COMPONENT(BoxColliderComponent, id);
     return bc ? bc->collisionMask : 0xFFFFFFFF;
 }
 
 static void BoxCollider_SetCollisionMask(u64 id, u32 val) {
     if (!s_BindingsWorld) return;
-    auto* bc = s_BindingsWorld->GetComponent<BoxColliderComponent>(static_cast<Entity>(id));
+    auto* bc = ENJIN_SCRIPT_COMPONENT(BoxColliderComponent, id);
     if (bc) bc->collisionMask = val;
 }
 
 static f32 BoxCollider_GetFriction(u64 id) {
     if (!s_BindingsWorld) return 0.5f;
-    auto* bc = s_BindingsWorld->GetComponent<BoxColliderComponent>(static_cast<Entity>(id));
+    auto* bc = ENJIN_SCRIPT_COMPONENT(BoxColliderComponent, id);
     return bc ? bc->friction : 0.5f;
 }
 
 static void BoxCollider_SetFriction(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* bc = s_BindingsWorld->GetComponent<BoxColliderComponent>(static_cast<Entity>(id));
+    auto* bc = ENJIN_SCRIPT_COMPONENT(BoxColliderComponent, id);
     if (bc) bc->friction = val;
 }
 
 static f32 BoxCollider_GetBounciness(u64 id) {
     if (!s_BindingsWorld) return 0.0f;
-    auto* bc = s_BindingsWorld->GetComponent<BoxColliderComponent>(static_cast<Entity>(id));
+    auto* bc = ENJIN_SCRIPT_COMPONENT(BoxColliderComponent, id);
     return bc ? bc->bounciness : 0.0f;
 }
 
 static void BoxCollider_SetBounciness(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* bc = s_BindingsWorld->GetComponent<BoxColliderComponent>(static_cast<Entity>(id));
+    auto* bc = ENJIN_SCRIPT_COMPONENT(BoxColliderComponent, id);
     if (bc) bc->bounciness = val;
 }
 
@@ -891,85 +961,85 @@ static bool HasComponent_SphereCollider(u64 id) {
 
 static f32 SphereCollider_GetRadius(u64 id) {
     if (!s_BindingsWorld) return 0.5f;
-    auto* sc = s_BindingsWorld->GetComponent<SphereColliderComponent>(static_cast<Entity>(id));
+    auto* sc = ENJIN_SCRIPT_COMPONENT(SphereColliderComponent, id);
     return sc ? sc->radius : 0.5f;
 }
 
 static void SphereCollider_SetRadius(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* sc = s_BindingsWorld->GetComponent<SphereColliderComponent>(static_cast<Entity>(id));
+    auto* sc = ENJIN_SCRIPT_COMPONENT(SphereColliderComponent, id);
     if (sc) sc->radius = val;
 }
 
 static Vector3 SphereCollider_GetCenter(u64 id) {
     if (!s_BindingsWorld) return Vector3();
-    auto* sc = s_BindingsWorld->GetComponent<SphereColliderComponent>(static_cast<Entity>(id));
+    auto* sc = ENJIN_SCRIPT_COMPONENT(SphereColliderComponent, id);
     return sc ? sc->center : Vector3();
 }
 
 static void SphereCollider_SetCenter(u64 id, float x, float y, float z) {
     if (!s_BindingsWorld) return;
-    auto* sc = s_BindingsWorld->GetComponent<SphereColliderComponent>(static_cast<Entity>(id));
+    auto* sc = ENJIN_SCRIPT_COMPONENT(SphereColliderComponent, id);
     if (sc) sc->center = Vector3(x, y, z);
 }
 
 static bool SphereCollider_IsTrigger(u64 id) {
     if (!s_BindingsWorld) return false;
-    auto* sc = s_BindingsWorld->GetComponent<SphereColliderComponent>(static_cast<Entity>(id));
+    auto* sc = ENJIN_SCRIPT_COMPONENT(SphereColliderComponent, id);
     return sc ? sc->isTrigger : false;
 }
 
 static void SphereCollider_SetTrigger(u64 id, bool val) {
     if (!s_BindingsWorld) return;
-    auto* sc = s_BindingsWorld->GetComponent<SphereColliderComponent>(static_cast<Entity>(id));
+    auto* sc = ENJIN_SCRIPT_COMPONENT(SphereColliderComponent, id);
     if (sc) sc->isTrigger = val;
 }
 
 static u32 SphereCollider_GetCategoryBits(u64 id) {
     if (!s_BindingsWorld) return 1;
-    auto* sc = s_BindingsWorld->GetComponent<SphereColliderComponent>(static_cast<Entity>(id));
+    auto* sc = ENJIN_SCRIPT_COMPONENT(SphereColliderComponent, id);
     return sc ? sc->categoryBits : 1;
 }
 
 static void SphereCollider_SetCategoryBits(u64 id, u32 val) {
     if (!s_BindingsWorld) return;
-    auto* sc = s_BindingsWorld->GetComponent<SphereColliderComponent>(static_cast<Entity>(id));
+    auto* sc = ENJIN_SCRIPT_COMPONENT(SphereColliderComponent, id);
     if (sc) sc->categoryBits = val;
 }
 
 static u32 SphereCollider_GetCollisionMask(u64 id) {
     if (!s_BindingsWorld) return 0xFFFFFFFF;
-    auto* sc = s_BindingsWorld->GetComponent<SphereColliderComponent>(static_cast<Entity>(id));
+    auto* sc = ENJIN_SCRIPT_COMPONENT(SphereColliderComponent, id);
     return sc ? sc->collisionMask : 0xFFFFFFFF;
 }
 
 static void SphereCollider_SetCollisionMask(u64 id, u32 val) {
     if (!s_BindingsWorld) return;
-    auto* sc = s_BindingsWorld->GetComponent<SphereColliderComponent>(static_cast<Entity>(id));
+    auto* sc = ENJIN_SCRIPT_COMPONENT(SphereColliderComponent, id);
     if (sc) sc->collisionMask = val;
 }
 
 static f32 SphereCollider_GetFriction(u64 id) {
     if (!s_BindingsWorld) return 0.5f;
-    auto* sc = s_BindingsWorld->GetComponent<SphereColliderComponent>(static_cast<Entity>(id));
+    auto* sc = ENJIN_SCRIPT_COMPONENT(SphereColliderComponent, id);
     return sc ? sc->friction : 0.5f;
 }
 
 static void SphereCollider_SetFriction(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* sc = s_BindingsWorld->GetComponent<SphereColliderComponent>(static_cast<Entity>(id));
+    auto* sc = ENJIN_SCRIPT_COMPONENT(SphereColliderComponent, id);
     if (sc) sc->friction = val;
 }
 
 static f32 SphereCollider_GetBounciness(u64 id) {
     if (!s_BindingsWorld) return 0.0f;
-    auto* sc = s_BindingsWorld->GetComponent<SphereColliderComponent>(static_cast<Entity>(id));
+    auto* sc = ENJIN_SCRIPT_COMPONENT(SphereColliderComponent, id);
     return sc ? sc->bounciness : 0.0f;
 }
 
 static void SphereCollider_SetBounciness(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* sc = s_BindingsWorld->GetComponent<SphereColliderComponent>(static_cast<Entity>(id));
+    auto* sc = ENJIN_SCRIPT_COMPONENT(SphereColliderComponent, id);
     if (sc) sc->bounciness = val;
 }
 
@@ -984,73 +1054,73 @@ static bool HasComponent_CapsuleCollider(u64 id) {
 
 static f32 CapsuleCollider_GetRadius(u64 id) {
     if (!s_BindingsWorld) return 0.5f;
-    auto* cc = s_BindingsWorld->GetComponent<CapsuleColliderComponent>(static_cast<Entity>(id));
+    auto* cc = ENJIN_SCRIPT_COMPONENT(CapsuleColliderComponent, id);
     return cc ? cc->radius : 0.5f;
 }
 
 static void CapsuleCollider_SetRadius(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* cc = s_BindingsWorld->GetComponent<CapsuleColliderComponent>(static_cast<Entity>(id));
+    auto* cc = ENJIN_SCRIPT_COMPONENT(CapsuleColliderComponent, id);
     if (cc) cc->radius = val;
 }
 
 static f32 CapsuleCollider_GetHeight(u64 id) {
     if (!s_BindingsWorld) return 2.0f;
-    auto* cc = s_BindingsWorld->GetComponent<CapsuleColliderComponent>(static_cast<Entity>(id));
+    auto* cc = ENJIN_SCRIPT_COMPONENT(CapsuleColliderComponent, id);
     return cc ? cc->height : 2.0f;
 }
 
 static void CapsuleCollider_SetHeight(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* cc = s_BindingsWorld->GetComponent<CapsuleColliderComponent>(static_cast<Entity>(id));
+    auto* cc = ENJIN_SCRIPT_COMPONENT(CapsuleColliderComponent, id);
     if (cc) cc->height = val;
 }
 
 static Vector3 CapsuleCollider_GetCenter(u64 id) {
     if (!s_BindingsWorld) return Vector3();
-    auto* cc = s_BindingsWorld->GetComponent<CapsuleColliderComponent>(static_cast<Entity>(id));
+    auto* cc = ENJIN_SCRIPT_COMPONENT(CapsuleColliderComponent, id);
     return cc ? cc->center : Vector3();
 }
 
 static void CapsuleCollider_SetCenter(u64 id, float x, float y, float z) {
     if (!s_BindingsWorld) return;
-    auto* cc = s_BindingsWorld->GetComponent<CapsuleColliderComponent>(static_cast<Entity>(id));
+    auto* cc = ENJIN_SCRIPT_COMPONENT(CapsuleColliderComponent, id);
     if (cc) cc->center = Vector3(x, y, z);
 }
 
 static bool CapsuleCollider_IsTrigger(u64 id) {
     if (!s_BindingsWorld) return false;
-    auto* cc = s_BindingsWorld->GetComponent<CapsuleColliderComponent>(static_cast<Entity>(id));
+    auto* cc = ENJIN_SCRIPT_COMPONENT(CapsuleColliderComponent, id);
     return cc ? cc->isTrigger : false;
 }
 
 static void CapsuleCollider_SetTrigger(u64 id, bool val) {
     if (!s_BindingsWorld) return;
-    auto* cc = s_BindingsWorld->GetComponent<CapsuleColliderComponent>(static_cast<Entity>(id));
+    auto* cc = ENJIN_SCRIPT_COMPONENT(CapsuleColliderComponent, id);
     if (cc) cc->isTrigger = val;
 }
 
 static f32 CapsuleCollider_GetFriction(u64 id) {
     if (!s_BindingsWorld) return 0.5f;
-    auto* cc = s_BindingsWorld->GetComponent<CapsuleColliderComponent>(static_cast<Entity>(id));
+    auto* cc = ENJIN_SCRIPT_COMPONENT(CapsuleColliderComponent, id);
     return cc ? cc->friction : 0.5f;
 }
 
 static void CapsuleCollider_SetFriction(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* cc = s_BindingsWorld->GetComponent<CapsuleColliderComponent>(static_cast<Entity>(id));
+    auto* cc = ENJIN_SCRIPT_COMPONENT(CapsuleColliderComponent, id);
     if (cc) cc->friction = val;
 }
 
 static f32 CapsuleCollider_GetBounciness(u64 id) {
     if (!s_BindingsWorld) return 0.0f;
-    auto* cc = s_BindingsWorld->GetComponent<CapsuleColliderComponent>(static_cast<Entity>(id));
+    auto* cc = ENJIN_SCRIPT_COMPONENT(CapsuleColliderComponent, id);
     return cc ? cc->bounciness : 0.0f;
 }
 
 static void CapsuleCollider_SetBounciness(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* cc = s_BindingsWorld->GetComponent<CapsuleColliderComponent>(static_cast<Entity>(id));
+    auto* cc = ENJIN_SCRIPT_COMPONENT(CapsuleColliderComponent, id);
     if (cc) cc->bounciness = val;
 }
 
@@ -1065,25 +1135,25 @@ static bool HasComponent_Tilemap(u64 id) {
 
 static i32 Tilemap_GetTile(u64 id, i32 x, i32 y) {
     if (!s_BindingsWorld || x < 0 || y < 0) return -1;
-    auto* tm = s_BindingsWorld->GetComponent<TilemapComponent>(static_cast<Entity>(id));
+    auto* tm = ENJIN_SCRIPT_COMPONENT(TilemapComponent, id);
     return tm ? tm->GetTile(static_cast<u32>(x), static_cast<u32>(y)) : -1;
 }
 
 static void Tilemap_SetTile(u64 id, i32 x, i32 y, i32 tileIndex) {
     if (!s_BindingsWorld || x < 0 || y < 0) return;
-    auto* tm = s_BindingsWorld->GetComponent<TilemapComponent>(static_cast<Entity>(id));
+    auto* tm = ENJIN_SCRIPT_COMPONENT(TilemapComponent, id);
     if (tm) tm->SetTile(static_cast<u32>(x), static_cast<u32>(y), tileIndex);
 }
 
 static i32 Tilemap_GetWidth(u64 id) {
     if (!s_BindingsWorld) return 0;
-    auto* tm = s_BindingsWorld->GetComponent<TilemapComponent>(static_cast<Entity>(id));
+    auto* tm = ENJIN_SCRIPT_COMPONENT(TilemapComponent, id);
     return tm ? static_cast<i32>(tm->width) : 0;
 }
 
 static i32 Tilemap_GetHeight(u64 id) {
     if (!s_BindingsWorld) return 0;
-    auto* tm = s_BindingsWorld->GetComponent<TilemapComponent>(static_cast<Entity>(id));
+    auto* tm = ENJIN_SCRIPT_COMPONENT(TilemapComponent, id);
     return tm ? static_cast<i32>(tm->height) : 0;
 }
 
@@ -1098,49 +1168,49 @@ static bool HasComponent_TriggerZone(u64 id) {
 
 static i32 TriggerZone_GetShape(u64 id) {
     if (!s_BindingsWorld) return 0;
-    auto* tz = s_BindingsWorld->GetComponent<TriggerZoneComponent>(static_cast<Entity>(id));
+    auto* tz = ENJIN_SCRIPT_COMPONENT(TriggerZoneComponent, id);
     return tz ? static_cast<i32>(tz->shape) : 0;
 }
 
 static void TriggerZone_SetShape(u64 id, i32 val) {
     if (!s_BindingsWorld) return;
-    auto* tz = s_BindingsWorld->GetComponent<TriggerZoneComponent>(static_cast<Entity>(id));
+    auto* tz = ENJIN_SCRIPT_COMPONENT(TriggerZoneComponent, id);
     if (tz && val >= 0 && val <= 1) tz->shape = static_cast<TriggerZoneComponent::Shape>(val);
 }
 
 static Vector3 TriggerZone_GetBoxSize(u64 id) {
     if (!s_BindingsWorld) return Vector3(2, 2, 2);
-    auto* tz = s_BindingsWorld->GetComponent<TriggerZoneComponent>(static_cast<Entity>(id));
+    auto* tz = ENJIN_SCRIPT_COMPONENT(TriggerZoneComponent, id);
     return tz ? tz->boxSize : Vector3(2, 2, 2);
 }
 
 static void TriggerZone_SetBoxSize(u64 id, float x, float y, float z) {
     if (!s_BindingsWorld) return;
-    auto* tz = s_BindingsWorld->GetComponent<TriggerZoneComponent>(static_cast<Entity>(id));
+    auto* tz = ENJIN_SCRIPT_COMPONENT(TriggerZoneComponent, id);
     if (tz) tz->boxSize = Vector3(x, y, z);
 }
 
 static f32 TriggerZone_GetSphereRadius(u64 id) {
     if (!s_BindingsWorld) return 1.0f;
-    auto* tz = s_BindingsWorld->GetComponent<TriggerZoneComponent>(static_cast<Entity>(id));
+    auto* tz = ENJIN_SCRIPT_COMPONENT(TriggerZoneComponent, id);
     return tz ? tz->sphereRadius : 1.0f;
 }
 
 static void TriggerZone_SetSphereRadius(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* tz = s_BindingsWorld->GetComponent<TriggerZoneComponent>(static_cast<Entity>(id));
+    auto* tz = ENJIN_SCRIPT_COMPONENT(TriggerZoneComponent, id);
     if (tz) tz->sphereRadius = val;
 }
 
 static bool TriggerZone_GetTriggerOnce(u64 id) {
     if (!s_BindingsWorld) return false;
-    auto* tz = s_BindingsWorld->GetComponent<TriggerZoneComponent>(static_cast<Entity>(id));
+    auto* tz = ENJIN_SCRIPT_COMPONENT(TriggerZoneComponent, id);
     return tz ? tz->triggerOnce : false;
 }
 
 static void TriggerZone_SetTriggerOnce(u64 id, bool val) {
     if (!s_BindingsWorld) return;
-    auto* tz = s_BindingsWorld->GetComponent<TriggerZoneComponent>(static_cast<Entity>(id));
+    auto* tz = ENJIN_SCRIPT_COMPONENT(TriggerZoneComponent, id);
     if (tz) tz->triggerOnce = val;
 }
 
@@ -1155,43 +1225,43 @@ static bool HasComponent_Interactable(u64 id) {
 
 static std::string Interactable_GetPrompt(u64 id) {
     if (!s_BindingsWorld) return "";
-    auto* ic = s_BindingsWorld->GetComponent<InteractableComponent>(static_cast<Entity>(id));
+    auto* ic = ENJIN_SCRIPT_COMPONENT(InteractableComponent, id);
     return ic ? ic->promptText : "";
 }
 
 static void Interactable_SetPrompt(u64 id, const std::string& val) {
     if (!s_BindingsWorld) return;
-    auto* ic = s_BindingsWorld->GetComponent<InteractableComponent>(static_cast<Entity>(id));
+    auto* ic = ENJIN_SCRIPT_COMPONENT(InteractableComponent, id);
     if (ic) ic->promptText = val;
 }
 
 static f32 Interactable_GetRange(u64 id) {
     if (!s_BindingsWorld) return 2.0f;
-    auto* ic = s_BindingsWorld->GetComponent<InteractableComponent>(static_cast<Entity>(id));
+    auto* ic = ENJIN_SCRIPT_COMPONENT(InteractableComponent, id);
     return ic ? ic->interactionRange : 2.0f;
 }
 
 static void Interactable_SetRange(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* ic = s_BindingsWorld->GetComponent<InteractableComponent>(static_cast<Entity>(id));
+    auto* ic = ENJIN_SCRIPT_COMPONENT(InteractableComponent, id);
     if (ic) ic->interactionRange = val;
 }
 
 static bool Interactable_IsEnabled(u64 id) {
     if (!s_BindingsWorld) return false;
-    auto* ic = s_BindingsWorld->GetComponent<InteractableComponent>(static_cast<Entity>(id));
+    auto* ic = ENJIN_SCRIPT_COMPONENT(InteractableComponent, id);
     return ic ? ic->isEnabled : false;
 }
 
 static void Interactable_SetEnabled(u64 id, bool val) {
     if (!s_BindingsWorld) return;
-    auto* ic = s_BindingsWorld->GetComponent<InteractableComponent>(static_cast<Entity>(id));
+    auto* ic = ENJIN_SCRIPT_COMPONENT(InteractableComponent, id);
     if (ic) ic->isEnabled = val;
 }
 
 static bool Interactable_HasBeenUsed(u64 id) {
     if (!s_BindingsWorld) return false;
-    auto* ic = s_BindingsWorld->GetComponent<InteractableComponent>(static_cast<Entity>(id));
+    auto* ic = ENJIN_SCRIPT_COMPONENT(InteractableComponent, id);
     return ic ? ic->hasBeenUsed : false;
 }
 
@@ -1206,61 +1276,61 @@ static bool HasComponent_Pickup(u64 id) {
 
 static i32 Pickup_GetType(u64 id) {
     if (!s_BindingsWorld) return 0;
-    auto* pc = s_BindingsWorld->GetComponent<PickupComponent>(static_cast<Entity>(id));
+    auto* pc = ENJIN_SCRIPT_COMPONENT(PickupComponent, id);
     return pc ? static_cast<i32>(pc->type) : 0;
 }
 
 static void Pickup_SetType(u64 id, i32 val) {
     if (!s_BindingsWorld) return;
-    auto* pc = s_BindingsWorld->GetComponent<PickupComponent>(static_cast<Entity>(id));
+    auto* pc = ENJIN_SCRIPT_COMPONENT(PickupComponent, id);
     if (pc && val >= 0 && val <= 5) pc->type = static_cast<PickupComponent::PickupType>(val);
 }
 
 static f32 Pickup_GetValue(u64 id) {
     if (!s_BindingsWorld) return 0.0f;
-    auto* pc = s_BindingsWorld->GetComponent<PickupComponent>(static_cast<Entity>(id));
+    auto* pc = ENJIN_SCRIPT_COMPONENT(PickupComponent, id);
     return pc ? pc->value : 0.0f;
 }
 
 static void Pickup_SetValue(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* pc = s_BindingsWorld->GetComponent<PickupComponent>(static_cast<Entity>(id));
+    auto* pc = ENJIN_SCRIPT_COMPONENT(PickupComponent, id);
     if (pc) pc->value = val;
 }
 
 static std::string Pickup_GetCustomId(u64 id) {
     if (!s_BindingsWorld) return "";
-    auto* pc = s_BindingsWorld->GetComponent<PickupComponent>(static_cast<Entity>(id));
+    auto* pc = ENJIN_SCRIPT_COMPONENT(PickupComponent, id);
     return pc ? pc->customId : "";
 }
 
 static void Pickup_SetCustomId(u64 id, const std::string& val) {
     if (!s_BindingsWorld) return;
-    auto* pc = s_BindingsWorld->GetComponent<PickupComponent>(static_cast<Entity>(id));
+    auto* pc = ENJIN_SCRIPT_COMPONENT(PickupComponent, id);
     if (pc) pc->customId = val;
 }
 
 static f32 Pickup_GetRange(u64 id) {
     if (!s_BindingsWorld) return 1.0f;
-    auto* pc = s_BindingsWorld->GetComponent<PickupComponent>(static_cast<Entity>(id));
+    auto* pc = ENJIN_SCRIPT_COMPONENT(PickupComponent, id);
     return pc ? pc->pickupRange : 1.0f;
 }
 
 static void Pickup_SetRange(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* pc = s_BindingsWorld->GetComponent<PickupComponent>(static_cast<Entity>(id));
+    auto* pc = ENJIN_SCRIPT_COMPONENT(PickupComponent, id);
     if (pc) pc->pickupRange = val;
 }
 
 static bool Pickup_GetDestroyOnPickup(u64 id) {
     if (!s_BindingsWorld) return true;
-    auto* pc = s_BindingsWorld->GetComponent<PickupComponent>(static_cast<Entity>(id));
+    auto* pc = ENJIN_SCRIPT_COMPONENT(PickupComponent, id);
     return pc ? pc->destroyOnPickup : true;
 }
 
 static void Pickup_SetDestroyOnPickup(u64 id, bool val) {
     if (!s_BindingsWorld) return;
-    auto* pc = s_BindingsWorld->GetComponent<PickupComponent>(static_cast<Entity>(id));
+    auto* pc = ENJIN_SCRIPT_COMPONENT(PickupComponent, id);
     if (pc) pc->destroyOnPickup = val;
 }
 
@@ -1275,7 +1345,7 @@ static bool HasComponent_Inventory(u64 id) {
 
 static i32 Inventory_GetItemCount(u64 id, const std::string& itemId) {
     if (!s_BindingsWorld) return 0;
-    auto* inv = s_BindingsWorld->GetComponent<InventoryComponent>(static_cast<Entity>(id));
+    auto* inv = ENJIN_SCRIPT_COMPONENT(InventoryComponent, id);
     if (!inv) return 0;
     for (const auto& slot : inv->slots) {
         if (slot.itemId == itemId) return slot.quantity;
@@ -1285,7 +1355,7 @@ static i32 Inventory_GetItemCount(u64 id, const std::string& itemId) {
 
 static bool Inventory_AddItem(u64 id, const std::string& itemId, i32 count) {
     if (!s_BindingsWorld) return false;
-    auto* inv = s_BindingsWorld->GetComponent<InventoryComponent>(static_cast<Entity>(id));
+    auto* inv = ENJIN_SCRIPT_COMPONENT(InventoryComponent, id);
     if (!inv) return false;
     // Try to stack
     for (auto& slot : inv->slots) {
@@ -1306,7 +1376,7 @@ static bool Inventory_AddItem(u64 id, const std::string& itemId, i32 count) {
 
 static bool Inventory_RemoveItem(u64 id, const std::string& itemId, i32 count) {
     if (!s_BindingsWorld) return false;
-    auto* inv = s_BindingsWorld->GetComponent<InventoryComponent>(static_cast<Entity>(id));
+    auto* inv = ENJIN_SCRIPT_COMPONENT(InventoryComponent, id);
     if (!inv) return false;
     for (auto it = inv->slots.begin(); it != inv->slots.end(); ++it) {
         if (it->itemId == itemId) {
@@ -1321,7 +1391,7 @@ static bool Inventory_RemoveItem(u64 id, const std::string& itemId, i32 count) {
 
 static bool Inventory_HasItem(u64 id, const std::string& itemId) {
     if (!s_BindingsWorld) return false;
-    auto* inv = s_BindingsWorld->GetComponent<InventoryComponent>(static_cast<Entity>(id));
+    auto* inv = ENJIN_SCRIPT_COMPONENT(InventoryComponent, id);
     if (!inv) return false;
     for (const auto& slot : inv->slots) {
         if (slot.itemId == itemId && slot.quantity > 0) return true;
@@ -1331,37 +1401,37 @@ static bool Inventory_HasItem(u64 id, const std::string& itemId) {
 
 static void Inventory_Clear(u64 id) {
     if (!s_BindingsWorld) return;
-    auto* inv = s_BindingsWorld->GetComponent<InventoryComponent>(static_cast<Entity>(id));
+    auto* inv = ENJIN_SCRIPT_COMPONENT(InventoryComponent, id);
     if (inv) inv->slots.clear();
 }
 
 static i32 Inventory_GetCoins(u64 id) {
     if (!s_BindingsWorld) return 0;
-    auto* inv = s_BindingsWorld->GetComponent<InventoryComponent>(static_cast<Entity>(id));
+    auto* inv = ENJIN_SCRIPT_COMPONENT(InventoryComponent, id);
     return inv ? inv->coins : 0;
 }
 
 static void Inventory_SetCoins(u64 id, i32 val) {
     if (!s_BindingsWorld) return;
-    auto* inv = s_BindingsWorld->GetComponent<InventoryComponent>(static_cast<Entity>(id));
+    auto* inv = ENJIN_SCRIPT_COMPONENT(InventoryComponent, id);
     if (inv) inv->coins = val;
 }
 
 static i32 Inventory_GetGems(u64 id) {
     if (!s_BindingsWorld) return 0;
-    auto* inv = s_BindingsWorld->GetComponent<InventoryComponent>(static_cast<Entity>(id));
+    auto* inv = ENJIN_SCRIPT_COMPONENT(InventoryComponent, id);
     return inv ? inv->gems : 0;
 }
 
 static void Inventory_SetGems(u64 id, i32 val) {
     if (!s_BindingsWorld) return;
-    auto* inv = s_BindingsWorld->GetComponent<InventoryComponent>(static_cast<Entity>(id));
+    auto* inv = ENJIN_SCRIPT_COMPONENT(InventoryComponent, id);
     if (inv) inv->gems = val;
 }
 
 static bool Inventory_HasKey(u64 id, const std::string& keyId) {
     if (!s_BindingsWorld) return false;
-    auto* inv = s_BindingsWorld->GetComponent<InventoryComponent>(static_cast<Entity>(id));
+    auto* inv = ENJIN_SCRIPT_COMPONENT(InventoryComponent, id);
     if (!inv) return false;
     for (const auto& k : inv->keys) {
         if (k == keyId) return true;
@@ -1371,7 +1441,7 @@ static bool Inventory_HasKey(u64 id, const std::string& keyId) {
 
 static void Inventory_AddKey(u64 id, const std::string& keyId) {
     if (!s_BindingsWorld) return;
-    auto* inv = s_BindingsWorld->GetComponent<InventoryComponent>(static_cast<Entity>(id));
+    auto* inv = ENJIN_SCRIPT_COMPONENT(InventoryComponent, id);
     if (!inv) return;
     for (const auto& k : inv->keys) {
         if (k == keyId) return; // Already has it
@@ -1390,67 +1460,67 @@ static bool HasComponent_Timer(u64 id) {
 
 static f32 Timer_GetDuration(u64 id) {
     if (!s_BindingsWorld) return 0.0f;
-    auto* tc = s_BindingsWorld->GetComponent<TimerComponent>(static_cast<Entity>(id));
+    auto* tc = ENJIN_SCRIPT_COMPONENT(TimerComponent, id);
     return tc ? tc->duration : 0.0f;
 }
 
 static void Timer_SetDuration(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* tc = s_BindingsWorld->GetComponent<TimerComponent>(static_cast<Entity>(id));
+    auto* tc = ENJIN_SCRIPT_COMPONENT(TimerComponent, id);
     if (tc) tc->duration = val;
 }
 
 static f32 Timer_GetElapsed(u64 id) {
     if (!s_BindingsWorld) return 0.0f;
-    auto* tc = s_BindingsWorld->GetComponent<TimerComponent>(static_cast<Entity>(id));
+    auto* tc = ENJIN_SCRIPT_COMPONENT(TimerComponent, id);
     return tc ? tc->elapsed : 0.0f;
 }
 
 static void Timer_SetElapsed(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* tc = s_BindingsWorld->GetComponent<TimerComponent>(static_cast<Entity>(id));
+    auto* tc = ENJIN_SCRIPT_COMPONENT(TimerComponent, id);
     if (tc) tc->elapsed = val;
 }
 
 static bool Timer_IsRunning(u64 id) {
     if (!s_BindingsWorld) return false;
-    auto* tc = s_BindingsWorld->GetComponent<TimerComponent>(static_cast<Entity>(id));
+    auto* tc = ENJIN_SCRIPT_COMPONENT(TimerComponent, id);
     return tc ? tc->isRunning : false;
 }
 
 static void Timer_SetRunning(u64 id, bool val) {
     if (!s_BindingsWorld) return;
-    auto* tc = s_BindingsWorld->GetComponent<TimerComponent>(static_cast<Entity>(id));
+    auto* tc = ENJIN_SCRIPT_COMPONENT(TimerComponent, id);
     if (tc) tc->isRunning = val;
 }
 
 static bool Timer_GetLoop(u64 id) {
     if (!s_BindingsWorld) return false;
-    auto* tc = s_BindingsWorld->GetComponent<TimerComponent>(static_cast<Entity>(id));
+    auto* tc = ENJIN_SCRIPT_COMPONENT(TimerComponent, id);
     return tc ? tc->loop : false;
 }
 
 static void Timer_SetLoop(u64 id, bool val) {
     if (!s_BindingsWorld) return;
-    auto* tc = s_BindingsWorld->GetComponent<TimerComponent>(static_cast<Entity>(id));
+    auto* tc = ENJIN_SCRIPT_COMPONENT(TimerComponent, id);
     if (tc) tc->loop = val;
 }
 
 static f32 Timer_GetProgress(u64 id) {
     if (!s_BindingsWorld) return 0.0f;
-    auto* tc = s_BindingsWorld->GetComponent<TimerComponent>(static_cast<Entity>(id));
+    auto* tc = ENJIN_SCRIPT_COMPONENT(TimerComponent, id);
     return tc ? tc->GetProgress() : 0.0f;
 }
 
 static f32 Timer_GetRemaining(u64 id) {
     if (!s_BindingsWorld) return 0.0f;
-    auto* tc = s_BindingsWorld->GetComponent<TimerComponent>(static_cast<Entity>(id));
+    auto* tc = ENJIN_SCRIPT_COMPONENT(TimerComponent, id);
     return tc ? tc->GetRemaining() : 0.0f;
 }
 
 static bool Timer_IsComplete(u64 id) {
     if (!s_BindingsWorld) return false;
-    auto* tc = s_BindingsWorld->GetComponent<TimerComponent>(static_cast<Entity>(id));
+    auto* tc = ENJIN_SCRIPT_COMPONENT(TimerComponent, id);
     return tc ? tc->IsComplete() : false;
 }
 
@@ -1460,49 +1530,49 @@ static bool Timer_IsComplete(u64 id) {
 
 static f32 Health_GetShield(u64 id) {
     if (!s_BindingsWorld) return 0.0f;
-    auto* hc = s_BindingsWorld->GetComponent<HealthComponent>(static_cast<Entity>(id));
+    auto* hc = ENJIN_SCRIPT_COMPONENT(HealthComponent, id);
     return hc ? hc->currentShield : 0.0f;
 }
 
 static void Health_SetShield(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* hc = s_BindingsWorld->GetComponent<HealthComponent>(static_cast<Entity>(id));
+    auto* hc = ENJIN_SCRIPT_COMPONENT(HealthComponent, id);
     if (hc) hc->currentShield = Math::Clamp(val, 0.0f, hc->maxShield);
 }
 
 static void Health_SetMaxHealth(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* hc = s_BindingsWorld->GetComponent<HealthComponent>(static_cast<Entity>(id));
+    auto* hc = ENJIN_SCRIPT_COMPONENT(HealthComponent, id);
     if (hc) hc->maxHealth = val;
 }
 
 static bool Health_IsDead(u64 id) {
     if (!s_BindingsWorld) return false;
-    auto* hc = s_BindingsWorld->GetComponent<HealthComponent>(static_cast<Entity>(id));
+    auto* hc = ENJIN_SCRIPT_COMPONENT(HealthComponent, id);
     return hc ? hc->isDead : false;
 }
 
 static bool Health_IsInvulnerable(u64 id) {
     if (!s_BindingsWorld) return false;
-    auto* hc = s_BindingsWorld->GetComponent<HealthComponent>(static_cast<Entity>(id));
+    auto* hc = ENJIN_SCRIPT_COMPONENT(HealthComponent, id);
     return hc ? hc->isInvulnerable : false;
 }
 
 static void Health_SetInvulnerable(u64 id, bool val) {
     if (!s_BindingsWorld) return;
-    auto* hc = s_BindingsWorld->GetComponent<HealthComponent>(static_cast<Entity>(id));
+    auto* hc = ENJIN_SCRIPT_COMPONENT(HealthComponent, id);
     if (hc) hc->isInvulnerable = val;
 }
 
 static f32 Health_GetPercent(u64 id) {
     if (!s_BindingsWorld) return 0.0f;
-    auto* hc = s_BindingsWorld->GetComponent<HealthComponent>(static_cast<Entity>(id));
+    auto* hc = ENJIN_SCRIPT_COMPONENT(HealthComponent, id);
     return hc ? hc->GetHealthPercent() : 0.0f;
 }
 
 static void Health_Heal(u64 id, f32 amount) {
     if (!s_BindingsWorld) return;
-    auto* hc = s_BindingsWorld->GetComponent<HealthComponent>(static_cast<Entity>(id));
+    auto* hc = ENJIN_SCRIPT_COMPONENT(HealthComponent, id);
     if (hc) hc->currentHealth = Math::Min(hc->currentHealth + amount, hc->maxHealth);
 }
 
@@ -1517,31 +1587,31 @@ static bool HasComponent_Lock(u64 id) {
 
 static bool Lock_IsLocked(u64 id) {
     if (!s_BindingsWorld) return false;
-    auto* lc = s_BindingsWorld->GetComponent<LockComponent>(static_cast<Entity>(id));
+    auto* lc = ENJIN_SCRIPT_COMPONENT(LockComponent, id);
     return lc ? lc->isLocked : false;
 }
 
 static void Lock_SetLocked(u64 id, bool val) {
     if (!s_BindingsWorld) return;
-    auto* lc = s_BindingsWorld->GetComponent<LockComponent>(static_cast<Entity>(id));
+    auto* lc = ENJIN_SCRIPT_COMPONENT(LockComponent, id);
     if (lc) lc->isLocked = val;
 }
 
 static std::string Lock_GetRequiredKey(u64 id) {
     if (!s_BindingsWorld) return "";
-    auto* lc = s_BindingsWorld->GetComponent<LockComponent>(static_cast<Entity>(id));
+    auto* lc = ENJIN_SCRIPT_COMPONENT(LockComponent, id);
     return lc ? lc->requiredKey : "";
 }
 
 static bool Lock_IsOpen(u64 id) {
     if (!s_BindingsWorld) return false;
-    auto* lc = s_BindingsWorld->GetComponent<LockComponent>(static_cast<Entity>(id));
+    auto* lc = ENJIN_SCRIPT_COMPONENT(LockComponent, id);
     return lc ? lc->isOpen : false;
 }
 
 static void Lock_SetOpen(u64 id, bool val) {
     if (!s_BindingsWorld) return;
-    auto* lc = s_BindingsWorld->GetComponent<LockComponent>(static_cast<Entity>(id));
+    auto* lc = ENJIN_SCRIPT_COMPONENT(LockComponent, id);
     if (lc) lc->isOpen = val;
 }
 
@@ -1556,32 +1626,32 @@ static bool HasComponent_Switch(u64 id) {
 
 static bool Switch_IsActive(u64 id) {
     if (!s_BindingsWorld) return false;
-    auto* sc = s_BindingsWorld->GetComponent<SwitchComponent>(static_cast<Entity>(id));
+    auto* sc = ENJIN_SCRIPT_COMPONENT(SwitchComponent, id);
     return sc ? sc->isActive : false;
 }
 
 static void Switch_SetActive(u64 id, bool val) {
     if (!s_BindingsWorld) return;
-    auto* sc = s_BindingsWorld->GetComponent<SwitchComponent>(static_cast<Entity>(id));
+    auto* sc = ENJIN_SCRIPT_COMPONENT(SwitchComponent, id);
     if (sc) sc->isActive = val;
 }
 
 static i32 Switch_GetLinkedCount(u64 id) {
     if (!s_BindingsWorld) return 0;
-    auto* sc = s_BindingsWorld->GetComponent<SwitchComponent>(static_cast<Entity>(id));
+    auto* sc = ENJIN_SCRIPT_COMPONENT(SwitchComponent, id);
     return sc ? static_cast<i32>(sc->linkedEntities.size()) : 0;
 }
 
 static u64 Switch_GetLinkedEntity(u64 id, i32 index) {
     if (!s_BindingsWorld) return 0;
-    auto* sc = s_BindingsWorld->GetComponent<SwitchComponent>(static_cast<Entity>(id));
+    auto* sc = ENJIN_SCRIPT_COMPONENT(SwitchComponent, id);
     if (!sc || index < 0 || index >= static_cast<i32>(sc->linkedEntities.size())) return 0;
     return static_cast<u64>(sc->linkedEntities[index]);
 }
 
 static std::string Switch_GetPrompt(u64 id) {
     if (!s_BindingsWorld) return "";
-    auto* sc = s_BindingsWorld->GetComponent<SwitchComponent>(static_cast<Entity>(id));
+    auto* sc = ENJIN_SCRIPT_COMPONENT(SwitchComponent, id);
     return sc ? sc->promptText : "";
 }
 
@@ -1596,25 +1666,25 @@ static bool HasComponent_GoalZone(u64 id) {
 
 static bool GoalZone_IsSatisfied(u64 id) {
     if (!s_BindingsWorld) return false;
-    auto* gz = s_BindingsWorld->GetComponent<GoalZoneComponent>(static_cast<Entity>(id));
+    auto* gz = ENJIN_SCRIPT_COMPONENT(GoalZoneComponent, id);
     return gz ? gz->isSatisfied : false;
 }
 
 static std::string GoalZone_GetRequiredTag(u64 id) {
     if (!s_BindingsWorld) return "";
-    auto* gz = s_BindingsWorld->GetComponent<GoalZoneComponent>(static_cast<Entity>(id));
+    auto* gz = ENJIN_SCRIPT_COMPONENT(GoalZoneComponent, id);
     return gz ? gz->requiredTag : "";
 }
 
 static i32 GoalZone_GetGoalGroup(u64 id) {
     if (!s_BindingsWorld) return 0;
-    auto* gz = s_BindingsWorld->GetComponent<GoalZoneComponent>(static_cast<Entity>(id));
+    auto* gz = ENJIN_SCRIPT_COMPONENT(GoalZoneComponent, id);
     return gz ? gz->goalGroup : 0;
 }
 
 static std::string GoalZone_GetNextScene(u64 id) {
     if (!s_BindingsWorld) return "";
-    auto* gz = s_BindingsWorld->GetComponent<GoalZoneComponent>(static_cast<Entity>(id));
+    auto* gz = ENJIN_SCRIPT_COMPONENT(GoalZoneComponent, id);
     return gz ? gz->nextScene : "";
 }
 
@@ -1629,37 +1699,37 @@ static bool HasComponent_Conveyor(u64 id) {
 
 static Vector3 Conveyor_GetDirection(u64 id) {
     if (!s_BindingsWorld) return Vector3(1, 0, 0);
-    auto* cc = s_BindingsWorld->GetComponent<ConveyorComponent>(static_cast<Entity>(id));
+    auto* cc = ENJIN_SCRIPT_COMPONENT(ConveyorComponent, id);
     return cc ? cc->direction : Vector3(1, 0, 0);
 }
 
 static void Conveyor_SetDirection(u64 id, float x, float y, float z) {
     if (!s_BindingsWorld) return;
-    auto* cc = s_BindingsWorld->GetComponent<ConveyorComponent>(static_cast<Entity>(id));
+    auto* cc = ENJIN_SCRIPT_COMPONENT(ConveyorComponent, id);
     if (cc) cc->direction = Vector3(x, y, z);
 }
 
 static f32 Conveyor_GetSpeed(u64 id) {
     if (!s_BindingsWorld) return 3.0f;
-    auto* cc = s_BindingsWorld->GetComponent<ConveyorComponent>(static_cast<Entity>(id));
+    auto* cc = ENJIN_SCRIPT_COMPONENT(ConveyorComponent, id);
     return cc ? cc->speed : 3.0f;
 }
 
 static void Conveyor_SetSpeed(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* cc = s_BindingsWorld->GetComponent<ConveyorComponent>(static_cast<Entity>(id));
+    auto* cc = ENJIN_SCRIPT_COMPONENT(ConveyorComponent, id);
     if (cc) cc->speed = val;
 }
 
 static bool Conveyor_IsActive(u64 id) {
     if (!s_BindingsWorld) return true;
-    auto* cc = s_BindingsWorld->GetComponent<ConveyorComponent>(static_cast<Entity>(id));
+    auto* cc = ENJIN_SCRIPT_COMPONENT(ConveyorComponent, id);
     return cc ? cc->isActive : true;
 }
 
 static void Conveyor_SetActive(u64 id, bool val) {
     if (!s_BindingsWorld) return;
-    auto* cc = s_BindingsWorld->GetComponent<ConveyorComponent>(static_cast<Entity>(id));
+    auto* cc = ENJIN_SCRIPT_COMPONENT(ConveyorComponent, id);
     if (cc) cc->isActive = val;
 }
 
@@ -1674,37 +1744,37 @@ static bool HasComponent_Teleporter(u64 id) {
 
 static Vector3 Teleporter_GetDestination(u64 id) {
     if (!s_BindingsWorld) return Vector3();
-    auto* tp = s_BindingsWorld->GetComponent<TeleporterComponent>(static_cast<Entity>(id));
+    auto* tp = ENJIN_SCRIPT_COMPONENT(TeleporterComponent, id);
     return tp ? tp->targetPosition : Vector3();
 }
 
 static void Teleporter_SetDestination(u64 id, float x, float y, float z) {
     if (!s_BindingsWorld) return;
-    auto* tp = s_BindingsWorld->GetComponent<TeleporterComponent>(static_cast<Entity>(id));
+    auto* tp = ENJIN_SCRIPT_COMPONENT(TeleporterComponent, id);
     if (tp) tp->targetPosition = Vector3(x, y, z);
 }
 
 static f32 Teleporter_GetCooldown(u64 id) {
     if (!s_BindingsWorld) return 1.0f;
-    auto* tp = s_BindingsWorld->GetComponent<TeleporterComponent>(static_cast<Entity>(id));
+    auto* tp = ENJIN_SCRIPT_COMPONENT(TeleporterComponent, id);
     return tp ? tp->cooldown : 1.0f;
 }
 
 static void Teleporter_SetCooldown(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* tp = s_BindingsWorld->GetComponent<TeleporterComponent>(static_cast<Entity>(id));
+    auto* tp = ENJIN_SCRIPT_COMPONENT(TeleporterComponent, id);
     if (tp) tp->cooldown = val;
 }
 
 static bool Teleporter_GetPreserveVelocity(u64 id) {
     if (!s_BindingsWorld) return false;
-    auto* tp = s_BindingsWorld->GetComponent<TeleporterComponent>(static_cast<Entity>(id));
+    auto* tp = ENJIN_SCRIPT_COMPONENT(TeleporterComponent, id);
     return tp ? tp->preserveVelocity : false;
 }
 
 static void Teleporter_SetPreserveVelocity(u64 id, bool val) {
     if (!s_BindingsWorld) return;
-    auto* tp = s_BindingsWorld->GetComponent<TeleporterComponent>(static_cast<Entity>(id));
+    auto* tp = ENJIN_SCRIPT_COMPONENT(TeleporterComponent, id);
     if (tp) tp->preserveVelocity = val;
 }
 
@@ -1719,43 +1789,43 @@ static bool HasComponent_MovingPlatform(u64 id) {
 
 static f32 MovingPlatform_GetSpeed(u64 id) {
     if (!s_BindingsWorld) return 2.0f;
-    auto* mp = s_BindingsWorld->GetComponent<MovingPlatformComponent>(static_cast<Entity>(id));
+    auto* mp = ENJIN_SCRIPT_COMPONENT(MovingPlatformComponent, id);
     return mp ? mp->speed : 2.0f;
 }
 
 static void MovingPlatform_SetSpeed(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* mp = s_BindingsWorld->GetComponent<MovingPlatformComponent>(static_cast<Entity>(id));
+    auto* mp = ENJIN_SCRIPT_COMPONENT(MovingPlatformComponent, id);
     if (mp) mp->speed = val;
 }
 
 static bool MovingPlatform_IsMoving(u64 id) {
     if (!s_BindingsWorld) return false;
-    auto* mp = s_BindingsWorld->GetComponent<MovingPlatformComponent>(static_cast<Entity>(id));
+    auto* mp = ENJIN_SCRIPT_COMPONENT(MovingPlatformComponent, id);
     return mp ? mp->isMoving : false;
 }
 
 static void MovingPlatform_SetMoving(u64 id, bool val) {
     if (!s_BindingsWorld) return;
-    auto* mp = s_BindingsWorld->GetComponent<MovingPlatformComponent>(static_cast<Entity>(id));
+    auto* mp = ENJIN_SCRIPT_COMPONENT(MovingPlatformComponent, id);
     if (mp) mp->isMoving = val;
 }
 
 static i32 MovingPlatform_GetWaypointCount(u64 id) {
     if (!s_BindingsWorld) return 0;
-    auto* mp = s_BindingsWorld->GetComponent<MovingPlatformComponent>(static_cast<Entity>(id));
+    auto* mp = ENJIN_SCRIPT_COMPONENT(MovingPlatformComponent, id);
     return mp ? static_cast<i32>(mp->waypoints.size()) : 0;
 }
 
 static f32 MovingPlatform_GetWaitTime(u64 id) {
     if (!s_BindingsWorld) return 1.0f;
-    auto* mp = s_BindingsWorld->GetComponent<MovingPlatformComponent>(static_cast<Entity>(id));
+    auto* mp = ENJIN_SCRIPT_COMPONENT(MovingPlatformComponent, id);
     return mp ? mp->waitTime : 1.0f;
 }
 
 static void MovingPlatform_SetWaitTime(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* mp = s_BindingsWorld->GetComponent<MovingPlatformComponent>(static_cast<Entity>(id));
+    auto* mp = ENJIN_SCRIPT_COMPONENT(MovingPlatformComponent, id);
     if (mp) mp->waitTime = val;
 }
 
@@ -1770,37 +1840,37 @@ static bool HasComponent_Damage(u64 id) {
 
 static f32 Damage_GetDamage(u64 id) {
     if (!s_BindingsWorld) return 0.0f;
-    auto* dc = s_BindingsWorld->GetComponent<DamageComponent>(static_cast<Entity>(id));
+    auto* dc = ENJIN_SCRIPT_COMPONENT(DamageComponent, id);
     return dc ? dc->damage : 0.0f;
 }
 
 static void Damage_SetDamage(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* dc = s_BindingsWorld->GetComponent<DamageComponent>(static_cast<Entity>(id));
+    auto* dc = ENJIN_SCRIPT_COMPONENT(DamageComponent, id);
     if (dc) dc->damage = val;
 }
 
 static f32 Damage_GetKnockback(u64 id) {
     if (!s_BindingsWorld) return 0.0f;
-    auto* dc = s_BindingsWorld->GetComponent<DamageComponent>(static_cast<Entity>(id));
+    auto* dc = ENJIN_SCRIPT_COMPONENT(DamageComponent, id);
     return dc ? dc->knockbackForce : 0.0f;
 }
 
 static void Damage_SetKnockback(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* dc = s_BindingsWorld->GetComponent<DamageComponent>(static_cast<Entity>(id));
+    auto* dc = ENJIN_SCRIPT_COMPONENT(DamageComponent, id);
     if (dc) dc->knockbackForce = val;
 }
 
 static f32 Damage_GetInterval(u64 id) {
     if (!s_BindingsWorld) return 0.0f;
-    auto* dc = s_BindingsWorld->GetComponent<DamageComponent>(static_cast<Entity>(id));
+    auto* dc = ENJIN_SCRIPT_COMPONENT(DamageComponent, id);
     return dc ? dc->damageInterval : 0.0f;
 }
 
 static void Damage_SetInterval(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* dc = s_BindingsWorld->GetComponent<DamageComponent>(static_cast<Entity>(id));
+    auto* dc = ENJIN_SCRIPT_COMPONENT(DamageComponent, id);
     if (dc) dc->damageInterval = val;
 }
 
@@ -1815,49 +1885,49 @@ static bool HasComponent_Resource(u64 id) {
 
 static f32 Resource_GetValue(u64 id) {
     if (!s_BindingsWorld) return 0.0f;
-    auto* rc = s_BindingsWorld->GetComponent<ResourceComponent>(static_cast<Entity>(id));
+    auto* rc = ENJIN_SCRIPT_COMPONENT(ResourceComponent, id);
     return rc ? rc->currentValue : 0.0f;
 }
 
 static void Resource_SetValue(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* rc = s_BindingsWorld->GetComponent<ResourceComponent>(static_cast<Entity>(id));
+    auto* rc = ENJIN_SCRIPT_COMPONENT(ResourceComponent, id);
     if (rc) rc->currentValue = Math::Clamp(val, 0.0f, rc->maxValue);
 }
 
 static f32 Resource_GetMax(u64 id) {
     if (!s_BindingsWorld) return 0.0f;
-    auto* rc = s_BindingsWorld->GetComponent<ResourceComponent>(static_cast<Entity>(id));
+    auto* rc = ENJIN_SCRIPT_COMPONENT(ResourceComponent, id);
     return rc ? rc->maxValue : 0.0f;
 }
 
 static void Resource_SetMax(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
-    auto* rc = s_BindingsWorld->GetComponent<ResourceComponent>(static_cast<Entity>(id));
+    auto* rc = ENJIN_SCRIPT_COMPONENT(ResourceComponent, id);
     if (rc) rc->maxValue = val;
 }
 
 static f32 Resource_GetPercent(u64 id) {
     if (!s_BindingsWorld) return 0.0f;
-    auto* rc = s_BindingsWorld->GetComponent<ResourceComponent>(static_cast<Entity>(id));
+    auto* rc = ENJIN_SCRIPT_COMPONENT(ResourceComponent, id);
     return rc ? rc->GetPercent() : 0.0f;
 }
 
 static bool Resource_TryConsume(u64 id, f32 amount) {
     if (!s_BindingsWorld) return false;
-    auto* rc = s_BindingsWorld->GetComponent<ResourceComponent>(static_cast<Entity>(id));
+    auto* rc = ENJIN_SCRIPT_COMPONENT(ResourceComponent, id);
     return rc ? rc->TryConsume(amount) : false;
 }
 
 static bool Resource_IsDepleted(u64 id) {
     if (!s_BindingsWorld) return false;
-    auto* rc = s_BindingsWorld->GetComponent<ResourceComponent>(static_cast<Entity>(id));
+    auto* rc = ENJIN_SCRIPT_COMPONENT(ResourceComponent, id);
     return rc ? rc->depleted : false;
 }
 
 static std::string Resource_GetName(u64 id) {
     if (!s_BindingsWorld) return "";
-    auto* rc = s_BindingsWorld->GetComponent<ResourceComponent>(static_cast<Entity>(id));
+    auto* rc = ENJIN_SCRIPT_COMPONENT(ResourceComponent, id);
     return rc ? rc->resourceName : "";
 }
 
@@ -1872,25 +1942,25 @@ static bool HasComponent_LOD(u64 id) {
 
 static i32 LOD_GetCurrentLOD(u64 id) {
     if (!s_BindingsWorld) return 0;
-    auto* lod = s_BindingsWorld->GetComponent<LODComponent>(static_cast<Entity>(id));
+    auto* lod = ENJIN_SCRIPT_COMPONENT(LODComponent, id);
     return lod ? lod->activeLOD : 0;
 }
 
 static i32 LOD_GetLevelCount(u64 id) {
     if (!s_BindingsWorld) return 0;
-    auto* lod = s_BindingsWorld->GetComponent<LODComponent>(static_cast<Entity>(id));
+    auto* lod = ENJIN_SCRIPT_COMPONENT(LODComponent, id);
     return lod ? lod->levelCount : 0;
 }
 
 static bool LOD_IsEnabled(u64 id) {
     if (!s_BindingsWorld) return false;
-    auto* lod = s_BindingsWorld->GetComponent<LODComponent>(static_cast<Entity>(id));
+    auto* lod = ENJIN_SCRIPT_COMPONENT(LODComponent, id);
     return lod ? lod->enabled : false;
 }
 
 static void LOD_SetEnabled(u64 id, bool val) {
     if (!s_BindingsWorld) return;
-    auto* lod = s_BindingsWorld->GetComponent<LODComponent>(static_cast<Entity>(id));
+    auto* lod = ENJIN_SCRIPT_COMPONENT(LODComponent, id);
     if (lod) lod->enabled = val;
 }
 
@@ -1905,19 +1975,19 @@ static bool HasComponent_Layer(u64 id) {
 
 static u32 Layer_GetLayer(u64 id) {
     if (!s_BindingsWorld) return 0;
-    auto* lc = s_BindingsWorld->GetComponent<LayerComponent>(static_cast<Entity>(id));
+    auto* lc = ENJIN_SCRIPT_COMPONENT(LayerComponent, id);
     return lc ? lc->layer : 0;
 }
 
 static void Layer_SetLayer(u64 id, u32 val) {
     if (!s_BindingsWorld) return;
-    auto* lc = s_BindingsWorld->GetComponent<LayerComponent>(static_cast<Entity>(id));
+    auto* lc = ENJIN_SCRIPT_COMPONENT(LayerComponent, id);
     if (lc) lc->layer = val;
 }
 
 static std::string Layer_GetName(u64 id) {
     if (!s_BindingsWorld) return "";
-    auto* lc = s_BindingsWorld->GetComponent<LayerComponent>(static_cast<Entity>(id));
+    auto* lc = ENJIN_SCRIPT_COMPONENT(LayerComponent, id);
     return lc ? lc->layerName : "";
 }
 
@@ -1932,13 +2002,13 @@ static bool HasComponent_Notes(u64 id) {
 
 static std::string Notes_Get(u64 id) {
     if (!s_BindingsWorld) return "";
-    auto* nc = s_BindingsWorld->GetComponent<NotesComponent>(static_cast<Entity>(id));
+    auto* nc = ENJIN_SCRIPT_COMPONENT(NotesComponent, id);
     return nc ? nc->notes : "";
 }
 
 static void Notes_Set(u64 id, const std::string& val) {
     if (!s_BindingsWorld) return;
-    auto* nc = s_BindingsWorld->GetComponent<NotesComponent>(static_cast<Entity>(id));
+    auto* nc = ENJIN_SCRIPT_COMPONENT(NotesComponent, id);
     if (nc) nc->notes = val;
 }
 
@@ -1953,32 +2023,32 @@ static bool HasComponent_Tag(u64 id) {
 
 static i32 Tag_GetCount(u64 id) {
     if (!s_BindingsWorld) return 0;
-    auto* tc = s_BindingsWorld->GetComponent<TagComponent>(static_cast<Entity>(id));
+    auto* tc = ENJIN_SCRIPT_COMPONENT(TagComponent, id);
     return tc ? static_cast<i32>(tc->tags.size()) : 0;
 }
 
 static std::string Tag_GetAt(u64 id, i32 index) {
     if (!s_BindingsWorld) return "";
-    auto* tc = s_BindingsWorld->GetComponent<TagComponent>(static_cast<Entity>(id));
+    auto* tc = ENJIN_SCRIPT_COMPONENT(TagComponent, id);
     if (!tc || index < 0 || index >= static_cast<i32>(tc->tags.size())) return "";
     return tc->tags[index];
 }
 
 static void Tag_Add(u64 id, const std::string& tag) {
     if (!s_BindingsWorld) return;
-    auto* tc = s_BindingsWorld->GetComponent<TagComponent>(static_cast<Entity>(id));
+    auto* tc = ENJIN_SCRIPT_COMPONENT(TagComponent, id);
     if (tc) tc->AddTag(tag);
 }
 
 static void Tag_Remove(u64 id, const std::string& tag) {
     if (!s_BindingsWorld) return;
-    auto* tc = s_BindingsWorld->GetComponent<TagComponent>(static_cast<Entity>(id));
+    auto* tc = ENJIN_SCRIPT_COMPONENT(TagComponent, id);
     if (tc) tc->RemoveTag(tag);
 }
 
 static bool Tag_Has(u64 id, const std::string& tag) {
     if (!s_BindingsWorld) return false;
-    auto* tc = s_BindingsWorld->GetComponent<TagComponent>(static_cast<Entity>(id));
+    auto* tc = ENJIN_SCRIPT_COMPONENT(TagComponent, id);
     return tc ? tc->HasTag(tag) : false;
 }
 
@@ -1993,19 +2063,19 @@ namespace Enjin {
 
 static void Camera2D_Shake(u64 id, f32 intensity, f32 duration) {
     if (!s_BindingsWorld) return;
-    auto* cam = s_BindingsWorld->GetComponent<Camera2DBoundsComponent>(static_cast<Entity>(id));
+    auto* cam = ENJIN_SCRIPT_COMPONENT(Camera2DBoundsComponent, id);
     if (cam) cam->TriggerShake(intensity, duration);
 }
 
 static f32 Camera2D_GetZoom(u64 id) {
     if (!s_BindingsWorld) return 1.0f;
-    auto* cam = s_BindingsWorld->GetComponent<Camera2DBoundsComponent>(static_cast<Entity>(id));
+    auto* cam = ENJIN_SCRIPT_COMPONENT(Camera2DBoundsComponent, id);
     return cam ? cam->currentZoom : 1.0f;
 }
 
 static void Camera2D_SetZoom(u64 id, f32 zoom) {
     if (!s_BindingsWorld) return;
-    auto* cam = s_BindingsWorld->GetComponent<Camera2DBoundsComponent>(static_cast<Entity>(id));
+    auto* cam = ENJIN_SCRIPT_COMPONENT(Camera2DBoundsComponent, id);
     if (cam) cam->targetZoom = zoom;
 }
 
@@ -2034,13 +2104,13 @@ static void Camera2D_RemoveTarget(u64 cameraId, u64 targetId) {
 
 static void Camera2D_ClearTargets(u64 id) {
     if (!s_BindingsWorld) return;
-    auto* cam = s_BindingsWorld->GetComponent<Camera2DBoundsComponent>(static_cast<Entity>(id));
+    auto* cam = ENJIN_SCRIPT_COMPONENT(Camera2DBoundsComponent, id);
     if (cam) cam->additionalTargets.clear();
 }
 
 static void Camera2D_SetDeadZone(u64 id, f32 width, f32 height) {
     if (!s_BindingsWorld) return;
-    auto* cam = s_BindingsWorld->GetComponent<Camera2DBoundsComponent>(static_cast<Entity>(id));
+    auto* cam = ENJIN_SCRIPT_COMPONENT(Camera2DBoundsComponent, id);
     if (cam) {
         cam->deadZoneSize.x = width;
         cam->deadZoneSize.y = height;
@@ -2049,7 +2119,7 @@ static void Camera2D_SetDeadZone(u64 id, f32 width, f32 height) {
 
 static void Camera2D_SetLookAhead(u64 id, f32 distance, f32 smoothing) {
     if (!s_BindingsWorld) return;
-    auto* cam = s_BindingsWorld->GetComponent<Camera2DBoundsComponent>(static_cast<Entity>(id));
+    auto* cam = ENJIN_SCRIPT_COMPONENT(Camera2DBoundsComponent, id);
     if (cam) {
         cam->lookAheadDistance = distance;
         cam->lookAheadSmoothing = smoothing;
@@ -2064,7 +2134,7 @@ static void Camera2D_SetFollowTarget(u64 cameraId, u64 targetId) {
 
 static u64 Camera2D_GetFollowTarget(u64 id) {
     if (!s_BindingsWorld) return 0;
-    auto* cam = s_BindingsWorld->GetComponent<Camera2DBoundsComponent>(static_cast<Entity>(id));
+    auto* cam = ENJIN_SCRIPT_COMPONENT(Camera2DBoundsComponent, id);
     return cam ? static_cast<u64>(cam->followTarget) : 0;
 }
 
@@ -2158,6 +2228,29 @@ void RegisterComponentBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction("void Controller_SetCameraYaw(uint64, float)", ENJIN_AS_FN(Controller_SetCameraYaw), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Controller_GetCameraYaw(uint64)", ENJIN_AS_FN(Controller_GetCameraYaw), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Controller_SetMouseLook(uint64, bool)", ENJIN_AS_FN(Controller_SetMouseLook), ENJIN_AS_CALL_CDECL));
+
+    // Water vehicle
+    AS_CHECK(engine->RegisterGlobalFunction("void WaterVehicle_SetDrive(uint64, float, float, float)", ENJIN_AS_FN(WaterVehicle_SetDrive), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void WaterVehicle_SetCurrent(uint64, float, float)", ENJIN_AS_FN(WaterVehicle_SetCurrent), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void WaterVehicle_SetThrottle(uint64, float)", ENJIN_AS_FN(WaterVehicle_SetThrottle), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float WaterVehicle_GetThrottle(uint64)", ENJIN_AS_FN(WaterVehicle_GetThrottle), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void WaterVehicle_SetRudder(uint64, float)", ENJIN_AS_FN(WaterVehicle_SetRudder), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float WaterVehicle_GetRudder(uint64)", ENJIN_AS_FN(WaterVehicle_GetRudder), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float WaterVehicle_GetHeading(uint64)", ENJIN_AS_FN(WaterVehicle_GetHeading), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void WaterVehicle_SetHeading(uint64, float)", ENJIN_AS_FN(WaterVehicle_SetHeading), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float WaterVehicle_GetSpeedThroughWater(uint64)", ENJIN_AS_FN(WaterVehicle_GetSpeedThroughWater), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float WaterVehicle_GetSpeedOverGround(uint64)", ENJIN_AS_FN(WaterVehicle_GetSpeedOverGround), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float WaterVehicle_GetHeel(uint64)", ENJIN_AS_FN(WaterVehicle_GetHeel), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float WaterVehicle_GetLeeway(uint64)", ENJIN_AS_FN(WaterVehicle_GetLeeway), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool WaterVehicle_IsPlaning(uint64)", ENJIN_AS_FN(WaterVehicle_IsPlaning), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("Vector3 WaterVehicle_GetForward(uint64)", ENJIN_AS_FN(WaterVehicle_GetForward), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("Vector3 WaterVehicle_GetVelocity(uint64)", ENJIN_AS_FN(WaterVehicle_GetVelocity), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void WaterVehicle_SetHullSpeed(uint64, float)", ENJIN_AS_FN(WaterVehicle_SetHullSpeed), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float WaterVehicle_GetHullSpeed(uint64)", ENJIN_AS_FN(WaterVehicle_GetHullSpeed), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void WaterVehicle_SetLateralGrip(uint64, float)", ENJIN_AS_FN(WaterVehicle_SetLateralGrip), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void WaterVehicle_SetRighting(uint64, float)", ENJIN_AS_FN(WaterVehicle_SetRighting), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void WaterVehicle_SetMaxThrust(uint64, float)", ENJIN_AS_FN(WaterVehicle_SetMaxThrust), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool WaterVehicle_Has(uint64)", ENJIN_AS_FN(WaterVehicle_Has), ENJIN_AS_CALL_CDECL));
 
     // Virtual Camera system — Tier 2 (directed) + Tier 3 (manual token)
     AS_CHECK(engine->RegisterGlobalFunction("bool Camera_HasVCam(uint64)", ENJIN_AS_FN(Camera_HasVCam), ENJIN_AS_CALL_CDECL));
