@@ -1,5 +1,6 @@
 #include "Enjin/Scripting/ScriptBindings.h"
 #include "Enjin/Scripting/ASCallConv.h"
+#include "Enjin/ECS/CameraMath.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Math/Vector.h"
 #include "Enjin/ECS/World.h"
@@ -113,23 +114,22 @@ static bool Physics_RaycastHit(const Vector3& origin, const Vector3& direction,
 // camera and return the first entity hit (0 = nothing). Pair with Input_GetMousePosition
 // for "is the cursor over this object" gameplay (hover-to-open, click-to-use).
 static u64 Physics_RaycastScreen(f32 screenX, f32 screenY) {
-#ifndef ENJIN_PLATFORM_WEB
+    // Through ECS::ScreenToRayVP, which lives in the Engine module. This used
+    // to call Editor::ScenePicker, and the web build excludes the Editor
+    // module -- so on web this function returned "nothing hit" unconditionally
+    // and every click-to-pick game was dead in the browser.
     if (!s_BindingsPhysics || !s_BindingsRenderCamera) return 0;
-    Editor::Ray r = Editor::ScenePicker::ScreenToRay(s_BindingsRenderCamera, screenX, screenY,
-                                                     s_BindingsViewW, s_BindingsViewH);
-    if (r.direction.LengthSquared() < 1e-12f) return 0;
+    Math::Vector3 origin, dir;
+    if (!ECS::ScreenToRayVP(s_BindingsRenderCamera->GetViewProjectionMatrix(),
+                            Vector2(screenX, screenY),
+                            s_BindingsViewW, s_BindingsViewH, origin, dir)) {
+        return 0;
+    }
     Physics::Ray pr;
-    pr.origin = r.origin;
-    pr.direction = r.direction.Normalized();
+    pr.origin = origin;
+    pr.direction = dir;
     Physics::RaycastHit hit = s_BindingsPhysics->Raycast(pr, 1000.0f);
     return hit.hit ? static_cast<u64>(hit.entity) : 0;
-#else
-    // ScenePicker lives in the Editor module, which the web build excludes —
-    // linking it here broke the web player (found 2026-08-28). Scripts get a
-    // clean "nothing hit" until a web-side ray builder exists.
-    (void)screenX; (void)screenY;
-    return 0;
-#endif
 }
 
 // Engine-side entry for the same pick (mouse-hover script callbacks). Lives here
@@ -140,6 +140,50 @@ u64 Enjin::Scripting::BindingsPickEntityAtScreen(f32 screenX, f32 screenY) {
 
 static Vector2 Input_GetScreenSize() {
     return Vector2(s_BindingsViewW, s_BindingsViewH);
+}
+
+// ---------------------------------------------------------------------------
+// Screen <-> world.
+//
+// The engine has always held the projection matrix and never exposed this, so
+// a 2D game had to reimplement orthographic unprojection in script from the
+// screen size plus a hand-copied camera orthoSize. That duplicates the
+// camera's size into a second file: change it in the scene and every click
+// lands on the wrong place, with nothing on screen to say why.
+// ---------------------------------------------------------------------------
+
+// The world point under a screen pixel, on the z = 0 plane. This is the 2D
+// case -- a board, a card field, a tilemap.
+static Vector3 Camera_ScreenToWorld(u64 cameraEntity, const Vector2& screen) {
+    Math::Vector3 out(0.0f, 0.0f, 0.0f);
+    if (!s_BindingsWorld) return out;
+    ECS::ScreenToWorldOnPlane(s_BindingsWorld, static_cast<ECS::Entity>(cameraEntity),
+                              screen, s_BindingsViewW, s_BindingsViewH, 0.0f, out);
+    return out;
+}
+
+// The same against any plane of constant Z, for a board that does not sit at
+// the origin.
+static Vector3 Camera_ScreenToWorldOnPlane(u64 cameraEntity, const Vector2& screen, f32 planeZ) {
+    Math::Vector3 out(0.0f, 0.0f, 0.0f);
+    if (!s_BindingsWorld) return out;
+    ECS::ScreenToWorldOnPlane(s_BindingsWorld, static_cast<ECS::Entity>(cameraEntity),
+                              screen, s_BindingsViewW, s_BindingsViewH, planeZ, out);
+    return out;
+}
+
+// Where a world point lands on screen, in pixels from the top-left. Returns
+// (-1, -1) when the point is behind the camera, which a caller must be able to
+// tell from a real position -- pinning a label to something behind you would
+// otherwise look like a valid answer.
+static Vector2 Camera_WorldToScreen(u64 cameraEntity, const Vector3& worldPoint) {
+    Math::Vector2 out(-1.0f, -1.0f);
+    if (!s_BindingsWorld) return out;
+    if (!ECS::WorldToScreen(s_BindingsWorld, static_cast<ECS::Entity>(cameraEntity),
+                            worldPoint, s_BindingsViewW, s_BindingsViewH, out)) {
+        return Math::Vector2(-1.0f, -1.0f);
+    }
+    return out;
 }
 
 static bool Physics_CheckSphere(const Vector3& center, f32 radius) {
@@ -474,6 +518,16 @@ void RegisterPhysicsBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction(
         "Vector2 Input_GetScreenSize()",
         ENJIN_AS_FN(Input_GetScreenSize), ENJIN_AS_CALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "Vector3 Camera_ScreenToWorld(uint64 camera, const Vector2 &in screen)",
+        ENJIN_AS_FN(Camera_ScreenToWorld), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "Vector3 Camera_ScreenToWorldOnPlane(uint64 camera, const Vector2 &in screen, float planeZ)",
+        ENJIN_AS_FN(Camera_ScreenToWorldOnPlane), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "Vector2 Camera_WorldToScreen(uint64 camera, const Vector3 &in worldPoint)",
+        ENJIN_AS_FN(Camera_WorldToScreen), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool Physics_CheckSphere(const Vector3 &in, float)",
