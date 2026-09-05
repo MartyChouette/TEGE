@@ -39,9 +39,21 @@ public:
     static constexpr u32 kAtlasSize = 1024;
 
     // fontFileData = a complete TTF/OTF in memory (the caller resolves paths /
-    // the embedded default, same as TextRasterizer). Bakes ASCII 32..126 and
-    // Latin-1 160..255. Returns false on font-parse failure.
-    bool Build(const u8* fontFileData, usize fontFileSize);
+    // the embedded default, same as TextRasterizer). Returns false on
+    // font-parse failure.
+    //
+    // Always bakes ASCII 32..126 and Latin-1 160..255, then `extraCodepoints`
+    // on top.
+    //
+    // The extras exist because baking every codepoint a font HAS does not fit.
+    // At kBasePx with kPadding a glyph occupies roughly 64x64 in a 1024 atlas,
+    // so about 250 fit at all -- ASCII plus Latin-1 is already 191, and adding
+    // the whole Cyrillic block would overflow and drop glyphs on the floor.
+    // What a project actually USES is far smaller than what its font can
+    // express: a Russian game needs 66 letters, not the 255-codepoint block.
+    // So the caller passes the codepoints its strings contain.
+    bool Build(const u8* fontFileData, usize fontFileSize,
+               const std::vector<u32>& extraCodepoints = std::vector<u32>());
 
     bool IsBuilt() const { return m_Built; }
     const Glyph* Find(u32 codepoint) const {
@@ -68,9 +80,33 @@ public:
     // the shared white atlas tints per-entity with one material.
     ECS::MeshComponent BuildTextMesh(const ECS::TextComponent& tc) const;
 
+    // Where a character sits, in the same local space BuildTextMesh emits into
+    // (block top-left at the origin, +x right, lines descending -y). Pass the
+    // codepoint index; index >= the string length answers with the pen at the
+    // end of the last line, which is where a caret belongs after the last
+    // character. Without this every caller re-derives font metrics by hand -
+    // Ink Ribbon carried `charW = worldHeight * 1229/2320` as a magic number in
+    // two languages to place one caret.
+    Math::Vector3 MeasureTo(const ECS::TextComponent& tc, i32 codepointIndex) const;
+
     ~FontAtlas();
 
 private:
+    // One laid-out character: which codepoint, where it came from in the source
+    // string (so runs and revealCount address it), and where the pen was.
+    static constexpr usize kNoSource = static_cast<usize>(-1);   // end-of-line sentinel
+    struct Placed {
+        u32 cp = 0;
+        usize src = 0;
+        f32 penX = 0.0f;
+        f32 baselineY = 0.0f;
+    };
+    // The single layout pass every consumer reads. `world` converts layout
+    // pixels to world units; `lineTop` is the ascent offset that puts a line's
+    // TOP at its baseline row, for callers that want the block-top anchor.
+    bool LayoutText(const ECS::TextComponent& tc, std::vector<Placed>& out,
+                    f32& world, f32& lineTop) const;
+
     bool m_Built = false;
     std::unordered_map<u32, Glyph> m_Glyphs;
     std::vector<u8> m_Pixels;

@@ -96,6 +96,7 @@ Renderer::SkyboxConfig RenderSystem::WeatherSky(const Renderer::SkyboxConfig& cf
 #include "Enjin/Effects/Weather.h"        // weather particle draw
 #include "Enjin/Effects/ElementalSystem.h" // elemental (fire/water/etc) particle draw — web + desktop
 #include "Enjin/Accessibility/TextFont.h"  // the one font-choice resolver
+#include "Enjin/Renderer/TextCodepointSet.h"
 #include "Enjin/Build/AssetReader.h"
 #include "Enjin/Math/Math.h"
 #include <algorithm>
@@ -1491,8 +1492,11 @@ Renderer::GPUTextureHandle RenderSystem::WebGetOrLoadTexture(const std::string& 
 // bind picks it up by baseColorTexturePath. Returns null if the font fails.
 Renderer::FontAtlas* RenderSystem::WebGetOrBuildFontAtlas(const std::string& fontPath, std::string& outCacheKey) {
     // The GPU texture cache is keyed off this string too, so the accessibility
-    // choice has to be in it or a toggle keeps sampling the old atlas.
-    const std::string sdfKey = Accessibility::FontCacheKey(fontPath);
+    // choice has to be in it or a toggle keeps sampling the old atlas. Same for
+    // the project's codepoint set: a locale change is a different atlas.
+    const std::vector<u32> extraCodepoints = Renderer::CollectProjectCodepoints(m_World);
+    const std::string sdfKey = Accessibility::FontCacheKey(fontPath) +
+                               "#cp" + std::to_string(Renderer::HashCodepoints(extraCodepoints));
     outCacheKey = "__sdf__" + sdfKey;
     auto it = m_WebSDFFonts.find(sdfKey);
     if (it == m_WebSDFFonts.end()) {
@@ -1515,7 +1519,7 @@ Renderer::FontAtlas* RenderSystem::WebGetOrBuildFontAtlas(const std::string& fon
             if (!fileData.empty()) { bytes = fileData.data(); size = fileData.size(); }
         }
         auto atlas = std::make_unique<Renderer::FontAtlas>();
-        if (bytes && atlas->Build(bytes, size)) {
+        if (bytes && atlas->Build(bytes, size, extraCodepoints)) {
             auto* texMgr = m_Renderer->GetTextureManager();
             Renderer::GPUTextureDesc desc;
             desc.width = atlas->Width();
@@ -3832,6 +3836,7 @@ void RenderSystem::SetUpscalerQuality(u32 quality) { m_UpscalerQuality = quality
 #include <fstream>
 #include <unordered_set>
 #include "Enjin/Accessibility/TextFont.h"  // the one font-choice resolver
+#include "Enjin/Renderer/TextCodepointSet.h"
 
 namespace Enjin {
 namespace ECS {
@@ -4854,9 +4859,14 @@ Math::Vector3 RenderSystem::MeasureTextTo(Entity entity, i32 codepointIndex) {
 }
 
 Renderer::FontAtlas* RenderSystem::GetOrBuildFontAtlas(const std::string& fontPath, Renderer::Texture** outTexture) {
-    // Keyed by the accessibility font choice too, so toggling it rebuilds
-    // rather than returning the atlas baked in the previous face.
-    const std::string sdfKey = Accessibility::FontCacheKey(fontPath);
+    // Keyed by the accessibility font choice AND by which codepoints this
+    // project uses. Two different character sets against one font path are two
+    // different atlases; without the set in the key the first one baked would
+    // be handed back forever, and switching locale would look like it did
+    // nothing at all.
+    const std::vector<u32> extraCodepoints = Renderer::CollectProjectCodepoints(m_World);
+    const std::string sdfKey = Accessibility::FontCacheKey(fontPath) +
+                               "#cp" + std::to_string(Renderer::HashCodepoints(extraCodepoints));
     auto it = m_SDFFonts.find(sdfKey);
     if (it == m_SDFFonts.end()) {
         SDFFont entry;
@@ -4905,7 +4915,7 @@ Renderer::FontAtlas* RenderSystem::GetOrBuildFontAtlas(const std::string& fontPa
             }
         }
         auto atlas = std::make_unique<Renderer::FontAtlas>();
-        if (bytes && atlas->Build(bytes, size) && m_VulkanRenderer) {
+        if (bytes && atlas->Build(bytes, size, extraCodepoints) && m_VulkanRenderer) {
             auto tex = std::make_shared<Renderer::Texture>(m_VulkanRenderer->GetContext());
             if (tex->CreateFromData(atlas->Pixels().data(), atlas->Width(), atlas->Height(), 4)) {
                 if (m_BindlessManager) {
