@@ -2,7 +2,26 @@
 
 This document captures detailed technical plans, performance findings, and strategic initiatives identified through codebase audits. It complements CLAUDE.md's feature roadmap with implementation-specific details.
 
-## Status Summary (2026-04-12)
+## Status Summary
+
+> **Read this first.** The tables below are kept current; this summary is the
+> part that goes stale, so it carries its own date. Last reconciled against the
+> tree on **2026-09-05**.
+>
+> Windows and Linux both build and ship; the Linux CI job runs the full suite,
+> a lavapipe render smoke, and an exported-game boot on every push. Web is a
+> real target, not a demo: PBR, shadows, particles, vegetation, weather,
+> inverted-hull outlines, weighted-blended OIT and a depth-driven post-process
+> pass all run in the browser. Ray tracing displays end to end on desktop.
+> Of the ten flagship initiatives, four have shipped (replays, MCP server,
+> per-style splash, Linux), one is held by choice (#6 web share, no
+> commercial-platform branding), and five have not started.
+>
+> The four platform tracks that have not started - Steam, Steam Deck, VR/XR/AR,
+> mobile - share one prerequisite: the renderer assumes a single view and
+> projection. Doing the multiview refactor once unblocks three of them.
+
+### Superseded summary (2026-04-12)
 
 **210+ features complete.** Full engine audit completed 2026-04-12 — 55 findings across memory safety, thread safety, Vulkan renderer, security, logic, and performance (see `docs/AUDIT_2026_04_12.md`). 5 critical/high fixes applied: VulkanImage staging buffer copy (textures were never transferred to GPU), atomic ECS component type IDs, audio channel thread safety (mutex on all m_Channels access), command injection removal (system() → fork/exec), cascade shadow stagger fix. 7 initially flagged issues verified as false positives (existing guards already sufficient). Full record & rewind system (per-entity Braid-style + scene-wide Sands of Time-style) with delta compression, ring buffers, physics sync, editor timeline scrubber, and 11 AngelScript bindings. Dialogue-to-gameplay integration — 3 new dialogue node types (QuestAction, PlayCinematic, SetGameFlag) let designers wire narrative → quest → cinematic without visual script glue. Condition nodes can check quest status and game flags. In-editor dialogue preview. Per-entity wireframe overlay. Accessible bone rig editing — auto-detected body regions (face, hands, spine, etc.), hierarchical bone tree, pose library for saving expressions/gestures, 15px pick threshold for dense clusters. Import robustness — mesh validation (NaN fix, degenerate triangle detection, bone weight normalization, scale sanity), vertex colors from FBX/glTF, glTF matrix decomposition, import result dialog with undo, structured validation report. Animation editor UX — visual timeline ruler with click-to-seek events, 1D blend tree axis visualization, onion skin opacity preview strip, tooltips on all controls. 82/82 tests passing.
 
@@ -21,7 +40,7 @@ This document captures detailed technical plans, performance findings, and strat
 | ~~**Art Styles**~~ | ~~Analog/Degraded Polish — film gate weave, light leaks, tape dropout~~ | ~~P0~~ DONE |
 | ~~**Art Styles**~~ | ~~Art Style Presets — editor dropdown (7 presets)~~ | ~~P0~~ DONE |
 | **Renderer** | Reflection Probes — box projection, baked cubemaps (6-face + prefiltered mips), roughness glossy sampling, and PBR specular IBL done. SSR done in the post-process pass (editor + web); exported-desktop SSR waits on the disabled offscreen target being fixed (same blocker as the other post effects) | P1 IN PROGRESS |
-| **Renderer (Web)** | Web post-process port — ~16 effects now run in the WebGPU inline PP pass (tonemap, bloom, FXAA, colorblind, brightness/contrast, saturation, color filter, gamma, vignette, chromatic aberration, color quant, film grain, CRT scanlines, ordered dither, stipple, color-space AO). GI parity via hemispheric sky-dome ambient (active on any sky-configured scene). BLOCKED: depth-accurate PP (real SSAO/DoF/cel-outline/god-rays/tilt-shift) needs a sampleable depth buffer — web scene depth is 4× MSAA and the renderer bind abstraction can't bind a multisampled or unfilterable-float texture; needs a depth pre-pass or abstraction work. LUT/light-leak/palette-lock need new SceneRenderSettings fields | P1 IN PROGRESS |
+| **Renderer (Web)** | Web post-process port — ~16 effects now run in the WebGPU inline PP pass (tonemap, bloom, FXAA, colorblind, brightness/contrast, saturation, color filter, gamma, vignette, chromatic aberration, color quant, film grain, CRT scanlines, ordered dither, stipple, color-space AO). GI parity via hemispheric sky-dome ambient (active on any sky-configured scene). UNBLOCKED 2026-09-05: the 4x MSAA that made scene depth unbindable came off on 09-03, so the depth buffer is a plain single-sample texture. It now carries TextureBinding usage and a depth-aspect view bound to the PP pass as texture_depth_2d (read with textureLoad, no sampler). SSAO is now REAL depth occlusion rather than the luminance approximation it shipped as, and the cel outline (Sobel on linear depth) is live off the celOutline* fields that were already in SceneRenderSettings and inert on web. DoF, god rays and tilt-shift are now unblocked and unbuilt. LUT/light-leak/palette-lock need new SceneRenderSettings fields | P1 IN PROGRESS |
 | ~~**Gameplay**~~ | ~~Dynamic Difficulty — read player stats (health, deaths, time, accuracy) + difficulty setting to auto-adjust AI aggression, damage, resources, hints~~ | ~~P1~~ DONE |
 | **Renderer** | ReSTIR — Reservoir-based light sampling (DI + temporal + spatial reuse complete, rt_shadow ReSTIR consumption done, settings serialization done, integrated into main pipeline) | P1 IN PROGRESS |
 | **Renderer** | Temporal RT Reuse — reprojection + history blend for shadow/AO/reflect/GI done, confidence map done, denoiser-aware feedback pending | P2 |

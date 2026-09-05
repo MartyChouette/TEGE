@@ -1,5 +1,15 @@
 # TEGE Master Plan
 
+> **Both release gates in this document have expired.** Reviewed 2026-09-05.
+> Gate A was 0.9.7 "this week"; gate B was 0.9.8 "before Pitch Day (Sep 3)".
+> The dates are past and the plan was not re-cut.
+>
+> What is still live here is the *content*, not the schedule: the RT status
+> section, the known gaps to encode, the earmarked latent bugs, and the
+> template QA risk (16 templates, most still untested - the largest
+> user-facing risk for anyone downloading a release). Those belong in
+> `ROADMAP.md` and a backlog; this file should not be read as a timetable.
+
 Living document. Master list of all known unfinished work, ordered to carry 0.9.7 to release and then to 1.0.
 Compiled 2026-08-06 from the full audit backlog (2026-03-14), the whole-engine review (2026-07-17), all session earmarks, and the RT/settings campaigns of 2026-08-03 through 08-06.
 Last updated 2026-08-06 (evening): RT batch committed and pushed through `d53f464`; the mixed-RT set is functionally complete.

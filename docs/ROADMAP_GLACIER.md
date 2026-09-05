@@ -1,5 +1,17 @@
 # Glacier-Inspired Long-Term Engine Roadmap
 
+> **Status: UNOWNED, and this document tracks nothing.** Reviewed 2026-09-05.
+> Eight phases, week estimates, and a dependency graph, with no status marker
+> anywhere in the file - it cannot tell you what is done, in flight, or
+> abandoned. That matters now because the engine has overtaken parts of it:
+> Phase 5 (volumetric fog) and Phase 6 (GPU particles + lighting integration)
+> both have shipped work, and this plan does not know.
+>
+> Treat it as a research direction rather than a schedule. Before starting any
+> phase, check the current state of that system first - two separate audits
+> this year produced work that was already finished because a list was trusted
+> over the code.
+
 ## Context
 
 After analyzing IO Interactive's Glacier engine advances (Digital Foundry interview, 007 First Light), this plan addresses 8 major capability gaps in Enjin. The goal: bring Enjin's rendering, streaming, ECS, animation, and editor architecture to the same caliber as a AAA in-house engine — while maintaining the cross-platform story (Vulkan + WebGPU + future Metal) and the "120 FPS No Matter What" pillar.
