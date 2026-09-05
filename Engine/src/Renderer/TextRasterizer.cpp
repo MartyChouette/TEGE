@@ -2,6 +2,7 @@
 #include <stb_truetype.h>
 
 #include "Enjin/Renderer/TextRasterizer.h"
+#include "Enjin/Renderer/TextEncoding.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Accessibility/TextFont.h"  // bundled default font (embedded bytes)
 #include "Enjin/Assets/MeshAssetCache.h"           // game-root resolution for relative font paths
@@ -142,22 +143,28 @@ std::vector<u8> TextRasterizer::Rasterize(const ECS::TextComponent& textComp) {
     if (maxWidth <= 0.0f) maxWidth = static_cast<f32>(width) - padX * 2.0f;
 
     // Split text into lines, then word-wrap each line
+    // Layout runs over CODEPOINTS. This used to walk the std::string a byte at
+    // a time and pass each one to stb_truetype as a codepoint -- and `char` is
+    // signed on MSVC, so every byte above 0x7F arrived NEGATIVE and drew
+    // nothing at all. Accented and localised text was unrenderable here.
+    const std::vector<u32> allCps = DecodeUTF8All(textComp.text);
+
     struct TextLine {
-        std::string text;
+        std::vector<u32> cps;
         f32 width;
     };
     std::vector<TextLine> lines;
 
     // Split by newlines first
-    std::vector<std::string> paragraphs;
+    std::vector<std::vector<u32>> paragraphs;
     {
-        std::string paragraph;
-        for (char c : textComp.text) {
-            if (c == '\n') {
+        std::vector<u32> paragraph;
+        for (u32 cp : allCps) {
+            if (cp == 10u) {                 // newline
                 paragraphs.push_back(paragraph);
                 paragraph.clear();
             } else {
-                paragraph += c;
+                paragraph.push_back(cp);
             }
         }
         paragraphs.push_back(paragraph);
@@ -166,22 +173,22 @@ std::vector<u8> TextRasterizer::Rasterize(const ECS::TextComponent& textComp) {
     // Word-wrap each paragraph
     for (const auto& para : paragraphs) {
         if (para.empty()) {
-            lines.push_back({"", 0.0f});
+            lines.push_back(TextLine{ std::vector<u32>(), 0.0f });
             continue;
         }
 
         // Split into words
-        std::vector<std::string> words;
+        std::vector<std::vector<u32>> words;
         {
-            std::string word;
-            for (char c : para) {
-                if (c == ' ' || c == '\t') {
+            std::vector<u32> word;
+            for (u32 cp : para) {
+                if (cp == 32u || cp == 9u) {          // space or tab
                     if (!word.empty()) {
                         words.push_back(word);
                         word.clear();
                     }
                 } else {
-                    word += c;
+                    word.push_back(cp);
                 }
             }
             if (!word.empty()) {
@@ -189,7 +196,7 @@ std::vector<u8> TextRasterizer::Rasterize(const ECS::TextComponent& textComp) {
             }
         }
 
-        std::string currentLine;
+        std::vector<u32> currentLine;
         f32 currentWidth = 0.0f;
 
         // Measure space width
@@ -202,10 +209,11 @@ std::vector<u8> TextRasterizer::Rasterize(const ECS::TextComponent& textComp) {
             f32 wordWidth = 0.0f;
             for (usize i = 0; i < word.size(); i++) {
                 int advance, lsb;
-                stbtt_GetCodepointHMetrics(&font, word[i], &advance, &lsb);
+                stbtt_GetCodepointHMetrics(&font, static_cast<int>(word[i]), &advance, &lsb);
                 wordWidth += advance * scale;
                 if (i + 1 < word.size()) {
-                    int kern = stbtt_GetCodepointKernAdvance(&font, word[i], word[i + 1]);
+                    int kern = stbtt_GetCodepointKernAdvance(&font, static_cast<int>(word[i]),
+                                                             static_cast<int>(word[i + 1]));
                     wordWidth += kern * scale;
                 }
             }
@@ -223,10 +231,10 @@ std::vector<u8> TextRasterizer::Rasterize(const ECS::TextComponent& textComp) {
                 currentWidth = wordWidth;
             } else {
                 if (!currentLine.empty()) {
-                    currentLine += ' ';
+                    currentLine.push_back(32u);
                     currentWidth += spaceWidth;
                 }
-                currentLine += word;
+                currentLine.insert(currentLine.end(), word.begin(), word.end());
                 currentWidth += wordWidth;
             }
         }
@@ -238,7 +246,7 @@ std::vector<u8> TextRasterizer::Rasterize(const ECS::TextComponent& textComp) {
     f32 cursorY = padY + scaledAscent;
 
     for (const auto& line : lines) {
-        if (line.text.empty()) {
+        if (line.cps.empty()) {
             cursorY += scaledLineHeight;
             continue;
         }
@@ -252,8 +260,8 @@ std::vector<u8> TextRasterizer::Rasterize(const ECS::TextComponent& textComp) {
         }
 
         // Render each character
-        for (usize i = 0; i < line.text.size(); i++) {
-            int ch = line.text[i];
+        for (usize i = 0; i < line.cps.size(); i++) {
+            const int ch = static_cast<int>(line.cps[i]);
 
             // Get glyph bitmap
             int x0, y0, x1, y1;
@@ -300,8 +308,8 @@ std::vector<u8> TextRasterizer::Rasterize(const ECS::TextComponent& textComp) {
             cursorX += advance * scale;
 
             // Kerning
-            if (i + 1 < line.text.size()) {
-                int kern = stbtt_GetCodepointKernAdvance(&font, ch, line.text[i + 1]);
+            if (i + 1 < line.cps.size()) {
+                int kern = stbtt_GetCodepointKernAdvance(&font, ch, static_cast<int>(line.cps[i + 1]));
                 cursorX += kern * scale;
             }
         }

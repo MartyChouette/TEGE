@@ -1,7 +1,10 @@
 #include "EnjinTest.h"
 #include "Enjin/Renderer/FontAtlas.h"
 #include "Enjin/Accessibility/OpenDyslexicFont.h"
+#include "Enjin/ECS/Components/Text.h"
+#include "Enjin/ECS/Components/Mesh.h"
 #include <algorithm>
+#include <cmath>
 
 using namespace Enjin;
 using namespace Enjin::Renderer;
@@ -119,6 +122,150 @@ ENJIN_TEST(FontAtlas, BuildsTextMesh) {
     for (const auto& v : wrapped.vertices) wrapMinY = std::min(wrapMinY, v.position.y);
     for (const auto& v : flat.vertices) flatMinY = std::min(flatMinY, v.position.y);
     ENJIN_EXPECT_TRUE(wrapMinY < flatMinY - 0.1f);
+}
+
+
+// ---------------------------------------------------------------------------
+// UTF-8. Layout used to index tc.text a BYTE at a time and treat each byte as
+// a codepoint, so every character above U+007F became two or more garbage
+// glyphs -- accented text rendered as mojibake. Latin-1 is baked into the
+// atlas BY CODEPOINT, so the right glyph was present the whole time and only
+// the lookup was wrong. This also blocks localisation outright.
+//
+// Every string under test is built from explicit BYTE VALUES rather than a
+// source literal: a literal has to survive this file's own encoding, and one
+// that is silently re-encoded would leave the test passing against the wrong
+// input.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+std::string U8(std::initializer_list<int> bytes) {
+    std::string out;
+    for (int b : bytes) out.push_back(static_cast<char>(static_cast<unsigned char>(b)));
+    return out;
+}
+
+// U+00E9 LATIN SMALL LETTER E WITH ACUTE: two bytes, one character, one glyph.
+const std::string& EAcute() { static const std::string s = U8({0xC3, 0xA9}); return s; }
+
+Enjin::ECS::TextComponent MakeText(const std::string& body) {
+    Enjin::ECS::TextComponent tc;
+    tc.text = body;
+    tc.sdfText = true;
+    tc.wrapWidth = 0.0f;       // no wrapping: one line, so quads == visible glyphs
+    tc.fontSize = 32.0f;
+    tc.worldHeight = 0.5f;
+    return tc;
+}
+
+// One quad is four vertices, so this is the number of VISIBLE glyphs laid out.
+usize GlyphCount(const Enjin::ECS::MeshComponent& m) { return m.vertices.size() / 4; }
+
+FontAtlas& SharedAtlas() {
+    static FontAtlas atlas;
+    static bool built = atlas.Build(Accessibility::s_OpenDyslexicFontData,
+                                    Accessibility::s_OpenDyslexicFontDataSize);
+    (void)built;
+    return atlas;
+}
+
+} // namespace
+
+ENJIN_TEST(FontAtlas, TheAtlasBakesLatin1ByCodepoint) {
+    // Arrange / Act / Assert: the premise of everything below -- the accented
+    // glyph really is in the atlas, so any failure to draw it is a LOOKUP bug.
+    FontAtlas& atlas = SharedAtlas();
+    ENJIN_ASSERT_TRUE(atlas.IsBuilt());
+    const FontAtlas::Glyph* g = atlas.Find(0x00E9u);
+    ENJIN_ASSERT_TRUE(g != nullptr);
+    ENJIN_EXPECT_TRUE(g->w > 0.0f && g->h > 0.0f);
+}
+
+ENJIN_TEST(FontAtlas, AnAccentedWordLaysOutOneGlyphPerCharacter) {
+    // Arrange: "cafe" with an acute is FIVE bytes but FOUR characters. Byte
+    // indexing laid out five quads, the last two of them garbage.
+    FontAtlas& atlas = SharedAtlas();
+    ENJIN_ASSERT_TRUE(atlas.IsBuilt());
+    const std::string accented = "caf" + EAcute();
+    ENJIN_ASSERT_TRUE(accented.size() == 5);      // the premise: 5 bytes, 4 chars
+
+    // Act
+    const Enjin::ECS::MeshComponent plain = atlas.BuildTextMesh(MakeText("cafe"));
+    const Enjin::ECS::MeshComponent acc   = atlas.BuildTextMesh(MakeText(accented));
+
+    // Assert
+    ENJIN_EXPECT_TRUE(GlyphCount(plain) == 4);
+    ENJIN_EXPECT_TRUE(GlyphCount(acc) == 4);
+}
+
+ENJIN_TEST(FontAtlas, TheAccentedQuadSamplesTheRectBakedForThatCodepoint) {
+    // Arrange: counting quads alone would also pass if layout silently DROPPED
+    // both bytes. The quad has to sample the atlas rect baked for U+00E9.
+    FontAtlas& atlas = SharedAtlas();
+    ENJIN_ASSERT_TRUE(atlas.IsBuilt());
+    const FontAtlas::Glyph* g = atlas.Find(0x00E9u);
+    ENJIN_ASSERT_TRUE(g != nullptr);
+
+    // Act: the accented character alone, so its quad is the only one.
+    const Enjin::ECS::MeshComponent m = atlas.BuildTextMesh(MakeText(EAcute()));
+
+    // Assert
+    ENJIN_ASSERT_TRUE(GlyphCount(m) == 1);
+    bool sawU0 = false, sawU1 = false;
+    for (const auto& v : m.vertices) {
+        if (std::fabs(v.uv.x - g->u0) < 1e-5f) sawU0 = true;
+        if (std::fabs(v.uv.x - g->u1) < 1e-5f) sawU1 = true;
+    }
+    ENJIN_EXPECT_TRUE(sawU0 && sawU1);
+}
+
+ENJIN_TEST(FontAtlas, AsciiLayoutIsUnchangedByTheDecoder) {
+    // Arrange: the decoder must be a no-op for plain ASCII, which is what
+    // every scene authored so far contains.
+    FontAtlas& atlas = SharedAtlas();
+    ENJIN_ASSERT_TRUE(atlas.IsBuilt());
+
+    // Act
+    const Enjin::ECS::MeshComponent m = atlas.BuildTextMesh(MakeText("Hello World"));
+
+    // Assert: eleven characters, the space baking no quad.
+    ENJIN_EXPECT_TRUE(GlyphCount(m) == 10);
+}
+
+ENJIN_TEST(FontAtlas, MalformedUTF8TerminatesInsteadOfHanging) {
+    // Arrange: a lone continuation byte, and a two-byte lead truncated at the
+    // end of the string. A decoder that consumed ZERO bytes on bad input would
+    // spin forever, so reaching the assertions at all is half the test.
+    FontAtlas& atlas = SharedAtlas();
+    ENJIN_ASSERT_TRUE(atlas.IsBuilt());
+    const std::string lone      = U8({'a', 0x80, 'b'});
+    const std::string truncated = U8({'a', 'b', 0xC3});
+
+    // Act
+    const Enjin::ECS::MeshComponent a = atlas.BuildTextMesh(MakeText(lone));
+    const Enjin::ECS::MeshComponent b = atlas.BuildTextMesh(MakeText(truncated));
+
+    // Assert: the well-formed characters still laid out either side of the bad byte.
+    ENJIN_EXPECT_TRUE(GlyphCount(a) >= 2);
+    ENJIN_EXPECT_TRUE(GlyphCount(b) == 2);
+}
+
+ENJIN_TEST(FontAtlas, WordWrapMeasuresCharactersNotBytes) {
+    // Arrange: wrap width is measured from glyph advances. Byte indexing made
+    // an accented word measure wider than it draws, so lines broke early.
+    FontAtlas& atlas = SharedAtlas();
+    ENJIN_ASSERT_TRUE(atlas.IsBuilt());
+    const std::string e = EAcute();
+    const std::string accented = e + e + e + e + " " + e + e + e + e;
+
+    // Act
+    const Enjin::ECS::MeshComponent a = atlas.BuildTextMesh(MakeText("aaaa aaaa"));
+    const Enjin::ECS::MeshComponent b = atlas.BuildTextMesh(MakeText(accented));
+
+    // Assert: eight visible glyphs each, whatever their byte lengths.
+    ENJIN_EXPECT_TRUE(GlyphCount(a) == 8);
+    ENJIN_EXPECT_TRUE(GlyphCount(b) == 8);
 }
 
 ENJIN_TEST_MAIN()

@@ -1,10 +1,12 @@
 #include "Enjin/Renderer/FontAtlas.h"
+#include "Enjin/Renderer/TextEncoding.h"
 #include "Enjin/Logging/Log.h"
 
 #include <stb_truetype.h>
 
 #include <algorithm>
 #include <cstring>
+#include <vector>
 
 namespace Enjin {
 namespace Renderer {
@@ -125,39 +127,46 @@ ECS::MeshComponent FontAtlas::BuildTextMesh(const ECS::TextComponent& tc) const 
     const f32 world = (tc.worldHeight > 0.0f ? tc.worldHeight : 0.5f) / lineHeightPx;
     const f32 wrapPx = tc.wrapWidth > 0.0f ? tc.wrapWidth : 0.0f;
 
-    // Pass 1: break the text into lines (explicit \n + word wrap at wrapPx).
-    struct Line { std::string s; f32 width; };
+    // Layout runs over CODEPOINTS, never bytes. Indexing UTF-8 a byte at a
+    // time turned every character above U+007F into two or more garbage
+    // glyphs, so accented text rendered as mojibake even though Latin-1 is
+    // baked into the atlas by codepoint and the glyphs were there all along.
+    const std::vector<u32> text = DecodeUTF8All(tc.text);
+
+    // Pass 1: break the text into lines (explicit newline + word wrap at wrapPx).
+    struct Line { std::vector<u32> s; f32 width; };
     std::vector<Line> lines;
     {
-        std::string cur;
+        std::vector<u32> cur;
         f32 curW = 0.0f;
-        auto measure = [&](const std::string& s) {
+        auto measure = [&](const std::vector<u32>& cps) {
             f32 w = 0.0f;
-            for (usize i = 0; i < s.size(); ++i) {
-                const Glyph* g = Find(static_cast<u32>(static_cast<unsigned char>(s[i])));
+            for (usize i = 0; i < cps.size(); ++i) {
+                const Glyph* g = Find(cps[i]);
                 if (!g) continue;
                 w += g->xadvance * glyphScale;
-                if (i + 1 < s.size())
-                    w += Kern(static_cast<unsigned char>(s[i]), static_cast<unsigned char>(s[i + 1])) * glyphScale;
+                if (i + 1 < cps.size()) w += Kern(cps[i], cps[i + 1]) * glyphScale;
             }
             return w;
         };
+        const f32 spaceAdv = measure(std::vector<u32>{ 32u });
         auto flush = [&]() { lines.push_back({cur, curW}); cur.clear(); curW = 0.0f; };
-        std::string word;
-        for (usize i = 0; i <= tc.text.size(); ++i) {
-            char c = i < tc.text.size() ? tc.text[i] : '\n';
-            if (c == ' ' || c == '\n') {
+        std::vector<u32> word;
+        for (usize i = 0; i <= text.size(); ++i) {
+            const u32 c = (i < text.size()) ? text[i] : 10u;   // sentinel newline
+            if (c == 32u || c == 10u) {
                 if (!word.empty()) {
-                    f32 wordW = measure(word);
-                    f32 spaceW = cur.empty() ? 0.0f : measure(" ");
+                    const f32 wordW = measure(word);
+                    const f32 spaceW = cur.empty() ? 0.0f : spaceAdv;
                     if (wrapPx > 0.0f && !cur.empty() && curW + spaceW + wordW > wrapPx) flush();
-                    if (!cur.empty()) { cur += ' '; curW += measure(" "); }
-                    cur += word; curW += wordW;
+                    if (!cur.empty()) { cur.push_back(32u); curW += spaceAdv; }
+                    cur.insert(cur.end(), word.begin(), word.end());
+                    curW += wordW;
                     word.clear();
                 }
-                if (c == '\n' && i < tc.text.size()) flush();
+                if (c == 10u && i < text.size()) flush();
             } else {
-                word += c;
+                word.push_back(c);
             }
         }
         if (!cur.empty() || lines.empty()) flush();
@@ -170,8 +179,8 @@ ECS::MeshComponent FontAtlas::BuildTextMesh(const ECS::TextComponent& tc) const 
 
     // Pass 2: emit one quad per visible glyph. Bitmap space (x right, y down,
     // origin = block top-left) maps to world as (x*world, -y*world, 0).
-    mesh.vertices.reserve(tc.text.size() * 4);
-    mesh.indices.reserve(tc.text.size() * 6);
+    mesh.vertices.reserve(text.size() * 4);
+    mesh.indices.reserve(text.size() * 6);
     const Math::Vector3 normal(0.0f, 0.0f, 1.0f);
     const Math::Vector4 color(tc.textColor.x, tc.textColor.y, tc.textColor.z, 1.0f);
 
@@ -181,7 +190,7 @@ ECS::MeshComponent FontAtlas::BuildTextMesh(const ECS::TextComponent& tc) const 
         if (tc.horizontalAlign == ECS::TextAlign::Center)      penX = (maxW - line.width) * 0.5f;
         else if (tc.horizontalAlign == ECS::TextAlign::Right)  penX = maxW - line.width;
         for (usize i = 0; i < line.s.size(); ++i) {
-            u32 cp = static_cast<u32>(static_cast<unsigned char>(line.s[i]));
+            const u32 cp = line.s[i];
             const Glyph* g = Find(cp);
             if (!g) continue;
             if (g->w > 0.0f && g->h > 0.0f) {
@@ -207,8 +216,7 @@ ECS::MeshComponent FontAtlas::BuildTextMesh(const ECS::TextComponent& tc) const 
                 mesh.indices.push_back(base + 0); mesh.indices.push_back(base + 2); mesh.indices.push_back(base + 3);
             }
             penX += g->xadvance * glyphScale;
-            if (i + 1 < line.s.size())
-                penX += Kern(cp, static_cast<unsigned char>(line.s[i + 1])) * glyphScale;
+            if (i + 1 < line.s.size()) penX += Kern(cp, line.s[i + 1]) * glyphScale;
         }
         baselineY += lineHeightPx;
     }
