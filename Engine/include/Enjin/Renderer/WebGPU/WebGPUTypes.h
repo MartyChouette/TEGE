@@ -130,6 +130,23 @@ inline WGPUTextureFormat GetDepthStencilFormat() {
     return WGPUTextureFormat_Depth24PlusStencil8;
 }
 
+// The format a DEPTH-ONLY view of that texture must declare.
+//
+// A view with TextureAspect::DepthOnly is not the combined format any more, it
+// is just the depth half, and WebGPU rejects the view outright if the two
+// disagree: "view format Depth24PlusStencil8 is not compatible with
+// TextureAspect::DepthOnly of Depth24PlusStencil8 (Depth24Plus)". The rejected
+// view then invalidates the bind group that holds it, the render pass that sets
+// the bind group, and the whole frame's command buffer - so the entire scene
+// stops drawing because one sampled depth view named the wrong format.
+inline WGPUTextureFormat GetDepthOnlyViewFormat() {
+    switch (GetDepthStencilFormat()) {
+        case WGPUTextureFormat_Depth24PlusStencil8:  return WGPUTextureFormat_Depth24Plus;
+        case WGPUTextureFormat_Depth32FloatStencil8: return WGPUTextureFormat_Depth32Float;
+        default:                                     return GetDepthStencilFormat();
+    }
+}
+
 } // namespace Renderer
 } // namespace Enjin
 

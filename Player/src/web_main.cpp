@@ -288,6 +288,16 @@ public:
                                        m_InputSettings.customActions.size());
                     }
                 }
+
+                // Project render settings, for scenes that say useProjectDefaults.
+                // Only the editor honoured that flag; the runtimes applied the
+                // scene's own block, which for such a scene is stale by design.
+                if (manifest.contains("defaultRenderSettings")
+                    && manifest["defaultRenderSettings"].is_object()) {
+                    m_ProjectRenderSettings =
+                        Enjin::Renderer::DeserializeRenderSettings(manifest["defaultRenderSettings"]);
+                    m_HasProjectRenderSettings = true;
+                }
                 Enjin::InputSystem::SetTouchProjectSettings(&m_InputSettings);
                 // Project string tables + starting locale. Web has no loose
                 // files, so this MUST go through the asset reader -- the same
@@ -608,6 +618,10 @@ public:
                     Enjin::Scene::SceneSerializer serializer(m_World.get());
                     serializer.LoadFromString(sceneStr);
                     m_SceneRenderSettings = serializer.GetRenderSettings();
+                    if (m_SceneRenderSettings.useProjectDefaults && m_HasProjectRenderSettings) {
+                        m_SceneRenderSettings = m_ProjectRenderSettings;   // scene defers to the project
+                        m_SceneRenderSettings.useProjectDefaults = true;
+                    }
                     if (m_RenderSystem) m_RenderSystem->SetSkybox(serializer.GetSkyboxConfig());
                     sceneLoaded = true;
                     m_CurrentWebScenePath = m_StartScene;
@@ -627,6 +641,10 @@ public:
                     Enjin::Scene::SceneSerializer serializer(m_World.get());
                     serializer.LoadFromString(sceneStr);
                     m_SceneRenderSettings = serializer.GetRenderSettings();
+                    if (m_SceneRenderSettings.useProjectDefaults && m_HasProjectRenderSettings) {
+                        m_SceneRenderSettings = m_ProjectRenderSettings;   // scene defers to the project
+                        m_SceneRenderSettings.useProjectDefaults = true;
+                    }
                     if (m_RenderSystem) m_RenderSystem->SetSkybox(serializer.GetSkyboxConfig());
                     sceneLoaded = true;
                     ENJIN_LOG_INFO(Player, "Loaded loose scene: scene.enjin");
@@ -1862,6 +1880,10 @@ private:
         Enjin::Scene::SceneSerializer serializer(m_World.get());
         serializer.LoadFromString(sceneStr, true);   // clears the world first
         m_SceneRenderSettings = serializer.GetRenderSettings();
+        if (m_SceneRenderSettings.useProjectDefaults && m_HasProjectRenderSettings) {
+            m_SceneRenderSettings = m_ProjectRenderSettings;   // scene defers to the project
+            m_SceneRenderSettings.useProjectDefaults = true;
+        }
         if (m_RenderSystem) m_RenderSystem->SetSkybox(serializer.GetSkyboxConfig());
         ApplyWebPostProcess();
         m_CurrentWebScenePath = scenePath;
@@ -2248,6 +2270,8 @@ private:
     Enjin::Scene::SceneManager m_SceneManager;
     Enjin::Networking::NetworkSystem m_NetworkSystem;
     Enjin::Renderer::SceneRenderSettings m_SceneRenderSettings;
+    Enjin::Renderer::SceneRenderSettings m_ProjectRenderSettings;
+    bool m_HasProjectRenderSettings = false;
 
     // Build manifest
     std::string m_WindowTitle;

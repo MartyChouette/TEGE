@@ -356,7 +356,10 @@ void RenderSystem::RecreateWebSizedTargets(u32 sceneW, u32 sceneH) {
     // post-process bind group can carry it like any other.
     {
         WGPUTextureViewDescriptor depthSampleDesc = {};
-        depthSampleDesc.format = Renderer::GetDepthStencilFormat();
+        // Depth-only aspect: the view declares the DEPTH half of the format,
+        // not the combined depth+stencil one, or WebGPU rejects the view and
+        // every bind group, pass and command buffer downstream of it.
+        depthSampleDesc.format = Renderer::GetDepthOnlyViewFormat();
         depthSampleDesc.dimension = WGPUTextureViewDimension_2D;
         depthSampleDesc.mipLevelCount = 1;
         depthSampleDesc.arrayLayerCount = 1;

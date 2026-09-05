@@ -281,6 +281,17 @@ bool BuildPipeline::ScanProject(const std::string& projectPath) {
             m_InputSettingsJson = root["input"].dump();
         }
 
+        // Carry the project's default render settings. A scene with
+        // useProjectDefaults set has a render-settings block the editor ignores
+        // entirely, so it holds whatever it was last written with; only the
+        // editor knew to substitute the project's. An exported game applied that
+        // ignored block verbatim - one scene here carried a colour filter of
+        // (0,0,0), which multiplies every pixel to black.
+        m_DefaultRenderSettingsJson.clear();
+        if (root.contains("defaultRenderSettings") && root["defaultRenderSettings"].is_object()) {
+            m_DefaultRenderSettingsJson = root["defaultRenderSettings"].dump();
+        }
+
         m_AccessibilityDefaultsJson.clear();
         if (root.contains("accessibilityDefaults") && root["accessibilityDefaults"].is_object()) {
             m_AccessibilityDefaultsJson = root["accessibilityDefaults"].dump();
@@ -812,6 +823,9 @@ bool BuildPipeline::WriteBuildManifest(const BuildConfig& config, AssetPacker& p
     if (!m_InputSettingsJson.empty()) {
         manifest["input"] = nlohmann::json::parse(m_InputSettingsJson);
     }
+    if (!m_DefaultRenderSettingsJson.empty()) {
+        manifest["defaultRenderSettings"] = nlohmann::json::parse(m_DefaultRenderSettingsJson);
+    }
 
     // Localization: default locale + string tables. Rides the manifest like
     // `input` so a shipped game reads its locale from the same one file.
@@ -1030,6 +1044,9 @@ bool BuildPipeline::WriteLooseManifest(const BuildConfig& config, const std::str
     // Input settings (custom actions + touch layout) authored in the editor
     if (!m_InputSettingsJson.empty()) {
         manifest["input"] = nlohmann::json::parse(m_InputSettingsJson);
+    }
+    if (!m_DefaultRenderSettingsJson.empty()) {
+        manifest["defaultRenderSettings"] = nlohmann::json::parse(m_DefaultRenderSettingsJson);
     }
 
     std::string manifestPath = (fs::path(outputDir) / "game.manifest").string();

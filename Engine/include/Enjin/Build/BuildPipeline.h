@@ -109,6 +109,10 @@ private:
     // Project input settings (custom actions + touch layout), carried the same
     // verbatim way so an exported game ships the controls the editor authored.
     std::string m_InputSettingsJson;
+    std::string m_DefaultRenderSettingsJson;
+    // The project's render settings, carried so an exported game can honour a
+    // scene that says useProjectDefaults. Without them the runtime applied the
+    // scene's own stale block, which the editor never shows and never updates.
 
     // Accessibility settings the exported game starts with (empty = engine
     // defaults). Authored in the editor, shipped as accessibility.json.

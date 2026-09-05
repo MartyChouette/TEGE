@@ -2753,7 +2753,17 @@ private:
                 m_InputSettings.ApplyTo(m_InputMap);
                 ENJIN_LOG_INFO(Player, "Project input settings: %zu custom actions",
                                m_InputSettings.customActions.size());
-            }
+            }        }
+
+        // The project's default render settings, for scenes that say
+        // useProjectDefaults. Only the editor honoured that flag, so an exported
+        // game applied the scene's own render-settings block instead - a block
+        // the editor never shows and never refreshes for such a scene, so it
+        // holds whatever it last happened to contain.
+        if (manifest.contains("defaultRenderSettings") && manifest["defaultRenderSettings"].is_object()) {
+            m_ProjectRenderSettings =
+                Enjin::Renderer::DeserializeRenderSettings(manifest["defaultRenderSettings"]);
+            m_HasProjectRenderSettings = true;
         }
         Enjin::InputSystem::SetTouchProjectSettings(&m_InputSettings);
 
@@ -2829,6 +2839,12 @@ private:
         // bail out gracefully in InitializeRayTracing (IsRayTracingSupported check).
         if (m_RenderSystem) {
             m_SceneRenderSettings = serializer.GetRenderSettings();
+            // A scene that defers to the project gets the PROJECT's settings,
+            // exactly as the editor does it. Its own block is stale by design.
+            if (m_SceneRenderSettings.useProjectDefaults && m_HasProjectRenderSettings) {
+                m_SceneRenderSettings = m_ProjectRenderSettings;
+                m_SceneRenderSettings.useProjectDefaults = true;
+            }
             m_SceneRenderSettings.ApplyToRuntime(m_RenderSystem,
                 m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
             m_SceneArtStylePreset = m_SceneRenderSettings.artStylePreset;   // splash restyles to match
@@ -3365,6 +3381,8 @@ private:
     Enjin::Effects::WindSystem m_WindSystem;
     Enjin::Effects::WorldTimeSystem m_WorldTime;
     Enjin::Renderer::SceneRenderSettings m_SceneRenderSettings;
+    Enjin::Renderer::SceneRenderSettings m_ProjectRenderSettings;
+    bool m_HasProjectRenderSettings = false;
     Enjin::Effects::SeasonalWeatherSystem m_SeasonalWeather;
 
     // Elemental system (fire/water/earth/air) + fire-light injection buffers.
