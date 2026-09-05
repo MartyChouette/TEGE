@@ -214,3 +214,6 @@ node_modules/
 /_*.png
 /goldens/
 /tools/package-lock.json
+
+# Internal docs: business, roadmap, journals, audits, contribution policy
+_docs_internal/

@@ -263,10 +263,14 @@ enjin/
 
 ## Further Reading
 
-- `docs/CLAUDE_REFERENCE.md` - Detailed subsystem docs (component catalog, binding tables, RT pipeline, physics, audio, scripting, editor details, perf history)
-- `docs/ARCHITECTURE.md` - System architecture and diagrams
-- `docs/SCRIPTING_API.md` - Complete AngelScript API reference
-- `docs/USER_MANUAL.md` - Component details and user guide
-- `docs/ROADMAP.md` - Planned work and progress tracking
-- `docs/BUILD.md` - Build guide with dependencies
-- `docs/AUDIT_2026_04_12.md` - Full engine audit (55 findings)
+Public docs live in `docs/`. Internal material (roadmap, journals, audits,
+reviews, market and strategy notes, ADRs, coding standards) is untracked in
+`_docs_internal/` and must NOT be added back to the repo.
+
+- `docs/ARCHITECTURE.md` - system architecture
+- `docs/SCRIPTING_API.md` - AngelScript API reference
+- `docs/USER_MANUAL.md` - component details and user guide
+- `docs/BUILD.md` - build guide
+- `_docs_internal/CLAUDE_REFERENCE.md` - detailed subsystem notes
+- `_docs_internal/ROADMAP.md` - planned work
+- `_docs_internal/architecture/` - ADRs (adr-0003 material indexing, adr-0004 ECS reads, adr-0005 fixed timestep)
