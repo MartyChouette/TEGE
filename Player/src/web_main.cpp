@@ -54,6 +54,8 @@
 #include "Enjin/Effects/Weather.h"
 #include "Enjin/Effects/TreeRenderer.h"
 #include "Enjin/Effects/Wind.h"
+#include "Enjin/Effects/Water.h"
+#include "Enjin/ECS/Components/Water3D.h"
 #include "Enjin/Effects/WorldTime.h"
 #include "Enjin/Effects/WorldTimeApply.h"
 #include "Enjin/Audio/AudioSystem.h"
@@ -366,8 +368,11 @@ public:
         // touching weather, UI, audio, saves, quests or cinematics resolved to
         // nullptr and did nothing, with the graph still reporting as running.
         // Web has no PostProcessing (the pointer is #if'd out of the registry) and
-        // no Water3D or AudioGraphRuntime member, so those stay unset here.
+        // no AudioGraphRuntime member, so those stay unset here. Water3D now
+        // exists on web and IS wired, just below.
         {
+            extern Enjin::Effects::Water3D* s_VisualScriptWater;
+            s_VisualScriptWater = &m_Water3D;
             extern Enjin::Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
             extern Enjin::Effects::WeatherSystem* s_VisualScriptWeather;
             extern Enjin::GUI::UISystem* s_VisualScriptUI;
@@ -707,6 +712,7 @@ public:
         Enjin::Scripting::SetBindingsAudio(nullptr);
         Enjin::Scripting::SetBindingsWeather(nullptr);
         Enjin::Scripting::SetBindingsWind(nullptr);
+        { extern Enjin::Effects::Water3D* s_VisualScriptWater; s_VisualScriptWater = nullptr; }
         Enjin::Scripting::SetBindingsSceneManager(nullptr);
         Enjin::Scripting::SetBindingsPhysics2D(nullptr);
         Enjin::Scripting::SetBindingsNetworking(nullptr);
@@ -956,6 +962,30 @@ public:
         // dirty meshes each frame.
         m_ClothSystem.Update(m_World.get(), deltaTime, &m_WindSystem);
 
+        // Water3D animated surfaces (desktop: main.cpp / PlayMode). Settings are
+        // ASSIGNED, never Initialize()d, because Initialize resets the wave clock
+        // and the waves would never travel. meshDirty tells the web render path
+        // to re-upload the displaced vertices.
+        m_Water3D.Update(deltaTime);
+        for (auto entity : m_World->GetEntitiesWithComponent<Enjin::ECS::Water3DComponent>()) {
+            auto* water3d = m_World->GetComponent<Enjin::ECS::Water3DComponent>(entity);
+            if (!water3d || !water3d->meshCreated) continue;
+            m_Water3D.GetSettings() = water3d->settings;
+            // Wind, sampled AT THE WATER: GetWindAt honours weather zones, so
+            // a sheltered lake stays calm while the open sea outside the zone
+            // does not. Water ignored wind entirely until now -- a storm rolled
+            // in and the sea kept its calm-day swell, pointing wherever the
+            // author had aimed it.
+            {
+                const auto* wtf = m_World->GetComponent<Enjin::ECS::TransformComponent>(entity);
+                const Enjin::Math::Vector3 at = wtf ? wtf->position : Enjin::Math::Vector3(0.0f, 0.0f, 0.0f);
+                const Enjin::Math::Vector3 wind = m_WindSystem.GetWindAt(at);
+                m_Water3D.SetWind(wind, wind.Length());
+            }
+            m_Water3D.UpdateEntityMesh(m_World.get(), entity);
+            water3d->meshDirty = true;
+        }
+
         // Only use fly camera if no character controller exists in the scene
         if (m_CameraController && m_CameraController->IsEnabled()) {
             bool hasPlayerController = !m_World->GetEntitiesWithComponent<
@@ -1062,6 +1092,12 @@ public:
                 m_WeatherSystem.GetRainIntensity() >= m_WeatherSystem.GetSnowIntensity());
         }
 
+        // Desktop parity: hand the emitters the scene wind, or useSceneWind
+        // emitters sit still on web while they drift everywhere else.
+        m_ParticleSystem.SetSceneWind(Enjin::Math::Vector3(
+            m_WindSystem.GetWindVector().x,
+            m_WindSystem.GetWindVector().y,
+            m_WindSystem.GetWindVector().z));
         m_ParticleSystem.Update(deltaTime, m_World.get());
 
         // Elemental sim + fire lighting. Mirrors the desktop Player: the sim drives
@@ -2127,6 +2163,10 @@ private:
     Enjin::f32 m_FireAccum = 0.0f;
     Enjin::Effects::WorldTimeSystem m_WorldTime;
     Enjin::Effects::ParticleSystem m_ParticleSystem;
+    // Web had no Water3D at all: no animated surface, and s_VisualScriptWater
+    // stayed null so Water3D_GetHeight returned 0 and anything floating on the
+    // waves (a boat sampling the surface) sat on a flat plane.
+    Enjin::Effects::Water3D m_Water3D;
     Enjin::Effects::ElementalSystem m_ElementalSystem;
     std::vector<Enjin::Effects::FireLight> m_FireLights;
     Enjin::f32 m_EffectsTime = 0.0f;

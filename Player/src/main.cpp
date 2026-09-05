@@ -1162,7 +1162,22 @@ public:
             auto* water3d = m_World->GetComponent<Enjin::ECS::Water3DComponent>(entity);
             if (!water3d || !water3d->meshCreated) continue;
             m_Water3D.GetSettings() = water3d->settings;
+            // Wind, sampled AT THE WATER: GetWindAt honours weather zones, so
+            // a sheltered lake stays calm while the open sea outside the zone
+            // does not. Water ignored wind entirely until now -- a storm rolled
+            // in and the sea kept its calm-day swell, pointing wherever the
+            // author had aimed it.
+            {
+                const auto* wtf = m_World->GetComponent<Enjin::ECS::TransformComponent>(entity);
+                const Enjin::Math::Vector3 at = wtf ? wtf->position : Enjin::Math::Vector3(0.0f, 0.0f, 0.0f);
+                const Enjin::Math::Vector3 wind = m_WindSystem.GetWindAt(at);
+                m_Water3D.SetWind(wind, wind.Length());
+            }
             m_Water3D.UpdateEntityMesh(m_World.get(), entity);
+            // Editor parity: the vertices just moved on the CPU, so the renderer
+            // has to re-send them. Without this the Player draws the flat plane
+            // the mesh was built as, however the waves are authored.
+            water3d->meshDirty = true;
         }
         m_FluidSimulation.Update(deltaTime, m_World.get());
         m_FluidTerrainCoupling.Update(deltaTime, m_World.get(), m_FluidSimulation);

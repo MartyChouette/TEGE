@@ -1196,6 +1196,15 @@ void PlayMode::Update(f32 deltaTime) {
                 auto* water3d = m_World->GetComponent<ECS::Water3DComponent>(entity);
                 if (!water3d || !water3d->meshCreated) continue;
                 m_Water3D->GetSettings() = water3d->settings;
+                // Wind, sampled AT THE WATER: GetWindAt honours weather zones,
+                // so a sheltered lake stays calm while the open sea outside it
+                // does not. Water ignored wind entirely until now.
+                if (auto* ws = m_RenderSystem ? m_RenderSystem->GetWindSystem() : nullptr) {
+                    const auto* wtf = m_World->GetComponent<ECS::TransformComponent>(entity);
+                    const Math::Vector3 at = wtf ? wtf->position : Math::Vector3(0.0f, 0.0f, 0.0f);
+                    const Math::Vector3 wind = ws->GetWindAt(at);
+                    m_Water3D->SetWind(wind, wind.Length());
+                }
                 m_Water3D->UpdateEntityMesh(m_World, entity);
                 // The vertices just moved on the CPU; tell the renderer to send
                 // them, or the surface stays flat no matter what the waves say.

@@ -2134,6 +2134,19 @@ void EditorLayer::DrawWater3DComponent(ECS::Entity entity) {
         }
 
         ImGui::Separator();
+            InspectorUndo::SliderFloat(m_UndoRedo, "Wind Influence", &w->settings.windInfluence, 0.0f, 1.0f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                "How much the WindSystem drives this water.\n"
+                "0 keeps the authored direction and height exactly as set.\n"
+                "1 turns the waves toward the wind and grows them with it,\n"
+                "so a storm actually changes the sea. Sampled AT the water,\n"
+                "so a sheltered weather zone stays calm.");
+            if (w->settings.windInfluence > 0.0f) {
+                InspectorUndo::DragFloat(m_UndoRedo, "Wind Wave Height", &w->settings.windWaveHeightScale, 0.05f, 0.1f, 5.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Wave height multiplier at full wind strength.");
+                InspectorUndo::DragFloat(m_UndoRedo, "Wind Wave Speed", &w->settings.windWaveSpeedScale, 0.05f, 0.1f, 5.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Wave speed multiplier at full wind strength.");
+            }
         InspectorUndo::Checkbox(m_UndoRedo, "Enable Foam", &w->settings.enableFoam);
         if (w->settings.enableFoam) {
             InspectorUndo::SliderFloat(m_UndoRedo, "Foam Threshold", &w->settings.foamThreshold, 0.0f, 1.0f);

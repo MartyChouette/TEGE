@@ -2,6 +2,7 @@
 
 // Jolt requires this before any Jolt headers
 #include <Jolt/Jolt.h>
+#include "Enjin/Effects/Water.h"
 
 // Jolt headers
 #include <Jolt/RegisterTypes.h>
@@ -977,6 +978,14 @@ void JoltBackend::ApplyBuoyancy() {
     struct BuoyZone {
         f32 surfaceY, bottomY, minX, maxX, minZ, maxZ, strength, drag;
         i32 priority;
+        // Water3D surfaces WAVE. Floating things at the flat entity Y meant a
+        // boat sat at the mean level while the swell passed straight through
+        // it -- the more visible the waves, the more obviously wrong. These
+        // carry the surface state the water published this frame, so buoyancy
+        // samples the same numbers the mesh was built from, wind included.
+        bool waves = false;
+        Effects::Water3DSettings waveSettings;
+        f32 waveTime = 0.0f;
     };
     static std::vector<BuoyZone> zones;   // reused (physics is single-threaded)
     zones.clear();
@@ -989,10 +998,17 @@ void JoltBackend::ApplyBuoyancy() {
             auto* wv = wvStorage ? wvStorage->Get(e) : nullptr;
             auto* tf = xformStorage ? xformStorage->Get(e) : nullptr;
             if (!wv || !tf || !wv->enableBuoyancy) continue;
-            zones.push_back({ tf->position.y, tf->position.y - wv->halfExtents.y * 2.0f,
-                tf->position.x - wv->halfExtents.x, tf->position.x + wv->halfExtents.x,
-                tf->position.z - wv->halfExtents.z, tf->position.z + wv->halfExtents.z,
-                wv->buoyancyStrength, wv->buoyancyDrag, wv->priority });
+            BuoyZone z{};
+            z.surfaceY = tf->position.y;
+            z.bottomY  = tf->position.y - wv->halfExtents.y * 2.0f;
+            z.minX = tf->position.x - wv->halfExtents.x; z.maxX = tf->position.x + wv->halfExtents.x;
+            z.minZ = tf->position.z - wv->halfExtents.z; z.maxZ = tf->position.z + wv->halfExtents.z;
+            z.strength = wv->buoyancyStrength;
+            z.drag     = wv->buoyancyDrag;
+            z.priority = wv->priority;
+            // A WaterVolume is a box of water with no animated surface, so its
+            // level stays flat. Nothing to sample.
+            zones.push_back(z);
         }
     }
     {
@@ -1002,10 +1018,23 @@ void JoltBackend::ApplyBuoyancy() {
             auto* tf = xformStorage ? xformStorage->Get(e) : nullptr;
             if (!w3 || !tf || !w3->settings.enableBuoyancy) continue;
             f32 hw = w3->settings.width * 0.5f, hd = w3->settings.depth * 0.5f;
-            zones.push_back({ tf->position.y, tf->position.y - 20.0f,
-                tf->position.x - hw, tf->position.x + hw,
-                tf->position.z - hd, tf->position.z + hd,
-                w3->settings.buoyancyStrength, w3->settings.buoyancyDrag, 0 });
+            BuoyZone z{};
+            z.surfaceY = tf->position.y;
+            z.bottomY  = tf->position.y - 20.0f;
+            z.minX = tf->position.x - hw; z.maxX = tf->position.x + hw;
+            z.minZ = tf->position.z - hd; z.maxZ = tf->position.z + hd;
+            z.strength = w3->settings.buoyancyStrength;
+            z.drag     = w3->settings.buoyancyDrag;
+            z.priority = 0;
+            // Only once the water system has actually run: before that there is
+            // no clock and no effective settings, and sampling would put the
+            // surface somewhere arbitrary on the first frame.
+            if (w3->runtimeValid) {
+                z.waves = true;
+                z.waveSettings = w3->runtimeSettings;
+                z.waveTime = w3->runtimeWaveTime;
+            }
+            zones.push_back(z);
         }
     }
     if (zones.empty()) return;
@@ -1023,15 +1052,28 @@ void JoltBackend::ApplyBuoyancy() {
         if (!tf) continue;
 
         const BuoyZone* best = nullptr;
+        f32 bestSurfaceY = 0.0f;   // the WAVE surface for `best`, not its mean
         for (const BuoyZone& z : zones) {
             if (tf->position.x < z.minX || tf->position.x > z.maxX) continue;
             if (tf->position.z < z.minZ || tf->position.z > z.maxZ) continue;
-            if (tf->position.y >= z.surfaceY || tf->position.y < z.bottomY) continue;  // must be under the surface, inside depth
-            if (!best || z.priority > best->priority) best = &z;
+            // Against the surface where this body IS. On a waving surface the
+            // mean level is the wrong test: a body under a crest is submerged
+            // and one under a trough is not, and using the mean makes things
+            // pop in and out of the water as the swell moves past.
+            const f32 surfaceHere = z.waves
+                ? z.surfaceY + Effects::Water3D::SampleWaveHeight(
+                      z.waveSettings, z.waveTime, tf->position.x, tf->position.z)
+                : z.surfaceY;
+            if (tf->position.y >= surfaceHere || tf->position.y < z.bottomY) continue;  // must be under the surface, inside depth
+            if (!best || z.priority > best->priority) { best = &z; bestSurfaceY = surfaceHere; }
         }
         if (!best) continue;
 
-        f32 depth = best->surfaceY - tf->position.y;
+        // Depth below the surface AT THIS POINT. Using the mean would give a
+        // boat the same lift under a crest as in a trough, so it would sit
+        // dead still while the water moved around it -- the exact symptom of
+        // buoyancy that ignores the waves.
+        f32 depth = bestSurfaceY - tf->position.y;
         f32 sub = std::clamp(depth / kFloatDepth, 0.0f, 1.0f);
         f32 mass = std::max(rb->mass, 0.0001f);
 

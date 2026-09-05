@@ -968,6 +968,9 @@ json SerializeWater3DComponent(const ECS::Water3DComponent& w) {
     j["waveDirection"] = SerializeVector2(w.settings.waveDirection);
     j["gerstnerWaves"] = w.settings.gerstnerWaves;
     j["waveSteepness"] = RF(w.settings.waveSteepness);
+    j["windInfluence"] = RF(w.settings.windInfluence);
+    j["windWaveHeightScale"] = RF(w.settings.windWaveHeightScale);
+    j["windWaveSpeedScale"] = RF(w.settings.windWaveSpeedScale);
     j["uvScrollSpeed"] = SerializeVector2(w.settings.uvScrollSpeed);
     j["reflectionStrength"] = RF(w.settings.reflectionStrength);
     j["fresnelPower"] = RF(w.settings.fresnelPower);
@@ -995,6 +998,11 @@ ECS::Water3DComponent DeserializeWater3DComponent(const json& j) {
     if (j.contains("waveDirection")) w.settings.waveDirection = DeserializeVector2(j["waveDirection"]);
     if (j.contains("gerstnerWaves")) w.settings.gerstnerWaves = JB(j["gerstnerWaves"]);
     if (j.contains("waveSteepness")) w.settings.waveSteepness = Math::Clamp(j["waveSteepness"].get<f32>(), 0.0f, 1.0f);
+    // Read back beside the write: a key written and not read is erased by
+    // the next save with no warning anywhere.
+    if (j.contains("windInfluence")) w.settings.windInfluence = Math::Clamp(j["windInfluence"].get<f32>(), 0.0f, 1.0f);
+    if (j.contains("windWaveHeightScale")) w.settings.windWaveHeightScale = j["windWaveHeightScale"].get<f32>();
+    if (j.contains("windWaveSpeedScale")) w.settings.windWaveSpeedScale = j["windWaveSpeedScale"].get<f32>();
     if (j.contains("uvScrollSpeed")) w.settings.uvScrollSpeed = DeserializeVector2(j["uvScrollSpeed"]);
     if (j.contains("reflectionStrength")) w.settings.reflectionStrength = j["reflectionStrength"].get<f32>();
     if (j.contains("fresnelPower")) w.settings.fresnelPower = j["fresnelPower"].get<f32>();

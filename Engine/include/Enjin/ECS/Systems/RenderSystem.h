@@ -2047,7 +2047,6 @@ public:
     // never calls Update() (where these run for the player), so without this 3D water
     // never gets its mesh in the editor game view (reported 2026-09-02).
     void EnsureWaterMeshes();
-    void EnsureWater3DMeshes();
 private:
 #endif
 
@@ -2324,6 +2323,16 @@ private:
     // Per-entity previous-frame model matrices for motion vector computation.
     // Keyed by entity ID — entries are added on first sight, removed on entity destruction.
     std::unordered_map<u64, Math::Matrix4> m_PrevModelMatrices;
+
+    // Shared: the web render path builds water3D surfaces too, so this cannot
+    // live inside the !WEBGPU block or the web definition has no declaration.
+    //
+    // Public because the EDITOR calls it: the game view builds water meshes
+    // from UpdateGameViewSims, since Update() is never called there and the
+    // surface would otherwise be invisible in the game view (0adaa966).
+public:
+    void EnsureWater3DMeshes();
+private:
 
 #if !ENJIN_RENDERER_WEBGPU
     // --- Ray Tracing subsystems (null when unsupported) ---

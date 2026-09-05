@@ -1,4 +1,5 @@
 #include "Enjin/Effects/Water.h"
+#include "Enjin/ECS/Components/Water3D.h"
 #include "Enjin/Math/Math.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Mesh.h"
@@ -10,12 +11,52 @@ namespace Effects {
 
 void Water3D::Initialize(const Water3DSettings& settings) {
     m_Settings = settings;
+    m_Effective = settings;
     m_WaveTime = 0.0f;
     m_UVOffset = Math::Vector2(0, 0);
 }
 
+void Water3D::SetWind(const Math::Vector3& direction, f32 strength) {
+    m_WindDirection = direction;
+    m_WindStrength = strength < 0.0f ? 0.0f : strength;
+}
+
+void Water3D::RecomputeEffectiveSettings() {
+    m_Effective = m_Settings;
+
+    const f32 influence = (m_Settings.windInfluence < 0.0f) ? 0.0f
+                        : (m_Settings.windInfluence > 1.0f ? 1.0f : m_Settings.windInfluence);
+    if (influence <= 0.0f) return;   // authored waves, untouched
+
+    // Heading. The wind is a world vector; waveDirection is the 2D heading the
+    // wave functions use, so only the horizontal part matters. A vertical or
+    // zero wind leaves the authored heading alone rather than snapping the sea
+    // to an arbitrary direction.
+    const f32 hx = m_WindDirection.x, hz = m_WindDirection.z;
+    const f32 hlen = std::sqrt(hx * hx + hz * hz);
+    if (hlen > 1e-4f) {
+        const Math::Vector2 windDir(hx / hlen, hz / hlen);
+        m_Effective.waveDirection.x =
+            m_Effective.waveDirection.x + (windDir.x - m_Effective.waveDirection.x) * influence;
+        m_Effective.waveDirection.y =
+            m_Effective.waveDirection.y + (windDir.y - m_Effective.waveDirection.y) * influence;
+    }
+
+    // Size and pace. Calm air flattens the sea toward still; a gale raises it.
+    // Blended by influence so a partly wind-driven water still keeps some of
+    // the swell the author asked for.
+    const f32 heightFactor = 1.0f + (m_Settings.windWaveHeightScale - 1.0f) * m_WindStrength;
+    const f32 speedFactor  = 1.0f + (m_Settings.windWaveSpeedScale  - 1.0f) * m_WindStrength;
+    m_Effective.waveHeight = m_Effective.waveHeight * (1.0f + (heightFactor - 1.0f) * influence);
+    m_Effective.waveSpeed  = m_Settings.waveSpeed  * (1.0f + (speedFactor  - 1.0f) * influence);
+}
+
 void Water3D::Update(f32 deltaTime) {
-    m_WaveTime += deltaTime * m_Settings.waveSpeed;
+    // Fold wind in FIRST: the wave clock advances at the effective speed, so a
+    // gust makes the surface move faster rather than just taller.
+    RecomputeEffectiveSettings();
+
+    m_WaveTime += deltaTime * m_Effective.waveSpeed;
 
     // Update UV scrolling
     m_UVOffset.x += m_Settings.uvScrollSpeed.x * deltaTime;
@@ -26,19 +67,29 @@ void Water3D::Update(f32 deltaTime) {
     if (m_UVOffset.y > 1.0f) m_UVOffset.y -= 1.0f;
 }
 
-f32 Water3D::GetWaveHeight(f32 x, f32 z) const {
-    if (m_Settings.gerstnerWaves) {
+f32 Water3D::SampleWaveHeight(const Water3DSettings& settings, f32 waveTime, f32 x, f32 z) {
+    if (settings.gerstnerWaves) {
         // Vertical component of the trochoidal surface. Ignores the horizontal
         // shift (inverting it needs iteration) — close enough for buoyancy.
-        return GetGerstnerOffset(x, z).y;
+        Water3D tmp;
+        tmp.m_Settings = settings;
+        tmp.m_Effective = settings;
+        tmp.m_WaveTime = waveTime;
+        return tmp.GetGerstnerOffset(x, z).y;
     }
 
     // Simple sine wave combination (very PS1/N64)
-    f32 wave1 = Math::Sin((x * m_Settings.waveFrequency + m_WaveTime) * m_Settings.waveDirection.x);
-    f32 wave2 = Math::Sin((z * m_Settings.waveFrequency * 0.7f + m_WaveTime * 1.3f) * m_Settings.waveDirection.y);
-    f32 wave3 = Math::Sin((x + z) * m_Settings.waveFrequency * 0.5f + m_WaveTime * 0.8f) * 0.5f;
+    const f32 wave1 = Math::Sin((x * settings.waveFrequency + waveTime) * settings.waveDirection.x);
+    const f32 wave2 = Math::Sin((z * settings.waveFrequency * 0.7f + waveTime * 1.3f) * settings.waveDirection.y);
+    const f32 wave3 = Math::Sin((x + z) * settings.waveFrequency * 0.5f + waveTime * 0.8f) * 0.5f;
 
-    return (wave1 + wave2 + wave3) * m_Settings.waveHeight / 2.5f;
+    return (wave1 + wave2 + wave3) * settings.waveHeight / 2.5f;
+}
+
+f32 Water3D::GetWaveHeight(f32 x, f32 z) const {
+    // Through the shared sampler, on the EFFECTIVE settings, so the height a
+    // script or the buoyancy asks for is the height the mesh was built at.
+    return SampleWaveHeight(m_Effective, m_WaveTime, x, z);
 }
 
 Math::Vector3 Water3D::GetGerstnerOffset(f32 x, f32 z) const {
@@ -49,13 +100,13 @@ Math::Vector3 Water3D::GetGerstnerOffset(f32 x, f32 z) const {
     // (bunching vertices at crests = sharp peaks, spreading them in troughs =
     // flat valleys) and lifts it by A*sin(phase).
     struct GerstnerWave { f32 dirX, dirZ, amplitude, frequency, phaseSpeed; };
-    Math::Vector2 d = m_Settings.waveDirection;
+    Math::Vector2 d = m_Effective.waveDirection;
     f32 dLen = Math::Sqrt(d.x * d.x + d.y * d.y);
     if (dLen < 0.0001f) { d = Math::Vector2(1.0f, 0.0f); dLen = 1.0f; }
     f32 dx = d.x / dLen, dz = d.y / dLen;
 
-    const f32 A = m_Settings.waveHeight;
-    const f32 w = Math::Max(m_Settings.waveFrequency, 0.0001f);
+    const f32 A = m_Effective.waveHeight;
+    const f32 w = Math::Max(m_Effective.waveFrequency, 0.0001f);
     const GerstnerWave waves[3] = {
         { dx, dz, A * 0.60f, w, 1.0f },
         // ~60 degrees off the primary heading, tighter and faster
@@ -68,7 +119,7 @@ Math::Vector3 Water3D::GetGerstnerOffset(f32 x, f32 z) const {
     // classic normalization that keeps the summed horizontal displacement
     // below the self-intersection limit (loops forming at crests) at
     // steepness <= 1 regardless of amplitude/frequency choices.
-    f32 steep = Math::Clamp(m_Settings.waveSteepness, 0.0f, 1.0f);
+    f32 steep = Math::Clamp(m_Effective.waveSteepness, 0.0f, 1.0f);
 
     Math::Vector3 offset(0.0f, 0.0f, 0.0f);
     for (const auto& gw : waves) {
@@ -132,7 +183,7 @@ void Water3D::GenerateMesh(std::vector<Math::Vector3>& positions,
             if (m_Settings.style == WaterStyle::VertexWave ||
                 m_Settings.style == WaterStyle::Reflective ||
                 m_Settings.style == WaterStyle::Refractive) {
-                if (m_Settings.gerstnerWaves) {
+                if (m_Effective.gerstnerWaves) {
                     // Trochoidal: crests pull vertices horizontally too
                     Math::Vector3 off = GetGerstnerOffset(xPos, zPos);
                     positions.push_back(Math::Vector3(xPos + off.x, yPos + off.y, zPos + off.z));
@@ -213,13 +264,29 @@ void Water3D::BuildEntityMesh(ECS::World* world, ECS::Entity entity) const {
         f32 minEdgeDist = Math::Min(Math::Min(distL, distR), Math::Min(distT, distB));
         f32 edgeDist = Math::Min(minEdgeDist * 2.0f, 1.0f);
 
-        // Vertex color: water color RGB + edge distance in alpha for shore foam
-        v.color = Math::Vector4(
-            m_Settings.shallowColor.x,
-            m_Settings.shallowColor.y,
-            m_Settings.shallowColor.z,
-            edgeDist
-        );
+        // Vertex colour contract for water surfaces, from triangle.frag: the
+        // G channel carries EDGE DISTANCE (0 = edge, 1 = centre), RGB is not used
+        // as colour (the shader skips the vertex tint for FLAG_WATER_SURFACE),
+        // and ALPHA multiplies straight into opacity.
+        //
+        // This wrote shallowColor into RGB and edgeDist into ALPHA, which got
+        // both halves wrong: the shore/foam path read shallowColor.g as its edge
+        // distance - a constant, so shore never varied - and the real alpha
+        // channel faded the surface out toward its own borders.
+        //
+        // The G term also folds in crest height. On an ocean the plane's border
+        // is kilometres away and edge foam is useless, but a crest IS shallow
+        // water as far as this shader is concerned, so wave tops pick up the
+        // lighter tint and the foam and the troughs stay dark. That is the whole
+        // depth read on a surface with no depth buffer to sample.
+        f32 shallowness = edgeDist;
+        {
+            f32 amp = Math::Max(m_Effective.waveHeight, 0.0001f);
+            f32 rel = (positions[i].y - m_Settings.position.y) / amp;   // -1 trough .. +1 crest
+            f32 crest = Math::Clamp(rel * 0.5f + 0.5f, 0.0f, 1.0f);
+            shallowness = Math::Min(shallowness, 1.0f - crest);
+        }
+        v.color = Math::Vector4(1.0f, shallowness, 1.0f, 1.0f);
 
         // Tangent along X direction
         v.tangent = Math::Vector4(1.0f, 0.0f, 0.0f, 1.0f);
@@ -261,6 +328,17 @@ void Water3D::BuildEntityMesh(ECS::World* world, ECS::Entity entity) const {
 void Water3D::UpdateEntityMesh(ECS::World* world, ECS::Entity entity) const {
     if (!world) return;
 
+    // Publish what this surface is actually doing, for physics to sample.
+    // Buoyancy cannot call into this system, so the settings the mesh is being
+    // built from -- wind already folded in -- and the wave clock go onto the
+    // component. Written before the early-out below so a water entity that has
+    // no mesh yet still floats things correctly.
+    if (auto* w3 = world->GetComponent<ECS::Water3DComponent>(entity)) {
+        w3->runtimeSettings = m_Effective;
+        w3->runtimeWaveTime = m_WaveTime;
+        w3->runtimeValid = true;
+    }
+
     auto* mesh = world->GetComponent<ECS::MeshComponent>(entity);
     if (!mesh || mesh->vertices.empty()) return;
 
@@ -274,7 +352,7 @@ void Water3D::UpdateEntityMesh(ECS::World* world, ECS::Entity entity) const {
     if (positions.size() != mesh->vertices.size()) return;
 
     f32 eps = m_Settings.tileSize * 0.1f;
-    bool gerstner = m_Settings.gerstnerWaves &&
+    bool gerstner = m_Effective.gerstnerWaves &&
                     (m_Settings.style == WaterStyle::VertexWave ||
                      m_Settings.style == WaterStyle::Reflective ||
                      m_Settings.style == WaterStyle::Refractive);

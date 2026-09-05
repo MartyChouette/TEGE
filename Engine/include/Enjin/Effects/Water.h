@@ -53,6 +53,21 @@ struct Water3DSettings {
     bool gerstnerWaves = false;
     f32 waveSteepness = 0.6f;   // 0 = plain sine look, 1 = maximum crest sharpness
 
+    // Wind. Water had none: waveDirection and waveHeight were authored
+    // constants, so a storm rolled in and the sea kept its calm-day swell
+    // heading the way the author happened to point it. Meanwhile WindSystem
+    // already carries a direction and a weather-driven strength that the grass
+    // and the cloth both read.
+    //
+    // 0 leaves the authored values exactly as they were, so every existing
+    // scene is unchanged. Above 0 the waves turn toward the wind and grow with
+    // it, blended by this amount.
+    f32 windInfluence = 0.0f;      // 0 = authored waves only, 1 = fully wind-driven
+    // What "fully wind-driven" means, so a calm day is not glassy and a gale
+    // is not infinite.
+    f32 windWaveHeightScale = 1.5f;   // wave height at full wind strength
+    f32 windWaveSpeedScale = 1.5f;    // wave speed at full wind strength
+
     // UV scrolling (texture animation)
     Math::Vector2 uvScrollSpeed = Math::Vector2(0.02f, 0.01f);
 
@@ -84,6 +99,31 @@ public:
     // Get settings for modification
     Water3DSettings& GetSettings() { return m_Settings; }
     const Water3DSettings& GetSettings() const { return m_Settings; }
+
+    // The wind this water is sitting in, from WindSystem. Direction is a world
+    // vector (Y ignored); strength is the same 0..1-ish scale the grass reads.
+    //
+    // Set every frame by whichever runtime is ticking the water, so a gust
+    // reaches the surface at the same moment it reaches the grass.
+    void SetWind(const Math::Vector3& direction, f32 strength);
+
+    // The settings after wind is folded in -- what the surface is ACTUALLY
+    // being built from this frame. Buoyancy has to sample the same numbers the
+    // mesh was generated with, or a boat floats to a surface that is not there.
+    const Water3DSettings& GetEffectiveSettings() const { return m_Effective; }
+
+    // Surface height at (x, z) for a given settings + wave clock, with no
+    // Water3D instance involved.
+    //
+    // Physics needs this: buoyancy floated things at a FLAT plane -- the water
+    // entity's Y -- while the visible surface waved, so a boat sat at the mean
+    // level and the swell passed straight through it. The physics backend
+    // cannot call Water3D (it does not know the type, and the water is ticked
+    // by the runtime, not by physics), so the water publishes its settings and
+    // clock onto the component and physics samples them through here.
+    //
+    // Same function the instance method uses, so the two cannot drift.
+    static f32 SampleWaveHeight(const Water3DSettings& settings, f32 waveTime, f32 x, f32 z);
 
     // Get current wave offset for shader
     f32 GetWaveTime() const { return m_WaveTime; }
@@ -118,6 +158,13 @@ public:
 
 private:
     Water3DSettings m_Settings;
+    // m_Settings with wind folded in. Every wave computation reads THIS, so the
+    // mesh, the height query and buoyancy cannot disagree about what the
+    // surface is doing this frame.
+    Water3DSettings m_Effective;
+    void RecomputeEffectiveSettings();
+    Math::Vector3 m_WindDirection = Math::Vector3(1.0f, 0.0f, 0.0f);
+    f32 m_WindStrength = 0.0f;
     f32 m_WaveTime = 0.0f;
     Math::Vector2 m_UVOffset;
 };

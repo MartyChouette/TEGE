@@ -224,6 +224,7 @@ enjin_add_test(TestAudioTypes         Unit/Audio/TestAudioTypes.cpp)
 # --- Effects ---
 enjin_add_test(TestWorldTime          Unit/Effects/TestWorldTime.cpp)
 enjin_add_test(TestInteractiveWater   Unit/Effects/TestInteractiveWater.cpp)
+enjin_add_test(TestWaterWind        Unit/Effects/TestWaterWind.cpp)
 enjin_add_test(TestReactionDiffusion  Unit/Effects/TestReactionDiffusion.cpp)
 enjin_add_test(TestScreenTransition   Unit/Effects/TestScreenTransition.cpp)
 enjin_add_test(TestWeather            Unit/Effects/TestWeather.cpp)
