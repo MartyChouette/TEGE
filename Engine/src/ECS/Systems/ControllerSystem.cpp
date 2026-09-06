@@ -247,11 +247,33 @@ void ControllerSystem::Update(f32 deltaTime) {
             UpdateWaterVehicle(entity, controller, transform, deltaTime);
         });
 
-    // Process FollowTarget components (camera follow, companion follow, etc.)
-    // Camera-follow / look-at / 2D-camera work is per-frame presentation, not
-    // per-entity simulation - skip it in the realtime (bullet-time) pass so it
-    // never runs twice per frame.
-    if (m_RealtimePass) return;
+
+    // Fixed-tick mode: this tick consumed the frame's latched edges/deltas.
+    // Later ticks in the same frame see nothing (no double-fired jumps, no
+    // double-applied mouse look); zero-tick frames keep latches for the next.
+    if (m_ExternalFixedClock && !m_RealtimePass) {
+        m_LatchJump = m_LatchCrouch = m_LatchDash = m_LatchPrimaryClick = false;
+        m_LatchMouseDelta = Math::Vector2(0.0f, 0.0f);
+        m_LatchScroll = Math::Vector2(0.0f, 0.0f);
+    }
+}
+
+void ControllerSystem::UpdatePresentation(f32 deltaTime) {
+    if (!m_World) return;
+
+    // Camera follow, look-at, and the 2D bounds camera (dead zone, look-ahead,
+    // zoom, screen shake). This is presentation, and the comment that used to
+    // sit here already said so -- it just ran in the wrong place.
+    //
+    // ADR-0005 moved ControllerSystem::Update inside the fixed step, which
+    // silently reclassified everything Update also happened to do as
+    // simulation. On a 144Hz display against a 60Hz tick most frames run zero
+    // ticks, so the camera held its position for a frame or two and then
+    // jumped, while the body it follows rendered interpolated and smooth. The
+    // two disagreed every frame.
+    //
+    // Called once per RENDERED frame by every runtime: outside the step loop,
+    // and outside the bullet-time pass so it never runs twice.
 
     for (Entity entity : m_World->GetEntitiesWithComponent<FollowTargetComponent>()) {
         auto* transform = m_World->GetComponent<TransformComponent>(entity);
@@ -479,16 +501,8 @@ void ControllerSystem::Update(f32 deltaTime) {
             }
         }
     }
-
-    // Fixed-tick mode: this tick consumed the frame's latched edges/deltas.
-    // Later ticks in the same frame see nothing (no double-fired jumps, no
-    // double-applied mouse look); zero-tick frames keep latches for the next.
-    if (m_ExternalFixedClock && !m_RealtimePass) {
-        m_LatchJump = m_LatchCrouch = m_LatchDash = m_LatchPrimaryClick = false;
-        m_LatchMouseDelta = Math::Vector2(0.0f, 0.0f);
-        m_LatchScroll = Math::Vector2(0.0f, 0.0f);
-    }
 }
+
 
 Math::Vector2 ControllerSystem::GetMovementInput(const CharacterControllerBase& controller) {
     // Delegate to input action map if available

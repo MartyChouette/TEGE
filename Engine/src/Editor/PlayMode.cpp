@@ -1071,6 +1071,9 @@ void PlayMode::Update(f32 deltaTime) {
             // Fixed-timestep projects tick controllers inside the SimClock loop
             if (!m_SimClock.IsEnabled()) m_ControllerSystem.Update(deltaTime);
             m_ControllerSystem.UpdateRealtime(deltaTime);  // bullet-time controllers
+            // Camera follow / look-at / 2D bounds camera: presentation, so it
+            // runs once per RENDERED frame with frame dt, not in the step loop.
+            m_ControllerSystem.UpdatePresentation(deltaTime);
             m_FlowerSystem.Update(deltaTime);
             // TotK-style surface response: footstep/impact sound + particle from
             // the material of the surface walked on / struck. 3D physics path.

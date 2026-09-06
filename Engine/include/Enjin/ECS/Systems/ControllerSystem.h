@@ -88,8 +88,20 @@ public:
     void SetEnabled(bool enabled) { m_Enabled = enabled; }
     bool IsEnabled() const { return m_Enabled; }
 
-    // Main update - call each frame with delta time
+    // Simulation: character/vehicle controllers. Runs on the fixed tick when a
+    // SimulationClock owns stepping, otherwise once per frame.
     void Update(f32 deltaTime);
+
+    // Presentation: camera follow, look-at, and the 2D bounds camera (dead
+    // zone, look-ahead, zoom, screen shake). ALWAYS once per rendered frame,
+    // with FRAME dt -- never inside the step loop.
+    //
+    // This used to live at the end of Update. ADR-0005 put Update inside the
+    // fixed step, which silently made the camera part of the simulation: on a
+    // 144Hz display against a 60Hz tick most frames run zero ticks, so the
+    // camera froze for a frame or two and then jumped while the body it
+    // follows rendered smoothly interpolated.
+    void UpdatePresentation(f32 frameDt);
 
 private:
     // Individual controller update methods

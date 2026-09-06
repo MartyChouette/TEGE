@@ -1057,6 +1057,9 @@ public:
         // Fixed-timestep projects tick controllers inside the SimClock loop
         if (!m_SimClock.IsEnabled()) m_ControllerSystem.Update(deltaTime);
         m_ControllerSystem.UpdateRealtime(deltaTime);  // bullet-time controllers
+        // Camera follow / look-at / 2D bounds camera: presentation, so it runs
+        // once per RENDERED frame with frame dt, never inside the step loop.
+        m_ControllerSystem.UpdatePresentation(deltaTime);
         // TotK-style surface response: footstep/impact sound + particle from the
         // material of the surface walked on / struck (3D physics path).
         m_SurfaceResponseSystem.Initialize(&m_SimpleAudio, m_RenderSystem, m_Physics.get(), m_Physics2D.get());
