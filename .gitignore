@@ -12,6 +12,9 @@ Engine/include/Enjin/Editor/WebhookConfig.h
 # Build output
 # -----------------------------------------------------------------------------
 /build/
+# Sanitizer build trees (ASan/TSan reproduce the linux-sanitizers CI job locally)
+/build-san-address/
+/build-san-thread/
 out/
 x64/
 /Debug/

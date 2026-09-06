@@ -9647,6 +9647,208 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
     }
 }
 
+// The part of a scene load that is identical however the JSON arrived: create
+// every entity, remap saved entity references onto the new ids, rebuild
+// ChildrenComponent from parents, re-share skeleton groups, and migrate legacy
+// HUD widgets.
+//
+// This was duplicated between the file path and the string path. That is how
+// BoneAttachmentComponent's remap had to be fixed in two places, and how the
+// unknown-key warnings ended up existing on the FILE path only -- a scene
+// loaded from a .enjpak dropped mistyped keys silently, with nothing reported,
+// which is the invisible data loss those warnings exist to catch. Sharing the
+// code fixes that gap as a side effect.
+//
+// Everything before this legitimately differs per caller (opening a file vs
+// parsing a string, the read-only version latch, the scene-level config
+// blocks) and stays where it is.
+void SceneSerializer::DeserializeEntities(const json& sceneJson, DeserializationResult& result) {
+    // Map old entity IDs -> new entity IDs for remapping references
+    std::unordered_map<u64, ECS::Entity> oldToNew;
+
+    // Recognized entity-level keys, so we can warn about unknown/mistyped
+    // ones. Unknown keys are silently ignored on load and erased on the next
+    // save (e.g. "script" instead of "scriptComponent"), an invisible way to
+    // lose authored data. Set = registry keys + the entity-level keys handled
+    // outside the registry below.
+    std::unordered_set<std::string> knownEntityKeys = {
+        "id", "stableId", "mesh", "parent", "morphTargets"
+    };
+    for (const auto& reg : ComponentRegistry()) knownEntityKeys.insert(reg.key);
+    constexpr usize kMaxLoadWarnings = 25;
+
+    for (const auto& entityJson : sceneJson["entities"]) {
+        ECS::Entity entity = m_World->CreateEntity();
+        result.entities.push_back(entity);
+
+        // Track old-to-new ID mapping for hierarchy/reference remapping
+        if (entityJson.contains("id")) {
+            u64 oldId = entityJson["id"].get<u64>();
+            oldToNew[oldId] = entity;
+        }
+
+        // Restore the durable scene-authoring identity. Legacy scenes saved
+        // before stableId existed get a fresh one backfilled here; the scene
+        // then persists it on next save (a visible, one-time VCS diff).
+        {
+            u64 stableId = (entityJson.contains("stableId") && entityJson["stableId"].is_number_unsigned())
+                               ? entityJson["stableId"].get<u64>()
+                               : ECS::GenerateStableId();
+            m_World->AddComponent<ECS::StableIdComponent>(entity, ECS::StableIdComponent{ stableId });
+        }
+
+        // Set root entity to first entity
+        if (result.rootEntity == ECS::INVALID_ENTITY) {
+            result.rootEntity = entity;
+        }
+
+        // Deserialize components
+                    // Deserialize components via the registry (single source of truth).
+        // mesh stays explicit below (IsValid guard); stableId/id/parent are
+        // entity-level and handled outside the registry.
+        for (const auto& reg : ComponentRegistry()) {
+            std::string_view rk(reg.key);
+            if (rk == "mesh" || rk == "stableId") continue;
+            auto regIt = entityJson.find(reg.key);
+            if (regIt != entityJson.end()) reg.de(m_World, entity, *regIt);
+        }
+        if (entityJson.contains("mesh")) {
+            auto mesh = DeserializeMeshComponent(entityJson["mesh"]);
+            if (mesh.IsValid()) {
+                m_World->AddComponent<ECS::MeshComponent>(entity, mesh);
+            }
+        }
+        if (entityJson.contains("parent")) {
+            auto& pc = m_World->AddComponent<ECS::ParentComponent>(entity);
+            pc.parent = static_cast<ECS::Entity>(entityJson["parent"].get<u64>());
+        }
+
+        // Warn about unknown/mistyped entity keys that were silently dropped.
+        if (entityJson.is_object() && result.warnings.size() < kMaxLoadWarnings) {
+            std::string entName;
+            if (auto nit = entityJson.find("name"); nit != entityJson.end() && nit->is_string())
+                entName = nit->get<std::string>();
+            for (auto kit = entityJson.begin(); kit != entityJson.end(); ++kit) {
+                if (result.warnings.size() >= kMaxLoadWarnings) break;
+                const std::string& key = kit.key();
+                if (knownEntityKeys.count(key)) continue;
+                // Suggest a near-miss key (e.g. script -> scriptComponent).
+                std::string suggestion;
+                for (const std::string& known : knownEntityKeys) {
+                    if (known == key + "Component" || key == known + "Component" ||
+                        (known.size() > key.size() && known.rfind(key, 0) == 0)) {
+                        suggestion = known;
+                        break;
+                    }
+                }
+                std::string who = entName.empty()
+                    ? ("entity " + std::to_string(static_cast<u64>(entity)))
+                    : ("'" + entName + "'");
+                std::string msg = "Unknown key '" + key + "' on " + who + " was ignored";
+                if (!suggestion.empty()) msg += " (did you mean '" + suggestion + "'?)";
+                result.warnings.push_back(std::move(msg));
+            }
+        }
+
+    }
+
+    // Remap entity references (parent, IK target) from old IDs to new IDs
+    for (ECS::Entity entity : result.entities) {
+        if (m_World->HasComponent<ECS::ParentComponent>(entity)) {
+            auto* pc = m_World->GetComponent<ECS::ParentComponent>(entity);
+            auto it = oldToNew.find(static_cast<u64>(pc->parent));
+            if (it != oldToNew.end()) {
+                pc->parent = it->second;
+            } else {
+                pc->parent = ECS::INVALID_ENTITY;
+            }
+        }
+        if (m_World->HasComponent<ECS::LookAtIKComponent>(entity)) {
+            auto* ik = m_World->GetComponent<ECS::LookAtIKComponent>(entity);
+            if (ik->useEntityTarget && ik->targetEntity != ECS::INVALID_ENTITY) {
+                auto it = oldToNew.find(static_cast<u64>(ik->targetEntity));
+                ik->targetEntity = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
+            }
+        }
+        if (m_World->HasComponent<ECS::TwoBoneIKComponent>(entity)) {
+            auto* ik = m_World->GetComponent<ECS::TwoBoneIKComponent>(entity);
+            if (ik->useEntityTarget && ik->targetEntity != ECS::INVALID_ENTITY) {
+                auto it = oldToNew.find(static_cast<u64>(ik->targetEntity));
+                ik->targetEntity = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
+            }
+        }
+        if (m_World->HasComponent<ECS::TetherComponent>(entity)) {
+            auto* tc = m_World->GetComponent<ECS::TetherComponent>(entity);
+            if (tc->stemEntity != ECS::INVALID_ENTITY) {
+                auto it = oldToNew.find(static_cast<u64>(tc->stemEntity));
+                tc->stemEntity = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
+            }
+            if (tc->connectedEntity != ECS::INVALID_ENTITY) {
+                auto it = oldToNew.find(static_cast<u64>(tc->connectedEntity));
+                tc->connectedEntity = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
+            }
+        }
+        if (m_World->HasComponent<ECS::FollowTargetComponent>(entity)) {
+            auto* ft = m_World->GetComponent<ECS::FollowTargetComponent>(entity);
+            if (ft->target != 0 && ft->target != ECS::INVALID_ENTITY) {
+                auto it = oldToNew.find(static_cast<u64>(ft->target));
+                ft->target = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
+            }
+        }
+        if (m_World->HasComponent<ECS::LookAtTargetComponent>(entity)) {
+            auto* la = m_World->GetComponent<ECS::LookAtTargetComponent>(entity);
+            if (la->target != 0 && la->target != ECS::INVALID_ENTITY) {
+                auto it = oldToNew.find(static_cast<u64>(la->target));
+                la->target = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
+            }
+        }
+        if (m_World->HasComponent<ECS::VirtualCameraComponent>(entity)) {
+            auto* vc = m_World->GetComponent<ECS::VirtualCameraComponent>(entity);
+            if (vc->follow != 0 && vc->follow != ECS::INVALID_ENTITY) {
+                auto it = oldToNew.find(static_cast<u64>(vc->follow));
+                vc->follow = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
+            }
+            if (vc->lookAt != 0 && vc->lookAt != ECS::INVALID_ENTITY) {
+                auto it = oldToNew.find(static_cast<u64>(vc->lookAt));
+                vc->lookAt = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
+            }
+        }
+        // BoneAttachment was missing from this list while its serializer
+        // happily wrote targetEntity as a raw ID. Saved IDs are pre-load
+        // IDs and CreateEntity hands out different ones, so a sword
+        // attached to a character's hand came back pointing at whichever
+        // entity now held that slot -- and unlike the components above it
+        // was not even nulled, so the stale ID looked like a valid handle.
+        if (m_World->HasComponent<ECS::BoneAttachmentComponent>(entity)) {
+            auto* ba = m_World->GetComponent<ECS::BoneAttachmentComponent>(entity);
+            if (ba->targetEntity != 0 && ba->targetEntity != ECS::INVALID_ENTITY) {
+                auto it = oldToNew.find(static_cast<u64>(ba->targetEntity));
+                ba->targetEntity = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
+            }
+        }
+    }
+
+    // Rebuild ChildrenComponent from ParentComponent references
+    for (ECS::Entity entity : result.entities) {
+        if (m_World->HasComponent<ECS::ParentComponent>(entity)) {
+            ECS::Entity parent = m_World->GetComponent<ECS::ParentComponent>(entity)->parent;
+            if (parent != ECS::INVALID_ENTITY && m_World->IsValid(parent)) {
+                if (!m_World->HasComponent<ECS::ChildrenComponent>(parent)) {
+                    m_World->AddComponent<ECS::ChildrenComponent>(parent);
+                }
+                m_World->GetComponent<ECS::ChildrenComponent>(parent)->children.push_back(entity);
+            }
+        }
+    }
+
+    // Re-share one Skeleton per imported-model group so co-skeleton meshes (body + joints)
+    // resolve to a single animator after reload (see ReshareSkeletonGroups).
+    ReshareSkeletonGroups(m_World);
+
+    // UI unification: convert legacy hudWidget components to UICanvases
+    MigrateHUDWidgetsToCanvases(m_World);
+}
+
 DeserializationResult SceneSerializer::Load(const std::string& filepath, bool clearExisting) {
     if (!m_World) {
         DeserializationResult result;
@@ -9800,190 +10002,7 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             return result;
         }
 
-        // Map old entity IDs -> new entity IDs for remapping references
-        std::unordered_map<u64, ECS::Entity> oldToNew;
-
-        // Recognized entity-level keys, so we can warn about unknown/mistyped
-        // ones. Unknown keys are silently ignored on load and erased on the next
-        // save (e.g. "script" instead of "scriptComponent"), an invisible way to
-        // lose authored data. Set = registry keys + the entity-level keys handled
-        // outside the registry below.
-        std::unordered_set<std::string> knownEntityKeys = {
-            "id", "stableId", "mesh", "parent", "morphTargets"
-        };
-        for (const auto& reg : ComponentRegistry()) knownEntityKeys.insert(reg.key);
-        constexpr usize kMaxLoadWarnings = 25;
-
-        for (const auto& entityJson : sceneJson["entities"]) {
-            ECS::Entity entity = m_World->CreateEntity();
-            result.entities.push_back(entity);
-
-            // Track old-to-new ID mapping for hierarchy/reference remapping
-            if (entityJson.contains("id")) {
-                u64 oldId = entityJson["id"].get<u64>();
-                oldToNew[oldId] = entity;
-            }
-
-            // Restore the durable scene-authoring identity. Legacy scenes saved
-            // before stableId existed get a fresh one backfilled here; the scene
-            // then persists it on next save (a visible, one-time VCS diff).
-            {
-                u64 stableId = (entityJson.contains("stableId") && entityJson["stableId"].is_number_unsigned())
-                                   ? entityJson["stableId"].get<u64>()
-                                   : ECS::GenerateStableId();
-                m_World->AddComponent<ECS::StableIdComponent>(entity, ECS::StableIdComponent{ stableId });
-            }
-
-            // Set root entity to first entity
-            if (result.rootEntity == ECS::INVALID_ENTITY) {
-                result.rootEntity = entity;
-            }
-
-            // Deserialize components
-                        // Deserialize components via the registry (single source of truth).
-            // mesh stays explicit below (IsValid guard); stableId/id/parent are
-            // entity-level and handled outside the registry.
-            for (const auto& reg : ComponentRegistry()) {
-                std::string_view rk(reg.key);
-                if (rk == "mesh" || rk == "stableId") continue;
-                auto regIt = entityJson.find(reg.key);
-                if (regIt != entityJson.end()) reg.de(m_World, entity, *regIt);
-            }
-            if (entityJson.contains("mesh")) {
-                auto mesh = DeserializeMeshComponent(entityJson["mesh"]);
-                if (mesh.IsValid()) {
-                    m_World->AddComponent<ECS::MeshComponent>(entity, mesh);
-                }
-            }
-            if (entityJson.contains("parent")) {
-                auto& pc = m_World->AddComponent<ECS::ParentComponent>(entity);
-                pc.parent = static_cast<ECS::Entity>(entityJson["parent"].get<u64>());
-            }
-
-            // Warn about unknown/mistyped entity keys that were silently dropped.
-            if (entityJson.is_object() && result.warnings.size() < kMaxLoadWarnings) {
-                std::string entName;
-                if (auto nit = entityJson.find("name"); nit != entityJson.end() && nit->is_string())
-                    entName = nit->get<std::string>();
-                for (auto kit = entityJson.begin(); kit != entityJson.end(); ++kit) {
-                    if (result.warnings.size() >= kMaxLoadWarnings) break;
-                    const std::string& key = kit.key();
-                    if (knownEntityKeys.count(key)) continue;
-                    // Suggest a near-miss key (e.g. script -> scriptComponent).
-                    std::string suggestion;
-                    for (const std::string& known : knownEntityKeys) {
-                        if (known == key + "Component" || key == known + "Component" ||
-                            (known.size() > key.size() && known.rfind(key, 0) == 0)) {
-                            suggestion = known;
-                            break;
-                        }
-                    }
-                    std::string who = entName.empty()
-                        ? ("entity " + std::to_string(static_cast<u64>(entity)))
-                        : ("'" + entName + "'");
-                    std::string msg = "Unknown key '" + key + "' on " + who + " was ignored";
-                    if (!suggestion.empty()) msg += " (did you mean '" + suggestion + "'?)";
-                    result.warnings.push_back(std::move(msg));
-                }
-            }
-
-        }
-
-        // Remap entity references (parent, IK target) from old IDs to new IDs
-        for (ECS::Entity entity : result.entities) {
-            if (m_World->HasComponent<ECS::ParentComponent>(entity)) {
-                auto* pc = m_World->GetComponent<ECS::ParentComponent>(entity);
-                auto it = oldToNew.find(static_cast<u64>(pc->parent));
-                if (it != oldToNew.end()) {
-                    pc->parent = it->second;
-                } else {
-                    pc->parent = ECS::INVALID_ENTITY;
-                }
-            }
-            if (m_World->HasComponent<ECS::LookAtIKComponent>(entity)) {
-                auto* ik = m_World->GetComponent<ECS::LookAtIKComponent>(entity);
-                if (ik->useEntityTarget && ik->targetEntity != ECS::INVALID_ENTITY) {
-                    auto it = oldToNew.find(static_cast<u64>(ik->targetEntity));
-                    ik->targetEntity = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
-                }
-            }
-            if (m_World->HasComponent<ECS::TwoBoneIKComponent>(entity)) {
-                auto* ik = m_World->GetComponent<ECS::TwoBoneIKComponent>(entity);
-                if (ik->useEntityTarget && ik->targetEntity != ECS::INVALID_ENTITY) {
-                    auto it = oldToNew.find(static_cast<u64>(ik->targetEntity));
-                    ik->targetEntity = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
-                }
-            }
-            if (m_World->HasComponent<ECS::TetherComponent>(entity)) {
-                auto* tc = m_World->GetComponent<ECS::TetherComponent>(entity);
-                if (tc->stemEntity != ECS::INVALID_ENTITY) {
-                    auto it = oldToNew.find(static_cast<u64>(tc->stemEntity));
-                    tc->stemEntity = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
-                }
-                if (tc->connectedEntity != ECS::INVALID_ENTITY) {
-                    auto it = oldToNew.find(static_cast<u64>(tc->connectedEntity));
-                    tc->connectedEntity = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
-                }
-            }
-            if (m_World->HasComponent<ECS::FollowTargetComponent>(entity)) {
-                auto* ft = m_World->GetComponent<ECS::FollowTargetComponent>(entity);
-                if (ft->target != 0 && ft->target != ECS::INVALID_ENTITY) {
-                    auto it = oldToNew.find(static_cast<u64>(ft->target));
-                    ft->target = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
-                }
-            }
-            if (m_World->HasComponent<ECS::LookAtTargetComponent>(entity)) {
-                auto* la = m_World->GetComponent<ECS::LookAtTargetComponent>(entity);
-                if (la->target != 0 && la->target != ECS::INVALID_ENTITY) {
-                    auto it = oldToNew.find(static_cast<u64>(la->target));
-                    la->target = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
-                }
-            }
-            if (m_World->HasComponent<ECS::VirtualCameraComponent>(entity)) {
-                auto* vc = m_World->GetComponent<ECS::VirtualCameraComponent>(entity);
-                if (vc->follow != 0 && vc->follow != ECS::INVALID_ENTITY) {
-                    auto it = oldToNew.find(static_cast<u64>(vc->follow));
-                    vc->follow = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
-                }
-                if (vc->lookAt != 0 && vc->lookAt != ECS::INVALID_ENTITY) {
-                    auto it = oldToNew.find(static_cast<u64>(vc->lookAt));
-                    vc->lookAt = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
-                }
-            }
-            // BoneAttachment was missing from this list while its serializer
-            // happily wrote targetEntity as a raw ID. Saved IDs are pre-load
-            // IDs and CreateEntity hands out different ones, so a sword
-            // attached to a character's hand came back pointing at whichever
-            // entity now held that slot -- and unlike the components above it
-            // was not even nulled, so the stale ID looked like a valid handle.
-            if (m_World->HasComponent<ECS::BoneAttachmentComponent>(entity)) {
-                auto* ba = m_World->GetComponent<ECS::BoneAttachmentComponent>(entity);
-                if (ba->targetEntity != 0 && ba->targetEntity != ECS::INVALID_ENTITY) {
-                    auto it = oldToNew.find(static_cast<u64>(ba->targetEntity));
-                    ba->targetEntity = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
-                }
-            }
-        }
-
-        // Rebuild ChildrenComponent from ParentComponent references
-        for (ECS::Entity entity : result.entities) {
-            if (m_World->HasComponent<ECS::ParentComponent>(entity)) {
-                ECS::Entity parent = m_World->GetComponent<ECS::ParentComponent>(entity)->parent;
-                if (parent != ECS::INVALID_ENTITY && m_World->IsValid(parent)) {
-                    if (!m_World->HasComponent<ECS::ChildrenComponent>(parent)) {
-                        m_World->AddComponent<ECS::ChildrenComponent>(parent);
-                    }
-                    m_World->GetComponent<ECS::ChildrenComponent>(parent)->children.push_back(entity);
-                }
-            }
-        }
-
-        // Re-share one Skeleton per imported-model group so co-skeleton meshes (body + joints)
-        // resolve to a single animator after reload (see ReshareSkeletonGroups).
-        ReshareSkeletonGroups(m_World);
-
-        // UI unification: convert legacy hudWidget components to UICanvases
-        MigrateHUDWidgetsToCanvases(m_World);
+        DeserializeEntities(sceneJson, result);
 
         result.success = true;
         ENJIN_LOG_INFO(Asset, "Loaded scene from %s (%zu entities)", filepath.c_str(), result.entities.size());
@@ -10242,150 +10261,7 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             m_ContentFlags = Accessibility::SceneContentFlags{};
         }
 
-        // Map old entity IDs -> new entity IDs for remapping references
-        std::unordered_map<u64, ECS::Entity> oldToNew;
-
-        for (const auto& entityJson : sceneJson["entities"]) {
-            ECS::Entity entity = m_World->CreateEntity();
-            result.entities.push_back(entity);
-
-            // Track old-to-new ID mapping for hierarchy/reference remapping
-            if (entityJson.contains("id")) {
-                u64 oldId = entityJson["id"].get<u64>();
-                oldToNew[oldId] = entity;
-            }
-
-            // Restore the durable scene-authoring identity. Legacy scenes saved
-            // before stableId existed get a fresh one backfilled here; the scene
-            // then persists it on next save (a visible, one-time VCS diff).
-            {
-                u64 stableId = (entityJson.contains("stableId") && entityJson["stableId"].is_number_unsigned())
-                                   ? entityJson["stableId"].get<u64>()
-                                   : ECS::GenerateStableId();
-                m_World->AddComponent<ECS::StableIdComponent>(entity, ECS::StableIdComponent{ stableId });
-            }
-
-            if (result.rootEntity == ECS::INVALID_ENTITY) {
-                result.rootEntity = entity;
-            }
-
-            // Deserialize components
-                        // Deserialize components via the registry (single source of truth).
-            // mesh stays explicit below (IsValid guard); stableId/id/parent are
-            // entity-level and handled outside the registry.
-            for (const auto& reg : ComponentRegistry()) {
-                std::string_view rk(reg.key);
-                if (rk == "mesh" || rk == "stableId") continue;
-                auto regIt = entityJson.find(reg.key);
-                if (regIt != entityJson.end()) reg.de(m_World, entity, *regIt);
-            }
-            if (entityJson.contains("mesh")) {
-                auto mesh = DeserializeMeshComponent(entityJson["mesh"]);
-                if (mesh.IsValid()) {
-                    m_World->AddComponent<ECS::MeshComponent>(entity, mesh);
-                }
-            }
-            if (entityJson.contains("parent")) {
-                auto& pc = m_World->AddComponent<ECS::ParentComponent>(entity);
-                pc.parent = static_cast<ECS::Entity>(entityJson["parent"].get<u64>());
-            }
-
-        }
-
-        // Remap entity references (parent, IK target) from old IDs to new IDs
-        for (ECS::Entity entity : result.entities) {
-            if (m_World->HasComponent<ECS::ParentComponent>(entity)) {
-                auto* pc = m_World->GetComponent<ECS::ParentComponent>(entity);
-                auto it = oldToNew.find(static_cast<u64>(pc->parent));
-                if (it != oldToNew.end()) {
-                    pc->parent = it->second;
-                } else {
-                    pc->parent = ECS::INVALID_ENTITY;
-                }
-            }
-            if (m_World->HasComponent<ECS::LookAtIKComponent>(entity)) {
-                auto* ik = m_World->GetComponent<ECS::LookAtIKComponent>(entity);
-                if (ik->useEntityTarget && ik->targetEntity != ECS::INVALID_ENTITY) {
-                    auto it = oldToNew.find(static_cast<u64>(ik->targetEntity));
-                    ik->targetEntity = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
-                }
-            }
-            if (m_World->HasComponent<ECS::TwoBoneIKComponent>(entity)) {
-                auto* ik = m_World->GetComponent<ECS::TwoBoneIKComponent>(entity);
-                if (ik->useEntityTarget && ik->targetEntity != ECS::INVALID_ENTITY) {
-                    auto it = oldToNew.find(static_cast<u64>(ik->targetEntity));
-                    ik->targetEntity = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
-                }
-            }
-            if (m_World->HasComponent<ECS::TetherComponent>(entity)) {
-                auto* tc = m_World->GetComponent<ECS::TetherComponent>(entity);
-                if (tc->stemEntity != ECS::INVALID_ENTITY) {
-                    auto it = oldToNew.find(static_cast<u64>(tc->stemEntity));
-                    tc->stemEntity = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
-                }
-                if (tc->connectedEntity != ECS::INVALID_ENTITY) {
-                    auto it = oldToNew.find(static_cast<u64>(tc->connectedEntity));
-                    tc->connectedEntity = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
-                }
-            }
-            if (m_World->HasComponent<ECS::FollowTargetComponent>(entity)) {
-                auto* ft = m_World->GetComponent<ECS::FollowTargetComponent>(entity);
-                if (ft->target != 0 && ft->target != ECS::INVALID_ENTITY) {
-                    auto it = oldToNew.find(static_cast<u64>(ft->target));
-                    ft->target = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
-                }
-            }
-            if (m_World->HasComponent<ECS::LookAtTargetComponent>(entity)) {
-                auto* la = m_World->GetComponent<ECS::LookAtTargetComponent>(entity);
-                if (la->target != 0 && la->target != ECS::INVALID_ENTITY) {
-                    auto it = oldToNew.find(static_cast<u64>(la->target));
-                    la->target = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
-                }
-            }
-            if (m_World->HasComponent<ECS::VirtualCameraComponent>(entity)) {
-                auto* vc = m_World->GetComponent<ECS::VirtualCameraComponent>(entity);
-                if (vc->follow != 0 && vc->follow != ECS::INVALID_ENTITY) {
-                    auto it = oldToNew.find(static_cast<u64>(vc->follow));
-                    vc->follow = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
-                }
-                if (vc->lookAt != 0 && vc->lookAt != ECS::INVALID_ENTITY) {
-                    auto it = oldToNew.find(static_cast<u64>(vc->lookAt));
-                    vc->lookAt = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
-                }
-            }
-            // BoneAttachment was missing from this list while its serializer
-            // happily wrote targetEntity as a raw ID. Saved IDs are pre-load
-            // IDs and CreateEntity hands out different ones, so a sword
-            // attached to a character's hand came back pointing at whichever
-            // entity now held that slot -- and unlike the components above it
-            // was not even nulled, so the stale ID looked like a valid handle.
-            if (m_World->HasComponent<ECS::BoneAttachmentComponent>(entity)) {
-                auto* ba = m_World->GetComponent<ECS::BoneAttachmentComponent>(entity);
-                if (ba->targetEntity != 0 && ba->targetEntity != ECS::INVALID_ENTITY) {
-                    auto it = oldToNew.find(static_cast<u64>(ba->targetEntity));
-                    ba->targetEntity = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
-                }
-            }
-        }
-
-        // Rebuild ChildrenComponent from ParentComponent references
-        for (ECS::Entity entity : result.entities) {
-            if (m_World->HasComponent<ECS::ParentComponent>(entity)) {
-                ECS::Entity parent = m_World->GetComponent<ECS::ParentComponent>(entity)->parent;
-                if (parent != ECS::INVALID_ENTITY && m_World->IsValid(parent)) {
-                    if (!m_World->HasComponent<ECS::ChildrenComponent>(parent)) {
-                        m_World->AddComponent<ECS::ChildrenComponent>(parent);
-                    }
-                    m_World->GetComponent<ECS::ChildrenComponent>(parent)->children.push_back(entity);
-                }
-            }
-        }
-
-        // Re-share one Skeleton per imported-model group (see ReshareSkeletonGroups).
-        ReshareSkeletonGroups(m_World);
-
-        // UI unification: convert legacy hudWidget components to UICanvases
-        MigrateHUDWidgetsToCanvases(m_World);
+        DeserializeEntities(sceneJson, result);
 
         result.success = true;
         ENJIN_LOG_DEBUG(Asset, "Loaded scene from string (%zu entities)", result.entities.size());

@@ -162,6 +162,11 @@ private:
     // Apply incremental migrations from fromVersion up to SCENE_FORMAT_VERSION
     static void MigrateScene(nlohmann::json& root, u32 fromVersion);
 
+    // Shared tail of every scene load: create entities, remap saved entity
+    // references, rebuild children, re-share skeletons, migrate HUD widgets.
+    // The file path and the string path used to carry their own copy.
+    void DeserializeEntities(const nlohmann::json& sceneJson, DeserializationResult& result);
+
     // Canonical form of a path for the save-block comparison. Falls back to a
     // lexically normalised absolute path when the file cannot be resolved.
     static std::string CanonicalPathKey(const std::string& path);

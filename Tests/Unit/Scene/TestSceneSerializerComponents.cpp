@@ -1838,4 +1838,69 @@ ENJIN_TEST(SceneVersionGuard, LoadingAKnownVersionClearsTheBlock) {
     std::filesystem::remove(known, ec);
 }
 
+// ===========================================================================
+// Unknown-key warnings on BOTH load paths
+//
+// Regression: the file path and the string path each carried their own copy of
+// the entity loop, and only the file path grew the unknown-key warnings. A
+// scene loaded from a .enjpak (string path) therefore dropped mistyped keys
+// silently -- "script" instead of "scriptComponent" is the documented example,
+// and it is erased by the next save. Both paths share one implementation now.
+// ===========================================================================
+
+namespace {
+
+std::string SceneWithUnknownEntityKey() {
+    return R"({
+  "version": "1.0",
+  "formatVersion": 1,
+  "entities": [
+    { "id": 1, "name": "Probe", "definitelyNotAComponentKey": { "x": 1 } }
+  ]
+})";
+}
+
+} // namespace
+
+ENJIN_TEST(UnknownKeyWarnings, StringLoadReportsUnknownEntityKeys) {
+    // Arrange
+    World world;
+    Scene::SceneSerializer ser(&world);
+
+    // Act
+    auto result = ser.LoadFromString(SceneWithUnknownEntityKey());
+
+    // Assert: the load still succeeds, and the dropped key is reported rather
+    // than silently discarded.
+    ENJIN_ASSERT_TRUE(result.success);
+    bool mentioned = false;
+    for (const auto& w : result.warnings) {
+        if (w.find("definitelyNotAComponentKey") != std::string::npos) mentioned = true;
+    }
+    ENJIN_EXPECT_TRUE(mentioned);
+}
+
+ENJIN_TEST(UnknownKeyWarnings, FileLoadStillReportsThem) {
+    // Arrange
+    const std::string path = (std::filesystem::temp_directory_path() /
+                              "enjin_unknown_key_scene.enjin").string();
+    { std::ofstream f(path, std::ios::binary); f << SceneWithUnknownEntityKey(); }
+    World world;
+    Scene::SceneSerializer ser(&world);
+
+    // Act
+    auto result = ser.Load(path);
+
+    // Assert: unchanged behaviour on the path that already had it.
+    ENJIN_ASSERT_TRUE(result.success);
+    bool mentioned = false;
+    for (const auto& w : result.warnings) {
+        if (w.find("definitelyNotAComponentKey") != std::string::npos) mentioned = true;
+    }
+    ENJIN_EXPECT_TRUE(mentioned);
+
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+}
+
 ENJIN_TEST_MAIN()
