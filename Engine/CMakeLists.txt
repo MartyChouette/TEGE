@@ -501,8 +501,19 @@ if(NOT ENJIN_PLATFORM_WEB)
              "${CMAKE_SOURCE_DIR}/Engine/shaders/*.frag"
              "${CMAKE_SOURCE_DIR}/Engine/shaders/*.comp")
 
-        # RT shaders include rt_common.glsl and are handled by _gen_rt.py.
-        list(FILTER ENJIN_SHADER_SRCS EXCLUDE REGEX "/rt_")
+        # Shaders that belong to the RT header are excluded here: _gen_rt.py
+        # packs them, and it must see glslc output, not glslangValidator output,
+        # or RTShaderData.h ends up built from two different compilers.
+        #
+        # Excluding on the "rt_" PREFIX was too broad and broke the build the
+        # first time codegen actually ran in CI. rt_hybrid_apply.frag is an
+        # ordinary fragment shader that merely starts with rt_; it has no
+        # #include, glslangValidator compiles it fine, and _gen_all.py REQUIRES
+        # its .spv. Skipping it meant _gen_all.py died with FileNotFoundError.
+        # What actually needs excluding is the set _gen_rt.py owns, so name it.
+        foreach(RT_OWNED rt_composite.comp rt_temporal_reuse.comp)
+            list(FILTER ENJIN_SHADER_SRCS EXCLUDE REGEX "/${RT_OWNED}$")
+        endforeach()
 
         set(ENJIN_SPV_OUTPUTS "")
         foreach(SHADER ${ENJIN_SHADER_SRCS})
