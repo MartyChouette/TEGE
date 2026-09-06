@@ -202,6 +202,8 @@ void PlayMode::Play() {
             // Script bindings captured the (null) backend pointer at Initialize —
             // refresh it or Physics_Raycast/Teleport silently no-op this session
             Scripting::SetBindingsPhysics(m_Physics.get());
+            // Same reason, same list: hover picks against this backend too.
+            m_HoverHighlightSystem.SetPhysics(m_Physics.get());
             ENJIN_LOG_INFO(Editor, "PlayMode: Created 3D physics backend on Play()");
         }
     }
@@ -920,6 +922,15 @@ void PlayMode::Stop() {
     m_RecordRewindSystem.SetPhysics2D(nullptr);
     m_VisualScriptSystem.SetPhysics(nullptr);
     Scripting::SetBindingsPhysics(nullptr);
+    // Hover highlight was missing from this list, which is the whole bug: it
+    // took a raw backend pointer in Initialize, nothing cleared it here, and
+    // nothing refreshed it in Play. From the first Stop onward it pointed at a
+    // destroyed backend -- non-null, so its own guard passed, and the next
+    // Update raycast read freed memory. That is the play-cycle access violation
+    // (CI, 0xC0000005 reading 0x40 at HoverHighlightSystem.cpp:67). It only
+    // showed under lavapipe because the freed block survives intact on a real
+    // GPU run.
+    m_HoverHighlightSystem.SetPhysics(nullptr);
     m_Physics.reset();
     m_Physics2D.reset();
 
