@@ -65,9 +65,22 @@ void ScriptSystem::HandleScriptError(ECS::ScriptAttachment& script, const char* 
         script.className.c_str(), methodName, script.lastError.c_str());
 }
 
-bool ScriptSystem::ClassifyExecuteResult(ECS::ScriptAttachment& script, int result,
+ECS::ScriptAttachment* ScriptSystem::ResolveScript(ECS::Entity entity, usize index) {
+    if (!m_World) return nullptr;
+    auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
+    if (!sc || index >= sc->scripts.size()) return nullptr;
+    return &sc->scripts[index];
+}
+
+bool ScriptSystem::ClassifyExecuteResult(ECS::Entity entity, usize index, int result,
                                          const char* methodName, const char* exceptionText) {
     if (result == asEXECUTION_FINISHED) return true;
+
+    // Re-resolved AFTER the call: the attachment reference the caller held
+    // going in is not guaranteed to survive arbitrary script code.
+    ECS::ScriptAttachment* sp = ResolveScript(entity, index);
+    if (!sp) return false;
+    ECS::ScriptAttachment& script = *sp;
 
     if (result == asEXECUTION_EXCEPTION) {
         script.lastError = exceptionText ? exceptionText : "";
@@ -108,7 +121,11 @@ bool ScriptSystem::ClassifyExecuteResult(ECS::ScriptAttachment& script, int resu
     return false;
 }
 
-bool ScriptSystem::CallLifecycleMethod(ECS::ScriptAttachment& script, int methodId, const char* methodName) {
+bool ScriptSystem::CallLifecycleMethod(ECS::Entity entity, usize index, int methodId, const char* methodName) {
+    ECS::ScriptAttachment* sp = ResolveScript(entity, index);
+    if (!sp) return true;
+    ECS::ScriptAttachment& script = *sp;
+
     if (methodId < 0 || !script.instance || script.hasError || !script.enabled) return true;
     if (!m_ScriptEngine) return false;
 
@@ -127,14 +144,18 @@ bool ScriptSystem::CallLifecycleMethod(ECS::ScriptAttachment& script, int method
     ctx->SetObject(obj);
 
     int r = ctx->Execute();
-    bool success = ClassifyExecuteResult(script, r, methodName,
+    bool success = ClassifyExecuteResult(entity, index, r, methodName,
         r == asEXECUTION_EXCEPTION ? ctx->GetExceptionString() : nullptr);
 
     m_ScriptEngine->ReturnContext(ctx);
     return success;
 }
 
-bool ScriptSystem::CallLifecycleMethodFloat(ECS::ScriptAttachment& script, int methodId, const char* methodName, f32 value) {
+bool ScriptSystem::CallLifecycleMethodFloat(ECS::Entity entity, usize index, int methodId, const char* methodName, f32 value) {
+    ECS::ScriptAttachment* sp = ResolveScript(entity, index);
+    if (!sp) return true;
+    ECS::ScriptAttachment& script = *sp;
+
     if (methodId < 0 || !script.instance || script.hasError || !script.enabled) return true;
     if (!m_ScriptEngine) return false;
 
@@ -154,14 +175,18 @@ bool ScriptSystem::CallLifecycleMethodFloat(ECS::ScriptAttachment& script, int m
     ctx->SetArgFloat(0, value);
 
     int r = ctx->Execute();
-    bool success = ClassifyExecuteResult(script, r, methodName,
+    bool success = ClassifyExecuteResult(entity, index, r, methodName,
         r == asEXECUTION_EXCEPTION ? ctx->GetExceptionString() : nullptr);
 
     m_ScriptEngine->ReturnContext(ctx);
     return success;
 }
 
-bool ScriptSystem::CallCollisionMethod(ECS::ScriptAttachment& script, int methodId, const char* methodName, ECS::Entity other) {
+bool ScriptSystem::CallCollisionMethod(ECS::Entity entity, usize index, int methodId, const char* methodName, ECS::Entity other) {
+    ECS::ScriptAttachment* sp = ResolveScript(entity, index);
+    if (!sp) return true;
+    ECS::ScriptAttachment& script = *sp;
+
     if (methodId < 0 || !script.instance || script.hasError || !script.enabled) return true;
     if (!m_ScriptEngine) return false;
 
@@ -181,14 +206,18 @@ bool ScriptSystem::CallCollisionMethod(ECS::ScriptAttachment& script, int method
     ctx->SetArgQWord(0, static_cast<asQWORD>(other));
 
     int r = ctx->Execute();
-    bool success = ClassifyExecuteResult(script, r, methodName,
+    bool success = ClassifyExecuteResult(entity, index, r, methodName,
         r == asEXECUTION_EXCEPTION ? ctx->GetExceptionString() : nullptr);
 
     m_ScriptEngine->ReturnContext(ctx);
     return success;
 }
 
-bool ScriptSystem::CallStringMethod(ECS::ScriptAttachment& script, int methodId, const char* methodName, const std::string& arg) {
+bool ScriptSystem::CallStringMethod(ECS::Entity entity, usize index, int methodId, const char* methodName, const std::string& arg) {
+    ECS::ScriptAttachment* sp = ResolveScript(entity, index);
+    if (!sp) return true;
+    ECS::ScriptAttachment& script = *sp;
+
     if (methodId < 0 || !script.instance || script.hasError || !script.enabled) return true;
     if (!m_ScriptEngine) return false;
 
@@ -211,7 +240,7 @@ bool ScriptSystem::CallStringMethod(ECS::ScriptAttachment& script, int methodId,
     ctx->SetArgObject(0, &argCopy);
 
     int r = ctx->Execute();
-    bool success = ClassifyExecuteResult(script, r, methodName,
+    bool success = ClassifyExecuteResult(entity, index, r, methodName,
         r == asEXECUTION_EXCEPTION ? ctx->GetExceptionString() : nullptr);
 
     m_ScriptEngine->ReturnContext(ctx);
@@ -220,14 +249,15 @@ bool ScriptSystem::CallStringMethod(ECS::ScriptAttachment& script, int methodId,
 
 void ScriptSystem::OnAnimationEvent(ECS::Entity entity, const std::string& name) {
     if (!m_World || !m_World->HasComponent<ECS::ScriptComponent>(entity)) return;
-    auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
-    if (!sc) return;
-    for (auto& script : sc->scripts) {
-        CallStringMethod(script, script.methodOnAnimationEvent, "OnAnimationEvent", name);
-    }
+    ForEachScript(entity, [&](usize i, ECS::ScriptAttachment& script) {
+        CallStringMethod(entity, i, script.methodOnAnimationEvent, "OnAnimationEvent", name);
+    });
 }
 
-void ScriptSystem::InitScript(ECS::Entity entity, ECS::ScriptAttachment& script) {
+void ScriptSystem::InitScript(ECS::Entity entity, usize index) {
+    ECS::ScriptAttachment* sp0 = ResolveScript(entity, index);
+    if (!sp0) return;
+    ECS::ScriptAttachment& script = *sp0;
     if (!m_ScriptEngine || script.initialized) return;
 
     // Resolve relative script paths against the script root (project dir).
@@ -333,12 +363,13 @@ void ScriptSystem::InitScript(ECS::Entity entity, ECS::ScriptAttachment& script)
 
     script.initialized = true;
 
-    // Call OnCreate
-    CallLifecycleMethod(script, script.methodOnCreate, "OnCreate");
+    // Call OnCreate. Both of these run user code, so the attachment is
+    // re-resolved rather than reusing the reference from the top.
+    CallLifecycleMethod(entity, index, script.methodOnCreate, "OnCreate");
 
     // Call OnEnable if enabled
-    if (script.enabled) {
-        CallLifecycleMethod(script, script.methodOnEnable, "OnEnable");
+    if (ECS::ScriptAttachment* sp1 = ResolveScript(entity, index); sp1 && sp1->enabled) {
+        CallLifecycleMethod(entity, index, sp1->methodOnEnable, "OnEnable");
     }
 }
 
@@ -349,11 +380,11 @@ void ScriptSystem::InitializeAllScripts() {
         auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
         if (!sc) continue;
 
-        for (auto& script : sc->scripts) {
+        ForEachScript(entity, [&](usize i, ECS::ScriptAttachment& script) {
             if (!script.initialized) {
-                InitScript(entity, script);
+                InitScript(entity, i);
             }
-        }
+        });
     }
 
     ENJIN_LOG_INFO(Script, "All scripts initialized");
@@ -386,12 +417,13 @@ void ScriptSystem::TeardownEntityScripts(ECS::Entity entity) {
     auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
     if (!sc) return;
 
-    for (auto& script : sc->scripts) {
+    for (usize i = 0; i < sc->scripts.size(); ++i) {
+        ECS::ScriptAttachment& script = sc->scripts[i];
         if (script.initialized && script.instance && !script.hasError) {
             if (script.enabled) {
-                CallLifecycleMethod(script, script.methodOnDisable, "OnDisable");
+                CallLifecycleMethod(entity, i, script.methodOnDisable, "OnDisable");
             }
-            CallLifecycleMethod(script, script.methodOnDestroy, "OnDestroy");
+            CallLifecycleMethod(entity, i, script.methodOnDestroy, "OnDestroy");
         }
 
         if (script.instance && m_ScriptEngine) {
@@ -452,7 +484,7 @@ void ScriptSystem::Update(f32 deltaTime) {
             auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
             if (!sc) continue;
 
-            for (auto& script : sc->scripts) {
+            ForEachScript(entity, [&](usize i, ECS::ScriptAttachment& script) {
                 if (script.hasError) {
                     // Retry: release old instance and re-init
                     if (script.instance) {
@@ -463,9 +495,9 @@ void ScriptSystem::Update(f32 deltaTime) {
                     script.started = false;
                     script.hasError = false;
                     script.lastError.clear();
-                    InitScript(entity, script);
+                    InitScript(entity, i);
                 }
-            }
+            });
         }
     }
 
@@ -474,20 +506,21 @@ void ScriptSystem::Update(f32 deltaTime) {
         auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
         if (!sc) continue;
 
-        for (auto& script : sc->scripts) {
+        ForEachScript(entity, [&](usize i, ECS::ScriptAttachment& script) {
             // hasError gates the retry: a failed init used to re-run EVERY
             // frame (full compile attempt + file IO + 4 error lines — 50k log
             // lines in a minute when a script file is missing). Hot reload
             // clears hasError when the source changes, and play-mode stop
             // resets it, so those remain the retry paths.
             if (!script.initialized && !script.hasError) {
-                InitScript(entity, script);
+                InitScript(entity, i);
             }
-            if (script.initialized && !script.started && !script.hasError && script.enabled) {
-                CallLifecycleMethod(script, script.methodOnStart, "OnStart");
-                script.started = true;
+            ECS::ScriptAttachment* sp = ResolveScript(entity, i);
+            if (sp && sp->initialized && !sp->started && !sp->hasError && sp->enabled) {
+                CallLifecycleMethod(entity, i, sp->methodOnStart, "OnStart");
+                if (ECS::ScriptAttachment* after = ResolveScript(entity, i)) after->started = true;
             }
-        }
+        });
     }
 
     // 4. Fixed update (accumulate time, run at fixed intervals). When the
@@ -508,14 +541,11 @@ void ScriptSystem::Update(f32 deltaTime) {
 
     // 5. OnUpdate
     for (ECS::Entity entity : m_CachedScriptEntities) {
-        auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
-        if (!sc) continue;
-
-        for (auto& script : sc->scripts) {
+        ForEachScript(entity, [&](usize i, ECS::ScriptAttachment& script) {
             if (script.initialized && script.started && !script.hasError && script.enabled) {
-                CallLifecycleMethodFloat(script, script.methodOnUpdate, "OnUpdate", deltaTime);
+                CallLifecycleMethodFloat(entity, i, script.methodOnUpdate, "OnUpdate", deltaTime);
             }
-        }
+        });
     }
 
     // 6. Update coroutines
@@ -535,14 +565,11 @@ void ScriptSystem::FixedUpdate(f32 fixedDeltaTime) {
     Scripting::TickBindingsTime(0.0f, fixedDeltaTime);
 
     for (ECS::Entity entity : m_CachedScriptEntities) {
-        auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
-        if (!sc) continue;
-
-        for (auto& script : sc->scripts) {
+        ForEachScript(entity, [&](usize i, ECS::ScriptAttachment& script) {
             if (script.initialized && script.started && !script.hasError && script.enabled) {
-                CallLifecycleMethodFloat(script, script.methodOnFixedUpdate, "OnFixedUpdate", fixedDeltaTime);
+                CallLifecycleMethodFloat(entity, i, script.methodOnFixedUpdate, "OnFixedUpdate", fixedDeltaTime);
             }
-        }
+        });
     }
 }
 
@@ -550,14 +577,11 @@ void ScriptSystem::LateUpdate(f32 deltaTime) {
     if (!m_Enabled || !m_World) return;
 
     for (ECS::Entity entity : m_CachedScriptEntities) {
-        auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
-        if (!sc) continue;
-
-        for (auto& script : sc->scripts) {
+        ForEachScript(entity, [&](usize i, ECS::ScriptAttachment& script) {
             if (script.initialized && script.started && !script.hasError && script.enabled) {
-                CallLifecycleMethodFloat(script, script.methodOnLateUpdate, "OnLateUpdate", deltaTime);
+                CallLifecycleMethodFloat(entity, i, script.methodOnLateUpdate, "OnLateUpdate", deltaTime);
             }
-        }
+        });
     }
 }
 
@@ -588,12 +612,10 @@ void ScriptSystem::UpdateMouseCallbacks() {
 
     auto dispatch = [this](ECS::Entity entity, int ECS::ScriptAttachment::*method, const char* name) {
         if (entity == ECS::INVALID_ENTITY || !m_World->IsValid(entity)) return;
-        auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
-        if (!sc) return;
-        for (auto& script : sc->scripts) {
+        ForEachScript(entity, [&](usize i, ECS::ScriptAttachment& script) {
             if (script.initialized && script.started)
-                CallLifecycleMethod(script, script.*method, name);
-        }
+                CallLifecycleMethod(entity, i, script.*method, name);
+        });
     };
 
     if (hovered != m_MouseHoverEntity) {
@@ -609,47 +631,37 @@ void ScriptSystem::UpdateMouseCallbacks() {
 
 void ScriptSystem::OnCollisionEnter(ECS::Entity entity, ECS::Entity other) {
     if (!m_World || !m_World->HasComponent<ECS::ScriptComponent>(entity)) return;
-    auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
-    if (!sc) return;
-    for (auto& script : sc->scripts) {
-        CallCollisionMethod(script, script.methodOnCollisionEnter, "OnCollisionEnter", other);
-    }
+    ForEachScript(entity, [&](usize i, ECS::ScriptAttachment& script) {
+        CallCollisionMethod(entity, i, script.methodOnCollisionEnter, "OnCollisionEnter", other);
+    });
 }
 
 void ScriptSystem::OnCollisionStay(ECS::Entity entity, ECS::Entity other) {
     if (!m_World || !m_World->HasComponent<ECS::ScriptComponent>(entity)) return;
-    auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
-    if (!sc) return;
-    for (auto& script : sc->scripts) {
-        CallCollisionMethod(script, script.methodOnCollisionStay, "OnCollisionStay", other);
-    }
+    ForEachScript(entity, [&](usize i, ECS::ScriptAttachment& script) {
+        CallCollisionMethod(entity, i, script.methodOnCollisionStay, "OnCollisionStay", other);
+    });
 }
 
 void ScriptSystem::OnCollisionExit(ECS::Entity entity, ECS::Entity other) {
     if (!m_World || !m_World->HasComponent<ECS::ScriptComponent>(entity)) return;
-    auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
-    if (!sc) return;
-    for (auto& script : sc->scripts) {
-        CallCollisionMethod(script, script.methodOnCollisionExit, "OnCollisionExit", other);
-    }
+    ForEachScript(entity, [&](usize i, ECS::ScriptAttachment& script) {
+        CallCollisionMethod(entity, i, script.methodOnCollisionExit, "OnCollisionExit", other);
+    });
 }
 
 void ScriptSystem::OnTriggerEnter(ECS::Entity entity, ECS::Entity other) {
     if (!m_World || !m_World->HasComponent<ECS::ScriptComponent>(entity)) return;
-    auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
-    if (!sc) return;
-    for (auto& script : sc->scripts) {
-        CallCollisionMethod(script, script.methodOnTriggerEnter, "OnTriggerEnter", other);
-    }
+    ForEachScript(entity, [&](usize i, ECS::ScriptAttachment& script) {
+        CallCollisionMethod(entity, i, script.methodOnTriggerEnter, "OnTriggerEnter", other);
+    });
 }
 
 void ScriptSystem::OnTriggerExit(ECS::Entity entity, ECS::Entity other) {
     if (!m_World || !m_World->HasComponent<ECS::ScriptComponent>(entity)) return;
-    auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
-    if (!sc) return;
-    for (auto& script : sc->scripts) {
-        CallCollisionMethod(script, script.methodOnTriggerExit, "OnTriggerExit", other);
-    }
+    ForEachScript(entity, [&](usize i, ECS::ScriptAttachment& script) {
+        CallCollisionMethod(entity, i, script.methodOnTriggerExit, "OnTriggerExit", other);
+    });
 }
 
 } // namespace Scripting

@@ -88,19 +88,46 @@ public:
 
 private:
     // Initialize a single script attachment (create instance, call OnCreate)
-    void InitScript(ECS::Entity entity, ECS::ScriptAttachment& script);
+    // Resolves the attachment itself, and re-resolves around the OnCreate /
+    // OnEnable calls it makes, since those run user code.
+    void InitScript(ECS::Entity entity, usize index);
 
     // Call a void(void) lifecycle method on a script
-    bool CallLifecycleMethod(ECS::ScriptAttachment& script, int methodId, const char* methodName);
+    bool CallLifecycleMethod(ECS::Entity entity, usize index, int methodId, const char* methodName);
 
     // Call a void(float) lifecycle method
-    bool CallLifecycleMethodFloat(ECS::ScriptAttachment& script, int methodId, const char* methodName, f32 value);
+    bool CallLifecycleMethodFloat(ECS::Entity entity, usize index, int methodId, const char* methodName, f32 value);
 
     // Call a void(Entity) collision method
-    bool CallCollisionMethod(ECS::ScriptAttachment& script, int methodId, const char* methodName, ECS::Entity other);
+    bool CallCollisionMethod(ECS::Entity entity, usize index, int methodId, const char* methodName, ECS::Entity other);
 
     // Call a void(string) method (e.g. OnAnimationEvent)
-    bool CallStringMethod(ECS::ScriptAttachment& script, int methodId, const char* methodName, const std::string& arg);
+    bool CallStringMethod(ECS::Entity entity, usize index, int methodId, const char* methodName, const std::string& arg);
+
+    // Resolve one attachment by (entity, index). Returns null if the entity, the
+    // component or the index is gone.
+    //
+    // Every dispatcher resolves through this immediately BEFORE Execute and
+    // again AFTER it, instead of holding one reference across the call. The
+    // call hands control to arbitrary user script code, which is free to mutate
+    // the ECS; if a script ever makes the ScriptComponent dense storage grow or
+    // shrink, a held pointer and the reference taken from it both dangle. That
+    // is not reachable today -- nothing adds a ScriptComponent, entity destroy
+    // is deferred, and the two RemoveComponent sites are editor-only -- so this
+    // closes the shape, not a live crash. RenderSystem applies exactly this
+    // pattern one file over, for exactly this reason.
+    ECS::ScriptAttachment* ResolveScript(ECS::Entity entity, usize index);
+
+    // Iterate an entity's attachments, re-resolving the component every step so
+    // no reference is held across a script call. fn receives (index, script).
+    template <typename Fn>
+    void ForEachScript(ECS::Entity entity, Fn&& fn) {
+        for (usize i = 0; ; ++i) {
+            ECS::ScriptAttachment* s = ResolveScript(entity, i);
+            if (!s) return;
+            fn(i, *s);
+        }
+    }
 
     // Cache method IDs for a script attachment
     void CacheMethodIds(ECS::ScriptAttachment& script);
@@ -119,7 +146,7 @@ private:
     // asEXECUTION_ABORTED note in the implementation. `exceptionText` is only
     // read when the result is an exception, and may be null otherwise (the
     // AngelScript types stay out of this header).
-    bool ClassifyExecuteResult(ECS::ScriptAttachment& script, int result,
+    bool ClassifyExecuteResult(ECS::Entity entity, usize index, int result,
                                const char* methodName, const char* exceptionText);
 
     // Registered on the World so a despawn during play runs the teardown above.
