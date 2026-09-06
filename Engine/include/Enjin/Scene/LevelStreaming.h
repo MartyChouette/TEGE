@@ -10,6 +10,7 @@
 #include <unordered_set>
 #include <functional>
 #include <thread>
+#include <future>
 #include <mutex>
 #include <atomic>
 #include <chrono>
@@ -146,7 +147,12 @@ public:
     u32 GetIntegrationBudgetUs() const { return m_IntegrationBudgetUs; }
 
     // Stats
-    u32 GetPendingIntegrationCount() const { return static_cast<u32>(m_StagedChunks.size()); }
+    // Locked: a worker pushes into m_StagedChunks concurrently, so reading
+    // size() unsynchronised was a race with whatever the debug overlay drew.
+    u32 GetPendingIntegrationCount() const {
+        std::lock_guard<std::mutex> lock(m_StagedMutex);
+        return static_cast<u32>(m_StagedChunks.size());
+    }
     f32 GetLastIntegrationTimeMs() const { return m_LastIntegrationTimeMs; }
 
     // Callbacks
@@ -166,6 +172,9 @@ private:
     // root. Safe to call from a worker thread (read-only members).
     bool ReadChunkSource(const std::string& relPath, std::string& outJson) const;
     void UnloadChunkEntities(StreamingChunk& chunk);
+    // Blocks until every in-flight chunk read has finished touching this
+    // object. Called from the destructor before any member is torn down.
+    void WaitForPendingLoads();
     void EnforceMemoryBudget(const Math::Vector3& cameraPosition);
 
     // Time-sliced integration: process staged chunks within budget
@@ -190,7 +199,7 @@ private:
 
     // Staged chunks waiting for time-sliced integration on main thread
     std::queue<StagedChunkData> m_StagedChunks;
-    std::mutex m_StagedMutex;
+    mutable std::mutex m_StagedMutex;
 
     u32 m_MaxConcurrentLoads = 2;
     u64 m_MemoryBudgetBytes = 0;      // 0 = unlimited
@@ -207,6 +216,15 @@ private:
 
     ChunkCallback m_OnChunkLoaded;
     ChunkCallback m_OnChunkUnloaded;
+
+    // In-flight chunk reads. Declared LAST on purpose: members are destroyed in
+    // reverse declaration order, so even if someone removes the explicit wait in
+    // the destructor, these are joined before the mutex and queue they touch are
+    // gone. Chunk loads used to be std::thread::detach, which meant a worker
+    // could take m_StagedMutex and push into m_StagedChunks after both had been
+    // freed -- cross a streaming trigger, then Stop or load another project, and
+    // the heap is corrupted with the fault landing somewhere unrelated.
+    std::vector<std::future<void>> m_LoadTasks;
 };
 
 } // namespace Scene

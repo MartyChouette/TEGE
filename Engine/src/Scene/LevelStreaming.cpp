@@ -21,7 +21,20 @@ StreamingManager::StreamingManager() = default;
 
 StreamingManager::~StreamingManager()
 {
+    // Before anything else. A chunk read in flight is holding `this` and will
+    // take m_StagedMutex and push into m_StagedChunks when it finishes; the
+    // destructor used to call ClearChunks() and return, leaving that worker to
+    // lock a freed mutex and push into a freed queue.
+    WaitForPendingLoads();
     ClearChunks();
+}
+
+void StreamingManager::WaitForPendingLoads()
+{
+    for (auto& task : m_LoadTasks) {
+        if (task.valid()) task.wait();
+    }
+    m_LoadTasks.clear();
 }
 
 void StreamingManager::AddChunk(const StreamingChunk& chunk)
@@ -64,6 +77,14 @@ void StreamingManager::RemoveChunk(const std::string& chunkId)
 
 void StreamingManager::ClearChunks()
 {
+    // Settle in-flight reads before dropping the chunk list, or they stage data
+    // for chunks that no longer exist. ProcessStagedIntegration releases a load
+    // slot by finding the chunk by id, so a staged entry whose chunk was cleared
+    // matched nothing and leaked m_ActiveLoads: after m_MaxConcurrentLoads of
+    // those the budget was permanently full and streaming stopped loading
+    // anything, with no error. PlayMode calls this on every play start.
+    WaitForPendingLoads();
+
     for (auto& chunk : m_Chunks) {
         if (chunk.state == ChunkState::Loaded) {
             UnloadChunkEntities(chunk);
@@ -75,6 +96,15 @@ void StreamingManager::ClearChunks()
     m_LoadQueueSet.clear();
     m_UnloadQueueSet.clear();
     m_ResidentBytes = 0;
+
+    // Anything the settled workers staged is for a chunk that is gone now.
+    {
+        std::lock_guard<std::mutex> lock(m_StagedMutex);
+        std::queue<StagedChunkData> empty;
+        m_StagedChunks.swap(empty);
+    }
+    m_ActiveLoads.store(0);
+
     ENJIN_LOG_INFO(Game, "Cleared all streaming chunks");
 }
 
@@ -312,8 +342,22 @@ void StreamingManager::LoadChunkAsync(StreamingChunk& chunk)
     // inline (pak reads are in-memory) and stage through the same path.
     readAndStage();
 #else
-    std::thread worker(readAndStage);
-    worker.detach();
+    // Tracked, not detached. The worker touches m_StagedMutex and
+    // m_StagedChunks, so the object has to be able to outlive it -- see
+    // WaitForPendingLoads and the m_LoadTasks comment in the header.
+    //
+    // Reap finished reads first so a long session does not accumulate futures.
+    // Concurrency is already bounded by m_MaxConcurrentLoads; this bounds the
+    // bookkeeping.
+    m_LoadTasks.erase(
+        std::remove_if(m_LoadTasks.begin(), m_LoadTasks.end(),
+            [](std::future<void>& f) {
+                return !f.valid() ||
+                       f.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+            }),
+        m_LoadTasks.end());
+
+    m_LoadTasks.emplace_back(std::async(std::launch::async, readAndStage));
 #endif
 }
 

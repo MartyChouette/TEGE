@@ -559,4 +559,61 @@ ENJIN_TEST(Budget, ClearChunksResetsResident) {
     std::filesystem::remove_all(root, ec);
 }
 
+// ===========================================================================
+// In-flight chunk reads vs teardown
+//
+// Regression: chunk reads were std::thread::detach and the destructor only
+// called ClearChunks(). A worker that finished after teardown took a freed
+// m_StagedMutex and pushed into a freed m_StagedChunks. The same gap leaked a
+// load slot: ProcessStagedIntegration releases m_ActiveLoads by finding the
+// chunk by id, so anything staged for a chunk ClearChunks had already dropped
+// matched nothing, and after m_MaxConcurrentLoads of those the budget was
+// permanently full and streaming silently stopped loading.
+// ===========================================================================
+
+ENJIN_TEST(StreamingTeardown, DestructorWithLoadInFlightDoesNotFault) {
+    auto root = MakeBudgetRoot("teardown");
+    ECS::World world;
+    {
+        StreamingManager sm;
+        sm.SetWorld(&world);
+        sm.SetSceneRoot(root.string());
+        sm.AddChunk(MakeChunk("a", 0.0f, 100.0f, 150.0f));
+        // One Update queues and starts the read; destruct immediately, without
+        // ever calling ProcessStagedIntegration, so a read is still in flight.
+        sm.Update(Vector3(0.0f), 0.016f);
+    }
+    // Reaching here without a crash or a hang is the assertion.
+    ENJIN_EXPECT_TRUE(true);
+
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+}
+
+ENJIN_TEST(StreamingTeardown, ClearChunksMidLoadKeepsLoadSlotsAvailable) {
+    auto root = MakeBudgetRoot("slotleak");
+    ECS::World world;
+    StreamingManager sm;
+    sm.SetWorld(&world);
+    sm.SetSceneRoot(root.string());
+
+    // Repeatedly start a load and clear before integrating. Each round used to
+    // strand one m_ActiveLoads slot permanently.
+    for (int i = 0; i < 6; ++i) {
+        sm.AddChunk(MakeChunk("a", 0.0f, 100.0f, 150.0f));
+        sm.Update(Vector3(0.0f), 0.016f);
+        sm.ClearChunks();
+    }
+
+    // Nothing should be left staged, and a fresh chunk must still be able to
+    // claim a slot and load.
+    ENJIN_EXPECT_EQ(sm.GetPendingIntegrationCount(), (u32)0);
+    sm.AddChunk(MakeChunk("a", 0.0f, 100.0f, 150.0f));
+    PumpAt(sm, Vector3(0.0f), 60);
+    ENJIN_EXPECT_TRUE(sm.GetChunkState("a") == ChunkState::Loaded);
+
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+}
+
 ENJIN_TEST_MAIN()
