@@ -55,6 +55,21 @@ private:
     void EmitLooseRuntimeFiles(const std::string& outputDir);
     // Phase 4: Copy player executable to output
     bool CopyPlayer(const std::string& outputDir);
+    // The manifest every runtime reads, and the accessibility defaults that
+    // ship beside it. ONE source for both packaging modes.
+    //
+    // These used to be built inline in two hand-copied writers, and the loose
+    // one had fallen behind: no "localization" key and no accessibility.json at
+    // all. A project with authored string tables and Project Settings >
+    // Accessibility Defaults, exported as loose files, booted with untranslated
+    // keys and engine-default accessibility, and the build reported success.
+    // m_AccessibilityDefaultsJson was read from the .enjinproject and then
+    // dropped on the floor.
+    // Both return already-serialised JSON text. Returning strings rather than
+    // nlohmann::json keeps the json header out of this public one.
+    std::string BuildManifestJson(const BuildConfig& config) const;
+    std::string BuildAccessibilityJson() const;
+
     // Phase 5: Write build manifest (window title, resolution) into pack
     bool WriteBuildManifest(const BuildConfig& config, AssetPacker& packer);
     // Phase 5 (alt): Write game.manifest JSON for loose files mode

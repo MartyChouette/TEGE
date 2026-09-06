@@ -784,7 +784,7 @@ bool VerifyRuntimePresent(const std::string& outputDir, BuildTargetPlatform targ
     return false;
 }
 
-bool BuildPipeline::WriteBuildManifest(const BuildConfig& config, AssetPacker& packer) {
+std::string BuildPipeline::BuildManifestJson(const BuildConfig& config) const {
     nlohmann::json manifest;
     manifest["windowTitle"] = config.windowTitle.empty() ? m_ProjectName : config.windowTitle;
     manifest["windowWidth"] = config.windowWidth;
@@ -835,21 +835,16 @@ bool BuildPipeline::WriteBuildManifest(const BuildConfig& config, AssetPacker& p
         manifest["localization"] = nlohmann::json::parse(m_LocalizationJson);
     }
 
-    std::string jsonStr = manifest.dump(2);
-    if (!packer.AddData("_build/manifest.json",
-                        jsonStr.data(),
-                        jsonStr.size())) {
-        return false;
-    }
+    return manifest.dump(2);
+}
 
+std::string BuildPipeline::BuildAccessibilityJson() const {
     // Ship the accessibility settings the PROJECT authored, so configuring
     // "Motor Impaired" (or larger subtitles, or reduced motion) in the editor
     // is what players actually get. Only when the project has none do we fall
     // back to engine defaults.
     if (!m_AccessibilityDefaultsJson.empty()) {
-        packer.AddData("accessibility.json",
-                       m_AccessibilityDefaultsJson.data(), m_AccessibilityDefaultsJson.size());
-        return true;
+        return m_AccessibilityDefaultsJson;
     }
 
     nlohmann::json accessDefaults;
@@ -867,12 +862,19 @@ bool BuildPipeline::WriteBuildManifest(const BuildConfig& config, AssetPacker& p
     accessDefaults["subtitleBgOpacity"] = 0.7f;
     accessDefaults["fontScale"] = 1.0f;
     accessDefaults["dyslexiaFriendly"] = false;
-    std::string accessStr = accessDefaults.dump(2);
-    packer.AddData("accessibility.json", accessStr.data(), accessStr.size());
-
-    return true;
+    return accessDefaults.dump(2);
 }
 
+bool BuildPipeline::WriteBuildManifest(const BuildConfig& config, AssetPacker& packer) {
+    const std::string jsonStr = BuildManifestJson(config);
+    if (!packer.AddData("_build/manifest.json", jsonStr.data(), jsonStr.size())) {
+        return false;
+    }
+
+    const std::string accessStr = BuildAccessibilityJson();
+    packer.AddData("accessibility.json", accessStr.data(), accessStr.size());
+    return true;
+}
 bool BuildPipeline::VerifyBuild(const std::string& pakPath, const std::string& key) {
     AssetReader reader;
     if (!reader.Open(pakPath, key)) {
@@ -1007,69 +1009,52 @@ bool BuildPipeline::CopyLooseFiles(const std::string& outputDir) {
 }
 
 bool BuildPipeline::WriteLooseManifest(const BuildConfig& config, const std::string& outputDir) {
-    nlohmann::json manifest;
-    manifest["windowTitle"] = config.windowTitle.empty() ? m_ProjectName : config.windowTitle;
-    manifest["windowWidth"] = config.windowWidth;
-    manifest["windowHeight"] = config.windowHeight;
-    manifest["fullscreen"] = config.fullscreen;
-    manifest["engineSplash"] = config.engineSplash;
-    manifest["projectName"] = m_ProjectName;
-
-    // Find start scene
-    for (const auto& scene : m_Scenes) {
-        if (scene.isStartScene) {
-            manifest["startScene"] = scene.relativePath;
-            break;
-        }
-    }
-
-    // Frame settings
-    nlohmann::json frameSettings;
-    frameSettings["targetFrameRate"] = m_TargetFrameRate;
-    frameSettings["vSync"] = m_VSync;
-    frameSettings["backgroundBehavior"] = m_BackgroundBehavior;
-    frameSettings["fixedTimestep"] = m_FixedTimestep;
-    frameSettings["physicsTicksPerSecond"] = m_PhysicsTicksPerSecond;
-    manifest["frameSettings"] = frameSettings;
-
-    // Physics backend and project mode
-    manifest["physicsBackend"] = m_PhysicsBackendType;
-    manifest["projectMode"] = m_ProjectMode;
-
-    // Startup flow (if the project authored one)
-    if (!m_StartupFlowJson.empty()) {
-        manifest["startupFlow"] = nlohmann::json::parse(m_StartupFlowJson);
-    }
-
-    // Input settings (custom actions + touch layout) authored in the editor
-    if (!m_InputSettingsJson.empty()) {
-        manifest["input"] = nlohmann::json::parse(m_InputSettingsJson);
-    }
-    if (!m_DefaultRenderSettingsJson.empty()) {
-        manifest["defaultRenderSettings"] = nlohmann::json::parse(m_DefaultRenderSettingsJson);
-    }
-
-    std::string manifestPath = (fs::path(outputDir) / "game.manifest").string();
+    const std::string manifestPath = (fs::path(outputDir) / "game.manifest").string();
     try {
         std::ofstream file(manifestPath);
         if (!file.is_open()) {
             AddMessage(MessageSeverity::Error, "Cannot create game.manifest at: " + manifestPath);
             return false;
         }
-        file << manifest.dump(2);
+        file << BuildManifestJson(config);
         file.close();
-        return true;
     } catch (const std::exception& e) {
         AddMessage(MessageSeverity::Error, std::string("Error writing game.manifest: ") + e.what());
         return false;
     }
-}
 
+    // accessibility.json beside the exe. The player looks here FIRST and only
+    // falls back to the pak, so a loose build that omits this ships engine
+    // defaults over whatever the project authored -- which is what it did.
+    const std::string accessPath = (fs::path(outputDir) / "accessibility.json").string();
+    try {
+        std::ofstream file(accessPath);
+        if (!file.is_open()) {
+            AddMessage(MessageSeverity::Error, "Cannot create accessibility.json at: " + accessPath);
+            return false;
+        }
+        file << BuildAccessibilityJson();
+        file.close();
+    } catch (const std::exception& e) {
+        AddMessage(MessageSeverity::Error, std::string("Error writing accessibility.json: ") + e.what());
+        return false;
+    }
+
+    return true;
+}
 bool BuildPipeline::VerifyLooseBuild(const std::string& outputDir) {
     // Verify game.manifest exists
     std::string manifestPath = (fs::path(outputDir) / "game.manifest").string();
     if (!fs::exists(manifestPath)) {
         AddMessage(MessageSeverity::Error, "game.manifest missing from output directory");
+        return false;
+    }
+
+    // Verify accessibility.json. It was absent from loose builds entirely and
+    // nothing noticed, because verification only looked for the manifest.
+    std::string accessPath = (fs::path(outputDir) / "accessibility.json").string();
+    if (!fs::exists(accessPath)) {
+        AddMessage(MessageSeverity::Error, "accessibility.json missing from output directory");
         return false;
     }
 

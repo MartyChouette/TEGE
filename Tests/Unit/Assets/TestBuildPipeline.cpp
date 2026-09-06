@@ -948,4 +948,96 @@ ENJIN_TEST(RuntimeVerification, AWebBuildThatCannotRunFailsTheWholePipeline) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Loose-files parity with the packed build
+//
+// Regression: WriteLooseManifest was a hand-copied twin of WriteBuildManifest
+// and had fallen behind. It never wrote the "localization" key and never
+// emitted accessibility.json at all, so a project with authored string tables
+// and Project Settings > Accessibility Defaults, exported as loose files,
+// booted with untranslated keys and engine-default accessibility. The build
+// reported success. Both writers share one builder now.
+// ---------------------------------------------------------------------------
+
+static void MakeProjectWithLocaleAndAccess(const std::filesystem::path& dir) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+
+    fs::remove_all(dir, ec);
+    fs::create_directories(dir / "scenes", ec);
+
+    {
+        std::ofstream proj(dir / "Parity.enjinproject");
+        proj << R"({"projectName":"Parity","version":"1.0",)"
+                R"("scenes":[{"name":"Main","path":"scenes/Main.enjin",)"
+                R"("buildIndex":0,"isStartScene":true}],)"
+                R"("localization":{"defaultLocale":"fr","locales":["en","fr"]},)"
+                R"("accessibilityDefaults":{"subtitlesEnabled":true,"fontScale":1.75})"
+                R"(})";
+    }
+    { std::ofstream scene(dir / "scenes" / "Main.enjin"); scene << "{}"; }
+}
+
+ENJIN_TEST(LooseBuildParity, ManifestCarriesLocalization) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+
+    // Arrange
+    fs::path root = fs::temp_directory_path() / "enjin_loose_parity_loc";
+    fs::path out  = fs::temp_directory_path() / "enjin_loose_parity_loc_out";
+    MakeProjectWithLocaleAndAccess(root);
+    fs::remove_all(out, ec);
+
+    BuildConfig cfg;
+    cfg.projectPath   = (root / "Parity.enjinproject").string();
+    cfg.outputDir     = out.string();
+    cfg.packagingMode = PackagingMode::LooseFiles;
+
+    // Act
+    BuildPipeline pipeline;
+    pipeline.Execute(cfg);
+
+    // Assert: the authored locale reached game.manifest.
+    ENJIN_ASSERT_TRUE(fs::exists(out / "game.manifest"));
+    std::ifstream mf((out / "game.manifest").string());
+    std::string body((std::istreambuf_iterator<char>(mf)), std::istreambuf_iterator<char>());
+    ENJIN_EXPECT_TRUE(body.find("localization") != std::string::npos);
+    ENJIN_EXPECT_TRUE(body.find("\"fr\"") != std::string::npos);
+
+    fs::remove_all(root, ec);
+    fs::remove_all(out, ec);
+}
+
+ENJIN_TEST(LooseBuildParity, AccessibilityDefaultsAreShipped) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+
+    // Arrange
+    fs::path root = fs::temp_directory_path() / "enjin_loose_parity_access";
+    fs::path out  = fs::temp_directory_path() / "enjin_loose_parity_access_out";
+    MakeProjectWithLocaleAndAccess(root);
+    fs::remove_all(out, ec);
+
+    BuildConfig cfg;
+    cfg.projectPath   = (root / "Parity.enjinproject").string();
+    cfg.outputDir     = out.string();
+    cfg.packagingMode = PackagingMode::LooseFiles;
+
+    // Act
+    BuildPipeline pipeline;
+    pipeline.Execute(cfg);
+
+    // Assert: the file exists at all (it never used to), and carries the
+    // PROJECT's values rather than engine defaults. The player reads this path
+    // before the pak, so this is what a shipped loose build actually applies.
+    ENJIN_ASSERT_TRUE(fs::exists(out / "accessibility.json"));
+    std::ifstream af((out / "accessibility.json").string());
+    std::string body((std::istreambuf_iterator<char>(af)), std::istreambuf_iterator<char>());
+    ENJIN_EXPECT_TRUE(body.find("subtitlesEnabled") != std::string::npos);
+    ENJIN_EXPECT_TRUE(body.find("1.75") != std::string::npos);
+
+    fs::remove_all(root, ec);
+    fs::remove_all(out, ec);
+}
+
 ENJIN_TEST_MAIN()
