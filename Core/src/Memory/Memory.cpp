@@ -3,6 +3,7 @@
 #include <cstring>
 #include <cassert>
 #include <cstdlib>
+#include <new>       // std::align_val_t, std::bad_alloc
 
 namespace Enjin {
 
@@ -261,4 +262,59 @@ void operator delete(void* ptr) noexcept {
 
 void operator delete[](void* ptr) noexcept {
     Enjin::Deallocate(ptr);
+}
+
+// SIZED deallocation (C++14) and ALIGNED deallocation (C++17).
+//
+// These were missing, and the compiler does not fall back to the unsized form
+// above: it emits a call to the DEFAULT sized operator delete, which frees with
+// libc free(). So every std::vector, std::string and most container teardown in
+// the engine allocated through Enjin::Allocate and freed through an allocator
+// that knew nothing about it.
+//
+// Today that survives because the fallback path is posix_memalign/_aligned_malloc,
+// and posix_memalign memory is legal to free(). It stops surviving the moment
+// anyone calls SetDefaultAllocator: Allocate then hands out memory from a custom
+// arena and the default sized delete hands it to libc free(), which is heap
+// corruption. The API is public (Memory.h) and exists to be used.
+//
+// AddressSanitizer reports it today as alloc-dealloc-mismatch (malloc vs
+// operator delete), which is how this was found -- the first CI run that ever
+// executed a sanitizer flagged it on TestMemory's static initialisation.
+void operator delete(void* ptr, std::size_t) noexcept {
+    Enjin::Deallocate(ptr);
+}
+
+void operator delete[](void* ptr, std::size_t) noexcept {
+    Enjin::Deallocate(ptr);
+}
+
+void operator delete(void* ptr, std::align_val_t) noexcept {
+    Enjin::Deallocate(ptr);
+}
+
+void operator delete[](void* ptr, std::align_val_t) noexcept {
+    Enjin::Deallocate(ptr);
+}
+
+void operator delete(void* ptr, std::size_t, std::align_val_t) noexcept {
+    Enjin::Deallocate(ptr);
+}
+
+void operator delete[](void* ptr, std::size_t, std::align_val_t) noexcept {
+    Enjin::Deallocate(ptr);
+}
+
+// Aligned allocation (C++17), so an over-aligned type does not bypass the
+// engine allocator on the way in either.
+void* operator new(std::size_t size, std::align_val_t alignment) {
+    void* ptr = Enjin::Allocate(size, static_cast<Enjin::usize>(alignment));
+    if (!ptr) throw std::bad_alloc();
+    return ptr;
+}
+
+void* operator new[](std::size_t size, std::align_val_t alignment) {
+    void* ptr = Enjin::Allocate(size, static_cast<Enjin::usize>(alignment));
+    if (!ptr) throw std::bad_alloc();
+    return ptr;
 }
