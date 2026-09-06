@@ -346,14 +346,15 @@ jobs:
     # produce noise that would bury real findings. The unit suite is where the
     # threading and lifetime code actually lives.
     #
-    # continue-on-error is TEMPORARY. It is here so introducing sanitizers does
-    # not red the whole pipeline on day one while the first run's findings are
-    # triaged. Flip it to false once a run is clean -- a permanently advisory
-    # job is a job nobody reads.
+    # Was continue-on-error while the first run's findings were triaged. That run
+    # (2026-09-06) found two real defects -- a missing sized operator delete in
+    # the global allocator, and a heap-use-after-free in TestScriptTeardown --
+    # both since fixed, plus one RSS gate that is meaningless under a sanitizer
+    # and now opts out. So this blocks properly now, which is the only way a
+    # sanitizer job stays useful.
     name: Linux (sanitizers)
     runs-on: ubuntu-24.04
     timeout-minutes: 90
-    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:

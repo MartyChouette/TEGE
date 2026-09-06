@@ -17,6 +17,18 @@
 #include "Enjin/Build/AssetReader.h"
 #include "Enjin/Platform/Paths.h"
 
+// True when this translation unit is built with AddressSanitizer or
+// ThreadSanitizer. Both inflate resident memory by design, so RSS-budget gates
+// have to opt out rather than report noise.
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
+#  define ENJIN_TEST_UNDER_SANITIZER 1
+#elif defined(__has_feature)
+#  if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer)
+#    define ENJIN_TEST_UNDER_SANITIZER 1
+#  endif
+#endif
+
+
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
@@ -140,6 +152,21 @@ int main() {
     T2_CHECK(packMs + readMs < 120'000.0,
              "pack+read took %.1f s (order-of-magnitude regression)",
              (packMs + readMs) / 1000.0);
+#if defined(ENJIN_TEST_UNDER_SANITIZER)
+    // RSS is not a meaningful number under a sanitizer: ASan adds redzones
+    // around every allocation, keeps a quarantine of freed memory, and maps
+    // shadow memory alongside the heap. Measured 879 MB against this gate's
+    // ~673 MB bound on the first CI run that ever executed ASan -- roughly 30%
+    // over, which is the instrumentation, not the packer.
+    //
+    // Widening the bound would be inventing a number. The gate is about whether
+    // AssetPacker buffers the whole pak, and that question is answered by the
+    // uninstrumented runs; skip it here and say so rather than reporting a
+    // failure nobody should act on.
+    (void)rssStart; (void)rssAfterPack; (void)rssEnd; (void)originalTotal;
+    std::printf("  SKIP: peak-RSS gate (sanitizer build inflates RSS by design)
+");
+#else
     if (rssStart > 0) {
         // Generous bound: our own test data is ~300MB resident; the packer
         // itself must not add another whole-pak copy on top.
@@ -149,6 +176,7 @@ int main() {
                  "peak RSS %.0f MB vs start %.0f MB - packing may buffer the whole pak",
                  peak / (1024.0 * 1024.0), rssStart / (1024.0 * 1024.0));
     }
+#endif
 
     std::error_code ec;
     std::filesystem::remove(pakPath, ec);
