@@ -164,8 +164,7 @@ int main() {
     // uninstrumented runs; skip it here and say so rather than reporting a
     // failure nobody should act on.
     (void)rssStart; (void)rssAfterPack; (void)rssEnd; (void)originalTotal;
-    std::printf("  SKIP: peak-RSS gate (sanitizer build inflates RSS by design)
-");
+    std::printf("  SKIP: peak-RSS gate (sanitizer build inflates RSS by design)\n");
 #else
     if (rssStart > 0) {
         // Generous bound: our own test data is ~300MB resident; the packer
