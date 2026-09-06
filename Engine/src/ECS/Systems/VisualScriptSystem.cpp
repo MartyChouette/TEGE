@@ -1,4 +1,5 @@
 #include "Enjin/ECS/Systems/VisualScriptSystem.h"
+#include <vector>
 #include "Enjin/ECS/Components/VisualScript.h"
 #include "Enjin/VisualScript/ScriptApiNodes.h"
 #include "Enjin/Scripting/ScriptEngine.h"
@@ -26,13 +27,27 @@ void VisualScriptSystem::Initialize() {
 
     m_FirstUpdate = true;
 
-    // Call OnCreate for all visual scripts
-    for (Entity entity : m_World->GetEntitiesWithComponent<VisualScriptComponent>()) {
+    // Call OnCreate for all visual scripts.
+    //
+    // The entity list is COPIED and the component pointer is re-resolved after
+    // the call. ExecuteEvent runs arbitrary graph code, and the visual-script
+    // node set can create entities and add components -- which reallocates the
+    // dense storage that GetEntitiesWithComponent returns a live reference to,
+    // and invalidates `script` with it. Iterating that reference directly while
+    // the executor mutates it is a use-after-free.
+    //
+    // Same pattern ScriptSystem uses for exactly the same reason.
+    const std::vector<Entity> entities = m_World->GetEntitiesWithComponent<VisualScriptComponent>();
+    for (Entity entity : entities) {
+        if (!m_World->IsValid(entity)) continue;
         auto* script = m_World->GetComponent<VisualScriptComponent>(entity);
         if (script && script->enabled && !script->initialized) {
             m_Executor.ExecuteEvent(m_World, entity, script,
                                     VisualScriptEvent::OnCreate, 0.0f);
-            script->initialized = true;
+            // Re-resolve: the call above may have moved the storage.
+            if (auto* after = m_World->GetComponent<VisualScriptComponent>(entity)) {
+                after->initialized = true;
+            }
         }
     }
 
@@ -42,13 +57,18 @@ void VisualScriptSystem::Initialize() {
 void VisualScriptSystem::Shutdown() {
     if (!m_World) return;
 
-    // Call OnDestroy and reset runtime state
-    for (Entity entity : m_World->GetEntitiesWithComponent<VisualScriptComponent>()) {
+    // Call OnDestroy and reset runtime state. Copied + re-resolved for the same
+    // reason as Initialize above: OnDestroy graphs run arbitrary node code.
+    const std::vector<Entity> entities = m_World->GetEntitiesWithComponent<VisualScriptComponent>();
+    for (Entity entity : entities) {
+        if (!m_World->IsValid(entity)) continue;
         auto* script = m_World->GetComponent<VisualScriptComponent>(entity);
         if (script && script->enabled) {
             m_Executor.ExecuteEvent(m_World, entity, script,
                                     VisualScriptEvent::OnDestroy, 0.0f);
-            script->ResetRuntimeState();
+            if (auto* after = m_World->GetComponent<VisualScriptComponent>(entity)) {
+                after->ResetRuntimeState();
+            }
         }
     }
 
