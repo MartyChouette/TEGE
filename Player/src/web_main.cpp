@@ -82,6 +82,11 @@
 #include "Enjin/Gameplay/CinematicSystem.h"
 #include "Enjin/Gameplay/ClothSystem.h"
 #include "Enjin/Gameplay/SurfaceResponseSystem.h"
+// Parity with the desktop player: both of these compile into the web build and
+// were simply never ticked here, so the shipped "flower" template's pluckable
+// petals and every audio-reactive component were dead in the browser.
+#include "Enjin/ECS/Systems/FlowerSystem.h"
+#include "Enjin/Audio/AudioReactiveSystem.h"
 #include "Enjin/Gameplay/QuestFlow.h"
 #include "Enjin/Effects/ElementalSystem.h"
 #include "Enjin/Effects/SeasonalWeather.h"    // web parity: seasonal weather (Update no-ops unless a scene enables it)
@@ -497,7 +502,22 @@ public:
         Enjin::Scripting::SetBindingsStreaming(&m_StreamingManager);
         m_SceneManager.SetWorld(m_World.get());
         m_SceneManager.SetAssetReader(&m_AssetReader);
+
+        m_FlowerSystem.SetWorld(m_World.get());
+        m_FlowerSystem.SetCamera(m_Camera.get());
+        m_FlowerSystem.SetRenderSystem(m_RenderSystem);
+        m_FlowerSystem.SetWindSystem(&m_WindSystem);
+
+        m_AudioReactiveSystem.SetWorld(m_World.get());
+        m_AudioReactiveSystem.SetAudio(&m_SimpleAudio);
+
+        // The bindings are registered on every platform on purpose (a script
+        // naming a Net_* symbol must still compile here), but a browser has no
+        // UDP socket, so this system is deliberately never Update()d and every
+        // call is inert. Say so once instead of leaving a developer to debug
+        // silence -- that silence is what this log exists to break.
         m_NetworkSystem.SetWorld(m_World.get());
+        ENJIN_LOG_INFO(Network, "LAN networking is unavailable in the browser: Net_* script calls are inert on web");
 
         // Load scene list from packed project manifest
         {
@@ -1050,6 +1070,21 @@ public:
         // MeshComponent vertices + meshDirty; the web render path re-uploads
         // dirty meshes each frame.
         m_ClothSystem.Update(m_World.get(), deltaTime, &m_WindSystem);
+
+        // Flower system (desktop: main.cpp:1065). Full-canvas viewport, same as
+        // the desktop player's full-screen case. WebGPURenderer exposes the
+        // swapchain size as two accessors rather than the Vulkan extent struct.
+        if (m_Renderer) {
+            const Enjin::u32 w = m_Renderer->GetSwapchainWidth();
+            const Enjin::u32 h = m_Renderer->GetSwapchainHeight();
+            m_FlowerSystem.SetGameViewBounds(0.0f, 0.0f,
+                static_cast<Enjin::f32>(w), static_cast<Enjin::f32>(h));
+            m_FlowerSystem.SetRenderTargetSize(w, h);
+        }
+        m_FlowerSystem.Update(deltaTime);
+
+        // Audio-reactive components (desktop: main.cpp:1196).
+        m_AudioReactiveSystem.Update(deltaTime);
 
         // Water3D animated surfaces (desktop: main.cpp / PlayMode). Settings are
         // ASSIGNED, never Initialize()d, because Initialize resets the wave clock
@@ -2211,6 +2246,11 @@ private:
     Enjin::Gameplay::SimulationClock m_SimClock;
     Enjin::Gameplay::ClothSystem m_ClothSystem;
     Enjin::Gameplay::SurfaceResponseSystem m_SurfaceResponseSystem;
+    Enjin::ECS::FlowerSystem m_FlowerSystem;
+    // No MIDI on web (no MIDIInput in this build), so SetMIDI is never called
+    // and the MIDI-driven paths stay inert. Beat sync, VU-to-visual, RTPC and
+    // threshold triggers all run off SimpleAudio and work here.
+    Enjin::Audio::AudioReactiveSystem m_AudioReactiveSystem;
     // Long-lived: Wire2DCollisionCallbacks captures a reference to this
     // (desktop: main.cpp m_DeferredDestroys) — never pass it a frame-local.
     std::vector<Enjin::ECS::Entity> m_DeferredDestroys;
