@@ -213,6 +213,18 @@ jobs:
           key: deps-linux-${{ hashFiles('Engine/CMakeLists.txt', 'CMakeLists.txt', 'Core/CMakeLists.txt') }}
           restore-keys: deps-linux-
 
+      - name: Runtime system-tick parity
+        # Pure source check, no build needed, so it runs before the slow steps.
+        # Three runtimes hand-maintain their own tick lists, and a system added
+        # to one and forgotten in another is silent: no warning, no error, just
+        # a feature that does nothing in the runtime nobody tested. That is how
+        # FlowerSystem and AudioReactiveSystem ended up dead on web while the
+        # shipped flower template depended on them.
+        #
+        # Baseline-pinned like tools/backend_parity.py: existing divergence is
+        # recorded with a reason, and this fails only when the divergence GROWS.
+        run: python3 tools/runtime_parity.py --strict
+
       - name: Configure
         run: cmake -B build-linux -S . -G Ninja -DCMAKE_BUILD_TYPE=Release -DENJIN_BUILD_TESTS=ON
 

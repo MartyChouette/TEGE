@@ -1,0 +1,72 @@
+# Systems deliberately NOT ticked in a given runtime, or known gaps not yet closed.
+#
+# Format: <runtime>:<SystemMember>  meaning that runtime does not tick it while
+# at least one other runtime does. Check with:
+#
+#     python tools/runtime_parity.py            # report
+#     python tools/runtime_parity.py --strict    # exit 1 on NEW divergence
+#     python tools/runtime_parity.py --record    # accept current state (loses these comments)
+#
+# --record rewrites this file and throws the reasoning away. Prefer editing it
+# by hand so every line keeps saying WHY.
+
+# ---------------------------------------------------------------------------
+# Editor-only tooling. Not gameplay systems; a shipped game has no business
+# running them.
+# ---------------------------------------------------------------------------
+desktop:CollabSystem
+web:CollabSystem
+desktop:FlashTimelineEditor
+web:FlashTimelineEditor
+
+# PlayMode is the editor's play-mode container, not a system. The players ARE
+# the runtime, so there is nothing to contain.
+desktop:PlayMode
+web:PlayMode
+
+# ---------------------------------------------------------------------------
+# Engine plumbing driven differently per runtime, not per-frame gameplay
+# systems. The tool matches on m_Thing.Update( and cannot tell these apart.
+# ---------------------------------------------------------------------------
+# The editor drives the world through PlayMode rather than calling
+# World::Update itself.
+editor:World
+# The desktop and editor paths render through the frame loop; only web_main
+# calls RenderSystem::Update directly.
+desktop:RenderSystem
+editor:RenderSystem
+
+# ---------------------------------------------------------------------------
+# Real platform limits on web. These are correct and will stay.
+# ---------------------------------------------------------------------------
+# A browser has no MIDI device in this build.
+web:MIDIInput
+# A browser has no UDP socket. The bindings still register on every platform so
+# a script naming a Net_* symbol compiles, and web_main logs once at boot that
+# the calls are inert.
+web:NetworkSystem
+# Web has its own post-process path (ApplyWebPostProcess); the PostProcessing
+# object is #if'd out of the web registry entirely.
+web:PostProcessing
+
+# ---------------------------------------------------------------------------
+# KNOWN GAPS - not intended, not yet fixed. Baselined so --strict guards against
+# NEW drift; each of these is outstanding work, not a decision.
+#
+# Found 2026-09-06 by the review that produced this tool. FlowerSystem and
+# AudioReactiveSystem were two more of the same and are already fixed.
+# ---------------------------------------------------------------------------
+# Audio event graphs do not run in a browser.
+web:AudioGraphRuntime
+# Accessibility audio indicators do not run in a browser. Notable given the
+# project's accessibility commitments.
+web:AudioIndicators
+# Fluid simulation does not run in a browser. Note FluidRenderer.cpp IS
+# web-excluded in CMake, so closing this needs a decision about whether fluid
+# is meant to be visible on web at all.
+web:FluidSimulation
+web:FluidTerrainCoupling
+# Parallax backgrounds animate in the EDITOR and in neither shipped player, so
+# a parallax scene looks right while authoring and is static in the game.
+desktop:ParallaxSystem
+web:ParallaxSystem
