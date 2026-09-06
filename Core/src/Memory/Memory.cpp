@@ -264,7 +264,7 @@ void operator delete[](void* ptr) noexcept {
     Enjin::Deallocate(ptr);
 }
 
-// SIZED deallocation (C++14) and ALIGNED deallocation (C++17).
+// SIZED deallocation (C++14).
 //
 // These were missing, and the compiler does not fall back to the unsized form
 // above: it emits a call to the DEFAULT sized operator delete, which frees with
@@ -289,32 +289,20 @@ void operator delete[](void* ptr, std::size_t) noexcept {
     Enjin::Deallocate(ptr);
 }
 
-void operator delete(void* ptr, std::align_val_t) noexcept {
-    Enjin::Deallocate(ptr);
-}
+// NOTE: the ALIGNED new/delete overloads are deliberately NOT overridden.
+//
+// They were added alongside the sized deletes above and then backed out: the Linux
+// lavapipe render smoke started failing with "LLVM ERROR: out of memory" in the
+// exact push that introduced them, and stayed red for four consecutive runs.
+// The sized deletes are what AddressSanitizer actually required -- they fix the
+// alloc/dealloc mismatch without changing WHICH allocator serves memory. The
+// aligned new was speculative, and it did change that: over-aligned types went
+// from glibc's aligned_alloc to posix_memalign via Enjin::Allocate, and glibc's
+// memalign path carries more per-allocation overhead. lavapipe allocates
+// heavily and over-aligned, on a runner with little headroom.
+//
+// Leaving them to the default implementation means an over-aligned type does
+// not route through g_DefaultAllocator. That is a real (currently theoretical)
+// gap: nothing sets a custom allocator today. Re-adding them needs the OOM
+// understood first, not another guess.
 
-void operator delete[](void* ptr, std::align_val_t) noexcept {
-    Enjin::Deallocate(ptr);
-}
-
-void operator delete(void* ptr, std::size_t, std::align_val_t) noexcept {
-    Enjin::Deallocate(ptr);
-}
-
-void operator delete[](void* ptr, std::size_t, std::align_val_t) noexcept {
-    Enjin::Deallocate(ptr);
-}
-
-// Aligned allocation (C++17), so an over-aligned type does not bypass the
-// engine allocator on the way in either.
-void* operator new(std::size_t size, std::align_val_t alignment) {
-    void* ptr = Enjin::Allocate(size, static_cast<Enjin::usize>(alignment));
-    if (!ptr) throw std::bad_alloc();
-    return ptr;
-}
-
-void* operator new[](std::size_t size, std::align_val_t alignment) {
-    void* ptr = Enjin::Allocate(size, static_cast<Enjin::usize>(alignment));
-    if (!ptr) throw std::bad_alloc();
-    return ptr;
-}
