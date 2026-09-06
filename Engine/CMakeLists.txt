@@ -486,7 +486,13 @@ endif()
 # If no compiler is on PATH the checked-in generated files are used as-is, so a
 # machine without the Vulkan SDK still builds (CI containers, contributors).
 if(NOT ENJIN_PLATFORM_WEB)
-    find_program(ENJIN_GLSLANG NAMES glslangValidator glslangValidator.exe)
+    # `glslang` is the modern name for the binary; `glslangValidator` is the
+    # older one still shipped by the LunarG SDK and Ubuntu's glslang-tools.
+    # Accept both. Khronos' own prebuilt release archives contain ONLY
+    # bin/glslang.exe, so searching for the old name alone meant a machine with
+    # a perfectly good compiler installed still reported "codegen SKIPPED".
+    find_program(ENJIN_GLSLANG NAMES glslangValidator glslangValidator.exe
+                                     glslang glslang.exe)
     find_program(ENJIN_PYTHON NAMES python python3)
 
     if(ENJIN_GLSLANG AND ENJIN_PYTHON)
