@@ -98,6 +98,8 @@
 #include "Enjin/Gameplay/GameplayLoop.h"
 #include "Enjin/Gameplay/FootstepSystem.h"
 #include "Enjin/Accessibility/SubtitleSystem.h"
+#include "Enjin/Accessibility/AudioVisualIndicator.h"
+#include "Enjin/Audio/AudioEventGraph.h"
 #include "Enjin/Accessibility/AlternativeInput.h"
 #include "Enjin/Accessibility/Announcer.h"
 #include "Enjin/Accessibility/AccessibilitySettings.h"
@@ -510,6 +512,9 @@ public:
 
         m_AudioReactiveSystem.SetWorld(m_World.get());
         m_AudioReactiveSystem.SetAudio(&m_SimpleAudio);
+
+        m_AudioGraphRuntime.Initialize(&m_SimpleAudio);
+        Enjin::Scripting::SetBindingsAudioGraphRuntime(&m_AudioGraphRuntime);
 
         // The bindings are registered on every platform on purpose (a script
         // naming a Net_* symbol must still compile here), but a browser has no
@@ -973,6 +978,7 @@ public:
 
         m_SimpleAudio.Update(deltaTime);
         m_SimpleAudio.UpdateAudioSources(deltaTime);
+        m_AudioGraphRuntime.Update(deltaTime);   // desktop: main.cpp:964
 
         // Input must keep rotating its per-frame state while paused, or the
         // Escape pressed-edge (and every other key edge) would freeze.
@@ -1253,6 +1259,7 @@ public:
             m_FootstepSystem.Update(m_World.get(), deltaTime);
             m_SubtitleSystem.Update(deltaTime);
             m_AlternativeInput.Update(deltaTime);
+            m_AudioIndicators.Update(deltaTime);   // desktop: main.cpp:1293
             m_Announcer.Update(deltaTime);
 
             // Live accessibility sync: scripts change these mid-game (Accessibility
@@ -2250,6 +2257,16 @@ private:
     Enjin::Gameplay::ClothSystem m_ClothSystem;
     Enjin::Gameplay::SurfaceResponseSystem m_SurfaceResponseSystem;
     Enjin::ECS::FlowerSystem m_FlowerSystem;
+    // Parity with the desktop player: both ticked on desktop and in the editor
+    // and were absent here, so audio event graphs and the accessibility audio
+    // indicators simply did not run in a browser.
+    //
+    // Fluid deliberately NOT wired yet. Its simulation would tick fine, but
+    // FluidRenderer is Vulkan-only and RenderSystem::SetFluidSimulation is a
+    // no-op stub on the web branch, so it would cost frame time and draw
+    // nothing. Waits on the WebGPU fluid path (hardening list item 18).
+    Enjin::Audio::AudioEventGraphRuntime m_AudioGraphRuntime;
+    Enjin::Accessibility::AudioVisualIndicatorSystem m_AudioIndicators;
     // No MIDI on web (no MIDIInput in this build), so SetMIDI is never called
     // and the MIDI-driven paths stay inert. Beat sync, VU-to-visual, RTPC and
     // threshold triggers all run off SimpleAudio and work here.

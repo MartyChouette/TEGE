@@ -59,17 +59,15 @@ web:PostProcessing
 # checked, and at least two look like decisions somebody already made without
 # writing down why. Each needs a yes/no, not a fix applied on assumption.
 # ---------------------------------------------------------------------------
-# Documented as absent in web_main.cpp ("web has ... no AudioGraphRuntime
-# member"), stated as fact with no reason given. So: known, but nobody recorded
-# whether audio event graphs are MEANT to be desktop-only.
-web:AudioGraphRuntime
-# No mention anywhere in web_main.cpp. This is an ACCESSIBILITY feature, which
-# makes it the one here most likely to be a genuine oversight.
-web:AudioIndicators
-# No mention in web_main.cpp, and FluidRenderer.cpp is web-excluded in CMake --
-# so fluid cannot be drawn on web regardless. That reads like a deliberate
-# "fluid is desktop-only" call, in which case the right fix is to say so here
-# rather than to start ticking a simulation nothing can render.
+# AudioGraphRuntime and AudioIndicators were here and are now CLOSED (both tick
+# on web as of 2026-09-06). Marty confirmed the gaps were not intentional.
+#
+# Fluid stays, but as a SEQUENCED gap rather than an unknown. Marty asked for
+# web fluid parity; the simulation would tick fine, but FluidRenderer.cpp is
+# Vulkan-only (9 direct vk* call sites) and RenderSystem::SetFluidSimulation is
+# a no-op stub on the web branch, so wiring the sim today costs frame time and
+# draws nothing -- strictly worse than leaving it off. It lands with the WebGPU
+# fluid render path, hardening list item 18.
 web:FluidSimulation
 web:FluidTerrainCoupling
 # PARTLY a false positive of this tool, and worth reading before acting on it.
