@@ -65,6 +65,49 @@ void ScriptSystem::HandleScriptError(ECS::ScriptAttachment& script, const char* 
         script.className.c_str(), methodName, script.lastError.c_str());
 }
 
+bool ScriptSystem::ClassifyExecuteResult(ECS::ScriptAttachment& script, int result,
+                                         const char* methodName, const char* exceptionText) {
+    if (result == asEXECUTION_FINISHED) return true;
+
+    if (result == asEXECUTION_EXCEPTION) {
+        script.lastError = exceptionText ? exceptionText : "";
+        HandleScriptError(script, methodName);
+        return false;
+    }
+
+    if (result == asEXECUTION_ABORTED) {
+        // ScriptEngine's line callback aborts a context that blows the
+        // instruction budget. That abort used to land here as SUCCESS: every
+        // dispatcher tested only for exceptions, so hasError was never set,
+        // the script was never disabled, and the runaway method ran again on
+        // the very next frame with a fresh counter (the budget is allocated
+        // per AcquireContext). The limit stopped one call and bounded nothing
+        // over time -- a while(true) in OnUpdate burned the full budget every
+        // frame forever, logging one line each time.
+        //
+        // Latch the script off instead. A method that exhausts the budget once
+        // will exhaust it every frame, and there was no other way to stop it.
+        script.lastError = "Aborted: exceeded the script instruction budget in "
+                           + std::string(methodName) + "(). This script is now disabled.";
+        script.hasError = true;
+        ENJIN_LOG_ERROR(Script, "Script aborted (instruction budget) in %s::%s -- script disabled",
+                        script.className.c_str(), methodName);
+        return false;
+    }
+
+    if (result == asCONTEXT_NOT_PREPARED) {
+        ENJIN_LOG_ERROR(Script, "Context not prepared for %s::%s", script.className.c_str(), methodName);
+        return false;
+    }
+
+    // Anything else (asEXECUTION_SUSPENDED, an error code) is reported rather
+    // than passed off as a completed call. Not latched: only the abort above
+    // is known to repeat every frame.
+    ENJIN_LOG_WARN(Script, "Unexpected script execution result %d in %s::%s",
+                   result, script.className.c_str(), methodName);
+    return false;
+}
+
 bool ScriptSystem::CallLifecycleMethod(ECS::ScriptAttachment& script, int methodId, const char* methodName) {
     if (methodId < 0 || !script.instance || script.hasError || !script.enabled) return true;
     if (!m_ScriptEngine) return false;
@@ -84,16 +127,8 @@ bool ScriptSystem::CallLifecycleMethod(ECS::ScriptAttachment& script, int method
     ctx->SetObject(obj);
 
     int r = ctx->Execute();
-    bool success = true;
-
-    if (r == asEXECUTION_EXCEPTION) {
-        script.lastError = ctx->GetExceptionString();
-        HandleScriptError(script, methodName);
-        success = false;
-    } else if (r == asCONTEXT_NOT_PREPARED) {
-        ENJIN_LOG_ERROR(Script, "Context not prepared for %s::%s", script.className.c_str(), methodName);
-        success = false;
-    }
+    bool success = ClassifyExecuteResult(script, r, methodName,
+        r == asEXECUTION_EXCEPTION ? ctx->GetExceptionString() : nullptr);
 
     m_ScriptEngine->ReturnContext(ctx);
     return success;
@@ -119,13 +154,8 @@ bool ScriptSystem::CallLifecycleMethodFloat(ECS::ScriptAttachment& script, int m
     ctx->SetArgFloat(0, value);
 
     int r = ctx->Execute();
-    bool success = true;
-
-    if (r == asEXECUTION_EXCEPTION) {
-        script.lastError = ctx->GetExceptionString();
-        HandleScriptError(script, methodName);
-        success = false;
-    }
+    bool success = ClassifyExecuteResult(script, r, methodName,
+        r == asEXECUTION_EXCEPTION ? ctx->GetExceptionString() : nullptr);
 
     m_ScriptEngine->ReturnContext(ctx);
     return success;
@@ -151,13 +181,8 @@ bool ScriptSystem::CallCollisionMethod(ECS::ScriptAttachment& script, int method
     ctx->SetArgQWord(0, static_cast<asQWORD>(other));
 
     int r = ctx->Execute();
-    bool success = true;
-
-    if (r == asEXECUTION_EXCEPTION) {
-        script.lastError = ctx->GetExceptionString();
-        HandleScriptError(script, methodName);
-        success = false;
-    }
+    bool success = ClassifyExecuteResult(script, r, methodName,
+        r == asEXECUTION_EXCEPTION ? ctx->GetExceptionString() : nullptr);
 
     m_ScriptEngine->ReturnContext(ctx);
     return success;
@@ -186,12 +211,8 @@ bool ScriptSystem::CallStringMethod(ECS::ScriptAttachment& script, int methodId,
     ctx->SetArgObject(0, &argCopy);
 
     int r = ctx->Execute();
-    bool success = true;
-    if (r == asEXECUTION_EXCEPTION) {
-        script.lastError = ctx->GetExceptionString();
-        HandleScriptError(script, methodName);
-        success = false;
-    }
+    bool success = ClassifyExecuteResult(script, r, methodName,
+        r == asEXECUTION_EXCEPTION ? ctx->GetExceptionString() : nullptr);
 
     m_ScriptEngine->ReturnContext(ctx);
     return success;

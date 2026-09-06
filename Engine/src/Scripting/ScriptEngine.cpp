@@ -1323,14 +1323,37 @@ int ScriptEngine::IncludeCallback(const char* include,
         return -1;
     }
 
-    // Helper lambda: verify that a resolved path stays within the script directory
+    // Containment root for every #include below.
+    //
+    // This used to `return true` whenever m_ScriptDirectory was empty ("no
+    // restriction if no directory set"), which meant any ScriptEngine that
+    // compiled script content before SetScriptDirectory ran had no sandbox at
+    // all: `#include "../../../../../../Users/x/.ssh/id_rsa"` was read off disk
+    // and pasted into the module, where a compile error spills its content
+    // into the log and console. A sandbox that does not know its root has to
+    // fail CLOSED.
+    //
+    // With no configured root we contain the include to the INCLUDING FILE's
+    // own directory, which keeps sibling includes working for callers that
+    // never set a root (tooling, tests) while still refusing traversal. With
+    // neither, the include is refused outright.
+    std::string containmentRoot = self->m_ScriptDirectory;
+    if (containmentRoot.empty() && from && *from) {
+        auto fromDir = std::filesystem::path(from).parent_path();
+        if (!fromDir.empty()) containmentRoot = fromDir.string();
+    }
+
+    // Helper lambda: verify that a resolved path stays within the containment root
     // S1 fix: Use canonical() to resolve symlinks, preventing symlink traversal attacks
     auto isPathSafe = [&](const std::filesystem::path& resolved) -> bool {
-        if (self->m_ScriptDirectory.empty()) return true; // No restriction if no directory set
+        if (containmentRoot.empty()) {
+            ENJIN_LOG_ERROR(Script, "Script #include '%s' refused: no script directory set and no including file to contain it against", include);
+            return false;
+        }
         std::error_code ec2;
-        auto baseDir = std::filesystem::weakly_canonical(self->m_ScriptDirectory, ec2);
+        auto baseDir = std::filesystem::weakly_canonical(containmentRoot, ec2);
         if (ec2) {
-            baseDir = std::filesystem::absolute(self->m_ScriptDirectory, ec2).lexically_normal();
+            baseDir = std::filesystem::absolute(containmentRoot, ec2).lexically_normal();
         }
         auto resolvedCanon = std::filesystem::weakly_canonical(resolved, ec2);
         if (ec2) {

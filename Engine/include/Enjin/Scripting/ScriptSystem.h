@@ -113,6 +113,15 @@ private:
     // Handle script error
     void HandleScriptError(ECS::ScriptAttachment& script, const char* methodName);
 
+    // Classify an asIScriptContext::Execute() return code. Returns true only
+    // when the call actually completed. Every dispatcher routes through this
+    // so no result code can be silently treated as success again -- see the
+    // asEXECUTION_ABORTED note in the implementation. `exceptionText` is only
+    // read when the result is an exception, and may be null otherwise (the
+    // AngelScript types stay out of this header).
+    bool ClassifyExecuteResult(ECS::ScriptAttachment& script, int result,
+                               const char* methodName, const char* exceptionText);
+
     // Registered on the World so a despawn during play runs the teardown above.
     // Removed in SetWorld and the destructor -- the observer captures `this`.
     void InstallDestroyObserver();
