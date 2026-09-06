@@ -261,6 +261,21 @@ bool IsSafeRelativePath(const std::string& relative) {
     return true;
 }
 
+bool HasUpwardTraversal(const std::string& path) {
+    if (path.empty()) return false;
+    // Normalize backslashes first for the same cross-platform reason
+    // IsSafeRelativePath does: content and project files travel between
+    // platforms, and a backslash-separated "..\\x" must read as traversal on Linux too.
+    std::string normalized = path;
+    std::replace(normalized.begin(), normalized.end(), '\\', '/');
+    for (const auto& component : std::filesystem::path(normalized).lexically_normal()) {
+        if (component == "..") {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool IsSafeFileName(const std::string& name) {
     if (name.empty()) {
         return false;

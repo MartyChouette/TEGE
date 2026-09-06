@@ -117,4 +117,51 @@ ENJIN_TEST(PathSanitize, MakeRelativeToRoot_EmptyInput_ReturnsEmpty) {
     ENJIN_EXPECT_TRUE(Platform::MakeRelativeToRoot("C:/proj", "").empty());
 }
 
+// ---------------------------------------------------------------------------
+// HasUpwardTraversal - what it does, and what it deliberately does not
+//
+// Call sites spelled this as `lexically_normal().string().find("..") != npos`,
+// which rejected an innocent "level..2.enjin" and told the user it was path
+// traversal. This replaces the substring test with a COMPONENT test.
+//
+// Read the second test before trusting this for security. Normalization
+// ABSORBS ".." in an absolute path -- "C:/proj/a/../../etc/passwd" collapses to
+// "C:/etc/passwd" with no ".." left -- so neither this nor the substring check
+// it replaces ever caught that. On absolute paths the check is near-decorative,
+// and it always was. Confining a path to a directory needs
+// Platform::ResolveWithinRoot against that root, which is a different (and
+// currently absent) design decision for save targets.
+// ---------------------------------------------------------------------------
+
+ENJIN_TEST(PathSanitize, HasUpwardTraversal_DetectsSurvivingUpwardComponent) {
+    // Relative paths that climb out: the ".." survives normalization.
+    ENJIN_EXPECT_TRUE(Platform::HasUpwardTraversal("../secrets.enjin"));
+    ENJIN_EXPECT_TRUE(Platform::HasUpwardTraversal("scenes/../../secrets.enjin"));
+    // Backslashes count as separators on every platform, because content and
+    // project files travel between them.
+    ENJIN_EXPECT_TRUE(Platform::HasUpwardTraversal("..\\windows"));
+}
+
+ENJIN_TEST(PathSanitize, HasUpwardTraversal_AbsolutePathsAbsorbDotDot) {
+    // NOT a bug and NOT an oversight: an absolute path with enough leading
+    // components simply resolves elsewhere, it does not escape a root. Anyone
+    // reaching for this expecting containment wants ResolveWithinRoot.
+    ENJIN_EXPECT_FALSE(Platform::HasUpwardTraversal("C:/proj/scenes/../../etc/passwd"));
+    ENJIN_EXPECT_FALSE(Platform::HasUpwardTraversal("/home/u/proj/../../etc/shadow"));
+}
+
+ENJIN_TEST(PathSanitize, HasUpwardTraversal_AllowsDotsInsideNames) {
+    // The reason this helper exists: these are ordinary file names.
+    ENJIN_EXPECT_FALSE(Platform::HasUpwardTraversal("C:/proj/scenes/level..2.enjin"));
+    ENJIN_EXPECT_FALSE(Platform::HasUpwardTraversal("/home/u/wall..diffuse.png"));
+    ENJIN_EXPECT_FALSE(Platform::HasUpwardTraversal("a..b"));
+}
+
+ENJIN_TEST(PathSanitize, HasUpwardTraversal_AllowsPlainAndCollapsingPaths) {
+    ENJIN_EXPECT_FALSE(Platform::HasUpwardTraversal("C:/proj/scenes/Main.enjin"));
+    ENJIN_EXPECT_FALSE(Platform::HasUpwardTraversal("/home/u/proj/Main.enjin"));
+    ENJIN_EXPECT_FALSE(Platform::HasUpwardTraversal("C:/proj/a/../b/Main.enjin"));
+    ENJIN_EXPECT_FALSE(Platform::HasUpwardTraversal(""));
+}
+
 ENJIN_TEST_MAIN()

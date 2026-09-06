@@ -61,6 +61,18 @@ ENJIN_API bool IsSafeFileName(const std::string& name);
 // absolute path, or "" if either input is empty or the path escapes root.
 ENJIN_API std::string ResolveWithinRoot(const std::string& root, const std::string& relative);
 
+// True if 'path' still contains an upward ".." COMPONENT after lexical
+// normalization. Works on absolute paths, which IsSafeRelativePath rejects
+// outright by design.
+//
+// This is for the paths a user or a tool supplies that are legitimately
+// absolute -- an editor save target, a file to bundle -- where the question is
+// only "does this climb out of where it claims to be". Call sites used to spell
+// it as `normalized.find("..") != npos`, a SUBSTRING test that also rejected an
+// innocent "level..2.enjin" or "wall..diffuse.png" and blamed the user for
+// path traversal.
+ENJIN_API bool HasUpwardTraversal(const std::string& path);
+
 // Returns 'absolute' expressed relative to 'root' if it lies within root
 // after normalization; otherwise "" (caller keeps the original path).
 ENJIN_API std::string MakeRelativeToRoot(const std::string& root, const std::string& absolute);

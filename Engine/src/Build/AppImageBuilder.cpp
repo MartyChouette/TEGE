@@ -1,5 +1,6 @@
 #include "Enjin/Build/AppImageBuilder.h"
 #include "Enjin/Logging/Log.h"
+#include "Enjin/Platform/Paths.h"
 
 #include <filesystem>
 #include <fstream>
@@ -297,8 +298,7 @@ bool AppImageBuilder::CopyGameFiles(const AppImageConfig& config, const std::str
             continue;
         }
         // Validate path doesn't escape expected directories
-        auto normalPath = std::filesystem::path(filePath).lexically_normal();
-        if (normalPath.string().find("..") != std::string::npos) {
+        if (Platform::HasUpwardTraversal(filePath)) {
             ENJIN_LOG_WARN(Build, "Extra file path contains traversal: %s — skipping", filePath.c_str());
             continue;
         }

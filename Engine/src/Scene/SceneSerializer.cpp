@@ -82,6 +82,7 @@
 #include "Enjin/ECS/Components/ParallaxLayer.h"
 #include "Enjin/Physics/PhysicsTypes2D.h"
 #include "Enjin/Logging/Log.h"
+#include "Enjin/Platform/Paths.h"
 
 #include <nlohmann/json.hpp>
 #include <filesystem>
@@ -9446,8 +9447,7 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
     }
 
     // Reject path traversal in save paths (symmetric with Load)
-    auto normalized = std::filesystem::path(filepath).lexically_normal().string();
-    if (normalized.find("..") != std::string::npos) {
+    if (Platform::HasUpwardTraversal(filepath)) {
         SerializationResult result;
         result.success = false;
         result.error = "Path traversal rejected: " + filepath;
@@ -9677,8 +9677,7 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
 
     // SN-C4: Reject directory traversal in additive load paths
     {
-        auto normalized = std::filesystem::path(filepath).lexically_normal().string();
-        if (normalized.find("..") != std::string::npos) {
+        if (Platform::HasUpwardTraversal(filepath)) {
             result.error = "Path traversal rejected: " + filepath;
             ENJIN_LOG_ERROR(Asset, "LoadAdditive: %s", result.error.c_str());
             return result;
