@@ -1,4 +1,5 @@
 #include "Enjin/Gameplay/SaveSystem.h"
+#include "Enjin/Scene/GameSaveSystem.h"   // one Linux save root, not two
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Name.h"
@@ -32,9 +33,14 @@ std::string SaveSystem::GetSaveDirectory() {
     if (home) return std::string(home) + "/Library/Application Support/enjin/saves/";
     return "saves/";
 #else
-    const char* home = std::getenv("HOME");
-    if (home) return std::string(home) + "/.config/enjin/saves/";
-    return "saves/";
+    // Linux: delegate, do not reimplement. This returned ~/.config/enjin/saves
+    // while Scene::GameSaveSystem returned the XDG_DATA_HOME path
+    // (~/.local/share/enjin/saves) -- two save systems writing two directories
+    // on the same machine, and the one this used is the config directory a
+    // "reset my settings" tool or a dotfile manager will happily delete.
+    // GameSaveSystem's version is the documented-correct one AND carries the
+    // legacy-location fallback, so a player with existing saves keeps them.
+    return Scene::GameSaveSystem::GetSaveDirectory();
 #endif
 }
 

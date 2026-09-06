@@ -5,6 +5,8 @@
 #include "Enjin/Platform/Paths.h"
 #include <filesystem>
 #include <algorithm>
+#include <vector>
+#include <string>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -19,8 +21,10 @@ extern char** environ;
 namespace Enjin {
 namespace Build {
 
-// Forward declaration (defined below Emscripten Build section)
-static int RunProcess(const std::string& cmdLine);
+// Forward declaration (defined below Emscripten Build section).
+// Takes an ARGUMENT VECTOR, never a shell string -- see the note on the
+// definition. workingDir may be empty to inherit the caller's.
+static int RunProcess(const std::vector<std::string>& args, const std::string& workingDir = std::string());
 
 // ============================================================================
 // Export
@@ -166,14 +170,26 @@ HTML5ExportResult HTML5Exporter::Export(const HTML5ExportConfig& config,
         std::filesystem::remove(zipPath);
 
 #ifdef _WIN32
-        // Use PowerShell Compress-Archive (always available on Windows 10/11)
-        std::string psCmd = "powershell -NoProfile -Command \"Compress-Archive -Path '"
-            + config.outputDir + "\\*' -DestinationPath '" + zipPath + "' -Force\"";
-        int zipResult = RunProcess(psCmd);
+        // PowerShell Compress-Archive (always available on Windows 10/11).
+        // The -Command payload is PowerShell script, so paths inside it are
+        // single-quoted with embedded quotes doubled -- PowerShell's own
+        // escape. The argument reaches the process intact because RunProcess
+        // quotes per argument instead of concatenating a line.
+        auto psQuote = [](const std::string& v) {
+            std::string out;
+            for (char c : v) { out.push_back(c); if (c == '\'') out.push_back(c); }
+            return out;
+        };
+        int zipResult = RunProcess({
+            "powershell", "-NoProfile", "-Command",
+            "Compress-Archive -Path '" + psQuote(config.outputDir) + "\\*' -DestinationPath '"
+                + psQuote(zipPath) + "' -Force"
+        });
 #else
-        // Use system zip command on Linux/Mac
-        std::string zipCmd = "cd \"" + config.outputDir + "\" && zip -r \"" + zipPath + "\" .";
-        int zipResult = RunProcess(zipCmd);
+        // zip, with the output directory as the working directory. This was
+        // `cd "dir" && zip ...` handed to a shell, which both invited
+        // injection and broke on any path holding a quote or an ampersand.
+        int zipResult = RunProcess({ "zip", "-r", zipPath, "." }, config.outputDir);
 #endif
 
         if (zipResult == 0 && std::filesystem::exists(zipPath)) {
@@ -194,17 +210,54 @@ HTML5ExportResult HTML5Exporter::Export(const HTML5ExportConfig& config,
 // Emscripten Build Invocation
 // ============================================================================
 
-// S-C1: Safe process execution — avoids std::system() to prevent command injection
-static int RunProcess(const std::string& cmdLine) {
+// Spawn a process from an ARGUMENT VECTOR. No shell is involved on any
+// platform, so nothing in a path is ever parsed as syntax.
+//
+// The previous version took one std::string and, on POSIX, handed it to
+// /bin/sh -c. The comment above it said it "avoids std::system() to prevent
+// command injection", which is precisely what sh -c on a concatenated string
+// is: an output directory containing ; & | $() or a quote was executed, not
+// quoted. On Windows it passed a concatenated line to CreateProcessA with a
+// null application name, with the same quoting problem in a different dialect.
+//
+// It was also plainly broken for ordinary input: a project path with an
+// ampersand or an apostrophe in it corrupted the command and failed the build
+// with an unrelated error.
+static int RunProcess(const std::vector<std::string>& args, const std::string& workingDir) {
+    if (args.empty()) return -1;
 #ifdef _WIN32
+    // CreateProcess takes a single line, so quote each argument the way
+    // CommandLineToArgvW parses it back: wrap anything with a space, tab or
+    // quote, double the backslashes that precede a quote, and escape quotes.
+    auto quote = [](const std::string& a) -> std::string {
+        if (!a.empty() && a.find_first_of(" \t\"") == std::string::npos) return a;
+        std::string out = "\"";
+        for (size_t i = 0; i < a.size(); ++i) {
+            size_t slashes = 0;
+            while (i < a.size() && a[i] == '\\') { ++slashes; ++i; }
+            if (i == a.size())      { out.append(slashes * 2, '\\'); break; }
+            if (a[i] == '"')        { out.append(slashes * 2 + 1, '\\'); out.push_back('"'); }
+            else                    { out.append(slashes, '\\'); out.push_back(a[i]); }
+        }
+        out.push_back('"');
+        return out;
+    };
+    std::string cmdLine;
+    for (size_t i = 0; i < args.size(); ++i) {
+        if (i) cmdLine.push_back(' ');
+        cmdLine += quote(args[i]);
+    }
+
     STARTUPINFOA si{};
     si.cb = sizeof(si);
     si.dwFlags = STARTF_USESHOWWINDOW;
     si.wShowWindow = SW_HIDE;
     PROCESS_INFORMATION pi{};
-    std::string cmd = cmdLine; // CreateProcessA needs mutable buffer
-    if (!CreateProcessA(nullptr, cmd.data(), nullptr, nullptr, FALSE,
-                        CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
+    std::string mutableCmd = cmdLine;  // CreateProcessA needs a mutable buffer
+    if (!CreateProcessA(nullptr, mutableCmd.data(), nullptr, nullptr, FALSE,
+                        CREATE_NO_WINDOW, nullptr,
+                        workingDir.empty() ? nullptr : workingDir.c_str(),
+                        &si, &pi)) {
         return -1;
     }
     DWORD waitResult = WaitForSingleObject(pi.hProcess, 300000); // 5 min timeout
@@ -216,13 +269,23 @@ static int RunProcess(const std::string& cmdLine) {
     CloseHandle(pi.hThread);
     return static_cast<int>(exitCode);
 #else
-    const char* argv[] = { "/bin/sh", "-c", cmdLine.c_str(), nullptr };
-    pid_t pid = 0;
-    if (posix_spawnp(&pid, "/bin/sh", nullptr, nullptr, const_cast<char**>(argv), environ) != 0) {
-        return -1;
+    // fork + chdir + execvp rather than posix_spawn: the working directory is
+    // how the zip step stopped needing `cd X && ...`, and the addchdir file
+    // action is not portable enough to rely on.
+    std::vector<char*> argv;
+    argv.reserve(args.size() + 1);
+    for (const auto& a : args) argv.push_back(const_cast<char*>(a.c_str()));
+    argv.push_back(nullptr);
+
+    pid_t pid = fork();
+    if (pid < 0) return -1;
+    if (pid == 0) {
+        if (!workingDir.empty() && chdir(workingDir.c_str()) != 0) _exit(127);
+        execvp(argv[0], argv.data());
+        _exit(127);   // exec failed
     }
     int status = 0;
-    waitpid(pid, &status, 0);
+    if (waitpid(pid, &status, 0) < 0) return -1;
     return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
 #endif
 }
@@ -294,16 +357,20 @@ bool HTML5Exporter::InvokeEmscriptenBuild(const std::string& outputDir,
         std::string buildDir = outputDir + "/build-web";
         fs::create_directories(buildDir);
 
-        std::string configCmd = "emcmake cmake -B \"" + buildDir + "\" -DENJIN_PLATFORM_WEB=ON";
-        ENJIN_LOG_INFO(Build, "Web build: configuring... (%s)", configCmd.c_str());
+        const std::vector<std::string> configCmd = {
+            "emcmake", "cmake", "-B", buildDir, "-DENJIN_PLATFORM_WEB=ON"
+        };
+        ENJIN_LOG_INFO(Build, "Web build: configuring... (emcmake cmake -B %s)", buildDir.c_str());
         int configResult = RunProcess(configCmd);
         if (configResult != 0) {
             ENJIN_LOG_ERROR(Build, "Web build: CMake configure failed (exit code %d). Is emsdk activated?", configResult);
             return false;
         }
 
-        std::string buildCmd = "emmake cmake --build \"" + buildDir + "\" --target EnjinPlayer";
-        ENJIN_LOG_INFO(Build, "Web build: compiling... (%s)", buildCmd.c_str());
+        const std::vector<std::string> buildCmd = {
+            "emmake", "cmake", "--build", buildDir, "--target", "EnjinPlayer"
+        };
+        ENJIN_LOG_INFO(Build, "Web build: compiling... (emmake cmake --build %s)", buildDir.c_str());
         int buildResult = RunProcess(buildCmd);
         if (buildResult != 0) {
             ENJIN_LOG_ERROR(Build, "Web build: compilation failed (exit code %d)", buildResult);

@@ -1,5 +1,6 @@
 #include "Enjin/Assets/AssimpLoader.h"
 #include "Enjin/Logging/Log.h"
+#include "Enjin/Platform/Paths.h"
 
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
@@ -216,10 +217,25 @@ bool AssimpLoader::Load(const std::string& filepath, AssimpScene& outScene) {
         // so the render system can load them as normal image files.
         auto resolveEmbedded = [&](const std::string& rawPath) -> std::string {
             if (rawPath.empty() || rawPath[0] != '*') {
-                // SEC-H2 fix: validate non-embedded paths against directory traversal
-                auto normalized = std::filesystem::path(rawPath).lexically_normal().string();
-                if (normalized.find("..") != std::string::npos) {
-                    ENJIN_LOG_WARN(Asset, "Rejecting asset path with traversal: %s", rawPath.c_str());
+                // A model file is untrusted content: downloaded, from a
+                // marketplace, or contributed by a player. Its material texture
+                // paths are whatever the author put in them.
+                //
+                // The hand-rolled check this replaces looked for ".." as a
+                // SUBSTRING after normalisation, which was wrong in both
+                // directions. It rejected a legitimate "wall..diffuse.png", and
+                // it passed absolute and UNC paths straight through -- so a
+                // crafted model naming a \host\share path made the editor open
+                // an SMB connection to a host of the author's choosing on
+                // import, and "/etc/shadow" or a C:\Users\... path produced an
+                // out-of-project read attempt.
+                //
+                // Platform::IsSafeRelativePath is the project's shared rule and
+                // gets both right: no absolute, no root name, no drive letter,
+                // no colon, no ".." component, while still allowing ".." inside
+                // a file name.
+                if (!Platform::IsSafeRelativePath(rawPath)) {
+                    ENJIN_LOG_WARN(Asset, "Rejecting unsafe texture path from model: %s", rawPath.c_str());
                     return "";
                 }
                 return rawPath;
