@@ -4,6 +4,8 @@
 #   glslc --target-env=vulkan1.2 -I. <shader> -o <shader>.spv
 # Then: python _gen_rt.py
 import struct
+import hashlib
+import os
 
 # Repo root, derived rather than hardcoded -- see _repo.py.
 from _repo import ROOT as BASE
@@ -83,6 +85,50 @@ def u32block(path):
     lines = ["    " + ", ".join(V[i:i+8]) for i in range(0, len(V), 8)]
     return ("," + NL).join(lines), size, words
 
+# Staleness guard. RTShaderData.h is a 660KB GENERATED file that is tracked in
+# git, and _gen_rt.py is invoked by nothing -- not CMake, not CI. It stays
+# correct only because somebody remembers to run it. Edit an rt_ shader, forget
+# the script, and the engine runs stale SPIR-V against current source: the file
+# on disk looks right and the GPU reads different bytes. That is the same class
+# as the PostProcessing fossil that hid for months.
+#
+# So record a hash of the SOURCES this header was generated from.
+# tools/rt_shader_freshness.py recomputes it and fails when they disagree.
+# Hashing sources rather than diffing the output on purpose: the output depends
+# on the exact glslc version, so a byte-diff would go red when the SDK moves
+# rather than when a shader actually changed. This only goes red when a source
+# really did change without a regeneration.
+def source_files():
+    names = set()
+    for spv, name, desc in BLOCKS:
+        if spv is not None:
+            names.add(spv[:-4])          # rt_shadow.rgen.spv -> rt_shadow.rgen
+    for _inl, blocks in INL_FILES:
+        for spv, name, desc in blocks:
+            names.add(spv[:-4])
+    # .glsl are includes (rt_common.glsl and friends): editing one changes the
+    # compiled output of every shader including it while no listed source moves.
+    for f in os.listdir(SHADERS):
+        if f.endswith(".glsl"):
+            names.add(f)
+    return sorted(names)
+
+def source_hash():
+    h = hashlib.sha256()
+    for n in source_files():
+        p = SHADERS + "/" + n
+        h.update(n.encode("utf-8"))
+        with open(p, "rb") as fh:
+            # Normalise line endings before hashing. core.autocrlf is true in
+            # this repo, so the SAME committed shader is CRLF in a Windows
+            # working tree and LF in a Linux one -- hashing raw bytes would make
+            # the check pass on one platform and fail on the other for no real
+            # reason. GLSL compilers ignore line endings, so the compiled SPIR-V
+            # is identical either way and normalising loses nothing.
+            h.update(fh.read().replace(b"\r\n", b"\n"))
+    return h.hexdigest()
+
+SOURCE_HASH = source_hash()
 out = []
 out.append("#pragma once")
 out.append("")
@@ -92,6 +138,10 @@ out.append("// Compiled with: glslc --target-env=vulkan1.2")
 out.append("//")
 out.append("// To regenerate: compile each shader, then run: python _gen_rt.py")
 out.append("// See docs/BUILD.md for compilation instructions.")
+out.append("//")
+out.append("// SOURCE-SHA256: " + SOURCE_HASH)
+out.append("// Checked by tools/rt_shader_freshness.py -- if this does not match the")
+out.append("// shader sources on disk, someone edited a shader and skipped _gen_rt.py.")
 out.append("")
 out.append("#include <cstdint>")
 out.append("")

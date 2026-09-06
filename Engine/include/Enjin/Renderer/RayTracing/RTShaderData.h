@@ -6,6 +6,10 @@
 //
 // To regenerate: compile each shader, then run: python _gen_rt.py
 // See docs/BUILD.md for compilation instructions.
+//
+// SOURCE-SHA256: a66f166c7dfdb8887c5d155a7cec793e1ef8b643e970543b0a657b786f36d99e
+// Checked by tools/rt_shader_freshness.py -- if this does not match the
+// shader sources on disk, someone edited a shader and skipped _gen_rt.py.
 
 #include <cstdint>
 

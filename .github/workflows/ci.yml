@@ -31,11 +31,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Glslang is here for glslangValidator, NOT for the loader. Without it
+      # CMake prints "Shader codegen SKIPPED" and CI compiles no SPIR-V at
+      # all: no .spv reaches Engine/shaders, GPU culling and every other
+      # file-loaded compute shader silently disables itself, and the render
+      # smoke, play-cycle stress and exported-game smoke all pass anyway
+      # because the engine degrades gracefully and only logs at INFO. That was
+      # true of every run until 2026-09-06, when the installer smoke failed on
+      # a wildcard matching no files and finally surfaced it.
       - name: Install Vulkan SDK
         uses: humbletim/setup-vulkan-sdk@v1.2.1
         with:
           vulkan-query-version: 1.3.283.0
-          vulkan-components: Vulkan-Headers, Vulkan-Loader
+          vulkan-components: Vulkan-Headers, Vulkan-Loader, Glslang
           vulkan-use-cache: true
 
       # assimp, Jolt, Box2D, nlohmann and miniaudio are all pinned to tags, so
@@ -200,12 +208,14 @@ jobs:
         # where the shader path should be. All four were invisible to the test
         # suite, which only ever exercises the dev tree.
         #
-        # Note on shader count: CMake's codegen compiles the non-rt_ shaders
-        # only (RT ones #include rt_common.glsl and go through _gen_rt.py, which
-        # is NOT wired into the build), and no .spv is tracked in git. So CI
-        # packages ~71 shaders where a dev machine that has run _gen_rt.py has
-        # ~96. The floor below catches codegen degrading further; it cannot
-        # catch the missing RT set, which is a separate known gap.
+        # Note on shader count: CMake compiles the non-rt_ shaders only (RT
+        # ones #include rt_common.glsl and go through _gen_rt.py), and no .spv
+        # is tracked, so CI packages ~71 where a dev machine that has run
+        # _gen_rt.py has ~96. That difference is harmless: RT SPIR-V is baked
+        # into the tracked RTShaderData.h and read from there, and nothing
+        # loads rt_*.spv from disk. The shaders that DO load from a file are
+        # compute, visibility-buffer and upscaler, all of which CI builds --
+        # so the floor below guards the set that actually matters at runtime.
         env:
           VK_DRIVER_FILES: ${{ github.workspace }}\mesa\x64\lvp_icd.x86_64.json
           VK_ICD_FILENAMES: ${{ github.workspace }}\mesa\x64\lvp_icd.x86_64.json
@@ -305,7 +315,7 @@ jobs:
           sudo apt-get install -y -qq build-essential cmake ninja-build pkg-config \
             libvulkan-dev libglfw3-dev libx11-dev libxrandr-dev libxinerama-dev \
             libxcursor-dev libxi-dev libcurl4-openssl-dev mesa-vulkan-drivers \
-            vulkan-tools xvfb zenity
+            vulkan-tools xvfb zenity glslang-tools
 
       - name: Cache fetched dependencies
         uses: actions/cache@v4
@@ -325,6 +335,25 @@ jobs:
         # Baseline-pinned like tools/backend_parity.py: existing divergence is
         # recorded with a reason, and this fails only when the divergence GROWS.
         run: python3 tools/runtime_parity.py --strict
+
+      - name: RT shader freshness (generated header matches its sources)
+        # Another pure source check, so it also runs before the slow steps.
+        #
+        # RTShaderData.h is 660KB of generated SPIR-V, TRACKED in git, and read
+        # directly by every RT subsystem - nothing loads rt_*.spv from disk. It
+        # is produced by _gen_rt.py, which CMake does not call and CI does not
+        # call: its codegen glob is .vert/.frag/.comp and explicitly excludes
+        # /rt_. So the header stays correct only because someone remembers to
+        # run a script by hand, and forgetting means the engine compiles against
+        # stale SPIR-V while the GLSL on disk looks perfectly right.
+        #
+        # _gen_rt.py stamps a hash of its INPUTS into the header and this
+        # recomputes it. Hashing inputs rather than diffing the regenerated
+        # output on purpose: the output bytes depend on the exact glslc version,
+        # so a byte-diff would go red whenever the SDK moves. The hash is taken
+        # over line-ending-normalised content, because core.autocrlf makes the
+        # same committed shader CRLF on Windows and LF here.
+        run: python3 tools/rt_shader_freshness.py
 
       - name: Configure
         run: cmake -B build-linux -S . -G Ninja -DCMAKE_BUILD_TYPE=Release -DENJIN_BUILD_TESTS=ON
