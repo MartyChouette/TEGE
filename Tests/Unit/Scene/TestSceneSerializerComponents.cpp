@@ -2,6 +2,9 @@
 #include <set>
 #include <cstdio>
 #include <string>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Material.h"
@@ -1722,6 +1725,117 @@ ENJIN_TEST(ReplaySnapshot, AuthoredMeshKeepsVerticesUnderReferenceMode) {
     ENJIN_ASSERT_EQ((int)back->vertices.size(), 3);
     ENJIN_EXPECT_EQ((int)back->indices.size(), 3);
     ENJIN_EXPECT_FLOAT_NEAR(back->vertices[2].position.x, 2.0f, 0.001f);
+}
+
+// ===========================================================================
+// Newer-than-engine scene files are read-only
+//
+// Regression: a scene whose formatVersion is newer than SCENE_FORMAT_VERSION
+// logged an error and loaded anyway. Every key this build does not recognise
+// was dropped, the load still reported success, and the editor's autosave timer
+// then wrote the truncated scene back over the author's original. The console
+// line was the only trace.
+// ===========================================================================
+
+namespace {
+
+std::string WriteFutureScene(const char* tag, unsigned version) {
+    // Arrange: a minimal but VALID scene carrying a future formatVersion and a
+    // key this build has no idea about.
+    std::string path = (std::filesystem::temp_directory_path() /
+                        (std::string("enjin_future_scene_") + tag + ".enjin")).string();
+    std::ofstream f(path, std::ios::binary);
+    f << "{\n"
+      << "  \"version\": \"1.0\",\n"
+      << "  \"formatVersion\": " << version << ",\n"
+      << "  \"entities\": [],\n"
+      << "  \"somethingFromTheFuture\": { \"keep\": true }\n"
+      << "}\n";
+    return path;
+}
+
+} // namespace
+
+ENJIN_TEST(SceneVersionGuard, NewerSceneLoadsButWarns) {
+    // Arrange
+    const std::string path = WriteFutureScene("warns", Scene::SceneSerializer::SCENE_FORMAT_VERSION + 1);
+    World world;
+    Scene::SceneSerializer ser(&world);
+
+    // Act
+    auto result = ser.Load(path);
+
+    // Assert: still usable, but the caller is told, and the version is recorded.
+    ENJIN_EXPECT_TRUE(result.success);
+    ENJIN_EXPECT_TRUE(!result.warnings.empty());
+    ENJIN_EXPECT_EQ(ser.GetBlockingSceneVersion(),
+                    (u32)(Scene::SceneSerializer::SCENE_FORMAT_VERSION + 1));
+
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+}
+
+ENJIN_TEST(SceneVersionGuard, SavingOverTheSourceIsRefused) {
+    // Arrange
+    const std::string path = WriteFutureScene("refuse", Scene::SceneSerializer::SCENE_FORMAT_VERSION + 1);
+    World world;
+    Scene::SceneSerializer ser(&world);
+    ENJIN_ASSERT_TRUE(ser.Load(path).success);
+
+    // Act: this is the autosave path
+    auto saved = ser.Save(path);
+
+    // Assert: refused, and the file on disk still has its future content.
+    ENJIN_EXPECT_FALSE(saved.success);
+    ENJIN_EXPECT_TRUE(!saved.error.empty());
+    std::ifstream check(path);
+    std::string body((std::istreambuf_iterator<char>(check)), std::istreambuf_iterator<char>());
+    ENJIN_EXPECT_TRUE(body.find("somethingFromTheFuture") != std::string::npos);
+
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+}
+
+ENJIN_TEST(SceneVersionGuard, SaveAsElsewhereIsAllowed) {
+    // Arrange
+    const std::string path = WriteFutureScene("saveas", Scene::SceneSerializer::SCENE_FORMAT_VERSION + 1);
+    World world;
+    Scene::SceneSerializer ser(&world);
+    ENJIN_ASSERT_TRUE(ser.Load(path).success);
+
+    // Act: a different file is fine -- the truncated scene is still worth
+    // keeping, it just must not replace the original.
+    const std::string other = (std::filesystem::temp_directory_path() /
+                               "enjin_future_scene_saveas_copy.enjin").string();
+    auto saved = ser.Save(other);
+
+    // Assert
+    ENJIN_EXPECT_TRUE(saved.success);
+
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+    std::filesystem::remove(other, ec);
+}
+
+ENJIN_TEST(SceneVersionGuard, LoadingAKnownVersionClearsTheBlock) {
+    // Arrange: block on a future scene, then load one this engine understands.
+    const std::string future = WriteFutureScene("clear", Scene::SceneSerializer::SCENE_FORMAT_VERSION + 1);
+    const std::string known  = WriteFutureScene("clear_ok", Scene::SceneSerializer::SCENE_FORMAT_VERSION);
+    World world;
+    Scene::SceneSerializer ser(&world);
+    ENJIN_ASSERT_TRUE(ser.Load(future).success);
+    ENJIN_ASSERT_TRUE(ser.GetBlockingSceneVersion() != 0);
+
+    // Act
+    ENJIN_ASSERT_TRUE(ser.Load(known).success);
+
+    // Assert: the block is per-load state, not sticky for the session.
+    ENJIN_EXPECT_EQ(ser.GetBlockingSceneVersion(), (u32)0);
+    ENJIN_EXPECT_TRUE(ser.Save(known).success);
+
+    std::error_code ec;
+    std::filesystem::remove(future, ec);
+    std::filesystem::remove(known, ec);
 }
 
 ENJIN_TEST_MAIN()

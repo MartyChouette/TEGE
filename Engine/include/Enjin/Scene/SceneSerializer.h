@@ -144,9 +144,32 @@ public:
     void SetRenderSettings(const Renderer::SceneRenderSettings& s) { m_RenderSettings = s; }
     const Renderer::SceneRenderSettings& GetRenderSettings() const { return m_RenderSettings; }
 
+    // True when the last file load read a scene whose formatVersion is NEWER
+    // than this engine understands, and `path` is that same file.
+    //
+    // Loading such a scene drops every key the older engine does not know (the
+    // load still reports success), so writing back over the source truncates
+    // it -- permanently, and the editor autosaves on a timer, so it happens
+    // without anyone choosing to save. Save/SaveEntities refuse that one path.
+    // Save As somewhere else is allowed: the truncated scene is still worth
+    // keeping, it just must not replace the original.
+    bool IsSaveBlockedFor(const std::string& path) const;
+
+    // The version that blocked it, for messaging. 0 when nothing is blocked.
+    u32 GetBlockingSceneVersion() const { return m_NewerVersionFound; }
+
 private:
     // Apply incremental migrations from fromVersion up to SCENE_FORMAT_VERSION
     static void MigrateScene(nlohmann::json& root, u32 fromVersion);
+
+    // Canonical form of a path for the save-block comparison. Falls back to a
+    // lexically normalised absolute path when the file cannot be resolved.
+    static std::string CanonicalPathKey(const std::string& path);
+
+    // Source file of a newer-than-engine scene, and the version it declared.
+    // Cleared by any load that fully understood its input.
+    std::string m_NewerVersionSourcePath;
+    u32 m_NewerVersionFound = 0;
 
     ECS::World* m_World = nullptr;
     Accessibility::SceneContentFlags m_ContentFlags;

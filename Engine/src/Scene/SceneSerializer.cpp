@@ -9394,12 +9394,46 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
     return reg;
 }
 
+std::string SceneSerializer::CanonicalPathKey(const std::string& path) {
+    if (path.empty()) return {};
+    std::error_code ec;
+    auto canon = std::filesystem::weakly_canonical(path, ec);
+    if (ec) {
+        canon = std::filesystem::absolute(path, ec).lexically_normal();
+        if (ec) return path;
+    }
+    return canon.string();
+}
+
+bool SceneSerializer::IsSaveBlockedFor(const std::string& path) const {
+    if (m_NewerVersionSourcePath.empty() || path.empty()) return false;
+    return CanonicalPathKey(path) == m_NewerVersionSourcePath;
+}
+
 SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, const std::vector<ECS::Entity>& entities, const SerializationOptions& options) {
     if (!m_World) {
         SerializationResult result;
         result.success = false;
         result.error = "No world set";
         result.filepath = filepath;
+        return result;
+    }
+
+    // Refuse to write back over a scene this engine could not fully read.
+    // The load dropped every key it did not recognise and still reported
+    // success, so this save would replace the author's file with a truncated
+    // copy -- and the editor's autosave timer would do it without anyone
+    // choosing to. Save As to a different path is deliberately still allowed.
+    if (IsSaveBlockedFor(filepath)) {
+        SerializationResult result;
+        result.success = false;
+        result.filepath = filepath;
+        result.error = "Refusing to overwrite '" + filepath + "': it was written by a newer engine (scene format "
+                     + std::to_string(m_NewerVersionFound) + ", this engine understands "
+                     + std::to_string(SCENE_FORMAT_VERSION) + "). Loading it dropped everything this build does "
+                     "not recognise, so saving here would destroy that data. Save to a different file, or open "
+                     "this scene in the newer build.";
+        ENJIN_LOG_ERROR(Asset, "%s", result.error.c_str());
         return result;
     }
 
@@ -9666,9 +9700,25 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
         u32 formatVersion = sceneJson.value("formatVersion", u32(0));
         if (formatVersion == 0) {
             ENJIN_LOG_WARN(Asset, "Loading legacy scene file (no format version): %s", filepath.c_str());
+            m_NewerVersionSourcePath.clear();
+            m_NewerVersionFound = 0;
         } else if (formatVersion > SCENE_FORMAT_VERSION) {
             ENJIN_LOG_ERROR(Asset, "Scene file version %u is newer than engine version %u: %s",
                             formatVersion, SCENE_FORMAT_VERSION, filepath.c_str());
+            // The load continues -- a partially readable scene is more useful
+            // than nothing -- but every unrecognised key is being dropped right
+            // now, so this file is latched read-only. Without that, the error
+            // above was the only trace, and the next autosave wrote the
+            // truncated scene back over the author's original.
+            m_NewerVersionSourcePath = CanonicalPathKey(filepath);
+            m_NewerVersionFound = formatVersion;
+            result.warnings.push_back(
+                "Scene format " + std::to_string(formatVersion) + " is newer than this engine ("
+                + std::to_string(SCENE_FORMAT_VERSION) + "). Unrecognised data was dropped on load and this "
+                "file is now read-only; saving over it would destroy that data.");
+        } else {
+            m_NewerVersionSourcePath.clear();
+            m_NewerVersionFound = 0;
         }
         if (formatVersion < SCENE_FORMAT_VERSION) {
             MigrateScene(sceneJson, formatVersion);
