@@ -275,8 +275,12 @@ struct MaterialComponent {
     }
 };
 
-// GPU-aligned material data for shader upload (112 bytes — must match the
-// material SSBO struct in the shaders and ShaderData.h)
+// GPU-aligned material data for shader upload (144 bytes — must match the
+// material SSBO struct in the shaders and ShaderData.h).
+// Three sites move together, and only the test ever had the true number:
+// this struct, MaterialEntry in triangle.frag, and the static_assert +
+// runtime check in Tests/Unit/ECS/TestMaterial.cpp. 112 was the size before
+// the SSS/bindless rows, 128 before the F1 UV-animation row.
 struct alignas(16) MaterialGPU {
     alignas(16) Math::Vector3 baseColor;
     alignas(4) f32 metallic;

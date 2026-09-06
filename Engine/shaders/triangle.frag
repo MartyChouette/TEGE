@@ -124,7 +124,7 @@ layout(push_constant) uniform PushConstants {
 // per draw by v_MaterialIndex (direct draws pass the index via firstInstance,
 // adr-0003). No more dynamic offset: the descriptor is a plain STORAGE_BUFFER
 // covering the whole buffer, which is what makes UPDATE_AFTER_BIND legal on
-// set 0. Entry layout matches C++ MaterialGPU (std430, 128 bytes).
+// set 0. Entry layout matches C++ MaterialGPU (std430, 144 bytes).
 struct MaterialEntry {
     vec3  matBaseColor;
     float matMetallic;

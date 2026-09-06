@@ -5664,7 +5664,6 @@ void RenderSystem::EnsureMaterialSlotTextures() {
 
 
 void RenderSystem::FlushPendingChanges() {
-    EnsureMaterialSlotTextures();   // pre-recording: safe place to register bindless textures
     if (!m_Renderer || !m_Initialized) return;
 
     // MID-FRAME GUARD: in the editor, Update()'s fallback call to this function
@@ -5681,6 +5680,18 @@ void RenderSystem::FlushPendingChanges() {
     if (m_SkipMainPassRendering) {
         return;
     }
+
+    // Material-slot textures. This creates VkImages and does a blocking staging
+    // submit, and it registers bindless slots, so it belongs BELOW the guard
+    // with everything else that touches GPU lifetime. It used to sit on the
+    // very first line of this function, above both returns, carrying a comment
+    // claiming it was "pre-recording: safe" — which is exactly what it is not
+    // on the editor path, where the fallback flush runs after RenderOffscreen
+    // has already recorded binds. It did not crash only because
+    // BindlessResourceManager::RegisterTexture defers the actual
+    // vkUpdateDescriptorSets; that made it a trap armed for whoever added a
+    // descriptor write here, not a safe exception to the rule.
+    EnsureMaterialSlotTextures();
 
     // CPU-generated textures (reaction-diffusion, Physarum, script pixels).
     // This creates a texture, registers a bindless slot and retires the
