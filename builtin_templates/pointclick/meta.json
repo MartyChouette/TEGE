@@ -10,5 +10,7 @@
   "category": "2D",
   "id": "pointclick",
   "author": "TEGE",
-  "thumbnailPath": ""
+  "thumbnailPath": "",
+  "maturity": "Beta",
+  "categoryFlags": "kTMPL_2D"
 }

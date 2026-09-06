@@ -223,15 +223,11 @@ public:
     // <basePath>.png (human diffing) + <basePath>.ppm (dependency-free
     // comparer), then the editor exits. Golden-image regression harness
     // (tools/probes/golden.ps1). Combine with --play to capture play-mode frames.
-    // Set by main() from --export-templates <dir>: run every built-in template
-    // generator once, save each as a project folder in <dir>, and exit.
-    //
-    // ApplyTemplate is 3,000 lines of hardcoded scene building across 29 id
-    // branches, which is why a demo cannot be a template and why the two lists
-    // are maintained separately. Exporting them turns each generator into a
-    // folder on disk, which is the same shape a demo project already has.
-    static inline std::string s_ExportTemplatesDir;
-    static inline int s_ExportTemplateIndex = -1;
+    // Load the shipped templates and report them, without a window or a GPU.
+    // Deleting the generators removed the only way to check the roster from a
+    // script, and "do the shipped templates still parse" is exactly the question
+    // CI should be able to ask.
+    static int ValidateBuiltinTemplates();
 
     static inline std::string s_GoldenCapturePath;
     static inline i32 s_GoldenCaptureFrame = 180;
@@ -759,9 +755,6 @@ private:
     // settings struct only carries the path.
     void ApplySceneLUT(const Renderer::SceneRenderSettings& settings);
 
-    // Drives --export-templates: one template per frame, because applying a
-    // template and saving its scene are deferred to Update by design.
-    void TickTemplateExport();
     bool m_PendingWireframe = false;       // Deferred wireframe toggle (pipeline recreation unsafe mid-render)
     bool m_PendingQuit = false;            // Deferred quit (Close() unsafe mid-ImGui-render)
     bool m_PrePlayFullscreen = false;      // Window fullscreen state before play mode changed it

@@ -10,5 +10,7 @@
   "category": "2D",
   "id": "platformer",
   "author": "TEGE",
-  "thumbnailPath": ""
+  "thumbnailPath": "",
+  "maturity": "Stable",
+  "categoryFlags": "kTMPL_2D"
 }

@@ -360,11 +360,6 @@ int main(int argc, char* argv[]) {
             Enjin::Editor::EditorLayer::s_GoldenCapturePath = argv[++i];
         } else if (flag == "--golden-frames" && i + 1 < argc && argv[i + 1]) {
             Enjin::Editor::EditorLayer::s_GoldenCaptureFrame = std::atoi(argv[++i]);
-        } else if (flag == "--export-templates" && i + 1 < argc && argv[i + 1]) {
-            // Run every built-in template generator and write each out as a
-            // project folder, so templates can become data instead of code.
-            Enjin::Editor::EditorLayer::s_ExportTemplatesDir = argv[++i];
-            Enjin::Editor::EditorLayer::s_ExportTemplateIndex = 0;
         }
     }
 
@@ -373,6 +368,13 @@ int main(int argc, char* argv[]) {
     // GPU. The web player fetches game.enjpak, so this is THE "build my game for web"
     // step: it always packs the project you pass, so the web build can never serve
     // stale content again. Uses Desktop packaging (pak only, no slow emscripten rebuild).
+    // --list-templates: HEADLESS. Load the shipped templates, print them, exit.
+    for (int i = 1; i < argc; i++) {
+        if (argv[i] && std::string(argv[i]) == "--list-templates") {
+            return Enjin::Editor::EditorLayer::ValidateBuiltinTemplates();
+        }
+    }
+
     for (int i = 1; i < argc; i++) {
         if (argv[i] && std::string(argv[i]) == "--build-web" && i + 1 < argc && argv[i + 1]) {
             std::string projectPath = argv[i + 1];

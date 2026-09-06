@@ -10,5 +10,7 @@
   "category": "All",
   "id": "accessibility",
   "author": "TEGE",
-  "thumbnailPath": ""
+  "thumbnailPath": "",
+  "maturity": "Beta",
+  "categoryFlags": "kTMPL_ALL"
 }

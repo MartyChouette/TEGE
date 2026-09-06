@@ -10,5 +10,7 @@
   "category": "All",
   "id": "blank",
   "author": "TEGE",
-  "thumbnailPath": ""
+  "thumbnailPath": "",
+  "maturity": "Stable",
+  "categoryFlags": "kTMPL_ALL"
 }

@@ -10,5 +10,7 @@
   "category": "3D",
   "id": "componentsonly",
   "author": "TEGE",
-  "thumbnailPath": ""
+  "thumbnailPath": "",
+  "maturity": "Stable",
+  "categoryFlags": "kTMPL_3D"
 }

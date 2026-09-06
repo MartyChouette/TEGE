@@ -2362,30 +2362,6 @@ static bool CopyBuiltinTemplate(const std::string& templateId,
     return true;
 }
 
-void EditorLayer::TickTemplateExport() {
-    if (s_ExportTemplateIndex < 0 || s_ExportTemplatesDir.empty()) return;
-
-    // CreateProjectOnDisk defers the template build and the scene save to the
-    // next Update, so only start the next one once the previous has landed.
-    if (!m_PendingTemplateId.empty() || !m_PendingSceneLoadPath.empty()) return;
-
-    if (s_ExportTemplateIndex >= BuiltinCount()) {
-        ENJIN_LOG_INFO(Editor, "Exported %d templates to %s",
-                       BuiltinCount(), s_ExportTemplatesDir.c_str());
-        s_ExportTemplateIndex = -1;
-        if (m_Window) m_Window->Close();
-        return;
-    }
-
-    const std::string id = s_BuiltinTemplates[s_ExportTemplateIndex].id;
-    ++s_ExportTemplateIndex;
-    ENJIN_LOG_INFO(Editor, "Exporting template %d/%d: %s",
-                   s_ExportTemplateIndex, BuiltinCount(), id);
-    if (!CreateProjectOnDisk(s_ExportTemplatesDir, id, "Main", id)) {
-        ENJIN_LOG_ERROR(Editor, "Template export failed: %s", id);
-    }
-}
-
 bool EditorLayer::CreateProjectOnDisk(const std::string& projectDir, const std::string& projectName,
                                       const std::string& sceneName, const std::string& templateId) {
     namespace fs = std::filesystem;
@@ -2608,6 +2584,27 @@ void EditorLayer::ApplyTemplateLayout(const std::string& templateId) {
 
     m_VisiblePanels = m_Layout.panels;
     m_ForceLayout = true;
+}
+
+int EditorLayer::ValidateBuiltinTemplates() {
+    LoadBuiltinTemplates();
+    if (s_BuiltinTemplates.empty()) {
+        std::printf("no built-in templates found\n");
+        return 1;
+    }
+    int bad = 0;
+    const std::string dir = FindBuiltinTemplatesDir();
+    for (const auto& t : s_BuiltinTemplates) {
+        const std::filesystem::path scene =
+            std::filesystem::path(dir) / t.id / "scene.enjin";
+        std::error_code ec;
+        const bool ok = std::filesystem::exists(scene, ec);
+        if (!ok) ++bad;
+        std::printf("%-16s %-24s %s\n", t.id.c_str(), t.name.c_str(),
+                    ok ? "ok" : "MISSING scene.enjin");
+    }
+    std::printf("%zu templates, %d broken\n", s_BuiltinTemplates.size(), bad);
+    return bad == 0 ? 0 : 1;
 }
 
 void EditorLayer::SaveCustomTemplate(const std::string& name) {
