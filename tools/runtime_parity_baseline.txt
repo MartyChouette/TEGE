@@ -50,23 +50,35 @@ web:NetworkSystem
 web:PostProcessing
 
 # ---------------------------------------------------------------------------
-# KNOWN GAPS - not intended, not yet fixed. Baselined so --strict guards against
-# NEW drift; each of these is outstanding work, not a decision.
+# GAPS OF UNKNOWN INTENT. Found 2026-09-06 by the review that produced this
+# tool. FlowerSystem and AudioReactiveSystem were two more of the same shape and
+# are fixed; these are baselined so --strict guards against NEW drift while they
+# are decided.
 #
-# Found 2026-09-06 by the review that produced this tool. FlowerSystem and
-# AudioReactiveSystem were two more of the same and are already fixed.
+# Deliberately NOT labelled "bugs". I first wrote them up as unintended, then
+# checked, and at least two look like decisions somebody already made without
+# writing down why. Each needs a yes/no, not a fix applied on assumption.
 # ---------------------------------------------------------------------------
-# Audio event graphs do not run in a browser.
+# Documented as absent in web_main.cpp ("web has ... no AudioGraphRuntime
+# member"), stated as fact with no reason given. So: known, but nobody recorded
+# whether audio event graphs are MEANT to be desktop-only.
 web:AudioGraphRuntime
-# Accessibility audio indicators do not run in a browser. Notable given the
-# project's accessibility commitments.
+# No mention anywhere in web_main.cpp. This is an ACCESSIBILITY feature, which
+# makes it the one here most likely to be a genuine oversight.
 web:AudioIndicators
-# Fluid simulation does not run in a browser. Note FluidRenderer.cpp IS
-# web-excluded in CMake, so closing this needs a decision about whether fluid
-# is meant to be visible on web at all.
+# No mention in web_main.cpp, and FluidRenderer.cpp is web-excluded in CMake --
+# so fluid cannot be drawn on web regardless. That reads like a deliberate
+# "fluid is desktop-only" call, in which case the right fix is to say so here
+# rather than to start ticking a simulation nothing can render.
 web:FluidSimulation
 web:FluidTerrainCoupling
-# Parallax backgrounds animate in the EDITOR and in neither shipped player, so
-# a parallax scene looks right while authoring and is static in the game.
+# PARTLY a false positive of this tool, and worth reading before acting on it.
+# Per-sprite parallax works in all three runtimes: they all call the STATIC
+# ParallaxSystem::ApplyParallaxLayers, which this tool cannot see because it
+# only matches m_Thing.Update(. What the players genuinely lack is the
+# ParallaxMachineComponent backdrop path (the instance Update + Render), so a
+# scene authored with a ParallaxMachine shows its layers in the editor and not
+# in the shipped game. Narrower than "parallax is broken in the player", and
+# fixing it means wiring Render into each player's 2D pass, not just a tick.
 desktop:ParallaxSystem
 web:ParallaxSystem
