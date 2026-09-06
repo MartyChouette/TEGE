@@ -147,7 +147,23 @@ jobs:
           VK_ICD_FILENAMES: ${{ github.workspace }}\mesa\x64\lvp_icd.x86_64.json
         run: |
           & build\bin\Release\EnjinEditor.exe "${{ github.workspace }}\Tests\GoldenScene\GoldenScene.enjinproject" --play --play-cycle 40 15 2>&1 | ForEach-Object { "$_" }
-          if ($LASTEXITCODE -ne 0) { throw "play-cycle stress failed with code $LASTEXITCODE" }
+          $code = $LASTEXITCODE
+          # The engine writes a SYMBOLISED crash report (Core/src/Debug/CrashHandler.cpp)
+          # next to the EXECUTABLE, not next to where it was launched: Application
+          # calls SetWorkingDirectoryToExecutableDirectory() before installing the
+          # handler. CI looked in the workspace root and found nothing, so an access
+          # violation here has only ever surfaced as "exit -1073741819" plus a
+          # half-written log line. The report carries GPU, scene, exception, module
+          # and a stack with file:line for engine frames.
+          $report = "build/bin/Release/enjin_crash.txt"
+          if (Test-Path $report) {
+            Write-Host "=================== enjin_crash.txt ==================="
+            Get-Content $report | ForEach-Object { "$_" }
+            Write-Host "======================================================="
+          } else {
+            Write-Host "(no crash report at $report)"
+          }
+          if ($code -ne 0) { throw "play-cycle stress failed with code $code" }
 
       - name: Exported-game smoke (pack + run the Windows player headless)
         shell: pwsh
@@ -181,7 +197,8 @@ jobs:
           path: |
             golden_out/
             game_out/*.log
-            enjin_crash.dmp
+            build/bin/Release/enjin_crash.dmp
+            build/bin/Release/enjin_crash.txt
           if-no-files-found: ignore
 
   linux-desktop:
