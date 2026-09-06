@@ -1,6 +1,8 @@
 #pragma once
 
 #include "Enjin/Platform/Platform.h"
+#include <functional>
+#include <vector>
 #include "Enjin/Gameplay/SimulationClock.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/Renderer/Camera.h"
@@ -273,6 +275,12 @@ private:
     f32   m_SessionElapsed = 0.0f;            // seconds simulated this session (record + replay)
     u32   m_PausedScriptCount = 0;            // breakpoint-pause transition guard
     u32   m_LastExceptionCount = 0;           // script-exception watermark for auto-bookmarks
+
+    // Undo closures for the procgen seeds Play() pre-rolls onto seed==0
+    // components. RestoreEditorState runs them, which is what keeps "0 =
+    // random each run" from being permanently overwritten by pressing Play.
+    // Each closure re-checks IsValid: the entity may not have survived play.
+    std::vector<std::function<void()>> m_SeedRestores;
 
     // Audio-reactive system (beat sync, VU→visual, RTPC, threshold triggers)
     Audio::AudioReactiveSystem m_AudioReactiveSystem;

@@ -270,8 +270,16 @@ void PlayMode::Play() {
     // Replay determinism: procgen components with seed 0 roll a random_device
     // seed inside Generate - invisible to the replay's scene snapshot, so a
     // replay would regenerate DIFFERENT content. Resolve them to concrete
-    // seeds up front: generation below uses them, the snapshot captures them,
-    // and Stop's scene restore returns the editor values to 0.
+    // seeds up front: generation below uses them and the snapshot captures
+    // them.
+    //
+    // Every roll records its own undo. The old comment claimed "Stop's scene
+    // restore returns the editor values to 0", and that stopped being true
+    // when the restore was slimmed to transform/name/velocity: the rolled seed
+    // stayed on the authored component, so Play -> Stop -> Ctrl+S wrote a
+    // fixed, machine-specific seed into the scene file and the "0 = random
+    // each run" intent was silently gone, in the editor and in every export.
+    m_SeedRestores.clear();
     if (m_World && !m_Replaying) {
         std::random_device rd;
         auto roll = [&rd]() { u32 s = rd(); return s ? s : 1u; };
@@ -279,7 +287,13 @@ void PlayMode::Play() {
             using T = std::remove_pointer_t<decltype(tag)>;
             for (ECS::Entity e : m_World->GetEntitiesWithComponent<T>()) {
                 auto* c = m_World->GetComponent<T>(e);
-                if (c && c->seed == 0) c->seed = roll();
+                if (c && c->seed == 0) {
+                    c->seed = roll();
+                    m_SeedRestores.push_back([this, e]() {
+                        if (!m_World || !m_World->IsValid(e)) return;
+                        if (auto* restore = m_World->GetComponent<T>(e)) restore->seed = 0;
+                    });
+                }
             }
         };
         preRoll(static_cast<ECS::DungeonGeneratorComponent*>(nullptr));
@@ -1377,6 +1391,12 @@ void PlayMode::RestoreEditorState() {
     if (!m_World || !m_Camera) {
         return;
     }
+
+    // Put the pre-rolled procgen seeds back to 0 before anything else touches
+    // the scene, so a Play -> Stop -> Save cycle leaves the authored "0 =
+    // random each run" intact instead of baking in this machine's roll.
+    for (auto& restore : m_SeedRestores) restore();
+    m_SeedRestores.clear();
 
     // Capture any destroys still queued from the final play frame while the observer
     // is still installed (their data is intact until the flush actually runs), then
