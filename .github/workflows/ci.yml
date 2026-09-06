@@ -189,6 +189,90 @@ jobs:
           if (-not ($gameLog | Where-Object { "$_" -match "Headless frame limit reached" })) { throw "exported game did not survive its render loop (crash?)" }
           if (-not ($gameLog | Where-Object { "$_" -match "GoldenSmoke: script runtime is alive" })) { throw "exported game did not run scene scripts (script runtime broken in shipped player)" }
 
+      - name: Installer smoke (compile the .iss, install it, launch the result)
+        shell: pwsh
+        timeout-minutes: 20
+        # Windows had no equivalent of the Linux install smoke, and one manual
+        # pass on 2026-09-06 found four defects: the Inno layout ({app}\bin exe,
+        # {app}\shaders) matched NO entry in Renderer::ShaderSearchPaths, so an
+        # installed editor found zero compute shaders, plus three
+        # std::string-passed-to-printf-%s sites that printed raw object bytes
+        # where the shader path should be. All four were invisible to the test
+        # suite, which only ever exercises the dev tree.
+        #
+        # Note on shader count: CMake's codegen compiles the non-rt_ shaders
+        # only (RT ones #include rt_common.glsl and go through _gen_rt.py, which
+        # is NOT wired into the build), and no .spv is tracked in git. So CI
+        # packages ~71 shaders where a dev machine that has run _gen_rt.py has
+        # ~96. The floor below catches codegen degrading further; it cannot
+        # catch the missing RT set, which is a separate known gap.
+        env:
+          VK_DRIVER_FILES: ${{ github.workspace }}\mesa\x64\lvp_icd.x86_64.json
+          VK_ICD_FILENAMES: ${{ github.workspace }}\mesa\x64\lvp_icd.x86_64.json
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            # Inno Setup ships on the GitHub Windows images, but don't let the
+            # whole step depend on that staying true.
+            Write-Host "ISCC not on the image, installing Inno Setup"
+            choco install innosetup --no-progress -y | Select-Object -Last 3
+            if (-not (Test-Path $iscc)) { throw "could not obtain ISCC" }
+          }
+          & $iscc "installer\EnjinSetup.iss" | Select-Object -Last 5
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with code $LASTEXITCODE" }
+
+          $setup = Get-ChildItem "installer\output\TEGESetup-*.exe" | Select-Object -First 1
+          if (-not $setup) { throw "no installer produced" }
+          Write-Host "installer: $($setup.Name) $([math]::Round($setup.Length/1MB,1)) MB"
+
+          # Install into the workspace rather than Program Files: no elevation
+          # games, and the tree is easy to inspect and upload when it fails.
+          $dest = "${{ github.workspace }}\installed"
+          & $setup.FullName /VERYSILENT /SUPPRESSMSGBOXES /NORESTART "/DIR=$dest" | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "silent install failed with code $LASTEXITCODE" }
+
+          foreach ($d in @("bin","shaders","builtin_templates")) {
+            if (-not (Test-Path "$dest\$d")) { throw "installed tree is missing $d" }
+          }
+          $shaderCount = (Get-ChildItem "$dest\shaders").Count
+          $tmplCount = (Get-ChildItem "$dest\builtin_templates").Count
+          Write-Host "shaders installed:   $shaderCount"
+          Write-Host "templates installed: $tmplCount"
+          if ($shaderCount -lt 60) { throw "only $shaderCount shaders installed - shader codegen degraded" }
+
+          # Templates, headless: nonzero if a shipped template lost its scene,
+          # and it exercises the builtin_templates lookup from an install.
+          Push-Location "$dest\bin"
+          & ".\EnjinEditor.exe" --list-templates 2>&1 | Tee-Object -Variable tmplLog | ForEach-Object { "$_" }
+          if ($LASTEXITCODE -ne 0) { throw "installed editor could not list templates" }
+          if (-not ($tmplLog | Where-Object { "$_" -match "\d+ templates, 0 broken" })) {
+            throw "installed editor reported broken templates"
+          }
+
+          # Boot it for real. This is the check that proves ../shaders resolves:
+          # without that prefix the installed editor finds no compute shaders.
+          # The pipe is load-bearing - PowerShell does not wait on a
+          # GUI-subsystem exe otherwise, and $LASTEXITCODE never gets set.
+          New-Item -ItemType Directory -Force "${{ github.workspace }}\installed_out" | Out-Null
+          & ".\EnjinEditor.exe" "${{ github.workspace }}\Tests\GoldenScene\GoldenScene.enjinproject" --play --golden "${{ github.workspace }}\installed_out\smoke" --golden-frames 10 2>&1 | Tee-Object -Variable bootLog | ForEach-Object { "$_" }
+          $code = $LASTEXITCODE
+          Pop-Location
+          if ($code -ne 0) { throw "installed editor exited with code $code" }
+          if (-not ($bootLog | Where-Object { "$_" -match "Loaded compute shader from" })) {
+            throw "installed editor loaded no compute shaders (ShaderSearchPaths does not cover the installer layout)"
+          }
+          if (-not ($bootLog | Where-Object { "$_" -match "GoldenSmoke: script runtime is alive" })) {
+            throw "installed editor did not run scene scripts"
+          }
+
+      - name: Upload the built installer
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: installer/output/TEGESetup-*.exe
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Upload golden capture
         if: always()
         uses: actions/upload-artifact@v4
