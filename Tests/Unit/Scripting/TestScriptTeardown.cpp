@@ -19,6 +19,7 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Script.h"
 #include "Enjin/ECS/Components/Transform.h"
+#include <angelscript.h>   // asIScriptObject AddRef/Release refcount evidence
 
 #include <chrono>
 #include <filesystem>
@@ -102,6 +103,18 @@ struct Fixture {
 
 } // namespace
 
+// These two used to cache a ScriptAttachment* and read it back AFTER the entity
+// was destroyed, to check `instance` had been nulled. Destroying the entity
+// removes the ScriptComponent, whose destructor frees the scripts vector the
+// pointer points into -- so the assertion was reading freed memory and passing
+// only because nothing had reused it yet. ThreadSanitizer caught it on the
+// first CI run that ever executed a sanitizer (heap-use-after-free, 2026-09-06).
+//
+// The refcount is better evidence anyway. AddRef/Release return the new count,
+// so the test takes its own reference, which keeps the object alive across the
+// destroy; if the system released ITS reference, the test's final Release
+// returns 0. That proves ReleaseInstance ran without touching the component.
+
 ENJIN_TEST(ScriptTeardown, ScriptInstanceIsReleasedWhenTheEntityIsDestroyed) {
     // Arrange: an entity with a live script instance.
     Fixture fx("release");
@@ -109,15 +122,21 @@ ENJIN_TEST(ScriptTeardown, ScriptInstanceIsReleasedWhenTheEntityIsDestroyed) {
     ENJIN_ASSERT_TRUE(att != nullptr);
     ENJIN_ASSERT_TRUE(att->instance != nullptr);
 
+    // Hold our own reference so the object outlives the component, and read
+    // nothing out of the component after this point.
+    auto* obj = static_cast<asIScriptObject*>(att->instance);
+    obj->AddRef();
+
     // Act: destroy it the way gameplay does. DestroyEntity is deferred, so the
     // observer fires on the flush, while the component data is still intact.
     fx.world.DestroyEntity(fx.entity);
     fx.world.FlushPendingDestructions();
 
-    // Assert: the instance pointer is cleared, which is what proves
-    // ReleaseInstance ran. Before the fix nothing per-entity ever ran.
-    ENJIN_EXPECT_TRUE(att->instance == nullptr);
-    ENJIN_EXPECT_TRUE(!att->initialized);
+    // Assert: the component is gone, and dropping our reference takes the
+    // refcount to zero -- which is only true if the system already dropped
+    // its own. Before the fix nothing per-entity ever ran.
+    ENJIN_EXPECT_TRUE(fx.world.GetComponent<ECS::ScriptComponent>(fx.entity) == nullptr);
+    ENJIN_EXPECT_EQ(obj->Release(), 0);
 }
 
 ENJIN_TEST(ScriptTeardown, ImmediateDestroyTearsDownToo) {
@@ -127,12 +146,15 @@ ENJIN_TEST(ScriptTeardown, ImmediateDestroyTearsDownToo) {
     Fixture fx("immediate");
     auto* att = fx.Attachment();
     ENJIN_ASSERT_TRUE(att != nullptr && att->instance != nullptr);
+    auto* obj = static_cast<asIScriptObject*>(att->instance);
+    obj->AddRef();
 
     // Act
     fx.world.DestroyEntityImmediate(fx.entity);
 
-    // Assert
-    ENJIN_EXPECT_TRUE(att->instance == nullptr);
+    // Assert: same refcount evidence as above, for the immediate path.
+    ENJIN_EXPECT_TRUE(fx.world.GetComponent<ECS::ScriptComponent>(fx.entity) == nullptr);
+    ENJIN_EXPECT_EQ(obj->Release(), 0);
 }
 
 ENJIN_TEST(ScriptTeardown, TeardownIsSafeOnAnEntityWithNoScripts) {
