@@ -268,6 +268,52 @@ jobs:
           grep -q "GoldenSmoke: script runtime is alive" editor.log || { echo "script canary never ran"; exit 1; }
           python3 Tests/GoldenScene/check_golden.py golden_out/smoke
 
+      - name: Installed-build smoke (cmake --install, then run from the install tree)
+        timeout-minutes: 15
+        # Nothing else here tests an INSTALLED build. Every job builds a dev tree
+        # and runs binaries out of build-linux/bin, while a customer runs the
+        # output of `cmake --install` (or the Inno installer). Every path bug in
+        # the 2026-09-05/06 review lived in exactly that gap and was found by
+        # READING, not by running:
+        #   - shader lookups found nothing after install until ShaderSearchPaths()
+        #     learned ../share/enjin/shaders
+        #   - the installer wrote templates to a garbage destination and
+        #     skipifsourcedoesntexist hid it
+        #   - builtin_templates was not tracked in git at all, while CMake and the
+        #     installer both referenced it behind silent existence guards
+        #
+        # This boots the installed editor from the install prefix, so the
+        # relative-path resolution a buyer depends on is exercised rather than
+        # assumed.
+        env:
+          VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.json
+        run: |
+          set -o pipefail
+          cmake --install build-linux --prefix "$GITHUB_WORKSPACE/install-test"
+
+          # Layout: the pieces the runtime resolves relative to the executable.
+          test -x "$GITHUB_WORKSPACE/install-test/bin/EnjinEditor" || { echo "no installed editor"; exit 1; }
+          test -x "$GITHUB_WORKSPACE/install-test/bin/EnjinPlayer" || { echo "no installed player"; exit 1; }
+          test -d "$GITHUB_WORKSPACE/install-test/share/enjin/shaders" || { echo "no installed shaders"; exit 1; }
+          ls "$GITHUB_WORKSPACE/install-test/share/enjin/shaders" | head -3
+
+          # Templates, headless and GPU-free. --list-templates exits nonzero when
+          # any shipped template is missing its scene, so this is a real check of
+          # the ../share/enjin/builtin_templates search path from an install tree.
+          cd "$GITHUB_WORKSPACE/install-test/bin"
+          ./EnjinEditor --list-templates 2>&1 | tee "$GITHUB_WORKSPACE/install_templates.log"
+          grep -qE "[0-9]+ templates, 0 broken" "$GITHUB_WORKSPACE/install_templates.log" \
+            || { echo "installed build cannot find its templates"; exit 1; }
+
+          # Boot the installed editor for real. This is what proves shaders
+          # resolve from ../share/enjin/shaders rather than from a source tree.
+          mkdir -p "$GITHUB_WORKSPACE/install_out"
+          xvfb-run -a ./EnjinEditor "$GITHUB_WORKSPACE/Tests/GoldenScene/GoldenScene.enjinproject" \
+            --play --golden "$GITHUB_WORKSPACE/install_out/smoke" --golden-frames 10 2>&1 \
+            | tee "$GITHUB_WORKSPACE/install_editor.log"
+          grep -q "GoldenSmoke: script runtime is alive" "$GITHUB_WORKSPACE/install_editor.log" \
+            || { echo "installed editor never ran scene scripts"; exit 1; }
+
       - name: Exported-game smoke (pack + run the Linux player headless)
         timeout-minutes: 10
         # Proves the whole shipping path, not just the editor: the build pipeline
