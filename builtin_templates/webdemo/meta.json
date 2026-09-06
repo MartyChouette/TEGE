@@ -1,0 +1,14 @@
+{
+  "name": "Web Demo",
+  "description": "Site browser demo\nThird person + live accessibility menu",
+  "accentColor": [
+    0.25,
+    0.85,
+    0.75,
+    1.0
+  ],
+  "category": "3D",
+  "id": "webdemo",
+  "author": "TEGE",
+  "thumbnailPath": ""
+}

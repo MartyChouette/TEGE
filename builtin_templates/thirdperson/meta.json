@@ -1,0 +1,14 @@
+{
+  "name": "3D Third Person",
+  "description": "Over-the-shoulder\nShadows + obstacles + point light",
+  "accentColor": [
+    0.8,
+    0.3,
+    0.3,
+    1.0
+  ],
+  "category": "3D",
+  "id": "thirdperson",
+  "author": "TEGE",
+  "thumbnailPath": ""
+}

@@ -1,0 +1,2197 @@
+{
+  "entities": [
+    {
+      "id": 1,
+      "light": {
+        "castShadows": true,
+        "color": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "constantAttenuation": 1.0,
+        "innerConeAngle": 12.5,
+        "intensity": 1.0,
+        "linearAttenuation": 0.09000000357627869,
+        "outerConeAngle": 17.5,
+        "quadraticAttenuation": 0.03200000151991844,
+        "range": 10.0,
+        "type": 0
+      },
+      "name": {
+        "name": "Global Directional Light"
+      },
+      "stableId": 13785190054114504308,
+      "transform": {
+        "position": [
+          0.0,
+          15.0,
+          10.0
+        ],
+        "rotation": [
+          -0.38268300890922546,
+          0.0,
+          0.0,
+          0.9238799810409546
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "body2D": {
+        "angularDamping": 0.10000000149011612,
+        "boxHalfExtents": [
+          0.4000000059604645,
+          0.800000011920929
+        ],
+        "boxOffset": [
+          0.0,
+          0.0
+        ],
+        "boxRotation": 0.0,
+        "capsuleHeight": 1.0,
+        "capsuleOffset": [
+          0.0,
+          0.0
+        ],
+        "capsuleRadius": 0.30000001192092896,
+        "categoryBits": 1,
+        "circleOffset": [
+          0.0,
+          0.0
+        ],
+        "circleRadius": 0.5,
+        "collisionMask": 4294967295,
+        "density": 1.0,
+        "fixedRotation": true,
+        "friction": 0.30000001192092896,
+        "gravityScale": 0.0,
+        "isKinematic": true,
+        "isSensor": false,
+        "isStatic": false,
+        "linearDamping": 0.10000000149011612,
+        "polygonOffset": [
+          0.0,
+          0.0
+        ],
+        "polygonVertices": [],
+        "restitution": 0.20000000298023224,
+        "shapeType": 1
+      },
+      "health": {
+        "currentHealth": 100.0,
+        "currentShield": 0.0,
+        "invulnerabilityTime": 0.0,
+        "invulnerabilityTimer": 0.0,
+        "isDead": false,
+        "isInvulnerable": 0.0,
+        "maxHealth": 100.0,
+        "maxShield": 0.0,
+        "onDamageNotify": 0,
+        "onDeathNotify": 0,
+        "onHealNotify": 0,
+        "regenDelay": 3.0,
+        "regenRate": 0.0,
+        "shieldRegenDelay": 5.0,
+        "shieldRegenRate": 0.0,
+        "timeSinceLastDamage": 0.0
+      },
+      "id": 2,
+      "material": {
+        "baseColor": [
+          0.20000000298023224,
+          0.4000000059604645,
+          0.8999999761581421
+        ]
+      },
+      "mesh": {
+        "indexCount": 78,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3,
+          0,
+          3,
+          4,
+          0,
+          4,
+          5,
+          0,
+          5,
+          6,
+          0,
+          6,
+          7,
+          0,
+          7,
+          8,
+          0,
+          8,
+          9,
+          0,
+          9,
+          10,
+          0,
+          10,
+          11,
+          0,
+          11,
+          12,
+          0,
+          12,
+          13,
+          0,
+          13,
+          14,
+          0,
+          14,
+          15,
+          0,
+          15,
+          16,
+          0,
+          16,
+          17,
+          0,
+          17,
+          18,
+          0,
+          18,
+          19,
+          0,
+          19,
+          20,
+          0,
+          20,
+          21,
+          0,
+          21,
+          22,
+          0,
+          22,
+          23,
+          0,
+          23,
+          24,
+          0,
+          24,
+          25,
+          0,
+          25,
+          26,
+          0,
+          26,
+          1
+        ],
+        "vertexCount": 27,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "uv": [
+              0.5,
+              0.5
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.4000000059604645,
+              -0.4000000059604645,
+              0.0
+            ],
+            "uv": [
+              0.0,
+              0.25
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.3863700032234192,
+              -0.5035279989242554,
+              0.0
+            ],
+            "uv": [
+              0.017037000507116318,
+              0.1852950006723404
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.34641000628471375,
+              -0.6000000238418579,
+              0.0
+            ],
+            "uv": [
+              0.06698700040578842,
+              0.125
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.2828429937362671,
+              -0.682843029499054,
+              0.0
+            ],
+            "uv": [
+              0.14644700288772583,
+              0.07322300225496292
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.20000000298023224,
+              -0.7464100122451782,
+              0.0
+            ],
+            "uv": [
+              0.25,
+              0.033493999391794205
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.10352800041437149,
+              -0.7863699793815613,
+              0.0
+            ],
+            "uv": [
+              0.37059101462364197,
+              0.008519000373780727
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.0,
+              -0.800000011920929,
+              0.0
+            ],
+            "uv": [
+              0.5,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.10352800041437149,
+              -0.7863699793815613,
+              0.0
+            ],
+            "uv": [
+              0.6294100284576416,
+              0.008519000373780727
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.20000000298023224,
+              -0.7464100122451782,
+              0.0
+            ],
+            "uv": [
+              0.75,
+              0.033493999391794205
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.2828429937362671,
+              -0.682843029499054,
+              0.0
+            ],
+            "uv": [
+              0.8535540103912354,
+              0.07322300225496292
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.34641000628471375,
+              -0.6000000238418579,
+              0.0
+            ],
+            "uv": [
+              0.9330130219459534,
+              0.125
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.3863700032234192,
+              -0.5035279989242554,
+              0.0
+            ],
+            "uv": [
+              0.9829630255699158,
+              0.1852950006723404
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.4000000059604645,
+              -0.4000000059604645,
+              0.0
+            ],
+            "uv": [
+              1.0,
+              0.25
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.4000000059604645,
+              0.4000000059604645,
+              0.0
+            ],
+            "uv": [
+              1.0,
+              0.75
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.3863700032234192,
+              0.5035279989242554,
+              0.0
+            ],
+            "uv": [
+              0.9829630255699158,
+              0.8147050142288208
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.34641000628471375,
+              0.6000000238418579,
+              0.0
+            ],
+            "uv": [
+              0.9330130219459534,
+              0.875
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.2828429937362671,
+              0.682843029499054,
+              0.0
+            ],
+            "uv": [
+              0.8535529971122742,
+              0.9267770051956177
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.20000000298023224,
+              0.7464100122451782,
+              0.0
+            ],
+            "uv": [
+              0.75,
+              0.9665060043334961
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.10352800041437149,
+              0.7863699793815613,
+              0.0
+            ],
+            "uv": [
+              0.6294100284576416,
+              0.9914820194244385
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.0,
+              0.800000011920929,
+              0.0
+            ],
+            "uv": [
+              0.5,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.10352800041437149,
+              0.7863699793815613,
+              0.0
+            ],
+            "uv": [
+              0.3705900013446808,
+              0.9914820194244385
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.20000000298023224,
+              0.7464100122451782,
+              0.0
+            ],
+            "uv": [
+              0.25,
+              0.9665060043334961
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.2828429937362671,
+              0.682843029499054,
+              0.0
+            ],
+            "uv": [
+              0.14644700288772583,
+              0.9267770051956177
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.34641000628471375,
+              0.6000000238418579,
+              0.0
+            ],
+            "uv": [
+              0.06698700040578842,
+              0.875
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.3863700032234192,
+              0.5035279989242554,
+              0.0
+            ],
+            "uv": [
+              0.017037000507116318,
+              0.8147050142288208
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.4000000059604645,
+              0.4000000059604645,
+              0.0
+            ],
+            "uv": [
+              0.0,
+              0.75
+            ]
+          }
+        ]
+      },
+      "name": {
+        "name": "Player"
+      },
+      "platformer2D": {
+        "acceleration": 50.0,
+        "airControl": 0.5,
+        "captureMouseOnClick": true,
+        "collisionHeight": 1.600000023841858,
+        "collisionRadius": 0.4000000059604645,
+        "coyoteTime": 0.15000000596046448,
+        "deceleration": 40.0,
+        "disableMouseLook": false,
+        "enableWallJump": false,
+        "enableWallSlide": false,
+        "gamepadIndex": 0.0,
+        "gamepadLookSensitivity": 2.0,
+        "gravity": 20.0,
+        "gridCellSize": 1.0,
+        "gridMoveSpeed": 8.0,
+        "gridMoveStart": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "gridMoveTarget": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "gridMovement": false,
+        "gridMoving": false,
+        "gridOrigin": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "groundCheckDistance": 0.10000000149011612,
+        "ignoreGlobalTimeScale": false,
+        "isEnabled": true,
+        "jumpBufferTime": 0.10000000149011612,
+        "jumpForce": 10.0,
+        "maxJumps": 2,
+        "moveSpeed": 5.0,
+        "sprintMultiplier": 2.0,
+        "stompBounceScale": 0.6000000238418579,
+        "stompMinFallSpeed": 1.0,
+        "stompMinHeight": 0.30000001192092896,
+        "swimDrag": 4.0,
+        "swimSinkRate": -0.5,
+        "swimSpeedScale": 0.6000000238418579,
+        "swimStrokeImpulse": 3.200000047683716,
+        "swimSurfaceBand": 0.25,
+        "swimSurfaceStrokeScale": 0.2800000011920929,
+        "useArrowKeys": false,
+        "useGamepad": false,
+        "useWASD": true,
+        "wallJumpForce": 6.0,
+        "wallSlideSpeed": 2.0
+      },
+      "stableId": 208084481849582461,
+      "tag": {
+        "tags": [
+          "player"
+        ]
+      },
+      "transform": {
+        "position": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "camera": {
+        "backgroundColor": [
+          0.6800000071525574,
+          0.75,
+          0.7200000286102295
+        ],
+        "clearColor": true,
+        "clearDepth": true,
+        "cullingMask": 4294967295,
+        "farPlane": 100.0,
+        "fieldOfView": 60.0,
+        "isActive": true,
+        "nearPlane": 0.10000000149011612,
+        "orthoSize": 8.0,
+        "priority": 10,
+        "projectionType": 1,
+        "viewportHeight": 1.0,
+        "viewportWidth": 1.0,
+        "viewportX": 0.0,
+        "viewportY": 0.0
+      },
+      "camera2DBounds": {
+        "autoZoomToFitTargets": 0.0,
+        "boundsPadding": 0.0,
+        "currentZoom": 1.0,
+        "deadZoneSize": [
+          1.0,
+          0.5
+        ],
+        "followOffset": [
+          0.0,
+          0.0
+        ],
+        "followSmoothing": 5.0,
+        "followTarget": 2,
+        "lookAheadDistance": 2.0,
+        "lookAheadSmoothing": 3.0,
+        "maxBounds": [
+          0.0,
+          0.0
+        ],
+        "maxZoom": 3.0,
+        "minBounds": [
+          0.0,
+          0.0
+        ],
+        "minZoom": 0.5,
+        "multiTargetPadding": 2.0,
+        "shakeFrequency": 15.0,
+        "targetZoom": 1.0,
+        "useBounds": false,
+        "zoomSmoothing": 5.0
+      },
+      "id": 3,
+      "name": {
+        "name": "Game Camera"
+      },
+      "stableId": 1939208992800126209,
+      "transform": {
+        "position": [
+          0.0,
+          1.0,
+          15.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "body2D": {
+        "angularDamping": 0.10000000149011612,
+        "boxHalfExtents": [
+          15.0,
+          0.5
+        ],
+        "boxOffset": [
+          0.0,
+          0.0
+        ],
+        "boxRotation": 0.0,
+        "capsuleHeight": 1.0,
+        "capsuleOffset": [
+          0.0,
+          0.0
+        ],
+        "capsuleRadius": 0.30000001192092896,
+        "categoryBits": 1,
+        "circleOffset": [
+          0.0,
+          0.0
+        ],
+        "circleRadius": 0.5,
+        "collisionMask": 4294967295,
+        "density": 1.0,
+        "fixedRotation": false,
+        "friction": 0.30000001192092896,
+        "gravityScale": 1.0,
+        "isKinematic": false,
+        "isSensor": false,
+        "isStatic": true,
+        "linearDamping": 0.10000000149011612,
+        "polygonOffset": [
+          0.0,
+          0.0
+        ],
+        "polygonVertices": [],
+        "restitution": 0.20000000298023224,
+        "shapeType": 1
+      },
+      "id": 4,
+      "material": {
+        "baseColor": [
+          0.3499999940395355,
+          0.550000011920929,
+          0.30000001192092896
+        ]
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0.0,
+              1.0
+            ]
+          }
+        ]
+      },
+      "name": {
+        "name": "Ground"
+      },
+      "stableId": 238924688934628125,
+      "transform": {
+        "position": [
+          0.0,
+          -1.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          30.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "body2D": {
+        "angularDamping": 0.10000000149011612,
+        "boxHalfExtents": [
+          2.5,
+          0.15000000596046448
+        ],
+        "boxOffset": [
+          0.0,
+          0.0
+        ],
+        "boxRotation": 0.0,
+        "capsuleHeight": 1.0,
+        "capsuleOffset": [
+          0.0,
+          0.0
+        ],
+        "capsuleRadius": 0.30000001192092896,
+        "categoryBits": 1,
+        "circleOffset": [
+          0.0,
+          0.0
+        ],
+        "circleRadius": 0.5,
+        "collisionMask": 4294967295,
+        "density": 1.0,
+        "fixedRotation": false,
+        "friction": 0.30000001192092896,
+        "gravityScale": 1.0,
+        "isKinematic": false,
+        "isSensor": false,
+        "isStatic": true,
+        "linearDamping": 0.10000000149011612,
+        "polygonOffset": [
+          0.0,
+          0.0
+        ],
+        "polygonVertices": [],
+        "restitution": 0.20000000298023224,
+        "shapeType": 1
+      },
+      "id": 5,
+      "material": {
+        "baseColor": [
+          0.44999998807907104,
+          0.3499999940395355,
+          0.25
+        ]
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0.0,
+              1.0
+            ]
+          }
+        ]
+      },
+      "name": {
+        "name": "Platform 1"
+      },
+      "stableId": 16305607025488664398,
+      "transform": {
+        "position": [
+          -4.0,
+          1.5,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          5.0,
+          0.30000001192092896,
+          1.0
+        ]
+      }
+    },
+    {
+      "body2D": {
+        "angularDamping": 0.10000000149011612,
+        "boxHalfExtents": [
+          3.0,
+          0.15000000596046448
+        ],
+        "boxOffset": [
+          0.0,
+          0.0
+        ],
+        "boxRotation": 0.0,
+        "capsuleHeight": 1.0,
+        "capsuleOffset": [
+          0.0,
+          0.0
+        ],
+        "capsuleRadius": 0.30000001192092896,
+        "categoryBits": 1,
+        "circleOffset": [
+          0.0,
+          0.0
+        ],
+        "circleRadius": 0.5,
+        "collisionMask": 4294967295,
+        "density": 1.0,
+        "fixedRotation": false,
+        "friction": 0.30000001192092896,
+        "gravityScale": 1.0,
+        "isKinematic": false,
+        "isSensor": false,
+        "isStatic": true,
+        "linearDamping": 0.10000000149011612,
+        "polygonOffset": [
+          0.0,
+          0.0
+        ],
+        "polygonVertices": [],
+        "restitution": 0.20000000298023224,
+        "shapeType": 1
+      },
+      "id": 6,
+      "material": {
+        "baseColor": [
+          0.44999998807907104,
+          0.3499999940395355,
+          0.25
+        ]
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0.0,
+              1.0
+            ]
+          }
+        ]
+      },
+      "name": {
+        "name": "Platform 2"
+      },
+      "stableId": 2830809237452993971,
+      "transform": {
+        "position": [
+          1.0,
+          3.5,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          6.0,
+          0.30000001192092896,
+          1.0
+        ]
+      }
+    },
+    {
+      "body2D": {
+        "angularDamping": 0.10000000149011612,
+        "boxHalfExtents": [
+          2.0,
+          0.15000000596046448
+        ],
+        "boxOffset": [
+          0.0,
+          0.0
+        ],
+        "boxRotation": 0.0,
+        "capsuleHeight": 1.0,
+        "capsuleOffset": [
+          0.0,
+          0.0
+        ],
+        "capsuleRadius": 0.30000001192092896,
+        "categoryBits": 1,
+        "circleOffset": [
+          0.0,
+          0.0
+        ],
+        "circleRadius": 0.5,
+        "collisionMask": 4294967295,
+        "density": 1.0,
+        "fixedRotation": false,
+        "friction": 0.30000001192092896,
+        "gravityScale": 1.0,
+        "isKinematic": false,
+        "isSensor": false,
+        "isStatic": true,
+        "linearDamping": 0.10000000149011612,
+        "polygonOffset": [
+          0.0,
+          0.0
+        ],
+        "polygonVertices": [],
+        "restitution": 0.20000000298023224,
+        "shapeType": 1
+      },
+      "id": 7,
+      "material": {
+        "baseColor": [
+          0.44999998807907104,
+          0.3499999940395355,
+          0.25
+        ]
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0.0,
+              1.0
+            ]
+          }
+        ]
+      },
+      "name": {
+        "name": "Platform 3"
+      },
+      "stableId": 12789310029637398193,
+      "transform": {
+        "position": [
+          6.0,
+          5.5,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          4.0,
+          0.30000001192092896,
+          1.0
+        ]
+      }
+    },
+    {
+      "body2D": {
+        "angularDamping": 0.10000000149011612,
+        "boxHalfExtents": [
+          0.25,
+          0.25
+        ],
+        "boxOffset": [
+          0.0,
+          0.0
+        ],
+        "boxRotation": 0.0,
+        "capsuleHeight": 1.0,
+        "capsuleOffset": [
+          0.0,
+          0.0
+        ],
+        "capsuleRadius": 0.30000001192092896,
+        "categoryBits": 1,
+        "circleOffset": [
+          0.0,
+          0.0
+        ],
+        "circleRadius": 0.5,
+        "collisionMask": 4294967295,
+        "density": 1.0,
+        "fixedRotation": false,
+        "friction": 0.30000001192092896,
+        "gravityScale": 0.0,
+        "isKinematic": true,
+        "isSensor": true,
+        "isStatic": false,
+        "linearDamping": 0.10000000149011612,
+        "polygonOffset": [
+          0.0,
+          0.0
+        ],
+        "polygonVertices": [],
+        "restitution": 0.20000000298023224,
+        "shapeType": 1
+      },
+      "id": 8,
+      "material": {
+        "baseColor": [
+          1.0,
+          0.8500000238418579,
+          0.20000000298023224
+        ],
+        "emissiveColor": [
+          1.0,
+          0.8500000238418579,
+          0.20000000298023224
+        ],
+        "emissiveStrength": 0.30000001192092896
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0.0,
+              1.0
+            ]
+          }
+        ]
+      },
+      "name": {
+        "name": "Coin"
+      },
+      "pickup": {
+        "bobHeight": 0.20000000298023224,
+        "bobSpeed": 2.0,
+        "canRespawn": 0.0,
+        "customId": "",
+        "destroyOnPickup": 1.0,
+        "magnetRange": 3.0,
+        "magnetSpeed": 10.0,
+        "magnetToPlayer": 0.0,
+        "pickupRange": 1.0,
+        "respawnTime": 10.0,
+        "rotationSpeed": 90.0,
+        "type": 2,
+        "value": 1.0
+      },
+      "stableId": 9372132522242588842,
+      "transform": {
+        "position": [
+          1.0,
+          4.5,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          0.5,
+          0.5,
+          1.0
+        ]
+      },
+      "tween": {
+        "autoPlay": 1.0,
+        "tweens": [
+          {
+            "delay": 0.0,
+            "duration": 1.0,
+            "easing": 12,
+            "endValue": [
+              1.0,
+              4.900000095367432,
+              0.0
+            ],
+            "mode": 2,
+            "property": 0,
+            "startValue": [
+              1.0,
+              4.5,
+              0.0
+            ],
+            "useCurrentAsStart": 0.0
+          }
+        ]
+      }
+    },
+    {
+      "aiController": {
+        "arrivalRadius": 0.5,
+        "attackCooldown": 1.0,
+        "attackDamage": 10.0,
+        "attackRange": 2.0,
+        "chaseSpeed": 5.0,
+        "debugDrawDetection": 0.0,
+        "debugDrawPath": false,
+        "detectionRange": 10.0,
+        "fieldOfView": 120.0,
+        "fleeDistance": 15.0,
+        "fleeSpeed": 6.0,
+        "is2D": true,
+        "loseTargetRange": 15.0,
+        "moveSpeed": 2.0,
+        "patrolLoop": true,
+        "patrolPoints": [
+          [
+            3.0,
+            0.20000000298023224,
+            0.0
+          ],
+          [
+            8.0,
+            0.20000000298023224,
+            0.0
+          ]
+        ],
+        "patrolWaitTime": 2.0,
+        "repathInterval": 0.5,
+        "stoppingDistance": 1.0,
+        "turnSpeed": 180.0,
+        "useNavmesh": true
+      },
+      "body2D": {
+        "angularDamping": 0.10000000149011612,
+        "boxHalfExtents": [
+          0.4000000059604645,
+          0.4000000059604645
+        ],
+        "boxOffset": [
+          0.0,
+          0.0
+        ],
+        "boxRotation": 0.0,
+        "capsuleHeight": 1.0,
+        "capsuleOffset": [
+          0.0,
+          0.0
+        ],
+        "capsuleRadius": 0.30000001192092896,
+        "categoryBits": 1,
+        "circleOffset": [
+          0.0,
+          0.0
+        ],
+        "circleRadius": 0.5,
+        "collisionMask": 4294967295,
+        "density": 1.0,
+        "fixedRotation": false,
+        "friction": 0.30000001192092896,
+        "gravityScale": 0.0,
+        "isKinematic": true,
+        "isSensor": true,
+        "isStatic": false,
+        "linearDamping": 0.10000000149011612,
+        "polygonOffset": [
+          0.0,
+          0.0
+        ],
+        "polygonVertices": [],
+        "restitution": 0.20000000298023224,
+        "shapeType": 1
+      },
+      "damage": {
+        "damage": 10.0,
+        "damageInterval": 0.0,
+        "damageOnce": 1.0,
+        "destroyOnHit": 1.0,
+        "knockbackForce": 0.0,
+        "knockbackUpScale": 0.5,
+        "type": 0
+      },
+      "id": 9,
+      "material": {
+        "baseColor": [
+          0.800000011920929,
+          0.20000000298023224,
+          0.20000000298023224
+        ]
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0.0,
+              1.0
+            ]
+          }
+        ]
+      },
+      "name": {
+        "name": "Enemy"
+      },
+      "stableId": 9332568297992597347,
+      "tag": {
+        "tags": [
+          "enemy"
+        ]
+      },
+      "transform": {
+        "position": [
+          5.0,
+          0.20000000298023224,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          0.800000011920929,
+          0.800000011920929,
+          1.0
+        ]
+      }
+    },
+    {
+      "id": 10,
+      "light": {
+        "castShadows": false,
+        "color": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "constantAttenuation": 1.0,
+        "innerConeAngle": 12.5,
+        "intensity": 1.0,
+        "linearAttenuation": 0.09000000357627869,
+        "outerConeAngle": 17.5,
+        "quadraticAttenuation": 0.03200000151991844,
+        "range": 10.0,
+        "type": 0
+      },
+      "name": {
+        "name": "Global Directional Light"
+      },
+      "stableId": 16575964931560723647,
+      "transform": {
+        "position": [
+          0.0,
+          10.0,
+          5.0
+        ],
+        "rotation": [
+          -0.38268300890922546,
+          0.0,
+          0.0,
+          0.9238799810409546
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "id": 11,
+      "name": {
+        "name": "-- Guide --"
+      },
+      "notes": {
+        "notes": "2D PLATFORMER STARTER\n======================\n\nEntities:\n  Player - Capsule with Platformer2DController (WASD + Space)\n  Ground - Static platform spanning the scene\n  Platforms - 3 stepping stones at increasing heights\n  Coin - PickupComponent + TweenComponent bob animation\n  Enemy - AIControllerComponent with patrol + DamageComponent\n\nKey systems:\n  - Platformer2DController handles jump, double-jump, coyote time\n  - Box2D physics for ground/platform collision\n  - PickupComponent collected via AABB overlap\n  - AIControllerComponent patrols between 2 points\n  - Camera2DBoundsComponent follows player with smoothing\n\nTry:\n  - Add more platforms to extend the level\n  - Duplicate coins and place them on platforms\n  - Add a moving platform with TweenComponent\n  - Enable wall jumping: Platformer2DController.enableWallJump"
+      },
+      "stableId": 58797325192989619,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    }
+  ],
+  "entityCount": 11,
+  "formatVersion": 1,
+  "renderSettings": {
+    "aaComparisonDivider": 0.5,
+    "aaComparisonEnabled": false,
+    "aaComparisonModeLeft": 0,
+    "aaComparisonModeRight": 1,
+    "aaMode": 1,
+    "ambientColor": [
+      0.10000000149011612,
+      0.10000000149011612,
+      0.15000000596046448
+    ],
+    "ambientIntensity": 0.15000000596046448,
+    "artStylePreset": 0,
+    "backfaceCulling": false,
+    "bloomEnabled": true,
+    "bloomIntensity": 0.4000000059604645,
+    "bloomRadius": 0.004999999888241291,
+    "bloomThreshold": 0.8500000238418579,
+    "brightness": 0.0,
+    "cascadeFarUpdateInterval": 2,
+    "cascadeProgressiveUpdate": false,
+    "causticsEnabled": false,
+    "causticsIntensity": 0.30000001192092896,
+    "causticsScale": 1.0,
+    "causticsSpeed": 1.0,
+    "causticsWaterY": 0.0,
+    "celDiffuseBands": 3.0,
+    "celOutlineColor": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "celOutlineCurvatureWeight": 0.0,
+    "celOutlineEnabled": false,
+    "celOutlineThickness": 1.0,
+    "celOutlineThreshold": 0.10000000149011612,
+    "celShadingEnabled": false,
+    "celShadowMode": 0.0,
+    "celSpecularCutoff": 0.5,
+    "chromaticAberrationEnabled": false,
+    "chromaticAberrationIntensity": 0.004999999888241291,
+    "colorBitDepth": 8,
+    "colorFilter": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "colorQuantEnabled": false,
+    "contactShadowsEnabled": false,
+    "contactShadowsIntensity": 1.0,
+    "contactShadowsLength": 0.10000000149011612,
+    "contactShadowsSteps": 16,
+    "contrast": 1.0,
+    "crtBloomRadius": 1.5,
+    "crtBloomSigma": 0.800000011920929,
+    "crtBloomStrength": 0.30000001192092896,
+    "crtCurvature": 0.0,
+    "crtEnabled": false,
+    "crtMaskPitch": 1.0,
+    "crtMaskType": 0,
+    "crtModelPreset": 0.0,
+    "crtPhosphorEnabled": false,
+    "crtTVL": 400.0,
+    "depthSortJitter": 0.0,
+    "ditherEnabled": false,
+    "ditherPattern": 0,
+    "ditherStrength": 1.0,
+    "dofApertureShape": 0,
+    "dofBokehSize": 4.0,
+    "dofDebugCoC": false,
+    "dofEnabled": false,
+    "dofFarBlurStrength": 1.0,
+    "dofFocalDistance": 10.0,
+    "dofFocalRange": 5.0,
+    "dofNearBlurStrength": 1.0,
+    "energyConservation": false,
+    "exposure": 1.0,
+    "filmGrainEnabled": false,
+    "filmGrainIntensity": 0.05000000074505806,
+    "fogColor": [
+      0.5,
+      0.5,
+      0.6000000238418579
+    ],
+    "fogDensity": 0.0,
+    "fogEnd": 100.0,
+    "fogHeightFalloff": 0.10000000149011612,
+    "fogShaftsDecay": 0.949999988079071,
+    "fogShaftsDensity": 0.05000000074505806,
+    "fogShaftsEnabled": false,
+    "fogShaftsIntensity": 0.30000001192092896,
+    "fogShaftsMaxDistance": 50.0,
+    "fogShaftsSamples": 16,
+    "fogStart": 20.0,
+    "fresnelEnabled": false,
+    "fxaaEnabled": true,
+    "fxaaReduceMin": 0.007813000120222569,
+    "fxaaReduceMul": 0.125,
+    "fxaaSpanMax": 8.0,
+    "gamma": 1.0,
+    "geometryOutlineColor": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "geometryOutlineWidth": 0.019999999552965164,
+    "geometryOutlinesEnabled": false,
+    "geometryTerm": false,
+    "globalAffineTexturing": false,
+    "globalFlatShading": false,
+    "globalGouraudOnly": false,
+    "globalStippleTransparency": false,
+    "globalUVQuantize": false,
+    "globalVertexSnapResolution": 160,
+    "globalVertexSnapping": false,
+    "godRaysDecay": 0.9700000286102295,
+    "godRaysDensity": 1.0,
+    "godRaysEnabled": false,
+    "godRaysIntensity": 0.5,
+    "godRaysSamples": 64,
+    "godRaysWeight": 0.009999999776482582,
+    "halfLambert": false,
+    "hdrOutput": false,
+    "internalHeight": 240,
+    "internalWidth": 320,
+    "lightRampMode": 0.0,
+    "lutEnabled": false,
+    "lutSize": 32,
+    "lutStrength": 1.0,
+    "normalQuantizeSteps": 0.0,
+    "paletteColors": 16,
+    "paletteEnabled": false,
+    "posterizeLevels": 0.0,
+    "radianceCacheDepthThreshold": 0.10000000149011612,
+    "radianceCacheEnabled": false,
+    "radianceCacheExcludeDirectional": true,
+    "radianceCacheHysteresis": 0.8999999761581421,
+    "radianceCacheMaxAge": 8.0,
+    "radianceCacheNormalThreshold": 0.8500000238418579,
+    "radianceCacheTileSize": 32,
+    "rainActive": false,
+    "resDownscaleEnabled": false,
+    "restirDistanceBias": 0.10000000149011612,
+    "restirEnabled": false,
+    "restirInitialCandidates": 8,
+    "restirSpatialDepthThreshold": 0.10000000149011612,
+    "restirSpatialNeighbors": 5,
+    "restirSpatialNormalThreshold": 0.8999999761581421,
+    "restirSpatialRadius": 30.0,
+    "restirSpatialReuse": false,
+    "restirTemporalDepthThreshold": 0.10000000149011612,
+    "restirTemporalMaxHistory": 20,
+    "restirTemporalNormalThreshold": 0.8999999761581421,
+    "restirTemporalReuse": false,
+    "rtAOEnabled": true,
+    "rtAOPower": 1.5,
+    "rtAORadius": 2.0,
+    "rtAOStrength": 1.0,
+    "rtDenoiserEnabled": true,
+    "rtDenoiserIterations": 5,
+    "rtDenoiserTemporalAlpha": 0.05000000074505806,
+    "rtDenoiserType": 0,
+    "rtEnabled": false,
+    "rtGIBounces": 1,
+    "rtGIEnabled": false,
+    "rtGIIntensity": 1.0,
+    "rtGIMaxDistance": 50.0,
+    "rtGIStrength": 0.5,
+    "rtMode": 0,
+    "rtOIDNQuality": 1,
+    "rtPathTracerFireflyClamp": 10.0,
+    "rtPathTracerMIS": true,
+    "rtPathTracerMaxBounces": 4,
+    "rtPathTracerNEE": true,
+    "rtPathTracerRRMinBounce": 3.0,
+    "rtPathTracerRRMinProb": 0.05000000074505806,
+    "rtPathTracerTargetSPP": 1024,
+    "rtReflectionMaxDistance": 50.0,
+    "rtReflectionRoughnessThreshold": 0.5,
+    "rtReflectionSDFFallback": true,
+    "rtReflectionSDFMaxDistance": 500.0,
+    "rtReflectionStrength": 0.5,
+    "rtReflectionsEnabled": true,
+    "rtShadowMaxDistance": 100.0,
+    "rtShadowRadius": 0.009999999776482582,
+    "rtShadowStrength": 1.0,
+    "rtShadowsEnabled": true,
+    "rtSimplifiedMaterials": true,
+    "rtSimplifyAfterBounce": 1,
+    "rtTemporalReuseAO": true,
+    "rtTemporalReuseDisocclusionThreshold": 0.10000000149011612,
+    "rtTemporalReuseEnabled": false,
+    "rtTemporalReuseGI": true,
+    "rtTemporalReuseHistoryLength": 0.8999999761581421,
+    "rtTemporalReuseNormalThreshold": 0.8999999761581421,
+    "rtTemporalReuseReflections": true,
+    "rtTemporalReuseShadows": true,
+    "saturation": 1.0,
+    "scanlineIntensity": 0.30000001192092896,
+    "scanlineWidth": 1.0,
+    "seasonalChangeInterval": 300.0,
+    "seasonalWeatherEnabled": false,
+    "secondsPerGameHour": 60.0,
+    "shadingModel": 0,
+    "shadowDistance": 100.0,
+    "shadowResolution": 2048,
+    "shadowSoftness": 0.0,
+    "shadowStrength": 1.0,
+    "shadowsEnabled": false,
+    "snowIntensity": 0.0,
+    "sphereEnvMapEnabled": false,
+    "sphereEnvStrength": 0.5,
+    "ssaoBias": 0.02500000037252903,
+    "ssaoEnabled": false,
+    "ssaoIntensity": 1.5,
+    "ssaoRadius": 0.5,
+    "ssaoSamples": 16,
+    "startMonth": 6,
+    "startTimeOfDay": 8.0,
+    "stippleBgColor": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "stippleColorMode": 0,
+    "stippleDensity": 0.5,
+    "stippleEnabled": false,
+    "stippleFgColor": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "stipplePatternMask": 1,
+    "stippleScale": 1.0,
+    "stippleStrength": 1.0,
+    "surfelCacheBlendWeight": 0.5,
+    "surfelCacheCameraRadius": 50.0,
+    "surfelCacheEnabled": false,
+    "surfelCacheExcludeDirectional": true,
+    "surfelCacheMaxAge": 32.0,
+    "surfelCacheMaxSurfels": 65536,
+    "surfelCacheNormalThreshold": 0.699999988079071,
+    "surfelCachePlacementInterval": 4,
+    "surfelCacheRadius": 0.5,
+    "surfelCacheRaysPerSurfel": 2,
+    "surfelCacheUpdateFraction": 0.125,
+    "taaFeedbackMax": 0.9700000286102295,
+    "taaFeedbackMin": 0.8799999952316284,
+    "taaJitterScale": 1.0,
+    "taaSharpness": 0.10000000149011612,
+    "textureAnisotropy": 8,
+    "textureFilter": 2,
+    "textureMipmaps": true,
+    "texturePageSize": 0.0,
+    "textureWrap": 0,
+    "tiltShiftBandWidth": 0.30000001192092896,
+    "tiltShiftBlurAmount": 3.0,
+    "tiltShiftEnabled": false,
+    "tiltShiftFocusY": 0.5,
+    "toneMappingMode": 0,
+    "upscalerQuality": 2,
+    "upscalerSharpness": 0.0,
+    "upscalerType": 0,
+    "usePointFiltering": true,
+    "useProjectDefaults": true,
+    "vhsBlueShift": 0.05000000074505806,
+    "vhsColorBleed": 0.003000000026077032,
+    "vhsEnabled": false,
+    "vhsInterlacing": false,
+    "vhsNoiseIntensity": 0.05000000074505806,
+    "vhsScreenTear": false,
+    "vhsTearOffset": 0.0,
+    "vhsTrackingIntensity": 0.30000001192092896,
+    "vhsTrackingSpeed": 1.0,
+    "vhsWobbleIntensity": 0.0020000000949949026,
+    "vhsWobbleSpeed": 2.0,
+    "vignetteEnabled": false,
+    "vignetteIntensity": 0.30000001192092896,
+    "vignetteSmoothness": 0.5,
+    "whitePoint": 4.0,
+    "wireframe": false,
+    "worldCurvature": 0.0,
+    "worldTimeEnabled": false
+  },
+  "skybox": {
+    "bottomColor": [
+      0.800000011920929,
+      0.8500000238418579,
+      0.8999999761581421
+    ],
+    "cloud2Coverage": 0.0,
+    "cloud2Scale": 2.5,
+    "cloudColor": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "cloudCoverage": 0.0,
+    "cloudScale": 1.0,
+    "cloudShadowStrength": 0.6000000238418579,
+    "cloudSoftness": 0.5,
+    "cloudSpeed": 1.0,
+    "cubemapPaths": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+    ],
+    "horizonColor": [
+      0.5,
+      0.699999988079071,
+      1.0
+    ],
+    "horizonHaze": 0.0,
+    "rotation": 0.0,
+    "solidColor": [
+      0.20000000298023224,
+      0.30000001192092896,
+      0.4000000059604645
+    ],
+    "sunColor": [
+      1.0,
+      0.949999988079071,
+      0.8500000238418579
+    ],
+    "sunDirection": [
+      0.0,
+      1.0,
+      0.0
+    ],
+    "sunIntensity": 0.0,
+    "sunSize": 0.04500000178813934,
+    "topColor": [
+      0.10000000149011612,
+      0.30000001192092896,
+      0.800000011920929
+    ],
+    "type": 2
+  },
+  "version": "1.0"
+}

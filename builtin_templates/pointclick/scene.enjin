@@ -1,0 +1,2055 @@
+{
+  "entities": [
+    {
+      "id": 1,
+      "light": {
+        "castShadows": true,
+        "color": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "constantAttenuation": 1.0,
+        "innerConeAngle": 12.5,
+        "intensity": 1.0,
+        "linearAttenuation": 0.09000000357627869,
+        "outerConeAngle": 17.5,
+        "quadraticAttenuation": 0.03200000151991844,
+        "range": 10.0,
+        "type": 0
+      },
+      "name": {
+        "name": "Global Directional Light"
+      },
+      "stableId": 10105437238047938008,
+      "transform": {
+        "position": [
+          0.0,
+          15.0,
+          10.0
+        ],
+        "rotation": [
+          -0.38268300890922546,
+          0.0,
+          0.0,
+          0.9238799810409546
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "material": {
+        "baseColor": [
+          0.4000000059604645,
+          0.5,
+          0.6000000238418579
+        ]
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0.0,
+              1.0
+            ]
+          }
+        ]
+      },
+      "name": {
+        "name": "Background"
+      },
+      "sprite2D": {
+        "alpha": 1.0,
+        "flipX": false,
+        "flipY": false,
+        "orderInLayer": 0.0,
+        "pivot": [
+          0.5,
+          0.5
+        ],
+        "size": [
+          1.0,
+          1.0
+        ],
+        "sortingLayer": 0.0,
+        "srcHeight": 0.0,
+        "srcWidth": 0.0,
+        "srcX": 0.0,
+        "srcY": 0.0,
+        "texturePath": "",
+        "tint": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": 1.0
+      },
+      "stableId": 2459092518094197123,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          -1.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          16.0,
+          9.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "camera": {
+        "backgroundColor": [
+          0.6800000071525574,
+          0.75,
+          0.7200000286102295
+        ],
+        "clearColor": true,
+        "clearDepth": true,
+        "cullingMask": 4294967295,
+        "farPlane": 1000.0,
+        "fieldOfView": 60.0,
+        "isActive": true,
+        "nearPlane": 0.10000000149011612,
+        "orthoSize": 5.400000095367432,
+        "priority": 10,
+        "projectionType": 1,
+        "viewportHeight": 1.0,
+        "viewportWidth": 1.0,
+        "viewportX": 0.0,
+        "viewportY": 0.0
+      },
+      "id": 3,
+      "name": {
+        "name": "Camera"
+      },
+      "stableId": 5937626221320443378,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          10.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "dialogue": {
+        "charDelay": 0.05000000074505806,
+        "choices": [],
+        "dialogueLines": [
+          "A heavy wooden door. It's locked."
+        ],
+        "playTypeSound": true,
+        "portraitPath": "",
+        "speakerName": "",
+        "typeSound": ""
+      },
+      "id": 4,
+      "interactable": {
+        "highlightColor": [
+          1.0,
+          1.0,
+          0.0
+        ],
+        "highlightOnHover": 1.0,
+        "interactionRange": 2.0,
+        "isEnabled": 1.0,
+        "lookAtAngle": 45.0,
+        "onInteractNotify": 0,
+        "promptText": "Examine Door",
+        "requiresLookAt": 1.0,
+        "singleUse": 0.0
+      },
+      "material": {
+        "baseColor": [
+          0.6000000238418579,
+          0.4000000059604645,
+          0.30000001192092896
+        ]
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0.0,
+              1.0
+            ]
+          }
+        ]
+      },
+      "name": {
+        "name": "Door"
+      },
+      "sprite2D": {
+        "alpha": 1.0,
+        "flipX": false,
+        "flipY": false,
+        "orderInLayer": 0.0,
+        "pivot": [
+          0.5,
+          0.5
+        ],
+        "size": [
+          1.0,
+          1.0
+        ],
+        "sortingLayer": 0.0,
+        "srcHeight": 0.0,
+        "srcWidth": 0.0,
+        "srcX": 0.0,
+        "srcY": 0.0,
+        "texturePath": "",
+        "tint": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": 1.0
+      },
+      "stableId": 15982039765567777550,
+      "transform": {
+        "position": [
+          -4.0,
+          1.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.5,
+          1.5,
+          0.10000000149011612
+        ]
+      }
+    },
+    {
+      "dialogue": {
+        "charDelay": 0.05000000074505806,
+        "choices": [],
+        "dialogueLines": [
+          "Papers are scattered across the desk."
+        ],
+        "playTypeSound": true,
+        "portraitPath": "",
+        "speakerName": "",
+        "typeSound": ""
+      },
+      "id": 5,
+      "interactable": {
+        "highlightColor": [
+          1.0,
+          1.0,
+          0.0
+        ],
+        "highlightOnHover": 1.0,
+        "interactionRange": 2.0,
+        "isEnabled": 1.0,
+        "lookAtAngle": 45.0,
+        "onInteractNotify": 0,
+        "promptText": "Examine Desk",
+        "requiresLookAt": 1.0,
+        "singleUse": 0.0
+      },
+      "material": {
+        "baseColor": [
+          0.699999988079071,
+          0.4000000059604645,
+          0.30000001192092896
+        ]
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0.0,
+              1.0
+            ]
+          }
+        ]
+      },
+      "name": {
+        "name": "Desk"
+      },
+      "sprite2D": {
+        "alpha": 1.0,
+        "flipX": false,
+        "flipY": false,
+        "orderInLayer": 0.0,
+        "pivot": [
+          0.5,
+          0.5
+        ],
+        "size": [
+          1.0,
+          1.0
+        ],
+        "sortingLayer": 0.0,
+        "srcHeight": 0.0,
+        "srcWidth": 0.0,
+        "srcX": 0.0,
+        "srcY": 0.0,
+        "texturePath": "",
+        "tint": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": 1.0
+      },
+      "stableId": 11533195570186882177,
+      "transform": {
+        "position": [
+          2.0,
+          -1.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.5,
+          1.5,
+          0.10000000149011612
+        ]
+      }
+    },
+    {
+      "dialogue": {
+        "charDelay": 0.05000000074505806,
+        "choices": [],
+        "dialogueLines": [
+          "The window overlooks a garden."
+        ],
+        "playTypeSound": true,
+        "portraitPath": "",
+        "speakerName": "",
+        "typeSound": ""
+      },
+      "id": 6,
+      "interactable": {
+        "highlightColor": [
+          1.0,
+          1.0,
+          0.0
+        ],
+        "highlightOnHover": 1.0,
+        "interactionRange": 2.0,
+        "isEnabled": 1.0,
+        "lookAtAngle": 45.0,
+        "onInteractNotify": 0,
+        "promptText": "Examine Window",
+        "requiresLookAt": 1.0,
+        "singleUse": 0.0
+      },
+      "material": {
+        "baseColor": [
+          0.800000011920929,
+          0.4000000059604645,
+          0.30000001192092896
+        ]
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0.0,
+              1.0
+            ]
+          }
+        ]
+      },
+      "name": {
+        "name": "Window"
+      },
+      "sprite2D": {
+        "alpha": 1.0,
+        "flipX": false,
+        "flipY": false,
+        "orderInLayer": 0.0,
+        "pivot": [
+          0.5,
+          0.5
+        ],
+        "size": [
+          1.0,
+          1.0
+        ],
+        "sortingLayer": 0.0,
+        "srcHeight": 0.0,
+        "srcWidth": 0.0,
+        "srcX": 0.0,
+        "srcY": 0.0,
+        "texturePath": "",
+        "tint": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": 1.0
+      },
+      "stableId": 12253795209710331488,
+      "transform": {
+        "position": [
+          5.0,
+          2.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.5,
+          1.5,
+          0.10000000149011612
+        ]
+      }
+    },
+    {
+      "id": 7,
+      "interactable": {
+        "highlightColor": [
+          1.0,
+          1.0,
+          0.0
+        ],
+        "highlightOnHover": 1.0,
+        "interactionRange": 2.0,
+        "isEnabled": 1.0,
+        "lookAtAngle": 45.0,
+        "onInteractNotify": 0,
+        "promptText": "Pick up Key",
+        "requiresLookAt": 1.0,
+        "singleUse": 0.0
+      },
+      "material": {
+        "baseColor": [
+          1.0,
+          0.8500000238418579,
+          0.0
+        ],
+        "emissiveColor": [
+          1.0,
+          0.8500000238418579,
+          0.0
+        ],
+        "emissiveStrength": 0.5
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0.0,
+              1.0
+            ]
+          }
+        ]
+      },
+      "name": {
+        "name": "Key"
+      },
+      "pickup": {
+        "bobHeight": 0.20000000298023224,
+        "bobSpeed": 2.0,
+        "canRespawn": 0.0,
+        "customId": "Brass Key",
+        "destroyOnPickup": 1.0,
+        "magnetRange": 3.0,
+        "magnetSpeed": 10.0,
+        "magnetToPlayer": 0.0,
+        "pickupRange": 1.0,
+        "respawnTime": 10.0,
+        "rotationSpeed": 90.0,
+        "type": 3,
+        "value": 1.0
+      },
+      "sprite2D": {
+        "alpha": 1.0,
+        "flipX": false,
+        "flipY": false,
+        "orderInLayer": 0.0,
+        "pivot": [
+          0.5,
+          0.5
+        ],
+        "size": [
+          1.0,
+          1.0
+        ],
+        "sortingLayer": 0.0,
+        "srcHeight": 0.0,
+        "srcWidth": 0.0,
+        "srcX": 0.0,
+        "srcY": 0.0,
+        "texturePath": "",
+        "tint": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": 1.0
+      },
+      "stableId": 10171042216861903884,
+      "transform": {
+        "position": [
+          2.0,
+          -1.5,
+          0.10000000149011612
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          0.5,
+          0.5,
+          0.10000000149011612
+        ]
+      },
+      "tween": {
+        "autoPlay": 0.0,
+        "tweens": [
+          {
+            "delay": 0.0,
+            "duration": 1.2000000476837158,
+            "easing": 12,
+            "endValue": [
+              0.550000011920929,
+              0.550000011920929,
+              0.10000000149011612
+            ],
+            "mode": 2,
+            "property": 2,
+            "startValue": [
+              0.44999998807907104,
+              0.44999998807907104,
+              0.10000000149011612
+            ],
+            "useCurrentAsStart": 1.0
+          }
+        ]
+      }
+    },
+    {
+      "dialogue": {
+        "charDelay": 0.05000000074505806,
+        "choices": [],
+        "dialogueLines": [
+          "The cabinet is locked. You need a key."
+        ],
+        "playTypeSound": true,
+        "portraitPath": "",
+        "speakerName": "",
+        "typeSound": ""
+      },
+      "id": 8,
+      "interactable": {
+        "highlightColor": [
+          1.0,
+          1.0,
+          0.0
+        ],
+        "highlightOnHover": 1.0,
+        "interactionRange": 2.0,
+        "isEnabled": 1.0,
+        "lookAtAngle": 45.0,
+        "onInteractNotify": 0,
+        "promptText": "Examine Cabinet",
+        "requiresLookAt": 1.0,
+        "singleUse": 0.0
+      },
+      "material": {
+        "baseColor": [
+          0.3499999940395355,
+          0.25,
+          0.15000000596046448
+        ]
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0.0,
+              1.0
+            ]
+          }
+        ]
+      },
+      "name": {
+        "name": "Locked Cabinet"
+      },
+      "sprite2D": {
+        "alpha": 1.0,
+        "flipX": false,
+        "flipY": false,
+        "orderInLayer": 0.0,
+        "pivot": [
+          0.5,
+          0.5
+        ],
+        "size": [
+          1.0,
+          1.0
+        ],
+        "sortingLayer": 0.0,
+        "srcHeight": 0.0,
+        "srcWidth": 0.0,
+        "srcX": 0.0,
+        "srcY": 0.0,
+        "texturePath": "",
+        "tint": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": 1.0
+      },
+      "stableId": 13299533262729270199,
+      "transform": {
+        "position": [
+          -5.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          2.0,
+          2.5,
+          0.10000000149011612
+        ]
+      }
+    },
+    {
+      "dialogueBox": {
+        "boxAlpha": 0.9200000166893005,
+        "boxBorderRadius": 8.0,
+        "boxColor": [
+          0.05000000074505806,
+          0.05000000074505806,
+          0.07999999821186066
+        ],
+        "boxHeight": 200.0,
+        "boxMargin": 20.0,
+        "boxPadding": 16.0,
+        "choiceColor": [
+          0.15000000596046448,
+          0.15000000596046448,
+          0.20000000298023224
+        ],
+        "choiceSpacing": 6.0,
+        "choiceTextColor": [
+          0.8500000238418579,
+          0.8500000238418579,
+          0.8500000238418579
+        ],
+        "continueBlinkSpeed": 2.0,
+        "continueText": ">>>",
+        "defaultSpeakerColor": [
+          0.8999999761581421,
+          0.8500000238418579,
+          0.5
+        ],
+        "portraitSize": 96.0,
+        "showPortrait": true,
+        "speakerFontSize": 20.0,
+        "textColor": [
+          0.8999999761581421,
+          0.8999999761581421,
+          0.8999999761581421
+        ],
+        "textFontSize": 17.0
+      },
+      "id": 9,
+      "name": {
+        "name": "Dialogue Box"
+      },
+      "stableId": 8033809978907914991,
+      "text": {
+        "bgColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "bgOpacity": 1.0,
+        "fontPath": "",
+        "fontSize": 24.0,
+        "horizontalAlign": 0,
+        "lit": false,
+        "paddingX": 16.0,
+        "paddingY": 16.0,
+        "sdfText": true,
+        "text": "Click on objects to examine them.",
+        "textColor": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "textureHeight": 512,
+        "textureWidth": 512,
+        "worldHeight": 0.5,
+        "wrapWidth": 512.0
+      },
+      "transform": {
+        "position": [
+          0.0,
+          -3.5,
+          1.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "id": 10,
+      "light": {
+        "castShadows": true,
+        "color": [
+          1.0,
+          0.8999999761581421,
+          0.75
+        ],
+        "constantAttenuation": 1.0,
+        "innerConeAngle": 12.5,
+        "intensity": 1.5,
+        "linearAttenuation": 0.09000000357627869,
+        "outerConeAngle": 17.5,
+        "quadraticAttenuation": 0.03200000151991844,
+        "range": 12.0,
+        "type": 1
+      },
+      "name": {
+        "name": "Room Light"
+      },
+      "stableId": 7393947809809521792,
+      "transform": {
+        "position": [
+          0.0,
+          4.0,
+          2.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "id": 11,
+      "material": null,
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0.0,
+              1.0
+            ]
+          }
+        ]
+      },
+      "name": {
+        "name": "Cursor Indicator"
+      },
+      "sprite2D": {
+        "alpha": 1.0,
+        "flipX": false,
+        "flipY": false,
+        "orderInLayer": 0.0,
+        "pivot": [
+          0.5,
+          0.5
+        ],
+        "size": [
+          1.0,
+          1.0
+        ],
+        "sortingLayer": 0.0,
+        "srcHeight": 0.0,
+        "srcWidth": 0.0,
+        "srcX": 0.0,
+        "srcY": 0.0,
+        "texturePath": "",
+        "tint": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": 1.0
+      },
+      "stableId": 14386323270095677586,
+      "tag": {
+        "tags": [
+          "cursor"
+        ]
+      },
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          2.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          0.30000001192092896,
+          0.30000001192092896,
+          0.10000000149011612
+        ]
+      }
+    },
+    {
+      "id": 12,
+      "name": {
+        "name": "Inventory"
+      },
+      "stableId": 16930266349269656496,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "uiCanvas": {
+        "canvasName": "Inventory",
+        "designHeight": 1080.0,
+        "designWidth": 1920.0,
+        "elements": [
+          {
+            "anchor": {
+              "anchorMax": [
+                0.0,
+                1.0
+              ],
+              "anchorMin": [
+                0.0,
+                1.0
+              ],
+              "offsetBottom": -20.0,
+              "offsetLeft": 20.0,
+              "offsetRight": 420.0,
+              "offsetTop": -80.0,
+              "pivot": [
+                0.5,
+                0.5
+              ]
+            },
+            "childIds": [
+              2
+            ],
+            "data": {
+              "activeTabIndex": 0.0,
+              "checked": 0.0,
+              "gridColumns": 2.0,
+              "imageAlpha": 1.0,
+              "imagePath": "",
+              "imageTint": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "inputText": "",
+              "listSelectedIndex": -1.0,
+              "placeholder": "",
+              "progressFillColor": [
+                -1.0,
+                -1.0,
+                -1.0
+              ],
+              "progressValue": 0.5,
+              "selectedOption": 0.0,
+              "sliderMax": 1.0,
+              "sliderMin": 0.0,
+              "sliderValue": 0.5,
+              "text": "",
+              "textAlignH": 1.0,
+              "textAlignV": 1.0,
+              "tooltipDelay": 0.5
+            },
+            "enabled": true,
+            "focusable": false,
+            "id": 1.0,
+            "layoutAlign": 3,
+            "layoutMode": 0,
+            "layoutPaddingX": 0.0,
+            "layoutPaddingY": 0.0,
+            "layoutSpacing": -1.0,
+            "name": "InventoryPanel",
+            "onClickEvent": "",
+            "onSubmitEvent": "",
+            "onValueChangedEvent": "",
+            "parentId": 0,
+            "style": {
+              "bgAlpha": 0.800000011920929,
+              "bgColor": [
+                0.10000000149011612,
+                0.10000000149011612,
+                0.11999999731779099
+              ],
+              "borderColor": [
+                -1.0,
+                -1.0,
+                -1.0
+              ],
+              "borderRadius": -1.0,
+              "borderWidth": -1.0,
+              "focusColor": [
+                -1.0,
+                -1.0,
+                -1.0
+              ],
+              "fontSize": -1.0,
+              "textColor": [
+                -1.0,
+                -1.0,
+                -1.0
+              ]
+            },
+            "tabOrder": 0,
+            "type": 0,
+            "visible": 1.0
+          },
+          {
+            "anchor": {
+              "anchorMax": [
+                0.949999988079071,
+                0.8999999761581421
+              ],
+              "anchorMin": [
+                0.05000000074505806,
+                0.10000000149011612
+              ],
+              "offsetBottom": -12.0,
+              "offsetLeft": -100.0,
+              "offsetRight": -100.0,
+              "offsetTop": -12.0,
+              "pivot": [
+                0.5,
+                0.5
+              ]
+            },
+            "childIds": [],
+            "data": {
+              "activeTabIndex": 0.0,
+              "checked": 0.0,
+              "gridColumns": 2.0,
+              "imageAlpha": 1.0,
+              "imagePath": "",
+              "imageTint": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "inputText": "",
+              "listSelectedIndex": -1.0,
+              "placeholder": "",
+              "progressFillColor": [
+                -1.0,
+                -1.0,
+                -1.0
+              ],
+              "progressValue": 0.5,
+              "selectedOption": 0.0,
+              "sliderMax": 1.0,
+              "sliderMin": 0.0,
+              "sliderValue": 0.5,
+              "text": "Inventory: (empty)",
+              "textAlignH": 0.0,
+              "textAlignV": 1.0,
+              "tooltipDelay": 0.5
+            },
+            "enabled": true,
+            "focusable": false,
+            "id": 2.0,
+            "layoutAlign": 3,
+            "layoutMode": 0,
+            "layoutPaddingX": 0.0,
+            "layoutPaddingY": 0.0,
+            "layoutSpacing": -1.0,
+            "name": "InventoryLabel",
+            "onClickEvent": "",
+            "onSubmitEvent": "",
+            "onValueChangedEvent": "",
+            "parentId": 1,
+            "style": {
+              "bgAlpha": -1.0,
+              "bgColor": [
+                -1.0,
+                -1.0,
+                -1.0
+              ],
+              "borderColor": [
+                -1.0,
+                -1.0,
+                -1.0
+              ],
+              "borderRadius": -1.0,
+              "borderWidth": -1.0,
+              "focusColor": [
+                -1.0,
+                -1.0,
+                -1.0
+              ],
+              "fontSize": -1.0,
+              "textColor": [
+                0.8999999761581421,
+                0.8999999761581421,
+                0.800000011920929
+              ]
+            },
+            "tabOrder": 0,
+            "type": 2,
+            "visible": 1.0
+          }
+        ],
+        "nextElementId": 3,
+        "scaleMode": 0,
+        "sortOrder": 0.0,
+        "theme": {
+          "background": [
+            0.07999999821186066,
+            0.07999999821186066,
+            0.10000000149011612
+          ],
+          "bgAlpha": 0.9200000166893005,
+          "borderRadius": 4.0,
+          "borderWidth": 1.0,
+          "buttonDefault": [
+            0.25999999046325684,
+            0.5899999737739563,
+            0.9800000190734863
+          ],
+          "buttonDisabled": [
+            0.25,
+            0.25,
+            0.30000001192092896
+          ],
+          "buttonHovered": [
+            0.36000001430511475,
+            0.6899999976158142,
+            1.0
+          ],
+          "buttonPressed": [
+            0.1599999964237213,
+            0.49000000953674316,
+            0.8799999952316284
+          ],
+          "checkboxBg": [
+            0.15000000596046448,
+            0.15000000596046448,
+            0.20000000298023224
+          ],
+          "checkboxChecked": [
+            0.25999999046325684,
+            0.5899999737739563,
+            0.9800000190734863
+          ],
+          "error": [
+            0.8999999761581421,
+            0.25,
+            0.25
+          ],
+          "focusBorderWidth": 2.5,
+          "fontSizeBody": 16.0,
+          "fontSizeHeading": 24.0,
+          "fontSizeSmall": 12.0,
+          "inputBg": [
+            0.10000000149011612,
+            0.10000000149011612,
+            0.12999999523162842
+          ],
+          "inputBorder": [
+            0.30000001192092896,
+            0.30000001192092896,
+            0.3499999940395355
+          ],
+          "inputFocused": [
+            0.25999999046325684,
+            0.5899999737739563,
+            0.9800000190734863
+          ],
+          "name": "Dark",
+          "primary": [
+            0.25999999046325684,
+            0.5899999737739563,
+            0.9800000190734863
+          ],
+          "secondary": [
+            0.44999998807907104,
+            0.44999998807907104,
+            0.5
+          ],
+          "sliderFill": [
+            0.25999999046325684,
+            0.5899999737739563,
+            0.9800000190734863
+          ],
+          "sliderThumb": [
+            0.8999999761581421,
+            0.8999999761581421,
+            0.949999988079071
+          ],
+          "sliderTrack": [
+            0.20000000298023224,
+            0.20000000298023224,
+            0.25
+          ],
+          "spacing": 8.0,
+          "surface": [
+            0.14000000059604645,
+            0.14000000059604645,
+            0.17000000178813934
+          ],
+          "textDisabled": [
+            0.3499999940395355,
+            0.3499999940395355,
+            0.4000000059604645
+          ],
+          "textPrimary": [
+            0.949999988079071,
+            0.949999988079071,
+            0.9700000286102295
+          ],
+          "textSecondary": [
+            0.6000000238418579,
+            0.6000000238418579,
+            0.6499999761581421
+          ],
+          "toggleKnob": [
+            0.949999988079071,
+            0.949999988079071,
+            0.9700000286102295
+          ],
+          "toggleOffBg": [
+            0.30000001192092896,
+            0.30000001192092896,
+            0.3499999940395355
+          ],
+          "toggleOnBg": [
+            0.25999999046325684,
+            0.5899999737739563,
+            0.9800000190734863
+          ]
+        },
+        "visible": 1.0
+      }
+    },
+    {
+      "id": 13,
+      "name": {
+        "name": "Adventure Guide"
+      },
+      "notes": {
+        "notes": "Point & click adventure template:\n- 3 Hotspots: Door, Desk, Window — each with dialogue\n- Key item (glowing) can be picked up via PickupComponent\n- Locked Cabinet requires the key to open\n- Dialogue Box shows examine text at screen bottom\n- Cursor Indicator follows mouse (wire via script)\n- Inventory UI panel tracks collected items."
+      },
+      "stableId": 3251927647345289063,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    }
+  ],
+  "entityCount": 13,
+  "formatVersion": 1,
+  "renderSettings": {
+    "aaComparisonDivider": 0.5,
+    "aaComparisonEnabled": false,
+    "aaComparisonModeLeft": 0,
+    "aaComparisonModeRight": 1,
+    "aaMode": 1,
+    "ambientColor": [
+      0.10000000149011612,
+      0.10000000149011612,
+      0.15000000596046448
+    ],
+    "ambientIntensity": 0.30000001192092896,
+    "artStylePreset": 0,
+    "backfaceCulling": false,
+    "bloomEnabled": true,
+    "bloomIntensity": 0.30000001192092896,
+    "bloomRadius": 0.004999999888241291,
+    "bloomThreshold": 0.8999999761581421,
+    "brightness": 0.0,
+    "cascadeFarUpdateInterval": 2,
+    "cascadeProgressiveUpdate": false,
+    "causticsEnabled": false,
+    "causticsIntensity": 0.30000001192092896,
+    "causticsScale": 1.0,
+    "causticsSpeed": 1.0,
+    "causticsWaterY": 0.0,
+    "celDiffuseBands": 3.0,
+    "celOutlineColor": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "celOutlineCurvatureWeight": 0.0,
+    "celOutlineEnabled": false,
+    "celOutlineThickness": 1.0,
+    "celOutlineThreshold": 0.10000000149011612,
+    "celShadingEnabled": false,
+    "celShadowMode": 0.0,
+    "celSpecularCutoff": 0.5,
+    "chromaticAberrationEnabled": false,
+    "chromaticAberrationIntensity": 0.004999999888241291,
+    "colorBitDepth": 8,
+    "colorFilter": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "colorQuantEnabled": false,
+    "contactShadowsEnabled": false,
+    "contactShadowsIntensity": 1.0,
+    "contactShadowsLength": 0.10000000149011612,
+    "contactShadowsSteps": 16,
+    "contrast": 1.0,
+    "crtBloomRadius": 1.5,
+    "crtBloomSigma": 0.800000011920929,
+    "crtBloomStrength": 0.30000001192092896,
+    "crtCurvature": 0.0,
+    "crtEnabled": false,
+    "crtMaskPitch": 1.0,
+    "crtMaskType": 0,
+    "crtModelPreset": 0.0,
+    "crtPhosphorEnabled": false,
+    "crtTVL": 400.0,
+    "depthSortJitter": 0.0,
+    "ditherEnabled": false,
+    "ditherPattern": 0,
+    "ditherStrength": 1.0,
+    "dofApertureShape": 0,
+    "dofBokehSize": 4.0,
+    "dofDebugCoC": false,
+    "dofEnabled": false,
+    "dofFarBlurStrength": 1.0,
+    "dofFocalDistance": 10.0,
+    "dofFocalRange": 5.0,
+    "dofNearBlurStrength": 1.0,
+    "energyConservation": false,
+    "exposure": 1.0,
+    "filmGrainEnabled": false,
+    "filmGrainIntensity": 0.05000000074505806,
+    "fogColor": [
+      0.5,
+      0.5,
+      0.6000000238418579
+    ],
+    "fogDensity": 0.009999999776482582,
+    "fogEnd": 100.0,
+    "fogHeightFalloff": 0.30000001192092896,
+    "fogShaftsDecay": 0.949999988079071,
+    "fogShaftsDensity": 0.05000000074505806,
+    "fogShaftsEnabled": false,
+    "fogShaftsIntensity": 0.30000001192092896,
+    "fogShaftsMaxDistance": 50.0,
+    "fogShaftsSamples": 16,
+    "fogStart": 20.0,
+    "fresnelEnabled": false,
+    "fxaaEnabled": true,
+    "fxaaReduceMin": 0.007813000120222569,
+    "fxaaReduceMul": 0.125,
+    "fxaaSpanMax": 8.0,
+    "gamma": 1.0,
+    "geometryOutlineColor": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "geometryOutlineWidth": 0.019999999552965164,
+    "geometryOutlinesEnabled": false,
+    "geometryTerm": false,
+    "globalAffineTexturing": false,
+    "globalFlatShading": false,
+    "globalGouraudOnly": false,
+    "globalStippleTransparency": false,
+    "globalUVQuantize": false,
+    "globalVertexSnapResolution": 160,
+    "globalVertexSnapping": false,
+    "godRaysDecay": 0.9700000286102295,
+    "godRaysDensity": 1.0,
+    "godRaysEnabled": false,
+    "godRaysIntensity": 0.5,
+    "godRaysSamples": 64,
+    "godRaysWeight": 0.009999999776482582,
+    "halfLambert": false,
+    "hdrOutput": false,
+    "internalHeight": 240,
+    "internalWidth": 320,
+    "lightRampMode": 0.0,
+    "lutEnabled": false,
+    "lutSize": 32,
+    "lutStrength": 1.0,
+    "normalQuantizeSteps": 0.0,
+    "paletteColors": 16,
+    "paletteEnabled": false,
+    "posterizeLevels": 0.0,
+    "radianceCacheDepthThreshold": 0.10000000149011612,
+    "radianceCacheEnabled": false,
+    "radianceCacheExcludeDirectional": true,
+    "radianceCacheHysteresis": 0.8999999761581421,
+    "radianceCacheMaxAge": 8.0,
+    "radianceCacheNormalThreshold": 0.8500000238418579,
+    "radianceCacheTileSize": 32,
+    "rainActive": false,
+    "resDownscaleEnabled": false,
+    "restirDistanceBias": 0.10000000149011612,
+    "restirEnabled": false,
+    "restirInitialCandidates": 8,
+    "restirSpatialDepthThreshold": 0.10000000149011612,
+    "restirSpatialNeighbors": 5,
+    "restirSpatialNormalThreshold": 0.8999999761581421,
+    "restirSpatialRadius": 30.0,
+    "restirSpatialReuse": false,
+    "restirTemporalDepthThreshold": 0.10000000149011612,
+    "restirTemporalMaxHistory": 20,
+    "restirTemporalNormalThreshold": 0.8999999761581421,
+    "restirTemporalReuse": false,
+    "rtAOEnabled": true,
+    "rtAOPower": 1.5,
+    "rtAORadius": 2.0,
+    "rtAOStrength": 1.0,
+    "rtDenoiserEnabled": true,
+    "rtDenoiserIterations": 5,
+    "rtDenoiserTemporalAlpha": 0.05000000074505806,
+    "rtDenoiserType": 0,
+    "rtEnabled": false,
+    "rtGIBounces": 1,
+    "rtGIEnabled": false,
+    "rtGIIntensity": 1.0,
+    "rtGIMaxDistance": 50.0,
+    "rtGIStrength": 0.5,
+    "rtMode": 0,
+    "rtOIDNQuality": 1,
+    "rtPathTracerFireflyClamp": 10.0,
+    "rtPathTracerMIS": true,
+    "rtPathTracerMaxBounces": 4,
+    "rtPathTracerNEE": true,
+    "rtPathTracerRRMinBounce": 3.0,
+    "rtPathTracerRRMinProb": 0.05000000074505806,
+    "rtPathTracerTargetSPP": 1024,
+    "rtReflectionMaxDistance": 50.0,
+    "rtReflectionRoughnessThreshold": 0.5,
+    "rtReflectionSDFFallback": true,
+    "rtReflectionSDFMaxDistance": 500.0,
+    "rtReflectionStrength": 0.5,
+    "rtReflectionsEnabled": true,
+    "rtShadowMaxDistance": 100.0,
+    "rtShadowRadius": 0.009999999776482582,
+    "rtShadowStrength": 1.0,
+    "rtShadowsEnabled": true,
+    "rtSimplifiedMaterials": true,
+    "rtSimplifyAfterBounce": 1,
+    "rtTemporalReuseAO": true,
+    "rtTemporalReuseDisocclusionThreshold": 0.10000000149011612,
+    "rtTemporalReuseEnabled": false,
+    "rtTemporalReuseGI": true,
+    "rtTemporalReuseHistoryLength": 0.8999999761581421,
+    "rtTemporalReuseNormalThreshold": 0.8999999761581421,
+    "rtTemporalReuseReflections": true,
+    "rtTemporalReuseShadows": true,
+    "saturation": 1.0,
+    "scanlineIntensity": 0.30000001192092896,
+    "scanlineWidth": 1.0,
+    "seasonalChangeInterval": 300.0,
+    "seasonalWeatherEnabled": false,
+    "secondsPerGameHour": 60.0,
+    "shadingModel": 0,
+    "shadowDistance": 100.0,
+    "shadowResolution": 2048,
+    "shadowSoftness": 0.0,
+    "shadowStrength": 1.0,
+    "shadowsEnabled": false,
+    "snowIntensity": 0.0,
+    "sphereEnvMapEnabled": false,
+    "sphereEnvStrength": 0.5,
+    "ssaoBias": 0.02500000037252903,
+    "ssaoEnabled": false,
+    "ssaoIntensity": 1.5,
+    "ssaoRadius": 0.5,
+    "ssaoSamples": 16,
+    "startMonth": 6,
+    "startTimeOfDay": 8.0,
+    "stippleBgColor": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "stippleColorMode": 0,
+    "stippleDensity": 0.5,
+    "stippleEnabled": false,
+    "stippleFgColor": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "stipplePatternMask": 1,
+    "stippleScale": 1.0,
+    "stippleStrength": 1.0,
+    "surfelCacheBlendWeight": 0.5,
+    "surfelCacheCameraRadius": 50.0,
+    "surfelCacheEnabled": false,
+    "surfelCacheExcludeDirectional": true,
+    "surfelCacheMaxAge": 32.0,
+    "surfelCacheMaxSurfels": 65536,
+    "surfelCacheNormalThreshold": 0.699999988079071,
+    "surfelCachePlacementInterval": 4,
+    "surfelCacheRadius": 0.5,
+    "surfelCacheRaysPerSurfel": 2,
+    "surfelCacheUpdateFraction": 0.125,
+    "taaFeedbackMax": 0.9700000286102295,
+    "taaFeedbackMin": 0.8799999952316284,
+    "taaJitterScale": 1.0,
+    "taaSharpness": 0.10000000149011612,
+    "textureAnisotropy": 8,
+    "textureFilter": 2,
+    "textureMipmaps": true,
+    "texturePageSize": 0.0,
+    "textureWrap": 0,
+    "tiltShiftBandWidth": 0.30000001192092896,
+    "tiltShiftBlurAmount": 3.0,
+    "tiltShiftEnabled": false,
+    "tiltShiftFocusY": 0.5,
+    "toneMappingMode": 0,
+    "upscalerQuality": 2,
+    "upscalerSharpness": 0.0,
+    "upscalerType": 0,
+    "usePointFiltering": true,
+    "useProjectDefaults": true,
+    "vhsBlueShift": 0.05000000074505806,
+    "vhsColorBleed": 0.003000000026077032,
+    "vhsEnabled": false,
+    "vhsInterlacing": false,
+    "vhsNoiseIntensity": 0.05000000074505806,
+    "vhsScreenTear": false,
+    "vhsTearOffset": 0.0,
+    "vhsTrackingIntensity": 0.30000001192092896,
+    "vhsTrackingSpeed": 1.0,
+    "vhsWobbleIntensity": 0.0020000000949949026,
+    "vhsWobbleSpeed": 2.0,
+    "vignetteEnabled": true,
+    "vignetteIntensity": 0.20000000298023224,
+    "vignetteSmoothness": 0.5,
+    "whitePoint": 4.0,
+    "wireframe": false,
+    "worldCurvature": 0.0,
+    "worldTimeEnabled": false
+  },
+  "skybox": {
+    "bottomColor": [
+      0.20000000298023224,
+      0.20000000298023224,
+      0.25
+    ],
+    "cloud2Coverage": 0.0,
+    "cloud2Scale": 2.5,
+    "cloudColor": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "cloudCoverage": 0.0,
+    "cloudScale": 1.0,
+    "cloudShadowStrength": 0.6000000238418579,
+    "cloudSoftness": 0.5,
+    "cloudSpeed": 1.0,
+    "cubemapPaths": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+    ],
+    "horizonColor": [
+      0.4000000059604645,
+      0.3499999940395355,
+      0.5
+    ],
+    "horizonHaze": 0.0,
+    "rotation": 0.0,
+    "solidColor": [
+      0.20000000298023224,
+      0.30000001192092896,
+      0.4000000059604645
+    ],
+    "sunColor": [
+      1.0,
+      0.949999988079071,
+      0.8500000238418579
+    ],
+    "sunDirection": [
+      0.30000001192092896,
+      0.30000001192092896,
+      0.0
+    ],
+    "sunIntensity": 0.0,
+    "sunSize": 0.04500000178813934,
+    "topColor": [
+      0.07999999821186066,
+      0.15000000596046448,
+      0.4000000059604645
+    ],
+    "type": 2
+  },
+  "version": "1.0"
+}

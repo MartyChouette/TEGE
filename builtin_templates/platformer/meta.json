@@ -1,0 +1,14 @@
+{
+  "name": "2D Platformer",
+  "description": "4-zone adventure\nMeadow + cave + tower + sky boss",
+  "accentColor": [
+    0.3,
+    0.8,
+    0.3,
+    1.0
+  ],
+  "category": "2D",
+  "id": "platformer",
+  "author": "TEGE",
+  "thumbnailPath": ""
+}

@@ -1,0 +1,14 @@
+{
+  "name": "Dialogue & Narrative",
+  "description": "NPC conversations\nQuests + dialogue box + branching",
+  "accentColor": [
+    0.7,
+    0.6,
+    0.85,
+    1.0
+  ],
+  "category": "3D",
+  "id": "narrative",
+  "author": "TEGE",
+  "thumbnailPath": ""
+}

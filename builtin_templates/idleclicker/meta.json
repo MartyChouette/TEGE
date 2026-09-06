@@ -1,0 +1,14 @@
+{
+  "name": "Idle/Clicker",
+  "description": "Incremental game\nUI canvas + meta saves + tweens",
+  "accentColor": [
+    0.4,
+    0.8,
+    0.4,
+    1.0
+  ],
+  "category": "2D",
+  "id": "idleclicker",
+  "author": "TEGE",
+  "thumbnailPath": ""
+}

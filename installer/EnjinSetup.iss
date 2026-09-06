@@ -81,6 +81,9 @@ Source: "{#SourceRoot}\Engine\shaders\*.spv"; DestDir: "{app}\shaders"; Componen
 Source: "{#SourceRoot}\build\bin\Release\scripts\*"; DestDir: "{app}\scripts"; Components: scripts; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 
 ; --- Documentation ---
+; Built-in templates. The editor reads these from disk; without them a fresh
+; install has no templates to start a project from.
+Source: "{#SourceRoot}\builtin_templates\*"; DestDir: "{app}\builtin_templates"; Components: editor; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 Source: "{#SourceRoot}\installer\enjin.ico";     DestDir: "{app}"; Components: editor; Flags: ignoreversion
 Source: "{#SourceRoot}\LICENSE";                DestDir: "{app}"; Components: editor; Flags: ignoreversion
 Source: "{#SourceRoot}\docs\USER_MANUAL.md";   DestDir: "{app}\docs"; Components: docs; Flags: ignoreversion

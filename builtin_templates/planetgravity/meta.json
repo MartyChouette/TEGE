@@ -1,0 +1,14 @@
+{
+  "name": "Planet Gravity",
+  "description": "Spherical gravity\nWalk on a planet surface",
+  "accentColor": [
+    0.3,
+    0.6,
+    0.95,
+    1.0
+  ],
+  "category": "3D",
+  "id": "planetgravity",
+  "author": "TEGE",
+  "thumbnailPath": ""
+}

@@ -1,0 +1,14 @@
+{
+  "name": "Coin Rush",
+  "description": "3D collectathon\nCollect coins, dodge spikes, reach the portal",
+  "accentColor": [
+    1.0,
+    0.8,
+    0.2,
+    1.0
+  ],
+  "category": "3D",
+  "id": "coinrush",
+  "author": "TEGE",
+  "thumbnailPath": ""
+}

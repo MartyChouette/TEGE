@@ -1063,7 +1063,10 @@ private:
     void DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 contentY, f32 sidebarW);
     void DrawHubDemosTab(ImDrawList* dl, const ImVec2& area, f32 contentY, f32 sidebarW);
     void DrawTemplateHoverPreview(ImDrawList* dl, i32 templateIdx, const ImVec2& cardPos, const ImVec2& cardEnd);
-    void ApplyTemplate(const std::string& templateId);
+    // Panel widths / game-view size / stats overlay authored per template.
+    // Called by ApplyTemplate AND by the shipped-template-folder path, which
+    // does not go through ApplyTemplate at all.
+    void ApplyTemplateLayout(const std::string& templateId);
     // Live accessibility settings menu (UICanvas + controller entity +
     // scripts/AccessibilityDemo.as) — shared by the Accessibility Demo and
     // Web Demo templates
@@ -1504,6 +1507,24 @@ private:
 
     // Deferred scene open (prevents World::Clear during Render-phase ImGui callbacks)
     std::string m_PendingSceneLoadPath;
+
+    // Deferred "new scene". The menu bar, the unsaved-changes dialog, the
+    // project-creation dialog and the command palette all used to call
+    // World::Clear() straight from their ImGui callbacks -- i.e. from the
+    // Render phase, while the frame's command buffer was mid-recording and
+    // every panel drawn after them still walked the world. The hub path for
+    // the same action had always deferred; these had not, so one user action
+    // had a safe and an unsafe implementation depending on which widget
+    // invoked it. All four now queue this and Update() performs the clear.
+    enum class NewSceneMode : u8 {
+        None,
+        ToHub,      // File > New Scene: clear, forget the path, reopen the hub
+        SaveAsNew,  // project creation: clear, then save an empty scene to the path below
+        ClearOnly,  // command palette: clear and forget the path, leave the UI where it is
+    };
+    NewSceneMode m_PendingNewScene = NewSceneMode::None;
+    std::string  m_PendingNewScenePath;   // SaveAsNew only
+    void ApplyPendingNewScene();          // runs from Update(), never from Render
 
     // Script-requested play restart / scene switch (Scene_Restart /
     // Scene_LoadScene during editor play): stop -> (open scene) -> re-play,

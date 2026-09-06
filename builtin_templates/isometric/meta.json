@@ -1,0 +1,14 @@
+{
+  "name": "3D Isometric",
+  "description": "45-degree CRPG\nPerspective + player",
+  "accentColor": [
+    0.9,
+    0.6,
+    0.2,
+    1.0
+  ],
+  "category": "3D",
+  "id": "isometric",
+  "author": "TEGE",
+  "thumbnailPath": ""
+}

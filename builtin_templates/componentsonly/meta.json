@@ -1,0 +1,14 @@
+{
+  "name": "Components Only",
+  "description": "No code at all\nA winnable game from Inspector components alone",
+  "accentColor": [
+    0.35,
+    0.75,
+    0.55,
+    1.0
+  ],
+  "category": "3D",
+  "id": "componentsonly",
+  "author": "TEGE",
+  "thumbnailPath": ""
+}

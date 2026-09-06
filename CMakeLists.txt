@@ -209,7 +209,17 @@ install(DIRECTORY Engine/shaders/ DESTINATION share/enjin/shaders
 install(DIRECTORY docs/ DESTINATION share/doc/enjin
     FILES_MATCHING PATTERN "*.md")
 
-# Install project templates directory
+# Install the shipped templates. These ARE the built-in templates now, not code:
+# the editor reads them from disk and only falls back to a generator when the
+# folder is missing, so an install without them has no templates at all.
+#
+# Deliberately not named "templates": that name beside the exe is the USER's
+# template folder, which the editor scans separately.
+if(EXISTS "${CMAKE_SOURCE_DIR}/builtin_templates")
+    install(DIRECTORY builtin_templates/ DESTINATION share/enjin/builtin_templates)
+endif()
+
+# A user template folder, if one was shipped alongside.
 if(EXISTS "${CMAKE_SOURCE_DIR}/templates")
     install(DIRECTORY templates/ DESTINATION share/enjin/templates)
 endif()

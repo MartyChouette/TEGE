@@ -1,0 +1,14 @@
+{
+  "name": "Accessibility Demo",
+  "description": "Live settings demo\nColorblind + font + screen reader",
+  "accentColor": [
+    0.3,
+    0.75,
+    0.9,
+    1.0
+  ],
+  "category": "All",
+  "id": "accessibility",
+  "author": "TEGE",
+  "thumbnailPath": ""
+}

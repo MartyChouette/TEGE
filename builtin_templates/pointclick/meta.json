@@ -1,0 +1,14 @@
+{
+  "name": "Point & Click",
+  "description": "Adventure game\nClick hotspots + inventory + dialogue",
+  "accentColor": [
+    1.0,
+    0.55,
+    0.2,
+    1.0
+  ],
+  "category": "2D",
+  "id": "pointclick",
+  "author": "TEGE",
+  "thumbnailPath": ""
+}

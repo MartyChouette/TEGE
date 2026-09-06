@@ -1,0 +1,14 @@
+{
+  "name": "Flower Garden",
+  "description": "Procedural flower\nPluckable petals + score",
+  "accentColor": [
+    0.9,
+    0.4,
+    0.6,
+    1.0
+  ],
+  "category": "3D",
+  "id": "flower",
+  "author": "TEGE",
+  "thumbnailPath": ""
+}
