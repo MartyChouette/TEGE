@@ -12,6 +12,19 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(json)
 
 # Fetch Assimp for FBX and other model format support
+# Static, like Jolt below (JOLT_BUILD_SHARED_LIBS OFF). Assimp defaults to a
+# SHARED library on Linux, and nothing installed or packaged the .so: the
+# install rules copy executables only, and the Linux release tarball copies
+# exactly two binaries while its README promises they are "self-contained apart
+# from standard desktop system libraries". They were not. An installed or
+# downloaded build died immediately with
+#   ./EnjinEditor: error while loading shared libraries: libassimp.so.5
+# unless the machine happened to have assimp 5 installed system-wide.
+#
+# Found by the install smoke on its first CI run (2026-09-06). It never showed
+# on Windows, where the DLL sits beside the exe in the build tree, which is why
+# a local check of the same install passed.
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(ASSIMP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(ASSIMP_INSTALL OFF CACHE BOOL "" FORCE)
 set(ASSIMP_BUILD_ASSIMP_TOOLS OFF CACHE BOOL "" FORCE)
