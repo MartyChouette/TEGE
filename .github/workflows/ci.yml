@@ -320,6 +320,84 @@ jobs:
             game_out/*.log
           if-no-files-found: ignore
 
+  linux-sanitizers:
+    # ASan and TSan over the unit-test suite. The CMake options for these have
+    # existed since the Linux port and were never run by anything, so the two
+    # bug classes they catch -- use-after-free on a freed object, and data races
+    # -- were only ever found by reading code. The 2026-09-05 review turned up
+    # both (a detached streaming worker outliving its manager; an unsynchronised
+    # size() read next to a concurrent push), which is exactly what these would
+    # have flagged the day they were written.
+    #
+    # Deliberately NOT running the render/editor smokes: a sanitised build under
+    # lavapipe is slow enough to blow the timeout, and third-party GPU stacks
+    # produce noise that would bury real findings. The unit suite is where the
+    # threading and lifetime code actually lives.
+    #
+    # continue-on-error is TEMPORARY. It is here so introducing sanitizers does
+    # not red the whole pipeline on day one while the first run's findings are
+    # triaged. Flip it to false once a run is clean -- a permanently advisory
+    # job is a job nobody reads.
+    name: Linux (sanitizers)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        # ASan and TSan are mutually exclusive (the CMake config hard-errors if
+        # both are set), so they get one build each.
+        sanitizer: [address, thread]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential cmake ninja-build pkg-config \
+            libvulkan-dev libglfw3-dev libx11-dev libxrandr-dev libxinerama-dev \
+            libxcursor-dev libxi-dev libcurl4-openssl-dev
+
+      - name: Cache fetched dependencies
+        uses: actions/cache@v4
+        with:
+          path: build-san-${{ matrix.sanitizer }}/_deps
+          key: deps-san-${{ matrix.sanitizer }}-${{ hashFiles('Engine/CMakeLists.txt', 'CMakeLists.txt', 'Core/CMakeLists.txt') }}
+          restore-keys: deps-san-${{ matrix.sanitizer }}-
+
+      - name: Configure
+        # RelWithDebInfo, not Release: sanitizer reports are unreadable without
+        # frame pointers and line numbers, and the CMake block already adds
+        # -fno-omit-frame-pointer alongside the sanitizer flags.
+        # Editor and player are skipped -- only the test binaries are run here.
+        run: |
+          ASAN=OFF; TSAN=OFF
+          if [ "${{ matrix.sanitizer }}" = "address" ]; then ASAN=ON; fi
+          if [ "${{ matrix.sanitizer }}" = "thread" ]; then TSAN=ON; fi
+          cmake -B build-san-${{ matrix.sanitizer }} -S . -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DENJIN_BUILD_TESTS=ON \
+            -DENJIN_BUILD_EDITOR=OFF \
+            -DENJIN_BUILD_PLAYER=OFF \
+            -DENJIN_ENABLE_ASAN=$ASAN \
+            -DENJIN_ENABLE_TSAN=$TSAN
+
+      - name: Build
+        run: cmake --build build-san-${{ matrix.sanitizer }} --parallel
+
+      - name: Run tests under ${{ matrix.sanitizer }} sanitizer
+        working-directory: build-san-${{ matrix.sanitizer }}
+        # Same four env-gated suites the other jobs skip (audio device / asset
+        # fixtures not present on a runner).
+        #
+        # detect_leaks=0 on the first pass: leak reports from the vendored
+        # libraries would bury the use-after-free findings this is here for.
+        # Turn it on once the tree is clean under ASan proper.
+        env:
+          ASAN_OPTIONS: detect_leaks=0:abort_on_error=1:strict_string_checks=1
+          TSAN_OPTIONS: halt_on_error=0:second_deadlock_stack=1
+        run: ctest --output-on-failure -E "TestAudio|TestAudioTypes|TestAssetPack|TestAssetLoaders"
+
   web:
     name: Web (WebAssembly build)
     runs-on: ubuntu-latest
