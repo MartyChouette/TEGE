@@ -92,6 +92,19 @@ if(ENJIN_PLATFORM_WEB)
          "src/Editor/*.cpp" "src/App/*.cpp"
          "src/Water/WaterRenderer.cpp")
     list(REMOVE_ITEM ENGINE_SOURCES ${VULKAN_SOURCES})
+
+    # ScenePicker is a RUNTIME utility that happens to live under src/Editor/.
+    # It is pure ECS + math ray-picking with no ImGui and no editor dependency,
+    # and FlowerSystem (a gameplay system that ticks in the player) calls its
+    # ScreenToRay. The blanket "src/Editor/*.cpp" exclusion above dropped it, so
+    # the moment the web player started ticking FlowerSystem the link failed on
+    # an undefined ScreenToRay. Put it back explicitly.
+    #
+    # The real fix is moving ScenePicker out of Editor/ -- the engine has ten
+    # runtime headers reaching into Enjin/Editor/, and this is the first one to
+    # actually break a build.
+    list(APPEND ENGINE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/Editor/ScenePicker.cpp")
+    list(REMOVE_DUPLICATES ENGINE_SOURCES)
 else()
     # Desktop build: exclude WebGPU-specific sources
     file(GLOB_RECURSE WEBGPU_SOURCES "src/Renderer/WebGPU/*.cpp")
