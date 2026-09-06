@@ -19,6 +19,15 @@ std::vector<std::string> ShaderSearchPaths(std::string_view fileName) {
         "../../Engine/shaders/",
         "../../../Engine/shaders/",
         "bin/shaders/",
+        // The Inno installer layout: the exe goes to {app}/bin and the
+        // shaders to {app}/shaders, so from the executable they are one
+        // level up. Nothing here matched that -- "shaders/" resolves to
+        // {app}/bin/shaders, and the share/enjin entries are the CMake
+        // layout, which the installer does not use. A Windows install therefore
+        // found no compute or ray-tracing shaders at all, which is the same bug
+        // this list was created to fix, still live for the one layout most
+        // users actually get.
+        "../shaders/",
         "../share/enjin/shaders/",
         "../../share/enjin/shaders/",
     };

@@ -353,8 +353,19 @@ jobs:
         # just an artifact on each run so a Linux build always exists to grab.
         run: |
           STAGE="$GITHUB_WORKSPACE/tege-linux-x86_64"
-          mkdir -p "$STAGE/bin"
-          cp build-linux/bin/EnjinEditor build-linux/bin/EnjinPlayer "$STAGE/bin/"
+          rm -rf "$STAGE"
+          # Package the INSTALL TREE, not two binaries out of the build dir.
+          # Copying just the executables shipped a build with no
+          # share/enjin/shaders and no builtin_templates: the compute and RT
+          # shaders load from FILES through Renderer::ShaderSearchPaths, so a
+          # download had no compute shaders and no templates to start a project
+          # from, while this README claimed there was "nothing else to unpack".
+          # The install smoke boots exactly this layout, so what ships is now
+          # what CI proved can launch.
+          cmake --install build-linux --prefix "$STAGE"
+          # Headers and static libs are for building AGAINST the engine, not for
+          # running it. Drop them from an end-user download.
+          rm -rf "$STAGE/include" "$STAGE/lib"
           strip "$STAGE/bin/EnjinEditor" "$STAGE/bin/EnjinPlayer" || true
           cat > "$STAGE/README.txt" <<'EOF'
           TEGE (Enjin) - Linux x86_64 build
@@ -363,9 +374,16 @@ jobs:
             bin/EnjinEditor  - the editor
             bin/EnjinPlayer  - the standalone game player (build export copies this)
 
-          These binaries embed their own shaders, fonts, and scripting API, so
-          there is nothing else to unpack. They need a Vulkan-capable system and
-          a few standard desktop libraries. On Debian/Ubuntu/SteamOS:
+          Contents:
+            bin/                    the executables
+            share/enjin/shaders     compute and ray-tracing shaders, loaded from
+                                    disk at run time (the rasterisation shaders
+                                    are embedded in the binaries)
+            share/enjin/builtin_templates   the project templates the editor offers
+
+          Keep the layout as-is: the binaries find share/ relative to themselves.
+          They need a Vulkan-capable system and a few standard desktop
+          libraries. On Debian/Ubuntu/SteamOS:
 
             sudo apt-get install libvulkan1 libglfw3 mesa-vulkan-drivers
 
