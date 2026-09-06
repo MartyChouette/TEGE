@@ -33,7 +33,24 @@ class ENJIN_API ComponentRegistry {
 public:
     template<typename T>
     static ComponentTypeId GetTypeId() {
-        return GetOrAssignTypeId(typeid(T).hash_code());
+        // Resolved ONCE per T, not per call.
+        //
+        // GetOrAssignTypeId takes a global std::mutex and does an
+        // unordered_map lookup. This function is on the path of every
+        // GetComponent / HasComponent / GetStorage in the engine, so that lock
+        // was being taken thousands of times a frame -- and adr-0004 removed
+        // the World's per-call recursive_mutex for exactly that reason without
+        // noticing the identical lock one level down. The "lock-free read path"
+        // was not lock-free, and in the >=32-caster parallel shadow region
+        // every worker serialised its component access on this one mutex.
+        //
+        // The typeid-hash KEY is kept deliberately: it is what makes ids agree
+        // across translation units, and on WASM where template statics can be
+        // duplicated per TU. Duplicating this static is harmless -- each copy
+        // initialises from the same shared map and gets the same id. Only the
+        // lookup is memoised.
+        static const ComponentTypeId id = GetOrAssignTypeId(typeid(T).hash_code());
+        return id;
     }
 
     static ComponentTypeId GetNextId() { return s_NextComponentId.load(std::memory_order_relaxed); }

@@ -1,5 +1,6 @@
 #include "EnjinTest.h"
 #include "Enjin/ECS/World.h"
+#include "Enjin/ECS/Component.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
@@ -716,6 +717,65 @@ ENJIN_TEST(EntityGenerations, GenerationsKeepSeparatingAcrossRepeatedClears) {
         ENJIN_EXPECT_NE(old, live);
     }
     ENJIN_EXPECT_TRUE(world.IsValid(live));
+}
+
+// ===========================================================================
+// ComponentRegistry type ids
+//
+// GetTypeId used to call GetOrAssignTypeId -- a global mutex plus a hash
+// lookup -- on EVERY GetComponent/HasComponent. It is memoised in a
+// function-local static now, so these guard the two properties that change
+// depended on: ids stay stable and distinct, and the guarded init is safe when
+// several threads touch a type for the first time at once.
+// ===========================================================================
+
+namespace {
+struct RegistryProbeA { int v = 0; };
+struct RegistryProbeB { int v = 0; };
+struct RegistryProbeC { int v = 0; };
+}
+
+ENJIN_TEST(ComponentRegistryIds, StableAcrossRepeatedCalls) {
+    // Arrange / Act
+    const ECS::ComponentTypeId first  = ECS::ComponentRegistry::GetTypeId<RegistryProbeA>();
+    const ECS::ComponentTypeId second = ECS::ComponentRegistry::GetTypeId<RegistryProbeA>();
+    const ECS::ComponentTypeId third  = ECS::ComponentRegistry::GetTypeId<RegistryProbeA>();
+
+    // Assert
+    ENJIN_EXPECT_EQ(first, second);
+    ENJIN_EXPECT_EQ(second, third);
+}
+
+ENJIN_TEST(ComponentRegistryIds, DistinctTypesGetDistinctIds) {
+    // Arrange / Act
+    const ECS::ComponentTypeId a = ECS::ComponentRegistry::GetTypeId<RegistryProbeA>();
+    const ECS::ComponentTypeId b = ECS::ComponentRegistry::GetTypeId<RegistryProbeB>();
+
+    // Assert
+    ENJIN_EXPECT_NE(a, b);
+}
+
+ENJIN_TEST(ComponentRegistryIds, ConcurrentFirstTouchAgreesOnOneId) {
+    // Arrange: RegistryProbeC has not been resolved yet, so every thread races
+    // the same guarded initialisation.
+    constexpr int kThreads = 8;
+    std::vector<ECS::ComponentTypeId> seen(kThreads, 0);
+    std::vector<std::thread> workers;
+    workers.reserve(kThreads);
+
+    // Act
+    for (int i = 0; i < kThreads; ++i) {
+        workers.emplace_back([&seen, i]() {
+            seen[i] = ECS::ComponentRegistry::GetTypeId<RegistryProbeC>();
+        });
+    }
+    for (auto& w : workers) w.join();
+
+    // Assert: one id, agreed by everyone, and not the null id.
+    ENJIN_ASSERT_TRUE(seen[0] != 0);
+    for (int i = 1; i < kThreads; ++i) {
+        ENJIN_EXPECT_EQ(seen[i], seen[0]);
+    }
 }
 
 ENJIN_TEST_MAIN()
