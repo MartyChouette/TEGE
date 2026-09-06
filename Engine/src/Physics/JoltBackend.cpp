@@ -846,12 +846,17 @@ void JoltBackend::SyncJoltToECS() {
             // Sleep state
             rb->isSleeping = !bodyInterface.IsActive(bodyID);
 
-            // Ground check via downward raycast
+            // Ground check via downward raycast.
+            //
+            // Cast from solvedPos, NOT from transform->position: the write-up
+            // above just converted the solved pose to LOCAL space, so for a
+            // parented body transform->position is an offset from its parent,
+            // not a world point. Using it aimed the ray at wherever that offset
+            // happens to land in world space -- a crate parented under a
+            // platform at world (0,0,40) tested the ground under the world
+            // origin and reported whatever was there. Root entities were
+            // unaffected, which is why this survived testing.
             rb->isGrounded = false;
-            JPH::RRayCast groundRay(
-                ToJoltR(transform->position),
-                JPH::Vec3(0, -1, 0)  // direction not normalized needed, but will set max distance via collector
-            );
 
             // Use a short raycast downward for ground check
             f32 checkDist = 0.15f;
@@ -860,13 +865,22 @@ void JoltBackend::SyncJoltToECS() {
             bodyFilter.filterData = &m_BodyFilterData;
             bodyFilter.layerMask = 0xFFFFFFFF;
 
-            // Cast a short ray downward from entity bottom
-            // Approximate entity half-height
+            // Cast a short ray downward from entity bottom.
+            // Approximate entity half-height. Collider sizes are WORLD SPACE
+            // and the shape built above is not scaled by the transform (see
+            // CreateBody), so this must not scale either -- it did, and the
+            // ray then missed the collider entirely: size 1 at scale 0.2 gave
+            // a 0.1 half-height against a real 0.5, so the ray stopped inside
+            // the box and isGrounded was never true. At scale 3 it started a
+            // full unit below the box, through the floor. The mesh case was
+            // worse: those vertices are already baked with scale, so the
+            // multiply applied it twice.
             f32 halfHeight = 0.5f;
             if (auto* box = boxStorage ? boxStorage->Get(entity) : nullptr) {
-                halfHeight = box->size.y * transform->scale.y * 0.5f;
+                halfHeight = box->size.y * 0.5f;
             } else if (auto* capsule = capsuleStorage ? capsuleStorage->Get(entity) : nullptr) {
-                halfHeight = capsule->height * transform->scale.y * 0.5f;
+                // height is the cylinder only; the hemispheres add radius each.
+                halfHeight = capsule->height * 0.5f + capsule->radius;
             } else if (auto* meshCol = meshColStorage ? meshColStorage->Get(entity) : nullptr) {
                 // Approximate half-height from cached mesh vertices AABB
                 if (meshCol->generated && !meshCol->vertices.empty()) {
@@ -875,12 +889,12 @@ void JoltBackend::SyncJoltToECS() {
                         if (v.y < minY) minY = v.y;
                         if (v.y > maxY) maxY = v.y;
                     }
-                    halfHeight = (maxY - minY) * transform->scale.y * 0.5f;
+                    halfHeight = (maxY - minY) * 0.5f;
                 }
             }
 
             JPH::RRayCast shortRay(
-                ToJoltR(transform->position + Math::Vector3(0, -halfHeight + 0.02f, 0)),
+                ToJoltR(solvedPos + Math::Vector3(0, -halfHeight + 0.02f, 0)),
                 JPH::Vec3(0, -(checkDist + 0.02f), 0)
             );
 

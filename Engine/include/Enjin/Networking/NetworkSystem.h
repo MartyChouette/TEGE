@@ -124,9 +124,21 @@ private:
     void HandleHeartbeatAck(const NetworkAddress& sender, PlayerId senderId);
     void HandlePlayerReady(PlayerId senderId, const u8* payload, u32 size);
     void HandleLobbyState(const u8* payload, u32 size);
-    void HandleEntitySnapshot(const u8* payload, u32 size);
-    void HandleEntitySpawn(const u8* payload, u32 size);
-    void HandleEntityDestroy(const u8* payload, u32 size);
+    // These three take senderId because the packet being authentic is not the
+    // same as the sender being ALLOWED to send it. HMAC and the replay window
+    // prove a packet came from an admitted peer; only IsSenderAuthoritativeFor
+    // decides whether that peer may move or delete this particular entity.
+    void HandleEntitySnapshot(PlayerId senderId, const u8* payload, u32 size);
+    void HandleEntitySpawn(PlayerId senderId, const u8* payload, u32 size);
+    void HandleEntityDestroy(PlayerId senderId, const u8* payload, u32 size);
+
+    // Authority gate for entity-mutating messages.
+    // On a client, only the host may drive entity state -- another client's
+    // packet is never authoritative, whatever it claims. On the host, a client
+    // may only touch entities it actually owns. `entity` may be INVALID_ENTITY
+    // for messages that are not about one entity yet (spawn), which checks the
+    // host rule only.
+    bool IsSenderAuthoritativeFor(PlayerId senderId, ECS::Entity entity) const;
     void HandleOwnershipRequest(PlayerId senderId, const u8* payload, u32 size);
     void HandleOwnershipGrant(const u8* payload, u32 size);
     void HandleRPCCall(PlayerId senderId, const u8* payload, u32 size);

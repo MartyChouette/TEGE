@@ -780,13 +780,13 @@ void NetworkSystem::HandlePacket(const NetworkAddress& sender, const u8* data, u
             HandleLobbyState(payload, payloadSize);
             break;
         case MessageType::EntitySnapshot:
-            HandleEntitySnapshot(payload, payloadSize);
+            HandleEntitySnapshot(header.senderId, payload, payloadSize);
             break;
         case MessageType::EntitySpawn:
-            HandleEntitySpawn(payload, payloadSize);
+            HandleEntitySpawn(header.senderId, payload, payloadSize);
             break;
         case MessageType::EntityDestroy:
-            HandleEntityDestroy(payload, payloadSize);
+            HandleEntityDestroy(header.senderId, payload, payloadSize);
             break;
         case MessageType::OwnershipRequest:
             HandleOwnershipRequest(header.senderId, payload, payloadSize);
@@ -1008,7 +1008,29 @@ void NetworkSystem::HandleLobbyState(const u8* payload, u32 size) {
     }
 }
 
-void NetworkSystem::HandleEntitySnapshot(const u8* payload, u32 size) {
+// The host is always PlayerId 0 (StartHost assigns m_LocalPlayerId = 0).
+static constexpr PlayerId kHostPlayerId = 0;
+
+bool NetworkSystem::IsSenderAuthoritativeFor(PlayerId senderId, ECS::Entity entity) const {
+    if (senderId == INVALID_PLAYER) return false;
+
+    if (!IsHost()) {
+        // We are a client: only the host drives entity state. A packet from a
+        // peer client is authentic (it passed HMAC) but never authoritative.
+        return senderId == kHostPlayerId;
+    }
+
+    // We are the host. A client may only act on entities it owns. Our own
+    // loopback traffic is always allowed.
+    if (senderId == m_LocalPlayerId) return true;
+    if (entity == ECS::INVALID_ENTITY) return false;
+    if (!m_World) return false;
+
+    auto* netId = m_World->GetComponent<ECS::NetworkIdentityComponent>(entity);
+    return netId && netId->ownerId == senderId;
+}
+
+void NetworkSystem::HandleEntitySnapshot(PlayerId senderId, const u8* payload, u32 size) {
     if (!m_World) return;
     if (size < 2) return;
 
@@ -1061,6 +1083,14 @@ void NetworkSystem::HandleEntitySnapshot(const u8* payload, u32 size) {
         auto* netId = m_World->GetComponent<ECS::NetworkIdentityComponent>(entity);
         if (!netId || netId->isLocallyOwned) continue;  // Don't overwrite own entities
 
+        // isLocallyOwned only protects OUR entities. Without this, any admitted
+        // peer could teleport an entity belonging to a third player.
+        if (!IsSenderAuthoritativeFor(senderId, entity)) {
+            ENJIN_LOG_WARN(Network, "NetworkSystem: player %u snapshot for entity it does not own (NetworkId=%u), dropped",
+                           (unsigned)senderId, snap.networkId);
+            continue;
+        }
+
         // Push into interpolation buffer
         InterpolationState state;
         state.position = snap.position;
@@ -1081,9 +1111,16 @@ void NetworkSystem::HandleEntitySnapshot(const u8* payload, u32 size) {
     }
 }
 
-void NetworkSystem::HandleEntitySpawn(const u8* payload, u32 size) {
+void NetworkSystem::HandleEntitySpawn(PlayerId senderId, const u8* payload, u32 size) {
     if (!m_World || m_Role != NetworkRole::Client) return;
     if (size < 45) return;
+
+    // Client-only handler, so the host rule is the whole gate: a peer client
+    // must not be able to conjure entities into our world.
+    if (!IsSenderAuthoritativeFor(senderId, ECS::INVALID_ENTITY)) {
+        ENJIN_LOG_WARN(Network, "NetworkSystem: entity spawn from non-host player %u, dropped", (unsigned)senderId);
+        return;
+    }
 
     u32 offset = 0;
     NetworkId netId = ReadU32(payload, offset, size);
@@ -1126,7 +1163,7 @@ void NetworkSystem::HandleEntitySpawn(const u8* payload, u32 size) {
     ENJIN_LOG_INFO(Network, "NetworkSystem: Spawned remote entity NetworkId=%u owner=%u", netId, ownerId);
 }
 
-void NetworkSystem::HandleEntityDestroy(const u8* payload, u32 size) {
+void NetworkSystem::HandleEntityDestroy(PlayerId senderId, const u8* payload, u32 size) {
     if (!m_World) return;
     if (size < 4) return;
 
@@ -1137,6 +1174,15 @@ void NetworkSystem::HandleEntityDestroy(const u8* payload, u32 size) {
     if (it == m_NetworkToEntity.end()) return;
 
     ECS::Entity entity = it->second;
+
+    // This handler used to check only m_World and the payload size, so any
+    // admitted peer could delete any networked entity on every other peer.
+    if (!IsSenderAuthoritativeFor(senderId, entity)) {
+        ENJIN_LOG_WARN(Network, "NetworkSystem: player %u tried to destroy entity it does not own (NetworkId=%u), dropped",
+                       (unsigned)senderId, netId);
+        return;
+    }
+
     m_EntityToNetwork.erase(entity);
     m_NetworkToEntity.erase(it);
     m_InterpBuffers.erase(netId);

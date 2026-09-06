@@ -9901,6 +9901,19 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
                     vc->lookAt = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
                 }
             }
+            // BoneAttachment was missing from this list while its serializer
+            // happily wrote targetEntity as a raw ID. Saved IDs are pre-load
+            // IDs and CreateEntity hands out different ones, so a sword
+            // attached to a character's hand came back pointing at whichever
+            // entity now held that slot -- and unlike the components above it
+            // was not even nulled, so the stale ID looked like a valid handle.
+            if (m_World->HasComponent<ECS::BoneAttachmentComponent>(entity)) {
+                auto* ba = m_World->GetComponent<ECS::BoneAttachmentComponent>(entity);
+                if (ba->targetEntity != 0 && ba->targetEntity != ECS::INVALID_ENTITY) {
+                    auto it = oldToNew.find(static_cast<u64>(ba->targetEntity));
+                    ba->targetEntity = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
+                }
+            }
         }
 
         // Rebuild ChildrenComponent from ParentComponent references
@@ -10289,6 +10302,19 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
                 if (vc->lookAt != 0 && vc->lookAt != ECS::INVALID_ENTITY) {
                     auto it = oldToNew.find(static_cast<u64>(vc->lookAt));
                     vc->lookAt = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
+                }
+            }
+            // BoneAttachment was missing from this list while its serializer
+            // happily wrote targetEntity as a raw ID. Saved IDs are pre-load
+            // IDs and CreateEntity hands out different ones, so a sword
+            // attached to a character's hand came back pointing at whichever
+            // entity now held that slot -- and unlike the components above it
+            // was not even nulled, so the stale ID looked like a valid handle.
+            if (m_World->HasComponent<ECS::BoneAttachmentComponent>(entity)) {
+                auto* ba = m_World->GetComponent<ECS::BoneAttachmentComponent>(entity);
+                if (ba->targetEntity != 0 && ba->targetEntity != ECS::INVALID_ENTITY) {
+                    auto it = oldToNew.find(static_cast<u64>(ba->targetEntity));
+                    ba->targetEntity = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
                 }
             }
         }
