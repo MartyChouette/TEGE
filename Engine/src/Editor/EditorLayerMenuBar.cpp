@@ -134,22 +134,8 @@ void EditorLayer::DrawMenuBar() {
                     m_UnsavedChangesAction = UnsavedAction::NewScene;
                     m_ShowUnsavedChangesDialog = true;
                 } else if (m_World) {
-                    m_World->Clear();
-                    if (m_RenderSystem) m_RenderSystem->OnSceneClear();
-                    ClearSelection();
-                    ResetLayerSession();
-                    m_CurrentScenePath.clear();
-                    ClearDirty();
-                    UpdateWindowTitle();
-                    m_HubPage = HubPage::WizardSetup;
-                    m_SelectedTemplate = -1;
-                    m_TemplateFilter = TMPL_ALL;
-                    m_TemplateSearchBuffer[0] = '\0';
-                    m_ShowProjectHub = true;
-                    // Reset rendering to project defaults
-                    m_SceneManager.GetDefaultRenderSettings().ApplyToRuntime(
-                        m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
-                    m_CurrentSceneUsesProjectDefaults = true;
+                    // Queued, not done here: this runs in the Render phase.
+                    m_PendingNewScene = NewSceneMode::ToHub;
                     ENJIN_LOG_INFO(Editor, "Created new scene");
                 }
             }

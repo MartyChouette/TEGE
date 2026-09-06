@@ -5472,13 +5472,8 @@ void EditorLayer::RegisterPaletteCommands() {
         "New Scene", "Scene", "Ctrl+N",
         "Create a new empty scene",
         [this]() {
-            if (m_World) {
-                m_World->Clear();
-                if (m_RenderSystem) m_RenderSystem->OnSceneClear();
-                ClearSelection();
-                ResetLayerSession();
-                m_CurrentScenePath.clear();
-            }
+            // Queued: palette commands fire from the Render phase.
+            if (m_World) m_PendingNewScene = NewSceneMode::ClearOnly;
         }
     });
 

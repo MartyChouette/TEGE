@@ -1378,19 +1378,17 @@ void EditorLayer::Update(f32 deltaTime) {
         m_World->FlushPendingDestructions();
     }
 
-    // Handle deferred template application (requested during Render-phase ImGui).
-    // World::Clear() must not run during Render to avoid invalidating GPU resources
-    // still referenced by in-flight Vulkan command buffers.
-    if (!m_PendingTemplateId.empty()) {
-        std::string tmplId = std::move(m_PendingTemplateId);
-        std::string scenePath = std::move(m_PendingSceneLoadPath);
-        m_PendingTemplateId.clear();
-        m_PendingSceneLoadPath.clear();
-        ApplyTemplate(tmplId);
-        if (!scenePath.empty()) {
-            SaveScene(scenePath);
-        }
-    }
+    // Handle a deferred "new scene" (File > New Scene, the unsaved-changes
+    // dialog, project creation, the command palette). Same hazard as below:
+    // World::Clear() during Render invalidates the recording command buffer.
+    ApplyPendingNewScene();
+
+    // Templates are folders on disk now, copied into the project by
+    // CreateProjectOnDisk, so there is nothing to build here and nothing to save:
+    // the scene file already exists and the deferred load below opens it. This
+    // used to call ApplyTemplate, 2,984 lines of C++ that constructed each
+    // template's scene by hand, which is what kept a demo project from being a
+    // template.
 
     // Handle deferred scene load (requested during Render-phase ImGui callbacks).
     // World::Clear() must not run during Render to avoid invalidating entity
@@ -5365,6 +5363,55 @@ void EditorLayer::DeselectEntity(ECS::Entity entity) {
     if (m_PrimarySelected == entity) {
         m_PrimarySelected = m_SelectedEntities.empty() ? ECS::INVALID_ENTITY : *m_SelectedEntities.begin();
     }
+}
+
+void EditorLayer::ApplyPendingNewScene() {
+    if (m_PendingNewScene == NewSceneMode::None) return;
+
+    const NewSceneMode mode = m_PendingNewScene;
+    const std::string savePath = std::move(m_PendingNewScenePath);
+    m_PendingNewScene = NewSceneMode::None;
+    m_PendingNewScenePath.clear();
+
+    if (!m_World) return;
+
+    // A scene torn down while play mode is running would strand PlayMode's
+    // restore state, so stop first -- same order OpenSceneImmediate uses.
+    if (!m_PlayMode.IsStopped()) {
+        if (m_Renderer) m_Renderer->WaitForAllFrames();
+        m_PlayMode.Stop();
+    }
+
+    m_World->Clear();
+    if (m_RenderSystem) m_RenderSystem->OnSceneClear();
+    ClearSelection();
+    ResetLayerSession();
+
+    if (mode == NewSceneMode::SaveAsNew && !savePath.empty()) {
+        // Project creation: the empty scene has to reach disk before anything
+        // opens it, which is why this mode carries a path at all.
+        SaveScene(savePath);
+        m_CurrentScenePath = savePath;
+        ClearDirty();
+        UpdateWindowTitle();
+        return;
+    }
+
+    m_CurrentScenePath.clear();
+
+    if (mode == NewSceneMode::ClearOnly) return;
+
+    // ToHub: reset the picker and reopen the hub on a clean slate.
+    ClearDirty();
+    UpdateWindowTitle();
+    m_HubPage = HubPage::WizardSetup;
+    m_SelectedTemplate = -1;
+    m_TemplateFilter = TMPL_ALL;
+    m_TemplateSearchBuffer[0] = '\0';
+    m_ShowProjectHub = true;
+    m_SceneManager.GetDefaultRenderSettings().ApplyToRuntime(
+        m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+    m_CurrentSceneUsesProjectDefaults = true;
 }
 
 void EditorLayer::ClearSelection() {

@@ -1728,20 +1728,16 @@ void EditorLayer::DrawNewProjectDialog() {
             // Save manifest
             fs::path manifestPath = projRoot / (projName + ".enjinproject");
             if (m_SceneManager.SaveProject(manifestPath.string())) {
-                // Clear current world and save empty scene
-                if (m_World) {
-                    m_World->Clear();
-                    if (m_RenderSystem) m_RenderSystem->OnSceneClear();
-                    ClearSelection();
-                }
-                // Before SaveScene: a stale layer stack would otherwise be
-                // persisted beside the brand-new empty scene.
-                ResetLayerSession();
+                // Clear the world and save the empty scene -- deferred to
+                // Update(), because this dialog draws in the Render phase and
+                // World::Clear() there invalidates the recording command
+                // buffer. SaveAsNew keeps the clear and the save together in
+                // that order; ResetLayerSession still has to happen before the
+                // save or a stale layer stack is persisted beside the new
+                // scene, and ApplyPendingNewScene does exactly that.
                 fs::path sceneFilePath = projRoot / relativeScenePath;
-                SaveScene(sceneFilePath.string());
-                m_CurrentScenePath = sceneFilePath.string();
-                ClearDirty();
-                UpdateWindowTitle();
+                m_PendingNewScene = NewSceneMode::SaveAsNew;
+                m_PendingNewScenePath = sceneFilePath.string();
 
                 // Track project and persist settings
                 m_EditorSettings.AddRecentProject(manifestPath.string());
@@ -2521,23 +2517,8 @@ void EditorLayer::DrawUnsavedChangesDialog() {
                     m_ShowQuitFeedbackDialog = true;
                     break;
                 case UnsavedAction::NewScene:
-                    if (m_World) {
-                        m_World->Clear();
-                        if (m_RenderSystem) m_RenderSystem->OnSceneClear();
-                        ClearSelection();
-                        ResetLayerSession();
-                        m_CurrentScenePath.clear();
-                        ClearDirty();
-                        UpdateWindowTitle();
-                        m_HubPage = HubPage::WizardSetup;
-                        m_SelectedTemplate = -1;
-                        m_TemplateFilter = TMPL_ALL;
-                        m_TemplateSearchBuffer[0] = '\0';
-                        m_ShowProjectHub = true;
-                        m_SceneManager.GetDefaultRenderSettings().ApplyToRuntime(
-                            m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
-                        m_CurrentSceneUsesProjectDefaults = true;
-                    }
+                    // Queued: this dialog draws in the Render phase.
+                    if (m_World) m_PendingNewScene = NewSceneMode::ToHub;
                     break;
                 case UnsavedAction::OpenScene:
                     if (!m_PendingOpenPath.empty()) {
@@ -2563,22 +2544,10 @@ void EditorLayer::DrawUnsavedChangesDialog() {
                     m_ShowQuitFeedbackDialog = true;
                     break;
                 case UnsavedAction::NewScene:
-                    if (m_World) {
-                        m_World->Clear();
-                        if (m_RenderSystem) m_RenderSystem->OnSceneClear();
-                        ClearSelection();
-                        ResetLayerSession();
-                        m_CurrentScenePath.clear();
-                        UpdateWindowTitle();
-                        m_HubPage = HubPage::WizardSetup;
-                        m_SelectedTemplate = -1;
-                        m_TemplateFilter = TMPL_ALL;
-                        m_TemplateSearchBuffer[0] = '\0';
-                        m_ShowProjectHub = true;
-                        m_SceneManager.GetDefaultRenderSettings().ApplyToRuntime(
-                            m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
-                        m_CurrentSceneUsesProjectDefaults = true;
-                    }
+                    // Queued: this dialog draws in the Render phase. ClearDirty
+                    // already ran above on this branch; ApplyPendingNewScene
+                    // calling it again is harmless.
+                    if (m_World) m_PendingNewScene = NewSceneMode::ToHub;
                     break;
                 case UnsavedAction::OpenScene:
                     if (!m_PendingOpenPath.empty()) {
