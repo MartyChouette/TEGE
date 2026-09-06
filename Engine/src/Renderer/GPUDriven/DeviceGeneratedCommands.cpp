@@ -274,7 +274,7 @@ bool DeviceGeneratedCommands::CreateComputePipeline() {
     for (const std::string& path : shaderPaths) {
         if (computeShader.LoadFromFile(path, false) && computeShader.GetModule() != VK_NULL_HANDLE) {
             loaded = true;
-            ENJIN_LOG_INFO(Renderer, "DGC: Loaded command generation shader from: %s", path);
+            ENJIN_LOG_INFO(Renderer, "DGC: Loaded command generation shader from: %s", path.c_str());
             break;
         }
     }

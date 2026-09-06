@@ -482,7 +482,7 @@ bool GPUCullingSystem::CreateComputePipeline() {
         if (computeShader.LoadFromFile(path, false)) {
             if (computeShader.GetModule() != VK_NULL_HANDLE) {
                 shaderLoaded = true;
-                ENJIN_LOG_INFO(Renderer, "Loaded compute shader from: %s", path);
+                ENJIN_LOG_INFO(Renderer, "Loaded compute shader from: %s", path.c_str());
                 break;
             }
         }
@@ -694,7 +694,7 @@ bool GPUCullingSystem::CreateHiZComputePipeline() {
     for (const std::string& path : shaderPaths) {
         if (computeShader.LoadFromFile(path, false) && computeShader.GetModule() != VK_NULL_HANDLE) {
             loaded = true;
-            ENJIN_LOG_INFO(Renderer, "Loaded HiZ cull shader from: %s", path);
+            ENJIN_LOG_INFO(Renderer, "Loaded HiZ cull shader from: %s", path.c_str());
             break;
         }
     }
