@@ -658,4 +658,64 @@ ENJIN_TEST(StringIntern, FindUnknownReturnsZero) {
     ENJIN_EXPECT_EQ(si.Find("nonexistent"), (u32)0);
 }
 
+// ===========================================================================
+// Entity handles across World::Clear()
+//
+// Regression: EntityManager::Reset() used to clear the generation table and
+// restart at index 1 / generation 0, so the first entity of the next scene was
+// bit-identical to the first entity of the previous one. Any handle held across
+// a scene load -- an editor selection, a script's cached Entity, a physics body
+// map key -- then resolved to an unrelated live entity and IsValid() agreed.
+// ===========================================================================
+
+ENJIN_TEST(EntityGenerations, StaleHandleIsInvalidAfterClear) {
+    ECS::World world;
+    ECS::Entity before = world.CreateEntity();
+    world.AddComponent<ECS::NameComponent>(before).name = "scene A";
+
+    world.Clear();
+
+    // The handle from the previous scene must not resolve to anything.
+    ENJIN_EXPECT_FALSE(world.IsValid(before));
+
+    // ...including after the slot has been handed out again.
+    ECS::Entity after = world.CreateEntity();
+    ENJIN_EXPECT_FALSE(world.IsValid(before));
+    ENJIN_EXPECT_TRUE(world.IsValid(after));
+    ENJIN_EXPECT_NE(before, after);
+    // Same slot index is fine and expected; the generation is what separates them.
+    ENJIN_EXPECT_EQ(ECS::EntityIndex(before), ECS::EntityIndex(after));
+    ENJIN_EXPECT_NE(ECS::EntityGeneration(before), ECS::EntityGeneration(after));
+}
+
+ENJIN_TEST(EntityGenerations, StaleHandleReadsNothingAfterClear) {
+    ECS::World world;
+    ECS::Entity before = world.CreateEntity();
+    world.AddComponent<ECS::NameComponent>(before).name = "scene A";
+
+    world.Clear();
+
+    ECS::Entity after = world.CreateEntity();
+    world.AddComponent<ECS::NameComponent>(after).name = "scene B";
+
+    // The old handle must not reach the new scene's component.
+    ENJIN_EXPECT_FALSE(world.HasComponent<ECS::NameComponent>(before));
+    ENJIN_EXPECT_TRUE(world.HasComponent<ECS::NameComponent>(after));
+}
+
+ENJIN_TEST(EntityGenerations, GenerationsKeepSeparatingAcrossRepeatedClears) {
+    ECS::World world;
+    std::vector<ECS::Entity> stale;
+    for (int i = 0; i < 8; ++i) {
+        stale.push_back(world.CreateEntity());
+        world.Clear();
+    }
+    ECS::Entity live = world.CreateEntity();
+    for (ECS::Entity old : stale) {
+        ENJIN_EXPECT_FALSE(world.IsValid(old));
+        ENJIN_EXPECT_NE(old, live);
+    }
+    ENJIN_EXPECT_TRUE(world.IsValid(live));
+}
+
 ENJIN_TEST_MAIN()

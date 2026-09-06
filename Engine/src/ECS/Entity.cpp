@@ -75,15 +75,37 @@ bool EntityManager::IsValid(Entity entity) const {
 }
 
 void EntityManager::Reset() {
-    m_Generations.clear();
-    m_Alive.clear();
+    // Bump every live slot's generation instead of clearing the table.
+    //
+    // Clearing it restarted at index 1 / generation 0, which is bit-identical
+    // to the first entity of the PREVIOUS scene — so any Entity held across a
+    // scene load (an editor selection, a script's cached handle, a physics
+    // body map key, a quest or save reference) silently resolved to an
+    // unrelated entity in the new scene, and IsValid() said yes. The
+    // generation counter exists to make that impossible; Reset() was the one
+    // place that threw it away. World::Clear() already protects cached storage
+    // POINTERS with the storage epoch and protected nothing about handles.
+    //
+    // The table only grows (it is sized by the highest entity index ever
+    // used, at 5 bytes per slot). That is the cost of keeping handles
+    // distinguishable across loads, and it is worth it.
+    for (usize i = 0; i < m_Generations.size(); ++i) {
+        if (m_Alive[i]) {
+            m_Generations[i]++;
+            m_Alive[i] = 0;
+        }
+    }
+
     m_ActiveEntities.clear();
     m_FreeIndices.clear();
     m_NextIndex = 1;
 
-    // Re-reserve slot 0
-    m_Generations.push_back(0);
-    m_Alive.push_back(0);
+    // Slot 0 stays reserved for INVALID_ENTITY. It is never alive, so its
+    // generation is never bumped and MakeEntity(0, 0) == INVALID_ENTITY holds.
+    if (m_Generations.empty()) {
+        m_Generations.push_back(0);
+        m_Alive.push_back(0);
+    }
 }
 
 } // namespace ECS
