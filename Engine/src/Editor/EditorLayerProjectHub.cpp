@@ -1368,6 +1368,8 @@ static void DrawTemplateThumbnail(ImDrawList* dl, const char* templateId, ImVec2
 // Defined below, beside the folder finder it uses.
 static void LoadBuiltinTemplates();
 static void LoadExampleTemplates();
+static std::string FindBuiltinTemplatesDir();
+static std::string FindExamplesDir();
 static std::string CopyExampleProject(const std::string& srcFolder,
                                       const std::string& destDir,
                                       const std::string& projectName);
@@ -2120,47 +2122,6 @@ void EditorLayer::DrawTemplateHoverPreview(ImDrawList* /*dl*/, i32 templateIdx, 
 // second copy of every demo is a second thing to keep current, and the standing
 // rule is that demos are repacked FROM these source projects.
 
-static std::string FindExamplesDir() {
-    // Find the ROOT that owns both Examples and builtin_templates, then take its
-    // Examples. Searching for a directory merely NAMED Examples picked up
-    // build/Examples -- CMake's project directory for the example executables,
-    // which on this machine also held four unrelated game projects, so the hub
-    // listed those and none of the real demos.
-    //
-    // Requiring the PAIR is what makes it unambiguous: a build tree has one or
-    // the other, a source tree and an install both have both.
-    namespace fs = std::filesystem;
-    std::error_code ec;
-
-    auto hasProject = [](const fs::path& dir) {
-        std::error_code e;
-        if (!fs::is_directory(dir, e)) return false;
-        for (const auto& sub : fs::directory_iterator(dir, e)) {
-            if (!sub.is_directory()) continue;
-            std::error_code e2;
-            for (const auto& f : fs::directory_iterator(sub.path(), e2)) {
-                if (f.path().extension() == ".enjinproject") return true;
-            }
-        }
-        return false;
-    };
-
-    fs::path dir = Enjin::Platform::GetExecutableDirectory();
-    for (int up = 0; up < 6 && !dir.empty(); ++up) {
-        // Source-tree layout: <root>/Examples beside <root>/builtin_templates.
-        if (fs::is_directory(dir / "builtin_templates", ec) && hasProject(dir / "Examples")) {
-            return (dir / "Examples").lexically_normal().string();
-        }
-        // Installed layout: both under share/enjin.
-        const fs::path share = dir / "share" / "enjin";
-        if (fs::is_directory(share / "builtin_templates", ec) && hasProject(share / "Examples")) {
-            return (share / "Examples").lexically_normal().string();
-        }
-        if (!dir.has_parent_path() || dir.parent_path() == dir) break;
-        dir = dir.parent_path();
-    }
-    return {};
-}
 
 // Append every project in Examples/ to the SAME roster the scene templates use.
 // They are templates too; the only difference is that making one copies a whole
@@ -2288,31 +2249,84 @@ static std::string CopyExampleProject(const std::string& srcFolder,
     return {};
 }
 
-// Where the shipped template folders live. Searched the same way shaders and the
-// window icon are, because the process CWD is the exe directory and never the
-// repo root.
-static std::string FindBuiltinTemplatesDir() {
-    // NOT "templates": that name next to the exe is the USER's template folder,
-    // the one TemplateCreator::ScanTemplates("templates") writes into. Searching
-    // for it found the user's directory first and stopped there.
-    const std::filesystem::path exeDir = Enjin::Platform::GetExecutableDirectory();
-    for (const char* rel : { "builtin_templates", "../builtin_templates",
-                             "../../builtin_templates", "../../../builtin_templates",
-                             "../share/enjin/builtin_templates" }) {
-        std::filesystem::path candidate = exeDir / rel;
-        std::error_code ec;
-        if (!std::filesystem::is_directory(candidate, ec)) continue;
+// Where the engine's shipped content lives.
+//
+// ONE resolver, because searching for a directory by NAME has now picked the
+// wrong one twice. FindExamplesDir found build/Examples -- CMake's project
+// directory for the example executables, which on one machine also held four
+// unrelated game projects -- and the hub listed those instead of the demos.
+// FindBuiltinTemplatesDir had the identical shape and the identical exposure.
+//
+// The reliable signal is the PAIR: a root that owns both builtin_templates and
+// Examples. A build tree has one or the other; a source tree and an install
+// both have both. Names alone cannot tell those apart, and a check for "does
+// this folder contain something plausible" cannot either, which is exactly how
+// build/Examples passed.
+//
+// NOT "templates": that name beside the exe is the USER's template folder, the
+// one TemplateCreator::ScanTemplates("templates") writes into. Searching for it
+// found the user's directory first and stopped there.
+static std::filesystem::path FindContentRoot() {
+    namespace fs = std::filesystem;
+    std::error_code ec;
 
-        // A directory is not enough. Require a template inside it, or an empty or
-        // half-made folder earlier in the list shadows the real one and every
-        // lookup past it fails.
-        for (const auto& entry : std::filesystem::directory_iterator(candidate, ec)) {
-            if (entry.is_directory() && std::filesystem::exists(entry.path() / "scene.enjin")) {
-                return candidate.lexically_normal().string();
+    auto hasTemplate = [](const fs::path& dir) {
+        std::error_code e;
+        if (!fs::is_directory(dir, e)) return false;
+        for (const auto& entry : fs::directory_iterator(dir, e)) {
+            if (entry.is_directory() && fs::exists(entry.path() / "scene.enjin", e)) return true;
+        }
+        return false;
+    };
+    auto hasProject = [](const fs::path& dir) {
+        std::error_code e;
+        if (!fs::is_directory(dir, e)) return false;
+        for (const auto& sub : fs::directory_iterator(dir, e)) {
+            if (!sub.is_directory()) continue;
+            std::error_code e2;
+            for (const auto& f : fs::directory_iterator(sub.path(), e2)) {
+                if (f.path().extension() == ".enjinproject") return true;
             }
         }
+        return false;
+    };
+
+    // Both layouts, walking up from the exe: <root>/… for a source tree,
+    // <root>/share/enjin/… for an install.
+    std::vector<fs::path> candidates;
+    fs::path dir = Enjin::Platform::GetExecutableDirectory();
+    for (int up = 0; up < 6 && !dir.empty(); ++up) {
+        candidates.push_back(dir);
+        candidates.push_back(dir / "share" / "enjin");
+        if (!dir.has_parent_path() || dir.parent_path() == dir) break;
+        dir = dir.parent_path();
+    }
+
+    // Prefer a root with BOTH -- that is the unambiguous answer.
+    for (const auto& c : candidates) {
+        if (hasTemplate(c / "builtin_templates") && hasProject(c / "Examples")) {
+            return c.lexically_normal();
+        }
+    }
+    // A trimmed install may ship templates and no examples. Still usable, so
+    // fall back rather than reporting nothing at all.
+    for (const auto& c : candidates) {
+        if (hasTemplate(c / "builtin_templates")) return c.lexically_normal();
     }
     return {};
+}
+
+static std::string FindBuiltinTemplatesDir() {
+    const std::filesystem::path root = FindContentRoot();
+    return root.empty() ? std::string() : (root / "builtin_templates").string();
+}
+
+static std::string FindExamplesDir() {
+    const std::filesystem::path root = FindContentRoot();
+    if (root.empty()) return {};
+    std::error_code ec;
+    const std::filesystem::path ex = root / "Examples";
+    return std::filesystem::is_directory(ex, ec) ? ex.string() : std::string();
 }
 
 // Read the built-in roster off disk, once. Order is alphabetical by id, which is
