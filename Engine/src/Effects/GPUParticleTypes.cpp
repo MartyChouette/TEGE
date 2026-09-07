@@ -91,54 +91,66 @@ const char* GPUParticlePresetName(GPUParticlePreset p) {
     }
 }
 
+// Preset speeds are POST-cone-fix values.
+//
+// Until 2026-09-07 both GPU spawn paths built the cone by adding its axial term
+// to world Y, so a +Y emitter counted its axis twice and moved at roughly double
+// the speed the field asked for. These twelve presets were tuned by eye against
+// that, which means the numbers were all about half of what they claimed.
+//
+// Fixing the cone made every shipped effect move at half its old apparent speed,
+// so the speeds are doubled here to keep the looks unchanged. Measured rather
+// than guessed: the old magnitude was between 1.93x and 2.01x the field across
+// the whole spread range 0.3 to 1.6, flat enough that one factor of 2 is more
+// honest than twelve slightly different numbers. Worst-case drift is under 4%.
 ParticleSpawnParams PresetSpawnParams(GPUParticlePreset preset) {
     ParticleSpawnParams p;
     switch (preset) {
         case GPUParticlePreset::Smoke:
             p.color = {0.35f, 0.35f, 0.38f, 0.5f}; p.size = 0.8f; p.lifetime = 4.0f;
-            p.speed = 1.2f; p.spread = 0.4f; p.gravityScale = -0.15f; p.drag = 0.8f; p.sizeJitter = 0.5f; break;
+            p.speed = 2.4f; p.spread = 0.4f; p.gravityScale = -0.15f; p.drag = 0.8f; p.sizeJitter = 0.5f; break;
         case GPUParticlePreset::Fire:
             p.color = {1.0f, 0.55f, 0.12f, 0.9f}; p.size = 0.5f; p.lifetime = 1.0f;
-            p.speed = 2.5f; p.spread = 0.35f; p.gravityScale = -0.4f; p.drag = 1.2f; p.sizeJitter = 0.4f; break;
+            p.speed = 5.0f; p.spread = 0.35f; p.gravityScale = -0.4f; p.drag = 1.2f; p.sizeJitter = 0.4f; break;
         case GPUParticlePreset::Sparks:
             p.color = {1.0f, 0.85f, 0.4f, 1.0f}; p.size = 0.08f; p.lifetime = 0.8f;
-            p.speed = 6.0f; p.spread = 1.0f; p.gravityScale = 1.4f; p.drag = 0.2f; p.sizeJitter = 0.6f; break;
+            p.speed = 12.0f; p.spread = 1.0f; p.gravityScale = 1.4f; p.drag = 0.2f; p.sizeJitter = 0.6f; break;
         case GPUParticlePreset::Blood:
             p.color = {0.55f, 0.02f, 0.02f, 1.0f}; p.size = 0.12f; p.lifetime = 1.2f;
-            p.speed = 4.0f; p.spread = 0.6f; p.gravityScale = 1.8f; p.drag = 0.1f; p.sizeJitter = 0.5f; break;
+            p.speed = 8.0f; p.spread = 0.6f; p.gravityScale = 1.8f; p.drag = 0.1f; p.sizeJitter = 0.5f; break;
         case GPUParticlePreset::Mist:
             p.color = {0.85f, 0.88f, 0.92f, 0.3f}; p.size = 1.2f; p.lifetime = 5.0f;
-            p.speed = 0.6f; p.spread = 0.9f; p.gravityScale = 0.0f; p.drag = 1.5f; p.sizeJitter = 0.6f; break;
+            p.speed = 1.2f; p.spread = 0.9f; p.gravityScale = 0.0f; p.drag = 1.5f; p.sizeJitter = 0.6f; break;
         case GPUParticlePreset::Spray:
             p.color = {0.7f, 0.85f, 1.0f, 0.7f}; p.size = 0.15f; p.lifetime = 1.5f;
-            p.speed = 5.0f; p.spread = 0.5f; p.gravityScale = 1.0f; p.drag = 0.4f; p.sizeJitter = 0.5f; break;
+            p.speed = 10.0f; p.spread = 0.5f; p.gravityScale = 1.0f; p.drag = 0.4f; p.sizeJitter = 0.5f; break;
         case GPUParticlePreset::Dust:
             p.color = {0.7f, 0.62f, 0.5f, 0.45f}; p.size = 0.4f; p.lifetime = 3.0f;
-            p.speed = 0.8f; p.spread = 0.8f; p.gravityScale = 0.1f; p.drag = 1.2f; p.sizeJitter = 0.6f; break;
+            p.speed = 1.6f; p.spread = 0.8f; p.gravityScale = 0.1f; p.drag = 1.2f; p.sizeJitter = 0.6f; break;
         case GPUParticlePreset::Magic:
             p.color = {0.6f, 0.35f, 1.0f, 1.0f}; p.size = 0.18f; p.lifetime = 2.0f;
-            p.speed = 1.5f; p.spread = 1.0f; p.gravityScale = -0.2f; p.drag = 0.6f; p.sizeJitter = 0.7f; break;
+            p.speed = 3.0f; p.spread = 1.0f; p.gravityScale = -0.2f; p.drag = 0.6f; p.sizeJitter = 0.7f; break;
         case GPUParticlePreset::Snow:
             p.color = {1.0f, 1.0f, 1.0f, 0.9f}; p.size = 0.12f; p.lifetime = 6.0f;
-            p.speed = 0.4f; p.spread = 0.6f; p.gravityScale = 0.15f; p.drag = 1.8f; p.sizeJitter = 0.4f; break;
+            p.speed = 0.8f; p.spread = 0.6f; p.gravityScale = 0.15f; p.drag = 1.8f; p.sizeJitter = 0.4f; break;
         case GPUParticlePreset::Liquid:
             // Droplets: small hard circles that fall fast, splat instead of
             // bouncing (low restitution), and cling to surfaces (high friction).
             p.color = {0.30f, 0.55f, 0.95f, 0.8f}; p.size = 0.12f; p.lifetime = 2.2f;
-            p.speed = 4.5f; p.spread = 0.3f; p.gravityScale = 1.5f; p.drag = 0.08f;
+            p.speed = 9.0f; p.spread = 0.3f; p.gravityScale = 1.5f; p.drag = 0.08f;
             p.sizeJitter = 0.5f; p.sprite = 1; p.softness = 0.35f;
             p.collide = true; p.bounciness = 0.06f; p.friction = 0.7f; break;
         case GPUParticlePreset::Impact:
             // Collision hit: a quick radial pop of hard little sparks that fly out,
             // fall fast, and die almost immediately. Fire as a one-shot burst.
             p.color = {1.0f, 0.9f, 0.55f, 1.0f}; p.size = 0.09f; p.lifetime = 0.4f;
-            p.speed = 7.0f; p.spread = 1.6f; p.gravityScale = 1.6f; p.drag = 0.5f;
+            p.speed = 14.0f; p.spread = 1.6f; p.gravityScale = 1.6f; p.drag = 0.5f;
             p.sizeJitter = 0.7f; p.sprite = 1; p.softness = 0.2f; break;
         case GPUParticlePreset::Pickup:
             // Item collected: a cheerful upward sparkle of soft stars that rise and
             // fade. Fire as a one-shot burst where the item was picked up.
             p.color = {1.0f, 0.92f, 0.5f, 1.0f}; p.size = 0.16f; p.lifetime = 0.7f;
-            p.speed = 2.4f; p.spread = 0.7f; p.gravityScale = -0.5f; p.drag = 1.0f;
+            p.speed = 4.8f; p.spread = 0.7f; p.gravityScale = -0.5f; p.drag = 1.0f;
             p.sizeJitter = 0.6f; p.sprite = 4; p.softness = 0.8f; break;
         case GPUParticlePreset::Custom:
         default: break;   // defaults on the struct
