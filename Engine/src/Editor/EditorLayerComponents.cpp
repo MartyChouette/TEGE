@@ -1,4 +1,5 @@
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/ECS/Components/BrushSolid.h"
 #ifndef _WIN32
 // POSIX environment for posix_spawn. Declared at GLOBAL scope: a block-scope
 // extern inside namespace Enjin mangles as a namespaced symbol under GCC.
@@ -3150,6 +3151,161 @@ void EditorLayer::DrawReflectivePlaneComponent(ECS::Entity entity) {
         ImGui::Separator();
         if (ImGui::Button("Remove##ReflectivePlane")) {
             RemoveComponentWithUndo<ECS::ReflectivePlaneComponent>(entity, "reflectivePlane", "Reflective Floor");
+        }
+    }
+}
+
+void EditorLayer::DrawBrushSolidComponent(ECS::Entity entity) {
+    if (UI::SectionHeader("Brush Solid", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* solid = m_World->GetComponent<ECS::BrushSolidComponent>(entity);
+        if (!solid) return;
+        DrawComponentHelp("brushSolid", m_World, entity);
+
+        ImGui::TextWrapped("Level geometry built from convex brushes. Add solids, subtract "
+                           "them to cut doorways and windows. The mesh and its collision are "
+                           "rebuilt from this list, so nothing here is destructive: delete a "
+                           "cut and the wall closes back up.");
+        ImGui::Separator();
+
+        // Any edit below sets this. The rebuild happens once on the next frame
+        // rather than per-widget, because re-clipping the whole solid for every
+        // dragged pixel would stall the drag.
+        bool changed = false;
+
+        if (ImGui::DragFloat("UV Scale##Brush", &solid->uvScale, 0.05f, 0.05f, 64.0f, "%.2f")) {
+            if (solid->uvScale < 0.01f) solid->uvScale = 0.01f;
+            changed = true;
+        }
+        ImGui::SetItemTooltip("World units per texture tile. Faces are planar-projected on "
+                              "their dominant axis, so this is the whole UV control.");
+
+        if (ImGui::Checkbox("Generate Collider##Brush", &solid->generateCollider)) changed = true;
+        ImGui::SetItemTooltip("Collision is the same triangles as the mesh, welded. Off for "
+                              "decorative solids nothing touches.\n"
+                              "It has to be the triangles: a convex shape cannot express a "
+                              "hole, so a hull would make your doorway solid again.");
+
+        ImGui::Separator();
+        ImGui::Text("Brushes: %d", static_cast<int>(solid->brushes.size()));
+        ImGui::SameLine();
+        ImGui::TextDisabled("(%u faces, %u collision tris)", solid->lastFaceCount,
+                            solid->lastTriangleCount);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Output of the last rebuild. Every subtract re-clips every face, "
+                              "so this grows faster than the brush count and is worth watching.");
+        }
+
+        if (ImGui::Button("Add Box##Brush")) {
+            ECS::BrushSolidComponent::Brush b;
+            b.shape = ECS::BrushSolidComponent::Shape::Box;
+            solid->brushes.push_back(b);
+            changed = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Add Prism##Brush")) {
+            ECS::BrushSolidComponent::Brush b;
+            b.shape = ECS::BrushSolidComponent::Shape::Prism;
+            solid->brushes.push_back(b);
+            changed = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Wall + Doorway##Brush")) {
+            // The canonical example, because an empty brush list shows nothing
+            // and "add box" alone does not demonstrate what this component is
+            // for. One press and the feature explains itself.
+            ECS::BrushSolidComponent::Brush wall;
+            wall.halfExtents = Math::Vector3(4.0f, 3.0f, 0.25f);
+            ECS::BrushSolidComponent::Brush door;
+            door.op = Geometry::BrushOp::Subtract;
+            door.center = Math::Vector3(0.0f, -1.0f, 0.0f);
+            door.halfExtents = Math::Vector3(1.0f, 2.0f, 1.0f);
+            solid->brushes.push_back(wall);
+            solid->brushes.push_back(door);
+            changed = true;
+        }
+
+        int removeIndex = -1;
+        for (usize i = 0; i < solid->brushes.size(); ++i) {
+            auto& b = solid->brushes[i];
+            ImGui::PushID(static_cast<int>(i));
+
+            const char* opName = (b.op == Geometry::BrushOp::Subtract) ? "Subtract"
+                               : (b.op == Geometry::BrushOp::Intersect) ? "Intersect" : "Add";
+            const char* shapeName = (b.shape == ECS::BrushSolidComponent::Shape::Prism) ? "Prism" : "Box";
+            char label[96];
+            snprintf(label, sizeof(label), "%d. %s %s%s", static_cast<int>(i) + 1,
+                     opName, shapeName, b.enabled ? "" : "  (off)");
+
+            if (ImGui::TreeNode(label)) {
+                if (ImGui::Checkbox("Enabled", &b.enabled)) changed = true;
+                ImGui::SetItemTooltip("Off keeps the brush in the list and stops it "
+                                      "contributing, so you can see what a cut is doing "
+                                      "without losing it.");
+
+                int op = static_cast<int>(b.op);
+                if (ImGui::Combo("Operation", &op, "Add\0Subtract\0Intersect\0")) {
+                    b.op = static_cast<Geometry::BrushOp>(op);
+                    changed = true;
+                }
+
+                int shape = static_cast<int>(b.shape);
+                if (ImGui::Combo("Shape", &shape, "Box\0Prism\0")) {
+                    b.shape = static_cast<ECS::BrushSolidComponent::Shape>(shape);
+                    changed = true;
+                }
+
+                f32 c[3] = { b.center.x, b.center.y, b.center.z };
+                if (ImGui::DragFloat3("Center", c, 0.05f)) {
+                    b.center = Math::Vector3(c[0], c[1], c[2]);
+                    changed = true;
+                }
+                ImGui::SetItemTooltip("Relative to the entity, in world units.");
+
+                Math::Vector3 euler = b.rotation.ToEulerDegrees();
+                f32 r[3] = { euler.x, euler.y, euler.z };
+                if (ImGui::DragFloat3("Rotation", r, 1.0f)) {
+                    b.rotation = Math::Quaternion::FromEulerDegrees(Math::Vector3(r[0], r[1], r[2]));
+                    changed = true;
+                }
+                ImGui::SetItemTooltip("A rotated brush is still exactly a brush: its planes are "
+                                      "built from the rotated axes, not approximated.");
+
+                if (b.shape == ECS::BrushSolidComponent::Shape::Prism) {
+                    if (ImGui::DragFloat("Radius", &b.radius, 0.05f, 0.01f, 500.0f)) changed = true;
+                    if (ImGui::DragFloat("Half Height", &b.halfHeight, 0.05f, 0.01f, 500.0f)) changed = true;
+                    int sides = static_cast<int>(b.sides);
+                    if (ImGui::SliderInt("Sides", &sides, 3, 64)) {
+                        b.sides = static_cast<u32>(sides);
+                        changed = true;
+                    }
+                    ImGui::SetItemTooltip("Three bounds a wedge; past about 32 you are paying "
+                                          "every clip pass for a circle nobody can resolve.");
+                } else {
+                    f32 he[3] = { b.halfExtents.x, b.halfExtents.y, b.halfExtents.z };
+                    if (ImGui::DragFloat3("Half Extents", he, 0.05f, 0.01f, 500.0f)) {
+                        b.halfExtents = Math::Vector3(he[0], he[1], he[2]);
+                        changed = true;
+                    }
+                    ImGui::SetItemTooltip("Half size in world units. A cutter should reach "
+                                          "THROUGH the solid, or the hole does not go all the way.");
+                }
+
+                if (ImGui::Button("Remove Brush")) removeIndex = static_cast<int>(i);
+                ImGui::TreePop();
+            }
+            ImGui::PopID();
+        }
+
+        if (removeIndex >= 0) {
+            solid->brushes.erase(solid->brushes.begin() + removeIndex);
+            changed = true;
+        }
+
+        if (changed) solid->dirty = true;
+
+        ImGui::Separator();
+        if (ImGui::Button("Remove##BrushSolid")) {
+            RemoveComponentWithUndo<ECS::BrushSolidComponent>(entity, "brushSolid", "Brush Solid");
         }
     }
 }

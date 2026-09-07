@@ -110,6 +110,7 @@
 #include "Enjin/Gameplay/FaceCardSystem.h"
 #include "Enjin/ECS/Systems/SwarmSystem.h"
 #include "Enjin/ECS/Systems/GeneratedGeometrySystem.h"
+#include "Enjin/ECS/Systems/BrushSolidSystem.h"
 #include "Enjin/ECS/Systems/DungeonGeneratorSystem.h"
 #include "Enjin/ECS/Systems/ScatterSystem.h"
 #include "Enjin/ECS/Systems/TerrainGeneratorSystem.h"
@@ -1157,6 +1158,11 @@ public:
         m_ActionTriggerSystem.Update(m_World.get(), deltaTime);
         m_TweenSystem.Update(m_World.get(), deltaTime);
         m_SwarmSystem.Update(m_World.get(), deltaTime);
+        // Brush solids: a loaded scene stores brushes, not geometry, so the
+        // first tick is what makes the level exist. Cheap afterwards -- only a
+        // solid whose list changed rebuilds, and in a shipped game nothing
+        // changes one unless gameplay does.
+        Enjin::ECS::BrushSolidSystem::Update(m_World.get());
         m_GeneratedGeometry.Update(m_World.get(), deltaTime);
         m_DynamicDifficulty.Update(m_World.get(), deltaTime);
         m_FaceCardSystem.Update(deltaTime);

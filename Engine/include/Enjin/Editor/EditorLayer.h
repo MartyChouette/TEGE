@@ -468,6 +468,7 @@ private:
     void DrawReflectionProbeComponent(ECS::Entity entity);
     void DrawReflectivePlaneComponent(ECS::Entity entity);
     void DrawActionTriggerComponent(ECS::Entity entity);
+    void DrawBrushSolidComponent(ECS::Entity entity);
     void DrawLadderComponent(ECS::Entity entity);
     void DrawRopeComponent(ECS::Entity entity);
     void DrawDoorComponent(ECS::Entity entity);

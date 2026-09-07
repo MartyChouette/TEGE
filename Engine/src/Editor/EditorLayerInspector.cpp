@@ -1,5 +1,6 @@
 #include "Enjin/Platform/Desktop.h"
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/ECS/Components/BrushSolid.h"
 #include "Enjin/Editor/EditorWidgets.h"
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Editor/ScenePicker.h"
@@ -584,6 +585,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::InteractableComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::InteractableComponent>(e); },
             "interactable"},
+        {"Brush Solid", "Rendering", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::BrushSolidComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::BrushSolidComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::BrushSolidComponent>(e); },
+            "brushSolid", DimensionTag::Only3D},
         {"Ladder", "Gameplay", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::LadderComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::LadderComponent>(e); },
@@ -1889,6 +1895,11 @@ void EditorLayer::DrawInspectorPanel() {
         // Action Trigger (input action -> scene effect, no script)
         if (m_World->HasComponent<ECS::ActionTriggerComponent>(m_PrimarySelected)) {
             DrawActionTriggerComponent(m_PrimarySelected);
+        }
+
+        // Brush solid (CSG level geometry)
+        if (m_World->HasComponent<ECS::BrushSolidComponent>(m_PrimarySelected)) {
+            DrawBrushSolidComponent(m_PrimarySelected);
         }
 
         // Ladder component (G1 climbable volume)

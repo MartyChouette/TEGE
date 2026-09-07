@@ -1,4 +1,5 @@
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/ECS/Systems/BrushSolidSystem.h"
 #include "Enjin/Renderer/Camera.h"
 #include "Enjin/ECS/CameraMath.h"
 #include "Enjin/GUI/LocalizationBoot.h"
@@ -2251,6 +2252,12 @@ void EditorLayer::Update(f32 deltaTime) {
             hover.Clear();
         }
     }
+
+    // Brush solids rebuild whenever their list changed, in EDIT mode as much as
+    // in play: they are authored in the scene view, and a solid that only
+    // rebuilt during play would show nothing while you were building it. Cheap
+    // when nothing is dirty, which is every frame that is not an edit.
+    ECS::BrushSolidSystem::Update(m_World);
 
     // Update play mode
     m_PlayMode.Update(deltaTime);
