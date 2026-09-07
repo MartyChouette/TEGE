@@ -119,6 +119,20 @@ void CameraController::UpdateFlyMode(f32 deltaTime) {
     // gamepad input is gated only by m_Enabled.
     bool keyboardAllowed = m_MouseCapturedByUs || m_PointerOverViewport || m_ViewportFocused;
 
+    // A modifier chord is a COMMAND, not movement. Ctrl+S is a save, and it was
+    // also flying the camera backwards the whole time it was held, because the
+    // fly cam asked only "is S down" and never "is this keystroke meant for me".
+    // Every Ctrl and Alt shortcut in the editor had the same problem: Ctrl+D
+    // duplicated and strafed, Ctrl+Z undid and strafed.
+    //
+    // Shift is deliberately NOT included -- it is the sprint modifier, and
+    // shift-to-move-faster is the one chord that IS movement.
+    const bool commandChord = Input::IsKeyDown(KeyCode::LeftControl) ||
+                              Input::IsKeyDown(KeyCode::RightControl) ||
+                              Input::IsKeyDown(KeyCode::LeftAlt) ||
+                              Input::IsKeyDown(KeyCode::RightAlt);
+    if (commandChord) keyboardAllowed = false;
+
     // Radial deadzone for gamepad sticks. Without this, a connected controller's normal stick
     // drift (commonly 0.05-0.15) feeds the fly camera every frame with no input, so the editor
     // view slowly rotates or sinks on its own. Applies to both sticks below.

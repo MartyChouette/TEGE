@@ -1804,6 +1804,31 @@ void EditorLayer::Update(f32 deltaTime) {
     // have focus but no text field is being edited. WantCaptureKeyboard is true whenever
     // any ImGui window is focused, which blocks Delete/Ctrl+D/gizmo keys after clicking
     // in the hierarchy or any other panel.
+    // A modifier chord in the editor belongs to the EDITOR, not to the running
+    // game. Ctrl+S is Save; without this the S also reached the character and
+    // walked it backwards while the scene was being written to disk. Same for
+    // Ctrl+D, Ctrl+Z and every other chord.
+    //
+    // Focus is set here, BEFORE PlayMode::Update ticks gameplay this frame, so
+    // the suppression lands on the same keystroke rather than one frame late.
+    // The end-of-frame assignment restores it for the next frame.
+    //
+    // Deliberately requires a chord, not just the modifier: Crouch is bound to
+    // Ctrl, so suppressing a held Ctrl on its own would stop players crouching
+    // while testing. Only Ctrl-plus-something is treated as a command.
+    //
+    // Editor-only. Both players run their own focus logic and never reach this,
+    // so crouch-walking in a shipped game is untouched.
+    if (m_PlayMode.IsPlaying() && !m_PlayMode.IsPaused()) {
+        const bool modifierHeld = Input::IsKeyDown(KeyCode::LeftControl) ||
+                                  Input::IsKeyDown(KeyCode::RightControl) ||
+                                  Input::IsKeyDown(KeyCode::LeftAlt) ||
+                                  Input::IsKeyDown(KeyCode::RightAlt);
+        if (modifierHeld && Input::AnyNonModifierKeyDown()) {
+            Input::SetInputFocus(Input::InputFocus::Menu);
+        }
+    }
+
     if (!ImGui::GetIO().WantTextInput) {
         if (Input::IsKeyPressed(KeyCode::Num1)) {
             m_GizmoOperation = GizmoOperation::Translate;
@@ -5399,9 +5424,22 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     // Gameplay input belongs to the game only while it is actually playing.
     // Editing or paused reads as Menu, so a scene's actions cannot fire while
     // the user is building the level.
-    Input::SetInputFocus((m_PlayMode.IsPlaying() && !m_PlayMode.IsPaused())
-        ? Input::InputFocus::Gameplay
-        : Input::InputFocus::Menu);
+    const bool gameplayHasInput = m_PlayMode.IsPlaying() && !m_PlayMode.IsPaused();
+    Input::SetInputFocus(gameplayHasInput ? Input::InputFocus::Gameplay
+                                          : Input::InputFocus::Menu);
+
+    // ImGui keyboard navigation moves focus between widgets with the arrow keys.
+    // That is right while editing and wrong while playing: pressing arrows to
+    // move a character also walked the editor's focus around, highlighting and
+    // activating panels behind the game. The flag is set once at startup and was
+    // never reconsidered, so the game and the editor chrome both consumed every
+    // arrow key.
+    //
+    // Off while gameplay owns input, on again the moment it does not, so
+    // keyboard navigation still works everywhere it should.
+    ImGuiIO& navIo = ImGui::GetIO();
+    if (gameplayHasInput) navIo.ConfigFlags &= ~ImGuiConfigFlags_NavEnableKeyboard;
+    else                  navIo.ConfigFlags |=  ImGuiConfigFlags_NavEnableKeyboard;
     m_GameViewImageDrawnThisFrame = false;   // re-armed by DrawGameViewPanel next frame
     m_GameViewDrawList = nullptr;            // a window draw list never outlives its frame
 

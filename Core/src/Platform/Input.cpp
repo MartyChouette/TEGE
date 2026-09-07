@@ -1012,6 +1012,26 @@ bool Input::IsKeyDown(KeyCode key) {
     return s_KeysDown[keyIndex];
 }
 
+// Reads the same array IsKeyDown does, including the replay-injection scope, so
+// a replayed session answers this the same way a live one does.
+bool Input::AnyNonModifierKeyDown() {
+    static const i32 kModifiers[] = {
+        static_cast<i32>(KeyCode::LeftControl),  static_cast<i32>(KeyCode::RightControl),
+        static_cast<i32>(KeyCode::LeftAlt),      static_cast<i32>(KeyCode::RightAlt),
+        static_cast<i32>(KeyCode::LeftShift),    static_cast<i32>(KeyCode::RightShift),
+        static_cast<i32>(KeyCode::LeftSuper),    static_cast<i32>(KeyCode::RightSuper),
+    };
+    const bool* keys = (s_RealScope && s_ReplayInjection) ? s_RealKeysDown : s_KeysDown;
+
+    for (i32 i = 0; i < MAX_KEYS; ++i) {
+        if (!keys[i]) continue;
+        bool isModifier = false;
+        for (i32 m : kModifiers) { if (i == m) { isModifier = true; break; } }
+        if (!isModifier) return true;
+    }
+    return false;
+}
+
 bool Input::IsKeyPressed(KeyCode key) {
     i32 keyIndex = static_cast<i32>(key);
     if (keyIndex < 0 || keyIndex >= MAX_KEYS) return false;

@@ -132,6 +132,12 @@ public:
 
     // Keyboard queries
     static bool IsKeyDown(KeyCode key);      // True while key is held
+
+    // Is any key other than a modifier currently held? Lets a caller tell a
+    // modifier being HELD (Ctrl on its own is Crouch) from a modifier CHORD
+    // (Ctrl+S is a command), which are different intentions that read the same
+    // way if you only ask about Ctrl.
+    static bool AnyNonModifierKeyDown();
     static bool IsKeyPressed(KeyCode key);   // True only on frame key was pressed
     static bool IsKeyReleased(KeyCode key);  // True only on frame key was released
 

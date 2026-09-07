@@ -156,4 +156,85 @@ ENJIN_TEST(InputFocus, TouchRoutesToUIBeforeTheMoveStickClaimsIt) {
     Input::SetUIHitTestResolver(nullptr);
 }
 
+// ===========================================================================
+// Modifier chords
+//
+// Ctrl+S was saving the scene AND walking the character backwards, because
+// nothing distinguished "Ctrl is held" from "Ctrl plus something is a command".
+// The distinction matters both ways: Crouch is bound to Ctrl, so a held
+// modifier on its own must stay gameplay input.
+// ===========================================================================
+
+ENJIN_TEST(InputChords, HeldModifierAloneIsNotAChord) {
+    FakeInput in;
+    in.SetKey(KeyCode::LeftControl, true);
+    in.Step();
+
+    // Ctrl on its own is Crouch. Treating it as a command would stop players
+    // crouching while testing their game.
+    ENJIN_EXPECT_TRUE(Input::IsKeyDown(KeyCode::LeftControl));
+    ENJIN_EXPECT_FALSE(Input::AnyNonModifierKeyDown());
+}
+
+ENJIN_TEST(InputChords, ModifierPlusKeyIsAChord) {
+    FakeInput in;
+    in.SetKey(KeyCode::LeftControl, true);
+    in.SetKey(KeyCode::S, true);
+    in.Step();
+
+    ENJIN_EXPECT_TRUE(Input::AnyNonModifierKeyDown());   // Ctrl+S: a command
+}
+
+ENJIN_TEST(InputChords, EveryModifierCountsAsOne) {
+    FakeInput in;
+    for (KeyCode k : { KeyCode::LeftControl, KeyCode::RightControl,
+                       KeyCode::LeftAlt, KeyCode::RightAlt,
+                       KeyCode::LeftShift, KeyCode::RightShift,
+                       KeyCode::LeftSuper, KeyCode::RightSuper }) {
+        in.SetKey(k, true);
+    }
+    in.Step();
+
+    // Shift is in the list on purpose: shift-to-sprint is a held modifier, not
+    // a command, so a player sprinting must not read as issuing one.
+    ENJIN_EXPECT_FALSE(Input::AnyNonModifierKeyDown());
+}
+
+ENJIN_TEST(InputChords, PlainKeyIsNotAChord) {
+    FakeInput in;
+    in.SetKey(KeyCode::S, true);
+    in.Step();
+
+    // S alone: the character SHOULD move. The chord rule must not swallow
+    // ordinary movement.
+    ENJIN_EXPECT_TRUE(Input::AnyNonModifierKeyDown());
+    ENJIN_EXPECT_FALSE(Input::IsKeyDown(KeyCode::LeftControl));
+}
+
+// The editor answers a chord by moving focus off Gameplay for that frame, which
+// is what actually silences the character. Asserted through the same path the
+// action map uses.
+ENJIN_TEST(InputChords, MenuFocusDuringAChordSilencesMovement) {
+    FakeInput in;
+    InputActionMap map;
+    map.LoadDefaults();
+
+    in.SetKey(KeyCode::LeftControl, true);
+    in.SetKey(KeyCode::S, true);
+    in.Step();
+
+    Input::SetInputFocus(Input::InputFocus::Gameplay);
+    map.Update(0.016f);
+    const bool movesWhileFocused = map.GetActionValue(GameAction::MoveBack) != 0.0f ||
+                                   map.IsActionDown(GameAction::MoveBack);
+
+    Input::SetInputFocus(Input::InputFocus::Menu);
+    map.Update(0.016f);
+    const bool movesWhileMenu = map.GetActionValue(GameAction::MoveBack) != 0.0f ||
+                                map.IsActionDown(GameAction::MoveBack);
+
+    ENJIN_EXPECT_TRUE(movesWhileFocused);    // S is bound to backward
+    ENJIN_EXPECT_FALSE(movesWhileMenu);      // and the editor's chord silences it
+}
+
 ENJIN_TEST_MAIN()
