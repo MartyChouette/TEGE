@@ -1464,6 +1464,12 @@ private:
     Accessibility::AlternativeInputManager m_AlternativeInput;
 
     // Import dialog state
+    // The Game View window's draw list, captured while that window is being
+    // built. The game UI is appended to it after the panel closes, so it stacks
+    // with the editor's windows instead of painting over all of them.
+    // Null until the Game View has drawn its image this frame.
+    ImDrawList* m_GameViewDrawList = nullptr;
+
     bool m_ShowImportDialog = false;
     std::string m_ImportDialogPath;
     Assets::ImportOptions m_ImportDialogOptions;

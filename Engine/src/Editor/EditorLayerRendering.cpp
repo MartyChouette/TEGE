@@ -666,6 +666,10 @@ void EditorLayer::DrawGameViewPanel() {
                 m_GameViewImageMaxX = p1.x;
                 m_GameViewImageMaxY = p1.y;
                 m_GameViewImageDrawnThisFrame = true;   // gates the game-UI overlay
+                // The game's UI draws into THIS window's list, not the
+                // foreground one, so editor panels and popups that overlap the
+                // Game View cover it the way any other window would.
+                m_GameViewDrawList = drawList;
                 m_GameViewHovered = ImGui::IsItemHovered();
                 // Drop target: accept asset drags onto Game View
                 if (ImGui::BeginDragDropTarget()) {

@@ -5310,8 +5310,15 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         f32 gvW = m_GameViewImageMaxX - m_GameViewImageMinX;
         f32 gvH = m_GameViewImageMaxY - m_GameViewImageMinY;
         if (gvW > 0 && gvH > 0) {
+            // Draw into the Game View window's list rather than the foreground
+            // one. The foreground list is above ALL editor windows, so the
+            // game's HUD painted over any panel, popup or dragged window
+            // overlapping the Game View. Clipping to the viewport rect never
+            // fixed that: the rect was right, the depth was wrong.
+            m_UISystem.SetTargetDrawList(m_GameViewDrawList);
             m_UISystem.Update(m_World, gvW, gvH, m_LastDeltaTime,
                               m_GameViewImageMinX, m_GameViewImageMinY, m_Camera);
+            m_UISystem.SetTargetDrawList(nullptr);
             // One flag for "the UI took the pointer", so a click on a game-view
             // UI button does not also fire in the world (matches both players).
             Input::SetUIConsumedPointer(m_UISystem.WasPointerConsumed());
@@ -5336,6 +5343,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         ? Input::InputFocus::Gameplay
         : Input::InputFocus::Menu);
     m_GameViewImageDrawnThisFrame = false;   // re-armed by DrawGameViewPanel next frame
+    m_GameViewDrawList = nullptr;            // a window draw list never outlives its frame
 
     // Render UI editor overlay (design-time WYSIWYG preview in Game View)
     if (m_UIEditMode && m_PlayMode.IsStopped()) {

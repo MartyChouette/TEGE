@@ -8,6 +8,7 @@
 #include "Enjin/GUI/UICanvas.h"
 #include "Enjin/GUI/UIEvents.h"
 #include "Enjin/Renderer/VectorTessellator.h"
+#include <imgui.h>   // ImDrawList: canvases draw into the editor's Game View list or the foreground one
 
 #include <functional>
 #include <unordered_map>
@@ -30,6 +31,18 @@ public:
     // camera: game camera for WORLD-SPACE elements (billboard tags glued to
     // entities — the HUDSystem capability folded into UICanvas). Null = all
     // world-space elements are culled.
+    // Where the canvases draw. Null (the default, and what both players use) is
+    // ImGui's foreground list, which paints over every window -- correct when
+    // the game owns the whole screen.
+    //
+    // In the EDITOR that is wrong: the foreground list sits above all editor
+    // chrome, so the game's HUD painted over any panel, popup or dragged window
+    // that overlapped the Game View. Clipping to the viewport rect does not help,
+    // because the problem is depth, not extent. Hand it the Game View window's
+    // own draw list instead and ImGui's normal window stacking decides what
+    // covers what.
+    void SetTargetDrawList(ImDrawList* drawList) { m_TargetDrawList = drawList; }
+
     void Update(ECS::World* world, f32 vpW, f32 vpH, f32 deltaTime,
                 f32 originX = 0.0f, f32 originY = 0.0f,
                 const Renderer::Camera* camera = nullptr);
@@ -112,6 +125,13 @@ public:
     bool GetStickyDragEnabled() const { return m_StickyDragEnabled; }
 
 private:
+    // Resolved once per call site: the editor's Game View list when set, the
+    // foreground list otherwise.
+    ImDrawList* TargetDrawList() const {
+        return m_TargetDrawList ? m_TargetDrawList : ImGui::GetForegroundDrawList();
+    }
+    ImDrawList* m_TargetDrawList = nullptr;
+
     UIEventBus m_EventBus;
     bool m_HUDEnabled = true;  // HUD-tier canvas gate (see SetHUDEnabled)
     TextureResolver m_TextureResolver;

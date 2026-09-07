@@ -198,7 +198,7 @@ void UISystem::Update(ECS::World* world, f32 vpW, f32 vpH, f32 deltaTime,
 
     // Clip all canvas drawing to the viewport rect: elements (and dropdown /
     // tooltip overlays) must never bleed past the game view's borders.
-    ImDrawList* clipDL = ImGui::GetForegroundDrawList();
+    ImDrawList* clipDL = TargetDrawList();
     clipDL->PushClipRect(ImVec2(originX, originY),
                          ImVec2(originX + vpW, originY + vpH), false);
 
@@ -1008,7 +1008,7 @@ void UISystem::RenderCanvas(const UICanvasComponent& canvas) {
     if (m_OpenDropdownId != 0) {
         const UIElement* dropdown = canvas.GetElement(m_OpenDropdownId);
         if (dropdown && dropdown->visible && dropdown->data.dropdownOpen) {
-            ImDrawList* dl = ImGui::GetForegroundDrawList();
+            ImDrawList* dl = TargetDrawList();
             const UITheme& theme = canvas.theme;
             f32 radius = ResolveFloat(dropdown->style.borderRadius, theme.borderRadius);
             f32 fontSize = ResolveFloat(dropdown->style.fontSize, theme.fontSizeBody) * m_FontScale;
@@ -1121,7 +1121,7 @@ void UISystem::RenderElement(const UIElement& element, const UITheme& theme, u32
 }
 
 void UISystem::RenderPanel(const UIElement& element, const UITheme& theme) {
-    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    ImDrawList* dl = TargetDrawList();
     f32 radius = ResolveFloat(element.style.borderRadius, theme.borderRadius);
     f32 alpha  = ResolveFloat(element.style.bgAlpha, theme.bgAlpha);
 
@@ -1157,7 +1157,7 @@ void UISystem::RenderPanel(const UIElement& element, const UITheme& theme) {
 }
 
 void UISystem::RenderButton(const UIElement& element, const UITheme& theme, bool focused) {
-    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    ImDrawList* dl = TargetDrawList();
     f32 radius = ResolveFloat(element.style.borderRadius, theme.borderRadius);
 
     // Try nine-slice rendering first
@@ -1216,7 +1216,7 @@ void UISystem::RenderButton(const UIElement& element, const UITheme& theme, bool
 }
 
 void UISystem::RenderLabel(const UIElement& element, const UITheme& theme) {
-    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    ImDrawList* dl = TargetDrawList();
     f32 fontSize = ResolveFloat(element.style.fontSize, theme.fontSizeBody) * m_FontScale;
     ImVec4 textColor = ResolveColor(element.style.textColor, theme.textPrimary, 1.0f);
 
@@ -1263,7 +1263,7 @@ void UISystem::RenderLabel(const UIElement& element, const UITheme& theme) {
 
 void UISystem::RenderImage(const UIElement& element, const UITheme& theme) {
     (void)theme;
-    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    ImDrawList* dl = TargetDrawList();
     f32 alpha = element.data.imageAlpha;
     auto& tint = element.data.imageTint;
 
@@ -1305,7 +1305,7 @@ void UISystem::RenderVectorGraphic(const UIElement& element, const UITheme& them
     // The tessellator (and nanosvg's implementation) are desktop-only for now.
     RenderPlaceholder(element, theme);
 #else
-    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    ImDrawList* dl = TargetDrawList();
     const f32 alpha = element.data.imageAlpha;
     const auto& tint = element.data.imageTint;
 
@@ -1375,7 +1375,7 @@ void UISystem::RenderVectorGraphic(const UIElement& element, const UITheme& them
 }
 
 void UISystem::RenderProgressBar(const UIElement& element, const UITheme& theme) {
-    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    ImDrawList* dl = TargetDrawList();
     f32 radius = ResolveFloat(element.style.borderRadius, theme.borderRadius);
 
     // Track background
@@ -1404,7 +1404,7 @@ void UISystem::RenderProgressBar(const UIElement& element, const UITheme& theme)
 }
 
 void UISystem::RenderSlider(const UIElement& element, const UITheme& theme) {
-    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    ImDrawList* dl = TargetDrawList();
     f32 radius = ResolveFloat(element.style.borderRadius, theme.borderRadius);
 
     // Track
@@ -1439,7 +1439,7 @@ void UISystem::RenderSlider(const UIElement& element, const UITheme& theme) {
 }
 
 void UISystem::RenderCheckbox(const UIElement& element, const UITheme& theme) {
-    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    ImDrawList* dl = TargetDrawList();
     f32 boxSize = std::min(element.computedRect.w, element.computedRect.h);
 
     UIRect boxRect;
@@ -1487,7 +1487,7 @@ void UISystem::RenderCheckbox(const UIElement& element, const UITheme& theme) {
 }
 
 void UISystem::RenderToggle(const UIElement& element, const UITheme& theme) {
-    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    ImDrawList* dl = TargetDrawList();
 
     f32 toggleH = std::min(element.computedRect.h, 24.0f);
     f32 toggleW = toggleH * 1.8f;
@@ -1531,7 +1531,7 @@ void UISystem::RenderToggle(const UIElement& element, const UITheme& theme) {
 // ============================================================================
 
 void UISystem::RenderDropdown(const UIElement& element, const UITheme& theme, bool focused) {
-    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    ImDrawList* dl = TargetDrawList();
     f32 radius = ResolveFloat(element.style.borderRadius, theme.borderRadius);
     f32 fontSize = ResolveFloat(element.style.fontSize, theme.fontSizeBody) * m_FontScale;
 
@@ -1601,7 +1601,7 @@ void UISystem::RenderDropdown(const UIElement& element, const UITheme& theme, bo
 // ============================================================================
 
 void UISystem::RenderTextInput(const UIElement& element, const UITheme& theme, bool focused) {
-    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    ImDrawList* dl = TargetDrawList();
     f32 radius = ResolveFloat(element.style.borderRadius, theme.borderRadius);
     f32 fontSize = ResolveFloat(element.style.fontSize, theme.fontSizeBody) * m_FontScale;
 
@@ -1684,7 +1684,7 @@ void UISystem::RenderTextInput(const UIElement& element, const UITheme& theme, b
 // ============================================================================
 
 void UISystem::RenderRadioGroup(const UIElement& element, const UITheme& theme, bool focused) {
-    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    ImDrawList* dl = TargetDrawList();
     f32 fontSize = ResolveFloat(element.style.fontSize, theme.fontSizeBody) * m_FontScale;
 
     if (element.data.options.empty()) return;
@@ -1747,7 +1747,7 @@ void UISystem::RenderRadioGroup(const UIElement& element, const UITheme& theme, 
 
 void UISystem::RenderScrollArea(const UIElement& element, const UITheme& theme,
                                 const UICanvasComponent& canvas) {
-    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    ImDrawList* dl = TargetDrawList();
     f32 radius = ResolveFloat(element.style.borderRadius, theme.borderRadius);
     f32 alpha  = ResolveFloat(element.style.bgAlpha, theme.bgAlpha);
 
@@ -1843,7 +1843,7 @@ void UISystem::RenderScrollArea(const UIElement& element, const UITheme& theme,
 
 void UISystem::RenderGrid(const UIElement& element, const UITheme& theme,
                           const UICanvasComponent& canvas, u32 focusedId) {
-    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    ImDrawList* dl = TargetDrawList();
     f32 radius = ResolveFloat(element.style.borderRadius, theme.borderRadius);
     f32 alpha  = ResolveFloat(element.style.bgAlpha, theme.bgAlpha);
 
@@ -1894,7 +1894,7 @@ void UISystem::RenderGrid(const UIElement& element, const UITheme& theme,
 
 void UISystem::RenderTabGroup(const UIElement& element, const UITheme& theme,
                               const UICanvasComponent& canvas, u32 focusedId) {
-    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    ImDrawList* dl = TargetDrawList();
     f32 radius = ResolveFloat(element.style.borderRadius, theme.borderRadius);
     f32 fontSize = ResolveFloat(element.style.fontSize, theme.fontSizeBody) * m_FontScale;
 
@@ -1997,7 +1997,7 @@ void UISystem::RenderTabGroup(const UIElement& element, const UITheme& theme,
 // ============================================================================
 
 void UISystem::RenderTooltip(const UIElement& element, const UITheme& theme) {
-    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    ImDrawList* dl = TargetDrawList();
     f32 fontSize = ResolveFloat(element.style.fontSize, theme.fontSizeSmall) * m_FontScale;
     f32 radius = ResolveFloat(element.style.borderRadius, theme.borderRadius);
 
@@ -2055,7 +2055,7 @@ void UISystem::RenderTooltip(const UIElement& element, const UITheme& theme) {
 
 void UISystem::RenderModal(const UIElement& element, const UITheme& theme,
                            const UICanvasComponent& canvas, u32 focusedId) {
-    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    ImDrawList* dl = TargetDrawList();
     f32 radius = ResolveFloat(element.style.borderRadius, theme.borderRadius);
 
     // Full-screen semi-transparent dim overlay
@@ -2117,7 +2117,7 @@ void UISystem::RenderModal(const UIElement& element, const UITheme& theme,
 
 void UISystem::RenderListView(const UIElement& element, const UITheme& theme,
                               const UICanvasComponent& canvas, bool focused) {
-    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    ImDrawList* dl = TargetDrawList();
     f32 radius = ResolveFloat(element.style.borderRadius, theme.borderRadius);
     f32 fontSize = ResolveFloat(element.style.fontSize, theme.fontSizeBody) * m_FontScale;
 
@@ -2223,7 +2223,7 @@ void UISystem::RenderListView(const UIElement& element, const UITheme& theme,
 
 void UISystem::RenderPlaceholder(const UIElement& element, const UITheme& theme) {
     // Phase 2+ widgets render as a labeled panel placeholder
-    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    ImDrawList* dl = TargetDrawList();
     f32 radius = ResolveFloat(element.style.borderRadius, theme.borderRadius);
     f32 alpha  = ResolveFloat(element.style.bgAlpha, theme.bgAlpha * 0.5f);
 
@@ -2605,7 +2605,7 @@ void UISystem::AdjustSliderValue(UIElement& element, i32 direction) {
 }
 
 void UISystem::RenderFocusIndicator(const UIElement& element, const UITheme& theme) {
-    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    ImDrawList* dl = TargetDrawList();
     f32 radius = ResolveFloat(element.style.borderRadius, theme.borderRadius) + 2.0f;
     f32 focusWidth = theme.focusBorderWidth;
 
@@ -2632,7 +2632,7 @@ void UISystem::RenderFocusIndicator(const UIElement& element, const UITheme& the
 // ============================================================================
 
 void UISystem::RenderScanIndicator(const UIElement& element, const UITheme& theme) {
-    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    ImDrawList* dl = TargetDrawList();
     f32 radius = ResolveFloat(element.style.borderRadius, theme.borderRadius) + 3.0f;
 
     // Animated pulse: border thickness oscillates between 2.5 and 4.5
@@ -2687,7 +2687,7 @@ void UISystem::RenderScanIndicator(const UIElement& element, const UITheme& them
 void UISystem::RenderDwellProgress(const UIElement& element, f32 progress) {
     if (progress <= 0.0f || progress > 1.0f) return;
 
-    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    ImDrawList* dl = TargetDrawList();
 
     // Draw a circular progress indicator at the top-right of the element
     f32 cx = element.computedRect.x + element.computedRect.w - 8.0f;
