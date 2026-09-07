@@ -76,6 +76,14 @@ private:
     usize m_ObjectSize;
     usize m_ObjectCount;
     FreeBlock* m_FreeList;
+
+    // One byte per slot, 1 = handed out. Deallocate needs this to reject a
+    // double free: without it, freeing the same pointer twice pushes the same
+    // block onto the free list twice, the list develops a cycle, and two later
+    // Allocate calls hand the SAME memory to two owners. That corruption
+    // surfaces arbitrarily far from the bug. Walking the free list to check
+    // would be O(n) on a hot path; a slot table is O(1).
+    u8* m_SlotInUse;
 };
 
 // Linear allocator - Very fast, but can only reset all at once

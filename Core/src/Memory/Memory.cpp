@@ -3,6 +3,7 @@
 #include <cstring>
 #include <cassert>
 #include <cstdlib>
+#include <cstdint>  // SIZE_MAX (pool size overflow guard)
 #include <new>       // std::align_val_t, std::bad_alloc
 
 namespace Enjin {
@@ -129,13 +130,47 @@ void StackAllocator::Reset() {
 
 // PoolAllocator implementation
 PoolAllocator::PoolAllocator(usize objectSize, usize objectCount)
-    : m_ObjectSize(objectSize), m_ObjectCount(objectCount) {
+    : m_Memory(nullptr), m_ObjectSize(objectSize), m_ObjectCount(objectCount),
+      m_FreeList(nullptr), m_SlotInUse(nullptr) {
     // Ensure object size is at least sizeof(FreeBlock)
     m_ObjectSize = (m_ObjectSize < sizeof(FreeBlock)) ? sizeof(FreeBlock) : m_ObjectSize;
-    
+
+    // A count of 0 used to walk straight into `i < m_ObjectCount - 1`, where
+    // usize wraps to SIZE_MAX and the loop writes a next-pointer through every
+    // address in the process. Empty pool is a legal thing to construct; it
+    // just has nothing to hand out.
+    if (m_ObjectCount == 0) {
+        return;
+    }
+
+    // Overflow on the size math would malloc a small block and then hand out
+    // m_ObjectCount slots from it.
+    if (m_ObjectSize > SIZE_MAX / m_ObjectCount) {
+        ENJIN_LOG_ERROR(Core, "PoolAllocator: %zu x %zu bytes overflows; pool left empty",
+                        m_ObjectCount, m_ObjectSize);
+        m_ObjectCount = 0;
+        return;
+    }
+
     m_Memory = static_cast<u8*>(std::malloc(m_ObjectSize * m_ObjectCount));
-    assert(m_Memory && "Failed to allocate memory for PoolAllocator");
-    
+    if (!m_Memory) {
+        // Was an assert, i.e. nothing in Release. Allocate() already copes with
+        // a null free list, so an empty pool degrades instead of faulting.
+        ENJIN_LOG_ERROR(Core, "PoolAllocator: failed to allocate %zu x %zu bytes",
+                        m_ObjectCount, m_ObjectSize);
+        m_ObjectCount = 0;
+        return;
+    }
+
+    m_SlotInUse = static_cast<u8*>(std::calloc(m_ObjectCount, 1));
+    if (!m_SlotInUse) {
+        ENJIN_LOG_ERROR(Core, "PoolAllocator: failed to allocate the slot table; pool left empty");
+        std::free(m_Memory);
+        m_Memory = nullptr;
+        m_ObjectCount = 0;
+        return;
+    }
+
     // Initialize free list
     m_FreeList = reinterpret_cast<FreeBlock*>(m_Memory);
     FreeBlock* current = m_FreeList;
@@ -149,6 +184,7 @@ PoolAllocator::PoolAllocator(usize objectSize, usize objectCount)
 
 PoolAllocator::~PoolAllocator() {
     std::free(m_Memory);
+    std::free(m_SlotInUse);
 }
 
 void* PoolAllocator::Allocate(usize size, usize alignment) {
@@ -159,6 +195,10 @@ void* PoolAllocator::Allocate(usize size, usize alignment) {
     
     FreeBlock* block = m_FreeList;
     m_FreeList = m_FreeList->next;
+    if (m_SlotInUse) {
+        usize slot = static_cast<usize>(reinterpret_cast<u8*>(block) - m_Memory) / m_ObjectSize;
+        m_SlotInUse[slot] = 1;
+    }
     return block;
 }
 
@@ -179,6 +219,15 @@ void PoolAllocator::Deallocate(void* ptr) {
                         ptr, m_ObjectSize);
         return;
     }
+
+    // Double free. Pushing an already-free block on again cycles the free list,
+    // and two later Allocate calls then hand the same memory to two owners.
+    usize slot = offset / m_ObjectSize;
+    if (m_SlotInUse && !m_SlotInUse[slot]) {
+        ENJIN_LOG_ERROR(Core, "PoolAllocator::Deallocate: double free of %p (slot %zu)", ptr, slot);
+        return;
+    }
+    if (m_SlotInUse) m_SlotInUse[slot] = 0;
 
     FreeBlock* block = static_cast<FreeBlock*>(ptr);
     block->next = m_FreeList;

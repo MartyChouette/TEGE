@@ -4,6 +4,7 @@
 #include "Enjin/Platform/Types.h"
 #include <cassert>
 #include <cstring>
+#include <cstdint>   // SIZE_MAX (Init size overflow guard)
 #include <new>
 #include <type_traits>
 
@@ -45,6 +46,15 @@ public:
     // Call once per frame after FrameAllocator::Reset().
     // maxCount: maximum number of elements this array can hold.
     void Init(FrameAllocator& allocator, usize maxCount) {
+        // maxCount * sizeof(T) wrapping would request a small block and then
+        // report capacity for maxCount elements, so every write past the real
+        // end is out of bounds.
+        if (maxCount != 0 && maxCount > SIZE_MAX / sizeof(T)) {
+            m_Data = nullptr;
+            m_Capacity = 0;
+            m_Size = 0;
+            return;
+        }
         m_Data = static_cast<T*>(allocator.Allocate(maxCount * sizeof(T), alignof(T)));
         m_Capacity = m_Data ? maxCount : 0;
         m_Size = 0;
@@ -57,9 +67,19 @@ public:
         }
     }
 
+    // Overflow behaviour matches push_back and resize: assert in debug, and in
+    // Release refuse rather than corrupt. This one asserted ONLY, so a Release
+    // build wrote past the end of the buffer and kept incrementing m_Size.
+    // Returning the last slot means an overflowing caller overwrites its own
+    // final element instead of somebody else's memory. A null m_Data (Init
+    // failed or was never called) has no slot to return, so that stays UB by
+    // contract, same as operator[] and back().
     T& emplace_back() {
         assert(m_Size < m_Capacity && "FrameArray overflow");
-        return m_Data[m_Size++];
+        if (m_Size < m_Capacity) {
+            return m_Data[m_Size++];
+        }
+        return m_Data[m_Capacity - 1];
     }
 
     void resize(usize newSize) {

@@ -1,5 +1,7 @@
 #include "EnjinTest.h"
 #include "Enjin/Memory/Memory.h"
+#include "Enjin/Memory/FrameAllocator.h"
+#include <cstdint>
 
 using namespace Enjin;
 
@@ -120,5 +122,71 @@ ENJIN_TEST(PoolAllocator, CapacityReasonable) {
     PoolAllocator alloc(128, 16);
     ENJIN_EXPECT_GE(alloc.GetTotalCapacity(), (usize)16);
 }
+
+// Regression: a 0-count pool walked into `i < m_ObjectCount - 1`, where usize
+// wraps to SIZE_MAX and the free-list loop writes through every address in the
+// process. An empty pool is legal to construct; it just hands out nothing.
+ENJIN_TEST(PoolAllocator, ZeroCountPoolIsEmpty) {
+    PoolAllocator alloc(64, 0);
+    ENJIN_EXPECT_NULL(alloc.Allocate(64));
+    ENJIN_EXPECT_EQ(alloc.GetTotalCapacity(), (usize)0);
+}
+
+// Regression: freeing the same block twice pushed it onto the free list twice,
+// so the list cycled and two later Allocate calls handed the same memory to two
+// owners. The second free is now refused, leaving one free slot, not two.
+ENJIN_TEST(PoolAllocator, DoubleFreeIsRejected) {
+    PoolAllocator alloc(64, 2);
+    void* p1 = alloc.Allocate(64);
+    void* p2 = alloc.Allocate(64);
+    ENJIN_ASSERT_NOT_NULL(p1);
+    ENJIN_ASSERT_NOT_NULL(p2);
+    alloc.Deallocate(p1);
+    alloc.Deallocate(p1);  // logs an error and does nothing
+    void* a = alloc.Allocate(64);
+    void* b = alloc.Allocate(64);
+    ENJIN_EXPECT_NOT_NULL(a);
+    ENJIN_EXPECT_NULL(b);  // p2 is still out; only one slot was ever free
+    alloc.Deallocate(a);
+    alloc.Deallocate(p2);
+}
+
+// ===========================================================================
+// FrameArray
+// ===========================================================================
+
+// maxCount * sizeof(T) wrapping would take a small block and then report
+// capacity for maxCount elements.
+ENJIN_TEST(FrameArray, InitRejectsOverflowingCount) {
+    FrameAllocator alloc(1024);
+    FrameArray<u64> arr;
+    arr.Init(alloc, SIZE_MAX / 4);
+    ENJIN_EXPECT_EQ(arr.capacity(), (usize)0);
+    ENJIN_EXPECT_EQ(arr.size(), (usize)0);
+}
+
+ENJIN_TEST(FrameArray, InitFailureLeavesZeroCapacity) {
+    FrameAllocator alloc(64);
+    FrameArray<u64> arr;
+    arr.Init(alloc, 1000);  // more than the allocator holds
+    ENJIN_EXPECT_EQ(arr.capacity(), (usize)0);
+}
+
+#ifdef NDEBUG
+// Regression: emplace_back only asserted, so a Release build wrote past the end
+// of the buffer and kept incrementing m_Size. Debug still aborts on the assert,
+// which is why this case is Release-only.
+ENJIN_TEST(FrameArray, EmplaceBackStopsAtCapacity) {
+    FrameAllocator alloc(1024);
+    FrameArray<u32> arr;
+    arr.Init(alloc, 2);
+    arr.emplace_back() = 1;
+    arr.emplace_back() = 2;
+    arr.emplace_back() = 3;  // refused; overwrites the caller's own last slot
+    ENJIN_EXPECT_EQ(arr.size(), (usize)2);
+    ENJIN_EXPECT_EQ(arr[0], (u32)1);
+    ENJIN_EXPECT_EQ(arr[1], (u32)3);
+}
+#endif
 
 ENJIN_TEST_MAIN()
