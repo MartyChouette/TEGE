@@ -93,7 +93,6 @@ namespace Enjin { namespace Effects {
 #include <vulkan/vulkan.h>
 #endif
 
-#include "Enjin/Memory/FrameAllocator.h"
 #include "Enjin/Renderer/HaltonSequence.h"
 
 #include <algorithm>
@@ -2457,7 +2456,6 @@ private:
 
     // Per-frame linear allocator (8 MB) for hot-path arrays rebuilt every frame.
     // Reset at frame start, replaces std::vector clear/push for render lists.
-    std::unique_ptr<FrameAllocator> m_FrameAllocator;
 
 #if !ENJIN_RENDERER_WEBGPU
 #ifdef ENJIN_CLUSTERED_LIGHTING

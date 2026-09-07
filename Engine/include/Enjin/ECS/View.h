@@ -68,16 +68,14 @@ public:
         }
     }
 
-    // ── Exclude filter ──────────────────────────────────────────────────
-    // Call before iteration. Entities that HAVE the excluded component are
-    // skipped. Up to 4 exclude types are supported (stack-allocated).
-    template<typename Excluded>
-    View& Exclude(World& world) {
-        if (m_ExcludeCount < MaxExcludes) {
-            m_ExcludeStorages[m_ExcludeCount++] = world.GetComponentStorage<Excluded>();
-        }
-        return *this;
-    }
+    // The Exclude filter lives further down, as Exclude(const
+    // ComponentStorage<Excluded>*). A second overload taking World& used to sit
+    // here and could not compile: it assigned a raw ComponentStorage<Excluded>*
+    // into m_ExcludeStorages, whose element type is the ExcludeEntry struct
+    // {storage, hasFunc}. Being a template that nothing ever called, it was
+    // never instantiated, so the build stayed green over a function that could
+    // not build. Removed rather than repaired: the storage-taking overload is
+    // the one every caller already uses.
 
     // ── Accessors ────────────────────────────────────────────────────────
     // Get<T>(entity) — returns T* from the cached storage (no type-ID hash).

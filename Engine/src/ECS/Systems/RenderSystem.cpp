@@ -701,7 +701,6 @@ bool RenderSystem::EnsureWebOITTargets(u32 w, u32 h) {
 
 void RenderSystem::Initialize() {
     if (m_Initialized) return;
-    m_FrameAllocator = std::make_unique<FrameAllocator>(8 * 1024 * 1024);
 
     auto* shaderMgr = m_Renderer->GetShaderManager();
     auto* pipeMgr = m_Renderer->GetPipelineManager();
@@ -4954,9 +4953,6 @@ void RenderSystem::Initialize() {
     m_ReflectionProbes->Initialize(m_VulkanRenderer->GetContext());
     m_SDFScene = std::make_unique<Renderer::SDFScene>();
 
-    // Per-frame linear allocator: 8 MB supports ~100K entities x 128B each
-    m_FrameAllocator = std::make_unique<FrameAllocator>(8 * 1024 * 1024);
-
     // Initialize clustered forward lighting system
 #ifdef ENJIN_CLUSTERED_LIGHTING
     {
@@ -6043,9 +6039,6 @@ void RenderSystem::Update(f32 deltaTime) {
 
     // Reset material SSBO flag — will be rebuilt on first use this frame
     m_MaterialSSBOBuilt = false;
-
-    // Reset per-frame linear allocator (all FrameArray allocations from previous frame are freed)
-    if (m_FrameAllocator) m_FrameAllocator->Reset();
 
     // Rebuild cached light entity list only when dirty (entity add/remove with LightComponent).
     // Also detect dynamic LightComponent add/remove on existing entities via count mismatch.
