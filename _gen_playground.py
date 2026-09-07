@@ -16,13 +16,10 @@ BOXCOL = by["Ground"]["boxCollider"]
 PLAYER = copy.deepcopy(by["Player"])
 
 # --- assets: waterfall textures from WaterFX + a generated matcap -----------
-# Rigged character (Quaternius robot, CC0) - kept across regens; sourced from
-# Downloads when present so a fresh checkout still regenerates everything else.
-_robot_src = os.path.join("C:", os.sep, "Users", "jerma", "Downloads",
-                          "Animated Robot by Quaternius", "FBX", "Robot.fbx")
-_robot_dst = os.path.join(OUT, "assets", "Robot.fbx")
-if os.path.exists(_robot_src) and not os.path.exists(_robot_dst):
-    shutil.copyfile(_robot_src, _robot_dst)
+# No rigged character for now. The Quaternius robot was sourced from a hardcoded
+# path under one machine's Downloads folder, so a fresh checkout could never
+# regenerate this scene the same way twice. When a character comes back it ships
+# from the repo, not from somebody's disk.
 
 for tex in ("water.png", "foam.png", "mist.png"):
     shutil.copyfile(os.path.join(ROOT, "Examples", "WaterFX", "assets", tex),
@@ -281,11 +278,6 @@ ent("WelcomeSign", (0, 6.5, -6), (7, 3.4, 1),
           "fontSize": 38, "textureWidth": 1024, "textureHeight": 512,
           "textColor": [1, 1, 1], "bgColor": [0.05, 0.08, 0.12], "bgOpacity": 0.75,
           "horizontalAlign": 1, "wrapWidth": 1000})
-ent("CharacterNote", (8, 2.2, 14), (4, 1.6, 1),
-    text={"text": "Animated character station:\ndrag assets/Robot.fbx from the\nAsset Browser to HERE",
-          "fontSize": 34, "textureWidth": 512, "textureHeight": 256,
-          "textColor": [1, 0.95, 0.7], "bgColor": [0.1, 0.1, 0.05], "bgOpacity": 0.6,
-          "horizontalAlign": 1, "wrapWidth": 480})
 ent("Director", (0, 0, 0), scriptComponent={"scripts": [{"path": "scripts/Playground.as",
                                                          "class": "Playground", "enabled": True}]})
 
