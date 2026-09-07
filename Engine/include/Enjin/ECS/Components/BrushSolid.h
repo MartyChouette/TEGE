@@ -1,0 +1,94 @@
+#pragma once
+
+// A solid built from convex brushes: walls, floors, ramps, and the doorways and
+// windows cut out of them.
+//
+// The component stores the BRUSH LIST, not the mesh. A room is a few dozen
+// brushes and its triangulation is megabytes, so the brushes are what gets
+// saved, and the geometry is derived on load and after every edit. That is also
+// what makes the thing non-destructive: move a doorway and the wall closes
+// behind it, because the wall was never actually cut, only described as cut.
+//
+// Brushes are stored as SHAPES rather than as raw planes. Planes would be a
+// smaller and more general representation, and would be miserable to author:
+// the inspector needs a centre and a size to put on a row, a gizmo needs
+// something to drag, and a rotated box built from its own rotated axes stays
+// exactly a box instead of drifting as planes get nudged one at a time.
+
+#include "Enjin/Platform/Platform.h"
+#include "Enjin/Platform/Types.h"
+#include "Enjin/Math/Vector.h"
+#include "Enjin/Math/Quaternion.h"
+#include "Enjin/Geometry/CSG.h"
+
+#include <vector>
+
+namespace Enjin {
+namespace ECS {
+
+struct ENJIN_API BrushSolidComponent {
+    // What kind of convex solid this brush is. Box covers walls, floors,
+    // pillars and most doorways; Prism covers cylinders, round-topped openings
+    // and anything read as a wedge.
+    enum class Shape : u8 { Box = 0, Prism };
+
+    struct Brush {
+        Shape shape = Shape::Box;
+        Geometry::BrushOp op = Geometry::BrushOp::Add;
+
+        Math::Vector3 center = Math::Vector3(0.0f, 0.0f, 0.0f);
+        Math::Quaternion rotation = Math::Quaternion::Identity();
+
+        // Box
+        Math::Vector3 halfExtents = Math::Vector3(1.0f, 1.0f, 1.0f);
+
+        // Prism
+        f32 radius = 1.0f;
+        f32 halfHeight = 1.0f;
+        u32 sides = 8;
+
+        // Off means the brush stays in the list and stops contributing, which is
+        // how you check what a cut is doing without losing it.
+        bool enabled = true;
+
+        Geometry::Brush ToGeometry() const {
+            if (shape == Shape::Prism) {
+                return Geometry::Brush::Prism(center, radius, halfHeight, sides, rotation);
+            }
+            return Geometry::Brush::Box(center, halfExtents, rotation);
+        }
+    };
+
+    std::vector<Brush> brushes;
+
+    // World units per texture tile. Brush geometry is planar-projected, so this
+    // is the only UV control there is, and it is the one a wall wants.
+    f32 uvScale = 1.0f;
+
+    // Collision is the same triangles as the render mesh, because convex shapes
+    // cannot express a hole. Off for decorative solids nothing touches.
+    bool generateCollider = true;
+
+    // Set by anything that edits the list. The rebuild runs on the next system
+    // pass and clears it: rebuilding on every edit would re-clip the whole solid
+    // for each dragged handle.
+    bool dirty = true;
+
+    // Last rebuild's output size, for the inspector to show. A brush solid that
+    // has quietly grown to thousands of faces is worth being able to see.
+    u32 lastFaceCount = 0;
+    u32 lastTriangleCount = 0;
+
+    std::vector<Geometry::BrushEntry> ToBrushEntries() const {
+        std::vector<Geometry::BrushEntry> out;
+        out.reserve(brushes.size());
+        for (const Brush& b : brushes) {
+            if (!b.enabled) continue;
+            out.push_back({ b.ToGeometry(), b.op });
+        }
+        return out;
+    }
+};
+
+} // namespace ECS
+} // namespace Enjin

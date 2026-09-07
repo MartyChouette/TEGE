@@ -38,6 +38,7 @@ struct ENJIN_API ProceduralMeshComponent {
         Projection4D,
         SplineIK,
         Script,
+        Csg,        // BrushSolidComponent: convex brushes, booleaned
         Count
     };
 
@@ -58,6 +59,7 @@ inline const char* ProceduralMeshSourceName(ProceduralMeshComponent::Source s) {
         case ProceduralMeshComponent::Source::Projection4D:     return "4D Projection";
         case ProceduralMeshComponent::Source::SplineIK:         return "Spline IK";
         case ProceduralMeshComponent::Source::Script:           return "Script";
+        case ProceduralMeshComponent::Source::Csg:              return "Brush Solid (CSG)";
         default:                                                return "Unknown";
     }
 }
