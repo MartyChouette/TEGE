@@ -547,11 +547,73 @@ void ScriptEngine::LineCallback(asIScriptContext* ctx, void* param)
         budget->frameTotal->fetch_add(1, std::memory_order_relaxed);
     }
     u32 count = budget->callCount.fetch_add(1, std::memory_order_relaxed) + 1;
-    if (count > MAX_INSTRUCTIONS) {
+    if (count <= MAX_INSTRUCTIONS) {
+        return;
+    }
+
+    // Out of slice. If the caller can resume us, stop cleanly and let it: a big
+    // job then costs frames instead of costing the whole script. Only a call
+    // that keeps doing this, slice after slice, is actually a runaway.
+    if (budget->maySuspend && budget->slices + 1 < MAX_SLICES) {
+        // Say so the FIRST time only. A call that spans frames is worth knowing
+        // about -- it is a hitch you can go and look for -- but one line per
+        // slice would bury the log of any genuinely heavy scene.
+        if (budget->slices == 0) {
+            asIScriptFunction* fn = ctx->GetFunction();
+            ENJIN_LOG_INFO(Script,
+                "%s ran past %u statements — continuing it next frame",
+                fn ? fn->GetDeclaration(true, true) : "a script call", MAX_INSTRUCTIONS);
+        }
+        budget->suspendedForBudget = true;
+        ctx->Suspend();
+        return;
+    }
+
+    if (budget->maySuspend) {
+        ENJIN_LOG_ERROR(Script,
+            "Script ran for %u slices of %u statements without finishing — aborting. "
+            "That is not a big job, that is a loop that does not end.",
+            budget->slices + 1, MAX_INSTRUCTIONS);
+    } else {
         ENJIN_LOG_ERROR(Script, "Script exceeded the per-call statement limit (%u) — aborting",
                         MAX_INSTRUCTIONS);
-        ctx->Abort();
     }
+    ctx->Abort();
+}
+
+// A parked context keeps its budget between slices, so these all reach through
+// to the same per-context CallBudget the line callback is counting into.
+void ScriptEngine::AllowBudgetSuspend(asIScriptContext* ctx, bool allow)
+{
+    if (!ctx) return;
+    auto* budget = reinterpret_cast<CallBudget*>(ctx->GetUserData(0));
+    if (budget) budget->maySuspend = allow;
+}
+
+bool ScriptEngine::WasSuspendedForBudget(asIScriptContext* ctx) const
+{
+    if (!ctx) return false;
+    auto* budget = reinterpret_cast<CallBudget*>(ctx->GetUserData(0));
+    return budget && budget->suspendedForBudget;
+}
+
+// Hand a parked call its next slice. The statement counter resets; the slice
+// count does not, because that is the thing telling a big job from a runaway.
+void ScriptEngine::BeginBudgetSlice(asIScriptContext* ctx)
+{
+    if (!ctx) return;
+    auto* budget = reinterpret_cast<CallBudget*>(ctx->GetUserData(0));
+    if (!budget) return;
+    budget->callCount.store(0, std::memory_order_relaxed);
+    budget->suspendedForBudget = false;
+    budget->slices++;
+}
+
+u32 ScriptEngine::BudgetSlicesUsed(asIScriptContext* ctx) const
+{
+    if (!ctx) return 0;
+    auto* budget = reinterpret_cast<CallBudget*>(ctx->GetUserData(0));
+    return budget ? budget->slices : 0u;
 }
 
 void ScriptEngine::ResetFrameStatementCount()
@@ -597,6 +659,9 @@ asIScriptContext* ScriptEngine::AcquireContext()
     }
     budget->callCount.store(0, std::memory_order_relaxed);
     budget->frameTotal = &m_FrameStatements;
+    budget->maySuspend = false;          // opt in per call, never by default
+    budget->suspendedForBudget = false;
+    budget->slices = 0;
 
     int cbResult = ctx->SetLineCallback(asFUNCTION(ScriptEngine::LineCallback), budget, asCALL_CDECL);
     if (cbResult < 0) {

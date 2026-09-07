@@ -188,4 +188,139 @@ ENJIN_TEST(ScriptStartFrame, FlagIsClearedByTheEndOfTheStartUpdate) {
     ENJIN_EXPECT_FALSE(fx.StartedThisFrameFlag());
 }
 
+// ===========================================================================
+// Statement budget: a big call is SLICED across frames, not killed.
+//
+// The instruction ceiling is a runaway guard. Used alone it doubles as a frame
+// budget, and those are different problems: `while(true)` and "this level solve
+// is genuinely big" got the same maximal punishment, the script switched off for
+// the rest of the session. A call that runs out of slice is now suspended and
+// resumed on the next dispatch; only a call that keeps doing it is a runaway.
+// ===========================================================================
+
+namespace {
+
+// ~3.6M statements: several slices deep, so the call is STILL parked after a
+// resume. That matters for the teardown test: with a call that finishes on its
+// first resume, the teardown bug hides. Module globals survive the instance,
+// which is how the test sees OnDestroy after teardown released it.
+void WriteHeavyProbe(const fs::path& p) {
+    std::ofstream f(p, std::ios::trunc);
+    f << "int g_done = 0;\n"
+      << "int g_destroyed = 0;\n"
+      << "class Probe : TegeBehavior {\n"
+      << "    void OnUpdate(float dt) {\n"
+      << "        int n = 0;\n"
+      << "        for (int i = 0; i < 1200000; i++) { n += i; }\n"
+      << "        g_done += 1;\n"
+      << "    }\n"
+      << "    void OnDestroy() { g_destroyed = 1; }\n"
+      << "}\n";
+}
+
+struct HeavyFixture {
+    ECS::World world;
+    ScriptEngine engine;
+    CoroutineScheduler scheduler;
+    ScriptSystem system;
+    fs::path dir;
+    ECS::Entity entity = ECS::INVALID_ENTITY;
+
+    explicit HeavyFixture(const char* leaf) {
+        dir = MakeScriptDir(leaf);
+        WriteHeavyProbe(dir / "Probe.as");
+
+        engine.Initialize();
+        RegisterAllBindings(engine.GetASEngine());
+        engine.SetScriptDirectory(dir.string());
+        engine.CompileScript((dir / "Probe.as").string());
+
+        system.SetScriptEngine(&engine);
+        system.SetCoroutineScheduler(&scheduler);
+        system.SetWorld(&world);
+        system.SetScriptRoot(dir.string());
+        system.SetEnabled(true);
+
+        entity = world.CreateEntity();
+        world.AddComponent<ECS::TransformComponent>(entity);
+        ECS::ScriptComponent sc;
+        ECS::ScriptAttachment att;
+        att.scriptPath = "Probe.as";
+        att.className = "Probe";
+        att.enabled = true;
+        sc.scripts.push_back(att);
+        world.AddComponent<ECS::ScriptComponent>(entity, sc);
+        system.InitializeAllScripts();
+    }
+
+    ~HeavyFixture() {
+        system.SetWorld(nullptr);
+        engine.Shutdown();
+        std::error_code ec;
+        fs::remove_all(dir, ec);
+    }
+
+    // Module globals outlive the script instance, unlike its members.
+    int Global(const char* name) {
+        asIScriptEngine* as = engine.GetASEngine();
+        if (!as) return -1;
+        asIScriptModule* mod = as->GetModuleByIndex(0);
+        if (!mod) return -1;
+        for (asUINT i = 0; i < mod->GetGlobalVarCount(); ++i) {
+            const char* n = nullptr;
+            mod->GetGlobalVar(i, &n);
+            if (n && std::string(n) == name) {
+                return *reinterpret_cast<int*>(mod->GetAddressOfGlobalVar(i));
+            }
+        }
+        return -1;
+    }
+
+    ECS::ScriptAttachment* Att() {
+        auto* sc = world.GetComponent<ECS::ScriptComponent>(entity);
+        return (sc && !sc->scripts.empty()) ? &sc->scripts[0] : nullptr;
+    }
+};
+
+} // namespace
+
+ENJIN_TEST(ScriptBudgetSlices, BigCallParksInsteadOfBeingKilled) {
+    HeavyFixture fx("parks");
+
+    fx.system.Update(kFrame);   // OnStart only; ticks begin next frame
+    fx.system.Update(kFrame);   // OnUpdate starts and runs out of slice
+
+    ENJIN_ASSERT_NOT_NULL(fx.Att());
+    ENJIN_EXPECT_NOT_NULL(fx.Att()->pendingContext);   // parked, not abandoned
+    ENJIN_EXPECT_FALSE(fx.Att()->hasError);            // and NOT disabled
+    ENJIN_EXPECT_EQ(fx.Global("g_done"), 0);           // hasn't finished yet
+}
+
+ENJIN_TEST(ScriptBudgetSlices, ParkedCallResumesAndFinishes) {
+    HeavyFixture fx("resumes");
+
+    for (int i = 0; i < 12; ++i) fx.system.Update(kFrame);
+
+    ENJIN_EXPECT_FALSE(fx.Att()->hasError);
+    ENJIN_EXPECT_TRUE(fx.Global("g_done") > 0);   // it completed rather than dying
+}
+
+// Regression: every lifecycle dispatch begins with ResumePending, so tearing
+// down an entity whose call was parked spent the OnDisable and OnDestroy
+// dispatches resuming a call that was about to be thrown away, and neither hook
+// ran. OnDestroy is the cleanup hook; silently skipping it is the despawn-leak
+// class of bug over again. The pending call is discarded FIRST now.
+ENJIN_TEST(ScriptBudgetSlices, DestroyWhileParkedStillRunsOnDestroy) {
+    HeavyFixture fx("destroy_parked");
+
+    fx.system.Update(kFrame);
+    fx.system.Update(kFrame);
+    ENJIN_ASSERT_NOT_NULL(fx.Att());
+    ENJIN_ASSERT_NOT_NULL(fx.Att()->pendingContext);   // genuinely parked
+
+    fx.system.ShutdownAllScripts();
+
+    ENJIN_EXPECT_EQ(fx.Global("g_destroyed"), 1);
+}
+
 ENJIN_TEST_MAIN()

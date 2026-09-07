@@ -72,6 +72,14 @@ struct ScriptAttachment {
     bool hasError = false;
     std::string lastError;
 
+    // A call that ran out of statement budget and was SUSPENDED rather than
+    // aborted. The context is still on the stack, mid-method, holding the
+    // script's locals; it is not in the context pool and must not be reused.
+    // The next dispatch for this script resumes it instead of starting
+    // anything new, so a big job costs frames instead of costing the script.
+    void* pendingContext = nullptr;     // asIScriptContext*
+    std::string pendingMethod;          // for the log if it turns out to be a runaway
+
     // Cached method IDs for fast dispatch (-1 = not found)
     int methodOnCreate = -1;
     int methodOnStart = -1;

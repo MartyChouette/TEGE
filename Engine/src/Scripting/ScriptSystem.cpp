@@ -122,6 +122,52 @@ bool ScriptSystem::ClassifyExecuteResult(ECS::Entity entity, usize index, int re
     return false;
 }
 
+// A call that ran out of slice is still mid-method with its locals on the
+// stack. Keep the context out of the pool and hand it back the next time this
+// script is dispatched. Returns true if the call was parked.
+bool ScriptSystem::ParkIfSuspended(ECS::ScriptAttachment& script, void* ctxv,
+                                   int result, const char* methodName) {
+    if (result != asEXECUTION_SUSPENDED) return false;
+    auto* ctx = static_cast<asIScriptContext*>(ctxv);
+    if (!m_ScriptEngine->WasSuspendedForBudget(ctx)) return false;
+    script.pendingContext = ctx;
+    script.pendingMethod = methodName ? methodName : "";
+    return true;
+}
+
+// Give a parked call its next slice, before anything new runs on this script.
+// Returns true if there was one, whether or not it finished this time.
+bool ScriptSystem::ResumePending(ECS::Entity entity, usize index,
+                                 ECS::ScriptAttachment& script) {
+    if (!script.pendingContext) return false;
+    auto* ctx = static_cast<asIScriptContext*>(script.pendingContext);
+
+    m_ScriptEngine->BeginBudgetSlice(ctx);
+    int r = ctx->Execute();
+    if (r == asEXECUTION_SUSPENDED && m_ScriptEngine->WasSuspendedForBudget(ctx)) {
+        return true;   // still going; it keeps the context
+    }
+
+    script.pendingContext = nullptr;
+    const std::string method = script.pendingMethod;
+    script.pendingMethod.clear();
+    ClassifyExecuteResult(entity, index, r, method.c_str(),
+        r == asEXECUTION_EXCEPTION ? ctx->GetExceptionString() : nullptr);
+    m_ScriptEngine->ReturnContext(ctx);
+    return true;
+}
+
+// Throw a parked call away: the script is going, so nothing is going to finish
+// it. Aborting first unwinds the stack so the context is clean to reuse.
+void ScriptSystem::DiscardPending(ECS::ScriptAttachment& script) {
+    if (!script.pendingContext) return;
+    auto* ctx = static_cast<asIScriptContext*>(script.pendingContext);
+    script.pendingContext = nullptr;
+    script.pendingMethod.clear();
+    ctx->Abort();
+    if (m_ScriptEngine) m_ScriptEngine->ReturnContext(ctx);
+}
+
 bool ScriptSystem::CallLifecycleMethod(ECS::Entity entity, usize index, int methodId, const char* methodName) {
     ECS::ScriptAttachment* sp = ResolveScript(entity, index);
     if (!sp) return true;
@@ -129,6 +175,7 @@ bool ScriptSystem::CallLifecycleMethod(ECS::Entity entity, usize index, int meth
 
     if (methodId < 0 || !script.instance || script.hasError || !script.enabled) return true;
     if (!m_ScriptEngine) return false;
+    if (ResumePending(entity, index, script)) return true;
 
     asIScriptObject* obj = static_cast<asIScriptObject*>(script.instance);
     asIScriptContext* ctx = m_ScriptEngine->AcquireContext();
@@ -143,8 +190,10 @@ bool ScriptSystem::CallLifecycleMethod(ECS::Entity entity, usize index, int meth
 
     ctx->Prepare(func);
     ctx->SetObject(obj);
+    m_ScriptEngine->AllowBudgetSuspend(ctx, true);
 
     int r = ctx->Execute();
+    if (ParkIfSuspended(script, ctx, r, methodName)) return true;
     bool success = ClassifyExecuteResult(entity, index, r, methodName,
         r == asEXECUTION_EXCEPTION ? ctx->GetExceptionString() : nullptr);
 
@@ -159,6 +208,7 @@ bool ScriptSystem::CallLifecycleMethodFloat(ECS::Entity entity, usize index, int
 
     if (methodId < 0 || !script.instance || script.hasError || !script.enabled) return true;
     if (!m_ScriptEngine) return false;
+    if (ResumePending(entity, index, script)) return true;
 
     asIScriptObject* obj = static_cast<asIScriptObject*>(script.instance);
     asIScriptContext* ctx = m_ScriptEngine->AcquireContext();
@@ -173,9 +223,11 @@ bool ScriptSystem::CallLifecycleMethodFloat(ECS::Entity entity, usize index, int
 
     ctx->Prepare(func);
     ctx->SetObject(obj);
+    m_ScriptEngine->AllowBudgetSuspend(ctx, true);
     ctx->SetArgFloat(0, value);
 
     int r = ctx->Execute();
+    if (ParkIfSuspended(script, ctx, r, methodName)) return true;
     bool success = ClassifyExecuteResult(entity, index, r, methodName,
         r == asEXECUTION_EXCEPTION ? ctx->GetExceptionString() : nullptr);
 
@@ -190,6 +242,7 @@ bool ScriptSystem::CallCollisionMethod(ECS::Entity entity, usize index, int meth
 
     if (methodId < 0 || !script.instance || script.hasError || !script.enabled) return true;
     if (!m_ScriptEngine) return false;
+    if (ResumePending(entity, index, script)) return true;
 
     asIScriptObject* obj = static_cast<asIScriptObject*>(script.instance);
     asIScriptContext* ctx = m_ScriptEngine->AcquireContext();
@@ -204,9 +257,11 @@ bool ScriptSystem::CallCollisionMethod(ECS::Entity entity, usize index, int meth
 
     ctx->Prepare(func);
     ctx->SetObject(obj);
+    m_ScriptEngine->AllowBudgetSuspend(ctx, true);
     ctx->SetArgQWord(0, static_cast<asQWORD>(other));
 
     int r = ctx->Execute();
+    if (ParkIfSuspended(script, ctx, r, methodName)) return true;
     bool success = ClassifyExecuteResult(entity, index, r, methodName,
         r == asEXECUTION_EXCEPTION ? ctx->GetExceptionString() : nullptr);
 
@@ -221,6 +276,7 @@ bool ScriptSystem::CallStringMethod(ECS::Entity entity, usize index, int methodI
 
     if (methodId < 0 || !script.instance || script.hasError || !script.enabled) return true;
     if (!m_ScriptEngine) return false;
+    if (ResumePending(entity, index, script)) return true;
 
     asIScriptObject* obj = static_cast<asIScriptObject*>(script.instance);
     asIScriptContext* ctx = m_ScriptEngine->AcquireContext();
@@ -241,6 +297,7 @@ bool ScriptSystem::CallStringMethod(ECS::Entity entity, usize index, int methodI
     ctx->SetArgObject(0, &argCopy);
 
     int r = ctx->Execute();
+    if (ParkIfSuspended(script, ctx, r, methodName)) return true;
     bool success = ClassifyExecuteResult(entity, index, r, methodName,
         r == asEXECUTION_EXCEPTION ? ctx->GetExceptionString() : nullptr);
 
@@ -420,6 +477,14 @@ void ScriptSystem::TeardownEntityScripts(ECS::Entity entity) {
 
     for (usize i = 0; i < sc->scripts.size(); ++i) {
         ECS::ScriptAttachment& script = sc->scripts[i];
+        // BEFORE the teardown calls, not after. Every lifecycle dispatch starts
+        // with ResumePending, so a script parked mid-slice when its entity is
+        // destroyed would spend its OnDisable and OnDestroy dispatches resuming
+        // a call that is about to be thrown away, and neither hook would ever
+        // run. OnDestroy is the cleanup hook; silently skipping it is the
+        // despawn-leak class of bug all over again.
+        DiscardPending(script);
+
         if (script.initialized && script.instance && !script.hasError) {
             if (script.enabled) {
                 CallLifecycleMethod(entity, i, script.methodOnDisable, "OnDisable");
@@ -493,6 +558,7 @@ void ScriptSystem::Update(f32 deltaTime) {
             ForEachScript(entity, [&](usize i, ECS::ScriptAttachment& script) {
                 if (script.hasError) {
                     // Retry: release old instance and re-init
+                    DiscardPending(script);
                     if (script.instance) {
                         m_ScriptEngine->ReleaseInstance(static_cast<asIScriptObject*>(script.instance));
                         script.instance = nullptr;

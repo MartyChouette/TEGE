@@ -69,6 +69,30 @@ public:
     void ResetFrameStatementCount();
     u64 GetFrameStatementCount() const;
 
+    // ── Running out of budget without dying ──────────────────────────────
+    //
+    // An instruction ceiling is a RUNAWAY GUARD. Used on its own it is also a
+    // frame budget, and those are different problems: `while(true)` and "this
+    // level solve is genuinely big" get the same, maximal punishment, which is
+    // the script switched off for the rest of the session.
+    //
+    // AngelScript can suspend a context mid-call and resume it later exactly
+    // where it stopped, and this engine already relies on that for `yield`. So
+    // a caller that can survive its call being spread over several frames says
+    // so with AllowBudgetSuspend, and then a call that exhausts a slice is
+    // SUSPENDED rather than aborted. The caller parks the context and resumes
+    // it next frame with BeginBudgetSlice.
+    //
+    // A genuine runaway still dies: after MAX_SLICES slices with no end in
+    // sight the context is aborted, and the caller latches the script off.
+    //
+    // Not every caller can do this. An argument passed by pointer to a stack
+    // local does not survive the return, so those calls must not opt in.
+    void AllowBudgetSuspend(asIScriptContext* ctx, bool allow);
+    bool WasSuspendedForBudget(asIScriptContext* ctx) const;
+    void BeginBudgetSlice(asIScriptContext* ctx);
+    u32 BudgetSlicesUsed(asIScriptContext* ctx) const;
+
     // One warning when a frame crosses this. AngelScript runs on the order of
     // tens of millions of simple statements a second, so a million of them in
     // one frame already means the scripts ARE the frame.
@@ -178,6 +202,12 @@ private:
     // statement, so this counts statements, not VM instructions, whatever the
     // name says.
     static constexpr u32 MAX_INSTRUCTIONS = 1000000u;
+
+    // How many slices one call may take before it is a runaway rather than a
+    // big job. At 60fps this is about four seconds of a single call hogging
+    // the script system, which no legitimate frame of work reaches.
+    static constexpr u32 MAX_SLICES = 240u;
+
     static void LineCallback(asIScriptContext* ctx, void* param);
 
     // Statement accounting, allocated once per CONTEXT and reused for every
@@ -186,8 +216,11 @@ private:
     // script, per entity, per frame, to police a limit that cannot bound a
     // frame. Freed where the context is released.
     struct CallBudget {
-        std::atomic<u32> callCount{0};            // statements in the CURRENT call
+        std::atomic<u32> callCount{0};            // statements in the CURRENT slice
         std::atomic<u64>* frameTotal = nullptr;   // engine-wide, spans all calls
+        bool maySuspend = false;          // caller can resume this call next frame
+        bool suspendedForBudget = false;  // this suspend was ours, not a yield
+        u32 slices = 0;                   // frames this ONE call has taken
     };
     std::atomic<u64> m_FrameStatements{0};
 

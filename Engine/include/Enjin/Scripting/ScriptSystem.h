@@ -149,6 +149,16 @@ private:
     bool ClassifyExecuteResult(ECS::Entity entity, usize index, int result,
                                const char* methodName, const char* exceptionText);
 
+    // Running out of statement budget suspends a call instead of killing the
+    // script. The context stays out of the pool, mid-method, until the next
+    // dispatch for that script hands it another slice. `ctx` is an
+    // asIScriptContext*, passed as void* to keep AngelScript out of here, the
+    // same way ScriptAttachment::instance does.
+    bool ParkIfSuspended(ECS::ScriptAttachment& script, void* ctx,
+                         int result, const char* methodName);
+    bool ResumePending(ECS::Entity entity, usize index, ECS::ScriptAttachment& script);
+    void DiscardPending(ECS::ScriptAttachment& script);
+
     // Registered on the World so a despawn during play runs the teardown above.
     // Removed in SetWorld and the destructor -- the observer captures `this`.
     void InstallDestroyObserver();
