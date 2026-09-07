@@ -363,4 +363,38 @@ ENJIN_TEST(CsgCollision, EmptyBrushListYieldsEmptyCollision) {
     ENJIN_EXPECT_EQ(col.indices.size(), (usize)0);
 }
 
+// A cutter is normally deeper than its target so the hole goes all the way
+// through. The part sticking out the far side must NOT be drawn: the liner
+// faces are the inside surface of a hole, and a hole that extends past the wall
+// has no inside surface out there.
+//
+// Found by screenshot, not by reasoning: a slab cut by a taller box rendered
+// with the cutter visibly protruding above and below it.
+ENJIN_TEST(CsgSolid, LinerFacesAreTrimmedToTheSolid) {
+    std::vector<BrushEntry> brushes;
+    // A thin slab, 0.25 deep in Z.
+    brushes.push_back({ Brush::Box(Vector3(0.0f), Vector3(4.0f, 3.0f, 0.25f)), BrushOp::Add });
+    // A cutter twelve times deeper, so it pokes far out both faces.
+    brushes.push_back({ Brush::Box(Vector3(0.0f), Vector3(1.0f, 1.0f, 3.0f)), BrushOp::Subtract });
+
+    ECS::MeshComponent m = BuildMesh(brushes);
+    ENJIN_ASSERT_TRUE(m.vertices.size() > 0);
+
+    // Nothing may exist beyond the slab's own depth.
+    ENJIN_EXPECT_TRUE(MeshMin(m).z >= -0.26f);
+    ENJIN_EXPECT_TRUE(MeshMax(m).z <=  0.26f);
+
+    // And the hole is still a hole: the front face is gone where it was cut.
+    ENJIN_EXPECT_FALSE(SurfaceCoversXY(m, 0.0f, 0.0f, 0.25f));
+    ENJIN_EXPECT_TRUE(SurfaceCoversXY(m, 3.0f, 0.0f, 0.25f));
+}
+
+// A Subtract with nothing to cut contributes nothing at all -- its liner has no
+// solid to line.
+ENJIN_TEST(CsgSolid, SubtractWithNoSolidYieldsNothing) {
+    std::vector<BrushEntry> brushes;
+    brushes.push_back({ Brush::Box(Vector3(0.0f), Vector3(1.0f, 1.0f, 1.0f)), BrushOp::Subtract });
+    ENJIN_EXPECT_TRUE(BuildSolid(brushes).empty());
+}
+
 ENJIN_TEST_MAIN()

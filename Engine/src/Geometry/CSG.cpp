@@ -222,6 +222,12 @@ std::vector<BrushFace> ClipFaceOutsideBrush(const BrushFace& poly, const Brush& 
 std::vector<BrushFace> BuildSolid(const std::vector<BrushEntry>& brushes) {
     std::vector<BrushFace> solid;
 
+    // The Add brushes seen so far. A Subtract needs them to know where the solid
+    // actually IS, so its own faces can be trimmed to that. Without this a
+    // cutter that pokes out of the wall leaves the protruding part of its
+    // surface floating in mid-air.
+    std::vector<Brush> addBrushes;
+
     for (usize i = 0; i < brushes.size(); ++i) {
         const BrushEntry& entry = brushes[i];
         const std::vector<BrushFace> faces = BuildFaces(entry.brush);
@@ -235,6 +241,7 @@ std::vector<BrushFace> BuildSolid(const std::vector<BrushEntry>& brushes) {
                 // is the classic brush-editor behaviour and is what keeps the
                 // operation order-independent for Adds.
                 solid.insert(solid.end(), faces.begin(), faces.end());
+                addBrushes.push_back(entry.brush);
                 break;
             }
 
@@ -251,12 +258,25 @@ std::vector<BrushFace> BuildSolid(const std::vector<BrushEntry>& brushes) {
                 // flipped to face into the void. Without this a subtraction
                 // leaves an opening you can see through into the back of the
                 // wall, which is the single most obvious CSG artefact.
+                // Trimmed to the solid being cut, not added whole. A cutter is
+                // normally deeper than its target so the hole goes all the way
+                // through, and the part sticking out the far side has no
+                // business being drawn: it renders as a box floating behind the
+                // wall, which is precisely what a screenshot of this showed.
                 for (const BrushFace& f : faces) {
                     BrushFace inner = f;
                     std::reverse(inner.vertices.begin(), inner.vertices.end());
                     inner.plane.normal = f.plane.normal * -1.0f;
                     inner.plane.offset = -f.plane.offset;
-                    kept.push_back(std::move(inner));
+
+                    for (const Brush& add : addBrushes) {
+                        BrushFace piece = inner;
+                        for (const Plane& pl : add.planes) {
+                            if (!piece.Valid()) break;
+                            piece = ClipFace(piece, pl, true);
+                        }
+                        if (piece.Valid()) kept.push_back(std::move(piece));
+                    }
                 }
 
                 solid.swap(kept);
