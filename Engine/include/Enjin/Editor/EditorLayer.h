@@ -1004,7 +1004,7 @@ private:
     f32 m_EditorFadeIn = 0.0f;     // Editor fade-in progress (0 to 1)
 
     // Project Hub (shown after splash)
-    enum class HubPage : u8 { Landing = 0, WizardSetup, WizardTemplate, Demos };
+    enum class HubPage : u8 { Landing = 0, WizardSetup, WizardTemplate };
     bool m_ShowProjectHub = true;
     HubPage m_HubPage = HubPage::Landing;
 
@@ -1034,9 +1034,6 @@ private:
     f32 m_HoverTimer = 0.0f;
     i32 m_HoverFrameIdx = 0;
 
-    // Demos tab state
-    std::vector<bool> m_DemoAvailability;
-    bool m_DemosCacheValid = false;
 
     // Custom templates
     std::vector<std::string> m_CustomTemplateNames;
@@ -1059,7 +1056,6 @@ private:
     void DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 contentY, f32 sidebarW);
     void DrawHubWizardSetup(ImDrawList* dl, const ImVec2& area, f32 contentY, f32 sidebarW);
     void DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 contentY, f32 sidebarW);
-    void DrawHubDemosTab(ImDrawList* dl, const ImVec2& area, f32 contentY, f32 sidebarW);
     void DrawTemplateHoverPreview(ImDrawList* dl, i32 templateIdx, const ImVec2& cardPos, const ImVec2& cardEnd);
     // Panel widths / game-view size / stats overlay authored per template.
     // Called by ApplyTemplate AND by the shipped-template-folder path, which

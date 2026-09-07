@@ -344,7 +344,6 @@ void EditorLayer::DrawProjectHubInner() {
                 case HubPage::Landing:        break; // handled above
                 case HubPage::WizardSetup:    DrawHubWizardSetup(drawList, area, contentY, sidebarW);    break;
                 case HubPage::WizardTemplate: DrawHubWizardTemplate(drawList, area, contentY, sidebarW); break;
-                case HubPage::Demos:          DrawHubDemosTab(drawList, area, contentY, sidebarW);       break;
             }
         }
 
@@ -1062,22 +1061,12 @@ void EditorLayer::DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 /*c
     f32 linkFontSize = 22.0f;
     f32 linkY = barY + (bottomBarH - linkFontSize) * 0.5f;
 
-    // Left: Demos link
-    const char* demosText = "Demos";
-    ImVec2 demosSz = font->CalcTextSizeA(linkFontSize, FLT_MAX, 0.0f, demosText);
+    // The Demos link and its tab are gone. They were a second face on the same
+    // built-in templates, pointing at demos/*.enjin -- a directory that has
+    // never existed in the tree, so all six cards failed with "Demo scene not
+    // found". Example projects are in the one template list now.
     ImVec2 demosPos(sectionPad, linkY);
-    bool demosHovered = (io.MousePos.x >= demosPos.x && io.MousePos.x <= demosPos.x + demosSz.x &&
-                        io.MousePos.y >= demosPos.y && io.MousePos.y <= demosPos.y + demosSz.y);
-    dl->AddText(nullptr, linkFontSize, demosPos,
-        demosHovered ? IM_COL32(180, 185, 210, 255) : IM_COL32(120, 125, 150, 200), demosText);
-    if (demosHovered)
-        dl->AddLine(ImVec2(demosPos.x, demosPos.y + demosSz.y + 1.0f),
-                    ImVec2(demosPos.x + demosSz.x, demosPos.y + demosSz.y + 1.0f),
-                    IM_COL32(180, 185, 210, 200));
-    if (demosHovered && ImGui::IsMouseClicked(0)) {
-        m_DemosCacheValid = false;
-        m_HubPage = HubPage::Demos;
-    }
+    ImVec2 demosSz(0.0f, linkFontSize);
 
     // Template Marketplace link
     f32 marketX = demosPos.x + demosSz.x + 24.0f;
@@ -1265,6 +1254,12 @@ namespace {
         ImVec4 accentColor{1, 1, 1, 1};
         u32 categoryFlags = 0;
         Editor::MaturityTier maturity = Editor::MaturityTier::Stable;
+
+        // Set when this entry is backed by a whole project in Examples/ rather
+        // than a scene folder in builtin_templates/. Both are templates as far
+        // as the hub is concerned; the difference is only how one is made:
+        // instantiate a scene, or copy the project.
+        std::string examplePath;
     };
 
     // The built-in roster, loaded from builtin_templates/*/meta.json.
@@ -1372,6 +1367,10 @@ static void DrawTemplateThumbnail(ImDrawList* dl, const char* templateId, ImVec2
 // --------------------------------------------------
 // Defined below, beside the folder finder it uses.
 static void LoadBuiltinTemplates();
+static void LoadExampleTemplates();
+static std::string CopyExampleProject(const std::string& srcFolder,
+                                      const std::string& destDir,
+                                      const std::string& projectName);
 
 void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 contentY, f32 sidebarW) {
     // The roster is data now; load it before anything asks how many there are.
@@ -1906,6 +1905,31 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
         createTextCol, createText);
 
     if (createHovered && ImGui::IsMouseClicked(0)) {
+        // An example-backed template is a whole project, so it is COPIED rather
+        // than instantiated: the shipped demo stays untouched, and the editor's
+        // autosave timer cannot rewrite it behind you.
+        if (m_SelectedTemplate >= 0 && m_SelectedTemplate < BuiltinCount() &&
+            !s_BuiltinTemplates[m_SelectedTemplate].examplePath.empty()) {
+            const auto& tpl = s_BuiltinTemplates[m_SelectedTemplate];
+            const std::string proj = CopyExampleProject(tpl.examplePath, m_NewProjectPath,
+                                                        m_NewProjectName);
+            if (proj.empty()) {
+                ShowNotification("Could not copy " + tpl.name + " -- see the console.",
+                                 NotificationType::Error);
+            } else {
+                ShowNotification("Created " + std::string(m_NewProjectName) + " from " + tpl.name,
+                                 NotificationType::Success);
+                std::strncpy(m_NewProjectName, "MyGame", sizeof(m_NewProjectName));
+                std::strncpy(m_NewSceneName, "Main", sizeof(m_NewSceneName));
+                m_SelectedTemplate = -1;
+                m_TemplateFilter = TMPL_ALL;
+                m_TemplateSearchBuffer[0] = '\0';
+                m_HubPage = HubPage::Landing;
+                OpenProjectFromPath(proj);
+            }
+            return;
+        }
+
         std::string templateId = "blank";
         if (m_SelectedTemplate >= 0 && m_SelectedTemplate < BuiltinCount()) {
             templateId = s_BuiltinTemplates[m_SelectedTemplate].id;   // std::string now
@@ -2081,167 +2105,172 @@ void EditorLayer::DrawTemplateHoverPreview(ImDrawList* /*dl*/, i32 templateIdx, 
     }
 }
 
-// --------------------------------------------------
-// Demos tab: showcase demo scenes
-// --------------------------------------------------
-void EditorLayer::DrawHubDemosTab(ImDrawList* dl, const ImVec2& area, f32 contentY, f32 sidebarW) {
-    ImGuiIO& io = ImGui::GetIO();
-    ImFont* font = ImGui::GetFont();
+// ---------------------------------------------------------------------------
+// Example projects (Examples/) as templates
+// ---------------------------------------------------------------------------
+//
+// The demos are whole PROJECTS, not scenes: each has its own .enjinproject,
+// scripts and assets. The template system next door instantiates a scene folder
+// into a new project, which is a different shape, so these were never reachable
+// from the hub at all. A separate Demos tab shipped six hardcoded cards pointing at
+// `demos/*.enjin`, a directory that does not exist in the tree, so every one of
+// them failed with "Demo scene not found".
+//
+// Listed straight off disk rather than copied into builtin_templates/, because a
+// second copy of every demo is a second thing to keep current, and the standing
+// rule is that demos are repacked FROM these source projects.
 
-    f32 contentW = area.x - sidebarW;
+static std::string FindExamplesDir() {
+    const std::filesystem::path exeDir = Enjin::Platform::GetExecutableDirectory();
+    for (const char* rel : { "Examples", "../Examples", "../../Examples",
+                             "../../../Examples", "../share/enjin/Examples" }) {
+        std::filesystem::path candidate = exeDir / rel;
+        std::error_code ec;
+        if (!std::filesystem::is_directory(candidate, ec)) continue;
 
-    struct DemoInfo {
-        const char* name;
-        const char* description;
-        const char* scenePath;
-        ImVec4 accentColor;
-        const char* templateId;
-    };
-
-    DemoInfo demos[] = {
-        { "2D Platformer",   "Side-scrolling platformer with\njumping, enemies, and collectibles.",   "demos/platformer_demo.enjin",   ImVec4(0.3f, 0.8f, 0.3f, 1.0f), "platformer" },
-        { "3D Third Person",  "Over-the-shoulder exploration\nwith third-person camera controls.",    "demos/thirdperson_demo.enjin",  ImVec4(0.8f, 0.3f, 0.3f, 1.0f), "thirdperson" },
-        { "Flower Garden",   "Interactive flower plucking\nwith physics and scoring.",                "demos/flower_demo.enjin",       ImVec4(0.9f, 0.4f, 0.6f, 1.0f), "flower" },
-        { "Coin Rush",       "Collect coins, dodge spikes,\nand reach the portal.",                   "demos/coinrush_demo.enjin",     ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "coinrush" },
-        { "Dialogue & Narrative", "NPC conversations with\nquests and branching dialogue.",          "demos/narrative_demo.enjin",    ImVec4(0.7f, 0.6f, 0.85f, 1.0f), "narrative" },
-        { "Point & Click",   "Adventure game with hotspots,\ninventory, and dialogue.",              "demos/pointclick_demo.enjin",   ImVec4(1.0f, 0.55f, 0.2f, 1.0f), "pointclick" },
-    };
-    constexpr int demoCount = 6;
-
-    // Cache file availability on tab switch
-    if (!m_DemosCacheValid) {
-        m_DemoAvailability.resize(demoCount);
-        for (int i = 0; i < demoCount; ++i) {
-            m_DemoAvailability[i] = true;
-        }
-        m_DemosCacheValid = true;
-    }
-
-    // "< Back" link at top
-    f32 backFontSize = 20.0f;
-    const char* backText = "< Back";
-    ImVec2 backSz = font->CalcTextSizeA(backFontSize, FLT_MAX, 0.0f, backText);
-    ImVec2 backPos(sidebarW + 30.0f, contentY + 8.0f);
-    bool backHovered = (io.MousePos.x >= backPos.x && io.MousePos.x <= backPos.x + backSz.x &&
-                       io.MousePos.y >= backPos.y && io.MousePos.y <= backPos.y + backSz.y);
-    dl->AddText(nullptr, backFontSize, backPos,
-        backHovered ? IM_COL32(180, 185, 205, 255) : IM_COL32(120, 125, 145, 200), backText);
-    if (backHovered && ImGui::IsMouseClicked(0)) {
-        m_HubPage = HubPage::Landing;
-    }
-
-    // Subtitle (clipped if wider than content area)
-    f32 subtitleFontSize = 18.0f;
-    const char* subtitle = "Click to explore -- each demo creates a scene from a built-in template.";
-    f32 subtitleMaxW = contentW - 60.0f;
-    std::string clippedSubtitle = EllipsizeText(subtitle, subtitleMaxW, font, subtitleFontSize);
-    ImVec2 subSz = font->CalcTextSizeA(subtitleFontSize, FLT_MAX, 0.0f, clippedSubtitle.c_str());
-    f32 subX = sidebarW + (contentW - subSz.x) * 0.5f;
-    dl->AddText(nullptr, subtitleFontSize, ImVec2(subX, contentY + 8.0f + backSz.y + 12.0f),
-        IM_COL32(120, 130, 145, 200), clippedSubtitle.c_str());
-
-    // Grid layout (offset by sidebar)
-    f32 gridStartY = contentY + 8.0f + backSz.y + 12.0f + subSz.y + 24.0f;
-    f32 cardW = 440.0f;
-    f32 cardH = 320.0f;
-    f32 cardPad = 24.0f;
-    f32 maxRowWidth = contentW - 60.0f;
-    int cardsPerRow = static_cast<int>((maxRowWidth + cardPad) / (cardW + cardPad));
-    if (cardsPerRow < 1) cardsPerRow = 1;
-
-    for (int i = 0; i < demoCount; ++i) {
-        int row = i / cardsPerRow;
-        int col = i % cardsPerRow;
-        int itemsInRow = demoCount - row * cardsPerRow;
-        if (itemsInRow > cardsPerRow) itemsInRow = cardsPerRow;
-
-        f32 rowWidth = itemsInRow * (cardW + cardPad) - cardPad;
-        f32 rowStartX = sidebarW + (contentW - rowWidth) * 0.5f;
-
-        ImVec2 cPos(rowStartX + col * (cardW + cardPad), gridStartY + row * (cardH + cardPad));
-        ImVec2 cEnd(cPos.x + cardW, cPos.y + cardH);
-
-        bool available = (i < static_cast<int>(m_DemoAvailability.size())) && m_DemoAvailability[i];
-        bool hovered = (io.MousePos.x >= cPos.x && io.MousePos.x <= cEnd.x &&
-                       io.MousePos.y >= cPos.y && io.MousePos.y <= cEnd.y);
-
-        ImVec4 accent = demos[i].accentColor;
-        ImU32 accentCol = IM_COL32(
-            (int)(accent.x * 255), (int)(accent.y * 255),
-            (int)(accent.z * 255), available ? ((hovered) ? 255 : 180) : 80);
-
-        // Card background — dimmed if not available
-        ImU32 bgCol = !available ? IM_COL32(20, 22, 28, 255) :
-                      (hovered ? IM_COL32(40, 45, 60, 255) : IM_COL32(25, 28, 35, 255));
-        dl->AddRectFilled(cPos, cEnd, bgCol, 8.0f);
-
-        // Procedural thumbnail for demo cards
-        ImVec2 dThumbMin(cPos.x + 1, cPos.y + 1);
-        ImVec2 dThumbMax(cEnd.x - 1, cPos.y + 160.0f);
-        DrawTemplateThumbnail(dl, demos[i].templateId, dThumbMin, dThumbMax, accent, hovered && available);
-        dl->AddRectFilled(cPos, ImVec2(cEnd.x, cPos.y + 3.0f), accentCol, 8.0f, ImDrawFlags_RoundCornersTop);
-
-        // Border
-        ImU32 borderCol = !available ? IM_COL32(45, 48, 58, 150) :
-                          (hovered ? accentCol : IM_COL32(60, 65, 80, 150));
-        dl->AddRect(cPos, cEnd, borderCol, 8.0f, 0, hovered ? 2.0f : 1.0f);
-
-        // Name (clipped with ellipsis if wider than card)
-        ImU32 nameCol = available ? IM_COL32(220, 225, 245, 255) : IM_COL32(120, 125, 140, 180);
-        DrawCenteredClippedText(dl, demos[i].name, cPos.x, cardW,
-            cPos.y + 172.0f, nameCol, 12.0f, font, 16.0f);
-
-        // Description (centered, multi-line, clipped per line)
-        f32 lineY = cPos.y + 198.0f;
-        ImU32 descCol = available ? IM_COL32(140, 145, 165, 200) : IM_COL32(90, 95, 110, 140);
-        std::string descStr(demos[i].description);
-        std::istringstream iss(descStr);
-        std::string line;
-        while (std::getline(iss, line, '\n')) {
-            DrawCenteredClippedText(dl, line.c_str(), cPos.x, cardW,
-                lineY, descCol, 12.0f, font, 14.0f);
-            lineY += 20.0f;
-        }
-
-        // "Coming Soon" badge overlay for unavailable demos
-        if (!available) {
-            const char* badge = "Coming Soon";
-            f32 badgeFontSize = 16.0f;
-            ImVec2 badgeSz = font->CalcTextSizeA(badgeFontSize, FLT_MAX, 0.0f, badge);
-            f32 badgePadX = 14.0f, badgePadY = 6.0f;
-            f32 badgeW = badgeSz.x + badgePadX * 2.0f;
-            f32 badgeH = badgeSz.y + badgePadY * 2.0f;
-            ImVec2 badgePos(cPos.x + (cardW - badgeW) * 0.5f, cEnd.y - badgeH - 16.0f);
-            ImVec2 badgeEnd(badgePos.x + badgeW, badgePos.y + badgeH);
-
-            dl->AddRectFilled(badgePos, badgeEnd, IM_COL32(60, 65, 80, 200), badgeH * 0.5f);
-            dl->AddRect(badgePos, badgeEnd, IM_COL32(100, 105, 120, 150), badgeH * 0.5f);
-            dl->AddText(nullptr, badgeFontSize,
-                ImVec2(badgePos.x + badgePadX, badgePos.y + badgePadY),
-                IM_COL32(160, 165, 180, 220), badge);
-        }
-
-        // Click to open available demos
-        if (available && hovered && ImGui::IsMouseClicked(0)) {
-            if (std::filesystem::exists(demos[i].scenePath)) {
-                OpenScene(demos[i].scenePath);
-                m_ShowProjectHub = false;
-            } else {
-                // This used to build the demo from the C++ generator. Templates are
-                // folders now, so a missing demo scene is a missing file, and saying
-                // so beats opening something that is not the demo.
-                ENJIN_LOG_WARN(Editor, "Demo scene not found: %s",
-                               demos[i].scenePath);
-                ShowNotification(std::string("Demo scene not found: ") + demos[i].scenePath,
-                                 NotificationType::Warning);
+        // A directory is not enough, the same way it is not enough for
+        // builtin_templates: bin/Examples/ exists in a dev build as the output
+        // folder for the example EXECUTABLES, and finding that first would
+        // shadow the real source projects. Require an actual project inside.
+        for (const auto& entry : std::filesystem::directory_iterator(candidate, ec)) {
+            if (!entry.is_directory()) continue;
+            std::error_code ec2;
+            for (const auto& f : std::filesystem::directory_iterator(entry.path(), ec2)) {
+                if (f.path().extension() == ".enjinproject") {
+                    return candidate.lexically_normal().string();
+                }
             }
         }
     }
+    return {};
 }
 
-// --------------------------------------------------
-// Create project folder structure on disk
-// --------------------------------------------------
+// Append every project in Examples/ to the SAME roster the scene templates use.
+// They are templates too; the only difference is that making one copies a whole
+// project instead of instantiating a scene. Name and blurb come from the
+// project file, so a demo describes itself instead of being described by a
+// table here that goes stale the moment the demo changes.
+static void LoadExampleTemplates() {
+    const std::string dir = FindExamplesDir();
+    if (dir.empty()) {
+        ENJIN_LOG_WARN(Editor, "No Examples folder found beside the editor. "
+                               "Example projects will not be offered as templates.");
+        return;
+    }
+
+    int added = 0;
+    std::error_code ec;
+    for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+        if (!entry.is_directory()) continue;
+
+        std::filesystem::path projFile;
+        std::error_code ec2;
+        for (const auto& f : std::filesystem::directory_iterator(entry.path(), ec2)) {
+            if (f.path().extension() == ".enjinproject") { projFile = f.path(); break; }
+        }
+        if (projFile.empty()) continue;
+
+        HubTemplateInfo t;
+        t.id = entry.path().filename().string();
+        t.name = t.id;
+        t.examplePath = entry.path().lexically_normal().string();
+        t.categoryFlags = kTMPL_ALL;
+        t.maturity = Editor::MaturityTier::Stable;
+
+        try {
+            std::ifstream ifs(projFile.string());
+            if (ifs.is_open()) {
+                nlohmann::json j = nlohmann::json::parse(ifs);
+                t.name = j.value("name", t.name);
+                t.description = j.value("description", std::string());
+            }
+        } catch (const std::exception&) {
+            // A demo with an unreadable project file still lists. Opening it is
+            // what reports the real problem; hiding it here would make a broken
+            // demo look like a missing one.
+        }
+        if (t.description.empty()) {
+            t.description = "Example project\nOpens as your own copy";
+        }
+
+        // Deterministic accent per demo, hashed from the id rather than the
+        // index, so adding one example does not recolour every card after it.
+        u32 h = 2166136261u;
+        for (char c : t.id) { h = (h ^ static_cast<u8>(c)) * 16777619u; }
+        ImGui::ColorConvertHSVtoRGB(static_cast<f32>(h % 360u) / 360.0f, 0.55f, 0.85f,
+                                    t.accentColor.x, t.accentColor.y, t.accentColor.z);
+        t.accentColor.w = 1.0f;
+
+        s_BuiltinTemplates.push_back(std::move(t));
+        ++added;
+    }
+    ENJIN_LOG_INFO(Editor, "Added %d example projects to the template list from %s",
+                   added, dir.c_str());
+}
+
+// Copy an example project into a new project folder.
+//
+// Opening the shipped demo in place would edit it, and the editor auto-saves on
+// a timer, so a look around Playground would silently rewrite the demo every
+// repack reads from. Returns the copied .enjinproject, or empty on failure.
+static std::string CopyExampleProject(const std::string& srcFolder,
+                                      const std::string& destDir,
+                                      const std::string& projectName) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+
+    const fs::path src(srcFolder);
+    if (!fs::is_directory(src, ec)) {
+        ENJIN_LOG_ERROR(Editor, "Example folder is gone: %s", srcFolder.c_str());
+        return {};
+    }
+
+    fs::path dst = fs::path(destDir) / projectName;
+    fs::create_directories(dst, ec);
+    if (ec) {
+        ENJIN_LOG_ERROR(Editor, "Could not create %s: %s",
+                        dst.string().c_str(), ec.message().c_str());
+        return {};
+    }
+
+    // Skip build output. Examples/Playground/Build alone carries a packed game
+    // and an exe; copying it would turn "make a project from this" into a long
+    // wait for files the copy has no use for.
+    static const char* kSkip[] = { "Build", "build", "bin", ".git", "__pycache__" };
+    bool copiedAnything = false;
+    for (const auto& entry : fs::directory_iterator(src, ec)) {
+        const std::string leaf = entry.path().filename().string();
+        bool skip = false;
+        for (const char* sk : kSkip) { if (leaf == sk) { skip = true; break; } }
+        if (skip) continue;
+
+        std::error_code copyEc;
+        if (entry.is_directory()) {
+            fs::copy(entry.path(), dst / leaf,
+                     fs::copy_options::recursive | fs::copy_options::overwrite_existing, copyEc);
+        } else {
+            fs::copy_file(entry.path(), dst / leaf,
+                          fs::copy_options::overwrite_existing, copyEc);
+        }
+        if (copyEc) {
+            ENJIN_LOG_WARN(Editor, "Example copy: %s failed (%s)",
+                           leaf.c_str(), copyEc.message().c_str());
+        } else {
+            copiedAnything = true;
+        }
+    }
+    if (!copiedAnything) return {};
+
+    // The project file carries the demo's name, not the new folder's, so it is
+    // looked up rather than assumed.
+    for (const auto& f : fs::directory_iterator(dst, ec)) {
+        if (f.path().extension() == ".enjinproject") return f.path().string();
+    }
+    ENJIN_LOG_ERROR(Editor, "Copied %s but found no .enjinproject in the copy",
+                    projectName.c_str());
+    return {};
+}
+
 // Where the shipped template folders live. Searched the same way shaders and the
 // window icon are, because the process CWD is the exe directory and never the
 // repo root.
@@ -2313,6 +2342,10 @@ static void LoadBuiltinTemplates() {
     }
     ENJIN_LOG_INFO(Editor, "Loaded %zu built-in templates from %s",
                    s_BuiltinTemplates.size(), dir.c_str());
+
+    // One list. Example projects are templates too; they are just made by
+    // copying a whole project instead of instantiating a scene.
+    LoadExampleTemplates();
 }
 
 // Copy a shipped template's content into a freshly created project.

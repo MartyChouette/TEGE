@@ -219,6 +219,20 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/builtin_templates")
     install(DIRECTORY builtin_templates/ DESTINATION share/enjin/builtin_templates)
 endif()
 
+# The example projects are templates too: the hub lists them beside the scene
+# templates and makes a project by COPYING one. Without this an installed build
+# offers the 15 scene templates and none of the demos, which is what it did
+# until 2026-09-07.
+# Build output is excluded: Examples/Playground/Build alone carries a packed
+# game and an exe, and none of it belongs in a template.
+if(EXISTS "${CMAKE_SOURCE_DIR}/Examples")
+    install(DIRECTORY Examples/ DESTINATION share/enjin/Examples
+            PATTERN "Build" EXCLUDE
+            PATTERN "build" EXCLUDE
+            PATTERN "bin" EXCLUDE
+            PATTERN "__pycache__" EXCLUDE)
+endif()
+
 # A user template folder, if one was shipped alongside.
 if(EXISTS "${CMAKE_SOURCE_DIR}/templates")
     install(DIRECTORY templates/ DESTINATION share/enjin/templates)
