@@ -175,6 +175,11 @@ private:
     f32 m_FixedTimeAccumulator = 0.0f;
     bool m_ExternalFixedClock = false;
     static constexpr f32 FIXED_TIMESTEP = 1.0f / 60.0f;
+
+    // Latch for the frame statement-budget warning: one line, then quiet until
+    // a frame comes in under the budget again. A scene that is permanently over
+    // says so once rather than once every frame.
+    bool m_FrameBudgetWarned = false;
 };
 
 } // namespace Scripting

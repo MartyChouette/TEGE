@@ -146,6 +146,11 @@ void Profiler::DrawProfilerPanel(bool* open) {
         ImGui::SameLine(0, 24);
         ImGui::Text("Triangles: %u", m_CurrentFrame.triangleCount);
 
+        if (m_CurrentFrame.scriptStatements > 0) {
+            ImGui::Text("Script statements: %llu",
+                        static_cast<unsigned long long>(m_CurrentFrame.scriptStatements));
+        }
+
         if (m_CurrentFrame.memoryUsedBytes > 0) {
             f64 mb = static_cast<f64>(m_CurrentFrame.memoryUsedBytes) / (1024.0 * 1024.0);
             ImGui::Text("Memory: %.1f MB", mb);

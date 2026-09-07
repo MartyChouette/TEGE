@@ -32,6 +32,7 @@ struct FrameData {
     u32 entityCount = 0;
     u32 triangleCount = 0;
     usize memoryUsedBytes = 0;
+    u64 scriptStatements = 0;   // AngelScript statements executed this frame
 };
 
 // RAII scope timer
@@ -65,6 +66,9 @@ public:
     void SetEntityCount(u32 count) { m_CurrentFrame.entityCount = count; }
     void SetTriangleCount(u32 count) { m_CurrentFrame.triangleCount = count; }
     void SetMemoryUsed(usize bytes) { m_CurrentFrame.memoryUsedBytes = bytes; }
+    // Frame total from ScriptEngine. The script instruction limit is per CALL,
+    // so this is the only number that says what scripts cost the whole frame.
+    void SetScriptStatements(u64 count) { m_CurrentFrame.scriptStatements = count; }
     void IncrementDrawCalls(u32 count = 1) { m_CurrentFrame.drawCalls += count; }
 
     // Query

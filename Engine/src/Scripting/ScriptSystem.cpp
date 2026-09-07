@@ -6,6 +6,7 @@
 #include "Enjin/Scripting/ScriptPropertyParser.h"
 #include "Enjin/Scripting/CoroutineScheduler.h"
 #include "Enjin/Logging/Log.h"
+#include "Enjin/Debug/Profiler.h"  // frame statement total
 #include <angelscript.h>
 #include <filesystem>
 #include <fstream>
@@ -474,6 +475,11 @@ void ScriptSystem::Update(f32 deltaTime) {
     // it -- all three call Update -- rather than three places remembering to.
     Scripting::TickBindingsTime(deltaTime);
 
+    // Statement accounting for the whole frame. The engine's limit is per CALL
+    // and cannot see a frame, so this is the only number that says what the
+    // scripts cost. Reported, never enforced.
+    m_ScriptEngine->ResetFrameStatementCount();
+
     m_CachedScriptEntities = m_World->GetEntitiesWithComponent<ECS::ScriptComponent>();
 
     // 1. Poll for file changes and process hot reload
@@ -567,6 +573,25 @@ void ScriptSystem::Update(f32 deltaTime) {
         ForEachScript(entity, [](usize, ECS::ScriptAttachment& script) {
             script.startedThisFrame = false;
         });
+    }
+
+    // 9. Publish the frame's statement total and warn once if it crosses.
+    // Not enforced: skipping the remaining scripts would make behaviour depend
+    // on iteration order, which is worse than a slow frame.
+    const u64 statements = m_ScriptEngine->GetFrameStatementCount();
+    Debug::Profiler::Instance().SetScriptStatements(statements);
+    if (statements > ScriptEngine::FRAME_STATEMENT_BUDGET) {
+        if (!m_FrameBudgetWarned) {
+            m_FrameBudgetWarned = true;
+            ENJIN_LOG_WARN(Script,
+                "Scripts executed %llu statements in one frame (over the %llu reporting budget). "
+                "The engine's hard limit cannot see this: it is per CALL, and every script gets "
+                "its own. Warning once until a frame comes in under.",
+                static_cast<unsigned long long>(statements),
+                static_cast<unsigned long long>(ScriptEngine::FRAME_STATEMENT_BUDGET));
+        }
+    } else {
+        m_FrameBudgetWarned = false;
     }
 }
 

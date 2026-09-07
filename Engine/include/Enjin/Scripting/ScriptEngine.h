@@ -3,6 +3,7 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/ECS/Components/Script.h"
 #include <angelscript.h>
+#include <atomic>
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -56,6 +57,22 @@ public:
     // this is cheap and safe at any time; not calling it after a late
     // registration means those functions return garbage.
     void InvalidateContextPool();
+
+    // ── Script statement accounting ──────────────────────────────────────
+    // MAX_INSTRUCTIONS is a per-CALL ceiling and cannot bound a frame: every
+    // dispatch gets its own budget, so N scripts each running just under the
+    // ceiling is N million statements in one frame and nothing fires. The
+    // frame total below is REPORTED, not enforced. The per-call ceiling stays
+    // the only hard stop, because a cap that silently drops half the entities'
+    // updates on a heavy frame is worse than the heavy frame.
+    // Reset once per frame by the runtime that ticks scripts.
+    void ResetFrameStatementCount();
+    u64 GetFrameStatementCount() const;
+
+    // One warning when a frame crosses this. AngelScript runs on the order of
+    // tens of millions of simple statements a second, so a million of them in
+    // one frame already means the scripts ARE the frame.
+    static constexpr u64 FRAME_STATEMENT_BUDGET = 1000000ull;
 
     // Find a method on a script object type
     asIScriptFunction* FindMethod(asIScriptObject* obj, const std::string& decl);
@@ -157,9 +174,22 @@ private:
     u32 m_PollCounter = 0;
     static constexpr u32 POLL_INTERVAL = 30; // Check every 30 frames
 
-    // Execution timeout (instruction limit per Execute call)
-    static constexpr u32 MAX_INSTRUCTIONS = 1000000u; // 1M instructions
+    // Execution ceiling for ONE call. The line callback fires per executed
+    // statement, so this counts statements, not VM instructions, whatever the
+    // name says.
+    static constexpr u32 MAX_INSTRUCTIONS = 1000000u;
     static void LineCallback(asIScriptContext* ctx, void* param);
+
+    // Statement accounting, allocated once per CONTEXT and reused for every
+    // call that context serves. This used to be a `new std::atomic<u32>` in
+    // AcquireContext and a delete in ReturnContext: a heap allocation per
+    // script, per entity, per frame, to police a limit that cannot bound a
+    // frame. Freed where the context is released.
+    struct CallBudget {
+        std::atomic<u32> callCount{0};            // statements in the CURRENT call
+        std::atomic<u64>* frameTotal = nullptr;   // engine-wide, spans all calls
+    };
+    std::atomic<u64> m_FrameStatements{0};
 
     ECS::World* m_World = nullptr;
     Build::AssetReader* m_AssetReader = nullptr;

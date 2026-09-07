@@ -536,17 +536,32 @@ void ScriptEngine::ReleaseInstance(asIScriptObject* obj)
 // Context Pool
 // ---------------------------------------------------------------------------
 
-// Execution timeout callback — aborts scripts that exceed the instruction limit.
-// The instruction counter is stored in the context's user data pointer.
+// Fires per executed statement. Counts twice: once against this call's ceiling,
+// which is the only hard stop, and once into the engine-wide frame total, which
+// is reported and never enforced.
 // ED-C3 fix: use std::atomic to prevent race condition when multiple contexts run concurrently.
 void ScriptEngine::LineCallback(asIScriptContext* ctx, void* param)
 {
-    std::atomic<u32>* counter = reinterpret_cast<std::atomic<u32>*>(param);
-    u32 count = counter->fetch_add(1, std::memory_order_relaxed) + 1;
+    CallBudget* budget = reinterpret_cast<CallBudget*>(param);
+    if (budget->frameTotal) {
+        budget->frameTotal->fetch_add(1, std::memory_order_relaxed);
+    }
+    u32 count = budget->callCount.fetch_add(1, std::memory_order_relaxed) + 1;
     if (count > MAX_INSTRUCTIONS) {
-        ENJIN_LOG_ERROR(Script, "Script exceeded instruction limit (%u) — aborting", MAX_INSTRUCTIONS);
+        ENJIN_LOG_ERROR(Script, "Script exceeded the per-call statement limit (%u) — aborting",
+                        MAX_INSTRUCTIONS);
         ctx->Abort();
     }
+}
+
+void ScriptEngine::ResetFrameStatementCount()
+{
+    m_FrameStatements.store(0, std::memory_order_relaxed);
+}
+
+u64 ScriptEngine::GetFrameStatementCount() const
+{
+    return m_FrameStatements.load(std::memory_order_relaxed);
 }
 
 asIScriptContext* ScriptEngine::AcquireContext()
@@ -572,14 +587,20 @@ asIScriptContext* ScriptEngine::AcquireContext()
         }
     }
 
-    // ED-C3 fix: allocate atomic instruction counter for thread-safe timeout enforcement
-    auto* counter = new std::atomic<u32>(0);
-    ctx->SetUserData(counter, 0);
-    int cbResult = ctx->SetLineCallback(asFUNCTION(ScriptEngine::LineCallback), counter, asCALL_CDECL);
+    // ED-C3 fix: the counters are atomic so concurrent contexts cannot race.
+    // The budget belongs to the CONTEXT, not the call: allocated on this
+    // context's first acquire, reset here, and freed when the context dies.
+    auto* budget = reinterpret_cast<CallBudget*>(ctx->GetUserData(0));
+    if (!budget) {
+        budget = new CallBudget();
+        ctx->SetUserData(budget, 0);
+    }
+    budget->callCount.store(0, std::memory_order_relaxed);
+    budget->frameTotal = &m_FrameStatements;
+
+    int cbResult = ctx->SetLineCallback(asFUNCTION(ScriptEngine::LineCallback), budget, asCALL_CDECL);
     if (cbResult < 0) {
         ENJIN_LOG_WARN(Script, "Failed to set line callback on context (err=%d)", cbResult);
-        delete counter;
-        ctx->SetUserData(nullptr, 0);
         m_ContextPool.push_back(ctx);
         return nullptr;
     }
@@ -610,6 +631,8 @@ void ScriptEngine::InvalidateContextPool()
 {
     for (asIScriptContext* ctx : m_ContextPool) {
         if (ctx) {
+            delete reinterpret_cast<CallBudget*>(ctx->GetUserData(0));
+            ctx->SetUserData(nullptr, 0);
             ctx->Release();
         }
     }
@@ -623,10 +646,8 @@ void ScriptEngine::ReturnContext(asIScriptContext* ctx)
         return;
     }
 
-    // Free the per-context instruction counter (atomic)
-    auto* counter = reinterpret_cast<std::atomic<u32>*>(ctx->GetUserData(0));
-    delete counter;
-    ctx->SetUserData(nullptr, 0);
+    // The statement budget stays attached and is reset on the next acquire.
+    // Freeing it here is what made this a per-call heap allocation.
     ctx->ClearLineCallback();
 
     // Unprepare the context before returning to pool so it releases
