@@ -61,6 +61,14 @@ struct ScriptAttachment {
     bool enabled = true;
     bool initialized = false;   // OnCreate called
     bool started = false;       // OnStart called
+    // OnStart and the first OnUpdate used to land in the SAME ScriptSystem::
+    // Update, so a script that started this frame was handed the whole frame's
+    // dt, including the time before it existed. With the fixed-step accumulator
+    // sitting between them it also took every pending OnFixedUpdate tick, up to
+    // six of them at the 0.1s dt clamp. Anything integrating `pos += v * dt`
+    // teleported on its first frame alive. Ticks now begin the NEXT frame.
+    // Cleared at the end of ScriptSystem::Update.
+    bool startedThisFrame = false;
     bool hasError = false;
     std::string lastError;
 

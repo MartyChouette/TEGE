@@ -518,7 +518,10 @@ void ScriptSystem::Update(f32 deltaTime) {
             ECS::ScriptAttachment* sp = ResolveScript(entity, i);
             if (sp && sp->initialized && !sp->started && !sp->hasError && sp->enabled) {
                 CallLifecycleMethod(entity, i, sp->methodOnStart, "OnStart");
-                if (ECS::ScriptAttachment* after = ResolveScript(entity, i)) after->started = true;
+                if (ECS::ScriptAttachment* after = ResolveScript(entity, i)) {
+                    after->started = true;
+                    after->startedThisFrame = true;  // no ticks until the next frame
+                }
             }
         });
     }
@@ -542,7 +545,8 @@ void ScriptSystem::Update(f32 deltaTime) {
     // 5. OnUpdate
     for (ECS::Entity entity : m_CachedScriptEntities) {
         ForEachScript(entity, [&](usize i, ECS::ScriptAttachment& script) {
-            if (script.initialized && script.started && !script.hasError && script.enabled) {
+            if (script.initialized && script.started && !script.startedThisFrame
+                && !script.hasError && script.enabled) {
                 CallLifecycleMethodFloat(entity, i, script.methodOnUpdate, "OnUpdate", deltaTime);
             }
         });
@@ -555,6 +559,15 @@ void ScriptSystem::Update(f32 deltaTime) {
 
     // 7. OnLateUpdate
     LateUpdate(deltaTime);
+
+    // 8. Scripts that started this frame become tickable from the next one.
+    // Cleared here, after every phase, so the external fixed clock (which runs
+    // its step loop BEFORE Update) sees a clean flag on the following frame.
+    for (ECS::Entity entity : m_CachedScriptEntities) {
+        ForEachScript(entity, [](usize, ECS::ScriptAttachment& script) {
+            script.startedThisFrame = false;
+        });
+    }
 }
 
 void ScriptSystem::FixedUpdate(f32 fixedDeltaTime) {
@@ -566,7 +579,8 @@ void ScriptSystem::FixedUpdate(f32 fixedDeltaTime) {
 
     for (ECS::Entity entity : m_CachedScriptEntities) {
         ForEachScript(entity, [&](usize i, ECS::ScriptAttachment& script) {
-            if (script.initialized && script.started && !script.hasError && script.enabled) {
+            if (script.initialized && script.started && !script.startedThisFrame
+                && !script.hasError && script.enabled) {
                 CallLifecycleMethodFloat(entity, i, script.methodOnFixedUpdate, "OnFixedUpdate", fixedDeltaTime);
             }
         });
@@ -578,7 +592,11 @@ void ScriptSystem::LateUpdate(f32 deltaTime) {
 
     for (ECS::Entity entity : m_CachedScriptEntities) {
         ForEachScript(entity, [&](usize i, ECS::ScriptAttachment& script) {
-            if (script.initialized && script.started && !script.hasError && script.enabled) {
+            // Gated on startedThisFrame like OnUpdate: running a script's
+            // OnLateUpdate on a frame its OnUpdate was skipped is a stranger
+            // state than either choice on its own.
+            if (script.initialized && script.started && !script.startedThisFrame
+                && !script.hasError && script.enabled) {
                 CallLifecycleMethodFloat(entity, i, script.methodOnLateUpdate, "OnLateUpdate", deltaTime);
             }
         });
