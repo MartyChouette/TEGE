@@ -1,5 +1,6 @@
 #include "Enjin/Editor/EditorLayer.h"
 #include "Enjin/ECS/Systems/BrushSolidSystem.h"
+#include "Enjin/ECS/Components/BrushSolid.h"
 #include "Enjin/Renderer/Camera.h"
 #include "Enjin/ECS/CameraMath.h"
 #include "Enjin/GUI/LocalizationBoot.h"
@@ -4566,6 +4567,58 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                         drawLine3D(dl, p0, p1, color, thickness);
                     }
                 };
+
+                // Brush solids: every brush of a selected solid, so the shapes
+                // that MAKE the geometry are visible, not just the geometry.
+                // Colour carries the operation, because "why is there a hole
+                // there" is answered by seeing which box is a subtract.
+                for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::BrushSolidComponent>()) {
+                    if (!IsSelected(entity)) continue;
+                    auto* solid = m_World->GetComponent<ECS::BrushSolidComponent>(entity);
+                    auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+                    if (!solid || !transform) continue;
+
+                    for (usize bi = 0; bi < solid->brushes.size(); ++bi) {
+                        const auto& b = solid->brushes[bi];
+                        const bool target = (solid->gizmoBrush == static_cast<i32>(bi));
+
+                        // Add is the solid, Subtract is the cut, Intersect trims.
+                        // A disabled brush dims rather than disappearing, so you
+                        // can still find the one you switched off.
+                        ImU32 color;
+                        switch (b.op) {
+                            case Geometry::BrushOp::Subtract:
+                                color = IM_COL32(255, 110, 90, b.enabled ? 220 : 70); break;
+                            case Geometry::BrushOp::Intersect:
+                                color = IM_COL32(150, 255, 170, b.enabled ? 220 : 70); break;
+                            default:
+                                color = IM_COL32(120, 200, 255, b.enabled ? 200 : 60); break;
+                        }
+                        const f32 thick = target ? 2.5f : 1.0f;
+
+                        const Math::Vector3 worldCenter =
+                            transform->position + transform->rotation.Rotate(b.center);
+                        const Math::Quaternion worldRot = transform->rotation * b.rotation;
+
+                        // A prism is drawn as its bounding box: the wireframe is
+                        // here to say where a brush IS and what it does, and an
+                        // n-gon outline costs more than it explains.
+                        const Math::Vector3 half =
+                            (b.shape == ECS::BrushSolidComponent::Shape::Prism)
+                                ? Math::Vector3(b.radius, b.halfHeight, b.radius)
+                                : b.halfExtents;
+
+                        drawWireBox(bgDrawList, worldCenter, half, color, thick, worldRot);
+
+                        if (target) {
+                            ImVec2 lp;
+                            if (worldToScreen(worldCenter, lp)) {
+                                bgDrawList->AddText(ImVec2(lp.x + 6.0f, lp.y - 6.0f), color,
+                                                    "Editing brush");
+                            }
+                        }
+                    }
+                }
 
                 // Box colliders (yellow, oriented to entity rotation)
                 for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::BoxColliderComponent>()) {

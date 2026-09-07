@@ -85,6 +85,12 @@ struct ENJIN_API BrushSolidComponent {
     // nothing has been built yet.
     u64 builtHash = 0;
 
+    // Which brush the viewport gizmo drives, or -1 for the entity itself.
+    // Runtime only and deliberately not serialized: it is a selection, not data,
+    // and a scene that reopened with a brush still "being edited" would be
+    // surprising. Set by the inspector's Edit toggle.
+    i32 gizmoBrush = -1;
+
     // Last rebuild's output size, for the inspector to show. A brush solid that
     // has quietly grown to thousands of faces is worth being able to see.
     u32 lastFaceCount = 0;

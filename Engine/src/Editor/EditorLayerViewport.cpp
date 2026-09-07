@@ -1,4 +1,5 @@
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/ECS/Components/BrushSolid.h"
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Assets/AssetPipeline.h"
@@ -922,6 +923,68 @@ void EditorLayer::DrawGizmos() {
                 snapValues[0] = snapValues[1] = snapValues[2] = m_RotateSnap; break;
             case GizmoOperation::Scale:
                 snapValues[0] = snapValues[1] = snapValues[2] = m_ScaleSnap; break;
+        }
+    }
+
+    // --- Brush gizmo -------------------------------------------------------
+    //
+    // A brush solid is a list of shapes inside one entity, so the entity gizmo
+    // can only move the whole thing. When a brush is picked for editing in the
+    // inspector, the gizmo drives THAT brush instead and returns, the same way
+    // the bone gizmo above replaces the entity gizmo while a bone is selected.
+    //
+    // Without this a brush is positioned by typing numbers, which is the
+    // complaint that started the creative-mode work.
+    if (m_PrimarySelected != ECS::INVALID_ENTITY &&
+        m_World->HasComponent<ECS::BrushSolidComponent>(m_PrimarySelected)) {
+        auto* solid = m_World->GetComponent<ECS::BrushSolidComponent>(m_PrimarySelected);
+        if (solid && solid->gizmoBrush >= 0 &&
+            solid->gizmoBrush < static_cast<i32>(solid->brushes.size())) {
+
+            auto& brush = solid->brushes[static_cast<usize>(solid->gizmoBrush)];
+            const Math::Matrix4 entityWorld = ECS::ComputeWorldMatrix(m_World, m_PrimarySelected);
+
+            // The brush's own matrix carries its size as SCALE, so ImGuizmo's
+            // scale handles resize the brush directly rather than needing a
+            // separate widget. A prism has no non-uniform size to express this
+            // way, so it uses its radius and half height on the matching axes.
+            const Math::Vector3 sizeAsScale =
+                (brush.shape == ECS::BrushSolidComponent::Shape::Prism)
+                    ? Math::Vector3(brush.radius, brush.halfHeight, brush.radius)
+                    : brush.halfExtents;
+
+            Math::Matrix4 brushLocal = Math::Matrix4::Translation(brush.center) *
+                                       brush.rotation.ToMatrix() *
+                                       Math::Matrix4::Scale(sizeAsScale);
+            Math::Matrix4 brushWorld = entityWorld * brushLocal;
+
+            if (ImGuizmo::Manipulate(viewMat.m, projMat.m, op, mode, brushWorld.m, nullptr,
+                                     m_UseSnap ? snapValues : nullptr)) {
+                // Back into the entity's space: the brush list is authored
+                // relative to the entity, not the world.
+                const Math::Matrix4 newLocal = entityWorld.Inverse() * brushWorld;
+
+                f32 t[3], r[3], sc[3];
+                ImGuizmo::DecomposeMatrixToComponents(newLocal.m, t, r, sc);
+
+                brush.center = Math::Vector3(t[0], t[1], t[2]);
+                brush.rotation = Math::Quaternion::FromEulerDegrees(Math::Vector3(r[0], r[1], r[2]));
+
+                // A zero or negative extent bounds nothing and would make the
+                // brush contribute no faces at all, so the drag stops there
+                // rather than letting the solid vanish mid-gesture.
+                constexpr f32 kMinExtent = 0.01f;
+                if (brush.shape == ECS::BrushSolidComponent::Shape::Prism) {
+                    brush.radius = std::max(kMinExtent, (std::fabs(sc[0]) + std::fabs(sc[2])) * 0.5f);
+                    brush.halfHeight = std::max(kMinExtent, std::fabs(sc[1]));
+                } else {
+                    brush.halfExtents = Math::Vector3(std::max(kMinExtent, std::fabs(sc[0])),
+                                                      std::max(kMinExtent, std::fabs(sc[1])),
+                                                      std::max(kMinExtent, std::fabs(sc[2])));
+                }
+                solid->dirty = true;
+            }
+            return;   // the brush gizmo replaces the entity gizmo
         }
     }
 

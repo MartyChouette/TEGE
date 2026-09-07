@@ -3265,6 +3265,19 @@ void EditorLayer::DrawBrushSolidComponent(ECS::Entity entity) {
             snprintf(label, sizeof(label), "%d. %s %s%s", static_cast<int>(i) + 1,
                      opName, shapeName, b.enabled ? "" : "  (off)");
 
+            // Drive this brush with the viewport gizmo instead of the entity.
+            // Radio-style: only one brush can be under the gizmo at a time, and
+            // pressing the active one again hands the gizmo back to the entity.
+            const bool isGizmoTarget = (solid->gizmoBrush == static_cast<i32>(i));
+            if (isGizmoTarget) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.50f, 0.80f, 1.0f));
+            if (ImGui::SmallButton(isGizmoTarget ? "Editing" : "Edit")) {
+                solid->gizmoBrush = isGizmoTarget ? -1 : static_cast<i32>(i);
+            }
+            if (isGizmoTarget) ImGui::PopStyleColor();
+            ImGui::SetItemTooltip("Point the viewport gizmo at this brush. Move, rotate and "
+                                  "scale it in the scene instead of typing numbers.");
+            ImGui::SameLine();
+
             if (ImGui::TreeNode(label)) {
                 if (InspectorUndo::Checkbox(m_UndoRedo, "Enabled", &b.enabled)) changed = true;
                 ImGui::SetItemTooltip("Off keeps the brush in the list and stops it "
