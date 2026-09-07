@@ -120,6 +120,56 @@ static void Material_SetRoughness(u64 id, f32 val) {
     if (mc) mc->roughness = val;
 }
 
+// Opacity, and the screen-door dither that makes it usable without blending.
+//
+// The pair exists for the case every fixed-camera game hits: a wall between the
+// lens and the player. `stippleTransparency` is a Bayer 4x4 discard in the
+// fragment shader, so a faded material stays in the OPAQUE pass and there is no
+// sort order to get wrong and no OIT cost. Set it once when the entity spawns
+// and drive `opacity` per frame.
+//
+// Opacity on its own only reads under AlphaMode::Blend; on an Opaque or Mask
+// material the shader forces alpha to 1.0 and the stipple flag is the only
+// thing that makes the value do anything. Both are exposed because a game may
+// want either.
+static void Material_SetOpacity(u64 id, f32 val) {
+    if (!s_BindingsWorld) return;
+    auto* mc = ENJIN_SCRIPT_COMPONENT(MaterialComponent, id);
+    if (mc) mc->opacity = val;
+}
+
+static f32 Material_GetOpacity(u64 id) {
+    if (!s_BindingsWorld) return 1.0f;
+    auto* mc = ENJIN_SCRIPT_COMPONENT(MaterialComponent, id);
+    return mc ? mc->opacity : 1.0f;
+}
+
+static void Material_SetStippleTransparency(u64 id, bool on) {
+    if (!s_BindingsWorld) return;
+    auto* mc = ENJIN_SCRIPT_COMPONENT(MaterialComponent, id);
+    if (mc) mc->stippleTransparency = on;
+}
+
+static bool Material_GetStippleTransparency(u64 id) {
+    if (!s_BindingsWorld) return false;
+    auto* mc = ENJIN_SCRIPT_COMPONENT(MaterialComponent, id);
+    return mc ? mc->stippleTransparency : false;
+}
+
+static void Material_SetAlphaMode(u64 id, i32 mode) {
+    if (!s_BindingsWorld) return;
+    auto* mc = ENJIN_SCRIPT_COMPONENT(MaterialComponent, id);
+    if (!mc) return;
+    if (mode < 0 || mode > 2) return;   // Opaque, Mask, Blend
+    mc->alphaMode = static_cast<MaterialComponent::AlphaMode>(mode);
+}
+
+static i32 Material_GetAlphaMode(u64 id) {
+    if (!s_BindingsWorld) return 0;
+    auto* mc = ENJIN_SCRIPT_COMPONENT(MaterialComponent, id);
+    return mc ? static_cast<i32>(mc->alphaMode) : 0;
+}
+
 static void Material_SetTransmission(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
     auto* mc = ENJIN_SCRIPT_COMPONENT(MaterialComponent, id);
@@ -2336,6 +2386,12 @@ void RegisterComponentBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction("Vector3 Material_GetBaseColor(uint64)", ENJIN_AS_FN(Material_GetBaseColor), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Material_SetMetallic(uint64, float)", ENJIN_AS_FN(Material_SetMetallic), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Material_SetRoughness(uint64, float)", ENJIN_AS_FN(Material_SetRoughness), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Material_SetOpacity(uint64, float)", ENJIN_AS_FN(Material_SetOpacity), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Material_GetOpacity(uint64)", ENJIN_AS_FN(Material_GetOpacity), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Material_SetStippleTransparency(uint64, bool)", ENJIN_AS_FN(Material_SetStippleTransparency), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Material_GetStippleTransparency(uint64)", ENJIN_AS_FN(Material_GetStippleTransparency), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Material_SetAlphaMode(uint64, int)", ENJIN_AS_FN(Material_SetAlphaMode), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int Material_GetAlphaMode(uint64)", ENJIN_AS_FN(Material_GetAlphaMode), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Material_SetTransmission(uint64, float)", ENJIN_AS_FN(Material_SetTransmission), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Material_GetTransmission(uint64)", ENJIN_AS_FN(Material_GetTransmission), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Material_SetIOR(uint64, float)", ENJIN_AS_FN(Material_SetIOR), ENJIN_AS_CALL_CDECL));
