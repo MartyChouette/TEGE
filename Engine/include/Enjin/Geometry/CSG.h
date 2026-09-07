@@ -28,6 +28,7 @@
 #include <vector>
 
 namespace Enjin {
+namespace ECS { struct MeshColliderComponent; }
 namespace Geometry {
 
 // A half-space. Points with Distance(p) < 0 are INSIDE the space the plane
@@ -123,6 +124,37 @@ ENJIN_API ECS::MeshComponent ToMesh(const std::vector<BrushFace>& polygons, f32 
 
 // Convenience: brushes straight to a mesh.
 ENJIN_API ECS::MeshComponent BuildMesh(const std::vector<BrushEntry>& brushes, f32 uvScale = 1.0f);
+
+// --- Collision -------------------------------------------------------------
+//
+// A carved solid needs collision that matches what you can see through, and
+// convex shapes cannot express a hole: a union of convex hulls over the Add
+// brushes puts the doorway back. So the collider is the same triangles as the
+// render mesh. Jolt cooks an exact MeshShape for static bodies whatever the
+// convex flag says, which is precisely this case -- level geometry does not
+// move.
+//
+// Not the render mesh verbatim, though. That duplicates every vertex per face
+// so flat normals work, which a collider has no use for: a box arrives with 24
+// vertices and needs 8. Welding also closes the seams between faces that shared
+// a corner, and physics is happier with a closed mesh than with coincident
+// duplicates.
+struct ENJIN_API CollisionMesh {
+    std::vector<Math::Vector3> vertices;
+    std::vector<u32> indices;
+};
+
+// Weld coincident vertices and drop degenerate triangles. Degenerate triangles
+// are not cosmetic here: a zero-area triangle has no normal, and a physics
+// engine asked to cook one either rejects the whole shape or keeps a face that
+// can never be hit.
+ENJIN_API CollisionMesh BuildCollision(const std::vector<BrushFace>& faces,
+                                       f32 weldEpsilon = 1e-3f);
+
+// Fill a MeshColliderComponent from a brush list. Sets convex=false, because a
+// carved solid is concave by definition and a hull of it would be a lie.
+ENJIN_API void FillMeshCollider(ECS::MeshColliderComponent& out,
+                                const std::vector<BrushEntry>& brushes);
 
 } // namespace Geometry
 } // namespace Enjin

@@ -6,6 +6,7 @@
 // worth asserting are geometric facts, not triangle counts.
 #include "EnjinTest.h"
 #include "Enjin/Geometry/CSG.h"
+#include "Enjin/ECS/Components/Gameplay.h"   // MeshColliderComponent
 
 using namespace Enjin;
 using namespace Enjin::Geometry;
@@ -271,6 +272,95 @@ ENJIN_TEST(CsgMesh, EmptyBrushListMakesAnEmptyMeshNotACrash) {
     ENJIN_EXPECT_EQ(m.vertices.size(), (usize)0);
     ENJIN_EXPECT_EQ(m.indices.size(), (usize)0);
     ENJIN_EXPECT_EQ(m.subMeshes.size(), (usize)0);
+}
+
+// ===========================================================================
+// Collision
+//
+// The bug this half exists to prevent: a doorway you can see through that is
+// still solid to the player. Convex shapes cannot express a hole, so the
+// collider has to be the same triangles as the render mesh.
+// ===========================================================================
+
+ENJIN_TEST(CsgCollision, WeldingCollapsesTheDuplicatedCorners) {
+    auto faces = BuildFaces(Brush::Box(Vector3(0.0f), Vector3(1.0f, 1.0f, 1.0f)));
+
+    // The render mesh keeps a vertex per face so flat normals work: 6 quads,
+    // 24 vertices. A box has 8 corners.
+    ENJIN_EXPECT_EQ(ToMesh(faces).vertices.size(), (usize)24);
+    ENJIN_EXPECT_EQ(BuildCollision(faces).vertices.size(), (usize)8);
+}
+
+ENJIN_TEST(CsgCollision, TrianglesAreWellFormed) {
+    CollisionMesh cm = BuildCollision(BuildSolid({
+        { Brush::Box(Vector3(0.0f), Vector3(4.0f, 3.0f, 0.25f)), BrushOp::Add },
+        { Brush::Box(Vector3(0.0f), Vector3(1.0f, 1.0f, 1.0f)),  BrushOp::Subtract },
+    }));
+
+    ENJIN_ASSERT_TRUE(cm.indices.size() > 0);
+    ENJIN_EXPECT_EQ(cm.indices.size() % 3, (usize)0);
+    for (u32 i : cm.indices) ENJIN_EXPECT_TRUE(i < static_cast<u32>(cm.vertices.size()));
+
+    // No degenerate triangle survives. A zero-area face has no normal, and a
+    // physics cooker handed one either rejects the shape or keeps a face that
+    // can never be hit.
+    for (usize i = 0; i + 2 < cm.indices.size(); i += 3) {
+        const u32 a = cm.indices[i], b = cm.indices[i + 1], c = cm.indices[i + 2];
+        ENJIN_EXPECT_TRUE(a != b && b != c && a != c);
+        const Vector3& p0 = cm.vertices[a];
+        const Vector3& p1 = cm.vertices[b];
+        const Vector3& p2 = cm.vertices[c];
+        const Vector3 e1(p1.x - p0.x, p1.y - p0.y, p1.z - p0.z);
+        const Vector3 e2(p2.x - p0.x, p2.y - p0.y, p2.z - p0.z);
+        const Vector3 n = e1.Cross(e2);
+        ENJIN_EXPECT_TRUE(n.x * n.x + n.y * n.y + n.z * n.z > 1e-12f);
+    }
+}
+
+// The whole point. The collision surface must be absent exactly where the
+// render surface is absent, or the doorway is a window.
+ENJIN_TEST(CsgCollision, TheDoorwayIsOpenToCollisionToo) {
+    std::vector<BrushEntry> brushes = {
+        { Brush::Box(Vector3(0.0f), Vector3(4.0f, 3.0f, 0.25f)), BrushOp::Add },
+        { Brush::Box(Vector3(0.0f, -1.0f, 0.0f), Vector3(1.0f, 2.0f, 1.0f)), BrushOp::Subtract },
+    };
+    CollisionMesh cm = BuildCollision(BuildSolid(brushes));
+
+    // Rebuild a MeshComponent view of the collision triangles so the same
+    // surface test can be applied to it.
+    ECS::MeshComponent asMesh;
+    for (const auto& v : cm.vertices) {
+        ECS::MeshComponent::Vertex mv; mv.position = v; asMesh.vertices.push_back(mv);
+    }
+    asMesh.indices = cm.indices;
+
+    ENJIN_EXPECT_FALSE(SurfaceCoversXY(asMesh, 0.0f, -1.0f, 0.25f));   // through the doorway
+    ENJIN_EXPECT_TRUE(SurfaceCoversXY(asMesh, 3.0f, 0.0f, 0.25f));     // wall beside it
+    ENJIN_EXPECT_TRUE(SurfaceCoversXY(asMesh, 0.0f, 2.5f, 0.25f));     // lintel above it
+}
+
+ENJIN_TEST(CsgCollision, FillMeshColliderMarksItConcaveAndGenerated) {
+    ECS::MeshColliderComponent col;
+    col.convex = true;          // the component default, wrong for a carved solid
+    col.autoGenerate = true;
+
+    FillMeshCollider(col, {
+        { Brush::Box(Vector3(0.0f), Vector3(2.0f, 2.0f, 0.5f)), BrushOp::Add },
+        { Brush::Box(Vector3(0.0f), Vector3(0.5f, 0.5f, 2.0f)), BrushOp::Subtract },
+    });
+
+    ENJIN_EXPECT_FALSE(col.convex);        // a hull would fill the hole back in
+    ENJIN_EXPECT_TRUE(col.generated);
+    ENJIN_EXPECT_FALSE(col.autoGenerate);  // the brush list owns this, not a MeshComponent
+    ENJIN_EXPECT_TRUE(col.vertices.size() > 0);
+    ENJIN_EXPECT_TRUE(col.indices.size() > 0);
+}
+
+ENJIN_TEST(CsgCollision, EmptyBrushListYieldsEmptyCollision) {
+    ECS::MeshColliderComponent col;
+    FillMeshCollider(col, {});
+    ENJIN_EXPECT_EQ(col.vertices.size(), (usize)0);
+    ENJIN_EXPECT_EQ(col.indices.size(), (usize)0);
 }
 
 ENJIN_TEST_MAIN()

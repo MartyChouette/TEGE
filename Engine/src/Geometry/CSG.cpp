@@ -1,5 +1,8 @@
 #include "Enjin/Geometry/CSG.h"
+#include "Enjin/ECS/Components/Gameplay.h"   // MeshColliderComponent
 #include "Enjin/Logging/Log.h"
+
+#include <unordered_map>
 
 #include <algorithm>
 #include <cmath>
@@ -341,6 +344,89 @@ ECS::MeshComponent ToMesh(const std::vector<BrushFace>& polygons, f32 uvScale) {
 
 ECS::MeshComponent BuildMesh(const std::vector<BrushEntry>& brushes, f32 uvScale) {
     return ToMesh(BuildSolid(brushes), uvScale);
+}
+
+// ---------------------------------------------------------------------------
+// Collision
+// ---------------------------------------------------------------------------
+
+CollisionMesh BuildCollision(const std::vector<BrushFace>& faces, f32 weldEpsilon) {
+    CollisionMesh out;
+    if (weldEpsilon <= 0.0f) weldEpsilon = 1e-3f;
+    const f32 inv = 1.0f / weldEpsilon;
+
+    // Snap to a grid of the weld tolerance and key on that. A hash of the
+    // quantised position finds coincident corners without an O(n^2) search,
+    // which matters because a room is thousands of faces.
+    struct Key { i64 x, y, z; bool operator==(const Key& o) const { return x==o.x && y==o.y && z==o.z; } };
+    struct KeyHash {
+        usize operator()(const Key& k) const {
+            u64 h = 1469598103934665603ull;
+            for (i64 v : { k.x, k.y, k.z }) {
+                h ^= static_cast<u64>(v); h *= 1099511628211ull;
+            }
+            return static_cast<usize>(h);
+        }
+    };
+    std::unordered_map<Key, u32, KeyHash> lookup;
+
+    auto indexOf = [&](const Math::Vector3& p) -> u32 {
+        const Key k{ static_cast<i64>(std::llround(p.x * inv)),
+                     static_cast<i64>(std::llround(p.y * inv)),
+                     static_cast<i64>(std::llround(p.z * inv)) };
+        auto it = lookup.find(k);
+        if (it != lookup.end()) return it->second;
+        const u32 idx = static_cast<u32>(out.vertices.size());
+        out.vertices.push_back(p);
+        lookup.emplace(k, idx);
+        return idx;
+    };
+
+    for (const BrushFace& face : faces) {
+        if (!face.Valid()) continue;
+
+        // Same fan as the render mesh: the faces are convex by construction.
+        std::vector<u32> ring;
+        ring.reserve(face.vertices.size());
+        for (const Math::Vector3& p : face.vertices) ring.push_back(indexOf(p));
+
+        for (usize i = 1; i + 1 < ring.size(); ++i) {
+            const u32 a = ring[0], b = ring[i], c = ring[i + 1];
+
+            // Welding can collapse a triangle to a line or a point. Emitting it
+            // would hand the physics cooker a face with no normal.
+            if (a == b || b == c || a == c) continue;
+
+            const Math::Vector3& p0 = out.vertices[a];
+            const Math::Vector3& p1 = out.vertices[b];
+            const Math::Vector3& p2 = out.vertices[c];
+            const Math::Vector3 e1(p1.x - p0.x, p1.y - p0.y, p1.z - p0.z);
+            const Math::Vector3 e2(p2.x - p0.x, p2.y - p0.y, p2.z - p0.z);
+            const Math::Vector3 n = e1.Cross(e2);
+            const f32 area2 = n.x * n.x + n.y * n.y + n.z * n.z;
+            if (area2 < 1e-12f) continue;   // degenerate even after welding
+
+            out.indices.push_back(a);
+            out.indices.push_back(b);
+            out.indices.push_back(c);
+        }
+    }
+
+    return out;
+}
+
+void FillMeshCollider(ECS::MeshColliderComponent& out, const std::vector<BrushEntry>& brushes) {
+    const CollisionMesh cm = BuildCollision(BuildSolid(brushes));
+
+    out.vertices = cm.vertices;
+    out.indices = cm.indices;
+    // Concave by definition once anything has been subtracted, and a hull would
+    // fill the hole straight back in. Static bodies cook the exact triangles
+    // regardless, but saying convex here would be wrong the moment somebody
+    // makes the solid dynamic.
+    out.convex = false;
+    out.generated = true;
+    out.autoGenerate = false;   // the brush list owns this geometry, not a MeshComponent
 }
 
 } // namespace Geometry
