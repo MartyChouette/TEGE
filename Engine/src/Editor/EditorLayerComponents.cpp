@@ -5988,7 +5988,9 @@ void EditorLayer::DrawParticleEmitterComponent(ECS::Entity entity) {
             InspectorUndo::DragFloat(m_UndoRedo, "Start Speed", &emitter->startSpeed, 0.1f, 0.0f, 100.0f);
             InspectorUndo::DragFloat(m_UndoRedo, "Speed Variance", &emitter->speedVariance, 0.1f, 0.0f, emitter->startSpeed);
             InspectorUndo::DragFloat(m_UndoRedo, "Start Size", &emitter->startSize, 0.01f, 0.001f, 10.0f);
+            ImGui::SetItemTooltip("Billboard width in WORLD units, not a multiplier: 0.5 is half a metre across at any distance. Multiplied by the emitter entity's scale. The soft edge fades from 60%% of this width out to the full width, so a particle reads smaller than the number.");
             InspectorUndo::DragFloat(m_UndoRedo, "End Size", &emitter->endSize, 0.01f, 0.0f, 10.0f);
+            ImGui::SetItemTooltip("Billboard width in WORLD units at the end of a particle's life. Same units as Start Size.");
             InspectorUndo::DragFloat(m_UndoRedo, "Start Alpha", &emitter->startAlpha, 0.01f, 0.0f, 1.0f);
             InspectorUndo::DragFloat(m_UndoRedo, "End Alpha", &emitter->endAlpha, 0.01f, 0.0f, 1.0f);
             ImGui::TreePop();

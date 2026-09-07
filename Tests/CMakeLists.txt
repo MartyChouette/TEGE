@@ -230,6 +230,7 @@ enjin_add_test(TestWaterWind        Unit/Effects/TestWaterWind.cpp)
 enjin_add_test(TestReactionDiffusion  Unit/Effects/TestReactionDiffusion.cpp)
 enjin_add_test(TestScreenTransition   Unit/Effects/TestScreenTransition.cpp)
 enjin_add_test(TestWeather            Unit/Effects/TestWeather.cpp)
+enjin_add_test(TestParticleEmitter    Unit/Effects/TestParticleEmitter.cpp)
 enjin_add_test(TestWorldTimeSystem    Unit/Effects/TestWorldTimeSystem.cpp)
 
 # --- GUI ---

@@ -2182,6 +2182,7 @@ void EditorLayer::DrawSettingsWindow() {
                     ImGui::ColorEdit4("Start Color", &cfg.startColor.x);
                     ImGui::ColorEdit4("End Color", &cfg.endColor.x);
                     ImGui::SliderFloat("Start Size", &cfg.startSize, 0.01f, 2.0f);
+                    ImGui::SetItemTooltip("Billboard width in WORLD units, not a multiplier: 0.5 is half a metre across at any distance. Multiplied by the emitter entity's scale. The soft edge fades from 60%% of this width out to the full width, so a particle reads smaller than the number.");
                     ImGui::SliderFloat("End Size", &cfg.endSize, 0.01f, 5.0f);
                     ImGui::TreePop();
                 }

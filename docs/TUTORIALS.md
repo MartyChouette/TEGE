@@ -1438,6 +1438,9 @@ if (path.length() > 0) {
 
 1. Add `ParticleEmitterComponent` to an entity.
 2. Configure emitter properties in the Inspector.
+3. Aim the emitter with the entity's **Transform > Rotation**, the same way a
+   directional or spot light is aimed. Scale the entity to scale the particles
+   and the emission volume together.
 
 ### Key Properties
 
@@ -1448,7 +1451,7 @@ if (path.length() > 0) {
 | Emission Rate | Particles per second |
 | Start Lifetime | How long particles live |
 | Start Speed | Initial velocity |
-| Start Size | Initial particle size |
+| Start Size | Initial billboard width, in world units, times the emitter entity's scale |
 | Start Color | RGB color |
 | Gravity | Gravity vector applied to particles |
 | Drag | Air resistance |

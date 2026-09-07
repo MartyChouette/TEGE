@@ -2763,6 +2763,7 @@ void EditorLayer::DrawParticleEditorPanel() {
     // --- Size Over Lifetime ---
     if (UI::SectionHeader("Size Over Lifetime")) {
         ImGui::DragFloat("Start Size##pe", &emitter->startSize, 0.01f, 0.001f, 10.0f);
+        ImGui::SetItemTooltip("Billboard width in WORLD units, not a multiplier: 0.5 is half a metre across at any distance. Multiplied by the emitter entity's scale. The soft edge fades from 60%% of this width out to the full width, so a particle reads smaller than the number.");
         ImGui::DragFloat("Mid Size##pe", &emitter->sizeMid, 0.01f, -1.0f, 10.0f, "%.3f (-1=auto)");
         ImGui::DragFloat("End Size##pe", &emitter->endSize, 0.01f, 0.0f, 10.0f);
 

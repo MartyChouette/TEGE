@@ -347,7 +347,7 @@ Permanent key-value storage that survives across runs and save slot deletion.
 - `Particle_Burst(uint64, int count)` — Emit a burst of particles instantly.
 - `Particle_SetLifetime(uint64, float)` — Particle lifetime in seconds.
 - `Particle_SetSpeed(uint64, float)` — Particle start speed.
-- `Particle_SetSize(uint64, float startSize, float endSize)` — Particle size over lifetime.
+- `Particle_SetSize(uint64, float startSize, float endSize)` — Billboard width over lifetime, in world units, multiplied by the emitter entity's scale.
 - `Particle_SetColor(uint64, float sr, sg, sb, float er, eg, eb)` — Start/end color RGB.
 - `Particle_SetAlpha(uint64, float startAlpha, float endAlpha)` — Fade over lifetime.
 - `Particle_SetLoop(uint64, bool)` — Enable/disable looping.

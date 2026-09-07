@@ -1,10 +1,44 @@
 #include "Enjin/Effects/ParticleSystem.h"
+#include "Enjin/ECS/Components/Hierarchy.h"  // ComputeWorldMatrix — emitters can be parented
 #include "Enjin/Logging/Log.h"
 #include <cmath>
 #include <algorithm>
 
 namespace Enjin {
 namespace Effects {
+
+// The emitter entity's world transform. TransformComponent holds the LOCAL
+// transform, so reading position straight off it put a parented emitter
+// wherever its offset from the parent landed near the origin. The world matrix
+// carries position, rotation and scale, and all three matter here.
+EmitterTransform ResolveEmitterTransform(ECS::World* world, ECS::Entity entity) {
+    EmitterTransform xf;
+
+    // Force a recompute rather than trusting the cache. The world-matrix dirty
+    // flag is cleared once per frame by RenderSystem::Update, so a runtime that
+    // does not run a RenderSystem (headless tools, tests) would otherwise hand
+    // every emitter the transform it had on the first frame, forever. One
+    // matrix multiply per emitter per frame; the parent chain stays cached.
+    if (auto* t = world->GetComponent<ECS::TransformComponent>(entity)) {
+        t->worldMatrixDirty = true;
+    }
+    const Math::Matrix4 m = ECS::ComputeWorldMatrix(world, entity);
+
+    xf.position = Math::Vector3(m.m[12], m.m[13], m.m[14]);
+    xf.rotation = Math::Quaternion::FromMatrix(m);  // strips scale, no skew
+
+    // Column lengths are the world scale. Largest component: the billboard is
+    // square, so there is no honest way to spend a non-uniform scale, and the
+    // largest keeps a squashed emitter visible instead of collapsing it.
+    auto axisLen = [](f32 a, f32 b, f32 c) { return std::sqrt(a * a + b * b + c * c); };
+    const f32 sx = axisLen(m.m[0], m.m[1], m.m[2]);
+    const f32 sy = axisLen(m.m[4], m.m[5], m.m[6]);
+    const f32 sz = axisLen(m.m[8], m.m[9], m.m[10]);
+    xf.scale = std::max(std::max(sx, sy), sz);
+    if (!(xf.scale > 0.0f)) xf.scale = 1.0f;  // zero/NaN scale would erase the effect
+
+    return xf;
+}
 
 // Fast xorshift32 random float in [0, 1]
 static u32 s_RandState = 2463534242u;
@@ -47,14 +81,16 @@ void ParticleSystem::InitPool(ECS::ParticleEmitterComponent& emitter) {
     pool.initialized = true;
 }
 
-void ParticleSystem::SpawnParticle(ECS::ParticleEmitterComponent& emitter, const Math::Vector3& emitterPos) {
+void ParticleSystem::SpawnParticle(ECS::ParticleEmitterComponent& emitter, const EmitterTransform& xf) {
     auto& pool = emitter.pool;
     if (pool.activeCount >= pool.maxParticles) return;
 
     ECS::Particle& p = pool.particles[pool.activeCount];
 
-    // Compute spawn position and direction based on shape
-    Math::Vector3 spawnPos = emitterPos;
+    // Shape offset and direction are built in the emitter's LOCAL space and
+    // then placed by its world transform, so rotating the entity aims the cone
+    // and scaling it grows the emission volume.
+    Math::Vector3 spawnPos(0.0f, 0.0f, 0.0f);
     Math::Vector3 direction(0.0f, 1.0f, 0.0f);
 
     switch (emitter.shape) {
@@ -119,6 +155,11 @@ void ParticleSystem::SpawnParticle(ECS::ParticleEmitterComponent& emitter, const
         }
     }
 
+    // Local -> world: scale the emission volume, rotate the offset and the
+    // direction by the emitter, then place it.
+    spawnPos = xf.position + xf.rotation.Rotate(spawnPos * xf.scale);
+    direction = xf.rotation.Rotate(direction);
+
     // Set particle properties
     f32 lifetimeVar = emitter.lifetimeVariance > 0.0f
         ? RandRange(-emitter.lifetimeVariance, emitter.lifetimeVariance)
@@ -133,7 +174,7 @@ void ParticleSystem::SpawnParticle(ECS::ParticleEmitterComponent& emitter, const
     p.velocity.z = direction.z * speed;
 
     p.position = spawnPos;
-    p.size = emitter.startSize;
+    p.size = emitter.startSize * xf.scale;
     p.alpha = emitter.startAlpha;
     p.color = emitter.startColor;
 
@@ -143,8 +184,12 @@ void ParticleSystem::SpawnParticle(ECS::ParticleEmitterComponent& emitter, const
     pool.activeCount++;
 }
 
-void ParticleSystem::UpdateEmitter(ECS::ParticleEmitterComponent& emitter, const Math::Vector3& emitterPos, f32 deltaTime) {
+void ParticleSystem::UpdateEmitter(ECS::ParticleEmitterComponent& emitter, const EmitterTransform& xf, f32 deltaTime) {
     auto& pool = emitter.pool;
+
+    // Recorded before the isPlaying gate so the size curve below is correct
+    // even on the frame an emitter is resumed.
+    pool.emitterScale = xf.scale;
 
     if (!emitter.isPlaying) return;
 
@@ -159,7 +204,7 @@ void ParticleSystem::UpdateEmitter(ECS::ParticleEmitterComponent& emitter, const
         // Cap accumulator to prevent massive catch-up spawns after lag spikes
         pool.spawnAccumulator = std::min(pool.spawnAccumulator, 128.0f);
         while (pool.spawnAccumulator >= 1.0f && pool.activeCount < pool.maxParticles) {
-            SpawnParticle(emitter, emitterPos);
+            SpawnParticle(emitter, xf);
             pool.spawnAccumulator -= 1.0f;
         }
     }
@@ -170,7 +215,7 @@ void ParticleSystem::UpdateEmitter(ECS::ParticleEmitterComponent& emitter, const
         if (pool.burstTimer >= emitter.burstInterval) {
             pool.burstTimer -= emitter.burstInterval;
             for (i32 i = 0; i < emitter.burstCount && pool.activeCount < pool.maxParticles; ++i) {
-                SpawnParticle(emitter, emitterPos);
+                SpawnParticle(emitter, xf);
             }
         }
     }
@@ -226,8 +271,9 @@ void ParticleSystem::UpdateEmitter(ECS::ParticleEmitterComponent& emitter, const
         p.position.y += p.velocity.y * speedMult * deltaTime;
         p.position.z += p.velocity.z * speedMult * deltaTime;
 
-        // Interpolate size
-        p.size = PiecewiseLerp(t, emitter.startSize, sizeMid, emitter.endSize);
+        // Interpolate size. Scaled by the emitter, same as the spawn size, or a
+        // scaled emitter would spawn correctly and then snap back on frame two.
+        p.size = PiecewiseLerp(t, emitter.startSize, sizeMid, emitter.endSize) * pool.emitterScale;
 
         // Interpolate alpha
         p.alpha = emitter.startAlpha + (emitter.endAlpha - emitter.startAlpha) * t;
@@ -262,7 +308,7 @@ void ParticleSystem::Update(f32 deltaTime, ECS::World* world) {
 
         auto* emitter = world->GetComponent<ECS::ParticleEmitterComponent>(entity);
         auto* transform = world->GetComponent<ECS::TransformComponent>(entity);
-        if (!emitter || !transform) continue;
+        if (!emitter || !transform) continue;  // transform read via ResolveEmitterTransform
 
         // Initialize pool on first encounter
         if (!emitter->pool.initialized) {
@@ -288,7 +334,7 @@ void ParticleSystem::Update(f32 deltaTime, ECS::World* world) {
             }
         }
 
-        UpdateEmitter(*emitter, transform->position, deltaTime);
+        UpdateEmitter(*emitter, ResolveEmitterTransform(world, entity), deltaTime);
 
         m_TotalActiveParticles += emitter->pool.activeCount;
         m_TotalEmitterCount++;

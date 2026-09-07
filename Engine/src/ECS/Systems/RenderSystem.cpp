@@ -11,6 +11,7 @@
 // Effect renderer headers needed for unique_ptr destructor (incomplete type fix)
 #include "Enjin/Effects/WeatherRenderer.h"
 #include "Enjin/Effects/ParticleRenderer.h"
+#include "Enjin/Effects/ParticleSystem.h"   // ResolveEmitterTransform (GPU emitters)
 #include "Enjin/Effects/FluidRenderer.h"
 #include "Enjin/Effects/SpriteBatchRenderer.h"
 #include "Enjin/Effects/SpriteTextureAtlas.h"
@@ -7679,11 +7680,20 @@ void RenderSystem::TickGPUEmitters(f32 deltaTime) {
         auto* em = m_World->GetComponent<GPUParticleEmitterComponent>(e);
         if (!em) continue;
 
-        Math::Vector3 pos(0.0f);
-        if (auto* t = m_World->GetComponent<TransformComponent>(e)) pos = t->position;
+        // World transform, not the local one: a parented emitter used to spawn
+        // at its offset from the parent, and the entity's rotation and scale
+        // were ignored outright, so aiming or resizing an emitter meant typing
+        // numbers instead of dragging the gizmo.
+        const Effects::EmitterTransform xf = Effects::ResolveEmitterTransform(m_World, e);
+        Math::Vector3 pos = xf.position;
 
         const u8 shape = static_cast<u8>(em->shape);
         Effects::ParticleSpawnParams params = em->ResolveParams();
+
+        // Sizes and the emission volume are world units, so the emitter's scale
+        // applies to both. Same convention as collider sizes.
+        params.size *= xf.scale;
+        const f32 shapeSize = em->shapeSize * xf.scale;
 
         // 2D mode: aim with a single Angle in the XY plane and keep particles planar.
         const bool planar2D = em->emit2D;
@@ -7697,6 +7707,10 @@ void RenderSystem::TickGPUEmitters(f32 deltaTime) {
             pos.z += static_cast<f32>(em->sortingLayer) * 0.01f
                    + static_cast<f32>(em->orderInLayer) * 0.0001f;
         }
+        // Aim by the entity. The 2D Angle composes with the transform's own
+        // rotation rather than replacing it.
+        dir = xf.rotation.Rotate(dir);
+
         params.emitterKey = static_cast<f32>(EntityIndex(e));
 
         // Textured sprite card: resolve the emitter's texture path to a bindless
@@ -7716,7 +7730,7 @@ void RenderSystem::TickGPUEmitters(f32 deltaTime) {
 
         // One-shot burst (fired once, then cleared)
         if (em->burstNow && em->burstCount > 0) {
-            m_GPUParticleSystem->SpawnWithParams(em->burstCount, pos, dir, params, shape, em->shapeSize, planar2D);
+            m_GPUParticleSystem->SpawnWithParams(em->burstCount, pos, dir, params, shape, shapeSize, planar2D);
             em->burstNow = false;
         }
 
@@ -7727,7 +7741,7 @@ void RenderSystem::TickGPUEmitters(f32 deltaTime) {
             if (n > 0) {
                 em->accumulator -= static_cast<f32>(n);
                 if (n > 4096) n = 4096;   // clamp a single frame's spawn spike
-                m_GPUParticleSystem->SpawnWithParams(n, pos, dir, params, shape, em->shapeSize, planar2D);
+                m_GPUParticleSystem->SpawnWithParams(n, pos, dir, params, shape, shapeSize, planar2D);
             }
         }
     }

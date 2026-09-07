@@ -1112,6 +1112,11 @@ struct ParticlePool {
     f32 spawnAccumulator = 0.0f;
     f32 burstTimer = 0.0f;
     f32 systemAge = 0.0f;
+    // World scale of the emitter entity, refreshed every frame. Sizes are world
+    // units, so the size-over-life curve has to be scaled by it too, not just
+    // the size baked at spawn. Live, so rescaling the entity in the editor
+    // resizes the particles already in flight.
+    f32 emitterScale = 1.0f;
     bool initialized = false;
 };
 

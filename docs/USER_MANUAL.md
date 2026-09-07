@@ -1080,6 +1080,11 @@ Makes the entity always face the camera, useful for sprites, health bars, and la
 
 Emits particles with configurable shape, lifetime, color, and forces.
 
+The emitter is placed, aimed and sized by its entity's transform. Move the
+entity to move the emission point, rotate it to aim the cone, and scale it to
+scale the particles and the emission volume together. Sizes and shape radii are
+world units, so the scale is what relates them to the entity.
+
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `isPlaying` | bool | false | Whether particles are being emitted. |
@@ -1092,7 +1097,7 @@ Emits particles with configurable shape, lifetime, color, and forces.
 | `lifetimeVariance` | f32 | 0.5 | Random lifetime variation. |
 | `startSpeed` | f32 | 5.0 | Initial particle speed. |
 | `speedVariance` | f32 | 1.0 | Random speed variation. |
-| `startSize` / `endSize` | f32 | 0.5 / 0.1 | Size at birth and death. |
+| `startSize` / `endSize` | f32 | 0.5 / 0.1 | Billboard width at birth and death, in WORLD units (not a multiplier). Multiplied by the emitter entity's scale. The soft edge fades from 60% of this width out to the full width, so a particle reads smaller than the number. |
 | `startColor` / `endColor` | Vector3 | (1,1,1) | Color at birth and death. |
 | `startAlpha` / `endAlpha` | f32 | 1.0 / 0.0 | Opacity at birth and death. |
 | `shape` | enum | Cone | Emitter shape: `Point`, `Sphere`, `Hemisphere`, `Cone`, `Box`. |
@@ -2644,9 +2649,9 @@ Scripts can implement any of these methods:
 |--------|-------------------|
 | `void OnCreate()` | When the script instance is first created (entering play mode). |
 | `void OnStart()` | Once, on the first frame after creation. |
-| `void OnUpdate(float dt)` | Every frame. |
-| `void OnFixedUpdate(float dt)` | At a fixed timestep (60 Hz). |
-| `void OnLateUpdate(float dt)` | After all OnUpdate calls. |
+| `void OnUpdate(float dt)` | Every frame, starting the frame AFTER `OnStart`. |
+| `void OnFixedUpdate(float dt)` | At a fixed timestep (60 Hz), starting the frame after `OnStart`. |
+| `void OnLateUpdate(float dt)` | After all OnUpdate calls, starting the frame after `OnStart`. |
 | `void OnDestroy()` | When the entity is destroyed or play mode stops. |
 | `void OnEnable()` | When the script is enabled. |
 | `void OnDisable()` | When the script is disabled. |
@@ -2665,6 +2670,16 @@ Scripts can implement any of these methods:
 5. `OnUpdate(deltaTime)`.
 6. Coroutine scheduler update.
 7. `OnLateUpdate(deltaTime)`.
+
+A script does not tick on the frame it starts. Steps 4, 5 and 7 skip any script
+whose `OnStart` ran in step 3 of the same frame, and begin on the next frame.
+
+`deltaTime` is the whole frame, including the part before the script existed,
+and the fixed-step accumulator in step 4 can hold several ticks of time that
+also predate it (up to six, since a frame's delta is clamped to 0.1s). A script
+that integrates `position += velocity * dt` would jump on its first frame alive.
+The cost of skipping is one frame of latency for anything that must act the
+instant it spawns; do that work in `OnStart` itself.
 
 ### Script Properties
 
@@ -2837,6 +2852,10 @@ The profiler displays:
 - **Frame time graph** (240-frame rolling window)
 - **System breakdown**: Render, Physics, Scripting, ECS, Audio (progress bars showing % of frame)
 - **Counters**: Draw calls, entity count, triangle count, memory usage
+- **Script statements**: AngelScript statements executed this frame, across every
+  script. Shown only when scripts ran. This is the number that says what scripts
+  cost the frame -- the engine's own instruction limit is per CALL and cannot see
+  a frame total (see Scripting)
 - **Detailed scopes**: Expandable table showing per-scope last/avg/max times and call counts
 
 ### Adding Profile Scopes
