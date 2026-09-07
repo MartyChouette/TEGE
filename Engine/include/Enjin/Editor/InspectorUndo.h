@@ -70,6 +70,10 @@ namespace Detail {
         static std::unordered_map<ImGuiID, f32[3]> s;
         return s;
     }
+    inline std::unordered_map<ImGuiID, f32[2]>& Float2Cache() {
+        static std::unordered_map<ImGuiID, f32[2]> s;
+        return s;
+    }
     inline std::unordered_map<ImGuiID, i32>& IntCache() {
         static std::unordered_map<ImGuiID, i32> s;
         return s;
@@ -132,6 +136,40 @@ inline bool DragFloat3(UndoRedoManager& undo, const char* label, f32 v[3],
                 undo.Execute(std::make_unique<PropertyEditCommand<V3>>(
                     label, V3{o0, o1, o2}, V3{n0, n1, n2},
                     [setter](const V3& val) { setter(val.x, val.y, val.z); }
+                ));
+            }
+        }
+    }
+    return changed;
+}
+
+// Two-component drag. Added for the UI canvas anchors and pivot, which were the
+// only editable fields in that panel with no undo equivalent to move to.
+//
+// Its own cache, not Float3Cache: sharing that one would read v[2] off the end
+// of a two-element array, which is what the first cut of this function did.
+inline bool DragFloat2(UndoRedoManager& undo, const char* label, f32 v[2],
+                       std::function<void(f32, f32)> setter,
+                       f32 speed = 0.1f, f32 min = 0.0f, f32 max = 0.0f,
+                       const char* format = "%.3f", ImGuiSliderFlags flags = 0)
+{
+    bool changed = ImGui::DragFloat2(label, v, speed, min, max, format, flags);
+    ImGuiID id = ImGui::GetItemID();
+    if (ImGui::IsItemActivated()) {
+        auto& cache = Detail::Float2Cache()[id];
+        cache[0] = v[0]; cache[1] = v[1];
+    }
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+        auto it = Detail::Float2Cache().find(id);
+        if (it != Detail::Float2Cache().end()) {
+            f32 o0 = it->second[0], o1 = it->second[1];
+            f32 n0 = v[0], n1 = v[1];
+            Detail::Float2Cache().erase(it);
+            if (o0 != n0 || o1 != n1) {
+                struct V2 { f32 x, y; };
+                undo.Execute(std::make_unique<PropertyEditCommand<V2>>(
+                    label, V2{o0, o1}, V2{n0, n1},
+                    [setter](const V2& val) { setter(val.x, val.y); }
                 ));
             }
         }

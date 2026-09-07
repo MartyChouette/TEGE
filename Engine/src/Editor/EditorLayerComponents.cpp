@@ -9289,22 +9289,23 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
     // --- Canvas Settings ---
     char nameBuf[128];
     strncpy(nameBuf, canvas->canvasName.c_str(), sizeof(nameBuf) - 1); nameBuf[sizeof(nameBuf) - 1] = '\0';
-    if (ImGui::InputText("Canvas Name", nameBuf, sizeof(nameBuf))) canvas->canvasName = nameBuf;
+    if (InspectorUndo::InputText(m_UndoRedo, "Canvas Name", nameBuf, sizeof(nameBuf),
+                              [t = &canvas->canvasName](const std::string& v) { *t = v; })) canvas->canvasName = nameBuf;
 
-    ImGui::Checkbox("Visible", &canvas->visible);
+    InspectorUndo::Checkbox(m_UndoRedo, "Visible", &canvas->visible);
     ImGui::SameLine();
     ImGui::SetNextItemWidth(80.0f);
-    ImGui::DragInt("Sort Order", &canvas->sortOrder, 1, -100, 1000);
+    InspectorUndo::DragInt(m_UndoRedo, "Sort Order", &canvas->sortOrder, 1, -100, 1000);
 
     ImGui::SetNextItemWidth(100.0f);
-    ImGui::DragFloat("Design W", &canvas->designWidth, 1.0f, 320.0f, 7680.0f);
+    InspectorUndo::DragFloat(m_UndoRedo, "Design W", &canvas->designWidth, 1.0f, 320.0f, 7680.0f);
     ImGui::SameLine();
     ImGui::SetNextItemWidth(100.0f);
-    ImGui::DragFloat("Design H", &canvas->designHeight, 1.0f, 240.0f, 4320.0f);
+    InspectorUndo::DragFloat(m_UndoRedo, "Design H", &canvas->designHeight, 1.0f, 240.0f, 4320.0f);
 
     const char* scaleModes[] = { "Scale With Screen", "Constant Pixel", "Constant Physical" };
     int scaleMode = static_cast<int>(canvas->scaleMode);
-    if (ImGui::Combo("Scale Mode", &scaleMode, scaleModes, 3)) {
+    if (InspectorUndo::Combo(m_UndoRedo, "Scale Mode", &scaleMode, scaleModes, 3)) {
         canvas->scaleMode = static_cast<GUI::UIScaleMode>(scaleMode);
     }
 
@@ -9342,31 +9343,44 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
             theme.name == "Light" ? 1 :
             theme.name == "RetroGreen" ? 2 :
             theme.name == "Fantasy" ? 3 : 0);
-        if (ImGui::Combo("Preset", &presetIdx, presets, 4)) {
+        if (InspectorUndo::Combo(m_UndoRedo, "Preset", &presetIdx, presets, 4)) {
             if (presetIdx >= 0 && presetIdx < static_cast<int>(GUI::UIThemePreset::Count)) {
                 theme = GUI::UITheme::FromPreset(static_cast<GUI::UIThemePreset>(presetIdx));
             }
         }
 
-        ImGui::ColorEdit3("Primary", &theme.primary.x);
-        ImGui::ColorEdit3("Secondary", &theme.secondary.x);
-        ImGui::ColorEdit3("Background", &theme.background.x);
-        ImGui::ColorEdit3("Surface", &theme.surface.x);
-        ImGui::ColorEdit3("Error", &theme.error.x);
-        ImGui::ColorEdit3("Text Primary", &theme.textPrimary.x);
-        ImGui::ColorEdit3("Text Secondary", &theme.textSecondary.x);
-        ImGui::ColorEdit3("Button Default", &theme.buttonDefault.x);
-        ImGui::ColorEdit3("Button Hovered", &theme.buttonHovered.x);
-        ImGui::ColorEdit3("Button Pressed", &theme.buttonPressed.x);
-        ImGui::ColorEdit3("Slider Fill", &theme.sliderFill.x);
-        ImGui::ColorEdit3("Slider Track", &theme.sliderTrack.x);
-        ImGui::DragFloat("Border Radius", &theme.borderRadius, 0.5f, 0.0f, 20.0f);
-        ImGui::DragFloat("Border Width", &theme.borderWidth, 0.25f, 0.0f, 5.0f);
-        ImGui::DragFloat("Font Size Body", &theme.fontSizeBody, 0.5f, 8.0f, 48.0f);
-        ImGui::DragFloat("Font Size Heading", &theme.fontSizeHeading, 0.5f, 12.0f, 72.0f);
-        ImGui::DragFloat("BG Alpha", &theme.bgAlpha, 0.01f, 0.0f, 1.0f);
-        ImGui::DragFloat("Focus Border Width", &theme.focusBorderWidth, 0.25f, 0.0f, 6.0f);
-        ImGui::ColorEdit3("Focus Color", &theme.inputFocused.x);
+        InspectorUndo::ColorEdit3(m_UndoRedo, "Primary", &theme.primary.x,
+                              [c = &theme.primary](f32 r, f32 g, f32 b) { c->x = r; c->y = g; c->z = b; });
+        InspectorUndo::ColorEdit3(m_UndoRedo, "Secondary", &theme.secondary.x,
+                              [c = &theme.secondary](f32 r, f32 g, f32 b) { c->x = r; c->y = g; c->z = b; });
+        InspectorUndo::ColorEdit3(m_UndoRedo, "Background", &theme.background.x,
+                              [c = &theme.background](f32 r, f32 g, f32 b) { c->x = r; c->y = g; c->z = b; });
+        InspectorUndo::ColorEdit3(m_UndoRedo, "Surface", &theme.surface.x,
+                              [c = &theme.surface](f32 r, f32 g, f32 b) { c->x = r; c->y = g; c->z = b; });
+        InspectorUndo::ColorEdit3(m_UndoRedo, "Error", &theme.error.x,
+                              [c = &theme.error](f32 r, f32 g, f32 b) { c->x = r; c->y = g; c->z = b; });
+        InspectorUndo::ColorEdit3(m_UndoRedo, "Text Primary", &theme.textPrimary.x,
+                              [c = &theme.textPrimary](f32 r, f32 g, f32 b) { c->x = r; c->y = g; c->z = b; });
+        InspectorUndo::ColorEdit3(m_UndoRedo, "Text Secondary", &theme.textSecondary.x,
+                              [c = &theme.textSecondary](f32 r, f32 g, f32 b) { c->x = r; c->y = g; c->z = b; });
+        InspectorUndo::ColorEdit3(m_UndoRedo, "Button Default", &theme.buttonDefault.x,
+                              [c = &theme.buttonDefault](f32 r, f32 g, f32 b) { c->x = r; c->y = g; c->z = b; });
+        InspectorUndo::ColorEdit3(m_UndoRedo, "Button Hovered", &theme.buttonHovered.x,
+                              [c = &theme.buttonHovered](f32 r, f32 g, f32 b) { c->x = r; c->y = g; c->z = b; });
+        InspectorUndo::ColorEdit3(m_UndoRedo, "Button Pressed", &theme.buttonPressed.x,
+                              [c = &theme.buttonPressed](f32 r, f32 g, f32 b) { c->x = r; c->y = g; c->z = b; });
+        InspectorUndo::ColorEdit3(m_UndoRedo, "Slider Fill", &theme.sliderFill.x,
+                              [c = &theme.sliderFill](f32 r, f32 g, f32 b) { c->x = r; c->y = g; c->z = b; });
+        InspectorUndo::ColorEdit3(m_UndoRedo, "Slider Track", &theme.sliderTrack.x,
+                              [c = &theme.sliderTrack](f32 r, f32 g, f32 b) { c->x = r; c->y = g; c->z = b; });
+        InspectorUndo::DragFloat(m_UndoRedo, "Border Radius", &theme.borderRadius, 0.5f, 0.0f, 20.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Border Width", &theme.borderWidth, 0.25f, 0.0f, 5.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Font Size Body", &theme.fontSizeBody, 0.5f, 8.0f, 48.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Font Size Heading", &theme.fontSizeHeading, 0.5f, 12.0f, 72.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "BG Alpha", &theme.bgAlpha, 0.01f, 0.0f, 1.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Focus Border Width", &theme.focusBorderWidth, 0.25f, 0.0f, 6.0f);
+        InspectorUndo::ColorEdit3(m_UndoRedo, "Focus Color", &theme.inputFocused.x,
+                              [c = &theme.inputFocused](f32 r, f32 g, f32 b) { c->x = r; c->y = g; c->z = b; });
 
         ImGui::TreePop();
     }
@@ -9493,7 +9507,8 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
     char elemNameBuf[128];
     strncpy(elemNameBuf, sel->name.c_str(), sizeof(elemNameBuf) - 1); elemNameBuf[sizeof(elemNameBuf) - 1] = '\0';
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.5f);
-    if (ImGui::InputText("##ElemName", elemNameBuf, sizeof(elemNameBuf))) sel->name = elemNameBuf;
+    if (InspectorUndo::InputText(m_UndoRedo, "##ElemName", elemNameBuf, sizeof(elemNameBuf),
+                              [t = &sel->name](const std::string& v) { *t = v; })) sel->name = elemNameBuf;
     ImGui::SameLine();
 
     const char* widgetTypes[] = {
@@ -9502,18 +9517,18 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
     };
     int widgetType = static_cast<int>(sel->type);
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-    if (ImGui::Combo("##WidgetType", &widgetType, widgetTypes, 17)) {
+    if (InspectorUndo::Combo(m_UndoRedo, "##WidgetType", &widgetType, widgetTypes, 17)) {
         sel->type = static_cast<GUI::UIWidgetType>(widgetType);
     }
 
-    ImGui::Checkbox("Visible", &sel->visible);
+    InspectorUndo::Checkbox(m_UndoRedo, "Visible", &sel->visible);
     ImGui::SameLine();
-    ImGui::Checkbox("Enabled", &sel->enabled);
+    InspectorUndo::Checkbox(m_UndoRedo, "Enabled", &sel->enabled);
     ImGui::SameLine();
-    ImGui::Checkbox("Focusable", &sel->focusable);
+    InspectorUndo::Checkbox(m_UndoRedo, "Focusable", &sel->focusable);
 
     ImGui::SetNextItemWidth(100.0f);
-    ImGui::DragInt("Tab Order", &sel->tabOrder, 1, 0, 100, sel->tabOrder == 0 ? "Auto" : "%d");
+    InspectorUndo::DragInt(m_UndoRedo, "Tab Order", &sel->tabOrder, 1, 0, 100, sel->tabOrder == 0 ? "Auto" : "%d");
 
     ImGui::Spacing();
 
@@ -9528,16 +9543,16 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
 
     bool changed = false;
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.24f);
-    if (ImGui::DragFloat("##X", &x, 1.0f, -10000.0f, 10000.0f, "X: %.0f")) changed = true;
+    if (InspectorUndo::DragFloat(m_UndoRedo, "##X", &x, 1.0f, -10000.0f, 10000.0f, "X: %.0f")) changed = true;
     ImGui::SameLine();
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.32f);
-    if (ImGui::DragFloat("##Y", &y, 1.0f, -10000.0f, 10000.0f, "Y: %.0f")) changed = true;
+    if (InspectorUndo::DragFloat(m_UndoRedo, "##Y", &y, 1.0f, -10000.0f, 10000.0f, "Y: %.0f")) changed = true;
     ImGui::SameLine();
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.48f);
-    if (ImGui::DragFloat("##W", &w, 1.0f, 1.0f, 10000.0f, "W: %.0f")) changed = true;
+    if (InspectorUndo::DragFloat(m_UndoRedo, "##W", &w, 1.0f, 1.0f, 10000.0f, "W: %.0f")) changed = true;
     ImGui::SameLine();
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-    if (ImGui::DragFloat("##H", &h, 1.0f, 1.0f, 10000.0f, "H: %.0f")) changed = true;
+    if (InspectorUndo::DragFloat(m_UndoRedo, "##H", &h, 1.0f, 1.0f, 10000.0f, "H: %.0f")) changed = true;
 
     if (changed) {
         canvas->SetDesignRect(sel->id, x, y, w, h);
@@ -9643,7 +9658,7 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
         const char* modes[] = { "None (anchors)", "Vertical Stack", "Horizontal Stack", "Grid" };
         int mode = static_cast<int>(sel->layoutMode);
         ImGui::SetNextItemWidth(160.0f);
-        if (ImGui::Combo("##LayoutMode", &mode, modes, 4)) {
+        if (InspectorUndo::Combo(m_UndoRedo, "##LayoutMode", &mode, modes, 4)) {
             sel->layoutMode = static_cast<GUI::UILayoutMode>(mode);
         }
         if (ImGui::IsItemHovered()) {
@@ -9651,21 +9666,21 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
         }
         if (sel->layoutMode != GUI::UILayoutMode::None) {
             ImGui::SetNextItemWidth(90.0f);
-            ImGui::DragFloat("Spacing", &sel->layoutSpacing, 0.25f, -1.0f, 128.0f, "%.0f");
+            InspectorUndo::DragFloat(m_UndoRedo, "Spacing", &sel->layoutSpacing, 0.25f, -1.0f, 128.0f, "%.0f");
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("-1 = theme spacing");
             ImGui::SetNextItemWidth(90.0f);
-            ImGui::DragFloat("Pad X", &sel->layoutPaddingX, 0.25f, 0.0f, 256.0f, "%.0f");
+            InspectorUndo::DragFloat(m_UndoRedo, "Pad X", &sel->layoutPaddingX, 0.25f, 0.0f, 256.0f, "%.0f");
             ImGui::SameLine();
             ImGui::SetNextItemWidth(90.0f);
-            ImGui::DragFloat("Pad Y", &sel->layoutPaddingY, 0.25f, 0.0f, 256.0f, "%.0f");
+            InspectorUndo::DragFloat(m_UndoRedo, "Pad Y", &sel->layoutPaddingY, 0.25f, 0.0f, 256.0f, "%.0f");
             if (sel->layoutMode == GUI::UILayoutMode::Grid) {
                 ImGui::SetNextItemWidth(90.0f);
-                ImGui::DragInt("Columns", &sel->data.gridColumns, 0.1f, 1, 12);
+                InspectorUndo::DragInt(m_UndoRedo, "Columns", &sel->data.gridColumns, 0.1f, 1, 12);
             } else {
                 const char* aligns[] = { "Start", "Center", "End", "Stretch" };
                 int align = static_cast<int>(sel->layoutAlign);
                 ImGui::SetNextItemWidth(110.0f);
-                if (ImGui::Combo("Align", &align, aligns, 4)) {
+                if (InspectorUndo::Combo(m_UndoRedo, "Align", &align, aligns, 4)) {
                     sel->layoutAlign = static_cast<GUI::UILayoutAlign>(align);
                 }
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("Cross-axis placement of children");
@@ -9681,17 +9696,18 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
         ImGui::TextDisabled("Text");
         char textBuf[256];
         strncpy(textBuf, sel->data.text.c_str(), sizeof(textBuf) - 1); textBuf[sizeof(textBuf) - 1] = '\0';
-        if (ImGui::InputText("##Text", textBuf, sizeof(textBuf))) sel->data.text = textBuf;
+        if (InspectorUndo::InputText(m_UndoRedo, "##Text", textBuf, sizeof(textBuf),
+                              [t = &sel->data.text](const std::string& v) { *t = v; })) sel->data.text = textBuf;
 
         const char* hAligns[] = { "Left", "Center", "Right" };
         int hAlign = sel->data.textAlignH;
         ImGui::SetNextItemWidth(80.0f);
-        if (ImGui::Combo("H Align", &hAlign, hAligns, 3)) sel->data.textAlignH = static_cast<u8>(hAlign);
+        if (InspectorUndo::Combo(m_UndoRedo, "H Align", &hAlign, hAligns, 3)) sel->data.textAlignH = static_cast<u8>(hAlign);
         ImGui::SameLine();
         const char* vAligns[] = { "Top", "Center", "Bottom" };
         int vAlign = sel->data.textAlignV;
         ImGui::SetNextItemWidth(80.0f);
-        if (ImGui::Combo("V Align", &vAlign, vAligns, 3)) sel->data.textAlignV = static_cast<u8>(vAlign);
+        if (InspectorUndo::Combo(m_UndoRedo, "V Align", &vAlign, vAligns, 3)) sel->data.textAlignV = static_cast<u8>(vAlign);
 
         // Data binding: live gameplay value pushed into this element every frame
         // (same behavior on desktop, editor play, and web). "None" = static.
@@ -9703,7 +9719,7 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
             if (sel->data.bindField == bindKeys[bi]) bindIdx = bi;
         }
         ImGui::SetNextItemWidth(140.0f);
-        if (ImGui::Combo("##BindField", &bindIdx, bindOptions, 3)) {
+        if (InspectorUndo::Combo(m_UndoRedo, "##BindField", &bindIdx, bindOptions, 3)) {
             sel->data.bindField = bindKeys[bindIdx];
             sel->data.boundText.clear();
             MarkDirty();
@@ -9712,7 +9728,7 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
             ImGui::SameLine();
             ImGui::SetNextItemWidth(90.0f);
             f32 total = sel->data.bindMaxValue;
-            if (ImGui::DragFloat("Total##BindMax", &total, 1.0f, 0.0f, 9999.0f, "%.0f")) {
+            if (InspectorUndo::DragFloat(m_UndoRedo, "Total##BindMax", &total, 1.0f, 0.0f, 9999.0f, "%.0f")) {
                 sel->data.bindMaxValue = total;
                 MarkDirty();
             }
@@ -9724,15 +9740,18 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
         ImGui::TextDisabled("Image");
         char imgBuf[256];
         strncpy(imgBuf, sel->data.imagePath.c_str(), sizeof(imgBuf) - 1); imgBuf[sizeof(imgBuf) - 1] = '\0';
-        if (ImGui::InputText("Image Path", imgBuf, sizeof(imgBuf))) sel->data.imagePath = imgBuf;
-        ImGui::ColorEdit3("Image Tint", &sel->data.imageTint.x);
-        ImGui::DragFloat("Image Alpha", &sel->data.imageAlpha, 0.01f, 0.0f, 1.0f);
+        if (InspectorUndo::InputText(m_UndoRedo, "Image Path", imgBuf, sizeof(imgBuf),
+                              [t = &sel->data.imagePath](const std::string& v) { *t = v; })) sel->data.imagePath = imgBuf;
+        InspectorUndo::ColorEdit3(m_UndoRedo, "Image Tint", &sel->data.imageTint.x,
+                              [c = &sel->data.imageTint](f32 r, f32 g, f32 b) { c->x = r; c->y = g; c->z = b; });
+        InspectorUndo::DragFloat(m_UndoRedo, "Image Alpha", &sel->data.imageAlpha, 0.01f, 0.0f, 1.0f);
     }
 
     if (sel->type == GUI::UIWidgetType::ProgressBar) {
         ImGui::TextDisabled("Progress Bar");
-        ImGui::DragFloat("Value", &sel->data.progressValue, 0.01f, 0.0f, 1.0f);
-        ImGui::ColorEdit3("Fill Color", &sel->data.progressFillColor.x);
+        InspectorUndo::DragFloat(m_UndoRedo, "Value", &sel->data.progressValue, 0.01f, 0.0f, 1.0f);
+        InspectorUndo::ColorEdit3(m_UndoRedo, "Fill Color", &sel->data.progressFillColor.x,
+                              [c = &sel->data.progressFillColor](f32 r, f32 g, f32 b) { c->x = r; c->y = g; c->z = b; });
 
         // Data binding (same combo as text widgets): a bound bar auto-fills from
         // live gameplay each frame on every platform.
@@ -9743,7 +9762,7 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
             if (sel->data.bindField == pbBindKeys[bi]) pbBindIdx = bi;
         }
         ImGui::SetNextItemWidth(140.0f);
-        if (ImGui::Combo("Bind To##PB", &pbBindIdx, pbBindOptions, 3)) {
+        if (InspectorUndo::Combo(m_UndoRedo, "Bind To##PB", &pbBindIdx, pbBindOptions, 3)) {
             sel->data.bindField = pbBindKeys[pbBindIdx];
             sel->data.boundText.clear();
             MarkDirty();
@@ -9752,23 +9771,24 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
 
     if (sel->type == GUI::UIWidgetType::Slider) {
         ImGui::TextDisabled("Slider");
-        ImGui::DragFloat("Value", &sel->data.sliderValue, 0.01f, sel->data.sliderMin, sel->data.sliderMax);
-        ImGui::DragFloat("Min", &sel->data.sliderMin, 0.01f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Value", &sel->data.sliderValue, 0.01f, sel->data.sliderMin, sel->data.sliderMax);
+        InspectorUndo::DragFloat(m_UndoRedo, "Min", &sel->data.sliderMin, 0.01f);
         ImGui::SameLine();
-        ImGui::DragFloat("Max", &sel->data.sliderMax, 0.01f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Max", &sel->data.sliderMax, 0.01f);
     }
 
     if (sel->type == GUI::UIWidgetType::Checkbox || sel->type == GUI::UIWidgetType::Toggle) {
-        ImGui::Checkbox("Checked", &sel->data.checked);
+        InspectorUndo::Checkbox(m_UndoRedo, "Checked", &sel->data.checked);
     }
 
     // Dropdown
     if (sel->type == GUI::UIWidgetType::Dropdown) {
         ImGui::TextDisabled("Dropdown");
-        ImGui::DragInt("Selected##DD", &sel->data.selectedOption, 1, 0, std::max(0, static_cast<int>(sel->data.options.size()) - 1));
+        InspectorUndo::DragInt(m_UndoRedo, "Selected##DD", &sel->data.selectedOption, 1, 0, std::max(0, static_cast<int>(sel->data.options.size()) - 1));
         char placeBuf[128];
         strncpy(placeBuf, sel->data.placeholder.c_str(), sizeof(placeBuf) - 1); placeBuf[sizeof(placeBuf) - 1] = '\0';
-        if (ImGui::InputText("Placeholder##DD", placeBuf, sizeof(placeBuf))) sel->data.placeholder = placeBuf;
+        if (InspectorUndo::InputText(m_UndoRedo, "Placeholder##DD", placeBuf, sizeof(placeBuf),
+                              [t = &sel->data.placeholder](const std::string& v) { *t = v; })) sel->data.placeholder = placeBuf;
 
         ImGui::Text("Options (%d):", static_cast<int>(sel->data.options.size()));
         for (int i = 0; i < static_cast<int>(sel->data.options.size()); ++i) {
@@ -9789,16 +9809,18 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
         ImGui::TextDisabled("Text Input");
         char inputBuf[256];
         strncpy(inputBuf, sel->data.inputText.c_str(), sizeof(inputBuf) - 1); inputBuf[sizeof(inputBuf) - 1] = '\0';
-        if (ImGui::InputText("Input Text##TI", inputBuf, sizeof(inputBuf))) sel->data.inputText = inputBuf;
+        if (InspectorUndo::InputText(m_UndoRedo, "Input Text##TI", inputBuf, sizeof(inputBuf),
+                              [t = &sel->data.inputText](const std::string& v) { *t = v; })) sel->data.inputText = inputBuf;
         char placeBuf2[128];
         strncpy(placeBuf2, sel->data.placeholder.c_str(), sizeof(placeBuf2) - 1); placeBuf2[sizeof(placeBuf2) - 1] = '\0';
-        if (ImGui::InputText("Placeholder##TI", placeBuf2, sizeof(placeBuf2))) sel->data.placeholder = placeBuf2;
+        if (InspectorUndo::InputText(m_UndoRedo, "Placeholder##TI", placeBuf2, sizeof(placeBuf2),
+                              [t = &sel->data.placeholder](const std::string& v) { *t = v; })) sel->data.placeholder = placeBuf2;
     }
 
     // RadioGroup
     if (sel->type == GUI::UIWidgetType::RadioGroup) {
         ImGui::TextDisabled("Radio Group");
-        ImGui::DragInt("Selected##RG", &sel->data.selectedOption, 1, 0, std::max(0, static_cast<int>(sel->data.options.size()) - 1));
+        InspectorUndo::DragInt(m_UndoRedo, "Selected##RG", &sel->data.selectedOption, 1, 0, std::max(0, static_cast<int>(sel->data.options.size()) - 1));
         ImGui::Text("Options (%d):", static_cast<int>(sel->data.options.size()));
         for (int i = 0; i < static_cast<int>(sel->data.options.size()); ++i) {
             char optBuf[128];
@@ -9816,13 +9838,13 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
     // Grid
     if (sel->type == GUI::UIWidgetType::Grid) {
         ImGui::TextDisabled("Grid Layout");
-        ImGui::DragInt("Columns", &sel->data.gridColumns, 1, 1, 12);
+        InspectorUndo::DragInt(m_UndoRedo, "Columns", &sel->data.gridColumns, 1, 1, 12);
     }
 
     // TabGroup
     if (sel->type == GUI::UIWidgetType::TabGroup) {
         ImGui::TextDisabled("Tab Group");
-        ImGui::DragInt("Active Tab", &sel->data.activeTabIndex, 1, 0,
+        InspectorUndo::DragInt(m_UndoRedo, "Active Tab", &sel->data.activeTabIndex, 1, 0,
             std::max(0, static_cast<int>(sel->childIds.size()) - 1));
         ImGui::TextDisabled("Add child elements as tab pages");
     }
@@ -9832,8 +9854,9 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
         ImGui::TextDisabled("Tooltip");
         char tipBuf[256];
         strncpy(tipBuf, sel->data.tooltipText.c_str(), sizeof(tipBuf) - 1); tipBuf[sizeof(tipBuf) - 1] = '\0';
-        if (ImGui::InputText("Tooltip Text", tipBuf, sizeof(tipBuf))) sel->data.tooltipText = tipBuf;
-        ImGui::DragFloat("Tooltip Delay", &sel->data.tooltipDelay, 0.05f, 0.0f, 5.0f, "%.2f s");
+        if (InspectorUndo::InputText(m_UndoRedo, "Tooltip Text", tipBuf, sizeof(tipBuf),
+                              [t = &sel->data.tooltipText](const std::string& v) { *t = v; })) sel->data.tooltipText = tipBuf;
+        InspectorUndo::DragFloat(m_UndoRedo, "Tooltip Delay", &sel->data.tooltipDelay, 0.05f, 0.0f, 5.0f, "%.2f s");
     }
 
     // Modal
@@ -9841,14 +9864,15 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
         ImGui::TextDisabled("Modal Dialog");
         char modalTextBuf[256];
         strncpy(modalTextBuf, sel->data.text.c_str(), sizeof(modalTextBuf) - 1); modalTextBuf[sizeof(modalTextBuf) - 1] = '\0';
-        if (ImGui::InputText("Title##Modal", modalTextBuf, sizeof(modalTextBuf))) sel->data.text = modalTextBuf;
+        if (InspectorUndo::InputText(m_UndoRedo, "Title##Modal", modalTextBuf, sizeof(modalTextBuf),
+                              [t = &sel->data.text](const std::string& v) { *t = v; })) sel->data.text = modalTextBuf;
         ImGui::TextDisabled("Toggle visible to show/hide");
     }
 
     // ListView
     if (sel->type == GUI::UIWidgetType::ListView) {
         ImGui::TextDisabled("List View");
-        ImGui::DragInt("Selected Item", &sel->data.listSelectedIndex, 1, -1,
+        InspectorUndo::DragInt(m_UndoRedo, "Selected Item", &sel->data.listSelectedIndex, 1, -1,
             std::max(0, static_cast<int>(sel->childIds.size()) - 1));
         ImGui::TextDisabled("Add child elements as list items");
     }
@@ -9857,19 +9881,23 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
 
     // --- Style (shown directly) ---
     ImGui::TextDisabled("Style");
-    ImGui::ColorEdit3("BG Color", &sel->style.bgColor.x);
-    ImGui::ColorEdit3("Text Color", &sel->style.textColor.x);
-    ImGui::ColorEdit3("Border Color", &sel->style.borderColor.x);
-    ImGui::DragFloat("BG Alpha", &sel->style.bgAlpha, 0.01f, -1.0f, 1.0f);
+    InspectorUndo::ColorEdit3(m_UndoRedo, "BG Color", &sel->style.bgColor.x,
+                              [c = &sel->style.bgColor](f32 r, f32 g, f32 b) { c->x = r; c->y = g; c->z = b; });
+    InspectorUndo::ColorEdit3(m_UndoRedo, "Text Color", &sel->style.textColor.x,
+                              [c = &sel->style.textColor](f32 r, f32 g, f32 b) { c->x = r; c->y = g; c->z = b; });
+    InspectorUndo::ColorEdit3(m_UndoRedo, "Border Color", &sel->style.borderColor.x,
+                              [c = &sel->style.borderColor](f32 r, f32 g, f32 b) { c->x = r; c->y = g; c->z = b; });
+    InspectorUndo::DragFloat(m_UndoRedo, "BG Alpha", &sel->style.bgAlpha, 0.01f, -1.0f, 1.0f);
 
     ImGui::SetNextItemWidth(100.0f);
-    ImGui::DragFloat("Border Radius", &sel->style.borderRadius, 0.5f, -1.0f, 20.0f);
+    InspectorUndo::DragFloat(m_UndoRedo, "Border Radius", &sel->style.borderRadius, 0.5f, -1.0f, 20.0f);
     ImGui::SameLine();
     ImGui::SetNextItemWidth(100.0f);
-    ImGui::DragFloat("Border Width", &sel->style.borderWidth, 0.25f, -1.0f, 5.0f);
+    InspectorUndo::DragFloat(m_UndoRedo, "Border Width", &sel->style.borderWidth, 0.25f, -1.0f, 5.0f);
 
-    ImGui::DragFloat("Font Size", &sel->style.fontSize, 0.5f, -1.0f, 72.0f);
-    ImGui::ColorEdit3("Focus Color", &sel->style.focusColor.x);
+    InspectorUndo::DragFloat(m_UndoRedo, "Font Size", &sel->style.fontSize, 0.5f, -1.0f, 72.0f);
+    InspectorUndo::ColorEdit3(m_UndoRedo, "Focus Color", &sel->style.focusColor.x,
+                              [c = &sel->style.focusColor](f32 r, f32 g, f32 b) { c->x = r; c->y = g; c->z = b; });
     ImGui::TextDisabled("(-1 = use theme default)");
 
     // Nine-slice (collapsible — rarely used)
@@ -9881,10 +9909,10 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
             if (ImGui::InputText("Texture Path", pathBuf, sizeof(pathBuf)))
                 sel->style.nineSlice.texturePath = pathBuf;
 
-            ImGui::DragFloat("Border Left", &sel->style.nineSlice.borderLeft, 0.5f, 0.0f, 128.0f);
-            ImGui::DragFloat("Border Right", &sel->style.nineSlice.borderRight, 0.5f, 0.0f, 128.0f);
-            ImGui::DragFloat("Border Top", &sel->style.nineSlice.borderTop, 0.5f, 0.0f, 128.0f);
-            ImGui::DragFloat("Border Bottom", &sel->style.nineSlice.borderBottom, 0.5f, 0.0f, 128.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Border Left", &sel->style.nineSlice.borderLeft, 0.5f, 0.0f, 128.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Border Right", &sel->style.nineSlice.borderRight, 0.5f, 0.0f, 128.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Border Top", &sel->style.nineSlice.borderTop, 0.5f, 0.0f, 128.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Border Bottom", &sel->style.nineSlice.borderBottom, 0.5f, 0.0f, 128.0f);
 
             // Texture preview with border guide lines
             if (!sel->style.nineSlice.texturePath.empty()) {
@@ -9928,15 +9956,18 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
     ImGui::TextDisabled("Events");
     char clickBuf[128];
     strncpy(clickBuf, sel->onClickEvent.c_str(), sizeof(clickBuf) - 1); clickBuf[sizeof(clickBuf) - 1] = '\0';
-    if (ImGui::InputText("On Click", clickBuf, sizeof(clickBuf))) sel->onClickEvent = clickBuf;
+    if (InspectorUndo::InputText(m_UndoRedo, "On Click", clickBuf, sizeof(clickBuf),
+                              [t = &sel->onClickEvent](const std::string& v) { *t = v; })) sel->onClickEvent = clickBuf;
 
     char valBuf[128];
     strncpy(valBuf, sel->onValueChangedEvent.c_str(), sizeof(valBuf) - 1); valBuf[sizeof(valBuf) - 1] = '\0';
-    if (ImGui::InputText("On Value Changed", valBuf, sizeof(valBuf))) sel->onValueChangedEvent = valBuf;
+    if (InspectorUndo::InputText(m_UndoRedo, "On Value Changed", valBuf, sizeof(valBuf),
+                              [t = &sel->onValueChangedEvent](const std::string& v) { *t = v; })) sel->onValueChangedEvent = valBuf;
 
     char subBuf[128];
     strncpy(subBuf, sel->onSubmitEvent.c_str(), sizeof(subBuf) - 1); subBuf[sizeof(subBuf) - 1] = '\0';
-    if (ImGui::InputText("On Submit", subBuf, sizeof(subBuf))) sel->onSubmitEvent = subBuf;
+    if (InspectorUndo::InputText(m_UndoRedo, "On Submit", subBuf, sizeof(subBuf),
+                              [t = &sel->onSubmitEvent](const std::string& v) { *t = v; })) sel->onSubmitEvent = subBuf;
 
     ImGui::Spacing();
 
@@ -9944,20 +9975,24 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
     ImGui::TextDisabled("Accessibility");
     char accLabelBuf[256];
     strncpy(accLabelBuf, sel->accessibleLabel.c_str(), sizeof(accLabelBuf) - 1); accLabelBuf[sizeof(accLabelBuf) - 1] = '\0';
-    if (ImGui::InputText("Accessible Label", accLabelBuf, sizeof(accLabelBuf))) sel->accessibleLabel = accLabelBuf;
+    if (InspectorUndo::InputText(m_UndoRedo, "Accessible Label", accLabelBuf, sizeof(accLabelBuf),
+                              [t = &sel->accessibleLabel](const std::string& v) { *t = v; })) sel->accessibleLabel = accLabelBuf;
     ImGui::SameLine();
     ImGui::TextDisabled("(?)");
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Screen reader label. Falls back to element name if empty.");
 
     // Advanced Anchor (collapsible for power users)
     if (ImGui::TreeNode("Advanced Anchor")) {
-        ImGui::DragFloat2("Anchor Min", &sel->anchor.anchorMin.x, 0.01f, 0.0f, 1.0f);
-        ImGui::DragFloat2("Anchor Max", &sel->anchor.anchorMax.x, 0.01f, 0.0f, 1.0f);
-        ImGui::DragFloat2("Pivot", &sel->anchor.pivot.x, 0.01f, 0.0f, 1.0f);
-        ImGui::DragFloat("Offset Left", &sel->anchor.offsetLeft, 1.0f);
-        ImGui::DragFloat("Offset Right", &sel->anchor.offsetRight, 1.0f);
-        ImGui::DragFloat("Offset Top", &sel->anchor.offsetTop, 1.0f);
-        ImGui::DragFloat("Offset Bottom", &sel->anchor.offsetBottom, 1.0f);
+        InspectorUndo::DragFloat2(m_UndoRedo, "Anchor Min", &sel->anchor.anchorMin.x,
+                              [p = &sel->anchor.anchorMin](f32 a, f32 b) { p->x = a; p->y = b; }, 0.01f, 0.0f, 1.0f);
+        InspectorUndo::DragFloat2(m_UndoRedo, "Anchor Max", &sel->anchor.anchorMax.x,
+                              [p = &sel->anchor.anchorMax](f32 a, f32 b) { p->x = a; p->y = b; }, 0.01f, 0.0f, 1.0f);
+        InspectorUndo::DragFloat2(m_UndoRedo, "Pivot", &sel->anchor.pivot.x,
+                              [p = &sel->anchor.pivot](f32 a, f32 b) { p->x = a; p->y = b; }, 0.01f, 0.0f, 1.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Offset Left", &sel->anchor.offsetLeft, 1.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Offset Right", &sel->anchor.offsetRight, 1.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Offset Top", &sel->anchor.offsetTop, 1.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Offset Bottom", &sel->anchor.offsetBottom, 1.0f);
         ImGui::TreePop();
     }
 
