@@ -17,6 +17,7 @@
 #include "Enjin/Debug/Profiler.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Input/InputAction.h"
+#include "Enjin/ECS/Components/BrushSolid.h"
 #include "Enjin/GUI/GameMenus.h"
 #include "Enjin/GUI/UISystem.h"
 #include "Enjin/Accessibility/SubtitleSystem.h"
@@ -469,6 +470,27 @@ private:
     void DrawReflectivePlaneComponent(ECS::Entity entity);
     void DrawActionTriggerComponent(ECS::Entity entity);
     void DrawBrushSolidComponent(ECS::Entity entity);
+
+    // One undo command for any brush-list change, so the inspector rows and the
+    // viewport gizmo cannot drift apart on what Ctrl+Z does. Snapshots the whole
+    // vector: a per-brush command would need stable identities the list does not
+    // have, since indices shift the moment anything is removed.
+    void PushBrushListUndo(ECS::Entity entity, const char* desc,
+                           std::vector<ECS::BrushSolidComponent::Brush> before,
+                           std::vector<ECS::BrushSolidComponent::Brush> after);
+
+    // Brush gizmo drag state, mirroring m_GizmoDragging for the entity gizmo:
+    // one undo entry per gesture, not per manipulated frame.
+    // Name at the moment the entity-name box was focused, so a rename is one
+    // undo entry per commit rather than one per keystroke.
+    std::string m_RenameStartName;
+
+    // Every selected entity's transform at the start of a multi-select gizmo
+    // drag, so the gesture undoes as one compound step.
+    std::vector<std::pair<ECS::Entity, ECS::TransformComponent>> m_MultiDragStart;
+
+    bool m_BrushGizmoDragging = false;
+    std::vector<ECS::BrushSolidComponent::Brush> m_BrushGizmoStart;
     void DrawLadderComponent(ECS::Entity entity);
     void DrawRopeComponent(ECS::Entity entity);
     void DrawDoorComponent(ECS::Entity entity);

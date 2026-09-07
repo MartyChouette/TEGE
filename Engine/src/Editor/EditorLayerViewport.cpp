@@ -958,6 +958,15 @@ void EditorLayer::DrawGizmos() {
                                        Math::Matrix4::Scale(sizeAsScale);
             Math::Matrix4 brushWorld = entityWorld * brushLocal;
 
+            // One undo entry per GESTURE, not per manipulated frame: snapshot on
+            // the first frame of the drag, push on release. Without this the
+            // viewport and the inspector rows disagree about Ctrl+Z, which is
+            // worse than neither having it.
+            if (ImGuizmo::IsUsing() && !m_BrushGizmoDragging) {
+                m_BrushGizmoDragging = true;
+                m_BrushGizmoStart = solid->brushes;
+            }
+
             if (ImGuizmo::Manipulate(viewMat.m, projMat.m, op, mode, brushWorld.m, nullptr,
                                      m_UseSnap ? snapValues : nullptr)) {
                 // Back into the entity's space: the brush list is authored
@@ -983,6 +992,15 @@ void EditorLayer::DrawGizmos() {
                                                       std::max(kMinExtent, std::fabs(sc[2])));
                 }
                 solid->dirty = true;
+            }
+
+            if (!ImGuizmo::IsUsing() && m_BrushGizmoDragging) {
+                m_BrushGizmoDragging = false;
+                if (m_BrushGizmoStart != solid->brushes) {
+                    PushBrushListUndo(m_PrimarySelected, "Move Brush",
+                                      m_BrushGizmoStart, solid->brushes);
+                }
+                m_BrushGizmoStart.clear();
             }
             return;   // the brush gizmo replaces the entity gizmo
         }
@@ -1033,6 +1051,19 @@ void EditorLayer::DrawGizmos() {
         // Store the start in parent-LOCAL space so the undo snapshot matches
         // what we write (entityMat is world-space for a single selection).
         m_GizmoStartTransform = gizmoSingle ? (gizmoParentWorld.Inverse() * entityMat) : entityMat;
+
+        // Every selected entity's transform at drag start. A multi-select drag
+        // used to have NO undo at all -- the code said so and moved on -- while
+        // CompoundCommand sat unused for exactly this. Dragging five entities
+        // and pressing Ctrl+Z left all five where they landed.
+        m_MultiDragStart.clear();
+        if (m_SelectedEntities.size() > 1) {
+            for (ECS::Entity e : m_SelectedEntities) {
+                if (auto* t = m_World->GetComponent<ECS::TransformComponent>(e)) {
+                    m_MultiDragStart.push_back({ e, *t });
+                }
+            }
+        }
     }
 
     // Draw and manipulate gizmo
@@ -1240,7 +1271,23 @@ void EditorLayer::DrawGizmos() {
                 }
             }
         }
-        // Note: multi-entity undo is not tracked per-entity to keep complexity manageable
+        // Multi-select: one compound entry holding a TransformCommand per entity,
+        // so the whole drag undoes as a single step rather than not at all.
+        if (m_SelectedEntities.size() > 1 && !m_MultiDragStart.empty()) {
+            auto compound = std::make_unique<Editor::CompoundCommand>("Move Selection");
+            for (const auto& [e, before] : m_MultiDragStart) {
+                auto* now = m_World->GetComponent<ECS::TransformComponent>(e);
+                if (!now) continue;
+                if (now->position == before.position && now->scale == before.scale &&
+                    now->rotation.x == before.rotation.x && now->rotation.y == before.rotation.y &&
+                    now->rotation.z == before.rotation.z && now->rotation.w == before.rotation.w) {
+                    continue;   // untouched by the drag
+                }
+                compound->AddCommand(std::make_unique<TransformCommand>(m_World, e, before, *now));
+            }
+            if (!compound->IsEmpty()) m_UndoRedo.Execute(std::move(compound));
+        }
+        m_MultiDragStart.clear();
 
         // VWS: fold the moved transform(s) into the active override layer. Fires
         // once per drag (not per manipulated frame) and no-ops without an active

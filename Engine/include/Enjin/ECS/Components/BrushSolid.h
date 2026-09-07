@@ -51,6 +51,18 @@ struct ENJIN_API BrushSolidComponent {
         // how you check what a cut is doing without losing it.
         bool enabled = true;
 
+        // Field-wise, so a gizmo drag can ask "did this gesture actually change
+        // anything" before pushing an undo entry. Quaternion has no operator==,
+        // so its components are compared directly.
+        bool operator==(const Brush& o) const {
+            return shape == o.shape && op == o.op && enabled == o.enabled &&
+                   center == o.center && halfExtents == o.halfExtents &&
+                   radius == o.radius && halfHeight == o.halfHeight && sides == o.sides &&
+                   rotation.x == o.rotation.x && rotation.y == o.rotation.y &&
+                   rotation.z == o.rotation.z && rotation.w == o.rotation.w;
+        }
+        bool operator!=(const Brush& o) const { return !(*this == o); }
+
         Geometry::Brush ToGeometry() const {
             if (shape == Shape::Prism) {
                 return Geometry::Brush::Prism(center, radius, halfHeight, sides, rotation);

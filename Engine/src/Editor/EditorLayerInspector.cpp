@@ -1624,12 +1624,32 @@ void EditorLayer::DrawInspectorPanel() {
             strncpy(nameBuffer, nameComp->name.c_str(), sizeof(nameBuffer) - 1);
             nameBuffer[sizeof(nameBuffer) - 1] = '\0';
             ImGui::SetNextItemWidth(-1);
+            // Renaming had no undo at all: RenameEntityCommand has existed the
+            // whole time with zero callers. Typing in this box was the one
+            // inspector edit Ctrl+Z could not take back.
+            //
+            // The command is pushed on commit, not per keystroke, so renaming
+            // "Player" to "Enemy" is one undo entry rather than eight.
             if (ImGui::InputText("##EntityName", nameBuffer, sizeof(nameBuffer))) {
-                std::string oldName = nameComp->name;
                 m_World->SetEntityName(m_PrimarySelected, nameBuffer);
-                if (m_CollabSystem.IsActive()) {
-                    m_CollabSystem.OnEntityRenamed(m_PrimarySelected, oldName, nameComp->name);
+            }
+            if (ImGui::IsItemActivated()) {
+                m_RenameStartName = nameComp->name;
+            }
+            if (ImGui::IsItemDeactivatedAfterEdit()) {
+                const std::string newName = nameComp->name;
+                if (m_RenameStartName != newName) {
+                    // Put the old name back first: the command's Execute applies
+                    // the new one, and without this the undo stack records a
+                    // change that had already happened.
+                    m_World->SetEntityName(m_PrimarySelected, m_RenameStartName);
+                    m_UndoRedo.Execute(std::make_unique<Editor::RenameEntityCommand>(
+                        m_World, m_PrimarySelected, m_RenameStartName, newName));
+                    if (m_CollabSystem.IsActive()) {
+                        m_CollabSystem.OnEntityRenamed(m_PrimarySelected, m_RenameStartName, newName);
+                    }
                 }
+                m_RenameStartName.clear();
             }
             // Drop a .as script from the Asset Browser onto the name to attach it here.
             if (ImGui::BeginDragDropTarget()) {

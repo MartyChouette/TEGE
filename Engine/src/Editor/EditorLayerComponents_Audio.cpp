@@ -986,9 +986,9 @@ void EditorLayer::DrawMaterialInteractionTableComponent(ECS::Entity entity) {
                 // Material selectors
                 int matA = static_cast<int>(inter.a);
                 int matB = static_cast<int>(inter.b);
-                if (ImGui::Combo("Material A", &matA, matNames, matCount))
+                if (InspectorUndo::Combo(m_UndoRedo, "Material A", &matA, matNames, matCount))
                     inter.a = static_cast<ECS::SurfaceMaterial>(matA);
-                if (ImGui::Combo("Material B", &matB, matNames, matCount))
+                if (InspectorUndo::Combo(m_UndoRedo, "Material B", &matB, matNames, matCount))
                     inter.b = static_cast<ECS::SurfaceMaterial>(matB);
 
                 // Clip paths
@@ -1005,9 +1005,9 @@ void EditorLayer::DrawMaterialInteractionTableComponent(ECS::Entity entity) {
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("Continuous sliding/scraping contact sound");
 
                 // Parameters
-                ImGui::DragFloat("Pitch Offset", &inter.pitchOffset, 0.01f, -1.0f, 1.0f);
+                InspectorUndo::DragFloat(m_UndoRedo, "Pitch Offset", &inter.pitchOffset, 0.01f, -1.0f, 1.0f);
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("Shift pitch for this pair (-1 to +1 semitone range)");
-                ImGui::DragFloat("Volume Mult", &inter.volumeMultiplier, 0.05f, 0.0f, 3.0f);
+                InspectorUndo::DragFloat(m_UndoRedo, "Volume Mult", &inter.volumeMultiplier, 0.05f, 0.0f, 3.0f);
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("Scale volume for this material combination");
 
                 ImGui::TreePop();

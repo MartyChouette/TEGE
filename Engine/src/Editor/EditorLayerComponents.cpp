@@ -1113,13 +1113,13 @@ void EditorLayer::DrawMaterialSlotsComponent(ECS::Entity entity) {
 
                 // Opacity
                 std::string opLabel = "Opacity##slot" + std::to_string(i);
-                ImGui::DragFloat(opLabel.c_str(), &slot.opacity, 0.01f, 0.0f, 1.0f);
+                InspectorUndo::DragFloat(m_UndoRedo, opLabel.c_str(), &slot.opacity, 0.01f, 0.0f, 1.0f);
 
                 // PBR
                 std::string metLabel = "Metallic##slot" + std::to_string(i);
-                ImGui::DragFloat(metLabel.c_str(), &slot.metallic, 0.01f, 0.0f, 1.0f);
+                InspectorUndo::DragFloat(m_UndoRedo, metLabel.c_str(), &slot.metallic, 0.01f, 0.0f, 1.0f);
                 std::string roughLabel = "Roughness##slot" + std::to_string(i);
-                ImGui::DragFloat(roughLabel.c_str(), &slot.roughness, 0.01f, 0.0f, 1.0f);
+                InspectorUndo::DragFloat(m_UndoRedo, roughLabel.c_str(), &slot.roughness, 0.01f, 0.0f, 1.0f);
 
                 // Emission
                 f32 emissive[3] = { slot.emissiveColor.x, slot.emissiveColor.y, slot.emissiveColor.z };
@@ -1128,21 +1128,21 @@ void EditorLayer::DrawMaterialSlotsComponent(ECS::Entity entity) {
                     slot.emissiveColor = Math::Vector3(emissive[0], emissive[1], emissive[2]);
                 }
                 std::string esLabel = "Emissive Strength##slot" + std::to_string(i);
-                ImGui::DragFloat(esLabel.c_str(), &slot.emissiveStrength, 0.1f, 0.0f, 100.0f);
+                InspectorUndo::DragFloat(m_UndoRedo, esLabel.c_str(), &slot.emissiveStrength, 0.1f, 0.0f, 100.0f);
 
                 // Rendering flags
                 std::string dsLabel = "Double Sided##slot" + std::to_string(i);
-                ImGui::Checkbox(dsLabel.c_str(), &slot.doubleSided);
+                InspectorUndo::Checkbox(m_UndoRedo, dsLabel.c_str(), &slot.doubleSided);
                 std::string csLabel = "Cast Shadows##slot" + std::to_string(i);
-                ImGui::Checkbox(csLabel.c_str(), &slot.castShadows);
+                InspectorUndo::Checkbox(m_UndoRedo, csLabel.c_str(), &slot.castShadows);
                 std::string rsLabel = "Receive Shadows##slot" + std::to_string(i);
-                ImGui::Checkbox(rsLabel.c_str(), &slot.receiveShadows);
+                InspectorUndo::Checkbox(m_UndoRedo, rsLabel.c_str(), &slot.receiveShadows);
 
                 // Alpha mode
                 const char* alphaModes[] = { "Opaque", "Mask", "Blend" };
                 int currentMode = static_cast<int>(slot.alphaMode);
                 std::string amLabel = "Alpha Mode##slot" + std::to_string(i);
-                if (ImGui::Combo(amLabel.c_str(), &currentMode, alphaModes, 3)) {
+                if (InspectorUndo::Combo(m_UndoRedo, amLabel.c_str(), &currentMode, alphaModes, 3)) {
                     slot.alphaMode = static_cast<ECS::MaterialComponent::AlphaMode>(currentMode);
                 }
 
@@ -1425,7 +1425,7 @@ void EditorLayer::DrawHoverHighlightComponent(ECS::Entity entity) {
     ECS::HoverHighlightComponent* h = m_World->GetComponent<ECS::HoverHighlightComponent>(entity);
     if (!h) return;
 
-    ImGui::Checkbox("Enabled##Hover", &h->enabled);
+    InspectorUndo::Checkbox(m_UndoRedo, "Enabled##Hover", &h->enabled);
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Off means this entity is not highlightable at all.");
 
     ImGui::BeginDisabled(!h->enabled);
@@ -1433,7 +1433,7 @@ void EditorLayer::DrawHoverHighlightComponent(ECS::Entity entity) {
     ImGui::ColorEdit3("Color##Hover", &h->color.x);
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Outline colour while the cursor is on this entity.");
 
-    ImGui::DragFloat("Thickness##Hover", &h->thickness, 0.002f, 0.0f, 1.0f, "%.3f");
+    InspectorUndo::DragFloat(m_UndoRedo, "Thickness##Hover", &h->thickness, 0.002f, 0.0f, 1.0f, "%.3f");
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("World units, the same scale the cel outline uses.\n"
                           "Not affected by transform scale, so it agrees with the\n"
@@ -1443,7 +1443,7 @@ void EditorLayer::DrawHoverHighlightComponent(ECS::Entity entity) {
     static const char* kStyles[] = { "Solid", "Pulse", "Flash" };
     int style = static_cast<int>(h->style);
     if (style < 0 || style > 2) style = 0;
-    if (ImGui::Combo("Style##Hover", &style, kStyles, 3)) {
+    if (InspectorUndo::Combo(m_UndoRedo, "Style##Hover", &style, kStyles, 3)) {
         h->style = static_cast<ECS::HighlightStyle>(style);
     }
     if (ImGui::IsItemHovered()) {
@@ -1452,14 +1452,14 @@ void EditorLayer::DrawHoverHighlightComponent(ECS::Entity entity) {
     }
 
     if (h->style != ECS::HighlightStyle::Solid) {
-        ImGui::DragFloat("Speed##Hover", &h->speed, 0.05f, 0.0f, 20.0f, "%.2f Hz");
+        InspectorUndo::DragFloat(m_UndoRedo, "Speed##Hover", &h->speed, 0.05f, 0.0f, 20.0f, "%.2f Hz");
         if (h->style == ECS::HighlightStyle::Pulse) {
-            ImGui::SliderFloat("Pulse Depth##Hover", &h->pulseDepth, 0.0f, 1.0f, "%.2f");
+            InspectorUndo::SliderFloat(m_UndoRedo, "Pulse Depth##Hover", &h->pulseDepth, 0.0f, 1.0f, "%.2f");
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("How far the outline thins at the bottom of the cycle.");
         }
     }
 
-    ImGui::Checkbox("Include Children##Hover", &h->includeChildren);
+    InspectorUndo::Checkbox(m_UndoRedo, "Include Children##Hover", &h->includeChildren);
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Highlight this whole prop when a child is pointed at,\n"
                           "rather than the one sub-mesh the ray happened to hit.\n"
@@ -2498,15 +2498,15 @@ void EditorLayer::DrawTerrainComponent(ECS::Entity entity) {
         int w = static_cast<int>(terrain->gridWidth);
         int h = static_cast<int>(terrain->gridHeight);
         bool resized = false;
-        resized |= ImGui::DragInt("Grid Width", &w, 1, 4, 512);
-        resized |= ImGui::DragInt("Grid Height", &h, 1, 4, 512);
+        resized |= InspectorUndo::DragInt(m_UndoRedo, "Grid Width", &w, 1, 4, 512);
+        resized |= InspectorUndo::DragInt(m_UndoRedo, "Grid Height", &h, 1, 4, 512);
         if (resized) {
             terrain->gridWidth = static_cast<u32>(w);
             terrain->gridHeight = static_cast<u32>(h);
             terrain->InitializeFlat(0.0f);
         }
-        ImGui::DragFloat("Cell Size", &terrain->cellSize, 0.1f, 0.1f, 10.0f);
-        ImGui::DragFloat("Max Height", &terrain->maxHeight, 1.0f, 1.0f, 200.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Cell Size", &terrain->cellSize, 0.1f, 0.1f, 10.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Max Height", &terrain->maxHeight, 1.0f, 1.0f, 200.0f);
 
         if (terrain->heightmap.empty()) {
             if (ImGui::Button("Initialize Flat")) {
@@ -2516,24 +2516,24 @@ void EditorLayer::DrawTerrainComponent(ECS::Entity entity) {
 
         ImGui::Separator();
         ImGui::Text("Terrain Brush");
-        ImGui::Checkbox("Edit Mode", &m_TerrainEditMode);
+        InspectorUndo::Checkbox(m_UndoRedo, "Edit Mode", &m_TerrainEditMode);
 
         if (m_TerrainEditMode) {
             const char* brushModes[] = { "Raise", "Lower", "Flatten", "Smooth", "Paint" };
             int brushIdx = static_cast<int>(m_TerrainBrush.mode);
-            if (ImGui::Combo("Brush Mode", &brushIdx, brushModes, 5)) {
+            if (InspectorUndo::Combo(m_UndoRedo, "Brush Mode", &brushIdx, brushModes, 5)) {
                 m_TerrainBrush.mode = static_cast<TerrainBrushMode>(brushIdx);
             }
-            ImGui::DragFloat("Radius", &m_TerrainBrush.radius, 0.1f, 0.5f, 50.0f);
-            ImGui::DragFloat("Strength", &m_TerrainBrush.strength, 0.01f, 0.01f, 10.0f);
-            ImGui::DragFloat("Falloff", &m_TerrainBrush.falloff, 0.01f, 0.0f, 1.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Radius", &m_TerrainBrush.radius, 0.1f, 0.5f, 50.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Strength", &m_TerrainBrush.strength, 0.01f, 0.01f, 10.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Falloff", &m_TerrainBrush.falloff, 0.01f, 0.0f, 1.0f);
 
             if (m_TerrainBrush.mode == TerrainBrushMode::Flatten) {
-                ImGui::DragFloat("Flatten Height", &m_TerrainBrush.flattenHeight, 0.1f, 0.0f, terrain->maxHeight);
+                InspectorUndo::DragFloat(m_UndoRedo, "Flatten Height", &m_TerrainBrush.flattenHeight, 0.1f, 0.0f, terrain->maxHeight);
             }
             if (m_TerrainBrush.mode == TerrainBrushMode::Paint) {
                 int layer = static_cast<int>(m_TerrainBrush.paintLayer);
-                if (ImGui::DragInt("Paint Layer", &layer, 1, 0, 3)) {
+                if (InspectorUndo::DragInt(m_UndoRedo, "Paint Layer", &layer, 1, 0, 3)) {
                     m_TerrainBrush.paintLayer = static_cast<u32>(layer);
                 }
             }
@@ -2564,7 +2564,7 @@ void EditorLayer::DrawTerrainComponent(ECS::Entity entity) {
                         if (!path.empty()) terrain->layers[i].texturePath = path;
                     }
                 }
-                ImGui::DragFloat("Tile Scale", &terrain->layers[i].tileScale, 0.1f, 0.1f, 100.0f);
+                InspectorUndo::DragFloat(m_UndoRedo, "Tile Scale", &terrain->layers[i].tileScale, 0.1f, 0.1f, 100.0f);
                 ImGui::TreePop();
             }
             ImGui::PopID();
@@ -2587,8 +2587,8 @@ void EditorLayer::DrawTerrain2DComponent(ECS::Entity entity) {
         if (!terrain) return;
         DrawComponentHelp("terrain2d", m_World, entity);
 
-        ImGui::DragFloat("Depth", &terrain->depth, 0.1f, 0.1f, 50.0f);
-        ImGui::DragFloat("UV Scale", &terrain->uvScale, 0.01f, 0.01f, 10.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Depth", &terrain->depth, 0.1f, 0.1f, 50.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "UV Scale", &terrain->uvScale, 0.01f, 0.01f, 10.0f);
 
         // Surface colliders: one thin static box per control-point segment,
         // spawned as child-less collider entities (same pattern as tree trunks)
@@ -2626,7 +2626,7 @@ void EditorLayer::DrawTerrain2DComponent(ECS::Entity entity) {
         ImGui::SetItemTooltip("Creates a thin static box collider along each surface segment");
 
         ImGui::Separator();
-        ImGui::Checkbox("Edit Mode (Drag Points)", &m_TerrainEditMode);
+        InspectorUndo::Checkbox(m_UndoRedo, "Edit Mode (Drag Points)", &m_TerrainEditMode);
         if (m_TerrainEditMode && m_BrushHitValid) {
             ImGui::Text("Cursor: (%.1f, %.1f)", m_BrushHitPoint.x, m_BrushHitPoint.y);
             if (m_Dragging2DPoint >= 0)
@@ -3155,25 +3155,24 @@ void EditorLayer::DrawReflectivePlaneComponent(ECS::Entity entity) {
     }
 }
 
-// Structural edits to a brush list -- adding, removing, or dropping in a preset
-// -- are one undo step each, snapshotting the whole vector. A per-brush command
-// would need stable identities the list does not have (indices shift the moment
-// anything is removed), and a brush list is a few dozen small structs, so
-// copying it is cheaper than the bookkeeping would be.
-static void PushBrushListEdit(Editor::UndoRedoManager& undo, ECS::World* world,
-                              ECS::Entity entity, const char* desc,
-                              std::vector<ECS::BrushSolidComponent::Brush> before,
-                              std::vector<ECS::BrushSolidComponent::Brush> after) {
-    auto apply = [world, entity](const std::vector<ECS::BrushSolidComponent::Brush>& v) {
+// One undo command for any brush-list change -- the inspector rows and the
+// viewport gizmo both come here, so they cannot disagree about what Ctrl+Z does.
+// Snapshots the whole vector: a per-brush command would need stable identities
+// the list does not have, since indices shift the moment anything is removed,
+// and a brush list is a few dozen small structs.
+void EditorLayer::PushBrushListUndo(ECS::Entity entity, const char* desc,
+                                    std::vector<ECS::BrushSolidComponent::Brush> before,
+                                    std::vector<ECS::BrushSolidComponent::Brush> after) {
+    auto apply = [w = m_World, entity](const std::vector<ECS::BrushSolidComponent::Brush>& v) {
         // Re-resolved every time: the component pointer captured at push time
         // does not survive an add or remove on the same storage.
-        if (auto* s = world->GetComponent<ECS::BrushSolidComponent>(entity)) {
+        if (auto* s = w->GetComponent<ECS::BrushSolidComponent>(entity)) {
             s->brushes = v;
             s->dirty = true;
         }
     };
-    undo.Execute(std::make_unique<Editor::PropertyEditCommand<
-                     std::vector<ECS::BrushSolidComponent::Brush>>>(
+    m_UndoRedo.Execute(std::make_unique<Editor::PropertyEditCommand<
+                           std::vector<ECS::BrushSolidComponent::Brush>>>(
         desc, std::move(before), std::move(after), apply));
 }
 
@@ -3222,7 +3221,7 @@ void EditorLayer::DrawBrushSolidComponent(ECS::Entity entity) {
             ECS::BrushSolidComponent::Brush b;
             b.shape = ECS::BrushSolidComponent::Shape::Box;
             auto after = before; after.push_back(b);
-            PushBrushListEdit(m_UndoRedo, m_World, entity, "Add Box Brush",
+            PushBrushListUndo(entity, "Add Box Brush",
                               std::move(before), std::move(after));
         }
         ImGui::SameLine();
@@ -3231,7 +3230,7 @@ void EditorLayer::DrawBrushSolidComponent(ECS::Entity entity) {
             ECS::BrushSolidComponent::Brush b;
             b.shape = ECS::BrushSolidComponent::Shape::Prism;
             auto after = before; after.push_back(b);
-            PushBrushListEdit(m_UndoRedo, m_World, entity, "Add Prism Brush",
+            PushBrushListUndo(entity, "Add Prism Brush",
                               std::move(before), std::move(after));
         }
         ImGui::SameLine();
@@ -3249,7 +3248,7 @@ void EditorLayer::DrawBrushSolidComponent(ECS::Entity entity) {
             auto after = before;
             after.push_back(wall);
             after.push_back(door);
-            PushBrushListEdit(m_UndoRedo, m_World, entity, "Add Wall and Doorway",
+            PushBrushListUndo(entity, "Add Wall and Doorway",
                               std::move(before), std::move(after));
         }
 
@@ -3370,7 +3369,7 @@ void EditorLayer::DrawBrushSolidComponent(ECS::Entity entity) {
             auto before = solid->brushes;
             auto after = before;
             after.erase(after.begin() + removeIndex);
-            PushBrushListEdit(m_UndoRedo, m_World, entity, "Remove Brush",
+            PushBrushListUndo(entity, "Remove Brush",
                               std::move(before), std::move(after));
         }
 
@@ -5038,7 +5037,7 @@ void EditorLayer::DrawStateMachineComponent(ECS::Entity entity) {
                 std::string toRemove;
                 for (auto& [name, val] : sm->boolParams) {
                     ImGui::PushID(name.c_str());
-                    ImGui::Checkbox(name.c_str(), &val);
+                    InspectorUndo::Checkbox(m_UndoRedo, name.c_str(), &val);
                     ImGui::SameLine();
                     if (ImGui::SmallButton("X")) toRemove = name;
                     ImGui::PopID();
@@ -5060,7 +5059,7 @@ void EditorLayer::DrawStateMachineComponent(ECS::Entity entity) {
                 std::string toRemove;
                 for (auto& [name, val] : sm->floatParams) {
                     ImGui::PushID(name.c_str());
-                    ImGui::DragFloat(name.c_str(), &val, 0.1f);
+                    InspectorUndo::DragFloat(m_UndoRedo, name.c_str(), &val, 0.1f);
                     ImGui::SameLine();
                     if (ImGui::SmallButton("X")) toRemove = name;
                     ImGui::PopID();
@@ -5082,7 +5081,7 @@ void EditorLayer::DrawStateMachineComponent(ECS::Entity entity) {
                 std::string toRemove;
                 for (auto& [name, val] : sm->intParams) {
                     ImGui::PushID(name.c_str());
-                    ImGui::DragInt(name.c_str(), &val);
+                    InspectorUndo::DragInt(m_UndoRedo, name.c_str(), &val);
                     ImGui::SameLine();
                     if (ImGui::SmallButton("X")) toRemove = name;
                     ImGui::PopID();
@@ -5179,7 +5178,7 @@ void EditorLayer::DrawStateMachineComponent(ECS::Entity entity) {
                                 const char* condTypes[] = {"Bool True", "Bool False", "Float >", "Float <",
                                                            "Int ==", "Int !=", "Trigger"};
                                 i32 condType = static_cast<i32>(cond.type);
-                                if (ImGui::Combo("Type", &condType, condTypes, 7)) {
+                                if (InspectorUndo::Combo(m_UndoRedo, "Type", &condType, condTypes, 7)) {
                                     cond.type = static_cast<ECS::SMConditionType>(condType);
                                 }
 
@@ -5194,11 +5193,11 @@ void EditorLayer::DrawStateMachineComponent(ECS::Entity entity) {
                                 // Threshold / intValue based on type
                                 if (cond.type == ECS::SMConditionType::FloatGreater ||
                                     cond.type == ECS::SMConditionType::FloatLess) {
-                                    ImGui::DragFloat("Threshold", &cond.threshold, 0.1f);
+                                    InspectorUndo::DragFloat(m_UndoRedo, "Threshold", &cond.threshold, 0.1f);
                                 }
                                 if (cond.type == ECS::SMConditionType::IntEquals ||
                                     cond.type == ECS::SMConditionType::IntNotEquals) {
-                                    ImGui::DragInt("Value", &cond.intValue);
+                                    InspectorUndo::DragInt(m_UndoRedo, "Value", &cond.intValue);
                                 }
 
                                 if (ImGui::SmallButton("Remove Condition")) condToRemove = ci;
@@ -5313,11 +5312,11 @@ void EditorLayer::DrawDialogueComponent(ECS::Entity entity) {
         }
 
         // Typewriter settings
-        ImGui::DragFloat("Char Delay", &dialogue->charDelay, 0.01f, 0.01f, 0.5f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Char Delay", &dialogue->charDelay, 0.01f, 0.01f, 0.5f);
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("Seconds between characters (typewriter effect)");
         }
-        ImGui::Checkbox("Play Type Sound", &dialogue->playTypeSound);
+        InspectorUndo::Checkbox(m_UndoRedo, "Play Type Sound", &dialogue->playTypeSound);
 
         // Status
         ImGui::Separator();
@@ -5470,25 +5469,25 @@ void EditorLayer::DrawDialogueBoxComponent(ECS::Entity entity) {
         if (!box) return;
 
         if (ImGui::TreeNode("Box Layout")) {
-            ImGui::DragFloat("Height", &box->boxHeight, 1.0f, 50.0f, 600.0f);
-            ImGui::DragFloat("Margin", &box->boxMargin, 0.5f, 0.0f, 100.0f);
-            ImGui::DragFloat("Padding", &box->boxPadding, 0.5f, 0.0f, 50.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Height", &box->boxHeight, 1.0f, 50.0f, 600.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Margin", &box->boxMargin, 0.5f, 0.0f, 100.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Padding", &box->boxPadding, 0.5f, 0.0f, 50.0f);
             f32 col[3] = { box->boxColor.x, box->boxColor.y, box->boxColor.z };
             if (ImGui::ColorEdit3("Box Color", col)) {
                 box->boxColor = Math::Vector3(col[0], col[1], col[2]);
             }
-            ImGui::SliderFloat("Box Alpha", &box->boxAlpha, 0.0f, 1.0f);
-            ImGui::DragFloat("Border Radius", &box->boxBorderRadius, 0.5f, 0.0f, 32.0f);
+            InspectorUndo::SliderFloat(m_UndoRedo, "Box Alpha", &box->boxAlpha, 0.0f, 1.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Border Radius", &box->boxBorderRadius, 0.5f, 0.0f, 32.0f);
             ImGui::TreePop();
         }
 
         if (ImGui::TreeNode("Text Style")) {
-            ImGui::DragFloat("Speaker Font Size", &box->speakerFontSize, 0.5f, 8.0f, 48.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Speaker Font Size", &box->speakerFontSize, 0.5f, 8.0f, 48.0f);
             f32 sc[3] = { box->defaultSpeakerColor.x, box->defaultSpeakerColor.y, box->defaultSpeakerColor.z };
             if (ImGui::ColorEdit3("Default Speaker Color", sc)) {
                 box->defaultSpeakerColor = Math::Vector3(sc[0], sc[1], sc[2]);
             }
-            ImGui::DragFloat("Text Font Size", &box->textFontSize, 0.5f, 8.0f, 48.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Text Font Size", &box->textFontSize, 0.5f, 8.0f, 48.0f);
             f32 tc[3] = { box->textColor.x, box->textColor.y, box->textColor.z };
             if (ImGui::ColorEdit3("Text Color", tc)) {
                 box->textColor = Math::Vector3(tc[0], tc[1], tc[2]);
@@ -5497,15 +5496,15 @@ void EditorLayer::DrawDialogueBoxComponent(ECS::Entity entity) {
         }
 
         if (ImGui::TreeNode("Portrait")) {
-            ImGui::Checkbox("Show Portrait", &box->showPortrait);
+            InspectorUndo::Checkbox(m_UndoRedo, "Show Portrait", &box->showPortrait);
             if (box->showPortrait) {
-                ImGui::DragFloat("Portrait Size", &box->portraitSize, 1.0f, 32.0f, 256.0f);
+                InspectorUndo::DragFloat(m_UndoRedo, "Portrait Size", &box->portraitSize, 1.0f, 32.0f, 256.0f);
             }
             ImGui::TreePop();
         }
 
         if (ImGui::TreeNode("Choices")) {
-            ImGui::DragFloat("Choice Spacing", &box->choiceSpacing, 0.5f, 0.0f, 24.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Choice Spacing", &box->choiceSpacing, 0.5f, 0.0f, 24.0f);
             f32 cc[3] = { box->choiceColor.x, box->choiceColor.y, box->choiceColor.z };
             if (ImGui::ColorEdit3("Choice BG Color", cc)) {
                 box->choiceColor = Math::Vector3(cc[0], cc[1], cc[2]);
@@ -5524,7 +5523,7 @@ void EditorLayer::DrawDialogueBoxComponent(ECS::Entity entity) {
             if (ImGui::InputText("Text", buf, sizeof(buf))) {
                 box->continueText = buf;
             }
-            ImGui::DragFloat("Blink Speed", &box->continueBlinkSpeed, 0.1f, 0.5f, 10.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Blink Speed", &box->continueBlinkSpeed, 0.1f, 0.5f, 10.0f);
             ImGui::TreePop();
         }
 
@@ -6610,7 +6609,7 @@ void EditorLayer::DrawCineComponent(ECS::Entity entity) {
         if (!cine) return;
         DrawComponentHelp("cineComponent", m_World, entity);
 
-        ImGui::Checkbox("Enabled##CineComp", &cine->enabled);
+        InspectorUndo::Checkbox(m_UndoRedo, "Enabled##CineComp", &cine->enabled);
 
         ImGui::SeparatorText("Director Preset");
         const char* directorNames[] = {
@@ -6624,7 +6623,7 @@ void EditorLayer::DrawCineComponent(ECS::Entity entity) {
             "Kurosawa (Telephoto Compression, A/B/C Multicam)"
         };
         int currentDirector = static_cast<int>(cine->directorStyle);
-        if (ImGui::Combo("Director Style##CineComp", &currentDirector, directorNames, 8)) {
+        if (InspectorUndo::Combo(m_UndoRedo, "Director Style##CineComp", &currentDirector, directorNames, 8)) {
             cine->directorStyle = static_cast<ECS::CineDirectorStyle>(currentDirector);
         }
 
@@ -6638,28 +6637,28 @@ void EditorLayer::DrawCineComponent(ECS::Entity entity) {
             "FreeFlying (Drone / Flycam)"
         };
         int currentRig = static_cast<int>(cine->rigArchetype);
-        if (ImGui::Combo("Rig Archetype##CineComp", &currentRig, rigNames, 6)) {
+        if (InspectorUndo::Combo(m_UndoRedo, "Rig Archetype##CineComp", &currentRig, rigNames, 6)) {
             cine->rigArchetype = static_cast<ECS::CineRigArchetype>(currentRig);
         }
 
         ImGui::SeparatorText("Second-Order Dynamics");
-        ImGui::SliderFloat("Frequency (f)##CineComp", &cine->frequency, 0.1f, 10.0f, "%.1f Hz");
+        InspectorUndo::SliderFloat(m_UndoRedo, "Frequency (f)##CineComp", &cine->frequency, 0.1f, 10.0f, "%.1f Hz");
         ImGui::SetItemTooltip("Spring responsiveness (higher = faster, lower = heavier mass)");
-        ImGui::SliderFloat("Damping Ratio (zeta)##CineComp", &cine->dampingRatio, 0.1f, 2.0f, "%.2f");
+        InspectorUndo::SliderFloat(m_UndoRedo, "Damping Ratio (zeta)##CineComp", &cine->dampingRatio, 0.1f, 2.0f, "%.2f");
         ImGui::SetItemTooltip("1.0 = Critically Damped, <1.0 = Underdamped / Overshoot, >1.0 = Overdamped");
-        ImGui::SliderFloat("Initial Response (r)##CineComp", &cine->initialResponse, -2.0f, 2.0f, "%.2f");
+        InspectorUndo::SliderFloat(m_UndoRedo, "Initial Response (r)##CineComp", &cine->initialResponse, -2.0f, 2.0f, "%.2f");
         ImGui::SetItemTooltip("0 = Smooth Start, >0 = Immediate, <0 = Anticipation");
 
         ImGui::SeparatorText("Camera & Optics");
-        ImGui::SliderFloat("Focal Length (mm)##CineComp", &cine->focalLengthMm, 12.0f, 300.0f, "%.0f mm");
-        ImGui::SliderFloat("Aperture (T-Stop)##CineComp", &cine->apertureTStop, 1.0f, 22.0f, "T%.1f");
-        ImGui::DragFloat("Focus Distance (m)##CineComp", &cine->focusDistanceMeters, 0.1f, 0.1f, 100.0f, "%.2f m");
-        ImGui::SliderFloat("Anamorphic Squeeze##CineComp", &cine->squeezeRatio, 1.0f, 2.0f, "%.2fx");
+        InspectorUndo::SliderFloat(m_UndoRedo, "Focal Length (mm)##CineComp", &cine->focalLengthMm, 12.0f, 300.0f, "%.0f mm");
+        InspectorUndo::SliderFloat(m_UndoRedo, "Aperture (T-Stop)##CineComp", &cine->apertureTStop, 1.0f, 22.0f, "T%.1f");
+        InspectorUndo::DragFloat(m_UndoRedo, "Focus Distance (m)##CineComp", &cine->focusDistanceMeters, 0.1f, 0.1f, 100.0f, "%.2f m");
+        InspectorUndo::SliderFloat(m_UndoRedo, "Anamorphic Squeeze##CineComp", &cine->squeezeRatio, 1.0f, 2.0f, "%.2fx");
 
         ImGui::SeparatorText("Electric & Lighting Ratios");
-        ImGui::DragFloat("Key Intensity (EV)##CineComp", &cine->keyIntensityEv, 0.1f, 0.0f, 20.0f, "%.1f EV");
-        ImGui::SliderFloat("Key : Fill Ratio##CineComp", &cine->keyToFillRatio, 1.0f, 16.0f, "%.1f : 1");
-        ImGui::SliderFloat("Key : Rim Ratio##CineComp", &cine->keyToRimRatio, 1.0f, 16.0f, "%.1f : 1");
+        InspectorUndo::DragFloat(m_UndoRedo, "Key Intensity (EV)##CineComp", &cine->keyIntensityEv, 0.1f, 0.0f, 20.0f, "%.1f EV");
+        InspectorUndo::SliderFloat(m_UndoRedo, "Key : Fill Ratio##CineComp", &cine->keyToFillRatio, 1.0f, 16.0f, "%.1f : 1");
+        InspectorUndo::SliderFloat(m_UndoRedo, "Key : Rim Ratio##CineComp", &cine->keyToRimRatio, 1.0f, 16.0f, "%.1f : 1");
 
         ImGui::SeparatorText("Staging & Target Intent");
         i32 targetId = static_cast<i32>(cine->targetSubjectEntityId);
@@ -6778,12 +6777,12 @@ void EditorLayer::DrawSaveLoadMenuComponent(ECS::Entity entity) {
         if (!menu) return;
         DrawComponentHelp("saveLoadMenu", m_World, entity);
 
-        ImGui::Checkbox("Show on Pause", &menu->showOnPause);
-        ImGui::Checkbox("Allow Manual Save", &menu->allowManualSave);
-        ImGui::Checkbox("Allow Manual Load", &menu->allowManualLoad);
-        ImGui::Checkbox("Allow Delete", &menu->allowDelete);
-        ImGui::Checkbox("Show Auto-Saves", &menu->showAutoSaves);
-        ImGui::SliderInt("Columns Per Row", &menu->columnsPerRow, 1, 6);
+        InspectorUndo::Checkbox(m_UndoRedo, "Show on Pause", &menu->showOnPause);
+        InspectorUndo::Checkbox(m_UndoRedo, "Allow Manual Save", &menu->allowManualSave);
+        InspectorUndo::Checkbox(m_UndoRedo, "Allow Manual Load", &menu->allowManualLoad);
+        InspectorUndo::Checkbox(m_UndoRedo, "Allow Delete", &menu->allowDelete);
+        InspectorUndo::Checkbox(m_UndoRedo, "Show Auto-Saves", &menu->showAutoSaves);
+        InspectorUndo::SliderInt(m_UndoRedo, "Columns Per Row", &menu->columnsPerRow, 1, 6);
 
         char headerBuf[128];
         strncpy(headerBuf, menu->headerText.c_str(), sizeof(headerBuf) - 1);
@@ -7318,7 +7317,7 @@ void EditorLayer::DrawScriptComponent(ECS::Entity entity) {
 
             // Enabled checkbox on same line
             ImGui::SameLine(ImGui::GetWindowWidth() - 50);
-            ImGui::Checkbox("##Enabled", &script.enabled);
+            InspectorUndo::Checkbox(m_UndoRedo, "##Enabled", &script.enabled);
 
             if (ImGui::BeginPopupContextItem("ScriptAttachCtx")) {
                 if (ImGui::MenuItem("Remove Script")) {
@@ -7407,10 +7406,10 @@ void EditorLayer::DrawScriptComponent(ECS::Entity entity) {
                         case ECS::ScriptPropertyType::Int: {
                             int v = val.intVal;
                             if (prop.hasRange) {
-                                changed = ImGui::SliderInt(prop.name.c_str(), &v,
+                                changed = InspectorUndo::SliderInt(m_UndoRedo, prop.name.c_str(), &v,
                                     static_cast<int>(prop.rangeMin), static_cast<int>(prop.rangeMax));
                             } else {
-                                changed = ImGui::DragInt(prop.name.c_str(), &v);
+                                changed = InspectorUndo::DragInt(m_UndoRedo, prop.name.c_str(), &v);
                             }
                             if (changed) {
                                 prop.instanceValue.intVal = v;
@@ -7421,9 +7420,9 @@ void EditorLayer::DrawScriptComponent(ECS::Entity entity) {
                         case ECS::ScriptPropertyType::Float: {
                             f32 v = val.floatVal;
                             if (prop.hasRange) {
-                                changed = ImGui::SliderFloat(prop.name.c_str(), &v, prop.rangeMin, prop.rangeMax);
+                                changed = InspectorUndo::SliderFloat(m_UndoRedo, prop.name.c_str(), &v, prop.rangeMin, prop.rangeMax);
                             } else {
-                                changed = ImGui::DragFloat(prop.name.c_str(), &v, 0.1f);
+                                changed = InspectorUndo::DragFloat(m_UndoRedo, prop.name.c_str(), &v, 0.1f);
                             }
                             if (changed) {
                                 prop.instanceValue.floatVal = v;
@@ -7433,7 +7432,7 @@ void EditorLayer::DrawScriptComponent(ECS::Entity entity) {
                         }
                         case ECS::ScriptPropertyType::Bool: {
                             bool v = val.boolVal;
-                            if (ImGui::Checkbox(prop.name.c_str(), &v)) {
+                            if (InspectorUndo::Checkbox(m_UndoRedo, prop.name.c_str(), &v)) {
                                 prop.instanceValue.boolVal = v;
                                 prop.isOverridden = true;
                             }
@@ -7581,7 +7580,7 @@ void EditorLayer::DrawScriptComponent(ECS::Entity entity) {
                                     ImGui::EndCombo();
                                 }
                             } else {
-                                if (ImGui::DragInt(prop.name.c_str(), &v)) {
+                                if (InspectorUndo::DragInt(m_UndoRedo, prop.name.c_str(), &v)) {
                                     prop.instanceValue.intVal = v;
                                     prop.isOverridden = true;
                                 }
@@ -8988,7 +8987,7 @@ void EditorLayer::DrawAnimationRecorderComponent(ECS::Entity entity) {
 
         // Sample rate
         f32 fps = (rec->recordInterval > 0.0f) ? (1.0f / rec->recordInterval) : 30.0f;
-        if (ImGui::DragFloat("Sample Rate (FPS)", &fps, 1.0f, 1.0f, 120.0f, "%.0f")) {
+        if (InspectorUndo::DragFloat(m_UndoRedo, "Sample Rate (FPS)", &fps, 1.0f, 1.0f, 120.0f, "%.0f")) {
             rec->recordInterval = (fps > 0.0f) ? (1.0f / fps) : (1.0f / 30.0f);
         }
         ImGui::SetItemTooltip("Keyframes captured per second");
@@ -10105,13 +10104,13 @@ void EditorLayer::DrawBehaviorTreeComponent(ECS::Entity entity) {
     if (!UI::SectionHeader("Behavior Tree", ImGuiTreeNodeFlags_DefaultOpen))
         return;
 
-    ImGui::Checkbox("Enabled##bt", &bt->enabled);
+    InspectorUndo::Checkbox(m_UndoRedo, "Enabled##bt", &bt->enabled);
 
-    ImGui::DragFloat("Tick Interval##bt", &bt->tickInterval, 0.01f, 0.0f, 10.0f, "%.2f s");
+    InspectorUndo::DragFloat(m_UndoRedo, "Tick Interval##bt", &bt->tickInterval, 0.01f, 0.0f, 10.0f, "%.2f s");
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("0 = every frame");
 
-    ImGui::Checkbox("Debug##bt", &bt->debugEnabled);
+    InspectorUndo::Checkbox(m_UndoRedo, "Debug##bt", &bt->debugEnabled);
 
     // Blackboard summary
     if (!bt->blackboardDefaults.empty()) {
@@ -10140,7 +10139,7 @@ void EditorLayer::DrawQuestFlowComponent(ECS::Entity entity) {
     if (!UI::SectionHeader("Quest Flow", ImGuiTreeNodeFlags_DefaultOpen))
         return;
 
-    ImGui::Checkbox("Enabled##qf", &qf->enabled);
+    InspectorUndo::Checkbox(m_UndoRedo, "Enabled##qf", &qf->enabled);
 
     char questIdBuf[128];
     strncpy(questIdBuf, qf->questId.c_str(), sizeof(questIdBuf) - 1);
@@ -10188,8 +10187,8 @@ void EditorLayer::DrawNetworkIdentityComponent(ECS::Entity entity) {
     ImGui::Text("Owner ID: %u", net->ownerId);
     ImGui::Text("Locally Owned: %s", net->isLocallyOwned ? "Yes" : "No");
 
-    ImGui::Checkbox("Sync Transform", &net->syncTransform);
-    ImGui::DragFloat("Sync Interval", &net->syncInterval, 0.01f, 0.01f, 1.0f, "%.3f s");
+    InspectorUndo::Checkbox(m_UndoRedo, "Sync Transform", &net->syncTransform);
+    InspectorUndo::DragFloat(m_UndoRedo, "Sync Interval", &net->syncInterval, 0.01f, 0.01f, 1.0f, "%.3f s");
 }
 
 void EditorLayer::DrawNetworkTransformComponent(ECS::Entity entity) {
@@ -10213,7 +10212,7 @@ void EditorLayer::DrawNetworkTransformComponent(ECS::Entity entity) {
                 nt->lastSyncedPosition.x, nt->lastSyncedPosition.y, nt->lastSyncedPosition.z);
     ImGui::Text("Network Velocity: %.2f, %.2f, %.2f",
                 nt->networkVelocity.x, nt->networkVelocity.y, nt->networkVelocity.z);
-    ImGui::DragFloat("Interp Duration", &nt->interpDuration, 0.01f, 0.01f, 1.0f, "%.3f s");
+    InspectorUndo::DragFloat(m_UndoRedo, "Interp Duration", &nt->interpDuration, 0.01f, 0.01f, 1.0f, "%.3f s");
 }
 
 // ============================================================================
@@ -10841,7 +10840,10 @@ void EditorLayer::DrawBoneAttachmentComponent(ECS::Entity entity) {
     }
 
     // Position offset
-    ImGui::DragFloat3("Position Offset##BA", &ba->positionOffset.x, 0.01f);
+    InspectorUndo::DragFloat3(m_UndoRedo, "Position Offset##BA", &ba->positionOffset.x,
+                              [v = &ba->positionOffset](f32 x, f32 y, f32 z) {
+                                  v->x = x; v->y = y; v->z = z;
+                              }, 0.01f);
 
     // Rotation offset (as Euler angles for readability)
     Math::Vector3 euler = ba->rotationOffset.ToEulerDegrees();
