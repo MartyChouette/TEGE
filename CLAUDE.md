@@ -20,10 +20,12 @@ What it decides, whenever human-facing and AI-facing work compete:
 
 - **The MCP server is a convenience, never the only path.** If something can
   ONLY be done through MCP, that is a missing feature and not a shipped one.
-- **A component with a system and no authoring tool is not shipped.** Ladder,
-  Water3D, Terrain and MeshSimplifier are all built, working, and unreachable
-  without hand-adding a component in the Inspector. That is four features the
-  engine has and a user does not.
+- **A component with a system and no authoring tool is not shipped.** Verified
+  2026-09-07: Water 3D and Terrain DO have Entity-menu entries and are fine.
+  `LadderComponent` is add-a-component-only, so placing a ladder means knowing
+  the component exists; `MeshSimplifier` has no user-facing surface at all and
+  only runs inside LOD generation, so "reduce this model" is something the
+  engine can do and a person cannot ask for.
 - **Discoverability is part of the feature.** Tools three submenus deep, and a
   creative Build palette that is off by default and unfindable, fail this bar as
   surely as a missing feature does.

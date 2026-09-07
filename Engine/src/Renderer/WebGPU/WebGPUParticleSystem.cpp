@@ -433,17 +433,22 @@ void WebGPUParticleSystem::SpawnWithParams(u32 count, const Math::Vector3& posit
     std::vector<Effects::GPUParticle> fresh(count);
     for (u32 i = 0; i < count; ++i) {
         Effects::GPUParticle& p = fresh[i];
-        p.position = position + orientation.Rotate(Effects::ShapeSpawnOffset(shape, shapeSize, i));
-        p.lifetime = params.lifetime * (0.7f + 0.6f * HashUnit(i * 2654435761u + 11u));
+        // Global seed, not the batch index -- see the desktop spawn for why.
+        // A batch is a handful of particles, so `i` repeated 0,1,2,3 every frame
+        // and every frame emitted the same particles on top of the last.
+        const u32 seed = m_NextSpawnIndex + i;
+
+        p.position = position + orientation.Rotate(Effects::ShapeSpawnOffset(shape, shapeSize, seed));
+        p.lifetime = params.lifetime * (0.7f + 0.6f * HashUnit(seed * 2654435761u + 11u));
         p.age = 0.0f;
         // A real cone around `direction`, shared with the desktop spawn. The
         // hand-written version this replaces added the axial term to world Y,
         // so a rotated emitter still threw particles upward.
-        p.velocity = Effects::ConeVelocity(direction, params.spread, i) * params.speed;
+        p.velocity = Effects::ConeVelocity(direction, params.spread, seed) * params.speed;
         p.color = params.color;
-        p.size = params.size * (1.0f - params.sizeJitter * 0.5f + params.sizeJitter * HashUnit(i * 40503u + 7u));
+        p.size = params.size * (1.0f - params.sizeJitter * 0.5f + params.sizeJitter * HashUnit(seed * 40503u + 7u));
         p.rotation = (params.fixedRotation >= 0.0f) ? params.fixedRotation
-                     : HashUnit(i * 22695477u + 3u) * 6.2831853f;
+                     : HashUnit(seed * 22695477u + 3u) * 6.2831853f;
         p.gravityScale = params.gravityScale;
         p.drag = params.drag;
         p.sprite = static_cast<f32>(params.sprite);

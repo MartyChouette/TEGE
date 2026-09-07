@@ -230,25 +230,39 @@ void GPUParticleSystem::SpawnWithParams(u32 count, const Math::Vector3& position
     std::vector<GPUParticle> newParticles(count);
     for (u32 i = 0; i < count; ++i) {
         GPUParticle& p = newParticles[i];
-        p.position = position + orientation.Rotate(ShapeSpawnOffset(shape, shapeSize, i));
-        p.lifetime = params.lifetime * (0.7f + 0.6f * HashUnit(i * 2654435761u + 11u));
+
+        // Seed every per-particle variation from a GLOBAL counter, not from the
+        // index within this batch.
+        //
+        // At 260 spawns a second and 60fps a batch is four particles, so `i` was
+        // 0,1,2,3 on every single frame: the same four lifetimes, the same four
+        // cone angles, the same four sizes and the same four spawn offsets,
+        // forever. Successive frames laid particles on top of each other and the
+        // plume rendered as a solid ribbon with a bright clot at the origin
+        // instead of a spray. m_NextSpawnIndex is the ring-buffer write position
+        // and advances across batches, so consecutive frames now sample
+        // different points.
+        const u32 seed = m_NextSpawnIndex + i;
+
+        p.position = position + orientation.Rotate(ShapeSpawnOffset(shape, shapeSize, seed));
+        p.lifetime = params.lifetime * (0.7f + 0.6f * HashUnit(seed * 2654435761u + 11u));
         p.age = 0.0f;
         if (planar2D) {
             // Stay in the emitter's Z plane; emit a clean fan around the heading so
             // the Angle control actually steers the particles (no +Y cone bias).
             p.position.z = position.z;
-            f32 off = (HashUnit(i * 2246822519u + 5u) * 2.0f - 1.0f) * params.spread;
+            f32 off = (HashUnit(seed * 2246822519u + 5u) * 2.0f - 1.0f) * params.spread;
             f32 a = baseAngle + off;
             p.velocity = Math::Vector3(cosf(a), sinf(a), 0.0f) * params.speed;
         } else {
             // A real cone around `direction`. See ConeVelocity for what the
             // hand-written version did instead.
-            p.velocity = ConeVelocity(direction, params.spread, i) * params.speed;
+            p.velocity = ConeVelocity(direction, params.spread, seed) * params.speed;
         }
         p.color = params.color;
-        p.size = params.size * (1.0f - params.sizeJitter + 2.0f * params.sizeJitter * HashUnit(i * 40503u + 7u));
+        p.size = params.size * (1.0f - params.sizeJitter + 2.0f * params.sizeJitter * HashUnit(seed * 40503u + 7u));
         p.rotation = (params.fixedRotation >= 0.0f) ? params.fixedRotation
-                     : HashUnit(i * 22699u + 3u) * 6.2831853f;
+                     : HashUnit(seed * 22699u + 3u) * 6.2831853f;
         p.gravityScale = params.gravityScale;
         p.drag = params.drag;
         p.sprite = static_cast<f32>(params.sprite);
