@@ -127,6 +127,13 @@ private:
 
     // Entity↔Body mappings (store full BodyID to preserve generation counter — P1/P2 fix)
     std::unordered_map<ECS::Entity, JPH::BodyID> m_EntityToBody;      // Entity → BodyID
+
+    // Shape of the mesh collider each body was COOKED from, as vertex and index
+    // counts. A body is recreated when this moves, because Jolt bakes the
+    // triangles into a shape at creation and never looks at the component
+    // again: a collider filled in after the body existed stayed an empty shape
+    // forever, and everything fell straight through it.
+    std::unordered_map<ECS::Entity, u64> m_MeshColliderSignature;
     std::unordered_map<uint32_t, ECS::Entity> m_BodyIndexToEntity;    // BodyID index → Entity
 
     // Per-body collision filter data (keyed by BodyID index)

@@ -393,6 +393,34 @@ void JoltBackend::SyncECSToJolt() {
         DestroyBodyForEntity(entity);
     }
 
+    // Detect mesh-collider geometry changes and recook. Jolt bakes triangles
+    // into a shape when the body is created and never consults the component
+    // again, so anything that fills or regenerates a collider AFTER that point
+    // -- a brush solid rebuilding, a procedural mesh, a runtime edit -- left the
+    // body holding whatever it was cooked from, usually nothing at all.
+    //
+    // Signature is vertex and index counts rather than a content hash: cheap
+    // enough to run per body per frame, and geometry that changes shape without
+    // changing either count is not a case worth paying a full hash for.
+    m_ToRemoveCache.clear();
+    for (auto& [entity, bodyID] : m_EntityToBody) {
+        auto* meshCol = m_World->GetComponent<ECS::MeshColliderComponent>(entity);
+        if (!meshCol) continue;
+        const u64 sig = (static_cast<u64>(meshCol->vertices.size()) << 32) ^
+                         static_cast<u64>(meshCol->indices.size());
+        auto it = m_MeshColliderSignature.find(entity);
+        if (it == m_MeshColliderSignature.end()) {
+            m_MeshColliderSignature[entity] = sig;
+        } else if (it->second != sig) {
+            it->second = sig;
+            m_ToRemoveCache.push_back(entity);
+        }
+    }
+    for (ECS::Entity entity : m_ToRemoveCache) {
+        DestroyBodyForEntity(entity);
+        CreateBodyForEntity(entity);
+    }
+
     // Detect body type changes (e.g. rigidbody added/changed after collider was created)
     // and recreate the body with the correct motion type.
     m_ToRemoveCache.clear();
@@ -643,8 +671,43 @@ void JoltBackend::CreateBodyForEntity(ECS::Entity entity) {
                         }
                     }
                 } else {
-                    ENJIN_LOG_WARN(Physics, "MeshCollider triangle mesh mode requires static body (entity %llu)",
-                                   static_cast<unsigned long long>(entity));
+                    // A moving body cannot have a triangle mesh: Jolt requires a
+                    // convex shape for anything that simulates. This used to warn
+                    // and leave the body with NO SHAPE, so the object fell
+                    // through the world and the only clue was one line in the
+                    // console. Silent absence of collision is the worst possible
+                    // failure for something a designer configured.
+                    //
+                    // Cook the convex hull instead: an approximation of the mesh
+                    // is a better answer than nothing, and it is the only answer
+                    // Jolt will accept for a moving body. The warning says what
+                    // was substituted and how to get the exact shape back.
+                    JPH::Array<JPH::Vec3> points;
+                    points.reserve(meshCol->vertices.size());
+                    for (const auto& v : meshCol->vertices) {
+                        points.push_back(JPH::Vec3(v.x, v.y, v.z));
+                    }
+                    if (points.size() >= 4) {
+                        JPH::ConvexHullShapeSettings hullSettings(points.data(),
+                                                                  static_cast<int>(points.size()));
+                        hullSettings.mMaxConvexRadius = 0.05f;
+                        auto result = hullSettings.Create();
+                        if (result.IsValid()) {
+                            shape = result.Get();
+                            ENJIN_LOG_WARN(Physics,
+                                "MeshCollider on entity %llu is a MOVING body, so its exact "
+                                "triangles cannot be used -- collides as a convex hull instead. "
+                                "Set the rigidbody to Static for the exact shape.",
+                                static_cast<unsigned long long>(entity));
+                        }
+                    }
+                    if (!shape) {
+                        ENJIN_LOG_ERROR(Physics,
+                            "MeshCollider on entity %llu has no usable shape: a moving body needs "
+                            "a convex hull and there are only %zu vertices to build one from. "
+                            "This entity will NOT collide with anything.",
+                            static_cast<unsigned long long>(entity), meshCol->vertices.size());
+                    }
                 }
             }
 
@@ -761,6 +824,7 @@ void JoltBackend::CreateBodyForEntity(ECS::Entity entity) {
 }
 
 void JoltBackend::DestroyBodyForEntity(ECS::Entity entity) {
+    m_MeshColliderSignature.erase(entity);
     auto it = m_EntityToBody.find(entity);
     if (it == m_EntityToBody.end()) return;
 
