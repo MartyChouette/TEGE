@@ -115,24 +115,40 @@ ent("FallMist", (-22, 1.2, -18.2),
                      "startColor": [0.9, 0.95, 1.0], "startAlpha": 0.28, "endAlpha": 0.0,
                      "gravityScale": -0.02, "playing": True})
 
-# --- N: lake with buoyancy, in its OWN basin --------------------------------
+# --- E: pool with buoyancy, in its OWN basin --------------------------------
 # The water doesn't float on the ground plane: a sunken basin (floor + rim
 # walls) gives it real depth below grade (Marty: "water needs to change where
 # the floor is"). Engine-side auto-basin on WaterVolume is a queued feature;
 # this is the authored version.
-ent("Lake", (-2, 0, -22),
-    waterVolume={"halfExtents": [12, 3, 8], "waterType": 0,
-                 "waterColor": [0.08, 0.28, 0.42], "opacity": 0.82,
-                 "waveSpeed": 1.0, "waveHeight": 0.14, "enableShore": True,
-                 "shoreWidth": 0.12, "foamIntensity": 0.6})
-solid("LakeBed", (-2, -2.2, -22), (24, 0.5, 16), (0.25, 0.3, 0.28))
-solid("LakeRimN", (-2, 0.6, -30.4), (25.6, 2.2, 0.8), (0.5, 0.48, 0.45))
-solid("LakeRimS", (-2, 0.6, -13.6), (25.6, 2.2, 0.8), (0.5, 0.48, 0.45))
-solid("LakeRimW", (-14.4, 0.6, -22), (0.8, 2.2, 17.6), (0.5, 0.48, 0.45))
-solid("LakeRimE", (10.4, 0.6, -22), (0.8, 2.2, 17.6), (0.5, 0.48, 0.45))
-for i in range(3):
-    solid(f"Floater{i}", (-6 + i * 4, 1.5, -22), (1.2, 1.2, 1.2),
-          (0.7, 0.5 + 0.1 * i, 0.3), static=False)
+#
+# Re-forked 2026-09-07 from the committed scene. This was a "Lake" at (-2,0,-22)
+# with four rims and three floaters; it was reworked in the EDITOR into a deeper
+# pool out east, and the generator never knew. Regenerating would have quietly
+# put the old lake back. Values below are read out of the scene as it stands.
+ent("Pool", (41, 0, 0),
+    waterVolume={"halfExtents": [9, 2, 11], "waterType": 0,
+                 "waterColor": [0.1, 0.42, 0.55], "opacity": 0.78,
+                 "waveSpeed": 0.7, "waveHeight": 0.06, "enableShore": True,
+                 "shoreWidth": 0.12, "foamIntensity": 0.6},
+    material={"baseColor": [0.1, 0.42, 0.55], "metallic": 0, "roughness": 0.1})
+solid("PoolBed",  (41, -4.25, 0),    (19.6, 0.5, 23.6), (0.25, 0.3, 0.28))
+solid("PoolRimN", (41, -2.0, -11.4), (19.6, 4.0, 0.8),  (0.5, 0.48, 0.45))
+solid("PoolRimS", (41, -2.0, 11.4),  (19.6, 4.0, 0.8),  (0.5, 0.48, 0.45))
+solid("PoolRimE", (50.4, -2.0, 0),   (0.8, 4.0, 22.0),  (0.5, 0.48, 0.45))
+# Two floats, not three, and only an east rim: the west side is left open so you
+# can walk in. Both authored in the editor.
+solid("PoolFloat0", (37.0, 1.2, -3.0), (1.2, 1.2, 1.2), (0.7, 0.5, 0.3), static=False)
+solid("PoolFloat1", (44.5, 1.2, 2.0),  (1.2, 1.2, 1.2), (0.7, 0.5, 0.3), static=False)
+
+# --- Material demo labels, authored in the editor -----------------------------
+# One sign per material station along z=20. Same plate for each, so the row reads
+# as a set rather than six unrelated signs.
+for _lx, _ltext in ((-15.0, "MATCAP"), (-9.0, "SCROLL REFLECTION"), (-3.0, "FLAT SHADING"),
+                    (3.0, "PS1 AFFINE + SNAP"), (9.0, "STIPPLE TRANSPARENCY"), (15.0, "UV SCROLL")):
+    ent("Label_" + _ltext.split()[0].capitalize(), (_lx, 3.05, 20.0), (2.4, 0.6, 1.0),
+        text={"text": _ltext, "fontSize": 36, "textureWidth": 640, "textureHeight": 128,
+              "textColor": [1, 1, 1], "bgColor": [0.05, 0.08, 0.12], "bgOpacity": 0.75,
+              "horizontalAlign": 1, "wrapWidth": 600})
 
 # --- NE: vegetation grove - the REAL user-facing volume components ----------
 # GPU-instanced grass/shrub/tree renderers (Marty: "everything in the scene
