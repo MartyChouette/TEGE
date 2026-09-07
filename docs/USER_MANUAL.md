@@ -2388,6 +2388,31 @@ Materials carry the sound and particle they make when walked on or struck (inspi
 
 Enjin includes comprehensive accessibility features, configurable from the **Settings** window, **System** tab (View > Settings > System Settings). Settings are saved persistently to disk (JSON format in `%APPDATA%/enjin/` on Windows).
 
+### What every game gets without doing anything
+
+These are guarantees, not features you switch on. A game you export has them
+whether or not you ever open a settings panel, and whether you ship to desktop or
+to the web.
+
+| | |
+|---|---|
+| **A pause menu** | Spawned at runtime when the player pauses. You do not author it, and a project with no UI at all still has one. |
+| **A start screen** | If your project has a canvas named `MainMenu`, that is used. If it has none, the built-in title screen is used instead. Either way there is one. |
+| **An options screen** | Volume, fullscreen, field of view, render scale and shadows. |
+| **Accessibility controls** | Reduced motion, subtitles, dyslexia-friendly font and colorblind mode, reachable from Options in the shipped game. |
+| **Rebindable controls** | Every action can be reassigned by the player, and the rebinds persist to `bindings.json` beside the game. |
+| **Accessibility defaults you choose** | Project Settings > Accessibility Defaults is packed into the build as `accessibility.json`, so your game starts with the settings you picked rather than the engine's. New projects carry this block from creation. |
+
+Two paths reach the same place. The desktop player uses the built-in menu system,
+which grows an Accessibility tab inside Options. The web player builds its menus
+from the same authored canvases you can edit yourself, and listens for the same
+settings. If you replace either with your own UI, you take over responsibility
+for offering these.
+
+**What this means for you:** you cannot accidentally ship a game with no pause
+menu, no way out, or no accessibility options. You can deliberately replace them.
+The distinction matters, because the default is the thing most games ship with.
+
 ### Editor Themes
 
 Eleven themes are available, including four standard themes and seven retro console-inspired themes:
