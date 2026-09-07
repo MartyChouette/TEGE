@@ -86,6 +86,18 @@ const char* GPUParticlePresetName(GPUParticlePreset preset);
 // offset (Cone is a velocity spread, not a volume). `size` is radius / half-extent.
 Math::Vector3 ShapeSpawnOffset(u8 shape, f32 size, u32 index);
 
+// Unit velocity direction inside a cone of half-angle `spread` radians around
+// `direction`, deterministic per particle index.
+//
+// Both GPU spawn paths used to write this by hand as
+//   (direction.x + ..., direction.y + cos(phi), direction.z + ...)
+// which adds the cone's axial term to world Y no matter where the emitter is
+// aimed. A sideways emitter still threw particles up and to the side, and an
+// emitter aimed at +Y got roughly twice the speed it asked for because the axis
+// was counted twice. `spread` also scaled the magnitude rather than the angle,
+// so it never meant the half-angle this header documents.
+Math::Vector3 ConeVelocity(const Math::Vector3& direction, f32 spread, u32 index);
+
 // Emitter configuration for GPU particles (uploaded to the sim's params UBO).
 struct GPUEmitterConfig {
     Math::Vector3 position = {0, 0, 0};

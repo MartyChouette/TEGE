@@ -7730,7 +7730,7 @@ void RenderSystem::TickGPUEmitters(f32 deltaTime) {
 
         // One-shot burst (fired once, then cleared)
         if (em->burstNow && em->burstCount > 0) {
-            m_GPUParticleSystem->SpawnWithParams(em->burstCount, pos, dir, params, shape, shapeSize, planar2D);
+            m_GPUParticleSystem->SpawnWithParams(em->burstCount, pos, dir, params, shape, shapeSize, planar2D, xf.rotation);
             em->burstNow = false;
         }
 
@@ -7741,7 +7741,7 @@ void RenderSystem::TickGPUEmitters(f32 deltaTime) {
             if (n > 0) {
                 em->accumulator -= static_cast<f32>(n);
                 if (n > 4096) n = 4096;   // clamp a single frame's spawn spike
-                m_GPUParticleSystem->SpawnWithParams(n, pos, dir, params, shape, shapeSize, planar2D);
+                m_GPUParticleSystem->SpawnWithParams(n, pos, dir, params, shape, shapeSize, planar2D, xf.rotation);
             }
         }
     }

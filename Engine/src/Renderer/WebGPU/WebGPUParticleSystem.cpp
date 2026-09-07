@@ -425,22 +425,21 @@ void WebGPUParticleSystem::Shutdown() {
 void WebGPUParticleSystem::SpawnWithParams(u32 count, const Math::Vector3& position,
                                            const Math::Vector3& direction,
                                            const Effects::ParticleSpawnParams& params,
-                                           u8 shape, f32 shapeSize) {
+                                           u8 shape, f32 shapeSize,
+                                            const Math::Quaternion& orientation) {
     if (!m_Initialized || count == 0) return;
     m_HasSpawned = true;
 
     std::vector<Effects::GPUParticle> fresh(count);
     for (u32 i = 0; i < count; ++i) {
         Effects::GPUParticle& p = fresh[i];
-        p.position = position + Effects::ShapeSpawnOffset(shape, shapeSize, i);
+        p.position = position + orientation.Rotate(Effects::ShapeSpawnOffset(shape, shapeSize, i));
         p.lifetime = params.lifetime * (0.7f + 0.6f * HashUnit(i * 2654435761u + 11u));
         p.age = 0.0f;
-        f32 theta = static_cast<f32>(i) * 2.39996f;   // golden angle
-        f32 phi = params.spread * static_cast<f32>(i % 16) / 16.0f;
-        p.velocity = Math::Vector3(
-            direction.x + sinf(phi) * cosf(theta) * params.spread,
-            direction.y + cosf(phi),
-            direction.z + sinf(phi) * sinf(theta) * params.spread) * params.speed;
+        // A real cone around `direction`, shared with the desktop spawn. The
+        // hand-written version this replaces added the axial term to world Y,
+        // so a rotated emitter still threw particles upward.
+        p.velocity = Effects::ConeVelocity(direction, params.spread, i) * params.speed;
         p.color = params.color;
         p.size = params.size * (1.0f - params.sizeJitter * 0.5f + params.sizeJitter * HashUnit(i * 40503u + 7u));
         p.rotation = (params.fixedRotation >= 0.0f) ? params.fixedRotation

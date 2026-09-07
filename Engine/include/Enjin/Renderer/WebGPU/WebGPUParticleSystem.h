@@ -8,6 +8,7 @@
 #include "Enjin/Effects/ParticleColliders.h"
 #include "Enjin/Renderer/GPUTypes.h"
 #include "Enjin/Math/Matrix.h"
+#include "Enjin/Math/Quaternion.h"   // emitter orientation for the emission volume
 #include <webgpu/webgpu.h>
 
 namespace Enjin {
@@ -32,9 +33,14 @@ public:
     void Shutdown();
 
     // Upload `count` fresh particles at position/direction with the given look.
+    // orientation: the emitter entity's world rotation, which orients the
+    // emission VOLUME. The cone is oriented by `direction`. Keep this in step
+    // with Effects::GPUParticleSystem::SpawnWithParams -- the two are the same
+    // spawn written twice, and they have drifted before.
     void SpawnWithParams(u32 count, const Math::Vector3& position,
                          const Math::Vector3& direction, const Effects::ParticleSpawnParams& params,
-                         u8 shape = 0, f32 shapeSize = 0.0f);
+                         u8 shape = 0, f32 shapeSize = 0.0f,
+                         const Math::Quaternion& orientation = Math::Quaternion::Identity());
 
     // World shapes the particles bounce off this frame (call before Simulate).
     void SetColliders(const std::vector<Effects::ParticleColliderShape>& shapes);

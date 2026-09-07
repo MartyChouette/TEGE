@@ -40,6 +40,38 @@ Math::Vector3 ShapeSpawnOffset(u8 shape, f32 size, u32 index) {
     }
 }
 
+Math::Vector3 ConeVelocity(const Math::Vector3& direction, f32 spread, u32 index) {
+    // Normalize the axis; a zero direction has no cone to build, so fall back to
+    // +Y rather than returning NaN.
+    f32 len = std::sqrt(direction.x * direction.x + direction.y * direction.y +
+                        direction.z * direction.z);
+    Math::Vector3 axis = (len > 1e-6f) ? Math::Vector3(direction.x / len, direction.y / len,
+                                                       direction.z / len)
+                                       : Math::Vector3(0.0f, 1.0f, 0.0f);
+
+    // An orthonormal basis around the axis. The helper is picked to never be
+    // parallel to it, so the cross product cannot collapse.
+    Math::Vector3 helper = (std::fabs(axis.y) < 0.99f) ? Math::Vector3(0.0f, 1.0f, 0.0f)
+                                                       : Math::Vector3(1.0f, 0.0f, 0.0f);
+    Math::Vector3 t = axis.Cross(helper);
+    f32 tl = std::sqrt(t.x * t.x + t.y * t.y + t.z * t.z);
+    if (tl > 1e-6f) t = Math::Vector3(t.x / tl, t.y / tl, t.z / tl);
+    Math::Vector3 b = axis.Cross(t);
+
+    // Golden-angle spiral around the axis, phi within the half-angle.
+    f32 theta = static_cast<f32>(index) * 2.39996f;
+    f32 phi = spread * static_cast<f32>(index % 16) / 16.0f;
+    f32 sp = std::sin(phi);
+    f32 cp = std::cos(phi);
+    f32 ct = std::cos(theta);
+    f32 st = std::sin(theta);
+
+    return Math::Vector3(
+        axis.x * cp + (t.x * ct + b.x * st) * sp,
+        axis.y * cp + (t.y * ct + b.y * st) * sp,
+        axis.z * cp + (t.z * ct + b.z * st) * sp);
+}
+
 const char* GPUParticlePresetName(GPUParticlePreset p) {
     switch (p) {
         case GPUParticlePreset::Custom: return "Custom";

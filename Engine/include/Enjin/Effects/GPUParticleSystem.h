@@ -5,6 +5,7 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Platform/Types.h"
 #include "Enjin/Math/Vector.h"
+#include "Enjin/Math/Quaternion.h"   // emitter orientation for the emission volume
 #include "Enjin/Effects/GPUParticleTypes.h"   // shared GPUParticle / presets / config
 #include "Enjin/Effects/ParticleColliders.h"   // shapes particles bounce off
 #include "Enjin/Renderer/ComputePipelineHelper.h"
@@ -69,9 +70,14 @@ public:
     // and presets use so different looks coexist in the one shared buffer).
     // planar2D: keep spawns on the emitter's Z plane and emit a clean 2D fan
     // around `direction` (used by 2D emitters so particles stay in the sprite plane).
+    // orientation: the emitter entity's world rotation. It orients the emission
+    // VOLUME (the shape offset); the cone is already oriented by `direction`.
+    // Without it a rotated Box emitter aimed correctly and still emitted from an
+    // unrotated box.
     void SpawnWithParams(u32 count, const Math::Vector3& position,
                          const Math::Vector3& direction, const ParticleSpawnParams& params,
-                         u8 shape = 0, f32 shapeSize = 0.0f, bool planar2D = false);
+                         u8 shape = 0, f32 shapeSize = 0.0f, bool planar2D = false,
+                         const Math::Quaternion& orientation = Math::Quaternion::Identity());
 
     // Render: draw the particle SSBO as an instance-rate vertex buffer inside
     // the current (already begun) render pass. Dead slots collapse to

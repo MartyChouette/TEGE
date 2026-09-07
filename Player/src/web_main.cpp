@@ -1631,11 +1631,24 @@ public:
         for (Enjin::ECS::Entity e : m_World->GetEntitiesWithComponent<Enjin::ECS::GPUParticleEmitterComponent>()) {
             auto* em = m_World->GetComponent<Enjin::ECS::GPUParticleEmitterComponent>(e);
             if (!em) continue;
-            Enjin::Math::Vector3 pos(0.0f);
-            if (auto* t = m_World->GetComponent<Enjin::ECS::TransformComponent>(e)) pos = t->position;
+
+            // Same resolver the desktop path uses. This loop read t->position and
+            // nothing else, so on web an emitter still could not be aimed by
+            // rotating it, sizing it did nothing, and a parented emitter spawned
+            // at its offset from the parent.
+            const Enjin::Effects::EmitterTransform xf =
+                Enjin::Effects::ResolveEmitterTransform(m_World.get(), e);
+            const Enjin::Math::Vector3 pos = xf.position;
+            const Enjin::Math::Vector3 dir = xf.rotation.Rotate(em->direction);
             const Enjin::u8 shape = static_cast<Enjin::u8>(em->shape);
+            const Enjin::f32 shapeSize = em->shapeSize * xf.scale;
+
+            Enjin::Effects::ParticleSpawnParams params = em->ResolveParams();
+            params.size *= xf.scale;
+
             if (em->burstNow && em->burstCount > 0) {
-                m_Particles->SpawnWithParams(em->burstCount, pos, em->direction, em->ResolveParams(), shape, em->shapeSize);
+                m_Particles->SpawnWithParams(em->burstCount, pos, dir, params, shape, shapeSize,
+                                             xf.rotation);
                 em->burstNow = false;
             }
             if (em->emitting && em->spawnRate > 0.0f) {
@@ -1644,7 +1657,8 @@ public:
                 if (n > 0) {
                     em->accumulator -= static_cast<Enjin::f32>(n);
                     if (n > 4096) n = 4096;
-                    m_Particles->SpawnWithParams(n, pos, em->direction, em->ResolveParams(), shape, em->shapeSize);
+                    m_Particles->SpawnWithParams(n, pos, dir, params, shape, shapeSize,
+                                                 xf.rotation);
                 }
             }
         }
