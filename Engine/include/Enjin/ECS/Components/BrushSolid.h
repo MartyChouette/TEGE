@@ -72,12 +72,47 @@ struct ENJIN_API BrushSolidComponent {
     // Set by anything that edits the list. The rebuild runs on the next system
     // pass and clears it: rebuilding on every edit would re-clip the whole solid
     // for each dragged handle.
+    //
+    // It is a fast path, NOT the correctness mechanism. BrushSolidSystem also
+    // hashes the list and rebuilds when the hash moved, because a flag that
+    // every writer must remember to set is a flag somebody will forget: undo
+    // writes an old value straight back through a raw pointer, a script could
+    // poke a brush, and a future tool will do something nobody predicted. The
+    // hash means the geometry follows the data no matter who wrote it.
     bool dirty = true;
+
+    // Hash of the brush list the current geometry was built from. Zero means
+    // nothing has been built yet.
+    u64 builtHash = 0;
 
     // Last rebuild's output size, for the inspector to show. A brush solid that
     // has quietly grown to thousands of faces is worth being able to see.
     u32 lastFaceCount = 0;
     u32 lastTriangleCount = 0;
+
+    // Cheap content hash of everything that changes the geometry. Deliberately
+    // excludes lastFaceCount and friends, which are outputs.
+    u64 ContentHash() const {
+        u64 h = 1469598103934665603ull;
+        auto mix = [&h](const void* data, usize bytes) {
+            const u8* p = static_cast<const u8*>(data);
+            for (usize i = 0; i < bytes; ++i) { h ^= p[i]; h *= 1099511628211ull; }
+        };
+        mix(&uvScale, sizeof(uvScale));
+        mix(&generateCollider, sizeof(generateCollider));
+        for (const Brush& b : brushes) {
+            mix(&b.shape, sizeof(b.shape));
+            mix(&b.op, sizeof(b.op));
+            mix(&b.center, sizeof(b.center));
+            mix(&b.rotation, sizeof(b.rotation));
+            mix(&b.halfExtents, sizeof(b.halfExtents));
+            mix(&b.radius, sizeof(b.radius));
+            mix(&b.halfHeight, sizeof(b.halfHeight));
+            mix(&b.sides, sizeof(b.sides));
+            mix(&b.enabled, sizeof(b.enabled));
+        }
+        return h;
+    }
 
     std::vector<Geometry::BrushEntry> ToBrushEntries() const {
         std::vector<Geometry::BrushEntry> out;

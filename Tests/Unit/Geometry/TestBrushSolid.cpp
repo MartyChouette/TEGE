@@ -183,4 +183,49 @@ ENJIN_TEST(BrushSolid, RebuildOnAnEntityWithoutOneIsHarmless) {
     ENJIN_EXPECT_FALSE(ECS::BrushSolidSystem::Rebuild(nullptr, e));
 }
 
+// The flag is a fast path, not the correctness mechanism. Undo writes an old
+// value straight back through a raw pointer without touching dirty, and so
+// would a script or any future tool. If rebuild depended on the flag alone,
+// every one of those would leave stale geometry on screen.
+ENJIN_TEST(BrushSolid, EditWithoutSettingDirtyStillRebuilds) {
+    ECS::World w;
+    ECS::Entity e = MakeWall(w);
+    ECS::BrushSolidSystem::Update(&w);
+    const usize before = w.GetComponent<ECS::MeshComponent>(e)->indices.size();
+
+    auto* solid = w.GetComponent<ECS::BrushSolidComponent>(e);
+    ENJIN_ASSERT_FALSE(solid->dirty);
+
+    // Edit the list and deliberately do NOT set dirty, the way undo does.
+    solid->brushes.pop_back();
+
+    ENJIN_EXPECT_EQ(ECS::BrushSolidSystem::Update(&w), (u32)1);
+    ENJIN_EXPECT_TRUE(w.GetComponent<ECS::MeshComponent>(e)->indices.size() != before);
+}
+
+ENJIN_TEST(BrushSolid, UnchangedSolidsAreNotRebuilt) {
+    ECS::World w;
+    ECS::Entity e = MakeWall(w);
+    ECS::BrushSolidSystem::Update(&w);
+
+    // Hash matches and the flag is clear, so there is nothing to do. Without
+    // this the hash check would rebuild every solid every frame.
+    ENJIN_EXPECT_EQ(ECS::BrushSolidSystem::Update(&w), (u32)0);
+    ENJIN_EXPECT_EQ(ECS::BrushSolidSystem::Update(&w), (u32)0);
+    (void)e;
+}
+
+// Output fields must not feed the hash, or recording a rebuild's own results
+// changes the hash and asks for another rebuild, forever.
+ENJIN_TEST(BrushSolid, OutputCountsDoNotFeedTheHash) {
+    ECS::World w;
+    ECS::Entity e = MakeWall(w);
+    auto* solid = w.GetComponent<ECS::BrushSolidComponent>(e);
+
+    const u64 h = solid->ContentHash();
+    solid->lastFaceCount = 999;
+    solid->lastTriangleCount = 12345;
+    ENJIN_EXPECT_EQ(solid->ContentHash(), h);
+}
+
 ENJIN_TEST_MAIN()

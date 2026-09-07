@@ -19,6 +19,7 @@ bool BrushSolidSystem::Rebuild(World* world, Entity entity) {
 
     solid->lastFaceCount = static_cast<u32>(faces.size());
     solid->dirty = false;
+    solid->builtHash = solid->ContentHash();
 
     if (faces.empty()) {
         // An empty solid is a legal state, not an error: a fresh component has
@@ -88,7 +89,14 @@ u32 BrushSolidSystem::Update(World* world) {
 
     for (Entity e : entities) {
         auto* solid = world->GetComponent<BrushSolidComponent>(e);
-        if (!solid || !solid->dirty) continue;
+        if (!solid) continue;
+
+        // The flag is the fast path; the hash is the truth. Undo writes an old
+        // value straight back through a raw pointer without touching the flag,
+        // and so would a script or any tool that edits the list directly. The
+        // hash means the geometry follows the data whoever wrote it.
+        if (!solid->dirty && solid->ContentHash() == solid->builtHash) continue;
+
         if (Rebuild(world, e)) ++rebuilt;
     }
 

@@ -3155,6 +3155,28 @@ void EditorLayer::DrawReflectivePlaneComponent(ECS::Entity entity) {
     }
 }
 
+// Structural edits to a brush list -- adding, removing, or dropping in a preset
+// -- are one undo step each, snapshotting the whole vector. A per-brush command
+// would need stable identities the list does not have (indices shift the moment
+// anything is removed), and a brush list is a few dozen small structs, so
+// copying it is cheaper than the bookkeeping would be.
+static void PushBrushListEdit(Editor::UndoRedoManager& undo, ECS::World* world,
+                              ECS::Entity entity, const char* desc,
+                              std::vector<ECS::BrushSolidComponent::Brush> before,
+                              std::vector<ECS::BrushSolidComponent::Brush> after) {
+    auto apply = [world, entity](const std::vector<ECS::BrushSolidComponent::Brush>& v) {
+        // Re-resolved every time: the component pointer captured at push time
+        // does not survive an add or remove on the same storage.
+        if (auto* s = world->GetComponent<ECS::BrushSolidComponent>(entity)) {
+            s->brushes = v;
+            s->dirty = true;
+        }
+    };
+    undo.Execute(std::make_unique<Editor::PropertyEditCommand<
+                     std::vector<ECS::BrushSolidComponent::Brush>>>(
+        desc, std::move(before), std::move(after), apply));
+}
+
 void EditorLayer::DrawBrushSolidComponent(ECS::Entity entity) {
     if (UI::SectionHeader("Brush Solid", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* solid = m_World->GetComponent<ECS::BrushSolidComponent>(entity);
@@ -3172,14 +3194,14 @@ void EditorLayer::DrawBrushSolidComponent(ECS::Entity entity) {
         // dragged pixel would stall the drag.
         bool changed = false;
 
-        if (ImGui::DragFloat("UV Scale##Brush", &solid->uvScale, 0.05f, 0.05f, 64.0f, "%.2f")) {
+        if (InspectorUndo::DragFloat(m_UndoRedo, "UV Scale##Brush", &solid->uvScale, 0.05f, 0.05f, 64.0f)) {
             if (solid->uvScale < 0.01f) solid->uvScale = 0.01f;
             changed = true;
         }
         ImGui::SetItemTooltip("World units per texture tile. Faces are planar-projected on "
                               "their dominant axis, so this is the whole UV control.");
 
-        if (ImGui::Checkbox("Generate Collider##Brush", &solid->generateCollider)) changed = true;
+        if (InspectorUndo::Checkbox(m_UndoRedo, "Generate Collider##Brush", &solid->generateCollider)) changed = true;
         ImGui::SetItemTooltip("Collision is the same triangles as the mesh, welded. Off for "
                               "decorative solids nothing touches.\n"
                               "It has to be the triangles: a convex shape cannot express a "
@@ -3196,17 +3218,21 @@ void EditorLayer::DrawBrushSolidComponent(ECS::Entity entity) {
         }
 
         if (ImGui::Button("Add Box##Brush")) {
+            auto before = solid->brushes;
             ECS::BrushSolidComponent::Brush b;
             b.shape = ECS::BrushSolidComponent::Shape::Box;
-            solid->brushes.push_back(b);
-            changed = true;
+            auto after = before; after.push_back(b);
+            PushBrushListEdit(m_UndoRedo, m_World, entity, "Add Box Brush",
+                              std::move(before), std::move(after));
         }
         ImGui::SameLine();
         if (ImGui::Button("Add Prism##Brush")) {
+            auto before = solid->brushes;
             ECS::BrushSolidComponent::Brush b;
             b.shape = ECS::BrushSolidComponent::Shape::Prism;
-            solid->brushes.push_back(b);
-            changed = true;
+            auto after = before; after.push_back(b);
+            PushBrushListEdit(m_UndoRedo, m_World, entity, "Add Prism Brush",
+                              std::move(before), std::move(after));
         }
         ImGui::SameLine();
         if (ImGui::Button("Wall + Doorway##Brush")) {
@@ -3219,9 +3245,12 @@ void EditorLayer::DrawBrushSolidComponent(ECS::Entity entity) {
             door.op = Geometry::BrushOp::Subtract;
             door.center = Math::Vector3(0.0f, -1.0f, 0.0f);
             door.halfExtents = Math::Vector3(1.0f, 2.0f, 1.0f);
-            solid->brushes.push_back(wall);
-            solid->brushes.push_back(door);
-            changed = true;
+            auto before = solid->brushes;
+            auto after = before;
+            after.push_back(wall);
+            after.push_back(door);
+            PushBrushListEdit(m_UndoRedo, m_World, entity, "Add Wall and Doorway",
+                              std::move(before), std::move(after));
         }
 
         int removeIndex = -1;
@@ -3237,7 +3266,7 @@ void EditorLayer::DrawBrushSolidComponent(ECS::Entity entity) {
                      opName, shapeName, b.enabled ? "" : "  (off)");
 
             if (ImGui::TreeNode(label)) {
-                if (ImGui::Checkbox("Enabled", &b.enabled)) changed = true;
+                if (InspectorUndo::Checkbox(m_UndoRedo, "Enabled", &b.enabled)) changed = true;
                 ImGui::SetItemTooltip("Off keeps the brush in the list and stops it "
                                       "contributing, so you can see what a cut is doing "
                                       "without losing it.");
@@ -3255,7 +3284,18 @@ void EditorLayer::DrawBrushSolidComponent(ECS::Entity entity) {
                 }
 
                 f32 c[3] = { b.center.x, b.center.y, b.center.z };
-                if (ImGui::DragFloat3("Center", c, 0.05f)) {
+                // The setter runs on undo and redo too, so it re-resolves the
+                // component and marks it dirty: an undone brush edit has to
+                // rebuild the geometry, not just change the numbers.
+                if (InspectorUndo::DragFloat3(m_UndoRedo, "Center", c,
+                        [w = m_World, entity, i](f32 x, f32 y, f32 z) {
+                            if (auto* sp = w->GetComponent<ECS::BrushSolidComponent>(entity)) {
+                                if (i < sp->brushes.size()) {
+                                    sp->brushes[i].center = Math::Vector3(x, y, z);
+                                    sp->dirty = true;
+                                }
+                            }
+                        }, 0.05f)) {
                     b.center = Math::Vector3(c[0], c[1], c[2]);
                     changed = true;
                 }
@@ -3263,7 +3303,16 @@ void EditorLayer::DrawBrushSolidComponent(ECS::Entity entity) {
 
                 Math::Vector3 euler = b.rotation.ToEulerDegrees();
                 f32 r[3] = { euler.x, euler.y, euler.z };
-                if (ImGui::DragFloat3("Rotation", r, 1.0f)) {
+                if (InspectorUndo::DragFloat3(m_UndoRedo, "Rotation", r,
+                        [w = m_World, entity, i](f32 x, f32 y, f32 z) {
+                            if (auto* sp = w->GetComponent<ECS::BrushSolidComponent>(entity)) {
+                                if (i < sp->brushes.size()) {
+                                    sp->brushes[i].rotation =
+                                        Math::Quaternion::FromEulerDegrees(Math::Vector3(x, y, z));
+                                    sp->dirty = true;
+                                }
+                            }
+                        }, 1.0f)) {
                     b.rotation = Math::Quaternion::FromEulerDegrees(Math::Vector3(r[0], r[1], r[2]));
                     changed = true;
                 }
@@ -3271,10 +3320,10 @@ void EditorLayer::DrawBrushSolidComponent(ECS::Entity entity) {
                                       "built from the rotated axes, not approximated.");
 
                 if (b.shape == ECS::BrushSolidComponent::Shape::Prism) {
-                    if (ImGui::DragFloat("Radius", &b.radius, 0.05f, 0.01f, 500.0f)) changed = true;
-                    if (ImGui::DragFloat("Half Height", &b.halfHeight, 0.05f, 0.01f, 500.0f)) changed = true;
+                    if (InspectorUndo::DragFloat(m_UndoRedo, "Radius", &b.radius, 0.05f, 0.01f, 500.0f)) changed = true;
+                    if (InspectorUndo::DragFloat(m_UndoRedo, "Half Height", &b.halfHeight, 0.05f, 0.01f, 500.0f)) changed = true;
                     int sides = static_cast<int>(b.sides);
-                    if (ImGui::SliderInt("Sides", &sides, 3, 64)) {
+                    if (InspectorUndo::SliderInt(m_UndoRedo, "Sides", &sides, 3, 64)) {
                         b.sides = static_cast<u32>(sides);
                         changed = true;
                     }
@@ -3282,7 +3331,15 @@ void EditorLayer::DrawBrushSolidComponent(ECS::Entity entity) {
                                           "every clip pass for a circle nobody can resolve.");
                 } else {
                     f32 he[3] = { b.halfExtents.x, b.halfExtents.y, b.halfExtents.z };
-                    if (ImGui::DragFloat3("Half Extents", he, 0.05f, 0.01f, 500.0f)) {
+                    if (InspectorUndo::DragFloat3(m_UndoRedo, "Half Extents", he,
+                            [w = m_World, entity, i](f32 x, f32 y, f32 z) {
+                                if (auto* sp = w->GetComponent<ECS::BrushSolidComponent>(entity)) {
+                                    if (i < sp->brushes.size()) {
+                                        sp->brushes[i].halfExtents = Math::Vector3(x, y, z);
+                                        sp->dirty = true;
+                                    }
+                                }
+                            }, 0.05f, 0.01f, 500.0f)) {
                         b.halfExtents = Math::Vector3(he[0], he[1], he[2]);
                         changed = true;
                     }
@@ -3297,8 +3354,11 @@ void EditorLayer::DrawBrushSolidComponent(ECS::Entity entity) {
         }
 
         if (removeIndex >= 0) {
-            solid->brushes.erase(solid->brushes.begin() + removeIndex);
-            changed = true;
+            auto before = solid->brushes;
+            auto after = before;
+            after.erase(after.begin() + removeIndex);
+            PushBrushListEdit(m_UndoRedo, m_World, entity, "Remove Brush",
+                              std::move(before), std::move(after));
         }
 
         if (changed) solid->dirty = true;
