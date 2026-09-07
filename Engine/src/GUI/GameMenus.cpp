@@ -113,7 +113,7 @@ void GameMenuSystem::Render(f32 screenW, f32 screenH) {
 
 void GameMenuSystem::RenderMainMenu(f32 w, f32 h) {
     // Solid full-screen opaque background cover card over the game scene
-    ImDrawList* draw = ImGui::GetBackgroundDrawList();
+    ImDrawList* draw = TargetDrawList();
     draw->AddRectFilledMultiColor(ImVec2(0, 0), ImVec2(w, h),
         IM_COL32(12, 14, 24, 255),   // top-left
         IM_COL32(18, 22, 34, 255),   // top-right
@@ -182,7 +182,7 @@ void GameMenuSystem::RenderMainMenu(f32 w, f32 h) {
 
 void GameMenuSystem::RenderPauseMenu(f32 w, f32 h) {
     // Dim overlay behind pause menu (background draw list = behind HUD)
-    ImDrawList* draw = ImGui::GetBackgroundDrawList();
+    ImDrawList* draw = TargetDrawList();
     draw->AddRectFilledMultiColor(ImVec2(0, 0), ImVec2(w, h),
         IM_COL32(8, 10, 18, 100),   // top-left (lighter)
         IM_COL32(8, 10, 18, 100),   // top-right
@@ -237,7 +237,7 @@ void GameMenuSystem::RenderPauseMenu(f32 w, f32 h) {
 // ---------------------------------------------------------------------------
 
 void GameMenuSystem::RenderOptions(f32 w, f32 h) {
-    ImDrawList* draw = ImGui::GetBackgroundDrawList();
+    ImDrawList* draw = TargetDrawList();
     if (m_ReturnScreen == MenuScreen::MainMenu || m_CurrentScreen == MenuScreen::MainMenu) {
         draw->AddRectFilledMultiColor(ImVec2(0, 0), ImVec2(w, h),
             IM_COL32(12, 14, 24, 255),
@@ -758,7 +758,7 @@ void GameMenuSystem::RenderControls(f32 w, f32 h) {
 // ---------------------------------------------------------------------------
 
 void GameMenuSystem::RenderHowToPlay(f32 w, f32 h) {
-    ImDrawList* draw = ImGui::GetBackgroundDrawList();
+    ImDrawList* draw = TargetDrawList();
     if (m_ReturnScreen == MenuScreen::MainMenu || m_CurrentScreen == MenuScreen::MainMenu) {
         draw->AddRectFilledMultiColor(ImVec2(0, 0), ImVec2(w, h),
             IM_COL32(12, 14, 24, 255),
@@ -893,7 +893,7 @@ void GameMenuSystem::ShowGameOver(bool won, const std::string& message,
 
 void GameMenuSystem::RenderGameOver(f32 w, f32 h) {
     // Full-screen dark overlay (heavier than pause for finality)
-    ImDrawList* draw = ImGui::GetBackgroundDrawList();
+    ImDrawList* draw = TargetDrawList();
     ImU32 overlayColor = m_GameOverWon ? IM_COL32(5, 15, 5, 220)
                                        : IM_COL32(18, 5, 5, 220);
     draw->AddRectFilled(ImVec2(0, 0), ImVec2(w, h), overlayColor);

@@ -96,6 +96,16 @@ public:
     MenuScreen GetCurrentScreen() const;
     bool IsMenuOpen() const;
 
+    // Where the menus draw. Null (the default, and what both players use) is
+    // ImGui's BACKGROUND list, which sits under every window -- right when the
+    // game owns the screen and the renderer has already drawn the world.
+    //
+    // In the editor that is exactly backwards: the game view is an ImGui image
+    // inside a window, so a menu on the background list renders UNDERNEATH the
+    // thing it is supposed to be covering. Hand it the Game View window's own
+    // draw list and it stacks correctly.
+    void SetTargetDrawList(ImDrawList* drawList) { m_TargetDrawList = drawList; }
+
     void Render(f32 screenW, f32 screenH);
 
     void SetCallback(MenuCallback cb);
@@ -131,6 +141,12 @@ private:
     // RenderPauseMenu is kept for a runtime that has no canvas; nothing
     // reaches it today.
     MenuScreen m_ReturnScreen = MenuScreen::None;
+
+    // The editor's Game View list when set, the background list otherwise.
+    ImDrawList* TargetDrawList() const {
+        return m_TargetDrawList ? m_TargetDrawList : ImGui::GetBackgroundDrawList();
+    }
+    ImDrawList* m_TargetDrawList = nullptr;
 
     void RenderMainMenu(f32 w, f32 h);
     void RenderPauseMenu(f32 w, f32 h);

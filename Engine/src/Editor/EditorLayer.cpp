@@ -5371,7 +5371,12 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
             case GUI::MenuScreen::Audio:
             case GUI::MenuScreen::Controls:
             case GUI::MenuScreen::HowToPlay:
+                // Into the Game View window's list, not the background one:
+                // the docked game view is an ImGui image, so a menu on the
+                // background list draws underneath the very thing it covers.
+                m_GameMenu.SetTargetDrawList(m_GameViewDrawList);
                 m_GameMenu.Render(io.DisplaySize.x, io.DisplaySize.y);
+                m_GameMenu.SetTargetDrawList(nullptr);
                 break;
             default:
                 break;
