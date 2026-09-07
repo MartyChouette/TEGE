@@ -1,4 +1,5 @@
 #include "Enjin/Scene/SceneManager.h"
+#include "Enjin/Accessibility/AccessibilitySettings.h"   // seed new projects with a11y defaults
 #include "Enjin/Renderer/SceneRenderSettings.h"
 #include "Enjin/Build/AssetReader.h"
 #include "Enjin/Logging/Log.h"
@@ -30,6 +31,24 @@ void SceneManager::NewProject(const std::string& projectName) {
     // ADR-0005: NEW projects get frame-rate-independent physics from day one.
     // Existing projects keep whatever their file says (missing key = off).
     m_GameFrameSettings.fixedTimestep = true;
+
+    // Same reasoning for accessibility. BuildPipeline packs accessibility.json
+    // from this block, and the block was only written when someone had already
+    // opened Project Settings and changed something -- so a game shipped by
+    // anyone who never visited that panel shipped without it. The engine has
+    // ten accessibility subsystems and the default was to hand a player none of
+    // them.
+    //
+    // Seeding the DEFAULTS costs nothing and makes the promise true by
+    // construction: every new project carries the block, every build packs it,
+    // and every player gets the menu. Existing projects are untouched -- a
+    // missing key still means missing, and NewProject is only new ones.
+    m_AccessibilityDefaultsJson = Accessibility::RuntimeAccessibilitySettings{}.ToJson();
+
+    // startupFlow is deliberately NOT seeded. An empty flow means "go straight
+    // to the start scene", which is the right default; writing one in would
+    // impose a title screen on every new project, and removing that imposition
+    // is exactly what the startup-flow work set out to fix.
     m_ProjectMode = ProjectMode::Mode3D;
     m_PhysicsBackendType = Physics::PhysicsBackendType::Auto;
     m_CollisionGroupNames.clear();

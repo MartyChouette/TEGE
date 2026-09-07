@@ -1,4 +1,6 @@
 #include "EnjinTest.h"
+#include <filesystem>
+#include <string>
 #include "Enjin/Scene/SceneManager.h"
 
 using namespace Enjin;
@@ -336,6 +338,60 @@ ENJIN_TEST(SceneManagement, AutoAssign_PreservesExistingStartFlag) {
     ENJIN_EXPECT_EQ(sm.GetScene(2)->buildIndex, 2);
     ENJIN_EXPECT_FALSE(sm.GetScene(0)->isStartScene);
     ENJIN_EXPECT_TRUE(sm.GetScene(2)->isStartScene);
+}
+
+// ===========================================================================
+// Every game ships accessible
+//
+// BuildPipeline packs accessibility.json from the project's accessibilityDefaults
+// block, and that block was only written once someone had opened Project
+// Settings and changed something. A game made by anyone who never visited that
+// panel shipped with none of the engine's ten accessibility subsystems reachable.
+// Seeding the defaults makes the promise true by construction.
+// ===========================================================================
+
+ENJIN_TEST(ShipsAccessible, NewProjectCarriesAccessibilityDefaults) {
+    Scene::SceneManager sm;
+    sm.NewProject("Fresh");
+
+    // Present and a real object, not an empty string that serializes to nothing.
+    const std::string& json = sm.GetAccessibilityDefaultsJson();
+    ENJIN_ASSERT_FALSE(json.empty());
+    ENJIN_EXPECT_TRUE(json.find('{') != std::string::npos);
+}
+
+ENJIN_TEST(ShipsAccessible, TheDefaultsSurviveASaveAndLoad) {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "enjin_ships_accessible";
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    fs::create_directories(dir, ec);
+    const std::string manifest = (dir / "Fresh.enjinproject").string();
+
+    {
+        Scene::SceneManager sm;
+        sm.NewProject("Fresh");
+        sm.AddScene("Main", "scenes/Main.enjin");
+        sm.SetStartScene(0);
+        ENJIN_ASSERT_TRUE(sm.SaveProject(manifest));
+    }
+
+    // The point of seeding is that the block reaches the FILE, since that is
+    // what BuildPipeline reads.
+    Scene::SceneManager loaded;
+    ENJIN_ASSERT_TRUE(loaded.LoadProject(manifest));
+    ENJIN_EXPECT_FALSE(loaded.GetAccessibilityDefaultsJson().empty());
+
+    fs::remove_all(dir, ec);
+}
+
+// A title screen must NOT be imposed. An empty startup flow means "go straight
+// to the start scene", and forcing one in is the imposition the startup-flow
+// work removed.
+ENJIN_TEST(ShipsAccessible, NewProjectDoesNotImposeATitleScreen) {
+    Scene::SceneManager sm;
+    sm.NewProject("Fresh");
+    ENJIN_EXPECT_TRUE(sm.GetStartupFlow().empty());
 }
 
 ENJIN_TEST_MAIN()
