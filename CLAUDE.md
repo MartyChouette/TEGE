@@ -8,6 +8,29 @@
 
 Enjin is an open-source (BSL 1.1) game engine built from scratch using C++20. It features a complete editor with ImGui, an Entity-Component-System architecture, and modern rendering with multi-backend support (Vulkan, WebGPU, Metal planned).
 
+## The golden rule
+
+**TEGE is a powerful OFFLINE tool for people with no AI.** A person on their own
+machine, no model in the loop, no network, must be able to reach every
+capability through the editor UI. (Marty, 2026-09-07: "we are always looking to
+make this a better tool for people to use without ai, we want a powerful
+offline." Called a golden design rule in the same breath.)
+
+What it decides, whenever human-facing and AI-facing work compete:
+
+- **The MCP server is a convenience, never the only path.** If something can
+  ONLY be done through MCP, that is a missing feature and not a shipped one.
+- **A component with a system and no authoring tool is not shipped.** Ladder,
+  Water3D, Terrain and MeshSimplifier are all built, working, and unreachable
+  without hand-adding a component in the Inspector. That is four features the
+  engine has and a user does not.
+- **Discoverability is part of the feature.** Tools three submenus deep, and a
+  creative Build palette that is off by default and unfindable, fail this bar as
+  surely as a missing feature does.
+- **Dogfood it.** The sharpest evidence against the claim today is that our own
+  flagship demo, Playground, was authored in Python rather than in the editor.
+  If the editor were pleasant enough for the job, we would have used it.
+
 ## Traps & Rules
 
 These are hard-won lessons. Violating any of these will cause bugs.
