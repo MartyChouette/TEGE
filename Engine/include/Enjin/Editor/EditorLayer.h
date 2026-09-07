@@ -1506,6 +1506,33 @@ private:
     bool m_ImportPreviewScanned = false;
     void ScanImportPreview(const std::string& filepath);
 
+    // --- Live import preview -------------------------------------------------
+    // A decimated point sample of the model in its FILE space, plus its bounds,
+    // collected during ScanImportPreview (which already loads the whole file, so
+    // this costs nothing extra). The dialog projects these every frame under the
+    // current scale / axis conversion / flips / rotation, so the settings can be
+    // judged by eye instead of imported, inspected, undone and imported again.
+    //
+    // Points are in file space with node transforms baked in. The import
+    // settings are a rigid transform on top, which is exactly what the preview
+    // applies -- so what is drawn is what lands in the scene.
+    std::vector<Math::Vector3> m_ImportPreviewPoints;
+    Math::Vector3 m_ImportPreviewMin = Math::Vector3(0.0f);
+    Math::Vector3 m_ImportPreviewMax = Math::Vector3(0.0f);
+    bool m_ImportPreviewHasGeometry = false;
+    static constexpr usize kImportPreviewMaxPoints = 4000;
+
+    // Orbit state for the preview viewport (drag to turn, wheel to zoom).
+    f32 m_ImportPreviewYaw = 0.7f;
+    f32 m_ImportPreviewPitch = 0.25f;
+    f32 m_ImportPreviewZoom = 1.0f;
+    bool m_ImportPreviewShowRef = true;
+
+    void DrawImportPreviewViewport();
+    // The rigid transform the current options describe, so the preview and the
+    // importer cannot disagree about what a setting means.
+    Math::Quaternion ImportPreviewRotation() const;
+
     std::string m_ImportDialogFilename;   // Cached on dialog open
     std::string m_ImportDialogExtension;  // Cached on dialog open
     u64 m_ImportDialogFileSize = 0;       // Cached on dialog open

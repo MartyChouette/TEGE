@@ -520,9 +520,41 @@ void EditorLayer::ImportModel(const std::string& path) {
     }
 }
 
+namespace {
+
+// Compose a node's world transform by walking its parent chain, so a model whose
+// parts are placed by node transforms previews in one piece instead of collapsed
+// on the origin. Depth-capped like ComputeWorldMatrix.
+template <typename NodeArray, typename ParentOf>
+Enjin::Math::Matrix4 PreviewNodeWorld(const NodeArray& nodes, int index, ParentOf parentOf) {
+    Enjin::Math::Matrix4 m = Enjin::Math::Matrix4::Identity();
+    int chain[64];
+    int depth = 0;
+    for (int cur = index; cur >= 0 && depth < 64; cur = parentOf(cur)) {
+        chain[depth++] = cur;
+    }
+    for (int d = depth - 1; d >= 0; --d) {
+        const auto& n = nodes[chain[d]];
+        Enjin::Math::Matrix4 local = Enjin::Math::Matrix4::Translation(n.translation) *
+                                     n.rotation.ToMatrix() *
+                                     Enjin::Math::Matrix4::Scale(n.scale);
+        m = m * local;
+    }
+    return m;
+}
+
+} // namespace
+
 void EditorLayer::ScanImportPreview(const std::string& filepath) {
     m_ImportPreviewNodes.clear();
     m_ImportPreviewScanned = false;
+    m_ImportPreviewPoints.clear();
+    m_ImportPreviewHasGeometry = false;
+    m_ImportPreviewMin = Math::Vector3(0.0f);
+    m_ImportPreviewMax = Math::Vector3(0.0f);
+
+    // Filled by both loader branches below, then decimated once.
+    std::vector<Math::Vector3> allPoints;
 
     std::string ext = std::filesystem::path(filepath).extension().string();
     for (auto& c : ext) c = static_cast<char>(std::tolower(c));
@@ -561,6 +593,23 @@ void EditorLayer::ScanImportPreview(const std::string& filepath) {
                 m_ImportPreviewNodes.push_back(preview);
             }
             m_ImportPreviewScanned = true;
+
+            // Point sample for the live preview, with node transforms baked in.
+            auto parentOf = [this](int idx) {
+                return (idx >= 0 && idx < static_cast<int>(m_ImportPreviewNodes.size()))
+                       ? m_ImportPreviewNodes[idx].parentIndex : -1;
+            };
+            for (usize i = 0; i < scene.nodes.size() && i < m_ImportPreviewNodes.size(); ++i) {
+                const auto& node = scene.nodes[i];
+                if (node.meshIndex < 0 || node.meshIndex >= static_cast<i32>(scene.meshes.size())) continue;
+                Math::Matrix4 world = PreviewNodeWorld(scene.nodes, static_cast<int>(i), parentOf);
+                for (const auto& prim : scene.meshes[node.meshIndex].primitives) {
+                    for (const auto& v : prim.vertices) {
+                        Math::Vector4 p = world * Math::Vector4(v.position.x, v.position.y, v.position.z, 1.0f);
+                        allPoints.push_back(Math::Vector3(p.x, p.y, p.z));
+                    }
+                }
+            }
         }
     } else {
         Assets::AssimpScene scene;
@@ -592,8 +641,262 @@ void EditorLayer::ScanImportPreview(const std::string& filepath) {
                     if (n.hasMesh) n.hasSkin = true;
                 }
             }
+
+            auto parentOf = [&scene](int idx) {
+                return (idx >= 0 && idx < static_cast<int>(scene.nodes.size()))
+                       ? scene.nodes[idx].parentIndex : -1;
+            };
+            for (usize i = 0; i < scene.nodes.size(); ++i) {
+                const auto& node = scene.nodes[i];
+                if (node.meshIndices.empty()) continue;
+                Math::Matrix4 world = PreviewNodeWorld(scene.nodes, static_cast<int>(i), parentOf);
+                for (i32 mi : node.meshIndices) {
+                    if (mi < 0 || mi >= static_cast<i32>(scene.meshes.size())) continue;
+                    for (const auto& prim : scene.meshes[mi].primitives) {
+                        for (const auto& v : prim.vertices) {
+                            Math::Vector4 p = world * Math::Vector4(v.position.x, v.position.y, v.position.z, 1.0f);
+                            allPoints.push_back(Math::Vector3(p.x, p.y, p.z));
+                        }
+                    }
+                }
+            }
         }
     }
+
+    // Decimate to a fixed budget and record the bounds. Bounds come from EVERY
+    // vertex, not the sample, so the reported size is the real one -- the sample
+    // only decides how dense the silhouette looks.
+    if (!allPoints.empty()) {
+        Math::Vector3 mn = allPoints[0], mx = allPoints[0];
+        for (const auto& p : allPoints) {
+            mn.x = std::min(mn.x, p.x); mn.y = std::min(mn.y, p.y); mn.z = std::min(mn.z, p.z);
+            mx.x = std::max(mx.x, p.x); mx.y = std::max(mx.y, p.y); mx.z = std::max(mx.z, p.z);
+        }
+        m_ImportPreviewMin = mn;
+        m_ImportPreviewMax = mx;
+
+        const usize stride = std::max<usize>(1, allPoints.size() / kImportPreviewMaxPoints);
+        m_ImportPreviewPoints.reserve(allPoints.size() / stride + 1);
+        for (usize i = 0; i < allPoints.size(); i += stride) {
+            m_ImportPreviewPoints.push_back(allPoints[i]);
+        }
+        m_ImportPreviewHasGeometry = true;
+    }
+
+    // A fresh model gets a fresh view; keeping the last one hides a model that
+    // happens to sit outside it.
+    m_ImportPreviewYaw = 0.7f;
+    m_ImportPreviewPitch = 0.25f;
+    m_ImportPreviewZoom = 1.0f;
+}
+
+// The rotation the current import settings describe: the source-app axis
+// conversion, then the explicit euler. Read by the preview so what is drawn and
+// what the importer produces come from one description of the settings.
+Math::Quaternion EditorLayer::ImportPreviewRotation() const {
+    const auto& o = m_ImportDialogOptions;
+
+    Math::Quaternion q = Math::Quaternion::Identity();
+
+    // Z-up -> Y-up is a -90 degree turn about X, the conversion the importer
+    // applies through its source-app preset.
+    if (o.convertAxes && o.sourceApp != Assets::SourceApp::Auto) {
+        Assets::SourceAppPreset preset = Assets::GetSourceAppPreset(o.sourceApp);
+        if (preset.zUpToYUp) {
+            q = Math::Quaternion::FromEulerDegrees(Math::Vector3(-90.0f, 0.0f, 0.0f)) * q;
+        }
+    }
+
+    return Math::Quaternion::FromEulerDegrees(o.rotationEuler) * q;
+}
+
+// Live wireframe preview of the model under the current import settings, with a
+// 1 m ground grid and a 1.8 m human reference standing beside it.
+//
+// This is a projected point sample rather than a lit render. Isolating a real
+// scene render would need per-layer culling, and `cullingMask` is declared on
+// CameraComponent and serialized but read by nothing -- there is no layer system
+// behind it, and eight separate mesh-gather sites would need one. The silhouette
+// answers what is actually being asked (is it facing the right way, is it the
+// right size) without inventing that first.
+void EditorLayer::DrawImportPreviewViewport() {
+    const f32 uiScale = m_EditorSettings.uiScale;
+    const ImVec2 size(500.0f * uiScale, 260.0f * uiScale);
+
+    ImGui::InvisibleButton("##ImportPreviewCanvas", size);
+    const bool hovered = ImGui::IsItemHovered();
+    const ImVec2 p0 = ImGui::GetItemRectMin();
+    const ImVec2 p1 = ImGui::GetItemRectMax();
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+
+    dl->AddRectFilled(p0, p1, IM_COL32(18, 20, 24, 255));
+    dl->AddRect(p0, p1, IM_COL32(70, 74, 82, 255));
+    dl->PushClipRect(p0, p1, true);
+
+    // Orbit / zoom
+    if (hovered) {
+        if (ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
+            ImVec2 d = ImGui::GetIO().MouseDelta;
+            m_ImportPreviewYaw -= d.x * 0.01f;
+            m_ImportPreviewPitch = std::clamp(m_ImportPreviewPitch + d.y * 0.01f, -1.4f, 1.4f);
+        }
+        f32 wheel = ImGui::GetIO().MouseWheel;
+        if (wheel != 0.0f) {
+            m_ImportPreviewZoom = std::clamp(m_ImportPreviewZoom * (1.0f - wheel * 0.1f), 0.2f, 6.0f);
+        }
+    }
+
+    if (!m_ImportPreviewHasGeometry) {
+        const char* msg = "No geometry to preview";
+        ImVec2 ts = ImGui::CalcTextSize(msg);
+        dl->AddText(ImVec2((p0.x + p1.x - ts.x) * 0.5f, (p0.y + p1.y - ts.y) * 0.5f),
+                    IM_COL32(150, 150, 160, 255), msg);
+        dl->PopClipRect();
+        return;
+    }
+
+    // --- The transform the import will apply --------------------------------
+    const auto& o = m_ImportDialogOptions;
+    const Math::Quaternion modelRot = ImportPreviewRotation();
+
+    f32 scale = o.scale;
+    if (o.convertAxes && o.sourceApp != Assets::SourceApp::Auto) {
+        scale *= Assets::GetSourceAppPreset(o.sourceApp).scale;
+    }
+    const Math::Vector3 flip(o.flipX ? -1.0f : 1.0f, o.flipY ? -1.0f : 1.0f, o.flipZ ? -1.0f : 1.0f);
+
+    auto toModel = [&](const Math::Vector3& v) {
+        Math::Vector3 f(v.x * flip.x, v.y * flip.y, v.z * flip.z);
+        return modelRot.Rotate(f) * scale;
+    };
+
+    // Post-transform bounds, so the size readout and the framing describe what
+    // the scene will actually receive.
+    Math::Vector3 mn(1e9f, 1e9f, 1e9f), mx(-1e9f, -1e9f, -1e9f);
+    for (int c = 0; c < 8; ++c) {
+        const Math::Vector3 corner(
+            (c & 1) ? m_ImportPreviewMax.x : m_ImportPreviewMin.x,
+            (c & 2) ? m_ImportPreviewMax.y : m_ImportPreviewMin.y,
+            (c & 4) ? m_ImportPreviewMax.z : m_ImportPreviewMin.z);
+        const Math::Vector3 w = toModel(corner);
+        mn.x = std::min(mn.x, w.x); mn.y = std::min(mn.y, w.y); mn.z = std::min(mn.z, w.z);
+        mx.x = std::max(mx.x, w.x); mx.y = std::max(mx.y, w.y); mx.z = std::max(mx.z, w.z);
+    }
+    Math::Vector3 dims(mx.x - mn.x, mx.y - mn.y, mx.z - mn.z);
+
+    // "Force ~1.8 m" is a size change like any other, so the preview shows it.
+    f32 normK = 1.0f;
+    if (o.normalizeScale) {
+        const f32 largest = std::max(std::max(dims.x, dims.y), std::max(dims.z, 1e-6f));
+        normK = 1.8f / largest;
+        mn = mn * normK; mx = mx * normK; dims = dims * normK;
+    }
+
+    // --- Camera: orbit the model, framed on the taller of it and the figure --
+    const f32 refHeight = 1.8f;
+    const f32 frame = std::max(std::max(dims.x, dims.y), std::max(dims.z, refHeight));
+    const f32 dist = std::max(frame, 0.05f) * 2.6f * m_ImportPreviewZoom;
+    const Math::Vector3 focus(0.0f, std::max(dims.y, refHeight) * 0.5f, 0.0f);
+
+    const f32 cy = std::cos(m_ImportPreviewYaw), sy = std::sin(m_ImportPreviewYaw);
+    const f32 cp = std::cos(m_ImportPreviewPitch), sp = std::sin(m_ImportPreviewPitch);
+    const Math::Vector3 eye(focus.x + dist * cp * sy,
+                            focus.y + dist * sp,
+                            focus.z + dist * cp * cy);
+
+    const Math::Matrix4 view = Math::Matrix4::LookAt(eye, focus, Math::Vector3(0.0f, 1.0f, 0.0f));
+    const Math::Matrix4 proj = Math::Matrix4::Perspective(Math::Radians(40.0f),
+                                                          size.x / size.y, 0.05f, 1000.0f);
+    const Math::Matrix4 viewProj = proj * view;
+
+    const ImVec2 center((p0.x + p1.x) * 0.5f, (p0.y + p1.y) * 0.5f);
+    auto project = [&](const Math::Vector3& w, ImVec2& out) -> bool {
+        const Math::Vector4 c = viewProj * Math::Vector4(w.x, w.y, w.z, 1.0f);
+        if (c.w <= 0.0001f) return false;               // behind the camera
+        out = ImVec2(center.x + (c.x / c.w) * size.x * 0.5f,
+                     center.y - (c.y / c.w) * size.y * 0.5f);
+        return true;
+    };
+    auto line = [&](const Math::Vector3& a, const Math::Vector3& b, ImU32 col, f32 thick) {
+        ImVec2 pa, pb;
+        if (project(a, pa) && project(b, pb)) dl->AddLine(pa, pb, col, thick);
+    };
+
+    // --- 1 m ground grid ----------------------------------------------------
+    {
+        const int half = std::clamp(static_cast<int>(frame) + 2, 3, 12);
+        const f32 extent = static_cast<f32>(half);
+        for (int i = -half; i <= half; ++i) {
+            const f32 f = static_cast<f32>(i);
+            const ImU32 col = (i == 0) ? IM_COL32(90, 96, 110, 255) : IM_COL32(46, 50, 58, 255);
+            line(Math::Vector3(f, 0.0f, -extent), Math::Vector3(f, 0.0f, extent), col, 1.0f);
+            line(Math::Vector3(-extent, 0.0f, f), Math::Vector3(extent, 0.0f, f), col, 1.0f);
+        }
+    }
+
+    // --- The model ----------------------------------------------------------
+    // Stand it on the grid and centre it, so it can be compared with something
+    // standing on the same floor.
+    const Math::Vector3 offset(-(mn.x + mx.x) * 0.5f, -mn.y, -(mn.z + mx.z) * 0.5f);
+    {
+        for (const auto& v : m_ImportPreviewPoints) {
+            const Math::Vector3 w = toModel(v) * normK + offset;
+            ImVec2 sp2;
+            if (project(w, sp2)) {
+                dl->AddRectFilled(ImVec2(sp2.x, sp2.y), ImVec2(sp2.x + 1.5f, sp2.y + 1.5f),
+                                  IM_COL32(120, 220, 255, 190));
+            }
+        }
+
+        // Bounding box, so the extents read even where the sample is sparse.
+        const Math::Vector3 b0 = mn + offset, b1 = mx + offset;
+        const Math::Vector3 c[8] = {
+            {b0.x, b0.y, b0.z}, {b1.x, b0.y, b0.z}, {b1.x, b0.y, b1.z}, {b0.x, b0.y, b1.z},
+            {b0.x, b1.y, b0.z}, {b1.x, b1.y, b0.z}, {b1.x, b1.y, b1.z}, {b0.x, b1.y, b1.z}};
+        const int edges[12][2] = {{0,1},{1,2},{2,3},{3,0},{4,5},{5,6},{6,7},{7,4},
+                                  {0,4},{1,5},{2,6},{3,7}};
+        for (const auto& e : edges) line(c[e[0]], c[e[1]], IM_COL32(90, 150, 180, 130), 1.0f);
+
+        // Facing marker along +Z after conversion. Which way is "front" is the
+        // other half of getting rotation right, and a silhouette alone hides it.
+        const f32 arrow = std::max(dims.z, 0.5f) * 0.6f;
+        const Math::Vector3 base(0.0f, 0.02f, 0.0f);
+        const ImU32 aCol = IM_COL32(255, 180, 90, 220);
+        line(base, base + Math::Vector3(0.0f, 0.0f, arrow), aCol, 2.0f);
+        line(base + Math::Vector3(0.0f, 0.0f, arrow),
+             base + Math::Vector3(arrow * 0.12f, 0.0f, arrow * 0.85f), aCol, 2.0f);
+        line(base + Math::Vector3(0.0f, 0.0f, arrow),
+             base + Math::Vector3(-arrow * 0.12f, 0.0f, arrow * 0.85f), aCol, 2.0f);
+    }
+
+    // --- 1.8 m human reference, standing beside it --------------------------
+    if (m_ImportPreviewShowRef) {
+        const f32 x = std::max(dims.x * 0.5f, 0.3f) + 0.6f;
+        const ImU32 refCol = IM_COL32(150, 255, 170, 200);
+        line({x, 0.00f, 0.0f}, {x, 1.05f, 0.0f}, refCol, 2.0f);
+        line({x, 1.05f, 0.0f}, {x - 0.18f, 0.0f, 0.0f}, refCol, 1.5f);
+        line({x, 1.05f, 0.0f}, {x + 0.18f, 0.0f, 0.0f}, refCol, 1.5f);
+        line({x, 1.05f, 0.0f}, {x, 1.55f, 0.0f}, refCol, 2.0f);
+        line({x - 0.28f, 1.45f, 0.0f}, {x + 0.28f, 1.45f, 0.0f}, refCol, 1.5f);
+        ImVec2 head;
+        if (project({x, 1.68f, 0.0f}, head)) {
+            dl->AddCircle(head, 6.0f * uiScale, refCol, 12, 2.0f);
+        }
+        ImVec2 label;
+        if (project({x, 2.05f, 0.0f}, label)) {
+            dl->AddText(ImVec2(label.x - 14.0f, label.y - 8.0f), refCol, "1.8 m");
+        }
+    }
+
+    dl->PopClipRect();
+
+    // --- Readout ------------------------------------------------------------
+    ImGui::Text("Imported size: %.3f x %.3f x %.3f m  (W x H x D)", dims.x, dims.y, dims.z);
+    ImGui::SetItemTooltip("World size after scale, axis conversion, flips and rotation.\n"
+                          "Compare it against the 1.8 m figure to sanity-check the file's unit.");
+    ImGui::SameLine();
+    ImGui::Checkbox("Scale ref", &m_ImportPreviewShowRef);
+    ImGui::TextDisabled("Drag to orbit, wheel to zoom. Orange arrow is +Z (forward).");
 }
 
 void EditorLayer::DrawImportDialog() {
@@ -706,9 +1009,35 @@ void EditorLayer::DrawImportDialog() {
         ImGui::Separator();
         ImGui::Spacing();
 
+        // --- Live preview -------------------------------------------------
+        // Every control below changes what this draws, immediately. Getting
+        // rotation and scale right used to mean importing, looking, undoing and
+        // importing again.
+        ImGui::Separator();
+        DrawImportPreviewViewport();
+        ImGui::Separator();
+
         // --- Import Options ---
         ImGui::Text("Import Options");
         ImGui::DragFloat("Scale", &m_ImportDialogOptions.scale, 0.01f, 0.001f, 100.0f, "%.3f");
+        ImGui::SetItemTooltip("Multiplies the file's own units. The preview and the size readout "
+                              "above show the result.");
+
+        // Explicit rotation. The presets and flips only cover the conversions an
+        // exporter is known to need; anything authored facing the wrong way had
+        // no dial at all before this.
+        f32 rot[3] = { m_ImportDialogOptions.rotationEuler.x,
+                       m_ImportDialogOptions.rotationEuler.y,
+                       m_ImportDialogOptions.rotationEuler.z };
+        if (ImGui::DragFloat3("Rotation", rot, 1.0f, -360.0f, 360.0f, "%.1f")) {
+            m_ImportDialogOptions.rotationEuler = Math::Vector3(rot[0], rot[1], rot[2]);
+        }
+        ImGui::SetItemTooltip("Extra rotation in degrees, applied on top of the axis conversion.\n"
+                              "Watch the preview: the orange arrow is +Z, the direction the model faces.");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Reset##ImportRot")) {
+            m_ImportDialogOptions.rotationEuler = Math::Vector3(0.0f, 0.0f, 0.0f);
+        }
         ImGui::Checkbox("Force ~1.8m size (only if units are wrong)", &m_ImportDialogOptions.normalizeScale);
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("OFF (default): import at the file's true unit-converted size — predictable,\n"

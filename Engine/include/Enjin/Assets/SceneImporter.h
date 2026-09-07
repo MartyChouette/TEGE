@@ -77,6 +77,14 @@ struct ImportOptions {
 
     // Source application preset
     SourceApp sourceApp = SourceApp::Auto;
+    // Extra rotation applied to the whole import, in DEGREES, on top of the
+    // source-app axis conversion. The presets and the three flips only cover the
+    // conversions an exporter is known to need; anything authored facing the
+    // wrong way had no dial at all, so the fix was to rotate every entity by
+    // hand after the fact. Composed onto the import's root entities, so a
+    // multi-root scene rotates as one piece rather than scattering.
+    Math::Vector3 rotationEuler = Math::Vector3(0.0f, 0.0f, 0.0f);
+
     bool convertAxes = true;     // Apply axis conversion from source app preset
     bool flipX = false;          // Per-axis sign overrides
     bool flipY = false;

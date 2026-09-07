@@ -375,6 +375,26 @@ static void CopyStatsToResult(ImportResult& result, const SceneImporter::ImportS
     result.warnings = stats.warnings;
 }
 
+// Rotate a finished import as one piece. Only PARENTLESS entities are touched:
+// children already inherit through the hierarchy, and rotating them too would
+// apply it twice.
+static void ApplyImportRotation(ECS::World* world, const ImportResult& result,
+                                const Math::Vector3& eulerDegrees) {
+    if (!world) return;
+    if (eulerDegrees.x == 0.0f && eulerDegrees.y == 0.0f && eulerDegrees.z == 0.0f) return;
+
+    const Math::Quaternion r = Math::Quaternion::FromEulerDegrees(eulerDegrees);
+    for (ECS::Entity e : result.entities) {
+        auto* pc = world->GetComponent<ECS::ParentComponent>(e);
+        if (pc && pc->parent != ECS::INVALID_ENTITY) continue;   // not a root
+        auto* t = world->GetComponent<ECS::TransformComponent>(e);
+        if (!t) continue;
+        t->position = r.Rotate(t->position);   // about the import origin
+        t->rotation = r * t->rotation;
+        t->worldMatrixDirty = true;
+    }
+}
+
 ImportResult SceneImporter::ImportGLTF(const std::string& filepath, ECS::World* world,
                                         const ImportOptions& options) {
     ImportResult result;
@@ -513,6 +533,7 @@ ImportResult SceneImporter::ImportGLTF(const std::string& filepath, ECS::World* 
     }
 
     FillMeshSourcePaths(world, result.entities, filepath);
+    ApplyImportRotation(world, result, effectiveOptions.rotationEuler);
     CopyStatsToResult(result, stats);
     result.success = true;
     return result;
@@ -1640,6 +1661,7 @@ ImportResult SceneImporter::ImportAssimp(const std::string& filepath, ECS::World
     }
 
     FillMeshSourcePaths(world, result.entities, filepath);
+    ApplyImportRotation(world, result, effectiveOptions.rotationEuler);
     CopyStatsToResult(result, stats);
     result.success = true;
     return result;
