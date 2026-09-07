@@ -22,6 +22,8 @@
 #include "Enjin/ECS/Components/GPUParticleEmitter.h"
 #include "Enjin/ECS/Components/Flower.h"
 #include "Enjin/ECS/Components/Ladder.h"
+#include "Enjin/ECS/Components/BrushSolid.h"
+#include "Enjin/ECS/Systems/BrushSolidSystem.h"
 #include "Enjin/ECS/Components/Mesh.h"
 #include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/Physics/PhysicsTypes2D.h"
@@ -809,6 +811,141 @@ ENJIN_TEST(SerdesCoverage, VehicleHandlingSurvivesASave) {
     ENJIN_EXPECT_TRUE(Near(r->reverseAccelScale, 0.25f));
     ENJIN_EXPECT_TRUE(Near(r->reverseSpeedThreshold, 2.0f));
     ENJIN_EXPECT_TRUE(Near(r->highSpeedSteerReduction, 0.85f));
+}
+
+// ===========================================================================
+// BrushSolidComponent
+//
+// The brush list is the entire payload: the mesh and collider are derived and
+// must NOT be written, or a room stores megabytes of triangulation next to the
+// few dozen numbers that regenerate it.
+// ===========================================================================
+
+ENJIN_TEST(SerdesCoverage, BrushSolidBrushesSurviveASave) {
+    World src;
+    Entity e = Base(src);
+
+    BrushSolidComponent solid;
+    solid.uvScale = 2.5f;
+    solid.generateCollider = false;
+
+    BrushSolidComponent::Brush wall;
+    wall.shape = BrushSolidComponent::Shape::Box;
+    wall.center = Vector3(1.0f, 2.0f, 3.0f);
+    wall.halfExtents = Vector3(4.0f, 3.0f, 0.25f);
+    wall.rotation = Quaternion::FromEulerDegrees(Vector3(0.0f, 30.0f, 0.0f));
+    solid.brushes.push_back(wall);
+
+    BrushSolidComponent::Brush door;
+    door.shape = BrushSolidComponent::Shape::Prism;
+    door.op = Geometry::BrushOp::Subtract;
+    door.center = Vector3(1.0f, 0.5f, 3.0f);
+    door.radius = 0.9f;
+    door.halfHeight = 1.5f;
+    door.sides = 12;
+    door.enabled = false;
+    solid.brushes.push_back(door);
+
+    src.AddComponent<BrushSolidComponent>(e, solid);
+
+    World dst;
+    Entity r = RoundTrip(src, e, dst);
+    ENJIN_ASSERT_TRUE(dst.HasComponent<BrushSolidComponent>(r));
+    const auto* out = dst.GetComponent<BrushSolidComponent>(r);
+
+    ENJIN_EXPECT_TRUE(Near(out->uvScale, 2.5f));
+    ENJIN_EXPECT_FALSE(out->generateCollider);
+    ENJIN_ASSERT_EQ(out->brushes.size(), (usize)2);
+
+    const auto& w = out->brushes[0];
+    ENJIN_EXPECT_EQ((int)w.shape, (int)BrushSolidComponent::Shape::Box);
+    ENJIN_EXPECT_EQ((int)w.op, (int)Geometry::BrushOp::Add);
+    ENJIN_EXPECT_TRUE(Near(w.center.x, 1.0f) && Near(w.center.y, 2.0f) && Near(w.center.z, 3.0f));
+    ENJIN_EXPECT_TRUE(Near(w.halfExtents.x, 4.0f) && Near(w.halfExtents.z, 0.25f));
+    ENJIN_EXPECT_TRUE(w.enabled);
+    ENJIN_EXPECT_TRUE(std::fabs(w.rotation.y) > 0.01f);   // the turn survived
+
+    const auto& d = out->brushes[1];
+    ENJIN_EXPECT_EQ((int)d.shape, (int)BrushSolidComponent::Shape::Prism);
+    ENJIN_EXPECT_EQ((int)d.op, (int)Geometry::BrushOp::Subtract);
+    ENJIN_EXPECT_TRUE(Near(d.radius, 0.9f));
+    ENJIN_EXPECT_TRUE(Near(d.halfHeight, 1.5f));
+    ENJIN_EXPECT_EQ(d.sides, (u32)12);
+    ENJIN_EXPECT_FALSE(d.enabled);   // a disabled brush is kept, not dropped
+}
+
+// Geometry is derived, so a loaded solid owes a rebuild. Without this a scene
+// full of brush solids opens showing nothing at all.
+ENJIN_TEST(SerdesCoverage, BrushSolidLoadsDirtyAndRebuilds) {
+    World src;
+    Entity e = Base(src);
+    BrushSolidComponent solid;
+    BrushSolidComponent::Brush b;
+    b.halfExtents = Vector3(2.0f, 2.0f, 2.0f);
+    solid.brushes.push_back(b);
+    src.AddComponent<BrushSolidComponent>(e, solid);
+
+    World dst;
+    Entity r = RoundTrip(src, e, dst);
+    ENJIN_ASSERT_TRUE(dst.HasComponent<BrushSolidComponent>(r));
+    ENJIN_EXPECT_TRUE(dst.GetComponent<BrushSolidComponent>(r)->dirty);
+
+    ENJIN_EXPECT_EQ(BrushSolidSystem::Update(&dst), (u32)1);
+    ENJIN_ASSERT_TRUE(dst.HasComponent<MeshComponent>(r));
+    ENJIN_EXPECT_TRUE(dst.GetComponent<MeshComponent>(r)->indices.size() > 0);
+}
+
+// The size claim, asserted. A brush solid's mesh AND its collider are both
+// regenerated on load, so neither one's vertices have any business in the scene
+// file even when vertex data is asked for. Otherwise the component saves the
+// very megabytes it exists to avoid, twice: once as render vertices and once as
+// collision ones.
+ENJIN_TEST(SerdesCoverage, BrushSolidMeshIsNotWrittenToTheScene) {
+    World src;
+    Entity e = Base(src);
+    BrushSolidComponent solid;
+    BrushSolidComponent::Brush b;
+    b.halfExtents = Vector3(2.0f, 2.0f, 2.0f);
+    solid.brushes.push_back(b);
+    src.AddComponent<BrushSolidComponent>(e, solid);
+    BrushSolidSystem::Rebuild(&src, e);
+    ENJIN_ASSERT_TRUE(src.GetComponent<MeshComponent>(e)->vertices.size() > 0);
+    ENJIN_ASSERT_TRUE(src.GetComponent<MeshColliderComponent>(e)->vertices.size() > 0);
+
+    // Ask for vertex data explicitly: a derived mesh still must not write it.
+    const std::string json = Scene::SceneSerializer::SerializeEntityToString(&src, e, true);
+    ENJIN_EXPECT_TRUE(json.find("\"vertices\"") == std::string::npos);
+
+    // And it comes back anyway, because the brushes rebuild it.
+    World dst;
+    Entity r = Scene::SceneSerializer::DeserializeEntityFromString(&dst, json);
+    BrushSolidSystem::Update(&dst);
+    ENJIN_ASSERT_TRUE(dst.HasComponent<MeshComponent>(r));
+    ENJIN_EXPECT_TRUE(dst.GetComponent<MeshComponent>(r)->indices.size() > 0);
+}
+
+// Scene files are untrusted. A prism with two sides bounds nothing and a
+// thousand-sided one costs every clip pass for a circle nobody can resolve.
+ENJIN_TEST(SerdesCoverage, BrushSolidClampsAbsurdSideCounts) {
+    World src;
+    Entity e = Base(src);
+    BrushSolidComponent solid;
+    BrushSolidComponent::Brush tiny;
+    tiny.shape = BrushSolidComponent::Shape::Prism;
+    tiny.sides = 1;
+    solid.brushes.push_back(tiny);
+    BrushSolidComponent::Brush huge;
+    huge.shape = BrushSolidComponent::Shape::Prism;
+    huge.sides = 100000;
+    solid.brushes.push_back(huge);
+    src.AddComponent<BrushSolidComponent>(e, solid);
+
+    World dst;
+    Entity r = RoundTrip(src, e, dst);
+    const auto* out = dst.GetComponent<BrushSolidComponent>(r);
+    ENJIN_ASSERT_EQ(out->brushes.size(), (usize)2);
+    ENJIN_EXPECT_TRUE(out->brushes[0].sides >= 3);
+    ENJIN_EXPECT_TRUE(out->brushes[1].sides <= 256);
 }
 
 ENJIN_TEST_MAIN()

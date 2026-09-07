@@ -2,6 +2,7 @@
 #include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/ECS/Components/GeneratedGeometry.h"
 #include "Enjin/ECS/Components/ProceduralMesh.h"
+#include "Enjin/ECS/Components/BrushSolid.h"
 #include "Enjin/ECS/Components/ProceduralTexture.h"
 #include "Enjin/ECS/Components/GeneratedTexture.h"
 #include "Enjin/Effects/Metaballs.h"
@@ -3667,6 +3668,106 @@ ECS::CapsuleColliderComponent DeserializeCapsuleColliderComponent(const json& j)
 // ============================================================================
 // Mesh Collider Component
 // ============================================================================
+
+// --- BrushSolidComponent ---------------------------------------------------
+//
+// The brush list is the whole payload. The mesh and the collider it produces are
+// NOT written: a room is a few dozen brushes and its triangulation is megabytes,
+// and both are rebuilt on load from these numbers. That is the entire reason the
+// component stores brushes instead of geometry.
+// A mesh owned by a brush solid is DERIVED: the brush list rebuilds it on load,
+// so its triangulation has no business in the scene file. There are four places
+// that write a mesh -- the component registry, both scene serializers and the
+// single-entity one -- and every one of them has to ask, or the megabytes the
+// component exists to avoid come back through whichever path was missed.
+static bool MeshIsDerivedFromBrushes(ECS::World* w, ECS::Entity e) {
+    return w && w->HasComponent<ECS::BrushSolidComponent>(e);
+}
+
+json SerializeBrushSolidComponent(const ECS::BrushSolidComponent& solid) {
+    json j;
+    j["uvScale"] = RF(solid.uvScale);
+    j["generateCollider"] = solid.generateCollider;
+
+    json arr = json::array();
+    for (const auto& b : solid.brushes) {
+        json bj;
+        bj["shape"] = static_cast<int>(b.shape);
+        bj["op"] = static_cast<int>(b.op);
+        bj["center"] = SerializeVector3(b.center);
+        bj["rotation"] = SerializeQuaternion(b.rotation);
+        bj["enabled"] = b.enabled;
+        if (b.shape == ECS::BrushSolidComponent::Shape::Prism) {
+            bj["radius"] = RF(b.radius);
+            bj["halfHeight"] = RF(b.halfHeight);
+            bj["sides"] = b.sides;
+        } else {
+            bj["halfExtents"] = SerializeVector3(b.halfExtents);
+        }
+        arr.push_back(bj);
+    }
+    j["brushes"] = arr;
+    return j;
+}
+
+ECS::BrushSolidComponent DeserializeBrushSolidComponent(const json& j) {
+    ECS::BrushSolidComponent solid;
+    if (j.contains("uvScale")) solid.uvScale = j["uvScale"].get<f32>();
+    if (solid.uvScale <= 0.0f) solid.uvScale = 1.0f;   // a zero would divide the UVs to infinity
+    if (j.contains("generateCollider")) solid.generateCollider = j["generateCollider"].get<bool>();
+
+    // A scene file is untrusted input. Every subtract re-clips every face, so the
+    // cost of a brush list is superlinear in its length: an absurd count is not
+    // just big, it hangs the load. 4096 is far past any hand-authored room.
+    constexpr usize kMaxBrushes = 4096;
+
+    if (j.contains("brushes") && j["brushes"].is_array()) {
+        const auto& arr = j["brushes"];
+        if (arr.size() > kMaxBrushes) {
+            ENJIN_LOG_WARN(Asset, "Scene: BrushSolid has %zu brushes, over the %zu cap - truncating",
+                           arr.size(), kMaxBrushes);
+        }
+        const usize count = std::min(arr.size(), kMaxBrushes);
+        solid.brushes.reserve(count);
+
+        for (usize i = 0; i < count; ++i) {
+            const auto& bj = arr[i];
+            if (!bj.is_object()) continue;
+
+            ECS::BrushSolidComponent::Brush b;
+            if (bj.contains("shape")) {
+                const int sh = bj["shape"].get<int>();
+                b.shape = (sh == 1) ? ECS::BrushSolidComponent::Shape::Prism
+                                    : ECS::BrushSolidComponent::Shape::Box;
+            }
+            if (bj.contains("op")) {
+                const int op = bj["op"].get<int>();
+                b.op = (op >= 0 && op <= 2) ? static_cast<Geometry::BrushOp>(op)
+                                            : Geometry::BrushOp::Add;
+            }
+            if (bj.contains("center")) b.center = DeserializeVector3(bj["center"]);
+            if (bj.contains("rotation")) b.rotation = DeserializeQuaternion(bj["rotation"]);
+            if (bj.contains("enabled")) b.enabled = bj["enabled"].get<bool>();
+
+            if (bj.contains("halfExtents")) b.halfExtents = DeserializeVector3(bj["halfExtents"]);
+            if (bj.contains("radius")) b.radius = bj["radius"].get<f32>();
+            if (bj.contains("halfHeight")) b.halfHeight = bj["halfHeight"].get<f32>();
+            if (bj.contains("sides")) b.sides = bj["sides"].get<u32>();
+
+            // A prism needs at least three sides to bound anything, and a
+            // thousand-sided one is a circle nobody can see the difference in
+            // while every clip pass pays for it.
+            b.sides = std::min<u32>(std::max<u32>(b.sides, 3u), 256u);
+
+            solid.brushes.push_back(std::move(b));
+        }
+    }
+
+    // Geometry is derived, never loaded, so a freshly read solid always owes a
+    // rebuild. Without this a loaded scene shows brush solids as nothing at all.
+    solid.dirty = true;
+    return solid;
+}
 
 json SerializeMeshColliderComponent(const ECS::MeshColliderComponent& col) {
     json j;
@@ -9063,6 +9164,7 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
         ENJIN_SERDES("aiController", ECS::AIControllerComponent, SerializeAIControllerComponent, DeserializeAIControllerComponent),
         ENJIN_SERDES("animatedSprite2D", ECS::AnimatedSprite2DComponent, SerializeAnimatedSprite2DComponent, DeserializeAnimatedSprite2DComponent),
         ENJIN_SERDES("animationRecorder", ECS::AnimationRecorderComponent, SerializeAnimationRecorderComponent, DeserializeAnimationRecorderComponent),
+        ENJIN_SERDES("brushSolid", ECS::BrushSolidComponent, SerializeBrushSolidComponent, DeserializeBrushSolidComponent),
         ENJIN_SERDES("artStyle", ECS::ArtStyleComponent, SerializeArtStyleComponent, DeserializeArtStyleComponent),
         ENJIN_SERDES("audioCollision", ECS::AudioCollisionComponent, SerializeAudioCollisionComponent, DeserializeAudioCollisionComponent),
         ENJIN_SERDES("audioFidelity", ECS::AudioFidelityComponent, SerializeAudioFidelityComponent, DeserializeAudioFidelityComponent),
@@ -9138,7 +9240,23 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
         ENJIN_SERDES("material", ECS::MaterialComponent, SerializeMaterialComponent, DeserializeMaterialComponent),
         ENJIN_SERDES("materialInteractionTable", ECS::MaterialInteractionTableComponent, SerializeMaterialInteractionTableComponent, DeserializeMaterialInteractionTableComponent),
         ENJIN_SERDES("materialSlots", ECS::MaterialSlotsComponent, SerializeMaterialSlotsComponent, DeserializeMaterialSlotsComponent),
-        ENJIN_SERDES("meshCollider", ECS::MeshColliderComponent, SerializeMeshColliderComponent, DeserializeMeshColliderComponent),
+        ComponentSerdes{ "meshCollider",
+            [](ECS::World* w, ECS::Entity e){ return w->HasComponent<ECS::MeshColliderComponent>(e); },
+            [](ECS::World* w, ECS::Entity e)->json{
+                // A brush solid's collider is DERIVED from the brush list, the
+                // same as its mesh. The cached triangles are re-welded on load,
+                // so writing them stores the triangulation twice over -- once as
+                // render vertices and once as collision ones -- next to the few
+                // dozen brushes that produce both.
+                json j = SerializeMeshColliderComponent(*w->GetComponent<ECS::MeshColliderComponent>(e));
+                if (w->HasComponent<ECS::BrushSolidComponent>(e)) {
+                    j.erase("vertices");
+                    j.erase("indices");
+                }
+                return j;
+            },
+            [](ECS::World* w, ECS::Entity e, const json& j){ w->AddComponent<ECS::MeshColliderComponent>(e, DeserializeMeshColliderComponent(j)); },
+            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::MeshColliderComponent>(e); } },
         ENJIN_SERDES("meshRenderer", ECS::MeshRendererComponent, SerializeMeshRendererComponent, DeserializeMeshRendererComponent),
         ENJIN_SERDES("midiBinding", ECS::MIDIBindingComponent, SerializeMIDIBindingComponent, DeserializeMIDIBindingComponent),
         ComponentSerdes{ "morphTargets",
@@ -9246,7 +9364,15 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
             [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::StableIdComponent>(e); } },
         ComponentSerdes{ "mesh",
             [](ECS::World* w, ECS::Entity e){ return w->HasComponent<ECS::MeshComponent>(e); },
-            [](ECS::World* w, ECS::Entity e)->json{ return SerializeMeshComponent(*w->GetComponent<ECS::MeshComponent>(e), true); },
+            [](ECS::World* w, ECS::Entity e)->json{
+                // A brush solid's mesh is DERIVED. Writing its vertices would
+                // store megabytes of triangulation next to the few dozen brushes
+                // that regenerate it, which is the exact cost the component
+                // exists to avoid. The header still goes out so the entity keeps
+                // its mesh slot; BrushSolidSystem fills it on load.
+                const bool derived = MeshIsDerivedFromBrushes(w, e);
+                return SerializeMeshComponent(*w->GetComponent<ECS::MeshComponent>(e), !derived);
+            },
             [](ECS::World* w, ECS::Entity e, const json& j){ w->AddComponent<ECS::MeshComponent>(e, DeserializeMeshComponent(j)); },
             [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::MeshComponent>(e); } },
         ComponentSerdes{ "animator",
@@ -9516,7 +9642,9 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             }
             if (m_World->HasComponent<ECS::MeshComponent>(entity)) {
                 const auto* mesh = m_World->GetComponent<ECS::MeshComponent>(entity);
-                entityJson["mesh"] = SerializeMeshComponent(*mesh, options.includeVertexData, options.useMeshReferences);
+                entityJson["mesh"] = SerializeMeshComponent(*mesh,
+                    options.includeVertexData && !MeshIsDerivedFromBrushes(m_World, entity),
+                    options.useMeshReferences);
             }
             if (m_World->HasComponent<ECS::ParentComponent>(entity)) {
                 entityJson["parent"] = static_cast<u64>(m_World->GetComponent<ECS::ParentComponent>(entity)->parent);
@@ -10067,7 +10195,9 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             }
             if (m_World->HasComponent<ECS::MeshComponent>(entity)) {
                 const auto* mesh = m_World->GetComponent<ECS::MeshComponent>(entity);
-                entityJson["mesh"] = SerializeMeshComponent(*mesh, options.includeVertexData, options.useMeshReferences);
+                entityJson["mesh"] = SerializeMeshComponent(*mesh,
+                    options.includeVertexData && !MeshIsDerivedFromBrushes(m_World, entity),
+                    options.useMeshReferences);
             }
             if (m_World->HasComponent<ECS::ParentComponent>(entity)) {
                 entityJson["parent"] = static_cast<u64>(m_World->GetComponent<ECS::ParentComponent>(entity)->parent);
@@ -10294,7 +10424,8 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
             if (reg.has(world, entity)) entityJson[reg.key] = reg.ser(world, entity);
         }
         if (world->HasComponent<ECS::MeshComponent>(entity))
-            entityJson["mesh"] = SerializeMeshComponent(*world->GetComponent<ECS::MeshComponent>(entity), includeVertexData);
+            entityJson["mesh"] = SerializeMeshComponent(*world->GetComponent<ECS::MeshComponent>(entity),
+                includeVertexData && !MeshIsDerivedFromBrushes(world, entity));
         if (world->HasComponent<ECS::ParentComponent>(entity))
             entityJson["parent"] = static_cast<u64>(world->GetComponent<ECS::ParentComponent>(entity)->parent);
         if (world->HasComponent<ECS::MorphTargetComponent>(entity))
