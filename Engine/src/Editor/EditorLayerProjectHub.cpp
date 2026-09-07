@@ -2121,26 +2121,43 @@ void EditorLayer::DrawTemplateHoverPreview(ImDrawList* /*dl*/, i32 templateIdx, 
 // rule is that demos are repacked FROM these source projects.
 
 static std::string FindExamplesDir() {
-    const std::filesystem::path exeDir = Enjin::Platform::GetExecutableDirectory();
-    for (const char* rel : { "Examples", "../Examples", "../../Examples",
-                             "../../../Examples", "../share/enjin/Examples" }) {
-        std::filesystem::path candidate = exeDir / rel;
-        std::error_code ec;
-        if (!std::filesystem::is_directory(candidate, ec)) continue;
+    // Find the ROOT that owns both Examples and builtin_templates, then take its
+    // Examples. Searching for a directory merely NAMED Examples picked up
+    // build/Examples -- CMake's project directory for the example executables,
+    // which on this machine also held four unrelated game projects, so the hub
+    // listed those and none of the real demos.
+    //
+    // Requiring the PAIR is what makes it unambiguous: a build tree has one or
+    // the other, a source tree and an install both have both.
+    namespace fs = std::filesystem;
+    std::error_code ec;
 
-        // A directory is not enough, the same way it is not enough for
-        // builtin_templates: bin/Examples/ exists in a dev build as the output
-        // folder for the example EXECUTABLES, and finding that first would
-        // shadow the real source projects. Require an actual project inside.
-        for (const auto& entry : std::filesystem::directory_iterator(candidate, ec)) {
-            if (!entry.is_directory()) continue;
-            std::error_code ec2;
-            for (const auto& f : std::filesystem::directory_iterator(entry.path(), ec2)) {
-                if (f.path().extension() == ".enjinproject") {
-                    return candidate.lexically_normal().string();
-                }
+    auto hasProject = [](const fs::path& dir) {
+        std::error_code e;
+        if (!fs::is_directory(dir, e)) return false;
+        for (const auto& sub : fs::directory_iterator(dir, e)) {
+            if (!sub.is_directory()) continue;
+            std::error_code e2;
+            for (const auto& f : fs::directory_iterator(sub.path(), e2)) {
+                if (f.path().extension() == ".enjinproject") return true;
             }
         }
+        return false;
+    };
+
+    fs::path dir = Enjin::Platform::GetExecutableDirectory();
+    for (int up = 0; up < 6 && !dir.empty(); ++up) {
+        // Source-tree layout: <root>/Examples beside <root>/builtin_templates.
+        if (fs::is_directory(dir / "builtin_templates", ec) && hasProject(dir / "Examples")) {
+            return (dir / "Examples").lexically_normal().string();
+        }
+        // Installed layout: both under share/enjin.
+        const fs::path share = dir / "share" / "enjin";
+        if (fs::is_directory(share / "builtin_templates", ec) && hasProject(share / "Examples")) {
+            return (share / "Examples").lexically_normal().string();
+        }
+        if (!dir.has_parent_path() || dir.parent_path() == dir) break;
+        dir = dir.parent_path();
     }
     return {};
 }
@@ -2628,13 +2645,27 @@ int EditorLayer::ValidateBuiltinTemplates() {
     int bad = 0;
     const std::string dir = FindBuiltinTemplatesDir();
     for (const auto& t : s_BuiltinTemplates) {
-        const std::filesystem::path scene =
-            std::filesystem::path(dir) / t.id / "scene.enjin";
         std::error_code ec;
-        const bool ok = std::filesystem::exists(scene, ec);
+        bool ok = false;
+        const char* what = nullptr;
+
+        if (!t.examplePath.empty()) {
+            // Example-backed: a whole project, so what must exist is its
+            // .enjinproject, not a scene.enjin. Checking every entry for a scene
+            // reported all four examples as broken the moment they joined the
+            // roster -- a validator that does not know what it is looking at,
+            // rather than four broken templates.
+            for (const auto& f : std::filesystem::directory_iterator(t.examplePath, ec)) {
+                if (f.path().extension() == ".enjinproject") { ok = true; break; }
+            }
+            what = ok ? "ok (example project)" : "MISSING .enjinproject";
+        } else {
+            ok = std::filesystem::exists(std::filesystem::path(dir) / t.id / "scene.enjin", ec);
+            what = ok ? "ok" : "MISSING scene.enjin";
+        }
+
         if (!ok) ++bad;
-        std::printf("%-16s %-24s %s\n", t.id.c_str(), t.name.c_str(),
-                    ok ? "ok" : "MISSING scene.enjin");
+        std::printf("%-16s %-24s %s\n", t.id.c_str(), t.name.c_str(), what);
     }
     std::printf("%zu templates, %d broken\n", s_BuiltinTemplates.size(), bad);
     return bad == 0 ? 0 : 1;
