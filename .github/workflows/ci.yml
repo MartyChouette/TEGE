@@ -335,7 +335,7 @@ jobs:
           sudo apt-get install -y -qq build-essential cmake ninja-build pkg-config \
             libvulkan-dev libglfw3-dev libx11-dev libxrandr-dev libxinerama-dev \
             libxcursor-dev libxi-dev libcurl4-openssl-dev mesa-vulkan-drivers \
-            vulkan-tools xvfb zenity glslang-tools
+            vulkan-tools vulkan-validationlayers xvfb zenity glslang-tools
 
       - name: Cache fetched dependencies
         uses: actions/cache@v4
@@ -391,8 +391,27 @@ jobs:
         # canary script ran (AngelScript native calling conventions differ per
         # ABI, so this catches SysV-specific binding breaks like the ALLFLOATS
         # return-type issue), and the capture is a real image.
+        #
+        # Vulkan validation runs here. CI's only driver is lavapipe, a CPU
+        # renderer, so no AMD/Intel/NVIDIA driver is exercised anywhere and a
+        # vendor-specific bug cannot be caught automatically at all (that is
+        # what _docs_internal/GPU_TEST_MATRIX.md is for). API MISUSE, though,
+        # is driver-independent: the layer catches it on lavapipe exactly as it
+        # would on hardware. The Release exe never asks for the layer itself
+        # (validation is compiled out under ENJIN_BUILD_DEBUG), so the LOADER
+        # injects it into an app that did not request it.
+        #
+        # Gates on ERRORS only. Measured 2026-09-06 against a real GPU: zero
+        # validation errors, ten warnings, all of them one benign
+        # Undefined-Value-ShaderOutputNotConsumed (the MRT velocity attachment,
+        # written by the shader and masked off in the blend state). Blocking on
+        # warnings would make this red on day one for something already
+        # understood; they print instead. If a warning class ever earns a gate,
+        # promote that ID, not the whole tier.
         env:
           VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.json
+          VK_LOADER_LAYERS_ENABLE: '*validation*'
+          VK_INSTANCE_LAYERS: VK_LAYER_KHRONOS_validation
         run: |
           set -o pipefail
           mkdir -p golden_out
@@ -400,6 +419,12 @@ jobs:
             --play --golden "$GITHUB_WORKSPACE/golden_out/smoke" --golden-frames 30 2>&1 | tee editor.log
           grep -q "GoldenSmoke: script runtime is alive" editor.log || { echo "script canary never ran"; exit 1; }
           python3 Tests/GoldenScene/check_golden.py golden_out/smoke
+          # Prove the layer actually LOADED. Without this the gate passes
+          # trivially whenever the layer is missing or fails to load, which is
+          # the same silent-degradation shape as the missing shader compiler.
+          grep -q "VK_LAYER_KHRONOS_validation" editor.log \
+            || { echo "validation layer never loaded - the gate is meaningless"; exit 1; }
+          python3 tools/vk_validation_gate.py editor.log
 
       - name: Installed-build smoke (cmake --install, then run from the install tree)
         timeout-minutes: 15
@@ -461,8 +486,15 @@ jobs:
         # takes a longer run to surface. 120 frames reproduced it reliably on
         # lavapipe; the fix releases the scene render target while the renderer
         # is still alive (Player Shutdown).
+        #
+        # Validation runs on the PLAYER too, not only the editor. The two
+        # render through separate code paths (a known structural item), so
+        # validating one says nothing about the other, and the player is the
+        # path a customer actually runs.
         env:
           VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.json
+          VK_LOADER_LAYERS_ENABLE: '*validation*'
+          VK_INSTANCE_LAYERS: VK_LAYER_KHRONOS_validation
         run: |
           set -o pipefail
           ./build-linux/bin/EnjinEditor "$GITHUB_WORKSPACE/Tests/GoldenScene/GoldenScene.enjinproject" \
@@ -477,6 +509,9 @@ jobs:
           # script's OnStart ran: proves the SHIPPED player's AngelScript runtime
           # compiles and executes scene scripts (the SysV ABI binding path).
           grep -q "GoldenSmoke: script runtime is alive" game.log || { echo "exported game did not run scene scripts (script runtime broken in shipped player)"; exit 1; }
+          grep -q "VK_LAYER_KHRONOS_validation" game.log \
+            || { echo "validation layer never loaded in the player - the gate is meaningless"; exit 1; }
+          python3 "$GITHUB_WORKSPACE/tools/vk_validation_gate.py" game.log
 
       - name: Package Linux build
         # Turns the CI build into a downloadable Linux build (editor + player).
