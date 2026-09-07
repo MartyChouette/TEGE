@@ -231,6 +231,9 @@ enjin_add_test(TestReactionDiffusion  Unit/Effects/TestReactionDiffusion.cpp)
 enjin_add_test(TestScreenTransition   Unit/Effects/TestScreenTransition.cpp)
 enjin_add_test(TestWeather            Unit/Effects/TestWeather.cpp)
 enjin_add_test(TestParticleEmitter    Unit/Effects/TestParticleEmitter.cpp)
+
+# --- Geometry ---
+enjin_add_test(TestCSG                Unit/Geometry/TestCSG.cpp)
 enjin_add_test(TestWorldTimeSystem    Unit/Effects/TestWorldTimeSystem.cpp)
 
 # --- GUI ---
