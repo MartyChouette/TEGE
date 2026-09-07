@@ -122,7 +122,15 @@ private:
     AccessibilityChangedCallback m_AccessibilityChanged;
     std::string m_GameTitle = "My Game";
     i32 m_RebindingAction = -1;
-    MenuScreen m_ReturnScreen = MenuScreen::PauseMenu;
+    // Where Back goes from Options / How to Play. Defaults to None, NOT
+    // PauseMenu: the pause root is UITemplates::CreatePauseMenu() spawned as a
+    // UICanvas in all three runtimes, and that canvas stays alive underneath a
+    // sub-screen. Defaulting to PauseMenu made Back render this class's own
+    // pause screen ON TOP of that canvas — two pause menus stacked. None means
+    // Back simply closes the sub-screen and reveals the canvas again.
+    // RenderPauseMenu is kept for a runtime that has no canvas; nothing
+    // reaches it today.
+    MenuScreen m_ReturnScreen = MenuScreen::None;
 
     void RenderMainMenu(f32 w, f32 h);
     void RenderPauseMenu(f32 w, f32 h);

@@ -411,6 +411,37 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
         }
     });
 
+    // Pause root buttons. These are the events UITemplates::CreatePauseMenu()
+    // authors on its three buttons, so the editor answers the SAME events the
+    // desktop and web players answer — that is what keeps one authored menu
+    // behaving identically in all three places. Registered once and left
+    // registered: the canvas only exists while paused, so they are inert
+    // otherwise, and PlayMode::Stop only removes its own listener.
+    m_UISystem.GetEventBus().Listen("pause_resume",
+        [this](const GUI::UIEventData&) {
+            ClosePauseMenu();
+            m_PlayMode.Resume();
+            if (m_FocusMode || SceneHasMouseLookController()) {
+                m_GameViewMouseCaptured = !m_FocusMode;
+                Input::SetMouseCaptured(true);
+            }
+        });
+    m_UISystem.GetEventBus().Listen("pause_options",
+        [this](const GUI::UIEventData&) {
+            // Options is still a GameMenus screen in every runtime. The pause
+            // canvas stays alive underneath it, so Escape backs out to it.
+            m_GameMenu.ShowScreen(GUI::MenuScreen::Options);
+        });
+    m_UISystem.GetEventBus().Listen("pause_quit",
+        [this](const GUI::UIEventData&) {
+            // "Quit" in a shipped game returns to its title screen. The editor
+            // has no title screen, so the equivalent is ending the session —
+            // the same thing the old bespoke menu's "Quit to Menu" did.
+            // Deferred: Stop() must not run inside an event dispatch.
+            ClosePauseMenu();
+            m_PendingPlayStop = true;
+        });
+
     // Fill the Options menu from live state when it opens — otherwise Back
     // applies the menu's struct defaults (bloom=true) over the panel settings
     m_GameMenu.SetSettingsSyncCallback([this](GUI::GraphicsSettings& gfx,
@@ -693,6 +724,29 @@ void EditorLayer::StartPlayMode() {
     m_PlayMode.Play();
     m_Telemetry.TrackPlayModeEnter();
     if (m_Announcer.enabled) m_Announcer.Announce("Play mode started", Accessibility::AnnouncePriority::Normal);
+}
+
+// The pause root is the SHIPPED UICanvas template, not a bespoke ImGui draw.
+// The editor used to hand-draw four buttons into the Game View's draw list,
+// so the menu a creator saw while paused was not the menu their exported game
+// showed. Spawning the template here means one authored menu, previewed in the
+// place it is authored. Tagged Transient so an autosave taken while paused
+// cannot leak the menu entity into the scene file.
+void EditorLayer::OpenPauseMenu() {
+    if (!m_World || m_PauseMenuEntity != 0) return;
+    m_PauseMenuEntity = m_World->CreateEntity();
+    m_World->AddComponent<ECS::NameComponent>(m_PauseMenuEntity, "Pause Menu UI");
+    m_World->AddComponent<ECS::TransientComponent>(m_PauseMenuEntity, ECS::TransientComponent{});
+    m_World->AddComponent<GUI::UICanvasComponent>(m_PauseMenuEntity,
+        GUI::UITemplates::CreatePauseMenu());
+}
+
+void EditorLayer::ClosePauseMenu() {
+    if (!m_World || m_PauseMenuEntity == 0) return;
+    // Destroy is deferred to the next World::Update, so drop the handle now:
+    // entity ids are generational and a stale one must never be reused here.
+    m_World->DestroyEntity(m_PauseMenuEntity);
+    m_PauseMenuEntity = 0;
 }
 
 void EditorLayer::InitializePlayMode() {
@@ -1104,7 +1158,7 @@ void EditorLayer::Update(f32 deltaTime) {
                     return "saved " + m_CurrentScenePath;
                 }
                 if (op == "press_key") {
-                    if (!m_PlayMode.IsPlaying()) return std::string("error: start play mode first");
+                    if (m_PlayMode.IsStopped()) return std::string("error: start play mode first");
                     std::string key = args.value("key", "");
                     if (key.empty()) return std::string("error: 'key' is required");
                     i32 code = -1;
@@ -1135,7 +1189,7 @@ void EditorLayer::Update(f32 deltaTime) {
                     return std::string("pressed");
                 }
                 if (op == "click_at") {
-                    if (!m_PlayMode.IsPlaying()) return std::string("error: start play mode first");
+                    if (m_PlayMode.IsStopped()) return std::string("error: start play mode first");
                     if (!m_GameViewImageDrawnThisFrame && m_GameViewImageMaxX <= m_GameViewImageMinX)
                         return std::string("error: game view not visible");
                     f32 nx = args.value("x", -1.0f), ny = args.value("y", -1.0f);
@@ -1151,7 +1205,7 @@ void EditorLayer::Update(f32 deltaTime) {
                     return std::string("clicked");
                 }
                 if (op == "type_text") {
-                    if (!m_PlayMode.IsPlaying()) return std::string("error: start play mode first");
+                    if (m_PlayMode.IsStopped()) return std::string("error: start play mode first");
                     std::string text = args.value("text", "");
                     if (text.empty()) return std::string("error: 'text' is required");
                     if (text.size() > 4096) return std::string("error: text too long (4096 max)");
@@ -2042,9 +2096,24 @@ void EditorLayer::Update(f32 deltaTime) {
         }
     }
     if (Input::IsKeyPressed(KeyCode::Escape)) {
+        // Same shape as the desktop player's Escape handling: a GameMenus
+        // sub-screen backs out to the pause canvas, the pause canvas resumes,
+        // and gameplay pauses. Keeping the two in step is the point of the
+        // shared template.
         if (m_GameMenu.IsMenuOpen()) {
-            // Menu open: close it, resume, recapture if needed
+            // Sub-screen (Options / How to Play) open: back out to the pause
+            // canvas, which stayed alive underneath it.
             m_GameMenu.HideAll();
+            if (m_PauseMenuEntity == 0) {
+                m_PlayMode.Resume();
+                if (m_FocusMode || SceneHasMouseLookController()) {
+                    m_GameViewMouseCaptured = !m_FocusMode;
+                    Input::SetMouseCaptured(true);
+                }
+            }
+        } else if (m_PauseMenuEntity != 0) {
+            // Pause canvas open: resume, recapture if needed
+            ClosePauseMenu();
             m_PlayMode.Resume();
             if (m_FocusMode || SceneHasMouseLookController()) {
                 m_GameViewMouseCaptured = !m_FocusMode;
@@ -2054,7 +2123,7 @@ void EditorLayer::Update(f32 deltaTime) {
             // Playing: single-press pause — release mouse + open menu
             m_GameViewMouseCaptured = false;
             Input::SetMouseCaptured(false);
-            m_GameMenu.ShowScreen(GUI::MenuScreen::PauseMenu);
+            OpenPauseMenu();
             m_PlayMode.Pause();
         } else if (m_PlayMode.IsPaused()) {
             // Paused without menu: stop play mode
@@ -2225,9 +2294,13 @@ void EditorLayer::Update(f32 deltaTime) {
         Input::SetMouseCaptured(false);
     }
 
-    // Safety net: close pause menu if play mode stopped (e.g. via toolbar button)
-    if (m_GameMenu.IsMenuOpen() && m_PlayMode.IsStopped()) {
-        m_GameMenu.HideAll();
+    // Safety net: close the pause menu if play mode stopped (e.g. via toolbar
+    // button). PlayMode::Stop restores the pre-play scene, which already takes
+    // the spawned canvas entity with it, so the handle is dropped rather than
+    // destroyed — destroying a restored id would hit a different entity.
+    if (m_PlayMode.IsStopped()) {
+        if (m_GameMenu.IsMenuOpen()) m_GameMenu.HideAll();
+        m_PauseMenuEntity = 0;
     }
 
     // Update dialogue typewriter during play mode
@@ -3728,7 +3801,11 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         // Render UI canvases during play mode (fullscreen). HUDSystem is
         // retired — legacy hudWidget data migrates to UICanvas on scene load,
         // so canvases are the ONE UI path (world-space tags need the camera).
-        if (m_PlayMode.IsPlaying()) {
+        // IsPaused() too, not just IsPlaying(): the pause root is a UICanvas
+        // now, so stopping the UI system on pause would leave it undrawn and
+        // unclickable. Both shipped players keep drawing canvases while
+        // paused (HUD visible behind the overlay), so this also matches them.
+        if (m_PlayMode.IsPlaying() || m_PlayMode.IsPaused()) {
             m_UISystem.Update(m_World, io.DisplaySize.x, io.DisplaySize.y, m_LastDeltaTime,
                               0.0f, 0.0f, m_Camera);
         }
@@ -5229,7 +5306,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     // foreground draw list at the cached image rect, so with the Game View
     // tab hidden it would paint the game's HUD over whatever panel is docked
     // there (the VS-editor-covered-in-game-text bug).
-    if (m_PlayMode.IsPlaying() && m_GameViewImageDrawnThisFrame) {
+    if ((m_PlayMode.IsPlaying() || m_PlayMode.IsPaused()) && m_GameViewImageDrawnThisFrame) {
         f32 gvW = m_GameViewImageMaxX - m_GameViewImageMinX;
         f32 gvH = m_GameViewImageMaxY - m_GameViewImageMinY;
         if (gvW > 0 && gvH > 0) {
@@ -5267,6 +5344,31 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
 
     // Pause menu is now rendered inside the Game View panel (DrawGameViewPanel)
     // to prevent it from overlapping the Scene tab.
+
+    // GameMenus sub-screens (Options / How to Play) in the DOCKED view. Only
+    // focus mode rendered these before, so picking Options from the pause menu
+    // in the normal editor layout opened a screen that drew nothing — the
+    // button was dead in the default view. They draw full-window rather than
+    // inside the game-view rect (GameMenus lays out from 0,0); from the pause
+    // root that is a dim over the editor plus the game's own Options window,
+    // which is the real panel an exported game shows. Fitting them to the
+    // game-view rect is the separate "Options screen as UICanvas" item.
+    // Sub-screens ONLY. Not GameOver: GameplayLoop already spawns a UICanvas
+    // game-over screen, so rendering GameMenus' version here would stack two.
+    // Not MainMenu either — the editor has no title screen.
+    if (!m_PlayMode.IsStopped()) {
+        switch (m_GameMenu.GetCurrentScreen()) {
+            case GUI::MenuScreen::Options:
+            case GUI::MenuScreen::Graphics:
+            case GUI::MenuScreen::Audio:
+            case GUI::MenuScreen::Controls:
+            case GUI::MenuScreen::HowToPlay:
+                m_GameMenu.Render(io.DisplaySize.x, io.DisplaySize.y);
+                break;
+            default:
+                break;
+        }
+    }
 
     // Quake-style drop-down console (always on top of editor panels)
     DrawDropConsole(m_LastDeltaTime);
@@ -5657,7 +5759,11 @@ void EditorLayer::ProcessMcpInput(f32 deltaTime) {
         }
         return;
     }
-    if (!m_PlayMode.IsPlaying()) {   // queued while not playing: drop stale actions
+    // Paused counts. The pause menu is a UICanvas that exists ONLY while paused,
+    // so a gate of IsPlaying() meant an agent could press Escape to pause and
+    // then had no way to press Resume, or to click any button on it. Stopped
+    // still drops the queue: those actions are stale.
+    if (m_PlayMode.IsStopped()) {   // queued while not in a session: drop stale actions
         m_McpInputQueue.clear();
         return;
     }

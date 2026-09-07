@@ -1421,6 +1421,28 @@ void PlayMode::RestoreEditorState() {
         m_DestroyObserverToken = 0;
     }
 
+    // Entities SPAWNED during play are not touched by either pass below (both
+    // only handle pre-play entities), so anything the runtime created survived
+    // Stop and landed in the authored scene. TransientComponent already means
+    // "runtime-spawned, must never reach a scene file"; honour it here too and
+    // the whole class goes away, instead of one hand-written teardown per
+    // spawner (ObjectPool, Swarm proxies and GeneratedGeometry above are three
+    // of those). Deliberately AFTER the observer is removed: with it installed
+    // these would be captured as pre-play deaths and recreated below.
+    {
+        usize dropped = 0;
+        for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::TransientComponent>()) {
+            m_World->DestroyEntity(e);
+            ++dropped;
+        }
+        // DestroyEntity is deferred to World::Update, which edit mode never
+        // calls — flush it here or the entities linger until the next Play.
+        if (dropped > 0) {
+            m_World->FlushPendingDestructions();
+            ENJIN_LOG_INFO(Editor, "Dropped %zu transient runtime entities on stop", dropped);
+        }
+    }
+
     // Restore each SURVIVING tracked entity's gameplay-mutable state in place
     // (transform + visible). Static asset data (mesh, skeleton, animator) is left
     // untouched, which avoids the old multi-megabyte JSON roundtrip AND the reload

@@ -345,6 +345,11 @@ private:
 
     void InitializePlayMode();
     void StartPlayMode();  // Starts play mode and applies game VSync settings
+
+    // Pause root, spawned from the shipped UICanvas template so the editor
+    // shows the menu an exported game shows. Both are safe to call twice.
+    void OpenPauseMenu();
+    void ClosePauseMenu();
     void DrawMenuBar();
     void DrawHierarchyPanel();
     void DrawInspectorPanel();
@@ -1092,10 +1097,6 @@ private:
     std::unique_ptr<Renderer::RenderTarget> m_SceneRenderTarget;     // Scene pre-post-processing
     u32 m_GameViewWidth = 640;
     u32 m_GameViewHeight = 360;
-    f32 m_GameViewScreenX = 0;  // Screen-space position of game view content
-    f32 m_GameViewScreenY = 0;
-    f32 m_GameViewScreenW = 640;
-    f32 m_GameViewScreenH = 360;
 
     // Game View frame rate limiting (doesn't affect editor, only game view render)
     i32 m_GameViewFPSIndex = 0;  // 0=Unlimited, 1=24, 2=30, 3=60, 4=120, 5=144, 6=240
@@ -1427,8 +1428,16 @@ private:
     // Input action map for remappable input
     InputSystem::InputActionMap m_InputMap;
 
-    // In-game pause/system menu
+    // In-game pause/system menu. Owns Main Menu / Options / How to Play only —
+    // the pause ROOT is the shipped UICanvas template (m_PauseMenuEntity), the
+    // same one both players spawn, so the editor previews the real menu.
     GUI::GameMenuSystem m_GameMenu;
+
+    // Pause root: an entity carrying UITemplates::CreatePauseMenu(), spawned
+    // into the play world on pause and destroyed on resume/stop. Non-zero is
+    // the editor's "pause menu is up" state (the toolbar pause button pauses
+    // WITHOUT it, which is why this is not just IsPaused()).
+    ECS::Entity m_PauseMenuEntity = 0;
 
     // Runtime UI system
     GUI::UISystem m_UISystem;
