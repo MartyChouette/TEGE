@@ -19,6 +19,9 @@ carries its notes and downloadable builds. This file is the quick orientation.
   class of silently-vanishing components (audio suite and others on reload).
 - **CI render smoke test**: every push boots the editor on software Vulkan and
   verifies a real frame renders.
+- **Script exceptions say what and where**: a thrown exception used to reach
+  the log as "Unknown error in OnUpdate". It now carries the fault, the
+  function, and the section and line it threw on.
 - Sprite images no longer import upside down; editor selection glow no longer
   leaks into the game view; scene `"version"` format documented.
 

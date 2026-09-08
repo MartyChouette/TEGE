@@ -54,9 +54,57 @@ void ScriptSystem::CacheMethodIds(ECS::ScriptAttachment& script) {
     script.methodOnClick          = findMethod("void OnClick()");
 }
 
+// Everything AngelScript knows about a thrown exception, on one line.
+//
+// GetExceptionString() on its own is "Null pointer access": it names the fault
+// and not the place. The context is still holding the section, line, column
+// and the function that threw, and in a three-thousand-line module the fault
+// without the place is not actionable. All of it goes in the log line.
+static std::string DescribeException(asIScriptContext* ctx) {
+    if (!ctx) return std::string();
+
+    const char* what = ctx->GetExceptionString();
+    std::string out = (what && *what) ? what : "script exception";
+
+    if (asIScriptFunction* fn = ctx->GetExceptionFunction()) {
+        const char* decl = fn->GetDeclaration();
+        if (decl && *decl) {
+            out += " in ";
+            out += decl;
+        }
+    }
+
+    int col = 0;
+    const char* section = nullptr;
+    int line = ctx->GetExceptionLineNumber(&col, &section);
+    if (line > 0) {
+        out += " at ";
+        if (section && *section) {
+            out += section;
+            out += ":";
+        }
+        out += std::to_string(line);
+        out += ":";
+        out += std::to_string(col);
+    }
+    return out;
+}
+
 void ScriptSystem::HandleScriptError(ECS::ScriptAttachment& script, const char* methodName) {
     script.hasError = true;
-    if (m_ScriptEngine) {
+
+    // Only reach for the engine's message if the caller has not already said
+    // what happened.
+    //
+    // This used to overwrite lastError unconditionally, which threw away the
+    // one useful string in the whole path: ClassifyExecuteResult had just put
+    // the thrown exception there and it went straight in the bin. What came
+    // out the other end was "Unknown error in OnUpdate", because ScriptEngine's
+    // m_LastError is a COMPILE-time field -- it is set when a module fails to
+    // build and never touched again -- so at runtime it is either empty or
+    // stale. Empty gave the useless message; stale would have reported some
+    // other module's compile failure as this frame's exception.
+    if (script.lastError.empty() && m_ScriptEngine) {
         script.lastError = m_ScriptEngine->GetLastError();
     }
     if (script.lastError.empty()) {
@@ -74,7 +122,7 @@ ECS::ScriptAttachment* ScriptSystem::ResolveScript(ECS::Entity entity, usize ind
 }
 
 bool ScriptSystem::ClassifyExecuteResult(ECS::Entity entity, usize index, int result,
-                                         const char* methodName, const char* exceptionText) {
+                                         const char* methodName, void* ctxv) {
     if (result == asEXECUTION_FINISHED) return true;
 
     // Re-resolved AFTER the call: the attachment reference the caller held
@@ -84,7 +132,7 @@ bool ScriptSystem::ClassifyExecuteResult(ECS::Entity entity, usize index, int re
     ECS::ScriptAttachment& script = *sp;
 
     if (result == asEXECUTION_EXCEPTION) {
-        script.lastError = exceptionText ? exceptionText : "";
+        script.lastError = DescribeException(static_cast<asIScriptContext*>(ctxv));
         HandleScriptError(script, methodName);
         return false;
     }
@@ -151,8 +199,7 @@ bool ScriptSystem::ResumePending(ECS::Entity entity, usize index,
     script.pendingContext = nullptr;
     const std::string method = script.pendingMethod;
     script.pendingMethod.clear();
-    ClassifyExecuteResult(entity, index, r, method.c_str(),
-        r == asEXECUTION_EXCEPTION ? ctx->GetExceptionString() : nullptr);
+    ClassifyExecuteResult(entity, index, r, method.c_str(), ctx);
     m_ScriptEngine->ReturnContext(ctx);
     return true;
 }
@@ -194,8 +241,7 @@ bool ScriptSystem::CallLifecycleMethod(ECS::Entity entity, usize index, int meth
 
     int r = ctx->Execute();
     if (ParkIfSuspended(script, ctx, r, methodName)) return true;
-    bool success = ClassifyExecuteResult(entity, index, r, methodName,
-        r == asEXECUTION_EXCEPTION ? ctx->GetExceptionString() : nullptr);
+    bool success = ClassifyExecuteResult(entity, index, r, methodName, ctx);
 
     m_ScriptEngine->ReturnContext(ctx);
     return success;
@@ -228,8 +274,7 @@ bool ScriptSystem::CallLifecycleMethodFloat(ECS::Entity entity, usize index, int
 
     int r = ctx->Execute();
     if (ParkIfSuspended(script, ctx, r, methodName)) return true;
-    bool success = ClassifyExecuteResult(entity, index, r, methodName,
-        r == asEXECUTION_EXCEPTION ? ctx->GetExceptionString() : nullptr);
+    bool success = ClassifyExecuteResult(entity, index, r, methodName, ctx);
 
     m_ScriptEngine->ReturnContext(ctx);
     return success;
@@ -262,8 +307,7 @@ bool ScriptSystem::CallCollisionMethod(ECS::Entity entity, usize index, int meth
 
     int r = ctx->Execute();
     if (ParkIfSuspended(script, ctx, r, methodName)) return true;
-    bool success = ClassifyExecuteResult(entity, index, r, methodName,
-        r == asEXECUTION_EXCEPTION ? ctx->GetExceptionString() : nullptr);
+    bool success = ClassifyExecuteResult(entity, index, r, methodName, ctx);
 
     m_ScriptEngine->ReturnContext(ctx);
     return success;
@@ -298,8 +342,7 @@ bool ScriptSystem::CallStringMethod(ECS::Entity entity, usize index, int methodI
 
     int r = ctx->Execute();
     if (ParkIfSuspended(script, ctx, r, methodName)) return true;
-    bool success = ClassifyExecuteResult(entity, index, r, methodName,
-        r == asEXECUTION_EXCEPTION ? ctx->GetExceptionString() : nullptr);
+    bool success = ClassifyExecuteResult(entity, index, r, methodName, ctx);
 
     m_ScriptEngine->ReturnContext(ctx);
     return success;

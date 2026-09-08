@@ -137,17 +137,20 @@ private:
     // Skipped entirely (no raycast) unless some loaded script defines one.
     void UpdateMouseCallbacks();
 
-    // Handle script error
+    // Log a script error and latch the script off. Uses script.lastError if
+    // the caller has already filled it in; see the note in the implementation
+    // about why it must not go and fetch its own.
     void HandleScriptError(ECS::ScriptAttachment& script, const char* methodName);
 
     // Classify an asIScriptContext::Execute() return code. Returns true only
     // when the call actually completed. Every dispatcher routes through this
     // so no result code can be silently treated as success again -- see the
-    // asEXECUTION_ABORTED note in the implementation. `exceptionText` is only
-    // read when the result is an exception, and may be null otherwise (the
-    // AngelScript types stay out of this header).
+    // asEXECUTION_ABORTED note in the implementation. `ctxv` is the context
+    // that just ran, as void* so the AngelScript types stay out of this
+    // header; it is only read when the result is an exception, and may be
+    // null.
     bool ClassifyExecuteResult(ECS::Entity entity, usize index, int result,
-                               const char* methodName, const char* exceptionText);
+                               const char* methodName, void* ctxv);
 
     // Running out of statement budget suspends a call instead of killing the
     // script. The context stays out of the pool, mid-method, until the next

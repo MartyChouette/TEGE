@@ -323,4 +323,119 @@ ENJIN_TEST(ScriptBudgetSlices, DestroyWhileParkedStillRunsOnDestroy) {
     ENJIN_EXPECT_EQ(fx.Global("g_destroyed"), 1);
 }
 
+// ===========================================================================
+// A thrown exception says WHAT and WHERE.
+//
+// ClassifyExecuteResult put ctx->GetExceptionString() into script.lastError and
+// then called HandleScriptError, which overwrote it with ScriptEngine's
+// m_LastError -- a COMPILE-time field, set when a module fails to build and
+// never touched again. So the one useful string in the path was thrown away
+// every time. At runtime that field is empty, and what reached the log was
+// "Unknown error in OnUpdate". Worse, it is not always empty: a stale compile
+// failure from another module would have been reported as this frame's
+// exception.
+//
+// The message now carries the fault, the function it threw in, and the section
+// and line, because in a module spread over eight files the fault without the
+// place is not actionable.
+// ===========================================================================
+
+namespace {
+
+void WriteThrowingProbe(const fs::path& p) {
+    std::ofstream f(p, std::ios::trunc);
+    // The null access is on line 5, and the test asserts that number: a
+    // message naming the file but not the place is the thing being fixed.
+    f << "class Probe : TegeBehavior {\n"
+      << "    int v = 0;\n"
+      << "    void OnUpdate(float dt) {\n"
+      << "        Probe@ boom = null;\n"
+      << "        boom.v = 1;\n"
+      << "    }\n"
+      << "}\n";
+}
+
+struct ThrowFixture {
+    ECS::World world;
+    ScriptEngine engine;
+    CoroutineScheduler scheduler;
+    ScriptSystem system;
+    fs::path dir;
+    ECS::Entity entity = ECS::INVALID_ENTITY;
+
+    explicit ThrowFixture(const char* leaf) {
+        dir = MakeScriptDir(leaf);
+        WriteThrowingProbe(dir / "Probe.as");
+
+        engine.Initialize();
+        RegisterAllBindings(engine.GetASEngine());
+        engine.SetScriptDirectory(dir.string());
+        engine.CompileScript((dir / "Probe.as").string());
+
+        system.SetScriptEngine(&engine);
+        system.SetCoroutineScheduler(&scheduler);
+        system.SetWorld(&world);
+        system.SetScriptRoot(dir.string());
+        system.SetEnabled(true);
+
+        entity = world.CreateEntity();
+        world.AddComponent<ECS::TransformComponent>(entity);
+        ECS::ScriptComponent sc;
+        ECS::ScriptAttachment att;
+        att.scriptPath = "Probe.as";
+        att.className = "Probe";
+        att.enabled = true;
+        sc.scripts.push_back(att);
+        world.AddComponent<ECS::ScriptComponent>(entity, sc);
+        system.InitializeAllScripts();
+    }
+
+    ~ThrowFixture() {
+        system.SetWorld(nullptr);
+        engine.Shutdown();
+        std::error_code ec;
+        fs::remove_all(dir, ec);
+    }
+
+    ECS::ScriptAttachment* Att() {
+        auto* sc = world.GetComponent<ECS::ScriptComponent>(entity);
+        return (sc && !sc->scripts.empty()) ? &sc->scripts[0] : nullptr;
+    }
+};
+
+bool Contains(const std::string& hay, const char* needle) {
+    return hay.find(needle) != std::string::npos;
+}
+
+} // namespace
+
+ENJIN_TEST(ScriptExceptionMessage, KeepsWhatAngelScriptThrew) {
+    ThrowFixture fx("throws");
+
+    fx.system.Update(kFrame);   // OnStart only
+    fx.system.Update(kFrame);   // OnUpdate throws
+
+    ENJIN_ASSERT_NOT_NULL(fx.Att());
+    ENJIN_ASSERT_TRUE(fx.Att()->hasError);
+
+    const std::string& msg = fx.Att()->lastError;
+    ENJIN_EXPECT_TRUE(Contains(msg, "Null pointer access"));
+    ENJIN_EXPECT_FALSE(Contains(msg, "Unknown error"));
+}
+
+ENJIN_TEST(ScriptExceptionMessage, SaysWhereItThrew) {
+    ThrowFixture fx("throws_where");
+
+    fx.system.Update(kFrame);
+    fx.system.Update(kFrame);
+
+    ENJIN_ASSERT_NOT_NULL(fx.Att());
+    ENJIN_ASSERT_TRUE(fx.Att()->hasError);
+
+    const std::string& msg = fx.Att()->lastError;
+    ENJIN_EXPECT_TRUE(Contains(msg, "OnUpdate"));   // the function that threw
+    ENJIN_EXPECT_TRUE(Contains(msg, "Probe.as"));   // the section
+    ENJIN_EXPECT_TRUE(Contains(msg, ":5:"));        // the line boom is on
+}
+
 ENJIN_TEST_MAIN()
