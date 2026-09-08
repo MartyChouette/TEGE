@@ -391,6 +391,15 @@ void EditorLayer::DrawMenuBar() {
         }
 
         if (ImGui::BeginMenu("View")) {
+            // First item in the menu on purpose. Discoverability is part of the
+            // feature: a build surface nobody can find fails the same bar as a
+            // build surface that does not exist.
+            if (ImGui::MenuItem("Creative Mode", "Ctrl+B", m_Creative.IsActive())) {
+                m_Creative.SetActive(!m_Creative.IsActive());
+            }
+            ImGui::SetItemTooltip("Block out a level with walls, floors, stairs and brushes, "
+                                  "then press play. The full editor stays one click away.");
+            ImGui::Separator();
             if (ImGui::MenuItem("Simulate Touch Controls", nullptr, m_SimulateTouch)) {
                 m_SimulateTouch = !m_SimulateTouch;
             }

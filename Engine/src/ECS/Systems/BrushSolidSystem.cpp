@@ -4,6 +4,7 @@
 #include "Enjin/ECS/Components/ProceduralMesh.h"
 #include "Enjin/ECS/Components/Gameplay.h"   // MeshColliderComponent
 #include "Enjin/Geometry/CSG.h"
+#include "Enjin/ECS/MeshEdit.h"
 #include "Enjin/Logging/Log.h"
 
 namespace Enjin {
@@ -60,20 +61,8 @@ bool BrushSolidSystem::Rebuild(World* world, Entity entity) {
         solid->lastTriangleCount = static_cast<u32>(mesh->indices.size() / 3);
     }
 
-    // Hand the GPU side to the system that owns it. topologyDirty when the
-    // buffers need resizing, meshDirty when only the contents moved; that is
-    // the distinction every other generated-geometry system draws, and getting
-    // it wrong means either a stale buffer or a needless reallocation.
-    if (!world->HasComponent<ProceduralMeshComponent>(entity)) {
-        ProceduralMeshComponent pm;
-        pm.source = ProceduralMeshComponent::Source::Csg;
-        pm.topologyDirty = true;
-        world->AddComponent<ProceduralMeshComponent>(entity, pm);
-    } else if (auto* pm = world->GetComponent<ProceduralMeshComponent>(entity)) {
-        pm->source = ProceduralMeshComponent::Source::Csg;
-        if (topologyChanged) pm->topologyDirty = true;
-        else                 pm->meshDirty = true;
-    }
+    // Hand the GPU side to the one place that knows the upload protocol.
+    MarkMeshChanged(*world, entity, ProceduralMeshComponent::Source::Csg, topologyChanged);
 
     return true;
 }

@@ -1,4 +1,5 @@
 #include "Enjin/GUI/UISystem.h"
+#include "Enjin/GUI/UIFontRegistry.h"
 #include "Enjin/GUI/UICanvas.h"
 #include "Enjin/Platform/Input.h"
 #include "Enjin/ECS/Components/Gameplay.h"
@@ -45,11 +46,25 @@ static void DrawRoundedRectBorder(ImDrawList* dl, const UIRect& rect, ImU32 colo
         color, radius, 0, thickness);
 }
 
+// The face the element being drawn asked for, resolved once per element by
+// RenderElement. ImGui works the same way (a current font, pushed and popped)
+// and UI drawing is main-thread only, so this is ambient rather than an extra
+// argument on all sixteen text draws. RenderCanvas clears it on the way out,
+// which is what keeps a game's typeface inside the game's canvas instead of
+// restyling the editor around it.
+static ImFont* s_ActiveFace = nullptr;
+
 static void DrawCenteredText(ImDrawList* dl, const UIRect& rect, const char* text,
-                             ImU32 color, u8 alignH, u8 alignV, f32 fontSize) {
+                             ImU32 color, u8 alignH, u8 alignV, f32 fontSize,
+                             ImFont* face = nullptr) {
     if (!text || text[0] == '\0') return;
 
-    ImFont* font = ImGui::GetFont();
+    // The game's typeface when the canvas names one, otherwise whatever font
+    // is ambient -- which is what every scene authored before fonts existed
+    // gets, so those render exactly as they always have. A face that failed
+    // to load lands here too: missing text is never the right answer to a
+    // missing font.
+    ImFont* font = face ? face : (s_ActiveFace ? s_ActiveFace : ImGui::GetFont());
 
     // Clamp the font so a single line can't be taller than the box.
     if (rect.h > 4.0f && fontSize > rect.h - 4.0f) {
@@ -342,6 +357,29 @@ void UISystem::ComputeLayout(UICanvasComponent& canvas, f32 vpW, f32 vpH,
         }
         if (!nested) ArrangeContainer(canvas, element, scaleFactor);
     }
+
+    // Scroll pass: a ScrollArea's descendants are displaced by its scroll
+    // offset HERE, in computedRect, rather than at draw time. RenderScrollArea
+    // used to shift its children as it drew them and nothing shifted the hit
+    // box, so scrolled content rendered in one place and was clickable in
+    // another -- a slider halfway down a scrolled panel adjusted whatever
+    // happened to still occupy its unscrolled position. computedRect is what
+    // rendering, hit-testing, focus, the touch interactive-rect list and the
+    // dwell/scan indicators all read, so displacing it once here is what keeps
+    // them agreeing. Offsets accumulate through nested scroll areas.
+    for (auto& element : canvas.elements) {
+        if (element.parentId == 0) continue;
+        f32 scrollOff = 0.0f;
+        u32 pid = element.parentId;
+        int guard = 0;
+        while (pid != 0 && guard++ < 64) {
+            const UIElement* p = canvas.GetElement(pid);
+            if (!p) break;
+            if (p->type == UIWidgetType::ScrollArea) scrollOff += p->data.scrollOffset;
+            pid = p->parentId;
+        }
+        if (scrollOff != 0.0f) element.computedRect.y -= scrollOff;
+    }
 }
 
 void UISystem::RelayoutSubtree(UICanvasComponent& canvas, UIElement& element, f32 scaleFactor) {
@@ -465,6 +503,33 @@ void UISystem::ComputeElementRect(UIElement& element, const UIRect& parentRect, 
 // INPUT
 // ============================================================================
 
+// The rect an element actually occupies on screen once every ancestor
+// ScrollArea has clipped it. Returns false when nothing of it survives, which
+// is the input-side counterpart of the draw-time clip rect. The element's own
+// computedRect stays authoritative for value math (a slider drag maps against
+// the whole track, not the visible sliver).
+static bool ClipRectByScrollAncestors(const UICanvasComponent& canvas, const UIElement& e,
+                                      UIRect& out) {
+    out = e.computedRect;
+    u32 pid = e.parentId;
+    int guard = 0;
+    while (pid != 0 && guard++ < 64) {
+        const UIElement* p = canvas.GetElement(pid);
+        if (!p) break;
+        if (p->type == UIWidgetType::ScrollArea) {
+            const UIRect& c = p->computedRect;
+            const f32 x0 = std::max(out.x, c.x);
+            const f32 y0 = std::max(out.y, c.y);
+            const f32 x1 = std::min(out.x + out.w, c.x + c.w);
+            const f32 y1 = std::min(out.y + out.h, c.y + c.h);
+            if (x1 <= x0 || y1 <= y0) return false;
+            out = {x0, y0, x1 - x0, y1 - y0};
+        }
+        pid = p->parentId;
+    }
+    return true;
+}
+
 void UISystem::ProcessInput(UICanvasComponent& canvas, f32 /*vpW*/, f32 /*vpH*/) {
     ImGuiIO& io = ImGui::GetIO();
     f32 mouseX = io.MousePos.x;
@@ -518,13 +583,21 @@ void UISystem::ProcessInput(UICanvasComponent& canvas, f32 /*vpW*/, f32 /*vpH*/)
         // Every interactive element's rect is remembered for the frame, so a
         // touch can be routed to the UI as a real pointer before the move
         // stick or an action button claims it (Input::SetUIHitTestResolver).
-        const bool interactive = IsInteractiveElement(element);
-        if (interactive) m_InteractiveRects.push_back(element.computedRect);
+        // Scrolled-away content is untouchable, not merely unpainted. A row
+        // that has scrolled out of its list keeps its rect -- that is what
+        // makes it clickable exactly where it is drawn -- so without clipping
+        // here a row scrolled above its list would still take clicks from
+        // whatever now occupies that patch of screen.
+        UIRect hitRect;
+        const bool anyVisible = ClipRectByScrollAncestors(canvas, element, hitRect);
+
+        const bool interactive = IsInteractiveElement(element) && anyVisible;
+        if (interactive) m_InteractiveRects.push_back(hitRect);
 
         // Something above already took the pointer this frame.
         if (m_PointerConsumed) { element.interaction = {}; continue; }
 
-        bool hit = element.computedRect.Contains(mouseX, mouseY);
+        bool hit = anyVisible && hitRect.Contains(mouseX, mouseY);
         element.interaction.hovered = hit;
         element.interaction.pressed = hit && mouseDown;
 
@@ -963,44 +1036,12 @@ void UISystem::DrawNineSlice(ImDrawList* dl, const UIRect& rect, void* texId,
 
 void UISystem::RenderCanvas(const UICanvasComponent& canvas) {
     u32 focusedId = canvas.focusedElementId;
+    s_ActiveFace = nullptr;
 
-    // Render root elements, then their children recursively
-    // Note: ScrollArea, Grid, TabGroup, Modal handle their own children
+    // Render each root and its whole subtree.
     for (const auto& element : canvas.elements) {
-        if (element.parentId == 0 && element.visible && !element.worldCulled) {
-            RenderElement(element, canvas.theme, focusedId, canvas);
-
-            // Container widgets render their own children
-            if (element.type == UIWidgetType::ScrollArea ||
-                element.type == UIWidgetType::Grid ||
-                element.type == UIWidgetType::TabGroup ||
-                element.type == UIWidgetType::Modal) {
-                continue;
-            }
-
-            // Render children
-            for (u32 childId : element.childIds) {
-                const UIElement* child = canvas.GetElement(childId);
-                if (child && child->visible && !child->worldCulled) {
-                    RenderElement(*child, canvas.theme, focusedId, canvas);
-
-                    // Container children handle their own sub-children
-                    if (child->type == UIWidgetType::ScrollArea ||
-                        child->type == UIWidgetType::Grid ||
-                        child->type == UIWidgetType::TabGroup ||
-                        child->type == UIWidgetType::Modal) {
-                        continue;
-                    }
-
-                    // One level of nesting for children's children
-                    for (u32 grandchildId : child->childIds) {
-                        const UIElement* grandchild = canvas.GetElement(grandchildId);
-                        if (grandchild && grandchild->visible && !grandchild->worldCulled) {
-                            RenderElement(*grandchild, canvas.theme, focusedId, canvas);
-                        }
-                    }
-                }
-            }
+        if (element.parentId == 0) {
+            RenderElementTree(element, canvas.theme, focusedId, canvas, 0);
         }
     }
 
@@ -1076,10 +1117,59 @@ void UISystem::RenderCanvas(const UICanvasComponent& canvas) {
             RenderTooltip(*tooltipOwner, canvas.theme);
         }
     }
+
+    // The game's typeface stops at the edge of the game's canvas. Without this
+    // the last element drawn would keep its face for whatever ImGui draws next,
+    // which is the editor.
+    s_ActiveFace = nullptr;
+}
+
+// A container widget positions and clips its own children, so the generic walk
+// stops at one and lets its Render* function take over.
+static bool OwnsItsChildren(UIWidgetType t) {
+    return t == UIWidgetType::ScrollArea || t == UIWidgetType::Grid ||
+           t == UIWidgetType::TabGroup   || t == UIWidgetType::Modal;
+}
+
+void UISystem::RenderElementTree(const UIElement& element, const UITheme& theme, u32 focusedId,
+                                 const UICanvasComponent& canvas, i32 depth) {
+    if (!element.visible || element.worldCulled) return;
+
+    // Canvases arrive from scene JSON, which can describe a parent cycle. The
+    // layout passes guard the same way; without this a hand-edited file would
+    // recurse until the stack ran out.
+    if (depth > 64) return;
+
+    RenderElement(element, theme, focusedId, canvas);
+    if (OwnsItsChildren(element.type)) return;
+
+    for (u32 childId : element.childIds) {
+        const UIElement* child = canvas.GetElement(childId);
+        if (child) RenderElementTree(*child, theme, focusedId, canvas, depth + 1);
+    }
+}
+
+ImFont* UISystem::ResolveFace(const UIElement& element, const UICanvasComponent& canvas) {
+    // Element override first, then the canvas theme -- the same inheritance
+    // style.fontSize already has.
+    const std::string* wanted = nullptr;
+    if (element.style.HasFontPath())        wanted = &element.style.fontPath;
+    else if (!canvas.theme.fontPath.empty()) wanted = &canvas.theme.fontPath;
+    if (!wanted) return nullptr;
+
+    auto& fonts = UIFontRegistry::Get();
+    if (ImFont* face = fonts.Find(*wanted)) return face;
+
+    // Named but not loaded: ask for it. The atlas owner picks this up and
+    // rebuilds, and the next frame resolves. A path that fails to load is
+    // recorded as failed, so this asks once rather than every frame forever.
+    fonts.Request(*wanted);
+    return nullptr;
 }
 
 void UISystem::RenderElement(const UIElement& element, const UITheme& theme, u32 focusedId,
                              const UICanvasComponent& canvas) {
+    s_ActiveFace = ResolveFace(element, canvas);
     bool isFocused = (element.id == focusedId && focusedId != 0);
 
     switch (element.type) {
@@ -1232,7 +1322,7 @@ void UISystem::RenderLabel(const UIElement& element, const UITheme& theme) {
     }
 
     // Per-character color path (used by games needing inline color variation)
-    ImFont* font = ImGui::GetFont();
+    ImFont* font = s_ActiveFace ? s_ActiveFace : ImGui::GetFont();
     const std::string& text = element.data.text;
     if (text.empty()) return;
 
@@ -1289,7 +1379,7 @@ void UISystem::RenderImage(const UIElement& element, const UITheme& theme) {
     ImU32 color = ImGui::ColorConvertFloat4ToU32(ImVec4(tint.x * 0.3f, tint.y * 0.3f, tint.z * 0.3f, alpha * 0.5f));
     DrawRoundedRect(dl, element.computedRect, color, 0.0f);
     if (!element.data.imagePath.empty()) {
-        ImFont* font = ImGui::GetFont();
+        ImFont* font = s_ActiveFace ? s_ActiveFace : ImGui::GetFont();
         std::string label = "[" + element.data.imagePath + "]";
         ImVec2 textSize = font->CalcTextSizeA(12.0f, FLT_MAX, 0.0f, label.c_str());
         f32 tx = element.computedRect.x + (element.computedRect.w - textSize.x) * 0.5f;
@@ -1623,7 +1713,7 @@ void UISystem::RenderTextInput(const UIElement& element, const UITheme& theme, b
     contentRect.x += padX;
     contentRect.w -= padX * 2.0f;
 
-    ImFont* font = ImGui::GetFont();
+    ImFont* font = s_ActiveFace ? s_ActiveFace : ImGui::GetFont();
     const auto& text = element.data.inputText;
     i32 cursorPos = element.data.cursorPos;
     i32 selStart = element.data.selectionStart;
@@ -1764,18 +1854,23 @@ void UISystem::RenderScrollArea(const UIElement& element, const UITheme& theme,
 
     if (element.childIds.empty()) return;
 
-    // Calculate content height from children
+    // Content height, measured from the children's UNSCROLLED positions.
+    // ComputeLayout has already displaced them by scrollOffset, so it is added
+    // back here -- measuring the displaced rects would shrink contentH as you
+    // scroll, which shrinks maxScroll, which claws the offset back: the panel
+    // would refuse to scroll to its own bottom.
+    f32& scrollOff = const_cast<UIElement&>(element).data.scrollOffset;
     f32 contentH = 0.0f;
     for (u32 childId : element.childIds) {
         const UIElement* child = canvas.GetElement(childId);
         if (child && child->visible && !child->worldCulled) {
-            f32 childBottom = (child->computedRect.y + child->computedRect.h) - element.computedRect.y;
+            f32 childBottom = (child->computedRect.y + scrollOff + child->computedRect.h)
+                              - element.computedRect.y;
             if (childBottom > contentH) contentH = childBottom;
         }
     }
 
     // Clamp scroll offset
-    f32& scrollOff = const_cast<UIElement&>(element).data.scrollOffset;
     f32 maxScroll = std::max(0.0f, contentH - element.computedRect.h);
     scrollOff = std::max(0.0f, std::min(scrollOff, maxScroll));
 
@@ -1785,22 +1880,21 @@ void UISystem::RenderScrollArea(const UIElement& element, const UITheme& theme,
         ImVec2(element.computedRect.x + element.computedRect.w,
                element.computedRect.y + element.computedRect.h), true);
 
-    // Render children with scroll offset
+    // Children draw at their computed rects -- the scroll displacement is
+    // already in them, which is what makes the drawn position and the clickable
+    // position the same position. Whole subtrees, so a scroll area can hold
+    // rows that hold controls.
     for (u32 childId : element.childIds) {
         const UIElement* child = canvas.GetElement(childId);
         if (!child || !child->visible || child->worldCulled) continue;
 
-        // Create a temporary element with offset rect for rendering
-        UIElement shifted = *child;
-        shifted.computedRect.y -= scrollOff;
-
         // Skip if fully outside clip region
-        if (shifted.computedRect.y + shifted.computedRect.h < element.computedRect.y ||
-            shifted.computedRect.y > element.computedRect.y + element.computedRect.h) {
+        if (child->computedRect.y + child->computedRect.h < element.computedRect.y ||
+            child->computedRect.y > element.computedRect.y + element.computedRect.h) {
             continue;
         }
 
-        RenderElement(shifted, theme, 0, canvas);
+        RenderElementTree(*child, theme, canvas.focusedElementId, canvas, 0);
     }
 
     dl->PopClipRect();
@@ -1980,15 +2074,8 @@ void UISystem::RenderTabGroup(const UIElement& element, const UITheme& theme,
     i32 activeIdx = std::max(0, std::min(element.data.activeTabIndex, numTabs - 1));
     u32 activeChildId = element.childIds[activeIdx];
     const UIElement* activeChild = canvas.GetElement(activeChildId);
-    if (activeChild && activeChild->visible) {
-        RenderElement(*activeChild, theme, focusedId, canvas);
-        // Render grandchildren of active tab
-        for (u32 grandchildId : activeChild->childIds) {
-            const UIElement* grandchild = canvas.GetElement(grandchildId);
-            if (grandchild && grandchild->visible && !grandchild->worldCulled) {
-                RenderElement(*grandchild, theme, focusedId, canvas);
-            }
-        }
+    if (activeChild) {
+        RenderElementTree(*activeChild, theme, focusedId, canvas, 0);
     }
 }
 
@@ -2004,7 +2091,7 @@ void UISystem::RenderTooltip(const UIElement& element, const UITheme& theme) {
     const std::string& tipText = element.data.tooltipText;
     if (tipText.empty()) return;
 
-    ImFont* font = ImGui::GetFont();
+    ImFont* font = s_ActiveFace ? s_ActiveFace : ImGui::GetFont();
     ImVec2 textSize = font->CalcTextSizeA(fontSize, FLT_MAX, 300.0f, tipText.c_str());
 
     f32 padX = 8.0f;
@@ -2098,16 +2185,7 @@ void UISystem::RenderModal(const UIElement& element, const UITheme& theme,
     // Render children on top of modal panel
     for (u32 childId : element.childIds) {
         const UIElement* child = canvas.GetElement(childId);
-        if (child && child->visible && !child->worldCulled) {
-            RenderElement(*child, theme, focusedId, canvas);
-            // Render grandchildren
-            for (u32 grandchildId : child->childIds) {
-                const UIElement* grandchild = canvas.GetElement(grandchildId);
-                if (grandchild && grandchild->visible && !grandchild->worldCulled) {
-                    RenderElement(*grandchild, theme, focusedId, canvas);
-                }
-            }
-        }
+        if (child) RenderElementTree(*child, theme, focusedId, canvas, 0);
     }
 }
 

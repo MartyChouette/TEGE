@@ -194,6 +194,16 @@ public:
     // Reload fonts with new configuration (requires atlas rebuild)
     void ReloadFonts(const EditorFontConfig& fontConfig);
 
+    // Rebuild the atlas if a canvas has asked for a typeface that is not in it
+    // yet, reusing the font configuration already in force.
+    //
+    // Call once per frame. It is a no-op unless something new was requested,
+    // which matters because a rebuild waits for every in-flight frame: doing it
+    // unconditionally would stall the GPU every frame. Reusing the stored config
+    // is what keeps a game's font request from resetting the editor's own faces
+    // back to defaults as a side effect.
+    void RebuildFontsIfNeeded();
+
     // Apply editor theme (call after Initialize)
     // If accentColors is provided and useCustom is true, accent colors override theme defaults
     void ApplyTheme(Editor::EditorTheme theme, const Editor::AccentColorConfig* accentColors = nullptr);
@@ -209,6 +219,9 @@ private:
     bool CreateDescriptorPool();
     void DestroyDescriptorPool();
     void LoadFonts(const EditorFontConfig& fontConfig);
+    // The configuration the atlas was last built with, so a rebuild triggered
+    // by anything other than the font settings panel keeps the editor's faces.
+    EditorFontConfig m_FontConfig;
 
     Renderer::VulkanRenderer* m_Renderer = nullptr;
     Window* m_Window = nullptr;

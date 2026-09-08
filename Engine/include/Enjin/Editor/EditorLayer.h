@@ -53,6 +53,7 @@
 #include "Enjin/Editor/TerrainBrush.h"
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Editor/UndoRedo.h"
+#include "Enjin/Editor/CreativeMode.h"
 #include "Enjin/Build/BuildReport.h"
 #include "Enjin/Assets/AssetMetadata.h"
 #include "Enjin/Assets/ThumbnailGenerator.h"
@@ -352,6 +353,27 @@ private:
     void OpenPauseMenu();
     void ClosePauseMenu();
     void DrawMenuBar();
+    // --- Creative mode (option B: a hand-drawn surface hosted by ImGui) ---
+    // The rail, the options column and the mode toggle, all ImDrawList.
+    void DrawCreativeSurface();
+    // Where a screen point lands on the y = 0 build plane. False when the ray
+    // runs parallel to the plane or points away from it, rather than returning
+    // a placement at infinity.
+    bool CreativeGroundPoint(f32 screenX, f32 screenY, f32 viewW, f32 viewH,
+                             Math::Vector3& out) const;
+    // Turn a finished drag into geometry: a new brush solid, or a cut into the
+    // selected one. Undoable either way.
+    // Press-drag-release in the viewport, for the tools that build brushes.
+    void HandleBuildDrag();
+    void CommitCreativeDrag(const Math::Vector3& start, const Math::Vector3& end);
+
+    // Distinct from the older Build palette below (m_ShowCreativePalette and its
+    // own nested CreativeTool enum), which places pre-made objects. These are the
+    // brush build tools. The two overlap and should be folded together.
+    CreativeMode m_Creative;
+    bool m_BuildDragging = false;
+    Math::Vector3 m_BuildDragStart;
+
     void DrawHierarchyPanel();
     void DrawInspectorPanel();
     void DrawViewportPanel();
@@ -1382,6 +1404,9 @@ private:
 
     // Undo/Redo manager
     UndoRedoManager m_UndoRedo;
+    // Mesh > Reduce: fraction of triangles to keep. A transient tool setting,
+    // deliberately not per-entity -- it is the dial you last used, not scene data.
+    f32 m_MeshSimplifyRatio = 0.5f;
     Math::Matrix4 m_GizmoStartTransform;
     bool m_GizmoDragging = false;
 

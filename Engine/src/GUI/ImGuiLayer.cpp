@@ -1,4 +1,5 @@
 #include "Enjin/GUI/ImGuiLayer.h"
+#include "Enjin/GUI/UIFontRegistry.h"
 #include "Enjin/GUI/Localization.h"
 #include "Enjin/GUI/FontScripts.h"
 #include "Enjin/GUI/EmbeddedFonts.h"
@@ -321,6 +322,7 @@ static ImFont* AddFileFont(ImGuiIO& io, const char* path, f32 sizePx) {
 
 void ImGuiLayer::LoadFonts(const EditorFontConfig& fontConfig) {
     ImGuiIO& io = ImGui::GetIO();
+    m_FontConfig = fontConfig;
 
     m_BodyFont = nullptr;
     m_HeadingFont = nullptr;
@@ -405,6 +407,35 @@ void ImGuiLayer::LoadFonts(const EditorFontConfig& fontConfig) {
 
     // Publish the section typeface for free-function widget helpers
     s_SectionFont = m_H2Font;
+
+    // The GAME's typefaces, requested by the scene's canvases. They go into the
+    // same atlas as the editor's own faces because there is only one atlas, but
+    // they are never assigned to any editor slot -- so a game choosing an arcade
+    // face for its score readout does not restyle the tools around it.
+    //
+    // Loaded at a generous base size: ImGui renders a face at whatever size the
+    // draw call asks for, and the UI draws the same face from small labels up to
+    // large headings, so the atlas glyphs have to be big enough for the largest.
+    {
+        auto& fonts = UIFontRegistry::Get();
+        constexpr f32 kGameFontAtlasSize = 48.0f;
+        for (const std::string& relative : fonts.RequestedPaths()) {
+            const std::string absolute = fonts.ResolvedPath(relative);
+            if (absolute.empty()) {
+                // Refused by containment, not merely missing.
+                fonts.SetLoaded(relative, nullptr);
+                continue;
+            }
+            ImFont* face = AddFileFont(io, absolute.c_str(), kGameFontAtlasSize);
+            if (!face) {
+                ENJIN_LOG_WARN(Editor, "Failed to load UI font: %s", relative.c_str());
+            }
+            // Recorded either way: a null entry is "tried and failed", which is
+            // what stops it asking for a fresh atlas rebuild every frame.
+            fonts.SetLoaded(relative, face);
+        }
+        fonts.MarkBuilt();
+    }
 
     // Atlas builds automatically on first ImGui_ImplVulkan_NewFrame() call
 }
@@ -1127,12 +1158,20 @@ void ImGuiLayer::ReloadFonts(const EditorFontConfig& fontConfig) {
     // Clear existing fonts and reload
     ImGuiIO& io = ImGui::GetIO();
     io.Fonts->Clear();
+    // Every ImFont* handed out so far now dangles, the game's faces included.
+    UIFontRegistry::Get().OnAtlasCleared();
     LoadFonts(fontConfig);
 
     // Build the font atlas - backend auto-uploads on next NewFrame()
     io.Fonts->Build();
 
     ENJIN_LOG_INFO(Editor, "Reloaded editor fonts");
+}
+
+void ImGuiLayer::RebuildFontsIfNeeded() {
+    if (!m_Initialized) return;
+    if (!UIFontRegistry::Get().NeedsRebuild()) return;
+    ReloadFonts(m_FontConfig);
 }
 
 // ============================================================================

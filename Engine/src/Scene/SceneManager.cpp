@@ -7,6 +7,7 @@
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <filesystem>
+#include "Enjin/GUI/UIFontRegistry.h"
 #include <algorithm>
 
 namespace Enjin {
@@ -88,6 +89,17 @@ bool SceneManager::LoadProject(const std::string& manifestPath) {
 
         // Only update state after successful parse
         m_ManifestPath = manifestPath;
+
+        // Where a canvas's font path resolves from, set here so the editor, the
+        // desktop player and the web player all get it from opening a project
+        // rather than each remembering to do it. A path that escapes this root
+        // is refused when the face is requested.
+        {
+            std::error_code ec;
+            const std::filesystem::path dir =
+                std::filesystem::absolute(std::filesystem::path(manifestPath), ec).parent_path();
+            if (!ec) GUI::UIFontRegistry::Get().SetRoot(dir.string());
+        }
         m_ProjectRoot = std::filesystem::path(manifestPath).parent_path().string();
         m_ProjectName = root.value("projectName", "Untitled Project");
 

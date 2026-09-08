@@ -1,5 +1,8 @@
 #include "Enjin/GUI/UITemplates.h"
 
+#include <algorithm>
+#include <string>
+
 namespace Enjin::GUI {
 
 namespace UITemplates {
@@ -134,11 +137,208 @@ UICanvasComponent CreatePauseMenu() {
     return canvas;
 }
 
-UICanvasComponent CreateOptionsMenu() {
+// ============================================================================
+// OPTIONS MENU
+// ============================================================================
+//
+// Built from a row list rather than element by element. The previous version
+// placed every control by hand at a literal anchor fraction, so adding an
+// option meant re-deriving the Y of everything below it and the panel had a
+// fixed height that the content had to be trimmed to fit. Rows now stack
+// themselves, the panel sizes itself to what it holds, and a list longer than
+// the screen scrolls.
+
+namespace Options {
+
+static OptionRow MakeRow(OptionRow::Kind kind, const std::string& label,
+                         const std::string& event) {
+    OptionRow row;
+    row.kind = kind;
+    row.label = label;
+    row.event = event;
+    return row;
+}
+
+OptionRow Heading(const std::string& label) {
+    return MakeRow(OptionRow::Kind::Heading, label, "");
+}
+
+OptionRow Slider(const std::string& label, const std::string& event,
+                 f32 value, f32 minValue, f32 maxValue) {
+    OptionRow row = MakeRow(OptionRow::Kind::Slider, label, event);
+    row.value = value;
+    row.minValue = minValue;
+    row.maxValue = maxValue;
+    return row;
+}
+
+OptionRow Checkbox(const std::string& label, const std::string& event, bool checked) {
+    OptionRow row = MakeRow(OptionRow::Kind::Checkbox, label, event);
+    row.checked = checked;
+    return row;
+}
+
+OptionRow Dropdown(const std::string& label, const std::string& event,
+                   std::vector<std::string> options, i32 selected) {
+    OptionRow row = MakeRow(OptionRow::Kind::Dropdown, label, event);
+    row.options = std::move(options);
+    row.selected = selected;
+    return row;
+}
+
+OptionRow Button(const std::string& label, const std::string& event) {
+    return MakeRow(OptionRow::Kind::Button, label, event);
+}
+
+OptionRow Spacer() {
+    return MakeRow(OptionRow::Kind::Spacer, "", "");
+}
+
+} // namespace Options
+
+namespace {
+
+// Design-space metrics. The canvas design resolution is 1920x1080 and the
+// whole panel scales with the screen, so these are authored once, here.
+constexpr f32 kPanelWidth  = 620.0f;
+constexpr f32 kPanelMaxH   = 760.0f;
+constexpr f32 kTitleH      = 56.0f;
+constexpr f32 kFooterH     = 58.0f;
+constexpr f32 kPad         = 14.0f;
+constexpr f32 kRowSpacing  = 6.0f;
+constexpr f32 kRowH        = 32.0f;
+constexpr f32 kHeadingH    = 38.0f;
+constexpr f32 kSpacerH     = 10.0f;
+constexpr f32 kLabelRight  = 0.46f;   // label occupies the left of a row
+constexpr f32 kCtrlLeft    = 0.49f;   // control takes the rest
+
+f32 RowHeight(const OptionRow& row) {
+    switch (row.kind) {
+        case OptionRow::Kind::Heading: return kHeadingH;
+        case OptionRow::Kind::Spacer:  return kSpacerH;
+        default:                       return kRowH;
+    }
+}
+
+// A row box: full width of the list, fixed height. The VStack assigns the Y;
+// these anchors are only what give the row its height for it to stack by.
+void SetRowBox(UIElement* e, f32 height) {
+    e->anchor.anchorMin  = Math::Vector2(0.0f, 0.0f);
+    e->anchor.anchorMax  = Math::Vector2(1.0f, 0.0f);
+    e->anchor.offsetLeft = 0.0f;  e->anchor.offsetRight  = 0.0f;
+    e->anchor.offsetTop  = 0.0f;  e->anchor.offsetBottom = height;
+}
+
+// A horizontal band inside a row, vertically centred.
+void SetBand(UIElement* e, f32 fracLeft, f32 fracRight, f32 height) {
+    e->anchor.anchorMin  = Math::Vector2(fracLeft, 0.5f);
+    e->anchor.anchorMax  = Math::Vector2(fracRight, 0.5f);
+    e->anchor.offsetLeft = 0.0f;  e->anchor.offsetRight  = 0.0f;
+    e->anchor.offsetTop  = -height * 0.5f;
+    e->anchor.offsetBottom = height * 0.5f;
+}
+
+std::string RowName(const OptionRow& row, usize index) {
+    if (!row.name.empty()) return row.name;
+    if (!row.label.empty()) return row.label;
+    return "Row" + std::to_string(index);
+}
+
+} // namespace
+
+OptionsMenuSpec DefaultOptionsMenuSpec() {
+    OptionsMenuSpec spec;
+
+    // Every label here is the one the desktop menu already ships, and every
+    // default is the field's real default from RuntimeAccessibilitySettings --
+    // a menu that opens showing invented values is worse than one that opens
+    // showing none.
+    spec.rows = {
+        Options::Heading("Audio"),
+        Options::Slider("Master Volume", "options_master_volume", 0.8f),
+        Options::Slider("SFX Volume",    "options_sfx_volume",    1.0f),
+        Options::Slider("Music Volume",  "options_music_volume",  1.0f),
+
+        Options::Heading("Display"),
+        Options::Checkbox("Fullscreen", "options_fullscreen", false),
+        // Field of View and Render Scale carry a 0..1 fraction rather than
+        // their real units, because that is what the runtimes already map:
+        // 40..120 degrees and 0.5..1.0 scale respectively.
+        Options::Slider("Field of View", "options_fov",          0.375f),
+        Options::Slider("Render Scale",  "options_render_scale", 1.0f),
+        Options::Checkbox("Shadows", "options_shadows", true),
+
+        Options::Heading("Vision"),
+        Options::Dropdown("Colorblind Mode", "options_colorblind", {
+            "Off",
+            "Protanopia (no red)", "Deuteranopia (no green)", "Tritanopia (no blue)",
+            "Protanomaly (weak red)", "Deuteranomaly (weak green)", "Tritanomaly (weak blue)",
+            "Achromatopsia (no color)", "Achromatomaly (weak color)"
+        }, 0),
+        Options::Slider("Correction Strength", "options_colorblind_strength", 1.0f, 0.0f, 1.0f),
+        Options::Slider("Brightness", "options_brightness", 0.0f, -0.5f, 0.5f),
+        Options::Slider("Contrast",   "options_contrast",   1.0f,  0.5f, 2.0f),
+        Options::Slider("UI Font Scale", "options_font_scale", 1.0f, 0.5f, 3.0f),
+
+        Options::Heading("Text & Reading"),
+        Options::Checkbox("Dyslexia-Friendly Font", "options_dyslexia", false),
+        Options::Slider("Letter Spacing", "options_letter_spacing", 0.0f, 0.0f,  8.0f),
+        Options::Slider("Word Spacing",   "options_word_spacing",   0.0f, 0.0f, 16.0f),
+        Options::Slider("Line Spacing",   "options_line_spacing",   1.0f, 1.0f,  3.0f),
+        Options::Checkbox("Subtitles", "options_subtitles", false),
+        Options::Checkbox("Speaker Names", "options_subtitle_speakers", true),
+        Options::Checkbox("Closed Captions (sound effects)", "options_closed_captions", false),
+        Options::Checkbox("Direction Indicators", "options_subtitle_directions", false),
+        Options::Slider("Subtitle Size", "options_subtitle_size", 24.0f, 16.0f, 48.0f),
+        Options::Slider("Background Opacity", "options_subtitle_bg_opacity", 0.7f, 0.0f, 1.0f),
+
+        Options::Heading("Motion"),
+        Options::Checkbox("Reduced Motion", "options_reduced_motion", false),
+        Options::Checkbox("Disable Screen Shake", "options_disable_screen_shake", false),
+        Options::Checkbox("Disable FOV Effects", "options_disable_fov_effects", false),
+        Options::Checkbox("Disable Flashing Lights", "options_disable_flashing", false),
+
+        Options::Heading("Motor"),
+        Options::Checkbox("Dwell Click (hover to click)", "options_dwell_click", false),
+        Options::Slider("Dwell Time", "options_dwell_time", 1.0f, 0.3f, 3.0f),
+        Options::Checkbox("Switch Access (one-button scanning)", "options_switch_access", false),
+        Options::Slider("Scan Speed", "options_scan_speed", 1.5f, 0.5f, 5.0f),
+        Options::Checkbox("Gaze / Head Pointing (dwell to select)", "options_gaze", false),
+        Options::Slider("Gaze Dwell Time", "options_gaze_dwell_time", 1.0f, 0.3f, 3.0f),
+        Options::Slider("Gaze Smoothing",  "options_gaze_smoothing",  0.3f, 0.0f, 0.9f),
+        Options::Slider("Gaze Dead Zone",  "options_gaze_dead_zone",  5.0f, 0.0f, 40.0f),
+        Options::Checkbox("Show Gaze Indicator", "options_gaze_indicator", true),
+        Options::Checkbox("Sticky Slider Drag", "options_sticky_drag", false),
+        Options::Button("Left Hand Only",  "options_preset_left_hand"),
+        Options::Button("Right Hand Only", "options_preset_right_hand"),
+        Options::Button("Gamepad Only",    "options_preset_gamepad"),
+        Options::Button("Reset Controls to Default", "options_reset_controls"),
+
+        Options::Heading("Audio & Communication"),
+        Options::Checkbox("Screen Reader / Announcements", "options_screen_reader", false),
+        Options::Checkbox("Visual Sound Indicators", "options_audio_indicators", false),
+    };
+
+    return spec;
+}
+
+UICanvasComponent CreateOptionsMenu(const OptionsMenuSpec& spec) {
     UICanvasComponent canvas;
     canvas.canvasName = "OptionsMenu";
     canvas.sortOrder = 210;
     canvas.theme = UITheme::Dark();
+
+    // Measured before anything is placed: a short custom menu gets a short
+    // panel instead of a mostly empty box, and a long one stops growing and
+    // scrolls instead of running off the screen.
+    f32 contentH = 0.0f;
+    for (const OptionRow& row : spec.rows) contentH += RowHeight(row) + kRowSpacing;
+    if (contentH > 0.0f) contentH -= kRowSpacing;
+
+    const bool hasFooter = !spec.backEvent.empty();
+    const f32 chromeH = kTitleH + (hasFooter ? kFooterH : 0.0f) + kPad * 2.0f;
+    const f32 panelH  = std::min(kPanelMaxH, chromeH + contentH);
+    const f32 listH   = std::max(0.0f, panelH - chromeH);
 
     // Semi-transparent overlay
     u32 overlay = canvas.AddElement(UIWidgetType::Panel, "Overlay");
@@ -151,6 +351,7 @@ UICanvasComponent CreateOptionsMenu() {
         o->style.bgColor = Math::Vector3(0.0f, 0.0f, 0.0f);
         o->style.bgAlpha = 0.60f;
         o->style.borderWidth = 0.0f;
+        o->focusable = false;
     }
 
     // Options panel
@@ -159,255 +360,206 @@ UICanvasComponent CreateOptionsMenu() {
         auto* p = canvas.GetElement(panel);
         p->anchor.anchorMin = Math::Vector2(0.5f, 0.5f);
         p->anchor.anchorMax = Math::Vector2(0.5f, 0.5f);
-        p->anchor.offsetLeft = -250.0f; p->anchor.offsetRight = 250.0f;
-        p->anchor.offsetTop = -280.0f;  p->anchor.offsetBottom = 280.0f;
+        // Unity-style anchors: edge = anchor*parent + offset, so a centered
+        // box is -half / +half. Writing +half / -half yields negative width.
+        p->anchor.offsetLeft = -kPanelWidth * 0.5f; p->anchor.offsetRight  = kPanelWidth * 0.5f;
+        p->anchor.offsetTop  = -panelH * 0.5f;      p->anchor.offsetBottom = panelH * 0.5f;
         p->style.bgColor = Math::Vector3(0.10f, 0.10f, 0.14f);
         p->style.bgAlpha = 0.95f;
         p->style.borderRadius = 8.0f;
+        p->focusable = false;
     }
 
-    // "Options" title
+    // Title
     u32 title = canvas.AddElement(UIWidgetType::Label, "Title", panel);
     {
         auto* t = canvas.GetElement(title);
-        t->anchor.anchorMin = Math::Vector2(0.5f, 0.05f);
-        t->anchor.anchorMax = Math::Vector2(0.5f, 0.05f);
-        t->anchor.offsetLeft = -100.0f; t->anchor.offsetRight = 100.0f;
-        t->anchor.offsetTop = -16.0f;   t->anchor.offsetBottom = 16.0f;
-        t->data.text = "Options";
+        t->anchor.anchorMin = Math::Vector2(0.0f, 0.0f);
+        t->anchor.anchorMax = Math::Vector2(1.0f, 0.0f);
+        t->anchor.offsetLeft = 0.0f; t->anchor.offsetRight = 0.0f;
+        t->anchor.offsetTop  = kPad; t->anchor.offsetBottom = kPad + kTitleH;
+        t->data.text = spec.title;
         t->data.textAlignH = 1;
         t->style.fontSize = 28.0f;
+        t->focusable = false;
     }
 
-    // Master Volume label + slider
-    u32 volLabel = canvas.AddElement(UIWidgetType::Label, "VolumeLabel", panel);
+    // The scrolling list. Its VStack gives every row its Y, so a row's own
+    // anchors only have to say how tall it is.
+    u32 list = canvas.AddElement(UIWidgetType::ScrollArea, "OptionList", panel);
     {
-        auto* l = canvas.GetElement(volLabel);
-        l->anchor.anchorMin = Math::Vector2(0.05f, 0.18f);
-        l->anchor.anchorMax = Math::Vector2(0.35f, 0.18f);
-        l->anchor.offsetLeft = 0; l->anchor.offsetRight = 0;
-        l->anchor.offsetTop = -10.0f; l->anchor.offsetBottom = 10.0f;
-        l->data.text = "Master Volume";
-        l->data.textAlignH = 0;
-    }
-    u32 volSlider = canvas.AddElement(UIWidgetType::Slider, "VolumeSlider", panel);
-    {
-        auto* s = canvas.GetElement(volSlider);
-        s->anchor.anchorMin = Math::Vector2(0.38f, 0.18f);
-        s->anchor.anchorMax = Math::Vector2(0.92f, 0.18f);
-        s->anchor.offsetLeft = 0; s->anchor.offsetRight = 0;
-        s->anchor.offsetTop = -12.0f; s->anchor.offsetBottom = 12.0f;
-        s->data.sliderValue = 0.8f;
-        s->onValueChangedEvent = "options_master_volume";
+        auto* s = canvas.GetElement(list);
+        s->anchor.anchorMin = Math::Vector2(0.0f, 0.0f);
+        s->anchor.anchorMax = Math::Vector2(1.0f, 0.0f);
+        s->anchor.offsetLeft = kPad; s->anchor.offsetRight = -kPad;
+        s->anchor.offsetTop  = kPad + kTitleH;
+        s->anchor.offsetBottom = kPad + kTitleH + listH;
+        s->style.bgAlpha = 0.0f;
+        s->style.borderWidth = 0.0f;
+        s->layoutMode    = UILayoutMode::VStack;
+        s->layoutSpacing = kRowSpacing;
+        s->layoutPaddingX = 6.0f;
+        s->layoutPaddingY = 2.0f;
+        s->layoutAlign   = UILayoutAlign::Stretch;
+        s->focusable = false;
     }
 
-    // SFX Volume label + slider
-    u32 sfxLabel = canvas.AddElement(UIWidgetType::Label, "SFXLabel", panel);
-    {
-        auto* l = canvas.GetElement(sfxLabel);
-        l->anchor.anchorMin = Math::Vector2(0.05f, 0.30f);
-        l->anchor.anchorMax = Math::Vector2(0.35f, 0.30f);
-        l->anchor.offsetLeft = 0; l->anchor.offsetRight = 0;
-        l->anchor.offsetTop = -10.0f; l->anchor.offsetBottom = 10.0f;
-        l->data.text = "SFX Volume";
-        l->data.textAlignH = 0;
-    }
-    u32 sfxSlider = canvas.AddElement(UIWidgetType::Slider, "SFXSlider", panel);
-    {
-        auto* s = canvas.GetElement(sfxSlider);
-        s->anchor.anchorMin = Math::Vector2(0.38f, 0.30f);
-        s->anchor.anchorMax = Math::Vector2(0.92f, 0.30f);
-        s->anchor.offsetLeft = 0; s->anchor.offsetRight = 0;
-        s->anchor.offsetTop = -12.0f; s->anchor.offsetBottom = 12.0f;
-        s->data.sliderValue = 1.0f;
-        s->onValueChangedEvent = "options_sfx_volume";
+    for (usize i = 0; i < spec.rows.size(); ++i) {
+        const OptionRow& row = spec.rows[i];
+        const std::string name = RowName(row, i);
+        const f32 height = RowHeight(row);
+
+        switch (row.kind) {
+            case OptionRow::Kind::Spacer: {
+                u32 id = canvas.AddElement(UIWidgetType::Panel, name.empty() ? "Spacer" : name, list);
+                auto* e = canvas.GetElement(id);
+                SetRowBox(e, height);
+                e->style.bgAlpha = 0.0f;
+                e->style.borderWidth = 0.0f;
+                e->focusable = false;
+                break;
+            }
+            case OptionRow::Kind::Heading: {
+                u32 id = canvas.AddElement(UIWidgetType::Label, name, list);
+                auto* e = canvas.GetElement(id);
+                SetRowBox(e, height);
+                e->data.text = row.label;
+                e->data.textAlignH = 0;
+                e->data.textAlignV = 2;
+                e->style.fontSize = 19.0f;
+                e->focusable = false;
+                break;
+            }
+            case OptionRow::Kind::Checkbox: {
+                // A checkbox draws its own label, so it is the whole row.
+                u32 id = canvas.AddElement(UIWidgetType::Checkbox, name, list);
+                auto* e = canvas.GetElement(id);
+                SetRowBox(e, height);
+                e->data.text = row.label;
+                e->data.checked = row.checked;
+                e->onValueChangedEvent = row.event;
+                e->accessibleLabel = row.label;
+                break;
+            }
+            case OptionRow::Kind::Button: {
+                u32 id = canvas.AddElement(UIWidgetType::Button, name, list);
+                auto* e = canvas.GetElement(id);
+                SetRowBox(e, height);
+                e->data.text = row.label;
+                e->onClickEvent = row.event;
+                e->accessibleLabel = row.label;
+                break;
+            }
+            case OptionRow::Kind::Slider:
+            case OptionRow::Kind::Dropdown: {
+                // Label on the left, control on the right, inside a transparent
+                // row. This is the nesting that used to be impossible: the row
+                // sits four deep and rendering stopped at three.
+                u32 rowId = canvas.AddElement(UIWidgetType::Panel, name + "Row", list);
+                {
+                    auto* e = canvas.GetElement(rowId);
+                    SetRowBox(e, height);
+                    e->style.bgAlpha = 0.0f;
+                    e->style.borderWidth = 0.0f;
+                    e->focusable = false;
+                }
+
+                u32 labelId = canvas.AddElement(UIWidgetType::Label, name + "Label", rowId);
+                {
+                    auto* e = canvas.GetElement(labelId);
+                    SetBand(e, 0.0f, kLabelRight, height);
+                    e->data.text = row.label;
+                    e->data.textAlignH = 0;
+                    e->focusable = false;
+                }
+
+                if (row.kind == OptionRow::Kind::Slider) {
+                    u32 id = canvas.AddElement(UIWidgetType::Slider, name, rowId);
+                    auto* e = canvas.GetElement(id);
+                    SetBand(e, kCtrlLeft, 1.0f, height - 8.0f);
+                    e->data.sliderMin = row.minValue;
+                    e->data.sliderMax = row.maxValue;
+                    e->data.sliderValue = row.value;
+                    e->onValueChangedEvent = row.event;
+                    e->accessibleLabel = row.label;
+                } else {
+                    u32 id = canvas.AddElement(UIWidgetType::Dropdown, name, rowId);
+                    auto* e = canvas.GetElement(id);
+                    SetBand(e, kCtrlLeft, 1.0f, height - 4.0f);
+                    e->data.options = row.options;
+                    e->data.selectedOption = row.selected;
+                    e->onValueChangedEvent = row.event;
+                    e->accessibleLabel = row.label;
+                }
+                break;
+            }
+        }
     }
 
-    // Music Volume label + slider (desktop-menu parity; web routes it to the
-    // Music channel like SFX)
-    u32 musicLabel = canvas.AddElement(UIWidgetType::Label, "MusicLabel", panel);
-    {
-        auto* l = canvas.GetElement(musicLabel);
-        l->anchor.anchorMin = Math::Vector2(0.05f, 0.375f);
-        l->anchor.anchorMax = Math::Vector2(0.35f, 0.375f);
-        l->anchor.offsetLeft = 0; l->anchor.offsetRight = 0;
-        l->anchor.offsetTop = -10.0f; l->anchor.offsetBottom = 10.0f;
-        l->data.text = "Music Volume";
-        l->data.textAlignH = 0;
+    // Back button, pinned below the list rather than scrolling with it, so the
+    // way out of the menu is always on screen.
+    if (hasFooter) {
+        u32 back = canvas.AddElement(UIWidgetType::Button, "Back", panel);
+        auto* b = canvas.GetElement(back);
+        b->anchor.anchorMin = Math::Vector2(0.5f, 1.0f);
+        b->anchor.anchorMax = Math::Vector2(0.5f, 1.0f);
+        b->anchor.offsetLeft = -80.0f; b->anchor.offsetRight  = 80.0f;
+        b->anchor.offsetTop  = -kPad - 38.0f; b->anchor.offsetBottom = -kPad;
+        b->data.text = spec.backLabel;
+        b->onClickEvent = spec.backEvent;
+        b->accessibleLabel = spec.backLabel;
     }
-    u32 musicSlider = canvas.AddElement(UIWidgetType::Slider, "MusicSlider", panel);
-    {
-        auto* s = canvas.GetElement(musicSlider);
-        s->anchor.anchorMin = Math::Vector2(0.38f, 0.375f);
-        s->anchor.anchorMax = Math::Vector2(0.92f, 0.375f);
-        s->anchor.offsetLeft = 0; s->anchor.offsetRight = 0;
-        s->anchor.offsetTop = -12.0f; s->anchor.offsetBottom = 12.0f;
-        s->data.sliderValue = 1.0f;
-        s->onValueChangedEvent = "options_music_volume";
-    }
-
-    // Fullscreen checkbox
-    u32 fullscreenCheck = canvas.AddElement(UIWidgetType::Checkbox, "Fullscreen", panel);
-    {
-        auto* c = canvas.GetElement(fullscreenCheck);
-        c->anchor.anchorMin = Math::Vector2(0.05f, 0.45f);
-        c->anchor.anchorMax = Math::Vector2(0.5f, 0.45f);
-        c->anchor.offsetLeft = 0; c->anchor.offsetRight = 0;
-        c->anchor.offsetTop = -12.0f; c->anchor.offsetBottom = 12.0f;
-        c->data.text = "Fullscreen";
-        c->data.checked = false;
-        c->onValueChangedEvent = "options_fullscreen";
-    }
-
-    // Field of View label + slider (desktop-menu parity; 40..120 degrees,
-    // slider stores the normalized fraction)
-    u32 fovLabel = canvas.AddElement(UIWidgetType::Label, "FOVLabel", panel);
-    {
-        auto* l = canvas.GetElement(fovLabel);
-        l->anchor.anchorMin = Math::Vector2(0.05f, 0.505f);
-        l->anchor.anchorMax = Math::Vector2(0.35f, 0.505f);
-        l->anchor.offsetLeft = 0; l->anchor.offsetRight = 0;
-        l->anchor.offsetTop = -10.0f; l->anchor.offsetBottom = 10.0f;
-        l->data.text = "Field of View";
-        l->data.textAlignH = 0;
-    }
-    u32 fovSlider = canvas.AddElement(UIWidgetType::Slider, "FOVSlider", panel);
-    {
-        auto* s = canvas.GetElement(fovSlider);
-        s->anchor.anchorMin = Math::Vector2(0.38f, 0.505f);
-        s->anchor.anchorMax = Math::Vector2(0.92f, 0.505f);
-        s->anchor.offsetLeft = 0; s->anchor.offsetRight = 0;
-        s->anchor.offsetTop = -12.0f; s->anchor.offsetBottom = 12.0f;
-        s->data.sliderValue = 0.375f;   // (70 - 40) / 80 degrees
-        s->onValueChangedEvent = "options_fov";
-    }
-
-    // Render Scale label + slider. The scene renders below screen resolution
-    // and the post-process pass resolves it back up, which is the single
-    // biggest thing a player on a weak GPU or a dense phone screen can change.
-    // Slider fraction 0..1 maps to 0.5..1.0; 1.0 is native.
-    u32 scaleLabel = canvas.AddElement(UIWidgetType::Label, "RenderScaleLabel", panel);
-    {
-        auto* l = canvas.GetElement(scaleLabel);
-        l->anchor.anchorMin = Math::Vector2(0.05f, 0.55f);
-        l->anchor.anchorMax = Math::Vector2(0.35f, 0.55f);
-        l->anchor.offsetLeft = 0; l->anchor.offsetRight = 0;
-        l->anchor.offsetTop = -10.0f; l->anchor.offsetBottom = 10.0f;
-        l->data.text = "Render Scale";
-        l->data.textAlignH = 0;
-    }
-    u32 scaleSlider = canvas.AddElement(UIWidgetType::Slider, "RenderScaleSlider", panel);
-    {
-        auto* s = canvas.GetElement(scaleSlider);
-        s->anchor.anchorMin = Math::Vector2(0.38f, 0.55f);
-        s->anchor.anchorMax = Math::Vector2(0.92f, 0.55f);
-        s->anchor.offsetLeft = 0; s->anchor.offsetRight = 0;
-        s->anchor.offsetTop = -12.0f; s->anchor.offsetBottom = 12.0f;
-        s->data.sliderValue = 1.0f;     // native
-        s->onValueChangedEvent = "options_render_scale";
-    }
-
-    // Shadows toggle
-    u32 shadowsToggle = canvas.AddElement(UIWidgetType::Toggle, "Shadows", panel);
-    {
-        auto* t = canvas.GetElement(shadowsToggle);
-        t->anchor.anchorMin = Math::Vector2(0.05f, 0.65f);
-        t->anchor.anchorMax = Math::Vector2(0.5f, 0.65f);
-        t->anchor.offsetLeft = 0; t->anchor.offsetRight = 0;
-        t->anchor.offsetTop = -12.0f; t->anchor.offsetBottom = 12.0f;
-        t->data.text = "Shadows";
-        t->data.checked = true;
-        t->onValueChangedEvent = "options_shadows";
-    }
-
-    // --- Accessibility section -------------------------------------------------
-    u32 a11yLabel = canvas.AddElement(UIWidgetType::Label, "AccessLabel", panel);
-    {
-        auto* l = canvas.GetElement(a11yLabel);
-        l->anchor.anchorMin = Math::Vector2(0.05f, 0.71f);
-        l->anchor.anchorMax = Math::Vector2(0.5f, 0.71f);
-        l->anchor.offsetLeft = 0; l->anchor.offsetRight = 0;
-        l->anchor.offsetTop = -12.0f; l->anchor.offsetBottom = 12.0f;
-        l->data.text = "Accessibility";
-        l->data.textAlignH = 0;
-        l->style.fontSize = 18.0f;
-    }
-    // Reduced Motion (left) + Subtitles (right)
-    u32 reducedMotion = canvas.AddElement(UIWidgetType::Checkbox, "ReducedMotion", panel);
-    {
-        auto* c = canvas.GetElement(reducedMotion);
-        c->anchor.anchorMin = Math::Vector2(0.05f, 0.77f);
-        c->anchor.anchorMax = Math::Vector2(0.48f, 0.77f);
-        c->anchor.offsetLeft = 0; c->anchor.offsetRight = 0;
-        c->anchor.offsetTop = -12.0f; c->anchor.offsetBottom = 12.0f;
-        c->data.text = "Reduced Motion";
-        c->data.checked = false;
-        c->onValueChangedEvent = "options_reduced_motion";
-    }
-    u32 subtitlesChk = canvas.AddElement(UIWidgetType::Checkbox, "Subtitles", panel);
-    {
-        auto* c = canvas.GetElement(subtitlesChk);
-        c->anchor.anchorMin = Math::Vector2(0.52f, 0.77f);
-        c->anchor.anchorMax = Math::Vector2(0.95f, 0.77f);
-        c->anchor.offsetLeft = 0; c->anchor.offsetRight = 0;
-        c->anchor.offsetTop = -12.0f; c->anchor.offsetBottom = 12.0f;
-        c->data.text = "Subtitles";
-        c->data.checked = false;
-        c->onValueChangedEvent = "options_subtitles";
-    }
-    // Dyslexia Font (left)
-    u32 dyslexiaChk = canvas.AddElement(UIWidgetType::Checkbox, "DyslexiaFont", panel);
-    {
-        auto* c = canvas.GetElement(dyslexiaChk);
-        c->anchor.anchorMin = Math::Vector2(0.05f, 0.83f);
-        c->anchor.anchorMax = Math::Vector2(0.48f, 0.83f);
-        c->anchor.offsetLeft = 0; c->anchor.offsetRight = 0;
-        c->anchor.offsetTop = -12.0f; c->anchor.offsetBottom = 12.0f;
-        c->data.text = "Dyslexia Font";
-        c->data.checked = false;
-        c->onValueChangedEvent = "options_dyslexia";
-    }
-    // Colorblind mode label + slider (0 = Off .. 8 modes)
-    u32 cbLabel = canvas.AddElement(UIWidgetType::Label, "ColorblindLabel", panel);
-    {
-        auto* l = canvas.GetElement(cbLabel);
-        l->anchor.anchorMin = Math::Vector2(0.05f, 0.89f);
-        l->anchor.anchorMax = Math::Vector2(0.35f, 0.89f);
-        l->anchor.offsetLeft = 0; l->anchor.offsetRight = 0;
-        l->anchor.offsetTop = -10.0f; l->anchor.offsetBottom = 10.0f;
-        l->data.text = "Colorblind";
-        l->data.textAlignH = 0;
-    }
-    u32 cbSlider = canvas.AddElement(UIWidgetType::Slider, "ColorblindSlider", panel);
-    {
-        auto* s = canvas.GetElement(cbSlider);
-        s->anchor.anchorMin = Math::Vector2(0.38f, 0.89f);
-        s->anchor.anchorMax = Math::Vector2(0.92f, 0.89f);
-        s->anchor.offsetLeft = 0; s->anchor.offsetRight = 0;
-        s->anchor.offsetTop = -12.0f; s->anchor.offsetBottom = 12.0f;
-        s->data.sliderValue = 0.0f;
-        s->onValueChangedEvent = "options_colorblind";
-    }
-
-    // Back button
-    u32 backBtn = canvas.AddElement(UIWidgetType::Button, "Back", panel);
-    {
-        auto* b = canvas.GetElement(backBtn);
-        b->anchor.anchorMin = Math::Vector2(0.3f, 0.95f);
-        b->anchor.anchorMax = Math::Vector2(0.7f, 0.95f);
-        b->anchor.offsetLeft = 0.0f; b->anchor.offsetRight = 0.0f;
-        b->anchor.offsetTop = -20.0f; b->anchor.offsetBottom = 20.0f;
-        b->data.text = "Back";
-        b->onClickEvent = "options_back";
-    }
-
-    // Suppress unused variable warnings
-    (void)volLabel; (void)sfxLabel; (void)fullscreenCheck;
-    (void)scaleLabel; (void)scaleSlider; (void)shadowsToggle;
-    (void)a11yLabel; (void)reducedMotion; (void)subtitlesChk;
-    (void)dyslexiaChk; (void)cbLabel; (void)cbSlider;
 
     return canvas;
+}
+
+UICanvasComponent CreateOptionsMenu() {
+    return CreateOptionsMenu(DefaultOptionsMenuSpec());
+}
+
+// --- Reading current values back into a built menu ---------------------------
+//
+// A canvas is built once and shown many times, while the values it displays
+// live in the runtime and change behind it (a script, a loaded settings file,
+// another menu). Without this a returning player opens the menu and sees the
+// factory defaults rather than the settings the game is actually running, and
+// every control lies about its own state.
+//
+// Elements are addressed by the event they dispatch, because that is the name
+// the runtime already knows -- it wired a handler to it.
+
+namespace {
+
+UIElement* FindByEvent(UICanvasComponent& canvas, const std::string& event) {
+    if (event.empty()) return nullptr;
+    for (UIElement& e : canvas.elements) {
+        if (e.onValueChangedEvent == event || e.onClickEvent == event) return &e;
+    }
+    return nullptr;
+}
+
+} // namespace
+
+bool SetOptionValue(UICanvasComponent& canvas, const std::string& event, f32 value) {
+    UIElement* e = FindByEvent(canvas, event);
+    if (!e || e->type != UIWidgetType::Slider) return false;
+    e->data.sliderValue = std::max(e->data.sliderMin, std::min(e->data.sliderMax, value));
+    return true;
+}
+
+bool SetOptionChecked(UICanvasComponent& canvas, const std::string& event, bool checked) {
+    UIElement* e = FindByEvent(canvas, event);
+    if (!e || (e->type != UIWidgetType::Checkbox && e->type != UIWidgetType::Toggle)) return false;
+    e->data.checked = checked;
+    return true;
+}
+
+bool SetOptionSelected(UICanvasComponent& canvas, const std::string& event, i32 selected) {
+    UIElement* e = FindByEvent(canvas, event);
+    if (!e || e->type != UIWidgetType::Dropdown) return false;
+    if (e->data.options.empty()) return false;
+    e->data.selectedOption = std::max(0, std::min(static_cast<i32>(e->data.options.size()) - 1, selected));
+    return true;
 }
 
 UICanvasComponent CreateGameOverScreen(bool won, const std::string& message, bool allowRestart) {

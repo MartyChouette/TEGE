@@ -1,4 +1,5 @@
 #include "Enjin/Editor/UndoRedo.h"
+#include "Enjin/ECS/MeshEdit.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Terrain.h"
@@ -450,6 +451,40 @@ void TerrainSculptCommand::Undo() {
     terrain->heightmap = m_OldHeightmap;
     terrain->splatmap = m_OldSplatmap;
     terrain->meshDirty = true;
+}
+
+// ============================================================================
+// MeshEditCommand
+// ============================================================================
+
+void MeshEditCommand::Apply(const std::vector<ECS::Vertex>& vertices,
+                            const std::vector<u32>& indices,
+                            const std::vector<ECS::MeshComponent::SubMesh>& subMeshes) {
+    if (!m_World) return;
+    auto* mesh = m_World->GetComponent<ECS::MeshComponent>(m_Entity);
+    if (!mesh) return;
+
+    const bool topologyChanged = mesh->vertices.size() != vertices.size() ||
+                                 mesh->indices.size()  != indices.size();
+
+    mesh->vertices  = vertices;
+    mesh->indices   = indices;
+    mesh->subMeshes = subMeshes;
+    mesh->aabbDirty = true;
+
+    // Without this the undo restores the data and the screen keeps drawing the
+    // decimated version, because the GPU buffers were built once and nothing
+    // else would ask for them again.
+    ECS::MarkMeshChanged(*m_World, m_Entity, ECS::ProceduralMeshComponent::Source::Edited,
+                         topologyChanged);
+}
+
+void MeshEditCommand::Execute() {
+    Apply(m_NewVertices, m_NewIndices, m_NewSubMeshes);
+}
+
+void MeshEditCommand::Undo() {
+    Apply(m_OldVertices, m_OldIndices, m_OldSubMeshes);
 }
 
 // ============================================================================

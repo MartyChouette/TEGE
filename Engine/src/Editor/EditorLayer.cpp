@@ -1871,6 +1871,12 @@ void EditorLayer::Update(f32 deltaTime) {
             }
         }
 
+        // Creative mode (Ctrl+B) -- one key to the build surface and one key
+        // back, so trying it never costs a trip through a menu.
+        if (Input::IsKeyDown(KeyCode::LeftControl) && Input::IsKeyPressed(KeyCode::B)) {
+            m_Creative.SetActive(!m_Creative.IsActive());
+        }
+
         // Save scene (Ctrl+S)
         if (Input::IsKeyDown(KeyCode::LeftControl) && Input::IsKeyPressed(KeyCode::S)) {
             if (!m_CurrentScenePath.empty()) {
@@ -2221,6 +2227,7 @@ void EditorLayer::Update(f32 deltaTime) {
     if (m_CreativeTool != CreativeTool::None && m_PlayMode.IsStopped()) {
         HandleCreativePlacement(deltaTime);
     }
+
 
     // Deactivate UI edit mode when entering play mode
     if (!m_PlayMode.IsStopped() && m_UIEditMode) {
@@ -3775,6 +3782,10 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         }
     }
 
+    // A canvas may have asked for a typeface the atlas does not hold yet. Done
+    // before the frame opens, because it waits for in-flight frames and clears
+    // the atlas. No-op unless something new was actually requested.
+    m_ImGuiLayer->RebuildFontsIfNeeded();
     m_ImGuiLayer->BeginFrame();
 
     // Initialize ImGuizmo for this frame
@@ -3922,6 +3933,10 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     ImGui::DockSpace(dockspaceId, ImVec2(0, 0), ImGuiDockNodeFlags_None);
     ImGui::End();
 
+    // Creative mode draws before the docked panels so its surface is the
+    // leftmost thing on screen and the dockspace lays out beside it.
+    DrawCreativeSurface();
+
     // --- Core docked panels (positions managed by DockSpace) ---
     if (HasPanel(m_VisiblePanels, EditorPanel::Hierarchy)) {
         DrawHierarchyPanel();
@@ -3978,6 +3993,12 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     // PostProcessing and RetroEffects panels are now in the unified Settings window
     if (HasPanel(m_VisiblePanels, EditorPanel::Viewport)) {
         DrawViewportPanel();
+        // Creative mode's brush tools. This MUST run inside the ImGui frame:
+        // it hit-tests the mouse and draws a drag preview into the foreground
+        // draw list, and outside a frame that list has no font bound, so the
+        // first preview draw dereferences a null ImFont. It also has to come
+        // after the viewport panel, which is what sets the hover flag it reads.
+        HandleBuildDrag();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::GameView)) {
         DrawGameViewPanel();

@@ -100,6 +100,7 @@ extern char** environ;
 #include "Enjin/Renderer/PostProcessing.h"
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Platform/FileDialog.h"
+#include "Enjin/GUI/UIFontRegistry.h"
 #include "Enjin/ECS/Components/GaussianSplat.h"
 #include "Enjin/Assets/Prefab.h"
 #include "Enjin/Build/BuildPipeline.h"
@@ -368,6 +369,49 @@ void EditorLayer::DrawMeshComponent(ECS::Entity entity) {
 
         ImGui::Text("Vertices: %zu", mesh->vertices.size());
         ImGui::Text("Indices: %zu", mesh->indices.size());
+
+        // Reduce this model.
+        //
+        // MeshSimplifier::Simplify has been public since LOD generation
+        // shipped, and nothing called it: the decimator only ever ran inside
+        // GenerateLODs, so the engine could halve a model's triangles and a
+        // person had no way to ask it to. That is the gap this closes -- it is
+        // the tool sitting next to the triangle count it changes, not a menu
+        // three levels deep.
+        if (mesh->IsValid()) {
+            const usize triCount = mesh->indices.size() / 3;
+            ImGui::Separator();
+            ImGui::TextUnformatted("Reduce");
+            ImGui::SetNextItemWidth(160.0f);
+            ImGui::SliderFloat("##simplifyratio", &m_MeshSimplifyRatio, 0.05f, 0.95f, "keep %.0f%%");
+            ImGui::SetItemTooltip("Fraction of the triangles to keep. The result replaces this mesh; Ctrl+Z puts it back.");
+
+            const usize target = static_cast<usize>(static_cast<f32>(triCount) * m_MeshSimplifyRatio);
+            ImGui::SameLine();
+            if (ImGui::Button("Simplify")) {
+                std::vector<ECS::Vertex>  oldVertices  = mesh->vertices;
+                std::vector<u32>          oldIndices   = mesh->indices;
+                std::vector<ECS::MeshComponent::SubMesh> oldSubMeshes = mesh->subMeshes;
+
+                ECS::MeshComponent reduced =
+                    Renderer::MeshSimplifier::Simplify(*mesh, m_MeshSimplifyRatio);
+
+                if (reduced.IsValid() && reduced.indices.size() < oldIndices.size()) {
+                    m_UndoRedo.Execute(std::make_unique<Editor::MeshEditCommand>(
+                        m_World, entity, "Simplify Mesh",
+                        std::move(oldVertices), std::move(oldIndices), std::move(oldSubMeshes),
+                        reduced.vertices, reduced.indices, reduced.subMeshes));
+                    MarkDirty();
+                    ENJIN_LOG_INFO(Editor, "Simplified mesh: %zu -> %zu triangles",
+                                   triCount, reduced.indices.size() / 3);
+                } else {
+                    // Say so rather than appearing to work. A mesh can refuse to
+                    // decimate further -- every remaining edge is a boundary.
+                    ENJIN_LOG_WARN(Editor, "Mesh could not be reduced below %zu triangles", triCount);
+                }
+            }
+            ImGui::TextDisabled("%zu triangles -> about %zu", triCount, target);
+        }
 
         // Mesh Info read-only panel
         if (mesh->IsValid() && ImGui::TreeNode("Mesh Info")) {
@@ -9387,6 +9431,44 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
                               [c = &theme.sliderTrack](f32 r, f32 g, f32 b) { c->x = r; c->y = g; c->z = b; });
         InspectorUndo::DragFloat(m_UndoRedo, "Border Radius", &theme.borderRadius, 0.5f, 0.0f, 20.0f);
         InspectorUndo::DragFloat(m_UndoRedo, "Border Width", &theme.borderWidth, 0.25f, 0.0f, 5.0f);
+        // The typeface this canvas draws in. Sizes have always been authorable
+        // here; the FACE was the one thing a game could not choose, so a game's
+        // HUD came out in whatever the editor was set to. Project-relative, and
+        // refused at load if it points outside the project.
+        {
+            char fontBuf[512];
+            const std::string& current = theme.fontPath;
+            std::snprintf(fontBuf, sizeof(fontBuf), "%s", current.c_str());
+            ImGui::SetNextItemWidth(240.0f);
+            InspectorUndo::InputText(m_UndoRedo, "Font", fontBuf, sizeof(fontBuf),
+                [t = &theme](const std::string& val) { t->fontPath = val; });
+            ImGui::SetItemTooltip("Project-relative .ttf/.otf, e.g. assets/fonts/Kenney Pixel.ttf. "
+                                  "Empty uses the default face. Affects this canvas only, not the editor.");
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Browse##CanvasFont")) {
+                const std::string picked = FileDialog::OpenFile("Select Font", {{ "Font Files", "*.ttf;*.otf" }});
+                if (!picked.empty()) {
+                    // Stored relative to the project, because an absolute path
+                    // would not survive the project moving, or shipping.
+                    std::error_code ec;
+                    const std::filesystem::path root =
+                        std::filesystem::path(GUI::UIFontRegistry::Get().GetRoot());
+                    std::filesystem::path rel =
+                        std::filesystem::relative(std::filesystem::path(picked), root, ec);
+                    const std::string value = (!ec && !rel.empty() && rel.native()[0] != '.')
+                                              ? rel.generic_string() : picked;
+                    m_UndoRedo.Execute(std::make_unique<Editor::PropertyEditCommand<std::string>>(
+                        "Font", theme.fontPath, value,
+                        [t = &theme](const std::string& v) { t->fontPath = v; }));
+                }
+            }
+            if (!current.empty() && !GUI::UIFontRegistry::Get().Find(current)) {
+                // Say it plainly. The alternative is a scene that silently
+                // renders in the wrong face and no indication why.
+                ImGui::TextColored(ImVec4(0.95f, 0.65f, 0.25f, 1.0f), "Font not loaded");
+                ImGui::SetItemTooltip("The file is missing, unreadable, or outside the project root.");
+            }
+        }
         InspectorUndo::DragFloat(m_UndoRedo, "Font Size Body", &theme.fontSizeBody, 0.5f, 8.0f, 48.0f);
         InspectorUndo::DragFloat(m_UndoRedo, "Font Size Heading", &theme.fontSizeHeading, 0.5f, 12.0f, 72.0f);
         InspectorUndo::DragFloat(m_UndoRedo, "BG Alpha", &theme.bgAlpha, 0.01f, 0.0f, 1.0f);

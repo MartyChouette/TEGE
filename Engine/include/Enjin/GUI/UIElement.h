@@ -73,6 +73,10 @@ struct UIStyleOverride {
     f32 borderRadius = -1.0f;
     f32 borderWidth  = -1.0f;
     f32 fontSize     = -1.0f;
+    // Typeface override, project-relative. Empty = inherit the canvas theme's,
+    // exactly as fontSize inherits theme.fontSizeBody. For the one readout that
+    // wants a different face from the rest of the HUD.
+    std::string fontPath;
     Math::Vector3 focusColor = Math::Vector3(-1, -1, -1); // -1 = use theme inputFocused
 
     bool HasBgColor()     const { return bgColor.x >= 0.0f; }
@@ -82,6 +86,7 @@ struct UIStyleOverride {
     bool HasBorderRadius() const { return borderRadius >= 0.0f; }
     bool HasBorderWidth() const { return borderWidth >= 0.0f; }
     bool HasFontSize()    const { return fontSize >= 0.0f; }
+    bool HasFontPath()    const { return !fontPath.empty(); }
     bool HasFocusColor()  const { return focusColor.x >= 0.0f; }
 
     NineSliceConfig nineSlice; // Empty = flat color fallback

@@ -199,7 +199,16 @@ private:
 
     // Render pass: draw all visible elements
     void RenderCanvas(const UICanvasComponent& canvas);
+    // The typeface an element draws in: its own override, else the canvas
+    // theme's, else none (the ambient font). Requests an unloaded face so the
+    // atlas owner can rebuild with it.
+    static ImFont* ResolveFace(const UIElement& element, const UICanvasComponent& canvas);
     void RenderElement(const UIElement& element, const UITheme& theme, u32 focusedId, const UICanvasComponent& canvas);
+    // Draws an element and everything under it, to any depth. Rendering used to
+    // be unrolled to exactly three levels (root, child, grandchild) and silently
+    // dropped anything deeper, which caps how deep an authored canvas can nest.
+    void RenderElementTree(const UIElement& element, const UITheme& theme, u32 focusedId,
+                           const UICanvasComponent& canvas, i32 depth);
 
     // Individual widget renderers
     void RenderPanel(const UIElement& element, const UITheme& theme);

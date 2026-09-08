@@ -32,6 +32,7 @@ static bool s_SimulateTouch = false;
 #include "Enjin/Input/MIDIInput.h"
 #include "Enjin/GUI/GameMenus.h"
 #include "Enjin/GUI/ImGuiLayer.h"
+#include "Enjin/GUI/UIFontRegistry.h"
 #include "Enjin/GUI/UITemplates.h"
 #include "Enjin/GUI/UISystem.h"
 #include "Enjin/ECS/Components/Gameplay.h"
@@ -148,6 +149,14 @@ public:
         std::string exeDir = Enjin::Platform::GetExecutableDirectory();
         std::string pakPath = (fs::path(exeDir) / "game.enjpak").string();
         std::string looseManifestPath = (fs::path(exeDir) / "game.manifest").string();
+
+        // Where a canvas's font path resolves from in a shipped game. The editor
+        // gets this from SceneManager::LoadProject, which a built game never
+        // calls -- it boots from game.manifest -- so without this every game
+        // font request is refused and the HUD silently falls back to the default
+        // face. BuildPipeline copies the whole assets/ tree next to the exe, so
+        // the same project-relative path the editor authored resolves here.
+        Enjin::GUI::UIFontRegistry::Get().SetRoot(exeDir);
 
         if (fs::exists(pakPath)) {
             // Packed mode — open .enjpak (try with default key, then empty key for PackedOpen)
@@ -1631,6 +1640,7 @@ public:
         // Render ImGui overlays (pause menu, dialogue)
         VkCommandBuffer cmd = m_Renderer->GetCurrentCommandBuffer();
         if (m_ImGuiLayer && cmd != VK_NULL_HANDLE) {
+            m_ImGuiLayer->RebuildFontsIfNeeded();
             m_ImGuiLayer->BeginFrame();
 
             // Pause menu (suppressed while the engine intro card is up so

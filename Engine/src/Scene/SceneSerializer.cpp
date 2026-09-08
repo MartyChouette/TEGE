@@ -7496,7 +7496,27 @@ json SerializeHUDWidgetComponent(const ECS::HUDWidgetComponent& h) {
 
 ECS::HUDWidgetComponent DeserializeHUDWidgetComponent(const json& j) {
     ECS::HUDWidgetComponent h;
-    if (j.contains("type")) { u8 v = j["type"].get<u8>(); if (v <= 5) h.type = static_cast<ECS::HUDWidgetComponent::WidgetType>(v); }
+    if (j.contains("type")) {
+        u8 v = j["type"].get<u8>();
+        if (v <= 5) {
+            h.type = static_cast<ECS::HUDWidgetComponent::WidgetType>(v);
+        } else {
+            // Out of range for HUDWidgetComponent::WidgetType. Almost always a
+            // value taken from GUI::UIWidgetType, which is a DIFFERENT enum with
+            // a different order that happens to agree on Label = 2. Silently
+            // keeping the default is how a widget ends up rendering nothing with
+            // no indication why.
+            //
+            // Note what this cannot catch: a value that is in range for BOTH
+            // enums and means different things in each -- 4 is ProgressBar in
+            // one and Crosshair in the other -- is indistinguishable from a
+            // correct value here. Only writing the type as a NAME rather than an
+            // ordinal would close that.
+            ENJIN_LOG_WARN(Asset, "hudWidget type %u is out of range (0-5); "
+                                  "keeping the default. UIWidgetType values are not "
+                                  "interchangeable with HUD widget types.", static_cast<unsigned>(v));
+        }
+    }
     if (j.contains("visible")) h.visible = JB(j["visible"]);
     if (j.contains("screenSpace")) h.screenSpace = JB(j["screenSpace"]);
     if (j.contains("anchorX")) h.anchorX = j["anchorX"].get<f32>();
@@ -7555,6 +7575,7 @@ json SerializeUIElement(const GUI::UIElement& e) {
     style["borderRadius"] = RF(e.style.borderRadius);
     style["borderWidth"] = RF(e.style.borderWidth);
     style["fontSize"] = RF(e.style.fontSize);
+    if (e.style.HasFontPath()) style["fontPath"] = e.style.fontPath;
     style["focusColor"] = SerializeVector3(e.style.focusColor);
     if (e.style.nineSlice.IsActive()) {
         json ns;
@@ -7616,7 +7637,16 @@ GUI::UIElement DeserializeUIElement(const json& j) {
     GUI::UIElement e;
     if (j.contains("id")) e.id = j["id"].get<u32>();
     if (j.contains("name")) e.name = SafeStr(j["name"], MAX_STR_NAME);
-    if (j.contains("type")) { u8 v = j["type"].get<u8>(); if (v < static_cast<u8>(GUI::UIWidgetType::Count)) e.type = static_cast<GUI::UIWidgetType>(v); }
+    if (j.contains("type")) {
+        u8 v = j["type"].get<u8>();
+        if (v < static_cast<u8>(GUI::UIWidgetType::Count)) {
+            e.type = static_cast<GUI::UIWidgetType>(v);
+        } else {
+            ENJIN_LOG_WARN(Asset, "UI element '%s' has type %u, which is out of range; "
+                                  "it will render as a Panel.",
+                           e.name.c_str(), static_cast<unsigned>(v));
+        }
+    }
     if (j.contains("visible")) e.visible = JB(j["visible"]);
     if (j.contains("enabled")) e.enabled = JB(j["enabled"]);
     if (j.contains("focusable")) e.focusable = JB(j["focusable"]);
@@ -7659,6 +7689,10 @@ GUI::UIElement DeserializeUIElement(const json& j) {
         if (s.contains("borderRadius")) e.style.borderRadius = s["borderRadius"].get<f32>();
         if (s.contains("borderWidth")) e.style.borderWidth = s["borderWidth"].get<f32>();
         if (s.contains("fontSize")) e.style.fontSize = s["fontSize"].get<f32>();
+        // Untrusted: containment against the project root is checked when the
+        // face is requested, not here, so a hostile path is stored and refused
+        // rather than silently rewritten into something that loads.
+        if (s.contains("fontPath")) e.style.fontPath = SafeStr(s["fontPath"]);
         if (s.contains("focusColor")) e.style.focusColor = DeserializeVector3(s["focusColor"]);
         if (s.contains("nineSlice")) {
             const auto& ns = s["nineSlice"];
@@ -7741,6 +7775,7 @@ json SerializeUITheme(const GUI::UITheme& t) {
     j["toggleKnob"] = SerializeVector3(t.toggleKnob);
     j["borderRadius"] = RF(t.borderRadius);
     j["borderWidth"] = RF(t.borderWidth);
+    if (!t.fontPath.empty()) j["fontPath"] = t.fontPath;
     j["fontSizeBody"] = RF(t.fontSizeBody);
     j["fontSizeHeading"] = RF(t.fontSizeHeading);
     j["fontSizeSmall"] = RF(t.fontSizeSmall);
@@ -7796,6 +7831,7 @@ GUI::UITheme DeserializeUITheme(const json& j) {
     if (j.contains("toggleKnob")) t.toggleKnob = DeserializeVector3(j["toggleKnob"]);
     if (j.contains("borderRadius")) t.borderRadius = j["borderRadius"].get<f32>();
     if (j.contains("borderWidth")) t.borderWidth = j["borderWidth"].get<f32>();
+    if (j.contains("fontPath")) t.fontPath = SafeStr(j["fontPath"]);
     if (j.contains("fontSizeBody")) t.fontSizeBody = j["fontSizeBody"].get<f32>();
     if (j.contains("fontSizeHeading")) t.fontSizeHeading = j["fontSizeHeading"].get<f32>();
     if (j.contains("fontSizeSmall")) t.fontSizeSmall = j["fontSizeSmall"].get<f32>();

@@ -61,6 +61,15 @@ struct UITheme {
     // Border / spacing
     f32 borderRadius = 4.0f;
     f32 borderWidth  = 1.0f;
+    // The typeface this canvas draws in, as a project-relative path
+    // ("assets/fonts/Kenney Pixel.ttf"). Empty = whatever font is ambient,
+    // which is what every existing scene gets and what it has always rendered.
+    //
+    // The sizes below have been honoured for as long as they have existed; the
+    // FACE was the one thing a game could not choose, so a game's HUD came out
+    // in whatever the editor happened to be set to.
+    std::string fontPath;
+
     f32 fontSizeBody    = 16.0f;
     f32 fontSizeHeading = 24.0f;
     f32 fontSizeSmall   = 12.0f;

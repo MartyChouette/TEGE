@@ -4,6 +4,7 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
+#include "Enjin/ECS/Components/Mesh.h"
 #include "Enjin/GUI/UIElement.h"
 #include <string>
 #include <vector>
@@ -405,6 +406,50 @@ private:
     std::vector<f32> m_NewHeightmap;
     std::vector<f32> m_OldSplatmap;
     std::vector<f32> m_NewSplatmap;
+};
+
+// ============================================================================
+// Mesh Edit Command
+// ============================================================================
+
+/**
+ * @brief Undo/redo for a tool that rewrites an entity's mesh data wholesale
+ *        (simplify, and any future mesh operation).
+ *
+ * Holds both versions of the geometry outright, the way TerrainSculptCommand
+ * holds both heightmaps. A decimated mesh cannot be reconstructed from the
+ * result, so there is nothing smaller to keep.
+ */
+class ENJIN_API MeshEditCommand : public ICommand {
+public:
+    MeshEditCommand(ECS::World* world, ECS::Entity entity, const char* description,
+                    std::vector<ECS::Vertex> oldVertices, std::vector<u32> oldIndices,
+                    std::vector<ECS::MeshComponent::SubMesh> oldSubMeshes,
+                    std::vector<ECS::Vertex> newVertices, std::vector<u32> newIndices,
+                    std::vector<ECS::MeshComponent::SubMesh> newSubMeshes)
+        : m_World(world), m_Entity(entity), m_Description(description),
+          m_OldVertices(std::move(oldVertices)), m_OldIndices(std::move(oldIndices)),
+          m_OldSubMeshes(std::move(oldSubMeshes)),
+          m_NewVertices(std::move(newVertices)), m_NewIndices(std::move(newIndices)),
+          m_NewSubMeshes(std::move(newSubMeshes)) {}
+
+    void Execute() override;
+    void Undo() override;
+    const char* GetDescription() const override { return m_Description; }
+
+private:
+    void Apply(const std::vector<ECS::Vertex>& vertices, const std::vector<u32>& indices,
+               const std::vector<ECS::MeshComponent::SubMesh>& subMeshes);
+
+    ECS::World* m_World;
+    ECS::Entity m_Entity;
+    const char* m_Description;
+    std::vector<ECS::Vertex>  m_OldVertices;
+    std::vector<u32>          m_OldIndices;
+    std::vector<ECS::MeshComponent::SubMesh> m_OldSubMeshes;
+    std::vector<ECS::Vertex>  m_NewVertices;
+    std::vector<u32>          m_NewIndices;
+    std::vector<ECS::MeshComponent::SubMesh> m_NewSubMeshes;
 };
 
 // ============================================================================

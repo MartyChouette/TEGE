@@ -930,15 +930,70 @@ public:
     // The built-in options screen (parity with the PC build) — the same shared
     // UITemplates canvas. We swap the pause canvas for the options canvas while
     // staying paused, so gameplay keeps frozen. Back returns to the pause menu.
+    // Every control the options menu carries, set to the value the runtime is
+    // running on. Addressed by event name, which is the same name the handler
+    // above was registered under, so a row added to the template and a handler
+    // added here are the only two edits a new option needs.
+    void SyncOptionsMenuToSettings(Enjin::GUI::UICanvasComponent& c) {
+        namespace T = Enjin::GUI::UITemplates;
+        const auto& a = m_AccessibilitySettings;
+
+        T::SetOptionValue(c, "options_master_volume", m_SimpleAudio.GetMasterVolume());
+        if (m_OptionsFov > 0.0f) {
+            T::SetOptionValue(c, "options_fov", (m_OptionsFov - 40.0f) / 80.0f);
+        }
+
+        T::SetOptionSelected(c, "options_colorblind", static_cast<Enjin::i32>(a.colorblindMode));
+        T::SetOptionValue(c, "options_colorblind_strength", a.colorblindStrength);
+        T::SetOptionValue(c, "options_brightness",          a.screenBrightness);
+        T::SetOptionValue(c, "options_contrast",            a.screenContrast);
+        T::SetOptionValue(c, "options_font_scale",          a.fontScale);
+
+        T::SetOptionChecked(c, "options_dyslexia",            a.dyslexiaFriendly);
+        T::SetOptionValue  (c, "options_letter_spacing",      a.letterSpacing);
+        T::SetOptionValue  (c, "options_word_spacing",        a.wordSpacing);
+        T::SetOptionValue  (c, "options_line_spacing",        a.lineSpacing);
+        T::SetOptionChecked(c, "options_subtitles",           a.subtitlesEnabled);
+        T::SetOptionChecked(c, "options_subtitle_speakers",   a.subtitleSpeakerNames);
+        T::SetOptionChecked(c, "options_closed_captions",     a.closedCaptionsEnabled);
+        T::SetOptionChecked(c, "options_subtitle_directions", a.subtitleDirectionIndicators);
+        T::SetOptionValue  (c, "options_subtitle_size",       a.subtitleFontSize);
+        T::SetOptionValue  (c, "options_subtitle_bg_opacity", a.subtitleBgOpacity);
+
+        T::SetOptionChecked(c, "options_reduced_motion",       a.reducedMotion);
+        T::SetOptionChecked(c, "options_disable_screen_shake", a.disableScreenShake);
+        T::SetOptionChecked(c, "options_disable_fov_effects",  a.disableFOVEffects);
+        T::SetOptionChecked(c, "options_disable_flashing",     a.disableFlashingLights);
+
+        T::SetOptionChecked(c, "options_dwell_click",     a.dwellClickEnabled);
+        T::SetOptionValue  (c, "options_dwell_time",      a.dwellClickTime);
+        T::SetOptionChecked(c, "options_switch_access",   a.switchAccessEnabled);
+        T::SetOptionValue  (c, "options_scan_speed",      a.switchScanSpeed);
+        T::SetOptionChecked(c, "options_gaze",            a.eyeTrackingEnabled);
+        T::SetOptionValue  (c, "options_gaze_dwell_time", a.eyeDwellTime);
+        T::SetOptionValue  (c, "options_gaze_smoothing",  a.eyeSmoothing);
+        T::SetOptionValue  (c, "options_gaze_dead_zone",  a.eyeDeadZone);
+        T::SetOptionChecked(c, "options_gaze_indicator",  a.eyeShowGazeIndicator);
+        T::SetOptionChecked(c, "options_sticky_drag",     a.stickyDragEnabled);
+
+        T::SetOptionChecked(c, "options_screen_reader",    a.screenReaderEnabled);
+        T::SetOptionChecked(c, "options_audio_indicators", a.audioIndicatorsEnabled);
+    }
+
     void ShowOptionsMenu() {
         if (m_PauseMenuEntity != Enjin::ECS::INVALID_ENTITY && m_World->IsValid(m_PauseMenuEntity)) {
             m_World->DestroyEntity(m_PauseMenuEntity);
             m_PauseMenuEntity = Enjin::ECS::INVALID_ENTITY;
         }
+        // Built from the template, then pointed at what the game is actually
+        // set to -- otherwise a returning player opens the menu and every
+        // control shows a factory default rather than their own setting.
+        Enjin::GUI::UICanvasComponent options = Enjin::GUI::UITemplates::CreateOptionsMenu();
+        SyncOptionsMenuToSettings(options);
+
         m_OptionsMenuEntity = m_World->CreateEntity();
         m_World->AddComponent<Enjin::ECS::NameComponent>(m_OptionsMenuEntity, "Options Menu UI");
-        m_World->AddComponent<Enjin::GUI::UICanvasComponent>(m_OptionsMenuEntity,
-            Enjin::GUI::UITemplates::CreateOptionsMenu());
+        m_World->AddComponent<Enjin::GUI::UICanvasComponent>(m_OptionsMenuEntity, std::move(options));
         Enjin::Input::SetMouseCaptured(false);
     }
 
@@ -1412,7 +1467,15 @@ public:
             m_UISystem.GetEventBus().Listen("pause_options",
                 [this](const Enjin::GUI::UIEventData&) { ShowOptionsMenu(); });
             m_UISystem.GetEventBus().Listen("options_back",
-                [this](const Enjin::GUI::UIEventData&) { CloseOptionsMenu(true); });
+                [this](const Enjin::GUI::UIEventData&) {
+                    // Sliders fire every frame while dragged, so the settings
+                    // file is written here rather than on each change.
+                    if (m_AccessibilityDirty) {
+                        SaveWebAccessibilitySettings();
+                        m_AccessibilityDirty = false;
+                    }
+                    CloseOptionsMenu(true);
+                });
             m_UISystem.GetEventBus().Listen("options_fov",
                 [this](const Enjin::GUI::UIEventData& e) {
                     // Slider is normalized; map to 40..120 degrees
@@ -1455,28 +1518,100 @@ public:
             // Accessibility toggles — write the runtime settings; colorblind/font
             // re-apply every frame, and we apply colorblind immediately so it shows
             // live even while the menu is up.
-            m_UISystem.GetEventBus().Listen("options_reduced_motion",
-                [this](const Enjin::GUI::UIEventData& e) { m_AccessibilitySettings.reducedMotion = e.boolValue; });
-            m_UISystem.GetEventBus().Listen("options_subtitles",
-                [this](const Enjin::GUI::UIEventData& e) { m_AccessibilitySettings.subtitlesEnabled = e.boolValue; });
-            m_UISystem.GetEventBus().Listen("options_dyslexia",
-                [this](const Enjin::GUI::UIEventData& e) {
-                    m_AccessibilitySettings.dyslexiaFriendly = e.boolValue;
-                    Enjin::Accessibility::ApplyTextScale(m_AccessibilitySettings, &m_UISystem, &m_SubtitleSystem, &m_Announcer);
-                });
+            // Every accessibility setting the runtime can apply now has a
+            // control. ApplyWebAccessibilitySettings() has always pushed the
+            // whole struct into the subtitle system, the announcer, the
+            // controller, the alternative-input manager and the render system;
+            // until now only four of these could be changed from inside the
+            // game, so a web player got four of the twenty-odd settings a
+            // desktop player of the same game got.
+            //
+            // Sliders dispatch continuously while dragged, so a change applies
+            // immediately (cheap, in-memory) and the file is written once, on
+            // the way out of the menu.
+            using A11y = Enjin::Accessibility::RuntimeAccessibilitySettings;
+            auto a11yBool = [this](const char* event, bool A11y::* field) {
+                m_UISystem.GetEventBus().Listen(event,
+                    [this, field](const Enjin::GUI::UIEventData& e) {
+                        m_AccessibilitySettings.*field = e.boolValue;
+                        ApplyWebAccessibilitySettings();
+                        m_AccessibilityDirty = true;
+                    });
+            };
+            auto a11yFloat = [this](const char* event, Enjin::f32 A11y::* field) {
+                m_UISystem.GetEventBus().Listen(event,
+                    [this, field](const Enjin::GUI::UIEventData& e) {
+                        m_AccessibilitySettings.*field = e.floatValue;
+                        ApplyWebAccessibilitySettings();
+                        m_AccessibilityDirty = true;
+                    });
+            };
+
+            // Vision
             m_UISystem.GetEventBus().Listen("options_colorblind",
                 [this](const Enjin::GUI::UIEventData& e) {
-                    Enjin::u32 mode = static_cast<Enjin::u32>(e.floatValue * 8.0f + 0.5f);
-                    if (mode > 8) mode = 8;
-                    m_AccessibilitySettings.colorblindMode = static_cast<Enjin::Accessibility::ColorblindMode>(mode);
-                    // Desktop-menu parity: dragging the slider splits the screen,
+                    // Dropdown: the index IS the mode, so the nine modes are
+                    // named rather than being nine unlabelled stops on a slider.
+                    Enjin::i32 idx = e.intValue;
+                    if (idx < 0) idx = 0;
+                    if (idx > 8) idx = 8;
+                    m_AccessibilitySettings.colorblindMode =
+                        static_cast<Enjin::Accessibility::ColorblindMode>(idx);
+                    // Desktop-menu parity: changing it splits the screen,
                     // left = without correction, right = with (fades after a beat)
                     m_ColorblindPreviewTimer = 1.5f;
-                    if (m_RenderSystem) {
-                        m_RenderSystem->SetWebAccessibility(mode, m_AccessibilitySettings.colorblindStrength,
-                            m_AccessibilitySettings.screenBrightness, m_AccessibilitySettings.screenContrast);
-                    }
+                    ApplyWebAccessibilitySettings();
+                    m_AccessibilityDirty = true;
                 });
+            a11yFloat("options_colorblind_strength", &A11y::colorblindStrength);
+            a11yFloat("options_brightness",          &A11y::screenBrightness);
+            a11yFloat("options_contrast",            &A11y::screenContrast);
+            a11yFloat("options_font_scale",          &A11y::fontScale);
+
+            // Text & reading
+            a11yBool ("options_dyslexia",              &A11y::dyslexiaFriendly);
+            a11yFloat("options_letter_spacing",        &A11y::letterSpacing);
+            a11yFloat("options_word_spacing",          &A11y::wordSpacing);
+            a11yFloat("options_line_spacing",          &A11y::lineSpacing);
+            a11yBool ("options_subtitles",             &A11y::subtitlesEnabled);
+            a11yBool ("options_subtitle_speakers",     &A11y::subtitleSpeakerNames);
+            a11yBool ("options_closed_captions",       &A11y::closedCaptionsEnabled);
+            a11yBool ("options_subtitle_directions",   &A11y::subtitleDirectionIndicators);
+            a11yFloat("options_subtitle_size",         &A11y::subtitleFontSize);
+            a11yFloat("options_subtitle_bg_opacity",   &A11y::subtitleBgOpacity);
+
+            // Motion
+            a11yBool("options_reduced_motion",       &A11y::reducedMotion);
+            a11yBool("options_disable_screen_shake", &A11y::disableScreenShake);
+            a11yBool("options_disable_fov_effects",  &A11y::disableFOVEffects);
+            a11yBool("options_disable_flashing",     &A11y::disableFlashingLights);
+
+            // Motor
+            a11yBool ("options_dwell_click",     &A11y::dwellClickEnabled);
+            a11yFloat("options_dwell_time",      &A11y::dwellClickTime);
+            a11yBool ("options_switch_access",   &A11y::switchAccessEnabled);
+            a11yFloat("options_scan_speed",      &A11y::switchScanSpeed);
+            a11yBool ("options_gaze",            &A11y::eyeTrackingEnabled);
+            a11yFloat("options_gaze_dwell_time", &A11y::eyeDwellTime);
+            a11yFloat("options_gaze_smoothing",  &A11y::eyeSmoothing);
+            a11yFloat("options_gaze_dead_zone",  &A11y::eyeDeadZone);
+            a11yBool ("options_gaze_indicator",  &A11y::eyeShowGazeIndicator);
+            a11yBool ("options_sticky_drag",     &A11y::stickyDragEnabled);
+
+            // Audio & communication
+            a11yBool("options_screen_reader",    &A11y::screenReaderEnabled);
+            a11yBool("options_audio_indicators", &A11y::audioIndicatorsEnabled);
+
+            // Control presets. These rewrite bindings.json, not
+            // accessibility.json, so they save through the input path.
+            m_UISystem.GetEventBus().Listen("options_preset_left_hand",
+                [this](const Enjin::GUI::UIEventData&) { m_InputMap.ApplyLeftHandOnly(); SaveWebInputBindings(); });
+            m_UISystem.GetEventBus().Listen("options_preset_right_hand",
+                [this](const Enjin::GUI::UIEventData&) { m_InputMap.ApplyRightHandOnly(); SaveWebInputBindings(); });
+            m_UISystem.GetEventBus().Listen("options_preset_gamepad",
+                [this](const Enjin::GUI::UIEventData&) { m_InputMap.ApplyGamepadOnly(); SaveWebInputBindings(); });
+            m_UISystem.GetEventBus().Listen("options_reset_controls",
+                [this](const Enjin::GUI::UIEventData&) { m_InputMap.ResetToDefaults(); SaveWebInputBindings(); });
             // Authored MainMenu canvas buttons: hide (not destroy -- authored
             // content) and unfreeze gameplay.
             auto startGame = [this]() {
@@ -2318,6 +2453,8 @@ private:
     Enjin::Accessibility::AlternativeInputManager m_AlternativeInput;
     Enjin::Accessibility::AccessibilityAnnouncer m_Announcer;
     Enjin::Accessibility::RuntimeAccessibilitySettings m_AccessibilitySettings;
+    // Set by any options-menu change; consumed by the one save on menu close.
+    bool m_AccessibilityDirty = false;
     Enjin::f32 m_OptionsFov = 0.0f;   // options menu override; 0 = use the authored camera
     Enjin::f32 m_ColorblindPreviewTimer = 0.0f;   // seconds of split-preview left after a slider change
     // One true UI source: the same UISystem that renders UICanvasComponent on
