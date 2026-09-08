@@ -80,6 +80,20 @@ A symptom shows up in a project, so the project is where you look, and project d
 - **`CheckHazardOverlaps`** is a manual AABB check each frame — workaround for Box2D v3 kinematic-kinematic sensor limitation
 - **3D character controllers:** Use `JPH::CharacterVirtual` (not manual raycasts). Self-excluded from own raycasts via `EnjinBodyFilter.ignoreBodyID`
 
+### Water
+- **`Water3DSettings::position` is where the water IS, not a decoration.** The
+  surface mesh is generated in WORLD space around it (`Water3D::GenerateMesh`),
+  and the entity transform is applied to that mesh on top — so the transform
+  must stay at the ORIGIN and the placement goes in `settings.position`. Putting
+  it in both moves the water twice as far as intended. It also went unserialized
+  until 2026-09-07, which never showed because nothing had ever placed water off
+  the origin (the Entity menu creates it at 0,0,0 and neither the inspector nor
+  the gizmo touches the field); the first tool that placed it anywhere else found
+  every pond back at the origin after a reload (test: `Water3DPositionSurvivesASave`)
+- **The Water3D LOADER clamps `tileSize` to a 0.5 minimum.** Anything COMPUTING a
+  tile size has to respect the same floor, or the mesh silently retessellates on
+  the first reload
+
 ### Renderer
 - **Particle `startSize`/`endSize` are the billboard's full WIDTH in WORLD units**, not a radius and not a multiplier, and the quad corners are `-0.5..0.5` on all four paths (CPU Vulkan, GPU compute Vulkan, WebGPU compute, WebGPU CPU). Nothing doubles them. They read SMALLER than the number because every particle fragment shader masks to an inscribed circle with `1 - smoothstep(0.3, 0.5, d)`: full alpha only to 60% of the width, fading to zero at the full width
 - **Emitters are placed by their WORLD transform, and scale and rotation both apply** (`Effects::ResolveEmitterTransform`, used by the CPU emitters in ParticleSystem and the GPU emitters fed from RenderSystem). Until 2026-09-06 both paths read `transform->position` and nothing else: a parented emitter spawned at its offset from the parent, scaling the entity did nothing, and rotating it did nothing, so aiming meant typing numbers into `direction`. Scale is the largest world-scale component (the billboard is square) and multiplies size, the size-over-life curve and the emission volume; rotation aims the cone and the 2D `angle2D`. The resolver force-dirties the world matrix first, because that cache is only invalidated per frame by `RenderSystem::Update` and a headless runtime would otherwise freeze every emitter at its first-frame transform. The GPU emission VOLUME (`ShapeSpawnOffset`) is still axis-aligned; only the direction is oriented
@@ -117,6 +131,47 @@ A symptom shows up in a project, so the project is where you look, and project d
 - **The process CWD is NEVER reliable** (editor/player CWD = exe dir). All relative paths resolve via roots set at play/boot: `ScriptSystem::SetScriptRoot`, `ScriptEngine::SetScriptDirectory`, `SimpleAudio::SetAssetRoot` — new path consumers must follow this pattern, never bare relative file access
 - **Exported games read scripts from loose DISK files by default** — BuildPipeline emits loose `scripts/`, `scripts/enjin_api/`, and `assets/` next to the exe (`EmitLooseRuntimeFiles`), and that is what the runtime loads. Pak-side script loading now EXISTS as a fallback (`ScriptEngine::SetAssetReader` + `ReadScriptSource`/`IncludeCallback` read from the `.enjpak`), but loose files still ship and take precedence, so the pak path is not exercised in practice yet
 - **The build copies a PREBUILT `EnjinPlayer.exe`** — after engine changes, rebuild the `EnjinPlayer` target too or exported games ship a stale engine
+
+### Editor UI (ImGui) — three traps that each cost a session
+
+- **`EditorLayer::Update` runs BEFORE `ImGui::NewFrame`.** `NewFrame` lives in
+  `EditorLayer::Render`, so ANY ImGui call from Update happens outside the
+  frame. Hit-tests and `GetIO()` limp along; **drawing crashes** — the
+  foreground draw list has no font bound, so the first `AddText` dereferences a
+  null `ImFont`. This is why `HandleCreativePlacement` reads
+  `Input::GetMousePosition()` and calls zero ImGui functions. Anything that
+  draws or hit-tests belongs in the panel-drawing phase, not Update
+  (creative-mode drag crash, 2026-09-07)
+- **The swapchain is `B8G8R8A8_SRGB` and ImGui writes vertex colours straight
+  through**, so the hardware converts them as though they were already linear
+  and every colour renders about 3x lighter than authored: `#1b212b` samples on
+  screen as RGB(91,101,114). Author in sRGB and convert to linear before packing
+  into `IM_COL32` (`Authored()` in `EditorLayerCreative.cpp`). Do not "fix" this
+  by picking darker constants — that hides the transfer error in the numbers
+- **`m_EditorViewportImageMinX/MaxX/MinY/MaxY` are only written while the Scene
+  panel actually draws its image.** With the Game View tab active, the panel
+  collapsed, or before the first draw, they hold whatever they held before —
+  initially all zero. Anything positioning against them draws in the SCREEN's
+  top-left corner. Pass the rect from inside `DrawViewportPanel` instead of
+  reading the members from elsewhere — and gate on `m_SceneViewVisibleThisFrame`
+  even there, because `DrawViewportPanel` does NOT early-return on a `Begin`
+  that returned false: the widgets inside just become no-ops, so `ImGui::Image`
+  draws nothing and `GetItemRectMin()` hands back the last item of ANOTHER
+  window. That is a plausible rectangle in a wrong place, so a "looks
+  degenerate" guard never fires
+- **`io.FontGlobalScale` (the editor's UI scale) does not reach
+  `ImDrawList::AddText(font, size, ...)`.** It reaches `ImGui::Text` and
+  `ImGui::GetFontSize()` only. Any hand-drawn surface must read the scale itself,
+  author its numbers at 100%, and draw EVERY string at an explicit size — mixing
+  the two makes headings grow while labels stay put (at 190% the creative scene
+  name was drawn through the middle of its own heading). It must also FIT: a
+  fixed list of rows at 190% can be taller than the window, and what goes missing
+  is whatever was pinned to the bottom
+- **Screenshotting the editor for review requires a DPI-AWARE capture process.**
+  On a 150% display a DPI-unaware PowerShell reports a 2582x1622 window as
+  1721x1081 and `CopyFromScreen` returns the top-left two thirds. The missing
+  third reads exactly like a layout bug. Call
+  `SetProcessDpiAwarenessContext(-4)` before measuring or capturing
 
 ### Frame Safety (crash class: mid-frame GPU resource destruction)
 - **`RenderSystem::FlushPendingChanges` is the ONLY safe home** for destroying/recreating GPU resources or updating descriptor sets. It early-returns when `m_SkipMainPassRendering` is set (the editor records offscreen binds BEFORE `World::Update`) — destroying/updating anything bound in the recording command buffer invalidates it and the driver access-violates at submit

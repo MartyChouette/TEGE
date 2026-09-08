@@ -784,6 +784,23 @@ void VulkanRenderer::EndFrame() {
 }
 
 VkCommandBuffer VulkanRenderer::GetCurrentCommandBuffer() const {
+    // No frame open means no command buffer, and saying so is the whole point.
+    //
+    // The per-frame buffers are pre-allocated and persistent, so without this
+    // check the function returns a valid, non-null handle to a buffer that is
+    // NOT in the recording state whenever it is called outside a frame. Every
+    // `cmd == VK_NULL_HANDLE` guard in the renderer -- and there are many --
+    // then passes, the caller records into a dead buffer, and the driver
+    // access-violates somewhere with no useful stack.
+    //
+    // That is not theoretical. Reflection probe baking ran its shadow pass
+    // before opening its frame; RenderShadowPass checked for null, got a live
+    // handle, and faulted inside nvoglv64.dll on the first vkCmd. Captured
+    // 2026-09-08, see _docs_internal/PROBE_BAKE_INVESTIGATION.md.
+    //
+    // Returning null here turns that class of bug from undefined behaviour into
+    // the early-return the calling code already believed it was getting.
+    if (!m_IsFrameStarted) return VK_NULL_HANDLE;
     if (m_CurrentFrame >= m_CommandBuffers.size()) return VK_NULL_HANDLE;
     return m_CommandBuffers[m_CurrentFrame];
 }

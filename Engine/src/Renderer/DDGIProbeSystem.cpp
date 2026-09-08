@@ -16,6 +16,84 @@ DDGIProbeSystem::~DDGIProbeSystem() {
     Shutdown();
 }
 
+void ClampDDGIGridShape(i32& probeCountX, i32& probeCountY, i32& probeCountZ,
+                        i32& voxelResolution, u32& octResolution) {
+    auto clampI = [](i32 v, i32 lo, i32 hi) { return v < lo ? lo : (v > hi ? hi : v); };
+    probeCountX = clampI(probeCountX, 2, 32);
+    probeCountY = clampI(probeCountY, 2, 16);
+    probeCountZ = clampI(probeCountZ, 2, 32);
+    // The voxel grid is a voxelRes^3 R16F image: 256 is 32 MB, 512 would be 256.
+    voxelResolution = clampI(voxelResolution, 16, 256);
+    // Atlas side is ceil(sqrt(totalProbes)) * oct. At the ceilings above that is
+    // 128 * 16 = 2048, which is a comfortable image on every target.
+    octResolution = static_cast<u32>(clampI(static_cast<i32>(octResolution), 4, 16));
+}
+
+void DDGIProbeSystem::RequestGridRebuild(i32 probeCountX, i32 probeCountY, i32 probeCountZ,
+                                         i32 voxelResolution, u32 octResolution) {
+    ClampDDGIGridShape(probeCountX, probeCountY, probeCountZ, voxelResolution, octResolution);
+
+    // Already the shape we are running: nothing to do. Without this a slider
+    // held at its current value would queue a rebuild every frame.
+    if (probeCountX == m_Config.probeCountX && probeCountY == m_Config.probeCountY &&
+        probeCountZ == m_Config.probeCountZ && voxelResolution == m_Config.voxelResolution &&
+        octResolution == m_Config.octResolution) {
+        // A pending request that matches the live shape is also stale.
+        if (m_GridRebuildPending &&
+            probeCountX == m_PendingProbeCountX && probeCountY == m_PendingProbeCountY &&
+            probeCountZ == m_PendingProbeCountZ && voxelResolution == m_PendingVoxelResolution &&
+            octResolution == m_PendingOctResolution) {
+            m_GridRebuildPending = false;
+        }
+        return;
+    }
+
+    m_PendingProbeCountX = probeCountX;
+    m_PendingProbeCountY = probeCountY;
+    m_PendingProbeCountZ = probeCountZ;
+    m_PendingVoxelResolution = voxelResolution;
+    m_PendingOctResolution = octResolution;
+    m_GridRebuildPending = true;
+}
+
+bool DDGIProbeSystem::RebuildGrid() {
+    if (!m_GridRebuildPending) return false;
+    m_GridRebuildPending = false;
+
+    DDGIConfig next = m_Config;
+    next.probeCountX = m_PendingProbeCountX;
+    next.probeCountY = m_PendingProbeCountY;
+    next.probeCountZ = m_PendingProbeCountZ;
+    next.voxelResolution = m_PendingVoxelResolution;
+    next.octResolution = m_PendingOctResolution;
+
+    // Full teardown and rebuild. The compute pipelines go with it, which is
+    // what we want: their descriptors point at the images being replaced. They
+    // are recreated lazily on the next SetGeometryBuffers.
+    Shutdown();
+
+    // Geometry lived in descriptors that no longer exist, so the caller has to
+    // feed it again before the next voxelize.
+    m_GeometryBound = false;
+    m_TriangleCount = 0;
+    m_InstanceCount = 0;
+
+    if (!Initialize(next)) {
+        ENJIN_LOG_ERROR(Renderer, "DDGI: grid rebuild failed (%dx%dx%d, voxel %d, oct %u) "
+                        "- software GI is now off",
+                        next.probeCountX, next.probeCountY, next.probeCountZ,
+                        next.voxelResolution, next.octResolution);
+        return true;   // resources ARE gone; the caller must still drop its bindings
+    }
+
+    ENJIN_LOG_INFO(Renderer, "DDGI: grid rebuilt - %dx%dx%d probes, voxel %d^3, oct %u "
+                   "(atlas %ux%u)",
+                   next.probeCountX, next.probeCountY, next.probeCountZ,
+                   next.voxelResolution, next.octResolution,
+                   m_ProbeAtlasWidth, m_ProbeAtlasHeight);
+    return true;
+}
+
 bool DDGIProbeSystem::Initialize(const DDGIConfig& config) {
     if (m_Initialized) return true;
     m_Config = config;

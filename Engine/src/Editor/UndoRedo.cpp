@@ -459,7 +459,8 @@ void TerrainSculptCommand::Undo() {
 
 void MeshEditCommand::Apply(const std::vector<ECS::Vertex>& vertices,
                             const std::vector<u32>& indices,
-                            const std::vector<ECS::MeshComponent::SubMesh>& subMeshes) {
+                            const std::vector<ECS::MeshComponent::SubMesh>& subMeshes,
+                            const ECS::MeshComponent::SourceRef& source) {
     if (!m_World) return;
     auto* mesh = m_World->GetComponent<ECS::MeshComponent>(m_Entity);
     if (!mesh) return;
@@ -470,6 +471,9 @@ void MeshEditCommand::Apply(const std::vector<ECS::Vertex>& vertices,
     mesh->vertices  = vertices;
     mesh->indices   = indices;
     mesh->subMeshes = subMeshes;
+    // Moves with the geometry, or the save writes a reference to the file this
+    // mesh no longer matches and the load brings the original back.
+    mesh->source    = source;
     mesh->aabbDirty = true;
 
     // Without this the undo restores the data and the screen keeps drawing the
@@ -480,11 +484,11 @@ void MeshEditCommand::Apply(const std::vector<ECS::Vertex>& vertices,
 }
 
 void MeshEditCommand::Execute() {
-    Apply(m_NewVertices, m_NewIndices, m_NewSubMeshes);
+    Apply(m_NewVertices, m_NewIndices, m_NewSubMeshes, m_NewSource);
 }
 
 void MeshEditCommand::Undo() {
-    Apply(m_OldVertices, m_OldIndices, m_OldSubMeshes);
+    Apply(m_OldVertices, m_OldIndices, m_OldSubMeshes, m_OldSource);
 }
 
 // ============================================================================

@@ -20,9 +20,15 @@
 namespace Enjin::Debug {
 
 // File-scope state — no heap allocations, safe to read from crash handler
+// The paths are FIXED BUFFERS filled once at install with absolute locations
+// beside the executable. They used to be relative, which relies on the CWD still
+// being the exe directory at crash time -- true today because InitializeEngine
+// sets it, but that is code running before ours and anything afterwards may
+// change it, and a crash report written into an unknown directory is one nobody
+// finds. Filled once, only read from the handler, never allocated.
 static CrashContext s_CrashContext = {};
-static const char* s_CrashReportPath = "enjin_crash.txt";
-static const char* s_CrashDumpPath   = "enjin_crash.dmp";
+static char s_CrashReportPath[1024] = "enjin_crash.txt";
+static char s_CrashDumpPath[1024]   = "enjin_crash.dmp";
 
 // ============================================================================
 // Helpers (safe for use inside crash handler — no heap, no Logger, no exceptions)
@@ -251,8 +257,41 @@ static LONG WINAPI EnjinCrashFilter(EXCEPTION_POINTERS* exInfo) {
     return EXCEPTION_EXECUTE_HANDLER;
 }
 
+// Point the report paths at the executable's own directory.
+static void ResolveCrashPaths() {
+    char exePath[1024] = {};
+    const DWORD len = GetModuleFileNameA(nullptr, exePath, sizeof(exePath) - 1);
+    if (len == 0 || len >= sizeof(exePath) - 1) return;   // keep the relative fallback
+
+    char* lastSlash = strrchr(exePath, '\\');
+    if (!lastSlash) return;
+    *(lastSlash + 1) = '\0';
+
+    snprintf(s_CrashReportPath, sizeof(s_CrashReportPath), "%senjin_crash.txt", exePath);
+    snprintf(s_CrashDumpPath, sizeof(s_CrashDumpPath), "%senjin_crash.dmp", exePath);
+}
+
 void InstallCrashHandler() {
+    ResolveCrashPaths();
     s_PreviousFilter = SetUnhandledExceptionFilter(EnjinCrashFilter);
+    ENJIN_LOG_INFO(Core, "Crash handler installed; reports go to %s", s_CrashReportPath);
+}
+
+void ReassertCrashHandler() {
+    // SetUnhandledExceptionFilter returns whichever filter WAS installed, so
+    // re-installing also tells us whether we were still the one in the slot.
+    LPTOP_LEVEL_EXCEPTION_FILTER previous = SetUnhandledExceptionFilter(EnjinCrashFilter);
+    if (previous != EnjinCrashFilter) {
+        // Something took the slot after we installed. We have it back now, and
+        // there is a line in the log naming the moment it happened.
+        ENJIN_LOG_WARN(Core, "Crash handler had been displaced by another module; reinstalled");
+    }
+}
+
+void TriggerTestCrash() {
+    ENJIN_LOG_WARN(Core, "TriggerTestCrash: deliberately access-violating to exercise the crash path");
+    volatile int* p = nullptr;
+    *p = 1;
 }
 
 void UninstallCrashHandler() {
@@ -336,13 +375,47 @@ static void CrashSignalHandler(int sig) {
     raise(sig);
 }
 
+static void ResolveCrashPaths() {
+    char exePath[1024] = {};
+    const ssize_t len = readlink("/proc/self/exe", exePath, sizeof(exePath) - 1);
+    if (len <= 0) return;                       // keep the relative fallback
+    exePath[len] = '\0';
+
+    char* lastSlash = strrchr(exePath, '/');
+    if (!lastSlash) return;
+    *(lastSlash + 1) = '\0';
+
+    snprintf(s_CrashReportPath, sizeof(s_CrashReportPath), "%senjin_crash.txt", exePath);
+    snprintf(s_CrashDumpPath, sizeof(s_CrashDumpPath), "%senjin_crash.dmp", exePath);
+}
+
 void InstallCrashHandler() {
+    ResolveCrashPaths();
     struct sigaction sa = {};
     sa.sa_handler = CrashSignalHandler;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = SA_RESETHAND;  // One-shot: restore default after first delivery
     sigaction(SIGSEGV, &sa, &s_PrevSIGSEGV);
     sigaction(SIGABRT, &sa, &s_PrevSIGABRT);
+}
+
+void ReassertCrashHandler() {
+    // Signal dispositions are per-signal rather than one global slot, so they are
+    // far harder for another module to take over than the Windows filter is.
+    // Reinstalled anyway so both platforms behave the same, and because
+    // SA_RESETHAND means a delivered signal restores the default.
+    struct sigaction sa = {};
+    sa.sa_handler = CrashSignalHandler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESETHAND;
+    sigaction(SIGSEGV, &sa, nullptr);
+    sigaction(SIGABRT, &sa, nullptr);
+}
+
+void TriggerTestCrash() {
+    ENJIN_LOG_WARN(Core, "TriggerTestCrash: deliberately faulting to exercise the crash path");
+    volatile int* p = nullptr;
+    *p = 1;
 }
 
 void UninstallCrashHandler() {
@@ -355,6 +428,8 @@ void UninstallCrashHandler() {
 // Unsupported platform — no-op
 void InstallCrashHandler() {}
 void UninstallCrashHandler() {}
+void ReassertCrashHandler() {}
+void TriggerTestCrash() {}
 
 #endif
 

@@ -125,6 +125,10 @@ private:
     // verbatim way so an exported game ships the controls the editor authored.
     std::string m_InputSettingsJson;
     std::string m_DefaultRenderSettingsJson;
+    // Project render quality tiers, carried verbatim like startupFlow and input.
+    // A tier is a cost ceiling the shipped game applies, so it has to reach the
+    // player or the player-facing quality menu has nothing to act on.
+    std::string m_RenderQualityJson;
     // The project's render settings, carried so an exported game can honour a
     // scene that says useProjectDefaults. Without them the runtime applied the
     // scene's own stale block, which the editor never shows and never updates.

@@ -218,7 +218,11 @@ public:
     // (SetTouchSimulation) inside a registered surface (SetTouchSurface), so a
     // layout is testable without a phone. Safe-area insets keep it clear of
     // notches/rounded corners on web.
-    static constexpr int kMaxTouchButtons = 6;
+    // Ten, not six. Six was below what a real game needs: Potions' shop alone
+    // has three potions, three foods and a way out, and a cap that cannot
+    // express a game's own verbs is the engine deciding the game is finishable
+    // only with a keyboard.
+    static constexpr int kMaxTouchButtons = 10;
 
     // One anchored on-screen button. Position is a grid slot measured from the
     // bottom-right of the SAFE area, in multiples of the button spacing, so a

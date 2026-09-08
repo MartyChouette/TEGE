@@ -397,10 +397,15 @@ void EditorLayer::DrawMeshComponent(ECS::Entity entity) {
                     Renderer::MeshSimplifier::Simplify(*mesh, m_MeshSimplifyRatio);
 
                 if (reduced.IsValid() && reduced.indices.size() < oldIndices.size()) {
+                    // The empty new SourceRef is what makes the reduction stick:
+                    // a mesh still pointing at its import file is saved as a
+                    // reference and re-imported at full resolution on load.
                     m_UndoRedo.Execute(std::make_unique<Editor::MeshEditCommand>(
                         m_World, entity, "Simplify Mesh",
                         std::move(oldVertices), std::move(oldIndices), std::move(oldSubMeshes),
-                        reduced.vertices, reduced.indices, reduced.subMeshes));
+                        mesh->source,
+                        reduced.vertices, reduced.indices, reduced.subMeshes,
+                        ECS::MeshComponent::SourceRef{}));
                     MarkDirty();
                     ENJIN_LOG_INFO(Editor, "Simplified mesh: %zu -> %zu triangles",
                                    triCount, reduced.indices.size() / 3);

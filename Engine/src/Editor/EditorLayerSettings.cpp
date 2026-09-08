@@ -2002,6 +2002,7 @@ void EditorLayer::DrawSettingsWindow() {
             DrawSettingsSection_StartupFlow();
             DrawSettingsSection_InputTouch();
             DrawSettingsSection_AccessibilityDefaults();
+            DrawSettingsSection_RenderQuality();
             DrawSettingsSection_BuildConfig();
             DrawSettingsSection_Networking();
             ImGui::PopID();
@@ -2105,7 +2106,11 @@ void EditorLayer::DrawSettingsWindow() {
             // DDGI (Software-Traced Global Illumination)
             if (m_RenderSystem && m_RenderSystem->m_DDGISystem) {
                 auto& ddgi = *m_RenderSystem->m_DDGISystem;
-                auto& cfg = const_cast<Renderer::DDGIConfig&>(ddgi.GetConfig());
+                // Read-only view. Edits go through SetRuntimeTunables (live) or
+                // RequestGridRebuild (reallocating), never by casting away const
+                // and writing into a running system -- which is what used to
+                // leave the config describing an atlas that was never allocated.
+                const Renderer::DDGIConfig& cfg = ddgi.GetConfig();
                 bool ddgiEnabled = ddgi.IsEnabled();
                 if (ImGui::Checkbox("Software DDGI (Global Illumination)", &ddgiEnabled)) {
                     ddgi.SetEnabled(ddgiEnabled);
@@ -2120,20 +2125,79 @@ void EditorLayer::DrawSettingsWindow() {
                     }
                 }
                 if (ddgiEnabled && ImGui::TreeNode("DDGI Settings")) {
-                    ImGui::SliderInt("Probe Grid X", &cfg.probeCountX, 2, 32);
-                    ImGui::SliderInt("Probe Grid Y", &cfg.probeCountY, 2, 16);
-                    ImGui::SliderInt("Probe Grid Z", &cfg.probeCountZ, 2, 32);
-                    ImGui::SliderFloat("Grid Spacing", &cfg.gridSpacing, 0.5f, 16.0f);
-                    ImGui::SliderInt("Rays Per Probe", reinterpret_cast<i32*>(&cfg.raysPerProbe), 16, 256);
-                    ImGui::SliderFloat("Max Trace Distance", &cfg.maxTraceDistance, 5.0f, 100.0f);
-                    ImGui::SliderFloat("Hysteresis", &cfg.hysteresis, 0.8f, 0.99f, "%.3f");
-                    int voxRes = cfg.voxelResolution;
-                    if (ImGui::Combo("Voxel Resolution", &voxRes, "32\00064\000128\000256\0")) {
-                        static const i32 resolutions[] = { 32, 64, 128, 256 };
-                        cfg.voxelResolution = resolutions[voxRes];
+                    // --- Grid shape: reallocates, so it is REQUESTED, not written.
+                    //
+                    // The edit is held in local state while a slider is being
+                    // dragged, because seeding from the live config every frame
+                    // would snap the handle back, and because committing on every
+                    // frame of a drag would tear down and rebuild the probe atlas
+                    // dozens of times. The request goes in when the slider is
+                    // released; the rebuild itself happens in FlushPendingChanges.
+                    static i32 s_GridX = 0, s_GridY = 0, s_GridZ = 0, s_VoxRes = 0;
+                    static bool s_GridEditing = false;
+                    if (!s_GridEditing) {
+                        s_GridX = cfg.probeCountX;
+                        s_GridY = cfg.probeCountY;
+                        s_GridZ = cfg.probeCountZ;
+                        s_VoxRes = cfg.voxelResolution;
                     }
+                    bool gridActive = false;
+                    bool gridCommit = false;
+
+                    ImGui::SliderInt("Probe Grid X", &s_GridX, 2, 32);
+                    gridActive |= ImGui::IsItemActive();
+                    gridCommit |= ImGui::IsItemDeactivatedAfterEdit();
+                    ImGui::SliderInt("Probe Grid Y", &s_GridY, 2, 16);
+                    gridActive |= ImGui::IsItemActive();
+                    gridCommit |= ImGui::IsItemDeactivatedAfterEdit();
+                    ImGui::SliderInt("Probe Grid Z", &s_GridZ, 2, 32);
+                    gridActive |= ImGui::IsItemActive();
+                    gridCommit |= ImGui::IsItemDeactivatedAfterEdit();
+
+                    int voxIdx = 1;
+                    static const i32 kVoxResolutions[] = { 32, 64, 128, 256 };
+                    for (int i = 0; i < 4; ++i) {
+                        if (kVoxResolutions[i] == s_VoxRes) { voxIdx = i; break; }
+                    }
+                    if (ImGui::Combo("Voxel Resolution", &voxIdx, "32\00064\000128\000256\0")) {
+                        s_VoxRes = kVoxResolutions[voxIdx];
+                        gridCommit = true;   // a combo has no drag to wait out
+                    }
+                    s_GridEditing = gridActive;
+                    if (gridCommit) {
+                        ddgi.RequestGridRebuild(s_GridX, s_GridY, s_GridZ,
+                                                s_VoxRes, cfg.octResolution);
+                    }
+                    if (ImGui::IsItemHovered() || gridActive) {
+                        ImGui::SetTooltip("Changing the grid rebuilds the probe atlas. "
+                                          "Applied when you release the slider.");
+                    }
+
+                    // --- Live tunables: no reallocation, pushed straight through.
+                    f32 gridSpacing = cfg.gridSpacing;
+                    i32 raysPerProbe = static_cast<i32>(cfg.raysPerProbe);
+                    f32 maxTrace = cfg.maxTraceDistance;
+                    f32 hysteresis = cfg.hysteresis;
+                    bool tuned = false;
+                    tuned |= ImGui::SliderFloat("Grid Spacing", &gridSpacing, 0.5f, 16.0f);
+                    tuned |= ImGui::SliderInt("Rays Per Probe", &raysPerProbe, 16, 256);
+                    tuned |= ImGui::SliderFloat("Max Trace Distance", &maxTrace, 5.0f, 100.0f);
+                    tuned |= ImGui::SliderFloat("Hysteresis", &hysteresis, 0.8f, 0.99f, "%.3f");
+                    if (tuned) {
+                        ddgi.SetRuntimeTunables(gridSpacing, cfg.gridOrigin, cfg.voxelWorldExtent,
+                                                static_cast<u32>(raysPerProbe), maxTrace,
+                                                cfg.amortizationRate, hysteresis);
+                    }
+
+                    // Read from the system, so it reports what was ALLOCATED
+                    // rather than what a slider currently shows.
                     ImGui::Text("Total probes: %u | Updated/frame: %u",
                                 ddgi.GetTotalProbes(), ddgi.GetProbesUpdatedThisFrame());
+                    ImGui::Text("Probe atlas: %ux%u", ddgi.GetProbeAtlasWidth(),
+                                ddgi.GetProbeAtlasHeight());
+                    if (ddgi.HasPendingGridRebuild()) {
+                        ImGui::TextDisabled("Rebuilding on the next frame...");
+                    }
                     ImGui::TreePop();
                 }
             }
@@ -2268,6 +2332,119 @@ namespace {
             return true;
         }
         return false;
+    }
+}
+
+void EditorLayer::DrawSettingsSection_RenderQuality() {
+    if (!UI::SectionHeader("Render Quality Tiers")) return;
+
+    if (m_SceneManager.GetProjectPath().empty()) {
+        ImGui::TextDisabled("No project loaded.");
+        return;
+    }
+
+    auto& q = m_SceneManager.GetRenderQuality();
+
+    ImGui::TextWrapped("A quality tier is a CEILING on how much the renderer may spend, so a "
+                       "player on a slower machine can turn the cost down. It never changes how "
+                       "the scene looks: intensities, strengths, colours, fog and sky are left "
+                       "alone. A scene authored cheaper than the tier keeps its own values, so "
+                       "Ultra never makes a deliberately cheap scene expensive.");
+    ImGui::Spacing();
+
+    if (ImGui::Checkbox("Use quality tiers in this project", &q.enabled)) {
+        m_SceneManager.SaveProject();
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Off by default. While off, scenes render exactly the cost they "
+                          "were authored with.");
+    }
+
+    if (!q.enabled) {
+        ImGui::TextDisabled("Tiers are off - scenes render at their authored cost.");
+        return;
+    }
+
+    ImGui::Spacing();
+
+    const char* tierNames[] = { "Low", "Medium", "High", "Ultra", "Custom" };
+    int def = static_cast<int>(q.defaultTier);
+    if (ImGui::Combo("Default tier", &def, tierNames, IM_ARRAYSIZE(tierNames))) {
+        q.defaultTier = static_cast<Renderer::QualityTier>(def);
+        m_SceneManager.SaveProject();
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("The tier a game starts on before the player chooses one.");
+    }
+
+    if (ImGui::Checkbox("Let players change it in the options menu", &q.playerCanChange)) {
+        m_SceneManager.SaveProject();
+    }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // One editable tier at a time. Five tiers times fourteen knobs on screen at
+    // once is a wall nobody reads, and the tiers are edited one at a time anyway.
+    static int s_EditTier = 2;   // High, the default
+    ImGui::Combo("Editing tier", &s_EditTier, tierNames, IM_ARRAYSIZE(tierNames));
+
+    Renderer::RenderQualityCaps& c =
+        q.CapsFor(static_cast<Renderer::QualityTier>(s_EditTier));
+
+    bool changed = false;
+
+    ImGui::SeparatorText("What this tier allows at all");
+    changed |= ImGui::Checkbox("Ray tracing", &c.allowRayTracing);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Off turns the whole RT pass off for this tier. A cheap RT pass is "
+                          "still an RT pass, which is why Low uses this rather than small counts.");
+    }
+    changed |= ImGui::Checkbox("Path tracing", &c.allowPathTracing);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Off makes a path-traced scene fall back to hybrid rather than "
+                          "refusing to render.");
+    }
+    changed |= ImGui::Checkbox("ReSTIR spatial reuse", &c.allowRestirSpatialReuse);
+    changed |= ImGui::Checkbox("Surfel cache", &c.allowSurfelCache);
+    changed |= ImGui::Checkbox("Radiance cache", &c.allowRadianceCache);
+
+    ImGui::SeparatorText("Ceilings");
+    ImGui::TextDisabled("A scene asking for less than these keeps its own value.");
+
+    auto CapU32 = [&](const char* label, Enjin::u32& v, int lo, int hi, const char* help) {
+        int tmp = static_cast<int>(v);
+        if (ImGui::SliderInt(label, &tmp, lo, hi)) {
+            v = static_cast<Enjin::u32>(tmp < lo ? lo : tmp);
+            changed = true;
+        }
+        if (help && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", help);
+    };
+
+    CapU32("Max path tracer SPP", c.maxPathTracerSPP, 1, 4096,
+           "Samples per pixel the path tracer may accumulate to.");
+    CapU32("Max GI bounces", c.maxGIBounces, 0, 8, nullptr);
+    CapU32("Max denoiser iterations", c.maxDenoiserIterations, 1, 8, nullptr);
+    CapU32("Max ReSTIR candidates", c.maxRestirInitialCandidates, 1, 32, nullptr);
+    CapU32("Max ReSTIR neighbours", c.maxRestirSpatialNeighbors, 0, 16, nullptr);
+    CapU32("Max surfels", c.maxSurfelCount, 0, 262144, nullptr);
+    CapU32("Max adaptive rays per pixel", c.maxAdaptiveRaysPerPixel, 1, 16, nullptr);
+    CapU32("Max DDGI rays per probe", c.maxDDGIRaysPerProbe, 8, 256, nullptr);
+
+    ImGui::SeparatorText("Floor");
+    CapU32("Min DDGI amortization", c.minDDGIAmortizationRate, 1, 64,
+           "DDGI updates one probe in N, so a BIGGER number is cheaper. This is the "
+           "least amortization the tier will accept, which is why it is a floor and "
+           "not a ceiling.");
+
+    if (changed) m_SceneManager.SaveProject();
+
+    ImGui::Spacing();
+    if (ImGui::Button("Reset this tier to the built-in preset")) {
+        Renderer::RenderQualitySettings fresh;   // constructor seeds the presets
+        c = fresh.CapsFor(static_cast<Renderer::QualityTier>(s_EditTier));
+        m_SceneManager.SaveProject();
     }
 }
 

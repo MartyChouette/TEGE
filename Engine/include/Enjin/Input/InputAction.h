@@ -184,7 +184,21 @@ public:
 
     // Rebinding helpers (used by menu UI)
     i32 PollNextKeyPress() const;
-    void RebindAction(i32 actionIndex, i32 keyCode);
+    void RebindAction(i32 actionIndex, i32 keyCode);   // keyboard, kept for scripts
+    // Rebind to a key OR a mouse button. Replaces the existing binding of the
+    // same kind, so binding a mouse button does not drop the keyboard one.
+    void RebindAction(i32 actionIndex, BindingType type, i32 code);
+
+    // Engine key code pressed this frame, or -1. Returns a KeyCode, not an
+    // ImGuiKey -- see the implementation for why that distinction cost every
+    // rebind its effect.
+    i32 PollNextMouseButton() const;
+
+    // Whether a code can ever match a real input of that kind.
+    static bool IsBindingCodeValid(BindingType type, i32 code);
+    // Drop bindings that can never fire and restore defaults for any action left
+    // with none. Run automatically by FromJson; returns how many were dropped.
+    u32 DropInvalidBindings();
 
     // Custom action slots: a game names Custom0..7 at boot. Names survive
     // ResetToDefaults (they describe the game, not the player's bindings).

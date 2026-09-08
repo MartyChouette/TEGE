@@ -1,0 +1,23 @@
+{
+  "projectName": "ReflectionProbes",
+  "buildConfig": {
+    "fullscreen": false,
+    "windowHeight": 900,
+    "windowTitle": "Reflection Probes",
+    "windowWidth": 1600
+  },
+  "scenes": [
+    {
+      "path": "scenes/ImplicitProbe.enjin",
+      "name": "ImplicitProbe",
+      "buildIndex": 0,
+      "isStartScene": true
+    },
+    {
+      "path": "scenes/PlacedProbe.enjin",
+      "name": "PlacedProbe",
+      "buildIndex": 1,
+      "isStartScene": false
+    }
+  ]
+}

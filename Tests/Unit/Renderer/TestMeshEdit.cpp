@@ -169,8 +169,9 @@ ENJIN_TEST(MeshEdit, UndoRestoresTheGeometryExactly) {
     ENJIN_ASSERT_TRUE(reduced.IsValid());
 
     Editor::MeshEditCommand cmd(&w, e, "Simplify Mesh",
-                                oldVertices, oldIndices, oldSubs,
-                                reduced.vertices, reduced.indices, reduced.subMeshes);
+                                oldVertices, oldIndices, oldSubs, mesh->source,
+                                reduced.vertices, reduced.indices, reduced.subMeshes,
+                                ECS::MeshComponent::SourceRef{});
 
     cmd.Execute();
     ENJIN_ASSERT_TRUE(mesh->indices.size() < oldIndices.size());
@@ -199,8 +200,9 @@ ENJIN_TEST(MeshEdit, UndoAlsoAsksForTheBuffersBack) {
 
     ECS::MeshComponent reduced = Renderer::MeshSimplifier::Simplify(*mesh, 0.5f);
     Editor::MeshEditCommand cmd(&w, e, "Simplify Mesh",
-                                mesh->vertices, mesh->indices, mesh->subMeshes,
-                                reduced.vertices, reduced.indices, reduced.subMeshes);
+                                mesh->vertices, mesh->indices, mesh->subMeshes, mesh->source,
+                                reduced.vertices, reduced.indices, reduced.subMeshes,
+                                ECS::MeshComponent::SourceRef{});
 
     cmd.Execute();
     auto* pm = w.GetComponent<ECS::ProceduralMeshComponent>(e);
@@ -222,8 +224,9 @@ ENJIN_TEST(MeshEdit, RedoAppliesTheReductionAgain) {
     const usize reducedCount = reduced.indices.size();
 
     Editor::MeshEditCommand cmd(&w, e, "Simplify Mesh",
-                                mesh->vertices, mesh->indices, mesh->subMeshes,
-                                reduced.vertices, reduced.indices, reduced.subMeshes);
+                                mesh->vertices, mesh->indices, mesh->subMeshes, mesh->source,
+                                reduced.vertices, reduced.indices, reduced.subMeshes,
+                                ECS::MeshComponent::SourceRef{});
 
     cmd.Execute();
     ENJIN_EXPECT_EQ(mesh->indices.size(), reducedCount);
@@ -233,6 +236,38 @@ ENJIN_TEST(MeshEdit, RedoAppliesTheReductionAgain) {
     ENJIN_EXPECT_EQ(mesh->indices.size(), reducedCount);
 }
 
+// The quiet revert: a mesh that still names the file it was imported from is
+// SERIALIZED AS A REFERENCE, and the loader re-imports the original at full
+// resolution. Comparing only the source file's hash, nothing notices the live
+// geometry has changed -- so simplifying an imported model, saving and
+// reopening put every triangle back with no warning.
+ENJIN_TEST(MeshEdit, SimplifyingDetachesTheImportReferenceAndUndoRestoresIt) {
+    ECS::World w;
+    ECS::Entity e = MakeMeshEntity(w);
+    auto* mesh = w.GetComponent<ECS::MeshComponent>(e);
+
+    mesh->source.sourcePath = "models/statue.fbx";
+    mesh->source.meshIndex = 2;
+    ENJIN_ASSERT_TRUE(mesh->source.Valid());
+    const ECS::MeshComponent::SourceRef before = mesh->source;
+
+    ECS::MeshComponent reduced = Renderer::MeshSimplifier::Simplify(*mesh, 0.5f);
+    Editor::MeshEditCommand cmd(&w, e, "Simplify Mesh",
+                                mesh->vertices, mesh->indices, mesh->subMeshes, mesh->source,
+                                reduced.vertices, reduced.indices, reduced.subMeshes,
+                                ECS::MeshComponent::SourceRef{});
+
+    cmd.Execute();
+    // Detached, so the next save writes the reduced geometry inline.
+    ENJIN_EXPECT_FALSE(mesh->source.Valid());
+
+    cmd.Undo();
+    // And undo puts the link back, so the mesh is a reference again.
+    ENJIN_EXPECT_TRUE(mesh->source.Valid());
+    ENJIN_EXPECT_TRUE(mesh->source.sourcePath == before.sourcePath);
+    ENJIN_EXPECT_EQ(mesh->source.meshIndex, before.meshIndex);
+}
+
 ENJIN_TEST(MeshEdit, UndoOnADestroyedEntityDoesNotCrash) {
     ECS::World w;
     ECS::Entity e = MakeMeshEntity(w);
@@ -240,8 +275,9 @@ ENJIN_TEST(MeshEdit, UndoOnADestroyedEntityDoesNotCrash) {
 
     ECS::MeshComponent reduced = Renderer::MeshSimplifier::Simplify(*mesh, 0.5f);
     Editor::MeshEditCommand cmd(&w, e, "Simplify Mesh",
-                                mesh->vertices, mesh->indices, mesh->subMeshes,
-                                reduced.vertices, reduced.indices, reduced.subMeshes);
+                                mesh->vertices, mesh->indices, mesh->subMeshes, mesh->source,
+                                reduced.vertices, reduced.indices, reduced.subMeshes,
+                                ECS::MeshComponent::SourceRef{});
     cmd.Execute();
 
     w.DestroyEntity(e);

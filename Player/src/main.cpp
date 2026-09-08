@@ -59,6 +59,7 @@ static bool s_SimulateTouch = false;
 #include "Enjin/Effects/ElementalSystem.h"
 #include "Enjin/Audio/AudioReactiveSystem.h"
 #include "Enjin/Renderer/SceneRenderSettings.h"
+#include "Enjin/Renderer/RenderQualitySettings.h"
 #include "Enjin/Effects/WorldTime.h"
 #include "Enjin/Effects/WorldTimeApply.h"
 #include "Enjin/Effects/SeasonalWeather.h"
@@ -396,6 +397,16 @@ public:
         // Accessibility tab: the menu edits the live settings struct in place;
         // every change re-applies the boot-time consumers and persists.
         m_GameMenu.SetAccessibilitySettings(&m_AccessibilitySettings);
+        // Quality tier: the menu edits the live tier in place, and re-applying
+        // the current scene's settings is what makes the new ceiling bite now
+        // instead of at the next scene load.
+        m_GameMenu.SetRenderQuality(&m_RenderQuality, &m_ActiveQualityTier, [this]() {
+            if (!m_RenderSystem) return;
+            m_RenderSystem->SetRenderQuality(m_RenderQuality);
+            m_RenderSystem->SetActiveQualityTier(m_ActiveQualityTier);
+            m_SceneRenderSettings.ApplyToRuntime(
+                m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+        });
         // Live preview split: hovering a visual setting shows the screen half
         // without / half with the effect.
         m_GameMenu.SetPostProcessing(m_PostProcessing.get());
@@ -1667,8 +1678,21 @@ public:
                 // One flag for "the UI took the pointer", from the UI's own hit
                 // test plus ImGui, so a click on a button never also fires in
                 // the world (attack, camera drag).
-                Enjin::Input::SetUIConsumedPointer(m_UISystem.WasPointerConsumed() ||
-                                                   ImGui::GetIO().WantCaptureMouse);
+                const bool uiTookIt = m_UISystem.WasPointerConsumed();
+                const bool imguiTookIt = ImGui::GetIO().WantCaptureMouse;
+                Enjin::Input::SetUIConsumedPointer(uiTookIt || imguiTookIt);
+                // DIAGNOSTIC (mirrors the web player): this flag suppresses every
+                // mouse-bound action, so when it is stuck on, rebinding an action
+                // to a mouse button looks like it did nothing while keyboard
+                // rebinds work.
+                {
+                    static int s_GateTick = 0;
+                    if ((uiTookIt || imguiTookIt) && (s_GateTick++ % 60) == 0) {
+                        ENJIN_LOG_WARN(Player,
+                            "pointer gate ON: uiCanvas=%d imgui=%d (mouse-bound actions suppressed)",
+                            uiTookIt ? 1 : 0, imguiTookIt ? 1 : 0);
+                    }
+                }
 
                 // Touch overlay (--touch) and the bottom-left controls hint, both
                 // derived from the active preset + live bindings (shared with web).
@@ -2784,6 +2808,14 @@ private:
                 Enjin::Renderer::DeserializeRenderSettings(manifest["defaultRenderSettings"]);
             m_HasProjectRenderSettings = true;
         }
+        // Project quality tiers: a ceiling on render cost the player can lower.
+        // Read here, applied to the render system just before scene settings go
+        // in, because the renderer does not exist yet at manifest time.
+        if (manifest.contains("renderQuality") && manifest["renderQuality"].is_object()) {
+            m_RenderQuality = Enjin::Renderer::DeserializeRenderQuality(manifest["renderQuality"]);
+            // The project default holds until a player picks a tier.
+            m_ActiveQualityTier = m_RenderQuality.defaultTier;
+        }
         Enjin::InputSystem::SetTouchProjectSettings(&m_InputSettings);
 
         // Project string tables + starting locale. The exe directory is the
@@ -2863,6 +2895,12 @@ private:
             if (m_SceneRenderSettings.useProjectDefaults && m_HasProjectRenderSettings) {
                 m_SceneRenderSettings = m_ProjectRenderSettings;
                 m_SceneRenderSettings.useProjectDefaults = true;
+            }
+            // Must precede ApplyToRuntime: that is what reads the tier and
+            // clamps the scene's cost knobs on its way into the live systems.
+            if (m_RenderSystem) {
+                m_RenderSystem->SetRenderQuality(m_RenderQuality);
+                m_RenderSystem->SetActiveQualityTier(m_ActiveQualityTier);
             }
             m_SceneRenderSettings.ApplyToRuntime(m_RenderSystem,
                 m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
@@ -3421,6 +3459,12 @@ private:
     Enjin::Renderer::SceneRenderSettings m_SceneRenderSettings;
     Enjin::Renderer::SceneRenderSettings m_ProjectRenderSettings;
     bool m_HasProjectRenderSettings = false;
+
+    // Project render quality tiers (ADR-0006) and the tier currently in force.
+    // The active tier starts at the project default; a player-facing selector
+    // overwrites it. Clamps cost only, never look.
+    Enjin::Renderer::RenderQualitySettings m_RenderQuality;
+    Enjin::Renderer::QualityTier m_ActiveQualityTier = Enjin::Renderer::QualityTier::High;
     Enjin::Effects::SeasonalWeatherSystem m_SeasonalWeather;
 
     // Elemental system (fire/water/earth/air) + fire-light injection buffers.

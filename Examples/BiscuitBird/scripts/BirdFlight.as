@@ -101,17 +101,29 @@ class BirdFlight : TegeBehavior {
 
     // ----------------------------------------------------------------- input
 
+    // A tap flaps, the left stick steers.
+    //
+    // The keyboard and gamepad routes go through the ACTION MAP rather than
+    // polling physical keys: Jump already carries Space and gamepad A, and
+    // MoveLeft/MoveRight already carry A/D, the arrow keys and the left stick's
+    // X axis. Reading actions means this bird gains the stick, gains rebinding,
+    // and appears in the controls screen and the touch overlay, none of which a
+    // raw Input_GetKeyDown can ever do.
+    //
+    // The raw pointer tap stays: tapping ANYWHERE flaps, which is the whole
+    // control scheme on a phone and is not something an action button expresses.
     bool Tapped() {
         return Input_GetMouseButtonDown(MouseBtn::Left)
-            || Input_GetKeyDown(Key::Space)
+            || InputAction_IsPressed(GameAction::Jump)
             || Input_GetKeyDown(Key::W)
             || Input_GetKeyDown(Key::Up);
     }
 
     float SteerInput() {
-        float s = 0.0f;
-        if (Input_GetKey(Key::A) || Input_GetKey(Key::Left))  s -= 1.0f;
-        if (Input_GetKey(Key::D) || Input_GetKey(Key::Right)) s += 1.0f;
+        // Left stick and the movement keys, both via the action map. The values
+        // are 0..1 per direction, so the difference is a signed steer.
+        float s = InputAction_GetValue(GameAction::MoveRight)
+                - InputAction_GetValue(GameAction::MoveLeft);
 
         // Held pointer: distance from the middle of the screen is the stick.
         if (Input_GetMouseButton(MouseBtn::Left)) {

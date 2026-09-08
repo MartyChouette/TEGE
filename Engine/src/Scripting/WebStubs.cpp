@@ -32,13 +32,12 @@ namespace VisualScript {
 
 } // namespace Enjin
 
-// AudioEventGraphRuntime method stubs
-#include "Enjin/Audio/AudioEventGraph.h"
-namespace Enjin { namespace Audio {
-    void AudioEventGraphRuntime::TriggerEvent(const std::string&) {}
-    void AudioEventGraphRuntime::SetParameter(const std::string&, float) {}
-    float AudioEventGraphRuntime::GetParameter(const std::string&) const { return 0.0f; }
-    void AudioEventGraphRuntime::StopAll() {}
-}}
+// NOTE: AudioEventGraphRuntime is NO LONGER stubbed here either, for the same
+// reason as the Register* functions above. Audio/AudioEventGraphRuntime.cpp
+// carries no platform guard and depends only on SimpleAudio and the logger, so
+// it compiles on web and defines these four methods itself. Keeping the stubs
+// meant two definitions and a duplicate-symbol link failure -- which only
+// surfaced on a clean web build, because a stale build directory was still
+// linking objects from before that file existed.
 
 #endif

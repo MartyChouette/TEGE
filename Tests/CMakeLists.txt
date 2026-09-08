@@ -205,6 +205,10 @@ enjin_add_test(TestSceneManager       Unit/Scene/TestSceneManager.cpp)
 enjin_add_test(TestSceneAssetValidator Unit/Scene/TestSceneAssetValidator.cpp)
 enjin_add_test(TestLevelStreaming      Unit/Scene/TestLevelStreaming.cpp)
 enjin_add_test(TestSerdesCoverage  Unit/Scene/TestSerdesCoverage.cpp)
+enjin_add_test(TestRenderQuality   Unit/Renderer/TestRenderQuality.cpp)
+enjin_add_test(TestDDGIGrid        Unit/Renderer/TestDDGIGrid.cpp)
+enjin_add_test(TestLightCookie     Unit/Renderer/TestLightCookie.cpp)
+enjin_add_test(TestControlsMenu    Unit/GUI/TestControlsMenu.cpp)
 
 # --- Scripting ---
 enjin_add_test(TestScriptEngine       Unit/Scripting/TestScriptEngine.cpp)

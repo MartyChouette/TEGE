@@ -3,6 +3,9 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Math/Matrix.h"
 #include "Enjin/Math/Vector.h"
+#include "Enjin/Renderer/LightCookie.h"
+
+#include <string>
 
 namespace Enjin {
 namespace ECS {
@@ -34,6 +37,25 @@ struct ENJIN_API LightComponent {
 
     // Shadow casting
     bool castShadows = true;
+
+    // --- Cookie (gobo): a shape in the light's projection ---
+    // Window mullions, blinds, leaf dapple. Spot lights only for now, because a
+    // cookie needs a cone to project through.
+    //
+    // The RECIPE is stored, not just the image, so the cookie stays re-editable
+    // after a save and can be regenerated instead of shipping a texture. A baked
+    // path is optional and wins when set, which is how a hand-painted cookie gets
+    // in without the generator having to be able to draw it.
+    bool cookieEnabled = false;
+    Renderer::CookieParams cookie;
+    std::string cookieTexturePath;   // project-relative; empty = generate from `cookie`
+
+    // How much of the cone the cookie covers. 1 = the pattern exactly fills the
+    // outer cone; smaller zooms in, larger tiles it out toward the edge.
+    f32 cookieScale = 1.0f;
+    // Blend between the plain light (0) and the full cookie (1). Not the same as
+    // dimming the light: at 0 the light is unchanged, not off.
+    f32 cookieIntensity = 1.0f;
 
     // Helper to calculate attenuation at a distance
     f32 CalculateAttenuation(f32 distance) const {
@@ -85,7 +107,28 @@ struct alignas(16) SpotLightData {
     f32 constantAttenuation;
     f32 linearAttenuation;
     f32 quadraticAttenuation;
+
+    // --- Cookie (gobo) ---
+    // cookieRight is the light's local +X taken from its transform, so the
+    // pattern keeps a stable orientation when the light rotates. The shader
+    // derives up as cross(direction, right) rather than carrying a second
+    // vector. Deriving BOTH from the direction alone would be cheaper still, but
+    // any stable-perpendicular trick flips as the direction crosses its
+    // reference axis, and a gobo that spins when a lamp is rotated past vertical
+    // is worse than one extra row.
+    Math::Vector3 cookieRight;
+    f32 cookieIndex;      // bindless texture index; < 0 means no cookie
+    f32 cookieScale;      // 1 = the pattern fills the outer cone
+    f32 cookieIntensity;  // blend between plain light (0) and full cookie (1)
+    f32 _cookiePad0;
+    f32 _cookiePad1;
 };
+
+// std140 rows: 6 x 16 bytes. The GLSL SpotLight struct in triangle.frag,
+// grass.frag, shrub.frag, tree.frag and sprite_lit.frag must match exactly --
+// they all index the same UBO array, so a stride mismatch in any one of them
+// reads every light after the first from the wrong offset.
+static_assert(sizeof(SpotLightData) == 96, "SpotLightData must stay 96 bytes; update all 5 shaders together");
 
 // GPU shadow data SSBO for point/spot light shadow maps (binding 12)
 struct alignas(16) ShadowDataSSBO {

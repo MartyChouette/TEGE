@@ -64,6 +64,7 @@ namespace Enjin { namespace Effects {
     class FluidSimulation;
     class ElementalSystem;
     class GPUParticleSystem;
+    struct GPUEmitterConfig;      // defined in Effects/GPUParticleTypes.h
     class SplatRenderer;
     enum class GPUParticlePreset : unsigned char; // defined in Effects/GPUParticleTypes.h
     class SpriteBatchRenderer;
@@ -101,6 +102,7 @@ namespace Enjin { namespace Effects {
 #include <unordered_set>
 #include <memory>
 #include <vector>
+#include "Enjin/Renderer/RenderQualitySettings.h"
 #include "Enjin/Effects/ParticleColliders.h"
 #include "Enjin/Renderer/Skybox.h"   // SkyboxConfig is backend-agnostic (class below is guarded)
 
@@ -287,6 +289,21 @@ public:
     Renderer::GPUTextureHandle ResolveWebTexture(const std::string& path);
     void TickHighlightTime(f32 dt) { m_HighlightTimeValue += dt; }
 private:
+    // One generated cookie texture per light entity, keyed by entity. The params
+    // it was built from are kept so an unchanged cookie is not rebuilt, and so a
+    // slider drag rebuilds exactly once per distinct value.
+    struct LightCookieEntry {
+        Renderer::CookieParams params;
+        std::string path;                  // baked texture, when one was used
+        u32 bindless = UINT32_MAX;
+        std::shared_ptr<Renderer::Texture> texture;   // keeps the image alive
+    };
+    std::unordered_map<u32, LightCookieEntry> m_LightCookies;
+
+    // Authored project quality tiers and the tier currently in force. Plain
+    // data, deliberately outside any renderer guard so web behaves identically.
+    Renderer::RenderQualitySettings m_RenderQuality;
+    Renderer::QualityTier m_ActiveQualityTier = Renderer::QualityTier::High;
 
 public:
     RenderSystem(World* world, Renderer::IRenderBackend* renderer);
@@ -303,6 +320,80 @@ public:
     // Process deferred changes (skybox config, pipeline recreation) — call at frame start,
     // BEFORE any command buffer recording (RenderOffscreen, Update, etc.)
     void FlushPendingChanges();
+
+    // Push authored volumetric fog values from scene render settings into the
+    // live froxel system. Vulkan-only: there is no WebGPU volumetric path yet,
+    // so on web these values are carried and ignored rather than lost.
+    void ApplyVolumetricFogSettings(bool enabled, const Math::Vector3& color,
+                                    f32 density, f32 heightFalloff, f32 baseHeight,
+                                    f32 anisotropy, f32 temporalBlend,
+                                    f32 noiseScale, f32 noiseStrength,
+                                    f32 windX, f32 windZ);
+
+    // The read side of the same values, for CaptureFromRuntime. Returns false
+    // and touches nothing when there is no fog system, so the caller keeps its
+    // defaults rather than getting zeroes.
+    bool GetVolumetricFogSettings(bool& enabled, Math::Vector3& color,
+                                  f32& density, f32& heightFalloff, f32& baseHeight,
+                                  f32& anisotropy, f32& temporalBlend,
+                                  f32& noiseScale, f32& noiseStrength,
+                                  f32& windX, f32& windZ) const;
+
+    // DDGI, same shape as the fog pair above. The live-tunable values are set
+    // immediately; the grid shape is REQUESTED, because it sizes GPU images and
+    // the reallocation has to wait for a point where no frame is reading them
+    // (FlushPendingChanges). Nothing here reallocates.
+    void ApplyDDGISettings(bool enabled, f32 gridSpacing, const Math::Vector3& gridOrigin,
+                           f32 voxelWorldExtent, u32 raysPerProbe, f32 maxTraceDistance,
+                           u32 amortizationRate, f32 hysteresis,
+                           i32 probeCountX, i32 probeCountY, i32 probeCountZ,
+                           i32 voxelResolution, u32 octResolution);
+
+    bool GetDDGISettings(bool& enabled, f32& gridSpacing, Math::Vector3& gridOrigin,
+                         f32& voxelWorldExtent, u32& raysPerProbe, f32& maxTraceDistance,
+                         u32& amortizationRate, f32& hysteresis,
+                         i32& probeCountX, i32& probeCountY, i32& probeCountZ,
+                         i32& voxelResolution, u32& octResolution) const;
+
+    // Project render quality (ADR-0006). Lives here because RenderSystem is what
+    // all three runtimes have, and because SceneRenderSettings::ApplyToRuntime
+    // needs to reach it. Not behind a renderer guard: the clamp is pure C++ and
+    // web gets identical behaviour from the same code.
+    // Rebind binding 22 to the live probe atlas. Safe to call any time the GPU
+    // is not mid-frame; no-ops once bound.
+    void UpdateDDGIAtlasDescriptor();
+
+    // Light cookies (gobos). Building one uploads a texture and registers a
+    // bindless slot, so it happens in FlushPendingChanges rather than during the
+    // per-frame UBO fill; ResolveLightCookie is then a pure lookup that reports
+    // "not ready" instead of allocating mid-frame.
+    void UpdateLightCookies();
+    u32 ResolveLightCookie(Entity e, const LightComponent& light) const;
+    void ClearLightCookies();
+
+    void SetRenderQuality(const Renderer::RenderQualitySettings& q) { m_RenderQuality = q; }
+    const Renderer::RenderQualitySettings& GetRenderQuality() const { return m_RenderQuality; }
+
+    // The tier actually in force: the project default until a player picks one.
+    void SetActiveQualityTier(Renderer::QualityTier t) { m_ActiveQualityTier = t; }
+    Renderer::QualityTier GetActiveQualityTier() const { return m_ActiveQualityTier; }
+
+    // GPU particles. Passed as the config struct rather than a scalar list
+    // because GPUParticleTypes.h is backend-agnostic and carries no renderer
+    // guard, so it costs nothing to name the type here. maxParticles and
+    // position are preserved from the live config by Apply.
+    void ApplyGPUParticleSettings(const Effects::GPUEmitterConfig& cfg);
+    bool GetGPUParticleSettings(Effects::GPUEmitterConfig& out) const;
+
+    // DIAGNOSTIC: run a probe bake from OUTSIDE an open frame, which is where a
+    // bake has to happen (it drives its own BeginFrame/EndFrame per cubemap
+    // face). Reached only via the editor's --probe-bake-test flag; nothing calls
+    // it in a normal session.
+    //
+    // This placement is believed correct and is known to access-violate. It
+    // exists so the crash can be captured with a real stack instead of guessed
+    // at. See _docs_internal/PROBE_BAKE_INVESTIGATION.md.
+    void ProbeBakeOutsideFrameDiagnostic();
 
     void Update(f32 deltaTime) override;
     void OnEntityAdded(Entity entity) override;

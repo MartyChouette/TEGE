@@ -456,6 +456,29 @@ json SerializeLightComponent(const ECS::LightComponent& light) {
     j["innerConeAngle"] = RF(light.innerConeAngle);
     j["outerConeAngle"] = RF(light.outerConeAngle);
     j["castShadows"] = light.castShadows;
+
+    // Cookie. Written only when it is on, so a scene that never used one does
+    // not grow a block of pattern parameters nobody set.
+    if (light.cookieEnabled) {
+        json c;
+        c["pattern"]    = static_cast<i32>(light.cookie.pattern);
+        c["resolution"] = light.cookie.resolution;
+        c["columns"]    = RF(light.cookie.columns);
+        c["rows"]       = RF(light.cookie.rows);
+        c["barWidth"]   = RF(light.cookie.barWidth);
+        c["softness"]   = RF(light.cookie.softness);
+        c["rotation"]   = RF(light.cookie.rotation);
+        c["contrast"]   = RF(light.cookie.contrast);
+        c["brightness"] = RF(light.cookie.brightness);
+        c["vignette"]   = RF(light.cookie.vignette);
+        c["invert"]     = light.cookie.invert;
+        c["seed"]       = light.cookie.seed;
+        c["sourcePath"] = light.cookie.sourcePath;
+        c["texturePath"]     = light.cookieTexturePath;
+        c["cookieScale"]     = RF(light.cookieScale);
+        c["cookieIntensity"] = RF(light.cookieIntensity);
+        j["cookie"] = c;
+    }
     return j;
 }
 
@@ -792,6 +815,33 @@ ECS::LightComponent DeserializeLightComponent(const json& j) {
     light.innerConeAngle = j.value("innerConeAngle", 12.5f);
     light.outerConeAngle = j.value("outerConeAngle", 17.5f);
     light.castShadows = j.contains("castShadows") ? JB(j["castShadows"]) : false;
+
+    // Cookie. Absent means off, which is what every scene written before cookies
+    // existed means too.
+    if (j.contains("cookie") && j["cookie"].is_object()) {
+        const auto& c = j["cookie"];
+        light.cookieEnabled = true;
+        light.cookie.pattern    = static_cast<Renderer::CookiePattern>(
+                                      c.value("pattern", 0));
+        light.cookie.resolution = c.value("resolution", Renderer::kCookieResolutionDefault);
+        light.cookie.columns    = c.value("columns", 3.0f);
+        light.cookie.rows       = c.value("rows", 3.0f);
+        light.cookie.barWidth   = c.value("barWidth", 0.12f);
+        light.cookie.softness   = c.value("softness", 0.04f);
+        light.cookie.rotation   = c.value("rotation", 0.0f);
+        light.cookie.contrast   = c.value("contrast", 1.0f);
+        light.cookie.brightness = c.value("brightness", 0.0f);
+        light.cookie.vignette   = c.value("vignette", 0.0f);
+        light.cookie.invert     = c.contains("invert") ? JB(c["invert"]) : false;
+        light.cookie.seed       = c.value("seed", 1337u);
+        light.cookie.sourcePath = c.value("sourcePath", std::string());
+        light.cookieTexturePath = c.value("texturePath", std::string());
+        light.cookieScale       = c.value("cookieScale", 1.0f);
+        light.cookieIntensity   = c.value("cookieIntensity", 1.0f);
+        // A scene file is user-editable text, so the recipe is clamped on the
+        // way in rather than trusted into a texture allocation.
+        Renderer::ClampCookieParams(light.cookie);
+    }
     // Note: old scenes may contain "shadowMapResolution" â€" silently ignored
     return light;
 }
@@ -966,6 +1016,10 @@ ECS::WaterVolumeComponent DeserializeWaterVolumeComponent(const json& j) {
 
 json SerializeWater3DComponent(const ECS::Water3DComponent& w) {
     json j;
+    // Where the water IS. The surface mesh is generated in world space around
+    // this point rather than around the entity transform, so leaving it out
+    // moved every saved water plane back to the origin on load.
+    j["position"] = SerializeVector3(w.settings.position);
     j["width"] = RF(w.settings.width);
     j["depth"] = RF(w.settings.depth);
     j["tileSize"] = RF(w.settings.tileSize);
@@ -996,6 +1050,9 @@ json SerializeWater3DComponent(const ECS::Water3DComponent& w) {
 
 ECS::Water3DComponent DeserializeWater3DComponent(const json& j) {
     ECS::Water3DComponent w;
+    // Absent in every scene written before this key existed, and the default is
+    // the origin, which is where all of that water already sat.
+    if (j.contains("position")) w.settings.position = DeserializeVector3(j["position"]);
     if (j.contains("width")) w.settings.width = j["width"].get<f32>();
     if (j.contains("depth")) w.settings.depth = j["depth"].get<f32>();
     if (j.contains("tileSize")) w.settings.tileSize = Math::Max(j["tileSize"].get<f32>(), 0.5f);
@@ -1278,7 +1335,9 @@ json SerializeReflectionProbeComponent(const ECS::ReflectionProbeComponent& prob
     j["resolution"] = probe.resolution;
     j["intensity"] = probe.intensity;
     j["priority"] = probe.priority;
-    j["baked"] = probe.baked;
+    // `baked` is NOT written: the cubemap it refers to is a GPU resource that
+    // does not survive the save, so persisting the flag only produced probes
+    // that claimed to be baked and were not. They re-bake on load instead.
     j["isActive"] = probe.isActive;
     j["blendDistance"] = probe.blendDistance;
     return j;
@@ -1291,7 +1350,7 @@ ECS::ReflectionProbeComponent DeserializeReflectionProbeComponent(const json& j)
     if (j.contains("resolution")) probe.resolution = j["resolution"].get<u32>();
     if (j.contains("intensity")) probe.intensity = j["intensity"].get<f32>();
     if (j.contains("priority")) probe.priority = j["priority"].get<u32>();
-    if (j.contains("baked")) probe.baked = JB(j["baked"]);
+    // Older scenes carry "baked": ignored on purpose, see above.
     if (j.contains("isActive")) probe.isActive = JB(j["isActive"]);
     if (j.contains("blendDistance")) probe.blendDistance = j["blendDistance"].get<f32>();
     return probe;

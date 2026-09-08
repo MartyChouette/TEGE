@@ -6,6 +6,7 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/Renderer/SceneRenderSettings.h"
+#include "Enjin/Renderer/RenderQualitySettings.h"
 #include "Enjin/Physics/PhysicsBackendType.h"
 #include <string>
 #include <vector>
@@ -240,6 +241,13 @@ public:
     void SetDefaultRenderSettings(const Renderer::SceneRenderSettings& s) { m_DefaultRenderSettings = s; }
     const Renderer::SceneRenderSettings& GetDefaultRenderSettings() const { return m_DefaultRenderSettings; }
 
+    // Project render quality tiers (ADR-0006). A CEILING on render cost that a
+    // player can lower; scene look settings are never touched by it. Off by
+    // default, so a project that has never opted in renders exactly as before.
+    const Renderer::RenderQualitySettings& GetRenderQuality() const { return m_RenderQuality; }
+    Renderer::RenderQualitySettings& GetRenderQuality() { return m_RenderQuality; }
+    void SetRenderQuality(const Renderer::RenderQualitySettings& q) { m_RenderQuality = q; }
+
     // --- Game frame rate settings ---
     void SetGameFrameSettings(const GameFrameSettings& s) { m_GameFrameSettings = s; }
     const GameFrameSettings& GetGameFrameSettings() const { return m_GameFrameSettings; }
@@ -301,6 +309,7 @@ private:
 
     // Project-level render defaults
     Renderer::SceneRenderSettings m_DefaultRenderSettings;
+    Renderer::RenderQualitySettings m_RenderQuality;
 
     // Game frame rate settings
     GameFrameSettings m_GameFrameSettings;

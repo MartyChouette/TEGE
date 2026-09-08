@@ -3,6 +3,7 @@
 #include <imgui.h>
 #include <nlohmann/json.hpp>
 #include <cmath>
+#include <algorithm>
 
 using json = nlohmann::json;
 
@@ -443,31 +444,134 @@ void InputActionMap::SetCrouchToggle(bool toggle) {
     SetActionMode(GameAction::Crouch, toggle ? ActionMode::Toggle : ActionMode::Press);
 }
 
-i32 InputActionMap::PollNextKeyPress() const {
-    for (int k = ImGuiKey_NamedKey_BEGIN; k < ImGuiKey_NamedKey_END; ++k) {
-        if (ImGui::IsKeyPressed(static_cast<ImGuiKey>(k))) {
-            // Map ImGuiKey back to GLFW key code where possible
-            // For common keys this is a direct mapping
-            return k;
+bool InputActionMap::IsBindingCodeValid(BindingType type, i32 code) {
+    switch (type) {
+        case BindingType::Key:
+            // KeyCode is GLFW-style and spans Space(32)..Menu(348). Anything
+            // outside that can never match a real press.
+            return code >= static_cast<i32>(KeyCode::Space) &&
+                   code <= static_cast<i32>(KeyCode::Menu);
+        case BindingType::MouseButton:
+            return code >= 0 && code < 8;
+        case BindingType::GamepadButton:
+        case BindingType::GamepadAxis:
+            return code >= 0 && code < 64;
+    }
+    return false;
+}
+
+u32 InputActionMap::DropInvalidBindings() {
+    // Repairs bindings that can never fire.
+    //
+    // PollNextKeyPress used to scan the ImGuiKey range and return the ImGuiKey
+    // itself. That range INCLUDES ImGuiKey_MouseLeft, so clicking while a
+    // rebind prompt was open stored a Key binding with a code near 656 -- a
+    // value no key press can equal. Those bindings were then written to
+    // bindings.json / browser storage and restored on every boot, so the action
+    // stayed permanently dead and re-binding it looked like it did nothing.
+    //
+    // The poll is fixed, but the saved data is not, and a player has no way to
+    // know their file is poisoned. Anything out of range is dropped on load; an
+    // action left with nothing gets its defaults back rather than staying unbound.
+    u32 repaired = 0;
+    const u32 count = static_cast<u32>(GameAction::Count);
+    for (u32 i = 0; i < count; ++i) {
+        auto& cfg = m_Actions[i];
+        const usize before = cfg.bindings.size();
+        cfg.bindings.erase(
+            std::remove_if(cfg.bindings.begin(), cfg.bindings.end(),
+                           [](const InputBinding& b) {
+                               return !IsBindingCodeValid(b.type, b.code);
+                           }),
+            cfg.bindings.end());
+        if (cfg.bindings.size() == before) continue;
+        repaired += static_cast<u32>(before - cfg.bindings.size());
+
+        if (cfg.bindings.empty()) {
+            const ActionInfo& info = kActionInfo[i];
+            auto add = [&cfg](BindingType t, i32 c) {
+                if (c < 0) return;
+                InputBinding b; b.type = t; b.code = c; cfg.bindings.push_back(b);
+            };
+            add(BindingType::Key, info.key1);
+            add(BindingType::Key, info.key2);
+            add(BindingType::MouseButton, info.mouse);
+            add(BindingType::GamepadButton, info.pad);
+            add(BindingType::GamepadButton, info.pad2);
         }
+    }
+    if (repaired > 0) {
+        ENJIN_LOG_WARN(Core, "Dropped %u unusable input binding(s) from saved data "
+                       "(codes outside the valid range); affected actions restored to defaults",
+                       repaired);
+    }
+    return repaired;
+}
+
+i32 InputActionMap::PollNextKeyPress() const {
+    // Scans the ENGINE key range and returns an engine KeyCode.
+    //
+    // This used to walk ImGuiKey_NamedKey_BEGIN..END and return the ImGuiKey
+    // itself, with a comment claiming it was "a direct mapping" to a GLFW code.
+    // It is not: KeyCode is GLFW-style (Space = 32, A = 65, Escape = 256) while
+    // ImGuiKey named keys start at 512. Every rebind therefore stored a code no
+    // real key press could ever equal, so rebinding silently did nothing --
+    // for every key, not just the exotic ones.
+    //
+    // Reading engine input rather than ImGui also means this works with no ImGui
+    // frame open, which is what the web player's UICanvas controls screen needs.
+    for (i32 k = static_cast<i32>(KeyCode::Space); k <= static_cast<i32>(KeyCode::Menu); ++k) {
+        if (Input::IsKeyPressed(static_cast<KeyCode>(k))) return k;
+    }
+    return -1;
+}
+
+i32 InputActionMap::PollNextMouseButton() const {
+    for (i32 b = static_cast<i32>(MouseButton::Left);
+         b <= static_cast<i32>(MouseButton::Button6); ++b) {
+        if (Input::IsMouseButtonPressed(static_cast<MouseButton>(b))) return b;
     }
     return -1;
 }
 
 void InputActionMap::RebindAction(i32 actionIndex, i32 keyCode) {
+    RebindAction(actionIndex, BindingType::Key, keyCode);
+}
+
+void InputActionMap::RebindAction(i32 actionIndex, BindingType type, i32 code) {
     if (actionIndex < 0 || actionIndex >= static_cast<i32>(GameAction::Count)) return;
+    // Only Key and MouseButton are rebindable from a controls screen; a gamepad
+    // binding is captured differently and is not what this path feeds.
+    if (type != BindingType::Key && type != BindingType::MouseButton) return;
+    // A code that cannot fire is worse than no rebind: the screen would show it
+    // and the action would be silently dead.
+    if (!IsBindingCodeValid(type, code)) {
+        ENJIN_LOG_WARN(Core, "Refused rebind: code %d is not valid for that input kind", code);
+        return;
+    }
     auto& cfg = m_Actions[actionIndex];
-    // Replace the first keyboard binding, or add one
-    for (auto& b : cfg.bindings) {
-        if (b.type == BindingType::Key) {
-            b.code = keyCode;
-            return;
+
+    // Rebinding REPLACES: after binding Jump to the left mouse button, Space
+    // must stop jumping. An earlier version replaced only the binding of the
+    // same kind, reasoning that a mouse binding should not cost you the key --
+    // but that is not what "rebind" means to the person doing it, and it left
+    // the old key quietly working while the controls screen claimed otherwise.
+    //
+    // Gamepad and axis bindings are deliberately kept: they are a separate
+    // column in the action table and a separate control on the screen, so a
+    // keyboard rebind must not silently unbind the pad.
+    std::vector<InputBinding> kept;
+    kept.reserve(cfg.bindings.size() + 1);
+    for (const auto& b : cfg.bindings) {
+        if (b.type == BindingType::GamepadButton || b.type == BindingType::GamepadAxis) {
+            kept.push_back(b);
         }
     }
-    InputBinding b;
-    b.type = BindingType::Key;
-    b.code = keyCode;
-    cfg.bindings.insert(cfg.bindings.begin(), b);
+    InputBinding nb;
+    nb.type = type;
+    nb.code = code;
+    kept.insert(kept.begin(), nb);
+    cfg.bindings.swap(kept);
 }
 
 i32 InputActionMap::GetActionCount() const {
@@ -637,6 +741,7 @@ bool InputActionMap::FromJson(const std::string& jsonStr) {
                 }
             }
         }
+        DropInvalidBindings();
         return true;
     } catch (const std::exception& e) {
         ENJIN_LOG_ERROR(Core, "Failed to load input action map: %s", e.what());

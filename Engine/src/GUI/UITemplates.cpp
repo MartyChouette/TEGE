@@ -562,6 +562,94 @@ bool SetOptionSelected(UICanvasComponent& canvas, const std::string& event, i32 
     return true;
 }
 
+// ---------------------------------------------------------------------------
+// Controls / key bindings, generated from the live action map.
+// ---------------------------------------------------------------------------
+namespace {
+
+const char* ControlsCategoryLabel(i32 category) {
+    switch (static_cast<InputSystem::ActionCategory>(category)) {
+        case InputSystem::ActionCategory::Movement: return "Movement";
+        case InputSystem::ActionCategory::Actions:  return "Actions";
+        case InputSystem::ActionCategory::Camera:   return "Camera";
+        case InputSystem::ActionCategory::UI:       return "Interface";
+        case InputSystem::ActionCategory::Custom:   return "Game";
+        default: return "Other";
+    }
+}
+
+} // namespace
+
+std::string ControlsRebindEvent(i32 actionIndex) {
+    return "controls_rebind_" + std::to_string(actionIndex);
+}
+
+i32 ControlsRebindIndexFromEvent(const std::string& event) {
+    constexpr const char* kPrefix = "controls_rebind_";
+    constexpr usize kPrefixLen = 16;   // strlen(kPrefix)
+    if (event.size() <= kPrefixLen || event.compare(0, kPrefixLen, kPrefix) != 0) return -1;
+    i32 out = 0;
+    for (usize i = kPrefixLen; i < event.size(); ++i) {
+        const char c = event[i];
+        if (c < '0' || c > '9') return -1;      // a malformed event is not action 0
+        out = out * 10 + (c - '0');
+    }
+    return out;
+}
+
+UICanvasComponent CreateControlsMenu(const InputSystem::InputActionMap& map, i32 rebindingIndex) {
+    OptionsMenuSpec spec;
+    spec.title = "Controls";
+    spec.backEvent = "controls_back";
+
+    spec.rows.push_back(Options::Heading("Look"));
+    // Sensitivity is authored in 0.05..5.0 on the map; the row carries the real
+    // range so the slider reads in the same units the rest of the engine uses.
+    spec.rows.push_back(Options::Slider("Mouse Sensitivity", "controls_sensitivity",
+                                        map.GetMouseSensitivity(), 0.05f, 5.0f));
+    spec.rows.push_back(Options::Checkbox("Invert Look Y", "controls_invert_y", map.GetInvertY()));
+
+    spec.rows.push_back(Options::Heading("Hold or Toggle"));
+    spec.rows.push_back(Options::Dropdown("Sprint", "controls_sprint_mode",
+                                          {"Hold", "Toggle"}, map.IsSprintToggle() ? 1 : 0));
+    spec.rows.push_back(Options::Dropdown("Crouch", "controls_crouch_mode",
+                                          {"Hold", "Toggle"}, map.IsCrouchToggle() ? 1 : 0));
+
+    // One row per action, grouped by the category the action table already
+    // declares. Headings are emitted lazily so a category with no actions does
+    // not leave an empty title behind.
+    i32 lastCategory = -1;
+    const i32 count = map.GetActionCount();
+    for (i32 i = 0; i < count; ++i) {
+        const char* name = map.GetActionName(i);
+        if (!name || !*name) continue;
+
+        const i32 category = map.GetActionCategory(i);
+        if (category != lastCategory) {
+            spec.rows.push_back(Options::Heading(ControlsCategoryLabel(category)));
+            lastCategory = category;
+        }
+
+        const char* binding = map.GetBindingDisplayName(i);
+        std::string label = name;
+        label += "     ";
+        if (i == rebindingIndex) {
+            // The row IS the prompt: a separate modal would have to be dismissed
+            // on touch, and there is nothing to dismiss it with while every key
+            // is being captured.
+            label += "< press a key or mouse button - Esc cancels >";
+        } else {
+            label += (binding && *binding) ? binding : "unbound";
+        }
+        spec.rows.push_back(Options::Button(label, ControlsRebindEvent(i)));
+    }
+
+    spec.rows.push_back(Options::Spacer());
+    spec.rows.push_back(Options::Button("Reset All Bindings", "controls_reset"));
+
+    return CreateOptionsMenu(spec);
+}
+
 UICanvasComponent CreateGameOverScreen(bool won, const std::string& message, bool allowRestart) {
     UICanvasComponent canvas;
     canvas.canvasName = "GameOverScreen";

@@ -1,0 +1,12 @@
+{
+ "name": "LightCookies",
+ "version": "1.0",
+ "scenes": [
+  {
+   "path": "scenes/WindowGobo.enjin",
+   "name": "WindowGobo",
+   "buildIndex": 0,
+   "isStartScene": true
+  }
+ ]
+}

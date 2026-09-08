@@ -422,16 +422,27 @@ private:
  */
 class ENJIN_API MeshEditCommand : public ICommand {
 public:
+    // The SourceRef is part of the edit, not incidental. A mesh that still
+    // points at the file it was imported from is SERIALIZED AS A REFERENCE:
+    // SceneSerializer drops the vertices and MeshAssetCache re-imports the
+    // original on load, comparing only the source file's content hash and never
+    // the live geometry. So an edit that rewrites the vertices and leaves the
+    // reference alone is silently reverted by the next save/load round trip --
+    // which is what happened to every Simplify on an imported model. Passing an
+    // empty ref as the new value detaches the mesh so it serializes inline;
+    // passing the old one back is what makes undo restore the link.
     MeshEditCommand(ECS::World* world, ECS::Entity entity, const char* description,
                     std::vector<ECS::Vertex> oldVertices, std::vector<u32> oldIndices,
                     std::vector<ECS::MeshComponent::SubMesh> oldSubMeshes,
+                    ECS::MeshComponent::SourceRef oldSource,
                     std::vector<ECS::Vertex> newVertices, std::vector<u32> newIndices,
-                    std::vector<ECS::MeshComponent::SubMesh> newSubMeshes)
+                    std::vector<ECS::MeshComponent::SubMesh> newSubMeshes,
+                    ECS::MeshComponent::SourceRef newSource)
         : m_World(world), m_Entity(entity), m_Description(description),
           m_OldVertices(std::move(oldVertices)), m_OldIndices(std::move(oldIndices)),
-          m_OldSubMeshes(std::move(oldSubMeshes)),
+          m_OldSubMeshes(std::move(oldSubMeshes)), m_OldSource(std::move(oldSource)),
           m_NewVertices(std::move(newVertices)), m_NewIndices(std::move(newIndices)),
-          m_NewSubMeshes(std::move(newSubMeshes)) {}
+          m_NewSubMeshes(std::move(newSubMeshes)), m_NewSource(std::move(newSource)) {}
 
     void Execute() override;
     void Undo() override;
@@ -439,7 +450,8 @@ public:
 
 private:
     void Apply(const std::vector<ECS::Vertex>& vertices, const std::vector<u32>& indices,
-               const std::vector<ECS::MeshComponent::SubMesh>& subMeshes);
+               const std::vector<ECS::MeshComponent::SubMesh>& subMeshes,
+               const ECS::MeshComponent::SourceRef& source);
 
     ECS::World* m_World;
     ECS::Entity m_Entity;
@@ -447,9 +459,11 @@ private:
     std::vector<ECS::Vertex>  m_OldVertices;
     std::vector<u32>          m_OldIndices;
     std::vector<ECS::MeshComponent::SubMesh> m_OldSubMeshes;
+    ECS::MeshComponent::SourceRef m_OldSource;
     std::vector<ECS::Vertex>  m_NewVertices;
     std::vector<u32>          m_NewIndices;
     std::vector<ECS::MeshComponent::SubMesh> m_NewSubMeshes;
+    ECS::MeshComponent::SourceRef m_NewSource;
 };
 
 // ============================================================================

@@ -1,0 +1,679 @@
+{
+ "formatVersion": 1,
+ "version": "1.0",
+ "entities": [
+  {
+   "id": 1,
+   "name": {
+    "name": "Camera"
+   },
+   "transform": {
+    "position": [
+     0,
+     3.2,
+     7.5
+    ],
+    "rotation": [
+     -0.121869,
+     0.0,
+     0.0,
+     0.992546
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "visible": true
+   },
+   "camera": {
+    "projectionType": 0,
+    "fieldOfView": 60,
+    "nearPlane": 0.1,
+    "farPlane": 200,
+    "isActive": true,
+    "priority": 0,
+    "clearColor": true,
+    "clearDepth": true,
+    "backgroundColor": [
+     0.1,
+     0.12,
+     0.16
+    ],
+    "orthoSize": 9
+   }
+  },
+  {
+   "id": 2,
+   "name": {
+    "name": "Sun"
+   },
+   "transform": {
+    "position": [
+     0,
+     12,
+     4
+    ],
+    "rotation": [
+     -0.450803,
+     -0.191984,
+     -0.099941,
+     0.865985
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "visible": true
+   },
+   "light": {
+    "type": 0,
+    "color": [
+     1.0,
+     0.97,
+     0.9
+    ],
+    "intensity": 2.2,
+    "castShadows": true,
+    "range": 40,
+    "innerConeAngle": 12.5,
+    "outerConeAngle": 17.5,
+    "constantAttenuation": 1.0,
+    "linearAttenuation": 0.09,
+    "quadraticAttenuation": 0.032
+   }
+  },
+  {
+   "id": 3,
+   "name": {
+    "name": "Floor (mirror)"
+   },
+   "transform": {
+    "position": [
+     0,
+     0,
+     0
+    ],
+    "rotation": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "visible": true
+   },
+   "brushSolid": {
+    "uvScale": 4.0,
+    "generateCollider": true,
+    "brushes": [
+     {
+      "shape": 0,
+      "op": 0,
+      "center": [
+       0,
+       -0.25,
+       0
+      ],
+      "rotation": [
+       0.0,
+       0.0,
+       0.0,
+       1.0
+      ],
+      "enabled": true,
+      "halfExtents": [
+       10.0,
+       0.25,
+       10.0
+      ]
+     }
+    ]
+   },
+   "material": {
+    "baseColor": [
+     0.86,
+     0.87,
+     0.9
+    ],
+    "metallic": 1.0,
+    "roughness": 0.08
+   }
+  },
+  {
+   "id": 4,
+   "name": {
+    "name": "Wall North (red)"
+   },
+   "transform": {
+    "position": [
+     0,
+     0,
+     0
+    ],
+    "rotation": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "visible": true
+   },
+   "brushSolid": {
+    "uvScale": 2.0,
+    "generateCollider": true,
+    "brushes": [
+     {
+      "shape": 0,
+      "op": 0,
+      "center": [
+       0,
+       2.5,
+       -10.0
+      ],
+      "rotation": [
+       0.0,
+       0.0,
+       0.0,
+       1.0
+      ],
+      "enabled": true,
+      "halfExtents": [
+       10.0,
+       2.5,
+       0.2
+      ]
+     }
+    ]
+   },
+   "material": {
+    "baseColor": [
+     0.78,
+     0.13,
+     0.12
+    ],
+    "metallic": 0.0,
+    "roughness": 0.9
+   }
+  },
+  {
+   "id": 5,
+   "name": {
+    "name": "Wall South (green)"
+   },
+   "transform": {
+    "position": [
+     0,
+     0,
+     0
+    ],
+    "rotation": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "visible": true
+   },
+   "brushSolid": {
+    "uvScale": 2.0,
+    "generateCollider": true,
+    "brushes": [
+     {
+      "shape": 0,
+      "op": 0,
+      "center": [
+       0,
+       2.5,
+       10.0
+      ],
+      "rotation": [
+       0.0,
+       0.0,
+       0.0,
+       1.0
+      ],
+      "enabled": true,
+      "halfExtents": [
+       10.0,
+       2.5,
+       0.2
+      ]
+     }
+    ]
+   },
+   "material": {
+    "baseColor": [
+     0.16,
+     0.58,
+     0.24
+    ],
+    "metallic": 0.0,
+    "roughness": 0.9
+   }
+  },
+  {
+   "id": 6,
+   "name": {
+    "name": "Wall East (blue)"
+   },
+   "transform": {
+    "position": [
+     0,
+     0,
+     0
+    ],
+    "rotation": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "visible": true
+   },
+   "brushSolid": {
+    "uvScale": 2.0,
+    "generateCollider": true,
+    "brushes": [
+     {
+      "shape": 0,
+      "op": 0,
+      "center": [
+       10.0,
+       2.5,
+       0
+      ],
+      "rotation": [
+       0.0,
+       0.0,
+       0.0,
+       1.0
+      ],
+      "enabled": true,
+      "halfExtents": [
+       0.2,
+       2.5,
+       10.0
+      ]
+     }
+    ]
+   },
+   "material": {
+    "baseColor": [
+     0.13,
+     0.3,
+     0.8
+    ],
+    "metallic": 0.0,
+    "roughness": 0.9
+   }
+  },
+  {
+   "id": 7,
+   "name": {
+    "name": "Wall West (amber)"
+   },
+   "transform": {
+    "position": [
+     0,
+     0,
+     0
+    ],
+    "rotation": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "visible": true
+   },
+   "brushSolid": {
+    "uvScale": 2.0,
+    "generateCollider": true,
+    "brushes": [
+     {
+      "shape": 0,
+      "op": 0,
+      "center": [
+       -10.0,
+       2.5,
+       0
+      ],
+      "rotation": [
+       0.0,
+       0.0,
+       0.0,
+       1.0
+      ],
+      "enabled": true,
+      "halfExtents": [
+       0.2,
+       2.5,
+       10.0
+      ]
+     }
+    ]
+   },
+   "material": {
+    "baseColor": [
+     0.9,
+     0.65,
+     0.1
+    ],
+    "metallic": 0.0,
+    "roughness": 0.9
+   }
+  },
+  {
+   "id": 8,
+   "name": {
+    "name": "Block Left"
+   },
+   "transform": {
+    "position": [
+     0,
+     0,
+     0
+    ],
+    "rotation": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "visible": true
+   },
+   "brushSolid": {
+    "uvScale": 1.0,
+    "generateCollider": true,
+    "brushes": [
+     {
+      "shape": 0,
+      "op": 0,
+      "center": [
+       -4.0,
+       1.0,
+       -1.5
+      ],
+      "rotation": [
+       0.0,
+       0.0,
+       0.0,
+       1.0
+      ],
+      "enabled": true,
+      "halfExtents": [
+       1.0,
+       1.0,
+       1.0
+      ]
+     }
+    ]
+   },
+   "material": {
+    "baseColor": [
+     0.92,
+     0.9,
+     0.86
+    ],
+    "metallic": 1.0,
+    "roughness": 0.12
+   }
+  },
+  {
+   "id": 9,
+   "name": {
+    "name": "Block Middle"
+   },
+   "transform": {
+    "position": [
+     0,
+     0,
+     0
+    ],
+    "rotation": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "visible": true
+   },
+   "brushSolid": {
+    "uvScale": 1.0,
+    "generateCollider": true,
+    "brushes": [
+     {
+      "shape": 0,
+      "op": 0,
+      "center": [
+       0.0,
+       1.75,
+       -3.0
+      ],
+      "rotation": [
+       0.0,
+       0.0,
+       0.0,
+       1.0
+      ],
+      "enabled": true,
+      "halfExtents": [
+       1.2,
+       1.75,
+       1.2
+      ]
+     }
+    ]
+   },
+   "material": {
+    "baseColor": [
+     0.85,
+     0.88,
+     0.92
+    ],
+    "metallic": 1.0,
+    "roughness": 0.05
+   }
+  },
+  {
+   "id": 10,
+   "name": {
+    "name": "Block Right"
+   },
+   "transform": {
+    "position": [
+     0,
+     0,
+     0
+    ],
+    "rotation": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "visible": true
+   },
+   "brushSolid": {
+    "uvScale": 1.0,
+    "generateCollider": true,
+    "brushes": [
+     {
+      "shape": 0,
+      "op": 0,
+      "center": [
+       4.2,
+       0.7,
+       -1.0
+      ],
+      "rotation": [
+       0.0,
+       0.0,
+       0.0,
+       1.0
+      ],
+      "enabled": true,
+      "halfExtents": [
+       1.4,
+       0.7,
+       1.4
+      ]
+     }
+    ]
+   },
+   "material": {
+    "baseColor": [
+     0.9,
+     0.86,
+     0.8
+    ],
+    "metallic": 1.0,
+    "roughness": 0.22
+   }
+  },
+  {
+   "id": 11,
+   "name": {
+    "name": "Control Block (matte)"
+   },
+   "transform": {
+    "position": [
+     0,
+     0,
+     0
+    ],
+    "rotation": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "visible": true
+   },
+   "brushSolid": {
+    "uvScale": 1.0,
+    "generateCollider": true,
+    "brushes": [
+     {
+      "shape": 0,
+      "op": 0,
+      "center": [
+       6.5,
+       0.9,
+       3.0
+      ],
+      "rotation": [
+       0.0,
+       0.0,
+       0.0,
+       1.0
+      ],
+      "enabled": true,
+      "halfExtents": [
+       0.9,
+       0.9,
+       0.9
+      ]
+     }
+    ]
+   },
+   "material": {
+    "baseColor": [
+     0.72,
+     0.72,
+     0.74
+    ],
+    "metallic": 0.0,
+    "roughness": 0.95
+   }
+  },
+  {
+   "id": 12,
+   "name": {
+    "name": "Reflection Probe"
+   },
+   "transform": {
+    "position": [
+     0,
+     2.5,
+     0
+    ],
+    "rotation": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "visible": true
+   },
+   "reflectionProbe": {
+    "boxMin": [
+     -10.0,
+     -2.5,
+     -10.0
+    ],
+    "boxMax": [
+     10.0,
+     2.5,
+     10.0
+    ],
+    "resolution": 256,
+    "intensity": 1.0,
+    "priority": 1,
+    "isActive": true,
+    "blendDistance": 0.5
+   }
+  }
+ ]
+}

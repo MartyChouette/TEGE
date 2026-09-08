@@ -69,6 +69,36 @@ public:
     // Safe to call mid-frame from the editor — actual bake runs between frames.
     void RequestBake(u64 probeEntity);
 
+    // Keep every probe current without anyone pressing a button.
+    //
+    // Two things made a probe go stale, and both were silent. A probe that had
+    // never been baked THIS SESSION had no cubemap at all -- which is every
+    // probe in a scene that was just loaded, because the cubemap is a GPU
+    // resource and does not survive a save. And a probe whose scene had changed
+    // underneath it kept lighting the old geometry, which is the failure mode
+    // that made Tiny Glade abandon its probe grid: resize a building and the
+    // region that used to be inside is now outside, still being darkened by a
+    // probe that has not noticed.
+    //
+    // Both are worse in a building tool than in a normal game, because in
+    // creative mode the geometry changes constantly and by design.
+    //
+    // Called once per frame from RenderSystem::FlushPendingChanges, immediately
+    // before ProcessPendingBakes, so a bake it queues runs in the same safe
+    // window as a hand-requested one.
+    void Update(ECS::World* world);
+
+    // Force every active probe to re-capture on the next safe frame.
+    void MarkAllProbesDirty(ECS::World* world);
+
+    // The key the scene-wide implicit probe is filed under. Not a real entity,
+    // and chosen so it can never collide with one.
+    static constexpr u64 kImplicitProbeKey = ~0ull;
+
+    // Is the reflection currently coming from the implicit probe rather than one
+    // somebody placed? For the editor to be able to SAY so.
+    bool IsUsingImplicitProbe() const { return m_ImplicitActive; }
+
     // Process any pending bake requests. Called by RenderSystem::FlushPendingChanges()
     // when the GPU is idle and no frame is in progress.
     void ProcessPendingBakes(ECS::World* world, ECS::RenderSystem* renderSystem);
@@ -92,6 +122,27 @@ public:
     u32 GetActiveBakedMipLevels() const { return m_ActiveBakedMipLevels; }
 
 private:
+    // A cheap stand-in for "has the world changed shape". Brush solids already
+    // carry the hash their geometry was built from, so reading it costs nothing
+    // and it is exactly what creative mode moves. Honest about its limits: it
+    // does NOT notice an imported mesh sliding across the room, which would need
+    // a broader change signal than the renderer currently has.
+    u64 ComputeGeometryFingerprint(ECS::World* world) const;
+
+    // The world-space box the scene's renderable geometry occupies. False when
+    // there is nothing to bound, which is a scene with nothing in it -- there is
+    // no reflection to capture and no probe worth baking.
+    bool ComputeSceneBounds(ECS::World* world, Math::Vector3& outMin, Math::Vector3& outMax) const;
+
+    // Keep the implicit probe in step with the scene: created when nobody has
+    // placed a probe, destroyed the moment somebody does.
+    void UpdateImplicitProbe(ECS::World* world);
+
+    // The shared half of a bake, with no probe entity involved, so the implicit
+    // probe can use the same six-face capture as a placed one.
+    bool BakeAt(ECS::World* world, ECS::RenderSystem* renderSystem,
+                u64 key, const Math::Vector3& position, u32 resolution);
+
     bool BakeProbeInternal(ECS::World* world, ECS::RenderSystem* renderSystem, u64 probeEntity);
     bool CreateCubemapImage(u32 resolution, BakedCubemap& cubemap);
     void DestroyCubemap(BakedCubemap& cubemap);
@@ -102,6 +153,41 @@ private:
 
     // Pending bake requests (entity IDs)
     std::vector<u64> m_PendingBakes;
+
+    // Auto-refresh state. The settle counter is what stops a drag from baking
+    // sixty times a second: a bake is six full scene renders, so it waits until
+    // the geometry has held still for a few frames before spending one.
+    // The scene-wide implicit probe.
+    //
+    // A reflection probe is a thing a person has to know exists and know to
+    // place, which fails the project's own bar twice over: someone offline with
+    // no AI in the loop gets sky-gradient reflections and no hint that a better
+    // answer was one component away. So when a scene has NO probe, one is
+    // captured over the scene's own bounds.
+    //
+    // Deliberately not an entity. An auto-spawned probe object would clutter the
+    // hierarchy, get saved into the scene, and then go stale in the file the way
+    // the `baked` flag used to. This is a default, not authored data: it owns no
+    // component, serializes nothing, and the instant somebody places a real
+    // probe it is destroyed and gets out of the way.
+    bool m_ImplicitActive = false;
+    Math::Vector3 m_ImplicitCenter;
+    Math::Vector3 m_ImplicitMin;
+    Math::Vector3 m_ImplicitMax;
+
+    // Keys whose last bake FAILED.
+    //
+    // Auto-refresh turns a failing bake into a failing bake EVERY FRAME: the
+    // probe has no cubemap, so Update queues it, so it fails, so it still has no
+    // cubemap. Six warnings a frame, forever. A failure is remembered and not
+    // retried until something actually changes -- a real geometry edit, or a
+    // person pressing Bake, which is a deliberate "try again".
+    std::vector<u64> m_FailedBakes;
+
+    u64 m_GeometryFingerprint = 0;
+    u32 m_FramesSinceGeometryChanged = 0;
+    bool m_GeometryDirty = false;
+    static constexpr u32 kSettleFrames = 12;
 
     // Baked cubemaps indexed by entity ID
     std::unordered_map<u64, BakedCubemap> m_BakedCubemaps;

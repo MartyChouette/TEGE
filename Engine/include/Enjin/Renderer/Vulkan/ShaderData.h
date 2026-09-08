@@ -15,7 +15,7 @@ namespace ShaderData {
 extern const unsigned char TriangleVertexShaderData[];
 extern const size_t TriangleVertexShaderDataSize;
 
-// triangle.frag.spv (141528 bytes, 35382 words)
+// triangle.frag.spv (144652 bytes, 36163 words)
 extern const unsigned char TriangleFragmentShaderData[];
 extern const size_t TriangleFragmentShaderDataSize;
 
@@ -39,7 +39,7 @@ extern const size_t WeatherParticleFragmentShaderDataSize;
 extern const unsigned char GrassVertexShaderData[];
 extern const size_t GrassVertexShaderDataSize;
 
-// grass.frag.spv (11160 bytes, 2790 words)
+// grass.frag.spv (11452 bytes, 2863 words)
 extern const unsigned char GrassFragmentShaderData[];
 extern const size_t GrassFragmentShaderDataSize;
 
@@ -47,7 +47,7 @@ extern const size_t GrassFragmentShaderDataSize;
 extern const unsigned char ShrubVertexShaderData[];
 extern const size_t ShrubVertexShaderDataSize;
 
-// shrub.frag.spv (11424 bytes, 2856 words)
+// shrub.frag.spv (11716 bytes, 2929 words)
 extern const unsigned char ShrubFragmentShaderData[];
 extern const size_t ShrubFragmentShaderDataSize;
 
@@ -55,7 +55,7 @@ extern const size_t ShrubFragmentShaderDataSize;
 extern const unsigned char TreeVertexShaderData[];
 extern const size_t TreeVertexShaderDataSize;
 
-// tree.frag.spv (12180 bytes, 3045 words)
+// tree.frag.spv (12472 bytes, 3118 words)
 extern const unsigned char TreeFragmentShaderData[];
 extern const size_t TreeFragmentShaderDataSize;
 
@@ -79,7 +79,7 @@ extern const size_t SpriteFragmentShaderDataSize;
 extern const unsigned char SpriteLitVertexShaderData[];
 extern const size_t SpriteLitVertexShaderDataSize;
 
-// sprite_lit.frag.spv (20016 bytes, 5004 words)
+// sprite_lit.frag.spv (20308 bytes, 5077 words)
 extern const unsigned char SpriteLitFragmentShaderData[];
 extern const size_t SpriteLitFragmentShaderDataSize;
 

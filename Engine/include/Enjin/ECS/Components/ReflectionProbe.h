@@ -25,10 +25,16 @@ struct ENJIN_API ReflectionProbeComponent {
     // Priority for overlapping probes (higher wins)
     u32 priority = 0;
 
-    // Whether this probe has been baked (set by ReflectionProbeSystem::BakeProbe)
+    // RUNTIME ONLY, and deliberately not serialized -- the cubemap itself is a
+    // GPU resource that does not survive a scene save, so a `baked` flag that
+    // DID survive would be a lie the moment the scene reloaded. It was
+    // serialized until 2026-09-08, and the effect was that every probe came back
+    // claiming to be baked with no cubemap behind it: the shader fell through to
+    // the sky approximation while the inspector said "Baked", and the only way
+    // to find out was to notice your reflections were wrong. Probes now re-bake
+    // themselves instead (ReflectionProbeSystem::Update), so nothing needs to
+    // persist here.
     bool baked = false;
-
-    // Runtime: cubemap index in ReflectionProbeSystem (-1 = not baked, uses skybox fallback)
     i32 cubemapTextureId = -1;
 
     // Whether this probe is active

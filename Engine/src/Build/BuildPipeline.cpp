@@ -292,6 +292,11 @@ bool BuildPipeline::ScanProject(const std::string& projectPath) {
             m_DefaultRenderSettingsJson = root["defaultRenderSettings"].dump();
         }
 
+        m_RenderQualityJson.clear();
+        if (root.contains("renderQuality") && root["renderQuality"].is_object()) {
+            m_RenderQualityJson = root["renderQuality"].dump();
+        }
+
         m_AccessibilityDefaultsJson.clear();
         if (root.contains("accessibilityDefaults") && root["accessibilityDefaults"].is_object()) {
             m_AccessibilityDefaultsJson = root["accessibilityDefaults"].dump();
@@ -825,6 +830,9 @@ std::string BuildPipeline::BuildManifestJson(const BuildConfig& config) const {
     }
     if (!m_DefaultRenderSettingsJson.empty()) {
         manifest["defaultRenderSettings"] = nlohmann::json::parse(m_DefaultRenderSettingsJson);
+    }
+    if (!m_RenderQualityJson.empty()) {
+        manifest["renderQuality"] = nlohmann::json::parse(m_RenderQualityJson);
     }
 
     // Localization: default locale + string tables. Rides the manifest like

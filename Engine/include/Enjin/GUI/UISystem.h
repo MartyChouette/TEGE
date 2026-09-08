@@ -43,6 +43,13 @@ public:
     // covers what.
     void SetTargetDrawList(ImDrawList* drawList) { m_TargetDrawList = drawList; }
 
+    // UI events raised during the input walk are queued and dispatched after
+    // it, so a handler may freely create or destroy entities. See
+    // FlushPendingEvents in the .cpp for why this is not optional.
+    void QueueEvent(const UIEventData& event);
+    void FlushPendingEvents();
+    std::vector<UIEventData> m_PendingEvents;
+
     void Update(ECS::World* world, f32 vpW, f32 vpH, f32 deltaTime,
                 f32 originX = 0.0f, f32 originY = 0.0f,
                 const Renderer::Camera* camera = nullptr);

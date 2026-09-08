@@ -240,6 +240,18 @@ void UISystem::Update(ECS::World* world, f32 vpW, f32 vpH, f32 deltaTime,
         ProcessFocusNavigation(*canvas, deltaTime);
     }
 
+    // Handlers run HERE, after every canvas has been walked, never inside the
+    // walk. ProcessInput iterates `canvas.elements` by reference, and those
+    // elements live in a UICanvasComponent inside ECS storage: a handler that
+    // adds or removes a component can reallocate that storage, and the loop
+    // then keeps reading freed memory. On wasm that traps and the page simply
+    // freezes, which is what "click Options and it hangs" was.
+    //
+    // Same shape as the deferred scene requests: a UI callback is allowed to do
+    // anything, so the engine picks the safe moment rather than trusting every
+    // game not to touch the world from a button.
+    FlushPendingEvents();
+
     // 3) Draw back to front.
     for (auto& entry : m_CachedCanvases) {
         auto* canvas = world->GetComponent<UICanvasComponent>(entry.entity);
@@ -530,6 +542,22 @@ static bool ClipRectByScrollAncestors(const UICanvasComponent& canvas, const UIE
     return true;
 }
 
+void UISystem::QueueEvent(const UIEventData& event) {
+    m_PendingEvents.push_back(event);
+}
+
+void UISystem::FlushPendingEvents() {
+    if (m_PendingEvents.empty()) return;
+    // Swapped out first: a handler may queue further events (a menu that opens
+    // another menu), and those must land in the NEXT flush rather than growing
+    // the vector being iterated.
+    std::vector<UIEventData> events;
+    events.swap(m_PendingEvents);
+    for (const UIEventData& e : events) {
+        m_EventBus.Dispatch(e);
+    }
+}
+
 void UISystem::ProcessInput(UICanvasComponent& canvas, f32 /*vpW*/, f32 /*vpH*/) {
     ImGuiIO& io = ImGui::GetIO();
     f32 mouseX = io.MousePos.x;
@@ -561,7 +589,7 @@ void UISystem::ProcessInput(UICanvasComponent& canvas, f32 /*vpW*/, f32 /*vpH*/)
                         event.elementId = dragElement->id;
                         event.eventName = dragElement->onValueChangedEvent;
                         event.floatValue = newValue;
-                        m_EventBus.Dispatch(event);
+                        QueueEvent(event);
                     }
                 }
             }
@@ -624,7 +652,7 @@ void UISystem::ProcessInput(UICanvasComponent& canvas, f32 /*vpW*/, f32 /*vpH*/)
                 event.elementId = element.id;
                 event.eventName = element.onClickEvent;
                 event.stringValue = element.data.text;
-                m_EventBus.Dispatch(event);
+                QueueEvent(event);
             }
         }
 
@@ -636,7 +664,7 @@ void UISystem::ProcessInput(UICanvasComponent& canvas, f32 /*vpW*/, f32 /*vpH*/)
                 event.elementId = element.id;
                 event.eventName = element.onValueChangedEvent;
                 event.boolValue = element.data.checked;
-                m_EventBus.Dispatch(event);
+                QueueEvent(event);
             }
         }
 
@@ -662,7 +690,7 @@ void UISystem::ProcessInput(UICanvasComponent& canvas, f32 /*vpW*/, f32 /*vpH*/)
                     event.elementId = element.id;
                     event.eventName = element.onValueChangedEvent;
                     event.floatValue = newValue;
-                    m_EventBus.Dispatch(event);
+                    QueueEvent(event);
                 }
             }
         }
@@ -702,7 +730,7 @@ void UISystem::ProcessInput(UICanvasComponent& canvas, f32 /*vpW*/, f32 /*vpH*/)
                     event.eventName = element.onValueChangedEvent;
                     event.intValue = clickedIdx;
                     event.stringValue = element.data.options[clickedIdx];
-                    m_EventBus.Dispatch(event);
+                    QueueEvent(event);
                 }
             }
         }
@@ -722,7 +750,7 @@ void UISystem::ProcessInput(UICanvasComponent& canvas, f32 /*vpW*/, f32 /*vpH*/)
                     event.elementId = element.id;
                     event.eventName = element.onValueChangedEvent;
                     event.intValue = clickedIdx;
-                    m_EventBus.Dispatch(event);
+                    QueueEvent(event);
                 }
             }
         }
@@ -742,7 +770,7 @@ void UISystem::ProcessInput(UICanvasComponent& canvas, f32 /*vpW*/, f32 /*vpH*/)
                         event.elementId = element.id;
                         event.eventName = element.onValueChangedEvent;
                         event.intValue = clickedTab;
-                        m_EventBus.Dispatch(event);
+                        QueueEvent(event);
                     }
                 }
             }
@@ -788,7 +816,7 @@ void UISystem::ProcessInput(UICanvasComponent& canvas, f32 /*vpW*/, f32 /*vpH*/)
                     event.eventName = element.onValueChangedEvent;
                     event.intValue = clickedIdx;
                     event.stringValue = element.data.options[clickedIdx];
-                    m_EventBus.Dispatch(event);
+                    QueueEvent(event);
                 }
             } else if (!element.computedRect.Contains(mouseX, mouseY)) {
                 // Click outside dropdown and list — close it
@@ -945,7 +973,7 @@ void UISystem::ProcessInput(UICanvasComponent& canvas, f32 /*vpW*/, f32 /*vpH*/)
                     event.elementId = focused->id;
                     event.eventName = focused->onSubmitEvent;
                     event.stringValue = text;
-                    m_EventBus.Dispatch(event);
+                    QueueEvent(event);
                 }
             }
         }

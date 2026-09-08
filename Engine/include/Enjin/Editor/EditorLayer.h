@@ -77,6 +77,7 @@
 #include "Enjin/Editor/CollaborativeEditing.h"
 #include "Enjin/Editor/FlashTimeline.h"
 #include "Enjin/Editor/VectorDrawingEditor.h"
+#include "Enjin/Renderer/LightCookie.h"   // CookieParams for the Cookie Creator
 #include "Enjin/Editor/FeedbackSystem.h"
 #include "Enjin/Editor/TemplateCreator.h"
 #include "Enjin/Editor/TemplateMarketplace.h"
@@ -209,6 +210,11 @@ public:
     // s_AutoPlayOnLaunch clears once play fires; s_AutoPlayRequested persists
     // so the --golden counter knows to wait for play mode before counting.
     static inline bool s_AutoPlayOnLaunch = false;
+    // --creative: open straight into the build surface. Lets a person launch
+    // into creative mode without hunting for it, and makes the surface
+    // capturable by the headless --golden harness, which is the only way to
+    // look at it without a human at the keyboard.
+    static inline bool s_StartInCreativeMode = false;
     static inline bool s_AutoPlayRequested = false;
     // Set by main() from --play-cycle <N>: stop/restart play mode every N
     // frames (skinned-mesh play-transition crash probe). 0 = off.
@@ -335,6 +341,17 @@ private:
     // texture + a .atlas.json region map for the material Atlas Region UI.
     void DrawAtlasPackerWindow();
     bool m_ShowAtlasPacker = false;
+
+    // --- Cookie Creator (light gobos) ---
+    // A plain bool rather than an EditorPanel bit: only bit 31 of that mask is
+    // still free and this is a tool window, not a dockable panel.
+    bool m_ShowCookieCreator = false;
+    Renderer::CookieParams m_CookieDraft;
+    std::vector<u8> m_CookiePreview;         // regenerated only when the draft changes
+    Renderer::CookieParams m_CookiePreviewOf; // what m_CookiePreview was built from
+    bool m_CookiePreviewValid = false;
+    std::string m_CookieSaveName = "cookie";
+    std::string m_CookieStatus;              // last save result, shown in the window
     char m_AtlasInputDir[512] = {};
     char m_AtlasOutputName[128] = "atlas";
     int m_AtlasSize = 2048;
@@ -356,16 +373,49 @@ private:
     // --- Creative mode (option B: a hand-drawn surface hosted by ImGui) ---
     // The rail, the options column and the mode toggle, all ImDrawList.
     void DrawCreativeSurface();
+    // How wide the surface is drawn at the editor's current UI scale. The
+    // dockspace is inset by exactly this, so the two cannot disagree.
+    f32 CreativeSurfaceWidthPx() const;
     // Where a screen point lands on the y = 0 build plane. False when the ray
     // runs parallel to the plane or points away from it, rather than returning
     // a placement at infinity.
     bool CreativeGroundPoint(f32 screenX, f32 screenY, f32 viewW, f32 viewH,
                              Math::Vector3& out) const;
-    // Turn a finished drag into geometry: a new brush solid, or a cut into the
-    // selected one. Undoable either way.
-    // Press-drag-release in the viewport, for the tools that build brushes.
+    // Grid/snap state, brush and triangle counts, the active tool, and the
+    // first-run hint -- drawn over the viewport, inside the ImGui frame.
+    void DrawCreativeOverlay(const ImVec2& imgMin, const ImVec2& imgMax);
+    // Every creative gesture, dispatched by tool. Must run inside the ImGui
+    // frame: it hit-tests the mouse and draws into the foreground draw list.
     void HandleBuildDrag();
+    // Turn a finished press-drag-release into a thing: a new brush solid, a cut
+    // into the selected one, or a placed component. Undoable in every case.
     void CommitCreativeDrag(const Math::Vector3& start, const Math::Vector3& end);
+    // Water and Ladder: a component placed from the drag's footprint rather than
+    // brushes built from it. Returns the new entity, or INVALID_ENTITY.
+    ECS::Entity PlaceCreativeComponent(BuildTool tool, const Math::Vector3& start,
+                                       const Math::Vector3& end);
+    // One undo step per placement, snapshotted after the components are on.
+    void FinishCreativePlacement(ECS::Entity entity);
+    // Terrain: a press-and-hold sculpt rather than a drag that commits on
+    // release. Drives the same ApplyBrush the inspector's Edit Mode does, so
+    // there is one sculpt implementation and not two.
+    void HandleCreativeTerrain(const Math::Vector3& ground, bool onGround,
+                               f32 localX, f32 localY, f32 viewW, f32 viewH);
+    // Reduce: a click on whatever model is under the cursor, not a drag.
+    void HandleCreativeReduce(f32 localX, f32 localY, f32 viewW, f32 viewH);
+    // Edit: click to select something you built, then drag one of the eight
+    // grips on its footprint to resize it. The only tool where a viewport click
+    // selects instead of building.
+    void HandleCreativeEdit(f32 localX, f32 localY, f32 viewW, f32 viewH,
+                            const Math::Vector3& ground, bool onGround);
+    // Path: click corners, pull a span sideways to bow it, Enter to finish. The
+    // first creative gesture that is not press-drag-release, so it carries state
+    // between frames rather than living inside one drag.
+    void HandleCreativePath(f32 viewW, f32 viewH, const Math::Vector3& ground, bool onGround);
+    void CommitCreativePath();
+    // End an in-flight drag or sculpt without committing it. Needed because a
+    // mouse release is not guaranteed to arrive: see the definition.
+    void CancelCreativeGesture();
 
     // Distinct from the older Build palette below (m_ShowCreativePalette and its
     // own nested CreativeTool enum), which places pre-made objects. These are the
@@ -373,6 +423,24 @@ private:
     CreativeMode m_Creative;
     bool m_BuildDragging = false;
     Math::Vector3 m_BuildDragStart;
+    // Rising-edge detection for entering creative mode, and the countdown that
+    // pulls the Scene tab in front when it does.
+    bool m_CreativeWasActive = false;
+    i32 m_CreativeFocusSceneFrames = 0;
+    // The terrain the creative Terrain tool is sculpting. Held across the stroke
+    // so a drag that wanders off the heightmap does not re-pick a different
+    // terrain halfway through, and so the undo snapshot belongs to one entity.
+    ECS::Entity m_CreativeTerrainTarget = ECS::INVALID_ENTITY;
+    // The grip being dragged, and the brush list as it was when the drag began.
+    // The snapshot is what makes a resize ONE undo entry instead of one per
+    // frame the mouse moved.
+    i32 m_CreativeGrip = -1;
+    std::vector<ECS::BrushSolidComponent::Brush> m_CreativeGripStart;
+    // The path being clicked out, one bow per span, and which bow handle is
+    // being dragged. Non-empty points mean a path is in progress.
+    std::vector<Math::Vector3> m_CreativePathPoints;
+    std::vector<f32> m_CreativePathBows;
+    i32 m_CreativePathBow = -1;
 
     void DrawHierarchyPanel();
     void DrawInspectorPanel();
@@ -410,6 +478,7 @@ private:
     void DrawSettingsSection_StartupFlow();
     void DrawSettingsSection_InputTouch();
     void DrawSettingsSection_AccessibilityDefaults();
+    void DrawSettingsSection_RenderQuality();
     void DrawSettingsSection_BuildConfig();
     void DrawSettingsSection_Networking();
     // Scene tab sections
@@ -433,6 +502,11 @@ private:
     void DrawVisualScriptPanel();
     void DrawSpriteSheetImporterPanel();
     void DrawPixelEditorPanel();
+    // Build and preview light cookies (gobos), then apply one to a spot light.
+    void DrawCookieCreatorWindow();
+    // Shared by the creator and the Light inspector section, so a cookie edited
+    // in either place looks the same.
+    void DrawCookiePreview(const std::vector<u8>& pixels, u32 res, f32 sizePx);
     void DrawBehaviorTreePanel();
     void DrawQuestFlowPanel();
     void DrawUserManualPanel();
@@ -1200,12 +1274,17 @@ private:
     // Scene view display mode (like Blender's viewport shading)
     enum class SceneViewMode : u8 {
         Wireframe = 0,  // Wireframe only
-        Solid,          // Flat shading, no lighting
-        Lit,            // Lighting, no shadows (default)
+        Solid,          // Flat shading, no lighting (default)
+        Lit,            // Lighting, no shadows
         LitShadows,     // Lighting + shadows
         Full            // Everything: shadows + post-processing
     };
-    SceneViewMode m_SceneViewMode = SceneViewMode::Lit;
+    // Solid by default, the same choice Blender makes and for the same reason:
+    // the scene view always shows the geometry at full brightness, so a scene
+    // that is simply dark, or a light that is not reaching a surface, cannot be
+    // mistaken for the editor failing to render. Switch to Lit in the viewport
+    // toolbar to judge the actual lighting.
+    SceneViewMode m_SceneViewMode = SceneViewMode::Solid;
 
     // Compute letterboxed image size from available space and aspect ratio
     static ImVec2 ComputeAspectConstrainedSize(f32 availW, f32 availH, f32 aspect);

@@ -314,6 +314,24 @@ void GameMenuSystem::RenderGraphics(f32 w, f32 h) {
     ImGui::Dummy(ImVec2(0, 4));
     ImGui::PushItemWidth(300.0f);  // Fixed widget width — labels get remaining space
 
+    // Quality tier first: it is the one setting that decides whether the machine
+    // can run the game at all, and it caps render COST without touching how the
+    // game looks. Hidden entirely unless the project opted in and allows it.
+    if (m_RenderQuality && m_ActiveQualityTier &&
+        m_RenderQuality->enabled && m_RenderQuality->playerCanChange) {
+        static const char* kTierNames[] = { "Low", "Medium", "High", "Ultra", "Custom" };
+        i32 tier = static_cast<i32>(*m_ActiveQualityTier);
+        if (ImGui::Combo("Quality", &tier, kTierNames, 5)) {
+            *m_ActiveQualityTier = static_cast<Renderer::QualityTier>(tier);
+            if (m_QualityChanged) m_QualityChanged();
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Lower tiers spend less on lighting and reflections.\n"
+                              "The look of the game does not change.");
+        }
+        ImGui::Separator();
+    }
+
     // Resolution
     struct Resolution { u32 w; u32 h; const char* label; };
     static const std::array<Resolution, 6> resolutions = {{

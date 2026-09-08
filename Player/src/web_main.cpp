@@ -35,6 +35,7 @@
 #include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/Scene/SceneManager.h"
 #include "Enjin/Renderer/SceneRenderSettings.h"
+#include "Enjin/Renderer/RenderQualitySettings.h"
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/Input/TouchActionBridge.h"
 #include "Enjin/Input/InputProjectSettings.h"
@@ -305,6 +306,13 @@ public:
                     m_ProjectRenderSettings =
                         Enjin::Renderer::DeserializeRenderSettings(manifest["defaultRenderSettings"]);
                     m_HasProjectRenderSettings = true;
+                }
+                // Same quality tiers as desktop, same clamp, same code. The tier
+                // is pure C++ over SceneRenderSettings, so web needs no port.
+                if (manifest.contains("renderQuality") && manifest["renderQuality"].is_object()) {
+                    m_RenderQuality = Enjin::Renderer::DeserializeRenderQuality(manifest["renderQuality"]);
+                    // The project default holds until a player picks a tier.
+                    m_ActiveQualityTier = m_RenderQuality.defaultTier;
                 }
                 Enjin::InputSystem::SetTouchProjectSettings(&m_InputSettings);
                 // Project string tables + starting locale. Web has no loose
@@ -776,6 +784,11 @@ public:
 
         // Apply scene render settings (ambient, shadows, etc.)
         m_SceneRenderSettings.rtEnabled = false;
+        // Must precede ApplyToRuntime, which is where the clamp happens.
+        if (m_RenderSystem) {
+            m_RenderSystem->SetRenderQuality(m_RenderQuality);
+            m_RenderSystem->SetActiveQualityTier(m_ActiveQualityTier);
+        }
         m_SceneRenderSettings.ApplyToRuntime(m_RenderSystem, nullptr);
         // World time is authored per scene. Seed the clock from it, and let the
         // scene decide whether it runs at all -- an editor checkbox was the only
@@ -786,6 +799,34 @@ public:
             m_WorldTime.SetTime(srs.startTimeOfDay, 1, srs.startMonth, 1);
             m_SeasonalWeather.GetConfig().enabled = srs.seasonalWeatherEnabled;
             m_SeasonalWeather.GetConfig().weatherChangeInterval = srs.seasonalChangeInterval;
+        }
+
+        // GPU particles: the emitter config is owned by RenderSystem on desktop
+        // and by this player on web, so ApplyToRuntime cannot reach it here.
+        // Same authored values, same setter contract, so an emitter tuned in the
+        // editor looks the same in the browser.
+        if (m_Particles) {
+            const auto& srs = m_SceneRenderSettings;
+            Enjin::Effects::GPUEmitterConfig gp = m_Particles->GetConfig();
+            gp.direction           = srs.gpuParticleDirection;
+            gp.spread              = srs.gpuParticleSpread;
+            gp.gravity             = srs.gpuParticleGravity;
+            gp.damping             = srs.gpuParticleDamping;
+            gp.startColor          = Enjin::Math::Vector4(srs.gpuParticleStartColor.x,
+                                                          srs.gpuParticleStartColor.y,
+                                                          srs.gpuParticleStartColor.z,
+                                                          srs.gpuParticleStartAlpha);
+            gp.endColor            = Enjin::Math::Vector4(srs.gpuParticleEndColor.x,
+                                                          srs.gpuParticleEndColor.y,
+                                                          srs.gpuParticleEndColor.z,
+                                                          srs.gpuParticleEndAlpha);
+            gp.startSize           = srs.gpuParticleStartSize;
+            gp.endSize             = srs.gpuParticleEndSize;
+            gp.maxLifetime         = srs.gpuParticleMaxLifetime;
+            gp.spawnRate           = srs.gpuParticleSpawnRate;
+            gp.turbulenceStrength  = srs.gpuParticleTurbulenceStrength;
+            gp.turbulenceFrequency = srs.gpuParticleTurbulenceFrequency;
+            m_Particles->SetRuntimeTunables(gp);
         }
 
         // ApplyToRuntime passes null pp on web, so feed the post-process effects
@@ -923,6 +964,9 @@ public:
             m_World->DestroyEntity(m_PauseMenuEntity);
         }
         m_PauseMenuEntity = Enjin::ECS::INVALID_ENTITY;
+        // Both sub-screens go with the pause menu, or a canvas outlives the menu
+        // that owned it and stays on screen with nothing to dismiss it.
+        CloseControlsMenu(false);
         CloseOptionsMenu(false);
         if (SceneWantsMouseCapture()) Enjin::Input::SetMouseCaptured(true);
     }
@@ -988,13 +1032,55 @@ public:
         // Built from the template, then pointed at what the game is actually
         // set to -- otherwise a returning player opens the menu and every
         // control shows a factory default rather than their own setting.
-        Enjin::GUI::UICanvasComponent options = Enjin::GUI::UITemplates::CreateOptionsMenu();
+        // The default spec plus a Controls row. Inserted at the top rather than
+        // appended, because the accessibility set runs long and key bindings are
+        // what a player opening Options is most often looking for.
+        auto spec = Enjin::GUI::UITemplates::DefaultOptionsMenuSpec();
+        spec.rows.insert(spec.rows.begin(),
+                         Enjin::GUI::UITemplates::Options::Spacer());
+        spec.rows.insert(spec.rows.begin(),
+                         Enjin::GUI::UITemplates::Options::Button("Controls", "options_controls"));
+        Enjin::GUI::UICanvasComponent options = Enjin::GUI::UITemplates::CreateOptionsMenu(spec);
         SyncOptionsMenuToSettings(options);
 
         m_OptionsMenuEntity = m_World->CreateEntity();
         m_World->AddComponent<Enjin::ECS::NameComponent>(m_OptionsMenuEntity, "Options Menu UI");
         m_World->AddComponent<Enjin::GUI::UICanvasComponent>(m_OptionsMenuEntity, std::move(options));
         Enjin::Input::SetMouseCaptured(false);
+    }
+
+    void ShowControlsMenu() {
+        CloseOptionsMenu(false);
+        RebuildControlsMenu();
+    }
+
+    // Rebuilt rather than patched in place: the rows carry the binding inside
+    // their LABEL, and SetOptionValue addresses values, not labels. A rebuild is
+    // a handful of elements and only happens on a click or a rebind.
+    void RebuildControlsMenu() {
+        if (m_ControlsMenuEntity != Enjin::ECS::INVALID_ENTITY && m_World->IsValid(m_ControlsMenuEntity)) {
+            m_World->DestroyEntity(m_ControlsMenuEntity);
+        }
+        auto controls = Enjin::GUI::UITemplates::CreateControlsMenu(m_InputMap, m_RebindingAction);
+        m_ControlsMenuEntity = m_World->CreateEntity();
+        m_World->AddComponent<Enjin::ECS::NameComponent>(m_ControlsMenuEntity, "Controls Menu UI");
+        m_World->AddComponent<Enjin::GUI::UICanvasComponent>(m_ControlsMenuEntity, std::move(controls));
+    }
+
+    void CloseControlsMenu(bool reopenOptions) {
+        if (m_ControlsMenuEntity != Enjin::ECS::INVALID_ENTITY && m_World->IsValid(m_ControlsMenuEntity)) {
+            m_World->DestroyEntity(m_ControlsMenuEntity);
+        }
+        m_ControlsMenuEntity = Enjin::ECS::INVALID_ENTITY;
+        // Abandon any capture in progress, or the next key pressed anywhere
+        // would silently rebind an action the player has stopped looking at.
+        m_RebindingAction = -1;
+        m_RebindNeedsRelease = false;
+        if (m_InputBindingsDirty) {
+            SaveWebInputBindings();
+            m_InputBindingsDirty = false;
+        }
+        if (reopenOptions) ShowOptionsMenu();
     }
 
     void CloseOptionsMenu(bool reopenPause) {
@@ -1027,8 +1113,50 @@ public:
         // Pause menu (UI unification: the same UITemplates pause canvas as any
         // platform). Escape toggles; gameplay freezes while the menu is up but
         // rendering + UI keep running so the menu is interactive.
-        if (!m_AtMainMenu && Enjin::Input::IsKeyPressed(Enjin::KeyCode::Escape)) {
-            if (m_OptionsMenuEntity != Enjin::ECS::INVALID_ENTITY) CloseOptionsMenu(true);  // back to pause
+        // Key capture for rebinding. Runs BEFORE the Escape handling below so a
+        // player rebinding an action to Escape gets the binding rather than a
+        // closed menu.
+        if (m_RebindingAction >= 0 && Enjin::Input::IsKeyPressed(Enjin::KeyCode::Escape)) {
+            // Cancel. Escape is deliberately NOT bindable: while a row is armed
+            // the capture swallows every other input, so this is the only way
+            // back out.
+            m_RebindingAction = -1;
+            m_RebindNeedsRelease = false;
+            RebuildControlsMenu();
+        } else if (m_RebindingAction >= 0) {
+            // Wait out the click that armed the row before looking at the mouse.
+            if (m_RebindNeedsRelease) {
+                const bool anyDown =
+                    Enjin::Input::IsMouseButtonDown(Enjin::MouseButton::Left) ||
+                    Enjin::Input::IsMouseButtonDown(Enjin::MouseButton::Right) ||
+                    Enjin::Input::IsMouseButtonDown(Enjin::MouseButton::Middle);
+                if (!anyDown) m_RebindNeedsRelease = false;
+            }
+
+            Enjin::i32 key = m_InputMap.PollNextKeyPress();
+            if (key == static_cast<Enjin::i32>(Enjin::KeyCode::Escape)) key = -1;  // cancels, above
+            const Enjin::i32 mb = m_RebindNeedsRelease ? -1 : m_InputMap.PollNextMouseButton();
+            if (key >= 0 || mb >= 0) {
+                if (key >= 0) {
+                    m_InputMap.RebindAction(m_RebindingAction,
+                                            Enjin::InputSystem::BindingType::Key, key);
+                } else {
+                    m_InputMap.RebindAction(m_RebindingAction,
+                                            Enjin::InputSystem::BindingType::MouseButton, mb);
+                }
+                m_RebindingAction = -1;
+                m_RebindNeedsRelease = false;
+                m_InputBindingsDirty = true;
+                // A mouse capture consumed a real click; the row handler will
+                // see that same click this frame and must not re-arm.
+                m_IgnoreNextRebindClick = (mb >= 0);
+                LogActionBindings("after rebind", Enjin::InputSystem::GameAction::Jump);
+                RebuildControlsMenu();
+            }
+        } else if (!m_AtMainMenu && Enjin::Input::IsKeyPressed(Enjin::KeyCode::Escape)) {
+            // Unwind one screen at a time: controls -> options -> pause -> game.
+            if (m_ControlsMenuEntity != Enjin::ECS::INVALID_ENTITY) CloseControlsMenu(true);
+            else if (m_OptionsMenuEntity != Enjin::ECS::INVALID_ENTITY) CloseOptionsMenu(true);
             else TogglePauseMenu();
         }
 
@@ -1466,6 +1594,64 @@ public:
                 [this](const Enjin::GUI::UIEventData&) { ClosePauseMenu(); });
             m_UISystem.GetEventBus().Listen("pause_options",
                 [this](const Enjin::GUI::UIEventData&) { ShowOptionsMenu(); });
+            m_UISystem.GetEventBus().Listen("options_controls",
+                [this](const Enjin::GUI::UIEventData&) { ShowControlsMenu(); });
+
+            // --- Controls screen ---
+            // A listener per action: the event bus dispatches by name, and the
+            // rows are generated from the same map, so the two lists cannot get
+            // out of step. Registered once at boot -- GameAction is append-only,
+            // so the count cannot change under a running player.
+            for (Enjin::i32 ai = 0; ai < m_InputMap.GetActionCount(); ++ai) {
+                m_UISystem.GetEventBus().Listen(
+                    Enjin::GUI::UITemplates::ControlsRebindEvent(ai),
+                    [this, ai](const Enjin::GUI::UIEventData&) {
+                        // While a row is armed, EVERY click belongs to the
+                        // capture -- including this one. Binding a mouse button
+                        // means clicking, and every click on this screen lands
+                        // on a row, so letting a row click cancel made binding a
+                        // mouse button impossible: the binding click cancelled
+                        // the arming instead. Escape cancels; see the capture.
+                        if (m_RebindingAction >= 0) return;
+                        // This is the click the capture just consumed, arriving
+                        // late from the UI walk. Swallow it once.
+                        if (m_IgnoreNextRebindClick) { m_IgnoreNextRebindClick = false; return; }
+                        m_RebindingAction = ai;
+                        m_RebindNeedsRelease = true;
+                        RebuildControlsMenu();
+                    });
+            }
+
+            m_UISystem.GetEventBus().Listen("controls_back",
+                [this](const Enjin::GUI::UIEventData&) { CloseControlsMenu(true); });
+            m_UISystem.GetEventBus().Listen("controls_reset",
+                [this](const Enjin::GUI::UIEventData&) {
+                    m_InputMap.ResetToDefaults();
+                    m_RebindingAction = -1;
+                    SaveWebInputBindings();
+                    m_InputBindingsDirty = false;
+                    RebuildControlsMenu();
+                });
+            m_UISystem.GetEventBus().Listen("controls_sensitivity",
+                [this](const Enjin::GUI::UIEventData& e) {
+                    m_InputMap.SetMouseSensitivity(e.floatValue);
+                    m_InputBindingsDirty = true;
+                });
+            m_UISystem.GetEventBus().Listen("controls_invert_y",
+                [this](const Enjin::GUI::UIEventData& e) {
+                    m_InputMap.SetInvertY(e.boolValue);
+                    m_InputBindingsDirty = true;
+                });
+            m_UISystem.GetEventBus().Listen("controls_sprint_mode",
+                [this](const Enjin::GUI::UIEventData& e) {
+                    m_InputMap.SetSprintToggle(e.intValue == 1);
+                    m_InputBindingsDirty = true;
+                });
+            m_UISystem.GetEventBus().Listen("controls_crouch_mode",
+                [this](const Enjin::GUI::UIEventData& e) {
+                    m_InputMap.SetCrouchToggle(e.intValue == 1);
+                    m_InputBindingsDirty = true;
+                });
             m_UISystem.GetEventBus().Listen("options_back",
                 [this](const Enjin::GUI::UIEventData&) {
                     // Sliders fire every frame while dragged, so the settings
@@ -1672,7 +1858,14 @@ public:
         // One flag for "the UI took the pointer", from the UI's own hit test
         // plus ImGui (the pause button lives in an ImGui window). This is what
         // stops a tap on either from ALSO reaching gameplay underneath.
-        Enjin::Input::SetUIConsumedPointer(m_UISystem.WasPointerConsumed() || io.WantCaptureMouse);
+        const bool uiTookIt = m_UISystem.WasPointerConsumed();
+        // The ImGui half is decided at the END of this function, once this
+        // frame's windows actually exist -- see the SetUIConsumedPointer call
+        // there. Reading io.WantCaptureMouse here, immediately after NewFrame
+        // and before a single window has been submitted, was reporting "ImGui
+        // owns the mouse" across the whole screen and silently suppressing
+        // every mouse-bound action in the game.
+        m_UICanvasTookPointer = uiTookIt;
         // Subtitle overlay (accessibility) -- same draw code as desktop
         m_SubtitleSystem.RenderOverlay(w, h);
         // Switch-scanning highlight / dwell cursor
@@ -1706,6 +1899,25 @@ public:
         // its foreground-draw-list commands are submitted after the frame is
         // already rendered and never appear (was called after RenderUIOverlay).
         RenderTouchOverlay();
+
+        // Now that this frame's windows exist, ask the precise question: is the
+        // cursor actually over an ImGui window, or is an ImGui widget being
+        // dragged? io.WantCaptureMouse is a coarser flag and, read before the
+        // windows are submitted, was true when nothing was under the cursor at
+        // all. The only ImGui window here during play is the 44px pause button.
+        // Touch controls: must draw INSIDE the ImGui frame (before Render), or
+        // its foreground-draw-list commands are submitted after the frame is
+        // already rendered and never appear (was called after RenderUIOverlay).
+        RenderTouchOverlay();
+
+        // Now that this frame's windows exist, ask the precise question: is the
+        // cursor actually over an ImGui window, or is an ImGui widget being
+        // dragged? io.WantCaptureMouse is a coarser flag and, read before the
+        // windows are submitted, was true when nothing was under the cursor at
+        // all. The only ImGui window here during play is the 44px pause button.
+        const bool imguiHasPointer =
+            ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow) || ImGui::IsAnyItemActive();
+        Enjin::Input::SetUIConsumedPointer(m_UICanvasTookPointer || imguiHasPointer);
 
         ImGui::Render();
         ImDrawData* drawData = ImGui::GetDrawData();
@@ -2265,6 +2477,25 @@ private:
     }
 
     // Player-remapped controls persist alongside the accessibility settings
+    // Report an action's live bindings. The controls row is a snapshot canvas
+    // built at rebind time, so it can show one thing while the map holds
+    // another -- which is exactly how a dead binding stayed invisible.
+    void LogActionBindings(const char* when, Enjin::InputSystem::GameAction action) {
+        std::string binds;
+        const auto& cfg = m_InputMap.GetActionConfig(action);
+        for (const auto& b : cfg.bindings) {
+            const char* kind = "?";
+            switch (b.type) {
+                case Enjin::InputSystem::BindingType::Key:           kind = "key"; break;
+                case Enjin::InputSystem::BindingType::MouseButton:   kind = "mouse"; break;
+                case Enjin::InputSystem::BindingType::GamepadButton: kind = "pad"; break;
+                case Enjin::InputSystem::BindingType::GamepadAxis:   kind = "axis"; break;
+            }
+            binds += std::string(kind) + ":" + std::to_string(b.code) + " ";
+        }
+        ENJIN_LOG_INFO(Player, "Jump bindings %s: [%s]", when, binds.c_str());
+    }
+
     void LoadWebInputBindings() {
         std::ifstream f("/saves/bindings.json");
         if (!f.is_open()) return;
@@ -2272,6 +2503,7 @@ private:
         ss << f.rdbuf();
         if (m_InputMap.FromJson(ss.str())) {
             ENJIN_LOG_INFO(Player, "Loaded control bindings from /saves/bindings.json");
+            LogActionBindings("after load", Enjin::InputSystem::GameAction::Jump);
         }
     }
 
@@ -2463,6 +2695,24 @@ private:
     bool m_Paused = false;
     Enjin::ECS::Entity m_PauseMenuEntity = Enjin::ECS::INVALID_ENTITY;
     Enjin::ECS::Entity m_OptionsMenuEntity = Enjin::ECS::INVALID_ENTITY;
+    // Controls / key bindings. Generated from m_InputMap, so it lists exactly
+    // the actions the game has. -1 = not currently capturing a key.
+    Enjin::ECS::Entity m_ControlsMenuEntity = Enjin::ECS::INVALID_ENTITY;
+    Enjin::i32 m_RebindingAction = -1;
+    // A row is armed BY a mouse click, so the very same click would otherwise be
+    // captured as the new binding. Capture waits for every button to come up
+    // first.
+    bool m_RebindNeedsRelease = false;
+    // Set during the UI walk, consumed at the end of the ImGui frame.
+    bool m_UICanvasTookPointer = false;
+    // Capture runs in Update; the row click for that SAME press is dispatched
+    // later the same frame, from the UI walk. Without this the click that binds
+    // a mouse button immediately re-arms the row it just bound.
+    bool m_IgnoreNextRebindClick = false;
+    // Sliders dispatch every frame while dragged, so bindings are written on
+    // leaving the screen rather than on each change -- the same shape the
+    // accessibility settings use.
+    bool m_InputBindingsDirty = false;
     bool m_AtMainMenu = false;             // Authored "MainMenu" canvas showing at boot
     bool m_WebImGuiInit = false;
     Enjin::f32 m_LastDeltaTime = 1.0f / 60.0f;
@@ -2499,6 +2749,12 @@ private:
     Enjin::Renderer::SceneRenderSettings m_SceneRenderSettings;
     Enjin::Renderer::SceneRenderSettings m_ProjectRenderSettings;
     bool m_HasProjectRenderSettings = false;
+
+    // Project render quality tiers (ADR-0006) and the tier currently in force.
+    // The active tier starts at the project default; a player-facing selector
+    // overwrites it. Clamps cost only, never look.
+    Enjin::Renderer::RenderQualitySettings m_RenderQuality;
+    Enjin::Renderer::QualityTier m_ActiveQualityTier = Enjin::Renderer::QualityTier::High;
 
     // Build manifest
     std::string m_WindowTitle;

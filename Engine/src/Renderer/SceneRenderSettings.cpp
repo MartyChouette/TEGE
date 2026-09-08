@@ -1,6 +1,7 @@
 #include "Enjin/Renderer/SceneRenderSettings.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Renderer/PostProcessing.h"
+#include "Enjin/Effects/GPUParticleTypes.h"   // GPUEmitterConfig: no renderer guard
 #if !ENJIN_RENDERER_WEBGPU
 #include "Enjin/Renderer/RayTracing/RTShadows.h"
 #include "Enjin/Renderer/RayTracing/RTReflections.h"
@@ -14,6 +15,8 @@
 #include "Enjin/Renderer/RayTracing/SVGFDenoiser.h"
 #include "Enjin/Renderer/RayTracing/OIDNDenoiser.h"
 #include "Enjin/Renderer/RayTracing/RTCompositor.h"
+#include "Enjin/Renderer/RayTracing/LightBVH.h"
+#include "Enjin/Renderer/RayTracing/AdaptiveRayBudget.h"
 #endif
 #include <algorithm>
 #include <nlohmann/json.hpp>
@@ -60,6 +63,44 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
         s.fogStart             = rs->GetFogStart();
         s.fogEnd               = rs->GetFogEnd();
         s.fogHeightFalloff     = rs->GetFogHeightFalloff();
+#if !ENJIN_RENDERER_WEBGPU
+        // Volumetric fog: without this the editor's ten live knobs are edited on
+        // the fog system and never reach the settings the scene saves.
+        rs->GetVolumetricFogSettings(s.volumetricFogEnabled, s.volumetricFogColor,
+                                     s.volumetricFogDensity, s.volumetricFogHeightFalloff,
+                                     s.volumetricFogBaseHeight, s.volumetricFogAnisotropy,
+                                     s.volumetricFogTemporalBlend, s.volumetricFogNoiseScale,
+                                     s.volumetricFogNoiseStrength, s.volumetricFogWindX,
+                                     s.volumetricFogWindZ);
+
+        // DDGI: the editor panel edits the live system through GetConfig(), so
+        // without this read-back none of it reaches the file.
+        rs->GetDDGISettings(s.ddgiEnabled, s.ddgiGridSpacing, s.ddgiGridOrigin,
+                            s.ddgiVoxelWorldExtent, s.ddgiRaysPerProbe,
+                            s.ddgiMaxTraceDistance, s.ddgiAmortizationRate,
+                            s.ddgiHysteresis, s.ddgiProbeCountX, s.ddgiProbeCountY,
+                            s.ddgiProbeCountZ, s.ddgiVoxelResolution,
+                            s.ddgiOctResolution);
+
+        Effects::GPUEmitterConfig gp;
+        if (rs->GetGPUParticleSettings(gp)) {
+            s.gpuParticleDirection           = gp.direction;
+            s.gpuParticleSpread              = gp.spread;
+            s.gpuParticleGravity             = gp.gravity;
+            s.gpuParticleDamping             = gp.damping;
+            s.gpuParticleStartColor          = Math::Vector3(gp.startColor.x, gp.startColor.y, gp.startColor.z);
+            s.gpuParticleStartAlpha          = gp.startColor.w;
+            s.gpuParticleEndColor            = Math::Vector3(gp.endColor.x, gp.endColor.y, gp.endColor.z);
+            s.gpuParticleEndAlpha            = gp.endColor.w;
+            s.gpuParticleStartSize           = gp.startSize;
+            s.gpuParticleEndSize             = gp.endSize;
+            s.gpuParticleMaxLifetime         = gp.maxLifetime;
+            s.gpuParticleSpawnRate           = gp.spawnRate;
+            s.gpuParticleTurbulenceStrength  = gp.turbulenceStrength;
+            s.gpuParticleTurbulenceFrequency = gp.turbulenceFrequency;
+            s.gpuParticleMaxParticles        = gp.maxParticles;
+        }
+#endif
         s.fogColor             = rs->GetFogColor();
         s.snowIntensity        = rs->GetAuthoredSnowIntensity();
         s.worldCurvature       = rs->GetWorldCurvature();
@@ -188,6 +229,21 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
             s.surfelCacheNormalThreshold = sc->GetConfig().normalThreshold;
             s.surfelCachePlacementInterval = sc->GetConfig().placementInterval;
             s.surfelCacheRaysPerSurfel = sc->GetConfig().raysPerSurfel;
+        }
+        if (auto* bvh = rs->GetLightBVH()) {
+            s.lightBVHEnabled = bvh->GetConfig().enabled;
+            s.lightBVHMaxLights = bvh->GetConfig().maxLights;
+            s.lightBVHMinLightsForBVH = bvh->GetConfig().minLightsForBVH;
+            s.lightBVHRebuildEveryFrame = bvh->GetConfig().rebuildEveryFrame;
+        }
+        if (auto* arb = rs->GetAdaptiveRayBudget()) {
+            s.adaptiveRayBudgetEnabled = arb->GetConfig().enabled;
+            s.adaptiveRayMinPerPixel = arb->GetConfig().minRaysPerPixel;
+            s.adaptiveRayMaxPerPixel = arb->GetConfig().maxRaysPerPixel;
+            s.adaptiveRayVarianceThreshold = arb->GetConfig().varianceThreshold;
+            s.adaptiveRayVarianceScale = arb->GetConfig().varianceScale;
+            s.adaptiveRayEdgeBoost = arb->GetConfig().edgeBoost;
+            s.adaptiveRayDisocclusionBoost = arb->GetConfig().disocclusionBoost;
         }
         if (auto* compositor = rs->GetRTCompositor()) {
             s.rtShadowStrength = compositor->GetConfig().shadowStrength;
@@ -380,6 +436,23 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
 // Preserves runtime-only fields: time, screenWidth/Height, colorblindMode/Strength
 // ---------------------------------------------------------------------------
 void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSettings* pp) const {
+    // One place, so a tier cannot be live in the player and missing in the
+    // editor. The clamp is a pure function on a copy: the authored settings this
+    // object holds are never modified, so a save still writes what the author
+    // chose rather than what the player's tier allowed.
+    if (rs) {
+        const Renderer::RenderQualitySettings& q = rs->GetRenderQuality();
+        if (q.enabled) {
+            SceneRenderSettings clamped = *this;
+            q.ApplyTo(clamped, rs->GetActiveQualityTier());
+            clamped.ApplyToRuntimeUnclamped(rs, pp);
+            return;
+        }
+    }
+    ApplyToRuntimeUnclamped(rs, pp);
+}
+
+void SceneRenderSettings::ApplyToRuntimeUnclamped(ECS::RenderSystem* rs, PostProcessSettings* pp) const {
     if (rs) {
         rs->SetShadowDistance(shadowDistance);  // both backends (web: single-cascade fit range)
 #if !ENJIN_RENDERER_WEBGPU
@@ -396,6 +469,46 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
         rs->SetAmbientIntensity(ambientIntensity);
         rs->SetAmbientColor(ambientColor);
         rs->SetFogParams(fogDensity, fogStart, fogEnd, fogHeightFalloff);
+#if !ENJIN_RENDERER_WEBGPU
+        // Volumetric fog is a separate system from the distance fog above.
+        // Vulkan-only for now, so the values ride along on web and are applied
+        // the moment a WebGPU path exists.
+        rs->ApplyVolumetricFogSettings(volumetricFogEnabled, volumetricFogColor,
+                                       volumetricFogDensity, volumetricFogHeightFalloff,
+                                       volumetricFogBaseHeight, volumetricFogAnisotropy,
+                                       volumetricFogTemporalBlend, volumetricFogNoiseScale,
+                                       volumetricFogNoiseStrength, volumetricFogWindX,
+                                       volumetricFogWindZ);
+
+        rs->ApplyDDGISettings(ddgiEnabled, ddgiGridSpacing, ddgiGridOrigin,
+                              ddgiVoxelWorldExtent, ddgiRaysPerProbe,
+                              ddgiMaxTraceDistance, ddgiAmortizationRate,
+                              ddgiHysteresis, ddgiProbeCountX, ddgiProbeCountY,
+                              ddgiProbeCountZ, ddgiVoxelResolution,
+                              ddgiOctResolution);
+
+        // Start from the live config so anything the scene does not author (the
+        // emitter position, the allocated particle ceiling) is carried through
+        // rather than reset to a struct default.
+        Effects::GPUEmitterConfig gp;
+        if (rs->GetGPUParticleSettings(gp)) {
+            gp.direction           = gpuParticleDirection;
+            gp.spread              = gpuParticleSpread;
+            gp.gravity             = gpuParticleGravity;
+            gp.damping             = gpuParticleDamping;
+            gp.startColor          = Math::Vector4(gpuParticleStartColor.x, gpuParticleStartColor.y,
+                                                   gpuParticleStartColor.z, gpuParticleStartAlpha);
+            gp.endColor            = Math::Vector4(gpuParticleEndColor.x, gpuParticleEndColor.y,
+                                                   gpuParticleEndColor.z, gpuParticleEndAlpha);
+            gp.startSize           = gpuParticleStartSize;
+            gp.endSize             = gpuParticleEndSize;
+            gp.maxLifetime         = gpuParticleMaxLifetime;
+            gp.spawnRate           = gpuParticleSpawnRate;
+            gp.turbulenceStrength  = gpuParticleTurbulenceStrength;
+            gp.turbulenceFrequency = gpuParticleTurbulenceFrequency;
+            rs->ApplyGPUParticleSettings(gp);
+        }
+#endif
         rs->SetFogColor(fogColor);
         // Remembered separately so the per-frame weather updater can restore it
         // instead of overwriting it with hardcoded defaults.
@@ -535,6 +648,21 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
             sc->GetConfig().normalThreshold = surfelCacheNormalThreshold;
             sc->GetConfig().placementInterval = surfelCachePlacementInterval;
             sc->GetConfig().raysPerSurfel = surfelCacheRaysPerSurfel;
+        }
+        if (auto* bvh = rs->GetLightBVH()) {
+            bvh->GetConfig().enabled = lightBVHEnabled;
+            bvh->GetConfig().maxLights = lightBVHMaxLights;
+            bvh->GetConfig().minLightsForBVH = lightBVHMinLightsForBVH;
+            bvh->GetConfig().rebuildEveryFrame = lightBVHRebuildEveryFrame;
+        }
+        if (auto* arb = rs->GetAdaptiveRayBudget()) {
+            arb->GetConfig().enabled = adaptiveRayBudgetEnabled;
+            arb->GetConfig().minRaysPerPixel = adaptiveRayMinPerPixel;
+            arb->GetConfig().maxRaysPerPixel = adaptiveRayMaxPerPixel;
+            arb->GetConfig().varianceThreshold = adaptiveRayVarianceThreshold;
+            arb->GetConfig().varianceScale = adaptiveRayVarianceScale;
+            arb->GetConfig().edgeBoost = adaptiveRayEdgeBoost;
+            arb->GetConfig().disocclusionBoost = adaptiveRayDisocclusionBoost;
         }
         if (auto* compositor = rs->GetRTCompositor()) {
             compositor->GetConfig().shadowStrength = rtShadowStrength;
@@ -980,6 +1108,62 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     j["useProjectDefaults"] = s.useProjectDefaults;
     j["artStylePreset"]    = s.artStylePreset;
 
+    // Volumetric fog. Ten knobs that were editable and unsaveable until 2026-09-08.
+    j["volumetricFogEnabled"]       = s.volumetricFogEnabled;
+    j["volumetricFogColor"]         = SerializeVec3(s.volumetricFogColor);
+    j["volumetricFogDensity"]       = RF(s.volumetricFogDensity);
+    j["volumetricFogHeightFalloff"] = RF(s.volumetricFogHeightFalloff);
+    j["volumetricFogBaseHeight"]    = RF(s.volumetricFogBaseHeight);
+    j["volumetricFogAnisotropy"]    = RF(s.volumetricFogAnisotropy);
+    j["volumetricFogTemporalBlend"] = RF(s.volumetricFogTemporalBlend);
+    j["volumetricFogNoiseScale"]    = RF(s.volumetricFogNoiseScale);
+    j["volumetricFogNoiseStrength"] = RF(s.volumetricFogNoiseStrength);
+    j["volumetricFogWindX"]         = RF(s.volumetricFogWindX);
+    j["volumetricFogWindZ"]         = RF(s.volumetricFogWindZ);
+
+    j["ddgiEnabled"]          = s.ddgiEnabled;
+    j["ddgiGridSpacing"]      = RF(s.ddgiGridSpacing);
+    j["ddgiGridOrigin"]       = SerializeVec3(s.ddgiGridOrigin);
+    j["ddgiVoxelWorldExtent"] = RF(s.ddgiVoxelWorldExtent);
+    j["ddgiRaysPerProbe"]     = s.ddgiRaysPerProbe;
+    j["ddgiMaxTraceDistance"] = RF(s.ddgiMaxTraceDistance);
+    j["ddgiAmortizationRate"] = s.ddgiAmortizationRate;
+    j["ddgiHysteresis"]       = RF(s.ddgiHysteresis);
+    j["ddgiProbeCountX"]      = s.ddgiProbeCountX;
+    j["ddgiProbeCountY"]      = s.ddgiProbeCountY;
+    j["ddgiProbeCountZ"]      = s.ddgiProbeCountZ;
+    j["ddgiVoxelResolution"]  = s.ddgiVoxelResolution;
+    j["ddgiOctResolution"]    = s.ddgiOctResolution;
+
+    j["gpuParticleDirection"]           = SerializeVec3(s.gpuParticleDirection);
+    j["gpuParticleSpread"]              = RF(s.gpuParticleSpread);
+    j["gpuParticleGravity"]             = SerializeVec3(s.gpuParticleGravity);
+    j["gpuParticleDamping"]             = RF(s.gpuParticleDamping);
+    j["gpuParticleStartColor"]          = SerializeVec3(s.gpuParticleStartColor);
+    j["gpuParticleStartAlpha"]          = RF(s.gpuParticleStartAlpha);
+    j["gpuParticleEndColor"]            = SerializeVec3(s.gpuParticleEndColor);
+    j["gpuParticleEndAlpha"]            = RF(s.gpuParticleEndAlpha);
+    j["gpuParticleStartSize"]           = RF(s.gpuParticleStartSize);
+    j["gpuParticleEndSize"]             = RF(s.gpuParticleEndSize);
+    j["gpuParticleMaxLifetime"]         = RF(s.gpuParticleMaxLifetime);
+    j["gpuParticleSpawnRate"]           = RF(s.gpuParticleSpawnRate);
+    j["gpuParticleTurbulenceStrength"]  = RF(s.gpuParticleTurbulenceStrength);
+    j["gpuParticleTurbulenceFrequency"] = RF(s.gpuParticleTurbulenceFrequency);
+    j["gpuParticleMaxParticles"]        = s.gpuParticleMaxParticles;
+
+    j["lightBVHEnabled"]            = s.lightBVHEnabled;
+    j["lightBVHMaxLights"]          = s.lightBVHMaxLights;
+    j["lightBVHMinLightsForBVH"]    = s.lightBVHMinLightsForBVH;
+    j["lightBVHRebuildEveryFrame"]  = s.lightBVHRebuildEveryFrame;
+
+    j["adaptiveRayBudgetEnabled"]     = s.adaptiveRayBudgetEnabled;
+    j["adaptiveRayMinPerPixel"]       = s.adaptiveRayMinPerPixel;
+    j["adaptiveRayMaxPerPixel"]       = s.adaptiveRayMaxPerPixel;
+    j["adaptiveRayVarianceThreshold"] = RF(s.adaptiveRayVarianceThreshold);
+    j["adaptiveRayVarianceScale"]     = RF(s.adaptiveRayVarianceScale);
+    j["adaptiveRayEdgeBoost"]         = s.adaptiveRayEdgeBoost;
+    j["adaptiveRayDisocclusionBoost"] = s.adaptiveRayDisocclusionBoost;
+
     // RenderSystem
     j["shadowsEnabled"]    = s.shadowsEnabled;
     j["shadowResolution"]  = s.shadowResolution;
@@ -1299,6 +1483,64 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
 
     if (j.contains("useProjectDefaults")) s.useProjectDefaults = JB(j["useProjectDefaults"]);
     if (j.contains("artStylePreset"))    s.artStylePreset    = j["artStylePreset"].get<u32>();
+
+    // Volumetric fog. Absent in every scene written before these keys existed,
+    // and the defaults match the old hardcoded ones, so an old scene loads
+    // looking exactly as it did.
+    if (j.contains("volumetricFogEnabled"))       s.volumetricFogEnabled       = JB(j["volumetricFogEnabled"]);
+    if (j.contains("volumetricFogColor"))         s.volumetricFogColor         = DeserializeVec3(j["volumetricFogColor"], s.volumetricFogColor);
+    if (j.contains("volumetricFogDensity"))       s.volumetricFogDensity       = j["volumetricFogDensity"].get<f32>();
+    if (j.contains("volumetricFogHeightFalloff")) s.volumetricFogHeightFalloff = j["volumetricFogHeightFalloff"].get<f32>();
+    if (j.contains("volumetricFogBaseHeight"))    s.volumetricFogBaseHeight    = j["volumetricFogBaseHeight"].get<f32>();
+    if (j.contains("volumetricFogAnisotropy"))    s.volumetricFogAnisotropy    = j["volumetricFogAnisotropy"].get<f32>();
+    if (j.contains("volumetricFogTemporalBlend")) s.volumetricFogTemporalBlend = j["volumetricFogTemporalBlend"].get<f32>();
+    if (j.contains("volumetricFogNoiseScale"))    s.volumetricFogNoiseScale    = j["volumetricFogNoiseScale"].get<f32>();
+    if (j.contains("volumetricFogNoiseStrength")) s.volumetricFogNoiseStrength = j["volumetricFogNoiseStrength"].get<f32>();
+    if (j.contains("volumetricFogWindX"))         s.volumetricFogWindX         = j["volumetricFogWindX"].get<f32>();
+    if (j.contains("volumetricFogWindZ"))         s.volumetricFogWindZ         = j["volumetricFogWindZ"].get<f32>();
+
+    if (j.contains("ddgiEnabled"))          s.ddgiEnabled          = JB(j["ddgiEnabled"]);
+    if (j.contains("ddgiGridSpacing"))      s.ddgiGridSpacing      = j["ddgiGridSpacing"].get<f32>();
+    if (j.contains("ddgiGridOrigin"))       s.ddgiGridOrigin       = DeserializeVec3(j["ddgiGridOrigin"], s.ddgiGridOrigin);
+    if (j.contains("ddgiVoxelWorldExtent")) s.ddgiVoxelWorldExtent = j["ddgiVoxelWorldExtent"].get<f32>();
+    if (j.contains("ddgiRaysPerProbe"))     s.ddgiRaysPerProbe     = j["ddgiRaysPerProbe"].get<u32>();
+    if (j.contains("ddgiMaxTraceDistance")) s.ddgiMaxTraceDistance = j["ddgiMaxTraceDistance"].get<f32>();
+    if (j.contains("ddgiAmortizationRate")) s.ddgiAmortizationRate = j["ddgiAmortizationRate"].get<u32>();
+    if (j.contains("ddgiHysteresis"))       s.ddgiHysteresis       = j["ddgiHysteresis"].get<f32>();
+    if (j.contains("ddgiProbeCountX"))      s.ddgiProbeCountX      = j["ddgiProbeCountX"].get<i32>();
+    if (j.contains("ddgiProbeCountY"))      s.ddgiProbeCountY      = j["ddgiProbeCountY"].get<i32>();
+    if (j.contains("ddgiProbeCountZ"))      s.ddgiProbeCountZ      = j["ddgiProbeCountZ"].get<i32>();
+    if (j.contains("ddgiVoxelResolution"))  s.ddgiVoxelResolution  = j["ddgiVoxelResolution"].get<i32>();
+    if (j.contains("ddgiOctResolution"))    s.ddgiOctResolution    = j["ddgiOctResolution"].get<u32>();
+
+    if (j.contains("gpuParticleDirection"))           s.gpuParticleDirection           = DeserializeVec3(j["gpuParticleDirection"], s.gpuParticleDirection);
+    if (j.contains("gpuParticleSpread"))              s.gpuParticleSpread              = j["gpuParticleSpread"].get<f32>();
+    if (j.contains("gpuParticleGravity"))             s.gpuParticleGravity             = DeserializeVec3(j["gpuParticleGravity"], s.gpuParticleGravity);
+    if (j.contains("gpuParticleDamping"))             s.gpuParticleDamping             = j["gpuParticleDamping"].get<f32>();
+    if (j.contains("gpuParticleStartColor"))          s.gpuParticleStartColor          = DeserializeVec3(j["gpuParticleStartColor"], s.gpuParticleStartColor);
+    if (j.contains("gpuParticleStartAlpha"))          s.gpuParticleStartAlpha          = j["gpuParticleStartAlpha"].get<f32>();
+    if (j.contains("gpuParticleEndColor"))            s.gpuParticleEndColor            = DeserializeVec3(j["gpuParticleEndColor"], s.gpuParticleEndColor);
+    if (j.contains("gpuParticleEndAlpha"))            s.gpuParticleEndAlpha            = j["gpuParticleEndAlpha"].get<f32>();
+    if (j.contains("gpuParticleStartSize"))           s.gpuParticleStartSize           = j["gpuParticleStartSize"].get<f32>();
+    if (j.contains("gpuParticleEndSize"))             s.gpuParticleEndSize             = j["gpuParticleEndSize"].get<f32>();
+    if (j.contains("gpuParticleMaxLifetime"))         s.gpuParticleMaxLifetime         = j["gpuParticleMaxLifetime"].get<f32>();
+    if (j.contains("gpuParticleSpawnRate"))           s.gpuParticleSpawnRate           = j["gpuParticleSpawnRate"].get<f32>();
+    if (j.contains("gpuParticleTurbulenceStrength"))  s.gpuParticleTurbulenceStrength  = j["gpuParticleTurbulenceStrength"].get<f32>();
+    if (j.contains("gpuParticleTurbulenceFrequency")) s.gpuParticleTurbulenceFrequency = j["gpuParticleTurbulenceFrequency"].get<f32>();
+    if (j.contains("gpuParticleMaxParticles"))        s.gpuParticleMaxParticles        = j["gpuParticleMaxParticles"].get<u32>();
+
+    if (j.contains("lightBVHEnabled"))           s.lightBVHEnabled           = JB(j["lightBVHEnabled"]);
+    if (j.contains("lightBVHMaxLights"))         s.lightBVHMaxLights         = j["lightBVHMaxLights"].get<u32>();
+    if (j.contains("lightBVHMinLightsForBVH"))   s.lightBVHMinLightsForBVH   = j["lightBVHMinLightsForBVH"].get<u32>();
+    if (j.contains("lightBVHRebuildEveryFrame")) s.lightBVHRebuildEveryFrame = JB(j["lightBVHRebuildEveryFrame"]);
+
+    if (j.contains("adaptiveRayBudgetEnabled"))     s.adaptiveRayBudgetEnabled     = JB(j["adaptiveRayBudgetEnabled"]);
+    if (j.contains("adaptiveRayMinPerPixel"))       s.adaptiveRayMinPerPixel       = j["adaptiveRayMinPerPixel"].get<u32>();
+    if (j.contains("adaptiveRayMaxPerPixel"))       s.adaptiveRayMaxPerPixel       = j["adaptiveRayMaxPerPixel"].get<u32>();
+    if (j.contains("adaptiveRayVarianceThreshold")) s.adaptiveRayVarianceThreshold = j["adaptiveRayVarianceThreshold"].get<f32>();
+    if (j.contains("adaptiveRayVarianceScale"))     s.adaptiveRayVarianceScale     = j["adaptiveRayVarianceScale"].get<f32>();
+    if (j.contains("adaptiveRayEdgeBoost"))         s.adaptiveRayEdgeBoost         = JB(j["adaptiveRayEdgeBoost"]);
+    if (j.contains("adaptiveRayDisocclusionBoost")) s.adaptiveRayDisocclusionBoost = JB(j["adaptiveRayDisocclusionBoost"]);
     if (j.contains("worldTimeEnabled"))       s.worldTimeEnabled       = j["worldTimeEnabled"].get<bool>();
     if (j.contains("startTimeOfDay"))         s.startTimeOfDay         = j["startTimeOfDay"].get<f32>();
     if (j.contains("secondsPerGameHour"))     s.secondsPerGameHour     = j["secondsPerGameHour"].get<f32>();

@@ -7,6 +7,9 @@
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/ReflectionProbe.h"
+#include "Enjin/ECS/Components/Mesh.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
+#include "Enjin/ECS/Components/BrushSolid.h"
 #include "Enjin/Math/Math.h"
 #include "Enjin/Logging/Log.h"
 #include <cmath>
@@ -106,6 +109,27 @@ ReflectionProbeData ReflectionProbeSystem::FindNearestProbe(
         }
     }
 
+    // Nothing placed covers this point. Fall back to the scene-wide capture,
+    // which is what makes a scene nobody configured still reflect its own room
+    // instead of a sky gradient.
+    if (result.intensity <= 0.0f && m_ImplicitActive) {
+        auto it = m_BakedCubemaps.find(kImplicitProbeKey);
+        if (it != m_BakedCubemaps.end() && it->second.view != VK_NULL_HANDLE) {
+            result.probePosition = m_ImplicitCenter;
+            result.boxMin = m_ImplicitMin;
+            result.boxMax = m_ImplicitMax;
+            result.blendDistance = 0.0f;   // no edge falloff: it IS the whole scene
+            result.intensity = 1.0f;
+            result.isBaked = 1.0f;
+            m_ActiveBakedDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            m_ActiveBakedDescriptor.imageView = it->second.view;
+            m_ActiveBakedDescriptor.sampler = it->second.sampler;
+            m_ActiveBakedDescriptorValid = true;
+            m_ActiveBakedMipLevels = it->second.mipLevels;
+            return result;
+        }
+    }
+
     // If the best probe is baked, set up the active cubemap descriptor
     if (result.isBaked > 0.5f && bestEntity != 0) {
         auto it = m_BakedCubemaps.find(bestEntity);
@@ -121,10 +145,239 @@ ReflectionProbeData ReflectionProbeSystem::FindNearestProbe(
     return result;
 }
 
+u64 ReflectionProbeSystem::ComputeGeometryFingerprint(ECS::World* world) const {
+    if (!world) return 0;
+
+    // FNV-1a over the things that change a probe's view of the world. Brush
+    // solids carry the hash their geometry was built from, so this reads a value
+    // that was computed anyway rather than walking any vertices.
+    u64 h = 1469598103934665603ull;
+    auto mix = [&h](u64 v) {
+        for (int i = 0; i < 8; ++i) { h ^= (v >> (i * 8)) & 0xffull; h *= 1099511628211ull; }
+    };
+
+    for (ECS::Entity e : world->GetEntitiesWithComponent<ECS::BrushSolidComponent>()) {
+        auto* solid = world->GetComponent<ECS::BrushSolidComponent>(e);
+        if (!solid) continue;
+        mix(solid->builtHash);
+        mix(static_cast<u64>(solid->brushes.size()));
+        if (auto* t = world->GetComponent<ECS::TransformComponent>(e)) {
+            // Quantised to a centimetre: a probe cannot see a sub-centimetre
+            // move, and hashing raw floats would re-bake on camera-driven
+            // float noise that never reaches the geometry.
+            mix(static_cast<u64>(static_cast<i64>(t->position.x * 100.0f)));
+            mix(static_cast<u64>(static_cast<i64>(t->position.y * 100.0f)));
+            mix(static_cast<u64>(static_cast<i64>(t->position.z * 100.0f)));
+        }
+    }
+
+    // Entities appearing and disappearing count as a change even when no brush
+    // solid moved -- placing a Water plane or a Ladder changes what a probe sees.
+    mix(static_cast<u64>(world->GetEntitiesWithComponent<ECS::MeshComponent>().size()));
+    return h;
+}
+
+bool ReflectionProbeSystem::ComputeSceneBounds(ECS::World* world,
+                                              Math::Vector3& outMin,
+                                              Math::Vector3& outMax) const {
+    if (!world) return false;
+
+    bool any = false;
+    Math::Vector3 lo(1e30f, 1e30f, 1e30f);
+    Math::Vector3 hi(-1e30f, -1e30f, -1e30f);
+
+    for (ECS::Entity e : world->GetEntitiesWithComponent<ECS::MeshComponent>()) {
+        auto* mesh = world->GetComponent<ECS::MeshComponent>(e);
+        auto* xf = world->GetComponent<ECS::TransformComponent>(e);
+        if (!mesh || !xf || !mesh->IsValid()) continue;
+
+        // The cached AABB uses min > max to mean "not computed yet". Rather than
+        // walk the vertices of every mesh in the scene to fix that here, fall
+        // back to the entity's position: it still bounds WHERE the thing is,
+        // which is all a probe placement needs.
+        Math::Vector3 localMin = mesh->cachedAABBMin;
+        Math::Vector3 localMax = mesh->cachedAABBMax;
+        const bool haveLocal = (localMin.x <= localMax.x &&
+                                localMin.y <= localMax.y &&
+                                localMin.z <= localMax.z);
+
+        if (!haveLocal) {
+            lo.x = Math::Min(lo.x, xf->position.x); hi.x = Math::Max(hi.x, xf->position.x);
+            lo.y = Math::Min(lo.y, xf->position.y); hi.y = Math::Max(hi.y, xf->position.y);
+            lo.z = Math::Min(lo.z, xf->position.z); hi.z = Math::Max(hi.z, xf->position.z);
+            any = true;
+            continue;
+        }
+
+        // Every corner through the world matrix, because a rotated box's world
+        // bounds are not its rotated extents.
+        const Math::Matrix4 m = ECS::ComputeWorldMatrix(world, e);
+        for (int c = 0; c < 8; ++c) {
+            const Math::Vector3 corner((c & 1) ? localMax.x : localMin.x,
+                                       (c & 2) ? localMax.y : localMin.y,
+                                       (c & 4) ? localMax.z : localMin.z);
+            const Math::Vector4 h4 = m * Math::Vector4(corner.x, corner.y, corner.z, 1.0f);
+            const Math::Vector3 w(h4.x, h4.y, h4.z);
+            lo.x = Math::Min(lo.x, w.x); hi.x = Math::Max(hi.x, w.x);
+            lo.y = Math::Min(lo.y, w.y); hi.y = Math::Max(hi.y, w.y);
+            lo.z = Math::Min(lo.z, w.z); hi.z = Math::Max(hi.z, w.z);
+        }
+        any = true;
+    }
+
+    if (!any) return false;
+
+    // A scene of one flat floor has zero height, and a probe volume with no
+    // thickness contains nothing -- including the camera, so it would never be
+    // picked. Pad so the box is always something you can stand inside.
+    constexpr f32 kMinHalf = 2.0f;
+    for (int axis = 0; axis < 3; ++axis) {
+        f32& a = (axis == 0) ? lo.x : (axis == 1) ? lo.y : lo.z;
+        f32& b = (axis == 0) ? hi.x : (axis == 1) ? hi.y : hi.z;
+        const f32 mid = (a + b) * 0.5f;
+        const f32 half = Math::Max((b - a) * 0.5f, kMinHalf);
+        a = mid - half;
+        b = mid + half;
+    }
+
+    outMin = lo;
+    outMax = hi;
+    return true;
+}
+
+void ReflectionProbeSystem::UpdateImplicitProbe(ECS::World* world) {
+    if (!world) return;
+
+    // Somebody placed a probe: theirs wins, and ours gets out of the way rather
+    // than sitting in memory competing.
+    bool anyPlaced = false;
+    for (ECS::Entity e : world->GetEntitiesWithComponent<ECS::ReflectionProbeComponent>()) {
+        auto* probe = world->GetComponent<ECS::ReflectionProbeComponent>(e);
+        if (probe && probe->isActive) { anyPlaced = true; break; }
+    }
+
+    if (anyPlaced) {
+        if (m_ImplicitActive) {
+            auto it = m_BakedCubemaps.find(kImplicitProbeKey);
+            if (it != m_BakedCubemaps.end()) {
+                DestroyCubemap(it->second);
+                m_BakedCubemaps.erase(it);
+            }
+            m_ImplicitActive = false;
+            ENJIN_LOG_INFO(Renderer, "Reflection: a placed probe took over from the scene-wide one");
+        }
+        return;
+    }
+
+    Math::Vector3 lo, hi;
+    if (!ComputeSceneBounds(world, lo, hi)) {
+        // Nothing in the scene to reflect. No probe, and the sky fallback is the
+        // honest answer rather than a capture of empty space.
+        m_ImplicitActive = false;
+        return;
+    }
+
+    const Math::Vector3 centre((lo.x + hi.x) * 0.5f, (lo.y + hi.y) * 0.5f, (lo.z + hi.z) * 0.5f);
+
+    // Only re-bake when the volume has actually moved. Scene bounds jitter by
+    // millimetres as things settle, and a probe is six full scene renders.
+    constexpr f32 kMoved = 0.25f;
+    const bool moved = !m_ImplicitActive ||
+        Math::Abs(centre.x - m_ImplicitCenter.x) > kMoved ||
+        Math::Abs(centre.y - m_ImplicitCenter.y) > kMoved ||
+        Math::Abs(centre.z - m_ImplicitCenter.z) > kMoved ||
+        Math::Abs(lo.x - m_ImplicitMin.x) > kMoved ||
+        Math::Abs(hi.x - m_ImplicitMax.x) > kMoved ||
+        Math::Abs(lo.z - m_ImplicitMin.z) > kMoved;
+
+    m_ImplicitCenter = centre;
+    m_ImplicitMin = lo;
+    m_ImplicitMax = hi;
+
+    const bool firstTime = !m_ImplicitActive;
+    m_ImplicitActive = true;
+
+    if (firstTime) {
+        ENJIN_LOG_INFO(Renderer,
+            "Reflection: no probe in the scene, capturing a scene-wide one at (%.1f, %.1f, %.1f)",
+            centre.x, centre.y, centre.z);
+    }
+    bool implicitBlocked = false;
+    for (u64 f : m_FailedBakes) { if (f == kImplicitProbeKey) { implicitBlocked = true; break; } }
+    if (moved) {
+        RequestBake(kImplicitProbeKey);   // a real change: worth another try
+    } else if (!implicitBlocked && m_BakedCubemaps.find(kImplicitProbeKey) == m_BakedCubemaps.end()) {
+        RequestBake(kImplicitProbeKey);
+    }
+}
+
+void ReflectionProbeSystem::MarkAllProbesDirty(ECS::World* world) {
+    if (!world) return;
+    for (ECS::Entity e : world->GetEntitiesWithComponent<ECS::ReflectionProbeComponent>()) {
+        auto* probe = world->GetComponent<ECS::ReflectionProbeComponent>(e);
+        if (probe && probe->isActive) RequestBake(static_cast<u64>(e));
+    }
+}
+
+void ReflectionProbeSystem::Update(ECS::World* world) {
+    if (!world || !m_Initialized) return;
+
+    // --- probes with no cubemap at all -------------------------------------
+    // Every probe in a freshly loaded scene is in this state, because the
+    // cubemap is a GPU resource and does not survive a save. These are queued
+    // without waiting for the settle timer: there is nothing to preserve, the
+    // reflection is currently the sky-gradient fallback, and the sooner it is
+    // right the better.
+    for (ECS::Entity e : world->GetEntitiesWithComponent<ECS::ReflectionProbeComponent>()) {
+        auto* probe = world->GetComponent<ECS::ReflectionProbeComponent>(e);
+        if (!probe || !probe->isActive) continue;
+        bool blocked = false;
+        for (u64 f : m_FailedBakes) { if (f == static_cast<u64>(e)) { blocked = true; break; } }
+        if (!blocked && m_BakedCubemaps.find(static_cast<u64>(e)) == m_BakedCubemaps.end()) {
+            // Keep the component honest while it waits, so nothing downstream
+            // reads a baked flag with no cubemap behind it.
+            probe->baked = false;
+            probe->cubemapTextureId = -1;
+            RequestBake(static_cast<u64>(e));
+        }
+    }
+
+    // --- the scene-wide fallback -------------------------------------------
+    UpdateImplicitProbe(world);
+
+    // --- probes whose world moved under them --------------------------------
+    const u64 fingerprint = ComputeGeometryFingerprint(world);
+    if (fingerprint != m_GeometryFingerprint) {
+        m_GeometryFingerprint = fingerprint;
+        m_FramesSinceGeometryChanged = 0;
+        m_GeometryDirty = true;
+        return;   // still moving; do not spend a bake yet
+    }
+
+    if (!m_GeometryDirty) return;
+
+    // Held still long enough to be worth six scene renders. Without this a
+    // single resize drag would bake on every frame of the gesture.
+    if (++m_FramesSinceGeometryChanged < kSettleFrames) return;
+
+    m_GeometryDirty = false;
+    m_FramesSinceGeometryChanged = 0;
+    MarkAllProbesDirty(world);
+    // The implicit probe is not in the component list, so it has to be asked
+    // separately -- and it is the one that matters most here, because a scene
+    // with no placed probe is exactly the scene relying on it.
+    if (m_ImplicitActive) RequestBake(kImplicitProbeKey);
+}
+
 void ReflectionProbeSystem::RequestBake(u64 probeEntity) {
     // Avoid duplicate requests
     for (u64 id : m_PendingBakes) {
         if (id == probeEntity) return;
+    }
+    // An explicit request is a deliberate retry, so it lifts any previous
+    // failure block on this key.
+    for (auto it = m_FailedBakes.begin(); it != m_FailedBakes.end(); ++it) {
+        if (*it == probeEntity) { m_FailedBakes.erase(it); break; }
     }
     m_PendingBakes.push_back(probeEntity);
     ENJIN_LOG_INFO(Renderer, "Reflection probe bake queued for entity %llu (will bake next frame)", probeEntity);
@@ -135,15 +388,28 @@ void ReflectionProbeSystem::ProcessPendingBakes(ECS::World* world, ECS::RenderSy
 
     // Process all pending bakes
     for (u64 entity : m_PendingBakes) {
-        BakeProbeInternal(world, renderSystem, entity);
+        if (!BakeProbeInternal(world, renderSystem, entity)) {
+            bool known = false;
+            for (u64 f : m_FailedBakes) { if (f == entity) { known = true; break; } }
+            if (!known) {
+                m_FailedBakes.push_back(entity);
+                ENJIN_LOG_WARN(Renderer,
+                    "Reflection probe %llu failed to bake; not retrying until the scene changes "
+                    "or you bake it by hand", entity);
+            }
+        }
     }
     m_PendingBakes.clear();
 }
 
 bool ReflectionProbeSystem::BakeProbeInternal(ECS::World* world, ECS::RenderSystem* renderSystem, u64 probeEntity) {
-    if (!world || !renderSystem || !m_Context || !m_Initialized) {
-        ENJIN_LOG_ERROR(Renderer, "ReflectionProbeSystem::BakeProbe - not initialized or null parameters");
-        return false;
+    if (!world) return false;
+
+    // The implicit scene-wide probe has no entity to read: it is a default, not
+    // a component, so its position and resolution come from the system itself.
+    if (probeEntity == kImplicitProbeKey) {
+        if (!m_ImplicitActive) return false;
+        return BakeAt(world, renderSystem, probeEntity, m_ImplicitCenter, 256);
     }
 
     auto* probe = world->GetComponent<ECS::ReflectionProbeComponent>(static_cast<ECS::Entity>(probeEntity));
@@ -152,6 +418,16 @@ bool ReflectionProbeSystem::BakeProbeInternal(ECS::World* world, ECS::RenderSyst
         ENJIN_LOG_ERROR(Renderer, "ReflectionProbeSystem::BakeProbe - entity missing required components");
         return false;
     }
+    return BakeAt(world, renderSystem, probeEntity, transform->position, probe->resolution);
+}
+
+bool ReflectionProbeSystem::BakeAt(ECS::World* world, ECS::RenderSystem* renderSystem,
+                                   u64 key, const Math::Vector3& position, u32 bakeResolution) {
+    if (!world || !renderSystem || !m_Context || !m_Initialized) {
+        ENJIN_LOG_ERROR(Renderer, "ReflectionProbeSystem::BakeProbe - not initialized or null parameters");
+        return false;
+    }
+    const u64 probeEntity = key;
 
     VulkanRenderer* vulkanRenderer = renderSystem->GetVulkanRenderer();
     if (!vulkanRenderer) {
@@ -159,11 +435,11 @@ bool ReflectionProbeSystem::BakeProbeInternal(ECS::World* world, ECS::RenderSyst
         return false;
     }
 
-    u32 resolution = probe->resolution;
+    u32 resolution = bakeResolution;
     if (resolution < 32) resolution = 32;
     if (resolution > 1024) resolution = 1024;
 
-    Math::Vector3 probePos = transform->position;
+    Math::Vector3 probePos = position;
 
     ENJIN_LOG_INFO(Renderer, "Baking reflection probe at (%.1f, %.1f, %.1f) resolution %u...",
         probePos.x, probePos.y, probePos.z, resolution);
@@ -213,6 +489,11 @@ bool ReflectionProbeSystem::BakeProbeInternal(ECS::World* world, ECS::RenderSyst
     std::vector<std::vector<u8>> facePixels(6);
     usize expectedFaceBytes = static_cast<usize>(resolution) * static_cast<usize>(resolution) * 4;
     bool allFacesOk = true;
+    // Faces that actually rendered. A failed face is filled with flat mid-grey,
+    // so a cubemap where NOTHING rendered is six grey walls -- which the shader
+    // would happily reflect as a uniform wash, indistinguishable from a real
+    // room that happens to be grey.
+    u32 renderedFaces = 0;
 
     for (int face = 0; face < 6; ++face) {
         // Set up camera for this face: 90 degree FOV, 1:1 aspect
@@ -222,10 +503,6 @@ bool ReflectionProbeSystem::BakeProbeInternal(ECS::World* world, ECS::RenderSyst
                              probePos.z + faces[face].dir.z);
         faceCamera.SetLookAt(probePos, target, faces[face].up);
         faceCamera.SetPerspective(90.0f, 1.0f, 0.1f, 1000.0f);
-
-        // Run shadow pass for this camera (needs its own command buffer submission)
-        renderSystem->RenderShadowPassForCamera(&faceCamera);
-        m_Context->WaitForGPU();
 
         // Begin a frame, render the scene to the target, end the frame
         if (!vulkanRenderer->BeginFrameVulkan()) {
@@ -244,6 +521,21 @@ bool ReflectionProbeSystem::BakeProbeInternal(ECS::World* world, ECS::RenderSyst
             continue;
         }
 
+        // Shadow pass for this face, INSIDE the frame.
+        //
+        // It used to run before BeginFrameVulkan, under a comment claiming it
+        // needed its own command buffer submission. It does not: it RECORDS into
+        // whatever GetCurrentCommandBuffer returns. Outside a frame that is a
+        // pre-allocated buffer which is valid, non-null, and NOT in the
+        // recording state, so the null check inside RenderShadowPass passed and
+        // the driver access-violated on the first vkCmd (nvoglv64.dll, captured
+        // 2026-09-08 via --probe-bake-test; see
+        // _docs_internal/PROBE_BAKE_INVESTIGATION.md).
+        //
+        // Shadows must also be rendered BEFORE the face is drawn, or the cubemap
+        // captures the scene lit by the previous face's shadow map.
+        renderSystem->RenderShadowPassForCamera(&faceCamera);
+
         // Begin render target, render scene, end render target
         faceTarget->Begin(cmd);
         renderSystem->RenderToTarget(faceTarget.get(), &faceCamera);
@@ -257,6 +549,7 @@ bool ReflectionProbeSystem::BakeProbeInternal(ECS::World* world, ECS::RenderSyst
         auto pixels = faceTarget->CaptureToPixels();
         if (pixels.size() >= expectedFaceBytes) {
             facePixels[face] = std::move(pixels);
+            ++renderedFaces;
         } else {
             ENJIN_LOG_WARN(Renderer, "Probe bake face %d: capture returned %zu bytes, expected %zu",
                 face, pixels.size(), expectedFaceBytes);
@@ -267,6 +560,18 @@ bool ReflectionProbeSystem::BakeProbeInternal(ECS::World* world, ECS::RenderSyst
 
     if (!allFacesOk) {
         ENJIN_LOG_WARN(Renderer, "Some probe faces failed to render, cubemap may have artifacts");
+    }
+    // NO face rendered: every face is the flat grey fill, so storing this hands
+    // the shader six grey walls and the scene reflects a uniform wash -- worse
+    // than the sky-gradient fallback it replaced, and impossible to tell from a
+    // room that is genuinely grey. Fail honestly instead, so the caller records
+    // it, stops retrying, and the reflection falls back to the sky.
+    if (renderedFaces == 0) {
+        ENJIN_LOG_ERROR(Renderer, "Probe bake produced no faces; leaving the reflection unbaked");
+        faceTarget->Destroy();
+        faceTarget.reset();
+        DestroyCubemap(cubemap);
+        return false;
     }
 
     // Clean up the render target
@@ -280,12 +585,20 @@ bool ReflectionProbeSystem::BakeProbeInternal(ECS::World* world, ECS::RenderSyst
         return false;
     }
 
-    // Store the baked cubemap
+    // The previous cubemap for this key was already destroyed at the top of the
+    // bake, right after WaitForGPU -- which is what makes repeated refreshes
+    // safe rather than a leak per bake.
     m_BakedCubemaps[probeEntity] = cubemap;
 
-    // Update the component
-    probe->baked = true;
-    probe->cubemapTextureId = static_cast<i32>(probeEntity & 0x7FFFFFFF);
+    // A placed probe carries the flags. The implicit scene-wide one has no
+    // component to mark -- the system's own state is its record.
+    if (probeEntity != kImplicitProbeKey) {
+        if (auto* placed = world->GetComponent<ECS::ReflectionProbeComponent>(
+                static_cast<ECS::Entity>(probeEntity))) {
+            placed->baked = true;
+            placed->cubemapTextureId = static_cast<i32>(probeEntity & 0x7FFFFFFF);
+        }
+    }
 
     ENJIN_LOG_INFO(Renderer, "Reflection probe baked successfully (%ux%u per face, 6 faces)",
         resolution, resolution);

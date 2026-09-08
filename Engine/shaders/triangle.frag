@@ -56,6 +56,14 @@ struct SpotLight {
     float constantAtten;
     float linearAtten;
     float quadraticAtten;
+    // Cookie (gobo). Must match SpotLightData in Light.h; see the static_assert
+    // there. cookieIndex < 0 means this light has no cookie.
+    vec3 cookieRight;
+    float cookieIndex;
+    float cookieScale;
+    float cookieIntensity;
+    float _cookiePad0;
+    float _cookiePad1;
 };
 
 // Lighting UBO - must match C++ LightingUBO structure
@@ -507,6 +515,43 @@ float calcPointShadow(vec3 fragPos, int shadowIdx) {
 }
 
 // Calculate spot light shadow factor using 2D array shadow sampling
+// Light cookie (gobo): the shape a spot light projects. Returns a multiplier for
+// the light's contribution, 1.0 when the light has no cookie.
+//
+// A function rather than inline code because there are TWO spot loops in this
+// shader (the clustered path and the brute-force #else), and clustered lighting
+// is ON by default. Writing the maths in only one of them is exactly how this
+// shipped invisible the first time.
+float calcSpotCookie(uint i, vec3 lightDir, vec3 spotDir, float outerCutoff) {
+    float cookieIdx = lighting.spotLights[i].cookieIndex;
+    if (cookieIdx < 0.0) return 1.0;
+
+    vec3 toFrag = -lightDir;                 // light -> fragment
+    float axial = dot(toFrag, spotDir);      // depth along the cone
+    if (axial <= 0.0001) return 1.0;
+
+    vec3 right = lighting.spotLights[i].cookieRight;
+    vec3 up = cross(spotDir, right);
+
+    // Radius of the outer cone at this depth. outerCutoff is the COSINE of the
+    // half angle, so the tangent comes from the identity rather than a trig call.
+    float cosOuter = clamp(outerCutoff, 0.0001, 0.9999);
+    float tanOuter = sqrt(1.0 - cosOuter * cosOuter) / cosOuter;
+    float radius = max(axial * tanOuter, 0.0001);
+    float scale = max(lighting.spotLights[i].cookieScale, 0.0001);
+
+    vec2 uv = vec2(dot(toFrag, right), dot(toFrag, up)) / (radius * scale);
+    uv = uv * 0.5 + 0.5;
+
+    // Outside the cookie the light is left unshaped rather than blacked out: a
+    // gobo masks what it covers, it does not add a dark box around itself.
+    float cookie = 1.0;
+    if (all(greaterThanEqual(uv, vec2(0.0))) && all(lessThanEqual(uv, vec2(1.0)))) {
+        cookie = texture(BTEX(int(cookieIdx)), uv).r;
+    }
+    return mix(1.0, cookie, clamp(lighting.spotLights[i].cookieIntensity, 0.0, 1.0));
+}
+
 float calcSpotShadow(vec3 fragPos, int shadowIdx) {
     // Project fragment into spot light space
     vec4 lightSpacePos = shadowData.spotViewProj[shadowIdx] * vec4(fragPos, 1.0);
@@ -1469,6 +1514,7 @@ void main() {
                     if (int(i) < lighting.spotShadowCount && (mat_flags & FLAG_RECEIVE_SHADOWS) != 0) {
                         shadow = calcSpotShadow(fragWorldPos, int(i));
                     }
+                    shadow *= calcSpotCookie(i, lightDir, spotDir, outerCutoff);
                     bool useCelSp = (lighting.celDiffuseBands >= 2.0) && ((mat_flags & FLAG_EXCLUDE_CEL) == 0);
                     result += shadow * (useCelSp
                         ? calcBlinnPhongCel(lightDir, lightColor, intensity * atten * spotIntensity, normal, viewDir, albedo, metallic, shininess)
@@ -1548,6 +1594,8 @@ void main() {
             if (int(i) < lighting.spotShadowCount && (mat_flags & FLAG_RECEIVE_SHADOWS) != 0) {
                 shadow = calcSpotShadow(fragWorldPos, int(i));
             }
+
+            shadow *= calcSpotCookie(i, lightDir, spotDir, outerCutoff);
 
             bool useCelSp = (lighting.celDiffuseBands >= 2.0) && ((mat_flags & FLAG_EXCLUDE_CEL) == 0);
             result += shadow * (useCelSp

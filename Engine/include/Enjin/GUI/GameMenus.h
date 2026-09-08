@@ -9,6 +9,8 @@
 
 #include <imgui.h>
 
+#include "Enjin/Renderer/RenderQualitySettings.h"
+
 #include <functional>
 #include <string>
 
@@ -83,11 +85,30 @@ public:
     // UISystem motor toggles, dyslexia font) and persist to accessibility.json.
     void SetAccessibilitySettings(Accessibility::RuntimeAccessibilitySettings* s) { m_Accessibility = s; }
 
+    // Render quality tier, in the Graphics tab. Like the accessibility pointer
+    // above it edits the host's LIVE state; the callback lets the host re-apply
+    // the current scene's render settings so a new ceiling takes effect
+    // immediately rather than at the next scene load. The row only appears when
+    // the project turned tiers on AND allowed players to change them.
+    void SetRenderQuality(Renderer::RenderQualitySettings* quality,
+                          Renderer::QualityTier* activeTier,
+                          std::function<void()> onChanged) {
+        m_RenderQuality = quality;
+        m_ActiveQualityTier = activeTier;
+        m_QualityChanged = std::move(onChanged);
+    }
+
     // Optional: enables the live preview split in the options tabs. While the
     // player hovers a visual setting (bloom, colorblind mode, brightness...),
     // the screen splits down the middle - left renders WITHOUT the effect,
     // right WITH it - so every slider shows exactly what it does.
     void SetPostProcessing(Renderer::PostProcessing* pp) { m_PostProcessing = pp; }
+
+private:
+    Renderer::RenderQualitySettings* m_RenderQuality = nullptr;
+    Renderer::QualityTier* m_ActiveQualityTier = nullptr;
+    std::function<void()> m_QualityChanged;
+public:
     using AccessibilityChangedCallback = std::function<void()>;
     void SetAccessibilityChangedCallback(AccessibilityChangedCallback cb) { m_AccessibilityChanged = std::move(cb); }
 

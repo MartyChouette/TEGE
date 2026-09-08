@@ -247,6 +247,25 @@ void EditorLayer::DrawViewportPanel() {
             m_EditorViewportHovered = ImGui::IsWindowHovered() && ImGui::IsMouseHoveringRect(imgMin, imgMax);
             m_EditorViewportFocused = ImGui::IsWindowFocused();
 
+            // Creative mode's readouts and first-run hint, drawn HERE because
+            // this is the only point where the viewport image rect is known to
+            // be current. Called from the panel list instead, it read whatever
+            // the members held from a previous frame -- and with the Game View
+            // tab active they are never written at all, so the hint painted
+            // itself across the top-left corner of the screen.
+            //
+            // The visibility check is the same bug one layer down and is not
+            // redundant: Begin() returning false does not stop this function, it
+            // only makes every widget in it a no-op. ImGui::Image draws nothing
+            // and GetItemRectMin then hands back the LAST item of some other
+            // window, which is a perfectly plausible rectangle in a completely
+            // wrong place -- so a degenerate-rect guard never fires and the hint
+            // lands on the menu bar anyway. Measured: with the Game View tab in
+            // front, the hint drew centred on the tab strip.
+            if (m_SceneViewVisibleThisFrame) {
+                DrawCreativeOverlay(imgMin, imgMax);
+            }
+
             // Drop target: accept asset drags onto scene viewport
             if (ImGui::BeginDragDropTarget()) {
                 if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ASSET_PATH")) {

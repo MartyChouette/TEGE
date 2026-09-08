@@ -64,6 +64,82 @@ struct SceneRenderSettings {
     f32 fogEnd = 100.0f;
     f32 fogHeightFalloff = 0.1f;
     Math::Vector3 fogColor = Math::Vector3(0.5f, 0.5f, 0.6f);
+
+    // ---- Volumetric (froxel) fog --------------------------------------
+    //
+    // A SEPARATE system from the simple distance fog above, and easy to confuse
+    // with it: that one is a depth-based tint, this one is participating media
+    // marched through a froxel grid, and it lights from the clustered light list.
+    //
+    // These live here because they had nowhere to live before. The system had
+    // ten authored knobs in the editor's Settings window and NO serialization at
+    // all, so every value was lost the moment the editor closed, and an exported
+    // game could not reach them by any path -- it got the hardcoded defaults
+    // forever. Scene settings gives them persistence, per-scene control and the
+    // build path in one move.
+    //
+    // Defaults mirror VolumetricFogConfig exactly, including enabled = false, so
+    // no existing scene changes appearance by gaining these keys.
+    bool volumetricFogEnabled = false;
+    Math::Vector3 volumetricFogColor = Math::Vector3(0.9f, 0.9f, 1.0f);
+    f32 volumetricFogDensity = 0.02f;
+    f32 volumetricFogHeightFalloff = 0.1f;
+    f32 volumetricFogBaseHeight = 0.0f;
+    f32 volumetricFogAnisotropy = 0.3f;    // Henyey-Greenstein g
+    f32 volumetricFogTemporalBlend = 0.9f;
+    f32 volumetricFogNoiseScale = 0.1f;
+    f32 volumetricFogNoiseStrength = 0.3f;
+    f32 volumetricFogWindX = 1.0f;
+    f32 volumetricFogWindZ = 0.5f;
+
+    // --- DDGI (software-traced global illumination) ---
+    // Defaults mirror Renderer::DDGIConfig, EXCEPT enabled: RenderSystem forces
+    // enabled = false when it initialises the system, so false is the value a
+    // scene without these keys actually runs with. Mirroring the struct's own
+    // `true` here would light every existing scene differently on load.
+    bool ddgiEnabled = false;
+    f32 ddgiGridSpacing = 4.0f;
+    Math::Vector3 ddgiGridOrigin = Math::Vector3(-16.0f, 0.0f, -16.0f);
+    f32 ddgiVoxelWorldExtent = 50.0f;
+    u32 ddgiRaysPerProbe = 64;
+    f32 ddgiMaxTraceDistance = 30.0f;
+    u32 ddgiAmortizationRate = 8;
+    f32 ddgiHysteresis = 0.97f;
+
+    // The grid SHAPE. These size the voxel grid and the probe atlas, so they
+    // are not written into a running system directly: ApplyToRuntime hands them
+    // to DDGIProbeSystem::RequestGridRebuild, and the destroy-and-recreate
+    // happens in RenderSystem::FlushPendingChanges where no frame is reading the
+    // images. A request that matches the running shape is dropped, so a scene
+    // that never touched the grid costs nothing to load. Values are clamped by
+    // ClampDDGIGridShape, because a scene file is user-editable text.
+    i32 ddgiProbeCountX = 8;
+    i32 ddgiProbeCountY = 4;
+    i32 ddgiProbeCountZ = 8;
+    i32 ddgiVoxelResolution = 64;
+    u32 ddgiOctResolution = 8;
+
+    // --- GPU particles (Effects::GPUEmitterConfig) ---
+    // The system holds ONE emitter config, so the scene is its home. `position`
+    // is deliberately absent: emitters are placed by their entity world
+    // transform, not by scene render settings.
+    Math::Vector3 gpuParticleDirection = Math::Vector3(0.0f, 1.0f, 0.0f);
+    f32 gpuParticleSpread = 0.5f;
+    Math::Vector3 gpuParticleGravity = Math::Vector3(0.0f, -9.8f, 0.0f);
+    f32 gpuParticleDamping = 0.1f;
+    Math::Vector3 gpuParticleStartColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+    f32 gpuParticleStartAlpha = 1.0f;
+    Math::Vector3 gpuParticleEndColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+    f32 gpuParticleEndAlpha = 0.0f;
+    f32 gpuParticleStartSize = 0.1f;
+    f32 gpuParticleEndSize = 0.3f;
+    f32 gpuParticleMaxLifetime = 3.0f;
+    f32 gpuParticleSpawnRate = 100.0f;
+    f32 gpuParticleTurbulenceStrength = 0.0f;
+    f32 gpuParticleTurbulenceFrequency = 1.0f;
+    // Allocation-sizing: the particle and alive-list buffers are built from it in
+    // Initialize. Saved, not applied live, for the same reason as the DDGI counts.
+    u32 gpuParticleMaxParticles = 65536;
     f32 snowIntensity = 0.0f;
     f32 worldCurvature = 0.0f;
     bool rainActive = false;
@@ -395,6 +471,21 @@ struct SceneRenderSettings {
     u32 surfelCachePlacementInterval = 4;
     u32 surfelCacheRaysPerSurfel = 2;
 
+    // Light BVH (importance-weighted light selection for ReSTIR)
+    bool lightBVHEnabled = false;
+    u32 lightBVHMaxLights = 32768;
+    u32 lightBVHMinLightsForBVH = 16;
+    bool lightBVHRebuildEveryFrame = false;
+
+    // Adaptive ray budget (variance-driven per-pixel ray allocation)
+    bool adaptiveRayBudgetEnabled = false;
+    u32 adaptiveRayMinPerPixel = 1;
+    u32 adaptiveRayMaxPerPixel = 4;
+    f32 adaptiveRayVarianceThreshold = 0.1f;
+    f32 adaptiveRayVarianceScale = 4.0f;
+    bool adaptiveRayEdgeBoost = true;
+    bool adaptiveRayDisocclusionBoost = true;
+
     // Composite strengths
     f32 rtShadowStrength = 1.0f;
     f32 rtReflectionStrength = 0.5f;
@@ -403,7 +494,17 @@ struct SceneRenderSettings {
 
     // --- Conversion helpers ---
     static SceneRenderSettings CaptureFromRuntime(ECS::RenderSystem* rs, PostProcessSettings* pp);
+    // Pushes these values into the live systems. If the RenderSystem carries an
+    // enabled project quality tier, the values are CLAMPED by it first, so every
+    // caller gets the tier for free. There are fourteen call sites across the
+    // three runtimes and hooking each one individually is how a tier ends up
+    // applied in two of them.
     void ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSettings* pp) const;
+
+    // The same work with no tier applied. Used by ApplyToRuntime once it has
+    // built the clamped copy; call it directly only when you have already
+    // clamped, or you deliberately want the authored values.
+    void ApplyToRuntimeUnclamped(ECS::RenderSystem* rs, PostProcessSettings* pp) const;
     static SceneRenderSettings Defaults() { return SceneRenderSettings{}; }
 };
 

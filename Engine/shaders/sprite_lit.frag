@@ -48,6 +48,14 @@ struct SpotLight {
     float constantAtten;
     float linearAtten;
     float quadraticAtten;
+    // Cookie (gobo). Must match SpotLightData in Light.h; see the static_assert
+    // there. cookieIndex < 0 means this light has no cookie.
+    vec3 cookieRight;
+    float cookieIndex;
+    float cookieScale;
+    float cookieIntensity;
+    float _cookiePad0;
+    float _cookiePad1;
 };
 
 // Lighting UBO — must match C++ LightingUBO structure exactly

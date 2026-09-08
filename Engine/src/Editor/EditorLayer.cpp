@@ -274,6 +274,8 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
 
     // Load accessibility / editor settings and apply theme + scale
     m_EditorSettings.Load();
+    if (s_StartInCreativeMode) m_Creative.SetActive(true);
+
     m_ImGuiLayer->ApplyTheme(m_EditorSettings.theme, &m_EditorSettings.accentColors);
     m_ImGuiLayer->SetGlobalScale(m_EditorSettings.uiScale);
     // Apply dyslexia-friendly spacing to ImGui (increased item/frame padding for readability)
@@ -888,6 +890,20 @@ void EditorLayer::Shutdown() {
 }
 
 void EditorLayer::Update(f32 deltaTime) {
+
+    // NOTE: the editor deliberately does NOT push project quality tiers into
+    // RenderSystem, even though it owns them through SceneManager.
+    //
+    // The tier clamps values on their way into the live systems, and saving a
+    // scene works by CaptureFromRuntime reading those same live systems back
+    // out (EditorLayerScene.cpp). Clamping here would therefore write the
+    // TIER'S CEILING into the author's scene file as if they had chosen it, and
+    // the original values would be gone after one save on a Low tier.
+    //
+    // Tiers are a runtime concern and are applied by the players, where nothing
+    // captures back into scene files. Previewing one in the editor needs a mode
+    // that suppresses capture while it is active; until that exists, not
+    // applying is the only safe behaviour.
 
     // Cloth/ropes need their generated mesh even in EDIT mode (the sim only
     // runs during play) - build any uninitialized ones to rest pose so a
@@ -2208,7 +2224,10 @@ void EditorLayer::Update(f32 deltaTime) {
     }
 
     // Handle terrain brush painting (intercepts mouse before viewport picking)
-    if (m_TerrainEditMode && m_PlayMode.IsStopped()) {
+    // Creative mode drives the same brush from its own Terrain tool, inside the
+    // ImGui frame. Letting both run would apply two strokes per frame at double
+    // the strength, and each would take the other's undo snapshot.
+    if (m_TerrainEditMode && m_PlayMode.IsStopped() && !m_Creative.IsActive()) {
         HandleTerrainBrush(deltaTime);
     }
 
@@ -2224,7 +2243,12 @@ void EditorLayer::Update(f32 deltaTime) {
 
     // Creative-mode build placement (drag a lake/trees/grass/shrubs onto the ground).
     // Intercepts the mouse before picking so a click places instead of selects.
-    if (m_CreativeTool != CreativeTool::None && m_PlayMode.IsStopped()) {
+    //
+    // Suppressed while the new build surface is up: both read the same click
+    // against the same ground plane, so a scene with the old palette left open
+    // would place a lake and a wall from one drag.
+    if (m_CreativeTool != CreativeTool::None && m_PlayMode.IsStopped() &&
+        !m_Creative.IsActive()) {
         HandleCreativePlacement(deltaTime);
     }
 
@@ -2236,8 +2260,16 @@ void EditorLayer::Update(f32 deltaTime) {
 
     // Handle viewport picking (left-click to select entities in editor viewport)
     // Skip viewport picking while terrain/tilemap/UI/creative edit mode is active to prevent entity deselection
+    //
+    // The build tools are on that list for a reason worth spelling out: a click
+    // that both starts a drag and re-selects whatever it landed on breaks
+    // Subtract outright. Cutting a doorway means selecting the wall and then
+    // dragging the opening, and the press that begins the drag would move the
+    // selection to the floor under the cursor before the release found its
+    // target. Reduce picks its own entity and does not want a second one.
+    const bool creativeOwnsTheClick = m_Creative.IsActive();
     if (!ImGuizmo::IsOver() && !m_TerrainEditMode && !m_TilemapEditMode && !m_UIEditMode &&
-        m_CreativeTool == CreativeTool::None) {
+        !creativeOwnsTheClick && m_CreativeTool == CreativeTool::None) {
         HandleViewportPicking();
     }
 
@@ -3921,8 +3953,11 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     }
 
     // Submit the DockSpace
-    ImGui::SetNextWindowPos(ImVec2(0, menuBarH));
-    ImGui::SetNextWindowSize(ImVec2(screenW, screenH - menuBarH));
+    // Creative mode owns the left edge, so the dockspace starts beside it
+    // instead of underneath it.
+    const f32 creativeInset = m_Creative.IsActive() ? CreativeSurfaceWidthPx() : 0.0f;
+    ImGui::SetNextWindowPos(ImVec2(creativeInset, menuBarH));
+    ImGui::SetNextWindowSize(ImVec2(screenW - creativeInset, screenH - menuBarH));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     ImGuiWindowFlags dockWindowFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse |
@@ -3938,28 +3973,64 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     DrawCreativeSurface();
 
     // --- Core docked panels (positions managed by DockSpace) ---
-    if (HasPanel(m_VisiblePanels, EditorPanel::Hierarchy)) {
+    //
+    // Creative mode is a MODE, not an extra panel: switching to it puts the
+    // build surface and the viewport on screen and takes everything else away.
+    // A rail bolted onto the side of the full editor would be a thirty-second
+    // panel, which is the opposite of the point. The panels are hidden, not
+    // closed, so Ctrl+B brings the editor back exactly as it was.
+    const bool creativeOnly = m_Creative.IsActive();
+
+    // Creative mode without the viewport is a blank screen: the build surface
+    // draws, and the thing you are building has nowhere to appear. The drag
+    // handler also lives inside the viewport's block, so it would never run.
+    if (creativeOnly && !HasPanel(m_VisiblePanels, EditorPanel::Viewport)) {
+        SetPanelVisibility(EditorPanel::Viewport, true);
+    }
+
+    // Visible is not the same as IN FRONT. Scene and Game View share a dock
+    // node, so an editor left on the Game View tab opens creative mode onto a
+    // camera preview: the build surface is there, the ground is not, and every
+    // tool on the rail does nothing because the drag never finds a viewport.
+    // Measured on a --creative launch, which is exactly the case with no human
+    // there to click the other tab.
+    //
+    // Focus is requested for a few frames rather than one, because on the first
+    // frame of a --creative launch the Scene window has not been submitted yet
+    // and SetWindowFocus on a window ImGui has never seen does nothing at all.
+    if (creativeOnly && !m_CreativeWasActive) m_CreativeFocusSceneFrames = 4;
+    m_CreativeWasActive = creativeOnly;
+    if (m_CreativeFocusSceneFrames > 0) {
+        --m_CreativeFocusSceneFrames;
+        ImGui::SetWindowFocus("Scene");
+    }
+
+    if (!creativeOnly && HasPanel(m_VisiblePanels, EditorPanel::Hierarchy)) {
         DrawHierarchyPanel();
     }
-    if (HasPanel(m_VisiblePanels, EditorPanel::Inspector)) {
+    if (!creativeOnly && HasPanel(m_VisiblePanels, EditorPanel::Inspector)) {
         DrawInspectorPanel();
     }
     // VWS override-layer panel (standalone bool: the EditorPanel bitmask is full).
-    if (m_ShowLayersPanel) {
+    if (!creativeOnly && m_ShowLayersPanel) {
         DrawLayersPanel();
     }
     // Undo/redo history panel (standalone bool, same reason)
-    if (m_ShowHistoryPanel) {
+    if (!creativeOnly && m_ShowHistoryPanel) {
         DrawHistoryPanel();
     }
     // Unified settings window — any of the 5 old settings bits activates it
     {
-        bool anySettingsBit =
+        // Parenthesised deliberately: && binds tighter than ||, so the
+        // creative-mode suppression written without these brackets only
+        // applied to the FIRST bit and a project-settings window still opened
+        // over the build surface.
+        bool anySettingsBit = !creativeOnly && (
             HasPanel(m_VisiblePanels, EditorPanel::EditorSettings) ||
             HasPanel(m_VisiblePanels, EditorPanel::ProjectSettings) ||
             HasPanel(m_VisiblePanels, EditorPanel::PostProcessing) ||
             HasPanel(m_VisiblePanels, EditorPanel::RetroEffects) ||
-            HasPanel(m_VisiblePanels, EditorPanel::Rendering);
+            HasPanel(m_VisiblePanels, EditorPanel::Rendering));
         if (anySettingsBit) {
             // Route old bits to the correct tab (one-shot on first open)
             if (HasPanel(m_VisiblePanels, EditorPanel::ProjectSettings) &&
@@ -3984,26 +4055,33 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
             DrawSettingsWindow();
         }
     }
-    if (HasPanel(m_VisiblePanels, EditorPanel::Console)) {
+    if (!creativeOnly && HasPanel(m_VisiblePanels, EditorPanel::Console)) {
         DrawConsolePanel();
     }
-    if (HasPanel(m_VisiblePanels, EditorPanel::AssetBrowser)) {
+    if (!creativeOnly && HasPanel(m_VisiblePanels, EditorPanel::AssetBrowser)) {
         DrawAssetBrowserPanel();
     }
     // PostProcessing and RetroEffects panels are now in the unified Settings window
     if (HasPanel(m_VisiblePanels, EditorPanel::Viewport)) {
         DrawViewportPanel();
-        // Creative mode's brush tools. This MUST run inside the ImGui frame:
+        // Creative mode's build tools. This MUST run inside the ImGui frame:
         // it hit-tests the mouse and draws a drag preview into the foreground
         // draw list, and outside a frame that list has no font bound, so the
         // first preview draw dereferences a null ImFont. It also has to come
         // after the viewport panel, which is what sets the hover flag it reads.
-        HandleBuildDrag();
+        //
+        // And only when the Scene panel actually drew: it maps the mouse through
+        // the viewport image rect, and behind another dock tab that rect belongs
+        // to whatever widget ImGui touched last. A click would then be projected
+        // through the wrong rectangle and build metres from the cursor.
+        if (m_SceneViewVisibleThisFrame) {
+            HandleBuildDrag();
+        }
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::GameView)) {
         DrawGameViewPanel();
     }
-    if (HasPanel(m_VisiblePanels, EditorPanel::SceneList)) {
+    if (!creativeOnly && HasPanel(m_VisiblePanels, EditorPanel::SceneList)) {
         DrawSceneListPanel();
     }
     // Rendering panel is now in the unified Settings window
@@ -4097,7 +4175,9 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     DrawUVPreviewPanel();
 
     // Creative-mode build palette (SimCity-style drag-to-place)
-    DrawCreativePalette();
+    // Not alongside the build surface: two build palettes on screen at once,
+    // with two different tool vocabularies, is worse than either alone.
+    if (!creativeOnly) DrawCreativePalette();
 
     if (m_ShowDebugOverlay) {
         DrawDebugOverlay();
@@ -4163,6 +4243,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         // "Apply to Selected Entity": compile the graph and bind it as a live custom
         // shader on the current selection (RenderSystem shares the main pipeline layout).
         DrawAtlasPackerWindow();
+        DrawCookieCreatorWindow();
         if (m_ShaderGraphEditor.ConsumeApplyRequest()) {
             if (m_RenderSystem && m_World && m_PrimarySelected != ECS::INVALID_ENTITY &&
                 m_World->IsValid(m_PrimarySelected)) {

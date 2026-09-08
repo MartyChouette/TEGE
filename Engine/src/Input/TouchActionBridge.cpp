@@ -74,6 +74,9 @@ namespace {
     const Slot kSlots[Input::kMaxTouchButtons] = {
         { 0.085f, 0, 0 }, { 0.075f, 1, 0 }, { 0.070f, 0, 1 },
         { 0.070f, 1, 1 }, { 0.065f, 2, 0 }, { 0.065f, 0, 2 },
+        // Slots 7-10 continue the same cluster outward, staying clear of the
+        // move stick on the left half and of the bottom-left controls hint.
+        { 0.065f, 2, 1 }, { 0.060f, 1, 2 }, { 0.060f, 2, 2 }, { 0.060f, 0, 3 },
     };
 
     bool IsCustom(int action) {

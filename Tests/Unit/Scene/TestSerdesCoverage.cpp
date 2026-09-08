@@ -23,6 +23,8 @@
 #include "Enjin/ECS/Components/Flower.h"
 #include "Enjin/ECS/Components/Ladder.h"
 #include "Enjin/ECS/Components/BrushSolid.h"
+#include "Enjin/ECS/Components/Water3D.h"
+#include "Enjin/ECS/Components/ReflectionProbe.h"
 #include "Enjin/ECS/Systems/BrushSolidSystem.h"
 #include "Enjin/ECS/Components/Mesh.h"
 #include "Enjin/ECS/Components/Skeleton.h"
@@ -31,6 +33,7 @@
 #include "Enjin/Animation/Timeline.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/Scene/SceneSerializer.h"
+#include "Enjin/Renderer/SceneRenderSettings.h"
 #include <cmath>
 #include <variant>
 
@@ -946,6 +949,310 @@ ENJIN_TEST(SerdesCoverage, BrushSolidClampsAbsurdSideCounts) {
     ENJIN_ASSERT_EQ(out->brushes.size(), (usize)2);
     ENJIN_EXPECT_TRUE(out->brushes[0].sides >= 3);
     ENJIN_EXPECT_TRUE(out->brushes[1].sides <= 256);
+}
+
+// ---------------------------------------------------------------------------
+// Water3DComponent
+// ---------------------------------------------------------------------------
+
+// position is where the water IS: Water3D generates its surface mesh in WORLD
+// space around settings.position rather than around the entity transform. It was
+// never serialized, and that had never shown because nothing ever moved a water
+// plane off the origin -- the Entity menu creates it at (0,0,0) and neither the
+// inspector nor the gizmo touches the field. The first tool to place water
+// somewhere else found every pond back at the origin after a reload.
+ENJIN_TEST(SerdesCoverage, Water3DPositionSurvivesASave) {
+    World src, dst;
+    Entity e = Base(src);
+
+    Water3DComponent water;
+    water.settings.position = Vector3(12.5f, -1.5f, -30.25f);
+    water.settings.width = 18.0f;
+    water.settings.depth = 24.0f;
+    water.settings.waveHeight = 0.35f;
+    water.settings.tileSize = 1.125f;
+    water.settings.style = Effects::WaterStyle::VertexWave;
+    src.AddComponent<Water3DComponent>(e, water);
+
+    Entity r = RoundTrip(src, e, dst);
+    ENJIN_ASSERT_TRUE(dst.HasComponent<Water3DComponent>(r));
+    const auto* out = dst.GetComponent<Water3DComponent>(r);
+    ENJIN_ASSERT_TRUE(out != nullptr);
+
+    ENJIN_EXPECT_TRUE(Near(out->settings.position.x, 12.5f));
+    ENJIN_EXPECT_TRUE(Near(out->settings.position.y, -1.5f));
+    ENJIN_EXPECT_TRUE(Near(out->settings.position.z, -30.25f));
+    ENJIN_EXPECT_TRUE(Near(out->settings.width, 18.0f));
+    ENJIN_EXPECT_TRUE(Near(out->settings.depth, 24.0f));
+    ENJIN_EXPECT_TRUE(Near(out->settings.waveHeight, 0.35f));
+    ENJIN_EXPECT_EQ((int)out->settings.style, (int)Effects::WaterStyle::VertexWave);
+}
+
+// A scene written before the key existed must still load, and its water must
+// stay exactly where it has always been rather than moving somewhere new.
+ENJIN_TEST(SerdesCoverage, Water3DWithoutASavedPositionLoadsAtTheOrigin) {
+    World dst;
+    const std::string json =
+        "{\"name\":\"OldWater\",\"transform\":{\"position\":[0,0,0],"
+        "\"rotation\":[0,0,0],\"scale\":[1,1,1]},"
+        "\"water3D\":{\"width\":40.0,\"depth\":40.0}}";
+    Entity r = Scene::SceneSerializer::DeserializeEntityFromString(&dst, json);
+    ENJIN_ASSERT_TRUE(r != INVALID_ENTITY);
+    const auto* out = dst.GetComponent<Water3DComponent>(r);
+    ENJIN_ASSERT_TRUE(out != nullptr);
+    ENJIN_EXPECT_TRUE(Near(out->settings.position.x, 0.0f));
+    ENJIN_EXPECT_TRUE(Near(out->settings.position.y, 0.0f));
+    ENJIN_EXPECT_TRUE(Near(out->settings.position.z, 0.0f));
+    ENJIN_EXPECT_TRUE(Near(out->settings.width, 40.0f));
+}
+
+// The loader clamps tileSize, so anything WRITING it has to respect the same
+// floor or the geometry silently changes on the first reload. Creative mode
+// derives tileSize from the footprint and is the only thing that computes one.
+ENJIN_TEST(SerdesCoverage, Water3DTileSizeIsNotSilentlyChangedByAReload) {
+    World src, dst;
+    Entity e = Base(src);
+
+    Water3DComponent water;
+    water.settings.width = 8.0f;
+    water.settings.depth = 8.0f;
+    water.settings.tileSize = 0.5f;   // the loader's floor
+    src.AddComponent<Water3DComponent>(e, water);
+
+    Entity r = RoundTrip(src, e, dst);
+    const auto* out = dst.GetComponent<Water3DComponent>(r);
+    ENJIN_ASSERT_TRUE(out != nullptr);
+    ENJIN_EXPECT_TRUE(Near(out->settings.tileSize, 0.5f));
+}
+
+// ---------------------------------------------------------------------------
+// ReflectionProbeComponent
+// ---------------------------------------------------------------------------
+
+// `baked` must NOT survive a save. The cubemap it refers to is a GPU resource
+// that does not, so a flag that persisted was simply false on load: the probe
+// came back claiming to be baked with nothing behind it, the shader fell through
+// to the sky-gradient approximation, and the inspector said "Baked" the whole
+// time. The only symptom was that reflections were quietly wrong, every session,
+// until someone pressed the button again.
+ENJIN_TEST(SerdesCoverage, AProbeDoesNotClaimToBeBakedAfterAReload) {
+    World src, dst;
+    Entity e = Base(src);
+
+    ReflectionProbeComponent probe;
+    probe.boxMin = Vector3(-8.0f, -4.0f, -8.0f);
+    probe.boxMax = Vector3(8.0f, 4.0f, 8.0f);
+    probe.resolution = 128;
+    probe.intensity = 0.75f;
+    probe.priority = 3;
+    probe.blendDistance = 2.5f;
+    // As it would be after a bake in the running editor.
+    probe.baked = true;
+    probe.cubemapTextureId = 4;
+    src.AddComponent<ReflectionProbeComponent>(e, probe);
+
+    Entity r = RoundTrip(src, e, dst);
+    ENJIN_ASSERT_TRUE(dst.HasComponent<ReflectionProbeComponent>(r));
+    const auto* out = dst.GetComponent<ReflectionProbeComponent>(r);
+    ENJIN_ASSERT_TRUE(out != nullptr);
+
+    // The authored settings are data and must survive.
+    ENJIN_EXPECT_TRUE(Near(out->boxMin.x, -8.0f));
+    ENJIN_EXPECT_TRUE(Near(out->boxMax.y, 4.0f));
+    ENJIN_EXPECT_EQ(out->resolution, 128u);
+    ENJIN_EXPECT_TRUE(Near(out->intensity, 0.75f));
+    ENJIN_EXPECT_EQ(out->priority, 3u);
+    ENJIN_EXPECT_TRUE(Near(out->blendDistance, 2.5f));
+
+    // The runtime state is not data and must not.
+    ENJIN_EXPECT_FALSE(out->baked);
+    ENJIN_EXPECT_EQ(out->cubemapTextureId, -1);
+}
+
+// A scene written before the flag was dropped still carries "baked": true. It
+// has to be ignored rather than trusted, or every old scene keeps the bug.
+ENJIN_TEST(SerdesCoverage, AnOldSceneClaimingABakedProbeIsNotBelieved) {
+    World dst;
+    const std::string json =
+        "{\"name\":\"OldProbe\",\"transform\":{\"position\":[0,2,0],"
+        "\"rotation\":[0,0,0],\"scale\":[1,1,1]},"
+        "\"reflectionProbe\":{\"intensity\":1.0,\"baked\":true}}";
+    Entity r = Scene::SceneSerializer::DeserializeEntityFromString(&dst, json);
+    ENJIN_ASSERT_TRUE(r != INVALID_ENTITY);
+    const auto* out = dst.GetComponent<ReflectionProbeComponent>(r);
+    ENJIN_ASSERT_TRUE(out != nullptr);
+    ENJIN_EXPECT_FALSE(out->baked);
+}
+
+
+
+// --- Scene render settings: DDGI and GPU particles (ADR-0006) --------------
+//
+// These do not go through SceneSerializer's entity path; they are the scene's
+// own render settings block. A field added to SceneRenderSettings and forgotten
+// in SerializeRenderSettings is invisible until someone loses a day of tuning,
+// so each of these fails if its serializer line is removed.
+
+namespace {
+
+Enjin::Renderer::SceneRenderSettings RoundTripRenderSettings(
+        const Enjin::Renderer::SceneRenderSettings& in) {
+    return Enjin::Renderer::DeserializeRenderSettings(
+               Enjin::Renderer::SerializeRenderSettings(in));
+}
+
+} // namespace
+
+ENJIN_TEST(SerdesCoverage, DdgiTuningSurvivesASave) {
+    Enjin::Renderer::SceneRenderSettings s;
+    s.ddgiEnabled          = true;
+    s.ddgiGridSpacing      = 2.75f;
+    s.ddgiGridOrigin       = Vector3(-5.0f, 1.5f, 7.25f);
+    s.ddgiVoxelWorldExtent = 80.0f;
+    s.ddgiRaysPerProbe     = 128u;
+    s.ddgiMaxTraceDistance = 45.5f;
+    s.ddgiAmortizationRate = 4u;
+    s.ddgiHysteresis       = 0.85f;
+
+    const auto out = RoundTripRenderSettings(s);
+    ENJIN_EXPECT_TRUE(out.ddgiEnabled);
+    ENJIN_EXPECT_TRUE(Near(out.ddgiGridSpacing, 2.75f));
+    ENJIN_EXPECT_TRUE(Near(out.ddgiGridOrigin.x, -5.0f));
+    ENJIN_EXPECT_TRUE(Near(out.ddgiGridOrigin.y, 1.5f));
+    ENJIN_EXPECT_TRUE(Near(out.ddgiGridOrigin.z, 7.25f));
+    ENJIN_EXPECT_TRUE(Near(out.ddgiVoxelWorldExtent, 80.0f));
+    ENJIN_EXPECT_EQ(out.ddgiRaysPerProbe, 128u);
+    ENJIN_EXPECT_TRUE(Near(out.ddgiMaxTraceDistance, 45.5f));
+    ENJIN_EXPECT_EQ(out.ddgiAmortizationRate, 4u);
+    ENJIN_EXPECT_TRUE(Near(out.ddgiHysteresis, 0.85f));
+}
+
+// The probe grid sizes the voxel grid and the probe atlas. It round-trips here,
+// and ApplyToRuntime hands it to DDGIProbeSystem::RequestGridRebuild, which
+// defers the reallocation to FlushPendingChanges. Values are clamped on the way
+// in (see TestDDGIGrid), so what a scene saves is not necessarily what the grid
+// ends up as -- but what it saves must come back unchanged.
+ENJIN_TEST(SerdesCoverage, DdgiGridShapeSurvivesASave) {
+    Enjin::Renderer::SceneRenderSettings s;
+    s.ddgiProbeCountX     = 16;
+    s.ddgiProbeCountY     = 6;
+    s.ddgiProbeCountZ     = 12;
+    s.ddgiVoxelResolution = 128;
+    s.ddgiOctResolution   = 16u;
+
+    const auto out = RoundTripRenderSettings(s);
+    ENJIN_EXPECT_EQ(out.ddgiProbeCountX, 16);
+    ENJIN_EXPECT_EQ(out.ddgiProbeCountY, 6);
+    ENJIN_EXPECT_EQ(out.ddgiProbeCountZ, 12);
+    ENJIN_EXPECT_EQ(out.ddgiVoxelResolution, 128);
+    ENJIN_EXPECT_EQ(out.ddgiOctResolution, 16u);
+}
+
+// A scene saved before these keys existed must load with the values it actually
+// ran with. DDGI in particular starts DISABLED at RenderSystem init, so a
+// default of true here would light every old scene differently on load.
+ENJIN_TEST(SerdesCoverage, ASceneWithoutDdgiKeysKeepsTheDefaultsItRanWith) {
+    const nlohmann::json empty = nlohmann::json::object();
+    const auto out = Enjin::Renderer::DeserializeRenderSettings(empty);
+
+    ENJIN_EXPECT_FALSE(out.ddgiEnabled);
+    ENJIN_EXPECT_TRUE(Near(out.ddgiGridSpacing, 4.0f));
+    ENJIN_EXPECT_EQ(out.ddgiProbeCountX, 8);
+    ENJIN_EXPECT_EQ(out.ddgiProbeCountY, 4);
+    ENJIN_EXPECT_EQ(out.ddgiProbeCountZ, 8);
+    ENJIN_EXPECT_EQ(out.ddgiRaysPerProbe, 64u);
+    ENJIN_EXPECT_EQ(out.ddgiOctResolution, 8u);
+}
+
+ENJIN_TEST(SerdesCoverage, GpuParticleTuningSurvivesASave) {
+    Enjin::Renderer::SceneRenderSettings s;
+    s.gpuParticleDirection           = Vector3(0.0f, 0.0f, -1.0f);
+    s.gpuParticleSpread              = 1.25f;
+    s.gpuParticleGravity             = Vector3(0.0f, -2.5f, 0.5f);
+    s.gpuParticleDamping             = 0.42f;
+    s.gpuParticleStartColor          = Vector3(0.1f, 1.0f, 0.8f);
+    s.gpuParticleStartAlpha          = 0.9f;
+    s.gpuParticleEndColor            = Vector3(0.2f, 0.3f, 0.4f);
+    s.gpuParticleEndAlpha            = 0.05f;
+    s.gpuParticleStartSize           = 0.25f;
+    s.gpuParticleEndSize             = 1.75f;
+    s.gpuParticleMaxLifetime         = 6.5f;
+    s.gpuParticleSpawnRate           = 250.0f;
+    s.gpuParticleTurbulenceStrength  = 0.65f;
+    s.gpuParticleTurbulenceFrequency = 3.5f;
+    s.gpuParticleMaxParticles        = 32768u;
+
+    const auto out = RoundTripRenderSettings(s);
+    ENJIN_EXPECT_TRUE(Near(out.gpuParticleDirection.z, -1.0f));
+    ENJIN_EXPECT_TRUE(Near(out.gpuParticleSpread, 1.25f));
+    ENJIN_EXPECT_TRUE(Near(out.gpuParticleGravity.y, -2.5f));
+    ENJIN_EXPECT_TRUE(Near(out.gpuParticleDamping, 0.42f));
+    // The colour is authored as rgb plus a separate alpha, because the runtime
+    // config carries a Vector4 and the settings block stores Vector3.
+    ENJIN_EXPECT_TRUE(Near(out.gpuParticleStartColor.y, 1.0f));
+    ENJIN_EXPECT_TRUE(Near(out.gpuParticleStartAlpha, 0.9f));
+    ENJIN_EXPECT_TRUE(Near(out.gpuParticleEndColor.z, 0.4f));
+    ENJIN_EXPECT_TRUE(Near(out.gpuParticleEndAlpha, 0.05f));
+    ENJIN_EXPECT_TRUE(Near(out.gpuParticleStartSize, 0.25f));
+    ENJIN_EXPECT_TRUE(Near(out.gpuParticleEndSize, 1.75f));
+    ENJIN_EXPECT_TRUE(Near(out.gpuParticleMaxLifetime, 6.5f));
+    ENJIN_EXPECT_TRUE(Near(out.gpuParticleSpawnRate, 250.0f));
+    ENJIN_EXPECT_TRUE(Near(out.gpuParticleTurbulenceStrength, 0.65f));
+    ENJIN_EXPECT_TRUE(Near(out.gpuParticleTurbulenceFrequency, 3.5f));
+    ENJIN_EXPECT_EQ(out.gpuParticleMaxParticles, 32768u);
+}
+
+ENJIN_TEST(SerdesCoverage, ASceneWithoutGpuParticleKeysKeepsTheDefaultsItRanWith) {
+    const nlohmann::json empty = nlohmann::json::object();
+    const auto out = Enjin::Renderer::DeserializeRenderSettings(empty);
+
+    ENJIN_EXPECT_TRUE(Near(out.gpuParticleSpawnRate, 100.0f));
+    ENJIN_EXPECT_TRUE(Near(out.gpuParticleMaxLifetime, 3.0f));
+    ENJIN_EXPECT_TRUE(Near(out.gpuParticleGravity.y, -9.8f));
+    ENJIN_EXPECT_TRUE(Near(out.gpuParticleStartSize, 0.1f));
+    ENJIN_EXPECT_TRUE(Near(out.gpuParticleEndSize, 0.3f));
+    ENJIN_EXPECT_TRUE(Near(out.gpuParticleEndAlpha, 0.0f));
+    ENJIN_EXPECT_EQ(out.gpuParticleMaxParticles, 65536u);
+}
+
+// The last two RT configs the settings audit flagged. The other eleven turned
+// out to be false positives: their values already round-trip under different
+// names in this block (rtShadow*, restir*, surfelCache* and so on). These two
+// genuinely had editor UI and no serializer.
+ENJIN_TEST(SerdesCoverage, LightBvhTuningSurvivesASave) {
+    Enjin::Renderer::SceneRenderSettings s;
+    s.lightBVHEnabled           = true;
+    s.lightBVHMaxLights         = 4096u;
+    s.lightBVHMinLightsForBVH   = 48u;
+    s.lightBVHRebuildEveryFrame = true;
+
+    const auto out = RoundTripRenderSettings(s);
+    ENJIN_EXPECT_TRUE(out.lightBVHEnabled);
+    ENJIN_EXPECT_EQ(out.lightBVHMaxLights, 4096u);
+    ENJIN_EXPECT_EQ(out.lightBVHMinLightsForBVH, 48u);
+    ENJIN_EXPECT_TRUE(out.lightBVHRebuildEveryFrame);
+}
+
+ENJIN_TEST(SerdesCoverage, AdaptiveRayBudgetTuningSurvivesASave) {
+    Enjin::Renderer::SceneRenderSettings s;
+    s.adaptiveRayBudgetEnabled     = true;
+    s.adaptiveRayMinPerPixel       = 2u;
+    s.adaptiveRayMaxPerPixel       = 12u;
+    s.adaptiveRayVarianceThreshold = 0.35f;
+    s.adaptiveRayVarianceScale     = 7.5f;
+    s.adaptiveRayEdgeBoost         = false;
+    s.adaptiveRayDisocclusionBoost = false;
+
+    const auto out = RoundTripRenderSettings(s);
+    ENJIN_EXPECT_TRUE(out.adaptiveRayBudgetEnabled);
+    ENJIN_EXPECT_EQ(out.adaptiveRayMinPerPixel, 2u);
+    ENJIN_EXPECT_EQ(out.adaptiveRayMaxPerPixel, 12u);
+    ENJIN_EXPECT_TRUE(Near(out.adaptiveRayVarianceThreshold, 0.35f));
+    ENJIN_EXPECT_TRUE(Near(out.adaptiveRayVarianceScale, 7.5f));
+    // Booleans that default TRUE are the ones a missing serializer hides, so
+    // both are authored false here on purpose.
+    ENJIN_EXPECT_FALSE(out.adaptiveRayEdgeBoost);
+    ENJIN_EXPECT_FALSE(out.adaptiveRayDisocclusionBoost);
 }
 
 ENJIN_TEST_MAIN()

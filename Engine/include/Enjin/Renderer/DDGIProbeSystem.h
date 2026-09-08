@@ -20,6 +20,17 @@ class VulkanContext;
 class VulkanBuffer;
 
 // Configuration for the DDGI probe system
+// Clamp a requested probe grid to something the atlas allocator can actually
+// build. Both a slider and a hand-edited scene file are user input, and a zero
+// or a wild value here becomes a zero-sized or multi-gigabyte image rather than
+// a visible mistake. Ranges match what the editor offers, and the ceilings keep
+// the packed atlas inside a comfortable 2048x2048.
+//
+// Pure and free-standing on purpose: it is the part worth testing, and a test
+// must not need a Vulkan device to run it.
+ENJIN_API void ClampDDGIGridShape(i32& probeCountX, i32& probeCountY, i32& probeCountZ,
+                                  i32& voxelResolution, u32& octResolution);
+
 struct DDGIConfig {
     // Probe grid
     i32 probeCountX = 8;       // Probes per axis
@@ -106,7 +117,45 @@ public:
     // Configuration
     const DDGIConfig& GetConfig() const { return m_Config; }
     void SetEnabled(bool enabled) { m_Config.enabled = enabled; }
+
+    // The subset that can be changed with no reallocation. The grid SHAPE
+    // (probe counts, oct resolution, voxel resolution) is not here because it
+    // sizes the voxel grid and the probe atlas: it goes through
+    // RequestGridRebuild instead, which defers the destroy and recreate to a
+    // safe point in the frame.
+    void SetRuntimeTunables(f32 gridSpacing, const Math::Vector3& gridOrigin,
+                            f32 voxelWorldExtent, u32 raysPerProbe,
+                            f32 maxTraceDistance, u32 amortizationRate,
+                            f32 hysteresis) {
+        m_Config.gridSpacing      = gridSpacing;
+        m_Config.gridOrigin       = gridOrigin;
+        m_Config.voxelWorldExtent = voxelWorldExtent;
+        // Both are divisors in the probe update, and a scene file is
+        // user-editable text, so a zero has to be absorbed here.
+        m_Config.raysPerProbe     = raysPerProbe ? raysPerProbe : 1u;
+        m_Config.amortizationRate = amortizationRate ? amortizationRate : 1u;
+        m_Config.maxTraceDistance = maxTraceDistance;
+        m_Config.hysteresis       = hysteresis;
+    }
     bool IsEnabled() const { return m_Config.enabled; }
+
+    // Ask for a new grid shape. Recorded, clamped, and applied later by
+    // RebuildGrid -- NEVER applied here, because these values size GPU images
+    // that the frames in flight are still reading. A request equal to the
+    // current shape is dropped, so holding a slider does not rebuild per frame.
+    void RequestGridRebuild(i32 probeCountX, i32 probeCountY, i32 probeCountZ,
+                            i32 voxelResolution, u32 octResolution);
+    bool HasPendingGridRebuild() const { return m_GridRebuildPending; }
+
+    // Destroy and recreate the voxel grid and probe atlas at the requested
+    // shape. Returns true when the resources were actually replaced, which
+    // means every descriptor pointing at the old atlas is now dangling and the
+    // caller MUST rebind before anything samples it.
+    //
+    // CALLER CONTRACT: the GPU must be idle. This destroys images that recorded
+    // command buffers may still reference, so it belongs in
+    // RenderSystem::FlushPendingChanges after a full wait, never mid-frame.
+    bool RebuildGrid();
 
     // Stats
     u32 GetTotalProbes() const;
@@ -179,6 +228,15 @@ private:
     bool m_AtlasesReadable = false;        // atlases left SHADER_READ_ONLY for the PBR pass
 
     bool m_Initialized = false;
+
+    // Pending grid shape (see RequestGridRebuild). Held rather than applied so
+    // the reallocation happens at a point where no frame is reading the atlas.
+    bool m_GridRebuildPending = false;
+    i32 m_PendingProbeCountX = 0;
+    i32 m_PendingProbeCountY = 0;
+    i32 m_PendingProbeCountZ = 0;
+    i32 m_PendingVoxelResolution = 0;
+    u32 m_PendingOctResolution = 0;
 };
 
 } // namespace Renderer

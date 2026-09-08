@@ -2,6 +2,7 @@
 
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/GUI/UICanvas.h"
+#include "Enjin/Input/InputAction.h"
 
 #include <string>
 #include <vector>
@@ -95,6 +96,35 @@ namespace UITemplates {
     ENJIN_API bool SetOptionValue(UICanvasComponent& canvas, const std::string& event, f32 value);
     ENJIN_API bool SetOptionChecked(UICanvasComponent& canvas, const std::string& event, bool checked);
     ENJIN_API bool SetOptionSelected(UICanvasComponent& canvas, const std::string& event, i32 selected);
+
+    // ---------------------------------------------------------------------
+    // Controls / key bindings screen, built from the live InputActionMap.
+    //
+    // Generated from the action map rather than hand-written, so it cannot list
+    // an action the game does not have or miss one it does. That is the same
+    // reason the hint bar and the touch overlay read kActionInfo: one authored
+    // list, several presentations, no chance of drift.
+    //
+    // Built as UICanvas rows rather than as an ImGui panel because this screen
+    // has to work under a thumb. UISystem hit-tests touch against interactive
+    // elements, so the rows are tappable on a phone for free; an ImGui controls
+    // panel is only usable with a mouse.
+    //
+    // Events dispatched:
+    //   controls_back, controls_reset
+    //   controls_sensitivity (float), controls_invert_y (bool)
+    //   controls_sprint_mode (int), controls_crouch_mode (int)
+    //   controls_rebind_<index> (button) -- <index> is the action ordinal
+    //
+    // rebindingIndex >= 0 marks that action as awaiting a key press, so the
+    // caller re-builds the canvas to show "press a key" and again once bound.
+    ENJIN_API UICanvasComponent CreateControlsMenu(const InputSystem::InputActionMap& map,
+                                                   i32 rebindingIndex = -1);
+
+    // The event name a rebind row dispatches, and the inverse. Kept here so the
+    // producer and the consumer cannot disagree about the format.
+    ENJIN_API std::string ControlsRebindEvent(i32 actionIndex);
+    ENJIN_API i32 ControlsRebindIndexFromEvent(const std::string& event);
 
     // Create a victory/defeat screen: dark overlay, colored message, optional
     // "Play Again" button that dispatches the "gameover_restart" UI event.

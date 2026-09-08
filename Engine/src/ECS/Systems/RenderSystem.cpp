@@ -4631,8 +4631,14 @@ void RenderSystem::Initialize() {
         ENJIN_LOG_WARN(Renderer, "Bindless resource manager initialization failed — per-entity descriptors will be used");
         m_BindlessManager.reset();
     } else {
-        // Register default white texture so empty material slots have a valid fallback
-        if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
+        // The default white texture is registered further down, immediately after
+        // it is CREATED. It used to be registered here, ~100 lines before the
+        // texture existed, so the null check silently failed every run: nothing
+        // ever claimed slot 0, m_DefaultBindlessHandle kept its initial 0, and
+        // the first texture to register (a material's, or a light cookie's) took
+        // slot 0 -- which is the handle every untextured material falls back to.
+        // Untextured surfaces therefore sampled whatever happened to load first.
+        if (false) {
             u32 h = m_BindlessManager->RegisterTexture(
                 m_DefaultWhiteTexture->GetImageView(), m_DefaultWhiteTexture->GetSampler());
             if (h != UINT32_MAX) {
@@ -4732,6 +4738,24 @@ void RenderSystem::Initialize() {
     m_DefaultWhiteTexture = std::make_unique<Renderer::Texture>(m_VulkanRenderer->GetContext());
     if (!m_DefaultWhiteTexture->CreateSolidColor(255, 255, 255, 255)) {
         ENJIN_LOG_FATAL(Renderer, "Failed to create default white texture — rendering will be broken");
+    }
+
+    // Claim a bindless slot for it HERE, where the texture actually exists.
+    // m_DefaultBindlessHandle is what every material without a texture samples,
+    // so if this does not run, that handle points at whichever texture happens
+    // to register first and untextured surfaces sample it as their base colour.
+    if (m_BindlessManager && m_DefaultWhiteTexture->IsValid()) {
+        const u32 h = m_BindlessManager->RegisterTexture(
+            m_DefaultWhiteTexture->GetImageView(), m_DefaultWhiteTexture->GetSampler());
+        if (h != UINT32_MAX) {
+            m_DefaultBindlessHandle = h;
+            ENJIN_LOG_INFO(Renderer, "Default white texture registered at bindless slot %u", h);
+        } else {
+            // A million-slot pool cannot realistically be full on the first
+            // registration, but a wrong default handle corrupts every fallback,
+            // so say so rather than carrying on quietly.
+            ENJIN_LOG_ERROR(Renderer, "Default white texture bindless registration failed");
+        }
     }
 
     // Create default bone buffer with 256 identity matrices — covers any bone index
@@ -5973,14 +5997,178 @@ void RenderSystem::FlushPendingChanges() {
         m_Water2DConfig = m_PendingWater2D;   // pure data (no GPU resources to recreate)
     }
 
-    // Process pending reflection probe bakes — renders 6 faces per probe.
-    // Safe to do here because no frame is in progress yet.
+    // Reflection probe refresh.
+    //
+    // Update() is what drives auto-refresh and the implicit scene-wide probe:
+    // it decides which probes are stale and queues them. It sits OUTSIDE the
+    // HasPendingBake guard because it is what creates pending bakes -- gating it
+    // on one already existing is a loop that can never start.
+    if (m_ReflectionProbes) m_ReflectionProbes->Update(m_World);
+
+    // The BAKE itself is KNOWN BROKEN and left here because here it is
+    // harmless. It renders six cubemap faces, driving its own BeginFrame /
+    // EndFrame for each, so it cannot run inside an open frame -- and both
+    // runtimes call BeginFrameVulkan and THEN flush. Every face fails with
+    // "frame already in progress", so probe baking has never worked in either
+    // runtime, the editor's Bake button included. That predates this work.
+    //
+    // Moving it ahead of BeginFrameVulkan is the obvious fix and does NOT work:
+    // the editor access-violates on launch (0xC0000005, reproduced), because a
+    // bake renders the scene and the pipelines, descriptor sets and bindless
+    // textures a scene draw needs are not built that early. A frame-counter
+    // guard did not save it. The fix needs a point that is per-frame AND outside
+    // an open frame AND after first-frame setup; none of the three tried is it.
+    //
+    // Consequence today: probes queue, never bake, reflections fall back to the
+    // sky gradient. Bounded and quiet -- a bake that renders no face returns
+    // false instead of storing a grey cubemap, and a failed key is not retried
+    // until the scene changes.
+    // Light cookies: generating one uploads a texture and registers a bindless
+    // slot, so it cannot happen during the per-frame UBO fill.
+    UpdateLightCookies();
+
+    // DDGI grid reshape. This destroys and recreates the voxel grid and the
+    // probe atlas, so it has to happen where nothing is recording and nothing is
+    // in flight -- the same reason the probe bake below lives here. Ordered
+    // BEFORE the bake so a rebuild and a bake in the same tick share one wait.
+    if (m_DDGISystem && m_DDGISystem->HasPendingGridRebuild()) {
+        m_VulkanRenderer->WaitForAllFrames();
+        if (m_DDGISystem->RebuildGrid()) {
+            // Binding 22 now holds a destroyed view, and the geometry SSBOs went
+            // with the compute descriptors. Both have to be re-established
+            // before anything samples GI again.
+            m_DDGIAtlasBound = false;
+            m_DDGIGeometryDirty = true;
+            UpdateDDGIAtlasDescriptor();
+        }
+    }
+
     if (m_ReflectionProbes && m_ReflectionProbes->HasPendingBake()) {
         m_VulkanRenderer->WaitForAllFrames();
         m_ReflectionProbes->ProcessPendingBakes(m_World, this);
         // Update descriptor binding 19 with the newly baked cubemap
         UpdateProbeCubemapDescriptor();
     }
+}
+
+void RenderSystem::ApplyVolumetricFogSettings(bool enabled, const Math::Vector3& color,
+                                              f32 density, f32 heightFalloff, f32 baseHeight,
+                                              f32 anisotropy, f32 temporalBlend,
+                                              f32 noiseScale, f32 noiseStrength,
+                                              f32 windX, f32 windZ) {
+    if (!m_VolumetricFog) return;
+    auto& cfg = m_VolumetricFog->GetConfig();
+    cfg.fogAlbedo        = color;
+    cfg.fogDensity       = density;
+    cfg.fogHeightFalloff = heightFalloff;
+    cfg.fogBaseHeight    = baseHeight;
+    cfg.fogAnisotropy    = anisotropy;
+    cfg.temporalBlend    = temporalBlend;
+    cfg.noiseScale       = noiseScale;
+    cfg.noiseStrength    = noiseStrength;
+    cfg.windSpeedX       = windX;
+    cfg.windSpeedZ       = windZ;
+    // Last, and through the setter: disabling has to run the one-shot neutral
+    // clear or the last frame's fog is left bound and lingers forever.
+    m_VolumetricFog->SetEnabled(enabled);
+}
+
+bool RenderSystem::GetVolumetricFogSettings(bool& enabled, Math::Vector3& color,
+                                            f32& density, f32& heightFalloff, f32& baseHeight,
+                                            f32& anisotropy, f32& temporalBlend,
+                                            f32& noiseScale, f32& noiseStrength,
+                                            f32& windX, f32& windZ) const {
+    if (!m_VolumetricFog) return false;
+    const auto& cfg = m_VolumetricFog->GetConfig();
+    enabled       = m_VolumetricFog->IsEnabled();
+    color         = cfg.fogAlbedo;
+    density       = cfg.fogDensity;
+    heightFalloff = cfg.fogHeightFalloff;
+    baseHeight    = cfg.fogBaseHeight;
+    anisotropy    = cfg.fogAnisotropy;
+    temporalBlend = cfg.temporalBlend;
+    noiseScale    = cfg.noiseScale;
+    noiseStrength = cfg.noiseStrength;
+    windX         = cfg.windSpeedX;
+    windZ         = cfg.windSpeedZ;
+    return true;
+}
+
+void RenderSystem::ApplyDDGISettings(bool enabled, f32 gridSpacing, const Math::Vector3& gridOrigin,
+                                     f32 voxelWorldExtent, u32 raysPerProbe, f32 maxTraceDistance,
+                                     u32 amortizationRate, f32 hysteresis,
+                                     i32 probeCountX, i32 probeCountY, i32 probeCountZ,
+                                     i32 voxelResolution, u32 octResolution) {
+    if (!m_DDGISystem) return;
+    m_DDGISystem->SetRuntimeTunables(gridSpacing, gridOrigin, voxelWorldExtent,
+                                     raysPerProbe, maxTraceDistance,
+                                     amortizationRate, hysteresis);
+    // Queued, not applied. A request matching the running shape is dropped
+    // inside, so loading a scene that never changed the grid costs nothing.
+    m_DDGISystem->RequestGridRebuild(probeCountX, probeCountY, probeCountZ,
+                                     voxelResolution, octResolution);
+    m_DDGISystem->SetEnabled(enabled);
+}
+
+bool RenderSystem::GetDDGISettings(bool& enabled, f32& gridSpacing, Math::Vector3& gridOrigin,
+                                   f32& voxelWorldExtent, u32& raysPerProbe, f32& maxTraceDistance,
+                                   u32& amortizationRate, f32& hysteresis,
+                                   i32& probeCountX, i32& probeCountY, i32& probeCountZ,
+                                   i32& voxelResolution, u32& octResolution) const {
+    if (!m_DDGISystem) return false;
+    const auto& c = m_DDGISystem->GetConfig();
+    enabled          = m_DDGISystem->IsEnabled();
+    gridSpacing      = c.gridSpacing;
+    gridOrigin       = c.gridOrigin;
+    voxelWorldExtent = c.voxelWorldExtent;
+    raysPerProbe     = c.raysPerProbe;
+    maxTraceDistance = c.maxTraceDistance;
+    amortizationRate = c.amortizationRate;
+    hysteresis       = c.hysteresis;
+    // Read back as well, so a save records the grid that is actually allocated
+    // rather than whatever the file happened to carry in.
+    probeCountX      = c.probeCountX;
+    probeCountY      = c.probeCountY;
+    probeCountZ      = c.probeCountZ;
+    voxelResolution  = c.voxelResolution;
+    octResolution    = c.octResolution;
+    return true;
+}
+
+void RenderSystem::ApplyGPUParticleSettings(const Effects::GPUEmitterConfig& cfg) {
+    if (!m_GPUParticleSystem) return;
+    auto& live = m_GPUParticleSystem->GetConfig();
+    // maxParticles sized the particle and alive-list buffers at init and has no
+    // recreate path; position belongs to the emitter entity's world transform.
+    // Both have to survive an authored config being dropped on top.
+    const u32 allocated = live.maxParticles;
+    const Math::Vector3 placed = live.position;
+    live = cfg;
+    live.maxParticles = allocated;
+    live.position     = placed;
+}
+
+bool RenderSystem::GetGPUParticleSettings(Effects::GPUEmitterConfig& out) const {
+    if (!m_GPUParticleSystem) return false;
+    out = m_GPUParticleSystem->GetConfig();
+    return true;
+}
+
+void RenderSystem::ProbeBakeOutsideFrameDiagnostic() {
+    if (!m_ReflectionProbes || !m_VulkanRenderer) return;
+
+    // Set up the implicit probe / notice stale ones, then force a bake even for
+    // keys the in-frame attempt already failed and blocked -- RequestBake clears
+    // a failure block, which is what makes this reproducible on a late frame.
+    m_ReflectionProbes->Update(m_World);
+    m_ReflectionProbes->MarkAllProbesDirty(m_World);
+    m_ReflectionProbes->RequestBake(Renderer::ReflectionProbeSystem::kImplicitProbeKey);
+
+    if (!m_ReflectionProbes->HasPendingBake()) return;
+
+    m_VulkanRenderer->WaitForAllFrames();
+    m_ReflectionProbes->ProcessPendingBakes(m_World, this);
+    UpdateProbeCubemapDescriptor();
 }
 
 void RenderSystem::Update(f32 deltaTime) {
@@ -11457,28 +11645,37 @@ void RenderSystem::BuildDDGIGeometry() {
     // Bind the probe irradiance atlas to the main PBR pass (binding 22),
     // replacing the RT dummy, so the fragment shader can sample GI directly.
     // Done once; the atlas exists from Initialize.
-    if (!m_DDGIAtlasBound && m_DDGISystem->GetProbeAtlasView() &&
-        m_DDGISystem->GetProbeAtlasSampler() && !m_DescriptorSets.empty()) {
-        VkDescriptorImageInfo atlasInfo{};
-        atlasInfo.imageView = m_DDGISystem->GetProbeAtlasView();
-        atlasInfo.sampler = m_DDGISystem->GetProbeAtlasSampler();
-        atlasInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        std::vector<VkWriteDescriptorSet> writes;
-        auto queue = [&](VkDescriptorSet set) {
-            VkWriteDescriptorSet w{};
-            w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            w.dstSet = set; w.dstBinding = 22;
-            w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            w.descriptorCount = 1; w.pImageInfo = &atlasInfo;
-            writes.push_back(w);
-        };
-        for (auto set : m_DescriptorSets) queue(set);
-        for (auto set : m_OffscreenDescriptorSets) queue(set);
-        vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(),
-                               static_cast<u32>(writes.size()), writes.data(), 0, nullptr);
-        m_DDGIAtlasBound = true;
-        ENJIN_LOG_INFO(Renderer, "DDGI: probe atlas bound to main pass (binding 22, %zu sets)", writes.size());
-    }
+    UpdateDDGIAtlasDescriptor();
+}
+
+// Point binding 22 at the CURRENT probe atlas. Extracted so the first-time bind
+// and the post-rebuild rebind cannot drift apart: after RebuildGrid the old
+// image view is destroyed, and a set still holding it is a use-after-free the
+// moment the PBR shader samples GI.
+void RenderSystem::UpdateDDGIAtlasDescriptor() {
+    if (!m_DDGISystem || m_DDGIAtlasBound) return;
+    if (!m_DDGISystem->GetProbeAtlasView() || !m_DDGISystem->GetProbeAtlasSampler()) return;
+    if (m_DescriptorSets.empty()) return;
+
+    VkDescriptorImageInfo atlasInfo{};
+    atlasInfo.imageView = m_DDGISystem->GetProbeAtlasView();
+    atlasInfo.sampler = m_DDGISystem->GetProbeAtlasSampler();
+    atlasInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    std::vector<VkWriteDescriptorSet> writes;
+    auto queue = [&](VkDescriptorSet set) {
+        VkWriteDescriptorSet w{};
+        w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        w.dstSet = set; w.dstBinding = 22;
+        w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        w.descriptorCount = 1; w.pImageInfo = &atlasInfo;
+        writes.push_back(w);
+    };
+    for (auto set : m_DescriptorSets) queue(set);
+    for (auto set : m_OffscreenDescriptorSets) queue(set);
+    vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(),
+                           static_cast<u32>(writes.size()), writes.data(), 0, nullptr);
+    m_DDGIAtlasBound = true;
+    ENJIN_LOG_INFO(Renderer, "DDGI: probe atlas bound to main pass (binding 22, %zu sets)", writes.size());
 }
 
 void RenderSystem::UpdateFrameUniforms() {
@@ -11663,6 +11860,24 @@ void RenderSystem::UpdateFrameUniforms() {
                     spotLight.constantAttenuation = light->constantAttenuation;
                     spotLight.linearAttenuation = light->linearAttenuation;
                     spotLight.quadraticAttenuation = light->quadraticAttenuation;
+
+                    // Cookie. The right vector comes from the light's transform
+                    // so the pattern turns with the lamp instead of spinning
+                    // when the direction crosses a reference axis. Index -1 is
+                    // "no cookie"; it must be written every frame because this
+                    // UBO slot is reused by whichever light lands in it.
+                    spotLight.cookieRight = lightTransform
+                        ? lightTransform->rotation.Rotate(Math::Vector3(1.0f, 0.0f, 0.0f)).Normalized()
+                        : Math::Vector3(1.0f, 0.0f, 0.0f);
+                    spotLight.cookieIndex = -1.0f;
+                    spotLight.cookieScale = light->cookieScale > 0.0f ? light->cookieScale : 1.0f;
+                    spotLight.cookieIntensity = light->cookieIntensity;
+                    spotLight._cookiePad0 = 0.0f;
+                    spotLight._cookiePad1 = 0.0f;
+                    if (light->cookieEnabled) {
+                        const u32 slot = ResolveLightCookie(lightEntity, *light);
+                        if (slot != UINT32_MAX) spotLight.cookieIndex = static_cast<f32>(slot);
+                    }
                     lighting.spotLightCount++;
                 }
                 break;

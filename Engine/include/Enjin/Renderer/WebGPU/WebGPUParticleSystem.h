@@ -57,6 +57,21 @@ public:
     // off). No-ops if RenderScene already drew this frame.
     void Render(WGPURenderPassEncoder pass, const Math::Matrix4& view, const Math::Matrix4& proj);
 
+    // Apply an authored GPUEmitterConfig from scene render settings. maxParticles
+    // and position are deliberately preserved: the particle buffers were sized
+    // from maxParticles at Initialize and there is no recreate path, and position
+    // comes from the emitter entity's world transform, not from scene settings.
+    // This mirrors RenderSystem::ApplyGPUParticleSettings exactly so the desktop
+    // and web backends read one authored config the same way.
+    void SetRuntimeTunables(const Effects::GPUEmitterConfig& cfg) {
+        const u32 allocated = m_Config.maxParticles;
+        const Math::Vector3 placed = m_Config.position;
+        m_Config = cfg;
+        m_Config.maxParticles = allocated;
+        m_Config.position     = placed;
+    }
+    const Effects::GPUEmitterConfig& GetConfig() const { return m_Config; }
+
     u32 GetMaxParticles() const { return m_Config.maxParticles; }
     bool HasSpawned() const { return m_HasSpawned; }
 

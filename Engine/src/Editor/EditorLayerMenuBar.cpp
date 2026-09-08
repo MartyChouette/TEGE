@@ -603,6 +603,11 @@ void EditorLayer::DrawMenuBar() {
                     }
                     ImGui::Separator();
                     if (ImGui::MenuItem("Atlas Packer")) m_ShowAtlasPacker = true;
+                    if (ImGui::MenuItem("Light Cookie Creator")) m_ShowCookieCreator = true;
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Build gobos for spot lights: window panes, blinds,\n"
+                                          "leaf dapple, cathedral glass.");
+                    }
                     ImGui::EndMenu();
                 }
                 // --- Audio ---

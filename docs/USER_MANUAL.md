@@ -214,6 +214,55 @@ Panels display helpful empty-state messages when there is nothing to show:
 | `F2` | Toggle Debug Workstation panel |
 | `` ` `` (backtick) | Toggle drop-down console |
 | `F11` | Toggle focus mode (fullscreen game view) |
+| `Ctrl` + `B` | Toggle Creative Mode (build surface) |
+
+### Creative Mode
+
+Creative Mode is a build surface for blocking out a level. Press `Ctrl` + `B`,
+pick **View > Creative Mode**, or launch the editor with `--creative`.
+
+It is a mode rather than a panel. Turning it on hides the Hierarchy, Inspector,
+Console, Asset Browser, Scene List, Layers, History and Settings, puts a tool
+rail down the left edge, and brings the Scene view to the front. Turning it off
+with `Ctrl` + `B` or the **Full Editor** button restores every panel as it was.
+
+#### The build tools
+
+Pick a tool on the rail, then drag on the ground in the Scene view. Each tool
+keeps its own numbers, so setting a wall to 4 m, switching to stairs and coming
+back does not reset it. Placements snap to the grid named at the bottom of the
+options column; click that line to turn snapping off.
+
+| Tool | Gesture | What it makes |
+|------|---------|---------------|
+| **Wall** | Drag a line | A wall standing on the line you drew, at the set height and thickness. |
+| **Floor** | Drag a region | A slab filling the region, hanging below the set elevation, so elevation 0 is a floor you stand on. |
+| **Stairs** | Drag the run | One tread per step of the set run, each reaching the ground so there is nothing to fall between. Capped at 256 treads. |
+| **Brush** | Drag a region | A convex solid. Sides above 4 makes a prism instead of a box. |
+| **Water** | Drag a rectangle | A Water 3D surface covering the rectangle, sitting at the height set by **Surface**. **Waves** is the wave height; 0 gives a still pool. |
+| **Terrain** | Drag over the ground | Raises or lowers the terrain under the cursor within the set radius. In a scene with no terrain, the first stroke creates a 64 x 64 m one centred on where you pressed. |
+| **Ladder** | Drag along a wall | A climbable ladder with visible rails and rungs. Character controllers already handle climbing; the rails and rungs are visual and carry no collision. |
+| **Reduce** | Click a model | Cuts the model's triangles down to the **Keep** percentage. A label under the cursor shows the before and after counts first. |
+
+Wall, Floor, Stairs and Brush have an **Add** / **Subtract** mode. Subtract cuts
+into the entity currently selected, which is how a doorway is made: select the
+wall, switch to Subtract, then drag the opening. Terrain's second mode is
+**Raise** / **Lower** instead.
+
+Every placement is one undo step, so `Ctrl` + `Z` removes a stray drag without
+hunting for it in a hierarchy the mode has hidden.
+
+#### Reading the viewport
+
+Along the bottom of the Scene view, the left corner names the active tool and
+says whether it is cutting, and the right corner gives the grid size, whether
+snapping is on, and how much geometry the scene holds. Those counters move as
+soon as a drag commits, which is how you can tell a gesture landed.
+
+#### Playing
+
+The **Play** button at the bottom of the surface starts and stops play mode
+without leaving Creative Mode. The build tools are inactive while the game runs.
 
 ### Viewport Shading Modes
 

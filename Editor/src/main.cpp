@@ -5,6 +5,7 @@
 #include "Enjin/Platform/Input.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
+#include "Enjin/Renderer/DDGIProbeSystem.h"   // --ddgi-rebuild-test reads the grid
 #include "Enjin/Renderer/Vulkan/VulkanRenderer.h"
 #include "Enjin/Renderer/Vulkan/VulkanContext.h"
 #include "Enjin/Renderer/Camera.h"
@@ -241,6 +242,44 @@ public:
             return;
         }
 
+        if (s_CrashTestCountdown > 0 && --s_CrashTestCountdown == 0) {
+            Enjin::Debug::TriggerTestCrash();
+        }
+
+        // Before BeginFrameVulkan below, because that is the only moment in the
+        // whole loop when no frame is open.
+        if (s_DDGIRebuildRequestCountdown > 0 && --s_DDGIRebuildRequestCountdown == 0 &&
+            m_RenderSystem && m_RenderSystem->m_DDGISystem) {
+            auto& ddgi = *m_RenderSystem->m_DDGISystem;
+            const auto& c = ddgi.GetConfig();
+            ENJIN_LOG_WARN(Editor, "--ddgi-rebuild-test: before  %dx%dx%d voxel %d oct %u atlas %ux%u",
+                           c.probeCountX, c.probeCountY, c.probeCountZ, c.voxelResolution,
+                           c.octResolution, ddgi.GetProbeAtlasWidth(), ddgi.GetProbeAtlasHeight());
+            // Enable it too: a disabled system never samples the atlas, so a
+            // dangling binding 22 would go unnoticed.
+            ddgi.SetEnabled(true);
+            ddgi.RequestGridRebuild(c.probeCountX == 16 ? 12 : 16, 8, 16,
+                                    c.voxelResolution == 128 ? 64 : 128, 8);
+            ENJIN_LOG_WARN(Editor, "--ddgi-rebuild-test: rebuild requested");
+        }
+        if (s_DDGIRebuildReportCountdown > 0 && --s_DDGIRebuildReportCountdown == 0) {
+            if (m_RenderSystem && m_RenderSystem->m_DDGISystem) {
+                auto& ddgi = *m_RenderSystem->m_DDGISystem;
+                const auto& c = ddgi.GetConfig();
+                ENJIN_LOG_WARN(Editor, "--ddgi-rebuild-test: after   %dx%dx%d voxel %d oct %u atlas %ux%u",
+                               c.probeCountX, c.probeCountY, c.probeCountZ, c.voxelResolution,
+                               c.octResolution, ddgi.GetProbeAtlasWidth(), ddgi.GetProbeAtlasHeight());
+                ENJIN_LOG_WARN(Editor, "--ddgi-rebuild-test: survived %d frames after the rebuild", 120);
+            }
+            RequestShutdown();
+        }
+
+        if (s_ProbeBakeTestCountdown > 0 && --s_ProbeBakeTestCountdown == 0 && m_RenderSystem) {
+            ENJIN_LOG_WARN(Editor, "--probe-bake-test: baking probes outside the frame");
+            m_RenderSystem->ProbeBakeOutsideFrameDiagnostic();
+            ENJIN_LOG_WARN(Editor, "--probe-bake-test: survived the bake");
+        }
+
         if (!m_Renderer->BeginFrameVulkan()) {
             m_FrameFailCount++;
             if (m_Renderer->IsDeviceLost()) {
@@ -311,6 +350,18 @@ public:
         m_Renderer->EndFrame();
     }
 
+    // Frames until --crash-test fires. 0 = disabled.
+    static inline int s_CrashTestCountdown = 0;
+    // Frames until --probe-bake-test fires. 0 = disabled.
+    static inline int s_ProbeBakeTestCountdown = 0;
+    // --ddgi-rebuild-test: request a probe-grid reshape, then keep rendering.
+    // Two countdowns: one to fire the request, a later one to report and quit,
+    // so the frames AFTER the reallocation are actually rendered. A rebuild that
+    // destroys the atlas and leaves binding 22 dangling shows up there, not at
+    // the moment of the request.
+    static inline int s_DDGIRebuildRequestCountdown = 0;
+    static inline int s_DDGIRebuildReportCountdown = 0;
+
 private:
     std::unique_ptr<Enjin::Renderer::VulkanRenderer> m_Renderer;
     std::unique_ptr<Enjin::Renderer::Camera> m_Camera;
@@ -354,6 +405,21 @@ int main(int argc, char* argv[]) {
             if (i + 1 < argc && argv[i + 1] && argv[i + 1][0] != '-') {
                 Enjin::Editor::EditorLayer::s_PlayCycleMax = std::atoi(argv[++i]);
             }
+        } else if (flag == "--creative") {
+            Enjin::Editor::EditorLayer::s_StartInCreativeMode = true;
+        } else if (flag == "--ddgi-rebuild-test") {
+            EditorApplication::s_DDGIRebuildRequestCountdown = 120;
+            EditorApplication::s_DDGIRebuildReportCountdown = 240;
+        } else if (flag == "--probe-bake-test") {
+            // Fire a probe bake from outside an open frame, well after startup.
+            EditorApplication::s_ProbeBakeTestCountdown = 120;
+        } else if (flag == "--crash-test") {
+            // Deliberately crash a few seconds in, to prove the crash reporter
+            // actually fires and writes its report. Late enough that the window,
+            // the Vulkan loader and the driver have all had a chance to displace
+            // our exception filter first -- which is the failure this exists to
+            // catch, so crashing before they load would test nothing.
+            EditorApplication::s_CrashTestCountdown = 120;
         } else if (flag == "--compute-skinning") {
             Enjin::Editor::EditorLayer::s_ComputeSkinningOnLaunch = true;
         } else if (flag == "--golden" && i + 1 < argc && argv[i + 1]) {

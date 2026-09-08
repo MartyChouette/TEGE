@@ -233,6 +233,22 @@ void Application::RunOneFrame() {
     Update(deltaTime);
     Render();
 
+    // Take the crash handler slot back if something displaced it.
+    //
+    // Periodic rather than once at startup, because the modules that displace it
+    // -- the Vulkan loader, the graphics driver, capture and overlay hooks --
+    // need not have loaded by the time initialization finishes. Roughly every
+    // five seconds at 60fps; the call is one Win32 set-and-return, and being
+    // without a crash reporter for five seconds is a far cheaper trade than
+    // being without one for a whole session and not knowing.
+    // Own counter: m_FramesRendered is only incremented under the headless frame
+    // limit, so it stays 0 in a normal run and a modulo against it would fire
+    // every single frame.
+    static u32 s_ReassertTick = 0;
+    if ((s_ReassertTick++ % 300u) == 0u) {
+        Debug::ReassertCrashHandler();
+    }
+
     // Headless frame cap: run exactly N frames then shut down cleanly. Lets CI
     // verify an exported game survives a real render loop and exits with code 0.
     if (s_HeadlessFrameLimit > 0) {

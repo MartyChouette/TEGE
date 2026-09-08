@@ -192,6 +192,10 @@ bool SceneManager::LoadProject(const std::string& manifestPath) {
         }
 
         // Load project-level render defaults
+        m_RenderQuality = Renderer::RenderQualitySettings{};
+        if (root.contains("renderQuality") && root["renderQuality"].is_object()) {
+            m_RenderQuality = Renderer::DeserializeRenderQuality(root["renderQuality"]);
+        }
         if (root.contains("defaultRenderSettings")) {
             m_DefaultRenderSettings = Renderer::DeserializeRenderSettings(root["defaultRenderSettings"]);
         } else {
@@ -327,6 +331,11 @@ bool SceneManager::SaveProject(const std::string& manifestPath) {
 
         // Save project-level render defaults
         root["defaultRenderSettings"] = Renderer::SerializeRenderSettings(m_DefaultRenderSettings);
+        // Written only once a project opts in, so an untouched .enjinproject does
+        // not grow a block nobody asked for.
+        if (m_RenderQuality.enabled) {
+            root["renderQuality"] = Renderer::SerializeRenderQuality(m_RenderQuality);
+        }
 
         // Save game frame settings
         nlohmann::json frameSettingsJson;
