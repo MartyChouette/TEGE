@@ -1694,8 +1694,9 @@
      0.44999998807907104
     ],
     "lightmapped": true,
-    "roughness": 0.949999988079071,
-    "scrollReflectionStrength": 0.5
+    "roughness": 0.15,
+    "scrollReflectionStrength": 0.5,
+    "metallic": 0.9
    },
    "mesh": {
     "indexCount": 36,
@@ -2501,9 +2502,9 @@
   "adaptiveRayVarianceScale": 4.0,
   "adaptiveRayVarianceThreshold": 0.10000000149011612,
   "ambientColor": [
-   0.10000000149011612,
-   0.10000000149011612,
-   0.15000000596046448
+   0.35,
+   0.3,
+   0.22
   ],
   "ambientIntensity": 1.0,
   "artStylePreset": 0,
@@ -2841,7 +2842,7 @@
    0.95
   ],
   "volumetricFogDensity": 0.06,
-  "volumetricFogEnabled": true,
+  "volumetricFogEnabled": false,
   "volumetricFogHeightFalloff": 0.05,
   "volumetricFogNoiseScale": 0.10000000149011612,
   "volumetricFogNoiseStrength": 0.30000001192092896,

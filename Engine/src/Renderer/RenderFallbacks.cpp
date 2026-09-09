@@ -65,5 +65,26 @@ FogSubstitution SubstituteVolumetricFog(const VolumetricFogRequest& request,
     return out;
 }
 
+ReflectionSource ResolveReflections(bool sceneWantsTraced, const ReflectionCapabilities& caps) {
+    if (sceneWantsTraced && caps.canTrace) return ReflectionSource::Traced;
+    // The environment term needs a dome to sample. A scene with a configured
+    // sky already has one; a scene that wants reflections gets one derived from
+    // its ambient light instead.
+    if (caps.hasConfiguredSky || sceneWantsTraced) return ReflectionSource::Environment;
+    return ReflectionSource::None;
+}
+
+EnvironmentDome DeriveEnvironmentDome(const Math::Vector3& ambientColor) {
+    EnvironmentDome dome;
+    // A dome that is brighter above than below, which is what every real
+    // environment does and what makes a reflection read as a direction rather
+    // than a tint. The factors are a shape, not a colour: everything here is
+    // the scene's own ambient scaled, so a black ambient stays black.
+    dome.top = Math::Vector3(ambientColor.x * 1.35f, ambientColor.y * 1.35f, ambientColor.z * 1.45f);
+    dome.horizon = ambientColor;
+    dome.bottom = Math::Vector3(ambientColor.x * 0.55f, ambientColor.y * 0.55f, ambientColor.z * 0.5f);
+    return dome;
+}
+
 } // namespace Renderer
 } // namespace Enjin

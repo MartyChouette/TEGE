@@ -110,5 +110,44 @@ FogSubstitution SubstituteVolumetricFog(const VolumetricFogRequest& request,
                                         bool canRunVolumetric,
                                         f32 existingFogDensity);
 
+// --- Reflections -------------------------------------------------------------
+
+// Ray-traced reflections are the desktop answer. A browser cannot trace, and
+// the cheap screen-space substitute is deliberately NOT taken: a screen-space
+// reflection can only show what is already on screen, so it admits that the
+// world stops at the frame edge. That is the one thing this whole family of
+// techniques exists to avoid.
+//
+// What web gets instead is an environment reflection sampled from the sky dome
+// along the reflection vector. It is world-space, it does not care where the
+// frame ends, and it costs no rays.
+enum class ReflectionSource : u8 {
+    None = 0,
+    Traced,        // ray-traced, desktop
+    Environment,   // sky-dome IBL along the reflection vector
+};
+
+struct ReflectionCapabilities {
+    bool canTrace = false;
+    // The scene configured a sky, which is what the environment term samples.
+    bool hasConfiguredSky = false;
+};
+
+ReflectionSource ResolveReflections(bool sceneWantsTraced, const ReflectionCapabilities& caps);
+
+// A sky dome derived from the scene's own ambient light, for a scene that wants
+// reflections and never configured a sky.
+//
+// Derived, not invented. A plausible blue sky would be a colour nobody in the
+// scene chose, and would light a night interior like an afternoon. Ambient is
+// the one environment value every scene really has, so a black ambient yields a
+// black dome and the substitution correctly amounts to nothing.
+struct EnvironmentDome {
+    Math::Vector3 top;
+    Math::Vector3 horizon;
+    Math::Vector3 bottom;
+};
+EnvironmentDome DeriveEnvironmentDome(const Math::Vector3& ambientColor);
+
 } // namespace Renderer
 } // namespace Enjin

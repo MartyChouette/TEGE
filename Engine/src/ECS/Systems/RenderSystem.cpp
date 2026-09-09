@@ -74,6 +74,7 @@ Renderer::SkyboxConfig RenderSystem::WeatherSky(const Renderer::SkyboxConfig& cf
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Components/PreRenderedBackground.h"
 #include "Enjin/Renderer/DepthPlate.h"
+#include "Enjin/Renderer/RenderFallbacks.h"
 #include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/ECS/Components/LOD.h"
@@ -2675,6 +2676,20 @@ void RenderSystem::Update(f32 deltaTime) {
             lit.skyTop = {sc.topColor.x, sc.topColor.y, sc.topColor.z, configured};
             lit.skyBottom = {sc.bottomColor.x, sc.bottomColor.y, sc.bottomColor.z, 0.0f};
             lit.skyHorizon = {sc.horizonColor.x, sc.horizonColor.y, sc.horizonColor.z, sc.horizonHaze};
+
+            // Reflection substitute: a scene that wanted ray-traced reflections
+            // and never configured a sky has nothing for the environment term to
+            // sample, so it would resolve to Environment and then do nothing --
+            // the exact way the fog substitution failed before it was measured.
+            // A dome derived from the scene's own ambient gives it something
+            // real to reflect. Only the DOME is synthesized; the sky itself is
+            // not drawn, because the scene did not ask for one.
+            if (m_SubstituteEnvironmentReflections && configured < 0.5f) {
+                const auto dome = Renderer::DeriveEnvironmentDome(m_AmbientColor);
+                lit.skyTop = {dome.top.x, dome.top.y, dome.top.z, 1.0f};
+                lit.skyHorizon = {dome.horizon.x, dome.horizon.y, dome.horizon.z, 0.0f};
+                lit.skyBottom = {dome.bottom.x, dome.bottom.y, dome.bottom.z, 0.0f};
+            }
             lit.skySunDir = {sc.sunDirection.x, sc.sunDirection.y, sc.sunDirection.z, sc.sunIntensity};
             lit.skySunColor = {sc.sunColor.x, sc.sunColor.y, sc.sunColor.z, sc.sunSize};
             lit.skyClouds = {sc.cloudCoverage, sc.cloudScale, sc.cloudSpeed, sc.cloud2Coverage};

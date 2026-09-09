@@ -604,6 +604,37 @@ void SceneRenderSettings::ApplyToRuntimeUnclamped(ECS::RenderSystem* rs, PostPro
             }
             rs->SetScenePalettes(slots);
         }
+        // Reflections, same shape. Ray tracing is the desktop answer; the web
+        // substitute is an environment reflection off the sky dome, NOT a
+        // screen-space one -- SSR can only show what is already on screen, so it
+        // admits the world ends at the frame edge, which is the one thing this
+        // family exists to avoid.
+        {
+            Renderer::ReflectionCapabilities rcaps;
+#if !ENJIN_RENDERER_WEBGPU
+            rcaps.canTrace = true;
+#else
+            rcaps.canTrace = false;   // no ray tracing in a browser
+#endif
+            // The sky is not part of render settings -- it is set separately --
+            // so the answer is unknown HERE and the runtime re-checks it when it
+            // fills the dome. Saying false is the honest input: it asks whether
+            // a substitute would be needed at all.
+            rcaps.hasConfiguredSky = false;
+            const auto source = Renderer::ResolveReflections(rtReflectionsEnabled, rcaps);
+            // Only when the scene actually wanted traced reflections. A scene
+            // that asked for neither chose the flat look, and adding an
+            // environment term would change art nobody asked to change.
+            const bool substitute = (source == Renderer::ReflectionSource::Environment) &&
+                                    rtReflectionsEnabled;
+            rs->SetSubstituteEnvironmentReflections(substitute);
+            if (substitute) {
+                ENJIN_LOG_INFO(Renderer,
+                    "Traced reflections are unavailable here; reflecting a sky dome "
+                    "derived from the scene's ambient instead");
+            }
+        }
+
         // Which GI this runtime will actually use, decided once and stated.
         //
         // A scene asks for dynamic GI by ticking DDGI, and the web build cannot

@@ -311,6 +311,7 @@ private:
     // Baked lightmap atlases: three paths and their bindless slots. OUTSIDE
     // the renderer guard, because the paths are plain scene data that both
     // backends carry -- only the GPU-side load is Vulkan-specific.
+    bool m_SubstituteEnvironmentReflections = false;
     bool m_LightmapEnabled = false;
     std::string m_LightmapPath[3];
     f32 m_LightmapStrength = 1.0f;
@@ -412,6 +413,11 @@ public:
     // backends need, and defining them in the Vulkan-only file is how the
     // plate declarations and the palette accessors each broke the web link
     // earlier today. Only the GPU-side load below is renderer-specific.
+    // A scene that asked for reflections this backend cannot trace, and never
+    // configured a sky for the environment term to sample. Set by
+    // SceneRenderSettings::ApplyToRuntime; only the web fill reads it.
+    void SetSubstituteEnvironmentReflections(bool on) { m_SubstituteEnvironmentReflections = on; }
+
     void SetSceneLightmap(bool enabled, const std::string& b0, const std::string& b1,
                           const std::string& b2, f32 strength) {
         m_LightmapEnabled = enabled;

@@ -129,4 +129,60 @@ ENJIN_TEST(RenderFallbacks, NothingToStandInForIsNotSubstituted) {
     ENJIN_EXPECT_FALSE(SubstituteVolumetricFog(Vol(false, 0.03f), false, 0.0f).apply);
 }
 
+// --- Reflections -------------------------------------------------------------
+
+namespace {
+ReflectionCapabilities RCaps(bool trace, bool sky) {
+    ReflectionCapabilities c;
+    c.canTrace = trace;
+    c.hasConfiguredSky = sky;
+    return c;
+}
+f32 Luma(const Math::Vector3& c) { return (c.x + c.y + c.z) / 3.0f; }
+} // namespace
+
+ENJIN_TEST(RenderFallbacks, DesktopTracesReflectionsWhenAsked) {
+    ENJIN_EXPECT_TRUE(ResolveReflections(true, RCaps(true, false)) == ReflectionSource::Traced);
+}
+
+ENJIN_TEST(RenderFallbacks, WebSubstitutesAnEnvironmentReflectionRatherThanAScreenSpaceOne) {
+    // Deliberately not SSR. A screen-space reflection can only show what is
+    // already on screen, so it admits the world stops at the frame edge --
+    // which is the single thing this family of techniques exists to avoid.
+    ENJIN_EXPECT_TRUE(ResolveReflections(true, RCaps(false, false)) == ReflectionSource::Environment);
+    ENJIN_EXPECT_TRUE(ResolveReflections(true, RCaps(false, true)) == ReflectionSource::Environment);
+}
+
+ENJIN_TEST(RenderFallbacks, ASceneThatWantedNeitherStaysFlat) {
+    // A scene with no sky that never asked for reflections chose that look.
+    // Adding an environment term would change art nobody asked to change.
+    ENJIN_EXPECT_TRUE(ResolveReflections(false, RCaps(false, false)) == ReflectionSource::None);
+    // But a configured sky is itself the request.
+    ENJIN_EXPECT_TRUE(ResolveReflections(false, RCaps(false, true)) == ReflectionSource::Environment);
+}
+
+ENJIN_TEST(RenderFallbacks, TheDerivedDomeIsBrighterAboveThanBelow) {
+    // What makes a reflection read as a direction rather than a flat tint.
+    const auto dome = DeriveEnvironmentDome(Math::Vector3(0.3f, 0.32f, 0.4f));
+    ENJIN_EXPECT_TRUE(Luma(dome.top) > Luma(dome.horizon));
+    ENJIN_EXPECT_TRUE(Luma(dome.horizon) > Luma(dome.bottom));
+}
+
+ENJIN_TEST(RenderFallbacks, ABlackAmbientDerivesABlackDome) {
+    // The rule that a fallback is EMPTY rather than a plausible guess. Inventing
+    // a blue sky here would light a night interior like an afternoon, using a
+    // colour nobody in the scene ever chose.
+    const auto dome = DeriveEnvironmentDome(Math::Vector3(0.0f, 0.0f, 0.0f));
+    ENJIN_EXPECT_TRUE(Luma(dome.top) == 0.0f);
+    ENJIN_EXPECT_TRUE(Luma(dome.horizon) == 0.0f);
+    ENJIN_EXPECT_TRUE(Luma(dome.bottom) == 0.0f);
+}
+
+ENJIN_TEST(RenderFallbacks, TheDomeIsTheScenesOwnColourAndNotSomeOtherHue) {
+    // Scaled, never re-tinted: a warm ambient must not come back blue.
+    const auto dome = DeriveEnvironmentDome(Math::Vector3(0.5f, 0.25f, 0.1f));
+    ENJIN_EXPECT_TRUE(dome.top.x > dome.top.y && dome.top.y > dome.top.z);
+    ENJIN_EXPECT_TRUE(dome.bottom.x > dome.bottom.y && dome.bottom.y > dome.bottom.z);
+}
+
 ENJIN_TEST_MAIN()
