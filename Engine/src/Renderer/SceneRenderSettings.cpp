@@ -76,6 +76,8 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
         // Scene palette, read back so an edit made in the editor is what gets
         // saved. The AUTHORED table is captured, never the cycled one, or every
         // save would bake in whatever phase the animation happened to be at.
+        rs->GetSceneLightmap(s.lightmapEnabled, s.lightmapPath[0], s.lightmapPath[1],
+                             s.lightmapPath[2], s.lightmapStrength);
         {
             s.scenePalettes.clear();
             for (const Renderer::ScenePaletteSlot& slot : rs->GetScenePalettes()) {
@@ -569,6 +571,11 @@ void SceneRenderSettings::ApplyToRuntimeUnclamped(ECS::RenderSystem* rs, PostPro
             }
             rs->SetScenePalettes(slots);
         }
+        // Lightmaps. Outside the renderer guard for the same reason the
+        // palettes are: this is authored data reaching the render system, not
+        // a Vulkan call.
+        rs->SetSceneLightmap(lightmapEnabled, lightmapPath[0], lightmapPath[1],
+                             lightmapPath[2], lightmapStrength);
         rs->SetFogColor(fogColor);
         // Remembered separately so the per-frame weather updater can restore it
         // instead of overwriting it with hardcoded defaults.
@@ -1213,6 +1220,12 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
 
     // Scene palette. Written only when in use, so a scene that never touched it
     // does not carry a colour table nobody authored.
+    if (s.lightmapEnabled) {
+        nlohmann::json lm;
+        lm["strength"] = RF(s.lightmapStrength);
+        lm["basis"] = { s.lightmapPath[0], s.lightmapPath[1], s.lightmapPath[2] };
+        j["lightmap"] = lm;
+    }
     if (s.scenePaletteEnabled && !s.scenePalettes.empty()) {
         nlohmann::json arr = nlohmann::json::array();
         for (const auto& e : s.scenePalettes) {
@@ -1615,6 +1628,22 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("gpuParticleTurbulenceStrength"))  s.gpuParticleTurbulenceStrength  = j["gpuParticleTurbulenceStrength"].get<f32>();
     if (j.contains("gpuParticleTurbulenceFrequency")) s.gpuParticleTurbulenceFrequency = j["gpuParticleTurbulenceFrequency"].get<f32>();
     if (j.contains("gpuParticleMaxParticles"))        s.gpuParticleMaxParticles        = j["gpuParticleMaxParticles"].get<u32>();
+
+    if (j.contains("lightmap") && j["lightmap"].is_object()) {
+        const auto& lm = j["lightmap"];
+        s.lightmapEnabled = true;
+        s.lightmapStrength = lm.value("strength", 1.0f);
+        if (lm.contains("basis") && lm["basis"].is_array()) {
+            for (u32 i = 0; i < 3 && i < lm["basis"].size(); ++i) {
+                if (lm["basis"][i].is_string()) s.lightmapPath[i] = lm["basis"][i].get<std::string>();
+            }
+        }
+        // All three or none: two atlases and a missing one would blend a basis
+        // direction against black and tilt the whole scene's lighting.
+        if (s.lightmapPath[0].empty() || s.lightmapPath[1].empty() || s.lightmapPath[2].empty()) {
+            s.lightmapEnabled = false;
+        }
+    }
 
     // Palettes. One reader for both shapes: the CURRENT "scenePalettes" list,
     // and the single "scenePalette" object the first version of this feature

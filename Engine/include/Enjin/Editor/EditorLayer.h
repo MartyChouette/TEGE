@@ -241,6 +241,8 @@ public:
     // --bake-plate <name>: bake a background plate from the launch scene, then
     // exit. Exists so the bake has a path that is not a mouse click.
     static inline std::string s_BakePlateName;
+    // --bake-lightmap: bake the launch scene's lightmap, save, and exit.
+    static inline bool s_BakeLightmapOnLaunch = false;
     static inline i32 s_GoldenCaptureFrame = 180;
 
     EditorLayer();
@@ -354,9 +356,22 @@ private:
     // View, so there is no separate preview to hold here -- only the name and
     // whatever the last bake had to say.
     bool m_ShowPlateBaker = false;
+
+    // Lightmap baking.
+    bool m_ShowLightmapBaker = false;
+    std::string m_LightmapBakeName = "scene";
+    std::string m_LightmapBakeStatus;
+    // 1024 at 4 texels per unit, because the first thing tried at 512/8 was a
+    // 16x20 room and it ran out of atlas at triangle 14 of 36. Baked light is
+    // meant to be soft; density buys detail a normal map is better at, and the
+    // failure of guessing too high is a bake that refuses to run.
+    u32 m_LightmapAtlasSize = 1024;
+    f32 m_LightmapTexelsPerUnit = 4.0f;
+    u32 m_LightmapSkySamples = 32;
     std::string m_PlateBakeName = "plate";
     std::string m_PlateBakeStatus;
     int m_PlateBakeFrameCounter = 0;
+    int m_LightmapBakeFrameCounter = 0;
     Renderer::CookieParams m_CookieDraft;
     std::vector<u8> m_CookiePreview;         // regenerated only when the draft changes
     Renderer::CookieParams m_CookiePreviewOf; // what m_CookiePreview was built from
@@ -517,6 +532,10 @@ private:
     // Build and preview light cookies (gobos), then apply one to a spot light.
     void DrawCookieCreatorWindow();
     void DrawBackgroundPlateBakerWindow();
+    void DrawLightmapBakerWindow();
+    // Collects opted-in geometry, unwraps it, traces the light, writes three
+    // atlases into the project and points the scene at them.
+    bool BakeSceneLightmap(std::string& outStatus);
     // Captures the Game View's colour and depth, writes both to the project,
     // and attaches them to the active camera. Returns false with a reason.
     bool BakeBackgroundPlate(std::string& outStatus);

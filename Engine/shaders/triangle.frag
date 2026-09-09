@@ -113,6 +113,8 @@ layout(binding = 1) uniform LightingUBO {
     SpotLight spotLights[MAX_SPOT_LIGHTS];
     vec4 cloudShadowParams;      // x = coverage, y = scale, z = strength, w = speed
     vec4 accessibilityParams;    // x = colorblind mode, y = strength, z = brightness, w = contrast
+    // Radiosity normal mapping. Appended last, matching ECS::LightingUBO.
+    vec4 lightmapParams;         // xyz = bindless index per basis (-1 = none), w = strength
 } lighting;
 
 // Material via push constants (per-object data)
@@ -203,6 +205,14 @@ layout(constant_id = 7) const uint SPEC_ALPHA_MODE = 0;  // 0=Opaque, 1=Mask, 2=
 
 // Height texture flag
 #define FLAG_HAS_HEIGHT_TEX     (1 << 10)
+
+// The Half-Life 2 basis, in tangent space. These literals are the SAME numbers
+// as kBasis in RadiosityNormalMap.cpp, written out rather than derived so the
+// bake and the shader cannot drift apart. If they ever do the picture does not
+// break, it leans -- every surface picks up a directional bias nobody authored.
+const vec3 kRNMBasis0 = vec3(-0.408248290, -0.707106781, 0.577350269);
+const vec3 kRNMBasis1 = vec3(-0.408248290,  0.707106781, 0.577350269);
+const vec3 kRNMBasis2 = vec3( 0.816496581,  0.0,         0.577350269);
 
 // Water/rain flag bits
 #define FLAG_WATER_SURFACE      (1 << 5)
@@ -1161,6 +1171,50 @@ void main() {
         normal = normalize(fragNormal);
     }
 
+    // --- Radiosity normal mapping ------------------------------------------
+    //
+    // Baked light that still reacts to a normal map. Three atlases hold the
+    // light arriving from three fixed tangent-space directions; the blend is
+    // by how much THIS pixel's normal faces each one, so bumps pick up
+    // different baked light instead of all sharing the surface's answer.
+    //
+    // Computed here, applied further down with the rest of the lighting.
+    vec3 rnmLight = vec3(0.0);
+    float rnmAmount = 0.0;
+    if (mat_surfaceParam1 >= 599.5 && mat_surfaceParam1 < 699.5
+        && lighting.lightmapParams.x >= 0.0) {
+        // The normal in TANGENT space. The block above resolved a WORLD-space
+        // normal, which is the wrong frame: the basis lives in tangent space,
+        // so the normal has to come back through the same TBN rather than the
+        // world normal being used directly.
+        vec3 Nl = normalize(fragNormal);
+        vec3 Tl = normalize(fragTangent.xyz);
+        Tl = normalize(Tl - dot(Tl, Nl) * Nl);
+        vec3 Bl = cross(Nl, Tl) * fragTangent.w;
+        vec3 nTS = vec3(dot(normal, Tl), dot(normal, Bl), dot(normal, Nl));
+        float nLen = length(nTS);
+        // A missing tangent frame resolves FLAT rather than black: an even
+        // share of all three is what the texel was baked as, and a black
+        // surface would be blamed on the bake.
+        nTS = (nLen > 1e-6) ? nTS / nLen : vec3(0.0, 0.0, 1.0);
+
+        vec3 w = vec3(max(dot(nTS, kRNMBasis0), 0.0),
+                      max(dot(nTS, kRNMBasis1), 0.0),
+                      max(dot(nTS, kRNMBasis2), 0.0));
+        float wSum = w.x + w.y + w.z;
+        // Normalized so a bumpy surface stays as bright as the flat lightmap
+        // says. Without this the total light changes with the bump angle and
+        // flat regions come out darker than the value baked for them.
+        w = (wSum > 1e-6) ? w / wSum : vec3(1.0 / 3.0);
+
+        vec2 lmUV = fragUV1;
+        vec3 c0 = texture(BTEX(int(lighting.lightmapParams.x)), lmUV).rgb;
+        vec3 c1 = texture(BTEX(int(lighting.lightmapParams.y)), lmUV).rgb;
+        vec3 c2 = texture(BTEX(int(lighting.lightmapParams.z)), lmUV).rgb;
+        rnmLight = c0 * w.x + c1 * w.y + c2 * w.z;
+        rnmAmount = clamp(lighting.lightmapParams.w, 0.0, 4.0);
+    }
+
     // Normal quantization: snap normals to N cardinal directions (pixel art / 2D-in-3D look)
     float nqSteps = lighting.worldCurvature.z;
     if (nqSteps >= 4.0) {
@@ -1383,6 +1437,12 @@ void main() {
 
     // Start with ambient
     vec3 result = lighting.ambientColor * lighting.ambientIntensity * albedo;
+
+    // Baked light, added as its own term against the surface colour. This is
+    // the whole payoff of the bake: shadows and bounced sky that cost three
+    // texture reads instead of rays, and that still change across a normal map
+    // because the three basis directions were sampled separately.
+    result += rnmLight * rnmAmount * albedo;
 
     // Specular IBL from the reflection probe. Metals (high metallic) and glossy
     // dielectrics reflect the environment; without this a metal material only

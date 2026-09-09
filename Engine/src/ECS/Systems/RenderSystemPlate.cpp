@@ -131,6 +131,38 @@ void RenderSystem::UpdatePreRenderedPlates() {
     }
 }
 
+// --- Baked lightmaps ---------------------------------------------------------
+//
+// The three basis atlases share the plate texture cache: both want a texture
+// loaded from a path, kept alive here, and given a bindless slot. A lightmap is
+// COLOUR, so unlike a depth plate it takes the ordinary sRGB and filtered
+// treatment -- baked light is meant to be smooth between texels, which is the
+// whole reason a low-resolution atlas looks acceptable.
+
+void RenderSystem::UpdateSceneLightmap() {
+    if (!m_VulkanRenderer || !m_BindlessManager) return;
+    if (!m_LightmapEnabled) return;
+    if (m_LightmapBindless[0] != UINT32_MAX) return;   // already resident
+
+    for (u32 i = 0; i < 3; ++i) {
+        if (m_LightmapPath[i].empty()) return;
+        m_LightmapBindless[i] = LoadPlateImage(m_LightmapPath[i], /*isDepth=*/false);
+    }
+    // All three or none. Two atlases and a missing one would blend a basis
+    // direction against black and tilt the whole scene's lighting -- which is
+    // exactly the kind of wrong that reads as a bad bake.
+    if (m_LightmapBindless[0] == UINT32_MAX || m_LightmapBindless[1] == UINT32_MAX ||
+        m_LightmapBindless[2] == UINT32_MAX) {
+        ENJIN_LOG_ERROR(Renderer, "Lightmap incomplete; baked light is off for this scene");
+        m_LightmapEnabled = false;
+        for (u32 i = 0; i < 3; ++i) m_LightmapBindless[i] = UINT32_MAX;
+        return;
+    }
+    ENJIN_LOG_INFO(Renderer, "Scene lightmap resident: bindless %u/%u/%u, strength %.2f",
+                   m_LightmapBindless[0], m_LightmapBindless[1], m_LightmapBindless[2],
+                   m_LightmapStrength);
+}
+
 void RenderSystem::ClearPreRenderedPlates() {
     m_PlateTextures.clear();
 }

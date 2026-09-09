@@ -72,6 +72,11 @@ struct MaterialComponent {
     // draw time, so a slot pointing at a palette that was deleted falls back to
     // the first one rather than sampling a blank row.
     u8 paletteSlot = 0;
+    // Read baked light from the scene's three basis atlases, through this
+    // mesh's second UV channel. Like the palette above it this rides a
+    // surfaceParam1 band rather than a flag bit, so it is mutually exclusive
+    // with the other banded modes -- the flags word has no free bits at all.
+    bool lightmapped = false;
     u8 vertexSnapResolution = 160; // PS1-style grid resolution (80-320)
 
     // SDF text (unified display P1): the base color texture's alpha is a signed
@@ -454,6 +459,7 @@ struct alignas(16) MaterialGPU {
     // A palette material has no water or artistic surface params to lose, which
     // is what makes the slot safe to claim.
     static constexpr f32 SURFACE_PARAM1_PALETTE_INDEXED = 500.0f;
+    static constexpr f32 SURFACE_PARAM1_LIGHTMAPPED = 600.0f;
 };
 
 // Multi-material component for entities with sub-meshes.

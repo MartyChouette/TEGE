@@ -1,0 +1,12 @@
+{
+ "name": "Lightmap",
+ "version": "1.0",
+ "scenes": [
+  {
+   "path": "scenes/Room.enjin",
+   "name": "Room",
+   "buildIndex": 0,
+   "isStartScene": true
+  }
+ ]
+}

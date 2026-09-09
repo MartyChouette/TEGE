@@ -232,6 +232,15 @@ struct alignas(16) LightingUBO {
     // y = colorblind strength, z = brightness (-0.5..0.5), w = contrast (0.5..2).
     // Same append-last prefix rule as cloudShadowParams; only triangle.frag reads it.
     alignas(16) Math::Vector4 accessibilityParams;
+
+    // Radiosity normal mapping: the three basis atlases as bindless indices,
+    // and how strongly they contribute. Scene-wide, because one bake covers a
+    // scene -- which is also what keeps it OFF MaterialGPU (full at 144 bytes)
+    // and off the push constants (full at the guaranteed 128). Appended last,
+    // per the prefix rule above: shaders that declare a shorter LightingUBO
+    // keep reading a valid prefix.
+    // xyz = bindless index per basis (-1 = no lightmap), w = strength.
+    alignas(16) Math::Vector4 lightmapParams;
 };
 
 } // namespace ECS

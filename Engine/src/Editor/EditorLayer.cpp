@@ -1409,6 +1409,20 @@ void EditorLayer::Update(f32 deltaTime) {
     // Same countdown as the golden capture, and for the same reason: the game
     // view has to have drawn the scene at least once before there is anything
     // to read back.
+    // Lightmap bake on launch. It needs no rendered frame -- the bake is pure
+    // CPU work over the scene -- but it waits the same few frames so the scene
+    // has finished loading.
+    if (s_BakeLightmapOnLaunch && m_World && m_RenderSystem) {
+        if (++m_LightmapBakeFrameCounter >= 30) {
+            s_BakeLightmapOnLaunch = false;
+            std::string status;
+            const bool ok = BakeSceneLightmap(status);
+            ENJIN_LOG_INFO(Editor, "bake-lightmap: %s", status.c_str());
+            if (ok && !m_CurrentScenePath.empty()) SaveScene(m_CurrentScenePath);
+            if (m_Window) m_Window->Close();
+        }
+    }
+
     if (!s_BakePlateName.empty() && m_RenderSystem && m_GameViewRenderTarget) {
         if (++m_PlateBakeFrameCounter >= 30) {
             m_PlateBakeName = s_BakePlateName;
@@ -4273,6 +4287,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         DrawAtlasPackerWindow();
         DrawCookieCreatorWindow();
         DrawBackgroundPlateBakerWindow();
+        DrawLightmapBakerWindow();
         if (m_ShaderGraphEditor.ConsumeApplyRequest()) {
             if (m_RenderSystem && m_World && m_PrimarySelected != ECS::INVALID_ENTITY &&
                 m_World->IsValid(m_PrimarySelected)) {

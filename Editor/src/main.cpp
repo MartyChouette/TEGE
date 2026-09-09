@@ -424,6 +424,10 @@ int main(int argc, char* argv[]) {
             Enjin::Editor::EditorLayer::s_ComputeSkinningOnLaunch = true;
         } else if (flag == "--golden" && i + 1 < argc && argv[i + 1]) {
             Enjin::Editor::EditorLayer::s_GoldenCapturePath = argv[++i];
+        } else if (flag == "--bake-lightmap") {
+            // Bake the launch scene's lightmap and exit. Same reason as
+            // --bake-plate: a menu action cannot be exercised by a test.
+            Enjin::Editor::EditorLayer::s_BakeLightmapOnLaunch = true;
         } else if (flag == "--bake-plate" && i + 1 < argc && argv[i + 1]) {
             // Bake a pre-rendered background from the launch scene and exit.
             // Same harness shape as --golden: the bake is a menu action, and

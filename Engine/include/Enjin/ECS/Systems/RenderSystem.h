@@ -308,6 +308,14 @@ private:
     // m_PaletteCycled is the animated result that actually goes to the GPU.
     std::vector<Renderer::ScenePaletteSlot> m_ScenePalettes;
     Renderer::Palette m_PaletteCycled;   // scratch for one slot at a time
+    // Baked lightmap atlases: three paths and their bindless slots. OUTSIDE
+    // the renderer guard, because the paths are plain scene data that both
+    // backends carry -- only the GPU-side load is Vulkan-specific.
+    bool m_LightmapEnabled = false;
+    std::string m_LightmapPath[3];
+    f32 m_LightmapStrength = 1.0f;
+    u32 m_LightmapBindless[3] = { UINT32_MAX, UINT32_MAX, UINT32_MAX };
+
     f32 m_PaletteTime = 0.0f;
     bool m_PaletteTickedThisFrame = false;
     u32 m_PaletteBindless = UINT32_MAX;
@@ -397,6 +405,33 @@ public:
     u32 GetScenePaletteCount() const { return static_cast<u32>(m_ScenePalettes.size()); }
     // Empty palette for an out-of-range slot rather than a throw: callers are UI
     // and draw code that must keep running against stale indices.
+    // The scene's baked lightmap: three basis atlases and how strongly they
+    // contribute. Paths, because the images are assets on disk; the render
+    // system loads them at its own safe point like any other texture.
+    // Inline, and deliberately so: these are pure bookkeeping that BOTH
+    // backends need, and defining them in the Vulkan-only file is how the
+    // plate declarations and the palette accessors each broke the web link
+    // earlier today. Only the GPU-side load below is renderer-specific.
+    void SetSceneLightmap(bool enabled, const std::string& b0, const std::string& b1,
+                          const std::string& b2, f32 strength) {
+        m_LightmapEnabled = enabled;
+        m_LightmapPath[0] = b0;
+        m_LightmapPath[1] = b1;
+        m_LightmapPath[2] = b2;
+        m_LightmapStrength = strength;
+        // Force a reload: the paths may name a fresh bake written over the old
+        // one, and the texture cache is keyed by path.
+        for (u32 i = 0; i < 3; ++i) m_LightmapBindless[i] = UINT32_MAX;
+    }
+    void GetSceneLightmap(bool& enabled, std::string& b0, std::string& b1,
+                          std::string& b2, f32& strength) const {
+        enabled = m_LightmapEnabled;
+        b0 = m_LightmapPath[0];
+        b1 = m_LightmapPath[1];
+        b2 = m_LightmapPath[2];
+        strength = m_LightmapStrength;
+    }
+
     const Renderer::Palette& GetScenePalette(u32 slot = 0) const;
     const std::vector<Renderer::PaletteCycleRange>& GetPaletteCycles(u32 slot = 0) const;
 
@@ -454,6 +489,7 @@ public:
     // Pre-rendered backgrounds. Loading happens at the FlushPendingChanges
     // safe point like every other GPU resource; the draw happens first in the
     // scene pass, before anything that has to be occluded by the room.
+    void UpdateSceneLightmap();
     void UpdatePreRenderedPlates();
     void ClearPreRenderedPlates();
     u32 LoadPlateImage(const std::string& path, bool isDepth);

@@ -288,6 +288,7 @@ json SerializeMaterialComponent(const ECS::MaterialComponent& material) {
     if (material.uvQuantize != kDefaultMaterial.uvQuantize) j["uvQuantize"] = material.uvQuantize;
     if (material.gouraudOnly != kDefaultMaterial.gouraudOnly) j["gouraudOnly"] = material.gouraudOnly;
     if (material.paletteIndexed != kDefaultMaterial.paletteIndexed) j["paletteIndexed"] = material.paletteIndexed;
+    if (material.lightmapped != kDefaultMaterial.lightmapped) j["lightmapped"] = material.lightmapped;
     if (material.paletteSlot != kDefaultMaterial.paletteSlot) j["paletteSlot"] = material.paletteSlot;
     if (material.sdfText != kDefaultMaterial.sdfText) j["sdfText"] = material.sdfText;
     if (material.vertexSnapResolution != kDefaultMaterial.vertexSnapResolution) j["vertexSnapResolution"] = material.vertexSnapResolution;
@@ -664,6 +665,7 @@ ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
     if (j.contains("uvQuantize")) material.uvQuantize = JB(j["uvQuantize"]);
     if (j.contains("gouraudOnly")) material.gouraudOnly = JB(j["gouraudOnly"]);
     if (j.contains("paletteIndexed")) material.paletteIndexed = JB(j["paletteIndexed"]);
+    if (j.contains("lightmapped")) material.lightmapped = JB(j["lightmapped"]);
     if (j.contains("paletteSlot") && j["paletteSlot"].is_number()) {
         const u32 slot = j["paletteSlot"].get<u32>();
         material.paletteSlot = static_cast<u8>(

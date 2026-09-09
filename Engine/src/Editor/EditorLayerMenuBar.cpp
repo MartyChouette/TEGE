@@ -609,6 +609,11 @@ void EditorLayer::DrawMenuBar() {
                                           "leaf dapple, cathedral glass.");
                     }
                     if (ImGui::MenuItem("Bake Background Plate")) m_ShowPlateBaker = true;
+                    if (ImGui::MenuItem("Bake Lightmap")) m_ShowLightmapBaker = true;
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Baked light that still reacts to normal maps.\n"
+                                          "Shadows and bounced sky for three texture reads.");
+                    }
                     if (ImGui::IsItemHovered()) {
                         ImGui::SetTooltip("Render this shot once and keep the picture, with the depth\n"
                                           "it was rendered at, so characters walk behind it.");

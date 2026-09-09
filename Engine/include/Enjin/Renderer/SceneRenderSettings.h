@@ -159,6 +159,13 @@ struct SceneRenderSettings {
         std::vector<u32> colors;
         std::vector<Renderer::PaletteCycleRange> cycles;
     };
+    // Radiosity normal mapping: the three basis atlases a bake produced, and
+    // how strongly they light the scene. Paths rather than pixels -- a bake is
+    // an asset on disk that a person can look at and a build can pack.
+    bool lightmapEnabled = false;
+    std::string lightmapPath[3];
+    f32 lightmapStrength = 1.0f;
+
     bool scenePaletteEnabled = false;
     std::vector<ScenePaletteEntry> scenePalettes;
     f32 snowIntensity = 0.0f;

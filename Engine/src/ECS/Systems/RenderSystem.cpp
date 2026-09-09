@@ -6426,6 +6426,7 @@ void RenderSystem::FlushPendingChanges() {
     // Background plates: creates images and registers bindless slots, so it
     // belongs here with everything else that touches GPU lifetime.
     UpdatePreRenderedPlates();
+    UpdateSceneLightmap();
 
     // DDGI grid reshape. This destroys and recreates the voxel grid and the
     // probe atlas, so it has to happen where nothing is recording and nothing is
@@ -8893,6 +8894,12 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 if (material->paletteIndexed) {
                     pushConstants.surfaceParam1 = PaletteBandFor(material->paletteSlot);
                 }
+                // Lightmapped, after the palette so it wins the slot when both
+                // are set. They cannot coexist -- the flags word has no free
+                // bits, so every mode here shares one float.
+                if (material->lightmapped) {
+                    pushConstants.surfaceParam1 = ECS::MaterialGPU::SURFACE_PARAM1_LIGHTMAPPED;
+                }
             } else {
                 pushConstants.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
                 pushConstants.metallic = 0.0f;
@@ -9773,6 +9780,12 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                 // 500 this.
                 if (material->paletteIndexed) {
                     pushConstants.surfaceParam1 = PaletteBandFor(material->paletteSlot);
+                }
+                // Lightmapped, after the palette so it wins the slot when both
+                // are set. They cannot coexist -- the flags word has no free
+                // bits, so every mode here shares one float.
+                if (material->lightmapped) {
+                    pushConstants.surfaceParam1 = ECS::MaterialGPU::SURFACE_PARAM1_LIGHTMAPPED;
                 }
             } else {
                 pushConstants.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
@@ -12179,6 +12192,15 @@ void RenderSystem::UpdateFrameUniforms() {
         (m_PaletteBindless != UINT32_MAX && IsScenePaletteActive())
             ? static_cast<f32>(m_PaletteBindless) : -1.0f);
 
+    // The three basis atlases, or -1 when the scene has no bake. Written every
+    // frame like everything else here: a scene load can turn it off, and a
+    // stale index would sample whatever texture took that slot next.
+    lighting.lightmapParams = Math::Vector4(
+        m_LightmapEnabled ? static_cast<f32>(m_LightmapBindless[0]) : -1.0f,
+        m_LightmapEnabled ? static_cast<f32>(m_LightmapBindless[1]) : -1.0f,
+        m_LightmapEnabled ? static_cast<f32>(m_LightmapBindless[2]) : -1.0f,
+        m_LightmapStrength);
+
     // DDGI params for the direct fragment-shader probe lookup. z of atlasParams
     // gates the whole block in the shader, so it stays off unless DDGI is
     // enabled AND geometry has been fed (probe atlas holds real data).
@@ -13832,6 +13854,10 @@ void RenderSystem::RenderEntity(Entity entity) {
         // editor viewport and nowhere a player would ever see it.
         if (material->paletteIndexed) {
             pushConstants.surfaceParam1 = PaletteBandFor(material->paletteSlot);
+        }
+        // Same, on the main-pass direct draw a player and an exported game take.
+        if (material->lightmapped) {
+            pushConstants.surfaceParam1 = ECS::MaterialGPU::SURFACE_PARAM1_LIGHTMAPPED;
         }
     } else {
         // Default material (light gray, non-metallic)
