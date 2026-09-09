@@ -2,6 +2,7 @@
 #include "Enjin/Scripting/ScriptComponentAccess.h"
 #include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Logging/Log.h"
+#include "Enjin/Renderer/PaletteCycle.h"   // kMaxPaletteSlots, for the slot range check
 #include "Enjin/Math/Vector.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Entity.h"
@@ -154,6 +155,36 @@ static bool Material_GetStippleTransparency(u64 id) {
     if (!s_BindingsWorld) return false;
     auto* mc = ENJIN_SCRIPT_COMPONENT(MaterialComponent, id);
     return mc ? mc->stippleTransparency : false;
+}
+
+static void Material_SetPaletteIndexed(u64 id, bool on) {
+    if (!s_BindingsWorld) return;
+    auto* mc = ENJIN_SCRIPT_COMPONENT(MaterialComponent, id);
+    if (mc) mc->paletteIndexed = on;
+}
+
+static bool Material_GetPaletteIndexed(u64 id) {
+    if (!s_BindingsWorld) return false;
+    auto* mc = ENJIN_SCRIPT_COMPONENT(MaterialComponent, id);
+    return mc ? mc->paletteIndexed : false;
+}
+
+// The palette SWAP, which is the runtime half of the technique: same art, a
+// different table, so one call turns a unit into another faction, a summer tree
+// into an autumn one, or a whole scene into its night version. Out-of-range
+// slots are ignored rather than clamped -- a script computing a slot from data
+// should not silently recolour everything to table 0.
+static void Material_SetPaletteSlot(u64 id, i32 slot) {
+    if (!s_BindingsWorld) return;
+    if (slot < 0 || slot >= static_cast<i32>(Renderer::kMaxPaletteSlots)) return;
+    auto* mc = ENJIN_SCRIPT_COMPONENT(MaterialComponent, id);
+    if (mc) mc->paletteSlot = static_cast<u8>(slot);
+}
+
+static i32 Material_GetPaletteSlot(u64 id) {
+    if (!s_BindingsWorld) return 0;
+    auto* mc = ENJIN_SCRIPT_COMPONENT(MaterialComponent, id);
+    return mc ? static_cast<i32>(mc->paletteSlot) : 0;
 }
 
 static void Material_SetAlphaMode(u64 id, i32 mode) {
@@ -2389,6 +2420,10 @@ void RegisterComponentBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction("void Material_SetOpacity(uint64, float)", ENJIN_AS_FN(Material_SetOpacity), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Material_GetOpacity(uint64)", ENJIN_AS_FN(Material_GetOpacity), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Material_SetStippleTransparency(uint64, bool)", ENJIN_AS_FN(Material_SetStippleTransparency), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Material_SetPaletteIndexed(uint64, bool)", ENJIN_AS_FN(Material_SetPaletteIndexed), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Material_GetPaletteIndexed(uint64)", ENJIN_AS_FN(Material_GetPaletteIndexed), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Material_SetPaletteSlot(uint64, int)", ENJIN_AS_FN(Material_SetPaletteSlot), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int Material_GetPaletteSlot(uint64)", ENJIN_AS_FN(Material_GetPaletteSlot), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Material_GetStippleTransparency(uint64)", ENJIN_AS_FN(Material_GetStippleTransparency), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Material_SetAlphaMode(uint64, int)", ENJIN_AS_FN(Material_SetAlphaMode), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("int Material_GetAlphaMode(uint64)", ENJIN_AS_FN(Material_GetAlphaMode), ENJIN_AS_CALL_CDECL));

@@ -8490,7 +8490,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 // 200 dithered transparency, 300 elemental, 400 surface noise,
                 // 500 this.
                 if (material->paletteIndexed) {
-                    pushConstants.surfaceParam1 = ECS::MaterialGPU::SURFACE_PARAM1_PALETTE_INDEXED;
+                    pushConstants.surfaceParam1 = PaletteBandFor(material->paletteSlot);
                 }
             } else {
                 pushConstants.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
@@ -9371,7 +9371,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                 // 200 dithered transparency, 300 elemental, 400 surface noise,
                 // 500 this.
                 if (material->paletteIndexed) {
-                    pushConstants.surfaceParam1 = ECS::MaterialGPU::SURFACE_PARAM1_PALETTE_INDEXED;
+                    pushConstants.surfaceParam1 = PaletteBandFor(material->paletteSlot);
                 }
             } else {
                 pushConstants.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
@@ -11775,7 +11775,7 @@ void RenderSystem::UpdateFrameUniforms() {
         m_Camera ? m_Camera->GetNearPlane() : 0.1f,
         // w carries the scene palette's bindless slot; -1 means no palette, and
         // a palette-indexed material then falls back to its texture unchanged.
-        (m_PaletteBindless != UINT32_MAX && m_ScenePalette.count > 0)
+        (m_PaletteBindless != UINT32_MAX && IsScenePaletteActive())
             ? static_cast<f32>(m_PaletteBindless) : -1.0f);
 
     // DDGI params for the direct fragment-shader probe lookup. z of atlasParams
@@ -13430,7 +13430,7 @@ void RenderSystem::RenderEntity(Entity entity) {
         // and an exported game take -- without it the palette worked in the
         // editor viewport and nowhere a player would ever see it.
         if (material->paletteIndexed) {
-            pushConstants.surfaceParam1 = ECS::MaterialGPU::SURFACE_PARAM1_PALETTE_INDEXED;
+            pushConstants.surfaceParam1 = PaletteBandFor(material->paletteSlot);
         }
     } else {
         // Default material (light gray, non-metallic)

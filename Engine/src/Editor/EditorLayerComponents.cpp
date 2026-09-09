@@ -761,6 +761,49 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("0=all blend color, 1=all original, 0.5=even mix");
         }
 
+        // Palette-indexed colour. Until now this was reachable only by hand
+        // editing the scene file, which meant the technique shipped without a
+        // way to use it.
+        InspectorUndo::Checkbox(m_UndoRedo, "Palette Indexed##Mat", &material->paletteIndexed);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Read the base colour texture's red channel as an INDEX into a scene\n"
+                              "palette instead of as a colour. Rotating that palette animates every\n"
+                              "surface using it. Palettes live in Settings > Scene > Scene Palette.");
+        }
+        if (material->paletteIndexed) {
+            const u32 palCount = m_RenderSystem ? m_RenderSystem->GetScenePaletteCount() : 0;
+            if (palCount == 0) {
+                ImGui::TextDisabled("No scene palettes yet. Add one in Settings > Scene.");
+            } else {
+                // Named, because a slot number tells an author nothing about
+                // which one is the dusk version.
+                int slot = static_cast<int>(material->paletteSlot);
+                if (slot >= static_cast<int>(palCount)) slot = 0;
+                const std::string& cur = m_RenderSystem->GetScenePalette(static_cast<u32>(slot)).name;
+                char preview[80];
+                std::snprintf(preview, sizeof(preview), "%d: %s", slot,
+                              cur.empty() ? "(unnamed)" : cur.c_str());
+                if (ImGui::BeginCombo("Palette##Mat", preview)) {
+                    for (u32 i = 0; i < palCount; ++i) {
+                        const std::string& n = m_RenderSystem->GetScenePalette(i).name;
+                        char row[80];
+                        std::snprintf(row, sizeof(row), "%u: %s", i,
+                                      n.empty() ? "(unnamed)" : n.c_str());
+                        if (ImGui::Selectable(row, slot == static_cast<int>(i))) {
+                            material->paletteSlot = static_cast<u8>(i);
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+                ImGui::SetItemTooltip("Same art, different table: faction, season, damage state, night.");
+            }
+            if (material->baseColorTexture < 0) {
+                // Without an index texture there is nothing to look up, and the
+                // material would render as its plain base colour with no sign why.
+                ImGui::TextDisabled("Needs a base colour texture to read indices from.");
+            }
+        }
+
         // Alpha mode
         const char* alphaModes[] = { "Opaque", "Mask", "Blend" };
         int currentMode = static_cast<int>(material->alphaMode);

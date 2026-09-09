@@ -209,4 +209,85 @@ ENJIN_TEST(PaletteClock, ASecondTickInTheSameFrameIsIgnored) {
     ENJIN_EXPECT_TRUE(rs.GetPaletteTime() < 0.26f);
 }
 
+// --- Slots. Several tables over the same art is the other half of this
+// feature, and the material's slot is just an index, so it can outlive what it
+// points at.
+
+ENJIN_TEST(PaletteSlots, SettingOneSlotLeavesTheOthersAlone) {
+    // Arrange: two tables, so a swap of one is distinguishable from a reset.
+    ECS::World world;
+    ECS::RenderSystem rs(&world, nullptr);
+    Palette a = Countable(8); a.name = "A";
+    Palette b = Countable(8); b.name = "B";
+    rs.SetScenePalette(0, a, {});
+    rs.SetScenePalette(1, b, {});
+
+    // Act: replace slot 1 only. This is the runtime swap -- night falling, a
+    // faction changing -- and it must not disturb anything else.
+    Palette c = Countable(4); c.name = "C";
+    rs.SetScenePalette(1, c, {});
+
+    // Assert
+    ENJIN_ASSERT_EQ(rs.GetScenePaletteCount(), 2u);
+    ENJIN_EXPECT_TRUE(rs.GetScenePalette(0).name == "A");
+    ENJIN_EXPECT_TRUE(rs.GetScenePalette(1).name == "C");
+}
+
+ENJIN_TEST(PaletteSlots, AnUnknownSlotReadsAsEmptyRatherThanCrashing) {
+    ECS::World world;
+    ECS::RenderSystem rs(&world, nullptr);
+    rs.SetScenePalette(0, Countable(8), {});
+
+    // Editor panels and draw code hold slot indices that can go stale between
+    // frames, so reading past the end has to be survivable.
+    ENJIN_EXPECT_EQ(rs.GetScenePalette(7).count, 0u);
+    ENJIN_EXPECT_TRUE(rs.GetPaletteCycles(7).empty());
+}
+
+ENJIN_TEST(PaletteSlots, ASlotPastTheLastPaletteFallsBackToTheFirst) {
+    // A material keeps its slot when an author deletes a palette. Left alone it
+    // would sample a blank row of the palette texture and render BLACK, which
+    // reads as broken geometry and sends someone hunting in the wrong place.
+    // Wrong colours are a bug you can see and fix.
+    ECS::World world;
+    ECS::RenderSystem rs(&world, nullptr);
+    rs.SetScenePalette(0, Countable(8), {});
+    rs.SetScenePalette(1, Countable(8), {});
+
+    const f32 base = ECS::MaterialGPU::SURFACE_PARAM1_PALETTE_INDEXED;
+    ENJIN_EXPECT_TRUE(rs.PaletteBandFor(0) == base);
+    ENJIN_EXPECT_TRUE(rs.PaletteBandFor(1) == base + 1.0f);
+    // Slot 5 does not exist: falls back to the first table, not to a blank row.
+    ENJIN_EXPECT_TRUE(rs.PaletteBandFor(5) == base);
+}
+
+ENJIN_TEST(PaletteSlots, TheBandStaysInsideItsOwnRange) {
+    // surfaceParam1 carries five different modes by numeric band (100 dither
+    // gradient, 200 dithered transparency, 300 elemental, 400 surface noise,
+    // 500 palette). The slot is added to the palette band, so the highest slot
+    // must not reach the next band and turn a palette into some other effect.
+    ECS::World world;
+    ECS::RenderSystem rs(&world, nullptr);
+    std::vector<Renderer::ScenePaletteSlot> all(kMaxPaletteSlots);
+    for (auto& s : all) s.palette = Countable(4);
+    rs.SetScenePalettes(all);
+
+    const f32 top = rs.PaletteBandFor(static_cast<u8>(kMaxPaletteSlots - 1));
+    ENJIN_EXPECT_TRUE(top >= ECS::MaterialGPU::SURFACE_PARAM1_PALETTE_INDEXED);
+    ENJIN_EXPECT_TRUE(top < 599.5f);
+}
+
+ENJIN_TEST(PaletteSlots, MoreSlotsThanTheTextureHasRowsAreDropped) {
+    // The palette texture has exactly kMaxPaletteSlots rows, so an over-long
+    // list has to be cut on the way in rather than writing past the last row.
+    ECS::World world;
+    ECS::RenderSystem rs(&world, nullptr);
+    std::vector<Renderer::ScenePaletteSlot> tooMany(kMaxPaletteSlots + 5);
+    for (auto& s : tooMany) s.palette = Countable(4);
+
+    rs.SetScenePalettes(tooMany);
+
+    ENJIN_EXPECT_EQ(rs.GetScenePaletteCount(), kMaxPaletteSlots);
+}
+
 ENJIN_TEST_MAIN()

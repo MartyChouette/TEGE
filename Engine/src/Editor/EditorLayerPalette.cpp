@@ -18,6 +18,8 @@
 
 #include <cmath>
 #include <cstddef>
+#include <cstdio>
+#include <string>
 
 namespace Enjin {
 namespace Editor {
@@ -80,14 +82,71 @@ void EditorLayer::DrawSettingsSection_ScenePalette() {
     const f32 s = ImGui::GetIO().FontGlobalScale;
 
     ImGui::TextWrapped("A palette-indexed material stores an INDEX in its base colour texture's "
-                       "red channel instead of a colour, and this table supplies the colours. "
-                       "Rotating a run of the table animates every surface using it, for the cost "
+                       "red channel instead of a colour, and a table here supplies the colours. "
+                       "Rotating a run of a table animates every surface using it, for the cost "
                        "of rewriting a few entries -- no matter how much of the screen is moving.");
+    ImGui::TextWrapped("A scene can hold several tables. The SAME art read through a different "
+                       "one is a different faction, season, damage state or time of day, at no "
+                       "extra texture memory. A material picks its table in the Inspector.");
     ImGui::Spacing();
 
-    Renderer::Palette palette = m_RenderSystem->GetScenePalette();
-    std::vector<Renderer::PaletteCycleRange> cycles = m_RenderSystem->GetPaletteCycles();
+    // --- Which table is being edited. The slot number is what a material
+    // stores, so it is shown rather than hidden behind a name: a person editing
+    // "slot 2" has to be able to type 2 into the material.
+    const u32 slotCount = m_RenderSystem->GetScenePaletteCount();
+    static int s_Slot = 0;
+    if (s_Slot >= static_cast<int>(slotCount)) s_Slot = slotCount > 0 ? static_cast<int>(slotCount) - 1 : 0;
+
+    if (slotCount > 0) {
+        const std::string& cur = m_RenderSystem->GetScenePalette(static_cast<u32>(s_Slot)).name;
+        char preview[80];
+        std::snprintf(preview, sizeof(preview), "%d: %s", s_Slot,
+                      cur.empty() ? "(unnamed)" : cur.c_str());
+        ImGui::PushItemWidth(260.0f * s);
+        if (ImGui::BeginCombo("Editing", preview)) {
+            for (u32 i = 0; i < slotCount; ++i) {
+                const std::string& n = m_RenderSystem->GetScenePalette(i).name;
+                char row[80];
+                std::snprintf(row, sizeof(row), "%u: %s", i, n.empty() ? "(unnamed)" : n.c_str());
+                if (ImGui::Selectable(row, s_Slot == static_cast<int>(i))) {
+                    s_Slot = static_cast<int>(i);
+                }
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::PopItemWidth();
+        ImGui::SameLine();
+    }
+    if (slotCount < Renderer::kMaxPaletteSlots && ImGui::Button("Add palette")) {
+        Renderer::Palette np;
+        std::vector<Renderer::PaletteCycleRange> nc;
+        Renderer::MakePalettePreset(Renderer::PalettePreset::Water, np, nc);
+        np.name = "Palette " + std::to_string(slotCount);
+        m_RenderSystem->SetScenePalette(slotCount, np, nc);
+        s_Slot = static_cast<int>(slotCount);
+    }
+    if (slotCount == 0) {
+        ImGui::TextDisabled("No palettes yet. Add one to start.");
+        return;
+    }
+
+    const u32 slot = static_cast<u32>(s_Slot);
+    Renderer::Palette palette = m_RenderSystem->GetScenePalette(slot);
+    std::vector<Renderer::PaletteCycleRange> cycles = m_RenderSystem->GetPaletteCycles(slot);
     bool changed = false;
+
+    // --- Name. Slot numbers are what materials store, but a person needs to
+    // know which one is the dusk version.
+    {
+        char nameBuf[64];
+        std::snprintf(nameBuf, sizeof(nameBuf), "%s", palette.name.c_str());
+        ImGui::PushItemWidth(260.0f * s);
+        if (ImGui::InputText("Name", nameBuf, sizeof(nameBuf))) {
+            palette.name = nameBuf;
+            changed = true;
+        }
+        ImGui::PopItemWidth();
+    }
 
     // --- Presets, which are the fastest way to see the effect at all.
     static int s_Preset = 0;
@@ -97,7 +156,11 @@ void EditorLayer::DrawSettingsSection_ScenePalette() {
     ImGui::PopItemWidth();
     ImGui::SameLine();
     if (ImGui::Button("Load preset")) {
+        const std::string keep = palette.name;
         Renderer::MakePalettePreset(static_cast<Renderer::PalettePreset>(s_Preset), palette, cycles);
+        // A preset replaces the colours, not the slot's identity: overwriting
+        // "Dusk" with "Water" renames a table that materials already point at.
+        if (!keep.empty()) palette.name = keep;
         changed = true;
     }
     if (palette.count > 0) {
@@ -110,8 +173,8 @@ void EditorLayer::DrawSettingsSection_ScenePalette() {
     }
 
     if (palette.count == 0) {
-        ImGui::TextDisabled("No palette. Load a preset to start.");
-        if (changed) m_RenderSystem->SetScenePalette(palette, cycles);
+        ImGui::TextDisabled("This palette is empty. Load a preset to start.");
+        if (changed) m_RenderSystem->SetScenePalette(slot, palette, cycles);
         return;
     }
 
@@ -200,7 +263,7 @@ void EditorLayer::DrawSettingsSection_ScenePalette() {
     DrawPaletteStrip(animated, 420.0f * s, 22.0f * s, -1, 0);
     ImGui::TextDisabled("Cycling as it will render. Assign a material's Palette Indexed flag to use it.");
 
-    if (changed) m_RenderSystem->SetScenePalette(palette, cycles);
+    if (changed) m_RenderSystem->SetScenePalette(slot, palette, cycles);
 }
 
 } // namespace Editor

@@ -24,6 +24,10 @@ layout(location = 1) out vec2 outVelocity;    // Per-pixel screen-space motion v
 #define MAX_POINT_LIGHTS 64
 #define MAX_SPOT_LIGHTS 32
 
+// Rows in the scene palette texture. MUST equal kMaxPaletteSlots in
+// Enjin/Renderer/PaletteCycle.h: one number, two languages.
+#define PALETTE_SLOT_COUNT 16.0
+
 // Directional light data
 struct DirectionalLight {
     vec3 direction;
@@ -1279,11 +1283,12 @@ void main() {
     // the whole technique silently depend on conditions a palette material has
     // no reason to satisfy.
     float palIdx = lighting.fogScreenParams.w;
-    // Encoded in surfaceParam1 (400 band), NOT a flag bit: the flags word is
+    // Encoded in surfaceParam1 (500 band), NOT a flag bit: the flags word is
     // full and bits 24-28 carry vertexSnapResolution, so a flag here would
     // silently corrupt the PS1 vertex-snap look. The dither and elemental modes
-    // at 100/200/300 set this precedent.
-    if (mat_surfaceParam1 >= 499.5 && palIdx >= 0.0
+    // at 100/200/300/400 set this precedent. The value above 500 is the palette
+    // SLOT, so 503 means "palette-indexed, reading table 3".
+    if (mat_surfaceParam1 >= 499.5 && mat_surfaceParam1 < 599.5 && palIdx >= 0.0
         && materialData.matBaseColorTexIdx != 0xFFFFFFFFu) {
         vec4 idxTex = texture(BTEX(materialData.matBaseColorTexIdx), uv);
 
@@ -1299,7 +1304,15 @@ void main() {
         // neighbouring entries and turns a hard palette into a gradient, which
         // is the one thing this technique must not do.
         float entry = floor(srgb * 255.0 + 0.5);
-        vec2 palUV = vec2((entry + 0.5) / 256.0, 0.5);
+
+        // One texture holds every palette, one per ROW, so v picks the table and
+        // u picks the entry. PALETTE_SLOT_COUNT must equal kMaxPaletteSlots in
+        // PaletteCycle.h -- they are the same number written in two languages,
+        // and a mismatch reads a neighbouring palette rather than failing.
+        float slot = clamp(floor(mat_surfaceParam1 - 500.0 + 0.5),
+                           0.0, PALETTE_SLOT_COUNT - 1.0);
+        vec2 palUV = vec2((entry + 0.5) / 256.0,
+                          (slot + 0.5) / PALETTE_SLOT_COUNT);
 
         // Assigned, not multiplied: an index is not a tint, and multiplying
         // would darken every pixel by its own position in the table.

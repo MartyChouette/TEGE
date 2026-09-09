@@ -149,11 +149,18 @@ struct SceneRenderSettings {
     // finished image to a fixed palette. This one is the indexed-colour path: a
     // material's base texture stores indices and this table supplies the colours,
     // so rotating a run of it animates every surface using it.
+    // One authored palette as the scene file carries it. Several of these is
+    // what makes the same index texture cover a faction, a season, a damage
+    // state and a night version without a second texture.
+    struct ScenePaletteEntry {
+        std::string name;
+        // RGBA8 packed, one per used entry. Only the used ones are stored, not
+        // all 256, because a scene file is read by people.
+        std::vector<u32> colors;
+        std::vector<Renderer::PaletteCycleRange> cycles;
+    };
     bool scenePaletteEnabled = false;
-    std::string scenePaletteName;
-    // RGBA8 packed, one per used entry. Only `count` are stored, not all 256.
-    std::vector<u32> scenePaletteColors;
-    std::vector<Renderer::PaletteCycleRange> scenePaletteCycles;
+    std::vector<ScenePaletteEntry> scenePalettes;
     f32 snowIntensity = 0.0f;
     f32 worldCurvature = 0.0f;
     bool rainActive = false;

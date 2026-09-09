@@ -77,18 +77,27 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
         // saved. The AUTHORED table is captured, never the cycled one, or every
         // save would bake in whatever phase the animation happened to be at.
         {
-            const Renderer::Palette& p = rs->GetScenePalette();
-            s.scenePaletteEnabled = p.count > 0;
-            s.scenePaletteName = p.name;
-            s.scenePaletteColors.clear();
-            for (u32 i = 0; i < p.count && i < Renderer::kPaletteMaxColors; ++i) {
-                const Renderer::PaletteColor& c = p.colors[i];
-                s.scenePaletteColors.push_back((static_cast<u32>(c.r) << 24) |
-                                               (static_cast<u32>(c.g) << 16) |
-                                               (static_cast<u32>(c.b) << 8) |
-                                                static_cast<u32>(c.a));
+            s.scenePalettes.clear();
+            for (const Renderer::ScenePaletteSlot& slot : rs->GetScenePalettes()) {
+                SceneRenderSettings::ScenePaletteEntry e;
+                e.name = slot.palette.name;
+                for (u32 i = 0; i < slot.palette.count && i < Renderer::kPaletteMaxColors; ++i) {
+                    const Renderer::PaletteColor& c = slot.palette.colors[i];
+                    e.colors.push_back((static_cast<u32>(c.r) << 24) |
+                                       (static_cast<u32>(c.g) << 16) |
+                                       (static_cast<u32>(c.b) << 8) |
+                                        static_cast<u32>(c.a));
+                }
+                e.cycles = slot.cycles;
+                s.scenePalettes.push_back(std::move(e));
             }
-            s.scenePaletteCycles = rs->GetPaletteCycles();
+            // Enabled means at least one slot has colours in it. A scene with
+            // every table emptied saves as disabled rather than as a list of
+            // blanks that would reload as black materials.
+            s.scenePaletteEnabled = false;
+            for (const auto& e : s.scenePalettes) {
+                if (!e.colors.empty()) { s.scenePaletteEnabled = true; break; }
+            }
         }
 
         // DDGI: the editor panel edits the live system through GetConfig(), so
@@ -500,20 +509,28 @@ void SceneRenderSettings::ApplyToRuntimeUnclamped(ECS::RenderSystem* rs, PostPro
 
         // Scene palette. Rebuilt from the authored colours so cycling always
         // starts from the art rather than from wherever it left off.
-        if (scenePaletteEnabled && !scenePaletteColors.empty()) {
-            Renderer::Palette p;
-            p.name = scenePaletteName;
-            p.count = static_cast<u32>(scenePaletteColors.size());
-            for (u32 i = 0; i < p.count && i < Renderer::kPaletteMaxColors; ++i) {
-                const u32 packed = scenePaletteColors[i];
-                Renderer::PaletteColor c;
-                c.r = static_cast<u8>((packed >> 24) & 0xFF);
-                c.g = static_cast<u8>((packed >> 16) & 0xFF);
-                c.b = static_cast<u8>((packed >> 8) & 0xFF);
-                c.a = static_cast<u8>(packed & 0xFF);
-                p.colors[i] = c;
+        if (scenePaletteEnabled && !scenePalettes.empty()) {
+            std::vector<Renderer::ScenePaletteSlot> slots;
+            for (const ScenePaletteEntry& e : scenePalettes) {
+                if (slots.size() >= Renderer::kMaxPaletteSlots) break;
+                Renderer::ScenePaletteSlot slot;
+                slot.palette.name = e.name;
+                slot.palette.count = static_cast<u32>(
+                    e.colors.size() < Renderer::kPaletteMaxColors
+                        ? e.colors.size() : Renderer::kPaletteMaxColors);
+                for (u32 i = 0; i < slot.palette.count; ++i) {
+                    const u32 packed = e.colors[i];
+                    Renderer::PaletteColor c;
+                    c.r = static_cast<u8>((packed >> 24) & 0xFF);
+                    c.g = static_cast<u8>((packed >> 16) & 0xFF);
+                    c.b = static_cast<u8>((packed >> 8) & 0xFF);
+                    c.a = static_cast<u8>(packed & 0xFF);
+                    slot.palette.colors[i] = c;
+                }
+                slot.cycles = e.cycles;
+                slots.push_back(std::move(slot));
             }
-            rs->SetScenePalette(p, scenePaletteCycles);
+            rs->SetScenePalettes(slots);
         }
 
         rs->ApplyDDGISettings(ddgiEnabled, ddgiGridSpacing, ddgiGridOrigin,
@@ -1189,21 +1206,29 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
 
     // Scene palette. Written only when in use, so a scene that never touched it
     // does not carry a colour table nobody authored.
-    if (s.scenePaletteEnabled && !s.scenePaletteColors.empty()) {
-        nlohmann::json pal;
-        pal["name"] = s.scenePaletteName;
-        pal["colors"] = s.scenePaletteColors;
-        nlohmann::json runs = nlohmann::json::array();
-        for (const auto& r : s.scenePaletteCycles) {
-            nlohmann::json rj;
-            rj["first"]   = r.first;
-            rj["count"]   = r.count;
-            rj["speed"]   = RF(r.speed);
-            rj["enabled"] = r.enabled;
-            runs.push_back(rj);
+    if (s.scenePaletteEnabled && !s.scenePalettes.empty()) {
+        nlohmann::json arr = nlohmann::json::array();
+        for (const auto& e : s.scenePalettes) {
+            nlohmann::json pal;
+            pal["name"] = e.name;
+            pal["colors"] = e.colors;
+            nlohmann::json runs = nlohmann::json::array();
+            for (const auto& r : e.cycles) {
+                nlohmann::json rj;
+                rj["first"]   = r.first;
+                rj["count"]   = r.count;
+                rj["speed"]   = RF(r.speed);
+                rj["enabled"] = r.enabled;
+                runs.push_back(rj);
+            }
+            pal["cycles"] = runs;
+            arr.push_back(pal);
         }
-        pal["cycles"] = runs;
-        j["scenePalette"] = pal;
+        // The list, under a key of its own. The single-palette "scenePalette"
+        // object this replaced is still READ (see the loader) so a scene saved
+        // by the first version of the feature keeps its colours, but nothing
+        // writes it any more.
+        j["scenePalettes"] = arr;
     }
 
     j["lightBVHEnabled"]            = s.lightBVHEnabled;
@@ -1584,30 +1609,49 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("gpuParticleTurbulenceFrequency")) s.gpuParticleTurbulenceFrequency = j["gpuParticleTurbulenceFrequency"].get<f32>();
     if (j.contains("gpuParticleMaxParticles"))        s.gpuParticleMaxParticles        = j["gpuParticleMaxParticles"].get<u32>();
 
-    if (j.contains("scenePalette") && j["scenePalette"].is_object()) {
-        const auto& pal = j["scenePalette"];
-        s.scenePaletteEnabled = true;
-        s.scenePaletteName = pal.value("name", std::string());
-        s.scenePaletteColors.clear();
-        if (pal.contains("colors") && pal["colors"].is_array()) {
-            for (const auto& c : pal["colors"]) {
-                if (s.scenePaletteColors.size() >= Renderer::kPaletteMaxColors) break;
-                s.scenePaletteColors.push_back(c.get<u32>());
+    // Palettes. One reader for both shapes: the CURRENT "scenePalettes" list,
+    // and the single "scenePalette" object the first version of this feature
+    // wrote, which is read into slot 0 so a scene authored against it keeps its
+    // colours. Nothing writes the old key any more, so a scene upgrades the
+    // first time it is saved.
+    {
+        auto readOne = [](const nlohmann::json& pal) {
+            SceneRenderSettings::ScenePaletteEntry e;
+            e.name = pal.value("name", std::string());
+            if (pal.contains("colors") && pal["colors"].is_array()) {
+                for (const auto& c : pal["colors"]) {
+                    if (e.colors.size() >= Renderer::kPaletteMaxColors) break;
+                    if (c.is_number_unsigned()) e.colors.push_back(c.get<u32>());
+                }
             }
-        }
-        s.scenePaletteCycles.clear();
-        if (pal.contains("cycles") && pal["cycles"].is_array()) {
-            for (const auto& rj : pal["cycles"]) {
-                Renderer::PaletteCycleRange r;
-                r.first   = rj.value("first", 0u);
-                r.count   = rj.value("count", 0u);
-                r.speed   = rj.value("speed", 1.0f);
-                r.enabled = rj.contains("enabled") ? JB(rj["enabled"]) : true;
-                // A scene file is user-editable text, so a run is clamped to the
-                // palette it actually has before anything indexes with it.
-                Renderer::ClampCycleRange(r, static_cast<u32>(s.scenePaletteColors.size()));
-                s.scenePaletteCycles.push_back(r);
+            if (pal.contains("cycles") && pal["cycles"].is_array()) {
+                for (const auto& rj : pal["cycles"]) {
+                    Renderer::PaletteCycleRange r;
+                    r.first   = rj.value("first", 0u);
+                    r.count   = rj.value("count", 0u);
+                    r.speed   = rj.value("speed", 1.0f);
+                    r.enabled = rj.contains("enabled") ? JB(rj["enabled"]) : true;
+                    // A scene file is user-editable text, so a run is clamped to
+                    // the palette it actually has before anything indexes with it.
+                    Renderer::ClampCycleRange(r, static_cast<u32>(e.colors.size()));
+                    e.cycles.push_back(r);
+                }
             }
+            return e;
+        };
+
+        if (j.contains("scenePalettes") && j["scenePalettes"].is_array()) {
+            s.scenePalettes.clear();
+            for (const auto& pal : j["scenePalettes"]) {
+                if (!pal.is_object()) continue;
+                if (s.scenePalettes.size() >= Renderer::kMaxPaletteSlots) break;
+                s.scenePalettes.push_back(readOne(pal));
+            }
+            s.scenePaletteEnabled = !s.scenePalettes.empty();
+        } else if (j.contains("scenePalette") && j["scenePalette"].is_object()) {
+            s.scenePalettes.clear();
+            s.scenePalettes.push_back(readOne(j["scenePalette"]));
+            s.scenePaletteEnabled = true;
         }
     }
 

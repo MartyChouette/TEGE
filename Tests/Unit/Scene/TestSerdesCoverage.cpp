@@ -1258,28 +1258,75 @@ ENJIN_TEST(SerdesCoverage, AdaptiveRayBudgetTuningSurvivesASave) {
 // The scene palette is the authored table plus the runs that rotate it. Losing
 // either on a save means the art is gone, not just the animation.
 ENJIN_TEST(SerdesCoverage, ScenePaletteAndItsCyclingRunsSurviveASave) {
+    // Arrange: two palettes, because the whole point of several is that the
+    // same index texture reads as different colours through each one.
     Enjin::Renderer::SceneRenderSettings s;
     s.scenePaletteEnabled = true;
-    s.scenePaletteName = "Lagoon";
-    s.scenePaletteColors = { 0x000000FFu, 0x10285AFFu, 0x78C8EBFFu, 0xFFFFFFFFu };
+
+    Enjin::Renderer::SceneRenderSettings::ScenePaletteEntry lagoon;
+    lagoon.name = "Lagoon";
+    lagoon.colors = { 0x000000FFu, 0x10285AFFu, 0x78C8EBFFu, 0xFFFFFFFFu };
     Enjin::Renderer::PaletteCycleRange r;
     r.first = 1; r.count = 3; r.speed = -4.5f; r.enabled = true;
-    s.scenePaletteCycles.push_back(r);
+    lagoon.cycles.push_back(r);
 
+    Enjin::Renderer::SceneRenderSettings::ScenePaletteEntry dusk;
+    dusk.name = "Lagoon at dusk";
+    dusk.colors = { 0x000000FFu, 0x2A1840FFu, 0x8C5AA0FFu, 0xFFE0C0FFu };
+
+    s.scenePalettes = { lagoon, dusk };
+
+    // Act
     const auto out = RoundTripRenderSettings(s);
 
+    // Assert
     ENJIN_EXPECT_TRUE(out.scenePaletteEnabled);
-    ENJIN_EXPECT_TRUE(out.scenePaletteName == "Lagoon");
-    ENJIN_ASSERT_EQ(out.scenePaletteColors.size(), static_cast<usize>(4));
-    ENJIN_EXPECT_EQ(out.scenePaletteColors[1], 0x10285AFFu);
-    ENJIN_EXPECT_EQ(out.scenePaletteColors[3], 0xFFFFFFFFu);
+    ENJIN_ASSERT_EQ(out.scenePalettes.size(), static_cast<usize>(2));
 
-    ENJIN_ASSERT_EQ(out.scenePaletteCycles.size(), static_cast<usize>(1));
-    ENJIN_EXPECT_EQ(out.scenePaletteCycles[0].first, 1u);
-    ENJIN_EXPECT_EQ(out.scenePaletteCycles[0].count, 3u);
+    ENJIN_EXPECT_TRUE(out.scenePalettes[0].name == "Lagoon");
+    ENJIN_ASSERT_EQ(out.scenePalettes[0].colors.size(), static_cast<usize>(4));
+    ENJIN_EXPECT_EQ(out.scenePalettes[0].colors[1], 0x10285AFFu);
+    ENJIN_EXPECT_EQ(out.scenePalettes[0].colors[3], 0xFFFFFFFFu);
+
+    // Slot ORDER is the material's reference: paletteSlot is an index into this
+    // list, so two palettes coming back swapped would silently recolour the
+    // scene rather than lose anything.
+    ENJIN_EXPECT_TRUE(out.scenePalettes[1].name == "Lagoon at dusk");
+    ENJIN_EXPECT_EQ(out.scenePalettes[1].colors[3], 0xFFE0C0FFu);
+
+    ENJIN_ASSERT_EQ(out.scenePalettes[0].cycles.size(), static_cast<usize>(1));
+    ENJIN_EXPECT_EQ(out.scenePalettes[0].cycles[0].first, 1u);
+    ENJIN_EXPECT_EQ(out.scenePalettes[0].cycles[0].count, 3u);
     // Negative speed is what makes fire climb rather than fall; a serializer
     // that dropped the sign would silently reverse the art.
-    ENJIN_EXPECT_TRUE(out.scenePaletteCycles[0].speed < 0.0f);
+    ENJIN_EXPECT_TRUE(out.scenePalettes[0].cycles[0].speed < 0.0f);
+    // A palette with no runs is legitimate -- a faction recolour does not move.
+    ENJIN_EXPECT_TRUE(out.scenePalettes[1].cycles.empty());
+}
+
+// A scene saved by the FIRST version of this feature carries a single
+// "scenePalette" object rather than the list. Dropping it would blank the art
+// of anything authored in that window, so the loader still reads it into slot 0.
+ENJIN_TEST(SerdesCoverage, TheOldSinglePaletteKeyStillLoadsIntoSlotZero) {
+    // Arrange: the old shape, written by hand because nothing emits it now.
+    nlohmann::json j;
+    j["scenePalette"]["name"] = "Legacy";
+    j["scenePalette"]["colors"] = std::vector<u32>{ 0x000000FFu, 0x224466FFu, 0x88AACCFFu };
+    nlohmann::json run;
+    run["first"] = 1; run["count"] = 2; run["speed"] = 3.0f; run["enabled"] = true;
+    j["scenePalette"]["cycles"] = nlohmann::json::array({ run });
+
+    // Act
+    const auto out = Enjin::Renderer::DeserializeRenderSettings(j);
+
+    // Assert
+    ENJIN_EXPECT_TRUE(out.scenePaletteEnabled);
+    ENJIN_ASSERT_EQ(out.scenePalettes.size(), static_cast<usize>(1));
+    ENJIN_EXPECT_TRUE(out.scenePalettes[0].name == "Legacy");
+    ENJIN_ASSERT_EQ(out.scenePalettes[0].colors.size(), static_cast<usize>(3));
+    ENJIN_EXPECT_EQ(out.scenePalettes[0].colors[2], 0x88AACCFFu);
+    ENJIN_ASSERT_EQ(out.scenePalettes[0].cycles.size(), static_cast<usize>(1));
+    ENJIN_EXPECT_EQ(out.scenePalettes[0].cycles[0].count, 2u);
 }
 
 // A scene that never used a palette must not gain one, and must not gain the
@@ -1288,8 +1335,7 @@ ENJIN_TEST(SerdesCoverage, ASceneWithoutAPaletteStaysWithoutOne) {
     const nlohmann::json empty = nlohmann::json::object();
     const auto out = Enjin::Renderer::DeserializeRenderSettings(empty);
     ENJIN_EXPECT_FALSE(out.scenePaletteEnabled);
-    ENJIN_EXPECT_TRUE(out.scenePaletteColors.empty());
-    ENJIN_EXPECT_TRUE(out.scenePaletteCycles.empty());
+    ENJIN_EXPECT_TRUE(out.scenePalettes.empty());
 }
 
 ENJIN_TEST_MAIN()

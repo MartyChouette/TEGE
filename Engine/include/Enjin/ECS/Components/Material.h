@@ -65,6 +65,13 @@ struct MaterialComponent {
     // colours. Rotating that palette animates every pixel of every material
     // using it, which is the whole point of the technique.
     bool paletteIndexed = false;
+    // Which of the scene's palettes this material reads. Same index texture
+    // through a different palette is a different set of colours, which is how
+    // one piece of art covers a faction, a season, a damage state and a night
+    // version without a second texture. Clamped to the scene's palette count at
+    // draw time, so a slot pointing at a palette that was deleted falls back to
+    // the first one rather than sampling a blank row.
+    u8 paletteSlot = 0;
     u8 vertexSnapResolution = 160; // PS1-style grid resolution (80-320)
 
     // SDF text (unified display P1): the base color texture's alpha is a signed

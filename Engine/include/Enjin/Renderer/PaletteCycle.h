@@ -29,6 +29,14 @@ namespace Renderer {
 
 inline constexpr u32 kPaletteMaxColors = 256;
 
+// How many palettes a scene can hold at once. They are rows of ONE texture, so
+// this is the row count and the shader divides by it -- changing it means
+// changing triangle.frag to match. Sixteen rows of 256 RGBA is 16 KB, which is
+// the entire memory cost of "unlimited recolours": a faction, a season, a
+// damage state and a night version of the same art are four rows, not four
+// textures.
+inline constexpr u32 kMaxPaletteSlots = 16;
+
 struct PaletteColor {
     u8 r = 0, g = 0, b = 0, a = 255;
     bool operator==(const PaletteColor& o) const {
@@ -55,6 +63,14 @@ struct PaletteCycleRange {
     u32 count = 0;        // how many entries rotate; < 2 does nothing
     f32 speed = 1.0f;     // entries per second, negative runs the other way
     bool enabled = true;
+};
+
+// One palette slot as a scene holds it: the authored table, and the runs that
+// rotate inside it. Slots are independent -- a faction palette can sit still
+// while the water palette next to it flows.
+struct ScenePaletteSlot {
+    Palette palette;
+    std::vector<PaletteCycleRange> cycles;
 };
 
 // Rotate every enabled range by `timeSeconds` and write the result to `out`.

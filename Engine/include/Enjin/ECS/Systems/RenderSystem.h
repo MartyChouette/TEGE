@@ -301,11 +301,11 @@ private:
     };
     std::unordered_map<u32, LightCookieEntry> m_LightCookies;
 
-    // Scene palette. m_PaletteCycled is the animated table actually uploaded;
-    // m_ScenePalette keeps the authored colours so cycling never compounds.
-    Renderer::Palette m_ScenePalette;
-    Renderer::Palette m_PaletteCycled;
-    std::vector<Renderer::PaletteCycleRange> m_PaletteCycles;
+    // Scene palettes, one per slot, uploaded as rows of a single texture.
+    // m_ScenePalettes keeps the AUTHORED colours so cycling never compounds;
+    // m_PaletteCycled is the animated result that actually goes to the GPU.
+    std::vector<Renderer::ScenePaletteSlot> m_ScenePalettes;
+    Renderer::Palette m_PaletteCycled;   // scratch for one slot at a time
     f32 m_PaletteTime = 0.0f;
     bool m_PaletteTickedThisFrame = false;
     u32 m_PaletteBindless = UINT32_MAX;
@@ -384,10 +384,33 @@ public:
     // Scene palette + cycling (the Mark Ferrari technique). The palette is
     // scene-level because that is how it worked when it was hardware: one table,
     // many materials indexing into it. Materials opt in with paletteIndexed.
-    void SetScenePalette(const Renderer::Palette& p,
+    // Replace every slot at once. This is what a scene load does.
+    void SetScenePalettes(const std::vector<Renderer::ScenePaletteSlot>& slots);
+    // Replace ONE slot, growing the list if the slot does not exist yet. This is
+    // the swap the technique is for: the same index texture through a different
+    // table is a different faction, season, damage state or time of day.
+    void SetScenePalette(u32 slot, const Renderer::Palette& p,
                          const std::vector<Renderer::PaletteCycleRange>& ranges);
-    const Renderer::Palette& GetScenePalette() const { return m_ScenePalette; }
-    const std::vector<Renderer::PaletteCycleRange>& GetPaletteCycles() const { return m_PaletteCycles; }
+    const std::vector<Renderer::ScenePaletteSlot>& GetScenePalettes() const { return m_ScenePalettes; }
+    u32 GetScenePaletteCount() const { return static_cast<u32>(m_ScenePalettes.size()); }
+    // Empty palette for an out-of-range slot rather than a throw: callers are UI
+    // and draw code that must keep running against stale indices.
+    const Renderer::Palette& GetScenePalette(u32 slot = 0) const;
+    const std::vector<Renderer::PaletteCycleRange>& GetPaletteCycles(u32 slot = 0) const;
+
+    // The surfaceParam1 value a palette-indexed material draws with: the 500
+    // band plus its slot, so 503 is "palette-indexed, table 3". Clamped against
+    // the palettes the scene actually has, because a material can outlive the
+    // palette it pointed at -- an author deletes a table and every material on
+    // it would otherwise sample a blank row and render black. Falling back to
+    // the first table shows wrong colours, which is a bug someone can see and
+    // fix; a black model reads as broken geometry and sends them hunting in the
+    // wrong place.
+    f32 PaletteBandFor(u8 slot) const {
+        const u32 count = static_cast<u32>(m_ScenePalettes.size());
+        const u32 s = (count > 0 && static_cast<u32>(slot) < count) ? static_cast<u32>(slot) : 0u;
+        return MaterialGPU::SURFACE_PARAM1_PALETTE_INDEXED + static_cast<f32>(s);
+    }
 
     // Advance the palette cycling clock. Deposited by whoever holds a dt, which
     // is a different object per runtime: the player and Enjin::App reach it
@@ -408,7 +431,14 @@ public:
         m_PaletteTime += dt;
     }
     f32 GetPaletteTime() const { return m_PaletteTime; }
-    bool IsScenePaletteActive() const { return m_ScenePalette.count > 0; }
+    // Active means at least one slot has colours. A scene can hold several
+    // tables and have only one filled in.
+    bool IsScenePaletteActive() const {
+        for (const auto& s : m_ScenePalettes) {
+            if (s.palette.count > 0) return true;
+        }
+        return false;
+    }
     // Rebuild the cycled table and re-upload it. Called once a frame from
     // FlushPendingChanges, never mid-recording.
     void UpdateScenePalette();
