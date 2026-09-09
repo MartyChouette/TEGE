@@ -452,6 +452,7 @@ public:
     void ClearPreRenderedPlates();
     u32 LoadPlateImage(const std::string& path, bool isDepth);
     const PreRenderedBackgroundComponent* ActivePlate() const;
+#if !ENJIN_RENDERER_WEBGPU
     void CreatePlatePipeline(VkRenderPass renderPass = VK_NULL_HANDLE);
     bool CreatePlatePipelineVariant(VkRenderPass renderPass, u32 colorAttachmentCount,
                                     VkSampleCountFlagBits samples, VkPipeline& outPipeline);
@@ -459,6 +460,7 @@ public:
                                 const VkViewport* viewportOverride = nullptr,
                                 const VkRect2D* scissorOverride = nullptr,
                                 bool offscreenPass = false);
+#endif
     u32 ResolveLightCookie(Entity e, const LightComponent& light) const;
     void ClearLightCookies();
 
@@ -2350,9 +2352,11 @@ private:
     // fullscreen triangle with the bindless set), differing in one thing that
     // matters: this one WRITES depth, which is what makes a painted room
     // occlude a live character.
+#if !ENJIN_RENDERER_WEBGPU
     VkPipeline m_PlatePipeline = VK_NULL_HANDLE;
     VkPipeline m_PlatePipelineOffscreen = VK_NULL_HANDLE;
     VkPipelineLayout m_PlatePipelineLayout = VK_NULL_HANDLE;
+#endif
 
     // Plate images, keyed by the path a scene stores. Held here rather than in
     // the shared texture cache because a depth plate needs UNORM and point
