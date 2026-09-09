@@ -2198,7 +2198,20 @@ void RenderSystem::Update(f32 deltaTime) {
     WebEnsureTextMeshes();
 
     RefreshStorageCache();
-    ResetFrameCounters();
+
+    // Latch the frame's counters only on the call that can actually draw.
+    //
+    // This function runs TWICE per web frame: once from World::Update with the
+    // real delta, which reaches the 'no command encoder' return below and draws
+    // nothing, and once from the player's render step inside the frame, which
+    // does all the work. Resetting unconditionally meant call one zeroed the
+    // counter and call two then latched that zero as the frame's total, so
+    // GetDrawCallCount() reported 0 forever -- the ?perf HUD has been showing
+    // DC: 0 on web for as long as the two-call arrangement has existed, while
+    // the renderer was plainly drawing.
+    if (static_cast<Renderer::WebGPURenderer*>(m_Renderer)->GetCommandEncoder()) {
+        ResetFrameCounters();
+    }
 
     // Shadow-caster candidates, built lazily ONCE per frame (audit 2026-08-31):
     // the fit/directional/spot/point shadow passes each re-iterated EVERY mesh

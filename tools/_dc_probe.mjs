@@ -88,10 +88,10 @@ try {
     // that is the difference between a capture that means something and one
     // that happened to land after the right delay.
     //
-    // The signal is the ENTITY count rather than the draw-call count. Draw calls
-    // are now reported correctly on web, but a scene is legitimately allowed to
-    // draw nothing for a frame, whereas having entities means the scene is
-    // loaded -- which is the thing worth waiting for.
+    // The signal is the ENTITY count, not the draw-call count: on the web path
+    // getDrawCallCount() reports 0 even while the renderer is plainly drawing
+    // (the ?perf HUD has the same blind spot), so waiting on it waits forever
+    // on a page that is working perfectly.
     let frames = 0;
     await page.waitForFunction(
         () => typeof Module !== 'undefined' && Module._getEntityCount &&
@@ -124,6 +124,15 @@ try {
         requestAnimationFrame(tick);
     }), wantFrames);
 
+    const dc = await page.evaluate(async () => {
+        const seen = [];
+        for (let i = 0; i < 12; i++) {
+            seen.push(Module._getDrawCallCount ? Module._getDrawCallCount() : -1);
+            await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 60)));
+        }
+        return seen;
+    });
+    console.log('draw call samples: ' + JSON.stringify(dc));
     const canvas = await page.$('#game-canvas');
     if (!canvas) throw new Error('no #game-canvas on the page');
     const shot = await canvas.screenshot({ type: 'png' });
