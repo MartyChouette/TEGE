@@ -72,6 +72,8 @@ Renderer::SkyboxConfig RenderSystem::WeatherSky(const Renderer::SkyboxConfig& cf
 #include "Enjin/Renderer/GPUShader.h"
 #include "Enjin/Renderer/GPUBindGroup.h"
 #include "Enjin/ECS/Components/Camera.h"
+#include "Enjin/ECS/Components/PreRenderedBackground.h"
+#include "Enjin/Renderer/DepthPlate.h"
 #include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/ECS/Components/LOD.h"
@@ -729,6 +731,11 @@ void RenderSystem::Initialize() {
     frameLayoutDesc.entries = {
         {0, BType::UniformBuffer, SStage::Vertex | SStage::Fragment, sizeof(WebViewProjectionUBO)},
         {1, BType::UniformBuffer, SStage::Vertex | SStage::Fragment, sizeof(WebLightingUBO)},  // vertex too: water waves
+        // Scene palettes, 256 x 16, one table per row. Scene-wide, so it sits
+        // on the frame group and is bound once rather than in every material
+        // bind group. Other pipelines share this layout and simply do not
+        // declare the binding, which is allowed.
+        {2, BType::SampledTexture, SStage::Fragment, 0},
     };
     m_WebFrameLayout = bindMgr->CreateBindGroupLayout(frameLayoutDesc);
 
@@ -1046,9 +1053,28 @@ void RenderSystem::Initialize() {
     // Create frame bind group (group 0)
     Renderer::GPUBindGroupDesc frameBGDesc;
     frameBGDesc.layout = m_WebFrameLayout;
+    // The palette texture is created up front and re-uploaded when it changes,
+    // so the frame bind group never has to be rebuilt for it. A scene with no
+    // palette leaves it as the 1x1 white default and no material reads it.
+    {
+        // Created at its FULL size immediately, not as a 1x1 placeholder: a
+        // texture cannot be resized later, and growing it would mean rebuilding
+        // the frame bind group the first time a scene turned out to have a
+        // palette. White, so a material that reads it before any palette is set
+        // gets its texture back unchanged rather than black.
+        std::vector<u8> whiteTable(static_cast<usize>(Renderer::kPaletteMaxColors) *
+                                   Renderer::kMaxPaletteSlots * 4, 255);
+        Renderer::GPUTextureDesc palDesc;
+        palDesc.width = Renderer::kPaletteMaxColors;
+        palDesc.height = Renderer::kMaxPaletteSlots;
+        palDesc.format = Renderer::GPUTextureFormat::RGBA8Unorm;
+        palDesc.label = "ScenePalettes";
+        m_WebScenePaletteTex = texMgr->CreateTextureWithData(palDesc, whiteTable.data());
+    }
     frameBGDesc.entries = {
         {0, m_WebViewProjBuffer, 0, sizeof(WebViewProjectionUBO), {}, {}},
         {1, m_WebLightingBuffer, 0, sizeof(WebLightingUBO), {}, {}},
+        {2, {}, 0, 0, m_WebScenePaletteTex, {}},
     };
     m_WebFrameBindGroup = bindMgr->CreateBindGroup(frameBGDesc);
     if (!m_WebFrameBindGroup.IsValid()) {
@@ -1181,6 +1207,55 @@ void RenderSystem::Initialize() {
         m_WebSkyPipeline = pipeMgr->CreateRenderPipeline(skyPipeDesc);
         if (m_WebSkyPipeline.IsValid()) {
             ENJIN_LOG_INFO(Renderer, "RenderSystem: Procedural sky pipeline initialized");
+        }
+
+        // Pre-rendered background plate. Unlike the sky this one draws BEFORE
+        // the opaque meshes and WRITES depth, which is what lets a painted room
+        // occlude live geometry. depthCompare is Always rather than the test
+        // being switched off, because a pipeline with the depth test disabled
+        // does not write depth at all.
+        m_WebPlateShader = shaderMgr->LoadShader(
+            Renderer::WebShaderData::PLATE_WGSL,
+            std::strlen(Renderer::WebShaderData::PLATE_WGSL),
+            Renderer::GPUShaderStage::Vertex, "Plate");
+
+        {
+            Renderer::GPUBufferDesc plateBufDesc;
+            plateBufDesc.size = sizeof(WebPlateParams);
+            plateBufDesc.usage = Renderer::GPUBufferUsage::Uniform | Renderer::GPUBufferUsage::CopyDst;
+            plateBufDesc.hostVisible = true;
+            plateBufDesc.label = "PlateParams";
+            m_WebPlateParamsBuffer = bufMgr->CreateBufferWithData(plateBufDesc, &m_WebPlateParams);
+        }
+
+        Renderer::GPUBindGroupLayoutDesc plateLayoutDesc;
+        plateLayoutDesc.entries = {
+            {0, BType::UniformBuffer, SStage::Fragment, sizeof(WebPlateParams)},
+            {1, BType::SampledTexture, SStage::Fragment, 0},
+            {2, BType::Sampler, SStage::Fragment, 0},
+            {3, BType::SampledTexture, SStage::Fragment, 0},   // depth plate, textureLoad only
+        };
+        m_WebPlateLayout = bindMgr->CreateBindGroupLayout(plateLayoutDesc);
+
+        Renderer::GPURenderPipelineDesc platePipeDesc;
+        platePipeDesc.vertexShader = m_WebPlateShader;
+        platePipeDesc.fragmentShader = m_WebPlateShader;
+        platePipeDesc.bindGroupLayouts = {m_WebPlateLayout};
+        platePipeDesc.topology = Renderer::GPUPrimitiveTopology::TriangleList;
+        platePipeDesc.cullMode = Renderer::GPUCullMode::None;
+        platePipeDesc.frontFace = Renderer::GPUFrontFace::CCW;
+        platePipeDesc.depthTest = true;
+        platePipeDesc.depthWrite = true;
+        platePipeDesc.depthCompare = Renderer::GPUCompareFunction::Always;
+        platePipeDesc.hasColorAttachment = true;
+        platePipeDesc.colorFormat = Renderer::GPUTextureFormat::RGBA16Float;
+        platePipeDesc.depthFormat = Renderer::GPUTextureFormat::Depth24PlusStencil8;
+        platePipeDesc.sampleCount = Renderer::kWebSceneSampleCount;
+        platePipeDesc.alphaBlend = false;
+        platePipeDesc.label = "PlatePipeline";
+        m_WebPlatePipeline = pipeMgr->CreateRenderPipeline(platePipeDesc);
+        if (m_WebPlatePipeline.IsValid()) {
+            ENJIN_LOG_INFO(Renderer, "RenderSystem: Background plate pipeline initialized");
         }
 
         // Bloom: compile shaders, create pipelines, allocate mip chain textures
@@ -1542,6 +1617,121 @@ void RenderSystem::Shutdown() {
 // ============================================================================
 // Texture loading (WebGPU)
 // ============================================================================
+
+// Cycle the scene palettes and upload them as rows of one texture. Web twin of
+// UpdateScenePalette(); the packing is identical so a scene looks the same on
+// both, and the whole per-frame cost is a 16 KB upload no matter how much of
+// the screen the palette is animating.
+void RenderSystem::WebUpdateScenePalette() {
+    if (!m_Renderer || !m_WebScenePaletteTex.IsValid()) return;
+    if (m_ScenePalettes.empty()) return;
+
+    // Nothing to send when the animation has not moved. Cycling steps in whole
+    // entries, so between steps the table is byte-identical and re-uploading it
+    // would be pure waste.
+    if (m_WebPaletteUploadedTime == m_PaletteTime) return;
+    m_WebPaletteUploadedTime = m_PaletteTime;
+
+    auto* texMgr = m_Renderer->GetTextureManager();
+    if (!texMgr) return;
+
+    const usize rowBytes = static_cast<usize>(Renderer::kPaletteMaxColors) * 4;
+    m_PaletteUploadScratch.assign(rowBytes * Renderer::kMaxPaletteSlots, 0);
+
+    for (usize slot = 0; slot < m_ScenePalettes.size(); ++slot) {
+        const Renderer::ScenePaletteSlot& src = m_ScenePalettes[slot];
+        if (src.palette.count == 0) continue;
+        // From the AUTHORED table every time. Cycling a cycled table compounds.
+        Renderer::ApplyPaletteCycles(src.palette, src.cycles, m_PaletteTime, m_PaletteCycled);
+        u8* row = m_PaletteUploadScratch.data() + slot * rowBytes;
+        for (u32 i = 0; i < Renderer::kPaletteMaxColors; ++i) {
+            const Renderer::PaletteColor& c = m_PaletteCycled.colors[i];
+            row[i * 4 + 0] = c.r;
+            row[i * 4 + 1] = c.g;
+            row[i * 4 + 2] = c.b;
+            row[i * 4 + 3] = c.a;
+        }
+    }
+
+    texMgr->UploadData(m_WebScenePaletteTex, m_PaletteUploadScratch.data(),
+                       Renderer::kPaletteMaxColors, Renderer::kMaxPaletteSlots);
+}
+
+// The active camera's background plate, or null. Web twin of ActivePlate() on
+// the Vulkan side; kept separate because that one lives in a file the web build
+// does not compile.
+const PreRenderedBackgroundComponent* RenderSystem::WebActivePlate() const {
+    if (!m_World) return nullptr;
+    for (Entity e : m_World->GetEntitiesWithComponent<PreRenderedBackgroundComponent>()) {
+        const auto* cam = m_World->GetComponent<CameraComponent>(e);
+        if (!cam || !cam->isActive) continue;
+        const auto* bg = m_World->GetComponent<PreRenderedBackgroundComponent>(e);
+        if (bg && bg->enabled && bg->visible && !bg->platePath.empty()) return bg;
+    }
+    return nullptr;
+}
+
+// Load the plate images and rebuild the bind group when the shot changes, then
+// refresh the depth mapping from the camera's CURRENT projection. Called once
+// per frame before the scene pass records anything.
+bool RenderSystem::WebPreparePlate(const PreRenderedBackgroundComponent* bg) {
+    if (!bg || !m_Camera) return false;
+    if (!m_WebPlatePipeline.IsValid() || !m_WebPlateLayout.IsValid()) return false;
+
+    auto* bindMgr = m_Renderer ? m_Renderer->GetBindGroupManager() : nullptr;
+    auto* bufMgr = m_Renderer ? m_Renderer->GetBufferManager() : nullptr;
+    if (!bindMgr || !bufMgr) return false;
+
+    // Both plates load through the ordinary web texture path, which produces
+    // RGBA8Unorm. That is what the depth plate needs (its bytes are a number
+    // and an sRGB decode would rescale them) and it is what every other texture
+    // on this backend already is, so the colour plate matches its neighbours.
+    if (bg->platePath != m_WebPlateColorPath || bg->depthPath != m_WebPlateDepthPath ||
+        !m_WebPlateBG.IsValid()) {
+        m_WebPlateColorPath = bg->platePath;
+        m_WebPlateDepthPath = bg->depthPath;
+        m_WebPlateColorTex = WebGetOrLoadTexture(bg->platePath);
+        m_WebPlateDepthTex = bg->depthPath.empty() ? Renderer::GPUTextureHandle{}
+                                                   : WebGetOrLoadTexture(bg->depthPath);
+        if (!m_WebPlateColorTex.IsValid()) {
+            m_WebPlateBG = {};
+            return false;
+        }
+        // A bind group entry cannot be empty, so a plate with no depth image
+        // binds the colour one and the shader is told to ignore it.
+        const Renderer::GPUTextureHandle depthBinding =
+            m_WebPlateDepthTex.IsValid() ? m_WebPlateDepthTex : m_WebPlateColorTex;
+
+        Renderer::GPUBindGroupDesc bgDesc;
+        bgDesc.layout = m_WebPlateLayout;
+        bgDesc.entries = {
+            {0, m_WebPlateParamsBuffer, 0, sizeof(WebPlateParams), {}, {}},
+            {1, {}, 0, 0, m_WebPlateColorTex, {}},
+            {2, {}, 0, 0, {}, m_WebPlateColorTex},
+            {3, {}, 0, 0, depthBinding, {}},
+        };
+        bgDesc.label = "PlateBindGroup";
+        m_WebPlateBG = bindMgr->CreateBindGroup(bgDesc);
+    }
+    if (!m_WebPlateBG.IsValid()) return false;
+
+    // Solved every frame from the live projection: a canvas resize changes the
+    // aspect and a field-of-view change rewrites the mapping entirely, and a
+    // stored one would quietly stop matching the geometry beside it.
+    const Renderer::PlateDepthMapping mapping =
+        Renderer::SolvePlateDepthMapping(m_Camera->GetProjectionMatrix(),
+                                         bg->depthNear, bg->depthFar);
+    m_WebPlateParams.mapping[0] = mapping.a;
+    m_WebPlateParams.mapping[1] = mapping.b;
+    m_WebPlateParams.mapping[2] = mapping.inverse ? 1.0f : 0.0f;
+    m_WebPlateParams.mapping[3] = bg->depthBias;
+    m_WebPlateParams.range[0] = bg->depthNear;
+    m_WebPlateParams.range[1] = bg->depthFar;
+    m_WebPlateParams.range[2] = m_WebPlateDepthTex.IsValid() ? 1.0f : 0.0f;
+    m_WebPlateParams.range[3] = 0.0f;
+    bufMgr->UploadData(m_WebPlateParamsBuffer, &m_WebPlateParams, sizeof(WebPlateParams));
+    return true;
+}
 
 Renderer::GPUTextureHandle RenderSystem::WebGetOrLoadTexture(const std::string& path) {
     if (path.empty()) return {};
@@ -2976,6 +3166,28 @@ void RenderSystem::Update(f32 deltaTime) {
             webRenderer, scenePassEncoder, webPipeMgr, webBufMgr, webBindMgr);
         encoder = sceneEncoder.get();
     }
+    // ========================================================================
+    // Pre-rendered background plate
+    // ========================================================================
+    // BEFORE the opaque meshes, unlike the sky, and this is the whole point:
+    // the plate writes the depth of the room it shows, and every mesh drawn
+    // after it depth-tests against that. Drawn after the pass begins and before
+    // anything else records, so it cannot be occluded by geometry it should be
+    // occluding.
+    // Palette cycling: uploads the tables when the animation has moved.
+    WebUpdateScenePalette();
+
+    const PreRenderedBackgroundComponent* webPlate = WebActivePlate();
+    bool webPlateDrawn = false;
+    if (webPlate && usePostProcess && scenePassEncoder && WebPreparePlate(webPlate)) {
+        wgpuRenderPassEncoderSetPipeline(scenePassEncoder,
+                                         webPipeMgr->GetNativePipeline(m_WebPlatePipeline));
+        wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 0,
+                                          webBindMgr->GetNativeGroup(m_WebPlateBG), 0, nullptr);
+        wgpuRenderPassEncoderDraw(scenePassEncoder, 3, 1, 0, 0);
+        webPlateDrawn = true;
+    }
+
     encoder->BindPipeline(m_MainPipeline);
     encoder->SetViewport(0, 0, sceneW, sceneH);
     encoder->SetScissor(0, 0, static_cast<u32>(sceneW), static_cast<u32>(sceneH));
@@ -3221,6 +3433,17 @@ void RenderSystem::Update(f32 deltaTime) {
             if (mat) {
                 if (mat->affineTexturing)     obj.flags |= (1 << 21);
                 if (mat->stippleTransparency) obj.flags |= (1 << 23);
+                // Palette-indexed: bit 7 opts in, bits 24-27 carry the table.
+                // Packed into the flags word rather than added as a field so
+                // ObjectData does not grow -- its layout has to stay identical
+                // in three places (this struct, PBR_WGSL and OUTLINE_WGSL).
+                if (mat->paletteIndexed) {
+                    obj.flags |= (1 << 7);
+                    const u32 palCount = static_cast<u32>(m_ScenePalettes.size());
+                    const u32 slot = (palCount > 0 && mat->paletteSlot < palCount)
+                                     ? static_cast<u32>(mat->paletteSlot) : 0u;
+                    obj.flags |= static_cast<i32>((slot & 15u) << 24);
+                }
                 if (mat->vertexSnapping) {
                     obj.flags |= (1 << 22);
                     // Resolution rides in bits 24-28 as value/8, matching
@@ -3685,7 +3908,11 @@ void RenderSystem::Update(f32 deltaTime) {
     // and sprite silhouetted against open sky — only the ones in front of solid
     // geometry survived. The weather and elemental passes further down were
     // already moved after the sky for exactly this reason; these two were not.
-    if (usePostProcess && m_WebSkyPipeline.IsValid() && scenePassEncoder) {
+    // A plate that drew already contains this shot's sky, painted at bake time.
+    // Letting the procedural sky run afterwards would repaint every pixel the
+    // plate left at the far plane -- its windows, its doorways, its horizon --
+    // with a different sky.
+    if (usePostProcess && m_WebSkyPipeline.IsValid() && scenePassEncoder && !webPlateDrawn) {
         wgpuRenderPassEncoderSetPipeline(scenePassEncoder, webPipeMgr->GetNativePipeline(m_WebSkyPipeline));
         wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 0, webBindMgr->GetNativeGroup(m_WebFrameBindGroup), 0, nullptr);
         wgpuRenderPassEncoderDraw(scenePassEncoder, 3, 1, 0, 0);  // Fullscreen triangle at z=1
@@ -6195,6 +6422,8 @@ void RenderSystem::Update(f32 deltaTime) {
     // clock was reading a clock that never moved: Pulse held at half depth and
     // Flash stayed permanently on.
     TickHighlightTime(deltaTime);
+    // Palette cycling runs off the same clock here as it does on desktop.
+    TickPaletteTime(deltaTime);
     if (!m_Renderer || !m_Initialized) {
         return;
     }

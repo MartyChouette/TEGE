@@ -43,6 +43,12 @@ struct LightingUBO {
 
 @group(0) @binding(0) var<uniform> viewProj: ViewProjection;
 @group(0) @binding(1) var<uniform> lighting: LightingUBO;
+// The scene's palettes: one table per ROW of a 256 x 16 texture. Read with
+// textureLoad and never sampled -- entry 7 and entry 8 are unrelated colours,
+// and every texture on this backend gets a linear sampler whether it wants one
+// or not. Lives on the frame group because it is scene-wide: binding it here
+// costs one entry per frame instead of one per material bind group.
+@group(0) @binding(2) var scenePaletteTex: texture_2d<f32>;
 
 struct ObjectData {
     model: mat4x4<f32>,
@@ -397,8 +403,26 @@ fn shadeSurface(in: VertexOutput) -> vec4<f32> {
     let sdfW = clamp(fwidth(baseColorSample.a), 1e-4, sdfEdge * 0.5);
     let sdfCov = smoothstep(sdfEdge - sdfW, sdfEdge + sdfW, baseColorSample.a);
 
-    let albedo = baseColorSample.rgb * object.baseColor;
-    let alpha = baseColorSample.a * object.opacity;
+    // Palette-indexed: the base colour texture stores an INDEX in its red
+    // channel and the scene palette supplies the colour. Bit 7 says the
+    // material opted in; bits 24-27 carry which of the 16 tables to read.
+    //
+    // Two things differ from the desktop shader on purpose. The index is read
+    // with textureLoad, because a sampled index averages two unrelated palette
+    // entries into a third that is in neither. And there is no inverse-sRGB
+    // step: this backend uploads every texture as RGBA8Unorm, so the stored
+    // byte arrives unchanged, where the Vulkan path has to undo an sRGB decode.
+    var albedo = baseColorSample.rgb * object.baseColor;
+    var alpha = baseColorSample.a * object.opacity;
+    if ((object.flags & 128) != 0) {
+        let baseDims = vec2<f32>(textureDimensions(baseColorTex, 0));
+        let idxTexel = vec2<i32>(fract(uv) * baseDims);
+        let idxSample = textureLoad(baseColorTex, idxTexel, 0);
+        let entry = floor(clamp(idxSample.r, 0.0, 1.0) * 255.0 + 0.5);
+        let slot = f32((object.flags >> 24) & 15);
+        albedo = textureLoad(scenePaletteTex, vec2<i32>(i32(entry), i32(slot)), 0).rgb;
+        alpha = idxSample.a * object.opacity;
+    }
 
     if (object.alphaCutoff > 0.0 && alpha < object.alphaCutoff) {
         discard;
@@ -1745,6 +1769,85 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         }
     }
     return vec4<f32>(sky, 1.0);
+}
+)";
+
+
+// Pre-rendered background plate: a finished picture of a room plus the depth it
+// was rendered at, so live geometry occludes against it. Desktop counterpart is
+// Engine/shaders/plate.frag; the maths is deliberately identical.
+static const char* PLATE_WGSL = R"(
+struct PlateParams {
+    mapping: vec4<f32>,   // x = a, y = b, z = 1 if depth is a + b/dist, w = world-unit bias
+    range: vec4<f32>,     // x = plate near, y = plate far, z = 1 if a depth plate exists
+};
+@group(0) @binding(0) var<uniform> plate: PlateParams;
+@group(0) @binding(1) var plateTex: texture_2d<f32>;
+@group(0) @binding(2) var plateSmp: sampler;
+// Read with textureLoad, never sampled. Every non-depth texture on this backend
+// is created with a LINEAR sampler and there is no way to ask for nearest, so a
+// sampled depth plate would average the high bytes of two unrelated distances
+// into a wall standing somewhere between them. textureLoad is an exact texel
+// fetch and needs no sampler at all.
+@group(0) @binding(3) var plateDepthTex: texture_2d<f32>;
+
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
+    var out: VertexOutput;
+    let x = f32(i32(vertexIndex & 1u) * 4 - 1);
+    let y = f32(i32(vertexIndex >> 1u) * 4 - 1);
+    out.position = vec4<f32>(x, y, 0.0, 1.0);
+    out.uv = vec2<f32>((x + 1.0) * 0.5, (1.0 - y) * 0.5);
+    return out;
+}
+
+struct FragmentOutput {
+    @location(0) color: vec4<f32>,
+    @builtin(frag_depth) depth: f32,
+};
+
+@fragment
+fn fs_main(in: VertexOutput) -> FragmentOutput {
+    var out: FragmentOutput;
+
+    // Sampled unconditionally and before any branch: textureSample has to be
+    // reached from uniform control flow.
+    let plateColor = textureSample(plateTex, plateSmp, in.uv);
+    out.color = vec4<f32>(plateColor.rgb, 1.0);
+
+    if (plate.range.z < 0.5) {
+        // No depth plate: a flat backdrop. Everything live draws in front.
+        out.depth = 1.0;
+        return out;
+    }
+
+    let dims = vec2<f32>(textureDimensions(plateDepthTex, 0));
+    let uvc = clamp(in.uv, vec2<f32>(0.0), vec2<f32>(0.9999));
+    let texel = vec2<i32>(uvc * dims);
+    let p = textureLoad(plateDepthTex, texel, 0).rgb;
+
+    // Back to whole bytes before recombining 24 bits. One ulp in the top byte
+    // is metres.
+    let bytes = floor(p * 255.0 + 0.5);
+    let n = dot(bytes, vec3<f32>(65536.0, 256.0, 1.0)) / 16777215.0;
+
+    let dist = mix(plate.range.x, plate.range.y, n) + plate.mapping.w;
+    var d: f32;
+    if (plate.mapping.z > 0.5) {
+        d = plate.mapping.x + plate.mapping.y / max(dist, 1e-4);
+    } else {
+        d = plate.mapping.x + plate.mapping.y * dist;
+    }
+    // Clamped, not clipped: the engine's projection is the OpenGL form, so
+    // anything nearer than the harmonic mean of near and far maps below zero,
+    // and letting that through would punch holes in the room.
+    out.depth = clamp(d, 0.0, 1.0);
+    return out;
 }
 )";
 

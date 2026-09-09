@@ -16,13 +16,20 @@
 
 #include "Enjin/ECS/Systems/RenderSystem.h"
 
-#if !ENJIN_RENDERER_WEBGPU
+// The slot bookkeeping below is SHARED: web needs SetScenePalettes and the
+// getters just as much as Vulkan does, and leaving them inside the renderer
+// guard meant the web build had declarations with no definitions the moment a
+// scene actually carried a palette.
+#include "Enjin/Renderer/PaletteCycle.h"
 
+#if !ENJIN_RENDERER_WEBGPU
 #include "Enjin/Renderer/Texture.h"
 #include "Enjin/Renderer/Vulkan/VulkanSampler.h"
 #include "Enjin/Renderer/Vulkan/VulkanRenderer.h"
 #include "Enjin/Renderer/Vulkan/BindlessResources.h"
 #include "Enjin/Logging/Log.h"
+
+#endif
 
 namespace Enjin {
 namespace ECS {
@@ -86,6 +93,7 @@ void RenderSystem::SetScenePalette(u32 slot,
     // frame at the same moment.
 }
 
+#if !ENJIN_RENDERER_WEBGPU
 void RenderSystem::UpdateScenePalette() {
     if (!m_VulkanRenderer || !m_BindlessManager) return;
     if (m_ScenePalettes.empty()) return;
@@ -167,7 +175,7 @@ void RenderSystem::UpdateScenePalette() {
     }
 }
 
+#endif // !ENJIN_RENDERER_WEBGPU  (the Vulkan upload above)
+
 } // namespace ECS
 } // namespace Enjin
-
-#endif // !ENJIN_RENDERER_WEBGPU

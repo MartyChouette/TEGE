@@ -1584,6 +1584,10 @@ private:
 
     // Default textures
     Renderer::GPUTextureHandle m_WebDefaultWhiteTex;
+    // Scene palettes as a 256 x 16 texture, one table per row. Uploaded in
+    // place when the cycling moves, so the frame bind group is built once.
+    Renderer::GPUTextureHandle m_WebScenePaletteTex;
+    f32 m_WebPaletteUploadedTime = -1.0f;
     Renderer::GPUTextureHandle m_WebDefaultNormalTex;
     Renderer::GPUTextureHandle m_WebDefaultBlackTex;
 
@@ -1591,6 +1595,11 @@ private:
     std::unordered_map<std::string, Renderer::GPUTextureHandle> m_WebTextureCache;
     std::unordered_set<std::string> m_WebFailedTextures;  // don't retry failed loads
     Renderer::GPUTextureHandle WebGetOrLoadTexture(const std::string& path);
+    // Background plate on web: which one is active, and getting its textures,
+    // bind group and depth mapping ready before the scene pass records.
+    void WebUpdateScenePalette();
+    const PreRenderedBackgroundComponent* WebActivePlate() const;
+    bool WebPreparePlate(const PreRenderedBackgroundComponent* bg);
 
     // Web SDF text generation (unified display P1 on web): the CPU atlas build
     // is shared (FontAtlas/stb_truetype); the texture is a WebGPU texture keyed
@@ -1847,6 +1856,26 @@ private:
     // Procedural sky
     Renderer::GPUShaderHandle m_WebSkyShader;
     Renderer::GPUPipelineHandle m_WebSkyPipeline;
+
+    // Pre-rendered background plate (web). One uniform, a colour texture read
+    // with a sampler, and a depth texture read with textureLoad -- see
+    // PLATE_WGSL for why the depth one must never be sampled.
+    Renderer::GPUShaderHandle m_WebPlateShader;
+    Renderer::GPUPipelineHandle m_WebPlatePipeline;
+    Renderer::GPUBindGroupLayoutHandle m_WebPlateLayout;
+    Renderer::GPUBindGroupHandle m_WebPlateBG;
+    Renderer::GPUBufferHandle m_WebPlateParamsBuffer;
+    Renderer::GPUTextureHandle m_WebPlateColorTex;
+    Renderer::GPUTextureHandle m_WebPlateDepthTex;
+    // The paths the bind group was last built for. Rebuilding a bind group is
+    // cheap but not free, and a plate changes only when the shot changes.
+    std::string m_WebPlateColorPath;
+    std::string m_WebPlateDepthPath;
+    struct WebPlateParams {
+        f32 mapping[4] = {0.0f, 0.0f, 1.0f, 0.0f};   // a, b, inverse flag, world bias
+        f32 range[4] = {0.0f, 1.0f, 0.0f, 0.0f};     // near, far, hasDepth, unused
+    };
+    WebPlateParams m_WebPlateParams;
 
     f32 m_WebTime = 0.0f;  // Accumulated time for shader animations
 #else
