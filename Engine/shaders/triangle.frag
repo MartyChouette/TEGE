@@ -100,7 +100,7 @@ layout(binding = 1) uniform LightingUBO {
     vec4 reflectionProbePosition; // xyz = probe center, w = intensity (0 = no probe)
     vec4 reflectionProbeBoxMin;   // xyz = world AABB min, w = blend distance
     vec4 reflectionProbeBoxMax;   // xyz = world AABB max, w = isBaked (1.0 = cubemap at binding 19)
-    vec4 fogScreenParams;         // xy = screen size px (froxel UV), z = camera near, w = reserved
+    vec4 fogScreenParams;         // xy = screen size px (froxel UV), z = camera near, w = palette LUT index (-1 = none)
     vec4 ddgiGridOrigin;         // xyz = probe grid origin, w = spacing
     ivec4 ddgiProbeCounts;       // xyz = probes per axis, w = oct resolution
     vec4 ddgiAtlasParams;        // x = atlas W, y = atlas H, z = enabled, w = intensity
@@ -1269,6 +1269,44 @@ void main() {
     }
 
     // Sample metallic-roughness texture if available (bindless or fallback)
+    // Palette-indexed: the base colour texture's red channel is an INDEX, and the
+    // scene palette supplies the colour. Something else is busy rotating that
+    // palette; this is where the rotation becomes visible, at the cost of one
+    // extra tap rather than any per-pixel work.
+    //
+    // Deliberately NOT nested inside the base-colour block above: that block is
+    // gated by a specialization constant and a material flag, so nesting made
+    // the whole technique silently depend on conditions a palette material has
+    // no reason to satisfy.
+    float palIdx = lighting.fogScreenParams.w;
+    // Encoded in surfaceParam1 (400 band), NOT a flag bit: the flags word is
+    // full and bits 24-28 carry vertexSnapResolution, so a flag here would
+    // silently corrupt the PS1 vertex-snap look. The dither and elemental modes
+    // at 100/200/300 set this precedent.
+    if (mat_surfaceParam1 >= 499.5 && palIdx >= 0.0
+        && materialData.matBaseColorTexIdx != 0xFFFFFFFFu) {
+        vec4 idxTex = texture(BTEX(materialData.matBaseColorTexIdx), uv);
+
+        // The texture was uploaded as SRGB, so the hardware has already gamma
+        // decoded the stored byte. An INDEX is not a colour and has to survive
+        // that: without inverting it here every low index decodes to nearly zero
+        // and the entire palette collapses onto entry 0.
+        float lin = clamp(idxTex.r, 0.0, 1.0);
+        float srgb = (lin <= 0.0031308) ? lin * 12.92
+                                        : 1.055 * pow(lin, 1.0 / 2.4) - 0.055;
+
+        // +0.5 lands on the texel CENTRE. Sampling at the edge blends two
+        // neighbouring entries and turns a hard palette into a gradient, which
+        // is the one thing this technique must not do.
+        float entry = floor(srgb * 255.0 + 0.5);
+        vec2 palUV = vec2((entry + 0.5) / 256.0, 0.5);
+
+        // Assigned, not multiplied: an index is not a tint, and multiplying
+        // would darken every pixel by its own position in the table.
+        albedo = texture(BTEX(int(palIdx)), palUV).rgb;
+        texAlpha = idxTex.a;
+    }
+
     if (SPEC_HAS_METALLIC_TEX != 0 && (mat_flags & FLAG_HAS_METALLIC_TEX) != 0) {
         vec4 mrSample = (materialData.matMetallicRoughnessTexIdx != 0xFFFFFFFFu)
             ? texture(BTEX(materialData.matMetallicRoughnessTexIdx), uv)

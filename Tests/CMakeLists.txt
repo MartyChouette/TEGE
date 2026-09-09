@@ -208,6 +208,7 @@ enjin_add_test(TestSerdesCoverage  Unit/Scene/TestSerdesCoverage.cpp)
 enjin_add_test(TestRenderQuality   Unit/Renderer/TestRenderQuality.cpp)
 enjin_add_test(TestDDGIGrid        Unit/Renderer/TestDDGIGrid.cpp)
 enjin_add_test(TestLightCookie     Unit/Renderer/TestLightCookie.cpp)
+enjin_add_test(TestPaletteCycle    Unit/Renderer/TestPaletteCycle.cpp)
 enjin_add_test(TestControlsMenu    Unit/GUI/TestControlsMenu.cpp)
 
 # --- Scripting ---

@@ -60,6 +60,11 @@ struct MaterialComponent {
     bool stippleTransparency = false;
     bool uvQuantize = false;
     bool gouraudOnly = false;
+    // Palette-indexed: the base colour texture stores a palette INDEX in its red
+    // channel rather than a colour, and the scene's palette supplies the actual
+    // colours. Rotating that palette animates every pixel of every material
+    // using it, which is the whole point of the technique.
+    bool paletteIndexed = false;
     u8 vertexSnapResolution = 160; // PS1-style grid resolution (80-320)
 
     // SDF text (unified display P1): the base color texture's alpha is a signed
@@ -434,6 +439,14 @@ struct alignas(16) MaterialGPU {
 
     // Dithered gradient: encoded in surfaceParam1 (values > 1.0 = dither gradient mode)
     // surfaceParam1 = 100.0 + bands + pattern * 0.1
+    //
+    // Palette-indexed: surfaceParam1 = 500.0. The flags word has no bits left
+    // (bit 3 was the last, above), so this follows the encoding the other modes
+    // already use. Taken ranges: 100-199 dither gradient, 200-299 dithered
+    // transparency, 300-399 elemental, 400-499 procedural surface noise.
+    // A palette material has no water or artistic surface params to lose, which
+    // is what makes the slot safe to claim.
+    static constexpr f32 SURFACE_PARAM1_PALETTE_INDEXED = 500.0f;
 };
 
 // Multi-material component for entities with sub-meshes.

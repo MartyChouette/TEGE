@@ -35,12 +35,25 @@ public:
     );
     
     // Create image from raw pixel data
+    // Re-upload pixels into an EXISTING image. The image, its view and its
+    // sampler are kept, so anything already referencing this texture (a bindless
+    // slot, a descriptor set) stays valid -- which is the whole reason to update
+    // rather than recreate. Single mip level only: a mip chain would have to be
+    // regenerated, and the callers for this are small dynamic textures.
+    bool UpdateFromData(const void* data, u32 width, u32 height, u32 channels);
+
+    // generateMips=false gives a single-level image. That is what a lookup
+    // table wants: a lower mip averages neighbouring entries, and for a palette
+    // the neighbours are unrelated colours, so a minified palette would blend
+    // colours that were never meant to touch. It is also what makes the image
+    // eligible for UpdateFromData above.
     bool CreateFromData(
         const void* data,
         u32 width,
         u32 height,
         u32 channels,
-        VkFormat format = VK_FORMAT_R8G8B8A8_SRGB
+        VkFormat format = VK_FORMAT_R8G8B8A8_SRGB,
+        bool generateMips = true
     );
     
     void Destroy();

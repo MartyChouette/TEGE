@@ -103,6 +103,7 @@ namespace Enjin { namespace Effects {
 #include <memory>
 #include <vector>
 #include "Enjin/Renderer/RenderQualitySettings.h"
+#include "Enjin/Renderer/PaletteCycle.h"
 #include "Enjin/Effects/ParticleColliders.h"
 #include "Enjin/Renderer/Skybox.h"   // SkyboxConfig is backend-agnostic (class below is guarded)
 
@@ -300,6 +301,17 @@ private:
     };
     std::unordered_map<u32, LightCookieEntry> m_LightCookies;
 
+    // Scene palette. m_PaletteCycled is the animated table actually uploaded;
+    // m_ScenePalette keeps the authored colours so cycling never compounds.
+    Renderer::Palette m_ScenePalette;
+    Renderer::Palette m_PaletteCycled;
+    std::vector<Renderer::PaletteCycleRange> m_PaletteCycles;
+    f32 m_PaletteTime = 0.0f;
+    bool m_PaletteTickedThisFrame = false;
+    u32 m_PaletteBindless = UINT32_MAX;
+    std::shared_ptr<Renderer::Texture> m_PaletteTexture;
+    std::vector<u8> m_PaletteUploadScratch;
+
     // Authored project quality tiers and the tier currently in force. Plain
     // data, deliberately outside any renderer guard so web behaves identically.
     Renderer::RenderQualitySettings m_RenderQuality;
@@ -368,6 +380,38 @@ public:
     // per-frame UBO fill; ResolveLightCookie is then a pure lookup that reports
     // "not ready" instead of allocating mid-frame.
     void UpdateLightCookies();
+
+    // Scene palette + cycling (the Mark Ferrari technique). The palette is
+    // scene-level because that is how it worked when it was hardware: one table,
+    // many materials indexing into it. Materials opt in with paletteIndexed.
+    void SetScenePalette(const Renderer::Palette& p,
+                         const std::vector<Renderer::PaletteCycleRange>& ranges);
+    const Renderer::Palette& GetScenePalette() const { return m_ScenePalette; }
+    const std::vector<Renderer::PaletteCycleRange>& GetPaletteCycles() const { return m_PaletteCycles; }
+
+    // Advance the palette cycling clock. Deposited by whoever holds a dt, which
+    // is a different object per runtime: the player and Enjin::App reach it
+    // through Update(), the EDITOR cannot -- it never calls RenderSystem::Update
+    // at all (see the note in EditorLayer where skeletal animation is ticked for
+    // the same reason), so EditorLayer::Update deposits it directly. Without the
+    // editor call the clock sits at zero and the palette renders correctly but
+    // never moves, which is indistinguishable from the feature being off.
+    //
+    // The flag makes this exactly once per frame no matter how many callers
+    // fire, because in editor play mode both paths are live and a palette
+    // cycling at double speed is a subtler bug than one that does not cycle.
+    // Cleared in FlushPendingChanges, which every runtime calls once per frame
+    // before recording.
+    void TickPaletteTime(f32 dt) {
+        if (m_PaletteTickedThisFrame) return;
+        m_PaletteTickedThisFrame = true;
+        m_PaletteTime += dt;
+    }
+    f32 GetPaletteTime() const { return m_PaletteTime; }
+    bool IsScenePaletteActive() const { return m_ScenePalette.count > 0; }
+    // Rebuild the cycled table and re-upload it. Called once a frame from
+    // FlushPendingChanges, never mid-recording.
+    void UpdateScenePalette();
     u32 ResolveLightCookie(Entity e, const LightComponent& light) const;
     void ClearLightCookies();
 

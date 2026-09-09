@@ -3,7 +3,10 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Math/Vector.h"
 #include <nlohmann/json_fwd.hpp>
+#include "Enjin/Renderer/PaletteCycle.h"
+
 #include <string>
+#include <vector>
 
 namespace Enjin {
 
@@ -140,6 +143,17 @@ struct SceneRenderSettings {
     // Allocation-sizing: the particle and alive-list buffers are built from it in
     // Initialize. Saved, not applied live, for the same reason as the DDGI counts.
     u32 gpuParticleMaxParticles = 65536;
+
+    // --- Scene palette + cycling ---
+    // Distinct from the post-process `paletteEnabled` above, which QUANTISES the
+    // finished image to a fixed palette. This one is the indexed-colour path: a
+    // material's base texture stores indices and this table supplies the colours,
+    // so rotating a run of it animates every surface using it.
+    bool scenePaletteEnabled = false;
+    std::string scenePaletteName;
+    // RGBA8 packed, one per used entry. Only `count` are stored, not all 256.
+    std::vector<u32> scenePaletteColors;
+    std::vector<Renderer::PaletteCycleRange> scenePaletteCycles;
     f32 snowIntensity = 0.0f;
     f32 worldCurvature = 0.0f;
     bool rainActive = false;

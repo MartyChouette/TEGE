@@ -73,6 +73,24 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
                                      s.volumetricFogNoiseStrength, s.volumetricFogWindX,
                                      s.volumetricFogWindZ);
 
+        // Scene palette, read back so an edit made in the editor is what gets
+        // saved. The AUTHORED table is captured, never the cycled one, or every
+        // save would bake in whatever phase the animation happened to be at.
+        {
+            const Renderer::Palette& p = rs->GetScenePalette();
+            s.scenePaletteEnabled = p.count > 0;
+            s.scenePaletteName = p.name;
+            s.scenePaletteColors.clear();
+            for (u32 i = 0; i < p.count && i < Renderer::kPaletteMaxColors; ++i) {
+                const Renderer::PaletteColor& c = p.colors[i];
+                s.scenePaletteColors.push_back((static_cast<u32>(c.r) << 24) |
+                                               (static_cast<u32>(c.g) << 16) |
+                                               (static_cast<u32>(c.b) << 8) |
+                                                static_cast<u32>(c.a));
+            }
+            s.scenePaletteCycles = rs->GetPaletteCycles();
+        }
+
         // DDGI: the editor panel edits the live system through GetConfig(), so
         // without this read-back none of it reaches the file.
         rs->GetDDGISettings(s.ddgiEnabled, s.ddgiGridSpacing, s.ddgiGridOrigin,
@@ -479,6 +497,24 @@ void SceneRenderSettings::ApplyToRuntimeUnclamped(ECS::RenderSystem* rs, PostPro
                                        volumetricFogTemporalBlend, volumetricFogNoiseScale,
                                        volumetricFogNoiseStrength, volumetricFogWindX,
                                        volumetricFogWindZ);
+
+        // Scene palette. Rebuilt from the authored colours so cycling always
+        // starts from the art rather than from wherever it left off.
+        if (scenePaletteEnabled && !scenePaletteColors.empty()) {
+            Renderer::Palette p;
+            p.name = scenePaletteName;
+            p.count = static_cast<u32>(scenePaletteColors.size());
+            for (u32 i = 0; i < p.count && i < Renderer::kPaletteMaxColors; ++i) {
+                const u32 packed = scenePaletteColors[i];
+                Renderer::PaletteColor c;
+                c.r = static_cast<u8>((packed >> 24) & 0xFF);
+                c.g = static_cast<u8>((packed >> 16) & 0xFF);
+                c.b = static_cast<u8>((packed >> 8) & 0xFF);
+                c.a = static_cast<u8>(packed & 0xFF);
+                p.colors[i] = c;
+            }
+            rs->SetScenePalette(p, scenePaletteCycles);
+        }
 
         rs->ApplyDDGISettings(ddgiEnabled, ddgiGridSpacing, ddgiGridOrigin,
                               ddgiVoxelWorldExtent, ddgiRaysPerProbe,
@@ -1151,6 +1187,25 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     j["gpuParticleTurbulenceFrequency"] = RF(s.gpuParticleTurbulenceFrequency);
     j["gpuParticleMaxParticles"]        = s.gpuParticleMaxParticles;
 
+    // Scene palette. Written only when in use, so a scene that never touched it
+    // does not carry a colour table nobody authored.
+    if (s.scenePaletteEnabled && !s.scenePaletteColors.empty()) {
+        nlohmann::json pal;
+        pal["name"] = s.scenePaletteName;
+        pal["colors"] = s.scenePaletteColors;
+        nlohmann::json runs = nlohmann::json::array();
+        for (const auto& r : s.scenePaletteCycles) {
+            nlohmann::json rj;
+            rj["first"]   = r.first;
+            rj["count"]   = r.count;
+            rj["speed"]   = RF(r.speed);
+            rj["enabled"] = r.enabled;
+            runs.push_back(rj);
+        }
+        pal["cycles"] = runs;
+        j["scenePalette"] = pal;
+    }
+
     j["lightBVHEnabled"]            = s.lightBVHEnabled;
     j["lightBVHMaxLights"]          = s.lightBVHMaxLights;
     j["lightBVHMinLightsForBVH"]    = s.lightBVHMinLightsForBVH;
@@ -1528,6 +1583,33 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("gpuParticleTurbulenceStrength"))  s.gpuParticleTurbulenceStrength  = j["gpuParticleTurbulenceStrength"].get<f32>();
     if (j.contains("gpuParticleTurbulenceFrequency")) s.gpuParticleTurbulenceFrequency = j["gpuParticleTurbulenceFrequency"].get<f32>();
     if (j.contains("gpuParticleMaxParticles"))        s.gpuParticleMaxParticles        = j["gpuParticleMaxParticles"].get<u32>();
+
+    if (j.contains("scenePalette") && j["scenePalette"].is_object()) {
+        const auto& pal = j["scenePalette"];
+        s.scenePaletteEnabled = true;
+        s.scenePaletteName = pal.value("name", std::string());
+        s.scenePaletteColors.clear();
+        if (pal.contains("colors") && pal["colors"].is_array()) {
+            for (const auto& c : pal["colors"]) {
+                if (s.scenePaletteColors.size() >= Renderer::kPaletteMaxColors) break;
+                s.scenePaletteColors.push_back(c.get<u32>());
+            }
+        }
+        s.scenePaletteCycles.clear();
+        if (pal.contains("cycles") && pal["cycles"].is_array()) {
+            for (const auto& rj : pal["cycles"]) {
+                Renderer::PaletteCycleRange r;
+                r.first   = rj.value("first", 0u);
+                r.count   = rj.value("count", 0u);
+                r.speed   = rj.value("speed", 1.0f);
+                r.enabled = rj.contains("enabled") ? JB(rj["enabled"]) : true;
+                // A scene file is user-editable text, so a run is clamped to the
+                // palette it actually has before anything indexes with it.
+                Renderer::ClampCycleRange(r, static_cast<u32>(s.scenePaletteColors.size()));
+                s.scenePaletteCycles.push_back(r);
+            }
+        }
+    }
 
     if (j.contains("lightBVHEnabled"))           s.lightBVHEnabled           = JB(j["lightBVHEnabled"]);
     if (j.contains("lightBVHMaxLights"))         s.lightBVHMaxLights         = j["lightBVHMaxLights"].get<u32>();

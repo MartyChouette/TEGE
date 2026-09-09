@@ -1819,6 +1819,9 @@ void RenderSystem::WebEnsureTextMeshes() {
 
 void RenderSystem::Update(f32 deltaTime) {
     TickHighlightTime(deltaTime);   // drives hover-highlight Pulse/Flash
+    // Palette cycling runs off the same per-frame clock. Guarded against a
+    // second deposit in the same frame, because the editor ticks it too.
+    TickPaletteTime(deltaTime);
 
     // Once a second, say how much GPU memory the frame is actually holding.
     //
@@ -5726,6 +5729,7 @@ void RenderSystem::FlushPendingChanges() {
     // New frame is about to record — allow the compute pre-pass to run once
     m_ComputePrePassDone = false;
     m_FramePrepDone = false;
+    m_PaletteTickedThisFrame = false;   // re-arm the palette clock for this frame
 
     // Script render targets (FR-4): build queued targets / apply queued material
     // binds at this pre-recording safe point, and re-arm the per-frame render.
@@ -6026,6 +6030,10 @@ void RenderSystem::FlushPendingChanges() {
     // Light cookies: generating one uploads a texture and registers a bindless
     // slot, so it cannot happen during the per-frame UBO fill.
     UpdateLightCookies();
+
+    // Scene palette: cycles the table and re-uploads it. Same reasoning -- a
+    // texture upload has no business happening with a command buffer open.
+    UpdateScenePalette();
 
     // DDGI grid reshape. This destroys and recreates the voxel grid and the
     // probe atlas, so it has to happen where nothing is recording and nothing is
@@ -8476,6 +8484,14 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                     pushConstants.surfaceParam1 = 400.0f + material->surfaceNoiseScale;
                     pushConstants.surfaceParam2 = material->surfaceNoiseStrength;
                 }
+                // Palette-indexed, last so it wins the slot. The flags word has
+                // no free bits (24-28 carry vertexSnapResolution), so this rides
+                // surfaceParam1 like the modes above. Bands: 100 dither gradient,
+                // 200 dithered transparency, 300 elemental, 400 surface noise,
+                // 500 this.
+                if (material->paletteIndexed) {
+                    pushConstants.surfaceParam1 = ECS::MaterialGPU::SURFACE_PARAM1_PALETTE_INDEXED;
+                }
             } else {
                 pushConstants.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
                 pushConstants.metallic = 0.0f;
@@ -9348,6 +9364,14 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                     material->surfaceNoiseScale > 0.0f && pushConstants.surfaceParam1 < 100.0f) {
                     pushConstants.surfaceParam1 = 400.0f + material->surfaceNoiseScale;
                     pushConstants.surfaceParam2 = material->surfaceNoiseStrength;
+                }
+                // Palette-indexed, last so it wins the slot. The flags word has
+                // no free bits (24-28 carry vertexSnapResolution), so this rides
+                // surfaceParam1 like the modes above. Bands: 100 dither gradient,
+                // 200 dithered transparency, 300 elemental, 400 surface noise,
+                // 500 this.
+                if (material->paletteIndexed) {
+                    pushConstants.surfaceParam1 = ECS::MaterialGPU::SURFACE_PARAM1_PALETTE_INDEXED;
                 }
             } else {
                 pushConstants.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
@@ -11749,7 +11773,10 @@ void RenderSystem::UpdateFrameUniforms() {
         static_cast<f32>(m_Renderer->GetSwapchainWidth()),
         static_cast<f32>(m_Renderer->GetSwapchainHeight()),
         m_Camera ? m_Camera->GetNearPlane() : 0.1f,
-        0.0f);
+        // w carries the scene palette's bindless slot; -1 means no palette, and
+        // a palette-indexed material then falls back to its texture unchanged.
+        (m_PaletteBindless != UINT32_MAX && m_ScenePalette.count > 0)
+            ? static_cast<f32>(m_PaletteBindless) : -1.0f);
 
     // DDGI params for the direct fragment-shader probe lookup. z of atlasParams
     // gates the whole block in the shader, so it stays off unless DDGI is
@@ -13396,6 +13423,14 @@ void RenderSystem::RenderEntity(Entity entity) {
             material->surfaceNoiseScale > 0.0f && pushConstants.surfaceParam1 < 100.0f) {
             pushConstants.surfaceParam1 = 400.0f + material->surfaceNoiseScale;
             pushConstants.surfaceParam2 = material->surfaceNoiseStrength;
+        }
+        // Palette-indexed, last so it wins the slot. Same encoding and the same
+        // reason as the other two builders: the flags word has no free bits.
+        // This one is the MAIN-PASS direct draw, which is the path the player
+        // and an exported game take -- without it the palette worked in the
+        // editor viewport and nowhere a player would ever see it.
+        if (material->paletteIndexed) {
+            pushConstants.surfaceParam1 = ECS::MaterialGPU::SURFACE_PARAM1_PALETTE_INDEXED;
         }
     } else {
         // Default material (light gray, non-metallic)

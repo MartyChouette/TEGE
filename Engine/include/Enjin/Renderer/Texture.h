@@ -27,10 +27,15 @@ public:
         u32 height,
         u32 channels = 4,
         VkFormat format = VK_FORMAT_R8G8B8A8_SRGB,
-        const SamplerConfig& samplerConfig = SamplerConfig{}
+        const SamplerConfig& samplerConfig = SamplerConfig{},
+        bool generateMips = true
     );
 
     // Create a solid color texture (useful for defaults)
+    // Re-upload pixels into the existing image, keeping the view, sampler and
+    // any bindless slot that already points at it.
+    bool UpdateFromData(const void* data, u32 width, u32 height, u32 channels);
+
     bool CreateSolidColor(u8 r, u8 g, u8 b, u8 a = 255);
 
     // Alias an EXTERNALLY-owned image view + sampler (e.g. a RenderTarget's

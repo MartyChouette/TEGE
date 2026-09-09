@@ -224,3 +224,6 @@ _docs_internal/
 # Exported game archives and build output inside example projects
 Examples/*/Build/
 Examples/*/*.zip
+
+# CTest scratch, written wherever ctest is invoked
+Testing/

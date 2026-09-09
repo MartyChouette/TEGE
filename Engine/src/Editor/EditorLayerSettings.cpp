@@ -2029,6 +2029,7 @@ void EditorLayer::DrawSettingsWindow() {
 
             // --- Setting Conflicts ---
             DrawSettingsConflictWarnings();
+            DrawSettingsSection_ScenePalette();
 
             // --- Art Style Preset ---
             DrawSettingsSection_ArtStylePreset();

@@ -286,6 +286,7 @@ json SerializeMaterialComponent(const ECS::MaterialComponent& material) {
     if (material.stippleTransparency != kDefaultMaterial.stippleTransparency) j["stippleTransparency"] = material.stippleTransparency;
     if (material.uvQuantize != kDefaultMaterial.uvQuantize) j["uvQuantize"] = material.uvQuantize;
     if (material.gouraudOnly != kDefaultMaterial.gouraudOnly) j["gouraudOnly"] = material.gouraudOnly;
+    if (material.paletteIndexed != kDefaultMaterial.paletteIndexed) j["paletteIndexed"] = material.paletteIndexed;
     if (material.sdfText != kDefaultMaterial.sdfText) j["sdfText"] = material.sdfText;
     if (material.vertexSnapResolution != kDefaultMaterial.vertexSnapResolution) j["vertexSnapResolution"] = material.vertexSnapResolution;
     if (material.shadowDitherMode != kDefaultMaterial.shadowDitherMode) j["shadowDitherMode"] = material.shadowDitherMode;
@@ -645,6 +646,7 @@ ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
     if (j.contains("stippleTransparency")) material.stippleTransparency = JB(j["stippleTransparency"]);
     if (j.contains("uvQuantize")) material.uvQuantize = JB(j["uvQuantize"]);
     if (j.contains("gouraudOnly")) material.gouraudOnly = JB(j["gouraudOnly"]);
+    if (j.contains("paletteIndexed")) material.paletteIndexed = JB(j["paletteIndexed"]);
     if (j.contains("sdfText")) material.sdfText = JB(j["sdfText"]);
     // Full u8 range: the field is the RAW grid resolution (80-320-ish); the old
     // <=31 guard confused it with the 5-bit packed shader value and silently

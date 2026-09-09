@@ -124,12 +124,129 @@ bool VulkanImage::Create(
     return true;
 }
 
+bool VulkanImage::UpdateFromData(const void* data, u32 width, u32 height, u32 channels) {
+    if (!data || m_Image == VK_NULL_HANDLE) return false;
+    // Only the exact same extent: a different size would need a new image, and
+    // silently ignoring that would show stale pixels rather than fail loudly.
+    if (width != m_Width || height != m_Height) return false;
+    if (m_MipLevels != 1) return false;   // see the header note
+
+    VkDevice device = m_Context->GetDevice();
+    const VkDeviceSize imageSize = static_cast<VkDeviceSize>(width) * height * channels;
+
+    VkBuffer staging = VK_NULL_HANDLE;
+    VkDeviceMemory stagingMem = VK_NULL_HANDLE;
+    VkBufferCreateInfo bi{};
+    bi.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bi.size = imageSize;
+    bi.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    bi.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    if (vkCreateBuffer(device, &bi, nullptr, &staging) != VK_SUCCESS) return false;
+
+    VkMemoryRequirements memReq{};
+    vkGetBufferMemoryRequirements(device, staging, &memReq);
+    VkMemoryAllocateInfo ai{};
+    ai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    ai.allocationSize = memReq.size;
+    ai.memoryTypeIndex = m_Context->FindMemoryType(
+        memReq.memoryTypeBits,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    if (vkAllocateMemory(device, &ai, nullptr, &stagingMem) != VK_SUCCESS) {
+        vkDestroyBuffer(device, staging, nullptr);
+        return false;
+    }
+    vkBindBufferMemory(device, staging, stagingMem, 0);
+
+    void* mapped = nullptr;
+    vkMapMemory(device, stagingMem, 0, imageSize, 0, &mapped);
+    std::memcpy(mapped, data, static_cast<size_t>(imageSize));
+    vkUnmapMemory(device, stagingMem);
+
+    auto cleanup = [&]() {
+        vkDestroyBuffer(device, staging, nullptr);
+        vkFreeMemory(device, stagingMem, nullptr);
+    };
+
+    VkCommandPool pool = VK_NULL_HANDLE;
+    VkCommandPoolCreateInfo pi{};
+    pi.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    pi.queueFamilyIndex = m_Context->GetGraphicsQueueFamily();
+    pi.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+    if (vkCreateCommandPool(device, &pi, nullptr, &pool) != VK_SUCCESS) { cleanup(); return false; }
+
+    VkCommandBuffer cmd = VK_NULL_HANDLE;
+    VkCommandBufferAllocateInfo cai{};
+    cai.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    cai.commandPool = pool;
+    cai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cai.commandBufferCount = 1;
+    if (vkAllocateCommandBuffers(device, &cai, &cmd) != VK_SUCCESS) {
+        vkDestroyCommandPool(device, pool, nullptr);
+        cleanup();
+        return false;
+    }
+
+    VkCommandBufferBeginInfo begin{};
+    begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vkBeginCommandBuffer(cmd, &begin);
+
+    // The image is already shader-readable, so this is a round trip rather than
+    // the UNDEFINED -> TRANSFER_DST a fresh image takes.
+    VkImageMemoryBarrier toTransfer{};
+    toTransfer.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    toTransfer.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    toTransfer.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    toTransfer.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toTransfer.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toTransfer.image = m_Image;
+    toTransfer.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    toTransfer.subresourceRange.baseMipLevel = 0;
+    toTransfer.subresourceRange.levelCount = 1;
+    toTransfer.subresourceRange.baseArrayLayer = 0;
+    toTransfer.subresourceRange.layerCount = 1;
+    toTransfer.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    toTransfer.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &toTransfer);
+
+    VkBufferImageCopy region{};
+    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.mipLevel = 0;
+    region.imageSubresource.baseArrayLayer = 0;
+    region.imageSubresource.layerCount = 1;
+    region.imageExtent = { width, height, 1 };
+    vkCmdCopyBufferToImage(cmd, staging, m_Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+    VkImageMemoryBarrier toRead = toTransfer;
+    toRead.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    toRead.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    toRead.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    toRead.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &toRead);
+
+    vkEndCommandBuffer(cmd);
+
+    VkSubmitInfo si{};
+    si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    si.commandBufferCount = 1;
+    si.pCommandBuffers = &cmd;
+    bool ok = vkQueueSubmit(m_Context->GetGraphicsQueue(), 1, &si, VK_NULL_HANDLE) == VK_SUCCESS;
+    if (ok) vkQueueWaitIdle(m_Context->GetGraphicsQueue());
+
+    vkDestroyCommandPool(device, pool, nullptr);
+    cleanup();
+    return ok;
+}
+
 bool VulkanImage::CreateFromData(
     const void* data,
     u32 width,
     u32 height,
     u32 channels,
-    VkFormat format
+    VkFormat format,
+    bool generateMips
 ) {
     m_Width = width;
     m_Height = height;
@@ -138,7 +255,7 @@ bool VulkanImage::CreateFromData(
     // Calculate mip levels. A full chain only makes sense if the format can be
     // linearly blitted (needed to downsample the levels). Otherwise stick to one
     // mip so we never leave undefined levels for the sampler to read.
-    bool canMip = (width > 0 && height > 0);
+    bool canMip = generateMips && (width > 0 && height > 0);
     if (canMip) {
         VkFormatProperties fp{};
         vkGetPhysicalDeviceFormatProperties(m_Context->GetPhysicalDevice(), format, &fp);

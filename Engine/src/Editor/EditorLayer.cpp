@@ -1738,6 +1738,15 @@ void EditorLayer::Update(f32 deltaTime) {
         m_RenderSystem->SetWindSystem(&m_WindSystem);
     }
 
+    // Palette cycling clock, for the same reason as the skeletal tick below:
+    // RenderSystem::Update() is where it normally advances and the editor never
+    // calls it, so without this the palette uploads once and holds. It is
+    // deposit-only and self-guards against a second deposit in the same frame,
+    // so play mode ticking it as well does not double the speed.
+    if (m_RenderSystem) {
+        m_RenderSystem->TickPaletteTime(deltaTime);
+    }
+
     // Update skeletal animators (advance bone animation each frame).
     // RenderSystem::Update() is not called by the editor because it handles
     // terrain/sprite/tilemap regeneration that the editor manages separately.

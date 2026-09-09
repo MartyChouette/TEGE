@@ -1255,4 +1255,41 @@ ENJIN_TEST(SerdesCoverage, AdaptiveRayBudgetTuningSurvivesASave) {
     ENJIN_EXPECT_FALSE(out.adaptiveRayDisocclusionBoost);
 }
 
+// The scene palette is the authored table plus the runs that rotate it. Losing
+// either on a save means the art is gone, not just the animation.
+ENJIN_TEST(SerdesCoverage, ScenePaletteAndItsCyclingRunsSurviveASave) {
+    Enjin::Renderer::SceneRenderSettings s;
+    s.scenePaletteEnabled = true;
+    s.scenePaletteName = "Lagoon";
+    s.scenePaletteColors = { 0x000000FFu, 0x10285AFFu, 0x78C8EBFFu, 0xFFFFFFFFu };
+    Enjin::Renderer::PaletteCycleRange r;
+    r.first = 1; r.count = 3; r.speed = -4.5f; r.enabled = true;
+    s.scenePaletteCycles.push_back(r);
+
+    const auto out = RoundTripRenderSettings(s);
+
+    ENJIN_EXPECT_TRUE(out.scenePaletteEnabled);
+    ENJIN_EXPECT_TRUE(out.scenePaletteName == "Lagoon");
+    ENJIN_ASSERT_EQ(out.scenePaletteColors.size(), static_cast<usize>(4));
+    ENJIN_EXPECT_EQ(out.scenePaletteColors[1], 0x10285AFFu);
+    ENJIN_EXPECT_EQ(out.scenePaletteColors[3], 0xFFFFFFFFu);
+
+    ENJIN_ASSERT_EQ(out.scenePaletteCycles.size(), static_cast<usize>(1));
+    ENJIN_EXPECT_EQ(out.scenePaletteCycles[0].first, 1u);
+    ENJIN_EXPECT_EQ(out.scenePaletteCycles[0].count, 3u);
+    // Negative speed is what makes fire climb rather than fall; a serializer
+    // that dropped the sign would silently reverse the art.
+    ENJIN_EXPECT_TRUE(out.scenePaletteCycles[0].speed < 0.0f);
+}
+
+// A scene that never used a palette must not gain one, and must not gain the
+// keys either.
+ENJIN_TEST(SerdesCoverage, ASceneWithoutAPaletteStaysWithoutOne) {
+    const nlohmann::json empty = nlohmann::json::object();
+    const auto out = Enjin::Renderer::DeserializeRenderSettings(empty);
+    ENJIN_EXPECT_FALSE(out.scenePaletteEnabled);
+    ENJIN_EXPECT_TRUE(out.scenePaletteColors.empty());
+    ENJIN_EXPECT_TRUE(out.scenePaletteCycles.empty());
+}
+
 ENJIN_TEST_MAIN()

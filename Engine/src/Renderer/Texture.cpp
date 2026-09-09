@@ -36,10 +36,11 @@ bool Texture::CreateFromData(
     u32 height,
     u32 channels,
     VkFormat format,
-    const SamplerConfig& samplerConfig
+    const SamplerConfig& samplerConfig,
+    bool generateMips
 ) {
     m_Image = std::make_unique<VulkanImage>(m_Context);
-    if (!m_Image->CreateFromData(data, width, height, channels, format)) {
+    if (!m_Image->CreateFromData(data, width, height, channels, format, generateMips)) {
         m_Image.reset();
         return false;
     }
@@ -52,6 +53,11 @@ bool Texture::CreateFromData(
     }
 
     return true;
+}
+
+bool Texture::UpdateFromData(const void* data, u32 width, u32 height, u32 channels) {
+    if (!m_Image) return false;
+    return m_Image->UpdateFromData(data, width, height, channels);
 }
 
 bool Texture::CreateSolidColor(u8 r, u8 g, u8 b, u8 a) {
