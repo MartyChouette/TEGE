@@ -1634,6 +1634,7 @@ private:
     static constexpr u32 kWebCookieCell = 256;
     static constexpr u32 kWebCookieCells = 4;
     Renderer::GPUTextureHandle m_WebSpotCookieTex;
+    Renderer::GPUTextureHandle m_WebLightmapTex[3];
     std::vector<u8> m_WebCookieAtlasScratch;
     u64 m_WebCookieFingerprint = 0;
     f32 m_WebPaletteUploadedTime = -1.0f;
@@ -1647,6 +1648,7 @@ private:
     // Background plate on web: which one is active, and getting its textures,
     // bind group and depth mapping ready before the scene pass records.
     void WebUpdateScenePalette();
+    void WebUpdateSceneLightmap();
     void WebUpdateLightCookies();
     const PreRenderedBackgroundComponent* WebActivePlate() const;
     bool WebPreparePlate(const PreRenderedBackgroundComponent* bg);

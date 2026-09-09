@@ -44,6 +44,9 @@ struct LightingUBO {
     // the two must describe the same buffer or the binding sizes disagree.
     spotCookie: array<vec4<f32>, 4>,     // x = atlas cell (-1 = none), y = scale, z = intensity
     spotCookieRight: array<vec4<f32>, 4>,// xyz = the light's local +X
+    // Baked lightmap strength in x; the atlases themselves are textures above.
+    // Appended last in both copies, same prefix rule as everything else here.
+    lightmapParams: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> viewProj: ViewProjection;
@@ -59,6 +62,14 @@ struct LightingUBO {
 // texture with exactly one layer, and an atlas needs no backend change at all.
 @group(0) @binding(3) var spotCookieTex: texture_2d<f32>;
 @group(0) @binding(4) var spotCookieSmp: sampler;
+
+// Baked lightmap: three basis atlases. Scene-wide, so they sit here rather
+// than on a material bind group -- one bake covers a scene. Sampled with the
+// cookie's linear sampler on purpose: baked light is MEANT to be smooth
+// between texels, which is what lets a low-resolution atlas look acceptable.
+@group(0) @binding(5) var lightmapTex0: texture_2d<f32>;
+@group(0) @binding(6) var lightmapTex1: texture_2d<f32>;
+@group(0) @binding(7) var lightmapTex2: texture_2d<f32>;
 
 struct ObjectData {
     model: mat4x4<f32>,
@@ -135,6 +146,7 @@ struct VertexInput {
     @location(4) boneWeights: vec4<f32>,
     @location(5) boneIndices: vec4<u32>,
     @location(6) color: vec4<f32>,        // vertex color (SDF glyphs carry textColor here)
+    @location(7) uv1: vec2<f32>,          // lightmap UVs (baked light)
 };
 
 struct VertexOutput {
@@ -149,6 +161,7 @@ struct VertexOutput {
     // Affine texturing divides UV back out by this. 1.0 when off, so the
     // fragment does the same maths either way and stays uniform.
     @location(7) clipW: f32,
+    @location(8) uv1: vec2<f32>,          // lightmap UVs, carried through untouched
 };
 
 @vertex
@@ -260,6 +273,7 @@ fn vs_main(in: VertexInput, @builtin(instance_index) instanceIdx: u32) -> Vertex
     }
     out.instanceIdx = instanceIdx;
     out.color = in.color;
+    out.uv1 = in.uv1;
     return out;
 }
 
@@ -384,6 +398,14 @@ fn samplePointShadow(worldPos: vec3<f32>, lightPos: vec3<f32>, range: f32) -> f3
 // lines would drift the first time either was edited.
 // A gobo: the shape a light is projected through. Port of calcSpotCookie in
 // triangle.frag, reading a 2x2 atlas cell instead of a bindless texture.
+// The Half-Life 2 basis in tangent space. The SAME literals as kBasis in
+// RadiosityNormalMap.cpp and triangle.frag: the bake integrates against them
+// and every shader blends by them, so a third copy that drifted would make
+// surfaces lean on one backend and not the other.
+const kRNMBasis0 = vec3<f32>(-0.408248290, -0.707106781, 0.577350269);
+const kRNMBasis1 = vec3<f32>(-0.408248290,  0.707106781, 0.577350269);
+const kRNMBasis2 = vec3<f32>( 0.816496581,  0.0,         0.577350269);
+
 fn spotCookie(i: i32, lightDir: vec3<f32>, spotDirV: vec3<f32>, outerCos: f32) -> f32 {
     let cell = lighting.spotCookie[i].x;
     if (cell < 0.0) { return 1.0; }
@@ -493,6 +515,44 @@ fn shadeSurface(in: VertexOutput) -> vec4<f32> {
         let TBN = mat3x3<f32>(T, B, N);
         N = normalize(TBN * tangentNormal);
     }
+    // Baked light that still reacts to a normal map. Three atlases hold the
+    // light arriving from three fixed tangent-space directions, blended by how
+    // much this pixel's bumped normal faces each -- so a bump picks up light a
+    // flat lightmap could never give it. Bit 8 opts in.
+    //
+    // This reads tangentNormal DIRECTLY, where the Vulkan shader has to project
+    // its world normal back into tangent space. Same result, one frame change
+    // less, purely because this backend happened to still have the tangent-space
+    // value in hand at the point the blend is needed.
+    var rnmLight = vec3<f32>(0.0);
+    var rnmAmount = 0.0;
+    if ((object.flags & 256) != 0 && lighting.lightmapParams.x > 0.0) {
+        var nTS = tangentNormal;
+        let nLen = length(nTS);
+        // A missing or unnormalized normal map resolves FLAT, not black: an
+        // even share of all three is what the texel was baked as, and black
+        // would be blamed on the bake.
+        nTS = select(vec3<f32>(0.0, 0.0, 1.0), nTS / nLen, nLen > 1e-6);
+
+        var wgt = vec3<f32>(max(dot(nTS, kRNMBasis0), 0.0),
+                            max(dot(nTS, kRNMBasis1), 0.0),
+                            max(dot(nTS, kRNMBasis2), 0.0));
+        let wSum = wgt.x + wgt.y + wgt.z;
+        // Normalized so a bumpy surface stays as bright as the flat lightmap
+        // says it should be.
+        wgt = select(vec3<f32>(1.0 / 3.0), wgt / wSum, wSum > 1e-6);
+
+        // SampleLevel, not Sample: this sits behind a per-draw flag, which is
+        // non-uniform control flow, and an implicit-derivative sample there is
+        // illegal. Level 0 is also simply correct -- the atlases are uploaded
+        // without a mip chain.
+        let c0 = textureSampleLevel(lightmapTex0, spotCookieSmp, in.uv1, 0.0).rgb;
+        let c1 = textureSampleLevel(lightmapTex1, spotCookieSmp, in.uv1, 0.0).rgb;
+        let c2 = textureSampleLevel(lightmapTex2, spotCookieSmp, in.uv1, 0.0).rgb;
+        rnmLight = c0 * wgt.x + c1 * wgt.y + c2 * wgt.z;
+        rnmAmount = clamp(lighting.lightmapParams.x, 0.0, 4.0);
+    }
+
     let V = normalize(viewProj.viewPos - in.world_pos);
 
     let F0_dielectric = vec3<f32>(0.04);
@@ -639,7 +699,12 @@ fn shadeSurface(in: VertexOutput) -> vec4<f32> {
     }
     let ambient = ambIrr * lighting.ambientColor.w * albedo;
     let emissive = object.emissiveColor * object.emissiveStrength;
-    var color = ambient + Lo + emissive;
+    // Baked light, added as its own term against the surface colour -- the
+    // same place and the same form as triangle.frag, so a scene reads the same
+    // on both backends. Computing rnmLight above and never adding it here is
+    // exactly the bug this line is fixing: everything loaded, reported
+    // resident, and lit nothing.
+    var color = ambient + Lo + emissive + rnmLight * rnmAmount * albedo;
 
     // Specular IBL from the sky gradient — parity with the desktop reflection-probe
     // gradient fallback (triangle.frag ~1290: result += iblEnv * iblF * ambientIntensity).
@@ -1685,6 +1750,9 @@ struct LightingUBO {
     // the two must describe the same buffer or the binding sizes disagree.
     spotCookie: array<vec4<f32>, 4>,     // x = atlas cell (-1 = none), y = scale, z = intensity
     spotCookieRight: array<vec4<f32>, 4>,// xyz = the light's local +X
+    // Baked lightmap strength in x; the atlases themselves are textures above.
+    // Appended last in both copies, same prefix rule as everything else here.
+    lightmapParams: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> viewProj: ViewProjection;
 @group(0) @binding(1) var<uniform> lighting: LightingUBO;

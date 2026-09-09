@@ -155,6 +155,9 @@ struct WebLightingUBO {
     // touched or re-checked.
     WebLightVec4 spotCookie[4];            // 64   x = atlas cell (-1 = none), y = scale, z = intensity
     WebLightVec4 spotCookieRight[4];       // 64   xyz = the light's local +X
+    // Baked lightmap strength in x. The atlases are textures on the frame
+    // group; only the dial lives here.
+    WebLightVec4 lightmapParams;           // 16
 };                                         // Total: 992 bytes (appended the cookie rows)
 
 struct WebObjectDataUBO {
@@ -743,6 +746,11 @@ void RenderSystem::Initialize() {
         {2, BType::SampledTexture, SStage::Fragment, 0},
         {3, BType::SampledTexture, SStage::Fragment, 0},   // spot cookie atlas
         {4, BType::Sampler, SStage::Fragment, 0},
+        // The three basis atlases of a baked lightmap. Scene-wide, so they
+        // belong here rather than on a material group -- one bake per scene.
+        {5, BType::SampledTexture, SStage::Fragment, 0},
+        {6, BType::SampledTexture, SStage::Fragment, 0},
+        {7, BType::SampledTexture, SStage::Fragment, 0},
     };
     m_WebFrameLayout = bindMgr->CreateBindGroupLayout(frameLayoutDesc);
 
@@ -817,6 +825,7 @@ void RenderSystem::Initialize() {
         {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(MeshComponent::Vertex, boneWeights)), 4}, // boneWeights
         {Renderer::GPUVertexFormat::Uint32x4,  static_cast<u32>(offsetof(MeshComponent::Vertex, boneIndices)), 5}, // boneIndices
         {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(MeshComponent::Vertex, color)), 6},      // vertex color (SDF glyph textColor)
+        {Renderer::GPUVertexFormat::Float32x2, static_cast<u32>(offsetof(MeshComponent::Vertex, uv1)), 7},      // lightmap UVs (baked light)
     };
     pipeDesc.vertexBuffers = {vertLayout};
 
@@ -1097,6 +1106,12 @@ void RenderSystem::Initialize() {
         {2, {}, 0, 0, m_WebScenePaletteTex, {}},
         {3, {}, 0, 0, m_WebSpotCookieTex, {}},
         {4, {}, 0, 0, {}, m_WebSpotCookieTex},
+        // A bind group entry cannot be empty, so an unbaked scene points all
+        // three at the default white texture and lightmapParams.x stays 0,
+        // which skips the blend entirely.
+        {5, {}, 0, 0, m_WebDefaultWhiteTex, {}},
+        {6, {}, 0, 0, m_WebDefaultWhiteTex, {}},
+        {7, {}, 0, 0, m_WebDefaultWhiteTex, {}},
     };
     m_WebFrameBindGroup = bindMgr->CreateBindGroup(frameBGDesc);
     if (!m_WebFrameBindGroup.IsValid()) {
@@ -1729,6 +1744,64 @@ void RenderSystem::WebUpdateLightCookies() {
 
     texMgr->UploadData(m_WebSpotCookieTex, m_WebCookieAtlasScratch.data(), atlasEdge, atlasEdge);
     ENJIN_LOG_INFO(Renderer, "Web light cookies: %u in the atlas", cell);
+}
+
+// Load the scene's three basis atlases and rebuild the frame bind group around
+// them. Web twin of UpdateSceneLightmap().
+//
+// The frame group is otherwise built once at init, but a lightmap arrives with
+// a scene and its textures come from files whose size is not known up front, so
+// they cannot be preallocated the way the palette table is. Rebuilding one bind
+// group per scene load is the cheap way out.
+void RenderSystem::WebUpdateSceneLightmap() {
+    if (!m_Renderer) return;
+    if (!m_LightmapEnabled) return;
+    if (m_LightmapBindless[0] != UINT32_MAX) return;   // already resident
+
+    auto* bindMgr = m_Renderer->GetBindGroupManager();
+    if (!bindMgr || !m_WebFrameLayout.IsValid()) return;
+
+    Renderer::GPUTextureHandle tex[3];
+    for (u32 i = 0; i < 3; ++i) {
+        if (m_LightmapPath[i].empty()) return;
+        tex[i] = WebGetOrLoadTexture(m_LightmapPath[i]);
+        if (!tex[i].IsValid()) {
+            // All three or none. Two atlases and a missing one would blend a
+            // basis direction against black and tilt the whole scene.
+            ENJIN_LOG_ERROR(Renderer, "Lightmap incomplete on web; baked light is off");
+            m_LightmapEnabled = false;
+            return;
+        }
+    }
+    m_WebLightmapTex[0] = tex[0];
+    m_WebLightmapTex[1] = tex[1];
+    m_WebLightmapTex[2] = tex[2];
+
+    Renderer::GPUBindGroupDesc bg;
+    bg.layout = m_WebFrameLayout;
+    bg.entries = {
+        {0, m_WebViewProjBuffer, 0, sizeof(WebViewProjectionUBO), {}, {}},
+        {1, m_WebLightingBuffer, 0, sizeof(WebLightingUBO), {}, {}},
+        {2, {}, 0, 0, m_WebScenePaletteTex, {}},
+        {3, {}, 0, 0, m_WebSpotCookieTex, {}},
+        {4, {}, 0, 0, {}, m_WebSpotCookieTex},
+        {5, {}, 0, 0, tex[0], {}},
+        {6, {}, 0, 0, tex[1], {}},
+        {7, {}, 0, 0, tex[2], {}},
+    };
+    bg.label = "FrameBindGroupWithLightmap";
+    const auto rebuilt = bindMgr->CreateBindGroup(bg);
+    if (!rebuilt.IsValid()) {
+        ENJIN_LOG_ERROR(Renderer, "Could not rebuild the frame bind group for the lightmap");
+        m_LightmapEnabled = false;
+        return;
+    }
+    m_WebFrameBindGroup = rebuilt;
+    // Not bindless indices here -- this backend has no bindless -- but the same
+    // 'already resident' latch, so the group is rebuilt once per bake and not
+    // once per frame.
+    for (u32 i = 0; i < 3; ++i) m_LightmapBindless[i] = i;
+    ENJIN_LOG_INFO(Renderer, "Web scene lightmap resident, strength %.2f", m_LightmapStrength);
 }
 
 // Cycle the scene palettes and upload them as rows of one texture. Web twin of
@@ -2453,6 +2526,10 @@ void RenderSystem::Update(f32 deltaTime) {
     {
         WebLightingUBO lit{};
         std::memset(&lit, 0, sizeof(lit));
+        // Baked light strength, written every frame like the rest of this
+        // buffer -- and AFTER the memset above, which is where the first
+        // attempt put it and had it zeroed on the very next line.
+        lit.lightmapParams = { m_LightmapEnabled ? m_LightmapStrength : 0.0f, 0.0f, 0.0f, 0.0f };
 
         u32 dirCount = 0, pointCount = 0, spotCount = 0;
         // Which atlas quadrant the next cookie-carrying spot gets. Counted
@@ -3326,6 +3403,7 @@ void RenderSystem::Update(f32 deltaTime) {
     // occluding.
     // Palette cycling: uploads the tables when the animation has moved.
     WebUpdateScenePalette();
+    WebUpdateSceneLightmap();
     WebUpdateLightCookies();
 
     const PreRenderedBackgroundComponent* webPlate = WebActivePlate();
@@ -3588,6 +3666,11 @@ void RenderSystem::Update(f32 deltaTime) {
                 // Packed into the flags word rather than added as a field so
                 // ObjectData does not grow -- its layout has to stay identical
                 // in three places (this struct, PBR_WGSL and OUTLINE_WGSL).
+                // Baked lightmap: bit 8. A separate bit rather than a band,
+                // because on web the flags word still HAS free bits -- unlike
+                // the Vulkan side, where every one is spoken for and this had
+                // to share surfaceParam1.
+                if (mat->lightmapped) obj.flags |= (1 << 8);
                 if (mat->paletteIndexed) {
                     obj.flags |= (1 << 7);
                     const u32 palCount = static_cast<u32>(m_ScenePalettes.size());
