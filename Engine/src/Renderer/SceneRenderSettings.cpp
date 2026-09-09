@@ -507,31 +507,6 @@ void SceneRenderSettings::ApplyToRuntimeUnclamped(ECS::RenderSystem* rs, PostPro
                                        volumetricFogNoiseStrength, volumetricFogWindX,
                                        volumetricFogWindZ);
 
-        // Scene palette. Rebuilt from the authored colours so cycling always
-        // starts from the art rather than from wherever it left off.
-        if (scenePaletteEnabled && !scenePalettes.empty()) {
-            std::vector<Renderer::ScenePaletteSlot> slots;
-            for (const ScenePaletteEntry& e : scenePalettes) {
-                if (slots.size() >= Renderer::kMaxPaletteSlots) break;
-                Renderer::ScenePaletteSlot slot;
-                slot.palette.name = e.name;
-                slot.palette.count = static_cast<u32>(
-                    e.colors.size() < Renderer::kPaletteMaxColors
-                        ? e.colors.size() : Renderer::kPaletteMaxColors);
-                for (u32 i = 0; i < slot.palette.count; ++i) {
-                    const u32 packed = e.colors[i];
-                    Renderer::PaletteColor c;
-                    c.r = static_cast<u8>((packed >> 24) & 0xFF);
-                    c.g = static_cast<u8>((packed >> 16) & 0xFF);
-                    c.b = static_cast<u8>((packed >> 8) & 0xFF);
-                    c.a = static_cast<u8>(packed & 0xFF);
-                    slot.palette.colors[i] = c;
-                }
-                slot.cycles = e.cycles;
-                slots.push_back(std::move(slot));
-            }
-            rs->SetScenePalettes(slots);
-        }
 
         rs->ApplyDDGISettings(ddgiEnabled, ddgiGridSpacing, ddgiGridOrigin,
                               ddgiVoxelWorldExtent, ddgiRaysPerProbe,
@@ -562,6 +537,38 @@ void SceneRenderSettings::ApplyToRuntimeUnclamped(ECS::RenderSystem* rs, PostPro
             rs->ApplyGPUParticleSettings(gp);
         }
 #endif
+        // Scene palettes. OUTSIDE the renderer guard on purpose: this is
+        // authored data being handed to the render system, not a Vulkan call,
+        // and both backends have a palette path now. It sat inside the guard
+        // through the whole web port, so the web renderer was reading its
+        // default all-white table and every palette-indexed material came out
+        // blank -- a shader that worked perfectly and was never given anything
+        // to draw.
+        // Scene palette. Rebuilt from the authored colours so cycling always
+        // starts from the art rather than from wherever it left off.
+        if (scenePaletteEnabled && !scenePalettes.empty()) {
+            std::vector<Renderer::ScenePaletteSlot> slots;
+            for (const ScenePaletteEntry& e : scenePalettes) {
+                if (slots.size() >= Renderer::kMaxPaletteSlots) break;
+                Renderer::ScenePaletteSlot slot;
+                slot.palette.name = e.name;
+                slot.palette.count = static_cast<u32>(
+                    e.colors.size() < Renderer::kPaletteMaxColors
+                        ? e.colors.size() : Renderer::kPaletteMaxColors);
+                for (u32 i = 0; i < slot.palette.count; ++i) {
+                    const u32 packed = e.colors[i];
+                    Renderer::PaletteColor c;
+                    c.r = static_cast<u8>((packed >> 24) & 0xFF);
+                    c.g = static_cast<u8>((packed >> 16) & 0xFF);
+                    c.b = static_cast<u8>((packed >> 8) & 0xFF);
+                    c.a = static_cast<u8>(packed & 0xFF);
+                    slot.palette.colors[i] = c;
+                }
+                slot.cycles = e.cycles;
+                slots.push_back(std::move(slot));
+            }
+            rs->SetScenePalettes(slots);
+        }
         rs->SetFogColor(fogColor);
         // Remembered separately so the per-frame weather updater can restore it
         // instead of overwriting it with hardcoded defaults.
