@@ -428,6 +428,12 @@ public:
     // Cleared in FlushPendingChanges, which every runtime calls once per frame
     // before recording.
     void TickPaletteTime(f32 dt) {
+        // A zero or negative deposit is not a tick. The web runtime calls
+        // Update(0.0f) in its render step ("deltaTime handled separately"), and
+        // without this that call would CLAIM the frame and the next real dt
+        // would be dropped by the guard below -- freezing the palette while
+        // looking like the clock was being ticked correctly.
+        if (!(dt > 0.0f)) return;
         if (m_PaletteTickedThisFrame) return;
         m_PaletteTickedThisFrame = true;
         m_PaletteTime += dt;

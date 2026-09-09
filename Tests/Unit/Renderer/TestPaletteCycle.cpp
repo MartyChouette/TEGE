@@ -290,4 +290,30 @@ ENJIN_TEST(PaletteSlots, MoreSlotsThanTheTextureHasRowsAreDropped) {
     ENJIN_EXPECT_EQ(rs.GetScenePaletteCount(), kMaxPaletteSlots);
 }
 
+ENJIN_TEST(PaletteClock, AZeroTickDoesNotClaimTheFrame) {
+    // The web runtime calls Update(0.0f) in its render step, with the real dt
+    // deposited earlier from World::Update. A zero that counted as this frame's
+    // tick would make the guard swallow the NEXT frame's real dt, and the
+    // palette would sit still while every clock in the code looked correct.
+    // That is exactly how it reached the browser broken once.
+    ECS::World world;
+    ECS::RenderSystem rs(&world, nullptr);
+
+    rs.TickPaletteTime(0.0f);
+    rs.TickPaletteTime(0.25f);
+
+    ENJIN_EXPECT_TRUE(rs.GetPaletteTime() > 0.24f && rs.GetPaletteTime() < 0.26f);
+}
+
+ENJIN_TEST(PaletteClock, ANegativeTickIsIgnoredToo) {
+    // Nothing legitimately runs time backwards, and a negative dt from a bad
+    // clock read would rewind the animation rather than pause it.
+    ECS::World world;
+    ECS::RenderSystem rs(&world, nullptr);
+
+    rs.TickPaletteTime(-5.0f);
+
+    ENJIN_EXPECT_TRUE(rs.GetPaletteTime() == 0.0f);
+}
+
 ENJIN_TEST_MAIN()

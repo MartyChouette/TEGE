@@ -4614,6 +4614,11 @@ void RenderSystem::FlushSceneClear() {
 
 void RenderSystem::FlushPendingChanges() {
     if (m_SceneClearPending) FlushSceneClear();
+    // Re-arm the palette clock, exactly as the Vulkan flush does. Missing it
+    // here meant the guard latched on the first web frame and never opened
+    // again: the palette uploaded once and then held that frame forever, which
+    // reads as "cycling does not work on web" rather than as a stuck flag.
+    m_PaletteTickedThisFrame = false;
 }
 
 void RenderSystem::RefreshStorageCache() {
