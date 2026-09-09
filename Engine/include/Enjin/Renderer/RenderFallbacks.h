@@ -149,5 +149,37 @@ struct EnvironmentDome {
 };
 EnvironmentDome DeriveEnvironmentDome(const Math::Vector3& ambientColor);
 
+// --- Shadows -----------------------------------------------------------------
+
+// A scene that traces its shadows can reasonably switch shadow MAPS off: the
+// tracing is doing that job, and a second shadow system would be paid for
+// twice. On a backend that cannot trace, that same scene arrives with no
+// shadows whatsoever -- and unlike a missing reflection, missing shadows
+// detach everything in the scene from the ground.
+//
+// The substitute is the shadow maps the scene switched off. Turning them back
+// on is only correct because of what it can infer: the author asked for TRACED
+// shadows, so they wanted shadows. A scene with both switched off wanted none,
+// and must be left alone.
+enum class ShadowSource : u8 {
+    None = 0,
+    Traced,        // ray-traced, desktop
+    ShadowMaps,    // the ordinary depth-map path every backend runs
+    BakedOnly,     // only what a lightmap froze in: static geometry, nothing that moves
+};
+
+struct ShadowCapabilities {
+    bool canTrace = false;
+    bool shadowMapsAvailable = true;
+    bool hasBakedLightmap = false;
+};
+
+ShadowSource ResolveShadows(bool sceneWantsTraced, const ShadowCapabilities& caps);
+
+// True when a scene asked for traced shadows on a backend that cannot trace and
+// switched its shadow maps off -- the case where they should be switched back
+// on, because the author wanted shadows and not this particular technique.
+bool ShouldRestoreShadowMaps(bool sceneWantsTraced, bool shadowMapsEnabled, bool canTrace);
+
 } // namespace Renderer
 } // namespace Enjin

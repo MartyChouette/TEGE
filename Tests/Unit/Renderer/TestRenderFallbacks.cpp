@@ -185,4 +185,49 @@ ENJIN_TEST(RenderFallbacks, TheDomeIsTheScenesOwnColourAndNotSomeOtherHue) {
     ENJIN_EXPECT_TRUE(dome.bottom.x > dome.bottom.y && dome.bottom.y > dome.bottom.z);
 }
 
+// --- Shadows -----------------------------------------------------------------
+
+namespace {
+ShadowCapabilities SCaps(bool trace, bool maps, bool baked) {
+    ShadowCapabilities c;
+    c.canTrace = trace;
+    c.shadowMapsAvailable = maps;
+    c.hasBakedLightmap = baked;
+    return c;
+}
+} // namespace
+
+ENJIN_TEST(RenderFallbacks, DesktopTracesShadowsWhenAsked) {
+    ENJIN_EXPECT_TRUE(ResolveShadows(true, SCaps(true, true, false)) == ShadowSource::Traced);
+}
+
+ENJIN_TEST(RenderFallbacks, WebFallsBackToShadowMaps) {
+    ENJIN_EXPECT_TRUE(ResolveShadows(true, SCaps(false, true, false)) == ShadowSource::ShadowMaps);
+}
+
+ENJIN_TEST(RenderFallbacks, WithNoMapsABakeCoversTheStaticShadowsOnly) {
+    // Named separately from ShadowMaps on purpose. A lightmap froze the static
+    // shadows in at bake time, so anything that MOVES casts nothing -- that is a
+    // different picture, not a dimmer one, and a caller may want to say so.
+    ENJIN_EXPECT_TRUE(ResolveShadows(true, SCaps(false, false, true)) == ShadowSource::BakedOnly);
+    ENJIN_EXPECT_TRUE(ResolveShadows(true, SCaps(false, false, false)) == ShadowSource::None);
+}
+
+ENJIN_TEST(RenderFallbacks, ShadowMapsComeBackOnForASceneThatTracedInstead) {
+    // The scene switched maps off because tracing was doing the job. On a
+    // backend that cannot trace, that reads as 'no shadows at all', which
+    // detaches everything in the scene from the ground.
+    ENJIN_EXPECT_TRUE(ShouldRestoreShadowMaps(true, /*mapsEnabled=*/false, /*canTrace=*/false));
+}
+
+ENJIN_TEST(RenderFallbacks, ASceneThatWantedNoShadowsKeepsNone) {
+    // Both switched off is a look somebody chose. Restoring maps here would
+    // add shadows to art that was authored without them.
+    ENJIN_EXPECT_FALSE(ShouldRestoreShadowMaps(false, /*mapsEnabled=*/false, /*canTrace=*/false));
+    // And nothing is restored where tracing actually works, or where the maps
+    // were never switched off in the first place.
+    ENJIN_EXPECT_FALSE(ShouldRestoreShadowMaps(true, false, /*canTrace=*/true));
+    ENJIN_EXPECT_FALSE(ShouldRestoreShadowMaps(true, /*mapsEnabled=*/true, false));
+}
+
 ENJIN_TEST_MAIN()

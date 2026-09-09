@@ -86,5 +86,22 @@ EnvironmentDome DeriveEnvironmentDome(const Math::Vector3& ambientColor) {
     return dome;
 }
 
+ShadowSource ResolveShadows(bool sceneWantsTraced, const ShadowCapabilities& caps) {
+    if (sceneWantsTraced && caps.canTrace) return ShadowSource::Traced;
+    if (caps.shadowMapsAvailable) return ShadowSource::ShadowMaps;
+    // A lightmap froze the static shadows in at bake time. Better than nothing,
+    // and worth naming separately: anything that MOVES casts nothing at all,
+    // which is a different picture rather than a dimmer one.
+    if (caps.hasBakedLightmap) return ShadowSource::BakedOnly;
+    return ShadowSource::None;
+}
+
+bool ShouldRestoreShadowMaps(bool sceneWantsTraced, bool shadowMapsEnabled, bool canTrace) {
+    // Both off is a scene that wanted no shadows. Only the combination of
+    // 'traced was asked for' and 'this backend cannot' says the maps were
+    // switched off to avoid paying twice rather than as a look.
+    return sceneWantsTraced && !canTrace && !shadowMapsEnabled;
+}
+
 } // namespace Renderer
 } // namespace Enjin

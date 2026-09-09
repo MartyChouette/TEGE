@@ -311,6 +311,11 @@ private:
     // Baked lightmap atlases: three paths and their bindless slots. OUTSIDE
     // the renderer guard, because the paths are plain scene data that both
     // backends carry -- only the GPU-side load is Vulkan-specific.
+    // Outside the renderer guard, where it belongs: both backends draw shadows
+    // and both should honour a scene switching them off. It lived in the
+    // Vulkan-only block, so the web path could not even see it -- which is why
+    // a scene authored with shadows off still got them in a browser.
+    bool m_ShadowsEnabled = true;
     bool m_SubstituteEnvironmentReflections = false;
     bool m_LightmapEnabled = false;
     std::string m_LightmapPath[3];
@@ -2001,7 +2006,7 @@ private:
     std::unique_ptr<Renderer::VulkanPipeline> m_ShadowPipeline;
     std::unique_ptr<Renderer::VulkanPipeline> m_ShadowMaskPipeline;  // alpha-cutout variant (same pass/config + frag)
     Math::Matrix4 m_CurrentCascadeVP;  // Set per-cascade in RenderShadowPass, read by RenderEntityShadow
-    bool m_ShadowsEnabled = true;
+
     bool m_PassShadowsEnabled = true;   // per-pass; see SetPassShadowsEnabled
     bool m_ShadowDescriptorsDirty = false;
     bool m_EditorWireframe = false;

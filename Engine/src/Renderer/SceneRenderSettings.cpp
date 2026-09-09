@@ -486,7 +486,6 @@ void SceneRenderSettings::ApplyToRuntimeUnclamped(ECS::RenderSystem* rs, PostPro
     if (rs) {
         rs->SetShadowDistance(shadowDistance);  // both backends (web: single-cascade fit range)
 #if !ENJIN_RENDERER_WEBGPU
-        rs->SetShadowsEnabled(shadowsEnabled);
         rs->SetShadowResolution(shadowResolution);
         rs->SetShadowStrength(shadowStrength);
         rs->SetShadowSoftness(shadowSoftness);
@@ -495,6 +494,25 @@ void SceneRenderSettings::ApplyToRuntimeUnclamped(ECS::RenderSystem* rs, PostPro
         rs->SetWireframeEnabled(wireframe);
         rs->SetTextureFilterConfig(textureFilter, textureAnisotropy, textureMipmaps, textureWrap);
 #endif
+        // Shadows, OUTSIDE the renderer guard. The substitution's whole purpose
+        // is to fire on the backend that cannot trace, and the first version of
+        // it sat inside the desktop-only block a few lines up -- compiled out on
+        // exactly the platform it existed for, and silent about it.
+        bool effectiveShadowMaps = shadowsEnabled;
+        {
+#if !ENJIN_RENDERER_WEBGPU
+            const bool canTrace = true;
+#else
+            const bool canTrace = false;   // no ray tracing in a browser
+#endif
+            if (Renderer::ShouldRestoreShadowMaps(rtShadowsEnabled, shadowsEnabled, canTrace)) {
+                effectiveShadowMaps = true;
+                ENJIN_LOG_INFO(Renderer,
+                    "Traced shadows are unavailable here; switching shadow maps back on");
+            }
+        }
+        rs->SetShadowsEnabled(effectiveShadowMaps);
+
         rs->SetBackfaceCullingEnabled(backfaceCulling);
         rs->SetAmbientIntensity(ambientIntensity);
         rs->SetAmbientColor(ambientColor);

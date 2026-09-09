@@ -2719,7 +2719,11 @@ void RenderSystem::Update(f32 deltaTime) {
     // ========================================================================
     // Shadow depth pass (single cascade, directional light)
     // ========================================================================
-    if (m_WebShadowPipeline.IsValid() && m_WebShadowMapTex.IsValid() && m_Camera) {
+    // m_ShadowsEnabled is honoured here now. It never was on this path: every
+    // check of it lives in the Vulkan half, so a scene that deliberately
+    // switched shadows off still got them in a browser -- the flag meant one
+    // thing on desktop and nothing at all on web.
+    if (m_ShadowsEnabled && m_WebShadowPipeline.IsValid() && m_WebShadowMapTex.IsValid() && m_Camera) {
         // Same light the lighting UBO put in directional slot 0
         Math::Vector3 shadowLightDir(0.5f, -0.8f, 0.3f);
         bool hasShadowLight = false;
@@ -3030,7 +3034,7 @@ void RenderSystem::Update(f32 deltaTime) {
     // Spot light shadow passes (max 2 spot lights)
     // ========================================================================
     u32 activeSpotShadows = 0;
-    if (m_WebShadowPipeline.IsValid() && m_Camera) {
+    if (m_ShadowsEnabled && m_WebShadowPipeline.IsValid() && m_Camera) {
         auto* webRenderer = static_cast<Renderer::WebGPURenderer*>(m_Renderer);
         auto* webTexMgr = static_cast<Renderer::WebGPUTextureManager*>(m_Renderer->GetTextureManager());
         auto* pipeMgr2 = static_cast<Renderer::WebGPUPipelineManager*>(m_Renderer->GetPipelineManager());
