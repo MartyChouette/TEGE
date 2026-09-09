@@ -1840,10 +1840,22 @@ public:
         ImGuiIO& io = ImGui::GetIO();
         io.DisplaySize = ImVec2(static_cast<float>(w), static_cast<float>(h));
         io.DeltaTime = m_LastDeltaTime > 0.0f ? m_LastDeltaTime : 1.0f / 60.0f;
-        // Mouse comes in CSS pixels from the HTML5 callbacks; the UI layout space
-        // is swapchain pixels — scale by devicePixelRatio.
+        // Mouse and UI layout are BOTH in canvas backing-store pixels, so the
+        // position goes through untouched.
+        //
+        // This used to multiply by devicePixelRatio, with a comment saying the
+        // mouse arrived in CSS pixels. That was true once; the HTML5 callback
+        // was later changed to scale by backing/css itself, and this line was
+        // not changed with it. The double scale then sat dormant, because the
+        // page's ResizeObserver fires on load BEFORE the runtime is ready, so
+        // onCanvasResize was never called and the stored ratio stayed at its
+        // 1.0 default -- multiplying by one. The first resize that reached the
+        // runtime set the real ratio and every click moved 1.5x down and right
+        // on a 150% display. Going fullscreen is the resize most people hit
+        // first, which made it look like a fullscreen bug rather than a resize
+        // one: dragging the window edge broke it just as thoroughly.
         Enjin::Math::Vector2 mp = Enjin::Input::GetMousePosition();
-        io.MousePos = ImVec2(mp.x * m_LastDPR, mp.y * m_LastDPR);
+        io.MousePos = ImVec2(mp.x, mp.y);
         io.MouseDown[0] = Enjin::Input::IsMouseButtonDown(Enjin::MouseButton::Left);
         io.MouseDown[1] = Enjin::Input::IsMouseButtonDown(Enjin::MouseButton::Right);
 
@@ -2056,7 +2068,6 @@ public:
 
     void OnCanvasResize(int w, int h, float dpr) {
         if (w <= 0 || h <= 0) return;
-        m_LastDPR = dpr > 0.0f ? dpr : 1.0f;
         Enjin::u32 pixelW = static_cast<Enjin::u32>(w * dpr);
         Enjin::u32 pixelH = static_cast<Enjin::u32>(h * dpr);
         if (m_Renderer) m_Renderer->Resize(pixelW, pixelH);
@@ -2716,7 +2727,6 @@ private:
     bool m_AtMainMenu = false;             // Authored "MainMenu" canvas showing at boot
     bool m_WebImGuiInit = false;
     Enjin::f32 m_LastDeltaTime = 1.0f / 60.0f;
-    Enjin::f32 m_LastDPR = 1.0f;
     Enjin::Gameplay::QuestSystem m_QuestSystem;
     Enjin::Gameplay::ObjectPool m_ObjectPool;
     Enjin::Gameplay::TieredSaveSystem m_TieredSaveSystem;
