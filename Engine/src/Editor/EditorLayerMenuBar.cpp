@@ -608,6 +608,11 @@ void EditorLayer::DrawMenuBar() {
                         ImGui::SetTooltip("Build gobos for spot lights: window panes, blinds,\n"
                                           "leaf dapple, cathedral glass.");
                     }
+                    if (ImGui::MenuItem("Bake Background Plate")) m_ShowPlateBaker = true;
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Render this shot once and keep the picture, with the depth\n"
+                                          "it was rendered at, so characters walk behind it.");
+                    }
                     ImGui::EndMenu();
                 }
                 // --- Audio ---

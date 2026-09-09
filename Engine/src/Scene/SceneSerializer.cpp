@@ -14,6 +14,7 @@
 #include "Enjin/ECS/Components/Mesh.h"
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/ECS/Components/Notes.h"
+#include "Enjin/ECS/Components/PreRenderedBackground.h"
 #include "Enjin/ECS/Components/HoverHighlight.h"
 #include "Enjin/ECS/Components/DisplayGraphic.h"
 #include "Enjin/ECS/Components/Camera.h"
@@ -518,6 +519,21 @@ json SerializeNotesComponent(const ECS::NotesComponent& notes) {
     return j;
 }
 
+json SerializePreRenderedBackgroundComponent(const ECS::PreRenderedBackgroundComponent& bg) {
+    json j;
+    j["enabled"] = bg.enabled;
+    j["visible"] = bg.visible;
+    j["platePath"] = bg.platePath;
+    j["depthPath"] = bg.depthPath;
+    // depthNear/depthFar are half the MEANING of the packed depth bytes, so
+    // they are always written even at their defaults: a plate whose range went
+    // missing would load with every wall at a different distance.
+    j["depthNear"] = RF(bg.depthNear);
+    j["depthFar"] = RF(bg.depthFar);
+    j["depthBias"] = RF(bg.depthBias);
+    return j;
+}
+
 json SerializeTextComponent(const ECS::TextComponent& text) {
     json j;
     j["text"] = text.text;
@@ -858,6 +874,24 @@ ECS::NotesComponent DeserializeNotesComponent(const json& j) {
     ECS::NotesComponent notes;
     if (j.contains("notes")) notes.notes = SafeStr(j["notes"], MAX_STR_LARGE);
     return notes;
+}
+
+ECS::PreRenderedBackgroundComponent DeserializePreRenderedBackgroundComponent(const json& j) {
+    ECS::PreRenderedBackgroundComponent bg;
+    if (j.contains("enabled")) bg.enabled = JB(j["enabled"]);
+    if (j.contains("visible")) bg.visible = JB(j["visible"]);
+    if (j.contains("platePath")) bg.platePath = SafeStr(j["platePath"], MAX_STR_PATH);
+    if (j.contains("depthPath")) bg.depthPath = SafeStr(j["depthPath"], MAX_STR_PATH);
+    if (j.contains("depthNear") && j["depthNear"].is_number()) bg.depthNear = j["depthNear"].get<f32>();
+    if (j.contains("depthFar") && j["depthFar"].is_number()) bg.depthFar = j["depthFar"].get<f32>();
+    if (j.contains("depthBias") && j["depthBias"].is_number()) bg.depthBias = j["depthBias"].get<f32>();
+    // A scene file is editable text. A range that cannot describe anything is
+    // repaired to the default rather than divided by later.
+    if (!(bg.depthNear > 0.0f) || !(bg.depthFar > bg.depthNear)) {
+        bg.depthNear = 0.5f;
+        bg.depthFar = 100.0f;
+    }
+    return bg;
 }
 
 json SerializeDisplayGraphicComponent(const ECS::DisplayGraphicComponent& dg) {
@@ -9373,6 +9407,7 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
         ENJIN_SERDES("networkIdentity", ECS::NetworkIdentityComponent, SerializeNetworkIdentityComponent, DeserializeNetworkIdentityComponent),
         ENJIN_SERDES("networkTransform", ECS::NetworkTransformComponent, SerializeNetworkTransformComponent, DeserializeNetworkTransformComponent),
         ENJIN_SERDES("notes", ECS::NotesComponent, SerializeNotesComponent, DeserializeNotesComponent),
+        ENJIN_SERDES("preRenderedBackground", ECS::PreRenderedBackgroundComponent, SerializePreRenderedBackgroundComponent, DeserializePreRenderedBackgroundComponent),
         ENJIN_SERDES("hoverHighlight", ECS::HoverHighlightComponent, SerializeHoverHighlightComponent, DeserializeHoverHighlightComponent),
         ENJIN_SERDES("parallaxMachine", ECS::ParallaxMachineComponent, SerializeParallaxMachineComponent, DeserializeParallaxMachineComponent),
         ENJIN_SERDES("parallaxLayer", ECS::ParallaxLayerComponent, SerializeParallaxLayerComponent, DeserializeParallaxLayerComponent),

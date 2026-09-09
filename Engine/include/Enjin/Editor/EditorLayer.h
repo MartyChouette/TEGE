@@ -238,6 +238,9 @@ public:
     static int ValidateBuiltinTemplates();
 
     static inline std::string s_GoldenCapturePath;
+    // --bake-plate <name>: bake a background plate from the launch scene, then
+    // exit. Exists so the bake has a path that is not a mouse click.
+    static inline std::string s_BakePlateName;
     static inline i32 s_GoldenCaptureFrame = 180;
 
     EditorLayer();
@@ -346,6 +349,14 @@ private:
     // A plain bool rather than an EditorPanel bit: only bit 31 of that mask is
     // still free and this is a tool window, not a dockable panel.
     bool m_ShowCookieCreator = false;
+
+    // Pre-rendered background baking. The plate is produced from the Game
+    // View, so there is no separate preview to hold here -- only the name and
+    // whatever the last bake had to say.
+    bool m_ShowPlateBaker = false;
+    std::string m_PlateBakeName = "plate";
+    std::string m_PlateBakeStatus;
+    int m_PlateBakeFrameCounter = 0;
     Renderer::CookieParams m_CookieDraft;
     std::vector<u8> m_CookiePreview;         // regenerated only when the draft changes
     Renderer::CookieParams m_CookiePreviewOf; // what m_CookiePreview was built from
@@ -505,6 +516,10 @@ private:
     void DrawPixelEditorPanel();
     // Build and preview light cookies (gobos), then apply one to a spot light.
     void DrawCookieCreatorWindow();
+    void DrawBackgroundPlateBakerWindow();
+    // Captures the Game View's colour and depth, writes both to the project,
+    // and attaches them to the active camera. Returns false with a reason.
+    bool BakeBackgroundPlate(std::string& outStatus);
     // Shared by the creator and the Light inspector section, so a cookie edited
     // in either place looks the same.
     void DrawCookiePreview(const std::vector<u8>& pixels, u32 res, f32 sizePx);
@@ -548,6 +563,7 @@ private:
     void DrawLightComponent(ECS::Entity entity);
     void DrawCameraComponent(ECS::Entity entity);
     void DrawNotesComponent(ECS::Entity entity);
+    void DrawPreRenderedBackgroundComponent(ECS::Entity entity);
     void DrawHoverHighlightComponent(ECS::Entity entity);
     void DrawTextComponent(ECS::Entity entity);
     void DrawDisplayGraphicComponent(ECS::Entity entity);

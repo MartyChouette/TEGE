@@ -115,6 +115,10 @@ extern const size_t FullscreenVertexShaderDataSize;
 extern const unsigned char Sky2DFragmentShaderData[];
 extern const size_t Sky2DFragmentShaderDataSize;
 
+// plate.frag.spv (3652 bytes, 913 words)
+extern const unsigned char PlateFragmentShaderData[];
+extern const size_t PlateFragmentShaderDataSize;
+
 // water2d.frag.spv (8636 bytes, 2159 words)
 extern const unsigned char Water2DFragmentShaderData[];
 extern const size_t Water2DFragmentShaderDataSize;

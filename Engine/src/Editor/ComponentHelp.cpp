@@ -407,6 +407,7 @@ static const std::unordered_map<std::string, ComponentHelp>& Registry() {
         }
 
         // ---- Batch 4 (bulk): the long tail ---------------------------------
+        r["preRenderedBackground"] = { "Shows a finished picture of this shot instead of the geometry, with the depth it was rendered at so characters still go behind things in it.", "Bake it from the camera you want the shot from, hide the geometry, then tick Visible.", nullptr, { { RelationKind::PairsWith, "Camera", Has<ECS::CameraComponent>, Add<ECS::CameraComponent> } } };
         r["notes"] = { "Holds developer notes attached to an entity, not shipped in builds.", "Type reminders or to-dos for yourself here.", nullptr, {} };
         r["text"] = { "Shows a block of text in the world or UI.", "Type the words you want displayed.", nullptr, {} };
         r["terrain"] = { "A 3D heightmap ground you can sculpt and paint.", "Set the grid size, then raise, lower, and texture the surface.", nullptr, { { RelationKind::FeedsRenderer, "Renderer", nullptr, nullptr } } };

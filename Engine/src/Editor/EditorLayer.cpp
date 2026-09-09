@@ -1406,6 +1406,23 @@ void EditorLayer::Update(f32 deltaTime) {
         }
     }
 
+    // Same countdown as the golden capture, and for the same reason: the game
+    // view has to have drawn the scene at least once before there is anything
+    // to read back.
+    if (!s_BakePlateName.empty() && m_RenderSystem && m_GameViewRenderTarget) {
+        if (++m_PlateBakeFrameCounter >= 30) {
+            m_PlateBakeName = s_BakePlateName;
+            s_BakePlateName.clear();
+            std::string status;
+            const bool ok = BakeBackgroundPlate(status);
+            ENJIN_LOG_INFO(Editor, "bake-plate: %s", status.c_str());
+            // The scene now carries the component the bake attached, and the
+            // point of running this headless is to keep it.
+            if (ok && !m_CurrentScenePath.empty()) SaveScene(m_CurrentScenePath);
+            if (m_Window) m_Window->Close();
+        }
+    }
+
     // R1 GIF recording: sample the game view at the fidelity's capture rate.
     // The readback stalls the GPU briefly - acceptable while deliberately
     // recording. A game-view resize mid-recording ends the clip (GIF frames
@@ -2626,7 +2643,8 @@ void EditorLayer::PrepareRenderTargets() {
 void EditorLayer::UpdateGameViewSims(f32 simDt) {
     if (!m_World || !m_RenderSystem) return;
     if (!m_RenderSystem->IsGameViewReady()) return;
-    if (!m_PlayMode.IsPlaying() && !m_GameViewVisiblePrev && s_GoldenCapturePath.empty()) return;
+    if (!m_PlayMode.IsPlaying() && !m_GameViewVisiblePrev &&
+        s_GoldenCapturePath.empty() && s_BakePlateName.empty()) return;
 
     // Build water surface meshes here (a safe pre-render point). The player does this in
     // RenderSystem::Update(), which the editor never calls, so without this the 3D water
@@ -3171,7 +3189,8 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
 
     // Hidden-viewport skip: don't render the Game View when its panel isn't visible.
     // Keep rendering during a golden capture (headless RT verification reads the output).
-    if (!m_GameViewVisiblePrev && s_GoldenCapturePath.empty()) {
+    // A plate bake reads this target back too, so it has to have been drawn.
+    if (!m_GameViewVisiblePrev && s_GoldenCapturePath.empty() && s_BakePlateName.empty()) {
         return;
     }
 
@@ -4253,6 +4272,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         // shader on the current selection (RenderSystem shares the main pipeline layout).
         DrawAtlasPackerWindow();
         DrawCookieCreatorWindow();
+        DrawBackgroundPlateBakerWindow();
         if (m_ShaderGraphEditor.ConsumeApplyRequest()) {
             if (m_RenderSystem && m_World && m_PrimarySelected != ECS::INVALID_ENTITY &&
                 m_World->IsValid(m_PrimarySelected)) {

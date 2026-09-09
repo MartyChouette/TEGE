@@ -1,0 +1,12 @@
+{
+ "name": "Plate",
+ "version": "1.0",
+ "scenes": [
+  {
+   "path": "scenes/Plate.enjin",
+   "name": "Plate",
+   "buildIndex": 0,
+   "isStartScene": true
+  }
+ ]
+}

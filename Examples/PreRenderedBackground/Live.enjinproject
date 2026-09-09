@@ -1,0 +1,12 @@
+{
+ "name": "Live",
+ "version": "1.0",
+ "scenes": [
+  {
+   "path": "scenes/Live.enjin",
+   "name": "Live",
+   "buildIndex": 0,
+   "isStartScene": true
+  }
+ ]
+}

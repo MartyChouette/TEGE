@@ -147,6 +147,8 @@ namespace Enjin { namespace Renderer {
 namespace Enjin {
 namespace ECS {
 
+struct PreRenderedBackgroundComponent;
+
 // Scene rendering mode — auto-detected per frame from entity composition.
 // Controls which rendering features are active to avoid unnecessary GPU work.
 enum class SceneRenderMode : u8 {
@@ -442,6 +444,21 @@ public:
     // Rebuild the cycled table and re-upload it. Called once a frame from
     // FlushPendingChanges, never mid-recording.
     void UpdateScenePalette();
+
+    // Pre-rendered backgrounds. Loading happens at the FlushPendingChanges
+    // safe point like every other GPU resource; the draw happens first in the
+    // scene pass, before anything that has to be occluded by the room.
+    void UpdatePreRenderedPlates();
+    void ClearPreRenderedPlates();
+    u32 LoadPlateImage(const std::string& path, bool isDepth);
+    const PreRenderedBackgroundComponent* ActivePlate() const;
+    void CreatePlatePipeline(VkRenderPass renderPass = VK_NULL_HANDLE);
+    bool CreatePlatePipelineVariant(VkRenderPass renderPass, u32 colorAttachmentCount,
+                                    VkSampleCountFlagBits samples, VkPipeline& outPipeline);
+    void RenderPreRenderedPlate(VkCommandBuffer commandBuffer,
+                                const VkViewport* viewportOverride = nullptr,
+                                const VkRect2D* scissorOverride = nullptr,
+                                bool offscreenPass = false);
     u32 ResolveLightCookie(Entity e, const LightComponent& light) const;
     void ClearLightCookies();
 
@@ -2328,6 +2345,24 @@ private:
     VkPipeline m_Sky2DPipeline = VK_NULL_HANDLE;
     VkPipeline m_Sky2DPipelineOffscreen = VK_NULL_HANDLE;
     VkPipelineLayout m_Sky2DPipelineLayout = VK_NULL_HANDLE;
+
+    // Pre-rendered background plates. Same shape as the 2D sky pipeline (a
+    // fullscreen triangle with the bindless set), differing in one thing that
+    // matters: this one WRITES depth, which is what makes a painted room
+    // occlude a live character.
+    VkPipeline m_PlatePipeline = VK_NULL_HANDLE;
+    VkPipeline m_PlatePipelineOffscreen = VK_NULL_HANDLE;
+    VkPipelineLayout m_PlatePipelineLayout = VK_NULL_HANDLE;
+
+    // Plate images, keyed by the path a scene stores. Held here rather than in
+    // the shared texture cache because a depth plate needs UNORM and point
+    // sampling, which that cache does not offer and should not: it is right
+    // for colour, and a depth plate is not colour.
+    struct PlateTexture {
+        std::shared_ptr<Renderer::Texture> texture;
+        u32 bindless = UINT32_MAX;
+    };
+    std::unordered_map<std::string, PlateTexture> m_PlateTextures;
     // Custom cloud texture cache (SkyboxConfig is const via GetConfig): re-resolve
     // the bindless index only when the authored path changes.
     std::string m_CloudTexPath;

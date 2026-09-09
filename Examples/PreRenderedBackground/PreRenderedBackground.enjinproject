@@ -1,0 +1,24 @@
+{
+ "name": "PreRenderedBackground",
+ "version": "1.0",
+ "scenes": [
+  {
+   "path": "scenes/Room.enjin",
+   "name": "Room",
+   "buildIndex": 0,
+   "isStartScene": true
+  },
+  {
+   "path": "scenes/Live.enjin",
+   "name": "Live",
+   "buildIndex": 1,
+   "isStartScene": false
+  },
+  {
+   "path": "scenes/Plate.enjin",
+   "name": "Plate",
+   "buildIndex": 2,
+   "isStartScene": false
+  }
+ ]
+}

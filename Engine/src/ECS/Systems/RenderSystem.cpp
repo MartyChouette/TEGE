@@ -4879,6 +4879,7 @@ void RenderSystem::Initialize() {
     CreateSkyboxCubeVBO();
     CreateSkyboxPipeline();
     CreateSky2DPipeline();   // full-screen authored sky for 2D scenes
+    CreatePlatePipeline();   // pre-rendered background plates (colour + depth)
     CreateWater2DPipeline(); // full-screen authored water for 2D scenes
 
     // Set up shader hot-reload (editor-only)
@@ -5277,6 +5278,10 @@ void RenderSystem::Shutdown() {
         if (m_Sky2DPipelineOffscreen != VK_NULL_HANDLE) {
             vkDestroyPipeline(device, m_Sky2DPipelineOffscreen, nullptr);
             m_Sky2DPipelineOffscreen = VK_NULL_HANDLE;
+        }
+        if (m_PlatePipelineOffscreen != VK_NULL_HANDLE) {
+            vkDestroyPipeline(device, m_PlatePipelineOffscreen, nullptr);
+            m_PlatePipelineOffscreen = VK_NULL_HANDLE;
         }
         if (m_Sky2DPipelineLayout != VK_NULL_HANDLE) {
             vkDestroyPipelineLayout(device, m_Sky2DPipelineLayout, nullptr);
@@ -6034,6 +6039,10 @@ void RenderSystem::FlushPendingChanges() {
     // Scene palette: cycles the table and re-uploads it. Same reasoning -- a
     // texture upload has no business happening with a command buffer open.
     UpdateScenePalette();
+
+    // Background plates: creates images and registers bindless slots, so it
+    // belongs here with everything else that touches GPU lifetime.
+    UpdatePreRenderedPlates();
 
     // DDGI grid reshape. This destroys and recreates the voxel grid and the
     // probe atlas, so it has to happen where nothing is recording and nothing is
@@ -7385,6 +7394,11 @@ void RenderSystem::Update(f32 deltaTime) {
         RenderSkybox(commandBuffer);
     }
 
+    // A pre-rendered background replaces the sky it was drawn over, and writes
+    // the depth of the room it shows. It goes AFTER the sky so it covers it,
+    // and before every entity draw so those depth-test against the room.
+    RenderPreRenderedPlate(commandBuffer);
+
     u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
 
     // Bind pipeline, descriptor set, viewport, and scissor once for all entities
@@ -8170,6 +8184,8 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     } else {
         RenderSkybox(commandBuffer, &viewport, &scissor, /*offscreenPass=*/true);
     }
+
+    RenderPreRenderedPlate(commandBuffer, &viewport, &scissor, /*offscreenPass=*/true);
 
     // Reset descriptor cache for this render pass
     m_LastBound.Reset(); m_GeometryPoolBound = false;
@@ -16643,6 +16659,17 @@ void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass)
             m_Sky2DPipelineOffscreen = VK_NULL_HANDLE;
         }
         CreateSky2DPipelineVariant(renderPass, 1, VK_SAMPLE_COUNT_1_BIT, m_Sky2DPipelineOffscreen);
+    }
+
+    // Offscreen background plate variant. The editor game view renders into
+    // the offscreen pass, so without this the plate exists only in a build and
+    // is invisible in the editor -- which is where it is authored.
+    if (m_PlatePipelineLayout != VK_NULL_HANDLE) {
+        if (m_PlatePipelineOffscreen != VK_NULL_HANDLE) {
+            vkDestroyPipeline(m_VulkanRenderer->GetContext()->GetDevice(), m_PlatePipelineOffscreen, nullptr);
+            m_PlatePipelineOffscreen = VK_NULL_HANDLE;
+        }
+        CreatePlatePipelineVariant(renderPass, 1, VK_SAMPLE_COUNT_1_BIT, m_PlatePipelineOffscreen);
     }
 
     // Offscreen 2D water variant (same pass-mismatch reason)

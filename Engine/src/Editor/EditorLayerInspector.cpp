@@ -1,3 +1,4 @@
+#include "Enjin/ECS/Components/PreRenderedBackground.h"
 #include "Enjin/Platform/Desktop.h"
 #include "Enjin/Editor/EditorLayer.h"
 #include "Enjin/ECS/Components/BrushSolid.h"
@@ -1966,6 +1967,11 @@ void EditorLayer::DrawInspectorPanel() {
         if (m_World->HasComponent<ECS::NotesComponent>(m_PrimarySelected)) {
             DrawNotesComponent(m_PrimarySelected);
             DrawHoverHighlightComponent(m_PrimarySelected);
+        }
+
+        // Pre-rendered background (lives on the camera it was baked from)
+        if (m_World->HasComponent<ECS::PreRenderedBackgroundComponent>(m_PrimarySelected)) {
+            DrawPreRenderedBackgroundComponent(m_PrimarySelected);
         }
 
         // Text component

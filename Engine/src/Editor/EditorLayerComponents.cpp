@@ -1,3 +1,4 @@
+#include "Enjin/ECS/Components/PreRenderedBackground.h"
 #include "Enjin/Editor/EditorLayer.h"
 #include "Enjin/ECS/Components/BrushSolid.h"
 #ifndef _WIN32
@@ -1593,6 +1594,70 @@ void EditorLayer::DrawNotesComponent(ECS::Entity entity) {
             notes->notes = notesBuffer;
         }
     }
+}
+
+void EditorLayer::DrawPreRenderedBackgroundComponent(ECS::Entity entity) {
+    bool open = UI::SectionHeader("Pre-Rendered Background", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("PreRenderedBgCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::PreRenderedBackgroundComponent>(
+                entity, "preRenderedBackground", "Pre-Rendered Background");
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (!open) return;
+
+    auto* bg = m_World->GetComponent<ECS::PreRenderedBackgroundComponent>(entity);
+    if (!bg) return;
+    DrawComponentHelp("preRenderedBackground", m_World, entity);
+
+    ImGui::TextWrapped("A finished image of this shot, plus the depth it was rendered at, "
+                       "standing in for geometry. Live objects depth-test against it, so they "
+                       "go behind what it shows.");
+
+    // Only meaningful from the camera it was baked from, and only when that
+    // camera is the one rendering. Saying so beats a plate that silently does
+    // nothing on an entity that has no camera.
+    if (!m_World->HasComponent<ECS::CameraComponent>(entity)) {
+        ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f),
+                           "This entity has no Camera, so the plate will never draw.");
+    }
+
+    InspectorUndo::Checkbox(m_UndoRedo, "Enabled##PRBG", &bg->enabled);
+    ImGui::SetItemTooltip("Off unloads it entirely.");
+    InspectorUndo::Checkbox(m_UndoRedo, "Visible##PRBG", &bg->visible);
+    ImGui::SetItemTooltip("Off keeps the plate loaded but draws the live scene instead,\n"
+                          "which is how you compare a bake against what it came from.");
+
+    char plateBuf[512];
+    std::snprintf(plateBuf, sizeof(plateBuf), "%s", bg->platePath.c_str());
+    if (ImGui::InputText("Plate##PRBG", plateBuf, sizeof(plateBuf))) bg->platePath = plateBuf;
+    char depthBuf[512];
+    std::snprintf(depthBuf, sizeof(depthBuf), "%s", bg->depthPath.c_str());
+    if (ImGui::InputText("Depth##PRBG", depthBuf, sizeof(depthBuf))) bg->depthPath = depthBuf;
+    if (bg->depthPath.empty()) {
+        ImGui::TextDisabled("No depth plate: a flat backdrop, nothing occludes.");
+    }
+
+    // These two are half the MEANING of the depth image, not preferences. The
+    // bake writes them; editing one by hand moves every wall in the plate.
+    ImGui::Spacing();
+    ImGui::TextDisabled("Set by the bake. Changing these moves every surface in the plate.");
+    InspectorUndo::DragFloat(m_UndoRedo, "Depth Near##PRBG", &bg->depthNear, 0.01f, 0.001f, 10000.0f);
+    InspectorUndo::DragFloat(m_UndoRedo, "Depth Far##PRBG", &bg->depthFar, 0.01f, 0.002f, 100000.0f);
+    if (!(bg->depthFar > bg->depthNear)) {
+        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f),
+                           "Far must be greater than Near, or the whole plate sits at the back.");
+    }
+
+    InspectorUndo::DragFloat(m_UndoRedo, "Depth Bias##PRBG", &bg->depthBias, 0.001f, -1.0f, 1.0f);
+    ImGui::SetItemTooltip("Pushes the plate away from the camera, in world units.\n"
+                          "A small positive value settles feet that flicker against a baked floor.");
+
+    ImGui::Spacing();
+    if (ImGui::Button("Bake this shot...##PRBG")) m_ShowPlateBaker = true;
 }
 
 void EditorLayer::DrawTextComponent(ECS::Entity entity) {

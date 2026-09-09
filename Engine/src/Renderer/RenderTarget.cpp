@@ -1,3 +1,4 @@
+#include <cstring>
 #include "Enjin/Renderer/RenderTarget.h"
 #include "Enjin/Renderer/Vulkan/VulkanRenderer.h"
 #include "Enjin/Renderer/Vulkan/VulkanContext.h"
@@ -838,6 +839,135 @@ std::vector<u8> RenderTarget::CaptureToPixels() const {
     vkDestroyCommandPool(device, tempPool, nullptr);
 
     return pixels;
+}
+
+std::vector<f32> RenderTarget::CaptureDepthToPixels() const {
+    if (!m_Context || m_DepthImage == VK_NULL_HANDLE || m_Width == 0 || m_Height == 0)
+        return {};
+
+    VkDevice device = m_Context->GetDevice();
+    VkQueue queue = m_Context->GetGraphicsQueue();
+
+    // D32_SFLOAT: one float per pixel, holding the projected depth the
+    // rasterizer wrote. Turning that back into a world distance is the caller's
+    // job (Renderer::InvertPlateDepth), because only the caller knows which
+    // projection produced it.
+    const VkDeviceSize imageSize = static_cast<VkDeviceSize>(m_Width) * m_Height * sizeof(f32);
+
+    VkCommandPool tempPool = VK_NULL_HANDLE;
+    VkCommandPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
+    poolInfo.queueFamilyIndex = m_Context->GetGraphicsQueueFamily();
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+    if (vkCreateCommandPool(device, &poolInfo, nullptr, &tempPool) != VK_SUCCESS)
+        return {};
+
+    VkBufferCreateInfo bufInfo{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    bufInfo.size = imageSize;
+    bufInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    bufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    VkBuffer stagingBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory stagingMemory = VK_NULL_HANDLE;
+    if (vkCreateBuffer(device, &bufInfo, nullptr, &stagingBuffer) != VK_SUCCESS) {
+        vkDestroyCommandPool(device, tempPool, nullptr);
+        return {};
+    }
+
+    VkMemoryRequirements memReqs;
+    vkGetBufferMemoryRequirements(device, stagingBuffer, &memReqs);
+    VkMemoryAllocateInfo allocInfo{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+    allocInfo.allocationSize = memReqs.size;
+    allocInfo.memoryTypeIndex = m_Context->FindMemoryType(memReqs.memoryTypeBits,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    if (vkAllocateMemory(device, &allocInfo, nullptr, &stagingMemory) != VK_SUCCESS ||
+        vkBindBufferMemory(device, stagingBuffer, stagingMemory, 0) != VK_SUCCESS) {
+        if (stagingMemory != VK_NULL_HANDLE) vkFreeMemory(device, stagingMemory, nullptr);
+        vkDestroyBuffer(device, stagingBuffer, nullptr);
+        vkDestroyCommandPool(device, tempPool, nullptr);
+        return {};
+    }
+
+    VkCommandBufferAllocateInfo cmdAllocInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+    cmdAllocInfo.commandPool = tempPool;
+    cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cmdAllocInfo.commandBufferCount = 1;
+    VkCommandBuffer cmd = VK_NULL_HANDLE;
+    if (vkAllocateCommandBuffers(device, &cmdAllocInfo, &cmd) != VK_SUCCESS) {
+        vkFreeMemory(device, stagingMemory, nullptr);
+        vkDestroyBuffer(device, stagingBuffer, nullptr);
+        vkDestroyCommandPool(device, tempPool, nullptr);
+        return {};
+    }
+
+    VkCommandBufferBeginInfo beginInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    if (vkBeginCommandBuffer(cmd, &beginInfo) != VK_SUCCESS) {
+        vkFreeCommandBuffers(device, tempPool, 1, &cmd);
+        vkFreeMemory(device, stagingMemory, nullptr);
+        vkDestroyBuffer(device, stagingBuffer, nullptr);
+        vkDestroyCommandPool(device, tempPool, nullptr);
+        return {};
+    }
+
+    // The depth attachment is left in DEPTH_STENCIL_ATTACHMENT_OPTIMAL by the
+    // pass that wrote it -- unlike the colour image, which ends in
+    // SHADER_READ_ONLY. Getting this pair wrong is a validation error rather
+    // than a wrong picture, which is the better failure of the two.
+    VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    barrier.oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = m_DepthImage;
+    barrier.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    VkBufferImageCopy region{};
+    region.imageSubresource = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 0, 1};
+    region.imageExtent = {m_Width, m_Height, 1};
+    vkCmdCopyImageToBuffer(cmd, m_DepthImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        stagingBuffer, 1, &region);
+
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    if (vkEndCommandBuffer(cmd) != VK_SUCCESS) {
+        vkFreeCommandBuffers(device, tempPool, 1, &cmd);
+        vkFreeMemory(device, stagingMemory, nullptr);
+        vkDestroyBuffer(device, stagingBuffer, nullptr);
+        vkDestroyCommandPool(device, tempPool, nullptr);
+        return {};
+    }
+
+    VkSubmitInfo submitInfo{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &cmd;
+    if (vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to submit depth readback commands");
+    }
+    vkQueueWaitIdle(queue);
+    vkFreeCommandBuffers(device, tempPool, 1, &cmd);
+
+    std::vector<f32> depth;
+    void* data = nullptr;
+    if (vkMapMemory(device, stagingMemory, 0, imageSize, 0, &data) == VK_SUCCESS && data) {
+        depth.resize(static_cast<usize>(m_Width) * m_Height);
+        std::memcpy(depth.data(), data, static_cast<usize>(imageSize));
+        vkUnmapMemory(device, stagingMemory);
+    }
+
+    vkDestroyBuffer(device, stagingBuffer, nullptr);
+    vkFreeMemory(device, stagingMemory, nullptr);
+    vkDestroyCommandPool(device, tempPool, nullptr);
+
+    return depth;
 }
 
 } // namespace Renderer

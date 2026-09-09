@@ -46,6 +46,13 @@ public:
     // Returns empty vector on failure. Caller owns the data.
     std::vector<u8> CaptureToPixels() const;
 
+    // The DEPTH attachment, as the raw projected depth the rasterizer wrote
+    // (D32_SFLOAT, one float per pixel, row-major from the top). Used to bake
+    // a pre-rendered background's depth plate. Converting these to world
+    // distances needs the projection they came from, so that is the caller's
+    // job -- see Renderer::InvertPlateDepth.
+    std::vector<f32> CaptureDepthToPixels() const;
+
     // Begin/End a single-attachment render pass for post-processing output.
     // Only touches the color image — velocity and depth are left untouched.
     void BeginPPPass(VkCommandBuffer cmd);
