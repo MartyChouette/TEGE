@@ -4818,7 +4818,16 @@ void RenderSystem::RequestPipelineRecreation() {}  // Vulkan-only heal; WebGPU r
 f32  RenderSystem::GetShadowStrength() const { return m_WebShadowStrength; }
 void RenderSystem::SetShadowStrength(f32 s) { m_WebShadowStrength = (s < 0.0f) ? 0.0f : (s > 1.0f ? 1.0f : s); }
 void RenderSystem::SpawnGPUParticlePreset(u32, const Math::Vector3&, const Math::Vector3&,
-                                          Effects::GPUParticlePreset) {}  // Vulkan-only (GPU compute)
+                                          Effects::GPUParticlePreset) {
+    // Called from a SCRIPT binding, so a game can ask for this on web and get
+    // nothing. Said out loud once rather than never.
+    static bool warned = false;
+    if (!warned) {
+        warned = true;
+        ENJIN_LOG_WARN(Renderer,
+            "Particles_SpawnPreset is inert on web (no GPU compute path yet)");
+    }
+}
 void RenderSystem::SetFluidSimulation(Effects::FluidSimulation* /*sim*/) {}
 Renderer::GPUBufferHandle RenderSystem::UploadWebInstances(WebInstanceSlot slot,
                                                           const void* data, usize bytes) {
@@ -4839,8 +4848,28 @@ Renderer::GPUBufferHandle RenderSystem::UploadWebInstances(WebInstanceSlot slot,
 void RenderSystem::RenderWeatherParticles(const Effects::WeatherSystem& /*w*/, bool /*r*/, u32, u32, bool, u32) {}
 void RenderSystem::RenderGPUParticles() {}  // Vulkan-only (needs WebGPU compute first)
 void RenderSystem::RenderSplats() {}       // Vulkan-only
-void RenderSystem::SpawnGPUParticles(u32, const Math::Vector3&, const Math::Vector3&) {}
-void RenderSystem::SpawnSurfaceBurst(u32, const Math::Vector3&, const Math::Vector3&, u8) {}
+// The spawn calls below are REACHED on web -- by gameplay and by scripts -- and
+// do nothing here. That is a platform limit, but it used to be a silent one:
+// footstep and impact bursts simply never appeared and nothing said why. They
+// say it once now, the way the networking bindings already do ("Net_* script
+// calls are inert on web"), because a stated limitation can be worked around
+// and a silent one gets debugged as an art problem.
+void RenderSystem::SpawnGPUParticles(u32, const Math::Vector3&, const Math::Vector3&) {
+    static bool warned = false;
+    if (!warned) {
+        warned = true;
+        ENJIN_LOG_WARN(Renderer, "SpawnGPUParticles is inert on web (no GPU compute path yet)");
+    }
+}
+void RenderSystem::SpawnSurfaceBurst(u32, const Math::Vector3&, const Math::Vector3&, u8) {
+    // Reached from SurfaceResponseSystem: footstep and impact particles.
+    static bool warned = false;
+    if (!warned) {
+        warned = true;
+        ENJIN_LOG_WARN(Renderer,
+            "Surface bursts are inert on web: footstep and impact particles will not appear");
+    }
+}
 void RenderSystem::TickGPUEmitters(f32) {}
 void RenderSystem::RenderParticles(u32, u32, bool, u32) {}
 void RenderSystem::RenderElementalParticles(const Effects::ElementalSystem&, u32, u32, bool, u32) {}

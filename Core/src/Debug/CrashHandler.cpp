@@ -426,10 +426,17 @@ void UninstallCrashHandler() {
 #else
 
 // Unsupported platform — no-op
+// No crash handler off Windows yet. Install/Uninstall/Reassert doing nothing is
+// an honest platform limit, but TriggerTestCrash is a DIAGNOSTIC: someone runs
+// it to prove the handler works, and a silent no-op answers 'it works' when
+// nothing is installed at all. It says which it is now.
 void InstallCrashHandler() {}
 void UninstallCrashHandler() {}
 void ReassertCrashHandler() {}
-void TriggerTestCrash() {}
+void TriggerTestCrash() {
+    std::fprintf(stderr,
+        "[crash] TriggerTestCrash did nothing: no crash handler on this platform yet.\n");
+}
 
 #endif
 
