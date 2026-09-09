@@ -720,3 +720,38 @@ jobs:
         # runner's core count. If exit 137 comes back, put it to 3, not 2, and
         # find out which translation unit grew.
         run: cmake --build build-web-ci --parallel 4
+
+      # Render the web build in a real browser and prove it DREW something.
+      #
+      # Everything above this point is a compile check. A green Emscripten
+      # build and 16 legal shaders have both been true while the player showed
+      # a black canvas -- an MSAA sample-count mismatch did exactly that to
+      # every demo once, and a scene-palette apply left inside a Vulkan-only
+      # guard did a quieter version of it more recently. Neither is visible to
+      # a compiler.
+      #
+      # No pak is checked in, so the player falls back to the loose
+      # web-demo/scene.enjin -- lights, meshes and physics, which is enough to
+      # say the renderer is alive. It is deliberately NOT a golden-image
+      # comparison: this runs on SwiftShader and exact pixels would differ from
+      # any real GPU. The PNG is uploaded so a person can look when something
+      # smells wrong.
+      - name: Render the web build (headless Chrome)
+        run: |
+          set -o pipefail
+          cp build-web-ci/bin/EnjinPlayer.js build-web-ci/bin/EnjinPlayer.wasm web-demo/
+          python3 -m http.server 9090 --directory web-demo > /dev/null 2>&1 &
+          for i in $(seq 1 20); do
+            curl -sf -o /dev/null http://localhost:9090/index.html && break
+            sleep 1
+          done
+          cd tools
+          node web_capture.mjs http://localhost:9090/ "$GITHUB_WORKSPACE/web-render.png" --frames 90
+
+      - name: Upload the web render
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-render
+          path: web-render.png
+          if-no-files-found: ignore
