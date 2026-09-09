@@ -670,11 +670,18 @@ public:
     void RefreshDescriptorsIfDirty();
 #else
     // Web: same script-facing surface (ScriptBindings_Render compiles on both
-    // platforms — every script symbol must exist everywhere). The web shadow
-    // pass has no runtime toggles yet, so these are fixed-value accessors that
-    // let scripts degrade cleanly rather than fail to compile.
-    bool IsShadowsEnabled() const { return true; }
-    void SetShadowsEnabled(bool) {}
+    // platforms — every script symbol must exist everywhere).
+    //
+    // These were fixed-value stubs -- IsShadowsEnabled hardcoded to true and
+    // SetShadowsEnabled doing nothing -- because the web shadow pass had no
+    // runtime toggle to drive. It has one now: the pass is gated on this flag
+    // and the shader's shadow strength follows it, so the stubs were the last
+    // thing standing between a scene switching shadows off and it happening.
+    // While they stood, the flag meant one thing on desktop and was silently
+    // discarded in a browser, and IsShadowsEnabled would have written `true`
+    // back over an author's choice on any save.
+    bool IsShadowsEnabled() const { return m_ShadowsEnabled; }
+    void SetShadowsEnabled(bool enabled) { m_ShadowsEnabled = enabled; }
     f32 GetShadowStrength() const;
     void SetShadowStrength(f32 s);
 #endif

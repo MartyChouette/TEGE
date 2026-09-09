@@ -1,0 +1,12 @@
+{
+ "name": "ShadowCheck",
+ "version": "1.0",
+ "scenes": [
+  {
+   "path": "scenes/Main.enjin",
+   "name": "Main",
+   "buildIndex": 0,
+   "isStartScene": true
+  }
+ ]
+}

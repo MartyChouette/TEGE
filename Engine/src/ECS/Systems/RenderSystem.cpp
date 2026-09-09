@@ -2649,7 +2649,14 @@ void RenderSystem::Update(f32 deltaTime) {
         }
         // x is the shadow-strength the shader multiplies the occlusion by. It was
         // pinned at 1.0, so the options slider moved a value nothing read.
-        lit.shadowParams = {m_WebShadowStrength, static_cast<f32>(spotShadowCount),
+        // Strength goes to ZERO when shadows are off, and that -- not skipping
+        // the pass -- is what actually turns them off. The shader multiplies its
+        // occlusion by this, so leaving it at full strength while skipping the
+        // pass just samples a map nobody drew this run: the scene keeps its
+        // shadows and the flag looks broken. Skipping the pass as well only
+        // saves the work.
+        lit.shadowParams = {m_ShadowsEnabled ? m_WebShadowStrength : 0.0f,
+                            static_cast<f32>(spotShadowCount),
                             static_cast<f32>(pointShadowCount), 0.0f};
 
         static int s_ShadowLog = 0;
