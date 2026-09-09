@@ -1,5 +1,5 @@
 #include "Enjin/Renderer/SceneRenderSettings.h"
-#include "Enjin/Renderer/GIFallback.h"
+#include "Enjin/Renderer/RenderFallbacks.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Renderer/PostProcessing.h"
 #include "Enjin/Effects/GPUParticleTypes.h"   // GPUEmitterConfig: no renderer guard
@@ -498,7 +498,39 @@ void SceneRenderSettings::ApplyToRuntimeUnclamped(ECS::RenderSystem* rs, PostPro
         rs->SetBackfaceCullingEnabled(backfaceCulling);
         rs->SetAmbientIntensity(ambientIntensity);
         rs->SetAmbientColor(ambientColor);
-        rs->SetFogParams(fogDensity, fogStart, fogEnd, fogHeightFalloff);
+        // Fog, after the substitution below has had a chance to supply values
+        // for a backend that cannot run the volumetric version.
+        f32 effectiveFogDensity = fogDensity;
+        f32 effectiveFogStart = fogStart;
+        f32 effectiveFogEnd = fogEnd;
+        f32 effectiveFogHeightFalloff = fogHeightFalloff;
+        Math::Vector3 effectiveFogColor = fogColor;
+        {
+            Renderer::VolumetricFogRequest req;
+            req.enabled = volumetricFogEnabled;
+            req.color = volumetricFogColor;
+            req.density = volumetricFogDensity;
+            req.heightFalloff = volumetricFogHeightFalloff;
+#if !ENJIN_RENDERER_WEBGPU
+            const bool canRunVolumetric = true;
+#else
+            const bool canRunVolumetric = false;   // no froxel volume in a browser
+#endif
+            const auto sub = Renderer::SubstituteVolumetricFog(req, canRunVolumetric, fogDensity);
+            if (sub.apply) {
+                effectiveFogDensity = sub.density;
+                effectiveFogStart = sub.start;
+                effectiveFogEnd = sub.end;
+                effectiveFogHeightFalloff = sub.heightFalloff;
+                effectiveFogColor = sub.color;
+                ENJIN_LOG_INFO(Renderer,
+                    "Volumetric fog is unavailable here; standing in analytic fog "
+                    "(density %.3f). The shafts and the drifting noise are lost.",
+                    static_cast<double>(sub.density));
+            }
+        }
+        rs->SetFogParams(effectiveFogDensity, effectiveFogStart, effectiveFogEnd,
+                         effectiveFogHeightFalloff);
 #if !ENJIN_RENDERER_WEBGPU
         // Volumetric fog is a separate system from the distance fog above.
         // Vulkan-only for now, so the values ride along on web and are applied
@@ -603,10 +635,16 @@ void SceneRenderSettings::ApplyToRuntimeUnclamped(ECS::RenderSystem* rs, PostPro
         // a Vulkan call.
         rs->SetSceneLightmap(lightmapEnabled, lightmapPath[0], lightmapPath[1],
                              lightmapPath[2], lightmapStrength);
-        rs->SetFogColor(fogColor);
+        rs->SetFogColor(effectiveFogColor);
         // Remembered separately so the per-frame weather updater can restore it
         // instead of overwriting it with hardcoded defaults.
-        rs->SetAuthoredFog(fogDensity, fogStart, fogEnd, fogHeightFalloff, fogColor);
+        // The authored channel gets the SUBSTITUTED values as well. The
+        // per-frame weather updater restores fog from here, so leaving the
+        // originals would wipe the stand-in on the very next frame and the
+        // scene would clear itself one frame after loading.
+        rs->SetAuthoredFog(effectiveFogDensity, effectiveFogStart, effectiveFogEnd,
+                           effectiveFogHeightFalloff,
+                           effectiveFogColor);
         // The AUTHORED channel. Writing the live one here is pointless: the
         // per-frame weather updater overwrites it before the first frame.
         rs->SetAuthoredSnowIntensity(snowIntensity);

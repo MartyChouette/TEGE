@@ -19,7 +19,7 @@
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Renderer/LightmapBake.h"
 #include "Enjin/Renderer/LightmapUnwrap.h"
-#include "Enjin/Renderer/GIFallback.h"
+#include "Enjin/Renderer/RenderFallbacks.h"
 #include "Enjin/Platform/Paths.h"
 #include "Enjin/Logging/Log.h"
 

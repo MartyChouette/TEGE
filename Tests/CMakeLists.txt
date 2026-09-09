@@ -213,7 +213,7 @@ enjin_add_test(TestDepthPlate      Unit/Renderer/TestDepthPlate.cpp)
 enjin_add_test(TestRadiosityNormalMap Unit/Renderer/TestRadiosityNormalMap.cpp)
 enjin_add_test(TestLightmapUnwrap  Unit/Renderer/TestLightmapUnwrap.cpp)
 enjin_add_test(TestLightmapBake    Unit/Renderer/TestLightmapBake.cpp)
-enjin_add_test(TestGIFallback      Unit/Renderer/TestGIFallback.cpp)
+enjin_add_test(TestRenderFallbacks Unit/Renderer/TestRenderFallbacks.cpp)
 enjin_add_test(TestControlsMenu    Unit/GUI/TestControlsMenu.cpp)
 
 # --- Scripting ---

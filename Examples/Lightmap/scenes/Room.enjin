@@ -2836,13 +2836,13 @@
   "volumetricFogAnisotropy": 0.30000001192092896,
   "volumetricFogBaseHeight": 0.0,
   "volumetricFogColor": [
-   0.8999999761581421,
-   0.8999999761581421,
-   1.0
+   0.75,
+   0.8,
+   0.95
   ],
-  "volumetricFogDensity": 0.019999999552965164,
-  "volumetricFogEnabled": false,
-  "volumetricFogHeightFalloff": 0.10000000149011612,
+  "volumetricFogDensity": 0.06,
+  "volumetricFogEnabled": true,
+  "volumetricFogHeightFalloff": 0.05,
   "volumetricFogNoiseScale": 0.10000000149011612,
   "volumetricFogNoiseStrength": 0.30000001192092896,
   "volumetricFogTemporalBlend": 0.8999999761581421,
