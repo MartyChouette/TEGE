@@ -19,6 +19,7 @@
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Renderer/LightmapBake.h"
 #include "Enjin/Renderer/LightmapUnwrap.h"
+#include "Enjin/Renderer/GIFallback.h"
 #include "Enjin/Platform/Paths.h"
 #include "Enjin/Logging/Log.h"
 
@@ -240,6 +241,45 @@ void EditorLayer::DrawLightmapBakerWindow() {
                        "move belong here: a baked shadow under a door stays there after the door "
                        "opens.");
     ImGui::Spacing();
+
+    // What each platform will actually light this scene with. Saying it HERE
+    // matters because the bad case is invisible: a scene shipped to web with no
+    // GI does not look broken, it looks flat, and flat gets blamed on the art
+    // rather than on a bake nobody ran.
+    {
+        bool wantsDynamic = false;
+        bool hasBake = false;
+        if (m_RenderSystem) {
+            std::string b0, b1, b2;
+            f32 strength = 1.0f;
+            m_RenderSystem->GetSceneLightmap(hasBake, b0, b1, b2, strength);
+            f32 spacing = 0.0f, extent = 0.0f, trace = 0.0f, hyst = 0.0f;
+            Math::Vector3 origin;
+            u32 rays = 0, amort = 0, oct = 0;
+            i32 px = 0, py = 0, pz = 0, vres = 0;
+            m_RenderSystem->GetDDGISettings(wantsDynamic, spacing, origin, extent, rays,
+                                            trace, amort, hyst, px, py, pz, vres, oct);
+        }
+        Renderer::GICapabilities desktopCaps;
+        desktopCaps.canRunDynamic = true;
+        desktopCaps.hasBakedLightmap = hasBake;
+        Renderer::GICapabilities webCaps;
+        webCaps.canRunDynamic = false;   // no ray tracing in a browser
+        webCaps.hasBakedLightmap = hasBake;
+
+        ImGui::SeparatorText("Global illumination, per platform");
+        ImGui::Text("Desktop: %s",
+                    Renderer::GISourceName(Renderer::ResolveGI(wantsDynamic, desktopCaps)));
+        ImGui::Text("Web:     %s",
+                    Renderer::GISourceName(Renderer::ResolveGI(wantsDynamic, webCaps)));
+        const char* gap = Renderer::DescribeGIGap(wantsDynamic, webCaps);
+        if (gap && gap[0] != 0) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.72f, 0.30f, 1.0f));
+            ImGui::TextWrapped("%s", gap);
+            ImGui::PopStyleColor();
+        }
+        ImGui::Spacing();
+    }
 
     ImGui::PushItemWidth(180.0f);
     char nameBuf[64];

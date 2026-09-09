@@ -1,4 +1,5 @@
 #include "Enjin/Renderer/SceneRenderSettings.h"
+#include "Enjin/Renderer/GIFallback.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Renderer/PostProcessing.h"
 #include "Enjin/Effects/GPUParticleTypes.h"   // GPUEmitterConfig: no renderer guard
@@ -571,6 +572,32 @@ void SceneRenderSettings::ApplyToRuntimeUnclamped(ECS::RenderSystem* rs, PostPro
             }
             rs->SetScenePalettes(slots);
         }
+        // Which GI this runtime will actually use, decided once and stated.
+        //
+        // A scene asks for dynamic GI by ticking DDGI, and the web build cannot
+        // run it -- the whole path is compiled out there. Before this, such a
+        // scene simply arrived on web with no global illumination and nobody
+        // had decided that; it was what was left over. Now the baked lightmap
+        // is named as the substitute, and the one case with no substitute
+        // available is said out loud instead of looking like flat art.
+        {
+            Renderer::GICapabilities caps;
+#if !ENJIN_RENDERER_WEBGPU
+            caps.canRunDynamic = true;
+#else
+            caps.canRunDynamic = false;   // no ray tracing in a browser
+#endif
+            caps.hasBakedLightmap = lightmapEnabled;
+            const Renderer::GISource source = Renderer::ResolveGI(ddgiEnabled, caps);
+            const char* gap = Renderer::DescribeGIGap(ddgiEnabled, caps);
+            if (gap && gap[0] != '\0') {
+                ENJIN_LOG_WARN(Renderer, "%s", gap);
+            } else if (ddgiEnabled && source == Renderer::GISource::Baked) {
+                ENJIN_LOG_INFO(Renderer,
+                    "Dynamic GI is unavailable here; using the baked lightmap instead");
+            }
+        }
+
         // Lightmaps. Outside the renderer guard for the same reason the
         // palettes are: this is authored data reaching the render system, not
         // a Vulkan call.
