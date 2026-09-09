@@ -150,7 +150,12 @@ struct WebLightingUBO {
     WebLightVec4 skyClouds;                // x cov1, y scale1, z speed, w cov2
     WebLightVec4 skyCloudColor;            // xyz cloud color, w = scale2
     WebLightVec4 snowParams;               // x = snow accumulation (0..1); yzw reserved
-};                                         // Total: 864 bytes (appended snowParams)
+    // Light cookies. APPENDED rather than squeezed into the spot arrays: every
+    // field above keeps its offset, so nothing that writes this UBO had to be
+    // touched or re-checked.
+    WebLightVec4 spotCookie[4];            // 64   x = atlas cell (-1 = none), y = scale, z = intensity
+    WebLightVec4 spotCookieRight[4];       // 64   xyz = the light's local +X
+};                                         // Total: 992 bytes (appended the cookie rows)
 
 struct WebObjectDataUBO {
     alignas(16) Math::Matrix4 model;       // 64
@@ -736,6 +741,8 @@ void RenderSystem::Initialize() {
         // bind group. Other pipelines share this layout and simply do not
         // declare the binding, which is allowed.
         {2, BType::SampledTexture, SStage::Fragment, 0},
+        {3, BType::SampledTexture, SStage::Fragment, 0},   // spot cookie atlas
+        {4, BType::Sampler, SStage::Fragment, 0},
     };
     m_WebFrameLayout = bindMgr->CreateBindGroupLayout(frameLayoutDesc);
 
@@ -1071,10 +1078,25 @@ void RenderSystem::Initialize() {
         palDesc.label = "ScenePalettes";
         m_WebScenePaletteTex = texMgr->CreateTextureWithData(palDesc, whiteTable.data());
     }
+    {
+        // Cookie atlas, also created at full size once. White, because white is
+        // "no shaping": a light whose cookie has not been built yet lights the
+        // scene normally rather than going dark.
+        const u32 atlasEdge = kWebCookieCell * 2;
+        std::vector<u8> whiteAtlas(static_cast<usize>(atlasEdge) * atlasEdge * 4, 255);
+        Renderer::GPUTextureDesc cookieDesc;
+        cookieDesc.width = atlasEdge;
+        cookieDesc.height = atlasEdge;
+        cookieDesc.format = Renderer::GPUTextureFormat::RGBA8Unorm;
+        cookieDesc.label = "SpotCookieAtlas";
+        m_WebSpotCookieTex = texMgr->CreateTextureWithData(cookieDesc, whiteAtlas.data());
+    }
     frameBGDesc.entries = {
         {0, m_WebViewProjBuffer, 0, sizeof(WebViewProjectionUBO), {}, {}},
         {1, m_WebLightingBuffer, 0, sizeof(WebLightingUBO), {}, {}},
         {2, {}, 0, 0, m_WebScenePaletteTex, {}},
+        {3, {}, 0, 0, m_WebSpotCookieTex, {}},
+        {4, {}, 0, 0, {}, m_WebSpotCookieTex},
     };
     m_WebFrameBindGroup = bindMgr->CreateBindGroup(frameBGDesc);
     if (!m_WebFrameBindGroup.IsValid()) {
@@ -1617,6 +1639,97 @@ void RenderSystem::Shutdown() {
 // ============================================================================
 // Texture loading (WebGPU)
 // ============================================================================
+
+// Build the spot-light cookie atlas: up to four cookies, one per quadrant of a
+// single texture. Web twin of UpdateLightCookies(), which uses one bindless
+// texture per cookie -- there is no bindless here, and every 2D texture on this
+// backend has exactly one layer, so a 2x2 atlas is what fits without changing
+// the backend.
+//
+// Cookies are regenerated from their RECIPE rather than loaded, which is the
+// same reason the recipe is stored on the light in the first place: it is a few
+// floats instead of an image, and it survives being re-edited.
+void RenderSystem::WebUpdateLightCookies() {
+    if (!m_Renderer || !m_World || !m_WebSpotCookieTex.IsValid()) return;
+
+    // A fingerprint of every cookie recipe in the scene. Regenerating four
+    // 256x256 patterns every frame would be pure waste; they change when a
+    // person edits one, which is rare.
+    u64 fingerprint = 1469598103934665603ull;
+    auto mix64 = [&fingerprint](u64 v) {
+        fingerprint ^= v;
+        fingerprint *= 1099511628211ull;
+    };
+    u32 seen = 0;
+    for (Entity e : m_World->GetEntitiesWithComponent<LightComponent>()) {
+        const auto* lc = m_World->GetComponent<LightComponent>(e);
+        if (!lc || lc->type != LightType::Spot || !lc->cookieEnabled) continue;
+        if (seen >= kWebCookieCells) break;
+        Renderer::CookieParams p = lc->cookie;
+        Renderer::ClampCookieParams(p);
+        // The float fields are hashed as BITS, not rounded into an integer.
+        // rows and columns are floats, and a first attempt that truncated them
+        // could not tell 3.0 apart from 3.4 -- the atlas would have kept the
+        // old pattern and the edit would have looked like it did nothing.
+        auto mixF = [&mix64](f32 v) {
+            u32 bits = 0;
+            std::memcpy(&bits, &v, sizeof(bits));
+            mix64(static_cast<u64>(bits));
+        };
+        mix64(static_cast<u64>(p.pattern) * 31u + p.resolution);
+        mix64(static_cast<u64>(p.seed));
+        mix64(static_cast<u64>(p.invert ? 1 : 0));
+        mixF(p.columns); mixF(p.rows);      mixF(p.barWidth);   mixF(p.softness);
+        mixF(p.rotation); mixF(p.contrast); mixF(p.brightness); mixF(p.vignette);
+        ++seen;
+    }
+    mix64(seen);
+    if (fingerprint == m_WebCookieFingerprint) return;
+    m_WebCookieFingerprint = fingerprint;
+
+    auto* texMgr = m_Renderer->GetTextureManager();
+    if (!texMgr) return;
+
+    const u32 atlasEdge = kWebCookieCell * 2;
+    m_WebCookieAtlasScratch.assign(static_cast<usize>(atlasEdge) * atlasEdge * 4, 0);
+
+    std::vector<u8> pattern;
+    u32 cell = 0;
+    for (Entity e : m_World->GetEntitiesWithComponent<LightComponent>()) {
+        const auto* lc = m_World->GetComponent<LightComponent>(e);
+        if (!lc || lc->type != LightType::Spot || !lc->cookieEnabled) continue;
+        if (cell >= kWebCookieCells) break;
+
+        Renderer::CookieParams p = lc->cookie;
+        Renderer::ClampCookieParams(p);
+        Renderer::GenerateCookie(p, pattern);
+        const u32 src = p.resolution;
+        if (pattern.size() < static_cast<usize>(src) * src || src == 0) { ++cell; continue; }
+
+        // Nearest resample into the quadrant. The pattern is authored at its own
+        // resolution and the cell is fixed, so one of the two has to give; a
+        // cookie is a soft mask and nearest is invisible here.
+        const u32 ox = (cell % 2) * kWebCookieCell;
+        const u32 oy = (cell / 2) * kWebCookieCell;
+        for (u32 y = 0; y < kWebCookieCell; ++y) {
+            const u32 sy = (y * src) / kWebCookieCell;
+            for (u32 x = 0; x < kWebCookieCell; ++x) {
+                const u32 sx = (x * src) / kWebCookieCell;
+                const u8 v = pattern[static_cast<usize>(sy) * src + sx];
+                const usize o = (static_cast<usize>(oy + y) * atlasEdge + (ox + x)) * 4;
+                // Greyscale into rgb, since the shader reads .r.
+                m_WebCookieAtlasScratch[o + 0] = v;
+                m_WebCookieAtlasScratch[o + 1] = v;
+                m_WebCookieAtlasScratch[o + 2] = v;
+                m_WebCookieAtlasScratch[o + 3] = 255;
+            }
+        }
+        ++cell;
+    }
+
+    texMgr->UploadData(m_WebSpotCookieTex, m_WebCookieAtlasScratch.data(), atlasEdge, atlasEdge);
+    ENJIN_LOG_INFO(Renderer, "Web light cookies: %u in the atlas", cell);
+}
 
 // Cycle the scene palettes and upload them as rows of one texture. Web twin of
 // UpdateScenePalette(); the packing is identical so a scene looks the same on
@@ -2329,6 +2442,10 @@ void RenderSystem::Update(f32 deltaTime) {
         std::memset(&lit, 0, sizeof(lit));
 
         u32 dirCount = 0, pointCount = 0, spotCount = 0;
+        // Which atlas quadrant the next cookie-carrying spot gets. Counted
+        // separately from spotCount because a spot without a cookie takes a
+        // light slot but no cell.
+        u32 cookieCell = 0;
         if (m_CachedTransformStorage) {
             // Shadow caster first so it lands in directional slot 0
             std::vector<Entity> orderedLights(m_CachedLightEntities.begin(), m_CachedLightEntities.end());
@@ -2362,6 +2479,26 @@ void RenderSystem::Update(f32 deltaTime) {
                     f32 innerCos = std::cos(lc->innerConeAngle * 3.14159265f / 180.0f);
                     f32 outerCos = std::cos(lc->outerConeAngle * 3.14159265f / 180.0f);
                     lit.spotParams[spotCount] = {innerCos, outerCos, lc->linearAttenuation, lc->quadraticAttenuation};
+
+                    // Cookie. The right vector comes from the light's transform
+                    // so the pattern turns with the lamp instead of spinning
+                    // when the direction crosses a reference axis. Written
+                    // EVERY frame, cookie or not: this UBO slot is reused by
+                    // whichever light lands in it, and a stale -1 or a stale
+                    // cell would shape the wrong lamp.
+                    const Math::Vector3 right =
+                        xf->rotation.Rotate(Math::Vector3(1.0f, 0.0f, 0.0f)).Normalized();
+                    lit.spotCookieRight[spotCount] = {right.x, right.y, right.z, 0.0f};
+                    // The atlas is filled in the same order this loop runs, so
+                    // a spot's cell IS its slot -- both skip non-cookie lights
+                    // the same way.
+                    const f32 cell = lc->cookieEnabled ? static_cast<f32>(cookieCell) : -1.0f;
+                    if (lc->cookieEnabled && cookieCell < kWebCookieCells) cookieCell++;
+                    lit.spotCookie[spotCount] = {
+                        cell,
+                        lc->cookieScale > 0.0f ? lc->cookieScale : 1.0f,
+                        lc->cookieIntensity,
+                        0.0f};
                     spotCount++;
                 }
             }
@@ -3176,6 +3313,7 @@ void RenderSystem::Update(f32 deltaTime) {
     // occluding.
     // Palette cycling: uploads the tables when the animation has moved.
     WebUpdateScenePalette();
+    WebUpdateLightCookies();
 
     const PreRenderedBackgroundComponent* webPlate = WebActivePlate();
     bool webPlateDrawn = false;

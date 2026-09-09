@@ -1587,6 +1587,13 @@ private:
     // Scene palettes as a 256 x 16 texture, one table per row. Uploaded in
     // place when the cycling moves, so the frame bind group is built once.
     Renderer::GPUTextureHandle m_WebScenePaletteTex;
+    // Spot cookies, 2x2 in one texture. Four cells because the web lighting
+    // UBO carries four spot lights.
+    static constexpr u32 kWebCookieCell = 256;
+    static constexpr u32 kWebCookieCells = 4;
+    Renderer::GPUTextureHandle m_WebSpotCookieTex;
+    std::vector<u8> m_WebCookieAtlasScratch;
+    u64 m_WebCookieFingerprint = 0;
     f32 m_WebPaletteUploadedTime = -1.0f;
     Renderer::GPUTextureHandle m_WebDefaultNormalTex;
     Renderer::GPUTextureHandle m_WebDefaultBlackTex;
@@ -1598,6 +1605,7 @@ private:
     // Background plate on web: which one is active, and getting its textures,
     // bind group and depth mapping ready before the scene pass records.
     void WebUpdateScenePalette();
+    void WebUpdateLightCookies();
     const PreRenderedBackgroundComponent* WebActivePlate() const;
     bool WebPreparePlate(const PreRenderedBackgroundComponent* bg);
 

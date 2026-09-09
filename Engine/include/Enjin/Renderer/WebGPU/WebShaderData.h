@@ -39,6 +39,11 @@ struct LightingUBO {
     skyClouds: vec4<f32>,                // cov1, scale1, speed, cov2
     skyCloudColor: vec4<f32>,            // w = scale2
     snowParams: vec4<f32>,               // x = snow accumulation (0..1); yzw reserved
+    // Light cookies, appended so every offset above is unchanged. Declared in
+    // BOTH copies of this struct even though only the PBR shader reads them:
+    // the two must describe the same buffer or the binding sizes disagree.
+    spotCookie: array<vec4<f32>, 4>,     // x = atlas cell (-1 = none), y = scale, z = intensity
+    spotCookieRight: array<vec4<f32>, 4>,// xyz = the light's local +X
 };
 
 @group(0) @binding(0) var<uniform> viewProj: ViewProjection;
@@ -49,6 +54,11 @@ struct LightingUBO {
 // or not. Lives on the frame group because it is scene-wide: binding it here
 // costs one entry per frame instead of one per material bind group.
 @group(0) @binding(2) var scenePaletteTex: texture_2d<f32>;
+// Spot-light cookies, packed 2x2 into one texture: four lights, four quadrants.
+// A texture ARRAY would be the natural fit, but this backend creates every 2D
+// texture with exactly one layer, and an atlas needs no backend change at all.
+@group(0) @binding(3) var spotCookieTex: texture_2d<f32>;
+@group(0) @binding(4) var spotCookieSmp: sampler;
 
 struct ObjectData {
     model: mat4x4<f32>,
@@ -372,6 +382,47 @@ fn samplePointShadow(worldPos: vec3<f32>, lightPos: vec3<f32>, range: f32) -> f3
 // points calling one function is the only way to guarantee a transparent
 // surface is lit identically to an opaque one; a second copy of five hundred
 // lines would drift the first time either was edited.
+// A gobo: the shape a light is projected through. Port of calcSpotCookie in
+// triangle.frag, reading a 2x2 atlas cell instead of a bindless texture.
+fn spotCookie(i: i32, lightDir: vec3<f32>, spotDirV: vec3<f32>, outerCos: f32) -> f32 {
+    let cell = lighting.spotCookie[i].x;
+    if (cell < 0.0) { return 1.0; }
+
+    let toFrag = -lightDir;                    // light -> fragment
+    let axial = dot(toFrag, spotDirV);         // depth along the cone
+    if (axial <= 0.0001) { return 1.0; }
+
+    let right = lighting.spotCookieRight[i].xyz;
+    let up = cross(spotDirV, right);
+
+    // Radius of the outer cone at this depth. outerCos is a COSINE, so the
+    // tangent comes from the identity rather than a trig call.
+    let cosOuter = clamp(outerCos, 0.0001, 0.9999);
+    let tanOuter = sqrt(1.0 - cosOuter * cosOuter) / cosOuter;
+    let radius = max(axial * tanOuter, 0.0001);
+    let scale = max(lighting.spotCookie[i].y, 0.0001);
+
+    var uv = vec2<f32>(dot(toFrag, right), dot(toFrag, up)) / (radius * scale);
+    uv = uv * 0.5 + 0.5;
+
+    // Outside the cookie the light is left unshaped rather than blacked out: a
+    // gobo masks what it covers, it does not add a dark box around itself.
+    var cookie = 1.0;
+    if (all(uv >= vec2<f32>(0.0)) && all(uv <= vec2<f32>(1.0))) {
+        // Into this light's quadrant, with a half-texel inset so filtering at a
+        // cell edge cannot reach into the neighbouring cookie.
+        let cellIdx = clamp(cell, 0.0, 3.0);
+        let cellOrigin = vec2<f32>(floor(cellIdx % 2.0), floor(cellIdx / 2.0)) * 0.5;
+        let inset = 0.5 / f32(textureDimensions(spotCookieTex, 0).x);
+        let atlasUV = cellOrigin + clamp(uv, vec2<f32>(inset), vec2<f32>(1.0 - inset)) * 0.5;
+        // SampleLevel, not Sample: this is called from inside the light loop,
+        // which is non-uniform control flow, and an implicit-derivative sample
+        // there is not allowed.
+        cookie = textureSampleLevel(spotCookieTex, spotCookieSmp, atlasUV, 0.0).r;
+    }
+    return mix(1.0, cookie, clamp(lighting.spotCookie[i].z, 0.0, 1.0));
+}
+
 fn shadeSurface(in: VertexOutput) -> vec4<f32> {
     let object = objects.data[in.instanceIdx];
 
@@ -564,6 +615,9 @@ fn shadeSurface(in: VertexOutput) -> vec4<f32> {
         var spotShadow = 1.0;
         if (i == 0) { spotShadow = spotShadow0; }
         else if (i == 1) { spotShadow = spotShadow1; }
+        // The cookie multiplies the light the same way a shadow does: it is a
+        // mask on what this lamp delivers, not a change to the surface.
+        spotShadow = spotShadow * spotCookie(i, L, spotDirV, outerCos);
         Lo = Lo + (kD * albedo + specular) * radiance * NdotL * spotShadow;
     }
 
@@ -1626,6 +1680,11 @@ struct LightingUBO {
     skyClouds: vec4<f32>,                // cov1, scale1, speed, cov2
     skyCloudColor: vec4<f32>,            // w = scale2
     snowParams: vec4<f32>,               // x = snow accumulation (0..1); yzw reserved
+    // Light cookies, appended so every offset above is unchanged. Declared in
+    // BOTH copies of this struct even though only the PBR shader reads them:
+    // the two must describe the same buffer or the binding sizes disagree.
+    spotCookie: array<vec4<f32>, 4>,     // x = atlas cell (-1 = none), y = scale, z = intensity
+    spotCookieRight: array<vec4<f32>, 4>,// xyz = the light's local +X
 };
 @group(0) @binding(0) var<uniform> viewProj: ViewProjection;
 @group(0) @binding(1) var<uniform> lighting: LightingUBO;
