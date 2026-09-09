@@ -4808,7 +4808,20 @@ void RenderSystem::CreatePipeline() {}
 // Stubs for methods not yet needed on WebGPU
 void RenderSystem::SetBackfaceCullingEnabled(bool enabled) { m_BackfaceCulling = enabled; }
 void RenderSystem::SetShadowDistance(f32 d) { m_ShadowDistance = d; }  // web: no ShadowMap object
-void RenderSystem::SetWireframeEnabled(bool enabled) { m_WireframeMode = enabled; }
+void RenderSystem::SetWireframeEnabled(bool enabled) {
+    // Stored, and nothing on this path reads it -- the web renderer has no
+    // wireframe mode. That is the quieter version of a null stub: the setter
+    // looks real, the value goes nowhere, and IsWireframeEnabled will even
+    // report back the setting that is doing nothing.
+    m_WireframeMode = enabled;
+    if (enabled) {
+        static bool warned = false;
+        if (!warned) {
+            warned = true;
+            ENJIN_LOG_WARN(Renderer, "Wireframe is inert on web: the web renderer has no wireframe pass");
+        }
+    }
+}
 void RenderSystem::SetTextureFilterConfig(u32, u32, bool, u32) {}  // Vulkan-only (bindless sampler)
 u32  RenderSystem::GetTextureFilter() const { return 2; }
 u32  RenderSystem::GetTextureAnisotropy() const { return 8; }

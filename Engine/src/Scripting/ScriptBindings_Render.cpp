@@ -85,6 +85,19 @@ static f32 Render_GetShadowDistance() {
 // Vulkan-only for now; on web these return 0/false so scripts degrade cleanly.
 // ============================================================================
 
+// Render-to-texture is Vulkan-only. The web branches below return empty values,
+// which is all they can do -- but they used to do it in silence, so a script
+// asking for a render target got 0 back and no idea why. One notice, the way
+// the Net_* bindings already announce that LAN is inert in a browser.
+static void WarnRenderTargetsInert() {
+    static bool warned = false;
+    if (!warned) {
+        warned = true;
+        ENJIN_LOG_WARN(Script,
+            "RenderTarget_* script calls are inert on web: render-to-texture is Vulkan-only");
+    }
+}
+
 static u64 RenderTarget_Create(int width, int height) {
 #if !ENJIN_RENDERER_WEBGPU
     if (!s_BindingsRenderSystem || width <= 0 || height <= 0) return 0;
@@ -92,6 +105,7 @@ static u64 RenderTarget_Create(int width, int height) {
         static_cast<u32>(width), static_cast<u32>(height));
 #else
     (void)width; (void)height;
+    WarnRenderTargetsInert();
     return 0;
 #endif
 }
@@ -101,6 +115,7 @@ static void RenderTarget_Destroy(u64 handle) {
     if (s_BindingsRenderSystem) s_BindingsRenderSystem->DestroyScriptRenderTarget(handle);
 #else
     (void)handle;
+    WarnRenderTargetsInert();
 #endif
 }
 
@@ -110,6 +125,7 @@ static void RenderTarget_SetCamera(u64 handle, u64 cameraEntity) {
         s_BindingsRenderSystem->SetScriptRenderTargetCamera(handle, cameraEntity);
 #else
     (void)handle; (void)cameraEntity;
+    WarnRenderTargetsInert();
 #endif
 }
 
@@ -120,6 +136,7 @@ static bool RenderTarget_BindToEntity(u64 handle, u64 entity) {
         handle, static_cast<ECS::Entity>(entity));
 #else
     (void)handle; (void)entity;
+    WarnRenderTargetsInert();
     return false;
 #endif
 }
