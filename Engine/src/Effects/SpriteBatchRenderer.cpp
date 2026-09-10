@@ -495,8 +495,9 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
                 inst.position = Math::Vector3(transform->position.x + sprite->shadowOffset.x,
                                               transform->position.y + sprite->shadowOffset.y,
                                               transform->position.z - 0.001f);
-                inst.sizeX = sprite->size.x * sprite->shadowScale;
-                inst.sizeY = sprite->size.y * sprite->shadowScale;
+                // Root: same transform scale as the parented branch above.
+                inst.sizeX = sprite->size.x * transform->scale.x * sprite->shadowScale;
+                inst.sizeY = sprite->size.y * transform->scale.y * sprite->shadowScale;
                 inst.rotation = transform->rotation.GetRotationZ();
             }
 
@@ -661,35 +662,58 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
     // Normal map flag (bit 17, same as triangle.frag/sprite_lit.frag FLAG_HAS_NORMAL_TEX)
     static constexpr i32 FLAG_HAS_NORMAL_TEX = (1 << 17);
 
-    // Lambda to flush the current batch as an instanced draw call
-    auto flushBatch = [&](u32 batchEnd) {
-        u32 count = batchEnd - batchStart;
-        if (count == 0) return;
+    // Batches are RECORDED here and drawn after the whole instance buffer has
+    // been uploaded once. They cannot be drawn as they are found.
+    //
+    // Each batch used to upload its own slice to offset 0 of the shared instance
+    // buffer and then draw with firstInstance = 0. Those uploads happen on the
+    // CPU while the command buffer is being RECORDED, and the draws do not run
+    // until it is submitted -- so by the time any of them executed, the buffer
+    // held whatever the LAST batch had written, and every batch drew the last
+    // batch's sprites. A scene using one texture has one batch and looks fine,
+    // which is why this survived: the moment a second texture appears, every
+    // sprite in the scene turns into a copy of the final group.
+    //
+    // Uploading once and addressing each run with firstInstance is also what the
+    // WebGPU path already did, so the two agree now.
+    struct SpriteBatch {
+        u32 first;
+        u32 count;
+        std::string texture;
+        std::string normalMap;
+    };
+    static std::vector<SpriteBatch> batches;   // reused, like the caches above
+    batches.clear();
 
-        // Upload this batch's instance data
+    auto closeBatch = [&](u32 batchEnd) {
+        if (batchEnd > batchStart)
+            batches.push_back({batchStart, batchEnd - batchStart, currentTexture, currentNormalMap});
+        batchStart = batchEnd;
+    };
+
+    // Upload everything collected so far, then replay the recorded batches.
+    auto emitBatches = [&]() {
+        if (batches.empty() || m_InstanceDataCache.empty()) return;
+
         m_InstanceBuffer->UploadData(
-            m_InstanceDataCache.data() + batchStart,
-            count * sizeof(SpriteInstanceData));
+            m_InstanceDataCache.data(),
+            m_InstanceDataCache.size() * sizeof(SpriteInstanceData));
 
-        // Update push constants with normal map flag for this batch
-        pc.flags = currentNormalMap.empty() ? 0 : FLAG_HAS_NORMAL_TEX;
-        vkCmdPushConstants(commandBuffer, activePipeline->GetLayout(),
-            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
-
-        // Bind the texture + normal map for this batch
-        if (textureBindCallback) {
-            textureBindCallback(currentTexture, currentNormalMap);
-        }
-
-        // Re-bind instance buffer after upload (data may have been re-uploaded)
         VkBuffer instanceBufs[] = { m_QuadVertexBuffer->GetBuffer(), m_InstanceBuffer->GetBuffer() };
         VkDeviceSize instanceOffsets[] = { 0, 0 };
         vkCmdBindVertexBuffers(commandBuffer, 0, 2, instanceBufs, instanceOffsets);
 
-        // Draw instanced: 6 indices per quad, count instances
-        vkCmdDrawIndexed(commandBuffer, 6, count, 0, 0, 0);
+        for (const auto& b : batches) {
+            pc.flags = b.normalMap.empty() ? 0 : FLAG_HAS_NORMAL_TEX;
+            vkCmdPushConstants(commandBuffer, activePipeline->GetLayout(),
+                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
 
-        batchStart = batchEnd;
+            if (textureBindCallback) textureBindCallback(b.texture, b.normalMap);
+
+            // firstInstance is how this run addresses its own slice.
+            vkCmdDrawIndexed(commandBuffer, 6, b.count, 0, 0, b.first);
+        }
+        batches.clear();
     };
 
     for (const auto& entry : sortedSprites) {
@@ -707,7 +731,7 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
         bool textureChanged = (effectiveKey != currentTexture);
         bool normalMapChanged = (sprite->normalMapPath != currentNormalMap);
         if ((textureChanged || normalMapChanged) && m_InstanceDataCache.size() > batchStart) {
-            flushBatch(static_cast<u32>(m_InstanceDataCache.size()));
+            closeBatch(static_cast<u32>(m_InstanceDataCache.size()));
         }
         currentTexture = effectiveKey;
         currentNormalMap = sprite->normalMapPath;
@@ -728,10 +752,18 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
             inst.sizeX = sprite->size.x * scaleX;
             inst.sizeY = sprite->size.y * scaleY;
         } else {
-            // Root entity — fast path (no parent chain walk, same as original behavior)
+            // Root entity: skip the parent chain walk, but apply the SAME
+            // transform scale the parented branch above does.
+            //
+            // This used to read sprite->size alone, so whether scaling an entity
+            // did anything to its sprite depended on whether it happened to have
+            // a parent. Scaling a root sprite with the gizmo moved the handles
+            // and changed nothing on screen, which reads as the gizmo being
+            // broken rather than as the sprite ignoring it. The WebGPU path
+            // multiplied unconditionally, so the two backends disagreed as well.
             inst.position = transform->position;
-            inst.sizeX = sprite->size.x;
-            inst.sizeY = sprite->size.y;
+            inst.sizeX = sprite->size.x * transform->scale.x;
+            inst.sizeY = sprite->size.y * transform->scale.y;
             inst.rotation = transform->rotation.GetRotationZ();
         }
 
@@ -771,16 +803,19 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
 
         m_InstanceDataCache.push_back(inst);
 
-        // If we hit the max sprite limit, flush immediately
+        // At the sprite ceiling: close, draw and start the cache over. The
+        // upload has to happen before the cache is cleared, which is why this
+        // emits rather than just closing.
         if (m_InstanceDataCache.size() >= MAX_SPRITES) {
-            flushBatch(static_cast<u32>(m_InstanceDataCache.size()));
+            closeBatch(static_cast<u32>(m_InstanceDataCache.size()));
+            emitBatches();
             m_InstanceDataCache.clear();
             batchStart = 0;
         }
     }
 
-    // Flush remaining sprites
-    flushBatch(static_cast<u32>(m_InstanceDataCache.size()));
+    closeBatch(static_cast<u32>(m_InstanceDataCache.size()));
+    emitBatches();
 }
 
 bool SpriteBatchRenderer::ReloadShaders(const std::string& shaderDir, VkDescriptorSetLayout sharedLayout) {

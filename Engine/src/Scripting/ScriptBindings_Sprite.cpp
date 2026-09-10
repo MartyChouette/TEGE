@@ -48,6 +48,36 @@ static void Sprite_SetColor(u64 id, f32 r, f32 g, f32 b, f32 a) {
     }
 }
 
+// A sprite's world size, in world units.
+//
+// There was no way to do this from a script. Size lives on the sprite and the
+// only other lever, the entity transform, multiplies it -- so anything that
+// resizes at run time (a health bar filling, a UI element growing, a pickup
+// pulsing) had to reach for the transform and hope. This is the direct one.
+static void Sprite_SetSize(u64 id, f32 width, f32 height) {
+    if (!s_BindingsWorld) return;
+    auto* sc = s_BindingsWorld->GetComponent<Sprite2DComponent>(static_cast<Entity>(id));
+    if (sc) {
+        sc->size = Vector2(width, height);
+        sc->spriteDirty = true;   // the generated quad is built from size
+    }
+}
+
+// Reading it back matters as much as setting it: the usual reason to resize a
+// sprite is a fraction of its full size (a bar at 40% health), and the full size
+// is authored on the sprite rather than known to the script.
+static f32 Sprite_GetWidth(u64 id) {
+    if (!s_BindingsWorld) return 0.0f;
+    auto* sc = s_BindingsWorld->GetComponent<Sprite2DComponent>(static_cast<Entity>(id));
+    return sc ? sc->size.x : 0.0f;
+}
+
+static f32 Sprite_GetHeight(u64 id) {
+    if (!s_BindingsWorld) return 0.0f;
+    auto* sc = s_BindingsWorld->GetComponent<Sprite2DComponent>(static_cast<Entity>(id));
+    return sc ? sc->size.y : 0.0f;
+}
+
 static void Sprite_SetAlpha(u64 id, f32 alpha) {
     if (!s_BindingsWorld) return;
     auto* sc = s_BindingsWorld->GetComponent<Sprite2DComponent>(static_cast<Entity>(id));
@@ -138,6 +168,9 @@ void RegisterSpriteBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction("void Sprite_SetTexture(uint64, const string &in)", ENJIN_AS_FN(Sprite_SetTexture), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("string Sprite_GetTexture(uint64)", ENJIN_AS_FN(Sprite_GetTexture), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Sprite_SetColor(uint64, float, float, float, float)", ENJIN_AS_FN(Sprite_SetColor), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Sprite_SetSize(uint64, float, float)", ENJIN_AS_FN(Sprite_SetSize), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Sprite_GetWidth(uint64)", ENJIN_AS_FN(Sprite_GetWidth), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Sprite_GetHeight(uint64)", ENJIN_AS_FN(Sprite_GetHeight), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Sprite_SetAlpha(uint64, float)", ENJIN_AS_FN(Sprite_SetAlpha), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Sprite_SetFlipX(uint64, bool)", ENJIN_AS_FN(Sprite_SetFlipX), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Sprite_SetFlipY(uint64, bool)", ENJIN_AS_FN(Sprite_SetFlipY), ENJIN_AS_CALL_CDECL));
