@@ -1,5 +1,9 @@
 #include "Enjin/Editor/PixelEditor.h"
 #include "Enjin/Assets/Prefab.h"
+#include "Enjin/ECS/World.h"
+#include "Enjin/ECS/Components/Name.h"
+#include "Enjin/ECS/Components/Transform.h"
+#include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/Logging/Log.h"
 #include <stb_image.h>
 
@@ -1038,73 +1042,66 @@ bool PixelEditor::ExportAsPrefab(const std::string& outputPath) {
         return false;
     }
 
-    // Build prefab with Sprite2D + AnimatedSprite2D components
-    Assets::Prefab prefab("PixelArt_Sprite");
+    // Build the prefab by building a real entity and prefabbing it.
+    //
+    // This block used to hand-write a property bag with the type names
+    // "Sprite2D", "AnimatedSprite2D" and "BoxCollider". None of the three was
+    // among the seven types the prefab system knew, so exported pixel art was
+    // guaranteed to come back as a bare Transform -- the sheet PNG was correct
+    // and the prefab beside it was empty. Going through a scratch World and
+    // CreateFromEntity means it rides the same component registry as everything
+    // else, so the field names are checked by the compiler rather than by hoping
+    // the two spellings match.
+    ECS::World scratch;
+    ECS::Entity sprite = scratch.CreateEntity();
+    scratch.AddComponent<ECS::NameComponent>(sprite, ECS::NameComponent{"PixelArt_Sprite"});
+    scratch.AddComponent<ECS::TransformComponent>(sprite, ECS::TransformComponent{});
 
-    Assets::PrefabEntityData entityData;
-    entityData.name = "PixelArt_Sprite";
-    entityData.parentIndex = -1;
-
-    // Transform component
     {
-        Assets::PrefabComponentData comp;
-        comp.typeName = "Transform";
-        comp.vec3Properties["position"] = Math::Vector3(0, 0, 0);
-        comp.vec3Properties["rotation"] = Math::Vector3(0, 0, 0);
-        comp.vec3Properties["scale"] = Math::Vector3(1, 1, 1);
-        entityData.components.push_back(comp);
+        ECS::Sprite2DComponent sp;
+        sp.texturePath = sheetPath;
+        sp.srcX = 0.0f;
+        sp.srcY = 0.0f;
+        sp.srcWidth  = static_cast<f32>(m_Width);
+        sp.srcHeight = static_cast<f32>(m_Height);
+        // 32 px to the world unit, the editor's pixel-art convention.
+        sp.size  = Math::Vector2(static_cast<f32>(m_Width) / 32.0f,
+                                 static_cast<f32>(m_Height) / 32.0f);
+        sp.pivot = Math::Vector2(0.5f, 0.5f);
+        scratch.AddComponent<ECS::Sprite2DComponent>(sprite, sp);
     }
 
-    // Sprite2D component
-    {
-        Assets::PrefabComponentData comp;
-        comp.typeName = "Sprite2D";
-        comp.stringProperties["texturePath"] = sheetPath;
-        comp.floatProperties["srcX"] = 0;
-        comp.floatProperties["srcY"] = 0;
-        comp.floatProperties["srcWidth"] = static_cast<f32>(m_Width);
-        comp.floatProperties["srcHeight"] = static_cast<f32>(m_Height);
-        comp.floatProperties["sizeX"] = static_cast<f32>(m_Width) / 32.0f;  // Scale to world units
-        comp.floatProperties["sizeY"] = static_cast<f32>(m_Height) / 32.0f;
-        comp.floatProperties["pivotX"] = 0.5f;
-        comp.floatProperties["pivotY"] = 0.5f;
-        entityData.components.push_back(comp);
-    }
-
-    // AnimatedSprite2D component (if multiple frames)
     if (frameCount > 1) {
-        Assets::PrefabComponentData comp;
-        comp.typeName = "AnimatedSprite2D";
-        comp.intProperties["frameCount"] = static_cast<i32>(frameCount);
-        comp.floatProperties["frameWidth"] = static_cast<f32>(m_Width);
-        comp.floatProperties["frameHeight"] = static_cast<f32>(m_Height);
-        comp.floatProperties["fps"] = m_PreviewFps;
-        comp.boolProperties["loop"] = true;
-        comp.boolProperties["playing"] = true;
-
-        // Store frame positions
+        ECS::AnimatedSprite2DComponent anim;
+        anim.playing = true;
+        anim.loop = true;
+        const f32 duration = (m_PreviewFps > 0.0f) ? (1.0f / m_PreviewFps) : 0.1f;
         for (u32 f = 0; f < frameCount; f++) {
-            std::string prefix = "frame" + std::to_string(f) + "_";
-            comp.floatProperties[prefix + "srcX"] = static_cast<f32>(f * m_Width);
-            comp.floatProperties[prefix + "srcY"] = 0.0f;
-            comp.floatProperties[prefix + "duration"] = (m_PreviewFps > 0.0f) ? (1.0f / m_PreviewFps) : 0.1f;
+            ECS::AnimatedSprite2DComponent::Frame frame;
+            frame.srcX = static_cast<f32>(f * m_Width);
+            frame.srcY = 0.0f;
+            frame.duration = duration;
+            anim.frames.push_back(frame);
         }
-        entityData.components.push_back(comp);
+        scratch.AddComponent<ECS::AnimatedSprite2DComponent>(sprite, anim);
     }
 
-    // Box collider based on canvas dimensions
     {
-        Assets::PrefabComponentData comp;
-        comp.typeName = "BoxCollider";
-        comp.vec3Properties["size"] = Math::Vector3(
-            static_cast<f32>(m_Width) / 32.0f,
-            static_cast<f32>(m_Height) / 32.0f,
-            0.1f);
-        comp.vec3Properties["offset"] = Math::Vector3(0, 0, 0);
-        entityData.components.push_back(comp);
+        ECS::BoxColliderComponent box;
+        // Collider sizes are WORLD SPACE and are not multiplied by the transform.
+        box.size = Math::Vector3(static_cast<f32>(m_Width) / 32.0f,
+                                 static_cast<f32>(m_Height) / 32.0f,
+                                 0.1f);
+        box.center = Math::Vector3(0.0f, 0.0f, 0.0f);   // the old bag wrote "offset", which is not a field
+        scratch.AddComponent<ECS::BoxColliderComponent>(sprite, box);
     }
 
-    prefab.AddEntity(entityData);
+    auto built = Assets::PrefabManager::Get().CreateFromEntity(&scratch, sprite, "PixelArt_Sprite");
+    if (!built) {
+        ENJIN_LOG_ERROR(Editor, "PixelEditor: failed to build prefab from the exported sprite");
+        return false;
+    }
+    const Assets::Prefab& prefab = *built;
 
     // Save prefab file
     std::string prefabPath = outputPath + ".enjprefab";

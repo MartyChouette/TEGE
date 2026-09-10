@@ -630,8 +630,16 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
                 std::string prefabName = defaultName.substr(0, defaultName.find_last_of('.'));
                 auto prefab = Assets::PrefabManager::Get().CreateFromEntity(
                     m_World, entity, prefabName);
-                if (prefab) {
-                    Assets::PrefabManager::Get().SavePrefab(*prefab, path);
+                // Both results were discarded here, so a prefab that failed to
+                // build and one that failed to write looked exactly like one
+                // that worked.
+                if (!prefab) {
+                    ShowNotification("Could not build a prefab from '" + prefabName + "'",
+                                     NotificationType::Error);
+                } else if (!Assets::PrefabManager::Get().SavePrefab(*prefab, path)) {
+                    ShowNotification("Could not write " + path, NotificationType::Error);
+                } else {
+                    ShowNotification("Saved prefab to " + path, NotificationType::Success);
                 }
             }
         }

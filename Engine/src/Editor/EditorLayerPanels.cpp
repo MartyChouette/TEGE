@@ -3464,7 +3464,14 @@ void EditorLayer::DrawPixelEditorPanel() {
         ImGui::Text("Export Path (without extension):");
         ImGui::InputText("##exportpath", exportPath, sizeof(exportPath));
         if (ImGui::Button("Export")) {
-            m_PixelEditor.ExportAsPrefab(exportPath);
+            // The bool was discarded, so a failed write reported nothing at all.
+            if (m_PixelEditor.ExportAsPrefab(exportPath)) {
+                ShowNotification(std::string("Exported sprite sheet and prefab to ") + exportPath,
+                                 NotificationType::Success);
+            } else {
+                ShowNotification(std::string("Export failed — see the console for why"),
+                                 NotificationType::Error);
+            }
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();

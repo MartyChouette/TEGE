@@ -6,6 +6,7 @@
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Components/Notes.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
+#include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/Logging/Log.h"
 #include <nlohmann/json.hpp>
 #include "Enjin/Platform/Paths.h"
@@ -424,12 +425,25 @@ void PrefabManager::SerializeEntityRecursive(ECS::World* world, ECS::Entity enti
         entityData.name = "Entity_" + std::to_string(entity);
     }
 
-    // Serialize all registered component types
-    for (const auto& [typeName, callbacks] : m_ComponentCallbacks) {
-        PrefabComponentData compData = callbacks.serializer(world, entity);
-        if (!compData.typeName.empty()) {
-            entityData.components.push_back(compData);
+    // Every component the SCENE serializer knows about -- 189 of them, against
+    // the seven this used to hand-register. Parent/children are rebuilt from
+    // parentIndex below, so they are captured but harmless; stableId is a
+    // per-entity identity and must NOT be copied into every instance.
+    for (const std::string& key : Scene::SceneSerializer::ComponentKeysOn(world, entity)) {
+        if (key == "stableId" || key == "prefabInstance") continue;
+        std::string compJson = Scene::SceneSerializer::SerializeOneComponent(world, entity, key);
+        if (compJson.empty()) {
+            // The registry said the component is present and the serializer
+            // could not write it. That is a serializer bug, not an empty
+            // component, and silence here is what this whole change is about.
+            ENJIN_LOG_WARN(Assets, "Prefab '%s': component '%s' is present but serialized to nothing",
+                           prefab.GetName().c_str(), key.c_str());
+            continue;
         }
+        PrefabComponentData compData;
+        compData.typeName = key;
+        compData.sceneJson = std::move(compJson);
+        entityData.components.push_back(std::move(compData));
     }
 
     i32 currentIndex = static_cast<i32>(prefab.GetEntities().size());
@@ -485,11 +499,24 @@ ECS::Entity PrefabManager::Instantiate(ECS::World* world, const Prefab& prefab,
         ECS::Entity entity = world->CreateEntity();
         createdEntities.push_back(entity);
 
-        // Deserialize components
+        // Deserialize components. New prefabs carry scene JSON and go through the
+        // one registry; prefabs written before that change carry the old property
+        // bag and still load through the seven legacy callbacks.
         for (const auto& compData : entityData.components) {
+            if (!compData.sceneJson.empty()) {
+                if (!Scene::SceneSerializer::DeserializeOneComponent(
+                        world, entity, compData.typeName, compData.sceneJson)) {
+                    ENJIN_LOG_WARN(Assets, "Prefab '%s': component '%s' failed to load",
+                                   prefab.GetName().c_str(), compData.typeName.c_str());
+                }
+                continue;
+            }
             auto it = m_ComponentCallbacks.find(compData.typeName);
             if (it != m_ComponentCallbacks.end()) {
                 it->second.deserializer(world, entity, compData);
+            } else {
+                ENJIN_LOG_WARN(Assets, "Prefab '%s': legacy component '%s' has no loader and was dropped",
+                               prefab.GetName().c_str(), compData.typeName.c_str());
             }
         }
     }
@@ -561,6 +588,20 @@ bool PrefabManager::SavePrefab(const Prefab& prefab, const std::string& filepath
         for (const auto& comp : entity.components) {
             json compJson;
             compJson["type"] = comp.typeName;
+
+            // Scene-serializer form. Stored parsed rather than as a string so the
+            // file stays readable and diffable next to a .enjin scene.
+            if (!comp.sceneJson.empty()) {
+                try {
+                    compJson["data"] = json::parse(comp.sceneJson);
+                    entityJson["components"].push_back(compJson);
+                    continue;
+                } catch (const std::exception& e) {
+                    ENJIN_LOG_ERROR(Assets, "Prefab '%s': component '%s' produced malformed JSON: %s",
+                                    prefab.GetName().c_str(), comp.typeName.c_str(), e.what());
+                    continue;
+                }
+            }
 
             if (!comp.stringProperties.empty()) {
                 compJson["strings"] = comp.stringProperties;
@@ -672,6 +713,14 @@ std::shared_ptr<Prefab> PrefabManager::LoadPrefab(const std::string& filepath) {
             PrefabComponentData compData;
             compData.typeName = compJson.value("type", "");
 
+            // Scene-serializer form. Everything below it is the legacy property
+            // bag, kept so prefabs written before this change still load.
+            if (compJson.contains("data")) {
+                compData.sceneJson = compJson["data"].dump();
+                entityData.components.push_back(std::move(compData));
+                continue;
+            }
+
             if (compJson.contains("strings")) {
                 for (auto& [key, val] : compJson["strings"].items()) {
                     if (val.is_string()) compData.stringProperties[key] = val.get<std::string>();
@@ -769,6 +818,11 @@ void PrefabManager::ApplyPrefabToInstances(ECS::World* world, u64 prefabId) {
         // Apply root entity's components (index 0) to this instance
         const auto& rootData = prefabEntities[0];
         for (const auto& compData : rootData.components) {
+            if (!compData.sceneJson.empty()) {
+                Scene::SceneSerializer::DeserializeOneComponent(
+                    world, entity, compData.typeName, compData.sceneJson);
+                continue;
+            }
             auto cbIt = m_ComponentCallbacks.find(compData.typeName);
             if (cbIt != m_ComponentCallbacks.end()) {
                 cbIt->second.deserializer(world, entity, compData);

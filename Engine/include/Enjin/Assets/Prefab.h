@@ -22,7 +22,26 @@ namespace Assets {
  * Uses a variant-like approach for different component types
  */
 struct PrefabComponentData {
+    // The scene-JSON key for this component ("rigidbody", "material", ...) when
+    // sceneJson is set, or one of the seven legacy hand-registered names when it
+    // is not.
     std::string typeName;
+
+    // The component as the SCENE serializer writes it.
+    //
+    // Prefabs used to carry a parallel property-bag format with seven
+    // hand-registered component types against the serializer's 189, and
+    // Instantiate skipped anything it did not recognise with no log at either
+    // end. Right-clicking an entity with a rigidbody, a script, a collider or an
+    // audio source and choosing Create Prefab produced a file that looked fine
+    // and instantiated as a bare Transform. Going through the one registry means
+    // a component is covered the day it is registered, exactly as the play-mode
+    // snapshot does.
+    //
+    // Empty only for a prefab loaded from a file written before this changed;
+    // the property maps below are kept to read those.
+    std::string sceneJson;
+
     std::unordered_map<std::string, std::string> stringProperties;
     std::unordered_map<std::string, f32> floatProperties;
     std::unordered_map<std::string, i32> intProperties;
