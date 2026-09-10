@@ -128,6 +128,7 @@ endfunction()
 # --- Core ---
 enjin_add_test(TestMath               Unit/Core/TestMath.cpp)
 enjin_add_test(TestPaths              Unit/Core/TestPaths.cpp)
+enjin_add_test(TestAssetPathResolve   Unit/Assets/TestAssetPathResolve.cpp)
 enjin_add_test(TestMemory             Unit/Core/TestMemory.cpp)
 enjin_add_test(TestSpline             Unit/Core/TestSpline.cpp)
 enjin_add_test(TestObjectPool         Unit/Core/TestObjectPool.cpp)

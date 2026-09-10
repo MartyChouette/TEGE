@@ -32,6 +32,20 @@ public:
     void SetSearchRoot(const std::string& root);
     const std::string& GetSearchRoot() const { return m_SearchRoot; }
 
+    // Turn a project-relative asset path into one that can actually be opened.
+    //
+    // The process CWD is never the project: the editor and the player both run
+    // from their exe directory, so fopen("assets/foo.png") resolves somewhere
+    // meaningless and fails. Everything that opens an authored path has to join
+    // it onto the search root first, and this is the one place that knows how.
+    //
+    // It exists because that join was written inline in the texture loader and
+    // NOT in the sprite atlas, so a sprite with a texture silently loaded
+    // nothing and drew nothing, in every project, for as long as the atlas has
+    // existed. Absolute paths and paths that already resolve are returned
+    // unchanged, so calling this on an already-good path is free and safe.
+    static std::string ResolveAgainstSearchRoot(const std::string& path);
+
     // Directory where baked binary mesh caches (.enjmesh) are written/read. When empty,
     // it's derived from the search root (<root>/.enjin/meshcache/); if that's also empty
     // baking is disabled and the cache falls back to re-importing the source every time.

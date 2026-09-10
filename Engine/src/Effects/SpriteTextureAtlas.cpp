@@ -1,4 +1,5 @@
 #include "Enjin/Effects/SpriteTextureAtlas.h"
+#include "Enjin/Assets/MeshAssetCache.h"
 #include "Enjin/Logging/Log.h"
 #include <vector>
 #include <algorithm>
@@ -72,15 +73,22 @@ bool SpriteTextureAtlas::Build() {
     for (const auto& path : m_RequestedPaths) {
         if (m_ExcludedPaths.count(path)) continue;
 
+        // A sprite stores the path its author wrote ("assets/hero.png"), which
+        // is relative to the PROJECT, not to wherever the exe happens to run.
+        // Opening it raw was the reason a textured sprite drew nothing at all:
+        // every load failed, every sprite was excluded, and the atlas came back
+        // empty with only a warning to show for it.
+        const std::string openPath = Assets::MeshAssetCache::ResolveAgainstSearchRoot(path);
+
         int w = 0, h = 0, ch = 0;
         stbi_uc* pixels = nullptr;
 
 #ifdef _WIN32
         {
-            int wlen = MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, nullptr, 0);
+            int wlen = MultiByteToWideChar(CP_UTF8, 0, openPath.c_str(), -1, nullptr, 0);
             if (wlen > 0) {
                 std::wstring wpath(wlen - 1, L'\0');
-                MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, wpath.data(), wlen);
+                MultiByteToWideChar(CP_UTF8, 0, openPath.c_str(), -1, wpath.data(), wlen);
                 FILE* f = _wfopen(wpath.c_str(), L"rb");
                 if (f) {
                     pixels = stbi_load_from_file(f, &w, &h, &ch, STBI_rgb_alpha);
@@ -89,7 +97,7 @@ bool SpriteTextureAtlas::Build() {
             }
         }
 #else
-        pixels = stbi_load(path.c_str(), &w, &h, &ch, STBI_rgb_alpha);
+        pixels = stbi_load(openPath.c_str(), &w, &h, &ch, STBI_rgb_alpha);
 #endif
 
         if (!pixels) {

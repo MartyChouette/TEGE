@@ -20,6 +20,28 @@ static_assert(std::is_trivially_copyable_v<Enjin::ECS::MeshComponent::Vertex>,
 namespace Enjin {
 namespace Assets {
 
+// See the header for why this exists rather than being inlined at each caller.
+std::string MeshAssetCache::ResolveAgainstSearchRoot(const std::string& path) {
+    if (path.empty()) return path;
+
+    namespace fs = std::filesystem;
+    std::error_code ec;
+
+    // Absolute, or already openable from wherever we are: leave it alone.
+    if (!fs::path(path).is_relative()) return path;
+    if (fs::exists(path, ec)) return path;
+
+    const std::string& root = Get().GetSearchRoot();
+    if (root.empty()) return path;
+
+    std::string joined = (fs::path(root) / path).string();
+    if (fs::exists(joined, ec)) return joined;
+
+    // Nothing found. Hand back the original so the caller's own error names the
+    // path the author actually wrote, not a guess at where it should have been.
+    return path;
+}
+
 MeshAssetCache& MeshAssetCache::Get() {
     static MeshAssetCache instance;
     return instance;
