@@ -130,6 +130,12 @@ exported_sprite.*
 # own tooling in /scripts and the golden scene's canary script.
 web-demo/scripts/
 web-demo/Build/
+# Same thing one level down: BuildPipeline emits loose scripts/, assets/ and a
+# copy of the source project next to every exported game, so a demo folder
+# fills up with regenerated output. The pak and index.html are what ship.
+web-demo/*/scripts/
+web-demo/*/assets/
+web-demo/*/MyGame/
 Tests/GoldenScene/replays/
 
 # -----------------------------------------------------------------------------
