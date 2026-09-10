@@ -411,7 +411,12 @@ private:
     // Play mode diff
     PlayModeDiff m_PlayModeDiff;
     bool m_ShowDiffDialog = false;
-    std::string m_PlayedSceneJson;  // Scene JSON captured at stop, before restore
+    // The two ends of a playtest, for the "what changed, tick what to keep"
+    // dialog. Both are captured WITHOUT vertex data: the diff is about authored
+    // values, and a whole-scene serialize that carries geometry was the 140MB
+    // roundtrip that made the old snapshot OOM.
+    std::string m_PreplaySceneJson;  // captured at Play
+    std::string m_PlayedSceneJson;   // captured at Stop, BEFORE the restore
 };
 
 } // namespace Editor

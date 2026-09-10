@@ -886,8 +886,33 @@ void PlayMode::Stop() {
     // Release mouse
     Input::SetMouseCaptured(false);
 
+    // The other end of the diff, taken BEFORE the restore -- after it there is
+    // nothing left to diff, which is the whole point of the restore.
+    if (m_World && !m_PreplaySceneJson.empty()) {
+        Scene::SerializationOptions opts;
+        opts.prettyPrint = false;
+        opts.includeVertexData = false;
+        Scene::SceneSerializer serializer(m_World);
+        m_PlayedSceneJson = serializer.SaveToString(opts);
+    }
+
     // Restore the scene to its pre-play state
     RestoreEditorState();
+
+    // Now offer what the playtest changed. The restore is what makes this safe
+    // to show rather than alarming: nothing was kept, and this is the deliberate
+    // way to promote a change you liked.
+    if (!m_PreplaySceneJson.empty() && !m_PlayedSceneJson.empty()) {
+        m_PlayModeDiff = ComputePlayModeDiff(m_PreplaySceneJson, m_PlayedSceneJson);
+        m_ShowDiffDialog = m_PlayModeDiff.HasChanges();
+        if (m_ShowDiffDialog) {
+            ENJIN_LOG_INFO(Editor, "Play mode changed %u entities (%u modified, %u created, %u deleted)",
+                           static_cast<u32>(m_PlayModeDiff.entities.size()),
+                           m_PlayModeDiff.CountModified(), m_PlayModeDiff.CountCreated(),
+                           m_PlayModeDiff.CountDeleted());
+        }
+    }
+    m_PreplaySceneJson.clear();
 
     // The hidden debug recorder is play-owned. "Scene changes persist on Stop"
     // is the documented PlayMode contract, so play-created entities survive the
@@ -1371,6 +1396,20 @@ void PlayMode::SaveEditorState() {
             m_SavedEntityNames[static_cast<u64>(entity)] = nc->name;
         }
     }
+
+    // One end of the play-mode diff. Without this the dialog could never appear:
+    // ComputePlayModeDiff had zero call sites, m_ShowDiffDialog was only ever
+    // assigned false, so HasPendingDiff() was a compile-time false and every
+    // play-mode edit was silently kept or discarded. The dialog itself -- per
+    // property checkboxes, Apply Selected, Apply to Prefab -- was already built.
+    {
+        Scene::SerializationOptions opts;
+        opts.prettyPrint = false;
+        opts.includeVertexData = false;
+        Scene::SceneSerializer serializer(m_World);
+        m_PreplaySceneJson = serializer.SaveToString(opts);
+    }
+    m_PlayedSceneJson.clear();
 
     // Save camera state
     m_SavedCameraPos = m_Camera->GetPosition();

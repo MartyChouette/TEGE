@@ -1,9 +1,91 @@
 #include "EnjinTest.h"
 #include "Enjin/Editor/PlayMode.h"
 #include "Enjin/Editor/PlayModeDiff.h"
+#include <string>
 
 using namespace Enjin;
 using namespace Enjin::Editor;
+
+namespace {
+
+// A minimal scene, so a diff test states exactly what changed between two of
+// them and nothing else.
+std::string SceneJson(const char* name, float x, float health) {
+    char buf[512];
+    std::snprintf(buf, sizeof(buf),
+        R"({"version":"1.0","entities":[{"id":1,"name":{"name":"%s"},)"
+        R"("transform":{"position":[%.3f,0.0,0.0],"rotation":[0.0,0.0,0.0,1.0],"scale":[1.0,1.0,1.0]},)"
+        R"("health":{"maxHealth":100.0,"currentHealth":%.3f}}]})",
+        name, x, health);
+    return buf;
+}
+
+} // namespace
+
+// ===========================================================================
+// The play-mode diff
+//
+// This whole feature was three lines short of existing. ComputePlayModeDiff had
+// ZERO call sites, m_ShowDiffDialog was only ever assigned false, and
+// m_PlayedSceneJson was declared with a public getter and never written -- so
+// HasPendingDiff() was a compile-time false and the "what changed during your
+// playtest, tick what to keep" dialog could never appear, though every part of
+// it (per-property checkboxes, Apply Selected, Apply to Prefab) was built.
+//
+// It pairs with the play-mode restore: the restore puts everything back so a
+// playtest cannot cost you work, and this is the deliberate way to promote a
+// change you liked.
+// ===========================================================================
+
+ENJIN_TEST(PlayModeDiffCompute, AnUnchangedSceneHasNoChanges) {
+    const std::string before = SceneJson("Player", 0.0f, 100.0f);
+    PlayModeDiff diff = ComputePlayModeDiff(before, before);
+    ENJIN_EXPECT_FALSE(diff.HasChanges());
+    ENJIN_EXPECT_EQ(diff.CountModified(), static_cast<u32>(0));
+}
+
+ENJIN_TEST(PlayModeDiffCompute, AMovedEntityIsReportedAsModified) {
+    PlayModeDiff diff = ComputePlayModeDiff(SceneJson("Player", 0.0f, 100.0f),
+                                            SceneJson("Player", 12.5f, 100.0f));
+    ENJIN_ASSERT_TRUE(diff.HasChanges());
+    ENJIN_EXPECT_EQ(diff.CountModified(), static_cast<u32>(1));
+    ENJIN_EXPECT_EQ(diff.CountCreated(), static_cast<u32>(0));
+    ENJIN_EXPECT_EQ(diff.CountDeleted(), static_cast<u32>(0));
+    ENJIN_EXPECT_EQ(diff.entities[0].entityName, std::string("Player"));
+}
+
+ENJIN_TEST(PlayModeDiffCompute, ADamagedEntityIsReportedTooNotJustTheTransform) {
+    // The transform was the only thing the old restore handled, so it is the one
+    // thing a diff must not be limited to.
+    PlayModeDiff diff = ComputePlayModeDiff(SceneJson("Player", 0.0f, 100.0f),
+                                            SceneJson("Player", 0.0f, 7.5f));
+    ENJIN_ASSERT_TRUE(diff.HasChanges());
+    ENJIN_EXPECT_EQ(diff.CountModified(), static_cast<u32>(1));
+}
+
+ENJIN_TEST(PlayModeDiffCompute, MalformedInputIsEmptyNotACrash) {
+    // Stop() feeds this whatever the serializer produced. An empty diff means
+    // "nothing to offer"; a throw here would take the editor down on Stop.
+    ENJIN_EXPECT_FALSE(ComputePlayModeDiff("", "").HasChanges());
+    ENJIN_EXPECT_FALSE(ComputePlayModeDiff("{not json", SceneJson("A", 0.0f, 1.0f)).HasChanges());
+    ENJIN_EXPECT_FALSE(ComputePlayModeDiff(SceneJson("A", 0.0f, 1.0f), "{not json").HasChanges());
+}
+
+ENJIN_TEST(PlayModeDiffCompute, EverySelectionFlagStartsOff) {
+    // The dialog's contract is opt-in: the restore already happened, so a change
+    // is kept only if someone ticks it. A default-on checkbox would silently
+    // re-apply the playtest, which is the bug the restore exists to prevent.
+    PlayModeDiff diff = ComputePlayModeDiff(SceneJson("Player", 0.0f, 100.0f),
+                                            SceneJson("Player", 12.5f, 7.5f));
+    ENJIN_ASSERT_TRUE(diff.HasChanges());
+    for (const auto& e : diff.entities) {
+        ENJIN_EXPECT_FALSE(e.selected);
+        for (const auto& c : e.components) {
+            ENJIN_EXPECT_FALSE(c.selected);
+            for (const auto& p : c.properties) ENJIN_EXPECT_FALSE(p.selected);
+        }
+    }
+}
 
 // ===========================================================================
 // PlayState Enum
