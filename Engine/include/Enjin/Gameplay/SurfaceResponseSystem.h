@@ -3,7 +3,7 @@
 #include "Enjin/Platform/Platform.h"   // ENJIN_FORCE_INLINE (Math headers) + ENJIN_API
 #include "Enjin/Platform/Types.h"
 #include "Enjin/Math/Vector.h"
-#include "Enjin/Audio/SimpleAudio.h"
+#include "Enjin/Audio/AudioEngine.h"
 #include "Enjin/ECS/Entity.h"
 #include <unordered_map>
 #include <string>
@@ -24,7 +24,7 @@ namespace Gameplay {
 // briefly so the two don't double up.
 class ENJIN_API SurfaceResponseSystem {
 public:
-    void Initialize(Audio::SimpleAudio* audio, ECS::RenderSystem* render,
+    void Initialize(Audio::AudioEngine* audio, ECS::RenderSystem* render,
                     Physics::IPhysicsBackend* physics,
                     Physics::IPhysicsBackend2D* physics2D = nullptr) {
         m_Audio = audio; m_Render = render; m_Physics = physics; m_Physics2D = physics2D;
@@ -51,7 +51,7 @@ private:
                      const Math::Vector3& normal, bool impact);
     Audio::AudioClipHandle GetClip(const std::string& path);
 
-    Audio::SimpleAudio* m_Audio = nullptr;
+    Audio::AudioEngine* m_Audio = nullptr;
     ECS::RenderSystem* m_Render = nullptr;
     Physics::IPhysicsBackend* m_Physics = nullptr;
     Physics::IPhysicsBackend2D* m_Physics2D = nullptr;

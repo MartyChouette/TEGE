@@ -107,7 +107,6 @@ extern char** environ;
 #include "Enjin/Build/BuildPipeline.h"
 #include "Enjin/Assets/DataAsset.h"
 #include "Enjin/Plugin/PluginRepository.h"
-#include "Enjin/Audio/AudioSystem.h"
 #include "Enjin/Renderer/NormalMapGenerator.h"
 #include "Enjin/Editor/SpriteContourTracer.h"
 #include "Enjin/GUI/UICanvas.h"
@@ -4657,7 +4656,10 @@ void EditorLayer::DrawSprite2DComponent(ECS::Entity entity) {
             sprite->pivot = Math::Vector2(pivot[0], pivot[1]);
         }
         if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("0,0 = top-left, 0.5,0.5 = center, 1,1 = bottom-right");
+            // Y is up. The quad is built with y0 = -pivotY * height, so pivotY 0
+            // puts the BOTTOM edge on the entity. The tooltip said top-left,
+            // which is the opposite of what the engine does on that axis.
+            ImGui::SetTooltip("0,0 = bottom-left, 0.5,0.5 = center, 1,1 = top-right");
         }
 
         // Tint
@@ -4679,6 +4681,23 @@ void EditorLayer::DrawSprite2DComponent(ECS::Entity entity) {
         InspectorUndo::Checkbox(m_UndoRedo, "Flip Y", &sprite->flipY);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Visible", &sprite->visible);
+
+        // Lighting: per sprite, defaulting to whatever the scene does. Before
+        // this the scene decided for everything in it, by light count.
+        {
+            const char* litNames[] = { "Scene default", "Unlit", "Lit" };
+            int litIdx = static_cast<int>(sprite->lighting);
+            if (ImGui::Combo("Lighting", &litIdx, litNames, 3)) {
+                sprite->lighting = static_cast<ECS::SpriteLighting>(litIdx);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(
+                    "Scene default: lit if the scene has any lights.\n"
+                    "Unlit: flat tint x texture, whatever the scene is doing.\n"
+                    "Lit: takes lights and its normal map, even in a 2D scene.\n"
+                    "Web builds draw every sprite unlit.");
+            }
+        }
 
         // Generate Collider from sprite alpha
         if (!sprite->texturePath.empty() && m_RenderSystem) {
@@ -7518,13 +7537,25 @@ void EditorLayer::DrawScriptComponent(ECS::Entity entity) {
                     ImGui::TextWrapped("Error: %s", script.lastError.c_str());
                     ImGui::PopStyleColor();
                     if (!script.scriptPath.empty() && ImGui::SmallButton("Open at error")) {
-                        // lastError is "file (row, col): message" — pull the row.
+                        // lastError comes in two shapes: "file (row, col): msg"
+                        // from the compiler and "... at file:row:col" from a
+                        // thrown exception. This used to take the digits after
+                        // the first '(' -- which in the second shape belongs to
+                        // the function's argument list, so it read 0 and the
+                        // jump quietly landed at the top of the file.
+                        std::string errPath;
                         int line = 0;
-                        auto lp = script.lastError.find('(');
-                        if (lp != std::string::npos)
-                            line = std::atoi(script.lastError.c_str() + lp + 1);
+                        ParseScriptLocation(script.lastError, errPath, line);
                         OpenScriptAtLine(resolveAbs(script.scriptPath), line);
                     }
+                    ImGui::SameLine();
+                    if (!script.scriptPath.empty() && ImGui::SmallButton("Show line")) {
+                        std::string errPath;
+                        int line = 0;
+                        ParseScriptLocation(script.lastError, errPath, line);
+                        PeekScriptAtLine(script.scriptPath, line);
+                    }
+                    ImGui::SetItemTooltip("Show the line here in the editor, no IDE needed");
                 }
 
                 // Status

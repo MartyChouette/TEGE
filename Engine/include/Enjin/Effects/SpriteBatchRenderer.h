@@ -22,11 +22,8 @@
 namespace Enjin {
 namespace Effects {
 
-class SpriteTextureAtlas;  // Forward declaration
-struct AtlasRegion;        // Forward declaration for SpriteEntry::cachedAtlasRegion
-
 // Per-instance sprite data uploaded to GPU each frame.
-// Matches the sprite.vert shader instance attribute layout (locations 2-7).
+// Matches the sprite.vert shader instance attribute layout (locations 2-9).
 struct SpriteInstanceData {
     Math::Vector3 position;   // World position (location 2)
     f32 sizeX;                // Billboard width in world units (location 3, component 0)
@@ -42,22 +39,37 @@ struct SpriteInstanceData {
     f32 tintB;                // Tint blue  (location 6, component 2)
     f32 tintA;                // Tint alpha (location 6, component 3)
     u32 flipFlags;            // Bit 0 = flipX, bit 1 = flipY (location 7)
-    f32 _pad1;                // Padding to 16-byte boundary
-    f32 _pad2;
-    f32 _pad3;
+    // Bindless slots for this sprite's own art (locations 8 and 9). -1 = none:
+    // the base colour falls back to white, so a tint-only sprite still draws,
+    // and the normal map falls back to the sprite's flat plane normal.
+    // Carrying the texture per INSTANCE is what lets every sprite in a scene
+    // ride one draw call however many different images they use.
+    i32 texIndex;
+    i32 normalIndex;
+    // Where the sprite's own origin sits inside it (location 10). 0.5,0.5 is
+    // the centre; 0,0 puts the bottom-left corner on the entity's position.
+    // Same meaning as MeshFactory::CreateSpriteQuad, which is the only place
+    // that has ever honoured it.
+    f32 pivotX;
+    f32 pivotY;
 };
 
 // GPU instanced sprite batch renderer for 2D Sprite2DComponent entities.
 // Follows the same architecture as ParticleRenderer/WeatherRenderer: shared quad
 // mesh, per-instance buffer, alpha-blended depth-tested pipeline.
-// Sprites are grouped by texture atlas and rendered in batched instanced draw calls
-// to minimize per-entity overhead.
+// Every visible sprite goes into ONE instanced draw: the per-instance data
+// carries a bindless texture slot, so two sprites with different images cost
+// the same as two with the same image and no grouping by texture is needed.
 class ENJIN_API SpriteBatchRenderer {
 public:
     SpriteBatchRenderer() = default;
     ~SpriteBatchRenderer();
 
-    bool Initialize(Renderer::VulkanRenderer* renderer, VkDescriptorSetLayout sharedLayout);
+    // bindlessLayout: set-1 bindless texture layout. Without it sprites can
+    // still draw, but only as flat tinted quads -- there is nowhere to sample
+    // their art from.
+    bool Initialize(Renderer::VulkanRenderer* renderer, VkDescriptorSetLayout sharedLayout,
+                    VkDescriptorSetLayout bindlessLayout = VK_NULL_HANDLE);
     void Shutdown();
 
     // Recreate pipeline for a different render pass (e.g. render target vs swapchain)
@@ -66,24 +78,23 @@ public:
     // Hot-reload shaders from disk (compile GLSL → SPIR-V, recreate pipeline)
     bool ReloadShaders(const std::string& shaderDir, VkDescriptorSetLayout sharedLayout);
 
-    // Gather all visible Sprite2DComponent entities, sort by texture and layer,
-    // batch by texture, and render with instanced draw calls.
-    // textureBindCallback: called by the renderer to bind the correct texture
-    //   descriptor before each texture-grouped batch. Receives base texture path
-    //   and normal map path (empty = no normal map, use default white).
+    // Gather all visible Sprite2DComponent entities, sort by layer, and render
+    // them in a single instanced draw.
+    // resolveTextureIndex: turns an authored texture path into a bindless slot,
+    //   or -1 when there is no texture / it failed to load. Called during
+    //   instance-data build, never between draws.
+    // bindlessSet: set 1, the array those slots index into.
     // viewportWidth/Height: 0 = use swapchain extent, >0 = override (for render targets)
     // litMode: when true, uses the lit pipeline with LightingUBO for 2.5D sprite lighting
     void Render(VkCommandBuffer commandBuffer,
                 const std::vector<VkDescriptorSet>& descriptorSets,
                 u32 currentFrame,
                 ECS::World* world,
-                const std::function<void(const std::string& texturePath, const std::string& normalMapPath)>& textureBindCallback,
+                const std::function<i32(const std::string& path)>& resolveTextureIndex,
+                VkDescriptorSet bindlessSet = VK_NULL_HANDLE,
                 u32 viewportWidth = 0,
                 u32 viewportHeight = 0,
                 bool litMode = false);
-
-    // Set the texture atlas for batching sprites with different textures into one draw call
-    void SetAtlas(SpriteTextureAtlas* atlas) { m_Atlas = atlas; }
 
 private:
     void CreateQuadBuffers();
@@ -123,15 +134,12 @@ private:
 
     // Reusable instance data cache to avoid per-frame allocation
     std::vector<SpriteInstanceData> m_InstanceDataCache;
+    // Whether each instance in the cache wants the lit pipeline. Parallel to the
+    // cache on purpose: it decides where a draw is CUT, not what is uploaded.
+    std::vector<u8> m_InstanceLit;
 
-    // Reusable shadow pass vectors (cleared each frame, capacity preserved)
+    // Reusable shadow pass vector (cleared each frame, capacity preserved)
     std::vector<SpriteInstanceData> m_ShadowInstances;
-    struct ShadowBatchEntry {
-        std::string textureKey;
-        u32 instanceIdx;
-    };
-    std::vector<ShadowBatchEntry> m_ShadowBatchEntries;
-    std::vector<SpriteInstanceData> m_SortedShadowInstances;
 
     // --- Sprite sorting ---
     // Rebuilt every call, in raw entity iteration order, then sorted. Both halves
@@ -142,15 +150,11 @@ private:
         i32 sortingLayer;
         i32 orderInLayer;
         const ECS::Sprite2DComponent* sprite;
-        const AtlasRegion* cachedAtlasRegion;
-        bool isAtlased;
-        usize textureHash;
-        usize normalMapHash;
     };
     std::vector<SpriteEntry> m_SortedSprites;
 
-    // Texture atlas for packing small sprites into a single draw call
-    SpriteTextureAtlas* m_Atlas = nullptr;
+    // Set 1: the bindless texture array every sprite's art is sampled from.
+    VkDescriptorSetLayout m_BindlessLayout = VK_NULL_HANDLE;
 
     bool m_Initialized = false;
 };

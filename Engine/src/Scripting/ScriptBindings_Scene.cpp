@@ -13,6 +13,8 @@
 #include <angelscript.h>
 #include <string>
 #include <vector>
+#include <set>
+#include <cctype>
 #include <cassert>
 
 using namespace Enjin;
@@ -191,13 +193,74 @@ static u64 Entity_GetChild(u64 parentId, int index) {
 // Scene functions
 // ============================================================================
 
+// A lookup that finds nothing used to return 0 and log nothing at all, in a
+// language where the caller usually goes straight on to use the result. A
+// visible, correctly parented entity that simply would not resolve cost a full
+// debugging session in Tune_In, with no signal from the engine in the editor or
+// the log.
+//
+// Once per name, like WarnMissingScriptComponent: a lookup in OnUpdate would
+// otherwise print the same true sentence sixty times a second and bury
+// everything else. And it says what IS there, because the useful answer is
+// almost always a name that exists in a slightly different form.
+static void WarnLookupMiss(const char* binding, const char* kind, const std::string& query) {
+    static std::set<std::string> warned;
+    std::string key = std::string(binding) + "/" + query;
+    if (!warned.insert(key).second) return;
+
+    auto lower = [](std::string v) {
+        for (char& c : v) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return v;
+    };
+    const std::string q = lower(query);
+
+    std::string sameLetters;          // differs only by case
+    std::vector<std::string> near;    // one name contains the other
+    u32 total = 0;
+
+    if (s_BindingsWorld) {
+        for (Entity e : s_BindingsWorld->GetEntitiesWithComponent<NameComponent>()) {
+            auto* nc = s_BindingsWorld->GetComponent<NameComponent>(e);
+            if (!nc) continue;
+            ++total;
+            const std::string other = lower(nc->name);
+            if (other == q) { sameLetters = nc->name; break; }
+            if (near.size() < 3 &&
+                (other.find(q) != std::string::npos || q.find(other) != std::string::npos)) {
+                near.push_back(nc->name);
+            }
+        }
+    }
+
+    if (!sameLetters.empty()) {
+        ENJIN_LOG_WARN(Script, "%s: no %s '%s', but '%s' exists - names are case-sensitive",
+                       binding, kind, query.c_str(), sameLetters.c_str());
+        return;
+    }
+    if (!near.empty()) {
+        std::string list;
+        for (usize i = 0; i < near.size(); ++i) {
+            if (i) list += ", ";
+            list += "'" + near[i] + "'";
+        }
+        ENJIN_LOG_WARN(Script, "%s: no %s '%s' - did you mean %s?",
+                       binding, kind, query.c_str(), list.c_str());
+        return;
+    }
+    ENJIN_LOG_WARN(Script, "%s: no %s '%s' in this scene (%u named entities). "
+                           "The call returned 0, which is not a valid entity.",
+                   binding, kind, query.c_str(), total);
+}
+
 static u64 Scene_FindEntity(const std::string& name) {
     if (!s_BindingsWorld) {
         ENJIN_LOG_WARN(Script, "Scene_FindEntity: no active world");
         return INVALID_ENTITY;
     }
 
-    return static_cast<u64>(s_BindingsWorld->FindEntityByName(name));
+    Entity found = s_BindingsWorld->FindEntityByName(name);
+    if (found == INVALID_ENTITY) WarnLookupMiss("Scene_FindEntity", "entity named", name);
+    return static_cast<u64>(found);
 }
 
 static u64 Scene_FindEntityByTag(const std::string& tag) {
@@ -213,6 +276,7 @@ static u64 Scene_FindEntityByTag(const std::string& tag) {
         }
     }
 
+    WarnLookupMiss("Scene_FindEntityByTag", "entity tagged", tag);
     return static_cast<u64>(INVALID_ENTITY);
 }
 

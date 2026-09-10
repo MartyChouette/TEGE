@@ -59,8 +59,7 @@
 #include "Enjin/ECS/Components/Water3D.h"
 #include "Enjin/Effects/WorldTime.h"
 #include "Enjin/Effects/WorldTimeApply.h"
-#include "Enjin/Audio/AudioSystem.h"
-#include "Enjin/Audio/SimpleAudio.h"
+#include "Enjin/Audio/AudioEngine.h"
 #include "Enjin/Build/AssetReader.h"
 #include "Enjin/Platform/WebLazyFS.h"
 #include "Enjin/Scripting/ScriptEngine.h"
@@ -454,7 +453,7 @@ public:
             extern Enjin::GUI::UISystem* s_VisualScriptUI;
             extern Enjin::Accessibility::SubtitleSystem* s_VisualScriptSubtitleSystem;
             extern Enjin::Accessibility::AccessibilityAnnouncer* s_VisualScriptAnnouncer;
-            extern Enjin::Audio::SimpleAudio* s_VisualScriptAudio;
+            extern Enjin::Audio::AudioEngine* s_VisualScriptAudio;
             extern Enjin::Gameplay::ObjectPool* s_VisualScriptObjectPool;
             extern Enjin::Gameplay::QuestSystem* s_VisualScriptQuestSystem;
             extern Enjin::Gameplay::CinematicSystem* s_VisualScriptCinematic;
@@ -463,7 +462,7 @@ public:
             s_VisualScriptUI = &m_UISystem;
             s_VisualScriptSubtitleSystem = &m_SubtitleSystem;
             s_VisualScriptAnnouncer = &m_Announcer;
-            s_VisualScriptAudio = &m_SimpleAudio;
+            s_VisualScriptAudio = &m_AudioEngine;
             s_VisualScriptObjectPool = &m_ObjectPool;
             s_VisualScriptQuestSystem = &m_QuestSystem;
             s_VisualScriptCinematic = &m_CinematicSystem;
@@ -494,8 +493,8 @@ public:
         m_DialogueSystem.SetSubtitleSystem(&m_SubtitleSystem);
         m_FootstepSystem.SetEnabled(true);
         m_TieredSaveSystem.LoadMeta();
-        m_SimpleAudio.Initialize();
-        m_SimpleAudio.SetWorld(m_World.get());
+        m_AudioEngine.Initialize();
+        m_AudioEngine.SetWorld(m_World.get());
         m_WeatherSystem.Initialize();
         // Elemental fire/water/earth/air simulation. Its particle visuals aren't
         // rendered on web yet, but BuildFireLights feeds the renderer's transient
@@ -520,9 +519,9 @@ public:
         m_FlowerSystem.SetWindSystem(&m_WindSystem);
 
         m_AudioReactiveSystem.SetWorld(m_World.get());
-        m_AudioReactiveSystem.SetAudio(&m_SimpleAudio);
+        m_AudioReactiveSystem.SetAudio(&m_AudioEngine);
 
-        m_AudioGraphRuntime.Initialize(&m_SimpleAudio);
+        m_AudioGraphRuntime.Initialize(&m_AudioEngine);
         Enjin::Scripting::SetBindingsAudioGraphRuntime(&m_AudioGraphRuntime);
 
         // The bindings are registered on every platform on purpose (a script
@@ -565,7 +564,7 @@ public:
         Enjin::Scripting::SetBindingsScriptEngine(&m_ScriptEngine);
         Enjin::Scripting::SetBindingsQuestSystem(&m_QuestSystem);
         Enjin::Scripting::SetBindingsObjectPool(&m_ObjectPool);
-        Enjin::Scripting::SetBindingsAudio(&m_SimpleAudio);
+        Enjin::Scripting::SetBindingsAudio(&m_AudioEngine);
         Enjin::Scripting::SetBindingsWeather(&m_WeatherSystem);
         // Day/night + seasons reachable from script (buttons, cutscenes, HUD).
         Enjin::Scripting::SetBindingsWorldTime(&m_WorldTime, &m_SeasonalWeather);
@@ -611,7 +610,7 @@ public:
 
         // Audio-visual sound indicators: ImGui draw lists don't exist on web,
         // so indicators are DOM elements (same pattern as the DOM HUD).
-        m_SimpleAudio.SetOnSoundPlayed([this](const std::string& soundName) {
+        m_AudioEngine.SetOnSoundPlayed([this](const std::string& soundName) {
             if (!m_AccessibilitySettings.audioIndicatorsEnabled) return;
             EM_ASM({
                 var label = UTF8ToString($0);
@@ -982,7 +981,7 @@ public:
         namespace T = Enjin::GUI::UITemplates;
         const auto& a = m_AccessibilitySettings;
 
-        T::SetOptionValue(c, "options_master_volume", m_SimpleAudio.GetMasterVolume());
+        T::SetOptionValue(c, "options_master_volume", m_AudioEngine.GetMasterVolume());
         if (m_OptionsFov > 0.0f) {
             T::SetOptionValue(c, "options_fov", (m_OptionsFov - 40.0f) / 80.0f);
         }
@@ -1160,8 +1159,24 @@ public:
             else TogglePauseMenu();
         }
 
-        m_SimpleAudio.Update(deltaTime);
-        m_SimpleAudio.UpdateAudioSources(deltaTime);
+        // A browser will not let an AudioContext run until the page has seen a
+        // real user gesture, and nothing used to resume ours: a web game was
+        // silent from boot, and when a click eventually landed the context
+        // resumed with its clock already seconds in, so a track started from
+        // the middle. Measured against an exported build with
+        // tools/web_audio_probe.mjs. Cheap to ask every frame -- it returns
+        // immediately once the device is running, which on desktop is always.
+        const bool sawGesture =
+            Enjin::Input::IsMouseButtonDown(Enjin::MouseButton::Left) ||
+            Enjin::Input::GetActiveTouchCount() > 0 ||
+            Enjin::Input::IsKeyPressed(Enjin::KeyCode::Space) ||
+            Enjin::Input::IsKeyPressed(Enjin::KeyCode::Enter);
+        if (!m_AudioEngine.IsDeviceRunning() && sawGesture) {
+            m_AudioEngine.ResumeAfterUserGesture();
+        }
+
+        m_AudioEngine.Update(deltaTime);
+        m_AudioEngine.UpdateAudioSources(deltaTime);
         m_AudioGraphRuntime.Update(deltaTime);   // desktop: main.cpp:964
 
         // Input must keep rotating its per-frame state while paused, or the
@@ -1256,7 +1271,7 @@ public:
         // TotK-style surface response (desktop: main.cpp:1005): footstep/impact
         // sound + particle from the surface material. Initialize is idempotent,
         // same per-frame pattern as desktop.
-        m_SurfaceResponseSystem.Initialize(&m_SimpleAudio, m_RenderSystem, m_Physics.get(), m_Physics2D.get());
+        m_SurfaceResponseSystem.Initialize(&m_AudioEngine, m_RenderSystem, m_Physics.get(), m_Physics2D.get());
         m_SurfaceResponseSystem.Update(m_World.get(), deltaTime);
 
         // Cloth/rope/chain simulation (desktop: main.cpp:1007). The sim writes
@@ -1668,14 +1683,14 @@ public:
                     m_OptionsFov = 40.0f + e.floatValue * 80.0f;
                 });
             m_UISystem.GetEventBus().Listen("options_master_volume",
-                [this](const Enjin::GUI::UIEventData& e) { m_SimpleAudio.SetMasterVolume(e.floatValue); });
+                [this](const Enjin::GUI::UIEventData& e) { m_AudioEngine.SetMasterVolume(e.floatValue); });
             m_UISystem.GetEventBus().Listen("options_sfx_volume",
                 [this](const Enjin::GUI::UIEventData& e) {
-                    m_SimpleAudio.SetChannelVolume(Enjin::Audio::AudioChannel::SFX, e.floatValue);
+                    m_AudioEngine.SetChannelVolume(Enjin::Audio::AudioChannel::SFX, e.floatValue);
                 });
             m_UISystem.GetEventBus().Listen("options_music_volume",
                 [this](const Enjin::GUI::UIEventData& e) {
-                    m_SimpleAudio.SetChannelVolume(Enjin::Audio::AudioChannel::Music, e.floatValue);
+                    m_AudioEngine.SetChannelVolume(Enjin::Audio::AudioChannel::Music, e.floatValue);
                 });
             m_UISystem.GetEventBus().Listen("options_fullscreen",
                 [](const Enjin::GUI::UIEventData& e) {
@@ -2667,7 +2682,7 @@ private:
     Enjin::Accessibility::AudioVisualIndicatorSystem m_AudioIndicators;
     // No MIDI on web (no MIDIInput in this build), so SetMIDI is never called
     // and the MIDI-driven paths stay inert. Beat sync, VU-to-visual, RTPC and
-    // threshold triggers all run off SimpleAudio and work here.
+    // threshold triggers all run off AudioEngine and work here.
     Enjin::Audio::AudioReactiveSystem m_AudioReactiveSystem;
     // Long-lived: Wire2DCollisionCallbacks captures a reference to this
     // (desktop: main.cpp m_DeferredDestroys) — never pass it a frame-local.
@@ -2732,7 +2747,7 @@ private:
     Enjin::Gameplay::TieredSaveSystem m_TieredSaveSystem;
 
     // Audio & effects
-    Enjin::Audio::SimpleAudio m_SimpleAudio;
+    Enjin::Audio::AudioEngine m_AudioEngine;
     Enjin::Effects::WeatherSystem m_WeatherSystem;
     Enjin::Effects::WindSystem m_WindSystem;
     Enjin::f32 m_RainAccum = 0.0f;   // weather-particle spawn accumulators (web precip)

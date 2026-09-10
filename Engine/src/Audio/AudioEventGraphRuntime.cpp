@@ -2,14 +2,14 @@
 // No ImGui or editor dependency. Used by Player, VisualScript, and ScriptBindings.
 
 #include "Enjin/Audio/AudioEventGraph.h"
-#include "Enjin/Audio/SimpleAudio.h"
+#include "Enjin/Audio/AudioEngine.h"
 #include "Enjin/Logging/Log.h"
 #include <random>
 
 namespace Enjin {
 namespace Audio {
 
-void AudioEventGraphRuntime::Initialize(SimpleAudio* audio) {
+void AudioEventGraphRuntime::Initialize(AudioEngine* audio) {
     m_Audio = audio;
     m_Graph = nullptr;
     m_Parameters.clear();

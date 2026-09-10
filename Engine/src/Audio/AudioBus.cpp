@@ -5,6 +5,15 @@
 
 namespace Enjin::Audio {
 
+f32 DbToLinear(f32 db) {
+    return std::pow(10.0f, db / 20.0f);
+}
+
+f32 LinearToDb(f32 linear) {
+    if (linear <= 0.0f) return -100.0f;  // effectively silent
+    return 20.0f * std::log10(linear);
+}
+
 // ============================================================================
 // AudioMixer
 // ============================================================================

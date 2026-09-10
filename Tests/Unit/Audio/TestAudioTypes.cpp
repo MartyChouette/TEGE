@@ -1,5 +1,5 @@
 #include "EnjinTest.h"
-#include "Enjin/Audio/SimpleAudio.h"
+#include "Enjin/Audio/AudioEngine.h"
 
 using namespace Enjin;
 using namespace Enjin::Audio;
@@ -87,16 +87,16 @@ ENJIN_TEST(SoundInstance, NullMaSound) {
 }
 
 // ===========================================================================
-// SimpleAudio Default State
+// AudioEngine Default State
 // ===========================================================================
 
-ENJIN_TEST(SimpleAudio, DefaultMasterVolume) {
-    SimpleAudio audio;
+ENJIN_TEST(AudioEngine, DefaultMasterVolume) {
+    AudioEngine audio;
     ENJIN_EXPECT_FLOAT_EQ(audio.GetMasterVolume(), 1.0f);
 }
 
-ENJIN_TEST(SimpleAudio, DefaultChannelVolumes) {
-    SimpleAudio audio;
+ENJIN_TEST(AudioEngine, DefaultChannelVolumes) {
+    AudioEngine audio;
     ENJIN_EXPECT_FLOAT_EQ(audio.GetChannelVolume(AudioChannel::SFX), 1.0f);
     ENJIN_EXPECT_FLOAT_EQ(audio.GetChannelVolume(AudioChannel::Music), 1.0f);
     ENJIN_EXPECT_FLOAT_EQ(audio.GetChannelVolume(AudioChannel::UI), 1.0f);

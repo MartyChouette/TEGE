@@ -15,7 +15,7 @@
 namespace Enjin {
 namespace Audio {
 
-// Forward declaration — SoundHandle defined in SimpleAudio.h
+// Forward declaration — SoundHandle defined in AudioEngine.h
 #ifndef ENJIN_SOUND_HANDLE_DEFINED
 #define ENJIN_SOUND_HANDLE_DEFINED
 using SoundHandle = u32;

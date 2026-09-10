@@ -1,7 +1,7 @@
 #include "Enjin/VisualScript/VisualScriptExecutor.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Skeleton.h"
-#include "Enjin/Audio/SimpleAudio.h"
+#include "Enjin/Audio/AudioEngine.h"
 #include "Enjin/Logging/Log.h"
 #include <chrono>
 #include <cctype>

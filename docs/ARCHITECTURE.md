@@ -72,7 +72,7 @@ enjin/
 │   │   ├── AI/             # AIBehaviors, Navmesh, A* Pathfinding
 │   │   ├── Animation/      # Sprite + skeletal animation, Timeline/Sequencer
 │   │   ├── Assets/         # GLTFLoader, SceneImporter, Prefab
-│   │   ├── Audio/          # AudioSystem, SimpleAudio (miniaudio backend)
+│   │   ├── Audio/          # AudioEngine (miniaudio), AudioBus mixer, Steam Audio HRTF
 │   │   ├── Debug/          # Profiler, ScopeTimer, FrameData tracking
 │   │   ├── ECS/            # Entity-Component-System
 │   │   │   ├── Components/ # 70+ component types (incl. joints, ragdoll, behavior trees, dialogue box)
@@ -80,7 +80,7 @@ enjin/
 │   │   │   │   └── ...
 │   │   │   └── Systems/    # RenderSystem, ControllerSystem
 │   │   ├── Editor/         # EditorLayer, PlayMode, PlayModeDiff, EditorSettings, FeedbackSystem, PerformanceStats, VectorDrawingEditor
-│   │   ├── Effects/        # Weather, Water, Wind, RetroEffects, Destructible, SpriteTextureAtlas, SpriteContourTracer
+│   │   ├── Effects/        # Weather, Water, Wind, RetroEffects, Destructible, SpriteBatchRenderer, SpriteContourTracer
 │   │   ├── GUI/            # ImGui integration, Localization, DialogueTree, UICanvas, UISystem
 │   │   ├── Gameplay/       # TieredSaveSystem, SaveBackend, SaveLoadMenu, HUDSystem, QuestSystem, FootstepSystem, ObjectPool, CinematicSystem, DialogueAsset
 │   │   ├── Networking/     # LANMultiplayer, NetworkPanel, SteamSaveBackend
@@ -469,7 +469,7 @@ Alternative render path: geometry-only pass writes triangle ID + instance ID to 
 **Script Bindings** (~1,010 bindings across 15+ categories):
 - **Scene**: Entity transform access (Get/Set Position/Rotation/Scale/Name), scene loading
 - **Physics**: Raycast, sphere/box overlap, force/impulse/velocity, gravity scale
-- **Audio**: Play/stop/volume/pitch per entity, positional audio, master volume, channel mixing
+- **Audio**: Play/stop/volume/pitch per entity, positional audio, master volume, channel mixing, playback position (`Audio_GetTime`/`GetLength`/`Seek`)
 - **Components**: Health, Material, Light, Camera, AudioSource, Animator, Controller (40+ functions)
 - **Core**: Coroutines (StartCoroutine, Yield*), Events (Listen, Send, Broadcast), logging, input, time
 - **Gameplay**: Save/load, quests, cinematics, destructibles, object pooling, weather, particles, prefabs

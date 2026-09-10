@@ -822,6 +822,34 @@ Plays audio clips with 3D spatialization support.
 | `spatialBlend` | f32 | 1.0 | Blend between 2D (0) and 3D (1) spatialization. |
 | `rolloff` | enum | Logarithmic | Volume falloff curve: `Logarithmic`, `Linear`, or `Custom`. |
 | `priority` | i32 | 128 | Playback priority (lower = higher priority when too many sounds are playing). |
+| `channel` | enum | SFX | `SFX`, `Music`, `UI` or `Voice`. Music and UI are always 2D. |
+| `pitchMin` / `pitchMax` | f32 | 1.0 | Random pitch range per play. Both at 1.0 = no variation. |
+| `volumeMin` / `volumeMax` | f32 | 1.0 | Random volume range per play, multiplying `volume`. |
+| `clipVariations` | string[] | empty | Alternate clips. Each play picks between these and `clipPath`. |
+| `noRepeat` | bool | true | Never pick the same clip twice in a row. |
+| `audioDescription` | string | "" | Text description of this sound, for players who cannot hear it. |
+
+**Hearing it while you build.** The clip field takes a drop from the Asset
+Browser, or use the **...** button to browse; dropping or picking a file plays it
+straight away. **Play** auditions the clip through the editor's own output
+without entering play mode, and the transport underneath shows position and
+length (`0:03.4 / 0:12.0`) — click it to scrub. Double-clicking any audio file in
+the Asset Browser previews it the same way.
+
+During play mode the transport shows the game's real playback position instead,
+read-only: scrubbing a running scene would make the session unreproducible.
+
+**Randomization.** Add alternate clips under **Randomization** and every play
+picks between them and the assigned clip, jittering pitch and volume inside the
+ranges you set. This is the fix for footsteps and impacts that betray themselves
+by sounding like one recording. **No Repeat** keeps the same clip from landing
+twice running; it needs at least one alternate to mean anything.
+
+> **Web:** browsers refuse to start audio before the player's first click, tap or
+> key press. The engine holds `playOnAwake` sources until then, so a title track
+> starts from its beginning on that first input rather than partway through.
+> Nothing to configure — but do not design a moment that depends on sound
+> before the player has touched anything.
 
 #### AudioListenerComponent
 
@@ -1167,13 +1195,32 @@ world units, so the scale is what relates them to the entity.
 | `srcX`, `srcY` | f32 | 0 | Source rectangle position in texture (for sprite sheets). |
 | `srcWidth`, `srcHeight` | f32 | 0 | Source rectangle size (0 = full texture). |
 | `size` | Vector2 | (1, 1) | Display size in world units. |
-| `pivot` | Vector2 | (0.5, 0.5) | Pivot point (0-1, center by default). |
+| `pivot` | Vector2 | (0.5, 0.5) | Where the entity's origin sits inside the sprite. `0,0` = bottom-left, `1,1` = top-right. The sprite also rotates about this point. |
 | `tint` | Vector3 | (1, 1, 1) | Color tint. |
 | `alpha` | f32 | 1.0 | Opacity. |
 | `sortingLayer` | i32 | 0 | Render order (layer). |
 | `orderInLayer` | i32 | 0 | Render order within layer. |
 | `flipX` / `flipY` | bool | false | Flip sprite horizontally/vertically. |
 | `visible` | bool | true | Visibility toggle. |
+| `lighting` | enum | Scene default | `Scene default` (lit if the scene has lights), `Unlit`, or `Lit`. |
+| `normalMapPath` | string | "" | Normal map, used when this sprite is lit. |
+| `dropShadow` | bool | false | Draw a flat silhouette behind the sprite. `shadowOffset`, `shadowColor` and `shadowScale` shape it. |
+
+**Size and scale both apply.** `size` is the sprite's own width and height in
+world units, and the entity's transform scale multiplies it — either lever
+works. A script can change the size at runtime with `Sprite_SetSize`.
+
+**Lighting is per sprite.** The default defers to the scene: a scene with sprites
+and no lights draws them all flat, and adding any light makes them all lit. Set
+`Unlit` or `Lit` on a sprite to opt it out of that — a HUD element that should
+stay flat in a lit scene, or a character that should take light in a flat one.
+
+> **Web:** the WebGPU renderer has no lit sprite path and draws every sprite
+> flat. A sprite marked `Lit` still renders; it just will not take light there,
+> and the player log says so once.
+
+Sprites draw in `sortingLayer` then `orderInLayer` order, and sprites sharing
+both draw in the order their entities were created.
 
 #### AnimatedSprite2DComponent
 

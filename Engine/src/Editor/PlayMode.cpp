@@ -52,7 +52,7 @@ extern Enjin::Effects::Water3D* s_VisualScriptWater;
 extern Enjin::GUI::UISystem* s_VisualScriptUI;
 extern Enjin::Accessibility::SubtitleSystem* s_VisualScriptSubtitleSystem;
 extern Enjin::Accessibility::AccessibilityAnnouncer* s_VisualScriptAnnouncer;
-extern Enjin::Audio::SimpleAudio* s_VisualScriptAudio;
+extern Enjin::Audio::AudioEngine* s_VisualScriptAudio;
 extern Enjin::Renderer::PostProcessing* s_VisualScriptPostProcessing;
 extern Enjin::Editor::AudioEventGraphRuntime* s_VisualScriptAudioGraphRuntime;
 extern Enjin::Gameplay::ObjectPool* s_VisualScriptObjectPool;
@@ -135,7 +135,7 @@ void PlayMode::Initialize(ECS::World* world, Renderer::Camera* camera,
         m_RecordRewindSystem.SetPhysics2D(m_Physics2D.get());
 
         m_AudioReactiveSystem.SetWorld(world);
-        m_AudioReactiveSystem.SetAudio(&m_SimpleAudio);
+        m_AudioReactiveSystem.SetAudio(&m_AudioEngine);
         m_AudioReactiveSystem.SetMIDI(&m_MIDIInput);
 
         // Dynamic difficulty and face cards. Both gate per-entity on their own
@@ -239,7 +239,7 @@ void PlayMode::Play() {
         Assets::PrefabManager::Get().SetAssetRoot(projDir.string());
         m_ScriptSystem.SetScriptRoot(projDir.string());
         m_ScriptEngine.SetScriptDirectory((projDir / "scripts").string());
-        m_SimpleAudio.SetAssetRoot(projDir.string());
+        m_AudioEngine.SetAssetRoot(projDir.string());
         m_StreamingManager.SetSceneRoot(projDir.string());   // chunk sub-scenes are project-relative
     }
 
@@ -416,7 +416,7 @@ void PlayMode::Play() {
     Scripting::SetBindingsPhysics2D(m_Physics2D.get());
     Scripting::SetBindingsNetworking(&m_NetworkSystem);
     Scripting::SetBindingsStreaming(&m_StreamingManager);
-    Scripting::SetBindingsAudio(&m_SimpleAudio);
+    Scripting::SetBindingsAudio(&m_AudioEngine);
     Scripting::SetBindingsDestructible(&m_DestructibleSystem);
     Scripting::SetBindingsRewindSystem(&m_RecordRewindSystem);
     Scripting::SetBindingsFlower(m_World);
@@ -471,7 +471,7 @@ void PlayMode::Play() {
     s_VisualScriptUI = m_UISystem;
     s_VisualScriptSubtitleSystem = m_SubtitleSystem;
     s_VisualScriptAnnouncer = m_Announcer;
-    s_VisualScriptAudio = &m_SimpleAudio;
+    s_VisualScriptAudio = &m_AudioEngine;
     s_VisualScriptPostProcessing = m_PostProcessing;
     s_VisualScriptWater = m_Water3D;
     s_VisualScriptAudioGraphRuntime = &m_AudioGraphRuntime;
@@ -481,20 +481,20 @@ void PlayMode::Play() {
     ENJIN_LOG_INFO(Editor, "PlayMode: Script bindings set");
 
     // Initialize owned systems
-    m_SimpleAudio.Initialize();
-    m_SimpleAudio.SetWorld(m_World);
+    m_AudioEngine.Initialize();
+    m_AudioEngine.SetWorld(m_World);
 #ifdef ENJIN_AUDIO_STEAM_AUDIO
     // Apply HRTF setting from editor
     if (m_EditorSettings) {
-        m_SimpleAudio.SetHRTFEnabled(m_EditorSettings->enableHRTF);
-        m_SimpleAudio.SetOcclusionEnabled(m_EditorSettings->enableOcclusion);
-        m_SimpleAudio.SetTransmissionEnabled(m_EditorSettings->enableTransmission);
+        m_AudioEngine.SetHRTFEnabled(m_EditorSettings->enableHRTF);
+        m_AudioEngine.SetOcclusionEnabled(m_EditorSettings->enableOcclusion);
+        m_AudioEngine.SetTransmissionEnabled(m_EditorSettings->enableTransmission);
     }
     // Build audio scene geometry from colliders for occlusion
-    m_SimpleAudio.BuildSteamAudioScene();
+    m_AudioEngine.BuildSteamAudioScene();
 #endif
     m_DestructibleSystem.Initialize(m_World);
-    m_AudioGraphRuntime.Initialize(&m_SimpleAudio);
+    m_AudioGraphRuntime.Initialize(&m_AudioEngine);
     if (m_CurlNoiseSystem) m_CurlNoiseSystem->Initialize(m_World);
 
     // Wire 2D physics collision callbacks to visual script system and gameplay processing
@@ -540,9 +540,9 @@ void PlayMode::Play() {
         Accessibility::ApplyTextScale(*m_AccessibilitySettings, m_UISystem, m_SubtitleSystem, m_Announcer);
     }
 
-    // Wire audio visual indicators to SimpleAudio callbacks (Task #38)
+    // Wire audio visual indicators to AudioEngine callbacks (Task #38)
     if (m_AudioIndicators && m_AudioIndicators->GetConfig().enabled) {
-        m_SimpleAudio.SetOnSoundPlayed([this](const std::string& soundName) {
+        m_AudioEngine.SetOnSoundPlayed([this](const std::string& soundName) {
             if (m_AudioIndicators) {
                 m_AudioIndicators->ShowIndicator(soundName,
                     Enjin::Math::Vector3(0.4f, 0.8f, 1.0f), 1.5f);
@@ -758,7 +758,7 @@ void PlayMode::Stop() {
     m_GameOverReady = false;
 
     // Stop all audio before destroying entities (prevents stale sound handles)
-    m_SimpleAudio.StopAll();
+    m_AudioEngine.StopAll();
 
     // Destroy pooled objects before shutting down scripts (scripts may reference pooled entities)
     m_ObjectPool.DestroyAll(m_World);
@@ -785,7 +785,7 @@ void PlayMode::Stop() {
 
     // Shutdown owned runtime systems
     m_AudioGraphRuntime.Shutdown();
-    m_SimpleAudio.Shutdown();
+    m_AudioEngine.Shutdown();
     if (m_CurlNoiseSystem) m_CurlNoiseSystem->Shutdown();
     m_DestructibleSystem.Shutdown();
 
@@ -857,7 +857,7 @@ void PlayMode::Stop() {
         m_UISystem->SetDwellClickEnabled(false);
         m_UISystem->SetStickyDragEnabled(false);
     }
-    m_SimpleAudio.SetOnSoundPlayed(nullptr);
+    m_AudioEngine.SetOnSoundPlayed(nullptr);
 
     // Disable network system (but don't disconnect — lobby persists)
     m_NetworkSystem.SetEnabled(false);
@@ -1088,7 +1088,7 @@ void PlayMode::Update(f32 deltaTime) {
             m_FlowerSystem.Update(deltaTime);
             // TotK-style surface response: footstep/impact sound + particle from
             // the material of the surface walked on / struck. 3D physics path.
-            m_SurfaceResponseSystem.Initialize(&m_SimpleAudio, m_RenderSystem, m_Physics.get(), m_Physics2D.get());
+            m_SurfaceResponseSystem.Initialize(&m_AudioEngine, m_RenderSystem, m_Physics.get(), m_Physics2D.get());
             m_SurfaceResponseSystem.Update(m_World, deltaTime);
             m_ClothSystem.Update(m_World, deltaTime,
                                  m_RenderSystem ? m_RenderSystem->GetWindSystem() : nullptr);
@@ -1144,7 +1144,7 @@ void PlayMode::Update(f32 deltaTime) {
             if (cam != ECS::INVALID_ENTITY) {
                 auto* camT = m_World->GetComponent<ECS::TransformComponent>(cam);
                 if (camT) {
-                    m_SimpleAudio.SetListenerPosition(camT->position,
+                    m_AudioEngine.SetListenerPosition(camT->position,
                                                       camT->rotation.GetForward(),
                                                       camT->rotation.GetUp());
                 }
@@ -1262,8 +1262,8 @@ void PlayMode::Update(f32 deltaTime) {
         }
 
         // Audio
-        m_SimpleAudio.Update(deltaTime);
-        m_SimpleAudio.UpdateAudioSources(deltaTime);
+        m_AudioEngine.Update(deltaTime);
+        m_AudioEngine.UpdateAudioSources(deltaTime);
         m_AudioGraphRuntime.Update(deltaTime);
 
         // Accessibility systems update (Tasks #37, #38)

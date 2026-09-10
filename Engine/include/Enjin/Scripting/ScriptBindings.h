@@ -10,7 +10,7 @@ namespace Enjin {
 namespace ECS { class World; class DialogueSystem; class RenderSystem; }
 namespace Physics { class IPhysicsBackend; class IPhysicsBackend2D; }
 namespace Networking { class NetworkSystem; }
-namespace Audio { class SimpleAudio; }
+namespace Audio { class AudioEngine; }
 namespace Accessibility { class SubtitleSystem; class AccessibilityAnnouncer; struct RuntimeAccessibilitySettings; }
 namespace Scene { class SceneManager; class StreamingManager; }
 namespace Renderer { class PostProcessing; class Camera; }
@@ -80,7 +80,7 @@ void SetBindingsRenderView(const Renderer::Camera* camera, f32 viewportWidth, f3
 // Physics_RaycastScreen). 0 = nothing hit / no camera / web. Drives the
 // OnMouseEnter/OnMouseExit/OnClick script callbacks in ScriptSystem.
 ENJIN_API u64 BindingsPickEntityAtScreen(f32 screenX, f32 screenY);
-void SetBindingsAudio(Audio::SimpleAudio* audio);
+void SetBindingsAudio(Audio::AudioEngine* audio);
 void SetBindingsSceneManager(Scene::SceneManager* mgr);
 void SetBindingsFlowAdvanceFlag(bool* flag);
 void SetBindingsCoroutineScheduler(CoroutineScheduler* scheduler);

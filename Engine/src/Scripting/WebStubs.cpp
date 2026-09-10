@@ -34,7 +34,7 @@ namespace VisualScript {
 
 // NOTE: AudioEventGraphRuntime is NO LONGER stubbed here either, for the same
 // reason as the Register* functions above. Audio/AudioEventGraphRuntime.cpp
-// carries no platform guard and depends only on SimpleAudio and the logger, so
+// carries no platform guard and depends only on AudioEngine and the logger, so
 // it compiles on web and defines these four methods itself. Keeping the stubs
 // meant two definitions and a duplicate-symbol link failure -- which only
 // surfaced on a clean web build, because a stale build directory was still

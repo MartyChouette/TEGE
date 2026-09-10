@@ -9,6 +9,12 @@
 
 namespace Enjin::Audio {
 
+// Decibels are what a mixer speaks. These moved here from an IAudioBackend
+// layer that was deleted for never having run; they were the only part of it
+// anything would have wanted, and a bus is what they are for.
+ENJIN_API f32 DbToLinear(f32 db);
+ENJIN_API f32 LinearToDb(f32 linear);
+
 // Forward declaration
 class AudioMixer;
 
@@ -125,7 +131,7 @@ public:
     void PopSnapshot(const std::string& name);
     bool IsSnapshotActive(const std::string& name) const;
 
-    // VU level update (called by SimpleAudio with per-bus sound counts)
+    // VU level update (called by AudioEngine with per-bus sound counts)
     void UpdateVU(const std::string& busName, f32 rmsLevel, u32 soundCount);
 
     // Mono downmix (accessibility)

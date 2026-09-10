@@ -97,7 +97,7 @@ if(ENJIN_PLATFORM_WEB)
          "src/Effects/WeatherRenderer.cpp" "src/Effects/ParticleRenderer.cpp"
          "src/Effects/FluidRenderer.cpp" "src/Effects/GrassRenderer.cpp"
          "src/Effects/ShrubRenderer.cpp" "src/Effects/TreeRenderer.cpp"
-         "src/Effects/SpriteBatchRenderer.cpp" "src/Effects/SpriteTextureAtlas.cpp"
+         "src/Effects/SpriteBatchRenderer.cpp"
          "src/GUI/ImGuiLayer.cpp" "src/GUI/ShaderGUI.cpp" "src/GUI/EngineSplash.cpp"
          # ScriptBindings_Render/_AudioGraph compile on web ON PURPOSE: every
          # script-visible symbol must register on every platform or any .as

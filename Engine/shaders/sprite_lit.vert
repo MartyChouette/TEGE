@@ -14,6 +14,11 @@ layout(location = 4) in float inRotation;      // Z-axis rotation in radians
 layout(location = 5) in vec4 inUVRect;         // left, top, right, bottom
 layout(location = 6) in vec4 inTintAlpha;      // rgb = tint, a = alpha
 layout(location = 7) in uint inFlipFlags;      // bit 0 = flipX, bit 1 = flipY
+// Bindless slots for this instance's own art. -1 = none. Carrying the texture
+// per instance is what lets every sprite in the scene ride one draw call.
+layout(location = 8) in int inTexIndex;        // base colour, -1 = untextured
+layout(location = 9) in int inNormalIndex;     // normal map, -1 = none
+layout(location = 10) in vec2 inPivot;         // 0.5,0.5 = centred on the entity
 
 // View/Projection UBO (same binding as main pipeline)
 layout(binding = 0) uniform UniformBufferObject {
@@ -26,18 +31,29 @@ layout(location = 1) out vec4 fragTintAlpha;
 layout(location = 2) out vec3 fragWorldPos;
 layout(location = 3) out vec3 fragNormal;
 layout(location = 4) out vec4 fragTangent;
+layout(location = 5) flat out int fragTexIndex;
+layout(location = 6) flat out int fragNormalIndex;
 
 void main() {
-    // Apply Z-rotation to quad position
+    // Size first, THEN rotate. The other order rotates a unit quad and scales
+    // the result along the world axes, which only permutes the corners of a
+    // non-square sprite: a 10 x 2 bar turned 90 degrees stayed 10 wide and 2
+    // tall instead of standing up. Measured, not reasoned about.
+    //
+    // The pivot offset goes in before the rotation as well, so a sprite turns
+    // about its own pivot rather than about its centre. Nothing honoured pivot
+    // in this path at all until now -- it was authored, saved, and read only by
+    // the per-entity fallback that no scene takes.
+    vec2 local = (inQuadPos + (vec2(0.5) - inPivot)) * inSize;
+
     float cosR = cos(inRotation);
     float sinR = sin(inRotation);
     vec2 rotated = vec2(
-        inQuadPos.x * cosR - inQuadPos.y * sinR,
-        inQuadPos.x * sinR + inQuadPos.y * cosR
+        local.x * cosR - local.y * sinR,
+        local.x * sinR + local.y * cosR
     );
 
-    // Scale by sprite size
-    vec3 worldPos = inPosition + vec3(rotated * inSize, 0.0);
+    vec3 worldPos = inPosition + vec3(rotated, 0.0);
 
     gl_Position = ubo.proj * ubo.view * vec4(worldPos, 1.0);
 
@@ -61,6 +77,8 @@ void main() {
     );
 
     fragTintAlpha = inTintAlpha;
+    fragTexIndex = inTexIndex;
+    fragNormalIndex = inNormalIndex;
 
     // World-space outputs for lighting
     fragWorldPos = worldPos;

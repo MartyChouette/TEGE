@@ -100,7 +100,6 @@
 #include "Enjin/Build/BuildPipeline.h"
 #include "Enjin/Assets/DataAsset.h"
 #include "Enjin/Plugin/PluginRepository.h"
-#include "Enjin/Audio/AudioSystem.h"
 #include "Enjin/Renderer/NormalMapGenerator.h"
 #include "Enjin/Editor/SpriteContourTracer.h"
 #include "Enjin/GUI/UICanvas.h"
@@ -455,15 +454,15 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
             gfx.fxaa = m_PostProcessing->GetSettings().fxaaEnabled != 0;
         }
         if (m_RenderSystem) gfx.shadows = m_RenderSystem->IsShadowsEnabled();
-        auto* sa = m_PlayMode.GetSimpleAudio();
+        auto* sa = m_PlayMode.GetAudioEngine();
         if (sa) audio.masterVolume = sa->GetMasterVolume();
     });
 
     // Apply graphics/audio settings when user exits Options menu in play mode
     m_GameMenu.SetSettingsCallback([this](const GUI::GraphicsSettings& gfx,
                                           const GUI::AudioSettings& audio) {
-        // Audio (via PlayMode's SimpleAudio instance)
-        auto* sa = m_PlayMode.GetSimpleAudio();
+        // Audio (via PlayMode's AudioEngine instance)
+        auto* sa = m_PlayMode.GetAudioEngine();
         if (sa) {
             sa->SetMasterVolume(audio.masterMute ? 0.0f : audio.masterVolume);
             sa->SetChannelVolume(Audio::AudioChannel::Music, audio.musicMute ? 0.0f : audio.musicVolume);
@@ -837,6 +836,13 @@ void EditorLayer::Shutdown() {
     if (m_BuildThread.joinable()) {
         ENJIN_LOG_INFO(Editor, "Waiting for the in-flight build to finish...");
         m_BuildThread.join();
+    }
+
+    // Close the audition device if one was ever opened.
+    if (m_AuditionInitialized) {
+        AuditionStop();
+        m_AuditionAudio.Shutdown();
+        m_AuditionInitialized = false;
     }
 
     // End telemetry session (saves aggregate data to disk)
@@ -2366,6 +2372,14 @@ void EditorLayer::Update(f32 deltaTime) {
 
     // Update play mode
     m_PlayMode.Update(deltaTime);
+
+    // The editor's own audio device, for auditioning clips while editing. Only
+    // ticks once something has actually been played: the device is not opened
+    // until the first press. Kept separate from the game's engine on purpose,
+    // so a preview never touches the game's mixer, listener or buses.
+    if (m_AuditionInitialized) {
+        m_AuditionAudio.Update(deltaTime);
+    }
 
     // Game-view sims: update path, AFTER gameplay ticked (fresh camera and
     // player positions). Time-scaled so bullet time slows them (the player
@@ -4099,6 +4113,11 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     }
     if (!creativeOnly && HasPanel(m_VisiblePanels, EditorPanel::Console)) {
         DrawConsolePanel();
+    }
+    // Opened by double-clicking a console line that names a script location, so
+    // it has no panel toggle of its own and closes with its own X.
+    if (!creativeOnly) {
+        DrawScriptPeekWindow();
     }
     if (!creativeOnly && HasPanel(m_VisiblePanels, EditorPanel::AssetBrowser)) {
         DrawAssetBrowserPanel();

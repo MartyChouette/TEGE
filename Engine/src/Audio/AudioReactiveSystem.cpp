@@ -1,5 +1,5 @@
 #include "Enjin/Audio/AudioReactiveSystem.h"
-#include "Enjin/Audio/SimpleAudio.h"
+#include "Enjin/Audio/AudioEngine.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Light.h"
@@ -726,7 +726,7 @@ void AudioReactiveSystem::UpdateReverbZones(f32 deltaTime) {
         wet *= activeBlend;
     }
 
-    // Feed the real Freeverb bus (SimpleAudio smooths on the audio thread).
+    // Feed the real Freeverb bus (AudioEngine smooths on the audio thread).
     m_Audio->SetEnvironmentReverb(wet, room, damp, decayT, pre);
     (void)deltaTime;
 }

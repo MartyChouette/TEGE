@@ -1678,6 +1678,7 @@ struct InstanceInput {
     @location(11) uvTop: f32,
     @location(12) uvRight: f32,
     @location(13) uvBottom: f32,
+    @location(14) pivot: vec2<f32>,
 };
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -1687,15 +1688,22 @@ struct VertexOutput {
 
 @vertex
 fn vs_main(vert: VertexInput, inst: InstanceInput) -> VertexOutput {
+    // Size first, THEN rotate, with the pivot offset before both. See
+    // sprite.vert: rotating a unit quad and scaling the result afterwards only
+    // permutes the corners of a non-square sprite, so a 10 x 2 bar turned 90
+    // degrees stayed 10 wide and 2 tall instead of standing up. The pivot says
+    // where the sprite's own origin sits inside it, and nothing honoured it.
+    let local = (vert.position + (vec2<f32>(0.5, 0.5) - inst.pivot)) *
+                vec2<f32>(inst.sizeX, inst.sizeY);
     let ca = cos(inst.rotation);
     let sa = sin(inst.rotation);
-    let rx = vert.position.x * ca - vert.position.y * sa;
-    let ry = vert.position.x * sa + vert.position.y * ca;
+    let rx = local.x * ca - local.y * sa;
+    let ry = local.x * sa + local.y * ca;
 
     // Billboard in world space (camera-facing)
     let right = vec3<f32>(viewProj.view[0][0], viewProj.view[1][0], viewProj.view[2][0]);
     let up = vec3<f32>(viewProj.view[0][1], viewProj.view[1][1], viewProj.view[2][1]);
-    let worldPos = inst.worldPos + right * rx * inst.sizeX + up * ry * inst.sizeY;
+    let worldPos = inst.worldPos + right * rx + up * ry;
 
     var out: VertexOutput;
     out.position = viewProj.proj * viewProj.view * vec4<f32>(worldPos, 1.0);

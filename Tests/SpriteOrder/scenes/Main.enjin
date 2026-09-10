@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "entityCount": 3,
+  "entityCount": 5,
   "entities": [
     {
       "id": 1,
@@ -138,6 +138,100 @@
         "alpha": 1.0,
         "sortingLayer": 0,
         "orderInLayer": 0,
+        "flipX": false,
+        "flipY": false,
+        "visible": true
+      }
+    },
+    {
+      "id": 4,
+      "stableId": 3004,
+      "name": {
+        "name": "GreenPatch"
+      },
+      "transform": {
+        "position": [
+          0.0,
+          7.0,
+          5.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "sprite2D": {
+        "texturePath": "assets/solid_green.png",
+        "size": [
+          4.0,
+          4.0
+        ],
+        "pivot": [
+          0.5,
+          0.5
+        ],
+        "tint": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "alpha": 1.0,
+        "sortingLayer": 0,
+        "orderInLayer": 5,
+        "flipX": false,
+        "flipY": false,
+        "visible": true
+      }
+    },
+    {
+      "id": 5,
+      "stableId": 3005,
+      "name": {
+        "name": "BluePatch"
+      },
+      "transform": {
+        "position": [
+          0.0,
+          -7.0,
+          5.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "sprite2D": {
+        "texturePath": "assets/solid_blue.png",
+        "size": [
+          4.0,
+          4.0
+        ],
+        "pivot": [
+          0.5,
+          0.5
+        ],
+        "tint": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "alpha": 1.0,
+        "sortingLayer": 0,
+        "orderInLayer": 5,
         "flipX": false,
         "flipY": false,
         "visible": true

@@ -12,7 +12,7 @@ namespace Enjin {
 // Forward declarations for plugin context
 namespace ECS { class World; class RenderSystem; }
 namespace Scripting { class ScriptEngine; }
-namespace Audio { class SimpleAudio; }
+namespace Audio { class AudioEngine; }
 class SceneManager;
 
 namespace Plugin {
@@ -22,7 +22,7 @@ struct PluginContext {
     ECS::World* world = nullptr;
     ECS::RenderSystem* renderSystem = nullptr;
     Scripting::ScriptEngine* scriptEngine = nullptr;
-    Audio::SimpleAudio* audio = nullptr;
+    Audio::AudioEngine* audio = nullptr;
     SceneManager* sceneManager = nullptr;
 };
 

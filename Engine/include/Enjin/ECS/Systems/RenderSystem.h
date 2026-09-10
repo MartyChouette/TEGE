@@ -68,7 +68,6 @@ namespace Enjin { namespace Effects {
     class SplatRenderer;
     enum class GPUParticlePreset : unsigned char; // defined in Effects/GPUParticleTypes.h
     class SpriteBatchRenderer;
-    class SpriteTextureAtlas;
     class GrassRenderer;
     class ShrubRenderer;
     class TreeRenderer;
@@ -2351,7 +2350,6 @@ private:
     std::unique_ptr<Effects::ShrubRenderer> m_ShrubRenderer;
     std::unique_ptr<Effects::TreeRenderer> m_TreeRenderer;
     std::unique_ptr<Effects::SpriteBatchRenderer> m_SpriteBatchRenderer;
-    std::unique_ptr<Effects::SpriteTextureAtlas> m_SpriteAtlas;
 #endif
     Effects::WeatherSystem* m_MainPassWeather = nullptr;  // Weather for main pass (editor viewport)
     const Effects::ElementalSystem* m_MainPassElemental = nullptr;  // Elemental for main pass (PP-off path)

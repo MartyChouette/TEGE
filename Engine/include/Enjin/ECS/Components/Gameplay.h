@@ -276,7 +276,7 @@ struct AudioSourceComponent {
     // State
     bool isPlaying = false;
     f32 playbackPosition = 0.0f;
-    u32 soundHandle = 0;        // Handle from SimpleAudio (0 = invalid)
+    u32 soundHandle = 0;        // Handle from AudioEngine (0 = invalid)
     bool awakeTriggered = false; // Whether playOnAwake has fired
 
     // Priority (lower = higher priority when too many sounds)
@@ -290,10 +290,6 @@ struct AudioSourceComponent {
     std::vector<std::string> clipVariations;  // Alternative clips chosen randomly
     bool noRepeat = true;              // Avoid repeating the same clip twice
     u32 lastPlayedIndex = 0;           // Runtime: tracks last clip for no-repeat
-
-    // Sound pooling — pre-allocate voices for rapid fire SFX
-    bool usePooling = false;
-    u32 poolSize = 8;
 
     // Accessibility: description of this sound for audio-impaired users
     std::string audioDescription;
@@ -1566,6 +1562,18 @@ struct LayerComponent {
 // ============================================================================
 
 // Sprite2D component for 2D games
+// Whether a sprite takes lighting. The default defers to the scene, which is
+// how this worked before there was a choice: a scene with sprites and no lights
+// classifies as Scene2D and everything in it is unlit, and dropping in one light
+// flipped EVERY sprite in the scene to lit with nothing to say so and no way to
+// opt out. "This HUD element is unlit, that character is lit" is the normal
+// thing to want in a 2D game.
+enum class SpriteLighting : u8 {
+    SceneDefault = 0,   // lit iff the scene has lights (the historic behaviour)
+    Unlit = 1,          // flat: tint x texture, whatever the scene is doing
+    Lit = 2,            // takes lights, and its normal map, even in a 2D scene
+};
+
 struct Sprite2DComponent {
     // Texture reference (path for now, could be handle later)
     std::string texturePath;
@@ -1593,6 +1601,10 @@ struct Sprite2DComponent {
 
     // Visibility
     bool visible = true;
+
+    // Lit or unlit, per sprite. Not honoured by the WebGPU path, which has no
+    // lit sprite pipeline and draws every sprite flat.
+    SpriteLighting lighting = SpriteLighting::SceneDefault;
 
     // Dirty flag — triggers mesh regeneration in RenderSystem
     bool spriteDirty = true;

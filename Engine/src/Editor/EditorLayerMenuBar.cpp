@@ -82,7 +82,6 @@
 #include "Enjin/Build/BuildPipeline.h"
 #include "Enjin/Assets/DataAsset.h"
 #include "Enjin/Plugin/PluginRepository.h"
-#include "Enjin/Audio/AudioSystem.h"
 #include "Enjin/Renderer/NormalMapGenerator.h"
 #include "Enjin/Editor/SpriteContourTracer.h"
 #include "Enjin/GUI/UICanvas.h"

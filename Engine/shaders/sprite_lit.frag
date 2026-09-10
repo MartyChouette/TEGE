@@ -1,4 +1,5 @@
 #version 450
+#extension GL_EXT_nonuniform_qualifier : enable
 
 // Lit 2D sprite fragment shader — full Blinn-Phong lighting from LightingUBO
 // Supports optional normal mapping for per-pixel detail on sprites
@@ -8,6 +9,8 @@ layout(location = 1) in vec4 fragTintAlpha;
 layout(location = 2) in vec3 fragWorldPos;
 layout(location = 3) in vec3 fragNormal;
 layout(location = 4) in vec4 fragTangent;
+layout(location = 5) flat in int fragTexIndex;
+layout(location = 6) flat in int fragNormalIndex;
 
 layout(location = 0) out vec4 outColor;
 
@@ -101,11 +104,15 @@ layout(binding = 1) uniform LightingUBO {
     SpotLight spotLights[MAX_SPOT_LIGHTS];
 } lighting;
 
-// Base color texture sampler (same binding as main pipeline)
-layout(binding = 3) uniform sampler2D baseColorTexture;
-
-// Normal map sampler (same binding as main pipeline)
-layout(binding = 6) uniform sampler2D normalMap;
+// Bindless texture array (set 1) — a sprite's art is addressed by an index it
+// carries in its own instance data, so a scene using twenty different images
+// still draws in one call. Binding a shared descriptor between per-texture
+// draws cannot work: the rebinds happen while the command buffer is RECORDED
+// and the draws do not run until it is submitted, so every draw sampled
+// whatever the last one bound.
+layout(set = 1, binding = 0) uniform texture2D bindlessTextures[];
+layout(set = 1, binding = 2) uniform sampler bindlessSamplers[8];
+#define SPRITE_TEX(idx) sampler2D(bindlessTextures[nonuniformEXT(idx)], bindlessSamplers[0])
 
 // Push constants — same layout as main pipeline
 layout(push_constant) uniform PushConstants {
@@ -123,9 +130,6 @@ layout(push_constant) uniform PushConstants {
     float surfaceParam2;
     float surfaceParam3;
 } material;
-
-// Normal map flag (bit 17, same as triangle.frag FLAG_HAS_NORMAL_TEX)
-#define FLAG_HAS_NORMAL_TEX (1 << 17)
 
 // Blinn-Phong lighting calculation (simplified from triangle.frag)
 vec3 calcBlinnPhong(vec3 lightDir, vec3 lightColor, float lightIntensity, vec3 normal, vec3 viewDir, vec3 albedo, float shininess) {
@@ -147,8 +151,9 @@ float calcAttenuation(float distance, float constant, float linear, float quadra
 }
 
 void main() {
-    // Sample base color texture
-    vec4 texColor = texture(baseColorTexture, fragUV);
+    // Sample base color texture. Untextured sprites are flat tinted quads.
+    vec4 texColor = vec4(1.0);
+    if (fragTexIndex >= 0) texColor = texture(SPRITE_TEX(fragTexIndex), fragUV);
 
     vec3 albedo = texColor.rgb * fragTintAlpha.rgb;
     float alpha = texColor.a * fragTintAlpha.a;
@@ -160,7 +165,7 @@ void main() {
 
     // Determine surface normal
     vec3 normal;
-    if ((material.flags & FLAG_HAS_NORMAL_TEX) != 0) {
+    if (fragNormalIndex >= 0) {
         // Sample normal map and transform via TBN matrix
         vec3 N = normalize(fragNormal);
         vec3 T = normalize(fragTangent.xyz);
@@ -169,7 +174,7 @@ void main() {
         mat3 TBN = mat3(T, B, N);
 
         // Normal map stored as [0,1], remap to [-1,1]
-        vec3 sampledNormal = texture(normalMap, fragUV).rgb * 2.0 - 1.0;
+        vec3 sampledNormal = texture(SPRITE_TEX(fragNormalIndex), fragUV).rgb * 2.0 - 1.0;
         normal = normalize(TBN * sampledNormal);
     } else {
         // Dome normal: sprite plane normal (gives basic directional light response)

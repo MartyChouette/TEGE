@@ -1,5 +1,5 @@
 #include "Enjin/Platform/Platform.h"
-#include "Enjin/Audio/SimpleAudio.h"
+#include "Enjin/Audio/AudioEngine.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/Math/Math.h"
 #include "Enjin/Logging/Log.h"
@@ -12,6 +12,10 @@
 // miniaudio supports Emscripten/Web Audio out of the box (MA_ENABLE_WEBAUDIO).
 // No special handling needed — miniaudio auto-detects the platform.
 #include "miniaudio.h"
+
+#if defined(__EMSCRIPTEN__)
+#include <emscripten/emscripten.h>
+#endif
 
 #ifdef ENJIN_AUDIO_STEAM_AUDIO
 #include "Enjin/Audio/SteamAudioProcessor.h"
@@ -176,22 +180,22 @@ static ma_node_vtable g_reverbNodeVTable = {
 } // namespace
 
 // pImpl holding the ma_engine
-struct SimpleAudio::Impl {
+struct AudioEngine::Impl {
     ma_engine engine{};
     ReverbNode reverb{};
     bool reverbReady = false;
     bool initialized = false;
 };
 
-SimpleAudio::SimpleAudio()
+AudioEngine::AudioEngine()
     : m_Impl(std::make_unique<Impl>()) {
 }
 
-SimpleAudio::~SimpleAudio() {
+AudioEngine::~AudioEngine() {
     Shutdown();
 }
 
-bool SimpleAudio::Initialize() {
+bool AudioEngine::Initialize() {
     if (m_Initialized) return true;
 
     ma_result result = ma_engine_init(nullptr, &m_Impl->engine);
@@ -204,7 +208,15 @@ bool SimpleAudio::Initialize() {
 
     m_Impl->initialized = true;
     m_Initialized = true;
-    ENJIN_LOG_INFO(Audio, "SimpleAudio initialized (miniaudio backend)");
+#if defined(__EMSCRIPTEN__)
+    // Every AudioContext a browser creates starts suspended and stays that way
+    // until the page has seen a real user gesture. Chrome says so in the
+    // console. Nothing plays until ResumeAfterUserGesture lifts this.
+    m_WebAudioGated = true;
+    ENJIN_LOG_INFO(Audio, "AudioEngine initialized (miniaudio/WebAudio) - held until the first user gesture");
+#else
+    ENJIN_LOG_INFO(Audio, "AudioEngine initialized (miniaudio backend)");
+#endif
 
 #ifdef ENJIN_AUDIO_STEAM_AUDIO
     // Initialize Steam Audio HRTF processor
@@ -263,7 +275,7 @@ bool SimpleAudio::Initialize() {
     return true;
 }
 
-void SimpleAudio::Shutdown() {
+void AudioEngine::Shutdown() {
     if (!m_Initialized) return;
 
     StopAll();
@@ -287,10 +299,10 @@ void SimpleAudio::Shutdown() {
     }
 
     m_Initialized = false;
-    ENJIN_LOG_INFO(Audio, "SimpleAudio shutdown");
+    ENJIN_LOG_INFO(Audio, "AudioEngine shutdown");
 }
 
-void SimpleAudio::SetEnvironmentReverb(f32 wetDry, f32 roomSize, f32 damping, f32 decayTime, f32 preDelay) {
+void AudioEngine::SetEnvironmentReverb(f32 wetDry, f32 roomSize, f32 damping, f32 decayTime, f32 preDelay) {
     if (!m_Impl || !m_Impl->reverbReady) return;
     m_Impl->reverb.tWet.store(wetDry, std::memory_order_relaxed);
     m_Impl->reverb.tRoom.store(roomSize, std::memory_order_relaxed);
@@ -299,7 +311,7 @@ void SimpleAudio::SetEnvironmentReverb(f32 wetDry, f32 roomSize, f32 damping, f3
     m_Impl->reverb.tPre.store(preDelay, std::memory_order_relaxed);
 }
 
-void SimpleAudio::SetListenerPosition(const Math::Vector3& position, const Math::Vector3& forward, const Math::Vector3& up) {
+void AudioEngine::SetListenerPosition(const Math::Vector3& position, const Math::Vector3& forward, const Math::Vector3& up) {
     m_ListenerPosition = position;
     m_ListenerForward = forward;
     m_ListenerUp = up;
@@ -331,7 +343,7 @@ void SimpleAudio::SetListenerPosition(const Math::Vector3& position, const Math:
 #endif
 }
 
-bool SimpleAudio::LoadWAV(const std::string& filepath, AudioClipData& clip) {
+bool AudioEngine::LoadWAV(const std::string& filepath, AudioClipData& clip) {
     // With miniaudio, we don't need to manually parse WAV — ma_sound_init_from_file handles it.
     // Just verify the file exists and store the path.
     std::ifstream file(filepath, std::ios::binary);
@@ -351,7 +363,7 @@ bool SimpleAudio::LoadWAV(const std::string& filepath, AudioClipData& clip) {
     return true;
 }
 
-AudioClipHandle SimpleAudio::LoadClip(const std::string& filepath) {
+AudioClipHandle AudioEngine::LoadClip(const std::string& filepath) {
     // Resolve relative paths against the asset root (project dir); the CWD is
     // the exe dir, so project-relative paths never resolve without this.
     std::string resolved = filepath;
@@ -389,7 +401,7 @@ AudioClipHandle SimpleAudio::LoadClip(const std::string& filepath) {
     return handle;
 }
 
-void SimpleAudio::UnloadClip(AudioClipHandle clip) {
+void AudioEngine::UnloadClip(AudioClipHandle clip) {
     auto it = m_Clips.find(clip);
     if (it != m_Clips.end()) {
         // Stop any sounds using this clip
@@ -404,7 +416,7 @@ void SimpleAudio::UnloadClip(AudioClipHandle clip) {
     }
 }
 
-void SimpleAudio::CleanupUnusedClips() {
+void AudioEngine::CleanupUnusedClips() {
     std::unordered_set<AudioClipHandle> referencedClips;
     for (const auto& [handle, sound] : m_Sounds) {
         referencedClips.insert(sound.clip);
@@ -420,7 +432,7 @@ void SimpleAudio::CleanupUnusedClips() {
     }
 }
 
-void SimpleAudio::CleanupSound(SoundInstance& sound) {
+void AudioEngine::CleanupSound(SoundInstance& sound) {
 #ifdef ENJIN_AUDIO_STEAM_AUDIO
     if (sound.binauralNode) {
         auto* bNode = static_cast<BinauralNode*>(sound.binauralNode);
@@ -444,7 +456,7 @@ void SimpleAudio::CleanupSound(SoundInstance& sound) {
     sound.isPlaying = false;
 }
 
-SoundHandle SimpleAudio::Play(AudioClipHandle clip, f32 volume, f32 pitch, bool loop,
+SoundHandle AudioEngine::Play(AudioClipHandle clip, f32 volume, f32 pitch, bool loop,
                               AudioChannel channel) {
     auto clipIt = m_Clips.find(clip);
     if (clipIt == m_Clips.end()) {
@@ -517,7 +529,7 @@ SoundHandle SimpleAudio::Play(AudioClipHandle clip, f32 volume, f32 pitch, bool 
     return handle;
 }
 
-SoundHandle SimpleAudio::Play3D(AudioClipHandle clip, const Math::Vector3& position,
+SoundHandle AudioEngine::Play3D(AudioClipHandle clip, const Math::Vector3& position,
                                  f32 volume, f32 minDist, f32 maxDist,
                                  AudioChannel channel) {
     auto clipIt = m_Clips.find(clip);
@@ -651,15 +663,15 @@ SoundHandle SimpleAudio::Play3D(AudioClipHandle clip, const Math::Vector3& posit
     return handle;
 }
 
-void SimpleAudio::PlayOneShot(AudioClipHandle clip, f32 volume, AudioChannel channel) {
+void AudioEngine::PlayOneShot(AudioClipHandle clip, f32 volume, AudioChannel channel) {
     Play(clip, volume, 1.0f, false, channel);
 }
 
-void SimpleAudio::PlayOneShot3D(AudioClipHandle clip, const Math::Vector3& position, f32 volume) {
+void AudioEngine::PlayOneShot3D(AudioClipHandle clip, const Math::Vector3& position, f32 volume) {
     Play3D(clip, position, volume);
 }
 
-void SimpleAudio::Stop(SoundHandle sound) {
+void AudioEngine::Stop(SoundHandle sound) {
     auto it = m_Sounds.find(sound);
     if (it != m_Sounds.end()) {
         CleanupSound(it->second);
@@ -667,14 +679,14 @@ void SimpleAudio::Stop(SoundHandle sound) {
     }
 }
 
-void SimpleAudio::StopAll() {
+void AudioEngine::StopAll() {
     for (auto& [handle, sound] : m_Sounds) {
         CleanupSound(sound);
     }
     m_Sounds.clear();
 }
 
-void SimpleAudio::Pause(SoundHandle sound) {
+void AudioEngine::Pause(SoundHandle sound) {
     auto it = m_Sounds.find(sound);
     if (it != m_Sounds.end() && it->second.maSound) {
         ma_sound_stop(static_cast<ma_sound*>(it->second.maSound));
@@ -682,7 +694,7 @@ void SimpleAudio::Pause(SoundHandle sound) {
     }
 }
 
-void SimpleAudio::Resume(SoundHandle sound) {
+void AudioEngine::Resume(SoundHandle sound) {
     auto it = m_Sounds.find(sound);
     if (it != m_Sounds.end() && it->second.maSound) {
         ma_sound_start(static_cast<ma_sound*>(it->second.maSound));
@@ -690,7 +702,7 @@ void SimpleAudio::Resume(SoundHandle sound) {
     }
 }
 
-void SimpleAudio::SetVolume(SoundHandle sound, f32 volume) {
+void AudioEngine::SetVolume(SoundHandle sound, f32 volume) {
     auto it = m_Sounds.find(sound);
     if (it != m_Sounds.end()) {
         it->second.volume = Math::Clamp(volume, 0.0f, 1.0f);
@@ -707,7 +719,7 @@ void SimpleAudio::SetVolume(SoundHandle sound, f32 volume) {
     }
 }
 
-void SimpleAudio::SetPitch(SoundHandle sound, f32 pitch) {
+void AudioEngine::SetPitch(SoundHandle sound, f32 pitch) {
     auto it = m_Sounds.find(sound);
     if (it != m_Sounds.end()) {
         it->second.pitch = Math::Clamp(pitch, 0.1f, 3.0f);
@@ -717,7 +729,7 @@ void SimpleAudio::SetPitch(SoundHandle sound, f32 pitch) {
     }
 }
 
-void SimpleAudio::SetPosition(SoundHandle sound, const Math::Vector3& position) {
+void AudioEngine::SetPosition(SoundHandle sound, const Math::Vector3& position) {
     auto it = m_Sounds.find(sound);
     if (it != m_Sounds.end()) {
         it->second.position = position;
@@ -743,7 +755,7 @@ void SimpleAudio::SetPosition(SoundHandle sound, const Math::Vector3& position) 
     }
 }
 
-bool SimpleAudio::IsPlaying(SoundHandle sound) const {
+bool AudioEngine::IsPlaying(SoundHandle sound) const {
     auto it = m_Sounds.find(sound);
     if (it == m_Sounds.end()) return false;
 
@@ -754,7 +766,77 @@ bool SimpleAudio::IsPlaying(SoundHandle sound) const {
     return it->second.isPlaying;
 }
 
-void SimpleAudio::SetMasterVolume(f32 volume) {
+bool AudioEngine::IsDeviceRunning() const {
+    if (!m_Initialized) return false;
+    // The browser's refusal is invisible from here, so it is tracked separately
+    // rather than inferred from the device. See m_WebAudioGated.
+    if (m_WebAudioGated) return false;
+    ma_device* dev = ma_engine_get_device(const_cast<ma_engine*>(&m_Impl->engine));
+    return dev != nullptr && ma_device_get_state(dev) == ma_device_state_started;
+}
+
+void AudioEngine::ResumeAfterUserGesture() {
+    if (!m_Initialized || !m_WebAudioGated) return;
+
+#if defined(__EMSCRIPTEN__)
+    // Only a real activation lifts the gate. The caller watches for input, but
+    // input is not the same fact as "the browser considers this page
+    // activated", and lifting the gate early would put us back where we
+    // started: sources starting into a context that is not running.
+    const int activated = EM_ASM_INT({
+        return (navigator.userActivation && navigator.userActivation.hasBeenActive) ? 1 : 0;
+    });
+    if (!activated) return;
+
+    // ma_device_start is what calls resume() on the AudioContext, and the
+    // browser only honours it once the page has been activated.
+    ma_device* dev = ma_engine_get_device(&m_Impl->engine);
+    if (dev) ma_device_start(dev);
+#endif
+
+    m_WebAudioGated = false;
+    ENJIN_LOG_INFO(Audio, "Audio released: the page has been activated, sound can start now");
+}
+
+f32 AudioEngine::GetPlaybackTime(SoundHandle sound) const {
+    auto it = m_Sounds.find(sound);
+    if (it == m_Sounds.end() || !it->second.maSound) return -1.0f;
+
+    f32 cursor = 0.0f;
+    if (ma_sound_get_cursor_in_seconds(
+            static_cast<ma_sound*>(it->second.maSound), &cursor) != MA_SUCCESS) {
+        return -1.0f;
+    }
+    return cursor;
+}
+
+f32 AudioEngine::GetLength(SoundHandle sound) const {
+    auto it = m_Sounds.find(sound);
+    if (it == m_Sounds.end() || !it->second.maSound) return -1.0f;
+
+    f32 length = 0.0f;
+    if (ma_sound_get_length_in_seconds(
+            static_cast<ma_sound*>(it->second.maSound), &length) != MA_SUCCESS) {
+        return -1.0f;
+    }
+    return length;
+}
+
+bool AudioEngine::Seek(SoundHandle sound, f32 seconds) {
+    auto it = m_Sounds.find(sound);
+    if (it == m_Sounds.end() || !it->second.maSound) return false;
+    if (seconds < 0.0f) seconds = 0.0f;
+
+    auto* ma = static_cast<ma_sound*>(it->second.maSound);
+    // Seeking is in FRAMES, so it needs the engine's sample rate rather than
+    // the clip's: ma_sound rides the engine's output rate.
+    const u32 rate = ma_engine_get_sample_rate(&m_Impl->engine);
+    if (rate == 0) return false;
+    const ma_uint64 frame = static_cast<ma_uint64>(seconds * static_cast<f32>(rate));
+    return ma_sound_seek_to_pcm_frame(ma, frame) == MA_SUCCESS;
+}
+
+void AudioEngine::SetMasterVolume(f32 volume) {
     m_MasterVolume = Math::Clamp(volume, 0.0f, 1.0f);
     // Update all active sounds with new effective volume
     for (auto& [handle, sound] : m_Sounds) {
@@ -770,7 +852,7 @@ void SimpleAudio::SetMasterVolume(f32 volume) {
     }
 }
 
-void SimpleAudio::SetChannelVolume(AudioChannel channel, f32 volume) {
+void AudioEngine::SetChannelVolume(AudioChannel channel, f32 volume) {
     auto idx = static_cast<usize>(channel);
     if (idx >= static_cast<usize>(AudioChannel::Count)) return;
     m_ChannelVolumes[idx] = Math::Clamp(volume, 0.0f, 1.0f);
@@ -788,13 +870,13 @@ void SimpleAudio::SetChannelVolume(AudioChannel channel, f32 volume) {
     }
 }
 
-f32 SimpleAudio::GetChannelVolume(AudioChannel channel) const {
+f32 AudioEngine::GetChannelVolume(AudioChannel channel) const {
     auto idx = static_cast<usize>(channel);
     if (idx >= static_cast<usize>(AudioChannel::Count)) return 1.0f;
     return m_ChannelVolumes[idx];
 }
 
-void SimpleAudio::StopChannel(AudioChannel channel) {
+void AudioEngine::StopChannel(AudioChannel channel) {
     std::vector<SoundHandle> toRemove;
     for (auto& [handle, sound] : m_Sounds) {
         if (sound.channel == channel) {
@@ -807,7 +889,7 @@ void SimpleAudio::StopChannel(AudioChannel channel) {
     }
 }
 
-f32 SimpleAudio::EffectiveVolume(f32 instanceVolume, AudioChannel channel) const {
+f32 AudioEngine::EffectiveVolume(f32 instanceVolume, AudioChannel channel) const {
     // Cached bus pointers — avoid per-call string-based map lookup.
     // These are resolved once and reused (buses are never removed at runtime).
     static const Audio::AudioBus* cachedBuses[4] = {nullptr, nullptr, nullptr, nullptr};
@@ -829,7 +911,7 @@ f32 SimpleAudio::EffectiveVolume(f32 instanceVolume, AudioChannel channel) const
     return instanceVolume * busVol * legacyVol * m_MasterVolume;
 }
 
-void SimpleAudio::Update(f32 deltaTime) {
+void AudioEngine::Update(f32 deltaTime) {
     // Update bus mixer (volume fades, snapshot transitions)
     m_Mixer.Update(deltaTime);
     m_Crossfader.Update(deltaTime);
@@ -890,7 +972,54 @@ void SimpleAudio::Update(f32 deltaTime) {
 #endif
 }
 
-void SimpleAudio::UpdateAudioSources(f32 deltaTime) {
+// Which clip this play uses, and at what pitch and volume.
+//
+// The component has carried pitchMin/pitchMax, volumeMin/volumeMax,
+// clipVariations and noRepeat since the inspector grew a "Randomization"
+// section, and NOTHING read any of them: they were authored, serialized,
+// checked by the asset validator, and then ignored at play time. Every
+// footstep came out identical, which is the exact thing the section exists to
+// prevent. Implemented here rather than at each call site so a script-driven
+// play and a play-on-awake sound the same.
+AudioEngine::PlayVariation AudioEngine::ChooseVariation(ECS::AudioSourceComponent& src) {
+    PlayVariation v;
+    v.clipPath = src.clipPath;
+    v.pitch = src.pitch;
+    v.volume = src.volume;
+
+    auto jitter = [this](f32 lo, f32 hi) {
+        if (hi <= lo) return lo;
+        std::uniform_real_distribution<f32> d(lo, hi);
+        return d(m_Rng);
+    };
+
+    // A variation list is the SOURCE's clip plus its alternates: picking only
+    // among the alternates would make the authored clip the one you never hear.
+    if (!src.clipVariations.empty()) {
+        const usize count = src.clipVariations.size() + 1;
+        usize pick;
+        if (src.noRepeat && count > 1) {
+            // Choose from the others, then map back. Rerolling until it differs
+            // has no bound; this picks in one go.
+            std::uniform_int_distribution<usize> d(0, count - 2);
+            pick = d(m_Rng);
+            if (pick >= src.lastPlayedIndex) ++pick;
+        } else {
+            std::uniform_int_distribution<usize> d(0, count - 1);
+            pick = d(m_Rng);
+        }
+        src.lastPlayedIndex = static_cast<u32>(pick);
+        if (pick > 0) v.clipPath = src.clipVariations[pick - 1];
+    }
+
+    // 1.0/1.0 is the default and means "no variation", so the jitter only
+    // applies where an author actually widened the range.
+    v.pitch = src.pitch * jitter(src.pitchMin, src.pitchMax);
+    v.volume = src.volume * jitter(src.volumeMin, src.volumeMax);
+    return v;
+}
+
+void AudioEngine::UpdateAudioSources(f32 deltaTime) {
     if (!m_World) return;
 
     for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::AudioSourceComponent>()) {
@@ -902,10 +1031,24 @@ void SimpleAudio::UpdateAudioSources(f32 deltaTime) {
 
         Math::Vector3 position = transform ? transform->position : Math::Vector3(0, 0, 0);
 
-        // Handle playOnAwake
+        // Handle playOnAwake.
+        //
+        // Held until the device is actually RUNNING. In a browser that is not
+        // until the player's first gesture, and starting a clip into a
+        // suspended context does not queue it -- the context's clock is
+        // stopped, so when it finally resumes the sound is already several
+        // seconds "in" and starts from the middle, or is simply gone. A title
+        // track would begin partway through the first time anyone clicked.
+        // `awakeTriggered` is deliberately NOT set while we wait, so this is a
+        // hold and not a skip.
+        if (audio->playOnAwake && !audio->isPlaying && !audio->awakeTriggered &&
+            !IsDeviceRunning()) {
+            continue;
+        }
         if (audio->playOnAwake && !audio->isPlaying && !audio->awakeTriggered) {
             if (!audio->clipPath.empty()) {
-                AudioClipHandle clip = LoadClip(audio->clipPath);
+                PlayVariation v = ChooseVariation(*audio);
+                AudioClipHandle clip = LoadClip(v.clipPath);
                 // Map ECS::AudioChannel to Audio::AudioChannel (same enum values)
                 auto ch = static_cast<AudioChannel>(static_cast<u8>(audio->channel));
                 // Music and UI channels force non-diegetic (2D) playback
@@ -913,9 +1056,9 @@ void SimpleAudio::UpdateAudioSources(f32 deltaTime) {
                     ch != AudioChannel::Music && ch != AudioChannel::UI;
                 SoundHandle snd;
                 if (diegetic3D) {
-                    snd = Play3D(clip, position, audio->volume, audio->minDistance, audio->maxDistance, ch);
+                    snd = Play3D(clip, position, v.volume, audio->minDistance, audio->maxDistance, ch);
                 } else {
-                    snd = Play(clip, audio->volume, audio->pitch, audio->loop, ch);
+                    snd = Play(clip, v.volume, v.pitch, audio->loop, ch);
                 }
                 audio->soundHandle = snd;
                 audio->isPlaying = true;
@@ -939,7 +1082,7 @@ void SimpleAudio::UpdateAudioSources(f32 deltaTime) {
     (void)deltaTime;
 }
 
-f32 SimpleAudio::Calculate3DVolume(const Math::Vector3& soundPos, f32 minDist, f32 maxDist) const {
+f32 AudioEngine::Calculate3DVolume(const Math::Vector3& soundPos, f32 minDist, f32 maxDist) const {
     Math::Vector3 diff = soundPos - m_ListenerPosition;
     f32 distance = Math::Sqrt(diff.x * diff.x + diff.y * diff.y + diff.z * diff.z);
 
@@ -954,44 +1097,44 @@ f32 SimpleAudio::Calculate3DVolume(const Math::Vector3& soundPos, f32 minDist, f
 }
 
 #ifdef ENJIN_AUDIO_STEAM_AUDIO
-void SimpleAudio::SetHRTFEnabled(bool enabled) {
+void AudioEngine::SetHRTFEnabled(bool enabled) {
     m_HRTFEnabled = enabled;
     if (m_SteamAudio) {
         m_SteamAudio->SetEnabled(enabled);
     }
 }
 
-bool SimpleAudio::IsHRTFEnabled() const {
+bool AudioEngine::IsHRTFEnabled() const {
     return m_HRTFEnabled && m_SteamAudio && m_SteamAudio->IsInitialized();
 }
 
-bool SimpleAudio::IsHRTFAvailable() const {
+bool AudioEngine::IsHRTFAvailable() const {
     return m_SteamAudio && m_SteamAudio->IsInitialized();
 }
 
-void SimpleAudio::SetOcclusionEnabled(bool enabled) {
+void AudioEngine::SetOcclusionEnabled(bool enabled) {
     m_OcclusionEnabled = enabled;
     if (m_SteamAudio) {
         m_SteamAudio->SetOcclusionEnabled(enabled);
     }
 }
 
-bool SimpleAudio::IsOcclusionEnabled() const {
+bool AudioEngine::IsOcclusionEnabled() const {
     return m_OcclusionEnabled && m_SteamAudio && m_SteamAudio->IsInitialized();
 }
 
-void SimpleAudio::SetTransmissionEnabled(bool enabled) {
+void AudioEngine::SetTransmissionEnabled(bool enabled) {
     m_TransmissionEnabled = enabled;
     if (m_SteamAudio) {
         m_SteamAudio->SetTransmissionEnabled(enabled);
     }
 }
 
-bool SimpleAudio::IsTransmissionEnabled() const {
+bool AudioEngine::IsTransmissionEnabled() const {
     return m_TransmissionEnabled && m_SteamAudio && m_SteamAudio->IsInitialized();
 }
 
-void SimpleAudio::BuildSteamAudioScene() {
+void AudioEngine::BuildSteamAudioScene() {
     if (!m_SteamAudio || !m_SteamAudio->IsInitialized() || !m_World) return;
 
     std::vector<Math::Vector3> vertices;
@@ -1129,7 +1272,7 @@ void SimpleAudio::BuildSteamAudioScene() {
     }
 }
 
-void SimpleAudio::RebuildAudioScene() {
+void AudioEngine::RebuildAudioScene() {
     if (m_SteamAudio) {
         m_SteamAudio->DestroyScene();
     }

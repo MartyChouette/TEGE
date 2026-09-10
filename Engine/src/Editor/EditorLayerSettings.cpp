@@ -81,7 +81,6 @@
 #include "Enjin/Build/BuildPipeline.h"
 #include "Enjin/Assets/DataAsset.h"
 #include "Enjin/Plugin/PluginRepository.h"
-#include "Enjin/Audio/AudioSystem.h"
 #include "Enjin/Renderer/NormalMapGenerator.h"
 #include "Enjin/Editor/SpriteContourTracer.h"
 #include "Enjin/GUI/UICanvas.h"
@@ -1648,7 +1647,7 @@ void EditorLayer::DrawSettingsSection_FrameRate() {
 void EditorLayer::DrawSettingsSection_Audio() {
     if (UI::SectionHeader("Audio")) {
 #ifdef ENJIN_AUDIO_STEAM_AUDIO
-        auto* audio = m_PlayMode.GetSimpleAudio();
+        auto* audio = m_PlayMode.GetAudioEngine();
         if (audio) {
             bool hrtfEnabled = m_SceneManager.GetEnableHRTF();
             if (ImGui::Checkbox("HRTF Binaural Audio (Steam Audio)", &hrtfEnabled)) {

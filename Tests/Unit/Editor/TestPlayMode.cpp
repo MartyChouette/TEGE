@@ -101,9 +101,9 @@ ENJIN_TEST(PlayModeSystems, NetworkSystem) {
     ENJIN_ASSERT_NOT_NULL(pm.GetNetworkSystem());
 }
 
-ENJIN_TEST(PlayModeSystems, SimpleAudio) {
+ENJIN_TEST(PlayModeSystems, AudioEngine) {
     PlayMode pm;
-    ENJIN_ASSERT_NOT_NULL(pm.GetSimpleAudio());
+    ENJIN_ASSERT_NOT_NULL(pm.GetAudioEngine());
 }
 
 ENJIN_TEST(PlayModeSystems, InputActionMapIsBorrowedNotOwned) {

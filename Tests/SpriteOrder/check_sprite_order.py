@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check sprite draw order AND texture orientation from one capture.
+"""Check sprite draw order, texture orientation, and per-sprite texturing.
 
 The scene beside this script is built so the two disagree. A teal marker is
 created FIRST (entity id 2) but sorts LAST (orderInLayer 10); a large red ground
@@ -22,6 +22,15 @@ top of the image or the bottom. It used to land on the bottom: every textured
 sprite rendered upside down on both backends, while the same texture on a mesh
 came out the right way up, and the only sprite example in the tree used
 untextured quads so nothing caught it.
+
+Third, two more sprites sit above and below the marker carrying DIFFERENT solid
+textures, green over blue. They are what says each sprite drew with its own
+image. Sprites used to be grouped into one draw per texture with a shared
+descriptor rebound between the groups, and those rebinds happen while the
+command buffer is being recorded while the draws do not run until it is
+submitted -- so every group sampled whatever the LAST one bound, and a scene
+turned into copies of its final group the moment it used a second texture. One
+texture is one group and looks perfect, which is why nothing caught it.
 
 Sampled well inside large flat regions, so lavapipe's rasterisation differences
 from a real GPU cannot move the result.
@@ -82,6 +91,14 @@ def main():
     bottom = patch(h // 2 + h // 6)
     print(f"upper half: rgb{top}   lower half: rgb{bottom}")
 
+    # The two solid-texture patches. The camera is orthographic with a half
+    # height of 12 world units, so world y maps to row h/2 * (1 - y/12): the
+    # sprite centred at y = +7 lands at 0.208h and the one at y = -7 at 0.792h,
+    # each 4 units tall, which is a third of the half-view either side.
+    green = patch(int(h * 0.208))
+    blue = patch(int(h * 0.792))
+    print(f"upper patch: rgb{green}   lower patch: rgb{blue}")
+
     # The three things a sample can be. Compared by which channel leads rather
     # than against exact values, because tonemapping shifts the absolute numbers.
     def is_ground(c):  return c[0] > c[1] * 2 and c[0] > c[2] * 2   # red, dark elsewhere
@@ -95,14 +112,27 @@ def main():
     print("sprite order OK: the marker sorted on top, as authored")
 
     # --- 2. texture orientation ---------------------------------------------
-    if is_amber(top) and is_blue(bottom):
-        print("texture orientation OK: v = 0 is the top of the image")
-        return
     if is_blue(top) and is_amber(bottom):
         fail("the sprite's texture is upside down: v = 0 landed on the bottom "
              "of the image (check the mix() in sprite.vert / SPRITE_WGSL)")
-    fail(f"neither orientation: upper rgb{top} lower rgb{bottom} - did the "
-         "texture load at all?")
+    if not (is_amber(top) and is_blue(bottom)):
+        fail(f"neither orientation: upper rgb{top} lower rgb{bottom} - did the "
+             "texture load at all?")
+    print("texture orientation OK: v = 0 is the top of the image")
+
+    # --- 3. one texture per sprite ------------------------------------------
+    def is_green(c):  return c[1] > c[0] and c[1] > c[2]
+
+    if not is_green(green):
+        fail(f"the green sprite did not draw its own texture: rgb{green}. "
+             "Every sprite carries a bindless texture index in its instance "
+             "data; if they share one bound descriptor instead, they all sample "
+             "whichever texture was bound last.")
+    if not is_blue(blue):
+        fail(f"the blue sprite did not draw its own texture: rgb{blue}. "
+             "See the note above - two sprites with two images must not become "
+             "two copies of one image.")
+    print("per-sprite texturing OK: two sprites, two different images")
 
 
 if __name__ == "__main__":

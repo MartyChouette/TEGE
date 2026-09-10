@@ -1,6 +1,8 @@
 // Single translation unit that provides the miniaudio implementation.
-// Both MiniaudioBackend.cpp and SimpleAudio.cpp include miniaudio.h
-// (without MINIAUDIO_IMPLEMENTATION) and use the symbols defined here.
+// AudioEngine.cpp includes miniaudio.h without MINIAUDIO_IMPLEMENTATION and
+// uses the symbols defined here. It is the only consumer now that the unused
+// MiniaudioBackend has been retired; this stays a separate TU so the ~90k-line
+// implementation is compiled once rather than on every edit to the engine.
 #ifdef _WIN32
 #define NOMINMAX
 #endif

@@ -195,6 +195,7 @@ enjin_add_test(TestPlayMode           Unit/Editor/TestPlayMode.cpp)
 enjin_add_test(TestMcpServer       Unit/Editor/TestMcpServer.cpp)
 enjin_add_test(TestSharedMemoryTransport Unit/Editor/TestSharedMemoryTransport.cpp)
 enjin_add_test(TestCameraController   Unit/Editor/TestCameraController.cpp)
+enjin_add_test(TestScriptErrorLocation Unit/Editor/TestScriptErrorLocation.cpp)
 enjin_add_test(TestUndoRedo           Unit/Editor/TestUndoRedo.cpp)
 enjin_add_test(TestDropImport         Unit/Editor/TestDropImport.cpp)
 
@@ -235,6 +236,7 @@ enjin_add_test(TestNavmesh            Unit/AI/TestNavmesh.cpp)
 # --- Audio ---
 enjin_add_test(TestAudio              Unit/Audio/TestAudio.cpp)
 enjin_add_test(TestAudioTypes         Unit/Audio/TestAudioTypes.cpp)
+enjin_add_test(TestAudioVariation   Unit/Audio/TestAudioVariation.cpp)
 
 # --- Effects ---
 enjin_add_test(TestWorldTime          Unit/Effects/TestWorldTime.cpp)

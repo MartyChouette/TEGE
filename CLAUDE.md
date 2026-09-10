@@ -135,7 +135,7 @@ A symptom shows up in a project, so the project is where you look, and project d
 - **web_main.cpp must call `Logger::Get().Initialize(...)`** (web forgot until 2026-08-09 — every `ENJIN_LOG_*` silently dropped; stdout DOES reach the browser console) **and `m_ScriptEngine.SetAssetReader(&m_AssetReader)`** (web has no loose script files; script sources come from the pak)
 - **TegeBehavior + the enjin_api scripts are EMBEDDED in the engine** (`EnjinApiEmbedded.cpp`, regenerate with `python _gen_api.py` after editing `enjin_api/*.as`). TegeBehavior is auto-injected into every module unless the source mentions `TegeBehavior.as`; `#include "Timer.as"` etc. fall back to embedded copies. Project `scripts/enjin_api/` overrides
 - **Script module names are `parentDir_stem`** (`scripts/Foo.as` → `scripts_Foo`) — anything creating instances must derive the name identically or CreateInstance fails
-- **The process CWD is NEVER reliable** (editor/player CWD = exe dir). All relative paths resolve via roots set at play/boot: `ScriptSystem::SetScriptRoot`, `ScriptEngine::SetScriptDirectory`, `SimpleAudio::SetAssetRoot` — new path consumers must follow this pattern, never bare relative file access
+- **The process CWD is NEVER reliable** (editor/player CWD = exe dir). All relative paths resolve via roots set at play/boot: `ScriptSystem::SetScriptRoot`, `ScriptEngine::SetScriptDirectory`, `AudioEngine::SetAssetRoot` — new path consumers must follow this pattern, never bare relative file access
 - **Exported games read scripts from loose DISK files by default** — BuildPipeline emits loose `scripts/`, `scripts/enjin_api/`, and `assets/` next to the exe (`EmitLooseRuntimeFiles`), and that is what the runtime loads. Pak-side script loading now EXISTS as a fallback (`ScriptEngine::SetAssetReader` + `ReadScriptSource`/`IncludeCallback` read from the `.enjpak`), but loose files still ship and take precedence, so the pak path is not exercised in practice yet
 - **The build copies a PREBUILT `EnjinPlayer.exe`** — after engine changes, rebuild the `EnjinPlayer` target too or exported games ship a stale engine
 
@@ -313,7 +313,7 @@ enjin/
 │   │   ├── AI/             # AIBehaviors, Navmesh, A* Pathfinding
 │   │   ├── Animation/      # Sprite + skeletal animation, BlendTree, Retargeting
 │   │   ├── Assets/         # GLTFLoader, AssimpLoader, SceneImporter, Prefab
-│   │   ├── Audio/          # SimpleAudio (miniaudio), SteamAudioProcessor
+│   │   ├── Audio/          # AudioEngine (miniaudio), SteamAudioProcessor
 │   │   ├── ECS/            # Entity-Component-System (140+ component types)
 │   │   │   ├── Components/ # Transform, Mesh, Material, Light, Camera, etc.
 │   │   │   └── Systems/    # RenderSystem, ControllerSystem

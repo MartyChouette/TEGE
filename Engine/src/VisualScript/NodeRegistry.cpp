@@ -7,7 +7,7 @@
 #include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/Systems/DialogueSystem.h"
 #include "Enjin/AI/BehaviorTree.h"
-#include "Enjin/Audio/SimpleAudio.h"
+#include "Enjin/Audio/AudioEngine.h"
 #include "Enjin/Physics/IPhysicsBackend.h"
 #include "Enjin/Physics/IPhysicsBackend2D.h"
 #include "Enjin/Networking/NetworkSystem.h"
@@ -56,7 +56,7 @@
 // TODO: Move these to ExecutionContext so nodes receive systems via context
 //       rather than relying on global extern pointers.
 Enjin::Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem = nullptr;
-Enjin::Audio::SimpleAudio* s_VisualScriptAudio = nullptr;
+Enjin::Audio::AudioEngine* s_VisualScriptAudio = nullptr;
 Enjin::Audio::AudioEventGraphRuntime* s_VisualScriptAudioGraphRuntime = nullptr;
 Enjin::Plugin::PluginSystem* s_VisualScriptPluginSystem = nullptr;
 Enjin::Effects::WeatherSystem* s_VisualScriptWeather = nullptr;

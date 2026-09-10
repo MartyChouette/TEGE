@@ -12,7 +12,7 @@ class asIScriptEngine;
 namespace Enjin {
 
 namespace ECS { class World; }
-namespace Audio { class SimpleAudio; }
+namespace Audio { class AudioEngine; }
 namespace Gameplay { class TieredSaveSystem; }
 namespace Scripting {
 
@@ -256,7 +256,7 @@ ENJIN_API void RegisterFlashAPIBindings(asIScriptEngine* engine);
 
 // Set the world, audio, and save system pointers for the shim to use
 void SetFlashShimWorld(ECS::World* world);
-void SetFlashShimAudio(Audio::SimpleAudio* audio);
+void SetFlashShimAudio(Audio::AudioEngine* audio);
 void SetFlashShimSaveSystem(Gameplay::TieredSaveSystem* sys);
 
 } // namespace Scripting

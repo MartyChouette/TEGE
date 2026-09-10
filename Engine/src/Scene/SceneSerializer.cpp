@@ -3318,8 +3318,6 @@ json SerializeAudioSourceComponent(const ECS::AudioSourceComponent& audio) {
     j["volumeMax"] = RF(audio.volumeMax);
     if (!audio.clipVariations.empty()) j["clipVariations"] = audio.clipVariations;
     j["noRepeat"] = audio.noRepeat;
-    j["usePooling"] = audio.usePooling;
-    j["poolSize"] = audio.poolSize;
     if (!audio.audioDescription.empty()) j["audioDescription"] = audio.audioDescription;
     return j;
 }
@@ -3349,8 +3347,9 @@ ECS::AudioSourceComponent DeserializeAudioSourceComponent(const json& j) {
         }
     }
     if (j.contains("noRepeat")) audio.noRepeat = JB(j["noRepeat"]);
-    if (j.contains("usePooling")) audio.usePooling = JB(j["usePooling"]);
-    if (j.contains("poolSize")) { u32 v = j["poolSize"].get<u32>(); if (v >= 1 && v <= 64) audio.poolSize = v; }
+    // usePooling / poolSize were removed 2026-09-10: nothing in the engine ever
+    // read them and there is no voice pool. Old scenes carrying the keys load
+    // fine (unknown keys are ignored) and drop them on their next save.
     if (j.contains("audioDescription")) audio.audioDescription = SafeStr(j["audioDescription"], 512);
     return audio;
 }
@@ -4978,6 +4977,9 @@ json SerializeSprite2DComponent(const ECS::Sprite2DComponent& s) {
     j["flipX"] = s.flipX;
     j["flipY"] = s.flipY;
     j["visible"] = RF(s.visible);
+    if (s.lighting != ECS::SpriteLighting::SceneDefault) {
+        j["lighting"] = static_cast<u32>(s.lighting);
+    }
     if (s.dropShadow) {
         j["dropShadow"] = true;
         j["shadowOffset"] = SerializeVector2(s.shadowOffset);
@@ -5004,6 +5006,11 @@ ECS::Sprite2DComponent DeserializeSprite2DComponent(const json& j) {
     if (j.contains("flipX")) s.flipX = JB(j["flipX"]);
     if (j.contains("flipY")) s.flipY = JB(j["flipY"]);
     if (j.contains("visible")) s.visible = JB(j["visible"]);
+    if (j.contains("lighting") && j["lighting"].is_number_unsigned()) {
+        u32 lit = j["lighting"].get<u32>();
+        if (lit <= static_cast<u32>(ECS::SpriteLighting::Lit))
+            s.lighting = static_cast<ECS::SpriteLighting>(lit);
+    }
     if (j.contains("dropShadow")) s.dropShadow = JB(j["dropShadow"]);
     if (j.contains("shadowOffset")) s.shadowOffset = DeserializeVector2(j["shadowOffset"]);
     if (j.contains("shadowColor") && j["shadowColor"].is_array() && j["shadowColor"].size() >= 4) {

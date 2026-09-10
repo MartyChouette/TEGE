@@ -46,7 +46,7 @@
 #include "Enjin/Editor/PlayModeDiff.h"
 #include "Enjin/Editor/EditorSettings.h"
 #include "Enjin/Scene/LevelStreaming.h"
-#include "Enjin/Audio/SimpleAudio.h"
+#include "Enjin/Audio/AudioEngine.h"
 #include "Enjin/Effects/Destructible.h"
 #include "Enjin/Effects/InteractiveWater.h"
 #include "Enjin/Input/InputAction.h"
@@ -166,7 +166,7 @@ public:
     }
     f32 GetSessionElapsed() const { return m_SessionElapsed; }
 
-    Audio::SimpleAudio* GetSimpleAudio() { return &m_SimpleAudio; }
+    Audio::AudioEngine* GetAudioEngine() { return &m_AudioEngine; }
     Effects::DestructibleSystem* GetDestructibleSystem() { return &m_DestructibleSystem; }
     Effects::InteractiveWaterSystem* GetInteractiveWaterSystem() { return &m_InteractiveWaterSystem; }
     void SetInputActionMap(InputSystem::InputActionMap* map) { m_InputMap = map; }
@@ -326,7 +326,7 @@ private:
     EditorSettings* m_EditorSettings = nullptr;
 
     // Audio system (owned by PlayMode for script bindings)
-    Audio::SimpleAudio m_SimpleAudio;
+    Audio::AudioEngine m_AudioEngine;
 
     // Destructible system (owned by PlayMode for script bindings)
     Effects::DestructibleSystem m_DestructibleSystem;

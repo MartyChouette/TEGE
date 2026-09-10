@@ -14,7 +14,6 @@
 #include "Enjin/Effects/ParticleSystem.h"   // ResolveEmitterTransform (GPU emitters)
 #include "Enjin/Effects/FluidRenderer.h"
 #include "Enjin/Effects/SpriteBatchRenderer.h"
-#include "Enjin/Effects/SpriteTextureAtlas.h"
 #include "Enjin/Effects/GrassRenderer.h"
 #include "Enjin/Effects/ShrubRenderer.h"
 #include "Enjin/Effects/TreeRenderer.h"
@@ -134,6 +133,24 @@ void RenderSystem::WarnIfSceneHasNoLights(bool noLights) {
 
 namespace Enjin {
 namespace ECS {
+
+// One instance row for the sprite pipeline, and it is ONE struct on purpose.
+// It used to be declared separately inside each of the two blocks that feed
+// that pipeline -- the sprite draw and the weather particles -- so the layout
+// lived in three places (here twice, plus the vertex layout the pipeline was
+// built with) and any field added to one of them silently mis-strided the
+// other. SPRITE_WGSL's InstanceInput is the fourth copy and cannot be merged,
+// so the static_assert below is what ties this side to it.
+struct WebSpriteInst {
+    f32 px, py, pz;
+    f32 sizeX, sizeY;
+    f32 rotation;
+    f32 tintR, tintG, tintB, tintA;
+    f32 uvL, uvT, uvR, uvB;
+    f32 pivotX, pivotY;    // 0.5,0.5 = centred on the position
+};
+static_assert(sizeof(WebSpriteInst) == 16 * sizeof(f32),
+              "WebSpriteInst must match the sprite pipeline's vertex stride");
 
 // UBO structs matching pbr.wgsl expectations (std140 layout)
 struct WebViewProjectionUBO {
@@ -1545,7 +1562,7 @@ void RenderSystem::Initialize() {
             {Renderer::GPUVertexFormat::Float32x2, 2 * sizeof(f32), 1},
         };
         Renderer::GPUVertexBufferLayoutDesc sprInstLayout;
-        sprInstLayout.stride = 14 * sizeof(f32);  // worldPos(3)+sizeX+sizeY+rot+tintRGBA+uvRect(4)
+        sprInstLayout.stride = sizeof(WebSpriteInst);  // worldPos(3)+size(2)+rot+tintRGBA+uvRect(4)+pivot(2)
         sprInstLayout.perInstance = true;
         sprInstLayout.attributes = {
             {Renderer::GPUVertexFormat::Float32x3, 0, 2},                    // worldPos
@@ -1560,6 +1577,7 @@ void RenderSystem::Initialize() {
             {Renderer::GPUVertexFormat::Float32, 11 * sizeof(f32), 11},      // uvTop
             {Renderer::GPUVertexFormat::Float32, 12 * sizeof(f32), 12},      // uvRight
             {Renderer::GPUVertexFormat::Float32, 13 * sizeof(f32), 13},      // uvBottom
+            {Renderer::GPUVertexFormat::Float32x2, 14 * sizeof(f32), 14},    // pivot
         };
         pd.vertexBuffers = {sprQuadLayout, sprInstLayout};
         m_WebSpritePipeline = pipeMgr->CreateRenderPipeline(pd);
@@ -2340,6 +2358,10 @@ void RenderSystem::Update(f32 deltaTime) {
     WebEnsureTextMeshes();
 
     RefreshStorageCache();
+
+    // Classify the scene. Nothing on this path called it while the web body was
+    // empty, so restoring the body alone would have left the mode frozen.
+    ClassifySceneComposition();
 
     // Latch the frame's counters only on the call that can actually draw.
     //
@@ -4309,10 +4331,9 @@ void RenderSystem::Update(f32 deltaTime) {
         auto* webBufMgrS = static_cast<Renderer::WebGPUBufferManager*>(bufMgr);
         const auto& spriteEntities = m_World->GetEntitiesWithComponent<Sprite2DComponent>();
 
-        struct SpriteInst { f32 px, py, pz, sizeX, sizeY, rotation, tintR, tintG, tintB, tintA, uvL, uvT, uvR, uvB; };
         // Reused across frames like drawCmds above: render is single-threaded,
         // and a fresh heap allocation every frame for the same list is waste.
-        static std::vector<SpriteInst> spriteInsts;
+        static std::vector<WebSpriteInst> spriteInsts;
         spriteInsts.clear();
         spriteInsts.reserve(spriteEntities.size());
 
@@ -4338,6 +4359,17 @@ void RenderSystem::Update(f32 deltaTime) {
             auto* spr = m_World->GetComponent<Sprite2DComponent>(se);
             auto* sxf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(se) : nullptr;
             if (!spr || !sxf || !sxf->visible || !spr->visible) continue;
+            // Say so rather than quietly drawing it flat. There is no lit sprite
+            // pipeline on this backend, so a sprite that asks for lighting gets
+            // the unlit one and looks different here than it does on desktop.
+            if (spr->lighting == SpriteLighting::Lit) {
+                static bool warnedLitSprite = false;
+                if (!warnedLitSprite) {
+                    warnedLitSprite = true;
+                    ENJIN_LOG_WARN(Renderer, "Sprite lighting is not available on web; "
+                                             "sprites marked Lit are drawn unlit");
+                }
+            }
             spriteDraws.push_back({se, spr, sxf});
         }
 
@@ -4351,21 +4383,57 @@ void RenderSystem::Update(f32 deltaTime) {
         for (const auto& d : spriteDraws) {
             const auto* spr = d.spr;
             const auto* sxf = d.xf;
-            f32 srcL = spr->srcX, srcT = spr->srcY;
-            f32 srcR = spr->srcWidth > 0 ? spr->srcX + spr->srcWidth : 1.0f;
-            f32 srcB = spr->srcHeight > 0 ? spr->srcY + spr->srcHeight : 1.0f;
+
+            // Position, rotation and scale resolved the way the desktop path
+            // resolves them, parent chain included. This read the LOCAL
+            // position and passed 0 for the rotation, with a comment calling
+            // that simplified: a parented sprite drew at its offset from the
+            // parent rather than where the parent put it, and a rotated sprite
+            // did not turn at all in a browser while turning on desktop.
+            Math::Vector3 wpos = sxf->position;
+            f32 rotZ = sxf->rotation.GetRotationZ();
+            f32 scaleX = sxf->scale.x, scaleY = sxf->scale.y;
+            auto* sparent = m_World->GetComponent<ParentComponent>(d.entity);
+            if (sparent && sparent->parent != INVALID_ENTITY) {
+                Math::Matrix4 wm = ECS::ComputeWorldMatrix(m_World, d.entity);
+                wpos = Math::Vector3(wm.m[12], wm.m[13], wm.m[14]);
+                rotZ = std::atan2(wm.m[1], wm.m[0]);
+                scaleX = std::sqrt(wm.m[0] * wm.m[0] + wm.m[1] * wm.m[1]);
+                scaleY = std::sqrt(wm.m[4] * wm.m[4] + wm.m[5] * wm.m[5]);
+            }
+
+            // Sheet UVs are a FRACTION of the texture. These were the raw pixel
+            // numbers straight off the component, so a sprite sheet sampled far
+            // past its own edge on web while being correct on desktop.
+            // srcWidth 0 still means "the whole texture".
+            f32 srcL = 0.0f, srcT = 0.0f, srcR = 1.0f, srcB = 1.0f;
+            if (spr->srcWidth > 0 && spr->srcHeight > 0 &&
+                spr->texPixelWidth > 0 && spr->texPixelHeight > 0) {
+                srcL = spr->srcX / spr->texPixelWidth;
+                srcT = spr->srcY / spr->texPixelHeight;
+                srcR = (spr->srcX + spr->srcWidth) / spr->texPixelWidth;
+                srcB = (spr->srcY + spr->srcHeight) / spr->texPixelHeight;
+            }
+
+            // Flip by swapping the rect's edges, which is exactly what the
+            // desktop shader's "uv = 1 - uv, then mix" comes to. flipX and
+            // flipY reached the web instance data in no form at all before.
+            if (spr->flipX) std::swap(srcL, srcR);
+            if (spr->flipY) std::swap(srcT, srcB);
+
             spriteInsts.push_back({
-                sxf->position.x, sxf->position.y, sxf->position.z,
-                spr->size.x * sxf->scale.x, spr->size.y * sxf->scale.y,
-                0.0f,  // rotation from transform Z euler (simplified)
+                wpos.x, wpos.y, wpos.z,
+                spr->size.x * scaleX, spr->size.y * scaleY,
+                rotZ,
                 spr->tint.x, spr->tint.y, spr->tint.z, spr->alpha,
-                srcL, srcT, srcR, srcB
+                srcL, srcT, srcR, srcB,
+                spr->pivot.x, spr->pivot.y
             });
         }
 
         if (!spriteInsts.empty()) {
             auto instBuf = UploadWebInstances(WebInstanceSlot::Sprite,
-                spriteInsts.data(), spriteInsts.size() * sizeof(SpriteInst));
+                spriteInsts.data(), spriteInsts.size() * sizeof(WebSpriteInst));
 
             wgpuRenderPassEncoderSetPipeline(scenePassEncoder, webPipeMgr->GetNativePipeline(m_WebSpritePipeline));
             wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 0, webBindMgr->GetNativeGroup(m_WebFrameBindGroup), 0, nullptr);
@@ -4405,10 +4473,9 @@ void RenderSystem::Update(f32 deltaTime) {
     if (usePostProcess && m_WebSpritePipeline.IsValid() && scenePassEncoder && m_MainPassWeather) {
         const auto& wparts = m_MainPassWeather->GetParticles();
         const bool wIsRain = m_MainPassWeatherIsRain;
-        struct SpriteInst { f32 px, py, pz, sizeX, sizeY, rotation, tintR, tintG, tintB, tintA, uvL, uvT, uvR, uvB; };
         // Reused across frames like drawCmds above: render is single-threaded,
         // and a fresh heap allocation every frame for the same list is waste.
-        static std::vector<SpriteInst> winsts;
+        static std::vector<WebSpriteInst> winsts;
         winsts.clear();
         winsts.reserve(wparts.size());
         for (const auto& p : wparts) {
@@ -4425,7 +4492,8 @@ void RenderSystem::Update(f32 deltaTime) {
             f32 a = p.alpha * (wIsRain ? 0.6f : 0.8f);    // softer so they disperse, not pop
             winsts.push_back({p.position.x, p.position.y, p.position.z,
                               sx, sy, 0.0f, r, g, b, a,
-                              0.0f, 0.0f, 1.0f, 1.0f});
+                              0.0f, 0.0f, 1.0f, 1.0f,
+                              0.5f, 0.5f});   // a drop is centred on its position
         }
         if (!winsts.empty()) {
             auto* webBufMgrW = static_cast<Renderer::WebGPUBufferManager*>(bufMgr);
@@ -4433,7 +4501,7 @@ void RenderSystem::Update(f32 deltaTime) {
             // Grow-and-keep, rather than create-and-destroy every frame. At the
             // 8000-particle pool this is ~450 KB of GPU allocation per frame
             // saved, and the bind group below never changes at all.
-            const usize needBytes = winsts.size() * sizeof(SpriteInst);
+            const usize needBytes = winsts.size() * sizeof(WebSpriteInst);
             if (!m_WebWeatherInstBuf.IsValid() || m_WebWeatherInstCapacity < needBytes) {
                 if (m_WebWeatherInstBuf.IsValid()) bufMgr->DestroyBuffer(m_WebWeatherInstBuf);
                 m_WebWeatherInstCapacity = needBytes + needBytes / 2;  // headroom
@@ -4791,11 +4859,14 @@ void RenderSystem::Update(f32 deltaTime) {
 void RenderSystem::OnEntityAdded(Entity entity) {
     m_LightListDirty = true;
     m_RenderListDirty = true;
+    // A new entity can change the 2D/3D answer, exactly as it can on desktop.
+    m_SceneComposition.dirty = true;
 }
 
 void RenderSystem::OnEntityRemoved(Entity entity) {
     m_LightListDirty = true;
     m_RenderListDirty = true;
+    m_SceneComposition.dirty = true;
 
     u64 eid = EntityIndex(entity);  // dense index: low 32 bits (raw handle has generation in high bits)
     if (eid < m_EntityRenderData.size() && m_EntityRenderData[eid].valid) {
@@ -4839,6 +4910,7 @@ void RenderSystem::FlushSceneClear() {
     m_EntityRenderData.clear();
     m_CachedLightEntities.clear();
     m_LightListDirty = true;
+    m_SceneComposition.dirty = true;
 }
 
 void RenderSystem::FlushPendingChanges() {
@@ -4908,7 +4980,6 @@ AnimatorComponent* RenderSystem::ResolveAnimator(Entity entity) {
 
 void RenderSystem::RenderEntity(Entity /*entity*/) {}
 void RenderSystem::RenderSprites(u32, u32) {}
-void RenderSystem::ClassifySceneComposition() {}
 void RenderSystem::CreateDefaultMesh() {}
 void RenderSystem::CreatePipeline() {}
 
@@ -5042,7 +5113,6 @@ void RenderSystem::SetUpscalerQuality(u32 quality) { m_UpscalerQuality = quality
 #include "Enjin/Effects/FluidRenderer.h"
 #include "Enjin/Effects/ElementalSystem.h"
 #include "Enjin/Effects/SpriteBatchRenderer.h"
-#include "Enjin/Effects/SpriteTextureAtlas.h"
 #include "Enjin/Effects/GrassRenderer.h"
 #include "Enjin/Effects/ShrubRenderer.h"
 #include "Enjin/Effects/TreeRenderer.h"
@@ -5506,20 +5576,19 @@ void RenderSystem::Initialize() {
         m_TreeRenderer.reset();
     }
 
-    // Initialize sprite batch renderer
+    // Initialize sprite batch renderer. It samples sprite art out of the same
+    // bindless array everything else uses, which is what lets a scene of many
+    // different images draw in one call. There used to be a 4096x4096 atlas
+    // here doing that job by packing the images into one texture: it cost 64 MB
+    // whether or not a scene had sprites, it excluded anything over 512px (so
+    // the backgrounds that most need to be sprites fell out of it), and the
+    // sprites that fell out went down a per-texture path that drew them with
+    // the wrong texture.
     m_SpriteBatchRenderer = std::make_unique<Effects::SpriteBatchRenderer>();
-    if (!m_SpriteBatchRenderer->Initialize(m_VulkanRenderer, m_Pipeline->GetDescriptorSetLayout())) {
+    if (!m_SpriteBatchRenderer->Initialize(m_VulkanRenderer, m_Pipeline->GetDescriptorSetLayout(),
+                                           effectsBindlessLayout)) {
         ENJIN_LOG_WARN(Renderer, "SpriteBatchRenderer initialization failed, sprite batching disabled");
         m_SpriteBatchRenderer.reset();
-    }
-
-    // Initialize sprite texture atlas (auto-packs small sprites into one GPU texture)
-    m_SpriteAtlas = std::make_unique<Effects::SpriteTextureAtlas>();
-    if (m_SpriteAtlas->Initialize(m_VulkanRenderer->GetContext())) {
-        if (m_SpriteBatchRenderer) m_SpriteBatchRenderer->SetAtlas(m_SpriteAtlas.get());
-    } else {
-        ENJIN_LOG_WARN(Renderer, "SpriteTextureAtlas initialization failed, atlas packing disabled");
-        m_SpriteAtlas.reset();
     }
 
     // Initialize skybox
@@ -5870,7 +5939,6 @@ void RenderSystem::Shutdown() {
     m_GrassRenderer.reset();
     m_ShrubRenderer.reset();
     m_TreeRenderer.reset();
-    m_SpriteAtlas.reset();
     m_SpriteBatchRenderer.reset();
 
     // Clean up merged geometry buffer (before entity render data so pool frees are valid)
@@ -10337,69 +10405,6 @@ void RenderSystem::OnEntityRemoved(Entity entity) {
     // Invalidate cached player entity — will be re-discovered lazily
     if (entity == m_CachedPlayerEntity) {
         m_CachedPlayerEntity = INVALID_ENTITY;
-    }
-}
-
-void RenderSystem::ClassifySceneComposition() {
-    if (!m_SceneComposition.dirty || !m_World) return;
-
-    m_SceneComposition.spriteCount = 0;
-    m_SceneComposition.tilemapCount = 0;
-    m_SceneComposition.mesh3DCount = 0;
-    m_SceneComposition.hasShadowCastingLights = false;
-
-    // Count sprites and tilemaps using direct container size (avoids iteration)
-    m_SceneComposition.spriteCount = static_cast<u32>(m_World->GetEntitiesWithComponent<Sprite2DComponent>().size());
-    m_SceneComposition.tilemapCount = static_cast<u32>(m_World->GetEntitiesWithComponent<TilemapComponent>().size());
-
-    // Count 3D meshes: total MeshComponent entities minus sprites and tilemaps
-    // (sprites and tilemaps also have MeshComponent, so subtract them)
-    {
-        u32 totalMesh = static_cast<u32>(m_World->GetEntitiesWithComponent<MeshComponent>().size());
-        m_SceneComposition.mesh3DCount = (totalMesh > m_SceneComposition.spriteCount + m_SceneComposition.tilemapCount)
-            ? totalMesh - m_SceneComposition.spriteCount - m_SceneComposition.tilemapCount : 0;
-    }
-
-    // Check for shadow-casting directional lights and any lights at all
-    bool hasAnyLights = !m_CachedLightEntities.empty();
-    for (Entity entity : m_CachedLightEntities) {
-        auto* light = m_World->GetComponent<LightComponent>(entity);
-        if (light && light->type == LightType::Directional && light->castShadows) {
-            m_SceneComposition.hasShadowCastingLights = true;
-            break;
-        }
-    }
-
-    // Classify scene mode
-    // Scene3D: 3D meshes present — full pipeline (shadows, lighting, normal maps)
-    // Scene2_5D: sprites only but lights exist — skip shadows, populate full lighting UBO
-    // Scene2D: sprites only, no lights — minimal UBO (ambient/fog only)
-    if (m_SceneComposition.mesh3DCount > 0) {
-        m_SceneComposition.mode = SceneRenderMode::Scene3D;
-    } else if (hasAnyLights) {
-        m_SceneComposition.mode = SceneRenderMode::Scene2_5D;
-    } else {
-        m_SceneComposition.mode = SceneRenderMode::Scene2D;
-    }
-
-    m_SceneComposition.dirty = false;
-
-    // Diagnostic warnings (every 300 frames to avoid log spam)
-    if (++m_DiagnosticFrameCounter >= 300) {
-        m_DiagnosticFrameCounter = 0;
-
-        // Warn if many unbatched sprites
-        if (m_SceneComposition.spriteCount > 100 && !m_SpriteBatchRenderer) {
-            ENJIN_LOG_WARN(Renderer, "%u sprites without batching - consider enabling SpriteBatchRenderer",
-                m_SceneComposition.spriteCount);
-        }
-
-        // Log mixed 2D/3D scene info for debugging
-        if (m_SceneComposition.spriteCount > 0 && m_SceneComposition.mesh3DCount > 0) {
-            ENJIN_LOG_INFO(Renderer, "Mixed 2D/3D scene: %u sprites, %u meshes, %u shadow casters",
-                m_SceneComposition.spriteCount, m_SceneComposition.mesh3DCount,
-                static_cast<u32>(m_ShadowCasters.size()));
-        }
     }
 }
 
@@ -14936,58 +14941,31 @@ void RenderSystem::RenderSprites(u32 targetWidth, u32 targetHeight) {
     }
     InvalidateBoundSet0();   // batch renderer below binds its own state
 
-    // Render sprites via batch renderer (instanced draw calls grouped by texture)
+    // Render sprites via batch renderer (one instanced draw, texture per instance)
     if (m_SpriteBatchRenderer) {
-        // Populate sprite texture atlas with all sprite textures before rendering
-        if (m_SpriteAtlas) {
-            auto* spriteAtlasStorage = m_World->GetComponentStorage<Sprite2DComponent>();
-            for (Entity entity : m_World->GetEntitiesWithComponent<Sprite2DComponent>()) {
-                auto* sprite = spriteAtlasStorage ? spriteAtlasStorage->Get(entity) : nullptr;
-                if (sprite && !sprite->texturePath.empty())
-                    m_SpriteAtlas->RequestTexture(sprite->texturePath);
-            }
-            if (m_SpriteAtlas->IsDirty()) m_SpriteAtlas->Build();
-        }
-
         // Determine lit mode: Scene2D = unlit, Scene2_5D/Scene3D = lit (sprites respond to lights)
         bool litMode = (m_SceneComposition.mode != SceneRenderMode::Scene2D);
 
-        auto textureBindCallback = [this, litMode](const std::string& texturePath, const std::string& normalMapPath) {
-            // Handle atlas sentinel — bind the packed atlas texture
-            if (texturePath == "__atlas__" && m_SpriteAtlas && m_SpriteAtlas->IsValid()) {
-                UpdateTextureDescriptor(m_SpriteAtlas->GetAtlasTexture());
-            } else if (!texturePath.empty()) {
-                auto tex = GetOrLoadTexture(texturePath);
-                if (tex && tex->IsValid()) {
-                    UpdateTextureDescriptor(tex.get());
-                }
-            } else if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
-                // Textureless sprite: bind the 1x1 white texture so the quad renders
-                // as a flat tinted colour. Without this the descriptor kept whatever
-                // was previously bound and a plain coloured sprite drew nothing.
-                UpdateTextureDescriptor(m_DefaultWhiteTexture.get());
-            }
-            // Bind normal map for lit sprites (binding 6)
-            if (litMode) {
-                if (!normalMapPath.empty()) {
-                    auto normalTex = GetOrLoadTexture(normalMapPath);
-                    if (normalTex && normalTex->IsValid()) {
-                        UpdateNormalMapDescriptor(normalTex.get());
-                    } else if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
-                        UpdateNormalMapDescriptor(m_DefaultWhiteTexture.get());
-                    }
-                } else if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
-                    UpdateNormalMapDescriptor(m_DefaultWhiteTexture.get());
-                }
-            }
+        // Resolved per sprite, per pass, deliberately not cached on the
+        // component: the path can be reassigned from a script, the inspector,
+        // an animation and the SWF importer, and a cache that any one of those
+        // forgets to clear shows the previous image with nothing to say it is
+        // stale. Both lookups behind this are hash hits on an already-loaded
+        // texture, and failures are remembered so a broken path is not retried.
+        auto resolveTextureIndex = [this](const std::string& path) -> i32 {
+            return ResolveBindlessTextureIndex(path);
         };
+
+        VkDescriptorSet bindlessSet = m_BindlessManager ? m_BindlessManager->GetDescriptorSet()
+                                                        : VK_NULL_HANDLE;
 
         m_SpriteBatchRenderer->Render(
             commandBuffer,
             *m_ActiveDescriptorSets,
             GetActiveBufferIndex(currentFrame),
             m_World,
-            textureBindCallback,
+            resolveTextureIndex,
+            bindlessSet,
             targetWidth, targetHeight,
             litMode);
     } else {
@@ -15713,8 +15691,6 @@ void RenderSystem::ProcessPendingTextureReloads() {
                 }
             }
         }
-        if (m_SpriteAtlas) m_SpriteAtlas->Invalidate();
-
         ENJIN_LOG_INFO(Renderer, "Texture reloaded: %s", key.c_str());
     }
 }

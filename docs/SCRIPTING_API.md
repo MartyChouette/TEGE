@@ -118,6 +118,90 @@ The auto-preset is applied before scripts tick and reapplies only when the contr
 `Audio_SetChannelVolume(uint8, float)`, `Audio_GetChannelVolume(uint8)`, `Audio_StopChannel(uint8)`
 Channel constants: `AUDIO_CHANNEL_SFX=0`, `AUDIO_CHANNEL_MUSIC=1`, `AUDIO_CHANNEL_UI=2`, `AUDIO_CHANNEL_VOICE=3`
 
+### Where the audio is
+
+- `float Audio_GetTime(uint64)` — seconds into the clip this entity is playing.
+- `float Audio_GetLength(uint64)` — how long that clip is, in seconds.
+- `bool Audio_Seek(uint64, float seconds)` — jump to a position. Returns whether it happened.
+
+Both getters return **-1**, never 0, when they cannot answer: nothing playing,
+no clip, or a backend that does not know. A real `0.0` means "at the very
+start", and a caller has to be able to tell those apart.
+
+This is what timed subtitles need. Without it a caption track has to
+dead-reckon from the frame `Audio_Play` fired and hard-code the clip length,
+and any drift or engine-side loop restart desyncs it permanently with nothing
+able to notice:
+
+```angelscript
+// Show the line whose window contains the current playback position.
+float t = Audio_GetTime(radio);
+if (t >= 0.0f) {
+    for (uint i = 0; i < captions.length(); i++) {
+        if (t >= captions[i].start && t < captions[i].end) {
+            Subtitle_Show(captions[i].text);
+            break;
+        }
+    }
+}
+```
+
+### Randomised playback
+
+An Audio Source can carry alternate clips and pitch/volume ranges (inspector:
+**Randomization**). Each play picks between the assigned clip and its alternates
+and jitters pitch and volume inside the authored ranges, so a footstep does not
+sound like the same recording every time. Nothing to call — it applies to every
+play of that source. Leave the ranges at 1.0 for no variation.
+
+**On web**, no sound plays until the player's first click, tap or key press: a
+browser refuses to start an AudioContext before a real user gesture. The engine
+holds play-on-awake sources until then so they start from the beginning rather
+than partway through. Design for it — a title track begins on the first input,
+not on load.
+
+## Sprites (2D)
+
+- `Sprite_SetTexture(uint64, string)`, `string Sprite_GetTexture(uint64)`
+- `Sprite_SetSize(uint64, float w, float h)` — world units, not pixels
+- `float Sprite_GetWidth(uint64)`, `float Sprite_GetHeight(uint64)`
+- `Sprite_SetColor(uint64, float r, float g, float b, float a)`, `Sprite_SetAlpha(uint64, float)`
+- `Sprite_SetFlipX/SetFlipY(uint64, bool)`
+- `Sprite_SetSortOrder(uint64, int)` — order within the sorting layer
+- `Sprite_SetVisible(uint64, bool)`
+
+Size is the sprite's own width and height; the entity's transform **scale**
+multiplies it, so either lever works and they compose. Reading the size back is
+usually the point — a health bar is a fraction of the authored width:
+
+```angelscript
+float full = Sprite_GetWidth(bar);          // once, at start
+...
+Sprite_SetSize(bar, full * (hp / maxHp), Sprite_GetHeight(bar));
+```
+
+## Data Assets
+
+Read-only records loaded from `.enjdata` files in the project, described by
+`.enjschema`. Useful for anything a designer should be able to change without
+touching script: item tables, enemy stats, caption tracks, localised strings.
+
+- `bool DataAsset_Load(const string &in asset)` — is this record present?
+- `string DataAsset_GetString(const string &in asset, const string &in field)`
+- `float DataAsset_GetFloat(...)`, `int DataAsset_GetInt(...)`, `bool DataAsset_GetBool(...)`
+- `Vector3 DataAsset_GetVector3(...)`
+
+Every getter takes the asset name first and the field name second. Field types
+are `String`, `Float`, `Int`, `Bool`, `Vector3`, `Vector4`, `StringArray` and
+`FloatArray`; the script bindings reach the first five.
+
+```angelscript
+if (DataAsset_Load("sword_iron")) {
+    float damage = DataAsset_GetFloat("sword_iron", "damage");
+    string name  = DataAsset_GetString("sword_iron", "displayName");
+}
+```
+
 ## Component Access
 
 - **Health**: `Health_Get/GetMax/SetCurrent(uint64)`, `Health_Damage(uint64, float)`

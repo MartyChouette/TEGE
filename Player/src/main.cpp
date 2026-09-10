@@ -65,8 +65,7 @@ static bool s_SimulateTouch = false;
 #include "Enjin/Effects/SeasonalWeather.h"
 #include "Enjin/Effects/Water.h"
 #include "Enjin/ECS/Components/Water3D.h"
-#include "Enjin/Audio/AudioSystem.h"
-#include "Enjin/Audio/SimpleAudio.h"
+#include "Enjin/Audio/AudioEngine.h"
 #include "Enjin/Build/AssetReader.h"
 #include "Enjin/Scripting/ScriptEngine.h"
 #include "Enjin/GUI/EngineSplash.h"
@@ -391,7 +390,7 @@ public:
                 gfx.fxaa = m_PostProcessing->GetSettings().fxaaEnabled != 0;
             }
             if (m_RenderSystem) gfx.shadows = m_RenderSystem->IsShadowsEnabled();
-            audio.masterVolume = m_SimpleAudio.GetMasterVolume();
+            audio.masterVolume = m_AudioEngine.GetMasterVolume();
         });
 
         // Accessibility tab: the menu edits the live settings struct in place;
@@ -426,10 +425,10 @@ public:
             // Persist any Controls-tab rebinds along with the settings exit
             SaveInputBindings();
             // --- Audio (safe to apply immediately) ---
-            m_SimpleAudio.SetMasterVolume(audio.masterMute ? 0.0f : audio.masterVolume);
-            m_SimpleAudio.SetChannelVolume(Enjin::Audio::AudioChannel::Music, audio.musicMute ? 0.0f : audio.musicVolume);
-            m_SimpleAudio.SetChannelVolume(Enjin::Audio::AudioChannel::SFX, audio.sfxMute ? 0.0f : audio.sfxVolume);
-            m_SimpleAudio.SetChannelVolume(Enjin::Audio::AudioChannel::Voice, audio.voiceMute ? 0.0f : audio.voiceVolume);
+            m_AudioEngine.SetMasterVolume(audio.masterMute ? 0.0f : audio.masterVolume);
+            m_AudioEngine.SetChannelVolume(Enjin::Audio::AudioChannel::Music, audio.musicMute ? 0.0f : audio.musicVolume);
+            m_AudioEngine.SetChannelVolume(Enjin::Audio::AudioChannel::SFX, audio.sfxMute ? 0.0f : audio.sfxVolume);
+            m_AudioEngine.SetChannelVolume(Enjin::Audio::AudioChannel::Voice, audio.voiceMute ? 0.0f : audio.voiceVolume);
 
             if (!m_Renderer || !m_RenderSystem) return;
 
@@ -522,9 +521,9 @@ public:
         m_TieredSaveSystem.LoadMeta();
 
         // Initialize systems needed for script bindings
-        m_SimpleAudio.Initialize();
-        m_SimpleAudio.SetWorld(m_World.get());
-        m_SimpleAudio.SetAssetRoot(gameRoot);
+        m_AudioEngine.Initialize();
+        m_AudioEngine.SetWorld(m_World.get());
+        m_AudioEngine.SetAssetRoot(gameRoot);
         Enjin::Assets::PrefabManager::Get().SetAssetRoot(gameRoot);
         // Resolve project-relative mesh references against the game root (loose assets
         // ship next to the exe). NOTE: for this to work in an exported game the source
@@ -539,7 +538,7 @@ public:
         m_RenderSystem->SetMainPassElemental(&m_ElementalSystem);
         m_FireLights.reserve(Enjin::Effects::ElementalSystem::MAX_FIRE_LIGHTS);
         m_AudioReactiveSystem.SetWorld(m_World.get());
-        m_AudioReactiveSystem.SetAudio(&m_SimpleAudio);
+        m_AudioReactiveSystem.SetAudio(&m_AudioEngine);
         m_AudioReactiveSystem.SetMIDI(&m_MIDIInput);
         m_DestructibleSystem.Initialize(m_World.get());
         m_DynamicDifficulty.SetWorld(m_World.get());
@@ -762,7 +761,7 @@ public:
             extern Enjin::GUI::UISystem* s_VisualScriptUI;
             extern Enjin::Accessibility::SubtitleSystem* s_VisualScriptSubtitleSystem;
             extern Enjin::Accessibility::AccessibilityAnnouncer* s_VisualScriptAnnouncer;
-            extern Enjin::Audio::SimpleAudio* s_VisualScriptAudio;
+            extern Enjin::Audio::AudioEngine* s_VisualScriptAudio;
             extern Enjin::Renderer::PostProcessing* s_VisualScriptPostProcessing;
             extern Enjin::Audio::AudioEventGraphRuntime* s_VisualScriptAudioGraphRuntime;
             extern Enjin::Gameplay::ObjectPool* s_VisualScriptObjectPool;
@@ -800,7 +799,7 @@ public:
         m_CurlNoiseSystem.Shutdown();
         m_DestructibleSystem.Shutdown();
         m_WeatherSystem.Shutdown();
-        m_SimpleAudio.Shutdown();
+        m_AudioEngine.Shutdown();
         m_StreamingManager.SetEnabled(false);
         m_StreamingManager.ClearChunks();
 
@@ -830,7 +829,7 @@ public:
         m_AlternativeInput.ClearScanTargets();
         m_AudioIndicators.Clear();
         m_Announcer.Clear();
-        m_SimpleAudio.SetOnSoundPlayed(nullptr);
+        m_AudioEngine.SetOnSoundPlayed(nullptr);
 
         // Clear script bindings
         Enjin::Scripting::SetBindingsWorld(nullptr);
@@ -980,8 +979,8 @@ public:
         }
 
         // Update audio
-        m_SimpleAudio.Update(deltaTime);
-        m_SimpleAudio.UpdateAudioSources(deltaTime);
+        m_AudioEngine.Update(deltaTime);
+        m_AudioEngine.UpdateAudioSources(deltaTime);
         m_AudioGraphRuntime.Update(deltaTime);
         m_MIDIInput.Update();
 
@@ -1083,7 +1082,7 @@ public:
         m_ControllerSystem.UpdatePresentation(deltaTime);
         // TotK-style surface response: footstep/impact sound + particle from the
         // material of the surface walked on / struck (3D physics path).
-        m_SurfaceResponseSystem.Initialize(&m_SimpleAudio, m_RenderSystem, m_Physics.get(), m_Physics2D.get());
+        m_SurfaceResponseSystem.Initialize(&m_AudioEngine, m_RenderSystem, m_Physics.get(), m_Physics2D.get());
         m_SurfaceResponseSystem.Update(m_World.get(), deltaTime);
         m_ClothSystem.Update(m_World.get(), deltaTime, &m_WindSystem);
         // Update flower system viewport (full screen in player)
@@ -1471,7 +1470,7 @@ public:
                                             camTransform->position + forward, up);
                         // 3D audio listener follows the camera (without this,
                         // all positional sound pans relative to world origin)
-                        m_SimpleAudio.SetListenerPosition(camTransform->position, forward, up);
+                        m_AudioEngine.SetListenerPosition(camTransform->position, forward, up);
                     }
                 }
             }
@@ -2349,7 +2348,7 @@ private:
             GetWindow() ? static_cast<Enjin::f32>(GetWindow()->GetWidth()) : 1280.0f,
             GetWindow() ? static_cast<Enjin::f32>(GetWindow()->GetHeight()) : 720.0f);
         Enjin::Scripting::SetBindingsProcedural(nullptr);
-        Enjin::Scripting::SetBindingsAudio(&m_SimpleAudio);
+        Enjin::Scripting::SetBindingsAudio(&m_AudioEngine);
         Enjin::Scripting::SetBindingsWeather(&m_WeatherSystem);
         Enjin::Scripting::SetBindingsWind(&m_WindSystem);
         Enjin::Scripting::SetBindingsDestructible(&m_DestructibleSystem);
@@ -2459,7 +2458,7 @@ private:
             extern Enjin::GUI::UISystem* s_VisualScriptUI;
             extern Enjin::Accessibility::SubtitleSystem* s_VisualScriptSubtitleSystem;
             extern Enjin::Accessibility::AccessibilityAnnouncer* s_VisualScriptAnnouncer;
-            extern Enjin::Audio::SimpleAudio* s_VisualScriptAudio;
+            extern Enjin::Audio::AudioEngine* s_VisualScriptAudio;
             extern Enjin::Renderer::PostProcessing* s_VisualScriptPostProcessing;
             extern Enjin::Audio::AudioEventGraphRuntime* s_VisualScriptAudioGraphRuntime;
             extern Enjin::Gameplay::ObjectPool* s_VisualScriptObjectPool;
@@ -2471,7 +2470,7 @@ private:
             s_VisualScriptUI = &m_UISystem;
             s_VisualScriptSubtitleSystem = &m_SubtitleSystem;
             s_VisualScriptAnnouncer = &m_Announcer;
-            s_VisualScriptAudio = &m_SimpleAudio;
+            s_VisualScriptAudio = &m_AudioEngine;
             s_VisualScriptPostProcessing = m_PostProcessing.get();
             s_VisualScriptAudioGraphRuntime = &m_AudioGraphRuntime;
             s_VisualScriptObjectPool = &m_ObjectPool;
@@ -2520,7 +2519,7 @@ private:
         m_CurlNoiseSystem.Initialize(m_World.get());
 
         // Initialize audio event graph runtime
-        m_AudioGraphRuntime.Initialize(&m_SimpleAudio);
+        m_AudioGraphRuntime.Initialize(&m_AudioEngine);
 
         // Scene-dependent runtime setup (camera, quest, physics wiring, visual
         // scripts, tweens, script lifecycle). Factored so a mid-flow scene swap
@@ -2991,7 +2990,7 @@ private:
 
         // Build audio occlusion scene from colliders
 #ifdef ENJIN_AUDIO_STEAM_AUDIO
-        m_SimpleAudio.BuildSteamAudioScene();
+        m_AudioEngine.BuildSteamAudioScene();
 #endif
 
         ENJIN_LOG_INFO(Player, "Loaded scene: %s (%zu entities)", scenePath.c_str(), result.entities.size());
@@ -3036,7 +3035,7 @@ private:
         // Audio visual indicators (callback wired unconditionally — the overlay
         // render gates on config.enabled, so a disabled state just drops events)
         m_AudioIndicators.GetConfig().enabled = m_AccessibilitySettings.audioIndicatorsEnabled;
-        m_SimpleAudio.SetOnSoundPlayed([this](const std::string& soundName) {
+        m_AudioEngine.SetOnSoundPlayed([this](const std::string& soundName) {
             if (m_AudioIndicators.GetConfig().enabled) {
                 m_AudioIndicators.ShowIndicator(soundName,
                     Enjin::Math::Vector3(0.4f, 0.8f, 1.0f), 1.5f);
@@ -3443,7 +3442,7 @@ private:
     Enjin::Gameplay::TieredSaveSystem m_TieredSaveSystem;
 
     // Systems for script bindings
-    Enjin::Audio::SimpleAudio m_SimpleAudio;
+    Enjin::Audio::AudioEngine m_AudioEngine;
     Enjin::Effects::WeatherSystem m_WeatherSystem;
     Enjin::Effects::DestructibleSystem m_DestructibleSystem;
     Enjin::Effects::InteractiveWaterSystem m_InteractiveWaterSystem;

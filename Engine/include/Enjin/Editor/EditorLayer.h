@@ -973,6 +973,63 @@ private:
     // Console multi-selection (Shift+Click to toggle, Ctrl+C to copy selected)
     std::unordered_set<int> m_ConsoleSelectedIndices;
 
+    // --- Auditioning a sound while EDITING -----------------------------------
+    // The editor had no audio device at all outside play mode. PlayMode owns an
+    // AudioEngine but only Initialize()s it in Play() and Shutdown()s it in
+    // Stop(), so the Audio Source inspector's Play button could not have made a
+    // sound even in principle -- it set a bool, and the only reader of that bool
+    // runs in play mode. Worse, in play mode setting it true makes the source
+    // look already-playing and SKIPS the play-on-awake start, so the button was
+    // not merely inert, it was harmful.
+    //
+    // This is a second, editor-owned engine, so auditioning a clip never touches
+    // the game's mixer, listener or buses. It starts on first use and not before:
+    // opening a device costs a real audio thread, and most editor sessions never
+    // press play on a sound.
+    Audio::AudioEngine m_AuditionAudio;
+    bool m_AuditionInitialized = false;
+    Audio::SoundHandle m_AuditionSound = 0;
+    Audio::AudioClipHandle m_AuditionClip = 0;
+    std::string m_AuditionPath;
+
+    // Play `path` (project-relative or absolute) through the editor's own
+    // device, stopping whatever it was playing. Returns false and toasts when
+    // the clip will not load.
+    bool AuditionSound(const std::string& path);
+    void AuditionStop();
+    bool AuditionIsPlaying() const;
+    // Seconds, or -1 when nothing is auditioning / the backend cannot answer.
+    f32 AuditionTime() const;
+    f32 AuditionLength() const;
+    void AuditionSeek(f32 seconds);
+    // One row: transport for whichever engine owns this clip right now -- the
+    // game's during play, the editor's otherwise. Draws nothing when neither
+    // has it. Returns true if it drew.
+    bool DrawAudioTransport(const std::string& clipPath, ECS::Entity entity);
+
+    // --- Script error peek ---------------------------------------------------
+    // Double-clicking a console line that names a script file and a line opens
+    // the file at that line, here in the editor. A script error already carries
+    // its own location -- "scripts/Player.as (31, 9): Expected ';'" from the
+    // compiler, "... at scripts/Player.as:31:9" from a thrown exception -- and
+    // until now reading that meant finding the file yourself and counting to the
+    // line. Nothing else in the editor can show a line of script.
+    // Reads the file from disk on open; it is a viewer, not an editor.
+    bool ParseScriptLocation(const std::string& message, std::string& outPath, int& outLine) const;
+    bool PeekScriptAtLine(const std::string& path, int line);
+    void DrawScriptPeekWindow();
+
+    bool m_ScriptPeekOpen = false;
+    std::string m_ScriptPeekPath;         // resolved absolute path on disk
+    std::string m_ScriptPeekLabel;        // what the message called it
+    std::vector<std::string> m_ScriptPeekLines;
+    int  m_ScriptPeekLine = 0;            // 1-based, 0 = no line highlighted
+    bool m_ScriptPeekScrollPending = false;
+    // Opening has to raise the window, not just set the flag: a window that is
+    // already open sits wherever it was in the z-order, and a second
+    // double-click would look like nothing happened.
+    bool m_ScriptPeekFocusPending = false;
+
     // Helper methods
     void ImportModel(const std::string& path);
     void OnFileDrop(int count, const char** paths);

@@ -6,6 +6,7 @@
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Core/Version.h"
 #include "Enjin/Platform/Paths.h"
+#include "Enjin/Editor/ScriptErrorLocation.h"
 #include <GLFW/glfw3.h>
 #include <chrono>
 #include "Enjin/Logging/Log.h"
@@ -83,7 +84,6 @@
 #include "Enjin/Build/BuildPipeline.h"
 #include "Enjin/Assets/DataAsset.h"
 #include "Enjin/Plugin/PluginRepository.h"
-#include "Enjin/Audio/AudioSystem.h"
 #include "Enjin/Renderer/NormalMapGenerator.h"
 #include "Enjin/Editor/SpriteContourTracer.h"
 #include "Enjin/GUI/UICanvas.h"
@@ -107,6 +107,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cctype>
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -231,8 +232,18 @@ void EditorLayer::DrawConsolePanel() {
         bool isSelected = m_ConsoleSelectedIndices.count(idx) > 0;
         ImGui::PushStyleColor(ImGuiCol_Text, color);
         ImGui::PushID(idx);
-        if (ImGui::Selectable(entry.message.c_str(), isSelected)) {
-            if (ImGui::GetIO().KeyShift) {
+        // Selectable has to allow the double click, or ImGui swallows the second
+        // press as another single click and the message never arrives.
+        if (ImGui::Selectable(entry.message.c_str(), isSelected,
+                              ImGuiSelectableFlags_AllowDoubleClick)) {
+            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                // The error says where it happened; go there.
+                std::string scriptPath;
+                int scriptLine = 0;
+                if (ParseScriptLocation(entry.message, scriptPath, scriptLine)) {
+                    PeekScriptAtLine(scriptPath, scriptLine);
+                }
+            } else if (ImGui::GetIO().KeyShift) {
                 // Shift+Click: toggle selection
                 if (isSelected)
                     m_ConsoleSelectedIndices.erase(idx);
@@ -242,6 +253,15 @@ void EditorLayer::DrawConsolePanel() {
                 // Plain click: select only this entry
                 m_ConsoleSelectedIndices.clear();
                 m_ConsoleSelectedIndices.insert(idx);
+            }
+        }
+        // Only the lines that can be opened say so. A hint on every line would
+        // be a promise the other three quarters of the console cannot keep.
+        if (ImGui::IsItemHovered()) {
+            std::string hintPath;
+            int hintLine = 0;
+            if (ParseScriptLocation(entry.message, hintPath, hintLine)) {
+                ImGui::SetTooltip("Double-click to open %s at line %d", hintPath.c_str(), hintLine);
             }
         }
         ImGui::PopID();
@@ -276,6 +296,149 @@ void EditorLayer::DrawConsolePanel() {
         m_ConsoleSelectedIndices.clear();
     }
 
+    ImGui::End();
+}
+
+// The parse lives in ScriptErrorLocation.cpp: it is pure string work with two
+// message shapes to get right, so it is unit-tested rather than only reachable
+// by double-clicking a console line in a running editor.
+bool EditorLayer::ParseScriptLocation(const std::string& message, std::string& outPath, int& outLine) const {
+    return ParseScriptErrorLocation(message, outPath, outLine);
+}
+
+// Resolve what the message called the file against the places a script can
+// legitimately live, then read it. The section name AngelScript reports is
+// whatever was handed to AddSectionFromMemory, which is sometimes already
+// absolute, sometimes project-relative, and for an embedded api file just a
+// bare name -- so this tries each in turn rather than assuming one.
+bool EditorLayer::PeekScriptAtLine(const std::string& path, int line) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+
+    std::vector<std::string> candidates;
+    candidates.push_back(path);
+
+    std::string proj = m_SceneManager.GetProjectPath();
+    if (!proj.empty()) {
+        std::string root = fs::path(proj).parent_path().string();
+        if (Platform::IsSafeRelativePath(path)) {
+            std::string joined = Platform::ResolveWithinRoot(root, path);
+            if (!joined.empty()) candidates.push_back(joined);
+        }
+        // An include resolves to a bare name ("Timer.as"): look where scripts live.
+        std::string name = fs::path(path).filename().string();
+        if (!name.empty() && Platform::IsSafeFileName(name)) {
+            for (const char* dir : { "scripts", "scripts/enjin_api" }) {
+                std::string joined = Platform::ResolveWithinRoot(root, std::string(dir) + "/" + name);
+                if (!joined.empty()) candidates.push_back(joined);
+            }
+        }
+    }
+
+    for (const auto& c : candidates) {
+        if (c.empty() || !fs::is_regular_file(c, ec)) continue;
+        std::ifstream f(c);
+        if (!f.is_open()) continue;
+
+        m_ScriptPeekLines.clear();
+        std::string ln;
+        while (std::getline(f, ln)) {
+            if (!ln.empty() && ln.back() == '\r') ln.pop_back();
+            m_ScriptPeekLines.push_back(ln);
+        }
+        m_ScriptPeekPath = fs::absolute(c, ec).string();
+        m_ScriptPeekLabel = path;
+        m_ScriptPeekLine = line;
+        m_ScriptPeekOpen = true;
+        m_ScriptPeekScrollPending = true;
+        m_ScriptPeekFocusPending = true;
+        return true;
+    }
+
+    // Say so rather than opening an empty window: "the file the error names is
+    // not where the error says it is" is itself worth knowing.
+    ShowNotification("Could not find " + path + " on disk", NotificationType::Warning);
+    return false;
+}
+
+void EditorLayer::DrawScriptPeekWindow() {
+    if (!m_ScriptPeekOpen) return;
+
+    ImGui::SetNextWindowSize(ImVec2(720, 420), ImGuiCond_FirstUseEver);
+    if (m_ScriptPeekFocusPending) {
+        ImGui::SetNextWindowFocus();
+        m_ScriptPeekFocusPending = false;
+    }
+    if (!ImGui::Begin("Script", &m_ScriptPeekOpen)) {
+        ImGui::End();
+        return;
+    }
+
+    ImGui::TextUnformatted(m_ScriptPeekLabel.c_str());
+    if (m_ScriptPeekLine > 0) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("line %d", m_ScriptPeekLine);
+    }
+    ImGui::SameLine(0.0f, 16.0f);
+    if (ImGui::SmallButton("Open in IDE")) {
+        // The IDE jump already exists (the inspector's "Open at error" uses it)
+        // and takes the line with it. This window is what answers when there is
+        // no IDE on the machine, which is the case the engine has to hold up in.
+        OpenScriptAtLine(m_ScriptPeekPath, m_ScriptPeekLine);
+    }
+    ImGui::SetItemTooltip("Open the file in the external IDE, at this line");
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Reload")) {
+        PeekScriptAtLine(m_ScriptPeekLabel, m_ScriptPeekLine);
+    }
+    ImGui::SetItemTooltip("Read the file again — this is a viewer, so an external edit does not show until you do");
+    ImGui::Separator();
+
+    ImGui::BeginChild("ScriptPeekBody", ImVec2(0, 0), true, ImGuiWindowFlags_HorizontalScrollbar);
+    ImFont* mono = m_ImGuiLayer ? m_ImGuiLayer->GetMonoFont() : nullptr;
+    if (mono) ImGui::PushFont(mono);
+
+    const int total = static_cast<int>(m_ScriptPeekLines.size());
+    for (int i = 0; i < total; ++i) {
+        const bool isErrorLine = (i + 1 == m_ScriptPeekLine);
+
+        if (isErrorLine) {
+            // Full-width band behind the line, so it is findable at a glance
+            // rather than by reading the gutter.
+            ImVec2 p = ImGui::GetCursorScreenPos();
+            f32 w = ImGui::GetContentRegionAvail().x + ImGui::GetScrollX();
+            ImGui::GetWindowDrawList()->AddRectFilled(
+                p, ImVec2(p.x + w, p.y + ImGui::GetTextLineHeight()),
+                ImGui::GetColorU32(ImVec4(0.55f, 0.12f, 0.12f, 0.55f)));
+        }
+
+        ImGui::TextDisabled("%5d", i + 1);
+        ImGui::SameLine(0.0f, 12.0f);
+        if (isErrorLine) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.80f, 0.80f, 1.0f));
+        ImGui::TextUnformatted(m_ScriptPeekLines[i].c_str());
+        if (isErrorLine) ImGui::PopStyleColor();
+
+        // Scroll on the frame the line is actually laid out, not on open: the
+        // window has no scroll range until its content has been through a frame.
+        if (isErrorLine && m_ScriptPeekScrollPending) {
+            ImGui::SetScrollHereY(0.35f);
+            m_ScriptPeekScrollPending = false;
+        }
+    }
+
+    if (total == 0) {
+        ImGui::TextDisabled("(empty file)");
+    } else if (m_ScriptPeekLine > total) {
+        // The error named a line past the end of the file on disk. Usually the
+        // file has been edited since the error was logged; saying so beats
+        // showing an unhighlighted file and letting it look like a miss.
+        ImGui::Separator();
+        ImGui::TextDisabled("line %d is past the end of this file (%d lines) - edited since the error?",
+                            m_ScriptPeekLine, total);
+    }
+
+    if (mono) ImGui::PopFont();
+    ImGui::EndChild();
     ImGui::End();
 }
 
@@ -1137,6 +1300,13 @@ void EditorLayer::DrawAssetBrowserPanel() {
                             OpenInExternalIDE(entry.fullPath);
                         } else if (IsImage(entry.extension)) {
                             OpenTextureInPixelEditor(entry.fullPath);
+                        } else if (IsAudio(entry.extension)) {
+                            // Hear it. The browser already coloured audio files
+                            // teal and labelled them SFX, and then did nothing
+                            // at all when you opened one -- every other type
+                            // here has done something on double-click for as
+                            // long as the panel has existed.
+                            AuditionSound(entry.fullPath);
                         }
                     }
                 }
@@ -6901,9 +7071,9 @@ void EditorLayer::DrawAudioMixer() {
         return;
     }
 
-    Audio::SimpleAudio* audio = m_PlayMode.IsPlaying() ? m_PlayMode.GetSimpleAudio() : nullptr;
+    Audio::AudioEngine* audio = m_PlayMode.IsPlaying() ? m_PlayMode.GetAudioEngine() : nullptr;
     // Get mixer reference (always available even when not playing)
-    Audio::SimpleAudio* audioRef = m_PlayMode.GetSimpleAudio();
+    Audio::AudioEngine* audioRef = m_PlayMode.GetAudioEngine();
     if (!audioRef) {
         ImGui::TextDisabled("Audio system not initialized");
         ImGui::End();
@@ -7447,7 +7617,7 @@ void EditorLayer::DrawAudioMixer() {
 // Audio Meter Strip — thin VU bar above Scene/Game view showing per-bus levels
 // ---------------------------------------------------------------------------
 void EditorLayer::DrawAudioMeterStrip() {
-    Audio::SimpleAudio* audio = m_PlayMode.IsPlaying() ? m_PlayMode.GetSimpleAudio() : nullptr;
+    Audio::AudioEngine* audio = m_PlayMode.IsPlaying() ? m_PlayMode.GetAudioEngine() : nullptr;
     if (!audio) return;
 
     const auto& mixer = audio->GetMixer();
@@ -8251,7 +8421,7 @@ void EditorLayer::DrawDebugWorkstation() {
             // Audio
             ImGui::Separator();
             ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Audio --");
-            Audio::SimpleAudio* audio = m_PlayMode.IsPlaying() ? m_PlayMode.GetSimpleAudio() : nullptr;
+            Audio::AudioEngine* audio = m_PlayMode.IsPlaying() ? m_PlayMode.GetAudioEngine() : nullptr;
             if (audio) {
                 u32 totalSounds = 0;
                 for (const auto* bus : audio->GetMixer().GetAllBuses()) totalSounds += bus->activeSoundCount;

@@ -32,7 +32,7 @@ namespace Scripting {
 // ============================================================================
 
 static ECS::World*& g_FlashWorld = s_BindingsWorld;
-static Audio::SimpleAudio* g_FlashAudio = nullptr;
+static Audio::AudioEngine* g_FlashAudio = nullptr;
 
 // Timer state
 static u32 s_NextTimerId = 1;
@@ -50,7 +50,7 @@ static Gameplay::TieredSaveSystem* g_FlashSaveSystem = nullptr;
 void SetFlashShimWorld(ECS::World* /*world*/) {
     // World pointer is now shared via s_BindingsWorld (set by SetBindingsWorld)
 }
-void SetFlashShimAudio(Audio::SimpleAudio* audio) { g_FlashAudio = audio; }
+void SetFlashShimAudio(Audio::AudioEngine* audio) { g_FlashAudio = audio; }
 void SetFlashShimSaveSystem(Gameplay::TieredSaveSystem* sys) { g_FlashSaveSystem = sys; }
 
 // ============================================================================
@@ -667,7 +667,7 @@ f32 Flash_MathAtan2(f32 y, f32 x) {
 
 void Flash_PlaySound(const std::string& name) {
     ENJIN_LOG_INFO(Script, "Flash_PlaySound: %s", name.c_str());
-    // Delegates to SimpleAudio if available
+    // Delegates to AudioEngine if available
 }
 
 void Flash_StopSound(const std::string& name) {

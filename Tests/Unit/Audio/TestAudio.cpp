@@ -1,6 +1,6 @@
 #include "EnjinTest.h"
-#include "Enjin/Audio/AudioSystem.h"
-#include "Enjin/Audio/SimpleAudio.h"
+#include "Enjin/Audio/AudioEngine.h"
+#include "Enjin/Audio/AudioBus.h"
 #include "Enjin/Input/MIDIInput.h"
 #include "Enjin/Editor/AudioEventGraph.h"
 
@@ -10,33 +10,6 @@ using namespace Enjin;
 using namespace Enjin::Audio;
 using namespace Enjin::InputSystem;
 using namespace Enjin::Editor;
-
-// ===========================================================================
-// SoundSettings Defaults
-// ===========================================================================
-
-ENJIN_TEST(SoundSettings, Defaults) {
-    SoundSettings s;
-    ENJIN_EXPECT_EQ((int)s.type, (int)SoundType::SoundEffect);
-    ENJIN_EXPECT_EQ((int)s.loadMode, (int)LoadMode::Memory);
-    ENJIN_EXPECT_FALSE(s.loop);
-    ENJIN_EXPECT_FLOAT_EQ(s.volume, 1.0f);
-    ENJIN_EXPECT_FLOAT_EQ(s.pitch, 1.0f);
-    ENJIN_EXPECT_FALSE(s.is3D);
-    ENJIN_EXPECT_FLOAT_EQ(s.minDistance, 1.0f);
-    ENJIN_EXPECT_FLOAT_EQ(s.maxDistance, 100.0f);
-    ENJIN_EXPECT_EQ((int)s.attenuation, (int)AttenuationMode::InverseDistanceClamped);
-}
-
-// ===========================================================================
-// AudioListener Defaults
-// ===========================================================================
-
-ENJIN_TEST(Listener, Defaults) {
-    AudioListener listener;
-    ENJIN_EXPECT_FLOAT_EQ(listener.forward.z, -1.0f);
-    ENJIN_EXPECT_FLOAT_EQ(listener.up.y, 1.0f);
-}
 
 // ===========================================================================
 // AudioChannel Enum
@@ -50,87 +23,48 @@ ENJIN_TEST(Channel, Values) {
     ENJIN_EXPECT_EQ((int)AudioChannel::Count, 4);
 }
 
-// ===========================================================================
-// SoundType & AttenuationMode Enums
-// ===========================================================================
-
-ENJIN_TEST(Enums, SoundType) {
-    ENJIN_EXPECT_EQ((int)SoundType::SoundEffect, 0);
-    ENJIN_EXPECT_EQ((int)SoundType::Music, 1);
-    ENJIN_EXPECT_EQ((int)SoundType::Ambient, 2);
-    ENJIN_EXPECT_EQ((int)SoundType::Voice, 3);
-}
-
-ENJIN_TEST(Enums, AttenuationMode) {
-    ENJIN_EXPECT_EQ((int)AttenuationMode::None, 0);
-    ENJIN_EXPECT_EQ((int)AttenuationMode::Linear, 1);
-    ENJIN_EXPECT_EQ((int)AttenuationMode::InverseDistance, 2);
-    ENJIN_EXPECT_EQ((int)AttenuationMode::InverseDistanceClamped, 3);
-    ENJIN_EXPECT_EQ((int)AttenuationMode::Logarithmic, 4);
-}
-
-// ===========================================================================
-// Handle Constants
-// ===========================================================================
-
 ENJIN_TEST(Handles, InvalidConstants) {
     ENJIN_EXPECT_EQ(INVALID_SOUND, 0u);
-    ENJIN_EXPECT_EQ(INVALID_CHANNEL, 0u);
+    ENJIN_EXPECT_EQ(INVALID_AUDIO_CLIP, 0u);
 }
 
 // ===========================================================================
-// AudioUtils Math
+// Decibel conversion (AudioBus)
+//
+// SoundSettings, SoundType, AttenuationMode, AudioListener, ChannelHandle and
+// AudioUtils::Calculate3DVolume/CrossfadeVolume were all tested here and are
+// all gone: they belonged to an IAudioBackend layer that nothing ever
+// instantiated, deleted 2026-09-10. Testing the constants of code that cannot
+// run is how a dead layer keeps looking alive in a green suite. The dB pair
+// moved into AudioBus, which is what a mixer wants them for.
 // ===========================================================================
 
 ENJIN_TEST(AudioUtils, DbToLinearZero) {
-    f32 linear = AudioUtils::DbToLinear(0.0f);
+    f32 linear = Audio::DbToLinear(0.0f);
     ENJIN_EXPECT_FLOAT_NEAR(linear, 1.0f, 0.01f);
 }
 
 ENJIN_TEST(AudioUtils, DbToLinearMinus6) {
     // -6dB ≈ 0.5 linear
-    f32 linear = AudioUtils::DbToLinear(-6.0f);
+    f32 linear = Audio::DbToLinear(-6.0f);
     ENJIN_EXPECT_FLOAT_NEAR(linear, 0.5f, 0.05f);
 }
 
 ENJIN_TEST(AudioUtils, LinearToDbOne) {
-    f32 db = AudioUtils::LinearToDb(1.0f);
+    f32 db = Audio::LinearToDb(1.0f);
     ENJIN_EXPECT_FLOAT_NEAR(db, 0.0f, 0.01f);
 }
 
 ENJIN_TEST(AudioUtils, RoundTrip) {
     f32 original = 0.7f;
-    f32 db = AudioUtils::LinearToDb(original);
-    f32 back = AudioUtils::DbToLinear(db);
+    f32 db = Audio::LinearToDb(original);
+    f32 back = Audio::DbToLinear(db);
     ENJIN_EXPECT_FLOAT_NEAR(back, original, 0.01f);
 }
 
-ENJIN_TEST(AudioUtils, Calculate3DVolumeAtMin) {
-    // At minDistance, volume should be full (1.0)
-    f32 vol = AudioUtils::Calculate3DVolume(1.0f, 1.0f, 100.0f, AttenuationMode::InverseDistanceClamped);
-    ENJIN_EXPECT_FLOAT_NEAR(vol, 1.0f, 0.01f);
-}
 
-ENJIN_TEST(AudioUtils, Calculate3DVolumeAtMax) {
-    // At maxDistance, volume should be near 0
-    f32 vol = AudioUtils::Calculate3DVolume(100.0f, 1.0f, 100.0f, AttenuationMode::Linear);
-    ENJIN_EXPECT_FLOAT_NEAR(vol, 0.0f, 0.05f);
-}
 
-ENJIN_TEST(AudioUtils, Calculate3DVolumeNone) {
-    // No attenuation → full volume regardless of distance
-    f32 vol = AudioUtils::Calculate3DVolume(50.0f, 1.0f, 100.0f, AttenuationMode::None);
-    ENJIN_EXPECT_FLOAT_EQ(vol, 1.0f);
-}
 
-ENJIN_TEST(AudioUtils, CrossfadeVolumeEdges) {
-    // At progress 0: fadeIn=0, fadeOut=1
-    ENJIN_EXPECT_FLOAT_NEAR(AudioUtils::CrossfadeVolume(0.0f, true), 0.0f, 0.01f);
-    ENJIN_EXPECT_FLOAT_NEAR(AudioUtils::CrossfadeVolume(0.0f, false), 1.0f, 0.01f);
-    // At progress 1: fadeIn=1, fadeOut=0
-    ENJIN_EXPECT_FLOAT_NEAR(AudioUtils::CrossfadeVolume(1.0f, true), 1.0f, 0.01f);
-    ENJIN_EXPECT_FLOAT_NEAR(AudioUtils::CrossfadeVolume(1.0f, false), 0.0f, 0.01f);
-}
 
 // ===========================================================================
 // MIDI Types

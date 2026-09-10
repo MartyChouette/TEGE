@@ -13,7 +13,7 @@
 namespace Enjin {
 
 namespace Audio {
-    class SimpleAudio;
+    class AudioEngine;
 }
 
 namespace Audio {
@@ -73,7 +73,7 @@ struct AudioEventGraphData {
 // Walks the graph from trigger nodes, applies processing chain, plays sounds.
 class ENJIN_API AudioEventGraphRuntime {
 public:
-    void Initialize(SimpleAudio* audio);
+    void Initialize(AudioEngine* audio);
     void Shutdown();
 
     void SetGraph(const AudioEventGraphData* graph);
@@ -84,7 +84,7 @@ public:
     void Update(f32 deltaTime);
 
 private:
-    SimpleAudio* m_Audio = nullptr;
+    AudioEngine* m_Audio = nullptr;
     const AudioEventGraphData* m_Graph = nullptr;
 
     std::unordered_map<std::string, f32> m_Parameters;

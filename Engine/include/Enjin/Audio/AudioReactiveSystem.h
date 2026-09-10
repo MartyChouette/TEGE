@@ -6,7 +6,7 @@
 
 namespace Enjin {
 namespace InputSystem { class MIDIInput; }
-namespace Audio { class SimpleAudio; }
+namespace Audio { class AudioEngine; }
 namespace Audio {
 
 // Processes AudioReactiveComponent, AudioThresholdTriggerComponent,
@@ -14,7 +14,7 @@ namespace Audio {
 class ENJIN_API AudioReactiveSystem {
 public:
     void SetWorld(ECS::World* world) { m_World = world; }
-    void SetAudio(SimpleAudio* audio) { m_Audio = audio; }
+    void SetAudio(AudioEngine* audio) { m_Audio = audio; }
     void SetMIDI(InputSystem::MIDIInput* midi) { m_MIDI = midi; }
     void Update(f32 deltaTime);
 
@@ -37,7 +37,7 @@ private:
     void ApplyValueToTarget(ECS::Entity entity, ECS::AudioTargetProperty target, f32 value);
 
     ECS::World* m_World = nullptr;
-    SimpleAudio* m_Audio = nullptr;
+    AudioEngine* m_Audio = nullptr;
     InputSystem::MIDIInput* m_MIDI = nullptr;
 
     // Cached per-frame (avoids redundant lookups across subsystems)

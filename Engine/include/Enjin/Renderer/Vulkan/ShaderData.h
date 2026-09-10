@@ -67,19 +67,19 @@ extern const size_t SkyboxVertexShaderDataSize;
 extern const uint32_t SkyboxFragmentShaderData[];
 extern const size_t SkyboxFragmentShaderDataSize;
 
-// sprite.vert.spv (3536 bytes, 884 words)
+// sprite.vert.spv (3988 bytes, 997 words)
 extern const unsigned char SpriteVertexShaderData[];
 extern const size_t SpriteVertexShaderDataSize;
 
-// sprite.frag.spv (2108 bytes, 527 words)
+// sprite.frag.spv (2764 bytes, 691 words)
 extern const unsigned char SpriteFragmentShaderData[];
 extern const size_t SpriteFragmentShaderDataSize;
 
-// sprite_lit.vert.spv (3948 bytes, 987 words)
+// sprite_lit.vert.spv (4500 bytes, 1125 words)
 extern const unsigned char SpriteLitVertexShaderData[];
 extern const size_t SpriteLitVertexShaderDataSize;
 
-// sprite_lit.frag.spv (20308 bytes, 5077 words)
+// sprite_lit.frag.spv (21008 bytes, 5252 words)
 extern const unsigned char SpriteLitFragmentShaderData[];
 extern const size_t SpriteLitFragmentShaderDataSize;
 

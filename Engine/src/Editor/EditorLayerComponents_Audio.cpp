@@ -8,10 +8,152 @@
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/Math/Math.h"
 #include "Enjin/Editor/ComponentHelp.h"
+#include "Enjin/Platform/FileDialog.h"
+#include <algorithm>
+#include <filesystem>
+#include <cstdio>
 
 namespace Enjin {
 
 using namespace Editor;
+
+// ============================================================================
+// Auditioning a sound while editing
+// ============================================================================
+//
+// The editor had no audio device outside play mode, so the Audio Source
+// inspector's Play button could not have made a sound: it set
+// AudioSourceComponent::isPlaying, and the only reader of that flag is
+// AudioEngine::UpdateAudioSources, which runs from PlayMode and the two
+// players. In play mode it was worse than inert -- the start path is
+// `playOnAwake && !isPlaying`, so setting the flag true told the engine the
+// source was already going and skipped starting it.
+//
+// This is a second engine, owned by the editor, so an audition never touches
+// the game's mixer, listener or buses.
+
+bool EditorLayer::AuditionSound(const std::string& path) {
+    if (path.empty()) return false;
+
+    // Opening a device costs a real audio thread, and most sessions never
+    // audition anything, so the device is created on the first press.
+    if (!m_AuditionInitialized) {
+        if (!m_AuditionAudio.Initialize()) {
+            ShowNotification("Could not open an audio device to preview with",
+                             NotificationType::Error);
+            return false;
+        }
+        m_AuditionInitialized = true;
+    }
+
+    // Clips are authored project-relative; the editor runs from its exe dir.
+    std::string proj = m_SceneManager.GetProjectPath();
+    if (!proj.empty()) {
+        m_AuditionAudio.SetAssetRoot(std::filesystem::path(proj).parent_path().string());
+    }
+
+    AuditionStop();
+
+    Audio::AudioClipHandle clip = m_AuditionAudio.LoadClip(path);
+    if (clip == Audio::INVALID_AUDIO_CLIP) {
+        ShowNotification("Could not load " + path, NotificationType::Warning);
+        return false;
+    }
+
+    // UI channel: an audition is not part of the game's mix, and it should not
+    // be silenced by a project that has turned its SFX bus down.
+    m_AuditionSound = m_AuditionAudio.Play(clip, 1.0f, 1.0f, false, Audio::AudioChannel::UI);
+    m_AuditionClip = clip;
+    m_AuditionPath = path;
+    return m_AuditionSound != Audio::INVALID_SOUND;
+}
+
+void EditorLayer::AuditionStop() {
+    if (!m_AuditionInitialized) return;
+    if (m_AuditionSound != Audio::INVALID_SOUND) {
+        m_AuditionAudio.Stop(m_AuditionSound);
+        m_AuditionSound = Audio::INVALID_SOUND;
+    }
+    if (m_AuditionClip != Audio::INVALID_AUDIO_CLIP) {
+        m_AuditionAudio.UnloadClip(m_AuditionClip);
+        m_AuditionClip = Audio::INVALID_AUDIO_CLIP;
+    }
+    m_AuditionPath.clear();
+}
+
+bool EditorLayer::AuditionIsPlaying() const {
+    if (!m_AuditionInitialized || m_AuditionSound == Audio::INVALID_SOUND) return false;
+    return m_AuditionAudio.IsPlaying(m_AuditionSound);
+}
+
+f32 EditorLayer::AuditionTime() const {
+    if (!m_AuditionInitialized || m_AuditionSound == Audio::INVALID_SOUND) return -1.0f;
+    return m_AuditionAudio.GetPlaybackTime(m_AuditionSound);
+}
+
+f32 EditorLayer::AuditionLength() const {
+    if (!m_AuditionInitialized || m_AuditionSound == Audio::INVALID_SOUND) return -1.0f;
+    return m_AuditionAudio.GetLength(m_AuditionSound);
+}
+
+void EditorLayer::AuditionSeek(f32 seconds) {
+    if (!m_AuditionInitialized || m_AuditionSound == Audio::INVALID_SOUND) return;
+    m_AuditionAudio.Seek(m_AuditionSound, seconds);
+}
+
+// One transport row, for whichever engine currently owns this clip: the game's
+// during play, the editor's audition otherwise. Draws nothing when neither has
+// it, so a stopped inspector stays quiet rather than showing a dead 0:00 bar.
+bool EditorLayer::DrawAudioTransport(const std::string& clipPath, ECS::Entity entity) {
+    f32 pos = -1.0f, len = -1.0f;
+    bool fromGame = false;
+
+    if (m_PlayMode.IsPlaying() && m_World) {
+        if (auto* audio = m_PlayMode.GetAudioEngine()) {
+            auto* asc = m_World->GetComponent<ECS::AudioSourceComponent>(entity);
+            if (asc && asc->soundHandle != 0) {
+                pos = audio->GetPlaybackTime(asc->soundHandle);
+                len = audio->GetLength(asc->soundHandle);
+                fromGame = true;
+            }
+        }
+    }
+    if (!fromGame && m_AuditionPath == clipPath) {
+        pos = AuditionTime();
+        len = AuditionLength();
+    }
+
+    if (pos < 0.0f || len <= 0.0f) return false;
+
+    auto stamp = [](f32 seconds) {
+        int total = static_cast<int>(seconds);
+        char buf[32];
+        std::snprintf(buf, sizeof(buf), "%d:%04.1f", total / 60,
+                      seconds - static_cast<f32>((total / 60) * 60));
+        return std::string(buf);
+    };
+
+    const f32 frac = pos / len;
+    ImGui::ProgressBar(frac, ImVec2(-1.0f, 0.0f),
+                       (stamp(pos) + " / " + stamp(len)).c_str());
+
+    // Click the bar to seek. Only the audition can be moved: seeking the game's
+    // own playback mid-scene would be editing the running simulation, which is
+    // the sort of thing that makes a play session unreproducible.
+    if (!fromGame && ImGui::IsItemClicked()) {
+        ImVec2 mn = ImGui::GetItemRectMin();
+        ImVec2 mx = ImGui::GetItemRectMax();
+        const f32 width = mx.x - mn.x;
+        if (width > 1.0f) {
+            f32 t = (ImGui::GetIO().MousePos.x - mn.x) / width;
+            AuditionSeek(std::clamp(t, 0.0f, 1.0f) * len);
+        }
+    }
+    if (fromGame && ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Playing in the game. Stop play mode to scrub.");
+    }
+    return true;
+}
 
 void EditorLayer::DrawAudioSourceComponent(ECS::Entity entity) {
     bool audioOpen = ImGui::CollapsingHeader("[A] Audio Source", ImGuiTreeNodeFlags_DefaultOpen);
@@ -28,14 +170,65 @@ void EditorLayer::DrawAudioSourceComponent(ECS::Entity entity) {
         if (!audio) return;
         DrawComponentHelp("audioSource", m_World, entity);
 
-        // Clip path (would need file browser in real implementation)
+        // Clip: type it, drop one on it, or browse. It used to be a bare text
+        // box with a comment saying a file browser would be needed "in real
+        // implementation", while every other asset field in the inspector --
+        // sprite texture, script, material map -- already took a drop and had a
+        // button. Naming your audio file from memory was the only way in.
         char pathBuffer[256];
         strncpy(pathBuffer, audio->clipPath.c_str(), sizeof(pathBuffer) - 1);
         pathBuffer[sizeof(pathBuffer) - 1] = '\0';
-        if (InspectorUndo::InputText(m_UndoRedo, "Clip Path", pathBuffer, sizeof(pathBuffer),
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 34.0f);
+        if (InspectorUndo::InputText(m_UndoRedo, "##ClipPath", pathBuffer, sizeof(pathBuffer),
                 [audio](const std::string& val) { audio->clipPath = val; })) {
             audio->clipPath = pathBuffer;
         }
+        if (ImGui::BeginDragDropTarget()) {
+            if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ASSET_PATH")) {
+                std::string p(static_cast<const char*>(payload->Data));
+                std::string e = std::filesystem::path(p).extension().string();
+                std::transform(e.begin(), e.end(), e.begin(),
+                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                if (e == ".wav" || e == ".ogg" || e == ".mp3" || e == ".flac") {
+                    audio->clipPath = p;
+                    AuditionSound(p);   // dropping a sound plays it
+                }
+            }
+            ImGui::EndDragDropTarget();
+        }
+        ImGui::SameLine(0.0f, 4.0f);
+        if (ImGui::Button("...##ClipBrowse")) {
+            // A dialog is not available on every Linux box; say which, rather
+            // than opening nothing and looking broken.
+            if (!::Enjin::FileDialog::IsAvailable()) {
+                ShowNotification("No file dialog on this system - install zenity, kdialog or yad",
+                                 NotificationType::Warning);
+            } else {
+                std::string proj0 = m_SceneManager.GetProjectPath();
+                std::string startDir = proj0.empty() ? std::string()
+                    : std::filesystem::path(proj0).parent_path().string();
+                std::string picked = ::Enjin::FileDialog::OpenFile(
+                    "Select Audio Clip",
+                    {{ "Audio Files", "*.wav;*.ogg;*.mp3;*.flac" }},
+                    startDir);
+                if (!picked.empty()) {
+                    // Store it project-relative when it is inside the project,
+                    // so the scene stays portable.
+                    std::string proj = m_SceneManager.GetProjectPath();
+                    if (!proj.empty()) {
+                        std::error_code ec;
+                        auto rel = std::filesystem::relative(
+                            picked, std::filesystem::path(proj).parent_path(), ec);
+                        if (!ec && !rel.empty() && rel.generic_string().rfind("..", 0) != 0)
+                            picked = rel.generic_string();
+                    }
+                    audio->clipPath = picked;
+                    AuditionSound(picked);
+                }
+            }
+        }
+        ImGui::SameLine(0.0f, 6.0f);
+        ImGui::TextUnformatted("Clip");
 
         InspectorUndo::DragFloat(m_UndoRedo, "Volume", &audio->volume, 0.01f, 0.0f, 1.0f);
         InspectorUndo::DragFloat(m_UndoRedo, "Pitch", &audio->pitch, 0.01f, 0.1f, 3.0f);
@@ -78,26 +271,99 @@ void EditorLayer::DrawAudioSourceComponent(ECS::Entity entity) {
 
         InspectorUndo::DragInt(m_UndoRedo, "Priority", &audio->priority, 1, 0, 255);
 
-        // Sound randomization
+        // Sound randomization. Every field in here was authored, saved and then
+        // ignored at play time until 2026-09-10 -- AudioEngine::ChooseVariation
+        // reads them now, so a footstep stops sounding like the same recording
+        // sixty times a minute, which is the entire point of the section.
+        //
+        // The "Pooling" tree that used to sit below this is gone: usePooling and
+        // poolSize were read by nothing at all, and there is no pool -- every
+        // Play allocates its own voice. A switch that does nothing is worse than
+        // a missing feature, because it looks like it has been tried.
         if (ImGui::TreeNode("Randomization")) {
             InspectorUndo::DragFloat(m_UndoRedo, "Pitch Min##Rand", &audio->pitchMin, 0.01f, 0.1f, 3.0f);
             InspectorUndo::DragFloat(m_UndoRedo, "Pitch Max##Rand", &audio->pitchMax, 0.01f, 0.1f, 3.0f);
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Random pitch variation per play (1.0 = no variation)");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Random pitch per play. Leave both at 1.0 for none.");
             InspectorUndo::DragFloat(m_UndoRedo, "Volume Min##Rand", &audio->volumeMin, 0.01f, 0.0f, 2.0f);
             InspectorUndo::DragFloat(m_UndoRedo, "Volume Max##Rand", &audio->volumeMax, 0.01f, 0.0f, 2.0f);
-            InspectorUndo::Checkbox(m_UndoRedo, "No Repeat##Rand", &audio->noRepeat);
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Avoid playing the same clip variation twice in a row");
-            ImGui::Text("Clip Variations: %zu", audio->clipVariations.size());
-            ImGui::TreePop();
-        }
 
-        // Sound pooling
-        if (ImGui::TreeNode("Pooling")) {
-            InspectorUndo::Checkbox(m_UndoRedo, "Use Pooling##Pool", &audio->usePooling);
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Pre-allocate sound voices for rapid-fire SFX (gunshots, footsteps)");
-            if (audio->usePooling) {
-                int ps = static_cast<int>(audio->poolSize);
-                if (ImGui::InputInt("Pool Size##Pool", &ps)) audio->poolSize = static_cast<u32>(Math::Max(1, ps));
+            ImGui::Separator();
+            ImGui::TextDisabled("Alternate clips (%zu)", audio->clipVariations.size());
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Each play picks at random between the clip above and these.\n"
+                                  "Drop audio files here to add them.");
+            }
+
+            // The list used to be a COUNT and nothing else: you could not add
+            // one, see one, or remove one from the editor at all.
+            int removeAt = -1;
+            for (usize i = 0; i < audio->clipVariations.size(); ++i) {
+                ImGui::PushID(static_cast<int>(i));
+                if (ImGui::SmallButton("x")) removeAt = static_cast<int>(i);
+                ImGui::SameLine();
+                if (ImGui::SmallButton(">")) AuditionSound(audio->clipVariations[i]);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Hear this one");
+                ImGui::SameLine();
+                ImGui::TextUnformatted(
+                    std::filesystem::path(audio->clipVariations[i]).filename().string().c_str());
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("%s", audio->clipVariations[i].c_str());
+                ImGui::PopID();
+            }
+            if (removeAt >= 0) {
+                audio->clipVariations.erase(audio->clipVariations.begin() + removeAt);
+                // The no-repeat cursor indexes this list; a stale one after a
+                // removal points at a clip that is no longer there.
+                audio->lastPlayedIndex = 0;
+            }
+
+            if (ImGui::Button("Add Variation...")) {
+                if (!::Enjin::FileDialog::IsAvailable()) {
+                    ShowNotification("No file dialog on this system - install zenity, kdialog or yad",
+                                     NotificationType::Warning);
+                } else {
+                    std::string projV = m_SceneManager.GetProjectPath();
+                    std::string startV = projV.empty() ? std::string()
+                        : std::filesystem::path(projV).parent_path().string();
+                    std::string picked = ::Enjin::FileDialog::OpenFile(
+                        "Add Clip Variation", {{ "Audio Files", "*.wav;*.ogg;*.mp3;*.flac" }}, startV);
+                    if (!picked.empty() && audio->clipVariations.size() < 64) {
+                        if (!projV.empty()) {
+                            std::error_code ec;
+                            auto rel = std::filesystem::relative(
+                                picked, std::filesystem::path(projV).parent_path(), ec);
+                            if (!ec && !rel.empty() && rel.generic_string().rfind("..", 0) != 0)
+                                picked = rel.generic_string();
+                        }
+                        audio->clipVariations.push_back(picked);
+                        AuditionSound(picked);
+                    }
+                }
+            }
+            // The whole tree is a drop target, so a multi-select from the asset
+            // browser can be dragged in one file at a time without aiming.
+            if (ImGui::BeginDragDropTarget()) {
+                if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("ASSET_PATH")) {
+                    std::string dp(static_cast<const char*>(pl->Data));
+                    std::string de = std::filesystem::path(dp).extension().string();
+                    std::transform(de.begin(), de.end(), de.begin(),
+                        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                    if ((de == ".wav" || de == ".ogg" || de == ".mp3" || de == ".flac") &&
+                        audio->clipVariations.size() < 64) {
+                        audio->clipVariations.push_back(dp);
+                        AuditionSound(dp);
+                    }
+                }
+                ImGui::EndDragDropTarget();
+            }
+
+            ImGui::BeginDisabled(audio->clipVariations.empty());
+            InspectorUndo::Checkbox(m_UndoRedo, "No Repeat##Rand", &audio->noRepeat);
+            ImGui::EndDisabled();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                ImGui::SetTooltip(audio->clipVariations.empty()
+                    ? "Needs at least one alternate clip to have anything to avoid repeating"
+                    : "Never pick the same clip twice in a row");
             }
             ImGui::TreePop();
         }
@@ -112,16 +378,35 @@ void EditorLayer::DrawAudioSourceComponent(ECS::Entity entity) {
         }
 
         ImGui::Separator();
-        ImGui::Text("Playing: %s", audio->isPlaying ? "Yes" : "No");
 
-        if (ImGui::Button("Play")) {
-            audio->isPlaying = true;
+        // These used to set AudioSourceComponent::isPlaying and nothing else,
+        // which made no sound in the editor (nothing ticks audio sources
+        // outside play mode) and in play mode actively PREVENTED the start,
+        // since the awake path is `playOnAwake && !isPlaying`. They now play
+        // the clip through the editor's own device.
+        const bool auditioning = (m_AuditionPath == audio->clipPath) && AuditionIsPlaying();
+        ImGui::BeginDisabled(audio->clipPath.empty());
+        if (ImGui::Button(auditioning ? "Restart" : "Play")) {
+            AuditionSound(audio->clipPath);
+        }
+        ImGui::EndDisabled();
+        if (audio->clipPath.empty() && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip("Pick a clip first");
         }
         ImGui::SameLine();
+        ImGui::BeginDisabled(!auditioning);
         if (ImGui::Button("Stop")) {
-            audio->isPlaying = false;
-            audio->playbackPosition = 0.0f;
+            AuditionStop();
         }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        if (m_PlayMode.IsPlaying()) {
+            ImGui::TextDisabled("in game: %s", audio->isPlaying ? "playing" : "stopped");
+        } else {
+            ImGui::TextDisabled("preview");
+        }
+
+        DrawAudioTransport(audio->clipPath, entity);
     }
 }
 

@@ -6,7 +6,7 @@
 #include "Enjin/ECS/Entity.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Gameplay.h"
-#include "Enjin/Audio/SimpleAudio.h"
+#include "Enjin/Audio/AudioEngine.h"
 #include <angelscript.h>
 #include <string>
 #include <cassert>
@@ -21,7 +21,7 @@ using namespace Enjin::ECS;
 extern ECS::World* s_BindingsWorld;
 extern bool ValidateScriptAssetPath(const std::string& path, const char* funcName);
 
-static Audio::SimpleAudio* s_BindingsAudio = nullptr;
+static Audio::AudioEngine* s_BindingsAudio = nullptr;
 
 // Channel constants for AngelScript
 static const u8 s_ChannelSFX   = 0;
@@ -31,12 +31,12 @@ static const u8 s_ChannelVoice = 3;
 
 namespace Enjin {
 namespace Scripting {
-void SetBindingsAudio(Audio::SimpleAudio* audio) { s_BindingsAudio = audio; }
+void SetBindingsAudio(Audio::AudioEngine* audio) { s_BindingsAudio = audio; }
 } // namespace Scripting
 } // namespace Enjin
 
 // ============================================================================
-// Audio functions — wired to SimpleAudio + AudioSourceComponent
+// Audio functions — wired to AudioEngine + AudioSourceComponent
 // ============================================================================
 
 static void Audio_Play(u64 entityId) {
@@ -144,6 +144,40 @@ static bool Audio_IsPlaying(u64 entityId) {
     return s_BindingsAudio->IsPlaying(asc->soundHandle);
 }
 
+// Where the entity's sound is, how long it is, and moving it. -1 for both
+// queries means "cannot answer" -- nothing playing, no clip, or a backend that
+// does not know -- which a caller has to be able to tell from a real 0.0 at the
+// start of a clip.
+static f32 Audio_GetTime(u64 entityId) {
+    if (!s_BindingsWorld || !s_BindingsAudio) return -1.0f;
+
+    Entity entity = static_cast<Entity>(entityId);
+    auto* asc = s_BindingsWorld->GetComponent<AudioSourceComponent>(entity);
+    if (!asc || asc->soundHandle == 0) return -1.0f;
+
+    return s_BindingsAudio->GetPlaybackTime(asc->soundHandle);
+}
+
+static f32 Audio_GetLength(u64 entityId) {
+    if (!s_BindingsWorld || !s_BindingsAudio) return -1.0f;
+
+    Entity entity = static_cast<Entity>(entityId);
+    auto* asc = s_BindingsWorld->GetComponent<AudioSourceComponent>(entity);
+    if (!asc || asc->soundHandle == 0) return -1.0f;
+
+    return s_BindingsAudio->GetLength(asc->soundHandle);
+}
+
+static bool Audio_Seek(u64 entityId, f32 seconds) {
+    if (!s_BindingsWorld || !s_BindingsAudio) return false;
+
+    Entity entity = static_cast<Entity>(entityId);
+    auto* asc = s_BindingsWorld->GetComponent<AudioSourceComponent>(entity);
+    if (!asc || asc->soundHandle == 0) return false;
+
+    return s_BindingsAudio->Seek(asc->soundHandle, seconds);
+}
+
 static void Audio_SetMasterVolume(f32 volume) {
     if (!s_BindingsAudio) return;
     s_BindingsAudio->SetMasterVolume(volume);
@@ -205,6 +239,18 @@ void RegisterAudioBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool Audio_IsPlaying(uint64)",
         ENJIN_AS_FN(Audio_IsPlaying), ENJIN_AS_CALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "float Audio_GetTime(uint64)",
+        ENJIN_AS_FN(Audio_GetTime), ENJIN_AS_CALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "float Audio_GetLength(uint64)",
+        ENJIN_AS_FN(Audio_GetLength), ENJIN_AS_CALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "bool Audio_Seek(uint64, float)",
+        ENJIN_AS_FN(Audio_Seek), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Audio_SetMasterVolume(float)",

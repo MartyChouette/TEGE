@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <functional>
 #include <memory>
+#include <random>
 
 #ifdef ENJIN_AUDIO_STEAM_AUDIO
 #include "Enjin/Audio/SteamAudioProcessor.h"
@@ -64,10 +65,10 @@ constexpr SoundHandle INVALID_SOUND = 0;
 #endif
 
 // Simple audio manager — uses miniaudio for cross-platform audio playback
-class ENJIN_API SimpleAudio {
+class ENJIN_API AudioEngine {
 public:
-    SimpleAudio();
-    ~SimpleAudio();
+    AudioEngine();
+    ~AudioEngine();
 
     bool Initialize();
     void Shutdown();
@@ -86,6 +87,16 @@ public:
     void SetEnvironmentReverb(f32 wetDry, f32 roomSize, f32 damping, f32 decayTime, f32 preDelay);
 
     void SetListenerPosition(const Math::Vector3& position, const Math::Vector3& forward, const Math::Vector3& up);
+
+    // What one play of a source sounds like: which of its clips, and the pitch
+    // and volume after the authored random ranges are applied.
+    struct PlayVariation {
+        std::string clipPath;
+        f32 pitch = 1.0f;
+        f32 volume = 1.0f;
+    };
+    // Advances the source's no-repeat state, hence the non-const reference.
+    PlayVariation ChooseVariation(ECS::AudioSourceComponent& src);
 
     // Load audio clip from file
     AudioClipHandle LoadClip(const std::string& filepath);
@@ -120,6 +131,40 @@ public:
 
     // Query
     bool IsPlaying(SoundHandle sound) const;
+
+    // Is the output device actually running?
+    //
+    // On desktop this is true from Initialize onward. In a BROWSER it is false
+    // until the page has seen a real user gesture: every AudioContext starts
+    // suspended, and Chrome says so in the console --  "The AudioContext was
+    // not allowed to start. It must be resumed (or created) after a user
+    // gesture on the page." Measured with tools/web_audio_probe.mjs against an
+    // exported build: state=suspended and currentTime frozen at 0 before a
+    // click, running and advancing after one.
+    //
+    // Anything played while this is false is played into a stopped device.
+    bool IsDeviceRunning() const;
+
+    // Call from the first real user input on web. Starts the device, which is
+    // what resumes the AudioContext, and releases any play-on-awake sources
+    // that were held back waiting for it. A no-op everywhere else, and a no-op
+    // once the device is already running, so it is safe to call on every input.
+    void ResumeAfterUserGesture();
+
+    // Where a playing sound is, in seconds, and how long it is. Both return -1
+    // when the sound is unknown or the backend cannot answer -- a real 0.0 is
+    // "at the start", which a caller has to be able to tell apart from "no
+    // idea". Seek returns whether it happened.
+    //
+    // Asked for by Tune_In, which is a game about listening to radio
+    // broadcasts: with no way to ask where the audio is, timed subtitles have
+    // to dead-reckon from the frame Play was called and hardcode the clip
+    // length, and any drift or engine-side loop restart desyncs the captions
+    // permanently with nothing able to detect it. IsPlaying was the only
+    // observability a script had.
+    f32 GetPlaybackTime(SoundHandle sound) const;
+    f32 GetLength(SoundHandle sound) const;
+    bool Seek(SoundHandle sound, f32 seconds);
 
     // Master volume (affects all channels)
     void SetMasterVolume(f32 volume);
@@ -173,6 +218,19 @@ private:
 
     // Listener (camera) state
     Math::Vector3 m_ListenerPosition;
+
+    // Web only: true from Initialize until a user gesture has let the browser
+    // run the AudioContext. It exists because miniaudio cannot answer the
+    // question -- ma_device_start returns MA_SUCCESS and the device reports
+    // itself STARTED while the browser has quietly refused to resume the
+    // context, so the device state says "running" and nothing is audible.
+    // Measured: with the check on device state alone, a play-on-awake source
+    // still loaded and started its clip before any click.
+    bool m_WebAudioGated = false;
+
+    // One generator for clip/pitch/volume variation. Seeded once: reseeding per
+    // play from the clock gives runs of identical picks at frame rate.
+    std::mt19937 m_Rng{std::random_device{}()};
     Math::Vector3 m_ListenerForward = Math::Vector3(0, 0, -1);
     Math::Vector3 m_ListenerUp = Math::Vector3(0, 1, 0);
 

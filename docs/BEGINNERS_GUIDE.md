@@ -69,7 +69,7 @@ detail on each step.
 | **Viewport** | The 3D/2D scene. Fly with WASD + right-mouse. Gizmos move/rotate/scale the selection. |
 | **Asset Browser** | Project files. Drag assets onto entities, the viewport, or component fields. |
 | **Scene Settings** | Per-scene art style, sky, fog, post-processing. |
-| **Console** (`` ` ``) | Log output + commands. |
+| **Console** (`` ` ``) | Log output + commands. **Double-click a script error** to open the file at that line. |
 
 ### Keyboard shortcuts
 
@@ -111,7 +111,8 @@ detail on each step.
 | **Material** | PBR look: colour, textures, roughness, metalness | Drives lit shading. Has a "Surface Response" block (footstep/impact sounds). |
 | **Light** | Directional / point / spot | **No direction field** — a directional light's aim comes from the Transform's rotation. |
 | **Camera** | The view | One is the game camera. Perspective or orthographic (don't mix in one scene). |
-| **Sprite2D** | A 2D image quad | `flipX`/`flipY` toggles. Sorting layer + order control draw depth. |
+| **Sprite2D** | A 2D image quad | Sorting layer + order control draw depth. `size` is world units and the Transform's scale multiplies it. `pivot` is `0,0` at the bottom-left. |
+| **Audio Source** | Plays a sound from this entity | Drop a `.wav` on the Clip field, then press **Play** to hear it without entering play mode. Add alternate clips under Randomization so repeats stop sounding identical. |
 | **Rigidbody / Colliders** | Physics body + shape | 3D = Jolt, 2D = Box2D — never mix in one scene. Collider sizes are **world-space** (scale is ignored). |
 | **Script** | Attaches an AngelScript behavior | See §7. Serialized under key `scriptComponent`. |
 | **Tilemap** | 2D tile grid | Painted by the Dungeon/WFC procgen components. |
@@ -232,6 +233,13 @@ output is `build-web/bin/EnjinPlayer.{js,wasm}`. Best in Chrome/Edge (WebGPU).
   you hand-edit a scene, use the exact serializer keys.
 - **The editor auto-saves the open scene on a timer** — don't edit a scene file
   out-of-band while the editor is open on it.
+- **On web, nothing plays until the player clicks.** Browsers refuse to start
+  audio before a real gesture. The engine holds `playOnAwake` sounds until that
+  first input so they start from the beginning — but don't design an opening
+  beat that depends on sound before the player has touched anything.
+- **A sprite's lighting follows the scene unless you say otherwise.** A scene
+  with sprites and no lights draws them flat; add one light and they all become
+  lit. Set a sprite's **Lighting** to `Unlit` or `Lit` to opt it out.
 
 ---
 
