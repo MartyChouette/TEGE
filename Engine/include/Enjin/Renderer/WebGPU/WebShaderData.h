@@ -1702,7 +1702,10 @@ fn vs_main(vert: VertexInput, inst: InstanceInput) -> VertexOutput {
     // Remap UV to atlas rect
     out.uv = vec2<f32>(
         mix(inst.uvLeft, inst.uvRight, vert.uv.x),
-        mix(inst.uvTop, inst.uvBottom, vert.uv.y)
+        // See sprite.vert: vert.uv.y is 0 at the quad's bottom and a texture's
+        // v = 0 is its top row, so mapping 0 -> uvTop rendered every textured
+        // sprite upside down.
+        mix(inst.uvBottom, inst.uvTop, vert.uv.y)
     );
     out.tint = vec4<f32>(inst.tintR, inst.tintG, inst.tintB, inst.tintA);
     return out;

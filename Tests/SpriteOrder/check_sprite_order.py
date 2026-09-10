@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check that sprites drew in sortingLayer/orderInLayer order, not entity order.
+"""Check sprite draw order AND texture orientation from one capture.
 
 The scene beside this script is built so the two disagree. A teal marker is
 created FIRST (entity id 2) but sorts LAST (orderInLayer 10); a large red ground
@@ -15,8 +15,16 @@ was skipped forever after, so from frame two onward sortingLayer and orderInLaye
 did nothing. Authoring a draw order looked like it was being ignored, because it
 was. A capture taken at any frame past the first shows it.
 
-Sampled dead centre of a large solid quad, so lavapipe's rasterisation
-differences from a real GPU cannot move the result.
+The same capture also checks which way up the sprite's texture is. The marker
+carries a 16x16 image that is amber on its top half and blue on its bottom half,
+so the two samples either side of centre say directly whether v = 0 landed on the
+top of the image or the bottom. It used to land on the bottom: every textured
+sprite rendered upside down on both backends, while the same texture on a mesh
+came out the right way up, and the only sprite example in the tree used
+untextured quads so nothing caught it.
+
+Sampled well inside large flat regions, so lavapipe's rasterisation differences
+from a real GPU cannot move the result.
 
 Usage: check_sprite_order.py <capture-base-path>   (reads <base>.ppm)
 """
@@ -54,31 +62,47 @@ def main():
     if len(pixels) < w * h * 3:
         fail(f"truncated pixel data: {len(pixels)} < {w * h * 3}")
 
-    # Average a small patch at the centre rather than one pixel, so a stray
-    # dithered or filtered texel cannot decide the outcome.
-    r = g = b = 0
-    n = 0
-    for dy in range(-3, 4):
-        for dx in range(-3, 4):
-            x, y = w // 2 + dx, h // 2 + dy
-            i = (y * w + x) * 3
-            r += pixels[i]
-            g += pixels[i + 1]
-            b += pixels[i + 2]
-            n += 1
-    r, g, b = r // n, g // n, b // n
-    print(f"centre pixel: rgb({r},{g},{b})")
+    def patch(cy):
+        """Average a 7x7 patch on the vertical centre line at row cy."""
+        rr = gg = bb = 0
+        n = 0
+        for dy in range(-3, 4):
+            for dx in range(-3, 4):
+                i = ((cy + dy) * w + (w // 2 + dx)) * 3
+                rr += pixels[i]; gg += pixels[i + 1]; bb += pixels[i + 2]
+                n += 1
+        return rr // n, gg // n, bb // n
 
-    # Teal marker (0.10, 1.00, 0.80) vs red ground (0.85, 0.15, 0.10). Compared
-    # by which channel dominates, not against exact values, because tonemapping
-    # and colour management shift the absolute numbers.
-    if g > r and b > r:
-        print("sprite order OK: the marker sorted on top, as authored")
-        return
-    if r > g and r > b:
+    # Either side of centre, never AT it: the marker's texture changes colour
+    # exactly on its middle row, so a patch straddling that seam averages the two
+    # halves into mud and says nothing about either question. A 10-unit sprite in
+    # a 24-unit view is a bit under half the frame, so a sixth either way stays
+    # well inside it.
+    top = patch(h // 2 - h // 6)
+    bottom = patch(h // 2 + h // 6)
+    print(f"upper half: rgb{top}   lower half: rgb{bottom}")
+
+    # The three things a sample can be. Compared by which channel leads rather
+    # than against exact values, because tonemapping shifts the absolute numbers.
+    def is_ground(c):  return c[0] > c[1] * 2 and c[0] > c[2] * 2   # red, dark elsewhere
+    def is_amber(c):   return c[0] > c[2] and c[1] > c[2]           # red and green over blue
+    def is_blue(c):    return c[2] > c[0] and c[2] > c[1]
+
+    # --- 1. draw order -------------------------------------------------------
+    if is_ground(top) and is_ground(bottom):
         fail("the ground painted over the marker: sprites drew in entity order, "
              "not in sortingLayer/orderInLayer order")
-    fail(f"centre is neither marker nor ground: rgb({r},{g},{b}) - did the scene render?")
+    print("sprite order OK: the marker sorted on top, as authored")
+
+    # --- 2. texture orientation ---------------------------------------------
+    if is_amber(top) and is_blue(bottom):
+        print("texture orientation OK: v = 0 is the top of the image")
+        return
+    if is_blue(top) and is_amber(bottom):
+        fail("the sprite's texture is upside down: v = 0 landed on the bottom "
+             "of the image (check the mix() in sprite.vert / SPRITE_WGSL)")
+    fail(f"neither orientation: upper rgb{top} lower rgb{bottom} - did the "
+         "texture load at all?")
 
 
 if __name__ == "__main__":

@@ -48,7 +48,13 @@ void main() {
     // Map [0,1] quad UV to the sprite's UV sub-rect
     fragUV = vec2(
         mix(inUVRect.x, inUVRect.z, uv.x),  // left -> right
-        mix(inUVRect.y, inUVRect.w, uv.y)   // top -> bottom
+        // uv.y is 0 at the quad's BOTTOM (world -Y) and 1 at its top, while a
+        // texture's v = 0 is its TOP row. Mapping 0 -> uvRect.top therefore put
+        // the top of the image along the bottom of the sprite: every textured
+        // sprite rendered upside down, on both backends, while the same texture
+        // on a mesh came out the right way up. Nothing in the tree caught it
+        // because the only sprite example uses untextured, tinted quads.
+        mix(inUVRect.w, inUVRect.y, uv.y)   // bottom -> top
     );
 
     fragTintAlpha = inTintAlpha;
