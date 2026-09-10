@@ -20,6 +20,9 @@ namespace Enjin::Scene
         std::string scenePath;
         f32 playTime = 0.0f;
         bool occupied = false;
+        // A file is there and could not be read. Distinct from unoccupied: an
+        // unreadable save reported as free is an invitation to overwrite it.
+        bool corrupt = false;
     };
 
     struct GameSaveData

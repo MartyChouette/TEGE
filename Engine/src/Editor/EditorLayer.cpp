@@ -5801,6 +5801,14 @@ void EditorLayer::ApplyPendingNewScene() {
     m_World->Clear();
     if (m_RenderSystem) m_RenderSystem->OnSceneClear();
     ClearSelection();
+    // The undo stack belongs to the scene that is going away.
+    // OpenSceneImmediate clears it and this did not, so Ctrl+Z straight after
+    // File > New Scene ran DeleteEntityCommand::Undo, which unconditionally
+    // CreateEntity()s -- resurrecting an entity from the PREVIOUS scene into the
+    // fresh one. The other commands merely no-op, because EntityManager::Reset
+    // bumps generations and their stale handles fail IsValid; the resurrect is
+    // the one that acts.
+    m_UndoRedo.Clear();
     ResetLayerSession();
 
     if (mode == NewSceneMode::SaveAsNew && !savePath.empty()) {

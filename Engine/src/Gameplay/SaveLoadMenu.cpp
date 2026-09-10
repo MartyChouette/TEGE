@@ -64,6 +64,17 @@ void DrawSaveLoadMenu(SaveLoadMenuComponent& menu,
                 } else {
                     ImGui::TextDisabled("Slot %u", slot.slotIndex + 1);
                 }
+            } else if (slot.isCorrupt) {
+                // Not empty, not loadable. This used to render as "--- Empty ---"
+                // and offer "Save Here", which invited a player to overwrite a
+                // save that might still be recoverable by hand.
+                ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.2f, 1.0f), "Damaged save");
+                if (slot.isAutoSave) {
+                    ImGui::TextDisabled("Auto %u", slot.slotIndex - TieredSaveSystem::AUTO_SAVE_SLOT_START + 1);
+                } else {
+                    ImGui::TextDisabled("Slot %u", slot.slotIndex + 1);
+                }
+                ImGui::TextDisabled("Cannot be loaded");
             } else {
                 ImGui::Text("%s", slot.displayName.c_str());
                 ImGui::TextDisabled("%s", slot.sceneName.c_str());
@@ -99,7 +110,8 @@ void DrawSaveLoadMenu(SaveLoadMenuComponent& menu,
                         }
                     }
                 }
-            } else if (menu.mode == SaveLoadMenuComponent::Mode::Load && menu.allowManualLoad && !slot.isEmpty) {
+            } else if (menu.mode == SaveLoadMenuComponent::Mode::Load && menu.allowManualLoad &&
+                       !slot.isEmpty && !slot.isCorrupt) {
                 if (ImGui::SmallButton("Load")) {
                     saveSystem->LoadFromSlot(slot.slotIndex, world);
                     menu.isOpen = false;

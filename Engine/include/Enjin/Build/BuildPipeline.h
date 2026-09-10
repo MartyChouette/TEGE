@@ -52,7 +52,9 @@ private:
     // Phase 3.5 (pak mode): scripts + enjin_api + assets must also ship loose —
     // the script engine reads from the filesystem (pak script loading is
     // unimplemented) and script-referenced assets are invisible to scene scans
-    void EmitLooseRuntimeFiles(const std::string& outputDir);
+    // Returns false when any copy failed. Exported games read their scripts
+    // from these files, so a silent failure ships a game with no scripts.
+    bool EmitLooseRuntimeFiles(const std::string& outputDir);
     // Phase 4: Copy player executable to output
     bool CopyPlayer(const std::string& outputDir);
     // The manifest every runtime reads, and the accessibility defaults that
@@ -124,6 +126,7 @@ private:
     // Project input settings (custom actions + touch layout), carried the same
     // verbatim way so an exported game ships the controls the editor authored.
     std::string m_InputSettingsJson;
+    std::string m_AudioSettingsJson;
     std::string m_DefaultRenderSettingsJson;
     // Project render quality tiers, carried verbatim like startupFlow and input.
     // A tier is a cost ceiling the shipped game applies, so it has to reach the

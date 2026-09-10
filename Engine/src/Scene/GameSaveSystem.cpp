@@ -1,4 +1,5 @@
 #include "Enjin/Scene/GameSaveSystem.h"
+#include "Enjin/Logging/Log.h"
 
 #include <fstream>
 #include <filesystem>
@@ -333,17 +334,28 @@ namespace Enjin::Scene
         if (!std::filesystem::exists(filePath))
             return info;
 
+        // The file exists, so from here on every failure is "there is a save
+        // here and something is wrong with it" -- never "the slot is free".
         std::ifstream file(filePath);
         if (!file.is_open())
+        {
+            info.corrupt = true;
+            info.displayName = "Slot " + std::to_string(slot) + " - unreadable";
+            ENJIN_LOG_WARN(Game, "Save slot %u exists but could not be opened: %s",
+                           slot, filePath.c_str());
             return info;
+        }
 
         nlohmann::json j;
         try
         {
             file >> j;
         }
-        catch (const nlohmann::json::parse_error&)
+        catch (const nlohmann::json::parse_error& e)
         {
+            info.corrupt = true;
+            info.displayName = "Slot " + std::to_string(slot) + " - damaged";
+            ENJIN_LOG_WARN(Game, "Save slot %u could not be parsed: %s", slot, e.what());
             return info;
         }
 

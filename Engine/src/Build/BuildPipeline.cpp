@@ -106,7 +106,11 @@ BuildResult BuildPipeline::Execute(const BuildConfig& config) {
         // files next to the executable. The script engine can now also read
         // scripts from the .enjpak asset pack (ScriptEngine::SetAssetReader) as
         // a fallback, but the loose copies are what the runtime loads today.
-        EmitLooseRuntimeFiles(config.outputDir);
+        // Failure here is fatal to the build: a game whose scripts did not copy
+        // launches and does nothing, and used to do so behind a success message.
+        if (!EmitLooseRuntimeFiles(config.outputDir)) {
+            m_Result.success = false;
+        }
         CopyPlayer(config.outputDir);  // reports its own failure; Phase 5 decides
     }
 
@@ -279,6 +283,16 @@ bool BuildPipeline::ScanProject(const std::string& projectPath) {
         m_InputSettingsJson.clear();
         if (root.contains("input") && root["input"].is_object()) {
             m_InputSettingsJson = root["input"].dump();
+        }
+
+        // Carry the project's audio settings (HRTF, occlusion, transmission).
+        // These persisted to .enjinproject correctly and nothing ever read them
+        // back out for a build, so an exported game always shipped the defaults
+        // regardless of what the project authored -- and the editor was reading
+        // a deprecated EditorSettings copy, so neither runtime honoured them.
+        m_AudioSettingsJson.clear();
+        if (root.contains("audio") && root["audio"].is_object()) {
+            m_AudioSettingsJson = root["audio"].dump();
         }
 
         // Carry the project's default render settings. A scene with
@@ -655,18 +669,34 @@ bool BuildPipeline::PackAssets(const std::string& outputDir, const std::string& 
     return true;
 }
 
-void BuildPipeline::EmitLooseRuntimeFiles(const std::string& outputDir) {
-    std::error_code ec;
+bool BuildPipeline::EmitLooseRuntimeFiles(const std::string& outputDir) {
+    // Exported games read their scripts from these loose files by default, so a
+    // failed copy here ships a game with no scripts. This used to discard every
+    // error_code, increment a counter nothing read, return void, and log an
+    // unconditional success line -- the one arrangement guaranteed to make that
+    // silent.
     u32 copied = 0;
+    u32 failed = 0;
+
+    auto fail = [&](const std::string& what, const std::error_code& why) {
+        ++failed;
+        AddMessage(MessageSeverity::Error, "Could not copy " + what + ": " + why.message());
+    };
 
     auto copyRel = [&](const std::string& absPath) {
+        std::error_code ec;
         auto rel = fs::relative(fs::path(absPath), fs::path(m_ProjectDir), ec);
-        if (ec || rel.empty()) return;
+        if (ec || rel.empty()) {
+            fail(absPath + " (outside the project directory)", ec);
+            return;
+        }
         fs::path dest = fs::path(outputDir) / rel;
         fs::create_directories(dest.parent_path(), ec);
-        if (fs::copy_file(absPath, dest, fs::copy_options::overwrite_existing, ec)) {
-            ++copied;
-        }
+        if (ec) { fail(dest.parent_path().string(), ec); return; }
+        ec.clear();
+        fs::copy_file(absPath, dest, fs::copy_options::overwrite_existing, ec);
+        if (ec) { fail(rel.string(), ec); return; }
+        ++copied;
     };
 
     // Scene-referenced scripts
@@ -674,28 +704,36 @@ void BuildPipeline::EmitLooseRuntimeFiles(const std::string& outputDir) {
         copyRel(path);
     }
 
-    // enjin_api script headers (TegeBehavior.as etc. — needed for #include
-    // resolution and the auto-injected base class)
-    fs::path apiDir = fs::path(m_ProjectDir) / "scripts" / "enjin_api";
-    if (fs::exists(apiDir, ec)) {
-        fs::create_directories(fs::path(outputDir) / "scripts" / "enjin_api", ec);
-        fs::copy(apiDir, fs::path(outputDir) / "scripts" / "enjin_api",
-                 fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
+    auto copyTree = [&](const fs::path& src, const fs::path& dest, const char* label) {
+        std::error_code ec;
+        if (!fs::exists(src, ec)) return;   // genuinely absent is not a failure
+        fs::create_directories(dest, ec);
+        if (ec) { fail(dest.string(), ec); return; }
+        ec.clear();
+        fs::copy(src, dest, fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
+        if (ec) { fail(label, ec); return; }
         ++copied;
-    }
+    };
+
+    // enjin_api script headers (TegeBehavior.as etc. -- needed for #include
+    // resolution and the auto-injected base class)
+    copyTree(fs::path(m_ProjectDir) / "scripts" / "enjin_api",
+             fs::path(outputDir) / "scripts" / "enjin_api", "scripts/enjin_api");
 
     // The whole assets/ directory: script-referenced files (audio one-shots,
     // UI images set at runtime) can't be discovered by scene scanning
-    fs::path assetsDir = fs::path(m_ProjectDir) / "assets";
-    if (fs::exists(assetsDir, ec)) {
-        fs::create_directories(fs::path(outputDir) / "assets", ec);
-        fs::copy(assetsDir, fs::path(outputDir) / "assets",
-                 fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
-        ++copied;
-    }
+    copyTree(fs::path(m_ProjectDir) / "assets",
+             fs::path(outputDir) / "assets", "assets");
 
+    if (failed > 0) {
+        AddMessage(MessageSeverity::Error,
+                   "Emitted " + std::to_string(copied) + " loose runtime files to " + outputDir +
+                   ", " + std::to_string(failed) + " failed — the exported game will be missing them");
+        return false;
+    }
     AddMessage(MessageSeverity::Info,
-               "Emitted loose runtime files (scripts + enjin_api + assets) to " + outputDir);
+               "Emitted " + std::to_string(copied) + " loose runtime files (scripts + enjin_api + assets) to " + outputDir);
+    return true;
 }
 
 bool BuildPipeline::CopyPlayer(const std::string& outputDir) {
@@ -827,6 +865,9 @@ std::string BuildPipeline::BuildManifestJson(const BuildConfig& config) const {
     // Input settings (custom actions + touch layout) authored in the editor
     if (!m_InputSettingsJson.empty()) {
         manifest["input"] = nlohmann::json::parse(m_InputSettingsJson);
+    }
+    if (!m_AudioSettingsJson.empty()) {
+        manifest["audio"] = nlohmann::json::parse(m_AudioSettingsJson);
     }
     if (!m_DefaultRenderSettingsJson.empty()) {
         manifest["defaultRenderSettings"] = nlohmann::json::parse(m_DefaultRenderSettingsJson);

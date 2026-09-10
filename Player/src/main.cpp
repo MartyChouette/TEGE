@@ -2774,6 +2774,21 @@ private:
                                m_InputSettings.customActions.size());
             }        }
 
+        // Project audio settings. These persisted to .enjinproject correctly and
+        // were read by nobody -- the manifest never carried them, so an exported
+        // game always shipped the defaults no matter what the project authored.
+        if (manifest.contains("audio") && manifest["audio"].is_object()) {
+            const auto& a = manifest["audio"];
+            m_ProjectEnableHRTF         = a.value("enableHRTF", true);
+            m_ProjectEnableOcclusion    = a.value("enableOcclusion", true);
+            m_ProjectEnableTransmission = a.value("enableTransmission", true);
+            m_HasProjectAudioSettings = true;
+            ENJIN_LOG_INFO(Player, "Project audio settings: HRTF %s, occlusion %s, transmission %s",
+                           m_ProjectEnableHRTF ? "on" : "off",
+                           m_ProjectEnableOcclusion ? "on" : "off",
+                           m_ProjectEnableTransmission ? "on" : "off");
+        }
+
         // The project's default render settings, for scenes that say
         // useProjectDefaults. Only the editor honoured that flag, so an exported
         // game applied the scene's own render-settings block instead - a block
@@ -2963,6 +2978,12 @@ private:
 
         // Build audio occlusion scene from colliders
 #ifdef ENJIN_AUDIO_STEAM_AUDIO
+        // Apply what the project authored, before the scene geometry goes in.
+        if (m_HasProjectAudioSettings) {
+            m_AudioEngine.SetHRTFEnabled(m_ProjectEnableHRTF);
+            m_AudioEngine.SetOcclusionEnabled(m_ProjectEnableOcclusion);
+            m_AudioEngine.SetTransmissionEnabled(m_ProjectEnableTransmission);
+        }
         m_AudioEngine.BuildSteamAudioScene();
 #endif
 
@@ -3435,6 +3456,10 @@ private:
     Enjin::Renderer::SceneRenderSettings m_SceneRenderSettings;
     Enjin::Renderer::SceneRenderSettings m_ProjectRenderSettings;
     bool m_HasProjectRenderSettings = false;
+    bool m_HasProjectAudioSettings = false;
+    bool m_ProjectEnableHRTF = true;
+    bool m_ProjectEnableOcclusion = true;
+    bool m_ProjectEnableTransmission = true;
 
     // Project render quality tiers (ADR-0006) and the tier currently in force.
     // The active tier starts at the project default; a player-facing selector

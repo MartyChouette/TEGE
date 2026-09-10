@@ -487,8 +487,18 @@ void PlayMode::Play() {
     m_AudioEngine.Initialize();
     m_AudioEngine.SetWorld(m_World);
 #ifdef ENJIN_AUDIO_STEAM_AUDIO
-    // Apply HRTF setting from editor
-    if (m_EditorSettings) {
+    // These three live on the PROJECT (.enjinproject), not on editor settings.
+    // They were migrated there and EditorSettings::Save deliberately stopped
+    // writing its copies -- but this kept reading them, so after the first
+    // settings save they sat at their `true` defaults and every Play silently
+    // re-enabled HRTF and occlusion on a project that had turned them off.
+    // Editor settings are only a fallback now, for a play session with no
+    // project open.
+    if (m_SceneManager) {
+        m_AudioEngine.SetHRTFEnabled(m_SceneManager->GetEnableHRTF());
+        m_AudioEngine.SetOcclusionEnabled(m_SceneManager->GetEnableOcclusion());
+        m_AudioEngine.SetTransmissionEnabled(m_SceneManager->GetEnableTransmission());
+    } else if (m_EditorSettings) {
         m_AudioEngine.SetHRTFEnabled(m_EditorSettings->enableHRTF);
         m_AudioEngine.SetOcclusionEnabled(m_EditorSettings->enableOcclusion);
         m_AudioEngine.SetTransmissionEnabled(m_EditorSettings->enableTransmission);

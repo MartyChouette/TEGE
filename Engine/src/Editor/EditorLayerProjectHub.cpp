@@ -256,15 +256,42 @@ void EditorLayer::DrawProjectHubInner() {
     if (!m_HubPendingDeletePath.empty()) {
         std::string pathToDelete = m_HubPendingDeletePath;
         m_HubPendingDeletePath.clear();
-        m_EditorSettings.RemoveRecentProject(pathToDelete);
-        m_EditorSettings.Save();
+
+        // Delete the files FIRST, and only drop it from Recents if that worked.
+        // It used to run the other way round inside a bare catch(...) with the
+        // error_code discarded, so a locked folder made the project vanish from
+        // the hub while every file stayed on disk -- under a modal that promises
+        // "This will permanently delete the project folder. This cannot be
+        // undone." Neither outcome said anything.
+        bool removed = false;
+        std::string why;
         try {
             std::filesystem::path delDir = std::filesystem::path(pathToDelete).parent_path();
-            if (!delDir.empty() && std::filesystem::exists(delDir)) {
+            if (delDir.empty()) {
+                why = "the project path has no folder";
+            } else if (!std::filesystem::exists(delDir)) {
+                removed = true;   // already gone; dropping it from Recents is right
+            } else {
                 std::error_code ec;
                 std::filesystem::remove_all(delDir, ec);
+                if (ec) why = ec.message(); else removed = true;
             }
-        } catch (...) {}
+        } catch (const std::exception& e) {
+            why = e.what();
+        }
+
+        if (removed) {
+            m_EditorSettings.RemoveRecentProject(pathToDelete);
+            m_EditorSettings.Save();
+            ShowNotification("Deleted project folder", NotificationType::Success);
+        } else {
+            // Left in Recents on purpose: the files are still there, and a
+            // project you can no longer see is harder to recover than one you can.
+            ShowNotification("Could not delete the project folder: " + why,
+                             NotificationType::Error);
+            ENJIN_LOG_ERROR(Editor, "Project delete failed for '%s': %s",
+                            pathToDelete.c_str(), why.c_str());
+        }
     }
 
     // Process deferred project open (set by click in previous frame)

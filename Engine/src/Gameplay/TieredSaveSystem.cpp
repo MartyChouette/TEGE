@@ -236,14 +236,28 @@ SaveSlotInfo TieredSaveSystem::GetSlotInfo(u32 slot) const {
 
     try {
         json j = json::parse(data, nullptr, false);
-        if (j.is_discarded()) return info;
+        if (j.is_discarded()) {
+            // There IS data here, it just did not parse. Saying "empty" would
+            // invite the player to overwrite it.
+            info.isCorrupt = true;
+            info.isEmpty = false;
+            info.displayName = "Damaged save";
+            ENJIN_LOG_WARN(Game, "Save slot %u could not be parsed (%zu bytes on disk)",
+                           slot, data.size());
+            return info;
+        }
 
         info.isEmpty = false;
         if (j.contains("displayName")) info.displayName = j["displayName"].get<std::string>();
         if (j.contains("sceneName")) info.sceneName = j["sceneName"].get<std::string>();
         if (j.contains("timestamp")) info.timestamp = j["timestamp"].get<std::string>();
         if (j.contains("playTime")) info.playTime = j["playTime"].get<f32>();
-    } catch (...) {}
+    } catch (const std::exception& e) {
+        info.isCorrupt = true;
+        info.isEmpty = false;
+        info.displayName = "Damaged save";
+        ENJIN_LOG_WARN(Game, "Save slot %u could not be read: %s", slot, e.what());
+    }
 
     return info;
 }

@@ -21,6 +21,11 @@ struct SaveSlotInfo {
     f32 playTime = 0.0f;
     bool isEmpty = true;
     bool isAutoSave = false;
+    // There is a slot here and it could not be read. NOT the same as empty, and
+    // it used to render as empty: a player whose save was corrupt or locked saw
+    // "(empty)", and the menu hid Load behind !isEmpty while still offering
+    // Save -- so the UI invited them to overwrite a recoverable save.
+    bool isCorrupt = false;
 };
 
 // Auto-save configuration
