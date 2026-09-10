@@ -97,9 +97,27 @@ struct DataAsset {
 // DATA ASSET REGISTRY (Singleton)
 // ============================================================================
 
+// What a directory scan actually did. Returned rather than logged-and-forgotten
+// so a view can SAY what it searched: a scan of the wrong tree and a project with
+// no records are otherwise the same silence, and telling them apart by hand cost
+// a session (2026-09-10, Ink Ribbon).
+struct DataAssetScanResult {
+    std::string directory;        // absolute path actually searched
+    bool directoryExists = false;
+    usize filesFound = 0;         // files with the right extension
+    usize loaded = 0;             // of those, the ones that parsed
+};
+
 class ENJIN_API DataAssetRegistry {
 public:
     static DataAssetRegistry& Get();
+
+    // Bumped by every mutation. A view caches against this instead of growing its
+    // own dirty flag, which is the difference between one panel being correct and
+    // every panel being correct: a dirty flag on the VIEWER only works while that
+    // viewer is the sole mutator, and a second view of the same data is stale from
+    // the moment it opens.
+    u64 Version() const { return m_Version; }
 
     // Schema management
     void RegisterSchema(const DataAssetSchema& schema);
@@ -110,7 +128,11 @@ public:
     // Schema I/O
     bool SaveSchema(const DataAssetSchema& schema, const std::string& path);
     bool LoadSchema(const std::string& path);
-    void ScanSchemaDirectory(const std::string& directory);
+    // Parse from text rather than from a path, so a caller reading out of an
+    // .enjpak and a caller reading off disk share ONE parser. `sourcePath` is
+    // recorded and used in messages; it is never opened.
+    bool LoadSchemaFromString(const std::string& text, const std::string& sourcePath);
+    DataAssetScanResult ScanSchemaDirectory(const std::string& directory);
 
     // Asset management
     void CreateAsset(const DataAsset& asset);
@@ -123,7 +145,8 @@ public:
     // Asset I/O
     bool SaveAsset(const DataAsset& asset, const std::string& path);
     bool LoadAsset(const std::string& path);
-    void ScanAssetDirectory(const std::string& directory);
+    bool LoadAssetFromString(const std::string& text, const std::string& sourcePath);
+    DataAssetScanResult ScanAssetDirectory(const std::string& directory);
 
     // Typed getters (with fallback defaults)
     f32 GetFloat(const std::string& assetName, const std::string& field, f32 fallback = 0.0f) const;
@@ -150,6 +173,7 @@ private:
 
     std::unordered_map<std::string, DataAssetSchema> m_Schemas;
     std::unordered_map<std::string, DataAsset> m_Assets;
+    u64 m_Version = 0;
 };
 
 } // namespace Assets

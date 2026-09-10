@@ -603,11 +603,23 @@ public:
         }
 
         // Load data assets (.enjschema and .enjdata)
+        //
+        // This block used to carry its OWN json parser, and it never ran: the
+        // suffix tests were off by one in both directions -- ".enjschema" is 10
+        // characters and the code compared the last 11, ".enjdata" is 8 and it
+        // compared the last 9 -- so neither could match any filename. Data assets
+        // have never loaded in an exported game. The duplicate parser also
+        // handled only string/float/int/bool, silently dropping Vector3, Vector4
+        // and the array types the schema editor can author.
+        //
+        // Now it goes through DataAssetRegistry, the same parser the editor uses,
+        // and the extension test goes through std::filesystem rather than
+        // arithmetic on a length.
         {
             auto& registry = Enjin::Assets::DataAssetRegistry::Get();
             Enjin::u32 schemaCount = 0, assetCount = 0;
 
-            // Collect file list — from pack or from filesystem
+            // Collect file list - from pack or from filesystem
             std::vector<std::string> fileList;
             if (m_LooseFilesMode) {
                 try {
@@ -639,70 +651,19 @@ public:
                 }
             };
 
+            // Schemas first: an asset names the schema it belongs to.
             for (const auto& file : fileList) {
-                if (file.size() > 11 && file.substr(file.size() - 11) == ".enjschema") {
-                    std::string str = readFileContent(file);
-                    if (!str.empty()) {
-                        try {
-                            auto j = nlohmann::json::parse(str);
-                            Enjin::Assets::DataAssetSchema schema;
-                            schema.name = j.value("name", "");
-                            schema.description = j.value("description", "");
-                            if (j.contains("fields") && j["fields"].is_array()) {
-                                for (const auto& fj : j["fields"]) {
-                                    Enjin::Assets::DataAssetField field;
-                                    field.name = fj.value("name", "");
-                                    field.type = Enjin::Assets::DataFieldTypeFromString(fj.value("type", "String"));
-                                    schema.fields.push_back(field);
-                                }
-                            }
-                            if (!schema.name.empty()) {
-                                registry.RegisterSchema(schema);
-                                schemaCount++;
-                            }
-                        } catch (const std::exception& e) {
-                            ENJIN_LOG_ERROR(Player, "Failed to parse schema '%s': %s", file.c_str(), e.what());
-                        }
-                    }
-                }
+                if (fs::path(file).extension() != ".enjschema") continue;
+                std::string str = readFileContent(file);
+                if (!str.empty() && registry.LoadSchemaFromString(str, file)) schemaCount++;
             }
             for (const auto& file : fileList) {
-                if (file.size() > 9 && file.substr(file.size() - 9) == ".enjdata") {
-                    std::string str = readFileContent(file);
-                    if (!str.empty()) {
-                        try {
-                            auto j = nlohmann::json::parse(str);
-                            Enjin::Assets::DataAsset asset;
-                            asset.name = j.value("name", "");
-                            asset.schemaName = j.value("schema", "");
-                            asset.filePath = file;
-                            // Parse values map
-                            if (j.contains("values") && j["values"].is_object()) {
-                                for (auto& [key, val] : j["values"].items()) {
-                                    if (val.is_string()) {
-                                        asset.values[key] = val.get<std::string>();
-                                    } else if (val.is_number_float()) {
-                                        asset.values[key] = val.get<Enjin::f32>();
-                                    } else if (val.is_number_integer()) {
-                                        asset.values[key] = val.get<Enjin::i32>();
-                                    } else if (val.is_boolean()) {
-                                        asset.values[key] = val.get<bool>();
-                                    }
-                                }
-                            }
-                            if (!asset.name.empty()) {
-                                registry.CreateAsset(asset);
-                                assetCount++;
-                            }
-                        } catch (const std::exception& e) {
-                            ENJIN_LOG_ERROR(Player, "Failed to parse data asset '%s': %s", file.c_str(), e.what());
-                        }
-                    }
-                }
+                if (fs::path(file).extension() != ".enjdata") continue;
+                std::string str = readFileContent(file);
+                if (!str.empty() && registry.LoadAssetFromString(str, file)) assetCount++;
             }
-            if (schemaCount > 0 || assetCount > 0) {
-                ENJIN_LOG_INFO(Player, "Loaded %u schemas and %u data assets", schemaCount, assetCount);
-            }
+            ENJIN_LOG_INFO(Player, "Loaded %u schemas and %u data assets from %zu files",
+                           schemaCount, assetCount, fileList.size());
         }
 
         m_NetworkSystem.SetWorld(m_World.get());

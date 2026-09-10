@@ -387,11 +387,21 @@ void EditorLayer::DrawScriptPeekWindow() {
         OpenScriptAtLine(m_ScriptPeekPath, m_ScriptPeekLine);
     }
     ImGui::SetItemTooltip("Open the file in the external IDE, at this line");
-    ImGui::SameLine();
-    if (ImGui::SmallButton("Reload")) {
-        PeekScriptAtLine(m_ScriptPeekLabel, m_ScriptPeekLine);
+    // No Reload button. Its tooltip used to read "this is a viewer, so an
+    // external edit does not show until you do", which is the confession in one
+    // sentence: the panel knew it went stale and handed the user the job. It
+    // watches the file instead, and re-reads within a second of an IDE saving it.
+    if (!m_ScriptPeekPath.empty()) {
+        if (m_ScriptPeekWatchPath != m_ScriptPeekPath) {
+            if (m_ScriptPeekWatch != 0) m_Watch.Unwatch(m_ScriptPeekWatch);
+            m_ScriptPeekWatch = m_Watch.WatchFile(m_ScriptPeekPath);
+            m_ScriptPeekWatchPath = m_ScriptPeekPath;
+            m_ScriptPeekWatchSeen = m_Watch.Version(m_ScriptPeekWatch);
+        } else if (m_Watch.Version(m_ScriptPeekWatch) != m_ScriptPeekWatchSeen) {
+            m_ScriptPeekWatchSeen = m_Watch.Version(m_ScriptPeekWatch);
+            PeekScriptAtLine(m_ScriptPeekLabel, m_ScriptPeekLine);
+        }
     }
-    ImGui::SetItemTooltip("Read the file again — this is a viewer, so an external edit does not show until you do");
     ImGui::Separator();
 
     ImGui::BeginChild("ScriptPeekBody", ImVec2(0, 0), true, ImGuiWindowFlags_HorizontalScrollbar);
@@ -762,6 +772,22 @@ void EditorLayer::DrawAssetBrowserPanel() {
         m_AssetBrowserCacheDirty = true;
     }
 
+    // Watch the folder being shown. The dirty flag below still catches every
+    // change the EDITOR makes; this catches the ones it does not make -- a git
+    // pull, a texture exported from another tool, a file dropped in Explorer --
+    // which is the entire job the Refresh button used to be doing by hand. The
+    // flag stays because it is instant and the watch is throttled: an editor
+    // operation should not wait up to a second to show its own result.
+    if (m_AssetBrowserWatchPath != m_AssetBrowserPath) {
+        if (m_AssetBrowserWatch != 0) m_Watch.Unwatch(m_AssetBrowserWatch);
+        m_AssetBrowserWatch = m_Watch.WatchTree(m_AssetBrowserPath, "");
+        m_AssetBrowserWatchPath = m_AssetBrowserPath;
+        m_AssetBrowserWatchSeen = m_Watch.Version(m_AssetBrowserWatch);
+    } else if (m_Watch.Version(m_AssetBrowserWatch) != m_AssetBrowserWatchSeen) {
+        m_AssetBrowserWatchSeen = m_Watch.Version(m_AssetBrowserWatch);
+        m_AssetBrowserCacheDirty = true;
+    }
+
     // Refresh cache if path changed or flagged dirty
     if (m_AssetBrowserCacheDirty || m_AssetBrowserCachedPath != m_AssetBrowserPath) {
         RefreshAssetBrowserCache();
@@ -781,11 +807,6 @@ void EditorLayer::DrawAssetBrowserPanel() {
             m_AssetBrowserPath = m_AssetBrowserPath.substr(0, pos);
         }
         m_AssetBrowserCacheDirty = true;
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Refresh")) {
-        m_AssetBrowserCacheDirty = true;
-        m_AssetBrowserSelected.clear();
     }
     ImGui::SameLine();
 
@@ -1389,6 +1410,13 @@ void EditorLayer::DrawAssetBrowserPanel() {
                 }
             }
         }
+    }
+
+    // Ask A: which empty is this? An asset folder that is genuinely empty and one
+    // whose path does not exist (a project moved, a folder renamed under the
+    // editor) used to draw the same blank rectangle.
+    if (m_AssetBrowserCache.empty()) {
+        DrawEmptyListState("files", m_AssetBrowserPath, false);
     }
 
     ImGui::EndChild();
@@ -4323,6 +4351,55 @@ void EditorLayer::DrawUserManualPanel() {
 // DATA ASSET EDITOR PANEL
 // ============================================================================
 
+void EditorLayer::ReloadDataAssetsIfChangedOnDisk() {
+    const std::string& root = m_SceneManager.GetProjectRoot();
+    if (root.empty()) {
+        if (m_DataAssetWatch != 0) {
+            m_Watch.Unwatch(m_DataAssetWatch);
+            m_DataAssetWatch = 0;
+            m_DataAssetWatchRoot.clear();
+        }
+        return;
+    }
+    if (m_DataAssetWatch == 0 || m_DataAssetWatchRoot != root) {
+        if (m_DataAssetWatch != 0) m_Watch.Unwatch(m_DataAssetWatch);
+        // Two watches would be tidier than one; the schema tree and the record
+        // tree are the same tree, so one walk covers both and the rescan below
+        // does both anyway.
+        m_DataAssetWatch = m_Watch.WatchTree(root, ".enjdata");
+        m_DataAssetWatchRoot = root;
+        m_DataAssetWatchSeen = m_Watch.Version(m_DataAssetWatch);
+        return;
+    }
+
+    const u64 now = m_Watch.Version(m_DataAssetWatch);
+    if (now == m_DataAssetWatchSeen) return;
+    m_DataAssetWatchSeen = now;
+
+    auto& registry = Assets::DataAssetRegistry::Get();
+    registry.Clear();
+    const auto schemas = registry.ScanSchemaDirectory(root);
+    const auto assets  = registry.ScanAssetDirectory(root);
+    ENJIN_LOG_INFO(Editor, "Data assets changed on disk: reloaded %zu schemas and %zu records from %s",
+                   schemas.loaded, assets.loaded, assets.directory.c_str());
+}
+
+void EditorLayer::DrawEmptyListState(const char* what, const std::string& source,
+                                     bool filtered) {
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+    if (filtered) {
+        ImGui::TextWrapped("No %s match the search.", what);
+    } else if (source.empty()) {
+        ImGui::TextWrapped("No %s. Nothing has been searched yet.", what);
+    } else {
+        // The path is the point: naming it is what makes a scan of the wrong
+        // tree visible in two seconds instead of after a relaunch.
+        ImGui::TextWrapped("No %s under", what);
+        ImGui::TextWrapped("%s", source.c_str());
+    }
+    ImGui::PopStyleColor();
+}
+
 void EditorLayer::DrawDataAssetPanel() {
     bool panelOpen = true;
     if (!ImGui::Begin("Data Asset Editor", &panelOpen)) {
@@ -4333,6 +4410,13 @@ void EditorLayer::DrawDataAssetPanel() {
     if (!panelOpen) { SetPanelVisibility(EditorPanel::DataAssets, false); ImGui::End(); return; }
 
     auto& registry = Assets::DataAssetRegistry::Get();
+
+    // What this panel is a view OF. The scan used to be ScanAssetDirectory(".")
+    // -- the process working directory, which for a shortcut, an Explorer
+    // double-click or an IDE is never the project root -- and the panel never
+    // said so, so a scan of the wrong tree looked exactly like an empty project.
+    // Empty when no project is open, which the empty state then reports.
+    const std::string& dataRoot = m_SceneManager.GetProjectRoot();
 
     // Split: left = schema/asset lists, right = editor
     ImGui::Columns(2, "DataAssetColumns", true);
@@ -4373,7 +4457,11 @@ void EditorLayer::DrawDataAssetPanel() {
     ImGui::InputText("##schemasearch", m_DataAssetSchemaSearchBuf, sizeof(m_DataAssetSchemaSearchBuf));
     ImGui::Separator();
 
+    // Read the registry fresh every frame (tier 1). It is a map of a few hundred
+    // entries against a 16.6 ms budget, so not caching makes staleness
+    // structurally impossible rather than something to remember to handle.
     auto schemas = registry.GetAllSchemas();
+    usize schemasShown = 0;
     for (const auto* schema : schemas) {
         // Filter
         if (m_DataAssetSchemaSearchBuf[0] != '\0') {
@@ -4384,12 +4472,17 @@ void EditorLayer::DrawDataAssetPanel() {
             if (lower.find(filter) == std::string::npos) continue;
         }
 
+        ++schemasShown;
         bool selected = (m_SelectedSchemaName == schema->name);
         if (ImGui::Selectable(schema->name.c_str(), selected)) {
             m_SelectedSchemaName = schema->name;
             m_SelectedAssetName.clear();
             m_EditingSchema = true;
         }
+    }
+    if (schemasShown == 0) {
+        DrawEmptyListState("schemas (.enjschema)", dataRoot,
+                           !schemas.empty() && m_DataAssetSchemaSearchBuf[0] != '\0');
     }
 
     ImGui::Spacing();
@@ -4440,8 +4533,11 @@ void EditorLayer::DrawDataAssetPanel() {
     ImGui::InputText("##assetsearch", m_DataAssetSearchBuf, sizeof(m_DataAssetSearchBuf));
     ImGui::Separator();
 
-    if (!m_SelectedSchemaName.empty()) {
+    if (m_SelectedSchemaName.empty()) {
+        ImGui::TextDisabled("Select a schema to list its records.");
+    } else {
         auto assets = registry.GetAssetsBySchema(m_SelectedSchemaName);
+        usize assetsShown = 0;
         for (const auto* asset : assets) {
             if (m_DataAssetSearchBuf[0] != '\0') {
                 std::string lower = asset->name;
@@ -4451,11 +4547,21 @@ void EditorLayer::DrawDataAssetPanel() {
                 if (lower.find(filter) == std::string::npos) continue;
             }
 
+            ++assetsShown;
             bool selected = (m_SelectedAssetName == asset->name);
             if (ImGui::Selectable(asset->name.c_str(), selected)) {
                 m_SelectedAssetName = asset->name;
                 m_EditingSchema = false;
             }
+        }
+        if (assetsShown == 0) {
+            // This bare loop with no else branch is the line the report named:
+            // "no records exist" and "I have never looked" rendered as the same
+            // nothing, so the working-directory bug underneath took a relaunch to
+            // find instead of two seconds.
+            const std::string what = m_SelectedSchemaName + " records (.enjdata)";
+            DrawEmptyListState(what.c_str(), dataRoot,
+                               !assets.empty() && m_DataAssetSearchBuf[0] != '\0');
         }
     }
 
@@ -4662,14 +4768,17 @@ void EditorLayer::DrawDataAssetPanel() {
 
     ImGui::Columns(1);
 
-    // Scan buttons at bottom
+    // No "Scan Schemas..." / "Scan Assets..." buttons. Opening the project loads
+    // them (SceneManager::LoadProject) and the watch below picks up an external
+    // edit within a second, so a button here would only be this panel asking the
+    // user to do its job on a schedule they have no way to know.
     ImGui::Separator();
-    if (ImGui::Button("Scan Schemas...")) {
-        registry.ScanSchemaDirectory(".");
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Scan Assets...")) {
-        registry.ScanAssetDirectory(".");
+    if (dataRoot.empty()) {
+        ImGui::TextDisabled("No project open.");
+    } else {
+        ImGui::TextDisabled("%zu schemas, %zu records under %s",
+                            registry.GetAllSchemas().size(), registry.GetAllAssets().size(),
+                            dataRoot.c_str());
     }
 
     ImGui::End();
@@ -4709,9 +4818,25 @@ void EditorLayer::DrawPluginBrowserPanel() {
     }
     ImGui::SameLine();
     ImGui::Checkbox("Installed Only", &m_PluginShowInstalledOnly);
-    ImGui::SameLine();
-    if (ImGui::Button("Refresh")) {
-        m_PluginRepository.RefreshCatalog();
+
+    // No Refresh button. RefreshCatalog() walks the repository source folders on
+    // local disk -- a directory scan, not a remote fetch -- so there is nothing
+    // here the editor cannot notice on its own. Every enabled source is watched;
+    // installing, removing or editing a plugin shows up within a second.
+    {
+        u64 combined = 0;
+        for (const auto& source : m_PluginRepository.GetSources()) {
+            if (!source.enabled || source.path.empty()) continue;
+            combined += m_Watch.Version(m_Watch.WatchTree(source.path, ""));
+        }
+        // The source LIST itself can change (a source added or disabled), and no
+        // file moved when it does, so fold its shape in as well.
+        combined += m_PluginRepository.GetSources().size() * 1000003ull;
+        if (!m_PluginSourcesWatched || combined != m_PluginSourcesSeen) {
+            m_PluginSourcesSeen = combined;
+            m_PluginSourcesWatched = true;
+            m_PluginRepository.RefreshCatalog();
+        }
     }
 
     ImGui::Separator();
@@ -4804,7 +4929,7 @@ void EditorLayer::DrawPluginBrowserPanel() {
     }
 
     if (catalog.empty()) {
-        DrawEmptyState("{+}", "No Plugins Found", "Add a repository source and click Refresh");
+        DrawEmptyState("{+}", "No Plugins Found", "Add a repository source above");
     }
 
     // Repository sources management

@@ -10,6 +10,7 @@
 #include "Enjin/Renderer/CameraController.h"
 #include "Enjin/Renderer/RenderTarget.h"
 #include "Enjin/GUI/ImGuiLayer.h"
+#include "Enjin/Editor/EditorWatch.h"
 #include "Enjin/Editor/PlayMode.h"
 #include "Enjin/Editor/EditorSettings.h"
 #include "Enjin/Editor/GifRecorder.h"
@@ -546,6 +547,27 @@ private:
     void DrawQuestFlowPanel();
     void DrawUserManualPanel();
     void DrawDataAssetPanel();
+
+    // A list view that came back empty has to say WHICH empty it is. "Nothing
+    // matches your filter", "I looked here and there was nothing", and "I have
+    // never looked" are three different facts, and rendering them as the same
+    // blank turns every bug in the panel into an investigation -- an empty Data
+    // Assets panel cost a whole session on 2026-09-10 because a scan of the
+    // wrong directory was indistinguishable from a project with no records.
+    //
+    //   what     what the list holds, lowercase plural ("Dictation records")
+    //   source   where they were looked for; shown verbatim, so make it a path
+    //            or a name the reader can act on. Empty = nowhere to look yet.
+    //   filtered true when a search box is non-empty and hid everything
+    static void DrawEmptyListState(const char* what, const std::string& source,
+                                   bool filtered = false);
+
+    // Re-scan the project's .enjschema/.enjdata when the tree moves on disk.
+    // Registers the watch lazily against the open project, and re-registers when
+    // the open project changes. This is what makes the Data Assets panel correct
+    // without a Refresh button: opening the project loads the records, and an
+    // edit in an external editor shows up within a second.
+    void ReloadDataAssetsIfChangedOnDisk();
     void DrawPluginBrowserPanel();
     void DrawProceduralGenPanel();
     void DrawGitIntegrationPanel();
@@ -1793,6 +1815,23 @@ private:
     bool m_ShowWrongProjectDialog = false;
     std::string m_WrongProjectScenePath;
     std::string m_WrongProjectManifest;
+
+    // One throttled disk watch for the whole editor. A panel registers a path and
+    // reads back a version; nothing else in the editor owns a stat timer, and
+    // nothing asks the user to press Refresh because the disk moved.
+    EditorWatch m_Watch;
+    EditorWatch::Handle m_DataAssetWatch = 0;
+    u64 m_DataAssetWatchSeen = 0;
+    std::string m_DataAssetWatchRoot;   // the root m_DataAssetWatch was opened on
+    EditorWatch::Handle m_AssetBrowserWatch = 0;
+    u64 m_AssetBrowserWatchSeen = 0;
+    std::string m_AssetBrowserWatchPath;
+    EditorWatch::Handle m_ScriptPeekWatch = 0;
+    u64 m_ScriptPeekWatchSeen = 0;
+    std::string m_ScriptPeekWatchPath;
+    u64 m_PluginSourcesSeen = 0;
+    bool m_PluginSourcesWatched = false;
+    u64 m_TmplWatchSeen = 0;
 
     // External scene-change watch: baseline mtime of the open scene file,
     // recorded on load/save; a mismatch means someone edited it out-of-band.

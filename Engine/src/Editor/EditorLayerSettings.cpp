@@ -1347,7 +1347,12 @@ void EditorLayer::DrawSettingsSection_Fonts() {
         ImGui::TextDisabled("Mono");
         ImGui::DragFloat("Mono Size", &monoSize, 0.5f, 8.0f, 48.0f);
 
-        if (ImGui::Button("Reload Fonts")) {
+        // "Apply", not "Reload". It was on the manual-refresh audit because the
+        // label read like one, but it does not re-read anything that went stale:
+        // it applies the paths and sizes typed into the fields above, and
+        // rebuilding a font atlas per keystroke is not something to do on a
+        // watch. The list below it already reads the catalogue fresh every frame.
+        if (ImGui::Button("Apply Fonts")) {
             GUI::EditorFontConfig fontConfig;
             fontConfig.bodyFontPath = bodyFontPath;
             fontConfig.headingFontPath = headingFontPath;

@@ -2752,6 +2752,17 @@ void EditorLayer::DrawTemplateCreatorWindow() {
         return;
     }
 
+    // Watch the templates folder. A template saved by another editor instance, or
+    // a folder dropped in by hand, used to need the Refresh button below; the flag
+    // still catches this editor's own saves and deletes instantly.
+    {
+        const EditorWatch::Handle h = m_Watch.WatchTree("templates", "");
+        if (m_Watch.Version(h) != m_TmplWatchSeen) {
+            m_TmplWatchSeen = m_Watch.Version(h);
+            m_TmplNeedsRescan = true;
+        }
+    }
+
     // Rescan custom templates when needed
     if (m_TmplNeedsRescan) {
         m_ScannedTemplates = Editor::TemplateCreator::ScanTemplates("templates");
@@ -2926,10 +2937,6 @@ void EditorLayer::DrawTemplateCreatorWindow() {
         for (const char* name : builtinNames) {
             ImGui::BulletText("%s", name);
         }
-    }
-
-    if (ImGui::Button("Refresh", ImVec2(-1, 0))) {
-        m_TmplNeedsRescan = true;
     }
 
     ImGui::End();

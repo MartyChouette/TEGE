@@ -64,6 +64,37 @@ static json SerializeValue(const DataAssetValue& value, DataFieldType type) {
 }
 
 static DataAssetValue DeserializeValue(const json& j) {
+    // A value written by hand rather than by the editor. The canonical form is
+    // tagged -- {"type":"Float","value":42.5} -- and everything below assumes it,
+    // but value() on a non-object THROWS, and the throw is caught a level up
+    // around the whole file, so one bare number cost every record in it. A person
+    // writing an .enjdata in a text editor writes "seconds": 42.5, and a data
+    // format meant for authoring outside code has to read what a person writes.
+    // (The player's own parser, dead since it shipped, read only this form -- so
+    // the two halves of the engine disagreed about the format as well.)
+    if (!j.is_object() || !j.contains("type")) {
+        if (j.is_string())         return j.get<std::string>();
+        if (j.is_boolean())        return j.get<bool>();
+        if (j.is_number_integer()) return j.get<i32>();
+        if (j.is_number())         return j.get<f32>();
+        if (j.is_array()) {
+            if (j.empty()) return std::vector<std::string>{};
+            if (j[0].is_string()) {
+                std::vector<std::string> arr;
+                for (const auto& e : j) arr.push_back(e.is_string() ? e.get<std::string>() : std::string());
+                return arr;
+            }
+            if (j.size() == 3 && j[0].is_number())
+                return Math::Vector3(j[0].get<f32>(), j[1].get<f32>(), j[2].get<f32>());
+            if (j.size() == 4 && j[0].is_number())
+                return Math::Vector4(j[0].get<f32>(), j[1].get<f32>(), j[2].get<f32>(), j[3].get<f32>());
+            std::vector<f32> arr;
+            for (const auto& e : j) arr.push_back(e.is_number() ? e.get<f32>() : 0.0f);
+            return arr;
+        }
+        return std::string("");   // null, or an object with no "type"
+    }
+
     std::string typeStr = j.value("type", "String");
     DataFieldType type = DataFieldTypeFromString(typeStr);
 
@@ -201,12 +232,13 @@ static DataAsset DeserializeAsset(const json& j) {
 
 void DataAssetRegistry::RegisterSchema(const DataAssetSchema& schema) {
     m_Schemas[schema.name] = schema;
+    ++m_Version;
     ENJIN_LOG_INFO(Script, "Registered DataAsset schema: %s (%zu fields)",
                    schema.name.c_str(), schema.fields.size());
 }
 
 void DataAssetRegistry::RemoveSchema(const std::string& name) {
-    m_Schemas.erase(name);
+    if (m_Schemas.erase(name)) ++m_Version;
 }
 
 const DataAssetSchema* DataAssetRegistry::FindSchema(const std::string& name) const {
@@ -245,34 +277,56 @@ bool DataAssetRegistry::SaveSchema(const DataAssetSchema& schema, const std::str
 }
 
 bool DataAssetRegistry::LoadSchema(const std::string& path) {
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        ENJIN_LOG_ERROR(Script, "Failed to open schema file: %s", path.c_str());
+        return false;
+    }
+    std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    return LoadSchemaFromString(text, path);
+}
+
+bool DataAssetRegistry::LoadSchemaFromString(const std::string& text, const std::string& sourcePath) {
     try {
-        std::ifstream file(path);
-        if (!file.is_open()) {
-            ENJIN_LOG_ERROR(Script, "Failed to open schema file: %s", path.c_str());
-            return false;
-        }
-        json j;
-        file >> j;
-        DataAssetSchema schema = Assets::DeserializeSchema(j);
+        DataAssetSchema schema = Assets::DeserializeSchema(json::parse(text));
         if (schema.name.empty()) {
-            ENJIN_LOG_ERROR(Script, "Schema file missing 'name' field: %s", path.c_str());
+            ENJIN_LOG_ERROR(Script, "Schema missing 'name' field: %s", sourcePath.c_str());
             return false;
         }
         RegisterSchema(schema);
         return true;
     } catch (const std::exception& e) {
-        ENJIN_LOG_ERROR(Script, "Failed to parse schema file '%s': %s", path.c_str(), e.what());
+        ENJIN_LOG_ERROR(Script, "Failed to parse schema '%s': %s", sourcePath.c_str(), e.what());
         return false;
     }
 }
 
-void DataAssetRegistry::ScanSchemaDirectory(const std::string& directory) {
-    if (!fs::exists(directory) || !fs::is_directory(directory)) return;
-    for (const auto& entry : fs::recursive_directory_iterator(directory)) {
-        if (entry.is_regular_file() && entry.path().extension() == ".enjschema") {
-            LoadSchema(entry.path().string());
-        }
+// One walk for both extensions. It reports the ABSOLUTE directory it searched
+// and what it saw there, because the two ways a scan comes back empty -- nothing
+// to find, and looking in the wrong place -- used to render identically.
+template <typename LoadFn>
+static DataAssetScanResult ScanDirectory(const std::string& directory,
+                                         const char* extension, LoadFn&& load) {
+    DataAssetScanResult result;
+    std::error_code ec;
+    result.directory = fs::absolute(directory, ec).lexically_normal().string();
+    if (ec) result.directory = directory;
+    result.directoryExists = fs::is_directory(directory, ec);
+    if (!result.directoryExists) return result;
+
+    for (fs::recursive_directory_iterator it(directory, fs::directory_options::skip_permission_denied, ec), end;
+         it != end; it.increment(ec)) {
+        if (ec) break;
+        if (!it->is_regular_file(ec) || it->path().extension() != extension) continue;
+        ++result.filesFound;
+        if (load(it->path().string())) ++result.loaded;
     }
+    return result;
+}
+
+DataAssetScanResult DataAssetRegistry::ScanSchemaDirectory(const std::string& directory) {
+    return ScanDirectory(directory, ".enjschema",
+        [this](const std::string& p) { return LoadSchema(p); });
 }
 
 // ============================================================================
@@ -281,12 +335,13 @@ void DataAssetRegistry::ScanSchemaDirectory(const std::string& directory) {
 
 void DataAssetRegistry::CreateAsset(const DataAsset& asset) {
     m_Assets[asset.name] = asset;
+    ++m_Version;
     ENJIN_LOG_INFO(Script, "Created DataAsset: %s (schema: %s)",
                    asset.name.c_str(), asset.schemaName.c_str());
 }
 
 void DataAssetRegistry::RemoveAsset(const std::string& name) {
-    m_Assets.erase(name);
+    if (m_Assets.erase(name)) ++m_Version;
 }
 
 const DataAsset* DataAssetRegistry::FindAsset(const std::string& name) const {
@@ -340,35 +395,34 @@ bool DataAssetRegistry::SaveAsset(const DataAsset& asset, const std::string& pat
 }
 
 bool DataAssetRegistry::LoadAsset(const std::string& path) {
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        ENJIN_LOG_ERROR(Script, "Failed to open data asset file: %s", path.c_str());
+        return false;
+    }
+    std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    return LoadAssetFromString(text, path);
+}
+
+bool DataAssetRegistry::LoadAssetFromString(const std::string& text, const std::string& sourcePath) {
     try {
-        std::ifstream file(path);
-        if (!file.is_open()) {
-            ENJIN_LOG_ERROR(Script, "Failed to open data asset file: %s", path.c_str());
-            return false;
-        }
-        json j;
-        file >> j;
-        DataAsset asset = Assets::DeserializeAsset(j);
+        DataAsset asset = Assets::DeserializeAsset(json::parse(text));
         if (asset.name.empty()) {
-            ENJIN_LOG_ERROR(Script, "Data asset file missing 'name' field: %s", path.c_str());
+            ENJIN_LOG_ERROR(Script, "Data asset missing 'name' field: %s", sourcePath.c_str());
             return false;
         }
-        asset.filePath = path;
+        asset.filePath = sourcePath;
         CreateAsset(asset);
         return true;
     } catch (const std::exception& e) {
-        ENJIN_LOG_ERROR(Script, "Failed to parse data asset '%s': %s", path.c_str(), e.what());
+        ENJIN_LOG_ERROR(Script, "Failed to parse data asset '%s': %s", sourcePath.c_str(), e.what());
         return false;
     }
 }
 
-void DataAssetRegistry::ScanAssetDirectory(const std::string& directory) {
-    if (!fs::exists(directory) || !fs::is_directory(directory)) return;
-    for (const auto& entry : fs::recursive_directory_iterator(directory)) {
-        if (entry.is_regular_file() && entry.path().extension() == ".enjdata") {
-            LoadAsset(entry.path().string());
-        }
-    }
+DataAssetScanResult DataAssetRegistry::ScanAssetDirectory(const std::string& directory) {
+    return ScanDirectory(directory, ".enjdata",
+        [this](const std::string& p) { return LoadAsset(p); });
 }
 
 // ============================================================================
@@ -428,27 +482,27 @@ Math::Vector3 DataAssetRegistry::GetVector3(const std::string& assetName, const 
 
 void DataAssetRegistry::SetFloat(const std::string& assetName, const std::string& field, f32 value) {
     DataAsset* asset = FindAssetMut(assetName);
-    if (asset) asset->values[field] = value;
+    if (asset) { asset->values[field] = value; ++m_Version; }
 }
 
 void DataAssetRegistry::SetInt(const std::string& assetName, const std::string& field, i32 value) {
     DataAsset* asset = FindAssetMut(assetName);
-    if (asset) asset->values[field] = value;
+    if (asset) { asset->values[field] = value; ++m_Version; }
 }
 
 void DataAssetRegistry::SetBool(const std::string& assetName, const std::string& field, bool value) {
     DataAsset* asset = FindAssetMut(assetName);
-    if (asset) asset->values[field] = value;
+    if (asset) { asset->values[field] = value; ++m_Version; }
 }
 
 void DataAssetRegistry::SetString(const std::string& assetName, const std::string& field, const std::string& value) {
     DataAsset* asset = FindAssetMut(assetName);
-    if (asset) asset->values[field] = value;
+    if (asset) { asset->values[field] = value; ++m_Version; }
 }
 
 void DataAssetRegistry::SetVector3(const std::string& assetName, const std::string& field, Math::Vector3 value) {
     DataAsset* asset = FindAssetMut(assetName);
-    if (asset) asset->values[field] = value;
+    if (asset) { asset->values[field] = value; ++m_Version; }
 }
 
 // ============================================================================
@@ -458,6 +512,7 @@ void DataAssetRegistry::SetVector3(const std::string& assetName, const std::stri
 void DataAssetRegistry::Clear() {
     m_Schemas.clear();
     m_Assets.clear();
+    ++m_Version;
 }
 
 } // namespace Assets

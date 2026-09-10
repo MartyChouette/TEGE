@@ -1639,6 +1639,11 @@ void EditorLayer::Update(f32 deltaTime) {
     // Watch the open scene file for out-of-band edits (git pull, another tool).
     CheckExternalSceneChange(deltaTime);
 
+    // The one disk watch. Ticked here so no panel has to own a timer; the panels
+    // themselves only compare a version against what they last saw.
+    m_Watch.Update(deltaTime);
+    ReloadDataAssetsIfChangedOnDisk();
+
     // Update input action map each frame
     m_InputMap.Update(deltaTime);
 

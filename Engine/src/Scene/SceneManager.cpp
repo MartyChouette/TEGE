@@ -1,4 +1,5 @@
 #include "Enjin/Scene/SceneManager.h"
+#include "Enjin/Assets/DataAsset.h"
 #include "Enjin/Accessibility/AccessibilitySettings.h"   // seed new projects with a11y defaults
 #include "Enjin/Renderer/SceneRenderSettings.h"
 #include "Enjin/Build/AssetReader.h"
@@ -244,6 +245,29 @@ bool SceneManager::LoadProject(const std::string& manifestPath) {
             if (bc.contains("windowWidth")) m_WindowWidth = bc["windowWidth"].get<u32>();
             if (bc.contains("windowHeight")) m_WindowHeight = bc["windowHeight"].get<u32>();
             if (bc.contains("fullscreen")) m_Fullscreen = bc["fullscreen"].get<bool>();
+        }
+
+        // Data assets come with the project, the same way the font root above
+        // does, so the editor and both players get them from opening a project
+        // rather than each remembering to. Before this the ONLY loader in the
+        // editor was a "Scan Assets..." button that searched the process working
+        // directory, so a script calling DataAsset_Load returned false in play
+        // mode and (once the exported game's own loader was fixed) true in the
+        // build -- a divergence between playtest and ship, which is the worst
+        // shape a bug can take.
+        //
+        // Schemas first: an asset names the schema it belongs to. Rooted at the
+        // project, never at fs::current_path().
+        {
+            auto& registry = Assets::DataAssetRegistry::Get();
+            registry.Clear();
+            const auto schemas = registry.ScanSchemaDirectory(m_ProjectRoot);
+            const auto assets  = registry.ScanAssetDirectory(m_ProjectRoot);
+            if (schemas.filesFound > 0 || assets.filesFound > 0) {
+                ENJIN_LOG_INFO(Asset, "Data assets: %zu/%zu schemas and %zu/%zu records loaded from %s",
+                    schemas.loaded, schemas.filesFound, assets.loaded, assets.filesFound,
+                    assets.directory.c_str());
+            }
         }
 
         ENJIN_LOG_INFO(Asset, "Loaded project '%s' with %zu scenes from %s",

@@ -130,6 +130,14 @@ public:
     // Get project info
     const std::string& GetProjectName() const { return m_ProjectName; }
     const std::string& GetProjectPath() const { return m_ManifestPath; }
+    // The directory holding the manifest, and the root every project-relative
+    // path resolves against. It was private, so twenty-odd call sites spelled it
+    // `path(GetProjectPath()).parent_path()` by hand and the ones that forgot
+    // reached for the process working directory instead -- which for a shortcut,
+    // an Explorer double-click or an IDE is never the project. Empty when no
+    // project is open, which is the only correct fallback: see
+    // "no irrelevant defaults".
+    const std::string& GetProjectRoot() const { return m_ProjectRoot; }
     void SetProjectName(const std::string& name) { m_ProjectName = name; }
 
     // --- Scene List Management ---
