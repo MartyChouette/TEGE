@@ -377,8 +377,19 @@ void ScriptSystem::InitScript(ECS::Entity entity, usize index) {
     std::string parentDir = fsPath.parent_path().filename().string();
     std::string moduleName = parentDir.empty() ? stem : (parentDir + "_" + stem);
 
-    // Compile if not already compiled
-    m_ScriptEngine->CompileScript(resolvedPath);
+    // Compile if not already compiled. The check is the point: CompileScript
+    // DISCARDS an existing module and rebuilds it, and every instance already
+    // created from that module is left pointing at freed type info. This call
+    // used to be unconditional, so attaching one script to N entities compiled
+    // the module N times and only the LAST instance survived — the other N-1
+    // threw "Null pointer access" the first time they touched a module-owned
+    // object (a script-class member, an array). Measured in a 32-NPC scene:
+    // 32 compiles of scripts_NPCBehavior, 31 dead NPCs, and the one survivor
+    // was the one created last. Hot-reload still forces a rebuild by calling
+    // CompileScript directly; it does not come through here.
+    if (!m_ScriptEngine->GetASEngine()->GetModule(moduleName.c_str(), asGM_ONLY_IF_EXISTS)) {
+        m_ScriptEngine->CompileScript(resolvedPath);
+    }
 
     // Parse [Property] annotations from source for editor metadata
     {
