@@ -119,6 +119,104 @@ json ParseSceneJson(const std::string& text) {
 namespace {
 
 // Round float to 6 decimal places for deterministic serialization
+// An entity reference in a scene file is the 32-bit slot INDEX, never the
+// packed 64-bit handle.
+//
+// The handle carries the slot's GENERATION in its high word, and generation is
+// a runtime fact about reuse -- it means nothing in a file, and a loaded entity
+// gets a fresh handle regardless. Writing the whole handle leaked it: any
+// entity whose slot had been recycled once was written as
+// (1 << 32) | index. Marty's scan of 55 scenes across 20 projects found four,
+// every one of them generation 1, and in each case the low word was exactly the
+// id missing from an otherwise contiguous sequence -- which is what proves the
+// low word is the value that was meant.
+//
+// Nothing broke visibly because the loader keyed its remap table on whatever
+// the file said, so a corrupt file was at least self-consistent: it rendered,
+// transformed and parented correctly, and only a tool reading the file could
+// tell. See _docs_internal ROADMAP items 92-96.
+static u64 SceneEntityRef(ECS::Entity e) {
+    return static_cast<u64>(ECS::EntityIndex(e));
+}
+
+// The other half: a file already on disk may carry packed handles, so both the
+// remap key and every lookup are masked. That makes the two spellings the same
+// key and heals an affected scene on its next load, with no renumbering and no
+// ambiguity.
+static u64 SceneRefKey(u64 rawFromFile) {
+    return rawFromFile & 0xFFFFFFFFull;
+}
+
+// Refuse to let a malformed entity table reach a file quietly.
+//
+// Three things go wrong here and all three are silent: an id larger than a slot
+// index (the packed-handle leak SceneEntityRef exists to prevent), two entities
+// claiming the same id (which makes the load-time remap ambiguous -- one of them
+// wins and every reference to the other silently retargets), and a parent
+// pointing at an id the file does not contain (the child loads unparented, in
+// the right place, and moves wrong the first time the parent moves).
+//
+// Reports rather than aborts: a save that refuses to write is worse than a save
+// that warns, and by the time this runs the person has already made the edit.
+// It is a tripwire for the ENGINE writing something wrong, not a content lint.
+static void ValidateEntityTable(const json& entitiesArray, const char* where) {
+    std::unordered_map<u64, std::string> byId;
+    std::vector<std::pair<u64, std::string>> parents;   // (parent id, child name)
+    u32 outOfRange = 0, duplicates = 0, dangling = 0;
+
+    auto nameOf = [](const json& e) -> std::string {
+        if (auto n = e.find("name"); n != e.end() && n->is_object()) {
+            if (auto nn = n->find("name"); nn != n->end() && nn->is_string())
+                return nn->get<std::string>();
+        }
+        return "<unnamed>";
+    };
+
+    for (const auto& e : entitiesArray) {
+        if (!e.is_object() || !e.contains("id") || !e["id"].is_number_unsigned()) continue;
+        const u64 id = e["id"].get<u64>();
+        const std::string name = nameOf(e);
+
+        if (id > 0xFFFFFFFFull) {
+            ++outOfRange;
+            ENJIN_LOG_ERROR(Asset,
+                "%s: entity '%s' has id %llu, which is larger than a 32-bit slot index "
+                "(generation %llu leaked into the high word). Expected %llu.",
+                where, name.c_str(), static_cast<unsigned long long>(id),
+                static_cast<unsigned long long>(id >> 32),
+                static_cast<unsigned long long>(id & 0xFFFFFFFFull));
+        }
+        auto [it, fresh] = byId.emplace(id & 0xFFFFFFFFull, name);
+        if (!fresh) {
+            ++duplicates;
+            ENJIN_LOG_ERROR(Asset,
+                "%s: entities '%s' and '%s' both claim id %llu. A reference to that id "
+                "is ambiguous and one of them will silently win on load.",
+                where, it->second.c_str(), name.c_str(),
+                static_cast<unsigned long long>(id & 0xFFFFFFFFull));
+        }
+        if (auto pit = e.find("parent"); pit != e.end() && pit->is_number_unsigned()) {
+            parents.emplace_back(pit->get<u64>() & 0xFFFFFFFFull, name);
+        }
+    }
+
+    for (const auto& [pid, child] : parents) {
+        if (byId.find(pid) == byId.end()) {
+            ++dangling;
+            ENJIN_LOG_ERROR(Asset,
+                "%s: '%s' is parented to id %llu, which is not in this file. It will "
+                "load unparented -- in the right place, and wrong the moment the "
+                "parent moves.",
+                where, child.c_str(), static_cast<unsigned long long>(pid));
+        }
+    }
+
+    if (outOfRange || duplicates || dangling) {
+        ENJIN_LOG_ERROR(Asset, "%s: %u out-of-range id(s), %u duplicate(s), %u dangling parent(s)",
+                        where, outOfRange, duplicates, dangling);
+    }
+}
+
 static f32 RF(f32 val) {
     if (std::isnan(val) || std::isinf(val)) return val;
     if (std::fabs(val) < 1e-6f) return 0.0f;
@@ -9767,7 +9865,7 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             }
 
             json entityJson;
-            entityJson["id"] = static_cast<u64>(entity);
+            entityJson["id"] = SceneEntityRef(entity);
 
             // Durable scene-authoring identity (see StableId.h). Assigned here if
             // missing so every persisted entity carries a stable address for the
@@ -9794,7 +9892,7 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
                     options.useMeshReferences);
             }
             if (m_World->HasComponent<ECS::ParentComponent>(entity)) {
-                entityJson["parent"] = static_cast<u64>(m_World->GetComponent<ECS::ParentComponent>(entity)->parent);
+                entityJson["parent"] = SceneEntityRef(m_World->GetComponent<ECS::ParentComponent>(entity)->parent);
             }
             if (m_World->HasComponent<ECS::MorphTargetComponent>(entity)) {
                 entityJson["morphTargets"] = SerializeMorphTargetComponent(*m_World->GetComponent<ECS::MorphTargetComponent>(entity), options.includeVertexData);
@@ -9804,6 +9902,7 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             entitiesArray.push_back(entityJson);
         }
 
+        ValidateEntityTable(entitiesArray, "SaveScene");
         sceneJson["entities"] = entitiesArray;
 
         // Serialize accessibility content flags
@@ -9958,7 +10057,7 @@ void SceneSerializer::DeserializeEntities(const json& sceneJson, Deserialization
 
         // Track old-to-new ID mapping for hierarchy/reference remapping
         if (entityJson.contains("id")) {
-            u64 oldId = entityJson["id"].get<u64>();
+            u64 oldId = SceneRefKey(entityJson["id"].get<u64>());
             oldToNew[oldId] = entity;
         }
 
@@ -10031,7 +10130,7 @@ void SceneSerializer::DeserializeEntities(const json& sceneJson, Deserialization
     for (ECS::Entity entity : result.entities) {
         if (m_World->HasComponent<ECS::ParentComponent>(entity)) {
             auto* pc = m_World->GetComponent<ECS::ParentComponent>(entity);
-            auto it = oldToNew.find(static_cast<u64>(pc->parent));
+            auto it = oldToNew.find(SceneRefKey(static_cast<u64>(pc->parent)));
             if (it != oldToNew.end()) {
                 pc->parent = it->second;
             } else {
@@ -10041,50 +10140,50 @@ void SceneSerializer::DeserializeEntities(const json& sceneJson, Deserialization
         if (m_World->HasComponent<ECS::LookAtIKComponent>(entity)) {
             auto* ik = m_World->GetComponent<ECS::LookAtIKComponent>(entity);
             if (ik->useEntityTarget && ik->targetEntity != ECS::INVALID_ENTITY) {
-                auto it = oldToNew.find(static_cast<u64>(ik->targetEntity));
+                auto it = oldToNew.find(SceneRefKey(static_cast<u64>(ik->targetEntity)));
                 ik->targetEntity = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
             }
         }
         if (m_World->HasComponent<ECS::TwoBoneIKComponent>(entity)) {
             auto* ik = m_World->GetComponent<ECS::TwoBoneIKComponent>(entity);
             if (ik->useEntityTarget && ik->targetEntity != ECS::INVALID_ENTITY) {
-                auto it = oldToNew.find(static_cast<u64>(ik->targetEntity));
+                auto it = oldToNew.find(SceneRefKey(static_cast<u64>(ik->targetEntity)));
                 ik->targetEntity = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
             }
         }
         if (m_World->HasComponent<ECS::TetherComponent>(entity)) {
             auto* tc = m_World->GetComponent<ECS::TetherComponent>(entity);
             if (tc->stemEntity != ECS::INVALID_ENTITY) {
-                auto it = oldToNew.find(static_cast<u64>(tc->stemEntity));
+                auto it = oldToNew.find(SceneRefKey(static_cast<u64>(tc->stemEntity)));
                 tc->stemEntity = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
             }
             if (tc->connectedEntity != ECS::INVALID_ENTITY) {
-                auto it = oldToNew.find(static_cast<u64>(tc->connectedEntity));
+                auto it = oldToNew.find(SceneRefKey(static_cast<u64>(tc->connectedEntity)));
                 tc->connectedEntity = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
             }
         }
         if (m_World->HasComponent<ECS::FollowTargetComponent>(entity)) {
             auto* ft = m_World->GetComponent<ECS::FollowTargetComponent>(entity);
             if (ft->target != 0 && ft->target != ECS::INVALID_ENTITY) {
-                auto it = oldToNew.find(static_cast<u64>(ft->target));
+                auto it = oldToNew.find(SceneRefKey(static_cast<u64>(ft->target)));
                 ft->target = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
             }
         }
         if (m_World->HasComponent<ECS::LookAtTargetComponent>(entity)) {
             auto* la = m_World->GetComponent<ECS::LookAtTargetComponent>(entity);
             if (la->target != 0 && la->target != ECS::INVALID_ENTITY) {
-                auto it = oldToNew.find(static_cast<u64>(la->target));
+                auto it = oldToNew.find(SceneRefKey(static_cast<u64>(la->target)));
                 la->target = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
             }
         }
         if (m_World->HasComponent<ECS::VirtualCameraComponent>(entity)) {
             auto* vc = m_World->GetComponent<ECS::VirtualCameraComponent>(entity);
             if (vc->follow != 0 && vc->follow != ECS::INVALID_ENTITY) {
-                auto it = oldToNew.find(static_cast<u64>(vc->follow));
+                auto it = oldToNew.find(SceneRefKey(static_cast<u64>(vc->follow)));
                 vc->follow = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
             }
             if (vc->lookAt != 0 && vc->lookAt != ECS::INVALID_ENTITY) {
-                auto it = oldToNew.find(static_cast<u64>(vc->lookAt));
+                auto it = oldToNew.find(SceneRefKey(static_cast<u64>(vc->lookAt)));
                 vc->lookAt = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
             }
         }
@@ -10097,7 +10196,7 @@ void SceneSerializer::DeserializeEntities(const json& sceneJson, Deserialization
         if (m_World->HasComponent<ECS::BoneAttachmentComponent>(entity)) {
             auto* ba = m_World->GetComponent<ECS::BoneAttachmentComponent>(entity);
             if (ba->targetEntity != 0 && ba->targetEntity != ECS::INVALID_ENTITY) {
-                auto it = oldToNew.find(static_cast<u64>(ba->targetEntity));
+                auto it = oldToNew.find(SceneRefKey(static_cast<u64>(ba->targetEntity)));
                 ba->targetEntity = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
             }
         }
@@ -10320,7 +10419,7 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             }
 
             json entityJson;
-            entityJson["id"] = static_cast<u64>(entity);
+            entityJson["id"] = SceneEntityRef(entity);
 
             // Durable scene-authoring identity (see StableId.h). Assigned here if
             // missing so every persisted entity carries a stable address for the
@@ -10347,7 +10446,7 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
                     options.useMeshReferences);
             }
             if (m_World->HasComponent<ECS::ParentComponent>(entity)) {
-                entityJson["parent"] = static_cast<u64>(m_World->GetComponent<ECS::ParentComponent>(entity)->parent);
+                entityJson["parent"] = SceneEntityRef(m_World->GetComponent<ECS::ParentComponent>(entity)->parent);
             }
             if (m_World->HasComponent<ECS::MorphTargetComponent>(entity)) {
                 entityJson["morphTargets"] = SerializeMorphTargetComponent(*m_World->GetComponent<ECS::MorphTargetComponent>(entity), options.includeVertexData);
@@ -10357,6 +10456,7 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             entitiesArray.push_back(entityJson);
         }
 
+        ValidateEntityTable(entitiesArray, "SaveScene");
         sceneJson["entities"] = entitiesArray;
 
         // Serialize accessibility content flags
@@ -10559,7 +10659,7 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
 
     try {
         json entityJson;
-        entityJson["id"] = static_cast<u64>(entity);
+        entityJson["id"] = SceneEntityRef(entity);
 
         // Serialize all components (mirrors SaveEntities loop)
                 // Serialize components via the registry (single source of truth).
@@ -10574,7 +10674,7 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
             entityJson["mesh"] = SerializeMeshComponent(*world->GetComponent<ECS::MeshComponent>(entity),
                 includeVertexData && !MeshIsDerivedFromBrushes(world, entity));
         if (world->HasComponent<ECS::ParentComponent>(entity))
-            entityJson["parent"] = static_cast<u64>(world->GetComponent<ECS::ParentComponent>(entity)->parent);
+            entityJson["parent"] = SceneEntityRef(world->GetComponent<ECS::ParentComponent>(entity)->parent);
         if (world->HasComponent<ECS::MorphTargetComponent>(entity))
             entityJson["morphTargets"] = SerializeMorphTargetComponent(*world->GetComponent<ECS::MorphTargetComponent>(entity), true);
 
