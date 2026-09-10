@@ -58,19 +58,33 @@ if (!chromePath) {
     process.exit(2);
 }
 
+// Software rendering is a different renderer, not a slower one. SwiftShader
+// accepts things a real driver rejects and vice versa, so a capture that only
+// ever runs on it can report a scene as fine while the machine in front of a
+// person shows black. --gpu runs headed on the actual adapter, which is the
+// only way to see what a player sees.
+const useGPU = args.includes('--gpu');
+
 const browser = await launch({
     executablePath: chromePath,
-    headless: true,
-    args: [
-        // WebGPU in headless. Without the swiftshader flag requestAdapter
-        // returns null on a machine with no usable GPU in the headless
-        // sandbox, and the engine boots into a canvas that never draws.
-        '--enable-unsafe-webgpu',
-        '--enable-unsafe-swiftshader',
-        '--enable-features=Vulkan',
-        '--hide-scrollbars',
-        '--mute-audio',
-    ],
+    headless: !useGPU,
+    args: useGPU
+        ? [
+            '--enable-unsafe-webgpu',
+            '--hide-scrollbars',
+            '--mute-audio',
+            '--window-size=940,700',
+          ]
+        : [
+            // WebGPU in headless. Without the swiftshader flag requestAdapter
+            // returns null on a machine with no usable GPU in the headless
+            // sandbox, and the engine boots into a canvas that never draws.
+            '--enable-unsafe-webgpu',
+            '--enable-unsafe-swiftshader',
+            '--enable-features=Vulkan',
+            '--hide-scrollbars',
+            '--mute-audio',
+          ],
 });
 
 let exitCode = 0;

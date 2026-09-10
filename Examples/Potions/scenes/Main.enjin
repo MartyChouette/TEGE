@@ -1,0 +1,5452 @@
+{
+  "entities": [
+    {
+      "camera": {
+        "backgroundColor": [
+          0.6800000071525574,
+          0.75,
+          0.7200000286102295
+        ],
+        "clearColor": true,
+        "clearDepth": true,
+        "cullingMask": 4294967295,
+        "enablePostProcessing": true,
+        "farPlane": 100.0,
+        "fieldOfView": 60.0,
+        "isActive": true,
+        "nearPlane": 0.10000000149011612,
+        "orthoSize": 12.0,
+        "priority": 10,
+        "projectionType": 1,
+        "viewportHeight": 1.0,
+        "viewportWidth": 1.0,
+        "viewportX": 0.0,
+        "viewportY": 0.0
+      },
+      "id": 1,
+      "name": {
+        "name": "Game Camera"
+      },
+      "stableId": 1000,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          20.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "material": {
+        "affineTexturing": false,
+        "alphaCutoff": 0.5,
+        "alphaMode": 1,
+        "baseColor": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "baseColorTexture": -1,
+        "baseColorTexturePath": "assets/player.png",
+        "castShadows": false,
+        "ditherGradient": false,
+        "ditherGradientBands": 4,
+        "ditherGradientPattern": 0,
+        "ditherTransBlendColor": [
+          0.699999988079071,
+          0.8500000238418579,
+          1.0
+        ],
+        "ditherTransOpacity": 0.5,
+        "ditherTransPattern": 0,
+        "ditherTransparency": false,
+        "doubleSided": true,
+        "emissiveColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "emissiveStrength": 0.0,
+        "emissiveTexture": -1,
+        "emissiveTexturePath": "",
+        "excludeFromCelShading": false,
+        "flatShading": false,
+        "footstepVolume": 1.0,
+        "fresnelPower": 5.0,
+        "gouraudOnly": false,
+        "heightTexturePath": "",
+        "impactThreshold": 3.0,
+        "ior": 1.5,
+        "matcapTexturePath": "",
+        "metallic": 0.0,
+        "metallicRoughnessTexture": -1,
+        "metallicRoughnessTexturePath": "",
+        "normalTexture": -1,
+        "normalTexturePath": "",
+        "opacity": 1.0,
+        "outlineColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "outlineWidth": 0.0,
+        "parallaxMode": 0,
+        "parallaxScale": 0.05000000074505806,
+        "pomHeightScale": 0.05000000074505806,
+        "pomMaxSteps": 32,
+        "receiveShadows": false,
+        "reflectivity": 0.0,
+        "rimLightStrength": 0.0,
+        "roughness": 0.5,
+        "scrollReflectionSpeed": [
+          0.05000000074505806,
+          0.029999999329447746
+        ],
+        "scrollReflectionStrength": 0.5,
+        "scrollReflectionTexturePath": "",
+        "sdfText": false,
+        "shadowDitherMode": 0,
+        "shadowDitherPattern": 0,
+        "specularTexturePath": "",
+        "sssColor": [
+          1.0,
+          0.20000000298023224,
+          0.10000000149011612
+        ],
+        "sssIntensity": 0.0,
+        "sssRadius": 1.0,
+        "stippleTransparency": false,
+        "surfaceNoiseScale": 0.0,
+        "surfaceNoiseStrength": 0.0,
+        "textureFilterOverride": 0,
+        "thickness": 0.0,
+        "transmission": 0.0,
+        "uvQuantize": false,
+        "uvRegionOffset": [
+          0.0,
+          0.0
+        ],
+        "uvRegionScale": [
+          1.0,
+          1.0
+        ],
+        "vertexSnapResolution": 160,
+        "vertexSnapping": false
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "name": {
+        "name": "Player"
+      },
+      "scriptComponent": {
+        "scripts": [
+          {
+            "class": "GameController",
+            "enabled": true,
+            "path": "scripts/GameController.as"
+          }
+        ]
+      },
+      "stableId": 1001,
+      "topDown2D": {
+        "acceleration": 30.0,
+        "captureMouseOnClick": true,
+        "dashCooldown": 1.0,
+        "dashDuration": 0.20000000298023224,
+        "dashSpeed": 15.0,
+        "deceleration": 25.0,
+        "disableMouseLook": false,
+        "enableDash": false,
+        "gamepadIndex": 0.0,
+        "gamepadLookSensitivity": 2.0,
+        "gridCellSize": 1.0,
+        "gridMoveSpeed": 6.0,
+        "gridMoveStart": [
+          0.0,
+          -2.0,
+          6.2
+        ],
+        "gridMoveTarget": [
+          0.0,
+          -2.0,
+          6.2
+        ],
+        "gridMovement": true,
+        "gridMoving": false,
+        "gridOrigin": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "ignoreGlobalTimeScale": false,
+        "isEnabled": true,
+        "moveSpeed": 5.0,
+        "rotateToFaceMovement": false,
+        "rotationSpeed": 720.0,
+        "sprintMultiplier": 2.0,
+        "useArrowKeys": false,
+        "useGamepad": false,
+        "useWASD": true
+      },
+      "transform": {
+        "position": [
+          0.0,
+          -2.0,
+          6.2
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.8,
+          2.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "id": 3,
+      "name": {
+        "name": "Ground"
+      },
+      "stableId": 1002,
+      "transform": {
+        "position": [
+          0,
+          0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          80,
+          48,
+          1
+        ]
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "material": {
+        "affineTexturing": false,
+        "alphaCutoff": 0.5,
+        "alphaMode": 1,
+        "baseColor": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "baseColorTexture": -1,
+        "baseColorTexturePath": "assets/tile_grass.png",
+        "castShadows": false,
+        "ditherGradient": false,
+        "ditherGradientBands": 4,
+        "ditherGradientPattern": 0,
+        "ditherTransBlendColor": [
+          0.699999988079071,
+          0.8500000238418579,
+          1.0
+        ],
+        "ditherTransOpacity": 0.5,
+        "ditherTransPattern": 0,
+        "ditherTransparency": false,
+        "doubleSided": true,
+        "emissiveColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "emissiveStrength": 0.0,
+        "emissiveTexture": -1,
+        "emissiveTexturePath": "",
+        "excludeFromCelShading": false,
+        "flatShading": false,
+        "footstepVolume": 1.0,
+        "fresnelPower": 5.0,
+        "gouraudOnly": false,
+        "heightTexturePath": "",
+        "impactThreshold": 3.0,
+        "ior": 1.5,
+        "matcapTexturePath": "",
+        "metallic": 0.0,
+        "metallicRoughnessTexture": -1,
+        "metallicRoughnessTexturePath": "",
+        "normalTexture": -1,
+        "normalTexturePath": "",
+        "opacity": 1.0,
+        "outlineColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "outlineWidth": 0.0,
+        "parallaxMode": 0,
+        "parallaxScale": 0.05000000074505806,
+        "pomHeightScale": 0.05000000074505806,
+        "pomMaxSteps": 32,
+        "receiveShadows": false,
+        "reflectivity": 0.0,
+        "rimLightStrength": 0.0,
+        "roughness": 0.5,
+        "scrollReflectionSpeed": [
+          0.05000000074505806,
+          0.029999999329447746
+        ],
+        "scrollReflectionStrength": 0.5,
+        "scrollReflectionTexturePath": "",
+        "sdfText": false,
+        "shadowDitherMode": 0,
+        "shadowDitherPattern": 0,
+        "specularTexturePath": "",
+        "sssColor": [
+          1.0,
+          0.20000000298023224,
+          0.10000000149011612
+        ],
+        "sssIntensity": 0.0,
+        "sssRadius": 1.0,
+        "stippleTransparency": false,
+        "surfaceNoiseScale": 0.0,
+        "surfaceNoiseStrength": 0.0,
+        "textureFilterOverride": 0,
+        "thickness": 0.0,
+        "transmission": 0.0,
+        "uvQuantize": false,
+        "uvRegionOffset": [
+          0.0,
+          0.0
+        ],
+        "uvRegionScale": [
+          40,
+          24
+        ],
+        "vertexSnapResolution": 160,
+        "vertexSnapping": false
+      }
+    },
+    {
+      "id": 4,
+      "name": {
+        "name": "NPC_0"
+      },
+      "stableId": 1003,
+      "transform": {
+        "position": [
+          5.0,
+          0.0,
+          6.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          2.0,
+          2.7,
+          1
+        ]
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "material": {
+        "affineTexturing": false,
+        "alphaCutoff": 0.5,
+        "alphaMode": 1,
+        "baseColor": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "baseColorTexture": -1,
+        "baseColorTexturePath": "assets/npc_0.png",
+        "castShadows": false,
+        "ditherGradient": false,
+        "ditherGradientBands": 4,
+        "ditherGradientPattern": 0,
+        "ditherTransBlendColor": [
+          0.699999988079071,
+          0.8500000238418579,
+          1.0
+        ],
+        "ditherTransOpacity": 0.5,
+        "ditherTransPattern": 0,
+        "ditherTransparency": false,
+        "doubleSided": true,
+        "emissiveColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "emissiveStrength": 0.0,
+        "emissiveTexture": -1,
+        "emissiveTexturePath": "",
+        "excludeFromCelShading": false,
+        "flatShading": false,
+        "footstepVolume": 1.0,
+        "fresnelPower": 5.0,
+        "gouraudOnly": false,
+        "heightTexturePath": "",
+        "impactThreshold": 3.0,
+        "ior": 1.5,
+        "matcapTexturePath": "",
+        "metallic": 0.0,
+        "metallicRoughnessTexture": -1,
+        "metallicRoughnessTexturePath": "",
+        "normalTexture": -1,
+        "normalTexturePath": "",
+        "opacity": 1.0,
+        "outlineColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "outlineWidth": 0.0,
+        "parallaxMode": 0,
+        "parallaxScale": 0.05000000074505806,
+        "pomHeightScale": 0.05000000074505806,
+        "pomMaxSteps": 32,
+        "receiveShadows": false,
+        "reflectivity": 0.0,
+        "rimLightStrength": 0.0,
+        "roughness": 0.5,
+        "scrollReflectionSpeed": [
+          0.05000000074505806,
+          0.029999999329447746
+        ],
+        "scrollReflectionStrength": 0.5,
+        "scrollReflectionTexturePath": "",
+        "sdfText": false,
+        "shadowDitherMode": 0,
+        "shadowDitherPattern": 0,
+        "specularTexturePath": "",
+        "sssColor": [
+          1.0,
+          0.20000000298023224,
+          0.10000000149011612
+        ],
+        "sssIntensity": 0.0,
+        "sssRadius": 1.0,
+        "stippleTransparency": false,
+        "surfaceNoiseScale": 0.0,
+        "surfaceNoiseStrength": 0.0,
+        "textureFilterOverride": 0,
+        "thickness": 0.0,
+        "transmission": 0.0,
+        "uvQuantize": false,
+        "uvRegionOffset": [
+          0.0,
+          0.0
+        ],
+        "uvRegionScale": [
+          1,
+          1
+        ],
+        "vertexSnapResolution": 160,
+        "vertexSnapping": false
+      }
+    },
+    {
+      "id": 5,
+      "name": {
+        "name": "NPC_1"
+      },
+      "stableId": 1004,
+      "transform": {
+        "position": [
+          -5.0,
+          2.0,
+          5.8
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          2.0,
+          2.7,
+          1
+        ]
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "material": {
+        "affineTexturing": false,
+        "alphaCutoff": 0.5,
+        "alphaMode": 1,
+        "baseColor": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "baseColorTexture": -1,
+        "baseColorTexturePath": "assets/npc_1.png",
+        "castShadows": false,
+        "ditherGradient": false,
+        "ditherGradientBands": 4,
+        "ditherGradientPattern": 0,
+        "ditherTransBlendColor": [
+          0.699999988079071,
+          0.8500000238418579,
+          1.0
+        ],
+        "ditherTransOpacity": 0.5,
+        "ditherTransPattern": 0,
+        "ditherTransparency": false,
+        "doubleSided": true,
+        "emissiveColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "emissiveStrength": 0.0,
+        "emissiveTexture": -1,
+        "emissiveTexturePath": "",
+        "excludeFromCelShading": false,
+        "flatShading": false,
+        "footstepVolume": 1.0,
+        "fresnelPower": 5.0,
+        "gouraudOnly": false,
+        "heightTexturePath": "",
+        "impactThreshold": 3.0,
+        "ior": 1.5,
+        "matcapTexturePath": "",
+        "metallic": 0.0,
+        "metallicRoughnessTexture": -1,
+        "metallicRoughnessTexturePath": "",
+        "normalTexture": -1,
+        "normalTexturePath": "",
+        "opacity": 1.0,
+        "outlineColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "outlineWidth": 0.0,
+        "parallaxMode": 0,
+        "parallaxScale": 0.05000000074505806,
+        "pomHeightScale": 0.05000000074505806,
+        "pomMaxSteps": 32,
+        "receiveShadows": false,
+        "reflectivity": 0.0,
+        "rimLightStrength": 0.0,
+        "roughness": 0.5,
+        "scrollReflectionSpeed": [
+          0.05000000074505806,
+          0.029999999329447746
+        ],
+        "scrollReflectionStrength": 0.5,
+        "scrollReflectionTexturePath": "",
+        "sdfText": false,
+        "shadowDitherMode": 0,
+        "shadowDitherPattern": 0,
+        "specularTexturePath": "",
+        "sssColor": [
+          1.0,
+          0.20000000298023224,
+          0.10000000149011612
+        ],
+        "sssIntensity": 0.0,
+        "sssRadius": 1.0,
+        "stippleTransparency": false,
+        "surfaceNoiseScale": 0.0,
+        "surfaceNoiseStrength": 0.0,
+        "textureFilterOverride": 0,
+        "thickness": 0.0,
+        "transmission": 0.0,
+        "uvQuantize": false,
+        "uvRegionOffset": [
+          0.0,
+          0.0
+        ],
+        "uvRegionScale": [
+          1,
+          1
+        ],
+        "vertexSnapResolution": 160,
+        "vertexSnapping": false
+      }
+    },
+    {
+      "id": 6,
+      "name": {
+        "name": "NPC_2"
+      },
+      "stableId": 1005,
+      "transform": {
+        "position": [
+          7.0,
+          3.0,
+          5.7
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          2.0,
+          2.7,
+          1
+        ]
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "material": {
+        "affineTexturing": false,
+        "alphaCutoff": 0.5,
+        "alphaMode": 1,
+        "baseColor": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "baseColorTexture": -1,
+        "baseColorTexturePath": "assets/npc_2.png",
+        "castShadows": false,
+        "ditherGradient": false,
+        "ditherGradientBands": 4,
+        "ditherGradientPattern": 0,
+        "ditherTransBlendColor": [
+          0.699999988079071,
+          0.8500000238418579,
+          1.0
+        ],
+        "ditherTransOpacity": 0.5,
+        "ditherTransPattern": 0,
+        "ditherTransparency": false,
+        "doubleSided": true,
+        "emissiveColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "emissiveStrength": 0.0,
+        "emissiveTexture": -1,
+        "emissiveTexturePath": "",
+        "excludeFromCelShading": false,
+        "flatShading": false,
+        "footstepVolume": 1.0,
+        "fresnelPower": 5.0,
+        "gouraudOnly": false,
+        "heightTexturePath": "",
+        "impactThreshold": 3.0,
+        "ior": 1.5,
+        "matcapTexturePath": "",
+        "metallic": 0.0,
+        "metallicRoughnessTexture": -1,
+        "metallicRoughnessTexturePath": "",
+        "normalTexture": -1,
+        "normalTexturePath": "",
+        "opacity": 1.0,
+        "outlineColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "outlineWidth": 0.0,
+        "parallaxMode": 0,
+        "parallaxScale": 0.05000000074505806,
+        "pomHeightScale": 0.05000000074505806,
+        "pomMaxSteps": 32,
+        "receiveShadows": false,
+        "reflectivity": 0.0,
+        "rimLightStrength": 0.0,
+        "roughness": 0.5,
+        "scrollReflectionSpeed": [
+          0.05000000074505806,
+          0.029999999329447746
+        ],
+        "scrollReflectionStrength": 0.5,
+        "scrollReflectionTexturePath": "",
+        "sdfText": false,
+        "shadowDitherMode": 0,
+        "shadowDitherPattern": 0,
+        "specularTexturePath": "",
+        "sssColor": [
+          1.0,
+          0.20000000298023224,
+          0.10000000149011612
+        ],
+        "sssIntensity": 0.0,
+        "sssRadius": 1.0,
+        "stippleTransparency": false,
+        "surfaceNoiseScale": 0.0,
+        "surfaceNoiseStrength": 0.0,
+        "textureFilterOverride": 0,
+        "thickness": 0.0,
+        "transmission": 0.0,
+        "uvQuantize": false,
+        "uvRegionOffset": [
+          0.0,
+          0.0
+        ],
+        "uvRegionScale": [
+          1,
+          1
+        ],
+        "vertexSnapResolution": 160,
+        "vertexSnapping": false
+      }
+    },
+    {
+      "id": 7,
+      "name": {
+        "name": "HomeDoor"
+      },
+      "stableId": 1006,
+      "transform": {
+        "position": [
+          -8.0,
+          -4.0,
+          6.4
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          4.0,
+          4.0,
+          1
+        ]
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "material": {
+        "affineTexturing": false,
+        "alphaCutoff": 0.5,
+        "alphaMode": 1,
+        "baseColor": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "baseColorTexture": -1,
+        "baseColorTexturePath": "assets/house.png",
+        "castShadows": false,
+        "ditherGradient": false,
+        "ditherGradientBands": 4,
+        "ditherGradientPattern": 0,
+        "ditherTransBlendColor": [
+          0.699999988079071,
+          0.8500000238418579,
+          1.0
+        ],
+        "ditherTransOpacity": 0.5,
+        "ditherTransPattern": 0,
+        "ditherTransparency": false,
+        "doubleSided": true,
+        "emissiveColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "emissiveStrength": 0.0,
+        "emissiveTexture": -1,
+        "emissiveTexturePath": "",
+        "excludeFromCelShading": false,
+        "flatShading": false,
+        "footstepVolume": 1.0,
+        "fresnelPower": 5.0,
+        "gouraudOnly": false,
+        "heightTexturePath": "",
+        "impactThreshold": 3.0,
+        "ior": 1.5,
+        "matcapTexturePath": "",
+        "metallic": 0.0,
+        "metallicRoughnessTexture": -1,
+        "metallicRoughnessTexturePath": "",
+        "normalTexture": -1,
+        "normalTexturePath": "",
+        "opacity": 1.0,
+        "outlineColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "outlineWidth": 0.0,
+        "parallaxMode": 0,
+        "parallaxScale": 0.05000000074505806,
+        "pomHeightScale": 0.05000000074505806,
+        "pomMaxSteps": 32,
+        "receiveShadows": false,
+        "reflectivity": 0.0,
+        "rimLightStrength": 0.0,
+        "roughness": 0.5,
+        "scrollReflectionSpeed": [
+          0.05000000074505806,
+          0.029999999329447746
+        ],
+        "scrollReflectionStrength": 0.5,
+        "scrollReflectionTexturePath": "",
+        "sdfText": false,
+        "shadowDitherMode": 0,
+        "shadowDitherPattern": 0,
+        "specularTexturePath": "",
+        "sssColor": [
+          1.0,
+          0.20000000298023224,
+          0.10000000149011612
+        ],
+        "sssIntensity": 0.0,
+        "sssRadius": 1.0,
+        "stippleTransparency": false,
+        "surfaceNoiseScale": 0.0,
+        "surfaceNoiseStrength": 0.0,
+        "textureFilterOverride": 0,
+        "thickness": 0.0,
+        "transmission": 0.0,
+        "uvQuantize": false,
+        "uvRegionOffset": [
+          0.0,
+          0.0
+        ],
+        "uvRegionScale": [
+          1,
+          1
+        ],
+        "vertexSnapResolution": 160,
+        "vertexSnapping": false
+      }
+    },
+    {
+      "id": 8,
+      "name": {
+        "name": "ShopDoor"
+      },
+      "stableId": 1007,
+      "transform": {
+        "position": [
+          0.0,
+          -4.0,
+          6.4
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          4.0,
+          4.0,
+          1
+        ]
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "material": {
+        "affineTexturing": false,
+        "alphaCutoff": 0.5,
+        "alphaMode": 1,
+        "baseColor": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "baseColorTexture": -1,
+        "baseColorTexturePath": "assets/shop.png",
+        "castShadows": false,
+        "ditherGradient": false,
+        "ditherGradientBands": 4,
+        "ditherGradientPattern": 0,
+        "ditherTransBlendColor": [
+          0.699999988079071,
+          0.8500000238418579,
+          1.0
+        ],
+        "ditherTransOpacity": 0.5,
+        "ditherTransPattern": 0,
+        "ditherTransparency": false,
+        "doubleSided": true,
+        "emissiveColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "emissiveStrength": 0.0,
+        "emissiveTexture": -1,
+        "emissiveTexturePath": "",
+        "excludeFromCelShading": false,
+        "flatShading": false,
+        "footstepVolume": 1.0,
+        "fresnelPower": 5.0,
+        "gouraudOnly": false,
+        "heightTexturePath": "",
+        "impactThreshold": 3.0,
+        "ior": 1.5,
+        "matcapTexturePath": "",
+        "metallic": 0.0,
+        "metallicRoughnessTexture": -1,
+        "metallicRoughnessTexturePath": "",
+        "normalTexture": -1,
+        "normalTexturePath": "",
+        "opacity": 1.0,
+        "outlineColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "outlineWidth": 0.0,
+        "parallaxMode": 0,
+        "parallaxScale": 0.05000000074505806,
+        "pomHeightScale": 0.05000000074505806,
+        "pomMaxSteps": 32,
+        "receiveShadows": false,
+        "reflectivity": 0.0,
+        "rimLightStrength": 0.0,
+        "roughness": 0.5,
+        "scrollReflectionSpeed": [
+          0.05000000074505806,
+          0.029999999329447746
+        ],
+        "scrollReflectionStrength": 0.5,
+        "scrollReflectionTexturePath": "",
+        "sdfText": false,
+        "shadowDitherMode": 0,
+        "shadowDitherPattern": 0,
+        "specularTexturePath": "",
+        "sssColor": [
+          1.0,
+          0.20000000298023224,
+          0.10000000149011612
+        ],
+        "sssIntensity": 0.0,
+        "sssRadius": 1.0,
+        "stippleTransparency": false,
+        "surfaceNoiseScale": 0.0,
+        "surfaceNoiseStrength": 0.0,
+        "textureFilterOverride": 0,
+        "thickness": 0.0,
+        "transmission": 0.0,
+        "uvQuantize": false,
+        "uvRegionOffset": [
+          0.0,
+          0.0
+        ],
+        "uvRegionScale": [
+          1,
+          1
+        ],
+        "vertexSnapResolution": 160,
+        "vertexSnapping": false
+      }
+    },
+    {
+      "id": 9,
+      "name": {
+        "name": "ShopKeeper"
+      },
+      "stableId": 1008,
+      "transform": {
+        "position": [
+          2.5,
+          -2.5,
+          6.25
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          2.0,
+          2.7,
+          1
+        ]
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "material": {
+        "affineTexturing": false,
+        "alphaCutoff": 0.5,
+        "alphaMode": 1,
+        "baseColor": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "baseColorTexture": -1,
+        "baseColorTexturePath": "assets/npc_shop.png",
+        "castShadows": false,
+        "ditherGradient": false,
+        "ditherGradientBands": 4,
+        "ditherGradientPattern": 0,
+        "ditherTransBlendColor": [
+          0.699999988079071,
+          0.8500000238418579,
+          1.0
+        ],
+        "ditherTransOpacity": 0.5,
+        "ditherTransPattern": 0,
+        "ditherTransparency": false,
+        "doubleSided": true,
+        "emissiveColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "emissiveStrength": 0.0,
+        "emissiveTexture": -1,
+        "emissiveTexturePath": "",
+        "excludeFromCelShading": false,
+        "flatShading": false,
+        "footstepVolume": 1.0,
+        "fresnelPower": 5.0,
+        "gouraudOnly": false,
+        "heightTexturePath": "",
+        "impactThreshold": 3.0,
+        "ior": 1.5,
+        "matcapTexturePath": "",
+        "metallic": 0.0,
+        "metallicRoughnessTexture": -1,
+        "metallicRoughnessTexturePath": "",
+        "normalTexture": -1,
+        "normalTexturePath": "",
+        "opacity": 1.0,
+        "outlineColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "outlineWidth": 0.0,
+        "parallaxMode": 0,
+        "parallaxScale": 0.05000000074505806,
+        "pomHeightScale": 0.05000000074505806,
+        "pomMaxSteps": 32,
+        "receiveShadows": false,
+        "reflectivity": 0.0,
+        "rimLightStrength": 0.0,
+        "roughness": 0.5,
+        "scrollReflectionSpeed": [
+          0.05000000074505806,
+          0.029999999329447746
+        ],
+        "scrollReflectionStrength": 0.5,
+        "scrollReflectionTexturePath": "",
+        "sdfText": false,
+        "shadowDitherMode": 0,
+        "shadowDitherPattern": 0,
+        "specularTexturePath": "",
+        "sssColor": [
+          1.0,
+          0.20000000298023224,
+          0.10000000149011612
+        ],
+        "sssIntensity": 0.0,
+        "sssRadius": 1.0,
+        "stippleTransparency": false,
+        "surfaceNoiseScale": 0.0,
+        "surfaceNoiseStrength": 0.0,
+        "textureFilterOverride": 0,
+        "thickness": 0.0,
+        "transmission": 0.0,
+        "uvQuantize": false,
+        "uvRegionOffset": [
+          0.0,
+          0.0
+        ],
+        "uvRegionScale": [
+          1,
+          1
+        ],
+        "vertexSnapResolution": 160,
+        "vertexSnapping": false
+      }
+    },
+    {
+      "id": 10,
+      "name": {
+        "name": "NextTownGate"
+      },
+      "stableId": 1009,
+      "transform": {
+        "position": [
+          12.0,
+          -2.0,
+          6.2
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          3.0,
+          3.8,
+          1
+        ]
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "material": {
+        "affineTexturing": false,
+        "alphaCutoff": 0.5,
+        "alphaMode": 1,
+        "baseColor": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "baseColorTexture": -1,
+        "baseColorTexturePath": "assets/gate.png",
+        "castShadows": false,
+        "ditherGradient": false,
+        "ditherGradientBands": 4,
+        "ditherGradientPattern": 0,
+        "ditherTransBlendColor": [
+          0.699999988079071,
+          0.8500000238418579,
+          1.0
+        ],
+        "ditherTransOpacity": 0.5,
+        "ditherTransPattern": 0,
+        "ditherTransparency": false,
+        "doubleSided": true,
+        "emissiveColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "emissiveStrength": 0.0,
+        "emissiveTexture": -1,
+        "emissiveTexturePath": "",
+        "excludeFromCelShading": false,
+        "flatShading": false,
+        "footstepVolume": 1.0,
+        "fresnelPower": 5.0,
+        "gouraudOnly": false,
+        "heightTexturePath": "",
+        "impactThreshold": 3.0,
+        "ior": 1.5,
+        "matcapTexturePath": "",
+        "metallic": 0.0,
+        "metallicRoughnessTexture": -1,
+        "metallicRoughnessTexturePath": "",
+        "normalTexture": -1,
+        "normalTexturePath": "",
+        "opacity": 1.0,
+        "outlineColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "outlineWidth": 0.0,
+        "parallaxMode": 0,
+        "parallaxScale": 0.05000000074505806,
+        "pomHeightScale": 0.05000000074505806,
+        "pomMaxSteps": 32,
+        "receiveShadows": false,
+        "reflectivity": 0.0,
+        "rimLightStrength": 0.0,
+        "roughness": 0.5,
+        "scrollReflectionSpeed": [
+          0.05000000074505806,
+          0.029999999329447746
+        ],
+        "scrollReflectionStrength": 0.5,
+        "scrollReflectionTexturePath": "",
+        "sdfText": false,
+        "shadowDitherMode": 0,
+        "shadowDitherPattern": 0,
+        "specularTexturePath": "",
+        "sssColor": [
+          1.0,
+          0.20000000298023224,
+          0.10000000149011612
+        ],
+        "sssIntensity": 0.0,
+        "sssRadius": 1.0,
+        "stippleTransparency": false,
+        "surfaceNoiseScale": 0.0,
+        "surfaceNoiseStrength": 0.0,
+        "textureFilterOverride": 0,
+        "thickness": 0.0,
+        "transmission": 0.0,
+        "uvQuantize": false,
+        "uvRegionOffset": [
+          0.0,
+          0.0
+        ],
+        "uvRegionScale": [
+          1,
+          1
+        ],
+        "vertexSnapResolution": 160,
+        "vertexSnapping": false
+      }
+    },
+    {
+      "id": 11,
+      "name": {
+        "name": "FloorHome"
+      },
+      "stableId": 1010,
+      "transform": {
+        "position": [
+          0,
+          0,
+          0.1
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          80,
+          45,
+          1
+        ]
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "material": {
+        "affineTexturing": false,
+        "alphaCutoff": 0.5,
+        "alphaMode": 1,
+        "baseColor": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "baseColorTexture": -1,
+        "baseColorTexturePath": "assets/home_bg.png",
+        "castShadows": false,
+        "ditherGradient": false,
+        "ditherGradientBands": 4,
+        "ditherGradientPattern": 0,
+        "ditherTransBlendColor": [
+          0.699999988079071,
+          0.8500000238418579,
+          1.0
+        ],
+        "ditherTransOpacity": 0.5,
+        "ditherTransPattern": 0,
+        "ditherTransparency": false,
+        "doubleSided": true,
+        "emissiveColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "emissiveStrength": 0.0,
+        "emissiveTexture": -1,
+        "emissiveTexturePath": "",
+        "excludeFromCelShading": false,
+        "flatShading": false,
+        "footstepVolume": 1.0,
+        "fresnelPower": 5.0,
+        "gouraudOnly": false,
+        "heightTexturePath": "",
+        "impactThreshold": 3.0,
+        "ior": 1.5,
+        "matcapTexturePath": "",
+        "metallic": 0.0,
+        "metallicRoughnessTexture": -1,
+        "metallicRoughnessTexturePath": "",
+        "normalTexture": -1,
+        "normalTexturePath": "",
+        "opacity": 1.0,
+        "outlineColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "outlineWidth": 0.0,
+        "parallaxMode": 0,
+        "parallaxScale": 0.05000000074505806,
+        "pomHeightScale": 0.05000000074505806,
+        "pomMaxSteps": 32,
+        "receiveShadows": false,
+        "reflectivity": 0.0,
+        "rimLightStrength": 0.0,
+        "roughness": 0.5,
+        "scrollReflectionSpeed": [
+          0.05000000074505806,
+          0.029999999329447746
+        ],
+        "scrollReflectionStrength": 0.5,
+        "scrollReflectionTexturePath": "",
+        "sdfText": false,
+        "shadowDitherMode": 0,
+        "shadowDitherPattern": 0,
+        "specularTexturePath": "",
+        "sssColor": [
+          1.0,
+          0.20000000298023224,
+          0.10000000149011612
+        ],
+        "sssIntensity": 0.0,
+        "sssRadius": 1.0,
+        "stippleTransparency": false,
+        "surfaceNoiseScale": 0.0,
+        "surfaceNoiseStrength": 0.0,
+        "textureFilterOverride": 0,
+        "thickness": 0.0,
+        "transmission": 0.0,
+        "uvQuantize": false,
+        "uvRegionOffset": [
+          0.0,
+          0.0
+        ],
+        "uvRegionScale": [
+          1,
+          1
+        ],
+        "vertexSnapResolution": 160,
+        "vertexSnapping": false
+      }
+    },
+    {
+      "id": 12,
+      "name": {
+        "name": "Cauldron"
+      },
+      "stableId": 1011,
+      "transform": {
+        "position": [
+          0.0,
+          3.0,
+          5.7
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          3.0,
+          4.0,
+          1
+        ]
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "material": {
+        "affineTexturing": false,
+        "alphaCutoff": 0.5,
+        "alphaMode": 1,
+        "baseColor": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "baseColorTexture": -1,
+        "baseColorTexturePath": "assets/cauldron.png",
+        "castShadows": false,
+        "ditherGradient": false,
+        "ditherGradientBands": 4,
+        "ditherGradientPattern": 0,
+        "ditherTransBlendColor": [
+          0.699999988079071,
+          0.8500000238418579,
+          1.0
+        ],
+        "ditherTransOpacity": 0.5,
+        "ditherTransPattern": 0,
+        "ditherTransparency": false,
+        "doubleSided": true,
+        "emissiveColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "emissiveStrength": 0.0,
+        "emissiveTexture": -1,
+        "emissiveTexturePath": "",
+        "excludeFromCelShading": false,
+        "flatShading": false,
+        "footstepVolume": 1.0,
+        "fresnelPower": 5.0,
+        "gouraudOnly": false,
+        "heightTexturePath": "",
+        "impactThreshold": 3.0,
+        "ior": 1.5,
+        "matcapTexturePath": "",
+        "metallic": 0.0,
+        "metallicRoughnessTexture": -1,
+        "metallicRoughnessTexturePath": "",
+        "normalTexture": -1,
+        "normalTexturePath": "",
+        "opacity": 1.0,
+        "outlineColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "outlineWidth": 0.0,
+        "parallaxMode": 0,
+        "parallaxScale": 0.05000000074505806,
+        "pomHeightScale": 0.05000000074505806,
+        "pomMaxSteps": 32,
+        "receiveShadows": false,
+        "reflectivity": 0.0,
+        "rimLightStrength": 0.0,
+        "roughness": 0.5,
+        "scrollReflectionSpeed": [
+          0.05000000074505806,
+          0.029999999329447746
+        ],
+        "scrollReflectionStrength": 0.5,
+        "scrollReflectionTexturePath": "",
+        "sdfText": false,
+        "shadowDitherMode": 0,
+        "shadowDitherPattern": 0,
+        "specularTexturePath": "",
+        "sssColor": [
+          1.0,
+          0.20000000298023224,
+          0.10000000149011612
+        ],
+        "sssIntensity": 0.0,
+        "sssRadius": 1.0,
+        "stippleTransparency": false,
+        "surfaceNoiseScale": 0.0,
+        "surfaceNoiseStrength": 0.0,
+        "textureFilterOverride": 0,
+        "thickness": 0.0,
+        "transmission": 0.0,
+        "uvQuantize": false,
+        "uvRegionOffset": [
+          0.0,
+          0.0
+        ],
+        "uvRegionScale": [
+          1,
+          1
+        ],
+        "vertexSnapResolution": 160,
+        "vertexSnapping": false
+      }
+    },
+    {
+      "id": 13,
+      "name": {
+        "name": "ExitDoor"
+      },
+      "stableId": 1012,
+      "transform": {
+        "position": [
+          -8.0,
+          -5.0,
+          6.5
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          2.8,
+          4.0,
+          1
+        ]
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "material": {
+        "affineTexturing": false,
+        "alphaCutoff": 0.5,
+        "alphaMode": 1,
+        "baseColor": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "baseColorTexture": -1,
+        "baseColorTexturePath": "assets/door.png",
+        "castShadows": false,
+        "ditherGradient": false,
+        "ditherGradientBands": 4,
+        "ditherGradientPattern": 0,
+        "ditherTransBlendColor": [
+          0.699999988079071,
+          0.8500000238418579,
+          1.0
+        ],
+        "ditherTransOpacity": 0.5,
+        "ditherTransPattern": 0,
+        "ditherTransparency": false,
+        "doubleSided": true,
+        "emissiveColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "emissiveStrength": 0.0,
+        "emissiveTexture": -1,
+        "emissiveTexturePath": "",
+        "excludeFromCelShading": false,
+        "flatShading": false,
+        "footstepVolume": 1.0,
+        "fresnelPower": 5.0,
+        "gouraudOnly": false,
+        "heightTexturePath": "",
+        "impactThreshold": 3.0,
+        "ior": 1.5,
+        "matcapTexturePath": "",
+        "metallic": 0.0,
+        "metallicRoughnessTexture": -1,
+        "metallicRoughnessTexturePath": "",
+        "normalTexture": -1,
+        "normalTexturePath": "",
+        "opacity": 1.0,
+        "outlineColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "outlineWidth": 0.0,
+        "parallaxMode": 0,
+        "parallaxScale": 0.05000000074505806,
+        "pomHeightScale": 0.05000000074505806,
+        "pomMaxSteps": 32,
+        "receiveShadows": false,
+        "reflectivity": 0.0,
+        "rimLightStrength": 0.0,
+        "roughness": 0.5,
+        "scrollReflectionSpeed": [
+          0.05000000074505806,
+          0.029999999329447746
+        ],
+        "scrollReflectionStrength": 0.5,
+        "scrollReflectionTexturePath": "",
+        "sdfText": false,
+        "shadowDitherMode": 0,
+        "shadowDitherPattern": 0,
+        "specularTexturePath": "",
+        "sssColor": [
+          1.0,
+          0.20000000298023224,
+          0.10000000149011612
+        ],
+        "sssIntensity": 0.0,
+        "sssRadius": 1.0,
+        "stippleTransparency": false,
+        "surfaceNoiseScale": 0.0,
+        "surfaceNoiseStrength": 0.0,
+        "textureFilterOverride": 0,
+        "thickness": 0.0,
+        "transmission": 0.0,
+        "uvQuantize": false,
+        "uvRegionOffset": [
+          0.0,
+          0.0
+        ],
+        "uvRegionScale": [
+          1,
+          1
+        ],
+        "vertexSnapResolution": 160,
+        "vertexSnapping": false
+      }
+    },
+    {
+      "id": 14,
+      "name": {
+        "name": "BattleBG"
+      },
+      "stableId": 1013,
+      "transform": {
+        "position": [
+          0,
+          0,
+          15.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          80,
+          45,
+          1
+        ]
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "material": {
+        "affineTexturing": false,
+        "alphaCutoff": 0.5,
+        "alphaMode": 1,
+        "baseColor": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "baseColorTexture": -1,
+        "baseColorTexturePath": "assets/battle_bg.png",
+        "castShadows": false,
+        "ditherGradient": false,
+        "ditherGradientBands": 4,
+        "ditherGradientPattern": 0,
+        "ditherTransBlendColor": [
+          0.699999988079071,
+          0.8500000238418579,
+          1.0
+        ],
+        "ditherTransOpacity": 0.5,
+        "ditherTransPattern": 0,
+        "ditherTransparency": false,
+        "doubleSided": true,
+        "emissiveColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "emissiveStrength": 0.0,
+        "emissiveTexture": -1,
+        "emissiveTexturePath": "",
+        "excludeFromCelShading": false,
+        "flatShading": false,
+        "footstepVolume": 1.0,
+        "fresnelPower": 5.0,
+        "gouraudOnly": false,
+        "heightTexturePath": "",
+        "impactThreshold": 3.0,
+        "ior": 1.5,
+        "matcapTexturePath": "",
+        "metallic": 0.0,
+        "metallicRoughnessTexture": -1,
+        "metallicRoughnessTexturePath": "",
+        "normalTexture": -1,
+        "normalTexturePath": "",
+        "opacity": 1.0,
+        "outlineColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "outlineWidth": 0.0,
+        "parallaxMode": 0,
+        "parallaxScale": 0.05000000074505806,
+        "pomHeightScale": 0.05000000074505806,
+        "pomMaxSteps": 32,
+        "receiveShadows": false,
+        "reflectivity": 0.0,
+        "rimLightStrength": 0.0,
+        "roughness": 0.5,
+        "scrollReflectionSpeed": [
+          0.05000000074505806,
+          0.029999999329447746
+        ],
+        "scrollReflectionStrength": 0.5,
+        "scrollReflectionTexturePath": "",
+        "sdfText": false,
+        "shadowDitherMode": 0,
+        "shadowDitherPattern": 0,
+        "specularTexturePath": "",
+        "sssColor": [
+          1.0,
+          0.20000000298023224,
+          0.10000000149011612
+        ],
+        "sssIntensity": 0.0,
+        "sssRadius": 1.0,
+        "stippleTransparency": false,
+        "surfaceNoiseScale": 0.0,
+        "surfaceNoiseStrength": 0.0,
+        "textureFilterOverride": 0,
+        "thickness": 0.0,
+        "transmission": 0.0,
+        "uvQuantize": false,
+        "uvRegionOffset": [
+          0.0,
+          0.0
+        ],
+        "uvRegionScale": [
+          1,
+          1
+        ],
+        "vertexSnapResolution": 160,
+        "vertexSnapping": false
+      }
+    },
+    {
+      "id": 15,
+      "name": {
+        "name": "BattlePlayer"
+      },
+      "stableId": 1014,
+      "transform": {
+        "position": [
+          -9.0,
+          -4.5,
+          16.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          6.0,
+          6.0,
+          1
+        ]
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "material": {
+        "affineTexturing": false,
+        "alphaCutoff": 0.5,
+        "alphaMode": 1,
+        "baseColor": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "baseColorTexture": -1,
+        "baseColorTexturePath": "assets/battle_player.png",
+        "castShadows": false,
+        "ditherGradient": false,
+        "ditherGradientBands": 4,
+        "ditherGradientPattern": 0,
+        "ditherTransBlendColor": [
+          0.699999988079071,
+          0.8500000238418579,
+          1.0
+        ],
+        "ditherTransOpacity": 0.5,
+        "ditherTransPattern": 0,
+        "ditherTransparency": false,
+        "doubleSided": true,
+        "emissiveColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "emissiveStrength": 0.0,
+        "emissiveTexture": -1,
+        "emissiveTexturePath": "",
+        "excludeFromCelShading": false,
+        "flatShading": false,
+        "footstepVolume": 1.0,
+        "fresnelPower": 5.0,
+        "gouraudOnly": false,
+        "heightTexturePath": "",
+        "impactThreshold": 3.0,
+        "ior": 1.5,
+        "matcapTexturePath": "",
+        "metallic": 0.0,
+        "metallicRoughnessTexture": -1,
+        "metallicRoughnessTexturePath": "",
+        "normalTexture": -1,
+        "normalTexturePath": "",
+        "opacity": 1.0,
+        "outlineColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "outlineWidth": 0.0,
+        "parallaxMode": 0,
+        "parallaxScale": 0.05000000074505806,
+        "pomHeightScale": 0.05000000074505806,
+        "pomMaxSteps": 32,
+        "receiveShadows": false,
+        "reflectivity": 0.0,
+        "rimLightStrength": 0.0,
+        "roughness": 0.5,
+        "scrollReflectionSpeed": [
+          0.05000000074505806,
+          0.029999999329447746
+        ],
+        "scrollReflectionStrength": 0.5,
+        "scrollReflectionTexturePath": "",
+        "sdfText": false,
+        "shadowDitherMode": 0,
+        "shadowDitherPattern": 0,
+        "specularTexturePath": "",
+        "sssColor": [
+          1.0,
+          0.20000000298023224,
+          0.10000000149011612
+        ],
+        "sssIntensity": 0.0,
+        "sssRadius": 1.0,
+        "stippleTransparency": false,
+        "surfaceNoiseScale": 0.0,
+        "surfaceNoiseStrength": 0.0,
+        "textureFilterOverride": 0,
+        "thickness": 0.0,
+        "transmission": 0.0,
+        "uvQuantize": false,
+        "uvRegionOffset": [
+          0.0,
+          0.0
+        ],
+        "uvRegionScale": [
+          1,
+          1
+        ],
+        "vertexSnapResolution": 160,
+        "vertexSnapping": false
+      }
+    },
+    {
+      "id": 16,
+      "name": {
+        "name": "BattleEnemy0"
+      },
+      "stableId": 1015,
+      "transform": {
+        "position": [
+          9.0,
+          3.0,
+          16.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          4.5,
+          6.0,
+          1
+        ]
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "material": {
+        "affineTexturing": false,
+        "alphaCutoff": 0.5,
+        "alphaMode": 1,
+        "baseColor": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "baseColorTexture": -1,
+        "baseColorTexturePath": "assets/npc_0.png",
+        "castShadows": false,
+        "ditherGradient": false,
+        "ditherGradientBands": 4,
+        "ditherGradientPattern": 0,
+        "ditherTransBlendColor": [
+          0.699999988079071,
+          0.8500000238418579,
+          1.0
+        ],
+        "ditherTransOpacity": 0.5,
+        "ditherTransPattern": 0,
+        "ditherTransparency": false,
+        "doubleSided": true,
+        "emissiveColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "emissiveStrength": 0.0,
+        "emissiveTexture": -1,
+        "emissiveTexturePath": "",
+        "excludeFromCelShading": false,
+        "flatShading": false,
+        "footstepVolume": 1.0,
+        "fresnelPower": 5.0,
+        "gouraudOnly": false,
+        "heightTexturePath": "",
+        "impactThreshold": 3.0,
+        "ior": 1.5,
+        "matcapTexturePath": "",
+        "metallic": 0.0,
+        "metallicRoughnessTexture": -1,
+        "metallicRoughnessTexturePath": "",
+        "normalTexture": -1,
+        "normalTexturePath": "",
+        "opacity": 1.0,
+        "outlineColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "outlineWidth": 0.0,
+        "parallaxMode": 0,
+        "parallaxScale": 0.05000000074505806,
+        "pomHeightScale": 0.05000000074505806,
+        "pomMaxSteps": 32,
+        "receiveShadows": false,
+        "reflectivity": 0.0,
+        "rimLightStrength": 0.0,
+        "roughness": 0.5,
+        "scrollReflectionSpeed": [
+          0.05000000074505806,
+          0.029999999329447746
+        ],
+        "scrollReflectionStrength": 0.5,
+        "scrollReflectionTexturePath": "",
+        "sdfText": false,
+        "shadowDitherMode": 0,
+        "shadowDitherPattern": 0,
+        "specularTexturePath": "",
+        "sssColor": [
+          1.0,
+          0.20000000298023224,
+          0.10000000149011612
+        ],
+        "sssIntensity": 0.0,
+        "sssRadius": 1.0,
+        "stippleTransparency": false,
+        "surfaceNoiseScale": 0.0,
+        "surfaceNoiseStrength": 0.0,
+        "textureFilterOverride": 0,
+        "thickness": 0.0,
+        "transmission": 0.0,
+        "uvQuantize": false,
+        "uvRegionOffset": [
+          0.0,
+          0.0
+        ],
+        "uvRegionScale": [
+          1,
+          1
+        ],
+        "vertexSnapResolution": 160,
+        "vertexSnapping": false
+      }
+    },
+    {
+      "id": 17,
+      "name": {
+        "name": "BattleEnemy1"
+      },
+      "stableId": 1016,
+      "transform": {
+        "position": [
+          9.0,
+          3.0,
+          16.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          4.5,
+          6.0,
+          1
+        ]
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "material": {
+        "affineTexturing": false,
+        "alphaCutoff": 0.5,
+        "alphaMode": 1,
+        "baseColor": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "baseColorTexture": -1,
+        "baseColorTexturePath": "assets/npc_1.png",
+        "castShadows": false,
+        "ditherGradient": false,
+        "ditherGradientBands": 4,
+        "ditherGradientPattern": 0,
+        "ditherTransBlendColor": [
+          0.699999988079071,
+          0.8500000238418579,
+          1.0
+        ],
+        "ditherTransOpacity": 0.5,
+        "ditherTransPattern": 0,
+        "ditherTransparency": false,
+        "doubleSided": true,
+        "emissiveColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "emissiveStrength": 0.0,
+        "emissiveTexture": -1,
+        "emissiveTexturePath": "",
+        "excludeFromCelShading": false,
+        "flatShading": false,
+        "footstepVolume": 1.0,
+        "fresnelPower": 5.0,
+        "gouraudOnly": false,
+        "heightTexturePath": "",
+        "impactThreshold": 3.0,
+        "ior": 1.5,
+        "matcapTexturePath": "",
+        "metallic": 0.0,
+        "metallicRoughnessTexture": -1,
+        "metallicRoughnessTexturePath": "",
+        "normalTexture": -1,
+        "normalTexturePath": "",
+        "opacity": 1.0,
+        "outlineColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "outlineWidth": 0.0,
+        "parallaxMode": 0,
+        "parallaxScale": 0.05000000074505806,
+        "pomHeightScale": 0.05000000074505806,
+        "pomMaxSteps": 32,
+        "receiveShadows": false,
+        "reflectivity": 0.0,
+        "rimLightStrength": 0.0,
+        "roughness": 0.5,
+        "scrollReflectionSpeed": [
+          0.05000000074505806,
+          0.029999999329447746
+        ],
+        "scrollReflectionStrength": 0.5,
+        "scrollReflectionTexturePath": "",
+        "sdfText": false,
+        "shadowDitherMode": 0,
+        "shadowDitherPattern": 0,
+        "specularTexturePath": "",
+        "sssColor": [
+          1.0,
+          0.20000000298023224,
+          0.10000000149011612
+        ],
+        "sssIntensity": 0.0,
+        "sssRadius": 1.0,
+        "stippleTransparency": false,
+        "surfaceNoiseScale": 0.0,
+        "surfaceNoiseStrength": 0.0,
+        "textureFilterOverride": 0,
+        "thickness": 0.0,
+        "transmission": 0.0,
+        "uvQuantize": false,
+        "uvRegionOffset": [
+          0.0,
+          0.0
+        ],
+        "uvRegionScale": [
+          1,
+          1
+        ],
+        "vertexSnapResolution": 160,
+        "vertexSnapping": false
+      }
+    },
+    {
+      "id": 18,
+      "name": {
+        "name": "BattleEnemy2"
+      },
+      "stableId": 1017,
+      "transform": {
+        "position": [
+          9.0,
+          3.0,
+          16.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          4.5,
+          6.0,
+          1
+        ]
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "material": {
+        "affineTexturing": false,
+        "alphaCutoff": 0.5,
+        "alphaMode": 1,
+        "baseColor": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "baseColorTexture": -1,
+        "baseColorTexturePath": "assets/npc_2.png",
+        "castShadows": false,
+        "ditherGradient": false,
+        "ditherGradientBands": 4,
+        "ditherGradientPattern": 0,
+        "ditherTransBlendColor": [
+          0.699999988079071,
+          0.8500000238418579,
+          1.0
+        ],
+        "ditherTransOpacity": 0.5,
+        "ditherTransPattern": 0,
+        "ditherTransparency": false,
+        "doubleSided": true,
+        "emissiveColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "emissiveStrength": 0.0,
+        "emissiveTexture": -1,
+        "emissiveTexturePath": "",
+        "excludeFromCelShading": false,
+        "flatShading": false,
+        "footstepVolume": 1.0,
+        "fresnelPower": 5.0,
+        "gouraudOnly": false,
+        "heightTexturePath": "",
+        "impactThreshold": 3.0,
+        "ior": 1.5,
+        "matcapTexturePath": "",
+        "metallic": 0.0,
+        "metallicRoughnessTexture": -1,
+        "metallicRoughnessTexturePath": "",
+        "normalTexture": -1,
+        "normalTexturePath": "",
+        "opacity": 1.0,
+        "outlineColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "outlineWidth": 0.0,
+        "parallaxMode": 0,
+        "parallaxScale": 0.05000000074505806,
+        "pomHeightScale": 0.05000000074505806,
+        "pomMaxSteps": 32,
+        "receiveShadows": false,
+        "reflectivity": 0.0,
+        "rimLightStrength": 0.0,
+        "roughness": 0.5,
+        "scrollReflectionSpeed": [
+          0.05000000074505806,
+          0.029999999329447746
+        ],
+        "scrollReflectionStrength": 0.5,
+        "scrollReflectionTexturePath": "",
+        "sdfText": false,
+        "shadowDitherMode": 0,
+        "shadowDitherPattern": 0,
+        "specularTexturePath": "",
+        "sssColor": [
+          1.0,
+          0.20000000298023224,
+          0.10000000149011612
+        ],
+        "sssIntensity": 0.0,
+        "sssRadius": 1.0,
+        "stippleTransparency": false,
+        "surfaceNoiseScale": 0.0,
+        "surfaceNoiseStrength": 0.0,
+        "textureFilterOverride": 0,
+        "thickness": 0.0,
+        "transmission": 0.0,
+        "uvQuantize": false,
+        "uvRegionOffset": [
+          0.0,
+          0.0
+        ],
+        "uvRegionScale": [
+          1,
+          1
+        ],
+        "vertexSnapResolution": 160,
+        "vertexSnapping": false
+      }
+    },
+    {
+      "id": 19,
+      "name": {
+        "name": "EnemyHPBg"
+      },
+      "stableId": 1018,
+      "transform": {
+        "position": [
+          -6.0,
+          7.5,
+          17.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          8.4,
+          0.9,
+          1
+        ]
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "material": {
+        "affineTexturing": false,
+        "alphaCutoff": 0.5,
+        "alphaMode": 0,
+        "baseColor": [
+          0.1,
+          0.1,
+          0.13
+        ],
+        "baseColorTexture": -1,
+        "baseColorTexturePath": "",
+        "castShadows": false,
+        "ditherGradient": false,
+        "ditherGradientBands": 4,
+        "ditherGradientPattern": 0,
+        "ditherTransBlendColor": [
+          0.699999988079071,
+          0.8500000238418579,
+          1.0
+        ],
+        "ditherTransOpacity": 0.5,
+        "ditherTransPattern": 0,
+        "ditherTransparency": false,
+        "doubleSided": true,
+        "emissiveColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "emissiveStrength": 0.0,
+        "emissiveTexture": -1,
+        "emissiveTexturePath": "",
+        "excludeFromCelShading": false,
+        "flatShading": false,
+        "footstepVolume": 1.0,
+        "fresnelPower": 5.0,
+        "gouraudOnly": false,
+        "heightTexturePath": "",
+        "impactThreshold": 3.0,
+        "ior": 1.5,
+        "matcapTexturePath": "",
+        "metallic": 0.0,
+        "metallicRoughnessTexture": -1,
+        "metallicRoughnessTexturePath": "",
+        "normalTexture": -1,
+        "normalTexturePath": "",
+        "opacity": 1.0,
+        "outlineColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "outlineWidth": 0.0,
+        "parallaxMode": 0,
+        "parallaxScale": 0.05000000074505806,
+        "pomHeightScale": 0.05000000074505806,
+        "pomMaxSteps": 32,
+        "receiveShadows": false,
+        "reflectivity": 0.0,
+        "rimLightStrength": 0.0,
+        "roughness": 0.5,
+        "scrollReflectionSpeed": [
+          0.05000000074505806,
+          0.029999999329447746
+        ],
+        "scrollReflectionStrength": 0.5,
+        "scrollReflectionTexturePath": "",
+        "sdfText": false,
+        "shadowDitherMode": 0,
+        "shadowDitherPattern": 0,
+        "specularTexturePath": "",
+        "sssColor": [
+          1.0,
+          0.20000000298023224,
+          0.10000000149011612
+        ],
+        "sssIntensity": 0.0,
+        "sssRadius": 1.0,
+        "stippleTransparency": false,
+        "surfaceNoiseScale": 0.0,
+        "surfaceNoiseStrength": 0.0,
+        "textureFilterOverride": 0,
+        "thickness": 0.0,
+        "transmission": 0.0,
+        "uvQuantize": false,
+        "uvRegionOffset": [
+          0.0,
+          0.0
+        ],
+        "uvRegionScale": [
+          1.0,
+          1.0
+        ],
+        "vertexSnapResolution": 160,
+        "vertexSnapping": false
+      }
+    },
+    {
+      "id": 20,
+      "name": {
+        "name": "EnemyHPFill"
+      },
+      "stableId": 1019,
+      "transform": {
+        "position": [
+          -6.0,
+          7.5,
+          17.1
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          8.0,
+          0.55,
+          1
+        ]
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "material": {
+        "affineTexturing": false,
+        "alphaCutoff": 0.5,
+        "alphaMode": 0,
+        "baseColor": [
+          0.3,
+          0.8,
+          0.35
+        ],
+        "baseColorTexture": -1,
+        "baseColorTexturePath": "",
+        "castShadows": false,
+        "ditherGradient": false,
+        "ditherGradientBands": 4,
+        "ditherGradientPattern": 0,
+        "ditherTransBlendColor": [
+          0.699999988079071,
+          0.8500000238418579,
+          1.0
+        ],
+        "ditherTransOpacity": 0.5,
+        "ditherTransPattern": 0,
+        "ditherTransparency": false,
+        "doubleSided": true,
+        "emissiveColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "emissiveStrength": 0.0,
+        "emissiveTexture": -1,
+        "emissiveTexturePath": "",
+        "excludeFromCelShading": false,
+        "flatShading": false,
+        "footstepVolume": 1.0,
+        "fresnelPower": 5.0,
+        "gouraudOnly": false,
+        "heightTexturePath": "",
+        "impactThreshold": 3.0,
+        "ior": 1.5,
+        "matcapTexturePath": "",
+        "metallic": 0.0,
+        "metallicRoughnessTexture": -1,
+        "metallicRoughnessTexturePath": "",
+        "normalTexture": -1,
+        "normalTexturePath": "",
+        "opacity": 1.0,
+        "outlineColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "outlineWidth": 0.0,
+        "parallaxMode": 0,
+        "parallaxScale": 0.05000000074505806,
+        "pomHeightScale": 0.05000000074505806,
+        "pomMaxSteps": 32,
+        "receiveShadows": false,
+        "reflectivity": 0.0,
+        "rimLightStrength": 0.0,
+        "roughness": 0.5,
+        "scrollReflectionSpeed": [
+          0.05000000074505806,
+          0.029999999329447746
+        ],
+        "scrollReflectionStrength": 0.5,
+        "scrollReflectionTexturePath": "",
+        "sdfText": false,
+        "shadowDitherMode": 0,
+        "shadowDitherPattern": 0,
+        "specularTexturePath": "",
+        "sssColor": [
+          1.0,
+          0.20000000298023224,
+          0.10000000149011612
+        ],
+        "sssIntensity": 0.0,
+        "sssRadius": 1.0,
+        "stippleTransparency": false,
+        "surfaceNoiseScale": 0.0,
+        "surfaceNoiseStrength": 0.0,
+        "textureFilterOverride": 0,
+        "thickness": 0.0,
+        "transmission": 0.0,
+        "uvQuantize": false,
+        "uvRegionOffset": [
+          0.0,
+          0.0
+        ],
+        "uvRegionScale": [
+          1.0,
+          1.0
+        ],
+        "vertexSnapResolution": 160,
+        "vertexSnapping": false
+      }
+    },
+    {
+      "id": 21,
+      "name": {
+        "name": "PlayerHPBg"
+      },
+      "stableId": 1020,
+      "transform": {
+        "position": [
+          4.0,
+          -1.5,
+          17.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          8.4,
+          0.9,
+          1
+        ]
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "material": {
+        "affineTexturing": false,
+        "alphaCutoff": 0.5,
+        "alphaMode": 0,
+        "baseColor": [
+          0.1,
+          0.1,
+          0.13
+        ],
+        "baseColorTexture": -1,
+        "baseColorTexturePath": "",
+        "castShadows": false,
+        "ditherGradient": false,
+        "ditherGradientBands": 4,
+        "ditherGradientPattern": 0,
+        "ditherTransBlendColor": [
+          0.699999988079071,
+          0.8500000238418579,
+          1.0
+        ],
+        "ditherTransOpacity": 0.5,
+        "ditherTransPattern": 0,
+        "ditherTransparency": false,
+        "doubleSided": true,
+        "emissiveColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "emissiveStrength": 0.0,
+        "emissiveTexture": -1,
+        "emissiveTexturePath": "",
+        "excludeFromCelShading": false,
+        "flatShading": false,
+        "footstepVolume": 1.0,
+        "fresnelPower": 5.0,
+        "gouraudOnly": false,
+        "heightTexturePath": "",
+        "impactThreshold": 3.0,
+        "ior": 1.5,
+        "matcapTexturePath": "",
+        "metallic": 0.0,
+        "metallicRoughnessTexture": -1,
+        "metallicRoughnessTexturePath": "",
+        "normalTexture": -1,
+        "normalTexturePath": "",
+        "opacity": 1.0,
+        "outlineColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "outlineWidth": 0.0,
+        "parallaxMode": 0,
+        "parallaxScale": 0.05000000074505806,
+        "pomHeightScale": 0.05000000074505806,
+        "pomMaxSteps": 32,
+        "receiveShadows": false,
+        "reflectivity": 0.0,
+        "rimLightStrength": 0.0,
+        "roughness": 0.5,
+        "scrollReflectionSpeed": [
+          0.05000000074505806,
+          0.029999999329447746
+        ],
+        "scrollReflectionStrength": 0.5,
+        "scrollReflectionTexturePath": "",
+        "sdfText": false,
+        "shadowDitherMode": 0,
+        "shadowDitherPattern": 0,
+        "specularTexturePath": "",
+        "sssColor": [
+          1.0,
+          0.20000000298023224,
+          0.10000000149011612
+        ],
+        "sssIntensity": 0.0,
+        "sssRadius": 1.0,
+        "stippleTransparency": false,
+        "surfaceNoiseScale": 0.0,
+        "surfaceNoiseStrength": 0.0,
+        "textureFilterOverride": 0,
+        "thickness": 0.0,
+        "transmission": 0.0,
+        "uvQuantize": false,
+        "uvRegionOffset": [
+          0.0,
+          0.0
+        ],
+        "uvRegionScale": [
+          1.0,
+          1.0
+        ],
+        "vertexSnapResolution": 160,
+        "vertexSnapping": false
+      }
+    },
+    {
+      "id": 22,
+      "name": {
+        "name": "PlayerHPFill"
+      },
+      "stableId": 1021,
+      "transform": {
+        "position": [
+          4.0,
+          -1.5,
+          17.1
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          8.0,
+          0.55,
+          1
+        ]
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "material": {
+        "affineTexturing": false,
+        "alphaCutoff": 0.5,
+        "alphaMode": 0,
+        "baseColor": [
+          0.3,
+          0.8,
+          0.35
+        ],
+        "baseColorTexture": -1,
+        "baseColorTexturePath": "",
+        "castShadows": false,
+        "ditherGradient": false,
+        "ditherGradientBands": 4,
+        "ditherGradientPattern": 0,
+        "ditherTransBlendColor": [
+          0.699999988079071,
+          0.8500000238418579,
+          1.0
+        ],
+        "ditherTransOpacity": 0.5,
+        "ditherTransPattern": 0,
+        "ditherTransparency": false,
+        "doubleSided": true,
+        "emissiveColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "emissiveStrength": 0.0,
+        "emissiveTexture": -1,
+        "emissiveTexturePath": "",
+        "excludeFromCelShading": false,
+        "flatShading": false,
+        "footstepVolume": 1.0,
+        "fresnelPower": 5.0,
+        "gouraudOnly": false,
+        "heightTexturePath": "",
+        "impactThreshold": 3.0,
+        "ior": 1.5,
+        "matcapTexturePath": "",
+        "metallic": 0.0,
+        "metallicRoughnessTexture": -1,
+        "metallicRoughnessTexturePath": "",
+        "normalTexture": -1,
+        "normalTexturePath": "",
+        "opacity": 1.0,
+        "outlineColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "outlineWidth": 0.0,
+        "parallaxMode": 0,
+        "parallaxScale": 0.05000000074505806,
+        "pomHeightScale": 0.05000000074505806,
+        "pomMaxSteps": 32,
+        "receiveShadows": false,
+        "reflectivity": 0.0,
+        "rimLightStrength": 0.0,
+        "roughness": 0.5,
+        "scrollReflectionSpeed": [
+          0.05000000074505806,
+          0.029999999329447746
+        ],
+        "scrollReflectionStrength": 0.5,
+        "scrollReflectionTexturePath": "",
+        "sdfText": false,
+        "shadowDitherMode": 0,
+        "shadowDitherPattern": 0,
+        "specularTexturePath": "",
+        "sssColor": [
+          1.0,
+          0.20000000298023224,
+          0.10000000149011612
+        ],
+        "sssIntensity": 0.0,
+        "sssRadius": 1.0,
+        "stippleTransparency": false,
+        "surfaceNoiseScale": 0.0,
+        "surfaceNoiseStrength": 0.0,
+        "textureFilterOverride": 0,
+        "thickness": 0.0,
+        "transmission": 0.0,
+        "uvQuantize": false,
+        "uvRegionOffset": [
+          0.0,
+          0.0
+        ],
+        "uvRegionScale": [
+          1.0,
+          1.0
+        ],
+        "vertexSnapResolution": 160,
+        "vertexSnapping": false
+      }
+    },
+    {
+      "id": 23,
+      "name": {
+        "name": "ThrowPlayer"
+      },
+      "stableId": 1022,
+      "transform": {
+        "position": [
+          -9.0,
+          -0.6,
+          16.5
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.8,
+          2.4,
+          1
+        ]
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "material": {
+        "affineTexturing": false,
+        "alphaCutoff": 0.5,
+        "alphaMode": 0,
+        "baseColor": [
+          0.2,
+          0.45,
+          0.9
+        ],
+        "baseColorTexture": -1,
+        "baseColorTexturePath": "",
+        "castShadows": false,
+        "ditherGradient": false,
+        "ditherGradientBands": 4,
+        "ditherGradientPattern": 0,
+        "ditherTransBlendColor": [
+          0.699999988079071,
+          0.8500000238418579,
+          1.0
+        ],
+        "ditherTransOpacity": 0.5,
+        "ditherTransPattern": 0,
+        "ditherTransparency": false,
+        "doubleSided": true,
+        "emissiveColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "emissiveStrength": 0.0,
+        "emissiveTexture": -1,
+        "emissiveTexturePath": "",
+        "excludeFromCelShading": false,
+        "flatShading": false,
+        "footstepVolume": 1.0,
+        "fresnelPower": 5.0,
+        "gouraudOnly": false,
+        "heightTexturePath": "",
+        "impactThreshold": 3.0,
+        "ior": 1.5,
+        "matcapTexturePath": "",
+        "metallic": 0.0,
+        "metallicRoughnessTexture": -1,
+        "metallicRoughnessTexturePath": "",
+        "normalTexture": -1,
+        "normalTexturePath": "",
+        "opacity": 1.0,
+        "outlineColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "outlineWidth": 0.0,
+        "parallaxMode": 0,
+        "parallaxScale": 0.05000000074505806,
+        "pomHeightScale": 0.05000000074505806,
+        "pomMaxSteps": 32,
+        "receiveShadows": false,
+        "reflectivity": 0.0,
+        "rimLightStrength": 0.0,
+        "roughness": 0.5,
+        "scrollReflectionSpeed": [
+          0.05000000074505806,
+          0.029999999329447746
+        ],
+        "scrollReflectionStrength": 0.5,
+        "scrollReflectionTexturePath": "",
+        "sdfText": false,
+        "shadowDitherMode": 0,
+        "shadowDitherPattern": 0,
+        "specularTexturePath": "",
+        "sssColor": [
+          1.0,
+          0.20000000298023224,
+          0.10000000149011612
+        ],
+        "sssIntensity": 0.0,
+        "sssRadius": 1.0,
+        "stippleTransparency": false,
+        "surfaceNoiseScale": 0.0,
+        "surfaceNoiseStrength": 0.0,
+        "textureFilterOverride": 0,
+        "thickness": 0.0,
+        "transmission": 0.0,
+        "uvQuantize": false,
+        "uvRegionOffset": [
+          0.0,
+          0.0
+        ],
+        "uvRegionScale": [
+          1.0,
+          1.0
+        ],
+        "vertexSnapResolution": 160,
+        "vertexSnapping": false
+      }
+    },
+    {
+      "id": 24,
+      "name": {
+        "name": "ThrowEnemy"
+      },
+      "stableId": 1023,
+      "transform": {
+        "position": [
+          9.0,
+          6.2,
+          16.5
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.6,
+          2.2,
+          1
+        ]
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "material": {
+        "affineTexturing": false,
+        "alphaCutoff": 0.5,
+        "alphaMode": 0,
+        "baseColor": [
+          0.9,
+          0.3,
+          0.3
+        ],
+        "baseColorTexture": -1,
+        "baseColorTexturePath": "",
+        "castShadows": false,
+        "ditherGradient": false,
+        "ditherGradientBands": 4,
+        "ditherGradientPattern": 0,
+        "ditherTransBlendColor": [
+          0.699999988079071,
+          0.8500000238418579,
+          1.0
+        ],
+        "ditherTransOpacity": 0.5,
+        "ditherTransPattern": 0,
+        "ditherTransparency": false,
+        "doubleSided": true,
+        "emissiveColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "emissiveStrength": 0.0,
+        "emissiveTexture": -1,
+        "emissiveTexturePath": "",
+        "excludeFromCelShading": false,
+        "flatShading": false,
+        "footstepVolume": 1.0,
+        "fresnelPower": 5.0,
+        "gouraudOnly": false,
+        "heightTexturePath": "",
+        "impactThreshold": 3.0,
+        "ior": 1.5,
+        "matcapTexturePath": "",
+        "metallic": 0.0,
+        "metallicRoughnessTexture": -1,
+        "metallicRoughnessTexturePath": "",
+        "normalTexture": -1,
+        "normalTexturePath": "",
+        "opacity": 1.0,
+        "outlineColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "outlineWidth": 0.0,
+        "parallaxMode": 0,
+        "parallaxScale": 0.05000000074505806,
+        "pomHeightScale": 0.05000000074505806,
+        "pomMaxSteps": 32,
+        "receiveShadows": false,
+        "reflectivity": 0.0,
+        "rimLightStrength": 0.0,
+        "roughness": 0.5,
+        "scrollReflectionSpeed": [
+          0.05000000074505806,
+          0.029999999329447746
+        ],
+        "scrollReflectionStrength": 0.5,
+        "scrollReflectionTexturePath": "",
+        "sdfText": false,
+        "shadowDitherMode": 0,
+        "shadowDitherPattern": 0,
+        "specularTexturePath": "",
+        "sssColor": [
+          1.0,
+          0.20000000298023224,
+          0.10000000149011612
+        ],
+        "sssIntensity": 0.0,
+        "sssRadius": 1.0,
+        "stippleTransparency": false,
+        "surfaceNoiseScale": 0.0,
+        "surfaceNoiseStrength": 0.0,
+        "textureFilterOverride": 0,
+        "thickness": 0.0,
+        "transmission": 0.0,
+        "uvQuantize": false,
+        "uvRegionOffset": [
+          0.0,
+          0.0
+        ],
+        "uvRegionScale": [
+          1.0,
+          1.0
+        ],
+        "vertexSnapResolution": 160,
+        "vertexSnapping": false
+      }
+    },
+    {
+      "id": 25,
+      "name": {
+        "name": "Fade"
+      },
+      "stableId": 1024,
+      "transform": {
+        "position": [
+          0,
+          0,
+          19.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          96,
+          96,
+          1
+        ]
+      },
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              1
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1,
+              0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "material": {
+        "affineTexturing": false,
+        "alphaCutoff": 0.5,
+        "alphaMode": 2,
+        "baseColor": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "baseColorTexture": -1,
+        "baseColorTexturePath": "assets/spiral.png",
+        "castShadows": false,
+        "ditherGradient": false,
+        "ditherGradientBands": 4,
+        "ditherGradientPattern": 0,
+        "ditherTransBlendColor": [
+          0.699999988079071,
+          0.8500000238418579,
+          1.0
+        ],
+        "ditherTransOpacity": 0.5,
+        "ditherTransPattern": 0,
+        "ditherTransparency": false,
+        "doubleSided": true,
+        "emissiveColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "emissiveStrength": 0.0,
+        "emissiveTexture": -1,
+        "emissiveTexturePath": "",
+        "excludeFromCelShading": false,
+        "flatShading": false,
+        "footstepVolume": 1.0,
+        "fresnelPower": 5.0,
+        "gouraudOnly": false,
+        "heightTexturePath": "",
+        "impactThreshold": 3.0,
+        "ior": 1.5,
+        "matcapTexturePath": "",
+        "metallic": 0.0,
+        "metallicRoughnessTexture": -1,
+        "metallicRoughnessTexturePath": "",
+        "normalTexture": -1,
+        "normalTexturePath": "",
+        "opacity": 1.0,
+        "outlineColor": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "outlineWidth": 0.0,
+        "parallaxMode": 0,
+        "parallaxScale": 0.05000000074505806,
+        "pomHeightScale": 0.05000000074505806,
+        "pomMaxSteps": 32,
+        "receiveShadows": false,
+        "reflectivity": 0.0,
+        "rimLightStrength": 0.0,
+        "roughness": 0.5,
+        "scrollReflectionSpeed": [
+          0.05000000074505806,
+          0.029999999329447746
+        ],
+        "scrollReflectionStrength": 0.5,
+        "scrollReflectionTexturePath": "",
+        "sdfText": false,
+        "shadowDitherMode": 0,
+        "shadowDitherPattern": 0,
+        "specularTexturePath": "",
+        "sssColor": [
+          1.0,
+          0.20000000298023224,
+          0.10000000149011612
+        ],
+        "sssIntensity": 0.0,
+        "sssRadius": 1.0,
+        "stippleTransparency": false,
+        "surfaceNoiseScale": 0.0,
+        "surfaceNoiseStrength": 0.0,
+        "textureFilterOverride": 0,
+        "thickness": 0.0,
+        "transmission": 0.0,
+        "uvQuantize": false,
+        "uvRegionOffset": [
+          0.0,
+          0.0
+        ],
+        "uvRegionScale": [
+          1.0,
+          1.0
+        ],
+        "vertexSnapResolution": 160,
+        "vertexSnapping": false
+      }
+    },
+    {
+      "id": 26,
+      "name": {
+        "name": "GameHUD"
+      },
+      "stableId": 1025,
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "uiCanvas": {
+        "canvasName": "GameHUD",
+        "designHeight": 1080.0,
+        "designWidth": 1920.0,
+        "elements": [
+          {
+            "anchor": {
+              "anchorMax": [
+                0.5,
+                0.17
+              ],
+              "anchorMin": [
+                0.5,
+                0.17
+              ],
+              "offsetBottom": 180.0,
+              "offsetLeft": -880.0,
+              "offsetRight": 880.0,
+              "offsetTop": -180.0,
+              "pivot": [
+                0.5,
+                0.5
+              ]
+            },
+            "childIds": [],
+            "data": {
+              "activeTabIndex": 0.0,
+              "checked": 0.0,
+              "gridColumns": 2.0,
+              "imageAlpha": 1.0,
+              "imagePath": "",
+              "imageTint": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "inputText": "",
+              "listSelectedIndex": -1.0,
+              "placeholder": "",
+              "progressFillColor": [
+                -1.0,
+                -1.0,
+                -1.0
+              ],
+              "progressValue": 0.5,
+              "selectedOption": 0.0,
+              "sliderMax": 1.0,
+              "sliderMin": 0.0,
+              "sliderValue": 0.5,
+              "text": "",
+              "textAlignH": 0.5,
+              "textAlignV": 0.5,
+              "tooltipDelay": 0.5
+            },
+            "enabled": true,
+            "focusable": false,
+            "id": 1.0,
+            "layoutAlign": 3,
+            "layoutMode": 0,
+            "layoutPaddingX": 0.0,
+            "layoutPaddingY": 0.0,
+            "layoutSpacing": -1.0,
+            "name": "text",
+            "onClickEvent": "",
+            "onSubmitEvent": "",
+            "onValueChangedEvent": "",
+            "parentId": 0,
+            "style": {
+              "bgAlpha": 0.84,
+              "bgColor": [
+                0.05,
+                0.05,
+                0.09
+              ],
+              "borderColor": [
+                0.17,
+                0.55,
+                0.6
+              ],
+              "borderRadius": 12.0,
+              "borderWidth": 2.0,
+              "focusColor": [
+                -1.0,
+                -1.0,
+                -1.0
+              ],
+              "fontSize": 40.0,
+              "textColor": [
+                0.97,
+                0.96,
+                0.92
+              ]
+            },
+            "tabOrder": 0,
+            "type": 2,
+            "visible": 1.0
+          }
+        ],
+        "nextElementId": 2,
+        "scaleMode": 0,
+        "sortOrder": 200.0,
+        "theme": {
+          "background": [
+            0.07999999821186066,
+            0.07999999821186066,
+            0.10000000149011612
+          ],
+          "bgAlpha": 0.9200000166893005,
+          "borderRadius": 4.0,
+          "borderWidth": 1.0,
+          "buttonDefault": [
+            0.25999999046325684,
+            0.5899999737739563,
+            0.9800000190734863
+          ],
+          "buttonDisabled": [
+            0.25,
+            0.25,
+            0.30000001192092896
+          ],
+          "buttonHovered": [
+            0.36000001430511475,
+            0.6899999976158142,
+            1.0
+          ],
+          "buttonPressed": [
+            0.1599999964237213,
+            0.49000000953674316,
+            0.8799999952316284
+          ],
+          "checkboxBg": [
+            0.15000000596046448,
+            0.15000000596046448,
+            0.20000000298023224
+          ],
+          "checkboxChecked": [
+            0.25999999046325684,
+            0.5899999737739563,
+            0.9800000190734863
+          ],
+          "error": [
+            0.8999999761581421,
+            0.25,
+            0.25
+          ],
+          "focusBorderWidth": 2.5,
+          "fontSizeBody": 16.0,
+          "fontSizeHeading": 24.0,
+          "fontSizeSmall": 12.0,
+          "inputBg": [
+            0.10000000149011612,
+            0.10000000149011612,
+            0.12999999523162842
+          ],
+          "inputBorder": [
+            0.30000001192092896,
+            0.30000001192092896,
+            0.3499999940395355
+          ],
+          "inputFocused": [
+            0.25999999046325684,
+            0.5899999737739563,
+            0.9800000190734863
+          ],
+          "name": "Dark",
+          "primary": [
+            0.25999999046325684,
+            0.5899999737739563,
+            0.9800000190734863
+          ],
+          "secondary": [
+            0.44999998807907104,
+            0.44999998807907104,
+            0.5
+          ],
+          "sliderFill": [
+            0.25999999046325684,
+            0.5899999737739563,
+            0.9800000190734863
+          ],
+          "sliderThumb": [
+            0.8999999761581421,
+            0.8999999761581421,
+            0.949999988079071
+          ],
+          "sliderTrack": [
+            0.20000000298023224,
+            0.20000000298023224,
+            0.25
+          ],
+          "spacing": 8.0,
+          "surface": [
+            0.14000000059604645,
+            0.14000000059604645,
+            0.17000000178813934
+          ],
+          "textDisabled": [
+            0.3499999940395355,
+            0.3499999940395355,
+            0.4000000059604645
+          ],
+          "textPrimary": [
+            0.949999988079071,
+            0.949999988079071,
+            0.9700000286102295
+          ],
+          "textSecondary": [
+            0.6000000238418579,
+            0.6000000238418579,
+            0.6499999761581421
+          ],
+          "toggleKnob": [
+            0.949999988079071,
+            0.949999988079071,
+            0.9700000286102295
+          ],
+          "toggleOffBg": [
+            0.30000001192092896,
+            0.30000001192092896,
+            0.3499999940395355
+          ],
+          "toggleOnBg": [
+            0.25999999046325684,
+            0.5899999737739563,
+            0.9800000190734863
+          ]
+        },
+        "visible": 1.0
+      }
+    },
+    {
+      "id": 27,
+      "stableId": 1026,
+      "name": {
+        "name": "Sun"
+      },
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          20.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "light": {
+        "type": 0,
+        "color": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "intensity": 1.0,
+        "range": 50.0,
+        "constantAttenuation": 1.0,
+        "linearAttenuation": 0.09,
+        "quadraticAttenuation": 0.032,
+        "innerConeAngle": 12.5,
+        "outerConeAngle": 17.5,
+        "castShadows": false
+      }
+    }
+  ],
+  "entityCount": 27,
+  "formatVersion": 1,
+  "renderSettings": {
+    "aaComparisonDivider": 0.5,
+    "aaComparisonEnabled": false,
+    "aaComparisonModeLeft": 0,
+    "aaComparisonModeRight": 1,
+    "aaMode": 1,
+    "ambientColor": [
+      0.10000000149011612,
+      0.10000000149011612,
+      0.15000000596046448
+    ],
+    "ambientIntensity": 1.0,
+    "artStylePreset": 0,
+    "backfaceCulling": false,
+    "bloomEnabled": false,
+    "bloomIntensity": 0.5,
+    "bloomRadius": 0.004999999888241291,
+    "bloomThreshold": 1.0,
+    "brightness": 0.0,
+    "cascadeFarUpdateInterval": 2,
+    "cascadeProgressiveUpdate": false,
+    "causticsEnabled": false,
+    "causticsIntensity": 0.30000001192092896,
+    "causticsScale": 1.0,
+    "causticsSpeed": 1.0,
+    "causticsWaterY": 0.0,
+    "celDiffuseBands": 3.0,
+    "celOutlineColor": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "celOutlineCurvatureWeight": 0.0,
+    "celOutlineEnabled": false,
+    "celOutlineThickness": 1.0,
+    "celOutlineThreshold": 0.10000000149011612,
+    "celShadingEnabled": false,
+    "celShadowMode": 0.0,
+    "celSpecularCutoff": 0.5,
+    "chromaticAberrationEnabled": false,
+    "chromaticAberrationIntensity": 0.004999999888241291,
+    "colorBitDepth": 5,
+    "colorFilter": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "colorQuantEnabled": false,
+    "contactShadowsEnabled": false,
+    "contactShadowsIntensity": 1.0,
+    "contactShadowsLength": 0.10000000149011612,
+    "contactShadowsSteps": 16,
+    "contrast": 1.0,
+    "crtBloomRadius": 1.5,
+    "crtBloomSigma": 0.800000011920929,
+    "crtBloomStrength": 0.30000001192092896,
+    "crtCurvature": 0.0,
+    "crtEnabled": false,
+    "crtMaskPitch": 1.0,
+    "crtMaskType": 0,
+    "crtModelPreset": 0.0,
+    "crtPhosphorEnabled": false,
+    "crtTVL": 400.0,
+    "depthSortJitter": 0.0,
+    "ditherEnabled": false,
+    "ditherPattern": 1,
+    "ditherStrength": 1.0,
+    "dofApertureShape": 0,
+    "dofBokehSize": 4.0,
+    "dofDebugCoC": false,
+    "dofEnabled": false,
+    "dofFarBlurStrength": 1.0,
+    "dofFocalDistance": 10.0,
+    "dofFocalRange": 5.0,
+    "dofNearBlurStrength": 1.0,
+    "energyConservation": false,
+    "exposure": 1.0,
+    "filmGrainEnabled": false,
+    "filmGrainIntensity": 0.05000000074505806,
+    "fogColor": [
+      0.5,
+      0.5,
+      0.6000000238418579
+    ],
+    "fogDensity": 0.0,
+    "fogEnd": 100.0,
+    "fogHeightFalloff": 0.10000000149011612,
+    "fogShaftsDecay": 0.949999988079071,
+    "fogShaftsDensity": 0.05000000074505806,
+    "fogShaftsEnabled": false,
+    "fogShaftsIntensity": 0.30000001192092896,
+    "fogShaftsMaxDistance": 50.0,
+    "fogShaftsSamples": 16,
+    "fogStart": 20.0,
+    "fresnelEnabled": false,
+    "fxaaEnabled": true,
+    "fxaaReduceMin": 0.007813000120222569,
+    "fxaaReduceMul": 0.125,
+    "fxaaSpanMax": 8.0,
+    "gamma": 1.0,
+    "geometryOutlineColor": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "geometryOutlineWidth": 0.019999999552965164,
+    "geometryOutlinesEnabled": false,
+    "geometryTerm": false,
+    "globalAffineTexturing": false,
+    "globalFlatShading": false,
+    "globalGouraudOnly": false,
+    "globalStippleTransparency": false,
+    "globalUVQuantize": false,
+    "globalVertexSnapResolution": 160,
+    "globalVertexSnapping": false,
+    "godRaysDecay": 0.9700000286102295,
+    "godRaysDensity": 1.0,
+    "godRaysEnabled": false,
+    "godRaysIntensity": 0.5,
+    "godRaysSamples": 64,
+    "godRaysWeight": 0.009999999776482582,
+    "halfLambert": false,
+    "hdrOutput": false,
+    "internalHeight": 224,
+    "internalWidth": 320,
+    "lightRampMode": 0.0,
+    "lutEnabled": false,
+    "lutSize": 32,
+    "lutStrength": 1.0,
+    "normalQuantizeSteps": 0.0,
+    "paletteColors": 16,
+    "paletteEnabled": false,
+    "posterizeLevels": 0.0,
+    "radianceCacheDepthThreshold": 0.10000000149011612,
+    "radianceCacheEnabled": false,
+    "radianceCacheExcludeDirectional": true,
+    "radianceCacheHysteresis": 0.8999999761581421,
+    "radianceCacheMaxAge": 8.0,
+    "radianceCacheNormalThreshold": 0.8500000238418579,
+    "radianceCacheTileSize": 32,
+    "rainActive": false,
+    "resDownscaleEnabled": false,
+    "restirDistanceBias": 0.10000000149011612,
+    "restirEnabled": false,
+    "restirInitialCandidates": 8,
+    "restirSpatialDepthThreshold": 0.10000000149011612,
+    "restirSpatialNeighbors": 5,
+    "restirSpatialNormalThreshold": 0.8999999761581421,
+    "restirSpatialRadius": 30.0,
+    "restirSpatialReuse": false,
+    "restirTemporalDepthThreshold": 0.10000000149011612,
+    "restirTemporalMaxHistory": 20,
+    "restirTemporalNormalThreshold": 0.8999999761581421,
+    "restirTemporalReuse": false,
+    "rtAOEnabled": true,
+    "rtAOPower": 1.5,
+    "rtAORadius": 2.0,
+    "rtAOStrength": 1.0,
+    "rtDenoiserEnabled": true,
+    "rtDenoiserIterations": 5,
+    "rtDenoiserTemporalAlpha": 0.05000000074505806,
+    "rtDenoiserType": 0,
+    "rtEnabled": false,
+    "rtGIBounces": 1,
+    "rtGIEnabled": false,
+    "rtGIIntensity": 1.0,
+    "rtGIMaxDistance": 50.0,
+    "rtGIStrength": 0.5,
+    "rtMode": 0,
+    "rtOIDNQuality": 1,
+    "rtPathTracerFireflyClamp": 10.0,
+    "rtPathTracerMIS": true,
+    "rtPathTracerMaxBounces": 4,
+    "rtPathTracerNEE": true,
+    "rtPathTracerRRMinBounce": 3.0,
+    "rtPathTracerRRMinProb": 0.05000000074505806,
+    "rtPathTracerTargetSPP": 1024,
+    "rtReflectionMaxDistance": 50.0,
+    "rtReflectionRoughnessThreshold": 0.5,
+    "rtReflectionSDFFallback": true,
+    "rtReflectionSDFMaxDistance": 500.0,
+    "rtReflectionStrength": 0.5,
+    "rtReflectionsEnabled": true,
+    "rtShadowMaxDistance": 100.0,
+    "rtShadowRadius": 0.009999999776482582,
+    "rtShadowStrength": 1.0,
+    "rtShadowsEnabled": true,
+    "rtSimplifiedMaterials": true,
+    "rtSimplifyAfterBounce": 1,
+    "rtTemporalReuseAO": true,
+    "rtTemporalReuseDisocclusionThreshold": 0.10000000149011612,
+    "rtTemporalReuseEnabled": false,
+    "rtTemporalReuseGI": true,
+    "rtTemporalReuseHistoryLength": 0.8999999761581421,
+    "rtTemporalReuseNormalThreshold": 0.8999999761581421,
+    "rtTemporalReuseReflections": true,
+    "rtTemporalReuseShadows": true,
+    "saturation": 1.0,
+    "scanlineIntensity": 0.30000001192092896,
+    "scanlineWidth": 1.0,
+    "shadingModel": 0,
+    "shadowDistance": 100.0,
+    "shadowResolution": 2048,
+    "shadowSoftness": 0.0,
+    "shadowStrength": 1.0,
+    "shadowsEnabled": true,
+    "snowIntensity": 0.0,
+    "sphereEnvMapEnabled": false,
+    "sphereEnvStrength": 0.5,
+    "ssaoBias": 0.02500000037252903,
+    "ssaoEnabled": false,
+    "ssaoIntensity": 1.5,
+    "ssaoRadius": 0.5,
+    "ssaoSamples": 16,
+    "stippleBgColor": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "stippleColorMode": 0,
+    "stippleDensity": 0.5,
+    "stippleEnabled": false,
+    "stippleFgColor": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "stipplePatternMask": 1,
+    "stippleScale": 1.0,
+    "stippleStrength": 1.0,
+    "surfelCacheBlendWeight": 0.5,
+    "surfelCacheCameraRadius": 50.0,
+    "surfelCacheEnabled": false,
+    "surfelCacheExcludeDirectional": true,
+    "surfelCacheMaxAge": 32.0,
+    "surfelCacheMaxSurfels": 65536,
+    "surfelCacheNormalThreshold": 0.699999988079071,
+    "surfelCachePlacementInterval": 4,
+    "surfelCacheRadius": 0.5,
+    "surfelCacheRaysPerSurfel": 2,
+    "surfelCacheUpdateFraction": 0.125,
+    "taaFeedbackMax": 0.9700000286102295,
+    "taaFeedbackMin": 0.8799999952316284,
+    "taaJitterScale": 1.0,
+    "taaSharpness": 0.10000000149011612,
+    "textureAnisotropy": 8,
+    "textureFilter": 2,
+    "textureMipmaps": true,
+    "texturePageSize": 0.0,
+    "textureWrap": 0,
+    "tiltShiftBandWidth": 0.30000001192092896,
+    "tiltShiftBlurAmount": 3.0,
+    "tiltShiftEnabled": false,
+    "tiltShiftFocusY": 0.5,
+    "toneMappingMode": 0,
+    "upscalerQuality": 2,
+    "upscalerSharpness": 0.0,
+    "upscalerType": 0,
+    "usePointFiltering": true,
+    "useProjectDefaults": true,
+    "vhsBlueShift": 0.05000000074505806,
+    "vhsColorBleed": 0.003000000026077032,
+    "vhsEnabled": false,
+    "vhsInterlacing": false,
+    "vhsNoiseIntensity": 0.05000000074505806,
+    "vhsScreenTear": false,
+    "vhsTearOffset": 0.0,
+    "vhsTrackingIntensity": 0.30000001192092896,
+    "vhsTrackingSpeed": 1.0,
+    "vhsWobbleIntensity": 0.0020000000949949026,
+    "vhsWobbleSpeed": 2.0,
+    "vignetteEnabled": false,
+    "vignetteIntensity": 0.30000001192092896,
+    "vignetteSmoothness": 0.5,
+    "whitePoint": 4.0,
+    "wireframe": false,
+    "worldCurvature": 0.0
+  },
+  "version": "1.0"
+}
