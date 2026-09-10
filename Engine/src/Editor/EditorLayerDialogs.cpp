@@ -2686,7 +2686,41 @@ void EditorLayer::PushConsoleMessage(const std::string& message) {
 }
 
 void EditorLayer::PushConsoleMessage(LogLevel level, LogCategory category, const std::string& message) {
+    // This is the global logger callback's landing point, so it can arrive on any
+    // thread: the build thread logs ~17 times during an export, and the MCP
+    // socket thread and dev web server log too. m_ConsoleLog is read across a
+    // dozen ImGui calls while the Console panel draws, so an off-thread
+    // push_back could reallocate the vector under that read.
+    //
+    // Off-thread entries queue; the main thread drains them once a frame. The
+    // ~440 main-thread call sites keep pushing directly and pay nothing.
+    if (std::this_thread::get_id() != m_MainThreadId) {
+        std::lock_guard<std::mutex> lock(m_PendingConsoleMutex);
+        // Bounded here too -- a runaway background logger must not grow this
+        // without limit between frames.
+        if (m_PendingConsoleEntries.size() < MAX_CONSOLE_LINES) {
+            m_PendingConsoleEntries.push_back({ message, level, category });
+        }
+        return;
+    }
+
     m_ConsoleLog.push_back({ message, level, category });
+    if (m_ConsoleLog.size() > MAX_CONSOLE_LINES) {
+        m_ConsoleLog.erase(m_ConsoleLog.begin(),
+            m_ConsoleLog.begin() + static_cast<ptrdiff_t>(m_ConsoleLog.size() - MAX_CONSOLE_LINES));
+    }
+}
+
+void EditorLayer::DrainPendingConsoleEntries() {
+    std::vector<ConsoleEntry> pending;
+    {
+        std::lock_guard<std::mutex> lock(m_PendingConsoleMutex);
+        if (m_PendingConsoleEntries.empty()) return;
+        pending.swap(m_PendingConsoleEntries);
+    }
+    m_ConsoleLog.insert(m_ConsoleLog.end(),
+                        std::make_move_iterator(pending.begin()),
+                        std::make_move_iterator(pending.end()));
     if (m_ConsoleLog.size() > MAX_CONSOLE_LINES) {
         m_ConsoleLog.erase(m_ConsoleLog.begin(),
             m_ConsoleLog.begin() + static_cast<ptrdiff_t>(m_ConsoleLog.size() - MAX_CONSOLE_LINES));

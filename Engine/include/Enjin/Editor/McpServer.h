@@ -7,6 +7,7 @@
 #include <condition_variable>
 #include <functional>
 #include <mutex>
+#include <memory>
 #include <queue>
 #include <string>
 #include <thread>
@@ -87,10 +88,22 @@ public:
 private:
     void Run();
 
+    // Shared-owned, not a socket-thread stack local.
+    //
+    // It used to be a stack object whose address went on the queue. On the 10s
+    // timeout the socket thread scanned the queue and pulled its entry back --
+    // but if PumpMainThread had ALREADY popped it and was inside HandleJsonRpc,
+    // the scan found nothing, the socket thread returned 504 and unwound, and the
+    // main thread then wrote p->response, p->done and called p->cv.notify_one()
+    // on freed stack. Any tool call that keeps the editor busy past ten seconds
+    // reaches it: a large scene load, a heavy SaveScene, a native modal opening
+    // mid-pump. A shared_ptr means the main thread's own reference keeps the
+    // object alive past the socket thread's unwind.
     struct Pending {
         std::string body;
         std::string response;
         bool done = false;
+        bool abandoned = false;   // client gave up; nobody is waiting for this
         std::mutex m;
         std::condition_variable cv;
     };
@@ -110,7 +123,7 @@ private:
     i64 m_ListenSocket = -1;
 
     std::mutex m_QueueMutex;
-    std::queue<Pending*> m_Queue;
+    std::queue<std::shared_ptr<Pending>> m_Queue;
 };
 
 } // namespace Editor

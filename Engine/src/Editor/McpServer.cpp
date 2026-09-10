@@ -323,7 +323,10 @@ std::string McpServer::HandleJsonRpc(const std::string& body) {
 // ---------------------------------------------------------------------------
 void McpServer::PumpMainThread() {
     for (;;) {
-        Pending* p = nullptr;
+        // Held by shared_ptr for the whole iteration: the requesting socket
+        // thread can time out and unwind while HandleJsonRpc is still running,
+        // and this reference is what keeps the object alive to write into.
+        std::shared_ptr<Pending> p;
         {
             std::lock_guard<std::mutex> lock(m_QueueMutex);
             if (m_Queue.empty()) return;
@@ -333,6 +336,12 @@ void McpServer::PumpMainThread() {
         std::string resp = HandleJsonRpc(p->body);
         {
             std::lock_guard<std::mutex> lock(p->m);
+            if (p->abandoned) {
+                // The client already got its 504. Doing the work was not wasted
+                // -- the tool ran -- but there is nobody to hand the result to.
+                ENJIN_LOG_WARN(Editor, "MCP: request completed after the client timed out");
+                continue;
+            }
             p->response = std::move(resp);
             p->done = true;
         }
@@ -396,7 +405,7 @@ void McpServer::Stop() {
     // Fail any requests still parked in the queue so their sockets close.
     std::lock_guard<std::mutex> lock(m_QueueMutex);
     while (!m_Queue.empty()) {
-        Pending* p = m_Queue.front();
+        std::shared_ptr<Pending> p = m_Queue.front();
         m_Queue.pop();
         {
             std::lock_guard<std::mutex> pl(p->m);
@@ -460,23 +469,28 @@ void McpServer::Run() {
         } else {
             // Park the request for the main thread; wait with a timeout so a
             // stalled editor produces an error instead of a hung client.
-            Pending pending;
-            pending.body = body;
+            auto pending = std::make_shared<Pending>();
+            pending->body = body;
             {
                 std::lock_guard<std::mutex> lock(m_QueueMutex);
-                m_Queue.push(&pending);
+                m_Queue.push(pending);
             }
-            std::unique_lock<std::mutex> lk(pending.m);
-            bool ok = pending.cv.wait_for(lk, std::chrono::seconds(10),
-                                          [&] { return pending.done; });
+            std::unique_lock<std::mutex> lk(pending->m);
+            bool ok = pending->cv.wait_for(lk, std::chrono::seconds(10),
+                                           [&] { return pending->done; });
             if (!ok) {
-                // Editor never picked it up (blocked/modal). Pull it back off the
-                // queue if still parked so PumpMainThread can't touch freed stack.
+                // Editor never picked it up, or picked it up and is still in it.
+                // Mark it abandoned FIRST, under the lock we already hold, so a
+                // pump that is mid-HandleJsonRpc right now sees the flag when it
+                // goes to write. Then drop it from the queue if it is still
+                // parked, so an editor that unblocks later does not run it at all.
+                pending->abandoned = true;
+                lk.unlock();
                 {
                     std::lock_guard<std::mutex> qlock(m_QueueMutex);
-                    std::queue<Pending*> keep;
+                    std::queue<std::shared_ptr<Pending>> keep;
                     while (!m_Queue.empty()) {
-                        if (m_Queue.front() != &pending) keep.push(m_Queue.front());
+                        if (m_Queue.front() != pending) keep.push(m_Queue.front());
                         m_Queue.pop();
                     }
                     m_Queue = std::move(keep);
@@ -484,7 +498,7 @@ void McpServer::Run() {
                 status = "504 Gateway Timeout";
                 response = R"json({"jsonrpc":"2.0","id":null,"error":{"code":-32000,"message":"editor busy (timeout)"}})json";
             } else {
-                response = pending.response;
+                response = pending->response;
                 if (response.empty()) status = "202 Accepted";   // notification
             }
         }

@@ -987,7 +987,25 @@ private:
         ConsoleEntry(const std::string& msg, LogLevel lvl, LogCategory cat)
             : message(msg), level(lvl), category(cat) {}
     };
+    // MAIN THREAD ONLY. Read across a dozen ImGui calls while the panel draws,
+    // so nothing may push into it from elsewhere.
     std::vector<ConsoleEntry> m_ConsoleLog;
+
+    // Cross-thread inbox. EditorLogCallback is installed as the GLOBAL logger
+    // callback and Logger::Log fires it from whatever thread called it -- the
+    // build thread, the MCP socket thread, the dev web server. Those used to
+    // push_back straight into m_ConsoleLog, so exporting a game with the Console
+    // panel open could reallocate the vector under the panel's own read of it.
+    // They land here instead and the main thread drains them once a frame.
+    std::vector<ConsoleEntry> m_PendingConsoleEntries;
+    std::mutex m_PendingConsoleMutex;
+    // Set once at Initialize. Comparing against it is how PushConsoleMessage
+    // tells an editor-thread call from a background one without every one of the
+    // ~440 main-thread call sites paying for a lock.
+    std::thread::id m_MainThreadId;
+
+    // Move anything the background threads logged into m_ConsoleLog. Main thread.
+    void DrainPendingConsoleEntries();
     static constexpr usize MAX_CONSOLE_LINES = 1000;
 
     // Console filter state

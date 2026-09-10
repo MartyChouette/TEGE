@@ -748,8 +748,20 @@ void DestructibleSystem::CreatePersistentFragments(const DestructionEvent& event
     auto* srcMat = m_World->GetComponent<ECS::MaterialComponent>(event.entity);
     if (srcMat) baseColor = srcMat->baseColor;
 
+    // COPY everything the fragment loop needs, before it starts adding
+    // components. ComponentStorage is a dense std::vector<T> and Add is a
+    // push_back, so the first AddComponent<TransformComponent> on a fragment
+    // reallocates the very storage `transform` points into. The loop then placed
+    // every fragment from freed memory and copied a MaterialComponent whose
+    // std::string texture paths were read off the freed heap -- and that path
+    // went straight to the texture loader. Same for `fractureConfig` and `srcMat`.
+    const ECS::TransformComponent srcTransform = *transform;
+    const ECS::FractureConfigComponent srcFracture = *fractureConfig;
+    const bool hasSrcMat = (srcMat != nullptr);
+    const ECS::MaterialComponent srcMaterial = hasSrcMat ? *srcMat : ECS::MaterialComponent{};
+
     // Transform impact point into local space of the entity
-    Math::Vector3 localImpact = event.impactPoint - transform->position;
+    Math::Vector3 localImpact = event.impactPoint - srcTransform.position;
 
     // Configure Voronoi fracture
     VoronoiMeshFracture::Config fracConfig;
@@ -761,6 +773,10 @@ void DestructibleSystem::CreatePersistentFragments(const DestructionEvent& event
 
     // Run Voronoi fracture algorithm on the source mesh
     auto fragments = VoronoiMeshFracture::Fracture(mesh->vertices, mesh->indices, fracConfig);
+    // `mesh` is dead from here: the loop below adds MeshComponents, which
+    // reallocates the storage it points into. Everything it held is in
+    // `fragments` now.
+    mesh = nullptr;
 
     if (fragments.empty()) {
         // Fallback: generate old-style debris if fracture produces nothing
@@ -784,12 +800,12 @@ void DestructibleSystem::CreatePersistentFragments(const DestructionEvent& event
         // Transform: position = source entity transform + fragment centroid
         auto& fragTransform = m_World->AddComponent<ECS::TransformComponent>(fragEntity);
         fragTransform.position = Math::Vector3(
-            transform->position.x + frag.centroid.x * transform->scale.x,
-            transform->position.y + frag.centroid.y * transform->scale.y,
-            transform->position.z + frag.centroid.z * transform->scale.z
+            srcTransform.position.x + frag.centroid.x * srcTransform.scale.x,
+            srcTransform.position.y + frag.centroid.y * srcTransform.scale.y,
+            srcTransform.position.z + frag.centroid.z * srcTransform.scale.z
         );
-        fragTransform.rotation = transform->rotation;
-        fragTransform.scale = transform->scale;
+        fragTransform.rotation = srcTransform.rotation;
+        fragTransform.scale = srcTransform.scale;
         fragTransform.visible = true;
 
         // Mesh: offset vertices to be relative to the fragment centroid
@@ -806,8 +822,8 @@ void DestructibleSystem::CreatePersistentFragments(const DestructionEvent& event
 
         // Material: inherit from source with slight color variation
         auto& fragMat = m_World->AddComponent<ECS::MaterialComponent>(fragEntity);
-        if (srcMat) {
-            fragMat = *srcMat;
+        if (hasSrcMat) {
+            fragMat = srcMaterial;
         }
         fragMat.baseColor = Math::Vector3(
             std::max(0.0f, std::min(1.0f, baseColor.x + RandomRange(-0.05f, 0.05f))),
@@ -818,7 +834,7 @@ void DestructibleSystem::CreatePersistentFragments(const DestructionEvent& event
 
         // Rigidbody: dynamic body with mass based on volume * density
         auto& rb = m_World->AddComponent<ECS::RigidbodyComponent>(fragEntity);
-        rb.mass = std::max(0.1f, frag.volume * fractureConfig->fragmentDensity);
+        rb.mass = std::max(0.1f, frag.volume * srcFracture.fragmentDensity);
         rb.useGravity = true;
         rb.bodyType = ECS::RigidbodyComponent::BodyType::Dynamic;
 
@@ -832,7 +848,7 @@ void DestructibleSystem::CreatePersistentFragments(const DestructionEvent& event
             dir = Math::Vector3(RandomRange(-1.0f, 1.0f), RandomRange(0.2f, 1.0f), RandomRange(-1.0f, 1.0f));
             dir.Normalize();
         }
-        f32 forceMag = fractureConfig->explosionForce * RandomRange(0.5f, 1.5f);
+        f32 forceMag = srcFracture.explosionForce * RandomRange(0.5f, 1.5f);
         rb.velocity = dir * forceMag + event.impactDirection * (event.impactForce * 0.3f);
         rb.angularVelocity = Math::Vector3(
             RandomRange(-3.0f, 3.0f), RandomRange(-3.0f, 3.0f), RandomRange(-3.0f, 3.0f));
@@ -840,39 +856,39 @@ void DestructibleSystem::CreatePersistentFragments(const DestructionEvent& event
         // Box collider: sized to fragment AABB
         auto& collider = m_World->AddComponent<ECS::BoxColliderComponent>(fragEntity);
         Math::Vector3 fragSize(
-            (frag.aabbMax.x - frag.aabbMin.x) * transform->scale.x,
-            (frag.aabbMax.y - frag.aabbMin.y) * transform->scale.y,
-            (frag.aabbMax.z - frag.aabbMin.z) * transform->scale.z
+            (frag.aabbMax.x - frag.aabbMin.x) * srcTransform.scale.x,
+            (frag.aabbMax.y - frag.aabbMin.y) * srcTransform.scale.y,
+            (frag.aabbMax.z - frag.aabbMin.z) * srcTransform.scale.z
         );
         collider.size = fragSize;
-        collider.friction = fractureConfig->fragmentFriction;
-        collider.bounciness = fractureConfig->fragmentBounciness;
+        collider.friction = srcFracture.fragmentFriction;
+        collider.bounciness = srcFracture.fragmentBounciness;
 
         // Allow re-fracture if enabled and depth not exceeded
-        if (fractureConfig->allowRefracture &&
-            fractureConfig->currentDepth < fractureConfig->maxRefractureDepth) {
+        if (srcFracture.allowRefracture &&
+            srcFracture.currentDepth < srcFracture.maxRefractureDepth) {
             auto& childDc = m_World->AddComponent<ECS::DestructibleComponent>(fragEntity);
             childDc.health = 1.0f;
             childDc.destroyOnHit = true;
 
             auto& childFc = m_World->AddComponent<ECS::FractureConfigComponent>(fragEntity);
-            childFc.fragmentCount = std::max(3u, fractureConfig->fragmentCount / 2);
-            childFc.explosionForce = fractureConfig->explosionForce * 0.7f;
+            childFc.fragmentCount = std::max(3u, srcFracture.fragmentCount / 2);
+            childFc.explosionForce = srcFracture.explosionForce * 0.7f;
             childFc.persistentFragments = true;
             childFc.allowRefracture = true;
-            childFc.maxRefractureDepth = fractureConfig->maxRefractureDepth;
-            childFc.currentDepth = fractureConfig->currentDepth + 1;
-            childFc.maxFragmentEntities = fractureConfig->maxFragmentEntities;
-            childFc.autoCleanup = fractureConfig->autoCleanup;
-            childFc.cleanupDelay = fractureConfig->cleanupDelay;
-            childFc.fragmentDensity = fractureConfig->fragmentDensity;
-            childFc.fragmentFriction = fractureConfig->fragmentFriction;
-            childFc.fragmentBounciness = fractureConfig->fragmentBounciness;
-            childFc.impactBias = fractureConfig->impactBias;
+            childFc.maxRefractureDepth = srcFracture.maxRefractureDepth;
+            childFc.currentDepth = srcFracture.currentDepth + 1;
+            childFc.maxFragmentEntities = srcFracture.maxFragmentEntities;
+            childFc.autoCleanup = srcFracture.autoCleanup;
+            childFc.cleanupDelay = srcFracture.cleanupDelay;
+            childFc.fragmentDensity = srcFracture.fragmentDensity;
+            childFc.fragmentFriction = srcFracture.fragmentFriction;
+            childFc.fragmentBounciness = srcFracture.fragmentBounciness;
+            childFc.impactBias = srcFracture.impactBias;
         }
 
         // Track for limit enforcement and auto-cleanup
-        f32 cleanupDelay = fractureConfig->autoCleanup ? fractureConfig->cleanupDelay : -1.0f;
+        f32 cleanupDelay = srcFracture.autoCleanup ? srcFracture.cleanupDelay : -1.0f;
         TrackFragment(fragEntity, cleanupDelay);
     }
 }
@@ -902,9 +918,18 @@ void DestructibleSystem::InitializePreFracture(ECS::Entity entity) {
 
     auto fragments = VoronoiMeshFracture::Fracture(mesh->vertices, mesh->indices, fracConfig);
     if (fragments.empty()) return;
+    mesh = nullptr;   // dead once the loop below starts adding MeshComponents
 
     // Get source material
     auto* srcMat = m_World->GetComponent<ECS::MaterialComponent>(entity);
+
+    // Same copy-before-you-add rule as CreatePersistentFragments: the loop adds
+    // Transform, Material and Mesh components, each of which push_backs into the
+    // dense storage these pointers point into.
+    const ECS::TransformComponent srcTransform = *transform;
+    const ECS::FractureConfigComponent srcFracture = *fc;   // read at :974+ after the loop adds
+    const bool hasSrcMat = (srcMat != nullptr);
+    const ECS::MaterialComponent srcMaterial = hasSrcMat ? *srcMat : ECS::MaterialComponent{};
 
     std::vector<ECS::Entity> fragEntities;
     fragEntities.reserve(fragments.size());
@@ -920,12 +945,12 @@ void DestructibleSystem::InitializePreFracture(ECS::Entity entity) {
         // Transform: initially hidden
         auto& fragTransform = m_World->AddComponent<ECS::TransformComponent>(fragEntity);
         fragTransform.position = Math::Vector3(
-            transform->position.x + frag.centroid.x * transform->scale.x,
-            transform->position.y + frag.centroid.y * transform->scale.y,
-            transform->position.z + frag.centroid.z * transform->scale.z
+            srcTransform.position.x + frag.centroid.x * srcTransform.scale.x,
+            srcTransform.position.y + frag.centroid.y * srcTransform.scale.y,
+            srcTransform.position.z + frag.centroid.z * srcTransform.scale.z
         );
-        fragTransform.rotation = transform->rotation;
-        fragTransform.scale = transform->scale;
+        fragTransform.rotation = srcTransform.rotation;
+        fragTransform.scale = srcTransform.scale;
         fragTransform.visible = false; // Hidden until fracture triggers
 
         // Mesh
@@ -942,31 +967,31 @@ void DestructibleSystem::InitializePreFracture(ECS::Entity entity) {
 
         // Material
         auto& fragMat = m_World->AddComponent<ECS::MaterialComponent>(fragEntity);
-        if (srcMat) fragMat = *srcMat;
+        if (hasSrcMat) fragMat = srcMaterial;
         fragMat.textureCacheDirty = true;
 
         // Rigidbody (kinematic until released)
         auto& rb = m_World->AddComponent<ECS::RigidbodyComponent>(fragEntity);
-        rb.mass = std::max(0.1f, frag.volume * fc->fragmentDensity);
+        rb.mass = std::max(0.1f, frag.volume * srcFracture.fragmentDensity);
         rb.useGravity = false;
         rb.bodyType = ECS::RigidbodyComponent::BodyType::Kinematic;
 
         // Box collider
         auto& collider = m_World->AddComponent<ECS::BoxColliderComponent>(fragEntity);
         collider.size = Math::Vector3(
-            (frag.aabbMax.x - frag.aabbMin.x) * transform->scale.x,
-            (frag.aabbMax.y - frag.aabbMin.y) * transform->scale.y,
-            (frag.aabbMax.z - frag.aabbMin.z) * transform->scale.z
+            (frag.aabbMax.x - frag.aabbMin.x) * srcTransform.scale.x,
+            (frag.aabbMax.y - frag.aabbMin.y) * srcTransform.scale.y,
+            (frag.aabbMax.z - frag.aabbMin.z) * srcTransform.scale.z
         );
-        collider.friction = fc->fragmentFriction;
-        collider.bounciness = fc->fragmentBounciness;
+        collider.friction = srcFracture.fragmentFriction;
+        collider.bounciness = srcFracture.fragmentBounciness;
 
         // Breakable fixed joint to source entity
         auto& joint = m_World->AddComponent<ECS::FixedJointComponent>(fragEntity);
         joint.entityA = entity;
         joint.entityB = fragEntity;
         joint.breakable = true;
-        joint.breakForce = fc->jointBreakForce;
+        joint.breakForce = srcFracture.jointBreakForce;
 
         fragEntities.push_back(fragEntity);
     }

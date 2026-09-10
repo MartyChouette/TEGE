@@ -624,6 +624,10 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
     });
 
     // Wire Logger output to the editor console panel
+    // Record the editor thread before installing the callback: PushConsoleMessage
+    // compares against this to route an off-thread log into the queue instead of
+    // straight into the vector the Console panel is reading.
+    m_MainThreadId = std::this_thread::get_id();
     s_EditorLayerInstance = this;
     Logger::Get().SetLogCallback(EditorLogCallback);
 
@@ -1638,6 +1642,10 @@ void EditorLayer::Update(f32 deltaTime) {
 
     // Watch the open scene file for out-of-band edits (git pull, another tool).
     CheckExternalSceneChange(deltaTime);
+
+    // Anything the build thread, the MCP socket thread or the dev web server
+    // logged since the last frame. Main thread, before any panel reads the log.
+    DrainPendingConsoleEntries();
 
     // The one disk watch. Ticked here so no panel has to own a timer; the panels
     // themselves only compare a version against what they last saw.

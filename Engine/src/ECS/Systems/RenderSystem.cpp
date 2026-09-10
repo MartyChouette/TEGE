@@ -6154,12 +6154,20 @@ void RenderSystem::ProcessPendingRecreation() {
 void RenderSystem::CacheTextTexture(Entity entity, std::shared_ptr<Renderer::Texture> tex) {
     auto it = m_TextTextureCache.find(entity);
     if (it != m_TextTextureCache.end() && it->second) {
-        // Free the old bindless slot (the pooled-material site registers one
-        // per rasterize - per-keystroke text used to grow the set unbounded)
-        // and park the old texture until no in-flight frame references it.
+        // Release the old bindless slot (the pooled-material site registers one
+        // per rasterize - per-keystroke text used to grow the set unbounded) and
+        // park the old texture until no in-flight frame references it.
+        //
+        // The SLOT is deferred for the same window as the texture, for the reason
+        // CacheProcTexture below already documents: the material SSBO of a frame
+        // still in flight holds this index. This used to Unregister immediately,
+        // putting the index straight back on the free list -- so in a typewriter
+        // scene where two text entities re-rasterize in the same frame, entity A
+        // freed its slot at its draw and B claimed the same one at its draw while
+        // frame N-1 was still indexing it.
         auto bh = m_TextureBindlessHandles.find(it->second.get());
         if (bh != m_TextureBindlessHandles.end()) {
-            if (m_BindlessManager) m_BindlessManager->UnregisterTexture(bh->second);
+            m_BindlessGraveyard.push_back({m_FlushTick, bh->second});
             m_TextureBindlessHandles.erase(bh);
         }
         m_TextTextureGraveyard.push_back({m_FlushTick, std::move(it->second)});
@@ -15145,9 +15153,30 @@ void RenderSystem::RenderShadowPass() {
             // Pre-warm render data on the main thread — GetOrCreateRenderData
             // creates GPU buffers and mutates the map, which is not safe from
             // the worker threads recording the secondaries.
+            //
+            // World matrices get the same treatment, for the same reason.
+            // ECS::ComputeWorldMatrix WRITES transform->cachedWorldMatrix and
+            // clears worldMatrixDirty as it walks the parent chain, so two
+            // workers holding sibling entities under one parent both recomputed
+            // and both wrote that parent's 64-byte matrix concurrently -- a torn
+            // matrix, one frame, non-reproducibly. adr-0004 lets workers read
+            // only, and AssertOwnerThread cannot catch this because it guards
+            // structural mutation, not component-data writes.
+            //
+            // Warming here fills every cache (the recursion covers ancestors
+            // too), so each worker's call takes the `if (!worldMatrixDirty)
+            // return cached;` fast path and is a pure read.
             for (u32 i = 0; i < casterCount; ++i) {
                 GetOrCreateRenderData(m_FrameShadowCasters[i]);
+                ECS::ComputeWorldMatrix(m_World, m_FrameShadowCasters[i]);
             }
+
+            // Casters the workers hand back because they need the shared bone
+            // descriptor. Recorded on the main thread into one more secondary
+            // after the join. Collected under a lock because several workers can
+            // append at once.
+            std::vector<Entity> deferredSkinned;
+            std::mutex deferredMutex;
 
             std::vector<std::future<void>> futures;
             std::vector<VkCommandBuffer> secondaryBuffers(threadCount, VK_NULL_HANDLE);
@@ -15163,7 +15192,8 @@ void RenderSystem::RenderShadowPass() {
                 u32 end = std::min(start + chunkSize, casterCount);
                 if (start >= end) break;
 
-                futures.push_back(m_ThreadPool.Submit([this, t, start, end, frameIdx, &inheritInfo, &secondaryBuffers]() {
+                futures.push_back(m_ThreadPool.Submit([this, t, start, end, frameIdx, &inheritInfo, &secondaryBuffers,
+                                                       &deferredSkinned, &deferredMutex]() {
                     VkCommandBuffer secCmd = m_CmdBufferPool->Allocate(t, frameIdx);
                     if (!secCmd) return;
 
@@ -15204,8 +15234,12 @@ void RenderSystem::RenderShadowPass() {
                         Entity entity = m_FrameShadowCasters[i];
                         auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
                         if (xform && !xform->visible) continue;
-                        RenderEntityShadow(entity, secCmd, secPoolBound,
-                                           m_ShadowPipeline->GetPipeline(), secMaskPipeline, secBoundPipeline);
+                        if (!RenderEntityShadow(entity, secCmd, secPoolBound,
+                                                m_ShadowPipeline->GetPipeline(), secMaskPipeline,
+                                                secBoundPipeline, /*deferVertexSkinned=*/true)) {
+                            std::lock_guard<std::mutex> dl(deferredMutex);
+                            deferredSkinned.push_back(entity);
+                        }
                     }
 
                     vkEndCommandBuffer(secCmd);
@@ -15218,9 +15252,54 @@ void RenderSystem::RenderShadowPass() {
 
             // Collect valid secondary buffers and execute
             std::vector<VkCommandBuffer> validBuffers;
-            validBuffers.reserve(secondaryBuffers.size());
+            validBuffers.reserve(secondaryBuffers.size() + 1);
             for (auto buf : secondaryBuffers) {
                 if (buf != VK_NULL_HANDLE) validBuffers.push_back(buf);
+            }
+
+            // Vertex-skinned casters, on the main thread, into one more
+            // secondary. They cannot go in the primary: the render pass was begun
+            // for SECONDARY_COMMAND_BUFFERS, so the primary may record only
+            // vkCmdExecuteCommands. Ordering does not matter -- a shadow pass
+            // writes depth with no blending, so which secondary draws first is
+            // immaterial.
+            if (!deferredSkinned.empty()) {
+                // Slot 0, not `threadCount`: the pool is initialized with exactly
+                // GetThreadCount() slots, so threadCount would index past the end.
+                // The workers are joined, and Allocate hands out the NEXT buffer
+                // in that slot rather than reusing worker 0's, which is still in
+                // validBuffers waiting to execute.
+                VkCommandBuffer skinCmd = m_CmdBufferPool->Allocate(0, frameIdx);
+                if (skinCmd) {
+                    VkCommandBufferBeginInfo beginInfo{};
+                    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+                    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT |
+                                      VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+                    beginInfo.pInheritanceInfo = &inheritInfo;
+                    vkBeginCommandBuffer(skinCmd, &beginInfo);
+                    m_ShadowMap->ApplyCascadeViewportScissor(skinCmd);
+                    m_ShadowPipeline->Bind(skinCmd);
+                    vkCmdBindDescriptorSets(skinCmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                            m_ShadowPipeline->GetLayout(), 0, 1,
+                                            &m_DescriptorSets[frameIdx], 0, nullptr);
+                    if (m_BindlessManager) {
+                        VkDescriptorSet bindlessSet = m_BindlessManager->GetDescriptorSet();
+                        if (bindlessSet != VK_NULL_HANDLE) {
+                            vkCmdBindDescriptorSets(skinCmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                m_ShadowPipeline->GetLayout(), 1, 1, &bindlessSet, 0, nullptr);
+                        }
+                    }
+                    bool skinPoolBound = false;
+                    VkPipeline skinBoundPipeline = m_ShadowPipeline->GetPipeline();
+                    VkPipeline skinMaskPipeline = m_ShadowMaskPipeline ? m_ShadowMaskPipeline->GetPipeline() : VK_NULL_HANDLE;
+                    for (Entity entity : deferredSkinned) {
+                        RenderEntityShadow(entity, skinCmd, skinPoolBound,
+                                           m_ShadowPipeline->GetPipeline(), skinMaskPipeline,
+                                           skinBoundPipeline);
+                    }
+                    vkEndCommandBuffer(skinCmd);
+                    validBuffers.push_back(skinCmd);
+                }
             }
             if (!validBuffers.empty()) {
                 vkCmdExecuteCommands(commandBuffer, static_cast<u32>(validBuffers.size()), validBuffers.data());
@@ -15318,23 +15397,23 @@ void RenderSystem::RenderShadowPassForCamera(Renderer::Camera* camera) {
     m_Camera = prevCamera;
 }
 
-void RenderSystem::RenderEntityShadow(Entity entity, VkCommandBuffer commandBuffer, bool& poolBound,
+bool RenderSystem::RenderEntityShadow(Entity entity, VkCommandBuffer commandBuffer, bool& poolBound,
                                       VkPipeline normalPipeline, VkPipeline maskPipeline,
-                                      VkPipeline& boundPipeline) {
+                                      VkPipeline& boundPipeline, bool deferVertexSkinned) {
     // Viewmodel entities cast no shadows: a wall-sized first-person gun
     // shadow gives the depth-remap trick away instantly
     if (m_CachedViewmodelStorage) {
         ViewmodelComponent* vmc = m_CachedViewmodelStorage->Get(entity);
-        if (vmc && vmc->enabled) return;
+        if (vmc && vmc->enabled) return true;
     }
 
     TransformComponent* transform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
     MeshComponent* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
 
-    if (!transform || !mesh || !mesh->IsValid()) return;
+    if (!transform || !mesh || !mesh->IsValid()) return true;
 
     EntityRenderData* pRD = GetOrCreateRenderData(entity);
-    if (!pRD) return;
+    if (!pRD) return true;
     EntityRenderData& renderData = *pRD;
 
     // Masked materials with a base color texture cast SHAPED shadows: switch to
@@ -15382,6 +15461,14 @@ void RenderSystem::RenderEntityShadow(Entity entity, VkCommandBuffer commandBuff
     } else if (animComp && renderData.boneBuffer) {
         const auto& skinningMatrices = animComp->animator.GetSkinningMatrices();
         if (!skinningMatrices.empty()) {
+            // Vertex-shader skinning needs UpdateBoneDescriptor, which writes ONE
+            // descriptor set shared by every caster this frame and the shared
+            // m_LastBound early-out. Neither is safe from the parallel shadow
+            // workers: vkUpdateDescriptorSets requires external synchronisation on
+            // the set, and the early-out lets one worker skip a write another was
+            // about to do. The caller renders these on the main thread instead.
+            if (deferVertexSkinned) return false;
+
             renderData.boneBuffer->UploadData(skinningMatrices.data(),
                 skinningMatrices.size() * sizeof(Math::Matrix4));
             UpdateBoneDescriptor(renderData.boneBuffer.get());
@@ -15415,6 +15502,7 @@ void RenderSystem::RenderEntityShadow(Entity entity, VkCommandBuffer commandBuff
         vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
         poolBound = false;
     }
+    return true;
 }
 
 void RenderSystem::CreatePointShadowPipeline() {
@@ -18945,8 +19033,22 @@ void RenderSystem::RebuildTLAS(VkCommandBuffer cmd) {
     static_assert(sizeof(MeshComponent::Vertex) % sizeof(f32) == 0, "Vertex stride must be float-aligned");
     static_assert(offsetof(MeshComponent::Vertex, normal) == 12, "RT hit shaders assume normal at float offset 3");
 
-    EnsureRTInstanceGeomBuffer(std::max<u32>(RT_MATERIAL_BUFFER_INITIAL_CAPACITY,
-                                             static_cast<u32>(m_EntityRenderData.size())));
+    // A grow here destroys and recreates the RT instance-geometry SSBO, and this
+    // runs from inside RecordRTFrame's open command buffer: frame N-1 is still
+    // executing with the RT descriptor set bound to that VkBuffer. Wait first,
+    // exactly as UploadRTMaterials does for its two identical reallocs ("GPU must
+    // be idle before reallocating a buffer that may be in-flight"). Only on the
+    // grow, so the steady state costs nothing.
+    {
+        const u32 required = std::max<u32>(RT_MATERIAL_BUFFER_INITIAL_CAPACITY,
+                                           static_cast<u32>(m_EntityRenderData.size()));
+        if (required > m_RTInstanceGeomCapacity || m_RTInstanceGeomBuffer == VK_NULL_HANDLE) {
+            vkDeviceWaitIdle(m_VulkanRenderer->GetContext()->GetDevice());
+            EnsureRTInstanceGeomBuffer(required);
+            // A buffer handle changed, so the descriptor pointing at it is stale.
+            m_RTDescriptorsWritten = false;
+        }
+    }
     auto* geomDst = static_cast<RTInstanceGeomGPU*>(m_RTInstanceGeomMapped);
 
     // Cache pool buffer device addresses (computed once, reused for all pool entities)

@@ -1483,9 +1483,12 @@ private:
     // with a base color texture (shaped shadows for foliage/hair cards).
     // boundPipeline: per-command-buffer bind state (like poolBound) — callers
     // initialize it to the pipeline they bound before the entity loop.
-    void RenderEntityShadow(Entity entity, VkCommandBuffer commandBuffer, bool& poolBound,
+    // Returns false when `deferVertexSkinned` is set and this caster needs the
+    // shared bone descriptor -- the caller must render it on the main thread
+    // instead. See the parallel shadow path for why.
+    bool RenderEntityShadow(Entity entity, VkCommandBuffer commandBuffer, bool& poolBound,
                             VkPipeline normalPipeline, VkPipeline maskPipeline,
-                            VkPipeline& boundPipeline);
+                            VkPipeline& boundPipeline, bool deferVertexSkinned = false);
     // First-person viewmodel depth remap: entities tagged ViewmodelComponent
     // draw with the viewport depth range compressed to [0, kViewmodelDepthMax]
     // so they render in front of all world geometry and never visually clip

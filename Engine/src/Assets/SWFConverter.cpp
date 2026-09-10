@@ -474,9 +474,16 @@ ECS::Entity SWFConverter::ConvertMovieClip(
         if (charIt != characterEntityMap.end()) {
             auto* srcSprite = world->GetComponent<ECS::Sprite2DComponent>(charIt->second);
             if (srcSprite && !srcSprite->texturePath.empty()) {
+                // Copy first. AddComponent<Sprite2DComponent> push_backs into the
+                // same dense storage srcSprite points into, so reading through it
+                // afterwards read a freed std::string -- and that string is a
+                // texture path headed for the loader. Import a .swf whose display
+                // list reuses a character that already has a sprite.
+                const std::string texturePath = srcSprite->texturePath;
+                const Math::Vector2 size = srcSprite->size;
                 auto& childSprite = world->AddComponent<ECS::Sprite2DComponent>(childEntity);
-                childSprite.texturePath = srcSprite->texturePath;
-                childSprite.size = srcSprite->size;
+                childSprite.texturePath = texturePath;
+                childSprite.size = size;
             }
         }
 
