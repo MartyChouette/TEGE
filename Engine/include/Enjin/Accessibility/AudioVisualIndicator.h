@@ -48,7 +48,20 @@ public:
     void Update(f32 dt);
 
     // Render indicators overlay
-    void RenderOverlay(u32 viewportWidth, u32 viewportHeight);
+    // Origin FIRST, and no default value, on purpose.
+    //
+    // This used to take a size only, so a caller could not say WHERE the image
+    // it is overlaying starts -- 0,0 was baked in. In the docked editor the
+    // game is a panel somewhere in the middle of the window, so passing the
+    // window size put subtitles at the bottom of the EDITOR rather than the
+    // bottom of the game, over whatever panel was docked there. The editor had
+    // the right rectangle the whole time and used it correctly twelve lines
+    // away (EditorLayer.cpp, the UISystem::Update call).
+    //
+    // A magic zero that means "assume the top-left corner" gives a caller who
+    // does not know about it a wrong ANSWER rather than an error. Origin first
+    // means every old two-argument call fails to compile instead.
+    void RenderOverlay(f32 originX, f32 originY, u32 viewportWidth, u32 viewportHeight);
 
     // Clear all indicators
     void Clear();

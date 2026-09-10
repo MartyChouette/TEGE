@@ -783,7 +783,11 @@ private:
 
     // Runtime dialogue overlay (rendered during play mode)
     void UpdateDialogue(f32 deltaTime);
-    void DrawDialogueOverlay();
+    // Origin and size of the image it is drawn over, stated by the caller.
+    // It used to read io.DisplaySize itself, which is the editor WINDOW, so a
+    // dialogue box in the docked editor was centred on the editor rather than
+    // on the game. See SubtitleSystem::RenderOverlay for the same fix.
+    void DrawDialogueOverlay(f32 originX, f32 originY, f32 viewW, f32 viewH);
     ECS::Entity m_ActiveDialogueEntity = ECS::INVALID_ENTITY;
     GUI::DialogueTreeEditor m_DialogueTreeEditor;
 

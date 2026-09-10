@@ -3918,14 +3918,17 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
 
         ImGui::End();
 
-        // Render dialogue overlay on top of fullscreen game view
+        // Focus mode stretches the game image across the whole window, so
+        // here the window IS the image and 0,0 is the truth rather than a
+        // guess. Stated explicitly for the same reason the API demands it.
         if (m_PlayMode.IsPlaying() || m_PlayMode.IsPaused()) {
-            DrawDialogueOverlay();
+            DrawDialogueOverlay(0.0f, 0.0f, io.DisplaySize.x, io.DisplaySize.y);
         }
 
         // Render subtitle overlay (accessibility)
         if (m_PlayMode.IsPlaying() || m_PlayMode.IsPaused()) {
             m_SubtitleSystem.RenderOverlay(
+                0.0f, 0.0f,
                 static_cast<u32>(io.DisplaySize.x),
                 static_cast<u32>(io.DisplaySize.y));
         }
@@ -5513,23 +5516,41 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         ImGui::PopStyleColor();
     }
 
-    // Render dialogue overlay on top of editor panels during play
-    if (m_PlayMode.IsPlaying() || m_PlayMode.IsPaused()) {
-        DrawDialogueOverlay();
+    // These three overlay the GAME, which in the docked editor is a panel
+    // somewhere in the middle of the window -- not the window. All three used
+    // io.DisplaySize and so sat against the editor: a subtitle at the bottom of
+    // the editor rather than the bottom of the game, over whatever panel was
+    // docked below it. The right rectangle was already here, and already used
+    // correctly by the UISystem::Update call a few lines down.
+    //
+    // Gated on the image having actually drawn this frame, for the same reason
+    // that call is: with the Game View tab hidden the cached rect is stale, and
+    // a foreground-list overlay would paint the game's subtitles over whatever
+    // panel is docked in its place.
+    const bool gameImageLive = m_GameViewImageDrawnThisFrame;
+    const f32 ovX = gameImageLive ? m_GameViewImageMinX : 0.0f;
+    const f32 ovY = gameImageLive ? m_GameViewImageMinY : 0.0f;
+    const f32 ovW = gameImageLive ? (m_GameViewImageMaxX - m_GameViewImageMinX)
+                                  : io.DisplaySize.x;
+    const f32 ovH = gameImageLive ? (m_GameViewImageMaxY - m_GameViewImageMinY)
+                                  : io.DisplaySize.y;
+
+    if ((m_PlayMode.IsPlaying() || m_PlayMode.IsPaused()) && ovW > 0.0f && ovH > 0.0f) {
+        DrawDialogueOverlay(ovX, ovY, ovW, ovH);
     }
 
     // Render subtitle overlay (accessibility) during play mode
-    if (m_PlayMode.IsPlaying() || m_PlayMode.IsPaused()) {
-        m_SubtitleSystem.RenderOverlay(
-            static_cast<u32>(io.DisplaySize.x),
-            static_cast<u32>(io.DisplaySize.y));
+    if ((m_PlayMode.IsPlaying() || m_PlayMode.IsPaused()) && ovW > 0.0f && ovH > 0.0f) {
+        m_SubtitleSystem.RenderOverlay(ovX, ovY,
+                                       static_cast<u32>(ovW), static_cast<u32>(ovH));
     }
 
     // Render audio visual indicators (accessibility)
     m_AudioIndicators.Update(m_LastDeltaTime);
-    m_AudioIndicators.RenderOverlay(
-        static_cast<u32>(io.DisplaySize.x),
-        static_cast<u32>(io.DisplaySize.y));
+    if (ovW > 0.0f && ovH > 0.0f) {
+        m_AudioIndicators.RenderOverlay(ovX, ovY,
+                                        static_cast<u32>(ovW), static_cast<u32>(ovH));
+    }
 
     // Render accessibility announcer status bar
     m_Announcer.Update(m_LastDeltaTime);

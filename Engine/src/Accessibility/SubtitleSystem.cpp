@@ -53,7 +53,8 @@ void SubtitleSystem::Update(f32 dt) {
     }
 }
 
-void SubtitleSystem::RenderOverlay(u32 viewportWidth, u32 viewportHeight) {
+void SubtitleSystem::RenderOverlay(f32 originX, f32 originY,
+                                   u32 viewportWidth, u32 viewportHeight) {
     if (m_Entries.empty()) return;
     if (!m_Config.enabled && !m_Config.captionsEnabled) return;
     // T-L8: Guard against zero viewport dimensions
@@ -76,8 +77,8 @@ void SubtitleSystem::RenderOverlay(u32 viewportWidth, u32 viewportHeight) {
     f32 lineHeight = effectiveFontSize + 4.0f;
     f32 totalHeight = static_cast<f32>(m_Entries.size()) * lineHeight + padding * 2.0f;
 
-    f32 startY = screenH * m_Config.positionY - totalHeight;
-    f32 centerX = screenW * 0.5f;
+    f32 startY = originY + screenH * m_Config.positionY - totalHeight;
+    f32 centerX = originX + screenW * 0.5f;
 
     // Background
     ImU32 bgColor = ImGui::ColorConvertFloat4ToU32(

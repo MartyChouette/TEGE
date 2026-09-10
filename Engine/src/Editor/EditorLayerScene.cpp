@@ -937,7 +937,7 @@ void EditorLayer::UpdateDialogue(f32 deltaTime) {
     m_SubtitleSystem.Update(deltaTime);
 }
 
-void EditorLayer::DrawDialogueOverlay() {
+void EditorLayer::DrawDialogueOverlay(f32 originX, f32 originY, f32 viewW, f32 viewH) {
     if (!m_World || m_ActiveDialogueEntity == ECS::INVALID_ENTITY) return;
 
     auto* dlg = m_World->GetComponent<ECS::DialogueComponent>(m_ActiveDialogueEntity);
@@ -968,8 +968,10 @@ void EditorLayer::DrawDialogueOverlay() {
     }
 
     ImGuiIO& io = ImGui::GetIO();
-    f32 screenW = io.DisplaySize.x;
-    f32 screenH = io.DisplaySize.y;
+    // The image being overlaid, not the window. In the docked editor those
+    // are very different rectangles.
+    f32 screenW = viewW;
+    f32 screenH = viewH;
 
     f32 boxW = screenW * 0.75f;
     f32 boxH = 140.0f;

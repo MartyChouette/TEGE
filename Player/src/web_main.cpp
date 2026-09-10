@@ -1894,7 +1894,7 @@ public:
         // every mouse-bound action in the game.
         m_UICanvasTookPointer = uiTookIt;
         // Subtitle overlay (accessibility) -- same draw code as desktop
-        m_SubtitleSystem.RenderOverlay(w, h);
+        m_SubtitleSystem.RenderOverlay(0.0f, 0.0f, w, h);
         // Switch-scanning highlight / dwell cursor
         m_AlternativeInput.RenderOverlay();
         // Screen reader status bar (announcements also speak via Web Speech API)

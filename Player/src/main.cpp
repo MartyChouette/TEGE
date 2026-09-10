@@ -1712,9 +1712,9 @@ public:
                 if (m_ContentWarnings.IsVisible()) {
                     m_ContentWarnings.RenderWarningOverlay(extent.width, extent.height);
                 } else {
-                    m_SubtitleSystem.RenderOverlay(extent.width, extent.height);
+                    m_SubtitleSystem.RenderOverlay(0.0f, 0.0f, extent.width, extent.height);
                     m_AlternativeInput.RenderOverlay();
-                    m_AudioIndicators.RenderOverlay(extent.width, extent.height);
+                    m_AudioIndicators.RenderOverlay(0.0f, 0.0f, extent.width, extent.height);
                     m_Announcer.RenderStatusBar();
                 }
             }

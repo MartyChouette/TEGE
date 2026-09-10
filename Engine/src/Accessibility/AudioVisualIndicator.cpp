@@ -85,12 +85,16 @@ void AudioVisualIndicatorSystem::Update(f32 dt) {
         m_Indicators.end());
 }
 
-void AudioVisualIndicatorSystem::RenderOverlay(u32 viewportWidth, u32 viewportHeight) {
+void AudioVisualIndicatorSystem::RenderOverlay(f32 originX, f32 originY,
+                                               u32 viewportWidth, u32 viewportHeight) {
     if (!m_Config.enabled || m_Indicators.empty()) return;
 
     ImDrawList* drawList = ImGui::GetForegroundDrawList();
-    f32 x = m_Config.positionX * static_cast<f32>(viewportWidth);
-    f32 y = m_Config.positionY * static_cast<f32>(viewportHeight);
+    // positionX/Y are a FRACTION of the image, so they scale by its size and
+    // then shift by where it starts. Without the shift these sat against the
+    // editor window instead of the game.
+    f32 x = originX + m_Config.positionX * static_cast<f32>(viewportWidth);
+    f32 y = originY + m_Config.positionY * static_cast<f32>(viewportHeight);
     f32 r = m_Config.indicatorSize;
     f32 spacing = r * 3.0f;
 
