@@ -150,6 +150,39 @@ ENJIN_TEST(SimClockInterpolation, DynamicRigidbodyStillInterpolated) {
     ENJIN_EXPECT_FLOAT_NEAR(x, 0.5f, 0.01f);
 }
 
+ENJIN_TEST(SimClockInterpolation, Platformer2DControllerIsInterpolated) {
+    // Arrange: 2D controllers were deliberately left out, rendering at the raw
+    // tick pose, on the grounds it was "acceptable at 60Hz". Capped at 60 the
+    // tick and the frame line up so nothing shows; uncapped, each fixed pose is
+    // held for several frames and then jumps, which reads as a regular stepping
+    // judder. Fixed timestep is on for every new project, so that was the
+    // default look of an uncapped 2D game.
+    ECS::World world;
+    ECS::Entity player = world.CreateEntity();
+    world.AddComponent<ECS::TransformComponent>(player);
+    world.AddComponent<ECS::Platformer2DController>(player);
+
+    // Act
+    const f32 x = RenderedXAfterHalfFrame(world, player);
+
+    // Assert: halfway between the two tick poses, not snapped to either.
+    ENJIN_EXPECT_FLOAT_NEAR(x, 0.5f, 0.01f);
+}
+
+ENJIN_TEST(SimClockInterpolation, TopDown2DControllerIsInterpolated) {
+    // Arrange
+    ECS::World world;
+    ECS::Entity player = world.CreateEntity();
+    world.AddComponent<ECS::TransformComponent>(player);
+    world.AddComponent<ECS::TopDown2DController>(player);
+
+    // Act
+    const f32 x = RenderedXAfterHalfFrame(world, player);
+
+    // Assert
+    ENJIN_EXPECT_FLOAT_NEAR(x, 0.5f, 0.01f);
+}
+
 ENJIN_TEST(SimClockInterpolation, PlainEntityIsNotInterpolated) {
     // Arrange: nothing the fixed step owns -- must stay on the tick pose.
     ECS::World world;

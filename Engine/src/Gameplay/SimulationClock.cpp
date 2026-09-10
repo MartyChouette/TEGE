@@ -26,9 +26,16 @@ namespace {
     // display while every loose crate around it was smooth.
     //
     // Kinematic/static bodies stay out: they are moved by code and are already
-    // frame-paced. 2D controllers stay out too, matching the 2D rigidbody
-    // stance -- they step fixed and render at the tick pose (v1, acceptable at
-    // 60Hz, revisit if 2D stutter shows on 144Hz).
+    // frame-paced.
+    //
+    // 2D controllers used to stay out as well, rendered at the raw tick pose,
+    // on the stated grounds that it was "acceptable at 60Hz, revisit if 2D
+    // stutter shows on 144Hz". It shows. Capped at 60 the tick and the frame
+    // line up and nothing is visible; uncapped, each fixed pose is held for
+    // several frames and then jumps, which reads as a regular stepping judder
+    // rather than as a frame rate problem. Fixed timestep is ON for every new
+    // project (SceneManager sets it), so this is what an uncapped 2D game looks
+    // like by default.
     bool IsInterpolated(ECS::World* world, ECS::Entity e) {
         auto* rb = world->GetComponent<ECS::RigidbodyComponent>(e);
         if (rb && rb->bodyType == ECS::RigidbodyComponent::BodyType::Dynamic) return true;
@@ -38,7 +45,9 @@ namespace {
             || world->HasComponent<ECS::TopDown3DController>(e)
             || world->HasComponent<ECS::SurfaceAlignedController>(e)
             || world->HasComponent<ECS::VehicleController>(e)
-            || world->HasComponent<ECS::WaterVehicleController>(e);
+            || world->HasComponent<ECS::WaterVehicleController>(e)
+            || world->HasComponent<ECS::Platformer2DController>(e)
+            || world->HasComponent<ECS::TopDown2DController>(e);
     }
 
     // Visits every entity the fixed step can own, with its transform.
@@ -66,6 +75,8 @@ namespace {
         for (ECS::Entity e : world->GetEntitiesWithComponent<ECS::SurfaceAlignedController>())visit(e);
         for (ECS::Entity e : world->GetEntitiesWithComponent<ECS::VehicleController>())       visit(e);
         for (ECS::Entity e : world->GetEntitiesWithComponent<ECS::WaterVehicleController>())  visit(e);
+        for (ECS::Entity e : world->GetEntitiesWithComponent<ECS::Platformer2DController>())  visit(e);
+        for (ECS::Entity e : world->GetEntitiesWithComponent<ECS::TopDown2DController>())     visit(e);
     }
 
     bool NearlyEqual(const Math::Vector3& a, const Math::Vector3& b) {
