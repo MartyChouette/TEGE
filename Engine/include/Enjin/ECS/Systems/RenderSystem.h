@@ -1440,7 +1440,14 @@ private:
     void BindGeometryPipelineForMaterial(VkCommandBuffer cmd, Entity entity,
         Renderer::VulkanPipeline* opaque, Renderer::VulkanPipeline* transparent, bool& transparentBound);
 #endif
-    void RenderSprites();  // Sorted 2D sprite pass (after 3D geometry)
+    // Sorted 2D sprite pass (after 3D geometry).
+    //
+    // targetWidth/Height are the extent of what is being drawn INTO, and 0
+    // means the swapchain. The sprite pass sets its own viewport, so an
+    // offscreen caller that leaves these at 0 gets the swapchain's rectangle
+    // inside a differently sized target: sprites land off-centre and the parts
+    // past the target's edge are simply cropped away.
+    void RenderSprites(u32 targetWidth = 0, u32 targetHeight = 0);
     void ClassifySceneComposition();  // Update m_SceneComposition if dirty
 
     // Say once, per backend, that a scene has nothing lighting it.

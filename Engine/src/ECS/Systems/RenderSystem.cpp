@@ -4824,7 +4824,7 @@ AnimatorComponent* RenderSystem::ResolveAnimator(Entity entity) {
 }
 
 void RenderSystem::RenderEntity(Entity /*entity*/) {}
-void RenderSystem::RenderSprites() {}
+void RenderSystem::RenderSprites(u32, u32) {}
 void RenderSystem::ClassifySceneComposition() {}
 void RenderSystem::CreateDefaultMesh() {}
 void RenderSystem::CreatePipeline() {}
@@ -7817,7 +7817,7 @@ void RenderSystem::Update(f32 deltaTime) {
             RenderWireframeOverlayPass();
 
             // Sorted 2D sprite rendering pass (after 3D geometry)
-            RenderSprites();
+            RenderSprites(static_cast<u32>(pixelW), static_cast<u32>(pixelH));
 
             // Render effects for this viewport
             u32 vpW = static_cast<u32>(pixelW);
@@ -8182,7 +8182,7 @@ void RenderSystem::Update(f32 deltaTime) {
     RenderPlanarReflections();
 
     // Sorted 2D sprite rendering pass (after 3D geometry)
-    RenderSprites();
+    RenderSprites(0, 0);
 
     // 2D water: full-screen translucent overlay AFTER the sprites, so everything
     // below the waterline reads as submerged. Particles/effects below draw on top.
@@ -9649,7 +9649,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     RenderPlanarReflections();
 
     // Sorted 2D sprite rendering pass (after 3D geometry)
-    RenderSprites();
+    RenderSprites(target->GetWidth(), target->GetHeight());
 
     // 2D water overlay in the game view / editor viewport (offscreen target).
     if (m_SceneComposition.mode == SceneRenderMode::Scene2D)
@@ -10115,7 +10115,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
         }
 
         // Sorted 2D sprite rendering pass (after 3D geometry)
-        RenderSprites();
+        RenderSprites(targetW, targetH);
 
         // Render effects for this viewport
         RenderGrass(targetW, targetH);
@@ -14812,7 +14812,7 @@ void RenderSystem::RenderOutlinePassForTarget() {
     }
 }
 
-void RenderSystem::RenderSprites() {
+void RenderSystem::RenderSprites(u32 targetWidth, u32 targetHeight) {
     if (!m_Pipeline || !m_Renderer || !m_World) return;
 
     VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
@@ -14883,7 +14883,7 @@ void RenderSystem::RenderSprites() {
             GetActiveBufferIndex(currentFrame),
             m_World,
             textureBindCallback,
-            0, 0,
+            targetWidth, targetHeight,
             litMode);
     } else {
         // Fallback: per-entity sprite rendering (no batching)
