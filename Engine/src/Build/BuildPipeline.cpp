@@ -256,7 +256,7 @@ bool BuildPipeline::ScanProject(const std::string& projectPath) {
             m_PhysicsTicksPerSecond = fs.value("physicsTicksPerSecond", 120u);
         } else {
             // Defaults
-            m_TargetFrameRate = 60;
+            m_TargetFrameRate = 120;
             m_VSync = true;
             m_BackgroundBehavior = 1;
             m_FixedTimestep = false;

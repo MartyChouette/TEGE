@@ -123,6 +123,9 @@ struct EditorSettings {
     i32  mcpServerPort = 8971;
 
     // Performance / Frame Rate
+    // Uncapped on purpose: this is the editor WINDOW, not the game. Editing
+    // wants every frame the machine can give. The game view and the exported
+    // player cap at 120 to match the fixed tick; see GameFrameSettings.
     FrameRateLimit editorFrameRateLimit = FrameRateLimit::Uncapped;
     bool editorVSync = false;
     bool reduceFrameRateWhenUnfocused = true;

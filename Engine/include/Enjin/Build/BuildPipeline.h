@@ -107,7 +107,7 @@ private:
     std::set<std::string> m_DataAssetPaths; // .enjdata/.enjschema data assets
 
     // Game frame settings (read from project, written to manifest)
-    u32 m_TargetFrameRate = 60;      // 0 = uncapped
+    u32 m_TargetFrameRate = 120;     // 0 = uncapped
     bool m_VSync = true;
     u32 m_BackgroundBehavior = 1;    // 0 = run normally, 1 = reduce to 30, 2 = pause
     bool m_FixedTimestep = false;    // ADR-0005 fixed physics tick

@@ -68,7 +68,11 @@ enum class BackgroundBehavior : u32 {
 // NOTE: During play mode in the editor, Game View FPS is controlled via the
 // Game View panel dropdown. These settings only affect exported game builds.
 struct GameFrameSettings {
-    FrameRateLimit targetFrameRate = FrameRateLimit::Uncapped;
+    // 120 to match the fixed tick. When the cap and the tick are the same rate
+    // they line up one step per frame and stepping is not merely smaller, it is
+    // invisible. Uncapped renders faster than the simulation advances, so every
+    // frame that lands mid-tick shows the same pose again.
+    FrameRateLimit targetFrameRate = FrameRateLimit::FPS120;
     bool vSync = false;
     BackgroundBehavior backgroundBehavior = BackgroundBehavior::ReduceTo30;
     // Fixed physics timestep (ADR-0005). Default OFF so existing projects keep

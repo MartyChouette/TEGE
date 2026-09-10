@@ -325,7 +325,7 @@ public:
                 if (manifest.contains("frameSettings")) {
                     const auto& fs = manifest["frameSettings"];
                     m_SimClock.Configure(fs.value("fixedTimestep", false),
-                                         static_cast<Enjin::f32>(fs.value("physicsTicksPerSecond", 60u)));
+                                         static_cast<Enjin::f32>(fs.value("physicsTicksPerSecond", 120u)));
                     m_ScriptSystem.SetExternalFixedClock(m_SimClock.IsEnabled());
                     m_ControllerSystem.SetExternalFixedClock(m_SimClock.IsEnabled());
                 }

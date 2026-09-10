@@ -2829,11 +2829,11 @@ private:
         // Read frame rate settings
         if (manifest.contains("frameSettings")) {
             const auto& fs = manifest["frameSettings"];
-            m_TargetFPS = fs.value("targetFrameRate", 60u);
+            m_TargetFPS = fs.value("targetFrameRate", 120u);
             m_VSync = fs.value("vSync", true);
             m_BackgroundBehavior = fs.value("backgroundBehavior", 1u);
             m_SimClock.Configure(fs.value("fixedTimestep", false),
-                                 static_cast<Enjin::f32>(fs.value("physicsTicksPerSecond", 60u)));
+                                 static_cast<Enjin::f32>(fs.value("physicsTicksPerSecond", 120u)));
         }
 
         // Read physics backend and project mode
@@ -3371,7 +3371,7 @@ private:
 
     // Frame rate settings
     Enjin::Gameplay::SimulationClock m_SimClock;
-    Enjin::u32 m_TargetFPS = 60;
+    Enjin::u32 m_TargetFPS = 120;
     bool m_VSync = true;
     Enjin::u32 m_BackgroundBehavior = 1; // 0=RunNormally, 1=ReduceTo30, 2=Pause
 

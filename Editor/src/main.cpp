@@ -136,9 +136,22 @@ public:
                     }
                 }
 
-                // Run uncapped during play mode - Game View FPS is controlled
-                // by the dropdown in the Game View panel via RenderOffscreen()
-                return 0.0f;
+                // Honour the project's own frame cap while playing.
+                //
+                // This used to return 0 (uncapped) unconditionally, with a note
+                // that the cap "is only used for exported builds" and that the
+                // Game View had its own dropdown. There is no such dropdown, so
+                // playing a scene in the editor ran the loop as fast as it could
+                // no matter what the project asked for -- which is exactly the
+                // case where a fixed simulation tick becomes a visible step,
+                // and it is where that stepping got reported from.
+                //
+                // Uncapped is still available; it is now a thing a project
+                // chooses rather than the only thing the editor does.
+                // The enum's values ARE the rates (Uncapped = 0), same shape
+                // as the editor-mode branch below.
+                Enjin::u32 gameLimit = static_cast<Enjin::u32>(gameSettings.targetFrameRate);
+                return gameLimit > 0 ? static_cast<Enjin::f32>(gameLimit) : 0.0f;
             }
 
             // Editor mode - use editor frame settings
