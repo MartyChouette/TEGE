@@ -1,4 +1,5 @@
 #include "Enjin/GUI/ImGuiLayer.h"
+#include <cmath>
 #include "Enjin/GUI/UIFontRegistry.h"
 #include "Enjin/GUI/Localization.h"
 #include "Enjin/GUI/FontScripts.h"
@@ -1139,6 +1140,35 @@ void ImGuiLayer::ApplyTheme(Editor::EditorTheme theme, const Editor::AccentColor
         style.DockingSeparatorSize = 2.0f;
         style.TabBarBorderSize    = 1.0f;
         style.DisabledAlpha       = 0.5f;
+    }
+
+    // ------------------------------------------------------------------
+    // sRGB -> linear, once, over the finished palette.
+    //
+    // The swapchain is B8G8R8A8_SRGB (VulkanSwapchain.cpp:146) and ImGui writes
+    // its vertex colours straight through, so the hardware encodes them as
+    // though they were already linear and every colour in every theme above
+    // lands about three and a half times lighter than it was authored:
+    // WindowBg (0.10,0.10,0.13) was measured on screen at RGB(90,90,118)
+    // against the RGB(26,26,33) it was written as. The editor has never
+    // displayed the palette it was designed in.
+    //
+    // Three panels had each worked this out privately and written their own
+    // converter -- EditorLayerCreative.cpp, EditorLayerCookie.cpp,
+    // EditorLayerPalette.cpp -- which is why the creative surface looks like a
+    // product and the panels beside it do not. This is the same conversion, put
+    // where all 503 colours pass through it.
+    //
+    // Alpha is not a colour channel and is not transfer-encoded. Runs last, so
+    // the accent overrides and the derived slots above are covered too.
+    // ------------------------------------------------------------------
+    auto srgbToLinear = [](f32 c) {
+        return (c <= 0.04045f) ? (c / 12.92f) : std::pow((c + 0.055f) / 1.055f, 2.4f);
+    };
+    for (int i = 0; i < ImGuiCol_COUNT; ++i) {
+        colors[i].x = srgbToLinear(colors[i].x);
+        colors[i].y = srgbToLinear(colors[i].y);
+        colors[i].z = srgbToLinear(colors[i].z);
     }
 }
 
