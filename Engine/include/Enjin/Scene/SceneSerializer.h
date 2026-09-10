@@ -6,7 +6,9 @@
 #include "Enjin/Renderer/Skybox.h"
 #include "Enjin/Renderer/SceneRenderSettings.h"
 #include <nlohmann/json_fwd.hpp>
+#include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace Enjin {
@@ -60,6 +62,66 @@ struct SerializationOptions {
     // loss-safe: the saver only drops a mesh's inline vertices when the source can be
     // verifiably reloaded at that moment, otherwise it keeps them inline.
     bool useMeshReferences = true;
+};
+
+// A deep copy of the components on a set of entities, taken as typed C++ copies
+// rather than JSON, and restorable in place.
+//
+// This exists because Play mode is supposed to be non-destructive and was not:
+// Stop restored an entity's transform and nothing else, so every other component
+// a system had written during play -- a door left open, a health bar at its dying
+// value, a mesh replaced by generated text geometry -- was still holding the
+// playtest's state when the editor next saved the scene. Restoring by component
+// TYPE rather than by named field is the point: it covers a component the day it
+// is added instead of the day someone notices a system writes to it.
+//
+// Two things it deliberately does not do:
+//   - It does not roundtrip through JSON. A component whose serializer omits a
+//     field (every conditional writer, and anything derived) would come back
+//     holding the struct default, which is the data loss this class is meant to
+//     stop. It also inflates: JSON of a mesh is many times the size of the mesh,
+//     which is what made the old whole-scene snapshot OOM on skeletal characters.
+//   - It does not remove components that appeared during play. Removing a
+//     component tears down that entity's GPU buffers with nothing queued to
+//     rebuild them, and "scene changes persist on Stop" is the documented
+//     PlayMode contract for additions.
+class ENJIN_API ComponentSnapshot {
+public:
+    // Copies every registry-known component on `entity`, filed under `key` (the
+    // caller's stable id for it -- PlayMode uses the pre-play entity handle, so a
+    // recycled slot or a recreated entity can still find its own record).
+    void CaptureEntity(ECS::World* world, ECS::Entity entity, u64 key);
+
+    struct RestoreStats {
+        usize componentsRestored = 0;   // assigned back over a live component
+        usize componentsReadded = 0;    // removed during play, added back
+        usize componentsAppeared = 0;   // added during play, deliberately left alone
+    };
+
+    // Puts every captured component for `key` back onto `entity`. `entity` need
+    // not be the handle that was captured: an entity destroyed during play and
+    // recreated at Stop is a new handle carrying the same record.
+    void RestoreEntity(ECS::World* world, ECS::Entity entity, u64 key, RestoreStats& stats) const;
+
+    // The captured value of one component, or nullptr. An escape hatch for the
+    // caller that has to compare a component against its pre-play value rather
+    // than just overwrite it: MeshComponent is mirrored into GPU buffers, so a
+    // restore that changes the vertices has to say so and get them re-uploaded.
+    const void* Find(u64 key, const std::string& componentKey) const;
+
+    bool Contains(u64 key) const { return m_Entities.find(key) != m_Entities.end(); }
+    usize EntityCount() const { return m_Entities.size(); }
+    usize ComponentCount() const;
+    void Clear() { m_Entities.clear(); }
+
+private:
+    struct Held {
+        const char* key;                // points into the registry's static table
+        std::shared_ptr<void> value;    // the typed copy, erased
+        bool (*has)(ECS::World*, ECS::Entity);
+        void (*assign)(ECS::World*, ECS::Entity, const void*);
+    };
+    std::unordered_map<u64, std::vector<Held>> m_Entities;
 };
 
 // Scene Serializer - Saves and loads scenes to/from JSON files
@@ -120,6 +182,13 @@ public:
     // The registry keys PRESENT on one entity (cheap has-checks only). Powers
     // introspection surfaces like the editor MCP server's list_entities.
     static std::vector<std::string> ComponentKeysOn(ECS::World* world, ECS::Entity entity);
+
+    // Registry keys with no copy/assign pair, which is how a component drops out
+    // of the play-mode ComponentSnapshot: it would be saved, mutated during play
+    // and never restored, silently. Uniform entries get the pair from the SERDES
+    // macro; the irregular ones spell it out, which is the half a new entry can
+    // forget. Asserted empty by TestComponentSnapshot.
+    static std::vector<std::string> ComponentKeysMissingSnapshotOps();
 
     // UI unification: convert legacy HUDWidgetComponents into per-entity
     // UICanvases (HUDSystem is retired). Runs after every scene load; the

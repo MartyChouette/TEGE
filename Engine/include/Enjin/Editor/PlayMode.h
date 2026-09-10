@@ -46,6 +46,7 @@
 #include "Enjin/Editor/PlayModeDiff.h"
 #include "Enjin/Editor/EditorSettings.h"
 #include "Enjin/Scene/LevelStreaming.h"
+#include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/Audio/AudioEngine.h"
 #include "Enjin/Effects/Destructible.h"
 #include "Enjin/Effects/InteractiveWater.h"
@@ -367,26 +368,25 @@ private:
     u32 m_ProfileFrameCount = 0;
 
     // Saved editor state (to restore when stopping).
-    // Lightweight per-entity gameplay-mutable snapshot — NOT a full scene
-    // serialization. Roundtripping the entire scene through JSON every play/stop
-    // cycle was OOMing on heavy skeletal meshes (140MB+ JSON for a multi-mesh
-    // Mixamo character). The snapshot captures only what gameplay can mutate.
-    struct EntitySnapshot {
-        Math::Vector3 position;
-        Math::Quaternion rotation;
-        Math::Vector3 scale;
-        bool visible = true;
-        bool hadTransform = false;
-        std::string name;       // For detecting entity ID recycling
-        bool hadName = false;
-        // Rigidbody velocities: without these, physics-driven motion leaks across
-        // Play/Stop — the body keeps its last linear/angular velocity, so the next
-        // Play starts already spinning/drifting from the previous run.
-        Math::Vector3 linearVelocity = Math::Vector3(0.0f);
-        Math::Vector3 angularVelocity = Math::Vector3(0.0f);
-        bool hadRigidbody = false;
-    };
-    std::unordered_map<u64, EntitySnapshot> m_SavedEntityState;
+    //
+    // Every component the registry knows about, deep-copied per entity at Play
+    // and assigned back at Stop. This used to be a hand-written struct holding a
+    // transform, a visibility flag and the rigidbody velocities, and that was the
+    // whole restore: a door left open, a health bar at its dying value, a text
+    // mesh generated over authored geometry all survived Stop and went into the
+    // next save. Restoring by component TYPE covers a component the day it is
+    // added rather than the day someone notices a system writes to it.
+    //
+    // NOT a scene serialization. Roundtripping the scene through JSON every
+    // play/stop cycle was OOMing on heavy skeletal meshes (140MB+ JSON for a
+    // multi-mesh Mixamo character); a typed copy is a fraction of that and, more
+    // importantly, exact -- a field the serializer chooses not to write would
+    // come back as the struct default and destroy the value it was meant to save.
+    Scene::ComponentSnapshot m_ComponentSnapshot;
+    // The name each pre-play entity had, for spotting a recycled entity slot: a
+    // valid handle whose name changed is a different entity that reused the slot,
+    // so the original counts as destroyed and must not be restored over.
+    std::unordered_map<u64, std::string> m_SavedEntityNames;
 
     // Token for the destroy observer installed at Play. The observer list is
     // shared with ScriptSystem, so this must be removed by token rather than

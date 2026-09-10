@@ -962,6 +962,13 @@ public:
     // Call when material properties change outside of entity add/remove (e.g., inspector edits, scripts).
     void MarkMaterialsDirty() { m_MaterialSSBODirty = true; }
 
+    // Rebuild this entity's vertex/index buffers because its MeshComponent data
+    // changed underneath them. Queued, never done here: building buffers on the
+    // spot Invalidate()s GPU buffers the in-flight frame is still recording
+    // against, which is why OnEntityAdded defers too. Flushed in
+    // FlushPendingChanges, the one safe point.
+    void QueueEntityBufferRebuild(Entity entity) { m_PendingBufferSetups.push_back(entity); }
+
     // Draw call / triangle counters — getters return last completed frame's values
     // so that UI reads (which happen before the next render) see valid numbers.
     u32 GetDrawCallCount() const { return m_LastDrawCallCount; }

@@ -2,6 +2,7 @@
 #include "Enjin/Assets/Prefab.h"
 #include "Enjin/Input/TouchActionBridge.h"
 #include "Enjin/Effects/TreeRenderer.h"
+#include <cstring>
 #include <filesystem>
 #include <random>
 #include <type_traits>
@@ -1354,32 +1355,21 @@ void PlayMode::SaveEditorState() {
         return;
     }
 
-    // Lightweight per-entity snapshot — just the gameplay-mutable state.
-    // We deliberately avoid serializing the entire scene to JSON: roundtripping
-    // mesh + skeleton + animation track data through nlohmann::json was producing
-    // 100MB+ payloads for multi-mesh skeletal characters and OOMing on restore.
-    m_SavedEntityState.clear();
+    // Deep-copy every registered component on every entity. Typed copies, not
+    // JSON: roundtripping mesh + skeleton + animation track data through
+    // nlohmann::json was producing 100MB+ payloads for multi-mesh skeletal
+    // characters and OOMing on restore, and a serializer that omits a field
+    // (every conditional writer) would hand back the struct default at Stop and
+    // delete the authored value it was supposed to protect.
+    m_ComponentSnapshot.Clear();
+    m_SavedEntityNames.clear();
     m_DestroyedEntityJson.clear();
     auto entities = m_World->GetAllEntities();
     for (auto entity : entities) {
-        EntitySnapshot snap;
-        if (auto* t = m_World->GetComponent<ECS::TransformComponent>(entity)) {
-            snap.position = t->position;
-            snap.rotation = t->rotation;
-            snap.scale = t->scale;
-            snap.visible = t->visible;
-            snap.hadTransform = true;
-        }
+        m_ComponentSnapshot.CaptureEntity(m_World, entity, static_cast<u64>(entity));
         if (auto* nc = m_World->GetComponent<ECS::NameComponent>(entity)) {
-            snap.name = nc->name;
-            snap.hadName = true;
+            m_SavedEntityNames[static_cast<u64>(entity)] = nc->name;
         }
-        if (auto* rb = m_World->GetComponent<ECS::RigidbodyComponent>(entity)) {
-            snap.linearVelocity = rb->velocity;
-            snap.angularVelocity = rb->angularVelocity;
-            snap.hadRigidbody = true;
-        }
-        m_SavedEntityState[static_cast<u64>(entity)] = snap;
     }
 
     // Save camera state
@@ -1394,13 +1384,14 @@ void PlayMode::SaveEditorState() {
     m_DestroyObserverToken = m_World->AddEntityDestroyObserver([this](ECS::Entity e) {
         const u64 id = static_cast<u64>(e);
         // Only pre-play entities are restorable; play-created ones must stay gone.
-        if (m_SavedEntityState.find(id) == m_SavedEntityState.end()) return;
+        if (!m_ComponentSnapshot.Contains(id)) return;
         if (m_DestroyedEntityJson.count(id)) return;  // capture once, at first death
         m_DestroyedEntityJson[id] =
             Scene::SceneSerializer::SerializeEntityToString(m_World, e, /*includeVertexData=*/true);
     });
 
-    ENJIN_LOG_DEBUG(Editor, "Saved editor state (%zu entities snapshotted)", m_SavedEntityState.size());
+    ENJIN_LOG_DEBUG(Editor, "Saved editor state (%zu entities, %zu components snapshotted)",
+                    m_ComponentSnapshot.EntityCount(), m_ComponentSnapshot.ComponentCount());
 }
 
 void PlayMode::RestoreEditorState() {
@@ -1445,36 +1436,61 @@ void PlayMode::RestoreEditorState() {
         }
     }
 
-    // Restore each SURVIVING tracked entity's gameplay-mutable state in place
-    // (transform + visible). Static asset data (mesh, skeleton, animator) is left
-    // untouched, which avoids the old multi-megabyte JSON roundtrip AND the reload
-    // use-after-free that came from re-adding AnimatorComponent on reloaded entities.
+    // Restore each SURVIVING tracked entity. Every component the registry knows
+    // about is assigned back to the value it held at Play -- not just the
+    // transform, which is all this used to do. The assignment rides
+    // World::AddComponent, which writes over a live component in place: no
+    // structural mutation, so no ComponentStorage is invalidated and nothing
+    // re-runs OnEntityAdded (the reload use-after-free that came from re-adding
+    // AnimatorComponent on reloaded entities was the whole-scene reload path,
+    // which this deliberately is not).
+    //
     // Entities destroyed during play are handled by the recreate pass below; ID
     // recycling means a valid handle whose name changed is a different entity that
     // reused the slot, so treat the original as destroyed (skip it here).
+    //
+    // A mesh restored to different geometry needs its GPU buffers rebuilt: the
+    // renderer mirrors MeshComponent, and a text mesh generated over authored
+    // vertices during play leaves the buffers holding the glyphs. Collected here
+    // and flushed once below.
+    Scene::ComponentSnapshot::RestoreStats restoreStats;
+    std::vector<ECS::Entity> meshesToRebuild;
+    auto meshChanged = [this](u64 eid, ECS::Entity live) {
+        const auto* before = static_cast<const ECS::MeshComponent*>(
+            m_ComponentSnapshot.Find(eid, "mesh"));
+        const auto* now = m_World->GetComponent<ECS::MeshComponent>(live);
+        if (!before || !now) return false;
+        if (before->vertices.size() != now->vertices.size()) return true;
+        if (before->indices.size() != now->indices.size()) return true;
+        // MeshComponent::Vertex is a flat POD, so the bytes are the comparison.
+        if (!now->vertices.empty() &&
+            std::memcmp(before->vertices.data(), now->vertices.data(),
+                        now->vertices.size() * sizeof(ECS::MeshComponent::Vertex)) != 0) return true;
+        if (!now->indices.empty() &&
+            std::memcmp(before->indices.data(), now->indices.data(),
+                        now->indices.size() * sizeof(u32)) != 0) return true;
+        return false;
+    };
+
     usize restored = 0;
-    for (const auto& [eid, snap] : m_SavedEntityState) {
+    for (const auto& [eid, savedName] : m_SavedEntityNames) {
         ECS::Entity entity = static_cast<ECS::Entity>(eid);
         if (!m_World->IsValid(entity)) continue;   // destroyed — recreated below
-        if (snap.hadName) {
-            auto* nc = m_World->GetComponent<ECS::NameComponent>(entity);
-            if (!nc || nc->name != snap.name) continue;  // slot reused by another entity
-        }
-        if (snap.hadTransform) {
-            if (auto* t = m_World->GetComponent<ECS::TransformComponent>(entity)) {
-                t->position = snap.position;
-                t->rotation = snap.rotation;
-                t->scale = snap.scale;
-                t->visible = snap.visible;
-                ++restored;
-            }
-        }
-        if (snap.hadRigidbody) {
-            if (auto* rb = m_World->GetComponent<ECS::RigidbodyComponent>(entity)) {
-                rb->velocity = snap.linearVelocity;        // else physics motion leaks into the next Play
-                rb->angularVelocity = snap.angularVelocity;
-            }
-        }
+        auto* nc = m_World->GetComponent<ECS::NameComponent>(entity);
+        if (!nc || nc->name != savedName) continue;  // slot reused by another entity
+        if (meshChanged(eid, entity)) meshesToRebuild.push_back(entity);
+        m_ComponentSnapshot.RestoreEntity(m_World, entity, eid, restoreStats);
+        ++restored;
+    }
+    // Entities with no NameComponent are not in m_SavedEntityNames and cannot be
+    // checked for slot reuse, so they are restored on validity alone.
+    for (ECS::Entity entity : m_World->GetAllEntities()) {
+        const u64 eid = static_cast<u64>(entity);
+        if (m_SavedEntityNames.count(eid)) continue;
+        if (!m_ComponentSnapshot.Contains(eid)) continue;   // spawned during play
+        if (meshChanged(eid, entity)) meshesToRebuild.push_back(entity);
+        m_ComponentSnapshot.RestoreEntity(m_World, entity, eid, restoreStats);
+        ++restored;
     }
 
     // Recreate the pre-play entities that died during play, from their incrementally
@@ -1483,27 +1499,16 @@ void PlayMode::RestoreEditorState() {
     // normal per-entity add path (DeserializeEntityFromString -> AddComponent ->
     // OnEntityAdded rebuilds its render buffers), and we stamp its pre-play transform
     // back on so it returns to where it started rather than where it died.
+    // The recreated entity is rebuilt from the JSON captured at its DEATH, so it
+    // comes back holding the state it died in. Its snapshot record is still filed
+    // under the old handle, so the same restore runs over it: a new handle, the
+    // same pre-play values.
     usize recreated = 0;
     for (const auto& [eid, json] : m_DestroyedEntityJson) {
         if (json.empty()) continue;
         ECS::Entity created = Scene::SceneSerializer::DeserializeEntityFromString(m_World, json);
         if (!m_World->IsValid(created)) continue;
-        auto snapIt = m_SavedEntityState.find(eid);
-        if (snapIt != m_SavedEntityState.end() && snapIt->second.hadTransform) {
-            if (auto* t = m_World->GetComponent<ECS::TransformComponent>(created)) {
-                const auto& snap = snapIt->second;
-                t->position = snap.position;
-                t->rotation = snap.rotation;
-                t->scale = snap.scale;
-                t->visible = snap.visible;
-            }
-            if (snapIt->second.hadRigidbody) {
-                if (auto* rb = m_World->GetComponent<ECS::RigidbodyComponent>(created)) {
-                    rb->velocity = snapIt->second.linearVelocity;
-                    rb->angularVelocity = snapIt->second.angularVelocity;
-                }
-            }
-        }
+        m_ComponentSnapshot.RestoreEntity(m_World, created, eid, restoreStats);
         ++recreated;
     }
     m_DestroyedEntityJson.clear();
@@ -1513,11 +1518,25 @@ void PlayMode::RestoreEditorState() {
     // draws the recreated entities immediately.
     if (m_RenderSystem && recreated > 0) m_RenderSystem->RefreshStorageCache();
 
-    if (recreated > 0) {
-        ENJIN_LOG_INFO(Editor, "Restored editor state (%zu reset, %zu recreated from incremental capture)", restored, recreated);
-    } else {
-        ENJIN_LOG_INFO(Editor, "Restored editor state (%zu entities, lightweight)", restored);
+    // Restoring component VALUES does not touch what the GPU already holds. The
+    // material SSBO is rebuilt from the restored materials, and any entity whose
+    // vertices actually moved gets its buffers rebuilt at the renderer's one safe
+    // point (queued, not done here -- see FlushPendingChanges).
+    if (m_RenderSystem) {
+        m_RenderSystem->MarkMaterialsDirty();
+        for (ECS::Entity e : meshesToRebuild) m_RenderSystem->QueueEntityBufferRebuild(e);
     }
+
+    ENJIN_LOG_INFO(Editor,
+        "Restored editor state (%zu entities, %zu components reset, %zu re-added, "
+        "%zu recreated, %zu meshes re-uploaded; %zu components added during play kept)",
+        restored, restoreStats.componentsRestored, restoreStats.componentsReadded,
+        recreated, meshesToRebuild.size(), restoreStats.componentsAppeared);
+
+    // Release the copies. They are a whole scene's worth of components and there
+    // is no reader after this point; the next Play takes a fresh capture.
+    m_ComponentSnapshot.Clear();
+    m_SavedEntityNames.clear();
 
     // Restore camera state
     m_Camera->SetPosition(m_SavedCameraPos);

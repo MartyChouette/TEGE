@@ -340,7 +340,14 @@ json SerializeMaterialComponent(const ECS::MaterialComponent& material) {
     // every read with contains(), so an omitted field simply keeps its default.
     static const ECS::MaterialComponent kDefaultMaterial{};
 
-    json j;
+    // json::object(), not a default json: a material sitting on every default
+    // writes NO keys, and a default-constructed nlohmann::json is null rather
+    // than {}. The scene then carried "material": null, and the load threw
+    // "cannot use value() with null" out of DeserializeEntities -- which is not
+    // caught per entity, so the whole scene load failed and every entity after
+    // the offending one was lost. Reaching an all-default material takes nothing
+    // more than a fade that ends at opacity 1.0.
+    json j = json::object();
     if (material.baseColor != kDefaultMaterial.baseColor) j["baseColor"] = SerializeVector3(material.baseColor);
     if (material.opacity != kDefaultMaterial.opacity) j["opacity"] = RF(material.opacity);
     if (material.metallic != kDefaultMaterial.metallic) j["metallic"] = RF(material.metallic);
@@ -358,11 +365,14 @@ json SerializeMaterialComponent(const ECS::MaterialComponent& material) {
     if (material.uvScrollSpeed.x != 0.0f || material.uvScrollSpeed.y != 0.0f) {
         if (material.uvScrollSpeed != kDefaultMaterial.uvScrollSpeed) j["uvScrollSpeed"] = { RF(material.uvScrollSpeed.x), RF(material.uvScrollSpeed.y) };
     }
-    if (material.flipbookCols > 0 && material.flipbookRows > 0) {
-        if (material.flipbookCols != kDefaultMaterial.flipbookCols) j["flipbookCols"] = material.flipbookCols;
-        if (material.flipbookRows != kDefaultMaterial.flipbookRows) j["flipbookRows"] = material.flipbookRows;
-        if (material.flipbookFps != kDefaultMaterial.flipbookFps) j["flipbookFps"] = RF(material.flipbookFps);
-    }
+    // No outer "is the flipbook on" guard. Every other line here drops a field
+    // for equalling the default, which is lossless -- an omitted key reads back
+    // as that same default. Gating a field on a DIFFERENT field is not: an fps
+    // typed in before the grid was filled in was silently dropped, and setting
+    // the grid later brought the value back as 10 rather than what was typed.
+    if (material.flipbookCols != kDefaultMaterial.flipbookCols) j["flipbookCols"] = material.flipbookCols;
+    if (material.flipbookRows != kDefaultMaterial.flipbookRows) j["flipbookRows"] = material.flipbookRows;
+    if (material.flipbookFps != kDefaultMaterial.flipbookFps) j["flipbookFps"] = RF(material.flipbookFps);
     if (material.normalTexturePath != kDefaultMaterial.normalTexturePath) j["normalTexturePath"] = material.normalTexturePath;
     if (material.metallicRoughnessTexturePath != kDefaultMaterial.metallicRoughnessTexturePath) j["metallicRoughnessTexturePath"] = material.metallicRoughnessTexturePath;
     if (material.emissiveTexturePath != kDefaultMaterial.emissiveTexturePath) j["emissiveTexturePath"] = material.emissiveTexturePath;
@@ -9393,15 +9403,36 @@ SerializationResult SceneSerializer::Save(const std::string& filepath, const Ser
 // MSVC's C1061 nesting limit and silently dropped components). Uniform components
 // use ENJIN_SERDES; the few irregular ones are explicit entries.
 // ----------------------------------------------------------------------------
+// Type-erased deep copy and in-place restore for one component type. These do
+// NOT go through JSON: a play-mode snapshot has to be byte-faithful (a field the
+// serializer does not write would come back as the struct default and wipe the
+// authored value) and JSON of a mesh is an order of magnitude larger than the
+// mesh, which is what made the old whole-scene roundtrip OOM. A typed copy is
+// exact and costs one scene's worth of memory.
+//
+// `assign` rides World::AddComponent, which assigns over an existing component
+// WITHOUT a structural mutation -- no storage invalidation, no OnEntityAdded --
+// and falls back to a real add when the component was removed during play.
+struct ComponentTypeOps {
+    std::shared_ptr<void> (*copy)(ECS::World*, ECS::Entity) = nullptr;
+    void (*assign)(ECS::World*, ECS::Entity, const void*) = nullptr;
+};
+
+#define ENJIN_TYPE_OPS(TYPE) ComponentTypeOps{     [](ECS::World* w, ECS::Entity e)->std::shared_ptr<void>{ return std::make_shared<TYPE>(*w->GetComponent<TYPE>(e)); },     [](ECS::World* w, ECS::Entity e, const void* p){ w->AddComponent<TYPE>(e, *static_cast<const TYPE*>(p)); } }
+
 struct ComponentSerdes {
     const char* key;
     bool (*has)(ECS::World*, ECS::Entity);
     json (*ser)(ECS::World*, ECS::Entity);
     void (*de)(ECS::World*, ECS::Entity, const json&);
     void (*rem)(ECS::World*, ECS::Entity);
+    // Left null and a component silently drops out of the play-mode snapshot, so
+    // TestSerdesCoverage asserts every entry has one rather than trusting the
+    // next irregular entry to remember.
+    ComponentTypeOps ops;
 };
 
-#define ENJIN_SERDES(KEY, TYPE, SERFN, DESERFN) ComponentSerdes{ KEY, [](ECS::World* w, ECS::Entity e){ return w->HasComponent<TYPE>(e); }, [](ECS::World* w, ECS::Entity e)->json{ return SERFN(*w->GetComponent<TYPE>(e)); }, [](ECS::World* w, ECS::Entity e, const json& j){ w->AddComponent<TYPE>(e, DESERFN(j)); }, [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<TYPE>(e); } }
+#define ENJIN_SERDES(KEY, TYPE, SERFN, DESERFN) ComponentSerdes{ KEY, [](ECS::World* w, ECS::Entity e){ return w->HasComponent<TYPE>(e); }, [](ECS::World* w, ECS::Entity e)->json{ return SERFN(*w->GetComponent<TYPE>(e)); }, [](ECS::World* w, ECS::Entity e, const json& j){ w->AddComponent<TYPE>(e, DESERFN(j)); }, [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<TYPE>(e); }, ENJIN_TYPE_OPS(TYPE) }
 
 static const std::vector<ComponentSerdes>& ComponentRegistry() {
     static const std::vector<ComponentSerdes> reg = {
@@ -9500,14 +9531,16 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
                 return j;
             },
             [](ECS::World* w, ECS::Entity e, const json& j){ w->AddComponent<ECS::MeshColliderComponent>(e, DeserializeMeshColliderComponent(j)); },
-            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::MeshColliderComponent>(e); } },
+            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::MeshColliderComponent>(e); },
+            ENJIN_TYPE_OPS(ECS::MeshColliderComponent) },
         ENJIN_SERDES("meshRenderer", ECS::MeshRendererComponent, SerializeMeshRendererComponent, DeserializeMeshRendererComponent),
         ENJIN_SERDES("midiBinding", ECS::MIDIBindingComponent, SerializeMIDIBindingComponent, DeserializeMIDIBindingComponent),
         ComponentSerdes{ "morphTargets",
             [](ECS::World* w, ECS::Entity e){ return w->HasComponent<ECS::MorphTargetComponent>(e); },
             [](ECS::World* w, ECS::Entity e)->json{ return SerializeMorphTargetComponent(*w->GetComponent<ECS::MorphTargetComponent>(e), true); },
             [](ECS::World* w, ECS::Entity e, const json& j){ w->AddComponent<ECS::MorphTargetComponent>(e, DeserializeMorphTargetComponent(j)); },
-            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::MorphTargetComponent>(e); } },
+            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::MorphTargetComponent>(e); },
+            ENJIN_TYPE_OPS(ECS::MorphTargetComponent) },
         ENJIN_SERDES("movingPlatform", ECS::MovingPlatformComponent, SerializeMovingPlatformComponent, DeserializeMovingPlatformComponent),
         ENJIN_SERDES("musicZone", ECS::MusicZoneComponent, SerializeMusicZoneComponent, DeserializeMusicZoneComponent),
         ENJIN_SERDES("name", ECS::NameComponent, SerializeNameComponent, DeserializeNameComponent),
@@ -9606,7 +9639,8 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
             [](ECS::World* w, ECS::Entity e){ return w->HasComponent<ECS::StableIdComponent>(e); },
             [](ECS::World* w, ECS::Entity e)->json{ json j; j["id"] = w->GetComponent<ECS::StableIdComponent>(e)->id; return j; },
             [](ECS::World* w, ECS::Entity e, const json& j){ w->AddComponent<ECS::StableIdComponent>(e, ECS::StableIdComponent{ j.value("id", u64{0}) }); },
-            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::StableIdComponent>(e); } },
+            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::StableIdComponent>(e); },
+            ENJIN_TYPE_OPS(ECS::StableIdComponent) },
         ComponentSerdes{ "mesh",
             [](ECS::World* w, ECS::Entity e){ return w->HasComponent<ECS::MeshComponent>(e); },
             [](ECS::World* w, ECS::Entity e)->json{
@@ -9619,7 +9653,8 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
                 return SerializeMeshComponent(*w->GetComponent<ECS::MeshComponent>(e), !derived);
             },
             [](ECS::World* w, ECS::Entity e, const json& j){ w->AddComponent<ECS::MeshComponent>(e, DeserializeMeshComponent(j)); },
-            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::MeshComponent>(e); } },
+            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::MeshComponent>(e); },
+            ENJIN_TYPE_OPS(ECS::MeshComponent) },
         ComponentSerdes{ "animator",
             [](ECS::World* w, ECS::Entity e){ return w->HasComponent<ECS::AnimatorComponent>(e); },
             [](ECS::World* w, ECS::Entity e)->json{ return SerializeAnimatorComponent(*w->GetComponent<ECS::AnimatorComponent>(e)); },
@@ -9628,7 +9663,8 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
                 if (w->HasComponent<ECS::SkeletonComponent>(e)) skel = w->GetComponent<ECS::SkeletonComponent>(e)->skeleton;
                 w->AddComponent<ECS::AnimatorComponent>(e, DeserializeAnimatorComponent(j, skel));
             },
-            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::AnimatorComponent>(e); } },
+            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::AnimatorComponent>(e); },
+            ENJIN_TYPE_OPS(ECS::AnimatorComponent) },
         ComponentSerdes{ "boneAttachment",
             [](ECS::World* w, ECS::Entity e){ return w->HasComponent<ECS::BoneAttachmentComponent>(e); },
             [](ECS::World* w, ECS::Entity e)->json{
@@ -9650,7 +9686,8 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
                     auto& a = j["rotationOffset"]; ba.rotationOffset = Math::Quaternion(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>(), a[3].get<f32>());
                 }
             },
-            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::BoneAttachmentComponent>(e); } },
+            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::BoneAttachmentComponent>(e); },
+            ENJIN_TYPE_OPS(ECS::BoneAttachmentComponent) },
         // --- absorbed from the scene save/load loops (Stage 2): these were wired
         // only in the loops, so the per-key helpers could not copy/undo them ---
         ENJIN_SERDES("customShader", ECS::CustomShaderComponent, SerializeCustomShaderComponent, DeserializeCustomShaderComponent),
@@ -9661,7 +9698,8 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
             [](ECS::World* w, ECS::Entity e){ return w->HasComponent<ECS::ScatterInstanceComponent>(e); },
             [](ECS::World* w, ECS::Entity e)->json{ (void)w; (void)e; return json::object(); },
             [](ECS::World* w, ECS::Entity e, const json& j){ (void)j; w->AddComponent<ECS::ScatterInstanceComponent>(e); },
-            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::ScatterInstanceComponent>(e); } },
+            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::ScatterInstanceComponent>(e); },
+            ENJIN_TYPE_OPS(ECS::ScatterInstanceComponent) },
         // prefabInstance: persisted link fields only (overrides map is runtime state).
         ComponentSerdes{ "prefabInstance",
             [](ECS::World* w, ECS::Entity e){ return w->HasComponent<Assets::PrefabInstanceComponent>(e); },
@@ -9676,7 +9714,8 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
                 pi.prefabId = j.value("prefabId", static_cast<u64>(0));
                 pi.prefabPath = j.value("prefabPath", std::string(""));
             },
-            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<Assets::PrefabInstanceComponent>(e); } },
+            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<Assets::PrefabInstanceComponent>(e); },
+            ENJIN_TYPE_OPS(Assets::PrefabInstanceComponent) },
         ComponentSerdes{ "lookAtIK",
             [](ECS::World* w, ECS::Entity e){ return w->HasComponent<ECS::LookAtIKComponent>(e); },
             [](ECS::World* w, ECS::Entity e)->json{
@@ -9705,7 +9744,8 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
                 if (ikJson.contains("smoothSpeed")) ik.smoothSpeed = ikJson["smoothSpeed"].get<f32>();
                 if (ikJson.contains("lookWeight")) ik.lookWeight = ikJson["lookWeight"].get<f32>();
             },
-            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::LookAtIKComponent>(e); } },
+            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::LookAtIKComponent>(e); },
+            ENJIN_TYPE_OPS(ECS::LookAtIKComponent) },
         ComponentSerdes{ "interactionIK",
             [](ECS::World* w, ECS::Entity e){ return w->HasComponent<ECS::InteractionIKComponent>(e); },
             [](ECS::World* w, ECS::Entity e)->json{
@@ -9729,7 +9769,8 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
                 if (ikJson.contains("smoothSpeed")) ik.smoothSpeed = ikJson["smoothSpeed"].get<f32>();
                 if (ikJson.contains("interactionTag")) ik.interactionTag = ikJson["interactionTag"].get<std::string>();
             },
-            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::InteractionIKComponent>(e); } },
+            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::InteractionIKComponent>(e); },
+            ENJIN_TYPE_OPS(ECS::InteractionIKComponent) },
         ComponentSerdes{ "twoBoneIK",
             [](ECS::World* w, ECS::Entity e){ return w->HasComponent<ECS::TwoBoneIKComponent>(e); },
             [](ECS::World* w, ECS::Entity e)->json{
@@ -9761,7 +9802,8 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
                     ik.poleVector = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>());
                 }
             },
-            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::TwoBoneIKComponent>(e); } },
+            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::TwoBoneIKComponent>(e); },
+            ENJIN_TYPE_OPS(ECS::TwoBoneIKComponent) },
     };
     return reg;
 }
@@ -10084,7 +10126,13 @@ void SceneSerializer::DeserializeEntities(const json& sceneJson, Deserialization
             std::string_view rk(reg.key);
             if (rk == "mesh" || rk == "stableId") continue;
             auto regIt = entityJson.find(reg.key);
-            if (regIt != entityJson.end()) reg.de(m_World, entity, *regIt);
+            if (regIt == entityJson.end()) continue;
+            // See DeserializeEntityFromString: a null component value is what a
+            // conditional serializer wrote when every field was default, and
+            // value() on a null throws out of here -- uncaught per entity, so it
+            // failed the ENTIRE scene load. Read it as the empty object it meant.
+            static const json kEmptyComponent = json::object();
+            reg.de(m_World, entity, regIt->is_null() ? kEmptyComponent : *regIt);
         }
         if (entityJson.contains("mesh")) {
             auto mesh = DeserializeMeshComponent(entityJson["mesh"]);
@@ -10702,7 +10750,15 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
             std::string_view rk(reg.key);
             if (rk == "mesh" || rk == "stableId") continue;
             auto regIt = entityJson.find(reg.key);
-            if (regIt != entityJson.end()) reg.de(world, entity, *regIt);
+            if (regIt == entityJson.end()) continue;
+            // A null value means "present, no keys" -- what a conditional
+            // serializer wrote before it learned to emit {}. Deserializers read
+            // it with value()/contains(), and value() on a null THROWS, taking
+            // the whole entity (or scene) down with it. An empty object is the
+            // same thing said in a way every reader survives, so files already
+            // on disk load instead of failing.
+            static const json kEmptyComponent = json::object();
+            reg.de(world, entity, regIt->is_null() ? kEmptyComponent : *regIt);
         }
         if (entityJson.contains("mesh")) {
             world->AddComponent<ECS::MeshComponent>(entity, DeserializeMeshComponent(entityJson["mesh"]));
@@ -10733,11 +10789,83 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
 // ============================================================================
 
 
+// ----------------------------------------------------------------------------
+// ComponentSnapshot -- typed play-mode capture/restore.
+//
+// Lives here rather than in its own translation unit because ComponentRegistry()
+// is the single source of truth for which components exist and how to copy them,
+// and it is file-static on purpose: a second copy of that list is exactly the
+// drift the registry replaced.
+// ----------------------------------------------------------------------------
+
+void ComponentSnapshot::CaptureEntity(ECS::World* world, ECS::Entity entity, u64 key) {
+    if (!world || !world->IsValid(entity)) return;
+    std::vector<Held> held;
+    for (const auto& r : ComponentRegistry()) {
+        if (!r.ops.copy || !r.has(world, entity)) continue;
+        held.push_back(Held{ r.key, r.ops.copy(world, entity), r.has, r.ops.assign });
+    }
+    if (held.empty()) {
+        // Still record the entity: Contains() is how the caller tells a pre-play
+        // entity from one the runtime spawned, and an entity with no registered
+        // component is a real (if odd) case.
+        m_Entities.emplace(key, std::vector<Held>{});
+        return;
+    }
+    m_Entities.emplace(key, std::move(held));
+}
+
+void ComponentSnapshot::RestoreEntity(ECS::World* world, ECS::Entity entity, u64 key,
+                                      RestoreStats& stats) const {
+    if (!world || !world->IsValid(entity)) return;
+    auto it = m_Entities.find(key);
+    if (it == m_Entities.end()) return;
+
+    for (const auto& h : it->second) {
+        if (!h.assign || !h.value) continue;
+        // Was it still there? The distinction is only for the counters -- assign
+        // handles both, in place when present and as a real add when not.
+        const bool present = h.has && h.has(world, entity);
+        h.assign(world, entity, h.value.get());
+        if (present) ++stats.componentsRestored; else ++stats.componentsReadded;
+    }
+
+    // Components the runtime added to a pre-play entity are counted and left in
+    // place -- see the class comment for why removing them is not free.
+    for (const auto& r : ComponentRegistry()) {
+        if (!r.has(world, entity)) continue;
+        bool captured = false;
+        for (const auto& h : it->second) if (h.key == r.key) { captured = true; break; }
+        if (!captured) ++stats.componentsAppeared;
+    }
+}
+
+const void* ComponentSnapshot::Find(u64 key, const std::string& componentKey) const {
+    auto it = m_Entities.find(key);
+    if (it == m_Entities.end()) return nullptr;
+    for (const auto& h : it->second)
+        if (componentKey == h.key) return h.value.get();
+    return nullptr;
+}
+
+usize ComponentSnapshot::ComponentCount() const {
+    usize n = 0;
+    for (const auto& [id, held] : m_Entities) n += held.size();
+    return n;
+}
+
 std::vector<std::string> SceneSerializer::ComponentKeysOn(ECS::World* world, ECS::Entity entity) {
     std::vector<std::string> keys;
     if (!world || !world->IsValid(entity)) return keys;
     for (const auto& r : ComponentRegistry())
         if (r.has(world, entity)) keys.emplace_back(r.key);
+    return keys;
+}
+
+std::vector<std::string> SceneSerializer::ComponentKeysMissingSnapshotOps() {
+    std::vector<std::string> keys;
+    for (const auto& r : ComponentRegistry())
+        if (!r.ops.copy || !r.ops.assign) keys.emplace_back(r.key);
     return keys;
 }
 
