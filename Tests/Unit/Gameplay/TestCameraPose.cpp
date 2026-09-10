@@ -162,7 +162,7 @@ ENJIN_TEST(CameraPose, NoActiveCameraIsNotACrash) {
     // Act / Assert: must simply do nothing.
     ApplyCameraPose(&w, nullptr, Math::Vector3(1.0f, 1.0f, 1.0f),
                     Math::Vector3(0.0f, 0.0f, 0.0f), 60.0f);
-    ENJIN_EXPECT_TRUE(true);
+    ENJIN_SURVIVED("camera pose blending with degenerate input");
 }
 
 ENJIN_TEST_MAIN()

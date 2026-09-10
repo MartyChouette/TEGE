@@ -601,7 +601,7 @@ ENJIN_TEST(CRC32Utility, EmptyDataDoesNotCrash) {
     // CRC32 of null/0-size should not crash
     u32 crc = AssetPacker::ComputeCRC32(nullptr, 0);
     (void)crc;
-    ENJIN_EXPECT_TRUE(true);
+    ENJIN_SURVIVED("a build pipeline run with no project loaded");
 }
 
 ENJIN_TEST(CRC32Utility, SameDataProducesSameCRC) {

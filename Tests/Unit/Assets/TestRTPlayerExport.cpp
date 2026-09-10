@@ -33,7 +33,7 @@ ENJIN_TEST(RTPlayerExport, ExportsProbeProjectForPlayerVerification) {
     const char* probeDir  = std::getenv("ENJIN_RT_PROBE_DIR");
     const char* exportDir = std::getenv("ENJIN_RT_EXPORT_DIR");
     if (!probeDir || !*probeDir || !exportDir || !*exportDir) {
-        return;
+        ENJIN_SKIP("set ENJIN_RT_PROBE_DIR and ENJIN_RT_EXPORT_DIR to run the player export probe");
     }
 
     fs::path projectFile = fs::path(probeDir) / "RTProbe.enjinproject";

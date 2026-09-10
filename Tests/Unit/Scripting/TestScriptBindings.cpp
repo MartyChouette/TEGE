@@ -42,70 +42,152 @@ static bool HasEnum(asIScriptEngine* as, const char* name) {
 
 // ===========================================================================
 // Binding Registration — individual subsystems
+//
+// These used to be named *DoesNotCrash and assert nothing at all. That is not a
+// pedantic complaint: this exact family covered the surface that shipped a web
+// player with ZERO script bindings for months. On WASM, AngelScript forces
+// AS_MAX_PORTABILITY and every raw asFUNCTION registration fails with
+// asNOT_SUPPORTED (-7) -- a RETURN CODE, not a crash. So "it did not crash" was
+// true the whole time, the tests were green the whole time, and every script in
+// every browser build failed to compile.
+//
+// The assertion that catches that is: registration REGISTERED SOMETHING. Each
+// test now counts the engine's global functions and types before and after, and
+// names one symbol it must be able to find afterwards.
 // ===========================================================================
 
-ENJIN_TEST(BindingRegistration, RegisterMathTypesDoesNotCrash) {
-    ScriptEngine engine;
-    engine.Initialize();
-    RegisterMathTypes(engine.GetASEngine()); // must not crash or assert
-    engine.Shutdown();
+namespace {
+
+// Total registered surface: global functions + object types. Counting both
+// matters because some subsystems register only types (math) and some only
+// functions (time, debug).
+struct RegisteredSurface {
+    asUINT functions = 0;
+    asUINT types = 0;
+    asUINT Total() const { return functions + types; }
+};
+
+RegisteredSurface Surface(asIScriptEngine* as) {
+    return { as->GetGlobalFunctionCount(), as->GetObjectTypeCount() };
 }
 
-ENJIN_TEST(BindingRegistration, RegisterEntityTypesDoesNotCrash) {
-    ScriptEngine engine;
-    engine.Initialize();
-    // Math must come first — EntityHandle methods return Vector3
-    RegisterMathTypes(engine.GetASEngine());
-    RegisterEntityTypes(engine.GetASEngine());
-    engine.Shutdown();
-}
+} // namespace
 
-ENJIN_TEST(BindingRegistration, RegisterInputBindingsDoesNotCrash) {
-    ScriptEngine engine;
-    engine.Initialize();
-    RegisterMathTypes(engine.GetASEngine());
-    RegisterInputBindings(engine.GetASEngine());
-    engine.Shutdown();
-}
-
-ENJIN_TEST(BindingRegistration, RegisterAudioBindingsDoesNotCrash) {
-    ScriptEngine engine;
-    engine.Initialize();
-    RegisterMathTypes(engine.GetASEngine());
-    RegisterEntityTypes(engine.GetASEngine());
-    RegisterAudioBindings(engine.GetASEngine());
-    engine.Shutdown();
-}
-
-ENJIN_TEST(BindingRegistration, RegisterDebugBindingsDoesNotCrash) {
-    ScriptEngine engine;
-    engine.Initialize();
-    RegisterDebugBindings(engine.GetASEngine());
-    engine.Shutdown();
-}
-
-ENJIN_TEST(BindingRegistration, RegisterTimeBindingsDoesNotCrash) {
-    ScriptEngine engine;
-    engine.Initialize();
-    RegisterTimeBindings(engine.GetASEngine());
-    engine.Shutdown();
-}
-
-ENJIN_TEST(BindingRegistration, RegisterAllBindingsDoesNotCrash) {
+ENJIN_TEST(BindingRegistration, RegisterMathTypesActuallyRegisters) {
     ScriptEngine engine;
     ENJIN_ASSERT_TRUE(engine.Initialize());
-    RegisterAllBindings(engine.GetASEngine());
+    asIScriptEngine* as = engine.GetASEngine();
+    ENJIN_ASSERT_NOT_NULL(as);
+
+    const RegisteredSurface before = Surface(as);
+    RegisterMathTypes(as);
+    const RegisteredSurface after = Surface(as);
+
+    ENJIN_EXPECT_TRUE(after.Total() > before.Total());
+    ENJIN_EXPECT_TRUE(HasType(as, "Vector3"));
+    ENJIN_EXPECT_TRUE(HasType(as, "Vector2"));
     engine.Shutdown();
 }
 
-ENJIN_TEST(BindingRegistration, RegisterAllBindingsTwiceOnSeparateEnginesDoesNotCrash) {
-    // Two fully independent engines — registration must succeed on both
+ENJIN_TEST(BindingRegistration, RegisterEntityTypesActuallyRegisters) {
+    ScriptEngine engine;
+    ENJIN_ASSERT_TRUE(engine.Initialize());
+    asIScriptEngine* as = engine.GetASEngine();
+    ENJIN_ASSERT_NOT_NULL(as);
+
+    // Math must come first — EntityHandle methods return Vector3
+    RegisterMathTypes(as);
+    const RegisteredSurface before = Surface(as);
+    RegisterEntityTypes(as);
+    const RegisteredSurface after = Surface(as);
+
+    ENJIN_EXPECT_TRUE(after.Total() > before.Total());
+    ENJIN_EXPECT_TRUE(HasType(as, "EntityHandle"));
+    engine.Shutdown();
+}
+
+ENJIN_TEST(BindingRegistration, RegisterInputBindingsActuallyRegisters) {
+    ScriptEngine engine;
+    ENJIN_ASSERT_TRUE(engine.Initialize());
+    asIScriptEngine* as = engine.GetASEngine();
+    ENJIN_ASSERT_NOT_NULL(as);
+
+    RegisterMathTypes(as);
+    const asUINT before = as->GetGlobalFunctionCount();
+    RegisterInputBindings(as);
+    ENJIN_EXPECT_TRUE(as->GetGlobalFunctionCount() > before);
+    engine.Shutdown();
+}
+
+ENJIN_TEST(BindingRegistration, RegisterAudioBindingsActuallyRegisters) {
+    ScriptEngine engine;
+    ENJIN_ASSERT_TRUE(engine.Initialize());
+    asIScriptEngine* as = engine.GetASEngine();
+    ENJIN_ASSERT_NOT_NULL(as);
+
+    RegisterMathTypes(as);
+    RegisterEntityTypes(as);
+    const asUINT before = as->GetGlobalFunctionCount();
+    RegisterAudioBindings(as);
+    ENJIN_EXPECT_TRUE(as->GetGlobalFunctionCount() > before);
+    engine.Shutdown();
+}
+
+ENJIN_TEST(BindingRegistration, RegisterDebugBindingsActuallyRegisters) {
+    ScriptEngine engine;
+    ENJIN_ASSERT_TRUE(engine.Initialize());
+    asIScriptEngine* as = engine.GetASEngine();
+    ENJIN_ASSERT_NOT_NULL(as);
+
+    const asUINT before = as->GetGlobalFunctionCount();
+    RegisterDebugBindings(as);
+    ENJIN_EXPECT_TRUE(as->GetGlobalFunctionCount() > before);
+    engine.Shutdown();
+}
+
+ENJIN_TEST(BindingRegistration, RegisterTimeBindingsActuallyRegisters) {
+    ScriptEngine engine;
+    ENJIN_ASSERT_TRUE(engine.Initialize());
+    asIScriptEngine* as = engine.GetASEngine();
+    ENJIN_ASSERT_NOT_NULL(as);
+
+    const asUINT before = as->GetGlobalFunctionCount();
+    RegisterTimeBindings(as);
+    ENJIN_EXPECT_TRUE(as->GetGlobalFunctionCount() > before);
+    engine.Shutdown();
+}
+
+ENJIN_TEST(BindingRegistration, RegisterAllBindingsRegistersTheWholeSurface) {
+    // The one that would have caught the web bug outright. Roughly 940 global
+    // functions are registered today; the floor is deliberately far below that so
+    // the test tracks "the registry is populated", not a number someone has to
+    // maintain -- but it is far enough above zero that a wholesale
+    // asNOT_SUPPORTED failure cannot slip past.
+    ScriptEngine engine;
+    ENJIN_ASSERT_TRUE(engine.Initialize());
+    asIScriptEngine* as = engine.GetASEngine();
+    ENJIN_ASSERT_NOT_NULL(as);
+
+    RegisterAllBindings(as);
+    ENJIN_EXPECT_TRUE(as->GetGlobalFunctionCount() > 400);
+    ENJIN_EXPECT_TRUE(as->GetObjectTypeCount() >= 8);
+    engine.Shutdown();
+}
+
+ENJIN_TEST(BindingRegistration, RegisterAllBindingsTwiceOnSeparateEnginesBothPopulated) {
+    // Two fully independent engines — registration must succeed on BOTH, not
+    // merely not crash on both.
     ScriptEngine engine1;
     ScriptEngine engine2;
     ENJIN_ASSERT_TRUE(engine1.Initialize());
     ENJIN_ASSERT_TRUE(engine2.Initialize());
     RegisterAllBindings(engine1.GetASEngine());
     RegisterAllBindings(engine2.GetASEngine());
+
+    const asUINT c1 = engine1.GetASEngine()->GetGlobalFunctionCount();
+    const asUINT c2 = engine2.GetASEngine()->GetGlobalFunctionCount();
+    ENJIN_EXPECT_TRUE(c1 > 400);
+    ENJIN_EXPECT_EQ(c1, c2);   // the second engine is not short-changed
     engine1.Shutdown();
     engine2.Shutdown();
 }

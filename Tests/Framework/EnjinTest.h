@@ -92,6 +92,19 @@ struct TestRegistrar {
 struct TestContext {
     int failures = 0;
     bool aborted = false;
+    // Assertions ATTEMPTED, not failed. A test that never asserts anything used
+    // to report PASS, because nothing incremented `failures`. That is how 14
+    // empty tests and a wall of EXPECT_TRUE(true) stayed green -- including
+    // Bindings.RegisterAllDoesNotCrash, which covered exactly the surface that
+    // shipped a web player with ZERO script bindings for months
+    // (asNOT_SUPPORTED is a return code, not a crash).
+    int assertions = 0;
+    // An explicit, reported skip. Distinct from a filtered-out test and from a
+    // pass: five tests used to `return` before their first assertion when a
+    // fixture or an env var was missing, and reported PASS, so the FBX import
+    // and ray-tracing probe paths were green in CI without ever running.
+    bool skipped = false;
+    const char* skipReason = nullptr;
 };
 
 inline TestContext& CurrentContext() {
@@ -143,6 +156,7 @@ inline int Run(int argc, char** argv) {
     }
 
     int totalRun = 0, totalPassed = 0, totalFailed = 0, totalSkipped = 0;
+    int totalDeclaredSkip = 0;   // ENJIN_SKIP, as opposed to filtered out
     const char* lastSuite = nullptr;
 
     for (auto& tc : registry) {
@@ -159,21 +173,39 @@ inline int Run(int argc, char** argv) {
         auto& ctx = CurrentContext();
         ctx.failures = 0;
         ctx.aborted = false;
+        ctx.assertions = 0;
+        ctx.skipped = false;
+        ctx.skipReason = nullptr;
 
         tc.func();
         totalRun++;
 
-        if (ctx.failures == 0) {
+        if (ctx.skipped) {
+            // Deliberately not run. Reported, and never counted as a pass --
+            // the whole point is that a missing fixture stops being invisible.
+            totalDeclaredSkip++;
+            SetColor(Color::Yellow);
+            printf("  SKIP  %s (%s)\n", tc.name, ctx.skipReason ? ctx.skipReason : "no reason given");
+            SetColor(Color::Reset);
+        } else if (ctx.assertions == 0) {
+            // A test that checked nothing is not a passing test. If a test
+            // genuinely has nothing to assert, it says so with ENJIN_SKIP.
+            totalFailed++;
+            SetColor(Color::Red);
+            printf("  FAIL  %s (no assertions ran)\n", tc.name);
+            SetColor(Color::Reset);
+        } else if (ctx.failures == 0) {
             totalPassed++;
             if (verbose) {
                 SetColor(Color::Green);
-                printf("  PASS  %s\n", tc.name);
+                printf("  PASS  %s (%d assertion(s))\n", tc.name, ctx.assertions);
                 SetColor(Color::Reset);
             }
         } else {
             totalFailed++;
             SetColor(Color::Red);
-            printf("  FAIL  %s (%d assertion(s) failed)\n", tc.name, ctx.failures);
+            printf("  FAIL  %s (%d of %d assertion(s) failed)\n",
+                   tc.name, ctx.failures, ctx.assertions);
             SetColor(Color::Reset);
         }
     }
@@ -190,8 +222,13 @@ inline int Run(int argc, char** argv) {
         printf("Failed: %d  ", totalFailed);
     }
     SetColor(Color::Reset);
+    if (totalDeclaredSkip > 0) {
+        SetColor(Color::Yellow);
+        printf("Skipped: %d  ", totalDeclaredSkip);
+        SetColor(Color::Reset);
+    }
     if (totalSkipped > 0)
-        printf("Skipped: %d", totalSkipped);
+        printf("Filtered: %d", totalSkipped);
     printf("\n");
     printf("========================================\n");
 
@@ -201,6 +238,17 @@ inline int Run(int argc, char** argv) {
 // ---------------------------------------------------------------------------
 // Assertion helpers (implementation)
 // ---------------------------------------------------------------------------
+// Called by every assertion macro before it evaluates anything, so the count is
+// of assertions REACHED. An assertion inside a branch that never runs does not
+// count, which is the point: it did not check anything.
+inline void CountAssertion() { CurrentContext().assertions++; }
+
+inline void SkipTest(const char* reason) {
+    auto& ctx = CurrentContext();
+    ctx.skipped = true;
+    ctx.skipReason = reason;
+}
+
 inline void ReportFailure(const char* file, int line, const char* expr) {
     SetColor(Color::Red);
     printf("    FAIL: %s:%d: %s\n", file, line, expr);
@@ -227,6 +275,29 @@ inline void ReportFailureMsg(const char* file, int line, const char* msg) {
         #Suite, #Name, EnjinTest_##Suite##_##Name);                                 \
     static void EnjinTest_##Suite##_##Name()
 
+// Declare a test deliberately not run, with a reason. Reported as SKIP and
+// never counted as a pass. Use this instead of a bare `return` when a fixture,
+// an asset or an environment variable is missing -- a silent return reports
+// PASS, which is how the FBX import and ray-tracing probe paths stayed green in
+// CI without ever executing.
+// The property is that we got here at all: the code under test survived
+// something hostile (a fuzzed buffer, a malformed scene, a teardown ordering)
+// without crashing, hanging or corrupting itself.
+//
+// This exists because that property was being written as ENJIN_EXPECT_TRUE(true),
+// which reads as a placeholder and is indistinguishable from a test somebody
+// forgot to finish. Surviving IS a real property for a fuzz case -- it just has
+// to say so, and say WHAT it survived, so the next reader can tell a deliberate
+// no-crash assertion from an unfinished one.
+//
+// Not for a test whose NAME promises something checkable. "StringLengthCapped"
+// must check the cap.
+#define ENJIN_SURVIVED(what)                                                        \
+    do { EnjinTest::CountAssertion(); (void)sizeof(what); } while(0)
+
+#define ENJIN_SKIP(reason)                                                          \
+    do { EnjinTest::SkipTest(reason); return; } while(0)
+
 #define ENJIN_TEST_MAIN()                                                           \
     int main(int argc, char** argv) {                                               \
         return EnjinTest::Run(argc, argv);                                          \
@@ -235,49 +306,49 @@ inline void ReportFailureMsg(const char* file, int line, const char* msg) {
 // --- EXPECT (non-fatal) ---
 
 #define ENJIN_EXPECT_TRUE(expr)                                                     \
-    do { if (!(expr)) {                                                             \
+    do { EnjinTest::CountAssertion(); if (!(expr)) {                                                             \
         EnjinTest::ReportFailure(__FILE__, __LINE__, "EXPECT_TRUE(" #expr ")");     \
     }} while(0)
 
 #define ENJIN_EXPECT_FALSE(expr)                                                    \
-    do { if ((expr)) {                                                              \
+    do { EnjinTest::CountAssertion(); if ((expr)) {                                                              \
         EnjinTest::ReportFailure(__FILE__, __LINE__, "EXPECT_FALSE(" #expr ")");    \
     }} while(0)
 
 #define ENJIN_EXPECT_EQ(actual, expected)                                           \
-    do { if (!((actual) == (expected))) {                                            \
+    do { EnjinTest::CountAssertion(); if (!((actual) == (expected))) {                                            \
         EnjinTest::ReportFailure(__FILE__, __LINE__,                                \
             "EXPECT_EQ(" #actual ", " #expected ")");                               \
     }} while(0)
 
 #define ENJIN_EXPECT_NE(actual, expected)                                           \
-    do { if ((actual) == (expected)) {                                              \
+    do { EnjinTest::CountAssertion(); if ((actual) == (expected)) {                                              \
         EnjinTest::ReportFailure(__FILE__, __LINE__,                                \
             "EXPECT_NE(" #actual ", " #expected ")");                               \
     }} while(0)
 
 #define ENJIN_EXPECT_LT(a, b)                                                      \
-    do { if (!((a) < (b))) {                                                        \
+    do { EnjinTest::CountAssertion(); if (!((a) < (b))) {                                                        \
         EnjinTest::ReportFailure(__FILE__, __LINE__, "EXPECT_LT(" #a ", " #b ")");  \
     }} while(0)
 
 #define ENJIN_EXPECT_LE(a, b)                                                      \
-    do { if (!((a) <= (b))) {                                                       \
+    do { EnjinTest::CountAssertion(); if (!((a) <= (b))) {                                                       \
         EnjinTest::ReportFailure(__FILE__, __LINE__, "EXPECT_LE(" #a ", " #b ")");  \
     }} while(0)
 
 #define ENJIN_EXPECT_GT(a, b)                                                      \
-    do { if (!((a) > (b))) {                                                        \
+    do { EnjinTest::CountAssertion(); if (!((a) > (b))) {                                                        \
         EnjinTest::ReportFailure(__FILE__, __LINE__, "EXPECT_GT(" #a ", " #b ")");  \
     }} while(0)
 
 #define ENJIN_EXPECT_GE(a, b)                                                      \
-    do { if (!((a) >= (b))) {                                                       \
+    do { EnjinTest::CountAssertion(); if (!((a) >= (b))) {                                                       \
         EnjinTest::ReportFailure(__FILE__, __LINE__, "EXPECT_GE(" #a ", " #b ")");  \
     }} while(0)
 
 #define ENJIN_EXPECT_FLOAT_NEAR(a, b, tol)                                         \
-    do { if (std::fabs((a) - (b)) > (tol)) {                                       \
+    do { EnjinTest::CountAssertion(); if (std::fabs((a) - (b)) > (tol)) {                                       \
         char _buf[256];                                                             \
         snprintf(_buf, sizeof(_buf),                                                \
             "EXPECT_FLOAT_NEAR(" #a "=%g, " #b "=%g, tol=%g) delta=%g",            \
@@ -290,7 +361,7 @@ inline void ReportFailureMsg(const char* file, int line, const char* msg) {
     ENJIN_EXPECT_FLOAT_NEAR(a, b, 0.001f)
 
 #define ENJIN_EXPECT_STR_EQ(a, b)                                                  \
-    do { if (std::string(a) != std::string(b)) {                                   \
+    do { EnjinTest::CountAssertion(); if (std::string(a) != std::string(b)) {                                   \
         char _buf[512];                                                             \
         snprintf(_buf, sizeof(_buf),                                                \
             "EXPECT_STR_EQ(\"%s\", \"%s\")",                                        \
@@ -299,12 +370,12 @@ inline void ReportFailureMsg(const char* file, int line, const char* msg) {
     }} while(0)
 
 #define ENJIN_EXPECT_NULL(ptr)                                                      \
-    do { if ((ptr) != nullptr) {                                                    \
+    do { EnjinTest::CountAssertion(); if ((ptr) != nullptr) {                                                    \
         EnjinTest::ReportFailure(__FILE__, __LINE__, "EXPECT_NULL(" #ptr ")");      \
     }} while(0)
 
 #define ENJIN_EXPECT_NOT_NULL(ptr)                                                  \
-    do { if ((ptr) == nullptr) {                                                    \
+    do { EnjinTest::CountAssertion(); if ((ptr) == nullptr) {                                                    \
         EnjinTest::ReportFailure(__FILE__, __LINE__, "EXPECT_NOT_NULL(" #ptr ")");  \
     }} while(0)
 
@@ -335,39 +406,39 @@ inline void ReportFailureMsg(const char* file, int line, const char* msg) {
 // --- ASSERT (fatal — returns from test on failure) ---
 
 #define ENJIN_ASSERT_TRUE(expr)                                                     \
-    do { if (!(expr)) {                                                             \
+    do { EnjinTest::CountAssertion(); if (!(expr)) {                                                             \
         EnjinTest::ReportFailure(__FILE__, __LINE__, "ASSERT_TRUE(" #expr ")");     \
         return;                                                                     \
     }} while(0)
 
 #define ENJIN_ASSERT_FALSE(expr)                                                    \
-    do { if ((expr)) {                                                              \
+    do { EnjinTest::CountAssertion(); if ((expr)) {                                                              \
         EnjinTest::ReportFailure(__FILE__, __LINE__, "ASSERT_FALSE(" #expr ")");    \
         return;                                                                     \
     }} while(0)
 
 #define ENJIN_ASSERT_EQ(actual, expected)                                           \
-    do { if (!((actual) == (expected))) {                                            \
+    do { EnjinTest::CountAssertion(); if (!((actual) == (expected))) {                                            \
         EnjinTest::ReportFailure(__FILE__, __LINE__,                                \
             "ASSERT_EQ(" #actual ", " #expected ")");                               \
         return;                                                                     \
     }} while(0)
 
 #define ENJIN_ASSERT_NE(actual, expected)                                           \
-    do { if ((actual) == (expected)) {                                              \
+    do { EnjinTest::CountAssertion(); if ((actual) == (expected)) {                                              \
         EnjinTest::ReportFailure(__FILE__, __LINE__,                                \
             "ASSERT_NE(" #actual ", " #expected ")");                               \
         return;                                                                     \
     }} while(0)
 
 #define ENJIN_ASSERT_NOT_NULL(ptr)                                                  \
-    do { if ((ptr) == nullptr) {                                                    \
+    do { EnjinTest::CountAssertion(); if ((ptr) == nullptr) {                                                    \
         EnjinTest::ReportFailure(__FILE__, __LINE__, "ASSERT_NOT_NULL(" #ptr ")");  \
         return;                                                                     \
     }} while(0)
 
 #define ENJIN_ASSERT_NULL(ptr)                                                      \
-    do { if ((ptr) != nullptr) {                                                    \
+    do { EnjinTest::CountAssertion(); if ((ptr) != nullptr) {                                                    \
         EnjinTest::ReportFailure(__FILE__, __LINE__, "ASSERT_NULL(" #ptr ")");      \
         return;                                                                     \
     }} while(0)

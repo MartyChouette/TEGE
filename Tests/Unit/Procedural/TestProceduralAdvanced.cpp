@@ -31,10 +31,24 @@ ENJIN_TEST(Grammar, ShapeDefaults) {
 }
 
 ENJIN_TEST(Grammar, GenerateWithStartSymbol) {
+    // Both of these built a grammar, called Generate, discarded the result and
+    // asserted nothing -- and they are the ONLY tests of grammar expansion.
+    // Delete the expander and they would still have passed.
     GrammarGenerator::Params p;
     p.startSymbol = "S";
     auto result = GrammarGenerator::Generate(p);
-    // Even with no rules, the start symbol may produce a default shape
+
+    // A symbol with no rule is a TERMINAL, so the start symbol survives every
+    // iteration and becomes exactly one shape. (The old comment guessed at this
+    // -- "may produce a default shape" -- and then checked neither branch.)
+    ENJIN_EXPECT_EQ(result.shapes.size(), static_cast<size_t>(1));
+
+    auto again = GrammarGenerator::Generate(p);
+    ENJIN_EXPECT_EQ(again.shapes.size(), result.shapes.size());
+
+    // No start symbol is the one case that legitimately produces nothing.
+    GrammarGenerator::Params empty;
+    ENJIN_EXPECT_TRUE(GrammarGenerator::Generate(empty).shapes.empty());
 }
 
 ENJIN_TEST(Grammar, GenerateWithRules) {
@@ -49,8 +63,25 @@ ENJIN_TEST(Grammar, GenerateWithRules) {
     p.rules.push_back(rule);
 
     auto result = GrammarGenerator::Generate(p);
-    // Should produce at least some shapes from expansion
-    // (exact count depends on implementation)
+
+    // A rule that expands one symbol into three must produce shapes.
+    ENJIN_ASSERT_TRUE(!result.shapes.empty());
+
+    // Every shape must be placed, not left at a default-constructed zero size --
+    // a generator that emitted degenerate boxes would render nothing and pass an
+    // "is it non-empty" check alone.
+    for (const auto& shape : result.shapes) {
+        ENJIN_EXPECT_TRUE(shape.size.x > 0.0f || shape.size.y > 0.0f || shape.size.z > 0.0f);
+    }
+
+    // Seeded, so it is reproducible. A grammar that changed shape between runs
+    // could not be authored against.
+    auto again = GrammarGenerator::Generate(p);
+    ENJIN_ASSERT_EQ(again.shapes.size(), result.shapes.size());
+    for (size_t i = 0; i < result.shapes.size(); ++i) {
+        ENJIN_EXPECT_FLOAT_EQ(again.shapes[i].position.x, result.shapes[i].position.x);
+        ENJIN_EXPECT_FLOAT_EQ(again.shapes[i].size.x, result.shapes[i].size.x);
+    }
 }
 
 // ===========================================================================

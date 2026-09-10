@@ -18,7 +18,7 @@ ENJIN_TEST(RendererLifecycle, DestroyWithoutInitializeDoesNotCrash) {
     renderer.reset();
 
     // Assert: reaching this line IS the test (the bug was an access violation).
-    ENJIN_EXPECT_TRUE(true);
+    ENJIN_SURVIVED("renderer construction and teardown with no device");
 }
 
 ENJIN_TEST(RendererLifecycle, ExplicitShutdownWithoutInitializeIsSafe) {
@@ -30,7 +30,7 @@ ENJIN_TEST(RendererLifecycle, ExplicitShutdownWithoutInitializeIsSafe) {
     renderer.Shutdown();
 
     // Assert
-    ENJIN_EXPECT_TRUE(true);
+    ENJIN_SURVIVED("renderer construction and teardown with no device");
 }
 
 ENJIN_TEST_MAIN()

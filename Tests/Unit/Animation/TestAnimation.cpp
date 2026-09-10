@@ -331,11 +331,26 @@ ENJIN_TEST(StateMachine, ParameterSetGet) {
 }
 
 ENJIN_TEST(StateMachine, TriggerSetReset) {
+    // The comment used to say "check via transitions" and then checked nothing.
+    // GetTriggers() is the observable, so use it.
     AnimationStateMachine sm;
+    const auto& triggers = sm.GetTriggers();
+
     sm.SetTrigger("jump");
-    // Trigger should be set (implementation detail — check via transitions)
+    auto it = triggers.find("jump");
+    ENJIN_ASSERT_TRUE(it != triggers.end());
+    ENJIN_EXPECT_TRUE(it->second);
+
     sm.ResetTrigger("jump");
-    // Should not crash
+    it = triggers.find("jump");
+    // Reset may erase the entry or clear it; both mean "not set", and either is
+    // a fine implementation. What must not happen is it staying true.
+    ENJIN_EXPECT_TRUE(it == triggers.end() || !it->second);
+
+    // Resetting one that was never set must not invent it.
+    sm.ResetTrigger("never_set");
+    ENJIN_EXPECT_TRUE(triggers.find("never_set") == triggers.end() ||
+                      !triggers.at("never_set"));
 }
 
 ENJIN_TEST(StateMachine, AddStatesAndDefault) {

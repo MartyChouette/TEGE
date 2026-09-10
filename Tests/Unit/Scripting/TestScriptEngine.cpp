@@ -29,8 +29,19 @@ ENJIN_TEST(Init, DoubleInitIsSafe) {
 }
 
 ENJIN_TEST(Init, ShutdownWithoutInitIsSafe) {
+    // "Should not crash" was the whole test. Assert the observable state instead:
+    // a shutdown that never initialised must leave the engine unusable rather
+    // than half-alive, and must not invent an error it did not have.
     ScriptEngine engine;
-    engine.Shutdown(); // Should not crash
+    engine.Shutdown();
+    ENJIN_EXPECT_NULL(engine.GetASEngine());
+    ENJIN_EXPECT_TRUE(engine.GetLastError().empty());
+
+    // And it must still be initialisable afterwards -- a stray shutdown should
+    // not poison the object.
+    ENJIN_EXPECT_TRUE(engine.Initialize());
+    ENJIN_EXPECT_NOT_NULL(engine.GetASEngine());
+    engine.Shutdown();
 }
 
 ENJIN_TEST(Init, GetASEngineNonNull) {
@@ -51,10 +62,30 @@ ENJIN_TEST(Init, LastErrorEmptyOnSuccess) {
 // Binding Registration
 // ===========================================================================
 
-ENJIN_TEST(Bindings, RegisterAllDoesNotCrash) {
+ENJIN_TEST(Bindings, RegisterAllPopulatesTheEngine) {
+    // This test is the reason the whole suite got an assertion counter.
+    //
+    // It was called RegisterAllDoesNotCrash and asserted nothing, and it covered
+    // exactly the surface that shipped a web player with ZERO script bindings for
+    // months: on WASM, AngelScript forces AS_MAX_PORTABILITY and every raw
+    // asFUNCTION registration fails with asNOT_SUPPORTED (-7). That is a return
+    // code, not a crash. The test was green throughout while every script in
+    // every browser build failed to compile.
+    //
+    // "Did not crash" is not a property worth testing. "Registered the bindings"
+    // is.
     ScriptEngine engine;
-    engine.Initialize();
-    RegisterAllBindings(engine.GetASEngine());
+    ENJIN_ASSERT_TRUE(engine.Initialize());
+    asIScriptEngine* as = engine.GetASEngine();
+    ENJIN_ASSERT_NOT_NULL(as);
+
+    RegisterAllBindings(as);
+    ENJIN_EXPECT_TRUE(as->GetGlobalFunctionCount() > 400);
+    ENJIN_EXPECT_TRUE(as->GetObjectTypeCount() >= 8);
+
+    // And a named one, so a registry that fills with something unexpected still
+    // fails: Debug_Log is the first binding any script reaches for.
+    ENJIN_EXPECT_NOT_NULL(as->GetGlobalFunctionByDecl("void Debug_Log(const string &in)"));
     engine.Shutdown();
 }
 

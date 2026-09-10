@@ -499,7 +499,7 @@ ENJIN_TEST(ElementalCaps, MaxInteractionsPerFrame) {
     system.Update(&world, 0.016f, Vector3(0.0f));
 
     // Should have processed without crashing (the cap prevents runaway)
-    ENJIN_ASSERT_TRUE(true);
+    ENJIN_SURVIVED("the per-frame interaction cap under a saturated scene");
 }
 
 // ============================================================================

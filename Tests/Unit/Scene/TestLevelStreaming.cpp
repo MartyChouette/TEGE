@@ -584,7 +584,7 @@ ENJIN_TEST(StreamingTeardown, DestructorWithLoadInFlightDoesNotFault) {
         sm.Update(Vector3(0.0f), 0.016f);
     }
     // Reaching here without a crash or a hang is the assertion.
-    ENJIN_EXPECT_TRUE(true);
+    ENJIN_SURVIVED("streaming updates with no chunks registered");
 
     std::error_code ec;
     std::filesystem::remove_all(root, ec);

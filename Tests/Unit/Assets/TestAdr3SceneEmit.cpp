@@ -44,7 +44,9 @@ ENJIN_TEST(Adr3SceneEmit, EmitsTwoSkinnedMeshProbeProject) {
     // Arrange: opt-in only — no env var means this run is a normal test pass.
     const char* outDir = std::getenv("ENJIN_ADR3_PROBE_DIR");
     if (!outDir || !*outDir) {
-        return;
+        // A bare `return` here reported PASS, so this probe path was green in CI
+        // without ever running. Say so instead.
+        ENJIN_SKIP("set ENJIN_ADR3_PROBE_DIR to emit the two-skinned-mesh probe project");
     }
 
     fs::path projDir = outDir;

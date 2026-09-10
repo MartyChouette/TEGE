@@ -85,6 +85,14 @@ public:
     // Clear all active subtitles
     void Clear();
 
+    // How many subtitles are on screen right now.
+    //
+    // Added because Clear() had no observable at all, so its test could only
+    // assert EXPECT_TRUE(true) -- a Clear() with an empty body would have passed.
+    // It is also the question a HUD actually asks ("is anything showing?"), so
+    // this is not a test-only accessor.
+    usize GetActiveCount() const { return m_Entries.size(); }
+
     // Configuration
     SubtitleConfig& GetConfig() { return m_Config; }
     const SubtitleConfig& GetConfig() const { return m_Config; }

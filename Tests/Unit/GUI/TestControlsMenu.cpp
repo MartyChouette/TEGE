@@ -187,7 +187,7 @@ ENJIN_TEST(ControlsMenu, AHandlerMayCreateAndDestroyEntitiesDuringDispatch) {
     ENJIN_EXPECT_TRUE(ran);
     // Reaching here at all is the assertion: before the fix this path was a
     // use-after-free inside the element loop.
-    ENJIN_EXPECT_TRUE(true);
+    ENJIN_SURVIVED("controls menu navigation with no bindings");
 }
 
 // REGRESSION: a rebind must store a code the engine can actually match.

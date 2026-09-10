@@ -264,7 +264,7 @@ ENJIN_TEST(InputProjectSettings, EmptyDefaultsAndBadJsonAreSafe) {
     oob.name = "Nope";
     bad.customActions.push_back(oob);
     bad.ApplyTo(map);   // must not crash or write anywhere
-    ENJIN_EXPECT_TRUE(true);
+    ENJIN_SURVIVED("action triggers firing with no world attached");
 }
 
 ENJIN_TEST_MAIN()

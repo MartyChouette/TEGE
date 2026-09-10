@@ -480,12 +480,21 @@ ENJIN_TEST(MalformedJSON, WrongTypeForNameFieldUsesDefault) {
     Scene::SceneSerializer ser(&world);
     TemplateMetadata outMeta;
     bool loaded = TemplateCreator::LoadTemplate(dir, &world, ser, outMeta);
-    // May succeed with default name or fail gracefully; either way must not crash
-    // If it succeeds, the name should be the default "Unnamed"
+
+    // The assertion was inside `if (loaded)`, so on the branch where the load
+    // FAILED the test checked nothing at all -- and that is the branch a
+    // malformed file is most likely to take. Both outcomes are acceptable here;
+    // what matters is that each one is coherent.
     if (loaded) {
+        // A number where a string belongs falls back to the default name.
         ENJIN_EXPECT_STR_EQ(outMeta.name.c_str(), "Unnamed");
+        // The id is well-formed in this file, so it must have survived.
+        ENJIN_EXPECT_STR_EQ(outMeta.id.c_str(), "wrong_type");
+    } else {
+        // A refused load must not leave a half-filled metadata struct behind for
+        // the caller to render.
+        ENJIN_EXPECT_TRUE(outMeta.name.empty() || outMeta.name == "Unnamed");
     }
-    // If it fails, that is also acceptable — just must not crash
 
     RemoveTempDir(root);
 }

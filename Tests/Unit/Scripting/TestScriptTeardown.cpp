@@ -244,7 +244,7 @@ ENJIN_TEST(ScriptTeardown, OutlivingTheWorldIsNotACrash) {
 
     // Act / Assert: the destructor must not touch the dead World. Reaching the
     // end of this test at all is the assertion.
-    ENJIN_EXPECT_TRUE(true);
+    ENJIN_SURVIVED("script teardown ordering");
 }
 
 ENJIN_TEST(ScriptTeardown, ANewWorldReplacesTheObserverCleanly) {

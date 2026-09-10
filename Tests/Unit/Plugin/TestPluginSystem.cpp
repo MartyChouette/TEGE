@@ -85,11 +85,20 @@ ENJIN_TEST(System, IsLoadedReturnsFalse) {
 }
 
 ENJIN_TEST(System, SetContext) {
+    // "Should not crash" tested nothing -- a SetContext with an empty body would
+    // have passed. Assert the state it is supposed to leave behind instead.
     PluginSystem sys;
+    ENJIN_EXPECT_TRUE(sys.GetPlugins().empty());
+
     PluginContext ctx;
     ctx.world = nullptr;
     sys.SetContext(ctx);
-    // Should not crash
+
+    // Setting a context is not loading a plugin.
+    ENJIN_EXPECT_TRUE(sys.GetPlugins().empty());
+    // And it must not have made the system unusable: a bad load still reports
+    // failure rather than crashing or silently succeeding.
+    ENJIN_EXPECT_FALSE(sys.LoadPlugin("no_such_plugin"));
 }
 
 ENJIN_TEST(System, LoadNonexistentPluginFails) {
@@ -100,7 +109,18 @@ ENJIN_TEST(System, LoadNonexistentPluginFails) {
 
 ENJIN_TEST(System, UnloadAllSafe) {
     PluginSystem sys;
-    sys.UnloadAll(); // Should not crash when empty
+    ENJIN_EXPECT_TRUE(sys.GetPlugins().empty());
+
+    sys.UnloadAll();                              // on an empty system
+    ENJIN_EXPECT_TRUE(sys.GetPlugins().empty());
+
+    // Twice, because an unload that corrupted its own list would show here and
+    // not in a single call.
+    sys.UnloadAll();
+    ENJIN_EXPECT_TRUE(sys.GetPlugins().empty());
+
+    // And the system still works afterwards.
+    ENJIN_EXPECT_FALSE(sys.LoadPlugin("no_such_plugin"));
 }
 
 ENJIN_TEST_MAIN()

@@ -168,8 +168,19 @@ ENJIN_TEST(FABRIK, SingleJointNoOp) {
 }
 
 ENJIN_TEST(FABRIK, EmptyChainNoOp) {
+    // "Should not crash" tested nothing. The property that matters is that an
+    // empty chain comes back empty -- a solver that invented a joint here would
+    // have passed the old test.
     std::vector<Vector3> positions;
-    FABRIK::Solve(positions, Vector3(1, 0, 0)); // Should not crash
+    FABRIK::Solve(positions, Vector3(1, 0, 0));
+    ENJIN_EXPECT_TRUE(positions.empty());
+
+    // A single joint has no bone to bend, so it must not move either.
+    std::vector<Vector3> single = { Vector3(5.0f, 5.0f, 5.0f) };
+    FABRIK::Solve(single, Vector3(1, 0, 0));
+    ENJIN_ASSERT_EQ(single.size(), static_cast<size_t>(1));
+    ENJIN_EXPECT_FLOAT_EQ(single[0].x, 5.0f);
+    ENJIN_EXPECT_FLOAT_EQ(single[0].y, 5.0f);
 }
 
 ENJIN_TEST(FABRIK, ThreeBonesReachable) {

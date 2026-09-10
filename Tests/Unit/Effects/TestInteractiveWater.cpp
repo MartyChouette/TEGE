@@ -311,7 +311,7 @@ ENJIN_TEST(WaterEnter, NoBusIsHarmless) {
     sys.Update(&world, 0.016f);
     world.GetComponent<ECS::TransformComponent>(e)->position.y = -1.0f;
     sys.Update(&world, 0.016f);
-    ENJIN_EXPECT_TRUE(true);   // reached here without crashing
+    ENJIN_SURVIVED("ripple updates against a torn-down water surface");   // reached here without crashing
 }
 
 // ===========================================================================

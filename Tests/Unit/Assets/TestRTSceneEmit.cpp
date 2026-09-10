@@ -44,7 +44,7 @@ ENJIN_TEST(RTSceneEmit, EmitsRayTracingProbeProject) {
     // Arrange: opt-in only — no env var means this run is a normal test pass.
     const char* outDir = std::getenv("ENJIN_RT_PROBE_DIR");
     if (!outDir || !*outDir) {
-        return;
+        ENJIN_SKIP("set ENJIN_RT_PROBE_DIR to emit the ray-tracing probe project");
     }
 
     fs::path projDir = outDir;

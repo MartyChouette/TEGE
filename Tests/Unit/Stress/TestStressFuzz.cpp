@@ -69,7 +69,10 @@ ENJIN_TEST(SceneSerializerFuzz, MissingRequiredKeys) {
     auto result = serializer.LoadFromString(json, true);
     // Should succeed (the entity just has no components) or fail gracefully
     // Either outcome is acceptable; what matters is no crash
-    ENJIN_EXPECT_TRUE(true); // Reached here = no crash
+    // A scene load must always report an outcome and never leave the world
+    // half-populated. Whichever way it goes, the result has to be coherent.
+    ENJIN_EXPECT_TRUE(result.success || !result.error.empty());
+    ENJIN_SURVIVED("an unknown entity key in scene JSON");
 }
 
 ENJIN_TEST(SceneSerializerFuzz, ExtremelyLargeArrayInJson) {
@@ -88,7 +91,8 @@ ENJIN_TEST(SceneSerializerFuzz, ExtremelyLargeArrayInJson) {
 
     auto result = serializer.LoadFromString(json, true);
     // Should succeed or fail gracefully; no crash or OOM
-    ENJIN_EXPECT_TRUE(true);
+    ENJIN_EXPECT_TRUE(result.success || !result.error.empty());
+    ENJIN_SURVIVED("a very large generated scene JSON");
 }
 
 ENJIN_TEST(SceneSerializerFuzz, NegativeEnumValues) {
@@ -109,7 +113,8 @@ ENJIN_TEST(SceneSerializerFuzz, NegativeEnumValues) {
 
     auto result = serializer.LoadFromString(json, true);
     // Must not crash; the entity might have a light with default type or be skipped
-    ENJIN_EXPECT_TRUE(true);
+    ENJIN_EXPECT_TRUE(result.success || !result.error.empty());
+    ENJIN_SURVIVED("an out-of-range light type");
 }
 
 ENJIN_TEST(SceneSerializerFuzz, InvalidJsonSyntax) {
@@ -151,7 +156,8 @@ ENJIN_TEST(SceneSerializerFuzz, NestedGarbage) {
 
     auto result = serializer.LoadFromString(json, true);
     // Should handle type mismatches gracefully
-    ENJIN_EXPECT_TRUE(true);
+    ENJIN_EXPECT_TRUE(result.success || !result.error.empty());
+    ENJIN_SURVIVED("a field whose JSON type is wrong");
 }
 
 ENJIN_TEST(SceneSerializerFuzz, VectorArrayTooShort) {
@@ -171,7 +177,8 @@ ENJIN_TEST(SceneSerializerFuzz, VectorArrayTooShort) {
 
     auto result = serializer.LoadFromString(json, true);
     // Vectors should return safe defaults for malformed arrays (per CLAUDE.md)
-    ENJIN_EXPECT_TRUE(true);
+    ENJIN_EXPECT_TRUE(result.success || !result.error.empty());
+    ENJIN_SURVIVED("malformed vector arrays");
 }
 
 // ============================================================================
@@ -292,7 +299,10 @@ ENJIN_TEST(ProceduralFuzz, LSystemExponentialGrowth) {
     auto result = LSystemGenerator::Generate(params);
     // Just verifying it returns without OOM or crash.
     // The string cap at 4MB means segments will be bounded.
-    ENJIN_EXPECT_TRUE(true);
+    // The 4MB string cap bounds this. Checked, not assumed -- without the cap
+    // this test OOMs the machine rather than failing.
+    ENJIN_EXPECT_TRUE(result.segments.size() <= 4u * 1024u * 1024u + 1024u);
+    ENJIN_SURVIVED("an exponential L-system rule");
 }
 
 ENJIN_TEST(ProceduralFuzz, LSystem3DExponentialGrowth) {
@@ -306,7 +316,8 @@ ENJIN_TEST(ProceduralFuzz, LSystem3DExponentialGrowth) {
     params.seed = 42;
 
     auto result = LSystem3D::Generate(params);
-    ENJIN_EXPECT_TRUE(true);
+    ENJIN_EXPECT_TRUE(result.segments.size() <= 4u * 1024u * 1024u + 1024u);
+    ENJIN_SURVIVED("an exponential 3D L-system rule");
 }
 
 ENJIN_TEST(ProceduralFuzz, LSystemEmptyAxiom) {
@@ -361,7 +372,9 @@ ENJIN_TEST(ProceduralFuzz, VoronoiZeroSeeds) {
 
     auto result = VoronoiGenerator::Generate(params);
     // Zero seeds should be handled gracefully
-    ENJIN_EXPECT_TRUE(true);
+    // Zero seeds means no sites, so no diagram to assign regions from.
+    ENJIN_EXPECT_TRUE(result.seedPoints.empty());
+    ENJIN_SURVIVED("a Voronoi generator given zero seeds");
 }
 
 // ============================================================================
@@ -432,7 +445,7 @@ ENJIN_TEST(AssetPackerFuzz, VeryLongFileName) {
         std::filesystem::remove(pakPath);
     }
 
-    ENJIN_EXPECT_TRUE(true); // Reached = no crash
+    ENJIN_SURVIVED("a truncated or corrupt asset pack");
 }
 
 ENJIN_TEST(AssetPackerFuzz, DuplicateFileNames) {
@@ -518,7 +531,7 @@ ENJIN_TEST(AssetPackerFuzz, ReadFromCorruptedFile) {
     }
 
     std::filesystem::remove(pakPath);
-    ENJIN_EXPECT_TRUE(true);
+    ENJIN_SURVIVED("a pack whose integrity check fails");
 }
 
 // ============================================================================
@@ -724,7 +737,9 @@ ENJIN_TEST(ProceduralFuzz, GrammarGeneratorEmptyRules) {
 
     auto result = GrammarGenerator::Generate(params);
     // Should return empty or minimal result, not crash
-    ENJIN_EXPECT_TRUE(true);
+    // No rules and no start symbol: nothing to expand, so nothing to emit.
+    ENJIN_EXPECT_TRUE(result.shapes.empty());
+    ENJIN_SURVIVED("a grammar with no rules and an empty start symbol");
 }
 
 ENJIN_TEST(ProceduralFuzz, PrefabAssemblerNoSlots) {

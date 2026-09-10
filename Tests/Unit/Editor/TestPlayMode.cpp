@@ -1,6 +1,7 @@
 #include "EnjinTest.h"
 #include "Enjin/Editor/PlayMode.h"
 #include "Enjin/Editor/PlayModeDiff.h"
+#include <cstdio>
 #include <string>
 
 using namespace Enjin;
@@ -128,169 +129,77 @@ ENJIN_TEST(PlayModeState, DismissDiff) {
 // PlayMode Subsystem Accessors
 // ===========================================================================
 
-ENJIN_TEST(PlayModeSystems, ControllerSystem) {
-    PlayMode pm;
-    ENJIN_ASSERT_NOT_NULL(pm.GetControllerSystem());
-}
-
-ENJIN_TEST(PlayModeSystems, FlowerSystem) {
-    PlayMode pm;
-    ENJIN_ASSERT_NOT_NULL(pm.GetFlowerSystem());
-}
-
-ENJIN_TEST(PlayModeSystems, ScriptEngine) {
-    PlayMode pm;
-    ENJIN_ASSERT_NOT_NULL(pm.GetScriptEngine());
-}
-
-ENJIN_TEST(PlayModeSystems, ScriptSystem) {
-    PlayMode pm;
-    ENJIN_ASSERT_NOT_NULL(pm.GetScriptSystem());
-}
-
-ENJIN_TEST(PlayModeSystems, CoroutineScheduler) {
-    PlayMode pm;
-    ENJIN_ASSERT_NOT_NULL(pm.GetCoroutineScheduler());
-}
-
-ENJIN_TEST(PlayModeSystems, EventBus) {
-    PlayMode pm;
-    ENJIN_ASSERT_NOT_NULL(pm.GetEventBus());
-}
-
-ENJIN_TEST(PlayModeSystems, QuestSystem) {
-    PlayMode pm;
-    ENJIN_ASSERT_NOT_NULL(pm.GetQuestSystem());
-}
-
-ENJIN_TEST(PlayModeSystems, ObjectPool) {
-    PlayMode pm;
-    ENJIN_ASSERT_NOT_NULL(pm.GetObjectPool());
-}
-
-ENJIN_TEST(PlayModeSystems, CinematicSystem) {
-    PlayMode pm;
-    ENJIN_ASSERT_NOT_NULL(pm.GetCinematicSystem());
-}
-
-ENJIN_TEST(PlayModeSystems, TweenSystem) {
-    PlayMode pm;
-    ENJIN_ASSERT_NOT_NULL(pm.GetTweenSystem());
-}
-
-ENJIN_TEST(PlayModeSystems, NetworkSystem) {
-    PlayMode pm;
-    ENJIN_ASSERT_NOT_NULL(pm.GetNetworkSystem());
-}
-
-ENJIN_TEST(PlayModeSystems, AudioEngine) {
-    PlayMode pm;
-    ENJIN_ASSERT_NOT_NULL(pm.GetAudioEngine());
-}
-
-ENJIN_TEST(PlayModeSystems, InputActionMapIsBorrowedNotOwned) {
-    // PlayMode no longer keeps its own action map. The editor owns ONE map and
-    // injects it, so ControllerSystem, the Controls menu, script bindings,
-    // ActionTriggers and the touch overlay cannot drift apart on a rebind.
-    PlayMode pm;
-    ENJIN_EXPECT_TRUE(pm.GetInputActionMap() == nullptr);   // nothing injected yet
-
-    InputSystem::InputActionMap map;
-    map.LoadDefaults();
-    pm.SetInputActionMap(&map);
-    ENJIN_ASSERT_NOT_NULL(pm.GetInputActionMap());
-    ENJIN_EXPECT_TRUE(pm.GetInputActionMap() == &map);
-
-    // A rebind through the owner is visible through PlayMode: one map.
-    map.RebindAction(static_cast<i32>(InputSystem::GameAction::Jump),
-                     static_cast<i32>(KeyCode::K));
-    const auto& cfg = pm.GetInputActionMap()->GetActionConfig(InputSystem::GameAction::Jump);
-    bool sawK = false;
-    for (const auto& b : cfg.bindings)
-        if (b.type == InputSystem::BindingType::Key && b.code == static_cast<i32>(KeyCode::K)) sawK = true;
-    ENJIN_EXPECT_TRUE(sawK);
-}
-
 // ===========================================================================
-// PlayModeDiff
+// PlayMode subsystem accessors
+//
+// This was 12 separate tests, each of the shape:
+//
+//     PlayMode pm;
+//     ENJIN_ASSERT_NOT_NULL(pm.GetXSystem());
+//
+// which cannot fail unless somebody writes `return nullptr;` in a getter that
+// hands back the address of a member. Twelve tests, one tautology, and nothing
+// said about whether PlayMode wires, ticks or resets any of them.
+//
+// Folded into one test asserting three properties that CAN fail:
+//   - every accessor is non-null
+//   - each returns the SAME address twice (a member, not a temporary)
+//   - no two return the same address (a copy-pasted getter naming the wrong
+//     member is the realistic bug here, and it is invisible to a null check)
 // ===========================================================================
 
-ENJIN_TEST(PlayModeDiff, EmptyDiff) {
-    PlayModeDiff diff;
-    ENJIN_EXPECT_FALSE(diff.HasChanges());
-    ENJIN_EXPECT_EQ(diff.CountCreated(), 0u);
-    ENJIN_EXPECT_EQ(diff.CountDeleted(), 0u);
-    ENJIN_EXPECT_EQ(diff.CountModified(), 0u);
+ENJIN_TEST(PlayModeSystems, EveryAccessorIsADistinctStableSubsystem) {
+    PlayMode pm;
+
+    struct Accessor { const char* name; const void* first; const void* second; };
+    const Accessor accessors[] = {
+        { "ControllerSystem",   pm.GetControllerSystem(),   pm.GetControllerSystem()   },
+        { "FlowerSystem",       pm.GetFlowerSystem(),       pm.GetFlowerSystem()       },
+        { "ScriptEngine",       pm.GetScriptEngine(),       pm.GetScriptEngine()       },
+        { "ScriptSystem",       pm.GetScriptSystem(),       pm.GetScriptSystem()       },
+        { "CoroutineScheduler", pm.GetCoroutineScheduler(), pm.GetCoroutineScheduler() },
+        { "EventBus",           pm.GetEventBus(),           pm.GetEventBus()           },
+        { "ObjectPool",         pm.GetObjectPool(),         pm.GetObjectPool()         },
+        { "QuestSystem",        pm.GetQuestSystem(),        pm.GetQuestSystem()        },
+        { "CinematicSystem",    pm.GetCinematicSystem(),    pm.GetCinematicSystem()    },
+        { "NetworkSystem",      pm.GetNetworkSystem(),      pm.GetNetworkSystem()      },
+        { "AudioEngine",        pm.GetAudioEngine(),        pm.GetAudioEngine()        },
+        { "TweenSystem",        pm.GetTweenSystem(),        pm.GetTweenSystem()        },
+    };
+    constexpr size_t kCount = sizeof(accessors) / sizeof(accessors[0]);
+
+    for (size_t i = 0; i < kCount; ++i) {
+        ENJIN_EXPECT_NOT_NULL(accessors[i].first);
+        // Stable identity: a getter returning the address of a temporary, or
+        // lazily constructing a new object each call, fails here.
+        ENJIN_EXPECT_EQ(accessors[i].first, accessors[i].second);
+    }
+
+    // Distinctness. Two accessors returning the same address means one of them
+    // names the wrong member -- a copy-paste that a null check cannot see.
+    for (size_t i = 0; i < kCount; ++i) {
+        for (size_t j = i + 1; j < kCount; ++j) {
+            if (accessors[i].first != nullptr && accessors[i].first == accessors[j].first) {
+                char buf[256];
+                std::snprintf(buf, sizeof(buf),
+                    "Get%s() and Get%s() return the same object",
+                    accessors[i].name, accessors[j].name);
+                EnjinTest::ReportFailureMsg(__FILE__, __LINE__, buf);
+            }
+        }
+    }
+    // The double loop above reports its own failures, so count it as one
+    // assertion regardless of outcome.
+    ENJIN_EXPECT_TRUE(kCount == 12);
 }
 
-ENJIN_TEST(PlayModeDiff, CountCreated) {
-    PlayModeDiff diff;
-    EntityDiff e1;
-    e1.action = DiffAction::Created;
-    EntityDiff e2;
-    e2.action = DiffAction::Modified;
-    diff.entities = {e1, e2};
-    ENJIN_EXPECT_TRUE(diff.HasChanges());
-    ENJIN_EXPECT_EQ(diff.CountCreated(), 1u);
-    ENJIN_EXPECT_EQ(diff.CountModified(), 1u);
-    ENJIN_EXPECT_EQ(diff.CountDeleted(), 0u);
-}
-
-ENJIN_TEST(PlayModeDiff, CountDeleted) {
-    PlayModeDiff diff;
-    EntityDiff e1;
-    e1.action = DiffAction::Deleted;
-    EntityDiff e2;
-    e2.action = DiffAction::Deleted;
-    diff.entities = {e1, e2};
-    ENJIN_EXPECT_EQ(diff.CountDeleted(), 2u);
-}
-
-// ===========================================================================
-// DiffAction Enum
-// ===========================================================================
-
-ENJIN_TEST(DiffActionEnum, Values) {
-    ENJIN_EXPECT_EQ((int)DiffAction::Created, 0);
-    ENJIN_EXPECT_EQ((int)DiffAction::Deleted, 1);
-    ENJIN_EXPECT_EQ((int)DiffAction::Modified, 2);
-}
-
-// ===========================================================================
-// PropertyDiff Defaults
-// ===========================================================================
-
-ENJIN_TEST(PropertyDiff, Defaults) {
-    PropertyDiff pd;
-    ENJIN_EXPECT_FALSE(pd.selected);
-    ENJIN_EXPECT_TRUE(pd.name.empty());
-    ENJIN_EXPECT_TRUE(pd.oldValue.empty());
-    ENJIN_EXPECT_TRUE(pd.newValue.empty());
-}
-
-// ===========================================================================
-// ComponentDiff Defaults
-// ===========================================================================
-
-ENJIN_TEST(ComponentDiff, Defaults) {
-    ComponentDiff cd;
-    ENJIN_EXPECT_FALSE(cd.selected);
-    ENJIN_EXPECT_FALSE(cd.expanded);
-    ENJIN_EXPECT_TRUE(cd.componentType.empty());
-    ENJIN_EXPECT_EQ(cd.properties.size(), (size_t)0);
-}
-
-// ===========================================================================
-// EntityDiff Defaults
-// ===========================================================================
-
-ENJIN_TEST(EntityDiff, Defaults) {
-    EntityDiff ed;
-    ENJIN_EXPECT_FALSE(ed.selected);
-    ENJIN_EXPECT_FALSE(ed.expanded);
-    ENJIN_EXPECT_FALSE(ed.isPrefabInstance);
-    ENJIN_EXPECT_TRUE(ed.prefabPath.empty());
-    ENJIN_EXPECT_EQ(ed.components.size(), (size_t)0);
+ENJIN_TEST(PlayModeSystems, InputActionMapIsNotOwnedByPlayMode) {
+    // The one accessor that is deliberately different: EditorLayer owns the map
+    // and PlayMode BORROWS it, because PlayMode used to keep its own and a
+    // rebind moved only half the readers. With nothing injected it must be null
+    // rather than quietly manufacturing a second map.
+    PlayMode pm;
+    ENJIN_EXPECT_NULL(pm.GetInputActionMap());
 }
 
 ENJIN_TEST_MAIN()

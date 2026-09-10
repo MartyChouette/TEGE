@@ -18,11 +18,15 @@ static std::string GetTempPakPath() {
 // ============================================================================
 
 ENJIN_TEST(CRC32, EmptyDataIsZero) {
-    u32 crc = AssetPacker::ComputeCRC32(nullptr, 0);
-    // CRC32 of empty data is 0 by most implementations
-    // Just verify it doesn't crash
-    (void)crc;
-    ENJIN_EXPECT_TRUE(true);
+    // The test is NAMED for a value and then cast that value to (void). Check it:
+    // pack integrity depends on this being stable, and a CRC that returned
+    // garbage for the empty case would have passed the old test.
+    ENJIN_EXPECT_EQ(AssetPacker::ComputeCRC32(nullptr, 0), 0u);
+
+    // Zero length with a non-null pointer is the same case and must agree --
+    // reading the buffer at all would break that.
+    const u8 data[4] = { 1, 2, 3, 4 };
+    ENJIN_EXPECT_EQ(AssetPacker::ComputeCRC32(data, 0), 0u);
 }
 
 ENJIN_TEST(CRC32, KnownDataConsistent) {

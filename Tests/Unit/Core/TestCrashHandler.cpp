@@ -50,7 +50,7 @@ ENJIN_TEST(CrashHandler, InstallAndUninstallAreSafe) {
 
     // Assert: reaching here is the assertion. A handler that broke the process
     // on install would take the whole suite with it.
-    ENJIN_EXPECT_TRUE(true);
+    ENJIN_SURVIVED("installing and removing the crash handler");
 }
 
 #ifndef _WIN32

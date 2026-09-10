@@ -187,15 +187,34 @@ ENJIN_TEST(LSystem2D, BoundsContainSegments) {
 }
 
 ENJIN_TEST(LSystem2D, StringLengthCapped) {
-    // Exponential growth rule — should hit the 4MB cap
+    // The test is NAMED for a cap and asserted `true`. Delete the cap and it
+    // OOMs the machine instead of failing, which is the opposite of what a
+    // regression test is for.
+    //
+    // The cap is 4MB of L-system string (kMaxLSystemStringLength). Every 'F'
+    // becomes one segment, so the segment count is the observable proxy for it:
+    // bounded well under 10^20, and non-empty because the cap must truncate
+    // rather than abandon.
     LSystemGenerator::Params params;
     params.axiom = "F";
     params.rules['F'] = "FFFFFFFFFF";  // 10x growth per iteration
-    params.iterations = 20;  // Would be 10^20 chars without cap
+    params.iterations = 20;            // 10^20 chars without a cap
 
     auto result = LSystemGenerator::Generate(params);
-    // Just verifying it returns without crashing or OOM
-    ENJIN_EXPECT_TRUE(true);
+
+    // The cap is checked AFTER appending a whole replacement
+    // (`if (next.size() > kMaxLSystemStringLength) break;`), so the string can
+    // overshoot by up to one replacement -- 10 characters for this rule. Assert
+    // the contract that actually holds, with room for any replacement length,
+    // rather than a tighter number that would fail for an honest reason.
+    constexpr size_t kCap = 4u * 1024u * 1024u;
+    ENJIN_EXPECT_TRUE(!result.segments.empty());
+    ENJIN_EXPECT_TRUE(result.segments.size() <= kCap + 1024u);
+
+    // And it is still deterministic under the cap -- a truncation that depended
+    // on allocation timing would make authored output unreproducible.
+    auto again = LSystemGenerator::Generate(params);
+    ENJIN_EXPECT_EQ(again.segments.size(), result.segments.size());
 }
 
 // ============================================================================

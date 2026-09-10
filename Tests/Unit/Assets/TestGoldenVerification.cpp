@@ -255,17 +255,15 @@ ENJIN_TEST(GoldenOBJ, SceneImporterBuildsEntitiesFromOBJ) {
 ENJIN_TEST(GoldenFBX, RiggedMeshImports) {
     std::string path = std::string(ENJIN_TEST_FIXTURES_DIR) + "/humanrig.fbx";
     if (!fs::exists(path)) {
-        std::printf("    [skip] FBX fixture absent — drop a rigged+animated mesh at %s\n",
-                    path.c_str());
-        return;
+        // A bare return reported PASS, so the FBX import path was green in
+        // CI without a fixture ever being present.
+        ENJIN_SKIP("no rigged FBX fixture at Tests/Fixtures/humanrig.fbx");
     }
 
     Assets::AssimpScene scene;
     bool ok = Assets::AssimpLoader::Load(path, scene);
     if (!ok) {
-        std::printf("    [skip] FBX fixture did not load (empty/mesh-less export?): '%s'\n",
-                    Assets::AssimpLoader::GetLastError().c_str());
-        return;
+        ENJIN_SKIP("the FBX fixture is present but did not load (empty or mesh-less export?)");
     }
 
     // A rigged character: at least one skinned mesh, a skeleton, and a clip.

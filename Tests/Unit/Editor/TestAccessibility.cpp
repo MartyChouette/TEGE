@@ -116,11 +116,25 @@ ENJIN_TEST(Subtitles, SystemConfigAccess) {
 }
 
 ENJIN_TEST(Subtitles, Clear) {
+    // "After clear, no active subtitles" was the comment, and the assertion was
+    // EXPECT_TRUE(true) -- a Clear() with an empty body would have passed.
     SubtitleSystem subs;
+    subs.GetConfig().enabled = true;
+
     subs.ShowSubtitle("Hello", "NPC");
+    subs.ShowSubtitle("Second line", "NPC");
+    ENJIN_ASSERT_TRUE(subs.GetActiveCount() > 0);
+
     subs.Clear();
-    // After clear, no active subtitles (just verifying it doesn't crash)
-    ENJIN_EXPECT_TRUE(true);
+    ENJIN_EXPECT_EQ(subs.GetActiveCount(), static_cast<usize>(0));
+
+    // Clearing an already-empty system must stay empty rather than underflow.
+    subs.Clear();
+    ENJIN_EXPECT_EQ(subs.GetActiveCount(), static_cast<usize>(0));
+
+    // And the system still works afterwards.
+    subs.ShowSubtitle("Again", "NPC");
+    ENJIN_EXPECT_TRUE(subs.GetActiveCount() > 0);
 }
 
 // ===========================================================================
