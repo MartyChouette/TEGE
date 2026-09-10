@@ -546,13 +546,37 @@ WebGPUTextureHandle WebGPURenderer::CreateTexture(u32 width, u32 height, WGPUTex
         samplerDesc.compare = WGPUCompareFunction_LessEqual;
         samplerDesc.maxAnisotropy = 1;
     } else {
-        samplerDesc.addressModeU = WGPUAddressMode_Repeat;
-        samplerDesc.addressModeV = WGPUAddressMode_Repeat;
-        samplerDesc.addressModeW = WGPUAddressMode_Repeat;
-        samplerDesc.magFilter = WGPUFilterMode_Linear;
-        samplerDesc.minFilter = WGPUFilterMode_Linear;
-        samplerDesc.mipmapFilter = WGPUMipmapFilterMode_Linear;
-        samplerDesc.maxAnisotropy = 1;
+        // The project's filtering, read exactly as the Vulkan bindless sampler
+        // reads the same four numbers. This was hardcoded to linear + repeat,
+        // so a project that chose POINT filtering for pixel art got bilinear
+        // blur in a browser and nothing said so.
+        const WGPUAddressMode wrap =
+            (m_SamplerWrap == 1) ? WGPUAddressMode_ClampToEdge :
+            (m_SamplerWrap == 2) ? WGPUAddressMode_MirrorRepeat :
+                                   WGPUAddressMode_Repeat;
+        samplerDesc.addressModeU = wrap;
+        samplerDesc.addressModeV = wrap;
+        samplerDesc.addressModeW = wrap;
+
+        const bool point = (m_SamplerFilter == 0);
+        samplerDesc.magFilter = point ? WGPUFilterMode_Nearest : WGPUFilterMode_Linear;
+        samplerDesc.minFilter = point ? WGPUFilterMode_Nearest : WGPUFilterMode_Linear;
+        // Trilinear is the only setting that blends BETWEEN mips; point and
+        // bilinear pick the nearest one. Mips off clamps to level 0, which is
+        // the raw shimmer a PSX look wants.
+        samplerDesc.mipmapFilter = (m_SamplerFilter == 2 && m_SamplerMipmaps)
+            ? WGPUMipmapFilterMode_Linear : WGPUMipmapFilterMode_Nearest;
+        if (!m_SamplerMipmaps) {
+            samplerDesc.lodMinClamp = 0.0f;
+            samplerDesc.lodMaxClamp = 0.0f;
+        }
+        // WebGPU only permits anisotropy above 1 when all three filters are
+        // linear, so point filtering keeps it at 1 rather than failing.
+        const bool allLinear = !point && samplerDesc.mipmapFilter == WGPUMipmapFilterMode_Linear;
+        samplerDesc.maxAnisotropy =
+            (allLinear && m_SamplerAnisotropy > 1)
+                ? static_cast<uint16_t>(m_SamplerAnisotropy > 16 ? 16 : m_SamplerAnisotropy)
+                : 1;
     }
     handle.sampler = wgpuDeviceCreateSampler(m_Device, &samplerDesc);
 

@@ -492,8 +492,10 @@ void SceneRenderSettings::ApplyToRuntimeUnclamped(ECS::RenderSystem* rs, PostPro
         rs->SetCascadeProgressiveUpdate(cascadeProgressiveUpdate);
         rs->SetCascadeFarUpdateInterval(cascadeFarUpdateInterval);
         rs->SetWireframeEnabled(wireframe);
-        rs->SetTextureFilterConfig(textureFilter, textureAnisotropy, textureMipmaps, textureWrap);
 #endif
+        // OUTSIDE the guard now: both backends have a sampler to configure, and
+        // leaving this inside meant the web build never even heard the setting.
+        rs->SetTextureFilterConfig(textureFilter, textureAnisotropy, textureMipmaps, textureWrap);
         // Shadows, OUTSIDE the renderer guard. The substitution's whole purpose
         // is to fire on the backend that cannot trace, and the first version of
         // it sat inside the desktop-only block a few lines up -- compiled out on

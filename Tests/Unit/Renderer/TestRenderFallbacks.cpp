@@ -62,6 +62,11 @@ ENJIN_TEST(GIFallback, AWorkingSetupIsNotWarnedAbout) {
     ENJIN_EXPECT_TRUE(std::strlen(DescribeGIGap(true, Caps(true, false))) == 0);
     ENJIN_EXPECT_TRUE(std::strlen(DescribeGIGap(true, Caps(false, true))) == 0);
     ENJIN_EXPECT_TRUE(std::strlen(DescribeGIGap(false, Caps(false, true))) == 0);
+    // And the scene that simply never wanted GI. Direct lighting is a normal
+    // way to light a scene, so saying it "has no global illumination" is a
+    // warning on almost every scene there is -- which is how a log stops being
+    // read at all.
+    ENJIN_EXPECT_TRUE(std::strlen(DescribeGIGap(false, Caps(false, false))) == 0);
 }
 
 ENJIN_TEST(GIFallback, EverySourceHasAName) {

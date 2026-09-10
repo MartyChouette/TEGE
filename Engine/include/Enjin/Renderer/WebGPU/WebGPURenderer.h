@@ -95,6 +95,18 @@ public:
     void DestroyBuffer(WebGPUBufferHandle& buffer);
 
     // --- Texture management ---
+    // The project's texture filtering, mirroring the Vulkan bindless sampler's
+    // reading of the same four numbers: filter 0=Point 1=Bilinear 2=Trilinear,
+    // wrap 0=Repeat 1=Clamp 2=Mirror. Textures built after this is set adopt
+    // it -- which covers the real path, because a scene applies its render
+    // settings before its materials load their textures.
+    void SetDefaultSamplerConfig(u32 filter, u32 anisotropy, bool mipmaps, u32 wrap) {
+        m_SamplerFilter = filter;
+        m_SamplerAnisotropy = anisotropy;
+        m_SamplerMipmaps = mipmaps;
+        m_SamplerWrap = wrap;
+    }
+
     WebGPUTextureHandle CreateTexture(u32 width, u32 height, WGPUTextureFormat format,
                                       WGPUTextureUsage usage, const void* pixelData = nullptr);
     WebGPUTextureHandle CreateCubemapTexture(u32 size, WGPUTextureFormat format, WGPUTextureUsage usage);
@@ -191,6 +203,13 @@ public:
     void EndComputePass(IComputeEncoder* encoder) override;
 
 private:
+    // Texture filtering the project asked for. Defaults match the settings'
+    // defaults: trilinear, 8x aniso, mips on, repeat.
+    u32 m_SamplerFilter = 2;
+    u32 m_SamplerAnisotropy = 8;
+    bool m_SamplerMipmaps = true;
+    u32 m_SamplerWrap = 0;
+
     void CreateSwapChain();
     void CreateDepthTexture();
 

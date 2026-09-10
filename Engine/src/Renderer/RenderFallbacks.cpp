@@ -27,10 +27,10 @@ const char* DescribeGIGap(bool sceneWantsDynamic, const GICapabilities& caps) {
                "with no global illumination. Bake one: Tools > Art & Animation "
                "> Bake Lightmap.";
     }
-    if (!sceneWantsDynamic) {
-        return "This scene has no global illumination: dynamic GI is off and "
-               "nothing is baked.";
-    }
+    // A scene that never asked for GI and has no bake is not a gap, it is a
+    // choice -- plenty of scenes are lit by their direct lights and want
+    // nothing else. Only the scene that ASKED and did not get it has something
+    // to report, and that is the branch above.
     return "";
 }
 
