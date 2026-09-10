@@ -521,6 +521,35 @@ void RenderSystem::RecreateWebSizedTargets(u32 sceneW, u32 sceneH) {
     }
 }
 
+// The vertex layout every pipeline that uses PBR_VS must supply.
+//
+// WGSL is strict here in a way GLSL is not: a vertex shader's declared inputs
+// are a CONTRACT, and a pipeline whose layout omits even one of them fails to
+// create. It does not fail loudly at the call site either -- Dawn hands back an
+// invalid pipeline object, and the error only surfaces when something sets it
+// on a pass, at which point the whole command buffer is invalid and the frame
+// is BLACK. Nothing about that picture points back at a vertex attribute.
+//
+// Two pipelines share PBR_VS (opaque and OIT accumulate) and they used to spell
+// their layouts out separately, so adding uv1 for lightmaps to the shader and
+// to the opaque layout silently broke every scene containing anything
+// transparent. One definition, so the next attribute cannot half-land.
+static Renderer::GPUVertexBufferLayoutDesc MakePBRVertexLayout() {
+    Renderer::GPUVertexBufferLayoutDesc vl;
+    vl.stride = sizeof(MeshComponent::Vertex);
+    vl.attributes = {
+        {Renderer::GPUVertexFormat::Float32x3, 0, 0},                                                             // position
+        {Renderer::GPUVertexFormat::Float32x3, static_cast<u32>(offsetof(MeshComponent::Vertex, normal)), 1},     // normal
+        {Renderer::GPUVertexFormat::Float32x2, static_cast<u32>(offsetof(MeshComponent::Vertex, uv)), 2},         // uv
+        {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(MeshComponent::Vertex, tangent)), 3},    // tangent
+        {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(MeshComponent::Vertex, boneWeights)), 4},// boneWeights
+        {Renderer::GPUVertexFormat::Uint32x4,  static_cast<u32>(offsetof(MeshComponent::Vertex, boneIndices)), 5},// boneIndices
+        {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(MeshComponent::Vertex, color)), 6},      // vertex color (SDF glyph textColor)
+        {Renderer::GPUVertexFormat::Float32x2, static_cast<u32>(offsetof(MeshComponent::Vertex, uv1)), 7},        // lightmap UVs (baked light)
+    };
+    return vl;
+}
+
 // Weighted-blended OIT targets and pipelines, built the first time a scene
 // actually has something transparent in it and rebuilt when the scene target
 // resizes. A fully opaque scene never calls this and allocates nothing.
@@ -580,18 +609,7 @@ bool RenderSystem::EnsureWebOITTargets(u32 w, u32 h) {
         od.extraColorTargets = {reveal};
         od.colorAttachmentCount = 2;
 
-        Renderer::GPUVertexBufferLayoutDesc vl;
-        vl.stride = sizeof(MeshComponent::Vertex);
-        vl.attributes = {
-            {Renderer::GPUVertexFormat::Float32x3, 0, 0},
-            {Renderer::GPUVertexFormat::Float32x3, static_cast<u32>(offsetof(MeshComponent::Vertex, normal)), 1},
-            {Renderer::GPUVertexFormat::Float32x2, static_cast<u32>(offsetof(MeshComponent::Vertex, uv)), 2},
-            {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(MeshComponent::Vertex, tangent)), 3},
-            {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(MeshComponent::Vertex, boneWeights)), 4},
-            {Renderer::GPUVertexFormat::Uint32x4,  static_cast<u32>(offsetof(MeshComponent::Vertex, boneIndices)), 5},
-            {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(MeshComponent::Vertex, color)), 6},
-        };
-        od.vertexBuffers = {vl};
+        od.vertexBuffers = {MakePBRVertexLayout()};
         od.label = "OITAccumPipeline";
         m_WebOITPipeline = pipeMgr->CreateRenderPipeline(od);
         if (!m_WebOITPipeline.IsValid())
@@ -815,20 +833,7 @@ void RenderSystem::Initialize() {
     pipeDesc.sampleCount = Renderer::kWebSceneSampleCount;  // no MSAA on web (see MSAA note; WebGPU is 1 or 4 only)
     pipeDesc.label = "PBR_Pipeline";
 
-    // Vertex layout: position(vec3), normal(vec3), uv(vec2), color(vec4), tangent(vec4), boneWeights(vec4), boneIndices(u32x4)
-    Renderer::GPUVertexBufferLayoutDesc vertLayout;
-    vertLayout.stride = sizeof(MeshComponent::Vertex);
-    vertLayout.attributes = {
-        {Renderer::GPUVertexFormat::Float32x3, 0, 0},                                                            // position
-        {Renderer::GPUVertexFormat::Float32x3, static_cast<u32>(offsetof(MeshComponent::Vertex, normal)), 1},    // normal
-        {Renderer::GPUVertexFormat::Float32x2, static_cast<u32>(offsetof(MeshComponent::Vertex, uv)), 2},       // uv
-        {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(MeshComponent::Vertex, tangent)), 3},   // tangent
-        {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(MeshComponent::Vertex, boneWeights)), 4}, // boneWeights
-        {Renderer::GPUVertexFormat::Uint32x4,  static_cast<u32>(offsetof(MeshComponent::Vertex, boneIndices)), 5}, // boneIndices
-        {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(MeshComponent::Vertex, color)), 6},      // vertex color (SDF glyph textColor)
-        {Renderer::GPUVertexFormat::Float32x2, static_cast<u32>(offsetof(MeshComponent::Vertex, uv1)), 7},      // lightmap UVs (baked light)
-    };
-    pipeDesc.vertexBuffers = {vertLayout};
+    pipeDesc.vertexBuffers = {MakePBRVertexLayout()};
 
     m_MainPipeline = pipeMgr->CreateRenderPipeline(pipeDesc);
     if (!m_MainPipeline.IsValid()) {
