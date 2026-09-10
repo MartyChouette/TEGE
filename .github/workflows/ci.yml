@@ -160,6 +160,13 @@ jobs:
           if (-not ($editorLog | Where-Object { "$_" -match "GoldenSmoke: script runtime is alive" })) {
             throw "script canary never ran - the AngelScript runtime is broken in play mode"
           }
+          # Every 3D scene gets an implicit reflection probe, so this runs here
+          # whether or not the scene authored one. A bake needs six frames of its
+          # own and used to be attempted from inside an open frame, where all six
+          # BeginFrames were refused and the probe latched itself failed.
+          if ($editorLog | Where-Object { "$_" -match "Probe bake produced no faces" }) {
+            throw "reflection probe failed to bake - the bake is running inside an open frame again"
+          }
           python Tests/GoldenScene/check_golden.py golden_out/smoke
 
       - name: Sprite draw order (2D sorting reaches the frame)

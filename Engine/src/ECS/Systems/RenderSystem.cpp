@@ -1943,6 +1943,51 @@ bool RenderSystem::WebPreparePlate(const PreRenderedBackgroundComponent* bg) {
     return true;
 }
 
+// The texture bind group for one sprite texture, created once and kept.
+//
+// A bind group per texture is what lets the sprite pass draw a run of sprites
+// that share art in a single call. Creating them per frame would trade the draw
+// calls this saves for allocations, so they are cached by path for the life of
+// the scene, the same way the textures themselves are.
+//
+// An empty path, or a texture that cannot be loaded, resolves to the 1x1 white
+// texture, so a sprite authored with a tint and no art still draws as a flat
+// coloured quad instead of vanishing.
+Renderer::GPUBindGroupHandle RenderSystem::WebGetOrCreateSpriteBindGroup(const std::string& texturePath) {
+    auto* bindMgr = m_Renderer ? m_Renderer->GetBindGroupManager() : nullptr;
+    if (!bindMgr || !m_WebSpriteTexLayout.IsValid()) return {};
+
+    Renderer::GPUTextureHandle tex;
+    if (!texturePath.empty()) tex = WebGetOrLoadTexture(texturePath);
+
+    if (!tex.IsValid()) {
+        if (!m_WebDefaultWhiteTex.IsValid()) return {};
+        if (!m_WebWhiteSpriteBindGroup.IsValid()) {
+            Renderer::GPUBindGroupDesc d;
+            d.layout = m_WebSpriteTexLayout;
+            d.entries = {
+                {0, {}, 0, 0, m_WebDefaultWhiteTex, {}},
+                {1, {}, 0, 0, {}, m_WebDefaultWhiteTex},
+            };
+            m_WebWhiteSpriteBindGroup = bindMgr->CreateBindGroup(d);
+        }
+        return m_WebWhiteSpriteBindGroup;
+    }
+
+    auto it = m_WebSpriteTexBindGroups.find(texturePath);
+    if (it != m_WebSpriteTexBindGroups.end()) return it->second;
+
+    Renderer::GPUBindGroupDesc d;
+    d.layout = m_WebSpriteTexLayout;
+    d.entries = {
+        {0, {}, 0, 0, tex, {}},
+        {1, {}, 0, 0, {}, tex},
+    };
+    auto bg = bindMgr->CreateBindGroup(d);
+    m_WebSpriteTexBindGroups[texturePath] = bg;
+    return bg;
+}
+
 Renderer::GPUTextureHandle RenderSystem::WebGetOrLoadTexture(const std::string& path) {
     if (path.empty()) return {};
 
@@ -4271,10 +4316,41 @@ void RenderSystem::Update(f32 deltaTime) {
         spriteInsts.clear();
         spriteInsts.reserve(spriteEntities.size());
 
+        // Sorted, then batched by texture. Two things were wrong here before.
+        //
+        // The sprites were never sorted, so they drew in entity iteration order
+        // and sortingLayer/orderInLayer did nothing on web (the same end result
+        // as the desktop delta-sort bug, arrived at by a different route).
+        //
+        // And every sprite was drawn with one default WHITE texture, because
+        // per-sprite texturing "would need batching". It needs batching, so here
+        // is the batching: sort by the authored order first, then walk the
+        // sorted run and start a new draw wherever the texture changes. Paint
+        // order is preserved because the texture only ever breaks a run, it
+        // never reorders one. A scene using N textures costs N draws instead of
+        // 1, which is the price of the sprites having their art.
+        struct SpriteDraw { Entity entity; const Sprite2DComponent* spr; const TransformComponent* xf; };
+        static std::vector<SpriteDraw> spriteDraws;
+        spriteDraws.clear();
+        spriteDraws.reserve(spriteEntities.size());
+
         for (Entity se : spriteEntities) {
             auto* spr = m_World->GetComponent<Sprite2DComponent>(se);
             auto* sxf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(se) : nullptr;
-            if (!spr || !sxf || !sxf->visible) continue;
+            if (!spr || !sxf || !sxf->visible || !spr->visible) continue;
+            spriteDraws.push_back({se, spr, sxf});
+        }
+
+        std::stable_sort(spriteDraws.begin(), spriteDraws.end(),
+            [](const SpriteDraw& a, const SpriteDraw& b) {
+                if (a.spr->sortingLayer != b.spr->sortingLayer)
+                    return a.spr->sortingLayer < b.spr->sortingLayer;
+                return a.spr->orderInLayer < b.spr->orderInLayer;
+            });
+
+        for (const auto& d : spriteDraws) {
+            const auto* spr = d.spr;
+            const auto* sxf = d.xf;
             f32 srcL = spr->srcX, srcT = spr->srcY;
             f32 srcR = spr->srcWidth > 0 ? spr->srcX + spr->srcWidth : 1.0f;
             f32 srcB = spr->srcHeight > 0 ? spr->srcY + spr->srcHeight : 1.0f;
@@ -4291,26 +4367,33 @@ void RenderSystem::Update(f32 deltaTime) {
             auto instBuf = UploadWebInstances(WebInstanceSlot::Sprite,
                 spriteInsts.data(), spriteInsts.size() * sizeof(SpriteInst));
 
-            // Use default white texture for now (per-sprite texturing would need batching)
-            Renderer::GPUBindGroupDesc sprTexBGD;
-            sprTexBGD.layout = m_WebSpriteTexLayout;
-            sprTexBGD.entries = {
-                {0, {}, 0, 0, m_WebDefaultWhiteTex, {}},
-                {1, {}, 0, 0, {}, m_WebDefaultWhiteTex},
-            };
-            if (!m_WebWhiteSpriteBindGroup.IsValid()) {
-                m_WebWhiteSpriteBindGroup = webBindMgr->CreateBindGroup(sprTexBGD);
-            }
-            auto sprTexBG = m_WebWhiteSpriteBindGroup;
-
             wgpuRenderPassEncoderSetPipeline(scenePassEncoder, webPipeMgr->GetNativePipeline(m_WebSpritePipeline));
             wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 0, webBindMgr->GetNativeGroup(m_WebFrameBindGroup), 0, nullptr);
-            wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 1, webBindMgr->GetNativeGroup(sprTexBG), 0, nullptr);
             wgpuRenderPassEncoderSetVertexBuffer(scenePassEncoder, 0, webBufMgrS->GetNativeBuffer(m_WebParticleQuadVB), 0, WGPU_WHOLE_SIZE);  // Reuse quad
             wgpuRenderPassEncoderSetVertexBuffer(scenePassEncoder, 1, webBufMgrS->GetNativeBuffer(instBuf), 0, WGPU_WHOLE_SIZE);
             wgpuRenderPassEncoderSetIndexBuffer(scenePassEncoder, webBufMgrS->GetNativeBuffer(m_WebParticleQuadIB), WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
-            wgpuRenderPassEncoderDrawIndexed(scenePassEncoder, 6, static_cast<u32>(spriteInsts.size()), 0, 0, 0);
 
+            // One draw per contiguous run of the same texture. firstInstance is
+            // how the run addresses its own slice of the one instance buffer.
+            u32 runStart = 0;
+            std::string runTexture = spriteDraws.empty() ? std::string() : spriteDraws[0].spr->texturePath;
+            auto flushSpriteRun = [&](u32 runEnd, const std::string& texturePath) {
+                if (runEnd <= runStart) return;
+                auto bg = WebGetOrCreateSpriteBindGroup(texturePath);
+                if (!bg.IsValid()) { runStart = runEnd; return; }
+                wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 1, webBindMgr->GetNativeGroup(bg), 0, nullptr);
+                wgpuRenderPassEncoderDrawIndexed(scenePassEncoder, 6, runEnd - runStart, 0, 0, runStart);
+                runStart = runEnd;
+            };
+
+            for (u32 i = 0; i < static_cast<u32>(spriteDraws.size()); ++i) {
+                const std::string& tex = spriteDraws[i].spr->texturePath;
+                if (tex != runTexture) {
+                    flushSpriteRun(i, runTexture);
+                    runTexture = tex;
+                }
+            }
+            flushSpriteRun(static_cast<u32>(spriteDraws.size()), runTexture);
         }
     }
 
@@ -6626,12 +6709,15 @@ void RenderSystem::FlushPendingChanges() {
         }
     }
 
-    if (m_ReflectionProbes && m_ReflectionProbes->HasPendingBake()) {
-        m_VulkanRenderer->WaitForAllFrames();
-        m_ReflectionProbes->ProcessPendingBakes(m_World, this);
-        // Update descriptor binding 19 with the newly baked cubemap
-        UpdateProbeCubemapDescriptor();
-    }
+    // Reflection probes are NOT baked here. See ProcessProbeBakesOutsideFrame.
+    //
+    // FlushPendingChanges is the frame-safe window for destroying and recreating
+    // GPU resources, but it runs INSIDE an open frame, and a probe bake needs to
+    // open six frames of its own (one per cube face). BeginFrame refused every
+    // one of them, all six faces came back as flat grey, and the probe latched
+    // itself failed and stopped retrying until the scene changed. Reflection
+    // probes have therefore never baked, in any build, and the only outward sign
+    // was a pair of log lines.
 }
 
 void RenderSystem::ApplyVolumetricFogSettings(bool enabled, const Math::Vector3& color,
@@ -6735,6 +6821,25 @@ bool RenderSystem::GetGPUParticleSettings(Effects::GPUEmitterConfig& out) const 
     if (!m_GPUParticleSystem) return false;
     out = m_GPUParticleSystem->GetConfig();
     return true;
+}
+
+// Bake any probe that asked for one, from OUTSIDE an open frame.
+//
+// A probe bake renders the scene six times, once per cube face, and each render
+// needs a frame of its own. That makes it the one piece of GPU work that cannot
+// live in FlushPendingChanges with everything else: a runtime calls this from
+// its frame loop BEFORE it opens the frame, in the only window where no frame
+// is in flight.
+//
+// Cheap when there is nothing to do, which is almost always: probes bake on
+// scene load or when something asks, not per frame.
+void RenderSystem::ProcessProbeBakesOutsideFrame() {
+    if (!m_ReflectionProbes || !m_VulkanRenderer || !m_World) return;
+    if (!m_ReflectionProbes->HasPendingBake()) return;
+
+    m_VulkanRenderer->WaitForAllFrames();
+    m_ReflectionProbes->ProcessPendingBakes(m_World, this);
+    UpdateProbeCubemapDescriptor();   // binding 19: the newly baked cubemap
 }
 
 void RenderSystem::ProbeBakeOutsideFrameDiagnostic() {

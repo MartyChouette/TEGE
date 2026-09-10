@@ -539,6 +539,11 @@ public:
     // This placement is believed correct and is known to access-violate. It
     // exists so the crash can be captured with a real stack instead of guessed
     // at. See _docs_internal/PROBE_BAKE_INVESTIGATION.md.
+    // Bake pending reflection probes. MUST be called from outside an open
+    // frame (a bake opens six frames of its own, one per cube face), which in
+    // practice means the top of a runtime's frame loop, before BeginFrame.
+    void ProcessProbeBakesOutsideFrame();
+
     void ProbeBakeOutsideFrameDiagnostic();
 
     void Update(f32 deltaTime) override;
@@ -1679,6 +1684,10 @@ private:
     std::unordered_map<std::string, Renderer::GPUTextureHandle> m_WebTextureCache;
     std::unordered_set<std::string> m_WebFailedTextures;  // don't retry failed loads
     Renderer::GPUTextureHandle WebGetOrLoadTexture(const std::string& path);
+    // Texture bind group for one sprite texture, cached by path. See the note
+    // on the definition: this is what makes per-texture sprite batching possible
+    // on web, where there is no bindless array to index into.
+    Renderer::GPUBindGroupHandle WebGetOrCreateSpriteBindGroup(const std::string& texturePath);
     // Background plate on web: which one is active, and getting its textures,
     // bind group and depth mapping ready before the scene pass records.
     void WebUpdateScenePalette();
@@ -1885,6 +1894,7 @@ private:
     usize m_WebObjectArrayCapacity = 0;
     u32 m_WebObjectArrayGen = 1;
     Renderer::GPUBindGroupHandle m_WebWhiteSpriteBindGroup;
+    std::unordered_map<std::string, Renderer::GPUBindGroupHandle> m_WebSpriteTexBindGroups;
 
     // Inverted-hull geometry outlines (the web half of RenderOutlinePass).
     // Reuses the main pass's frame + object bind group layouts: an outline draw

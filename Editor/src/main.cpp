@@ -293,6 +293,10 @@ public:
             ENJIN_LOG_WARN(Editor, "--probe-bake-test: survived the bake");
         }
 
+        // The one window with no frame in flight, which is the only place a
+        // probe bake can run: it opens six frames of its own, one per cube face.
+        if (m_RenderSystem) m_RenderSystem->ProcessProbeBakesOutsideFrame();
+
         if (!m_Renderer->BeginFrameVulkan()) {
             m_FrameFailCount++;
             if (m_Renderer->IsDeviceLost()) {

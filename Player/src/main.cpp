@@ -1429,6 +1429,10 @@ public:
     void Render() override {
         if (!m_Initialized || !m_Renderer) return;
 
+        // Same slot as the editor: the only point with no frame in flight, and
+        // a probe bake needs six frames of its own (one per cube face).
+        if (m_RenderSystem) m_RenderSystem->ProcessProbeBakesOutsideFrame();
+
         if (!m_Renderer->BeginFrameVulkan()) {
             if (m_Renderer->IsDeviceLost()) {
                 ENJIN_LOG_FATAL(Player, "GPU device lost — shutting down.");
