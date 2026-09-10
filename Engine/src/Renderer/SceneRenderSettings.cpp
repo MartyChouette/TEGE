@@ -1334,10 +1334,13 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     j["gpuParticleTurbulenceFrequency"] = RF(s.gpuParticleTurbulenceFrequency);
     j["gpuParticleMaxParticles"]        = s.gpuParticleMaxParticles;
 
-    // Scene palette. Written only when in use, so a scene that never touched it
-    // does not carry a colour table nobody authored.
-    if (s.lightmapEnabled) {
+    // Baked lightmap. NOT gated on lightmapEnabled -- the three basis paths point
+    // at the output of a bake that can take minutes, and toggling lightmaps off
+    // for an A/B used to throw the paths away, so the next save left nothing to
+    // turn back on.
+    {
         nlohmann::json lm;
+        lm["enabled"] = s.lightmapEnabled;
         lm["strength"] = RF(s.lightmapStrength);
         lm["basis"] = { s.lightmapPath[0], s.lightmapPath[1], s.lightmapPath[2] };
         j["lightmap"] = lm;
@@ -1747,7 +1750,9 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
 
     if (j.contains("lightmap") && j["lightmap"].is_object()) {
         const auto& lm = j["lightmap"];
-        s.lightmapEnabled = true;
+        // Defaults to true for files written before the block became
+        // unconditional, where its presence WAS the enabled flag.
+        s.lightmapEnabled = lm.value("enabled", true);
         s.lightmapStrength = lm.value("strength", 1.0f);
         if (lm.contains("basis") && lm["basis"].is_array()) {
             for (u32 i = 0; i < 3 && i < lm["basis"].size(); ++i) {

@@ -569,10 +569,15 @@ json SerializeLightComponent(const ECS::LightComponent& light) {
     j["outerConeAngle"] = RF(light.outerConeAngle);
     j["castShadows"] = light.castShadows;
 
-    // Cookie. Written only when it is on, so a scene that never used one does
-    // not grow a block of pattern parameters nobody set.
-    if (light.cookieEnabled) {
+    // Cookie. NOT gated on cookieEnabled. It used to be, for the reasonable-
+    // sounding reason that a scene which never used one should not grow a block
+    // of pattern parameters -- but the reader takes the block unconditionally, so
+    // a gobo tuned across sixteen controls and then switched off once was
+    // unrecoverable. A default cookie block is sixteen short numbers; a lost one
+    // is an afternoon.
+    {
         json c;
+        c["enabled"]    = light.cookieEnabled;
         c["pattern"]    = static_cast<i32>(light.cookie.pattern);
         c["resolution"] = light.cookie.resolution;
         c["columns"]    = RF(light.cookie.columns);
@@ -951,10 +956,11 @@ ECS::LightComponent DeserializeLightComponent(const json& j) {
     light.castShadows = j.contains("castShadows") ? JB(j["castShadows"]) : false;
 
     // Cookie. Absent means off, which is what every scene written before cookies
-    // existed means too.
+    // existed means too. `enabled` defaults to true because in files written
+    // before the block became unconditional, its presence WAS the flag.
     if (j.contains("cookie") && j["cookie"].is_object()) {
         const auto& c = j["cookie"];
-        light.cookieEnabled = true;
+        light.cookieEnabled = c.value("enabled", true);
         light.cookie.pattern    = static_cast<Renderer::CookiePattern>(
                                       c.value("pattern", 0));
         light.cookie.resolution = c.value("resolution", Renderer::kCookieResolutionDefault);
@@ -5175,7 +5181,10 @@ json SerializeTilemapComponent(const ECS::TilemapComponent& tm) {
     j["worldTileWidth"] = RF(tm.worldTileWidth);
     j["worldTileHeight"] = RF(tm.worldTileHeight);
     j["hasCollision"] = RF(tm.hasCollision);
-    if (tm.hasCollision && !tm.collisionMask.empty()) {
+    // Not gated on hasCollision: a hand-painted per-tile mask is authored work,
+    // and unchecking "has collision" to test something used to erase it, with no
+    // way to get it back by re-checking the box.
+    if (!tm.collisionMask.empty()) {
         j["collisionMask"] = tm.collisionMask;
     }
     return j;
@@ -9952,8 +9961,16 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             sceneJson["accessibility"] = SerializeContentFlags(m_ContentFlags);
         }
 
-        // Serialize skybox configuration
-        if (m_SkyboxConfig.type != Renderer::SkyboxType::None) {
+        // Serialize skybox configuration.
+        //
+        // NOT gated on `type != None`. It used to be, and the loader's else
+        // branch hard-resets to a default SkyboxConfig, so setting the sky type
+        // to None to check your lighting and saving threw away all 22 authored
+        // fields -- gradient colours, sun, two cloud layers, six cubemap face
+        // paths. Dropping a field for equalling its OWN default is lossless;
+        // gating a block on a DIFFERENT field is not, because the gate is itself
+        // a value someone toggles.
+        {
             json skyboxJson;
             skyboxJson["type"] = static_cast<u32>(m_SkyboxConfig.type);
             skyboxJson["topColor"] = { RF(m_SkyboxConfig.topColor.x), RF(m_SkyboxConfig.topColor.y), RF(m_SkyboxConfig.topColor.z) };
@@ -9981,11 +9998,18 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             sceneJson["skybox"] = skyboxJson;
         }
 
-        // Serialize 2D water (scene-level, only when enabled so old scenes stay clean)
-        if (m_Water2DConfig.enabled) {
+        // Serialize 2D water (scene-level).
+        //
+        // Not gated on `enabled` -- same reason as the skybox above. It used to
+        // be written "only when enabled so old scenes stay clean", which meant
+        // turning water off to look at the level underneath and saving erased all
+        // 13 authored fields. A scene that never had water writes an `enabled:
+        // false` block of defaults, which is a few lines of JSON and cannot lose
+        // anything.
+        {
             const auto& wc = m_Water2DConfig;
             json wj;
-            wj["enabled"] = true;
+            wj["enabled"] = wc.enabled;
             wj["waterLineY"] = RF(wc.waterLineY);
             wj["surfaceColor"] = { RF(wc.surfaceColor.x), RF(wc.surfaceColor.y), RF(wc.surfaceColor.z) };
             wj["deepColor"] = { RF(wc.deepColor.x), RF(wc.deepColor.y), RF(wc.deepColor.z) };
@@ -10512,8 +10536,16 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             sceneJson["accessibility"] = SerializeContentFlags(m_ContentFlags);
         }
 
-        // Serialize skybox configuration
-        if (m_SkyboxConfig.type != Renderer::SkyboxType::None) {
+        // Serialize skybox configuration.
+        //
+        // NOT gated on `type != None`. It used to be, and the loader's else
+        // branch hard-resets to a default SkyboxConfig, so setting the sky type
+        // to None to check your lighting and saving threw away all 22 authored
+        // fields -- gradient colours, sun, two cloud layers, six cubemap face
+        // paths. Dropping a field for equalling its OWN default is lossless;
+        // gating a block on a DIFFERENT field is not, because the gate is itself
+        // a value someone toggles.
+        {
             json skyboxJson;
             skyboxJson["type"] = static_cast<u32>(m_SkyboxConfig.type);
             skyboxJson["topColor"] = { RF(m_SkyboxConfig.topColor.x), RF(m_SkyboxConfig.topColor.y), RF(m_SkyboxConfig.topColor.z) };
@@ -10541,11 +10573,18 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             sceneJson["skybox"] = skyboxJson;
         }
 
-        // Serialize 2D water (scene-level, only when enabled so old scenes stay clean)
-        if (m_Water2DConfig.enabled) {
+        // Serialize 2D water (scene-level).
+        //
+        // Not gated on `enabled` -- same reason as the skybox above. It used to
+        // be written "only when enabled so old scenes stay clean", which meant
+        // turning water off to look at the level underneath and saving erased all
+        // 13 authored fields. A scene that never had water writes an `enabled:
+        // false` block of defaults, which is a few lines of JSON and cannot lose
+        // anything.
+        {
             const auto& wc = m_Water2DConfig;
             json wj;
-            wj["enabled"] = true;
+            wj["enabled"] = wc.enabled;
             wj["waterLineY"] = RF(wc.waterLineY);
             wj["surfaceColor"] = { RF(wc.surfaceColor.x), RF(wc.surfaceColor.y), RF(wc.surfaceColor.z) };
             wj["deepColor"] = { RF(wc.deepColor.x), RF(wc.deepColor.y), RF(wc.deepColor.z) };

@@ -305,10 +305,13 @@ bool EditorSettings::Save(const std::string& path) const {
         j["theme"] = static_cast<u32>(theme);
         j["uiScale"] = uiScale;
 
-        // Accent colors
-        if (accentColors.useCustom) {
+        // Accent colors. Not gated on useCustom: Load reads all eleven
+        // unconditionally, so unticking "use custom" to glance at the stock
+        // palette and letting the next settings save run threw away every colour
+        // the user had picked.
+        {
             json ac;
-            ac["useCustom"] = true;
+            ac["useCustom"] = accentColors.useCustom;
             ac["button"] = AccentColorToJson(accentColors.button);
             ac["buttonHover"] = AccentColorToJson(accentColors.buttonHover);
             ac["buttonActive"] = AccentColorToJson(accentColors.buttonActive);
