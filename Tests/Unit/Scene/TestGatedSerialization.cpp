@@ -29,6 +29,7 @@
 #include "Enjin/Renderer/Skybox.h"
 #include "Enjin/Renderer/SceneRenderSettings.h"
 #include "Enjin/ECS/Components/Material.h"
+#include "Enjin/ECS/Components/BrushSolid.h"
 #include <nlohmann/json.hpp>
 #include <cmath>
 #include <string>
@@ -218,6 +219,80 @@ ENJIN_TEST(GatedSerialization, DroppingAFieldForEqualsDefaultIsStillFine) {
     const auto* back = dst.GetComponent<MaterialComponent>(loaded);
     ENJIN_EXPECT_TRUE(Near(back->baseColor.y, 0.7f));               // authored survives
     ENJIN_EXPECT_TRUE(Near(back->metallic, MaterialComponent{}.metallic));  // omitted reads default
+}
+
+ENJIN_TEST(GatedSerialization, AThresholdSurvivesFlippingTheComparisonType) {
+    // The picker that changes the comparison sits directly above the number it
+    // was erasing: flip "greater than 0.8" to an int comparison and back, and the
+    // 0.8 was gone.
+    World w;
+    Entity e = w.CreateEntity();
+    w.AddComponent<NameComponent>(e, NameComponent{"Actor"});
+    w.AddComponent<TransformComponent>(e, TransformComponent{});
+
+    SMTransitionCondition cond;
+    cond.paramName = "speed";
+    cond.type = SMConditionType::FloatGreater;
+    cond.threshold = 0.8f;
+    cond.intValue = 4;
+    SMTransition tr;
+    tr.toState = "Run";
+    tr.conditions.push_back(cond);
+    SMState idle;
+    idle.name = "Idle";
+    idle.transitions.push_back(tr);
+    StateMachineComponent sm;
+    sm.states.push_back(idle);
+    sm.currentState = "Idle";
+    w.AddComponent<StateMachineComponent>(e, sm);
+
+    // Flip the comparison type, which is what the picker above the number does.
+    w.GetComponent<StateMachineComponent>(e)->states[0].transitions[0].conditions[0].type =
+        SMConditionType::IntEquals;
+
+    const std::string json = Scene::SceneSerializer::SerializeEntityToString(&w, e, false);
+    World dst;
+    Entity loaded = Scene::SceneSerializer::DeserializeEntityFromString(&dst, json);
+    ENJIN_ASSERT_TRUE(dst.IsValid(loaded));
+
+    const auto* back = dst.GetComponent<StateMachineComponent>(loaded);
+    ENJIN_ASSERT_TRUE(back != nullptr && !back->states.empty());
+    ENJIN_ASSERT_TRUE(!back->states[0].transitions.empty());
+    ENJIN_ASSERT_TRUE(!back->states[0].transitions[0].conditions.empty());
+    const auto& c = back->states[0].transitions[0].conditions[0];
+    ENJIN_EXPECT_TRUE(Near(c.threshold, 0.8f));
+    ENJIN_EXPECT_EQ(c.intValue, 4);
+}
+
+ENJIN_TEST(GatedSerialization, BrushExtentsSurviveSwitchingShape) {
+    World w;
+    Entity e = w.CreateEntity();
+    w.AddComponent<NameComponent>(e, NameComponent{"Solid"});
+    w.AddComponent<TransformComponent>(e, TransformComponent{});
+    BrushSolidComponent bs;
+    BrushSolidComponent::Brush b;
+    b.shape = BrushSolidComponent::Shape::Box;
+    b.halfExtents = Vector3(2.5f, 1.25f, 0.75f);
+    b.radius = 3.0f;
+    b.sides = 6;
+    bs.brushes.push_back(b);
+    w.AddComponent<BrushSolidComponent>(e, bs);
+
+    // Switch it to a prism to try the shape out.
+    w.GetComponent<BrushSolidComponent>(e)->brushes[0].shape =
+        BrushSolidComponent::Shape::Prism;
+
+    const std::string json = Scene::SceneSerializer::SerializeEntityToString(&w, e, true);
+    World dst;
+    Entity loaded = Scene::SceneSerializer::DeserializeEntityFromString(&dst, json);
+    ENJIN_ASSERT_TRUE(dst.IsValid(loaded));
+
+    const auto* back = dst.GetComponent<BrushSolidComponent>(loaded);
+    ENJIN_ASSERT_TRUE(back != nullptr && !back->brushes.empty());
+    ENJIN_EXPECT_TRUE(Near(back->brushes[0].halfExtents.x, 2.5f));
+    ENJIN_EXPECT_TRUE(Near(back->brushes[0].halfExtents.z, 0.75f));
+    ENJIN_EXPECT_TRUE(Near(back->brushes[0].radius, 3.0f));
+    ENJIN_EXPECT_EQ(back->brushes[0].sides, static_cast<u32>(6));
 }
 
 ENJIN_TEST_MAIN()

@@ -3913,13 +3913,13 @@ json SerializeBrushSolidComponent(const ECS::BrushSolidComponent& solid) {
         bj["center"] = SerializeVector3(b.center);
         bj["rotation"] = SerializeQuaternion(b.rotation);
         bj["enabled"] = b.enabled;
-        if (b.shape == ECS::BrushSolidComponent::Shape::Prism) {
-            bj["radius"] = RF(b.radius);
-            bj["halfHeight"] = RF(b.halfHeight);
-            bj["sides"] = b.sides;
-        } else {
-            bj["halfExtents"] = SerializeVector3(b.halfExtents);
-        }
+        // Both shapes' fields, always. Gating on the current shape meant
+        // switching a brush from a box to a prism and back returned zeros where
+        // the extents had been.
+        bj["radius"] = RF(b.radius);
+        bj["halfHeight"] = RF(b.halfHeight);
+        bj["sides"] = b.sides;
+        bj["halfExtents"] = SerializeVector3(b.halfExtents);
         arr.push_back(bj);
     }
     j["brushes"] = arr;
@@ -5362,12 +5362,12 @@ json SerializeSMCondition(const ECS::SMTransitionCondition& cond) {
     json j;
     j["param"] = cond.paramName;
     j["type"] = static_cast<i32>(cond.type);
-    if (cond.type == ECS::SMConditionType::FloatGreater || cond.type == ECS::SMConditionType::FloatLess) {
-        j["threshold"] = RF(cond.threshold);
-    }
-    if (cond.type == ECS::SMConditionType::IntEquals || cond.type == ECS::SMConditionType::IntNotEquals) {
-        j["intValue"] = RF(cond.intValue);
-    }
+    // Both values, whatever the current comparison type is. They used to be
+    // gated on it, so flipping a transition from "greater than 0.8" to an int
+    // comparison and back lost the 0.8 -- and the picker that flips it sits
+    // directly above the number it was erasing.
+    j["threshold"] = RF(cond.threshold);
+    j["intValue"] = cond.intValue;
     return j;
 }
 
@@ -8982,9 +8982,13 @@ json SerializeAnimatorComponent(const ECS::AnimatorComponent& animComp) {
     {
         const auto& os = animComp.onionSkin;
         const ECS::SkeletalOnionSkinSettings def{};
+        // The predicate has to cover every field the block writes. It missed
+        // beforeTint and afterTint, so an animator whose only change was the
+        // ghost colour wrote no block at all and reverted to grey.
         const bool moved = os.enabled ||
             os.framesBefore != def.framesBefore || os.framesAfter != def.framesAfter ||
-            os.opacity != def.opacity || os.opacityFalloff != def.opacityFalloff;
+            os.opacity != def.opacity || os.opacityFalloff != def.opacityFalloff ||
+            os.beforeTint != def.beforeTint || os.afterTint != def.afterTint;
         if (moved) {
             json onion;
             onion["enabled"] = os.enabled;
@@ -8998,8 +9002,11 @@ json SerializeAnimatorComponent(const ECS::AnimatorComponent& animComp) {
         }
     }
 
-    // Movement drive (only when configured — keeps clip-less animators compact)
-    if (animComp.movement.HasAnyClip() || !animComp.movement.enabled) {
+    // Movement drive, always. It used to be gated on HasAnyClip(), which tests
+    // only idleClip and walkClip -- so an author who assigned just a run or jump
+    // clip, or tuned the four thresholds before picking clips, lost all eight
+    // fields on reload.
+    {
         json mv;
         mv["enabled"] = animComp.movement.enabled;
         mv["idleClip"] = animComp.movement.idleClip;
