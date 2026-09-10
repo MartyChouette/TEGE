@@ -1,0 +1,147 @@
+{
+  "version": "1.0",
+  "entityCount": 3,
+  "entities": [
+    {
+      "id": 1,
+      "stableId": 3001,
+      "name": {
+        "name": "Camera"
+      },
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          20.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "camera": {
+        "projectionType": 1,
+        "orthoSize": 12.0,
+        "nearPlane": 0.1,
+        "farPlane": 100.0,
+        "isActive": true,
+        "priority": 10,
+        "clearColor": true,
+        "clearDepth": true,
+        "cullingMask": 4294967295,
+        "fieldOfView": 60.0,
+        "viewportX": 0.0,
+        "viewportY": 0.0,
+        "viewportWidth": 1.0,
+        "viewportHeight": 1.0,
+        "enablePostProcessing": true,
+        "backgroundColor": [
+          0.1,
+          0.1,
+          0.12
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "stableId": 3002,
+      "name": {
+        "name": "Marker"
+      },
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          5.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "sprite2D": {
+        "texturePath": "",
+        "size": [
+          8.0,
+          8.0
+        ],
+        "pivot": [
+          0.5,
+          0.5
+        ],
+        "tint": [
+          0.1,
+          1.0,
+          0.8
+        ],
+        "alpha": 1.0,
+        "sortingLayer": 0,
+        "orderInLayer": 10,
+        "flipX": false,
+        "flipY": false,
+        "visible": true
+      }
+    },
+    {
+      "id": 3,
+      "stableId": 3003,
+      "name": {
+        "name": "Ground"
+      },
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          5.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "sprite2D": {
+        "texturePath": "",
+        "size": [
+          30.0,
+          18.0
+        ],
+        "pivot": [
+          0.5,
+          0.5
+        ],
+        "tint": [
+          0.85,
+          0.15,
+          0.1
+        ],
+        "alpha": 1.0,
+        "sortingLayer": 0,
+        "orderInLayer": 0,
+        "flipX": false,
+        "flipY": false,
+        "visible": true
+      }
+    }
+  ]
+}

@@ -385,14 +385,6 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
     m_SortedSprites.clear();  // Preserves capacity across frames
     m_SortedSprites.reserve(world->GetEntitiesWithComponent<ECS::Sprite2DComponent>().size());
 
-    // Rolling hash of sort keys to detect changes (FNV-1a style mixing)
-    usize sortKeyHash = 0xcbf29ce484222325ULL;
-    auto hashMix = [](usize h, usize v) -> usize {
-        h ^= v;
-        h *= 0x100000001b3ULL;
-        return h;
-    };
-
     for (ECS::Entity entity : world->GetEntitiesWithComponent<ECS::Sprite2DComponent>()) {
         // Skip invisible entities
         auto* xformBatch = world->GetComponent<ECS::TransformComponent>(entity);
@@ -413,23 +405,29 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
         entry.textureHash = strHasher(sprite->texturePath);
         entry.normalMapHash = strHasher(sprite->normalMapPath);
         m_SortedSprites.push_back(entry);
-
-        // Accumulate sort key hash: entity ID + all fields that affect sort order
-        sortKeyHash = hashMix(sortKeyHash, static_cast<usize>(entity));
-        sortKeyHash = hashMix(sortKeyHash, static_cast<usize>(sprite->sortingLayer));
-        sortKeyHash = hashMix(sortKeyHash, static_cast<usize>(sprite->orderInLayer));
-        sortKeyHash = hashMix(sortKeyHash, entry.textureHash);
-        sortKeyHash = hashMix(sortKeyHash, entry.normalMapHash);
-        sortKeyHash = hashMix(sortKeyHash, static_cast<usize>(entry.isAtlased));
     }
 
     if (m_SortedSprites.empty()) return;
 
-    // Delta sort: only re-sort when sort keys changed since last frame.
-    // When unchanged the previous frame's order is still valid — skip O(N log N).
-    // When keys DID change, use stable_sort which is O(N) on nearly-sorted data
-    // (most std implementations use TimSort or merge sort internally).
-    if (sortKeyHash != m_LastSortKeyHash) {
+    // Sort every call, and note why the obvious optimisation is not available.
+    //
+    // There used to be a delta sort here: skip the sort when the sort keys match
+    // last frame's, on the grounds that "the previous frame's order is still
+    // valid". It is not. m_SortedSprites is CLEARED and rebuilt from scratch at
+    // the top of this function, in raw entity iteration order, so there is no
+    // previous order left to be still valid. The sort ran on the first call and
+    // was skipped on every call afterwards, which meant sprites drew in entity
+    // creation order and sortingLayer/orderInLayer did nothing at all from frame
+    // two onward. Authoring a layer order looked like it was being ignored,
+    // because it was.
+    //
+    // It also had to be wrong twice over: Render is called more than once per
+    // frame (the game view and the editor viewport are separate passes), so even
+    // within a single frame the second pass drew unsorted.
+    //
+    // If this ever needs the optimisation back, the thing to cache is the ORDER,
+    // not a decision about whether to sort a vector that no longer exists.
+    {
         std::stable_sort(m_SortedSprites.begin(), m_SortedSprites.end(),
             [](const SpriteEntry& a, const SpriteEntry& b) {
                 if (a.sortingLayer != b.sortingLayer)
@@ -448,7 +446,6 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
                 // Same base texture hash — sub-sort by normal map hash
                 return a.normalMapHash < b.normalMapHash;
             });
-        m_LastSortKeyHash = sortKeyHash;
     }
 
     // Alias for readability in the rest of the function

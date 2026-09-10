@@ -133,9 +133,10 @@ private:
     std::vector<ShadowBatchEntry> m_ShadowBatchEntries;
     std::vector<SpriteInstanceData> m_SortedShadowInstances;
 
-    // --- Delta sprite sorting ---
-    // Persistent sorted sprite list across frames. Rebuilt (O(N)) each frame to
-    // pick up visibility/entity changes, but only re-sorted when sort keys change.
+    // --- Sprite sorting ---
+    // Rebuilt every call, in raw entity iteration order, then sorted. Both halves
+    // matter: the rebuild is what picks up visibility and entity changes, and
+    // because of it there is never a previous order to reuse.
     struct SpriteEntry {
         ECS::Entity entity;
         i32 sortingLayer;
@@ -147,12 +148,6 @@ private:
         usize normalMapHash;
     };
     std::vector<SpriteEntry> m_SortedSprites;
-
-    // Hash of all sort keys from the previous frame. When the hash matches, the
-    // relative order of sprites hasn't changed and we can skip the O(N log N) sort.
-    // The hash is computed over (entity, sortingLayer, orderInLayer, textureHash,
-    // normalMapHash, isAtlased) for every visible sprite in insertion order.
-    usize m_LastSortKeyHash = 0;
 
     // Texture atlas for packing small sprites into a single draw call
     SpriteTextureAtlas* m_Atlas = nullptr;

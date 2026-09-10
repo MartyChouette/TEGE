@@ -162,6 +162,21 @@ jobs:
           }
           python Tests/GoldenScene/check_golden.py golden_out/smoke
 
+      - name: Sprite draw order (2D sorting reaches the frame)
+        shell: pwsh
+        timeout-minutes: 10
+        # The scene is built so entity order and sort order DISAGREE: a teal
+        # marker created first sorts last, a red ground created second sorts
+        # first. Drawing in entity order puts red at the centre; drawing in
+        # authored order puts teal there. Catches a sort that silently stops
+        # being applied, which is what happened when the sprite list was rebuilt
+        # every call but only re-sorted when its keys changed.
+        run: |
+          New-Item -ItemType Directory -Force sprite_out | Out-Null
+          & build\bin\Release\EnjinEditor.exe "${{ github.workspace }}\Tests\SpriteOrder\SpriteOrder.enjinproject" --play --golden "${{ github.workspace }}\sprite_out\order" --golden-frames 30 2>&1 | Tee-Object -Variable spriteLog | ForEach-Object { "$_" }
+          if ($LASTEXITCODE -ne 0) { throw "editor exited with code $LASTEXITCODE" }
+          python Tests/SpriteOrder/check_sprite_order.py sprite_out/order
+
       - name: Play-cycle stress (T4 - 15 play/stop cycles, memory bounded)
         shell: pwsh
         timeout-minutes: 15

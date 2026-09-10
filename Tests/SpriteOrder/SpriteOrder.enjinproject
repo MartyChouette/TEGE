@@ -1,0 +1,14 @@
+{
+  "projectName": "SpriteOrder",
+  "version": "1.0",
+  "projectMode": 0,
+  "physicsBackend": 0,
+  "scenes": [
+    {
+      "name": "Main",
+      "path": "scenes/Main.enjin",
+      "buildIndex": 0,
+      "isStartScene": true
+    }
+  ]
+}
