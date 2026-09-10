@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <variant>
 
 namespace Enjin {
@@ -154,6 +155,41 @@ public:
     bool GetBool(const std::string& assetName, const std::string& field, bool fallback = false) const;
     std::string GetString(const std::string& assetName, const std::string& field, const std::string& fallback = "") const;
     Math::Vector3 GetVector3(const std::string& assetName, const std::string& field, Math::Vector3 fallback = {0,0,0}) const;
+    Math::Vector4 GetVector4(const std::string& assetName, const std::string& field, Math::Vector4 fallback = {0,0,0,0}) const;
+
+    // --- Arrays -------------------------------------------------------------
+    //
+    // DataAssetValue carries eight types and the serializer round-trips all
+    // eight, but only five had a getter -- so a format that can hold a list had
+    // no way to give one back, and Vector4 was unreachable too. The workarounds
+    // were indexed keys (cue0_t, cue1_t, read until empty) or one delimited
+    // string parsed by hand, both of which work around a capability the format
+    // already has. This is not caption-specific: waypoints, loot tables,
+    // dialogue, spawn sets and schedules hit the same wall.
+    //
+    // Scalar accessors rather than an array<T> return, deliberately. Nothing in
+    // the engine returns array<T> to script today; CScriptArray is included and
+    // read from script class properties, but nothing constructs one and hands it
+    // back. Doing so brings ownership and refcount questions and sets an
+    // engine-wide pattern, which is worth deciding on its own rather than as a
+    // side effect of a caption loader. These need none of it and can be
+    // superseded if array returns are ever adopted broadly.
+
+    // Element count, or 0 when the asset is missing, the field is missing, or
+    // the field is not an array. All three mean "nothing to iterate", and a
+    // caller writing `for (i = 0; i < len; ++i)` is correct in every one of them
+    // -- which is why this is 0 and not a -1 that every caller must remember to
+    // special-case.
+    usize GetArrayLength(const std::string& assetName, const std::string& field) const;
+
+    // Element reads. An out-of-range or wrong-type read returns the fallback AND
+    // warns once per asset+field, because a silently empty string is
+    // indistinguishable from authored empty text -- the same reason Audio_GetTime
+    // answers -1 rather than 0.0 when it cannot say where a sound is.
+    std::string GetStringAt(const std::string& assetName, const std::string& field,
+                            usize index, const std::string& fallback = "") const;
+    f32 GetFloatAt(const std::string& assetName, const std::string& field,
+                   usize index, f32 fallback = 0.0f) const;
 
     // Typed setters
     void SetFloat(const std::string& assetName, const std::string& field, f32 value);
@@ -174,6 +210,14 @@ private:
     std::unordered_map<std::string, DataAssetSchema> m_Schemas;
     std::unordered_map<std::string, DataAsset> m_Assets;
     u64 m_Version = 0;
+
+    // Which asset+field pairs have already reported a bad element read, so a
+    // per-frame loop over a mis-authored field warns once instead of every
+    // frame. Mutable because the read accessors are const and diagnosing a bad
+    // read is not a change to the data.
+    mutable std::unordered_set<std::string> m_WarnedArrayReads;
+    void WarnOnceAboutArray(const std::string& assetName, const std::string& field,
+                            const std::string& what) const;
 };
 
 } // namespace Assets

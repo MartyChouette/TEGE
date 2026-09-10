@@ -1153,6 +1153,46 @@ static Vector3 DataAsset_GetVector3(const std::string& assetName, const std::str
     return Enjin::Assets::DataAssetRegistry::Get().GetVector3(assetName, field);
 }
 
+static Vector4 DataAsset_GetVector4(const std::string& assetName, const std::string& field) {
+    return Enjin::Assets::DataAssetRegistry::Get().GetVector4(assetName, field);
+}
+
+// --- Arrays -----------------------------------------------------------------
+//
+// DataAssetValue carries eight types and the serializer round-trips all eight;
+// only five were reachable from script, so a format that can hold a list had no
+// way to give one back. The workarounds were indexed keys (cue0_t, cue1_t, read
+// until empty) or a delimited string parsed by hand -- both working around a
+// capability the format already has. Waypoints, loot tables, dialogue, spawn sets
+// and schedules all hit the same wall.
+//
+// Scalar accessors, not an array<T> return. Nothing in the engine returns
+// array<T> to script today: CScriptArray is included and read from script class
+// properties, but nothing constructs one and hands it back. That brings
+// ownership and refcount questions and would set an engine-wide pattern, which is
+// worth deciding on its own rather than as a side effect of a caption loader.
+//
+// Sentinel discipline follows Audio_GetTime, which shipped doing this correctly:
+// a length of 0 means "nothing to iterate" for every reason at once, and a bad
+// element read warns once rather than returning a silent "" that reads exactly
+// like authored empty text.
+static int DataAsset_GetArrayLength(const std::string& assetName, const std::string& field) {
+    return static_cast<int>(
+        Enjin::Assets::DataAssetRegistry::Get().GetArrayLength(assetName, field));
+}
+
+static std::string DataAsset_GetStringAt(const std::string& assetName, const std::string& field, int index) {
+    if (index < 0) return "";
+    return Enjin::Assets::DataAssetRegistry::Get().GetStringAt(
+        assetName, field, static_cast<Enjin::usize>(index));
+}
+
+static float DataAsset_GetFloatAt(const std::string& assetName, const std::string& field, int index) {
+    if (index < 0) return 0.0f;
+    return Enjin::Assets::DataAssetRegistry::Get().GetFloatAt(
+        assetName, field, static_cast<Enjin::usize>(index));
+}
+
 static void RegisterDataAssetBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool DataAsset_Load(const string &in)",
@@ -1172,6 +1212,18 @@ static void RegisterDataAssetBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction(
         "Vector3 DataAsset_GetVector3(const string &in, const string &in)",
         ENJIN_AS_FN(DataAsset_GetVector3), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "Vector4 DataAsset_GetVector4(const string &in, const string &in)",
+        ENJIN_AS_FN(DataAsset_GetVector4), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "int DataAsset_GetArrayLength(const string &in, const string &in)",
+        ENJIN_AS_FN(DataAsset_GetArrayLength), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "string DataAsset_GetStringAt(const string &in, const string &in, int)",
+        ENJIN_AS_FN(DataAsset_GetStringAt), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "float DataAsset_GetFloatAt(const string &in, const string &in, int)",
+        ENJIN_AS_FN(DataAsset_GetFloatAt), ENJIN_AS_CALL_CDECL));
 }
 
 static void RegisterVisualScriptBindings(asIScriptEngine* engine) {

@@ -84,10 +84,16 @@ static DataAssetValue DeserializeValue(const json& j) {
                 for (const auto& e : j) arr.push_back(e.is_string() ? e.get<std::string>() : std::string());
                 return arr;
             }
-            if (j.size() == 3 && j[0].is_number())
-                return Math::Vector3(j[0].get<f32>(), j[1].get<f32>(), j[2].get<f32>());
-            if (j.size() == 4 && j[0].is_number())
-                return Math::Vector4(j[0].get<f32>(), j[1].get<f32>(), j[2].get<f32>(), j[3].get<f32>());
+            // A bare numeric array is a FLOAT ARRAY, always -- never a Vector3 or
+            // Vector4 guessed from its length.
+            //
+            // Guessing looks helpful and is a trap: a caption track that happens
+            // to have exactly four cues, or a waypoint list with three points,
+            // would silently become a vector and read back as an array of length
+            // zero. The author would have written a list and been handed a point.
+            // Vectors are a fixed-size concept and the editor always writes them
+            // in the tagged form, so requiring {"type":"Vector4","value":[...]}
+            // for them costs nothing and removes the ambiguity entirely.
             std::vector<f32> arr;
             for (const auto& e : j) arr.push_back(e.is_number() ? e.get<f32>() : 0.0f);
             return arr;
@@ -476,6 +482,99 @@ Math::Vector3 DataAssetRegistry::GetVector3(const std::string& assetName, const 
     return fallback;
 }
 
+Math::Vector4 DataAssetRegistry::GetVector4(const std::string& assetName, const std::string& field, Math::Vector4 fallback) const {
+    const DataAsset* asset = FindAsset(assetName);
+    if (!asset) return fallback;
+    auto it = asset->values.find(field);
+    if (it == asset->values.end()) return fallback;
+    if (std::holds_alternative<Math::Vector4>(it->second)) return std::get<Math::Vector4>(it->second);
+    return fallback;
+}
+
+// ============================================================================
+// ARRAYS
+// ============================================================================
+
+void DataAssetRegistry::WarnOnceAboutArray(const std::string& assetName,
+                                           const std::string& field,
+                                           const std::string& what) const {
+    // Keyed on asset+field, so a loop over one mis-authored field says it once
+    // and a DIFFERENT bad field still gets its own line.
+    const std::string key = assetName + "" + field;
+    if (!m_WarnedArrayReads.insert(key).second) return;
+    ENJIN_LOG_WARN(Script, "DataAsset '%s' field '%s': %s",
+                   assetName.c_str(), field.c_str(), what.c_str());
+}
+
+usize DataAssetRegistry::GetArrayLength(const std::string& assetName, const std::string& field) const {
+    const DataAsset* asset = FindAsset(assetName);
+    if (!asset) return 0;
+    auto it = asset->values.find(field);
+    if (it == asset->values.end()) return 0;
+    if (std::holds_alternative<std::vector<std::string>>(it->second))
+        return std::get<std::vector<std::string>>(it->second).size();
+    if (std::holds_alternative<std::vector<f32>>(it->second))
+        return std::get<std::vector<f32>>(it->second).size();
+    // Present but not a list. 0 is the honest answer to "how many elements" and
+    // keeps a for-loop correct; no warning, because asking the length of a
+    // scalar is a reasonable thing for generic code to do.
+    return 0;
+}
+
+std::string DataAssetRegistry::GetStringAt(const std::string& assetName, const std::string& field,
+                                           usize index, const std::string& fallback) const {
+    const DataAsset* asset = FindAsset(assetName);
+    if (!asset) {
+        WarnOnceAboutArray(assetName, field, "no such asset");
+        return fallback;
+    }
+    auto it = asset->values.find(field);
+    if (it == asset->values.end()) {
+        WarnOnceAboutArray(assetName, field, "no such field");
+        return fallback;
+    }
+    if (!std::holds_alternative<std::vector<std::string>>(it->second)) {
+        // Deliberately not coerced from a float list. Turning 4.0 into "4" here
+        // is exactly the plausible-wrong-answer this accessor exists to avoid.
+        WarnOnceAboutArray(assetName, field, "is not a string array");
+        return fallback;
+    }
+    const auto& arr = std::get<std::vector<std::string>>(it->second);
+    if (index >= arr.size()) {
+        WarnOnceAboutArray(assetName, field,
+            "index " + std::to_string(index) + " is past the end (" +
+            std::to_string(arr.size()) + " elements)");
+        return fallback;
+    }
+    return arr[index];
+}
+
+f32 DataAssetRegistry::GetFloatAt(const std::string& assetName, const std::string& field,
+                                  usize index, f32 fallback) const {
+    const DataAsset* asset = FindAsset(assetName);
+    if (!asset) {
+        WarnOnceAboutArray(assetName, field, "no such asset");
+        return fallback;
+    }
+    auto it = asset->values.find(field);
+    if (it == asset->values.end()) {
+        WarnOnceAboutArray(assetName, field, "no such field");
+        return fallback;
+    }
+    if (!std::holds_alternative<std::vector<f32>>(it->second)) {
+        WarnOnceAboutArray(assetName, field, "is not a float array");
+        return fallback;
+    }
+    const auto& arr = std::get<std::vector<f32>>(it->second);
+    if (index >= arr.size()) {
+        WarnOnceAboutArray(assetName, field,
+            "index " + std::to_string(index) + " is past the end (" +
+            std::to_string(arr.size()) + " elements)");
+        return fallback;
+    }
+    return arr[index];
+}
+
 // ============================================================================
 // TYPED SETTERS
 // ============================================================================
@@ -512,6 +611,9 @@ void DataAssetRegistry::SetVector3(const std::string& assetName, const std::stri
 void DataAssetRegistry::Clear() {
     m_Schemas.clear();
     m_Assets.clear();
+    // Forget what has already been warned about: after a reload the data is new
+    // and a still-broken field deserves to say so again.
+    m_WarnedArrayReads.clear();
     ++m_Version;
 }
 

@@ -189,16 +189,55 @@ touching script: item tables, enemy stats, caption tracks, localised strings.
 - `bool DataAsset_Load(const string &in asset)` — is this record present?
 - `string DataAsset_GetString(const string &in asset, const string &in field)`
 - `float DataAsset_GetFloat(...)`, `int DataAsset_GetInt(...)`, `bool DataAsset_GetBool(...)`
-- `Vector3 DataAsset_GetVector3(...)`
+- `Vector3 DataAsset_GetVector3(...)`, `Vector4 DataAsset_GetVector4(...)`
+
+Lists:
+
+- `int DataAsset_GetArrayLength(const string &in asset, const string &in field)`
+- `string DataAsset_GetStringAt(const string &in asset, const string &in field, int index)`
+- `float DataAsset_GetFloatAt(const string &in asset, const string &in field, int index)`
 
 Every getter takes the asset name first and the field name second. Field types
 are `String`, `Float`, `Int`, `Bool`, `Vector3`, `Vector4`, `StringArray` and
-`FloatArray`; the script bindings reach the first five.
+`FloatArray`, and all eight are reachable from script.
 
 ```angelscript
 if (DataAsset_Load("sword_iron")) {
     float damage = DataAsset_GetFloat("sword_iron", "damage");
     string name  = DataAsset_GetString("sword_iron", "displayName");
+}
+```
+
+### Reading a list
+
+`GetArrayLength` answers `0` for a missing asset, a missing field, and a field
+that is not a list. All three mean "nothing to iterate", so the obvious loop is
+correct without a guard:
+
+```angelscript
+int cues = DataAsset_GetArrayLength("wgrb_night", "cue_t");
+for (int i = 0; i < cues; i++) {
+    float at    = DataAsset_GetFloatAt("wgrb_night", "cue_t", i);
+    string who  = DataAsset_GetStringAt("wgrb_night", "cue_who", i);
+    string line = DataAsset_GetStringAt("wgrb_night", "cue_line", i);
+}
+```
+
+Reading past the end, or reading a float list as strings, returns the fallback
+(`""` / `0.0`) **and logs a warning once** per asset and field. That matters
+because an authored empty caption is also `""` — without the warning the two are
+indistinguishable, which is the same reason `Audio_GetTime` answers `-1` rather
+than `0.0` when it cannot say where a sound is.
+
+Authoring note: a bare JSON array of numbers is always a **float list**, never a
+`Vector3` or `Vector4` guessed from its length. A caption track with exactly four
+cues would otherwise silently become a vector and read back as empty. Vectors use
+the tagged form, which is what the editor writes:
+
+```json
+{
+  "cue_t":  [0.5, 4.0, 8.0, 11.5],
+  "colour": { "type": "Vector4", "value": [0.2, 0.4, 0.6, 1.0] }
 }
 ```
 

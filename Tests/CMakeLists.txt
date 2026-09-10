@@ -181,6 +181,7 @@ enjin_add_test(TestAdaptiveQuality    Unit/Renderer/TestAdaptiveQuality.cpp)
 enjin_add_test(TestRendererLifecycle  Unit/Renderer/TestRendererLifecycle.cpp)
 enjin_add_test(TestSplatLoader        Unit/Assets/TestSplatLoader.cpp)
 enjin_add_test(TestPrefabCoverage     Unit/Assets/TestPrefabCoverage.cpp)
+enjin_add_test(TestDataAssetArrays    Unit/Assets/TestDataAssetArrays.cpp)
 
 # --- Editor ---
 enjin_add_test(TestEditorSettings     Unit/Editor/TestEditorSettings.cpp)
