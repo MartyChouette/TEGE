@@ -53,6 +53,24 @@ Renderer::SkyboxConfig RenderSystem::WeatherSky(const Renderer::SkyboxConfig& cf
     out.cloudCoverage = out.cloudCoverage + (0.9f - out.cloudCoverage) * wet;
     return out;
 }
+// One warning, shared by both backends, for a scene with nothing lighting it.
+//
+// It lives outside the platform guards on purpose: the fake sun it replaced was
+// written twice, once per backend, and the two copies drifted into pointing
+// opposite ways. Anything that answers "what does a lightless scene look like"
+// gets ONE definition from here on.
+void RenderSystem::WarnIfSceneHasNoLights(bool noLights) {
+    if (!noLights) {
+        m_WarnedSceneHasNoLights = false;   // re-arm: removing the last light warns again
+        return;
+    }
+    if (m_WarnedSceneHasNoLights) return;
+    m_WarnedSceneHasNoLights = true;
+    ENJIN_LOG_WARN(Renderer,
+        "This scene has no lights, so it renders by its ambient term alone. "
+        "Add one with Entity > Light > Directional Light.");
+}
+
 } // namespace ECS
 } // namespace Enjin
 
@@ -2600,25 +2618,26 @@ void RenderSystem::Update(f32 deltaTime) {
             }
         }
 
-        // Fallback: if no lights at all, use a default directional
-        if (dirCount == 0 && pointCount == 0 && spotCount == 0) {
-            lit.lightDir[0] = {0.5f, -0.8f, 0.3f, 0.0f};
-            lit.lightColor[0] = {1.0f, 0.95f, 0.9f, 1.2f};
-            dirCount = 1;
-        }
+        // No fallback light. A scene with no lights renders by its ambient
+        // term alone, because that is what the author actually asked for.
+        //
+        // There used to be an invented sun here, and another one in the Vulkan
+        // path, and they did not agree: this one travelled (0.5, -0.8, 0.3) and
+        // that one (-0.5, -0.8, -0.3), so the same lightless scene was lit from
+        // opposite sides depending on which backend you opened it in. Two
+        // guesses that disagree are worse than no guess, and a guess that
+        // disagrees with the OTHER guess is undiagnosable from a screenshot.
+        WarnIfSceneHasNoLights(dirCount == 0 && pointCount == 0 && spotCount == 0);
 
         lit.ambientColor = {m_AmbientColor.x, m_AmbientColor.y, m_AmbientColor.z, m_AmbientIntensity};
         lit.fogColor = {m_FogColor.x, m_FogColor.y, m_FogColor.z, 0.0f};
         lit.fogParams = {m_FogDensity, m_FogStart, m_FogEnd, m_FogHeightFalloff};
         lit.lightCount = {static_cast<f32>(dirCount), static_cast<f32>(pointCount), static_cast<f32>(spotCount), 0.0f};
 
-        // WebGPU: slight ambient floor so scenes are never pitch-black
-        lit.ambientColor = {
-            std::max(lit.ambientColor.x, 0.05f),
-            std::max(lit.ambientColor.y, 0.05f),
-            std::max(lit.ambientColor.z, 0.06f),
-            std::max(lit.ambientColor.w, 0.2f)
-        };
+        // The ambient floor that used to sit here ("so scenes are never
+        // pitch-black") is gone for the same reason: it existed only on web, so
+        // an authored ambient of 0.02 rendered as 0.02 in the editor and 0.05 in
+        // a browser, and no amount of staring at the two pictures explains that.
 
         static int s_LightLog = 0;
         if (s_LightLog++ < 3) {
@@ -4827,7 +4846,14 @@ void RenderSystem::SetWireframeEnabled(bool enabled) {
         }
     }
 }
-void RenderSystem::SetTextureFilterConfig(u32, u32, bool, u32) {}  // Vulkan-only (bindless sampler)
+void RenderSystem::SetTextureFilterConfig(u32 filter, u32 anisotropy, bool mipmaps, u32 wrap) {
+    // Was a no-op, and was not even called on this path. Textures created from
+    // here on adopt the setting, which covers the real order of events: a scene
+    // applies its render settings before its materials load their textures.
+    if (auto* web = static_cast<Renderer::WebGPURenderer*>(m_Renderer)) {
+        web->SetDefaultSamplerConfig(filter, anisotropy, mipmaps, wrap);
+    }
+}
 u32  RenderSystem::GetTextureFilter() const { return 2; }
 u32  RenderSystem::GetTextureAnisotropy() const { return 8; }
 bool RenderSystem::GetTextureMipmaps() const { return true; }
@@ -12508,12 +12534,9 @@ void RenderSystem::UpdateFrameUniforms() {
         hasAnyLight = true;
     }
 
-    if (!hasAnyLight) {
-        lighting.directionalLights[0].direction = Math::Vector3(-0.5f, -0.8f, -0.3f).Normalized();
-        lighting.directionalLights[0].color = Math::Vector3(1.0f, 0.95f, 0.9f);
-        lighting.directionalLights[0].intensity = 1.2f;
-        lighting.directionalLightCount = 1;
-    }
+    // No fallback light: see the matching note in the WebGPU path. A lightless
+    // scene renders by ambient alone in BOTH backends now, and says so once.
+    WarnIfSceneHasNoLights(!hasAnyLight);
 
     // m_PassShadowsEnabled is the PER-PASS gate (the editor viewport turns
     // shadows off for its own panel without taking them from the game view).

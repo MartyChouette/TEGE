@@ -1442,6 +1442,15 @@ private:
 #endif
     void RenderSprites();  // Sorted 2D sprite pass (after 3D geometry)
     void ClassifySceneComposition();  // Update m_SceneComposition if dirty
+
+    // Say once, per backend, that a scene has nothing lighting it.
+    //
+    // This replaced an invented directional light. The fake sun meant a person
+    // who had not added a light yet still saw a lit scene, so "I never added a
+    // light" and "my light is broken" looked identical, and the two backends
+    // faked DIFFERENT suns. Warning is the honest version of the same help: the
+    // picture tells the truth and the log says what to do about it.
+    void WarnIfSceneHasNoLights(bool noLights);
     void CreateDefaultMesh();
     void CreatePipeline();
 
@@ -2018,6 +2027,7 @@ private:
     bool m_ShadowDescriptorsDirty = false;
     bool m_EditorWireframe = false;
     bool m_EditorUnlit = false;
+
     bool m_PlayerMode = false;
     bool m_PendingMSAAChange = false;
     bool m_PendingHDRChange = false;   // Deferred HDR toggle requested mid-frame
@@ -2827,6 +2837,11 @@ public:
     void EnsureWaterMeshes();
     void EnsureWater3DMeshes();
 private:
+
+    // Latched so the no-lights warning fires once, and again if the author
+    // adds a light and later removes it. Not a static: two RenderSystems (the
+    // editor viewport and a play session) must each be able to say it.
+    bool m_WarnedSceneHasNoLights = false;
 
 #if !ENJIN_RENDERER_WEBGPU
     // --- Ray Tracing subsystems (null when unsupported) ---
