@@ -1644,7 +1644,7 @@ Displays UI elements like health bars, resource bars, labels, and markers.
 | `textColor` | Vector3 | (1, 1, 1) | Text color. |
 | `fontSize` | f32 | 16.0 | Font size for text. |
 | `text` | string | "" | Label text content. |
-| `sourceEntity` | Entity | 0 | Entity to read data from (0 = self). |
+| `sourceEntity` | Entity | 0 | Entity to read data from (0 = GetEntity()). |
 | `bindField` | string | "" | Field to bind: `"health"`, `"stamina"`, `"custom"`. |
 | `worldOffset` | Vector3 | (0, 2, 0) | Offset for world-space widgets. |
 | `maxRenderDistance` | f32 | 50.0 | Maximum distance for world-space widget visibility. |
@@ -3823,7 +3823,7 @@ Progressive path tracer for reference-quality rendering with physically-based li
 
 The path tracer uses a full Cook-Torrance BRDF with GGX importance sampling:
 - **GGX/Trowbridge-Reitz** normal distribution for microfacet specular
-- **Smith-Schlick** geometry term for self-shadowing
+- **Smith-Schlick** geometry term for GetEntity()-shadowing
 - **Fresnel-Schlick** approximation for reflectance
 - **Cosine-weighted hemisphere** sampling for diffuse lobes
 - **Combined PDF** (mixture model) — metallic/roughness-adaptive blend of specular and diffuse sampling probabilities

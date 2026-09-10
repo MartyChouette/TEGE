@@ -46,6 +46,25 @@ PREFIXES = re.compile(
     r'Ragdoll|PPVolume)_')
 
 
+# Types a sample may name. Anything else in a type position is either a class the
+# sample declares itself or a mistake, so this is a DENYLIST of known-wrong
+# spellings rather than a guess at every legal type. Each entry says what to write
+# instead, because "Vec3 is not a type" is a worse error than "Vec3 -> Vector3".
+WRONG_TYPES = {
+    'Vec2': 'Vector2',
+    'Vec3': 'Vector3',
+    'Vec4': 'Vector4',
+    'Quat': 'Quaternion',
+}
+
+# Identifiers a sample assumes are in scope and are not. `self` is the big one:
+# 55 uses across the tutorial book, and no script has ever had it. A script class
+# derives from TegeBehavior, which exposes the entity id through GetEntity().
+WRONG_IDENTS = {
+    'self': 'GetEntity() (TegeBehavior exposes the entity id through a method)',
+}
+
+
 def registered_names():
     names = set()
     out = subprocess.run(
@@ -81,10 +100,26 @@ def main():
             continue
         text = open(path, encoding='utf-8', errors='replace').read()
         for block in re.findall(r'```(?:angelscript|as|cpp)?\n(.*?)```', text, re.S):
-            for name in re.findall(r'\b([A-Za-z_]+_[A-Za-z_0-9]+)\s*\(', block):
+            # Strip line comments so prose inside a sample cannot trip the check.
+            code = re.sub(r'//[^\n]*', '', block)
+
+            for name in re.findall(r'\b([A-Za-z_]+_[A-Za-z_0-9]+)\s*\(', code):
                 if PREFIXES.match(name) and name not in registered:
-                    if name not in missing[doc]:
-                        missing[doc].append(name)
+                    entry = f'{name}() -- named in a code sample, not registered'
+                    if entry not in missing[doc]:
+                        missing[doc].append(entry)
+
+            for wrong, right in WRONG_TYPES.items():
+                if re.search(r'\b' + wrong + r'\b', code):
+                    entry = f'{wrong} -- not a registered type; use {right}'
+                    if entry not in missing[doc]:
+                        missing[doc].append(entry)
+
+            for wrong, right in WRONG_IDENTS.items():
+                if re.search(r'\b' + wrong + r'\b', code):
+                    entry = f'{wrong} -- not in scope in a script; use {right}'
+                    if entry not in missing[doc]:
+                        missing[doc].append(entry)
 
     if not missing:
         print(f'doc API check: OK ({len(registered)} bindings, '
@@ -95,7 +130,7 @@ def main():
     for doc, names in sorted(missing.items()):
         print(f'{doc}:')
         for n in sorted(names):
-            print(f'    {n} -- named in a code sample, not registered by the engine')
+            print(f'    {n}')
             total += 1
     print(f'\ndoc API check FAILED: {total} name(s) a reader cannot call')
     return 1

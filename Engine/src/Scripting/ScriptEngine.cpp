@@ -393,6 +393,34 @@ bool ScriptEngine::CompileScriptFromMemory(const std::string& moduleName,
         return false;
     }
 
+    // Auto-inject the TegeBehavior base class, exactly as CompileScript does for
+    // a file. It did not, so the same source compiled from a path and from memory
+    // followed different rules: every script is meant to derive from
+    // TegeBehavior, and from memory the identifier was simply not a data type.
+    // Anything driving the compiler with a string in hand -- a doc-sample check,
+    // a REPL, a pak-side loader, a generated script -- hit that.
+    // Only when the source actually derives from it. The file path injects
+    // unconditionally, which is safe there because a script that does not mention
+    // TegeBehavior simply carries an unused class -- but the base class calls
+    // Entity_GetPosition and friends, so injecting it into a module compiled
+    // before those bindings are registered fails the WHOLE module. A caller
+    // compiling a bare expression from memory should not need the entity API
+    // registered to do it.
+    if (source.find("TegeBehavior") != std::string::npos &&
+        source.find("TegeBehavior.as") == std::string::npos) {
+        bool injected = false;
+        std::filesystem::path apiDir = FindApiDirectory(m_ScriptDirectory);
+        if (!apiDir.empty()) {
+            std::string apiFile = (apiDir / "TegeBehavior.as").lexically_normal().string();
+            injected = builder.AddSectionFromFile(apiFile.c_str()) >= 0;
+        }
+        if (!injected) {
+            const char* embedded = GetEmbeddedTegeBehaviorSource();
+            builder.AddSectionFromMemory("TegeBehavior.as", embedded,
+                                         static_cast<unsigned int>(std::strlen(embedded)));
+        }
+    }
+
     // AddSectionFromMemory takes: name, code, length (0 = use strlen)
     r = builder.AddSectionFromMemory(moduleName.c_str(), source.c_str(),
                                      static_cast<u32>(source.size()));

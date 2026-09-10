@@ -65,7 +65,7 @@ detail on each step.
 | Panel | What it's for |
 |---|---|
 | **Hierarchy** | The entity tree for the open scene. Select, parent, rename, delete. |
-| **Inspector** | Components on the selected entity. Each panel is self-documenting (what it does, how to use it, a script snippet, what it connects to). Add Component is at the bottom. |
+| **Inspector** | Components on the selected entity. Each panel is GetEntity()-documenting (what it does, how to use it, a script snippet, what it connects to). Add Component is at the bottom. |
 | **Viewport** | The 3D/2D scene. Fly with WASD + right-mouse. Gizmos move/rotate/scale the selection. |
 | **Asset Browser** | Project files. Drag assets onto entities, the viewport, or component fields. |
 | **Scene Settings** | Per-scene art style, sky, fog, post-processing. |
@@ -117,7 +117,7 @@ detail on each step.
 | **Script** | Attaches an AngelScript behavior | See §7. Serialized under key `scriptComponent`. |
 | **Tilemap** | 2D tile grid | Painted by the Dungeon/WFC procgen components. |
 | **Terrain** | Heightmesh | Painted by the Terrain Generator. |
-| **Procgen suite** | DungeonGenerator, Scatter, TerrainGenerator, WFC (2D tiles + 3D modules), RandomBag | Each has a "Generate Now" button and a self-documenting panel. |
+| **Procgen suite** | DungeonGenerator, Scatter, TerrainGenerator, WFC (2D tiles + 3D modules), RandomBag | Each has a "Generate Now" button and a GetEntity()-documenting panel. |
 
 Add a component via **Add Component** at the bottom of the Inspector (grouped by
 category: Rendering, Physics, Effects, Procedural, UI, …). Every panel tells you
