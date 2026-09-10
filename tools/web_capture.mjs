@@ -102,16 +102,29 @@ try {
     // that is the difference between a capture that means something and one
     // that happened to land after the right delay.
     //
-    // The signal is the ENTITY count rather than the draw-call count. Draw calls
-    // are now reported correctly on web, but a scene is legitimately allowed to
-    // draw nothing for a frame, whereas having entities means the scene is
-    // loaded -- which is the thing worth waiting for.
+    // TWO signals, because neither alone covers every scene.
+    //
+    // The entity count is really the size of the per-entity RENDER DATA array,
+    // which only entities with their own GPU buffers populate. A sprite-only
+    // scene draws entirely from instance buffers and never adds a row to it, so
+    // its count is legitimately zero forever. Waiting on that alone reported
+    // "the engine never loaded a scene" for scenes that had loaded perfectly and
+    // were on screen -- which is exactly the kind of harness that makes you
+    // debug the wrong thing.
+    //
+    // So the scene-loaded log line counts too. It is the player saying, in its
+    // own words, that the thing we are waiting for has happened.
     let frames = 0;
+    let sceneLoaded = false;
+    page.on('console', (m) => {
+        if (/Loaded scene:/.test(m.text())) sceneLoaded = true;
+    });
     await page.waitForFunction(
         () => typeof Module !== 'undefined' && Module._getEntityCount &&
               Module._getEntityCount() > 0,
         { timeout: timeoutMs, polling: 250 },
     ).catch(async () => {
+        if (sceneLoaded) return;   // loaded, just nothing with per-entity render data
         // Say what the page looked like instead of just failing. "Never drew a
         // frame" has several very different causes -- no adapter, a wasm abort,
         // a missing export -- and they are indistinguishable without this.
