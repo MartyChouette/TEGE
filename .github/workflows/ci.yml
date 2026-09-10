@@ -717,6 +717,12 @@ jobs:
           node check_wgsl.mjs
           node check_instancing.mjs
 
+      # A doc sample that names a function the engine does not register fails
+      # in the READER's script, pointing at their file, so it reads as their
+      # mistake. Eleven of these were live when this check was written.
+      - name: Validate doc code samples against the script API
+        run: python tools/check_doc_api.py
+
       - name: Install Emscripten
         uses: mymindstorm/setup-emsdk@v14
         with:

@@ -7,7 +7,7 @@ Working toward 1.0 in summer 2027. The big pieces, ticked when they work end to 
 - [x] Entity component system, scenes, prefabs
 - [x] Physics in 2D and 3D
 - [x] Scripting, and visual scripting alongside it
-- [x] Audio with spatialization and event graphs
+- [x] Audio with spatialization, buses, per-play variation and event graphs
 - [x] Save, quest, dialogue and cinematic systems
 - [x] Time rewind and shareable replays
 - [ ] Particle system rebuild

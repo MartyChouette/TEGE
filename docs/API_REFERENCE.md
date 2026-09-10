@@ -312,6 +312,109 @@ physics.AddRigidBody(body);
 physics.Step(deltaTime);
 ```
 
+## Audio System
+
+`Audio::AudioEngine` is the whole audio implementation: miniaudio playback, 3D
+positioning, four channels, a Freeverb bus, Steam Audio HRTF and occlusion. One
+instance per runtime -- editor play mode, the desktop player and the web player
+each own one. (It was called `SimpleAudio` until 2026-09-10, alongside an
+`IAudioBackend` layer with FMOD and Wwise stubs that was never instantiated in
+any build; that layer has been deleted.)
+
+```cpp
+Audio::AudioEngine audio;
+audio.Initialize();
+audio.SetWorld(world);
+audio.SetAssetRoot(gameRoot);          // clips are authored project-relative
+
+Audio::AudioClipHandle clip = audio.LoadClip("assets/chime.wav");
+Audio::SoundHandle snd = audio.Play(clip, 1.0f, 1.0f, false,
+                                    Audio::AudioChannel::Music);
+
+audio.Update(deltaTime);               // mixer, reverb, Steam Audio
+audio.UpdateAudioSources(deltaTime);   // drives AudioSourceComponent entities
+```
+
+### Playback position
+
+```cpp
+f32 where = audio.GetPlaybackTime(snd);   // seconds, or -1 if unknown
+f32 length = audio.GetLength(snd);        // seconds, or -1 if unknown
+audio.Seek(snd, 12.5f);                   // returns whether it happened
+```
+
+Both getters return **-1**, never 0, when they cannot answer. A real `0.0` means
+"at the start", and a caller has to be able to tell those apart.
+
+### Per-play variation
+
+`ChooseVariation` decides what one play of an `AudioSourceComponent` sounds
+like: which of its clips, and the pitch and volume after the authored random
+ranges are applied. Called by `UpdateAudioSources`, so a play-on-awake and a
+script-driven play agree.
+
+```cpp
+auto v = audio.ChooseVariation(*sourceComponent);   // advances no-repeat state
+```
+
+### The browser gate
+
+A browser starts every `AudioContext` **suspended** and will not run it until
+the page has seen a real user gesture. miniaudio cannot report this: it returns
+`MA_SUCCESS` from `ma_device_start` and reports the device STARTED while the
+browser has quietly refused, so device state is not an answer to "can anything
+be heard".
+
+```cpp
+if (!audio.IsDeviceRunning() && sawUserInput) {
+    audio.ResumeAfterUserGesture();    // no-op off web, and once already running
+}
+```
+
+`IsDeviceRunning()` is false on web until that call succeeds.
+`UpdateAudioSources` holds `playOnAwake` sources while it is false, so they
+start at 0:00 on the first input rather than partway through a context whose
+clock has been running. `tools/web_audio_probe.mjs` reports the state of every
+`AudioContext` an exported build creates, with and without a synthetic click.
+
+### Mixer
+
+```cpp
+Audio::AudioMixer& mixer = audio.GetMixer();
+Audio::AudioBus* music = mixer.GetBus("Music");
+
+f32 linear = Audio::DbToLinear(-6.0f);   // ~0.5
+f32 db     = Audio::LinearToDb(0.5f);    // ~-6
+```
+
+## 2D Sprite Rendering
+
+`Effects::SpriteBatchRenderer` draws every visible `Sprite2DComponent`, drop
+shadows included, in **one instanced draw**. Each instance carries a bindless
+texture index, so a scene using twenty different images costs what one image
+costs and there is no grouping by texture.
+
+Ordering is `sortingLayer`, then `orderInLayer`, then entity creation order
+(the sort is stable). Sprites needing the lit pipeline are drawn as contiguous
+runs of it; a pipeline change only ever breaks a run, never reorders one.
+
+```cpp
+spriteBatch.Initialize(renderer, sharedSetLayout, bindlessSetLayout);
+spriteBatch.Render(commandBuffer, descriptorSets, frameIndex, world,
+                   resolveTextureIndex,   // path -> bindless slot, -1 = none
+                   bindlessSet,
+                   targetWidth, targetHeight,
+                   litMode);              // the scene default; per-sprite wins
+```
+
+`SpriteInstanceData` is the per-instance row: position, size, rotation, UV rect,
+tint, flip flags, `texIndex`, `normalIndex` and `pivot`. Size is applied before
+rotation, and the pivot offset before both, so a non-square sprite turns its
+silhouette and rotates about its own pivot.
+
+> There is no lit sprite pipeline on WebGPU; that backend draws every sprite
+> flat and logs once when a sprite asks otherwise.
+
 ## Water System
 
 ```cpp

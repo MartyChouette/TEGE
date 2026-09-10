@@ -533,7 +533,8 @@
       <tr><td><strong>Viewport</strong></td><td>The 3D/2D scene. Fly with WASD + right-mouse. Gizmos move/rotate/scale the selection.</td></tr>
       <tr><td><strong>Asset Browser</strong></td><td>Project files. Drag assets onto entities, the viewport, or component fields.</td></tr>
       <tr><td><strong>Scene Settings</strong></td><td>Per-scene art style, sky, fog, post-processing.</td></tr>
-      <tr><td><strong>Console</strong> <kbd>`</kbd></td><td>Log output + commands.</td></tr>
+      <tr><td><strong>Console</strong> <kbd>`</kbd></td><td>Log output + commands.
+      <strong>Double-click a script error</strong> to open the file at that line.</td></tr>
     </tbody>
   </table>
   </div>
@@ -589,7 +590,12 @@
       <tr><td><strong>Material</strong></td><td>PBR look: colour, textures, roughness, metalness</td><td>Drives lit shading. Has a "Surface Response" block (footstep/impact sounds).</td></tr>
       <tr><td><strong>Light</strong></td><td>Directional / point / spot</td><td><strong>No direction field</strong> — a directional light's aim comes from the Transform's rotation.</td></tr>
       <tr><td><strong>Camera</strong></td><td>The view</td><td>One is the game camera. Perspective or orthographic (don't mix in one scene).</td></tr>
-      <tr><td><strong>Sprite2D</strong></td><td>A 2D image quad</td><td><code>flipX</code>/<code>flipY</code> toggles. Sorting layer + order control draw depth.</td></tr>
+      <tr><td><strong>Sprite2D</strong></td><td>A 2D image quad</td><td>Sorting layer + order control draw depth.
+      <code>size</code> is world units and the Transform's scale multiplies it. <code>pivot</code> is
+      <code>0,0</code> at the bottom-left.</td></tr>
+      <tr><td><strong>Audio Source</strong></td><td>Plays a sound from this entity</td><td>Drop a
+      <code>.wav</code> on the Clip field, then press <strong>Play</strong> to hear it without entering
+      play mode. Add alternate clips under Randomization so repeats stop sounding identical.</td></tr>
       <tr><td><strong>Rigidbody / Colliders</strong></td><td>Physics body + shape</td><td>3D = Jolt, 2D = Box2D — never mix in one scene. Collider sizes are <strong>world-space</strong> (scale is ignored).</td></tr>
       <tr><td><strong>Script</strong></td><td>Attaches an AngelScript behavior</td><td>See <a href="#scripting">§7</a>. Serialized under key <code>scriptComponent</code>.</td></tr>
       <tr><td><strong>Tilemap</strong></td><td>2D tile grid</td><td>Painted by the Dungeon/WFC procgen components.</td></tr>
@@ -724,6 +730,14 @@
     save — if you hand-edit a scene, use the exact serializer keys.</li>
     <li><strong>The editor auto-saves the open scene on a timer</strong> — don't edit a scene
     file out-of-band while the editor is open on it.</li>
+    <li><strong>On web, nothing plays until the player clicks.</strong> Browsers refuse to
+    start audio before a real gesture. The engine holds <code>playOnAwake</code> sounds until
+    that first input so they start from the beginning — but don't design an opening beat that
+    depends on sound before the player has touched anything.</li>
+    <li><strong>A sprite's lighting follows the scene unless you say otherwise.</strong> A
+    scene with sprites and no lights draws them flat; add one light and they all become lit.
+    Set a sprite's <strong>Lighting</strong> to <code>Unlit</code> or <code>Lit</code> to opt
+    it out.</li>
   </ul>
 </section>
 

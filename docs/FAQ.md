@@ -274,6 +274,15 @@ levels.
 - **Accessibility is not a bolt-on.** Colorblind modes, text scaling, input
   remapping, reduced motion, subtitles, and screen-reader-facing hooks are built in
   and meant to be used from the start, not retrofitted.
+- **On web, nothing plays until the player clicks.** Browsers refuse to start
+  audio before a real gesture, and there is no way around it. The engine holds
+  play-on-awake sounds until that first click, tap or key press so they begin
+  from the start rather than partway through -- but an opening beat that depends
+  on sound before the player has touched anything cannot work in a browser.
+- **A sprite's lighting follows the scene unless you say otherwise.** A scene
+  with sprites and no lights draws them flat; add one light and they all become
+  lit. Set a sprite's Lighting to `Unlit` or `Lit` to opt it out. Web builds
+  have no lit sprite path and draw every sprite flat.
 
 ---
 

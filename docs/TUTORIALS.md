@@ -407,33 +407,68 @@ Default values: `categoryBits = 1`, `collisionMask = 0xFFFFFFFF` (collide with e
 | Loop | Whether to loop the animation |
 | Playing | Whether animation is currently active |
 
-### Sprite Texture Atlas
+### How many draw calls sprites cost
 
-Enjin automatically packs small sprites (<=512px) into a shared 4096x4096 texture atlas at runtime. This dramatically reduces draw calls — sprites sharing the atlas render in one instanced draw call instead of one per texture.
+One, for the whole scene.
 
-The atlas is transparent to you; it happens automatically. Textures >512px are excluded and drawn individually.
+Every sprite carries its own texture reference into a single instanced draw, so
+a scene using twenty different images costs what a scene using one costs. There
+is nothing to configure and no size limit on your art.
+
+(Until 2026-09-10 the engine packed sprites under 512px into a shared
+4096x4096 atlas to achieve this, and anything larger — backgrounds, mostly —
+fell out of it onto a slower path that also drew them with the wrong texture.
+The atlas is gone. If you read about it elsewhere, that is why.)
 
 ### Script Control
 
 ```angelscript
 void OnStart() {
-    Sprite2D_SetTexture(self, "sprites/hero_walk.png");
-    AnimSprite_SetFrameRate(self, 12);
-    AnimSprite_Play(self);
+    Sprite_SetTexture(self, "sprites/hero_walk.png");
+    SpriteAnim_SetSpeed(self, 1.0f);
+    SpriteAnim_Play(self, "walk");
 }
 
 void OnUpdate(float dt) {
-    if (Input_IsKeyPressed(KEY_RIGHT)) {
-        Sprite2D_SetFlipX(self, false);
-        AnimSprite_Play(self);
-    } else if (Input_IsKeyPressed(KEY_LEFT)) {
-        Sprite2D_SetFlipX(self, true);
-        AnimSprite_Play(self);
+    if (Input_GetKey(Key::Right)) {
+        Sprite_SetFlipX(self, false);
+        SpriteAnim_Play(self, "walk");
+    } else if (Input_GetKey(Key::Left)) {
+        Sprite_SetFlipX(self, true);
+        SpriteAnim_Play(self, "walk");
     } else {
-        AnimSprite_Stop(self);
+        SpriteAnim_Stop(self);
     }
 }
 ```
+
+### Resizing a sprite from script
+
+`size` is in world units and the entity's transform scale multiplies it, so
+either lever works. Reading the size back is usually the point — a health bar is
+a fraction of the width it was authored at:
+
+```angelscript
+float fullWidth;
+
+void OnStart() {
+    fullWidth = Sprite_GetWidth(self);
+}
+
+void SetHealthFraction(float f) {
+    Sprite_SetSize(self, fullWidth * f, Sprite_GetHeight(self));
+}
+```
+
+### Lighting a sprite
+
+A scene with sprites and no lights draws them all flat; add a single light and
+they all become lit. Set a sprite's **Lighting** to `Unlit` or `Lit` to take it
+out of that decision — a HUD element that must stay flat in a lit scene, or a
+character that should catch light in a flat one. Lit sprites use `normalMapPath`
+if one is set.
+
+> Web builds have no lit sprite path and draw every sprite flat.
 
 ---
 
@@ -615,7 +650,7 @@ The ControllerSystem uses raycasting to detect ground. With Jolt Physics enabled
 
 ```angelscript
 void OnUpdate(float dt) {
-    if (Input_IsKeyPressed(MOUSE_LEFT)) {
+    if (Input_GetMouseButtonDown(0)) {
         // Raycast from camera center
         Vec3 origin = GetPosition(self);
         Vec3 dir = GetForward(self);
@@ -693,7 +728,7 @@ void OnStart() {
 }
 
 void OnUpdate(float dt) {
-    if (Input_IsKeyDown(KEY_W)) {
+    if (Input_GetKey(Key::W)) {
         Animator_Play(self, "run");
         Animator_SetSpeed(self, 1.5);
     } else {
@@ -710,8 +745,8 @@ Multiple animations can blend together using weights:
 // Blend between walk and run based on speed
 float speed = GetMoveSpeed();
 float blend = Clamp(speed / maxSpeed, 0, 1);
-Animator_SetBlendWeight(self, "walk", 1.0 - blend);
-Animator_SetBlendWeight(self, "run", blend);
+// Blend between two clips over `fadeTime` seconds.
+Animator_CrossFade(self, blend > 0.5f ? "run" : "walk", 0.2f);
 ```
 
 ---
@@ -826,8 +861,9 @@ Quat GetRotation(Entity e);
 void SetRotation(Entity e, Quat rot);
 
 // Input
-bool Input_IsKeyPressed(int key);   // Just pressed this frame
-bool Input_IsKeyDown(int key);      // Currently held
+bool Input_GetKeyDown(int key);     // Just pressed this frame
+bool Input_GetKey(int key);         // Currently held
+bool Input_GetKeyUp(int key);       // Released this frame
 Vec2 Input_GetMousePosition();
 float GetAxis(string name);         // "Horizontal", "Vertical"
 
@@ -966,12 +1002,14 @@ The event system lets entities communicate without direct references:
 ```angelscript
 // Entity A: Publish an event
 void OnDeath() {
-    Event_Fire("enemy_killed", "goblin");
+    EventData@ d = EventData();
+    d.SetString("enemy", "goblin");
+    Events_Send("enemy_killed", d);
 }
 
 // Entity B: Subscribe and react
 void OnStart() {
-    Event_Subscribe("enemy_killed", "OnEnemyKilled");
+    Events_Listen("enemy_killed", EventCallback(this.OnEnemyKilled));
 }
 
 void OnEnemyKilled(string data) {
@@ -1167,7 +1205,7 @@ if (Quest_IsActive("lost_artifact")) {
 }
 
 // Complete quest
-Quest_Complete("lost_artifact");
+Quest_CompleteObjective("lost_artifact", 0);   // objective index
 ```
 
 ### Visual Script Integration
@@ -1517,7 +1555,7 @@ Open the **Particle Editor** panel for interactive editing with:
 
 ```angelscript
 // Set weather type
-Weather_SetType("rain");
+Weather_Set(WEATHER_RAIN, 2.0);   // type, seconds to transition
 
 // Adjust intensity
 Weather_SetRainIntensity(0.8);
@@ -1528,11 +1566,11 @@ Weather_SetFogDensity(0.02);
 Weather_SetFogColor(Vec3(0.5, 0.5, 0.6));
 
 // Wind
-Weather_SetWindDirection(Vec3(1, 0, 0.5));
-Weather_SetWindStrength(2.0);
+Weather_SetWind(1.0, 0.0, 0.5, 2.0);   // direction xyz, then strength
 
 // Lightning
-Weather_TriggerLightning();
+Weather_SetLightningInterval(4.0);     // seconds between strikes
+// Weather_IsLightning() / Weather_LightningJustFired() read it back
 ```
 
 ### World Time and Seasons
@@ -1653,13 +1691,36 @@ The SVGF (Spatiotemporal Variance-Guided Filtering) denoiser smooths noisy RT ou
 ### Audio Source Setup
 
 1. Add `AudioSourceComponent` to an entity.
-2. Set the **Audio File** path (.wav, .mp3, .ogg, .flac).
-3. Configure properties:
+2. Give it a clip: **drag a `.wav`/`.ogg`/`.mp3`/`.flac` from the Asset Browser
+   onto the Clip field**, or press **...** to browse. Either way it plays
+   immediately so you know you picked the right one.
+3. Press **Play** to hear it again. This works with play mode stopped — the
+   editor has its own output for previewing, separate from the game's mixer.
+   The bar underneath shows position and length; click it to scrub.
+4. Configure properties:
    - **Volume** — 0 to 1
    - **Pitch** — Playback speed
+   - **Channel** — SFX, Music, UI or Voice. Music and UI are always 2D.
    - **Loop** — Repeat playback
    - **is3D** — Enable 3D spatialization (falloff based on distance)
    - **Min/Max Distance** — 3D audio range
+
+> Double-clicking any audio file in the Asset Browser previews it too, without
+> creating anything.
+
+### Making a sound stop giving itself away
+
+A footstep triggered sixty times a minute from one recording sounds like one
+recording. Open **Randomization** on the Audio Source:
+
+- **Add Variation...** (or drop files onto the section) to add alternate clips.
+  Each play picks between them and the clip above.
+- **Pitch Min/Max** and **Volume Min/Max** jitter every play. Leave them at
+  `1.0` for none. `0.95`–`1.05` is enough to break the pattern without sounding
+  detuned.
+- **No Repeat** keeps the same clip from landing twice running.
+
+Each row has a **>** button to hear that one alone, and an **x** to remove it.
 
 ### Script Control
 
@@ -1670,9 +1731,28 @@ Audio_SetVolume(self, 0.5);
 Audio_SetPitch(self, 1.2);
 ```
 
+### Following the audio
+
+Ask a playing source where it is, which is what timed subtitles need:
+
+```angelscript
+float t = Audio_GetTime(self);      // seconds in, or -1 if it cannot answer
+float len = Audio_GetLength(self);  // seconds long, or -1
+Audio_Seek(self, 30.0f);            // jump to 0:30
+```
+
+Both getters return **-1** rather than 0 when there is nothing to report, so a
+real `0.0` ("at the very start") is never confused with "no idea".
+
 ### Background Music
 
-Create a dedicated entity with a non-3D AudioSource for background music. Set `is3D = false` so it plays at full volume regardless of camera position.
+Create a dedicated entity with a non-3D AudioSource for background music. Set `is3D = false` so it plays at full volume regardless of camera position, or pick the **Music** channel, which forces 2D anyway.
+
+> **Shipping to web?** Browsers refuse to start audio before the player's first
+> click, tap or key press. The engine holds `playOnAwake` sounds until then, so
+> your music starts from its beginning on that first input instead of partway
+> through — but don't design an opening beat that needs sound before the player
+> has touched anything.
 
 ---
 
@@ -2248,7 +2328,7 @@ Double-click `EnjinPlayer.exe` to play.
 ```angelscript
 // Subtitles
 Subtitle_Show("Welcome, adventurer!", 3.0);
-Subtitle_ShowWithSpeaker("Elder", "The artifact lies deep within.", 4.0);
+Subtitle_ShowWithColor("Elder", "The artifact lies deep within.", 0.8, 0.9, 1.0, 4.0);
 
 // Announcer (screen reader)
 Announcer_Announce("Menu opened", "polite");
