@@ -31,17 +31,56 @@ static Physics::IPhysicsBackend* s_BindingsPhysics = nullptr;
 // Render view for screen-space queries (mouse picking). The runtime pushes the active
 // render camera + viewport size each frame so scripts can raycast under the cursor.
 static const Renderer::Camera* s_BindingsRenderCamera = nullptr;
-static f32 s_BindingsViewW = 1280.0f;
-static f32 s_BindingsViewH = 720.0f;
+// Deliberately absurd, so a runtime that forgets to push its real size is
+// visible rather than plausible. These used to be 1280x720: a caller passing
+// zeros silently kept them, and 1280x720 is a real resolution, so every
+// screen-space query returned a believable wrong answer instead of an obvious
+// one. Editor Play passed zeros and the web player never called this at all.
+static f32 s_BindingsViewW = 0.0f;
+static f32 s_BindingsViewH = 0.0f;
+static bool s_BindingsViewSet = false;
 
 namespace Enjin {
 namespace Scripting {
 void SetBindingsPhysics(Physics::IPhysicsBackend* physics) { s_BindingsPhysics = physics; }
+// Every screen-space script binding reads these: Camera_ScreenToWorld,
+// ScreenToWorldOnPlane, WorldToScreen, Physics_RaycastScreen, and the OnClick
+// dispatch in ScriptSystem::UpdateMouseCallbacks. Push the rectangle the game
+// is actually being rendered into, every frame -- it changes when a window is
+// resized or an editor panel is dragged.
 void SetBindingsRenderView(const Renderer::Camera* camera, f32 viewportWidth, f32 viewportHeight) {
     s_BindingsRenderCamera = camera;
-    if (viewportWidth > 0.0f) s_BindingsViewW = viewportWidth;
-    if (viewportHeight > 0.0f) s_BindingsViewH = viewportHeight;
+
+    if (viewportWidth <= 0.0f || viewportHeight <= 0.0f) {
+        // Was a silent "keep whatever you had", which is how a wrong viewport
+        // survived: nothing failed, the numbers were just somebody else's.
+        // Say it once, keep the last good value, and carry on.
+        static bool warned = false;
+        if (!warned) {
+            warned = true;
+            ENJIN_LOG_WARN(Script,
+                "SetBindingsRenderView called with %gx%g. Screen-space script queries "
+                "(Camera_ScreenToWorld, Physics_RaycastScreen, OnClick picking) need the "
+                "real render size. Keeping the last value. Use "
+                "SetBindingsRenderViewKeepLast() if the camera changed but the size did not.",
+                viewportWidth, viewportHeight);
+        }
+        return;
+    }
+
+    s_BindingsViewW = viewportWidth;
+    s_BindingsViewH = viewportHeight;
+    s_BindingsViewSet = true;
 }
+
+// The camera changed; the viewport did not. Says what the old zeros meant.
+void SetBindingsRenderViewKeepLast(const Renderer::Camera* camera) {
+    s_BindingsRenderCamera = camera;
+}
+
+// True once a runtime has pushed a real size. Screen-space queries answer with
+// a shrug rather than a fiction before that.
+bool BindingsRenderViewIsSet() { return s_BindingsViewSet; }
 } // namespace Scripting
 } // namespace Enjin
 

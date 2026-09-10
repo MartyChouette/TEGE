@@ -75,7 +75,19 @@ void RegisterAudioReactiveBindings(asIScriptEngine* engine);
 void SetBindingsWorld(ECS::World* world);
 void SetBindingsPhysics(Physics::IPhysicsBackend* physics);
 // Push the active render camera + viewport so screen-space script queries (Physics_RaycastScreen) work.
+// The camera and the rectangle it is rendered into, for screen-space script
+// queries: Camera_ScreenToWorld, ScreenToWorldOnPlane, WorldToScreen,
+// Physics_RaycastScreen, and OnClick picking. Push it EVERY FRAME -- a window
+// resize or a dragged editor panel changes it.
+//
+// Zero or negative dimensions used to mean "keep the last value" and were
+// therefore accepted in silence; editor Play mode passed 0,0 at startup and the
+// values stayed at a compiled-in 1280x720 forever, so every screen-space query
+// under the editor answered for a window nobody had. Say KeepLast if that is
+// what you mean.
 void SetBindingsRenderView(const Renderer::Camera* camera, f32 viewportWidth, f32 viewportHeight);
+void SetBindingsRenderViewKeepLast(const Renderer::Camera* camera);
+bool BindingsRenderViewIsSet();
 // Screen-point pick through that same render view (same ray as the script-facing
 // Physics_RaycastScreen). 0 = nothing hit / no camera / web. Drives the
 // OnMouseEnter/OnMouseExit/OnClick script callbacks in ScriptSystem.

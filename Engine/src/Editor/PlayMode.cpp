@@ -409,9 +409,11 @@ void PlayMode::Play() {
     Scripting::SetBindingsCinematicSystem(&m_CinematicSystem);
     Scripting::SetBindingsCameraDirector(&m_CameraDirector);
     Scripting::SetBindingsObjectPool(&m_ObjectPool);
-    // Screen-space script picking uses the game camera (0 dims = keep the default/last
-    // viewport; the standalone player pushes exact window dims).
-    Scripting::SetBindingsRenderView(m_Camera, 0.0f, 0.0f);
+    // Screen-space script picking uses the game camera. The SIZE is pushed every
+    // frame by the editor, which is the only thing that knows how big the Game
+    // View panel currently is -- this call carries the camera only, and now says
+    // so instead of passing zeros and relying on the setter to ignore them.
+    Scripting::SetBindingsRenderViewKeepLast(m_Camera);
     Scripting::SetBindingsPhysics(m_Physics.get());
     Scripting::SetBindingsPhysics2D(m_Physics2D.get());
     Scripting::SetBindingsNetworking(&m_NetworkSystem);

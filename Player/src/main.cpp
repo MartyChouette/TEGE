@@ -978,6 +978,18 @@ public:
             }
         }
 
+        // Screen-space script queries need the CURRENT window size. This was
+        // pushed once at startup, so every one of them -- Camera_ScreenToWorld,
+        // Physics_RaycastScreen, OnClick picking -- kept answering for the size
+        // the window had when the game booted. A player who resizes, or goes
+        // fullscreen, moved every pick.
+        if (GetWindow()) {
+            Enjin::Scripting::SetBindingsRenderView(
+                m_Camera.get(),
+                static_cast<Enjin::f32>(GetWindow()->GetWidth()),
+                static_cast<Enjin::f32>(GetWindow()->GetHeight()));
+        }
+
         // Update audio
         m_AudioEngine.Update(deltaTime);
         m_AudioEngine.UpdateAudioSources(deltaTime);

@@ -122,6 +122,9 @@ public:
     Gameplay::ObjectPool* GetObjectPool() { return &m_ObjectPool; }
     Gameplay::CinematicSystem* GetCinematicSystem() { return &m_CinematicSystem; }
     Gameplay::CameraDirector* GetCameraDirector() { return &m_CameraDirector; }
+    // The camera scripts pick against. The editor pairs it with the Game View
+    // image size each frame (see SetBindingsRenderView).
+    Renderer::Camera* GetGameCamera() { return m_Camera; }
     Gameplay::TieredSaveSystem* GetTieredSaveSystem() { return &m_TieredSaveSystem; }
     ECS::TweenSystem* GetTweenSystem() { return &m_TweenSystem; }
     ECS::StateMachineSystem* GetStateMachineSystem() { return &m_StateMachineSystem; }

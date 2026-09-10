@@ -1175,6 +1175,18 @@ public:
             m_AudioEngine.ResumeAfterUserGesture();
         }
 
+        // Screen-space script queries (Camera_ScreenToWorld, Physics_RaycastScreen,
+        // OnClick picking) need the canvas size. The web player never pushed it
+        // AT ALL, so every one of them answered against a compiled-in 1280x720:
+        // on any canvas that is not exactly that, a script picking under the
+        // cursor picked somewhere else, in every shipped web game.
+        if (m_Renderer) {
+            Enjin::Scripting::SetBindingsRenderView(
+                m_Camera.get(),
+                static_cast<Enjin::f32>(m_Renderer->GetSwapChainWidth()),
+                static_cast<Enjin::f32>(m_Renderer->GetSwapChainHeight()));
+        }
+
         m_AudioEngine.Update(deltaTime);
         m_AudioEngine.UpdateAudioSources(deltaTime);
         m_AudioGraphRuntime.Update(deltaTime);   // desktop: main.cpp:964

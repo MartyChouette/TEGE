@@ -5535,6 +5535,20 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     const f32 ovH = gameImageLive ? (m_GameViewImageMaxY - m_GameViewImageMinY)
                                   : io.DisplaySize.y;
 
+    // Screen-space script queries need the rectangle the game is actually drawn
+    // into, and it changes whenever the Game View panel is resized or docked
+    // somewhere else -- so it is pushed every frame, not once at Play.
+    //
+    // PlayMode used to set this once with 0,0, which the setter read as "keep
+    // what you have", leaving a compiled-in 1280x720. Every screen-space script
+    // query under the editor then answered for a window nobody had:
+    // Camera_ScreenToWorld, ScreenToWorldOnPlane, WorldToScreen,
+    // Physics_RaycastScreen and OnClick picking all inherit it. A drag that
+    // worked windowed died fullscreen, and click-to-focus could not be built.
+    if ((m_PlayMode.IsPlaying() || m_PlayMode.IsPaused()) && ovW > 0.0f && ovH > 0.0f) {
+        Scripting::SetBindingsRenderView(m_PlayMode.GetGameCamera(), ovW, ovH);
+    }
+
     if ((m_PlayMode.IsPlaying() || m_PlayMode.IsPaused()) && ovW > 0.0f && ovH > 0.0f) {
         DrawDialogueOverlay(ovX, ovY, ovW, ovH);
     }
