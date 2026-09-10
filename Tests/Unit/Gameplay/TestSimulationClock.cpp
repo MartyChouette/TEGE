@@ -44,15 +44,25 @@ ENJIN_TEST(SimClock, CarryOverAccumulates) {
 
 ENJIN_TEST(SimClock, SpiralOfDeathClampDropsBacklog) {
     SimulationClock c;
-    c.Configure(true, 60.0f);
+    c.Configure(true, 120.0f);          // the default rate
     int calls = 0;
-    // A 100ms hitch at 60Hz owes 6 ticks; the clamp runs 4 and drops the rest
+    // A 100ms hitch at 120Hz owes 12 ticks; the clamp runs kMaxStepsPerFrame
+    // and drops the rest, so a bad frame costs time rather than compounding.
     c.Tick(nullptr, 0.1f, [&](f32) { ++calls; });
     ENJIN_EXPECT_EQ(calls, (int)SimulationClock::kMaxStepsPerFrame);
     // Backlog dropped: the next normal frame owes at most its own time
     calls = 0;
-    c.Tick(nullptr, 1.0f / 60.0f, [&](f32) { ++calls; });
+    c.Tick(nullptr, 1.0f / 120.0f, [&](f32) { ++calls; });
     ENJIN_EXPECT_TRUE(calls <= 1);
+}
+
+ENJIN_TEST(SimClock, ClampBudgetIsWallClockNotStepCount) {
+    // The clamp exists to bound how much simulation one frame may owe before
+    // the backlog is dropped. That bound is a DURATION, and doubling the tick
+    // rate without doubling the step count would have halved it: a machine that
+    // could absorb a 66ms hitch at 60Hz would start losing time at 33ms.
+    const f32 budget = static_cast<f32>(SimulationClock::kMaxStepsPerFrame) / 120.0f;
+    ENJIN_EXPECT_TRUE(budget > 0.06f);   // still ~66ms at the 120Hz default
 }
 
 ENJIN_TEST(SimClock, AlphaStaysInUnitRange) {

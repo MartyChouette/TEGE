@@ -27,10 +27,16 @@ namespace Gameplay {
 
 class ENJIN_API SimulationClock {
 public:
-    static constexpr u32 kMaxStepsPerFrame = 4;
+    // The spiral guard is really a wall-clock budget: how much simulation one
+    // frame may owe before the backlog is dropped and the game goes slow rather
+    // than freezing. 4 steps was ~66ms at the old 60Hz default. The default is
+    // now 120Hz, so the count doubles to hold the same ~66ms; leaving it at 4
+    // would have quietly halved the hitch a machine can absorb before the
+    // simulation starts losing time.
+    static constexpr u32 kMaxStepsPerFrame = 8;
 
     // enabled = the project's fixedTimestep setting. ticksPerSecond is clamped
-    // to [15, 240]; 60 is the default and the recommended value.
+    // to [15, 240]; 120 is the default.
     void Configure(bool enabled, f32 ticksPerSecond);
 
     // Drop all accumulated time and stored poses (scene load, play start).

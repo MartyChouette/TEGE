@@ -74,7 +74,14 @@ struct GameFrameSettings {
     // Fixed physics timestep (ADR-0005). Default OFF so existing projects keep
     // their tuned variable-step behavior; new projects should enable it.
     bool fixedTimestep = false;
-    u32 physicsTicksPerSecond = 60;
+    // 120, not 60. At 60 the fixed step and a 60Hz display line up exactly, so
+    // nothing shows; the moment the frame rate is uncapped or the display is
+    // faster, a 60Hz tick is a visible step. Halving the step halves how far
+    // anything can travel between poses, which is what the eye reads as
+    // smoothness for the things interpolation does not cover (kinematic bodies,
+    // anything a script moves on the fixed tick). It doubles the physics cost
+    // per second of wall clock; that is the trade.
+    u32 physicsTicksPerSecond = 120;
 };
 
 // Startup flow: an authorable boot sequence the exported game runs instead of

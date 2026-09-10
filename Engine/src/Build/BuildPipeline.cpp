@@ -253,14 +253,14 @@ bool BuildPipeline::ScanProject(const std::string& projectPath) {
             m_VSync = fs.value("vSync", true);
             m_BackgroundBehavior = fs.value("backgroundBehavior", 1u);
             m_FixedTimestep = fs.value("fixedTimestep", false);
-            m_PhysicsTicksPerSecond = fs.value("physicsTicksPerSecond", 60u);
+            m_PhysicsTicksPerSecond = fs.value("physicsTicksPerSecond", 120u);
         } else {
             // Defaults
             m_TargetFrameRate = 60;
             m_VSync = true;
             m_BackgroundBehavior = 1;
             m_FixedTimestep = false;
-            m_PhysicsTicksPerSecond = 60;
+            m_PhysicsTicksPerSecond = 120;
         }
 
         // Read physics backend and project mode

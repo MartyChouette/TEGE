@@ -1601,7 +1601,7 @@ void EditorLayer::DrawSettingsSection_FrameRate() {
                 changed = true;
             }
             if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("60 is right for almost everything. Raise for fast\n"
+                ImGui::SetTooltip("120 is the default and right for almost everything. Raise for fast\n"
                                   "precision gameplay, lower only for heavy scenes on weak targets.");
             }
         }
