@@ -195,7 +195,11 @@ struct EditorSettings {
     void AddRecentVisualScriptNode(const std::string& nodeTypeId);
 
     // Layout persistence
-    u32 visiblePanels = 319;          // EditorPanel bitmask - shipped default panel set
+    // EditorPanel bitmask - shipped default panel set. u64 because the enum is:
+    // stored as u32 it would have silently dropped every panel above bit 31 on
+    // save, so a newly added panel would be visible until the next restart and
+    // then never again.
+    u64 visiblePanels = 319;
     f32 leftPanelWidth = 0.18f;
     f32 rightPanelWidth = 0.25f;
     f32 bottomPanelHeight = 0.22f;

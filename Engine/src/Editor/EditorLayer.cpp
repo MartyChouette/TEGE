@@ -4196,6 +4196,10 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         ImGui::SetNextWindowSize(ImVec2(800 * s, 600 * s), ImGuiCond_FirstUseEver);
         DrawPixelEditorPanel();
     }
+    if (HasPanel(m_VisiblePanels, EditorPanel::CaptionTrack)) {
+        ImGui::SetNextWindowSize(ImVec2(820 * s, 520 * s), ImGuiCond_FirstUseEver);
+        DrawCaptionTrackPanel();
+    }
     if (HasPanel(m_VisiblePanels, EditorPanel::BehaviorTree)) {
         ImGui::SetNextWindowSize(ImVec2(800 * s, 600 * s), ImGuiCond_FirstUseEver);
         DrawBehaviorTreePanel();

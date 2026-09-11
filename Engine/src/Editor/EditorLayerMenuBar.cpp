@@ -562,6 +562,14 @@ void EditorLayer::DrawMenuBar() {
                     if (ImGui::MenuItem("Dialogue Editor", nullptr, &dialogue)) {
                         SetPanelVisibility(EditorPanel::Dialogue, dialogue);
                     }
+                    bool captions = IsPanelVisible(EditorPanel::CaptionTrack);
+                    if (ImGui::MenuItem("Caption Track", nullptr, &captions)) {
+                        SetPanelVisibility(EditorPanel::CaptionTrack, captions);
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Timeline, coverage and lint for an imported\n"
+                                          ".srt caption track.");
+                    }
                     ImGui::Separator();
                     if (ImGui::MenuItem("Import Captions (.srt)...")) {
                         const std::string picked = FileDialog::IsAvailable()

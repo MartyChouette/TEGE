@@ -114,53 +114,54 @@ namespace ECS {
 namespace Editor {
 
 // Editor panel flags
-enum class EditorPanel : u32 {
+enum class EditorPanel : u64 {
     None = 0,
-    Hierarchy = 1 << 0,
-    Inspector = 1 << 1,
-    Viewport = 1 << 2,
-    Console = 1 << 3,
-    AssetBrowser = 1 << 4,
-    EditorSettings = 1 << 5,
-    PostProcessing = 1 << 6,
-    RetroEffects = 1 << 7,
-    GameView = 1 << 8,
-    SceneList = 1 << 9,
-    Rendering = 1 << 10,
-    Profiler = 1 << 11,
-    ProjectSettings = 1 << 12,
-    ParticleEditor = 1 << 13,
-    AnimGraph = 1 << 14,
-    Dialogue = 1 << 15,
-    VisualScript = 1 << 16,
-    SpriteSheetImport = 1 << 17,
-    PixelEditorPanel = 1 << 18,
-    BehaviorTree = 1 << 19,
-    QuestFlow = 1 << 20,
-    UserManual = 1 << 21,
-    DataAssets = 1 << 22,
-    PluginBrowser = 1 << 23,
-    ProceduralGen = 1 << 24,
-    GitIntegration = 1 << 25,
-    NetworkPanel = 1 << 26,
-    Collaboration = 1 << 27,
-    FlashTimeline = 1 << 28,
-    VectorDrawing = 1 << 29,
-    FeedbackPanel = 1 << 30,
-    SaveDebug = 1u << 31,
-    All = 0xFFFFFFFF
+    Hierarchy = 1ull << 0,
+    Inspector = 1ull << 1,
+    Viewport = 1ull << 2,
+    Console = 1ull << 3,
+    AssetBrowser = 1ull << 4,
+    EditorSettings = 1ull << 5,
+    PostProcessing = 1ull << 6,
+    RetroEffects = 1ull << 7,
+    GameView = 1ull << 8,
+    SceneList = 1ull << 9,
+    Rendering = 1ull << 10,
+    Profiler = 1ull << 11,
+    ProjectSettings = 1ull << 12,
+    ParticleEditor = 1ull << 13,
+    AnimGraph = 1ull << 14,
+    Dialogue = 1ull << 15,
+    VisualScript = 1ull << 16,
+    SpriteSheetImport = 1ull << 17,
+    PixelEditorPanel = 1ull << 18,
+    BehaviorTree = 1ull << 19,
+    QuestFlow = 1ull << 20,
+    UserManual = 1ull << 21,
+    DataAssets = 1ull << 22,
+    PluginBrowser = 1ull << 23,
+    ProceduralGen = 1ull << 24,
+    GitIntegration = 1ull << 25,
+    NetworkPanel = 1ull << 26,
+    Collaboration = 1ull << 27,
+    FlashTimeline = 1ull << 28,
+    VectorDrawing = 1ull << 29,
+    FeedbackPanel = 1ull << 30,
+    SaveDebug = 1ull << 31,
+    CaptionTrack = 1ull << 32,
+    All = 0xFFFFFFFFFFFFFFFFull
 };
 
 inline EditorPanel operator|(EditorPanel a, EditorPanel b) {
-    return static_cast<EditorPanel>(static_cast<u32>(a) | static_cast<u32>(b));
+    return static_cast<EditorPanel>(static_cast<u64>(a) | static_cast<u64>(b));
 }
 
 inline EditorPanel operator&(EditorPanel a, EditorPanel b) {
-    return static_cast<EditorPanel>(static_cast<u32>(a) & static_cast<u32>(b));
+    return static_cast<EditorPanel>(static_cast<u64>(a) & static_cast<u64>(b));
 }
 
 inline bool HasPanel(EditorPanel flags, EditorPanel panel) {
-    return (static_cast<u32>(flags) & static_cast<u32>(panel)) != 0;
+    return (static_cast<u64>(flags) & static_cast<u64>(panel)) != 0;
 }
 
 // Git file status entry
@@ -350,8 +351,9 @@ private:
     bool m_ShowAtlasPacker = false;
 
     // --- Cookie Creator (light gobos) ---
-    // A plain bool rather than an EditorPanel bit: only bit 31 of that mask is
-    // still free and this is a tool window, not a dockable panel.
+    // A plain bool rather than an EditorPanel bit. The original reason was that
+    // the mask was a u32 and full; it is a u64 now, so a bit is available if this
+    // ever wants its visibility saved and restored like a real panel.
     bool m_ShowCookieCreator = false;
 
     // Pre-rendered background baking. The plate is produced from the Game
@@ -2172,6 +2174,16 @@ private:
     void SendDiscordBugReport();
     void CaptureViewportScreenshot();          // Grabs editor viewport pixels -> m_DiscordScreenshotPng
     void DrawSaveDebugPanel();
+
+    // --- Caption Track panel ---
+    // A timeline of the cues in a CaptionTrack data asset, the coverage figure, and
+    // the linter's findings. The faults in a caption track (overlaps, cues past the
+    // end of the audio, stretches with nothing in them) are invisible in a table of
+    // numbers and obvious against a time axis.
+    void DrawCaptionTrackPanel();
+    std::string m_CaptionTrackName;        // which loaded track is shown
+    f32 m_CaptionClipLength = 0.0f;        // 0 = unknown; two lint rules need it
+    f32 m_CaptionPlayhead = 0.0f;          // seconds, scrubbed by clicking the strip
     void DrawPlayModeDiffDialog();
     void DrawBugReportList();
     void DrawBugReportDetail(BugReport& report);
