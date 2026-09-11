@@ -1,4 +1,5 @@
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/Editor/EditorShortcuts.h"
 #include "Enjin/ECS/Systems/BrushSolidSystem.h"
 #include "Enjin/ECS/Components/BrushSolid.h"
 #include "Enjin/Renderer/Camera.h"
@@ -2061,6 +2062,19 @@ void EditorLayer::Update(f32 deltaTime) {
             m_CommandPalette.Toggle();
         }
 
+        // The shortcuts whose action lives in a menu item's body. These were all
+        // printed in the menu bar as accelerators and handled nowhere: the item
+        // worked when clicked, and the key it named did nothing at all.
+        //
+        // Each raises the request its menu item answers, so there is one code
+        // path and the two cannot drift.
+        for (ShortcutAction a : { ShortcutAction::NewScene, ShortcutAction::OpenScene,
+                                  ShortcutAction::SaveSceneAs, ShortcutAction::ImportModel,
+                                  ShortcutAction::Cut, ShortcutAction::Copy,
+                                  ShortcutAction::Paste }) {
+            if (ShortcutPressed(a)) RaiseShortcut(a);
+        }
+
         // Keyboard shortcuts help (Ctrl+Shift+/)
         if (Input::IsKeyDown(KeyCode::LeftControl) && Input::IsKeyDown(KeyCode::LeftShift) &&
             Input::IsKeyPressed(KeyCode::Slash)) {
@@ -3997,6 +4011,15 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
 
     // Menu bar
     DrawMenuBar();
+
+    // Anything raised this frame and not consumed by its menu item is dropped.
+    //
+    // The menu bar draws every frame, so in practice every raised shortcut is
+    // answered immediately. Clearing anyway is what stops a key pressed on a
+    // frame where the bar did NOT draw -- the hub screen, a modal that owns the
+    // frame -- from firing later, at a moment the person has forgotten pressing
+    // it and in a context where it may mean something else.
+    m_PendingShortcuts = 0;
 
     // Calculate layout dimensions from config
     f32 screenW = io.DisplaySize.x;

@@ -1,4 +1,5 @@
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/Editor/EditorShortcuts.h"
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Core/Version.h"
@@ -130,7 +131,8 @@ namespace Editor {
 void EditorLayer::DrawMenuBar() {
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
-            if (ImGui::MenuItem("New Scene", "Ctrl+N")) {
+            if (ImGui::MenuItem("New Scene", ShortcutChord(ShortcutAction::NewScene)) ||
+                TakeShortcut(ShortcutAction::NewScene)) {
                 if (m_SceneDirty) {
                     m_UnsavedChangesAction = UnsavedAction::NewScene;
                     m_ShowUnsavedChangesDialog = true;
@@ -140,7 +142,8 @@ void EditorLayer::DrawMenuBar() {
                     ENJIN_LOG_INFO(Editor, "Created new scene");
                 }
             }
-            if (ImGui::MenuItem("Open Scene...", "Ctrl+O")) {
+            if (ImGui::MenuItem("Open Scene...", ShortcutChord(ShortcutAction::OpenScene)) ||
+                TakeShortcut(ShortcutAction::OpenScene)) {
                 std::vector<FileFilter> filters = {
                     { "Enjin Scene", "*.enjin" },
                     { "All Files", "*.*" }
@@ -159,7 +162,7 @@ void EditorLayer::DrawMenuBar() {
                     }
                 }
             }
-            if (ImGui::MenuItem("Save Scene", "Ctrl+S")) {
+            if (ImGui::MenuItem("Save Scene", ShortcutChord(ShortcutAction::SaveScene))) {
                 if (!m_CurrentScenePath.empty()) {
                     SaveScene(m_CurrentScenePath);
                 } else {
@@ -175,7 +178,8 @@ void EditorLayer::DrawMenuBar() {
                     }
                 }
             }
-            if (ImGui::MenuItem("Save Scene As...", "Ctrl+Shift+S")) {
+            if (ImGui::MenuItem("Save Scene As...", ShortcutChord(ShortcutAction::SaveSceneAs)) ||
+                TakeShortcut(ShortcutAction::SaveSceneAs)) {
                 std::vector<FileFilter> filters = {
                     { "Enjin Scene", "*.enjin" },
                     { "All Files", "*.*" }
@@ -291,7 +295,8 @@ void EditorLayer::DrawMenuBar() {
                 }
             }
             ImGui::Separator();
-            if (ImGui::MenuItem("Import Model...", "Ctrl+I")) {
+            if (ImGui::MenuItem("Import Model...", ShortcutChord(ShortcutAction::ImportModel)) ||
+                TakeShortcut(ShortcutAction::ImportModel)) {
                 std::vector<FileFilter> filters = {
                     { "3D Models", "*.gltf;*.glb;*.fbx;*.obj;*.dae;*.3ds" },
                     { "glTF Files", "*.gltf;*.glb" },
@@ -307,7 +312,7 @@ void EditorLayer::DrawMenuBar() {
                 ImportModel(m_LastImportedModelPath);
             }
             ImGui::Separator();
-            if (ImGui::MenuItem("Build Game...", "Ctrl+B")) {
+            if (ImGui::MenuItem("Build Game...", ShortcutChord(ShortcutAction::BuildGame))) {
                 m_ShowBuildDialog = true;
                 m_BuildFinished = false;
                 m_BuildInProgress = false;
@@ -336,15 +341,16 @@ void EditorLayer::DrawMenuBar() {
         }
 
         if (ImGui::BeginMenu("Edit")) {
-            if (ImGui::MenuItem("Undo", "Ctrl+Z", false, m_UndoRedo.CanUndo())) {
+            if (ImGui::MenuItem("Undo", ShortcutChord(ShortcutAction::Undo), false, m_UndoRedo.CanUndo())) {
                 m_UndoRedo.Undo();
             }
-            if (ImGui::MenuItem("Redo", "Ctrl+Y", false, m_UndoRedo.CanRedo())) {
+            if (ImGui::MenuItem("Redo", ShortcutChord(ShortcutAction::Redo), false, m_UndoRedo.CanRedo())) {
                 m_UndoRedo.Redo();
             }
             ImGui::Separator();
             bool hasSelection = !m_SelectedEntities.empty() && m_World;
-            if (ImGui::MenuItem("Cut", "Ctrl+X", false, hasSelection)) {
+            if ((ImGui::MenuItem("Cut", ShortcutChord(ShortcutAction::Cut), false, hasSelection) ||
+                 TakeShortcut(ShortcutAction::Cut)) && hasSelection) {
                 Scene::SceneSerializer serializer(m_World);
                 Scene::SerializationOptions opts;
                 opts.includeVertexData = true;
@@ -353,7 +359,8 @@ void EditorLayer::DrawMenuBar() {
                 m_ClipboardSourceEntity = m_PrimarySelected;
                 DeleteSelectedEntities();
             }
-            if (ImGui::MenuItem("Copy", "Ctrl+C", false, hasSelection)) {
+            if ((ImGui::MenuItem("Copy", ShortcutChord(ShortcutAction::Copy), false, hasSelection) ||
+                 TakeShortcut(ShortcutAction::Copy)) && hasSelection) {
                 Scene::SceneSerializer serializer(m_World);
                 Scene::SerializationOptions opts;
                 opts.includeVertexData = true;
@@ -361,7 +368,8 @@ void EditorLayer::DrawMenuBar() {
                 m_ClipboardIsCut = false;
                 m_ClipboardSourceEntity = m_PrimarySelected;
             }
-            if (ImGui::MenuItem("Paste", "Ctrl+V", false, !m_ClipboardEntityJson.empty())) {
+            if ((ImGui::MenuItem("Paste", ShortcutChord(ShortcutAction::Paste), false, !m_ClipboardEntityJson.empty()) ||
+                 TakeShortcut(ShortcutAction::Paste)) && !m_ClipboardEntityJson.empty()) {
                 Scene::SceneSerializer serializer(m_World);
                 auto result = serializer.LoadFromString(m_ClipboardEntityJson, false);
                 if (result.success && !result.entities.empty()) {
@@ -395,7 +403,7 @@ void EditorLayer::DrawMenuBar() {
             // First item in the menu on purpose. Discoverability is part of the
             // feature: a build surface nobody can find fails the same bar as a
             // build surface that does not exist.
-            if (ImGui::MenuItem("Creative Mode", "Ctrl+B", m_Creative.IsActive())) {
+            if (ImGui::MenuItem("Creative Mode", ShortcutChord(ShortcutAction::CreativeMode), m_Creative.IsActive())) {
                 m_Creative.SetActive(!m_Creative.IsActive());
             }
             ImGui::SetItemTooltip("Block out a level with walls, floors, stairs and brushes, "
@@ -756,11 +764,11 @@ void EditorLayer::DrawMenuBar() {
                 SetPanelVisibility(EditorPanel::SceneList, sceneList);
             }
             ImGui::Separator();
-            if (ImGui::MenuItem("Game Debug", "F1", m_GameDebugActive)) {
+            if (ImGui::MenuItem("Game Debug", ShortcutChord(ShortcutAction::GameDebug), m_GameDebugActive)) {
                 ToggleGameDebug();
             }
             ImGui::SetItemTooltip("Toggle Console panel + FPS/stats debug overlay");
-            if (ImGui::MenuItem("Engine Debug", "F2", m_EngineDebugActive)) {
+            if (ImGui::MenuItem("Engine Debug", ShortcutChord(ShortcutAction::EngineDebug), m_EngineDebugActive)) {
                 ToggleEngineDebug();
             }
             ImGui::SetItemTooltip("Toggle Profiler, Rendering, PostProcessing, SaveDebug panels + colliders");
@@ -1271,7 +1279,7 @@ void EditorLayer::DrawMenuBar() {
             if (ImGui::MenuItem("User Manual", nullptr, &userManual)) {
                 SetPanelVisibility(EditorPanel::UserManual, userManual);
             }
-            if (ImGui::MenuItem("Keyboard Shortcuts", "Ctrl+Shift+/", &m_ShowShortcutsHelp)) {
+            if (ImGui::MenuItem("Keyboard Shortcuts", ShortcutChord(ShortcutAction::ShortcutsHelp), &m_ShowShortcutsHelp)) {
             }
             if (ImGui::MenuItem("Copy Scene JSON Key List")) {
                 // Every component key the serializer recognizes — the scene-file
@@ -1289,7 +1297,7 @@ void EditorLayer::DrawMenuBar() {
                                   "Pair with the Inspector's 'Copy as JSON' to learn the schema.");
             }
             ImGui::Separator();
-            if (ImGui::MenuItem("Report Bug...", "Ctrl+Shift+B")) {
+            if (ImGui::MenuItem("Report Bug...", ShortcutChord(ShortcutAction::ReportBug))) {
                 m_ShowDiscordBugDialog = true;
                 m_DiscordSendState = DiscordSendState::Idle;
             }

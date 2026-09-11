@@ -1,4 +1,5 @@
 #include "Enjin/Input/TouchActionBridge.h"
+#include "Enjin/Editor/EditorShortcuts.h"
 #include "Enjin/Editor/EditorLayer.h"
 #include "Enjin/Editor/EditorWidgets.h"
 #include "Enjin/Editor/InspectorUndo.h"
@@ -683,20 +684,40 @@ void EditorLayer::DrawSettingsSection_EditorPerformance() {
     }
 
     if (UI::SectionHeader("Keyboard Shortcuts")) {
+        // Camera and mouse bindings. These are NOT keyboard chords -- they are
+        // mouse buttons, held keys and wheel gestures -- so they are not in the
+        // shortcut table and are listed here, once.
+        ImGui::TextDisabled("Camera");
         ImGui::BulletText("RMB + WASD - Fly camera (horizontal plane)");
-        ImGui::BulletText("Space / Q - Move up / down");
+        ImGui::BulletText("Space / E - Move up");
+        ImGui::BulletText("Q / Left Ctrl - Move down");
         ImGui::BulletText("Shift - Sprint");
-        ImGui::BulletText("Left Ctrl - Move down (alt)");
         ImGui::BulletText("RMB + Drag - Look around");
         ImGui::BulletText("MMB + Drag - Orbit around selection");
         ImGui::BulletText("Scroll Wheel - Adjust speed / zoom");
-        ImGui::BulletText("F - Focus on selected entity");
-        ImGui::BulletText("Delete - Delete selected entity");
-        ImGui::BulletText("Ctrl+D - Duplicate entity");
-        ImGui::BulletText("1/2/3 - Translate/Rotate/Scale gizmo");
-        ImGui::BulletText("4 - Toggle Local/World space");
-        ImGui::BulletText("Ctrl+S - Save scene");
-        ImGui::BulletText("F11 - Toggle focus mode");
+
+        ImGui::Spacing();
+        ImGui::TextDisabled("Keyboard");
+
+        // Read from the one table rather than restating part of it.
+        //
+        // This used to be a hand-written subset -- eight of the thirty-odd
+        // shortcuts, chosen at some point and never revisited -- and it was the
+        // THIRD place the editor described its own keys. The other two disagreed
+        // with each other and with the code.
+        for (usize i = 0; i < ShortcutCount(); ++i) {
+            const auto& sc = ShortcutTable()[i];
+            if (sc.chord[0] == '\0') continue;   // menu-only commands
+            ImGui::BulletText("%s - %s", sc.chord, sc.description);
+        }
+
+        ImGui::Spacing();
+        if (ImGui::Button("Open Keyboard Shortcuts window")) {
+            m_ShowShortcutsHelp = true;
+            m_ShortcutSearchBuf[0] = '\0';
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("(searchable, grouped by category)");
     }
 }
 
@@ -3229,48 +3250,16 @@ void EditorLayer::DrawShortcutsHelpModal() {
                              m_ShortcutSearchBuf, sizeof(m_ShortcutSearchBuf));
     ImGui::Separator();
 
-    struct ShortcutEntry {
-        const char* category;
-        const char* shortcut;
-        const char* description;
-    };
-
-    static const ShortcutEntry shortcuts[] = {
-        // General
-        {"General", "Ctrl+S", "Save scene"},
-        {"General", "Ctrl+Z", "Undo"},
-        {"General", "Ctrl+Y", "Redo"},
-        {"General", "Ctrl+D", "Duplicate selected"},
-        {"General", "Delete", "Delete selected entity"},
-        {"General", "F", "Focus on selected entity"},
-        {"General", "Ctrl+P", "Command Palette"},
-        {"General", "Ctrl+Shift+/", "Show this help"},
-        // Viewport
-        {"Viewport", "1", "Translate gizmo"},
-        {"Viewport", "2", "Rotate gizmo"},
-        {"Viewport", "3", "Scale gizmo"},
-        {"Viewport", "4", "Toggle local/world space"},
-        {"Viewport", "W/A/S/D", "Camera movement (hold RMB)"},
-        {"Viewport", "Space / E", "Move camera up"},
-        {"Viewport", "Q / Ctrl", "Move camera down"},
-        {"Viewport", "Shift", "Sprint (faster camera)"},
-        {"Viewport", "RMB + Mouse", "Look around"},
-        {"Viewport", "MMB", "Orbit (Orbit mode)"},
-        // Selection
-        {"Selection", "Ctrl+Click", "Toggle entity selection"},
-        {"Selection", "Shift+Click", "Range select"},
-        {"Selection", "Drag", "Marquee selection"},
-        {"Selection", "Escape", "Clear selection"},
-        // Play Mode
-        {"Play Mode", "Ctrl+P", "Play / Stop"},
-        {"Play Mode", "Ctrl+Shift+P", "Pause / Resume"},
-        // Editor
-        {"Editor", "F1", "Game Debug"},
-        {"Editor", "F2", "Engine Debug"},
-        {"Editor", "F10", "Toggle input action map"},
-        {"Editor", "Ctrl+Shift+/", "Keyboard shortcuts help"},
-        {"Editor", "` (Backtick)", "Toggle drop-down console"},
-    };
+    // The table is Editor/EditorShortcuts.h now, and the menu bar and the key
+    // handlers read the same rows.
+    //
+    // This used to be a local array, which is how it came to list "Ctrl+P  Play
+    // / Stop" four rows below "Ctrl+P  Command Palette", and "Ctrl+Shift+P" and
+    // "F10" for handlers that do not exist -- while F5, F11, Ctrl+B,
+    // Ctrl+Shift+B and Ctrl+1..5 all worked and appeared nowhere.
+    using ShortcutEntry = Enjin::Editor::ShortcutEntry;
+    const ShortcutEntry* shortcuts = ShortcutTable();
+    const usize shortcutCount = ShortcutCount();
 
     std::string filter;
     if (m_ShortcutSearchBuf[0] != '\0') {
@@ -3279,10 +3268,14 @@ void EditorLayer::DrawShortcutsHelpModal() {
     }
 
     const char* lastCategory = nullptr;
-    for (auto& sc : shortcuts) {
+    for (usize si = 0; si < shortcutCount; ++si) {
+        const ShortcutEntry& sc = shortcuts[si];
+        // A command with no key is real and worth listing -- it says "menu
+        // only", which is a true statement rather than a blank row.
+        const char* chordText = sc.chord[0] != '\0' ? sc.chord : "-";
         // Filter
         if (!filter.empty()) {
-            std::string shortcutLower = sc.shortcut;
+            std::string shortcutLower = chordText;
             std::string descLower = sc.description;
             std::string catLower = sc.category;
             for (auto& c : shortcutLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
@@ -3304,7 +3297,7 @@ void EditorLayer::DrawShortcutsHelpModal() {
         }
 
         // Shortcut entry
-        ImGui::Text("  %-20s", sc.shortcut);
+        ImGui::Text("  %-20s", chordText);
         ImGui::SameLine(200.0f);
         ImGui::TextDisabled("%s", sc.description);
     }

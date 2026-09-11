@@ -77,6 +77,7 @@
 #include "Enjin/Assets/SrtImport.h"
 #include "Enjin/Editor/SceneLock.h"
 #include "Enjin/Editor/CollaborativeEditing.h"
+#include "Enjin/Editor/EditorShortcuts.h"
 #include "Enjin/Editor/FlashTimeline.h"
 #include "Enjin/Editor/SymbolLibrary.h"
 #include "Enjin/Editor/VectorDrawingEditor.h"
@@ -2213,6 +2214,28 @@ private:
     // buffer size it controls governs what happens while PLAYING, and it used to
     // be reachable only once playing had stopped.
     void DrawPlaybackToolsPopup();
+
+    // Keyboard shortcuts whose action lives inside a menu item's body.
+    //
+    // Seven of these -- New, Open, Save As, Import, Cut, Copy, Paste -- were
+    // printed as accelerators in the menu bar and handled nowhere, so the menu
+    // item worked when clicked and the key it advertised did nothing.
+    //
+    // Rather than copy each body out (file dialogs, unsaved-changes prompts,
+    // clipboard state), the key RAISES the same request the menu item answers:
+    //   if (ImGui::MenuItem(...) || TakeShortcut(Action::NewScene)) { ... }
+    // so the key and the menu cannot do different things, because they are one
+    // code path.
+    void RaiseShortcut(ShortcutAction action) {
+        m_PendingShortcuts |= (1ull << static_cast<u64>(action));
+    }
+    bool TakeShortcut(ShortcutAction action) {
+        const u64 bit = 1ull << static_cast<u64>(action);
+        const bool hit = (m_PendingShortcuts & bit) != 0;
+        m_PendingShortcuts &= ~bit;
+        return hit;
+    }
+    u64 m_PendingShortcuts = 0;
 
     // Writes the current session's replay for a bug report to point at. Silent:
     // a failure here must not derail the report being filed.
