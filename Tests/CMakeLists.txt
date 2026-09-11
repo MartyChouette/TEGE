@@ -201,6 +201,7 @@ enjin_add_test(TestCollabConflictStrategy Unit/Editor/TestCollabConflictStrategy
 enjin_add_test(TestSymbolThumbnails  Unit/Editor/TestSymbolThumbnails.cpp)
 enjin_add_test(TestFlashTimelineConvert Unit/Editor/TestFlashTimelineConvert.cpp)
 enjin_add_test(TestEditorShortcuts   Unit/Editor/TestEditorShortcuts.cpp)
+enjin_add_test(TestWalkthrough       Unit/Editor/TestWalkthrough.cpp)
 enjin_add_test(TestRewindAnimation   Unit/Gameplay/TestRewindAnimation.cpp)
 enjin_add_test(TestDebugRecorder     Unit/Gameplay/TestDebugRecorder.cpp)
 enjin_add_test(TestRewindFeedback    Unit/Gameplay/TestRewindFeedback.cpp)

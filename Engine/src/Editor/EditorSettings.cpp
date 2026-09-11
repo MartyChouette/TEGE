@@ -421,6 +421,7 @@ bool EditorSettings::Save(const std::string& path) const {
 
         // Layout persistence
         j["visiblePanels"] = visiblePanels;
+        j["editorMode"] = editorMode;
         j["leftPanelWidth"] = leftPanelWidth;
         j["rightPanelWidth"] = rightPanelWidth;
         j["bottomPanelHeight"] = bottomPanelHeight;
@@ -616,6 +617,7 @@ bool EditorSettings::Load(const std::string& path) {
 
         // Layout persistence
         if (j.contains("visiblePanels")) visiblePanels = j["visiblePanels"].get<u64>();
+        if (j.contains("editorMode")) editorMode = j["editorMode"].get<std::string>();
         if (j.contains("leftPanelWidth")) leftPanelWidth = std::clamp(j["leftPanelWidth"].get<f32>(), 0.05f, 0.5f);
         if (j.contains("rightPanelWidth")) rightPanelWidth = std::clamp(j["rightPanelWidth"].get<f32>(), 0.05f, 0.5f);
         if (j.contains("bottomPanelHeight")) bottomPanelHeight = std::clamp(j["bottomPanelHeight"].get<f32>(), 0.05f, 0.5f);

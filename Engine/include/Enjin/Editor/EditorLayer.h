@@ -78,6 +78,8 @@
 #include "Enjin/Editor/SceneLock.h"
 #include "Enjin/Editor/CollaborativeEditing.h"
 #include "Enjin/Editor/EditorShortcuts.h"
+#include "Enjin/Editor/EditorMode.h"
+#include "Enjin/Editor/Walkthrough.h"
 #include "Enjin/Editor/FlashTimeline.h"
 #include "Enjin/Editor/SymbolLibrary.h"
 #include "Enjin/Editor/VectorDrawingEditor.h"
@@ -450,10 +452,34 @@ private:
     // mouse release is not guaranteed to arrive: see the definition.
     void CancelCreativeGesture();
 
-    // Distinct from the older Build palette below (m_ShowCreativePalette and its
-    // own nested CreativeTool enum), which places pre-made objects. These are the
-    // brush build tools. The two overlap and should be folded together.
+    // The Build Palette below (m_ShowCreativePalette, its own CreativeTool enum)
+    // is a DIFFERENT surface and a deliberate one: a quick-place window inside
+    // the full editor. This is the build rail. They overlap on what they can
+    // make, and the standing risk is that the two drift -- the density curves
+    // and drop offsets are currently the same because they were copied, not
+    // because they are shared.
     CreativeMode m_Creative;
+
+    // --- Editor mode -------------------------------------------------------
+    //
+    // ONE owner. m_Creative.SetActive is derived from this and never called
+    // from anywhere else, because two ways to say the same thing is how a
+    // tutorial ends up running with its build surface switched off.
+    EditorMode m_EditorMode = EditorMode::Developer;
+
+    // The walkthrough behind Tutorial mode. Ticked only while that mode is up,
+    // so a Creative session pays nothing for it.
+    WalkthroughState m_Walkthrough;
+
+    // Drawn over the viewport in Tutorial mode: the step, why it matters, and
+    // how far through you are.
+    void DrawGuide(const ImVec2& imgMin, const ImVec2& imgMax);
+    void TickWalkthrough();
+
+public:
+    EditorMode GetEditorMode() const { return m_EditorMode; }
+    void SetEditorMode(EditorMode mode);
+private:
     bool m_BuildDragging = false;
     Math::Vector3 m_BuildDragStart;
     // Rising-edge detection for entering creative mode, and the countdown that

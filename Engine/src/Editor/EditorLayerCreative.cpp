@@ -11,6 +11,7 @@
 // which gesture happened.
 
 #include "Enjin/Editor/EditorLayer.h"
+#include <cfloat>
 #include "Enjin/ECS/Components/WaterVolume.h"
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/Renderer/MeshFactory.h"
@@ -355,7 +356,11 @@ void EditorLayer::DrawCreativeSurface() {
         dl->AddRectFilled(o, ImVec2(o.x + 3.0f * ui, o.y + kHeaderH), kAccent);
 
         const f32 titleY = o.y + 5.0f * ui;
-        text(kBodyText, ImVec2(o.x + kPad, titleY), kInk, "Creative");
+        // The mode's own name, not a hardcoded "Creative". Tutorial uses this
+        // same surface, and a header that called it Creative while a walkthrough
+        // ran over it would be the surface disagreeing with the menu you used to
+        // get here.
+        text(kBodyText, ImVec2(o.x + kPad, titleY), kInk, EditorModeName(m_EditorMode));
 
         const std::string sceneLabel =
             m_CurrentScenePath.empty() ? std::string("unsaved scene")
@@ -372,7 +377,7 @@ void EditorLayer::DrawCreativeSurface() {
             ImGui::SetCursorScreenPos(bMin);
             ImGui::PushID(900);
             if (ImGui::InvisibleButton("##leave", ImVec2(bw, bh))) {
-                m_Creative.SetActive(false);
+                SetEditorMode(EditorMode::Developer);
             }
             const bool hov = ImGui::IsItemHovered();
             ImGui::PopID();
@@ -647,7 +652,108 @@ bool EditorLayer::CreativeGroundPoint(f32 screenX, f32 screenY, f32 viewW, f32 v
     return CreativeMode::GroundHit(ray.origin, ray.direction, out);
 }
 
+// Advance the walkthrough. Tutorial mode only.
+//
+// Reads the world and the rail rather than being driven by them: a step
+// completes because the thing it asked for is true, not because some other code
+// remembered to tell it. That is what lets you wander off, build three other
+// things, and come back to a tutorial that is still on the right step.
+void EditorLayer::TickWalkthrough() {
+    if (m_EditorMode != EditorMode::Tutorial) return;
+
+    WalkthroughContext ctx;
+    ctx.world = m_World;
+    ctx.currentTool = m_Creative.GetTool();
+    ctx.isPlaying = !m_PlayMode.IsStopped();
+
+    if (m_Walkthrough.Update(ctx)) {
+        // Once, on the frame it completes.
+        if (m_Announcer.enabled) {
+            m_Announcer.Announce(m_Walkthrough.IsFinished()
+                                     ? "Walkthrough complete"
+                                     : m_Walkthrough.Current().instruction.c_str(),
+                                 Accessibility::AnnouncePriority::Low);
+        }
+    }
+}
+
+// The guide: what to do next and why, over the viewport, in Tutorial mode.
+//
+// Top-right, because the bottom edge already carries the tool name and the
+// brush/triangle readout, and the top-left has the gizmo buttons and the
+// shading row. Drawn with the same hand-rolled surface the rest of creative
+// mode uses, at the editor's UI scale -- ImGui's FontGlobalScale does not reach
+// ImDrawList::AddText, so every size here carries the scale itself.
+void EditorLayer::DrawGuide(const ImVec2& imgMin, const ImVec2& imgMax) {
+    if (m_EditorMode != EditorMode::Tutorial || !m_World) return;
+    if (imgMax.x - imgMin.x < 32.0f || imgMax.y - imgMin.y < 32.0f) return;
+
+    const f32 ui = m_EditorSettings.uiScale;
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    ImFont* font = ImGui::GetFont();
+
+    const f32 kHead = 15.0f * ui;
+    const f32 kBody = 12.0f * ui;
+    const f32 pad   = 12.0f * ui;
+    const f32 cardW = 300.0f * ui;
+
+    const auto& step = m_Walkthrough.Current();
+    const bool done = m_Walkthrough.IsFinished();
+
+    const char* heading = done ? "That is the whole tour" : step.instruction.c_str();
+    const char* body = done
+        ? "Everything here is the same editor. Switch to Developer from the "
+          "View menu when you want the panels."
+        : step.guidance.c_str();
+
+    // Measured, then boxed. Wrapping is done by ImGui's own measurement rather
+    // than a character count, because the text is authored at 100% and the card
+    // is not.
+    const ImVec2 headSize = font->CalcTextSizeA(kHead, FLT_MAX, cardW - pad * 2.0f, heading);
+    const ImVec2 bodySize = font->CalcTextSizeA(kBody, FLT_MAX, cardW - pad * 2.0f, body);
+
+    const f32 barH = 4.0f * ui;
+    const f32 cardH = pad + headSize.y + 6.0f * ui + bodySize.y + 10.0f * ui + barH + pad;
+
+    const ImVec2 c0(imgMax.x - cardW - 14.0f * ui, imgMin.y + 14.0f * ui);
+    const ImVec2 c1(c0.x + cardW, c0.y + cardH);
+
+    dl->AddRectFilled(c0, c1, IM_COL32(22, 25, 33, 235), 6.0f * ui);
+    dl->AddRect(c0, c1, IM_COL32(90, 150, 210, 180), 6.0f * ui, 0, 1.5f * ui);
+
+    f32 y = c0.y + pad;
+    dl->AddText(font, kHead, ImVec2(c0.x + pad, y), IM_COL32(235, 240, 255, 255),
+                heading, nullptr, cardW - pad * 2.0f);
+    y += headSize.y + 6.0f * ui;
+    dl->AddText(font, kBody, ImVec2(c0.x + pad, y), IM_COL32(170, 180, 205, 255),
+                body, nullptr, cardW - pad * 2.0f);
+    y += bodySize.y + 10.0f * ui;
+
+    // Progress as a bar rather than a number alone: "3 of 7" tells you where you
+    // are, the bar tells you how much is left without reading.
+    const usize total = m_Walkthrough.StepCount();
+    const usize at = done ? total : m_Walkthrough.CurrentStep();
+    const f32 frac = total ? static_cast<f32>(at) / static_cast<f32>(total) : 1.0f;
+    const ImVec2 b0(c0.x + pad, y);
+    const ImVec2 b1(c1.x - pad, y + barH);
+    dl->AddRectFilled(b0, b1, IM_COL32(60, 66, 82, 255), barH * 0.5f);
+    if (frac > 0.0f) {
+        dl->AddRectFilled(b0, ImVec2(b0.x + (b1.x - b0.x) * frac, b1.y),
+                          IM_COL32(90, 170, 240, 255), barH * 0.5f);
+    }
+
+    char prog[48];
+    std::snprintf(prog, sizeof(prog), "%zu of %zu", at, total);
+    const ImVec2 ps = font->CalcTextSizeA(kBody * 0.9f, FLT_MAX, 0.0f, prog);
+    dl->AddText(font, kBody * 0.9f, ImVec2(c1.x - pad - ps.x, b0.y - ps.y - 3.0f * ui),
+                IM_COL32(140, 150, 175, 255), prog);
+}
+
 void EditorLayer::DrawCreativeOverlay(const ImVec2& imgMin, const ImVec2& imgMax) {
+    // The guide first, because it is the one thing in Tutorial mode that has to
+    // be there whether or not the rest of the overlay has anything to say.
+    DrawGuide(imgMin, imgMax);
+
     if (!m_Creative.IsActive() || !m_World) return;
     if (!m_PlayMode.IsStopped()) return;   // nothing to author while the game runs
 

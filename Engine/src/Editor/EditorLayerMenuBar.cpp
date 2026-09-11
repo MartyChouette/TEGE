@@ -400,14 +400,30 @@ void EditorLayer::DrawMenuBar() {
         }
 
         if (ImGui::BeginMenu("View")) {
-            // First item in the menu on purpose. Discoverability is part of the
-            // feature: a build surface nobody can find fails the same bar as a
-            // build surface that does not exist.
-            if (ImGui::MenuItem("Creative Mode", ShortcutChord(ShortcutAction::CreativeMode), m_Creative.IsActive())) {
-                m_Creative.SetActive(!m_Creative.IsActive());
+            // First in the menu on purpose. Discoverability is part of the
+            // feature: a mode nobody can find fails the same bar as one that
+            // does not exist.
+            //
+            // This used to be a single "Creative Mode" checkbox, which is how a
+            // three-mode editor came to advertise one. Creative had a "Full
+            // Editor" button to leave by, so the way OUT was visible from inside
+            // it, and from the full editor there was nothing at all saying
+            // another mode existed short of a Ctrl+B you had to already know.
+            ImGui::TextDisabled("Mode");
+            for (u8 mi = 0; mi < static_cast<u8>(EditorMode::Count); ++mi) {
+                const EditorMode m = static_cast<EditorMode>(mi);
+                const bool on = (m_EditorMode == m);
+                // The chord belongs only to the two Ctrl+B flips between.
+                const char* chord = (m == EditorMode::Creative)
+                                        ? ShortcutChord(ShortcutAction::CreativeMode)
+                                        : nullptr;
+                if (ImGui::MenuItem(EditorModeName(m), chord, on)) {
+                    SetEditorMode(m);
+                }
+                // Every mode says what it is FOR. A switcher that lists three
+                // words and explains none of them makes you pick by guessing.
+                ImGui::SetItemTooltip("%s", EditorModeDescription(m));
             }
-            ImGui::SetItemTooltip("Block out a level with walls, floors, stairs and brushes, "
-                                  "then press play. The full editor stays one click away.");
             ImGui::Separator();
             if (ImGui::MenuItem("Simulate Touch Controls", nullptr, m_SimulateTouch)) {
                 m_SimulateTouch = !m_SimulateTouch;

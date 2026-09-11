@@ -274,7 +274,14 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
 
     // Load accessibility / editor settings and apply theme + scale
     m_EditorSettings.Load();
-    if (s_StartInCreativeMode) m_Creative.SetActive(true);
+    // --creative on the command line, and otherwise whatever mode the last
+    // session ended in. A mode that resets every launch is not a mode.
+    if (s_StartInCreativeMode) {
+        SetEditorMode(EditorMode::Creative);
+    } else {
+        const EditorMode saved = EditorModeFromName(m_EditorSettings.editorMode.c_str());
+        if (saved != EditorMode::Developer) SetEditorMode(saved);
+    }
 
     m_ImGuiLayer->ApplyTheme(m_EditorSettings.theme, &m_EditorSettings.accentColors);
     m_ImGuiLayer->SetGlobalScale(m_EditorSettings.uiScale);
@@ -706,6 +713,33 @@ void EditorLayer::OpenToolPanel(f32 baseW, f32 baseH) const {
                              ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowPos(vp->GetCenter(), ImGuiCond_FirstUseEver,
                             ImVec2(0.5f, 0.5f));
+}
+
+void EditorLayer::SetEditorMode(EditorMode mode) {
+    if (mode == m_EditorMode) return;
+
+    const EditorMode previous = m_EditorMode;
+    m_EditorMode = mode;
+
+    // The build surface follows the mode rather than being toggled beside it.
+    // Tutorial IS Creative with a walkthrough over it, so both raise the rail --
+    // ModeUsesBuildSurface is the one place that decision lives.
+    m_Creative.SetActive(ModeUsesBuildSurface(mode));
+
+    // Leaving Creative or Tutorial mid-gesture would otherwise strand the drag:
+    // the mouse release lands on a surface that is no longer drawn, so the next
+    // entry starts with a half-finished wall still attached to the cursor.
+    if (!ModeUsesBuildSurface(mode) && ModeUsesBuildSurface(previous)) {
+        CancelCreativeGesture();
+    }
+
+    m_EditorSettings.editorMode = EditorModeName(mode);
+    m_EditorSettings.Save();
+
+    ENJIN_LOG_INFO(Editor, "Editor mode: %s", EditorModeName(mode));
+    if (m_Announcer.enabled) {
+        m_Announcer.Announce(EditorModeName(mode), Accessibility::AnnouncePriority::Low);
+    }
 }
 
 void EditorLayer::SetRenderSystem(ECS::RenderSystem* renderSystem) {
@@ -1967,7 +2001,8 @@ void EditorLayer::Update(f32 deltaTime) {
         // Creative mode (Ctrl+B) -- one key to the build surface and one key
         // back, so trying it never costs a trip through a menu.
         if (Input::IsKeyDown(KeyCode::LeftControl) && Input::IsKeyPressed(KeyCode::B)) {
-            m_Creative.SetActive(!m_Creative.IsActive());
+            SetEditorMode(ModeUsesBuildSurface(m_EditorMode) ? EditorMode::Developer
+                                                              : EditorMode::Creative);
         }
 
         // Save scene (Ctrl+S)
@@ -4027,6 +4062,10 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     }
 
     // Menu bar
+    // The walkthrough is read from the world and the rail, so it ticks once a
+    // frame before anything draws it.
+    TickWalkthrough();
+
     DrawMenuBar();
 
     // Anything raised this frame and not consumed by its menu item is dropped.

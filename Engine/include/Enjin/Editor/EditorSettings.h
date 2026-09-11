@@ -200,6 +200,11 @@ struct EditorSettings {
     // save, so a newly added panel would be visible until the next restart and
     // then never again.
     u64 visiblePanels = 319;
+
+    // Which of the three editor modes to open in. Stored by NAME rather than
+    // by index so the file stays readable and reordering the enum does not
+    // silently move everybody to a different mode.
+    std::string editorMode = "Developer";
     f32 leftPanelWidth = 0.18f;
     f32 rightPanelWidth = 0.25f;
     f32 bottomPanelHeight = 0.22f;
