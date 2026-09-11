@@ -44,6 +44,16 @@ enum class BuildTool : u8 {
     Brush,
     Water,
     Terrain,
+    // Grass, shrubs and trees, sized by the same drag as Water. In the volume
+    // band because that is what it makes, and because the rail groups by band.
+    //
+    // These existed only in the older Build palette -- View > Build Palette
+    // (Creative), off by default -- so the whole of the engine's vegetation was
+    // reachable only from a window you had to already know about. The golden
+    // rule calls that not shipped, and it is the clearest case of the two
+    // creative systems overlapping: one has the plants, the other is the one
+    // people find.
+    Plants,
     Ladder,
     Reduce,
     // Not a build tool: the one that changes what is already there. Last on the
@@ -107,6 +117,12 @@ struct BuildToolSettings {
 
     f32 radius   = 4.00f;    // Terrain sculpt
     f32 strength = 0.60f;    // Terrain sculpt
+
+    // Plants: which of the three volume kinds the drag makes, and how thickly.
+    // 0 = grass, 1 = shrubs, 2 = trees. A float because every other setting is
+    // one and the rail's slider row is built for floats; it is rounded at use.
+    f32 plantKind    = 0.0f;
+    f32 plantDensity = 1.0f;
 
     // Path: how many wall brushes a BOWED span is cut into. A straight span is
     // always one, however this is set -- there is nothing to approximate.

@@ -39,6 +39,7 @@ const char* BuildToolName(BuildTool tool) {
         case BuildTool::Path:    return "Path";
         case BuildTool::Brush:   return "Brush";
         case BuildTool::Water:   return "Water";
+        case BuildTool::Plants:  return "Plants";
         case BuildTool::Terrain: return "Terrain";
         case BuildTool::Ladder:  return "Ladder";
         case BuildTool::Reduce:  return "Reduce";
@@ -55,6 +56,7 @@ u8 BuildToolGroup(BuildTool tool) {
         case BuildTool::Path:    return 0;   // structure
         case BuildTool::Brush:
         case BuildTool::Water:
+        case BuildTool::Plants:
         case BuildTool::Terrain: return 1;   // volume
         case BuildTool::Ladder:
         case BuildTool::Reduce:  return 2;   // object
@@ -82,6 +84,8 @@ const char* BuildToolVerb(BuildTool tool) {
             return "Drag a rectangle. The surface sits at the height you set.";
         case BuildTool::Terrain:
             return "Drag over the ground to raise or lower it. Makes a terrain if there is none.";
+        case BuildTool::Plants:
+            return "Drag a patch. Grass, shrubs or trees, scattered inside it.";
         case BuildTool::Ladder:
             return "Drag along a wall. Climbing is already wired into the controller.";
         case BuildTool::Reduce:
@@ -175,6 +179,12 @@ u32 BuildToolFields(BuildTool tool, BuildToolSettings& s,
         case BuildTool::Terrain:
             add("Radius",   &s.radius,   0.50f, 40.0f, "m");
             add("Strength", &s.strength, 0.05f,  2.0f, "");
+            break;
+        case BuildTool::Plants:
+            // Kind is a 0..2 pick rendered as a slider, for the same reason the
+            // rest of this rail is sliders: one row shape, one interaction.
+            add("Kind",    &s.plantKind,    0.0f, 2.0f, "");
+            add("Density", &s.plantDensity, 0.1f, 4.0f, "x");
             break;
         case BuildTool::Ladder:
             add("Height",   &s.height,  0.50f, 20.0f, "m");
@@ -380,6 +390,20 @@ bool CreativeMode::PlanPlacement(BuildTool tool,
 
             out = ToolPlacement{};
             out.origin = Math::Vector3(midX, settings.elevation, midZ);
+            out.halfExtents = Math::Vector3(spanX * 0.5f, 0.0f, spanZ * 0.5f);
+            return true;
+        }
+
+        case BuildTool::Plants: {
+            // Both dimensions, same as Water: a patch with one side of zero has
+            // no area to scatter into, and would produce a volume that looks
+            // placed and grows nothing.
+            if (spanX < kCreativeMinDragLength || spanZ < kCreativeMinDragLength) return false;
+
+            out = ToolPlacement{};
+            // Sits on the ground the drag happened on, not at an authored
+            // elevation -- plants grow where you dragged them.
+            out.origin = Math::Vector3(midX, dragStart.y, midZ);
             out.halfExtents = Math::Vector3(spanX * 0.5f, 0.0f, spanZ * 0.5f);
             return true;
         }

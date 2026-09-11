@@ -11,6 +11,9 @@
 // which gesture happened.
 
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/ECS/Components/TreeVolume.h"
+#include "Enjin/ECS/Components/ShrubVolume.h"
+#include "Enjin/ECS/Components/GrassVolume.h"
 #include "Enjin/Editor/CreativeMode.h"
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Editor/UndoRedo.h"
@@ -138,6 +141,25 @@ void DrawToolIcon(ImDrawList* dl, BuildTool tool, ImVec2 c, ImU32 col, f32 ui) {
             for (int i = 0; i < 3; ++i) {
                 const f32 y = c.y - r * 0.55f + static_cast<f32>(i) * r * 0.55f;
                 dl->AddLine(ImVec2(c.x - r * 0.55f, y), ImVec2(c.x + r * 0.55f, y), col, t);
+            }
+            break;
+        }
+        case BuildTool::Plants: {  // three sprigs on a ground line
+            // Drawn rather than lettered, like every other tool on this rail.
+            // A blank button is what a new tool gets by default here, and a rail
+            // of shapes with one gap in it reads as a bug in the rail.
+            dl->AddLine(ImVec2(c.x - r, c.y + r * 0.8f),
+                        ImVec2(c.x + r, c.y + r * 0.8f), col, t);
+            for (int i = 0; i < 3; ++i) {
+                const f32 x = c.x + (static_cast<f32>(i) - 1.0f) * r * 0.62f;
+                const f32 h = (i == 1) ? r * 1.5f : r * 1.1f;   // the middle one taller
+                const ImVec2 base(x, c.y + r * 0.8f);
+                dl->AddLine(base, ImVec2(x, base.y - h), col, t);
+                // A leaf either side, so it reads as a plant and not a fence.
+                dl->AddLine(ImVec2(x, base.y - h * 0.55f),
+                            ImVec2(x - r * 0.34f, base.y - h * 0.85f), col, t);
+                dl->AddLine(ImVec2(x, base.y - h * 0.55f),
+                            ImVec2(x + r * 0.34f, base.y - h * 0.85f), col, t);
             }
             break;
         }
@@ -1078,6 +1100,61 @@ ECS::Entity EditorLayer::PlaceCreativeComponent(BuildTool tool,
                        static_cast<double>(water.settings.width),
                        static_cast<double>(water.settings.depth),
                        static_cast<double>(plan.origin.y));
+        return entity;
+    }
+
+    if (tool == BuildTool::Plants) {
+        // Grass, shrubs or trees, scattered inside the dragged patch.
+        //
+        // These were only ever reachable from the older Build palette -- View >
+        // Build Palette (Creative), which is off by default -- so the engine's
+        // whole vegetation capability sat behind a window you had to already
+        // know existed. Same components, same density curve as that palette
+        // uses, so a patch dragged here and a patch dragged there are the same
+        // object; this is the discoverable way in, not a second implementation.
+        xf.position = plan.origin;
+
+        const f32 hx = plan.halfExtents.x;
+        const f32 hz = plan.halfExtents.z;
+
+        // Instances scale with AREA, clamped at both ends: a patch the size of a
+        // doormat still gets enough blades to read as grass, and one the size of
+        // a field does not try to place a hundred thousand.
+        auto areaDensity = [&](f32 perUnit, u32 lo, u32 hi) -> u32 {
+            const f32 scaled = hx * hz * 4.0f * perUnit * s.plantDensity;
+            const u32 d = static_cast<u32>(scaled);
+            return std::max(lo, std::min(d, hi));
+        };
+
+        const int kind = static_cast<int>(s.plantKind + 0.5f);
+        const char* kindName = "Grass Patch";
+        if (kind >= 2) {
+            kindName = "Tree Grove";
+            auto& tv = m_World->AddComponent<ECS::TreeVolumeComponent>(entity);
+            tv.halfExtents = Math::Vector3(hx, 0.0f, hz);
+            tv.density = areaDensity(0.08f, 1u, 120u);
+        } else if (kind == 1) {
+            kindName = "Shrub Patch";
+            auto& sv = m_World->AddComponent<ECS::ShrubVolumeComponent>(entity);
+            sv.halfExtents = Math::Vector3(hx, 0.0f, hz);
+            sv.density = areaDensity(1.0f, 8u, 1500u);
+        } else {
+            auto& gv = m_World->AddComponent<ECS::GrassVolumeComponent>(entity);
+            gv.halfExtents = Math::Vector3(hx, 0.0f, hz);
+            gv.density = areaDensity(4.0f, 32u, 6000u);
+        }
+
+        // Named for what it is rather than for the tool, because "Plants" in the
+        // hierarchy tells you nothing about which of the three you made.
+        if (auto* nc = m_World->GetComponent<ECS::NameComponent>(entity)) {
+            nc->name = kindName;
+        }
+
+        SelectEntity(entity);
+        RecordLayerCreate(entity);
+        FinishCreativePlacement(entity);
+        ENJIN_LOG_INFO(Editor, "Creative: placed %s (%.2f x %.2f m)", kindName,
+                       static_cast<double>(hx * 2.0f), static_cast<double>(hz * 2.0f));
         return entity;
     }
 

@@ -323,6 +323,7 @@ ENJIN_TEST(CreativeMode, ToolsThatActOnComponentsBuildNoBrushes) {
     BuildToolSettings s;
     const BuildTool notBrushes[] = {
         BuildTool::Water, BuildTool::Terrain,
+        BuildTool::Plants,
         BuildTool::Ladder, BuildTool::Reduce
     };
     for (BuildTool tool : notBrushes) {
@@ -998,6 +999,82 @@ ENJIN_TEST(CreativeMode, ThePreviewLineAndTheBuiltWallAgree) {
     ENJIN_EXPECT_FLOAT_NEAR(line.front().x, 0.0f, 0.001f);
     ENJIN_EXPECT_FLOAT_NEAR(line.back().x, 10.0f, 0.001f);
     ENJIN_EXPECT_FLOAT_NEAR(line.back().z, 4.0f, 0.001f);
+}
+
+// ---------------------------------------------------------------------------
+// Plants
+// ---------------------------------------------------------------------------
+//
+// Grass, shrubs and trees existed ONLY in the older Build palette -- View >
+// Build Palette (Creative), which is off by default -- so the whole of the
+// engine's vegetation was reachable only from a window you had to already know
+// about. Two creative systems, and the one people find had no plants in it.
+//
+// Worse than missing: with the tool absent from this enum, the realisation in
+// EditorLayerCreative fell through its Water branch to the Ladder branch, so a
+// drag with any unhandled tool silently produced a ladder.
+
+ENJIN_TEST(CreativeMode, PlantsCoverTheDraggedPatch) {
+    BuildToolSettings s;
+
+    bool ok = false;
+    const ToolPlacement p =
+        Plan(BuildTool::Plants, s, Vector3(-4, 0, -2), Vector3(6, 0, 8), &ok);
+
+    ENJIN_ASSERT_TRUE(ok);
+    ENJIN_EXPECT_FLOAT_NEAR(p.halfExtents.x * 2.0f, 10.0f, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(p.halfExtents.z * 2.0f, 10.0f, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(p.origin.x, 1.0f, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(p.origin.z, 3.0f, 0.001f);
+}
+
+ENJIN_TEST(CreativeMode, PlantsSitOnTheGroundTheyWereDraggedOn) {
+    // Deliberately NOT settings.elevation, which is what Water uses. Water is a
+    // surface you place at a height; plants grow where you dragged them, and a
+    // patch that floated at some authored elevation would be a different tool.
+    BuildToolSettings s;
+    s.elevation = -5.0f;
+
+    const ToolPlacement p =
+        Plan(BuildTool::Plants, s, Vector3(0, 2.25f, 0), Vector3(4, 2.25f, 4));
+
+    ENJIN_EXPECT_FLOAT_NEAR(p.origin.y, 2.25f, 0.001f);
+}
+
+ENJIN_TEST(CreativeMode, APatchWithNoAreaIsRefused) {
+    // A line has nothing to scatter into. Accepting it would place a volume that
+    // looks put down and grows nothing, which reads as broken vegetation rather
+    // than as a gesture that did not describe an area.
+    BuildToolSettings s;
+
+    bool ok = true;
+    Plan(BuildTool::Plants, s, Vector3(0, 0, 0), Vector3(8, 0, 0), &ok);
+    ENJIN_EXPECT_FALSE(ok);
+
+    ok = true;
+    Plan(BuildTool::Plants, s, Vector3(0, 0, 0), Vector3(0, 0, 8), &ok);
+    ENJIN_EXPECT_FALSE(ok);
+}
+
+ENJIN_TEST(CreativeMode, EveryToolHasAName) {
+    // BuildToolName feeds the rail's tooltip and the entity's name. A tool added
+    // to the enum and missed here gets whatever the default arm returns, which
+    // is how a new tool ends up on the rail labelled as another one.
+    for (int i = 0; i < static_cast<int>(BuildTool::Count); ++i) {
+        const char* n = BuildToolName(static_cast<BuildTool>(i));
+        ENJIN_ASSERT_TRUE(n != nullptr);
+        ENJIN_EXPECT_TRUE(n[0] != '\0');
+    }
+}
+
+ENJIN_TEST(CreativeMode, EveryToolSaysHowToUseIt) {
+    // The verb line under the rail. An empty one is a tool the surface will not
+    // explain, which is the discoverability half of the golden rule.
+    for (int i = 0; i < static_cast<int>(BuildTool::Count); ++i) {
+        const char* v = BuildToolVerb(static_cast<BuildTool>(i));
+        ENJIN_ASSERT_TRUE(v != nullptr);
+        ENJIN_EXPECT_TRUE(v[0] != '\0');
+    }
 }
 
 ENJIN_TEST_MAIN()
