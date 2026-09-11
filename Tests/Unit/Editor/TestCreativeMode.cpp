@@ -1127,4 +1127,46 @@ ENJIN_TEST(CreativeMode, PropsBuildNoBrushes) {
     ENJIN_EXPECT_EQ(solid.brushes.size(), (usize)0);
 }
 
+// ---------------------------------------------------------------------------
+// Water is two features, not one
+// ---------------------------------------------------------------------------
+//
+// Water3DComponent is a rendered plane: Gerstner waves, styles, tessellation.
+// WaterVolumeComponent is a BODY: depth, shore foam, and the component
+// ControllerSystem reads to put a character into a swim state.
+//
+// The Water tool only ever made the first, so "Water" in a level-building rail
+// produced water you sink through, and the swimmable kind was reachable only
+// from the older Build Palette. Playground's own Pool is a WaterVolume.
+
+ENJIN_TEST(CreativeMode, WaterDefaultsToTheSwimmableKind) {
+    // A build tool exists to make a level somebody plays. Water you fall through
+    // is the surprising answer, so it is not the default one.
+    BuildToolSettings s;
+    ENJIN_EXPECT_TRUE(s.waterKind >= 0.5f);
+    ENJIN_EXPECT_TRUE(s.waterDepth > 0.0f);
+}
+
+ENJIN_TEST(CreativeMode, BothWaterKindsCoverTheDraggedRectangle) {
+    // The footprint is the gesture either way -- only what gets built from it
+    // differs, and a tool whose shape changed with a settings toggle would be
+    // two tools wearing one name.
+    BuildToolSettings surface;
+    surface.waterKind = 0.0f;
+    BuildToolSettings swimmable;
+    swimmable.waterKind = 1.0f;
+
+    bool okA = false, okB = false;
+    const ToolPlacement a =
+        Plan(BuildTool::Water, surface, Vector3(-4, 0, -2), Vector3(6, 0, 8), &okA);
+    const ToolPlacement b =
+        Plan(BuildTool::Water, swimmable, Vector3(-4, 0, -2), Vector3(6, 0, 8), &okB);
+
+    ENJIN_ASSERT_TRUE(okA && okB);
+    ENJIN_EXPECT_FLOAT_NEAR(a.halfExtents.x, b.halfExtents.x, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(a.halfExtents.z, b.halfExtents.z, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(a.origin.x, b.origin.x, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(a.origin.z, b.origin.z, 0.001f);
+}
+
 ENJIN_TEST_MAIN()

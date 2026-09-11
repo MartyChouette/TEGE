@@ -123,6 +123,22 @@ struct BuildToolSettings {
     // the plane's footprint instead would be a lie on the surface.
     f32 waveScale = 0.35f;   // Water: wave height in metres
 
+    // Water: which of the engine's two water features the drag makes.
+    // 0 = Surface (Water3DComponent), 1 = Swimmable (WaterVolumeComponent).
+    //
+    // They are not variants of one thing and neither surface said so. Water3D
+    // is a rendered plane with Gerstner waves and styles; WaterVolume is a body
+    // with DEPTH, shore foam, and -- the part that matters -- the component
+    // ControllerSystem reads to let a character swim. This tool only ever made
+    // the first, so "Water" in a level-building rail produced water you sink
+    // through, and the only way to get the swimmable kind was the older Build
+    // Palette. Playground's own Pool is a WaterVolume.
+    //
+    // Not both on one entity: each draws its own surface, so the two would
+    // z-fight at the same height.
+    f32 waterKind  = 1.0f;   // swimmable by default -- see BuildToolVerb
+    f32 waterDepth = 2.0f;   // Swimmable: metres below the surface
+
     f32 radius   = 4.00f;    // Terrain sculpt
     f32 strength = 0.60f;    // Terrain sculpt
 

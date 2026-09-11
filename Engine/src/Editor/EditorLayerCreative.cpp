@@ -11,6 +11,7 @@
 // which gesture happened.
 
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/ECS/Components/WaterVolume.h"
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/Renderer/MeshFactory.h"
 #include "Enjin/ECS/Components/TreeVolume.h"
@@ -1078,6 +1079,36 @@ ECS::Entity EditorLayer::PlaceCreativeComponent(BuildTool tool,
     ECS::Entity entity = m_World->CreateEntity();
     m_World->AddComponent<ECS::NameComponent>(entity, BuildToolName(tool));
     auto& xf = m_World->AddComponent<ECS::TransformComponent>(entity);
+
+    if (tool == BuildTool::Water && s.waterKind >= 0.5f) {
+        // A swimmable body of water: the component ControllerSystem reads to
+        // put a character into a swim state. Playground's Pool is one of these.
+        //
+        // WaterVolume's transform position IS the surface level, and its
+        // halfExtents.y is how far the water reaches below it -- so the surface
+        // goes where the Surface slider says and the body hangs underneath.
+        xf.position = Math::Vector3(plan.origin.x, s.elevation, plan.origin.z);
+
+        auto& wv = m_World->AddComponent<ECS::WaterVolumeComponent>(entity);
+        wv.halfExtents = Math::Vector3(plan.halfExtents.x,
+                                       std::max(0.25f, s.waterDepth),
+                                       plan.halfExtents.z);
+        wv.waterType = ECS::WaterType::Lake;
+        wv.waveHeight = s.waveScale;
+
+        if (auto* nc = m_World->GetComponent<ECS::NameComponent>(entity)) {
+            nc->name = "Water (swimmable)";
+        }
+
+        SelectEntity(entity);
+        RecordLayerCreate(entity);
+        FinishCreativePlacement(entity);
+        ENJIN_LOG_INFO(Editor, "Creative: placed swimmable water (%.2f x %.2f m, %.2f m deep)",
+                       static_cast<double>(plan.halfExtents.x * 2.0f),
+                       static_cast<double>(plan.halfExtents.z * 2.0f),
+                       static_cast<double>(wv.halfExtents.y));
+        return entity;
+    }
 
     if (tool == BuildTool::Water) {
         // Water3D builds its surface mesh in WORLD space around

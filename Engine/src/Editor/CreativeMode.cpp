@@ -83,7 +83,7 @@ const char* BuildToolVerb(BuildTool tool) {
         case BuildTool::Brush:
             return "A convex solid. Subtract one from a wall and you have a doorway.";
         case BuildTool::Water:
-            return "Drag a rectangle. The surface sits at the height you set.";
+            return "Drag a rectangle. Swimmable by default; Kind 0 is a surface only.";
         case BuildTool::Terrain:
             return "Drag over the ground to raise or lower it. Makes a terrain if there is none.";
         case BuildTool::Plants:
@@ -174,11 +174,19 @@ u32 BuildToolFields(BuildTool tool, BuildToolSettings& s,
             break;
         }
         case BuildTool::Water:
-            // Surface, not depth. Water3D is a plane; how deep the water looks
-            // is the basin you cut under it, and the one number the plane
-            // actually has is the height it sits at.
+            // Kind first, because it decides what the rest of these mean.
+            // 0 = Surface (a Water3D plane), 1 = Swimmable (a WaterVolume body).
+            add("Kind",    &s.waterKind,   0.0f,  1.0f, "");
             add("Surface", &s.elevation, -20.0f, 20.0f, "m");
-            add("Waves",   &s.waveScale,   0.0f,  2.0f, "m");
+            // Depth belongs to the swimmable body only. A Water3D plane has no
+            // depth -- how deep THAT water looks is the basin you cut under it,
+            // and a field labelled Depth that moved the plane's footprint
+            // instead would be a lie on the surface.
+            if (s.waterKind >= 0.5f) {
+                add("Depth", &s.waterDepth, 0.25f, 20.0f, "m");
+            } else {
+                add("Waves", &s.waveScale,  0.0f,  2.0f, "m");
+            }
             break;
         case BuildTool::Terrain:
             add("Radius",   &s.radius,   0.50f, 40.0f, "m");
