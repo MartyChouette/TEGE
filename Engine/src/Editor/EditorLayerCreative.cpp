@@ -11,6 +11,7 @@
 // which gesture happened.
 
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/Editor/ScenePlacement.h"
 #include <cfloat>
 #include "Enjin/ECS/Components/WaterVolume.h"
 #include "Enjin/ECS/Components/Light.h"
@@ -1265,32 +1266,19 @@ ECS::Entity EditorLayer::PlaceCreativeComponent(BuildTool tool,
         const f32 hx = plan.halfExtents.x;
         const f32 hz = plan.halfExtents.z;
 
-        // Instances scale with AREA, clamped at both ends: a patch the size of a
-        // doormat still gets enough blades to read as grass, and one the size of
-        // a field does not try to place a hundred thousand.
-        auto areaDensity = [&](f32 perUnit, u32 lo, u32 hi) -> u32 {
-            const f32 scaled = hx * hz * 4.0f * perUnit * s.plantDensity;
-            const u32 d = static_cast<u32>(scaled);
-            return std::max(lo, std::min(d, hi));
-        };
+        // The density curve and the component choice live in ScenePlacement,
+        // which the Build Palette calls too. They used to be duplicated here,
+        // which meant the two surfaces agreed only because the same numbers had
+        // been typed twice.
+        const int kindIndex = static_cast<int>(s.plantKind + 0.5f);
+        const PlantKind kind =
+            (kindIndex >= 2) ? PlantKind::Trees
+          : (kindIndex == 1) ? PlantKind::Shrubs
+                             : PlantKind::Grass;
+        const char* kindName = PlantKindName(kind);
 
-        const int kind = static_cast<int>(s.plantKind + 0.5f);
-        const char* kindName = "Grass Patch";
-        if (kind >= 2) {
-            kindName = "Tree Grove";
-            auto& tv = m_World->AddComponent<ECS::TreeVolumeComponent>(entity);
-            tv.halfExtents = Math::Vector3(hx, 0.0f, hz);
-            tv.density = areaDensity(0.08f, 1u, 120u);
-        } else if (kind == 1) {
-            kindName = "Shrub Patch";
-            auto& sv = m_World->AddComponent<ECS::ShrubVolumeComponent>(entity);
-            sv.halfExtents = Math::Vector3(hx, 0.0f, hz);
-            sv.density = areaDensity(1.0f, 8u, 1500u);
-        } else {
-            auto& gv = m_World->AddComponent<ECS::GrassVolumeComponent>(entity);
-            gv.halfExtents = Math::Vector3(hx, 0.0f, hz);
-            gv.density = areaDensity(4.0f, 32u, 6000u);
-        }
+        AddPlantVolume(m_World, entity, kind);
+        SizePlantVolume(m_World, entity, kind, hx, hz, s.plantDensity);
 
         // Named for what it is rather than for the tool, because "Plants" in the
         // hierarchy tells you nothing about which of the three you made.
@@ -1319,65 +1307,25 @@ ECS::Entity EditorLayer::PlaceCreativeComponent(BuildTool tool,
         // that never visibly falls.
         xf.position = plan.origin;
 
-        const int kind = static_cast<int>(s.propKind + 0.5f);
-        const char* name = "Ball";
+        // The rail offers five of the six. Block is left out because the Brush
+        // tool already makes boxes, and two buttons for one thing on the same
+        // rail is worse than one. Mapped explicitly rather than by arithmetic,
+        // so adding a kind to either list cannot silently shift the others.
+        static constexpr PropKind kRailProps[] = {
+            PropKind::Ball, PropKind::Light, PropKind::PhysicsBox,
+            PropKind::Barrel, PropKind::SpawnPoint,
+        };
+        const int kindIndex = static_cast<int>(s.propKind + 0.5f);
+        const PropKind kind = kRailProps[
+            (kindIndex < 0) ? 0
+          : (kindIndex >= static_cast<int>(sizeof(kRailProps) / sizeof(kRailProps[0])))
+                ? static_cast<int>(sizeof(kRailProps) / sizeof(kRailProps[0])) - 1
+                : kindIndex];
+        const char* name = PropKindName(kind);
 
-        switch (kind) {
-            case 1: {   // Light
-                name = "Light";
-                auto& l = m_World->AddComponent<ECS::LightComponent>(entity);
-                l.type = ECS::LightType::Point;
-                // Above head height, because a point light sitting on the floor
-                // lights the floor and nothing else.
-                xf.position.y += 2.0f;
-                break;
-            }
-            case 2: {   // Physics Box
-                name = "Physics Box";
-                m_World->AddComponent<ECS::MeshComponent>(
-                    entity, Renderer::MeshFactory::CreateCube(1.0f));
-                m_World->AddComponent<ECS::MaterialComponent>(entity);
-                auto& rb = m_World->AddComponent<ECS::RigidbodyComponent>(entity);
-                rb.bodyType = ECS::RigidbodyComponent::BodyType::Dynamic;
-                rb.useGravity = true;
-                // Collider sizes are WORLD space in this engine and entity scale
-                // does not multiply them, so this is the cube's real size.
-                auto& bc = m_World->AddComponent<ECS::BoxColliderComponent>(entity);
-                bc.size = Math::Vector3(1.0f, 1.0f, 1.0f);
-                xf.position.y += 3.0f;
-                break;
-            }
-            case 3: {   // Barrel
-                name = "Barrel";
-                m_World->AddComponent<ECS::MeshComponent>(
-                    entity, Renderer::MeshFactory::CreateCylinder(0.5f, 1.2f));
-                m_World->AddComponent<ECS::MaterialComponent>(entity);
-                auto& d = m_World->AddComponent<ECS::DestructibleComponent>(entity);
-                d.health = 1.0f;
-                d.destroyOnHit = true;
-                auto& bc = m_World->AddComponent<ECS::BoxColliderComponent>(entity);
-                bc.size = Math::Vector3(1.0f, 1.2f, 1.0f);
-                xf.position.y += 0.6f;
-                break;
-            }
-            case 4: {   // Spawn Point
-                name = "Spawn Point";
-                m_World->AddComponent<ECS::MeshComponent>(
-                    entity, Renderer::MeshFactory::CreateCone(0.4f, 1.0f));
-                auto& mat = m_World->AddComponent<ECS::MaterialComponent>(entity);
-                mat.baseColor = Math::Vector3(0.2f, 0.9f, 0.4f);
-                mat.emissiveColor = Math::Vector3(0.1f, 0.5f, 0.2f);
-                xf.position.y += 0.5f;
-                break;
-            }
-            default: {  // Ball
-                m_World->AddComponent<ECS::MeshComponent>(
-                    entity, Renderer::MeshFactory::CreateSphere(0.5f));
-                m_World->AddComponent<ECS::MaterialComponent>(entity);
-                xf.position.y += 0.5f;
-                break;
-            }
-        }
+        // Meshes, components and the vertical drop live in ScenePlacement, which
+        // the Build Palette calls too.
+        CreateProp(m_World, entity, kind, plan.origin);
 
         // Named for the thing, not the tool. "Prop" in the hierarchy tells you
         // nothing about which of the five you placed.

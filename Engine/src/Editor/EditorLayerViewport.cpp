@@ -1,4 +1,5 @@
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/Editor/ScenePlacement.h"
 #include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/ECS/Components/BrushSolid.h"
 #include "Enjin/Editor/InspectorUndo.h"
@@ -2560,46 +2561,28 @@ void EditorLayer::HandleCreativePlacement(f32 /*deltaTime*/) {
     if (!areaTool) {
         if (m_EditorViewportHovered && haveHit && Input::IsMouseButtonPressed(MouseButton::Left)) {
             ECS::Entity e = m_World->CreateEntity();
-            auto& xf = m_World->AddComponent<ECS::TransformComponent>(e);
-            xf.position = hit;
+            m_World->AddComponent<ECS::TransformComponent>(e);
             auto& nc = m_World->AddComponent<ECS::NameComponent>(e);
+
+            // The objects themselves live in ScenePlacement, which Creative
+            // Mode's Prop tool calls too. This used to be a switch with the
+            // meshes, components and vertical drops written out, and the rail
+            // grew a copy of the same thing -- two definitions of what a barrel
+            // is, agreeing only because the numbers had been typed twice.
+            PropKind propKind = PropKind::Block;
+            bool isProp = true;
             switch (m_CreativeTool) {
-                case CreativeTool::Block:
-                    nc.name = "Block";
-                    m_World->AddComponent<ECS::MeshComponent>(e, Renderer::MeshFactory::CreateCube(1.0f));
-                    m_World->AddComponent<ECS::MaterialComponent>(e);
-                    xf.position.y += 0.5f; break;
-                case CreativeTool::Ball:
-                    nc.name = "Ball";
-                    m_World->AddComponent<ECS::MeshComponent>(e, Renderer::MeshFactory::CreateSphere(0.5f));
-                    m_World->AddComponent<ECS::MaterialComponent>(e);
-                    xf.position.y += 0.5f; break;
-                case CreativeTool::PointLight:
-                    nc.name = "Light";
-                    { auto& l = m_World->AddComponent<ECS::LightComponent>(e); l.type = ECS::LightType::Point; }
-                    xf.position.y += 2.0f; break;
-                case CreativeTool::PhysicsBox:
-                    nc.name = "Physics Box";
-                    m_World->AddComponent<ECS::MeshComponent>(e, Renderer::MeshFactory::CreateCube(1.0f));
-                    m_World->AddComponent<ECS::MaterialComponent>(e);
-                    { auto& rb = m_World->AddComponent<ECS::RigidbodyComponent>(e);
-                      rb.bodyType = ECS::RigidbodyComponent::BodyType::Dynamic; rb.useGravity = true;
-                      auto& bc = m_World->AddComponent<ECS::BoxColliderComponent>(e); bc.size = Math::Vector3(1.0f, 1.0f, 1.0f); }
-                    xf.position.y += 3.0f; break;
-                case CreativeTool::Barrel:
-                    nc.name = "Barrel";
-                    m_World->AddComponent<ECS::MeshComponent>(e, Renderer::MeshFactory::CreateCylinder(0.5f, 1.2f));
-                    m_World->AddComponent<ECS::MaterialComponent>(e);
-                    { auto& d = m_World->AddComponent<ECS::DestructibleComponent>(e); d.health = 1.0f; d.destroyOnHit = true;
-                      auto& bc = m_World->AddComponent<ECS::BoxColliderComponent>(e); bc.size = Math::Vector3(1.0f, 1.2f, 1.0f); }
-                    xf.position.y += 0.6f; break;
-                case CreativeTool::SpawnPoint:
-                    nc.name = "Spawn Point";
-                    m_World->AddComponent<ECS::MeshComponent>(e, Renderer::MeshFactory::CreateCone(0.4f, 1.0f));
-                    { auto& mat = m_World->AddComponent<ECS::MaterialComponent>(e);
-                      mat.baseColor = Math::Vector3(0.2f, 0.9f, 0.4f); mat.emissiveColor = Math::Vector3(0.1f, 0.5f, 0.2f); }
-                    xf.position.y += 0.5f; break;
-                default: break;
+                case CreativeTool::Block:      propKind = PropKind::Block;      break;
+                case CreativeTool::Ball:       propKind = PropKind::Ball;       break;
+                case CreativeTool::PointLight: propKind = PropKind::Light;      break;
+                case CreativeTool::PhysicsBox: propKind = PropKind::PhysicsBox; break;
+                case CreativeTool::Barrel:     propKind = PropKind::Barrel;     break;
+                case CreativeTool::SpawnPoint: propKind = PropKind::SpawnPoint; break;
+                default: isProp = false; break;
+            }
+            if (isProp) {
+                nc.name = PropKindName(propKind);
+                CreateProp(m_World, e, propKind, hit);
             }
             SelectEntity(e);
         }
@@ -2619,9 +2602,19 @@ void EditorLayer::HandleCreativePlacement(f32 /*deltaTime*/) {
         switch (m_CreativeTool) {
             case CreativeTool::Lake:       nc.name = "Lake";        m_World->AddComponent<ECS::WaterVolumeComponent>(e);
                                            m_World->AddComponent<ECS::BoundaryPolygonComponent>(e); break;
-            case CreativeTool::TreeGrove:  nc.name = "Tree Grove";  m_World->AddComponent<ECS::TreeVolumeComponent>(e);  break;
-            case CreativeTool::GrassPatch: nc.name = "Grass Patch"; m_World->AddComponent<ECS::GrassVolumeComponent>(e); break;
-            case CreativeTool::ShrubPatch: nc.name = "Shrub Patch"; m_World->AddComponent<ECS::ShrubVolumeComponent>(e); break;
+            // Shared with Creative Mode's Plants tool.
+            case CreativeTool::TreeGrove:
+                nc.name = PlantKindName(PlantKind::Trees);
+                AddPlantVolume(m_World, e, PlantKind::Trees);
+                break;
+            case CreativeTool::GrassPatch:
+                nc.name = PlantKindName(PlantKind::Grass);
+                AddPlantVolume(m_World, e, PlantKind::Grass);
+                break;
+            case CreativeTool::ShrubPatch:
+                nc.name = PlantKindName(PlantKind::Shrubs);
+                AddPlantVolume(m_World, e, PlantKind::Shrubs);
+                break;
             default: break;
         }
         m_CreativePlaceEntity = e;
@@ -2637,10 +2630,9 @@ void EditorLayer::HandleCreativePlacement(f32 /*deltaTime*/) {
         const f32 hz = std::max(std::abs(b.z - a.z) * 0.5f, 0.5f);
         if (auto* xf = m_World->GetComponent<ECS::TransformComponent>(m_CreativePlaceEntity))
             xf->position = center;
-        auto areaDensity = [](f32 hX, f32 hZ, f32 perUnit, u32 lo, u32 hi) -> u32 {
-            u32 d = static_cast<u32>(hX * hZ * 4.0f * perUnit);
-            return std::max(lo, std::min(d, hi));
-        };
+        // The density curve is ScenePlacement::PlantDensity now, called through
+        // SizePlantVolume below. The palette's drag has no density multiplier,
+        // so it passes 1.0 -- the rail's Density setting scales the same curve.
         switch (m_CreativeTool) {
             case CreativeTool::Lake:
                 if (auto* w = m_World->GetComponent<ECS::WaterVolumeComponent>(m_CreativePlaceEntity))
@@ -2654,22 +2646,13 @@ void EditorLayer::HandleCreativePlacement(f32 /*deltaTime*/) {
                 }
                 break;
             case CreativeTool::TreeGrove:
-                if (auto* tv = m_World->GetComponent<ECS::TreeVolumeComponent>(m_CreativePlaceEntity)) {
-                    tv->halfExtents = Math::Vector3(hx, 0.0f, hz);
-                    tv->density = areaDensity(hx, hz, 0.08f, 1u, 120u);
-                }
+                SizePlantVolume(m_World, m_CreativePlaceEntity, PlantKind::Trees, hx, hz, 1.0f);
                 break;
             case CreativeTool::GrassPatch:
-                if (auto* gv = m_World->GetComponent<ECS::GrassVolumeComponent>(m_CreativePlaceEntity)) {
-                    gv->halfExtents = Math::Vector3(hx, 0.0f, hz);
-                    gv->density = areaDensity(hx, hz, 4.0f, 32u, 6000u);
-                }
+                SizePlantVolume(m_World, m_CreativePlaceEntity, PlantKind::Grass, hx, hz, 1.0f);
                 break;
             case CreativeTool::ShrubPatch:
-                if (auto* sv = m_World->GetComponent<ECS::ShrubVolumeComponent>(m_CreativePlaceEntity)) {
-                    sv->halfExtents = Math::Vector3(hx, 0.0f, hz);
-                    sv->density = areaDensity(hx, hz, 1.0f, 8u, 1500u);
-                }
+                SizePlantVolume(m_World, m_CreativePlaceEntity, PlantKind::Shrubs, hx, hz, 1.0f);
                 break;
             default: break;
         }
