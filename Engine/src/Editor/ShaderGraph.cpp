@@ -1,4 +1,5 @@
 #include "Enjin/Editor/ShaderGraph.h"
+#include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/Logging/Log.h"
 #include <imgui.h>
 #include <algorithm>
@@ -13,13 +14,13 @@ namespace Enjin {
 namespace Editor {
 
 // Category colors
-static const ImU32 COLOR_INPUT   = IM_COL32(60, 140, 60, 255);   // Green
-static const ImU32 COLOR_MATH    = IM_COL32(80, 120, 180, 255);  // Blue
+static const ImU32 COLOR_INPUT   = Theme::GraphNodeSource;   // Green
+static const ImU32 COLOR_MATH    = Theme::GraphNodeMath;  // Blue
 static const ImU32 COLOR_TEXTURE = IM_COL32(160, 100, 60, 255);  // Orange
 static const ImU32 COLOR_COLOR   = IM_COL32(160, 60, 100, 255);  // Pink
 static const ImU32 COLOR_VECTOR  = IM_COL32(100, 80, 160, 255);  // Purple
-static const ImU32 COLOR_OUTPUT  = IM_COL32(160, 50, 50, 255);   // Red
-static const ImU32 COLOR_UTILITY = IM_COL32(100, 100, 100, 255); // Grey
+static const ImU32 COLOR_OUTPUT  = Theme::GraphNodeOutput;   // Red
+static const ImU32 COLOR_UTILITY = Theme::TextDark; // Grey
 
 static const f32 NODE_WIDTH  = 160.0f;
 static const f32 NODE_HEADER = 28.0f;
@@ -427,13 +428,13 @@ void ShaderGraphEditor::Render() {
         drawList->AddLine(
             ImVec2(canvasPos.x + x, canvasPos.y),
             ImVec2(canvasPos.x + x, canvasPos.y + canvasSize.y),
-            IM_COL32(50, 50, 50, 80));
+            Theme::OverlayBg);
     }
     for (f32 y = fmodf(m_ScrollOffset.y, gridStep); y < canvasSize.y; y += gridStep) {
         drawList->AddLine(
             ImVec2(canvasPos.x, canvasPos.y + y),
             ImVec2(canvasPos.x + canvasSize.x, canvasPos.y + y),
-            IM_COL32(50, 50, 50, 80));
+            Theme::OverlayBg);
     }
 
     // Single source of truth for the canvas origin: nodes previously read the
@@ -521,10 +522,10 @@ void ShaderGraphEditor::DrawNode(ShaderGraphNode& node) {
 
     ShaderNodeCategory cat = GetCategory(node.type);
     ImU32 headerColor = GetCategoryColor(cat);
-    ImU32 bodyColor = IM_COL32(40, 40, 40, 230);
+    ImU32 bodyColor = Theme::GraphNodeBody;
     ImU32 borderColor = (node.id == m_SelectedNodeId)
-        ? IM_COL32(255, 200, 50, 255)
-        : IM_COL32(80, 80, 80, 255);
+        ? Theme::AccentYellow
+        : Theme::Border;
 
     // Node body
     drawList->AddRectFilled(nodePos, nodeEnd, bodyColor, 6.0f * m_Zoom);
@@ -541,7 +542,7 @@ void ShaderGraphEditor::DrawNode(ShaderGraphNode& node) {
     // Title text
     const char* name = node.label.empty() ? GetNodeName(node.type) : node.label.c_str();
     ImVec2 textPos(nodePos.x + 8.0f * m_Zoom, nodePos.y + 5.0f * m_Zoom);
-    drawList->AddText(nullptr, 13.0f * m_Zoom, textPos, IM_COL32(255, 255, 255, 255), name);
+    drawList->AddText(nullptr, 13.0f * m_Zoom, textPos, Theme::TextWhite, name);
 
     // Pins: hoverable, type-aware link points. Hovered pins grow so the
     // click target reads as clickable.
@@ -552,7 +553,7 @@ void ShaderGraphEditor::DrawNode(ShaderGraphNode& node) {
         bool hot = (dx * dx + dy * dy) <= (pinR * 3.0f) * (pinR * 3.0f);
         ImU32 col = pinIdx < 0 ? IM_COL32(120, 200, 255, 255) : IM_COL32(200, 200, 200, 255);
         drawList->AddCircleFilled(p, hot ? pinR * 1.6f : pinR, col);
-        if (hot) drawList->AddCircle(p, pinR * 2.0f, IM_COL32(255, 255, 255, 160), 0, 1.5f);
+        if (hot) drawList->AddCircle(p, pinR * 2.0f, Theme::GraphPinHot, 0, 1.5f);
         m_FramePins.push_back({node.id, pinIdx, p.x, p.y});
         // Input pin label inside the body
         if (pinIdx >= 0) {
@@ -614,7 +615,7 @@ void ShaderGraphEditor::DrawConnections() {
         ImVec2 cp1(p1.x + tangentLen, p1.y);
         ImVec2 cp2(p2.x - tangentLen, p2.y);
 
-        drawList->AddBezierCubic(p1, cp1, cp2, p2, IM_COL32(200, 200, 200, 200), 2.0f * m_Zoom);
+        drawList->AddBezierCubic(p1, cp1, cp2, p2, Theme::Separator, 2.0f * m_Zoom);
     }
 }
 
@@ -683,7 +684,7 @@ void ShaderGraphEditor::HandleLinking() {
     f32 tangent = (iP.x - o.x) * 0.5f;
     if (tangent < 50.0f * m_Zoom) tangent = 50.0f * m_Zoom;
     drawList->AddBezierCubic(o, ImVec2(o.x + tangent, o.y), ImVec2(iP.x - tangent, iP.y), iP,
-                             snap ? IM_COL32(120, 255, 160, 255) : IM_COL32(255, 220, 120, 200),
+                             snap ? Theme::GraphSnapOn : Theme::GraphSnapOff,
                              2.5f * m_Zoom);
 
     if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {

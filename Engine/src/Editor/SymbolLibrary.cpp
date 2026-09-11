@@ -1,4 +1,5 @@
 #include "Enjin/Editor/SymbolLibrary.h"
+#include "Enjin/Editor/EditorTheme.h"
 #include <stb_image_write.h>
 #include "Enjin/Renderer/VectorTessellator.h"
 #include "Enjin/Renderer/VectorRaster.h"
@@ -780,13 +781,13 @@ void SymbolLibrary::DrawBrowserPanel() {
                 case SymbolType::Custom:        typeLabel = "[CUS]"; break;
             }
             dl->AddText(ImVec2(cursorPos.x + 4, cursorPos.y + 4),
-                        IM_COL32(200, 200, 200, 180), typeLabel);
+                        Theme::LabelFaded, typeLabel);
 
             // Symbol name centered
             ImVec2 textSize = ImGui::CalcTextSize(sym->name.c_str());
             f32 textX = cursorPos.x + (CELL_SIZE - textSize.x) * 0.5f;
             f32 textY = cursorPos.y + (CELL_SIZE - textSize.y) * 0.5f;
-            dl->AddText(ImVec2(textX, textY), IM_COL32(255, 255, 255, 230), sym->name.c_str());
+            dl->AddText(ImVec2(textX, textY), Theme::TextWhiteSoft, sym->name.c_str());
 
             // Use count badge in top-right
             if (sym->useCount > 0) {
@@ -794,7 +795,7 @@ void SymbolLibrary::DrawBrowserPanel() {
                 snprintf(useBuf, sizeof(useBuf), "x%u", sym->useCount);
                 ImVec2 badgeSize = ImGui::CalcTextSize(useBuf);
                 dl->AddText(ImVec2(cursorPos.x + CELL_SIZE - badgeSize.x - 4, cursorPos.y + 4),
-                            IM_COL32(180, 180, 100, 200), useBuf);
+                            Theme::DebugText, useBuf);
             }
 
             // Invisible button covering the cell for interaction

@@ -4914,7 +4914,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     if (box && transform) {
                         bool sel = IsSelected(entity);
                         if (!m_ShowColliderWireframes && !sel) continue;
-                        ImU32 color = sel ? IM_COL32(255, 220, 50, 220) : IM_COL32(255, 220, 50, 100);
+                        ImU32 color = sel ? Theme::BoneIKTarget : IM_COL32(255, 220, 50, 100);
                         f32 thick = sel ? 2.0f : 1.0f;
                         Math::Vector3 halfExt = box->size * 0.5f;
                         Math::Vector3 worldCenter = transform->position + transform->rotation.Rotate(box->center);
@@ -5173,7 +5173,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                 // Distance joints (white)
                 for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::DistanceJointComponent>()) {
                     auto* j = m_World->GetComponent<ECS::DistanceJointComponent>(e);
-                    if (j && jointVisible(e, j->entityA, j->entityB)) drawJointLine(bgDrawList, j->entityA, j->entityB, j->anchorA, j->anchorB, IM_COL32(255, 255, 255, 180));
+                    if (j && jointVisible(e, j->entityA, j->entityB)) drawJointLine(bgDrawList, j->entityA, j->entityB, j->anchorA, j->anchorB, Theme::OverlayLine);
                 }
                 // Hinge joints (cyan)
                 for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::HingeJointComponent>()) {
@@ -5503,11 +5503,11 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
 
                                 if (isSelected) {
                                     // Selected bone: filled circle + outline + name label
-                                    bgDrawList->AddCircleFilled(jointScreen, 6.0f, IM_COL32(50, 255, 80, 255));
-                                    bgDrawList->AddCircle(jointScreen, 6.0f, IM_COL32(255, 255, 255, 220), 0, 1.5f);
+                                    bgDrawList->AddCircleFilled(jointScreen, 6.0f, Theme::BoneSelected);
+                                    bgDrawList->AddCircle(jointScreen, 6.0f, Theme::OverlayBright, 0, 1.5f);
                                     bgDrawList->AddText(
                                         ImVec2(jointScreen.x + 10.0f, jointScreen.y - 6.0f),
-                                        IM_COL32(50, 255, 80, 255), bone.name.c_str());
+                                        Theme::BoneSelected, bone.name.c_str());
                                 } else {
                                     // Unselected: diamond shape (easier to see and click than tiny crosses)
                                     f32 sz = isIKTarget ? 4.5f : 3.5f;
@@ -5531,8 +5531,8 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                             bgDrawList->AddRectFilled(
                                 ImVec2(tooltipPos.x - 4, tooltipPos.y - 2),
                                 ImVec2(tooltipPos.x + textSize.x + 4, tooltipPos.y + textSize.y + 2),
-                                IM_COL32(0, 0, 0, 180), 3.0f);
-                            bgDrawList->AddText(tooltipPos, IM_COL32(255, 255, 255, 230), hBone.name.c_str());
+                                Theme::TooltipBg, 3.0f);
+                            bgDrawList->AddText(tooltipPos, Theme::TextWhiteSoft, hBone.name.c_str());
                         }
                     }
                 }

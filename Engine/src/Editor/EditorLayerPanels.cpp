@@ -2976,9 +2976,9 @@ void EditorLayer::DrawParticleEditorPanel() {
         ImDrawList* dl = ImGui::GetWindowDrawList();
 
         dl->AddRectFilled(curvePos, ImVec2(curvePos.x + curveW, curvePos.y + curveH),
-            IM_COL32(30, 30, 30, 255));
+            Theme::CardBg);
         dl->AddRect(curvePos, ImVec2(curvePos.x + curveW, curvePos.y + curveH),
-            IM_COL32(80, 80, 80, 255));
+            Theme::Border);
 
         // Draw piecewise linear curve
         f32 y0 = curvePos.y + curveH - (emitter->startSize / maxSize) * curveH;
@@ -3005,9 +3005,9 @@ void EditorLayer::DrawParticleEditorPanel() {
         ImDrawList* dl = ImGui::GetWindowDrawList();
 
         dl->AddRectFilled(curvePos, ImVec2(curvePos.x + curveW, curvePos.y + curveH),
-            IM_COL32(30, 30, 30, 255));
+            Theme::CardBg);
         dl->AddRect(curvePos, ImVec2(curvePos.x + curveW, curvePos.y + curveH),
-            IM_COL32(80, 80, 80, 255));
+            Theme::Border);
 
         f32 y0 = curvePos.y + curveH - (1.0f / maxSpd) * curveH;
         f32 y1 = curvePos.y + curveH - (emitter->speedMultiplierMid / maxSpd) * curveH;
@@ -3041,9 +3041,9 @@ void EditorLayer::DrawParticleEditorPanel() {
 
         dl->AddRectFilled(previewPos,
             ImVec2(previewPos.x + previewSize * 2, previewPos.y + previewSize * 2),
-            IM_COL32(20, 20, 20, 255));
+            Theme::Shadow);
 
-        ImU32 shapeColor = IM_COL32(100, 200, 100, 180);
+        ImU32 shapeColor = Theme::SuccessSoft;
         f32 scale = previewSize * 0.7f;
 
         switch (emitter->shape) {
@@ -5336,7 +5336,7 @@ void EditorLayer::DrawProceduralGenPanel() {
     ImGui::InvisibleButton("##procgen_canvas", canvasSize);
     ImDrawList* dl = ImGui::GetWindowDrawList();
     dl->AddRectFilled(canvasPos, ImVec2(canvasPos.x + canvasSize.x, canvasPos.y + canvasSize.y),
-                      IM_COL32(20, 20, 20, 255));
+                      Theme::Shadow);
 
     if (!m_ProceduralPreview.empty() && m_ProceduralPreviewW > 0 && m_ProceduralPreviewH > 0) {
         f32 cellW = canvasSize.x / static_cast<f32>(m_ProceduralPreviewW);
@@ -5353,7 +5353,7 @@ void EditorLayer::DrawProceduralGenPanel() {
                     u8 b = static_cast<u8>((val * 197) % 200 + 55);
                     color = IM_COL32(r, g, b, 255);
                 } else {
-                    color = IM_COL32(180, 180, 180, 255);
+                    color = Theme::TextGray;
                 }
                 f32 px = canvasPos.x + x * cellW;
                 f32 py = canvasPos.y + y * cellH;
@@ -7368,12 +7368,12 @@ void EditorLayer::DrawAudioMixer() {
             ImVec2 pos = ImGui::GetCursorScreenPos();
             ImDrawList* dl = ImGui::GetWindowDrawList();
             f32 barW = 8.0f;
-            dl->AddRectFilled(pos, ImVec2(pos.x + barW, pos.y + meterH), IM_COL32(30, 30, 30, 255));
+            dl->AddRectFilled(pos, ImVec2(pos.x + barW, pos.y + meterH), Theme::CardBg);
             f32 level = 0.0f;
             for (const auto* bus : mixer.GetAllBuses()) level += bus->vuLevel;
             level = Math::Clamp(level * 0.25f, 0.0f, 1.0f);
             f32 barH = level * meterH;
-            ImU32 meterCol = (level > 0.8f) ? IM_COL32(255, 60, 60, 255) : IM_COL32(100, 255, 120, 255);
+            ImU32 meterCol = (level > 0.8f) ? Theme::DangerBright : IM_COL32(100, 255, 120, 255);
             dl->AddRectFilled(ImVec2(pos.x, pos.y + meterH - barH), ImVec2(pos.x + barW, pos.y + meterH), meterCol);
             ImGui::Dummy(ImVec2(barW, meterH));
         }
@@ -7404,7 +7404,7 @@ void EditorLayer::DrawAudioMixer() {
             ImVec2 pos = ImGui::GetCursorScreenPos();
             ImDrawList* dl = ImGui::GetWindowDrawList();
             f32 barW = 8.0f;
-            dl->AddRectFilled(pos, ImVec2(pos.x + barW, pos.y + meterH), IM_COL32(30, 30, 30, 255));
+            dl->AddRectFilled(pos, ImVec2(pos.x + barW, pos.y + meterH), Theme::CardBg);
             const Audio::AudioBus* bus = mixer.GetBus(channelNames[ch]);
             f32 level = bus ? Math::Clamp(bus->vuLevel, 0.0f, 1.0f) : 0.0f;
             f32 peak = bus ? Math::Clamp(bus->vuPeak, 0.0f, 1.0f) : 0.0f;
@@ -7413,7 +7413,7 @@ void EditorLayer::DrawAudioMixer() {
             // Peak marker
             if (peak > 0.01f) {
                 f32 peakY = pos.y + meterH - peak * meterH;
-                dl->AddLine(ImVec2(pos.x, peakY), ImVec2(pos.x + barW, peakY), IM_COL32(255, 255, 255, 200), 1.5f);
+                dl->AddLine(ImVec2(pos.x, peakY), ImVec2(pos.x + barW, peakY), Theme::TextWhiteFaded, 1.5f);
             }
             ImGui::Dummy(ImVec2(barW, meterH));
         }
@@ -7473,7 +7473,7 @@ void EditorLayer::DrawAudioMixer() {
                     prev = cur;
                 }
                 // Center line
-                dl->AddLine(ImVec2(eqPos.x, midY), ImVec2(eqPos.x + eqW, midY), IM_COL32(80, 80, 80, 100));
+                dl->AddLine(ImVec2(eqPos.x, midY), ImVec2(eqPos.x + eqW, midY), Theme::GridLine);
             }
             ImGui::Dummy(ImVec2(eqW, eqH));
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("EQ: Low %.1fdB Mid %.1fdB High %.1fdB",
@@ -7912,7 +7912,7 @@ void EditorLayer::DrawAudioMeterStrip() {
         // Peak hold marker (thin line)
         if (peakX > 1.0f) {
             dl->AddLine(ImVec2(pos.x + peakX, y), ImVec2(pos.x + peakX, y + barHeight),
-                IM_COL32(255, 255, 255, 180), 1.5f);
+                Theme::OverlayLine, 1.5f);
         }
 
         // Bus name label (small, left-aligned)
@@ -9731,7 +9731,7 @@ void EditorLayer::DrawUVPreviewPanel() {
     // Background (dark)
     drawList->AddRectFilled(canvasPos,
         ImVec2(canvasPos.x + canvasSize.x, canvasPos.y + canvasSize.y),
-        IM_COL32(30, 30, 30, 255));
+        Theme::CardBg);
 
     // Optional: show base color texture as background (material declared above).
     if (material && !material->baseColorTexturePath.empty()) {
@@ -9742,14 +9742,14 @@ void EditorLayer::DrawUVPreviewPanel() {
                 canvasPos,
                 ImVec2(canvasPos.x + canvasSize.x, canvasPos.y + canvasSize.y),
                 ImVec2(0, 0), ImVec2(1, 1),
-                IM_COL32(255, 255, 255, 80));  // Low opacity background
+                Theme::OverlayFillFaint);  // Low opacity background
         }
     }
 
     // Draw border (UV 0-1 space)
     drawList->AddRect(canvasPos,
         ImVec2(canvasPos.x + canvasSize.x, canvasPos.y + canvasSize.y),
-        IM_COL32(80, 80, 80, 255));
+        Theme::Border);
 
     // Helper: map UV to screen position
     auto uvToScreen = [&](f32 u, f32 v) -> ImVec2 {
@@ -9827,9 +9827,9 @@ void EditorLayer::DrawUVPreviewPanel() {
     }
 
     // Draw axis labels
-    drawList->AddText(ImVec2(canvasPos.x + 2, canvasPos.y + canvasSize.y + 2), IM_COL32(150, 150, 150, 200), "0,1");
-    drawList->AddText(ImVec2(canvasPos.x + canvasSize.x - 20, canvasPos.y + canvasSize.y + 2), IM_COL32(150, 150, 150, 200), "1,1");
-    drawList->AddText(ImVec2(canvasPos.x + 2, canvasPos.y - 14), IM_COL32(150, 150, 150, 200), "0,0");
+    drawList->AddText(ImVec2(canvasPos.x + 2, canvasPos.y + canvasSize.y + 2), Theme::TextDisabled, "0,1");
+    drawList->AddText(ImVec2(canvasPos.x + canvasSize.x - 20, canvasPos.y + canvasSize.y + 2), Theme::TextDisabled, "1,1");
+    drawList->AddText(ImVec2(canvasPos.x + 2, canvasPos.y - 14), Theme::TextDisabled, "0,0");
 
     // Advance the cursor past the canvas so the controls below don't overlap it.
     ImGui::Dummy(ImVec2(canvasSize.x, canvasSize.y + 18.0f));

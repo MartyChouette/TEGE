@@ -1,4 +1,5 @@
 #include "Enjin/Editor/VectorDrawingEditor.h"
+#include "Enjin/Editor/EditorTheme.h"
 #include <stb_image_write.h>
 #include "Enjin/Renderer/VectorRaster.h"
 #include "Enjin/Renderer/VectorTessellator.h"
@@ -496,7 +497,7 @@ void VectorDrawingEditor::DrawCanvas() {
     f32 mx = (mousePos.x - ox) / m_Zoom;
     f32 my = (mousePos.y - oy) / m_Zoom;
     dl->AddText(ImVec2(canvasPos.x + 4, canvasPos.y + canvasSize.y - 18),
-                IM_COL32(200, 200, 200, 200),
+                Theme::Separator,
                 (std::to_string((int)mx) + ", " + std::to_string((int)my) +
                  " | " + std::to_string(m_Document.canvasWidth) + "x" +
                  std::to_string(m_Document.canvasHeight)).c_str());
@@ -660,7 +661,7 @@ void VectorDrawingEditor::DrawSelectionHandles(ImDrawList* dl, const VectorShape
     for (i32 i = 0; i < (i32)shape.points.size(); i++) {
         ImVec2 pt(ox + shape.points[i].x * zoom, oy + shape.points[i].y * zoom);
         dl->AddRectFilled(ImVec2(pt.x - 4, pt.y - 4), ImVec2(pt.x + 4, pt.y + 4),
-                          IM_COL32(255, 255, 255, 255));
+                          Theme::TextWhite);
         dl->AddRect(ImVec2(pt.x - 4, pt.y - 4), ImVec2(pt.x + 4, pt.y + 4),
                     IM_COL32(0, 120, 255, 255));
     }

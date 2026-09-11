@@ -1,4 +1,5 @@
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Core/Version.h"
@@ -291,7 +292,7 @@ void EditorLayer::DrawRadialMenu(RadialMenuType type) {
     f32 sectorAngle = 6.2831853f / sectorCount;
 
     // Background circle
-    dl->AddCircleFilled(center, outerRadius + 4, IM_COL32(0, 0, 0, 160), 48);
+    dl->AddCircleFilled(center, outerRadius + 4, Theme::Scrim, 48);
     dl->AddCircle(center, outerRadius + 4, IM_COL32(200, 200, 200, 120), 48, 2.0f);
     dl->AddCircleFilled(center, innerRadius - 2, IM_COL32(30, 30, 30, 200), 32);
 
@@ -334,7 +335,7 @@ void EditorLayer::DrawRadialMenu(RadialMenuType type) {
         // Label text centered in sector
         f32 labelDist = (innerRadius + outerRadius) * 0.5f;
         ImVec2 labelPos(center.x + std::cos(midAngle) * labelDist, center.y + std::sin(midAngle) * labelDist);
-        ImU32 textColor = hovered ? IM_COL32(255, 255, 255, 255) : IM_COL32(200, 200, 200, 220);
+        ImU32 textColor = hovered ? Theme::TextWhite : IM_COL32(200, 200, 200, 220);
         auto textSize = ImGui::CalcTextSize(items[i].label);
         dl->AddText(ImVec2(labelPos.x - textSize.x * 0.5f, labelPos.y - textSize.y * 0.5f), textColor, items[i].label);
     }
@@ -343,7 +344,7 @@ void EditorLayer::DrawRadialMenu(RadialMenuType type) {
     if (m_RadialMenuHovered >= 0 && m_RadialMenuHovered < sectorCount) {
         auto textSize = ImGui::CalcTextSize(items[m_RadialMenuHovered].icon);
         dl->AddText(ImVec2(center.x - textSize.x * 0.5f, center.y - textSize.y * 0.5f),
-                    IM_COL32(255, 255, 255, 255), items[m_RadialMenuHovered].icon);
+                    Theme::TextWhite, items[m_RadialMenuHovered].icon);
     }
 
     // Execute on release (handled in UpdateGamepadEditor via release detection)
@@ -612,7 +613,7 @@ void EditorLayer::DrawGamepadInspectorOverlay() {
 
     // Title
     dl->AddText(ImVec2(panelX + 8, panelY + 4), IM_COL32(100, 180, 255, 255), "Inspector (Gamepad)");
-    dl->AddText(ImVec2(panelX + 8, panelY + 20), IM_COL32(150, 150, 150, 200), "Stick=adjust  A=reset  B=exit");
+    dl->AddText(ImVec2(panelX + 8, panelY + 20), Theme::TextDisabled, "Stick=adjust  A=reset  B=exit");
 
     // Property list
     f32 y = panelY + 38.0f;
@@ -630,7 +631,7 @@ void EditorLayer::DrawGamepadInspectorOverlay() {
         }
 
         // Label
-        ImU32 textCol = active ? IM_COL32(255, 255, 255, 255) : IM_COL32(180, 180, 190, 200);
+        ImU32 textCol = active ? Theme::TextWhite : IM_COL32(180, 180, 190, 200);
         dl->AddText(ImVec2(panelX + 10, y + 2), textCol, prop.label.c_str());
 
         // Value
@@ -647,7 +648,7 @@ void EditorLayer::DrawGamepadInspectorOverlay() {
             dl->AddRectFilled(ImVec2(barX, y + 4), ImVec2(barX + barW, y + lineH - 4),
                 IM_COL32(40, 40, 50, 200));
             dl->AddRectFilled(ImVec2(barX, y + 4), ImVec2(barX + barW * norm, y + lineH - 4),
-                active ? IM_COL32(80, 160, 255, 255) : IM_COL32(60, 100, 160, 200));
+                active ? Theme::Info : IM_COL32(60, 100, 160, 200));
         }
 
         y += lineH;

@@ -11,6 +11,7 @@
 // for something that only exists while a window is open.
 
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/Renderer/LightCookie.h"
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/ECS/Components/Name.h"
@@ -75,7 +76,7 @@ void EditorLayer::DrawCookiePreview(const std::vector<u8>& pixels, u32 res, f32 
         }
     }
     dl->AddRect(origin, ImVec2(origin.x + sizePx, origin.y + sizePx),
-                IM_COL32(90, 95, 105, 255));
+                Theme::SwatchBorder);
     ImGui::Dummy(ImVec2(sizePx, sizePx));
 }
 
@@ -120,7 +121,7 @@ void EditorLayer::DrawCookieCreatorWindow() {
         if (selected) {
             ImGui::GetWindowDrawList()->AddRect(
                 cursor, ImVec2(cursor.x + thumb, cursor.y + thumb),
-                IM_COL32(120, 190, 255, 255), 0.0f, 0, 2.0f * s);
+                Theme::SwatchSelected, 0.0f, 0, 2.0f * s);
         }
         // An invisible button over the thumbnail, so the picture is the control.
         ImGui::SetCursorScreenPos(cursor);

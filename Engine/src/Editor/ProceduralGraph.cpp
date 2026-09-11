@@ -1,4 +1,5 @@
 #include "Enjin/Editor/ProceduralGraph.h"
+#include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/Procedural/ProceduralAlgorithms.h"
 
 #include <imgui.h>
@@ -11,12 +12,12 @@ namespace Enjin {
 namespace Editor {
 
 // Category colors
-static const ImU32 COLOR_GENERATOR = IM_COL32(60, 140, 60, 255);    // Green
-static const ImU32 COLOR_TRANSFORM = IM_COL32(80, 120, 180, 255);   // Blue
+static const ImU32 COLOR_GENERATOR = Theme::GraphNodeSource;    // Green
+static const ImU32 COLOR_TRANSFORM = Theme::GraphNodeMath;   // Blue
 static const ImU32 COLOR_FILTER    = IM_COL32(140, 100, 160, 255);  // Purple
 static const ImU32 COLOR_COMBINE   = IM_COL32(160, 130, 50, 255);   // Gold
-static const ImU32 COLOR_OUTPUT    = IM_COL32(160, 50, 50, 255);    // Red
-static const ImU32 COLOR_PARAMETER = IM_COL32(100, 100, 100, 255);  // Grey
+static const ImU32 COLOR_OUTPUT    = Theme::GraphNodeOutput;    // Red
+static const ImU32 COLOR_PARAMETER = Theme::TextDark;  // Grey
 
 static const f32 NODE_WIDTH  = 180.0f;
 static const f32 NODE_HEADER = 28.0f;
@@ -298,7 +299,7 @@ void ProceduralGraphEditor::DrawNode(ProcGraphNode& node) {
     drawList->AddRectFilled(ImVec2(x, y), ImVec2(x + w, y + NODE_HEADER * m_Zoom),
                             headerColor, 4.0f * m_Zoom, ImDrawFlags_RoundCornersTop);
     // Border
-    ImU32 borderColor = selected ? IM_COL32(255, 200, 50, 255) : IM_COL32(60, 60, 70, 255);
+    ImU32 borderColor = selected ? Theme::AccentYellow : Theme::GraphNodeBorder;
     drawList->AddRect(ImVec2(x, y), ImVec2(x + w, y + h),
                       borderColor, 4.0f * m_Zoom, 0, selected ? 2.0f : 1.0f);
 
@@ -370,7 +371,7 @@ void ProceduralGraphEditor::DrawConnections() {
         drawList->AddBezierCubic(
             ImVec2(fromX, fromY), ImVec2(fromX + dx, fromY),
             ImVec2(toX - dx, toY), ImVec2(toX, toY),
-            IM_COL32(200, 200, 200, 180), 2.0f);
+            Theme::LabelFaded, 2.0f);
     }
 }
 

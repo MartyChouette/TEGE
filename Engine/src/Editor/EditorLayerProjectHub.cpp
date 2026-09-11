@@ -1,4 +1,5 @@
 #include "Enjin/Platform/Desktop.h"
+#include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/Editor/EditorLayer.h"
 #ifndef _WIN32
 // POSIX environment for posix_spawn. Declared at GLOBAL scope: a block-scope
@@ -503,7 +504,7 @@ void EditorLayer::DrawHubRecentSidebar(ImDrawList* dl, const ImVec2& area, f32 c
 
     // Vertical divider on right edge
     dl->AddLine(ImVec2(sidebarW, contentY), ImVec2(sidebarW, area.y),
-        IM_COL32(60, 65, 80, 150), 1.0f);
+        Theme::BorderSubtle, 1.0f);
 
     // Header
     f32 headerFontSize = 26.0f;
@@ -994,7 +995,7 @@ void EditorLayer::DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 /*c
                 }
                 f32 initialsFontSize = 80.0f;
                 ImVec2 initSz = font->CalcTextSizeA(initialsFontSize, FLT_MAX, 0.0f, initials.c_str());
-                ImU32 initCol = missing ? IM_COL32(200, 200, 210, 100) : IM_COL32(255, 255, 255, 220);
+                ImU32 initCol = missing ? IM_COL32(200, 200, 210, 100) : Theme::OverlayBright;
                 cdl->AddText(nullptr, initialsFontSize,
                     ImVec2(cx + (cardW - initSz.x) * 0.5f, cy + (thumbH - initSz.y) * 0.5f),
                     initCol, initials.c_str());
@@ -1220,7 +1221,7 @@ void EditorLayer::DrawHubWizardSetup(ImDrawList* dl, const ImVec2& area, f32 con
     // --- Bottom bar: Back + Next ---
     f32 bottomY = area.y - 85.0f;
     dl->AddLine(ImVec2(sidebarW + 30.0f, bottomY - 12.0f), ImVec2(area.x - 30.0f, bottomY - 12.0f),
-        IM_COL32(60, 65, 80, 150), 1.0f);
+        Theme::BorderSubtle, 1.0f);
 
     bool canNext = (std::strlen(m_NewProjectName) > 0 && std::strlen(m_NewProjectPath) > 0 &&
                    std::strlen(m_NewSceneName) > 0);
@@ -1233,7 +1234,7 @@ void EditorLayer::DrawHubWizardSetup(ImDrawList* dl, const ImVec2& area, f32 con
     bool backHovered = (io.MousePos.x >= backPos.x && io.MousePos.x <= backPos.x + backSz.x &&
                        io.MousePos.y >= backPos.y && io.MousePos.y <= backPos.y + backSz.y);
     dl->AddText(nullptr, backFontSize, backPos,
-        backHovered ? IM_COL32(180, 185, 205, 255) : IM_COL32(120, 125, 145, 200), backText);
+        backHovered ? Theme::TextSecondary : Theme::TextMuted, backText);
     if (backHovered && ImGui::IsMouseClicked(0)) {
         m_HubPage = HubPage::Landing;
     }
@@ -1250,12 +1251,12 @@ void EditorLayer::DrawHubWizardSetup(ImDrawList* dl, const ImVec2& area, f32 con
                    (nextHovered ? IM_COL32(60, 90, 160, 255) : IM_COL32(50, 70, 130, 255));
     dl->AddRectFilled(nextPos, nextEnd, nextBg, 10.0f);
     if (canNext) {
-        dl->AddRect(nextPos, nextEnd, IM_COL32(80, 110, 180, 200), 10.0f);
+        dl->AddRect(nextPos, nextEnd, Theme::AccentBlue, 10.0f);
     }
 
     const char* nextText = "Next >";
     ImVec2 nextSz = font->CalcTextSizeA(nextFontSize, FLT_MAX, 0.0f, nextText);
-    ImU32 nextTextCol = canNext ? IM_COL32(220, 225, 245, 255) : IM_COL32(100, 105, 120, 150);
+    ImU32 nextTextCol = canNext ? Theme::TextPrimary : IM_COL32(100, 105, 120, 150);
     dl->AddText(nullptr, nextFontSize,
         ImVec2(nextPos.x + (nextBtnW - nextSz.x) * 0.5f, nextPos.y + (nextBtnH - nextSz.y) * 0.5f),
         nextTextCol, nextText);
@@ -1363,7 +1364,7 @@ static void DrawTemplateThumbnail(ImDrawList* dl, const char* templateId, ImVec2
     f32 shadowH = 16.0f;
     dl->AddRectFilledMultiColor(
         ImVec2(tMin.x, tMax.y - shadowH), tMax,
-        IM_COL32(0, 0, 0, 0), IM_COL32(0, 0, 0, 0),
+        Theme::Transparent, Theme::Transparent,
         IM_COL32(10, 12, 20, 180), IM_COL32(10, 12, 20, 180));
 
     // Subtle top highlight edge
@@ -1477,7 +1478,7 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
                        io.MousePos.y >= cPos.y && io.MousePos.y <= cEnd.y);
 
         ImU32 chipBg = isActive ? IM_COL32(60, 80, 140, 255) :
-                       (hovered ? IM_COL32(45, 50, 70, 255) : IM_COL32(30, 33, 42, 255));
+                       (hovered ? IM_COL32(45, 50, 70, 255) : Theme::PanelBg);
         dl->AddRectFilled(cPos, cEnd, chipBg, chipH * 0.5f);
         if (isActive) {
             dl->AddRect(cPos, cEnd, IM_COL32(100, 130, 200, 200), chipH * 0.5f);
@@ -1486,7 +1487,7 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
         dl->AddText(nullptr, chipFontSize,
             ImVec2(cPos.x + (chipW - chipTextSizes[f].x) * 0.5f,
                    cPos.y + (chipH - chipTextSizes[f].y) * 0.5f),
-            isActive ? IM_COL32(220, 225, 245, 255) : IM_COL32(150, 155, 175, 200),
+            isActive ? Theme::TextPrimary : IM_COL32(150, 155, 175, 200),
             filterLabels[f]);
 
         if (hovered && ImGui::IsMouseClicked(0)) {
@@ -1503,7 +1504,7 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
     ImU32 statusColors[] = {
         IM_COL32(160, 165, 185, 200),  // All — neutral
         IM_COL32(80, 140, 220, 255),   // Stable — blue
-        IM_COL32(80, 180, 80, 255),    // Beta — green
+        Theme::SuccessBright,    // Beta — green
     };
 
     f32 sChipFontSize = 18.0f;
@@ -1545,7 +1546,7 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
                        io.MousePos.y >= scPos.y && io.MousePos.y <= scEnd.y);
 
         ImU32 sBg = isActive ? IM_COL32(60, 80, 140, 255) :
-                   (hovered ? IM_COL32(45, 50, 70, 255) : IM_COL32(30, 33, 42, 255));
+                   (hovered ? IM_COL32(45, 50, 70, 255) : Theme::PanelBg);
         dl->AddRectFilled(scPos, scEnd, sBg, sChipH * 0.5f);
         if (isActive) {
             dl->AddRect(scPos, scEnd, statusColors[f], sChipH * 0.5f);
@@ -1673,13 +1674,13 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
         if (isStable) {
             // Card body: subtle vertical gradient (slightly lighter top to darker bottom)
             ImU32 bgTop = selected ? IM_COL32(40, 50, 78, 255) :
-                          (hovered ? IM_COL32(45, 50, 68, 255) : IM_COL32(30, 33, 42, 255));
+                          (hovered ? IM_COL32(45, 50, 68, 255) : Theme::PanelBg);
             ImU32 bgBot = selected ? IM_COL32(28, 35, 55, 255) :
-                          (hovered ? IM_COL32(32, 36, 48, 255) : IM_COL32(20, 22, 28, 255));
+                          (hovered ? IM_COL32(32, 36, 48, 255) : Theme::PanelBgDark);
             gridDl->AddRectFilledMultiColor(cardPos, cardEnd, bgTop, bgTop, bgBot, bgBot);
             // Re-round the corners (AddRectFilledMultiColor doesn't support rounding)
             // Draw rounded rect on top to clip corners
-            gridDl->AddRectFilled(cardPos, cardEnd, IM_COL32(0, 0, 0, 0), 8.0f);
+            gridDl->AddRectFilled(cardPos, cardEnd, Theme::Transparent, 8.0f);
 
             // Hover glow: accent-tinted border glow effect
             if (hovered) {
@@ -1691,7 +1692,7 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
                     IM_COL32(gr, gg, gb, 60), 10.0f, 0, 3.0f);
             }
         } else {
-            gridDl->AddRectFilled(cardPos, cardEnd, IM_COL32(20, 22, 28, 255), 8.0f);
+            gridDl->AddRectFilled(cardPos, cardEnd, Theme::PanelBgDark, 8.0f);
         }
 
         if (isStable) {
@@ -1727,7 +1728,7 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
         }
 
         // Template name — dimmed for locked
-        ImU32 nameCol = isStable ? IM_COL32(220, 225, 245, 255) : IM_COL32(100, 105, 120, 160);
+        ImU32 nameCol = isStable ? Theme::TextPrimary : IM_COL32(100, 105, 120, 160);
         DrawCenteredClippedText(gridDl, s_BuiltinTemplates[i].name.c_str(), cardPos.x, cardW,
             cardPos.y + 210.0f, nameCol, 12.0f, font, 20.0f);
 
@@ -1742,7 +1743,7 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
                     break;
                 case Editor::MaturityTier::Beta:
                     tierCol = IM_COL32(60, 160, 60, 220);
-                    tierBorderCol = IM_COL32(100, 200, 100, 180);
+                    tierBorderCol = Theme::SuccessSoft;
                     break;
                 case Editor::MaturityTier::Preview:
                     tierCol = IM_COL32(190, 150, 40, 220);
@@ -1823,11 +1824,11 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
 
         // Card body gradient
         ImU32 bgTop = selected ? IM_COL32(35, 55, 65, 255) :
-                      (hovered ? IM_COL32(42, 48, 65, 255) : IM_COL32(30, 33, 42, 255));
+                      (hovered ? IM_COL32(42, 48, 65, 255) : Theme::PanelBg);
         ImU32 bgBot = selected ? IM_COL32(25, 38, 48, 255) :
-                      (hovered ? IM_COL32(30, 34, 48, 255) : IM_COL32(20, 22, 28, 255));
+                      (hovered ? IM_COL32(30, 34, 48, 255) : Theme::PanelBgDark);
         gridDl->AddRectFilledMultiColor(cardPos, cardEnd, bgTop, bgTop, bgBot, bgBot);
-        gridDl->AddRectFilled(cardPos, cardEnd, IM_COL32(0, 0, 0, 0), 8.0f);
+        gridDl->AddRectFilled(cardPos, cardEnd, Theme::Transparent, 8.0f);
 
         // Hover glow
         if (hovered) {
@@ -1856,7 +1857,7 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
         }
 
         DrawCenteredClippedText(gridDl, m_CustomTemplateNames[ci].c_str(), cardPos.x, cardW,
-            cardPos.y + 210.0f, IM_COL32(220, 225, 245, 255), 12.0f, font, 20.0f);
+            cardPos.y + 210.0f, Theme::TextPrimary, 12.0f, font, 20.0f);
 
         const char* customLabel = "Custom Template";
         DrawCenteredClippedText(gridDl, customLabel, cardPos.x, cardW, cardPos.y + 240.0f,
@@ -1885,7 +1886,7 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
     // === Bottom bar: Back | Create | Start Blank ===
     f32 bottomY = area.y - 85.0f;
     dl->AddLine(ImVec2(sidebarW + 30.0f, bottomY - 12.0f), ImVec2(area.x - 30.0f, bottomY - 12.0f),
-        IM_COL32(60, 65, 80, 150), 1.0f);
+        Theme::BorderSubtle, 1.0f);
 
     // Block creation if a non-Stable template is selected
     bool templateLocked = false;
@@ -1903,7 +1904,7 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
     bool backHovered = (io.MousePos.x >= backPos.x && io.MousePos.x <= backPos.x + backSz.x &&
                        io.MousePos.y >= backPos.y && io.MousePos.y <= backPos.y + backSz.y);
     dl->AddText(nullptr, backFontSize, backPos,
-        backHovered ? IM_COL32(180, 185, 205, 255) : IM_COL32(120, 125, 145, 200), backText);
+        backHovered ? Theme::TextSecondary : Theme::TextMuted, backText);
     if (backHovered && ImGui::IsMouseClicked(0)) {
         m_HubPage = HubPage::WizardSetup;
     }
@@ -1921,12 +1922,12 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
                      (createHovered ? IM_COL32(60, 90, 160, 255) : IM_COL32(50, 70, 130, 255));
     dl->AddRectFilled(createPos, createEnd, createBg, 10.0f);
     if (canCreate) {
-        dl->AddRect(createPos, createEnd, IM_COL32(80, 110, 180, 200), 10.0f);
+        dl->AddRect(createPos, createEnd, Theme::AccentBlue, 10.0f);
     }
 
     const char* createText = "Create Project";
     ImVec2 createSz = font->CalcTextSizeA(createFontSize, FLT_MAX, 0.0f, createText);
-    ImU32 createTextCol = canCreate ? IM_COL32(220, 225, 245, 255) : IM_COL32(100, 105, 120, 150);
+    ImU32 createTextCol = canCreate ? Theme::TextPrimary : IM_COL32(100, 105, 120, 150);
     dl->AddText(nullptr, createFontSize,
         ImVec2(createPos.x + (createBtnW - createSz.x) * 0.5f,
                createPos.y + (createBtnH - createSz.y) * 0.5f),
@@ -1988,8 +1989,8 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
     bool blankHovered = canStartBlank && (io.MousePos.x >= blankPos.x && io.MousePos.x <= blankPos.x + blankSz.x &&
                        io.MousePos.y >= blankPos.y && io.MousePos.y <= blankPos.y + blankSz.y);
     dl->AddText(nullptr, blankFontSize, blankPos,
-        blankHovered ? IM_COL32(180, 185, 205, 255) :
-        (canStartBlank ? IM_COL32(120, 125, 145, 200) : IM_COL32(70, 75, 85, 120)), blankText);
+        blankHovered ? Theme::TextSecondary :
+        (canStartBlank ? Theme::TextMuted : IM_COL32(70, 75, 85, 120)), blankText);
 
     if (blankHovered && ImGui::IsMouseClicked(0)) {
         if (CreateProjectOnDisk(m_NewProjectPath, m_NewProjectName, m_NewSceneName, "blank")) {
@@ -2101,13 +2102,13 @@ void EditorLayer::DrawTemplateHoverPreview(ImDrawList* /*dl*/, i32 templateIdx, 
     curY += margin;
     f32 nameX = pMin.x + (popupW - nameSz.x) * 0.5f;
     fg->AddText(nullptr, nameFontSize, ImVec2(nameX, curY),
-        IM_COL32(220, 225, 245, 255), tmpl.name.c_str());
+        Theme::TextPrimary, tmpl.name.c_str());
     curY += nameSz.y;
 
     // --- Divider ---
     curY += dividerH * 0.5f;
     fg->AddLine(ImVec2(pMin.x + margin, curY), ImVec2(pMax.x - margin, curY),
-        IM_COL32(60, 65, 80, 150), 1.0f);
+        Theme::BorderSubtle, 1.0f);
     curY += dividerH * 0.5f;
 
     // --- Description (word-wrapped) ---

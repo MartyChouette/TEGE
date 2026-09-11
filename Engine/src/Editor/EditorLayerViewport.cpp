@@ -1,4 +1,5 @@
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/ECS/Components/BrushSolid.h"
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Editor/ScenePicker.h"
@@ -371,7 +372,7 @@ void EditorLayer::DrawViewportPanel() {
         ImVec2 pos = ImGui::GetCursorScreenPos();
         ImGui::GetWindowDrawList()->AddRectFilled(
             pos, ImVec2(pos.x + availSize.x, pos.y + availSize.y),
-            IM_COL32(30, 30, 30, 255));
+            Theme::CardBg);
         m_EditorViewportHovered = false;
         m_EditorViewportFocused = false;
     }
@@ -2117,7 +2118,7 @@ void EditorLayer::DrawUIEditorOverlay() {
 
         // 8 resize handles (white squares)
         constexpr f32 hs = 4.0f;
-        ImU32 handleColor = IM_COL32(255, 255, 255, 230);
+        ImU32 handleColor = Theme::TextWhiteSoft;
         ImU32 handleBorder = IM_COL32(0, 0, 0, 200);
 
         auto drawHandle = [&](f32 cx, f32 cy) {
@@ -2140,7 +2141,7 @@ void EditorLayer::DrawUIEditorOverlay() {
         f32 labelX = r.x;
         f32 labelY = r.y - textSize.y - 4.0f;
         dl->AddRectFilled(ImVec2(labelX - 2, labelY - 1), ImVec2(labelX + textSize.x + 4, labelY + textSize.y + 1),
-                          IM_COL32(0, 0, 0, 180));
+                          Theme::TooltipBg);
         dl->AddText(font, 12.0f, ImVec2(labelX, labelY), selColor, label.c_str());
     }
 
@@ -2201,7 +2202,7 @@ void EditorLayer::DrawUIEditorOverlay() {
     ImVec2 indicatorPos(offsetX + 8.0f, offsetY + 8.0f);
     dl->AddRectFilled(ImVec2(indicatorPos.x - 2, indicatorPos.y - 1),
                       ImVec2(indicatorPos.x + 102, indicatorPos.y + 15),
-                      IM_COL32(0, 0, 0, 160));
+                      Theme::Scrim);
     dl->AddText(font, 13.0f, indicatorPos, IM_COL32(0, 255, 200, 220), "UI EDIT MODE");
 
     // Restore computed rects back to local space

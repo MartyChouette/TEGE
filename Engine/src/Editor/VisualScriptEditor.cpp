@@ -1,4 +1,5 @@
 #include "Enjin/Editor/VisualScriptEditor.h"
+#include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/VisualScript/NodeDefinition.h"
@@ -832,7 +833,7 @@ void VisualScriptEditor::DrawExecutionTimeline() {
         ImDrawList* dl = ImGui::GetWindowDrawList();
         dl->AddRectFilled(canvasPos,
             ImVec2(canvasPos.x + canvasSize.x, canvasPos.y + canvasSize.y),
-            IM_COL32(30, 30, 30, 255));
+            Theme::CardBg);
 
         // Draw execution bars
         f32 barHeight = 12.0f;
@@ -852,7 +853,7 @@ void VisualScriptEditor::DrawExecutionTimeline() {
             // Color by node category (simplified)
             u32 color = IM_COL32(100, 150, 200, 255);  // Default blue
             if (rec.nodeType.find("Event_") == 0) {
-                color = IM_COL32(80, 180, 80, 255);  // Green for events
+                color = Theme::SuccessBright;  // Green for events
             } else if (rec.nodeType.find("Flow_") == 0) {
                 color = IM_COL32(200, 140, 60, 255);  // Orange for flow
             } else if (rec.nodeType.find("Debug_") == 0) {
@@ -2160,12 +2161,12 @@ static void DrawBreakpointIndicators(ImDrawList* dl, const NodeGraphData& graphD
             if (!bp.enabled)
                 color = IM_COL32(128, 128, 128, 200);
             else if (!bp.condition.empty() || bp.hitCountTarget > 0)
-                color = IM_COL32(255, 200, 50, 255);  // Yellow for conditional
+                color = Theme::AccentYellow;  // Yellow for conditional
             else
-                color = IM_COL32(255, 50, 50, 255);    // Red for unconditional
+                color = Theme::GizmoX;    // Red for unconditional
 
             dl->AddCircleFilled(dotPos, 5.0f * s, color);
-            dl->AddCircle(dotPos, 5.0f * s, IM_COL32(255, 255, 255, 180), 12, 1.0f);
+            dl->AddCircle(dotPos, 5.0f * s, Theme::OverlayLine, 12, 1.0f);
         }
     }
 }

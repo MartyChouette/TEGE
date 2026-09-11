@@ -1,4 +1,5 @@
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Core/Version.h"
@@ -191,7 +192,7 @@ void EditorLayer::DrawHierarchyPanel() {
     if (m_ShowFocusRing && m_FocusedPanel == FocusedPanel::Hierarchy) {
         ImVec2 wMin = ImGui::GetWindowPos();
         ImVec2 wMax = ImVec2(wMin.x + ImGui::GetWindowWidth(), wMin.y + ImGui::GetWindowHeight());
-        ImGui::GetWindowDrawList()->AddRect(wMin, wMax, IM_COL32(100, 200, 255, 200), 0.0f, 0, 2.0f);
+        ImGui::GetWindowDrawList()->AddRect(wMin, wMax, Theme::FocusRing, 0.0f, 0, 2.0f);
         // Auto-focus this window when keyboard-selected
         ImGui::SetWindowFocus();
     }

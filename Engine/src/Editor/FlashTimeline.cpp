@@ -1,4 +1,5 @@
 #include "Enjin/Editor/FlashTimeline.h"
+#include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Tween.h"
@@ -547,14 +548,14 @@ void FlashTimelineEditor::DrawFrameGrid() {
         if (f % 5 == 0) {
             char buf[16];
             snprintf(buf, sizeof(buf), "%u", f);
-            drawList->AddText(ImVec2(x + 2, canvasPos.y), IM_COL32(180, 180, 180, 255), buf);
+            drawList->AddText(ImVec2(x + 2, canvasPos.y), Theme::TextGray, buf);
         }
 
         // Tick mark
         drawList->AddLine(
             ImVec2(x, canvasPos.y + headerHeight - 4),
             ImVec2(x, canvasPos.y + headerHeight),
-            (f % 5 == 0) ? IM_COL32(150, 150, 150, 255) : IM_COL32(80, 80, 80, 255)
+            (f % 5 == 0) ? IM_COL32(150, 150, 150, 255) : Theme::Border
         );
     }
 
@@ -608,7 +609,7 @@ void FlashTimelineEditor::DrawFrameGrid() {
             if (isExactKeyframe) {
                 f32 cx = x + cellWidth * 0.5f;
                 f32 cy = rowY + rowHeight * 0.5f;
-                drawList->AddCircleFilled(ImVec2(cx, cy), 3.0f, IM_COL32(255, 255, 255, 255));
+                drawList->AddCircleFilled(ImVec2(cx, cy), 3.0f, Theme::TextWhite);
             }
 
             // Grid line
@@ -623,7 +624,7 @@ void FlashTimelineEditor::DrawFrameGrid() {
         drawList->AddLine(
             ImVec2(canvasPos.x, rowY + rowHeight),
             ImVec2(canvasPos.x + canvasSize.x, rowY + rowHeight),
-            IM_COL32(60, 60, 70, 255)
+            Theme::GraphNodeBorder
         );
     }
 
@@ -633,7 +634,7 @@ void FlashTimelineEditor::DrawFrameGrid() {
         drawList->AddLine(
             ImVec2(px, canvasPos.y),
             ImVec2(px, gridTop + numLayers * rowHeight),
-            IM_COL32(255, 60, 60, 200),
+            Theme::AccentRed,
             2.0f
         );
         // Playhead triangle
@@ -641,7 +642,7 @@ void FlashTimelineEditor::DrawFrameGrid() {
             ImVec2(px - 5, canvasPos.y),
             ImVec2(px + 5, canvasPos.y),
             ImVec2(px, canvasPos.y + 8),
-            IM_COL32(255, 60, 60, 255)
+            Theme::DangerBright
         );
     }
 

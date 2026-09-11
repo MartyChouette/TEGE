@@ -1,4 +1,5 @@
 #include "Enjin/ECS/Components/PreRenderedBackground.h"
+#include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/Editor/EditorLayer.h"
 #include "Enjin/ECS/Components/NavmeshVolume.h"
 #include "Enjin/AI/NavmeshBake.h"
@@ -4557,7 +4558,7 @@ void EditorLayer::DrawSprite2DComponent(ECS::Entity entity) {
                         f32 rw = (sprite->srcWidth / texW) * previewSize.x;
                         f32 rh = (sprite->srcHeight / texH) * previewSize.y;
                         drawList->AddRect(ImVec2(rx, ry), ImVec2(rx + rw, ry + rh),
-                                          IM_COL32(255, 50, 50, 255), 0.0f, 0, 2.0f);
+                                          Theme::GizmoX, 0.0f, 0, 2.0f);
                     }
 
                     ImGui::Text("Texture: %ux%u", tex->GetWidth(), tex->GetHeight());
@@ -4606,12 +4607,12 @@ void EditorLayer::DrawSprite2DComponent(ECS::Entity entity) {
                 for (u32 c = 1; c < gridCols; ++c) {
                     f32 x = sheetPos.x + c * cellW;
                     drawList->AddLine(ImVec2(x, sheetPos.y), ImVec2(x, sheetPos.y + sheetSize.y),
-                                      IM_COL32(255, 255, 255, 80));
+                                      Theme::OverlayFillFaint);
                 }
                 for (u32 r = 1; r < gridRows; ++r) {
                     f32 y = sheetPos.y + r * cellH;
                     drawList->AddLine(ImVec2(sheetPos.x, y), ImVec2(sheetPos.x + sheetSize.x, y),
-                                      IM_COL32(255, 255, 255, 80));
+                                      Theme::OverlayFillFaint);
                 }
 
                 // Highlight current selection
@@ -5135,7 +5136,7 @@ void EditorLayer::DrawTilemapComponent(ECS::Entity entity) {
                         snprintf(idBuf, sizeof(idBuf), "%d", tileIdx);
                         ImVec2 textSize = ImGui::CalcTextSize(idBuf);
                         if (textSize.x < cellSize && textSize.y < cellSize) {
-                            drawList->AddText(ImVec2(x0 + 1, y0 + 1), IM_COL32(255, 255, 255, 200), idBuf);
+                            drawList->AddText(ImVec2(x0 + 1, y0 + 1), Theme::TextWhiteFaded, idBuf);
                         }
                     } else {
                         drawList->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), IM_COL32(40, 40, 40, 180));
@@ -9462,12 +9463,12 @@ void EditorLayer::DrawCameraFrustum(ECS::Entity cameraEntity) {
         drawList->AddRectFilled(
             ImVec2(screenCamPos.x - iconSize, screenCamPos.y - iconSize),
             ImVec2(screenCamPos.x + iconSize, screenCamPos.y + iconSize),
-            isSelected ? IM_COL32(255, 200, 50, 255) : IM_COL32(150, 150, 150, 200)
+            isSelected ? Theme::AccentYellow : Theme::TextDisabled
         );
         drawList->AddRect(
             ImVec2(screenCamPos.x - iconSize, screenCamPos.y - iconSize),
             ImVec2(screenCamPos.x + iconSize, screenCamPos.y + iconSize),
-            IM_COL32(255, 255, 255, 255), 0.0f, 0, 1.0f
+            Theme::TextWhite, 0.0f, 0, 1.0f
         );
     }
 }

@@ -1,4 +1,5 @@
 #include "Enjin/ECS/Components/PreRenderedBackground.h"
+#include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/Platform/Desktop.h"
 #include "Enjin/Editor/EditorLayer.h"
 #include "Enjin/ECS/Components/NavmeshVolume.h"
@@ -1554,7 +1555,7 @@ void EditorLayer::DrawInspectorPanel() {
     if (m_ShowFocusRing && m_FocusedPanel == FocusedPanel::Inspector) {
         ImVec2 wMin = ImGui::GetWindowPos();
         ImVec2 wMax = ImVec2(wMin.x + ImGui::GetWindowWidth(), wMin.y + ImGui::GetWindowHeight());
-        ImGui::GetWindowDrawList()->AddRect(wMin, wMax, IM_COL32(100, 200, 255, 200), 0.0f, 0, 2.0f);
+        ImGui::GetWindowDrawList()->AddRect(wMin, wMax, Theme::FocusRing, 0.0f, 0, 2.0f);
         ImGui::SetWindowFocus();
     }
 
@@ -3757,7 +3758,7 @@ void EditorLayer::DrawInspectorPanel() {
                                 ImVec2 p1(markerX, sliderPos.y + rulerH);
                                 ImVec2 p2(markerX - triSize, sliderPos.y + rulerH - triSize - 1.0f);
                                 ImVec2 p3(markerX + triSize, sliderPos.y + rulerH - triSize - 1.0f);
-                                drawList->AddTriangleFilled(p1, p2, p3, IM_COL32(255, 200, 50, 255));
+                                drawList->AddTriangleFilled(p1, p2, p3, Theme::AccentYellow);
 
                                 ImVec2 hitMin(markerX - triSize - 1, sliderPos.y + rulerH - triSize - 2);
                                 ImVec2 hitMax(markerX + triSize + 1, sliderPos.y + rulerH + 1);
@@ -3774,7 +3775,7 @@ void EditorLayer::DrawInspectorPanel() {
                         // Playhead indicator
                         f32 playheadX = sliderPos.x + normalizedTime * sliderWidth;
                         drawList->AddLine(ImVec2(playheadX, sliderPos.y), ImVec2(playheadX, sliderPos.y + rulerH),
-                            IM_COL32(255, 80, 80, 255), 2.0f);
+                            Theme::Error, 2.0f);
 
                         // Advance cursor past the ruler
                         ImGui::Dummy(ImVec2(sliderWidth, rulerH));
@@ -4054,7 +4055,7 @@ void EditorLayer::DrawInspectorPanel() {
                             for (usize ni = 0; ni < bt.nodes.size(); ++ni) {
                                 f32 t = (bt.nodes[ni].threshold - axisMin) / axisRange;
                                 f32 nx = axisPos.x + t * axisWidth;
-                                btDL->AddLine(ImVec2(nx, axisPos.y), ImVec2(nx, axisPos.y + axisH), IM_COL32(200, 200, 200, 200), 1.5f);
+                                btDL->AddLine(ImVec2(nx, axisPos.y), ImVec2(nx, axisPos.y + axisH), Theme::Separator, 1.5f);
                                 // Short animation name
                                 std::string shortName = bt.nodes[ni].animationName;
                                 if (shortName.size() > 10) shortName = shortName.substr(0, 9) + "~";
@@ -4070,12 +4071,12 @@ void EditorLayer::DrawInspectorPanel() {
                             valNorm = Math::Clamp(valNorm, 0.0f, 1.0f);
                             f32 valX = axisPos.x + valNorm * axisWidth;
                             btDL->AddLine(ImVec2(valX, axisPos.y - 2), ImVec2(valX, axisPos.y + axisH + 2),
-                                IM_COL32(255, 80, 80, 255), 2.0f);
+                                Theme::Error, 2.0f);
                             btDL->AddTriangleFilled(
                                 ImVec2(valX, axisPos.y - 2),
                                 ImVec2(valX - 4, axisPos.y - 7),
                                 ImVec2(valX + 4, axisPos.y - 7),
-                                IM_COL32(255, 80, 80, 255));
+                                Theme::Error);
 
                             ImGui::Dummy(ImVec2(axisWidth, axisH));
 
@@ -4511,7 +4512,7 @@ void EditorLayer::DrawInspectorPanel() {
 
                             // Background
                             sDL->AddRectFilled(stripPos, ImVec2(stripPos.x + stripW, stripPos.y + stripH),
-                                IM_COL32(20, 20, 20, 255), 2.0f);
+                                Theme::Shadow, 2.0f);
 
                             // Before ghosts (left)
                             for (i32 i = onionSkin.framesBefore; i >= 1; --i) {
@@ -4528,7 +4529,7 @@ void EditorLayer::DrawInspectorPanel() {
                             // Current frame (center, white)
                             f32 curX = stripPos.x + onionSkin.framesBefore * cellW;
                             sDL->AddRectFilled(ImVec2(curX + 1, stripPos.y + 1), ImVec2(curX + cellW - 1, stripPos.y + stripH - 1),
-                                IM_COL32(255, 255, 255, 255));
+                                Theme::TextWhite);
 
                             // After ghosts (right)
                             for (i32 i = 1; i <= onionSkin.framesAfter; ++i) {

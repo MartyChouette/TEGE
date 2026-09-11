@@ -1,4 +1,5 @@
 #include "Enjin/Editor/ParticleGraph.h"
+#include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include <imgui.h>
 #include <nlohmann/json.hpp>
@@ -14,7 +15,7 @@ static const ImU32 COLOR_EMITTER     = IM_COL32(60, 140, 180, 255);  // Cyan
 static const ImU32 COLOR_MODIFIER    = IM_COL32(180, 120, 50, 255);  // Orange
 static const ImU32 COLOR_SUBEMITTER  = IM_COL32(140, 80, 160, 255);  // Purple
 static const ImU32 COLOR_COLLISION   = IM_COL32(160, 60, 60, 255);   // Red
-static const ImU32 COLOR_RENDERER    = IM_COL32(60, 160, 60, 255);   // Green
+static const ImU32 COLOR_RENDERER    = Theme::GraphNodeAction;   // Green
 static const ImU32 COLOR_CONTROL     = IM_COL32(120, 120, 60, 255);  // Yellow-brown
 
 static const f32 NODE_WIDTH  = 160.0f;
@@ -62,7 +63,7 @@ static ImU32 GetParticleNodeColor(ParticleNodeType type) {
             return COLOR_CONTROL;
 
         default:
-            return IM_COL32(100, 100, 100, 255);
+            return Theme::TextDark;
     }
 }
 
@@ -182,13 +183,13 @@ void ParticleGraphEditor::Render() {
         drawList->AddLine(
             ImVec2(canvasPos.x + x, canvasPos.y),
             ImVec2(canvasPos.x + x, canvasPos.y + canvasSize.y),
-            IM_COL32(50, 50, 50, 80));
+            Theme::OverlayBg);
     }
     for (f32 y = fmodf(m_ScrollOffset.y, gridStep); y < canvasSize.y; y += gridStep) {
         drawList->AddLine(
             ImVec2(canvasPos.x, canvasPos.y + y),
             ImVec2(canvasPos.x + canvasSize.x, canvasPos.y + y),
-            IM_COL32(50, 50, 50, 80));
+            Theme::OverlayBg);
     }
 
     m_CanvasOriginX = canvasPos.x;
@@ -296,10 +297,10 @@ void ParticleGraphEditor::DrawNode(ParticleGraphNode& node) {
     ImVec2 nodeEnd(nodePos.x + nodeW, nodePos.y + headerH + bodyH);
 
     ImU32 headerColor = GetParticleNodeColor(node.type);
-    ImU32 bodyColor = IM_COL32(40, 40, 40, 230);
+    ImU32 bodyColor = Theme::GraphNodeBody;
     ImU32 borderColor = (node.id == m_SelectedNodeId)
-        ? IM_COL32(255, 200, 50, 255)
-        : IM_COL32(80, 80, 80, 255);
+        ? Theme::AccentYellow
+        : Theme::Border;
 
     // Node body
     drawList->AddRectFilled(nodePos, nodeEnd, bodyColor, 6.0f * m_Zoom);
@@ -316,7 +317,7 @@ void ParticleGraphEditor::DrawNode(ParticleGraphNode& node) {
     // Title text
     const char* name = node.label.empty() ? GetNodeName(node.type) : node.label.c_str();
     ImVec2 textPos(nodePos.x + 8.0f * m_Zoom, nodePos.y + 5.0f * m_Zoom);
-    drawList->AddText(nullptr, 13.0f * m_Zoom, textPos, IM_COL32(255, 255, 255, 255), name);
+    drawList->AddText(nullptr, 13.0f * m_Zoom, textPos, Theme::TextWhite, name);
 
     // Pins: hoverable link points (grow on hover so they read as clickable)
     ImVec2 mouse = ImGui::GetIO().MousePos;
@@ -325,7 +326,7 @@ void ParticleGraphEditor::DrawNode(ParticleGraphNode& node) {
         f32 dx = mouse.x - p.x, dy = mouse.y - p.y;
         bool hot = (dx * dx + dy * dy) <= (pinR * 3.0f) * (pinR * 3.0f);
         drawList->AddCircleFilled(p, hot ? pinR * 1.6f : pinR, col);
-        if (hot) drawList->AddCircle(p, pinR * 2.0f, IM_COL32(255, 255, 255, 160), 0, 1.5f);
+        if (hot) drawList->AddCircle(p, pinR * 2.0f, Theme::GraphPinHot, 0, 1.5f);
         m_FramePins.push_back({node.id, pinIdx, p.x, p.y});
     };
     if (PGHasInput(node.type)) drawPin(0, IM_COL32(180, 220, 220, 255));
@@ -408,7 +409,7 @@ void ParticleGraphEditor::HandleLinking() {
     f32 tangent = (iP.x - o.x) * 0.5f;
     if (tangent < 50.0f * m_Zoom) tangent = 50.0f * m_Zoom;
     drawList->AddBezierCubic(o, ImVec2(o.x + tangent, o.y), ImVec2(iP.x - tangent, iP.y), iP,
-                             snap ? IM_COL32(120, 255, 160, 255) : IM_COL32(255, 220, 120, 200),
+                             snap ? Theme::GraphSnapOn : Theme::GraphSnapOff,
                              2.5f * m_Zoom);
 
     if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {

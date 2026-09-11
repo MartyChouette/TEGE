@@ -1,4 +1,5 @@
 #include "Enjin/Editor/AudioEventGraph.h"
+#include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/Audio/AudioEngine.h"
 #include "Enjin/Logging/Log.h"
 #include <imgui.h>
@@ -12,11 +13,11 @@ namespace Enjin {
 namespace Editor {
 
 // Category colors for audio node types
-static const ImU32 COLOR_TRIGGER    = IM_COL32(60, 160, 60, 255);   // Green
+static const ImU32 COLOR_TRIGGER    = Theme::GraphNodeAction;   // Green
 static const ImU32 COLOR_SOURCE     = IM_COL32(60, 120, 180, 255);  // Blue
 static const ImU32 COLOR_PROCESSING = IM_COL32(160, 120, 50, 255);  // Orange
 static const ImU32 COLOR_MIXING     = IM_COL32(140, 60, 140, 255);  // Purple
-static const ImU32 COLOR_OUT        = IM_COL32(160, 50, 50, 255);   // Red
+static const ImU32 COLOR_OUT        = Theme::GraphNodeOutput;   // Red
 
 static const f32 NODE_WIDTH  = 160.0f;
 static const f32 NODE_HEADER = 28.0f;
@@ -51,7 +52,7 @@ static ImU32 GetAudioNodeColor(AudioNodeType type) {
             return COLOR_OUT;
 
         default:
-            return IM_COL32(100, 100, 100, 255);
+            return Theme::TextDark;
     }
 }
 
@@ -153,13 +154,13 @@ void AudioEventGraphEditor::Render() {
         drawList->AddLine(
             ImVec2(canvasPos.x + x, canvasPos.y),
             ImVec2(canvasPos.x + x, canvasPos.y + canvasSize.y),
-            IM_COL32(50, 50, 50, 80));
+            Theme::OverlayBg);
     }
     for (f32 y = fmodf(m_ScrollOffset.y, gridStep); y < canvasSize.y; y += gridStep) {
         drawList->AddLine(
             ImVec2(canvasPos.x, canvasPos.y + y),
             ImVec2(canvasPos.x + canvasSize.x, canvasPos.y + y),
-            IM_COL32(50, 50, 50, 80));
+            Theme::OverlayBg);
     }
 
     // Draw connections first (behind nodes)
@@ -235,10 +236,10 @@ void AudioEventGraphEditor::DrawNode(AudioGraphNode& node) {
     ImVec2 nodeEnd(nodePos.x + nodeW, nodePos.y + headerH + bodyH);
 
     ImU32 headerColor = GetAudioNodeColor(node.type);
-    ImU32 bodyColor = IM_COL32(40, 40, 40, 230);
+    ImU32 bodyColor = Theme::GraphNodeBody;
     ImU32 borderColor = (node.id == m_SelectedNodeId)
-        ? IM_COL32(255, 200, 50, 255)
-        : IM_COL32(80, 80, 80, 255);
+        ? Theme::AccentYellow
+        : Theme::Border;
 
     // Node body
     drawList->AddRectFilled(nodePos, nodeEnd, bodyColor, 6.0f * m_Zoom);
@@ -255,7 +256,7 @@ void AudioEventGraphEditor::DrawNode(AudioGraphNode& node) {
     // Title text
     const char* name = node.label.empty() ? GetNodeName(node.type) : node.label.c_str();
     ImVec2 textPos(nodePos.x + 8.0f * m_Zoom, nodePos.y + 5.0f * m_Zoom);
-    drawList->AddText(nullptr, 13.0f * m_Zoom, textPos, IM_COL32(255, 255, 255, 255), name);
+    drawList->AddText(nullptr, 13.0f * m_Zoom, textPos, Theme::TextWhite, name);
 
     // Input pin (left side) - not for triggers
     if (node.type != AudioNodeType::EventTrigger &&

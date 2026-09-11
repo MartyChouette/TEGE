@@ -10,6 +10,7 @@
 // that exists only while a window is open.
 
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/Editor/EditorWidgets.h"
 #include "Enjin/Renderer/PaletteCycle.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
@@ -65,10 +66,10 @@ i32 DrawPaletteStrip(const Renderer::Palette& p, f32 width, f32 height, i32 mark
         const f32 x0 = origin.x + static_cast<f32>(markFirst) * w;
         const f32 x1 = x0 + static_cast<f32>(markCount) * w;
         dl->AddRect(ImVec2(x0, origin.y - 2.0f), ImVec2(x1, origin.y + height + 2.0f),
-                    IM_COL32(120, 190, 255, 255), 0.0f, 0, 2.0f);
+                    Theme::SwatchSelected, 0.0f, 0, 2.0f);
     }
     dl->AddRect(origin, ImVec2(origin.x + width, origin.y + height),
-                IM_COL32(90, 95, 105, 255));
+                Theme::SwatchBorder);
     ImGui::Dummy(ImVec2(width, height));
     return hovered;
 }

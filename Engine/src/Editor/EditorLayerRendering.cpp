@@ -1,4 +1,5 @@
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/Editor/EditorWidgets.h"
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Editor/ScenePicker.h"
@@ -761,7 +762,7 @@ void EditorLayer::DrawGameViewPanel() {
             // Water is now rendered as a 3D mesh in RenderToTarget (no ImGui overlay needed)
 
             // Preview area border
-            drawList->AddRect(p0, p1, IM_COL32(100, 100, 100, 255));
+            drawList->AddRect(p0, p1, Theme::TextDark);
 
             // Status text overlay
             const char* previewText = isPlaying ? "Game Running" : "Game Preview";
@@ -770,7 +771,7 @@ void EditorLayer::DrawGameViewPanel() {
             }
             ImVec2 textSize = ImGui::CalcTextSize(previewText);
             ImVec2 textPos((p0.x + p1.x - textSize.x) * 0.5f, p0.y + 10);
-            drawList->AddText(textPos, IM_COL32(200, 200, 200, 200), previewText);
+            drawList->AddText(textPos, Theme::Separator, previewText);
 
 
             // Debug: zone detection status - GAME DEBUG (F1) ONLY. This drew
@@ -787,7 +788,7 @@ void EditorLayer::DrawGameViewPanel() {
                 }
                 ImVec2 dbgSize = ImGui::CalcTextSize(debugBuf);
                 ImVec2 dbgPos((p0.x + p1.x - dbgSize.x) * 0.5f, p1.y - 20);
-                drawList->AddText(dbgPos, IM_COL32(180, 180, 100, 200), debugBuf);
+                drawList->AddText(dbgPos, Theme::DebugText, debugBuf);
             }
 
             // Render flower particles as projected shapes in game view
@@ -880,7 +881,7 @@ void EditorLayer::DrawGameViewPanel() {
                     ImVec2 textSize = ImGui::CalcTextSize(btnText);
                     ImVec2 textPos(btnPos.x + (btnW - textSize.x) * 0.5f,
                                   btnPos.y + (btnH - textSize.y) * 0.5f);
-                    drawList->AddText(textPos, IM_COL32(255, 255, 255, 230), btnText);
+                    drawList->AddText(textPos, Theme::TextWhiteSoft, btnText);
                     // Click detection
                     ImVec2 mousePos = ImGui::GetMousePos();
                     if (mousePos.x >= btnPos.x && mousePos.x <= btnEnd.x &&

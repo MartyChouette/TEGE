@@ -1,4 +1,5 @@
 #include "Enjin/Editor/PixelEditor.h"
+#include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/Assets/Prefab.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Name.h"
@@ -346,7 +347,7 @@ void PixelEditor::DrawCanvasArea() {
 
     // Grid overlay
     if (m_ShowGrid && pixelSize >= 4.0f) {
-        ImU32 gridColor = IM_COL32(80, 80, 80, 100);
+        ImU32 gridColor = Theme::GridLine;
         for (u32 x = 0; x <= m_Width; x++) {
             f32 px = originX + x * pixelSize;
             if (px >= canvasPos.x && px <= canvasPos.x + canvasSize.x) {
@@ -495,7 +496,7 @@ void PixelEditor::DrawPalettePanel() {
     u8 fa = (m_ForegroundColor >> 24) & 0xFF;
 
     dl->AddRectFilled(cursor, ImVec2(cursor.x + 32, cursor.y + 32), IM_COL32(fr, fg, fb, fa));
-    dl->AddRect(cursor, ImVec2(cursor.x + 32, cursor.y + 32), IM_COL32(255, 255, 255, 200));
+    dl->AddRect(cursor, ImVec2(cursor.x + 32, cursor.y + 32), Theme::TextWhiteFaded);
     ImGui::Dummy(ImVec2(32, 36));
 
     // Color picker
@@ -924,7 +925,7 @@ void PixelEditor::DrawAnimationTimeline() {
 
         ImU32 bgColor = isCurrent ? IM_COL32(80, 120, 200, 255) : IM_COL32(60, 60, 60, 255);
         dl->AddRectFilled(pos, ImVec2(pos.x + thumbW, pos.y + thumbW), bgColor);
-        dl->AddRect(pos, ImVec2(pos.x + thumbW, pos.y + thumbW), IM_COL32(180, 180, 180, 255));
+        dl->AddRect(pos, ImVec2(pos.x + thumbW, pos.y + thumbW), Theme::TextGray);
 
         char id[32];
         snprintf(id, sizeof(id), "##aframe%zu", i);
@@ -1156,7 +1157,7 @@ void PixelEditor::DrawPolygonOverlay(f32 originX, f32 originY, f32 pixelSize, Im
                              ? IM_COL32(255, 255, 0, 255)
                              : IM_COL32(0, 255, 128, 255);
         dl->AddCircleFilled(sp, 5.0f, dotColor);
-        dl->AddCircle(sp, 5.0f, IM_COL32(255, 255, 255, 200));
+        dl->AddCircle(sp, 5.0f, Theme::TextWhiteFaded);
     }
 }
 
