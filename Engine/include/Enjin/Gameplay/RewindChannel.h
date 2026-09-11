@@ -73,6 +73,25 @@ struct EntitySnapshot {
     Math::Vector3 baseColor = Math::Vector3(1.0f);
 };
 
+// Interpolate between two recorded animation positions.
+//
+// A looping clip wraps between two recorded frames, and then the LATER frame's
+// normalized time is smaller than the earlier one. Lerping those two numbers
+// directly runs the animation backwards through the middle of the clip for one
+// interval, which reads as a stutter exactly at the loop point -- the one place a
+// viewer is already looking. Unwrapping the endpoint forward instead keeps the
+// motion continuous.
+//
+// Free and pure because this is the part that has to be right and the part a
+// running editor cannot show you: at 30 recorded frames a second the wrong
+// interval lasts 33ms.
+inline f32 LerpNormalizedAnimTime(f32 from, f32 to, f32 t) {
+    if (to < from) to += 1.0f;
+    f32 result = from + (to - from) * t;
+    if (result > 1.0f) result -= 1.0f;
+    return result;
+}
+
 // A frame in the delta-compressed scene history
 struct DeltaFrame {
     f32 timestamp = 0.0f;

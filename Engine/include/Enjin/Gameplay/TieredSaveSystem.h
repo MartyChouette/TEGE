@@ -81,6 +81,21 @@ public:
     void Update(f32 deltaTime, ECS::World* world, const std::string& currentScene);
 
     // Scene transition hook
+    // A checkpoint the GAME reached, as opposed to one a script asked for.
+    //
+    // Checkpoint() below is an explicit command -- a script calling
+    // SaveGame_Checkpoint() means it, and honouring a config switch there would be
+    // silently ignoring an instruction. This is the other half: the player walked
+    // into a Checkpoint goal zone, and whether that saves is exactly what the
+    // "On Checkpoint" switch is for.
+    //
+    // That switch had no consumer at all. It sat in the Save Debug panel with
+    // onSceneTransition and onTimedInterval, both of which work, so it read as the
+    // third member of a working set.
+    //
+    // Returns whether it saved, so a caller can say so rather than guessing.
+    bool OnCheckpointReached(ECS::World* world, const std::string& sceneName);
+
     void OnSceneTransition(const std::string& fromScene, const std::string& toScene,
                            ECS::World* world);
 

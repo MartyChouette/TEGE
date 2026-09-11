@@ -5591,6 +5591,16 @@ void EditorLayer::DrawCollaborationPanel() {
             if (ImGui::Combo("Conflict Resolution", &currentStrategy, strategies, IM_ARRAYSIZE(strategies))) {
                 m_CollabSystem.SetConflictStrategy(static_cast<ConflictStrategy>(currentStrategy));
             }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(
+                    "What happens when a peer edits something you just edited.\n\n"
+                    "Last Writer Wins: the later edit stands, decided by vector clock.\n"
+                    "Host Authority: the host's edit stands and is re-sent to everyone.\n"
+                    "Merge: positions are averaged; every other kind of edit falls back\n"
+                    "  to last-writer-wins, because only a transform has fields to merge.\n"
+                    "Ask (Manual): the incoming edit is held in the Conflicts list below\n"
+                    "  and applied nowhere until you choose.");
+            }
             ImGui::TreePop();
         }
 
@@ -5652,6 +5662,15 @@ void EditorLayer::DrawCollaborationPanel() {
                 ImGui::SameLine();
                 if (ImGui::SmallButton("Accept Remote")) {
                     m_CollabSystem.ResolveConflict(i, ConflictStrategy::LastWriterWins);
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Merge")) {
+                    m_CollabSystem.ResolveConflict(i, ConflictStrategy::Merge);
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Average the two positions and keep the later rotation\n"
+                                      "and scale. Only a transform conflict can be merged;\n"
+                                      "anything else takes the later edit.");
                 }
                 ImGui::PopID();
             }

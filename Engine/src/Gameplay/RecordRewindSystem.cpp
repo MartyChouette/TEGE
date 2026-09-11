@@ -130,9 +130,26 @@ void RecordRewindSystem::RestoreEntitySnapshot(ECS::Entity entity, const EntityS
         }
     }
 
-    // Animation restore: seek the animator to the recorded time
-    // (SkeletalAnimator doesn't expose a time setter, so we skip restore for now —
-    //  the animator will naturally resume from its current state after rewind stops)
+    if (HasChannel(snap.channelMask, RewindChannelFlags::Animation)) {
+        // Seek the animator to the recorded time.
+        //
+        // This used to be a comment saying "SkeletalAnimator doesn't expose a time
+        // setter, so we skip restore for now". It does expose one, and has for
+        // longer than this comment has been here: SetNormalizedTime seeks, resamples
+        // the clip, and recalculates the world transforms and skinning matrices.
+        // Capture was writing animNormalizedTime into every snapshot the whole time,
+        // so the Animation checkbox recorded a channel that was then thrown away --
+        // a rewound character walked backwards through its own footsteps with its
+        // legs still cycling forward.
+        //
+        // Nothing pauses the animator during a rewind, so it also ticks forward each
+        // frame. That drift is bounded by one frame and re-corrected by the next
+        // restore, because this runs every frame of the rewind rather than once at
+        // the end.
+        if (auto* anim = m_World->GetComponent<ECS::AnimatorComponent>(entity)) {
+            anim->animator.SetNormalizedTime(snap.animNormalizedTime);
+        }
+    }
 
     if (HasChannel(snap.channelMask, RewindChannelFlags::Material)) {
         auto* mat = m_World->GetComponent<ECS::MaterialComponent>(entity);
@@ -197,8 +214,12 @@ void RecordRewindSystem::RestoreEntitySnapshotInterpolated(ECS::Entity entity,
         }
     }
 
-    // Animation interpolation: SkeletalAnimator doesn't expose a time setter,
-    // so we skip animation restore during interpolated rewind.
+    if (HasChannel(mask, RewindChannelFlags::Animation)) {
+        if (auto* anim = m_World->GetComponent<ECS::AnimatorComponent>(entity)) {
+            anim->animator.SetNormalizedTime(
+                LerpNormalizedAnimTime(a.animNormalizedTime, b.animNormalizedTime, t));
+        }
+    }
 
     // Sync physics
     if (HasChannel(mask, RewindChannelFlags::Transform)) {
@@ -265,7 +286,14 @@ void RecordRewindSystem::UpdateEntityRewind(f32 deltaTime) {
         bool rewindHeld = rr->rewindKey >= 0 &&
             Input::IsKeyDown(static_cast<KeyCode>(rr->rewindKey)) && rr->cooldownTimer <= 0.0f;
 
-        if (rewindHeld && !rr->history.Empty()) {
+        // A rewind asked for in code counts too. It used not to: StartEntityRewind
+        // set rewinding = true and this branch, gated only on the key, fell through
+        // to the else below and cleared it on the very next frame. The scripting
+        // binding Rewind_StartEntityRewind() therefore did nothing unless the player
+        // was also holding the key down.
+        const bool rewindActive = rewindHeld || rr->rewindRequested;
+
+        if (rewindActive && !rr->history.Empty()) {
             if (!rr->rewinding) {
                 rr->rewinding = true;
                 rr->rewindPlayhead = 0.0f;
@@ -317,6 +345,9 @@ void RecordRewindSystem::UpdateEntityRewind(f32 deltaTime) {
         } else {
             if (rr->rewinding) {
                 rr->rewinding = false;
+                // Also clears a standing request, which is reachable when the
+                // history empties out from under one.
+                rr->rewindRequested = false;
                 rr->rewindPlayhead = 0.0f;
                 rr->cooldownTimer = rr->cooldown;
                 // Recording resumes from wherever the rewind left the buffer.
@@ -368,7 +399,11 @@ void RecordRewindSystem::UpdateSceneRewind(f32 deltaTime) {
         bool rewindHeld = sr->rewindKey >= 0 &&
             Input::IsKeyDown(static_cast<KeyCode>(sr->rewindKey)) && canRewind;
 
-        if (rewindHeld && !sr->history.Empty()) {
+        // Same as the per-entity path: StartSceneRewind set a flag the next frame
+        // erased, so the scripted whole-scene rewind only ran while the key was held.
+        const bool rewindActive = rewindHeld || sr->rewindRequested;
+
+        if (rewindActive && !sr->history.Empty()) {
             // --- REWINDING ---
             if (!sr->rewinding) {
                 sr->rewinding = true;
@@ -506,6 +541,7 @@ void RecordRewindSystem::StartEntityRewind(ECS::Entity entity) {
     auto* rr = m_World->GetComponent<ECS::RecordRewindComponent>(entity);
     if (rr && !rr->rewinding && !rr->history.Empty()) {
         rr->rewinding = true;
+        rr->rewindRequested = true;
         rr->rewindPlayhead = 0.0f;
     }
 }
@@ -515,6 +551,7 @@ void RecordRewindSystem::StopEntityRewind(ECS::Entity entity) {
     auto* rr = m_World->GetComponent<ECS::RecordRewindComponent>(entity);
     if (rr && rr->rewinding) {
         rr->rewinding = false;
+        rr->rewindRequested = false;
         rr->rewindPlayhead = 0.0f;
         rr->cooldownTimer = rr->cooldown;
     }
@@ -541,6 +578,7 @@ void RecordRewindSystem::StopSceneRewind() {
         auto* sr = m_World->GetComponent<ECS::SceneRewindComponent>(entity);
         if (sr && sr->rewinding) {
             sr->rewinding = false;
+            sr->rewindRequested = false;
             sr->rewindPlayhead = 0.0f;
             sr->cooldownTimer = sr->cooldown;
             sr->prevFrameCache.clear();

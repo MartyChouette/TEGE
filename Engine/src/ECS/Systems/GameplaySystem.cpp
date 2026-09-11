@@ -4,6 +4,7 @@
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/Scene/SceneManager.h"
+#include "Enjin/Gameplay/TieredSaveSystem.h"
 #include "Enjin/Assets/Prefab.h"
 #include "Enjin/Logging/Log.h"
 
@@ -605,6 +606,15 @@ void GameplaySystem::UpdateGoalZones(World* world, f32 dt) {
         const bool wasSatisfied = goal->isSatisfied;
         goal->isSatisfied = satisfied;
         goal->satisfiedBy = by;
+
+        // A checkpoint fires once, on the edge. Whether it actually saves is the
+        // save system's decision: "On Checkpoint" in the Save Debug panel had no
+        // consumer anywhere, and nothing automatic had ever called Checkpoint().
+        if (satisfied && !wasSatisfied &&
+            goal->type == GoalZoneComponent::GoalType::Checkpoint && m_Saves) {
+            m_Saves->OnCheckpointReached(world, m_Scenes ? m_Scenes->GetCurrentSceneName()
+                                                         : std::string());
+        }
 
         // The level exit fires once, on the edge, and only when every goal in its
         // group is satisfied -- a multi-goal puzzle whose exit triggered on the

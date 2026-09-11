@@ -2823,6 +2823,16 @@ struct RecordRewindComponent {
     f32 recordTimer = 0.0f;
     f32 cooldownTimer = 0.0f;
     bool rewinding = false;
+    // Set by StartEntityRewind / StopEntityRewind (the scripting and runtime API).
+    // Separate from `rewinding` because that one answers "is a rewind running",
+    // and the update needs to know WHY -- a key-held rewind ends when the key comes
+    // up, a requested one ends when someone calls Stop.
+    //
+    // Without this the programmatic API did nothing: Start set rewinding = true and
+    // the next Update cleared it again, because the rewind branch was gated purely
+    // on the key being physically down. Rewind_StartEntityRewind() from a script
+    // therefore only worked while the player happened to be holding R.
+    bool rewindRequested = false;
     f32 rewindPlayhead = 0.0f;       // Current position in rewind buffer (seconds from end)
     f32 currentRecordedTime = 0.0f;  // Total elapsed recording time
 };
@@ -2866,6 +2876,16 @@ struct SceneRewindComponent {
     f32 cooldownTimer = 0.0f;
     i32 chargesUsed = 0;
     bool rewinding = false;
+    // Set by StartSceneRewind / StopSceneRewind (the scripting and runtime API).
+    // Separate from `rewinding` because that one answers "is a rewind running",
+    // and the update needs to know WHY -- a key-held rewind ends when the key comes
+    // up, a requested one ends when someone calls Stop.
+    //
+    // Without this the programmatic API did nothing: Start set rewinding = true and
+    // the next Update cleared it again, because the rewind branch was gated purely
+    // on the key being physically down. Rewind_StartSceneRewind() from a script
+    // therefore only worked while the player happened to be holding T.
+    bool rewindRequested = false;
     f32 rewindPlayhead = 0.0f;
     f32 currentRecordedTime = 0.0f;
     u32 framesSinceKeyframe = 0;

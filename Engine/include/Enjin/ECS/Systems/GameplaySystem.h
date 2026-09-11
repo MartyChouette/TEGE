@@ -36,6 +36,7 @@ namespace Enjin {
 
 namespace InputSystem { class InputActionMap; }
 namespace Scene { class SceneManager; }
+namespace Gameplay { class TieredSaveSystem; }
 
 namespace ECS {
 
@@ -76,6 +77,11 @@ public:
     // cannot finish and that must not be silent.
     void SetSceneManager(Scene::SceneManager* scenes) { m_Scenes = scenes; }
 
+    // Where a GoalZone of type Checkpoint reports to. Null means checkpoints are
+    // reached and nothing is saved, which is a legitimate setup (a game with no
+    // save system), so it is not warned about.
+    void SetSaveSystem(Gameplay::TieredSaveSystem* saves) { m_Saves = saves; }
+
     // Call once when play begins, before the first Update. Captures the rest
     // position of anything this system animates, and runs spawnOnStart.
     //
@@ -114,6 +120,7 @@ private:
 
     InputSystem::InputActionMap* m_InputMap = nullptr;
     Scene::SceneManager* m_Scenes = nullptr;
+    Gameplay::TieredSaveSystem* m_Saves = nullptr;
 
     // Authored rest positions, captured at OnPlayStart and restored by Reset.
     std::unordered_map<u64, Math::Vector3> m_RestPositions;

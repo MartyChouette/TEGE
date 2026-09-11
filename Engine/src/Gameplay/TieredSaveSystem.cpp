@@ -367,6 +367,18 @@ void TieredSaveSystem::Checkpoint(ECS::World* world, const std::string& sceneNam
     ENJIN_LOG_INFO(Editor, "TieredSaveSystem: Checkpoint saved to auto-slot %u", slot);
 }
 
+bool TieredSaveSystem::OnCheckpointReached(ECS::World* world, const std::string& sceneName) {
+    if (!world) return false;
+    // Both switches apply: the master enable, and the per-trigger one. This is the
+    // automatic path, and an author who turned either off asked for no save here.
+    if (!m_AutoSaveConfig.enabled || !m_AutoSaveConfig.onCheckpoint) return false;
+
+    const u32 slot = GetNextAutoSaveSlot();
+    SaveToSlot(slot, world, sceneName);
+    ENJIN_LOG_INFO(Editor, "TieredSaveSystem: Auto-saved at checkpoint (slot %u)", slot);
+    return true;
+}
+
 void TieredSaveSystem::ConfigureAutoSave(const AutoSaveConfig& config) {
     m_AutoSaveConfig = config;
     m_AutoSaveTimer = 0.0f;

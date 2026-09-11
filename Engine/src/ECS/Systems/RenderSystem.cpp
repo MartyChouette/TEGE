@@ -8758,7 +8758,21 @@ void RenderSystem::RecordComputePrePass(f32 deltaTime) {
         // GPU particles: record the sim dispatch. Spawns, collider gather, and
         // impact readback already happened in BeginFrame — this is record-only.
         if (m_GPUParticleSystem) {
-            Math::Vector3 wind(0.0f); // TODO: read from WindSystem
+            // Wind, from the WindSystem the CPU particles and the cloth already
+            // read. This was `Vector3(0.0f); // TODO: read from WindSystem`, so
+            // every GPU emitter in every scene simulated in dead calm while the
+            // grass beside it bent -- and a WeatherZone's gusts moved everything
+            // EXCEPT the thing most likely to be standing in for weather.
+            //
+            // Sampled once per frame at the camera, not per particle: the sim runs
+            // on the GPU and takes a single wind vector for the whole dispatch, so
+            // there is one place it can be asked. Zonal wind therefore follows the
+            // viewer rather than each particle, which is the honest limit of a
+            // uniform-per-dispatch parameter.
+            Math::Vector3 wind(0.0f);
+            if (m_WindSystem && m_Camera) {
+                wind = m_WindSystem->GetWindAt(m_Camera->GetPosition());
+            }
             m_GPUParticleSystem->Simulate(computeCmd, deltaTime, frameNumber, wind,
                                           &m_FrameParticleColliders);
         }

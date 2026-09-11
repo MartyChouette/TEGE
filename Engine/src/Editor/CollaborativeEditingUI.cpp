@@ -604,17 +604,14 @@ void CollaborativeEditingUI::ApplyRemoveComponent(const EditOperation& op) {
         return;
     }
 
-    // The componentKey tells us which component to remove. Since ECS components
-    // are template-based, we need to go through the serializer's known key
-    // mappings. A pragmatic approach: serialize a "null" component value via
-    // the same deserializer path. However, that doesn't remove. Instead we
-    // use the component key convention from SceneSerializer.
+    // Removal by scene-JSON key. Three keys are handled directly because they are
+    // not plain serializer entries -- "parent" is a hierarchy edge, not a component
+    // -- and everything else goes through the registry.
     //
-    // For now, we log the removal. The SceneSerializer doesn't expose a
-    // RemoveComponentByKey function, so we handle the most common types
-    // explicitly. For unknown types, we log a warning.
-
-    // Common component keys used by SceneSerializer
+    // The comment that used to sit here described the state before that fallback
+    // existed: "for now, we log the removal... for unknown types, we log a
+    // warning". It stayed after the fallback was written, so the code and its own
+    // description disagreed about whether the feature worked.
     if (op.componentKey == "transform") {
         m_World->RemoveComponent<ECS::TransformComponent>(entity);
     } else if (op.componentKey == "name") {

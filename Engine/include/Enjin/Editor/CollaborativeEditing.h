@@ -119,6 +119,33 @@ struct ConflictInfo {
     bool resolved = false;
 };
 
+// The host is always peer 0 (HostSession assigns it), which is how a client can
+// tell an arbitrating edit from an ordinary peer's.
+inline constexpr u8 kHostPeerId = 0;
+
+// What to do with a remote operation that collides with a local one.
+enum class ConflictOutcome : u8 {
+    ApplyRemote,            // Apply it if the CRDT merge changed anything
+    ForceApplyRemote,       // Apply it whatever the CRDT merge said
+    ApplyMerged,            // Apply a per-field blend of the two
+    KeepLocalAndReassert,   // Discard it and re-send ours so the peer converges
+    HoldForReview           // Apply nothing; put it in the Conflicts list
+};
+
+// The whole strategy decision, with no state and no side effects.
+//
+// Kept separate from the system because it is the part that has to be RIGHT, and
+// the part that was missing: the strategy setting was written by two combo boxes
+// and read by nothing, so every session ran last-writer-wins whatever it said.
+ENJIN_API ConflictOutcome DecideConflict(ConflictStrategy strategy, bool isHost,
+                                         const EditOperation& local,
+                                         const EditOperation& remote);
+
+// Per-field blend of two conflicting operations. Only a transform has fields to
+// blend; anything else takes the later edit.
+ENJIN_API EditOperation MergeOperations(const EditOperation& local,
+                                        const EditOperation& remote);
+
 // ============================================================================
 // COLLABORATIVE EDITING SYSTEM
 // ============================================================================
@@ -242,6 +269,16 @@ private:
     // Detect and handle conflicts
     bool DetectConflict(const EditOperation& local, const EditOperation& remote);
     EditOperation ResolveConflictInternal(const EditOperation& local, const EditOperation& remote);
+
+    // Re-send a local edit that WON a conflict, as a fresh operation.
+    //
+    // This is what makes a strategy other than LastWriterWins actually converge.
+    // The CRDT document has already merged the remote op by the time we decide to
+    // keep ours, so simply not applying it locally would leave this machine's scene
+    // and its own CRDT state disagreeing, and the peer would never hear that it
+    // lost. Re-broadcasting stamps a new vector clock that dominates the remote
+    // one, so both sides land on the same value.
+    void ReassertLocalOperation(const EditOperation& winner);
 
     // Serialization
     std::vector<u8> SerializeOperation(const EditOperation& op) const;

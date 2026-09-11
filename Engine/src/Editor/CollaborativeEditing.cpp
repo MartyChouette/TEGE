@@ -326,21 +326,39 @@ const CollabPeer* CollaborativeEditingSystem::GetEntityEditor(ECS::Entity entity
 void CollaborativeEditingSystem::ResolveConflict(usize index, ConflictStrategy resolution) {
     if (index >= m_UnresolvedConflicts.size()) return;
 
-    auto& conflict = m_UnresolvedConflicts[index];
-    conflict.resolution = resolution;
-    conflict.resolved = true;
+    const ConflictInfo& conflict = m_UnresolvedConflicts[index];
 
-    // Apply the resolution
-    if (resolution == ConflictStrategy::LastWriterWins || resolution == ConflictStrategy::HostAuthority) {
-        // The remote operation wins — apply it
-        if (m_OnRemoteEdit) {
-            m_OnRemoteEdit(conflict.remoteOp);
-        }
-    }
-    // For Reject, we keep local state as-is
-
-    // Remove resolved conflict
+    // Apply the resolution. Copy what we need first: every branch below can touch
+    // m_UnresolvedConflicts, and the erase at the end invalidates the reference.
+    const EditOperation localOp = conflict.localOp;
+    const EditOperation remoteOp = conflict.remoteOp;
     m_UnresolvedConflicts.erase(m_UnresolvedConflicts.begin() + index);
+
+    switch (resolution) {
+        case ConflictStrategy::LastWriterWins:
+        case ConflictStrategy::HostAuthority:
+            // The remote operation wins -- apply it.
+            if (m_OnRemoteEdit) m_OnRemoteEdit(remoteOp);
+            break;
+
+        case ConflictStrategy::Merge: {
+            // Merge was silently a no-op: it matched neither arm of the old if, so
+            // the "Merge" button in the conflict list did exactly what "Keep Mine"
+            // did, while saying something else.
+            const EditOperation merged = ResolveConflictInternal(localOp, remoteOp);
+            if (m_OnRemoteEdit) m_OnRemoteEdit(merged);
+            // Tell the peer what we landed on, or only this machine has the merge.
+            ReassertLocalOperation(merged);
+            break;
+        }
+
+        case ConflictStrategy::Reject:
+            // Keep local state -- and say so on the wire. The peer applied its own
+            // edit when it made it, so staying quiet leaves the two scenes different
+            // and both sides convinced they are in sync.
+            ReassertLocalOperation(localOp);
+            break;
+    }
 }
 
 // ============================================================================
@@ -415,16 +433,110 @@ void CollaborativeEditingSystem::ProcessRemoteOperation(const EditOperation& op)
         m_OperationLog.pop_front();
     }
 
-    // CRDT merge — the document decides if the remote op changes local state.
-    // No manual conflict resolution needed; LWW registers auto-converge.
+    // CRDT merge. This always runs, whatever the strategy: the document is how two
+    // machines agree on a value, and skipping the merge would make this peer's view
+    // of the shared document wrong rather than merely different.
     bool shouldApply = m_CRDTDoc.ApplyRemoteOp(op);
+    EditOperation toApply = op;
 
-    if (shouldApply && m_OnRemoteEdit) {
-        m_OnRemoteEdit(op);
+    // Does this collide with an edit WE made inside the conflict window?
+    //
+    // DetectConflict had no caller at all. The Conflict Strategy combo (in the
+    // Collaboration panel AND in the collab UI window) wrote m_ConflictStrategy and
+    // nothing ever read it, m_UnresolvedConflicts was never appended to so the
+    // Conflicts list was permanently empty in three places, and ResolveConflict was
+    // therefore unreachable. Every session ran last-writer-wins regardless of what
+    // the combo said.
+    const EditOperation* localOp = nullptr;
+    auto recent = m_RecentLocalEdits.find(op.entityId);
+    if (recent != m_RecentLocalEdits.end() && DetectConflict(recent->second, op)) {
+        localOp = &recent->second;
     }
 
-    // Legacy: still track recent local edits for the conflict info log (informational only)
-    // but don't block operations based on it anymore.
+    if (localOp) {
+        switch (DecideConflict(m_ConflictStrategy, IsHost(), *localOp, op)) {
+            case ConflictOutcome::ApplyRemote:
+                break;   // the CRDT's verdict stands
+
+            case ConflictOutcome::ForceApplyRemote:
+                shouldApply = true;
+                break;
+
+            case ConflictOutcome::ApplyMerged:
+                toApply = MergeOperations(*localOp, op);
+                shouldApply = true;
+                break;
+
+            case ConflictOutcome::KeepLocalAndReassert: {
+                ENJIN_LOG_INFO(Editor,
+                    "Collab: kept the local edit to entity %llu over '%s' and re-sent it",
+                    (unsigned long long)op.entityId, op.authorName.c_str());
+                // Copy first: reassert writes m_RecentLocalEdits, which can rehash
+                // and leave localOp dangling.
+                const EditOperation mine = *localOp;
+                ReassertLocalOperation(mine);
+                return;
+            }
+
+            case ConflictOutcome::HoldForReview: {
+                ConflictInfo info;
+                info.localOp = *localOp;
+                info.remoteOp = op;
+                info.resolved = false;
+                m_UnresolvedConflicts.push_back(info);
+                ENJIN_LOG_WARN(Editor,
+                    "Collab: held a conflicting edit to entity %llu from '%s' for review",
+                    (unsigned long long)op.entityId, op.authorName.c_str());
+                return;
+            }
+        }
+    }
+
+    if (shouldApply && m_OnRemoteEdit) {
+        m_OnRemoteEdit(toApply);
+    }
+}
+
+ConflictOutcome DecideConflict(ConflictStrategy strategy, bool isHost,
+                               const EditOperation& local, const EditOperation& remote) {
+    (void)local;
+    switch (strategy) {
+        case ConflictStrategy::LastWriterWins:
+            // The CRDT already decided, by vector clock.
+            return ConflictOutcome::ApplyRemote;
+
+        case ConflictStrategy::HostAuthority:
+            // The host's version of the scene is the one that stands, so the host
+            // keeps its own edit and re-sends it. A client defers to an edit that
+            // came from the host whatever the clocks say -- that is the whole point
+            // of the setting, and respecting the clock there would just be
+            // last-writer-wins under another name.
+            if (isHost) return ConflictOutcome::KeepLocalAndReassert;
+            if (remote.authorId == kHostPeerId) return ConflictOutcome::ForceApplyRemote;
+            // Two clients conflicting with each other: neither is authoritative and
+            // the host is not involved, so there is nothing to arbitrate.
+            return ConflictOutcome::ApplyRemote;
+
+        case ConflictStrategy::Merge:
+            return ConflictOutcome::ApplyMerged;
+
+        case ConflictStrategy::Reject:
+            return ConflictOutcome::HoldForReview;
+    }
+    // Unreachable for a valid enum. Falling back to the CRDT's own verdict is the
+    // one answer that cannot make the document inconsistent.
+    return ConflictOutcome::ApplyRemote;
+}
+
+void CollaborativeEditingSystem::ReassertLocalOperation(const EditOperation& winner) {
+    EditOperation op = MakeOperation(winner.type, static_cast<ECS::Entity>(winner.entityId));
+    op.componentKey = winner.componentKey;
+    op.dataJson     = winner.dataJson;
+    op.previousJson = winner.previousJson;
+    op.position     = winner.position;
+    op.rotation     = winner.rotation;
+    op.scale        = winner.scale;
+    BroadcastOperation(op);
 }
 
 bool CollaborativeEditingSystem::DetectConflict(const EditOperation& local, const EditOperation& remote) {
@@ -454,16 +566,18 @@ bool CollaborativeEditingSystem::DetectConflict(const EditOperation& local, cons
 }
 
 EditOperation CollaborativeEditingSystem::ResolveConflictInternal(const EditOperation& local, const EditOperation& remote) {
-    // For transforms: average positions, take latest rotation/scale
+    return MergeOperations(local, remote);
+}
+
+EditOperation MergeOperations(const EditOperation& local, const EditOperation& remote) {
+    // For transforms: average positions, take the later rotation and scale.
     if (local.type == EditOpType::ModifyTransform && remote.type == EditOpType::ModifyTransform) {
         EditOperation merged = remote; // Start with remote as base
 
-        // Lerp positions (50/50 blend)
         merged.position.x = (local.position.x + remote.position.x) * 0.5f;
         merged.position.y = (local.position.y + remote.position.y) * 0.5f;
         merged.position.z = (local.position.z + remote.position.z) * 0.5f;
 
-        // Take the one with higher lamport clock for rotation/scale
         if (local.lamportClock > remote.lamportClock) {
             merged.rotation = local.rotation;
             merged.scale = local.scale;
@@ -472,7 +586,9 @@ EditOperation CollaborativeEditingSystem::ResolveConflictInternal(const EditOper
         return merged;
     }
 
-    // For everything else: last-writer-wins
+    // Everything else has no fields to blend: two JSON payloads for the same
+    // component do not average into a third valid one. Last-writer-wins is the
+    // honest answer, and the tooltip says so rather than implying a merge happened.
     return remote.lamportClock > local.lamportClock ? remote : local;
 }
 

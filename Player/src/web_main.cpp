@@ -586,6 +586,7 @@ public:
         m_ActionTriggerSystem.SetInputActionMap(&m_InputMap);
         m_GameplaySystem.SetInputActionMap(&m_InputMap);
         m_GameplaySystem.SetSceneManager(&m_SceneManager);
+        m_GameplaySystem.SetSaveSystem(&m_TieredSaveSystem);
         m_GameplaySystem.OnPlayStart(m_World.get());
 
         // Bake the scene's navmesh and hand it to the AI system and the script
