@@ -316,14 +316,19 @@ Enjin includes 9 built-in camera presets accessible via scripting:
    - **Generate Colliders** — Auto-create box colliders for meshes
 4. Click **Import**. The model appears as one or more entities in the hierarchy.
 
-### Import via Script
+### Placing an Imported Model from Script
+
+Import itself is an editor operation: it reads the source file, builds the mesh,
+writes the `.enjinasset` sidecar and creates the entities. Scripts do not import
+files at runtime. What a script can do is place something already imported -- save
+the imported entity as a prefab (right-click it in the Hierarchy, **Create
+Prefab**) and instantiate copies:
 
 ```angelscript
-ImportOptions options;
-options.scale = 0.01;  // e.g., cm to m conversion
-options.importMaterials = true;
-options.importAnimations = true;
-Import("assets/character.glb", options);
+uint64 tree = Prefab_Instantiate("prefabs/tree.enjprefab", 4.0f, 0.0f, -2.0f);
+
+// If the source file was authored in centimetres, scale on the way in.
+Entity_SetScale(tree, Vector3(0.01f, 0.01f, 0.01f));
 ```
 
 ### Asset Metadata
@@ -538,11 +543,11 @@ Box2D v3.0.0 is enabled by default (`ENJIN_PHYSICS_BOX2D=ON` in CMake). The engi
 
 ```angelscript
 // Cast a ray downward to check for ground
+Vector3 p = GetPosition();
 bool onGround = Physics2D_Raycast(
-    GetPosition(),          // origin
-    Vector2(0, -1),               // direction
-    1.0,                        // distance
-    hit.point, hit.normal         // output
+    Vector2(p.x, p.y),   // origin
+    Vector2(0, -1),      // direction
+    1.0                  // distance
 );
 ```
 
@@ -582,7 +587,7 @@ void OnCollisionExit2D(Entity other) {
 
 ```angelscript
 void OnUpdate(float dt) {
-    Vector2 input = Vector2(GetAxis("Horizontal"), GetAxis("Vertical"));
+    Vector2 input = InputAction_GetMovement();
 
     if (input.Length() > 0.1) {
         float angle = Atan2(input.y, input.x);
@@ -655,12 +660,12 @@ void OnUpdate(float dt) {
         Vector3 origin = GetPosition();
         Vector3 dir = Entity_GetForward(GetEntity());
 
+        // Physics_Raycast answers only yes/no. The variant that fills in what
+        // was hit is Physics_RaycastHit.
         RaycastHit hit;
-        if (Physics_Raycast(origin, dir, 100.0, hit)) {
-            // Apply damage
-            DamageComponent@ dmg = GetDamageComponent(hit.entity);
-            if (dmg !is null) {
-                dmg.damage += 10.0;
+        if (Physics_RaycastHit(origin, dir, 100.0f, hit)) {
+            if (HasComponent_Health(hit.entity)) {
+                Health_Damage(hit.entity, 10.0f);
             }
         }
     }
@@ -742,11 +747,12 @@ void OnUpdate(float dt) {
 
 Multiple animations can blend together using weights:
 ```angelscript
-// Blend between walk and run based on speed
-float speed = GetMoveSpeed();
-float blend = Clamp(speed / maxSpeed, 0, 1);
-// Blend between two clips over `fadeTime` seconds.
-Animator_CrossFade(GetEntity(), blend > 0.5f ? "run" : "walk", 0.2f);
+// Blend between walk and run based on speed. The last argument of
+// Animator_CrossFade is the fade duration in seconds.
+void UpdateLocomotion(float speed, float maxSpeed) {
+    float blend = Clamp(speed / maxSpeed, 0.0f, 1.0f);
+    Animator_CrossFade(GetEntity(), blend > 0.5f ? "run" : "walk", 0.2f);
+}
 ```
 
 ---
@@ -846,36 +852,39 @@ void OnLateUpdate(float dt) {
 
 ### Common API Functions
 
-```angelscript
+Declarations, not calls, so this block is fenced as plain text rather than as
+AngelScript. Entity handles are `uint64`; rotations are euler degrees.
+
+```text
 // Entity
-Entity GetEntity();                        // Current entity (automatic)
-string GetEntityName(Entity e);
-Entity FindEntity(string name);     // Find by name (O(1) cached)
+uint64 GetEntity();                           // current entity (TegeBehavior method)
+string Entity_GetName(uint64 e);
+uint64 Scene_FindEntity(string name);         // find by name (O(1) cached)
 
 // Transform
-Vector3 GetPosition(Entity e);
-void SetPosition(Entity e, Vector3 pos);
-Vector3 GetScale(Entity e);
-void SetScale(Entity e, Vector3 scale);
-Quaternion GetRotation(Entity e);
-void SetRotation(Entity e, Quaternion rot);
+Vector3 Entity_GetPosition(uint64 e);
+void Entity_SetPosition(uint64 e, Vector3 pos);
+Vector3 Entity_GetScale(uint64 e);
+void Entity_SetScale(uint64 e, Vector3 scale);
+Vector3 Entity_GetRotation(uint64 e);         // euler degrees
+void Entity_SetRotation(uint64 e, Vector3 eulerDegrees);
 
 // Input
-bool Input_GetKeyDown(int key);     // Just pressed this frame
-bool Input_GetKey(int key);         // Currently held
-bool Input_GetKeyUp(int key);       // Released this frame
+bool Input_GetKeyDown(int key);               // just pressed this frame
+bool Input_GetKey(int key);                   // currently held
+bool Input_GetKeyUp(int key);                 // released this frame
 Vector2 Input_GetMousePosition();
-float GetAxis(string name);         // "Horizontal", "Vertical"
+Vector2 InputAction_GetMovement();            // the rebindable movement axes
 
 // Math
 float Sin(float x);
 float Cos(float x);
 float Lerp(float a, float b, float t);
-Vector3 Vec3_Lerp(Vector3 a, Vector3 b, float t);
 
 // Physics
-bool Physics_Raycast(Vector3 origin, Vector3 dir, float dist, RaycastHit& hit);
-void Physics_Teleport(uint64 entity, Vector3 pos); // Move a dynamic body and zero its velocities (respawns/resets)
+bool Physics_Raycast(Vector3 origin, Vector3 dir, float dist);
+bool Physics_RaycastHit(Vector3 origin, Vector3 dir, float dist, RaycastHit &out hit);
+void Physics_Teleport(uint64 entity, Vector3 pos); // move a dynamic body and zero its velocities
 ```
 
 ### Hot-Reload
@@ -943,21 +952,29 @@ Nodes are organized by category:
 Coroutines let you write sequential logic that spans multiple frames:
 
 ```angelscript
+uint m_Wave = 0;
+
 void OnStart() {
-    StartCoroutine("SpawnWave");
+    // StartCoroutine answers the coroutine's id; keep it if you ever want to
+    // cancel the sequence, and 0 means it is not running.
+    m_Wave = StartCoroutine("SpawnWave");
 }
 
 void SpawnWave() {
     for (int i = 0; i < 5; i++) {
         SpawnEnemy();
-        WaitSeconds(0.5);  // Pause for 0.5 seconds
+        YieldSeconds(0.5f);     // pause for half a second
     }
-    WaitSeconds(3.0);      // Wait 3 seconds
-    StartCoroutine("SpawnWave");  // Restart
+    YieldSeconds(3.0f);         // then a gap before the next wave
+    m_Wave = StartCoroutine("SpawnWave");
 }
 
 void SpawnEnemy() {
-    // ... spawn logic
+    Scene_InstantiateNamed("Enemy");
+}
+
+void OnDisable() {
+    StopCoroutine(m_Wave);
 }
 ```
 
@@ -965,27 +982,47 @@ void SpawnEnemy() {
 
 | Function | Description |
 |----------|-------------|
-| `StartCoroutine(name)` | Begin a coroutine |
-| `StopCoroutine(name)` | Cancel a running coroutine |
-| `StopAllCoroutines()` | Cancel all coroutines on this entity |
-| `WaitSeconds(float)` | Pause for N seconds |
-| `WaitFrames(int)` | Pause for N frames |
+| `uint StartCoroutine(string name)` | Begin a coroutine; answers its id, `0` if it is not running |
+| `StopCoroutine(uint id)` | Cancel one coroutine by the id it was started with |
+| `StopAllCoroutines()` | Cancel every coroutine on this entity |
+| `YieldSeconds(float)` | Pause for N seconds |
+| `YieldFrames(uint)` | Pause for N frames |
+| `YieldEndOfFrame()` | Resume after everything else has updated this frame |
+
+A coroutine must be a `void` method on the script class taking no arguments, and
+the `Yield*` calls only suspend inside one — called from `OnUpdate` they do
+nothing, because there is no coroutine to suspend.
 
 ### Practical Example: Screen Shake
 
-```angelscript
-void ShakeCamera(float duration, float intensity) {
-    float elapsed = 0;
-    Vector3 originalPos = Entity_GetPosition(camera);
+This is what coroutines are for: the shake is a loop with a wait in it, which is
+unreadable as a state machine and obvious as a sequence. The duration and
+intensity are fields because a coroutine method takes no arguments.
 
-    while (elapsed < duration) {
-        float x = RandomRange(-intensity, intensity);
-        float y = RandomRange(-intensity, intensity);
-        SetPosition(camera, originalPos + Vector3(x, y, 0));
-        WaitFrames(1);
+```angelscript
+float m_ShakeDuration = 0.0f;
+float m_ShakeIntensity = 0.0f;
+
+void Shake(float duration, float intensity) {
+    m_ShakeDuration = duration;
+    m_ShakeIntensity = intensity;
+    StartCoroutine("ShakeCamera");
+}
+
+void ShakeCamera() {
+    Vector3 origin = Entity_GetPosition(GetEntity());
+    float elapsed = 0.0f;
+
+    while (elapsed < m_ShakeDuration) {
+        float x = RandomRange(-m_ShakeIntensity, m_ShakeIntensity);
+        float y = RandomRange(-m_ShakeIntensity, m_ShakeIntensity);
+        Entity_SetPosition(GetEntity(), origin + Vector3(x, y, 0.0f));
+
+        YieldFrames(1);
         elapsed += Time_GetDeltaTime();
     }
-    SetPosition(camera, originalPos);
+
+    Entity_SetPosition(GetEntity(), origin);   // land back on centre
 }
 ```
 
@@ -1000,22 +1037,29 @@ void ShakeCamera(float duration, float intensity) {
 The event system lets entities communicate without direct references:
 
 ```angelscript
-// Entity A: Publish an event
+// Entity A: publish an event
 void OnDeath() {
     EventData@ d = EventData();
     d.SetString("enemy", "goblin");
     Events_Send("enemy_killed", d);
 }
 
-// Entity B: Subscribe and react
+// Entity B: subscribe and react.
+//
+// The callback signature must match the EventCallback funcdef exactly --
+// void(const string &in) -- or the delegate cannot be created and the listen
+// call does not compile. Its argument is the EVENT NAME; the payload is read with
+// Events_CurrentString / Events_CurrentFloat / Events_CurrentInt while the event
+// is being dispatched.
+int m_Score = 0;
+
 void OnStart() {
     Events_Listen("enemy_killed", EventCallback(this.OnEnemyKilled));
 }
 
-void OnEnemyKilled(string data) {
-    int score = GetScore();
-    SetScore(score + 100);
-    Debug_Log("Enemy killed: " + data);
+void OnEnemyKilled(const string &in eventName) {
+    m_Score += 100;
+    Debug_Log("Killed a " + Events_CurrentString("enemy") + ", score " + m_Score);
 }
 ```
 
@@ -1037,6 +1081,8 @@ void OnEnemyKilled(string data) {
 Enjin supports state machines with script callbacks:
 
 ```angelscript
+#include "Math.as"
+
 void OnStart() {
     SM_AddState(GetEntity(), "idle");
     SM_AddState(GetEntity(), "patrol");
@@ -1059,6 +1105,17 @@ void UpdateIdle(float dt) {
     if (DetectPlayer()) {
         SM_SetState(GetEntity(), "chase");
     }
+}
+
+void UpdatePatrol(float dt) { /* walk the route */ }
+void UpdateChase(float dt)  { /* move toward the player */ }
+void UpdateAttack(float dt) { /* swing */ }
+
+bool DetectPlayer() {
+    uint64 player = Scene_FindEntity("Player");
+    if (player == 0) return false;
+    return Distance(Entity_GetPosition(GetEntity()),
+                    Entity_GetPosition(player)) < 8.0f;
 }
 ```
 
@@ -1197,7 +1254,7 @@ Quest: "The Lost Artifact"
 Quest_Start("lost_artifact");
 
 // Update progress
-Quest_CompleteObjective("lost_artifact", "find_shards");
+Quest_CompleteObjective("lost_artifact", 0);
 
 // Check status
 if (Quest_IsActive("lost_artifact")) {
@@ -1232,16 +1289,27 @@ Add `PickupComponent` to items:
 
 ### Collection Script
 
+Components are read through `Component_Verb(entity, ...)` functions, not as object
+handles. `Pickup_GetType` answers the `PickupType` ordinal as an `int`: 0 Health,
+1 Ammo, 2 Coin, 3 Key, 4 PowerUp, 5 Custom.
+
 ```angelscript
-void OnCollisionEnter(Entity other) {
-    PickupComponent@ pickup = GetPickupComponent(other);
-    if (pickup !is null) {
-        if (pickup.type == PickupType::Health) {
-            Heal(pickup.value);
-        } else if (pickup.type == PickupType::Coin) {
-            AddCoins(int(pickup.value));
-        }
-        DestroyEntity(other);
+int m_Coins = 0;
+
+void OnCollisionEnter(uint64 other) {
+    if (!HasComponent_Pickup(other)) return;
+
+    int kind = Pickup_GetType(other);
+    float value = Pickup_GetValue(other);
+
+    if (kind == 0) {                    // Health
+        Health_Heal(GetEntity(), value);
+    } else if (kind == 2) {             // Coin
+        m_Coins += int(value);
+    }
+
+    if (Pickup_GetDestroyOnPickup(other)) {
+        Scene_DestroyEntity(other);
     }
 }
 ```
@@ -1251,11 +1319,12 @@ void OnCollisionEnter(Entity other) {
 For frequently spawned/despawned items, use the Object Pool:
 
 ```angelscript
-// Acquire from pool (reuses existing inactive entity)
-Entity coin = Pool_Acquire("coin_pool");
-SetPosition(coin, spawnPos);
+// Acquire from the pool (reuses an existing inactive entity)
+Vector3 spawnPos = Vector3(0.0f, 1.0f, 0.0f);
+uint64 coin = Pool_Acquire("coin_pool");
+Entity_SetPosition(coin, spawnPos);
 
-// Release back to pool (deactivates but doesn't destroy)
+// Release back to the pool (deactivates but does not destroy)
 Pool_Release("coin_pool", coin);
 ```
 
@@ -1273,20 +1342,24 @@ Pool_Release("coin_pool", coin);
 
 ### Adding UI Elements
 
+Elements are addressed by their integer id. `UI_AddElement` returns the id of a
+new element and `UI_FindElement` looks up one that was authored in the inspector;
+both answer `-1` when there is nothing to return, never `0`, because `0` is the
+valid parent id meaning "canvas root".
+
+Offsets are pixel insets from the anchored edges, so anchor first, then offset. A
+200x30 bar 20px inside the top-left corner anchors at (0,0)-(0,0) with left 20,
+right 220, top 20, bottom 50.
+
 ```angelscript
 void OnStart() {
-    // Create elements programmatically
-    UICanvas@ canvas = GetUICanvas(GetEntity());
+    int panel = UI_AddElement(GetEntity(), UI_PANEL, "HealthPanel");
+    int label = UI_AddElement(GetEntity(), UI_LABEL, "HealthLabel", panel);
+    int bar   = UI_AddElement(GetEntity(), UI_PROGRESSBAR, "HealthBar", panel);
 
-    int panel = canvas.AddElement(UIWidgetType::Panel, "HealthPanel", 0);
-    int label = canvas.AddElement(UIWidgetType::Label, "HealthLabel", panel);
-    int bar = canvas.AddElement(UIWidgetType::ProgressBar, "HealthBar", panel);
-
-    // Configure the health bar
-    UIElement@ barEl = canvas.GetElement(bar);
-    barEl.anchor = UIAnchor::TopLeft;
-    barEl.position = Vector2(20, 20);
-    barEl.size = Vector2(200, 30);
+    UI_SetElementAnchor(GetEntity(), bar, 0.0f, 0.0f, 0.0f, 0.0f);
+    UI_SetElementOffsets(GetEntity(), bar, 20.0f, 220.0f, 20.0f, 50.0f);
+    UI_SetText(GetEntity(), label, "HP");
 }
 ```
 
@@ -1307,10 +1380,13 @@ void OnStart() {
 
 ```angelscript
 void OnUpdate(float dt) {
-    // Update health bar
-    float healthPercent = currentHealth / maxHealth;
-    UI_SetProgress(GetEntity(), "HealthBar", healthPercent);
-    UI_SetText(GetEntity(), "HealthLabel", "HP: " + int(currentHealth));
+    uint64 player = Scene_FindEntity("Player");
+    int bar   = UI_FindElement(GetEntity(), "HealthBar");
+    int label = UI_FindElement(GetEntity(), "HealthLabel");
+    if (bar < 0 || label < 0) return;      // the canvas does not have them (yet)
+
+    UI_SetProgress(GetEntity(), bar, Health_GetPercent(player));
+    UI_SetText(GetEntity(), label, "HP: " + int(Health_Get(player)));
 }
 ```
 
@@ -1357,11 +1433,12 @@ Set patrol waypoints as child entities of the AI entity:
 ### Chase Behavior
 
 ```angelscript
+#include "Math.as"
 void OnUpdate(float dt) {
-    Entity player = FindEntity("Player");
+    Entity player = Scene_FindEntity("Player");
     float dist = Distance(GetPosition(), Entity_GetPosition(player));
 
-    if (dist < detectionRange) {
+    if (dist < AI_GetDetectionRange(GetEntity())) {
         AI_SetState(GetEntity(), AIState::AI_CHASE);
     } else {
         AI_SetState(GetEntity(), AIState::AI_PATROL);
@@ -1372,11 +1449,14 @@ void OnUpdate(float dt) {
 ### Script Bindings
 
 ```angelscript
-AI_SetState(entity, AIState::AI_PATROL);     // Set behavior
-AI_SetTarget(entity, player);       // Set chase target
-AI_SetMoveSpeed(entity, 5.0);           // Set movement speed
-AI_SetDetectionRange(entity, 10.0); // Set detection radius
-string state = AI_GetState(entity); // Query current state
+uint64 entity = GetEntity();
+uint64 player = Scene_FindEntity("Player");
+
+AI_SetState(entity, AI_PATROL);          // set behaviour
+AI_SetTarget(entity, player);            // set chase target
+AI_SetMoveSpeed(entity, 5.0f);           // set movement speed
+AI_SetDetectionRange(entity, 10.0f);     // set detection radius
+int state = AI_GetState(entity);         // query current state (an AIState ordinal)
 ```
 
 ---
@@ -1444,16 +1524,33 @@ The navigation mesh is automatically generated from the scene's static geometry 
 
 ### Pathfinding in Scripts
 
-```angelscript
-// Find a path from current position to target
-Vector3 target = GetPosition(FindEntity("Destination"));
-array<Vector3> path = Navmesh_FindPath(GetPosition(), target);
+`Navmesh_FindPath` answers how many waypoints the path has (`0` for no path) and
+stores it; `Navmesh_GetPathWaypoint(i)` reads one back. No binding returns an
+array -- a count plus an indexed read costs one more line and cannot hand you a
+copy that has gone stale.
 
-// Follow the path
-if (path.length() > 0) {
-    MoveToward(GetEntity(), path[0], speed * dt);
-    if (Distance(GetPosition(), path[0]) < 0.5) {
-        path.removeAt(0);
+```angelscript
+#include "Math.as"
+
+int m_Waypoint = 0;
+int m_PathLength = 0;
+
+void Repath() {
+    Vector3 from = Entity_GetPosition(GetEntity());
+    Vector3 to = Entity_GetPosition(Scene_FindEntity("Destination"));
+    m_PathLength = Navmesh_FindPath(from.x, from.y, from.z, to.x, to.y, to.z);
+    m_Waypoint = 0;
+}
+
+void OnUpdate(float dt) {
+    if (m_Waypoint >= m_PathLength) return;   // arrived, or no path
+
+    Vector3 here = Entity_GetPosition(GetEntity());
+    Vector3 next = Navmesh_GetPathWaypoint(m_Waypoint);
+
+    Entity_SetPosition(GetEntity(), here + Direction(here, next) * 3.0f * dt);
+    if (Distance(here, next) < 0.5f) {
+        m_Waypoint++;
     }
 }
 ```
@@ -1518,8 +1615,10 @@ Particle_Play(GetEntity());
 Particle_Stop(GetEntity());
 Particle_Burst(GetEntity(), 50);           // Emit 50 particles instantly
 Particle_SetEmissionRate(GetEntity(), 100); // Change rate
-Particle_SetColor(GetEntity(), Vector3(1, 0.5, 0)); // Orange
-Particle_SetGravity(GetEntity(), Vector3(0, -5, 0));
+// Start colour then end colour, six floats -- particles fade between the two
+// over their lifetime, so one colour would have to pick a side silently.
+Particle_SetColor(GetEntity(), 1.0f, 0.5f, 0.0f, 1.0f, 0.0f, 0.0f); // orange to red
+Particle_SetGravity(GetEntity(), 0.0f, -5.0f, 0.0f);
 ```
 
 ### Particle Editor
@@ -1563,13 +1662,13 @@ Weather_SetSnowIntensity(0.5);
 
 // Fog
 Weather_SetFogDensity(0.02);
-Weather_SetFogColor(Vector3(0.5, 0.5, 0.6));
+Weather_SetFogColor(0.5, 0.5, 0.6);
 
 // Wind
 Weather_SetWind(1.0, 0.0, 0.5, 2.0);   // direction xyz, then strength
 
 // Lightning
-Weather_SetLightningInterval(4.0);     // seconds between strikes
+Weather_SetLightningInterval(4.0f, 9.0f);  // min and max seconds between strikes
 // Weather_IsLightning() / Weather_LightningJustFired() read it back
 ```
 
@@ -1977,16 +2076,17 @@ Two chemicals (U and V) diffuse and react on a 2D grid:
 
 ### Scripting
 
+The preset is an ordinal, not a name: 0 MitosisSpots, 1 CoralGrowth,
+2 Fingerprints, 3 Leopard, 4 Labyrinth, 5 WormHoles, 6 BubblePacking, 7 Spirals,
+8 Custom. Grid resolution and PNG export are inspector-side, not scripted.
+
 ```angelscript
-// Create and step the simulation
-RD_SetPreset("leopard", 256, 256);
-RD_Rebake(10);  // Run 10 steps
+// Pick a pattern and how far to settle it before it is used.
+RD_SetPreset(GetEntity(), 3);              // Leopard
+RD_SetSettleSteps(GetEntity(), 200);
 
-// Seed additional spots
-RD_SeedCircle(128, 128, 10);
-
-// Export
-RD_Rebake("patterns/leopard.png");
+// Re-run the simulation from its seed with the current settings.
+RD_Rebake(GetEntity());
 ```
 
 ---
@@ -2118,10 +2218,11 @@ Enable **Onion Skin** to see ghost frames before and after the current time, hel
 
 ```angelscript
 // Play a named cinematic sequence
-Cinematic_Play("intro_cutscene");
+Cinematic_Play(GetEntity());
 
-// Stop playback
-Cinematic_Stop("intro_cutscene");
+// Stop playback. Both take the entity carrying the CinematicComponent -- the
+// sequence is authored on it, so there is no name to pass.
+Cinematic_Stop(GetEntity());
 ```
 
 ### Camera Tracks
@@ -2153,15 +2254,20 @@ Use the Timeline to animate camera properties:
 
 ### Tween Functions
 
+The easing argument is an `EasingType` constant, not one of the easing functions
+in `Tween.as` -- those are for easing a value you are integrating yourself.
+
 ```angelscript
-// Move entity to target over 2 seconds with ease-out
-Tween_Position(GetEntity(), targetPos, 2.0, EaseOutCubic);
+Vector3 targetPos = Vector3(0.0f, 3.0f, 0.0f);
 
-// Scale entity with bounce
-Tween_Scale(GetEntity(), Vector3(2, 2, 2), 0.5, EaseOutBounce);
+// Move to target over 2 seconds with ease-out
+Tween_Position(GetEntity(), targetPos, 2.0f, EASE_OUT_CUBIC);
 
-// Fade opacity
-Tween_Float(GetEntity(), "material.opacity", 0.0, 1.0, EaseInOutQuad);
+// Scale with bounce
+Tween_Scale(GetEntity(), Vector3(2.0f, 2.0f, 2.0f), 0.5f, EASE_OUT_BOUNCE);
+
+// Fade material opacity from 0 to 1
+Tween_Opacity(GetEntity(), 0.0f, 1.0f, EASE_IN_OUT_QUAD);
 ```
 
 ### 25 Easing Functions
@@ -2214,7 +2320,11 @@ Each networked entity has an owner (the player who controls it). Only the owner 
 
 ```angelscript
 // Call a function on all clients
-Net_CallRPC("OnPlayerScored", playerName + "," + score);
+void ReportScore(string playerName, int score) {
+    // Net_CallRPC takes a target player id; the everyone variant is a separate
+    // function so "send to all" is never a magic id.
+    Net_CallRPCAll("OnPlayerScored", playerName + "," + score);
+}
 
 // Handle incoming RPC
 void OnRPC(string functionName, string data) {
@@ -2326,8 +2436,10 @@ Double-click `EnjinPlayer.exe` to play.
 ### Script Integration
 
 ```angelscript
-// Subtitles
-Subtitle_Show("Welcome, adventurer!", 3.0);
+// Subtitles. The second argument is the SPEAKER, the third the duration --
+// Subtitle_Show(text, speaker = "", seconds = 3.0).
+Subtitle_Show("Welcome, adventurer!");
+Subtitle_Show("Mind the step.", "Guard", 2.0f);
 Subtitle_ShowWithColor("Elder", "The artifact lies deep within.", 0.8, 0.9, 1.0, 4.0);
 
 // Announcer (screen reader)
@@ -2462,11 +2574,15 @@ Create `.enjdata` files that conform to the schema:
 
 ### Script Access
 
+Assets are loaded by name into a registry and read back by asset name plus field
+name -- there is no handle object.
+
 ```angelscript
-// Load data asset
-DataAsset@ weapon = DataAsset_Load("weapons/shotgun.enjdata");
-float damage = weapon.GetFloat("damage");
-int ammo = weapon.GetInt("maxAmmo");
+// Load once; the asset is then addressed by its name.
+if (DataAsset_Load("weapons/shotgun.enjdata")) {
+    float damage = DataAsset_GetFloat("shotgun", "damage");
+    int ammo = DataAsset_GetInt("shotgun", "maxAmmo");
+}
 ```
 
 ---

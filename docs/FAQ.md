@@ -187,13 +187,21 @@ from a collision/trigger callback's `other`, or from spawning with
 With an ID you read and write components through prefixed functions:
 
 ```angelscript
-uint64 door = Scene_FindEntity("Door");
-Entity_SetPosition(door, Vector3(0, 3, 0));   // transform
-Light_SetIntensity(lamp, 2.5);                 // light
+// Every one of these is an entity handle, and every handle comes from the same
+// place: GetEntity() for the entity this script is on, or Scene_FindEntity by name.
+uint64 door  = Scene_FindEntity("Door");
+uint64 lamp  = Scene_FindEntity("Lamp");
+uint64 sign  = Scene_FindEntity("Sign");
+uint64 enemy = Scene_FindEntity("Enemy");
+uint64 ball  = Scene_FindEntity("Ball");
+uint64 hero  = GetEntity();
+
+Entity_SetPosition(door, Vector3(0, 3, 0));    // transform
+Light_SetIntensity(lamp, 2.5f);                // light
 Material_SetBaseColor(sign, Vector3(1, 0, 0)); // material
-Health_Damage(enemy, 10.0);                    // health
+Health_Damage(enemy, 10.0f);                   // health
 Physics_AddImpulse(ball, Vector3(0, 8, 0));    // rigidbody
-Animator_CrossFade(hero, "run", 0.2);          // animation
+Animator_CrossFade(hero, "run", 0.2f);         // animation
 ```
 
 The pattern is consistent: `Component_Verb(entity, ...)`. Ask before you touch if

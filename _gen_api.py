@@ -21,14 +21,49 @@ out.append('namespace Enjin {')
 out.append('namespace Scripting {')
 out.append('')
 
+# MSVC caps a single string literal at 16380 bytes (C2026: "string too big,
+# trailing characters truncated") and it TRUNCATES rather than refusing, so an
+# embedded script that grows past the cap ships with its tail silently missing --
+# it then compiles as far as the cut and fails on a syntax error inside the
+# engine's own API, pointing at nothing the author can see. Anything over the cap
+# is emitted as adjacent raw literals, which the compiler concatenates.
+#
+# The split is on line boundaries and the framing is unchanged (the embedded text
+# still opens and closes with a newline), so the bytes handed to the script
+# compiler are identical either way -- a file that changes shape here must not
+# shift the line numbers in its own error messages.
+CHUNK_BYTES = 8000
+
+
+def chunk_source(text):
+    chunks, cur, size = [], [], 0
+    for line in text.split('\n'):
+        cur.append(line)
+        size += len(line.encode('utf-8')) + 1
+        if size >= CHUNK_BYTES:
+            chunks.append('\n'.join(cur) + '\n')
+            cur, size = [], 0
+    if cur:
+        chunks.append('\n'.join(cur))
+    return chunks or ['']
+
+
 for i, name in enumerate(files):
     src = open(os.path.join(API_DIR, name), encoding='utf-8').read()
     delim = 'ENJIN_API'
     while (')' + delim + '"') in src:
         delim += '_'
-    out.append('static const char* s_Api%d = R"%s(' % (i, delim))
-    out.append(src.rstrip('\n'))
-    out.append(')%s";' % delim)
+
+    body = '\n' + src.rstrip('\n') + '\n'
+    chunks = chunk_source(body)
+    if len(chunks) == 1:
+        out.append('static const char* s_Api%d = R"%s(%s)%s";' %
+                   (i, delim, chunks[0], delim))
+    else:
+        out.append('static const char* s_Api%d =' % i)
+        for chunk in chunks:
+            out.append('R"%s(%s)%s"' % (delim, chunk, delim))
+        out.append(';')
     out.append('')
 
 out.append('const char* GetEmbeddedApiSource(const char* name) {')

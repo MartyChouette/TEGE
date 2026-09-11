@@ -57,8 +57,16 @@ class TegeBehavior {
 
     // --- Coroutines ---
 
-    void StartCoroutine(const string &in funcName) {
-        ::StartCoroutine(funcName);
+    uint StartCoroutine(const string &in funcName) {
+        return ::StartCoroutine(funcName);
+    }
+
+    void StopCoroutine(uint id) {
+        ::StopCoroutine(id);
+    }
+
+    void StopAllCoroutines() {
+        ::StopAllCoroutines();
     }
 
     // --- Lifecycle callbacks (override in subclasses) ---

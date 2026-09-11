@@ -564,40 +564,51 @@ static f32 Math_PI() { return Math::PI; }
 // COROUTINE WRAPPERS
 // ============================================================================
 
-static void Script_StartCoroutine(const std::string& funcName) {
-    if (!s_BindingsCoroutineScheduler || !s_BindingsScriptEngine) return;
+// Which entity is calling. Coroutines are methods on a TegeBehavior subclass, so
+// the owner is the _entityId property of the calling object.
+static u64 CallingEntityId(asIScriptObject* obj) {
+    if (!obj) return 0;
+    asITypeInfo* type = obj->GetObjectType();
+    const u32 propCount = type->GetPropertyCount();
+    for (u32 i = 0; i < propCount; i++) {
+        const char* propName = nullptr;
+        type->GetProperty(i, &propName);
+        if (propName && std::string(propName) == "_entityId") {
+            return *static_cast<u64*>(obj->GetAddressOfProperty(i));
+        }
+    }
+    return 0;
+}
+
+// Returns the coroutine's id, or 0. The scheduler has always handed one back and
+// this binding used to drop it, which left StopCoroutine undocumentable and
+// unusable: a script could start a sequence and had no way to name it again. 0
+// covers all three ways there is nothing to stop -- no such method, ran to
+// completion without ever yielding, or threw -- because in all three the
+// coroutine is not running, which is what a caller holding the id wants to know.
+static u32 Script_StartCoroutine(const std::string& funcName) {
+    if (!s_BindingsCoroutineScheduler || !s_BindingsScriptEngine) return 0;
 
     // Get the calling context to find the script object and entity ID
     asIScriptContext* callingCtx = asGetActiveContext();
-    if (!callingCtx) return;
+    if (!callingCtx) return 0;
 
     // Get the calling object (TegeBehavior subclass)
     asIScriptObject* obj = static_cast<asIScriptObject*>(callingCtx->GetThisPointer());
-    if (!obj) return;
+    if (!obj) return 0;
 
     // Find the coroutine method on the object
     asIScriptFunction* func = s_BindingsScriptEngine->FindMethod(obj, "void " + funcName + "()");
     if (!func) {
         ENJIN_LOG_WARN(Script, "StartCoroutine: method '%s' not found", funcName.c_str());
-        return;
+        return 0;
     }
 
-    // Get entity ID from the _entityId property
-    asITypeInfo* type = obj->GetObjectType();
-    u32 propCount = type->GetPropertyCount();
-    u64 entityId = 0;
-    for (u32 i = 0; i < propCount; i++) {
-        const char* propName = nullptr;
-        type->GetProperty(i, &propName);
-        if (propName && std::string(propName) == "_entityId") {
-            entityId = *static_cast<u64*>(obj->GetAddressOfProperty(i));
-            break;
-        }
-    }
+    const u64 entityId = CallingEntityId(obj);
 
     // Create a new context for the coroutine
     asIScriptContext* coCtx = s_BindingsScriptEngine->AcquireContext();
-    if (!coCtx) return;
+    if (!coCtx) return 0;
 
     coCtx->Prepare(func);
     coCtx->SetObject(obj);
@@ -606,15 +617,34 @@ static void Script_StartCoroutine(const std::string& funcName) {
     // Execute until first yield or completion
     int r = coCtx->Execute();
     if (r == asEXECUTION_SUSPENDED) {
-        s_BindingsCoroutineScheduler->StartCoroutine(coCtx, entityId);
-    } else {
-        // Completed immediately or errored
-        if (r == asEXECUTION_EXCEPTION) {
-            ENJIN_LOG_ERROR(Script, "Coroutine '%s' exception: %s",
-                funcName.c_str(), coCtx->GetExceptionString());
-        }
-        s_BindingsScriptEngine->ReturnContext(coCtx);
+        return s_BindingsCoroutineScheduler->StartCoroutine(coCtx, entityId);
     }
+
+    // Completed immediately or errored
+    if (r == asEXECUTION_EXCEPTION) {
+        ENJIN_LOG_ERROR(Script, "Coroutine '%s' exception: %s",
+            funcName.c_str(), coCtx->GetExceptionString());
+    }
+    s_BindingsScriptEngine->ReturnContext(coCtx);
+    return 0;
+}
+
+// Cancel one coroutine by the id StartCoroutine returned.
+static void Script_StopCoroutine(u32 id) {
+    if (!s_BindingsCoroutineScheduler) return;
+    s_BindingsCoroutineScheduler->StopCoroutine(id);
+}
+
+// Cancel every coroutine on the entity this script is attached to -- not every
+// coroutine in the scene, which would let one script tear down another's work.
+static void Script_StopAllCoroutines() {
+    if (!s_BindingsCoroutineScheduler) return;
+    asIScriptContext* callingCtx = asGetActiveContext();
+    if (!callingCtx) return;
+    const u64 entityId =
+        CallingEntityId(static_cast<asIScriptObject*>(callingCtx->GetThisPointer()));
+    if (entityId == 0) return;
+    s_BindingsCoroutineScheduler->StopAllForEntity(entityId);
 }
 
 static void Script_YieldSeconds(f32 seconds) {
@@ -1008,8 +1038,16 @@ void RegisterDebugBindings(asIScriptEngine* engine) {
 // ---------------------------------------------------------------------------
 void RegisterCoroutineBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction(
-        "void StartCoroutine(const string &in)",
+        "uint StartCoroutine(const string &in)",
         ENJIN_AS_FN(Script_StartCoroutine), ENJIN_AS_CALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void StopCoroutine(uint)",
+        ENJIN_AS_FN(Script_StopCoroutine), ENJIN_AS_CALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void StopAllCoroutines()",
+        ENJIN_AS_FN(Script_StopAllCoroutines), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void YieldSeconds(float)",

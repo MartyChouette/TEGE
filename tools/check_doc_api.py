@@ -87,6 +87,42 @@ def registered_names():
     return names
 
 
+# Walk the fences line by line instead of pairing them with a regex.
+#
+# The regex form was `r'```(?:angelscript|as|cpp)?\n(.*?)```'`, which does not
+# match a fence in any OTHER language -- ```text, ```json, ```mermaid, ```bash.
+# The engine then treats that block's CLOSING fence as an opening one, and every
+# fence after it in the file is paired to the wrong partner: prose gets scanned as
+# code (a "self" in "self-organizing" reported as a wrong identifier) and real
+# code gets skipped as prose, which is the half that matters -- a sample calling a
+# function that does not exist would pass unseen. Pairing has to be done by
+# walking, because only the opening fence carries the language.
+CODE_LANGS = ('angelscript', 'as', 'cpp')
+
+
+def code_blocks(text):
+    blocks = []
+    lang = None
+    body = []
+    for line in text.split('\n'):
+        # Markdown allows an indented fence (inside a list item), and an indented
+        # pair this walker did not recognise would leave it in whatever state it
+        # was already in -- the same desync, one level down.
+        stripped = line.strip()
+        if lang is None:
+            if stripped.startswith('```'):
+                lang = stripped[3:].strip().lower()
+                body = []
+            continue
+        if stripped == '```':
+            if lang in CODE_LANGS:
+                blocks.append('\n'.join(body))
+            lang = None
+            continue
+        body.append(line)
+    return blocks
+
+
 def main():
     registered = registered_names()
     if len(registered) < 200:
@@ -99,7 +135,7 @@ def main():
         if not os.path.exists(path):
             continue
         text = open(path, encoding='utf-8', errors='replace').read()
-        for block in re.findall(r'```(?:angelscript|as|cpp)?\n(.*?)```', text, re.S):
+        for block in code_blocks(text):
             # Strip line comments so prose inside a sample cannot trip the check.
             code = re.sub(r'//[^\n]*', '', block)
 

@@ -133,13 +133,21 @@ dead-reckon from the frame `Audio_Play` fired and hard-code the clip length,
 and any drift or engine-side loop restart desyncs it permanently with nothing
 able to notice:
 
+<!-- sample-context: uint64 radio = Scene_FindEntity("Radio"); -->
 ```angelscript
-// Show the line whose window contains the current playback position.
+// Show the cue whose window contains the current playback position. The track is
+// three parallel arrays in a .enjdata asset -- see "Reading a list" below.
 float t = Audio_GetTime(radio);
 if (t >= 0.0f) {
-    for (uint i = 0; i < captions.length(); i++) {
-        if (t >= captions[i].start && t < captions[i].end) {
-            Subtitle_Show(captions[i].text);
+    int cues = DataAsset_GetArrayLength("wgrb_night", "cue_t");
+    for (int i = 0; i < cues; i++) {
+        float start = DataAsset_GetFloatAt("wgrb_night", "cue_t", i);
+        float end = (i + 1 < cues)
+                  ? DataAsset_GetFloatAt("wgrb_night", "cue_t", i + 1)
+                  : Audio_GetLength(radio);
+        if (t >= start && t < end) {
+            Subtitle_Show(DataAsset_GetStringAt("wgrb_night", "cue_line", i),
+                          DataAsset_GetStringAt("wgrb_night", "cue_who", i));
             break;
         }
     }

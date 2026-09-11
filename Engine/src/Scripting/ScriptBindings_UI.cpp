@@ -159,6 +159,64 @@ static void UI_SetBgColor(u64 entity, int elementId, float r, float g, float b, 
     el->style.bgAlpha = a;
 }
 
+// -- Element lookup and creation --
+//
+// Every other UI_* function addresses an element by its integer id, and until now
+// a script had no way to obtain one: ids are assigned by the canvas as elements
+// are authored, are not shown anywhere in the inspector, and shift when an element
+// is removed. So the entire UI surface was addressable only by hardcoding a
+// number and hoping, which is why the HUD tutorial documented a
+// `canvas.AddElement(...)` / `canvas.GetElement(...)` object API that has never
+// existed -- the sample was reaching for the missing half of this.
+//
+// -1 for "no such element", never 0: 0 is the valid parent id meaning "canvas
+// root", so a 0 return would be accepted as a real element by every function it
+// was then passed to, and the wrong element would be written instead of none.
+static int UI_FindElement(u64 entity, const std::string& name) {
+    auto* canvas = GetCanvas(entity);
+    if (!canvas) return -1;
+    for (const auto& el : canvas->elements) {
+        if (el.name == name) return static_cast<int>(el.id);
+    }
+    return -1;
+}
+
+static int UI_AddElement(u64 entity, int widgetType, const std::string& name, int parentId) {
+    auto* canvas = GetCanvas(entity);
+    if (!canvas) {
+        ENJIN_LOG_WARN(Script, "UI_AddElement('%s'): entity has no UICanvasComponent",
+                       name.c_str());
+        return -1;
+    }
+    if (widgetType < 0 || widgetType >= static_cast<int>(GUI::UIWidgetType::Count)) {
+        ENJIN_LOG_WARN(Script, "UI_AddElement('%s'): %d is not a UIWidgetType",
+                       name.c_str(), widgetType);
+        return -1;
+    }
+    // A parent that does not exist would silently produce a root element, which
+    // lays out in the wrong place and looks like a broken anchor.
+    if (parentId != 0 && canvas->GetElement(static_cast<u32>(parentId)) == nullptr) {
+        ENJIN_LOG_WARN(Script, "UI_AddElement('%s'): parent id %d does not exist",
+                       name.c_str(), parentId);
+        return -1;
+    }
+    return static_cast<int>(canvas->AddElement(static_cast<GUI::UIWidgetType>(widgetType),
+                                              name, static_cast<u32>(parentId)));
+}
+
+// The offsets above are insets from the anchored edges, so they only mean
+// anything once the anchor itself is placed. Setting offsets with no way to set
+// the anchor left every scripted element pinned to the parent's centre.
+static void UI_SetElementAnchor(u64 entity, int elementId,
+                                float minX, float minY, float maxX, float maxY) {
+    auto* canvas = GetCanvas(entity);
+    if (!canvas) return;
+    auto* el = canvas->GetElement(static_cast<u32>(elementId));
+    if (!el) return;
+    el->anchor.anchorMin = Math::Vector2(minX, minY);
+    el->anchor.anchorMax = Math::Vector2(maxX, maxY);
+}
+
 static void UI_SetElementOffsets(u64 entity, int elementId, float l, float r, float t, float b) {
     auto* canvas = GetCanvas(entity);
     if (!canvas) return;
@@ -403,6 +461,23 @@ void RegisterUIBindings(asIScriptEngine* engine) {
         ENJIN_AS_FN(UI_SetTabOrder), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void UI_SetFocusable(uint64, int, bool)",
         ENJIN_AS_FN(UI_SetFocusable), ENJIN_AS_CALL_CDECL));
+
+    // -- Element lookup and creation --
+    AS_CHECK(engine->RegisterEnum("UIWidget"));
+    AS_CHECK(engine->RegisterEnumValue("UIWidget", "UI_PANEL", 0));
+    AS_CHECK(engine->RegisterEnumValue("UIWidget", "UI_BUTTON", 1));
+    AS_CHECK(engine->RegisterEnumValue("UIWidget", "UI_LABEL", 2));
+    AS_CHECK(engine->RegisterEnumValue("UIWidget", "UI_IMAGE", 3));
+    AS_CHECK(engine->RegisterEnumValue("UIWidget", "UI_PROGRESSBAR", 4));
+    AS_CHECK(engine->RegisterEnumValue("UIWidget", "UI_SLIDER", 5));
+    AS_CHECK(engine->RegisterEnumValue("UIWidget", "UI_CHECKBOX", 6));
+    AS_CHECK(engine->RegisterEnumValue("UIWidget", "UI_TOGGLE", 7));
+    AS_CHECK(engine->RegisterGlobalFunction("int UI_FindElement(uint64, const string &in)",
+        ENJIN_AS_FN(UI_FindElement), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int UI_AddElement(uint64, int, const string &in, int parentId = 0)",
+        ENJIN_AS_FN(UI_AddElement), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void UI_SetElementAnchor(uint64, int, float, float, float, float)",
+        ENJIN_AS_FN(UI_SetElementAnchor), ENJIN_AS_CALL_CDECL));
 
     // -- Localization --
     AS_CHECK(engine->RegisterGlobalFunction("string Loc_Get(const string &in)",
