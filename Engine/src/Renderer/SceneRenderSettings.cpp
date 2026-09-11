@@ -1,4 +1,7 @@
 #include "Enjin/Renderer/SceneRenderSettings.h"
+#include "Enjin/ECS/Components/ArtStyle.h"
+#include "Enjin/ECS/Components/Camera.h"
+#include "Enjin/ECS/World.h"
 #include "Enjin/Renderer/RenderFallbacks.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Renderer/PostProcessing.h"
@@ -1050,6 +1053,125 @@ void SceneRenderSettings::ApplyToRuntimeUnclamped(ECS::RenderSystem* rs, PostPro
 // ---------------------------------------------------------------------------
 // Art Style Presets
 // ---------------------------------------------------------------------------
+
+void ApplyArtStyleComponentToSettings(const ECS::ArtStyleComponent& art,
+                                      SceneRenderSettings& s) {
+    using Style = ECS::ArtStyleType;
+    if (art.style == Style::Inherit) return;   // "leave the scene alone"
+
+    switch (art.style) {
+    case Style::PrePBR:
+        s.shadingModel = 0;                      // Blinn-Phong
+        s.halfLambert = art.prePBR_halfLambert;
+        s.globalFlatShading = art.prePBR_flatShading;
+        s.globalGouraudOnly = art.prePBR_gouraudOnly;
+        // prePBR_specularStrength has no scene counterpart: the renderer has no
+        // global specular multiplier to point it at. Listed in the header as not
+        // mapped rather than silently dropped here.
+        break;
+
+    case Style::HandPainted:
+        s.halfLambert = true;                    // the look IS wrapped light
+        s.lightRampMode = static_cast<f32>(art.handPainted_lightRampMode);
+        // The component's boost is ADDITIVE around 0; the scene's saturation is a
+        // MULTIPLIER around 1. Translating rather than assigning: a 0 boost has to
+        // come out as 1.0, or adding the component would desaturate the scene.
+        s.saturation = 1.0f + art.handPainted_saturationBoost;
+        break;
+
+    case Style::CelToon:
+        s.celShadingEnabled = true;
+        s.celDiffuseBands = art.cel_diffuseBands;
+        s.celSpecularCutoff = art.cel_specularCutoff;
+        s.celShadowMode = static_cast<f32>(art.cel_shadowMode);
+        s.lightRampMode = static_cast<f32>(art.cel_lightRampMode);
+        // A non-zero width is what asks for outlines; the width itself is in world
+        // units on both sides.
+        s.geometryOutlinesEnabled = art.cel_outlineWidth > 0.0f;
+        s.geometryOutlineWidth = art.cel_outlineWidth;
+        s.geometryOutlineColor = art.cel_outlineColor;
+        break;
+
+    case Style::NPR:
+        s.celShadingEnabled = true;
+        s.celDiffuseBands = static_cast<f32>(art.npr_diffuseBands);
+        s.celOutlineEnabled = art.npr_celOutline;
+        s.celOutlineThickness = art.npr_outlineThickness;
+        s.celOutlineCurvatureWeight = art.npr_curvatureWeight;
+        s.stippleEnabled = art.npr_stippleStrength > 0.0f;
+        s.stipplePatternMask = art.npr_stipplePatternMask;
+        s.stippleDensity = art.npr_stippleDensity;
+        s.stippleStrength = art.npr_stippleStrength;
+        break;
+
+    case Style::Retro:
+        s.globalVertexSnapping = art.retro_vertexSnapping;
+        s.globalVertexSnapResolution = art.retro_snapResolution;
+        s.globalAffineTexturing = art.retro_affineTexturing;
+        s.globalUVQuantize = art.retro_uvQuantize;
+        s.globalFlatShading = art.retro_flatShading;
+        s.posterizeLevels = art.retro_posterizeLevels;
+        // retro_texturePageSize (PS1 VRAM page warping) has no scene counterpart.
+        break;
+
+    case Style::PixelArt:
+        s.resDownscaleEnabled = true;
+        s.paletteEnabled = art.pixel_paletteColors > 0;
+        s.paletteColors = art.pixel_paletteColors;
+        s.colorQuantEnabled = art.pixel_paletteColors > 0;
+        s.normalQuantizeSteps = art.pixel_normalQuantizeSteps;
+        // Point filtering is the GLOBAL texture filter, not a pixel-art-only flag:
+        // 0 = Point in that enum. Setting it here is what makes "pixel art" stop
+        // bilinear-smearing every texture in the scene.
+        if (art.pixel_pointFiltering) s.textureFilter = 0;
+        // pixel_paletteMode (PICO-8 / GameBoy / NES / CGA / C64) has no scene
+        // counterpart: palettes are chosen by SLOT, not by a named family.
+        break;
+
+    case Style::Analog:
+        // Every one of these is a full-screen pass over the finished image, which
+        // is exactly why this function takes the SCENE settings.
+        s.filmGrainEnabled = art.analog_filmGrain;
+        s.filmGrainIntensity = art.analog_filmGrainIntensity;
+        s.chromaticAberrationEnabled = art.analog_chromaticAberration;
+        s.chromaticAberrationIntensity = art.analog_chromaticIntensity;
+        s.vhsEnabled = art.analog_vhsEnabled;
+        s.vhsTrackingIntensity = art.analog_vhsTrackingIntensity;
+        s.crtEnabled = art.analog_crtEnabled;
+        s.scanlineIntensity = art.analog_scanlineIntensity;
+        // analog_filmGateWeave / analog_lightLeaks have no scene counterparts;
+        // neither effect exists in the post-process chain yet.
+        break;
+
+    case Style::MaterialExpression:
+        // Genuinely per-entity: surface noise and subsurface scattering are
+        // material properties and already reach the SSBO and the push constants.
+        // There is nothing scene-wide to set, and setting something would override
+        // the whole scene for one entity's sake.
+        break;
+
+    default:
+        break;
+    }
+}
+
+void ApplyCameraArtStyle(ECS::World* world, ECS::RenderSystem* rs,
+                         PostProcessSettings* pp) {
+    if (!world || !rs) return;
+
+    const ECS::Entity camEntity = ECS::CameraManager::GetActiveCamera(world);
+    if (camEntity == 0) return;
+
+    const auto* art = world->GetComponent<ECS::ArtStyleComponent>(camEntity);
+    if (!art || art->style == ECS::ArtStyleType::Inherit) return;
+
+    // Round-trip through the settings struct so the mapping stays a pure function
+    // of (component, settings) and can be tested with no renderer at all -- which
+    // is the only way the twenty-five fields this restores can be checked.
+    SceneRenderSettings settings = SceneRenderSettings::CaptureFromRuntime(rs, pp);
+    ApplyArtStyleComponentToSettings(*art, settings);
+    settings.ApplyToRuntime(rs, pp);
+}
 
 void ApplyArtStylePreset(SceneRenderSettings& s, u32 presetIndex) {
     s.artStylePreset = presetIndex;

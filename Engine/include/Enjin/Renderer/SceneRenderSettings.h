@@ -9,6 +9,7 @@
 #include <vector>
 
 namespace Enjin {
+namespace ECS { struct ArtStyleComponent; class World; }
 
 // Forward declarations
 namespace ECS { class RenderSystem; }
@@ -551,6 +552,41 @@ void ApplyArtStylePreset(SceneRenderSettings& s, u32 presetIndex);
 
 // JSON serialization (free functions — usable from SceneSerializer and SceneManager)
 nlohmann::json SerializeRenderSettings(const SceneRenderSettings& s);
+
+// Translate an ArtStyleComponent's SCENE-WIDE settings into the render settings
+// that actually drive them.
+//
+// ArtStyleComponent has fifty fields and thirteen reached the renderer. The rest
+// were authored, saved and read by nothing -- and the comment where they should
+// have been consumed said the NPR, PixelArt and Analog styles "happen in the
+// post-process pass, which queries ArtStyleComponent on the camera entity". No
+// such query existed anywhere.
+//
+// This is that query. It exists as a free function over the two structs rather
+// than inside the renderer so the mapping is pure and can be tested: every one of
+// these fields already has a working counterpart in SceneRenderSettings, so what
+// was missing was never the effect, only the wiring between the two.
+//
+// Why SCENE-wide and not per-entity: film grain, chromatic aberration, VHS
+// tracking, CRT scanlines, gate weave and light leaks are full-screen passes over
+// the finished image. There is no such thing as applying them to one entity, so a
+// component that offered them per-entity was promising something the technique
+// cannot do. Placing the component on the camera entity is what makes it mean
+// something, which is the rule the original comment already stated.
+ENJIN_API void ApplyArtStyleComponentToSettings(const ECS::ArtStyleComponent& art,
+                                                SceneRenderSettings& s);
+
+// Find the ACTIVE CAMERA's ArtStyleComponent and apply it to the live settings.
+//
+// Called once per frame by each runtime, because the runtime is what owns both the
+// RenderSystem and the PostProcessSettings -- the full-screen half of an art style
+// (grain, CRT, VHS, palettes) lives in the latter, and the RenderSystem has no
+// pointer to it.
+//
+// Does nothing when there is no camera, no component on it, or the style is
+// Inherit, so a scene that does not use the component is completely unaffected.
+ENJIN_API void ApplyCameraArtStyle(ECS::World* world, ECS::RenderSystem* rs,
+                                   PostProcessSettings* pp);
 SceneRenderSettings DeserializeRenderSettings(const nlohmann::json& j);
 
 } // namespace Renderer

@@ -9707,10 +9707,15 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 case ArtStyleType::NPR:
                 case ArtStyleType::PixelArt:
                 case ArtStyleType::Analog:
-                    // These styles are primarily post-process driven (outlines, palettes,
-                    // film effects). The per-entity component stores parameters but the
-                    // actual rendering happens in the post-process pass, which queries
-                    // ArtStyleComponent on the camera entity or scene default.
+                    // Full-screen styles: outlines, palettes, film effects. There is
+                    // nothing to do per ENTITY -- a full-screen pass cannot grain one
+                    // object -- so these are applied scene-wide from the component on
+                    // the active camera, by ApplyArtStyleSceneOverride below.
+                    //
+                    // This comment used to claim the post-process pass "queries
+                    // ArtStyleComponent on the camera entity". No such query existed,
+                    // so around twenty-five fields of this component were authored,
+                    // saved, reloaded and read by nothing at all.
                     break;
                 default:
                     break;

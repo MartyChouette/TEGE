@@ -1207,6 +1207,13 @@ void PlayMode::Update(f32 deltaTime) {
         // Gameplay systems
         m_ActionTriggerSystem.Update(m_World, deltaTime);
         m_GameplaySystem.Update(m_World, deltaTime);
+        // The active camera's ArtStyleComponent drives the scene-wide half of its
+        // style (grain, CRT, VHS, palettes, outlines, stipple). Around twenty-five
+        // of the component's fields were authored, saved and read by nothing until
+        // this call existed; the comment where they should have been consumed said
+        // the post-process pass "queries ArtStyleComponent on the camera entity",
+        // and no such query was ever written.
+        Renderer::ApplyCameraArtStyle(m_World, m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
         m_TweenSystem.Update(m_World, deltaTime);
         m_SwarmSystem.Update(m_World, deltaTime);
         m_GeneratedGeometry.Update(m_World, deltaTime);
