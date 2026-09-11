@@ -2942,6 +2942,11 @@ private:
     // surface would otherwise be invisible in the game view (0adaa966).
 public:
     void EnsureWaterMeshes();
+
+    // Tilemap -> MeshComponent. Called by BOTH Update bodies: it used to be
+    // inline in the Vulkan one, so web tilemaps produced no mesh and drew
+    // nothing.
+    void EnsureTilemapMeshes();
     void EnsureWater3DMeshes();
 private:
 

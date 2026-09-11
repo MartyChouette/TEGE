@@ -1,4 +1,7 @@
 #include "Enjin/ECS/Systems/RenderSystem.h"
+// Needed by EnsureTilemapMeshes, which both backend Update bodies call.
+// The other include of this sits deep inside the !WEBGPU branch.
+#include "Enjin/Renderer/MeshFactory.h"
 #include <chrono>
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Debug/Profiler.h"
@@ -2357,6 +2360,20 @@ void RenderSystem::Update(f32 deltaTime) {
     // runs before any pass is encoded, so the world mutation is frame-safe.)
     WebEnsureTextMeshes();
 
+    // And tilemap meshes, for the same reason and in the same window.
+    //
+    // This is why the web parity audit listed tilemaps as missing: there are TWO
+    // RenderSystem::Update bodies, one per backend, and the tilemap mesh
+    // generation only ever existed in the Vulkan one. A tilemap on web produced
+    // no MeshComponent, so it was not merely untextured -- there was nothing to
+    // draw at all, and the scene loaded, reported its entities, and showed an
+    // empty view.
+    //
+    // The mesh itself is backend-neutral: MeshFactory::CreateTilemapMesh is pure
+    // geometry with UVs addressing the tileset, and compiled into the web build
+    // the whole time with nothing calling it.
+    EnsureTilemapMeshes();
+
     RefreshStorageCache();
 
     // Classify the scene. Nothing on this path called it while the web body was
@@ -3693,20 +3710,35 @@ void RenderSystem::Update(f32 deltaTime) {
             auto* mat = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
             // Fallback: try direct query if cached storage failed (WASM template issue)
             if (!mat) mat = m_World->GetComponent<MaterialComponent>(entity);
-            static int s_MatLog = 0;
-            if (s_MatLog++ < 3) printf("[MAT] entity=%llu mat=%s color=(%.2f,%.2f,%.2f) tex=%s\n",
-                static_cast<unsigned long long>(entity), mat ? "YES" : "NULL",
-                mat ? mat->baseColor.x : 0, mat ? mat->baseColor.y : 0, mat ? mat->baseColor.z : 0,
-                mat && !mat->baseColorTexturePath.empty() ? mat->baseColorTexturePath.c_str() : "none");
+            // A tilemap's texture is not on its material.
+            //
+            // TilemapComponent carries tilesetPath, and the mesh built from it in
+            // Update() has UVs addressing that tileset. The Vulkan draw has an
+            // explicit override for this in RenderEntity; the web draw had none,
+            // so it resolved textures from the MaterialComponent alone and a
+            // tilemap rendered as untextured geometry in the right shape -- which
+            // reads as a missing texture file, not a missing code path.
+            //
+            // This is why the web parity audit listed tilemaps as "missing on
+            // web": the geometry was always being generated (that loop is not
+            // behind a backend guard), it just had nothing on it.
+            const TilemapComponent* tilemapComp = m_World->GetComponent<TilemapComponent>(entity);
+            const bool tilemapTextured = tilemapComp && !tilemapComp->tilesetPath.empty();
 
-            // Build per-entity texture bind group (cached, rebuilt on dirty)
-            if (!rd.texBindGroupValid && mat) {
-                auto baseColorTex = WebGetOrLoadTexture(mat->baseColorTexturePath);
-                auto normalTex = WebGetOrLoadTexture(mat->normalTexturePath);
-                auto mrTex = WebGetOrLoadTexture(mat->metallicRoughnessTexturePath);
+            // Build per-entity texture bind group (cached, rebuilt on dirty).
+            //
+            // A tilemap does not need a MaterialComponent to be textured, so the
+            // `mat` requirement cannot gate it -- an entity built by the Tilemap
+            // tool has a Tilemap and a Mesh and nothing else.
+            if (!rd.texBindGroupValid && (mat || tilemapTextured)) {
+                auto baseColorTex = tilemapTextured
+                    ? WebGetOrLoadTexture(tilemapComp->tilesetPath)
+                    : WebGetOrLoadTexture(mat ? mat->baseColorTexturePath : std::string());
+                auto normalTex = WebGetOrLoadTexture(mat ? mat->normalTexturePath : std::string());
+                auto mrTex = WebGetOrLoadTexture(mat ? mat->metallicRoughnessTexturePath : std::string());
                 // Hand-crafted reflection styles: matcap + scrolling reflection
-                auto matcapT = WebGetOrLoadTexture(mat->matcapTexturePath);
-                auto scrollT = WebGetOrLoadTexture(mat->scrollReflectionTexturePath);
+                auto matcapT = WebGetOrLoadTexture(mat ? mat->matcapTexturePath : std::string());
+                auto scrollT = WebGetOrLoadTexture(mat ? mat->scrollReflectionTexturePath : std::string());
                 rd.hasMatcap = matcapT.IsValid();
                 rd.hasScrollRefl = scrollT.IsValid();
 
@@ -7433,21 +7465,9 @@ void RenderSystem::Update(f32 deltaTime) {
             m_MaterialSSBODirty = true;
         }
 
-        // Auto-generate tilemap meshes when dirty
-        for (Entity entity : m_World->GetEntitiesWithComponent<TilemapComponent>()) {
-            auto* tilemap = m_World->GetComponent<TilemapComponent>(entity);
-            if (!tilemap || !tilemap->meshDirty) continue;
-
-            auto mesh = Renderer::MeshFactory::CreateTilemapMesh(*tilemap);
-            if (m_World->HasComponent<MeshComponent>(entity)) {
-                *m_World->GetComponent<MeshComponent>(entity) = std::move(mesh);
-            } else {
-                m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
-            }
-            if (static_cast<usize>(EntityIndex(entity)) < m_EntityRenderData.size())
-                RetireEntityBuffers(m_EntityRenderData[static_cast<usize>(EntityIndex(entity))]);
-            tilemap->meshDirty = false;
-        }
+        // Auto-generate tilemap meshes when dirty. Shared with the web body,
+        // which had no tilemap step at all.
+        EnsureTilemapMeshes();
     }
 
     // Update skeletal animators and apply IK constraints (single pass over AnimatorComponent entities)
@@ -22102,6 +22122,49 @@ f32 RenderSystem::GetSnowAccumulation() const {
     const f32 weatherSnow = m_MainPassWeather ? m_MainPassWeather->GetSnowAccumulation() : 0.0f;
     const f32 live = std::max(std::max(weatherSnow, m_WeatherSkySnow), m_SnowIntensity);
     return std::max(live, m_AuthoredSnowIntensity);
+}
+
+// Build a mesh for every tilemap that needs one.
+//
+// Backend-neutral on purpose. This lived inline in the Vulkan
+// RenderSystem::Update, and there are two Update bodies -- so a tilemap on web
+// never got a MeshComponent and drew nothing at all, which is what the web
+// parity audit recorded as "tilemaps missing". The geometry was never the
+// problem: MeshFactory::CreateTilemapMesh is pure vertex data and has been in
+// the web build all along with no caller.
+//
+// Safe to call from either body's pre-encode window: it mutates the world (adds
+// a MeshComponent) and must therefore run before any pass is recorded, which is
+// where both callers put it.
+void RenderSystem::EnsureTilemapMeshes() {
+    if (!m_World) return;
+
+    for (Entity entity : m_World->GetEntitiesWithComponent<TilemapComponent>()) {
+        auto* tilemap = m_World->GetComponent<TilemapComponent>(entity);
+        if (!tilemap || !tilemap->meshDirty) continue;
+
+        auto mesh = Renderer::MeshFactory::CreateTilemapMesh(*tilemap);
+        if (m_World->HasComponent<MeshComponent>(entity)) {
+            *m_World->GetComponent<MeshComponent>(entity) = std::move(mesh);
+        } else {
+            m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
+        }
+        // Make the draw path pick up the new geometry. The two backends retire a
+        // stale buffer differently, which is the only part of this that is not
+        // backend-neutral.
+        const usize idx = static_cast<usize>(EntityIndex(entity));
+        if (idx < m_EntityRenderData.size()) {
+#if !ENJIN_RENDERER_WEBGPU
+            RetireEntityBuffers(m_EntityRenderData[idx]);
+#else
+            // Web rebuilds vertex and index buffers whenever rd.valid is false,
+            // so clearing it is the whole of the invalidation. Without this a
+            // repainted tilemap would keep drawing the mesh it had at load.
+            m_EntityRenderData[idx].valid = false;
+#endif
+        }
+        tilemap->meshDirty = false;
+    }
 }
 
 void RenderSystem::EnsureWaterMeshes() {
