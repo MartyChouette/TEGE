@@ -691,6 +691,23 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
     return true;
 }
 
+void EditorLayer::OpenToolPanel(f32 baseW, f32 baseH) const {
+    const f32 s = m_EditorSettings.uiScale;
+    const ImGuiViewport* vp = ImGui::GetMainViewport();
+
+    // A margin, so a clamped panel still reads as a window with edges rather
+    // than something wedged against the screen.
+    const f32 margin = 80.0f;
+    const f32 maxW = vp->WorkSize.x - margin;
+    const f32 maxH = vp->WorkSize.y - margin;
+
+    ImGui::SetNextWindowSize(ImVec2(std::min(baseW * s, maxW),
+                                    std::min(baseH * s, maxH)),
+                             ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(vp->GetCenter(), ImGuiCond_FirstUseEver,
+                            ImVec2(0.5f, 0.5f));
+}
+
 void EditorLayer::SetRenderSystem(ECS::RenderSystem* renderSystem) {
     m_RenderSystem = renderSystem;
     m_ParallaxSystem.SetRenderSystem(renderSystem);
@@ -4216,7 +4233,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
 
     // --- Floating tool windows (not pre-docked, but user can dock them) ---
     if (HasPanel(m_VisiblePanels, EditorPanel::Profiler)) {
-        ImGui::SetNextWindowSize(ImVec2(520 * s, 450 * s), ImGuiCond_FirstUseEver);
+        OpenToolPanel(520.0f, 450.0f);
         bool profilerOpen = true;
         Debug::Profiler::Instance().DrawProfilerPanel(&profilerOpen);
         if (!profilerOpen) {
@@ -4224,27 +4241,27 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         }
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::ParticleEditor)) {
-        ImGui::SetNextWindowSize(ImVec2(380 * s, 600 * s), ImGuiCond_FirstUseEver);
+        OpenToolPanel(380.0f, 600.0f);
         DrawParticleEditorPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::AnimGraph)) {
-        ImGui::SetNextWindowSize(ImVec2(700 * s, 500 * s), ImGuiCond_FirstUseEver);
+        OpenToolPanel(700.0f, 500.0f);
         DrawAnimGraphPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::Dialogue)) {
-        ImGui::SetNextWindowSize(ImVec2(750 * s, 550 * s), ImGuiCond_FirstUseEver);
+        OpenToolPanel(750.0f, 550.0f);
         DrawDialoguePanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::VisualScript)) {
-        ImGui::SetNextWindowSize(ImVec2(800 * s, 600 * s), ImGuiCond_FirstUseEver);
+        OpenToolPanel(800.0f, 600.0f);
         DrawVisualScriptPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::SpriteSheetImport)) {
-        ImGui::SetNextWindowSize(ImVec2(700 * s, 500 * s), ImGuiCond_FirstUseEver);
+        OpenToolPanel(700.0f, 500.0f);
         DrawSpriteSheetImporterPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::PixelEditorPanel)) {
-        ImGui::SetNextWindowSize(ImVec2(800 * s, 600 * s), ImGuiCond_FirstUseEver);
+        OpenToolPanel(800.0f, 600.0f);
         DrawPixelEditorPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::CaptionTrack)) {
@@ -4267,59 +4284,59 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         DrawCaptionTrackPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::BehaviorTree)) {
-        ImGui::SetNextWindowSize(ImVec2(800 * s, 600 * s), ImGuiCond_FirstUseEver);
+        OpenToolPanel(800.0f, 600.0f);
         DrawBehaviorTreePanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::QuestFlow)) {
-        ImGui::SetNextWindowSize(ImVec2(800 * s, 600 * s), ImGuiCond_FirstUseEver);
+        OpenToolPanel(800.0f, 600.0f);
         DrawQuestFlowPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::UserManual)) {
-        ImGui::SetNextWindowSize(ImVec2(700 * s, 600 * s), ImGuiCond_FirstUseEver);
+        OpenToolPanel(700.0f, 600.0f);
         DrawUserManualPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::DataAssets)) {
-        ImGui::SetNextWindowSize(ImVec2(800 * s, 550 * s), ImGuiCond_FirstUseEver);
+        OpenToolPanel(800.0f, 550.0f);
         DrawDataAssetPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::PluginBrowser)) {
-        ImGui::SetNextWindowSize(ImVec2(800 * s, 500 * s), ImGuiCond_FirstUseEver);
+        OpenToolPanel(800.0f, 500.0f);
         DrawPluginBrowserPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::ProceduralGen)) {
-        ImGui::SetNextWindowSize(ImVec2(650 * s, 600 * s), ImGuiCond_FirstUseEver);
+        OpenToolPanel(650.0f, 600.0f);
         DrawProceduralGenPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::GitIntegration)) {
-        ImGui::SetNextWindowSize(ImVec2(550 * s, 600 * s), ImGuiCond_FirstUseEver);
+        OpenToolPanel(550.0f, 600.0f);
         DrawGitIntegrationPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::NetworkPanel)) {
-        ImGui::SetNextWindowSize(ImVec2(450 * s, 500 * s), ImGuiCond_FirstUseEver);
+        OpenToolPanel(450.0f, 500.0f);
         DrawNetworkPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::Collaboration)) {
-        ImGui::SetNextWindowSize(ImVec2(450 * s, 550 * s), ImGuiCond_FirstUseEver);
+        OpenToolPanel(450.0f, 550.0f);
         DrawCollaborationPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::FlashTimeline)) {
-        ImGui::SetNextWindowSize(ImVec2(800 * s, 350 * s), ImGuiCond_FirstUseEver);
+        OpenToolPanel(800.0f, 350.0f);
         DrawFlashTimelinePanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::VectorDrawing)) {
-        ImGui::SetNextWindowSize(ImVec2(700 * s, 550 * s), ImGuiCond_FirstUseEver);
+        OpenToolPanel(700.0f, 550.0f);
         DrawVectorDrawingPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::SymbolLibraryPanel)) {
-        ImGui::SetNextWindowSize(ImVec2(620 * s, 480 * s), ImGuiCond_FirstUseEver);
+        OpenToolPanel(620.0f, 480.0f);
         DrawSymbolLibraryPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::FeedbackPanel)) {
-        ImGui::SetNextWindowSize(ImVec2(720 * s, 580 * s), ImGuiCond_FirstUseEver);
+        OpenToolPanel(720.0f, 580.0f);
         DrawFeedbackPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::SaveDebug)) {
-        ImGui::SetNextWindowSize(ImVec2(620 * s, 500 * s), ImGuiCond_FirstUseEver);
+        OpenToolPanel(620.0f, 500.0f);
         DrawSaveDebugPanel();
     }
     // UV Preview panel (bool-toggled, not in EditorPanel bitfield)

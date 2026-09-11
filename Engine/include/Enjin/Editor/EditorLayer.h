@@ -2215,6 +2215,27 @@ private:
     // be reachable only once playing had stopped.
     void DrawPlaybackToolsPopup();
 
+    // Open a floating tool panel at a size the SCREEN can actually show.
+    //
+    // Every one of these used to be `SetNextWindowSize(ImVec2(W * s, H * s))`,
+    // and at the scale this editor actually runs at -- uiScale defaults to 1.9
+    // and is commonly 2.0 -- 23 of the 26 tool panels opened LARGER than the
+    // window. ImGui clamps the size, but the position is a separate default, so
+    // a window wider than the viewport opens with its left edge off-screen and
+    // its first column of labels cut in half; turning a panel on then looks
+    // exactly like turning it on and nothing happening.
+    //
+    // The sizes themselves are fine -- 800x600 is a comfortable default at 100%.
+    // What was missing is that a scaled size has to be measured against the
+    // viewport rather than assumed to fit it.
+    //
+    // Centred on first open for the same reason the caption panel is: this
+    // editor's layout is hand-rolled rather than ImGui docking, so a floating
+    // window left to ImGui's cascade opens in the top-left corner, underneath
+    // the Hierarchy.
+    void OpenToolPanel(f32 baseW, f32 baseH) const;
+
+
     // Keyboard shortcuts whose action lives inside a menu item's body.
     //
     // Seven of these -- New, Open, Save As, Import, Cut, Copy, Paste -- were

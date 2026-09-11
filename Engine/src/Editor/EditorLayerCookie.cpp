@@ -84,7 +84,7 @@ void EditorLayer::DrawCookieCreatorWindow() {
     if (!m_ShowCookieCreator) return;
 
     const f32 s = ImGui::GetIO().FontGlobalScale;
-    ImGui::SetNextWindowSize(ImVec2(720 * s, 620 * s), ImGuiCond_FirstUseEver);
+    OpenToolPanel(720.0f, 620.0f);
     if (!ImGui::Begin("Light Cookie Creator", &m_ShowCookieCreator)) {
         ImGui::End();
         return;

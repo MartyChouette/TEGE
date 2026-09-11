@@ -1601,7 +1601,7 @@ void EditorLayer::ExecuteImport(const std::string& path, const Assets::ImportOpt
 
 void EditorLayer::DrawBuildDialog() {
     f32 s = m_EditorSettings.uiScale;
-    ImGui::SetNextWindowSize(ImVec2(550 * s, 500 * s), ImGuiCond_FirstUseEver);
+    OpenToolPanel(550.0f, 500.0f);
     if (!ImGui::Begin("Build Game", &m_ShowBuildDialog)) {
         ImGui::End();
         return;
@@ -1987,7 +1987,7 @@ void EditorLayer::PollBuildThread() {
 
 void EditorLayer::DrawNewProjectDialog() {
     f32 s = m_EditorSettings.uiScale;
-    ImGui::SetNextWindowSize(ImVec2(480 * s, 280 * s), ImGuiCond_FirstUseEver);
+    OpenToolPanel(480.0f, 280.0f);
     if (!ImGui::Begin("New Project", &m_ShowNewProjectDialog)) {
         ImGui::End();
         return;
@@ -2596,7 +2596,7 @@ void EditorLayer::DrawPlayModeDiffDialog() {
     }
 
     f32 s = m_EditorSettings.uiScale;
-    ImGui::SetNextWindowSize(ImVec2(650 * s, 500 * s), ImGuiCond_FirstUseEver);
+    OpenToolPanel(650.0f, 500.0f);
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing,
                             ImVec2(0.5f, 0.5f));
 
@@ -3224,7 +3224,7 @@ void EditorLayer::DrawDiscordBugReportDialog() {
     if (!m_ShowDiscordBugDialog) return;
 
     f32 s = m_EditorSettings.uiScale;
-    ImGui::SetNextWindowSize(ImVec2(520 * s, 480 * s), ImGuiCond_FirstUseEver);
+    OpenToolPanel(520.0f, 480.0f);
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing,
                             ImVec2(0.5f, 0.5f));
 
@@ -3478,7 +3478,11 @@ void EditorLayer::DrawQuitFeedbackDialog() {
         float buttonHeight = 34.0f * dlgScale;
         float spacing = 12.0f * dlgScale;
         float totalWidth = buttonWidth * 3 + spacing * 2;
-        ImGui::SetCursorPosX((ImGui::GetWindowSize().x - totalWidth) * 0.5f);
+        // Floored at zero. These widths scale, so at 1.9 the three buttons want
+        // about a thousand pixels; centring a row wider than its window puts the
+        // cursor left of the content edge and cuts the first button in half.
+        const float buttonRowX = (ImGui::GetWindowSize().x - totalWidth) * 0.5f;
+        ImGui::SetCursorPosX(buttonRowX > 0.0f ? buttonRowX : 0.0f);
 
         ImGui::PushStyleColor(ImGuiCol_Button, accent);
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.46f, 0.70f, 1.0f, 1.0f));
