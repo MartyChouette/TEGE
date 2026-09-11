@@ -1082,7 +1082,19 @@ void EditorLayer::DrawSettingsSection_Accessibility() {
                 settingsChanged = true;
             }
             if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Drag model, texture, audio, or scene files onto the editor window to import them");
+                ImGui::SetTooltip("Drag model, texture, audio, scene or .srt caption files onto the editor window to import them");
+            }
+            if (ImGui::Checkbox("Split caption speaker prefixes",
+                                &m_EditorSettings.splitCaptionSpeakerPrefix)) {
+                settingsChanged = true;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(
+                    "When importing a .srt, treat a leading \"NAME:\" as the speaker\n"
+                    "instead of part of the caption.\n\n"
+                    "Off by default: \"Look: over there.\" has the same shape, so the\n"
+                    "importer counts them and tells you in the Console rather than\n"
+                    "rewriting some of your captions and not others.");
             }
             ImGui::TreePop();
         }

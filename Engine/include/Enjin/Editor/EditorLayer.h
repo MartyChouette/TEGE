@@ -74,6 +74,7 @@
 #include "Enjin/Editor/AudioEventGraph.h"
 #include "Enjin/Editor/ParticleGraph.h"
 #include "Enjin/Editor/DocGenerator.h"
+#include "Enjin/Assets/SrtImport.h"
 #include "Enjin/Editor/SceneLock.h"
 #include "Enjin/Editor/CollaborativeEditing.h"
 #include "Enjin/Editor/FlashTimeline.h"
@@ -2265,6 +2266,13 @@ private:
     // editors can autocomplete the engine API. Writes .tege/tege_api.as and
     // as.predefined into the open project's root. See Tools > Scripting & Logic.
     void ExportScriptApiStub();
+
+    // Import a .srt subtitle file as a CaptionTrack .enjdata in the open
+    // project's assets/data. Reachable from Tools > Scripting & Logic and by
+    // dropping the file on the window -- a capability only reachable from C++ is
+    // not a capability a person authoring a game has.
+    void ImportCaptionFile(const std::string& srtPath);
+    Assets::SrtImportOptions m_CaptionImportOptions;
 
     // Generate the reference set (components, script API, visual-script nodes,
     // data assets) into the open project's docs/generated, then reveal it.

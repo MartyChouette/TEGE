@@ -431,6 +431,7 @@ bool EditorSettings::Save(const std::string& path) const {
         j["autoSaveEnabled"] = autoSaveEnabled;
         j["autoSaveIntervalMinutes"] = autoSaveIntervalMinutes;
         j["enableDragDropImport"] = enableDragDropImport;
+        j["splitCaptionSpeakerPrefix"] = splitCaptionSpeakerPrefix;
 
         // Discord bug report webhook
         if (!discordWebhookUrl.empty()) {
@@ -631,6 +632,7 @@ bool EditorSettings::Load(const std::string& path) {
         if (j.contains("autoSaveEnabled")) autoSaveEnabled = j["autoSaveEnabled"].get<bool>();
         if (j.contains("autoSaveIntervalMinutes")) autoSaveIntervalMinutes = std::clamp(j["autoSaveIntervalMinutes"].get<f32>(), 1.0f, 60.0f);
         if (j.contains("enableDragDropImport")) enableDragDropImport = j["enableDragDropImport"].get<bool>();
+        if (j.contains("splitCaptionSpeakerPrefix")) splitCaptionSpeakerPrefix = j["splitCaptionSpeakerPrefix"].get<bool>();
 
         // Discord bug report webhook
         if (j.contains("discordWebhookUrl")) discordWebhookUrl = j["discordWebhookUrl"].get<std::string>();

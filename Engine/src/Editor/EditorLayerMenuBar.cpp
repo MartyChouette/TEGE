@@ -5,6 +5,7 @@
 #include "Enjin/Scripting/ScriptEngine.h"
 #include "Enjin/Scripting/ScriptBindings.h"
 #include "Enjin/Platform/Desktop.h"
+#include "Enjin/Assets/SrtImport.h"
 #include <GLFW/glfw3.h>
 #include <chrono>
 #include <fstream>
@@ -562,6 +563,31 @@ void EditorLayer::DrawMenuBar() {
                         SetPanelVisibility(EditorPanel::Dialogue, dialogue);
                     }
                     ImGui::Separator();
+                    if (ImGui::MenuItem("Import Captions (.srt)...")) {
+                        const std::string picked = FileDialog::IsAvailable()
+                            ? FileDialog::OpenFile(
+                                  "Select a subtitle file",
+                                  {{ "Subtitle Files", "*.srt;*.vtt" }})
+                            : std::string();
+                        if (!picked.empty()) {
+                            ImportCaptionFile(picked);
+                        } else if (!FileDialog::IsAvailable()) {
+                            // An empty string from a dialog does NOT mean cancelled;
+                            // on Linux it also means no dialog helper is installed,
+                            // and silently doing nothing is indistinguishable from
+                            // the feature being broken.
+                            ShowNotification(
+                                "No file dialog available (install zenity, kdialog or yad), "
+                                "or drop the .srt on the window",
+                                NotificationType::Warning);
+                        }
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Turn a .srt into a CaptionTrack data asset\n"
+                                          "(cue_t / cue_end / cue_who / cue_line) that a\n"
+                                          "script reads with DataAsset_GetFloatAt.\n"
+                                          "Dropping the file on the window does the same.");
+                    }
                     if (ImGui::MenuItem("Export Script API (IntelliSense)")) {
                         ExportScriptApiStub();
                     }
@@ -1649,6 +1675,75 @@ void EditorLayer::DrawMenuBar() {
 //      nothing happen has no reason to think it worked, and it did not: the
 //      component generator failed on every run (it looked for engine headers
 //      relative to that same CWD), which made GenerateAll return false.
+// Turn a .srt into a CaptionTrack .enjdata in the project's assets/data.
+//
+// Reports what it actually did rather than just whether it worked: a 60-cue file
+// that yielded 40 cues and one that yielded 60 are the same "success" otherwise,
+// and the difference is twenty captions nobody will look for. A file with a
+// "NAME:" prefix on some lines also gets told that the speaker split exists,
+// because the importer will not guess at a colon and the author cannot act on an
+// option they were never shown.
+void EditorLayer::ImportCaptionFile(const std::string& srtPath) {
+    namespace fs = std::filesystem;
+
+    const std::string& manifest = m_SceneManager.GetProjectPath();
+    if (manifest.empty()) {
+        ShowNotification("Open a project first: captions are saved into its assets/data",
+                         NotificationType::Warning);
+        return;
+    }
+
+    const fs::path root = fs::path(manifest).parent_path();
+    const fs::path outDir = root / "assets" / "data";
+    std::error_code ec;
+    fs::create_directories(outDir, ec);
+
+    const fs::path out = outDir / (fs::path(srtPath).stem().string() + ".enjdata");
+
+    m_CaptionImportOptions.splitColonSpeaker =
+        m_EditorSettings.splitCaptionSpeakerPrefix;
+
+    Assets::SrtParseResult parsed;
+    std::string error;
+    if (!Assets::ImportSrtFile(srtPath, out.string(), m_CaptionImportOptions,
+                               &parsed, &error)) {
+        ShowNotification("Caption import failed: " + error, NotificationType::Error);
+        return;
+    }
+
+    std::string msg = "Imported " + std::to_string(parsed.cues.size()) + " cue" +
+                      (parsed.cues.size() == 1 ? "" : "s") + " to " +
+                      out.filename().string();
+    NotificationType type = NotificationType::Success;
+
+    if (parsed.cues.size() != parsed.blocksSeen) {
+        msg = "Imported " + std::to_string(parsed.cues.size()) + " of " +
+              std::to_string(parsed.blocksSeen) + " blocks in " +
+              fs::path(srtPath).filename().string() + " -- see the Console";
+        type = NotificationType::Warning;
+    }
+    for (const std::string& problem : parsed.problems) {
+        m_ConsoleLog.push_back("[Warning] " + fs::path(srtPath).filename().string() +
+                               ": " + problem);
+    }
+
+    if (!m_CaptionImportOptions.splitColonSpeaker && parsed.cuesWithColonPrefix > 0) {
+        m_ConsoleLog.push_back(
+            "[Info] " + std::to_string(parsed.cuesWithColonPrefix) +
+            " cue(s) begin \"NAME:\". Left as caption text, because \"Look: over "
+            "there.\" has the same shape. Turn on Settings > System > Workflow > "
+            "Split caption speaker prefixes to separate them.");
+    }
+
+    ShowNotification(msg, type);
+
+    // Load it straight away so the Data Asset panel and any running script see it
+    // without a project reload.
+    auto& registry = Assets::DataAssetRegistry::Get();
+    registry.RegisterSchema(Assets::CaptionTrackSchema());
+    registry.LoadAsset(out.string());
+}
+
 void EditorLayer::GenerateProjectDocumentation() {
     namespace fs = std::filesystem;
 

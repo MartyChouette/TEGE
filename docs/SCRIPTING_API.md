@@ -136,15 +136,14 @@ able to notice:
 <!-- sample-context: uint64 radio = Scene_FindEntity("Radio"); -->
 ```angelscript
 // Show the cue whose window contains the current playback position. The track is
-// three parallel arrays in a .enjdata asset -- see "Reading a list" below.
+// four parallel arrays in a .enjdata asset -- see "Reading a list" below, and
+// "Importing a subtitle file" for where it comes from.
 float t = Audio_GetTime(radio);
 if (t >= 0.0f) {
     int cues = DataAsset_GetArrayLength("wgrb_night", "cue_t");
     for (int i = 0; i < cues; i++) {
         float start = DataAsset_GetFloatAt("wgrb_night", "cue_t", i);
-        float end = (i + 1 < cues)
-                  ? DataAsset_GetFloatAt("wgrb_night", "cue_t", i + 1)
-                  : Audio_GetLength(radio);
+        float end   = DataAsset_GetFloatAt("wgrb_night", "cue_end", i);
         if (t >= start && t < end) {
             Subtitle_Show(DataAsset_GetStringAt("wgrb_night", "cue_line", i),
                           DataAsset_GetStringAt("wgrb_night", "cue_who", i));
@@ -153,6 +152,37 @@ if (t >= 0.0f) {
     }
 }
 ```
+
+Read `cue_end`, do not infer the end from the next cue's start. The two agree only
+when the dialogue is continuous, and every pause in a conversation is a gap --
+inferring holds the previous caption on screen right through the silence.
+
+### Importing a subtitle file
+
+Drop a `.srt` on the editor window, or use **Tools > Scripting & Logic > Import
+Captions (.srt)**. It writes `assets/data/<name>.enjdata` as a `CaptionTrack`:
+
+| Field | Type | Holds |
+|-------|------|-------|
+| `cue_t` | FloatArray | start of each cue, seconds |
+| `cue_end` | FloatArray | end of each cue, seconds |
+| `cue_who` | StringArray | speaker, `""` where the file does not name one |
+| `cue_line` | StringArray | the caption text, newlines kept |
+
+All four are always written and always the same length, so one
+`DataAsset_GetArrayLength` walks the whole track.
+
+The speaker is read from the two notations that are unambiguous: WebVTT's
+`<v Speaker>` and a leading `[Speaker]`. A bare `NAME: text` is left alone, because
+`WGRB: Night desk.` and `Look: over there.` are the same shape and splitting on the
+colon would rewrite some captions and not others. The importer counts the lines
+that look like a prefix and says so in the Console; **Settings > System > Workflow
+> Split caption speaker prefixes** turns the split on for a file where you know it
+is right.
+
+A malformed block is reported with its source line number and skipped, and the
+notification says "imported N of M blocks" so a track that came out short cannot
+look like a clean import.
 
 ### Randomised playback
 

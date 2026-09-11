@@ -833,6 +833,9 @@ void EditorLayer::OnFileDrop(int count, const char** paths) {
         if (ext == ".fbx" || ext == ".obj" || ext == ".gltf" || ext == ".glb" ||
             ext == ".dae" || ext == ".3ds") {
             modelPaths.push_back(filePath.string());
+        } else if (ext == ".srt" || ext == ".vtt") {
+            ENJIN_LOG_INFO(Editor, "Drag-and-drop caption import: %s", paths[i]);
+            ImportCaptionFile(filePath.string());
         } else if (ext == ".enjin") {
             ENJIN_LOG_INFO(Editor, "Drag-and-drop scene open: %s", paths[i]);
             m_ConsoleLog.push_back(std::string("[Info] Drag-and-drop scene open: ") + paths[i]);

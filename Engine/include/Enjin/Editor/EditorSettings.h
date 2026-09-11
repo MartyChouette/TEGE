@@ -209,6 +209,13 @@ struct EditorSettings {
     // Workflow
     bool enableDragDropImport = true;  // Drag files onto the editor window to import them
 
+    // Split a leading "NAME:" off an imported caption into the speaker column.
+    //
+    // Off, because "WGRB: Night desk." and "Look: over there." are the same shape
+    // and the importer will not guess which is which -- it counts them and says so
+    // in the Console instead. This is the switch that message points at.
+    bool splitCaptionSpeakerPrefix = false;
+
     // Discord bug report webhook
     std::string discordWebhookUrl;  // Empty = disabled; set in Settings > System
 
