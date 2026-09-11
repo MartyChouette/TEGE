@@ -5947,6 +5947,58 @@ void EditorLayer::RegisterPaletteCommands() {
 // ============================================================================
 
 
+// The Symbol Library browser.
+//
+// SymbolLibrary had a browser panel, a nested edit viewport, CRUD, instantiation
+// and update propagation to every instance -- and none of it was reachable.
+// The class was constructed nowhere, DrawBrowserPanel() was called nowhere, and
+// no file but its own so much as named it. By the golden rule that is not a
+// shipped feature: "a component with a system and no authoring tool is not
+// shipped", and this was the system with no tool at all.
+//
+// Initialization is lazy and tied to the open PROJECT, not to the editor, because
+// symbols live beside the project ("symbols/") and the editor can open several in
+// a session. Doing it in the constructor would bind the library to whatever
+// directory the editor happened to start in -- which is the exe directory, since
+// the process CWD is never reliable here.
+void EditorLayer::DrawSymbolLibraryPanel() {
+    bool panelOpen = true;
+    if (!ImGui::Begin("Symbol Library", &panelOpen)) {
+        if (!panelOpen) SetPanelVisibility(EditorPanel::SymbolLibraryPanel, false);
+        ImGui::End();
+        return;
+    }
+    if (!panelOpen) {
+        SetPanelVisibility(EditorPanel::SymbolLibraryPanel, false);
+        ImGui::End();
+        return;
+    }
+
+    const std::string projectPath = m_SceneManager.GetProjectPath();
+    if (projectPath.empty()) {
+        // Name what is missing and why, rather than showing an empty grid that
+        // looks like a library with nothing in it.
+        ImGui::TextDisabled("No project open.");
+        ImGui::TextDisabled("Symbols live in a \"symbols\" folder beside the project file,");
+        ImGui::TextDisabled("so there is nowhere to read them from yet.");
+        m_SymbolLibraryInitialized = false;
+        ImGui::End();
+        return;
+    }
+
+    if (!m_SymbolLibraryInitialized) {
+        const std::string dir =
+            (std::filesystem::path(projectPath).parent_path() / "symbols").string();
+        m_SymbolLibrary.Initialize(dir);
+        m_SymbolLibraryInitialized = true;
+        ENJIN_LOG_INFO(Editor, "Symbol Library: %s (%zu symbols)", dir.c_str(),
+                       m_SymbolLibrary.GetAllSymbols().size());
+    }
+
+    m_SymbolLibrary.DrawBrowserPanel();
+    ImGui::End();
+}
+
 void EditorLayer::DrawFlashTimelinePanel() {
     bool panelOpen = true;
     if (!ImGui::Begin("Flash Timeline", &panelOpen)) {

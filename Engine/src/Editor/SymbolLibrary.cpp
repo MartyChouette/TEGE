@@ -1,4 +1,7 @@
 #include "Enjin/Editor/SymbolLibrary.h"
+#include <stb_image_write.h>
+#include "Enjin/Renderer/VectorTessellator.h"
+#include "Enjin/Renderer/VectorRaster.h"
 #include "Enjin/Editor/VectorDrawingEditor.h"
 #include "Enjin/Editor/FlashTimeline.h"
 #include "Enjin/Assets/Prefab.h"
@@ -12,12 +15,16 @@
 #include <algorithm>
 #include <cctype>
 #include <sstream>
+#include <iterator>
 #include <set>
 
 namespace Enjin {
 namespace Editor {
 
 using json = nlohmann::json;
+
+// Square, and big enough to stay readable at the browser's largest tile.
+static constexpr u32 kThumbnailSize = 128;
 namespace fs = std::filesystem;
 
 // ============================================================================
@@ -188,9 +195,16 @@ void SymbolLibrary::ScanLibrary() {
             sym.assetPath = svgPath;
         }
 
-        // Check for thumbnail
+        // A thumbnail on disk, if there is a real one.
+        //
+        // Existence is not enough. An older build wrote a ZERO-BYTE file named
+        // thumbnail.png beside every symbol as a placeholder, and those are still
+        // out there -- accepting one hands a loader a path to something that is
+        // not an image, which reads as a corrupt asset rather than as a thumbnail
+        // nobody rendered. An empty path says the true thing and costs nothing.
         std::string thumbPath = entry.path().string() + "/thumbnail.png";
-        if (fs::exists(thumbPath, ec)) {
+        std::error_code sizeEc;
+        if (fs::exists(thumbPath, ec) && fs::file_size(thumbPath, sizeEc) > 0 && !sizeEc) {
             sym.thumbnailPath = thumbPath;
         }
 
@@ -250,9 +264,11 @@ std::string SymbolLibrary::CreateSymbolFromEntity(ECS::World* world, ECS::Entity
     sym.category = category;
     sym.type = SymbolType::EntityPrefab;
     sym.assetPath = prefabPath;
-    sym.thumbnailPath = GenerateThumbnail(symbolId);
 
+    // Thumbnail AFTER the entry exists: it is rendered from the symbol's own
+    // asset, so it has to be able to find the symbol.
     m_Symbols.push_back(std::move(sym));
+    m_Symbols.back().thumbnailPath = GenerateThumbnail(symbolId);
     SaveCatalog();
 
     ENJIN_LOG_INFO(Editor, "SymbolLibrary: Created entity symbol '%s' (id: %s)",
@@ -295,9 +311,9 @@ std::string SymbolLibrary::CreateSymbolFromVector(VectorDrawingEditor& editor,
     sym.category = category;
     sym.type = SymbolType::VectorDrawing;
     sym.assetPath = svgPath;
-    sym.thumbnailPath = GenerateThumbnail(symbolId);
 
     m_Symbols.push_back(std::move(sym));
+    m_Symbols.back().thumbnailPath = GenerateThumbnail(symbolId);
     SaveCatalog();
 
     ENJIN_LOG_INFO(Editor, "SymbolLibrary: Created vector symbol '%s' (id: %s)",
@@ -1084,19 +1100,75 @@ std::string SymbolLibrary::GenerateSymbolId(const std::string& name) {
     return id;
 }
 
-std::string SymbolLibrary::GenerateThumbnail(const std::string& symbolId) {
-    // Create a placeholder thumbnail path. Actual rendering to PNG would
-    // require an offscreen framebuffer pass. For now we create the path
-    // so the catalog entry is valid; the rendering subsystem can populate
-    // the file later when the browser requests it.
-    std::string thumbPath = m_LibraryDir + "/" + symbolId + "/thumbnail.png";
+std::string SymbolLibrary::RegenerateThumbnail(const std::string& symbolId) {
+    SymbolEntry* sym = FindSymbolMutable(symbolId);
+    if (!sym) return {};
+    sym->thumbnailPath = GenerateThumbnail(symbolId);
+    SaveCatalog();
+    return sym->thumbnailPath;
+}
 
-    std::error_code ec;
-    if (!fs::exists(thumbPath, ec)) {
-        // Write an empty placeholder marker so the path is recorded
-        std::ofstream marker(thumbPath, std::ios::binary);
+std::string SymbolLibrary::GenerateThumbnail(const std::string& symbolId) {
+    // Used to write a ZERO-BYTE file called thumbnail.png and return its path as
+    // the symbol's thumbnail, on the stated plan that "the rendering subsystem
+    // can populate the file later when the browser requests it". Nothing ever
+    // did, and nothing was going to: there is no code anywhere that looks for an
+    // empty thumbnail and fills it in.
+    //
+    // The result was a catalog full of paths to files that are not images. A
+    // loader handed one of those gets a decode failure, which reads as a corrupt
+    // asset rather than as a thumbnail that was never rendered -- and an empty
+    // path would have said exactly the right thing for free.
+    //
+    // A vector symbol CAN be rendered here and now, headlessly, through the
+    // tessellator and rasterizer the engine already has. Everything else needs an
+    // offscreen GPU pass over a loaded prefab, which this class has no access to,
+    // so it returns nothing and says nothing.
+    const SymbolEntry* sym = FindSymbol(symbolId);
+    if (!sym) return {};
+
+    if (sym->type != SymbolType::VectorDrawing) {
+        // Not a failure. A prefab thumbnail needs a render target and a camera,
+        // and an empty path is how a browser knows to draw its own placeholder
+        // instead of trying to load something that is not an image.
+        return {};
     }
 
+    std::ifstream svgFile(sym->assetPath, std::ios::binary);
+    if (!svgFile) {
+        ENJIN_LOG_WARN(Editor, "SymbolLibrary: thumbnail for '%s' skipped, cannot read %s",
+                       symbolId.c_str(), sym->assetPath.c_str());
+        return {};
+    }
+    const std::string svgSource((std::istreambuf_iterator<char>(svgFile)),
+                                std::istreambuf_iterator<char>());
+
+    const Renderer::TessellatedGraphic graphic = Renderer::TessellateSVGFromString(svgSource);
+    if (!graphic.valid) {
+        ENJIN_LOG_WARN(Editor, "SymbolLibrary: thumbnail for '%s' skipped, %s did not tessellate",
+                       symbolId.c_str(), sym->assetPath.c_str());
+        return {};
+    }
+
+    std::vector<u8> pixels;
+    if (!Renderer::RasterizeTessellated(graphic, kThumbnailSize, kThumbnailSize, pixels)) {
+        ENJIN_LOG_WARN(Editor, "SymbolLibrary: thumbnail for '%s' skipped, nothing to rasterize",
+                       symbolId.c_str());
+        return {};
+    }
+
+    const std::string thumbPath = m_LibraryDir + "/" + symbolId + "/thumbnail.png";
+    std::error_code ec;
+    fs::create_directories(fs::path(thumbPath).parent_path(), ec);
+
+    if (!stbi_write_png(thumbPath.c_str(), static_cast<int>(kThumbnailSize),
+                        static_cast<int>(kThumbnailSize), 4, pixels.data(),
+                        static_cast<int>(kThumbnailSize * 4))) {
+        ENJIN_LOG_WARN(Editor, "SymbolLibrary: could not write %s", thumbPath.c_str());
+        return {};
+    }
+
+    ENJIN_LOG_INFO(Editor, "SymbolLibrary: thumbnail rendered for '%s'", symbolId.c_str());
     return thumbPath;
 }
 

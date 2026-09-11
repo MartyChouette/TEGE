@@ -78,6 +78,7 @@
 #include "Enjin/Editor/SceneLock.h"
 #include "Enjin/Editor/CollaborativeEditing.h"
 #include "Enjin/Editor/FlashTimeline.h"
+#include "Enjin/Editor/SymbolLibrary.h"
 #include "Enjin/Editor/VectorDrawingEditor.h"
 #include "Enjin/Renderer/LightCookie.h"   // CookieParams for the Cookie Creator
 #include "Enjin/Editor/FeedbackSystem.h"
@@ -149,6 +150,7 @@ enum class EditorPanel : u64 {
     FeedbackPanel = 1ull << 30,
     SaveDebug = 1ull << 31,
     CaptionTrack = 1ull << 32,
+    SymbolLibraryPanel = 1ull << 33,
     All = 0xFFFFFFFFFFFFFFFFull
 };
 
@@ -2085,10 +2087,21 @@ private:
     // Flash Timeline Editor
     FlashTimelineEditor m_FlashTimelineEditor;
     FlashTimelineData m_FlashTimelineData;
+
+    // The symbol library: reusable drawings and prefabs, with a browser, nested
+    // editing, instantiation and update propagation to every instance.
+    //
+    // All of that existed and NONE of it was reachable. SymbolLibrary was
+    // constructed nowhere, DrawBrowserPanel() was called nowhere, and the class
+    // was referenced by no file but its own -- a whole subsystem with no way in,
+    // which by the golden rule is not a shipped feature.
+    SymbolLibrary m_SymbolLibrary;
+    bool m_SymbolLibraryInitialized = false;
     Scripting::AS3Transpiler m_AS3Transpiler;
     char m_AS3TranspileInput[4096] = {};
     std::string m_AS3TranspileOutput;
     void DrawFlashTimelinePanel();
+    void DrawSymbolLibraryPanel();
 
     // Vector Drawing Editor
     VectorDrawingEditor m_VectorDrawingEditor;

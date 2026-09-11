@@ -620,6 +620,13 @@ void EditorLayer::DrawMenuBar() {
                     if (ImGui::MenuItem("Vector Drawing", nullptr, &vectorPanel)) {
                         SetPanelVisibility(EditorPanel::VectorDrawing, vectorPanel);
                     }
+                    bool symbolLib = IsPanelVisible(EditorPanel::SymbolLibraryPanel);
+                    if (ImGui::MenuItem("Symbol Library", nullptr, &symbolLib)) {
+                        SetPanelVisibility(EditorPanel::SymbolLibraryPanel, symbolLib);
+                    }
+                    ImGui::SetItemTooltip("Reusable drawings and prefabs: browse them, drop them\n"
+                                          "into a scene, edit one and push the change to every\n"
+                                          "instance.");
                     bool animGraph = IsPanelVisible(EditorPanel::AnimGraph);
                     if (ImGui::MenuItem("Animation Graph", nullptr, &animGraph)) {
                         SetPanelVisibility(EditorPanel::AnimGraph, animGraph);

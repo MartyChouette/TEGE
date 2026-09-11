@@ -4287,6 +4287,10 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         ImGui::SetNextWindowSize(ImVec2(700 * s, 550 * s), ImGuiCond_FirstUseEver);
         DrawVectorDrawingPanel();
     }
+    if (HasPanel(m_VisiblePanels, EditorPanel::SymbolLibraryPanel)) {
+        ImGui::SetNextWindowSize(ImVec2(620 * s, 480 * s), ImGuiCond_FirstUseEver);
+        DrawSymbolLibraryPanel();
+    }
     if (HasPanel(m_VisiblePanels, EditorPanel::FeedbackPanel)) {
         ImGui::SetNextWindowSize(ImVec2(720 * s, 580 * s), ImGuiCond_FirstUseEver);
         DrawFeedbackPanel();

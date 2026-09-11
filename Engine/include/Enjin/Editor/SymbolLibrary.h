@@ -168,6 +168,18 @@ public:
     /// Find a symbol by ID (nullptr if not found)
     const SymbolEntry* FindSymbol(const std::string& symbolId) const;
 
+    /// Re-render a symbol's thumbnail from its current source asset.
+    ///
+    /// Needed because a symbol's SVG can change after the symbol was created --
+    /// edited in the vector editor, or replaced on disk -- and nothing was
+    /// re-rendering the preview. Returns the thumbnail path, or empty when this
+    /// symbol has no thumbnail the library can produce (a prefab needs an
+    /// offscreen render, which this class has no access to).
+    ///
+    /// Empty is an answer, not a failure. It is what tells a browser to draw its
+    /// own placeholder instead of loading a file that is not an image.
+    std::string RegenerateThumbnail(const std::string& symbolId);
+
     // --- ImGui panels ---
 
     /// Draw the symbol browser panel (grid/list of symbols with search + category tabs)
