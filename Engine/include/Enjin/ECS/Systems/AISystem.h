@@ -5,6 +5,7 @@
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/AI/Navmesh.h"
+#include "Enjin/AI/NavmeshBake.h"
 #include <unordered_map>
 #include <memory>
 
@@ -32,6 +33,16 @@ public:
 
     /// Set the shared navmesh for pathfinding. The system does NOT take ownership.
     void SetNavmesh(const AI::Navmesh* navmesh);
+
+    // Bake the scene's NavmeshVolumeComponent into this system's generator and
+    // start using it. `onlyIfBakeOnPlay` skips a volume whose author turned that
+    // off, which is what a runtime wants at scene start and the editor's Bake
+    // button does not.
+    //
+    // Answers what happened rather than a bool: "no volume in the scene", "baked
+    // 0 walkable polygons" and "baked 900" are three different situations and the
+    // fix differs for each.
+    AI::NavmeshBakeResult BakeSceneNavmesh(bool onlyIfBakeOnPlay);
 
     /// Get the current navmesh (may be null)
     const AI::Navmesh* GetNavmesh() const { return m_Navmesh; }

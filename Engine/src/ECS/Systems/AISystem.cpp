@@ -1,4 +1,5 @@
 #include "Enjin/ECS/Systems/AISystem.h"
+#include "Enjin/ECS/Components/NavmeshVolume.h"
 #include "Enjin/Math/Math.h"
 #include "Enjin/Logging/Log.h"
 #include <algorithm>
@@ -17,6 +18,44 @@ void AISystem::SetNavmesh(const AI::Navmesh* navmesh) {
     m_OwnsNavmesh = false;
     ENJIN_LOG_INFO(AI, "AISystem: External navmesh set (%zu polygons)",
                    navmesh ? navmesh->GetPolygons().size() : 0);
+}
+
+AI::NavmeshBakeResult AISystem::BakeSceneNavmesh(bool onlyIfBakeOnPlay) {
+    AI::NavmeshBakeResult result;
+    if (!m_World) {
+        result.message = "No world.";
+        return result;
+    }
+
+    const Entity volume = AI::FindNavmeshVolume(m_World);
+    if (volume == INVALID_ENTITY) {
+        // Not an error. A scene with no agents that path needs no navmesh, and
+        // saying "bake failed" for that would train people to ignore the message.
+        result.message = "Scene has no navmesh volume.";
+        return result;
+    }
+
+    const auto* nv = m_World->GetComponent<NavmeshVolumeComponent>(volume);
+    if (onlyIfBakeOnPlay && nv && !nv->bakeOnPlay) {
+        result.message = "Navmesh volume has Bake On Play turned off.";
+        return result;
+    }
+
+    result = AI::BakeNavmeshVolume(m_World, volume, m_Generator);
+    if (result.success) {
+        m_Navmesh = &m_Generator.GetNavmesh();
+        m_Pathfinder.SetNavmesh(m_Navmesh);
+        m_OwnsNavmesh = true;
+    } else {
+        // A failed bake must not leave the previous navmesh in place pretending to
+        // be current -- agents would path against geometry that is no longer there.
+        m_Navmesh = nullptr;
+        m_Pathfinder.SetNavmesh(nullptr);
+        m_OwnsNavmesh = false;
+        ENJIN_LOG_WARN(AI, "Navmesh bake produced nothing usable: %s",
+                       result.message.c_str());
+    }
+    return result;
 }
 
 void AISystem::GenerateGridNavmesh(const Math::Vector3& min, const Math::Vector3& max,

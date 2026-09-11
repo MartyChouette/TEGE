@@ -250,6 +250,7 @@ enjin_add_test(TestVisualScript       Unit/Scripting/TestVisualScript.cpp)
 # --- AI ---
 enjin_add_test(TestBehaviorTree       Unit/AI/TestBehaviorTree.cpp)
 enjin_add_test(TestNavmesh            Unit/AI/TestNavmesh.cpp)
+enjin_add_test(TestNavmeshBake        Unit/AI/TestNavmeshBake.cpp)
 
 # --- Audio ---
 enjin_add_test(TestAudio              Unit/Audio/TestAudio.cpp)

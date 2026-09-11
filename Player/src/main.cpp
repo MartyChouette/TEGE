@@ -2421,6 +2421,12 @@ private:
         m_GameplaySystem.SetInputActionMap(&m_InputMap);
         m_GameplaySystem.SetSceneManager(&m_SceneManager);
         m_GameplaySystem.OnPlayStart(m_World.get());
+
+        // Bake the scene's navmesh and hand it to the AI system and the script
+        // bindings, the same as the editor's Play does.
+        m_AISystem.BakeSceneNavmesh(true);
+        Enjin::Scripting::SetBindingsNavmesh(m_AISystem.GetNavmesh(),
+                                             m_AISystem.GetPathfinder());
         m_ActionTriggerSystem.SetSubtitleSystem(&m_SubtitleSystem);
         m_ActionTriggerSystem.SetEventBus(&m_EntityEventBus);
 

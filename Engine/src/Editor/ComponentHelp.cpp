@@ -229,6 +229,19 @@ static const std::unordered_map<std::string, ComponentHelp>& Registry() {
             "Add it to your camera entity, pick a preset (Fisheye, Vintage, Security...), then tweak any value - tweaking makes it a Custom lens.",
             nullptr, {} };
 
+        r["navmeshVolume"] = {
+            "Marks the region A* can path through, and bakes it from your level.",
+            "Set Bounds to cover the walkable area, tune the agent size, press Bake Navmesh. Leave Bake On Play ticked so the built game rebuilds it at start.",
+            "Vector3 a = GetPosition();\n"
+            "Vector3 b = Entity_GetPosition(Scene_FindEntity(\"Goal\"));\n"
+            "int steps = Navmesh_FindPath(a.x, a.y, a.z, b.x, b.y, b.z);\n"
+            "for (int i = 0; i < steps; i++) {\n"
+            "    Vector3 p = Navmesh_GetPathWaypoint(i);\n"
+            "}",
+            {
+                { RelationKind::PairsWith, "AI Controller", Has<ECS::AIControllerComponent>, Add<ECS::AIControllerComponent> },
+            }
+        };
         r["aiController"] = {
             "Steers the entity with AI: pathfinding and behaviors.",
             "Give it a target or a behavior. It drives the entity's movement.",

@@ -576,6 +576,14 @@ void PlayMode::Play() {
     m_GameplaySystem.SetInputActionMap(m_InputMap);
     m_GameplaySystem.SetSceneManager(m_SceneManager);
     m_GameplaySystem.OnPlayStart(m_World);
+
+    // Bake the scene's navmesh and hand it to BOTH the AI system and the script
+    // bindings. Neither hand-off happened anywhere before: AISystem::SetNavmesh was
+    // never called, and Scripting::SetBindingsNavmesh was not even declared in a
+    // header, so an agent with "Use Navmesh" ticked walked straight through walls
+    // and Navmesh_FindPath answered 0 forever.
+    m_AISystem.BakeSceneNavmesh(true);
+    Scripting::SetBindingsNavmesh(m_AISystem.GetNavmesh(), m_AISystem.GetPathfinder());
     m_ActionTriggerSystem.SetSubtitleSystem(m_SubtitleSystem);
     m_ActionTriggerSystem.SetEventBus(&m_EntityEventBus);
     m_DialogueSystem.SetQuestSystem(&m_QuestSystem);

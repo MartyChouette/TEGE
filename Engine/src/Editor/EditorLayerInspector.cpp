@@ -1,6 +1,7 @@
 #include "Enjin/ECS/Components/PreRenderedBackground.h"
 #include "Enjin/Platform/Desktop.h"
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/ECS/Components/NavmeshVolume.h"
 #include "Enjin/ECS/Components/BrushSolid.h"
 #include "Enjin/Editor/EditorWidgets.h"
 #include "Enjin/Editor/InspectorUndo.h"
@@ -1023,6 +1024,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TeleporterComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::TeleporterComponent>(e); },
             "teleporter"},
+        {"Navmesh Volume", "AI", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::NavmeshVolumeComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::NavmeshVolumeComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::NavmeshVolumeComponent>(e); },
+            "navmeshVolume"},
         {"Destructible", "Puzzle", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::DestructibleComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::DestructibleComponent>(e); },
@@ -4774,6 +4780,9 @@ void EditorLayer::DrawInspectorPanel() {
         }
         if (m_World->HasComponent<ECS::ConveyorComponent>(m_PrimarySelected)) {
             DrawConveyorComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::NavmeshVolumeComponent>(m_PrimarySelected)) {
+            DrawNavmeshVolumeComponent(m_PrimarySelected);
         }
         if (m_World->HasComponent<ECS::TeleporterComponent>(m_PrimarySelected)) {
             DrawTeleporterComponent(m_PrimarySelected);

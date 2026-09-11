@@ -12,6 +12,7 @@
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Mesh.h"
+#include "Enjin/ECS/Components/NavmeshVolume.h"
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/ECS/Components/Notes.h"
 #include "Enjin/ECS/Components/PreRenderedBackground.h"
@@ -8720,6 +8721,81 @@ ECS::GoalZoneComponent DeserializeGoalZoneComponent(const json& j) {
     return gz;
 }
 
+json SerializeNavmeshVolumeComponent(const ECS::NavmeshVolumeComponent& nv) {
+    json j;
+    j["source"] = static_cast<u32>(nv.source);
+    j["boundsMin"] = SerializeVector3(nv.boundsMin);
+    j["boundsMax"] = SerializeVector3(nv.boundsMax);
+    j["gridCellSize"] = RF(nv.gridCellSize);
+    j["gridHeight"] = RF(nv.gridHeight);
+    j["includeTag"] = nv.includeTag;
+    j["excludeTag"] = nv.excludeTag;
+    j["bakeOnPlay"] = nv.bakeOnPlay;
+    j["debugDraw"] = nv.debugDraw;
+
+    // The agent shape and limits -- the fields the tutorial has always listed under
+    // "NavMesh Properties". The BAKE RESULT is deliberately not written: it is a
+    // function of the scene geometry and these settings, so storing it would be a
+    // second source of truth that goes stale the moment a wall moves, and a stale
+    // navmesh is worse than none because agents path confidently through the gap
+    // that used to be there.
+    json g;
+    g["cellSize"] = RF(nv.settings.cellSize);
+    g["cellHeight"] = RF(nv.settings.cellHeight);
+    g["agentHeight"] = RF(nv.settings.agentHeight);
+    g["agentRadius"] = RF(nv.settings.agentRadius);
+    g["agentMaxClimb"] = RF(nv.settings.agentMaxClimb);
+    g["agentMaxSlope"] = RF(nv.settings.agentMaxSlope);
+    g["regionMinSize"] = RF(nv.settings.regionMinSize);
+    g["regionMergeSize"] = RF(nv.settings.regionMergeSize);
+    g["edgeMaxLen"] = RF(nv.settings.edgeMaxLen);
+    g["edgeMaxError"] = RF(nv.settings.edgeMaxError);
+    g["vertsPerPoly"] = nv.settings.vertsPerPoly;
+    g["detailSampleDist"] = RF(nv.settings.detailSampleDist);
+    g["detailSampleMaxError"] = RF(nv.settings.detailSampleMaxError);
+    j["settings"] = g;
+    return j;
+}
+
+ECS::NavmeshVolumeComponent DeserializeNavmeshVolumeComponent(const json& j) {
+    ECS::NavmeshVolumeComponent nv;
+    if (j.contains("source")) {
+        nv.source = static_cast<ECS::NavmeshVolumeComponent::Source>(
+            std::min(j["source"].get<u32>(), 1u));
+    }
+    if (j.contains("boundsMin")) nv.boundsMin = DeserializeVector3(j["boundsMin"]);
+    if (j.contains("boundsMax")) nv.boundsMax = DeserializeVector3(j["boundsMax"]);
+    if (j.contains("gridCellSize")) nv.gridCellSize = j["gridCellSize"].get<f32>();
+    if (j.contains("gridHeight")) nv.gridHeight = j["gridHeight"].get<f32>();
+    if (j.contains("includeTag")) nv.includeTag = SafeStr(j["includeTag"]);
+    if (j.contains("excludeTag")) nv.excludeTag = SafeStr(j["excludeTag"]);
+    if (j.contains("bakeOnPlay")) nv.bakeOnPlay = j["bakeOnPlay"].get<bool>();
+    if (j.contains("debugDraw")) nv.debugDraw = j["debugDraw"].get<bool>();
+
+    if (j.contains("settings") && j["settings"].is_object()) {
+        const json& g = j["settings"];
+        auto F = [&](const char* k, f32& out) {
+            if (g.contains(k) && g[k].is_number()) out = g[k].get<f32>();
+        };
+        F("cellSize", nv.settings.cellSize);
+        F("cellHeight", nv.settings.cellHeight);
+        F("agentHeight", nv.settings.agentHeight);
+        F("agentRadius", nv.settings.agentRadius);
+        F("agentMaxClimb", nv.settings.agentMaxClimb);
+        F("agentMaxSlope", nv.settings.agentMaxSlope);
+        F("regionMinSize", nv.settings.regionMinSize);
+        F("regionMergeSize", nv.settings.regionMergeSize);
+        F("edgeMaxLen", nv.settings.edgeMaxLen);
+        F("edgeMaxError", nv.settings.edgeMaxError);
+        F("detailSampleDist", nv.settings.detailSampleDist);
+        F("detailSampleMaxError", nv.settings.detailSampleMaxError);
+        if (g.contains("vertsPerPoly") && g["vertsPerPoly"].is_number()) {
+            nv.settings.vertsPerPoly = std::min(g["vertsPerPoly"].get<u32>(), 32u);
+        }
+    }
+    return nv;
+}
+
 json SerializeConveyorComponent(const ECS::ConveyorComponent& cv) {
     json j;
     j["direction"] = SerializeVector3(cv.direction);
@@ -9492,6 +9568,7 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
         ENJIN_SERDES("cloth", ECS::ClothComponent, SerializeClothComponent, DeserializeClothComponent),
         ENJIN_SERDES("conductor", ECS::ConductorComponent, SerializeConductorComponent, DeserializeConductorComponent),
         ENJIN_SERDES("conveyor", ECS::ConveyorComponent, SerializeConveyorComponent, DeserializeConveyorComponent),
+        ENJIN_SERDES("navmeshVolume", ECS::NavmeshVolumeComponent, SerializeNavmeshVolumeComponent, DeserializeNavmeshVolumeComponent),
         ENJIN_SERDES("curlNoiseField", ECS::CurlNoiseFieldComponent, SerializeCurlNoiseFieldComponent, DeserializeCurlNoiseFieldComponent),
         ENJIN_SERDES("damage", ECS::DamageComponent, SerializeDamageComponent, DeserializeDamageComponent),
         ENJIN_SERDES("damageResistance", ECS::DamageResistanceComponent, SerializeDamageResistanceComponent, DeserializeDamageResistanceComponent),

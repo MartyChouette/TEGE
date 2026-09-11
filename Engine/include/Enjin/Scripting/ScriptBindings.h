@@ -17,6 +17,7 @@ namespace Renderer { class PostProcessing; class Camera; }
 namespace Gameplay { class TieredSaveSystem; class QuestSystem; class CinematicSystem; class ObjectPool; class RecordRewindSystem; class CameraDirector; }
 namespace Effects { class WeatherSystem; class WindSystem; class DestructibleSystem; class ElementalSystem; class WorldTimeSystem; class SeasonalWeatherSystem; }
 namespace Procedural { class LevelGenerator; }
+namespace AI { class Navmesh; class Pathfinder; }
 namespace Plugin { class PluginSystem; }
 namespace Audio { class AudioEventGraphRuntime; }
 namespace InputSystem { class MIDIInput; class InputActionMap; }
@@ -122,6 +123,14 @@ void SetBindingsWind(Effects::WindSystem* wind);
 void SetBindingsWorldTime(Effects::WorldTimeSystem* time,
                           Effects::SeasonalWeatherSystem* seasonal);
 void SetBindingsQuestSystem(Gameplay::QuestSystem* quest);
+
+// Hand the script bindings the scene's navmesh and pathfinder.
+//
+// This function existed and was declared NOWHERE, so nothing could call it:
+// Navmesh_HasNavmesh() answered false, Navmesh_FindPath() answered 0, and every
+// Navmesh_* binding was unreachable for the life of the engine. Called by each
+// runtime after the scene's navmesh volume is baked.
+void SetBindingsNavmesh(const AI::Navmesh* navmesh, AI::Pathfinder* pathfinder);
 void SetBindingsCinematicSystem(Gameplay::CinematicSystem* cinematic);
 void SetBindingsCameraDirector(Gameplay::CameraDirector* director);
 void SetBindingsObjectPool(Gameplay::ObjectPool* pool);

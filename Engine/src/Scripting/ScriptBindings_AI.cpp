@@ -20,13 +20,13 @@ using namespace Enjin::ECS;
 extern ECS::World* s_BindingsWorld;
 
 // Navmesh and Pathfinder pointers (set via SetBindingsNavmesh)
-static AI::Navmesh* s_BindingsNavmesh = nullptr;
+static const AI::Navmesh* s_BindingsNavmesh = nullptr;
 static AI::Pathfinder* s_BindingsPathfinder = nullptr;
 
 namespace Enjin {
 namespace Scripting {
 
-void SetBindingsNavmesh(AI::Navmesh* navmesh, AI::Pathfinder* pathfinder) {
+void SetBindingsNavmesh(const AI::Navmesh* navmesh, AI::Pathfinder* pathfinder) {
     s_BindingsNavmesh = navmesh;
     s_BindingsPathfinder = pathfinder;
 }

@@ -1,5 +1,7 @@
 #include "Enjin/ECS/Components/PreRenderedBackground.h"
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/ECS/Components/NavmeshVolume.h"
+#include "Enjin/AI/NavmeshBake.h"
 #include "Enjin/ECS/Components/BrushSolid.h"
 #ifndef _WIN32
 // POSIX environment for posix_spawn. Declared at GLOBAL scope: a block-scope
@@ -8431,6 +8433,117 @@ void EditorLayer::DrawGoalZoneComponent(ECS::Entity entity) {
         }
 
         ImGui::TextDisabled("Satisfied: %s", goal->isSatisfied ? "Yes" : "No");
+    }
+}
+
+void EditorLayer::DrawNavmeshVolumeComponent(ECS::Entity entity) {
+    bool open = UI::SectionHeader("Navmesh Volume", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("NavmeshVolumeCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::NavmeshVolumeComponent>(entity, "navmeshVolume",
+                                                                 "Navmesh Volume");
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (!open) return;
+
+    auto* nv = m_World->GetComponent<ECS::NavmeshVolumeComponent>(entity);
+    if (!nv) return;
+    DrawComponentHelp("navmeshVolume", m_World, entity);
+
+    int source = static_cast<int>(nv->source);
+    if (ImGui::Combo("Source##Nav", &source, "Scene Geometry\0Grid\0")) {
+        nv->source = static_cast<ECS::NavmeshVolumeComponent::Source>(source);
+        nv->baked = false;
+        nv->lastBakeMessage.clear();
+    }
+
+    f32 lo[3] = { nv->boundsMin.x, nv->boundsMin.y, nv->boundsMin.z };
+    InspectorUndo::DragFloat3(m_UndoRedo, "Bounds Min##Nav", lo,
+        [nv](f32 x, f32 y, f32 z) { nv->boundsMin = Math::Vector3(x, y, z); }, 0.5f);
+    f32 hi[3] = { nv->boundsMax.x, nv->boundsMax.y, nv->boundsMax.z };
+    InspectorUndo::DragFloat3(m_UndoRedo, "Bounds Max##Nav", hi,
+        [nv](f32 x, f32 y, f32 z) { nv->boundsMax = Math::Vector3(x, y, z); }, 0.5f);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("World space, and independent of this entity's transform.\n"
+                          "A navmesh volume is a region of the level, not an object\n"
+                          "in it.");
+    }
+
+    if (nv->source == ECS::NavmeshVolumeComponent::Source::Grid) {
+        InspectorUndo::DragFloat(m_UndoRedo, "Cell Size##Nav", &nv->gridCellSize,
+                                 0.05f, 0.05f, 20.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Grid Height##Nav", &nv->gridHeight,
+                                 0.1f, -1000.0f, 1000.0f);
+    } else {
+        auto tagField = [&](const char* label, std::string& value) {
+            char buf[64];
+            std::snprintf(buf, sizeof(buf), "%s", value.c_str());
+            if (ImGui::InputText(label, buf, sizeof(buf))) value = buf;
+        };
+        tagField("Include Tag##Nav", nv->includeTag);
+        tagField("Exclude Tag##Nav", nv->excludeTag);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Leave both empty to bake every mesh inside the bounds.\n"
+                              "A mesh matches through its TagComponent or its name.");
+        }
+    }
+
+    if (ImGui::TreeNode("Agent##Nav")) {
+        InspectorUndo::DragFloat(m_UndoRedo, "Agent Radius##Nav",
+                                 &nv->settings.agentRadius, 0.01f, 0.01f, 10.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Agent Height##Nav",
+                                 &nv->settings.agentHeight, 0.05f, 0.1f, 20.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Max Step##Nav",
+                                 &nv->settings.agentMaxClimb, 0.01f, 0.0f, 10.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Max Slope##Nav",
+                                 &nv->settings.agentMaxSlope, 0.5f, 0.0f, 89.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Voxel Size##Nav",
+                                 &nv->settings.cellSize, 0.01f, 0.01f, 5.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Voxel Height##Nav",
+                                 &nv->settings.cellHeight, 0.01f, 0.01f, 5.0f);
+        ImGui::TreePop();
+    }
+
+    InspectorUndo::Checkbox(m_UndoRedo, "Bake On Play##Nav", &nv->bakeOnPlay);
+    InspectorUndo::Checkbox(m_UndoRedo, "Debug Draw##Nav", &nv->debugDraw);
+
+    ImGui::Separator();
+    if (ImGui::Button("Bake Navmesh")) {
+        const AI::NavmeshBakeResult r =
+            m_PlayMode.GetAISystem()
+                ? m_PlayMode.GetAISystem()->BakeSceneNavmesh(false)
+                : AI::NavmeshBakeResult{};
+        ShowNotification(r.success ? ("Navmesh baked: " + r.message)
+                                   : ("Navmesh not baked: " + r.message),
+                         r.success ? NotificationType::Success
+                                   : NotificationType::Warning);
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("The bake result is NOT saved with the scene: it is a\n"
+                          "function of the geometry plus these settings, and a\n"
+                          "stored copy would go stale the moment a wall moves.\n"
+                          "Bake On Play rebuilds it when the game starts.");
+    }
+
+    // Say what the last bake did, always. A bake that produced nothing and a bake
+    // that was never pressed look identical otherwise, and the fixes differ.
+    if (!nv->lastBakeMessage.empty()) {
+        ImGui::PushTextWrapPos(0.0f);
+        if (nv->baked) {
+            ImGui::TextColored(ImVec4(0.55f, 0.85f, 0.60f, 1.0f), "%s",
+                               nv->lastBakeMessage.c_str());
+        } else {
+            ImGui::TextColored(ImVec4(0.95f, 0.55f, 0.35f, 1.0f), "%s",
+                               nv->lastBakeMessage.c_str());
+        }
+        ImGui::PopTextWrapPos();
+    } else {
+        ImGui::TextDisabled("Not baked yet.");
     }
 }
 

@@ -792,6 +792,7 @@ private:
     void DrawSwitchComponent(ECS::Entity entity);
     void DrawGoalZoneComponent(ECS::Entity entity);
     void DrawConveyorComponent(ECS::Entity entity);
+    void DrawNavmeshVolumeComponent(ECS::Entity entity);
     void DrawTeleporterComponent(ECS::Entity entity);
     void DrawDestructibleComponent(ECS::Entity entity);
     void DrawCurlNoiseFieldComponent(ECS::Entity entity);
