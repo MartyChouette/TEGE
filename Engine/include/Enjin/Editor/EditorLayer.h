@@ -2266,6 +2266,10 @@ private:
     // as.predefined into the open project's root. See Tools > Scripting & Logic.
     void ExportScriptApiStub();
 
+    // Generate the reference set (components, script API, visual-script nodes,
+    // data assets) into the open project's docs/generated, then reveal it.
+    void GenerateProjectDocumentation();
+
     // Accent Color Picker
     void DrawAccentColorPicker();
 

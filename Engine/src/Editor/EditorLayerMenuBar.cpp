@@ -4,6 +4,7 @@
 #include "Enjin/Core/Version.h"
 #include "Enjin/Scripting/ScriptEngine.h"
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Platform/Desktop.h"
 #include <GLFW/glfw3.h>
 #include <chrono>
 #include <fstream>
@@ -700,14 +701,7 @@ void EditorLayer::DrawMenuBar() {
                 }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Generate Documentation...")) {
-                    m_DocGenerator.SetOutputDirectory("docs/generated");
-                    if (m_DocGenerator.GenerateAll()) {
-                        ENJIN_LOG_INFO(Editor, "Documentation generated: %zu files",
-                                       m_DocGenerator.GetGeneratedFiles().size());
-                    } else {
-                        ENJIN_LOG_ERROR(Editor, "Documentation generation failed: %s",
-                                        m_DocGenerator.GetLastError().c_str());
-                    }
+                    GenerateProjectDocumentation();
                 }
                 ImGui::EndMenu();
             }
@@ -1639,6 +1633,72 @@ void EditorLayer::DrawMenuBar() {
     }
 }
 
+
+// Write the generated reference set into the open project.
+//
+// Three things were wrong with the one-liner this replaces, and each one alone
+// made the menu item useless:
+//
+//   1. GenerateAll() was called with no argument, so its asIScriptEngine* was
+//      null and the AngelScript API reference -- 1200+ functions, the largest
+//      thing here -- was skipped without a word.
+//   2. The output path was the bare relative "docs/generated", resolved against
+//      the process CWD. The editor's CWD is its own exe directory, so on a
+//      success the files landed in build/bin/Release/docs/generated.
+//   3. The result only reached the log. A person clicking a menu item and seeing
+//      nothing happen has no reason to think it worked, and it did not: the
+//      component generator failed on every run (it looked for engine headers
+//      relative to that same CWD), which made GenerateAll return false.
+void EditorLayer::GenerateProjectDocumentation() {
+    namespace fs = std::filesystem;
+
+    // Where: the open project's docs/generated, or the CWD with no project open.
+    fs::path root;
+    const std::string& manifest = m_SceneManager.GetProjectPath();
+    if (!manifest.empty()) {
+        root = fs::path(manifest).parent_path();
+    } else {
+        std::error_code cwdEc;
+        root = fs::current_path(cwdEc);
+    }
+    const fs::path outDir = root / "docs" / "generated";
+
+    // A throwaway, fully-bound engine purely for reflection, exactly as the API
+    // stub export does -- play state is never touched.
+    Scripting::ScriptEngine se;
+    if (!se.Initialize()) {
+        ShowNotification("Documentation failed: could not start AngelScript",
+                         NotificationType::Error);
+        return;
+    }
+    Scripting::RegisterAllBindings(se.GetASEngine());
+
+    m_DocGenerator.SetOutputDirectory(outDir.string());
+    const bool ok = m_DocGenerator.GenerateAll(se.GetASEngine());
+    se.Shutdown();
+
+    const size_t count = m_DocGenerator.GetGeneratedFiles().size();
+    const std::string& skipped = m_DocGenerator.GetSkippedReason();
+
+    if (!ok) {
+        ShowNotification("Documentation failed: " + m_DocGenerator.GetLastError(),
+                         NotificationType::Error);
+        ENJIN_LOG_ERROR(Editor, "Documentation generation failed: %s",
+                        m_DocGenerator.GetLastError().c_str());
+        return;
+    }
+
+    std::string msg = "Wrote " + std::to_string(count) + " document" +
+                      (count == 1 ? "" : "s") + " to docs/generated";
+    if (!skipped.empty()) msg += " (skipped: " + skipped + ")";
+    ShowNotification(msg, skipped.empty() ? NotificationType::Success
+                                          : NotificationType::Warning);
+    ENJIN_LOG_INFO(Editor, "Documentation generated: %zu files in %s",
+                   count, outDir.string().c_str());
+
+    // And show the person where it went, which is the other half of "it worked".
+    Platform::RevealInFileManager(outDir.string());
+}
 
 void EditorLayer::ExportScriptApiStub() {
     // Build a throwaway, fully-bound AngelScript engine purely for reflection.

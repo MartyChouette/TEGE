@@ -3,10 +3,12 @@
 #include "Enjin/VisualScript/NodeDefinition.h"
 #include "Enjin/Assets/DataAsset.h"
 #include "Enjin/Logging/Log.h"
+#include "Enjin/Platform/Paths.h"
 #include <angelscript.h>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <vector>
 #include <algorithm>
 
 namespace Enjin {
@@ -18,9 +20,52 @@ void DocGenerator::SetOutputDirectory(const std::string& path) {
     m_OutputDirectory = path;
 }
 
+void DocGenerator::SetSourceRoot(const std::string& path) {
+    m_SourceRoot = path;
+}
+
+std::string DocGenerator::ResolveSourceRoot() const {
+    const fs::path needle = fs::path("Engine") / "include" / "Enjin" / "ECS" / "Components";
+
+    // An explicitly set root is authoritative: if it does not hold the headers,
+    // the answer is "no source tree", not "let me go and find a different one".
+    // Silently generating a reference from some OTHER checkout found by walking up
+    // from the working directory is worse than generating nothing, because the
+    // output looks right and describes the wrong code.
+    if (!m_SourceRoot.empty()) {
+        std::error_code exists;
+        const fs::path root(m_SourceRoot);
+        if (fs::exists(root / needle, exists) && !exists) return root.string();
+        return {};
+    }
+
+    std::vector<fs::path> starts;
+    std::error_code ec;
+    const fs::path cwd = fs::current_path(ec);
+    if (!ec) starts.push_back(cwd);
+    starts.push_back(Platform::GetExecutableDirectory());
+
+    for (const fs::path& start : starts) {
+        if (start.empty()) continue;
+        // Walk up a bounded number of levels: a build tree is two or three deep
+        // inside the repo, and an unbounded walk would climb to the drive root.
+        fs::path at = start;
+        for (int level = 0; level < 6; ++level) {
+            std::error_code exists;
+            if (fs::exists(at / needle, exists) && !exists) {
+                return at.string();
+            }
+            if (!at.has_parent_path() || at.parent_path() == at) break;
+            at = at.parent_path();
+        }
+    }
+    return {};
+}
+
 bool DocGenerator::GenerateAll(asIScriptEngine* scriptEngine) {
     m_GeneratedFiles.clear();
     m_LastError.clear();
+    m_SkippedReason.clear();
 
     // Ensure output directory exists
     try {
@@ -35,6 +80,14 @@ bool DocGenerator::GenerateAll(asIScriptEngine* scriptEngine) {
     ok = GenerateComponentDocs() && ok;
     if (scriptEngine) {
         ok = GenerateScriptAPIDocs(scriptEngine) && ok;
+    } else {
+        // The script API reference is the biggest thing this generates -- 1200+
+        // functions -- and a caller that forgot the argument used to get it
+        // dropped with no mention anywhere. The default argument made that easy
+        // to do, and the editor menu did exactly that.
+        m_LastError = "no script engine passed: the AngelScript API reference "
+                      "was not generated";
+        ok = false;
     }
     ok = GenerateVisualScriptNodeDocs() && ok;
     ok = GenerateDataAssetDocs() && ok;
@@ -178,15 +231,18 @@ std::vector<StructDoc> DocGenerator::ParseComponentHeader(const std::string& fil
 }
 
 bool DocGenerator::GenerateComponentDocs() {
-    std::string componentsDir = "Engine/include/Enjin/ECS/Components";
-    if (!fs::exists(componentsDir)) {
-        // Try relative to current working directory
-        componentsDir = "Engine/include/Enjin/ECS/Components";
-        if (!fs::exists(componentsDir)) {
-            m_LastError = "Components directory not found";
-            return false;
-        }
+    const std::string root = ResolveSourceRoot();
+    if (root.empty()) {
+        // Not an error: this generator reads engine HEADERS, which only exist in
+        // a source checkout. Saying so, and letting the other three run, is the
+        // difference between "your install has no engine source" and "generation
+        // failed" -- and the second one is what it used to say, every time.
+        m_SkippedReason = "component reference needs the engine source tree "
+                          "(Engine/include/Enjin/ECS/Components was not found)";
+        return true;
     }
+    const std::string componentsDir =
+        (fs::path(root) / "Engine" / "include" / "Enjin" / "ECS" / "Components").string();
 
     std::ostringstream md;
     md << "# ECS Components Reference\n\n";
