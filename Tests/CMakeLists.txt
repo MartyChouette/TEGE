@@ -198,6 +198,7 @@ target_compile_definitions(TestDocGenerator PRIVATE
 enjin_add_test(TestFontAtlas          Unit/Renderer/TestFontAtlas.cpp)
 enjin_add_test(TestFontFallback      Unit/Renderer/TestFontFallback.cpp)
 enjin_add_test(TestVectorTessellator  Unit/Renderer/TestVectorTessellator.cpp)
+enjin_add_test(TestVectorRaster      Unit/Renderer/TestVectorRaster.cpp)
 enjin_add_test(TestMarketplace        Unit/Editor/TestMarketplace.cpp)
 enjin_add_test(TestTemplateCreator    Unit/Editor/TestTemplateCreator.cpp)
 enjin_add_test(TestAccessibility      Unit/Editor/TestAccessibility.cpp)

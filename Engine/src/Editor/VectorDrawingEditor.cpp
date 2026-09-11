@@ -1,4 +1,7 @@
 #include "Enjin/Editor/VectorDrawingEditor.h"
+#include <stb_image_write.h>
+#include "Enjin/Renderer/VectorRaster.h"
+#include "Enjin/Renderer/VectorTessellator.h"
 #include "Enjin/Logging/Log.h"
 #include <imgui.h>
 #include <cmath>
@@ -37,7 +40,14 @@ void VectorDrawingEditor::NewDocument(u32 width, u32 height) {
 bool VectorDrawingEditor::ExportSVG(const std::string& path) {
     std::ofstream file(path);
     if (!file.is_open()) return false;
+    if (!WriteSVG(file)) return false;
+    ENJIN_LOG_INFO(Editor, "SVG exported to %s", path.c_str());
+    return true;
+}
 
+// One SVG writer, used by the file export and the PNG export. Two copies would
+// drift, and the PNG would stop matching the SVG of the same drawing.
+bool VectorDrawingEditor::WriteSVG(std::ostream& file) {
     file << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
     file << "<svg xmlns=\"http://www.w3.org/2000/svg\" "
          << "width=\"" << m_Document.canvasWidth << "\" "
@@ -59,20 +69,62 @@ bool VectorDrawingEditor::ExportSVG(const std::string& path) {
     }
 
     file << "</svg>\n";
-    file.close();
-
-    ENJIN_LOG_INFO(Editor, "SVG exported to %s", path.c_str());
-    return true;
+    return file.good();
 }
 
 bool VectorDrawingEditor::ExportPNG(const std::string& path, f32 scale) {
-    // Export SVG first, then rasterize via SVGLoader
-    std::string svgPath = path + ".tmp.svg";
-    if (!ExportSVG(svgPath)) return false;
+    // This used to write an SVG to `path + ".tmp.svg"` and return true. Ask for
+    // drawing.png, get drawing.png.tmp.svg, and be told it worked. The comment
+    // said the real export "would use SVGLoader::LoadAndRasterize +
+    // stbi_write_png" -- LoadAndRasterize does not exist and never did.
+    //
+    // It goes through the tessellator the engine already has (the same one the
+    // world-space DisplayGraphic uses, so an exported PNG and an in-world graphic
+    // cannot disagree about what the drawing looks like) and a CPU rasterizer,
+    // which means it works headless and can be tested.
+    if (scale <= 0.0f) {
+        ENJIN_LOG_ERROR(Editor, "PNG export: scale must be greater than zero");
+        return false;
+    }
 
-    // The actual PNG export would use SVGLoader::LoadAndRasterize + stbi_write_png
-    // For now, just keep the SVG
-    ENJIN_LOG_INFO(Editor, "PNG export: SVG generated at %s (rasterization requires SVGLoader)", svgPath.c_str());
+    // Build the SVG into a string rather than a temp file: a temp file left behind
+    // next to the user's export is litter, and one that fails to delete makes the
+    // export look like it produced two files.
+    std::ostringstream svg;
+    if (!WriteSVG(svg)) {
+        ENJIN_LOG_ERROR(Editor, "PNG export: could not build the SVG source");
+        return false;
+    }
+
+    const Renderer::TessellatedGraphic graphic =
+        Renderer::TessellateSVGFromString(svg.str());
+    if (!graphic.valid) {
+        ENJIN_LOG_ERROR(Editor, "PNG export: the drawing did not tessellate");
+        return false;
+    }
+
+    const u32 width = static_cast<u32>(std::lround(m_Document.canvasWidth * scale));
+    const u32 height = static_cast<u32>(std::lround(m_Document.canvasHeight * scale));
+    if (width == 0 || height == 0) {
+        ENJIN_LOG_ERROR(Editor, "PNG export: canvas is %ux%u at scale %.2f",
+                        width, height, scale);
+        return false;
+    }
+
+    std::vector<u8> pixels;
+    if (!Renderer::RasterizeTessellated(graphic, width, height, pixels)) {
+        ENJIN_LOG_ERROR(Editor, "PNG export: nothing to rasterize");
+        return false;
+    }
+
+    if (!stbi_write_png(path.c_str(), static_cast<int>(width), static_cast<int>(height),
+                        4, pixels.data(), static_cast<int>(width * 4))) {
+        ENJIN_LOG_ERROR(Editor, "PNG export: could not write %s", path.c_str());
+        return false;
+    }
+
+    ENJIN_LOG_INFO(Editor, "PNG export: %ux%u written to %s", width, height,
+                   path.c_str());
     return true;
 }
 

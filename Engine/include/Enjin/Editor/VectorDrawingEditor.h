@@ -5,6 +5,7 @@
 #include "Enjin/Math/Vector.h"
 #include "Enjin/Editor/EditorSettings.h"
 #include <string>
+#include <ostream>
 #include <vector>
 
 struct ImDrawList;
@@ -78,6 +79,10 @@ public:
     // Document management
     void NewDocument(u32 width, u32 height);
     bool ExportSVG(const std::string& path);
+
+    // The SVG writer both exports share, so a PNG and an SVG of the same drawing
+    // cannot disagree.
+    bool WriteSVG(std::ostream& out);
     bool ExportPNG(const std::string& path, f32 scale = 1.0f);
 
     // Main render (called every frame when panel is visible)
