@@ -779,11 +779,22 @@ void ShaderGraphEditor::DrawInspector() {
         case ShaderNodeType::TextureParameter:
         case ShaderNodeType::SampleTexture2D:
         case ShaderNodeType::SampleCubemap: {
-            char texBuf[256];
-            strncpy(texBuf, selected->texturePath.c_str(), sizeof(texBuf) - 1);
-            texBuf[sizeof(texBuf) - 1] = '\0';
-            if (ImGui::InputText("Texture", texBuf, sizeof(texBuf))) {
-                selected->texturePath = texBuf;
+            // A source picker, not a path. The node offered a texture field it could
+            // never honour: cubemaps are not in the 2D bindless array, so there was
+            // no way to point this at an arbitrary file. The two cubemaps the shader
+            // CAN reach are the scene's, and naming them is more useful than a text
+            // box that does nothing.
+            int source = (selected->floatValue > 0.5f) ? 1 : 0;
+            if (ImGui::Combo("Source", &source, "Skybox\0Reflection Probe\0")) {
+                selected->floatValue = (source == 1) ? 1.0f : 0.0f;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(
+                    "Which of the scene's cubemaps to sample.\n\n"
+                    "Skybox: the sky as authored, or a 1x1 dummy if there is none.\n"
+                    "Reflection Probe: the baked probe, or a dummy if nothing is baked.\n\n"
+                    "Leaving Dir unconnected uses the view direction, which is what a\n"
+                    "reflection or a sky lookup normally wants.");
             }
             break;
         }
@@ -1416,8 +1427,24 @@ ShaderCodeResult ShaderGraphEditor::GenerateGLSL() const {
                 break;
             }
             case ShaderNodeType::SampleCubemap: {
-                // Cubemaps don't live in the 2D bindless array yet - neutral output.
-                body += "    vec4 " + var + " = vec4(0.5, 0.5, 0.5, 1.0); // cubemap sampling not supported yet\n";
+                // Samples a real cubemap. This used to emit vec4(0.5) -- flat grey --
+                // under a comment saying "cubemap sampling not supported yet", while
+                // the node sat in the Add menu with a texture field in its inspector.
+                //
+                // Cubemaps genuinely are not in the 2D bindless array, and that was
+                // read as "there is no cubemap to sample". There are two, both already
+                // in the pipeline layout this generated shader shares: the scene's
+                // skybox (binding 28) and the baked reflection probe (binding 19).
+                // Both have a 1x1 dummy cube bound when they are empty, so sampling is
+                // always safe.
+                //
+                // floatValue carries which one, so the .enjshader format does not
+                // change: 0 = skybox, anything else = reflection probe.
+                const bool useProbe = (node->floatValue > 0.5f);
+                auto dir = GetInputExpr(graph, nid, 0, "normalize(fragWorldPos - uCameraPos)");
+                body += "    vec4 " + var + " = texture(" +
+                        std::string(useProbe ? "sgProbeCubemap" : "sgSkyboxCubemap") +
+                        ", " + dir + ");\n";
                 break;
             }
             case ShaderNodeType::UVTransform: {
@@ -1703,6 +1730,13 @@ ShaderCodeResult ShaderGraphEditor::GenerateGLSL() const {
         "    float parallaxScale;\n"
         "} pc;\n"
         "\n" + samplerDecls +
+        "\n"
+        // The scene's two cubemaps, from the shared pipeline layout. Declared
+        // unconditionally: an unused sampler costs nothing, and making the
+        // declaration conditional on a Sample Cubemap node existing would mean the
+        // preamble and the body could disagree about what is in scope.
+        "layout(set = 0, binding = 19) uniform samplerCube sgProbeCubemap;\n"
+        "layout(set = 0, binding = 28) uniform samplerCube sgSkyboxCubemap;\n"
         "\n"
         "vec3 uCameraPos = lighting.cameraPos;\n"
         "mat3 fragTBN = mat3(1.0); // Placeholder TBN — use tangent attributes for proper POM\n"
