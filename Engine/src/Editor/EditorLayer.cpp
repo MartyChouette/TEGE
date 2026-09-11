@@ -853,7 +853,7 @@ void EditorLayer::Shutdown() {
     m_Telemetry.EndSession();
 
     // Persist current layout state before shutdown
-    m_EditorSettings.visiblePanels = static_cast<u32>(m_VisiblePanels);
+    m_EditorSettings.visiblePanels = static_cast<u64>(m_VisiblePanels);
     m_EditorSettings.leftPanelWidth = m_Layout.leftWidth;
     m_EditorSettings.rightPanelWidth = m_Layout.rightWidth;
     m_EditorSettings.bottomPanelHeight = m_Layout.bottomHeight;
@@ -4197,7 +4197,22 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         DrawPixelEditorPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::CaptionTrack)) {
-        ImGui::SetNextWindowSize(ImVec2(820 * s, 520 * s), ImGuiCond_FirstUseEver);
+        // Sized against the VIEWPORT, not just multiplied by the UI scale.
+        // `820 * s` is a comfortable default at 100% and is wider than the whole
+        // window at 190%, which opens the panel with its left edge off-screen and
+        // its labels cut in half. Measured that way, not reasoned about.
+        const ImGuiViewport* vp = ImGui::GetMainViewport();
+        const f32 maxW = vp->WorkSize.x - 80.0f;
+        const f32 maxH = vp->WorkSize.y - 80.0f;
+        ImGui::SetNextWindowSize(ImVec2(std::min(820.0f * s, maxW),
+                                        std::min(520.0f * s, maxH)),
+                                 ImGuiCond_FirstUseEver);
+        // Centred on first open. The editor's layout is hand-rolled rather than
+        // ImGui docking, so a floating window left to ImGui's default cascade
+        // opens in the top-left corner -- underneath the Hierarchy panel, where
+        // turning it on looks exactly like turning it on and nothing happening.
+        ImGui::SetNextWindowPos(vp->GetCenter(), ImGuiCond_FirstUseEver,
+                                ImVec2(0.5f, 0.5f));
         DrawCaptionTrackPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::BehaviorTree)) {
