@@ -55,6 +55,14 @@ struct ComponentHelp {
 // "transform", ...). Returns nullptr if the component has no registered help yet.
 const ComponentHelp* GetComponentHelp(const char* key);
 
+// Every key that has help registered. Exists so the help table can be CHECKED
+// rather than trusted: the script snippets in it are an API promise the editor
+// makes in a panel, and every one of them named `self` -- the parameter name from
+// the binding table, which is not in scope at a call site -- plus three functions
+// that do not exist. Without a way to enumerate, a test can only spot-check keys
+// it already knows, which is the same blind spot that let those ship.
+std::vector<const char*> ComponentHelpKeys();
+
 // Render the standard help block for `key` inside the current panel. Safe to call
 // with an unknown key (renders nothing). world/entity drive the live connections.
 void DrawComponentHelp(const char* key, ECS::World* world, ECS::Entity entity);

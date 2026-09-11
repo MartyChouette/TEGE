@@ -715,6 +715,84 @@ static void Controller_SetMouseLook(u64 id, bool enabled) {
 }
 
 // ============================================================================
+// Plain cameras: which one the scene is rendered from
+// ============================================================================
+//
+// CameraManager::GetActiveCamera picks the enabled camera with the highest
+// `priority`, and until now nothing bound either field, so a script could not
+// change the view at all without a VirtualCameraComponent. The editor's own help
+// text for the Camera component offered `Camera_SetActive(self)`, which has never
+// existed -- and a bare "set active" would have been a plausible lie anyway,
+// because flipping `isActive` on does not make a camera win if another enabled
+// camera outranks it.
+//
+// So the two fields that decide are bound separately, and the thing a caller
+// usually means -- "render from THIS one now" -- is its own function that does
+// both correctly.
+
+static void Camera_SetEnabled(u64 id, bool enabled) {
+    if (!s_BindingsWorld) return;
+    if (auto* cam = s_BindingsWorld->GetComponent<CameraComponent>(static_cast<Entity>(id)))
+        cam->isActive = enabled;
+}
+
+static bool Camera_IsEnabled(u64 id) {
+    if (!s_BindingsWorld) return false;
+    if (auto* cam = s_BindingsWorld->GetComponent<CameraComponent>(static_cast<Entity>(id)))
+        return cam->isActive;
+    return false;
+}
+
+static void Camera_SetPriority(u64 id, int priority) {
+    if (!s_BindingsWorld) return;
+    if (auto* cam = s_BindingsWorld->GetComponent<CameraComponent>(static_cast<Entity>(id)))
+        cam->priority = priority;
+}
+
+static int Camera_GetPriority(u64 id) {
+    if (!s_BindingsWorld) return 0;
+    if (auto* cam = s_BindingsWorld->GetComponent<CameraComponent>(static_cast<Entity>(id)))
+        return cam->priority;
+    return 0;
+}
+
+// Which camera the scene is being rendered from, by the same rule the renderer
+// uses. 0 when the scene has no enabled camera -- a caller has to be able to tell
+// "none" from "entity 0".
+static u64 Camera_GetActive() {
+    if (!s_BindingsWorld) return 0;
+    return ECS::CameraManager::GetActiveCamera(s_BindingsWorld);
+}
+
+static bool Camera_IsActive(u64 id) {
+    return id != 0 && Camera_GetActive() == id;
+}
+
+// Render from this camera now: enable it, and put its priority one above every
+// other enabled camera. Doing it in one call is the point -- "set active" done as
+// two separate writes by the caller is the version that silently does nothing
+// when some other camera outranks it.
+static void Camera_MakeActive(u64 id) {
+    if (!s_BindingsWorld) return;
+    Entity self = static_cast<Entity>(id);
+    auto* cam = s_BindingsWorld->GetComponent<CameraComponent>(self);
+    if (!cam) {
+        ENJIN_LOG_WARN(Script, "Camera_MakeActive: entity has no CameraComponent");
+        return;
+    }
+
+    i32 highest = cam->priority;
+    for (auto other : s_BindingsWorld->GetEntitiesWithComponent<CameraComponent>()) {
+        if (other == self) continue;
+        auto* oc = s_BindingsWorld->GetComponent<CameraComponent>(other);
+        if (oc && oc->isActive && oc->priority > highest) highest = oc->priority;
+    }
+
+    cam->isActive = true;
+    if (cam->priority <= highest) cam->priority = highest + 1;
+}
+
+// ============================================================================
 // Virtual Camera system (the CameraDirector "brain")
 // ============================================================================
 //
@@ -2519,6 +2597,15 @@ void RegisterComponentBindings(asIScriptEngine* engine) {
 
     // Virtual Camera system — Tier 2 (directed) + Tier 3 (manual token)
     AS_CHECK(engine->RegisterGlobalFunction("bool Camera_HasVCam(uint64)", ENJIN_AS_FN(Camera_HasVCam), ENJIN_AS_CALL_CDECL));
+    // -- Plain cameras (which one the scene renders from) --
+    AS_CHECK(engine->RegisterGlobalFunction("void Camera_SetEnabled(uint64, bool)", ENJIN_AS_FN(Camera_SetEnabled), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Camera_IsEnabled(uint64)", ENJIN_AS_FN(Camera_IsEnabled), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Camera_SetPriority(uint64, int)", ENJIN_AS_FN(Camera_SetPriority), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int Camera_GetPriority(uint64)", ENJIN_AS_FN(Camera_GetPriority), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("uint64 Camera_GetActive()", ENJIN_AS_FN(Camera_GetActive), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Camera_IsActive(uint64)", ENJIN_AS_FN(Camera_IsActive), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Camera_MakeActive(uint64)", ENJIN_AS_FN(Camera_MakeActive), ENJIN_AS_CALL_CDECL));
+
     AS_CHECK(engine->RegisterGlobalFunction("void Camera_SetVCamPriority(uint64, int)", ENJIN_AS_FN(Camera_SetVCamPriority), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("int Camera_GetVCamPriority(uint64)", ENJIN_AS_FN(Camera_GetVCamPriority), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Camera_SetVCamEnabled(uint64, bool)", ENJIN_AS_FN(Camera_SetVCamEnabled), ENJIN_AS_CALL_CDECL));

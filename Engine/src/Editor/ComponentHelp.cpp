@@ -36,9 +36,9 @@ static const std::unordered_map<std::string, ComponentHelp>& Registry() {
         r["randomBag"] = {
             "Hands out one authored item per pull, on demand.",
             "Author the item list below, pick a mode, then pull from a script.",
-            "string s = RandomBag_Draw(self);   // next item\n"
-            "int  i  = RandomBag_DrawIndex(self);\n"
-            "RandomBag_Reset(self);",
+            "string s = RandomBag_Draw(GetEntity());   // next item\n"
+            "int    i = RandomBag_DrawIndex(GetEntity());\n"
+            "RandomBag_Reset(GetEntity());",
             {
                 { RelationKind::PulledByScript, "Script", Has<ECS::ScriptComponent>, Add<ECS::ScriptComponent> },
             }
@@ -54,8 +54,8 @@ static const std::unordered_map<std::string, ComponentHelp>& Registry() {
         r["scatter"] = {
             "Stamps copies of a prefab across a region (foliage, rocks, props).",
             "Set a prefab, pick a distribution, press Generate Now. Instances are children of this entity.",
-            "Scatter_Generate(self);   // re-roll from script\n"
-            "Scatter_Clear(self);      // remove the batch",
+            "Scatter_Generate(GetEntity());   // re-roll from script\n"
+            "Scatter_Clear(GetEntity());      // remove the batch",
             {
                 { RelationKind::PairsWith, "Transform", Has<ECS::TransformComponent>, Add<ECS::TransformComponent> },
             }
@@ -63,7 +63,7 @@ static const std::unordered_map<std::string, ComponentHelp>& Registry() {
         r["terrainGenerator"] = {
             "Bakes a noise + erosion heightfield into a Terrain mesh.",
             "Tune the FBM and erosion, press Generate Now, or let it run on play start.",
-            "TerrainGen_Generate(self);   // rebake from script",
+            "TerrainGen_Generate(GetEntity());   // rebake from script",
             {
                 { RelationKind::Paints, "Terrain", Has<ECS::TerrainComponent>, Add<ECS::TerrainComponent> },
             }
@@ -71,7 +71,7 @@ static const std::unordered_map<std::string, ComponentHelp>& Registry() {
         r["wfc"] = {
             "Fills a grid so every neighbour pairing is legal (2D tiles or 3D modules).",
             "Add tiles, label their edges, press Generate. 2D paints a Tilemap; 3D places a prefab per cell. Tiles touch where edge labels match.",
-            "WFC_Generate(self);   // resolve from script (returns 1 on success)",
+            "WFC_Generate(GetEntity());   // resolve from script (returns 1 on success)",
             {
                 { RelationKind::Paints, "Tilemap", Has<ECS::TilemapComponent>, Add<ECS::TilemapComponent> },
             }
@@ -81,7 +81,7 @@ static const std::unordered_map<std::string, ComponentHelp>& Registry() {
         r["transform"] = {
             "Position, rotation and scale of the entity in the world.",
             "Drag the values, or move the entity with the gizmo in the viewport.",
-            "Transform_SetPosition(self, x, y, z);",
+            "Entity_SetPosition(GetEntity(), Vector3(0, 1, 0));",
             {}
         };
         r["mesh"] = {
@@ -115,7 +115,8 @@ static const std::unordered_map<std::string, ComponentHelp>& Registry() {
         r["camera"] = {
             "A viewpoint the scene can be rendered from.",
             "Set the projection and field of view. One camera is the active view.",
-            "Camera_SetActive(self);",
+            "Camera_MakeActive(GetEntity());   // render from this one now\n"
+            "Camera_SetPriority(GetEntity(), 10);   // or rank it yourself",
             {
                 { RelationKind::PairsWith,   "Transform", Has<ECS::TransformComponent>, Add<ECS::TransformComponent> },
                 { RelationKind::FeedsRenderer, "Renderer", nullptr, nullptr },
@@ -133,7 +134,7 @@ static const std::unordered_map<std::string, ComponentHelp>& Registry() {
         r["rigidbody"] = {
             "Makes the entity obey physics (gravity, forces, collisions).",
             "Choose dynamic or kinematic. Add a Collider so it can hit things.",
-            "Rigidbody_AddForce(self, x, y, z);",
+            "Physics_AddForce(GetEntity(), Vector3(0, 10, 0));",
             {
                 { RelationKind::FeedsPhysics, "Physics",  nullptr, nullptr },
                 { RelationKind::PairsWith,   "Transform", Has<ECS::TransformComponent>, Add<ECS::TransformComponent> },
@@ -215,11 +216,12 @@ static const std::unordered_map<std::string, ComponentHelp>& Registry() {
             "A camera shot. The Camera Director blends the real camera to the highest-priority vcam.",
             "Drag an entity onto Follow, pick a Shot Preset, set a Priority. Two vcams + a priority swap = a camera cut. You never touch the real camera; the Director owns it.",
             "// pick a preset from a script (1=Iso,2=OverShoulder,3=Follow,4=TopDown...):\n"
+            "uint64 shoulderCam = Scene_FindEntity(\"ShoulderCam\");\n"
             "Camera_ApplyVCamShot(shoulderCam, 2);\n"
             "// swap shots by priority (Tier 2, safe):\n"
             "Camera_SetVCamPriority(shoulderCam, 20);   // raise -> Director blends to it\n"
             "// take the wheel (Tier 3, contract):\n"
-            "Camera_TakeManualControl(self); /* ... */ Camera_ReleaseManualControl();",
+            "Camera_TakeManualControl(GetEntity()); /* ... */ Camera_ReleaseManualControl();",
             {}
         };
         r["lens"] = {
@@ -246,7 +248,7 @@ static const std::unordered_map<std::string, ComponentHelp>& Registry() {
         r["audioSource"] = {
             "Plays a sound or music clip from this entity's position.",
             "Assign a clip. Enable 3D for positional (spatial) audio.",
-            "AudioSource_Play(self);",
+            "AudioSource_Play(GetEntity());",
             {
                 { RelationKind::PairsWith, "Transform",      Has<ECS::TransformComponent>, Add<ECS::TransformComponent> },
                 { RelationKind::PairsWith, "Audio Listener", nullptr, nullptr },
@@ -263,7 +265,7 @@ static const std::unordered_map<std::string, ComponentHelp>& Registry() {
         r["health"] = {
             "Hit points for this entity; it dies when they reach zero.",
             "Set max health. Damage or heal it from scripts or hazards.",
-            "Health_Damage(self, 10);",
+            "Health_Damage(GetEntity(), 10.0f);",
             { { RelationKind::DrivenByScript, "Script", Has<ECS::ScriptComponent>, Add<ECS::ScriptComponent> } }
         };
         r["triggerZone"] = {
@@ -528,6 +530,14 @@ const ComponentHelp* GetComponentHelp(const char* key) {
     const auto& reg = Registry();
     auto it = reg.find(key);
     return (it == reg.end()) ? nullptr : &it->second;
+}
+
+std::vector<const char*> ComponentHelpKeys() {
+    std::vector<const char*> keys;
+    const auto& reg = Registry();
+    keys.reserve(reg.size());
+    for (const auto& entry : reg) keys.push_back(entry.first.c_str());
+    return keys;
 }
 
 // Short verb shown before each connection label.
