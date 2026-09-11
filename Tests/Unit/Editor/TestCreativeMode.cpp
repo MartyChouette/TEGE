@@ -323,7 +323,7 @@ ENJIN_TEST(CreativeMode, ToolsThatActOnComponentsBuildNoBrushes) {
     BuildToolSettings s;
     const BuildTool notBrushes[] = {
         BuildTool::Water, BuildTool::Terrain,
-        BuildTool::Plants,
+        BuildTool::Plants, BuildTool::Prop,
         BuildTool::Ladder, BuildTool::Reduce
     };
     for (BuildTool tool : notBrushes) {
@@ -1075,6 +1075,56 @@ ENJIN_TEST(CreativeMode, EveryToolSaysHowToUseIt) {
         ENJIN_ASSERT_TRUE(v != nullptr);
         ENJIN_EXPECT_TRUE(v[0] != '\0');
     }
+}
+
+// ---------------------------------------------------------------------------
+// Props
+// ---------------------------------------------------------------------------
+//
+// A ball, a point light, a physics box, a barrel and a spawn point: five
+// ready-made objects that existed ONLY in the older Build Palette, behind a
+// View-menu entry that is off by default. Same gap as the vegetation, five more
+// tools.
+
+ENJIN_TEST(CreativeMode, APropIsPlacedByAClickNotADrag) {
+    // Every other tool on this rail refuses a gesture with no span, because a
+    // wall or a patch with no length describes nothing. A prop is the opposite:
+    // it has its own size, the click IS the whole interaction, and refusing a
+    // zero-span gesture would make the tool look inert.
+    BuildToolSettings s;
+
+    bool ok = false;
+    const ToolPlacement p =
+        Plan(BuildTool::Prop, s, Vector3(3, 1, -2), Vector3(3, 1, -2), &ok);
+
+    ENJIN_ASSERT_TRUE(ok);
+    ENJIN_EXPECT_FLOAT_NEAR(p.origin.x, 3.0f, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(p.origin.z, -2.0f, 0.001f);
+}
+
+ENJIN_TEST(CreativeMode, APropLandsWhereTheGestureEnded) {
+    // Dragging does not size a prop -- it moves where the thing lands, so the
+    // END of the gesture is the answer. Taking the start would drop it wherever
+    // the mouse happened to go down, which is not where you are looking when you
+    // let go.
+    BuildToolSettings s;
+
+    const ToolPlacement p =
+        Plan(BuildTool::Prop, s, Vector3(0, 0, 0), Vector3(7, 0, 9));
+
+    ENJIN_EXPECT_FLOAT_NEAR(p.origin.x, 7.0f, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(p.origin.z, 9.0f, 0.001f);
+}
+
+ENJIN_TEST(CreativeMode, PropsBuildNoBrushes) {
+    // Props are components and meshes, not brush solids, so the brush path must
+    // decline them rather than emit an empty solid that reads as a failed build.
+    BuildToolSettings s;
+    bool ok = true;
+    ECS::BrushSolidComponent solid =
+        Build(BuildTool::Prop, s, false, Vector3(0, 0, 0), Vector3(0, 0, 0), &ok);
+    ENJIN_EXPECT_FALSE(ok);
+    ENJIN_EXPECT_EQ(solid.brushes.size(), (usize)0);
 }
 
 ENJIN_TEST_MAIN()

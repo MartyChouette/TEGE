@@ -40,6 +40,7 @@ const char* BuildToolName(BuildTool tool) {
         case BuildTool::Brush:   return "Brush";
         case BuildTool::Water:   return "Water";
         case BuildTool::Plants:  return "Plants";
+        case BuildTool::Prop:    return "Prop";
         case BuildTool::Terrain: return "Terrain";
         case BuildTool::Ladder:  return "Ladder";
         case BuildTool::Reduce:  return "Reduce";
@@ -59,6 +60,7 @@ u8 BuildToolGroup(BuildTool tool) {
         case BuildTool::Plants:
         case BuildTool::Terrain: return 1;   // volume
         case BuildTool::Ladder:
+        case BuildTool::Prop:
         case BuildTool::Reduce:  return 2;   // object
         default:                 return 3;   // edit
     }
@@ -86,6 +88,8 @@ const char* BuildToolVerb(BuildTool tool) {
             return "Drag over the ground to raise or lower it. Makes a terrain if there is none.";
         case BuildTool::Plants:
             return "Drag a patch. Grass, shrubs or trees, scattered inside it.";
+        case BuildTool::Prop:
+            return "Click the ground. Picks up where it lands, ready to play.";
         case BuildTool::Ladder:
             return "Drag along a wall. Climbing is already wired into the controller.";
         case BuildTool::Reduce:
@@ -185,6 +189,9 @@ u32 BuildToolFields(BuildTool tool, BuildToolSettings& s,
             // rest of this rail is sliders: one row shape, one interaction.
             add("Kind",    &s.plantKind,    0.0f, 2.0f, "");
             add("Density", &s.plantDensity, 0.1f, 4.0f, "x");
+            break;
+        case BuildTool::Prop:
+            add("Kind", &s.propKind, 0.0f, 4.0f, "");
             break;
         case BuildTool::Ladder:
             add("Height",   &s.height,  0.50f, 20.0f, "m");
@@ -405,6 +412,20 @@ bool CreativeMode::PlanPlacement(BuildTool tool,
             // elevation -- plants grow where you dragged them.
             out.origin = Math::Vector3(midX, dragStart.y, midZ);
             out.halfExtents = Math::Vector3(spanX * 0.5f, 0.0f, spanZ * 0.5f);
+            return true;
+        }
+
+        case BuildTool::Prop: {
+            // The only tool here that does NOT need a drag. These are ready-made
+            // objects at their own size; there is nothing for a gesture to
+            // describe, so a click is the whole interaction and a drag simply
+            // moves where it lands.
+            //
+            // Never refused: a click with no span is the intended use, and
+            // returning false for it would make the tool appear inert.
+            out = ToolPlacement{};
+            out.origin = dragEnd;
+            out.halfExtents = Math::Vector3(0.0f, 0.0f, 0.0f);
             return true;
         }
 

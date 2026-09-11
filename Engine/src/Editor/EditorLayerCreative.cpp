@@ -11,6 +11,8 @@
 // which gesture happened.
 
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/ECS/Components/Light.h"
+#include "Enjin/Renderer/MeshFactory.h"
 #include "Enjin/ECS/Components/TreeVolume.h"
 #include "Enjin/ECS/Components/ShrubVolume.h"
 #include "Enjin/ECS/Components/GrassVolume.h"
@@ -161,6 +163,15 @@ void DrawToolIcon(ImDrawList* dl, BuildTool tool, ImVec2 c, ImU32 col, f32 ui) {
                 dl->AddLine(ImVec2(x, base.y - h * 0.55f),
                             ImVec2(x + r * 0.34f, base.y - h * 0.85f), col, t);
             }
+            break;
+        }
+        case BuildTool::Prop: {   // a crate with a ball resting on it
+            // A pair rather than one shape, because this tool is five different
+            // things and no single silhouette is honest about that. Two objects
+            // reads as "objects"; a barrel would read as "barrel".
+            dl->AddRect(ImVec2(c.x - r * 0.9f, c.y + r * 0.05f),
+                        ImVec2(c.x + r * 0.15f, c.y + r * 0.95f), col, 0, 0, t);
+            dl->AddCircle(ImVec2(c.x + r * 0.5f, c.y + r * 0.5f), r * 0.42f, col, 0, t);
             break;
         }
         case BuildTool::Edit: {   // a rectangle with grips on its edges
@@ -1155,6 +1166,95 @@ ECS::Entity EditorLayer::PlaceCreativeComponent(BuildTool tool,
         FinishCreativePlacement(entity);
         ENJIN_LOG_INFO(Editor, "Creative: placed %s (%.2f x %.2f m)", kindName,
                        static_cast<double>(hx * 2.0f), static_cast<double>(hz * 2.0f));
+        return entity;
+    }
+
+    if (tool == BuildTool::Prop) {
+        // The five ready-made objects the older Build Palette could place and
+        // this rail could not: a ball, a point light, a physics box, a barrel
+        // and a spawn point.
+        //
+        // Same meshes, same components, same vertical offsets as that palette
+        // uses. The offsets matter and are not decoration: these all land on a
+        // ground hit, so a sphere of radius 0.5 has to rise by 0.5 or it is
+        // buried to its equator, and a physics box starts at 3 m so it has
+        // somewhere to fall from -- dropping it flush with the floor is a box
+        // that never visibly falls.
+        xf.position = plan.origin;
+
+        const int kind = static_cast<int>(s.propKind + 0.5f);
+        const char* name = "Ball";
+
+        switch (kind) {
+            case 1: {   // Light
+                name = "Light";
+                auto& l = m_World->AddComponent<ECS::LightComponent>(entity);
+                l.type = ECS::LightType::Point;
+                // Above head height, because a point light sitting on the floor
+                // lights the floor and nothing else.
+                xf.position.y += 2.0f;
+                break;
+            }
+            case 2: {   // Physics Box
+                name = "Physics Box";
+                m_World->AddComponent<ECS::MeshComponent>(
+                    entity, Renderer::MeshFactory::CreateCube(1.0f));
+                m_World->AddComponent<ECS::MaterialComponent>(entity);
+                auto& rb = m_World->AddComponent<ECS::RigidbodyComponent>(entity);
+                rb.bodyType = ECS::RigidbodyComponent::BodyType::Dynamic;
+                rb.useGravity = true;
+                // Collider sizes are WORLD space in this engine and entity scale
+                // does not multiply them, so this is the cube's real size.
+                auto& bc = m_World->AddComponent<ECS::BoxColliderComponent>(entity);
+                bc.size = Math::Vector3(1.0f, 1.0f, 1.0f);
+                xf.position.y += 3.0f;
+                break;
+            }
+            case 3: {   // Barrel
+                name = "Barrel";
+                m_World->AddComponent<ECS::MeshComponent>(
+                    entity, Renderer::MeshFactory::CreateCylinder(0.5f, 1.2f));
+                m_World->AddComponent<ECS::MaterialComponent>(entity);
+                auto& d = m_World->AddComponent<ECS::DestructibleComponent>(entity);
+                d.health = 1.0f;
+                d.destroyOnHit = true;
+                auto& bc = m_World->AddComponent<ECS::BoxColliderComponent>(entity);
+                bc.size = Math::Vector3(1.0f, 1.2f, 1.0f);
+                xf.position.y += 0.6f;
+                break;
+            }
+            case 4: {   // Spawn Point
+                name = "Spawn Point";
+                m_World->AddComponent<ECS::MeshComponent>(
+                    entity, Renderer::MeshFactory::CreateCone(0.4f, 1.0f));
+                auto& mat = m_World->AddComponent<ECS::MaterialComponent>(entity);
+                mat.baseColor = Math::Vector3(0.2f, 0.9f, 0.4f);
+                mat.emissiveColor = Math::Vector3(0.1f, 0.5f, 0.2f);
+                xf.position.y += 0.5f;
+                break;
+            }
+            default: {  // Ball
+                m_World->AddComponent<ECS::MeshComponent>(
+                    entity, Renderer::MeshFactory::CreateSphere(0.5f));
+                m_World->AddComponent<ECS::MaterialComponent>(entity);
+                xf.position.y += 0.5f;
+                break;
+            }
+        }
+
+        // Named for the thing, not the tool. "Prop" in the hierarchy tells you
+        // nothing about which of the five you placed.
+        if (auto* nc = m_World->GetComponent<ECS::NameComponent>(entity)) {
+            nc->name = name;
+        }
+
+        SelectEntity(entity);
+        RecordLayerCreate(entity);
+        FinishCreativePlacement(entity);
+        ENJIN_LOG_INFO(Editor, "Creative: placed %s at (%.2f, %.2f, %.2f)", name,
+                       static_cast<double>(xf.position.x),
+                       static_cast<double>(xf.position.y),
+                       static_cast<double>(xf.position.z));
         return entity;
     }
 

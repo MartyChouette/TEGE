@@ -55,6 +55,14 @@ enum class BuildTool : u8 {
     // people find.
     Plants,
     Ladder,
+    // Ball, light, physics box, barrel, spawn point: the five ready-made things
+    // the older Build Palette could place and this rail could not.
+    //
+    // One tool with a kind picker rather than five rail entries, because they
+    // are five variants of ONE gesture -- click the ground, get a thing -- and a
+    // rail of sixteen icons is a worse way to find any of them than a rail of
+    // twelve with a picker.
+    Prop,
     Reduce,
     // Not a build tool: the one that changes what is already there. Last on the
     // rail and in its own group, because everything above it makes something and
@@ -123,6 +131,10 @@ struct BuildToolSettings {
     // one and the rail's slider row is built for floats; it is rounded at use.
     f32 plantKind    = 0.0f;
     f32 plantDensity = 1.0f;
+
+    // Prop: which ready-made object a click places.
+    // 0 ball, 1 light, 2 physics box, 3 barrel, 4 spawn point.
+    f32 propKind = 0.0f;
 
     // Path: how many wall brushes a BOWED span is cut into. A straight span is
     // always one, however this is set -- there is nothing to approximate.
