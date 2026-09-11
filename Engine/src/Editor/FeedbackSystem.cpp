@@ -111,6 +111,17 @@ static json DiagnosticToJson(const DiagnosticSnapshot& d) {
     j["scenePath"] = d.scenePath;
     if (!d.sceneJson.empty()) j["sceneJson"] = d.sceneJson;
     j["consoleLogTail"] = d.consoleLogTail;
+    // The reproduction. Written only when there is one, so a report without a
+    // recorded session says nothing rather than claiming an empty replay.
+    if (!d.replayPath.empty()) {
+        j["replayPath"] = d.replayPath;
+        j["replayFrames"] = d.replayFrames;
+    }
+    if (d.debugRecorderFrames > 0) {
+        j["debugRecorderFrames"] = d.debugRecorderFrames;
+        j["debugRecorderSeconds"] = d.debugRecorderSeconds;
+    }
+    if (!d.sessionMarks.empty()) j["sessionMarks"] = d.sessionMarks;
     j["timestamp"] = d.timestamp;
     return j;
 }
@@ -136,6 +147,15 @@ static DiagnosticSnapshot DiagnosticFromJson(const json& j) {
     if (j.contains("consoleLogTail")) {
         for (auto& line : j["consoleLogTail"])
             d.consoleLogTail.push_back(line.get<std::string>());
+    }
+    if (j.contains("replayPath"))   d.replayPath = j["replayPath"].get<std::string>();
+    if (j.contains("replayFrames")) d.replayFrames = j["replayFrames"].get<u32>();
+    if (j.contains("debugRecorderFrames"))
+        d.debugRecorderFrames = j["debugRecorderFrames"].get<u32>();
+    if (j.contains("debugRecorderSeconds"))
+        d.debugRecorderSeconds = j["debugRecorderSeconds"].get<f32>();
+    if (j.contains("sessionMarks")) {
+        for (auto& m : j["sessionMarks"]) d.sessionMarks.push_back(m.get<std::string>());
     }
     if (j.contains("timestamp")) d.timestamp = j["timestamp"].get<std::string>();
     return d;

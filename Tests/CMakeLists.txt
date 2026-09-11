@@ -201,6 +201,7 @@ enjin_add_test(TestCollabConflictStrategy Unit/Editor/TestCollabConflictStrategy
 enjin_add_test(TestRewindAnimation   Unit/Gameplay/TestRewindAnimation.cpp)
 enjin_add_test(TestDebugRecorder     Unit/Gameplay/TestDebugRecorder.cpp)
 enjin_add_test(TestRewindFeedback    Unit/Gameplay/TestRewindFeedback.cpp)
+enjin_add_test(TestReplayPlayerPath  Unit/Gameplay/TestReplayPlayerPath.cpp)
 target_compile_definitions(TestDocGenerator PRIVATE
     ENJIN_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/..")
 enjin_add_test(TestFontAtlas          Unit/Renderer/TestFontAtlas.cpp)

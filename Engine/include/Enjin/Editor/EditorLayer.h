@@ -2200,6 +2200,10 @@ private:
     // buffer size it controls governs what happens while PLAYING, and it used to
     // be reachable only once playing had stopped.
     void DrawPlaybackToolsPopup();
+
+    // Writes the current session's replay for a bug report to point at. Silent:
+    // a failure here must not derail the report being filed.
+    std::string ExportReplayForDiagnostics();
     void DrawBugReportList();
     void DrawBugReportDetail(BugReport& report);
     void DrawNewBugReportForm();

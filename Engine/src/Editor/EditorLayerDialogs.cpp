@@ -2489,8 +2489,11 @@ DiagnosticSnapshot EditorLayer::CaptureDiagnostics(bool includeScene) {
     f32 fps = m_FrameTimeAvg > 0.0f ? 1000.0f / m_FrameTimeAvg : 0.0f;
     u32 entityCount = m_World ? static_cast<u32>(m_World->GetEntityCount()) : 0;
     std::string sceneJson;
-    // Scene snapshot is intentionally omitted for now — serializing mid-frame
-    // is unsafe and the diagnostics already capture the scene path.
+    // The live scene is still not serialized here: doing it mid-frame is unsafe.
+    // That is a reason to get the scene from somewhere else, though, not a reason
+    // for a bug report to contain no reproduction at all -- which is what it
+    // contained until now. A session replay carries a scene snapshot taken at
+    // play start, which IS a safe moment, along with the inputs that followed.
     (void)includeScene;
 
     // Extract plain message strings for the diagnostic snapshot
@@ -2500,7 +2503,7 @@ DiagnosticSnapshot EditorLayer::CaptureDiagnostics(bool includeScene) {
         logStrings.push_back(entry.message);
     }
 
-    return DiagnosticSnapshot::Capture(
+    DiagnosticSnapshot snap = DiagnosticSnapshot::Capture(
         m_PerfMetrics,
         fps,
         m_FrameTimeAvg,
@@ -2509,6 +2512,80 @@ DiagnosticSnapshot EditorLayer::CaptureDiagnostics(bool includeScene) {
         logStrings,
         static_cast<u32>(m_SelectedEntities.size()),
         sceneJson);
+
+    // Attach the reproduction.
+    //
+    // Everything below was already being recorded by the editor and none of it
+    // had ever reached a bug report, which carried a machine spec, a frame rate
+    // and fifty lines of console -- the conditions, and nothing about what
+    // actually happened. "Steps to reproduce" was left to the reporter's memory.
+    {
+        const auto& dbg = m_PlayMode.GetDebugRecorder();
+        snap.debugRecorderFrames = dbg.FrameCount();
+        snap.debugRecorderSeconds = dbg.RecordedDuration();
+
+        for (const auto& bm : m_PlayMode.GetSessionBookmarks()) {
+            char line[256];
+            snprintf(line, sizeof(line), "%.1fs  %s", bm.time, bm.label.c_str());
+            snap.sessionMarks.emplace_back(line);
+        }
+
+        // The session's input stream, written out as a .tegereplay. This is the
+        // part that makes the report reproducible rather than descriptive: the
+        // file carries the scene it was recorded against plus every input that
+        // followed, and EnjinPlayer --replay now plays it back in a real build.
+        //
+        // Exported rather than referenced, because the recording lives in memory
+        // and the next Play overwrites it -- a path to a file nobody wrote would
+        // be worse than no path.
+        if (m_PlayMode.HasRecording()) {
+            snap.replayFrames =
+                static_cast<u32>(m_PlayMode.GetActiveRecording().frames.size());
+            snap.replayPath = ExportReplayForDiagnostics();
+        }
+    }
+    return snap;
+}
+
+// Write the current session's replay next to the project, for a bug report to
+// point at. Returns the path, or empty if nothing could be written.
+//
+// Separate from ExportReplayToProject because that one is a user action with a
+// notification and a warning when there is nothing to export; this is a silent
+// side effect of filing a report, and a failure here must not derail the report.
+std::string EditorLayer::ExportReplayForDiagnostics() {
+    if (!m_PlayMode.HasRecording()) return {};
+
+    std::filesystem::path root =
+        std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path();
+    if (root.empty()) root = std::filesystem::current_path();
+    std::filesystem::path dir = root / "replays";
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    if (ec) {
+        ENJIN_LOG_WARN(Editor, "Bug report: cannot create %s, filing without a replay",
+                       dir.string().c_str());
+        return {};
+    }
+
+    int n = 1;
+    std::filesystem::path out;
+    do {
+        out = dir / ("bugreport_" + std::to_string(n++) + ".tegereplay");
+    } while (std::filesystem::exists(out) && n < 10000);
+
+    std::ofstream f(out, std::ios::binary);
+    if (!f.is_open()) {
+        ENJIN_LOG_WARN(Editor, "Bug report: cannot write %s, filing without a replay",
+                       out.string().c_str());
+        return {};
+    }
+    const std::string data = Gameplay::SerializeReplay(m_PlayMode.GetActiveRecording());
+    f.write(data.data(), static_cast<std::streamsize>(data.size()));
+    ENJIN_LOG_INFO(Editor, "Bug report: attached replay %s (%zu frames)",
+                   out.filename().string().c_str(),
+                   m_PlayMode.GetActiveRecording().frames.size());
+    return out.string();
 }
 
 void EditorLayer::DrawPlayModeDiffDialog() {

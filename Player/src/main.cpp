@@ -30,6 +30,10 @@
 
 // --touch: simulate the mobile touch overlay with the mouse (set in main()).
 static bool s_SimulateTouch = false;
+
+// Set by --replay. A path rather than a bool, because the player loads the file
+// itself; there is no editor here to pick the newest one out of a folder.
+static std::string s_ReplayPath;
 #include "Enjin/Input/MIDIInput.h"
 #include "Enjin/GUI/GameMenus.h"
 #include "Enjin/GUI/ImGuiLayer.h"
@@ -91,6 +95,8 @@ static bool s_SimulateTouch = false;
 #include "Enjin/ECS/Systems/AISystem.h"
 #include "Enjin/Gameplay/RecordRewindSystem.h"
 #include "Enjin/Gameplay/RewindFeedback.h"
+#include "Enjin/Gameplay/Replay.h"
+#include <iterator>
 #include "Enjin/ECS/EntityEventBus.h"
 #include "Enjin/Gameplay/QuestSystem.h"
 #include "Enjin/Gameplay/FootstepSystem.h"
@@ -697,6 +703,138 @@ public:
 
         m_Initialized = true;
         ENJIN_LOG_INFO(Player, "Player initialized");
+
+        if (!s_ReplayPath.empty()) BeginReplay(s_ReplayPath);
+    }
+
+    // --replay FILE. Loads a .tegereplay and plays its input stream back through
+    // this build.
+    //
+    // Replay used to be editor-only, which is the one place a repro is least
+    // useful: a tester on a shipped build could record nothing and send nothing.
+    // The format, the serializer and the injection path all already existed --
+    // the player just had no way in.
+    //
+    // The replay's own scene snapshot is loaded first. A replay file is
+    // self-contained for exactly this reason: replaying an input stream against
+    // whichever scene the project happens to start with diverges on frame one,
+    // and then every later frame is noise. A repro that does not reproduce is
+    // worse than none, because it looks like evidence.
+    void BeginReplay(const std::string& path) {
+        std::ifstream in(path, std::ios::binary);
+        if (!in) {
+            ENJIN_LOG_ERROR(Player, "--replay: cannot open '%s'", path.c_str());
+            return;
+        }
+        std::string json((std::istreambuf_iterator<char>(in)),
+                          std::istreambuf_iterator<char>());
+        if (!Enjin::Gameplay::ParseReplay(json, m_ReplayData)) {
+            ENJIN_LOG_ERROR(Player, "--replay: '%s' is not a readable replay", path.c_str());
+            return;
+        }
+        if (m_ReplayData.frames.empty()) {
+            ENJIN_LOG_ERROR(Player, "--replay: '%s' has no frames", path.c_str());
+            return;
+        }
+
+        // The recorded scene is NOT loaded here. Initialize runs before the
+        // splash, and the player loads its own start scene at the END of the
+        // splash -- so a scene swapped in at this point is overwritten a moment
+        // later by the project's, and the replay then runs against the wrong
+        // world while the log says it loaded the right one. It goes in
+        // EndSplashScreen instead, after that load.
+
+        // The recording's fixed-step configuration, not the project's. A clock
+        // that stepped differently during recording lands the same inputs on
+        // different simulation frames, which is divergence with no symptom until
+        // something falls through a floor.
+        m_SimClock.Configure(m_ReplayData.simFixedTimestep,
+                             static_cast<Enjin::f32>(m_ReplayData.simTicksPerSecond));
+        m_SimClock.Reset();
+        m_ScriptSystem.SetExternalFixedClock(m_SimClock.IsEnabled());
+        m_ControllerSystem.SetExternalFixedClock(m_SimClock.IsEnabled());
+
+        m_ReplayCursor = 0;
+        m_Replaying = true;
+        Enjin::Input::SetReplayInjection(true);
+        ENJIN_LOG_INFO(Player, "--replay: playing '%s' (%zu frames, %zu bookmarks)",
+                       path.c_str(), m_ReplayData.frames.size(),
+                       m_ReplayData.bookmarks.size());
+    }
+
+    // Swap in the scene the replay was recorded against.
+    //
+    // A replay file is self-contained for exactly this reason: replaying an input
+    // stream against whichever scene the project happens to start with diverges
+    // on frame one, and every later frame is noise. A repro that does not
+    // reproduce is worse than none, because it looks like evidence.
+    void ApplyReplayScene() {
+        if (!m_World) return;
+
+        if (m_ReplayData.sceneJson.empty()) {
+            ENJIN_LOG_WARN(Player, "--replay: this file carries no scene snapshot, so it runs "
+                                   "against the project's own start scene. Expect divergence.");
+            return;
+        }
+
+        Enjin::Scene::SceneSerializer ser(m_World.get());
+        auto res = ser.LoadFromString(m_ReplayData.sceneJson);
+        if (!res.success) {
+            // Stop rather than carry on against the wrong world. Playing the
+            // stream anyway would produce a run that looks like a reproduction
+            // and is not one.
+            m_Replaying = false;
+            Enjin::Input::SetReplayInjection(false);
+            ENJIN_LOG_ERROR(Player, "--replay: the recorded scene failed to load (%s). "
+                                    "Stopping, rather than replaying against a different scene.",
+                            res.error.c_str());
+            return;
+        }
+        ENJIN_LOG_INFO(Player, "--replay: loaded the recorded scene (%zu entities)",
+                       res.entities.size());
+    }
+
+    // Called once when the input stream runs out.
+    void FinishReplay() {
+        m_Replaying = false;
+        Enjin::Input::SetReplayInjection(false);
+
+        // Report where the run ended up against where the recording did. This is
+        // the whole value of a replay as a repro: "it diverged" with a number is
+        // actionable, and a silent finish is not.
+        Enjin::f32 worstDrift = 0.0f;
+        std::string worstName;
+        Enjin::u32 compared = 0;
+        if (m_World) {
+            for (const auto& end : m_ReplayData.endState) {
+                Enjin::ECS::Entity e = m_World->FindEntityByName(end.name);
+                if (e == Enjin::ECS::INVALID_ENTITY) continue;
+                auto* t = m_World->GetComponent<Enjin::ECS::TransformComponent>(e);
+                if (!t) continue;
+                ++compared;
+                const Enjin::f32 drift = (t->position - end.position).Length();
+                if (drift > worstDrift) { worstDrift = drift; worstName = end.name; }
+            }
+        }
+
+        if (compared == 0) {
+            // Not "it matched". Nothing was checked, and saying so is the
+            // difference between a pass and an absence of evidence.
+            ENJIN_LOG_WARN(Player, "--replay: finished; no recorded end state matched "
+                                   "an entity in this scene, so nothing was verified");
+        } else if (worstDrift > 0.05f) {
+            ENJIN_LOG_WARN(Player, "--replay: finished with drift -- '%s' ended %.3f units "
+                                   "from the recording (%u entities compared)",
+                           worstName.c_str(), worstDrift, compared);
+        } else {
+            ENJIN_LOG_INFO(Player, "--replay: finished, %u entities within %.3f units "
+                                   "of the recording", compared, worstDrift);
+        }
+
+        // The player does NOT snap entities to the recorded end state the way the
+        // editor does. The editor freezes there for inspection; here the game
+        // carries on under the player's own hands, and teleporting things at the
+        // handover would be the engine lying about where the simulation got to.
     }
 
     void Shutdown() override {
@@ -865,8 +1003,29 @@ public:
     }
 
     void Update(Enjin::f32 deltaTime) override {
-        // Global time scale (Time_SetScale): scales gameplay dt only.
-        deltaTime *= Enjin::Scripting::GetTimeScale();
+        // Replay playback (--replay), BEFORE the time scale is applied.
+        //
+        // A replay carries its own dt stream, recorded after the time scale was
+        // already folded in. Scaling it again would make a session recorded in
+        // bullet time replay in bullet-time-squared, and the whole point of a
+        // replay is that it reproduces what happened.
+        if (m_Replaying && m_Initialized) {
+            if (m_ReplayCursor < m_ReplayData.frames.size()) {
+                const auto& rf = m_ReplayData.frames[m_ReplayCursor++];
+                deltaTime = rf.dt;
+                bool keys[512]; bool mouse[8]; Enjin::Math::Vector2 mpos;
+                Enjin::Gameplay::ReplayFrameToBuffers(rf, keys, mouse, mpos);
+                Enjin::Input::InjectFrameState(keys, mouse, mpos);
+            } else {
+                // Stream exhausted. Report the drift and hand control back rather
+                // than freezing: a player is a game, not a timeline to inspect,
+                // and someone watching a repro needs to be able to close it.
+                FinishReplay();
+            }
+        } else {
+            // Global time scale (Time_SetScale): scales gameplay dt only.
+            deltaTime *= Enjin::Scripting::GetTimeScale();
+        }
 
         if (!m_Initialized) return;
         m_FrameDeltaTime = deltaTime;  // Render() needs it for the compute pre-pass
@@ -2316,6 +2475,15 @@ private:
             LoadSceneFromPack(m_StartScene);
         }
 
+        // A replay brings its own scene, and it replaces the one just loaded.
+        //
+        // This has to happen AFTER the project's scene load, not in BeginReplay:
+        // Initialize runs before the splash and this runs at the end of it, so a
+        // scene swapped in earlier is silently overwritten here and the replay
+        // then plays an input stream against a world it was never recorded in --
+        // with the log cheerfully reporting that the recorded scene had loaded.
+        if (m_Replaying) ApplyReplayScene();
+
         // Wire all script bindings so AngelScript functions work
         Enjin::Scripting::SetBindingsWorld(m_World.get());
         Enjin::Scripting::SetBindingsRenderSystem(m_RenderSystem);
@@ -3448,6 +3616,13 @@ private:
     Enjin::ECS::AISystem m_AISystem;
     Enjin::Gameplay::RecordRewindSystem m_RecordRewindSystem;
     Enjin::Gameplay::RewindFeedbackApplier m_RewindFeedback;
+
+    // Replay playback (--replay). The player records nothing: a shipped build
+    // has no Export Replay button and no editor to press it in, so this is
+    // playback only.
+    Enjin::Gameplay::ReplayData m_ReplayData;
+    bool m_Replaying = false;
+    Enjin::usize m_ReplayCursor = 0;
     Enjin::ECS::EntityEventBus m_EntityEventBus;
     Enjin::ECS::ActionTriggerSystem m_ActionTriggerSystem;
     Enjin::ECS::GameplaySystem m_GameplaySystem;
@@ -3808,6 +3983,16 @@ int main(int argc, char* argv[]) {
         // touch, so a game's touch layout can be checked without a phone.
         if (argv[i] && std::string(argv[i]) == "--touch") {
             s_SimulateTouch = true;
+        }
+        // --replay FILE: play a .tegereplay back through this build.
+        //
+        // Replay existed only in the editor, which is the one place a repro is
+        // least needed. A tester running a shipped build could record nothing and
+        // send nothing, so "it happened on my machine" had no artefact behind it.
+        // The format and the injection path were already there; the player simply
+        // had no way in.
+        if (argv[i] && std::string(argv[i]) == "--replay" && i + 1 < argc && argv[i + 1]) {
+            s_ReplayPath = argv[++i];
         }
     }
 

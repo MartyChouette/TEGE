@@ -139,6 +139,24 @@ struct DiagnosticSnapshot {
     std::vector<std::string> consoleLogTail; // last 50 lines
     std::string timestamp; // ISO 8601
 
+    // How somebody else reproduces this.
+    //
+    // A bug report used to carry a machine spec, a frame rate and fifty lines of
+    // console -- everything about the CONDITIONS and nothing about what happened.
+    // Meanwhile the editor was already recording the whole session two different
+    // ways and neither reached the report. "Steps to reproduce" was a free-text
+    // box the reporter had to fill in from memory.
+    //
+    // replayPath names an exported .tegereplay, which carries the scene it was
+    // recorded against plus the exact input stream, and which any build can now
+    // play back (EnjinPlayer --replay). That is a reproduction, not a description
+    // of one.
+    std::string replayPath;             // empty when no session was recorded
+    u32 replayFrames = 0;
+    u32 debugRecorderFrames = 0;        // scene-state buffer at the time of filing
+    f32 debugRecorderSeconds = 0.0f;
+    std::vector<std::string> sessionMarks;   // F8 marks + script exceptions, labelled
+
     static DiagnosticSnapshot Capture(
         const PerformanceMetrics& perf,
         f32 fps,

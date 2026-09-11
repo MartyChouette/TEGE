@@ -6570,6 +6570,54 @@ void EditorLayer::DrawBugReportDetail(BugReport& report) {
         ImGui::Spacing();
     }
 
+    // Reproduction, ABOVE the diagnostics and open by default.
+    //
+    // A bug report used to be a machine spec, a frame rate and fifty lines of
+    // console: everything about the conditions and nothing about what happened,
+    // while the editor recorded the whole session two different ways and neither
+    // reached the report. Whoever picks this up needs the repro first, not the
+    // GPU name.
+    {
+        auto& d = report.diagnostics;
+        const bool haveRepro = !d.replayPath.empty() || d.debugRecorderFrames > 0 ||
+                               !d.sessionMarks.empty();
+        if (haveRepro) {
+            ImGui::SetNextItemOpen(true, ImGuiCond_Once);
+            if (ImGui::TreeNode("Reproduction")) {
+                if (!d.replayPath.empty()) {
+                    ImGui::TextWrapped("Replay: %s", d.replayPath.c_str());
+                    ImGui::TextDisabled("%u frames. Play it back with:", d.replayFrames);
+                    ImGui::TextDisabled("  EnjinPlayer --replay \"%s\"", d.replayPath.c_str());
+                    if (ImGui::SmallButton("Show in folder##repro")) {
+                        Platform::RevealInFileManager(d.replayPath);
+                    }
+                    ImGui::SetItemTooltip("The recorded session: the scene it ran against\n"
+                                          "plus every input that followed.");
+                } else {
+                    ImGui::TextDisabled("No session replay -- nothing had been played when");
+                    ImGui::TextDisabled("this was filed, so there is no input stream to attach.");
+                }
+
+                if (d.debugRecorderFrames > 0) {
+                    ImGui::Text("Debug Recorder held %u snapshots (%.1fs) at the time of filing",
+                                d.debugRecorderFrames, d.debugRecorderSeconds);
+                    ImGui::TextDisabled("That buffer lives in the editor and is gone now;");
+                    ImGui::TextDisabled("the replay above is the part that travels.");
+                }
+
+                if (!d.sessionMarks.empty()) {
+                    ImGui::Spacing();
+                    ImGui::TextUnformatted("Marked moments:");
+                    for (const auto& m : d.sessionMarks) ImGui::BulletText("%s", m.c_str());
+                    ImGui::TextDisabled("F8 during play, and script errors marking themselves.");
+                }
+                ImGui::TreePop();
+            }
+        } else {
+            ImGui::TextDisabled("No reproduction attached (nothing was played before filing)");
+        }
+    }
+
     // Diagnostics summary
     if (ImGui::TreeNode("Diagnostics")) {
         auto& d = report.diagnostics;
