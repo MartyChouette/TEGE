@@ -929,22 +929,42 @@ void EditorLayer::DrawGameViewPanel() {
 
 
 // ============================================================================
-// Rewind Timeline Scrubber (inside Game View during play mode)
+// Rewind Ability readout (inside Game View during play mode)
 // ============================================================================
 
+// Reports the GAME's rewind mechanic, so a designer can watch their buffer fill,
+// their charges spend and their cooldown run while they play.
+//
+// It reads the first SceneRewindComponent in the world, and for a long time that
+// was the wrong one: PlayMode created a hidden "__DebugRecorder" entity carrying
+// the same component, and it usually came first. So the panel a designer used to
+// tune a shipped mechanic was reporting the editor's diagnostic buffer -- a
+// different duration, a different snapshot rate, no charges and no cooldown.
+// The Debug Recorder owns its own storage now and never appears here.
+//
+// A scene with more than one of these is still ambiguous, so this names the
+// entity it is reporting rather than leaving "the first" unstated.
 void EditorLayer::DrawRewindTimeline() {
     if (!m_World) return;
 
-    // Find the SceneRewindComponent (if any)
     ECS::SceneRewindComponent* sr = nullptr;
+    ECS::Entity srEntity = ECS::INVALID_ENTITY;
+    u32 rewindCount = 0;
     for (auto entity : m_World->GetEntitiesWithComponent<ECS::SceneRewindComponent>()) {
-        sr = m_World->GetComponent<ECS::SceneRewindComponent>(entity);
-        if (sr) break;
+        auto* candidate = m_World->GetComponent<ECS::SceneRewindComponent>(entity);
+        if (!candidate) continue;
+        ++rewindCount;
+        if (!sr) { sr = candidate; srEntity = entity; }
     }
     if (!sr || sr->history.Empty()) return;
 
     auto* rewindSystem = m_PlayMode.GetRecordRewindSystem();
     if (!rewindSystem) return;
+
+    std::string ownerName = "Scene Rewind";
+    if (auto* nc = m_World->GetComponent<ECS::NameComponent>(srEntity)) {
+        if (!nc->name.empty()) ownerName = nc->name;
+    }
 
     // Draw a horizontal timeline bar at the bottom of the current window
     ImGui::Separator();
@@ -967,6 +987,24 @@ void EditorLayer::DrawRewindTimeline() {
     if (sr->charges > 0) {
         ImGui::SameLine();
         ImGui::Text("| Charges: %d/%d", sr->charges - sr->chargesUsed, sr->charges);
+    }
+
+    // Which entity this is. Without it a scene with two rewind managers reports
+    // one of them and does not say which.
+    ImGui::SameLine();
+    ImGui::TextDisabled("| %s", ownerName.c_str());
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Your game's Rewind Ability, on entity \"%s\".\n\n"
+                          "Not the editor's Debug Recorder -- that one lives in\n"
+                          "the toolbar transport and is not part of your game.",
+                          ownerName.c_str());
+    }
+    if (rewindCount > 1) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(0.95f, 0.80f, 0.35f, 1.0f), "| +%u more", rewindCount - 1);
+        ImGui::SetItemTooltip("This scene has %u Scene Rewind components. Only one can drive the\n"
+                              "world at a time and this readout shows the first one found.",
+                              rewindCount);
     }
 
     // Timeline progress bar

@@ -68,6 +68,17 @@ public:
 
     void Clear() { m_Count = 0; m_Head = 0; }
 
+    // Give the memory BACK, as opposed to Clear, which keeps the allocation for
+    // the next session. Unticking a recorder's checkbox should return what it was
+    // holding; Clear alone leaves the whole ring allocated and MemoryUsage still
+    // reporting it, which is the checkbox not doing what it says.
+    void Release() {
+        std::vector<T>().swap(m_Buffer);
+        m_Capacity = 0;
+        m_Head = 0;
+        m_Count = 0;
+    }
+
     // Approximate memory usage in bytes
     usize MemoryUsage() const { return m_Buffer.capacity() * sizeof(T); }
 

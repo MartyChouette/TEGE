@@ -940,9 +940,25 @@ public:
             // An explicit ?sharp= still wins over that default.
             if (sharp >= 0.0f) m_RenderSystem->SetWebSharpness(sharp);
         }
+        // A Rewind Ability's authored tint and vignette, folded in on top of the
+        // scene's grade. Web has no PostProcessSettings object -- these go
+        // through as loose scalars -- so the desktop RewindFeedbackApplier does
+        // not fit and the same values are applied here by hand.
+        //
+        // Both were serialized, both were documented as a screen tint, and
+        // neither had ever been rendered on any platform.
+        const auto& rf = m_RecordRewindSystem.GetActiveFeedback();
+        const Enjin::f32 tintR = s.colorFilter.x * (rf.active ? rf.tint.x : 1.0f);
+        const Enjin::f32 tintG = s.colorFilter.y * (rf.active ? rf.tint.y : 1.0f);
+        const Enjin::f32 tintB = s.colorFilter.z * (rf.active ? rf.tint.z : 1.0f);
+        Enjin::f32 vignette = s.vignetteEnabled ? s.vignetteIntensity : 0.0f;
+        // The stronger of the two, so a game that already ships a vignette does
+        // not lose it for the duration of a rewind.
+        if (rf.active && rf.vignetteStrength > vignette) vignette = rf.vignetteStrength;
+
         m_RenderSystem->SetWebPostProcess(
-            s.saturation, s.colorFilter.x, s.colorFilter.y, s.colorFilter.z,
-            s.vignetteEnabled ? s.vignetteIntensity : 0.0f, s.vignetteSmoothness,
+            s.saturation, tintR, tintG, tintB,
+            vignette, s.vignetteSmoothness,
             s.chromaticAberrationEnabled ? s.chromaticAberrationIntensity : 0.0f,
             s.colorQuantEnabled ? 8.0f : 0.0f,
             s.filmGrainEnabled ? s.filmGrainIntensity : 0.0f,
@@ -1384,7 +1400,11 @@ public:
         // this call existed; the comment where they should have been consumed said
         // the post-process pass "queries ArtStyleComponent on the camera entity",
         // and no such query was ever written.
-        Enjin::Renderer::ApplyCameraArtStyle(m_World.get(), m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+        // Web has no PostProcessing object (the pointer is #if'd out of the
+        // registry), so the scene-wide half of the art style goes through the
+        // render system and the post-process half is skipped. ApplyCameraArtStyle
+        // takes a nullable pp for exactly this case.
+        Enjin::Renderer::ApplyCameraArtStyle(m_World.get(), m_RenderSystem, nullptr);
         m_TweenSystem.Update(m_World.get(), deltaTime);
         m_SwarmSystem.Update(m_World.get(), deltaTime);
         // Brush solids: a loaded scene stores brushes, not geometry, so the
@@ -1416,6 +1436,17 @@ public:
                 m_World->AddComponent<Enjin::ECS::MeshComponent>(entity, std::move(mesh));
         }
         m_RecordRewindSystem.Update(deltaTime);
+        // ApplyWebPostProcess runs on init and on scene load, not per frame, so a
+        // rewind that starts or ends has to ask for it. Edge-triggered: rebuilding
+        // the whole web PP state every frame would be a lot of work for a value
+        // that changes twice a rewind.
+        {
+            const bool feedbackActive = m_RecordRewindSystem.GetActiveFeedback().active;
+            if (feedbackActive != m_RewindFeedbackWasActive) {
+                m_RewindFeedbackWasActive = feedbackActive;
+                ApplyWebPostProcess();
+            }
+        }
         m_CameraDirector.Update(m_World.get(), m_Camera.get(), deltaTime);
         Enjin::ECS::ParallaxSystem::ApplyParallaxLayers(m_World.get(), deltaTime);
         m_DialogueSystem.Update(m_World.get(), deltaTime);
@@ -2697,6 +2728,7 @@ private:
     Enjin::ECS::ControllerSystem m_ControllerSystem;
     Enjin::Gameplay::CameraDirector m_CameraDirector;
     Enjin::Gameplay::RecordRewindSystem m_RecordRewindSystem;
+    bool m_RewindFeedbackWasActive = false;
     Enjin::Gameplay::SimulationClock m_SimClock;
     Enjin::Gameplay::ClothSystem m_ClothSystem;
     Enjin::Gameplay::SurfaceResponseSystem m_SurfaceResponseSystem;

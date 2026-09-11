@@ -90,6 +90,7 @@ static bool s_SimulateTouch = false;
 #include "Enjin/ECS/Systems/BehaviorTreeSystem.h"
 #include "Enjin/ECS/Systems/AISystem.h"
 #include "Enjin/Gameplay/RecordRewindSystem.h"
+#include "Enjin/Gameplay/RewindFeedback.h"
 #include "Enjin/ECS/EntityEventBus.h"
 #include "Enjin/Gameplay/QuestSystem.h"
 #include "Enjin/Gameplay/FootstepSystem.h"
@@ -1106,6 +1107,12 @@ public:
 
         // Record & Rewind (Braid / Sands of Time mechanic)
         m_RecordRewindSystem.Update(deltaTime);
+        // The Rewind Ability's authored tint and vignette. They were serialized
+        // and documented as a screen tint and nothing had ever rendered them, so
+        // a rewind that a designer had coloured gold came out unchanged.
+        if (m_PostProcessing) {
+            m_RewindFeedback.Apply(m_RecordRewindSystem, m_PostProcessing->GetSettings());
+        }
 
         // Dialogue
         UpdateDialogue(deltaTime);
@@ -3440,6 +3447,7 @@ private:
     Enjin::ECS::BehaviorTreeSystem m_BehaviorTreeSystem;
     Enjin::ECS::AISystem m_AISystem;
     Enjin::Gameplay::RecordRewindSystem m_RecordRewindSystem;
+    Enjin::Gameplay::RewindFeedbackApplier m_RewindFeedback;
     Enjin::ECS::EntityEventBus m_EntityEventBus;
     Enjin::ECS::ActionTriggerSystem m_ActionTriggerSystem;
     Enjin::ECS::GameplaySystem m_GameplaySystem;

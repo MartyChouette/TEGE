@@ -1443,13 +1443,24 @@ public:
     Renderer::AdaptiveRayBudget* GetAdaptiveRayBudget() { return m_AdaptiveRayBudget.get(); }
 #endif
 
+    // Order-Independent Transparency.
+    //
+    // The FLAG lives out here, unguarded, even though only the Vulkan backend can
+    // render OIT. It is a scene setting that saves and loads, and
+    // SceneRenderSettings reads it on every backend -- a web build that could not
+    // answer IsOITEnabled() broke the round trip, and the first symptom was that
+    // the web target simply stopped compiling.
+    //
+    // The MACHINERY below (OITManager, the accumulation pipeline) stays desktop
+    // only. A web scene keeps the author's intent and renders sorted alpha, which
+    // is the web tier's substitute rather than a silent loss of the setting.
+    bool IsOITEnabled() const { return m_OITEnabled; }
+    void SetOITEnabled(bool enabled) { m_OITEnabled = enabled; }
+
 #if !ENJIN_RENDERER_WEBGPU
     // Denoiser type selection: 0=SVGF, 1=OIDN, 2=OptiX
     u32 GetDenoiserType() const { return m_DenoiserType; }
     void SetDenoiserType(u32 type) { m_DenoiserType = type; }
-
-    // Order-Independent Transparency
-    bool IsOITEnabled() const { return m_OITEnabled; }
 
     // The accumulation pipeline: the main mesh shaders compiled with -DENJIN_OIT,
     // targeting the OIT render pass. Built lazily, because the OIT render pass only
@@ -1461,7 +1472,6 @@ public:
 
     // What FlushPendingChanges should build OIT for, set by RequestOITForTarget.
     Renderer::RenderTarget* m_PendingOITTarget = nullptr;
-    void SetOITEnabled(bool enabled) { m_OITEnabled = enabled; }
     Renderer::OITManager* GetOITManager() { return m_OITManager.get(); }
 
     // SH Light Probes
@@ -2183,6 +2193,9 @@ private:
 #endif
 
     bool m_BackfaceCulling = false;
+    // Order-Independent Transparency, the SETTING. Unguarded because it is
+    // serialized and read on every backend; only the rendering is Vulkan-only.
+    bool m_OITEnabled = false;
     bool m_WireframeMode = false;
     Effects::WindSystem* m_WindSystem = nullptr;
     Renderer::SkyboxConfig m_WebSkyConfig;   // web: scene sky (desktop uses m_Skybox)
@@ -3140,7 +3153,6 @@ private:
 
     // --- Order-Independent Transparency (Weighted Blended OIT) ---
     std::unique_ptr<Renderer::OITManager> m_OITManager;
-    bool m_OITEnabled = false;
 
     // --- SH Light Probes ---
     std::unique_ptr<Renderer::SHLightingSystem> m_SHLighting;

@@ -2194,6 +2194,12 @@ private:
     f32 m_CaptionClipLength = 0.0f;        // 0 = unknown; two lint rules need it
     f32 m_CaptionPlayhead = 0.0f;          // seconds, scrubbed by clicking the strip
     void DrawPlayModeDiffDialog();
+
+    // The Debug Recorder / Replay settings popup, hung off the transport strip.
+    // One function because both states of the strip open the same popup -- the
+    // buffer size it controls governs what happens while PLAYING, and it used to
+    // be reachable only once playing had stopped.
+    void DrawPlaybackToolsPopup();
     void DrawBugReportList();
     void DrawBugReportDetail(BugReport& report);
     void DrawNewBugReportForm();

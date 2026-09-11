@@ -8582,29 +8582,61 @@ void EditorLayer::DrawDebugWorkstation() {
                 ImGui::TextDisabled("Not in play mode");
             }
 
-            // Rewind
+            // Snapshot buffers.
+            //
+            // Split in two, because the two halves have opposite meanings to
+            // whoever is reading this tab. The Rewind Ability's memory SHIPS and
+            // is a budget; the Debug Recorder's does not and is free. Reporting
+            // them under one "-- Rewind System --" heading made an editor
+            // diagnostic look like something a player would be paying for, and
+            // the Debug Recorder is deliberately the more expensive of the two
+            // (every channel, twice the snapshot rate).
             if (m_World) {
                 ImGui::Separator();
-                ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Rewind System --");
+                ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Rewind Ability (ships) --");
                 bool any = false;
                 for (auto entity : m_World->GetEntitiesWithComponent<ECS::RecordRewindComponent>()) {
                     auto* rr = m_World->GetComponent<ECS::RecordRewindComponent>(entity);
-                    if (rr) { any = true;
-                        ImGui::Text("Entity: %u/%u frames, ~%.1f KB",
-                            rr->history.Count(), rr->history.Capacity(),
-                            static_cast<f32>(rr->history.MemoryUsage()) / 1024.0f);
+                    if (!rr) continue;
+                    any = true;
+                    const char* nm = "entity";
+                    if (auto* nc = m_World->GetComponent<ECS::NameComponent>(entity)) {
+                        if (!nc->name.empty()) nm = nc->name.c_str();
                     }
+                    ImGui::Text("Per-entity (%s): %u/%u frames, ~%.1f KB",
+                        nm, rr->history.Count(), rr->history.Capacity(),
+                        static_cast<f32>(rr->history.MemoryUsage()) / 1024.0f);
                 }
                 for (auto entity : m_World->GetEntitiesWithComponent<ECS::SceneRewindComponent>()) {
                     auto* sr = m_World->GetComponent<ECS::SceneRewindComponent>(entity);
-                    if (sr) { any = true;
-                        ImGui::Text("Scene: %u/%u frames, ~%.1f KB, cache: %zu",
-                            sr->history.Count(), sr->history.Capacity(),
-                            static_cast<f32>(sr->history.MemoryUsage()) / 1024.0f,
-                            sr->prevFrameCache.size());
+                    if (!sr) continue;
+                    any = true;
+                    const char* nm = "entity";
+                    if (auto* nc = m_World->GetComponent<ECS::NameComponent>(entity)) {
+                        if (!nc->name.empty()) nm = nc->name.c_str();
                     }
+                    ImGui::Text("Whole-scene (%s): %u/%u frames, ~%.1f KB, cache: %zu",
+                        nm, sr->history.Count(), sr->history.Capacity(),
+                        static_cast<f32>(sr->history.MemoryUsage()) / 1024.0f,
+                        sr->prevFrameCache.size());
                 }
-                if (!any) ImGui::TextDisabled("No rewind components");
+                if (!any) ImGui::TextDisabled("No Rewind Ability components in this scene");
+
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Debug Recorder (editor only) --");
+                const auto& dbg = m_PlayMode.GetDebugRecorder();
+                if (dbg.IsActive()) {
+                    ImGui::Text("%u frames, ~%.1f KB, %.0fs buffer at %.0f/s",
+                        dbg.FrameCount(), static_cast<f32>(dbg.MemoryBytes()) / 1024.0f,
+                        dbg.GetSettings().bufferSeconds, dbg.GetSettings().snapshotsPerSecond);
+                    ImGui::SetItemTooltip("Never reaches a build. Size it from the transport strip\n"
+                                          "settings, or from Settings > System > Play Mode.");
+                } else if (dbg.FrameCount() > 0) {
+                    ImGui::Text("%u frames held from the last session, ~%.1f KB",
+                        dbg.FrameCount(), static_cast<f32>(dbg.MemoryBytes()) / 1024.0f);
+                } else {
+                    ImGui::TextDisabled("Not recording");
+                }
             }
 
             ImGui::EndTabItem();

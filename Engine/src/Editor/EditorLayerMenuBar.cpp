@@ -1364,20 +1364,28 @@ void EditorLayer::DrawMenuBar() {
                 return clicked;
             };
 
-            // Recorder state used by the transport (step buttons + scrubber)
-            auto* rewind = m_PlayMode.GetRecordRewindSystem();
-            bool hasRecorder = !stopped && m_PlayMode.GetDebugRecorderEntity() != ECS::INVALID_ENTITY;
-            f32 recorded = (hasRecorder && rewind) ? rewind->GetSceneRecordedDuration() : 0.0f;
-            const f32 stepDt = 1.0f / 30.0f;   // matches the recorder's snapshot cadence
-            bool canStep = !stopped && !playing && recorded > 0.05f && rewind;
-            if (playing) m_DebugScrubOffset = 0.0f;   // any resume path returns the scrubber to the live edge
+            // Debug Recorder state used by the transport (step buttons + scrubber).
+            //
+            // This is the DIAGNOSTIC recorder, not the gameplay Rewind Ability.
+            // Until the two were separated this strip drove a hidden
+            // SceneRewindComponent through RecordRewindSystem -- the same code path
+            // a shipped rewind mechanic uses -- so neither this strip nor the Game
+            // View's own rewind timeline could tell them apart.
+            auto& dbg = m_PlayMode.GetDebugRecorder();
+            const bool hasRecorder = !stopped && dbg.IsActive();
+            const f32 recorded = hasRecorder ? dbg.RecordedDuration() : 0.0f;
+            const bool canStep = !stopped && !playing && dbg.HasUsableBuffer();
+            // Resuming branches the session away from the frames after the scrub
+            // point, so the recorder drops them rather than splicing two timelines.
+            if (playing && dbg.IsScrubbing()) dbg.ReturnToLiveEdge();
+            m_DebugScrubOffset = dbg.GetScrubOffset();
 
             // Step back one snapshot (DAW frame-step); pause first to use it
             if (!stopped) {
                 if (!canStep) ImGui::BeginDisabled();
                 if (ImGui::Button("|<##dbgback", ImVec2(stepW, btnH))) {
-                    m_DebugScrubOffset = std::min(m_DebugScrubOffset + stepDt, recorded);
-                    rewind->SeekSceneToTime(m_DebugScrubOffset);
+                    dbg.StepBack();
+                    m_DebugScrubOffset = dbg.GetScrubOffset();
                 }
                 if (!canStep) ImGui::EndDisabled();
                 ImGui::SetItemTooltip(canStep ? "Step one snapshot back in time"
@@ -1421,8 +1429,8 @@ void EditorLayer::DrawMenuBar() {
                 ImGui::SameLine(0.0f, 4.0f);
                 if (!canStep) ImGui::BeginDisabled();
                 if (ImGui::Button(">|##dbgfwd", ImVec2(stepW, btnH))) {
-                    m_DebugScrubOffset = std::max(m_DebugScrubOffset - stepDt, 0.0f);
-                    rewind->SeekSceneToTime(m_DebugScrubOffset);
+                    dbg.StepForward();
+                    m_DebugScrubOffset = dbg.GetScrubOffset();
                 }
                 if (!canStep) ImGui::EndDisabled();
                 ImGui::SetItemTooltip(canStep ? "Step one snapshot forward (toward the pause point)"
@@ -1477,11 +1485,26 @@ void EditorLayer::DrawMenuBar() {
                     f32 w = r * 2.0f + 3.0f + ImGui::CalcTextSize(recTxt).x;
                     ImGui::Dummy(ImVec2(w, btnH));
                     if (ImGui::IsItemHovered()) {
+                        // Says WHICH recorder, and that it is not the game's. A
+                        // person who wants a rewind their player can use needs the
+                        // Rewind Ability component, and nothing here used to
+                        // distinguish the two.
                         if (playing) {
-                            ImGui::SetTooltip("Recording the whole scene (%.0fs buffer) - pause to scrub back",
-                                              m_EditorSettings.debugRecordSeconds);
+                            ImGui::SetTooltip(
+                                "Debug Recorder: rolling %.0fs of the whole scene at %.0f snapshots/s.\n\n"
+                                "An editor diagnostic. It is not part of your game and never reaches\n"
+                                "a build. Pause to step or scrub back through it.\n\n"
+                                "For a rewind your PLAYER can use, add a Rewind Ability component\n"
+                                "to an entity instead.",
+                                dbg.GetSettings().bufferSeconds,
+                                dbg.GetSettings().snapshotsPerSecond);
                         } else {
-                            ImGui::SetTooltip("Recorded buffer - step or scrub backward, resume to branch from there");
+                            ImGui::SetTooltip(
+                                "Debug Recorder: %u snapshots, %.1f KB.\n\n"
+                                "Step or scrub backward through what just happened.\n"
+                                "Resuming continues from wherever you scrubbed to, and the frames\n"
+                                "after that point are dropped.",
+                                dbg.FrameCount(), static_cast<f32>(dbg.MemoryBytes()) / 1024.0f);
                         }
                     }
                 }
@@ -1493,12 +1516,16 @@ void EditorLayer::DrawMenuBar() {
                 if (!canStep) ImGui::BeginDisabled();
                 // Slider shows time-before-pause; drag left = further into the past.
                 if (ImGui::SliderFloat("##dbgscrub", &back, 0.0f, std::max(recorded, 0.05f), "-%.2fs")) {
-                    m_DebugScrubOffset = back;
-                    rewind->SeekSceneToTime(m_DebugScrubOffset);
+                    // The recorder clamps to what it actually holds. Dragging past
+                    // the oldest frame used to leave the scene still while the
+                    // slider kept moving, which reads as a broken control rather
+                    // than as the end of the buffer.
+                    dbg.ScrubTo(back);
+                    m_DebugScrubOffset = dbg.GetScrubOffset();
                 }
                 if (!canStep) ImGui::EndDisabled();
                 ImGui::SetItemTooltip(canStep
-                    ? "Scrub backward through the recorded play session\nResume plays on from wherever you scrubbed to"
+                    ? "Scrub backward through the Debug Recorder's buffer.\nResume continues from wherever you scrub to."
                     : "Pause to scrub backward through the recording");
 
                 // Bookmarks: flags for marked moments (F8 / script exceptions).
@@ -1517,8 +1544,8 @@ void EditorLayer::DrawMenuBar() {
                         snprintf(flagId, sizeof(flagId), "!%zu##bm%zu", mi + 1, mi);
                         if (!reachable) ImGui::BeginDisabled();
                         if (ImGui::SmallButton(flagId)) {
-                            m_DebugScrubOffset = offset;
-                            rewind->SeekSceneToTime(offset);
+                            dbg.ScrubTo(offset);
+                            m_DebugScrubOffset = dbg.GetScrubOffset();
                         }
                         if (!reachable) ImGui::EndDisabled();
                         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
@@ -1534,10 +1561,26 @@ void EditorLayer::DrawMenuBar() {
                 }
             }
 
-            // --- Export / replay + recorder settings (stopped only) -----------
-            // Every play session records its input stream; once stopped it can be
-            // exported as a shareable .tegereplay (plain JSON: scene snapshot +
-            // per-frame inputs+dt) or the newest one replayed deterministically.
+            // --- Replay export + settings ------------------------------------
+            //
+            // Two different features share this end of the strip and used to share
+            // a heading ("Recorder") that named neither:
+            //
+            //   Debug Recorder  scene STATE, rolling buffer, scrub backward. The
+            //                   left half of this strip.
+            //   Replay          the INPUT stream, written to a .tegereplay file,
+            //                   replayed deterministically. These buttons.
+            //
+            // Export and Play only make sense with the session finished, so they
+            // stay behind `stopped`. The settings popup does not -- the buffer size
+            // it controls governs what happens while playing, and it was only
+            // reachable once playing had stopped.
+            if (!stopped) {
+                ImGui::SameLine(0.0f, 8.0f);
+                if (ImGui::SmallButton("...##recsetlive")) ImGui::OpenPopup("RecorderSettingsPopup");
+                ImGui::SetItemTooltip("Debug Recorder and Replay settings");
+                DrawPlaybackToolsPopup();
+            }
             if (stopped) {
                 bool hasRec = m_PlayMode.HasRecording();
                 ImGui::SameLine(0.0f, 8.0f);
@@ -1557,30 +1600,8 @@ void EditorLayer::DrawMenuBar() {
 
                 ImGui::SameLine(0.0f, 4.0f);
                 if (ImGui::SmallButton("...##recset")) ImGui::OpenPopup("RecorderSettingsPopup");
-                ImGui::SetItemTooltip("Recorder settings");
-                if (ImGui::BeginPopup("RecorderSettingsPopup")) {
-                    ImGui::TextUnformatted("Recorder");
-                    ImGui::Separator();
-                    bool changed = false;
-                    changed |= ImGui::Checkbox("Record play sessions", &m_EditorSettings.debugRecordPlay);
-                    ImGui::SetItemTooltip("Keeps a rolling whole-scene recording during play so you can\n"
-                                          "pause and step or scrub backward through time");
-                    ImGui::SetNextItemWidth(160.0f);
-                    changed |= ImGui::SliderFloat("Buffer", &m_EditorSettings.debugRecordSeconds,
-                                                  5.0f, 120.0f, "%.0f s");
-                    ImGui::SetItemTooltip("How far back the timeline can scrub (30 snapshots/s)");
-                    ImGui::TextDisabled("Input replay is always recorded;");
-                    ImGui::TextDisabled("Export Replay saves it as a shareable file.");
-                    ImGui::TextDisabled("F8 during play marks a moment; script");
-                    ImGui::TextDisabled("errors mark themselves. Marks ride in");
-                    ImGui::TextDisabled("the replay - click a flag to jump there.");
-                    if (changed) {
-                        m_PlayMode.SetDebugRecording(m_EditorSettings.debugRecordPlay,
-                                                     m_EditorSettings.debugRecordSeconds);
-                        m_EditorSettings.Save();
-                    }
-                    ImGui::EndPopup();
-                }
+                ImGui::SetItemTooltip("Debug Recorder and Replay settings");
+                DrawPlaybackToolsPopup();
             }
 
             // Close the transport slab: rounded background behind the whole strip
@@ -1865,5 +1886,74 @@ void EditorLayer::ExportScriptApiStub() {
 }
 
 
+// The two playback tools, under headings that name them.
+//
+// They used to share one popup called "Recorder", which described the scene
+// recorder in a checkbox and the input replay in five lines of grey text, and a
+// person could not tell that these were two features with two storage formats
+// and two purposes. They are also not the gameplay Rewind Ability, which is a
+// component and lives in the inspector -- that is said here because the strip
+// this popup hangs off looks exactly like a rewind control.
+void EditorLayer::DrawPlaybackToolsPopup() {
+    if (!ImGui::BeginPopup("RecorderSettingsPopup")) return;
+
+    auto& dbg = m_PlayMode.GetDebugRecorder();
+    bool changed = false;
+
+    // ---- Debug Recorder ----------------------------------------------------
+    ImGui::TextUnformatted("Debug Recorder");
+    ImGui::TextDisabled("Scene state, so you can scrub back");
+    ImGui::Separator();
+
+    changed |= ImGui::Checkbox("Record play sessions", &m_EditorSettings.debugRecordPlay);
+    ImGui::SetItemTooltip("Keeps a rolling recording of the whole scene during play so you can\n"
+                          "pause and step or scrub backward through time.\n\n"
+                          "Editor only. It is not part of your game.");
+
+    if (!m_EditorSettings.debugRecordPlay) ImGui::BeginDisabled();
+    ImGui::SetNextItemWidth(160.0f);
+    changed |= ImGui::SliderFloat("Buffer", &m_EditorSettings.debugRecordSeconds,
+                                  5.0f, 120.0f, "%.0f s");
+    ImGui::SetItemTooltip("How far back the timeline can scrub.");
+    if (!m_EditorSettings.debugRecordPlay) ImGui::EndDisabled();
+
+    // What it is actually costing, right now. A buffer slider with no readout
+    // makes memory something you find out about from the Debug Workstation.
+    if (dbg.IsActive()) {
+        ImGui::TextDisabled("%u snapshots  %.1f KB  %.0f/s",
+                            dbg.FrameCount(), static_cast<f32>(dbg.MemoryBytes()) / 1024.0f,
+                            dbg.GetSettings().snapshotsPerSecond);
+    } else {
+        ImGui::TextDisabled("Not recording (press Play)");
+    }
+
+    ImGui::Spacing();
+
+    // ---- Replay ------------------------------------------------------------
+    ImGui::TextUnformatted("Replay");
+    ImGui::TextDisabled("Input stream, saved to a file");
+    ImGui::Separator();
+    ImGui::TextDisabled("Always recorded. Export Replay writes it");
+    ImGui::TextDisabled("to this project's replays folder as a");
+    ImGui::TextDisabled(".tegereplay, which replays deterministically.");
+    ImGui::TextDisabled("F8 during play marks a moment; script errors");
+    ImGui::TextDisabled("mark themselves. Marks ride in the replay --");
+    ImGui::TextDisabled("click a flag on the timeline to jump there.");
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::TextDisabled("Neither of these is the Rewind Ability.");
+    ImGui::TextDisabled("That is a component your game ships with:");
+    ImGui::TextDisabled("Add Component > Gameplay > Rewind Ability.");
+
+    if (changed) {
+        m_PlayMode.SetDebugRecording(m_EditorSettings.debugRecordPlay,
+                                     m_EditorSettings.debugRecordSeconds);
+        m_EditorSettings.Save();
+    }
+    ImGui::EndPopup();
+}
+
 } // namespace Editor
+
 } // namespace Enjin

@@ -199,6 +199,8 @@ enjin_add_test(TestShaderGraphCodegen Unit/Editor/TestShaderGraphCodegen.cpp)
 enjin_add_test(TestProceduralGraphGenerators Unit/Editor/TestProceduralGraphGenerators.cpp)
 enjin_add_test(TestCollabConflictStrategy Unit/Editor/TestCollabConflictStrategy.cpp)
 enjin_add_test(TestRewindAnimation   Unit/Gameplay/TestRewindAnimation.cpp)
+enjin_add_test(TestDebugRecorder     Unit/Gameplay/TestDebugRecorder.cpp)
+enjin_add_test(TestRewindFeedback    Unit/Gameplay/TestRewindFeedback.cpp)
 target_compile_definitions(TestDocGenerator PRIVATE
     ENJIN_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/..")
 enjin_add_test(TestFontAtlas          Unit/Renderer/TestFontAtlas.cpp)

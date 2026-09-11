@@ -385,20 +385,10 @@ void PlayMode::Play() {
     m_SessionElapsed = 0.0f;
     m_LastExceptionCount = m_ScriptEngine.GetExceptionCount();
 
-    m_DebugRecorderEntity = ECS::INVALID_ENTITY;
-    if (m_DebugRecordEnabled && m_World) {
-        m_DebugRecorderEntity = m_World->CreateEntity();
-        auto& name = m_World->AddComponent<ECS::NameComponent>(m_DebugRecorderEntity);
-        name.name = "__DebugRecorder";
-        auto& sr = m_World->AddComponent<ECS::SceneRewindComponent>(m_DebugRecorderEntity);
-        sr.maxDuration = m_DebugRecordSeconds;
-        sr.recordInterval = 1.0f / 30.0f;   // finer than the gameplay default: smoother stepping
-        sr.rewindKey = -1;
-        sr.cooldown = 0.0f;
-        sr.charges = 0;
-        ENJIN_LOG_INFO(Editor, "PlayMode: debug recorder active (%.0fs buffer, 30 snapshots/s)",
-                       m_DebugRecordSeconds);
-    }
+    // The Debug Recorder owns its own buffer now. It used to be a hidden entity
+    // carrying a SceneRewindComponent, which put a diagnostic into the world the
+    // designer was authoring and made the gameplay rewind timeline read it.
+    m_DebugRecorder.Begin(m_World, m_Physics.get(), m_Physics2D.get());
     m_TweenSystem.PlayAll(m_World);
     Scripting::SetBindingsWorld(m_World);
     Scripting::SetBindingsDialogueSystem(&m_DialogueSystem);
@@ -770,6 +760,10 @@ void PlayMode::Stop() {
             if (captured >= 2000) break;
             auto* nc = m_World->GetComponent<ECS::NameComponent>(e);
             auto* t = m_World->GetComponent<ECS::TransformComponent>(e);
+            // "__DebugRecorder" is a legacy entity from when the Debug Recorder
+            // was a hidden SceneRewindComponent. It is no longer created, but a
+            // scene saved by an older build can still contain one and it must not
+            // become part of a replay's expected end state.
             if (!nc || !t || nc->name.empty() || nc->name == "__DebugRecorder") continue;
             Gameplay::ReplayEndEntity end;
             end.name = nc->name;
@@ -944,6 +938,17 @@ void PlayMode::Stop() {
     // AFTER RestoreEditorState: before it, the destroy-observer would capture
     // the recorder and the recreate pass would resurrect it. The sweep also
     // heals scenes that collected recorders before this fix.
+    m_DebugRecorder.End();
+
+    // A session stopped mid-rewind would otherwise strand the tint, and the
+    // editor would carry a gold wash into edit mode with nothing to explain it.
+    if (m_PostProcessing) m_RewindFeedback.Reset(m_PostProcessing->GetSettings());
+
+    // The recorder no longer lives in the world, so nothing new can leave a
+    // "__DebugRecorder" behind. This sweep stays because scenes SAVED while the
+    // old hidden-entity version was in use still contain one, and a diagnostic
+    // that a designer never asked for should not sit in their hierarchy forever.
+    // It can be deleted once those scenes have been opened and re-saved.
     if (m_World) {
         std::vector<ECS::Entity> strayRecorders;
         for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::NameComponent>()) {
@@ -951,8 +956,13 @@ void PlayMode::Stop() {
             if (nc && nc->name == "__DebugRecorder") strayRecorders.push_back(e);
         }
         for (ECS::Entity e : strayRecorders) m_World->DestroyEntity(e);
-        if (!strayRecorders.empty()) m_World->FlushPendingDestructions();
-        m_DebugRecorderEntity = ECS::INVALID_ENTITY;
+        if (!strayRecorders.empty()) {
+            m_World->FlushPendingDestructions();
+            ENJIN_LOG_INFO(Editor,
+                "PlayMode: removed %zu legacy __DebugRecorder entit%s left in this scene by an "
+                "older editor build", strayRecorders.size(),
+                strayRecorders.size() == 1 ? "y" : "ies");
+        }
     }
 
     // Cloth: the restore brings back component data, but the GPU vertex/index
@@ -1172,8 +1182,16 @@ void PlayMode::Update(f32 deltaTime) {
         }
         auto t3 = std::chrono::high_resolution_clock::now();
 
-        // Record & Rewind (Braid / Sands of Time mechanic)
+        // The gameplay Rewind Ability -- a designed mechanic that ships.
         m_RecordRewindSystem.Update(deltaTime);
+        if (m_PostProcessing) {
+            m_RewindFeedback.Apply(m_RecordRewindSystem, m_PostProcessing->GetSettings());
+        }
+
+        // The Debug Recorder -- an editor diagnostic that does not. Ticked here,
+        // after everything that moves the world this frame, so the snapshot is of
+        // the frame as it ended rather than as it was halfway through.
+        m_DebugRecorder.Tick(deltaTime);
 
         // Camera Director: the virtual-camera brain. Runs AFTER controllers and
         // scripts (which may have re-prioritized vcams this frame) and BEFORE the

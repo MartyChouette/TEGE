@@ -24,6 +24,8 @@
 #include "Enjin/ECS/Systems/AISystem.h"
 #include "Enjin/Networking/NetworkSystem.h"
 #include "Enjin/Gameplay/RecordRewindSystem.h"
+#include "Enjin/Editor/DebugRecorder.h"
+#include "Enjin/Gameplay/RewindFeedback.h"
 #include "Enjin/Gameplay/Replay.h"
 #include "Enjin/Audio/AudioReactiveSystem.h"
 #include "Enjin/Editor/AudioEventGraph.h"
@@ -140,15 +142,23 @@ public:
 
     Gameplay::RecordRewindSystem* GetRecordRewindSystem() { return &m_RecordRewindSystem; }
 
-    // Editor debug recording: when enabled, Play() injects a hidden scene-rewind
-    // recorder (entity "__DebugRecorder") so every play session records the whole
-    // scene, and the editor timeline can pause + step/scrub backward through it.
-    // The same machinery games use for rewind mechanics, driven programmatically.
+    // The Debug Recorder: a rolling whole-scene recording of the play session so
+    // the editor timeline can pause and step or scrub backward through it.
+    //
+    // It used to be a hidden entity named "__DebugRecorder" carrying a
+    // SceneRewindComponent -- the same component a game uses for a rewind
+    // mechanic. That is why the Game View's gameplay rewind timeline read the
+    // debug buffer (it takes the first SceneRewindComponent in the world), and
+    // why Stop still carries a sweep for recorder entities that got saved into
+    // scenes. It is its own object now and owns nothing in the world.
     void SetDebugRecording(bool enabled, f32 seconds) {
-        m_DebugRecordEnabled = enabled;
-        m_DebugRecordSeconds = seconds;
+        DebugRecorder::Settings s = m_DebugRecorder.GetSettings();
+        s.enabled = enabled;
+        s.bufferSeconds = seconds;
+        m_DebugRecorder.Configure(s);
     }
-    ECS::Entity GetDebugRecorderEntity() const { return m_DebugRecorderEntity; }
+    DebugRecorder& GetDebugRecorder() { return m_DebugRecorder; }
+    const DebugRecorder& GetDebugRecorder() const { return m_DebugRecorder; }
 
     // --- Replay (flagship #5 phase 2: shareable input-stream replays) ---
     // Every play session records its input stream (cheap: sparse key lists) plus
@@ -271,9 +281,15 @@ private:
 
     // Record & Rewind (Braid / Sands of Time mechanic)
     Gameplay::RecordRewindSystem m_RecordRewindSystem;
-    bool m_DebugRecordEnabled = true;
-    f32  m_DebugRecordSeconds = 30.0f;
-    ECS::Entity m_DebugRecorderEntity = ECS::INVALID_ENTITY;
+
+    // Editor diagnostic, separate from the mechanic above and from the input
+    // replay below. Three features, three objects.
+    DebugRecorder m_DebugRecorder;
+
+    // Puts the Rewind Ability's authored tint and vignette on the screen while a
+    // rewind runs, and takes them off again after. One per post-process stack,
+    // because it holds the settings it displaced.
+    Gameplay::RewindFeedbackApplier m_RewindFeedback;
     Gameplay::ReplayData m_ActiveRecording;   // input stream of the current/last session
     Gameplay::ReplayData m_ReplayData;        // stream being played back
     bool  m_Replaying = false;

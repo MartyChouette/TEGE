@@ -27,6 +27,10 @@ void RecordRewindSystem::Update(f32 deltaTime) {
 
     m_AnyRewinding = false;
     m_SceneRewinding = false;
+    // Rebuilt each frame from whichever component is rewinding. A scene rewind
+    // wins over a per-entity one when both run: it is the whole world going back,
+    // so its look is the one that describes what the player is seeing.
+    m_Feedback = RewindFeedback{};
 
     // Scene rewind takes priority — if active, skip entity rewind
     UpdateSceneRewind(deltaTime);
@@ -39,224 +43,13 @@ void RecordRewindSystem::Update(f32 deltaTime) {
 // Snapshot Capture / Restore
 // ============================================================================
 
-void RecordRewindSystem::CaptureEntitySnapshot(ECS::Entity entity, EntitySnapshot& out, u32 channelMask) {
-    out.entity = entity;
-    out.channelMask = channelMask;
 
-    if (HasChannel(channelMask, RewindChannelFlags::Transform)) {
-        auto* t = m_World->GetComponent<ECS::TransformComponent>(entity);
-        if (t) {
-            out.position = t->position;
-            out.rotation = t->rotation;
-            out.scale = t->scale;
-            out.visible = t->visible;
-        }
-    }
 
-    if (HasChannel(channelMask, RewindChannelFlags::Velocity)) {
-        if (auto* ctrl = m_World->GetComponent<ECS::Platformer2DController>(entity))
-            out.velocity = ctrl->velocity;
-        else if (auto* ctrl3 = m_World->GetComponent<ECS::ThirdPersonController>(entity))
-            out.velocity = ctrl3->velocity;
-        else if (auto* ctrl1 = m_World->GetComponent<ECS::FirstPersonController>(entity))
-            out.velocity = ctrl1->velocity;
-    }
-
-    if (HasChannel(channelMask, RewindChannelFlags::Health)) {
-        auto* hp = m_World->GetComponent<ECS::HealthComponent>(entity);
-        if (hp) {
-            out.health = hp->currentHealth;
-            out.shield = hp->currentShield;
-            out.isDead = hp->isDead;
-        }
-    }
-
-    if (HasChannel(channelMask, RewindChannelFlags::Animation)) {
-        auto* anim = m_World->GetComponent<ECS::AnimatorComponent>(entity);
-        if (anim) {
-            out.animNormalizedTime = anim->animator.GetNormalizedTime();
-        }
-    }
-
-    // Physics and Material were declared in RewindChannelFlags, drawn in the
-    // inspector and serialized, and never captured by anything -- so the
-    // Physics checkbox restored zeroed velocity (RestoreEntitySnapshot reads
-    // these two fields) and the Material checkbox did nothing at all.
-    if (HasChannel(channelMask, RewindChannelFlags::Physics)) {
-        auto* rb = m_World->GetComponent<ECS::RigidbodyComponent>(entity);
-        if (rb) {
-            out.linearVelocity = rb->velocity;
-            out.angularVelocity = rb->angularVelocity;
-        }
-    }
-
-    if (HasChannel(channelMask, RewindChannelFlags::Material)) {
-        auto* mat = m_World->GetComponent<ECS::MaterialComponent>(entity);
-        if (mat) {
-            out.opacity = mat->opacity;
-            out.baseColor = mat->baseColor;
-        }
-    }
-}
-
-void RecordRewindSystem::RestoreEntitySnapshot(ECS::Entity entity, const EntitySnapshot& snap) {
-    if (!m_World->IsValid(entity)) return;
-
-    if (HasChannel(snap.channelMask, RewindChannelFlags::Transform)) {
-        auto* t = m_World->GetComponent<ECS::TransformComponent>(entity);
-        if (t) {
-            t->position = snap.position;
-            t->rotation = snap.rotation;
-            t->scale = snap.scale;
-            t->visible = snap.visible;
-        }
-    }
-
-    if (HasChannel(snap.channelMask, RewindChannelFlags::Velocity)) {
-        if (auto* ctrl = m_World->GetComponent<ECS::Platformer2DController>(entity))
-            ctrl->velocity = snap.velocity;
-        else if (auto* ctrl3 = m_World->GetComponent<ECS::ThirdPersonController>(entity))
-            ctrl3->velocity = snap.velocity;
-        else if (auto* ctrl1 = m_World->GetComponent<ECS::FirstPersonController>(entity))
-            ctrl1->velocity = snap.velocity;
-    }
-
-    if (HasChannel(snap.channelMask, RewindChannelFlags::Health)) {
-        auto* hp = m_World->GetComponent<ECS::HealthComponent>(entity);
-        if (hp) {
-            hp->currentHealth = snap.health;
-            hp->currentShield = snap.shield;
-            if (hp->isDead && !snap.isDead) hp->isDead = false;
-        }
-    }
-
-    if (HasChannel(snap.channelMask, RewindChannelFlags::Animation)) {
-        // Seek the animator to the recorded time.
-        //
-        // This used to be a comment saying "SkeletalAnimator doesn't expose a time
-        // setter, so we skip restore for now". It does expose one, and has for
-        // longer than this comment has been here: SetNormalizedTime seeks, resamples
-        // the clip, and recalculates the world transforms and skinning matrices.
-        // Capture was writing animNormalizedTime into every snapshot the whole time,
-        // so the Animation checkbox recorded a channel that was then thrown away --
-        // a rewound character walked backwards through its own footsteps with its
-        // legs still cycling forward.
-        //
-        // Nothing pauses the animator during a rewind, so it also ticks forward each
-        // frame. That drift is bounded by one frame and re-corrected by the next
-        // restore, because this runs every frame of the rewind rather than once at
-        // the end.
-        if (auto* anim = m_World->GetComponent<ECS::AnimatorComponent>(entity)) {
-            anim->animator.SetNormalizedTime(snap.animNormalizedTime);
-        }
-    }
-
-    if (HasChannel(snap.channelMask, RewindChannelFlags::Material)) {
-        auto* mat = m_World->GetComponent<ECS::MaterialComponent>(entity);
-        if (mat) {
-            mat->opacity = snap.opacity;
-            mat->baseColor = snap.baseColor;
-        }
-    }
-
-    if (HasChannel(snap.channelMask, RewindChannelFlags::Physics)) {
-        auto* rb = m_World->GetComponent<ECS::RigidbodyComponent>(entity);
-        if (rb) {
-            rb->velocity = snap.linearVelocity;
-            rb->angularVelocity = snap.angularVelocity;
-        }
-    }
-
-    // Sync physics body state if physics channel or transform was restored
-    if (HasChannel(snap.channelMask, RewindChannelFlags::Transform)) {
-        if (m_Physics) {
-            m_Physics->ForceSetBodyState(entity, snap.position, snap.rotation,
-                                          snap.linearVelocity, snap.angularVelocity);
-        }
-        if (m_Physics2D) {
-            m_Physics2D->ForceSetBodyState(entity, snap.position, snap.velocity);
-        }
-    }
-}
-
-void RecordRewindSystem::RestoreEntitySnapshotInterpolated(ECS::Entity entity,
-                                                            const EntitySnapshot& a,
-                                                            const EntitySnapshot& b, f32 t) {
-    if (!m_World->IsValid(entity)) return;
-    u32 mask = a.channelMask;
-
-    if (HasChannel(mask, RewindChannelFlags::Transform)) {
-        auto* tr = m_World->GetComponent<ECS::TransformComponent>(entity);
-        if (tr) {
-            tr->position = a.position + (b.position - a.position) * t;
-            tr->rotation = Math::Quaternion::Slerp(a.rotation, b.rotation, t);
-            tr->scale = a.scale + (b.scale - a.scale) * t;
-            tr->visible = (t < 0.5f) ? a.visible : b.visible;
-        }
-    }
-
-    if (HasChannel(mask, RewindChannelFlags::Velocity)) {
-        Math::Vector3 interpVel = a.velocity + (b.velocity - a.velocity) * t;
-        if (auto* ctrl = m_World->GetComponent<ECS::Platformer2DController>(entity))
-            ctrl->velocity = interpVel;
-        else if (auto* ctrl3 = m_World->GetComponent<ECS::ThirdPersonController>(entity))
-            ctrl3->velocity = interpVel;
-        else if (auto* ctrl1 = m_World->GetComponent<ECS::FirstPersonController>(entity))
-            ctrl1->velocity = interpVel;
-    }
-
-    if (HasChannel(mask, RewindChannelFlags::Health)) {
-        auto* hp = m_World->GetComponent<ECS::HealthComponent>(entity);
-        if (hp) {
-            hp->currentHealth = a.health + (b.health - a.health) * t;
-            hp->currentShield = a.shield + (b.shield - a.shield) * t;
-            if (hp->isDead && hp->currentHealth > 0.0f) hp->isDead = false;
-        }
-    }
-
-    if (HasChannel(mask, RewindChannelFlags::Animation)) {
-        if (auto* anim = m_World->GetComponent<ECS::AnimatorComponent>(entity)) {
-            anim->animator.SetNormalizedTime(
-                LerpNormalizedAnimTime(a.animNormalizedTime, b.animNormalizedTime, t));
-        }
-    }
-
-    // Sync physics
-    if (HasChannel(mask, RewindChannelFlags::Transform)) {
-        Math::Vector3 pos = a.position + (b.position - a.position) * t;
-        Math::Quaternion rot = Math::Quaternion::Slerp(a.rotation, b.rotation, t);
-        Math::Vector3 vel = a.velocity + (b.velocity - a.velocity) * t;
-        if (m_Physics) {
-            m_Physics->ForceSetBodyState(entity, pos, rot, vel, Math::Vector3(0.0f));
-        }
-        if (m_Physics2D) {
-            m_Physics2D->ForceSetBodyState(entity, pos, vel);
-        }
-    }
-}
 
 // ============================================================================
 // Delta Change Detection
 // ============================================================================
 
-bool RecordRewindSystem::HasEntityChanged(const EntitySnapshot& current, const EntitySnapshot& prev, u32 channelMask) const {
-    if (HasChannel(channelMask, RewindChannelFlags::Transform)) {
-        if ((current.position - prev.position).LengthSquared() > POS_EPSILON * POS_EPSILON) return true;
-        // Quaternion distance
-        f32 dot = Math::Abs(current.rotation.Dot(prev.rotation));
-        if (dot < 1.0f - ROT_EPSILON) return true;
-        if ((current.scale - prev.scale).LengthSquared() > SCALE_EPSILON * SCALE_EPSILON) return true;
-        if (current.visible != prev.visible) return true;
-    }
-    if (HasChannel(channelMask, RewindChannelFlags::Health)) {
-        if (Math::Abs(current.health - prev.health) > HEALTH_EPSILON) return true;
-        if (current.isDead != prev.isDead) return true;
-    }
-    if (HasChannel(channelMask, RewindChannelFlags::Velocity)) {
-        if ((current.velocity - prev.velocity).LengthSquared() > POS_EPSILON * POS_EPSILON) return true;
-    }
-    return false;
-}
 
 // ============================================================================
 // Entity Rewind (Braid-style — per-entity RecordRewindComponent)
@@ -301,6 +94,11 @@ void RecordRewindSystem::UpdateEntityRewind(f32 deltaTime) {
 
             rr->rewindPlayhead += deltaTime * rr->rewindSpeed;
             m_AnyRewinding = true;
+            if (!m_SceneRewinding) {
+                m_Feedback.active = true;
+                m_Feedback.vignetteStrength = rr->rewindVignetteStrength;
+                m_Feedback.tint = rr->rewindTint;
+            }
 
             // The playhead is an offset from a FIXED anchor: the recording head
             // as it stood when the hold began. currentRecordedTime is that
@@ -325,14 +123,14 @@ void RecordRewindSystem::UpdateEntityRewind(f32 deltaTime) {
             }
 
             if (frameA == frameB) {
-                RestoreEntitySnapshot(entity, rr->history.At(frameA));
+                m_Sampler.Restore(entity, rr->history.At(frameA));
             } else {
                 const f32 timeA = rr->history.At(frameA).timestamp;
                 const f32 timeB = rr->history.At(frameB).timestamp;
                 const f32 span = timeB - timeA;
                 const f32 t = (span > 0.0001f)
                     ? Math::Clamp((targetTime - timeA) / span, 0.0f, 1.0f) : 0.0f;
-                RestoreEntitySnapshotInterpolated(entity, rr->history.At(frameA), rr->history.At(frameB), t);
+                m_Sampler.RestoreInterpolated(entity, rr->history.At(frameA), rr->history.At(frameB), t);
             }
 
             // Drop frames the playhead has already passed, by their own
@@ -365,7 +163,7 @@ void RecordRewindSystem::UpdateEntityRewind(f32 deltaTime) {
                 rr->currentRecordedTime += rr->recordInterval;
 
                 EntitySnapshot snap;
-                CaptureEntitySnapshot(entity, snap, rr->channels);
+                m_Sampler.Capture(entity, snap, rr->channels);
                 snap.timestamp = rr->currentRecordedTime;
                 rr->history.Push(std::move(snap));
             }
@@ -416,6 +214,9 @@ void RecordRewindSystem::UpdateSceneRewind(f32 deltaTime) {
             sr->rewindPlayhead += deltaTime * sr->rewindSpeed;
             m_AnyRewinding = true;
             m_SceneRewinding = true;
+            m_Feedback.active = true;
+            m_Feedback.vignetteStrength = sr->rewindVignetteStrength;
+            m_Feedback.tint = sr->rewindTint;
 
             f32 targetTime = sr->currentRecordedTime - sr->rewindPlayhead;
 
@@ -434,7 +235,7 @@ void RecordRewindSystem::UpdateSceneRewind(f32 deltaTime) {
             // For delta frames, we need to reconstruct full state from nearest keyframe
             // For simplicity in v1, scene rewind snaps to nearest frame and restores all entities
             for (const auto& snap : frameA.snapshots) {
-                RestoreEntitySnapshot(snap.entity, snap);
+                m_Sampler.Restore(snap.entity, snap);
             }
 
             // If this is a delta frame, also apply any entities from the nearest keyframe
@@ -455,7 +256,7 @@ void RecordRewindSystem::UpdateSceneRewind(f32 deltaTime) {
                                 if (alreadyRestored) break;
                             }
                             if (!alreadyRestored) {
-                                RestoreEntitySnapshot(snap.entity, snap);
+                                m_Sampler.Restore(snap.entity, snap);
                             }
                         }
                         break;
@@ -503,14 +304,14 @@ void RecordRewindSystem::UpdateSceneRewind(f32 deltaTime) {
                     if (entity == manager) continue;
 
                     EntitySnapshot snap;
-                    CaptureEntitySnapshot(entity, snap, sr->channels);
+                    m_Sampler.Capture(entity, snap, sr->channels);
                     snap.timestamp = sr->currentRecordedTime;
 
                     bool keep = isKeyframe;
                     if (!keep) {
                         auto it = sr->prevFrameCache.find(entity);
                         keep = (it == sr->prevFrameCache.end() ||
-                                HasEntityChanged(snap, it->second, sr->channels));
+                                m_Sampler.Differs(snap, it->second, sr->channels));
                     }
                     if (keep) frame.snapshots.push_back(snap);
 
@@ -565,6 +366,7 @@ void RecordRewindSystem::StartSceneRewind() {
             bool canRewind = sr->charges == 0 || sr->chargesUsed < sr->charges;
             if (canRewind) {
                 sr->rewinding = true;
+                sr->rewindRequested = true;
                 sr->rewindPlayhead = 0.0f;
                 sr->chargesUsed++;
             }
@@ -606,7 +408,7 @@ void RecordRewindSystem::SeekSceneToTime(f32 timeOffset) {
 
         const auto& frame = sr->history.At(best);
         for (const auto& snap : frame.snapshots) {
-            RestoreEntitySnapshot(snap.entity, snap);
+            m_Sampler.Restore(snap.entity, snap);
         }
 
         // Handle delta reconstruction from keyframe
@@ -622,7 +424,7 @@ void RecordRewindSystem::SeekSceneToTime(f32 timeOffset) {
                             }
                             if (covered) break;
                         }
-                        if (!covered) RestoreEntitySnapshot(snap.entity, snap);
+                        if (!covered) m_Sampler.Restore(snap.entity, snap);
                     }
                     break;
                 }
@@ -648,7 +450,7 @@ void RecordRewindSystem::SeekEntityToTime(ECS::Entity entity, f32 timeOffset) {
         if (dist < bestDist) { bestDist = dist; best = static_cast<i32>(i); }
     }
 
-    RestoreEntitySnapshot(entity, rr->history.At(best));
+    m_Sampler.Restore(entity, rr->history.At(best));
 }
 
 // ============================================================================
