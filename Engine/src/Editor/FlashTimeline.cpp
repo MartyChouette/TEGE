@@ -419,16 +419,58 @@ void FlashTimelineEditor::DrawLayerList() {
         }
         ImGui::SameLine();
 
-        // Layer name (selectable)
+        // Layer name (selectable, or an edit box while renaming)
         bool isSelected = (m_SelectedLayer == i);
-        if (ImGui::Selectable(layer.name.c_str(), isSelected, 0, ImVec2(0, 0))) {
-            m_SelectedLayer = i;
+        if (m_RenamingLayer == static_cast<i32>(i)) {
+            ImGui::SetNextItemWidth(140.0f);
+            ImGui::SetKeyboardFocusHere();
+            if (ImGui::InputText("##renameLayer", m_RenameBuffer, sizeof(m_RenameBuffer),
+                                 ImGuiInputTextFlags_EnterReturnsTrue)) {
+                if (m_RenameBuffer[0] != '\0') layer.name = m_RenameBuffer;
+                m_RenamingLayer = -1;
+            }
+            // Escape, or clicking away, cancels. Committing on focus loss would
+            // rename a layer the moment you clicked something else.
+            if (ImGui::IsKeyPressed(ImGuiKey_Escape) ||
+                (!ImGui::IsItemActive() && !ImGui::IsItemFocused())) {
+                m_RenamingLayer = -1;
+            }
+        } else {
+            // Guide and mask layers say so where the layer is, not three menus
+            // deep in a checkbox you have to go looking for.
+            std::string label = layer.name;
+            if (layer.isGuide) label += "   [guide]";
+            if (layer.isMask)  label += "   [mask]";
+            if (layer.isGuide) {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.60f, 0.62f, 0.68f, 1.0f));
+            }
+            if (ImGui::Selectable(label.c_str(), isSelected, 0, ImVec2(0, 0))) {
+                m_SelectedLayer = i;
+            }
+            if (layer.isGuide) ImGui::PopStyleColor();
+            if (ImGui::IsItemHovered() && (layer.isGuide || layer.isMask)) {
+                if (layer.isGuide) {
+                    ImGui::SetTooltip("Guide layer: for you, not for the game.\n"
+                                      "Skipped when this timeline is converted.");
+                } else {
+                    ImGui::SetTooltip("Mask layer: marked, but the clipping is NOT applied\n"
+                                      "at runtime yet -- that needs a stencil pass the\n"
+                                      "renderer does not have. The layer converts and\n"
+                                      "animates like any other.");
+                }
+            }
+            // Double-click to rename, which is where a person tries first.
+            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                m_RenamingLayer = static_cast<i32>(i);
+                std::snprintf(m_RenameBuffer, sizeof(m_RenameBuffer), "%s", layer.name.c_str());
+            }
         }
 
         // Context menu
         if (ImGui::BeginPopupContextItem()) {
             if (ImGui::MenuItem("Rename")) {
-                // Would open rename input
+                m_RenamingLayer = static_cast<i32>(i);
+                std::snprintf(m_RenameBuffer, sizeof(m_RenameBuffer), "%s", layer.name.c_str());
             }
             if (ImGui::MenuItem("Delete")) {
                 m_Timeline->RemoveLayer(i);
@@ -449,7 +491,13 @@ void FlashTimelineEditor::DrawLayerList() {
             }
             ImGui::Separator();
             ImGui::Checkbox("Guide", &layer.isGuide);
+            ImGui::SetItemTooltip("Reference only. The layer still shows here and\n"
+                                  "is skipped when the timeline is converted.");
             ImGui::Checkbox("Mask", &layer.isMask);
+            ImGui::SetItemTooltip("Marks this layer as a mask for the one below.\n\n"
+                                  "The clipping is not applied at runtime yet: that\n"
+                                  "needs a stencil pass the renderer does not have.\n"
+                                  "The mark is saved, so authoring against it is safe.");
             ImGui::EndPopup();
         }
 
@@ -785,8 +833,21 @@ void FlashTimelineEditor::DrawSymbolLibrary(ECS::World* /*world*/) {
 void FlashTimelineEditor::ConvertToTimeline(ECS::World* world) {
     if (!m_Timeline || !world) return;
 
+    u32 converted = 0;
+    u32 skippedGuide = 0;
+    u32 skippedEmpty = 0;
+    u32 maskLayers = 0;
+
     for (auto& layer : m_Timeline->layers) {
-        if (layer.entity == 0 || layer.keyframes.empty()) continue;
+        if (layer.entity == 0 || layer.keyframes.empty()) { ++skippedEmpty; continue; }
+
+        // A guide layer is reference material for the author -- a motion path to
+        // trace, a rough block-in, a photo underlay -- and must not animate
+        // anything in the game. The flag has said "not rendered at runtime" since
+        // it was written and this loop ignored it, so guides converted like any
+        // other layer and moved their entities in the shipped build.
+        if (layer.isGuide) { ++skippedGuide; continue; }
+        if (layer.isMask) ++maskLayers;
 
         // Check if entity already has a TimelineComponent
         auto* tlComp = world->GetComponent<Animation::TimelineComponent>(layer.entity);
@@ -799,6 +860,18 @@ void FlashTimelineEditor::ConvertToTimeline(ECS::World* world) {
         tlComp->duration = static_cast<f32>(m_Timeline->totalFrames) / m_Timeline->frameRate;
         tlComp->loop = m_Timeline->loop;
         tlComp->playbackSpeed = 1.0f;
+
+        // Replace this entity's tracks rather than appending to them.
+        //
+        // Converting twice is something people do -- change a keyframe, press the
+        // button again -- and each press used to append a fresh position track to
+        // the same component. Two tracks then wrote the same property every
+        // frame, and which one won depended on their order in the vector.
+        //
+        // Replacing is consistent with what the rest of this loop already does:
+        // duration, loop and playback speed are overwritten wholesale, so the
+        // conversion is authoritative for this component either way.
+        tlComp->propertyTracks.clear();
 
         // Convert position keyframes
         Animation::PropertyTrack posTrack;
@@ -844,10 +917,111 @@ void FlashTimelineEditor::ConvertToTimeline(ECS::World* world) {
             posTrack.keyframes.push_back(pk);
         }
         tlComp->propertyTracks.push_back(posTrack);
+
+        // Scale and alpha, which were dropped on the floor.
+        //
+        // Only position was ever converted. FlashKeyframe carries rotation, scale
+        // and alpha too, the timeline panel lets you key all of them, and the
+        // conversion silently kept one of the four -- so a tween authored as a
+        // fade or a grow played back as an object sitting still at full size.
+        //
+        // The easing is already decided per keyframe above; reuse it rather than
+        // re-deriving it, so the three tracks cannot drift apart.
+        {
+            Animation::PropertyTrack scaleTrack;
+            scaleTrack.targetProperty = "scale";
+            scaleTrack.targetEntity = layer.entity;
+
+            Animation::PropertyTrack alphaTrack;
+            alphaTrack.targetProperty = "material.opacity";
+            alphaTrack.targetEntity = layer.entity;
+
+            bool scaleVaries = false;
+            bool alphaVaries = false;
+            for (usize k = 0; k < layer.keyframes.size(); ++k) {
+                const auto& kf = layer.keyframes[k];
+                const Animation::TimelineEasing easing = posTrack.keyframes[k].easing;
+                const f32 time = static_cast<f32>(kf.frameIndex) / m_Timeline->frameRate;
+
+                Animation::PropertyKeyframe sk;
+                sk.time = time;
+                sk.value = kf.scale;
+                sk.easing = easing;
+                scaleTrack.keyframes.push_back(sk);
+
+                Animation::PropertyKeyframe ak;
+                ak.time = time;
+                ak.value = kf.alpha;
+                ak.easing = easing;
+                alphaTrack.keyframes.push_back(ak);
+
+                if (k > 0) {
+                    const auto& prev = layer.keyframes[k - 1];
+                    if ((kf.scale - prev.scale).LengthSquared() > 0.000001f) scaleVaries = true;
+                    if (std::fabs(kf.alpha - prev.alpha) > 0.0001f) alphaVaries = true;
+                }
+            }
+
+            // Only emit a track that actually animates. A constant track costs a
+            // per-frame write that overwrites whatever else set that property,
+            // which is how a timeline ends up fighting a script for the same
+            // transform.
+            if (scaleVaries) tlComp->propertyTracks.push_back(std::move(scaleTrack));
+            if (alphaVaries) tlComp->propertyTracks.push_back(std::move(alphaTrack));
+        }
+
+        ++converted;
     }
 
-    ENJIN_LOG_INFO(Editor, "Converted Flash timeline to %zu TimelineComponents",
-                   m_Timeline->layers.size());
+    // Rotation is NOT converted, deliberately.
+    //
+    // Timeline's only rotation properties are "rotation.x/y/z", and they assign
+    // straight into TransformComponent::rotation, which is a QUATERNION -- so a
+    // track carrying euler degrees writes 90 into a quaternion component and
+    // produces a rotation nobody asked for. Emitting those tracks would turn a
+    // dropped feature into a corrupted one, which is worse. See the euler
+    // convention rule in CLAUDE.md: every euler->quat site goes through FromEuler.
+    {
+        bool anyRotation = false;
+        for (const auto& layer : m_Timeline->layers) {
+            if (layer.isGuide || layer.keyframes.size() < 2) continue;
+            for (usize k = 1; k < layer.keyframes.size(); ++k) {
+                if ((layer.keyframes[k].rotation -
+                     layer.keyframes[k - 1].rotation).LengthSquared() > 0.000001f) {
+                    anyRotation = true;
+                    break;
+                }
+            }
+            if (anyRotation) break;
+        }
+        if (anyRotation) {
+            ENJIN_LOG_WARN(Editor,
+                "Flash timeline: rotation keyframes were NOT converted. Timeline's "
+                "rotation.x/y/z properties write quaternion components, not euler "
+                "angles, so converting them would rotate these entities wrongly "
+                "rather than not at all.");
+        }
+    }
+
+    if (skippedGuide > 0) {
+        ENJIN_LOG_INFO(Editor, "Flash timeline: skipped %u guide layer%s", skippedGuide,
+                       skippedGuide == 1 ? "" : "s");
+    }
+    if (maskLayers > 0) {
+        ENJIN_LOG_WARN(Editor,
+            "Flash timeline: %u mask layer%s converted as ordinary layer%s -- the "
+            "clipping is not applied at runtime yet (it needs a stencil pass the "
+            "renderer does not have)",
+            maskLayers, maskLayers == 1 ? "" : "s", maskLayers == 1 ? "" : "s");
+    }
+
+    // The count used to be m_Timeline->layers.size(), which counts layers that
+    // were skipped for having no entity or no keyframes. It reported work that
+    // did not happen.
+    ENJIN_LOG_INFO(Editor,
+        "Converted %u of %zu Flash timeline layer%s to TimelineComponents (%u skipped "
+        "as empty)", converted, m_Timeline->layers.size(),
+        m_Timeline->layers.size() == 1 ? "" : "s", skippedEmpty);
 }
 
 std::vector<OnionSkinGhost> FlashTimelineEditor::ComputeOnionSkinGhosts() const {

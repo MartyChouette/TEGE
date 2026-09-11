@@ -3426,7 +3426,24 @@ void EditorLayer::DrawSettingsSection_LightProbes() {
     // === LIGHT PROBES ===
     {
         if (UI::SectionHeader("Light Probes")) {
-            ImGui::TextDisabled("Baked indirect lighting for static scenes — interiors, walkthroughs");
+            // Says what the bake DOES. It used to read "Baked indirect lighting
+            // for static scenes -- interiors, walkthroughs", and the bake does
+            // none of that: SHLightingSystem::BakeProbe integrates the scene's
+            // lights directly into SH coefficients with no occlusion test and no
+            // bounce. So it is DIRECT light projected into SH, and "interiors" is
+            // the exact case where no occlusion fails worst -- a probe in a sealed
+            // room receives full sun through the walls, which reads as a lighting
+            // bug rather than as a documented limit.
+            ImGui::TextDisabled("Smooth directional light per point, projected into SH");
+            ImGui::TextDisabled("Direct light only: walls do not block it, and there is no bounce.");
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(
+                    "Each probe integrates every light in the scene over a sphere.\n\n"
+                    "Nothing is traced, so geometry between a probe and a light is\n"
+                    "ignored -- a probe inside a closed room still sees the sun.\n\n"
+                    "For occluded indirect light, use DDGI (Rendering > Global\n"
+                    "Illumination) or the radiosity normal-map bake.");
+            }
             if (auto* shLighting = m_RenderSystem->GetSHLighting()) {
                 auto& grid = shLighting->GetGrid();
                 u32 probeCount = shLighting->GetProbeCount();

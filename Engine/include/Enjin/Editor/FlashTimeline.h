@@ -97,8 +97,16 @@ struct FlashTimelineLayer {
     std::string name = "Layer 1";
     bool visible = true;
     bool locked = false;
-    bool isGuide = false;       // Guide layer (not rendered at runtime)
-    bool isMask = false;        // Mask layer
+    // A guide layer exists for the author and not for the game: reference art,
+    // a motion path to trace, a rough block-in. ConvertToTimeline skips it, which
+    // is what "not rendered at runtime" always claimed and never did -- both of
+    // these were checkboxes with no consumer anywhere in the engine.
+    bool isGuide = false;
+
+    // A mask layer clips the layer beneath it. MARKED here and not yet applied:
+    // clipping one entity by another needs a stencil pass the renderer does not
+    // have, so the conversion says so rather than dropping the intent silently.
+    bool isMask = false;
 
     ECS::Entity entity = 0;     // The entity this layer controls
 
@@ -201,6 +209,12 @@ private:
     // Editor state
     u32 m_SelectedLayer = 0;
     u32 m_SelectedFrame = 0;
+
+    // Inline layer rename. The context menu had a "Rename" item whose whole body
+    // was `// Would open rename input`, so the only way to name a layer was to
+    // accept "Layer 1", "Layer 2" and so on forever.
+    i32 m_RenamingLayer = -1;
+    char m_RenameBuffer[128] = {};
     i32 m_DragFrame = -1;
     bool m_IsDraggingPlayhead = false;
     f32 m_ScrollX = 0;        // Horizontal scroll in the frame grid

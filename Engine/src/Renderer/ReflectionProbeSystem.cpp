@@ -600,8 +600,58 @@ bool ReflectionProbeSystem::BakeAt(ECS::World* world, ECS::RenderSystem* renderS
         }
     }
 
-    ENJIN_LOG_INFO(Renderer, "Reflection probe baked successfully (%ux%u per face, 6 faces)",
-        resolution, resolution);
+    // Say what was actually captured, not just that the upload worked.
+    //
+    // "baked successfully" was logged the moment the cubemap upload returned,
+    // whatever was in it. Six faces of the clear colour -- a probe buried inside
+    // geometry, a scene whose meshes had not finished loading, a camera looking
+    // at nothing -- produced the identical message and set baked = true. That is
+    // the plausible-wrong-answer shape: the failure is invisible at the point it
+    // happens and shows up later as reflections that are a flat colour, which
+    // reads as a material problem rather than as a probe that captured nothing.
+    //
+    // A uniform capture is not an ERROR. An overcast sky is legitimately uniform.
+    // It is worth SAYING, because it is the one result a person would want to
+    // check, and the difference costs one pass over pixels that are already in
+    // memory.
+    {
+        u32 uniformFaces = 0;
+        f32 meanLuma = 0.0f;
+        for (const auto& face : facePixels) {
+            if (face.size() < 4) { ++uniformFaces; continue; }
+            const u8 r0 = face[0], g0 = face[1], b0 = face[2];
+            bool varies = false;
+            f64 sum = 0.0;
+            usize samples = 0;
+            // Every 64th texel: enough to catch a face that is one colour, cheap
+            // enough not to matter at any resolution we bake.
+            for (usize i = 0; i + 3 < face.size(); i += 4 * 64) {
+                if (face[i] != r0 || face[i + 1] != g0 || face[i + 2] != b0) varies = true;
+                sum += (face[i] * 0.299 + face[i + 1] * 0.587 + face[i + 2] * 0.114);
+                ++samples;
+            }
+            if (!varies) ++uniformFaces;
+            if (samples > 0) meanLuma += static_cast<f32>(sum / samples);
+        }
+        meanLuma /= 6.0f;
+
+        if (uniformFaces == 6) {
+            ENJIN_LOG_WARN(Renderer,
+                "Reflection probe baked %ux%u, but all 6 faces are a single colour "
+                "(mean luma %.0f/255). The probe saw no geometry -- check that it is not "
+                "inside a mesh and that the scene had loaded when it baked.",
+                resolution, resolution, meanLuma);
+        } else if (uniformFaces > 0) {
+            ENJIN_LOG_INFO(Renderer,
+                "Reflection probe baked successfully (%ux%u per face, 6 faces; %u face%s "
+                "captured a single colour, which is normal for open sky)",
+                resolution, resolution, uniformFaces, uniformFaces == 1 ? "" : "s");
+        } else {
+            ENJIN_LOG_INFO(Renderer,
+                "Reflection probe baked successfully (%ux%u per face, 6 faces, mean luma %.0f)",
+                resolution, resolution, meanLuma);
+        }
+    }
 
     return true;
 }
