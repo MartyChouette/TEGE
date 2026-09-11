@@ -1586,6 +1586,70 @@ void EditorLayer::FocusOnEntity(ECS::Entity entity) {
 }
 
 
+// Frame the ground so the build tools have a surface to work on.
+//
+// Looks down at 40 degrees from a height that fits the scene's footprint, or a
+// sensible default when the scene is empty. Forty rather than straight down
+// because a top-down view makes wall heights invisible, and a blockout is mostly
+// walls.
+void EditorLayer::FrameGroundForBuilding() {
+    if (!m_Camera || !m_CameraController) return;
+
+    // Centre and radius of what is already there, on the ground plane. An empty
+    // scene gets the origin and a room-sized default rather than a degenerate
+    // zero that would put the camera inside the floor.
+    Math::Vector3 centre(0.0f, 0.0f, 0.0f);
+    f32 radius = 12.0f;
+
+    if (m_World) {
+        Math::Vector3 lo(1e9f, 0.0f, 1e9f), hi(-1e9f, 0.0f, -1e9f);
+        u32 counted = 0;
+        for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::TransformComponent>()) {
+            auto* xf = m_World->GetComponent<ECS::TransformComponent>(e);
+            if (!xf) continue;
+            // Cameras and lights are not scenery; framing to a light parked
+            // twenty metres up would aim at empty sky.
+            if (m_World->HasComponent<ECS::CameraComponent>(e)) continue;
+            if (m_World->HasComponent<ECS::LightComponent>(e)) continue;
+            lo.x = std::min(lo.x, xf->position.x);
+            lo.z = std::min(lo.z, xf->position.z);
+            hi.x = std::max(hi.x, xf->position.x);
+            hi.z = std::max(hi.z, xf->position.z);
+            ++counted;
+        }
+        if (counted > 0) {
+            centre = Math::Vector3((lo.x + hi.x) * 0.5f, 0.0f, (lo.z + hi.z) * 0.5f);
+            const f32 spanX = hi.x - lo.x;
+            const f32 spanZ = hi.z - lo.z;
+            radius = std::max(8.0f, std::max(spanX, spanZ) * 0.6f);
+        }
+    }
+
+    // 40 degrees down, looking along -Z at the centre.
+    constexpr f32 kPitchRadians = 0.698f;   // 40 degrees
+    const f32 dist = std::max(10.0f, radius * 1.8f);
+    const Math::Vector3 eye(centre.x,
+                            centre.y + dist * std::sin(kPitchRadians),
+                            centre.z + dist * std::cos(kPitchRadians));
+
+    m_Camera->SetPosition(eye);
+    m_Camera->SetLookAt(eye, centre, Math::Vector3(0.0f, 1.0f, 0.0f));
+    m_CameraController->SetOrbitTarget(centre);
+    m_CameraController->SetOrbitDistance(dist);
+
+    // The controller keeps its own yaw and pitch and rebuilds the camera's
+    // orientation from them every frame, so setting the camera alone lasts
+    // exactly one frame -- the position moved and the angle snapped straight
+    // back, which is why the first attempt at this looked like it had done
+    // nothing. SyncFromCamera is how the controller ADOPTS an orientation
+    // somebody else chose.
+    m_CameraController->SyncFromCamera();
+
+    ENJIN_LOG_INFO(Editor, "Creative: framed the ground (centre %.1f,%.1f radius %.1f)",
+                   static_cast<double>(centre.x), static_cast<double>(centre.z),
+                   static_cast<double>(radius));
+}
+
 void EditorLayer::FocusOnSelection() {
     if (!m_Camera || !m_CameraController || !m_World || m_SelectedEntities.empty()) return;
 

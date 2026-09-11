@@ -35,7 +35,7 @@ enum class ShortcutAction : u8 {
     NewScene, OpenScene, SaveScene, SaveSceneAs, ImportModel, BuildGame,
     Undo, Redo, Cut, Copy, Paste, Duplicate, DeleteSelected,
     FocusSelected, ClearSelection,
-    GizmoTranslate, GizmoRotate, GizmoScale, GizmoToggleSpace,
+    GizmoTranslate, GizmoRotate, GizmoScale, GizmoToggleSpace, FrameGround,
     CommandPalette, CreativeMode, ShortcutsHelp, ReportBug, QuickBugReport,
     GameDebug, EngineDebug, FocusMode, Console,
     FocusHierarchy, FocusInspector, FocusViewport, FocusConsole, FocusAssets,

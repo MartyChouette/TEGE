@@ -742,8 +742,19 @@ bool CreativeMode::GroundHit(const Math::Vector3& rayOrigin,
                              const Math::Vector3& rayDirection,
                              Math::Vector3& out) {
     // Level blockout happens on the ground, so the build plane is y = 0.
-    constexpr f32 kParallelEpsilon = 1e-4f;
-    if (std::fabs(rayDirection.y) < kParallelEpsilon) return false;
+    //
+    // The threshold is a USABLE angle, not merely a non-parallel one. A ray a
+    // fraction of a degree off the horizontal does intersect the plane -- half a
+    // kilometre away -- and the old 1e-4 epsilon accepted it. Every tool then
+    // worked exactly as written and felt broken: near the horizon one pixel of
+    // mouse movement is tens of metres of ground, so a short drag produced a
+    // wall the length of the level, and the terrain brush's ring flattened into
+    // a sliver pointing at somewhere you were not looking.
+    //
+    // sin(6 degrees) ~= 0.105. Below that the answer is "not a build point",
+    // which the caller already knows how to say.
+    constexpr f32 kMinGrazeSin = 0.105f;
+    if (std::fabs(rayDirection.y) < kMinGrazeSin) return false;
 
     const f32 t = -rayOrigin.y / rayDirection.y;
     if (t <= 0.0f) return false;   // the plane is behind the camera

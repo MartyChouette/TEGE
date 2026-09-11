@@ -726,6 +726,14 @@ void EditorLayer::SetEditorMode(EditorMode mode) {
     // ModeUsesBuildSurface is the one place that decision lives.
     m_Creative.SetActive(ModeUsesBuildSurface(mode));
 
+    // Entering a build mode frames the ground. Without this the camera is
+    // wherever it was, and for a fresh project that is level -- horizon across
+    // the middle, build plane edge-on, every tool technically working and
+    // feeling broken.
+    if (ModeUsesBuildSurface(mode) && !ModeUsesBuildSurface(previous)) {
+        FrameGroundForBuilding();
+    }
+
     // Leaving Creative or Tutorial mid-gesture would otherwise strand the drag:
     // the mouse release lands on a surface that is no longer drawn, so the next
     // entry starts with a half-finished wall still attached to the cursor.
@@ -2107,6 +2115,13 @@ void EditorLayer::Update(f32 deltaTime) {
             else if (Input::IsKeyPressed(KeyCode::Num4)) m_FocusedPanel = FocusedPanel::Console;
             else if (Input::IsKeyPressed(KeyCode::Num5)) m_FocusedPanel = FocusedPanel::AssetBrowser;
             m_ShowFocusRing = (m_FocusedPanel != FocusedPanel::None);
+        }
+
+        // Home re-frames the ground. The camera gets lost -- orbit far enough
+        // and the build plane goes edge-on again -- and without a way back the
+        // only fix is to fly until it looks right.
+        if (ShortcutPressed(ShortcutAction::FrameGround)) {
+            FrameGroundForBuilding();
         }
 
         // Command palette (Ctrl+P)

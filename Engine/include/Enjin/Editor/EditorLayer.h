@@ -473,6 +473,15 @@ private:
 
     // Drawn over the viewport in Tutorial mode: the step, why it matters, and
     // how far through you are.
+    // Put the editor camera somewhere you can actually build from.
+    //
+    // Creative mode inherits whatever the camera was doing, and for a fresh
+    // project that is level with the horizon across the middle of the viewport.
+    // Every tool then works exactly as written and feels broken: the build plane
+    // is edge-on, so a short drag spans tens of metres and the terrain brush
+    // lands somewhere you are not looking.
+    void FrameGroundForBuilding();
+
     void DrawGuide(const ImVec2& imgMin, const ImVec2& imgMax);
     void TickWalkthrough();
 

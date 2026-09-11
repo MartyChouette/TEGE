@@ -936,7 +936,9 @@ void EditorLayer::HandleBuildDrag() {
         ImFont* font = ImGui::GetFont();
         const f32 ui = CreativeUIScale();
         const f32 size = 13.0f * ui;
-        const char* why = "The camera is level with the ground. Orbit down to build.";
+        // Says what to do, and now covers the near-level case too: the ground
+        // is refused below a usable angle, not just an exactly parallel one.
+        const char* why = "Too flat an angle to build. Orbit down, or press Home to frame the ground.";
         const ImVec2 ts = font->CalcTextSizeA(size, FLT_MAX, 0.0f, why);
         const f32 cx = (m_EditorViewportImageMinX + m_EditorViewportImageMaxX) * 0.5f;
         const f32 cy = (m_EditorViewportImageMinY + m_EditorViewportImageMaxY) * 0.5f;

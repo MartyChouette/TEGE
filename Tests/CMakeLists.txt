@@ -203,6 +203,7 @@ enjin_add_test(TestFlashTimelineConvert Unit/Editor/TestFlashTimelineConvert.cpp
 enjin_add_test(TestEditorShortcuts   Unit/Editor/TestEditorShortcuts.cpp)
 enjin_add_test(TestWalkthrough       Unit/Editor/TestWalkthrough.cpp)
 enjin_add_test(TestScenePlacement    Unit/Editor/TestScenePlacement.cpp)
+enjin_add_test(TestCreativeExampleScene Unit/Editor/TestCreativeExampleScene.cpp)
 enjin_add_test(TestRewindAnimation   Unit/Gameplay/TestRewindAnimation.cpp)
 enjin_add_test(TestDebugRecorder     Unit/Gameplay/TestDebugRecorder.cpp)
 enjin_add_test(TestRewindFeedback    Unit/Gameplay/TestRewindFeedback.cpp)

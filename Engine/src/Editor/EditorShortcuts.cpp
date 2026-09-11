@@ -26,6 +26,7 @@ constexpr NamedKey kKeys[] = {
     { "F11", KeyCode::F11 },
     { "Delete", KeyCode::Delete },
     { "Escape", KeyCode::Escape },
+    { "Home", KeyCode::Home },
     { "Backtick", KeyCode::GraveAccent },
 };
 
@@ -103,6 +104,7 @@ constexpr ShortcutEntry kShortcuts[] = {
     { ShortcutAction::GizmoRotate,      "Viewport", "2",      "Rotate gizmo" },
     { ShortcutAction::GizmoScale,       "Viewport", "3",      "Scale gizmo" },
     { ShortcutAction::GizmoToggleSpace, "Viewport", "4",      "Toggle local/world space" },
+    { ShortcutAction::FrameGround,      "Viewport", "Home",   "Frame the ground for building" },
 
     // --- Tools ---
     { ShortcutAction::CommandPalette, "Tools", "Ctrl+P",       "Command palette" },
