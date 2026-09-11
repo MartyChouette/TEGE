@@ -105,7 +105,17 @@ struct QuestFlowComponent {
     std::unordered_map<Editor::NodeId, f32> nodeTimers;
     std::unordered_map<Editor::NodeId, i32> nodeCounters;
 
+    // Named variables a branch node can test.
+    //
+    // The condition evaluator has always parsed a key, an operator and a value off
+    // a branch node and then compared none of them -- every branch returned true,
+    // so a quest graph with two outcomes always took the first. There was nowhere
+    // to look a key UP: nodeCounters is keyed by node id, not by name. This is that
+    // store. Runtime state, cleared with the rest.
+    std::unordered_map<std::string, std::string> variables;
+
     void ResetRuntimeState() {
+        variables.clear();
         status = Gameplay::QuestFlowStatus::Inactive;
         activeNodes.clear();
         completedNodes.clear();

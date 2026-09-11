@@ -4323,10 +4323,6 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         m_ShaderGraphEditor.Render();
         // "Apply to Selected Entity": compile the graph and bind it as a live custom
         // shader on the current selection (RenderSystem shares the main pipeline layout).
-        DrawAtlasPackerWindow();
-        DrawCookieCreatorWindow();
-        DrawBackgroundPlateBakerWindow();
-        DrawLightmapBakerWindow();
         if (m_ShaderGraphEditor.ConsumeApplyRequest()) {
             if (m_RenderSystem && m_World && m_PrimarySelected != ECS::INVALID_ENTITY &&
                 m_World->IsValid(m_PrimarySelected)) {
@@ -4373,6 +4369,17 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
             }
         }
     }
+    // Four tool windows, each with its own m_Show* flag and its own menu entry.
+    // They used to be called INSIDE the `if (m_ShaderGraphEditor.IsOpen())` block
+    // above, so turning on the Cookie Creator, the Atlas Packer, the Background
+    // Plate Baker or the Lightmap Baker did nothing unless the Shader Graph editor
+    // happened to be open at the same time -- and the menu item stayed ticked,
+    // which reads as a window that opened somewhere off-screen.
+    DrawAtlasPackerWindow();
+    DrawCookieCreatorWindow();
+    DrawBackgroundPlateBakerWindow();
+    DrawLightmapBakerWindow();
+
     if (m_AudioGraphEditor.IsOpen()) {
         m_AudioGraphEditor.Render();
     }

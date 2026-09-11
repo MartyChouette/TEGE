@@ -128,36 +128,122 @@ static void ActivateOutputByIndex(ECS::QuestFlowComponent& flow,
     }
 }
 
-// Evaluate a simple condition from node properties
+// Apply an operator to two values.
+//
+// Compares numerically when BOTH sides parse as numbers, and as text otherwise.
+// That order matters: "10" > "9" is false as text and true as a number, and a
+// quest counter compared as text would take the wrong branch exactly once the
+// count reaches double figures -- late enough that the graph looks correct while
+// it is being built.
+static bool ApplyOperator(const std::string& lhs, const std::string& op,
+                          const std::string& rhs) {
+    auto asNumber = [](const std::string& v, f64& out) {
+        if (v.empty()) return false;
+        char* end = nullptr;
+        out = std::strtod(v.c_str(), &end);
+        return end != nullptr && *end == '\0';
+    };
+
+    f64 a = 0.0, b = 0.0;
+    if (asNumber(lhs, a) && asNumber(rhs, b)) {
+        if (op == "==") return a == b;
+        if (op == "!=") return a != b;
+        if (op == ">")  return a > b;
+        if (op == ">=") return a >= b;
+        if (op == "<")  return a < b;
+        if (op == "<=") return a <= b;
+    } else {
+        if (op == "==") return lhs == rhs;
+        if (op == "!=") return lhs != rhs;
+        if (op == ">")  return lhs > rhs;
+        if (op == ">=") return lhs >= rhs;
+        if (op == "<")  return lhs < rhs;
+        if (op == "<=") return lhs <= rhs;
+    }
+
+    ENJIN_LOG_WARN(Editor, "Quest branch: unknown operator '%s'; treating as false",
+                   op.c_str());
+    return false;
+}
+
+// Evaluate a branch node's condition.
+//
+// Every path in this function used to end in `return true`. The key, the operator
+// and the value were read off the node and compared against nothing, so a quest
+// graph with two outcomes always took the first one and the second was
+// unreachable -- an authored branch that could not branch.
 static bool EvaluateCondition(const QuestNodeMeta& meta,
                                const ECS::QuestFlowComponent& flow) {
     auto condIt = meta.properties.find("conditionType");
+    // No condition set at all is not a failure: an unconditional node passes.
     if (condIt == meta.properties.end()) return true;
 
     auto keyIt = meta.properties.find("key");
     auto opIt = meta.properties.find("operator");
     auto valIt = meta.properties.find("value");
 
-    std::string key = (keyIt != meta.properties.end()) ? keyIt->second : "";
-    std::string op = (opIt != meta.properties.end()) ? opIt->second : "==";
-    std::string val = (valIt != meta.properties.end()) ? valIt->second : "";
+    const std::string key = (keyIt != meta.properties.end()) ? keyIt->second : "";
+    const std::string op = (opIt != meta.properties.end()) ? opIt->second : "==";
+    const std::string val = (valIt != meta.properties.end()) ? valIt->second : "";
 
     const auto& cond = condIt->second;
+
     if (cond == "questComplete") {
-        // Check if another quest flow on same entity completed
-        // Simple check: compare questId in key with flow.questId
-        return flow.status == QuestFlowStatus::Completed;
+        // With no key, this asks about the flow it lives on. With a key, it names
+        // another quest -- and this component cannot see the QuestSystem, so
+        // rather than answer for the wrong quest it says it cannot answer.
+        if (key.empty() || key == flow.questId) {
+            return flow.status == QuestFlowStatus::Completed;
+        }
+        ENJIN_LOG_WARN(Editor,
+            "Quest branch on '%s': questComplete for another quest ('%s') is not "
+            "evaluated here; use a variable set by that quest instead. Taking the "
+            "false branch.",
+            flow.questId.c_str(), key.c_str());
+        return false;
     }
 
-    if (cond == "variable" || cond == "custom") {
-        // Check node counters as simple variable store
-        auto counterIt = flow.nodeCounters.find(0);  // placeholder
-        // For now, custom conditions evaluate to true by default
-        return true;
+    if (cond == "variable") {
+        auto it = flow.variables.find(key);
+        if (it == flow.variables.end()) {
+            // An unset variable is not equal to anything, and is not greater or
+            // less than anything either. "!=" is the one operator it can answer.
+            return op == "!=";
+        }
+        return ApplyOperator(it->second, op, val);
     }
 
-    // Default: true
-    return true;
+    if (cond == "counter") {
+        // nodeCounters is keyed by node id, so the key is a node number.
+        char* end = nullptr;
+        const unsigned long nodeId = std::strtoul(key.c_str(), &end, 10);
+        if (key.empty() || (end && *end != '\0')) {
+            ENJIN_LOG_WARN(Editor,
+                "Quest branch on '%s': counter condition needs a node id as its "
+                "key, got '%s'. Taking the false branch.",
+                flow.questId.c_str(), key.c_str());
+            return false;
+        }
+        auto it = flow.nodeCounters.find(static_cast<Editor::NodeId>(nodeId));
+        const i32 count = (it != flow.nodeCounters.end()) ? it->second : 0;
+        return ApplyOperator(std::to_string(count), op, val);
+    }
+
+    if (cond == "custom") {
+        // The engine cannot know what a game-defined condition means. Answering
+        // "true" is how an unimplementable check became an always-open path; the
+        // honest answer is that it did not pass, said loudly enough to find.
+        ENJIN_LOG_WARN(Editor,
+            "Quest branch on '%s': custom condition '%s' has no evaluator; set a "
+            "variable from script instead. Taking the false branch.",
+            flow.questId.c_str(), key.c_str());
+        return false;
+    }
+
+    ENJIN_LOG_WARN(Editor, "Quest branch on '%s': unknown condition type '%s'. "
+                           "Taking the false branch.",
+                   flow.questId.c_str(), cond.c_str());
+    return false;
 }
 
 // ============================================================================

@@ -2683,10 +2683,22 @@ Renderer::PostProcessSettings DeserializePPSettings(const json& j) {
     auto GU = [&](const char* k) -> u32 { return j.contains(k) ? j[k].get<u32>() : 0; };
     auto GF = [&](const char* k, f32 def) -> f32 { return j.contains(k) ? j[k].get<f32>() : def; };
 
-    // R4 fix: Clamp enum fields to valid ranges
-    s.toneMappingMode = std::min(GU("toneMappingMode"), 5u); // 0-5 (None..AgX)
-    // Migration: scenes saved with None (0) → ACES (3). None was an unintentional default.
-    if (s.toneMappingMode == 0) s.toneMappingMode = 3;
+    // Clamp enum fields to valid ranges.
+    //
+    // "None" (0) is a real choice an author can make in the Rendering panel, and it
+    // used to be rewritten to ACES on every load: the migration below could not
+    // tell a scene that never wrote the field from one that wrote a deliberate 0,
+    // so picking None, saving and reloading silently gave back ACES and there was
+    // no setting the author could have used to mean what they meant.
+    //
+    // The two cases ARE distinguishable -- one has the key and one does not. A
+    // missing key is the old scene the migration was written for; a present 0 is an
+    // answer.
+    if (j.contains("toneMappingMode")) {
+        s.toneMappingMode = std::min(GU("toneMappingMode"), 5u);  // 0-5 (None..AgX)
+    } else {
+        s.toneMappingMode = 3;   // ACES, for scenes saved before the field existed
+    }
     s.exposure = GF("exposure", 1.0f);
     s.gamma = GF("gamma", 1.0f);
     s.whitePoint = GF("whitePoint", 4.0f);

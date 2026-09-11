@@ -1,9 +1,11 @@
 #include "Enjin/Scripting/ScriptBindings.h"
 #include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Logging/Log.h"
+#include <string>
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Entity.h"
 #include "Enjin/Gameplay/QuestSystem.h"
+#include "Enjin/Gameplay/QuestFlow.h"
 #include "Enjin/Gameplay/CinematicSystem.h"
 #include "Enjin/Gameplay/ObjectPool.h"
 #include "Enjin/Effects/Destructible.h"
@@ -73,6 +75,62 @@ static bool Quest_IsActive(const std::string& questId) {
 static bool Quest_IsComplete(const std::string& questId) {
     return (s_BindingsQuest && s_BindingsWorld) ?
         s_BindingsQuest->IsQuestComplete(s_BindingsWorld, questId) : false;
+}
+
+// ============================================================================
+// Quest Flow variables
+// ============================================================================
+//
+// A quest graph's branch nodes test a named variable. Nothing could set one:
+// the evaluator read a key, an operator and a value off the node and compared
+// none of them, so every branch returned true and the second outcome of every
+// authored branch was unreachable. With the comparison implemented, these are
+// how a game puts something in front of it.
+//
+// Values are strings and compared numerically when both sides parse as numbers,
+// so QuestFlow_SetInt and QuestFlow_SetVariable write into the same store and a
+// branch does not have to know which was used.
+
+static void QuestFlow_SetVariable(u64 entity, const std::string& key,
+                                  const std::string& value) {
+    if (!s_BindingsWorld) return;
+    auto* flow = s_BindingsWorld->GetComponent<ECS::QuestFlowComponent>(
+        static_cast<ECS::Entity>(entity));
+    if (!flow) {
+        ENJIN_LOG_WARN(Script, "QuestFlow_SetVariable: entity has no QuestFlowComponent");
+        return;
+    }
+    flow->variables[key] = value;
+}
+
+static void QuestFlow_SetInt(u64 entity, const std::string& key, int value) {
+    QuestFlow_SetVariable(entity, key, std::to_string(value));
+}
+
+// The empty string for "not set". A caller cannot otherwise tell an unset
+// variable from one set to "0", and those take different branches.
+static std::string QuestFlow_GetVariable(u64 entity, const std::string& key) {
+    if (!s_BindingsWorld) return "";
+    auto* flow = s_BindingsWorld->GetComponent<ECS::QuestFlowComponent>(
+        static_cast<ECS::Entity>(entity));
+    if (!flow) return "";
+    auto it = flow->variables.find(key);
+    return (it != flow->variables.end()) ? it->second : std::string();
+}
+
+static bool QuestFlow_HasVariable(u64 entity, const std::string& key) {
+    if (!s_BindingsWorld) return false;
+    auto* flow = s_BindingsWorld->GetComponent<ECS::QuestFlowComponent>(
+        static_cast<ECS::Entity>(entity));
+    return flow && flow->variables.count(key) > 0;
+}
+
+static void QuestFlow_ClearVariable(u64 entity, const std::string& key) {
+    if (!s_BindingsWorld) return;
+    if (auto* flow = s_BindingsWorld->GetComponent<ECS::QuestFlowComponent>(
+            static_cast<ECS::Entity>(entity))) {
+        flow->variables.erase(key);
+    }
 }
 
 // ============================================================================
@@ -152,6 +210,23 @@ void RegisterGameplayBindings(asIScriptEngine* engine) {
         ENJIN_AS_FN(Quest_IsActive), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Quest_IsComplete(const string &in)",
         ENJIN_AS_FN(Quest_IsComplete), ENJIN_AS_CALL_CDECL));
+
+    // -- Quest Flow variables (what a branch node tests) --
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void QuestFlow_SetVariable(uint64, const string &in, const string &in)",
+        ENJIN_AS_FN(QuestFlow_SetVariable), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void QuestFlow_SetInt(uint64, const string &in, int)",
+        ENJIN_AS_FN(QuestFlow_SetInt), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "string QuestFlow_GetVariable(uint64, const string &in)",
+        ENJIN_AS_FN(QuestFlow_GetVariable), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "bool QuestFlow_HasVariable(uint64, const string &in)",
+        ENJIN_AS_FN(QuestFlow_HasVariable), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void QuestFlow_ClearVariable(uint64, const string &in)",
+        ENJIN_AS_FN(QuestFlow_ClearVariable), ENJIN_AS_CALL_CDECL));
 
     // -- Cinematic System --
     AS_CHECK(engine->RegisterGlobalFunction("void Cinematic_Play(uint64)",
