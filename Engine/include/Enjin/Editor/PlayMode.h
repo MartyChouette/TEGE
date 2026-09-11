@@ -14,6 +14,7 @@
 #include "Enjin/ECS/Systems/FlowerSystem.h"
 #include "Enjin/ECS/Systems/TweenSystem.h"
 #include "Enjin/ECS/Systems/ActionTriggerSystem.h"
+#include "Enjin/ECS/Systems/GameplaySystem.h"
 #include "Enjin/ECS/Systems/StateMachineSystem.h"
 #include "Enjin/ECS/Systems/SwarmSystem.h"
 #include "Enjin/ECS/Systems/GeneratedGeometrySystem.h"
@@ -254,6 +255,7 @@ private:
     // Tween system
     ECS::TweenSystem m_TweenSystem;
     ECS::ActionTriggerSystem m_ActionTriggerSystem;
+    ECS::GameplaySystem m_GameplaySystem;
 
     // Swarm system (data-oriented crowd proxies)
     ECS::SwarmSystem m_SwarmSystem;

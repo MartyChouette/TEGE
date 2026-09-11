@@ -573,6 +573,9 @@ void PlayMode::Play() {
     // ActionTrigger components: input actions wired to scene effects with no
     // script, so the editor previews exactly what the exported game runs.
     m_ActionTriggerSystem.SetInputActionMap(m_InputMap);
+    m_GameplaySystem.SetInputActionMap(m_InputMap);
+    m_GameplaySystem.SetSceneManager(m_SceneManager);
+    m_GameplaySystem.OnPlayStart(m_World);
     m_ActionTriggerSystem.SetSubtitleSystem(m_SubtitleSystem);
     m_ActionTriggerSystem.SetEventBus(&m_EntityEventBus);
     m_DialogueSystem.SetQuestSystem(&m_QuestSystem);
@@ -727,6 +730,7 @@ void PlayMode::Stop() {
     // A trigger holding the time scale (bullet time) must not survive the
     // session: the editor keeps running this process.
     m_ActionTriggerSystem.Reset(m_World);
+    m_GameplaySystem.Reset(m_World);
     // Weather scripted during play (Weather_SetRainIntensity) must not
     // outlive the session - stop returns to the editor's clear baseline;
     // weather zones re-establish themselves next frame if authored.
@@ -1194,6 +1198,7 @@ void PlayMode::Update(f32 deltaTime) {
 
         // Gameplay systems
         m_ActionTriggerSystem.Update(m_World, deltaTime);
+        m_GameplaySystem.Update(m_World, deltaTime);
         m_TweenSystem.Update(m_World, deltaTime);
         m_SwarmSystem.Update(m_World, deltaTime);
         m_GeneratedGeometry.Update(m_World, deltaTime);

@@ -26,6 +26,7 @@
 #include "Enjin/Input/InputProjectSettings.h"
 #include "Enjin/GUI/LocalizationBoot.h"
 #include "Enjin/ECS/Systems/ActionTriggerSystem.h"
+#include "Enjin/ECS/Systems/GameplaySystem.h"
 
 // --touch: simulate the mobile touch overlay with the mouse (set in main()).
 static bool s_SimulateTouch = false;
@@ -1080,6 +1081,7 @@ public:
 
         // --- Gameplay systems ---
         m_ActionTriggerSystem.Update(m_World.get(), deltaTime);
+        m_GameplaySystem.Update(m_World.get(), deltaTime);
         m_TweenSystem.Update(m_World.get(), deltaTime);
         m_SwarmSystem.Update(m_World.get(), deltaTime);
         // Brush solids: a loaded scene stores brushes, not geometry, so the
@@ -2416,6 +2418,9 @@ private:
         // ActionTrigger components: input actions wired to scene effects with
         // no script (bullet time, show/hide, events, subtitles).
         m_ActionTriggerSystem.SetInputActionMap(&m_InputMap);
+        m_GameplaySystem.SetInputActionMap(&m_InputMap);
+        m_GameplaySystem.SetSceneManager(&m_SceneManager);
+        m_GameplaySystem.OnPlayStart(m_World.get());
         m_ActionTriggerSystem.SetSubtitleSystem(&m_SubtitleSystem);
         m_ActionTriggerSystem.SetEventBus(&m_EntityEventBus);
 
@@ -3423,6 +3428,7 @@ private:
     Enjin::Gameplay::RecordRewindSystem m_RecordRewindSystem;
     Enjin::ECS::EntityEventBus m_EntityEventBus;
     Enjin::ECS::ActionTriggerSystem m_ActionTriggerSystem;
+    Enjin::ECS::GameplaySystem m_GameplaySystem;
     Enjin::InputSystem::InputProjectSettings m_InputSettings;
     Enjin::ECS::DialogueSystem m_DialogueSystem;
     Enjin::ECS::Entity m_ActiveDialogueEntity = 0;

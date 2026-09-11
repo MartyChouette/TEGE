@@ -41,6 +41,7 @@
 #include "Enjin/Input/InputProjectSettings.h"
 #include "Enjin/GUI/LocalizationBoot.h"
 #include "Enjin/ECS/Systems/ActionTriggerSystem.h"
+#include "Enjin/ECS/Systems/GameplaySystem.h"
 #include "Enjin/GUI/UISystem.h"
 #include "Enjin/GUI/UITemplates.h"
 #include "Enjin/GUI/EmbeddedFonts.h"    // web ImGui font (parity with desktop ImGuiLayer)
@@ -583,6 +584,9 @@ public:
         // ActionTrigger components: input actions wired to scene effects with
         // no script (bullet time, show/hide, events, subtitles).
         m_ActionTriggerSystem.SetInputActionMap(&m_InputMap);
+        m_GameplaySystem.SetInputActionMap(&m_InputMap);
+        m_GameplaySystem.SetSceneManager(&m_SceneManager);
+        m_GameplaySystem.OnPlayStart(m_World.get());
         m_ActionTriggerSystem.SetSubtitleSystem(&m_SubtitleSystem);
         m_ActionTriggerSystem.SetEventBus(&m_EntityEventBus);
 
@@ -1366,6 +1370,7 @@ public:
         // BEFORE visual scripts, so graphs see this frame's FSM state, not last
         // frame's (the web order was reversed until the 08-31 parity audit).
         m_ActionTriggerSystem.Update(m_World.get(), deltaTime);
+        m_GameplaySystem.Update(m_World.get(), deltaTime);
         m_TweenSystem.Update(m_World.get(), deltaTime);
         m_SwarmSystem.Update(m_World.get(), deltaTime);
         // Brush solids: a loaded scene stores brushes, not geometry, so the
@@ -2713,6 +2718,7 @@ private:
     Enjin::Gameplay::CinematicSystem m_CinematicSystem;
     Enjin::ECS::EntityEventBus m_EntityEventBus;
     Enjin::ECS::ActionTriggerSystem m_ActionTriggerSystem;
+    Enjin::ECS::GameplaySystem m_GameplaySystem;
     Enjin::InputSystem::InputProjectSettings m_InputSettings;
     Enjin::Gameplay::FootstepSystem m_FootstepSystem;
     Enjin::Accessibility::SubtitleSystem m_SubtitleSystem;
