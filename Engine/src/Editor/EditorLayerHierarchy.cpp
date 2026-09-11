@@ -346,37 +346,74 @@ void EditorLayer::DrawHierarchyPanel() {
     ImGui::End();
 }
 
+// Centred icon + heading + body for a panel with nothing in it.
+//
+// Every line here used to centre with `(avail.x - textWidth) * 0.5f` and no
+// floor. When the text is WIDER than the panel that expression is negative, so
+// the cursor went left of the panel's content edge and the string was clipped at
+// BOTH ends -- the Inspector's "Select an entity in the Hierarchy to inspect it"
+// rendered as "t an entity in the Hierarchy to inspe". At the default UI scale
+// of 1.9 that is the normal case, not an edge case: the text is authored at 100%
+// and the panel is not.
+//
+// So: clamp the centring at zero, and WRAP the body rather than letting one long
+// line decide whether the sentence is readable.
 void EditorLayer::DrawEmptyState(const char* icon, const char* heading, const char* body,
                                   const char* ctaLabel, std::function<void()> ctaAction) {
     ImVec2 avail = ImGui::GetContentRegionAvail();
+    const f32 scale = m_EditorSettings.uiScale;
+
+    // Never left of the content edge. Centring is a nicety; staying inside the
+    // panel is not.
+    auto centerX = [&](f32 itemWidth) {
+        const f32 x = (avail.x - itemWidth) * 0.5f;
+        ImGui::SetCursorPosX(x > 0.0f ? x : 0.0f);
+    };
+
     f32 centerY = avail.y * 0.35f;
 
     // Icon (large, 40% opacity)
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + centerY);
     ImFont* headingFont = m_ImGuiLayer ? m_ImGuiLayer->GetHeadingFont() : nullptr;
     if (headingFont) ImGui::PushFont(headingFont);
-    ImVec2 iconSize = ImGui::CalcTextSize(icon);
-    ImGui::SetCursorPosX((avail.x - iconSize.x) * 0.5f);
+    centerX(ImGui::CalcTextSize(icon).x);
     ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 0.4f), "%s", icon);
     if (headingFont) ImGui::PopFont();
 
     // Heading
-    ImVec2 headingSize = ImGui::CalcTextSize(heading);
-    ImGui::SetCursorPosX((avail.x - headingSize.x) * 0.5f);
+    centerX(ImGui::CalcTextSize(heading).x);
     ImGui::Text("%s", heading);
 
-    // Body text
-    ImVec2 bodySize = ImGui::CalcTextSize(body);
-    ImGui::SetCursorPosX((avail.x - bodySize.x) * 0.5f);
-    ImGui::TextDisabled("%s", body);
+    // Body text, wrapped to the panel.
+    //
+    // Wrapped rather than truncated because this sentence is the whole point of
+    // an empty state: it is the panel explaining what to do next, and half of
+    // that instruction is not a shorter instruction.
+    if (body && *body) {
+        const f32 bodyWidth = ImGui::CalcTextSize(body).x;
+        if (bodyWidth <= avail.x) {
+            centerX(bodyWidth);
+            ImGui::TextDisabled("%s", body);
+        } else {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + avail.x);
+            ImGui::TextUnformatted(body);
+            ImGui::PopTextWrapPos();
+            ImGui::PopStyleColor();
+        }
+    }
 
     // Optional CTA button
     if (ctaLabel && ctaAction) {
         ImGui::Spacing();
         ImVec2 btnSize = ImGui::CalcTextSize(ctaLabel);
-        btnSize.x += 24.0f;
-        btnSize.y += 10.0f;
-        ImGui::SetCursorPosX((avail.x - btnSize.x) * 0.5f);
+        // Scaled: at 1.9 an unscaled 24px of padding is a third of what the
+        // surrounding text grew to, so the button read as cramped next to
+        // everything around it.
+        btnSize.x += 24.0f * scale;
+        btnSize.y += 10.0f * scale;
+        if (btnSize.x > avail.x) btnSize.x = avail.x;
+        centerX(btnSize.x);
         if (ImGui::Button(ctaLabel, btnSize)) {
             ctaAction();
         }
@@ -420,9 +457,50 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
         entityLockedByOther ? "[X] " : (entityLockedByMe ? "[=] " : ""),
         name.c_str(),
         scriptError ? "  (!) script error" : "");
+    // Truncate to what actually fits, leaving room for the visibility toggle
+    // that gets drawn on this same line.
+    //
+    // Nothing clipped this before, so a long name drew straight under the eye
+    // icon and the two overlapped into an unreadable smudge -- "LadderTower"
+    // plus an "O" rendered as "LadderTowQr". At the default UI scale of 1.9 that
+    // is most names, not a few: the row width is fixed by the panel and the text
+    // is not.
+    //
+    // An ellipsis rather than a hard cut, because a silently shortened name
+    // looks like the entity is called that.
+    {
+        const f32 iconW = ImGui::CalcTextSize("O").x +
+                          ImGui::GetStyle().FramePadding.x * 2.0f;
+        const f32 indent = ImGui::GetCursorPosX();
+        // Exactly what the row has left: the content width, minus where this
+        // row starts, minus the arrow/label gap the tree node adds, minus the
+        // icon and one gap before it. Reserving more than that truncates names
+        // that would have fitted, which is its own small dishonesty -- the panel
+        // claiming less room than it has.
+        const f32 roomForLabel = ImGui::GetWindowContentRegionMax().x - indent -
+                                 ImGui::GetTreeNodeToLabelSpacing() - iconW -
+                                 ImGui::GetStyle().ItemSpacing.x;
+
+        if (roomForLabel > 0.0f && ImGui::CalcTextSize(labelBuf).x > roomForLabel) {
+            const f32 ellipsisW = ImGui::CalcTextSize("...").x;
+            usize keep = std::strlen(labelBuf);
+            while (keep > 1 &&
+                   ImGui::CalcTextSize(labelBuf, labelBuf + keep).x + ellipsisW > roomForLabel) {
+                --keep;
+            }
+            if (keep + 4 < sizeof(labelBuf)) {
+                std::snprintf(labelBuf + keep, sizeof(labelBuf) - keep, "...");
+            }
+        }
+    }
+
     if (scriptError) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.42f, 0.42f, 1.0f));
     bool opened = ImGui::TreeNodeEx((void*)(uintptr_t)entity, flags, "%s", labelBuf);
     if (scriptError) ImGui::PopStyleColor();
+    // The full name on hover, so truncation never costs you the information.
+    if (ImGui::IsItemHovered() && ImGui::CalcTextSize(name.c_str()).x > 0.0f) {
+        ImGui::SetTooltip("%s", name.c_str());
+    }
     if (scriptError && ImGui::IsItemHovered() && !scriptErrorMsg.empty()) {
         ImGui::SetTooltip("Script error: %s\n(select this entity to see it on the Script component, or open the Console)",
                           scriptErrorMsg.c_str());
@@ -656,7 +734,18 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
     {
         auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
         if (transform) {
-            ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - 18.0f);
+            // The gutter has to SCALE. It was a flat 18px while the entity name
+            // beside it is drawn at the editor's UI scale, which defaults to
+            // 1.9 -- so at any normal setting a long name ran underneath this
+            // button and the two overlapped ("[M] LadderTowerO").
+            //
+            // Measured from the glyph rather than guessed: the icon is one
+            // character in a SmallButton, so its width is the text width plus
+            // the frame padding ImGui will add on both sides.
+            const f32 iconW = ImGui::CalcTextSize("O").x +
+                              ImGui::GetStyle().FramePadding.x * 2.0f;
+            ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - iconW -
+                            ImGui::GetStyle().ItemSpacing.x);
             ImGui::PushID(static_cast<int>((uintptr_t)entity ^ 0xEEEE));
             const char* icon = transform->visible ? "O" : "-";
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
