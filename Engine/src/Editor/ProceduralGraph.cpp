@@ -727,6 +727,19 @@ ProcGraphResult ProceduralGraphEditor::Execute() const {
     u32 width = m_Graph->previewWidth;
     u32 height = m_Graph->previewHeight;
     u32 seed = m_Graph->globalSeed;
+
+    // Seed and Size nodes OVERRIDE the graph globals. That is the only thing they
+    // could be for, and nothing read them: placing a Seed node and typing a number
+    // into it changed nothing at all, because Execute took the global seed and the
+    // node's own output was a constant 0.5.
+    for (const auto& node : m_Graph->nodes) {
+        if (node.type == ProcNodeType::Param_Seed && node.intParams[0] != 0) {
+            seed = static_cast<u32>(node.intParams[0]);
+        } else if (node.type == ProcNodeType::Param_Size) {
+            if (node.intParams[0] > 0) width = static_cast<u32>(node.intParams[0]);
+            if (node.intParams[1] > 0) height = static_cast<u32>(node.intParams[1]);
+        }
+    }
     if (seed == 0) {
         seed = static_cast<u32>(std::chrono::steady_clock::now().time_since_epoch().count() & 0xFFFFFFFF);
     }
@@ -924,13 +937,121 @@ ProcGraphResult ProceduralGraphEditor::EvaluateNode(
             }
             break;
         }
-        // Fall through for generators without direct grid output
-        case ProcNodeType::Gen_LSystem:
-        case ProcNodeType::Gen_WFC:
+        case ProcNodeType::Gen_LSystem: {
+            // Was a uniform 0.5 grid with result.success left TRUE, so the node
+            // rendered as flat grey and reported that it had worked. The generator
+            // itself has existed all along in Procedural::LSystemGenerator; what was
+            // missing was turning its line segments into the grid this graph passes
+            // around.
+            Procedural::LSystemGenerator::Params params;
+            params.axiom = node->stringParam.empty() ? std::string("F") : node->stringParam;
+            params.iterations = static_cast<u32>(std::max(1, node->intParams[0]));
+            params.angle = node->floatParams[0] > 0.0f ? node->floatParams[0] : 25.0f;
+            params.stepLength = 1.0f;
+            // A rule is required or the axiom is already the final string. "F" is
+            // the conventional draw-forward symbol, and this is the Koch curve rule
+            // -- a visible default rather than a straight line that looks broken.
+            params.rules['F'] = "F+F-F-F+F";
+
+            const auto ls = Procedural::LSystemGenerator::Generate(params);
+            result.grid.assign(height, std::vector<f32>(width, 0.0f));
+
+            if (ls.segments.empty()) {
+                result.success = false;
+                result.error = "L-System produced no segments (check the axiom)";
+                break;
+            }
+
+            // Fit the drawing to the grid. The turtle works in its own units and
+            // its extent depends on the rule and the iteration count, so a fixed
+            // scale would put most results entirely off the grid.
+            const f32 spanX = std::max(0.0001f, ls.boundsMax.x - ls.boundsMin.x);
+            const f32 spanY = std::max(0.0001f, ls.boundsMax.y - ls.boundsMin.y);
+            const f32 scale = std::min((width - 1) / spanX, (height - 1) / spanY);
+            const f32 offX = (width - 1 - spanX * scale) * 0.5f;
+            const f32 offY = (height - 1 - spanY * scale) * 0.5f;
+
+            auto plot = [&](i32 x, i32 y) {
+                if (x >= 0 && y >= 0 && x < static_cast<i32>(width) &&
+                    y < static_cast<i32>(height)) {
+                    result.grid[static_cast<usize>(y)][static_cast<usize>(x)] = 1.0f;
+                }
+            };
+
+            for (const auto& seg : ls.segments) {
+                const f32 x0 = (seg.start.x - ls.boundsMin.x) * scale + offX;
+                const f32 y0 = (seg.start.y - ls.boundsMin.y) * scale + offY;
+                const f32 x1 = (seg.end.x - ls.boundsMin.x) * scale + offX;
+                const f32 y1 = (seg.end.y - ls.boundsMin.y) * scale + offY;
+
+                // Step along the segment at one sample per pixel of its longer
+                // axis, so a line is continuous at any angle.
+                const f32 dx = x1 - x0, dy = y1 - y0;
+                const i32 steps = static_cast<i32>(std::max(std::fabs(dx), std::fabs(dy))) + 1;
+                for (i32 i = 0; i <= steps; ++i) {
+                    const f32 t = static_cast<f32>(i) / static_cast<f32>(steps);
+                    plot(static_cast<i32>(x0 + dx * t + 0.5f),
+                         static_cast<i32>(y0 + dy * t + 0.5f));
+                }
+            }
+            break;
+        }
+
+        case ProcNodeType::Gen_WFC: {
+            // WFC's output IS a grid, so there was never a representation problem
+            // here -- the node simply did not run it.
+            Procedural::WaveFunctionCollapse::Params params;
+            params.width = width;
+            params.height = height;
+            params.seed = seed;
+
+            // A default tile set: every tile may neighbour every other. That is the
+            // unconstrained case, which is what a node with no authored adjacency
+            // can honestly produce.
+            const u32 tileCount = static_cast<u32>(std::max(2, node->intParams[0]));
+            for (u32 t = 0; t < tileCount; ++t) {
+                Procedural::WaveFunctionCollapse::WFCTile tile;
+                tile.id = t;
+                for (int d = 0; d < 4; ++d) {
+                    for (u32 n = 0; n < tileCount; ++n) tile.allowedNeighbors[d].push_back(n);
+                }
+                params.tiles.push_back(tile);
+            }
+
+            const auto wfc = Procedural::WaveFunctionCollapse::Generate(params);
+            result.grid.assign(height, std::vector<f32>(width, 0.0f));
+            if (!wfc.success || wfc.grid.empty()) {
+                result.success = false;
+                result.error = "Wave Function Collapse did not converge";
+                break;
+            }
+            // Tile ids become grid values in 0..1, so downstream transforms and the
+            // preview both read something meaningful rather than raw ids.
+            const f32 denom = static_cast<f32>(std::max(1u, tileCount - 1));
+            for (u32 y = 0; y < height && y < wfc.grid.size(); ++y) {
+                for (u32 x = 0; x < width && x < wfc.grid[y].size(); ++x) {
+                    result.grid[y][x] = static_cast<f32>(wfc.grid[y][x]) / denom;
+                }
+            }
+            break;
+        }
+
         case ProcNodeType::Gen_Grammar:
         case ProcNodeType::Gen_PrefabAssembler: {
-            // These produce non-grid output; generate a placeholder
-            result.grid.resize(height, std::vector<f32>(width, 0.5f));
+            // These two genuinely have no grid form: a shape grammar produces
+            // shapes and a prefab assembler produces placements, neither of which
+            // is a height field. They used to return a uniform 0.5 grid with
+            // success left TRUE, so the preview showed flat grey and the node
+            // reported that it had worked.
+            //
+            // Saying so is the honest answer. An author wiring one of these into a
+            // grid pipeline has made a mistake the graph can name, and a node that
+            // cannot answer should not pretend it did.
+            result.grid.assign(height, std::vector<f32>(width, 0.0f));
+            result.success = false;
+            result.error = std::string(GetNodeName(node->type)) +
+                           " produces placements, not a grid -- it cannot feed a "
+                           "grid pipeline. Use it as an output node.";
             break;
         }
 
@@ -1221,9 +1342,21 @@ ProcGraphResult ProceduralGraphEditor::EvaluateNode(
             result.grid.resize(height, std::vector<f32>(width, val));
             break;
         }
-        case ProcNodeType::Param_Seed:
+        case ProcNodeType::Param_Seed: {
+            // Emitted 0.5 regardless of the seed typed into it, while the sibling
+            // Param_Int node correctly emits its own value. Anything reading a seed
+            // through the graph got 0.5.
+            result.grid.assign(height,
+                std::vector<f32>(width, static_cast<f32>(node->intParams[0])));
+            break;
+        }
+
         case ProcNodeType::Param_Size: {
-            result.grid.resize(height, std::vector<f32>(width, 0.5f));
+            // A grid carries one scalar, so this emits the WIDTH; the height is
+            // read structurally by Execute, which is where a size actually has to
+            // take effect. Emitting 0.5 meant neither number reached anything.
+            result.grid.assign(height,
+                std::vector<f32>(width, static_cast<f32>(node->intParams[0])));
             break;
         }
 

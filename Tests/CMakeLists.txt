@@ -196,9 +196,11 @@ enjin_add_test(TestComponentHelpSnippets Unit/Editor/TestComponentHelpSnippets.c
 enjin_add_test(TestDocGenerator       Unit/Editor/TestDocGenerator.cpp)
 enjin_add_test(TestRetroClearDown   Unit/Editor/TestRetroClearDown.cpp)
 enjin_add_test(TestShaderGraphCodegen Unit/Editor/TestShaderGraphCodegen.cpp)
+enjin_add_test(TestProceduralGraphGenerators Unit/Editor/TestProceduralGraphGenerators.cpp)
 target_compile_definitions(TestDocGenerator PRIVATE
 enjin_add_test(TestRetroClearDown   Unit/Editor/TestRetroClearDown.cpp)
 enjin_add_test(TestShaderGraphCodegen Unit/Editor/TestShaderGraphCodegen.cpp)
+enjin_add_test(TestProceduralGraphGenerators Unit/Editor/TestProceduralGraphGenerators.cpp)
     ENJIN_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/..")
 enjin_add_test(TestFontAtlas          Unit/Renderer/TestFontAtlas.cpp)
 enjin_add_test(TestFontFallback      Unit/Renderer/TestFontFallback.cpp)
