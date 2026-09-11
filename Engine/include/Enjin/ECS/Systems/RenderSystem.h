@@ -600,7 +600,55 @@ public:
 
     // Render all entities to an offscreen render target using a custom camera
     // Must be called outside of the main render pass (before BeginMainRenderPass)
-    void RenderToTarget(Renderer::RenderTarget* target, Renderer::Camera* camera, u32 viewportIndex = 0);
+    // Which geometry a RenderToTarget call should record.
+    //
+    // Order-independent transparency needs the transparent half drawn into a
+    // different render pass, with different blend equations and a different
+    // fragment output -- but shaded by exactly the same code. Splitting the pass
+    // with a flag keeps one draw loop: a second copy would shade transparency
+    // slightly differently from everything else, and the difference would show up
+    // as glass that does not match the wall it is set into.
+    enum class TargetPass : u8 {
+        All,             // opaque + blended, the single-pass sorted path
+        OpaqueOnly,      // skip blended; the OIT pass will draw them
+        TransparentOIT,  // only blended, into the OIT accumulation targets
+    };
+
+    void RenderToTarget(Renderer::RenderTarget* target, Renderer::Camera* camera,
+                        u32 viewportIndex = 0, TargetPass pass = TargetPass::All);
+
+    // Run the whole OIT sequence for `target`, whose opaque pass has just ended.
+    // Returns false when OIT is off or unavailable, in which case the caller has
+    // already drawn transparency the sorted way and nothing more is needed.
+    bool RenderOITForTarget(Renderer::RenderTarget* target, Renderer::Camera* camera,
+                            u32 viewportIndex);
+
+    // Is OIT on AND usable? The draw path asks this before deciding to hold the
+    // blended geometry back, so a half-initialised OIT can never make transparency
+    // disappear -- it just stays sorted.
+    bool IsOITUsable() const;
+
+    // Whether what was built still matches this target at its current size.
+    bool IsOITCurrentFor(Renderer::RenderTarget* target) const;
+
+    // Ask for OIT to be set up for this target, and answer whether it is ready NOW.
+    //
+    // The BUILD is deferred to FlushPendingChanges, never done here. Attaching a
+    // depth buffer means recreating the OIT render pass, and the accumulation and
+    // composite pipelines with it -- destroying GPU objects that the command buffer
+    // currently being recorded may already reference. Doing that inline is what
+    // CLAUDE.md's frame-safety rule is about, and it access-violated at submit on
+    // the first frame OIT was switched on, exactly as documented.
+    //
+    // So the first frame after a change answers false and transparency stays
+    // sorted for one frame. That is the correct trade: a frame of sorted
+    // transparency is invisible, and a crash is not.
+    bool RequestOITForTarget(Renderer::RenderTarget* target);
+
+    // The actual build: recreates the OIT render pass and its pipelines. Only
+    // FlushPendingChanges may call it, because only there is destroying GPU
+    // objects safe.
+    bool PrepareOITForTarget(Renderer::RenderTarget* target);
 
     // Render multiple cameras to a single render target using viewport subdivision (splitscreen)
     // Each ViewportCamera defines a normalized rect within the target.
@@ -1393,6 +1441,17 @@ public:
 
     // Order-Independent Transparency
     bool IsOITEnabled() const { return m_OITEnabled; }
+
+    // The accumulation pipeline: the main mesh shaders compiled with -DENJIN_OIT,
+    // targeting the OIT render pass. Built lazily, because the OIT render pass only
+    // exists once a depth buffer has been handed to OITManager.
+    std::unique_ptr<Renderer::VulkanPipeline> m_OITAccumPipeline;
+    std::unique_ptr<Renderer::VulkanShader> m_OITAccumFragmentShader;
+    VkRenderPass m_OITAccumPipelinePass = VK_NULL_HANDLE;  // what it was built for
+    mutable bool m_OITRefusalLogged = false;
+
+    // What FlushPendingChanges should build OIT for, set by RequestOITForTarget.
+    Renderer::RenderTarget* m_PendingOITTarget = nullptr;
     void SetOITEnabled(bool enabled) { m_OITEnabled = enabled; }
     Renderer::OITManager* GetOITManager() { return m_OITManager.get(); }
 

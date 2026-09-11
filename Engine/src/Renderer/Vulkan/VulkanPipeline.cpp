@@ -484,11 +484,39 @@ bool VulkanPipeline::CreatePipeline(
     velocityBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT;
     velocityBlendAttachment.blendEnable = VK_FALSE;
 
+    // Weighted-blended OIT wants two attachments with two different equations,
+    // and neither of them is the velocity buffer's "no blending at all".
+    VkPipelineColorBlendAttachmentState oitAccumBlend{};
+    oitAccumBlend.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                   VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    oitAccumBlend.blendEnable = VK_TRUE;
+    oitAccumBlend.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+    oitAccumBlend.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
+    oitAccumBlend.colorBlendOp = VK_BLEND_OP_ADD;
+    oitAccumBlend.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    oitAccumBlend.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    oitAccumBlend.alphaBlendOp = VK_BLEND_OP_ADD;
+
+    VkPipelineColorBlendAttachmentState oitRevealBlend{};
+    oitRevealBlend.colorWriteMask = VK_COLOR_COMPONENT_R_BIT;
+    oitRevealBlend.blendEnable = VK_TRUE;
+    oitRevealBlend.srcColorBlendFactor = VK_BLEND_FACTOR_ZERO;
+    oitRevealBlend.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR;
+    oitRevealBlend.colorBlendOp = VK_BLEND_OP_ADD;
+    oitRevealBlend.srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    oitRevealBlend.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    oitRevealBlend.alphaBlendOp = VK_BLEND_OP_ADD;
+
     // Build attachment array: [0]=color, [1]=velocity (if MRT)
     std::vector<VkPipelineColorBlendAttachmentState> blendAttachments;
     u32 actualColorCount = config.hasColorAttachment ? config.colorAttachmentCount : 0;
-    if (actualColorCount >= 1) blendAttachments.push_back(colorBlendAttachment);
-    if (actualColorCount >= 2) blendAttachments.push_back(velocityBlendAttachment);
+    if (config.oitBlend) {
+        if (actualColorCount >= 1) blendAttachments.push_back(oitAccumBlend);
+        if (actualColorCount >= 2) blendAttachments.push_back(oitRevealBlend);
+    } else {
+        if (actualColorCount >= 1) blendAttachments.push_back(colorBlendAttachment);
+        if (actualColorCount >= 2) blendAttachments.push_back(velocityBlendAttachment);
+    }
 
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;

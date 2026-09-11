@@ -44,6 +44,17 @@ struct PipelineConfig {
     // Custom vertex input state (for instanced pipelines with non-standard vertex layouts)
     // When non-null, replaces the default mesh vertex input
     const VkPipelineVertexInputStateCreateInfo* customVertexInput = nullptr;
+
+    // Weighted-blended OIT accumulation. The two attachments need DIFFERENT and
+    // very specific blend equations, neither of which is alpha blending:
+    //
+    //   attachment 0, accumulation: dst += src        (every fragment contributes)
+    //   attachment 1, revealage:    dst *= (1 - src)  (product of what still shows)
+    //
+    // Set alongside colorAttachmentCount = 2. It replaces `alphaBlend`, which
+    // describes attachment 0 only and forces attachment 1 unblended -- correct for
+    // the velocity buffer of the main pass and wrong for both OIT targets.
+    bool oitBlend = false;
 };
 
 // Graphics pipeline wrapper

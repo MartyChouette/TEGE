@@ -58,12 +58,27 @@ public:
     void BeginPPPass(VkCommandBuffer cmd);
     void EndPPPass(VkCommandBuffer cmd);
 
+    // Begin/End a single-attachment pass that LOADS the existing colour instead
+    // of clearing it, so something can be drawn ON TOP of the rendered scene.
+    //
+    // BeginPPPass clears to black by design ("if we see black, PP isn't drawing"),
+    // which is right for post-processing -- it reads the scene as a texture and
+    // writes a whole new image. Compositing is the other shape: the OIT resolve
+    // blends over what is already there, and clearing first would throw the opaque
+    // scene away and leave only the transparent objects floating on black.
+    void BeginCompositePass(VkCommandBuffer cmd);
+    void EndCompositePass(VkCommandBuffer cmd);
+    VkRenderPass GetCompositeRenderPass() const { return m_CompositeRenderPass; }
+
     // Getters
     VkRenderPass GetRenderPass() const { return m_RenderPass; }
     VkRenderPass GetPPRenderPass() const { return m_PPRenderPass; }
     VkFramebuffer GetFramebuffer() const { return m_Framebuffer; }
     VkImageView GetColorImageView() const { return m_ColorImageView; }
     VkImageView GetDepthImageView() const { return m_DepthImageView; }
+    // Fixed at creation; the OIT pass has to bake the same format into its own
+    // depth attachment or the render pass will not accept the framebuffer.
+    VkFormat GetDepthFormat() const { return VK_FORMAT_D32_SFLOAT; }
     VkImage GetDepthImage() const { return m_DepthImage; }
     VkSampler GetSampler() const { return m_Sampler; }
     VkDescriptorSet GetImGuiTextureID() const { return m_UIDescriptor; }
@@ -82,6 +97,7 @@ private:
     bool CreateRenderPass();
     bool CreateFramebuffer();
     bool CreatePPRenderPass();
+    bool CreateCompositeRenderPass();
     bool CreatePPFramebuffer();
     bool CreateSampler();
     void RegisterTexture();
@@ -110,6 +126,7 @@ private:
 
     // Single-attachment render pass for post-processing (color only, no velocity/depth)
     VkRenderPass m_PPRenderPass = VK_NULL_HANDLE;
+    VkRenderPass m_CompositeRenderPass = VK_NULL_HANDLE;
     VkFramebuffer m_PPFramebuffer = VK_NULL_HANDLE;
 
     // Sampler for reading the color output

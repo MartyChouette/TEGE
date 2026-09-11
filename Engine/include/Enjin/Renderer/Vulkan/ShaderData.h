@@ -15,7 +15,7 @@ namespace ShaderData {
 extern const unsigned char TriangleVertexShaderData[];
 extern const size_t TriangleVertexShaderDataSize;
 
-// triangle.frag.spv (150816 bytes, 37704 words)
+// triangle.frag.spv (151116 bytes, 37779 words)
 extern const unsigned char TriangleFragmentShaderData[];
 extern const size_t TriangleFragmentShaderDataSize;
 
@@ -134,6 +134,10 @@ extern const size_t FluidFragmentShaderDataSize;
 // oit_composite.frag.spv (1376 bytes, 344 words)
 extern const unsigned char OitCompositeFragmentShaderData[];
 extern const size_t OitCompositeFragmentShaderDataSize;
+
+// oit_accum.frag.spv (151268 bytes, 37817 words)
+extern const unsigned char OitAccumFragmentShaderData[];
+extern const size_t OitAccumFragmentShaderDataSize;
 
 // taa_resolve.comp.spv (7656 bytes, 1914 words)
 extern const unsigned char TAAResolveComputeShaderData[];

@@ -6444,6 +6444,17 @@ void RenderSystem::FlushPendingChanges() {
     // BindlessResourceManager::RegisterTexture defers the actual
     // vkUpdateDescriptorSets; that made it a trap armed for whoever added a
     // descriptor write here, not a safe exception to the rule.
+    // OIT setup, here and nowhere else: attaching a depth buffer recreates the
+    // OIT render pass and the accumulation and composite pipelines with it, and
+    // destroying GPU objects a recording command buffer references is precisely
+    // what the guard above exists to prevent. Built inline on the first frame it
+    // was switched on, it access-violated at submit -- exactly as documented.
+    if (m_PendingOITTarget) {
+        Renderer::RenderTarget* oitTarget = m_PendingOITTarget;
+        m_PendingOITTarget = nullptr;
+        PrepareOITForTarget(oitTarget);
+    }
+
     EnsureMaterialSlotTextures();
 
     // CPU-generated textures (reaction-diffusion, Physarum, script pixels).
@@ -8841,7 +8852,181 @@ void RenderSystem::RenderScriptTargets(VkCommandBuffer commandBuffer) {
     m_ScriptTargetsRenderedThisFrame = true;
 }
 
-void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Camera* camera, u32 viewportIndex) {
+// Weighted-blended order-independent transparency, for one render target.
+//
+// The checkbox for this existed for a long time with nothing behind it:
+// m_OITEnabled was written by the Rendering panel and read by nothing, OITManager
+// allocated its accumulation and revealage targets every run, and its three pass
+// functions were called from nowhere in the engine. The composite shader had been
+// compiled and embedded since August while the tooltip still said "stub until
+// SPIR-V compiled".
+//
+// The sequence, which is the same one the WebGPU path already ran:
+//
+//   1. opaque pass (the caller's, already ended) writes colour and DEPTH
+//   2. accumulation pass: blended geometry, depth TESTED against that depth and
+//      never written, into accumulation (additive) + revealage (dst *= 1-src)
+//   3. composite: one fullscreen triangle resolving the pair over the opaque
+//      colour, with LOAD so the opaque scene is what it blends onto
+//
+// Returns false if anything is missing, and the caller has by then already drawn
+// transparency the ordinary sorted way -- a half-built OIT must never be the
+// reason transparent objects vanish.
+bool RenderSystem::RenderOITForTarget(Renderer::RenderTarget* target,
+                                      Renderer::Camera* camera, u32 viewportIndex) {
+    if (!IsOITUsable() || !target || !target->IsValid() || !camera) return false;
+    if (!m_VulkanRenderer) return false;
+
+    // Checked again HERE, not just at the start of the frame: the target may have
+    // been resized in between, and drawing into a framebuffer that references the
+    // old depth image is an access violation in the driver, not a wrong picture.
+    if (!IsOITCurrentFor(target)) {
+        m_PendingOITTarget = target;   // rebuild at the next safe point
+        return false;
+    }
+
+    VkCommandBuffer cmd = m_VulkanRenderer->GetCurrentCommandBuffer();
+    if (cmd == VK_NULL_HANDLE) return false;
+
+    m_OITManager->BeginTransparentPass(cmd);
+    RenderToTarget(target, camera, viewportIndex, TargetPass::TransparentOIT);
+    m_OITManager->EndTransparentPass(cmd);
+
+    target->BeginCompositePass(cmd);
+    m_OITManager->CompositePass(cmd);
+    target->EndCompositePass(cmd);
+    return true;
+}
+
+// Make sure OIT is ready for this target at this size, building what is missing.
+//
+// Called before the opaque pass, because the opaque pass needs to know whether to
+// hold the blended geometry back -- and it can only know that once the pipeline
+// and the render pass actually exist.
+// Ask for OIT on this target; the build happens in FlushPendingChanges.
+bool RenderSystem::RequestOITForTarget(Renderer::RenderTarget* target) {
+    m_PendingOITTarget = m_OITEnabled ? target : nullptr;
+    if (!m_OITEnabled) {
+        // Switched off: stop the pass running, but keep what was built so turning
+        // it back on does not pay for a rebuild.
+        if (m_OITManager) m_OITManager->GetConfig().enabled = false;
+        return false;
+    }
+    // True only once the deferred build has actually happened AND still matches
+    // this target. The first frame after switching on -- and the first frame after
+    // any resize -- draws transparency the sorted way instead. A frame of sorted
+    // transparency is invisible; a crash is not.
+    return IsOITUsable() && m_OITManager->GetConfig().enabled && IsOITCurrentFor(target);
+}
+
+bool RenderSystem::PrepareOITForTarget(Renderer::RenderTarget* target) {
+    // Say WHY, once, whenever the setting is on and the pass cannot run. A
+    // transparency mode that silently does nothing is the thing this whole change
+    // exists to stop, and "it is on but you see no difference" needs an answer.
+    auto refuse = [this](const char* why) {
+        if (m_OITEnabled && !m_OITRefusalLogged) {
+            m_OITRefusalLogged = true;
+            ENJIN_LOG_WARN(Renderer, "OIT is on but cannot run: %s. "
+                                     "Transparency stays sorted.", why);
+        }
+        return false;
+    };
+
+    if (!m_OITEnabled) return false;
+    if (!m_OITManager) return refuse("no OIT manager (initialisation failed at startup)");
+    if (!target || !target->IsValid()) return refuse("no valid render target");
+    if (!m_VulkanRenderer) return refuse("not on the Vulkan backend");
+    if (!m_VertexShader) return refuse("the mesh vertex shader is not loaded");
+
+    const u32 w = target->GetWidth();
+    const u32 h = target->GetHeight();
+    if (w == 0 || h == 0) return refuse("the render target has no size");
+
+    // A size change means the target's depth image was destroyed and remade, so
+    // the cached view is dangling. Forget it BEFORE the resize, which would
+    // otherwise rebuild the framebuffer around it.
+    if (m_OITManager->GetWidth() != w || m_OITManager->GetHeight() != h) {
+        m_OITManager->ForgetSceneDepth();
+    }
+    m_OITManager->Resize(w, h);
+
+    // The OIT render pass bakes in the depth format, and the accumulation pipeline
+    // bakes in the render pass, so the depth has to be attached before the pipeline
+    // is built -- and the pipeline rebuilt if the pass ever changes underneath it.
+    m_OITManager->SetSceneDepth(target->GetDepthImageView(), target->GetDepthFormat());
+    if (!m_OITManager->HasSceneDepth()) return refuse("the target has no depth buffer to test against");
+
+    VkRenderPass oitPass = m_OITManager->GetTransparentRenderPass();
+    if (oitPass == VK_NULL_HANDLE) return refuse("the transparent render pass could not be built");
+
+    if (!m_OITAccumFragmentShader) {
+        m_OITAccumFragmentShader =
+            std::make_unique<Renderer::VulkanShader>(m_VulkanRenderer->GetContext());
+        if (!m_OITAccumFragmentShader->LoadFromSPIRV(
+                reinterpret_cast<const u8*>(Renderer::ShaderData::OitAccumFragmentShaderData),
+                Renderer::ShaderData::OitAccumFragmentShaderDataSize)) {
+            ENJIN_LOG_ERROR(Renderer, "OIT: accumulation shader failed to load; "
+                                      "transparency stays sorted");
+            m_OITAccumFragmentShader.reset();
+            return refuse("the accumulation shader failed to load");
+        }
+    }
+
+    if (!m_OITAccumPipeline || m_OITAccumPipelinePass != oitPass) {
+        Renderer::PipelineConfig config;
+        config.renderPass = oitPass;
+        config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        config.depthTest = true;      // against the opaque depth
+        config.depthWrite = false;    // transparency must not occlude transparency
+        config.cullMode = VK_CULL_MODE_NONE;   // both faces of a pane of glass count
+        config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+        config.polygonMode = VK_POLYGON_MODE_FILL;
+        config.msaaSamples = VK_SAMPLE_COUNT_1_BIT;   // the OIT targets are 1-sample
+        config.colorAttachmentCount = 2;              // accumulation + revealage
+        config.oitBlend = true;
+
+        auto pipeline = std::make_unique<Renderer::VulkanPipeline>(
+            m_VulkanRenderer->GetContext());
+        if (m_BindlessManager) pipeline->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());
+        if (!pipeline->Create(config, m_VertexShader.get(), m_OITAccumFragmentShader.get())) {
+            return refuse("the accumulation pipeline could not be created");
+        }
+        m_OITAccumPipeline = std::move(pipeline);
+        m_OITAccumPipelinePass = oitPass;
+        ENJIN_LOG_INFO(Renderer, "OIT: accumulation pipeline ready (%ux%u)", w, h);
+    }
+
+    // The composite pipeline resolves INTO the target, so it is built against the
+    // target's LOAD pass, not the swapchain's.
+    m_OITManager->SetCompositeTargetPass(target->GetCompositeRenderPass());
+    m_OITManager->GetConfig().enabled = true;
+    if (!IsOITUsable()) return refuse("the pipeline is not usable after setup");
+    m_OITRefusalLogged = false;   // it works now; a later failure deserves saying
+    return true;
+}
+
+bool RenderSystem::IsOITUsable() const {
+    return m_OITEnabled && m_OITManager && m_OITManager->IsInitialized() &&
+           m_OITAccumPipeline && m_OITAccumPipeline->GetPipeline() != VK_NULL_HANDLE;
+}
+
+// Is the OIT framebuffer still built against THIS target, at its CURRENT size?
+//
+// It can stop being true between the build and the draw within a single frame:
+// the editor flushes (the only place the build is allowed), then resizes its
+// render targets, then records. A resize destroys the depth image the framebuffer
+// references, and vkCmdBeginRenderPass then reads a freed handle -- an access
+// violation inside the driver, with a stack that points at the render pass and
+// says nothing about the resize that caused it.
+bool RenderSystem::IsOITCurrentFor(Renderer::RenderTarget* target) const {
+    if (!target || !target->IsValid() || !m_OITManager) return false;
+    return m_OITManager->GetSceneDepthView() == target->GetDepthImageView() &&
+           m_OITManager->GetWidth() == target->GetWidth() &&
+           m_OITManager->GetHeight() == target->GetHeight();
+}
+
+void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Camera* camera,
+                                   u32 viewportIndex, TargetPass pass) {
     if (!target || !target->IsValid() || !camera || !m_Renderer || !m_Initialized || !m_Pipeline) {
         return;
     }
@@ -9083,7 +9268,28 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             // push constants stay valid). This loop is the editor game view - it
             // never went through BindGeometryPipelineForMaterial, so applied
             // graph shaders were invisible here.
-            if (Renderer::VulkanPipeline* rtCustom =
+            // Which half of the frame is this entity in? Water is deliberately not
+            // counted as transparent here for the same reason as below: it is one
+            // coherent translucent layer and belongs on the depth-writing path.
+            const bool rtIsWater = (m_CachedWater3DStorage && m_CachedWater3DStorage->Has(entity)) ||
+                                   (m_CachedWaterVolumeStorage && m_CachedWaterVolumeStorage->Has(entity));
+            const bool rtIsBlended = material &&
+                                     material->alphaMode == MaterialComponent::AlphaMode::Blend &&
+                                     !rtIsWater;
+            if (pass == TargetPass::OpaqueOnly && rtIsBlended) continue;
+            if (pass == TargetPass::TransparentOIT && !rtIsBlended) continue;
+
+            if (pass == TargetPass::TransparentOIT) {
+                // One pipeline for the whole accumulation pass. A custom shader
+                // graph cannot be honoured here -- it writes colour + velocity, not
+                // accumulation + revealage -- so those entities keep the sorted
+                // path rather than being drawn into the wrong attachments.
+                if (GetEntityCustomPipeline(entity, false)) continue;
+                if (!rtTransparentBound) {
+                    m_OITAccumPipeline->Bind(commandBuffer);
+                    rtTransparentBound = true;
+                }
+            } else if (Renderer::VulkanPipeline* rtCustom =
                     GetEntityCustomPipeline(entity, targetPipeline == m_OffscreenPipeline.get())) {
                 rtCustom->Bind(commandBuffer);
                 rtCustomBound = true;

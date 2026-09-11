@@ -2754,8 +2754,10 @@ void EditorLayer::DrawSettingsSection_DisplayOptions() {
             }
             if (ImGui::IsItemHovered()) ImGui::SetTooltip(
                 "Weighted Blended Order-Independent Transparency\n"
-                "(McGuire & Bavoil 2013).\n"
-                "Requires composite shader — stub until SPIR-V compiled.");
+                "(McGuire & Bavoil 2013).\n\n"
+                "Blended surfaces stop depending on draw order, so\n"
+                "overlapping glass and foliage no longer pop as the\n"
+                "camera moves. Saved with the scene.");
         }
     }
 

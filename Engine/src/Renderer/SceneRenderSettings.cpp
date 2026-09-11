@@ -58,6 +58,7 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
         s.textureWrap          = rs->GetTextureWrap();
 #endif
         s.backfaceCulling      = rs->IsBackfaceCullingEnabled();
+        s.oitEnabled           = rs->IsOITEnabled();
         s.ambientIntensity     = rs->GetAmbientIntensity();
         s.ambientColor         = rs->GetAmbientColor();
         s.fogDensity           = rs->GetFogDensity();
@@ -516,6 +517,7 @@ void SceneRenderSettings::ApplyToRuntimeUnclamped(ECS::RenderSystem* rs, PostPro
         rs->SetShadowsEnabled(effectiveShadowMaps);
 
         rs->SetBackfaceCullingEnabled(backfaceCulling);
+        rs->SetOITEnabled(oitEnabled);
         rs->SetAmbientIntensity(ambientIntensity);
         rs->SetAmbientColor(ambientColor);
         // Fog, after the substitution below has had a chance to supply values
@@ -1392,6 +1394,7 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     j["cascadeProgressiveUpdate"] = s.cascadeProgressiveUpdate;
     j["cascadeFarUpdateInterval"] = s.cascadeFarUpdateInterval;
     j["backfaceCulling"]   = s.backfaceCulling;
+    j["oitEnabled"]        = s.oitEnabled;
     j["wireframe"]         = s.wireframe;
     j["ambientIntensity"]  = RF(s.ambientIntensity);
     j["worldTimeEnabled"]       = s.worldTimeEnabled;
@@ -1840,6 +1843,7 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("cascadeProgressiveUpdate")) s.cascadeProgressiveUpdate = JB(j["cascadeProgressiveUpdate"]);
     if (j.contains("cascadeFarUpdateInterval")) s.cascadeFarUpdateInterval = std::clamp(j["cascadeFarUpdateInterval"].get<u32>(), 2u, 8u);
     if (j.contains("backfaceCulling"))   s.backfaceCulling   = JB(j["backfaceCulling"]);
+    if (j.contains("oitEnabled"))        s.oitEnabled        = JB(j["oitEnabled"]);
     if (j.contains("wireframe"))         s.wireframe         = JB(j["wireframe"]);
     if (j.contains("ambientIntensity"))  s.ambientIntensity  = j["ambientIntensity"].get<f32>();
     if (j.contains("ambientColor"))      s.ambientColor      = DeserializeVec3(j["ambientColor"], s.ambientColor);

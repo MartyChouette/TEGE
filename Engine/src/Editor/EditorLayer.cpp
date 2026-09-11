@@ -3467,6 +3467,13 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         m_RenderSystem->RenderScriptTargets(commandBuffer);
     }
 
+    // Order-independent transparency, when it is on AND everything it needs got
+    // built. Asked BEFORE the opaque pass, because the answer decides whether that
+    // pass holds the blended geometry back for the OIT pass or draws it the
+    // ordinary sorted way. A half-built OIT must never be the reason transparent
+    // objects vanish.
+    const bool useOIT = m_RenderSystem->RequestOITForTarget(sceneTarget);
+
     // Render scene + effects into the chosen target
     sceneTarget->Begin(commandBuffer);
     if (useSplitscreen && !splitViewports.empty()) {
@@ -3478,7 +3485,9 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         m_RenderSystem->RenderElementalParticles(m_ElementalSystem, rtWidth, rtHeight,
                                                  /*useOffscreenSets*/ true, /*viewport*/ 0);
     } else {
-        m_RenderSystem->RenderToTarget(sceneTarget, &gameCamera, 1);
+        m_RenderSystem->RenderToTarget(sceneTarget, &gameCamera, 1,
+                                       useOIT ? ECS::RenderSystem::TargetPass::OpaqueOnly
+                                              : ECS::RenderSystem::TargetPass::All);
         // CPU particle emitters (e.g. a fountain) into the offscreen target — was
         // never drawn in the offscreen path, only in the direct main pass.
         m_RenderSystem->RenderParticles(rtWidth, rtHeight, /*useOffscreenSets*/ true, /*viewport*/ 1);
@@ -3490,6 +3499,12 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
                                                  /*useOffscreenSets*/ true, /*viewport*/ 1);
     }
     sceneTarget->End(commandBuffer);
+
+    // The transparent half: accumulate into the OIT targets against the depth the
+    // opaque pass just wrote, then resolve the pair back over it.
+    if (useOIT) {
+        m_RenderSystem->RenderOITForTarget(sceneTarget, &gameCamera, 1);
+    }
 
     // Apply post-processing: read from scene RT, write to game view RT
     if (usePostProcessing) {

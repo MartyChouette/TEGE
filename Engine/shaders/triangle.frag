@@ -16,8 +16,21 @@ layout(location = 9) flat in int v_ObjectIndex; // >=0: indirect draw (SSBO inde
 layout(location = 11) flat in int v_MaterialIndex; // material SSBO index (adr-0003; from firstInstance on direct draws)
 layout(location = 10) in vec2 fragUV1;          // second UV channel (available for detail/lightmap)
 
+// Two output shapes from ONE source.
+//
+// The normal pass writes colour + velocity. Compiled with -DENJIN_OIT this same
+// shader becomes the weighted-blended transparency accumulation pass, writing a
+// weighted colour sum and a revealage value instead. A second copy of a 2200-line
+// PBR shader would be a fossil the moment either drifted, and this file has form:
+// PostProcessing.cpp carried a baked copy of postprocess.frag that shadowed the
+// generated one for months.
+#ifdef ENJIN_OIT
+layout(location = 0) out vec4 outAccum;       // weighted colour sum (RGBA16F)
+layout(location = 1) out float outReveal;     // alpha, blended as dst *= (1 - src)
+#else
 layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec2 outVelocity;    // Per-pixel screen-space motion vector (RG16F)
+#endif
 
 // Light limits (must match C++ constants)
 #define MAX_DIRECTIONAL_LIGHTS 4
@@ -1041,6 +1054,44 @@ vec3 applyAccessibilityColor(vec3 color) {
     return color;
 }
 
+// Write the fragment outputs.
+//
+// Both of this shader's exit paths go through here, so the -DENJIN_OIT variant
+// cannot miss one. It previously could: the unlit early-return wrote outColor and
+// returned without setting outVelocity at all, leaving whatever the last draw put
+// in it for TAA to smear.
+void writeFragment(vec3 result, float alpha) {
+#ifdef ENJIN_OIT
+    // Weighted Blended OIT (McGuire & Bavoil 2013), the same weight curve the
+    // WebGPU path uses in fs_oit -- the two must agree or the same scene
+    // composites differently on desktop and in a browser.
+    //
+    // The weight falls off with VIEW depth, not NDC z: the curve is written
+    // against linear distance from the eye, and without that falloff distant
+    // transparency drowns out near transparency. fragViewDepth is already an
+    // input for cascade selection, so this needs no new uniform.
+    //
+    // Clamped at both ends because the accumulation target is RGBA16F and finite:
+    // an unclamped weight overflows to inf on a near-camera fragment and the pixel
+    // resolves to NaN, which shows up as a black or white hole.
+    float oitAlpha = clamp(alpha, 0.0, 1.0);
+    float oitViewZ = abs(fragViewDepth);
+    float oitW = clamp(pow(min(1.0, oitAlpha * 10.0 + 0.01) /
+                           (0.00001 + oitViewZ / 200.0), 3.0),
+                       0.01, 3000.0);
+
+    outAccum  = vec4(result * oitAlpha, oitAlpha) * oitW;
+    outReveal = oitAlpha;
+#else
+    outColor = vec4(result, alpha);
+
+    // Per-pixel velocity: screen-space motion vector for TAA / temporal upscaling
+    vec2 curNDC  = fragCurClipPos.xy / fragCurClipPos.w;
+    vec2 prevNDC = fragPrevClipPos.xy / fragPrevClipPos.w;
+    outVelocity  = (curNDC - prevNDC) * 0.5;  // NDC is [-1,1], scale to [-0.5, 0.5]
+#endif
+}
+
 void main() {
 
     // Select this draw's material entry (adr-0003). Direct draws encode the
@@ -1427,7 +1478,7 @@ void main() {
         if (lighting.accessibilityParams.w > 0.001) {
         result = applyAccessibilityColor(result);
     }
-    outColor = vec4(result, alpha);
+    writeFragment(result, alpha);
         return;
     }
 
@@ -2177,10 +2228,5 @@ void main() {
         alpha = 1.0;   // neither blends; opacity must not make them see-through
     }
 
-    outColor = vec4(result, alpha);
-
-    // Per-pixel velocity: screen-space motion vector for TAA / temporal upscaling
-    vec2 curNDC  = fragCurClipPos.xy / fragCurClipPos.w;
-    vec2 prevNDC = fragPrevClipPos.xy / fragPrevClipPos.w;
-    outVelocity  = (curNDC - prevNDC) * 0.5;  // NDC is [-1,1], scale to [-0.5, 0.5] range
+    writeFragment(result, alpha);
 }

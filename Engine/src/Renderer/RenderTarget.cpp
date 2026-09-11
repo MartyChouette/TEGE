@@ -496,7 +496,139 @@ bool RenderTarget::CreatePPRenderPass() {
         ENJIN_LOG_ERROR(Renderer, "Failed to create PP render pass");
         return false;
     }
+    // The LOAD twin, made here so the two cannot get out of step.
+    if (!CreateCompositeRenderPass()) return false;
     return true;
+}
+
+// Same single colour attachment as the PP pass, but LOAD instead of CLEAR.
+//
+// It reuses m_PPFramebuffer: a framebuffer is compatible with any render pass
+// that has the same attachment formats and sample counts, and these two differ
+// only in load and store ops.
+bool RenderTarget::CreateCompositeRenderPass() {
+    VkDevice device = m_Context->GetDevice();
+
+    VkAttachmentDescription colorAttachment{};
+    colorAttachment.format = VK_FORMAT_B8G8R8A8_UNORM;
+    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;    // keep the opaque scene
+    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentReference colorRef{};
+    colorRef.attachment = 0;
+    colorRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkSubpassDescription subpass{};
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = 1;
+    subpass.pColorAttachments = &colorRef;
+
+    // Wait for the colour writes of the pass before this one, and for the OIT
+    // textures to be readable in the fragment shader.
+    VkSubpassDependency dependency{};
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass = 0;
+    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                              VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    dependency.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+                               VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+                               VK_ACCESS_SHADER_READ_BIT;
+
+    VkRenderPassCreateInfo rpInfo{};
+    rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    rpInfo.attachmentCount = 1;
+    rpInfo.pAttachments = &colorAttachment;
+    rpInfo.subpassCount = 1;
+    rpInfo.pSubpasses = &subpass;
+    rpInfo.dependencyCount = 1;
+    rpInfo.pDependencies = &dependency;
+
+    if (vkCreateRenderPass(device, &rpInfo, nullptr, &m_CompositeRenderPass) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to create composite render pass");
+        return false;
+    }
+    return true;
+}
+
+void RenderTarget::BeginCompositePass(VkCommandBuffer cmd) {
+    if (m_ColorImage == VK_NULL_HANDLE || m_CompositeRenderPass == VK_NULL_HANDLE ||
+        m_PPFramebuffer == VK_NULL_HANDLE) {
+        return;
+    }
+
+    // The colour image is left in SHADER_READ_ONLY by End(); bring it back to a
+    // colour attachment WITHOUT discarding it, which is the whole point here.
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = m_ColorImage;
+    barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+                            VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
+
+    vkCmdPipelineBarrier(cmd,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    VkRenderPassBeginInfo rpBegin{};
+    rpBegin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    rpBegin.renderPass = m_CompositeRenderPass;
+    rpBegin.framebuffer = m_PPFramebuffer;
+    rpBegin.renderArea.offset = {0, 0};
+    rpBegin.renderArea.extent = {m_Width, m_Height};
+    rpBegin.clearValueCount = 0;     // LOAD, so there is nothing to clear to
+    rpBegin.pClearValues = nullptr;
+
+    vkCmdBeginRenderPass(cmd, &rpBegin, VK_SUBPASS_CONTENTS_INLINE);
+
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<f32>(m_Width);
+    viewport.height = static_cast<f32>(m_Height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = {m_Width, m_Height};
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
+}
+
+void RenderTarget::EndCompositePass(VkCommandBuffer cmd) {
+    if (m_CompositeRenderPass == VK_NULL_HANDLE) return;
+    vkCmdEndRenderPass(cmd);
+
+    // Back to SHADER_READ_ONLY, the layout everything downstream (post-processing,
+    // the ImGui descriptor) expects to find it in.
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = m_ColorImage;
+    barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+    vkCmdPipelineBarrier(cmd,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        0, 0, nullptr, 0, nullptr, 1, &barrier);
 }
 
 bool RenderTarget::CreatePPFramebuffer() {
@@ -651,6 +783,10 @@ void RenderTarget::DestroyResources() {
     if (m_PPFramebuffer != VK_NULL_HANDLE) {
         vkDestroyFramebuffer(device, m_PPFramebuffer, nullptr);
         m_PPFramebuffer = VK_NULL_HANDLE;
+    }
+    if (m_CompositeRenderPass != VK_NULL_HANDLE) {
+        vkDestroyRenderPass(device, m_CompositeRenderPass, nullptr);
+        m_CompositeRenderPass = VK_NULL_HANDLE;
     }
     if (m_PPRenderPass != VK_NULL_HANDLE) {
         vkDestroyRenderPass(device, m_PPRenderPass, nullptr);

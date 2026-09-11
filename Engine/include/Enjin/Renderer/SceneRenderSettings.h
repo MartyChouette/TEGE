@@ -40,6 +40,14 @@ struct SceneRenderSettings {
     u32 cascadeFarUpdateInterval = 2;       // Far cascade update frequency (2-8)
     bool backfaceCulling = false;
     bool wireframe = false;
+
+    // Weighted-blended order-independent transparency.
+    //
+    // Saved with the scene like every other render setting, which it was not:
+    // RenderSystem::m_OITEnabled was a runtime bool the Rendering panel wrote and
+    // nothing else ever read or persisted, so even once the pass worked the choice
+    // would have been gone on the next load and absent from an exported game.
+    bool oitEnabled = false;
     f32 ambientIntensity = 1.0f;
     Math::Vector3 ambientColor = Math::Vector3(0.1f, 0.1f, 0.15f);
 

@@ -45,6 +45,51 @@ public:
     // Resize handling (recreates textures)
     void Resize(u32 width, u32 height);
 
+    // The depth buffer the OPAQUE pass wrote, which transparent geometry tests
+    // against but never writes.
+    //
+    // Without it there is no depth test at all -- the render pass had no depth
+    // attachment while its own comment claimed it "reads depth from the opaque
+    // pass via depth test". Transparent geometry behind a wall accumulated exactly
+    // as if the wall were not there, which is the one thing weighted-blended OIT
+    // still needs the depth buffer for.
+    //
+    // Passing a different view (or VK_NULL_HANDLE) rebuilds the render pass and
+    // framebuffer, so the editor's offscreen target and the swapchain can both
+    // drive it across a resize.
+    void SetSceneDepth(VkImageView depthView, VkFormat depthFormat);
+
+    // Drop the cached depth view WITHOUT touching any GPU object.
+    //
+    // Needed before a resize: the cached view belongs to the render target's
+    // previous depth image, and a resize destroys that image. Resize rebuilds the
+    // framebuffer from whatever is cached, so leaving it set hands a freed view to
+    // vkCreateFramebuffer -- which reads it, and takes the driver with it. Clearing
+    // first costs one extra pass rebuild on a resize frame and nothing otherwise.
+    void ForgetSceneDepth() { m_SceneDepthView = VK_NULL_HANDLE;
+                              m_SceneDepthFormat = VK_FORMAT_UNDEFINED; }
+    bool HasSceneDepth() const { return m_SceneDepthView != VK_NULL_HANDLE; }
+
+    // What the current framebuffer was actually built against.
+    //
+    // The caller has to be able to check this every frame, because the render
+    // target it points at can be destroyed and recreated between the setup and the
+    // draw: the editor flushes (which is the only safe place to build this), THEN
+    // resizes its render targets, THEN records. On a resize frame the framebuffer
+    // built in the flush references a depth image that no longer exists, and
+    // vkCmdBeginRenderPass reads the freed handle and takes the driver with it.
+    VkImageView GetSceneDepthView() const { return m_SceneDepthView; }
+    u32 GetWidth() const { return m_Width; }
+    u32 GetHeight() const { return m_Height; }
+
+    // The render pass the COMPOSITE resolves into.
+    //
+    // Initialize() took the swapchain pass, which is right for the player's direct
+    // path and wrong for the editor, where the scene is rendered into an offscreen
+    // target and the resolve has to happen there. A pipeline is bound to one render
+    // pass, so pointing at a different one rebuilds it.
+    void SetCompositeTargetPass(VkRenderPass pass);
+
     // Rendering interface
     // BeginTransparentPass: Bind accumulation + revealage as render targets, clear them
     // Transparent geometry renders with additive blending (accumulation) and zero-multiply (revealage)
@@ -110,6 +155,10 @@ private:
     VkDescriptorPool m_CompositeDescPool = VK_NULL_HANDLE;
     VkDescriptorSet m_CompositeDescSet = VK_NULL_HANDLE;
     VkSampler m_Sampler = VK_NULL_HANDLE;
+
+    // Not owned: the depth buffer belongs to whoever rendered the opaque pass.
+    VkImageView m_SceneDepthView = VK_NULL_HANDLE;
+    VkFormat m_SceneDepthFormat = VK_FORMAT_UNDEFINED;
 
     VkRenderPass m_OpaqueRenderPass = VK_NULL_HANDLE;  // Not owned — the swapchain render pass
     u32 m_Width = 0;

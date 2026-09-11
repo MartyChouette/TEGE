@@ -62,12 +62,65 @@ void OITManager::Shutdown() {
     m_Context = nullptr;
 }
 
+void OITManager::SetCompositeTargetPass(VkRenderPass pass) {
+    if (pass == VK_NULL_HANDLE || pass == m_OpaqueRenderPass) return;
+    m_OpaqueRenderPass = pass;
+    if (!m_Initialized || !m_Context) return;
+
+    // A graphics pipeline is created against one render pass and cannot be moved,
+    // so the composite pipeline is rebuilt. Waiting first: the old one may still be
+    // referenced by a command buffer in flight.
+    vkDeviceWaitIdle(m_Context->GetDevice());
+    VkDevice device = m_Context->GetDevice();
+    if (m_CompositePipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(device, m_CompositePipeline, nullptr);
+        m_CompositePipeline = VK_NULL_HANDLE;
+    }
+    if (!CreateCompositePipeline(pass)) {
+        ENJIN_LOG_ERROR(Renderer, "OIT: composite pipeline failed for the new target "
+                                  "pass; transparency stays sorted");
+        m_Initialized = false;
+    }
+}
+
+void OITManager::SetSceneDepth(VkImageView depthView, VkFormat depthFormat) {
+    if (m_SceneDepthView == depthView && m_SceneDepthFormat == depthFormat) return;
+    m_SceneDepthView = depthView;
+    m_SceneDepthFormat = depthFormat;
+    if (!m_Initialized || !m_Context) return;
+
+    // The render pass bakes in its attachment list, so a new depth view means a
+    // new pass and a new framebuffer. Waiting first because both may still be
+    // referenced by a command buffer in flight.
+    vkDeviceWaitIdle(m_Context->GetDevice());
+
+    VkDevice device = m_Context->GetDevice();
+    if (m_TransparentFramebuffer != VK_NULL_HANDLE) {
+        vkDestroyFramebuffer(device, m_TransparentFramebuffer, nullptr);
+        m_TransparentFramebuffer = VK_NULL_HANDLE;
+    }
+    if (m_TransparentRenderPass != VK_NULL_HANDLE) {
+        vkDestroyRenderPass(device, m_TransparentRenderPass, nullptr);
+        m_TransparentRenderPass = VK_NULL_HANDLE;
+    }
+    if (!CreateTransparentRenderPass() || !CreateTransparentFramebuffer()) {
+        ENJIN_LOG_ERROR(Renderer, "OIT: could not rebuild the transparent pass for "
+                                  "the new depth buffer; transparency stays sorted");
+        m_Initialized = false;
+    }
+}
+
 void OITManager::Resize(u32 width, u32 height) {
     if (!m_Initialized) return;
     if (width == m_Width && height == m_Height) return;
 
-    // Destroy framebuffer (depends on textures), then textures, then recreate
+    // Destroy framebuffer (depends on textures), then textures, then recreate.
+    //
+    // Idle first: these textures and this framebuffer can still be referenced by
+    // a frame the GPU has not finished, and this is called at a safe point in the
+    // frame, not a point where nothing is in flight.
     VkDevice device = m_Context->GetDevice();
+    vkDeviceWaitIdle(device);
 
     if (m_TransparentFramebuffer != VK_NULL_HANDLE) {
         vkDestroyFramebuffer(device, m_TransparentFramebuffer, nullptr);
@@ -321,7 +374,7 @@ bool OITManager::CreateTransparentRenderPass() {
     // Two color attachments: accumulation (RGBA16F) and revealage (R8_UNORM)
     // No depth attachment — transparent pass reads depth from the opaque pass
     // via depth test but does NOT write depth.
-    VkAttachmentDescription attachments[2]{};
+    VkAttachmentDescription attachments[3]{};
 
     // Attachment 0: Accumulation (RGBA16F)
     attachments[0].format = VK_FORMAT_R16G16B16A16_SFLOAT;
@@ -349,23 +402,50 @@ bool OITManager::CreateTransparentRenderPass() {
     colorRefs[1].attachment = 1;
     colorRefs[1].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
+    // Depth, when the caller gave us the opaque pass's buffer. LOAD and
+    // DONT_CARE: the transparent pass reads what the opaque pass wrote and must
+    // not write back, or the nearest transparent surface would occlude the ones
+    // behind it and the whole point of accumulating them would be gone.
+    //
+    // The comment that used to sit here said the pass depth-tested. It had no
+    // depth attachment, so it did not, and transparency behind walls accumulated.
+    const bool haveDepth = (m_SceneDepthView != VK_NULL_HANDLE &&
+                            m_SceneDepthFormat != VK_FORMAT_UNDEFINED);
+    if (haveDepth) {
+        attachments[2].format = m_SceneDepthFormat;
+        attachments[2].samples = VK_SAMPLE_COUNT_1_BIT;
+        attachments[2].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+        attachments[2].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        attachments[2].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        attachments[2].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        attachments[2].initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        attachments[2].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    }
+
+    VkAttachmentReference depthRef{};
+    depthRef.attachment = 2;
+    depthRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
     VkSubpassDescription subpass{};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = 2;
     subpass.pColorAttachments = colorRefs;
-    subpass.pDepthStencilAttachment = nullptr;  // No depth write for transparent pass
+    subpass.pDepthStencilAttachment = haveDepth ? &depthRef : nullptr;
 
     VkSubpassDependency dependency{};
     dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
     dependency.dstSubpass = 0;
-    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.srcAccessMask = 0;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                             VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                              VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependency.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+                               VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
 
     VkRenderPassCreateInfo rpInfo{};
     rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    rpInfo.attachmentCount = 2;
+    rpInfo.attachmentCount = haveDepth ? 3u : 2u;
     rpInfo.pAttachments = attachments;
     rpInfo.subpassCount = 1;
     rpInfo.pSubpasses = &subpass;
@@ -384,12 +464,14 @@ bool OITManager::CreateTransparentFramebuffer() {
     if (!m_Context || m_TransparentRenderPass == VK_NULL_HANDLE) return false;
     VkDevice device = m_Context->GetDevice();
 
-    std::array<VkImageView, 2> fbAttachments = { m_AccumulationView, m_RevealageView };
+    std::array<VkImageView, 3> fbAttachments = { m_AccumulationView, m_RevealageView,
+                                                 m_SceneDepthView };
+    const u32 fbCount = (m_SceneDepthView != VK_NULL_HANDLE) ? 3u : 2u;
 
     VkFramebufferCreateInfo fbInfo{};
     fbInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
     fbInfo.renderPass = m_TransparentRenderPass;
-    fbInfo.attachmentCount = static_cast<u32>(fbAttachments.size());
+    fbInfo.attachmentCount = fbCount;
     fbInfo.pAttachments = fbAttachments.data();
     fbInfo.width = m_Width;
     fbInfo.height = m_Height;

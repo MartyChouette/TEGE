@@ -94,6 +94,7 @@ SHADERS_LIST = [
     ("fluid.vert.spv",         "FluidVertexShaderData",          "uchar"),
     ("fluid.frag.spv",         "FluidFragmentShaderData",        "uchar"),
     ("oit_composite.frag.spv", "OitCompositeFragmentShaderData", "uchar"),
+    ("oit_accum.frag.spv",     "OitAccumFragmentShaderData",     "uchar"),
     ("taa_resolve.comp.spv",   "TAAResolveComputeShaderData",    "uchar"),
     ("rt_hybrid_apply.frag.spv", "RTHybridApplyFragmentShaderData", "uchar"),
     ("gpu_particle.vert.spv",  "GpuParticleVertexShaderData",    "uchar"),
