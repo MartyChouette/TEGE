@@ -1449,6 +1449,14 @@ private:
     Effects::Water3D m_Water3D;
     Effects::RetroEffects m_RetroEffects;
 
+    // Was retro enabled last frame? The clear-down is edge-triggered off this.
+    //
+    // Without it the disabled branch ran every frame and zeroed fourteen
+    // post-process and global render fields whoever had set them, so any other
+    // system's CRT / VHS / dither / colour-quant / downscale setting was wiped on
+    // the next frame by a panel that was not even open.
+    bool m_RetroWasEnabled = false;
+
     // Particle system (CPU simulation for ParticleEmitterComponent)
     Effects::ParticleSystem m_ParticleSystem;
 

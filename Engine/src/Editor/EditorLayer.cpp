@@ -2549,8 +2549,20 @@ void EditorLayer::Update(f32 deltaTime) {
             m_RenderSystem->SetTexturePageSize(affine.texturePageSize);
             m_RenderSystem->SetDepthSortJitter(jitter.depthSortJitter);
         }
-    } else if (m_PostProcessing) {
-        // When retro effects are disabled, clear the retro post-process fields
+    } else if (m_PostProcessing && m_RetroWasEnabled) {
+        // Clear the retro fields ONCE, on the frame retro is switched off.
+        //
+        // This used to run every frame that Retro Effects was disabled -- which is
+        // almost every frame of almost every session -- and it zeroed fourteen
+        // fields regardless of who had set them. Anything else that wanted CRT,
+        // VHS, dithering, colour quantisation or resolution downscale had its value
+        // wiped on the next frame: the Rendering panel, an art-style preset, a
+        // scene's own saved renderSettings on load, and the camera ArtStyle
+        // mapping. The effect an author saw was a setting that refused to stay on,
+        // with nothing in the panel they were using to explain it.
+        //
+        // Edge-triggered, so "turn retro off and its look goes away" still holds,
+        // and a panel that is merely CLOSED stops overwriting other people's work.
         auto& settings = m_PostProcessing->GetSettings();
         settings.ditherEnabled = 0;
         settings.colorQuantEnabled = 0;
@@ -2560,8 +2572,8 @@ void EditorLayer::Update(f32 deltaTime) {
         settings.vhsEnabled = 0;
     }
 
-    // Clear global retro overrides when retro is disabled
-    if (!m_RetroEffects.IsEnabled() && m_RenderSystem) {
+    // Same treatment for the global render overrides: only on the falling edge.
+    if (!m_RetroEffects.IsEnabled() && m_RetroWasEnabled && m_RenderSystem) {
         m_RenderSystem->SetGlobalFlatShading(false);
         m_RenderSystem->SetGlobalAffineTexturing(false);
         m_RenderSystem->SetGlobalVertexSnapping(false);
@@ -2571,6 +2583,7 @@ void EditorLayer::Update(f32 deltaTime) {
         m_RenderSystem->SetTexturePageSize(0.0f);
         m_RenderSystem->SetDepthSortJitter(0.0f);
     }
+    m_RetroWasEnabled = m_RetroEffects.IsEnabled();
 
     // CPU frame profiler: total Update time (derived from delta)
     m_CPUUpdateMs = m_CPUUpdateMs * 0.9f + (deltaTime * 1000.0f) * 0.1f;
