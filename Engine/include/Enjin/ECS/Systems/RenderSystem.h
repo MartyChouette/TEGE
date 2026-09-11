@@ -45,6 +45,7 @@ namespace Enjin::Build { class AssetReader; }
 #include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/ECS/Components/Viewmodel.h"
 #include "Enjin/ECS/Components/Material.h"
+#include "Enjin/ECS/Components/MeshRenderer.h"
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/ECS/Components/Text.h"
 
@@ -626,6 +627,14 @@ public:
     // Is OIT on AND usable? The draw path asks this before deciding to hold the
     // blended geometry back, so a half-initialised OIT can never make transparency
     // disappear -- it just stays sorted.
+    // The MeshRendererComponent filters, in ONE place. Three separate render-list
+    // builds call it; a rule added to only one of them applies in one view and not
+    // the others.
+    bool PassesMeshRendererFilters(const MeshRendererComponent* mr,
+                                   const Math::Vector3& position,
+                                   const Math::Vector3& camPos,
+                                   bool haveCam, u32 cullingMask) const;
+
     bool IsOITUsable() const;
 
     // Whether what was built still matches this target at its current size.
@@ -1656,6 +1665,7 @@ private:
     ComponentStorage<TransformComponent>* m_CachedTransformStorage = nullptr;
     ComponentStorage<MeshComponent>* m_CachedMeshStorage = nullptr;
     ComponentStorage<MaterialComponent>* m_CachedMaterialStorage = nullptr;
+    ComponentStorage<MeshRendererComponent>* m_CachedMeshRendererStorage = nullptr;
     ComponentStorage<MaterialSlotsComponent>* m_CachedMaterialSlotsStorage = nullptr;
     ComponentStorage<AnimatorComponent>* m_CachedAnimatorStorage = nullptr;
     ComponentStorage<ViewmodelComponent>* m_CachedViewmodelStorage = nullptr;

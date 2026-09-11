@@ -2400,6 +2400,22 @@ void RenderSystem::Update(f32 deltaTime) {
                 // the SDF text meshes, which set castShadows=false and were still
                 // throwing a shadow of their quad on web. Vulkan's
                 // RebuildShadowCasterCache has always filtered on this.
+                // MeshRenderer's shadowMode override, matching the Vulkan cache.
+                // A shadow that appears on one backend and not the other is a bug
+                // an author cannot diagnose from inside the editor.
+                const MeshRendererComponent* wmr =
+                    m_World->GetComponentStorage<MeshRendererComponent>()
+                        ? m_World->GetComponentStorage<MeshRendererComponent>()->Get(e)
+                        : nullptr;
+                if (wmr) {
+                    if (!wmr->enabled) continue;
+                    if (wmr->shadowMode == MeshRendererComponent::ShadowMode::Off) continue;
+                    if (wmr->shadowMode == MeshRendererComponent::ShadowMode::On ||
+                        wmr->shadowMode == MeshRendererComponent::ShadowMode::TwoSided) {
+                        s_WebShadowCasters.push_back(e);
+                        continue;
+                    }
+                }
                 auto* smat = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(e) : nullptr;
                 if (smat && !smat->castShadows) continue;
                 s_WebShadowCasters.push_back(e);
@@ -3805,7 +3821,21 @@ void RenderSystem::Update(f32 deltaTime) {
             }
             std::memcpy(objDataBuf.data() + offset, &obj, sizeof(obj));
 
-            const u64 meshKey = rd.vertexBuffer.id ^ (static_cast<u64>(rd.indexBuffer.id) << 16);
+            // The batching key. An entity that opts out of instancing gets a key
+            // nothing else can match, so it sorts and draws on its own rather than
+            // being folded into a batch.
+            //
+            // Opting out matters where per-instance state that is NOT in the
+            // instance buffer differs -- a custom shader, a bespoke descriptor --
+            // and batching would silently draw every instance with the first one's
+            // state.
+            u64 meshKey = rd.vertexBuffer.id ^ (static_cast<u64>(rd.indexBuffer.id) << 16);
+            if (const MeshRendererComponent* mri =
+                    m_CachedMeshRendererStorage ? m_CachedMeshRendererStorage->Get(entity) : nullptr) {
+                if (!mri->allowInstancing) {
+                    meshKey = ~static_cast<u64>(entity);
+                }
+            }
             const f32 distSq = (xf->position - sortCamPos).LengthSquared();
             drawCmds.push_back({entity, offset, meshKey, distSq, obj.opacity < 1.0f});
         }
@@ -4928,6 +4958,7 @@ void RenderSystem::RefreshStorageCache() {
     m_CachedTransformStorage = m_World->GetComponentStorage<TransformComponent>();
     m_CachedMeshStorage = m_World->GetComponentStorage<MeshComponent>();
     m_CachedMaterialStorage = m_World->GetComponentStorage<MaterialComponent>();
+    m_CachedMeshRendererStorage = m_World->GetComponentStorage<MeshRendererComponent>();
     m_CachedMaterialSlotsStorage = m_World->GetComponentStorage<MaterialSlotsComponent>();
     m_CachedAnimatorStorage = m_World->GetComponentStorage<AnimatorComponent>();
     m_CachedViewmodelStorage = m_World->GetComponentStorage<ViewmodelComponent>();
@@ -5254,6 +5285,7 @@ void RenderSystem::RefreshStorageCache() {
         m_CachedTransformStorage = nullptr;
         m_CachedMeshStorage = nullptr;
         m_CachedMaterialStorage = nullptr;
+        m_CachedMeshRendererStorage = nullptr;
         m_CachedMaterialSlotsStorage = nullptr;
         m_CachedAnimatorStorage = nullptr;
         m_CachedViewmodelStorage = nullptr;
@@ -7885,16 +7917,39 @@ void RenderSystem::Update(f32 deltaTime) {
             m_SortedRenderList.clear();
             ECS::View<TransformComponent, MeshComponent> view(*m_World);
             auto* matStorage = m_World->GetComponentStorage<MaterialComponent>();
+            auto* mrStorage = m_World->GetComponentStorage<MeshRendererComponent>();
             m_SortedRenderList.reserve(view.UpperBound());
             for (Entity entity : view) {
                 auto* xform = view.Get<TransformComponent>(entity);
                 if (!xform || !xform->visible) continue;
+                // haveCam = false on purpose: the viewports have different cameras
+                // and this list is shared, so a per-camera distance test cannot be
+                // made here without building a list per viewport. Everything else
+                // (enabled, layers) is camera-independent and applies.
+                const MeshRendererComponent* mr = mrStorage ? mrStorage->Get(entity) : nullptr;
+                if (!PassesMeshRendererFilters(mr, xform->position, Math::Vector3(),
+                                               false, 0xFFFFFFFFu)) {
+                    continue;
+                }
                 auto* mat = matStorage ? matStorage->Get(entity) : nullptr;
                 if (mat) mat->ComputeSortKey(0.0f);
                 m_SortedRenderList.push_back(entity);
             }
             std::sort(m_SortedRenderList.begin(), m_SortedRenderList.end(),
-                [matStorage](Entity a, Entity b) {
+                [matStorage, mrStorage](Entity a, Entity b) {
+                    // renderQueue first, and only then the material sort key.
+                    //
+                    // That order is the point of the field: it is what lets an
+                    // author force something to the front or the back regardless of
+                    // its material -- a skybox shell at -1000, an overlay at +1000.
+                    // Folding it into the material key would let the pipeline
+                    // bucket outrank the author's explicit choice.
+                    auto* mrA = mrStorage ? mrStorage->Get(a) : nullptr;
+                    auto* mrB = mrStorage ? mrStorage->Get(b) : nullptr;
+                    const i32 qA = mrA ? mrA->renderQueue : 0;
+                    const i32 qB = mrB ? mrB->renderQueue : 0;
+                    if (qA != qB) return qA < qB;
+
                     auto* matA = matStorage ? matStorage->Get(a) : nullptr;
                     auto* matB = matStorage ? matStorage->Get(b) : nullptr;
                     u64 keyA = matA ? matA->cachedSortKey : 0;
@@ -8058,10 +8113,29 @@ void RenderSystem::Update(f32 deltaTime) {
         // Also cache material storage for sort key computation (optional component)
         auto* matStorage = m_World->GetComponentStorage<MaterialComponent>();
 
+        // MeshRendererComponent. Thirteen of its sixteen fields were authored,
+        // serialized and read by nothing -- including `enabled`, the master on/off,
+        // so unticking it left the mesh drawing. The wireframe overlay pass was the
+        // only consumer the whole component had.
+        auto* mrStorage = m_World->GetComponentStorage<MeshRendererComponent>();
+
         // Compute camera position for depth-aware sort key
         Math::Vector3 camPos;
         bool haveCam = (m_Camera != nullptr);
         if (haveCam) camPos = m_Camera->GetPosition();
+
+        // Which layers this camera renders. Falls back to "all" when there is no
+        // camera entity to ask, because a mask of 0 would render nothing and an
+        // absent camera is not an instruction to hide the scene.
+        u32 cullingMask = 0xFFFFFFFFu;
+        if (m_World) {
+            const Entity camEntity = ECS::CameraManager::GetActiveCamera(m_World);
+            if (camEntity != 0) {
+                if (auto* cc = m_World->GetComponent<CameraComponent>(camEntity)) {
+                    cullingMask = cc->cullingMask;
+                }
+            }
+        }
 
         m_RenderListScratch.reserve(view.UpperBound());
 
@@ -8077,8 +8151,18 @@ void RenderSystem::Update(f32 deltaTime) {
             auto* xform = view.Get<TransformComponent>(entity);
             if (!xform->visible) continue;
 
-            // Skip GPU-culled entities (frustum culling — disabled in editor mode)
-            if (m_GPUCullingEnabled && !m_IsEditorMode && m_GPUCulling && !m_CullableObjects.empty()) {
+            const MeshRendererComponent* mr = mrStorage ? mrStorage->Get(entity) : nullptr;
+            if (!PassesMeshRendererFilters(mr, xform->position, camPos, haveCam,
+                                           cullingMask)) {
+                continue;
+            }
+
+            // Skip GPU-culled entities (frustum culling — disabled in editor mode).
+            // frustumCull = false opts an entity OUT of that test, for the things
+            // whose bounds lie about where they draw: a vertex-animated banner, a
+            // shader that pushes geometry outward, a skybox shell.
+            if (m_GPUCullingEnabled && !m_IsEditorMode && m_GPUCulling && !m_CullableObjects.empty() &&
+                (!mr || (mr->frustumCull && mr->occlusionCull))) {
                 usize entityIdx = static_cast<usize>(EntityIndex(entity));
                 if (entityIdx < m_EntityToCullIndex.size()) {
                     u32 cullIdx = m_EntityToCullIndex[entityIdx];
@@ -8104,6 +8188,9 @@ void RenderSystem::Update(f32 deltaTime) {
                 // entity moving a depth quantum forces the re-sort even with a
                 // still camera. Stale opaque depth order only costs early-z.
                 fnv((key >> 56) == 2 ? key : (key >> 16));
+                // renderQueue joins the hash, or editing it in the inspector
+                // changes nothing until some unrelated thing forces a re-sort.
+                if (mr && mr->renderQueue != 0) fnv(static_cast<u64>(mr->renderQueue));
             }
 
             m_RenderListScratch.push_back(entity);
@@ -8123,7 +8210,20 @@ void RenderSystem::Update(f32 deltaTime) {
             // then by material/texture hash (minimizes descriptor set updates),
             // then by depth (front-to-back for opaque, back-to-front for blend).
             std::sort(m_SortedRenderList.begin(), m_SortedRenderList.end(),
-                [matStorage](Entity a, Entity b) {
+                [matStorage, mrStorage](Entity a, Entity b) {
+                    // renderQueue first, and only then the material sort key.
+                    //
+                    // That order is the point of the field: it is what lets an
+                    // author force something to the front or the back regardless of
+                    // its material -- a skybox shell at -1000, an overlay at +1000.
+                    // Folding it into the material key would let the pipeline
+                    // bucket outrank the author's explicit choice.
+                    auto* mrA = mrStorage ? mrStorage->Get(a) : nullptr;
+                    auto* mrB = mrStorage ? mrStorage->Get(b) : nullptr;
+                    const i32 qA = mrA ? mrA->renderQueue : 0;
+                    const i32 qB = mrB ? mrB->renderQueue : 0;
+                    if (qA != qB) return qA < qB;
+
                     auto* matA = matStorage ? matStorage->Get(a) : nullptr;
                     auto* matB = matStorage ? matStorage->Get(b) : nullptr;
                     u64 keyA = matA ? matA->cachedSortKey : 0;
@@ -8328,8 +8428,30 @@ void RenderSystem::Update(f32 deltaTime) {
                             metric = (transform->position - camPos).Length();
                         }
 
-                        // Unified LOD selection (see ECS::SelectLOD) with directional hysteresis.
-                        i32 newLOD = SelectLOD(*lod, metric);
+                        // MeshRenderer's LOD controls, which read nothing before this.
+                        //
+                        // lodBias biases the METRIC rather than the chosen index:
+                        // the metric is a distance (or a screen-size ratio), and the
+                        // thresholds are spaced geometrically, so scaling it moves
+                        // every band together and keeps the hysteresis meaningful.
+                        // Biasing the index instead would step past a level entirely
+                        // at the far end and do nothing at the near end.
+                        //
+                        // The sign follows the field's own comment: -1 forces higher
+                        // detail, +1 forces lower. So a positive bias has to make the
+                        // metric LARGER (further away), and 2^bias gives a smooth
+                        // curve that is exactly 1.0 at bias 0.
+                        const MeshRendererComponent* mrLod =
+                            m_CachedMeshRendererStorage ? m_CachedMeshRendererStorage->Get(entity)
+                                                        : nullptr;
+                        f32 lodMetric = metric;
+                        if (mrLod && mrLod->lodBias != 0.0f) {
+                            lodMetric *= std::pow(2.0f, mrLod->lodBias);
+                        }
+
+                        i32 newLOD = (mrLod && mrLod->forceLowestLOD)
+                                   ? (lod->levelCount > 0 ? lod->levelCount - 1 : 0)
+                                   : SelectLOD(*lod, lodMetric);
 
                         if (newLOD != lod->activeLOD && newLOD < lod->levelCount) {
                             auto* mesh = meshStorageLoop ? meshStorageLoop->Get(entity) : nullptr;
@@ -9005,6 +9127,45 @@ bool RenderSystem::PrepareOITForTarget(Renderer::RenderTarget* target) {
     return true;
 }
 
+// Does this entity survive its MeshRendererComponent's filters?
+//
+// Shared because there are THREE places that build a render list: the
+// single-camera main pass, the splitscreen pass, and an editor-only rebuild inside
+// RenderToTarget (edit mode never calls Update, where the main list is built). A
+// rule added to one of them applies in one view and not the others, which presents
+// as "this setting works in play mode but not in the editor" -- and the first
+// version of this change did exactly that.
+//
+// `cullingMask` is the active camera's layer mask; pass 0xFFFFFFFF where there is
+// no camera to ask. `haveCam` gates the distance test only.
+bool RenderSystem::PassesMeshRendererFilters(const MeshRendererComponent* mr,
+                                             const Math::Vector3& position,
+                                             const Math::Vector3& camPos,
+                                             bool haveCam, u32 cullingMask) const {
+    if (!mr) return true;   // no component: nothing to filter on
+
+    // The master switch. It did nothing at all: an author could untick "Enabled"
+    // and watch the mesh carry on drawing, with no other setting that would have
+    // turned it off.
+    if (!mr->enabled) return false;
+
+    // Layers. Both halves of this were inert -- MeshRenderer::renderLayerMask says
+    // which layers an entity is on, CameraComponent::cullingMask says which layers
+    // a camera renders, and nothing read either, so the two could never disagree.
+    if ((mr->renderLayerMask & cullingMask) == 0) return false;
+
+    // Draw distance. 0 means infinite, which is why this is a guarded test and not
+    // a clamp: a 0 read as a distance would hide every mesh in the scene.
+    if (mr->maxDrawDistance > 0.0f && haveCam) {
+        const Math::Vector3 d = position - camPos;
+        if (d.x * d.x + d.y * d.y + d.z * d.z >
+            mr->maxDrawDistance * mr->maxDrawDistance) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool RenderSystem::IsOITUsable() const {
     return m_OITEnabled && m_OITManager && m_OITManager->IsInitialized() &&
            m_OITAccumPipeline && m_OITAccumPipeline->GetPipeline() != VK_NULL_HANDLE;
@@ -9176,9 +9337,26 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
         auto* rlMat = m_World->GetComponentStorage<MaterialComponent>();
         Math::Vector3 rlCam; bool rlHaveCam = (m_Camera != nullptr);
         if (rlHaveCam) rlCam = m_Camera->GetPosition();
+        // The same MeshRenderer filters as the other two builds. Without them the
+        // editor's Game View drew a mesh whose renderer was switched off, which is
+        // the view an author is actually looking at while they switch it off.
+        auto* rlMR = m_World->GetComponentStorage<MeshRendererComponent>();
+        u32 rlMask = 0xFFFFFFFFu;
+        {
+            const Entity camEnt = ECS::CameraManager::GetActiveCamera(m_World);
+            if (camEnt != 0) {
+                if (auto* cc = m_World->GetComponent<CameraComponent>(camEnt)) {
+                    rlMask = cc->cullingMask;
+                }
+            }
+        }
         for (Entity e : rlView) {
             auto* xf = rlView.Get<TransformComponent>(e);
             if (!xf || !xf->visible) continue;
+            const MeshRendererComponent* rlmr = rlMR ? rlMR->Get(e) : nullptr;
+            if (!PassesMeshRendererFilters(rlmr, xf->position, rlCam, rlHaveCam, rlMask)) {
+                continue;
+            }
             auto* mat = rlMat ? rlMat->Get(e) : nullptr;
             if (mat) mat->ComputeSortKey(rlHaveCam ? (xf->position - rlCam).Length() : 0.0f);
             m_SortedRenderList.push_back(e);
@@ -10635,6 +10813,7 @@ void RenderSystem::RebuildShadowCasterCache() {
     // Cache storage pointers to avoid per-entity type-ID hash lookups
     auto* spriteStorageSC = m_World->GetComponentStorage<Sprite2DComponent>();
     auto* tilemapStorageSC = m_World->GetComponentStorage<TilemapComponent>();
+    auto* mrStorageSC = m_World->GetComponentStorage<MeshRendererComponent>();
 
     // Iterate only entities with MeshComponent
     for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
@@ -10650,6 +10829,22 @@ void RenderSystem::RebuildShadowCasterCache() {
 
         // Skip invisible entities
         if (!xform->visible) continue;
+
+        // MeshRenderer's shadowMode OVERRIDES the material, which is what the
+        // field's own comment says it does and what nothing did. It is the field
+        // that lets one instance of a shared material stop casting -- the pane of
+        // glass in a window frame, the decal on a wall -- without editing the
+        // material and changing every other user of it.
+        const MeshRendererComponent* mr = mrStorageSC ? mrStorageSC->Get(entity) : nullptr;
+        if (mr) {
+            if (!mr->enabled) continue;   // a disabled renderer casts nothing either
+            if (mr->shadowMode == MeshRendererComponent::ShadowMode::Off) continue;
+            if (mr->shadowMode == MeshRendererComponent::ShadowMode::On ||
+                mr->shadowMode == MeshRendererComponent::ShadowMode::TwoSided) {
+                m_ShadowCasters.push_back(entity);
+                continue;   // forced on: the material's opt-out does not apply
+            }
+        }
 
         // Check if material casts shadows (default: yes)
         auto* material = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
@@ -10965,6 +11160,22 @@ void RenderSystem::UploadObjectData() {
         } else {
             obj.prevModel = obj.model;
             obj.teleported = 1;
+        }
+
+        // contributeMotionVectors = false rides the same path as a teleport: the
+        // shader is already told to emit zero velocity for those, so an entity
+        // opting out reuses it rather than needing a second flag in the shader.
+        //
+        // What it is for: anything whose motion is not the camera's problem -- a
+        // scrolling UV plane, a vertex-animated flag, a first-person weapon that
+        // moves with the view. Their real motion vectors make TAA smear the pixels
+        // they cover, which is what the field exists to switch off.
+        if (const MeshRendererComponent* mrv =
+                m_CachedMeshRendererStorage ? m_CachedMeshRendererStorage->Get(entity) : nullptr) {
+            if (!mrv->contributeMotionVectors) {
+                obj.prevModel = obj.model;
+                obj.teleported = 1;
+            }
         }
 
         // Network teleport detection: if the transform was flagged as teleported

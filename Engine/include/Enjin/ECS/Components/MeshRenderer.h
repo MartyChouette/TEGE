@@ -28,8 +28,18 @@ enum class RenderLayer : u32 {
 struct MeshRendererComponent {
     // Visibility & culling
     bool enabled = true;                  // Master on/off (skips draw entirely)
-    bool frustumCull = true;              // Participate in frustum culling
-    bool occlusionCull = true;            // Participate in HiZ occlusion culling
+    // Opt out of GPU culling, for geometry whose bounds lie about where it draws:
+    // a vertex-animated banner, a shader that pushes vertices outward, a skybox
+    // shell.
+    //
+    // These are COUPLED today, and turning off either one opts the entity out of
+    // both. The GPU culling pass tests frustum and HiZ occlusion together and
+    // returns one answer per object, so separating them needs a per-object flag in
+    // the cull buffer and a change to the culling compute shader. Written down
+    // rather than left for someone to discover by setting one and watching the
+    // other change too.
+    bool frustumCull = true;
+    bool occlusionCull = true;
     f32 maxDrawDistance = 0.0f;           // 0 = infinite, >0 = fade out beyond this distance
 
     // Render order
@@ -56,12 +66,24 @@ struct MeshRendererComponent {
     // Motion vectors (for TAA / motion blur)
     bool contributeMotionVectors = true;
 
-    // Custom shader override (empty = use default pipeline)
-    // When set, the render system looks up a named shader variant
-    // and uses it instead of the standard PBR pipeline for this entity.
+    // NOT WIRED, and superseded. There is no named-shader registry to look a name
+    // up in, and nothing reads this field.
+    //
+    // Per-entity custom shaders already exist and work through
+    // CustomShaderComponent, which holds the compiled GLSL and the node graph that
+    // produced it, and which RenderSystem binds via GetEntityCustomPipeline. That
+    // is the feature; this string is an older second way to ask for it that was
+    // never built. Left in place rather than deleted so existing scenes keep
+    // loading, and labelled so nobody types into it expecting an effect.
     std::string customShaderName;
 
-    // Lightmap UV channel (0 = primary UVs, 1 = lightmap UVs)
+    // NOT WIRED. Selecting the lightmap's UV set needs the choice to reach the
+    // fragment shader, which means a bit in the per-object SSBO and a branch in
+    // triangle.frag between fragUV and fragUV1. The second UV channel IS carried
+    // through to the shader already; only the selection is missing.
+    //
+    // Until then the lightmap samples the primary UVs, which is what 0 means, so
+    // the DEFAULT is honest and only a non-zero value is ignored.
     u8 lightmapUVChannel = 0;
 
     // Instancing hint — entities with identical mesh + material + renderer
