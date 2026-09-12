@@ -163,6 +163,27 @@ A symptom shows up in a project, so the project is where you look, and project d
   which looks identical to the feature being switched off. A tick deposited
   from two places must guard itself (a `...TickedThisFrame` flag, re-armed in
   `FlushPendingChanges`) or editor play mode runs it at double speed
+- **On the frame a drag ends, `ImGui::IsMouseDown` is ALREADY false** -- that is
+  what a release IS. A "the release was eaten, clean up" guard written as
+  `dragging && !IsMouseDown(...)` therefore fires on every SUCCESSFUL release and
+  cancels the gesture one frame before its commit can run. It has to exclude the
+  release edge: `!IsMouseDown(...) && !IsMouseReleased(...)`. Cost: seven creative
+  build tools dragged out a live preview, printed the length in metres, and built
+  nothing on mouse-up, for three days -- while the four tools that are not
+  press-drag-release kept working, so the mode read as half-alive rather than
+  broken (`GestureWasAbandoned` in CreativeMode.h; tests in TestCreativeMode)
+- **The editor can be driven by injected mouse, and it takes TWO channels.**
+  `ImGuiLayer::SetPreNewFrameCallback` fires between `ImGui_ImplGlfw_NewFrame()`
+  and `ImGui::NewFrame()`, the only window where an injected cursor is not
+  overwritten by the hardware one. But ImGui alone is not enough: the palette's
+  `HandleCreativePlacement` reads `Enjin::Input` (it has to -- `EditorLayer::Update`
+  runs outside the ImGui frame), so `PumpMcpMouse` also feeds Input's
+  replay-injection stream. Emit button events on TRANSITIONS only; re-sending the
+  press every step is a fresh click every frame, which restarts a build drag
+  continuously. MCP: `editor_drag`, `editor_click`, `editor_set_build_tool`,
+  `editor_viewport_info` (the last reports the three conditions a press must
+  satisfy, so a refused click can be diagnosed without screenshotting the editor
+  over whatever the person at the machine is doing)
 - **`m_EditorViewportImageMinX/MaxX/MinY/MaxY` are only written while the Scene
   panel actually draws its image.** With the Game View tab active, the panel
   collapsed, or before the first draw, they hold whatever they held before —
