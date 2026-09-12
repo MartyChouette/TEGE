@@ -10,6 +10,8 @@
 #include "Enjin/ECS/Components/Mesh.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/Components/BrushSolid.h"
+#include "Enjin/ECS/Components/Viewmodel.h"
+#include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/Math/Math.h"
 #include "Enjin/Logging/Log.h"
 #include <cmath>
@@ -191,6 +193,17 @@ bool ReflectionProbeSystem::ComputeSceneBounds(ECS::World* world,
         auto* xf = world->GetComponent<ECS::TransformComponent>(e);
         if (!mesh || !xf || !mesh->IsValid()) continue;
 
+        // Only things that hold still may define the volume. A viewmodel is
+        // parented to the camera and a dynamic body is in flight, so either one
+        // drags the bounds along behind the player -- and the implicit probe
+        // re-bakes when its volume moves, which is six scene renders. Including
+        // them means a bake every frame for as long as the player walks.
+        // (Viewmodels are excluded from shadow casting for the same reason.)
+        if (world->GetComponent<ECS::ViewmodelComponent>(e)) continue;
+        if (auto* rb = world->GetComponent<ECS::RigidbodyComponent>(e)) {
+            if (rb->bodyType != ECS::RigidbodyComponent::BodyType::Static) continue;
+        }
+
         // The cached AABB uses min > max to mean "not computed yet". Rather than
         // walk the vertices of every mesh in the scene to fix that here, fall
         // back to the entity's position: it still bounds WHERE the thing is,
@@ -304,8 +317,30 @@ void ReflectionProbeSystem::UpdateImplicitProbe(ECS::World* world) {
     }
     bool implicitBlocked = false;
     for (u64 f : m_FailedBakes) { if (f == kImplicitProbeKey) { implicitBlocked = true; break; } }
+
+    // A move is a reason to re-bake eventually, not on this frame. Placed probes
+    // already hold off until the world stops changing (kSettleFrames); the
+    // implicit probe needs the same discipline, because anything that moves the
+    // bounds for a run of frames -- a streaming chunk fading in, a lift, a door
+    // -- would otherwise spend six scene renders on every frame of the motion.
+    // The flag has to outlive `moved`: by the time the volume holds still,
+    // `moved` is false again, and that is exactly when the bake is owed.
     if (moved) {
-        RequestBake(kImplicitProbeKey);   // a real change: worth another try
+        m_ImplicitDirty = true;
+        m_ImplicitSettleFrames = 0;
+    }
+
+    if (firstTime) {
+        // No cubemap yet, so the reflection is the sky fallback right now.
+        // Waiting only makes the wrong thing last longer.
+        m_ImplicitDirty = false;
+        m_ImplicitSettleFrames = 0;
+        RequestBake(kImplicitProbeKey);
+    } else if (m_ImplicitDirty) {
+        if (++m_ImplicitSettleFrames < kSettleFrames) return;
+        m_ImplicitDirty = false;
+        m_ImplicitSettleFrames = 0;
+        RequestBake(kImplicitProbeKey);   // a real change, and it has settled
     } else if (!implicitBlocked && m_BakedCubemaps.find(kImplicitProbeKey) == m_BakedCubemaps.end()) {
         RequestBake(kImplicitProbeKey);
     }

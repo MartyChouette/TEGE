@@ -171,6 +171,11 @@ private:
     // component, serializes nothing, and the instant somebody places a real
     // probe it is destroyed and gets out of the way.
     bool m_ImplicitActive = false;
+    // The implicit probe's own settle state: its volume is recomputed from
+    // scene bounds every frame, so it needs the hold-still timer that placed
+    // probes get from the geometry fingerprint.
+    bool m_ImplicitDirty = false;
+    u32 m_ImplicitSettleFrames = 0;
     Math::Vector3 m_ImplicitCenter;
     Math::Vector3 m_ImplicitMin;
     Math::Vector3 m_ImplicitMax;
