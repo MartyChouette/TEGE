@@ -140,6 +140,15 @@ void DrawToolIcon(ImDrawList* dl, BuildTool tool, ImVec2 c, ImU32 col, f32 ui) {
             dl->AddPolyline(p, 5, col, 0, t);
             break;
         }
+        case BuildTool::Cave: {  // a tunnel mouth: an arch standing on the ground
+            const f32 base = c.y + r * 0.72f;
+            dl->AddLine(ImVec2(c.x - r, base), ImVec2(c.x + r, base), col, t);
+            // The arch itself, drawn as a half ring so it reads as an opening
+            // rather than as a filled hill.
+            dl->PathArcTo(ImVec2(c.x, base), r * 0.72f, 3.14159265f, 6.28318531f, 16);
+            dl->PathStroke(col, 0, t);
+            break;
+        }
         case BuildTool::Ladder: {  // two rails and three rungs
             dl->AddLine(ImVec2(c.x - r * 0.55f, c.y - r), ImVec2(c.x - r * 0.55f, c.y + r), col, t);
             dl->AddLine(ImVec2(c.x + r * 0.55f, c.y - r), ImVec2(c.x + r * 0.55f, c.y + r), col, t);
@@ -628,6 +637,7 @@ void EditorLayer::DrawCreativeSurface() {
         // them hunting for a bug that is not there.
         const char* instruction = "Drag on the ground to build.";
         if (tool == BuildTool::Terrain)     instruction = "Drag over the ground to sculpt it.";
+        if (tool == BuildTool::Cave)        instruction = "Drag where the tunnel runs. Sculpt a hill over it first.";
         else if (tool == BuildTool::Reduce) instruction = "Click a model to cut its triangles.";
         else if (tool == BuildTool::Edit)   instruction = "Click something, then drag a handle.";
         else if (tool == BuildTool::Path)   instruction = "Click corners. Enter finishes, Esc cancels.";
@@ -1165,6 +1175,14 @@ void EditorLayer::CommitCreativeDrag(const Math::Vector3& start, const Math::Vec
 
     const BuildTool tool = m_Creative.GetTool();
 
+    // A cave is two things at once -- a hollow solid AND a hole in the terrain
+    // above it -- so it commits on its own terms rather than through the brush
+    // path, which knows nothing about terrain.
+    if (tool == BuildTool::Cave) {
+        CommitCreativeCave(start, end);
+        return;
+    }
+
     // Water and Ladder place a component instead of building brushes, so they
     // never reach BuildBrushes at all.
     if (!BuildToolMakesBrushes(tool)) {
@@ -1229,6 +1247,118 @@ void EditorLayer::CommitCreativeDrag(const Math::Vector3& start, const Math::Vec
 
     ENJIN_LOG_INFO(Editor, "Creative: placed %s (%zu brush%s)", BuildToolName(tool),
                    solid.brushes.size(), solid.brushes.size() == 1 ? "" : "es");
+}
+
+
+// A tunnel, and the mouth it opens in the hill.
+//
+// Two entities' worth of change from one drag: a brush solid that is the tunnel
+// itself, and a punched-out patch of terrain surface wherever the tunnel is not
+// buried. Neither half is any use alone -- a tunnel under an unbroken surface is
+// invisible, and a hole with nothing under it is a pit.
+void EditorLayer::CommitCreativeCave(const Math::Vector3& start, const Math::Vector3& end) {
+    if (!m_World) return;
+
+    const BuildToolSettings& s = m_Creative.CurrentSettings();
+    ECS::BrushSolidComponent solid;
+    if (!CreativeMode::BuildCaveBrushes(s, start, end, solid)) {
+        ENJIN_LOG_WARN(Editor, "Creative: that drag is too short to be a tunnel");
+        return;
+    }
+
+    ECS::Entity entity = m_World->CreateEntity();
+    m_World->AddComponent<ECS::NameComponent>(entity, "Cave");
+    m_World->AddComponent<ECS::TransformComponent>(entity);
+    m_World->AddComponent<ECS::MaterialComponent>(entity);
+    m_World->AddComponent<ECS::BrushSolidComponent>(entity, solid);
+    ECS::BrushSolidSystem::Rebuild(m_World, entity);
+
+    // Which terrain it breaks through. Selected first so a scene with two
+    // terrains stays predictable, then the first in the world -- the same order
+    // the Terrain tool picks its target, because picking differently would mean
+    // sculpting one hill and opening another.
+    ECS::Entity terrain = ECS::INVALID_ENTITY;
+    if (m_PrimarySelected != ECS::INVALID_ENTITY &&
+        m_World->HasComponent<ECS::TerrainComponent>(m_PrimarySelected)) {
+        terrain = m_PrimarySelected;
+    } else {
+        for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::TerrainComponent>()) {
+            terrain = e;
+            break;
+        }
+    }
+
+    const u32 opened = OpenCaveMouth(terrain, s, start, end);
+
+    SelectEntity(entity);
+    RecordLayerCreate(entity);
+    FinishCreativePlacement(entity);
+
+    // Say which of the two halves happened. A tunnel that opened nothing is a
+    // legitimate result -- it is buried, which is what a tunnel under a hill
+    // should be -- but it is indistinguishable from a broken tool unless the
+    // editor says so.
+    if (terrain == ECS::INVALID_ENTITY) {
+        ENJIN_LOG_INFO(Editor, "Creative: placed a tunnel. No terrain in the scene to open.");
+    } else if (opened == 0) {
+        ENJIN_LOG_INFO(Editor,
+                       "Creative: placed a tunnel, fully buried. Sculpt the hill lower, "
+                       "or run the tunnel out through a slope, to open a mouth.");
+    } else {
+        ENJIN_LOG_INFO(Editor, "Creative: placed a tunnel and opened %u terrain cells", opened);
+    }
+}
+
+// Open the surface wherever the tunnel reaches through it.
+//
+// Geometric rather than authored: a cell is punched when it sits inside the
+// tunnel's footprint AND its surface is at or below the tunnel's roof. That is
+// what makes a mouth appear on the slope where the hill runs out, and nowhere
+// along the stretch the hill actually covers -- without anybody drawing the
+// outline of the mouth by hand.
+u32 EditorLayer::OpenCaveMouth(ECS::Entity terrainEntity, const BuildToolSettings& settings,
+                               const Math::Vector3& start, const Math::Vector3& end) {
+    if (!m_World || terrainEntity == ECS::INVALID_ENTITY) return 0;
+    auto* terrain = m_World->GetComponent<ECS::TerrainComponent>(terrainEntity);
+    if (!terrain || terrain->heightmap.empty()) return 0;
+    auto* xf = m_World->GetComponent<ECS::TransformComponent>(terrainEntity);
+
+    const Math::Vector3 gridOrigin =
+        terrain->GridOrigin(xf ? xf->position : Math::Vector3(0.0f));
+    const f32 topY = CreativeMode::CaveTopY(settings, start);
+    const f32 outer = CreativeMode::CaveOuterRadius(settings);
+
+    const auto before = terrain->holes;
+    u32 opened = 0;
+
+    for (u32 z = 0; z < terrain->gridHeight; ++z) {
+        for (u32 x = 0; x < terrain->gridWidth; ++x) {
+            if (terrain->IsHole(x, z)) continue;
+
+            const f32 wx = gridOrigin.x + static_cast<f32>(x) * terrain->cellSize;
+            const f32 wz = gridOrigin.z + static_cast<f32>(z) * terrain->cellSize;
+            if (CreativeMode::CaveDistanceToAxisXZ(start, end, wx, wz) > outer) continue;
+
+            const f32 surfaceY = gridOrigin.y + terrain->GetHeight(x, z);
+            if (surfaceY > topY) continue;   // the hill still covers it
+
+            terrain->SetHole(x, z, true);
+            ++opened;
+        }
+    }
+
+    if (opened > 0) {
+        terrain->meshDirty = true;
+        m_UndoRedo.Execute(std::make_unique<PropertyEditCommand<std::vector<u8>>>(
+            "Open Cave Mouth", before, terrain->holes,
+            [world = m_World, e = terrainEntity](const std::vector<u8>& v) {
+                if (auto* t = world->GetComponent<ECS::TerrainComponent>(e)) {
+                    t->holes = v;
+                    t->meshDirty = true;
+                }
+            }));
+    }
+    return opened;
 }
 
 // A placement is one undo step. Every creative gesture went straight into the

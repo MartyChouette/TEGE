@@ -44,6 +44,15 @@ enum class BuildTool : u8 {
     Brush,
     Water,
     Terrain,
+    // A tunnel, dragged along the ground where it should run.
+    //
+    // A heightmap has one height per cell, so a cave can never live inside the
+    // terrain itself. This is the other half of that: the tunnel is its own
+    // hollow solid, and the terrain surface is PUNCHED OUT wherever the hill is
+    // not thick enough to cover it. The two read as one hill you can walk into.
+    // Beside Terrain in the volume band because it is the tool you reach for
+    // straight after sculpting the hill.
+    Cave,
     // Grass, shrubs and trees, sized by the same drag as Water. In the volume
     // band because that is what it makes, and because the rail groups by band.
     //
@@ -426,6 +435,30 @@ public:
 
     // One wall brush per segment, each standing ON its segment exactly the way
     // the Wall tool's single brush stands on its drag.
+    // The two brushes a tunnel is made of: a prism shell along the drag, and a
+    // longer prism subtracted out of it that hollows it and opens both ends.
+    //
+    // Pure, so the shape of a tunnel can be checked without an editor, a world
+    // or a GPU -- the same reason BuildBrushes and PlanPlacement are pure.
+    // Returns false for a drag too short to be a tunnel rather than emitting a
+    // degenerate one.
+    static bool BuildCaveBrushes(const BuildToolSettings& settings,
+                                 const Math::Vector3& start, const Math::Vector3& end,
+                                 ECS::BrushSolidComponent& out);
+
+    // How high the tunnel built from this drag reaches, in world Y. The terrain
+    // is punched out wherever its surface sits at or below this, which is what
+    // makes the mouth appear on the hillside and nowhere else.
+    static f32 CaveTopY(const BuildToolSettings& settings, const Math::Vector3& start);
+
+    // Distance from a point to the tunnel's centre line, in XZ only. The cave's
+    // footprint on the terrain is every cell within the outer radius of this.
+    static f32 CaveDistanceToAxisXZ(const Math::Vector3& start, const Math::Vector3& end,
+                                    f32 px, f32 pz);
+
+    // The tunnel's outer radius -- the bore plus its wall.
+    static f32 CaveOuterRadius(const BuildToolSettings& settings);
+
     static bool BuildPathBrushes(const std::vector<Math::Vector3>& points,
                                  const std::vector<f32>& bows,
                                  u32 segmentsPerBow,

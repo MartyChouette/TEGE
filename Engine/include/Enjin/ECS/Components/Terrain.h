@@ -48,6 +48,44 @@ struct ENJIN_API TerrainComponent {
     //
     // One helper, because the disagreement was between three places that each
     // did the conversion themselves.
+    // Cells the surface is NOT drawn over -- a cave mouth, a shaft, a doorway
+    // into a hillside.
+    //
+    // A heightmap stores one height per cell, so it can never have a roof AND a
+    // floor and can never hold a cave by itself. What it CAN do is stop being
+    // there: punch the surface out over the cells a cave opens through, put the
+    // cave's own geometry underneath as a brush solid, and the two read as one
+    // hill you can walk into. That is the trade -- caves that open into sculpted
+    // terrain, and still no overhangs on the surface itself.
+    //
+    // Empty means no holes anywhere, which is what every terrain authored before
+    // this holds and what a fresh one holds. It is only allocated once something
+    // punches a hole, so the common terrain costs nothing.
+    //
+    // One byte per cell rather than a bit: the maps beside it (heightmap,
+    // splatmap) are per-cell arrays too, and a packed bitfield would be the only
+    // thing here needing index arithmetic to read.
+    std::vector<u8> holes;
+
+    bool HasHoles() const { return !holes.empty(); }
+
+    bool IsHole(u32 x, u32 z) const {
+        if (holes.empty() || x >= gridWidth || z >= gridHeight) return false;
+        return holes[static_cast<usize>(z) * gridWidth + x] != 0;
+    }
+
+    // Allocates the mask on the first hole, so an untouched terrain never pays
+    // for it. Clearing a hole on a terrain that has none stays a no-op rather
+    // than allocating a map of zeroes.
+    void SetHole(u32 x, u32 z, bool hole) {
+        if (x >= gridWidth || z >= gridHeight) return;
+        if (holes.empty()) {
+            if (!hole) return;
+            holes.assign(static_cast<usize>(gridWidth) * gridHeight, 0);
+        }
+        holes[static_cast<usize>(z) * gridWidth + x] = hole ? 1 : 0;
+    }
+
     // The range a cell is allowed to occupy, in one place.
     //
     // The clamp used to be written inline in the sculpt with a hardcoded 0 floor
@@ -90,6 +128,9 @@ struct ENJIN_API TerrainComponent {
             splatmap[i * 4 + 0] = 1.0f;
         }
         meshDirty = true;
+        // A re-initialised terrain is a new terrain; a stale hole mask would
+        // punch the surface out over cells the caller never asked about.
+        holes.clear();
     }
 };
 

@@ -138,4 +138,102 @@ ENJIN_TEST(TerrainRange, TheDefaultDepthMirrorsTheDefaultHeight) {
     ENJIN_EXPECT_TRUE(t.minHeight < 0.0f);
 }
 
+// A heightmap cannot hold a cave: one height per cell means no roof and floor
+// at the same x,z. What it can do is stop being there. Punch the surface out
+// over the cells a cave opens through, put the cave's geometry underneath as a
+// brush solid, and the two read as one hill you can walk into.
+ENJIN_TEST(TerrainHoles, AFreshTerrainCarriesNoMaskAtAll) {
+    ECS::TerrainComponent t;
+    t.gridWidth = 8;
+    t.gridHeight = 8;
+    t.InitializeFlat(0.0f);
+
+    // Not "a mask of zeroes" -- no mask. Every terrain ever authored has none,
+    // and the common case must not pay for the feature.
+    ENJIN_EXPECT_FALSE(t.HasHoles());
+    ENJIN_EXPECT_TRUE(t.holes.empty());
+    ENJIN_EXPECT_FALSE(t.IsHole(3, 3));
+}
+
+ENJIN_TEST(TerrainHoles, ClearingAHoleOnATerrainWithNoneAllocatesNothing) {
+    ECS::TerrainComponent t;
+    t.gridWidth = 8;
+    t.gridHeight = 8;
+    t.InitializeFlat(0.0f);
+
+    t.SetHole(2, 2, false);
+    ENJIN_EXPECT_TRUE(t.holes.empty());
+
+    t.SetHole(2, 2, true);
+    ENJIN_EXPECT_TRUE(t.HasHoles());
+    ENJIN_EXPECT_TRUE(t.IsHole(2, 2));
+    ENJIN_EXPECT_FALSE(t.IsHole(3, 2));
+}
+
+ENJIN_TEST(TerrainHoles, OutOfRangeCellsAreRefusedRatherThanWrapped) {
+    ECS::TerrainComponent t;
+    t.gridWidth = 8;
+    t.gridHeight = 8;
+    t.InitializeFlat(0.0f);
+
+    t.SetHole(99, 0, true);
+    t.SetHole(0, 99, true);
+    ENJIN_EXPECT_FALSE(t.HasHoles());
+    ENJIN_EXPECT_FALSE(t.IsHole(99, 0));
+}
+
+ENJIN_TEST(TerrainHoles, ReinitialisingDropsTheMask) {
+    ECS::TerrainComponent t;
+    t.gridWidth = 8;
+    t.gridHeight = 8;
+    t.InitializeFlat(0.0f);
+    t.SetHole(4, 4, true);
+    ENJIN_ASSERT_TRUE(t.HasHoles());
+
+    // A re-initialised terrain is a new terrain. A surviving mask would punch
+    // the surface out over cells the caller never asked about.
+    t.InitializeFlat(0.0f);
+    ENJIN_EXPECT_FALSE(t.HasHoles());
+}
+
+// The quad, not the vertex, is what goes missing -- and one punched corner
+// takes the whole quad, because a quad kept on three surviving corners
+// stretches a skin across the mouth of the hole. That skin is what you would
+// fall through the cave and land on.
+ENJIN_TEST(TerrainHoles, OnePunchedCellRemovesTheFourQuadsAroundIt) {
+    ECS::TerrainComponent t;
+    t.gridWidth = 8;
+    t.gridHeight = 8;
+    t.cellSize = 1.0f;
+    t.InitializeFlat(0.0f);
+
+    const auto before = Renderer::MeshFactory::CreateTerrain(t);
+    t.SetHole(4, 4, true);
+    const auto after = Renderer::MeshFactory::CreateTerrain(t);
+
+    // An interior cell is a corner of exactly four quads, each two triangles.
+    ENJIN_EXPECT_EQ(before.indices.size() - after.indices.size(), (usize)(4 * 2 * 3));
+
+    // The vertices stay put, so every surviving index still means what it did.
+    ENJIN_EXPECT_EQ(before.vertices.size(), after.vertices.size());
+}
+
+ENJIN_TEST(TerrainHoles, NoSurvivingTriangleTouchesAPunchedCell) {
+    ECS::TerrainComponent t;
+    t.gridWidth = 8;
+    t.gridHeight = 8;
+    t.cellSize = 1.0f;
+    t.InitializeFlat(0.0f);
+    t.SetHole(4, 4, true);
+    t.SetHole(5, 4, true);
+
+    const auto mesh = Renderer::MeshFactory::CreateTerrain(t);
+    const u32 holeA = 4u * t.gridWidth + 4u;
+    const u32 holeB = 4u * t.gridWidth + 5u;
+    for (u32 i : mesh.indices) {
+        ENJIN_EXPECT_TRUE(i != holeA);
+        ENJIN_EXPECT_TRUE(i != holeB);
+    }
+}
+
 ENJIN_TEST_MAIN()

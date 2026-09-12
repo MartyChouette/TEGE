@@ -1351,6 +1351,9 @@ json SerializeTerrainComponent(const ECS::TerrainComponent& terrain) {
     j["cellSize"] = RF(terrain.cellSize);
     j["maxHeight"] = RF(terrain.maxHeight);
     j["minHeight"] = RF(terrain.minHeight);
+    // Only when there are any. A terrain with no caves does not carry a map of
+    // zeroes the length of its grid into every save file.
+    if (terrain.HasHoles()) j["holes"] = terrain.holes;
     j["heightmap"] = terrain.heightmap;
     j["splatmap"] = terrain.splatmap;
     json layersArr = json::array();
@@ -1374,6 +1377,17 @@ ECS::TerrainComponent DeserializeTerrainComponent(const json& j) {
     // component default (-maxHeight) then applies, which widens what those
     // scenes ALLOW without changing a single height they stored.
     if (j.contains("minHeight")) terrain.minHeight = j["minHeight"].get<f32>();
+    // Sized against the grid rather than trusted: a mask from a terrain that
+    // has since been resized would punch holes in cells nobody chose, and a
+    // short one would be read off its end.
+    if (j.contains("holes") && j["holes"].is_array()) {
+        // Length checked BEFORE the get, like the heightmap below it: reading
+        // first and validating after lets a hostile scene make us allocate
+        // whatever it declares.
+        const usize expected = static_cast<usize>(terrain.gridWidth) * terrain.gridHeight;
+        if (j["holes"].size() == expected)
+            terrain.holes = j["holes"].get<std::vector<u8>>();
+    }
     if (j.contains("heightmap") && j["heightmap"].is_array()) {
         static constexpr usize kMaxGridElements = 4096ull * 4096ull;
         usize expected = static_cast<usize>(terrain.gridWidth) * terrain.gridHeight;

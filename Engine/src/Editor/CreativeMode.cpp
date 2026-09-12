@@ -33,6 +33,105 @@ f32 HorizontalLength(const Math::Vector3& v) {
 
 } // namespace
 
+// --------------------------------------------------------------------------
+// Cave
+// --------------------------------------------------------------------------
+
+namespace {
+
+// The tunnel's bore and its wall, clamped to something buildable. A zero wall
+// is not a tunnel, it is a hole with no surface to stand on.
+constexpr f32 kCaveMinBore = 0.75f;
+constexpr f32 kCaveMinWall = 0.15f;
+constexpr f32 kCaveMinRun  = 0.50f;
+
+f32 CaveBore(const BuildToolSettings& s) { return std::max(s.radius, kCaveMinBore); }
+f32 CaveWall(const BuildToolSettings& s) { return std::max(s.thickness, kCaveMinWall); }
+
+} // namespace
+
+f32 CreativeMode::CaveOuterRadius(const BuildToolSettings& s) { return CaveBore(s) + CaveWall(s); }
+
+// The tunnel FLOOR sits on the drag, so the roof is a full bore plus the wall
+// above it. Dragging along a hillside then buries the tunnel where the hill is
+// taller than this and exposes it where it is not, which is the whole trick.
+f32 CreativeMode::CaveTopY(const BuildToolSettings& s, const Math::Vector3& start) {
+    return start.y + 2.0f * CaveBore(s) + 2.0f * CaveWall(s);
+}
+
+f32 CreativeMode::CaveDistanceToAxisXZ(const Math::Vector3& start, const Math::Vector3& end,
+                                       f32 px, f32 pz) {
+    const f32 ax = end.x - start.x;
+    const f32 az = end.z - start.z;
+    const f32 len2 = ax * ax + az * az;
+    if (len2 < 1e-8f) {
+        const f32 dx = px - start.x, dz = pz - start.z;
+        return std::sqrt(dx * dx + dz * dz);
+    }
+    // Clamped to the SEGMENT, not the infinite line: a tunnel does not carry on
+    // past the end of the drag, and an unclamped projection would punch the
+    // terrain open in a stripe running off to the horizon.
+    f32 t = ((px - start.x) * ax + (pz - start.z) * az) / len2;
+    t = std::max(0.0f, std::min(1.0f, t));
+    const f32 cx = start.x + ax * t;
+    const f32 cz = start.z + az * t;
+    const f32 dx = px - cx, dz = pz - cz;
+    return std::sqrt(dx * dx + dz * dz);
+}
+
+bool CreativeMode::BuildCaveBrushes(const BuildToolSettings& s, const Math::Vector3& start,
+                                    const Math::Vector3& end, ECS::BrushSolidComponent& out) {
+    const f32 ax = end.x - start.x;
+    const f32 az = end.z - start.z;
+    const f32 run = std::sqrt(ax * ax + az * az);
+    if (run < kCaveMinRun) return false;
+
+    const f32 bore = CaveBore(s);
+    const f32 wall = CaveWall(s);
+    const u32 sides = static_cast<u32>(std::max(3.0f, std::min(s.segments, 32.0f)) + 0.5f);
+
+    // A prism's axis is its LOCAL +Y (CSG.cpp builds the caps along `up`), so a
+    // horizontal tunnel is that axis rotated onto the drag direction.
+    const Math::Vector3 dir(ax / run, 0.0f, az / run);
+    const Math::Quaternion rot =
+        Math::Quaternion::FromToRotation(Math::Vector3(0.0f, 1.0f, 0.0f), dir);
+
+    // Floor on the drag: the centre sits one bore plus one wall above it.
+    const Math::Vector3 centre((start.x + end.x) * 0.5f,
+                               start.y + bore + wall,
+                               (start.z + end.z) * 0.5f);
+
+    out = ECS::BrushSolidComponent{};
+
+    ECS::BrushSolidComponent::Brush shell;
+    shell.shape = ECS::BrushSolidComponent::Shape::Prism;
+    shell.op = Geometry::BrushOp::Add;
+    shell.center = centre;
+    shell.rotation = rot;
+    shell.radius = bore + wall;
+    shell.halfHeight = run * 0.5f;
+    shell.sides = sides;
+    out.brushes.push_back(shell);
+
+    // The bore, subtracted. LONGER than the shell on purpose: a subtraction that
+    // stopped at the shell's ends would leave a cap on each, and a tunnel sealed
+    // at both ends is a buried pipe. Overshooting by a wall thickness at each
+    // end cuts through them and opens the tunnel.
+    ECS::BrushSolidComponent::Brush bore_;
+    bore_.shape = ECS::BrushSolidComponent::Shape::Prism;
+    bore_.op = Geometry::BrushOp::Subtract;
+    bore_.center = centre;
+    bore_.rotation = rot;
+    bore_.radius = bore;
+    bore_.halfHeight = run * 0.5f + wall * 2.0f;
+    bore_.sides = sides;
+    out.brushes.push_back(bore_);
+
+    // You walk through it, so it needs collision on the inside.
+    out.generateCollider = true;
+    return true;
+}
+
 bool BuildToolFromName(const char* name, BuildTool& out) {
     if (!name || !*name) return false;
     for (u8 i = 0; i < static_cast<u8>(BuildTool::Count); ++i) {
@@ -60,6 +159,7 @@ const char* BuildToolName(BuildTool tool) {
         case BuildTool::Plants:  return "Plants";
         case BuildTool::Prop:    return "Prop";
         case BuildTool::Terrain: return "Terrain";
+        case BuildTool::Cave:    return "Cave";
         case BuildTool::Ladder:  return "Ladder";
         case BuildTool::Reduce:  return "Reduce";
         case BuildTool::Edit:    return "Edit";
@@ -76,6 +176,7 @@ u8 BuildToolGroup(BuildTool tool) {
         case BuildTool::Brush:
         case BuildTool::Water:
         case BuildTool::Plants:
+        case BuildTool::Cave:
         case BuildTool::Terrain: return 1;   // volume
         case BuildTool::Ladder:
         case BuildTool::Prop:
@@ -104,6 +205,8 @@ const char* BuildToolVerb(BuildTool tool) {
             return "Drag a rectangle. Swimmable by default; Kind 0 is a surface only.";
         case BuildTool::Terrain:
             return "Drag over the ground to raise or lower it. Makes a terrain if there is none.";
+        case BuildTool::Cave:
+            return "Drag where the tunnel should run. The hillside opens where it breaks out.";
         case BuildTool::Plants:
             return "Drag a patch. Grass, shrubs or trees, scattered inside it.";
         case BuildTool::Prop:
@@ -209,6 +312,13 @@ u32 BuildToolFields(BuildTool tool, BuildToolSettings& s,
         case BuildTool::Terrain:
             add("Radius",   &s.radius,   0.50f, 40.0f, "m");
             add("Strength", &s.strength, 0.05f,  2.0f, "");
+            break;
+        case BuildTool::Cave:
+            // Bore, wall and how round it is. Radius is the space you walk
+            // through, not the outside of the rock.
+            add("Bore",  &s.radius,    0.75f, 12.0f, "m");
+            add("Wall",  &s.thickness, 0.15f,  3.0f, "m");
+            add("Sides", &s.segments,  3.0f,  32.0f, "");
             break;
         case BuildTool::Plants:
             // Kind is a 0..2 pick rendered as a slider, for the same reason the

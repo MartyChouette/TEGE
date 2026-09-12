@@ -802,6 +802,20 @@ ECS::MeshComponent MeshFactory::CreateTerrain(const ECS::TerrainComponent& terra
     // Generate indices
     for (u32 z = 0; z < h - 1; ++z) {
         for (u32 x = 0; x < w - 1; ++x) {
+            // A quad is dropped when ANY of its four corners is punched out.
+            //
+            // Any, not all: a quad kept because three corners survived would
+            // stretch a triangle across the mouth of the hole, and that skin is
+            // exactly what you would fall through the cave and land on. The
+            // vertices stay in the buffer either way -- dropping them would
+            // renumber every index after them, for a saving of a few hundred
+            // vertices on a terrain that has thousands.
+            if (terrain.HasHoles() &&
+                (terrain.IsHole(x, z) || terrain.IsHole(x + 1, z) ||
+                 terrain.IsHole(x, z + 1) || terrain.IsHole(x + 1, z + 1))) {
+                continue;
+            }
+
             u32 topLeft = z * w + x;
             u32 topRight = topLeft + 1;
             u32 bottomLeft = (z + 1) * w + x;

@@ -425,6 +425,13 @@ private:
     // Turn a finished press-drag-release into a thing: a new brush solid, a cut
     // into the selected one, or a placed component. Undoable in every case.
     void CommitCreativeDrag(const Math::Vector3& start, const Math::Vector3& end);
+    // A tunnel, plus the hole it makes in the hill above it.
+    void CommitCreativeCave(const Math::Vector3& start, const Math::Vector3& end);
+    // Punch the terrain surface out wherever the tunnel breaks through it.
+    // Returns how many cells were opened, so the tool can say when a tunnel is
+    // still entirely buried instead of looking like it did nothing.
+    u32 OpenCaveMouth(ECS::Entity terrainEntity, const BuildToolSettings& settings,
+                      const Math::Vector3& start, const Math::Vector3& end);
     // Water and Ladder: a component placed from the drag's footprint rather than
     // brushes built from it. Returns the new entity, or INVALID_ENTITY.
     ECS::Entity PlaceCreativeComponent(BuildTool tool, const Math::Vector3& start,
