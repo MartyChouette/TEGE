@@ -430,8 +430,14 @@ private:
     // Punch the terrain surface out wherever the tunnel breaks through it.
     // Returns how many cells were opened, so the tool can say when a tunnel is
     // still entirely buried instead of looking like it did nothing.
+    //
+    // Adds its undo step to `into` rather than executing one of its own: one
+    // drag is one undo step, and a cave that took two presses of Ctrl+Z -- one
+    // for the tunnel, one for the hole it opened -- would leave a hole in a
+    // hill with nothing under it in between.
     u32 OpenCaveMouth(ECS::Entity terrainEntity, const BuildToolSettings& settings,
-                      const Math::Vector3& start, const Math::Vector3& end);
+                      const Math::Vector3& start, const Math::Vector3& end,
+                      CompoundCommand& into);
     // Water and Ladder: a component placed from the drag's footprint rather than
     // brushes built from it. Returns the new entity, or INVALID_ENTITY.
     ECS::Entity PlaceCreativeComponent(BuildTool tool, const Math::Vector3& start,

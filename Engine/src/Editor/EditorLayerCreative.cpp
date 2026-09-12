@@ -1091,7 +1091,14 @@ void EditorLayer::HandleBuildDrag() {
         // ladder is dragged along the wall it leans on, so it is a length too --
         // and it carries its height, because the height is the number that
         // decides whether the climb reaches the ledge.
-        if (tool == BuildTool::Ladder) {
+        if (tool == BuildTool::Cave) {
+            // A tunnel runs ALONG the drag, so its number is a length -- and
+            // its bore, because the bore is what decides whether you fit.
+            std::snprintf(buf, sizeof(buf), "%.2f m long, %.2f m bore",
+                          static_cast<double>(length),
+                          static_cast<double>(CreativeMode::CaveOuterRadius(
+                              m_Creative.CurrentSettings()) * 2.0f));
+        } else if (tool == BuildTool::Ladder) {
             std::snprintf(buf, sizeof(buf), "%.2f m wide, %.2f m tall",
                           static_cast<double>(std::max(std::fabs(d.x), std::fabs(d.z))),
                           static_cast<double>(m_Creative.CurrentSettings().height));
@@ -1288,11 +1295,18 @@ void EditorLayer::CommitCreativeCave(const Math::Vector3& start, const Math::Vec
         }
     }
 
-    const u32 opened = OpenCaveMouth(terrain, s, start, end);
+    // One drag, one undo step. The tunnel and the mouth it opens are halves of
+    // the same thing, and undoing only one of them leaves either a hole in a
+    // hill with nothing under it or a tunnel sealed under an unbroken surface.
+    auto step = std::make_unique<CompoundCommand>("Dig Cave");
+    const u32 opened = OpenCaveMouth(terrain, s, start, end, *step);
+    step->AddCommand(std::make_unique<FullCreateEntityCommand>(
+        m_World, entity, [this](ECS::Entity restored) { SelectEntity(restored); }));
 
     SelectEntity(entity);
     RecordLayerCreate(entity);
-    FinishCreativePlacement(entity);
+    m_UndoRedo.Execute(std::move(step));
+    MarkDirty();
 
     // Say which of the two halves happened. A tunnel that opened nothing is a
     // legitimate result -- it is buried, which is what a tunnel under a hill
@@ -1317,7 +1331,8 @@ void EditorLayer::CommitCreativeCave(const Math::Vector3& start, const Math::Vec
 // along the stretch the hill actually covers -- without anybody drawing the
 // outline of the mouth by hand.
 u32 EditorLayer::OpenCaveMouth(ECS::Entity terrainEntity, const BuildToolSettings& settings,
-                               const Math::Vector3& start, const Math::Vector3& end) {
+                               const Math::Vector3& start, const Math::Vector3& end,
+                               CompoundCommand& into) {
     if (!m_World || terrainEntity == ECS::INVALID_ENTITY) return 0;
     auto* terrain = m_World->GetComponent<ECS::TerrainComponent>(terrainEntity);
     if (!terrain || terrain->heightmap.empty()) return 0;
@@ -1349,7 +1364,7 @@ u32 EditorLayer::OpenCaveMouth(ECS::Entity terrainEntity, const BuildToolSetting
 
     if (opened > 0) {
         terrain->meshDirty = true;
-        m_UndoRedo.Execute(std::make_unique<PropertyEditCommand<std::vector<u8>>>(
+        into.AddCommand(std::make_unique<PropertyEditCommand<std::vector<u8>>>(
             "Open Cave Mouth", before, terrain->holes,
             [world = m_World, e = terrainEntity](const std::vector<u8>& v) {
                 if (auto* t = world->GetComponent<ECS::TerrainComponent>(e)) {

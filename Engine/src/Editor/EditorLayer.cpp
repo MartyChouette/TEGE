@@ -1296,6 +1296,33 @@ void EditorLayer::Update(f32 deltaTime) {
                     m_McpInputQueue.push_back(std::move(a));
                     return std::string("clicked");
                 }
+                if (op == "editor_undo" || op == "editor_redo") {
+                    // Ctrl+Z reads Enjin::Input, and an injected mouse gesture
+                    // deliberately holds every key down as false, so the editor
+                    // could be driven to BUILD things and never to take one
+                    // back. That made "is this one undo step or two" a question
+                    // nothing could answer except a person at the keyboard.
+                    const bool undo = (op == "editor_undo");
+                    i32 times = std::clamp(args.value("times", 1), 1, 64);
+                    i32 did = 0;
+                    for (i32 i = 0; i < times; ++i) {
+                        if (undo) {
+                            if (!m_UndoRedo.CanUndo()) break;
+                            m_UndoRedo.Undo();
+                        } else {
+                            if (!m_UndoRedo.CanRedo()) break;
+                            m_UndoRedo.Redo();
+                        }
+                        ++did;
+                    }
+                    MarkDirty();
+                    char msg[128];
+                    std::snprintf(msg, sizeof(msg), "%s %d step%s (%s remaining)",
+                                  undo ? "undid" : "redid", did, did == 1 ? "" : "s",
+                                  (undo ? m_UndoRedo.CanUndo() : m_UndoRedo.CanRedo())
+                                      ? "more" : "none");
+                    return std::string(msg);
+                }
                 if (op == "editor_set_build_tool") {
                     // The rail is the human path and stays the only one that
                     // matters; this exists because the rail sits OUTSIDE the

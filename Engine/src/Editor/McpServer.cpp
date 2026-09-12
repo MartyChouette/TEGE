@@ -112,6 +112,12 @@ static json ToolList() {
              {{"x", {{"type", "number"}}}, {"y", {{"type", "number"}}},
               {"button", {{"type", "string"}, {"enum", {"left", "right"}}}}},
              json::array({"x", "y"})),
+        tool("editor_undo", "Undo editor steps (the same stack Ctrl+Z drives). An injected mouse "
+                            "gesture holds every key up, so this is the only way to take one back.",
+             {{"times", {{"type", "integer"}, {"description", "how many steps (default 1)"}}}},
+             json::array()),
+        tool("editor_redo", "Redo editor steps.",
+             {{"times", {{"type", "integer"}}}}, json::array()),
         tool("editor_set_build_tool", "Arm one of the creative build tools by name (Wall, Floor, "
                                       "Stairs, Path, Brush, Water, Plants, Prop, Terrain, Ladder, "
                                       "Reduce, Edit) -- the same thing clicking the rail does. The "
@@ -178,7 +184,8 @@ json McpServerCallTool(McpServer* self, ECS::World* world,
     if (name == "list_scenes" || name == "open_scene" || name == "save_scene" || name == "get_log" ||
         name == "press_key" || name == "click_at" || name == "type_text" ||
         name == "editor_drag" || name == "editor_click" ||
-        name == "editor_viewport_info" || name == "editor_set_build_tool") {
+        name == "editor_viewport_info" || name == "editor_set_build_tool" ||
+        name == "editor_undo" || name == "editor_redo") {
         if (!editorTool) return ToolText("editor tools not available in this context", true);
         std::string r = editorTool(name, args.dump());
         return ToolText(r, r.rfind("error", 0) == 0);
