@@ -279,6 +279,7 @@ enjin_add_test(TestAcousticScene     Unit/Audio/TestAcousticScene.cpp)
 # --- Acoustics ---
 enjin_add_test(TestAcousticBVH       Unit/Acoustics/TestAcousticBVH.cpp)
 enjin_add_test(TestRoomResponse      Unit/Acoustics/TestRoomResponse.cpp)
+enjin_add_test(TestEarlyReflections  Unit/Acoustics/TestEarlyReflections.cpp)
 enjin_add_test(TestAudioTypes         Unit/Audio/TestAudioTypes.cpp)
 enjin_add_test(TestAudioVariation   Unit/Audio/TestAudioVariation.cpp)
 
