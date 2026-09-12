@@ -282,4 +282,98 @@ ENJIN_TEST(VoxelAim, AnUncarvedVolumeCannotBeAimedAt) {
                                      Vector3(0, -1, 0), 100.0f, hit));
 }
 
+// Smooth: a brush rather than a third mode, because the rail's mode toggle has
+// exactly two sides. It sat in the edit layer for a while with no way for
+// anyone to reach it, which by this project's own bar is a thing the engine can
+// do and a person cannot ask for.
+
+ENJIN_TEST(VoxelBrushes, SmoothIgnoresDigAndFill) {
+    // Arrange: the same gesture, once as a dig and once as a fill.
+    BrushGesture dig = Drag(Vector3(0, 10, 0), Vector3(8, 10, 0));
+    BrushGesture fill = dig;
+    fill.filling = true;
+
+    // Act
+    const VoxelStroke a = MakeBrushStroke(VoxelBrush::Smooth, dig);
+    const VoxelStroke b = MakeBrushStroke(VoxelBrush::Smooth, fill);
+
+    // Assert: both smooth. Softening a wall is not a direction, and a
+    // "Fill Smooth" that behaved differently from a "Dig Smooth" would be two
+    // behaviours hiding behind one name.
+    ENJIN_EXPECT_TRUE(a.mode == VoxelEditMode::Smooth);
+    ENJIN_EXPECT_TRUE(b.mode == VoxelEditMode::Smooth);
+
+    // And the others still honour the flag.
+    ENJIN_EXPECT_TRUE(MakeBrushStroke(VoxelBrush::Passage, dig).mode == VoxelEditMode::Carve);
+    ENJIN_EXPECT_TRUE(MakeBrushStroke(VoxelBrush::Passage, fill).mode == VoxelEditMode::Fill);
+}
+
+ENJIN_TEST(VoxelBrushes, SmoothNeverAddsRoughness) {
+    // Arrange: roughness turned up on the rail.
+    BrushGesture g = Drag(Vector3(0, 10, 0), Vector3(8, 10, 0));
+    g.roughness = 1.2f;
+
+    // Act / Assert: adding noise while smoothing is a contradiction, and would
+    // make the brush that tidies a wall the brush that roughens it.
+    ENJIN_EXPECT_FLOAT_NEAR(MakeBrushStroke(VoxelBrush::Smooth, g).roughness, 0.0f, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(MakeBrushStroke(VoxelBrush::Passage, g).roughness, 1.2f, 0.001f);
+}
+
+ENJIN_TEST(VoxelBrushes, SmoothingARoughWallActuallySoftensIt) {
+    // Arrange: a deliberately jagged dig, and a copy of it to leave alone.
+    ECS::VoxelVolumeComponent rough = SolidRock(24, 0.5f);
+    const Vector3 origin(0, 0, 0);
+    for (u32 i = 0; i < 6; ++i) {
+        BrushGesture bite = Drag(Vector3(4.0f + static_cast<f32>(i % 2) * 0.8f, 6.0f,
+                                         2.0f + static_cast<f32>(i) * 0.7f),
+                                 Vector3(4.0f + static_cast<f32>(i % 2) * 0.8f, 6.0f,
+                                         2.0f + static_cast<f32>(i) * 0.7f), 1.2f);
+        ApplyStroke(rough, origin, MakeBrushStroke(VoxelBrush::Chamber, bite));
+    }
+    const auto before = rough.field;
+
+    // Measure how much the field disagrees with its own neighbours: a jagged
+    // surface has large differences cell to cell, a soft one has small ones.
+    auto variation = [&](const ECS::VoxelVolumeComponent& v) {
+        f32 total = 0.0f;
+        for (u32 z = 1; z + 1 < v.dimZ; ++z)
+            for (u32 y = 1; y + 1 < v.dimY; ++y)
+                for (u32 x = 1; x + 1 < v.dimX; ++x)
+                    total += std::fabs(v.At(x + 1, y, z) - v.At(x - 1, y, z)) +
+                             std::fabs(v.At(x, y + 1, z) - v.At(x, y - 1, z)) +
+                             std::fabs(v.At(x, y, z + 1) - v.At(x, y, z - 1));
+        return total;
+    };
+    const f32 roughVariation = variation(rough);
+
+    // Act: several passes over the same stretch, as a person tidying would.
+    for (u32 i = 0; i < 4; ++i) {
+        ApplyStroke(rough, origin,
+                    MakeBrushStroke(VoxelBrush::Smooth,
+                                    Drag(Vector3(4, 6, 2), Vector3(4, 6, 6), 2.0f)));
+    }
+
+    // Assert: it changed something, and what it changed is SMOOTHER. A brush
+    // that ran, reported success and left the wall exactly as jagged would pass
+    // every other test in this file.
+    ENJIN_EXPECT_FALSE(rough.field == before);
+    ENJIN_EXPECT_TRUE(variation(rough) < roughVariation);
+}
+
+ENJIN_TEST(VoxelBrushes, SmoothingSolidRockDoesNothing) {
+    // Arrange: no surface to soften.
+    ECS::VoxelVolumeComponent v = SolidRock(16, 1.0f);
+    const auto before = v.field;
+
+    // Act
+    const EditRegion r = ApplyStroke(v, Vector3(0, 0, 0),
+                                     MakeBrushStroke(VoxelBrush::Smooth,
+                                                     Drag(Vector3(8, 8, 8), Vector3(8, 8, 8))));
+
+    // Assert: nothing to average towards, so nothing moves. Reported as no
+    // change rather than as a stroke, so the tool can say so.
+    ENJIN_EXPECT_TRUE(r.Empty());
+    ENJIN_EXPECT_TRUE(v.field == before);
+}
+
 ENJIN_TEST_MAIN()

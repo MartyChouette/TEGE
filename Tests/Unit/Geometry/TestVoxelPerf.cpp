@@ -127,4 +127,37 @@ ENJIN_TEST(VoxelPerf, AWholeStrokeAndRemeshCostsLessThanAQuarterSecond) {
     ENJIN_EXPECT_TRUE(worst < 400.0);
 }
 
+// The worst case a person can actually reach.
+//
+// Growth is capped at two million samples, so this is the largest single cave
+// the tool will ever remesh. Worth knowing rather than guessing: the number
+// here is what the last stroke of a big cave system costs, and it is the one
+// that decides whether the tool stays usable as a cave grows.
+ENJIN_TEST(VoxelPerf, ACaveAtTheGrowthBudgetStillRemeshesInUnderASecond) {
+    // Arrange: 128 x 122 x 128 is just under the two million cap.
+    ECS::VoxelVolumeComponent v = SolidBlock(128, 122, 128, 0.5f);
+    ENJIN_ASSERT_TRUE(v.Count() <= 2000000u);
+    VoxelStroke s;
+    s.a = Vector3(10, 30, 10);
+    s.b = Vector3(50, 30, 50);
+    s.radiusA = s.radiusB = 3.0f;
+    s.roughness = 0.3f;
+    ApplyStroke(v, Vector3(0, 0, 0), s);
+
+    // Act
+    usize triangles = 0;
+    const f64 ms = TimeMs([&] {
+        const SurfaceMesh m = BuildSurfaceNet(ToGrid(v), 0.0f);
+        triangles = m.TriangleCount();
+    });
+
+    // Assert
+    std::printf("    remesh at the growth cap (%zu samples, %zu tris): %.1f ms\n",
+                v.Count(), triangles, ms);
+    ENJIN_EXPECT_TRUE(triangles > 0);
+    // Generous on purpose: this guards against a change that makes remeshing an
+    // order of magnitude slower, not against a few milliseconds.
+    ENJIN_EXPECT_TRUE(ms < 1000.0);
+}
+
 ENJIN_TEST_MAIN()

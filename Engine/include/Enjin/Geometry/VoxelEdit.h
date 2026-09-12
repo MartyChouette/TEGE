@@ -139,6 +139,14 @@ enum class VoxelBrush : u8 {
     // A tall narrow fissure, or a low wide crawl, depending on the squash. A
     // cave that is round everywhere looks bored rather than formed.
     Crack,
+    // Softens what is already there rather than adding or removing. It is a
+    // BRUSH rather than a third mode because the rail's mode toggle has exactly
+    // two sides, and Smooth existed in the edit layer for a while with no way
+    // for anyone to reach it -- which by this project's own bar is a thing the
+    // engine can do and a person cannot ask for.
+    //
+    // It ignores Dig/Fill. Smoothing is not a direction.
+    Smooth,
     Count
 };
 

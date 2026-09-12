@@ -94,13 +94,19 @@ const char* VoxelBrushName(VoxelBrush brush) {
         case VoxelBrush::Shaft:   return "Shaft";
         case VoxelBrush::Ramp:    return "Ramp";
         case VoxelBrush::Crack:   return "Crack";
+        case VoxelBrush::Smooth:  return "Smooth";
         default:                  return "Unknown";
     }
 }
 
 VoxelStroke MakeBrushStroke(VoxelBrush brush, const BrushGesture& g) {
     VoxelStroke s;
-    s.mode = g.filling ? VoxelEditMode::Fill : VoxelEditMode::Carve;
+    // Smooth ignores Dig/Fill: softening a wall is not a direction, and a
+    // "Fill Smooth" that did something different from a "Dig Smooth" would be
+    // two behaviours hiding behind one name.
+    s.mode = (brush == VoxelBrush::Smooth)
+                 ? VoxelEditMode::Smooth
+                 : (g.filling ? VoxelEditMode::Fill : VoxelEditMode::Carve);
     s.blend = g.blend;
     s.roughness = g.roughness;
     s.seed = g.seed;
@@ -149,6 +155,17 @@ VoxelStroke MakeBrushStroke(VoxelBrush brush, const BrushGesture& g) {
             s.b = g.to;
             s.radiusA = s.radiusB = bore;
             s.heightScale = 0.45f;   // reaches about twice the bore vertically
+            break;
+        }
+        case VoxelBrush::Smooth: {
+            // Swept like a passage, because you smooth ALONG a wall rather than
+            // at a point, and a wider reach than the bore so one pass covers
+            // the shape rather than pitting it.
+            s.a = g.from;
+            s.b = g.to;
+            s.radiusA = s.radiusB = bore * 1.25f;
+            // No noise: adding roughness while smoothing is a contradiction.
+            s.roughness = 0.0f;
             break;
         }
         case VoxelBrush::Passage:

@@ -1429,11 +1429,14 @@ void EditorLayer::HandleCreativeCave(f32 localX, f32 localY, f32 viewW, f32 view
     const f32 ui = CreativeUIScale();
     const bool filling = m_Creative.IsSubtracting();
 
-    // Blue is the hole, amber is the rock going back. The shared tint has these
-    // the other way round for this tool, because Dig rides the ADD flag while
-    // actually removing material.
-    const ImU32 tint = filling ? kLand : kHole;
     const Geometry::VoxelBrush brush = CurrentCaveBrush();
+    const bool smoothing = (brush == Geometry::VoxelBrush::Smooth);
+
+    // Blue is the hole, amber is the rock going back, green is neither -- a
+    // pass that softens what is already there. The shared tint has the first
+    // two the other way round for this tool, because Dig rides the ADD flag
+    // while actually removing material.
+    const ImU32 tint = smoothing ? kOk : (filling ? kLand : kHole);
 
     // --- the rock being carved, and where it runs out ------------------------
     ECS::Entity target = ECS::INVALID_ENTITY;
@@ -1535,7 +1538,7 @@ void EditorLayer::HandleCreativeCave(f32 localX, f32 localY, f32 viewW, f32 view
         const f32 rdy = gestureTo.y - gestureFrom.y;
         const f32 rdz = gestureTo.z - gestureFrom.z;
         const f32 run = std::sqrt(rdx * rdx + rdy * rdy + rdz * rdz);
-        const char* verb = filling ? "Fill" : "Dig";
+        const char* verb = smoothing ? "Smooth" : (filling ? "Fill" : "Dig");
         switch (brush) {
             case Geometry::VoxelBrush::Chamber:
                 std::snprintf(buf, sizeof(buf), "%s  Chamber  %.1f m across", verb,
@@ -1549,6 +1552,10 @@ void EditorLayer::HandleCreativeCave(f32 localX, f32 localY, f32 viewW, f32 view
                 std::snprintf(buf, sizeof(buf), "%s  Ramp  %.1f m along, %.1f m down", verb,
                               static_cast<double>(run),
                               static_cast<double>(stroke.a.y - stroke.b.y));
+                break;
+            case Geometry::VoxelBrush::Smooth:
+                // Named once, not twice: "Smooth Smooth 4.0 m" reads as a bug.
+                std::snprintf(buf, sizeof(buf), "Smooth  %.1f m", static_cast<double>(run));
                 break;
             default:
                 std::snprintf(buf, sizeof(buf), "%s  %s  %.1f m", verb,
