@@ -310,22 +310,10 @@ public:
             [this](const Enjin::GUI::UIEventData&) { ClosePauseMenu(); });
         // Authored MainMenu canvas buttons (UITemplates::CreateMainMenu events).
         // Hide (not destroy) the canvas -- it's authored scene content.
-        auto startFromAuthoredMenu = [this]() {
-            Enjin::ECS::Entity menu = FindAuthoredMainMenu();
-            if (menu != Enjin::ECS::INVALID_ENTITY) {
-                if (auto* c = m_World->GetComponent<Enjin::GUI::UICanvasComponent>(menu)) c->visible = false;
-            }
-            // If a startup flow is on a Menu step, New Game advances the flow
-            // (to the next step, e.g. the gameplay scene) rather than just
-            // flipping m_GameStarted on the current scene.
-            if (m_FlowActive) { AdvanceFlow(); }
-            else { m_GameStarted = true; }
-            if (SceneWantsMouseCapture()) Enjin::Input::SetMouseCaptured(true);
-        };
         m_UISystem.GetEventBus().Listen("menu_newgame",
-            [startFromAuthoredMenu](const Enjin::GUI::UIEventData&) { startFromAuthoredMenu(); });
+            [this](const Enjin::GUI::UIEventData&) { StartNewGame(); });
         m_UISystem.GetEventBus().Listen("menu_continue",
-            [startFromAuthoredMenu](const Enjin::GUI::UIEventData&) { startFromAuthoredMenu(); });
+            [this](const Enjin::GUI::UIEventData&) { ResumeGame(); });
         m_UISystem.GetEventBus().Listen("menu_options",
             [this](const Enjin::GUI::UIEventData&) {
                 m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::Options);
@@ -365,12 +353,10 @@ public:
         });
 
         m_GameMenu.SetCallback([this](const std::string& action) {
-            if (action == "new_game" || action == "continue") {
-                m_GameMenu.HideAll();
-                // On a Menu step, New Game advances the flow (see above).
-                if (m_FlowActive) { AdvanceFlow(); }
-                else { m_GameStarted = true; }
-                if (SceneWantsMouseCapture()) Enjin::Input::SetMouseCaptured(true);
+            if (action == "new_game") {
+                StartNewGame();
+            } else if (action == "continue") {
+                ResumeGame();
             } else if (action == "resume") {
                 m_GameMenu.HideAll();
                 if (SceneWantsMouseCapture()) Enjin::Input::SetMouseCaptured(true);
@@ -1563,6 +1549,42 @@ public:
             }
         }
         m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::MainMenu);
+    }
+
+    // New Game means a NEW game. Both buttons used to run one shared "just
+    // start" path that did nothing but flip m_GameStarted, so after a quit to
+    // menu, New Game dropped you back into the world you had just left -- same
+    // shells spent, same jobs done. It only ever looked right on the first boot,
+    // where the scene happened to be freshly loaded anyway.
+    void StartNewGame() {
+        // Only pay for a reload when there is something to clear. On the first
+        // boot the scene is already pristine and a reload would just be a stall.
+        if (m_SessionPlayed) RestartGameSession();
+
+        // RestartGameSession reloads the scene, and the authored MainMenu canvas
+        // is scene content: it comes back with whatever `visible` the file says,
+        // which is true. Without this it would sit on top of the new game.
+        HideAuthoredMainMenu();
+        m_GameMenu.HideAll();
+
+        // On a Menu step of a startup flow, New Game advances the flow (to the
+        // gameplay scene) rather than flipping m_GameStarted on this one.
+        if (m_FlowActive) { AdvanceFlow(); }
+        else { m_GameStarted = true; }
+        m_SessionPlayed = true;
+        if (SceneWantsMouseCapture()) Enjin::Input::SetMouseCaptured(true);
+    }
+
+    // Pick the current session back up untouched. With no save system this is
+    // only meaningful after a quit to menu; from a cold boot it is a new game by
+    // another name.
+    void ResumeGame() {
+        HideAuthoredMainMenu();
+        m_GameMenu.HideAll();
+        if (m_FlowActive) { AdvanceFlow(); }
+        else { m_GameStarted = true; }
+        m_SessionPlayed = true;
+        if (SceneWantsMouseCapture()) Enjin::Input::SetMouseCaptured(true);
     }
 
     // Every menu the engine generates (pause, game over) is built from
@@ -3600,6 +3622,10 @@ private:
 
     bool m_Initialized = false;
     bool m_GameStarted = false;
+    // Whether gameplay has run at least once since launch -- the difference
+    // between "New Game on a pristine scene" and "New Game that has to throw a
+    // played-through world away first".
+    bool m_SessionPlayed = false;
     // Set only while an AUTHORED pause canvas is on screen. Separate from
     // m_PauseMenuEntity because that one is destroyed on close and this one is
     // scene content that merely gets hidden.
