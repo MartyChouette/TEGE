@@ -84,6 +84,15 @@ public:
     // the "Set HUD Enabled" visual-script node.
     static constexpr i32 HUD_SORT_ORDER = 100;
     void SetHUDEnabled(bool enabled) { m_HUDEnabled = enabled; }
+
+    // Draw canvases but let nothing click them. For the case where a built-in
+    // ImGui screen (Options, How to Play) is layered OVER an authored canvas:
+    // the canvas must keep drawing -- it is the backdrop the overlay sits on --
+    // but a click in the overlay must not also land on whatever canvas button
+    // happens to be underneath. ProcessInput reads ImGui's mouse state directly
+    // and has no window-capture notion of its own, so the gate lives here.
+    void SetInputEnabled(bool enabled) { m_InputEnabled = enabled; }
+    bool IsInputEnabled() const { return m_InputEnabled; }
     bool IsHUDEnabled() const { return m_HUDEnabled; }
 
     // Editor-facing API: compute layout and render preview for a single canvas
@@ -141,6 +150,7 @@ private:
 
     UIEventBus m_EventBus;
     bool m_HUDEnabled = true;  // HUD-tier canvas gate (see SetHUDEnabled)
+    bool m_InputEnabled = true;  // see SetInputEnabled
     TextureResolver m_TextureResolver;
     // Unified display P2: canvas-side cache of tessellated SVGs, keyed by path
     // (invalid entries cached too, so a bad file isn't re-parsed every frame).

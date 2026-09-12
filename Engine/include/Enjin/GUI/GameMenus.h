@@ -6,6 +6,7 @@
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/Editor/EditorSettings.h"
 #include "Enjin/Accessibility/AccessibilitySettings.h"
+#include "Enjin/GUI/UITheme.h"
 
 #include <imgui.h>
 
@@ -127,6 +128,15 @@ public:
     // draw list and it stacks correctly.
     void SetTargetDrawList(ImDrawList* drawList) { m_TargetDrawList = drawList; }
 
+    // The palette these ImGui screens draw in. Options / How to Play / Controls
+    // keep their ImGui implementation -- rebinding and the live setting preview
+    // are not worth rebuilding as canvas widgets -- so this is what lets them
+    // speak the same language as a game's authored canvases. Unset falls through
+    // to UITheme::Default(), which is itself what the game adopted.
+    void SetTheme(const UITheme& theme) { m_Theme = theme; m_HasTheme = true; }
+    void ClearTheme() { m_HasTheme = false; }
+    const UITheme& Theme() const { return m_HasTheme ? m_Theme : UITheme::Default(); }
+
     void Render(f32 screenW, f32 screenH);
 
     void SetCallback(MenuCallback cb);
@@ -137,8 +147,28 @@ public:
     void ShowGameOver(bool won, const std::string& message, bool allowRestart, bool returnToMenu);
     bool IsGameOverScreen() const { return m_CurrentScreen == MenuScreen::GameOver; }
 
+    // True for the screens that sit ON TOP of whatever menu the game itself is
+    // showing, rather than replacing it. MainMenu / PauseMenu / GameOver are the
+    // built-in versions of a menu a game may have authored as a canvas, so they
+    // stand alone; Options and How to Play are opened FROM one and must leave
+    // the authored canvas underneath drawing.
+    bool IsOverlayScreen() const {
+        switch (m_CurrentScreen) {
+            case MenuScreen::Options:
+            case MenuScreen::Graphics:
+            case MenuScreen::Audio:
+            case MenuScreen::Controls:
+            case MenuScreen::HowToPlay:
+                return true;
+            default:
+                return false;
+        }
+    }
+
 private:
     MenuScreen m_CurrentScreen = MenuScreen::None;
+    UITheme m_Theme;
+    bool m_HasTheme = false;
     GraphicsSettings m_Graphics;
     AudioSettings m_Audio;
     InputSystem::InputActionMap* m_InputMap = nullptr;

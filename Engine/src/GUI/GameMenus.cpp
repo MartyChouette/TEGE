@@ -6,6 +6,62 @@
 #include <algorithm>
 #include <array>
 
+
+namespace {
+
+inline ImVec4 TC(const Enjin::Math::Vector3& c, float a = 1.0f) {
+    return ImVec4(c.x, c.y, c.z, a);
+}
+
+// Lighten/darken a theme colour for the states a theme does not name outright
+// (a tab's unselected body, a scrollbar grab). Keeps everything derived from the
+// palette rather than reintroducing a second hardcoded one.
+inline ImVec4 TCMix(const Enjin::Math::Vector3& a, const Enjin::Math::Vector3& b,
+                    float t, float alpha = 1.0f) {
+    return ImVec4(a.x + (b.x - a.x) * t,
+                  a.y + (b.y - a.y) * t,
+                  a.z + (b.z - a.z) * t, alpha);
+}
+
+// Every ImGui colour the options/how-to-play panels actually use, derived from
+// the game's theme. Returns the number pushed so the caller can pop exactly
+// that many -- a miscount corrupts ImGui's colour stack for the whole frame.
+int PushMenuTheme(const Enjin::GUI::UITheme& t) {
+    using namespace Enjin;
+    ImGui::PushStyleColor(ImGuiCol_WindowBg,            TC(t.background, 0.97f));
+    ImGui::PushStyleColor(ImGuiCol_ChildBg,             TC(t.surface, 0.55f));
+    ImGui::PushStyleColor(ImGuiCol_PopupBg,             TC(t.surface, 0.98f));
+    ImGui::PushStyleColor(ImGuiCol_Border,              TC(t.primary, 0.45f));
+    ImGui::PushStyleColor(ImGuiCol_Text,                TC(t.textPrimary));
+    ImGui::PushStyleColor(ImGuiCol_TextDisabled,        TC(t.textDisabled));
+    ImGui::PushStyleColor(ImGuiCol_Separator,           TC(t.primary, 0.35f));
+    ImGui::PushStyleColor(ImGuiCol_Button,              TC(t.buttonDefault));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered,       TC(t.buttonHovered));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive,        TC(t.buttonPressed));
+    ImGui::PushStyleColor(ImGuiCol_FrameBg,             TC(t.inputBg));
+    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered,      TC(t.buttonHovered, 0.85f));
+    ImGui::PushStyleColor(ImGuiCol_FrameBgActive,       TC(t.buttonPressed));
+    ImGui::PushStyleColor(ImGuiCol_SliderGrab,          TC(t.sliderThumb));
+    ImGui::PushStyleColor(ImGuiCol_SliderGrabActive,    TC(t.primary));
+    ImGui::PushStyleColor(ImGuiCol_CheckMark,           TC(t.primary));
+    ImGui::PushStyleColor(ImGuiCol_Header,              TC(t.primary, 0.35f));
+    ImGui::PushStyleColor(ImGuiCol_HeaderHovered,       TC(t.primary, 0.50f));
+    ImGui::PushStyleColor(ImGuiCol_HeaderActive,        TC(t.primary, 0.65f));
+    ImGui::PushStyleColor(ImGuiCol_Tab,                 TCMix(t.background, t.surface, 0.6f));
+    ImGui::PushStyleColor(ImGuiCol_TabHovered,          TC(t.primary, 0.55f));
+    ImGui::PushStyleColor(ImGuiCol_TabSelected,         TC(t.primary, 0.80f));
+    ImGui::PushStyleColor(ImGuiCol_TabDimmed,           TCMix(t.background, t.surface, 0.35f));
+    ImGui::PushStyleColor(ImGuiCol_TabDimmedSelected,   TC(t.primary, 0.55f));
+    ImGui::PushStyleColor(ImGuiCol_ScrollbarBg,         TC(t.background, 0.60f));
+    ImGui::PushStyleColor(ImGuiCol_ScrollbarGrab,       TC(t.sliderTrack));
+    ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabHovered,TC(t.primary, 0.70f));
+    ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabActive, TC(t.primary));
+    ImGui::PushStyleColor(ImGuiCol_PlotHistogram,       TC(t.primary));
+    return 29;
+}
+
+} // namespace
+
 namespace Enjin::GUI {
 
 // ---------------------------------------------------------------------------
@@ -144,7 +200,7 @@ void GameMenuSystem::RenderMainMenu(f32 w, f32 h) {
     {
         ImVec2 titleSize = ImGui::CalcTextSize(m_GameTitle.c_str());
         ImGui::SetCursorPosX((cardW - titleSize.x) * 0.5f);
-        ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "%s", m_GameTitle.c_str());
+        ImGui::TextColored(TC(Theme().textPrimary), "%s", m_GameTitle.c_str());
     }
     ImGui::PopFont();
 
@@ -204,7 +260,7 @@ void GameMenuSystem::RenderPauseMenu(f32 w, f32 h) {
         const char* title = "PAUSED";
         ImVec2 titleSize = ImGui::CalcTextSize(title);
         ImGui::SetCursorPosX((buttonW + 60.0f - titleSize.x) * 0.5f);
-        ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 0.95f), "%s", title);
+        ImGui::TextColored(TC(Theme().textPrimary, 0.95f), "%s", title);
     }
 
     ImGui::Dummy(ImVec2(0, 20));
@@ -262,12 +318,11 @@ void GameMenuSystem::RenderOptions(f32 w, f32 h) {
     ImGui::SetNextWindowSizeConstraints(ImVec2(460.0f, 360.0f), ImVec2(w, h));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 12.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.10f, 0.11f, 0.14f, 0.95f));
-    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.3f, 0.5f, 0.6f, 0.5f));
+    const int themeColors = PushMenuTheme(Theme());
     ImGui::Begin("##Options", nullptr,
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings);
 
-    ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "Options");
+    ImGui::TextColored(TC(Theme().textPrimary), "Options");
     ImGui::Separator();
     ImGui::Dummy(ImVec2(0, 8));
 
@@ -299,7 +354,7 @@ void GameMenuSystem::RenderOptions(f32 w, f32 h) {
     }
 
     ImGui::End();
-    ImGui::PopStyleColor(2);
+    ImGui::PopStyleColor(themeColors);
     ImGui::PopStyleVar(2);
 }
 
@@ -665,7 +720,7 @@ void GameMenuSystem::RenderControls(f32 w, f32 h) {
     ImGui::Dummy(ImVec2(0, 4));
 
     if (!m_InputMap) {
-        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "No InputActionMap assigned.");
+        ImGui::TextColored(TC(Theme().error), "No InputActionMap assigned.");
         return;
     }
 
@@ -699,7 +754,7 @@ void GameMenuSystem::RenderControls(f32 w, f32 h) {
 
     // Rebinding prompt
     if (m_RebindingAction >= 0) {
-        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.3f, 1.0f), "Press any key to rebind...");
+        ImGui::TextColored(TC(Theme().primary), "Press any key to rebind...");
         ImGui::SameLine();
         if (ImGui::SmallButton("Cancel")) {
             m_RebindingAction = -1;
@@ -730,7 +785,7 @@ void GameMenuSystem::RenderControls(f32 w, f32 h) {
             // Binding button - click to rebind
             bool isRebinding = (m_RebindingAction == i);
             if (isRebinding) {
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.6f, 0.1f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_Button, TC(Theme().primary));
             }
 
             const char* displayText = isRebinding ? "..." : bindingName;
@@ -798,18 +853,17 @@ void GameMenuSystem::RenderHowToPlay(f32 w, f32 h) {
     ImGui::SetNextWindowSize(ImVec2(panelW, panelH));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 12.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.10f, 0.11f, 0.14f, 0.95f));
-    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.3f, 0.5f, 0.6f, 0.5f));
+    const int themeColors = PushMenuTheme(Theme());
     ImGui::Begin("##HowToPlay", nullptr,
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
 
-    ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "How to Play");
+    ImGui::TextColored(TC(Theme().textPrimary), "How to Play");
     ImGui::Separator();
     ImGui::Dummy(ImVec2(0, 6));
 
     if (!m_InputMap) {
-        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "No InputActionMap assigned.");
+        ImGui::TextColored(TC(Theme().error), "No InputActionMap assigned.");
     } else {
         if (ImGui::BeginChild("##HowToPlayList", ImVec2(0, -44), true)) {
             // Group actions by category
@@ -830,7 +884,7 @@ void GameMenuSystem::RenderHowToPlay(f32 w, f32 h) {
 
                 if (actionsInCategory == 0) continue;
 
-                ImGui::TextColored(ImVec4(0.6f, 0.85f, 1.0f, 1.0f), "%s", categories[cat]);
+                ImGui::TextColored(TC(Theme().primary), "%s", categories[cat]);
                 ImGui::Separator();
 
                 for (i32 i = 0; i < actionCount; ++i) {
@@ -842,7 +896,7 @@ void GameMenuSystem::RenderHowToPlay(f32 w, f32 h) {
 
                     ImGui::Text("  %-22s", actionName);
                     ImGui::SameLine(220);
-                    ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.5f, 1.0f), "%s", bindingName);
+                    ImGui::TextColored(TC(Theme().textPrimary), "%s", bindingName);
 
                     // Show gamepad binding on the same line if available
                     const char* gamepadBinding = m_InputMap->GetGamepadBindingDisplayName(i);
@@ -864,7 +918,7 @@ void GameMenuSystem::RenderHowToPlay(f32 w, f32 h) {
     }
 
     ImGui::End();
-    ImGui::PopStyleColor(2);
+    ImGui::PopStyleColor(themeColors);
     ImGui::PopStyleVar(2);
 }
 
@@ -876,17 +930,18 @@ bool GameMenuSystem::RenderMenuButton(const char* label, f32 width, bool selecte
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(16.0f, 12.0f));
 
+    const UITheme& t = Theme();
     if (selected) {
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.35f, 0.45f, 0.65f, 0.9f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.38f, 0.55f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.30f, 0.40f, 0.60f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Button, TC(t.primary, 0.85f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, TC(t.buttonHovered));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, TC(t.buttonPressed));
     } else {
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.20f, 0.28f, 0.85f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.38f, 0.55f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.22f, 0.26f, 0.38f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Button, TC(t.buttonDefault, 0.92f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, TC(t.buttonHovered));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, TC(t.buttonPressed));
     }
 
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.95f, 0.97f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Text, TC(t.textPrimary));
 
     bool pressed = ImGui::Button(label, ImVec2(width, 0));
 

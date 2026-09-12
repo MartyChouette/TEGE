@@ -233,11 +233,13 @@ void UISystem::Update(ECS::World* world, f32 vpW, f32 vpH, f32 deltaTime,
     // pointer takes it and everything below sees nothing.
     m_PointerConsumed = false;
     m_InteractiveRects.clear();
-    for (auto it = m_CachedCanvases.rbegin(); it != m_CachedCanvases.rend(); ++it) {
-        auto* canvas = world->GetComponent<UICanvasComponent>(it->entity);
-        if (!canvas) continue;
-        ProcessInput(*canvas, vpW, vpH);
-        ProcessFocusNavigation(*canvas, deltaTime);
+    if (m_InputEnabled) {
+        for (auto it = m_CachedCanvases.rbegin(); it != m_CachedCanvases.rend(); ++it) {
+            auto* canvas = world->GetComponent<UICanvasComponent>(it->entity);
+            if (!canvas) continue;
+            ProcessInput(*canvas, vpW, vpH);
+            ProcessFocusNavigation(*canvas, deltaTime);
+        }
     }
 
     // Handlers run HERE, after every canvas has been walked, never inside the

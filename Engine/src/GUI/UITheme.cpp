@@ -250,6 +250,31 @@ UITheme UITheme::ColorblindSafe() {
     return t;
 }
 
+// The game-wide default. Held as an optional rather than a plain UITheme so
+// "never set" stays distinguishable from "set to something that happens to look
+// like Dark", and so ClearDefault can really put it back.
+namespace {
+    bool s_HasDefaultTheme = false;
+    UITheme& DefaultThemeStorage() {
+        static UITheme s_DefaultTheme = UITheme::Dark();
+        return s_DefaultTheme;
+    }
+}
+
+const UITheme& UITheme::Default() {
+    static const UITheme s_Dark = UITheme::Dark();
+    return s_HasDefaultTheme ? DefaultThemeStorage() : s_Dark;
+}
+
+void UITheme::SetDefault(const UITheme& theme) {
+    DefaultThemeStorage() = theme;
+    s_HasDefaultTheme = true;
+}
+
+void UITheme::ClearDefault() {
+    s_HasDefaultTheme = false;
+}
+
 UITheme UITheme::FromPreset(UIThemePreset preset) {
     switch (preset) {
         case UIThemePreset::Light:              return Light();

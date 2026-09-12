@@ -91,6 +91,14 @@ struct UITheme {
     NineSliceConfig panelNineSlice;
     NineSliceConfig buttonNineSlice;
 
+    // The theme every generated menu uses unless told otherwise. A game sets
+    // this once (the player adopts it from the authored MainMenu canvas) and
+    // the pause menu, game-over screen and anything else built from
+    // UITemplates comes out in the same language instead of stock Dark.
+    static const UITheme& Default();
+    static void SetDefault(const UITheme& theme);
+    static void ClearDefault();
+
     // Factory presets
     static UITheme Dark();
     static UITheme Light();

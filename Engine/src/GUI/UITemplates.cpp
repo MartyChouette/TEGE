@@ -11,7 +11,7 @@ UICanvasComponent CreateMainMenu(const std::string& gameTitle) {
     UICanvasComponent canvas;
     canvas.canvasName = "MainMenu";
     canvas.sortOrder = 100;
-    canvas.theme = UITheme::Dark();
+    canvas.theme = UITheme::Default();
 
     // Full-screen dark background panel
     u32 bgPanel = canvas.AddElement(UIWidgetType::Panel, "Background");
@@ -77,7 +77,7 @@ UICanvasComponent CreatePauseMenu() {
     UICanvasComponent canvas;
     canvas.canvasName = "PauseMenu";
     canvas.sortOrder = 200;
-    canvas.theme = UITheme::Dark();
+    canvas.theme = UITheme::Default();
 
     // Semi-transparent overlay
     u32 overlay = canvas.AddElement(UIWidgetType::Panel, "Overlay");
@@ -326,7 +326,7 @@ UICanvasComponent CreateOptionsMenu(const OptionsMenuSpec& spec) {
     UICanvasComponent canvas;
     canvas.canvasName = "OptionsMenu";
     canvas.sortOrder = 210;
-    canvas.theme = UITheme::Dark();
+    canvas.theme = UITheme::Default();
 
     // Measured before anything is placed: a short custom menu gets a short
     // panel instead of a mostly empty box, and a long one stops growing and
@@ -654,7 +654,7 @@ UICanvasComponent CreateGameOverScreen(bool won, const std::string& message, boo
     UICanvasComponent canvas;
     canvas.canvasName = "GameOverScreen";
     canvas.sortOrder = 300;  // Above pause menu (200) and gameplay HUD canvases
-    canvas.theme = UITheme::Dark();
+    canvas.theme = UITheme::Default();
 
     // Full-screen dark overlay
     u32 overlay = canvas.AddElement(UIWidgetType::Panel, "Overlay");
