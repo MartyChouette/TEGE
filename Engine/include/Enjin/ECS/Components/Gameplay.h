@@ -4,6 +4,7 @@
 #include "Enjin/Math/Vector.h"
 #include "Enjin/Math/Quaternion.h"
 #include "Enjin/ECS/Entity.h"
+#include "Enjin/ECS/Components/SurfaceMaterial.h"
 #include "Enjin/GUI/DialogueTree.h"
 #include "Enjin/Gameplay/StateRingBuffer.h"
 #include "Enjin/Gameplay/RewindChannel.h"
@@ -742,15 +743,8 @@ struct ConductorComponent {
 // AUDIO COLLISION — Physics impacts auto-generate sound
 // ============================================================================
 
-// Surface material enum — shared between collision audio and material interaction
-enum class SurfaceMaterial : u8 {
-    Default, Metal, Wood, Stone, Glass, Flesh, Water, Dirt, Grass, Ice, Count
-};
-
-inline const char* SurfaceMaterialName(SurfaceMaterial m) {
-    static const char* names[] = {"Default","Metal","Wood","Stone","Glass","Flesh","Water","Dirt","Grass","Ice"};
-    return (static_cast<u8>(m) < 10) ? names[static_cast<u8>(m)] : "Unknown";
-}
+// SurfaceMaterial and its names live in SurfaceMaterial.h, so Material.h can
+// read them without pulling dialogue trees and rewind buffers in with them.
 
 // AudioCollisionComponent — TOTK-style physics audio.
 // Every surface has a material type. Impacts auto-generate sound based on

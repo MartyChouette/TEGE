@@ -2,6 +2,7 @@
 
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Math/Vector.h"
+#include "Enjin/ECS/Components/SurfaceMaterial.h"
 #include <string>
 #include <vector>
 
@@ -196,6 +197,18 @@ struct MaterialComponent {
     // sound = silent. surfaceParticle bursts at the foot / contact point.
     std::string footstepSound;         // per-footstep audio while walked/run on
     std::string impactSound;           // audio when struck by a collision
+
+    // What this surface is made of, for room acoustics.
+    //
+    // Beside the footstep and impact sounds because it is the same statement --
+    // "this is tile" -- and a person who has already said it once by choosing a
+    // footstep should not have to say it again in different words.
+    //
+    // Read by the audio scene builder to give each triangle a real absorption,
+    // scattering and transmission rather than one default shared by every
+    // surface in the world. Without it a carpeted basement and a tiled kitchen
+    // reflect identically.
+    SurfaceMaterial surfaceMaterial = SurfaceMaterial::Default;
     // 0=None,1=Dust,2=Grass,3=Spark,4=Splash,5=Smoke,6=Snow (maps to a particle preset)
     u8 surfaceParticle = 0;
     f32 footstepVolume = 1.0f;

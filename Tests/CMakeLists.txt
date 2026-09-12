@@ -273,6 +273,8 @@ enjin_add_test(TestNavmeshBake        Unit/AI/TestNavmeshBake.cpp)
 
 # --- Audio ---
 enjin_add_test(TestAudio              Unit/Audio/TestAudio.cpp)
+enjin_add_test(TestAcousticMaterial  Unit/Audio/TestAcousticMaterial.cpp)
+enjin_add_test(TestAcousticScene     Unit/Audio/TestAcousticScene.cpp)
 enjin_add_test(TestAudioTypes         Unit/Audio/TestAudioTypes.cpp)
 enjin_add_test(TestAudioVariation   Unit/Audio/TestAudioVariation.cpp)
 
