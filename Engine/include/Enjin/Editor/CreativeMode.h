@@ -186,6 +186,14 @@ struct BuildToolSettings {
     // always one, however this is set -- there is nothing to approximate.
     f32 segments = 8.0f;
 
+    // Cave: how far the rock wall wanders from a perfect tube, in metres.
+    //
+    // Defaults to something rather than nothing on purpose. Zero roughness is a
+    // mathematically smooth bore, which is exactly what made the first version
+    // of this tool a pipe rather than a cave. Turn it down for a worked stone
+    // passage; leave it for rock.
+    f32 roughness = 0.35f;
+
     f32 rungGap = 0.30f;     // Ladder: spacing of the rungs you can see
     f32 keepPercent = 50.0f; // Reduce
 
@@ -435,28 +443,24 @@ public:
 
     // One wall brush per segment, each standing ON its segment exactly the way
     // the Wall tool's single brush stands on its drag.
-    // The two brushes a tunnel is made of: a prism shell along the drag, and a
-    // longer prism subtracted out of it that hollows it and opens both ends.
+    // How high the carved passage reaches, in world Y. The terrain surface is
+    // punched out wherever it sits at or below this, which is what makes the
+    // mouth appear on the hillside and nowhere else.
     //
-    // Pure, so the shape of a tunnel can be checked without an editor, a world
-    // or a GPU -- the same reason BuildBrushes and PlanPlacement are pure.
-    // Returns false for a drag too short to be a tunnel rather than emitting a
-    // degenerate one.
-    static bool BuildCaveBrushes(const BuildToolSettings& settings,
-                                 const Math::Vector3& start, const Math::Vector3& end,
-                                 ECS::BrushSolidComponent& out);
-
-    // How high the tunnel built from this drag reaches, in world Y. The terrain
-    // is punched out wherever its surface sits at or below this, which is what
-    // makes the mouth appear on the hillside and nowhere else.
+    // It describes the CAPSULE the carve actually cuts -- floor on the drag, so
+    // the roof is two bores up -- plus the roughness, which pushes the wall
+    // outwards. It used to describe a prism shell that no longer exists; a roof
+    // reported lower than the carve reaches would leave the surface skinned
+    // over a passage that is poking through it.
     static f32 CaveTopY(const BuildToolSettings& settings, const Math::Vector3& start);
 
-    // Distance from a point to the tunnel's centre line, in XZ only. The cave's
+    // Distance from a point to the stroke's centre line, in XZ only. The cave's
     // footprint on the terrain is every cell within the outer radius of this.
     static f32 CaveDistanceToAxisXZ(const Math::Vector3& start, const Math::Vector3& end,
                                     f32 px, f32 pz);
 
-    // The tunnel's outer radius -- the bore plus its wall.
+    // How wide the carve reaches: the bore plus the roughness that wanders
+    // outside it.
     static f32 CaveOuterRadius(const BuildToolSettings& settings);
 
     static bool BuildPathBrushes(const std::vector<Math::Vector3>& points,

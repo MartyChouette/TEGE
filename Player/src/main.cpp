@@ -111,6 +111,7 @@ static std::string s_ReplayPath;
 #include "Enjin/ECS/Systems/SwarmSystem.h"
 #include "Enjin/ECS/Systems/GeneratedGeometrySystem.h"
 #include "Enjin/ECS/Systems/BrushSolidSystem.h"
+#include "Enjin/ECS/Systems/VoxelVolumeSystem.h"
 #include "Enjin/Gameplay/QuestFlow.h"
 #include "Enjin/Networking/NetworkSystem.h"
 #include "Enjin/Effects/ParticleSystem.h"
@@ -1256,6 +1257,7 @@ public:
         // solid whose list changed rebuilds, and in a shipped game nothing
         // changes one unless gameplay does.
         Enjin::ECS::BrushSolidSystem::Update(m_World.get());
+        Enjin::ECS::VoxelVolumeSystem::Update(m_World.get());
         m_GeneratedGeometry.Update(m_World.get(), deltaTime);
         m_DynamicDifficulty.Update(m_World.get(), deltaTime);
         m_FaceCardSystem.Update(deltaTime);

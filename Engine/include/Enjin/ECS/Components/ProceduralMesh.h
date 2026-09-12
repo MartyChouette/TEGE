@@ -39,6 +39,7 @@ struct ENJIN_API ProceduralMeshComponent {
         SplineIK,
         Script,
         Csg,        // BrushSolidComponent: convex brushes, booleaned
+        VoxelVolume,// VoxelVolumeComponent: a distance field, surface-netted
         Edited,     // rewritten by an editor tool (simplify); no system owns it
         Count
     };
@@ -61,6 +62,7 @@ inline const char* ProceduralMeshSourceName(ProceduralMeshComponent::Source s) {
         case ProceduralMeshComponent::Source::SplineIK:         return "Spline IK";
         case ProceduralMeshComponent::Source::Script:           return "Script";
         case ProceduralMeshComponent::Source::Csg:              return "Brush Solid (CSG)";
+        case ProceduralMeshComponent::Source::VoxelVolume:      return "Voxel Volume";
         case ProceduralMeshComponent::Source::Edited:           return "Edited in the editor";
         default:                                                return "Unknown";
     }

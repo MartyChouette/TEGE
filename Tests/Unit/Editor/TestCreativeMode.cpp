@@ -530,10 +530,11 @@ ENJIN_TEST(CreativeMode, EachToolBelongsToExactlyOneOfTheTwoPaths) {
         // Path belongs to neither path because it builds from a CLICKED POINT
         // LIST rather than from two ground points, so it has its own builder.
         //
-        // Cave belongs to neither because one drag changes TWO things -- it
-        // makes a hollow solid and it punches the terrain above it open -- and
-        // PlanPlacement describes a footprint for one entity. Its builder is
-        // BuildCaveBrushes, which the CreativeCave tests cover.
+        // Cave belongs to neither because it does not BUILD anything at all:
+        // it carves a signed distance field, and one drag also punches the
+        // terrain above it open. PlanPlacement describes a footprint for one
+        // entity, which is not what either half of that is. The carve lives in
+        // Geometry::VoxelEdit and is covered by TestVoxelEdit.
         const bool notFromADrag =
             (tool == BuildTool::Reduce) || BuildToolIsEdit(tool) ||
             BuildToolIsPath(tool) || (tool == BuildTool::Cave);
@@ -1242,63 +1243,6 @@ ENJIN_TEST(CreativeGesture, ToolNamesAreCaseInsensitiveAndUnknownNamesAreRefused
     ENJIN_EXPECT_FALSE(BuildToolFromName(nullptr, got));
 }
 
-// A tunnel is a shell with its middle taken out, and the middle is cut LONGER
-// than the shell on purpose.
-ENJIN_TEST(CreativeCave, ATunnelIsAShellAndABoreCutRightThroughIt) {
-    BuildToolSettings s;
-    s.radius = 2.0f;
-    s.thickness = 0.5f;
-    ECS::BrushSolidComponent out;
-    ENJIN_ASSERT_TRUE(CreativeMode::BuildCaveBrushes(s, Vector3(0, 0, 0), Vector3(10, 0, 0), out));
-
-    ENJIN_ASSERT_EQ(out.brushes.size(), (usize)2);
-    const auto& shell = out.brushes[0];
-    const auto& bore  = out.brushes[1];
-
-    ENJIN_EXPECT_TRUE(shell.op == Geometry::BrushOp::Add);
-    ENJIN_EXPECT_TRUE(bore.op == Geometry::BrushOp::Subtract);
-    ENJIN_EXPECT_TRUE(shell.shape == ECS::BrushSolidComponent::Shape::Prism);
-
-    // The bore is narrower than the shell, or there is no wall to stand on.
-    ENJIN_EXPECT_TRUE(bore.radius < shell.radius);
-    ENJIN_EXPECT_FLOAT_NEAR(shell.radius - bore.radius, 0.5f, 0.001f);
-
-    // And it runs PAST both ends. A subtraction stopping at the shell leaves a
-    // cap on each, and a tunnel sealed at both ends is a buried pipe.
-    ENJIN_EXPECT_TRUE(bore.halfHeight > shell.halfHeight);
-
-    // You walk through it.
-    ENJIN_EXPECT_TRUE(out.generateCollider);
-}
-
-ENJIN_TEST(CreativeCave, TheTunnelLiesAlongTheDragAndItsFloorSitsOnIt) {
-    BuildToolSettings s;
-    s.radius = 2.0f;
-    s.thickness = 0.5f;
-    ECS::BrushSolidComponent out;
-    ENJIN_ASSERT_TRUE(CreativeMode::BuildCaveBrushes(s, Vector3(0, 0, 0), Vector3(10, 0, 0), out));
-
-    // Centred on the drag in XZ.
-    ENJIN_EXPECT_FLOAT_NEAR(out.brushes[0].center.x, 5.0f, 0.001f);
-    ENJIN_EXPECT_FLOAT_NEAR(out.brushes[0].center.z, 0.0f, 0.001f);
-
-    // Floor on the drag: the centre sits one bore plus one wall above it, so
-    // the bottom of the bore is exactly the height you dragged at.
-    ENJIN_EXPECT_FLOAT_NEAR(out.brushes[0].center.y, 2.5f, 0.001f);
-
-    // Half as long as the drag, because halfHeight is a half.
-    ENJIN_EXPECT_FLOAT_NEAR(out.brushes[0].halfHeight, 5.0f, 0.001f);
-}
-
-ENJIN_TEST(CreativeCave, ADragTooShortToBeATunnelIsRefused) {
-    BuildToolSettings s;
-    ECS::BrushSolidComponent out;
-    // Refused rather than emitting a degenerate prism, which would be a solid
-    // plug of rock sitting where a click landed.
-    ENJIN_EXPECT_FALSE(CreativeMode::BuildCaveBrushes(s, Vector3(0, 0, 0), Vector3(0.1f, 0, 0), out));
-    ENJIN_EXPECT_FALSE(CreativeMode::BuildCaveBrushes(s, Vector3(3, 0, 3), Vector3(3, 0, 3), out));
-}
-
 // The footprint is measured against the SEGMENT, not the infinite line it sits
 // on. Unclamped, the mouth would open in a stripe running to the horizon.
 ENJIN_TEST(CreativeCave, TheFootprintStopsAtTheEndsOfTheDrag) {
@@ -1312,25 +1256,35 @@ ENJIN_TEST(CreativeCave, TheFootprintStopsAtTheEndsOfTheDrag) {
     ENJIN_EXPECT_FLOAT_NEAR(CreativeMode::CaveDistanceToAxisXZ(a, b, -10.0f, 0.0f), 10.0f, 0.001f);
 }
 
-// The roof height is what decides where the hill opens, so it has to agree with
-// the brushes: a roof reported lower than the tunnel actually reaches would
-// leave the surface skinned over a tunnel that is poking through it.
-ENJIN_TEST(CreativeCave, TheReportedRoofIsTheTopOfTheShell) {
+// The roof height is what decides where the hill opens, so it has to agree
+// with the carve: a roof reported lower than the passage actually reaches would
+// leave the surface skinned over a cave that is poking through it.
+ENJIN_TEST(CreativeCave, TheReportedRoofIsTheTopOfTheCarvedPassage) {
     BuildToolSettings s;
-    s.radius = 2.0f;
-    s.thickness = 0.5f;
-    ECS::BrushSolidComponent out;
-    ENJIN_ASSERT_TRUE(CreativeMode::BuildCaveBrushes(s, Vector3(0, 0, 0), Vector3(10, 0, 0), out));
+    s.radius = 2.0f;       // bore
+    s.roughness = 0.0f;
 
-    const f32 shellTop = out.brushes[0].center.y + out.brushes[0].radius;
-    ENJIN_EXPECT_FLOAT_NEAR(CreativeMode::CaveTopY(s, Vector3(0, 0, 0)), shellTop, 0.001f);
+    // The stroke puts the passage FLOOR on the drag, so the axis is one bore up
+    // and the roof is one more.
+    ENJIN_EXPECT_FLOAT_NEAR(CreativeMode::CaveTopY(s, Vector3(0, 0, 0)), 4.0f, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(CreativeMode::CaveTopY(s, Vector3(0, 10, 0)), 14.0f, 0.001f);
+
+    // Roughness pushes the wall outwards, so the roof goes up with it. Ignoring
+    // it would skin the surface over exactly the bumps that broke through.
+    s.roughness = 0.5f;
+    ENJIN_EXPECT_FLOAT_NEAR(CreativeMode::CaveTopY(s, Vector3(0, 0, 0)), 4.5f, 0.001f);
 }
 
-ENJIN_TEST(CreativeCave, TheOuterRadiusIsBorePlusWall) {
+ENJIN_TEST(CreativeCave, TheOuterRadiusCoversTheRoughnessAsWellAsTheBore) {
     BuildToolSettings s;
     s.radius = 3.0f;
-    s.thickness = 0.75f;
+    s.roughness = 0.75f;
+    // The footprint has to cover where the wall actually wanders to, or the
+    // terrain stays closed over the edges of the mouth.
     ENJIN_EXPECT_FLOAT_NEAR(CreativeMode::CaveOuterRadius(s), 3.75f, 0.001f);
+
+    s.roughness = 0.0f;
+    ENJIN_EXPECT_FLOAT_NEAR(CreativeMode::CaveOuterRadius(s), 3.0f, 0.001f);
 }
 
 // Cave's second mode is Fill, and Fill is NOT a CSG cut.

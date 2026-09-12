@@ -1,6 +1,7 @@
 #include "Enjin/Editor/EditorLayer.h"
 #include "Enjin/Editor/EditorShortcuts.h"
 #include "Enjin/ECS/Systems/BrushSolidSystem.h"
+#include "Enjin/ECS/Systems/VoxelVolumeSystem.h"
 #include "Enjin/ECS/Components/BrushSolid.h"
 #include "Enjin/Renderer/Camera.h"
 #include "Enjin/ECS/CameraMath.h"
@@ -2674,6 +2675,10 @@ void EditorLayer::Update(f32 deltaTime) {
     // rebuilt during play would show nothing while you were building it. Cheap
     // when nothing is dirty, which is every frame that is not an edit.
     ECS::BrushSolidSystem::Update(m_World);
+    // Voxel volumes remesh on the same beat, in all three runtimes. A
+    // generated-geometry system wired only into the editor is a cave that
+    // exists while you are carving it and is gone in the game.
+    ECS::VoxelVolumeSystem::Update(m_World);
 
     // Update play mode
     m_PlayMode.Update(deltaTime);

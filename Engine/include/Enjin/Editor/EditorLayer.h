@@ -427,6 +427,18 @@ private:
     void CommitCreativeDrag(const Math::Vector3& start, const Math::Vector3& end);
     // A tunnel, plus the hole it makes in the hill above it.
     void CommitCreativeCave(const Math::Vector3& start, const Math::Vector3& end);
+    // The rock a first cave stroke is cut into. Baked from the terrain when
+    // there is one, so a cave is carved into the hill rather than into a cube
+    // parked beside it.
+    ECS::Entity MakeCaveVolume(const Math::Vector3& start, const Math::Vector3& end,
+                               const BuildToolSettings& settings, ECS::Entity terrainEntity,
+                               CompoundCommand* into);
+
+    // Punch a rectangle of terrain out so a voxel volume can draw that ground
+    // instead. Two systems drawing the same ground is z-fighting at best and a
+    // doubled collider at worst.
+    u32 HandTerrainToVolume(ECS::Entity terrainEntity, f32 minX, f32 minZ,
+                            f32 maxX, f32 maxZ, CompoundCommand* into);
     // Punch the terrain surface out wherever the tunnel breaks through it.
     // Returns how many cells were opened, so the tool can say when a tunnel is
     // still entirely buried instead of looking like it did nothing.

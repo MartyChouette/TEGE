@@ -26,6 +26,8 @@
 #include "Enjin/ECS/Components/ShrubVolume.h"
 #include "Enjin/ECS/Components/TreeVolume.h"
 #include "Enjin/ECS/Components/Terrain.h"
+#include "Enjin/ECS/Components/VoxelVolume.h"
+#include "Enjin/Geometry/VoxelFieldCodec.h"
 #include "Enjin/ECS/Components/GaussianSplat.h"
 #include "Enjin/ECS/Components/Terrain2D.h"
 #include "Enjin/ECS/Components/CameraTrigger.h"
@@ -1344,6 +1346,48 @@ ECS::TreeVolumeComponent DeserializeTreeVolumeComponent(const json& j) {
 }
 
 // Terrain component serialization
+json SerializeVoxelVolumeComponent(const ECS::VoxelVolumeComponent& v) {
+    json j;
+    j["dimX"] = RF(v.dimX);
+    j["dimY"] = RF(v.dimY);
+    j["dimZ"] = RF(v.dimZ);
+    j["voxelSize"] = RF(v.voxelSize);
+    // The field goes out quantized, run-length encoded and base64'd. Written
+    // as a JSON float array a modest cave is about a megabyte of text, nearly
+    // all of it the same number repeated. Only when there IS a field: an
+    // uncarved volume writes no key at all.
+    if (v.field.size() == v.Count()) {
+        j["field"] = Geometry::EncodeVoxelField(v.field, v.Band());
+    }
+    return j;
+}
+
+ECS::VoxelVolumeComponent DeserializeVoxelVolumeComponent(const json& j) {
+    ECS::VoxelVolumeComponent v;
+    // Capped like the terrain grid, and for the same reason: the dimensions
+    // decide an allocation, so a hostile scene must not be able to name one.
+    // 512 on a side is 134 million samples, which is already far past anything
+    // the editor can carve interactively.
+    if (j.contains("dimX")) v.dimX = std::min(j["dimX"].get<u32>(), 512u);
+    if (j.contains("dimY")) v.dimY = std::min(j["dimY"].get<u32>(), 512u);
+    if (j.contains("dimZ")) v.dimZ = std::min(j["dimZ"].get<u32>(), 512u);
+    if (j.contains("voxelSize")) v.voxelSize = j["voxelSize"].get<f32>();
+    if (v.voxelSize <= 0.0f) v.voxelSize = 0.5f;
+
+    // A field that does not decode to exactly the right number of samples is
+    // refused, leaving an uncarved volume rather than a cave with a wall in a
+    // place nobody put one.
+    if (j.contains("field") && j["field"].is_string()) {
+        std::vector<f32> decoded;
+        if (Geometry::DecodeVoxelField(j["field"].get<std::string>(), v.Band(),
+                                       v.Count(), decoded)) {
+            v.field = std::move(decoded);
+        }
+    }
+    v.meshDirty = true;
+    return v;
+}
+
 json SerializeTerrainComponent(const ECS::TerrainComponent& terrain) {
     json j;
     j["gridWidth"] = RF(terrain.gridWidth);
@@ -9730,6 +9774,7 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
         ENJIN_SERDES("teleporter", ECS::TeleporterComponent, SerializeTeleporterComponent, DeserializeTeleporterComponent),
         ENJIN_SERDES("temperatureZone", ECS::TemperatureZoneComponent, SerializeTemperatureZoneComponent, DeserializeTemperatureZoneComponent),
         ENJIN_SERDES("terrain", ECS::TerrainComponent, SerializeTerrainComponent, DeserializeTerrainComponent),
+        ENJIN_SERDES("voxelVolume", ECS::VoxelVolumeComponent, SerializeVoxelVolumeComponent, DeserializeVoxelVolumeComponent),
         ENJIN_SERDES("gaussianSplat", ECS::GaussianSplatComponent, SerializeGaussianSplatComponent, DeserializeGaussianSplatComponent),
         ENJIN_SERDES("terrain2d", ECS::Terrain2DComponent, SerializeTerrain2DComponent, DeserializeTerrain2DComponent),
         ENJIN_SERDES("terrainGenerator", ECS::TerrainGeneratorComponent, SerializeTerrainGeneratorComponent, DeserializeTerrainGeneratorComponent),
