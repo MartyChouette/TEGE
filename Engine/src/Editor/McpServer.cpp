@@ -117,7 +117,11 @@ static json ToolList() {
                                       "Reduce, Edit) -- the same thing clicking the rail does. The "
                                       "rail sits outside the Scene viewport, so editor_click cannot "
                                       "reach it.",
-             {{"tool", {{"type", "string"}}}}, json::array({"tool"})),
+             {{"tool", {{"type", "string"}}},
+              {"subtract", {{"type", "boolean"},
+                            {"description", "the tool's second mode: Lower for Terrain, "
+                                            "Cut for the brush tools"}}}},
+             json::array({"tool"})),
         tool("editor_viewport_info", "Where the EDITOR's Scene viewport is, what part of it is "
                                      "covered by the build surface, which build tool is armed, and "
                                      "whether play is stopped. Read this before aiming editor_drag: "

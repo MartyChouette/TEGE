@@ -2666,6 +2666,8 @@ void EditorLayer::DrawTerrainComponent(ECS::Entity entity) {
         }
         InspectorUndo::DragFloat(m_UndoRedo, "Cell Size", &terrain->cellSize, 0.1f, 0.1f, 10.0f);
         InspectorUndo::DragFloat(m_UndoRedo, "Max Height", &terrain->maxHeight, 1.0f, 1.0f, 200.0f);
+        // Negative. How deep a Lower stroke may dig below the transform plane.
+        InspectorUndo::DragFloat(m_UndoRedo, "Min Height", &terrain->minHeight, 1.0f, -200.0f, 0.0f);
 
         if (terrain->heightmap.empty()) {
             if (ImGui::Button("Initialize Flat")) {
@@ -2688,7 +2690,7 @@ void EditorLayer::DrawTerrainComponent(ECS::Entity entity) {
             InspectorUndo::DragFloat(m_UndoRedo, "Falloff", &m_TerrainBrush.falloff, 0.01f, 0.0f, 1.0f);
 
             if (m_TerrainBrush.mode == TerrainBrushMode::Flatten) {
-                InspectorUndo::DragFloat(m_UndoRedo, "Flatten Height", &m_TerrainBrush.flattenHeight, 0.1f, 0.0f, terrain->maxHeight);
+                InspectorUndo::DragFloat(m_UndoRedo, "Flatten Height", &m_TerrainBrush.flattenHeight, 0.1f, terrain->minHeight, terrain->maxHeight);
             }
             if (m_TerrainBrush.mode == TerrainBrushMode::Paint) {
                 int layer = static_cast<int>(m_TerrainBrush.paintLayer);

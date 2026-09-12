@@ -1631,8 +1631,17 @@ private:
     void HandleCreativePlacement(f32 deltaTime);
 
     void HandleTerrainBrush(f32 deltaTime);
+    // heights: sculpt against a FROZEN copy of the heightmap instead of the live
+    // one. A stroke that re-aims at the surface it is itself raising walks: each
+    // frame the hill it just made intercepts the ray nearer the camera, the next
+    // stamp lands there, and the stroke crawls away from a cursor that never
+    // moved. Measured with injected input, a single press with the cursor held
+    // still smeared 35 cells and finished 20 m from where it started. Passing
+    // the stroke-start snapshot keeps "aim at the hill, hit the hill" while
+    // making the aim stable for the length of the stroke.
     bool RaycastTerrain(const Ray& ray, ECS::TerrainComponent* terrain,
-                        const ECS::TransformComponent* transform, Math::Vector3& hitPoint);
+                        const ECS::TransformComponent* transform, Math::Vector3& hitPoint,
+                        const std::vector<f32>* heights = nullptr);
     void ApplyBrush(ECS::TerrainComponent* terrain, const ECS::TransformComponent* transform,
                     const Math::Vector3& worldHit, f32 deltaTime);
     void ApplyBrush2D(ECS::Terrain2DComponent* terrain2d, const ECS::TransformComponent* transform,

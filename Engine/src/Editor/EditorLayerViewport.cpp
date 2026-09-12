@@ -1813,7 +1813,9 @@ void EditorLayer::ApplyBrush(ECS::TerrainComponent* terrain,
                 }
             }
 
-            h = std::max(0.0f, std::min(terrain->maxHeight, h));
+            // The floor is minHeight, not zero. A zero floor made Lower a
+            // tool that only undid Raise.
+            h = terrain->ClampHeight(h);
             terrain->SetHeight(ux, uz, h);
         }
     }

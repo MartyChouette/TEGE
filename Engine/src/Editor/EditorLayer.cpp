@@ -1317,7 +1317,31 @@ void EditorLayer::Update(f32 deltaTime) {
                                "'. Tools: " + names;
                     }
                     m_Creative.SetTool(t);
-                    return std::string("build tool is now ") + BuildToolName(t);
+
+                    // The second half of a tool. Every tool that has two modes
+                    // is a different tool in the mode it is not in -- Terrain
+                    // raises or lowers, Wall adds or cuts -- so arming one
+                    // without being able to say which mode arms half a tool.
+                    if (args.contains("subtract")) {
+                        const bool sub = args.value("subtract", false);
+                        // BuildToolModeLabels, not BuildToolCanSubtract. The
+                        // latter means strictly CSG cutting; Terrain's second
+                        // mode is Lower, which is a second mode and not a cut.
+                        // Gating on the narrower one refused the exact thing
+                        // the rail offers.
+                        const char* const* labels = BuildToolModeLabels(t);
+                        if (sub && !labels) {
+                            return std::string("error: ") + BuildToolName(t) +
+                                   " has only one mode";
+                        }
+                        m_Creative.SetSubtracting(sub);
+                    }
+                    // Named with the tool's OWN words, so a Terrain reply says
+                    // Lower rather than "subtract".
+                    const char* const* modes = BuildToolModeLabels(t);
+                    std::string reply = std::string("build tool is now ") + BuildToolName(t);
+                    if (modes) reply += std::string(" (") + modes[m_Creative.IsSubtracting() ? 1 : 0] + ")";
+                    return reply;
                 }
                 if (op == "editor_viewport_info") {
                     // Everything needed to aim an injected gesture, in one read.

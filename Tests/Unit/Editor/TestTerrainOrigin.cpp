@@ -102,4 +102,40 @@ ENJIN_TEST(TerrainOrigin, ACellSizeOtherThanOneStillLinesUp) {
                             t.GridOrigin(Math::Vector3(0.0f)).x, 0.001f);
 }
 
+// Lower used to be a tool that could only undo Raise.
+//
+// Every sculpt ran through `max(0.0f, min(maxHeight, h))`, so a cell could sit
+// anywhere from the transform plane upwards and nowhere below it. A riverbed, a
+// quarry, a sunken road and a moat were all unreachable, and nothing said so --
+// the brush kept working and the ground simply stopped moving. Marty, 09-11:
+// "on thee terrain editor i dont like ee we can lower it below the eorigin".
+ENJIN_TEST(TerrainRange, ACellCanSitBelowTheTransformPlane) {
+    ECS::TerrainComponent t;
+    t.maxHeight = 20.0f;
+    t.minHeight = -20.0f;
+
+    ENJIN_EXPECT_FLOAT_NEAR(t.ClampHeight(-5.0f), -5.0f, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(t.ClampHeight(5.0f), 5.0f, 0.001f);
+}
+
+ENJIN_TEST(TerrainRange, TheRangeIsClampedAtBothEndsAndNeitherEndIsZero) {
+    ECS::TerrainComponent t;
+    t.maxHeight = 12.0f;
+    t.minHeight = -3.0f;
+
+    ENJIN_EXPECT_FLOAT_NEAR(t.ClampHeight(99.0f), 12.0f, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(t.ClampHeight(-99.0f), -3.0f, 0.001f);
+    // The floor is the authored one, not a hardcoded zero.
+    ENJIN_EXPECT_FLOAT_NEAR(t.ClampHeight(-1.0f), -1.0f, 0.001f);
+}
+
+// The default depth is the same distance down as the component already allowed
+// up. A guessed depth would be a number nobody chose; symmetry is the one
+// figure here that is derived rather than invented.
+ENJIN_TEST(TerrainRange, TheDefaultDepthMirrorsTheDefaultHeight) {
+    const ECS::TerrainComponent t;
+    ENJIN_EXPECT_FLOAT_NEAR(t.minHeight, -t.maxHeight, 0.001f);
+    ENJIN_EXPECT_TRUE(t.minHeight < 0.0f);
+}
+
 ENJIN_TEST_MAIN()

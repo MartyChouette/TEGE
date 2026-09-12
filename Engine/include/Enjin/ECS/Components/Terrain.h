@@ -12,6 +12,19 @@ struct ENJIN_API TerrainComponent {
     u32 gridWidth = 64, gridHeight = 64;
     f32 cellSize = 1.0f;
     f32 maxHeight = 20.0f;
+
+    // How far BELOW the transform plane a cell may go.
+    //
+    // Every sculpt was clamped to [0, maxHeight], so Lower stopped dead at the
+    // origin: you could raise hills and you could flatten them again, and that
+    // was the whole range. A riverbed, a quarry, a sunken road and a moat were
+    // all unreachable, and nothing said why -- the brush kept working and the
+    // ground simply refused to move.
+    //
+    // Symmetric with maxHeight by default rather than a guessed depth: the same
+    // distance down as the component already allows up is the one figure here
+    // that is not an invention.
+    f32 minHeight = -20.0f;
     std::vector<f32> heightmap;  // gridWidth * gridHeight
 
     struct TextureLayer {
@@ -35,6 +48,18 @@ struct ENJIN_API TerrainComponent {
     //
     // One helper, because the disagreement was between three places that each
     // did the conversion themselves.
+    // The range a cell is allowed to occupy, in one place.
+    //
+    // The clamp used to be written inline in the sculpt with a hardcoded 0 floor
+    // (`max(0.0f, min(maxHeight, h))`), which is what made Lower a tool that
+    // could only undo Raise. Anything that writes a height goes through here so
+    // a second writer cannot reintroduce a different floor.
+    f32 ClampHeight(f32 h) const {
+        if (h < minHeight) return minHeight;
+        if (h > maxHeight) return maxHeight;
+        return h;
+    }
+
     Math::Vector3 GridOrigin(const Math::Vector3& transformPosition) const {
         const f32 halfW = static_cast<f32>(gridWidth - 1) * cellSize * 0.5f;
         const f32 halfH = static_cast<f32>(gridHeight - 1) * cellSize * 0.5f;

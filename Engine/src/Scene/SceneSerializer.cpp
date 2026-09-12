@@ -1350,6 +1350,7 @@ json SerializeTerrainComponent(const ECS::TerrainComponent& terrain) {
     j["gridHeight"] = RF(terrain.gridHeight);
     j["cellSize"] = RF(terrain.cellSize);
     j["maxHeight"] = RF(terrain.maxHeight);
+    j["minHeight"] = RF(terrain.minHeight);
     j["heightmap"] = terrain.heightmap;
     j["splatmap"] = terrain.splatmap;
     json layersArr = json::array();
@@ -1369,6 +1370,10 @@ ECS::TerrainComponent DeserializeTerrainComponent(const json& j) {
     if (j.contains("gridHeight")) terrain.gridHeight = std::min(j["gridHeight"].get<u32>(), 4096u);
     if (j.contains("cellSize")) terrain.cellSize = j["cellSize"].get<f32>();
     if (j.contains("maxHeight")) terrain.maxHeight = j["maxHeight"].get<f32>();
+    // Absent in scenes authored before terrain could go below the origin. The
+    // component default (-maxHeight) then applies, which widens what those
+    // scenes ALLOW without changing a single height they stored.
+    if (j.contains("minHeight")) terrain.minHeight = j["minHeight"].get<f32>();
     if (j.contains("heightmap") && j["heightmap"].is_array()) {
         static constexpr usize kMaxGridElements = 4096ull * 4096ull;
         usize expected = static_cast<usize>(terrain.gridWidth) * terrain.gridHeight;

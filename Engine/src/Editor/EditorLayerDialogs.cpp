@@ -2097,8 +2097,20 @@ void EditorLayer::DrawNewProjectDialog() {
 
 bool EditorLayer::RaycastTerrain(const Ray& ray, ECS::TerrainComponent* terrain,
                                   const ECS::TransformComponent* transform,
-                                  Math::Vector3& hitPoint) {
+                                  Math::Vector3& hitPoint,
+                                  const std::vector<f32>* heights) {
     if (!terrain || terrain->heightmap.empty()) return false;
+
+    // Read heights from the override when one is given and it matches the grid.
+    // A mismatched override is ignored rather than indexed into: the caller's
+    // snapshot can be from a terrain that has since been resized.
+    const std::vector<f32>* src =
+        (heights && heights->size() == terrain->heightmap.size()) ? heights : nullptr;
+    auto H = [&](u32 x, u32 z) -> f32 {
+        if (!src) return terrain->GetHeight(x, z);
+        if (x >= terrain->gridWidth || z >= terrain->gridHeight) return 0.0f;
+        return (*src)[static_cast<usize>(z) * terrain->gridWidth + x];
+    };
 
     // Grid cell (0,0) in world space -- the mesh is centred on the transform, so
     // this is not the transform position. Same fix as ApplyBrush, and through
@@ -2111,9 +2123,11 @@ bool EditorLayer::RaycastTerrain(const Ray& ray, ECS::TerrainComponent* terrain,
     // Quick reject: if ray is parallel to XZ plane and above max height, no hit
     if (std::abs(ray.direction.y) < 1e-6f) return false;
 
-    // Find approximate t where ray reaches terrain base plane (Y = origin.y)
-    f32 tBase = (origin.y - ray.origin.y) / ray.direction.y;
-    // Also check top plane
+    // The slab the heightmap can occupy, which now extends BELOW the transform
+    // plane. Marching from y=origin.y down missed every cell a Lower stroke had
+    // dug, so a second stroke aimed into a pit fell through to the flat build
+    // plane and sculpted the rim instead of the floor.
+    f32 tBase = (origin.y + terrain->minHeight - ray.origin.y) / ray.direction.y;
     f32 tTop = (origin.y + terrain->maxHeight - ray.origin.y) / ray.direction.y;
 
     f32 tMin = std::min(tBase, tTop);
@@ -2146,10 +2160,10 @@ bool EditorLayer::RaycastTerrain(const Ray& ray, ECS::TerrainComponent* terrain,
         f32 fx = gx - static_cast<f32>(ix);
         f32 fz = gz - static_cast<f32>(iz);
 
-        f32 h00 = terrain->GetHeight(ix, iz);
-        f32 h10 = terrain->GetHeight(ix + 1, iz);
-        f32 h01 = terrain->GetHeight(ix, iz + 1);
-        f32 h11 = terrain->GetHeight(ix + 1, iz + 1);
+        f32 h00 = H(ix, iz);
+        f32 h10 = H(ix + 1, iz);
+        f32 h01 = H(ix, iz + 1);
+        f32 h11 = H(ix + 1, iz + 1);
         f32 terrainH = h00 * (1 - fx) * (1 - fz) + h10 * fx * (1 - fz)
                       + h01 * (1 - fx) * fz + h11 * fx * fz;
 
@@ -2173,10 +2187,10 @@ bool EditorLayer::RaycastTerrain(const Ray& ray, ECS::TerrainComponent* terrain,
                 mfx = std::max(0.0f, std::min(1.0f, mfx));
                 mfz = std::max(0.0f, std::min(1.0f, mfz));
 
-                f32 mh = terrain->GetHeight(mix, miz) * (1 - mfx) * (1 - mfz)
-                        + terrain->GetHeight(mix + 1, miz) * mfx * (1 - mfz)
-                        + terrain->GetHeight(mix, miz + 1) * (1 - mfx) * mfz
-                        + terrain->GetHeight(mix + 1, miz + 1) * mfx * mfz;
+                f32 mh = H(mix, miz) * (1 - mfx) * (1 - mfz)
+                        + H(mix + 1, miz) * mfx * (1 - mfz)
+                        + H(mix, miz + 1) * (1 - mfx) * mfz
+                        + H(mix + 1, miz + 1) * mfx * mfz;
 
                 if (mp.y <= origin.y + mh) hi = mid;
                 else lo = mid;

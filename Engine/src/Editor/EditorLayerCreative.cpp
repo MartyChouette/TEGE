@@ -1548,10 +1548,18 @@ void EditorLayer::HandleCreativeTerrain(const Math::Vector3& ground, bool onGrou
             // plane: once a hill exists the two are metres apart, and a stroke
             // aimed at a peak lands somewhere on its far side. The ground plane
             // is the fallback for a ray that misses the heightmap entirely.
+            //
+            // Aimed at the terrain as it was when the stroke STARTED. Against
+            // the live surface the stroke walks: the hill it is raising
+            // intercepts the ray nearer the camera each frame, so the next stamp
+            // lands there and the whole stroke crawls away from a cursor that
+            // never moved. The undo snapshot is already exactly the right
+            // picture -- the terrain before this stroke touched it.
             Math::Vector3 hit = ground;
             const Ray ray = ScenePicker::ScreenToRay(m_Camera, localX, localY, viewW, viewH);
             Math::Vector3 surfaceHit;
-            if (RaycastTerrain(ray, terrain, xf, surfaceHit)) hit = surfaceHit;
+            if (RaycastTerrain(ray, terrain, xf, surfaceHit, &m_TerrainUndoHeightmapSnapshot))
+                hit = surfaceHit;
 
             ApplyBrush(terrain, xf, hit, ImGui::GetIO().DeltaTime);
         }
