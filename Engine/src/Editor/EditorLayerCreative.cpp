@@ -285,6 +285,12 @@ f32 EditorLayer::CreativeSurfaceWidthPx() const {
 }
 
 void EditorLayer::DrawCreativeSurface() {
+    // Cleared FIRST so that leaving creative mode leaves no stale rectangle
+    // behind. A rect that outlives the thing it describes is worse than no rect:
+    // it would tell injected input to avoid a region that is now open ground.
+    m_CreativeSurfaceMinX = m_CreativeSurfaceMinY = 0.0f;
+    m_CreativeSurfaceMaxX = m_CreativeSurfaceMaxY = 0.0f;
+
     if (!m_Creative.IsActive()) return;
 
     // Below the main menu bar, not over it. The first version used the viewport
@@ -334,6 +340,14 @@ void EditorLayer::DrawCreativeSurface() {
         const ImVec2 o = ImGui::GetWindowPos();
         const f32 h = ImGui::GetWindowSize().y;
         const f32 optX  = o.x + railW;
+
+        // Record where the surface is, so injected input can aim past it.
+        // Recorded HERE rather than computed by the caller, because the size
+        // depends on the fitted scale this function derives.
+        m_CreativeSurfaceMinX = o.x;
+        m_CreativeSurfaceMinY = o.y;
+        m_CreativeSurfaceMaxX = o.x + surfaceW;
+        m_CreativeSurfaceMaxY = o.y + h;
         const f32 innerW = (kCreativeOptionsWidth * ui) - kPad * 2.0f;
 
         auto text = [&](f32 size, const ImVec2& at, ImU32 col, const char* str, f32 wrap = 0.0f) {
@@ -944,7 +958,25 @@ void EditorLayer::HandleBuildDrag() {
     // The button is not down and we still think a gesture is running: the
     // release was eaten (focus loss), so end it here instead of waiting for one
     // that is never coming.
-    if ((m_BuildDragging || m_BrushActive) && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+    //
+    // The release edge has to be excluded, and leaving it out cost every
+    // press-drag-release tool in the mode.
+    //
+    // On the frame a drag ends normally, IsMouseDown is ALREADY false -- that is
+    // what a release is -- while IsMouseReleased is true for that one frame. So
+    // this ran on every successful release, cancelled the gesture, and the
+    // commit below never saw m_BuildDragging set. Wall, Floor, Stairs, Brush,
+    // Water, Ladder and Prop all dragged out a live preview, showed the length
+    // in metres, and then built nothing on release. Path, Terrain, Reduce and
+    // Edit return before this point and so kept working, which is why the mode
+    // looked half-alive rather than broken: "none of the items really drag and
+    // drop", with the four that are not drags fine.
+    //
+    // A release that was really eaten leaves the button up with no edge at all,
+    // which is what this now tests for.
+    if ((m_BuildDragging || m_BrushActive) &&
+        GestureWasAbandoned(ImGui::IsMouseDown(ImGuiMouseButton_Left),
+                            ImGui::IsMouseReleased(ImGuiMouseButton_Left))) {
         CancelCreativeGesture();
     }
 
@@ -955,6 +987,7 @@ void EditorLayer::HandleBuildDrag() {
     Math::Vector3 ground;
     const bool onGround = CreativeGroundPoint(localX, localY, vpW, vpH, ground);
     if (onGround) ground = m_Creative.SnapToGrid(ground);
+    m_CreativeOnGroundThisFrame = onGround;
 
     // Say when the ground is out of reach, instead of doing nothing.
     //

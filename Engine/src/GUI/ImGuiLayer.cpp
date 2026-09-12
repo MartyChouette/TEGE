@@ -189,6 +189,10 @@ void ImGuiLayer::BeginFrame() {
 
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
+    // Injected input goes HERE: after the GLFW backend has queued the real
+    // cursor, before NewFrame applies the queue. Earlier and the hardware mouse
+    // overwrites it; later and it is a frame behind every widget that reads it.
+    if (m_PreNewFrame) m_PreNewFrame();
     ImGui::NewFrame();
 }
 

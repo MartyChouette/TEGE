@@ -73,6 +73,27 @@ enum class BuildTool : u8 {
 
 ENJIN_API const char* BuildToolName(BuildTool tool);
 
+// The inverse, case-insensitive. Reads BuildToolName rather than carrying a
+// second table, so a renamed tool cannot end up answering to its old name here
+// and its new one on the rail. Returns false for a name no tool has.
+ENJIN_API bool BuildToolFromName(const char* name, BuildTool& out);
+
+// Was a gesture in progress ABANDONED, as opposed to finished?
+//
+// Both look the same in the one place it matters: on the frame a drag ends
+// normally the button is already up. What separates them is the release EDGE --
+// a finished drag has one, a gesture whose release was eaten by a focus loss
+// does not. Testing only "the button is up" therefore cancels every successful
+// drag one frame before it can commit, which is exactly what happened: Wall,
+// Floor, Stairs, Brush, Water, Ladder and Prop dragged out a live preview
+// showing the length in metres and then built nothing, for three days.
+//
+// It is a named function rather than two terms in an if, so the distinction has
+// somewhere to be written down and somewhere to be tested.
+inline bool GestureWasAbandoned(bool buttonDown, bool releasedThisFrame) {
+    return !buttonDown && !releasedThisFrame;
+}
+
 // Which band of the rail a tool sits in: structure, volume, object, edit. A
 // separator is drawn wherever this changes, and the surface's height budget
 // counts them, so it lives here rather than in the drawing code.

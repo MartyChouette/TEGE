@@ -1429,6 +1429,27 @@ private:
     bool m_EditorViewportHovered = false;
     bool m_EditorViewportFocused = false;
 
+    // The creative build surface's rectangle, in window pixels.
+    //
+    // The surface is its own borderless window pinned over the LEFT of the Scene
+    // viewport, so part of "the viewport" is chrome, not ground. A human sees
+    // that and aims past it. Injected input cannot, and the first MCP drags I
+    // aimed by normalized viewport coordinate pressed tool buttons instead --
+    // reporting "dragging" while selecting Path, and then Reduce.  So the rect
+    // is recorded where it is drawn, and the injection reads it.
+    //
+    // Zero when the surface is not on screen (Developer mode, or before the
+    // first draw), which is exactly "no chrome to avoid".
+    f32 m_CreativeSurfaceMinX = 0.0f, m_CreativeSurfaceMinY = 0.0f;
+    f32 m_CreativeSurfaceMaxX = 0.0f, m_CreativeSurfaceMaxY = 0.0f;
+
+    // Did the cursor have ground under it last frame? Recorded by HandleBuildDrag
+    // so the reason a click did not build can be READ rather than photographed.
+    // The on-screen readout already says this, but reading it meant capturing
+    // the screen, which means raising the editor over whatever the person at
+    // the machine is actually doing.
+    bool m_CreativeOnGroundThisFrame = false;
+
     // Viewport aspect ratio constraint
     enum class AspectRatio : u8 {
         Free = 0,   // Fill panel
@@ -2213,6 +2234,51 @@ private:
         f32 charTimer = 0.0f;
     };
     std::vector<McpInputAction> m_McpInputQueue;
+
+    // Injected EDITOR mouse, one step per frame.
+    //
+    // Separate from m_McpInputQueue, which feeds Enjin::Input and only runs
+    // during play. The editor's own tools read ImGui's mouse -- IsMouseClicked,
+    // GetIO().MousePos -- so driving them means ImGui IO events, and they have
+    // to work while play is STOPPED, which is exactly when you build.
+    //
+    // A step per frame because a drag is not a position: a build gesture needs a
+    // frame where the button goes down, frames where it moves, and a frame where
+    // it comes up. Collapsing that into one frame gives a click, not a drag.
+    struct McpMouseStep {
+        f32 x = 0.0f, y = 0.0f;   // window coordinates
+        i32 button = 0;
+        bool down = false;
+    };
+    std::vector<McpMouseStep> m_McpMouseSteps;
+    bool m_McpMouseActive = false;
+    // True only while THIS is what turned replay injection on, so ending a
+    // gesture cannot switch off an injection stream someone else owns.
+    bool m_McpMouseOwnsInjection = false;
+    // The button state already sent. A button event is only emitted on a
+    // CHANGE: re-sending "down" every frame made ImGui see a fresh press each
+    // frame, so the build drag restarted continuously and its start point
+    // followed the cursor. The wall being dragged stayed one frame long --
+    // measured at 0.50 m across a drag spanning a third of the viewport.
+    bool m_McpMouseDownSent = false;
+    void PumpMcpMouse();
+
+public:
+    // Queue an editor mouse gesture. Coordinates are WINDOW pixels; the MCP
+    // layer converts from the Scene viewport for callers who think in it.
+    void McpQueueMouseSteps(std::vector<McpMouseStep> steps) {
+        for (auto& s : steps) m_McpMouseSteps.push_back(s);
+    }
+    bool McpMouseBusy() const { return !m_McpMouseSteps.empty(); }
+    void McpCreativeSurfaceRect(f32& x0, f32& y0, f32& x1, f32& y1) const {
+        x0 = m_CreativeSurfaceMinX; y0 = m_CreativeSurfaceMinY;
+        x1 = m_CreativeSurfaceMaxX; y1 = m_CreativeSurfaceMaxY;
+    }
+    void McpSceneViewportRect(f32& x0, f32& y0, f32& x1, f32& y1) const {
+        x0 = m_EditorViewportImageMinX; y0 = m_EditorViewportImageMinY;
+        x1 = m_EditorViewportImageMaxX; y1 = m_EditorViewportImageMaxY;
+    }
+private:
     bool m_McpInjecting = false;
     void ProcessMcpInput(f32 deltaTime);
 

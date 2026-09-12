@@ -285,6 +285,10 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
 
     m_ImGuiLayer->ApplyTheme(m_EditorSettings.theme, &m_EditorSettings.accentColors);
     m_ImGuiLayer->SetGlobalScale(m_EditorSettings.uiScale);
+
+    // Injected editor mouse. Installed once; the pump does nothing when no
+    // gesture is queued, which is almost always.
+    m_ImGuiLayer->SetPreNewFrameCallback([this]() { PumpMcpMouse(); });
     // Apply dyslexia-friendly spacing to ImGui (increased item/frame padding for readability)
     if (m_EditorSettings.dyslexiaFontEnabled) {
         ImGuiStyle& style = ImGui::GetStyle();
@@ -1291,6 +1295,162 @@ void EditorLayer::Update(f32 deltaTime) {
                     a.remainingMs = 100.0f;
                     m_McpInputQueue.push_back(std::move(a));
                     return std::string("clicked");
+                }
+                if (op == "editor_set_build_tool") {
+                    // The rail is the human path and stays the only one that
+                    // matters; this exists because the rail sits OUTSIDE the
+                    // Scene viewport, so an injected gesture aimed in viewport
+                    // coordinates cannot reach it, and every tool would
+                    // otherwise be untestable without a person clicking it.
+                    if (!m_Creative.IsActive())
+                        return std::string("error: no build surface -- switch to Creative or Tutorial mode");
+
+                    BuildTool t = BuildTool::Wall;
+                    const std::string want = args.value("tool", std::string());
+                    if (!BuildToolFromName(want.c_str(), t)) {
+                        std::string names;
+                        for (u8 i = 0; i < static_cast<u8>(BuildTool::Count); ++i) {
+                            if (i) names += ", ";
+                            names += BuildToolName(static_cast<BuildTool>(i));
+                        }
+                        return std::string("error: no build tool named '") + want +
+                               "'. Tools: " + names;
+                    }
+                    m_Creative.SetTool(t);
+                    return std::string("build tool is now ") + BuildToolName(t);
+                }
+                if (op == "editor_viewport_info") {
+                    // Everything needed to aim an injected gesture, in one read.
+                    //
+                    // Added after aiming three gestures by eye and hitting the
+                    // tool rail every time. Normalized coordinates over "the
+                    // viewport" are not enough on their own, because part of the
+                    // viewport is the build surface.
+                    f32 vx0 = 0.0f, vy0 = 0.0f, vx1 = 0.0f, vy1 = 0.0f;
+                    McpSceneViewportRect(vx0, vy0, vx1, vy1);
+                    f32 sx0 = 0.0f, sy0 = 0.0f, sx1 = 0.0f, sy1 = 0.0f;
+                    McpCreativeSurfaceRect(sx0, sy0, sx1, sy1);
+
+                    nlohmann::json out;
+                    out["scene_viewport_px"] = {{"x0", vx0}, {"y0", vy0},
+                                                {"x1", vx1}, {"y1", vy1}};
+                    out["scene_view_visible"] = m_SceneViewVisibleThisFrame;
+                    out["editor_mode"] = EditorModeName(m_EditorMode);
+                    out["play_stopped"] = m_PlayMode.IsStopped();
+                    out["build_surface_active"] = m_Creative.IsActive();
+                    out["build_tool"] = m_Creative.IsActive()
+                                            ? BuildToolName(m_Creative.GetTool())
+                                            : "";
+                    out["mouse_gesture_busy"] = McpMouseBusy();
+
+                    // The three conditions a press has to satisfy before it
+                    // builds, as they stood LAST frame. Poll this during a
+                    // gesture and whichever one is false is the answer.
+                    out["viewport_hovered"] = m_EditorViewportHovered;
+                    out["ground_under_cursor"] = m_CreativeOnGroundThisFrame;
+                    out["build_dragging"] = m_BuildDragging;
+                    out["mouse_px"] = {{"x", ImGui::GetIO().MousePos.x},
+                                       {"y", ImGui::GetIO().MousePos.y}};
+
+                    const f32 vw = vx1 - vx0, vh = vy1 - vy0;
+                    if (vw > 1.0f && vh > 1.0f && sx1 > sx0) {
+                        // The part of the viewport that is actually ground, in
+                        // the same normalized units editor_drag takes.
+                        out["buildable_x_min"] = std::clamp((sx1 - vx0) / vw, 0.0f, 1.0f);
+                        out["build_surface_px"] = {{"x0", sx0}, {"y0", sy0},
+                                                   {"x1", sx1}, {"y1", sy1}};
+                    } else {
+                        out["buildable_x_min"] = 0.0f;
+                    }
+                    return out.dump();
+                }
+                if (op == "editor_drag" || op == "editor_click") {
+                    // Drives the EDITOR, so unlike click_at this must work with
+                    // play STOPPED -- building is something you do stopped.
+                    if (!m_SceneViewVisibleThisFrame &&
+                        m_EditorViewportImageMaxX <= m_EditorViewportImageMinX)
+                        return std::string("error: the Scene viewport is not visible");
+
+                    const f32 vx0 = m_EditorViewportImageMinX;
+                    const f32 vy0 = m_EditorViewportImageMinY;
+                    const f32 vw = m_EditorViewportImageMaxX - vx0;
+                    const f32 vh = m_EditorViewportImageMaxY - vy0;
+                    if (vw <= 1.0f || vh <= 1.0f)
+                        return std::string("error: the Scene viewport has no area");
+
+                    const bool isDrag = (op == "editor_drag");
+                    const f32 fx = isDrag ? args.value("from_x", -1.0f) : args.value("x", -1.0f);
+                    const f32 fy = isDrag ? args.value("from_y", -1.0f) : args.value("y", -1.0f);
+                    const f32 tx = isDrag ? args.value("to_x", -1.0f) : fx;
+                    const f32 ty = isDrag ? args.value("to_y", -1.0f) : fy;
+                    auto bad = [](f32 v) { return v < 0.0f || v > 1.0f; };
+                    if (bad(fx) || bad(fy) || bad(tx) || bad(ty))
+                        return std::string("error: coordinates must be normalized 0..1 over the Scene viewport");
+
+                    const i32 button =
+                        (args.value("button", std::string("left")) == "right") ? 1 : 0;
+                    i32 steps = isDrag ? args.value("steps", 8) : 1;
+                    steps = std::clamp(steps, 1, 120);
+
+                    std::vector<McpMouseStep> out;
+                    auto at = [&](f32 nx, f32 ny, bool down) {
+                        McpMouseStep s;
+                        s.x = vx0 + nx * vw;
+                        s.y = vy0 + ny * vh;
+                        s.button = button;
+                        s.down = down;
+                        out.push_back(s);
+                    };
+
+                    // A frame at the start position with the button UP, so ImGui
+                    // sees the cursor arrive before it sees the press. Without
+                    // it the press and the move land on the same frame and
+                    // IsMouseClicked fires at the previous cursor position.
+                    at(fx, fy, false);
+                    at(fx, fy, true);
+                    for (i32 i = 1; i <= steps; ++i) {
+                        const f32 u = static_cast<f32>(i) / static_cast<f32>(steps);
+                        at(fx + (tx - fx) * u, fy + (ty - fy) * u, true);
+                    }
+                    at(tx, ty, false);
+
+                    // Refuse a press that lands on the build surface.
+                    //
+                    // The surface is a window pinned over the LEFT of the Scene
+                    // viewport, so a normalized viewport coordinate can land on
+                    // a tool button, and the first drags I aimed this way did:
+                    // they selected Path, then Reduce, while the call reported
+                    // "dragging". A gesture that presses chrome and claims to
+                    // have dragged the ground is the exact failure this whole
+                    // pass is about, so it is an error with the numbers needed
+                    // to aim again, not a silent button press.
+                    f32 sx0 = 0.0f, sy0 = 0.0f, sx1 = 0.0f, sy1 = 0.0f;
+                    McpCreativeSurfaceRect(sx0, sy0, sx1, sy1);
+                    const bool haveSurface = (sx1 > sx0 && sy1 > sy0);
+                    auto onSurface = [&](const McpMouseStep& st) {
+                        return haveSurface && st.x >= sx0 && st.x <= sx1 &&
+                               st.y >= sy0 && st.y <= sy1;
+                    };
+                    if (!out.empty() && onSurface(out.front())) {
+                        const f32 minX = (sx1 - vx0) / vw;
+                        char msg[256];
+                        std::snprintf(msg, sizeof(msg),
+                                      "error: x=%.3f is on the build surface, not the ground. "
+                                      "The surface covers x 0.000..%.3f of the Scene viewport; "
+                                      "start the gesture at x > %.3f.",
+                                      fx, minX, minX);
+                        return std::string(msg);
+                    }
+
+                    // Name the tool the gesture will drive. Queued gestures are
+                    // applied a frame later, so this is what is armed NOW -- the
+                    // caller can compare it against what it meant to use instead
+                    // of finding out from the name of the entity that appeared.
+                    const char* driving = m_Creative.IsActive()
+                                              ? BuildToolName(m_Creative.GetTool())
+                                              : "no build tool (Developer mode)";
+                    McpQueueMouseSteps(std::move(out));
+                    return std::string(isDrag ? "dragging with " : "clicking with ") + driving;
                 }
                 if (op == "type_text") {
                     if (m_PlayMode.IsStopped()) return std::string("error: start play mode first");
@@ -6235,6 +6395,71 @@ void EditorLayer::WriteGoldenCapture() {
 // Edge semantics come free (injection keeps previous-frame bookkeeping), and
 // releasing is just the action expiring - the next frame's merge no longer
 // holds the key.
+// Apply one injected mouse step per frame, straight into ImGui's event queue.
+//
+// Runs from the ImGuiLayer hook between the GLFW backend's NewFrame and ImGui's,
+// because that is the only point where an injected position is not immediately
+// overwritten by the hardware cursor.
+void EditorLayer::PumpMcpMouse() {
+    if (m_McpMouseSteps.empty()) {
+        if (m_McpMouseOwnsInjection) {
+            Input::SetReplayInjection(false);
+            m_McpMouseOwnsInjection = false;
+        }
+        m_McpMouseActive = false;
+        return;
+    }
+
+    const McpMouseStep step = m_McpMouseSteps.front();
+    m_McpMouseSteps.erase(m_McpMouseSteps.begin());
+    m_McpMouseActive = true;
+
+    ImGuiIO& io = ImGui::GetIO();
+    io.AddMousePosEvent(step.x, step.y);
+
+    // Only on a transition. Emitting "down" every frame is a fresh press every
+    // frame as far as ImGui is concerned, and IsMouseClicked then fires
+    // continuously -- which restarts the build drag each frame and drags its
+    // start point along with the cursor.
+    if (step.down != m_McpMouseDownSent) {
+        io.AddMouseButtonEvent(step.button, step.down);
+        m_McpMouseDownSent = step.down;
+    }
+
+    // ImGui is not enough on its own.
+    //
+    // The editor's build tools deliberately read Enjin::Input rather than ImGui:
+    // EditorLayer::Update runs BEFORE ImGui::NewFrame, so HandleCreativePlacement
+    // cannot call an ImGui function at all. Feeding only ImGui therefore drove
+    // every button and gizmo in the editor while the build surface sat there
+    // reporting "cursor not over the viewport" -- which was the literal truth
+    // from where it was looking.
+    //
+    // Input's replay-injection stream is the existing way to force a frame's
+    // mouse state, and it keeps the previous-frame bookkeeping, so pressed and
+    // released edges resolve against the injected stream exactly as they do
+    // against hardware.
+    //
+    // It is applied at the NEXT Input::Update, so this channel trails the ImGui
+    // one by a frame. That does not matter for a drag: the gesture starts and
+    // ends with an idle frame at each endpoint, so the skew lands on frames
+    // where nothing changes.
+    if (!m_McpMouseOwnsInjection) {
+        // Never fight a replay that is already playing back.
+        if (Input::IsReplayInjectionActive()) return;
+        Input::SetReplayInjection(true);
+        m_McpMouseOwnsInjection = true;
+    }
+
+    // Keys read as up for the length of the gesture (well under a second). A
+    // mouse gesture is a mouse gesture; synthesizing keyboard state here would
+    // let an injected drag fire shortcuts nobody asked for.
+    bool keys[512] = {};
+    bool mouse[8] = {};
+    if (step.button >= 0 && step.button < 8) mouse[step.button] = step.down;
+    Input::InjectFrameState(keys, mouse, Math::Vector2(step.x, step.y));
+}
+
 void EditorLayer::ProcessMcpInput(f32 deltaTime) {
     if (m_McpInputQueue.empty()) {
         if (m_McpInjecting) {

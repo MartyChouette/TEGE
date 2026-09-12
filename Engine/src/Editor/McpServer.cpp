@@ -112,6 +112,31 @@ static json ToolList() {
              {{"x", {{"type", "number"}}}, {"y", {{"type", "number"}}},
               {"button", {{"type", "string"}, {"enum", {"left", "right"}}}}},
              json::array({"x", "y"})),
+        tool("editor_set_build_tool", "Arm one of the creative build tools by name (Wall, Floor, "
+                                      "Stairs, Path, Brush, Water, Plants, Prop, Terrain, Ladder, "
+                                      "Reduce, Edit) -- the same thing clicking the rail does. The "
+                                      "rail sits outside the Scene viewport, so editor_click cannot "
+                                      "reach it.",
+             {{"tool", {{"type", "string"}}}}, json::array({"tool"})),
+        tool("editor_viewport_info", "Where the EDITOR's Scene viewport is, what part of it is "
+                                     "covered by the build surface, which build tool is armed, and "
+                                     "whether play is stopped. Read this before aiming editor_drag: "
+                                     "buildable_x_min is the smallest normalized x that is ground "
+                                     "rather than chrome.",
+             json::object(), json::array()),
+        tool("editor_drag", "Drag the mouse across the EDITOR's Scene viewport -- the gesture the "
+                            "creative build tools read. Works while play is STOPPED, which is when you "
+                            "build. Coordinates are normalized 0..1 over the Scene viewport image.",
+             {{"from_x", {{"type", "number"}}}, {"from_y", {{"type", "number"}}},
+              {"to_x", {{"type", "number"}}}, {"to_y", {{"type", "number"}}},
+              {"button", {{"type", "string"}, {"enum", {"left", "right"}}}},
+              {"steps", {{"type", "integer"}, {"description", "frames the drag is spread over (default 8)"}}}},
+             json::array({"from_x", "from_y", "to_x", "to_y"})),
+        tool("editor_click", "Click once in the EDITOR's Scene viewport. Normalized 0..1 over the "
+                             "viewport image. Works while play is stopped.",
+             {{"x", {{"type", "number"}}}, {"y", {{"type", "number"}}},
+              {"button", {{"type", "string"}, {"enum", {"left", "right"}}}}},
+             json::array({"x", "y"})),
         tool("type_text", "Type text into the running game (feeds the same character queue Input_GetTextInput reads, paced like a human).",
              {{"text", {{"type", "string"}}}},
              json::array({"text"})),
@@ -147,7 +172,9 @@ json McpServerCallTool(McpServer* self, ECS::World* world,
     auto needWorld = [&]() -> ECS::World* { return world; };
 
     if (name == "list_scenes" || name == "open_scene" || name == "save_scene" || name == "get_log" ||
-        name == "press_key" || name == "click_at" || name == "type_text") {
+        name == "press_key" || name == "click_at" || name == "type_text" ||
+        name == "editor_drag" || name == "editor_click" ||
+        name == "editor_viewport_info" || name == "editor_set_build_tool") {
         if (!editorTool) return ToolText("editor tools not available in this context", true);
         std::string r = editorTool(name, args.dump());
         return ToolText(r, r.rfind("error", 0) == 0);

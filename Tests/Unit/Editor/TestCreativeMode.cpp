@@ -478,10 +478,16 @@ ENJIN_TEST(CreativeMode, ALadderHasTwoRailsAndOneBrushPerRung) {
     ENJIN_EXPECT_FALSE(solid.generateCollider);
 }
 
-// A TerrainComponent grid runs from its transform out to +X/+Z rather than
-// straddling it, so the origin has to be the CORNER that puts the first stroke
-// in the middle. Get this wrong and a fresh terrain appears off to one side and
-// the stroke that made it lands on nothing.
+// A terrain mesh is CENTRED on its transform -- MeshFactory::CreateTerrain
+// builds its vertices at `x * cellSize - halfW` -- so the placement origin is
+// the press point itself, with no corner arithmetic.
+//
+// This test used to assert the opposite, because the placement, the brush and
+// the raycast all believed the grid ran from the transform out to +X/+Z. They
+// agreed with each other and disagreed with the renderer, which is why the
+// brush ring drew in exactly the right place and the bump appeared 31.5 metres
+// away. TerrainComponent::GridOrigin is now the single conversion and
+// TestTerrainOrigin ties it to the renderer's own first vertex.
 ENJIN_TEST(CreativeMode, AFreshTerrainIsCentredOnTheStrokeThatMadeIt) {
     BuildToolSettings s;
     bool ok = false;
@@ -489,12 +495,14 @@ ENJIN_TEST(CreativeMode, AFreshTerrainIsCentredOnTheStrokeThatMadeIt) {
         Plan(BuildTool::Terrain, s, Vector3(10, 0, -6), Vector3(10, 0, -6), &ok);
 
     ENJIN_ASSERT_TRUE(ok);
+    ENJIN_EXPECT_FLOAT_NEAR(p.origin.x, 10.0f, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(p.origin.z, -6.0f, 0.001f);
+
+    // The half-extents still describe the grid's reach, so the stroke sits in
+    // the middle of a terrain that spans an equal distance either side of it.
     const f32 half = static_cast<f32>(kCreativeTerrainGrid) * kCreativeTerrainCell * 0.5f;
-    ENJIN_EXPECT_FLOAT_NEAR(p.origin.x, 10.0f - half, 0.001f);
-    ENJIN_EXPECT_FLOAT_NEAR(p.origin.z, -6.0f - half, 0.001f);
-    // The press point is the middle of the grid the corner describes.
-    ENJIN_EXPECT_FLOAT_NEAR(p.origin.x + half, 10.0f, 0.001f);
-    ENJIN_EXPECT_FLOAT_NEAR(p.origin.z + half, -6.0f, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(p.halfExtents.x, half, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(p.halfExtents.z, half, 0.001f);
 }
 
 // The two creation paths do not overlap: BuildBrushes owns the brush tools and
@@ -1167,6 +1175,58 @@ ENJIN_TEST(CreativeMode, BothWaterKindsCoverTheDraggedRectangle) {
     ENJIN_EXPECT_FLOAT_NEAR(a.halfExtents.z, b.halfExtents.z, 0.001f);
     ENJIN_EXPECT_FLOAT_NEAR(a.origin.x, b.origin.x, 0.001f);
     ENJIN_EXPECT_FLOAT_NEAR(a.origin.z, b.origin.z, 0.001f);
+}
+
+// The bug this pins down shipped for three days and killed seven tools.
+//
+// HandleBuildDrag ends an abandoned gesture so a release eaten by a focus loss
+// does not leave the mode stuck mid-drag forever. It tested only "the button is
+// not down" -- and on the frame a drag ends NORMALLY the button is not down
+// either, because that is what a release is. So every successful drag was
+// cancelled one frame before the commit could run: the preview tracked the
+// cursor, the length in metres updated, and the mouse-up built nothing.
+ENJIN_TEST(CreativeGesture, ANormalReleaseIsNotAnAbandonedGesture) {
+    // The release frame: button already up, edge present. This is the case the
+    // original condition got wrong.
+    ENJIN_EXPECT_FALSE(GestureWasAbandoned(false, true));
+}
+
+ENJIN_TEST(CreativeGesture, AnEatenReleaseIsAbandoned) {
+    // Button up, and no edge ever arrived -- a focus loss mid-drag.
+    ENJIN_EXPECT_TRUE(GestureWasAbandoned(false, false));
+}
+
+ENJIN_TEST(CreativeGesture, AGestureStillHeldIsNeitherFinishedNorAbandoned) {
+    ENJIN_EXPECT_FALSE(GestureWasAbandoned(true, false));
+}
+
+// Every tool answers to the name the rail prints for it, whatever the case, and
+// no two tools answer to the same name.
+ENJIN_TEST(CreativeGesture, EveryToolRoundTripsThroughItsOwnName) {
+    usize matched = 0;
+    for (u8 i = 0; i < static_cast<u8>(BuildTool::Count); ++i) {
+        const BuildTool want = static_cast<BuildTool>(i);
+        BuildTool got = BuildTool::Count;
+        ENJIN_ASSERT_TRUE(BuildToolFromName(BuildToolName(want), got));
+        ENJIN_EXPECT_TRUE(got == want);
+        ++matched;
+    }
+    ENJIN_EXPECT_TRUE(matched == static_cast<usize>(BuildTool::Count));
+}
+
+ENJIN_TEST(CreativeGesture, ToolNamesAreCaseInsensitiveAndUnknownNamesAreRefused) {
+    BuildTool got = BuildTool::Count;
+    ENJIN_ASSERT_TRUE(BuildToolFromName("wall", got));
+    ENJIN_EXPECT_TRUE(got == BuildTool::Wall);
+    ENJIN_ASSERT_TRUE(BuildToolFromName("TERRAIN", got));
+    ENJIN_EXPECT_TRUE(got == BuildTool::Terrain);
+
+    // A name no tool has must fail rather than fall back to the first tool --
+    // a silent fallback would arm Wall and build a wall where a typo asked for
+    // something else entirely.
+    ENJIN_EXPECT_FALSE(BuildToolFromName("Wal", got));
+    ENJIN_EXPECT_FALSE(BuildToolFromName("", got));
+    ENJIN_EXPECT_FALSE(BuildToolFromName(nullptr, got));
 }
 
 ENJIN_TEST_MAIN()

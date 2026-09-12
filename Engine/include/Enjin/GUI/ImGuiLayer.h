@@ -1,4 +1,6 @@
 #pragma once
+
+#include <functional>
 // WHOLE_FILE_WEBGPU_GUARD
 #if !ENJIN_RENDERER_WEBGPU
 
@@ -170,6 +172,16 @@ public:
     // Call at the beginning of each frame
     void BeginFrame();
 
+    // Called between the GLFW backend's NewFrame and ImGui's, which is the only
+    // window where injected mouse events survive.
+    //
+    // ImGui_ImplGlfw_NewFrame queues the REAL cursor position every frame, and
+    // ImGui::NewFrame applies queued events in order -- so anything injected
+    // earlier in the frame is overwritten by the hardware mouse before a widget
+    // ever sees it. Injecting after ImGui::NewFrame is a frame too late. This
+    // is the gap between them.
+    void SetPreNewFrameCallback(std::function<void()> cb) { m_PreNewFrame = std::move(cb); }
+
     // Call at the end of each frame (before present)
     void EndFrame(VkCommandBuffer commandBuffer);
 
@@ -227,6 +239,7 @@ private:
     Window* m_Window = nullptr;
     VkDescriptorPool m_DescriptorPool = VK_NULL_HANDLE;
     bool m_Initialized = false;
+    std::function<void()> m_PreNewFrame;
     bool m_Enabled = true;
 
     // Custom fonts (5-level typography system)

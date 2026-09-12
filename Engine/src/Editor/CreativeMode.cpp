@@ -1,5 +1,7 @@
 #include "Enjin/Editor/CreativeMode.h"
 
+#include <cctype>
+
 #include <algorithm>
 #include <cmath>
 
@@ -30,6 +32,22 @@ f32 HorizontalLength(const Math::Vector3& v) {
 }
 
 } // namespace
+
+bool BuildToolFromName(const char* name, BuildTool& out) {
+    if (!name || !*name) return false;
+    for (u8 i = 0; i < static_cast<u8>(BuildTool::Count); ++i) {
+        const BuildTool t = static_cast<BuildTool>(i);
+        const char* n = BuildToolName(t);
+        usize k = 0;
+        for (;; ++k) {
+            const char a = static_cast<char>(std::tolower(static_cast<unsigned char>(n[k])));
+            const char b = static_cast<char>(std::tolower(static_cast<unsigned char>(name[k])));
+            if (a != b) break;
+            if (a == '\0') { out = t; return true; }
+        }
+    }
+    return false;
+}
 
 const char* BuildToolName(BuildTool tool) {
     switch (tool) {
