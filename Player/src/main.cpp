@@ -39,6 +39,7 @@ static std::string s_ReplayPath;
 #include "Enjin/GUI/ImGuiLayer.h"
 #include "Enjin/GUI/UIFontRegistry.h"
 #include "Enjin/GUI/UITemplates.h"
+#include "Enjin/GUI/UITheme.h"
 #include "Enjin/GUI/UISystem.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/WeatherZone.h"
@@ -329,6 +330,13 @@ public:
             [this](const Enjin::GUI::UIEventData&) {
                 m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::Options);
             });
+        // An authored menu can offer How to Play the same way the built-in one
+        // does; without this the screen exists, is themed, and is unreachable
+        // from a game that authors its own title screen.
+        m_UISystem.GetEventBus().Listen("menu_howtoplay",
+            [this](const Enjin::GUI::UIEventData&) {
+                m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::HowToPlay);
+            });
         m_UISystem.GetEventBus().Listen("menu_quit",
             [this](const Enjin::GUI::UIEventData&) {
                 if (GetWindow()) GetWindow()->Close();
@@ -340,9 +348,7 @@ public:
         m_UISystem.GetEventBus().Listen("pause_quit",
             [this](const Enjin::GUI::UIEventData&) {
                 ClosePauseMenu();
-                m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::MainMenu);
-                m_GameStarted = false;
-                Enjin::Input::SetMouseCaptured(false);
+                ShowMainMenu();
             });
 
         // Bridge every UI event into the script event bus so game scripts can
@@ -375,17 +381,13 @@ public:
             } else if (action == "restart") {
                 RestartGameSession();
             } else if (action == "quit_to_menu") {
-                m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::MainMenu);
-                m_GameStarted = false;
-                Enjin::Input::SetMouseCaptured(false);
+                ShowMainMenu();
             } else if (action == "quit") {
                 if (GetWindow()) GetWindow()->Close();
             } else if (action == "game_over_restart") {
                 RestartGameSession();
             } else if (action == "game_over_menu") {
-                m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::MainMenu);
-                m_GameStarted = false;
-                Enjin::Input::SetMouseCaptured(false);
+                ShowMainMenu();
             }
         });
 
@@ -1523,6 +1525,19 @@ public:
         return false;
     }
 
+    // An authored canvas by name, visible or not. FindAuthoredMainMenu below
+    // keeps the visible-only rule it has always had (a hidden MainMenu means
+    // gameplay is running), but showing one again has to be able to find it
+    // after it was hidden, so the general form does not filter on visibility.
+    Enjin::ECS::Entity FindAuthoredCanvas(const char* name) {
+        if (!m_World) return Enjin::ECS::INVALID_ENTITY;
+        for (auto e : m_World->GetEntitiesWithComponent<Enjin::GUI::UICanvasComponent>()) {
+            auto* c = m_World->GetComponent<Enjin::GUI::UICanvasComponent>(e);
+            if (c && c->canvasName == name) return e;
+        }
+        return Enjin::ECS::INVALID_ENTITY;
+    }
+
     Enjin::ECS::Entity FindAuthoredMainMenu() {
         for (auto e : m_World->GetEntitiesWithComponent<Enjin::GUI::UICanvasComponent>()) {
             auto* c = m_World->GetComponent<Enjin::GUI::UICanvasComponent>(e);
@@ -1531,21 +1546,81 @@ public:
         return Enjin::ECS::INVALID_ENTITY;
     }
 
+    // Back to the title screen, from wherever. The authored canvas is the game's
+    // own menu, so it wins over the built-in ImGui one at EVERY exit point --
+    // quit-to-menu, the pause menu's Quit, game over -- not just at boot. A game
+    // that authors a title screen and then gets the stock one thrown back at it
+    // halfway through is the bug this exists to prevent.
+    void ShowMainMenu() {
+        m_GameStarted = false;
+        Enjin::Input::SetMouseCaptured(false);
+        if (Enjin::ECS::Entity menu = FindAuthoredCanvas("MainMenu");
+            menu != Enjin::ECS::INVALID_ENTITY) {
+            if (auto* c = m_World->GetComponent<Enjin::GUI::UICanvasComponent>(menu)) {
+                c->visible = true;
+                m_GameMenu.HideAll();   // never both at once
+                return;
+            }
+        }
+        m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::MainMenu);
+    }
+
+    // Every menu the engine generates (pause, game over) is built from
+    // UITemplates against UITheme::Default(). Adopting the authored main menu's
+    // theme as that default is what makes the rest of the game's menus speak the
+    // same language as the one the game actually authored.
+    void AdoptAuthoredMenuTheme() {
+        if (Enjin::ECS::Entity menu = FindAuthoredCanvas("MainMenu");
+            menu != Enjin::ECS::INVALID_ENTITY) {
+            if (auto* c = m_World->GetComponent<Enjin::GUI::UICanvasComponent>(menu)) {
+                Enjin::GUI::UITheme::SetDefault(c->theme);
+                // Options / How to Play / Controls stay ImGui (rebinding and the
+                // live setting preview are not worth rebuilding as canvas
+                // widgets), so they take the palette directly.
+                m_GameMenu.SetTheme(c->theme);
+                ENJIN_LOG_INFO(Player,
+                    "Menu theme '%s' adopted from the authored MainMenu canvas",
+                    c->theme.name.c_str());
+            }
+        }
+    }
+
     // Unified pause menu (same UITemplates canvas as web/editor). GameMenus keeps
     // only the main menu and options screens; the pause ROOT is the canvas.
     void OpenPauseMenu() {
         if (m_Paused) return;
         m_Paused = true;
+        Enjin::Input::SetMouseCaptured(false);
+
+        // An authored PauseMenu canvas wins over the generated one, same rule as
+        // the main menu. It is scene content, so it is SHOWN rather than spawned
+        // -- and must not be destroyed on close.
+        if (Enjin::ECS::Entity authored = FindAuthoredCanvas("PauseMenu");
+            authored != Enjin::ECS::INVALID_ENTITY) {
+            if (auto* c = m_World->GetComponent<Enjin::GUI::UICanvasComponent>(authored)) {
+                c->visible = true;
+                m_AuthoredPauseMenu = authored;
+                return;
+            }
+        }
+
         m_PauseMenuEntity = m_World->CreateEntity();
         m_World->AddComponent<Enjin::ECS::NameComponent>(m_PauseMenuEntity, "Pause Menu UI");
         m_World->AddComponent<Enjin::GUI::UICanvasComponent>(m_PauseMenuEntity,
             Enjin::GUI::UITemplates::CreatePauseMenu());
-        Enjin::Input::SetMouseCaptured(false);
     }
 
     void ClosePauseMenu() {
         if (!m_Paused) return;
         m_Paused = false;
+        if (m_AuthoredPauseMenu != Enjin::ECS::INVALID_ENTITY) {
+            if (m_World->IsValid(m_AuthoredPauseMenu)) {
+                if (auto* c = m_World->GetComponent<Enjin::GUI::UICanvasComponent>(m_AuthoredPauseMenu)) {
+                    c->visible = false;
+                }
+            }
+            m_AuthoredPauseMenu = Enjin::ECS::INVALID_ENTITY;
+        }
         if (m_PauseMenuEntity != Enjin::ECS::INVALID_ENTITY && m_World->IsValid(m_PauseMenuEntity)) {
             m_World->DestroyEntity(m_PauseMenuEntity);
         }
@@ -1823,7 +1898,23 @@ public:
             // intro card active to prevent double menus). HUDSystem is retired:
             // hudWidget data migrates to UICanvas on load, so canvases are the
             // ONE UI path — the camera drives world-space billboard elements.
-            if (!m_ShowingSplash && !EngineSplashActive() && !m_GameMenu.IsMenuOpen() && m_World) {
+            // Overlay screens (Options, How to Play) are opened FROM the title
+            // screen and draw on top of it, so the authored canvas underneath
+            // keeps rendering -- blanking it showed the bare world behind the
+            // options panel. Input still goes to the overlay alone.
+            const bool menuReplacesCanvases =
+                m_GameMenu.IsMenuOpen() && !m_GameMenu.IsOverlayScreen();
+            if (!m_ShowingSplash && !EngineSplashActive() && !menuReplacesCanvases && m_World) {
+                // Canvases normally draw to the FOREGROUND list, above every
+                // ImGui window. An overlay screen is an ImGui window, so an
+                // opaque authored backdrop would paint straight over it -- the
+                // options panel was open and fully working, just buried. Drop
+                // the canvases to the background list for as long as one is up
+                // and the overlay lands on top of the title screen as intended.
+                m_UISystem.SetTargetDrawList(m_GameMenu.IsOverlayScreen()
+                    ? ImGui::GetBackgroundDrawList()
+                    : nullptr);
+                m_UISystem.SetInputEnabled(!m_GameMenu.IsMenuOpen());
                 m_UISystem.Update(m_World.get(),
                     static_cast<Enjin::f32>(extent.width),
                     static_cast<Enjin::f32>(extent.height), 0.0f,
@@ -2703,6 +2794,10 @@ private:
         // currently-loaded scene so its first step doesn't reload it needlessly.
         m_CurrentFlowScene = m_StartScene;
 
+        // Before any generated menu is built, so the first pause menu already
+        // matches rather than restyling on a later open.
+        AdoptAuthoredMenuTheme();
+
         if (Enjin::Application::s_HeadlessFrameLimit > 0) {
             // Headless CI: always boot straight into gameplay so the smoke
             // exercises the real game loop, not a title screen.
@@ -2717,7 +2812,7 @@ private:
             Enjin::Input::SetMouseCaptured(false);
             ENJIN_LOG_INFO(Player, "Authored MainMenu canvas found — using it as the title screen");
         } else {
-            m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::MainMenu);
+            ShowMainMenu();
         }
 
         ENJIN_LOG_INFO(Player, "Splash screen ended, game loaded");
@@ -3505,6 +3600,10 @@ private:
 
     bool m_Initialized = false;
     bool m_GameStarted = false;
+    // Set only while an AUTHORED pause canvas is on screen. Separate from
+    // m_PauseMenuEntity because that one is destroyed on close and this one is
+    // scene content that merely gets hidden.
+    Enjin::ECS::Entity m_AuthoredPauseMenu = Enjin::ECS::INVALID_ENTITY;
     bool m_Paused = false;                 // Unified canvas pause (desktop)
     Enjin::ECS::Entity m_PauseMenuEntity = Enjin::ECS::INVALID_ENTITY;
     bool m_FullscreenChangeRequested = false;
