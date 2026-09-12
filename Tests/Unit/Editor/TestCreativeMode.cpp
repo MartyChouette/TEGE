@@ -8,6 +8,8 @@
 #include "EnjinTest.h"
 #include "Enjin/Editor/CreativeMode.h"
 
+#include <cstring>
+
 #include <cmath>
 #include <vector>
 
@@ -1329,6 +1331,37 @@ ENJIN_TEST(CreativeCave, TheOuterRadiusIsBorePlusWall) {
     s.radius = 3.0f;
     s.thickness = 0.75f;
     ENJIN_EXPECT_FLOAT_NEAR(CreativeMode::CaveOuterRadius(s), 3.75f, 0.001f);
+}
+
+// Cave's second mode is Fill, and Fill is NOT a CSG cut.
+//
+// Two predicates that are easy to confuse: BuildToolCanSubtract means the
+// tool's second mode carves geometry, and BuildToolModeLabels means it has a
+// second mode at all. Cave has one and not the other -- Fill closes the hole
+// mask and touches no geometry. Reading the narrow one as "has two modes" is
+// what made the MCP tool refuse Terrain's Lower.
+ENJIN_TEST(CreativeCave, FillIsASecondModeAndNotACut) {
+    const char* const* labels = BuildToolModeLabels(BuildTool::Cave);
+    ENJIN_ASSERT_TRUE(labels != nullptr);
+    ENJIN_EXPECT_TRUE(std::strcmp(labels[0], "Dig") == 0);
+    ENJIN_EXPECT_TRUE(std::strcmp(labels[1], "Fill") == 0);
+
+    ENJIN_EXPECT_FALSE(BuildToolCanSubtract(BuildTool::Cave));
+}
+
+// Every tool that carves geometry necessarily has a second mode; the reverse
+// does not hold, and Terrain and Cave are why.
+ENJIN_TEST(CreativeCave, EveryCuttingToolHasLabelsButNotEveryLabelledToolCuts) {
+    usize labelledButNotCutting = 0;
+    for (u8 i = 0; i < static_cast<u8>(BuildTool::Count); ++i) {
+        const BuildTool tool = static_cast<BuildTool>(i);
+        const bool cuts = BuildToolCanSubtract(tool);
+        const bool labelled = (BuildToolModeLabels(tool) != nullptr);
+        if (cuts) ENJIN_EXPECT_TRUE(labelled);
+        if (labelled && !cuts) ++labelledButNotCutting;
+    }
+    // Terrain (Raise/Lower) and Cave (Dig/Fill).
+    ENJIN_EXPECT_EQ(labelledButNotCutting, (usize)2);
 }
 
 ENJIN_TEST_MAIN()

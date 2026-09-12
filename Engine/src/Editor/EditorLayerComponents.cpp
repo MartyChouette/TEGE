@@ -2669,6 +2669,19 @@ void EditorLayer::DrawTerrainComponent(ECS::Entity entity) {
         // Negative. How deep a Lower stroke may dig below the transform plane.
         InspectorUndo::DragFloat(m_UndoRedo, "Min Height", &terrain->minHeight, 1.0f, -200.0f, 0.0f);
 
+        // How much of the surface is punched out for caves, said out loud.
+        //
+        // The mask is otherwise invisible from here: a terrain with a hundred
+        // open cells and one with none look identical in the inspector, and the
+        // only way to tell was to go and find the gap in the viewport.
+        if (terrain->HasHoles()) {
+            u32 open = 0;
+            for (u8 v : terrain->holes) {
+                if (v) ++open;
+            }
+            ImGui::Text("Open cells: %u  (Cave tool, Fill mode, closes them)", open);
+        }
+
         if (terrain->heightmap.empty()) {
             if (ImGui::Button("Initialize Flat")) {
                 terrain->InitializeFlat(0.0f);

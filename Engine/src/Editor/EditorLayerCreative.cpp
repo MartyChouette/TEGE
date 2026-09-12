@@ -1267,20 +1267,8 @@ void EditorLayer::CommitCreativeCave(const Math::Vector3& start, const Math::Vec
     if (!m_World) return;
 
     const BuildToolSettings& s = m_Creative.CurrentSettings();
-    ECS::BrushSolidComponent solid;
-    if (!CreativeMode::BuildCaveBrushes(s, start, end, solid)) {
-        ENJIN_LOG_WARN(Editor, "Creative: that drag is too short to be a tunnel");
-        return;
-    }
 
-    ECS::Entity entity = m_World->CreateEntity();
-    m_World->AddComponent<ECS::NameComponent>(entity, "Cave");
-    m_World->AddComponent<ECS::TransformComponent>(entity);
-    m_World->AddComponent<ECS::MaterialComponent>(entity);
-    m_World->AddComponent<ECS::BrushSolidComponent>(entity, solid);
-    ECS::BrushSolidSystem::Rebuild(m_World, entity);
-
-    // Which terrain it breaks through. Selected first so a scene with two
+    // Which terrain this gesture is about. Selected first so a scene with two
     // terrains stays predictable, then the first in the world -- the same order
     // the Terrain tool picks its target, because picking differently would mean
     // sculpting one hill and opening another.
@@ -1294,6 +1282,36 @@ void EditorLayer::CommitCreativeCave(const Math::Vector3& start, const Math::Vec
             break;
         }
     }
+
+    // Fill closes the surface back over the drag and builds nothing. It is the
+    // eraser for the hole mask, and it deliberately does NOT delete tunnels:
+    // sealing a mouth over a tunnel that is still there is a real thing to
+    // want, and a mode that also destroyed geometry would be a second action
+    // hiding inside the first.
+    if (m_Creative.IsSubtracting()) {
+        const u32 closed = FillCaveMouth(terrain, s, start, end);
+        if (terrain == ECS::INVALID_ENTITY) {
+            ENJIN_LOG_WARN(Editor, "Creative: no terrain in the scene to fill");
+        } else if (closed == 0) {
+            ENJIN_LOG_INFO(Editor, "Creative: nothing was open along that drag");
+        } else {
+            ENJIN_LOG_INFO(Editor, "Creative: closed %u terrain cells", closed);
+        }
+        return;
+    }
+
+    ECS::BrushSolidComponent solid;
+    if (!CreativeMode::BuildCaveBrushes(s, start, end, solid)) {
+        ENJIN_LOG_WARN(Editor, "Creative: that drag is too short to be a tunnel");
+        return;
+    }
+
+    ECS::Entity entity = m_World->CreateEntity();
+    m_World->AddComponent<ECS::NameComponent>(entity, "Cave");
+    m_World->AddComponent<ECS::TransformComponent>(entity);
+    m_World->AddComponent<ECS::MaterialComponent>(entity);
+    m_World->AddComponent<ECS::BrushSolidComponent>(entity, solid);
+    ECS::BrushSolidSystem::Rebuild(m_World, entity);
 
     // One drag, one undo step. The tunnel and the mouth it opens are halves of
     // the same thing, and undoing only one of them leaves either a hole in a
@@ -1321,6 +1339,56 @@ void EditorLayer::CommitCreativeCave(const Math::Vector3& start, const Math::Vec
     } else {
         ENJIN_LOG_INFO(Editor, "Creative: placed a tunnel and opened %u terrain cells", opened);
     }
+}
+
+
+// Close the surface back over a drag.
+//
+// The eraser for the hole mask. Symmetrical with OpenCaveMouth in footprint and
+// deliberately NOT symmetrical in its height test: opening asks whether the
+// tunnel reaches through the surface, and there is no tunnel to ask about here.
+// Every open cell the drag passes over closes, which is what "fill this in"
+// means when you are looking at a hole you want gone.
+u32 EditorLayer::FillCaveMouth(ECS::Entity terrainEntity, const BuildToolSettings& settings,
+                               const Math::Vector3& start, const Math::Vector3& end) {
+    if (!m_World || terrainEntity == ECS::INVALID_ENTITY) return 0;
+    auto* terrain = m_World->GetComponent<ECS::TerrainComponent>(terrainEntity);
+    if (!terrain || !terrain->HasHoles()) return 0;
+    auto* xf = m_World->GetComponent<ECS::TransformComponent>(terrainEntity);
+
+    const Math::Vector3 gridOrigin =
+        terrain->GridOrigin(xf ? xf->position : Math::Vector3(0.0f));
+    const f32 outer = CreativeMode::CaveOuterRadius(settings);
+
+    const auto before = terrain->holes;
+    u32 closed = 0;
+
+    for (u32 z = 0; z < terrain->gridHeight; ++z) {
+        for (u32 x = 0; x < terrain->gridWidth; ++x) {
+            if (!terrain->IsHole(x, z)) continue;
+
+            const f32 wx = gridOrigin.x + static_cast<f32>(x) * terrain->cellSize;
+            const f32 wz = gridOrigin.z + static_cast<f32>(z) * terrain->cellSize;
+            if (CreativeMode::CaveDistanceToAxisXZ(start, end, wx, wz) > outer) continue;
+
+            terrain->SetHole(x, z, false);
+            ++closed;
+        }
+    }
+
+    if (closed > 0) {
+        terrain->meshDirty = true;
+        m_UndoRedo.Execute(std::make_unique<PropertyEditCommand<std::vector<u8>>>(
+            "Fill Cave Mouth", before, terrain->holes,
+            [world = m_World, e = terrainEntity](const std::vector<u8>& v) {
+                if (auto* t = world->GetComponent<ECS::TerrainComponent>(e)) {
+                    t->holes = v;
+                    t->meshDirty = true;
+                }
+            }));
+        MarkDirty();
+    }
+    return closed;
 }
 
 // Open the surface wherever the tunnel reaches through it.

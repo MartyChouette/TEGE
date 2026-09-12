@@ -206,7 +206,8 @@ const char* BuildToolVerb(BuildTool tool) {
         case BuildTool::Terrain:
             return "Drag over the ground to raise or lower it. Makes a terrain if there is none.";
         case BuildTool::Cave:
-            return "Drag where the tunnel should run. The hillside opens where it breaks out.";
+            return "Drag where the tunnel should run. The hillside opens where it breaks out. "
+                   "Fill closes the surface back over a drag.";
         case BuildTool::Plants:
             return "Drag a patch. Grass, shrubs or trees, scattered inside it.";
         case BuildTool::Prop:
@@ -348,8 +349,13 @@ u32 BuildToolFields(BuildTool tool, BuildToolSettings& s,
 const char* const* BuildToolModeLabels(BuildTool tool) {
     static const char* kAddCut[2]     = { "Add", "Subtract" };
     static const char* kRaiseLower[2] = { "Raise", "Lower" };
+    // Fill is the eraser for the hole mask. Without it the mask had a writer
+    // and nothing that could take a cell back: a tunnel that opened more of the
+    // hillside than you wanted could only be undone whole, tunnel and all.
+    static const char* kDigFill[2]    = { "Dig", "Fill" };
     if (BuildToolCanSubtract(tool)) return kAddCut;
     if (tool == BuildTool::Terrain) return kRaiseLower;
+    if (tool == BuildTool::Cave)    return kDigFill;
     return nullptr;
 }
 

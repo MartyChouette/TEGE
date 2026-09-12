@@ -438,6 +438,12 @@ private:
     u32 OpenCaveMouth(ECS::Entity terrainEntity, const BuildToolSettings& settings,
                       const Math::Vector3& start, const Math::Vector3& end,
                       CompoundCommand& into);
+
+    // Close the surface back over a drag. The eraser for the hole mask: a Dig
+    // that opened more of the hillside than you wanted is otherwise only
+    // undoable whole, tunnel and all.
+    u32 FillCaveMouth(ECS::Entity terrainEntity, const BuildToolSettings& settings,
+                      const Math::Vector3& start, const Math::Vector3& end);
     // Water and Ladder: a component placed from the drag's footprint rather than
     // brushes built from it. Returns the new entity, or INVALID_ENTITY.
     ECS::Entity PlaceCreativeComponent(BuildTool tool, const Math::Vector3& start,
