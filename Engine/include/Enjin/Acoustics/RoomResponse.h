@@ -59,9 +59,32 @@ struct ENJIN_API RoomResponse {
     f32 firstReflection = 0.0f;
 
     u32 raysTraced = 0;
-    u32 raysEscaped = 0;   // left through a gap and never came back
+    u32 raysEscaped = 0;     // left through a gap and never came back
+    u32 raysTruncated = 0;   // ran out of bounces with energy to spare
 
-    bool Valid() const { return raysTraced > 0 && rt60[1] > 0.0f; }
+    // A measurement is only as good as the rays that finished.
+    //
+    // A hard room is the case that bites: tile absorbs 1% per bounce, so after
+    // twenty-four bounces a ray still carries 79% of its energy. Stopping there
+    // cuts the decay curve off while it is still loud, and the fit reads a
+    // SHORT reverb -- confidently, and wrongly, and for the hardest room in the
+    // building. Measured: a tiled room came back at 0.61 s and a carpeted one
+    // at 0.69 s, which is backwards.
+    //
+    // So a trace that ran out of bounces says so rather than reporting the
+    // number it happened to reach.
+    f32 TruncatedFraction() const {
+        return (raysTraced > 0) ? (static_cast<f32>(raysTruncated) /
+                                   static_cast<f32>(raysTraced))
+                                : 0.0f;
+    }
+
+    // The threshold is deliberately low. One ray in ten cut short barely moves
+    // the curve; one in three means the tail being measured is the tail the
+    // budget allowed, not the tail the room has.
+    bool Reliable() const { return TruncatedFraction() < 0.25f; }
+
+    bool Valid() const { return raysTraced > 0 && rt60[1] > 0.0f && Reliable(); }
 };
 
 struct ENJIN_API RoomTraceSettings {
@@ -70,7 +93,16 @@ struct ENJIN_API RoomTraceSettings {
     u32 rayCount = 512;
 
     // A ray that has bounced this many times has nothing left to say.
-    u32 maxBounces = 64;
+    //
+    // Generous, because of how little hard surfaces absorb. Concrete takes 2%
+    // per bounce, so a ray needs about four hundred bounces to fall the 35 dB
+    // the decay fit reads, and seven hundred to fall 60. A cap below that does
+    // not make the trace cheaper -- it makes it WRONG, by cutting the decay
+    // curve off while it is still loud and fitting a line to the stump.
+    //
+    // In practice a ray ends on the time window or the energy floor long before
+    // this; the cap is a guard against a pathological scene, not a budget.
+    u32 maxBounces = 1024;
 
     // Below this fraction of its starting energy a ray is finished.
     f32 energyFloor = 1.0e-6f;

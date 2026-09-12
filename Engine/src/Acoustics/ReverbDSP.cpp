@@ -173,18 +173,36 @@ void FeedbackDelayNetwork::Configure(const f32 rt60[Audio::kAcousticBands], f32 
         const f32 actualSeconds =
             static_cast<f32>(m_Delays[i]) / static_cast<f32>(m_SampleRate);
 
-        // Gain set from the LOW band, with the damping filter taking the highs
-        // down the rest of the way. Setting it from the mid and damping around
-        // that would make the low band decay too fast, and a room's low end is
-        // the part that rings longest.
-        const f32 gLow = DecayGain(actualSeconds, low);
+        // Gain from the MID band, damping taking the highs down from there.
+        //
+        // It used to be set from the LOW band, on the assumption that a room's
+        // bottom end always rings longest. Most materials do work that way --
+        // carpet absorbs 8% of the lows and 60% of the highs -- but WOOD is the
+        // opposite: panelling over a cavity is a bass trap, absorbing 15% at the
+        // bottom and 8% at the top. So in a wooden room the base gain was taken
+        // from the SHORTEST decay and the whole network rang for two thirds as
+        // long as it was asked to. Found because the room tracer got more
+        // accurate and the gap between what was measured and what was rendered
+        // got WIDER, which pointed here rather than at the measurement.
+        //
+        // Mid is the right anchor: it is the band a decay time is quoted in, it
+        // is where most sound sits, and it is what the closed-loop test reads.
+        const f32 gMid = DecayGain(actualSeconds, std::max(mid, 1.0e-4f));
         const f32 gHigh = DecayGain(actualSeconds, high);
-        m_Gains[i] = gLow;
+        m_Gains[i] = gMid;
 
-        // A one-pole with DC gain 1 has Nyquist gain (1-a)/(1+a). Solving that
-        // for the ratio the two decay times ask for:
-        const f32 ratio = std::min(std::max(gHigh / std::max(gLow, 1.0e-9f), 0.0f), 0.999f);
-        const f32 a = (1.0f - ratio) / (1.0f + ratio);
+        // A one-pole with DC gain 1 has Nyquist gain (1-a)/(1+a), so it can
+        // only make the top end decay FASTER than the base. When a material's
+        // highs ring longer than its mids -- wood again -- there is nothing a
+        // lowpass can do about it, and the honest result is to leave the top
+        // decaying at the mid rate rather than pretend otherwise. Correcting
+        // that needs a shelving filter and a reason to want one.
+        f32 a = 0.0f;
+        if (gHigh < gMid) {
+            const f32 ratio = std::min(std::max(gHigh / std::max(gMid, 1.0e-9f), 0.0f), 0.999f);
+            a = (1.0f - ratio) / (1.0f + ratio);
+        }
+        (void)low;
         m_Damping[i].SetCoefficient(std::min(a, 0.95f));
         m_Damping[i].Reset();
         m_Lines[i].Clear();

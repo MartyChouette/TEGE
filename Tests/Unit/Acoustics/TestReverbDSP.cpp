@@ -395,8 +395,8 @@ ENJIN_TEST(ReverbDSP, ARoomMeasuredFromGeometryRendersWithTheDecayItWasMeasuredT
     // that chain had its own test; this is the one that says they connect.
     std::printf("    geometry says %.2f s, rendered tail measures %.2f s\n",
                 measured.rt60[1], rendered);
-    ENJIN_EXPECT_TRUE(rendered > measured.rt60[1] * 0.7f);
-    ENJIN_EXPECT_TRUE(rendered < measured.rt60[1] * 1.3f);
+    ENJIN_EXPECT_TRUE(rendered > measured.rt60[1] * 0.8f);
+    ENJIN_EXPECT_TRUE(rendered < measured.rt60[1] * 1.2f);
 }
 
 ENJIN_TEST_MAIN()

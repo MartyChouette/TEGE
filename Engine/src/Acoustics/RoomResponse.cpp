@@ -114,6 +114,7 @@ RoomResponse TraceRoomResponse(const AcousticBVH& bvh, const Audio::AcousticScen
         f32 energy[Audio::kAcousticBands] = {1.0f, 1.0f, 1.0f};
         f32 travelled = 0.0f;
 
+        bool finished = false;
         for (u32 bounce = 0; bounce < settings.maxBounces; ++bounce) {
             const RayHit hit = bvh.Raycast(position, direction, 1.0e6f);
             if (!hit.hit) {
@@ -121,12 +122,16 @@ RoomResponse TraceRoomResponse(const AcousticBVH& bvh, const Audio::AcousticScen
                 // outdoors, and outdoors is exactly a room that returns almost
                 // nothing.
                 ++response.raysEscaped;
+                finished = true;
                 break;
             }
 
             travelled += hit.distance;
             const f32 arrival = travelled / kSpeedOfSound;
-            if (arrival >= settings.maxTime) break;
+            // Past the window is a finished ray: it was followed for as long as
+            // anyone is measuring, which is not the same as running out of
+            // budget.
+            if (arrival >= settings.maxTime) { finished = true; break; }
 
             pathTotal += hit.distance;
             ++pathSegments;
@@ -150,7 +155,7 @@ RoomResponse TraceRoomResponse(const AcousticBVH& bvh, const Audio::AcousticScen
                 }
                 remaining = std::max(remaining, energy[band]);
             }
-            if (remaining < settings.energyFloor) break;
+            if (remaining < settings.energyFloor) { finished = true; break; }
 
             // Specular or scattered, by the surface's scattering coefficient.
             // A polished wall mirrors; a rough one spreads. Choosing per bounce
@@ -167,6 +172,10 @@ RoomResponse TraceRoomResponse(const AcousticBVH& bvh, const Audio::AcousticScen
                                                     direction.z - 2.0f * d * hit.normal.z));
             }
         }
+
+        // Fell out of the loop with energy left: the budget ended this ray, not
+        // the room.
+        if (!finished) ++response.raysTruncated;
     }
 
     response.raysTraced = settings.rayCount;
