@@ -165,6 +165,7 @@ enjin_add_test(TestPhysicsSimulation  Unit/Physics/TestPhysicsSimulation.cpp)
 
 # --- Renderer ---
 enjin_add_test(TestRTConfig           Unit/Renderer/TestRTConfig.cpp)
+enjin_add_test(TestTerrainLayers      Unit/Renderer/TestTerrainLayers.cpp)
 enjin_add_test(TestRenderScale       Unit/Renderer/TestRenderScale.cpp)
 enjin_add_test(TestPostProcessLayout Unit/Renderer/TestPostProcessLayout.cpp)
 enjin_add_test(TestSceneRenderSettings Unit/Renderer/TestSceneRenderSettings.cpp)
