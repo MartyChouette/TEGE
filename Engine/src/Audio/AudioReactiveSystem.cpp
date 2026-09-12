@@ -1,4 +1,6 @@
 #include "Enjin/Audio/AudioReactiveSystem.h"
+
+#include <algorithm>
 #include "Enjin/Audio/AudioEngine.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Transform.h"
@@ -726,9 +728,38 @@ void AudioReactiveSystem::UpdateReverbZones(f32 deltaTime) {
         wet *= activeBlend;
     }
 
-    // Feed the real Freeverb bus (AudioEngine smooths on the audio thread).
+    // Measure the room the listener is actually standing in.
+    //
+    // Throttled inside the system: a rebuild at most once a second, a retrace
+    // when the listener has moved or the measurement has aged. Most frames this
+    // costs a distance check.
+    m_Acoustics.SetWorld(m_World);
+    m_Acoustics.Update(m_ListenerPos, deltaTime);
+
+    if (m_Acoustics.HasMeasurement()) {
+        const Acoustics::RoomResponse& measured = m_Acoustics.Measurement();
+        m_Audio->SetMeasuredRoom(measured.rt60, measured.meanFreePath,
+                                 measured.reflectedEnergy);
+
+        // How much room you hear is still a mixing decision rather than a
+        // property of the room, so an authored zone keeps control of it. With
+        // no zone, the measurement's own reflected energy decides -- a sealed
+        // basement is wet and an open field is nearly dry, without anybody
+        // having placed a volume to say so.
+        if (!activeZone) {
+            wet = std::min(0.45f, measured.reflectedEnergy * 0.45f);
+            pre = std::max(0.004f, measured.firstReflection);
+        }
+    } else {
+        // Nothing to measure -- an empty scene, a level still loading, or a
+        // trace that ran out of bounces and said so. The authored zone answers,
+        // exactly as it did before any of this existed.
+        m_Audio->ClearMeasuredRoom();
+    }
+
+    // Feed the bus. Freeverb still reads room/damp/decay; the measured path
+    // ignores them and uses wet and pre only.
     m_Audio->SetEnvironmentReverb(wet, room, damp, decayT, pre);
-    (void)deltaTime;
 }
 
 // ============================================================================

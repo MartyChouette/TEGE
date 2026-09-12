@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Enjin/Acoustics/AcousticsSystem.h"
+
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Gameplay.h"
@@ -31,6 +33,14 @@ private:
     void UpdateMIDIBindings(f32 deltaTime);
     void UpdateOcclusion(f32 deltaTime);
     void UpdateReverbZones(f32 deltaTime);
+
+    // The room the listener is standing in, measured from its geometry.
+    //
+    // Lives here because this is already the thing that decides what the reverb
+    // bus is doing each frame; a second system racing it for the same bus would
+    // be two answers to one question.
+    Acoustics::AcousticsSystem& Acoustics() { return m_Acoustics; }
+    const Acoustics::AcousticsSystem& Acoustics() const { return m_Acoustics; }
     void UpdateAmbientLayers(f32 deltaTime);
     void UpdateMusicZones(f32 deltaTime);
 
@@ -43,6 +53,8 @@ private:
     // Cached per-frame (avoids redundant lookups across subsystems)
     Math::Vector3 m_ListenerPos;
     const ECS::MaterialInteractionTableComponent* m_CachedMatTable = nullptr;
+
+    Acoustics::AcousticsSystem m_Acoustics;
 };
 
 } // namespace Audio

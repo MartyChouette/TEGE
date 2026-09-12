@@ -86,6 +86,21 @@ public:
     // reads smoothed values on the audio thread. wetDry 0 = bypass.
     void SetEnvironmentReverb(f32 wetDry, f32 roomSize, f32 damping, f32 decayTime, f32 preDelay);
 
+    // Hand the bus a room that was MEASURED rather than authored.
+    //
+    // rt60 is per band in seconds, meanFreePath in metres, reflectedEnergy the
+    // fraction that came back at all. While a measurement is set, the bus runs
+    // a feedback delay network configured from it and the decay is the decay
+    // that was measured. Without one it stays on Freeverb, so every scene
+    // authored so far sounds exactly as it does today -- measurement wins where
+    // there is one, authoring answers where there is not.
+    //
+    // wetDry still comes from SetEnvironmentReverb: how much room you hear is a
+    // mixing decision, not a property of the room.
+    void SetMeasuredRoom(const f32 rt60[3], f32 meanFreePath, f32 reflectedEnergy);
+    void ClearMeasuredRoom();
+    bool HasMeasuredRoom() const { return m_HasMeasuredRoom; }
+
     void SetListenerPosition(const Math::Vector3& position, const Math::Vector3& forward, const Math::Vector3& up);
 
     // What one play of a source sounds like: which of its clips, and the pitch
@@ -215,6 +230,7 @@ private:
 
     ECS::World* m_World = nullptr;
     std::string m_AssetRoot;
+    bool m_HasMeasuredRoom = false;
 
     // Listener (camera) state
     Math::Vector3 m_ListenerPosition;

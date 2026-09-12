@@ -1,6 +1,7 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Audio/AudioEngine.h"
 #include "Enjin/Audio/AcousticScene.h"
+#include "Enjin/Acoustics/ReverbDSP.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/Math/Math.h"
 #include "Enjin/Logging/Log.h"
@@ -95,6 +96,25 @@ struct ReverbNode {
     std::atomic<float> tWet{0.0f}, tRoom{0.5f}, tDamp{0.5f}, tDecay{1.5f}, tPre{0.02f};
     float wet = 0.0f, room = 0.5f, damp = 0.5f, pre = 0.02f, feedback = 0.8f;
     ma_uint32 sampleRate = 48000;
+
+    // The measured room, when there is one.
+    //
+    // Freeverb stays as the fallback rather than being removed. Its controls
+    // are room size and damping, which relate to a decay time only by feel, so
+    // it cannot be handed "1.24 seconds" -- but every scene authored so far
+    // sounds the way it does because of it, and replacing it wholesale would
+    // change how existing projects sound without anybody asking. Measurement
+    // wins where there is one; authoring answers where there is not.
+    Acoustics::FeedbackDelayNetwork fdn;
+    std::atomic<float> tRT60Low{0.0f}, tRT60Mid{0.0f}, tRT60High{0.0f};
+    std::atomic<float> tMeanFreePath{8.0f}, tReflected{1.0f};
+    // Bumped by the game thread whenever the numbers above change. The audio
+    // thread reconfigures when it sees a new value, which keeps the comparison
+    // to one integer instead of five floats.
+    std::atomic<unsigned> measuredGeneration{0};
+    unsigned appliedGeneration = 0;
+    bool measuredActive = false;
+    float lateLevel = 1.0f;
 };
 
 static void reverb_node_process(ma_node* pNode, const float** ppFramesIn,
@@ -123,6 +143,55 @@ static void reverb_node_process(ma_node* pNode, const float** ppFramesIn,
 
     if (wet < 0.005f) {   // bypass: straight copy
         for (ma_uint32 i = 0; i < frames * 2; ++i) out[i] = in[i];
+        return;
+    }
+
+    // Pick up a new measurement, if the game thread left one.
+    //
+    // Reconfiguring is allocation-free and deliberately does not clear the
+    // delay lines: this happens when a listener walks between rooms, and
+    // zeroing the tail at that moment is an audible click at exactly the
+    // instant somebody is listening for the room to change.
+    const unsigned generation = rn->measuredGeneration.load(std::memory_order_acquire);
+    if (generation != rn->appliedGeneration) {
+        rn->appliedGeneration = generation;
+        const float rt60[3] = {
+            rn->tRT60Low.load(std::memory_order_relaxed),
+            rn->tRT60Mid.load(std::memory_order_relaxed),
+            rn->tRT60High.load(std::memory_order_relaxed),
+        };
+        if (rt60[1] > 0.0f) {
+            rn->fdn.Configure(rt60, rn->tMeanFreePath.load(std::memory_order_relaxed));
+            rn->lateLevel = rn->tReflected.load(std::memory_order_relaxed);
+            if (rn->lateLevel > 1.0f) rn->lateLevel = 1.0f;
+            if (rn->lateLevel < 0.0f) rn->lateLevel = 0.0f;
+            rn->measuredActive = rn->fdn.IsConfigured();
+        } else {
+            rn->measuredActive = false;
+        }
+    }
+
+    if (rn->measuredActive) {
+        const int preLenM = static_cast<int>(rn->preDelayBuf.size() / 2);
+        int preSamplesM = static_cast<int>(rn->pre * static_cast<float>(rn->sampleRate));
+        if (preSamplesM >= preLenM) preSamplesM = preLenM - 1;
+        if (preSamplesM < 0) preSamplesM = 0;
+
+        for (ma_uint32 f = 0; f < frames; ++f) {
+            const float dryL = in[f * 2], dryR = in[f * 2 + 1];
+
+            rn->preDelayBuf[rn->preDelayPos * 2]     = dryL;
+            rn->preDelayBuf[rn->preDelayPos * 2 + 1] = dryR;
+            int rd = rn->preDelayPos - preSamplesM;
+            if (rd < 0) rd += preLenM;
+            const float feed = (rn->preDelayBuf[rd * 2] + rn->preDelayBuf[rd * 2 + 1]) * 0.5f;
+            rn->preDelayPos = (rn->preDelayPos + 1) % preLenM;
+
+            float wl = 0.0f, wr = 0.0f;
+            rn->fdn.Process(feed, wl, wr);
+            out[f * 2]     = dryL + wl * rn->lateLevel * wet;
+            out[f * 2 + 1] = dryR + wr * rn->lateLevel * wet;
+        }
         return;
     }
 
@@ -229,6 +298,7 @@ bool AudioEngine::Initialize() {
         {
             ma_uint32 sr = ma_engine_get_sample_rate(&m_Impl->engine);
             m_Impl->reverb.sampleRate = sr;
+    m_Impl->reverb.fdn.Prepare(sr);
             const float srScale = static_cast<float>(sr) / 44100.0f;
             for (int c = 0; c < 2; ++c) {
                 for (int i = 0; i < kCombs; ++i) {
@@ -301,6 +371,28 @@ void AudioEngine::Shutdown() {
 
     m_Initialized = false;
     ENJIN_LOG_INFO(Audio, "AudioEngine shutdown");
+}
+
+void AudioEngine::SetMeasuredRoom(const f32 rt60[3], f32 meanFreePath, f32 reflectedEnergy) {
+    if (!m_Impl || !m_Impl->reverbReady) return;
+    auto& rn = m_Impl->reverb;
+    rn.tRT60Low.store(rt60[0], std::memory_order_relaxed);
+    rn.tRT60Mid.store(rt60[1], std::memory_order_relaxed);
+    rn.tRT60High.store(rt60[2], std::memory_order_relaxed);
+    rn.tMeanFreePath.store(meanFreePath, std::memory_order_relaxed);
+    rn.tReflected.store(reflectedEnergy, std::memory_order_relaxed);
+    // Released last, so the audio thread never sees a new generation with half
+    // the numbers still belonging to the previous room.
+    rn.measuredGeneration.fetch_add(1, std::memory_order_release);
+    m_HasMeasuredRoom = (rt60[1] > 0.0f);
+}
+
+void AudioEngine::ClearMeasuredRoom() {
+    if (!m_Impl || !m_Impl->reverbReady) return;
+    auto& rn = m_Impl->reverb;
+    rn.tRT60Mid.store(0.0f, std::memory_order_relaxed);
+    rn.measuredGeneration.fetch_add(1, std::memory_order_release);
+    m_HasMeasuredRoom = false;
 }
 
 void AudioEngine::SetEnvironmentReverb(f32 wetDry, f32 roomSize, f32 damping, f32 decayTime, f32 preDelay) {

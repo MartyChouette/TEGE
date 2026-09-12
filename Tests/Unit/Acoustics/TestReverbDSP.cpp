@@ -399,4 +399,37 @@ ENJIN_TEST(ReverbDSP, ARoomMeasuredFromGeometryRendersWithTheDecayItWasMeasuredT
     ENJIN_EXPECT_TRUE(rendered < measured.rt60[1] * 1.2f);
 }
 
+ENJIN_TEST(ReverbDSP, ReconfiguringDoesNotCutTheTailDead) {
+    // Arrange: a ringing tail.
+    FeedbackDelayNetwork fdn;
+    fdn.Prepare(kRate);
+    const f32 first[Audio::kAcousticBands] = { 2.0f, 2.0f, 2.0f };
+    fdn.Configure(first, 8.0f);
+    f32 l = 0.0f, r = 0.0f;
+    fdn.Process(1.0f, l, r);
+    for (usize i = 0; i < kRate / 10; ++i) fdn.Process(0.0f, l, r);
+
+    f32 before = 0.0f;
+    for (usize i = 0; i < 500; ++i) {
+        fdn.Process(0.0f, l, r);
+        before = std::max(before, std::fabs(l) + std::fabs(r));
+    }
+    ENJIN_ASSERT_TRUE(before > 1.0e-5f);
+
+    // Act: walk into another room.
+    const f32 second[Audio::kAcousticBands] = { 0.8f, 0.8f, 0.8f };
+    fdn.Configure(second, 5.0f);
+
+    f32 after = 0.0f;
+    for (usize i = 0; i < 500; ++i) {
+        fdn.Process(0.0f, l, r);
+        after = std::max(after, std::fabs(l) + std::fabs(r));
+    }
+
+    // Assert: the tail is still there. Zeroing the lines on reconfigure would
+    // be an audible click at exactly the moment a person is most likely to be
+    // listening for the room to change.
+    ENJIN_EXPECT_TRUE(after > 1.0e-6f);
+}
+
 ENJIN_TEST_MAIN()

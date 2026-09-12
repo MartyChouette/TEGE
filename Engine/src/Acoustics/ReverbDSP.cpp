@@ -204,10 +204,18 @@ void FeedbackDelayNetwork::Configure(const f32 rt60[Audio::kAcousticBands], f32 
         }
         (void)low;
         m_Damping[i].SetCoefficient(std::min(a, 0.95f));
-        m_Damping[i].Reset();
-        m_Lines[i].Clear();
     }
     m_Configured = true;
+
+    // The delay lines are deliberately NOT cleared here.
+    //
+    // Reconfiguring happens when a listener walks from one room into another,
+    // and zeroing the lines at that moment cuts the tail dead -- an audible
+    // click, and the one place a person is most likely to be listening for the
+    // change. Leaving the contents means the old tail finishes decaying under
+    // the new settings, which is roughly what happens when you walk through a
+    // doorway anyway. Clear() is still there for a caller that genuinely wants
+    // silence, like a level load.
 }
 
 void FeedbackDelayNetwork::Process(f32 input, f32& outLeft, f32& outRight) {
