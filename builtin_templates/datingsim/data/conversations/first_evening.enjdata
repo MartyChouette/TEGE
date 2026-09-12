@@ -1,0 +1,20 @@
+{
+    "name": "conversations/first_evening",
+    "schema": "Conversation",
+    "values": {
+        "title": "First Evening",
+        "castIds": "ren;mira",
+        "castNames": "REN;MIRA",
+        "beatWho": "ren|mira|ren|mira|ren|mira|ren|mira|ren|mira",
+        "beatEmote": "smile|neutral|laugh|worried|neutral|thoughtful|blush|neutral|smug|smile",
+        "beatLine": "You actually came. I had a bet with myself about that.|She had a bet with me. I said you would.|She said you would not, so one of us is out a coffee.|It has been a long week. I did not think anyone was coming.|So. Settle it. Were we worth the trip?|He asks everyone that. He is not as casual about it as he sounds.|I am standing right here.|You are. And you are still waiting on an answer from me.|That went about how I expected.|It did not, and you know it.",
+        "beatChoice": "||||0|||1||",
+        "choiceWho": "ren|mira",
+        "choiceText": "Worth the trip.;Ask me at the end of the night.;You made a bet about me.|I am not in a hurry.;What is the question again?;You two rehearse this?",
+        "choiceTags": "warm;neutral;cool|warm;neutral;tease",
+        "choiceReply": "Then I am out a coffee and I do not mind at all.;Fair. I will hold you to it.;I did. That was probably not the introduction I wanted.|No. You are not. That is unusual and I notice it.;There was not one. That was the point.;Every Thursday. He does my half better than I do.",
+        "reactions": "reactions/vn_default",
+        "nextScene": "",
+        "closing": "You walk home working out which answer you actually meant."
+    }
+}

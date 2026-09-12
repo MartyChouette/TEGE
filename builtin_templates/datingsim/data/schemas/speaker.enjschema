@@ -1,0 +1,16 @@
+{
+    "name": "Speaker",
+    "description": "A cast entry. The portrait set and the scalars a game keeps about this character. What the scalars MEAN is the game's business; this only stores them, so the same schema serves Ink Ribbon's temper and another project's affection.",
+    "fields": [
+        {"name": "displayName",  "type": "String", "default": ""},
+        {"name": "role",         "type": "String", "default": ""},
+
+        {"name": "portraitDir",  "type": "String", "default": ""},
+        {"name": "baseHead",     "type": "String", "default": "base_head"},
+        {"name": "emotes",       "type": "String", "default": ""},
+
+        {"name": "statNames",    "type": "String", "default": ""},
+        {"name": "statValues",   "type": "String", "default": ""},
+        {"name": "statMax",      "type": "String", "default": ""}
+    ]
+}

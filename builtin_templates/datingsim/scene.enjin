@@ -1,0 +1,6105 @@
+{
+ "version": "1.0",
+ "formatVersion": 1,
+ "entityCount": 99,
+ "renderSettings": {
+  "aaComparisonDivider": 0.5,
+  "aaComparisonEnabled": false,
+  "aaComparisonModeLeft": 0,
+  "aaComparisonModeRight": 1,
+  "aaMode": 1,
+  "ambientColor": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "ambientIntensity": 1.0,
+  "artStylePreset": 0,
+  "backfaceCulling": false,
+  "bloomEnabled": false,
+  "bloomIntensity": 0.5,
+  "bloomRadius": 0.004999999888241291,
+  "bloomThreshold": 1.0,
+  "brightness": 0.0,
+  "cascadeFarUpdateInterval": 2,
+  "cascadeProgressiveUpdate": false,
+  "causticsEnabled": false,
+  "causticsIntensity": 0.30000001192092896,
+  "causticsScale": 1.0,
+  "causticsSpeed": 1.0,
+  "causticsWaterY": 0.0,
+  "celDiffuseBands": 3.0,
+  "celOutlineColor": [
+   0.0,
+   0.0,
+   0.0
+  ],
+  "celOutlineCurvatureWeight": 0.0,
+  "celOutlineEnabled": false,
+  "celOutlineThickness": 1.0,
+  "celOutlineThreshold": 0.10000000149011612,
+  "celShadingEnabled": false,
+  "celShadowMode": 0.0,
+  "celSpecularCutoff": 0.5,
+  "chromaticAberrationEnabled": false,
+  "chromaticAberrationIntensity": 0.004999999888241291,
+  "colorBitDepth": 8,
+  "colorFilter": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "colorQuantEnabled": false,
+  "contactShadowsEnabled": false,
+  "contactShadowsIntensity": 1.0,
+  "contactShadowsLength": 0.10000000149011612,
+  "contactShadowsSteps": 16,
+  "contrast": 1.0,
+  "crtBloomRadius": 1.5,
+  "crtBloomSigma": 0.800000011920929,
+  "crtBloomStrength": 0.30000001192092896,
+  "crtCurvature": 0.0,
+  "crtEnabled": false,
+  "crtMaskPitch": 1.0,
+  "crtMaskType": 0,
+  "crtModelPreset": 0.0,
+  "crtPhosphorEnabled": false,
+  "crtTVL": 400.0,
+  "depthSortJitter": 0.0,
+  "ditherEnabled": false,
+  "ditherPattern": 0,
+  "ditherStrength": 1.0,
+  "dofApertureShape": 0,
+  "dofBokehSize": 4.0,
+  "dofDebugCoC": false,
+  "dofEnabled": false,
+  "dofFarBlurStrength": 1.0,
+  "dofFocalDistance": 10.0,
+  "dofFocalRange": 5.0,
+  "dofNearBlurStrength": 1.0,
+  "energyConservation": false,
+  "exposure": 1.0,
+  "filmGrainEnabled": false,
+  "filmGrainIntensity": 0.05000000074505806,
+  "fogColor": [
+   0.5,
+   0.5,
+   0.6000000238418579
+  ],
+  "fogDensity": 0.0,
+  "fogEnd": 100.0,
+  "fogHeightFalloff": 0.10000000149011612,
+  "fogShaftsDecay": 0.949999988079071,
+  "fogShaftsDensity": 0.05000000074505806,
+  "fogShaftsEnabled": false,
+  "fogShaftsIntensity": 0.30000001192092896,
+  "fogShaftsMaxDistance": 50.0,
+  "fogShaftsSamples": 16,
+  "fogStart": 20.0,
+  "fresnelEnabled": false,
+  "fxaaEnabled": true,
+  "fxaaReduceMin": 0.007813000120222569,
+  "fxaaReduceMul": 0.125,
+  "fxaaSpanMax": 8.0,
+  "gamma": 1.0,
+  "geometryOutlineColor": [
+   0.0,
+   0.0,
+   0.0
+  ],
+  "geometryOutlineWidth": 0.019999999552965164,
+  "geometryOutlinesEnabled": false,
+  "geometryTerm": false,
+  "globalAffineTexturing": false,
+  "globalFlatShading": false,
+  "globalGouraudOnly": false,
+  "globalStippleTransparency": false,
+  "globalUVQuantize": false,
+  "globalVertexSnapResolution": 160,
+  "globalVertexSnapping": false,
+  "godRaysDecay": 0.9700000286102295,
+  "godRaysDensity": 1.0,
+  "godRaysEnabled": false,
+  "godRaysIntensity": 0.5,
+  "godRaysSamples": 64,
+  "godRaysWeight": 0.009999999776482582,
+  "halfLambert": false,
+  "hdrOutput": false,
+  "internalHeight": 240,
+  "internalWidth": 320,
+  "lightRampMode": 0.0,
+  "lutEnabled": false,
+  "lutSize": 32,
+  "lutStrength": 1.0,
+  "normalQuantizeSteps": 0.0,
+  "paletteColors": 16,
+  "paletteEnabled": false,
+  "posterizeLevels": 0.0,
+  "radianceCacheDepthThreshold": 0.10000000149011612,
+  "radianceCacheEnabled": false,
+  "radianceCacheExcludeDirectional": true,
+  "radianceCacheHysteresis": 0.8999999761581421,
+  "radianceCacheMaxAge": 8.0,
+  "radianceCacheNormalThreshold": 0.8500000238418579,
+  "radianceCacheTileSize": 32,
+  "rainActive": false,
+  "resDownscaleEnabled": false,
+  "restirDistanceBias": 0.10000000149011612,
+  "restirEnabled": false,
+  "restirInitialCandidates": 8,
+  "restirSpatialDepthThreshold": 0.10000000149011612,
+  "restirSpatialNeighbors": 5,
+  "restirSpatialNormalThreshold": 0.8999999761581421,
+  "restirSpatialRadius": 30.0,
+  "restirSpatialReuse": false,
+  "restirTemporalDepthThreshold": 0.10000000149011612,
+  "restirTemporalMaxHistory": 20,
+  "restirTemporalNormalThreshold": 0.8999999761581421,
+  "restirTemporalReuse": false,
+  "rtAOEnabled": true,
+  "rtAOPower": 1.5,
+  "rtAORadius": 2.0,
+  "rtAOStrength": 1.0,
+  "rtDenoiserEnabled": true,
+  "rtDenoiserIterations": 5,
+  "rtDenoiserTemporalAlpha": 0.05000000074505806,
+  "rtDenoiserType": 0,
+  "rtEnabled": false,
+  "rtGIBounces": 1,
+  "rtGIEnabled": false,
+  "rtGIIntensity": 1.0,
+  "rtGIMaxDistance": 50.0,
+  "rtGIStrength": 0.5,
+  "rtMode": 0,
+  "rtOIDNQuality": 1,
+  "rtPathTracerFireflyClamp": 10.0,
+  "rtPathTracerMIS": true,
+  "rtPathTracerMaxBounces": 4,
+  "rtPathTracerNEE": true,
+  "rtPathTracerRRMinBounce": 3.0,
+  "rtPathTracerRRMinProb": 0.05000000074505806,
+  "rtPathTracerTargetSPP": 1024,
+  "rtReflectionMaxDistance": 50.0,
+  "rtReflectionRoughnessThreshold": 0.5,
+  "rtReflectionSDFFallback": true,
+  "rtReflectionSDFMaxDistance": 500.0,
+  "rtReflectionStrength": 0.5,
+  "rtReflectionsEnabled": true,
+  "rtShadowMaxDistance": 100.0,
+  "rtShadowRadius": 0.009999999776482582,
+  "rtShadowStrength": 1.0,
+  "rtShadowsEnabled": true,
+  "rtSimplifiedMaterials": true,
+  "rtSimplifyAfterBounce": 1,
+  "rtTemporalReuseAO": true,
+  "rtTemporalReuseDisocclusionThreshold": 0.10000000149011612,
+  "rtTemporalReuseEnabled": false,
+  "rtTemporalReuseGI": true,
+  "rtTemporalReuseHistoryLength": 0.8999999761581421,
+  "rtTemporalReuseNormalThreshold": 0.8999999761581421,
+  "rtTemporalReuseReflections": true,
+  "rtTemporalReuseShadows": true,
+  "saturation": 1.0,
+  "scanlineIntensity": 0.30000001192092896,
+  "scanlineWidth": 1.0,
+  "shadingModel": 0,
+  "shadowDistance": 100.0,
+  "shadowResolution": 2048,
+  "shadowSoftness": 0.0,
+  "shadowStrength": 1.0,
+  "shadowsEnabled": true,
+  "snowIntensity": 0.0,
+  "sphereEnvMapEnabled": false,
+  "sphereEnvStrength": 0.5,
+  "ssaoBias": 0.02500000037252903,
+  "ssaoEnabled": false,
+  "ssaoIntensity": 1.5,
+  "ssaoRadius": 0.5,
+  "ssaoSamples": 16,
+  "stippleBgColor": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "stippleColorMode": 0,
+  "stippleDensity": 0.5,
+  "stippleEnabled": false,
+  "stippleFgColor": [
+   0.0,
+   0.0,
+   0.0
+  ],
+  "stipplePatternMask": 1,
+  "stippleScale": 1.0,
+  "stippleStrength": 1.0,
+  "surfelCacheBlendWeight": 0.5,
+  "surfelCacheCameraRadius": 50.0,
+  "surfelCacheEnabled": false,
+  "surfelCacheExcludeDirectional": true,
+  "surfelCacheMaxAge": 32.0,
+  "surfelCacheMaxSurfels": 65536,
+  "surfelCacheNormalThreshold": 0.699999988079071,
+  "surfelCachePlacementInterval": 4,
+  "surfelCacheRadius": 0.5,
+  "surfelCacheRaysPerSurfel": 2,
+  "surfelCacheUpdateFraction": 0.125,
+  "taaFeedbackMax": 0.9700000286102295,
+  "taaFeedbackMin": 0.8799999952316284,
+  "taaJitterScale": 1.0,
+  "taaSharpness": 0.10000000149011612,
+  "textureAnisotropy": 8,
+  "textureFilter": 2,
+  "textureMipmaps": true,
+  "texturePageSize": 0.0,
+  "textureWrap": 0,
+  "tiltShiftBandWidth": 0.30000001192092896,
+  "tiltShiftBlurAmount": 3.0,
+  "tiltShiftEnabled": false,
+  "tiltShiftFocusY": 0.5,
+  "toneMappingMode": 3,
+  "upscalerQuality": 2,
+  "upscalerSharpness": 0.0,
+  "upscalerType": 0,
+  "usePointFiltering": true,
+  "useProjectDefaults": true,
+  "vhsBlueShift": 0.05000000074505806,
+  "vhsColorBleed": 0.003000000026077032,
+  "vhsEnabled": false,
+  "vhsInterlacing": false,
+  "vhsNoiseIntensity": 0.05000000074505806,
+  "vhsScreenTear": false,
+  "vhsTearOffset": 0.0,
+  "vhsTrackingIntensity": 0.30000001192092896,
+  "vhsTrackingSpeed": 1.0,
+  "vhsWobbleIntensity": 0.0020000000949949026,
+  "vhsWobbleSpeed": 2.0,
+  "vignetteEnabled": false,
+  "vignetteIntensity": 0.30000001192092896,
+  "vignetteSmoothness": 0.5,
+  "whitePoint": 4.0,
+  "wireframe": false,
+  "worldCurvature": 0.0
+ },
+ "entities": [
+  {
+   "id": 1,
+   "name": {
+    "name": "Camera"
+   },
+   "stableId": {
+    "id": 9001
+   },
+   "transform": {
+    "position": [
+     0,
+     0,
+     15
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "camera": {
+    "projectionType": 1,
+    "orthoSize": 4.5,
+    "nearPlane": 0.05,
+    "farPlane": 100.0,
+    "priority": 10,
+    "isActive": true,
+    "backgroundColor": [
+     0.055,
+     0.052,
+     0.075
+    ]
+   }
+  },
+  {
+   "id": 2,
+   "name": {
+    "name": "Wall"
+   },
+   "stableId": {
+    "id": 9002
+   },
+   "transform": {
+    "position": [
+     0,
+     0.0,
+     -2.0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     18.0,
+     10.0,
+     1
+    ]
+   },
+   "mesh": {
+    "vertexCount": 4,
+    "indexCount": 6,
+    "vertices": [
+     {
+      "position": [
+       -0.5,
+       -0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0,
+       1
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       -0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       1,
+       1
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       1,
+       0
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0,
+       0
+      ]
+     }
+    ],
+    "indices": [
+     0,
+     1,
+     2,
+     0,
+     2,
+     3
+    ]
+   },
+   "material": {
+    "baseColor": [
+     0,
+     0,
+     0
+    ],
+    "metallic": 0.0,
+    "roughness": 1.0,
+    "emissiveColor": [
+     0.00702,
+     0.00604,
+     0.01221
+    ],
+    "emissiveStrength": 1.0,
+    "alphaMode": 0,
+    "castShadows": false
+   }
+  },
+  {
+   "id": 3,
+   "name": {
+    "name": "Floor"
+   },
+   "stableId": {
+    "id": 9003
+   },
+   "transform": {
+    "position": [
+     0,
+     -3.1,
+     -1.9
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     18.0,
+     2.8,
+     1
+    ]
+   },
+   "mesh": {
+    "vertexCount": 4,
+    "indexCount": 6,
+    "vertices": [
+     {
+      "position": [
+       -0.5,
+       -0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0,
+       1
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       -0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       1,
+       1
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       1,
+       0
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0,
+       0
+      ]
+     }
+    ],
+    "indices": [
+     0,
+     1,
+     2,
+     0,
+     2,
+     3
+    ]
+   },
+   "material": {
+    "baseColor": [
+     0,
+     0,
+     0
+    ],
+    "metallic": 0.0,
+    "roughness": 1.0,
+    "emissiveColor": [
+     0.00335,
+     0.0027,
+     0.00564
+    ],
+    "emissiveStrength": 1.0,
+    "alphaMode": 0,
+    "castShadows": false
+   }
+  },
+  {
+   "id": 4,
+   "name": {
+    "name": "Skirting"
+   },
+   "stableId": {
+    "id": 9004
+   },
+   "transform": {
+    "position": [
+     0,
+     -1.69,
+     -1.85
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     18.0,
+     0.05,
+     1
+    ]
+   },
+   "mesh": {
+    "vertexCount": 4,
+    "indexCount": 6,
+    "vertices": [
+     {
+      "position": [
+       -0.5,
+       -0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0,
+       1
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       -0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       1,
+       1
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       1,
+       0
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0,
+       0
+      ]
+     }
+    ],
+    "indices": [
+     0,
+     1,
+     2,
+     0,
+     2,
+     3
+    ]
+   },
+   "material": {
+    "baseColor": [
+     0,
+     0,
+     0
+    ],
+    "metallic": 0.0,
+    "roughness": 1.0,
+    "emissiveColor": [
+     0.05163,
+     0.0433,
+     0.07603
+    ],
+    "emissiveStrength": 1.0,
+    "alphaMode": 0,
+    "castShadows": false
+   }
+  },
+  {
+   "id": 5,
+   "name": {
+    "name": "PoolLeft"
+   },
+   "stableId": {
+    "id": 9005
+   },
+   "transform": {
+    "position": [
+     -3.95,
+     0.3,
+     -1.8
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     7.2,
+     7.2,
+     1
+    ]
+   },
+   "mesh": {
+    "vertexCount": 41,
+    "indexCount": 120,
+    "vertices": [
+     {
+      "position": [
+       0,
+       0,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       0.0,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.4938441702975689,
+       0.07821723252011543,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.47552825814757677,
+       0.1545084971874737,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.44550326209418395,
+       0.22699524986977337,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.4045084971874737,
+       0.29389262614623657,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.3535533905932738,
+       0.3535533905932738,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.29389262614623657,
+       0.4045084971874737,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.2269952498697734,
+       0.4455032620941839,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.15450849718747373,
+       0.47552825814757677,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.07821723252011546,
+       0.4938441702975689,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       3.061616997868383e-17,
+       0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.0782172325201153,
+       0.4938441702975689,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.15450849718747367,
+       0.4755282581475768,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.22699524986977337,
+       0.44550326209418395,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.2938926261462365,
+       0.4045084971874737,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.35355339059327373,
+       0.3535533905932738,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.40450849718747367,
+       0.2938926261462366,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.4455032620941839,
+       0.22699524986977343,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.47552825814757677,
+       0.15450849718747375,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.49384417029756883,
+       0.07821723252011549,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       6.123233995736766e-17,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.4938441702975689,
+       -0.07821723252011537,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.4755282581475769,
+       -0.15450849718747345,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.44550326209418395,
+       -0.22699524986977332,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.4045084971874737,
+       -0.2938926261462365,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.35355339059327384,
+       -0.35355339059327373,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.2938926261462366,
+       -0.40450849718747367,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.22699524986977346,
+       -0.4455032620941839,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.15450849718747378,
+       -0.47552825814757677,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.07821723252011552,
+       -0.49384417029756883,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -9.184850993605148e-17,
+       -0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.07821723252011534,
+       -0.4938441702975689,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.15450849718747361,
+       -0.4755282581475768,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.22699524986977332,
+       -0.445503262094184,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.29389262614623646,
+       -0.4045084971874738,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.3535533905932737,
+       -0.35355339059327384,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.40450849718747367,
+       -0.2938926261462367,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.4455032620941839,
+       -0.22699524986977349,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.47552825814757677,
+       -0.15450849718747384,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.49384417029756883,
+       -0.07821723252011555,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     }
+    ],
+    "indices": [
+     0,
+     1,
+     2,
+     0,
+     2,
+     3,
+     0,
+     3,
+     4,
+     0,
+     4,
+     5,
+     0,
+     5,
+     6,
+     0,
+     6,
+     7,
+     0,
+     7,
+     8,
+     0,
+     8,
+     9,
+     0,
+     9,
+     10,
+     0,
+     10,
+     11,
+     0,
+     11,
+     12,
+     0,
+     12,
+     13,
+     0,
+     13,
+     14,
+     0,
+     14,
+     15,
+     0,
+     15,
+     16,
+     0,
+     16,
+     17,
+     0,
+     17,
+     18,
+     0,
+     18,
+     19,
+     0,
+     19,
+     20,
+     0,
+     20,
+     21,
+     0,
+     21,
+     22,
+     0,
+     22,
+     23,
+     0,
+     23,
+     24,
+     0,
+     24,
+     25,
+     0,
+     25,
+     26,
+     0,
+     26,
+     27,
+     0,
+     27,
+     28,
+     0,
+     28,
+     29,
+     0,
+     29,
+     30,
+     0,
+     30,
+     31,
+     0,
+     31,
+     32,
+     0,
+     32,
+     33,
+     0,
+     33,
+     34,
+     0,
+     34,
+     35,
+     0,
+     35,
+     36,
+     0,
+     36,
+     37,
+     0,
+     37,
+     38,
+     0,
+     38,
+     39,
+     0,
+     39,
+     40,
+     0,
+     40,
+     1
+    ]
+   },
+   "material": {
+    "baseColor": [
+     0,
+     0,
+     0
+    ],
+    "metallic": 0.0,
+    "roughness": 1.0,
+    "emissiveColor": [
+     0.00908,
+     0.00778,
+     0.01473
+    ],
+    "emissiveStrength": 1.0,
+    "alphaMode": 0,
+    "castShadows": false
+   }
+  },
+  {
+   "id": 6,
+   "name": {
+    "name": "PoolRight"
+   },
+   "stableId": {
+    "id": 9006
+   },
+   "transform": {
+    "position": [
+     3.95,
+     0.3,
+     -1.8
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     7.2,
+     7.2,
+     1
+    ]
+   },
+   "mesh": {
+    "vertexCount": 41,
+    "indexCount": 120,
+    "vertices": [
+     {
+      "position": [
+       0,
+       0,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       0.0,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.4938441702975689,
+       0.07821723252011543,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.47552825814757677,
+       0.1545084971874737,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.44550326209418395,
+       0.22699524986977337,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.4045084971874737,
+       0.29389262614623657,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.3535533905932738,
+       0.3535533905932738,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.29389262614623657,
+       0.4045084971874737,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.2269952498697734,
+       0.4455032620941839,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.15450849718747373,
+       0.47552825814757677,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.07821723252011546,
+       0.4938441702975689,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       3.061616997868383e-17,
+       0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.0782172325201153,
+       0.4938441702975689,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.15450849718747367,
+       0.4755282581475768,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.22699524986977337,
+       0.44550326209418395,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.2938926261462365,
+       0.4045084971874737,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.35355339059327373,
+       0.3535533905932738,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.40450849718747367,
+       0.2938926261462366,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.4455032620941839,
+       0.22699524986977343,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.47552825814757677,
+       0.15450849718747375,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.49384417029756883,
+       0.07821723252011549,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       6.123233995736766e-17,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.4938441702975689,
+       -0.07821723252011537,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.4755282581475769,
+       -0.15450849718747345,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.44550326209418395,
+       -0.22699524986977332,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.4045084971874737,
+       -0.2938926261462365,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.35355339059327384,
+       -0.35355339059327373,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.2938926261462366,
+       -0.40450849718747367,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.22699524986977346,
+       -0.4455032620941839,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.15450849718747378,
+       -0.47552825814757677,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -0.07821723252011552,
+       -0.49384417029756883,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       -9.184850993605148e-17,
+       -0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.07821723252011534,
+       -0.4938441702975689,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.15450849718747361,
+       -0.4755282581475768,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.22699524986977332,
+       -0.445503262094184,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.29389262614623646,
+       -0.4045084971874738,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.3535533905932737,
+       -0.35355339059327384,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.40450849718747367,
+       -0.2938926261462367,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.4455032620941839,
+       -0.22699524986977349,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.47552825814757677,
+       -0.15450849718747384,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     },
+     {
+      "position": [
+       0.49384417029756883,
+       -0.07821723252011555,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0.5,
+       0.5
+      ]
+     }
+    ],
+    "indices": [
+     0,
+     1,
+     2,
+     0,
+     2,
+     3,
+     0,
+     3,
+     4,
+     0,
+     4,
+     5,
+     0,
+     5,
+     6,
+     0,
+     6,
+     7,
+     0,
+     7,
+     8,
+     0,
+     8,
+     9,
+     0,
+     9,
+     10,
+     0,
+     10,
+     11,
+     0,
+     11,
+     12,
+     0,
+     12,
+     13,
+     0,
+     13,
+     14,
+     0,
+     14,
+     15,
+     0,
+     15,
+     16,
+     0,
+     16,
+     17,
+     0,
+     17,
+     18,
+     0,
+     18,
+     19,
+     0,
+     19,
+     20,
+     0,
+     20,
+     21,
+     0,
+     21,
+     22,
+     0,
+     22,
+     23,
+     0,
+     23,
+     24,
+     0,
+     24,
+     25,
+     0,
+     25,
+     26,
+     0,
+     26,
+     27,
+     0,
+     27,
+     28,
+     0,
+     28,
+     29,
+     0,
+     29,
+     30,
+     0,
+     30,
+     31,
+     0,
+     31,
+     32,
+     0,
+     32,
+     33,
+     0,
+     33,
+     34,
+     0,
+     34,
+     35,
+     0,
+     35,
+     36,
+     0,
+     36,
+     37,
+     0,
+     37,
+     38,
+     0,
+     38,
+     39,
+     0,
+     39,
+     40,
+     0,
+     40,
+     1
+    ]
+   },
+   "material": {
+    "baseColor": [
+     0,
+     0,
+     0
+    ],
+    "metallic": 0.0,
+    "roughness": 1.0,
+    "emissiveColor": [
+     0.00908,
+     0.00778,
+     0.01473
+    ],
+    "emissiveStrength": 1.0,
+    "alphaMode": 0,
+    "castShadows": false
+   }
+  },
+  {
+   "id": 7,
+   "name": {
+    "name": "L_base_head"
+   },
+   "stableId": {
+    "id": 9007
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/base_head_ren.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 8,
+   "name": {
+    "name": "L_brow_neutral"
+   },
+   "stableId": {
+    "id": 9008
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/brow_neutral.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 9,
+   "name": {
+    "name": "L_brow_raised"
+   },
+   "stableId": {
+    "id": 9009
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/brow_raised.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 10,
+   "name": {
+    "name": "L_brow_furrowed"
+   },
+   "stableId": {
+    "id": 9010
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/brow_furrowed.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 11,
+   "name": {
+    "name": "L_brow_worried"
+   },
+   "stableId": {
+    "id": 9011
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/brow_worried.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 12,
+   "name": {
+    "name": "L_brow_skeptical"
+   },
+   "stableId": {
+    "id": 9012
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/brow_skeptical.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 13,
+   "name": {
+    "name": "L_eye_open"
+   },
+   "stableId": {
+    "id": 9013
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/eye_open.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 14,
+   "name": {
+    "name": "L_eye_half"
+   },
+   "stableId": {
+    "id": 9014
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/eye_half.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 15,
+   "name": {
+    "name": "L_eye_happy"
+   },
+   "stableId": {
+    "id": 9015
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/eye_happy.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 16,
+   "name": {
+    "name": "L_eye_wide"
+   },
+   "stableId": {
+    "id": 9016
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/eye_wide.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 17,
+   "name": {
+    "name": "L_eye_left"
+   },
+   "stableId": {
+    "id": 9017
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/eye_left.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 18,
+   "name": {
+    "name": "L_eye_right"
+   },
+   "stableId": {
+    "id": 9018
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/eye_right.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 19,
+   "name": {
+    "name": "L_eye_down"
+   },
+   "stableId": {
+    "id": 9019
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/eye_down.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 20,
+   "name": {
+    "name": "L_eye_teary"
+   },
+   "stableId": {
+    "id": 9020
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/eye_teary.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 21,
+   "name": {
+    "name": "L_eye_squeezed"
+   },
+   "stableId": {
+    "id": 9021
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/eye_squeezed.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 22,
+   "name": {
+    "name": "L_eye_closed"
+   },
+   "stableId": {
+    "id": 9022
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/eye_closed.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 23,
+   "name": {
+    "name": "L_mouth_neutral"
+   },
+   "stableId": {
+    "id": 9023
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/mouth_neutral.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 24,
+   "name": {
+    "name": "L_mouth_smile"
+   },
+   "stableId": {
+    "id": 9024
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/mouth_smile.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 25,
+   "name": {
+    "name": "L_mouth_open-smile"
+   },
+   "stableId": {
+    "id": 9025
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/mouth_open-smile.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 26,
+   "name": {
+    "name": "L_mouth_big-open"
+   },
+   "stableId": {
+    "id": 9026
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/mouth_big-open.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 27,
+   "name": {
+    "name": "L_mouth_frown"
+   },
+   "stableId": {
+    "id": 9027
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/mouth_frown.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 28,
+   "name": {
+    "name": "L_mouth_small-o"
+   },
+   "stableId": {
+    "id": 9028
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/mouth_small-o.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 29,
+   "name": {
+    "name": "L_mouth_gritted"
+   },
+   "stableId": {
+    "id": 9029
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/mouth_gritted.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 30,
+   "name": {
+    "name": "L_mouth_pout"
+   },
+   "stableId": {
+    "id": 9030
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/mouth_pout.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 31,
+   "name": {
+    "name": "L_mouth_wavy"
+   },
+   "stableId": {
+    "id": 9031
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/mouth_wavy.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 32,
+   "name": {
+    "name": "L_mouth_mid"
+   },
+   "stableId": {
+    "id": 9032
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/mouth_mid.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 33,
+   "name": {
+    "name": "L_blush_light"
+   },
+   "stableId": {
+    "id": 9033
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.1
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/blush_light.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 34,
+   "name": {
+    "name": "L_blush_heavy"
+   },
+   "stableId": {
+    "id": 9034
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.1
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/blush_heavy.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 35,
+   "name": {
+    "name": "L_fx_sweat"
+   },
+   "stableId": {
+    "id": 9035
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.3
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/fx_sweat.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 36,
+   "name": {
+    "name": "L_fx_anger"
+   },
+   "stableId": {
+    "id": 9036
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.3
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/fx_anger.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 37,
+   "name": {
+    "name": "L_fx_tears"
+   },
+   "stableId": {
+    "id": 9037
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.3
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/fx_tears.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 38,
+   "name": {
+    "name": "L_fx_sparkle"
+   },
+   "stableId": {
+    "id": 9038
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.3
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/fx_sparkle.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 39,
+   "name": {
+    "name": "L_fx_gloom"
+   },
+   "stableId": {
+    "id": 9039
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.3
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/fx_gloom.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 40,
+   "name": {
+    "name": "L_fx_excl"
+   },
+   "stableId": {
+    "id": 9040
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.3
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/fx_excl.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 41,
+   "name": {
+    "name": "L_fx_quest"
+   },
+   "stableId": {
+    "id": 9041
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.3
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/fx_quest.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 42,
+   "name": {
+    "name": "R_base_head"
+   },
+   "stableId": {
+    "id": 9042
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/base_head_mira.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 43,
+   "name": {
+    "name": "R_brow_neutral"
+   },
+   "stableId": {
+    "id": 9043
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/brow_neutral.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 44,
+   "name": {
+    "name": "R_brow_raised"
+   },
+   "stableId": {
+    "id": 9044
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/brow_raised.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 45,
+   "name": {
+    "name": "R_brow_furrowed"
+   },
+   "stableId": {
+    "id": 9045
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/brow_furrowed.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 46,
+   "name": {
+    "name": "R_brow_worried"
+   },
+   "stableId": {
+    "id": 9046
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/brow_worried.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 47,
+   "name": {
+    "name": "R_brow_skeptical"
+   },
+   "stableId": {
+    "id": 9047
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/brow_skeptical.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 48,
+   "name": {
+    "name": "R_eye_open"
+   },
+   "stableId": {
+    "id": 9048
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/eye_open.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 49,
+   "name": {
+    "name": "R_eye_half"
+   },
+   "stableId": {
+    "id": 9049
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/eye_half.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 50,
+   "name": {
+    "name": "R_eye_happy"
+   },
+   "stableId": {
+    "id": 9050
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/eye_happy.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 51,
+   "name": {
+    "name": "R_eye_wide"
+   },
+   "stableId": {
+    "id": 9051
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/eye_wide.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 52,
+   "name": {
+    "name": "R_eye_left"
+   },
+   "stableId": {
+    "id": 9052
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/eye_left.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 53,
+   "name": {
+    "name": "R_eye_right"
+   },
+   "stableId": {
+    "id": 9053
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/eye_right.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 54,
+   "name": {
+    "name": "R_eye_down"
+   },
+   "stableId": {
+    "id": 9054
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/eye_down.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 55,
+   "name": {
+    "name": "R_eye_teary"
+   },
+   "stableId": {
+    "id": 9055
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/eye_teary.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 56,
+   "name": {
+    "name": "R_eye_squeezed"
+   },
+   "stableId": {
+    "id": 9056
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/eye_squeezed.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 57,
+   "name": {
+    "name": "R_eye_closed"
+   },
+   "stableId": {
+    "id": 9057
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/eye_closed.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 58,
+   "name": {
+    "name": "R_mouth_neutral"
+   },
+   "stableId": {
+    "id": 9058
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/mouth_neutral.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 59,
+   "name": {
+    "name": "R_mouth_smile"
+   },
+   "stableId": {
+    "id": 9059
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/mouth_smile.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 60,
+   "name": {
+    "name": "R_mouth_open-smile"
+   },
+   "stableId": {
+    "id": 9060
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/mouth_open-smile.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 61,
+   "name": {
+    "name": "R_mouth_big-open"
+   },
+   "stableId": {
+    "id": 9061
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/mouth_big-open.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 62,
+   "name": {
+    "name": "R_mouth_frown"
+   },
+   "stableId": {
+    "id": 9062
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/mouth_frown.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 63,
+   "name": {
+    "name": "R_mouth_small-o"
+   },
+   "stableId": {
+    "id": 9063
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/mouth_small-o.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 64,
+   "name": {
+    "name": "R_mouth_gritted"
+   },
+   "stableId": {
+    "id": 9064
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/mouth_gritted.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 65,
+   "name": {
+    "name": "R_mouth_pout"
+   },
+   "stableId": {
+    "id": 9065
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/mouth_pout.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 66,
+   "name": {
+    "name": "R_mouth_wavy"
+   },
+   "stableId": {
+    "id": 9066
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/mouth_wavy.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 67,
+   "name": {
+    "name": "R_mouth_mid"
+   },
+   "stableId": {
+    "id": 9067
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/mouth_mid.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 68,
+   "name": {
+    "name": "R_blush_light"
+   },
+   "stableId": {
+    "id": 9068
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.1
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/blush_light.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 69,
+   "name": {
+    "name": "R_blush_heavy"
+   },
+   "stableId": {
+    "id": 9069
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.1
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/blush_heavy.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 70,
+   "name": {
+    "name": "R_fx_sweat"
+   },
+   "stableId": {
+    "id": 9070
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.3
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/fx_sweat.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 71,
+   "name": {
+    "name": "R_fx_anger"
+   },
+   "stableId": {
+    "id": 9071
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.3
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/fx_anger.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 72,
+   "name": {
+    "name": "R_fx_tears"
+   },
+   "stableId": {
+    "id": 9072
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.3
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/fx_tears.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 73,
+   "name": {
+    "name": "R_fx_sparkle"
+   },
+   "stableId": {
+    "id": 9073
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.3
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/fx_sparkle.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 74,
+   "name": {
+    "name": "R_fx_gloom"
+   },
+   "stableId": {
+    "id": 9074
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.3
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/fx_gloom.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 75,
+   "name": {
+    "name": "R_fx_excl"
+   },
+   "stableId": {
+    "id": 9075
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.3
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/fx_excl.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 76,
+   "name": {
+    "name": "R_fx_quest"
+   },
+   "stableId": {
+    "id": 9076
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.3
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/fx_quest.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 77,
+   "name": {
+    "name": "DimLeft"
+   },
+   "stableId": {
+    "id": 9077
+   },
+   "transform": {
+    "position": [
+     -5.4884615384615385,
+     2.52,
+     0.55
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/dim_ren.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 78,
+   "name": {
+    "name": "DimRight"
+   },
+   "stableId": {
+    "id": 9078
+   },
+   "transform": {
+    "position": [
+     2.411538461538462,
+     2.52,
+     0.55
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "displayGraphic": {
+    "sourcePath": "assets/art/vn/dim_mira.svg",
+    "worldHeight": 4.0,
+    "curveTolerance": 0.15
+   }
+  },
+  {
+   "id": 79,
+   "name": {
+    "name": "MeterNameLeft"
+   },
+   "stableId": {
+    "id": 9079
+   },
+   "transform": {
+    "position": [
+     -5.25,
+     3.42,
+     0.5
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "text": {
+    "text": "",
+    "fontPath": "assets/fonts/CourierBold.ttf",
+    "fontSize": 48.0,
+    "wrapWidth": 4000.0,
+    "textColor": [
+     0.21764,
+     0.19894,
+     0.26841
+    ],
+    "bgOpacity": 0.0,
+    "horizontalAlign": 0,
+    "sdfText": true,
+    "worldHeight": 0.2,
+    "lit": false
+   }
+  },
+  {
+   "id": 80,
+   "name": {
+    "name": "MeterValLeft"
+   },
+   "stableId": {
+    "id": 9080
+   },
+   "transform": {
+    "position": [
+     -2.95,
+     3.42,
+     0.5
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "text": {
+    "text": "",
+    "fontPath": "assets/fonts/CourierBold.ttf",
+    "fontSize": 48.0,
+    "wrapWidth": 4000.0,
+    "textColor": [
+     0.21764,
+     0.19894,
+     0.26841
+    ],
+    "bgOpacity": 0.0,
+    "horizontalAlign": 0,
+    "sdfText": true,
+    "worldHeight": 0.2,
+    "lit": false
+   }
+  },
+  {
+   "id": 81,
+   "name": {
+    "name": "MeterTrackLeft"
+   },
+   "stableId": {
+    "id": 9081
+   },
+   "transform": {
+    "position": [
+     -3.95,
+     3.22,
+     0.4
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     2.6,
+     0.075,
+     1
+    ]
+   },
+   "mesh": {
+    "vertexCount": 4,
+    "indexCount": 6,
+    "vertices": [
+     {
+      "position": [
+       -0.5,
+       -0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0,
+       1
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       -0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       1,
+       1
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       1,
+       0
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0,
+       0
+      ]
+     }
+    ],
+    "indices": [
+     0,
+     1,
+     2,
+     0,
+     2,
+     3
+    ]
+   },
+   "material": {
+    "baseColor": [
+     0,
+     0,
+     0
+    ],
+    "metallic": 0.0,
+    "roughness": 1.0,
+    "emissiveColor": [
+     0.0259,
+     0.02299,
+     0.03943
+    ],
+    "emissiveStrength": 1.0,
+    "alphaMode": 0,
+    "castShadows": false
+   }
+  },
+  {
+   "id": 82,
+   "name": {
+    "name": "MeterFillLeft"
+   },
+   "stableId": {
+    "id": 9082
+   },
+   "transform": {
+    "position": [
+     -5.25,
+     3.22,
+     0.45
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     0.001,
+     0.075,
+     1
+    ]
+   },
+   "mesh": {
+    "vertexCount": 4,
+    "indexCount": 6,
+    "vertices": [
+     {
+      "position": [
+       -0.5,
+       -0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0,
+       1
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       -0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       1,
+       1
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       1,
+       0
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0,
+       0
+      ]
+     }
+    ],
+    "indices": [
+     0,
+     1,
+     2,
+     0,
+     2,
+     3
+    ]
+   },
+   "material": {
+    "baseColor": [
+     0,
+     0,
+     0
+    ],
+    "metallic": 0.0,
+    "roughness": 1.0,
+    "emissiveColor": [
+     0.79311,
+     0.26841,
+     0.19894
+    ],
+    "emissiveStrength": 1.0,
+    "alphaMode": 0,
+    "castShadows": false
+   }
+  },
+  {
+   "id": 83,
+   "name": {
+    "name": "MeterNameRight"
+   },
+   "stableId": {
+    "id": 9083
+   },
+   "transform": {
+    "position": [
+     2.6500000000000004,
+     3.42,
+     0.5
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "text": {
+    "text": "",
+    "fontPath": "assets/fonts/CourierBold.ttf",
+    "fontSize": 48.0,
+    "wrapWidth": 4000.0,
+    "textColor": [
+     0.21764,
+     0.19894,
+     0.26841
+    ],
+    "bgOpacity": 0.0,
+    "horizontalAlign": 0,
+    "sdfText": true,
+    "worldHeight": 0.2,
+    "lit": false
+   }
+  },
+  {
+   "id": 84,
+   "name": {
+    "name": "MeterValRight"
+   },
+   "stableId": {
+    "id": 9084
+   },
+   "transform": {
+    "position": [
+     4.95,
+     3.42,
+     0.5
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "text": {
+    "text": "",
+    "fontPath": "assets/fonts/CourierBold.ttf",
+    "fontSize": 48.0,
+    "wrapWidth": 4000.0,
+    "textColor": [
+     0.21764,
+     0.19894,
+     0.26841
+    ],
+    "bgOpacity": 0.0,
+    "horizontalAlign": 0,
+    "sdfText": true,
+    "worldHeight": 0.2,
+    "lit": false
+   }
+  },
+  {
+   "id": 85,
+   "name": {
+    "name": "MeterTrackRight"
+   },
+   "stableId": {
+    "id": 9085
+   },
+   "transform": {
+    "position": [
+     3.95,
+     3.22,
+     0.4
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     2.6,
+     0.075,
+     1
+    ]
+   },
+   "mesh": {
+    "vertexCount": 4,
+    "indexCount": 6,
+    "vertices": [
+     {
+      "position": [
+       -0.5,
+       -0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0,
+       1
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       -0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       1,
+       1
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       1,
+       0
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0,
+       0
+      ]
+     }
+    ],
+    "indices": [
+     0,
+     1,
+     2,
+     0,
+     2,
+     3
+    ]
+   },
+   "material": {
+    "baseColor": [
+     0,
+     0,
+     0
+    ],
+    "metallic": 0.0,
+    "roughness": 1.0,
+    "emissiveColor": [
+     0.0259,
+     0.02299,
+     0.03943
+    ],
+    "emissiveStrength": 1.0,
+    "alphaMode": 0,
+    "castShadows": false
+   }
+  },
+  {
+   "id": 86,
+   "name": {
+    "name": "MeterFillRight"
+   },
+   "stableId": {
+    "id": 9086
+   },
+   "transform": {
+    "position": [
+     2.6500000000000004,
+     3.22,
+     0.45
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     0.001,
+     0.075,
+     1
+    ]
+   },
+   "mesh": {
+    "vertexCount": 4,
+    "indexCount": 6,
+    "vertices": [
+     {
+      "position": [
+       -0.5,
+       -0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0,
+       1
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       -0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       1,
+       1
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       1,
+       0
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0,
+       0
+      ]
+     }
+    ],
+    "indices": [
+     0,
+     1,
+     2,
+     0,
+     2,
+     3
+    ]
+   },
+   "material": {
+    "baseColor": [
+     0,
+     0,
+     0
+    ],
+    "metallic": 0.0,
+    "roughness": 1.0,
+    "emissiveColor": [
+     0.19894,
+     0.54675,
+     0.75485
+    ],
+    "emissiveStrength": 1.0,
+    "alphaMode": 0,
+    "castShadows": false
+   }
+  },
+  {
+   "id": 87,
+   "name": {
+    "name": "Box"
+   },
+   "stableId": {
+    "id": 9087
+   },
+   "transform": {
+    "position": [
+     0,
+     -2.7,
+     0.7
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     15.6,
+     2.5,
+     1
+    ]
+   },
+   "mesh": {
+    "vertexCount": 4,
+    "indexCount": 6,
+    "vertices": [
+     {
+      "position": [
+       -0.5,
+       -0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0,
+       1
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       -0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       1,
+       1
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       1,
+       0
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0,
+       0
+      ]
+     }
+    ],
+    "indices": [
+     0,
+     1,
+     2,
+     0,
+     2,
+     3
+    ]
+   },
+   "material": {
+    "baseColor": [
+     0,
+     0,
+     0
+    ],
+    "metallic": 0.0,
+    "roughness": 1.0,
+    "emissiveColor": [
+     0.01031,
+     0.00908,
+     0.01655
+    ],
+    "emissiveStrength": 1.0,
+    "alphaMode": 0,
+    "castShadows": false
+   }
+  },
+  {
+   "id": 88,
+   "name": {
+    "name": "BoxRule"
+   },
+   "stableId": {
+    "id": 9088
+   },
+   "transform": {
+    "position": [
+     0,
+     -1.89,
+     0.75
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     15.6,
+     0.02,
+     1
+    ]
+   },
+   "mesh": {
+    "vertexCount": 4,
+    "indexCount": 6,
+    "vertices": [
+     {
+      "position": [
+       -0.5,
+       -0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0,
+       1
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       -0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       1,
+       1
+      ]
+     },
+     {
+      "position": [
+       0.5,
+       0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       1,
+       0
+      ]
+     },
+     {
+      "position": [
+       -0.5,
+       0.5,
+       0
+      ],
+      "normal": [
+       0,
+       0,
+       1
+      ],
+      "uv": [
+       0,
+       0
+      ]
+     }
+    ],
+    "indices": [
+     0,
+     1,
+     2,
+     0,
+     2,
+     3
+    ]
+   },
+   "material": {
+    "baseColor": [
+     0,
+     0,
+     0
+    ],
+    "metallic": 0.0,
+    "roughness": 1.0,
+    "emissiveColor": [
+     0.0259,
+     0.02299,
+     0.03943
+    ],
+    "emissiveStrength": 1.0,
+    "alphaMode": 0,
+    "castShadows": false
+   }
+  },
+  {
+   "id": 89,
+   "name": {
+    "name": "Nameplate"
+   },
+   "stableId": {
+    "id": 9089
+   },
+   "transform": {
+    "position": [
+     -7.5,
+     -1.55,
+     0.8
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "text": {
+    "text": "",
+    "fontPath": "assets/fonts/CourierBold.ttf",
+    "fontSize": 48.0,
+    "wrapWidth": 4000.0,
+    "textColor": [
+     0.89329,
+     0.61207,
+     0.16428
+    ],
+    "bgOpacity": 0.0,
+    "horizontalAlign": 0,
+    "sdfText": true,
+    "worldHeight": 0.26,
+    "lit": false
+   }
+  },
+  {
+   "id": 90,
+   "name": {
+    "name": "BeatCount"
+   },
+   "stableId": {
+    "id": 9090
+   },
+   "transform": {
+    "position": [
+     6.9,
+     -1.55,
+     0.8
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "text": {
+    "text": "",
+    "fontPath": "assets/fonts/CourierBold.ttf",
+    "fontSize": 48.0,
+    "wrapWidth": 4000.0,
+    "textColor": [
+     0.21764,
+     0.19894,
+     0.26841
+    ],
+    "bgOpacity": 0.0,
+    "horizontalAlign": 0,
+    "sdfText": true,
+    "worldHeight": 0.19,
+    "lit": false
+   }
+  },
+  {
+   "id": 91,
+   "name": {
+    "name": "Line"
+   },
+   "stableId": {
+    "id": 9091
+   },
+   "transform": {
+    "position": [
+     -7.5,
+     -2.07,
+     0.8
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "text": {
+    "text": "",
+    "fontPath": "assets/fonts/CourierBold.ttf",
+    "fontSize": 48.0,
+    "wrapWidth": 2700.0,
+    "textColor": [
+     0.81263,
+     0.77385,
+     0.69939
+    ],
+    "bgOpacity": 0.0,
+    "horizontalAlign": 0,
+    "sdfText": true,
+    "worldHeight": 0.24,
+    "lit": false
+   }
+  },
+  {
+   "id": 92,
+   "name": {
+    "name": "Opt0"
+   },
+   "stableId": {
+    "id": 9092
+   },
+   "transform": {
+    "position": [
+     -7.1,
+     -2.68,
+     0.8
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "text": {
+    "text": "",
+    "fontPath": "assets/fonts/CourierBold.ttf",
+    "fontSize": 48.0,
+    "wrapWidth": 4000.0,
+    "textColor": [
+     0.42807,
+     0.69939,
+     0.87273
+    ],
+    "bgOpacity": 0.0,
+    "horizontalAlign": 0,
+    "sdfText": true,
+    "worldHeight": 0.22,
+    "lit": false
+   }
+  },
+  {
+   "id": 93,
+   "name": {
+    "name": "Opt1"
+   },
+   "stableId": {
+    "id": 9093
+   },
+   "transform": {
+    "position": [
+     -7.1,
+     -3.08,
+     0.8
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "text": {
+    "text": "",
+    "fontPath": "assets/fonts/CourierBold.ttf",
+    "fontSize": 48.0,
+    "wrapWidth": 4000.0,
+    "textColor": [
+     0.42807,
+     0.69939,
+     0.87273
+    ],
+    "bgOpacity": 0.0,
+    "horizontalAlign": 0,
+    "sdfText": true,
+    "worldHeight": 0.22,
+    "lit": false
+   }
+  },
+  {
+   "id": 94,
+   "name": {
+    "name": "Opt2"
+   },
+   "stableId": {
+    "id": 9094
+   },
+   "transform": {
+    "position": [
+     -7.1,
+     -3.4800000000000004,
+     0.8
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "text": {
+    "text": "",
+    "fontPath": "assets/fonts/CourierBold.ttf",
+    "fontSize": 48.0,
+    "wrapWidth": 4000.0,
+    "textColor": [
+     0.42807,
+     0.69939,
+     0.87273
+    ],
+    "bgOpacity": 0.0,
+    "horizontalAlign": 0,
+    "sdfText": true,
+    "worldHeight": 0.22,
+    "lit": false
+   }
+  },
+  {
+   "id": 95,
+   "name": {
+    "name": "Prompt"
+   },
+   "stableId": {
+    "id": 9095
+   },
+   "transform": {
+    "position": [
+     -7.5,
+     -3.81,
+     0.8
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "text": {
+    "text": "",
+    "fontPath": "assets/fonts/CourierBold.ttf",
+    "fontSize": 48.0,
+    "wrapWidth": 4000.0,
+    "textColor": [
+     0.21764,
+     0.19894,
+     0.26841
+    ],
+    "bgOpacity": 0.0,
+    "horizontalAlign": 0,
+    "sdfText": true,
+    "worldHeight": 0.18,
+    "lit": false
+   }
+  },
+  {
+   "id": 96,
+   "name": {
+    "name": "Closing"
+   },
+   "stableId": {
+    "id": 9096
+   },
+   "transform": {
+    "position": [
+     -7.5,
+     -2.07,
+     0.85
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "text": {
+    "text": "",
+    "fontPath": "assets/fonts/CourierBold.ttf",
+    "fontSize": 48.0,
+    "wrapWidth": 2700.0,
+    "textColor": [
+     0.81263,
+     0.77385,
+     0.69939
+    ],
+    "bgOpacity": 0.0,
+    "horizontalAlign": 0,
+    "sdfText": true,
+    "worldHeight": 0.26,
+    "lit": false
+   }
+  },
+  {
+   "id": 97,
+   "name": {
+    "name": "PortraitLeft"
+   },
+   "stableId": {
+    "id": 9097
+   },
+   "transform": {
+    "position": [
+     -3.95,
+     0,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "scriptComponent": {
+    "scripts": [
+     {
+      "class": "PortraitRig",
+      "path": "scripts/enjin_api/PortraitRig.as",
+      "enabled": true,
+      "properties": {
+       "speakerId": {
+        "type": 3,
+        "value": "ren"
+       },
+       "layerPrefix": {
+        "type": 3,
+        "value": "L_"
+       },
+       "startEmote": {
+        "type": 3,
+        "value": "neutral"
+       },
+       "emoteTable": {
+        "type": 3,
+        "value": ""
+       },
+       "blinkEvery": {
+        "type": 1,
+        "value": 3.4
+       },
+       "blinkHold": {
+        "type": 1,
+        "value": 0.09
+       },
+       "mouthRate": {
+        "type": 1,
+        "value": 11.0
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "id": 98,
+   "name": {
+    "name": "PortraitRight"
+   },
+   "stableId": {
+    "id": 9098
+   },
+   "transform": {
+    "position": [
+     3.95,
+     0,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "scriptComponent": {
+    "scripts": [
+     {
+      "class": "PortraitRig",
+      "path": "scripts/enjin_api/PortraitRig.as",
+      "enabled": true,
+      "properties": {
+       "speakerId": {
+        "type": 3,
+        "value": "mira"
+       },
+       "layerPrefix": {
+        "type": 3,
+        "value": "R_"
+       },
+       "startEmote": {
+        "type": 3,
+        "value": "neutral"
+       },
+       "emoteTable": {
+        "type": 3,
+        "value": ""
+       },
+       "blinkEvery": {
+        "type": 1,
+        "value": 3.4
+       },
+       "blinkHold": {
+        "type": 1,
+        "value": 0.09
+       },
+       "mouthRate": {
+        "type": 1,
+        "value": 11.0
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "id": 99,
+   "name": {
+    "name": "VN"
+   },
+   "stableId": {
+    "id": 9099
+   },
+   "transform": {
+    "position": [
+     0,
+     0,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "scriptComponent": {
+    "scripts": [
+     {
+      "class": "VNScene",
+      "path": "scripts/enjin_api/VNScene.as",
+      "enabled": true,
+      "properties": {
+       "conversation": {
+        "type": 3,
+        "value": "conversations/first_evening"
+       },
+       "fallbackLine": {
+        "type": 3,
+        "value": "No conversation asset loaded. Press Scan Assets in the Data Assets panel."
+       },
+       "revealRate": {
+        "type": 1,
+        "value": 42.0
+       },
+       "meterWidth": {
+        "type": 1,
+        "value": 2.6
+       },
+       "startAffinity": {
+        "type": 0,
+        "value": 40
+       },
+       "resetOnStart": {
+        "type": 0,
+        "value": 1
+       },
+       "maxAffinity": {
+        "type": 0,
+        "value": 100
+       },
+       "autoBeat": {
+        "type": 1,
+        "value": 0.0
+       },
+       "autoPick": {
+        "type": 0,
+        "value": 1
+       }
+      }
+     }
+    ]
+   }
+  }
+ ]
+}

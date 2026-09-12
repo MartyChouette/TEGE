@@ -259,7 +259,466 @@ float Rad2Deg(float radians) {
 }
 )ENJIN_API";
 
-static const char* s_Api2 = R"ENJIN_API(
+static const char* s_Api2 =
+R"ENJIN_API(
+// PortraitRig.as - one bust, built from swappable layers, driven by an emotion NAME.
+//
+// SHARED. Nothing in here knows what game it is in. It takes a string like
+// "worried" and shows the right stack of layer entities. That is the whole
+// contract, and it is why the same file serves a dictation letter and a
+// conversation in another project without a line of difference.
+//
+// THE SCENE HOLDS THE PIECES, THE RIG PICKS THEM. Runtime texture swapping is
+// not a thing in TEGE (same reason the wax colours are three pre-made
+// entities), so every layer piece exists as its own child entity and the rig
+// toggles visibility. Attach this to the portrait ROOT; name the children by
+// convention:
+//
+//   base_head            brow_neutral  brow_raised  brow_furrowed
+//   brow_worried         brow_skeptical
+//   eye_open  eye_half   eye_happy  eye_wide  eye_left  eye_right
+//   eye_down  eye_teary  eye_squeezed  eye_closed
+//   mouth_neutral  mouth_smile  mouth_open-smile  mouth_big-open  mouth_frown
+//   mouth_small-o  mouth_gritted  mouth_pout  mouth_wavy
+//   mouth_mid                      (lip-sync only: the halfway mouth)
+//   blush_light  blush_heavy
+//   fx_sweat  fx_anger  fx_tears  fx_sparkle  fx_gloom  fx_excl  fx_quest
+//
+// MISSING PIECES ARE FINE. A layer with no entity is skipped and recorded in
+// Missing(), so a rig runs on two drawings and tells you what is not painted
+// yet. That is the point: the emotion table can be finished long before the
+// art is.
+//
+// Per CharacterExpressionSpec.md: the 10 MVP emotions ship on everyone, the
+// full 16 on major characters. Auto-blink and look-toward are in here too,
+// because the spec is right that they sell "alive" harder than emotion 17 does.
+#include "TegeBehavior.as"
+
+// The 16 emotions, each as "brow|eye|mouth|blush|fx". "-" means that layer is
+// off for this emotion. THIS TABLE IS THE ONLY PLACE THE COMBOS LIVE. A
+// character with different art overrides emoteTable; it does not fork the rig.
+const string PORTRAIT_EMOTES =
+    "neutral=neutral|open|neutral|-|-;"
+    "smile=neutral|happy|smile|-|-;"
+    "laugh=raised|happy|big-open|-|-;"
+    "sad=worried|down|frown|-|-;"
+    "angry=furrowed|wide|gritted|-|anger;"
+    "surprised=raised|wide|small-o|-|excl;"
+    "blush=worried|right|wavy|heavy|sweat;"
+    "worried=worried|half|wavy|-|-;"
+    "smug=skeptical|half|smile|-|-;"
+    "flustered=raised|squeezed|open-smile|heavy|sweat;"
+    "crying=worried|teary|frown|-|tears;"
+    "thoughtful=furrowed|left|neutral|-|quest;"
+    "disgusted=furrowed|half|pout|-|-;"
+    "sleepy=neutral|half|small-o|-|gloom;"
+    "flirty=skeptical|half|smile|light|sparkle;"
+    "determined=furrowed|open|neutral|-|-";
+
+class PortraitRig : TegeBehavior {
+    // Override to give one character a different set of combos. Same format as
+    // PORTRAIT_EMOTES; anything not named here falls back to the shared table.
+    [Property] string emoteTable = "";
+    [Property] string startEmote = "neutral";
+
+    // WHO THIS BUST IS. A driver does not need a handle on this script; it
+    // sends "portrait_emote" with who + emote and every rig in the scene checks
+    // whether the name is its own. That keeps the dictation, the conversation,
+    // or anything else from having to reach across entities to move a face.
+    [Property] string speakerId = "";
+
+    // TWO BUSTS IN ONE SCENE. Layers are found by NAME through Scene_FindEntity,
+    // which is scene-global, so a second rig would grab the first rig's pieces.
+    // Give each rig a prefix and name its children "L_brow_neutral",
+    // "R_brow_neutral" and so on. A scene with one bust can leave it empty.
+    [Property] string layerPrefix = "";
+
+    // Eye life. blinkEvery 0 turns blinking off, for a screenshot or for a
+    // character whose eyes are covered.
+    [Property] float blinkEvery = 3.4f;
+    [Property] float blinkHold  = 0.09f;
+
+    // Lip-sync, 3-phase (closed / mid / open). The spec says three is enough
+    // when the words are text anyway. Speak(true) while the line is arriving.
+    [Property] float mouthRate = 11.0f;
+
+    array<string> layerName;      // every piece this rig knows how to show
+    array<uint64> layerEnt;       // 0 = not in the scene
+    array<string> absent;         // the pieces the art has not caught up to
+
+    string emote = "";
+    array<string> want;           // the layer names the current emote asks for
+    float blinkT = 0.0f;
+    bool  blinking = false;
+    bool  talking = false;
+    float mouthT = 0.0f;
+    bool  mouthOpen = false;
+
+    // ======================================================================
+    void OnStart() {
+        // Every piece either table mentions, plus the always-on base and the
+        // lip-sync mouth, is looked up once. Scene_FindEntity is not free and
+        // an emote change has to cost nothing.
+        Claim("base_head");
+        Claim("mouth_mid");
+        Claim("eye_closed");
+        Learn(PORTRAIT_EMOTES);
+        if (emoteTable != "") Learn(emoteTable);
+
+        Show("base_head", true);
+        Set(startEmote);
+
+        Events_Listen("portrait_emote", EventCallback(this.OnEmoteEvent));
+        Events_Listen("portrait_speak", EventCallback(this.OnSpeakEvent));
+        Events_Listen("portrait_look",  EventCallback(this.OnLookEvent));
+    }
+
+    // A rig with no speakerId answers to everything, which is what a debug
+    // scene with one bust in it wants.
+    bool Mine(const string &in who) {
+        return speakerId == "" || who == "" || who == speakerId;
+    }
+
+    void OnEmoteEvent(const string &in ev) {
+        if (Mine(Events_CurrentString("who"))) Set(Events_CurrentString("emote"));
+    }
+
+    void OnSpeakEvent(const string &in ev) {
+        if (Mine(Events_CurrentString("who"))) Speak(Events_CurrentInt("on") != 0);
+    }
+
+    void OnLookEvent(const string &in ev) {
+        if (Mine(Events_CurrentString("who"))) LookAt(Events_CurrentInt("dir"));
+    }
+
+    // Register every layer piece a table mentions.
+    void Learn(const string &in table) {
+        array<string> rows = Split(table, ";");
+        for (uint i = 0; i < rows.length(); i++) {
+            int eq = rows[i].findFirst("=");
+            if (eq < 0) continue;
+            array<string> parts = Split(rows[i].substr(eq + 1), "|");
+            for (uint p = 0; p < parts.length() && p < 5; p++) {
+                if (parts[p] == "" || parts[p] == "-") continue;
+                Claim(Prefix(p) + parts[p]);
+            }
+        }
+    }
+
+    // Private, not global. Dictation.as already has its own Split as a class
+    // method, and a shared file must never introduce a global that shadows or
+    // collides with a host script's member. enjin_api/StrUtil.as has these as
+    // globals for scripts that want them.
+    array<string> Split(const string &in s, const string &in sep) {
+        array<string> parts;
+        if (sep.length() == 0) { parts.insertLast(s); return parts; }
+        int start = 0;
+        while (true) {
+            int at = s.findFirst(sep, uint(start));
+            if (at < 0) {
+                parts.insertLast(s.substr(uint(start), s.length() - uint(start)));
+                break;
+            }
+            parts.insertLast(s.substr(uint(start), uint(at - start)));
+            start = at + int(sep.length());
+        }
+        return parts;
+    }
+
+    string Prefix(uint slot) {
+        if (slot == 0) return "brow_";
+        if (slot == 1) return "eye_";
+        if (slot == 2) return "mouth_";
+        if (slot == 3) return "blush_";
+        return "fx_";
+    }
+
+    void Claim(const string &in name) {
+        for (uint i = 0; i < layerName.length(); i++)
+            if (layerName[i] == name) return;
+        uint64 e = Scene_FindEntity(layerPrefix + name);
+        layerName.insertLast(name);
+        layerEnt.insertLast(e);
+        if (e == 0) absent.insertLast(name);
+        else Entity_SetVisible(e, false);
+    }
+
+    void Show(const string &in name, bool on) {
+        for (uint i = 0; i < layerName.length(); i++) {
+            if (layerName[i] != name) continue;
+)ENJIN_API"
+R"ENJIN_API(            if (layerEnt[i] != 0) Entity_SetVisible(layerEnt[i], on);
+            return;
+        }
+    }
+
+    // ======================================================================
+    // THE CONTRACT. One call, one string.
+    void Set(const string &in name) {
+        if (name == emote) return;
+        string row = Lookup(emoteTable, name);
+        if (row == "") row = Lookup(PORTRAIT_EMOTES, name);
+        if (row == "") return;             // unknown emote: hold the last one
+
+        for (uint i = 0; i < want.length(); i++) Show(want[i], false);
+        want.resize(0);
+
+        array<string> parts = Split(row, "|");
+        for (uint p = 0; p < parts.length() && p < 5; p++) {
+            if (parts[p] == "" || parts[p] == "-") continue;
+            string n = Prefix(p) + parts[p];
+            want.insertLast(n);
+            Show(n, true);
+        }
+        emote = name;
+        blinking = false;
+        blinkT = 0.0f;
+    }
+
+    string Lookup(const string &in table, const string &in name) {
+        if (table == "") return "";
+        array<string> rows = Split(table, ";");
+        for (uint i = 0; i < rows.length(); i++) {
+            int eq = rows[i].findFirst("=");
+            if (eq < 0) continue;
+            if (rows[i].substr(0, eq) == name) return rows[i].substr(eq + 1);
+        }
+        return "";
+    }
+
+    string Emote() { return emote; }
+
+    // What the art still owes you. Empty means the rig is fully dressed.
+    string Missing() {
+        string s = "";
+        for (uint i = 0; i < absent.length(); i++)
+            s += (i > 0 ? ", " : "") + absent[i];
+        return s;
+    }
+
+    int MissingCount() { return int(absent.length()); }
+
+    // The whole vocabulary, for a debug scene that wants to cycle it.
+    array<string> Emotes() {
+        array<string> names;
+        array<string> rows = Split(PORTRAIT_EMOTES, ";");
+        for (uint i = 0; i < rows.length(); i++) {
+            int eq = rows[i].findFirst("=");
+            if (eq > 0) names.insertLast(rows[i].substr(0, eq));
+        }
+        return names;
+    }
+
+    // ======================================================================
+    // The mouth moves while a line is arriving, and settles back onto the
+    // emotion's own mouth when it stops.
+    void Speak(bool on) {
+        if (talking == on) return;
+        talking = on;
+        if (!on) {
+            Show("mouth_mid", false);
+            MouthOfEmote(true);
+            mouthOpen = false;
+        }
+        mouthT = 0.0f;
+    }
+
+    void MouthOfEmote(bool on) {
+        for (uint i = 0; i < want.length(); i++)
+            if (want[i].substr(0, 6) == "mouth_") Show(want[i], on);
+    }
+
+    // Look toward whoever is talking: -1 left, 0 ahead, 1 right, 2 down. Only
+    // moves eyes that are plainly open, because teary / squeezed / happy-closed
+    // are all carrying the expression and must not be overwritten by a glance.
+    void LookAt(int dir) {
+        for (uint i = 0; i < want.length(); i++) {
+            if (want[i].substr(0, 4) != "eye_") continue;
+            if (want[i] != "eye_open" && want[i] != "eye_left"
+                && want[i] != "eye_right" && want[i] != "eye_down") return;
+            Show(want[i], false);
+            string n = dir < 0 ? "eye_left" : (dir == 1 ? "eye_right"
+                     : (dir == 2 ? "eye_down" : "eye_open"));
+            want[i] = n;
+            Show(n, true);
+            return;
+        }
+    }
+
+    // ======================================================================
+    void OnUpdate(float dt) {
+        if (blinkEvery > 0.0f) {
+            blinkT += dt;
+            if (!blinking && blinkT >= blinkEvery) {
+                blinking = true;  blinkT = 0.0f;
+                EyesTo(false);    Show("eye_closed", true);
+            } else if (blinking && blinkT >= blinkHold) {
+                blinking = false; blinkT = 0.0f;
+                Show("eye_closed", false);
+                EyesTo(true);
+            }
+        }
+        if (talking && mouthRate > 0.0f) {
+            mouthT += dt;
+            if (mouthT >= 1.0f / mouthRate) {
+                mouthT = 0.0f;
+                mouthOpen = !mouthOpen;
+                Show("mouth_mid", mouthOpen);
+                MouthOfEmote(!mouthOpen);
+            }
+        }
+    }
+
+    void EyesTo(bool on) {
+        for (uint i = 0; i < want.length(); i++)
+            if (want[i].substr(0, 4) == "eye_") Show(want[i], on);
+    }
+}
+)ENJIN_API"
+;
+
+static const char* s_Api3 = R"ENJIN_API(
+// Reactions.as - THE TAG SEAM.
+//
+// An option in a script carries a TAG, which is just a string. When the option
+// fires, the tag comes here, and here is the only place that knows what it
+// means. Two things come back out:
+//
+//   Emote(tag)   what the speaker's face does      -> PortraitRig.Set()
+//   Delta(tag)   what it moves, and by how much    -> the game's own scalar
+//
+// That is the whole seam, and it is what lets one runtime serve two games. Ink
+// Ribbon maps "sharpened" onto temper. Another project maps the same tag onto
+// affection, or suspicion, or nothing. Neither game edits this file: they each
+// ship a Reaction data asset (data/schemas/reaction.enjschema) and name it.
+//
+//   tags      "verbatim;softened;sharpened;cut"
+//   emotes    "neutral;worried;angry;sad"
+//   statName  "temper"
+//   deltas    "0;-1;1;-1"
+//
+// Authored in the editor's Data Assets panel. No build script, no recompile.
+//
+// USE. Not a behavior - make one and load it:
+//   Reactions r;
+//   r.Load("reactions/ink_ribbon");
+//   rig.Set(r.Emote(tag));
+//   temper += r.Delta(tag);
+
+class Reactions {
+    array<string> tag;
+    array<string> emote;
+    array<float>  delta;
+    string stat = "";
+    string source = "";
+
+    // Returns false when the asset is missing, and the table is then empty:
+    // every Emote() answers "neutral" and every Delta() answers 0, so a scene
+    // with no reaction asset still plays. It just plays flat.
+    bool Load(const string &in asset) {
+        tag.resize(0); emote.resize(0); delta.resize(0);
+        source = asset;
+        if (!DataAsset_Load(asset)) return false;
+
+        tag  = Split(DataAsset_GetString(asset, "tags"), ";");
+        stat = DataAsset_GetString(asset, "statName");
+        array<string> em = Split(DataAsset_GetString(asset, "emotes"), ";");
+        array<string> dl = Split(DataAsset_GetString(asset, "deltas"), ";");
+        for (uint i = 0; i < tag.length(); i++) {
+            emote.insertLast(i < em.length() ? em[i] : "neutral");
+            delta.insertLast(i < dl.length() ? Num(dl[i]) : 0.0f);
+        }
+        return tag.length() > 0;
+    }
+
+    // Private, not global. Dictation.as already has its own Split as a class
+    // method, and a shared file must never introduce a global that shadows or
+    // collides with a host script's member. enjin_api/StrUtil.as has these as
+    // globals for scripts that want them.
+    array<string> Split(const string &in s, const string &in sep) {
+        array<string> parts;
+        if (sep.length() == 0) { parts.insertLast(s); return parts; }
+        int start = 0;
+        while (true) {
+            int at = s.findFirst(sep, uint(start));
+            if (at < 0) {
+                parts.insertLast(s.substr(uint(start), s.length() - uint(start)));
+                break;
+            }
+            parts.insertLast(s.substr(uint(start), uint(at - start)));
+            start = at + int(sep.length());
+        }
+        return parts;
+    }
+
+    int RxDigit(const string &in c) {
+        string digits = "0123456789";
+        for (uint i = 0; i < 10; i++) if (digits.substr(i, 1) == c) return int(i);
+        return -1;
+    }
+
+    // One decimal point, everything after it fractional. Deltas in a reaction
+    // table are small and hand-authored, so this is enough. parseFloat does
+    // exist here, but this skips stray separators and cannot throw on a cell an
+    // author left half-typed, which is the failure that actually happens.
+    float ToFloat(const string &in s) {
+        float v = 0.0f, scale = 0.0f;
+        bool neg = false, any = false;
+        for (uint i = 0; i < s.length(); i++) {
+            string c = s.substr(i, 1);
+            if (i == 0 && c == "-") { neg = true; continue; }
+            if (c == "." && scale == 0.0f) { scale = 1.0f; continue; }
+            int d = RxDigit(c);
+            if (d < 0) continue;
+            any = true;
+            if (scale == 0.0f) { v = v * 10.0f + float(d); }
+            else { scale = scale * 0.1f; v = v + float(d) * scale; }
+        }
+        if (!any) return 0.0f;
+        return neg ? -v : v;
+    }
+
+    int Index(const string &in t) {
+        for (uint i = 0; i < tag.length(); i++)
+            if (tag[i] == t) return int(i);
+        return -1;
+    }
+
+    string Emote(const string &in t) {
+        int i = Index(t);
+        return i < 0 ? "neutral" : emote[i];
+    }
+
+    float Delta(const string &in t) {
+        int i = Index(t);
+        return i < 0 ? 0.0f : delta[i];
+    }
+
+    string StatName() { return stat; }
+    bool Known(const string &in t) { return Index(t) >= 0; }
+
+    // A tag a script uses that the table has never heard of is the failure mode
+    // that costs an afternoon, because nothing errors: the face just never
+    // moves. Hand this every tag the script can fire and it names the gaps.
+    string Unknown(const array<string> &in used) {
+        string s = "";
+        for (uint i = 0; i < used.length(); i++) {
+            if (used[i] == "" || Known(used[i])) continue;
+            if (s.findFirst(used[i]) >= 0) continue;
+            s += (s == "" ? "" : ", ") + used[i];
+        }
+        return s;
+    }
+
+    float Num(const string &in s) {
+        // parseFloat on a stray empty cell gives 0, which is the right answer
+        // for a tag that moves nothing.
+        return s == "" ? 0.0f : ToFloat(s);
+    }
+}
+)ENJIN_API";
+
+static const char* s_Api4 = R"ENJIN_API(
 // StateMachine.as — Simple finite state machine for game logic
 // Usage:
 //   class EnemyAI : TegeBehavior {
@@ -360,7 +819,114 @@ class StateMachine {
 }
 )ENJIN_API";
 
-static const char* s_Api3 = R"ENJIN_API(
+static const char* s_Api5 = R"ENJIN_API(
+// StrUtil.as - the string helpers every data-driven script ends up rewriting.
+//
+// WHY THIS EXISTS. TEGE calls RegisterStdString but not RegisterStdStringUtils,
+// and string::split() lives in the utils half, so THERE IS NO SPLIT ANYWHERE in
+// AngelScript here. Every script that reads a joined string has grown its own
+// private one; Dictation.as has Split and ToInt as class methods. These are the
+// same helpers as globals, once, so shared code can use them.
+//
+// parseInt / parseUInt / parseFloat / formatInt / formatFloat DO exist - they are
+// registered in RegisterStdString_Native, which RegisterStdString calls. ToInt and
+// ToFloat below are kept anyway because they never throw and they skip stray
+// separators, which is what reading hand-authored joined data actually needs.
+//
+// The joined-string convention they serve: records separated by "|", fields
+// within a record by ";". It exists because the Player's .enjdata loader only
+// understands string / float / int / bool and silently DROPS StringArray and
+// FloatArray, so a list that must survive a build has to travel as a string.
+
+// Split "a;b;c" into its parts. An empty input gives one empty part, which is
+// what you want: a slot with no options is one blank option, not zero.
+array<string> Split(const string &in s, const string &in sep) {
+    array<string> parts;
+    if (sep.length() == 0) { parts.insertLast(s); return parts; }
+    int start = 0;
+    while (true) {
+        int at = s.findFirst(sep, uint(start));
+        if (at < 0) {
+            parts.insertLast(s.substr(uint(start), s.length() - uint(start)));
+            break;
+        }
+        parts.insertLast(s.substr(uint(start), uint(at - start)));
+        start = at + int(sep.length());
+    }
+    return parts;
+}
+
+int StrDigit(const string &in c) {
+    string digits = "0123456789";
+    for (uint i = 0; i < 10; i++) if (digits.substr(i, 1) == c) return int(i);
+    return -1;
+}
+
+// Non-digits are skipped rather than rejected, so "72" and " 72 " and "72;" all
+// read as 72. An empty or digitless string is 0.
+int ToInt(const string &in s) {
+    int v = 0; bool neg = false, any = false;
+    for (uint i = 0; i < s.length(); i++) {
+        string c = s.substr(i, 1);
+        if (i == 0 && c == "-") { neg = true; continue; }
+        int d = StrDigit(c);
+        if (d < 0) continue;
+        v = v * 10 + d; any = true;
+    }
+    if (!any) return 0;
+    return neg ? -v : v;
+}
+
+// One decimal point, everything after it fractional. "-1.5" and "0" and "" all
+// behave. Deltas in a reaction table are small and hand-authored, so this is
+// enough and it cannot throw.
+float ToFloat(const string &in s) {
+    float v = 0.0f, scale = 0.0f;
+    bool neg = false, any = false;
+    for (uint i = 0; i < s.length(); i++) {
+        string c = s.substr(i, 1);
+        if (i == 0 && c == "-") { neg = true; continue; }
+        if (c == "." && scale == 0.0f) { scale = 1.0f; continue; }
+        int d = StrDigit(c);
+        if (d < 0) continue;
+        any = true;
+        if (scale == 0.0f) {
+            v = v * 10.0f + float(d);
+        } else {
+            scale = scale * 0.1f;
+            v = v + float(d) * scale;
+        }
+    }
+    if (!any) return 0.0f;
+    return neg ? -v : v;
+}
+
+// Trim ASCII whitespace off both ends. Authored data picked up by hand in an
+// inspector field collects trailing spaces and they break every == comparison.
+string Trim(const string &in s) {
+    uint a = 0, b = s.length();
+    while (a < b) {
+        string c = s.substr(a, 1);
+        if (c != " " && c != "\t" && c != "\n" && c != "\r") break;
+        a++;
+    }
+    while (b > a) {
+        string c = s.substr(b - 1, 1);
+        if (c != " " && c != "\t" && c != "\n" && c != "\r") break;
+        b--;
+    }
+    return s.substr(a, b - a);
+}
+
+string Join(const array<string> &in parts, const string &in sep) {
+    string s = "";
+    for (uint i = 0; i < parts.length(); i++)
+        s += (i > 0 ? sep : "") + parts[i];
+    return s;
+}
+)ENJIN_API";
+
+static const char* s_Api6 = R"ENJIN_API(
 // TegeBehavior — base class for all game scripts
 // Inherit from this class to attach behavior to entities.
 //
@@ -452,7 +1018,7 @@ class TegeBehavior {
 }
 )ENJIN_API";
 
-static const char* s_Api4 = R"ENJIN_API(
+static const char* s_Api7 = R"ENJIN_API(
 // Timer.as — Countdown and repeating timer utility
 // Usage:
 //   class Spawner : TegeBehavior {
@@ -615,7 +1181,7 @@ class Timer {
 }
 )ENJIN_API";
 
-static const char* s_Api5 = R"ENJIN_API(
+static const char* s_Api8 = R"ENJIN_API(
 // Tween.as — Easing and interpolation utilities for TegeBehavior scripts
 // Usage:
 //   float t = Tween::EaseInOut(elapsed / duration);
@@ -776,13 +1342,441 @@ Vector3 TweenVector3(const Vector3 &in from, const Vector3 &in to, float t) {
 }
 )ENJIN_API";
 
+static const char* s_Api9 =
+R"ENJIN_API(
+// VNScene.as - the generic visual-novel / dating-sim beat player.
+//
+// SHARED. Nothing in here is about any one game. It reads a Conversation data
+// asset, walks its beats, moves the speaker's face, offers you an answer where
+// the author put one, and moves that character's affinity by whatever the
+// reaction table says the tag is worth.
+//
+// THE WHOLE POINT IS THAT IT KNOWS NOTHING. A choice carries a bare tag string.
+// This script hands the tag to Reactions.as and does what it is told. Swap the
+// reaction asset and "tease" means something else, with no code change.
+//
+//   SPACE / ENTER / CLICK   advance a beat, or finish the line early
+//   1 / 2 / 3               answer, where the beat has a choice
+//
+// WHAT THE SCENE MUST CONTAIN (build_vn_template.py makes all of it):
+//   VN                  this script
+//   Nameplate           text, who is talking
+//   Line                text, what they say (revealed a character at a time)
+//   Prompt              text, the hint line under the box
+//   Opt0 Opt1 Opt2      text, the answers
+//   PortraitLeft/Right  a PortraitRig each, layerPrefix "L_" and "R_"
+//   DimLeft/DimRight    a dark quad over the bust that is not talking
+//   MeterFillLeft/Right a quad whose X scale is that character's affinity
+//   MeterNameLeft/Right text
+//   BeatCount           text
+//
+// A missing entity is skipped, never an error, so the scene can be cut down.
+#include "TegeBehavior.as"
+#include "Reactions.as"
+
+// Affinity survives a scene load through the meta store, so a template scene is
+// a real starting point for a game with more than one conversation in it.
+const string VN_AFFINITY = "vn.affinity.";
+
+class VNScene : TegeBehavior {
+    [Property] string conversation = "";   // a Conversation data asset
+
+    // Used only when `conversation` is empty or missing, so the scene still
+    // plays something rather than sitting blank.
+    [Property] string fallbackLine = "No conversation asset loaded.";
+
+    [Property] float revealRate = 42.0f;   // characters per second
+    [Property] float meterWidth = 2.6f;    // world width of a full affinity bar
+    [Property] int   startAffinity = 40;
+    [Property] int   maxAffinity   = 100;
+
+    // Affinity is carried between scenes through the meta store, which is the
+    // point of it. A DEMO wants the opposite: press play twice and the meters
+    // should not have crept up from last time. The shipped template sets this
+    // true; a real game leaves it false and the relationship accumulates.
+    [Property] int   resetOnStart = 0;
+
+    // Auto-play. Seconds per beat; 0 means you play it by hand. Above 0 it
+    // walks itself taking autoPick at every choice, which is how the template
+    // gets captured without a hand on the keyboard.
+    [Property] float autoBeat = 0.0f;
+    [Property] int   autoPick = 1;
+
+    Reactions rx;
+
+    // --- the conversation, parsed ----------------------------------------
+    array<string> castIds, castNames;
+    array<string> beatWho, beatEmote, beatLine;
+    array<string> beatChoice;            // "" or a choice-group index
+    array<string> choiceWho, choiceText, choiceTags, choiceReply;
+    array<int>    affinity;
+
+    // --- entities ---------------------------------------------------------
+    uint64 nameplate = 0, lineEnt = 0, prompt = 0, beatCount = 0, closingEnt = 0;
+    array<uint64> optEnt;
+    array<uint64> dimEnt, fillEnt, meterName, meterVal;
+
+    // --- state ------------------------------------------------------------
+    int  beat = 0;
+    int  mode = 0;              // 0 revealing, 1 waiting, 2 choosing, 3 done
+    float shown = 0.0f;
+    int  lineLen = 0;
+    int  asking = -1;           // choice group being offered
+    string pendingReply = "";   // a chosen option's answering line
+    float autoT = 0.0f;
+
+    // ======================================================================
+    void OnStart() {
+        nameplate  = Scene_FindEntity("Nameplate");
+        lineEnt    = Scene_FindEntity("Line");
+        prompt     = Scene_FindEntity("Prompt");
+        beatCount  = Scene_FindEntity("BeatCount");
+        closingEnt = Scene_FindEntity("Closing");
+        for (int i = 0; i < 3; i++) optEnt.insertLast(Scene_FindEntity("Opt" + i));
+
+        dimEnt.insertLast(Scene_FindEntity("DimLeft"));
+        dimEnt.insertLast(Scene_FindEntity("DimRight"));
+        fillEnt.insertLast(Scene_FindEntity("MeterFillLeft"));
+        fillEnt.insertLast(Scene_FindEntity("MeterFillRight"));
+        meterName.insertLast(Scene_FindEntity("MeterNameLeft"));
+        meterName.insertLast(Scene_FindEntity("MeterNameRight"));
+        meterVal.insertLast(Scene_FindEntity("MeterValLeft"));
+        meterVal.insertLast(Scene_FindEntity("MeterValRight"));
+
+        Load();
+        rx.Load(DataAsset_GetString(conversation, "reactions"));
+
+        string gaps = rx.Unknown(AllTags());
+        if (gaps != "")
+            Debug_Log("VNScene: reaction table has no entry for: " + gaps);
+
+        for (uint i = 0; i < castIds.length(); i++) {
+            // Carried across scenes, so a second conversation continues where
+            // the first left off rather than restarting the relationship.
+            affinity.insertLast(resetOnStart != 0 ? startAffinity
+                                : Meta_GetInt(VN_AFFINITY + castIds[i], startAffinity));
+            Set(meterName[i], i < castNames.length() ? castNames[i] : castIds[i]);
+        }
+        DrawMeters();
+        Set(closingEnt, "");
+        Beat();
+    }
+
+    void Load() {
+        if (conversation != "" && DataAsset_Load(conversation)) {
+            castIds     = Split(DataAsset_GetString(conversation, "castIds"), ";");
+            castNames   = Split(DataAsset_GetString(conversation, "castNames"), ";");
+            beatWho     = Split(DataAsset_GetString(conversation, "beatWho"), "|");
+            beatEmote   = Split(DataAsset_GetString(conversation, "beatEmote"), "|");
+            beatLine    = Split(DataAsset_GetString(conversation, "beatLine"), "|");
+            beatChoice  = Split(DataAsset_GetString(conversation, "beatChoice"), "|");
+            choiceWho   = Split(DataAsset_GetString(conversation, "choiceWho"), "|");
+            choiceText  = Split(DataAsset_GetString(conversation, "choiceText"), "|");
+            choiceTags  = Split(DataAsset_GetString(conversation, "choiceTags"), "|");
+            choiceReply = Split(DataAsset_GetString(conversation, "choiceReply"), "|");
+            if (beatLine.length() > 0 && beatLine[0] != "") return;
+        }
+        // Nothing loaded. Say so on the page rather than showing a blank box,
+        // because an empty VN scene and a broken one look identical otherwise.
+        Debug_Log("VNScene: no conversation '" + conversation + "'");
+        castIds.insertLast("left");   castNames.insertLast("");
+        beatWho.insertLast("left");   beatEmote.insertLast("worried");
+        beatLine.insertLast(fallbackLine);
+        beatChoice.insertLast("");
+    }
+
+    array<string> AllTags() {
+        array<string> all;
+        for (uint i = 0; i < choiceTags.length(); i++) {
+            array<string> t = Split(choiceTags[i], ";");
+            for (uint j = 0; j < t.length(); j++) all.insertLast(t[j]);
+        }
+        return all;
+    }
+
+    // ======================================================================
+    // Start the current beat: face, nameplate, dimming, and the line at zero
+    // characters revealed.
+    void Beat() {
+        if (beat >= int(beatLine.length())) { Finish(); return; }
+
+        string who = beat < int(beatWho.length()) ? beatWho[beat] : "";
+        string emo = beat < int(beatEmote.length()) ? beatEmote[beat] : "neutral";
+
+        FireEmote(who, emo);
+        Speak(who, true);
+        Set(nameplate, NameOf(who));
+        Set(beatCount, "" + (beat + 1) + " / " + beatLine.length());
+
+        // The one who is NOT talking goes dark. This is the oldest trick in the
+        // form and it does more for readability than any amount of animation.
+        for (uint i = 0; i < castIds.length() && i < dimEnt.length(); i++)
+)ENJIN_API"
+R"ENJIN_API(            Show(dimEnt[i], castIds[i] != who);
+
+        Text_SetContent(lineEnt, beatLine[beat]);
+        lineLen = Text_Length(lineEnt);
+        Text_RevealTo(lineEnt, 0);
+        shown = 0.0f;
+        mode = 0;
+        HideOptions();
+        Set(prompt, "");
+    }
+
+    void Finish() {
+        mode = 3;
+        Speak("", false);
+        for (uint i = 0; i < dimEnt.length(); i++) Show(dimEnt[i], false);
+        Set(nameplate, "");
+        Set(lineEnt, "");
+        Set(prompt, "");
+        HideOptions();
+
+        string closing = DataAsset_GetString(conversation, "closing");
+        Set(closingEnt, closing != "" ? closing : "The evening ends.");
+        for (uint i = 0; i < castIds.length(); i++)
+            Meta_SetInt(VN_AFFINITY + castIds[i], affinity[i]);
+        Meta_Save();
+
+        string next = DataAsset_GetString(conversation, "nextScene");
+        if (next != "") Scene_LoadScene(next);
+    }
+
+    // ======================================================================
+    void OnUpdate(float dt) {
+        if (mode == 3) return;
+
+        if (mode == 0) {
+            shown += revealRate * dt;
+            if (shown >= float(lineLen)) { shown = float(lineLen); Ready(); }
+            Text_RevealTo(lineEnt, int(shown));
+            if (Advanced()) { shown = float(lineLen); Text_RevealTo(lineEnt, lineLen); Ready(); }
+            return;
+        }
+
+        if (autoBeat > 0.0f) {
+            autoT += dt;
+            if (autoT < autoBeat) return;
+            autoT = 0.0f;
+            if (mode == 2) Answer(autoPick - 1); else Next();
+            return;
+        }
+
+        if (mode == 2) {
+            if (Input_GetKeyDown(Key::Num1)) Answer(0);
+            else if (Input_GetKeyDown(Key::Num2)) Answer(1);
+            else if (Input_GetKeyDown(Key::Num3)) Answer(2);
+            return;
+        }
+        if (Advanced()) Next();
+    }
+
+    // The line has finished arriving. Either there is an answer to give here,
+    // or you are just waiting to hear the next one.
+    void Ready() {
+        Speak("", false);
+        asking = ChoiceAt(beat);
+        if (asking >= 0) {
+            mode = 2;
+            ShowOptions(asking);
+            Set(prompt, "1 / 2 / 3 to answer");
+        } else {
+            mode = 1;
+            Set(prompt, "space to continue");
+        }
+    }
+
+    void Next() {
+        // An answer that came with its own reply line plays as its own beat,
+        // spoken by whoever the choice was aimed at.
+        if (pendingReply != "") {
+            string who = asking >= 0 && asking < int(choiceWho.length())
+                       ? choiceWho[asking] : "";
+            Set(nameplate, NameOf(who));
+            Text_SetContent(lineEnt, pendingReply);
+            lineLen = Text_Length(lineEnt);
+            Text_RevealTo(lineEnt, 0);
+            shown = 0.0f;
+            mode = 0;
+            pendingReply = "";
+            asking = -1;
+            Speak(who, true);
+            return;
+        }
+        beat++;
+        Beat();
+    }
+
+    // ======================================================================
+    // THE SEAM. The option carries a tag; the table turns it into a face and a
+    // number. This script never learns what "warm" or "cool" mean.
+    void Answer(int opt) {
+        if (asking < 0 || opt < 0) return;
+        array<string> tags = Split(Get(choiceTags, asking), ";");
+        if (opt >= int(tags.length())) return;
+
+        string tag = tags[opt];
+        string who = Get(choiceWho, asking);
+        int    idx = IndexOfCast(who);
+
+        // SPEND THE CHOICE. The answering line plays as its own beat WITHOUT
+        // advancing `beat`, so without this the beat still carries its choice
+        // and Ready() offers the same question again the moment the reply
+        // finishes. It reads as one question you can never stop answering, and
+        // the meter climbs to full on a single line.
+        beatChoice[beat] = "";
+
+        if (idx >= 0) {
+            affinity[idx] += int(rx.Delta(tag));
+            if (affinity[idx] < 0) affinity[idx] = 0;
+            if (affinity[idx] > maxAffinity) affinity[idx] = maxAffinity;
+            DrawMeters();
+        }
+        FireEmote(who, rx.Emote(tag));
+        Debug_Log("VNScene: tag '" + tag + "' -> " + who + " affinity "
+                  + (idx >= 0 ? "" + affinity[idx] : "?") + " face " + rx.Emote(tag));
+
+        array<string> replies = Split(Get(choiceReply, asking), ";");
+        pendingReply = opt < int(replies.length()) ? replies[opt] : "";
+
+        HideOptions();
+        Set(prompt, "space to continue");
+        mode = 1;
+        if (autoBeat > 0.0f) autoT = 0.0f;
+    }
+
+    int ChoiceAt(int b) {
+        if (b >= int(beatChoice.length())) return -1;
+        if (beatChoice[b] == "") return -1;
+        int g = ToInt(beatChoice[b]);
+        return g >= 0 && g < int(choiceText.length()) ? g : -1;
+    }
+
+    void ShowOptions(int group) {
+        array<string> opts = Split(Get(choiceText, group), ";");
+        for (uint i = 0; i < optEnt.length(); i++)
+            Set(optEnt[i], i < opts.length() ? ("" + (i + 1) + "   " + opts[i]) : "");
+    }
+
+    void HideOptions() {
+        for (uint i = 0; i < optEnt.length(); i++) Set(optEnt[i], "");
+    }
+
+    void DrawMeters() {
+        for (uint i = 0; i < affinity.length() && i < fillEnt.length(); i++) {
+            if (fillEnt[i] == 0) continue;
+            float f = maxAffinity > 0 ? float(affinity[i]) / float(maxAffinity) : 0.0f;
+            Vector3 s = Entity_GetScale(fillEnt[i]);
+            Vector3 p = Entity_GetPosition(fillEnt[i]);
+            // The bar grows from its left edge, so the centre has to move with
+            // the width. Anchoring it at the middle makes it grow both ways.
+            float w = meterWidth * f;
+            float left = p.x - s.x * 0.5f;
+            Entity_SetScale(fillEnt[i], Vector3(w > 0.001f ? w : 0.001f, s.y, s.z));
+            Entity_SetPosition(fillEnt[i], Vector3(left + w * 0.5f, p.y, p.z));
+            if (i < meterVal.length()) Set(meterVal[i], "" + affinity[i]);
+        }
+    }
+
+    // ======================================================================
+    // Helpers. Every one tolerates a missing entity or a short array, because a
+    // template gets cut down and should degrade instead of failing.
+    string Get(const array<string> &in a, int i) {
+        return i >= 0 && i < int(a.length()) ? a[i] : "";
+    }
+
+    int IndexOfCast(const string &in id) {
+        for (uint i = 0; i < castIds.length(); i++)
+            if (castIds[i] == id) return int(i);
+        return -1;
+    }
+
+    string NameOf(const string &in id) {
+        int i = IndexOfCast(id);
+        return i >= 0 && i < int(castNames.length()) ? castNames[i] : id;
+    }
+
+    void FireEmote(const string &in who, const string &in emote) {
+        if (who == "") return;
+        EventData@ d = EventData();
+        d.SetString("who", who);
+        d.SetString("emote", emote);
+        Events_Send("portrait_emote", d);
+    }
+
+    void Speak(const string &in who, bool on) {
+        EventData@ d = EventData();
+        d.SetString("who", who);
+        d.SetInt("on", on ? 1 : 0);
+        Events_Send("portrait_speak", d);
+    }
+
+    bool Advanced() {
+        if (autoBeat > 0.0f) return false;
+        return Input_GetKeyDown(Key::Space) || Input_GetKeyDown(Key::Enter)
+            || Input_GetMouseButtonDown(0);
+    }
+
+    void Set(uint64 e, const string &in s) {
+        if (e != 0) Text_SetContent(e, s);
+    }
+
+    void Show(uint64 e, bool on) {
+        if (e != 0) Entity_SetVisible(e, on);
+    }
+
+    // Private, not global: a shared file must not introduce a global that
+    // collides with a host script's member. See enjin_api/StrUtil.as.
+    array<string> Split(const string &in s, const string &in sep) {
+        array<string> parts;
+        if (sep.length() == 0) { parts.insertLast(s); return parts; }
+        int start = 0;
+        while (true) {
+            int at = s.findFirst(sep, uint(start));
+            if (at < 0) {
+                parts.insertLast(s.substr(uint(start), s.length() - uint(start)));
+)ENJIN_API"
+R"ENJIN_API(                break;
+            }
+            parts.insertLast(s.substr(uint(start), uint(at - start)));
+            start = at + int(sep.length());
+        }
+        return parts;
+    }
+
+    int VnDigit(const string &in c) {
+        string digits = "0123456789";
+        for (uint i = 0; i < 10; i++) if (digits.substr(i, 1) == c) return int(i);
+        return -1;
+    }
+
+    int ToInt(const string &in s) {
+        int v = 0; bool neg = false, any = false;
+        for (uint i = 0; i < s.length(); i++) {
+            string c = s.substr(i, 1);
+            if (i == 0 && c == "-") { neg = true; continue; }
+            int d = VnDigit(c);
+            if (d < 0) continue;
+            v = v * 10 + d; any = true;
+        }
+        if (!any) return 0;
+        return neg ? -v : v;
+    }
+}
+)ENJIN_API"
+;
+
 const char* GetEmbeddedApiSource(const char* name) {
     if (std::strcmp(name, "CineSuite.as") == 0) return s_Api0;
     if (std::strcmp(name, "Math.as") == 0) return s_Api1;
-    if (std::strcmp(name, "StateMachine.as") == 0) return s_Api2;
-    if (std::strcmp(name, "TegeBehavior.as") == 0) return s_Api3;
-    if (std::strcmp(name, "Timer.as") == 0) return s_Api4;
-    if (std::strcmp(name, "Tween.as") == 0) return s_Api5;
+    if (std::strcmp(name, "PortraitRig.as") == 0) return s_Api2;
+    if (std::strcmp(name, "Reactions.as") == 0) return s_Api3;
+    if (std::strcmp(name, "StateMachine.as") == 0) return s_Api4;
+    if (std::strcmp(name, "StrUtil.as") == 0) return s_Api5;
+    if (std::strcmp(name, "TegeBehavior.as") == 0) return s_Api6;
+    if (std::strcmp(name, "Timer.as") == 0) return s_Api7;
+    if (std::strcmp(name, "Tween.as") == 0) return s_Api8;
+    if (std::strcmp(name, "VNScene.as") == 0) return s_Api9;
     return nullptr;
 }
 

@@ -1,0 +1,10 @@
+{
+    "name": "reactions/vn_default",
+    "schema": "Reaction",
+    "values": {
+        "tags": "warm;neutral;cool;tease",
+        "emotes": "smile;neutral;sad;smug",
+        "statName": "affinity",
+        "deltas": "6;1;-4;3"
+    }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "Visual Novel & Dating Sim",
+  "description": "You and two prospects\nPortraits + choices + affinity, all as data",
+  "accentColor": [0.88, 0.52, 0.62, 1.0],
+  "category": "2D",
+  "id": "datingsim",
+  "author": "TEGE",
+  "thumbnailPath": "",
+  "maturity": "Beta",
+  "categoryFlags": "kTMPL_2D"
+}

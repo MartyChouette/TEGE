@@ -1,0 +1,25 @@
+{
+    "name": "Conversation",
+    "description": "A visual-novel scene: who speaks, what they say, what their face does, and where you get to answer. Authored in the editor's Data Assets panel. EVERY FIELD IS String OR Int ON PURPOSE - the Player's .enjdata loader drops StringArray/FloatArray silently, so lists travel joined. The fields are PARALLEL COLUMNS: beatWho[3], beatEmote[3] and beatLine[3] all describe beat 3. Beats separated by '|'. Within a choice group, options separated by ';'. No '|' or ';' in any authored line.",
+    "fields": [
+        {"name": "title",       "type": "String", "default": ""},
+
+        {"name": "castIds",     "type": "String", "default": "left;right"},
+        {"name": "castNames",   "type": "String", "default": "LEFT;RIGHT"},
+
+        {"name": "beatWho",     "type": "String", "default": ""},
+        {"name": "beatEmote",   "type": "String", "default": ""},
+        {"name": "beatLine",    "type": "String", "default": ""},
+
+        {"name": "beatChoice",  "type": "String", "default": ""},
+
+        {"name": "choiceWho",   "type": "String", "default": ""},
+        {"name": "choiceText",  "type": "String", "default": ""},
+        {"name": "choiceTags",  "type": "String", "default": ""},
+        {"name": "choiceReply", "type": "String", "default": ""},
+
+        {"name": "reactions",   "type": "String", "default": "reactions/vn_default"},
+        {"name": "nextScene",   "type": "String", "default": ""},
+        {"name": "closing",     "type": "String", "default": ""}
+    ]
+}
