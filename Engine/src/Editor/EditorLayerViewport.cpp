@@ -1710,7 +1710,11 @@ void EditorLayer::ApplyBrush(ECS::TerrainComponent* terrain,
                               const Math::Vector3& worldHit, f32 deltaTime) {
     if (!terrain || terrain->heightmap.empty()) return;
 
-    Math::Vector3 origin = transform ? transform->position : Math::Vector3(0.0f);
+    // Grid cell (0,0) in world space. NOT the transform position: the mesh is
+    // centred on the transform, so indexing from the transform put every stroke
+    // half a terrain away from the cursor.
+    const Math::Vector3 origin =
+        terrain->GridOrigin(transform ? transform->position : Math::Vector3(0.0f));
 
     // Convert hit to grid coordinates
     f32 localX = worldHit.x - origin.x;

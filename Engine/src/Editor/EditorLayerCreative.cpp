@@ -803,6 +803,41 @@ void EditorLayer::DrawCreativeOverlay(const ImVec2& imgMin, const ImVec2& imgMax
                   m_Creative.IsSubtracting() ? "  -  subtracting" : "");
     dl->AddText(font, kSmall, ImVec2(x0 + 14.0f * ui, y1 - kSmall - 13.0f * ui), tint, toolText);
 
+    // The drag preconditions, in one word, next to the tool.
+    //
+    // Added because a report of "it does not work" could not be told apart from
+    // a report of "it works and I am pointing at the wrong thing" -- and I could
+    // not reproduce either, having no way to drive a mouse. This makes the next
+    // report data rather than a guess: whichever word is showing when a click
+    // does nothing is the reason it did nothing.
+    {
+        const char* state = "ready";
+        ImU32 stateCol = kDim;
+        Math::Vector3 probeGround;
+        if (!m_PlayMode.IsStopped()) {
+            state = "playing - press Stop to build";
+            stateCol = kMuted;
+        } else if (!m_EditorViewportHovered) {
+            state = "cursor not over the viewport";
+            stateCol = kMuted;
+        } else if (!CreativeGroundPoint(ImGui::GetIO().MousePos.x - x0,
+                                        ImGui::GetIO().MousePos.y - y0,
+                                        x1 - x0, y1 - y0, probeGround)) {
+            // Computed here rather than passed in: the overlay is the only place
+            // that knows the viewport rect is current this frame, which is the
+            // same reason the rest of these readouts live here.
+            state = "no ground under the cursor";
+            stateCol = kMuted;
+        } else if (m_BuildDragging) {
+            state = "dragging";
+            stateCol = kAccent;
+        }
+        const f32 tw = font->CalcTextSizeA(kSmall, FLT_MAX, 0.0f, toolText).x;
+        dl->AddText(font, kSmall,
+                    ImVec2(x0 + 14.0f * ui + tw + 12.0f * ui, y1 - kSmall - 13.0f * ui),
+                    stateCol, state);
+    }
+
     // Terrain and Reduce work on triangle counts rather than brush counts, and a
     // readout that only ever says "brushes 0" while a hillside grows under the
     // cursor is a readout that answers the wrong question.
@@ -931,13 +966,19 @@ void EditorLayer::HandleBuildDrag() {
     // the ground plane edge-on and NO drag can ever land -- but it is the same
     // answer for a camera that has been orbited flat or dropped below the floor,
     // so the check is geometric rather than a scene-type test.
+    // Why a click will not build, said out loud.
+    //
+    // A build tool that silently does nothing is indistinguishable from a broken
+    // one, and that is exactly how this was reported: "none of the items really
+    // drag and drop". Three things have to be true before a press starts a drag
+    // -- the cursor over the viewport image, a usable angle onto the ground, and
+    // play stopped -- and when one is not, the surface now names it instead of
+    // ignoring the click.
     if (m_EditorViewportHovered && !onGround && m_Creative.GetTool() != BuildTool::Reduce) {
         ImDrawList* dl = ImGui::GetForegroundDrawList();
         ImFont* font = ImGui::GetFont();
         const f32 ui = CreativeUIScale();
         const f32 size = 13.0f * ui;
-        // Says what to do, and now covers the near-level case too: the ground
-        // is refused below a usable angle, not just an exactly parallel one.
         const char* why = "Too flat an angle to build. Orbit down, or press Home to frame the ground.";
         const ImVec2 ts = font->CalcTextSizeA(size, FLT_MAX, 0.0f, why);
         const f32 cx = (m_EditorViewportImageMinX + m_EditorViewportImageMaxX) * 0.5f;

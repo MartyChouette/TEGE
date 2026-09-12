@@ -2100,7 +2100,11 @@ bool EditorLayer::RaycastTerrain(const Ray& ray, ECS::TerrainComponent* terrain,
                                   Math::Vector3& hitPoint) {
     if (!terrain || terrain->heightmap.empty()) return false;
 
-    Math::Vector3 origin = transform ? transform->position : Math::Vector3(0.0f);
+    // Grid cell (0,0) in world space -- the mesh is centred on the transform, so
+    // this is not the transform position. Same fix as ApplyBrush, and through
+    // the same helper so the two cannot drift apart again.
+    const Math::Vector3 origin =
+        terrain->GridOrigin(transform ? transform->position : Math::Vector3(0.0f));
     f32 terrainWidth = terrain->gridWidth * terrain->cellSize;
     f32 terrainDepth = terrain->gridHeight * terrain->cellSize;
 

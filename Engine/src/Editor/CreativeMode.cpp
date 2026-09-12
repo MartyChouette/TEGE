@@ -464,14 +464,18 @@ bool CreativeMode::PlanPlacement(BuildTool tool,
 
         case BuildTool::Terrain: {
             // Sculpting is a press, not a drag, so only the point under the
-            // cursor when it went down matters here. A TerrainComponent's grid
-            // runs from its transform out to +X/+Z rather than straddling it, so
-            // the origin is the corner that puts the press point in the middle
-            // -- otherwise a fresh terrain appears entirely off to one side of
-            // the first stroke and the stroke lands on nothing.
+            // cursor when it went down matters here.
+            //
+            // The terrain mesh is CENTRED on its transform, so the press point
+            // is the transform -- no corner arithmetic. This used to subtract a
+            // half-extent, on the belief that the grid runs from the transform
+            // out to +X/+Z. It does not: MeshFactory::CreateTerrain centres it.
+            // The brush and the raycast believed the same wrong thing, which is
+            // how a stroke landed half a terrain from the cursor while the
+            // brush ring drew in exactly the right place.
             const f32 half = static_cast<f32>(kCreativeTerrainGrid) * kCreativeTerrainCell * 0.5f;
             out = ToolPlacement{};
-            out.origin = Math::Vector3(dragStart.x - half, 0.0f, dragStart.z - half);
+            out.origin = Math::Vector3(dragStart.x, 0.0f, dragStart.z);
             out.halfExtents = Math::Vector3(half, 0.0f, half);
             return true;
         }
