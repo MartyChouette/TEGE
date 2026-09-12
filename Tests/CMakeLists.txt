@@ -287,6 +287,7 @@ enjin_add_test(TestParticleEmitter    Unit/Effects/TestParticleEmitter.cpp)
 # --- Geometry ---
 enjin_add_test(TestCSG                Unit/Geometry/TestCSG.cpp)
 enjin_add_test(TestCSGPerf            Unit/Geometry/TestCSGPerf.cpp)
+enjin_add_test(TestSurfaceNets        Unit/Geometry/TestSurfaceNets.cpp)
 enjin_add_test(TestBrushSolid         Unit/Geometry/TestBrushSolid.cpp)
 enjin_add_test(TestWorldTimeSystem    Unit/Effects/TestWorldTimeSystem.cpp)
 
