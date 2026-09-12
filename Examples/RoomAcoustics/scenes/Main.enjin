@@ -1,0 +1,2318 @@
+{
+ "version": "1.0",
+ "entities": [
+  {
+   "id": 1,
+   "name": {
+    "name": "Kitchen Floor"
+   },
+   "transform": {
+    "position": [
+     -21.0,
+     -0.2,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     10.0,
+     0.4,
+     8.0
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.88,
+     0.9,
+     0.91
+    ],
+    "metallic": 0.0,
+    "roughness": 0.85,
+    "surfaceMaterial": 13
+   },
+   "boxCollider": {
+    "size": [
+     10.0,
+     0.4,
+     8.0
+    ],
+    "center": [
+     0,
+     0,
+     0
+    ],
+    "friction": 0.6,
+    "bounciness": 0.0
+   },
+   "rigidbody": {
+    "isStatic": true,
+    "isKinematic": false,
+    "mass": 0,
+    "useGravity": false
+   }
+  },
+  {
+   "id": 2,
+   "name": {
+    "name": "Kitchen Ceiling"
+   },
+   "transform": {
+    "position": [
+     -21.0,
+     3.6,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     10.0,
+     0.4,
+     8.0
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.83,
+     0.8,
+     0.75
+    ],
+    "metallic": 0.0,
+    "roughness": 0.85,
+    "surfaceMaterial": 12
+   },
+   "boxCollider": {
+    "size": [
+     10.0,
+     0.4,
+     8.0
+    ],
+    "center": [
+     0,
+     0,
+     0
+    ],
+    "friction": 0.6,
+    "bounciness": 0.0
+   },
+   "rigidbody": {
+    "isStatic": true,
+    "isKinematic": false,
+    "mass": 0,
+    "useGravity": false
+   }
+  },
+  {
+   "id": 3,
+   "name": {
+    "name": "Kitchen Back"
+   },
+   "transform": {
+    "position": [
+     -21.0,
+     1.7,
+     -4.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     10.0,
+     3.4,
+     0.4
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.88,
+     0.9,
+     0.91
+    ],
+    "metallic": 0.0,
+    "roughness": 0.85,
+    "surfaceMaterial": 13
+   },
+   "boxCollider": {
+    "size": [
+     10.0,
+     3.4,
+     0.4
+    ],
+    "center": [
+     0,
+     0,
+     0
+    ],
+    "friction": 0.6,
+    "bounciness": 0.0
+   },
+   "rigidbody": {
+    "isStatic": true,
+    "isKinematic": false,
+    "mass": 0,
+    "useGravity": false
+   }
+  },
+  {
+   "id": 4,
+   "name": {
+    "name": "Kitchen Front"
+   },
+   "transform": {
+    "position": [
+     -21.0,
+     1.7,
+     4.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     10.0,
+     3.4,
+     0.4
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.88,
+     0.9,
+     0.91
+    ],
+    "metallic": 0.0,
+    "roughness": 0.85,
+    "surfaceMaterial": 13
+   },
+   "boxCollider": {
+    "size": [
+     10.0,
+     3.4,
+     0.4
+    ],
+    "center": [
+     0,
+     0,
+     0
+    ],
+    "friction": 0.6,
+    "bounciness": 0.0
+   },
+   "rigidbody": {
+    "isStatic": true,
+    "isKinematic": false,
+    "mass": 0,
+    "useGravity": false
+   }
+  },
+  {
+   "id": 5,
+   "name": {
+    "name": "Kitchen Wall-X"
+   },
+   "transform": {
+    "position": [
+     -26.2,
+     1.7,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     0.4,
+     3.4,
+     8.0
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.88,
+     0.9,
+     0.91
+    ],
+    "metallic": 0.0,
+    "roughness": 0.85,
+    "surfaceMaterial": 13
+   },
+   "boxCollider": {
+    "size": [
+     0.4,
+     3.4,
+     8.0
+    ],
+    "center": [
+     0,
+     0,
+     0
+    ],
+    "friction": 0.6,
+    "bounciness": 0.0
+   },
+   "rigidbody": {
+    "isStatic": true,
+    "isKinematic": false,
+    "mass": 0,
+    "useGravity": false
+   }
+  },
+  {
+   "id": 6,
+   "name": {
+    "name": "Kitchen Wall+XA"
+   },
+   "transform": {
+    "position": [
+     -15.8,
+     1.7,
+     -2.3
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     0.4,
+     3.4,
+     3.4
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.88,
+     0.9,
+     0.91
+    ],
+    "metallic": 0.0,
+    "roughness": 0.85,
+    "surfaceMaterial": 13
+   },
+   "boxCollider": {
+    "size": [
+     0.4,
+     3.4,
+     3.4
+    ],
+    "center": [
+     0,
+     0,
+     0
+    ],
+    "friction": 0.6,
+    "bounciness": 0.0
+   },
+   "rigidbody": {
+    "isStatic": true,
+    "isKinematic": false,
+    "mass": 0,
+    "useGravity": false
+   }
+  },
+  {
+   "id": 7,
+   "name": {
+    "name": "Kitchen Wall+XB"
+   },
+   "transform": {
+    "position": [
+     -15.8,
+     1.7,
+     2.3
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     0.4,
+     3.4,
+     3.4
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.88,
+     0.9,
+     0.91
+    ],
+    "metallic": 0.0,
+    "roughness": 0.85,
+    "surfaceMaterial": 13
+   },
+   "boxCollider": {
+    "size": [
+     0.4,
+     3.4,
+     3.4
+    ],
+    "center": [
+     0,
+     0,
+     0
+    ],
+    "friction": 0.6,
+    "bounciness": 0.0
+   },
+   "rigidbody": {
+    "isStatic": true,
+    "isKinematic": false,
+    "mass": 0,
+    "useGravity": false
+   }
+  },
+  {
+   "id": 8,
+   "name": {
+    "name": "Kitchen Lintel+X"
+   },
+   "transform": {
+    "position": [
+     -15.8,
+     2.9,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     0.4,
+     1.0,
+     1.2
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.88,
+     0.9,
+     0.91
+    ],
+    "metallic": 0.0,
+    "roughness": 0.85,
+    "surfaceMaterial": 13
+   },
+   "boxCollider": {
+    "size": [
+     0.4,
+     1.0,
+     1.2
+    ],
+    "center": [
+     0,
+     0,
+     0
+    ],
+    "friction": 0.6,
+    "bounciness": 0.0
+   },
+   "rigidbody": {
+    "isStatic": true,
+    "isKinematic": false,
+    "mass": 0,
+    "useGravity": false
+   }
+  },
+  {
+   "id": 9,
+   "name": {
+    "name": "Hall Floor"
+   },
+   "transform": {
+    "position": [
+     0.0,
+     -0.2,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     10.0,
+     0.4,
+     8.0
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.55,
+     0.38,
+     0.22
+    ],
+    "metallic": 0.0,
+    "roughness": 0.85,
+    "surfaceMaterial": 2
+   },
+   "boxCollider": {
+    "size": [
+     10.0,
+     0.4,
+     8.0
+    ],
+    "center": [
+     0,
+     0,
+     0
+    ],
+    "friction": 0.6,
+    "bounciness": 0.0
+   },
+   "rigidbody": {
+    "isStatic": true,
+    "isKinematic": false,
+    "mass": 0,
+    "useGravity": false
+   }
+  },
+  {
+   "id": 10,
+   "name": {
+    "name": "Hall Ceiling"
+   },
+   "transform": {
+    "position": [
+     0.0,
+     3.6,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     10.0,
+     0.4,
+     8.0
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.83,
+     0.8,
+     0.75
+    ],
+    "metallic": 0.0,
+    "roughness": 0.85,
+    "surfaceMaterial": 12
+   },
+   "boxCollider": {
+    "size": [
+     10.0,
+     0.4,
+     8.0
+    ],
+    "center": [
+     0,
+     0,
+     0
+    ],
+    "friction": 0.6,
+    "bounciness": 0.0
+   },
+   "rigidbody": {
+    "isStatic": true,
+    "isKinematic": false,
+    "mass": 0,
+    "useGravity": false
+   }
+  },
+  {
+   "id": 11,
+   "name": {
+    "name": "Hall Back"
+   },
+   "transform": {
+    "position": [
+     0.0,
+     1.7,
+     -4.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     10.0,
+     3.4,
+     0.4
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.83,
+     0.8,
+     0.75
+    ],
+    "metallic": 0.0,
+    "roughness": 0.85,
+    "surfaceMaterial": 12
+   },
+   "boxCollider": {
+    "size": [
+     10.0,
+     3.4,
+     0.4
+    ],
+    "center": [
+     0,
+     0,
+     0
+    ],
+    "friction": 0.6,
+    "bounciness": 0.0
+   },
+   "rigidbody": {
+    "isStatic": true,
+    "isKinematic": false,
+    "mass": 0,
+    "useGravity": false
+   }
+  },
+  {
+   "id": 12,
+   "name": {
+    "name": "Hall Front"
+   },
+   "transform": {
+    "position": [
+     0.0,
+     1.7,
+     4.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     10.0,
+     3.4,
+     0.4
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.83,
+     0.8,
+     0.75
+    ],
+    "metallic": 0.0,
+    "roughness": 0.85,
+    "surfaceMaterial": 12
+   },
+   "boxCollider": {
+    "size": [
+     10.0,
+     3.4,
+     0.4
+    ],
+    "center": [
+     0,
+     0,
+     0
+    ],
+    "friction": 0.6,
+    "bounciness": 0.0
+   },
+   "rigidbody": {
+    "isStatic": true,
+    "isKinematic": false,
+    "mass": 0,
+    "useGravity": false
+   }
+  },
+  {
+   "id": 13,
+   "name": {
+    "name": "Hall Wall-XA"
+   },
+   "transform": {
+    "position": [
+     -5.2,
+     1.7,
+     -2.3
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     0.4,
+     3.4,
+     3.4
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.83,
+     0.8,
+     0.75
+    ],
+    "metallic": 0.0,
+    "roughness": 0.85,
+    "surfaceMaterial": 12
+   },
+   "boxCollider": {
+    "size": [
+     0.4,
+     3.4,
+     3.4
+    ],
+    "center": [
+     0,
+     0,
+     0
+    ],
+    "friction": 0.6,
+    "bounciness": 0.0
+   },
+   "rigidbody": {
+    "isStatic": true,
+    "isKinematic": false,
+    "mass": 0,
+    "useGravity": false
+   }
+  },
+  {
+   "id": 14,
+   "name": {
+    "name": "Hall Wall-XB"
+   },
+   "transform": {
+    "position": [
+     -5.2,
+     1.7,
+     2.3
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     0.4,
+     3.4,
+     3.4
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.83,
+     0.8,
+     0.75
+    ],
+    "metallic": 0.0,
+    "roughness": 0.85,
+    "surfaceMaterial": 12
+   },
+   "boxCollider": {
+    "size": [
+     0.4,
+     3.4,
+     3.4
+    ],
+    "center": [
+     0,
+     0,
+     0
+    ],
+    "friction": 0.6,
+    "bounciness": 0.0
+   },
+   "rigidbody": {
+    "isStatic": true,
+    "isKinematic": false,
+    "mass": 0,
+    "useGravity": false
+   }
+  },
+  {
+   "id": 15,
+   "name": {
+    "name": "Hall Lintel-X"
+   },
+   "transform": {
+    "position": [
+     -5.2,
+     2.9,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     0.4,
+     1.0,
+     1.2
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.83,
+     0.8,
+     0.75
+    ],
+    "metallic": 0.0,
+    "roughness": 0.85,
+    "surfaceMaterial": 12
+   },
+   "boxCollider": {
+    "size": [
+     0.4,
+     1.0,
+     1.2
+    ],
+    "center": [
+     0,
+     0,
+     0
+    ],
+    "friction": 0.6,
+    "bounciness": 0.0
+   },
+   "rigidbody": {
+    "isStatic": true,
+    "isKinematic": false,
+    "mass": 0,
+    "useGravity": false
+   }
+  },
+  {
+   "id": 16,
+   "name": {
+    "name": "Hall Wall+XA"
+   },
+   "transform": {
+    "position": [
+     5.2,
+     1.7,
+     -2.3
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     0.4,
+     3.4,
+     3.4
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.83,
+     0.8,
+     0.75
+    ],
+    "metallic": 0.0,
+    "roughness": 0.85,
+    "surfaceMaterial": 12
+   },
+   "boxCollider": {
+    "size": [
+     0.4,
+     3.4,
+     3.4
+    ],
+    "center": [
+     0,
+     0,
+     0
+    ],
+    "friction": 0.6,
+    "bounciness": 0.0
+   },
+   "rigidbody": {
+    "isStatic": true,
+    "isKinematic": false,
+    "mass": 0,
+    "useGravity": false
+   }
+  },
+  {
+   "id": 17,
+   "name": {
+    "name": "Hall Wall+XB"
+   },
+   "transform": {
+    "position": [
+     5.2,
+     1.7,
+     2.3
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     0.4,
+     3.4,
+     3.4
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.83,
+     0.8,
+     0.75
+    ],
+    "metallic": 0.0,
+    "roughness": 0.85,
+    "surfaceMaterial": 12
+   },
+   "boxCollider": {
+    "size": [
+     0.4,
+     3.4,
+     3.4
+    ],
+    "center": [
+     0,
+     0,
+     0
+    ],
+    "friction": 0.6,
+    "bounciness": 0.0
+   },
+   "rigidbody": {
+    "isStatic": true,
+    "isKinematic": false,
+    "mass": 0,
+    "useGravity": false
+   }
+  },
+  {
+   "id": 18,
+   "name": {
+    "name": "Hall Lintel+X"
+   },
+   "transform": {
+    "position": [
+     5.2,
+     2.9,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     0.4,
+     1.0,
+     1.2
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.83,
+     0.8,
+     0.75
+    ],
+    "metallic": 0.0,
+    "roughness": 0.85,
+    "surfaceMaterial": 12
+   },
+   "boxCollider": {
+    "size": [
+     0.4,
+     1.0,
+     1.2
+    ],
+    "center": [
+     0,
+     0,
+     0
+    ],
+    "friction": 0.6,
+    "bounciness": 0.0
+   },
+   "rigidbody": {
+    "isStatic": true,
+    "isKinematic": false,
+    "mass": 0,
+    "useGravity": false
+   }
+  },
+  {
+   "id": 19,
+   "name": {
+    "name": "Basement Floor"
+   },
+   "transform": {
+    "position": [
+     21.0,
+     -0.2,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     10.0,
+     0.4,
+     8.0
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.34,
+     0.26,
+     0.24
+    ],
+    "metallic": 0.0,
+    "roughness": 0.85,
+    "surfaceMaterial": 11
+   },
+   "boxCollider": {
+    "size": [
+     10.0,
+     0.4,
+     8.0
+    ],
+    "center": [
+     0,
+     0,
+     0
+    ],
+    "friction": 0.6,
+    "bounciness": 0.0
+   },
+   "rigidbody": {
+    "isStatic": true,
+    "isKinematic": false,
+    "mass": 0,
+    "useGravity": false
+   }
+  },
+  {
+   "id": 20,
+   "name": {
+    "name": "Basement Ceiling"
+   },
+   "transform": {
+    "position": [
+     21.0,
+     3.6,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     10.0,
+     0.4,
+     8.0
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.42,
+     0.34,
+     0.44
+    ],
+    "metallic": 0.0,
+    "roughness": 0.85,
+    "surfaceMaterial": 15
+   },
+   "boxCollider": {
+    "size": [
+     10.0,
+     0.4,
+     8.0
+    ],
+    "center": [
+     0,
+     0,
+     0
+    ],
+    "friction": 0.6,
+    "bounciness": 0.0
+   },
+   "rigidbody": {
+    "isStatic": true,
+    "isKinematic": false,
+    "mass": 0,
+    "useGravity": false
+   }
+  },
+  {
+   "id": 21,
+   "name": {
+    "name": "Basement Back"
+   },
+   "transform": {
+    "position": [
+     21.0,
+     1.7,
+     -4.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     10.0,
+     3.4,
+     0.4
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.42,
+     0.34,
+     0.44
+    ],
+    "metallic": 0.0,
+    "roughness": 0.85,
+    "surfaceMaterial": 15
+   },
+   "boxCollider": {
+    "size": [
+     10.0,
+     3.4,
+     0.4
+    ],
+    "center": [
+     0,
+     0,
+     0
+    ],
+    "friction": 0.6,
+    "bounciness": 0.0
+   },
+   "rigidbody": {
+    "isStatic": true,
+    "isKinematic": false,
+    "mass": 0,
+    "useGravity": false
+   }
+  },
+  {
+   "id": 22,
+   "name": {
+    "name": "Basement Front"
+   },
+   "transform": {
+    "position": [
+     21.0,
+     1.7,
+     4.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     10.0,
+     3.4,
+     0.4
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.42,
+     0.34,
+     0.44
+    ],
+    "metallic": 0.0,
+    "roughness": 0.85,
+    "surfaceMaterial": 15
+   },
+   "boxCollider": {
+    "size": [
+     10.0,
+     3.4,
+     0.4
+    ],
+    "center": [
+     0,
+     0,
+     0
+    ],
+    "friction": 0.6,
+    "bounciness": 0.0
+   },
+   "rigidbody": {
+    "isStatic": true,
+    "isKinematic": false,
+    "mass": 0,
+    "useGravity": false
+   }
+  },
+  {
+   "id": 23,
+   "name": {
+    "name": "Basement Wall-XA"
+   },
+   "transform": {
+    "position": [
+     15.8,
+     1.7,
+     -2.3
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     0.4,
+     3.4,
+     3.4
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.42,
+     0.34,
+     0.44
+    ],
+    "metallic": 0.0,
+    "roughness": 0.85,
+    "surfaceMaterial": 15
+   },
+   "boxCollider": {
+    "size": [
+     0.4,
+     3.4,
+     3.4
+    ],
+    "center": [
+     0,
+     0,
+     0
+    ],
+    "friction": 0.6,
+    "bounciness": 0.0
+   },
+   "rigidbody": {
+    "isStatic": true,
+    "isKinematic": false,
+    "mass": 0,
+    "useGravity": false
+   }
+  },
+  {
+   "id": 24,
+   "name": {
+    "name": "Basement Wall-XB"
+   },
+   "transform": {
+    "position": [
+     15.8,
+     1.7,
+     2.3
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     0.4,
+     3.4,
+     3.4
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.42,
+     0.34,
+     0.44
+    ],
+    "metallic": 0.0,
+    "roughness": 0.85,
+    "surfaceMaterial": 15
+   },
+   "boxCollider": {
+    "size": [
+     0.4,
+     3.4,
+     3.4
+    ],
+    "center": [
+     0,
+     0,
+     0
+    ],
+    "friction": 0.6,
+    "bounciness": 0.0
+   },
+   "rigidbody": {
+    "isStatic": true,
+    "isKinematic": false,
+    "mass": 0,
+    "useGravity": false
+   }
+  },
+  {
+   "id": 25,
+   "name": {
+    "name": "Basement Lintel-X"
+   },
+   "transform": {
+    "position": [
+     15.8,
+     2.9,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     0.4,
+     1.0,
+     1.2
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.42,
+     0.34,
+     0.44
+    ],
+    "metallic": 0.0,
+    "roughness": 0.85,
+    "surfaceMaterial": 15
+   },
+   "boxCollider": {
+    "size": [
+     0.4,
+     1.0,
+     1.2
+    ],
+    "center": [
+     0,
+     0,
+     0
+    ],
+    "friction": 0.6,
+    "bounciness": 0.0
+   },
+   "rigidbody": {
+    "isStatic": true,
+    "isKinematic": false,
+    "mass": 0,
+    "useGravity": false
+   }
+  },
+  {
+   "id": 26,
+   "name": {
+    "name": "Basement Wall+X"
+   },
+   "transform": {
+    "position": [
+     26.2,
+     1.7,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     0.4,
+     3.4,
+     8.0
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.42,
+     0.34,
+     0.44
+    ],
+    "metallic": 0.0,
+    "roughness": 0.85,
+    "surfaceMaterial": 15
+   },
+   "boxCollider": {
+    "size": [
+     0.4,
+     3.4,
+     8.0
+    ],
+    "center": [
+     0,
+     0,
+     0
+    ],
+    "friction": 0.6,
+    "bounciness": 0.0
+   },
+   "rigidbody": {
+    "isStatic": true,
+    "isKinematic": false,
+    "mass": 0,
+    "useGravity": false
+   }
+  },
+  {
+   "id": 27,
+   "name": {
+    "name": "Corridor West Floor"
+   },
+   "transform": {
+    "position": [
+     -10.7,
+     -0.2,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     11.0,
+     0.4,
+     2.0
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.34,
+     0.26,
+     0.24
+    ],
+    "metallic": 0.0,
+    "roughness": 0.85,
+    "surfaceMaterial": 11
+   },
+   "boxCollider": {
+    "size": [
+     11.0,
+     0.4,
+     2.0
+    ],
+    "center": [
+     0,
+     0,
+     0
+    ],
+    "friction": 0.6,
+    "bounciness": 0.0
+   },
+   "rigidbody": {
+    "isStatic": true,
+    "isKinematic": false,
+    "mass": 0,
+    "useGravity": false
+   }
+  },
+  {
+   "id": 28,
+   "name": {
+    "name": "Corridor West Ceiling"
+   },
+   "transform": {
+    "position": [
+     -10.7,
+     3.6,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     11.0,
+     0.4,
+     2.0
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.42,
+     0.34,
+     0.44
+    ],
+    "metallic": 0.0,
+    "roughness": 0.85,
+    "surfaceMaterial": 15
+   },
+   "boxCollider": {
+    "size": [
+     11.0,
+     0.4,
+     2.0
+    ],
+    "center": [
+     0,
+     0,
+     0
+    ],
+    "friction": 0.6,
+    "bounciness": 0.0
+   },
+   "rigidbody": {
+    "isStatic": true,
+    "isKinematic": false,
+    "mass": 0,
+    "useGravity": false
+   }
+  },
+  {
+   "id": 29,
+   "name": {
+    "name": "Corridor West Side-Z"
+   },
+   "transform": {
+    "position": [
+     -10.7,
+     1.7,
+     -1.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     11.0,
+     3.4,
+     0.4
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.42,
+     0.34,
+     0.44
+    ],
+    "metallic": 0.0,
+    "roughness": 0.85,
+    "surfaceMaterial": 15
+   },
+   "boxCollider": {
+    "size": [
+     11.0,
+     3.4,
+     0.4
+    ],
+    "center": [
+     0,
+     0,
+     0
+    ],
+    "friction": 0.6,
+    "bounciness": 0.0
+   },
+   "rigidbody": {
+    "isStatic": true,
+    "isKinematic": false,
+    "mass": 0,
+    "useGravity": false
+   }
+  },
+  {
+   "id": 30,
+   "name": {
+    "name": "Corridor West Side+Z"
+   },
+   "transform": {
+    "position": [
+     -10.7,
+     1.7,
+     1.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     11.0,
+     3.4,
+     0.4
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.42,
+     0.34,
+     0.44
+    ],
+    "metallic": 0.0,
+    "roughness": 0.85,
+    "surfaceMaterial": 15
+   },
+   "boxCollider": {
+    "size": [
+     11.0,
+     3.4,
+     0.4
+    ],
+    "center": [
+     0,
+     0,
+     0
+    ],
+    "friction": 0.6,
+    "bounciness": 0.0
+   },
+   "rigidbody": {
+    "isStatic": true,
+    "isKinematic": false,
+    "mass": 0,
+    "useGravity": false
+   }
+  },
+  {
+   "id": 31,
+   "name": {
+    "name": "Corridor East Floor"
+   },
+   "transform": {
+    "position": [
+     10.7,
+     -0.2,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     11.0,
+     0.4,
+     2.0
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.34,
+     0.26,
+     0.24
+    ],
+    "metallic": 0.0,
+    "roughness": 0.85,
+    "surfaceMaterial": 11
+   },
+   "boxCollider": {
+    "size": [
+     11.0,
+     0.4,
+     2.0
+    ],
+    "center": [
+     0,
+     0,
+     0
+    ],
+    "friction": 0.6,
+    "bounciness": 0.0
+   },
+   "rigidbody": {
+    "isStatic": true,
+    "isKinematic": false,
+    "mass": 0,
+    "useGravity": false
+   }
+  },
+  {
+   "id": 32,
+   "name": {
+    "name": "Corridor East Ceiling"
+   },
+   "transform": {
+    "position": [
+     10.7,
+     3.6,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     11.0,
+     0.4,
+     2.0
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.42,
+     0.34,
+     0.44
+    ],
+    "metallic": 0.0,
+    "roughness": 0.85,
+    "surfaceMaterial": 15
+   },
+   "boxCollider": {
+    "size": [
+     11.0,
+     0.4,
+     2.0
+    ],
+    "center": [
+     0,
+     0,
+     0
+    ],
+    "friction": 0.6,
+    "bounciness": 0.0
+   },
+   "rigidbody": {
+    "isStatic": true,
+    "isKinematic": false,
+    "mass": 0,
+    "useGravity": false
+   }
+  },
+  {
+   "id": 33,
+   "name": {
+    "name": "Corridor East Side-Z"
+   },
+   "transform": {
+    "position": [
+     10.7,
+     1.7,
+     -1.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     11.0,
+     3.4,
+     0.4
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.42,
+     0.34,
+     0.44
+    ],
+    "metallic": 0.0,
+    "roughness": 0.85,
+    "surfaceMaterial": 15
+   },
+   "boxCollider": {
+    "size": [
+     11.0,
+     3.4,
+     0.4
+    ],
+    "center": [
+     0,
+     0,
+     0
+    ],
+    "friction": 0.6,
+    "bounciness": 0.0
+   },
+   "rigidbody": {
+    "isStatic": true,
+    "isKinematic": false,
+    "mass": 0,
+    "useGravity": false
+   }
+  },
+  {
+   "id": 34,
+   "name": {
+    "name": "Corridor East Side+Z"
+   },
+   "transform": {
+    "position": [
+     10.7,
+     1.7,
+     1.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     11.0,
+     3.4,
+     0.4
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.42,
+     0.34,
+     0.44
+    ],
+    "metallic": 0.0,
+    "roughness": 0.85,
+    "surfaceMaterial": 15
+   },
+   "boxCollider": {
+    "size": [
+     11.0,
+     3.4,
+     0.4
+    ],
+    "center": [
+     0,
+     0,
+     0
+    ],
+    "friction": 0.6,
+    "bounciness": 0.0
+   },
+   "rigidbody": {
+    "isStatic": true,
+    "isKinematic": false,
+    "mass": 0,
+    "useGravity": false
+   }
+  },
+  {
+   "id": 35,
+   "name": {
+    "name": "Projector - tiled kitchen"
+   },
+   "transform": {
+    "position": [
+     -21.0,
+     1.2,
+     -3.0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     0.4,
+     0.4,
+     0.4
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.95,
+     0.78,
+     0.3
+    ],
+    "metallic": 0.1,
+    "roughness": 0.35,
+    "emissiveColor": [
+     0.7,
+     0.45,
+     0.12
+    ],
+    "emissiveStrength": 2.0
+   },
+   "audioSource": {
+    "clipPath": "assets/projector.wav",
+    "volume": 0.9,
+    "pitch": 1.0,
+    "playOnAwake": true,
+    "loop": true,
+    "is3D": true,
+    "spatialBlend": 1.0,
+    "minDistance": 2.0,
+    "maxDistance": 70.0
+   }
+  },
+  {
+   "id": 36,
+   "name": {
+    "name": "Projector - wooden hall"
+   },
+   "transform": {
+    "position": [
+     0.0,
+     1.2,
+     -3.0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     0.4,
+     0.4,
+     0.4
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.95,
+     0.78,
+     0.3
+    ],
+    "metallic": 0.1,
+    "roughness": 0.35,
+    "emissiveColor": [
+     0.7,
+     0.45,
+     0.12
+    ],
+    "emissiveStrength": 2.0
+   },
+   "audioSource": {
+    "clipPath": "assets/projector.wav",
+    "volume": 0.9,
+    "pitch": 1.0,
+    "playOnAwake": true,
+    "loop": true,
+    "is3D": true,
+    "spatialBlend": 1.0,
+    "minDistance": 2.0,
+    "maxDistance": 70.0
+   }
+  },
+  {
+   "id": 37,
+   "name": {
+    "name": "Projector - carpeted basement"
+   },
+   "transform": {
+    "position": [
+     21.0,
+     1.2,
+     -3.0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     0.4,
+     0.4,
+     0.4
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.95,
+     0.78,
+     0.3
+    ],
+    "metallic": 0.1,
+    "roughness": 0.35,
+    "emissiveColor": [
+     0.7,
+     0.45,
+     0.12
+    ],
+    "emissiveStrength": 2.0
+   },
+   "audioSource": {
+    "clipPath": "assets/projector.wav",
+    "volume": 0.9,
+    "pitch": 1.0,
+    "playOnAwake": true,
+    "loop": true,
+    "is3D": true,
+    "spatialBlend": 1.0,
+    "minDistance": 2.0,
+    "maxDistance": 70.0
+   }
+  },
+  {
+   "id": 38,
+   "name": {
+    "name": "Player"
+   },
+   "transform": {
+    "position": [
+     0.0,
+     0.9,
+     2.4
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     0.7,
+     1.7,
+     0.7
+    ],
+    "visible": true
+   },
+   "material": {
+    "baseColor": [
+     0.92,
+     0.92,
+     0.96
+    ],
+    "metallic": 0.0,
+    "roughness": 0.6
+   },
+   "thirdPerson": {
+    "moveSpeed": 5.0,
+    "jumpForce": 6.5,
+    "cameraDistance": 4.0,
+    "cameraHeight": 1.7
+   }
+  },
+  {
+   "id": 39,
+   "name": {
+    "name": "MainCam"
+   },
+   "transform": {
+    "position": [
+     0.0,
+     2.2,
+     8.0
+    ],
+    "rotation": [
+     -0.07,
+     0,
+     0,
+     0.9975
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "visible": true
+   },
+   "camera": {
+    "projectionType": 0,
+    "fieldOfView": 60,
+    "nearPlane": 0.1,
+    "farPlane": 500,
+    "isActive": true,
+    "priority": 0,
+    "clearColor": true,
+    "clearDepth": true,
+    "backgroundColor": [
+     0.04,
+     0.04,
+     0.06
+    ],
+    "orthoSize": 10
+   }
+  },
+  {
+   "id": 40,
+   "name": {
+    "name": "Sun"
+   },
+   "transform": {
+    "position": [
+     0,
+     12,
+     0
+    ],
+    "rotation": [
+     -0.38,
+     0.22,
+     0.09,
+     0.89
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "visible": true
+   },
+   "light": {
+    "type": 0,
+    "color": [
+     1.0,
+     0.97,
+     0.92
+    ],
+    "intensity": 1.2
+   }
+  },
+  {
+   "id": 41,
+   "name": {
+    "name": "Kitchen Lamp"
+   },
+   "transform": {
+    "position": [
+     -21.0,
+     2.9,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "visible": true
+   },
+   "light": {
+    "type": 1,
+    "color": [
+     1.0,
+     0.95,
+     0.86
+    ],
+    "intensity": 16.0,
+    "range": 15.0
+   }
+  },
+  {
+   "id": 42,
+   "name": {
+    "name": "Hall Lamp"
+   },
+   "transform": {
+    "position": [
+     0.0,
+     2.9,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "visible": true
+   },
+   "light": {
+    "type": 1,
+    "color": [
+     1.0,
+     0.95,
+     0.86
+    ],
+    "intensity": 16.0,
+    "range": 15.0
+   }
+  },
+  {
+   "id": 43,
+   "name": {
+    "name": "Basement Lamp"
+   },
+   "transform": {
+    "position": [
+     21.0,
+     2.9,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "visible": true
+   },
+   "light": {
+    "type": 1,
+    "color": [
+     1.0,
+     0.95,
+     0.86
+    ],
+    "intensity": 16.0,
+    "range": 15.0
+   }
+  },
+  {
+   "id": 44,
+   "name": {
+    "name": "Corridor West Lamp"
+   },
+   "transform": {
+    "position": [
+     -10.7,
+     2.8,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "visible": true
+   },
+   "light": {
+    "type": 1,
+    "color": [
+     1.0,
+     0.93,
+     0.82
+    ],
+    "intensity": 8.0,
+    "range": 8.0
+   }
+  },
+  {
+   "id": 45,
+   "name": {
+    "name": "Corridor East Lamp"
+   },
+   "transform": {
+    "position": [
+     10.7,
+     2.8,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "visible": true
+   },
+   "light": {
+    "type": 1,
+    "color": [
+     1.0,
+     0.93,
+     0.82
+    ],
+    "intensity": 8.0,
+    "range": 8.0
+   }
+  }
+ ]
+}

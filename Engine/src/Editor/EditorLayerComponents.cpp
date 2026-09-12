@@ -1086,6 +1086,31 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
 
         // Surface response: sound + particle this material makes when walked on or hit.
         if (ImGui::TreeNode("Surface Response")) {
+            // What this surface is MADE of. One statement, read by three
+            // systems: impact sounds pick a clip from it, material interaction
+            // picks a response, and the audio scene picks absorption and
+            // scattering. It is the difference between a carpeted basement and
+            // a tiled kitchen sounding the same and sounding like themselves.
+            {
+                const char* current = ECS::SurfaceMaterialName(material->surfaceMaterial);
+                if (ImGui::BeginCombo("Made Of", current)) {
+                    for (u8 i = 0; i < static_cast<u8>(ECS::SurfaceMaterial::Count); ++i) {
+                        const auto kind = static_cast<ECS::SurfaceMaterial>(i);
+                        const bool selected = (material->surfaceMaterial == kind);
+                        if (ImGui::Selectable(ECS::SurfaceMaterialName(kind), selected)) {
+                            material->surfaceMaterial = kind;
+                            MarkDirty();
+                        }
+                        if (selected) ImGui::SetItemDefaultFocus();
+                    }
+                    ImGui::EndCombo();
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Drives room reverb, impact sounds and footsteps. "
+                                      "Concrete rings; carpet does not.");
+                }
+            }
+
             char footBuf[256];
             strncpy(footBuf, material->footstepSound.c_str(), sizeof(footBuf) - 1);
             footBuf[sizeof(footBuf) - 1] = '\0';

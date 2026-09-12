@@ -408,6 +408,10 @@ json SerializeMaterialComponent(const ECS::MaterialComponent& material) {
     if (material.shadowDitherPattern != kDefaultMaterial.shadowDitherPattern) j["shadowDitherPattern"] = material.shadowDitherPattern;
     if (material.textureFilterOverride != kDefaultMaterial.textureFilterOverride) j["textureFilterOverride"] = material.textureFilterOverride;
     if (!material.footstepSound.empty()) j["footstepSound"] = material.footstepSound;
+    // What this surface is made of, for room acoustics and impact sounds.
+    // Written only when it is not Default, like everything else here.
+    if (material.surfaceMaterial != ECS::SurfaceMaterial::Default)
+        j["surfaceMaterial"] = static_cast<u32>(material.surfaceMaterial);
     if (!material.impactSound.empty())   j["impactSound"] = material.impactSound;
     if (material.surfaceParticle != 0)   j["surfaceParticle"] = material.surfaceParticle;
     if (material.footstepVolume != kDefaultMaterial.footstepVolume) j["footstepVolume"] = material.footstepVolume;
@@ -797,6 +801,15 @@ ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
     if (j.contains("shadowDitherPattern")) { u8 v = j["shadowDitherPattern"].get<u8>(); if (v <= 7) material.shadowDitherPattern = v; }
     if (j.contains("textureFilterOverride")) { u8 v = j["textureFilterOverride"].get<u8>(); if (v <= 3) material.textureFilterOverride = v; }
     if (j.contains("footstepSound")) material.footstepSound = j["footstepSound"].get<std::string>();
+    if (j.contains("surfaceMaterial")) {
+        // Clamped to the enum. An ordinal from a newer build than this one must
+        // not index past the acoustic table into whatever follows it in memory.
+        const u32 raw = j["surfaceMaterial"].get<u32>();
+        material.surfaceMaterial =
+            (raw < static_cast<u32>(ECS::SurfaceMaterial::Count))
+                ? static_cast<ECS::SurfaceMaterial>(raw)
+                : ECS::SurfaceMaterial::Default;
+    }
     if (j.contains("impactSound"))   material.impactSound = j["impactSound"].get<std::string>();
     if (j.contains("surfaceParticle")) { u8 v = j["surfaceParticle"].get<u8>(); if (v <= 6) material.surfaceParticle = v; }
     if (j.contains("footstepVolume")) material.footstepVolume = j["footstepVolume"].get<f32>();
