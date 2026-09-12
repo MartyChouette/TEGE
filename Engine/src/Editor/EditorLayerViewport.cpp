@@ -837,6 +837,23 @@ void EditorLayer::DrawGizmos() {
         return;
     }
 
+    // No transform gizmo while a build tool is armed.
+    //
+    // Every creative placement selects what it just made, which put a gizmo
+    // exactly where the next click was going to land. ImGuizmo then took that
+    // click, so the second wall went nowhere and the terrain brush -- whose
+    // entity origin sits in the middle of the area you are sculpting -- worked
+    // once and never again. Marty, using it: "the teerrain inwwqorks for one
+    // timee and theen neveer again", "conflict beetwween the movment gizmos and
+    // th eplapcemenet of items".
+    //
+    // Selection itself stays: Subtract needs it to know what to cut, and the
+    // terrain tool needs it to know which terrain to sculpt. It is only the
+    // HANDLES that have to go, and Creative Mode's Edit tool has its own anyway.
+    if (ModeUsesBuildSurface(m_EditorMode) || m_CreativeTool != CreativeTool::None) {
+        return;
+    }
+
     // Don't draw gizmos when popups/modals are open — ImGuizmo reads raw mouse
     // position and would otherwise respond to drags meant for the popup
     if (ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel)) {
