@@ -28,6 +28,9 @@
 #include "Enjin/ECS/Systems/ScatterSystem.h"
 #include "Enjin/ECS/Components/TerrainGenerator.h"
 #include "Enjin/ECS/Components/Terrain.h"
+#include "Enjin/ECS/Components/VoxelVolume.h"
+#include "Enjin/ECS/Systems/VoxelVolumeSystem.h"
+#include "Enjin/Geometry/VoxelEdit.h"
 #include "Enjin/ECS/Systems/TerrainGeneratorSystem.h"
 #include "Enjin/ECS/Components/WFC.h"
 #include "Enjin/ECS/Systems/WFCSystem.h"
@@ -45,6 +48,131 @@ static Entity RoundTrip(World& src, World& dst) {
     auto result = de.LoadFromString(json);
     if (!result.success || result.entities.empty()) return INVALID_ENTITY;
     return result.entities[0];
+}
+
+// ===========================================================================
+// VoxelVolumeComponent -- the chain a shipped game actually takes
+// ===========================================================================
+//
+// The serializer and the meshing system were each tested on their own, which
+// leaves the join between them untested: a cave that carved beautifully in the
+// editor and arrived in the game as an empty entity would pass every test in
+// TestVoxelEdit and every test in TestVoxelFieldCodec.
+//
+// So this carves a cave, writes the scene, reads it back into a fresh world and
+// rebuilds geometry from what came out. That is the whole path from a person
+// dragging in the editor to a player standing in the cave.
+
+ENJIN_TEST(VoxelVolume, ACarvedCaveSurvivesASaveAndStillMeshes) {
+    // Arrange: a block of rock with a passage and a chamber cut into it.
+    World w1;
+    Entity e = w1.CreateEntity();
+    w1.AddComponent<TransformComponent>(e);
+    auto& vol = w1.AddComponent<VoxelVolumeComponent>(e);
+    vol.dimX = vol.dimY = vol.dimZ = 24;
+    vol.voxelSize = 0.5f;
+    vol.field.assign(vol.Count(), -vol.Band());
+
+    const Math::Vector3 origin = vol.GridOrigin(Math::Vector3(0.0f, 0.0f, 0.0f));
+    Geometry::BrushGesture g;
+    g.from = Math::Vector3(origin.x + 2.0f, origin.y + 6.0f, origin.z + 6.0f);
+    g.to = Math::Vector3(origin.x + 9.0f, origin.y + 6.0f, origin.z + 6.0f);
+    g.bore = 1.5f;
+    g.roughness = 0.2f;
+    g.blend = 0.5f;
+    Geometry::ApplyStroke(vol, origin, Geometry::MakeBrushStroke(Geometry::VoxelBrush::Passage, g));
+    g.from = g.to;
+    Geometry::ApplyStroke(vol, origin, Geometry::MakeBrushStroke(Geometry::VoxelBrush::Chamber, g));
+
+    // Remember what the cave looks like, as a person would see it: which points
+    // are open and which are rock.
+    struct Probe { u32 x, y, z; bool solid; };
+    std::vector<Probe> probes;
+    for (u32 x = 2; x < 22; x += 3) {
+        for (u32 y = 6; y < 18; y += 3) {
+            probes.push_back({x, y, 12, vol.At(x, y, 12) < 0.0f});
+        }
+    }
+    bool sawOpen = false, sawRock = false;
+    for (const Probe& probe : probes) {
+        if (probe.solid) sawRock = true; else sawOpen = true;
+    }
+    ENJIN_ASSERT_TRUE(sawOpen);    // the carve did something...
+    ENJIN_ASSERT_TRUE(sawRock);    // ...and did not remove everything
+
+    // Act
+    World w2;
+    Entity e2 = RoundTrip(w1, w2);
+
+    // Assert: the component arrived, the same size...
+    ENJIN_ASSERT_NE(e2, INVALID_ENTITY);
+    auto* loaded = w2.GetComponent<VoxelVolumeComponent>(e2);
+    ENJIN_ASSERT_NOT_NULL(loaded);
+    ENJIN_EXPECT_EQ(loaded->dimX, vol.dimX);
+    ENJIN_EXPECT_EQ(loaded->dimY, vol.dimY);
+    ENJIN_EXPECT_EQ(loaded->dimZ, vol.dimZ);
+    ENJIN_EXPECT_FLOAT_EQ(loaded->voxelSize, vol.voxelSize);
+    ENJIN_EXPECT_EQ(loaded->field.size(), vol.Count());
+
+    // ...and every probe reads the same. Quantisation moves values slightly; it
+    // must never move one across zero, because that is a wall appearing in a
+    // passage or a passage opening through a wall.
+    for (const Probe& probe : probes) {
+        ENJIN_EXPECT_TRUE((loaded->At(probe.x, probe.y, probe.z) < 0.0f) == probe.solid);
+    }
+
+    // And it still becomes geometry, which is what a player needs.
+    ENJIN_EXPECT_TRUE(loaded->meshDirty);
+    ENJIN_ASSERT_TRUE(VoxelVolumeSystem::Rebuild(&w2, e2));
+    auto* mesh = w2.GetComponent<MeshComponent>(e2);
+    ENJIN_ASSERT_NOT_NULL(mesh);
+    ENJIN_EXPECT_TRUE(mesh->vertices.size() > 0);
+    ENJIN_EXPECT_TRUE(mesh->indices.size() > 0);
+
+    // Collision too: a cave you cannot stand in is scenery.
+    auto* collider = w2.GetComponent<MeshColliderComponent>(e2);
+    ENJIN_ASSERT_NOT_NULL(collider);
+    ENJIN_EXPECT_EQ(collider->indices.size(), mesh->indices.size());
+    ENJIN_EXPECT_FALSE(collider->convex);   // a convex cave is a solid lump
+    ENJIN_EXPECT_TRUE(collider->generated);
+}
+
+ENJIN_TEST(VoxelVolume, AnUncarvedVolumeCostsNothingInTheSceneFile) {
+    // Arrange: dropped in and not yet dug.
+    World w1;
+    Entity e = w1.CreateEntity();
+    w1.AddComponent<TransformComponent>(e);
+    w1.AddComponent<VoxelVolumeComponent>(e);
+
+    // Act
+    Scene::SceneSerializer ser(&w1);
+    const std::string json = ser.SaveToString();
+
+    // Assert: no field key at all, rather than a compressed block of "all air".
+    // A scene with a few unused volumes should not carry their emptiness.
+    ENJIN_EXPECT_TRUE(json.find("voxelVolume") != std::string::npos);
+    ENJIN_EXPECT_TRUE(json.find("\"field\"") == std::string::npos);
+
+    // And it still loads, as a volume made of air.
+    World w2;
+    Entity e2 = RoundTrip(w1, w2);
+    ENJIN_ASSERT_NE(e2, INVALID_ENTITY);
+    auto* loaded = w2.GetComponent<VoxelVolumeComponent>(e2);
+    ENJIN_ASSERT_NOT_NULL(loaded);
+    ENJIN_EXPECT_TRUE(loaded->field.empty());
+}
+
+ENJIN_TEST(VoxelVolume, AVolumeOfPureAirMakesNoGeometryRatherThanEmptyGeometry) {
+    // Arrange
+    World w;
+    Entity e = w.CreateEntity();
+    w.AddComponent<TransformComponent>(e);
+    w.AddComponent<VoxelVolumeComponent>(e);
+
+    // Act / Assert: a fresh volume is legal, not an error. Rebuild declines,
+    // and nothing downstream is handed a mesh with no triangles in it.
+    ENJIN_EXPECT_FALSE(VoxelVolumeSystem::Rebuild(&w, e));
+    ENJIN_EXPECT_NULL(w.GetComponent<MeshComponent>(e));
 }
 
 // ===========================================================================
