@@ -26,6 +26,7 @@
 
 #include <vector>
 #include "Enjin/ECS/Components/BrushSolid.h"
+#include "Enjin/Geometry/VoxelEdit.h"
 
 namespace Enjin {
 namespace Editor {
@@ -193,6 +194,16 @@ struct BuildToolSettings {
     // of this tool a pipe rather than a cave. Turn it down for a worked stone
     // passage; leave it for rock.
     f32 roughness = 0.35f;
+
+    // Cave: which authoring brush, as a Geometry::VoxelBrush ordinal.
+    //
+    // A float because the rail draws every setting as a slider, and one row
+    // shape means one interaction to learn. The tool rounds it.
+    f32 caveBrush = 0.0f;
+
+    // Cave: how far a Shaft sinks, or a Ramp descends, in metres. Ignored by
+    // the brushes that do not go down.
+    f32 caveDepth = 6.0f;
 
     f32 rungGap = 0.30f;     // Ladder: spacing of the rungs you can see
     f32 keepPercent = 50.0f; // Reduce

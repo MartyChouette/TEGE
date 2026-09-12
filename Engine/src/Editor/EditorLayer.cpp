@@ -1324,6 +1324,63 @@ void EditorLayer::Update(f32 deltaTime) {
                                       ? "more" : "none");
                     return std::string(msg);
                 }
+                if (op == "editor_build_settings") {
+                    // The rail's OWN field table, not a second list. A separate
+                    // list of settings would drift the moment a tool gained a
+                    // slider, and would then be reporting numbers nobody could
+                    // see in the editor.
+                    if (!m_Creative.IsActive())
+                        return std::string("error: no build surface -- switch to Creative "
+                                           "or Tutorial mode");
+
+                    const BuildTool tool = m_Creative.GetTool();
+                    BuildField fields[kBuildMaxFields];
+                    const u32 count = BuildToolFields(tool, m_Creative.CurrentSettings(),
+                                                      fields, kBuildMaxFields);
+
+                    const std::string want = args.value("name", std::string());
+                    if (!want.empty()) {
+                        if (!args.contains("value"))
+                            return std::string("error: 'name' given with no 'value'");
+                        const f32 v = args.value("value", 0.0f);
+                        for (u32 i = 0; i < count; ++i) {
+                            if (want != fields[i].label) continue;
+                            // Clamped to the same range the slider has, so a
+                            // driven value can never be one a person could not
+                            // have set by hand.
+                            *fields[i].value = std::max(fields[i].minValue,
+                                                        std::min(fields[i].maxValue, v));
+                            char msg[128];
+                            std::snprintf(msg, sizeof(msg), "%s = %.3g %s",
+                                          fields[i].label,
+                                          static_cast<double>(*fields[i].value),
+                                          fields[i].unit);
+                            return std::string(msg);
+                        }
+                        std::string names;
+                        for (u32 i = 0; i < count; ++i) {
+                            if (i) names += ", ";
+                            names += fields[i].label;
+                        }
+                        return std::string("error: ") + BuildToolName(tool) +
+                               " has no setting '" + want + "'. It has: " + names;
+                    }
+
+                    nlohmann::json out;
+                    out["tool"] = BuildToolName(tool);
+                    nlohmann::json list = nlohmann::json::array();
+                    for (u32 i = 0; i < count; ++i) {
+                        nlohmann::json f;
+                        f["name"] = fields[i].label;
+                        f["value"] = *fields[i].value;
+                        f["min"] = fields[i].minValue;
+                        f["max"] = fields[i].maxValue;
+                        f["unit"] = fields[i].unit;
+                        list.push_back(f);
+                    }
+                    out["settings"] = list;
+                    return out.dump();
+                }
                 if (op == "editor_set_build_tool") {
                     // The rail is the human path and stays the only one that
                     // matters; this exists because the rail sits OUTSIDE the

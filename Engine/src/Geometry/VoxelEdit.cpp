@@ -20,11 +20,16 @@ namespace {
 EditRegion StrokeBounds(const ECS::VoxelVolumeComponent& v,
                         const Math::Vector3& origin, const VoxelStroke& s) {
     const f32 reach = std::max(s.radiusA, s.radiusB) + s.blend + s.roughness + v.voxelSize * 2.0f;
+    // A squash below 1 makes the stroke reach FURTHER vertically than its own
+    // radius, so the vertical bound is divided by it. Without this a low wide
+    // slot is clipped flat top and bottom by the bounds of a shape that was
+    // never that tall.
+    const f32 vReach = reach / std::max(s.heightScale, 0.05f);
     const f32 minX = std::min(s.a.x, s.b.x) - reach;
-    const f32 minY = std::min(s.a.y, s.b.y) - reach;
+    const f32 minY = std::min(s.a.y, s.b.y) - vReach;
     const f32 minZ = std::min(s.a.z, s.b.z) - reach;
     const f32 maxX = std::max(s.a.x, s.b.x) + reach;
-    const f32 maxY = std::max(s.a.y, s.b.y) + reach;
+    const f32 maxY = std::max(s.a.y, s.b.y) + vReach;
     const f32 maxZ = std::max(s.a.z, s.b.z) + reach;
 
     auto lo = [&](f32 world, f32 o, u32 dim) -> u32 {
@@ -64,7 +69,158 @@ f32 Roughness(const Math::Vector3& p, f32 scale, u32 seed) {
     return (norm > 0.0f) ? (sum / norm) : 0.0f;
 }
 
+// The stroke shape at a point, squash included.
+//
+// One definition, so the shape a stroke CARVES and the shape its bounds are
+// computed from can never disagree. A stroke judged to fit inside a box it then
+// carves outside of would clip itself against its own edge.
+f32 StrokeField(const VoxelStroke& s, const Math::Vector3& p) {
+    if (s.heightScale == 1.0f) {
+        return SdfTaperedCapsule(p, s.a, s.b, s.radiusA, s.radiusB);
+    }
+    const f32 midY = (s.a.y + s.b.y) * 0.5f;
+    const Math::Vector3 squashed(p.x, midY + (p.y - midY) * s.heightScale, p.z);
+    const Math::Vector3 a(s.a.x, midY, s.a.z);
+    const Math::Vector3 b(s.b.x, midY, s.b.z);
+    return SdfTaperedCapsule(squashed, a, b, s.radiusA, s.radiusB);
+}
+
 } // namespace
+
+const char* VoxelBrushName(VoxelBrush brush) {
+    switch (brush) {
+        case VoxelBrush::Passage: return "Passage";
+        case VoxelBrush::Chamber: return "Chamber";
+        case VoxelBrush::Shaft:   return "Shaft";
+        case VoxelBrush::Ramp:    return "Ramp";
+        case VoxelBrush::Crack:   return "Crack";
+        default:                  return "Unknown";
+    }
+}
+
+VoxelStroke MakeBrushStroke(VoxelBrush brush, const BrushGesture& g) {
+    VoxelStroke s;
+    s.mode = g.filling ? VoxelEditMode::Fill : VoxelEditMode::Carve;
+    s.blend = g.blend;
+    s.roughness = g.roughness;
+    s.seed = g.seed;
+
+    const f32 bore = std::max(g.bore, 0.25f);
+    const f32 depth = std::max(g.depth, bore);
+    const f32 dx = g.to.x - g.from.x;
+    const f32 dy = g.to.y - g.from.y;
+    const f32 dz = g.to.z - g.from.z;
+    const f32 run = std::sqrt(dx * dx + dy * dy + dz * dz);
+
+    switch (brush) {
+        case VoxelBrush::Chamber: {
+            // A room has no direction, so the drag sets its SIZE. Centred on
+            // where the gesture started rather than on the midpoint: you point
+            // at the spot you want the room and drag to say how big, which is
+            // how every other radius-by-drag control in the editor behaves.
+            s.a = g.from;
+            s.b = g.from;
+            s.radiusA = s.radiusB = std::max(bore, run);
+            break;
+        }
+        case VoxelBrush::Shaft: {
+            // Straight down from the aim point. A vertical drag on a ground
+            // plane is impossible to express, which is why sinking a shaft
+            // used to need the camera moved and the whole cave re-approached.
+            s.a = g.from;
+            s.b = Math::Vector3(g.from.x, g.from.y - depth, g.from.z);
+            s.radiusA = s.radiusB = bore;
+            break;
+        }
+        case VoxelBrush::Ramp: {
+            // Descends as it runs. Tapered slightly so the lower end is the
+            // narrower one, which is what makes a ramp read as going somewhere
+            // rather than as a tilted corridor.
+            s.a = g.from;
+            s.b = Math::Vector3(g.to.x, g.from.y - depth, g.to.z);
+            s.radiusA = bore;
+            s.radiusB = bore * 0.85f;
+            break;
+        }
+        case VoxelBrush::Crack: {
+            // Tall and narrow. The squash is what does it; the radius stays the
+            // bore so the setting still means the same thing across brushes.
+            s.a = g.from;
+            s.b = g.to;
+            s.radiusA = s.radiusB = bore;
+            s.heightScale = 0.45f;   // reaches about twice the bore vertically
+            break;
+        }
+        case VoxelBrush::Passage:
+        default: {
+            s.a = g.from;
+            s.b = g.to;
+            s.radiusA = s.radiusB = bore;
+            break;
+        }
+    }
+    return s;
+}
+
+bool RaycastVolume(const ECS::VoxelVolumeComponent& volume, const Math::Vector3& volumeOrigin,
+                   const Math::Vector3& rayOrigin, const Math::Vector3& rayDirection,
+                   f32 maxDistance, Math::Vector3& outPoint) {
+    if (volume.field.size() != volume.Count()) return false;
+
+    const f32 dirLen = std::sqrt(rayDirection.x * rayDirection.x +
+                                 rayDirection.y * rayDirection.y +
+                                 rayDirection.z * rayDirection.z);
+    if (dirLen < 1e-6f) return false;
+    const Math::Vector3 dir(rayDirection.x / dirLen, rayDirection.y / dirLen,
+                            rayDirection.z / dirLen);
+
+    // Trilinear, so a hit lands on the surface rather than on a voxel corner. A
+    // stroke that snapped to the grid would start every dig up to half a voxel
+    // from where it was aimed, which reads as the tool being imprecise.
+    auto sample = [&](const Math::Vector3& p) -> f32 {
+        const f32 fx = (p.x - volumeOrigin.x) / volume.voxelSize;
+        const f32 fy = (p.y - volumeOrigin.y) / volume.voxelSize;
+        const f32 fz = (p.z - volumeOrigin.z) / volume.voxelSize;
+        if (fx < 0.0f || fy < 0.0f || fz < 0.0f) return volume.Band();
+        const u32 x0 = static_cast<u32>(fx), y0 = static_cast<u32>(fy), z0 = static_cast<u32>(fz);
+        if (x0 + 1 >= volume.dimX || y0 + 1 >= volume.dimY || z0 + 1 >= volume.dimZ)
+            return volume.Band();
+        const f32 tx = fx - static_cast<f32>(x0);
+        const f32 ty = fy - static_cast<f32>(y0);
+        const f32 tz = fz - static_cast<f32>(z0);
+        auto V = [&](u32 dx, u32 dy, u32 dz) { return volume.At(x0 + dx, y0 + dy, z0 + dz); };
+        const f32 c00 = V(0,0,0) * (1 - tx) + V(1,0,0) * tx;
+        const f32 c10 = V(0,1,0) * (1 - tx) + V(1,1,0) * tx;
+        const f32 c01 = V(0,0,1) * (1 - tx) + V(1,0,1) * tx;
+        const f32 c11 = V(0,1,1) * (1 - tx) + V(1,1,1) * tx;
+        const f32 c0 = c00 * (1 - ty) + c10 * ty;
+        const f32 c1 = c01 * (1 - ty) + c11 * ty;
+        return c0 * (1 - tz) + c1 * tz;
+    };
+
+    const f32 step = volume.voxelSize * 0.5f;
+    f32 previous = sample(rayOrigin);
+    for (f32 travelled = step; travelled <= maxDistance; travelled += step) {
+        const Math::Vector3 p(rayOrigin.x + dir.x * travelled,
+                              rayOrigin.y + dir.y * travelled,
+                              rayOrigin.z + dir.z * travelled);
+        const f32 current = sample(p);
+        // An air-to-rock crossing only. Starting already inside rock is
+        // legitimate -- a camera can be buried in a hillside -- and the useful
+        // answer there is the next surface along, not a hit at the eye.
+        if (current < 0.0f && previous >= 0.0f) {
+            const f32 denom = previous - current;
+            const f32 frac = (std::fabs(denom) > 1e-8f) ? (previous / denom) : 0.5f;
+            const f32 hitAt = travelled - step + step * std::max(0.0f, std::min(1.0f, frac));
+            outPoint = Math::Vector3(rayOrigin.x + dir.x * hitAt,
+                                     rayOrigin.y + dir.y * hitAt,
+                                     rayOrigin.z + dir.z * hitAt);
+            return true;
+        }
+        previous = current;
+    }
+    return false;
+}
 
 EditRegion ApplyStroke(ECS::VoxelVolumeComponent& volume, const Math::Vector3& volumeOrigin,
                        const VoxelStroke& stroke) {
@@ -114,8 +270,7 @@ EditRegion ApplyStroke(ECS::VoxelVolumeComponent& volume, const Math::Vector3& v
 
                     // Only inside the stroke, and faded at its edge, so a
                     // smoothing pass does not leave a visible disc.
-                    const f32 d = SdfTaperedCapsule(p, stroke.a, stroke.b,
-                                                    stroke.radiusA, stroke.radiusB);
+                    const f32 d = StrokeField(stroke, p);
                     if (d > 0.0f) continue;
                     const f32 w = std::min(1.0f, -d / std::max(volume.voxelSize, 0.001f));
                     const f32 blended = existing + (target - existing) * w;
@@ -126,8 +281,7 @@ EditRegion ApplyStroke(ECS::VoxelVolumeComponent& volume, const Math::Vector3& v
                     continue;
                 }
 
-                f32 tool = SdfTaperedCapsule(p, stroke.a, stroke.b,
-                                             stroke.radiusA, stroke.radiusB);
+                f32 tool = StrokeField(stroke, p);
                 if (rough > 0.0f) {
                     tool = SdfDisplace(tool, Roughness(p, stroke.roughnessScale,
                                                        stroke.seed) * rough);
@@ -160,11 +314,12 @@ GrowthRequest StrokeOverflow(const ECS::VoxelVolumeComponent& v,
     // written" can never disagree. If they did, a stroke could be judged to fit
     // and then be clipped by the edge it was judged against.
     const f32 reach = std::max(s.radiusA, s.radiusB) + s.blend + s.roughness + v.voxelSize * 2.0f;
+    const f32 vReach = reach / std::max(s.heightScale, 0.05f);
     const f32 minW[3] = { std::min(s.a.x, s.b.x) - reach,
-                          std::min(s.a.y, s.b.y) - reach,
+                          std::min(s.a.y, s.b.y) - vReach,
                           std::min(s.a.z, s.b.z) - reach };
     const f32 maxW[3] = { std::max(s.a.x, s.b.x) + reach,
-                          std::max(s.a.y, s.b.y) + reach,
+                          std::max(s.a.y, s.b.y) + vReach,
                           std::max(s.a.z, s.b.z) + reach };
     const f32 o[3] = { origin.x, origin.y, origin.z };
     const u32 dim[3] = { v.dimX, v.dimY, v.dimZ };

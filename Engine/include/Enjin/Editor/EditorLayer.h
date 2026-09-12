@@ -55,6 +55,7 @@
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Editor/UndoRedo.h"
 #include "Enjin/Editor/CreativeMode.h"
+#include "Enjin/Geometry/VoxelEdit.h"
 #include "Enjin/Build/BuildReport.h"
 #include "Enjin/Assets/AssetMetadata.h"
 #include "Enjin/Assets/ThumbnailGenerator.h"
@@ -425,9 +426,33 @@ private:
     // Turn a finished press-drag-release into a thing: a new brush solid, a cut
     // into the selected one, or a placed component. Undoable in every case.
     void CommitCreativeDrag(const Math::Vector3& start, const Math::Vector3& end);
+    // The Cave gesture. Its own handler rather than the generic press-drag-
+    // release, because a cave is dug in three dimensions and the generic path
+    // only ever hands out a point on the y = 0 build plane.
+    void HandleCreativeCave(f32 localX, f32 localY, f32 viewW, f32 viewH,
+                            const Math::Vector3& ground, bool onGround);
+
+    // One description of a cave gesture, read by the preview AND the commit. A
+    // preview allowed to disagree with the commit is a promise about where the
+    // hole will be, and the first time it lies nobody trusts it again.
+    Geometry::BrushGesture BuildCaveGesture(const Math::Vector3& from, const Math::Vector3& to,
+                                            bool fromRock, f32 blend) const;
+    Geometry::VoxelBrush CurrentCaveBrush() const;
+
+    // Where the cursor is pointing, on rock.
+    //
+    // The rock first, the build plane second. Pointing at a cave wall has to
+    // mean that wall, or digging deeper into a cave you are standing in is
+    // impossible -- which is what "a bit hard to dig" was.
+    bool CaveAimPoint(f32 localX, f32 localY, f32 viewW, f32 viewH,
+                      const Math::Vector3& ground, bool onGround,
+                      Math::Vector3& outPoint, bool& outFromRock);
+
     // A cave stroke: carve or fill a voxel volume, making or growing the rock
-    // it is cut into as needed.
-    void CommitCreativeCave(const Math::Vector3& start, const Math::Vector3& end);
+    // it is cut into as needed. `fromRock` says the gesture landed on an
+    // existing surface rather than on the empty build plane.
+    void CommitCreativeCave(const Math::Vector3& start, const Math::Vector3& end,
+                            bool fromRock);
     // The rock a first cave stroke is cut into. Baked from the terrain when
     // there is one, so a cave is carved into the hill rather than into a cube
     // parked beside it.
@@ -1467,6 +1492,11 @@ private:
     // the screen, which means raising the editor over whatever the person at
     // the machine is actually doing.
     bool m_CreativeOnGroundThisFrame = false;
+
+    // Did the cave gesture start on existing rock, or on the empty build plane?
+    // A stroke aimed at a surface is centred on it; the first stroke of a cave
+    // has no surface to aim at and sinks below the ground instead.
+    bool m_CaveDragFromRock = false;
 
     // Viewport aspect ratio constraint
     enum class AspectRatio : u8 {

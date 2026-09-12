@@ -1,4 +1,5 @@
 #include "Enjin/Editor/CreativeMode.h"
+#include "Enjin/Geometry/VoxelEdit.h"
 
 #include <cctype>
 
@@ -157,8 +158,8 @@ const char* BuildToolVerb(BuildTool tool) {
         case BuildTool::Terrain:
             return "Drag over the ground to raise or lower it. Makes a terrain if there is none.";
         case BuildTool::Cave:
-            return "Drag to dig. Keep digging: strokes join into chambers and passages. "
-                   "Fill puts rock back.";
+            return "Dig where you point, into the ground or into a wall you have already "
+                   "opened. Brush picks what the drag means. Fill puts rock back.";
         case BuildTool::Plants:
             return "Drag a patch. Grass, shrubs or trees, scattered inside it.";
         case BuildTool::Prop:
@@ -266,11 +267,14 @@ u32 BuildToolFields(BuildTool tool, BuildToolSettings& s,
             add("Strength", &s.strength, 0.05f,  2.0f, "");
             break;
         case BuildTool::Cave:
-            // Bore is the space you walk through. Rough is how far the wall
+            // Brush first, because it changes what the other three mean.
+            // Bore is the space you walk through; Rough is how far the wall
             // wanders from a perfect tube -- the difference between a cave and
-            // a drainpipe, and the reason the first version of this tool was
-            // the wrong thing.
+            // a drainpipe; Depth is how far a Shaft sinks or a Ramp descends.
+            add("Brush", &s.caveBrush,
+                0.0f, static_cast<f32>(static_cast<u8>(Geometry::VoxelBrush::Count) - 1), "");
             add("Bore",  &s.radius,    0.75f, 12.0f, "m");
+            add("Depth", &s.caveDepth, 1.00f, 30.0f, "m");
             add("Rough", &s.roughness, 0.00f,  1.5f, "m");
             break;
         case BuildTool::Plants:

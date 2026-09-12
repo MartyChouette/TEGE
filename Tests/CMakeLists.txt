@@ -291,6 +291,7 @@ enjin_add_test(TestSurfaceNets        Unit/Geometry/TestSurfaceNets.cpp)
 enjin_add_test(TestVoxelEdit          Unit/Geometry/TestVoxelEdit.cpp)
 enjin_add_test(TestVoxelFieldCodec    Unit/Geometry/TestVoxelFieldCodec.cpp)
 enjin_add_test(TestVoxelPerf          Unit/Geometry/TestVoxelPerf.cpp)
+enjin_add_test(TestVoxelBrushes       Unit/Geometry/TestVoxelBrushes.cpp)
 enjin_add_test(TestBrushSolid         Unit/Geometry/TestBrushSolid.cpp)
 enjin_add_test(TestWorldTimeSystem    Unit/Effects/TestWorldTimeSystem.cpp)
 

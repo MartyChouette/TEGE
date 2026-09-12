@@ -79,7 +79,90 @@ struct ENJIN_API VoxelStroke {
     f32 roughness = 0.0f;
     f32 roughnessScale = 0.35f;   // features per metre
     u32 seed = 1337u;
+
+    // Squash the stroke vertically. 1 is round; above 1 is a tall narrow crack,
+    // below 1 is a low wide slot.
+    //
+    // Applied by scaling the sample point before the distance is taken, which
+    // is not an exact distance field: distances along the squashed axis come
+    // out stretched by the same factor. The SURFACE is exact, which is what the
+    // mesher reads; only the blend width is slightly off, and it is clamped
+    // anyway. The alternative is an ellipsoid-capsule distance, which has no
+    // closed form and would be solved numerically per voxel.
+    f32 heightScale = 1.0f;
 };
+
+// Where a ray first meets the rock.
+//
+// This is what makes a cave diggable. Every stroke used to land on the y = 0
+// build plane, so a dig could only ever run horizontally at ground height: you
+// could not sink a shaft, deepen a floor, raise a ceiling, or cut into the wall
+// you were looking at. A cave is a three dimensional thing and the gesture was
+// two dimensional.
+//
+// Marched in fixed steps rather than sphere-traced. The field is clamped to a
+// band and has noise added to it, so it is not a true distance beyond a voxel
+// or two, and a sphere-trace that trusted it would step straight through a thin
+// wall. Half-voxel steps are slower and cannot miss anything the mesher can see.
+//
+// Returns false when the ray leaves the volume without meeting anything, which
+// is the normal result of pointing at open sky.
+ENJIN_API bool RaycastVolume(const ECS::VoxelVolumeComponent& volume,
+                             const Math::Vector3& volumeOrigin,
+                             const Math::Vector3& rayOrigin,
+                             const Math::Vector3& rayDirection,
+                             f32 maxDistance, Math::Vector3& outPoint);
+
+// The authoring brushes.
+//
+// One swept sphere carves one kind of hole, and a cave made entirely of one
+// kind of hole reads as plumbing however rough its walls are. These are the
+// shapes a cave is actually made of, and each is a different answer to "what
+// does this drag mean".
+//
+// They are mappings from a DRAG to a stroke rather than separate carving code:
+// the carve is the same swept-sphere write in every case, so a new brush cannot
+// introduce a new way for carving to be wrong.
+enum class VoxelBrush : u8 {
+    // A corridor along the drag. The workhorse.
+    Passage = 0,
+    // A room. The drag sets the radius rather than a direction, because a
+    // chamber has no direction -- dragging further makes it bigger.
+    Chamber,
+    // Straight down from where you aimed, as deep as the depth setting. The
+    // thing you cannot do with a drag on the ground plane, and the reason
+    // digging felt like fighting the tool.
+    Shaft,
+    // A passage that descends as it runs, so a cave can go somewhere rather
+    // than staying on one level.
+    Ramp,
+    // A tall narrow fissure, or a low wide crawl, depending on the squash. A
+    // cave that is round everywhere looks bored rather than formed.
+    Crack,
+    Count
+};
+
+ENJIN_API const char* VoxelBrushName(VoxelBrush brush);
+
+// How a brush turns a drag into a stroke.
+//
+// `from` and `to` are where the gesture started and ended on the rock. `depth`
+// is how far a Shaft sinks or a Ramp descends; `bore` is the radius the rail
+// is set to.
+struct ENJIN_API BrushGesture {
+    Math::Vector3 from = Math::Vector3(0.0f, 0.0f, 0.0f);
+    Math::Vector3 to = Math::Vector3(0.0f, 0.0f, 0.0f);
+    f32 bore = 2.0f;
+    f32 depth = 6.0f;
+    f32 roughness = 0.35f;
+    f32 blend = 0.5f;
+    u32 seed = 1337u;
+    bool filling = false;
+};
+
+// Pure: a gesture in, a stroke out. The whole difference between the brushes
+// lives here and is testable without an editor.
+ENJIN_API VoxelStroke MakeBrushStroke(VoxelBrush brush, const BrushGesture& gesture);
 
 // Apply one stroke. Returns the sample range that changed.
 ENJIN_API EditRegion ApplyStroke(ECS::VoxelVolumeComponent& volume,

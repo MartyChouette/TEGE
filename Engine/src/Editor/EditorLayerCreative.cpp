@@ -89,6 +89,26 @@ const ImU32 kCutSoft    = Authored(0x5a, 0xa9, 0xc9, 0x1a);
 const ImU32 kOk         = Authored(0x7f, 0xb0, 0x69);
 const ImU32 kOnAccent   = Authored(0x17, 0x14, 0x0d);
 
+// The cave tool's three states, which are not the same three the rest of the
+// rail has.
+//
+// Everywhere else, amber means "this makes material" and blue means "this cuts
+// it away". The cave tool inherits a subtracting FLAG whose sense is inverted
+// for it -- Dig is the default mode and it REMOVES rock, Fill is the second
+// mode and it ADDS rock -- so drawing it with the shared tint painted every
+// hole in the colour of making something. Marty: the visualisation needs to be
+// clearer about "where wee are making holes vs land vs boundary breeaking".
+//
+// So: blue for the hole you are about to open, amber for the rock you are
+// about to put back, and a red that appears nowhere else for the edge of the
+// volume -- the one thing that is neither hole nor land, but the limit of what
+// there is to dig.
+const ImU32 kHole     = kCut;
+const ImU32 kLand     = kAccent;
+const ImU32 kEdge     = Authored(0xc9, 0x5f, 0x52);
+const ImU32 kEdgeSoft = Authored(0xc9, 0x5f, 0x52, 0x40);
+const ImU32 kBounds   = Authored(0x4a, 0x56, 0x68);
+
 // A separator is drawn before a tool whose group differs from the one above.
 // The grouping itself is shared with the height budget, which has to count the
 // same separators this draws.
@@ -1061,6 +1081,13 @@ void EditorLayer::HandleBuildDrag() {
             if (m_BuildDragging || m_BrushActive) CancelCreativeGesture();
             HandleCreativePath(vpW, vpH, ground, onGround);
             return;
+        case BuildTool::Cave:
+            // Cave needs the RAY, not the ground point: it digs into whatever
+            // surface the cursor is over, which the generic path cannot express
+            // because it only ever hands out a point on the build plane.
+            if (m_BrushActive) CancelCreativeGesture();
+            HandleCreativeCave(localX, localY, vpW, vpH, ground, onGround);
+            return;
         default:
             if (m_BrushActive) CancelCreativeGesture();
             break;
@@ -1187,14 +1214,6 @@ void EditorLayer::CommitCreativeDrag(const Math::Vector3& start, const Math::Vec
 
     const BuildTool tool = m_Creative.GetTool();
 
-    // A cave is two things at once -- a hollow solid AND a hole in the terrain
-    // above it -- so it commits on its own terms rather than through the brush
-    // path, which knows nothing about terrain.
-    if (tool == BuildTool::Cave) {
-        CommitCreativeCave(start, end);
-        return;
-    }
-
     // Water and Ladder place a component instead of building brushes, so they
     // never reach BuildBrushes at all.
     if (!BuildToolMakesBrushes(tool)) {
@@ -1268,6 +1287,312 @@ void EditorLayer::CommitCreativeDrag(const Math::Vector3& start, const Math::Vec
 // itself, and a punched-out patch of terrain surface wherever the tunnel is not
 // buried. Neither half is any use alone -- a tunnel under an unbroken surface is
 // invisible, and a hole with nothing under it is a pit.
+// --- drawing solids in a viewport ------------------------------------------
+//
+// Both of these refuse to draw anything they cannot fully project. A wireframe
+// with some of its edges silently missing is worse than none: it reads as a
+// shape with a hole in it, in a tool whose whole job is holes.
+
+void DrawWireBox(ImDrawList* dl, const Renderer::Camera* cam, const ImVec2& imgMin,
+                 f32 viewW, f32 viewH, const Math::Vector3& lo, const Math::Vector3& hi,
+                 ImU32 col, f32 thickness) {
+    const Math::Vector3 corner[8] = {
+        {lo.x, lo.y, lo.z}, {hi.x, lo.y, lo.z}, {hi.x, hi.y, lo.z}, {lo.x, hi.y, lo.z},
+        {lo.x, lo.y, hi.z}, {hi.x, lo.y, hi.z}, {hi.x, hi.y, hi.z}, {lo.x, hi.y, hi.z},
+    };
+    ImVec2 screen[8];
+    for (u32 i = 0; i < 8; ++i) {
+        if (!ProjectToViewport(cam, corner[i], imgMin, viewW, viewH, screen[i])) return;
+    }
+    static const u32 edge[12][2] = {
+        {0,1},{1,2},{2,3},{3,0}, {4,5},{5,6},{6,7},{7,4}, {0,4},{1,5},{2,6},{3,7},
+    };
+    for (const auto& e : edge) dl->AddLine(screen[e[0]], screen[e[1]], col, thickness);
+}
+
+// Three great circles, which is what makes a sphere read as a volume rather
+// than as a flat disc lying on the ground.
+void DrawWireSphere(ImDrawList* dl, const Renderer::Camera* cam, const ImVec2& imgMin,
+                    f32 viewW, f32 viewH, const Math::Vector3& centre, f32 radius,
+                    ImU32 col, f32 thickness) {
+    constexpr u32 kSegments = 24;
+    for (u32 plane = 0; plane < 3; ++plane) {
+        ImVec2 ring[kSegments];
+        bool ok = true;
+        for (u32 i = 0; i < kSegments && ok; ++i) {
+            const f32 a = (static_cast<f32>(i) / static_cast<f32>(kSegments)) * 6.28318531f;
+            const f32 c = std::cos(a) * radius, s2 = std::sin(a) * radius;
+            Math::Vector3 p = centre;
+            if (plane == 0)      { p.x += c; p.z += s2; }
+            else if (plane == 1) { p.x += c; p.y += s2; }
+            else                 { p.y += c; p.z += s2; }
+            ok = ProjectToViewport(cam, p, imgMin, viewW, viewH, ring[i]);
+        }
+        if (ok) dl->AddPolyline(ring, kSegments, col, ImDrawFlags_Closed, thickness);
+    }
+}
+
+// Where the cursor is pointing, on rock.
+//
+// Rock first, build plane second. Pointing at a cave wall has to mean that
+// wall: without it a dig can only ever land on y = 0, so you cannot sink a
+// shaft, deepen a floor, raise a ceiling, or cut further into the cave you are
+// standing in. That is what made digging feel like fighting the tool.
+bool EditorLayer::CaveAimPoint(f32 localX, f32 localY, f32 viewW, f32 viewH,
+                               const Math::Vector3& ground, bool onGround,
+                               Math::Vector3& outPoint, bool& outFromRock) {
+    outFromRock = false;
+    if (!m_World || !m_Camera) return false;
+
+    const Ray ray = ScenePicker::ScreenToRay(m_Camera, localX, localY, viewW, viewH);
+
+    // Nearest volume hit wins, so two cave systems in one scene each respond to
+    // being pointed at rather than whichever was made first answering for both.
+    f32 best = 1e30f;
+    bool found = false;
+    for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::VoxelVolumeComponent>()) {
+        const auto* vol = m_World->GetComponent<ECS::VoxelVolumeComponent>(e);
+        const auto* exf = m_World->GetComponent<ECS::TransformComponent>(e);
+        if (!vol) continue;
+        const Math::Vector3 o = vol->GridOrigin(exf ? exf->position : Math::Vector3(0.0f));
+        Math::Vector3 hit;
+        if (!Geometry::RaycastVolume(*vol, o, ray.origin, ray.direction, 500.0f, hit)) continue;
+        const f32 dx = hit.x - ray.origin.x, dy = hit.y - ray.origin.y, dz = hit.z - ray.origin.z;
+        const f32 d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 < best) {
+            best = d2;
+            outPoint = hit;
+            found = true;
+        }
+    }
+    if (found) {
+        outFromRock = true;
+        return true;
+    }
+
+    // Nothing under the cursor yet: the first stroke of a cave starts on the
+    // ground, which is the only surface there is.
+    if (onGround) {
+        outPoint = ground;
+        return true;
+    }
+    return false;
+}
+
+// One description of the gesture, read by the preview AND by the commit.
+//
+// Shared rather than computed twice, because a preview that is allowed to
+// disagree with the commit is worse than no preview: it is a promise about
+// where the hole will be, and the first time it lies nobody trusts it again.
+Geometry::BrushGesture EditorLayer::BuildCaveGesture(const Math::Vector3& from,
+                                                     const Math::Vector3& to,
+                                                     bool fromRock, f32 blend) const {
+    const BuildToolSettings& s = m_Creative.CurrentSettings();
+    const f32 bore = std::max(s.radius, 0.5f);
+
+    Geometry::BrushGesture g;
+    // Aimed AT a surface, so a stroke centred on the aim point takes a bite out
+    // of it, which is what sculpting is. The exception is the first stroke of a
+    // cave, which lands on the empty build plane: centring there would leave a
+    // bowl in the ground rather than a passage, so it sinks by a bore.
+    const f32 sink = fromRock ? 0.0f : bore;
+    g.from = Math::Vector3(from.x, from.y - sink, from.z);
+    g.to = Math::Vector3(to.x, to.y - sink, to.z);
+    g.bore = bore;
+    g.depth = std::max(s.caveDepth, bore);
+    g.roughness = std::max(0.0f, s.roughness);
+    g.blend = blend;
+    g.filling = m_Creative.IsSubtracting();
+    g.seed = static_cast<u32>(std::lround(std::fabs(from.x) * 73.0f +
+                                          std::fabs(from.z) * 131.0f)) + 17u;
+    return g;
+}
+
+Geometry::VoxelBrush EditorLayer::CurrentCaveBrush() const {
+    const f32 raw = m_Creative.CurrentSettings().caveBrush;
+    const f32 top = static_cast<f32>(static_cast<u8>(Geometry::VoxelBrush::Count) - 1);
+    return static_cast<Geometry::VoxelBrush>(
+        static_cast<u8>(std::max(0.0f, std::min(raw, top)) + 0.5f));
+}
+
+// The Cave gesture, and what it will do, drawn.
+void EditorLayer::HandleCreativeCave(f32 localX, f32 localY, f32 viewW, f32 viewH,
+                                     const Math::Vector3& ground, bool onGround) {
+    Math::Vector3 aim;
+    bool fromRock = false;
+    const bool haveAim = CaveAimPoint(localX, localY, viewW, viewH, ground, onGround,
+                                      aim, fromRock);
+
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    const ImVec2 mouse = ImGui::GetIO().MousePos;
+    const ImVec2 imgMin(m_EditorViewportImageMinX, m_EditorViewportImageMinY);
+    const f32 ui = CreativeUIScale();
+    const bool filling = m_Creative.IsSubtracting();
+
+    // Blue is the hole, amber is the rock going back. The shared tint has these
+    // the other way round for this tool, because Dig rides the ADD flag while
+    // actually removing material.
+    const ImU32 tint = filling ? kLand : kHole;
+    const Geometry::VoxelBrush brush = CurrentCaveBrush();
+
+    // --- the rock being carved, and where it runs out ------------------------
+    ECS::Entity target = ECS::INVALID_ENTITY;
+    const ECS::VoxelVolumeComponent* targetVol = nullptr;
+    Math::Vector3 targetOrigin(0.0f, 0.0f, 0.0f);
+    if (m_World) {
+        f32 best = 1e30f;
+        for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::VoxelVolumeComponent>()) {
+            const auto* v = m_World->GetComponent<ECS::VoxelVolumeComponent>(e);
+            const auto* exf = m_World->GetComponent<ECS::TransformComponent>(e);
+            if (!v) continue;
+            const Math::Vector3 o = v->GridOrigin(exf ? exf->position : Math::Vector3(0.0f));
+            const Math::Vector3 ext = v->Extent();
+            // Nearest volume to the aim, so a scene with two cave systems shows
+            // you the bounds of the one you are pointing at.
+            const Math::Vector3 c(o.x + ext.x * 0.5f, o.y + ext.y * 0.5f, o.z + ext.z * 0.5f);
+            const f32 dx = c.x - aim.x, dy = c.y - aim.y, dz = c.z - aim.z;
+            const f32 d2 = dx * dx + dy * dy + dz * dz;
+            if (d2 < best) { best = d2; target = e; targetVol = v; targetOrigin = o; }
+        }
+    }
+
+    if (targetVol && m_Camera) {
+        // The limit of what there is to dig, in a colour used for nothing else.
+        const Math::Vector3 ext = targetVol->Extent();
+        DrawWireBox(dl, m_Camera, imgMin, viewW, viewH, targetOrigin,
+                    Math::Vector3(targetOrigin.x + ext.x, targetOrigin.y + ext.y,
+                                  targetOrigin.z + ext.z),
+                    kBounds, 1.0f);
+    }
+
+    // --- what this gesture will carve ---------------------------------------
+    const bool dragging = m_BuildDragging;
+    const Math::Vector3 gestureFrom = dragging ? m_BuildDragStart : aim;
+    const Math::Vector3 gestureTo = haveAim ? aim : gestureFrom;
+    const bool gestureFromRock = dragging ? m_CaveDragFromRock : fromRock;
+
+    if (m_EditorViewportHovered && (haveAim || dragging) && m_Camera) {
+        const f32 blend = targetVol ? std::max(targetVol->voxelSize, 0.1f) : 0.25f;
+        const Geometry::BrushGesture g =
+            BuildCaveGesture(gestureFrom, gestureTo, gestureFromRock, blend);
+        const Geometry::VoxelStroke stroke = Geometry::MakeBrushStroke(brush, g);
+
+        // The stroke itself: a sphere at each end and the sweep between them.
+        // Drawn from the SAME stroke the commit will apply, so a Shaft previews
+        // going down and a Chamber previews as a room rather than as a line.
+        DrawWireSphere(dl, m_Camera, imgMin, viewW, viewH, stroke.a, stroke.radiusA,
+                       tint, 1.6f);
+        const f32 dax = stroke.b.x - stroke.a.x, day = stroke.b.y - stroke.a.y,
+                  daz = stroke.b.z - stroke.a.z;
+        if (dax * dax + day * day + daz * daz > 1e-4f) {
+            DrawWireSphere(dl, m_Camera, imgMin, viewW, viewH, stroke.b, stroke.radiusB,
+                           tint, 1.6f);
+            ImVec2 s0, s1;
+            if (ProjectToViewport(m_Camera, stroke.a, imgMin, viewW, viewH, s0) &&
+                ProjectToViewport(m_Camera, stroke.b, imgMin, viewW, viewH, s1)) {
+                dl->AddLine(s0, s1, tint, 1.2f);
+            }
+        }
+
+        // --- boundary breaking ----------------------------------------------
+        //
+        // Three different things can happen at an edge and they used to look
+        // identical, which is to say invisible: the stroke fits; the stroke
+        // runs past the rock and the volume will GROW to meet it; or the volume
+        // is at its budget and the stroke will be CLIPPED. The third is the one
+        // that silently loses work, so it gets the loudest treatment.
+        const char* edgeNote = nullptr;
+        if (targetVol) {
+            const Geometry::GrowthRequest overflow =
+                Geometry::StrokeOverflow(*targetVol, targetOrigin, stroke);
+            if (overflow.Any()) {
+                const Math::Vector3 ext = targetVol->Extent();
+                const f32 vs = targetVol->voxelSize;
+                const Math::Vector3 lo(targetOrigin.x - static_cast<f32>(overflow.negX) * vs,
+                                       targetOrigin.y - static_cast<f32>(overflow.negY) * vs,
+                                       targetOrigin.z - static_cast<f32>(overflow.negZ) * vs);
+                const Math::Vector3 hi(targetOrigin.x + ext.x + static_cast<f32>(overflow.posX) * vs,
+                                       targetOrigin.y + ext.y + static_cast<f32>(overflow.posY) * vs,
+                                       targetOrigin.z + ext.z + static_cast<f32>(overflow.posZ) * vs);
+                const usize grown = static_cast<usize>(targetVol->dimX + overflow.negX + overflow.posX) *
+                                    (targetVol->dimY + overflow.negY + overflow.posY) *
+                                    (targetVol->dimZ + overflow.negZ + overflow.posZ);
+                const bool canGrow = !filling && grown <= 2000000u &&
+                                     (targetVol->dimX + overflow.negX + overflow.posX) <= 192u &&
+                                     (targetVol->dimY + overflow.negY + overflow.posY) <= 192u &&
+                                     (targetVol->dimZ + overflow.negZ + overflow.posZ) <= 192u;
+                DrawWireBox(dl, m_Camera, imgMin, viewW, viewH, lo, hi,
+                            canGrow ? kEdgeSoft : kEdge, canGrow ? 1.0f : 2.0f);
+                edgeNote = canGrow ? "past the edge - the rock grows to meet it"
+                                   : "PAST THE EDGE - this cave cannot grow further, "
+                                     "the stroke will be clipped";
+            }
+        }
+
+        // --- the label -----------------------------------------------------
+        char buf[192];
+        const f32 rdx = gestureTo.x - gestureFrom.x;
+        const f32 rdy = gestureTo.y - gestureFrom.y;
+        const f32 rdz = gestureTo.z - gestureFrom.z;
+        const f32 run = std::sqrt(rdx * rdx + rdy * rdy + rdz * rdz);
+        const char* verb = filling ? "Fill" : "Dig";
+        switch (brush) {
+            case Geometry::VoxelBrush::Chamber:
+                std::snprintf(buf, sizeof(buf), "%s  Chamber  %.1f m across", verb,
+                              static_cast<double>(stroke.radiusA * 2.0f));
+                break;
+            case Geometry::VoxelBrush::Shaft:
+                std::snprintf(buf, sizeof(buf), "%s  Shaft  %.1f m down", verb,
+                              static_cast<double>(stroke.a.y - stroke.b.y));
+                break;
+            case Geometry::VoxelBrush::Ramp:
+                std::snprintf(buf, sizeof(buf), "%s  Ramp  %.1f m along, %.1f m down", verb,
+                              static_cast<double>(run),
+                              static_cast<double>(stroke.a.y - stroke.b.y));
+                break;
+            default:
+                std::snprintf(buf, sizeof(buf), "%s  %s  %.1f m", verb,
+                              Geometry::VoxelBrushName(brush), static_cast<double>(run));
+                break;
+        }
+        const f32 size = 13.0f * ui;
+        dl->AddText(ImGui::GetFont(), size,
+                    ImVec2(mouse.x + 14.0f * ui, mouse.y + 10.0f * ui), tint, buf);
+
+        // What it is cutting into, said plainly, because "into rock" and "into
+        // open air" are the difference between a stroke that does something and
+        // one that does nothing at all.
+        dl->AddText(ImGui::GetFont(), 11.0f * ui,
+                    ImVec2(mouse.x + 14.0f * ui, mouse.y + 10.0f * ui + size),
+                    kDim,
+                    gestureFromRock ? "into rock" : "from the ground down");
+
+        if (edgeNote) {
+            dl->AddText(ImGui::GetFont(), 11.0f * ui,
+                        ImVec2(mouse.x + 14.0f * ui, mouse.y + 10.0f * ui + size * 2.0f),
+                        kEdge, edgeNote);
+        }
+    }
+
+    if (!m_BuildDragging) {
+        if (m_EditorViewportHovered && haveAim && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            m_BuildDragging = true;
+            m_BuildDragStart = aim;
+            m_CaveDragFromRock = fromRock;
+        }
+        return;
+    }
+
+    if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+        m_BuildDragging = false;
+        // A release off the rock still commits, using the press point for both
+        // ends. Otherwise a click that drifted off the edge of a cave mouth
+        // mid-gesture would silently do nothing.
+        CommitCreativeCave(m_BuildDragStart, haveAim ? aim : m_BuildDragStart,
+                           m_CaveDragFromRock);
+    }
+}
+
 // Carve a cave.
 //
 // This used to build a prism shell with a prism bore taken out of it, which is
@@ -1281,7 +1606,8 @@ void EditorLayer::CommitCreativeDrag(const Math::Vector3& start, const Math::Vec
 // A stroke now writes into a signed distance field, where an overhang, a
 // chamber and a branching passage are all just places the sign changes, and the
 // stroke that makes them is a swept sphere with noise on it rather than a tube.
-void EditorLayer::CommitCreativeCave(const Math::Vector3& start, const Math::Vector3& end) {
+void EditorLayer::CommitCreativeCave(const Math::Vector3& start, const Math::Vector3& end,
+                                     bool fromRock) {
     if (!m_World) return;
 
     const BuildToolSettings& s = m_Creative.CurrentSettings();
@@ -1340,6 +1666,9 @@ void EditorLayer::CommitCreativeCave(const Math::Vector3& start, const Math::Vec
             return;
         }
         volumeEntity = MakeCaveVolume(start, end, s, terrain, step.get());
+        // The stroke has to be re-aimed at the block that did not exist a
+        // moment ago; its bounds decide whether growth is needed below.
+        (void)0;
         if (volumeEntity == ECS::INVALID_ENTITY) return;
     }
 
@@ -1349,24 +1678,13 @@ void EditorLayer::CommitCreativeCave(const Math::Vector3& start, const Math::Vec
 
     const auto fieldBefore = volume->field;
 
-    Geometry::VoxelStroke stroke;
-    const f32 bore = std::max(s.radius, 0.5f);
-    // The floor of the passage sits on the drag, so a stroke follows the ground
-    // you dragged along rather than burying itself half a bore deep.
-    stroke.a = Math::Vector3(start.x, start.y + bore, start.z);
-    stroke.b = Math::Vector3(end.x, end.y + bore, end.z);
-    stroke.radiusA = bore;
-    stroke.radiusB = bore;
-    stroke.mode = filling ? Geometry::VoxelEditMode::Fill : Geometry::VoxelEditMode::Carve;
-    stroke.blend = std::max(volume->voxelSize, 0.1f);
-    // Roughness is most of what separates a cave from plumbing, so it is on by
-    // default and the rail can turn it down for a worked stone passage.
-    stroke.roughness = std::max(0.0f, s.roughness);
+    // The same gesture the preview drew, from the same builder. Recomputing it
+    // here with its own copy of the rules is how a preview starts lying.
+    const Geometry::BrushGesture gesture =
+        BuildCaveGesture(start, end, fromRock, std::max(volume->voxelSize, 0.1f));
+    const Geometry::VoxelBrush brush = CurrentCaveBrush();
+    Geometry::VoxelStroke stroke = Geometry::MakeBrushStroke(brush, gesture);
     stroke.roughnessScale = 0.35f;
-    // Seeded from where the stroke IS, so re-carving the same place looks the
-    // same and two passages side by side do not share a pattern.
-    stroke.seed = static_cast<u32>(std::lround(std::fabs(start.x) * 73.0f +
-                                               std::fabs(start.z) * 131.0f)) + 17u;
 
     Math::Vector3 volumeOrigin =
         volume->GridOrigin(volXf ? volXf->position : Math::Vector3(0.0f));
@@ -1464,8 +1782,8 @@ void EditorLayer::CommitCreativeCave(const Math::Vector3& start, const Math::Vec
     // opening appears on its own. The old tool had to punch the heightmap open
     // because its tunnel was a separate solid buried under ground that knew
     // nothing about it. There is nothing left to punch.
-    ENJIN_LOG_INFO(Editor, "Creative: %s (%u x %u x %u)",
-                   filling ? "filled rock back in" : "carved",
+    ENJIN_LOG_INFO(Editor, "Creative: %s %s (%u x %u x %u)",
+                   filling ? "filled" : "carved", Geometry::VoxelBrushName(brush),
                    volume->dimX, volume->dimY, volume->dimZ);
 }
 
