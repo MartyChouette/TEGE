@@ -1368,15 +1368,69 @@ void EditorLayer::CommitCreativeCave(const Math::Vector3& start, const Math::Vec
     stroke.seed = static_cast<u32>(std::lround(std::fabs(start.x) * 73.0f +
                                                std::fabs(start.z) * 131.0f)) + 17u;
 
-    const Math::Vector3 volumeOrigin =
+    Math::Vector3 volumeOrigin =
         volume->GridOrigin(volXf ? volXf->position : Math::Vector3(0.0f));
+
+    // Grow the rock to meet the dig.
+    //
+    // Nobody knows how big a cave system will be when they start it, so a dig
+    // reaching the edge of its block is the normal case rather than a mistake.
+    // Telling someone to "start a new cave away from this one" made the limit
+    // their problem and would have left two overlapping blocks in the scene.
+    //
+    // Only while CARVING: a Fill that ran off the edge is asking to put rock
+    // where there is no volume, and growing for it would quietly enlarge a
+    // cave system every time somebody tidied its edges.
+    const Geometry::GrowthRequest overflow =
+        Geometry::StrokeOverflow(*volume, volumeOrigin, stroke);
+    if (overflow.Any() && !filling) {
+        // 192 on any one axis, and two million samples in total. The second
+        // budget is the one that bites: 174 x 53 x 148 is inside the per-axis
+        // cap and is still 1.4 million samples to remesh after every stroke.
+        const Math::Vector3 offset = Geometry::GrowVolume(
+            *volume, volumeOrigin, overflow, 192u, 2000000u,
+            [&](const Math::Vector3& wp) { return SeedCaveField(terrain, wp); });
+
+        if (offset.x == 0.0f && offset.y == 0.0f && offset.z == 0.0f) {
+            // Refused. Said out loud, with the reason and the way forward,
+            // because a dig that silently stops at an invisible wall is
+            // indistinguishable from a broken tool.
+            ENJIN_LOG_WARN(Editor,
+                           "Creative: this cave is as large as one volume gets (%u x %u x %u). "
+                           "The stroke was clipped at its edge -- start another cave beside "
+                           "it to keep digging.",
+                           volume->dimX, volume->dimY, volume->dimZ);
+        } else {
+            // The volume is centred on the transform, so growing one side moves
+            // where its centre is. Without this every sample already carved
+            // would silently shift.
+            if (volXf) volXf->position = volXf->position + offset;
+            volumeOrigin = volume->GridOrigin(volXf ? volXf->position : Math::Vector3(0.0f));
+
+            // And the terrain hands over the ground the volume now covers, or
+            // the new rim draws straight through the hillside above it.
+            if (terrain != ECS::INVALID_ENTITY) {
+                const Math::Vector3 ext = volume->Extent();
+                const f32 inset = volume->voxelSize * 3.0f;
+                HandTerrainToVolume(terrain,
+                                    volumeOrigin.x + inset, volumeOrigin.z + inset,
+                                    volumeOrigin.x + ext.x - inset,
+                                    volumeOrigin.z + ext.z - inset, step.get());
+            }
+        }
+    }
+
+    const auto fieldAfterGrowth = volume->field;
     const Geometry::EditRegion touched =
         Geometry::ApplyStroke(*volume, volumeOrigin, stroke);
 
     if (touched.Empty()) {
+        // Reached only when the volume is already at its cap, or when a Fill
+        // was aimed at rock that is not part of any volume.
         ENJIN_LOG_INFO(Editor,
-                       "Creative: that stroke fell outside the cave volume. Drag inside it, "
-                       "or start a new cave away from this one.");
+                       "Creative: nothing to %s there -- the stroke is outside this cave "
+                       "and it cannot grow any further.",
+                       filling ? "fill" : "carve");
         return;
     }
 
@@ -1384,8 +1438,13 @@ void EditorLayer::CommitCreativeCave(const Math::Vector3& start, const Math::Vec
 
     // One drag, one undo step -- the block, the carve and the terrain mouth it
     // opens are all parts of the same thing.
+    // Snapshotted before the stroke but AFTER any growth, because the two have
+    // different shapes: undoing a grown volume by assigning a smaller field
+    // would leave the dimensions and the field disagreeing about how many
+    // samples there are.
+    (void)fieldBefore;
     step->AddCommand(std::make_unique<PropertyEditCommand<std::vector<f32>>>(
-        filling ? "Fill Cave" : "Carve Cave", fieldBefore, volume->field,
+        filling ? "Fill Cave" : "Carve Cave", fieldAfterGrowth, volume->field,
         [world = m_World, e = volumeEntity](const std::vector<f32>& v) {
             if (auto* vol = world->GetComponent<ECS::VoxelVolumeComponent>(e)) {
                 vol->field = v;
@@ -1394,24 +1453,47 @@ void EditorLayer::CommitCreativeCave(const Math::Vector3& start, const Math::Vec
             }
         }));
 
-    u32 opened = 0;
-    if (!filling) opened = OpenCaveMouth(terrain, s, start, end, *step);
-
     SelectEntity(volumeEntity);
     m_UndoRedo.Execute(std::move(step));
     MarkDirty();
 
-    if (filling) {
-        ENJIN_LOG_INFO(Editor, "Creative: filled rock back in");
-    } else if (terrain == ECS::INVALID_ENTITY) {
-        ENJIN_LOG_INFO(Editor, "Creative: carved. No terrain in the scene to open.");
-    } else if (opened == 0) {
-        ENJIN_LOG_INFO(Editor,
-                       "Creative: carved, still fully buried. Dig out through a slope to "
-                       "open a mouth.");
-    } else {
-        ENJIN_LOG_INFO(Editor, "Creative: carved and opened %u terrain cells", opened);
+    // The mouth is not punched any more; it happens.
+    //
+    // When the block is baked from the terrain, its surface IS the hillside, so
+    // digging out through a slope removes the rock that was the slope and the
+    // opening appears on its own. The old tool had to punch the heightmap open
+    // because its tunnel was a separate solid buried under ground that knew
+    // nothing about it. There is nothing left to punch.
+    ENJIN_LOG_INFO(Editor, "Creative: %s (%u x %u x %u)",
+                   filling ? "filled rock back in" : "carved",
+                   volume->dimX, volume->dimY, volume->dimZ);
+}
+
+// What the rock is, at a point, before anybody carved it.
+//
+// One definition, used when a cave block is first created AND when it grows, so
+// a volume that grows into new ground meets the same hillside it was baked from
+// rather than a wall of fresh rock at the old boundary.
+f32 EditorLayer::SeedCaveField(ECS::Entity terrainEntity, const Math::Vector3& worldPoint) {
+    if (!m_World || terrainEntity == ECS::INVALID_ENTITY) {
+        // No terrain: solid rock everywhere, which is what a block in an empty
+        // scene is.
+        return -1.0f;
     }
+    auto* terrain = m_World->GetComponent<ECS::TerrainComponent>(terrainEntity);
+    if (!terrain) return -1.0f;
+    const auto* xf = m_World->GetComponent<ECS::TransformComponent>(terrainEntity);
+    const Math::Vector3 terrainPos = xf ? xf->position : Math::Vector3(0.0f);
+
+    f32 height = 0.0f, slope = 0.0f;
+    if (!ECS::ScatterSystem::SampleTerrainHeight(*terrain, worldPoint.x - terrainPos.x,
+                                                 worldPoint.z - terrainPos.z, height, slope)) {
+        // Off the edge of the terrain: flat ground at the terrain's own level,
+        // rather than solid or air. Either of those would put a cliff at the
+        // block's edge that nobody built.
+        height = 0.0f;
+    }
+    return Geometry::SdfHeightfield(worldPoint, terrainPos.y + height);
 }
 
 // The rock a first cave stroke is cut into.
@@ -1485,15 +1567,7 @@ ECS::Entity EditorLayer::MakeCaveVolume(const Math::Vector3& start, const Math::
         // The block IS this piece of the hill: solid under the heightmap's own
         // surface, air above it.
         Geometry::BakeField(vol, volumeOrigin, [&](const Math::Vector3& p) {
-            f32 height = 0.0f, slope = 0.0f;
-            if (!ECS::ScatterSystem::SampleTerrainHeight(*terrain, p.x - terrainPos.x,
-                                                         p.z - terrainPos.z, height, slope)) {
-                // Off the edge of the terrain. Flat ground at the terrain's own
-                // level, rather than solid or air -- either of those would put a
-                // cliff at the block's edge that nobody built.
-                height = 0.0f;
-            }
-            return Geometry::SdfHeightfield(p, terrainPos.y + height);
+            return SeedCaveField(terrainEntity, p);
         });
 
         // The terrain hands this patch over. Punched INSIDE the footprint by a
@@ -1574,107 +1648,7 @@ u32 EditorLayer::HandTerrainToVolume(ECS::Entity terrainEntity,
 
 
 
-// Close the surface back over a drag.
-//
-// The eraser for the hole mask. Symmetrical with OpenCaveMouth in footprint and
-// deliberately NOT symmetrical in its height test: opening asks whether the
-// tunnel reaches through the surface, and there is no tunnel to ask about here.
-// Every open cell the drag passes over closes, which is what "fill this in"
-// means when you are looking at a hole you want gone.
-u32 EditorLayer::FillCaveMouth(ECS::Entity terrainEntity, const BuildToolSettings& settings,
-                               const Math::Vector3& start, const Math::Vector3& end) {
-    if (!m_World || terrainEntity == ECS::INVALID_ENTITY) return 0;
-    auto* terrain = m_World->GetComponent<ECS::TerrainComponent>(terrainEntity);
-    if (!terrain || !terrain->HasHoles()) return 0;
-    auto* xf = m_World->GetComponent<ECS::TransformComponent>(terrainEntity);
 
-    const Math::Vector3 gridOrigin =
-        terrain->GridOrigin(xf ? xf->position : Math::Vector3(0.0f));
-    const f32 outer = CreativeMode::CaveOuterRadius(settings);
-
-    const auto before = terrain->holes;
-    u32 closed = 0;
-
-    for (u32 z = 0; z < terrain->gridHeight; ++z) {
-        for (u32 x = 0; x < terrain->gridWidth; ++x) {
-            if (!terrain->IsHole(x, z)) continue;
-
-            const f32 wx = gridOrigin.x + static_cast<f32>(x) * terrain->cellSize;
-            const f32 wz = gridOrigin.z + static_cast<f32>(z) * terrain->cellSize;
-            if (CreativeMode::CaveDistanceToAxisXZ(start, end, wx, wz) > outer) continue;
-
-            terrain->SetHole(x, z, false);
-            ++closed;
-        }
-    }
-
-    if (closed > 0) {
-        terrain->meshDirty = true;
-        m_UndoRedo.Execute(std::make_unique<PropertyEditCommand<std::vector<u8>>>(
-            "Fill Cave Mouth", before, terrain->holes,
-            [world = m_World, e = terrainEntity](const std::vector<u8>& v) {
-                if (auto* t = world->GetComponent<ECS::TerrainComponent>(e)) {
-                    t->holes = v;
-                    t->meshDirty = true;
-                }
-            }));
-        MarkDirty();
-    }
-    return closed;
-}
-
-// Open the surface wherever the tunnel reaches through it.
-//
-// Geometric rather than authored: a cell is punched when it sits inside the
-// tunnel's footprint AND its surface is at or below the tunnel's roof. That is
-// what makes a mouth appear on the slope where the hill runs out, and nowhere
-// along the stretch the hill actually covers -- without anybody drawing the
-// outline of the mouth by hand.
-u32 EditorLayer::OpenCaveMouth(ECS::Entity terrainEntity, const BuildToolSettings& settings,
-                               const Math::Vector3& start, const Math::Vector3& end,
-                               CompoundCommand& into) {
-    if (!m_World || terrainEntity == ECS::INVALID_ENTITY) return 0;
-    auto* terrain = m_World->GetComponent<ECS::TerrainComponent>(terrainEntity);
-    if (!terrain || terrain->heightmap.empty()) return 0;
-    auto* xf = m_World->GetComponent<ECS::TransformComponent>(terrainEntity);
-
-    const Math::Vector3 gridOrigin =
-        terrain->GridOrigin(xf ? xf->position : Math::Vector3(0.0f));
-    const f32 topY = CreativeMode::CaveTopY(settings, start);
-    const f32 outer = CreativeMode::CaveOuterRadius(settings);
-
-    const auto before = terrain->holes;
-    u32 opened = 0;
-
-    for (u32 z = 0; z < terrain->gridHeight; ++z) {
-        for (u32 x = 0; x < terrain->gridWidth; ++x) {
-            if (terrain->IsHole(x, z)) continue;
-
-            const f32 wx = gridOrigin.x + static_cast<f32>(x) * terrain->cellSize;
-            const f32 wz = gridOrigin.z + static_cast<f32>(z) * terrain->cellSize;
-            if (CreativeMode::CaveDistanceToAxisXZ(start, end, wx, wz) > outer) continue;
-
-            const f32 surfaceY = gridOrigin.y + terrain->GetHeight(x, z);
-            if (surfaceY > topY) continue;   // the hill still covers it
-
-            terrain->SetHole(x, z, true);
-            ++opened;
-        }
-    }
-
-    if (opened > 0) {
-        terrain->meshDirty = true;
-        into.AddCommand(std::make_unique<PropertyEditCommand<std::vector<u8>>>(
-            "Open Cave Mouth", before, terrain->holes,
-            [world = m_World, e = terrainEntity](const std::vector<u8>& v) {
-                if (auto* t = world->GetComponent<ECS::TerrainComponent>(e)) {
-                    t->holes = v;
-                    t->meshDirty = true;
-                }
-            }));
-    }
-    return opened;
-}
 
 // A placement is one undo step. Every creative gesture went straight into the
 // world with no command behind it, so a stray drag could only be cleaned up by

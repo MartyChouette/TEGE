@@ -154,6 +154,137 @@ EditRegion ApplyStroke(ECS::VoxelVolumeComponent& volume, const Math::Vector3& v
     return region;
 }
 
+GrowthRequest StrokeOverflow(const ECS::VoxelVolumeComponent& v,
+                             const Math::Vector3& origin, const VoxelStroke& s) {
+    // The same reach StrokeBounds uses, so "does it fit" and "what gets
+    // written" can never disagree. If they did, a stroke could be judged to fit
+    // and then be clipped by the edge it was judged against.
+    const f32 reach = std::max(s.radiusA, s.radiusB) + s.blend + s.roughness + v.voxelSize * 2.0f;
+    const f32 minW[3] = { std::min(s.a.x, s.b.x) - reach,
+                          std::min(s.a.y, s.b.y) - reach,
+                          std::min(s.a.z, s.b.z) - reach };
+    const f32 maxW[3] = { std::max(s.a.x, s.b.x) + reach,
+                          std::max(s.a.y, s.b.y) + reach,
+                          std::max(s.a.z, s.b.z) + reach };
+    const f32 o[3] = { origin.x, origin.y, origin.z };
+    const u32 dim[3] = { v.dimX, v.dimY, v.dimZ };
+
+    u32 neg[3] = {0, 0, 0}, pos[3] = {0, 0, 0};
+    for (u32 axis = 0; axis < 3; ++axis) {
+        const f32 lo = (minW[axis] - o[axis]) / v.voxelSize;
+        const f32 hi = (maxW[axis] - o[axis]) / v.voxelSize;
+        if (lo < 0.0f) neg[axis] = static_cast<u32>(std::ceil(-lo));
+        const f32 last = static_cast<f32>(dim[axis] - 1);
+        if (hi > last) pos[axis] = static_cast<u32>(std::ceil(hi - last));
+    }
+
+    GrowthRequest r;
+    r.negX = neg[0]; r.negY = neg[1]; r.negZ = neg[2];
+    r.posX = pos[0]; r.posY = pos[1]; r.posZ = pos[2];
+    return r;
+}
+
+Math::Vector3 GrowVolume(ECS::VoxelVolumeComponent& v, const Math::Vector3& origin,
+                         const GrowthRequest& request, u32 maxDimension, usize maxSamples,
+                         const std::function<f32(const Math::Vector3&)>& seed) {
+    if (!request.Any()) return Math::Vector3(0.0f, 0.0f, 0.0f);
+
+    // Growth is capped per axis, and the cap is spent on the side that asked
+    // for it. A volume that refused to grow at all once it hit the cap would
+    // stop a dig dead; one that grew both ways equally would waste half the
+    // budget on rock nobody is digging towards.
+    auto clampAxis = [&](u32 dim, u32 neg, u32 pos, u32& outNeg, u32& outPos) {
+        outNeg = neg;
+        outPos = pos;
+        if (dim + neg + pos <= maxDimension) return;
+        const u32 room = (maxDimension > dim) ? (maxDimension - dim) : 0u;
+        const u32 asked = neg + pos;
+        if (asked == 0 || room == 0) { outNeg = 0; outPos = 0; return; }
+        outNeg = static_cast<u32>((static_cast<u64>(neg) * room) / asked);
+        outPos = room - outNeg;
+    };
+
+    u32 nx0 = 0, nx1 = 0, ny0 = 0, ny1 = 0, nz0 = 0, nz1 = 0;
+    clampAxis(v.dimX, request.negX, request.posX, nx0, nx1);
+    clampAxis(v.dimY, request.negY, request.posY, ny0, ny1);
+    clampAxis(v.dimZ, request.negZ, request.posZ, nz0, nz1);
+    if (nx0 + nx1 + ny0 + ny1 + nz0 + nz1 == 0) return Math::Vector3(0.0f, 0.0f, 0.0f);
+
+    // The total budget. A per-axis cap cannot bound this: 174 x 53 x 148 sits
+    // inside a 192 cap on every axis and is still 1.4 million samples, which is
+    // a remesh long enough to feel after every stroke.
+    //
+    // Refused WHOLE rather than trimmed to fit, because a partial grow leaves
+    // the dig still running off an edge, and the next stroke would ask again
+    // and be refused again -- a tool that gets slower and still says no. The
+    // caller reports the refusal instead.
+    {
+        const usize grownCount = static_cast<usize>(v.dimX + nx0 + nx1) *
+                                 (v.dimY + ny0 + ny1) * (v.dimZ + nz0 + nz1);
+        if (maxSamples > 0 && grownCount > maxSamples) return Math::Vector3(0.0f, 0.0f, 0.0f);
+    }
+
+    const u32 oldX = v.dimX, oldY = v.dimY, oldZ = v.dimZ;
+    const f32 band = v.Band();
+
+    // Old samples must keep their WORLD positions, so the new origin moves back
+    // by however many samples were added on the negative side.
+    const Math::Vector3 newOrigin(origin.x - static_cast<f32>(nx0) * v.voxelSize,
+                                  origin.y - static_cast<f32>(ny0) * v.voxelSize,
+                                  origin.z - static_cast<f32>(nz0) * v.voxelSize);
+
+    std::vector<f32> grown(static_cast<usize>(oldX + nx0 + nx1) *
+                           (oldY + ny0 + ny1) * (oldZ + nz0 + nz1), band);
+
+    const u32 newX = oldX + nx0 + nx1;
+    const u32 newY = oldY + ny0 + ny1;
+    const u32 newZ = oldZ + nz0 + nz1;
+    auto newIndex = [&](u32 x, u32 y, u32 z) {
+        return (static_cast<usize>(z) * newY + y) * newX + x;
+    };
+
+    // Seed the new space first, then copy the old field over the top of it. In
+    // that order the copy always wins, so nothing a person carved can be
+    // overwritten by the seed function.
+    if (seed) {
+        for (u32 z = 0; z < newZ; ++z) {
+            for (u32 y = 0; y < newY; ++y) {
+                for (u32 x = 0; x < newX; ++x) {
+                    const Math::Vector3 p(newOrigin.x + static_cast<f32>(x) * v.voxelSize,
+                                          newOrigin.y + static_cast<f32>(y) * v.voxelSize,
+                                          newOrigin.z + static_cast<f32>(z) * v.voxelSize);
+                    grown[newIndex(x, y, z)] = std::max(-band, std::min(band, seed(p)));
+                }
+            }
+        }
+    }
+
+    if (v.field.size() == v.Count()) {
+        for (u32 z = 0; z < oldZ; ++z) {
+            for (u32 y = 0; y < oldY; ++y) {
+                for (u32 x = 0; x < oldX; ++x) {
+                    grown[newIndex(x + nx0, y + ny0, z + nz0)] =
+                        v.field[(static_cast<usize>(z) * oldY + y) * oldX + x];
+                }
+            }
+        }
+    }
+
+    v.dimX = newX;
+    v.dimY = newY;
+    v.dimZ = newZ;
+    v.field = std::move(grown);
+    v.meshDirty = true;
+
+    // The transform has to move by HALF the growth, because the volume is
+    // centred on it: adding samples only on one side shifts where the centre
+    // of the grid is.
+    return Math::Vector3(
+        (static_cast<f32>(nx1) - static_cast<f32>(nx0)) * v.voxelSize * 0.5f,
+        (static_cast<f32>(ny1) - static_cast<f32>(ny0)) * v.voxelSize * 0.5f,
+        (static_cast<f32>(nz1) - static_cast<f32>(nz0)) * v.voxelSize * 0.5f);
+}
+
 void BakeField(ECS::VoxelVolumeComponent& volume, const Math::Vector3& volumeOrigin,
                const std::function<f32(const Math::Vector3&)>& field) {
     if (!field) return;

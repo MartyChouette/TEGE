@@ -95,5 +95,44 @@ ENJIN_API void BakeField(ECS::VoxelVolumeComponent& volume,
                          const Math::Vector3& volumeOrigin,
                          const std::function<f32(const Math::Vector3&)>& field);
 
+// How many samples a stroke needs beyond each face of the volume.
+//
+// Zero on every axis means the stroke fits. Anything else is how far a dig has
+// run past the edge of the rock it was cutting into -- which is a thing that
+// happens constantly, because a cave system is bigger than the block the first
+// stroke created and nobody knows how big it will be when they start.
+struct ENJIN_API GrowthRequest {
+    u32 negX = 0, negY = 0, negZ = 0;
+    u32 posX = 0, posY = 0, posZ = 0;
+    bool Any() const { return negX || negY || negZ || posX || posY || posZ; }
+};
+
+ENJIN_API GrowthRequest StrokeOverflow(const ECS::VoxelVolumeComponent& volume,
+                                       const Math::Vector3& volumeOrigin,
+                                       const VoxelStroke& stroke);
+
+// Grow the volume, keeping every sample it already holds where it was in WORLD
+// space. New samples are seeded by `seed`, called with the world position of
+// each one, so a volume baked from a hillside grows into more hillside rather
+// than into a wall of rock at the old boundary.
+//
+// The volume's origin moves, so the caller must move the entity transform by
+// the returned offset or every existing sample silently shifts. That is why the
+// offset is returned rather than applied: this layer knows nothing about
+// entities, and a growth that moved the field without moving the transform
+// would drag a finished cave sideways.
+//
+// Two budgets, because one is not enough. `maxDimension` stops any single axis
+// running away; `maxSamples` stops the TOTAL running away, which a per-axis cap
+// cannot do -- 174 x 53 x 148 is inside a 192 cap on every axis and is still
+// 1.4 million samples to remesh after every stroke. Growth that would break
+// either budget is refused whole rather than partially applied, so the volume
+// and its field never disagree about how big it is.
+ENJIN_API Math::Vector3 GrowVolume(ECS::VoxelVolumeComponent& volume,
+                                   const Math::Vector3& volumeOrigin,
+                                   const GrowthRequest& request, u32 maxDimension,
+                                   usize maxSamples,
+                                   const std::function<f32(const Math::Vector3&)>& seed);
+
 } // namespace Geometry
 } // namespace Enjin

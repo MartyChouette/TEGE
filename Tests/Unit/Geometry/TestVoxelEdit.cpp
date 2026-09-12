@@ -334,4 +334,230 @@ ENJIN_TEST(VoxelVolume, TheVolumeIsCentredOnItsTransform) {
     ENJIN_EXPECT_FLOAT_NEAR(v.Extent().x, 20.0f, 0.001f);
 }
 
+// Growing the rock to meet the dig.
+//
+// Nobody knows how big a cave system will be when they start it, so a stroke
+// reaching the edge of its block is the normal case. The property that matters
+// is that growing does not disturb anything already carved: a passage that
+// moved or lost its shape because the volume got bigger would be a cave
+// rearranging itself while you work on it.
+
+ENJIN_TEST(VoxelGrowth, AStrokeInsideTheVolumeAsksForNoGrowth) {
+    // Arrange
+    const ECS::VoxelVolumeComponent v = SolidRock(24, 1.0f);
+    VoxelStroke s;
+    s.a = s.b = Vector3(12, 12, 12);
+    s.radiusA = s.radiusB = 2.0f;
+
+    // Act
+    const GrowthRequest r = StrokeOverflow(v, Vector3(0, 0, 0), s);
+
+    // Assert
+    ENJIN_EXPECT_FALSE(r.Any());
+}
+
+ENJIN_TEST(VoxelGrowth, AStrokeRunningOffAnEdgeAsksForGrowthOnThatSideOnly) {
+    // Arrange
+    const ECS::VoxelVolumeComponent v = SolidRock(24, 1.0f);
+    VoxelStroke s;
+    s.a = Vector3(12, 12, 12);
+    s.b = Vector3(30, 12, 12);   // off the +X end
+    s.radiusA = s.radiusB = 2.0f;
+
+    // Act
+    const GrowthRequest r = StrokeOverflow(v, Vector3(0, 0, 0), s);
+
+    // Assert: +X only. Growing every side would double the remesh cost of a
+    // dig that only went one way.
+    ENJIN_EXPECT_TRUE(r.posX > 0);
+    ENJIN_EXPECT_EQ(r.negX, (u32)0);
+    ENJIN_EXPECT_EQ(r.posY, (u32)0);
+    ENJIN_EXPECT_EQ(r.negY, (u32)0);
+    ENJIN_EXPECT_EQ(r.posZ, (u32)0);
+    ENJIN_EXPECT_EQ(r.negZ, (u32)0);
+}
+
+ENJIN_TEST(VoxelGrowth, GrowingKeepsEveryCarvedSampleAtTheSameWorldPosition) {
+    // Arrange: carve a passage, then remember what the world looks like.
+    ECS::VoxelVolumeComponent v = SolidRock(24, 1.0f);
+    const Vector3 origin(0, 0, 0);
+    VoxelStroke dig;
+    dig.a = Vector3(8, 12, 12);
+    dig.b = Vector3(16, 12, 12);
+    dig.radiusA = dig.radiusB = 2.5f;
+    ApplyStroke(v, origin, dig);
+
+    struct Probe { Vector3 p; bool solid; };
+    std::vector<Probe> probes;
+    for (u32 x = 4; x < 20; x += 2) {
+        for (u32 y = 8; y < 18; y += 2) {
+            const Vector3 wp(static_cast<f32>(x), static_cast<f32>(y), 12.0f);
+            probes.push_back({wp, v.At(x, y, 12) < 0.0f});
+        }
+    }
+
+    // Act: grow off the +X side.
+    GrowthRequest r;
+    r.posX = 10;
+    const Vector3 offset = GrowVolume(v, origin, r, 192u, 0u,
+                                      [](const Vector3&) { return -1.0f; });
+    const Vector3 newOrigin(origin.x - 0.0f, origin.y, origin.z);
+
+    // Assert: the grid got bigger on the asked-for side...
+    ENJIN_EXPECT_EQ(v.dimX, (u32)34);
+    ENJIN_EXPECT_EQ(v.dimY, (u32)24);
+    ENJIN_EXPECT_EQ(v.dimZ, (u32)24);
+    // ...the transform has to move half the growth, because the volume is
+    // centred on it...
+    ENJIN_EXPECT_FLOAT_NEAR(offset.x, 5.0f, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(offset.y, 0.0f, 0.001f);
+
+    // ...and every probe reads the same as before, at the same world point.
+    for (const Probe& probe : probes) {
+        const u32 ix = static_cast<u32>(std::lround(probe.p.x - newOrigin.x));
+        const u32 iy = static_cast<u32>(std::lround(probe.p.y - newOrigin.y));
+        const u32 iz = static_cast<u32>(std::lround(probe.p.z - newOrigin.z));
+        ENJIN_EXPECT_TRUE((v.At(ix, iy, iz) < 0.0f) == probe.solid);
+    }
+}
+
+ENJIN_TEST(VoxelGrowth, GrowingBackwardsShiftsTheOriginSoOldSamplesStayPut) {
+    // Arrange
+    ECS::VoxelVolumeComponent v = SolidRock(16, 1.0f);
+    const Vector3 origin(0, 0, 0);
+    VoxelStroke dig;
+    dig.a = dig.b = Vector3(8, 8, 8);
+    dig.radiusA = dig.radiusB = 2.0f;
+    ApplyStroke(v, origin, dig);
+    ENJIN_ASSERT_FALSE(v.At(8, 8, 8) < 0.0f);   // hollow at the world point (8,8,8)
+
+    // Act: grow off the -X side by 4.
+    GrowthRequest r;
+    r.negX = 4;
+    const Vector3 offset = GrowVolume(v, origin, r, 192u, 0u,
+                                      [](const Vector3&) { return -1.0f; });
+
+    // Assert: the origin moved back 4 metres, so the same world point is now
+    // sample x = 12. Getting this wrong drags a finished cave sideways.
+    ENJIN_EXPECT_FLOAT_NEAR(offset.x, -2.0f, 0.001f);
+    ENJIN_EXPECT_EQ(v.dimX, (u32)20);
+    ENJIN_EXPECT_FALSE(v.At(12, 8, 8) < 0.0f);
+    ENJIN_EXPECT_TRUE(v.At(2, 8, 8) < 0.0f);    // the new rock is solid
+}
+
+ENJIN_TEST(VoxelGrowth, NewGroundIsSeededRatherThanLeftAsAWallOfRock) {
+    // Arrange: a volume whose field is a flat landscape, solid below y = 8.
+    ECS::VoxelVolumeComponent v;
+    v.dimX = v.dimY = v.dimZ = 16;
+    v.voxelSize = 1.0f;
+    const Vector3 origin(0, 0, 0);
+    auto ground = [](const Vector3& p) { return SdfHeightfield(p, 8.0f); };
+    BakeField(v, origin, ground);
+
+    // Act: grow sideways, seeding with the same landscape.
+    GrowthRequest r;
+    r.posX = 8;
+    GrowVolume(v, origin, r, 192u, 0u, ground);
+
+    // Assert: the new ground continues the landscape -- solid low, air high --
+    // rather than being a cliff of fresh rock at the old boundary.
+    ENJIN_EXPECT_TRUE(v.At(20, 2, 8) < 0.0f);
+    ENJIN_EXPECT_FALSE(v.At(20, 13, 8) < 0.0f);
+}
+
+ENJIN_TEST(VoxelGrowth, GrowthIsCappedAndSpentOnTheSideThatAskedForIt) {
+    // Arrange
+    ECS::VoxelVolumeComponent v = SolidRock(40, 1.0f);
+    const Vector3 origin(0, 0, 0);
+
+    // Act: ask for far more than the cap allows, all on one side.
+    GrowthRequest r;
+    r.posX = 500;
+    GrowVolume(v, origin, r, 48u, 0u, [](const Vector3&) { return -1.0f; });
+
+    // Assert: capped, and the room went where it was asked for. A volume that
+    // grew both ways would spend half the budget on rock nobody is digging
+    // towards.
+    ENJIN_EXPECT_EQ(v.dimX, (u32)48);
+    ENJIN_EXPECT_EQ(v.dimY, (u32)40);
+}
+
+ENJIN_TEST(VoxelGrowth, AVolumeAlreadyAtTheCapRefusesToGrowRatherThanCorruptItself) {
+    // Arrange
+    ECS::VoxelVolumeComponent v = SolidRock(32, 1.0f);
+    const auto before = v.field;
+
+    // Act
+    GrowthRequest r;
+    r.posX = 10;
+    const Vector3 offset = GrowVolume(v, Vector3(0, 0, 0), r, 32u, 0u,
+                                      [](const Vector3&) { return -1.0f; });
+
+    // Assert: nothing moved and nothing changed size. The tool reports this to
+    // the person rather than silently doing nothing.
+    ENJIN_EXPECT_FLOAT_NEAR(offset.x, 0.0f, 0.001f);
+    ENJIN_EXPECT_EQ(v.dimX, (u32)32);
+    ENJIN_EXPECT_TRUE(v.field == before);
+}
+
+ENJIN_TEST(VoxelGrowth, AGrownVolumeStillMeshesToAClosedSolid) {
+    // Arrange
+    ECS::VoxelVolumeComponent v = SolidRock(20, 0.5f);
+    const Vector3 origin(0, 0, 0);
+    VoxelStroke dig;
+    dig.a = Vector3(3, 5, 5);
+    dig.b = Vector3(7, 5, 5);
+    dig.radiusA = dig.radiusB = 1.2f;
+    dig.roughness = 0.2f;
+    ApplyStroke(v, origin, dig);
+
+    // Act
+    GrowthRequest r;
+    r.posX = 8;
+    r.negZ = 4;
+    GrowVolume(v, origin, r, 192u, 0u, [](const Vector3&) { return -1.0f; });
+    const SurfaceMesh m = BuildSurfaceNet(ToGrid(v, origin), 0.0f);
+
+    // Assert: growth must not open the surface. An unsealed boundary after a
+    // grow is a collider you can fall out through, in a place that was solid a
+    // moment earlier.
+    ENJIN_ASSERT_TRUE(!m.Empty());
+    ENJIN_EXPECT_EQ(NonManifoldEdges(m), (usize)0);
+}
+
+ENJIN_TEST(VoxelGrowth, ATotalBudgetRefusesGrowthAPerAxisCapWouldAllow) {
+    // Arrange: well inside any sensible per-axis cap, and already large.
+    ECS::VoxelVolumeComponent v = SolidRock(100, 0.5f);
+    const auto before = v.field;
+    const u32 beforeX = v.dimX;
+
+    // Act: ask to grow one axis a little. Per-axis this is fine; in total it
+    // crosses the budget.
+    GrowthRequest r;
+    r.posX = 20;
+    const Vector3 offset = GrowVolume(v, Vector3(0, 0, 0), r, 192u, 1000000u,
+                                      [](const Vector3&) { return -1.0f; });
+
+    // Assert: refused WHOLE. A partial grow would leave the dig still running
+    // off an edge, so the next stroke asks again and is refused again -- a tool
+    // that gets slower and still says no.
+    ENJIN_EXPECT_FLOAT_NEAR(offset.x, 0.0f, 0.001f);
+    ENJIN_EXPECT_EQ(v.dimX, beforeX);
+    ENJIN_EXPECT_TRUE(v.field == before);
+}
+
+ENJIN_TEST(VoxelGrowth, ABudgetOfZeroMeansUnbounded) {
+    // Arrange
+    ECS::VoxelVolumeComponent v = SolidRock(16, 1.0f);
+
+    // Act
+    GrowthRequest r;
+    r.posX = 4;
+    GrowVolume(v, Vector3(0, 0, 0), r, 192u, 0u, [](const Vector3&) { return -1.0f; });
+
+    // Assert: the tests above pass 0 for "no total budget", so that has to mean
+    // unbounded rather than "refuse everything".
+    ENJIN_EXPECT_EQ(v.dimX, (u32)20);
+}
+
 ENJIN_TEST_MAIN()

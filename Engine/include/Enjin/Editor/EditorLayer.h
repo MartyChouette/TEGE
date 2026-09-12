@@ -425,7 +425,8 @@ private:
     // Turn a finished press-drag-release into a thing: a new brush solid, a cut
     // into the selected one, or a placed component. Undoable in every case.
     void CommitCreativeDrag(const Math::Vector3& start, const Math::Vector3& end);
-    // A tunnel, plus the hole it makes in the hill above it.
+    // A cave stroke: carve or fill a voxel volume, making or growing the rock
+    // it is cut into as needed.
     void CommitCreativeCave(const Math::Vector3& start, const Math::Vector3& end);
     // The rock a first cave stroke is cut into. Baked from the terrain when
     // there is one, so a cave is carved into the hill rather than into a cube
@@ -439,23 +440,9 @@ private:
     // doubled collider at worst.
     u32 HandTerrainToVolume(ECS::Entity terrainEntity, f32 minX, f32 minZ,
                             f32 maxX, f32 maxZ, CompoundCommand* into);
-    // Punch the terrain surface out wherever the tunnel breaks through it.
-    // Returns how many cells were opened, so the tool can say when a tunnel is
-    // still entirely buried instead of looking like it did nothing.
-    //
-    // Adds its undo step to `into` rather than executing one of its own: one
-    // drag is one undo step, and a cave that took two presses of Ctrl+Z -- one
-    // for the tunnel, one for the hole it opened -- would leave a hole in a
-    // hill with nothing under it in between.
-    u32 OpenCaveMouth(ECS::Entity terrainEntity, const BuildToolSettings& settings,
-                      const Math::Vector3& start, const Math::Vector3& end,
-                      CompoundCommand& into);
-
-    // Close the surface back over a drag. The eraser for the hole mask: a Dig
-    // that opened more of the hillside than you wanted is otherwise only
-    // undoable whole, tunnel and all.
-    u32 FillCaveMouth(ECS::Entity terrainEntity, const BuildToolSettings& settings,
-                      const Math::Vector3& start, const Math::Vector3& end);
+    // What the rock is at a point before anybody carved it. One definition,
+    // shared by the block's first bake and by every later growth.
+    f32 SeedCaveField(ECS::Entity terrainEntity, const Math::Vector3& worldPoint);
     // Water and Ladder: a component placed from the drag's footprint rather than
     // brushes built from it. Returns the new entity, or INVALID_ENTITY.
     ECS::Entity PlaceCreativeComponent(BuildTool tool, const Math::Vector3& start,
