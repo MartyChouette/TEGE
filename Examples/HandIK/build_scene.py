@@ -441,7 +441,14 @@ add("RightHand",
         # Palm faces -Y in the rig's own space. Authored, not inferred: the same
         # hand is -Y in one export and +Z in another.
         "palmNormalLocal": [0.0, -1.0, 0.0],
-        "mode": 1,                  # SurfacePoint
+        # 3 = Auto: work out per frame whether what is under the hand is a face
+        # to press on or a bar to curl over. Authored as SurfacePoint until
+        # 2026-09-13, which is why the railing in this very room did nothing --
+        # five fingers casting straight down all pass either side of a 7 cm bar,
+        # so the hand reported no contact and looked broken rather than
+        # unsuited. The room has a worktop, a shelf lip and a railing on
+        # purpose; one authored mode can only ever serve one of them.
+        "mode": 3,                  # Auto
         "engageDistance": 0.45,
         "edgeDirection": [1.0, 0.0, 0.0],
         "approachRate": 5.0,

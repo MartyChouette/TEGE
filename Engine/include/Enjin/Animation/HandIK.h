@@ -64,6 +64,18 @@ enum class HandTargetMode : u8 {
     // windowsill. Fingers curl OVER it rather than pressing onto it, which is a
     // different pose and not a special case of the point solve.
     SurfaceEdge = 2,
+
+    // Work it out from what is actually under the hand, per frame.
+    //
+    // The two modes above are a property of the PROP, not of the hand, and
+    // authoring them on the hand means a hand can only ever rest on one kind of
+    // thing. Walk from a worktop to a railing and a SurfacePoint hand puts five
+    // straight fingers through the bar; a SurfaceEdge hand curls over a flat
+    // counter. Neither is a bug anyone can see in a scene file.
+    //
+    // Measured cost: four extra raycasts per hand per frame. See
+    // HandIK::ClassifyContact.
+    Auto = 3,
 };
 
 // One fingertip cast result.
@@ -196,6 +208,38 @@ public:
     static HandIKResult SolveSurface(HandPose& hand,
                                      const ISurfaceQuery& surfaces,
                                      const HandIKSettings& settings = {});
+
+    // What is under this hand: a face it can press on, or a bar it has to
+    // curl over?
+    //
+    // Five fingers each casting straight down works on anything with a top
+    // wider than a hand and fails silently on anything narrower. Measured on
+    // the demo room: the worktops and the shelf give 3 of 5 fingers, the 7 cm
+    // railing gives ZERO, because every finger's ray passes either side of it.
+    // The edge solver already handled that case and had to be switched on by
+    // hand, with a direction typed in, which is knowledge about the PROP stored
+    // on the HAND.
+    //
+    // So ask the world instead. Cast the palm ray, then four more offset by
+    // `probeRadius` along the hand's own right and forward axes. A face catches
+    // all four; a bar catches the two that run ALONG it and misses the two
+    // across it, which also hands back the direction the bar runs in. Hits that
+    // come back at a very different range are a different object and are not
+    // counted, so standing at the edge of a counter with a wall beyond it does
+    // not read as a railing.
+    struct ContactClassification {
+        bool hit = false;
+        HandTargetMode mode = HandTargetMode::SurfacePoint;
+        Math::Vector3 edgeDirection{1.0f, 0.0f, 0.0f};
+        SurfaceHit centre;
+    };
+    static ContactClassification ClassifyContact(const Math::Vector3& palmPosition,
+                                                 const Math::Vector3& palmNormal,
+                                                 const Math::Vector3& handRight,
+                                                 const Math::Vector3& handForward,
+                                                 f32 probeRadius,
+                                                 f32 maxDistance,
+                                                 const ISurfaceQuery& surfaces);
 
     // Settle onto a straight edge.
     //

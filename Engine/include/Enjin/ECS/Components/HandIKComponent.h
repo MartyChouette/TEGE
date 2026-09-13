@@ -86,8 +86,14 @@ struct HandIKComponent {
     f32 engageDistance = 0.35f;
 
     // SurfaceEdge only. Direction the edge runs; the surface normal is taken
-    // from what the fingertip cast reports.
+    // from what the fingertip cast reports. Ignored in Auto mode, which
+    // measures the direction off the geometry every frame.
     Math::Vector3 edgeDirection = Math::Vector3(1.0f, 0.0f, 0.0f);
+
+    // LIVE, not authored: which solver Auto mode picked this frame. A hand that
+    // curls when it should press, or presses when it should curl, is one wrong
+    // classification and there is no other way to see which one happened.
+    Animation::HandTargetMode resolvedMode = Animation::HandTargetMode::SurfacePoint;
 
     // Taking hold and letting go are not one control.
     //

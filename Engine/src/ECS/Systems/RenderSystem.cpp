@@ -7147,11 +7147,38 @@ void RenderSystem::SolveHandIK(Entity entity, AnimatorComponent& animComp,
     // instead of freezing mid-grip.
     bool engaged = false;
     Animation::SurfaceHit probe;
+    // Which solver to run. Authored modes are obeyed; Auto asks the geometry.
+    Animation::HandTargetMode activeMode = hand.mode;
+    Math::Vector3 activeEdgeDir = hand.edgeDirection;
+
     if (m_SurfaceQuery) {
-        engaged = m_SurfaceQuery->Cast(solved.palmPosition, solved.palmNormal,
-                                       hand.engageDistance, probe) && probe.hit;
+        if (hand.mode == Animation::HandTargetMode::Auto) {
+            // Probe radius from the RIG, not a constant: half the span from the
+            // outermost knuckle to the other. A hand that reaches across a bar
+            // is what makes it a bar, so the test has to be the size of this
+            // hand rather than the size of the hand I happened to build.
+            const Math::Vector3 a = solved.fingers[0].joints[0];
+            const Math::Vector3 b = solved.fingers[Animation::kFingerCount - 1].joints[0];
+            const Math::Vector3 span(b.x - a.x, b.y - a.y, b.z - a.z);
+            const f32 radius = span.Length() * 0.5f;
+
+            const auto klass = Animation::HandIK::ClassifyContact(
+                solved.palmPosition, solved.palmNormal,
+                boneDir(handIdx, Math::Vector3(1.0f, 0.0f, 0.0f)),
+                boneDir(handIdx, Math::Vector3(0.0f, 0.0f, 1.0f)),
+                radius, hand.engageDistance, *m_SurfaceQuery);
+
+            engaged = klass.hit;
+            probe = klass.centre;
+            activeMode = klass.mode;
+            activeEdgeDir = klass.edgeDirection;
+        } else {
+            engaged = m_SurfaceQuery->Cast(solved.palmPosition, solved.palmNormal,
+                                           hand.engageDistance, probe) && probe.hit;
+        }
     }
     hand.engaged = engaged;
+    hand.resolvedMode = activeMode;
 
     // A clock this pass can actually trust.
     //
@@ -7199,10 +7226,10 @@ void RenderSystem::SolveHandIK(Entity entity, AnimatorComponent& animComp,
     const Animation::HandPose animated = solved;
 
     Animation::HandIKResult result;
-    if (hand.mode == Animation::HandTargetMode::SurfaceEdge) {
+    if (activeMode == Animation::HandTargetMode::SurfaceEdge) {
         if (engaged) {
             result = Animation::HandIK::SolveEdge(solved, probe.point,
-                                                  hand.edgeDirection, probe.normal);
+                                                  activeEdgeDir, probe.normal);
         }
     } else {
         result = Animation::HandIK::SolveSurface(solved, *m_SurfaceQuery);
@@ -7229,11 +7256,13 @@ void RenderSystem::SolveHandIK(Entity entity, AnimatorComponent& animComp,
     if ((s_HandLogTick++ % 120u) == 0u) {
         ENJIN_LOG_INFO(Animation,
             "HandIK: palm (%.2f, %.2f, %.2f) normal (%.2f, %.2f, %.2f) "
-            "engaged=%s probeHit=%s at %.3f m, %u of 5 fingers in contact",
+            "engaged=%s probeHit=%s at %.3f m, %u of 5 fingers in contact, %s",
             solved.palmPosition.x, solved.palmPosition.y, solved.palmPosition.z,
             solved.palmNormal.x, solved.palmNormal.y, solved.palmNormal.z,
             engaged ? "yes" : "NO", probe.hit ? "yes" : "NO", probe.distance,
-            result.fingersContacted);
+            result.fingersContacted,
+            activeMode == Animation::HandTargetMode::SurfaceEdge ? "curling over an edge"
+                                                                 : "pressing on a face");
     }
 
     // Write the solved chains back as rotations.

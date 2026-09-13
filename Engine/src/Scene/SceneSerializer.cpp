@@ -9987,7 +9987,9 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
                 if (hj.contains("palmNormalLocal")) ik.palmNormalLocal = DeserializeVector3(hj["palmNormalLocal"]);
                 if (hj.contains("mode")) {
                     const i32 v = hj["mode"].get<i32>();
-                    if (v >= 0 && v <= 2) ik.mode = static_cast<Animation::HandTargetMode>(v);
+                    // 3 is Auto. The range check has to move with the enum or a
+                    // scene authoring the newest mode silently loads the oldest.
+                    if (v >= 0 && v <= 3) ik.mode = static_cast<Animation::HandTargetMode>(v);
                 }
                 if (hj.contains("interactionTag")) ik.interactionTag = SafeStr(hj["interactionTag"], MAX_STR_NAME);
                 if (hj.contains("interactionRadius")) ik.interactionRadius = hj["interactionRadius"].get<f32>();

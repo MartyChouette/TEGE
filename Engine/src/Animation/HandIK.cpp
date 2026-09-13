@@ -94,6 +94,65 @@ void BreakColinearity(std::array<Math::Vector3, kFingerJoints + 1>& chain,
 
 } // namespace
 
+HandIK::ContactClassification HandIK::ClassifyContact(const Math::Vector3& palmPosition,
+                                                     const Math::Vector3& palmNormal,
+                                                     const Math::Vector3& handRight,
+                                                     const Math::Vector3& handForward,
+                                                     f32 probeRadius,
+                                                     f32 maxDistance,
+                                                     const ISurfaceQuery& surfaces) {
+    ContactClassification out;
+
+    const Math::Vector3 down = SafeNormalize(palmNormal, Math::Vector3(0.0f, -1.0f, 0.0f));
+    if (!surfaces.Cast(palmPosition, down, maxDistance, out.centre) || !out.centre.hit) {
+        return out;   // nothing under the palm at all
+    }
+    out.hit = true;
+
+    // A degenerate radius cannot tell a bar from a table, and guessing would be
+    // worse than declining: fall back to the face solve, which is the safe
+    // answer because it leaves unreachable fingers alone.
+    if (probeRadius < 1.0e-4f) return out;
+
+    const Math::Vector3 right   = SafeNormalize(handRight,   Math::Vector3(1.0f, 0.0f, 0.0f));
+    const Math::Vector3 forward = SafeNormalize(handForward, Math::Vector3(0.0f, 0.0f, 1.0f));
+
+    // Same surface, or a different object? A hit at a very different range came
+    // off something else -- the floor past the end of a counter, a wall behind
+    // a shelf -- and counting it would invent an edge that is not there.
+    const f32 sameSurface = 0.05f;
+    auto onTheSameThing = [&](const Math::Vector3& offset) {
+        SurfaceHit h;
+        const Math::Vector3 from(palmPosition.x + offset.x,
+                                 palmPosition.y + offset.y,
+                                 palmPosition.z + offset.z);
+        if (!surfaces.Cast(from, down, maxDistance, h) || !h.hit) return false;
+        return Math::Abs(h.distance - out.centre.distance) <= sameSurface;
+    };
+
+    const Math::Vector3 rOff(right.x * probeRadius, right.y * probeRadius, right.z * probeRadius);
+    const Math::Vector3 fOff(forward.x * probeRadius, forward.y * probeRadius, forward.z * probeRadius);
+
+    const bool alongRight = onTheSameThing(rOff) &&
+                            onTheSameThing(Math::Vector3(-rOff.x, -rOff.y, -rOff.z));
+    const bool alongForward = onTheSameThing(fOff) &&
+                              onTheSameThing(Math::Vector3(-fOff.x, -fOff.y, -fOff.z));
+
+    // Continues one way and runs out the other: a bar, and it runs the way that
+    // continued. Both ways is a face. NEITHER way is something smaller than the
+    // hand in both axes -- a knob, a post cap -- which no amount of curling
+    // makes into a grip, so it stays a face solve and the fingers that can
+    // reach it land on it.
+    if (alongRight && !alongForward) {
+        out.mode = HandTargetMode::SurfaceEdge;
+        out.edgeDirection = right;
+    } else if (alongForward && !alongRight) {
+        out.mode = HandTargetMode::SurfaceEdge;
+        out.edgeDirection = forward;
+    }
+    return out;
+}
+
 HandIKResult HandIK::SolveSurface(HandPose& hand,
                                   const ISurfaceQuery& surfaces,
                                   const HandIKSettings& settings) {
