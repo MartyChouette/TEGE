@@ -364,6 +364,23 @@ void SkeletalAnimator::SetNormalizedTime(f32 t) {
     CalculateSkinningMatrices();
 }
 
+void SkeletalAnimator::RestoreBindPose() {
+    if (!m_Skeleton) return;
+    const usize count = m_Skeleton->bones.size();
+    if (m_CurrentPose.localRotations.size() != count) m_CurrentPose.Resize(count);
+    for (usize i = 0; i < count; ++i) {
+        m_CurrentPose.localPositions[i] = m_Skeleton->bones[i].bindPosition;
+        m_CurrentPose.localRotations[i] = m_Skeleton->bones[i].bindRotation;
+        m_CurrentPose.localScales[i] = m_Skeleton->bones[i].bindScale;
+    }
+}
+
+void SkeletalAnimator::RecomputePose() {
+    if (!m_Skeleton) return;
+    CalculateWorldTransforms();
+    CalculateSkinningMatrices();
+}
+
 void SkeletalAnimator::Update(f32 deltaTime) {
     if (!m_Skeleton || !m_IsPlaying || m_IsPaused) {
         return;

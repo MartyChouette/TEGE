@@ -7780,7 +7780,35 @@ void RenderSystem::Update(f32 deltaTime) {
     for (auto& job : m_AnimJobs) {
         Entity entity = job.entity;
         AnimatorComponent* animComp = job.comp;
-        if (!animComp->animator.IsPlaying()) continue;
+
+        // Does this entity carry anything that EDITS the pose?
+        //
+        // IK used to be skipped entirely unless a clip was playing, which is
+        // backwards for the case that matters most: a character standing still
+        // with a hand resting on a counter is exactly when nothing is playing.
+        const bool hasIK =
+            m_World->HasComponent<LookAtIKComponent>(entity) ||
+            m_World->HasComponent<InteractionIKComponent>(entity) ||
+            m_World->HasComponent<TwoBoneIKComponent>(entity) ||
+            m_World->HasComponent<HandIKComponent>(entity);
+
+        if (!animComp->animator.IsPlaying() && !hasIK) continue;
+
+        // With no clip running, nothing resets the pose between frames.
+        //
+        // Every IK path below composes a rotation DELTA onto whatever is
+        // already in localRotations. While a clip plays, Update() resamples it
+        // each frame and supplies a clean starting point; with no clip, Update()
+        // returns at its first line and last frame's IK is still sitting there,
+        // so the deltas compound and the limb winds up rotating without bound.
+        if (hasIK && !animComp->animator.IsPlaying()) {
+            animComp->animator.RestoreBindPose();
+            // And rebuild the world transforms from it, because the IK blocks
+            // below read bone WORLD positions out of the pose. Resetting the
+            // local rotations without this would leave them solving against
+            // last frame's already-solved positions.
+            animComp->animator.RecomputePose();
+        }
 
         auto* lookAtIK = m_World->GetComponent<LookAtIKComponent>(entity);
         if (lookAtIK && lookAtIK->lookWeight > 0.0f) {
@@ -7989,6 +8017,28 @@ void RenderSystem::Update(f32 deltaTime) {
                     animComp->matricesDirty = true;
                 }
             }
+        }
+
+        // Turn the edited pose into the matrices the renderer actually skins
+        // with.
+        //
+        // THIS is what was missing, and it is why no IK in this engine has ever
+        // reached the screen. Sampling builds the world transforms and the
+        // skinning matrices at the end of Update(), during pass 2. Every IK
+        // block above runs in pass 3 and edits localRotations, which by then
+        // nothing reads: the frame renders the pre-IK pose, and the next
+        // frame's sample overwrites the rotations before they are ever used.
+        // Look-at, two-bone, interaction and hand IK all computed correct
+        // answers into a buffer that was thrown away.
+        //
+        // The intent was there. TwoBoneIK sets animComp->matricesDirty, which
+        // reads like a request to rebuild -- but nothing anywhere consumes that
+        // flag; it appears only in the component's own copy constructors. A
+        // dirty flag with no consumer is indistinguishable from a working one
+        // right up until somebody looks.
+        if (hasIK) {
+            animComp->animator.RecomputePose();
+            animComp->matricesDirty = false;
         }
     }
 

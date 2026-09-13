@@ -442,6 +442,30 @@ public:
     // Used for onion skinning in the editor. Returns empty vector if no animation/skeleton.
     std::vector<Math::Matrix4> SampleSkinningMatricesAtTime(f32 time) const;
 
+    // Put the pose back to the skeleton's rest position.
+    //
+    // Needed by anything that EDITS the pose rather than samples it. IK writes
+    // rotation deltas onto whatever is already in localRotations, so it needs a
+    // known starting point every frame; while a clip is playing, Update()
+    // provides one by resampling, and when nothing is playing there is nothing
+    // to reset it and the deltas compound until the limb spins.
+    void RestoreBindPose();
+
+    // Rebuild the world transforms and skinning matrices from the CURRENT local
+    // pose.
+    //
+    // Sampling already does this at the end of Update(), so nothing that merely
+    // plays an animation needs it. Anything that changes localRotations AFTER
+    // that point does: the matrices the renderer skins with were built from the
+    // pre-edit pose, so without this the edit is written and then ignored.
+    //
+    // That was not a hypothetical. Every IK path in the engine wrote rotations
+    // in the renderer's IK pass, which runs after sampling, and nothing ever
+    // converted them -- so look-at, two-bone, interaction and hand IK all
+    // computed correct answers that never reached the screen, and the next
+    // frame's sample overwrote them.
+    void RecomputePose();
+
 private:
     void SampleAnimation(const SkeletalAnimation& anim, f32 time, SkeletonPose& outPose);
     void BlendPoses(const SkeletonPose& a, const SkeletonPose& b, f32 t, SkeletonPose& out);
