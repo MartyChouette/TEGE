@@ -202,6 +202,120 @@ ENJIN_TEST(RoomAcousticsDemo, TheCarpetedRoomIsDullRatherThanQuiet) {
     ENJIN_EXPECT_TRUE(basement.rt60[0] > basement.rt60[2] * 1.5f);
 }
 
+// The half of a room a decay time cannot describe.
+//
+// A tail says how live a room is. The discrete reflections say where its walls
+// are and what they are made of -- and until they were wired to the mixer the
+// engine only ever produced the tail, so every room was the same wash at a
+// different length. Tile returns the top of a clap almost intact; a curtain
+// returns the bottom of it and nothing else. If that stops being true, the
+// rooms collapse back into one room played at different speeds.
+ENJIN_TEST(RoomAcousticsDemo, TheReflectionsCarryTheMaterialNotJustTheTail) {
+    // Arrange
+    const std::string path = FindScene();
+    if (path.empty()) { ENJIN_SKIP("demo scene not found"); return; }
+
+    ECS::World world;
+    Scene::SceneSerializer serializer(&world);
+    std::ifstream file(path);
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    ENJIN_ASSERT_TRUE(serializer.LoadFromString(buffer.str()).success);
+
+    AcousticsSystem system;
+    system.SetWorld(&world);
+    system.SetSettings(DemoSettings());
+
+    // Act
+    MeasureAt(system, Vector3(-21.0f, 1.6f, 0.0f));
+    const auto kitchen = system.Reflections();
+
+    system.Update(Vector3(21.0f, 1.6f, 0.0f), 0.016f);
+    const auto basement = system.Reflections();
+
+    // Assert: there have to BE reflections at all. An empty set is what the
+    // engine effectively had for as long as nothing called the tracer.
+    ENJIN_ASSERT_TRUE(kitchen.Any());
+    ENJIN_ASSERT_TRUE(basement.Any());
+
+    // Brightest tap in each room, measured as how much of the top end comes
+    // back relative to the middle. This is the number a listener hears as
+    // "hard surface" versus "soft furnishing".
+    auto brightest = [](const EarlyReflectionResult& r) {
+        f32 best = 0.0f;
+        for (const auto& t : r.taps) {
+            const f32 mid = t.gain[1] > 1.0e-9f ? t.gain[1] : 1.0e-9f;
+            const f32 ratio = t.gain[2] / mid;
+            if (ratio > best) best = ratio;
+        }
+        return best;
+    };
+    auto loudest = [](const EarlyReflectionResult& r) {
+        f32 best = 0.0f;
+        for (const auto& t : r.taps) if (t.gain[1] > best) best = t.gain[1];
+        return best;
+    };
+
+    std::printf("    kitchen  %zu taps, loudest %.3f, brightest hi/mid %.2f\n",
+                kitchen.taps.size(), loudest(kitchen), brightest(kitchen));
+    std::printf("    basement %zu taps, loudest %.3f, brightest hi/mid %.2f\n",
+                basement.taps.size(), loudest(basement), brightest(basement));
+
+    // Where a single reflection actually carries the material, and where it
+    // does not.
+    //
+    // In the MIDS one bounce barely tells them apart, and that is not a bug.
+    // Heavy carpet on concrete absorbs 0.30 of the mid energy, so it returns
+    // sqrt(0.70) = 0.84 of the amplitude against tile's sqrt(0.99) = 0.995 --
+    // about 16% down, over the same 3.2 m floor bounce. Asserting a 1.5x split
+    // here would have been asserting a number the physics does not produce, and
+    // the only way to pass it would have been to make the materials wrong.
+    //
+    // What one bounce DOES carry is the top end: tile absorbs 0.02 up there and
+    // carpet absorbs 0.60, so the same reflection comes back bright off one and
+    // dull off the other. That is the cue a listener reads instantly as "hard
+    // room" -- and it is why the rooms have to differ in the tail as well, since
+    // the tail is where a hundred of these multiply together.
+    ENJIN_EXPECT_TRUE(loudest(kitchen) > loudest(basement));
+    ENJIN_EXPECT_TRUE(brightest(kitchen) > brightest(basement) * 1.2f);
+}
+
+// A reflection has to arrive AFTER the sound that caused it.
+ENJIN_TEST(RoomAcousticsDemo, TheFirstReflectionArrivesWhenTheGeometrySaysItShould) {
+    // Arrange
+    const std::string path = FindScene();
+    if (path.empty()) { ENJIN_SKIP("demo scene not found"); return; }
+
+    ECS::World world;
+    Scene::SceneSerializer serializer(&world);
+    std::ifstream file(path);
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    ENJIN_ASSERT_TRUE(serializer.LoadFromString(buffer.str()).success);
+
+    AcousticsSystem system;
+    system.SetWorld(&world);
+    system.SetSettings(DemoSettings());
+
+    // Act: stood in the middle of the hall, which is 10 x 3.4 x 8 metres.
+    MeasureAt(system, Vector3(0.0f, 1.6f, 0.0f));
+    const auto hall = system.Reflections();
+    ENJIN_ASSERT_TRUE(hall.Any());
+
+    f32 earliest = 1.0e9f;
+    for (const auto& t : hall.taps) if (t.delay < earliest) earliest = t.delay;
+
+    // Assert: the nearest surface to that point is the ceiling, 1.8 m up, so
+    // the shortest path out and back is 3.6 m -- about 10.5 ms at 343 m/s. The
+    // floor, 1.6 m down, gives 9.3 ms. Nothing can come back sooner than that
+    // without passing through a wall.
+    std::printf("    first reflection in the hall: %.1f ms\n", earliest * 1000.0f);
+    ENJIN_EXPECT_TRUE(earliest > 0.008f);
+    // And it has to be early enough to read as THIS room rather than as reverb:
+    // the longest dimension is 10 m, so a first-order path cannot exceed ~60 ms.
+    ENJIN_EXPECT_TRUE(earliest < 0.060f);
+}
+
 ENJIN_TEST(RoomAcousticsDemo, NothingInTheSceneAuthorsAReverb) {
     // Arrange
     const std::string path = FindScene();
