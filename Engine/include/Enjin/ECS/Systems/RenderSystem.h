@@ -56,7 +56,11 @@ namespace Enjin::Build { class AssetReader; }
 #endif
 
 // Forward declarations for effect renderers and systems (stored as unique_ptr/raw pointer)
-namespace Enjin { namespace Effects {
+namespace Enjin {
+// Forward declared rather than included: HandIK.h pulls in the whole IK solver
+// and this header is included almost everywhere. Only a pointer is stored.
+namespace Animation { class ISurfaceQuery; }
+ namespace Effects {
     class WindSystem;
     class WeatherSystem;
     class WeatherRenderer;
@@ -2817,6 +2821,21 @@ private:
     Math::Vector3 m_PrevCameraPos{0, 0, 0};   // Track camera movement for sort key recalculation
     u32 m_PrevEntityCount = 0;                // Detect entity count changes
     std::vector<Math::Vector3> m_IKChainCache; // Reused per frame for FABRIK IK solving
+
+    // What is under a fingertip.
+    //
+    // Injected rather than looked up, because the IK step runs inside the pose
+    // pass and this system has no physics backend and should not grow one. The
+    // owner supplies a physics-backed implementation; a test supplies a plane.
+    // Null means hands that need surfaces stay on their animation, which is the
+    // right behaviour for a headless tool rather than a reason to fail.
+    Animation::ISurfaceQuery* m_SurfaceQuery = nullptr;
+
+public:
+    // Supply the surface queries hand IK needs. See m_SurfaceQuery.
+    void SetSurfaceQuery(Animation::ISurfaceQuery* query) { m_SurfaceQuery = query; }
+
+private:
 
     // Draw call / triangle counters (current frame, accumulating)
     u32 m_DrawCallCount = 0;

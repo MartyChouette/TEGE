@@ -6993,6 +6993,50 @@ void RenderSystem::ProcessProbeBakesOutsideFrame() {
     UpdateProbeCubemapDescriptor();   // binding 19: the newly baked cubemap
 }
 
+namespace {
+
+// Rotate a bone so its child lands where the solver put it.
+//
+// IK solves POSITIONS; a skeleton stores local ROTATIONS, so every solver here
+// has to convert. The conversion is the same three steps every time: original
+// direction to the child, new direction to the child, the rotation between them
+// composed onto the bone's local rotation. It was written out twice inside the
+// TwoBoneIK block and needed a third copy for the arm chain, and three copies
+// of the same quaternion arithmetic is how one of them ends up subtly different
+// from the others.
+//
+// `newFrom` differs from `origFrom` only for a bone whose own parent has
+// already moved this frame, which is every link after the first.
+void ApplyChainRotation(Animation::SkeletonPose& pose, i32 boneIdx,
+                        const Math::Vector3& origFrom, const Math::Vector3& origTo,
+                        const Math::Vector3& newTo, const Math::Vector3& newFrom) {
+    Math::Vector3 origDir = origTo - origFrom;
+    Math::Vector3 newDir = newTo - newFrom;
+    const f32 origLen = origDir.Length();
+    const f32 newLen = newDir.Length();
+    if (origLen <= 0.0001f || newLen <= 0.0001f) return;
+
+    origDir = origDir * (1.0f / origLen);
+    newDir = newDir * (1.0f / newLen);
+
+    Math::Vector3 axis = origDir.Cross(newDir);
+    const f32 axisMag = axis.Length();
+    if (axisMag <= 0.0001f) return;          // already aligned, or exactly opposed
+
+    axis = axis * (1.0f / axisMag);
+    const f32 dotP = std::clamp(origDir.Dot(newDir), -1.0f, 1.0f);
+    const Math::Quaternion delta(axis, std::acos(dotP));
+    pose.localRotations[boneIdx] = delta * pose.localRotations[boneIdx];
+}
+
+void ApplyChainRotation(Animation::SkeletonPose& pose, i32 boneIdx,
+                        const Math::Vector3& origFrom, const Math::Vector3& origTo,
+                        const Math::Vector3& newTo) {
+    ApplyChainRotation(pose, boneIdx, origFrom, origTo, newTo, origFrom);
+}
+
+} // namespace
+
 void RenderSystem::ProbeBakeOutsideFrameDiagnostic() {
     if (!m_ReflectionProbes || !m_VulkanRenderer) return;
 
@@ -7625,6 +7669,7 @@ void RenderSystem::Update(f32 deltaTime) {
                 // Find nearest interactable within radius (only scan InteractableComponent entities)
                 Math::Vector3 handPos = entityTransform->position + Math::Vector3(0.3f, 1.0f, 0.5f);
                 Math::Vector3 nearestTarget = handPos;
+                Entity nearestEntity = INVALID_ENTITY;
                 f32 nearestDist = interactionIK->interactionRadius + 1.0f;
 
                 for (Entity other : m_World->GetEntitiesWithComponent<InteractableComponent>()) {
@@ -7640,17 +7685,65 @@ void RenderSystem::Update(f32 deltaTime) {
                     if (dist < nearestDist && dist <= interactionIK->interactionRadius) {
                         nearestDist = dist;
                         nearestTarget = otherTransform->position;
+                        nearestEntity = other;
                     }
                 }
 
                 if (nearestDist <= interactionIK->interactionRadius) {
-                    // Simple 3-bone FABRIK solve for hand chain
-                    // Reuse member vector to avoid per-frame heap allocation
-                    m_IKChainCache.resize(3);
-                    m_IKChainCache[0] = entityTransform->position + Math::Vector3(0.2f, 1.3f, 0.0f); // shoulder
-                    m_IKChainCache[1] = entityTransform->position + Math::Vector3(0.3f, 1.1f, 0.3f); // elbow
-                    m_IKChainCache[2] = handPos;                                                        // hand
-                    Animation::FABRIK::Solve(m_IKChainCache, nearestTarget, 5);
+                    // Solve the shoulder/elbow/hand chain from the ACTUAL BONES
+                    // and write the answer back into the pose.
+                    //
+                    // What was here before did none of that. It built a chain
+                    // out of three hardcoded offsets from the entity position,
+                    // ignoring handBoneName, elbowBoneName and shoulderBoneName
+                    // entirely, ran FABRIK into a scratch vector, and then threw
+                    // the result away: m_IKChainCache was never read again, and
+                    // currentTarget and currentHandTarget were never written by
+                    // anything. So this component has never moved a bone. It
+                    // serialized, it showed an inspector, it cost a solve every
+                    // frame, and it did nothing, which is the hardest kind of
+                    // dead code to notice because everything about it looks
+                    // alive.
+                    //
+                    // The write-back follows TwoBoneIKComponent's pattern, which
+                    // is the one IK path in here that does work.
+                    const auto* skeleton = animComp->animator.GetSkeleton();
+                    const i32 shoulderIdx = skeleton
+                        ? skeleton->FindBoneIndex(interactionIK->shoulderBoneName) : -1;
+                    const i32 elbowIdx = skeleton
+                        ? skeleton->FindBoneIndex(interactionIK->elbowBoneName) : -1;
+                    const i32 handIdx = skeleton
+                        ? skeleton->FindBoneIndex(interactionIK->handBoneName) : -1;
+
+                    if (shoulderIdx >= 0 && elbowIdx >= 0 && handIdx >= 0) {
+                        const auto& pose = animComp->animator.GetCurrentPose();
+                        const Math::Matrix4 entityWorld = ComputeWorldMatrix(m_World, entity);
+
+                        auto boneWorld = [&](i32 idx) {
+                            const Math::Matrix4 m = entityWorld * pose.worldTransforms[idx];
+                            return Math::Vector3(m.m[12], m.m[13], m.m[14]);
+                        };
+
+                        const Math::Vector3 shoulderPos = boneWorld(shoulderIdx);
+                        const Math::Vector3 elbowPos = boneWorld(elbowIdx);
+                        const Math::Vector3 handWorldPos = boneWorld(handIdx);
+
+                        Math::Vector3 solvedElbow, solvedHand;
+                        Animation::TwoBoneIK::Solve(
+                            shoulderPos, elbowPos, handWorldPos, nearestTarget,
+                            Math::Vector3(0.0f, 0.0f, 1.0f), interactionIK->ikWeight,
+                            solvedElbow, solvedHand);
+
+                        auto& poseMut = const_cast<Animation::SkeletonPose&>(pose);
+                        ApplyChainRotation(poseMut, shoulderIdx, shoulderPos, elbowPos, solvedElbow);
+                        ApplyChainRotation(poseMut, elbowIdx, elbowPos, handWorldPos,
+                                           solvedHand, solvedElbow);
+
+                        // Report what it settled on, so a script or the
+                        // inspector can see the hand is actually engaged.
+                        interactionIK->currentTarget = nearestEntity;
+                        interactionIK->currentHandTarget = solvedHand;
+                    }
                 }
             }
         }
