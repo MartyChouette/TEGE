@@ -22,6 +22,7 @@
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/Name.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/Scene/SceneSerializer.h"
 
@@ -157,15 +158,26 @@ ENJIN_TEST(HandIKDemo, TheRigsOwnFingersLandOnTheCountersOwnHeight) {
     ENJIN_ASSERT_TRUE(fp != nullptr);
     const f32 eyeY = playerT->position.y + fp->standingHeight;
 
-    // The hand hangs off the PLAYER, not the camera, so its local Y is measured
-    // from the capsule centre. It is parented that way because a child of the
-    // camera entity does not render correctly in that camera's view -- the
-    // controller rewrites the camera transform every frame without invalidating
-    // its children's cached world matrices. See the note in build_scene.py.
-    const f32 handY = playerT->position.y + handT->position.y;
+    // THE RIG SHAPE IS PART OF WHAT THIS TEST PINS, because getting it wrong is
+    // what broke the demo rather than anything in the solver.
+    //
+    // The camera is a ROOT entity that FirstPersonController drives, exactly as
+    // builtin_templates/componentsonly builds it, and the hand hangs off the
+    // CAMERA. Both halves matter. Parenting the camera to the player puts a
+    // world-space write into a local transform and throws the camera out of the
+    // level; parenting the hand to the player instead of the camera gives it
+    // yaw and no pitch, because the player transform only ever receives
+    // Quaternion(Y, yaw) and pitch lives on the camera alone. The second one
+    // renders perfectly and simply never looks up, which is why it survived.
+    ENJIN_EXPECT_TRUE(!world.HasComponent<ECS::ParentComponent>(FindByName(world, "MainCam")));
+    const auto* handParent = world.GetComponent<ECS::ParentComponent>(handEnt);
+    ENJIN_ASSERT_TRUE(handParent != nullptr);
+    ENJIN_EXPECT_TRUE(handParent->parent == FindByName(world, "MainCam"));
+
+    // So the hand's local Y is measured from the EYE, not the capsule centre.
+    const f32 handY = eyeY + handT->position.y;
     std::printf("    capsule %.2f + standing %.2f = eye %.2f\n",
                 playerT->position.y, fp->standingHeight, eyeY);
-    (void)camT;
     const f32 counterY = CounterTopY(world);
     const f32 gap = handY - counterY;
 

@@ -7765,9 +7765,9 @@
    },
    "transform": {
     "position": [
-     0.0,
-     0.0,
-     0.0
+     -3.5,
+     1.7,
+     0.6
     ],
     "rotation": [
      0,
@@ -7782,7 +7782,6 @@
     ],
     "visible": true
    },
-   "parent": 17,
    "camera": {
     "projectionType": 0,
     "fieldOfView": 70,
@@ -7808,7 +7807,7 @@
    "transform": {
     "position": [
      0.22,
-     0.6,
+     -0.25,
      -0.75
     ],
     "rotation": [
@@ -7824,7 +7823,7 @@
     ],
     "visible": true
    },
-   "parent": 17,
+   "parent": 18,
    "mesh": {
     "vertexCount": 384,
     "indexCount": 576,

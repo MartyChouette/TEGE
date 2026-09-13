@@ -357,36 +357,51 @@ player = add("Player",
                               "direction": 1, "friction": 0.5,
                               "bounciness": 0.0, "isTrigger": False})
 
+# THE CAMERA IS NOT A CHILD OF ANYTHING, and that is the whole first-person rig.
+#
+# FirstPersonController OWNS this entity: every frame it writes the camera's
+# TransformComponent to the player position plus currentHeight, with the full
+# yaw AND pitch. builtin_templates/componentsonly -- the rig that works -- has
+# "Game Camera" sitting at the scene root next to the player, not under it, and
+# that is not an accident or a shortcut.
+#
+# Parenting it to the player, which is what this file used to do, breaks the rig
+# in a way that takes a while to see: TransformComponent is LOCAL to a parent,
+# so a world position written into it is applied on TOP of the player's
+# transform and the camera ends up at roughly twice its intended offset --
+# outside the level. Everything hanging off the camera goes with it. I then
+# "fixed" that inside the engine by converting world to parent space on the way
+# in, which papered over a scene that should never have been built that way.
 cam = add("MainCam",
-          # Zero, and it does not matter: FirstPersonController writes this
-    # transform every frame from the player position and standingHeight.
-    # A non-zero offset here would read as load-bearing and be ignored.
-    transform=xform((0.0, 0.0, 0.0), rot=(0, 0, 0, 1)),
-          parent=player["id"],
+          # Roughly the eye, so the first frame before the controller's first
+          # write is not looking out of the floor. After that the controller
+          # owns it entirely.
+          transform=xform((SPAWN_X, EYE, SPAWN_Z), rot=(0, 0, 0, 1)),
           camera={"projectionType": 0, "fieldOfView": 70, "nearPlane": 0.05,
                   "farPlane": 200, "isActive": True, "priority": 0,
                   "clearColor": True, "clearDepth": True,
                   "backgroundColor": [0.06, 0.07, 0.09], "orthoSize": 10})
 
-# THE HAND. Parented to the PLAYER, not to the camera.
+# THE HAND HANGS OFF THE CAMERA, because a viewmodel is a thing held in the
+# view, and the view is the camera.
 #
-# Attaching it to the camera entity is the obvious way to build a viewmodel and
-# it does not work here. FirstPersonController rewrites the camera's
-# TransformComponent every frame, and doing so does not invalidate the cached
-# world matrices of its children, so anything hanging off the camera renders
-# from a transform that is not the one the view is using. The hand was drawn
-# outside the room, and from inside the game view it was not drawn at all --
-# while the Scene view showed it happily, because that path resolves transforms
-# differently.
+# This file previously parented it to the PLAYER and carried a long comment
+# explaining that the camera "does not work" because rewriting its transform
+# does not invalidate its children's cached world matrices. That explanation was
+# wrong. The camera did not work because I had parented the CAMERA to the player
+# as well, so the controller's world-space write landed in a local transform and
+# threw the camera out of the room -- and the hand, hanging off it, went too.
+# With the camera back at the root where the working template keeps it, there is
+# nothing to work around.
 #
-# Parenting to the player works, and costs one thing worth stating plainly: the
-# hand follows YAW but not PITCH, because the player yaws and only the camera
-# pitches. Look up or down and the hand stays level. For a demo about whether
-# fingertips land on a worktop that is acceptable; for a real viewmodel it is
-# not, and the fix belongs in the engine rather than in this file.
+# What that mistake cost, and what Marty saw: the player receives YAW ONLY
+# (ControllerSystem writes Quaternion(Y, yaw) to the player transform); PITCH
+# exists only on the camera. A hand parented to the player therefore follows you
+# when you turn and stays resolutely level when you look up or down, while the
+# camera pitches away from it. "The camera is not moving with the hand and they
+# are nowhere close to them."
 #
-# Local Y is measured from the player origin (the capsule centre), so it is
-# EYE - HAND_DROP - CAPSULE_REST rather than just -HAND_DROP.
+# Under the camera it inherits both, which is the entire point.
 add("RightHand",
     # +Z is FORWARD here, and identity is the right rotation.
     #
@@ -396,9 +411,12 @@ add("RightHand",
     # offset of +0.80. The player's local +Z maps to world -Z, which is the
     # direction it faces, so local +Z is in front and the rig's fingers (which
     # point +Z) already point that way. No rotation.
-    transform=xform((0.22, EYE - HAND_DROP - CAPSULE_REST, -HAND_FORWARD),
+    # Camera space: the origin IS the eye, so the drop is plain -HAND_DROP
+    # rather than the three-term correction it needed when this hung off the
+    # player and had to undo the capsule's resting height.
+    transform=xform((0.22, -HAND_DROP, -HAND_FORWARD),
                     rot=(0, 1, 0, 0)),
-    parent=player["id"],
+    parent=cam["id"],
     mesh=HAND_MESH,
     # Loud on purpose. This is the subject of the demo and it spent three
     # attempts being invisible for three different reasons; a placeholder
