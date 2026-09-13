@@ -39,6 +39,34 @@ COLOUR = {
     BRICK:    (0.52, 0.30, 0.24),
 }
 
+# A unit cube, 24 vertices so each face gets its own normal.
+#
+# Authored here rather than assumed, because a box collider is NOT a mesh: the
+# first version of this scene gave every slab a collider and a material and no
+# geometry at all. The acoustics read colliders and measured the building
+# perfectly while the screen stayed black -- a demo you cannot see, which is a
+# special kind of useless.
+def unit_cube():
+    faces = [
+        ((0, 0, 1),  [(-0.5,-0.5, 0.5), ( 0.5,-0.5, 0.5), ( 0.5, 0.5, 0.5), (-0.5, 0.5, 0.5)]),
+        ((0, 0,-1),  [( 0.5,-0.5,-0.5), (-0.5,-0.5,-0.5), (-0.5, 0.5,-0.5), ( 0.5, 0.5,-0.5)]),
+        ((1, 0, 0),  [( 0.5,-0.5, 0.5), ( 0.5,-0.5,-0.5), ( 0.5, 0.5,-0.5), ( 0.5, 0.5, 0.5)]),
+        ((-1, 0, 0), [(-0.5,-0.5,-0.5), (-0.5,-0.5, 0.5), (-0.5, 0.5, 0.5), (-0.5, 0.5,-0.5)]),
+        ((0, 1, 0),  [(-0.5, 0.5, 0.5), ( 0.5, 0.5, 0.5), ( 0.5, 0.5,-0.5), (-0.5, 0.5,-0.5)]),
+        ((0,-1, 0),  [(-0.5,-0.5,-0.5), ( 0.5,-0.5,-0.5), ( 0.5,-0.5, 0.5), (-0.5,-0.5, 0.5)]),
+    ]
+    verts, idx = [], []
+    uv = [(0, 0), (1, 0), (1, 1), (0, 1)]
+    for normal, corners in faces:
+        base = len(verts)
+        for c, t in zip(corners, uv):
+            verts.append({"position": list(c), "normal": list(normal), "uv": list(t)})
+        idx += [base + 0, base + 1, base + 2, base + 0, base + 2, base + 3]
+    return {"vertexCount": len(verts), "indexCount": len(idx),
+            "vertices": verts, "indices": idx}
+
+CUBE = unit_cube()
+
 def add(name, **kw):
     e = {"id": next_id[0], "name": {"name": name}}
     next_id[0] += 1
@@ -54,6 +82,7 @@ def box(name, pos, size, surface):
     """A slab. The collider is what the acoustics reads; the mesh is what you see."""
     add(name,
         transform=xform(pos, size),
+        mesh=dict(CUBE),
         material={"baseColor": list(COLOUR.get(surface, (0.7, 0.7, 0.7))),
                   "metallic": 0.0, "roughness": 0.85, "surfaceMaterial": surface},
         boxCollider={"size": list(size), "center": [0, 0, 0],
@@ -126,6 +155,7 @@ for label, cx in (("Corridor West", -10.7), ("Corridor East", 10.7)):
 def source(name, pos, clip, volume=1.0):
     add(name,
         transform=xform(pos, (0.4, 0.4, 0.4)),
+        mesh=dict(CUBE),
         material={"baseColor": [0.95, 0.78, 0.30], "metallic": 0.1,
                   "roughness": 0.35, "emissiveColor": [0.7, 0.45, 0.12],
                   "emissiveStrength": 2.0},
@@ -142,9 +172,20 @@ source("Projector - carpeted basement", (21.0, 1.2, BACK), "assets/projector.wav
 
 add("Player",
     transform=xform((0.0, 0.9, 2.4), (0.7, 1.7, 0.7)),
+    mesh=dict(CUBE),
     material={"baseColor": [0.92, 0.92, 0.96], "metallic": 0.0, "roughness": 0.6},
     thirdPerson={"moveSpeed": 5.0, "jumpForce": 6.5,
                  "cameraDistance": 4.0, "cameraHeight": 1.7})
+
+# The trigger.
+#
+# A demo of a ROOM needs something you fire and then listen to the end of. Three
+# looping projector hums were not that -- a drone fills the gap a tail lives in,
+# so every room sounds like a drone. SPACE claps, P silences the projectors.
+add("Room Clap",
+    transform=xform((0.0, 1.0, 0.0)),
+    scriptComponent={"scripts": [{"path": "scripts/RoomClap.as", "class": "RoomClap",
+                                  "enabled": True, "properties": {}}]})
 
 add("MainCam",
     transform=xform((0.0, 2.2, 8.0), rot=(-0.07, 0, 0, 0.9975)),
@@ -155,16 +196,32 @@ add("MainCam",
 
 add("Sun",
     transform=xform((0, 12, 0), rot=(-0.38, 0.22, 0.09, 0.89)),
-    light={"type": 0, "color": [1.0, 0.97, 0.92], "intensity": 1.2})
+    light={"type": 0, "color": [1.0, 0.97, 0.92], "intensity": 0.20})
 
-for label, cx in (("Kitchen Lamp", -21.0), ("Hall Lamp", 0.0), ("Basement Lamp", 21.0)):
+# Lamps, at an intensity you can look at.
+#
+# These were 16 and 8, which blew the rooms out to white -- a demo nobody can
+# see. A point light at intensity 16 with a 15 metre range in a room 3.4 metres
+# tall is roughly a floodlight two feet above your head. Values here are the
+# ones that leave the surfaces readable, which matters more than usual in this
+# scene: the whole point is to SEE that the kitchen is tiled and the basement is
+# carpeted while hearing the difference.
+# These intensities were set BY HAND, in the editor, by a person looking at the
+# scene, and are copied back here so regenerating does not throw the work away.
+# They are not uniform on purpose: a dark carpeted basement and a bright tiled
+# kitchen want different lamps, and the value that makes each room readable is
+# not something this script can compute.
+for label, cx, watts in (("Kitchen Lamp", -21.0, 1.1),
+                         ("Hall Lamp", 0.0, 3.3),
+                         ("Basement Lamp", 21.0, 1.8)):
     add(label,
         transform=xform((cx, H - 0.5, 0)),
-        light={"type": 1, "color": [1.0, 0.95, 0.86], "intensity": 16.0, "range": 15.0})
-for label, cx in (("Corridor West Lamp", -10.7), ("Corridor East Lamp", 10.7)):
+        light={"type": 1, "color": [1.0, 0.95, 0.86], "intensity": watts, "range": 15.0})
+for label, cx, watts in (("Corridor West Lamp", -10.7, 0.7),
+                         ("Corridor East Lamp", 10.7, 1.3)):
     add(label,
         transform=xform((cx, H - 0.6, 0)),
-        light={"type": 1, "color": [1.0, 0.93, 0.82], "intensity": 8.0, "range": 8.0})
+        light={"type": 1, "color": [1.0, 0.93, 0.82], "intensity": watts, "range": 8.0})
 
 scene = {"version": "1.0", "entities": entities}
 io.open("Examples/RoomAcoustics/scenes/Main.enjin", "w", encoding="utf-8").write(

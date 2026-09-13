@@ -3,9 +3,14 @@
  "version": "1.0",
  "scenes": [
   {
-   "path": "scenes/Main.enjin",
+   "path": "scenes/Range.enjin",
    "buildIndex": 0,
    "isStartScene": true
+  },
+  {
+   "path": "scenes/Main.enjin",
+   "buildIndex": 1,
+   "isStartScene": false
   }
  ]
 }
