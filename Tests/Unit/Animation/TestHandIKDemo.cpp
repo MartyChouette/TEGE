@@ -20,6 +20,7 @@
 #include "Enjin/ECS/Components/HandIKComponent.h"
 #include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/ECS/Components/Transform.h"
+#include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/Scene/SceneSerializer.h"
@@ -144,7 +145,27 @@ ENJIN_TEST(HandIKDemo, TheRigsOwnFingersLandOnTheCountersOwnHeight) {
     const auto* handT = world.GetComponent<ECS::TransformComponent>(handEnt);
     ENJIN_ASSERT_TRUE(playerT && camT && handT);
 
-    const f32 handY = playerT->position.y + camT->position.y + handT->position.y;
+    // The eye is NOT player.y + the camera child's offset.
+    //
+    // FirstPersonController owns the camera: it overwrites that transform every
+    // frame with player.position.y + currentHeight, which follows
+    // standingHeight. Modelling it the other way is what made an earlier version
+    // of this test agree with a scene the runtime did not produce -- the numbers
+    // happened to match while the camera offset happened to equal the standing
+    // height, and stopped matching the moment either moved.
+    const auto* fp = world.GetComponent<ECS::FirstPersonController>(FindByName(world, "Player"));
+    ENJIN_ASSERT_TRUE(fp != nullptr);
+    const f32 eyeY = playerT->position.y + fp->standingHeight;
+
+    // The hand hangs off the PLAYER, not the camera, so its local Y is measured
+    // from the capsule centre. It is parented that way because a child of the
+    // camera entity does not render correctly in that camera's view -- the
+    // controller rewrites the camera transform every frame without invalidating
+    // its children's cached world matrices. See the note in build_scene.py.
+    const f32 handY = playerT->position.y + handT->position.y;
+    std::printf("    capsule %.2f + standing %.2f = eye %.2f\n",
+                playerT->position.y, fp->standingHeight, eyeY);
+    (void)camT;
     const f32 counterY = CounterTopY(world);
     const f32 gap = handY - counterY;
 

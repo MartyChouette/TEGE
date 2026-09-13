@@ -1,4 +1,5 @@
 #include "Enjin/ECS/Systems/ControllerSystem.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/Components/Ladder.h"
 #include "Enjin/ECS/Components/WaterVolume.h"
 #include "Enjin/Effects/InteractiveWater.h"
@@ -82,7 +83,37 @@ void ControllerSystem::UpdateGameCameraTransform(const Math::Vector3& position, 
     if (m_GameCameraEntity != INVALID_ENTITY && m_World) {
         auto* camTransform = m_World->GetComponent<TransformComponent>(m_GameCameraEntity);
         if (camTransform) {
-            camTransform->position = position;
+            // A camera entity may have a PARENT, and TransformComponent is
+            // local to it.
+            //
+            // Writing the world eye position straight in was silently wrong for
+            // any camera parented to the thing it follows -- which is the
+            // obvious way to build a first-person rig, and the way a person
+            // does it before finding out that the controller already moves the
+            // camera. The parent transform is then applied on top: a player at
+            // (-6, 0.9, -2) with its camera child written to world (-6, 2.65,
+            // -2) put the camera at (-12, 3.55, -4), and anything attached to
+            // the camera -- a viewmodel, a held tool, a hand -- went outside the
+            // level with it. Nothing errors; the view still renders, because the
+            // renderer reads the entity's WORLD matrix and that is where the
+            // camera now is.
+            //
+            // So convert into the parent's space when there is one.
+            Math::Vector3 localPosition = position;
+            if (m_World->HasComponent<ParentComponent>(m_GameCameraEntity)) {
+                const Entity parent = m_World->GetComponent<ParentComponent>(m_GameCameraEntity)->parent;
+                if (m_World->IsValid(parent)) {
+                    const Math::Matrix4 toParent = ComputeWorldMatrix(m_World, parent).Inverse();
+                    localPosition = Math::Vector3(
+                        toParent.m[0] * position.x + toParent.m[4] * position.y +
+                            toParent.m[8] * position.z + toParent.m[12],
+                        toParent.m[1] * position.x + toParent.m[5] * position.y +
+                            toParent.m[9] * position.z + toParent.m[13],
+                        toParent.m[2] * position.x + toParent.m[6] * position.y +
+                            toParent.m[10] * position.z + toParent.m[14]);
+                }
+            }
+            camTransform->position = localPosition;
             // Compute rotation quaternion from look-at direction
             Math::Vector3 fwd = target - position;
             f32 fwdLen = fwd.Length();

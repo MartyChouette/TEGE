@@ -455,9 +455,9 @@
    },
    "material": {
     "baseColor": [
-     0.62,
-     0.62,
-     0.6
+     0.34,
+     0.34,
+     0.33
     ],
     "metallic": 0.0,
     "roughness": 0.85,
@@ -937,9 +937,9 @@
    },
    "material": {
     "baseColor": [
-     0.83,
-     0.8,
-     0.75
+     0.52,
+     0.5,
+     0.47
     ],
     "metallic": 0.0,
     "roughness": 0.85,
@@ -1419,9 +1419,9 @@
    },
    "material": {
     "baseColor": [
-     0.83,
-     0.8,
-     0.75
+     0.52,
+     0.5,
+     0.47
     ],
     "metallic": 0.0,
     "roughness": 0.85,
@@ -1901,9 +1901,9 @@
    },
    "material": {
     "baseColor": [
-     0.83,
-     0.8,
-     0.75
+     0.52,
+     0.5,
+     0.47
     ],
     "metallic": 0.0,
     "roughness": 0.85,
@@ -2383,9 +2383,9 @@
    },
    "material": {
     "baseColor": [
-     0.83,
-     0.8,
-     0.75
+     0.52,
+     0.5,
+     0.47
     ],
     "metallic": 0.0,
     "roughness": 0.85,
@@ -2865,9 +2865,9 @@
    },
    "material": {
     "baseColor": [
-     0.83,
-     0.8,
-     0.75
+     0.52,
+     0.5,
+     0.47
     ],
     "metallic": 0.0,
     "roughness": 0.85,
@@ -2901,7 +2901,7 @@
    "transform": {
     "position": [
      -3.5,
-     1.11,
+     1.3299999999999998,
      -3.2
     ],
     "rotation": [
@@ -3347,9 +3347,9 @@
    },
    "material": {
     "baseColor": [
-     0.7,
-     0.68,
-     0.63
+     0.3,
+     0.34,
+     0.4
     ],
     "metallic": 0.0,
     "roughness": 0.85,
@@ -3383,7 +3383,7 @@
    "transform": {
     "position": [
      -3.5,
-     0.54,
+     0.6449999999999999,
      -3.3
     ],
     "rotation": [
@@ -3394,7 +3394,7 @@
     ],
     "scale": [
      7.0,
-     1.06,
+     1.2899999999999998,
      0.55
     ],
     "visible": true
@@ -3829,9 +3829,9 @@
    },
    "material": {
     "baseColor": [
-     0.55,
-     0.38,
-     0.22
+     0.42,
+     0.26,
+     0.14
     ],
     "metallic": 0.0,
     "roughness": 0.85,
@@ -3840,7 +3840,7 @@
    "boxCollider": {
     "size": [
      7.0,
-     1.06,
+     1.2899999999999998,
      0.55
     ],
     "center": [
@@ -3865,7 +3865,7 @@
    "transform": {
     "position": [
      2.6,
-     1.11,
+     1.3299999999999998,
      -3.2
     ],
     "rotation": [
@@ -4311,9 +4311,9 @@
    },
    "material": {
     "baseColor": [
-     0.7,
-     0.68,
-     0.63
+     0.3,
+     0.34,
+     0.4
     ],
     "metallic": 0.0,
     "roughness": 0.85,
@@ -4347,7 +4347,7 @@
    "transform": {
     "position": [
      2.6,
-     0.54,
+     0.6449999999999999,
      -3.3
     ],
     "rotation": [
@@ -4358,7 +4358,7 @@
     ],
     "scale": [
      2.6,
-     1.06,
+     1.2899999999999998,
      0.55
     ],
     "visible": true
@@ -4793,9 +4793,9 @@
    },
    "material": {
     "baseColor": [
-     0.55,
-     0.38,
-     0.22
+     0.42,
+     0.26,
+     0.14
     ],
     "metallic": 0.0,
     "roughness": 0.85,
@@ -4804,7 +4804,7 @@
    "boxCollider": {
     "size": [
      2.6,
-     1.06,
+     1.2899999999999998,
      0.55
     ],
     "center": [
@@ -4829,7 +4829,7 @@
    "transform": {
     "position": [
      3.0,
-     1.46,
+     1.63,
      2.6
     ],
     "rotation": [
@@ -5275,9 +5275,9 @@
    },
    "material": {
     "baseColor": [
-     0.55,
-     0.38,
-     0.22
+     0.42,
+     0.26,
+     0.14
     ],
     "metallic": 0.0,
     "roughness": 0.85,
@@ -5311,7 +5311,7 @@
    "transform": {
     "position": [
      0.8,
-     0.72,
+     0.7999999999999999,
      2.7
     ],
     "rotation": [
@@ -5322,7 +5322,7 @@
     ],
     "scale": [
      0.1,
-     1.45,
+     1.5999999999999999,
      0.2
     ],
     "visible": true
@@ -5757,9 +5757,9 @@
    },
    "material": {
     "baseColor": [
-     0.55,
-     0.38,
-     0.22
+     0.42,
+     0.26,
+     0.14
     ],
     "metallic": 0.0,
     "roughness": 0.85,
@@ -5768,7 +5768,7 @@
    "boxCollider": {
     "size": [
      0.1,
-     1.45,
+     1.5999999999999999,
      0.2
     ],
     "center": [
@@ -5793,7 +5793,7 @@
    "transform": {
     "position": [
      5.2,
-     0.72,
+     0.7999999999999999,
      2.7
     ],
     "rotation": [
@@ -5804,7 +5804,7 @@
     ],
     "scale": [
      0.1,
-     1.45,
+     1.5999999999999999,
      0.2
     ],
     "visible": true
@@ -6239,9 +6239,9 @@
    },
    "material": {
     "baseColor": [
-     0.55,
-     0.38,
-     0.22
+     0.42,
+     0.26,
+     0.14
     ],
     "metallic": 0.0,
     "roughness": 0.85,
@@ -6250,7 +6250,7 @@
    "boxCollider": {
     "size": [
      0.1,
-     1.45,
+     1.5999999999999999,
      0.2
     ],
     "center": [
@@ -6275,7 +6275,7 @@
    "transform": {
     "position": [
      -4.0,
-     1.28,
+     1.47,
      2.4
     ],
     "rotation": [
@@ -6721,9 +6721,9 @@
    },
    "material": {
     "baseColor": [
-     0.7,
-     0.68,
-     0.63
+     0.3,
+     0.34,
+     0.4
     ],
     "metallic": 0.0,
     "roughness": 0.85,
@@ -6757,7 +6757,7 @@
    "transform": {
     "position": [
      -6.3,
-     0.64,
+     0.735,
      2.4
     ],
     "rotation": [
@@ -6768,7 +6768,7 @@
     ],
     "scale": [
      0.08,
-     1.28,
+     1.47,
      0.08
     ],
     "visible": true
@@ -7203,9 +7203,9 @@
    },
    "material": {
     "baseColor": [
-     0.7,
-     0.68,
-     0.63
+     0.3,
+     0.34,
+     0.4
     ],
     "metallic": 0.0,
     "roughness": 0.85,
@@ -7214,7 +7214,7 @@
    "boxCollider": {
     "size": [
      0.08,
-     1.28,
+     1.47,
      0.08
     ],
     "center": [
@@ -7239,7 +7239,7 @@
    "transform": {
     "position": [
      -1.7,
-     0.64,
+     0.735,
      2.4
     ],
     "rotation": [
@@ -7250,7 +7250,7 @@
     ],
     "scale": [
      0.08,
-     1.28,
+     1.47,
      0.08
     ],
     "visible": true
@@ -7685,9 +7685,9 @@
    },
    "material": {
     "baseColor": [
-     0.7,
-     0.68,
-     0.63
+     0.3,
+     0.34,
+     0.4
     ],
     "metallic": 0.0,
     "roughness": 0.85,
@@ -7696,7 +7696,7 @@
    "boxCollider": {
     "size": [
      0.08,
-     1.28,
+     1.47,
      0.08
     ],
     "center": [
@@ -7721,7 +7721,7 @@
    "transform": {
     "position": [
      -6.0,
-     0.9,
+     0.85,
      -2.0
     ],
     "rotation": [
@@ -7740,7 +7740,9 @@
    "firstPerson": {
     "moveSpeed": 3.2,
     "jumpForce": 6.0,
-    "mouseSensitivity": 2.0
+    "mouseSensitivity": 2.0,
+    "standingHeight": 0.85,
+    "crouchingHeight": 0.51
    },
    "rigidbody": {
     "bodyType": 0,
@@ -7765,7 +7767,7 @@
    "transform": {
     "position": [
      0.0,
-     0.78,
+     0.0,
      0.0
     ],
     "rotation": [
@@ -7807,14 +7809,14 @@
    "transform": {
     "position": [
      0.22,
-     -0.45,
-     0.75
+     0.6,
+     -0.75
     ],
     "rotation": [
      0,
+     1,
      0,
-     0,
-     1
+     0
     ],
     "scale": [
      1,
@@ -7823,7 +7825,7 @@
     ],
     "visible": true
    },
-   "parent": 18,
+   "parent": 17,
    "mesh": {
     "vertexCount": 384,
     "indexCount": 576,
@@ -19162,12 +19164,18 @@
    },
    "material": {
     "baseColor": [
-     0.86,
-     0.68,
-     0.6
+     0.95,
+     0.35,
+     0.2
     ],
     "metallic": 0.0,
-    "roughness": 0.75
+    "roughness": 0.6,
+    "emissiveColor": [
+     0.25,
+     0.05,
+     0.0
+    ],
+    "emissiveStrength": 0.6
    },
    "skeleton": {
     "name": "PlaceholderHand",
@@ -20083,7 +20091,7 @@
      0.97,
      0.92
     ],
-    "intensity": 0.2
+    "intensity": 0.12
    }
   },
   {
@@ -20117,7 +20125,7 @@
      0.95,
      0.88
     ],
-    "intensity": 1.15,
+    "intensity": 0.85,
     "range": 9.0
    }
   },
@@ -20152,7 +20160,7 @@
      0.95,
      0.88
     ],
-    "intensity": 1.15,
+    "intensity": 0.85,
     "range": 9.0
    }
   },
@@ -20187,7 +20195,7 @@
      0.95,
      0.88
     ],
-    "intensity": 1.15,
+    "intensity": 0.85,
     "range": 9.0
    }
   }

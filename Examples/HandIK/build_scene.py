@@ -28,12 +28,18 @@ next_id = [1]
 # SurfaceMaterial ordinals (see ECS/Components/SurfaceMaterial.h).
 WOOD, STONE, CONCRETE, DRYWALL, TILE = 2, 3, 10, 12, 13
 
+# Deliberately far apart, because a demo you cannot read is not a demo.
+#
+# The first pass used drywall white walls, stone white counters and a pale hand
+# in an over-lit room, and the result was a white rectangle in which none of the
+# three could be told from the others. These are chosen for contrast first and
+# plausibility second.
 COLOUR = {
-    WOOD:     (0.55, 0.38, 0.22),
-    STONE:    (0.70, 0.68, 0.63),
-    CONCRETE: (0.62, 0.62, 0.60),
-    DRYWALL:  (0.83, 0.80, 0.75),
-    TILE:     (0.88, 0.90, 0.91),
+    WOOD:     (0.42, 0.26, 0.14),
+    STONE:    (0.30, 0.34, 0.40),
+    CONCRETE: (0.34, 0.34, 0.33),
+    DRYWALL:  (0.52, 0.50, 0.47),
+    TILE:     (0.62, 0.66, 0.68),
 }
 
 
@@ -200,6 +206,51 @@ def build_hand():
 BONES, HAND_MESH = build_hand()
 
 
+# Height is the whole experiment, so it is arithmetic rather than taste -- and
+# it took three wrong models of this rig to get right.
+#
+# WHERE THE EYE ACTUALLY IS. Not player.y + the camera child's offset, which is
+# what the first two versions assumed. FirstPersonController OWNS the camera: it
+# writes the camera entity's transform every frame to
+# player.position.y + currentHeight, so whatever offset the camera is authored
+# with is overwritten on the first update. currentHeight follows standingHeight,
+# which IS authorable, so the eye height is a number this file chooses rather
+# than one it has to discover.
+#
+# And player.position is the CAPSULE CENTRE, which physics rests at
+# radius + height/2 = 0.3 + 0.55 = 0.85 above the floor. With the default 1.8
+# standing height that put the eye at 2.65, which is what the editor reported
+# and what none of the earlier arithmetic predicted.
+#
+#   capsule centre, resting                        = 0.85
+#   standingHeight (authored below)                = 0.85
+#   eye                                            = 1.70
+#   hand      eye - 0.45                           = 1.25
+#   counter   1.13 centre + 0.08/2 slab            = 1.17
+#   gap                                            = 0.08
+#
+# REACH. Finger reaches are 0.070 to 0.095, so the 0.08 gap sits INSIDE that
+# spread on purpose: Index, Middle and Ring make it, Little does not, Thumb is
+# on the line. A hand parked where every finger reaches would look identical
+# whether the solve were per-finger or one canned pose, and prove nothing.
+#
+# VISIBILITY. At distance d a 70 degree vertical FOV shows 0.70d above and below
+# the axis. The hand is 0.75 forward and 0.45 down: 0.525 of headroom against
+# 0.45 of drop. An earlier version had 0.45 forward and 0.61 down and the hand
+# sat below the bottom edge, so the scene rendered perfectly with its subject
+# out of frame.
+CAPSULE_REST = 0.85          # radius 0.3 + height 1.1 / 2
+STANDING_HEIGHT = 0.85       # authored, so the eye lands at a human height
+EYE = CAPSULE_REST + STANDING_HEIGHT
+HAND_FORWARD = 0.75
+HAND_DROP = 0.25
+HAND_Y = EYE - HAND_DROP
+COUNTER_TOP_Y = HAND_Y - 0.08
+
+assert 0.70 * HAND_FORWARD > HAND_DROP, (
+    "the hand is below the bottom of the frame: raise the counter, move the "
+    "hand forward, or widen the FOV")
+
 # ---------------------------------------------------------------------------
 # The room, and the things to put a hand on.
 # ---------------------------------------------------------------------------
@@ -216,26 +267,32 @@ box("Wall +X",   (W / 2, H / 2, 0),     (T, H, D),  DRYWALL)
 
 # THE COUNTER. 0.95 high, which is a kitchen worktop, and long enough to walk
 # the length of while the hand stays on it.
-box("Counter Top",   (-3.5, 1.11, -3.2), (7.0, 0.08, 0.65), STONE)
-box("Counter Body",  (-3.5, 0.54, -3.3), (7.0, 1.06, 0.55), WOOD)
+box("Counter Top",   (-3.5, COUNTER_TOP_Y - 0.04, -3.2), (7.0, 0.08, 0.65), STONE)
+box("Counter Body",  (-3.5, (COUNTER_TOP_Y - 0.08) / 2.0, -3.3),
+    (7.0, COUNTER_TOP_Y - 0.08, 0.55), WOOD)
 
 # THE GAP. Deliberate, and the only part of this scene that tests a NEGATIVE:
 # over open air the fingers must hang where the animation left them rather than
 # snapping to a surface that is not there.
-box("Counter Top 2", (2.6, 1.11, -3.2),  (2.6, 0.08, 0.65), STONE)
-box("Counter Body 2",(2.6, 0.54, -3.3),  (2.6, 1.06, 0.55), WOOD)
+box("Counter Top 2", (2.6, COUNTER_TOP_Y - 0.04, -3.2),  (2.6, 0.08, 0.65), STONE)
+box("Counter Body 2",(2.6, (COUNTER_TOP_Y - 0.08) / 2.0, -3.3),
+    (2.6, COUNTER_TOP_Y - 0.08, 0.55), WOOD)
 
 # THE SHELF LIP. A plank with its edge in free air, which is the case a point
 # target cannot express: fingers have to curl OVER it.
-box("Shelf Plank",   (3.0, 1.46, 2.6),   (5.0, 0.06, 0.40), WOOD)
-box("Shelf Post L",  (0.8, 0.72, 2.7),   (0.10, 1.45, 0.20), WOOD)
-box("Shelf Post R",  (5.2, 0.72, 2.7),   (0.10, 1.45, 0.20), WOOD)
+box("Shelf Plank",   (3.0, COUNTER_TOP_Y + 0.26, 2.6), (5.0, 0.06, 0.40), WOOD)
+box("Shelf Post L",  (0.8, (COUNTER_TOP_Y + 0.23) / 2.0, 2.7),
+    (0.10, COUNTER_TOP_Y + 0.23, 0.20), WOOD)
+box("Shelf Post R",  (5.2, (COUNTER_TOP_Y + 0.23) / 2.0, 2.7),
+    (0.10, COUNTER_TOP_Y + 0.23, 0.20), WOOD)
 
 # A RAILING at a different height, so the hand has to deal with a surface that
 # is not the one it just left.
-box("Rail",          (-4.0, 1.28, 2.4),  (5.0, 0.07, 0.07), STONE)
-box("Rail Post L",   (-6.3, 0.64, 2.4),  (0.08, 1.28, 0.08), STONE)
-box("Rail Post R",   (-1.7, 0.64, 2.4),  (0.08, 1.28, 0.08), STONE)
+box("Rail",          (-4.0, COUNTER_TOP_Y + 0.10, 2.4), (5.0, 0.07, 0.07), STONE)
+box("Rail Post L",   (-6.3, (COUNTER_TOP_Y + 0.10) / 2.0, 2.4),
+    (0.08, COUNTER_TOP_Y + 0.10, 0.08), STONE)
+box("Rail Post R",   (-1.7, (COUNTER_TOP_Y + 0.10) / 2.0, 2.4),
+    (0.08, COUNTER_TOP_Y + 0.10, 0.08), STONE)
 
 # ---------------------------------------------------------------------------
 # The player, the camera, and the hand hanging off it.
@@ -255,62 +312,55 @@ box("Rail Post R",   (-1.7, 0.64, 2.4),  (0.08, 1.28, 0.08), STONE)
 # in this engine are WORLD space and are not multiplied by the transform. A
 # camera or a viewmodel must never hang off a non-uniformly scaled parent.
 player = add("Player",
-             transform=xform((-6.0, 0.9, -2.0), (1.0, 1.0, 1.0)),
+             transform=xform((-6.0, CAPSULE_REST, -2.0), (1.0, 1.0, 1.0)),
              firstPerson={"moveSpeed": 3.2, "jumpForce": 6.0,
-                          "mouseSensitivity": 2.0},
+                          "mouseSensitivity": 2.0,
+                          "standingHeight": STANDING_HEIGHT,
+                          "crouchingHeight": STANDING_HEIGHT * 0.6},
              rigidbody={"bodyType": 0, "mass": 70.0, "useGravity": True},
              capsuleCollider={"radius": 0.3, "height": 1.1, "center": [0, 0, 0]})
 
 cam = add("MainCam",
-          transform=xform((0.0, 0.78, 0.0), rot=(0, 0, 0, 1)),
+          # Zero, and it does not matter: FirstPersonController writes this
+    # transform every frame from the player position and standingHeight.
+    # A non-zero offset here would read as load-bearing and be ignored.
+    transform=xform((0.0, 0.0, 0.0), rot=(0, 0, 0, 1)),
           parent=player["id"],
           camera={"projectionType": 0, "fieldOfView": 70, "nearPlane": 0.05,
                   "farPlane": 200, "isActive": True, "priority": 0,
                   "clearColor": True, "clearDepth": True,
                   "backgroundColor": [0.06, 0.07, 0.09], "orthoSize": 10})
 
-# THE HAND. Parented to the camera, held out and to the right, palm down.
+# THE HAND. Parented to the PLAYER, not to the camera.
 #
-# Parenting to the camera rather than the player is what makes it first person:
-# the hand goes where you look, and the IK re-solves against whatever ends up
-# underneath it.
-# Height is the whole experiment, so it is arithmetic rather than taste -- and
-# it has to satisfy TWO constraints at once, which the first attempt did not.
+# Attaching it to the camera entity is the obvious way to build a viewmodel and
+# it does not work here. FirstPersonController rewrites the camera's
+# TransformComponent every frame, and doing so does not invalidate the cached
+# world matrices of its children, so anything hanging off the camera renders
+# from a transform that is not the one the view is using. The hand was drawn
+# outside the room, and from inside the game view it was not drawn at all --
+# while the Scene view showed it happily, because that path resolves transforms
+# differently.
 #
-#   eye      player 0.90 + camera 0.78            = 1.68
-#   hand     eye - 0.45                           = 1.23
-#   counter  1.11 centre + 0.08/2 slab            = 1.15
-#   gap                                           = 0.08
+# Parenting to the player works, and costs one thing worth stating plainly: the
+# hand follows YAW but not PITCH, because the player yaws and only the camera
+# pitches. Look up or down and the hand stays level. For a demo about whether
+# fingertips land on a worktop that is acceptable; for a real viewmodel it is
+# not, and the fix belongs in the engine rather than in this file.
 #
-# REACH. Finger reaches are 0.070 to 0.095, so the 0.08 gap sits INSIDE that
-# spread on purpose: Index, Middle and Ring make it, Little does not, Thumb is
-# on the line. A hand parked where every finger reaches would look identical
-# whether the solve were per-finger or one canned pose, and prove nothing.
-#
-# VISIBILITY, which the first version got wrong and only a screenshot caught.
-# At distance d in front of the eye, a 70 degree vertical FOV shows
-# d * tan(35) = 0.70d above and below the view axis. The hand was 0.45 forward
-# and 0.61 down, so it needed 0.61 < 0.315 to be on screen and was simply below
-# the bottom edge -- the scene rendered perfectly and the subject of the demo
-# was not in it.
-#
-# A hand low enough to rest on a 0.95 counter cannot be seen from an eye 0.6
-# above it at arm's length; the two constraints genuinely conflict. So the
-# counter went up to bar height, which shortens the drop to 0.45, and the hand
-# went further forward, which widens the cone:
-#
-#   0.70 * 0.75 forward = 0.525 of headroom, against 0.45 of drop.  Fits.
-HAND_FORWARD = 0.75
-HAND_DROP = 0.45
-assert 0.70 * HAND_FORWARD > HAND_DROP, (
-    "the hand is below the bottom of the frame: raise the counter, move the "
-    "hand forward, or widen the FOV")
-
+# Local Y is measured from the player origin (the capsule centre), so it is
+# EYE - HAND_DROP - CAPSULE_REST rather than just -HAND_DROP.
 add("RightHand",
-    transform=xform((0.22, -HAND_DROP, HAND_FORWARD), rot=(0, 0, 0, 1)),
-    parent=cam["id"],
+    transform=xform((0.22, EYE - HAND_DROP - CAPSULE_REST, -HAND_FORWARD),
+                    rot=(0, 1, 0, 0)),
+    parent=player["id"],
     mesh=HAND_MESH,
-    material={"baseColor": [0.86, 0.68, 0.60], "metallic": 0.0, "roughness": 0.75},
+    # Loud on purpose. This is the subject of the demo and it spent three
+    # attempts being invisible for three different reasons; a placeholder
+    # that cannot be found is not telling anybody anything.
+    material={"baseColor": [0.95, 0.35, 0.20], "metallic": 0.0,
+              "roughness": 0.6, "emissiveColor": [0.25, 0.05, 0.0],
+              "emissiveStrength": 0.6},
     skeleton={"name": "PlaceholderHand", "sourceAssetPath": "", "bones": BONES},
     # An animator with no clip. The entity has to have one to be picked up by
     # the renderer's animation pass at all, and IK no longer requires anything
@@ -350,12 +400,12 @@ add("RightHand",
 # highlight on the counter hides exactly that.
 add("Sun",
     transform=xform((0, 6, 0), rot=(-0.38, 0.22, 0.09, 0.89)),
-    light={"type": 0, "color": [1.0, 0.97, 0.92], "intensity": 0.20})
+    light={"type": 0, "color": [1.0, 0.97, 0.92], "intensity": 0.12})
 
 for i, x in enumerate((-5.0, 0.0, 5.0)):
     add("Lamp %d" % i,
         transform=xform((x, H - 0.5, 0.0)),
-        light={"type": 1, "color": [1.0, 0.95, 0.88], "intensity": 1.15, "range": 9.0})
+        light={"type": 1, "color": [1.0, 0.95, 0.88], "intensity": 0.85, "range": 9.0})
 
 scene = {"version": "1.0", "entities": entities}
 out_dir = "Examples/HandIK"
