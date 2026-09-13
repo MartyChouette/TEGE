@@ -268,9 +268,27 @@ R"ENJIN_API(
 // contract, and it is why one file serves a conversation, an interrogation or
 // a negotiation in different projects without a line of difference.
 //
-// THE SCENE HOLDS THE PIECES, THE RIG PICKS THEM. Runtime texture swapping is
-// not a thing in TEGE, so every layer piece exists as its own entity and the
-// rig toggles visibility. Attach this to the portrait ROOT; name the children by
+// TWO WAYS TO BUILD A BUST, and you should almost always want the second.
+//
+// This file used to say "runtime texture swapping is not a thing in TEGE", and
+// everything below was shaped by that. It is not true. Sprite_SetTexture is
+// registered, documented, implemented, and the engine already uses it on itself
+// in FaceCardSystem. The sentence was wrong and the cost of believing it was
+// structural: every variant of every layer had to pre-exist as its own entity,
+// which is 25-35 entities per bust, and nothing could point a bust at a
+// DIFFERENT character, so one rig showed one character permanently. A cast of
+// eight across two busts was 560 hand-placed entities or a scene per pairing.
+//
+//   ENTITY MODE (the original): every piece is its own child entity and the rig
+//   toggles visibility. Set layerPrefix, leave portraitDir empty. Kept working,
+//   because art already placed this way must keep running.
+//
+//   TEXTURE MODE (set portraitDir): six sprite entities per bust, one per role,
+//   each pointed at portraitDir + "/" + piece + ".png". A new expression is a
+//   file in a folder. A new character is one string, at runtime, so one template
+//   scene serves the whole cast.
+//
+// Attach this to the portrait ROOT. In ENTITY mode name the children by
 // convention:
 //
 //   base_head            brow_neutral  brow_raised  brow_furrowed
@@ -332,6 +350,19 @@ class PortraitRig : TegeBehavior {
     // "R_brow_neutral" and so on. A scene with one bust can leave it empty.
     [Property] string layerPrefix = "";
 
+    // TEXTURE MODE. Empty means entity mode, exactly as before.
+    //
+    // Set it to a character's art folder and the rig stops hunting for one
+    // entity per variant and instead points six sprites at files. The six are
+    // found as layerPrefix + "base" / "brow" / "eye" / "mouth" / "blush" / "fx",
+    // and a piece named "-" hides its sprite.
+    [Property] string portraitDir = "";
+
+    // What a piece file is called: portraitDir + "/" + role + "_" + piece + ext.
+    // Separate from the folder so a project with a different naming habit does
+    // not have to fork the rig.
+    [Property] string portraitExt = ".png";
+
     // Eye life. blinkEvery 0 turns blinking off, for a screenshot or for a
     // character whose eyes are covered.
     [Property] float blinkEvery = 3.4f;
@@ -364,9 +395,20 @@ class PortraitRig : TegeBehavior {
         Learn(PORTRAIT_EMOTES);
         if (emoteTable != "") Learn(emoteTable);
 
-        Show("base_head", true);
+        if (portraitDir != "") {
+            ClaimRoles();
+            // The base is always on and never changes with the emote, so it is
+            // pointed once here rather than every Set().
+            if (roleEnt.length() == 6 && roleEnt[5] != 0) {
+                Sprite_SetTexture(roleEnt[5], portraitDir + "/base_head" + portraitExt);
+                Entity_SetVisible(roleEnt[5], true);
+            }
+        } else {
+            Show("base_head", true);
+        }
         Set(startEmote);
 
+        Events_Listen("portrait_cast",  EventCallback(this.OnCastEvent));
         Events_Listen("portrait_emote", EventCallback(this.OnEmoteEvent));
         Events_Listen("portrait_speak", EventCallback(this.OnSpeakEvent));
         Events_Listen("portrait_look",  EventCallback(this.OnLookEvent));
@@ -388,7 +430,8 @@ class PortraitRig : TegeBehavior {
 
     void OnLookEvent(const string &in ev) {
         if (Mine(Events_CurrentString("who"))) LookAt(Events_CurrentInt("dir"));
-    }
+)ENJIN_API"
+R"ENJIN_API(    }
 
     // Register every layer piece a table mentions.
     void Learn(const string &in table) {
@@ -433,6 +476,10 @@ class PortraitRig : TegeBehavior {
     }
 
     void Claim(const string &in name) {
+        // In texture mode there is nothing to claim: one sprite per role, not
+        // one entity per variant. That is the whole saving.
+        if (portraitDir != "") return;
+
         for (uint i = 0; i < layerName.length(); i++)
             if (layerName[i] == name) return;
         uint64 e = Scene_FindEntity(layerPrefix + name);
@@ -442,13 +489,62 @@ class PortraitRig : TegeBehavior {
         else Entity_SetVisible(e, false);
     }
 
+    // The six role sprites, found once. Index matches Prefix(): brow, eye,
+    // mouth, blush, fx, and base last because it is not part of an emote row.
+    array<uint64> roleEnt;
+    array<string> roleName = { "brow", "eye", "mouth", "blush", "fx", "base" };
+
+    void ClaimRoles() {
+        roleEnt.resize(0);
+        for (uint i = 0; i < roleName.length(); i++) {
+            uint64 e = Scene_FindEntity(layerPrefix + roleName[i]);
+            roleEnt.insertLast(e);
+            // A missing ROLE is worth reporting, unlike a missing variant: it
+            // means the bust is not built, not that one drawing is late.
+            if (e == 0) absent.insertLast(roleName[i] + " (role sprite)");
+        }
+    }
+
+    // Point one role at one piece. "-" or "" hides it.
+    // In texture mode there is no `want` list to read a piece back out of, so
+    // blink and lip-sync need to know what the expression's own eye and mouth
+    // were in order to put them back. Without these the eyes stay shut after
+    // the first blink, which is a memorable way to ship a character.
+    string emoteEye = "open";
+    string emoteMouth = "neutral";
+
+    void ShowPiece(uint slot, const string &in piece) {
+        if (slot >= roleEnt.length()) return;
+        uint64 e = roleEnt[slot];
+        if (e == 0) return;
+        if (piece == "" || piece == "-") { Entity_SetVisible(e, false); return; }
+        Sprite_SetTexture(e, portraitDir + "/" + roleName[slot] + "_" + piece + portraitExt);
+        Entity_SetVisible(e, true);
+    }
+
     void Show(const string &in name, bool on) {
         for (uint i = 0; i < layerName.length(); i++) {
             if (layerName[i] != name) continue;
             if (layerEnt[i] != 0) Entity_SetVisible(layerEnt[i], on);
-)ENJIN_API"
-R"ENJIN_API(            return;
+            return;
         }
+    }
+
+    // WHICH CHARACTER THIS BUST IS, changeable at runtime.
+    //
+    // The thing the old design could not do at all. One template scene, a cast
+    // of any size: point the rig at another folder and re-apply the current
+    // expression. Ignored in entity mode, where the art IS the scene.
+    void SetCharacter(const string &in dir) {
+        if (dir == "" || dir == portraitDir) return;
+        portraitDir = dir;
+        string held = emote;
+        emote = "";          // force Set() past its early-out
+        Set(held == "" ? startEmote : held);
+    }
+
+    void OnCastEvent(const string &in ev) {
+        if (Mine(Events_CurrentString("who"))) SetCharacter(Events_CurrentString("dir"));
     }
 
     // ======================================================================
@@ -459,15 +555,28 @@ R"ENJIN_API(            return;
         if (row == "") row = Lookup(PORTRAIT_EMOTES, name);
         if (row == "") return;             // unknown emote: hold the last one
 
-        for (uint i = 0; i < want.length(); i++) Show(want[i], false);
-        want.resize(0);
-
         array<string> parts = Split(row, "|");
-        for (uint p = 0; p < parts.length() && p < 5; p++) {
-            if (parts[p] == "" || parts[p] == "-") continue;
-            string n = Prefix(p) + parts[p];
-            want.insertLast(n);
-            Show(n, true);
+
+        if (portraitDir != "") {
+            // Texture mode: every role is addressed every time, including the
+            // ones this emote turns OFF. Skipping them would leave the previous
+            // emote's blush or sweat drop on the face, which is the bug the
+            // entity path avoids by hiding `want` first.
+            for (uint p = 0; p < 5; p++) {
+                ShowPiece(p, p < parts.length() ? parts[p] : "-");
+            }
+            emoteEye = parts.length() > 1 ? parts[1] : "open";
+            emoteMouth = parts.length() > 2 ? parts[2] : "neutral";
+        } else {
+            for (uint i = 0; i < want.length(); i++) Show(want[i], false);
+            want.resize(0);
+
+            for (uint p = 0; p < parts.length() && p < 5; p++) {
+                if (parts[p] == "" || parts[p] == "-") continue;
+                string n = Prefix(p) + parts[p];
+                want.insertLast(n);
+                Show(n, true);
+            }
         }
         emote = name;
         blinking = false;
@@ -515,8 +624,12 @@ R"ENJIN_API(            return;
         if (talking == on) return;
         talking = on;
         if (!on) {
-            Show("mouth_mid", false);
-            MouthOfEmote(true);
+            if (portraitDir != "") {
+                ShowPiece(2, emoteMouth);
+            } else {
+                Show("mouth_mid", false);
+                MouthOfEmote(true);
+            }
             mouthOpen = false;
         }
         mouthT = 0.0f;
@@ -528,9 +641,20 @@ R"ENJIN_API(            return;
     }
 
     // Look toward whoever is talking: -1 left, 0 ahead, 1 right, 2 down. Only
-    // moves eyes that are plainly open, because teary / squeezed / happy-closed
+)ENJIN_API"
+R"ENJIN_API(    // moves eyes that are plainly open, because teary / squeezed / happy-closed
     // are all carrying the expression and must not be overwritten by a glance.
     void LookAt(int dir) {
+        if (portraitDir != "") {
+            // Same rule as the entity path: only eyes that are plainly open get
+            // to glance. A teary or squeezed eye is carrying the expression.
+            if (emoteEye != "open" && emoteEye != "left"
+                && emoteEye != "right" && emoteEye != "down") return;
+            emoteEye = dir < 0 ? "left" : (dir == 1 ? "right"
+                     : (dir == 2 ? "down" : "open"));
+            if (!blinking) ShowPiece(1, emoteEye);
+            return;
+        }
         for (uint i = 0; i < want.length(); i++) {
             if (want[i].substr(0, 4) != "eye_") continue;
             if (want[i] != "eye_open" && want[i] != "eye_left"
@@ -550,11 +674,19 @@ R"ENJIN_API(            return;
             blinkT += dt;
             if (!blinking && blinkT >= blinkEvery) {
                 blinking = true;  blinkT = 0.0f;
-                EyesTo(false);    Show("eye_closed", true);
+                if (portraitDir != "") {
+                    ShowPiece(1, "closed");
+                } else {
+                    EyesTo(false);    Show("eye_closed", true);
+                }
             } else if (blinking && blinkT >= blinkHold) {
                 blinking = false; blinkT = 0.0f;
-                Show("eye_closed", false);
-                EyesTo(true);
+                if (portraitDir != "") {
+                    ShowPiece(1, emoteEye);
+                } else {
+                    Show("eye_closed", false);
+                    EyesTo(true);
+                }
             }
         }
         if (talking && mouthRate > 0.0f) {
@@ -562,8 +694,12 @@ R"ENJIN_API(            return;
             if (mouthT >= 1.0f / mouthRate) {
                 mouthT = 0.0f;
                 mouthOpen = !mouthOpen;
-                Show("mouth_mid", mouthOpen);
-                MouthOfEmote(!mouthOpen);
+                if (portraitDir != "") {
+                    ShowPiece(2, mouthOpen ? "mid" : emoteMouth);
+                } else {
+                    Show("mouth_mid", mouthOpen);
+                    MouthOfEmote(!mouthOpen);
+                }
             }
         }
     }
@@ -1206,6 +1342,16 @@ static const char* s_Api8 = R"ENJIN_API(
 //   SetPosition(LerpVector3(startPos, endPos, t));
 
 // Easing functions — all take t in [0,1] and return [0,1]
+// Tween uses LerpVector3, which lives in Math.as.
+//
+// Declared rather than assumed. Without this the file compiles only when
+// the host script happens to have included Math.as first, and a project
+// that includes Tween.as on its own fails at TweenVector3 -- which does not
+// degrade to a missing function, it fails the whole module, so every script
+// in that project stops working and the error points inside the engine at a
+// file the author never opened.
+#include "Math.as"
+
 namespace Tween {
 
 // Linear (no easing)

@@ -26,10 +26,24 @@ extern ECS::World* s_BindingsWorld;
 static void Sprite_SetTexture(u64 id, const std::string& path) {
     if (!s_BindingsWorld) return;
     auto* sc = s_BindingsWorld->GetComponent<Sprite2DComponent>(static_cast<Entity>(id));
-    if (sc) {
-        sc->texturePath = path;
-        sc->spriteDirty = true;
-    }
+    if (!sc) return;
+    if (sc->texturePath == path) return;   // nothing to do, and no needless reload
+
+    sc->texturePath = path;
+
+    // Forget the OLD texture's pixel size.
+    //
+    // RenderSystem only resolves texPixelWidth when it is zero, so leaving it
+    // set means a swap to a differently sized image keeps the previous image's
+    // dimensions and computes its sub-rect UVs against them. For a sprite
+    // drawing a full texture (srcWidth 0) the UVs are 0..1 and nothing shows;
+    // for an atlas or any sub-rect sprite the new art is sampled through the
+    // old one's grid, which reads as the swap being broken rather than as a
+    // stale number. Half-working is how "runtime texture swapping is not a
+    // thing in TEGE" ends up written down as fact.
+    sc->texPixelWidth = 0.0f;
+    sc->texPixelHeight = 0.0f;
+    sc->spriteDirty = true;
 }
 
 static std::string Sprite_GetTexture(u64 id) {

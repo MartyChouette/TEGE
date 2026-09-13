@@ -4,6 +4,16 @@
 //   SetPosition(LerpVector3(startPos, endPos, t));
 
 // Easing functions — all take t in [0,1] and return [0,1]
+// Tween uses LerpVector3, which lives in Math.as.
+//
+// Declared rather than assumed. Without this the file compiles only when
+// the host script happens to have included Math.as first, and a project
+// that includes Tween.as on its own fails at TweenVector3 -- which does not
+// degrade to a missing function, it fails the whole module, so every script
+// in that project stops working and the error points inside the engine at a
+// file the author never opened.
+#include "Math.as"
+
 namespace Tween {
 
 // Linear (no easing)

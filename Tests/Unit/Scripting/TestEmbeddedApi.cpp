@@ -21,6 +21,8 @@
 
 #include "EnjinTest.h"
 #include "Enjin/Scripting/ScriptEngine.h"
+#include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Logging/Log.h"
 
 #include <cstdio>
 #include <filesystem>
@@ -148,6 +150,78 @@ ENJIN_TEST(EmbeddedApi, AnUnknownNameReturnsNothingRatherThanSomethingElse) {
     // into a mystery about why a class went missing.
     ENJIN_EXPECT_TRUE(Scripting::GetEmbeddedApiSource("NotAThing.as") == nullptr);
     ENJIN_EXPECT_TRUE(Scripting::GetEmbeddedApiSource("") == nullptr);
+}
+
+// And every one of them has to COMPILE.
+//
+// Nothing in this repo compiled enjin_api/*.as until this test. TestDocSamples
+// compiles the snippets in docs/, TestExampleScripts compiles the scripts under
+// Examples/ and explicitly SKIPS enjin_api, and the embedding step is a text
+// copy that would happily embed a syntax error.
+//
+// These are the scripts injected into every project that does not override
+// them. A broken one does not degrade anything gracefully: it fails the module
+// compile, so every game script in every project stops working at once, and the
+// error points inside the engine's own API at a file the author never opened.
+//
+// That was a real hole rather than a theoretical one. PortraitRig.as was edited
+// today and there was no way to find out whether it still parsed short of
+// launching the editor and loading a VN scene.
+ENJIN_TEST(EmbeddedApi, EveryApiScriptCompiles) {
+    // Arrange
+    const fs::path apiDir = fs::path(ENJIN_REPO_ROOT) / "enjin_api";
+    if (!fs::is_directory(apiDir)) {
+        ENJIN_SKIP("enjin_api/ not found next to the repo root");
+        return;
+    }
+
+    std::vector<fs::path> scripts;
+    for (const auto& entry : fs::directory_iterator(apiDir)) {
+        if (entry.is_regular_file() && entry.path().extension() == ".as") {
+            scripts.push_back(entry.path());
+        }
+    }
+    std::sort(scripts.begin(), scripts.end());
+    ENJIN_ASSERT_TRUE(scripts.size() >= 5);
+
+    Logger::Get().Initialize("test_embedded_api.log");
+
+    Scripting::ScriptEngine engine;
+    ENJIN_ASSERT_TRUE(engine.Initialize());
+    Scripting::RegisterAllBindings(engine.GetASEngine());
+    engine.SetScriptDirectory(apiDir.string());
+
+    // Act / Assert
+    usize compiled = 0;
+    for (const fs::path& path : scripts) {
+        const std::string name = path.filename().string();
+
+        // TegeBehavior is the base class injected into everything else, so it
+        // is compiled as part of each of them rather than on its own.
+        if (name == "TegeBehavior.as") { ++compiled; continue; }
+
+        const std::string module = "enjin_api_" + path.stem().string();
+        std::printf("    %s\n", name.c_str());
+        std::fflush(stdout);      // the compiler logs through a different stream
+
+        if (engine.CompileScriptFromMemory(module, ReadFile(path))) {
+            ++compiled;
+            continue;
+        }
+
+        char buf[768];
+        std::snprintf(buf, sizeof(buf),
+                      "enjin_api/%s does not compile: %s. This script is injected "
+                      "into every project that does not override it, so a syntax "
+                      "error here stops every game script in every project.",
+                      name.c_str(), engine.GetLastError().c_str());
+        EnjinTest::ReportFailureMsg(__FILE__, __LINE__, buf);
+    }
+
+    std::printf("    %zu of %zu enjin_api scripts compile\n", compiled, scripts.size());
+    ENJIN_EXPECT_EQ(compiled, scripts.size());
+
+    engine.Shutdown();
 }
 
 ENJIN_TEST_MAIN()
