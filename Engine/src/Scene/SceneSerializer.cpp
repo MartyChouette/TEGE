@@ -10442,8 +10442,16 @@ void SceneSerializer::DeserializeEntities(const json& sceneJson, Deserialization
                     const json& v = it.value();
                     json altered;
                     if (v.is_boolean())            altered = !v.get<bool>();
-                    else if (v.is_number_integer()) altered = v.get<long long>() + 7;
-                    else if (v.is_number())         altered = v.get<double>() + 7.0;
+                    // Integers flip between 0 and 1 rather than taking a jump.
+                    //
+                    // Adding a constant pushes an ENUM out of its valid range,
+                    // and a deserializer that range-checks then ignores the
+                    // probe and looks like it ignores the field. That fired on
+                    // handIK's own `mode` the first time this ran: a real,
+                    // read, range-checked field reported as unknown. Staying
+                    // inside the range keeps the probe honest.
+                    else if (v.is_number_integer()) altered = (v.get<long long>() == 0) ? 1 : 0;
+                    else if (v.is_number())         altered = (v.get<double>() == 0.0) ? 1.0 : 0.0;
                     else if (v.is_string())         altered = v.get<std::string>() + "_x";
                     else continue;                  // array, object, null: not perturbable
 

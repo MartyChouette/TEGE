@@ -7722,7 +7722,7 @@
     "position": [
      -6.0,
      0.85,
-     -2.0
+     -2.45
     ],
     "rotation": [
      0,
@@ -7744,11 +7744,6 @@
     "standingHeight": 0.85,
     "crouchingHeight": 0.51
    },
-   "rigidbody": {
-    "bodyType": 0,
-    "mass": 70.0,
-    "useGravity": true
-   },
    "capsuleCollider": {
     "radius": 0.3,
     "height": 1.1,
@@ -7756,7 +7751,11 @@
      0,
      0,
      0
-    ]
+    ],
+    "direction": 1,
+    "friction": 0.5,
+    "bounciness": 0.0,
+    "isTrigger": false
    }
   },
   {
@@ -19986,18 +19985,18 @@
    },
    "handIK": {
     "handBone": "Hand_Wrist",
-    "palmNormalLocal": {
-     "x": 0.0,
-     "y": -1.0,
-     "z": 0.0
-    },
+    "palmNormalLocal": [
+     0.0,
+     -1.0,
+     0.0
+    ],
     "mode": 1,
     "engageDistance": 0.45,
-    "edgeDirection": {
-     "x": 1.0,
-     "y": 0.0,
-     "z": 0.0
-    },
+    "edgeDirection": [
+     1.0,
+     0.0,
+     0.0
+    ],
     "approachRate": 5.0,
     "releaseRate": 8.0,
     "weight": 1.0,
@@ -20007,55 +20006,55 @@
       "intermediate": "Hand_Thumb_2",
       "distal": "Hand_Thumb_3",
       "tip": "Hand_Thumb_tip",
-      "curlDirection": {
-       "x": 0.0,
-       "y": -1.0,
-       "z": 0.0
-      }
+      "curlDirection": [
+       0.0,
+       -1.0,
+       0.0
+      ]
      },
      {
       "proximal": "Hand_Index_1",
       "intermediate": "Hand_Index_2",
       "distal": "Hand_Index_3",
       "tip": "Hand_Index_tip",
-      "curlDirection": {
-       "x": 0.0,
-       "y": -1.0,
-       "z": 0.0
-      }
+      "curlDirection": [
+       0.0,
+       -1.0,
+       0.0
+      ]
      },
      {
       "proximal": "Hand_Middle_1",
       "intermediate": "Hand_Middle_2",
       "distal": "Hand_Middle_3",
       "tip": "Hand_Middle_tip",
-      "curlDirection": {
-       "x": 0.0,
-       "y": -1.0,
-       "z": 0.0
-      }
+      "curlDirection": [
+       0.0,
+       -1.0,
+       0.0
+      ]
      },
      {
       "proximal": "Hand_Ring_1",
       "intermediate": "Hand_Ring_2",
       "distal": "Hand_Ring_3",
       "tip": "Hand_Ring_tip",
-      "curlDirection": {
-       "x": 0.0,
-       "y": -1.0,
-       "z": 0.0
-      }
+      "curlDirection": [
+       0.0,
+       -1.0,
+       0.0
+      ]
      },
      {
       "proximal": "Hand_Little_1",
       "intermediate": "Hand_Little_2",
       "distal": "Hand_Little_3",
       "tip": "Hand_Little_tip",
-      "curlDirection": {
-       "x": 0.0,
-       "y": -1.0,
-       "z": 0.0
-      }
+      "curlDirection": [
+       0.0,
+       -1.0,
+       0.0
+      ]
      }
     ]
    }

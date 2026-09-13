@@ -2832,6 +2832,10 @@ private:
     // right behaviour for a headless tool rather than a reason to fail.
     Animation::ISurfaceQuery* m_SurfaceQuery = nullptr;
 
+    // Hand IK integrates weights over time and the deltaTime this pass receives
+    // is zero on the editor's path, so it measures its own.
+    std::chrono::steady_clock::time_point m_LastHandIKTime{};
+
     // Settle one hand's fingers onto whatever is under them. Runs in the serial
     // IK pass, after the pose is sampled and before skinning matrices are built.
     void SolveHandIK(Entity entity, AnimatorComponent& animComp,

@@ -312,13 +312,32 @@ box("Rail Post R",   (-1.7, (COUNTER_TOP_Y + 0.10) / 2.0, 2.4),
 # in this engine are WORLD space and are not multiplied by the transform. A
 # camera or a viewmodel must never hang off a non-uniformly scaled parent.
 player = add("Player",
-             transform=xform((-6.0, CAPSULE_REST, -2.0), (1.0, 1.0, 1.0)),
+             # Spawned with the hand already OVER the counter, not just short of it.
+             #
+             # The hand sits HAND_FORWARD in front of the player, so the player
+             # has to stand that much back from whatever it should be resting
+             # on. At z -2.0 the palm landed at -2.75 and the worktop starts at
+             # -2.875: a twelve centimetre miss, which the log read as
+             # "probeHit=NO" and the screen read as a hand doing nothing.
+             transform=xform((-6.0, CAPSULE_REST, -3.2 + HAND_FORWARD),
+                             (1.0, 1.0, 1.0)),
              firstPerson={"moveSpeed": 3.2, "jumpForce": 6.0,
                           "mouseSensitivity": 2.0,
                           "standingHeight": STANDING_HEIGHT,
                           "crouchingHeight": STANDING_HEIGHT * 0.6},
-             rigidbody={"bodyType": 0, "mass": 70.0, "useGravity": True},
-             capsuleCollider={"radius": 0.3, "height": 1.1, "center": [0, 0, 0]})
+             # NO RIGIDBODY, and that is the whole reason the player can move.
+             #
+             # A 3D character controller drives the transform itself (Jolt's
+             # CharacterVirtual). Giving the entity a dynamic rigidbody as well
+             # puts two owners on one transform: they fight every frame, the
+             # capsule slides on its own -- the player wandered several metres
+             # across the room with nobody touching the keyboard -- and input
+             # barely moves it. The working first-person template in
+             # builtin_templates/componentsonly carries a capsule and nothing
+             # else, which is the pattern to copy.
+             capsuleCollider={"radius": 0.3, "height": 1.1, "center": [0, 0, 0],
+                              "direction": 1, "friction": 0.5,
+                              "bounciness": 0.0, "isTrigger": False})
 
 cam = add("MainCam",
           # Zero, and it does not matter: FirstPersonController writes this
@@ -351,6 +370,14 @@ cam = add("MainCam",
 # Local Y is measured from the player origin (the capsule centre), so it is
 # EYE - HAND_DROP - CAPSULE_REST rather than just -HAND_DROP.
 add("RightHand",
+    # +Z is FORWARD here, and identity is the right rotation.
+    #
+    # Measured rather than reasoned about, after getting it wrong twice. A
+    # camera looks down its own -Z, so the hand was moved to -Z and turned half
+    # a revolution -- and the log then showed a local -0.75 arriving at a world
+    # offset of +0.80. The player's local +Z maps to world -Z, which is the
+    # direction it faces, so local +Z is in front and the rig's fingers (which
+    # point +Z) already point that way. No rotation.
     transform=xform((0.22, EYE - HAND_DROP - CAPSULE_REST, -HAND_FORWARD),
                     rot=(0, 1, 0, 0)),
     parent=player["id"],
@@ -366,14 +393,21 @@ add("RightHand",
     # the renderer's animation pass at all, and IK no longer requires anything
     # to be playing -- a hand resting on a counter is exactly when nothing is.
     animator={"speed": 1.0},
+    # Vector3 fields are ARRAYS, not {"x":..,"y":..,"z":..} objects.
+    #
+    # An object parses as ZERO and logs one line per field, which is easy to
+    # scroll past. All seven vectors here came back (0,0,0), and the one that
+    # mattered was palmNormalLocal: a zero palm normal is a fingertip cast with
+    # no direction, so nothing was ever hit, the hand never engaged, and it
+    # simply hovered. Every other part of the chain was working.
     handIK={
         "handBone": WRIST,
         # Palm faces -Y in the rig's own space. Authored, not inferred: the same
         # hand is -Y in one export and +Z in another.
-        "palmNormalLocal": {"x": 0.0, "y": -1.0, "z": 0.0},
+        "palmNormalLocal": [0.0, -1.0, 0.0],
         "mode": 1,                  # SurfacePoint
         "engageDistance": 0.45,
-        "edgeDirection": {"x": 1.0, "y": 0.0, "z": 0.0},
+        "edgeDirection": [1.0, 0.0, 0.0],
         "approachRate": 5.0,
         "releaseRate": 8.0,
         "weight": 1.0,
@@ -381,7 +415,7 @@ add("RightHand",
             {"proximal": "Hand_%s_1" % f, "intermediate": "Hand_%s_2" % f,
              "distal": "Hand_%s_3" % f, "tip": "Hand_%s_tip" % f,
              # Fingers hinge toward the palm, which is -Y here.
-             "curlDirection": {"x": 0.0, "y": -1.0, "z": 0.0}}
+             "curlDirection": [0.0, -1.0, 0.0]}
             for f, _, _, _ in FINGERS
         ],
     })

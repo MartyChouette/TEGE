@@ -2437,10 +2437,18 @@ static bool CopyBuiltinTemplate(const std::string& templateId,
         return false;
     }
 
-    // Scripts and assets the template authored. enjin_api is NOT among them: the
-    // project already received its own copy, and shipping a second would go stale
-    // the moment the API changed.
-    for (const char* sub : { "scripts", "assets" }) {
+    // Scripts, assets and DATA the template authored. enjin_api is NOT among
+    // them: the project already received its own copy, and shipping a second
+    // would go stale the moment the API changed.
+    //
+    // data/ matters as much as the other two. A template whose content lives in
+    // .enjdata records -- which is the authoring path we want people on, since
+    // it is editable in the Data Assets panel instead of in a build script --
+    // arrives with its scene and its art and nothing to say, and every
+    // DataAsset_Load in it returns false. Verified against the datingsim
+    // template: without this the new project logs "no conversation" and the
+    // scene falls back to its placeholder line.
+    for (const char* sub : { "scripts", "assets", "data" }) {
         const std::filesystem::path from = src / sub;
         if (!std::filesystem::is_directory(from, ec)) continue;
         std::filesystem::copy(from, projRoot / sub,

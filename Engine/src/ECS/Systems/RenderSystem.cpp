@@ -7048,10 +7048,33 @@ void ApplyChainRotation(Animation::SkeletonPose& pose, i32 boneIdx,
 void RenderSystem::SolveHandIK(Entity entity, AnimatorComponent& animComp,
                                HandIKComponent& hand, f32 deltaTime) {
     const auto* skeleton = animComp.animator.GetSkeleton();
-    if (!skeleton) return;
+    const i32 handIdx = skeleton ? skeleton->FindBoneIndex(hand.handBoneName) : -1;
 
-    const i32 handIdx = skeleton->FindBoneIndex(hand.handBoneName);
-    if (handIdx < 0) return;
+    // Say WHY it did nothing, once.
+    //
+    // Four different failures produce an identical hovering hand and none of
+    // them is an error: no skeleton bound, a wrist bone name that does not
+    // resolve, no surface query injected, or nothing within reach. Without this
+    // they are indistinguishable from the outside and from each other.
+    // Reported on CHANGE, not once.
+    //
+    // A once-only report fires during scene load, in editor mode, where there
+    // is legitimately no surface query yet -- so it says "NO" and then never
+    // speaks again, including after Play wires one up. What matters is each
+    // transition.
+    static int s_LastState = -1;
+    const int state = (skeleton ? 1 : 0) | (handIdx >= 0 ? 2 : 0) | (m_SurfaceQuery ? 4 : 0);
+    if (state != s_LastState) {
+        s_LastState = state;
+        ENJIN_LOG_INFO(Animation,
+            "HandIK setup: skeleton=%s bones=%d wrist='%s' index=%d surfaceQuery=%s",
+            skeleton ? "yes" : "NO",
+            skeleton ? static_cast<int>(skeleton->bones.size()) : 0,
+            hand.handBoneName.c_str(), handIdx,
+            m_SurfaceQuery ? "yes" : "NO");
+    }
+
+    if (!skeleton || handIdx < 0) return;
 
     const auto& pose = animComp.animator.GetCurrentPose();
     const Math::Matrix4 entityWorld = ComputeWorldMatrix(m_World, entity);
@@ -7130,12 +7153,36 @@ void RenderSystem::SolveHandIK(Entity entity, AnimatorComponent& animComp,
     }
     hand.engaged = engaged;
 
+    // A clock this pass can actually trust.
+    //
+    // The deltaTime handed to this pass is ZERO on the path the editor drives it
+    // from, and every weight here is a rate per second. The result was a hand
+    // that probed the counter correctly, reported engaged, and then never
+    // advanced a single finger off zero weight -- so the solve was skipped for
+    // all five and the hand hovered while the log insisted it had found the
+    // surface. Every other part of the chain was right.
+    //
+    // Measured here rather than plumbed through, because this is the only thing
+    // in the pass that integrates over time and the alternative is threading a
+    // reliable dt through a renderer path that does not have one.
+    const auto now = std::chrono::steady_clock::now();
+    f32 ikDt = deltaTime;
+    if (ikDt <= 0.0f) {
+        if (m_LastHandIKTime.time_since_epoch().count() != 0) {
+            ikDt = std::chrono::duration<f32>(now - m_LastHandIKTime).count();
+        }
+        // First frame, and any hitch: a huge step would snap the hand onto the
+        // surface in one go, which is the thing approach rates exist to avoid.
+        ikDt = std::min(ikDt, 0.05f);
+    }
+    m_LastHandIKTime = now;
+
     for (u32 f = 0; f < Animation::kFingerCount; ++f) {
         Animation::FingerChain& chain = solved.fingers[f];
         Animation::HandIK::AdvanceWeights(chain,
                                           engaged ? hand.weight : 0.0f,
                                           engaged ? 0.0f : 1.0f,
-                                          hand.approachRate, hand.releaseRate, deltaTime);
+                                          hand.approachRate, hand.releaseRate, ikDt);
         hand.approachWeights[f] = chain.approachWeight;
         hand.releaseWeights[f] = chain.releaseWeight;
     }
@@ -7162,6 +7209,32 @@ void RenderSystem::SolveHandIK(Entity entity, AnimatorComponent& animComp,
     }
 
     hand.fingersContacted = result.fingersContacted;
+
+    // Say what happened, once a second.
+    //
+    // A hand that is not conforming looks identical whatever the cause: no
+    // surface query, a palm axis pointing out the back of the hand, a bone name
+    // that does not resolve, or simply nothing within reach. All four produce a
+    // hand that hovers, and none of them produce an error. This line is the
+    // difference between "it does nothing" and knowing which nothing it is.
+    //
+    // Throttled rather than per-frame: the interesting transition is walking up
+    // to a counter, which takes about a second, and a per-frame line would bury
+    // every other log in the console.
+    // Counted in CALLS, not seconds. A time accumulator here never fired,
+    // because the deltaTime this pass receives is zero on the path the editor
+    // drives it from -- which is itself worth knowing, since every IK weight
+    // rate is expressed per second.
+    static u32 s_HandLogTick = 0;
+    if ((s_HandLogTick++ % 120u) == 0u) {
+        ENJIN_LOG_INFO(Animation,
+            "HandIK: palm (%.2f, %.2f, %.2f) normal (%.2f, %.2f, %.2f) "
+            "engaged=%s probeHit=%s at %.3f m, %u of 5 fingers in contact",
+            solved.palmPosition.x, solved.palmPosition.y, solved.palmPosition.z,
+            solved.palmNormal.x, solved.palmNormal.y, solved.palmNormal.z,
+            engaged ? "yes" : "NO", probe.hit ? "yes" : "NO", probe.distance,
+            result.fingersContacted);
+    }
 
     // Write the solved chains back as rotations.
     auto& poseMut = const_cast<Animation::SkeletonPose&>(pose);
