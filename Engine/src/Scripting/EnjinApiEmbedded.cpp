@@ -1522,7 +1522,15 @@ R"ENJIN_API(
 //   SPACE / ENTER / CLICK   advance a beat, or finish the line early
 //   1 / 2 / 3               answer, where the beat has a choice
 //
-// WHAT THE SCENE MUST CONTAIN (build_vn_template.py makes all of it):
+// WHAT THE SCENE MUST CONTAIN.
+//
+// Named here rather than pointed at, because this file ships to every project
+// and the generator it used to name (build_vn_template.py) lives inside one
+// unrelated game. A reader who is not in that project cannot run it and cannot
+// find it, which is the same failure as documenting an API the engine does not
+// have: the instruction looks actionable and is not. The datingsim template
+// ships a builder at tools/build_scene.py; anything else builds the list below
+// by hand or generates it however it likes.
 //   VN                  this script
 //   Nameplate           text, who is talking
 //   Line                text, what they say (revealed a character at a time)
@@ -1655,7 +1663,8 @@ class VNScene : TegeBehavior {
             target      = Ints(DataAsset_GetString(conversation, "castTarget"));
             outcomeTags  = Split(DataAsset_GetString(conversation, "outcomeTags"), ";");
             outcomeLines = Split(DataAsset_GetString(conversation, "outcomeLines"), ";");
-            if (beatLine.length() > 0 && beatLine[0] != "") return;
+)ENJIN_API"
+R"ENJIN_API(            if (beatLine.length() > 0 && beatLine[0] != "") return;
         }
         // Nothing loaded. Say so on the page rather than showing a blank box,
         // because an empty VN scene and a broken one look identical otherwise.
@@ -1663,8 +1672,7 @@ class VNScene : TegeBehavior {
         castIds.insertLast("left");   castNames.insertLast("");
         beatWho.insertLast("left");   beatEmote.insertLast("worried");
         beatLine.insertLast(fallbackLine);
-)ENJIN_API"
-R"ENJIN_API(        beatChoice.insertLast("");
+        beatChoice.insertLast("");
     }
 
     array<string> AllTags() {
@@ -1863,7 +1871,8 @@ R"ENJIN_API(        beatChoice.insertLast("");
 
     // ---- the target mark -------------------------------------------------
     // Where this character expects to be left, as a tick on their own meter.
-    // Without it a meter is a number going up, which says nothing about whether
+)ENJIN_API"
+R"ENJIN_API(    // Without it a meter is a number going up, which says nothing about whether
     // you are playing well; the GAP is the reading, and it is why more is not
     // automatically better.
     void PlaceMarks() {
@@ -1871,8 +1880,7 @@ R"ENJIN_API(        beatChoice.insertLast("");
             if (markEnt[i] == 0) continue;
             if (i >= target.length() || maxAffinity <= 0) { Show(markEnt[i], false); continue; }
             float f = float(target[i]) / float(maxAffinity);
-)ENJIN_API"
-R"ENJIN_API(            Vector3 p = Entity_GetPosition(markEnt[i]);
+            Vector3 p = Entity_GetPosition(markEnt[i]);
             Vector3 s = Entity_GetScale(fillEnt[i]);
             // fillEnt starts at the track's left edge, so that is the origin the
             // mark measures from too.

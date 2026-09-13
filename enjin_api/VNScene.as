@@ -12,7 +12,15 @@
 //   SPACE / ENTER / CLICK   advance a beat, or finish the line early
 //   1 / 2 / 3               answer, where the beat has a choice
 //
-// WHAT THE SCENE MUST CONTAIN (build_vn_template.py makes all of it):
+// WHAT THE SCENE MUST CONTAIN.
+//
+// Named here rather than pointed at, because this file ships to every project
+// and the generator it used to name (build_vn_template.py) lives inside one
+// unrelated game. A reader who is not in that project cannot run it and cannot
+// find it, which is the same failure as documenting an API the engine does not
+// have: the instruction looks actionable and is not. The datingsim template
+// ships a builder at tools/build_scene.py; anything else builds the list below
+// by hand or generates it however it likes.
 //   VN                  this script
 //   Nameplate           text, who is talking
 //   Line                text, what they say (revealed a character at a time)

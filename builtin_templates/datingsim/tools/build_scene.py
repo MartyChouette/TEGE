@@ -107,7 +107,8 @@ def text(s, wh, color, wrap=4000.0, align=0):
 
 
 # ---------------------------------------------------------------------------
-# PORTRAIT LAYERS, as SVG mounted with displayGraphic (build_vn_art.py draws
+# PORTRAIT LAYERS, as SVG mounted with displayGraphic (tools/build_art.py,
+# beside this file, draws
 # them). Every layer is a full-face document on one 200x260 viewBox with only
 # its own piece drawn, so ALL of them mount at the identical transform and the
 # alignment lives in the art instead of in a table of offsets here. Swapping a
