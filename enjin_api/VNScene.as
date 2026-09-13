@@ -62,13 +62,16 @@ class VNScene : TegeBehavior {
     array<string> castIds, castNames;
     array<string> beatWho, beatEmote, beatLine;
     array<string> beatChoice;            // "" or a choice-group index
-    array<string> choiceWho, choiceText, choiceTags, choiceReply;
+    array<string> choiceWho, choiceText, choiceTags, choiceReply, choiceNote;
+    array<string> outcomeTags, outcomeLines;
     array<int>    affinity;
+    array<int>    target;        // where each character EXPECTS to be left
 
     // --- entities ---------------------------------------------------------
     uint64 nameplate = 0, lineEnt = 0, prompt = 0, beatCount = 0, closingEnt = 0;
     array<uint64> optEnt;
-    array<uint64> dimEnt, fillEnt, meterName, meterVal;
+    array<uint64> dimEnt, fillEnt, meterName, meterVal, markEnt;
+    array<uint64> noteEnt, verdictEnt;
 
     // --- state ------------------------------------------------------------
     int  beat = 0;
@@ -86,7 +89,13 @@ class VNScene : TegeBehavior {
         prompt     = Scene_FindEntity("Prompt");
         beatCount  = Scene_FindEntity("BeatCount");
         closingEnt = Scene_FindEntity("Closing");
-        for (int i = 0; i < 3; i++) optEnt.insertLast(Scene_FindEntity("Opt" + i));
+        for (int i = 0; i < 3; i++) {
+            optEnt.insertLast(Scene_FindEntity("Opt" + i));
+            // The consequence line under each answer. A choice with stakes that
+            // will not say what it costs is a guess, not a decision.
+            noteEnt.insertLast(Scene_FindEntity("Note" + i));
+        }
+        for (int i = 0; i < 2; i++) verdictEnt.insertLast(Scene_FindEntity("Verdict" + i));
 
         dimEnt.insertLast(Scene_FindEntity("DimLeft"));
         dimEnt.insertLast(Scene_FindEntity("DimRight"));
@@ -96,6 +105,8 @@ class VNScene : TegeBehavior {
         meterName.insertLast(Scene_FindEntity("MeterNameRight"));
         meterVal.insertLast(Scene_FindEntity("MeterValLeft"));
         meterVal.insertLast(Scene_FindEntity("MeterValRight"));
+        markEnt.insertLast(Scene_FindEntity("MeterMarkLeft"));
+        markEnt.insertLast(Scene_FindEntity("MeterMarkRight"));
 
         Load();
         rx.Load(DataAsset_GetString(conversation, "reactions"));
@@ -111,8 +122,10 @@ class VNScene : TegeBehavior {
                                 : Meta_GetInt(VN_AFFINITY + castIds[i], startAffinity));
             Set(meterName[i], i < castNames.length() ? castNames[i] : castIds[i]);
         }
+        PlaceMarks();
         DrawMeters();
         Set(closingEnt, "");
+        for (uint i = 0; i < verdictEnt.length(); i++) Set(verdictEnt[i], "");
         Beat();
     }
 
@@ -128,6 +141,10 @@ class VNScene : TegeBehavior {
             choiceText  = Split(DataAsset_GetString(conversation, "choiceText"), "|");
             choiceTags  = Split(DataAsset_GetString(conversation, "choiceTags"), "|");
             choiceReply = Split(DataAsset_GetString(conversation, "choiceReply"), "|");
+            choiceNote  = Split(DataAsset_GetString(conversation, "choiceNote"), "|");
+            target      = Ints(DataAsset_GetString(conversation, "castTarget"));
+            outcomeTags  = Split(DataAsset_GetString(conversation, "outcomeTags"), ";");
+            outcomeLines = Split(DataAsset_GetString(conversation, "outcomeLines"), ";");
             if (beatLine.length() > 0 && beatLine[0] != "") return;
         }
         // Nothing loaded. Say so on the page rather than showing a blank box,
@@ -184,6 +201,19 @@ class VNScene : TegeBehavior {
         Set(lineEnt, "");
         Set(prompt, "");
         HideOptions();
+
+        // ONE ROW PER CHARACTER, read off the gap to their mark. This is what
+        // the meters were for: not a score, a question about whether you read
+        // each of them correctly, answered separately for each.
+        for (uint i = 0; i < castIds.length() && i < verdictEnt.length(); i++) {
+            int b = BandOf(int(i));
+            string tag  = b < int(outcomeTags.length())  ? outcomeTags[b]  : "";
+            string line = b < int(outcomeLines.length()) ? outcomeLines[b] : "";
+            Set(verdictEnt[i], NameOf(castIds[i]) + "   " + tag
+                               + "   " + affinity[i] + " against " + 
+                               (i < target.length() ? "" + target[i] : "?")
+                               + "   " + line);
+        }
 
         string closing = DataAsset_GetString(conversation, "closing");
         Set(closingEnt, closing != "" ? closing : "The evening ends.");
@@ -306,13 +336,58 @@ class VNScene : TegeBehavior {
     }
 
     void ShowOptions(int group) {
-        array<string> opts = Split(Get(choiceText, group), ";");
-        for (uint i = 0; i < optEnt.length(); i++)
+        array<string> opts  = Split(Get(choiceText, group), ";");
+        array<string> notes = Split(Get(choiceNote, group), ";");
+        for (uint i = 0; i < optEnt.length(); i++) {
             Set(optEnt[i], i < opts.length() ? ("" + (i + 1) + "   " + opts[i]) : "");
+            if (i < noteEnt.length())
+                Set(noteEnt[i], i < notes.length() ? notes[i] : "");
+        }
     }
 
     void HideOptions() {
         for (uint i = 0; i < optEnt.length(); i++) Set(optEnt[i], "");
+        for (uint i = 0; i < noteEnt.length(); i++) Set(noteEnt[i], "");
+    }
+
+    // ---- the target mark -------------------------------------------------
+    // Where this character expects to be left, as a tick on their own meter.
+    // Without it a meter is a number going up, which says nothing about whether
+    // you are playing well; the GAP is the reading, and it is why more is not
+    // automatically better.
+    void PlaceMarks() {
+        for (uint i = 0; i < markEnt.length(); i++) {
+            if (markEnt[i] == 0) continue;
+            if (i >= target.length() || maxAffinity <= 0) { Show(markEnt[i], false); continue; }
+            float f = float(target[i]) / float(maxAffinity);
+            Vector3 p = Entity_GetPosition(markEnt[i]);
+            Vector3 s = Entity_GetScale(fillEnt[i]);
+            // fillEnt starts at the track's left edge, so that is the origin the
+            // mark measures from too.
+            float left = Entity_GetPosition(fillEnt[i]).x - s.x * 0.5f;
+            Entity_SetPosition(markEnt[i], Vector3(left + meterWidth * f, p.y, p.z));
+            Show(markEnt[i], true);
+        }
+    }
+
+    // Which outcome band the gap to the mark falls in. Symmetric on purpose:
+    // overshooting someone is its own kind of misread, not a better result.
+    int BandOf(int idx) {
+        if (idx < 0 || idx >= int(target.length())) return 2;
+        int gap = affinity[idx] - target[idx];
+        if (gap <= -8) return 0;
+        if (gap <= -3) return 1;
+        if (gap <   3) return 2;
+        if (gap <   8) return 3;
+        return 4;
+    }
+
+    array<int> Ints(const string &in joined) {
+        // 'out' is a RESERVED KEYWORD in AngelScript and cannot name a local.
+        array<int> vals;
+        array<string> parts = Split(joined, ";");
+        for (uint i = 0; i < parts.length(); i++) vals.insertLast(ToInt(parts[i]));
+        return vals;
     }
 
     void DrawMeters() {

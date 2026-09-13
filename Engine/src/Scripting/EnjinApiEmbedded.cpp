@@ -265,13 +265,12 @@ R"ENJIN_API(
 //
 // SHARED. Nothing in here knows what game it is in. It takes a string like
 // "worried" and shows the right stack of layer entities. That is the whole
-// contract, and it is why the same file serves a dictation letter and a
-// conversation in another project without a line of difference.
+// contract, and it is why one file serves a conversation, an interrogation or
+// a negotiation in different projects without a line of difference.
 //
 // THE SCENE HOLDS THE PIECES, THE RIG PICKS THEM. Runtime texture swapping is
-// not a thing in TEGE (same reason the wax colours are three pre-made
-// entities), so every layer piece exists as its own child entity and the rig
-// toggles visibility. Attach this to the portrait ROOT; name the children by
+// not a thing in TEGE, so every layer piece exists as its own entity and the
+// rig toggles visibility. Attach this to the portrait ROOT; name the children by
 // convention:
 //
 //   base_head            brow_neutral  brow_raised  brow_furrowed
@@ -323,8 +322,8 @@ class PortraitRig : TegeBehavior {
 
     // WHO THIS BUST IS. A driver does not need a handle on this script; it
     // sends "portrait_emote" with who + emote and every rig in the scene checks
-    // whether the name is its own. That keeps the dictation, the conversation,
-    // or anything else from having to reach across entities to move a face.
+    // whether the name is its own. That keeps a driver from having to reach
+    // across entities to move a face.
     [Property] string speakerId = "";
 
     // TWO BUSTS IN ONE SCENE. Layers are found by NAME through Scene_FindEntity,
@@ -405,9 +404,9 @@ class PortraitRig : TegeBehavior {
         }
     }
 
-    // Private, not global. Dictation.as already has its own Split as a class
-    // method, and a shared file must never introduce a global that shadows or
-    // collides with a host script's member. enjin_api/StrUtil.as has these as
+    // Private, not global. A shared file must never introduce a global that
+    // shadows or collides with a host script's own member, and game scripts
+    // commonly define their own Split. enjin_api/StrUtil.as has these as
     // globals for scripts that want them.
     array<string> Split(const string &in s, const string &in sep) {
         array<string> parts;
@@ -446,9 +445,9 @@ class PortraitRig : TegeBehavior {
     void Show(const string &in name, bool on) {
         for (uint i = 0; i < layerName.length(); i++) {
             if (layerName[i] != name) continue;
+            if (layerEnt[i] != 0) Entity_SetVisible(layerEnt[i], on);
 )ENJIN_API"
-R"ENJIN_API(            if (layerEnt[i] != 0) Entity_SetVisible(layerEnt[i], on);
-            return;
+R"ENJIN_API(            return;
         }
     }
 
@@ -587,23 +586,24 @@ static const char* s_Api3 = R"ENJIN_API(
 //   Emote(tag)   what the speaker's face does      -> PortraitRig.Set()
 //   Delta(tag)   what it moves, and by how much    -> the game's own scalar
 //
-// That is the whole seam, and it is what lets one runtime serve two games. Ink
-// Ribbon maps "sharpened" onto temper. Another project maps the same tag onto
-// affection, or suspicion, or nothing. Neither game edits this file: they each
-// ship a Reaction data asset (data/schemas/reaction.enjschema) and name it.
+// That is the whole seam, and it is what lets one runtime serve several games.
+// A dating sim maps "sharpened" onto affection; an interrogation maps the same
+// tag onto suspicion; a third game maps it onto nothing at all. No game edits
+// this file: each ships a Reaction data asset (data/schemas/reaction.enjschema)
+// and names it.
 //
 //   tags      "verbatim;softened;sharpened;cut"
 //   emotes    "neutral;worried;angry;sad"
-//   statName  "temper"
+//   statName  "affection"
 //   deltas    "0;-1;1;-1"
 //
 // Authored in the editor's Data Assets panel. No build script, no recompile.
 //
 // USE. Not a behavior - make one and load it:
 //   Reactions r;
-//   r.Load("reactions/ink_ribbon");
+//   r.Load("reactions/vn_default");
 //   rig.Set(r.Emote(tag));
-//   temper += r.Delta(tag);
+//   standing += r.Delta(tag);
 
 class Reactions {
     array<string> tag;
@@ -631,10 +631,9 @@ class Reactions {
         return tag.length() > 0;
     }
 
-    // Private, not global. Dictation.as already has its own Split as a class
-    // method, and a shared file must never introduce a global that shadows or
-    // collides with a host script's member. enjin_api/StrUtil.as has these as
-    // globals for scripts that want them.
+    // Private, not global. A shared file must never introduce a global that
+    // shadows or collides with a host script's own member. enjin_api/StrUtil.as
+    // has these as globals for scripts that want them.
     array<string> Split(const string &in s, const string &in sep) {
         array<string> parts;
         if (sep.length() == 0) { parts.insertLast(s); return parts; }
@@ -825,8 +824,8 @@ static const char* s_Api5 = R"ENJIN_API(
 // WHY THIS EXISTS. TEGE calls RegisterStdString but not RegisterStdStringUtils,
 // and string::split() lives in the utils half, so THERE IS NO SPLIT ANYWHERE in
 // AngelScript here. Every script that reads a joined string has grown its own
-// private one; Dictation.as has Split and ToInt as class methods. These are the
-// same helpers as globals, once, so shared code can use them.
+// private one, commonly as a class method. These are the same helpers as
+// globals, once, so shared code can use them.
 //
 // parseInt / parseUInt / parseFloat / formatInt / formatFloat DO exist - they are
 // registered in RegisterStdString_Native, which RegisterStdString calls. ToInt and
@@ -1408,13 +1407,16 @@ class VNScene : TegeBehavior {
     array<string> castIds, castNames;
     array<string> beatWho, beatEmote, beatLine;
     array<string> beatChoice;            // "" or a choice-group index
-    array<string> choiceWho, choiceText, choiceTags, choiceReply;
+    array<string> choiceWho, choiceText, choiceTags, choiceReply, choiceNote;
+    array<string> outcomeTags, outcomeLines;
     array<int>    affinity;
+    array<int>    target;        // where each character EXPECTS to be left
 
     // --- entities ---------------------------------------------------------
     uint64 nameplate = 0, lineEnt = 0, prompt = 0, beatCount = 0, closingEnt = 0;
     array<uint64> optEnt;
-    array<uint64> dimEnt, fillEnt, meterName, meterVal;
+    array<uint64> dimEnt, fillEnt, meterName, meterVal, markEnt;
+    array<uint64> noteEnt, verdictEnt;
 
     // --- state ------------------------------------------------------------
     int  beat = 0;
@@ -1432,7 +1434,13 @@ class VNScene : TegeBehavior {
         prompt     = Scene_FindEntity("Prompt");
         beatCount  = Scene_FindEntity("BeatCount");
         closingEnt = Scene_FindEntity("Closing");
-        for (int i = 0; i < 3; i++) optEnt.insertLast(Scene_FindEntity("Opt" + i));
+        for (int i = 0; i < 3; i++) {
+            optEnt.insertLast(Scene_FindEntity("Opt" + i));
+            // The consequence line under each answer. A choice with stakes that
+            // will not say what it costs is a guess, not a decision.
+            noteEnt.insertLast(Scene_FindEntity("Note" + i));
+        }
+        for (int i = 0; i < 2; i++) verdictEnt.insertLast(Scene_FindEntity("Verdict" + i));
 
         dimEnt.insertLast(Scene_FindEntity("DimLeft"));
         dimEnt.insertLast(Scene_FindEntity("DimRight"));
@@ -1442,6 +1450,8 @@ class VNScene : TegeBehavior {
         meterName.insertLast(Scene_FindEntity("MeterNameRight"));
         meterVal.insertLast(Scene_FindEntity("MeterValLeft"));
         meterVal.insertLast(Scene_FindEntity("MeterValRight"));
+        markEnt.insertLast(Scene_FindEntity("MeterMarkLeft"));
+        markEnt.insertLast(Scene_FindEntity("MeterMarkRight"));
 
         Load();
         rx.Load(DataAsset_GetString(conversation, "reactions"));
@@ -1457,8 +1467,10 @@ class VNScene : TegeBehavior {
                                 : Meta_GetInt(VN_AFFINITY + castIds[i], startAffinity));
             Set(meterName[i], i < castNames.length() ? castNames[i] : castIds[i]);
         }
+        PlaceMarks();
         DrawMeters();
         Set(closingEnt, "");
+        for (uint i = 0; i < verdictEnt.length(); i++) Set(verdictEnt[i], "");
         Beat();
     }
 
@@ -1474,6 +1486,10 @@ class VNScene : TegeBehavior {
             choiceText  = Split(DataAsset_GetString(conversation, "choiceText"), "|");
             choiceTags  = Split(DataAsset_GetString(conversation, "choiceTags"), "|");
             choiceReply = Split(DataAsset_GetString(conversation, "choiceReply"), "|");
+            choiceNote  = Split(DataAsset_GetString(conversation, "choiceNote"), "|");
+            target      = Ints(DataAsset_GetString(conversation, "castTarget"));
+            outcomeTags  = Split(DataAsset_GetString(conversation, "outcomeTags"), ";");
+            outcomeLines = Split(DataAsset_GetString(conversation, "outcomeLines"), ";");
             if (beatLine.length() > 0 && beatLine[0] != "") return;
         }
         // Nothing loaded. Say so on the page rather than showing a blank box,
@@ -1482,7 +1498,8 @@ class VNScene : TegeBehavior {
         castIds.insertLast("left");   castNames.insertLast("");
         beatWho.insertLast("left");   beatEmote.insertLast("worried");
         beatLine.insertLast(fallbackLine);
-        beatChoice.insertLast("");
+)ENJIN_API"
+R"ENJIN_API(        beatChoice.insertLast("");
     }
 
     array<string> AllTags() {
@@ -1511,8 +1528,7 @@ class VNScene : TegeBehavior {
         // The one who is NOT talking goes dark. This is the oldest trick in the
         // form and it does more for readability than any amount of animation.
         for (uint i = 0; i < castIds.length() && i < dimEnt.length(); i++)
-)ENJIN_API"
-R"ENJIN_API(            Show(dimEnt[i], castIds[i] != who);
+            Show(dimEnt[i], castIds[i] != who);
 
         Text_SetContent(lineEnt, beatLine[beat]);
         lineLen = Text_Length(lineEnt);
@@ -1531,6 +1547,19 @@ R"ENJIN_API(            Show(dimEnt[i], castIds[i] != who);
         Set(lineEnt, "");
         Set(prompt, "");
         HideOptions();
+
+        // ONE ROW PER CHARACTER, read off the gap to their mark. This is what
+        // the meters were for: not a score, a question about whether you read
+        // each of them correctly, answered separately for each.
+        for (uint i = 0; i < castIds.length() && i < verdictEnt.length(); i++) {
+            int b = BandOf(int(i));
+            string tag  = b < int(outcomeTags.length())  ? outcomeTags[b]  : "";
+            string line = b < int(outcomeLines.length()) ? outcomeLines[b] : "";
+            Set(verdictEnt[i], NameOf(castIds[i]) + "   " + tag
+                               + "   " + affinity[i] + " against " + 
+                               (i < target.length() ? "" + target[i] : "?")
+                               + "   " + line);
+        }
 
         string closing = DataAsset_GetString(conversation, "closing");
         Set(closingEnt, closing != "" ? closing : "The evening ends.");
@@ -1653,13 +1682,59 @@ R"ENJIN_API(            Show(dimEnt[i], castIds[i] != who);
     }
 
     void ShowOptions(int group) {
-        array<string> opts = Split(Get(choiceText, group), ";");
-        for (uint i = 0; i < optEnt.length(); i++)
+        array<string> opts  = Split(Get(choiceText, group), ";");
+        array<string> notes = Split(Get(choiceNote, group), ";");
+        for (uint i = 0; i < optEnt.length(); i++) {
             Set(optEnt[i], i < opts.length() ? ("" + (i + 1) + "   " + opts[i]) : "");
+            if (i < noteEnt.length())
+                Set(noteEnt[i], i < notes.length() ? notes[i] : "");
+        }
     }
 
     void HideOptions() {
         for (uint i = 0; i < optEnt.length(); i++) Set(optEnt[i], "");
+        for (uint i = 0; i < noteEnt.length(); i++) Set(noteEnt[i], "");
+    }
+
+    // ---- the target mark -------------------------------------------------
+    // Where this character expects to be left, as a tick on their own meter.
+    // Without it a meter is a number going up, which says nothing about whether
+    // you are playing well; the GAP is the reading, and it is why more is not
+    // automatically better.
+    void PlaceMarks() {
+        for (uint i = 0; i < markEnt.length(); i++) {
+            if (markEnt[i] == 0) continue;
+            if (i >= target.length() || maxAffinity <= 0) { Show(markEnt[i], false); continue; }
+            float f = float(target[i]) / float(maxAffinity);
+)ENJIN_API"
+R"ENJIN_API(            Vector3 p = Entity_GetPosition(markEnt[i]);
+            Vector3 s = Entity_GetScale(fillEnt[i]);
+            // fillEnt starts at the track's left edge, so that is the origin the
+            // mark measures from too.
+            float left = Entity_GetPosition(fillEnt[i]).x - s.x * 0.5f;
+            Entity_SetPosition(markEnt[i], Vector3(left + meterWidth * f, p.y, p.z));
+            Show(markEnt[i], true);
+        }
+    }
+
+    // Which outcome band the gap to the mark falls in. Symmetric on purpose:
+    // overshooting someone is its own kind of misread, not a better result.
+    int BandOf(int idx) {
+        if (idx < 0 || idx >= int(target.length())) return 2;
+        int gap = affinity[idx] - target[idx];
+        if (gap <= -8) return 0;
+        if (gap <= -3) return 1;
+        if (gap <   3) return 2;
+        if (gap <   8) return 3;
+        return 4;
+    }
+
+    array<int> Ints(const string &in joined) {
+        // 'out' is a RESERVED KEYWORD in AngelScript and cannot name a local.
+        array<int> vals;
+        array<string> parts = Split(joined, ";");
+        for (uint i = 0; i < parts.length(); i++) vals.insertLast(ToInt(parts[i]));
+        return vals;
     }
 
     void DrawMeters() {
@@ -1735,8 +1810,7 @@ R"ENJIN_API(            Show(dimEnt[i], castIds[i] != who);
             int at = s.findFirst(sep, uint(start));
             if (at < 0) {
                 parts.insertLast(s.substr(uint(start), s.length() - uint(start)));
-)ENJIN_API"
-R"ENJIN_API(                break;
+                break;
             }
             parts.insertLast(s.substr(uint(start), uint(at - start)));
             start = at + int(sep.length());

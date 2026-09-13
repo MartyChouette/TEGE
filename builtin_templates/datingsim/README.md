@@ -39,14 +39,14 @@ running next door.
 
 That indirection is the whole reason this template is worth starting from. The
 same runtime drives a dating sim, an interrogation, a negotiation, or a
-temperament game, because the only thing that differs is a table.
+negotiation, because the only thing that differs is a table.
 
 ## Art
 
 38 SVG layers in `assets/art/vn`, mounted with `displayGraphic`, which
 tessellates them to real triangles: crisp at any scale, unlit, alpha blended,
-paint order preserved. `build_vn_art.py` in the Ink Ribbon project draws them if
-you want to regenerate.
+paint order preserved. `tools/build_art.py` draws them if you want to
+regenerate.
 
 **Every layer is a full-face document on one 200x260 viewBox**, with only its own
 piece drawn and the rest transparent. So every layer mounts at the identical

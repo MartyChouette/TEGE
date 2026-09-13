@@ -2,13 +2,12 @@
 //
 // SHARED. Nothing in here knows what game it is in. It takes a string like
 // "worried" and shows the right stack of layer entities. That is the whole
-// contract, and it is why the same file serves a dictation letter and a
-// conversation in another project without a line of difference.
+// contract, and it is why one file serves a conversation, an interrogation or
+// a negotiation in different projects without a line of difference.
 //
 // THE SCENE HOLDS THE PIECES, THE RIG PICKS THEM. Runtime texture swapping is
-// not a thing in TEGE (same reason the wax colours are three pre-made
-// entities), so every layer piece exists as its own child entity and the rig
-// toggles visibility. Attach this to the portrait ROOT; name the children by
+// not a thing in TEGE, so every layer piece exists as its own entity and the
+// rig toggles visibility. Attach this to the portrait ROOT; name the children by
 // convention:
 //
 //   base_head            brow_neutral  brow_raised  brow_furrowed
@@ -60,8 +59,8 @@ class PortraitRig : TegeBehavior {
 
     // WHO THIS BUST IS. A driver does not need a handle on this script; it
     // sends "portrait_emote" with who + emote and every rig in the scene checks
-    // whether the name is its own. That keeps the dictation, the conversation,
-    // or anything else from having to reach across entities to move a face.
+    // whether the name is its own. That keeps a driver from having to reach
+    // across entities to move a face.
     [Property] string speakerId = "";
 
     // TWO BUSTS IN ONE SCENE. Layers are found by NAME through Scene_FindEntity,
@@ -142,9 +141,9 @@ class PortraitRig : TegeBehavior {
         }
     }
 
-    // Private, not global. Dictation.as already has its own Split as a class
-    // method, and a shared file must never introduce a global that shadows or
-    // collides with a host script's member. enjin_api/StrUtil.as has these as
+    // Private, not global. A shared file must never introduce a global that
+    // shadows or collides with a host script's own member, and game scripts
+    // commonly define their own Split. enjin_api/StrUtil.as has these as
     // globals for scripts that want them.
     array<string> Split(const string &in s, const string &in sep) {
         array<string> parts;

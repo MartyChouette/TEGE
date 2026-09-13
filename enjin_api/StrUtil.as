@@ -3,8 +3,8 @@
 // WHY THIS EXISTS. TEGE calls RegisterStdString but not RegisterStdStringUtils,
 // and string::split() lives in the utils half, so THERE IS NO SPLIT ANYWHERE in
 // AngelScript here. Every script that reads a joined string has grown its own
-// private one; Dictation.as has Split and ToInt as class methods. These are the
-// same helpers as globals, once, so shared code can use them.
+// private one, commonly as a class method. These are the same helpers as
+// globals, once, so shared code can use them.
 //
 // parseInt / parseUInt / parseFloat / formatInt / formatFloat DO exist - they are
 // registered in RegisterStdString_Native, which RegisterStdString calls. ToInt and

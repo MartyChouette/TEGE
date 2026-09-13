@@ -7,23 +7,24 @@
 //   Emote(tag)   what the speaker's face does      -> PortraitRig.Set()
 //   Delta(tag)   what it moves, and by how much    -> the game's own scalar
 //
-// That is the whole seam, and it is what lets one runtime serve two games. Ink
-// Ribbon maps "sharpened" onto temper. Another project maps the same tag onto
-// affection, or suspicion, or nothing. Neither game edits this file: they each
-// ship a Reaction data asset (data/schemas/reaction.enjschema) and name it.
+// That is the whole seam, and it is what lets one runtime serve several games.
+// A dating sim maps "sharpened" onto affection; an interrogation maps the same
+// tag onto suspicion; a third game maps it onto nothing at all. No game edits
+// this file: each ships a Reaction data asset (data/schemas/reaction.enjschema)
+// and names it.
 //
 //   tags      "verbatim;softened;sharpened;cut"
 //   emotes    "neutral;worried;angry;sad"
-//   statName  "temper"
+//   statName  "affection"
 //   deltas    "0;-1;1;-1"
 //
 // Authored in the editor's Data Assets panel. No build script, no recompile.
 //
 // USE. Not a behavior - make one and load it:
 //   Reactions r;
-//   r.Load("reactions/ink_ribbon");
+//   r.Load("reactions/vn_default");
 //   rig.Set(r.Emote(tag));
-//   temper += r.Delta(tag);
+//   standing += r.Delta(tag);
 
 class Reactions {
     array<string> tag;
@@ -51,10 +52,9 @@ class Reactions {
         return tag.length() > 0;
     }
 
-    // Private, not global. Dictation.as already has its own Split as a class
-    // method, and a shared file must never introduce a global that shadows or
-    // collides with a host script's member. enjin_api/StrUtil.as has these as
-    // globals for scripts that want them.
+    // Private, not global. A shared file must never introduce a global that
+    // shadows or collides with a host script's own member. enjin_api/StrUtil.as
+    // has these as globals for scripts that want them.
     array<string> Split(const string &in s, const string &in sep) {
         array<string> parts;
         if (sep.length() == 0) { parts.insertLast(s); return parts; }

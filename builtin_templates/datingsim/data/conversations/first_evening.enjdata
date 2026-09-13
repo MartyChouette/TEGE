@@ -15,6 +15,10 @@
         "choiceReply": "Then I am out a coffee and I do not mind at all.;Fair. I will hold you to it.;I did. That was probably not the introduction I wanted.|No. You are not. That is unusual and I notice it.;There was not one. That was the point.;Every Thursday. He does my half better than I do.",
         "reactions": "reactions/vn_default",
         "nextScene": "",
-        "closing": "You walk home working out which answer you actually meant."
+        "closing": "You walk home working out which answer you actually meant.",
+        "castTarget": "46;41",
+        "choiceNote": "Meets him where he put it.;Holds back. He will read it as a maybe.;Turns his joke into an accusation.|Warmer than she asked for.;Matches her. She is not looking for more.;Plays along. Lighter than she is.",
+        "outcomeTags": "COLD;COOL;MET;WARM;OVER",
+        "outcomeLines": "You lost them somewhere in the middle and did not notice.;You held further back than they wanted.;You read them right.;You gave more than they were asking for.;You came on far stronger than they were ready for."
     }
 }

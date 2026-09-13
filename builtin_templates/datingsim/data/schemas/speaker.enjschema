@@ -1,6 +1,6 @@
 {
     "name": "Speaker",
-    "description": "A cast entry. The portrait set and the scalars a game keeps about this character. What the scalars MEAN is the game's business; this only stores them, so the same schema serves Ink Ribbon's temper and another project's affection.",
+    "description": "A cast entry. The portrait set and the scalars a game keeps about this character. What the scalars MEAN is the game's business; this only stores them, so the same schema serves affection, suspicion, or a reputation with a faction.",
     "fields": [
         {"name": "displayName",  "type": "String", "default": ""},
         {"name": "role",         "type": "String", "default": ""},

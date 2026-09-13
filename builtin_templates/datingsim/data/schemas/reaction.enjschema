@@ -1,6 +1,6 @@
 {
     "name": "Reaction",
-    "description": "THE TAG SEAM. Shared code never learns what a tag means; this table does. An option in a script carries a tag string. When it fires, the tag is looked up here and hands out (a) a portrait emotion and (b) deltas on the speaker's named stats. Ink Ribbon maps 'sharpened' onto temper; another project maps it onto whatever it keeps. Same runtime, different table.",
+    "description": "THE TAG SEAM. Shared code never learns what a tag means; this table does. An option in a script carries a tag string. When it fires, the tag is looked up here and hands out (a) a portrait emotion and (b) deltas on the speaker's named stats. A dating sim maps 'sharpened' onto affection; an interrogation maps it onto suspicion. Same runtime, different table.",
     "fields": [
         {"name": "tags",     "type": "String", "default": ""},
         {"name": "emotes",   "type": "String", "default": ""},
