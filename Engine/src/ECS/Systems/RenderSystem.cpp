@@ -5204,6 +5204,7 @@ void RenderSystem::SetUpscalerQuality(u32 quality) { m_UpscalerQuality = quality
 #include "Enjin/ECS/Components/ArtStyle.h"
 #include "Enjin/ECS/Components/MeshRenderer.h"
 #include "Enjin/ECS/Components/IKComponents.h"
+#include "Enjin/ECS/Components/HandIKComponent.h"
 #include "Enjin/ECS/Components/BoneAttachment.h"
 #include "Enjin/Animation/IKSolver.h"
 #include "Enjin/Math/Math.h"
@@ -7037,6 +7038,147 @@ void ApplyChainRotation(Animation::SkeletonPose& pose, i32 boneIdx,
 
 } // namespace
 
+// Settle one hand's fingers onto whatever is under them.
+//
+// Bones give three joint POSITIONS per finger and the solver wants four points,
+// so the tip comes from a named leaf bone where the rig has one and is
+// extrapolated past the distal joint where it does not. Everything is lifted to
+// world space, solved there, and written back as rotation deltas, because a
+// surface exists in world space and a bone's local rotation does not.
+void RenderSystem::SolveHandIK(Entity entity, AnimatorComponent& animComp,
+                               HandIKComponent& hand, f32 deltaTime) {
+    const auto* skeleton = animComp.animator.GetSkeleton();
+    if (!skeleton) return;
+
+    const i32 handIdx = skeleton->FindBoneIndex(hand.handBoneName);
+    if (handIdx < 0) return;
+
+    const auto& pose = animComp.animator.GetCurrentPose();
+    const Math::Matrix4 entityWorld = ComputeWorldMatrix(m_World, entity);
+
+    auto boneMatrix = [&](i32 idx) { return entityWorld * pose.worldTransforms[idx]; };
+    auto bonePos = [&](i32 idx) {
+        const Math::Matrix4 m = boneMatrix(idx);
+        return Math::Vector3(m.m[12], m.m[13], m.m[14]);
+    };
+    // Rotate a direction by a bone's world matrix without translating it.
+    auto boneDir = [&](i32 idx, const Math::Vector3& local) {
+        const Math::Matrix4 m = boneMatrix(idx);
+        return Math::Vector3(
+            m.m[0] * local.x + m.m[4] * local.y + m.m[8] * local.z,
+            m.m[1] * local.x + m.m[5] * local.y + m.m[9] * local.z,
+            m.m[2] * local.x + m.m[6] * local.y + m.m[10] * local.z);
+    };
+
+    Animation::HandPose solved;
+    solved.palmPosition = bonePos(handIdx);
+    solved.palmNormal = boneDir(handIdx, hand.palmNormalLocal);
+
+    // Bone indices per finger, kept so the write-back knows what to rotate.
+    struct Resolved { i32 bone[Animation::kFingerJoints]; bool usable; };
+    std::array<Resolved, Animation::kFingerCount> resolved{};
+
+    for (u32 f = 0; f < Animation::kFingerCount; ++f) {
+        const FingerBones& bones = hand.fingers[f];
+        resolved[f].usable = false;
+        if (!bones.IsSet()) continue;
+
+        const i32 p0 = skeleton->FindBoneIndex(bones.proximal);
+        const i32 p1 = skeleton->FindBoneIndex(bones.intermediate);
+        const i32 p2 = skeleton->FindBoneIndex(bones.distal);
+        if (p0 < 0 || p1 < 0 || p2 < 0) continue;
+
+        Animation::FingerChain& chain = solved.fingers[f];
+        chain.joints[0] = bonePos(p0);
+        chain.joints[1] = bonePos(p1);
+        chain.joints[2] = bonePos(p2);
+
+        i32 tipIdx = -1;
+        if (!bones.tip.empty()) tipIdx = skeleton->FindBoneIndex(bones.tip);
+        if (tipIdx >= 0) {
+            chain.joints[3] = bonePos(tipIdx);
+        } else {
+            // No leaf bone: continue past the distal joint along the last
+            // segment. Right for a straight finger, and it drifts as the finger
+            // curls, which is why naming a tip bone is better where the rig has
+            // one.
+            const Math::Vector3 last = chain.joints[2] - chain.joints[1];
+            chain.joints[3] = Math::Vector3(chain.joints[2].x + last.x,
+                                            chain.joints[2].y + last.y,
+                                            chain.joints[2].z + last.z);
+        }
+
+        chain.curlDirection = boneDir(handIdx, bones.curlDirection);
+        chain.approachWeight = hand.approachWeights[f];
+        chain.releaseWeight = hand.releaseWeights[f];
+
+        resolved[f].bone[0] = p0;
+        resolved[f].bone[1] = p1;
+        resolved[f].bone[2] = p2;
+        resolved[f].usable = true;
+    }
+
+    // Whether there is anything close enough to be worth holding decides which
+    // way the weights move. Both are advanced every frame whether or not a
+    // surface is found, so a hand that walks away from a counter releases
+    // instead of freezing mid-grip.
+    bool engaged = false;
+    Animation::SurfaceHit probe;
+    if (m_SurfaceQuery) {
+        engaged = m_SurfaceQuery->Cast(solved.palmPosition, solved.palmNormal,
+                                       hand.engageDistance, probe) && probe.hit;
+    }
+    hand.engaged = engaged;
+
+    for (u32 f = 0; f < Animation::kFingerCount; ++f) {
+        Animation::FingerChain& chain = solved.fingers[f];
+        Animation::HandIK::AdvanceWeights(chain,
+                                          engaged ? hand.weight : 0.0f,
+                                          engaged ? 0.0f : 1.0f,
+                                          hand.approachRate, hand.releaseRate, deltaTime);
+        hand.approachWeights[f] = chain.approachWeight;
+        hand.releaseWeights[f] = chain.releaseWeight;
+    }
+
+    if (!m_SurfaceQuery) {
+        // Nothing to ask. Hands stay on the animation, which is correct for a
+        // headless tool and not something to log every frame.
+        hand.fingersContacted = 0;
+        return;
+    }
+
+    // Remember where the animation had things, so the write-back computes a
+    // delta rather than a destination.
+    const Animation::HandPose animated = solved;
+
+    Animation::HandIKResult result;
+    if (hand.mode == Animation::HandTargetMode::SurfaceEdge) {
+        if (engaged) {
+            result = Animation::HandIK::SolveEdge(solved, probe.point,
+                                                  hand.edgeDirection, probe.normal);
+        }
+    } else {
+        result = Animation::HandIK::SolveSurface(solved, *m_SurfaceQuery);
+    }
+
+    hand.fingersContacted = result.fingersContacted;
+
+    // Write the solved chains back as rotations.
+    auto& poseMut = const_cast<Animation::SkeletonPose&>(pose);
+    for (u32 f = 0; f < Animation::kFingerCount; ++f) {
+        hand.contacted[f] = solved.fingers[f].contacted;
+        if (!resolved[f].usable || !solved.fingers[f].contacted) continue;
+
+        const Animation::FingerChain& before = animated.fingers[f];
+        const Animation::FingerChain& after = solved.fingers[f];
+        for (u32 j = 0; j < Animation::kFingerJoints; ++j) {
+            ApplyChainRotation(poseMut, resolved[f].bone[j],
+                               before.joints[j], before.joints[j + 1],
+                               after.joints[j + 1], after.joints[j]);
+        }
+    }
+}
+
 void RenderSystem::ProbeBakeOutsideFrameDiagnostic() {
     if (!m_ReflectionProbes || !m_VulkanRenderer) return;
 
@@ -7746,6 +7888,12 @@ void RenderSystem::Update(f32 deltaTime) {
                     }
                 }
             }
+        }
+
+        // Hand IK: five fingers, each settled on whatever is under it.
+        auto* handIK = m_World->GetComponent<HandIKComponent>(entity);
+        if (handIK && handIK->weight > 0.0f) {
+            SolveHandIK(entity, *animComp, *handIK, deltaTime);
         }
 
         // Two-Bone IK: analytic solve for arm/leg chains

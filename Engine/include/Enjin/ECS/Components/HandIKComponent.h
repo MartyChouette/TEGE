@@ -27,6 +27,18 @@ struct FingerBones {
     std::string intermediate;
     std::string distal;          // last joint to tip
 
+    // The fingertip, if the rig has one.
+    //
+    // Three bones give three joint positions, and the solver needs four points
+    // to describe three segments. Many rigs carry a leaf bone for exactly this
+    // ("LeftHandIndex4"); where one exists, name it and the tip is read rather
+    // than guessed. Where it does not, the tip is extrapolated past the distal
+    // joint along the last segment, which is right for a straight finger and
+    // drifts as the finger curls. That is a real approximation and worth
+    // knowing about when a fingertip sits a few millimetres off a counter on a
+    // rig with no leaf bones.
+    std::string tip;
+
     // Which way this finger bends, in the hand's local space.
     //
     // Needed, not optional: a perfectly straight finger aimed at its target is
@@ -40,6 +52,15 @@ struct FingerBones {
 struct HandIKComponent {
     // The wrist. Everything else is found relative to this.
     std::string handBoneName;
+
+    // Which way the palm faces, in the hand bone's own space.
+    //
+    // Rigs disagree about this and there is no way to infer it: the same hand
+    // is -Y in one export and +Z in another. Getting it wrong does not throw,
+    // it casts the fingertip rays out of the back of the hand, and every finger
+    // quietly reports no contact. So it is authored, and the inspector says
+    // what it is for.
+    Math::Vector3 palmNormalLocal = Math::Vector3(0.0f, -1.0f, 0.0f);
 
     // Thumb, index, middle, ring, little. A finger with no proximal bone name
     // is skipped, so a three-fingered rig is a supported rig rather than a

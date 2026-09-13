@@ -60,6 +60,7 @@ namespace Enjin {
 // Forward declared rather than included: HandIK.h pulls in the whole IK solver
 // and this header is included almost everywhere. Only a pointer is stored.
 namespace Animation { class ISurfaceQuery; }
+namespace ECS { struct HandIKComponent; struct AnimatorComponent; }
  namespace Effects {
     class WindSystem;
     class WeatherSystem;
@@ -2830,6 +2831,11 @@ private:
     // Null means hands that need surfaces stay on their animation, which is the
     // right behaviour for a headless tool rather than a reason to fail.
     Animation::ISurfaceQuery* m_SurfaceQuery = nullptr;
+
+    // Settle one hand's fingers onto whatever is under them. Runs in the serial
+    // IK pass, after the pose is sampled and before skinning matrices are built.
+    void SolveHandIK(Entity entity, AnimatorComponent& animComp,
+                     HandIKComponent& hand, f32 deltaTime);
 
 public:
     // Supply the surface queries hand IK needs. See m_SurfaceQuery.

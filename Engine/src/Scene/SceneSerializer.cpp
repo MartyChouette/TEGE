@@ -46,6 +46,7 @@
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/Components/IKComponents.h"
+#include "Enjin/ECS/Components/HandIKComponent.h"
 #include "Enjin/ECS/Components/BoneAttachment.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/BoundaryPolygon.h"
@@ -9953,6 +9954,66 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
             },
             [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::InteractionIKComponent>(e); },
             ENJIN_TYPE_OPS(ECS::InteractionIKComponent) },
+        ComponentSerdes{ "handIK",
+            [](ECS::World* w, ECS::Entity e){ return w->HasComponent<ECS::HandIKComponent>(e); },
+            [](ECS::World* w, ECS::Entity e)->json{
+                auto* ik = w->GetComponent<ECS::HandIKComponent>(e); json j;
+                j["handBone"] = ik->handBoneName;
+                j["palmNormalLocal"] = SerializeVector3(ik->palmNormalLocal);
+                j["mode"] = static_cast<i32>(ik->mode);
+                j["interactionTag"] = ik->interactionTag;
+                j["interactionRadius"] = RF(ik->interactionRadius);
+                j["engageDistance"] = RF(ik->engageDistance);
+                j["edgeDirection"] = SerializeVector3(ik->edgeDirection);
+                j["approachRate"] = RF(ik->approachRate);
+                j["releaseRate"] = RF(ik->releaseRate);
+                j["weight"] = RF(ik->weight);
+                json fingers = json::array();
+                for (const auto& f : ik->fingers) {
+                    json fj;
+                    fj["proximal"] = f.proximal;
+                    fj["intermediate"] = f.intermediate;
+                    fj["distal"] = f.distal;
+                    fj["tip"] = f.tip;
+                    fj["curlDirection"] = SerializeVector3(f.curlDirection);
+                    fingers.push_back(fj);
+                }
+                j["fingers"] = fingers;
+                return j;
+            },
+            [](ECS::World* w, ECS::Entity e, const json& hj){
+                auto& ik = w->AddComponent<ECS::HandIKComponent>(e);
+                if (hj.contains("handBone")) ik.handBoneName = SafeStr(hj["handBone"], MAX_STR_NAME);
+                if (hj.contains("palmNormalLocal")) ik.palmNormalLocal = DeserializeVector3(hj["palmNormalLocal"]);
+                if (hj.contains("mode")) {
+                    const i32 v = hj["mode"].get<i32>();
+                    if (v >= 0 && v <= 2) ik.mode = static_cast<Animation::HandTargetMode>(v);
+                }
+                if (hj.contains("interactionTag")) ik.interactionTag = SafeStr(hj["interactionTag"], MAX_STR_NAME);
+                if (hj.contains("interactionRadius")) ik.interactionRadius = hj["interactionRadius"].get<f32>();
+                if (hj.contains("engageDistance")) ik.engageDistance = hj["engageDistance"].get<f32>();
+                if (hj.contains("edgeDirection")) ik.edgeDirection = DeserializeVector3(hj["edgeDirection"]);
+                if (hj.contains("approachRate")) ik.approachRate = hj["approachRate"].get<f32>();
+                if (hj.contains("releaseRate")) ik.releaseRate = hj["releaseRate"].get<f32>();
+                if (hj.contains("weight")) ik.weight = hj["weight"].get<f32>();
+                if (hj.contains("fingers") && hj["fingers"].is_array()) {
+                    // Bounded by the component, not by the file: a scene
+                    // claiming forty fingers gets five.
+                    const usize count = std::min<usize>(hj["fingers"].size(),
+                                                        Enjin::Animation::kFingerCount);
+                    for (usize i = 0; i < count; ++i) {
+                        const auto& fj = hj["fingers"][i];
+                        auto& f = ik.fingers[i];
+                        if (fj.contains("proximal")) f.proximal = SafeStr(fj["proximal"], MAX_STR_NAME);
+                        if (fj.contains("intermediate")) f.intermediate = SafeStr(fj["intermediate"], MAX_STR_NAME);
+                        if (fj.contains("distal")) f.distal = SafeStr(fj["distal"], MAX_STR_NAME);
+                        if (fj.contains("tip")) f.tip = SafeStr(fj["tip"], MAX_STR_NAME);
+                        if (fj.contains("curlDirection")) f.curlDirection = DeserializeVector3(fj["curlDirection"]);
+                    }
+                }
+            },
+            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::HandIKComponent>(e); },
+            ENJIN_TYPE_OPS(ECS::HandIKComponent) },
         ComponentSerdes{ "twoBoneIK",
             [](ECS::World* w, ECS::Entity e){ return w->HasComponent<ECS::TwoBoneIKComponent>(e); },
             [](ECS::World* w, ECS::Entity e)->json{

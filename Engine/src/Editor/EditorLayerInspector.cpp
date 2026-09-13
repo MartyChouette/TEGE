@@ -83,6 +83,7 @@
 #include "Enjin/ECS/Components/Text.h"
 #include "Enjin/ECS/Components/DisplayGraphic.h"
 #include "Enjin/ECS/Components/IKComponents.h"
+#include "Enjin/ECS/Components/HandIKComponent.h"
 #include "Enjin/ECS/Components/BoneAttachment.h"
 #include "Enjin/ECS/Components/Flower.h"
 #ifndef _WIN32
@@ -1082,6 +1083,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::InteractionIKComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::InteractionIKComponent>(e); },
             "interactionIK", DimensionTag::Only3D},
+        {"Hand IK (per-finger)", "3D / Animation", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::HandIKComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::HandIKComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::HandIKComponent>(e); },
+            "handIK", DimensionTag::Only3D},
         {"Two-Bone IK", "3D / Animation", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TwoBoneIKComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TwoBoneIKComponent>(e); },
@@ -3231,6 +3237,139 @@ void EditorLayer::DrawInspectorPanel() {
                     ImGui::Spacing();
                     ImGui::DragFloat3("Target Position##LookAtIK", &ik->targetWorldPos.x, 0.1f);
                     ImGui::SetItemTooltip("World-space position the head looks toward");
+                }
+            }
+        }
+
+        if (m_World->HasComponent<ECS::HandIKComponent>(m_PrimarySelected)) {
+            bool handOpen = UI::SectionHeader("[IK] Hand IK (per-finger)", ImGuiTreeNodeFlags_DefaultOpen);
+            if (ImGui::BeginPopupContextItem("HandIKCtx")) {
+                if (ImGui::MenuItem("Remove Component")) {
+                    RemoveComponentWithUndo<ECS::HandIKComponent>(m_PrimarySelected, "handIK", "Hand IK");
+                    ImGui::EndPopup();
+                } else { ImGui::EndPopup(); }
+            } else if (handOpen) {
+                auto* hik = m_World->GetComponent<ECS::HandIKComponent>(m_PrimarySelected);
+                if (hik) {
+                    DrawComponentHelp("handIK", m_World, m_PrimarySelected);
+
+                    // Live state first. A rig with one bone name wrong shows up
+                    // as a hand that never contacts anything, and without this
+                    // row the only way to tell that from "there is nothing to
+                    // rest on" is to guess.
+                    ImGui::SeparatorText("Live");
+                    ImGui::Text("%s, %u of 5 fingers in contact",
+                                hik->engaged ? "engaged" : "not engaged",
+                                hik->fingersContacted);
+                    ImGui::SetItemTooltip(
+                        "Engaged means a surface is within Engage Distance of the palm.\n"
+                        "Engaged with zero fingers in contact usually means the palm\n"
+                        "normal axis is wrong for this rig, so the casts leave through\n"
+                        "the back of the hand.");
+
+                    ImGui::SeparatorText("Hand");
+                    char handBone[128];
+                    strncpy(handBone, hik->handBoneName.c_str(), sizeof(handBone) - 1);
+                    handBone[sizeof(handBone) - 1] = '\0';
+                    if (ImGui::InputText("Hand Bone##HandIK", handBone, sizeof(handBone))) {
+                        hik->handBoneName = handBone;
+                    }
+                    ImGui::SetItemTooltip("The wrist bone. Everything else is found relative to it.");
+
+                    float palm[3] = { hik->palmNormalLocal.x, hik->palmNormalLocal.y,
+                                      hik->palmNormalLocal.z };
+                    if (ImGui::DragFloat3("Palm Normal (local)##HandIK", palm, 0.05f, -1.0f, 1.0f)) {
+                        hik->palmNormalLocal = Math::Vector3(palm[0], palm[1], palm[2]);
+                    }
+                    ImGui::SetItemTooltip(
+                        "Which way the palm faces, in the hand bone's own space.\n"
+                        "Rigs disagree and it cannot be inferred: the same hand is -Y\n"
+                        "in one export and +Z in another. Wrong here does not error,\n"
+                        "it casts out of the back of the hand and nothing contacts.");
+
+                    ImGui::SeparatorText("Target");
+                    const char* modes[] = { "Entity (tagged interactable)",
+                                            "Surface point (counter, table)",
+                                            "Surface edge (shelf lip, railing)" };
+                    int mode = static_cast<int>(hik->mode);
+                    if (ImGui::Combo("Mode##HandIK", &mode, modes, 3)) {
+                        hik->mode = static_cast<Animation::HandTargetMode>(mode);
+                    }
+                    ImGui::SetItemTooltip(
+                        "Edge is not a special case of point: fingers curl OVER a lip\n"
+                        "rather than pressing onto it, which a point target cannot say.");
+
+                    ImGui::SliderFloat("Engage Distance##HandIK", &hik->engageDistance, 0.05f, 1.5f);
+                    ImGui::SetItemTooltip("How close the palm gets before the hand starts reaching.");
+
+                    if (hik->mode == Animation::HandTargetMode::SurfaceEdge) {
+                        float edge[3] = { hik->edgeDirection.x, hik->edgeDirection.y,
+                                          hik->edgeDirection.z };
+                        if (ImGui::DragFloat3("Edge Direction##HandIK", edge, 0.05f, -1.0f, 1.0f)) {
+                            hik->edgeDirection = Math::Vector3(edge[0], edge[1], edge[2]);
+                        }
+                        ImGui::SetItemTooltip("World direction the edge runs along.");
+                    }
+                    if (hik->mode == Animation::HandTargetMode::Entity) {
+                        char hTag[128];
+                        strncpy(hTag, hik->interactionTag.c_str(), sizeof(hTag) - 1);
+                        hTag[sizeof(hTag) - 1] = '\0';
+                        if (ImGui::InputText("Interaction Tag##HandIK", hTag, sizeof(hTag))) {
+                            hik->interactionTag = hTag;
+                        }
+                        ImGui::SliderFloat("Interaction Radius##HandIK", &hik->interactionRadius, 0.1f, 10.0f);
+                    }
+
+                    ImGui::SeparatorText("Taking hold, and letting go");
+                    ImGui::SliderFloat("Weight##HandIK", &hik->weight, 0.0f, 1.0f);
+                    ImGui::SetItemTooltip("Master blend. 0 disables without removing anything.");
+                    ImGui::SliderFloat("Approach Rate##HandIK", &hik->approachRate, 0.5f, 20.0f);
+                    ImGui::SetItemTooltip("Weight per second while reaching. 4 closes in a quarter second.");
+                    ImGui::SliderFloat("Release Rate##HandIK", &hik->releaseRate, 0.5f, 20.0f);
+                    ImGui::SetItemTooltip(
+                        "Weight per second while letting go, usually faster than the\n"
+                        "approach. Kept separate because a hand leaving a counter does\n"
+                        "not retrace how it arrived.");
+
+                    ImGui::SeparatorText("Fingers");
+                    static const char* kFingerNames[] = { "Thumb", "Index", "Middle", "Ring", "Little" };
+                    for (Enjin::u32 fi = 0; fi < Animation::kFingerCount; ++fi) {
+                        auto& fb = hik->fingers[fi];
+                        ImGui::PushID(static_cast<int>(fi));
+                        const bool set = fb.IsSet();
+                        char label[64];
+                        snprintf(label, sizeof(label), "%s%s%s", kFingerNames[fi],
+                                 set ? "" : "  (unset)",
+                                 (set && hik->contacted[fi]) ? "  [contact]" : "");
+                        if (ImGui::TreeNode(label)) {
+                            char b[128];
+                            strncpy(b, fb.proximal.c_str(), sizeof(b) - 1); b[sizeof(b)-1] = '\0';
+                            if (ImGui::InputText("Proximal", b, sizeof(b))) fb.proximal = b;
+                            strncpy(b, fb.intermediate.c_str(), sizeof(b) - 1); b[sizeof(b)-1] = '\0';
+                            if (ImGui::InputText("Intermediate", b, sizeof(b))) fb.intermediate = b;
+                            strncpy(b, fb.distal.c_str(), sizeof(b) - 1); b[sizeof(b)-1] = '\0';
+                            if (ImGui::InputText("Distal", b, sizeof(b))) fb.distal = b;
+                            strncpy(b, fb.tip.c_str(), sizeof(b) - 1); b[sizeof(b)-1] = '\0';
+                            if (ImGui::InputText("Tip (optional)", b, sizeof(b))) fb.tip = b;
+                            ImGui::SetItemTooltip(
+                                "A leaf bone at the fingertip, if the rig has one.\n"
+                                "Without it the tip is extrapolated past the distal joint,\n"
+                                "which is right for a straight finger and drifts as it curls.");
+
+                            float curl[3] = { fb.curlDirection.x, fb.curlDirection.y,
+                                              fb.curlDirection.z };
+                            if (ImGui::DragFloat3("Curl Direction", curl, 0.05f, -1.0f, 1.0f)) {
+                                fb.curlDirection = Math::Vector3(curl[0], curl[1], curl[2]);
+                            }
+                            ImGui::SetItemTooltip(
+                                "Which way this finger bends, in hand space. Required, not\n"
+                                "cosmetic: a perfectly straight finger aimed at its target\n"
+                                "is a case the IK solver cannot resolve on its own, and a\n"
+                                "flat hand over a counter is exactly that.");
+                            ImGui::TreePop();
+                        }
+                        ImGui::PopID();
+                    }
                 }
             }
         }

@@ -11,6 +11,11 @@
 
 #include "EnjinTest.h"
 #include "Enjin/Animation/HandIK.h"
+#include "Enjin/ECS/Components/HandIKComponent.h"
+#include "Enjin/ECS/World.h"
+#include "Enjin/Scene/SceneSerializer.h"
+#include "Enjin/ECS/Components/Transform.h"
+#include <string>
 
 #include <cstdio>
 
@@ -325,6 +330,91 @@ ENJIN_TEST(HandIK, TheChainNeverStretchesPastItsBoneLengths) {
             ENJIN_EXPECT_FLOAT_NEAR(solvedLen, originalLen, 0.001f);
         }
     }
+}
+
+// A component the system reads and nothing saves is a component that does not
+// exist.
+//
+// This engine shipped exactly that within the last day: MaterialComponent's
+// surfaceMaterial was read by the acoustics, drove the whole room-materials
+// demo, and was serialized by nothing, so a scene could not author it and it
+// did not survive a save. The demo it was built for loaded as three identical
+// rooms and proved the opposite of its point.
+//
+// HandIKComponent is the same shape of risk, only worse: ten bone names and
+// five curl directions per hand, none of which can be re-derived, all of which
+// are tedious to re-enter, and whose absence shows up not as an error but as a
+// hand that simply stops conforming.
+ENJIN_TEST(HandIK, TheComponentSurvivesASave) {
+    // Arrange: distinctive values in every field, so a default-valued field
+    // cannot pass by coincidence.
+    ECS::World source;
+    const ECS::Entity e = source.CreateEntity();
+    source.AddComponent<ECS::TransformComponent>(e, ECS::TransformComponent{});
+
+    ECS::HandIKComponent& hand = source.AddComponent<ECS::HandIKComponent>(e);
+    hand.handBoneName = "LeftHand";
+    hand.palmNormalLocal = Vector3(0.0f, 0.0f, -1.0f);
+    hand.mode = Animation::HandTargetMode::SurfaceEdge;
+    hand.interactionTag = "shelf";
+    hand.interactionRadius = 2.25f;
+    hand.engageDistance = 0.42f;
+    hand.edgeDirection = Vector3(0.0f, 0.0f, 1.0f);
+    hand.approachRate = 3.5f;
+    hand.releaseRate = 7.25f;
+    hand.weight = 0.75f;
+
+    const char* names[Animation::kFingerCount] =
+        { "Thumb", "Index", "Middle", "Ring", "Little" };
+    for (u32 f = 0; f < Animation::kFingerCount; ++f) {
+        hand.fingers[f].proximal = std::string("LeftHand") + names[f] + "1";
+        hand.fingers[f].intermediate = std::string("LeftHand") + names[f] + "2";
+        hand.fingers[f].distal = std::string("LeftHand") + names[f] + "3";
+        hand.fingers[f].tip = std::string("LeftHand") + names[f] + "4";
+        hand.fingers[f].curlDirection = Vector3(0.1f * static_cast<f32>(f + 1), 0.5f, -0.25f);
+    }
+
+    // Act
+    Scene::SceneSerializer writer(&source);
+    const std::string text = writer.SaveToString();
+
+    ECS::World loaded;
+    Scene::SceneSerializer reader(&loaded);
+    ENJIN_ASSERT_TRUE(reader.LoadFromString(text).success);
+
+    // Assert
+    ECS::Entity found = ECS::INVALID_ENTITY;
+    for (ECS::Entity candidate : loaded.GetEntitiesWithComponent<ECS::HandIKComponent>()) {
+        found = candidate;
+        break;
+    }
+    ENJIN_ASSERT_TRUE(found != ECS::INVALID_ENTITY);
+
+    const auto* out = loaded.GetComponent<ECS::HandIKComponent>(found);
+    ENJIN_ASSERT_TRUE(out != nullptr);
+
+    ENJIN_EXPECT_TRUE(out->handBoneName == "LeftHand");
+    ENJIN_EXPECT_TRUE(out->interactionTag == "shelf");
+    ENJIN_EXPECT_TRUE(out->mode == Animation::HandTargetMode::SurfaceEdge);
+    ENJIN_EXPECT_FLOAT_NEAR(out->palmNormalLocal.z, -1.0f, 1.0e-5f);
+    ENJIN_EXPECT_FLOAT_NEAR(out->interactionRadius, 2.25f, 1.0e-4f);
+    ENJIN_EXPECT_FLOAT_NEAR(out->engageDistance, 0.42f, 1.0e-4f);
+    ENJIN_EXPECT_FLOAT_NEAR(out->edgeDirection.z, 1.0f, 1.0e-5f);
+    ENJIN_EXPECT_FLOAT_NEAR(out->approachRate, 3.5f, 1.0e-4f);
+    ENJIN_EXPECT_FLOAT_NEAR(out->releaseRate, 7.25f, 1.0e-4f);
+    ENJIN_EXPECT_FLOAT_NEAR(out->weight, 0.75f, 1.0e-4f);
+
+    for (u32 f = 0; f < Animation::kFingerCount; ++f) {
+        const std::string expected = std::string("LeftHand") + names[f] + "1";
+        ENJIN_EXPECT_TRUE(out->fingers[f].proximal == expected);
+        ENJIN_EXPECT_TRUE(out->fingers[f].tip == std::string("LeftHand") + names[f] + "4");
+        ENJIN_EXPECT_FLOAT_NEAR(out->fingers[f].curlDirection.x,
+                                0.1f * static_cast<f32>(f + 1), 1.0e-4f);
+        ENJIN_EXPECT_FLOAT_NEAR(out->fingers[f].curlDirection.z, -0.25f, 1.0e-4f);
+    }
+
+    std::printf("    round trip kept %u fingers of bone names and curl directions\n",
+                Animation::kFingerCount);
 }
 
 ENJIN_TEST_MAIN()
