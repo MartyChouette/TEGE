@@ -10390,7 +10390,87 @@ void SceneSerializer::DeserializeEntities(const json& sceneJson, Deserialization
             // value() on a null throws out of here -- uncaught per entity, so it
             // failed the ENTIRE scene load. Read it as the empty object it meant.
             static const json kEmptyComponent = json::object();
-            reg.de(m_World, entity, regIt->is_null() ? kEmptyComponent : *regIt);
+            const json& componentJson = regIt->is_null() ? kEmptyComponent : *regIt;
+            reg.de(m_World, entity, componentJson);
+
+            // Warn about fields INSIDE a component that nothing reads.
+            //
+            // Unknown keys at ENTITY level were already reported (see
+            // knownEntityKeys above); unknown keys inside a component were not,
+            // and that is the far larger surface. Every deserializer is a list
+            // of `if (j.contains("x"))`, so a field spelled wrong is simply
+            // never asked for. Nothing throws, nothing logs, and the component
+            // loads with that value at its default.
+            //
+            // That cost a day. Three generated demo scenes wrote
+            // `"isStatic": true` into every rigidbody -- a field the 3D
+            // component does not have, because it uses `bodyType` -- so every
+            // wall and floor loaded as a DYNAMIC body and the rooms slowly shook
+            // themselves apart. The name is not even a typo: isStatic is a real
+            // field on the 2D body, which is exactly the kind of wrong that
+            // survives review.
+            //
+            // HOW "UNKNOWN" IS DECIDED, and why it took three tries.
+            //
+            // First attempt: compare the input against what the serializer
+            // WRITES. Wrong wherever serialization is conditional --
+            // TransformComponent only writes `visible` when it is FALSE, so
+            // every entity in every scene came back flagged.
+            //
+            // Second attempt: remove the key and see whether the component
+            // changes. Also wrong, and more subtly: `"visible": true` on a
+            // transform whose default is already true changes nothing, so a
+            // perfectly ordinary line was still reported.
+            //
+            // Both were asking "did this key make a difference", when the
+            // question is "does the deserializer READ this key". So: change the
+            // value to something else and see whether the component notices. A
+            // field that is read tracks the new value; a field that is ignored
+            // cannot. Only scalars are perturbed, because an array or object
+            // has no obvious "different value" -- those are left alone rather
+            // than guessed at, since a false alarm here trains people to stop
+            // reading the warnings and then the real one goes unseen too.
+            if (componentJson.is_object() && !componentJson.empty() &&
+                result.warnings.size() < kMaxLoadWarnings &&
+                reg.has && reg.ser && reg.rem && reg.has(m_World, entity)) {
+
+                const json loaded = reg.ser(m_World, entity);
+
+                for (auto it = componentJson.begin(); it != componentJson.end(); ++it) {
+                    if (result.warnings.size() >= kMaxLoadWarnings) break;
+
+                    const json& v = it.value();
+                    json altered;
+                    if (v.is_boolean())            altered = !v.get<bool>();
+                    else if (v.is_number_integer()) altered = v.get<long long>() + 7;
+                    else if (v.is_number())         altered = v.get<double>() + 7.0;
+                    else if (v.is_string())         altered = v.get<std::string>() + "_x";
+                    else continue;                  // array, object, null: not perturbable
+
+                    json probe = componentJson;
+                    probe[it.key()] = altered;
+
+                    reg.rem(m_World, entity);
+                    reg.de(m_World, entity, probe);
+                    const json probed = reg.has(m_World, entity)
+                        ? reg.ser(m_World, entity) : json::object();
+
+                    // Put the component back the way the scene asked for it,
+                    // whatever the verdict. A diagnostic that changes what loads
+                    // would be worse than the bug it reports.
+                    reg.rem(m_World, entity);
+                    reg.de(m_World, entity, componentJson);
+
+                    if (probed != loaded) continue;   // the value was read
+
+                    result.warnings.push_back(
+                        "Component '" + std::string(reg.key) + "' has no field '" + it.key() +
+                        "'. It was ignored, so that value is at its default.");
+                    ENJIN_LOG_WARN(Asset,
+                        "Scene load: component '%s' has no field '%s' - ignored, so it "
+                        "kept its default value", reg.key, it.key().c_str());
+                }
+            }
         }
         if (entityJson.contains("mesh")) {
             auto mesh = DeserializeMeshComponent(entityJson["mesh"]);

@@ -85,8 +85,7 @@ def box(name, pos, size, surface, collide=True):
     if collide:
         kw["boxCollider"] = {"size": list(size), "center": [0, 0, 0],
                              "friction": 0.6, "bounciness": 0.0}
-        kw["rigidbody"] = {"isStatic": True, "isKinematic": False, "mass": 0,
-                           "useGravity": False}
+        kw["rigidbody"] = {"bodyType": 2, "mass": 0, "useGravity": False}
     add(name, **kw)
 
 
@@ -246,8 +245,7 @@ player = add("Player",
              transform=xform((-6.0, 0.9, -2.0), (0.6, 1.7, 0.6)),
              firstPerson={"moveSpeed": 3.2, "jumpForce": 6.0,
                           "mouseSensitivity": 2.0, "eyeHeight": 1.65},
-             rigidbody={"isStatic": False, "isKinematic": False, "mass": 70.0,
-                        "useGravity": True},
+             rigidbody={"bodyType": 0, "mass": 70.0, "useGravity": True},
              capsuleCollider={"radius": 0.3, "height": 1.1, "center": [0, 0, 0]})
 
 cam = add("MainCam",

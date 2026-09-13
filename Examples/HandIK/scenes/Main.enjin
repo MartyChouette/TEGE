@@ -478,8 +478,7 @@
     "bounciness": 0.0
    },
    "rigidbody": {
-    "isStatic": true,
-    "isKinematic": false,
+    "bodyType": 2,
     "mass": 0,
     "useGravity": false
    }
@@ -961,8 +960,7 @@
     "bounciness": 0.0
    },
    "rigidbody": {
-    "isStatic": true,
-    "isKinematic": false,
+    "bodyType": 2,
     "mass": 0,
     "useGravity": false
    }
@@ -1444,8 +1442,7 @@
     "bounciness": 0.0
    },
    "rigidbody": {
-    "isStatic": true,
-    "isKinematic": false,
+    "bodyType": 2,
     "mass": 0,
     "useGravity": false
    }
@@ -1927,8 +1924,7 @@
     "bounciness": 0.0
    },
    "rigidbody": {
-    "isStatic": true,
-    "isKinematic": false,
+    "bodyType": 2,
     "mass": 0,
     "useGravity": false
    }
@@ -2410,8 +2406,7 @@
     "bounciness": 0.0
    },
    "rigidbody": {
-    "isStatic": true,
-    "isKinematic": false,
+    "bodyType": 2,
     "mass": 0,
     "useGravity": false
    }
@@ -2893,8 +2888,7 @@
     "bounciness": 0.0
    },
    "rigidbody": {
-    "isStatic": true,
-    "isKinematic": false,
+    "bodyType": 2,
     "mass": 0,
     "useGravity": false
    }
@@ -3376,8 +3370,7 @@
     "bounciness": 0.0
    },
    "rigidbody": {
-    "isStatic": true,
-    "isKinematic": false,
+    "bodyType": 2,
     "mass": 0,
     "useGravity": false
    }
@@ -3859,8 +3852,7 @@
     "bounciness": 0.0
    },
    "rigidbody": {
-    "isStatic": true,
-    "isKinematic": false,
+    "bodyType": 2,
     "mass": 0,
     "useGravity": false
    }
@@ -4342,8 +4334,7 @@
     "bounciness": 0.0
    },
    "rigidbody": {
-    "isStatic": true,
-    "isKinematic": false,
+    "bodyType": 2,
     "mass": 0,
     "useGravity": false
    }
@@ -4825,8 +4816,7 @@
     "bounciness": 0.0
    },
    "rigidbody": {
-    "isStatic": true,
-    "isKinematic": false,
+    "bodyType": 2,
     "mass": 0,
     "useGravity": false
    }
@@ -5308,8 +5298,7 @@
     "bounciness": 0.0
    },
    "rigidbody": {
-    "isStatic": true,
-    "isKinematic": false,
+    "bodyType": 2,
     "mass": 0,
     "useGravity": false
    }
@@ -5791,8 +5780,7 @@
     "bounciness": 0.0
    },
    "rigidbody": {
-    "isStatic": true,
-    "isKinematic": false,
+    "bodyType": 2,
     "mass": 0,
     "useGravity": false
    }
@@ -6274,8 +6262,7 @@
     "bounciness": 0.0
    },
    "rigidbody": {
-    "isStatic": true,
-    "isKinematic": false,
+    "bodyType": 2,
     "mass": 0,
     "useGravity": false
    }
@@ -6757,8 +6744,7 @@
     "bounciness": 0.0
    },
    "rigidbody": {
-    "isStatic": true,
-    "isKinematic": false,
+    "bodyType": 2,
     "mass": 0,
     "useGravity": false
    }
@@ -7240,8 +7226,7 @@
     "bounciness": 0.0
    },
    "rigidbody": {
-    "isStatic": true,
-    "isKinematic": false,
+    "bodyType": 2,
     "mass": 0,
     "useGravity": false
    }
@@ -7723,8 +7708,7 @@
     "bounciness": 0.0
    },
    "rigidbody": {
-    "isStatic": true,
-    "isKinematic": false,
+    "bodyType": 2,
     "mass": 0,
     "useGravity": false
    }
@@ -7760,8 +7744,7 @@
     "eyeHeight": 1.65
    },
    "rigidbody": {
-    "isStatic": false,
-    "isKinematic": false,
+    "bodyType": 0,
     "mass": 70.0,
     "useGravity": true
    },

@@ -87,8 +87,7 @@ def box(name, pos, size, surface):
                   "metallic": 0.0, "roughness": 0.85, "surfaceMaterial": surface},
         boxCollider={"size": list(size), "center": [0, 0, 0],
                      "friction": 0.6, "bounciness": 0.0},
-        rigidbody={"isStatic": True, "isKinematic": False, "mass": 0,
-                   "useGravity": False})
+        rigidbody={"bodyType": 2, "mass": 0, "useGravity": False})
 
 W, H, D = 10.0, 3.4, 8.0
 WALL = 0.4

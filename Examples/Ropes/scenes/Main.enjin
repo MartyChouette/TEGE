@@ -559,10 +559,9 @@
     "bounciness": 0.0
    },
    "rigidbody": {
-    "isStatic": true,
-    "isKinematic": false,
     "mass": 0,
-    "useGravity": false
+    "useGravity": false,
+    "bodyType": 2
    }
   },
   {
@@ -1041,10 +1040,9 @@
     "bounciness": 0.0
    },
    "rigidbody": {
-    "isStatic": true,
-    "isKinematic": false,
     "mass": 0,
-    "useGravity": false
+    "useGravity": false,
+    "bodyType": 2
    }
   },
   {
@@ -1523,10 +1521,9 @@
     "bounciness": 0.0
    },
    "rigidbody": {
-    "isStatic": true,
-    "isKinematic": false,
     "mass": 0,
-    "useGravity": false
+    "useGravity": false,
+    "bodyType": 2
    }
   },
   {
@@ -2005,10 +2002,9 @@
     "bounciness": 0.0
    },
    "rigidbody": {
-    "isStatic": true,
-    "isKinematic": false,
     "mass": 0,
-    "useGravity": false
+    "useGravity": false,
+    "bodyType": 2
    }
   },
   {
@@ -3045,10 +3041,9 @@
     "bounciness": 0.0
    },
    "rigidbody": {
-    "isStatic": true,
-    "isKinematic": false,
     "mass": 0,
-    "useGravity": false
+    "useGravity": false,
+    "bodyType": 2
    }
   },
   {
@@ -3527,10 +3522,9 @@
     "bounciness": 0.0
    },
    "rigidbody": {
-    "isStatic": true,
-    "isKinematic": false,
     "mass": 0,
-    "useGravity": false
+    "useGravity": false,
+    "bodyType": 2
    }
   },
   {

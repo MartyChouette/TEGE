@@ -466,7 +466,7 @@
      0.0,
      0.0
     ],
-    "bodyType": 0,
+    "bodyType": 2,
     "collisionMode": 0,
     "drag": 0.0,
     "freezePositionX": 0.0,
@@ -974,7 +974,7 @@
      0.0,
      0.0
     ],
-    "bodyType": 0,
+    "bodyType": 2,
     "collisionMode": 0,
     "drag": 0.0,
     "freezePositionX": 0.0,
@@ -1482,7 +1482,7 @@
      0.0,
      0.0
     ],
-    "bodyType": 0,
+    "bodyType": 2,
     "collisionMode": 0,
     "drag": 0.0,
     "freezePositionX": 0.0,
@@ -1990,7 +1990,7 @@
      0.0,
      0.0
     ],
-    "bodyType": 0,
+    "bodyType": 2,
     "collisionMode": 0,
     "drag": 0.0,
     "freezePositionX": 0.0,
@@ -2498,7 +2498,7 @@
      0.0,
      0.0
     ],
-    "bodyType": 0,
+    "bodyType": 2,
     "collisionMode": 0,
     "drag": 0.0,
     "freezePositionX": 0.0,
@@ -3006,7 +3006,7 @@
      0.0,
      0.0
     ],
-    "bodyType": 0,
+    "bodyType": 2,
     "collisionMode": 0,
     "drag": 0.0,
     "freezePositionX": 0.0,
@@ -3514,7 +3514,7 @@
      0.0,
      0.0
     ],
-    "bodyType": 0,
+    "bodyType": 2,
     "collisionMode": 0,
     "drag": 0.0,
     "freezePositionX": 0.0,
@@ -4022,7 +4022,7 @@
      0.0,
      0.0
     ],
-    "bodyType": 0,
+    "bodyType": 2,
     "collisionMode": 0,
     "drag": 0.0,
     "freezePositionX": 0.0,
@@ -4530,7 +4530,7 @@
      0.0,
      0.0
     ],
-    "bodyType": 0,
+    "bodyType": 2,
     "collisionMode": 0,
     "drag": 0.0,
     "freezePositionX": 0.0,
@@ -5038,7 +5038,7 @@
      0.0,
      0.0
     ],
-    "bodyType": 0,
+    "bodyType": 2,
     "collisionMode": 0,
     "drag": 0.0,
     "freezePositionX": 0.0,
@@ -5546,7 +5546,7 @@
      0.0,
      0.0
     ],
-    "bodyType": 0,
+    "bodyType": 2,
     "collisionMode": 0,
     "drag": 0.0,
     "freezePositionX": 0.0,
@@ -6054,7 +6054,7 @@
      0.0,
      0.0
     ],
-    "bodyType": 0,
+    "bodyType": 2,
     "collisionMode": 0,
     "drag": 0.0,
     "freezePositionX": 0.0,
@@ -6562,7 +6562,7 @@
      0.0,
      0.0
     ],
-    "bodyType": 0,
+    "bodyType": 2,
     "collisionMode": 0,
     "drag": 0.0,
     "freezePositionX": 0.0,
@@ -7070,7 +7070,7 @@
      0.0,
      0.0
     ],
-    "bodyType": 0,
+    "bodyType": 2,
     "collisionMode": 0,
     "drag": 0.0,
     "freezePositionX": 0.0,
@@ -7578,7 +7578,7 @@
      0.0,
      0.0
     ],
-    "bodyType": 0,
+    "bodyType": 2,
     "collisionMode": 0,
     "drag": 0.0,
     "freezePositionX": 0.0,
@@ -8086,7 +8086,7 @@
      0.0,
      0.0
     ],
-    "bodyType": 0,
+    "bodyType": 2,
     "collisionMode": 0,
     "drag": 0.0,
     "freezePositionX": 0.0,
@@ -8594,7 +8594,7 @@
      0.0,
      0.0
     ],
-    "bodyType": 0,
+    "bodyType": 2,
     "collisionMode": 0,
     "drag": 0.0,
     "freezePositionX": 0.0,
@@ -9102,7 +9102,7 @@
      0.0,
      0.0
     ],
-    "bodyType": 0,
+    "bodyType": 2,
     "collisionMode": 0,
     "drag": 0.0,
     "freezePositionX": 0.0,
@@ -9610,7 +9610,7 @@
      0.0,
      0.0
     ],
-    "bodyType": 0,
+    "bodyType": 2,
     "collisionMode": 0,
     "drag": 0.0,
     "freezePositionX": 0.0,
@@ -10118,7 +10118,7 @@
      0.0,
      0.0
     ],
-    "bodyType": 0,
+    "bodyType": 2,
     "collisionMode": 0,
     "drag": 0.0,
     "freezePositionX": 0.0,
@@ -10626,7 +10626,7 @@
      0.0,
      0.0
     ],
-    "bodyType": 0,
+    "bodyType": 2,
     "collisionMode": 0,
     "drag": 0.0,
     "freezePositionX": 0.0,
@@ -11134,7 +11134,7 @@
      0.0,
      0.0
     ],
-    "bodyType": 0,
+    "bodyType": 2,
     "collisionMode": 0,
     "drag": 0.0,
     "freezePositionX": 0.0,
@@ -11642,7 +11642,7 @@
      0.0,
      0.0
     ],
-    "bodyType": 0,
+    "bodyType": 2,
     "collisionMode": 0,
     "drag": 0.0,
     "freezePositionX": 0.0,
@@ -12150,7 +12150,7 @@
      0.0,
      0.0
     ],
-    "bodyType": 0,
+    "bodyType": 2,
     "collisionMode": 0,
     "drag": 0.0,
     "freezePositionX": 0.0,
@@ -12658,7 +12658,7 @@
      0.0,
      0.0
     ],
-    "bodyType": 0,
+    "bodyType": 2,
     "collisionMode": 0,
     "drag": 0.0,
     "freezePositionX": 0.0,
@@ -13166,7 +13166,7 @@
      0.0,
      0.0
     ],
-    "bodyType": 0,
+    "bodyType": 2,
     "collisionMode": 0,
     "drag": 0.0,
     "freezePositionX": 0.0,
@@ -13674,7 +13674,7 @@
      0.0,
      0.0
     ],
-    "bodyType": 0,
+    "bodyType": 2,
     "collisionMode": 0,
     "drag": 0.0,
     "freezePositionX": 0.0,
@@ -14182,7 +14182,7 @@
      0.0,
      0.0
     ],
-    "bodyType": 0,
+    "bodyType": 2,
     "collisionMode": 0,
     "drag": 0.0,
     "freezePositionX": 0.0,
@@ -14690,7 +14690,7 @@
      0.0,
      0.0
     ],
-    "bodyType": 0,
+    "bodyType": 2,
     "collisionMode": 0,
     "drag": 0.0,
     "freezePositionX": 0.0,
@@ -15198,7 +15198,7 @@
      0.0,
      0.0
     ],
-    "bodyType": 0,
+    "bodyType": 2,
     "collisionMode": 0,
     "drag": 0.0,
     "freezePositionX": 0.0,
@@ -15706,7 +15706,7 @@
      0.0,
      0.0
     ],
-    "bodyType": 0,
+    "bodyType": 2,
     "collisionMode": 0,
     "drag": 0.0,
     "freezePositionX": 0.0,
@@ -16214,7 +16214,7 @@
      0.0,
      0.0
     ],
-    "bodyType": 0,
+    "bodyType": 2,
     "collisionMode": 0,
     "drag": 0.0,
     "freezePositionX": 0.0,
@@ -16722,7 +16722,7 @@
      0.0,
      0.0
     ],
-    "bodyType": 0,
+    "bodyType": 2,
     "collisionMode": 0,
     "drag": 0.0,
     "freezePositionX": 0.0,
@@ -19620,7 +19620,7 @@
      0.0,
      0.0
     ],
-    "bodyType": 0,
+    "bodyType": 2,
     "collisionMode": 0,
     "drag": 0.0,
     "freezePositionX": 0.0,
