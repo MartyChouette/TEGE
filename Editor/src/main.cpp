@@ -466,6 +466,18 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    // --validate-templates [id]: HEADLESS. Instantiate every shipped template
+    // into a temp project through the real copy path and check the RESULT, not
+    // the template folder. Exits non-zero if any template would produce a
+    // broken project, which is the shape CI wants.
+    for (int i = 1; i < argc; i++) {
+        if (argv[i] && std::string(argv[i]) == "--validate-templates") {
+            const std::string only =
+                (i + 1 < argc && argv[i + 1] && argv[i + 1][0] != '-') ? argv[i + 1] : std::string();
+            return Enjin::Editor::EditorLayer::ValidateTemplatesDeep(only);
+        }
+    }
+
     for (int i = 1; i < argc; i++) {
         if (argv[i] && std::string(argv[i]) == "--build-web" && i + 1 < argc && argv[i + 1]) {
             std::string projectPath = argv[i + 1];

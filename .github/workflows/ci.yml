@@ -301,6 +301,18 @@ jobs:
             throw "installed editor reported broken templates"
           }
 
+          # Deep templates: INSTANTIATE each one through the real copy path and
+          # check the project it produces - everything arrived, every referenced
+          # file exists, the scripts compile, the data assets load.
+          # --list-templates only proves the metadata parsed, and it reported
+          # "ok" throughout the period when a project made from datingsim opened
+          # with no content at all.
+          & ".\EnjinEditor.exe" --validate-templates 2>&1 | Tee-Object -Variable deepLog | ForEach-Object { "$_" }
+          if ($LASTEXITCODE -ne 0) { throw "a shipped template produces a broken project" }
+          if (-not ($deepLog | Where-Object { "$_" -match "template\(s\) instantiated, 0 failing" })) {
+            throw "deep template validation did not report a clean run"
+          }
+
           # Boot it for real. This is the check that proves ../shaders resolves:
           # without that prefix the installed editor finds no compute shaders.
           # The pipe is load-bearing - PowerShell does not wait on a
@@ -484,6 +496,11 @@ jobs:
           ./EnjinEditor --list-templates 2>&1 | tee "$GITHUB_WORKSPACE/install_templates.log"
           grep -qE "[0-9]+ templates, 0 broken" "$GITHUB_WORKSPACE/install_templates.log" \
             || { echo "installed build cannot find its templates"; exit 1; }
+
+          # Deep templates: instantiate each one and check what it PRODUCES.
+          # --list-templates only proves the metadata parsed.
+          ./EnjinEditor --validate-templates 2>&1 | tee "$GITHUB_WORKSPACE/install_templates_deep.log"
+          grep -qE "template\(s\) instantiated, 0 failing"             "$GITHUB_WORKSPACE/install_templates_deep.log"             || { echo "a shipped template produces a broken project"; exit 1; }
 
           # Boot the installed editor for real. This is what proves shaders
           # resolve from ../share/enjin/shaders rather than from a source tree.

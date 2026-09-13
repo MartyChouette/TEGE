@@ -246,6 +246,12 @@ public:
     // CI should be able to ask.
     static int ValidateBuiltinTemplates();
 
+    // Deep validation: instantiate each template through the SHIPPING copy path
+    // into a temp project and interrogate the result -- everything arrived,
+    // every referenced file exists, the scripts compile, the data assets load.
+    // Empty id means all of them. Returns 0 when every template passes.
+    static int ValidateTemplatesDeep(const std::string& onlyId = std::string());
+
     static inline std::string s_GoldenCapturePath;
     // --bake-plate <name>: bake a background plate from the launch scene, then
     // exit. Exists so the bake has a path that is not a mouse click.

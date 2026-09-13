@@ -10,6 +10,7 @@ extern char** environ;
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Core/Version.h"
 #include "Enjin/Scripting/ScriptEngine.h"
+#include "Enjin/Scripting/ScriptChecker.h"
 #include <GLFW/glfw3.h>
 #include <chrono>
 #include "Enjin/Logging/Log.h"
@@ -2747,6 +2748,278 @@ void EditorLayer::ApplyTemplateLayout(const std::string& templateId) {
 
     m_VisiblePanels = m_Layout.panels;
     m_ForceLayout = true;
+}
+
+// ---------------------------------------------------------------------------
+// DEEP TEMPLATE VALIDATION
+//
+// The shallow check below answers "did the metadata parse and is there a
+// scene file". It reported `datingsim ok` for as long as a project made from
+// datingsim opened with nothing to say, because the thing that was broken --
+// data/ never being copied -- is invisible to any check that looks at the
+// template folder instead of at what the template PRODUCES.
+//
+// So this one instantiates. It runs the real CopyBuiltinTemplate and
+// CopyExampleProject, into a temp directory, and then interrogates the result.
+// Going through the shipping code path is the whole point: a validator with its
+// own idea of what gets copied drifts from the copier and starts certifying
+// bugs.
+//
+// Four questions, each one a bug this repo has actually shipped:
+//   1. Did everything arrive?     (data/ vanished into an allowlist)
+//   2. Do referenced files exist? (a scene pointing at a font it did not ship)
+//   3. Do the scripts compile?
+//   4. Are the data assets loadable? ({schema,data} instead of {name,schema,values})
+namespace {
+
+// Every field in a scene that names a file on disk. Walked recursively, because
+// these sit at wildly different depths: fontPath on a text component,
+// sourcePath on a displayGraphic, path on each entry of a scriptComponent.
+void CollectScenePaths(const nlohmann::json& j, std::vector<std::string>& out) {
+    static const char* kPathKeys[] = {
+        "fontPath", "sourcePath", "path", "imagePath", "texturePath",
+        "baseColorTexture", "normalTexture", "meshPath", "materialPath",
+    };
+    if (j.is_object()) {
+        for (auto it = j.begin(); it != j.end(); ++it) {
+            for (const char* k : kPathKeys) {
+                if (it.key() != k || !it.value().is_string()) continue;
+                const std::string v = it.value().get<std::string>();
+                // Empty is legal and means "engine default" for fonts.
+                // Absolute paths are a different bug and not this one's to find.
+                if (v.empty() || v.find(':') != std::string::npos) continue;
+                if (v.rfind("//", 0) == 0) continue;
+                out.push_back(v);
+            }
+            CollectScenePaths(it.value(), out);
+        }
+    } else if (j.is_array()) {
+        for (const auto& e : j) CollectScenePaths(e, out);
+    }
+}
+
+struct TemplateVerdict {
+    bool pass = true;
+    std::vector<std::string> problems;
+    u32 files = 0, scripts = 0, records = 0;
+    void Fail(const std::string& why) { pass = false; problems.push_back(why); }
+};
+
+// 1. Everything the template holds, minus what the copier is meant to drop,
+//    has to be in the output.
+void CheckCopyCompleteness(const std::filesystem::path& src,
+                           const std::filesystem::path& dst,
+                           const CopyFilter& filter, TemplateVerdict& v) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    for (const auto& e : fs::recursive_directory_iterator(src, ec)) {
+        if (!e.is_regular_file(ec)) continue;
+        const fs::path rel = fs::relative(e.path(), src, ec);
+        bool skipped = false;
+        for (const auto& part : rel) {
+            if (filter.Skips(part.filename().string())) { skipped = true; break; }
+        }
+        if (skipped) continue;
+        ++v.files;
+        if (!fs::exists(dst / rel, ec))
+            v.Fail("not copied: " + rel.generic_string());
+    }
+}
+
+// 2. A scene that names a file it did not ship renders NOTHING for that
+//    component, in silence. This is the check that catches it before a person
+//    does.
+void CheckSceneReferences(const std::filesystem::path& projRoot, TemplateVerdict& v) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const fs::path scenes = projRoot / "scenes";
+    if (!fs::is_directory(scenes, ec)) return;
+    for (const auto& e : fs::recursive_directory_iterator(scenes, ec)) {
+        if (!e.is_regular_file(ec) || e.path().extension() != ".enjin") continue;
+        std::ifstream in(e.path());
+        nlohmann::json j;
+        try { in >> j; } catch (const std::exception& ex) {
+            v.Fail(std::string("scene will not parse: ") + ex.what());
+            continue;
+        }
+        std::vector<std::string> paths;
+        CollectScenePaths(j, paths);
+        std::sort(paths.begin(), paths.end());
+        paths.erase(std::unique(paths.begin(), paths.end()), paths.end());
+        for (const auto& p : paths) {
+            if (fs::exists(projRoot / p, ec)) continue;
+            v.Fail("scene references a missing file: " + p);
+        }
+    }
+}
+
+// 4. A record the loader will drop is worse than a missing one: nothing errors,
+//    DataAsset_Load just answers false and every caller takes its fallback.
+void CheckDataAssets(const std::filesystem::path& projRoot, TemplateVerdict& v) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    std::vector<std::string> schemas;
+    std::vector<std::pair<std::string, std::string>> records;   // file, schema
+    for (const auto& e : fs::recursive_directory_iterator(projRoot, ec)) {
+        if (!e.is_regular_file(ec)) continue;
+        const std::string ext = e.path().extension().string();
+        if (ext != ".enjdata" && ext != ".enjschema") continue;
+        std::ifstream in(e.path());
+        nlohmann::json j;
+        try { in >> j; } catch (const std::exception& ex) {
+            v.Fail(e.path().filename().string() + " will not parse: " + ex.what());
+            continue;
+        }
+        const std::string rel = fs::relative(e.path(), projRoot, ec).generic_string();
+        if (ext == ".enjschema") {
+            if (!j.contains("name") || !j["name"].is_string() || j["name"].get<std::string>().empty())
+                v.Fail(rel + ": schema has no 'name'");
+            else schemas.push_back(j["name"].get<std::string>());
+            continue;
+        }
+        ++v.records;
+        if (!j.contains("name") || !j["name"].is_string() || j["name"].get<std::string>().empty()) {
+            v.Fail(rel + ": record has no top-level 'name', so it is dropped on load");
+            continue;
+        }
+        if (!j.contains("values"))
+            v.Fail(rel + ": record has no 'values' block (the old {schema,data} shape does not load)");
+        records.emplace_back(rel, j.value("schema", std::string()));
+    }
+    for (const auto& r : records) {
+        if (r.second.empty()) { v.Fail(r.first + ": record names no schema"); continue; }
+        if (std::find(schemas.begin(), schemas.end(), r.second) == schemas.end())
+            v.Fail(r.first + ": schema '" + r.second + "' is not shipped with the template");
+    }
+}
+
+// 5. A project-local copy of enjin_api that has drifted from the engine's.
+//
+// The API is shipped INTO a project, so a project that keeps its own copy is
+// carrying a fork. It shadows the engine's (FindApiDirectory prefers it), it
+// does not get the next fix, and the failure lands as a compile error inside a
+// file the author never opened -- which is exactly how Examples/Potions came to
+// fail on a LerpVector3 that the engine's own Tween.as had already fixed.
+void CheckApiDrift(const std::filesystem::path& projRoot,
+                   const std::filesystem::path& engineApi, TemplateVerdict& v) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const fs::path local = projRoot / "scripts" / "enjin_api";
+    if (engineApi.empty() || !fs::is_directory(local, ec)) return;
+
+    for (const auto& e : fs::directory_iterator(local, ec)) {
+        if (!e.is_regular_file(ec) || e.path().extension() != ".as") continue;
+        const fs::path mine = engineApi / e.path().filename();
+        if (!fs::exists(mine, ec)) {
+            v.Fail("scripts/enjin_api/" + e.path().filename().string()
+                   + " is not part of the engine API");
+            continue;
+        }
+        std::ifstream a(e.path(), std::ios::binary), b(mine, std::ios::binary);
+        const std::string sa((std::istreambuf_iterator<char>(a)), std::istreambuf_iterator<char>());
+        const std::string sb((std::istreambuf_iterator<char>(b)), std::istreambuf_iterator<char>());
+        if (sa != sb)
+            v.Fail("scripts/enjin_api/" + e.path().filename().string()
+                   + " has drifted from the engine's copy");
+    }
+}
+
+} // namespace
+
+int EditorLayer::ValidateTemplatesDeep(const std::string& onlyId) {
+    namespace fs = std::filesystem;
+    LoadBuiltinTemplates();
+    if (s_BuiltinTemplates.empty()) {
+        std::printf("no built-in templates found\n");
+        return 1;
+    }
+
+    std::error_code ec;
+    const fs::path stage = fs::temp_directory_path(ec) / "enjin_template_validate";
+    fs::remove_all(stage, ec);
+
+    const std::string dir = FindBuiltinTemplatesDir();
+    const fs::path apiDir = Scripting::ScriptEngine::FindApiDirectory("");
+
+    int bad = 0, ran = 0;
+    for (const auto& t : s_BuiltinTemplates) {
+        if (!onlyId.empty() && t.id != onlyId) continue;
+        ++ran;
+        TemplateVerdict v;
+        const fs::path proj = stage / t.id;
+        fs::remove_all(proj, ec);
+        fs::create_directories(proj / "scenes", ec);
+
+        if (!t.examplePath.empty()) {
+            const std::string made = CopyExampleProject(t.examplePath, stage.string(), t.id);
+            if (made.empty()) v.Fail("example copy produced no .enjinproject");
+            CopyFilter f = BaseCopyFilter();
+            AddTemplateIgnore(f, t.examplePath);
+            CheckCopyCompleteness(t.examplePath, proj, f, v);
+        } else {
+            if (!CopyBuiltinTemplate(t.id, proj, "scenes/Main.enjin")) {
+                v.Fail("template copy failed");
+            } else {
+                // Project creation ships the API headers; without them a scene
+                // that names scripts/enjin_api/*.as reads as broken when it is
+                // the validator that is incomplete.
+                if (!apiDir.empty()) {
+                    // fs::copy does not create intermediate parents, and
+                    // proj/scripts does not exist yet for a template that ships
+                    // no scripts of its own -- which is exactly the case that
+                    // needs the API most.
+                    fs::create_directories(proj / "scripts", ec);
+                    fs::copy(apiDir, proj / "scripts" / "enjin_api",
+                             fs::copy_options::recursive | fs::copy_options::skip_existing, ec);
+                    if (ec) v.Fail("could not stage enjin_api: " + ec.message());
+                    ec.clear();
+                }
+                CopyFilter f = BaseCopyFilter();
+                for (const char* k : { "meta.json", "thumbnail.png", "scene.enjin", "enjin_api" })
+                    f.Add(k);
+                AddTemplateIgnore(f, fs::path(dir) / t.id);
+                CheckCopyCompleteness(fs::path(dir) / t.id, proj, f, v);
+            }
+            std::ofstream pf(proj / (t.id + ".enjinproject"));
+            pf << "{\"projectName\":\"" << t.id << "\",\"projectMode\":2,\"scenes\":["
+               << "{\"buildIndex\":0,\"isStartScene\":true,\"name\":\"Main\","
+               << "\"path\":\"scenes/Main.enjin\"}]}";
+        }
+
+        CheckSceneReferences(proj, v);
+        CheckDataAssets(proj, v);
+        // Only meaningful for examples: a built-in template has enjin_api
+        // staged from the engine a few lines above, so it cannot drift.
+        if (!t.examplePath.empty()) CheckApiDrift(proj, apiDir, v);
+
+        // A template with no scripts is a legitimate template, not a broken one.
+        // Asking the checker anyway reported half the roster as failing because
+        // the CHECKER could not run, which is a validator that does not know
+        // what it is looking at.
+        Scripting::ScriptCheckResult sc;
+        if (fs::is_directory(proj / "scripts", ec))
+            sc = Scripting::CheckProjectScripts(proj.string());
+        v.scripts = sc.modulesChecked;
+        if (!sc.fatal.empty()) {
+            v.Fail("script check could not run: " + sc.fatal);
+        } else {
+            for (const auto& is : sc.issues) {
+                if (!is.isError) continue;
+                v.Fail("script: " + is.file + " (" + std::to_string(is.row) + ", "
+                       + std::to_string(is.col) + "): " + is.message);
+            }
+        }
+
+        std::printf("%-16s %-26s %s  (%u files, %u scripts, %u records)\n",
+                    t.id.c_str(), t.name.c_str(), v.pass ? "PASS" : "FAIL",
+                    v.files, v.scripts, v.records);
+        for (const auto& p : v.problems) std::printf("                   - %s\n", p.c_str());
+        if (!v.pass) ++bad;
+    }
+
+    fs::remove_all(stage, ec);
+    std::printf("%d template(s) instantiated, %d failing\n", ran, bad);
+    return bad == 0 ? 0 : 1;
 }
 
 int EditorLayer::ValidateBuiltinTemplates() {

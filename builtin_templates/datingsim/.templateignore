@@ -1,0 +1,10 @@
+# What should NOT travel into a project made from this template.
+# One name per line, matched against any file or folder at any depth.
+# The template format's own files (meta.json, thumbnail.png, scene.enjin,
+# .templateignore) are always skipped and do not need listing here.
+
+# The generators that draw the art and lay out the scene. They are how this
+# TEMPLATE is maintained, not something a game made from it needs; keeping them
+# would put two Python scripts in the root of a new project that rewrite the
+# very scene the person is about to start editing.
+tools

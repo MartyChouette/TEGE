@@ -287,7 +287,16 @@ bool ScriptEngine::CompileScript(const std::string& path)
     {
         std::string scriptSrc;
         if (ReadScriptSource(path, scriptSrc)) {
-            if (scriptSrc.find("TegeBehavior.as") == std::string::npos) {
+            // ...and skipped when the file being compiled IS the base class.
+            // The mention-test cannot see that case: TegeBehavior.as does not
+            // contain its own filename, so the base was injected into itself
+            // and every compile of it reported "Name conflict. 'TegeBehavior'
+            // is a class." That surfaced in --check-scripts for EVERY project
+            // that ships enjin_api, which is all of them.
+            const bool isTheBaseItself =
+                std::filesystem::path(path).filename() == "TegeBehavior.as";
+            if (!isTheBaseItself &&
+                scriptSrc.find("TegeBehavior.as") == std::string::npos) {
                 bool injected = false;
                 std::filesystem::path apiDir = FindApiDirectory(m_ScriptDirectory);
                 if (!apiDir.empty()) {
