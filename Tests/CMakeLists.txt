@@ -263,6 +263,9 @@ enjin_add_test(TestDocSamples        Unit/Scripting/TestDocSamples.cpp)
 target_compile_definitions(TestDocSamples PRIVATE
     ENJIN_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/..")
 enjin_add_test(TestExampleScripts    Unit/Scripting/TestExampleScripts.cpp)
+enjin_add_test(TestEmbeddedApi       Unit/Scripting/TestEmbeddedApi.cpp)
+target_compile_definitions(TestEmbeddedApi PRIVATE
+    ENJIN_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_compile_definitions(TestExampleScripts PRIVATE
     ENJIN_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/..")
 enjin_add_test(TestAddComponent      Unit/Scripting/TestAddComponent.cpp)

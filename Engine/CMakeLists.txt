@@ -135,7 +135,53 @@ list(APPEND ENGINE_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Renderer/Vulkan/VulkanRenderEncoder.cpp"
 )
 
+# ---------------------------------------------------------------------------
+# enjin_api codegen
+#
+# enjin_api/*.as are EMBEDDED in the engine as string literals
+# (Engine/src/Scripting/EnjinApiEmbedded.cpp) so that a project with no
+# scripts/enjin_api/ of its own still compiles. Keeping the two in step used to
+# be a step a person had to remember: edit the .as, then run _gen_api.py.
+#
+# Forgetting it does not fail. The loose file on disk changes, the embedded copy
+# does not, and a stale embedded copy is still a perfectly valid script -- so a
+# project without an on-disk override silently keeps running the OLD API, with
+# no error anywhere. That happened, and the only reason it was caught was
+# somebody grepping the generated file by hand.
+#
+# So the build does it. The command re-runs whenever any .as file or the
+# generator itself changes, and the generated .cpp stays checked in so a machine
+# without Python still builds exactly what was committed.
+find_package(Python3 COMPONENTS Interpreter QUIET)
+
+file(GLOB ENJIN_API_SCRIPTS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/../enjin_api/*.as")
+set(ENJIN_API_EMBEDDED "${CMAKE_CURRENT_SOURCE_DIR}/src/Scripting/EnjinApiEmbedded.cpp")
+
+if(Python3_Interpreter_FOUND AND ENJIN_API_SCRIPTS)
+    add_custom_command(
+        OUTPUT ${ENJIN_API_EMBEDDED}
+        COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/../_gen_api.py"
+        DEPENDS ${ENJIN_API_SCRIPTS} "${CMAKE_CURRENT_SOURCE_DIR}/../_gen_api.py"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/.."
+        COMMENT "Embedding enjin_api scripts into EnjinApiEmbedded.cpp"
+        VERBATIM
+    )
+    # A separate target so the regeneration finishes BEFORE anything starts
+    # compiling the file it rewrites.
+    add_custom_target(EnjinApiCodegen DEPENDS ${ENJIN_API_EMBEDDED})
+else()
+    # No Python: build the checked-in copy as it stands. TestEmbeddedApi still
+    # fails if it has drifted, so this degrades to "caught by the tests" rather
+    # than to "silently wrong".
+    add_custom_target(EnjinApiCodegen)
+    if(NOT Python3_Interpreter_FOUND)
+        message(STATUS "Python not found - enjin_api embedding will not regenerate; "
+                       "using the checked-in EnjinApiEmbedded.cpp")
+    endif()
+endif()
+
 add_library(EnjinEngine STATIC ${ENGINE_SOURCES})
+add_dependencies(EnjinEngine EnjinApiCodegen)
 
 target_include_directories(EnjinEngine PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
