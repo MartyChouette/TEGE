@@ -251,6 +251,24 @@ assert 0.70 * HAND_FORWARD > HAND_DROP, (
     "the hand is below the bottom of the frame: raise the counter, move the "
     "hand forward, or widen the FOV")
 
+# WHERE THE PLAYER STARTS, which is not a decoration either.
+#
+# The first version put the body exactly where the hand needed to be: 0.12 m
+# from the worktop, facing it, in the far corner of the room. Physically
+# correct -- you do stand at a counter -- and unusable. W walked into the
+# counter and stopped after 10 cm, A walked into the west wall and stopped
+# after half a metre, and the demo opened on a character that answered two of
+# the four movement keys with nothing. There is no way to tell that from a
+# broken input map without instrumenting the controller, and Marty reported it
+# as "I cannot move at all".
+#
+# So start in open floor, facing the counter, far enough back to walk. The
+# approach is worth watching anyway: the fingers are not touching at the start
+# and settle onto the slab as the hand arrives, which is the thing the demo is
+# actually for and was previously over before the first frame.
+SPAWN_X = -3.5          # centred on the long counter, clear of both side walls
+SPAWN_Z = 0.6           # about 3 m of approach, all of it open floor
+
 # ---------------------------------------------------------------------------
 # The room, and the things to put a hand on.
 # ---------------------------------------------------------------------------
@@ -319,7 +337,7 @@ player = add("Player",
              # on. At z -2.0 the palm landed at -2.75 and the worktop starts at
              # -2.875: a twelve centimetre miss, which the log read as
              # "probeHit=NO" and the screen read as a hand doing nothing.
-             transform=xform((-6.0, CAPSULE_REST, -3.2 + HAND_FORWARD),
+             transform=xform((SPAWN_X, CAPSULE_REST, SPAWN_Z),
                              (1.0, 1.0, 1.0)),
              firstPerson={"moveSpeed": 3.2, "jumpForce": 6.0,
                           "mouseSensitivity": 2.0,

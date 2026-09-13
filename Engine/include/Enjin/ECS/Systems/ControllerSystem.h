@@ -9,6 +9,7 @@
 #include "Enjin/Physics/IPhysicsBackend2D.h"
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/ECS/Components/GravityZone.h"
+#include <unordered_map>
 
 namespace Enjin {
 namespace ECS {
@@ -86,6 +87,16 @@ public:
 
     // Enable/disable all controller updates (e.g., when in editor mode vs play mode)
     void SetEnabled(bool enabled) { m_Enabled = enabled; }
+
+    // True when a controller is asking to move at speed and the world is not
+    // letting it -- walking into a wall, wedged in a doorway, spawned facing
+    // geometry. Reads the same state the blocked-movement warning reports, so
+    // a game can answer it (a shove, a line of dialogue) instead of leaving the
+    // player pressing a key that does nothing.
+    bool IsMovementBlocked(Entity entity) const {
+        auto it = m_BlockedWatch.find(entity);
+        return it != m_BlockedWatch.end() && it->second.stuckFor >= kBlockedGracePeriod;
+    }
     bool IsEnabled() const { return m_Enabled; }
 
     // Simulation: character/vehicle controllers. Runs on the fixed tick when a
@@ -110,6 +121,21 @@ private:
     void UpdateTopDown3D(Entity entity, TopDown3DController& controller, TransformComponent& transform, f32 dt);
     void UpdateThirdPerson(Entity entity, ThirdPersonController& controller, TransformComponent& transform, f32 dt);
     void UpdateFirstPerson(Entity entity, FirstPersonController& controller, TransformComponent& transform, f32 dt);
+
+    // Tells "no input is arriving" apart from "something solid is in the way",
+    // which are indistinguishable from the chair and have opposite fixes.
+    struct BlockedWatch {
+        Math::Vector3 lastPosition{0.0f, 0.0f, 0.0f};
+        f32 stuckFor = 0.0f;
+        f32 sinceReport = 1e9f;   // so the first real stick reports immediately
+    };
+    static constexpr f32 kBlockedGracePeriod   = 0.75f;
+    static constexpr f32 kBlockedReportInterval = 5.0f;
+    std::unordered_map<Entity, BlockedWatch> m_BlockedWatch;
+
+    void NoteBlockedOrMoving(Entity entity, const Math::Vector2& input,
+                             const Math::Vector3& velocity,
+                             const Math::Vector3& position, f32 dt);
     void UpdateVehicle(Entity entity, VehicleController& ctrl, TransformComponent& transform, f32 dt);
     void UpdateWaterVehicle(Entity entity, WaterVehicleController& ctrl, TransformComponent& transform, f32 dt);
     void UpdateSurfaceAligned(Entity entity, SurfaceAlignedController& ctrl, TransformComponent& transform, f32 dt);

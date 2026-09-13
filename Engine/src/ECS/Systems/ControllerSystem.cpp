@@ -1679,6 +1679,48 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
     }
 }
 
+void ControllerSystem::NoteBlockedOrMoving(Entity entity, const Math::Vector2& input,
+                                           const Math::Vector3& velocity,
+                                           const Math::Vector3& position, f32 dt) {
+    // Horizontal only: a character standing on the floor has zero vertical
+    // speed and is not stuck, and one in a lift is moving without input.
+    const f32 pushing = std::sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
+    const bool wantsToMove = std::sqrt(input.x * input.x + input.y * input.y) > 0.1f;
+
+    BlockedWatch& w = m_BlockedWatch[entity];
+    if (w.sinceReport < kBlockedReportInterval) w.sinceReport += dt;
+
+    if (!wantsToMove || pushing < 0.5f) {
+        w.stuckFor = 0.0f;
+        w.lastPosition = position;
+        return;
+    }
+
+    const f32 dx = position.x - w.lastPosition.x;
+    const f32 dz = position.z - w.lastPosition.z;
+    // Ten percent of the distance the velocity should have covered. Generous
+    // on purpose: sliding along a wall at a shallow angle is not stuck, and
+    // neither is climbing a step.
+    const f32 expected = pushing * dt;
+    w.lastPosition = position;
+
+    if (std::sqrt(dx * dx + dz * dz) > expected * 0.1f) {
+        w.stuckFor = 0.0f;
+        return;
+    }
+
+    w.stuckFor += dt;
+    if (w.stuckFor >= kBlockedGracePeriod && w.sinceReport >= kBlockedReportInterval) {
+        w.sinceReport = 0.0f;
+        ENJIN_LOG_WARN(Player,
+            "Entity %llu is pushing at %.1f m/s and has not moved for %.1f s - it is "
+            "against geometry at (%.2f, %.2f, %.2f). Input IS reaching the controller; "
+            "the obstruction is in the scene.",
+            static_cast<unsigned long long>(entity), pushing, w.stuckFor,
+            position.x, position.y, position.z);
+    }
+}
+
 void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& ctrl, TransformComponent& transform, f32 dt) {
     (void)entity;
 
@@ -1998,6 +2040,19 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
             ctrl.isGrounded = false;
         }
     }
+
+    // "The character will not move" has two causes that look identical from
+    // the chair: nothing is reaching the controller, or something solid is in
+    // the way. Neither produces an error, and a player pressed against a
+    // worktop reports exactly what a broken input map reports.
+    //
+    // So say which. The controller already knows it is pushing at full speed
+    // and knows it has not moved; nothing was comparing the two. Warn only
+    // when the contradiction is real and sustained -- input held, velocity up,
+    // displacement near zero for most of a second -- and then at most once
+    // every few seconds, because walking into a wall is a normal thing to do
+    // and must not fill the log.
+    NoteBlockedOrMoving(entity, input, ctrl.velocity, transform.position, dt);
 
     // Head bob (disabled when reduced motion is active)
     if (ctrl.enableHeadBob && !m_ReducedMotion && ctrl.isGrounded && moveMag > 0.1f) {

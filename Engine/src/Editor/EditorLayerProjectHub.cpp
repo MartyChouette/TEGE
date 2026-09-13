@@ -2213,6 +2213,93 @@ static void LoadExampleTemplates() {
                    added, dir.c_str());
 }
 
+// ---------------------------------------------------------------------------
+// WHAT TRAVELS INTO A NEW PROJECT
+//
+// Copy everything, skip a named set. The inverse -- an allowlist of the folders
+// the tool happens to know about -- is how data/ silently vanished out of every
+// template that authored its content as .enjdata records: the folder simply was
+// not in the array, nothing errored, and the new project opened with a scene
+// that had nothing to say. Whatever folder anyone invents next is that same bug
+// until someone remembers to edit C++.
+//
+// So the rule is inverted and the exclusions are DATA. A template drops a
+// `.templateignore` beside its meta.json, one name per line, `#` for comments,
+// and decides for itself what should not travel without touching the engine.
+// This is the shape every other generator settled on (dotnet new, cargo,
+// create-next-app): content by default, metadata in one known place.
+struct CopyFilter {
+    std::vector<std::string> skip;          // lower-cased leaf names
+
+    void Add(const std::string& leaf) {
+        std::string s = leaf;
+        s.erase(0, s.find_first_not_of(" \t\r\n"));
+        const auto end = s.find_last_not_of(" \t\r\n");
+        if (end != std::string::npos) s.erase(end + 1);
+        if (s.empty() || s[0] == '#') return;
+        std::transform(s.begin(), s.end(), s.begin(), ::tolower);
+        skip.push_back(s);
+    }
+
+    bool Skips(const std::string& leaf) const {
+        std::string s = leaf;
+        std::transform(s.begin(), s.end(), s.begin(), ::tolower);
+        for (const auto& k : skip) if (k == s) return true;
+        return false;
+    }
+};
+
+// Build output and VCS noise, skipped for every copy. Examples/Playground/Build
+// alone carries a packed game and an exe, and copying it turns "make a project
+// from this" into a long wait for files the copy has no use for.
+static CopyFilter BaseCopyFilter() {
+    CopyFilter f;
+    for (const char* k : { "build", "bin", "obj", ".git", ".vs", ".idea",
+                           "__pycache__", ".ds_store", "node_modules",
+                           ".templateignore" }) f.Add(k);
+    return f;
+}
+
+// A template's own exclusions, if it shipped any.
+static void AddTemplateIgnore(CopyFilter& f, const std::filesystem::path& root) {
+    std::error_code ec;
+    const std::filesystem::path p = root / ".templateignore";
+    if (!std::filesystem::exists(p, ec)) return;
+    std::ifstream in(p);
+    std::string line;
+    while (std::getline(in, line)) f.Add(line);
+}
+
+// Recursive copy that consults the filter at EVERY level, not just the top.
+// A top-level-only check would let scripts/enjin_api through, and a second copy
+// of the API goes stale the moment the API changes.
+static bool CopyTreeFiltered(const std::filesystem::path& src,
+                             const std::filesystem::path& dst,
+                             const CopyFilter& filter, const char* label) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    if (!fs::is_directory(src, ec)) return false;
+    fs::create_directories(dst, ec);
+
+    bool copied = false;
+    for (const auto& entry : fs::directory_iterator(src, ec)) {
+        const std::string leaf = entry.path().filename().string();
+        if (filter.Skips(leaf)) continue;
+
+        std::error_code one;
+        if (entry.is_directory(one)) {
+            if (CopyTreeFiltered(entry.path(), dst / leaf, filter, label)) copied = true;
+        } else {
+            fs::copy_file(entry.path(), dst / leaf,
+                          fs::copy_options::overwrite_existing, one);
+            if (one) ENJIN_LOG_WARN(Editor, "%s: %s failed (%s)",
+                                    label, leaf.c_str(), one.message().c_str());
+            else copied = true;
+        }
+    }
+    return copied;
+}
+
 // Copy an example project into a new project folder.
 //
 // Opening the shipped demo in place would edit it, and the editor auto-saves on
@@ -2238,33 +2325,11 @@ static std::string CopyExampleProject(const std::string& srcFolder,
         return {};
     }
 
-    // Skip build output. Examples/Playground/Build alone carries a packed game
-    // and an exe; copying it would turn "make a project from this" into a long
-    // wait for files the copy has no use for.
-    static const char* kSkip[] = { "Build", "build", "bin", ".git", "__pycache__" };
-    bool copiedAnything = false;
-    for (const auto& entry : fs::directory_iterator(src, ec)) {
-        const std::string leaf = entry.path().filename().string();
-        bool skip = false;
-        for (const char* sk : kSkip) { if (leaf == sk) { skip = true; break; } }
-        if (skip) continue;
-
-        std::error_code copyEc;
-        if (entry.is_directory()) {
-            fs::copy(entry.path(), dst / leaf,
-                     fs::copy_options::recursive | fs::copy_options::overwrite_existing, copyEc);
-        } else {
-            fs::copy_file(entry.path(), dst / leaf,
-                          fs::copy_options::overwrite_existing, copyEc);
-        }
-        if (copyEc) {
-            ENJIN_LOG_WARN(Editor, "Example copy: %s failed (%s)",
-                           leaf.c_str(), copyEc.message().c_str());
-        } else {
-            copiedAnything = true;
-        }
-    }
-    if (!copiedAnything) return {};
+    // One rule, shared with the shipped templates. An example can ship its own
+    // .templateignore to drop something further.
+    CopyFilter filter = BaseCopyFilter();
+    AddTemplateIgnore(filter, src);
+    if (!CopyTreeFiltered(src, dst, filter, "Example copy")) return {};
 
     // The project file carries the demo's name, not the new folder's, so it is
     // looked up rather than assumed.
@@ -2437,25 +2502,24 @@ static bool CopyBuiltinTemplate(const std::string& templateId,
         return false;
     }
 
-    // Scripts, assets and DATA the template authored. enjin_api is NOT among
-    // them: the project already received its own copy, and shipping a second
-    // would go stale the moment the API changed.
+    // EVERYTHING the template authored, minus what is structurally part of the
+    // template format rather than part of the project it makes.
     //
-    // data/ matters as much as the other two. A template whose content lives in
-    // .enjdata records -- which is the authoring path we want people on, since
-    // it is editable in the Data Assets panel instead of in a build script --
-    // arrives with its scene and its art and nothing to say, and every
-    // DataAsset_Load in it returns false. Verified against the datingsim
-    // template: without this the new project logs "no conversation" and the
-    // scene falls back to its placeholder line.
-    for (const char* sub : { "scripts", "assets", "data" }) {
-        const std::filesystem::path from = src / sub;
-        if (!std::filesystem::is_directory(from, ec)) continue;
-        std::filesystem::copy(from, projRoot / sub,
-                              std::filesystem::copy_options::recursive
-                                  | std::filesystem::copy_options::overwrite_existing, ec);
-        if (ec) ENJIN_LOG_WARN(Editor, "Template '%s': %s copy failed", templateId.c_str(), sub);
-    }
+    // This used to be an allowlist of { scripts, assets }, which is why a
+    // template whose content lives in .enjdata records -- the authoring path
+    // worth being on, since it is editable in the Data Assets panel instead of
+    // in a build script -- arrived with its scene and its art and nothing to
+    // say, every DataAsset_Load in it returning false, in silence.
+    //
+    // enjin_api is skipped at every level: the project already received its own
+    // copy, and a second would go stale the moment the API changed. scene.enjin
+    // is skipped because it was just copied above, to the project's own scene
+    // path under the name the project chose.
+    CopyFilter filter = BaseCopyFilter();
+    for (const char* k : { "meta.json", "thumbnail.png", "scene.enjin", "enjin_api" })
+        filter.Add(k);
+    AddTemplateIgnore(filter, src);
+    CopyTreeFiltered(src, projRoot, filter, "Template copy");
 
     ENJIN_LOG_INFO(Editor, "Created from shipped template folder: %s", templateId.c_str());
     return true;
