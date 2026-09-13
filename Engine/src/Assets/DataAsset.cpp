@@ -187,7 +187,36 @@ static DataAssetSchema DeserializeSchema(const json& j) {
         for (const auto& fj : j["fields"]) {
             DataAssetField field;
             field.name = fj.value("name", "");
-            field.type = DataFieldTypeFromString(fj.value("type", "String"));
+            const std::string declaredType = fj.value("type", "String");
+            DataFieldTypeParse how = DataFieldTypeParse::Exact;
+            field.type = DataFieldTypeFromString(declaredType, &how);
+
+            // Say so. This is the fix that matters.
+            //
+            // An unrecognised type name used to become String in silence, and
+            // the scalar getters then returned their fallback in silence too,
+            // so a field declared "int" read as 0 forever with nothing in the
+            // log. Three shipped schemas had 42 such fields, and somebody
+            // hitting it reasonably guessed the cause was arrays being dropped
+            // and wrote that guess into the engine's own API text, where it
+            // propagated outward as a delimiter convention built to route
+            // around a bug that never existed. Silent failures do not only cost
+            // the session that hits them; they generate folklore.
+            if (how == DataFieldTypeParse::Unknown) {
+                ENJIN_LOG_WARN(Assets,
+                    "Schema '%s' field '%s': type '%s' is not a known field type. "
+                    "Known types are String, Float, Int, Bool, Vector3, Vector4, "
+                    "StringArray, FloatArray. Falling back to String, so reads of "
+                    "this field through GetInt/GetFloat/GetBool will return their "
+                    "fallback value.",
+                    schema.name.c_str(), field.name.c_str(), declaredType.c_str());
+            } else if (how == DataFieldTypeParse::CaseFixed) {
+                ENJIN_LOG_WARN(Assets,
+                    "Schema '%s' field '%s': type '%s' should be spelled '%s'. "
+                    "Taken as '%s'; correcting the schema silences this.",
+                    schema.name.c_str(), field.name.c_str(), declaredType.c_str(),
+                    DataFieldTypeToString(field.type), DataFieldTypeToString(field.type));
+            }
             if (fj.contains("default")) {
                 field.defaultValue = DeserializeValue(fj["default"]);
             } else {
@@ -442,25 +471,31 @@ f32 DataAssetRegistry::GetFloat(const std::string& assetName, const std::string&
     if (it == asset->values.end()) return fallback;
     if (std::holds_alternative<f32>(it->second)) return std::get<f32>(it->second);
     if (std::holds_alternative<i32>(it->second)) return static_cast<f32>(std::get<i32>(it->second));
+    WarnOnceAboutRead(assetName, field, "is not a Float (check the schema type name)");
     return fallback;
 }
 
 i32 DataAssetRegistry::GetInt(const std::string& assetName, const std::string& field, i32 fallback) const {
     const DataAsset* asset = FindAsset(assetName);
-    if (!asset) return fallback;
+    if (!asset) { WarnOnceAboutRead(assetName, field, "no such data asset"); return fallback; }
     auto it = asset->values.find(field);
-    if (it == asset->values.end()) return fallback;
+    if (it == asset->values.end()) { WarnOnceAboutRead(assetName, field, "no such field"); return fallback; }
     if (std::holds_alternative<i32>(it->second)) return std::get<i32>(it->second);
     if (std::holds_alternative<f32>(it->second)) return static_cast<i32>(std::get<f32>(it->second));
+    // An authored 0 and a misparsed one are the same value. Only the warning
+    // tells them apart, which is the argument the array getters already make
+    // for themselves a few hundred lines below.
+    WarnOnceAboutRead(assetName, field, "is not an Int (check the schema type name)");
     return fallback;
 }
 
 bool DataAssetRegistry::GetBool(const std::string& assetName, const std::string& field, bool fallback) const {
     const DataAsset* asset = FindAsset(assetName);
-    if (!asset) return fallback;
+    if (!asset) { WarnOnceAboutRead(assetName, field, "no such data asset"); return fallback; }
     auto it = asset->values.find(field);
-    if (it == asset->values.end()) return fallback;
+    if (it == asset->values.end()) { WarnOnceAboutRead(assetName, field, "no such field"); return fallback; }
     if (std::holds_alternative<bool>(it->second)) return std::get<bool>(it->second);
+    WarnOnceAboutRead(assetName, field, "is not a Bool (check the schema type name)");
     return fallback;
 }
 
@@ -495,7 +530,7 @@ Math::Vector4 DataAssetRegistry::GetVector4(const std::string& assetName, const 
 // ARRAYS
 // ============================================================================
 
-void DataAssetRegistry::WarnOnceAboutArray(const std::string& assetName,
+void DataAssetRegistry::WarnOnceAboutRead(const std::string& assetName,
                                            const std::string& field,
                                            const std::string& what) const {
     // Keyed on asset+field, so a loop over one mis-authored field says it once
@@ -525,23 +560,23 @@ std::string DataAssetRegistry::GetStringAt(const std::string& assetName, const s
                                            usize index, const std::string& fallback) const {
     const DataAsset* asset = FindAsset(assetName);
     if (!asset) {
-        WarnOnceAboutArray(assetName, field, "no such asset");
+        WarnOnceAboutRead(assetName, field, "no such asset");
         return fallback;
     }
     auto it = asset->values.find(field);
     if (it == asset->values.end()) {
-        WarnOnceAboutArray(assetName, field, "no such field");
+        WarnOnceAboutRead(assetName, field, "no such field");
         return fallback;
     }
     if (!std::holds_alternative<std::vector<std::string>>(it->second)) {
         // Deliberately not coerced from a float list. Turning 4.0 into "4" here
         // is exactly the plausible-wrong-answer this accessor exists to avoid.
-        WarnOnceAboutArray(assetName, field, "is not a string array");
+        WarnOnceAboutRead(assetName, field, "is not a string array");
         return fallback;
     }
     const auto& arr = std::get<std::vector<std::string>>(it->second);
     if (index >= arr.size()) {
-        WarnOnceAboutArray(assetName, field,
+        WarnOnceAboutRead(assetName, field,
             "index " + std::to_string(index) + " is past the end (" +
             std::to_string(arr.size()) + " elements)");
         return fallback;
@@ -553,21 +588,21 @@ f32 DataAssetRegistry::GetFloatAt(const std::string& assetName, const std::strin
                                   usize index, f32 fallback) const {
     const DataAsset* asset = FindAsset(assetName);
     if (!asset) {
-        WarnOnceAboutArray(assetName, field, "no such asset");
+        WarnOnceAboutRead(assetName, field, "no such asset");
         return fallback;
     }
     auto it = asset->values.find(field);
     if (it == asset->values.end()) {
-        WarnOnceAboutArray(assetName, field, "no such field");
+        WarnOnceAboutRead(assetName, field, "no such field");
         return fallback;
     }
     if (!std::holds_alternative<std::vector<f32>>(it->second)) {
-        WarnOnceAboutArray(assetName, field, "is not a float array");
+        WarnOnceAboutRead(assetName, field, "is not a float array");
         return fallback;
     }
     const auto& arr = std::get<std::vector<f32>>(it->second);
     if (index >= arr.size()) {
-        WarnOnceAboutArray(assetName, field,
+        WarnOnceAboutRead(assetName, field,
             "index " + std::to_string(index) + " is past the end (" +
             std::to_string(arr.size()) + " elements)");
         return fallback;

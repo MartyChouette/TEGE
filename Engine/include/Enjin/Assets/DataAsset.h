@@ -2,6 +2,7 @@
 
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Math/Vector.h"
+#include <cctype>
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -40,16 +41,59 @@ inline const char* DataFieldTypeToString(DataFieldType type) {
     }
 }
 
-inline DataFieldType DataFieldTypeFromString(const std::string& s) {
-    if (s == "String")      return DataFieldType::String;
-    if (s == "Float")       return DataFieldType::Float;
-    if (s == "Int")         return DataFieldType::Int;
-    if (s == "Bool")        return DataFieldType::Bool;
-    if (s == "Vector3")     return DataFieldType::Vector3;
-    if (s == "Vector4")     return DataFieldType::Vector4;
-    if (s == "StringArray") return DataFieldType::StringArray;
-    if (s == "FloatArray")  return DataFieldType::FloatArray;
-    return DataFieldType::String;
+// How a type name parsed, as opposed to what it parsed to.
+//
+// This used to be thrown away. The function matched eight exact, case-sensitive
+// names and ended `return DataFieldType::String`, so every typo, every case
+// error and every invented name silently became String, and nothing downstream
+// could tell a field DECLARED String from one that failed to parse. Lowercase
+// "int" is what a person writes by hand, and 42 fields across three shipped
+// schemas were String at runtime because of it -- with the reads returning 0 on
+// every document in that game, every frame, with nothing in the log.
+enum class DataFieldTypeParse : u8 {
+    Exact,        // matched a canonical name
+    CaseFixed,    // matched ignoring case; the schema should be corrected
+    Unknown,      // no match; the caller falls back to String and must complain
+};
+
+inline DataFieldType DataFieldTypeFromString(const std::string& s,
+                                             DataFieldTypeParse* how = nullptr) {
+    auto done = [&](DataFieldType t, DataFieldTypeParse p) {
+        if (how) *how = p;
+        return t;
+    };
+
+    if (s == "String")      return done(DataFieldType::String, DataFieldTypeParse::Exact);
+    if (s == "Float")       return done(DataFieldType::Float, DataFieldTypeParse::Exact);
+    if (s == "Int")         return done(DataFieldType::Int, DataFieldTypeParse::Exact);
+    if (s == "Bool")        return done(DataFieldType::Bool, DataFieldTypeParse::Exact);
+    if (s == "Vector3")     return done(DataFieldType::Vector3, DataFieldTypeParse::Exact);
+    if (s == "Vector4")     return done(DataFieldType::Vector4, DataFieldTypeParse::Exact);
+    if (s == "StringArray") return done(DataFieldType::StringArray, DataFieldTypeParse::Exact);
+    if (s == "FloatArray")  return done(DataFieldType::FloatArray, DataFieldTypeParse::Exact);
+
+    // Second pass, ignoring case.
+    //
+    // A schema is an authoring format and "int" is what somebody types. Taking
+    // it means the field does what it says, which is the whole point; reporting
+    // it as CaseFixed means the author still finds out, once, instead of
+    // discovering it as a zero three weeks later.
+    std::string lower;
+    lower.reserve(s.size());
+    for (char c : s) lower.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+
+    if (lower == "string")      return done(DataFieldType::String, DataFieldTypeParse::CaseFixed);
+    if (lower == "float")       return done(DataFieldType::Float, DataFieldTypeParse::CaseFixed);
+    if (lower == "int")         return done(DataFieldType::Int, DataFieldTypeParse::CaseFixed);
+    if (lower == "bool")        return done(DataFieldType::Bool, DataFieldTypeParse::CaseFixed);
+    if (lower == "vector3")     return done(DataFieldType::Vector3, DataFieldTypeParse::CaseFixed);
+    if (lower == "vector4")     return done(DataFieldType::Vector4, DataFieldTypeParse::CaseFixed);
+    if (lower == "stringarray") return done(DataFieldType::StringArray, DataFieldTypeParse::CaseFixed);
+    if (lower == "floatarray")  return done(DataFieldType::FloatArray, DataFieldTypeParse::CaseFixed);
+
+    // Still String, because changing the fallback would break every schema that
+    // has been relying on it. What changes is that the caller now KNOWS.
+    return done(DataFieldType::String, DataFieldTypeParse::Unknown);
 }
 
 // ============================================================================
@@ -216,7 +260,7 @@ private:
     // frame. Mutable because the read accessors are const and diagnosing a bad
     // read is not a change to the data.
     mutable std::unordered_set<std::string> m_WarnedArrayReads;
-    void WarnOnceAboutArray(const std::string& assetName, const std::string& field,
+    void WarnOnceAboutRead(const std::string& assetName, const std::string& field,
                             const std::string& what) const;
 };
 

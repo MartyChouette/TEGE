@@ -833,9 +833,28 @@ static const char* s_Api5 = R"ENJIN_API(
 // separators, which is what reading hand-authored joined data actually needs.
 //
 // The joined-string convention they serve: records separated by "|", fields
-// within a record by ";". It exists because the Player's .enjdata loader only
-// understands string / float / int / bool and silently DROPS StringArray and
-// FloatArray, so a list that must survive a build has to travel as a string.
+// within a record by ";".
+//
+// The reason given here used to be that the Player's .enjdata loader only
+// understands string / float / int / bool and silently drops StringArray and
+// FloatArray. That is not true and never was. There is ONE parser: the editor
+// and the Player both call DataAssetRegistry::LoadAssetFromString, it handles
+// all eight types, both array types round-trip through serialise and
+// deserialise, and BuildPipeline packs .enjdata as a byte copy without looking
+// inside it.
+//
+// What almost certainly happened is that somebody hit a real bug next door -- an
+// unrecognised schema type name silently became String, so a field declared
+// "int" read as 0 with nothing in the log -- reasonably guessed arrays were
+// being dropped, and wrote the guess down. It then shipped inside the engine's
+// own API text and propagated outward. The schema parser now says when a type
+// name is wrong, so that particular wrong turn is closed.
+//
+// The convention itself stays, and this is a correction to the SENTENCE and not
+// to the format. VNScene parses every conversation field as a joined string, so
+// the format is load-bearing for the shipped VN player and for every
+// conversation asset authored against it. Split earns its place regardless:
+// there is no string split anywhere in this build.
 
 // Split "a;b;c" into its parts. An empty input gives one empty part, which is
 // what you want: a slot with no options is one blank option, not zero.
