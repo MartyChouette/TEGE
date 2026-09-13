@@ -64,6 +64,7 @@ static std::string s_ReplayPath;
 #include "Enjin/Effects/CurlNoiseSystem.h"
 #include "Enjin/Effects/ElementalSystem.h"
 #include "Enjin/Audio/AudioReactiveSystem.h"
+#include "Enjin/Animation/PhysicsSurfaceQuery.h"
 #include "Enjin/Renderer/SceneRenderSettings.h"
 #include "Enjin/Renderer/RenderQualitySettings.h"
 #include "Enjin/Effects/WorldTime.h"
@@ -497,6 +498,15 @@ public:
         m_ControllerSystem.SetWorld(m_World.get());
         m_ControllerSystem.SetCamera(m_Camera.get());
         m_ControllerSystem.SetPhysics(m_Physics.get());
+
+        // Hand IK asks what is under each fingertip.
+        //
+        // Re-pointed wherever the backend is created, not once at startup: a
+        // scene load builds a NEW physics backend and destroys the old one, so
+        // a query wired only at boot would be holding a freed pointer and
+        // casting fingertip rays into it on the next frame.
+        m_SurfaceQuery.SetBackend(m_Physics.get());
+        if (m_RenderSystem) m_RenderSystem->SetSurfaceQuery(&m_SurfaceQuery);
         m_ControllerSystem.SetPhysics2D(m_Physics2D.get());
         m_ControllerSystem.SetInputActionMap(&m_InputMap);
 
@@ -1666,6 +1676,15 @@ public:
         m_Physics2D = Enjin::Physics::CreatePhysicsBackend2D(backendType, projectMode);
         if (m_Physics2D) m_Physics2D->Initialize(m_World.get());
         m_ControllerSystem.SetPhysics(m_Physics.get());
+
+        // Hand IK asks what is under each fingertip.
+        //
+        // Re-pointed wherever the backend is created, not once at startup: a
+        // scene load builds a NEW physics backend and destroys the old one, so
+        // a query wired only at boot would be holding a freed pointer and
+        // casting fingertip rays into it on the next frame.
+        m_SurfaceQuery.SetBackend(m_Physics.get());
+        if (m_RenderSystem) m_RenderSystem->SetSurfaceQuery(&m_SurfaceQuery);
         m_ControllerSystem.SetPhysics2D(m_Physics2D.get());
         Enjin::Gameplay::GameplayLoop::Wire2DCollisionCallbacks(
             m_Physics2D.get(), m_World.get(), &m_VisualScriptSystem, m_DeferredDestroys);
@@ -2242,6 +2261,15 @@ public:
                 m_Physics2D = Enjin::Physics::CreatePhysicsBackend2D(backendType, projectMode);
                 if (m_Physics2D) m_Physics2D->Initialize(m_World.get());
                 m_ControllerSystem.SetPhysics(m_Physics.get());
+
+        // Hand IK asks what is under each fingertip.
+        //
+        // Re-pointed wherever the backend is created, not once at startup: a
+        // scene load builds a NEW physics backend and destroys the old one, so
+        // a query wired only at boot would be holding a freed pointer and
+        // casting fingertip rays into it on the next frame.
+        m_SurfaceQuery.SetBackend(m_Physics.get());
+        if (m_RenderSystem) m_RenderSystem->SetSurfaceQuery(&m_SurfaceQuery);
                 m_ControllerSystem.SetPhysics2D(m_Physics2D.get());
                 Enjin::Gameplay::GameplayLoop::Wire2DCollisionCallbacks(m_Physics2D.get(), m_World.get(), &m_VisualScriptSystem, m_DeferredDestroys);
                 LoadSceneFromPack(m_StartScene);
@@ -3807,6 +3835,7 @@ private:
 
     // Audio-reactive system (beat sync / FFT-driven parameters) — editor parity.
     Enjin::Audio::AudioReactiveSystem m_AudioReactiveSystem;
+    Enjin::Animation::PhysicsSurfaceQuery m_SurfaceQuery;
 
     Enjin::Effects::Water3D m_Water3D;
 

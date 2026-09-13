@@ -247,6 +247,13 @@ void PlayMode::Play() {
     // Enable controller system, flower system, scripting, and gameplay systems
     m_ControllerSystem.SetEnabled(true);
     ENJIN_LOG_INFO(Editor, "PlayMode: ControllerSystem enabled");
+    // Hand IK asks what is under each fingertip. Give it the play session's
+    // physics; without this hands stay on their animation, which is correct but
+    // silent, so it is wired at the same place as everything else that needs a
+    // backend rather than left to be discovered missing.
+    m_SurfaceQuery.SetBackend(m_Physics.get());
+    if (m_RenderSystem) m_RenderSystem->SetSurfaceQuery(&m_SurfaceQuery);
+
     m_FlowerSystem.SetRenderSystem(m_RenderSystem);
     m_FlowerSystem.Reset();
     m_FlowerSystem.SetEnabled(true);
@@ -992,6 +999,13 @@ void PlayMode::Stop() {
     // showed under lavapipe because the freed block survives intact on a real
     // GPU run.
     m_HoverHighlightSystem.SetPhysics(nullptr);
+
+    // Same hazard, same order. The render system belongs to the EDITOR and
+    // survives Stop, so a surface query left attached to it would outlive the
+    // physics backend it wraps and be cast against on the next editor frame.
+    if (m_RenderSystem) m_RenderSystem->SetSurfaceQuery(nullptr);
+    m_SurfaceQuery.SetBackend(nullptr);
+
     m_Physics.reset();
     m_Physics2D.reset();
 

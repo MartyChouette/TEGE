@@ -88,6 +88,7 @@
 // petals and every audio-reactive component were dead in the browser.
 #include "Enjin/ECS/Systems/FlowerSystem.h"
 #include "Enjin/Audio/AudioReactiveSystem.h"
+#include "Enjin/Animation/PhysicsSurfaceQuery.h"
 #include "Enjin/Gameplay/QuestFlow.h"
 #include "Enjin/Effects/ElementalSystem.h"
 #include "Enjin/Effects/SeasonalWeather.h"    // web parity: seasonal weather (Update no-ops unless a scene enables it)
@@ -422,6 +423,15 @@ public:
         m_ControllerSystem.SetWorld(m_World.get());
         m_ControllerSystem.SetCamera(m_Camera.get());
         m_ControllerSystem.SetPhysics(m_Physics.get());
+
+        // Hand IK asks what is under each fingertip.
+        //
+        // Re-pointed wherever the backend is created, not once at startup: a
+        // scene load builds a NEW physics backend and destroys the old one, so
+        // a query wired only at boot would be holding a freed pointer and
+        // casting fingertip rays into it on the next frame.
+        m_SurfaceQuery.SetBackend(m_Physics.get());
+        if (m_RenderSystem) m_RenderSystem->SetSurfaceQuery(&m_SurfaceQuery);
         m_ControllerSystem.SetPhysics2D(m_Physics2D.get());
         m_CameraDirector.Reset();
         m_CameraDirector.SetEnabled(true);
@@ -2749,6 +2759,7 @@ private:
     // and the MIDI-driven paths stay inert. Beat sync, VU-to-visual, RTPC and
     // threshold triggers all run off AudioEngine and work here.
     Enjin::Audio::AudioReactiveSystem m_AudioReactiveSystem;
+    Enjin::Animation::PhysicsSurfaceQuery m_SurfaceQuery;
     // Long-lived: Wire2DCollisionCallbacks captures a reference to this
     // (desktop: main.cpp m_DeferredDestroys) — never pass it a frame-local.
     std::vector<Enjin::ECS::Entity> m_DeferredDestroys;

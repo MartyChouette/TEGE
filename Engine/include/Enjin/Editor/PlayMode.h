@@ -30,6 +30,7 @@
 #include "Enjin/Audio/AudioReactiveSystem.h"
 #include "Enjin/Editor/AudioEventGraph.h"
 #include "Enjin/Physics/IPhysicsBackend.h"
+#include "Enjin/Animation/PhysicsSurfaceQuery.h"
 #include "Enjin/Physics/IPhysicsBackend2D.h"
 #include "Enjin/Physics/PhysicsBackendFactory.h"
 #include "Enjin/Scripting/ScriptEngine.h"
@@ -327,6 +328,15 @@ private:
 
     // Render system pointers (owned externally)
     ECS::RenderSystem* m_RenderSystem = nullptr;
+
+    // What hand IK casts against.
+    //
+    // Owned here rather than by RenderSystem because it wraps the PHYSICS
+    // backend, and physics belongs to the play session while the render system
+    // belongs to the editor and outlives it. That asymmetry is the whole reason
+    // the pointer has to be cleared on Stop: see the teardown, and see
+    // HoverHighlightSystem, which caused an access violation for exactly this.
+    Animation::PhysicsSurfaceQuery m_SurfaceQuery;
     Renderer::PostProcessing* m_PostProcessing = nullptr;
     Accessibility::SubtitleSystem* m_SubtitleSystem = nullptr;
     Accessibility::AccessibilityAnnouncer* m_Announcer = nullptr;
