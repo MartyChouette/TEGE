@@ -467,8 +467,21 @@ struct alignas(16) MaterialGPU {
     //
     // Palette-indexed: surfaceParam1 = 500.0. The flags word has no bits left
     // (bit 3 was the last, above), so this follows the encoding the other modes
-    // already use. Taken ranges: 100-199 dither gradient, 200-299 dithered
-    // transparency, 300-399 elemental, 400-499 procedural surface noise.
+    // already use.
+    //
+    // TAKEN RANGES -- keep this list and the constants below in step. It stopped
+    // at 499 for two releases while 500 and 600 were declared immediately under
+    // it, so the one comment a person reads before claiming a band was the one
+    // thing that did not know which bands were claimed:
+    //
+    //   100-199  dither gradient (100 + bands + pattern * 0.1)
+    //   200-299  dithered transparency
+    //   300-399  elemental
+    //   400-499  procedural surface noise
+    //   500-599  palette-indexed (+ the palette slot, so 503 is table 3)
+    //   600-699  lightmapped / radiosity normal mapping
+    //   700-799  NEXT FREE
+    //
     // A palette material has no water or artistic surface params to lose, which
     // is what makes the slot safe to claim.
     static constexpr f32 SURFACE_PARAM1_PALETTE_INDEXED = 500.0f;
