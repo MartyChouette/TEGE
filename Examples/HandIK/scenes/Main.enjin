@@ -2901,7 +2901,7 @@
    "transform": {
     "position": [
      -3.5,
-     0.95,
+     1.11,
      -3.2
     ],
     "rotation": [
@@ -3383,7 +3383,7 @@
    "transform": {
     "position": [
      -3.5,
-     0.46,
+     0.54,
      -3.3
     ],
     "rotation": [
@@ -3394,7 +3394,7 @@
     ],
     "scale": [
      7.0,
-     0.9,
+     1.06,
      0.55
     ],
     "visible": true
@@ -3840,7 +3840,7 @@
    "boxCollider": {
     "size": [
      7.0,
-     0.9,
+     1.06,
      0.55
     ],
     "center": [
@@ -3865,7 +3865,7 @@
    "transform": {
     "position": [
      2.6,
-     0.95,
+     1.11,
      -3.2
     ],
     "rotation": [
@@ -4347,7 +4347,7 @@
    "transform": {
     "position": [
      2.6,
-     0.46,
+     0.54,
      -3.3
     ],
     "rotation": [
@@ -4358,7 +4358,7 @@
     ],
     "scale": [
      2.6,
-     0.9,
+     1.06,
      0.55
     ],
     "visible": true
@@ -4804,7 +4804,7 @@
    "boxCollider": {
     "size": [
      2.6,
-     0.9,
+     1.06,
      0.55
     ],
     "center": [
@@ -4829,7 +4829,7 @@
    "transform": {
     "position": [
      3.0,
-     1.25,
+     1.46,
      2.6
     ],
     "rotation": [
@@ -5311,7 +5311,7 @@
    "transform": {
     "position": [
      0.8,
-     0.62,
+     0.72,
      2.7
     ],
     "rotation": [
@@ -5322,7 +5322,7 @@
     ],
     "scale": [
      0.1,
-     1.25,
+     1.45,
      0.2
     ],
     "visible": true
@@ -5768,7 +5768,7 @@
    "boxCollider": {
     "size": [
      0.1,
-     1.25,
+     1.45,
      0.2
     ],
     "center": [
@@ -5793,7 +5793,7 @@
    "transform": {
     "position": [
      5.2,
-     0.62,
+     0.72,
      2.7
     ],
     "rotation": [
@@ -5804,7 +5804,7 @@
     ],
     "scale": [
      0.1,
-     1.25,
+     1.45,
      0.2
     ],
     "visible": true
@@ -6250,7 +6250,7 @@
    "boxCollider": {
     "size": [
      0.1,
-     1.25,
+     1.45,
      0.2
     ],
     "center": [
@@ -6275,7 +6275,7 @@
    "transform": {
     "position": [
      -4.0,
-     1.05,
+     1.28,
      2.4
     ],
     "rotation": [
@@ -6757,7 +6757,7 @@
    "transform": {
     "position": [
      -6.3,
-     0.52,
+     0.64,
      2.4
     ],
     "rotation": [
@@ -6768,7 +6768,7 @@
     ],
     "scale": [
      0.08,
-     1.05,
+     1.28,
      0.08
     ],
     "visible": true
@@ -7214,7 +7214,7 @@
    "boxCollider": {
     "size": [
      0.08,
-     1.05,
+     1.28,
      0.08
     ],
     "center": [
@@ -7239,7 +7239,7 @@
    "transform": {
     "position": [
      -1.7,
-     0.52,
+     0.64,
      2.4
     ],
     "rotation": [
@@ -7250,7 +7250,7 @@
     ],
     "scale": [
      0.08,
-     1.05,
+     1.28,
      0.08
     ],
     "visible": true
@@ -7696,7 +7696,7 @@
    "boxCollider": {
     "size": [
      0.08,
-     1.05,
+     1.28,
      0.08
     ],
     "center": [
@@ -7731,17 +7731,16 @@
      1
     ],
     "scale": [
-     0.6,
-     1.7,
-     0.6
+     1.0,
+     1.0,
+     1.0
     ],
     "visible": true
    },
    "firstPerson": {
     "moveSpeed": 3.2,
     "jumpForce": 6.0,
-    "mouseSensitivity": 2.0,
-    "eyeHeight": 1.65
+    "mouseSensitivity": 2.0
    },
    "rigidbody": {
     "bodyType": 0,
@@ -7808,8 +7807,8 @@
    "transform": {
     "position": [
      0.22,
-     -0.61,
-     0.45
+     -0.45,
+     0.75
     ],
     "rotation": [
      0,
@@ -20084,7 +20083,7 @@
      0.97,
      0.92
     ],
-    "intensity": 0.6
+    "intensity": 0.2
    }
   },
   {
@@ -20118,8 +20117,8 @@
      0.95,
      0.88
     ],
-    "intensity": 2.4,
-    "range": 12.0
+    "intensity": 1.15,
+    "range": 9.0
    }
   },
   {
@@ -20153,8 +20152,8 @@
      0.95,
      0.88
     ],
-    "intensity": 2.4,
-    "range": 12.0
+    "intensity": 1.15,
+    "range": 9.0
    }
   },
   {
@@ -20188,8 +20187,8 @@
      0.95,
      0.88
     ],
-    "intensity": 2.4,
-    "range": 12.0
+    "intensity": 1.15,
+    "range": 9.0
    }
   }
  ]

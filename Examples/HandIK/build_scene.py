@@ -216,35 +216,48 @@ box("Wall +X",   (W / 2, H / 2, 0),     (T, H, D),  DRYWALL)
 
 # THE COUNTER. 0.95 high, which is a kitchen worktop, and long enough to walk
 # the length of while the hand stays on it.
-box("Counter Top",   (-3.5, 0.95, -3.2), (7.0, 0.08, 0.65), STONE)
-box("Counter Body",  (-3.5, 0.46, -3.3), (7.0, 0.90, 0.55), WOOD)
+box("Counter Top",   (-3.5, 1.11, -3.2), (7.0, 0.08, 0.65), STONE)
+box("Counter Body",  (-3.5, 0.54, -3.3), (7.0, 1.06, 0.55), WOOD)
 
 # THE GAP. Deliberate, and the only part of this scene that tests a NEGATIVE:
 # over open air the fingers must hang where the animation left them rather than
 # snapping to a surface that is not there.
-box("Counter Top 2", (2.6, 0.95, -3.2),  (2.6, 0.08, 0.65), STONE)
-box("Counter Body 2",(2.6, 0.46, -3.3),  (2.6, 0.90, 0.55), WOOD)
+box("Counter Top 2", (2.6, 1.11, -3.2),  (2.6, 0.08, 0.65), STONE)
+box("Counter Body 2",(2.6, 0.54, -3.3),  (2.6, 1.06, 0.55), WOOD)
 
 # THE SHELF LIP. A plank with its edge in free air, which is the case a point
 # target cannot express: fingers have to curl OVER it.
-box("Shelf Plank",   (3.0, 1.25, 2.6),   (5.0, 0.06, 0.40), WOOD)
-box("Shelf Post L",  (0.8, 0.62, 2.7),   (0.10, 1.25, 0.20), WOOD)
-box("Shelf Post R",  (5.2, 0.62, 2.7),   (0.10, 1.25, 0.20), WOOD)
+box("Shelf Plank",   (3.0, 1.46, 2.6),   (5.0, 0.06, 0.40), WOOD)
+box("Shelf Post L",  (0.8, 0.72, 2.7),   (0.10, 1.45, 0.20), WOOD)
+box("Shelf Post R",  (5.2, 0.72, 2.7),   (0.10, 1.45, 0.20), WOOD)
 
 # A RAILING at a different height, so the hand has to deal with a surface that
 # is not the one it just left.
-box("Rail",          (-4.0, 1.05, 2.4),  (5.0, 0.07, 0.07), STONE)
-box("Rail Post L",   (-6.3, 0.52, 2.4),  (0.08, 1.05, 0.08), STONE)
-box("Rail Post R",   (-1.7, 0.52, 2.4),  (0.08, 1.05, 0.08), STONE)
+box("Rail",          (-4.0, 1.28, 2.4),  (5.0, 0.07, 0.07), STONE)
+box("Rail Post L",   (-6.3, 0.64, 2.4),  (0.08, 1.28, 0.08), STONE)
+box("Rail Post R",   (-1.7, 0.64, 2.4),  (0.08, 1.28, 0.08), STONE)
 
 # ---------------------------------------------------------------------------
 # The player, the camera, and the hand hanging off it.
 # ---------------------------------------------------------------------------
 
+# SCALE 1, and it matters more than it looks.
+#
+# This started as (0.6, 1.7, 0.6) to suggest a body, and a parent's scale
+# multiplies through to its children: the camera's 0.78 local offset became
+# 0.78 * 1.7 = 1.33, so the eye ended up at 2.65 instead of 1.68, and the hand
+# hanging off the camera was stretched 1.7x vertically and squashed to 0.6x
+# across. Every height in this file was computed against an eye position that
+# the scene did not actually have, and the hand was out of frame and the wrong
+# shape.
+#
+# The scale was doing nothing else: the player has no mesh, and collider sizes
+# in this engine are WORLD space and are not multiplied by the transform. A
+# camera or a viewmodel must never hang off a non-uniformly scaled parent.
 player = add("Player",
-             transform=xform((-6.0, 0.9, -2.0), (0.6, 1.7, 0.6)),
+             transform=xform((-6.0, 0.9, -2.0), (1.0, 1.0, 1.0)),
              firstPerson={"moveSpeed": 3.2, "jumpForce": 6.0,
-                          "mouseSensitivity": 2.0, "eyeHeight": 1.65},
+                          "mouseSensitivity": 2.0},
              rigidbody={"bodyType": 0, "mass": 70.0, "useGravity": True},
              capsuleCollider={"radius": 0.3, "height": 1.1, "center": [0, 0, 0]})
 
@@ -261,19 +274,40 @@ cam = add("MainCam",
 # Parenting to the camera rather than the player is what makes it first person:
 # the hand goes where you look, and the IK re-solves against whatever ends up
 # underneath it.
-# Height is the whole experiment, so it is arithmetic rather than taste.
+# Height is the whole experiment, so it is arithmetic rather than taste -- and
+# it has to satisfy TWO constraints at once, which the first attempt did not.
 #
-#   eye     player 0.90 + camera 0.78            = 1.68
-#   hand    eye - 0.61                           = 1.07
-#   counter top face, 0.95 centre + 0.08/2 slab  = 0.99
-#   gap                                          = 0.08
+#   eye      player 0.90 + camera 0.78            = 1.68
+#   hand     eye - 0.45                           = 1.23
+#   counter  1.11 centre + 0.08/2 slab            = 1.15
+#   gap                                           = 0.08
 #
-# Finger reaches are 0.070 to 0.095, so the gap sits INSIDE that spread on
-# purpose: Index, Middle and Ring make it, Little does not, Thumb is on the
-# line. A hand parked where every finger reaches would look identical whether
-# the solve were per-finger or a single canned pose, and prove nothing.
+# REACH. Finger reaches are 0.070 to 0.095, so the 0.08 gap sits INSIDE that
+# spread on purpose: Index, Middle and Ring make it, Little does not, Thumb is
+# on the line. A hand parked where every finger reaches would look identical
+# whether the solve were per-finger or one canned pose, and prove nothing.
+#
+# VISIBILITY, which the first version got wrong and only a screenshot caught.
+# At distance d in front of the eye, a 70 degree vertical FOV shows
+# d * tan(35) = 0.70d above and below the view axis. The hand was 0.45 forward
+# and 0.61 down, so it needed 0.61 < 0.315 to be on screen and was simply below
+# the bottom edge -- the scene rendered perfectly and the subject of the demo
+# was not in it.
+#
+# A hand low enough to rest on a 0.95 counter cannot be seen from an eye 0.6
+# above it at arm's length; the two constraints genuinely conflict. So the
+# counter went up to bar height, which shortens the drop to 0.45, and the hand
+# went further forward, which widens the cone:
+#
+#   0.70 * 0.75 forward = 0.525 of headroom, against 0.45 of drop.  Fits.
+HAND_FORWARD = 0.75
+HAND_DROP = 0.45
+assert 0.70 * HAND_FORWARD > HAND_DROP, (
+    "the hand is below the bottom of the frame: raise the counter, move the "
+    "hand forward, or widen the FOV")
+
 add("RightHand",
-    transform=xform((0.22, -0.61, 0.45), rot=(0, 0, 0, 1)),
+    transform=xform((0.22, -HAND_DROP, HAND_FORWARD), rot=(0, 0, 0, 1)),
     parent=cam["id"],
     mesh=HAND_MESH,
     material={"baseColor": [0.86, 0.68, 0.60], "metallic": 0.0, "roughness": 0.75},
@@ -302,14 +336,26 @@ add("RightHand",
         ],
     })
 
+# Lighting you can look at.
+#
+# The first pass used a 0.6 sun and three 2.4 lamps, and the room came out solid
+# white with the counter barely readable against it. A 14 x 3 x 9 room is small,
+# the lamps are two and a half metres above the floor, and three of them overlap
+# across the whole space -- so the intensity that suits a hall blows this out.
+#
+# These are close to the values that were hand-picked for the acoustics demo
+# after the same mistake there: a 0.2 sun, and lamps a little over 1. Worth
+# keeping low here for a second reason: the entire point is to SEE whether a
+# fingertip is touching a worktop or floating a centimetre above it, and a blown
+# highlight on the counter hides exactly that.
 add("Sun",
     transform=xform((0, 6, 0), rot=(-0.38, 0.22, 0.09, 0.89)),
-    light={"type": 0, "color": [1.0, 0.97, 0.92], "intensity": 0.6})
+    light={"type": 0, "color": [1.0, 0.97, 0.92], "intensity": 0.20})
 
 for i, x in enumerate((-5.0, 0.0, 5.0)):
     add("Lamp %d" % i,
         transform=xform((x, H - 0.5, 0.0)),
-        light={"type": 1, "color": [1.0, 0.95, 0.88], "intensity": 2.4, "range": 12.0})
+        light={"type": 1, "color": [1.0, 0.95, 0.88], "intensity": 1.15, "range": 9.0})
 
 scene = {"version": "1.0", "entities": entities}
 out_dir = "Examples/HandIK"
