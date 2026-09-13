@@ -24,6 +24,7 @@
 #include "Enjin/Audio/AcousticScene.h"
 #include "Enjin/Acoustics/AcousticBVH.h"
 #include "Enjin/Acoustics/RoomResponse.h"
+#include "Enjin/Acoustics/EarlyReflections.h"
 
 namespace Enjin {
 namespace ECS { class World; }
@@ -69,6 +70,33 @@ public:
     const RoomResponse& Measurement() const { return m_Measurement; }
     bool HasMeasurement() const { return m_Measurement.Valid(); }
 
+    // The discrete reflections around the listener, traced with the source at
+    // the listener's own position.
+    //
+    // That is not a placeholder for a per-source trace, it is the correct
+    // answer to a different question: what the room does to a sound made where
+    // you are standing. It is exactly a clap, or a footstep, or your own voice,
+    // and it is a good approximation for anything else in the same room. A
+    // source across the building needs its own trace, and that is a separate
+    // job rather than something this quietly pretends to do.
+    const EarlyReflectionResult& Reflections() const { return m_Reflections; }
+    bool HasReflections() const { return m_Reflections.Any(); }
+
+    // Trace the reflections for ONE source, from where that source actually is.
+    //
+    // Separate from Update on purpose. The room response and the listener's own
+    // reflections describe a place and are retraced when the listener moves far
+    // enough; a source's reflections describe a PATH, and change when either end
+    // of it moves. The caller decides which sources are worth the cost and feeds
+    // them in one at a time, so the per-frame budget stays one trace whatever
+    // the scene contains.
+    //
+    // Returns an empty result when there is no geometry to trace against, which
+    // the caller should treat as "leave this source on the shared pattern"
+    // rather than as "this source has no reflections".
+    EarlyReflectionResult TraceSource(const Math::Vector3& source,
+                                      const Math::Vector3& listener) const;
+
     // Where the measurement was taken, which is what tells a caller whether it
     // still describes where the listener is now.
     Math::Vector3 MeasuredAt() const { return m_MeasuredAt; }
@@ -93,6 +121,7 @@ private:
     AcousticBVH m_BVH;
 
     RoomResponse m_Measurement;
+    EarlyReflectionResult m_Reflections;
     Math::Vector3 m_MeasuredAt = Math::Vector3(0.0f, 0.0f, 0.0f);
     bool m_HasTraced = false;
 

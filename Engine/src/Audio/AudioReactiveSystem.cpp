@@ -9,6 +9,7 @@
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/ECS/Components/MorphTarget.h"
+#include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/Input/MIDIInput.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Math/Math.h"
@@ -16,15 +17,59 @@
 
 namespace Enjin::Audio {
 
+// Where the listener is.
+//
+// There were TWO answers to this in the engine and they disagreed. miniaudio's
+// spatializer is driven from the active camera (PlayMode and the player both
+// call SetListenerPosition with it), while everything in this system read an
+// AudioListenerComponent and fell back to the world origin when the scene had
+// none -- which most scenes do, because nothing requires the component and
+// nothing said it was missing. So panning and distance followed the player
+// while room measurement, occlusion and reverb zones stayed at (0,0,0),
+// and walking between rooms changed nothing you could hear.
+//
+// One authority, in priority order, and no plausible-looking default at the
+// end of it: an explicit AudioListenerComponent wins because placing one is a
+// deliberate act (a listener on the head bone rather than the camera), and
+// otherwise the active camera answers -- the same camera miniaudio is already
+// using, so the two can no longer drift apart.
+bool AudioReactiveSystem::ResolveListenerPosition(Math::Vector3& out) const {
+    for (auto e : m_World->GetEntitiesWithComponent<ECS::AudioListenerComponent>()) {
+        if (!m_World->IsValid(e)) continue;
+        if (auto* lt = m_World->GetComponent<ECS::TransformComponent>(e)) {
+            out = lt->position;
+            return true;
+        }
+    }
+
+    const ECS::Entity cam = static_cast<ECS::Entity>(ECS::CameraManager::GetActiveCamera(m_World));
+    if (cam != ECS::INVALID_ENTITY) {
+        if (auto* ct = m_World->GetComponent<ECS::TransformComponent>(cam)) {
+            out = ct->position;
+            return true;
+        }
+    }
+
+    return false;
+}
+
 void AudioReactiveSystem::Update(f32 deltaTime) {
     if (!m_World || !m_Audio) return;
 
     // Cache listener position once (used by occlusion, reverb, ambient, music, collisions)
-    m_ListenerPos = Math::Vector3(0.0f);
-    for (auto e : m_World->GetEntitiesWithComponent<ECS::AudioListenerComponent>()) {
-        if (!m_World->IsValid(e)) continue;
-        auto* lt = m_World->GetComponent<ECS::TransformComponent>(e);
-        if (lt) { m_ListenerPos = lt->position; break; }
+    m_HasListener = ResolveListenerPosition(m_ListenerPos);
+    if (!m_HasListener) {
+        m_ListenerPos = Math::Vector3(0.0f);
+        if (!m_WarnedNoListener) {
+            m_WarnedNoListener = true;
+            // Said once, and said plainly. Every spatial decision below is about
+            // to be made from the origin, and silence here is what let a demo
+            // ship sounding identical in all three of its rooms.
+            ENJIN_LOG_WARN(Audio,
+                "No audio listener in this scene: no AudioListenerComponent and no "
+                "active camera. Room acoustics, occlusion and reverb zones will all "
+                "be evaluated at the world origin rather than where the player is.");
+        }
     }
 
     // Cache material interaction table (used by collision audio)
@@ -733,13 +778,18 @@ void AudioReactiveSystem::UpdateReverbZones(f32 deltaTime) {
     // Throttled inside the system: a rebuild at most once a second, a retrace
     // when the listener has moved or the measurement has aged. Most frames this
     // costs a distance check.
-    m_Acoustics.SetWorld(m_World);
-    m_Acoustics.Update(m_ListenerPos, deltaTime);
+    // With no listener there is no room to be standing in, so measuring one
+    // would be inventing a place. The warning at the top of Update says so once.
+    if (m_HasListener) {
+        m_Acoustics.SetWorld(m_World);
+        m_Acoustics.Update(m_ListenerPos, deltaTime);
+    }
 
-    if (m_Acoustics.HasMeasurement()) {
+    if (m_HasListener && m_Acoustics.HasMeasurement()) {
         const Acoustics::RoomResponse& measured = m_Acoustics.Measurement();
         m_Audio->SetMeasuredRoom(measured.rt60, measured.meanFreePath,
                                  measured.reflectedEnergy);
+        m_Audio->SetMeasuredReflections(m_Acoustics.Reflections());
 
         // How much room you hear is still a mixing decision rather than a
         // property of the room, so an authored zone keeps control of it. With
@@ -760,6 +810,101 @@ void AudioReactiveSystem::UpdateReverbZones(f32 deltaTime) {
     // Feed the bus. Freeverb still reads room/damp/decay; the measured path
     // ignores them and uses wet and pre only.
     m_Audio->SetEnvironmentReverb(wet, room, damp, decayT, pre);
+
+    UpdateSourceReflections(deltaTime);
+}
+
+// The nearest audible sources get reflections traced from where they are.
+//
+// Everything else keeps the listener-centric pattern, which is the right answer
+// for a sound made at your own position and a fair approximation elsewhere. The
+// difference this makes is the projector against the back wall: its first
+// reflection should arrive from the wall BEHIND IT, about six milliseconds after
+// the direct sound, and no pattern traced from the listener's own position can
+// produce that.
+//
+// One trace per call, round-robin over the slot holders. A trace is a few
+// thousand rays and there are eight slots, so tracing them all every frame
+// would cost more than the rest of the audio system put together -- and it would
+// be waste, because a source's reflections only change when one end of the path
+// moves, which is slow compared to a frame.
+void AudioReactiveSystem::UpdateSourceReflections(f32 deltaTime) {
+    if (!m_Audio || !m_World || !m_HasListener) return;
+    if (m_Audio->SourceReflectionSlotCount() == 0) return;
+    if (!m_Acoustics.HasMeasurement()) return;     // no geometry worth tracing against
+
+    m_SinceReflectionTrace += deltaTime;
+
+    // Gather the playing, spatialized sources and sort by distance. A source
+    // that cannot be heard does not deserve a slot, however close it is.
+    struct Candidate {
+        SoundHandle handle = 0;
+        Math::Vector3 position;
+        f32 distanceSq = 0.0f;
+    };
+    std::vector<Candidate> candidates;
+
+    for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::AudioSourceComponent>()) {
+        if (!m_World->IsValid(e)) continue;
+        const auto* src = m_World->GetComponent<ECS::AudioSourceComponent>(e);
+        const auto* tf = m_World->GetComponent<ECS::TransformComponent>(e);
+        if (!src || !tf) continue;
+        if (!src->isPlaying || !src->is3D || src->soundHandle == 0) continue;
+
+        const f32 dx = tf->position.x - m_ListenerPos.x;
+        const f32 dy = tf->position.y - m_ListenerPos.y;
+        const f32 dz = tf->position.z - m_ListenerPos.z;
+        const f32 d2 = dx * dx + dy * dy + dz * dz;
+
+        // Beyond its own falloff a source is inaudible, so a slot spent on it
+        // renders reflections of something nobody can hear.
+        if (d2 > src->maxDistance * src->maxDistance) continue;
+
+        candidates.push_back(Candidate{ static_cast<SoundHandle>(src->soundHandle),
+                                        tf->position, d2 });
+    }
+
+    std::sort(candidates.begin(), candidates.end(),
+              [](const Candidate& a, const Candidate& b) {
+                  return a.distanceSq < b.distanceSq;
+              });
+
+    const usize slots = static_cast<usize>(m_Audio->SourceReflectionSlotCount());
+    if (candidates.size() > slots) candidates.resize(slots);
+
+    // Anything that held a slot last frame and is not in the list now gives it
+    // back. Without this a source that stopped, or walked out of range, keeps a
+    // slot forever and the pool silently empties.
+    for (SoundHandle held : m_ReflectionOwners) {
+        bool stillWanted = false;
+        for (const Candidate& c : candidates) {
+            if (c.handle == held) { stillWanted = true; break; }
+        }
+        if (!stillWanted) m_Audio->ReleaseSourceReflections(held);
+    }
+
+    m_ReflectionOwners.clear();
+    for (const Candidate& c : candidates) m_ReflectionOwners.push_back(c.handle);
+    if (candidates.empty()) return;
+
+    // One trace, this call, for whichever source the cursor is on.
+    //
+    // A quarter second between traces for any given source: a listener walking
+    // at 5 m/s moves 1.25 m in that time, which is well under the distance at
+    // which a reflection pattern visibly changes, and it keeps eight sources on
+    // two traces a second between them.
+    if (m_SinceReflectionTrace < 0.25f) return;
+    m_SinceReflectionTrace = 0.0f;
+
+    if (m_ReflectionCursor >= candidates.size()) m_ReflectionCursor = 0;
+    const Candidate& target = candidates[m_ReflectionCursor];
+    m_ReflectionCursor = (m_ReflectionCursor + 1) % candidates.size();
+
+    const Acoustics::EarlyReflectionResult reflections =
+        m_Acoustics.TraceSource(target.position, m_ListenerPos);
+    if (reflections.Any()) {
+        m_Audio->SetSourceReflections(target.handle, reflections);
+    }
 }
 
 // ============================================================================

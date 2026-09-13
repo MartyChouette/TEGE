@@ -107,8 +107,32 @@ struct ENJIN_API RoomTraceSettings {
     // Below this fraction of its starting energy a ray is finished.
     f32 energyFloor = 1.0e-6f;
 
-    // How long a tail to measure, in seconds. A cathedral is about ten.
+    // How long a tail to measure, in seconds.
+    //
+    // This is a CEILING on what can be observed, and a fixed one was silently
+    // wrong for every room longer than it. Schroeder backward integration over
+    // a truncated response always decays to zero at the window edge -- that is
+    // an artifact of the truncation, not the room -- so the -35 dB crossing the
+    // T30 fit looks for was always found, somewhere near the end of the window,
+    // whatever the real decay was. A sweep of concrete cubes from 5 m to 40 m
+    // measured 6.7, 10.5, 12.7, 11.6, 10.1, 9.0 seconds against a true 6.7 to
+    // 53.7: the reading rose to about the window length and then FELL as the
+    // rooms got bigger, confidently, with no complaint anywhere.
+    //
+    // Leave `autoWindow` on and this is only a floor: the tracer sizes the
+    // window from the scene's own Sabine estimate, which it can compute because
+    // it has every triangle's area and absorption already.
     f32 maxTime = 8.0f;
+
+    // Size the window (and the bounce budget) to the room being measured.
+    //
+    // Off means "use maxTime and maxBounces exactly as given", which is what a
+    // test wants when it is deliberately measuring the truncation behaviour.
+    bool autoWindow = true;
+
+    // The longest tail worth chasing. Past this a room is a special effect
+    // rather than a room, and the cost of tracing it stops being worth paying.
+    f32 maxWindowSeconds = 45.0f;
 
     // Histogram resolution. Finer resolves the early part better; coarser is a
     // steadier curve from the same number of rays.

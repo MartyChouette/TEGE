@@ -88,6 +88,14 @@ public:
     // during one.
     void SetTaps(const EarlyReflectionResult& reflections);
 
+    // Reserve capacity so SetTaps can run on the audio thread.
+    //
+    // clear() plus push_back() inside an already-reserved vector allocates
+    // nothing, which is the whole reason the tap rebuild is allowed to happen
+    // down there. Call this once, from Prepare's caller, with the largest tap
+    // count that will ever be handed over.
+    void ReserveTaps(usize maxTaps) { m_Taps.reserve(maxTaps); }
+
     // One sample in, one sample of early reflections out. The direct sound is
     // NOT included: the caller mixes it, because whether the direct path is
     // audible at all is an occlusion question this does not answer.

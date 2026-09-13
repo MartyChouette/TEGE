@@ -5,6 +5,7 @@
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/Math/Math.h"
 #include "Enjin/Logging/Log.h"
+#include <array>
 #include <atomic>
 #include <cstring>
 #include <filesystem>
@@ -108,6 +109,23 @@ struct ReverbNode {
     Acoustics::FeedbackDelayNetwork fdn;
     std::atomic<float> tRT60Low{0.0f}, tRT60Mid{0.0f}, tRT60High{0.0f};
     std::atomic<float> tMeanFreePath{8.0f}, tReflected{1.0f};
+
+    // The discrete reflections, and the staging buffer that gets them here.
+    //
+    // A fixed array rather than a vector because the audio thread reads it: the
+    // game thread fills it, then bumps a generation, and the audio thread
+    // rebuilds the taps when it sees a new one -- the same handoff the RT60
+    // numbers already use, for the same reason. SetTaps itself is allocation
+    // free only because Prepare reserves the cap up front, so this array and
+    // that reservation have to stay the same size.
+    static constexpr u32 kMaxStagedTaps = 32;
+    Acoustics::EarlyReflectionRenderer early[2];
+    Acoustics::EarlyReflection stagedTaps[kMaxStagedTaps];
+    std::atomic<unsigned> earlyGeneration{0};
+    unsigned appliedEarlyGeneration = 0;
+    std::atomic<unsigned> stagedTapCount{0};
+    Acoustics::EarlyReflectionResult earlyScratch;   // audio thread only
+    bool earlyActive = false;
     // Bumped by the game thread whenever the numbers above change. The audio
     // thread reconfigures when it sees a new value, which keeps the comparison
     // to one integer instead of five floats.
@@ -115,6 +133,97 @@ struct ReverbNode {
     unsigned appliedGeneration = 0;
     bool measuredActive = false;
     float lateLevel = 1.0f;
+};
+
+// ============================================================================
+// Per-source early reflections
+// ============================================================================
+//
+// The reverb bus renders ONE reflection pattern, traced with the source at the
+// listener's own position. That is exactly right for a sound made where you are
+// standing -- a clap, a footstep, your own voice -- and it is the wrong pattern
+// for a sound across the room, because where the reflections come from and how
+// long after the direct sound they arrive are both properties of the path from
+// THAT source to you.
+//
+// So a handful of sources get their own. Each of these nodes sits between one
+// ma_sound and the reverb bus and renders that source's taps; everything else
+// routes to the bus directly and takes the listener-centric pattern, which
+// remains a decent approximation and costs nothing extra.
+//
+// A pool rather than one per sound, because each node owns a quarter-second
+// stereo delay line -- about 190 KB -- and a scene can have two hundred sounds
+// alive. Slots go to the nearest audible sources, which is where a wrong
+// reflection pattern would be most obvious.
+struct SourceReflectionNode {
+    ma_node_base base;
+    static constexpr u32 kMaxTaps = 24;
+
+    Acoustics::EarlyReflectionRenderer early[2];
+    Acoustics::EarlyReflection stagedTaps[kMaxTaps];
+    std::atomic<unsigned> generation{0};
+    unsigned appliedGeneration = 0;
+    std::atomic<unsigned> stagedCount{0};
+    Acoustics::EarlyReflectionResult scratch;   // audio thread only
+    bool active = false;
+
+    // Which sound owns this slot, or 0. Game thread only.
+    //
+    // The ma_sound pointer is kept alongside the handle because teardown runs
+    // from CleanupSound, which is handed a SoundInstance and not a handle, and
+    // looking the handle up would mean searching a map that is mid-erase.
+    SoundHandle owner = 0;
+    void* ownerMaSound = nullptr;
+};
+
+static void source_reflection_process(ma_node* pNode, const float** ppFramesIn,
+                                      ma_uint32* pFrameCountIn, float** ppFramesOut,
+                                      ma_uint32* pFrameCountOut)
+{
+    (void)pFrameCountIn;
+    auto* sr = reinterpret_cast<SourceReflectionNode*>(pNode);
+    const float* in = ppFramesIn[0];
+    float* out = ppFramesOut[0];
+    const ma_uint32 frames = *pFrameCountOut;
+
+    // Same handoff as the bus: the game thread stages taps and bumps a
+    // generation, and SetTaps runs here without allocating because Prepare
+    // reserved the cap.
+    const unsigned gen = sr->generation.load(std::memory_order_acquire);
+    if (gen != sr->appliedGeneration) {
+        sr->appliedGeneration = gen;
+        const unsigned n = sr->stagedCount.load(std::memory_order_relaxed);
+        sr->scratch.taps.clear();
+        for (unsigned i = 0; i < n && i < SourceReflectionNode::kMaxTaps; ++i) {
+            sr->scratch.taps.push_back(sr->stagedTaps[i]);
+        }
+        sr->early[0].SetTaps(sr->scratch);
+        sr->early[1].SetTaps(sr->scratch);
+        sr->active = !sr->scratch.taps.empty();
+    }
+
+    if (!sr->active) {
+        for (ma_uint32 i = 0; i < frames * 2; ++i) out[i] = in[i];
+        return;
+    }
+
+    // The direct sound passes through untouched and the reflections are added
+    // to it. They are not a wet/dry blend of the source: a reflection is extra
+    // sound arriving later, not a filtered copy replacing what you already
+    // heard.
+    for (ma_uint32 f = 0; f < frames; ++f) {
+        const float dl = in[f * 2], dr = in[f * 2 + 1];
+        out[f * 2]     = dl + sr->early[0].Process(dl);
+        out[f * 2 + 1] = dr + sr->early[1].Process(dr);
+    }
+}
+
+static ma_node_vtable g_sourceReflectionVTable = {
+    source_reflection_process,
+    nullptr,
+    1,   // input buses
+    1,   // output buses
+    MA_NODE_FLAG_CONTINUOUS_PROCESSING   // taps keep arriving after the source stops
 };
 
 static void reverb_node_process(ma_node* pNode, const float** ppFramesIn,
@@ -141,11 +250,6 @@ static void reverb_node_process(ma_node* pNode, const float** ppFramesIn,
     float damp1 = rn->damp < 0.0f ? 0.0f : (rn->damp > 1.0f ? 1.0f : rn->damp);
     float wet = rn->wet < 0.0f ? 0.0f : (rn->wet > 1.0f ? 1.0f : rn->wet);
 
-    if (wet < 0.005f) {   // bypass: straight copy
-        for (ma_uint32 i = 0; i < frames * 2; ++i) out[i] = in[i];
-        return;
-    }
-
     // Pick up a new measurement, if the game thread left one.
     //
     // Reconfiguring is allocation-free and deliberately does not clear the
@@ -171,6 +275,41 @@ static void reverb_node_process(ma_node* pNode, const float** ppFramesIn,
         }
     }
 
+    // Pick up a new set of early reflections the same way.
+    //
+    // SetTaps runs HERE, on the audio thread, which is only legal because
+    // Prepare reserved the cap up front -- clear() and push_back() inside an
+    // already-reserved vector allocate nothing. Rebuilding on the game thread
+    // instead would mean the audio thread reading a vector while it is being
+    // resized, which is the one thing that cannot be made safe with a counter.
+    const unsigned earlyGen = rn->earlyGeneration.load(std::memory_order_acquire);
+    if (earlyGen != rn->appliedEarlyGeneration) {
+        rn->appliedEarlyGeneration = earlyGen;
+        const unsigned n = rn->stagedTapCount.load(std::memory_order_relaxed);
+        rn->earlyScratch.taps.clear();
+        for (unsigned i = 0; i < n && i < ReverbNode::kMaxStagedTaps; ++i) {
+            rn->earlyScratch.taps.push_back(rn->stagedTaps[i]);
+        }
+        rn->early[0].SetTaps(rn->earlyScratch);
+        rn->early[1].SetTaps(rn->earlyScratch);
+        rn->earlyActive = !rn->earlyScratch.taps.empty();
+    }
+
+    // Bypass only when there is nothing at all to add, and only AFTER both
+    // pickups above.
+    //
+    // Testing the wet mix alone would silence the early reflections along with
+    // the tail, and those are not an effect the wet control governs: wet says
+    // how much ROOM you want behind a sound, while a reflection off a wall a
+    // metre away is part of hearing where the sound is. Putting the test before
+    // the pickups instead would deadlock -- earlyActive is only ever set by the
+    // pickup, so a dry first block would bypass forever and the taps would
+    // never arrive.
+    if (wet < 0.005f && !rn->earlyActive) {   // bypass: straight copy
+        for (ma_uint32 i = 0; i < frames * 2; ++i) out[i] = in[i];
+        return;
+    }
+
     if (rn->measuredActive) {
         const int preLenM = static_cast<int>(rn->preDelayBuf.size() / 2);
         int preSamplesM = static_cast<int>(rn->pre * static_cast<float>(rn->sampleRate));
@@ -187,10 +326,25 @@ static void reverb_node_process(ma_node* pNode, const float** ppFramesIn,
             const float feed = (rn->preDelayBuf[rd * 2] + rn->preDelayBuf[rd * 2 + 1]) * 0.5f;
             rn->preDelayPos = (rn->preDelayPos + 1) % preLenM;
 
+            // The reflections come off the DRY signal, not the pre-delayed
+            // feed: each tap already carries its own arrival time, measured
+            // from the geometry. Delaying them again by the pre-delay would
+            // push the whole pattern late and undo the thing it is for.
+            float erL = 0.0f, erR = 0.0f;
+            if (rn->earlyActive) {
+                erL = rn->early[0].Process(dryL);
+                erR = rn->early[1].Process(dryR);
+            }
+
             float wl = 0.0f, wr = 0.0f;
-            rn->fdn.Process(feed, wl, wr);
-            out[f * 2]     = dryL + wl * rn->lateLevel * wet;
-            out[f * 2 + 1] = dryR + wr * rn->lateLevel * wet;
+            rn->fdn.Process(feed + (erL + erR) * 0.5f, wl, wr);
+
+            // Early reflections sit at full level rather than being scaled by
+            // the wet mix. A first reflection off a wall a metre away is not an
+            // effect on the sound, it is part of hearing where the sound is --
+            // the wet control is about how much ROOM you want behind it.
+            out[f * 2]     = dryL + erL + wl * rn->lateLevel * wet;
+            out[f * 2 + 1] = dryR + erR + wr * rn->lateLevel * wet;
         }
         return;
     }
@@ -255,6 +409,14 @@ struct AudioEngine::Impl {
     ReverbNode reverb{};
     bool reverbReady = false;
     bool initialized = false;
+
+    // Eight sources get their own reflection pattern. Eight because each node
+    // holds a quarter-second stereo delay line and a scene can have hundreds of
+    // sounds; the slots go to the nearest audible ones, and everything else
+    // takes the listener-centric pattern off the bus.
+    static constexpr u32 kReflectionSlots = 8;
+    std::array<SourceReflectionNode, kReflectionSlots> sourceReflections{};
+    bool sourceReflectionsReady = false;
 };
 
 AudioEngine::AudioEngine()
@@ -288,17 +450,41 @@ bool AudioEngine::Initialize() {
     ENJIN_LOG_INFO(Audio, "AudioEngine initialized (miniaudio backend)");
 #endif
 
-#ifdef ENJIN_AUDIO_STEAM_AUDIO
-    // Initialize Steam Audio HRTF processor
-    if (m_HRTFEnabled) {
-        m_SteamAudio = std::make_unique<SteamAudioProcessor>();
-        // Environmental reverb bus: allocate Freeverb delay lines for the actual
-        // sample rate and splice the node in front of the endpoint. Spatialized
-        // sounds attach to this node; the rest stay directly on the endpoint.
+    // The environmental reverb bus. First party, and unconditional.
+    //
+    // This whole block used to live inside `#ifdef ENJIN_AUDIO_STEAM_AUDIO` and
+    // inside `if (m_HRTFEnabled)`, and that option defaults to OFF. So in a
+    // default build the node was never created, reverbReady stayed false, and
+    // every call into SetEnvironmentReverb, SetMeasuredRoom and
+    // SetMeasuredReflections returned at its first line. There has never been
+    // any environmental reverb in a stock build of this engine: not the
+    // measured rooms, not the early reflections, and not the Freeverb or the
+    // ReverbZone components that predate both by years. Every scene was dry,
+    // and every room therefore sounded exactly like every other room.
+    //
+    // It passed unnoticed because the tests exercise the DSP classes directly
+    // -- FeedbackDelayNetwork, EarlyReflectionRenderer, RoomResponse all have
+    // suites and all pass -- and none of them go through AudioEngine, which is
+    // the one place the feature was switched off. Twelve green suites over a
+    // bus that was never built.
+    //
+    // Reverb is ours. HRTF is Steam Audio's. Gating the first on the second was
+    // a leftover from when reflections were going to be Steam Audio's job, and
+    // it survived the decision to make all of this first party.
+    {
         {
             ma_uint32 sr = ma_engine_get_sample_rate(&m_Impl->engine);
             m_Impl->reverb.sampleRate = sr;
-    m_Impl->reverb.fdn.Prepare(sr);
+            m_Impl->reverb.fdn.Prepare(sr);
+            // 0.25 s of delay line holds every reflection worth hearing: past
+            // that a tap is indistinguishable from the diffuse tail it is
+            // sitting in. Reserving the tap cap here is what lets SetTaps run
+            // on the audio thread without allocating.
+            for (int c = 0; c < 2; ++c) {
+                m_Impl->reverb.early[c].Prepare(sr, 0.25f);
+                m_Impl->reverb.early[c].ReserveTaps(ReverbNode::kMaxStagedTaps);
+            }
+            m_Impl->reverb.earlyScratch.taps.reserve(ReverbNode::kMaxStagedTaps);
             const float srScale = static_cast<float>(sr) / 44100.0f;
             for (int c = 0; c < 2; ++c) {
                 for (int i = 0; i < kCombs; ++i) {
@@ -326,6 +512,52 @@ bool AudioEngine::Initialize() {
                 ENJIN_LOG_WARN(Audio, "Environmental reverb node init failed - sounds stay dry");
             }
         }
+    }
+
+    // The per-source reflection slots, spliced in front of the bus.
+    if (m_Impl->reverbReady) {
+        const ma_uint32 sr = ma_engine_get_sample_rate(&m_Impl->engine);
+        ma_node_config cfg = ma_node_config_init();
+        ma_uint32 chans = 2;
+        cfg.vtable = &g_sourceReflectionVTable;
+        cfg.pInputChannels = &chans;
+        cfg.pOutputChannels = &chans;
+
+        u32 built = 0;
+        for (auto& slot : m_Impl->sourceReflections) {
+            for (int c = 0; c < 2; ++c) {
+                slot.early[c].Prepare(sr, 0.25f);
+                slot.early[c].ReserveTaps(SourceReflectionNode::kMaxTaps);
+            }
+            slot.scratch.taps.reserve(SourceReflectionNode::kMaxTaps);
+            if (ma_node_init(ma_engine_get_node_graph(&m_Impl->engine), &cfg, nullptr,
+                             &slot.base) == MA_SUCCESS) {
+                ma_node_attach_output_bus(&slot.base, 0, &m_Impl->reverb.base, 0);
+                ++built;
+            }
+        }
+        m_Impl->sourceReflectionsReady = (built == Impl::kReflectionSlots);
+        if (!m_Impl->sourceReflectionsReady) {
+            ENJIN_LOG_WARN(Audio, "Only %u of %u per-source reflection slots initialised - "
+                                  "sources fall back to the shared pattern",
+                           built, Impl::kReflectionSlots);
+        }
+    }
+
+    // Say whether the bus is live, every time.
+    //
+    // "Is there reverb in this build" was answerable only by reading a CMake
+    // default, and the answer was no for the entire life of the feature. One
+    // line at startup makes it answerable by looking.
+    if (m_Impl->reverbReady) {
+        ENJIN_LOG_INFO(Audio, "Environmental reverb bus ready (first-party FDN + early reflections)");
+    }
+
+#ifdef ENJIN_AUDIO_STEAM_AUDIO
+    // Steam Audio supplies HRTF binaural rendering, and nothing else. The room
+    // itself is measured and rendered above, with or without it.
+    if (m_HRTFEnabled) {
+        m_SteamAudio = std::make_unique<SteamAudioProcessor>();
 
         ma_uint32 sampleRate = ma_engine_get_sample_rate(&m_Impl->engine);
         // Use engine's period size for frame size (typically 480 for 48kHz)
@@ -361,6 +593,15 @@ void AudioEngine::Shutdown() {
 #endif
 
     if (m_Impl && m_Impl->initialized) {
+        if (m_Impl->sourceReflectionsReady) {
+            for (auto& slot : m_Impl->sourceReflections) {
+                ma_node_detach_all_output_buses(&slot.base);
+                ma_node_uninit(&slot.base, nullptr);
+                slot.owner = 0;
+                slot.ownerMaSound = nullptr;
+            }
+            m_Impl->sourceReflectionsReady = false;
+        }
         if (m_Impl->reverbReady) {
             ma_node_uninit(&m_Impl->reverb.base, nullptr);
             m_Impl->reverbReady = false;
@@ -371,6 +612,10 @@ void AudioEngine::Shutdown() {
 
     m_Initialized = false;
     ENJIN_LOG_INFO(Audio, "AudioEngine shutdown");
+}
+
+bool AudioEngine::HasReverbBus() const {
+    return m_Impl && m_Impl->reverbReady;
 }
 
 void AudioEngine::SetMeasuredRoom(const f32 rt60[3], f32 meanFreePath, f32 reflectedEnergy) {
@@ -387,11 +632,134 @@ void AudioEngine::SetMeasuredRoom(const f32 rt60[3], f32 meanFreePath, f32 refle
     m_HasMeasuredRoom = (rt60[1] > 0.0f);
 }
 
+void AudioEngine::SetMeasuredReflections(const Acoustics::EarlyReflectionResult& reflections) {
+    if (!m_Impl || !m_Impl->reverbReady) return;
+    auto& rn = m_Impl->reverb;
+
+    // Loudest first, so that when there are more reflections than slots the
+    // ones dropped are the ones nobody would have heard. Sorting the caller's
+    // result would be rude, so the pick happens here by repeated max: with a
+    // cap of 32 that is cheaper than a sort and allocates nothing.
+    const usize available = reflections.taps.size();
+    u32 taken = 0;
+    bool used[256] = {};
+    const usize considered = available < 256 ? available : 256;
+
+    while (taken < ReverbNode::kMaxStagedTaps) {
+        usize best = considered;
+        f32 bestGain = -1.0f;
+        for (usize i = 0; i < considered; ++i) {
+            if (used[i]) continue;
+            if (reflections.taps[i].gain[1] > bestGain) {
+                bestGain = reflections.taps[i].gain[1];
+                best = i;
+            }
+        }
+        if (best == considered) break;
+        used[best] = true;
+        rn.stagedTaps[taken++] = reflections.taps[best];
+    }
+
+    rn.stagedTapCount.store(taken, std::memory_order_relaxed);
+    // Released last, so the audio thread never sees a new generation pointing
+    // at a half-written tap list.
+    rn.earlyGeneration.fetch_add(1, std::memory_order_release);
+}
+
+bool AudioEngine::SetSourceReflections(SoundHandle sound,
+                                       const Acoustics::EarlyReflectionResult& reflections) {
+    if (!m_Impl || !m_Impl->sourceReflectionsReady || sound == INVALID_SOUND) return false;
+
+    // The sound has to still exist and still be spatialized. A slot handed to a
+    // finished sound is a slot no live source can have.
+    auto it = m_Sounds.find(sound);
+    if (it == m_Sounds.end() || !it->second.maSound || !it->second.is3D) return false;
+
+    SourceReflectionNode* slot = nullptr;
+    for (auto& candidate : m_Impl->sourceReflections) {
+        if (candidate.owner == sound) { slot = &candidate; break; }
+    }
+    if (!slot) {
+        for (auto& candidate : m_Impl->sourceReflections) {
+            if (candidate.owner == 0) { slot = &candidate; break; }
+        }
+    }
+    if (!slot) return false;          // all eight busy; the shared pattern answers
+
+    if (slot->owner != sound) {
+        slot->owner = sound;
+        slot->ownerMaSound = it->second.maSound;
+        // Re-route this sound through its slot instead of straight to the bus.
+        ma_node_attach_output_bus(static_cast<ma_sound*>(it->second.maSound), 0,
+                                  &slot->base, 0);
+    }
+
+    // Loudest taps first, so an overflow drops the ones nobody would hear.
+    const usize considered = std::min<usize>(reflections.taps.size(), 256);
+    bool used[256] = {};
+    u32 taken = 0;
+    while (taken < SourceReflectionNode::kMaxTaps) {
+        usize best = considered;
+        f32 bestGain = -1.0f;
+        for (usize i = 0; i < considered; ++i) {
+            if (used[i]) continue;
+            if (reflections.taps[i].gain[1] > bestGain) {
+                bestGain = reflections.taps[i].gain[1];
+                best = i;
+            }
+        }
+        if (best == considered) break;
+        used[best] = true;
+        slot->stagedTaps[taken++] = reflections.taps[best];
+    }
+
+    slot->stagedCount.store(taken, std::memory_order_relaxed);
+    slot->generation.fetch_add(1, std::memory_order_release);
+    return true;
+}
+
+void AudioEngine::ReleaseSourceReflections(SoundHandle sound) {
+    if (!m_Impl || !m_Impl->sourceReflectionsReady || sound == INVALID_SOUND) return;
+
+    for (auto& slot : m_Impl->sourceReflections) {
+        if (slot.owner != sound) continue;
+        slot.owner = 0;
+        slot.ownerMaSound = nullptr;
+        slot.stagedCount.store(0, std::memory_order_relaxed);
+        slot.generation.fetch_add(1, std::memory_order_release);
+
+        // Put the sound back on the shared bus if it is still playing. A sound
+        // left attached to a slot that has been given away would render another
+        // source's walls.
+        auto it = m_Sounds.find(sound);
+        if (it != m_Sounds.end() && it->second.maSound && m_Impl->reverbReady) {
+            ma_node_attach_output_bus(static_cast<ma_sound*>(it->second.maSound), 0,
+                                      &m_Impl->reverb.base, 0);
+        }
+        break;
+    }
+}
+
+u32 AudioEngine::SourceReflectionSlotsInUse() const {
+    if (!m_Impl || !m_Impl->sourceReflectionsReady) return 0;
+    u32 used = 0;
+    for (const auto& slot : m_Impl->sourceReflections) if (slot.owner != 0) ++used;
+    return used;
+}
+
+u32 AudioEngine::SourceReflectionSlotCount() const {
+    return (m_Impl && m_Impl->sourceReflectionsReady) ? Impl::kReflectionSlots : 0u;
+}
+
 void AudioEngine::ClearMeasuredRoom() {
     if (!m_Impl || !m_Impl->reverbReady) return;
     auto& rn = m_Impl->reverb;
     rn.tRT60Mid.store(0.0f, std::memory_order_relaxed);
     rn.measuredGeneration.fetch_add(1, std::memory_order_release);
+    // The reflections describe the same place, so they go with it. Leaving them
+    // behind would slap a measured room's walls onto whatever comes next.
+    rn.stagedTapCount.store(0, std::memory_order_relaxed);
+    rn.earlyGeneration.fetch_add(1, std::memory_order_release);
     m_HasMeasuredRoom = false;
 }
 
@@ -526,6 +894,24 @@ void AudioEngine::CleanupUnusedClips() {
 }
 
 void AudioEngine::CleanupSound(SoundInstance& sound) {
+    // Hand back a reflection slot before the sound goes away.
+    //
+    // A slot left owned by a dead handle is a slot no live source can ever
+    // claim, and the pool is eight deep -- eight stopped footsteps would be
+    // enough to switch per-source reflections off for the rest of the session,
+    // silently, with everything still audible through the shared pattern. That
+    // is the quietest possible failure and worth one lookup here.
+    if (m_Impl && m_Impl->sourceReflectionsReady) {
+        for (auto& slot : m_Impl->sourceReflections) {
+            if (slot.owner != 0 && slot.ownerMaSound == sound.maSound) {
+                slot.owner = 0;
+                slot.ownerMaSound = nullptr;
+                slot.stagedCount.store(0, std::memory_order_relaxed);
+                slot.generation.fetch_add(1, std::memory_order_release);
+            }
+        }
+    }
+
 #ifdef ENJIN_AUDIO_STEAM_AUDIO
     if (sound.binauralNode) {
         auto* bNode = static_cast<BinauralNode*>(sound.binauralNode);

@@ -5,6 +5,7 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/Audio/AudioBus.h"
+#include "Enjin/Acoustics/EarlyReflections.h"
 #include <string>
 #include <unordered_map>
 #include <functional>
@@ -98,8 +99,59 @@ public:
     // wetDry still comes from SetEnvironmentReverb: how much room you hear is a
     // mixing decision, not a property of the room.
     void SetMeasuredRoom(const f32 rt60[3], f32 meanFreePath, f32 reflectedEnergy);
+
+    // The discrete reflections off named surfaces, as opposed to the diffuse
+    // tail behind them.
+    //
+    // This is what makes a room a PLACE rather than an amount of reverb. The
+    // tail tells you how live the room is; the first handful of reflections
+    // tell you a wall is a metre behind the thing making the sound, and which
+    // wall, and what it is made of -- a tiled wall returns the top of the clap
+    // almost intact, a curtain returns the bottom of it and nothing else.
+    //
+    // Without these the engine had one diffuse wash whose only variable was
+    // decay time, which is why every room sounded like the same room turned up
+    // or down. The tracing code and its tests existed for a while before
+    // anything called them, so the tail was all anybody ever heard.
+    void SetMeasuredReflections(const Acoustics::EarlyReflectionResult& reflections);
+
+    // Give ONE sound its own reflection pattern, traced from where it actually
+    // is rather than from the listener.
+    //
+    // The shared bus renders reflections traced with the source at the
+    // listener's own position, which is exactly right for a clap at your feet
+    // and increasingly wrong the further away a sound is: which walls answer,
+    // and how long after the direct sound, are properties of the path from THAT
+    // source to your ears. A handful of sounds get the real thing.
+    //
+    // Slots are limited (each holds a quarter-second stereo delay line) and are
+    // claimed on a first-come basis; a sound that cannot get one keeps routing
+    // through the shared pattern, which is a reasonable approximation and not a
+    // failure. Returns whether this sound holds a slot.
+    bool SetSourceReflections(SoundHandle sound,
+                              const Acoustics::EarlyReflectionResult& reflections);
+
+    // Hand a slot back. Called when a sound stops, and when it is no longer
+    // close enough to be worth one.
+    void ReleaseSourceReflections(SoundHandle sound);
+
+    // How many sounds currently hold their own pattern, and how many slots
+    // exist. Reported because "my footsteps sound wrong across the room" and
+    // "that source never got a slot" are the same symptom otherwise.
+    u32 SourceReflectionSlotsInUse() const;
+    u32 SourceReflectionSlotCount() const;
     void ClearMeasuredRoom();
     bool HasMeasuredRoom() const { return m_HasMeasuredRoom; }
+
+    // Whether the environmental reverb bus actually exists in this build.
+    //
+    // Worth asking out loud because for the whole life of the feature the
+    // answer was no, and nothing said so: the bus was created inside an
+    // OFF-by-default CMake option, so every call that fed it returned at its
+    // first line and every scene played dry. A capability that can be compiled
+    // out needs a way to be asked about, or "the reverb sounds wrong" and
+    // "there is no reverb" stay indistinguishable from the outside.
+    bool HasReverbBus() const;
 
     void SetListenerPosition(const Math::Vector3& position, const Math::Vector3& forward, const Math::Vector3& up);
 
