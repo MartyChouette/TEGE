@@ -233,3 +233,6 @@ Examples/*/*.zip
 
 # CTest scratch, written wherever ctest is invoked
 Testing/
+
+# Local playable builds produced by --build-web. Artifacts, never sources.
+dist/
