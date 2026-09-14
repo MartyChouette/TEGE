@@ -164,6 +164,25 @@ public:
     // Recreates an entity from a JSON string, returns the new entity ID
     static ECS::Entity DeserializeEntityFromString(ECS::World* world, const std::string& json);
 
+    // Apply component JSON onto an entity that ALREADY EXISTS.
+    //
+    // DeserializeEntityFromString always creates a new entity, which is right
+    // for a clipboard paste and wrong for a save file: a save is a delta onto a
+    // level that has already been loaded, and the entity it describes is
+    // already there. (ENG-001.)
+    //
+    // Reuses the same ComponentRegistry table as every other path, so a save
+    // never needs a second serialization mechanism and a component added to the
+    // engine is savable the day it is registered.
+    //
+    // Unknown keys are SKIPPED with a warning rather than treated as
+    // corruption. That is what lets a save survive a component being removed
+    // from the engine, which is the difference between an old save loading
+    // without a feature and an old save refusing to load at all.
+    // Returns how many component keys were applied.
+    static u32 ApplyEntityComponents(ECS::World* world, ECS::Entity entity,
+                                     const std::string& json);
+
     // Per-component serialization (for component remove undo)
     // Serializes a single component identified by its JSON key
     static std::string SerializeOneComponent(ECS::World* world, ECS::Entity entity, const std::string& key);

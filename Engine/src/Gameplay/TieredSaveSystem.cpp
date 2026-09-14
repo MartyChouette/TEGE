@@ -2,6 +2,8 @@
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/Scene/SceneSerializer.h"
+#include <unordered_map>
+#include "Enjin/ECS/Components/StableId.h"
 #include "Enjin/Logging/Log.h"
 
 #include <nlohmann/json.hpp>
@@ -69,10 +71,35 @@ void TieredSaveSystem::CollectEntitiesByTier(ECS::World* world, ECS::Persistence
 
         // Serialize this entity using the SceneSerializer per-entity method
         std::string entityJson = Scene::SceneSerializer::SerializeEntityToString(world, entity);
-        if (!entityJson.empty()) {
-            auto parsed = json::parse(entityJson, nullptr, false);
-            if (!parsed.is_discarded()) entitiesArr.push_back(std::move(parsed)); // GP-H1
+        if (entityJson.empty()) continue;
+        auto parsed = json::parse(entityJson, nullptr, false);
+        if (parsed.is_discarded()) continue;   // GP-H1
+
+        // THE STABLE ID IS WRITTEN HERE, NOT BY THE SERIALIZER.
+        //
+        // SerializeEntityToString deliberately omits it: its other caller is
+        // copy/paste, and a pasted entity carrying the original's stable id
+        // would put two entities in the scene claiming the same identity --
+        // which is its own class of bug and cost a day elsewhere this week.
+        //
+        // A save needs the opposite. Runtime Entity ids are generational and do
+        // not survive a load, so the stable id is the ONLY join key between a
+        // record and the entity it belongs to. So the save system adds it, and
+        // the clipboard still does not have it.
+        auto* sid = world->GetComponent<ECS::StableIdComponent>(entity);
+        if (!sid || sid->id == 0) {
+            // Opted into persistence with no identity: it can be written and
+            // can never be matched on load. Silence here would look exactly
+            // like a save that works.
+            ENJIN_LOG_WARN(Editor,
+                "TieredSaveSystem: entity %llu has a SaveDataComponent but no stable id, "
+                "so nothing it stores can be restored. Give it a StableIdComponent "
+                "(the editor adds one when an entity is created in a scene).",
+                static_cast<unsigned long long>(entity));
+            continue;
         }
+        parsed["stableId"] = json::object({{"id", sid->id}});
+        entitiesArr.push_back(std::move(parsed));
     }
     outJson = entitiesArr.dump();
 }
@@ -95,7 +122,7 @@ void TieredSaveSystem::CacheCurrentSceneState(ECS::World* world, const std::stri
 std::string TieredSaveSystem::BuildSaveJson(u32 slot, ECS::World* world,
                                              const std::string& sceneName) {
     json saveJson;
-    saveJson["version"] = 2;
+    saveJson["version"] = kSaveFormatVersion;
     saveJson["slotIndex"] = slot;
     saveJson["displayName"] = (slot >= AUTO_SAVE_SLOT_START)
         ? "Auto Save " + std::to_string(slot - AUTO_SAVE_SLOT_START + 1)
@@ -125,11 +152,21 @@ std::string TieredSaveSystem::BuildSaveJson(u32 slot, ECS::World* world,
         saveJson["sceneStates"] = sceneStates;
     }
 
-    // Full scene data for complete restore
-    {
-        Scene::SceneSerializer serializer(world);
-        saveJson["sceneData"] = serializer.SaveToString();
-    }
+    // NO FULL SCENE DUMP. (ENG-001, S1.)
+    //
+    // This used to write the ENTIRE level into every slot:
+    //   saveJson["sceneData"] = serializer.SaveToString();
+    //
+    // Three things were wrong with it. A 5.7 MB level times twenty slots is
+    // over 100 MB of saves for a one-level demo. The save became the AUTHORITY
+    // on the level, so shipping a patch that moved a building or fixed a
+    // collider was silently reverted by every existing save -- the hardest
+    // class of bug to explain to a player. And it made the tier design
+    // pointless: runState and sceneStates are collected twenty lines above and
+    // were then rendered redundant by a dump of everything.
+    //
+    // A save is a DELTA. The level on disk is the authority on the level; the
+    // save is the authority on what the player changed about it.
 
     return saveJson.dump(2);
 }
@@ -138,6 +175,68 @@ std::string TieredSaveSystem::BuildSaveJson(u32 slot, ECS::World* world,
 // Apply save JSON (restore)
 // ---------------------------------------------------------------------------
 
+// Apply a tier's entity records onto the live world, matched by stable id.
+//
+// (ENG-001, S3.) Runtime Entity ids are generational and are not stable across
+// a load, so they must never be the join key. StableIdComponent already exists,
+// is already serialized, and already survives a round trip -- it is the key.
+//
+// A record whose entity is gone is LOGGED AND SKIPPED, not an error: deleting an
+// authored entity from a level must not make older saves unloadable, and the
+// alternative is telling a player their save is corrupt because a designer
+// removed a crate.
+u32 TieredSaveSystem::ApplyEntityRecords(ECS::World* world, const std::string& recordsJson,
+                                         const char* tierName) {
+    if (!world || recordsJson.empty()) return 0;
+    // Records travel as a string, the way CollectEntitiesByTier already hands
+    // them over, so the public header stays free of the JSON library.
+    json records = json::parse(recordsJson, nullptr, false);
+    if (records.is_discarded() || !records.is_array()) return 0;
+
+    // One pass to index what is live, rather than a scan per record.
+    std::unordered_map<u64, ECS::Entity> byStableId;
+    for (ECS::Entity e : world->GetEntitiesWithComponent<ECS::StableIdComponent>()) {
+        auto* sid = world->GetComponent<ECS::StableIdComponent>(e);
+        if (sid && sid->id != 0) byStableId[sid->id] = e;
+    }
+
+    u32 applied = 0, missing = 0, unidentified = 0;
+    for (const auto& rec : records) {
+        if (!rec.is_object()) continue;
+
+        u64 stableId = 0;
+        if (rec.contains("stableId")) {
+            const auto& sj = rec["stableId"];
+            if (sj.is_object() && sj.contains("id")) stableId = sj["id"].get<u64>();
+            else if (sj.is_number_unsigned()) stableId = sj.get<u64>();
+        }
+        if (stableId == 0) {
+            ++unidentified;
+            continue;
+        }
+
+        auto it = byStableId.find(stableId);
+        if (it == byStableId.end()) {
+            ++missing;
+            continue;
+        }
+        if (Scene::SceneSerializer::ApplyEntityComponents(world, it->second, rec.dump()) > 0) {
+            ++applied;
+        }
+    }
+
+    if (missing > 0 || unidentified > 0) {
+        ENJIN_LOG_WARN(Editor,
+            "TieredSaveSystem: %s restored %u record(s); %u named an entity that is no "
+            "longer in the level (skipped), %u carried no stable id and could not be "
+            "matched to anything.",
+            tierName, applied, missing, unidentified);
+    } else {
+        ENJIN_LOG_INFO(Editor, "TieredSaveSystem: %s restored %u record(s)", tierName, applied);
+    }
+    return applied;
+}
+
 bool TieredSaveSystem::ApplySaveJson(const std::string& jsonStr, ECS::World* world) {
     if (!world) return false;
 
@@ -145,16 +244,46 @@ bool TieredSaveSystem::ApplySaveJson(const std::string& jsonStr, ECS::World* wor
         json saveJson = json::parse(jsonStr, nullptr, false);
         if (saveJson.is_discarded()) return false;
 
-        // Restore full scene
+        // VERSION GATE. (ENG-001, S5.)
+        //
+        // BuildSaveJson has always written a version and nothing has ever read
+        // it, so a file from a future build was parsed as though it were this
+        // one -- every key it did not recognise silently absent, every key that
+        // changed meaning silently misread. Refusing is the only honest answer
+        // to a format this build does not know.
+        const i32 fileVersion = saveJson.value("version", 1);
+        if (fileVersion > kSaveFormatVersion) {
+            ENJIN_LOG_ERROR(Editor,
+                "TieredSaveSystem: save is format version %d and this build understands "
+                "up to %d. Refusing to load it rather than guessing at what changed.",
+                fileVersion, kSaveFormatVersion);
+            return false;
+        }
+
+        // A version-2 save carries the whole level inside itself, which is the
+        // thing S1 removed. It cannot be applied as a delta, because its
+        // records were written against a world it also contains.
         if (saveJson.contains("sceneData")) {
-            std::string sceneData = saveJson["sceneData"].get<std::string>();
-            Scene::SceneSerializer serializer(world);
-            auto result = serializer.LoadFromString(sceneData, true);
-            if (!result.success) {
-                ENJIN_LOG_ERROR(Editor, "TieredSaveSystem: Failed to restore scene: %s",
-                                result.error.c_str());
-                return false;
-            }
+            ENJIN_LOG_ERROR(Editor,
+                "TieredSaveSystem: this save embeds a full scene dump (format %d). That "
+                "format is no longer loadable: a save is now a delta applied over the "
+                "level on disk, so the level is whatever the game currently ships. "
+                "Start a new game.",
+                fileVersion);
+            return false;
+        }
+
+        // RUN STATE, WHICH WAS WRITE-ONLY. (ENG-001, S2.)
+        //
+        // BuildSaveJson has always written runState.entities. ApplySaveJson read
+        // sceneData, playTime, sceneStates and sceneName, and never read
+        // runState back. The tier documented as holding health, inventory and
+        // quest progress was written to disk on every save and restored from it
+        // never. It appeared to work only because the full scene dump happened
+        // to contain those entities anyway -- so removing the dump without this
+        // would have stopped run state persisting entirely.
+        if (saveJson.contains("runState") && saveJson["runState"].contains("entities")) {
+            ApplyEntityRecords(world, saveJson["runState"]["entities"].dump(), "runState");
         }
 
         // Restore play time

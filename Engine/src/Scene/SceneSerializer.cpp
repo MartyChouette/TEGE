@@ -11169,6 +11169,54 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
     }
 }
 
+u32 SceneSerializer::ApplyEntityComponents(ECS::World* world, ECS::Entity entity,
+                                           const std::string& jsonStr) {
+    if (!world || entity == ECS::INVALID_ENTITY || jsonStr.empty()) return 0;
+
+    u32 applied = 0;
+    try {
+        json entityJson = ParseSceneJson(jsonStr);
+        if (!entityJson.is_object()) return 0;
+
+        // Entity-level keys are identity and structure, not state: re-applying
+        // them would move the record's entity onto a different id or reparent
+        // a live hierarchy from a file that may be several patches old.
+        static const char* kNotState[] = { "id", "stableId", "parent", "children" };
+
+        for (const auto& reg : ComponentRegistry()) {
+            auto regIt = entityJson.find(reg.key);
+            if (regIt == entityJson.end()) continue;
+            static const json kEmptyComponent = json::object();
+            reg.de(world, entity, regIt->is_null() ? kEmptyComponent : *regIt);
+            ++applied;
+        }
+
+        // Say what was in the record and could not be applied. A component that
+        // has been removed from the engine since the save was written lands
+        // here, and the save should still load.
+        for (auto it = entityJson.begin(); it != entityJson.end(); ++it) {
+            bool known = false;
+            for (const char* k : kNotState) {
+                if (it.key() == k) { known = true; break; }
+            }
+            if (known) continue;
+            for (const auto& reg : ComponentRegistry()) {
+                if (it.key() == reg.key) { known = true; break; }
+            }
+            if (!known) {
+                ENJIN_LOG_WARN(Asset,
+                    "Save record carries component '%s', which this build does not know. "
+                    "Skipped; the rest of the entity is applied.",
+                    it.key().c_str());
+            }
+        }
+    } catch (const std::exception& e) {
+        ENJIN_LOG_ERROR(Asset, "ApplyEntityComponents failed: %s", e.what());
+        return applied;
+    }
+    return applied;
+}
+
 ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, const std::string& jsonStr) {
     if (!world || jsonStr.empty()) return ECS::INVALID_ENTITY;
 

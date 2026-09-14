@@ -41,6 +41,13 @@ struct AutoSaveConfig {
 // 3-tier save system: SceneState, RunState, MetaProgression
 class ENJIN_API TieredSaveSystem {
 public:
+    // Save format this build writes and is willing to read.
+    //
+    // 3 dropped the embedded full-scene dump: a save is a delta over the level
+    // on disk, not a copy of it. A version above this is refused rather than
+    // parsed as though it were this one. (ENG-001.)
+    static constexpr i32 kSaveFormatVersion = 3;
+
     static constexpr u32 MAX_SLOTS = 20;
     static constexpr u32 MANUAL_SLOTS = 17;       // Slots 0-16
     static constexpr u32 AUTO_SAVE_SLOT_START = 17; // Slots 17-19
@@ -141,6 +148,11 @@ private:
     std::string GetSlotKey(u32 slot) const;
     std::string GetMetaKey() const;
     std::string BuildSaveJson(u32 slot, ECS::World* world, const std::string& sceneName);
+    // Apply one tier's records onto the live world, matched by StableIdComponent.
+    // Returns how many were applied; missing entities are skipped, not fatal.
+    u32 ApplyEntityRecords(ECS::World* world, const std::string& recordsJson,
+                           const char* tierName);
+
     bool ApplySaveJson(const std::string& jsonStr, ECS::World* world);
     void CollectEntitiesByTier(ECS::World* world, ECS::PersistenceTier tier,
                                std::string& outJson);
