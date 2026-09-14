@@ -197,4 +197,49 @@ ENJIN_TEST(SaveDelta, AFutureFormatIsRefusedNotGuessedAt) {
     ENJIN_EXPECT_TRUE(!loaded);
 }
 
+// S6: a script can declare persistence and park its state on an entity.
+//
+// The decision (Marty, 2026-09-14) was that script-local run state MOVES ONTO
+// ENTITIES rather than the save system growing a hook for AngelScript globals.
+// That only works if script can put it there, which it could not:
+// SaveDataComponent had an editor inspector and no binding, so persistence was
+// authorable by hand, entity by entity, in a game whose scene is generated.
+//
+// This exercises the C++ side of those bindings through the same component they
+// write, and then round-trips it, because "the value is on the entity" and "the
+// value survives a save" are different claims.
+ENJIN_TEST(SaveDelta, CustomDataOnAnEntitySurvivesARoundTrip) {
+    SaveScope s("customdata");
+
+    ECS::World world;
+    const ECS::Entity e = MakePersistent(world, 777, Math::Vector3(0.0f, 0.0f, 0.0f));
+
+    // What a script would write: the state that used to live in a global.
+    auto* sd = world.GetComponent<ECS::SaveDataComponent>(e);
+    ENJIN_ASSERT_NOT_NULL(sd);
+    sd->SetData("money", "1250");
+    sd->SetData("shotgun_unlocked", "1");
+    sd->SetData("job_done_docks", "1");
+    sd->tags.push_back("player");
+
+    ENJIN_ASSERT_TRUE(s.save.SaveToSlot(0, &world, "Level_01"));
+
+    // The player carries on and then loads.
+    sd->SetData("money", "0");
+    sd->SetData("shotgun_unlocked", "0");
+    ENJIN_ASSERT_TRUE(s.save.LoadFromSlot(0, &world));
+
+    auto* back = world.GetComponent<ECS::SaveDataComponent>(e);
+    ENJIN_ASSERT_NOT_NULL(back);
+    std::printf("    money=%s shotgun=%s tag=%d\n",
+                back->GetData("money", "?").c_str(),
+                back->GetData("shotgun_unlocked", "?").c_str(),
+                (int)back->HasTag("player"));
+
+    ENJIN_EXPECT_EQ(back->GetData("money", ""), std::string("1250"));
+    ENJIN_EXPECT_EQ(back->GetData("shotgun_unlocked", ""), std::string("1"));
+    ENJIN_EXPECT_EQ(back->GetData("job_done_docks", ""), std::string("1"));
+    ENJIN_EXPECT_TRUE(back->HasTag("player"));
+}
+
 ENJIN_TEST_MAIN()

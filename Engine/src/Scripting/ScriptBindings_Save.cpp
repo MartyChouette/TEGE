@@ -3,6 +3,8 @@
 #include "Enjin/Logging/Log.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Entity.h"
+#include "Enjin/ECS/Components/StableId.h"
+#include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/Gameplay/TieredSaveSystem.h"
 #include <angelscript.h>
 #include <string>
@@ -27,6 +29,126 @@ void SetBindingsSaveSystem(Gameplay::TieredSaveSystem* sys) {
 
 } // namespace Scripting
 } // namespace Enjin
+
+
+// ============================================================================
+// Per-entity persistence, declared from script (ENG-001, S6)
+// ============================================================================
+//
+// SaveDataComponent existed, was serialized, and had an editor inspector -- and
+// no script could touch it. Persistence could only be authored by hand in the
+// editor, entity by entity, which is unusable for a game whose scene is
+// generated and whose behaviour lives in AngelScript.
+//
+// That gap is what pushed run state into AngelScript globals, where the tier
+// system cannot see it and no save can capture it. The decision (Marty,
+// 2026-09-14) is that the state moves onto entities rather than the save system
+// growing a script-state hook, so script has to be able to put it there.
+//
+// The custom-data accessors mirror the Meta_* family in this same file (Float /
+// Int / Bool / String) rather than inventing a second shape. Storage underneath
+// is the string pairs SaveDataComponent already uses and that already round-trip
+// through the scene serializer.
+
+static ECS::SaveDataComponent* ResolveSaveData(u64 entityId, bool createIfMissing) {
+    if (!s_BindingsWorld) return nullptr;
+    const ECS::Entity e = static_cast<ECS::Entity>(entityId);
+    if (!s_BindingsWorld->IsValid(e)) return nullptr;
+    if (!s_BindingsWorld->HasComponent<ECS::SaveDataComponent>(e)) {
+        if (!createIfMissing) return nullptr;
+        s_BindingsWorld->AddComponent<ECS::SaveDataComponent>(e);
+    }
+    return s_BindingsWorld->GetComponent<ECS::SaveDataComponent>(e);
+}
+
+static void SaveData_Set(u64 entityId, int tier) {
+    if (tier < 0 || tier > 2) {
+        ENJIN_LOG_WARN(Script, "SaveData_Set: tier %d is not SceneState(0), RunState(1) "
+                       "or MetaProgression(2); ignored", tier);
+        return;
+    }
+    auto* sd = ResolveSaveData(entityId, true);
+    if (!sd) {
+        ENJIN_LOG_WARN(Script, "SaveData_Set: entity %llu is not valid",
+                       static_cast<unsigned long long>(entityId));
+        return;
+    }
+    sd->tier = static_cast<ECS::PersistenceTier>(tier);
+
+    // Said now rather than at save time. Without a stable id this entity's
+    // record can be written and can never be matched back on load, and that
+    // failure would not surface until someone tried to load.
+    const ECS::Entity e = static_cast<ECS::Entity>(entityId);
+    auto* sid = s_BindingsWorld->GetComponent<ECS::StableIdComponent>(e);
+    if (!sid || sid->id == 0) {
+        ENJIN_LOG_WARN(Script,
+            "SaveData_Set: entity %llu has no stable id, so anything it saves cannot be "
+            "restored. Entities authored into a scene have one; an entity spawned at "
+            "runtime does not, and runtime-spawned persistence is not supported yet.",
+            static_cast<unsigned long long>(entityId));
+    }
+}
+
+static bool SaveData_Has(u64 entityId) {
+    return ResolveSaveData(entityId, false) != nullptr;
+}
+
+static int SaveData_GetTier(u64 entityId) {
+    auto* sd = ResolveSaveData(entityId, false);
+    return sd ? static_cast<int>(sd->tier) : -1;
+}
+
+static void SaveData_AddTag(u64 entityId, const std::string& tag) {
+    auto* sd = ResolveSaveData(entityId, true);
+    if (sd && !sd->HasTag(tag)) sd->tags.push_back(tag);
+}
+
+static bool SaveData_HasTag(u64 entityId, const std::string& tag) {
+    auto* sd = ResolveSaveData(entityId, false);
+    return sd && sd->HasTag(tag);
+}
+
+static void SaveData_SetString(u64 entityId, const std::string& key, const std::string& value) {
+    if (auto* sd = ResolveSaveData(entityId, true)) sd->SetData(key, value);
+}
+static std::string SaveData_GetString(u64 entityId, const std::string& key,
+                                      const std::string& fallback) {
+    auto* sd = ResolveSaveData(entityId, false);
+    return sd ? sd->GetData(key, fallback) : fallback;
+}
+
+static void SaveData_SetFloat(u64 entityId, const std::string& key, f32 value) {
+    if (auto* sd = ResolveSaveData(entityId, true)) sd->SetData(key, std::to_string(value));
+}
+static f32 SaveData_GetFloat(u64 entityId, const std::string& key, f32 fallback) {
+    auto* sd = ResolveSaveData(entityId, false);
+    if (!sd) return fallback;
+    const std::string v = sd->GetData(key, "");
+    if (v.empty()) return fallback;
+    try { return std::stof(v); } catch (...) { return fallback; }
+}
+
+static void SaveData_SetInt(u64 entityId, const std::string& key, i32 value) {
+    if (auto* sd = ResolveSaveData(entityId, true)) sd->SetData(key, std::to_string(value));
+}
+static i32 SaveData_GetInt(u64 entityId, const std::string& key, i32 fallback) {
+    auto* sd = ResolveSaveData(entityId, false);
+    if (!sd) return fallback;
+    const std::string v = sd->GetData(key, "");
+    if (v.empty()) return fallback;
+    try { return std::stoi(v); } catch (...) { return fallback; }
+}
+
+static void SaveData_SetBool(u64 entityId, const std::string& key, bool value) {
+    if (auto* sd = ResolveSaveData(entityId, true)) sd->SetData(key, value ? "1" : "0");
+}
+static bool SaveData_GetBool(u64 entityId, const std::string& key, bool fallback) {
+    auto* sd = ResolveSaveData(entityId, false);
+    if (!sd) return fallback;
+    const std::string v = sd->GetData(key, "");
+    if (v.empty()) return fallback;
+    return v == "1" || v == "true";
+}
 
 // ============================================================================
 // Save/Load slot operations
@@ -147,6 +269,34 @@ void RegisterSaveBindings(asIScriptEngine* engine) {
         ENJIN_AS_FN(Meta_GetString), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Meta_Save()",
         ENJIN_AS_FN(Meta_Save), ENJIN_AS_CALL_CDECL));
+
+    // Per-entity persistence (ENG-001 S6)
+    AS_CHECK(engine->RegisterGlobalFunction("void SaveData_Set(uint64, int)",
+        ENJIN_AS_FN(SaveData_Set), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool SaveData_Has(uint64)",
+        ENJIN_AS_FN(SaveData_Has), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int SaveData_GetTier(uint64)",
+        ENJIN_AS_FN(SaveData_GetTier), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void SaveData_AddTag(uint64, const string &in)",
+        ENJIN_AS_FN(SaveData_AddTag), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool SaveData_HasTag(uint64, const string &in)",
+        ENJIN_AS_FN(SaveData_HasTag), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void SaveData_SetString(uint64, const string &in, const string &in)",
+        ENJIN_AS_FN(SaveData_SetString), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("string SaveData_GetString(uint64, const string &in, const string &in)",
+        ENJIN_AS_FN(SaveData_GetString), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void SaveData_SetFloat(uint64, const string &in, float)",
+        ENJIN_AS_FN(SaveData_SetFloat), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float SaveData_GetFloat(uint64, const string &in, float)",
+        ENJIN_AS_FN(SaveData_GetFloat), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void SaveData_SetInt(uint64, const string &in, int)",
+        ENJIN_AS_FN(SaveData_SetInt), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int SaveData_GetInt(uint64, const string &in, int)",
+        ENJIN_AS_FN(SaveData_GetInt), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void SaveData_SetBool(uint64, const string &in, bool)",
+        ENJIN_AS_FN(SaveData_SetBool), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool SaveData_GetBool(uint64, const string &in, bool)",
+        ENJIN_AS_FN(SaveData_GetBool), ENJIN_AS_CALL_CDECL));
 
     // Auto-save
     AS_CHECK(engine->RegisterGlobalFunction("void AutoSave_Enable(bool)",
