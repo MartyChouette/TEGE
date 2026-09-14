@@ -27,6 +27,7 @@ Exits non-zero if any asset 404s, if the games disagree about which engine they
 ship, or if a game's wasm never instantiates.
 """
 import http.server
+import io
 import os
 import re
 import subprocess
@@ -67,6 +68,71 @@ def serve(root):
         def log_message(self, *a):   # the per-request log buries the report
             pass
 
+        def end_headers(self):
+            # CROSS-ORIGIN ISOLATION, which this server did not send.
+            #
+            # The engine is built with pthreads, so its memory is a
+            # SharedArrayBuffer, and a browser only hands one out on a
+            # cross-origin-isolated page. Without these two headers the wasm
+            # never instantiates -- so every game reported ENGINE NEVER RAN
+            # while booting fine under web-demo/serve.py, which does send them.
+            #
+            # A checker that serves the build differently from the way it is
+            # actually served is not checking the deployment. These match
+            # serve.py deliberately; if that file's headers change, this one
+            # has to follow.
+            self.send_header("Cross-Origin-Opener-Policy", "same-origin")
+            self.send_header("Cross-Origin-Embedder-Policy", "require-corp")
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+            self.send_header("Accept-Ranges", "bytes")
+            super().end_headers()
+
+        def send_head(self):
+            # RANGE REQUESTS. SimpleHTTPRequestHandler has none, and the engine
+            # wasm is 13MB: Chrome asks for a range, gets a full-body 200,
+            # gives up on the connection mid-transfer, and streaming
+            # instantiation fails. The server then dies on the aborted socket.
+            # Net effect was ENGINE NEVER RAN on a build that boots fine.
+            rng = self.headers.get("Range")
+            if not rng or not rng.startswith("bytes="):
+                return super().send_head()
+            path = self.translate_path(self.path)
+            if not os.path.isfile(path):
+                return super().send_head()
+            size = os.path.getsize(path)
+            spec = rng[6:].split("-", 1)
+            try:
+                start = int(spec[0]) if spec[0] else 0
+                end = int(spec[1]) if len(spec) > 1 and spec[1] else size - 1
+            except ValueError:
+                return super().send_head()
+            end = min(end, size - 1)
+            if start > end:
+                self.send_response(416)
+                self.send_header("Content-Range", "bytes */%d" % size)
+                self.end_headers()
+                return None
+            fh = open(path, "rb")
+            fh.seek(start)
+            self.send_response(206)
+            self.send_header("Content-Type", self.guess_type(path))
+            self.send_header("Content-Range", "bytes %d-%d/%d" % (start, end, size))
+            self.send_header("Content-Length", str(end - start + 1))
+            self.end_headers()
+            # SimpleHTTPRequestHandler copies to EOF, so hand it only the slice.
+            data = fh.read(end - start + 1)
+            fh.close()
+            return io.BytesIO(data)
+
+        def handle_one_request(self):
+            # A browser that has what it needs closes the socket, and that is
+            # not a server error. Letting it surface printed a traceback
+            # through the middle of the report.
+            try:
+                super().handle_one_request()
+            except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+                self.close_connection = True
+
     handler = lambda *a, **k: Quiet(*a, directory=root, **k)
     httpd = http.server.ThreadingHTTPServer(("127.0.0.1", PORT), handler)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
@@ -98,12 +164,30 @@ def check_assets(base, game):
 
     html = urllib.request.urlopen(idx, timeout=30).read().decode("utf-8", "replace")
     refs = set(re.findall(r'(?:src|href)="([^"]+)"', html))
-    refs = {r for r in refs if not r.startswith(("http", "//", "#", ".."))}
+    refs = {r for r in refs if not r.startswith(("http", "//", "#"))}
 
-    # The locateFile hook is what versions the WASM request. Checking the plain
-    # filename would miss exactly the mismatch this script exists to catch.
+    # WHERE THE ENGINE ACTUALLY LIVES. This used to be hardcoded to
+    # "EnjinPlayer.wasm" beside the page, which was true when every demo carried
+    # its own copy of the engine. It is not true now: the sub-demos load
+    # '../EnjinPlayer.js' and share one engine at the demo root.
+    #
+    # The old code got it wrong twice over. It DROPPED any '..' reference as
+    # out-of-directory, so it never checked the real engine script at all, and
+    # then it added a same-directory wasm that had never existed -- so all five
+    # sub-demos reported a 404 on a file nothing requests, while booting
+    # perfectly in a browser. Emscripten resolves the wasm against the SCRIPT's
+    # URL, not the document's, so the engine script's own src is the only honest
+    # place to get this from.
+    script = re.findall(r"\.src\s*=\s*['\"]([^'\"]*EnjinPlayer\.js[^'\"]*)['\"]", html)
+    engine_js = script[0] if script else "EnjinPlayer.js"
+    refs.add(engine_js)
+
+    # The '?v=' cache-buster is optional: a locateFile hook versions the wasm
+    # separately from the script tag, and bumping only one ships a mismatched
+    # pair. No demo uses one today, so the plain path is what a browser asks for.
     ver = re.findall(r"path\s*\+\s*'\?v=([0-9A-Za-z]+)'", html)
-    refs.add("EnjinPlayer.wasm" + ("?v=" + ver[0] if ver else ""))
+    wasm = engine_js[:-3] + ".wasm" if engine_js.endswith(".js") else "EnjinPlayer.wasm"
+    refs.add(wasm + ("?v=" + ver[0] if ver else ""))
     if os.path.isfile(os.path.join(base_dir, game, "game.enjpak")):
         refs.add("game.enjpak")
 
@@ -112,17 +196,52 @@ def check_assets(base, game):
         st, ln = http_status("%s%s/%s" % (base, game, r))
         if st != 200:
             problems.append("%s -> HTTP %s" % (r, st))
-        if r.startswith("EnjinPlayer.wasm"):
+        if r.endswith(".wasm") or ".wasm?" in r:
             wasm_size = ln
     return problems, wasm_size
 
 
-def check_boot(chrome, base, game):
+def check_boot(chrome, base, game, attempts=3):
+    """Did the engine actually run? Retries only a harness race, never a failure.
+
+    Headless Chrome sometimes exits before the page has logged ANYTHING -- the
+    run takes ~0.7s instead of the ~1.5s a real boot takes, and the stderr holds
+    no CONSOLE line at all. That is the browser losing a startup race, and it is
+    indistinguishable in the result from a build that cannot boot, which is how
+    a healthy demo room reported ENGINE NEVER RAN about one run in three.
+
+    The two cases separate cleanly on whether the PAGE ever spoke:
+
+      no CONSOLE lines at all      the harness saw nothing -- retry
+      CONSOLE lines, no engine     the page ran and the engine did not -- FAIL
+
+    So only the first is retried. A build that genuinely fails to instantiate
+    still logs its way to the failure and is reported on the first attempt.
+    """
+    for attempt in range(attempts):
+        ran, fetch_fail, spoke = _boot_once(chrome, base, game)
+        if ran or spoke:
+            return ran, fetch_fail
+    return False, fetch_fail
+
+
+def _boot_once(chrome, base, game):
     with tempfile.TemporaryDirectory() as tmp:
         err = os.path.join(tmp, "err.txt")
         with open(err, "wb") as fh:
             subprocess.run(
-                [chrome, "--headless=new", "--disable-gpu", "--no-sandbox",
+                # WebGPU IN HEADLESS. --disable-gpu was here, and it is the
+                # one flag that guarantees this check can never pass: the demo
+                # pages gate the engine behind navigator.gpu.requestAdapter(),
+                # which returns null without an adapter, so the page shows its
+                # "no WebGPU" card and the engine is never fetched. Every game
+                # then reports ENGINE NEVER RAN whatever it actually does in a
+                # browser -- a red result that says nothing about the build.
+                # These are the flags tools/web_capture.mjs uses to get a real
+                # software adapter out of headless Chrome.
+                [chrome, "--headless=new", "--no-sandbox",
+                 "--enable-unsafe-webgpu", "--enable-unsafe-swiftshader",
+                 "--enable-features=Vulkan",
                  "--virtual-time-budget=25000", "--enable-logging=stderr", "--v=0",
                  "--user-data-dir=" + os.path.join(tmp, "profile"),
                  "--dump-dom", "%s%s/index.html" % (base, game)],
@@ -130,7 +249,11 @@ def check_boot(chrome, base, game):
         log = open(err, encoding="utf-8", errors="replace").read()
     ran = any(m in log for m in ENGINE_RAN)
     fetch_fail = re.findall(r"Failed to load resource.*?(\S+)", log)
-    return ran, fetch_fail
+    # Did the PAGE produce any console output at all? Chrome's own startup
+    # warnings are always present, so their absence proves nothing -- only a
+    # CONSOLE line means the document got as far as running script.
+    spoke = "INFO:CONSOLE" in log or "CONSOLE(" in log
+    return ran, fetch_fail, spoke
 
 
 def main():
@@ -146,7 +269,13 @@ def main():
         return 2
 
     serve(base_dir)
-    base = "http://127.0.0.1:%d/" % PORT
+    # localhost, NOT 127.0.0.1. Headless Chrome refuses a WebGPU adapter on the
+    # raw-IP origin here, so the demo pages' requestAdapter() gate fails, the
+    # engine script is never appended, and every game reports ENGINE NEVER RAN.
+    # Measured both ways against both servers: localhost boots, 127.0.0.1 does
+    # not. The bind address stays 127.0.0.1 -- only the URL the browser is given
+    # has to be the hostname.
+    base = "http://localhost:%d/" % PORT
     chrome = find_chrome()
     if not chrome:
         print("note: no Chrome found, skipping the boot check (assets still verified)")
