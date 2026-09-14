@@ -76,6 +76,38 @@ void RenderSystem::WarnIfSceneHasNoLights(bool noLights) {
 } // namespace ECS
 } // namespace Enjin
 
+namespace Enjin {
+namespace ECS {
+
+// ---------------------------------------------------------------------------
+// Shared frame setup (RENDERSYSTEM_SPLIT.md step 2)
+//
+// Both backend Update bodies open by doing the same backend-agnostic work, and
+// both used to carry their own copy of it. That is the drift surface: 4,282
+// lines of Update across two halves, most of which is not backend work at all.
+// Anything hoisted here is one implementation both backends share, and cannot
+// silently diverge again.
+// ---------------------------------------------------------------------------
+
+// Every entity recomputes its world matrix at most once per frame.
+//
+// The cache on TransformComponent is only correct because something clears it
+// exactly once at the top of the frame. Both backends did that, separately,
+// with different comments -- and the web copy carries a note explaining that it
+// had NOT been doing it, so every parented entity was served its first frame's
+// matrix forever and a viewmodel rig froze in mid-air at boot pose. That bug
+// existed because the two copies were separate. This is one copy.
+void RenderSystem::BeginFrameTransformCaches() {
+    if (!m_CachedTransformStorage) return;
+    auto& transforms = m_CachedTransformStorage->GetComponents();
+    for (auto& t : transforms) {
+        t.worldMatrixDirty = true;
+    }
+}
+
+} // namespace ECS
+} // namespace Enjin
+
 #if ENJIN_RENDERER_WEBGPU
 
 #include "Enjin/Renderer/WebGPU/WebSceneTarget.h"   // kWebSceneSampleCount
@@ -2555,16 +2587,8 @@ void RenderSystem::Update(f32 deltaTime) {
         return s_WebCasterSig;
     };
 
-    // Mark all transform world-matrix caches dirty so each entity recomputes at
-    // most once this frame — same contract as the Vulkan Update. Without this
-    // the web path served every parented entity its FIRST frame's cached world
-    // matrix forever (the Shells viewmodel rig froze in mid-air at boot pose).
-    if (m_CachedTransformStorage) {
-        auto& transforms = m_CachedTransformStorage->GetComponents();
-        for (auto& t : transforms) {
-            t.worldMatrixDirty = true;
-        }
-    }
+    // Shared, above the backend #if. See BeginFrameTransformCaches.
+    BeginFrameTransformCaches();
 
     // Index animators by shared skeleton so ResolveAnimator can match follower
     // meshes to their leader's clock (animators themselves tick in web_main)
@@ -7356,14 +7380,8 @@ void RenderSystem::Update(f32 deltaTime) {
     // up once here (via type-ID hash) instead of once per entity in the hot loops.
     RefreshStorageCache();
 
-    // Mark all transform world-matrix caches dirty so each entity recomputes at most
-    // once this frame (across main pass, shadow pass, outline pass, etc.).
-    if (m_CachedTransformStorage) {
-        auto& transforms = m_CachedTransformStorage->GetComponents();
-        for (auto& t : transforms) {
-            t.worldMatrixDirty = true;
-        }
-    }
+    // Shared, above the backend #if. See BeginFrameTransformCaches.
+    BeginFrameTransformCaches();
 
     // Reset per-frame stats
     ResetFrameCounters();

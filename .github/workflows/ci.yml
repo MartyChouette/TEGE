@@ -215,6 +215,23 @@ jobs:
           }
           if ($code -ne 0) { throw "play-cycle stress failed with code $code" }
 
+      - name: RenderSystem backend parity (no new one-sided methods)
+        shell: pwsh
+        # RenderSystem.cpp holds both renderer backends under one #if, and only
+        # one half compiles in any build -- so a feature added to one and not the
+        # other is invisible to the compiler AND to the tests, which only ever
+        # run one backend. That is not theoretical: tilemaps generated no mesh at
+        # all on web for months because the call site existed only in the Vulkan
+        # Update body. Three lines nobody added.
+        #
+        # Fails on NEW divergence only. The 189 methods that are already
+        # one-sided are recorded in tools/rendersystem_parity_baseline.txt as
+        # DEBT -- failing on all of them would mean switching this off on day
+        # one, which is how a gate becomes decoration.
+        run: |
+          python tools/rendersystem_parity.py --strict
+          if ($LASTEXITCODE -ne 0) { throw "RenderSystem backend parity failed" }
+
       - name: Vulkan validation (no validation errors on a real scene)
         shell: pwsh
         timeout-minutes: 15

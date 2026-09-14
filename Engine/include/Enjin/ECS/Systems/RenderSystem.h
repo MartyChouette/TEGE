@@ -2845,6 +2845,11 @@ public:
     // Supply the surface queries hand IK needs. See m_SurfaceQuery.
     void SetSurfaceQuery(Animation::ISurfaceQuery* query) { m_SurfaceQuery = query; }
 
+    // Shared frame setup, above the backend #if (RENDERSYSTEM_SPLIT.md step 2).
+    // One implementation both backends call, so it cannot drift the way the two
+    // hand-maintained copies did.
+    void BeginFrameTransformCaches();
+
 private:
 
     // Draw call / triangle counters (current frame, accumulating)
