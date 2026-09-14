@@ -4122,8 +4122,20 @@ int main(int argc, char* argv[]) {
                          issue.file.c_str(), issue.row, issue.col,
                          issue.isError ? "error" : "warning", issue.message.c_str());
         }
-        std::fprintf(stdout, "check-scripts: %u module(s), %u error(s), %u warning(s)\n",
-                     r.modulesChecked, r.errorCount, r.warningCount);
+        // Say what was NOT compiled and why. An include-only file is normal and
+        // expected; an include-only file nobody includes is dead script, and a
+        // file that vanished from this list since yesterday is a typo'd include
+        // silently removing it from the module it was meant to join. None of
+        // that is visible from a module count alone.
+        for (const auto& sk : r.skipped) {
+            std::fprintf(stdout, "%s: skipped, included by %s\n",
+                         sk.file.c_str(), sk.includedBy.c_str());
+        }
+        std::fprintf(stdout,
+                     "check-scripts: %u module(s), %u include-only file(s), "
+                     "%u error(s), %u warning(s)\n",
+                     r.modulesChecked, static_cast<unsigned>(r.skipped.size()),
+                     r.errorCount, r.warningCount);
         return r.Ok() ? 0 : 1;
     }
 

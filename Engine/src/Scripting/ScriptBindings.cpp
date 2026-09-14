@@ -1286,10 +1286,65 @@ static float DataAsset_GetFloatAt(const std::string& assetName, const std::strin
         assetName, field, static_cast<Enjin::usize>(index));
 }
 
+// ENUMERATION. Script could confirm a name it already knew and discover
+// nothing, so every data-driven project had to hand-maintain a manifest listing
+// its own content -- a second source of truth for something the engine already
+// holds. Forgetting to add a line to it is silent: the record loads, the schema
+// validates, nothing warns, and the character simply never appears. (FR-0001,
+// Marty 2026-09-13.)
+//
+// The registry has answered this in C++ the whole time and the editor calls it
+// in four places. Only the binding was missing.
+//
+// House pattern for returning a collection, copied from the physics API rather
+// than invented: a call that returns a count, then an indexed getter. No
+// binding in this engine returns an array<T>@, which is presumably why that
+// pattern exists, and following it keeps this near zero cost.
+static std::vector<std::string> s_DataAssetListResults;
+
+static int DataAsset_ListBySchema(const std::string& schemaName) {
+    s_DataAssetListResults.clear();
+    for (const auto* a : Enjin::Assets::DataAssetRegistry::Get().GetAssetsBySchema(schemaName)) {
+        if (a) s_DataAssetListResults.push_back(a->name);
+    }
+    return static_cast<int>(s_DataAssetListResults.size());
+}
+
+static int DataAsset_ListAll() {
+    s_DataAssetListResults.clear();
+    for (const auto* a : Enjin::Assets::DataAssetRegistry::Get().GetAllAssets()) {
+        if (a) s_DataAssetListResults.push_back(a->name);
+    }
+    return static_cast<int>(s_DataAssetListResults.size());
+}
+
+static std::string DataAsset_GetListResult(int index) {
+    if (index < 0 || index >= static_cast<int>(s_DataAssetListResults.size())) return std::string();
+    return s_DataAssetListResults[static_cast<Enjin::usize>(index)];
+}
+
+// So a loader can branch on what it found rather than being told in advance.
+static std::string DataAsset_GetSchemaName(const std::string& assetName) {
+    const auto* a = Enjin::Assets::DataAssetRegistry::Get().FindAsset(assetName);
+    return a ? a->schemaName : std::string();
+}
+
 static void RegisterDataAssetBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool DataAsset_Load(const string &in)",
         ENJIN_AS_FN(DataAsset_Load), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "int DataAsset_ListBySchema(const string &in)",
+        ENJIN_AS_FN(DataAsset_ListBySchema), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "int DataAsset_ListAll()",
+        ENJIN_AS_FN(DataAsset_ListAll), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "string DataAsset_GetListResult(int)",
+        ENJIN_AS_FN(DataAsset_GetListResult), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "string DataAsset_GetSchemaName(const string &in)",
+        ENJIN_AS_FN(DataAsset_GetSchemaName), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float DataAsset_GetFloat(const string &in, const string &in)",
         ENJIN_AS_FN(DataAsset_GetFloat), ENJIN_AS_CALL_CDECL));

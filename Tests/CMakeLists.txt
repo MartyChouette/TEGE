@@ -274,6 +274,8 @@ target_compile_definitions(TestExampleScripts PRIVATE
     ENJIN_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/..")
 enjin_add_test(TestAddComponent      Unit/Scripting/TestAddComponent.cpp)
 enjin_add_test(TestScriptChecker     Unit/Scripting/TestScriptChecker.cpp)
+enjin_add_test(TestScriptCheckerModules Unit/Scripting/TestScriptCheckerModules.cpp)
+enjin_add_test(TestDataAssetEnumeration Unit/Scripting/TestDataAssetEnumeration.cpp)
 enjin_add_test(TestVisualScript       Unit/Scripting/TestVisualScript.cpp)
 
 # --- AI ---
