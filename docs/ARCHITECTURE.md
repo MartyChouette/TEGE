@@ -122,7 +122,7 @@ enjin/
 **Multi-Backend Architecture** (in progress):
 - `IRenderBackend` - Abstract backend interface with sub-interfaces for buffers, textures, pipelines, shaders, bind groups, and render encoders
 - `GPUTypes.h` - Typed opaque resource handles (`GPUBufferHandle`, `GPUTextureHandle`, etc.) and backend-agnostic enums
-- `GPUCapabilities.h` - Feature detection (push constants, compute, RT, indirect draws) with presets for Vulkan, WebGPU, and Metal
+- `GPUCapabilities.h` - Feature detection (push constants, compute, RT, indirect draws) with presets for Vulkan and WebGPU. A Metal preset exists as an enum value only; there is no Metal backend in the tree
 
 **Vulkan Backend** (desktop — Windows, Linux):
 - `VulkanRenderer` - Main renderer, swapchain management

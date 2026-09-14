@@ -18,7 +18,7 @@
 
 ## Overview
 
-Enjin is an open-source (BSL 1.1) game engine built from scratch using C++20. It features a complete editor with ImGui, an Entity-Component-System architecture, and modern rendering with multi-backend support (Vulkan, WebGPU, Metal planned).
+Enjin is an open-source (BSL 1.1) game engine built from scratch using C++20. It features a complete editor with ImGui, an Entity-Component-System architecture, and modern rendering on two backends: Vulkan (Windows/Linux) and WebGPU (browser). There is NO Metal backend -- see the Backends note below before repeating otherwise.
 
 ## The golden rule
 
@@ -360,7 +360,7 @@ enjin/
 │   │   ├── Gameplay/       # SaveSystem, QuestSystem, HUD, Cinematics
 │   │   ├── Networking/     # LAN Multiplayer, HTTPClient
 │   │   ├── Physics/        # IPhysicsBackend (Jolt/Box2D)
-│   │   ├── Renderer/       # Multi-backend renderer (Vulkan/WebGPU/Metal)
+│   │   ├── Renderer/       # Multi-backend renderer (Vulkan, WebGPU)
 │   │   ├── Scene/          # SceneSerializer, SceneManager, LevelStreaming
 │   │   ├── Scripting/      # AngelScript engine, ScriptBindings
 │   │   └── VisualScript/   # Blueprint-style visual scripting
@@ -376,7 +376,13 @@ enjin/
 
 ### Renderer
 - **Multi-backend:** `IRenderBackend` with sub-interfaces (`IGPUBufferManager`, `IGPUTextureManager`, `IGPUPipelineManager`, etc.). Typed opaque handles in `GPUTypes.h`. Feature detection in `GPUCapabilities.h`
-- **Backends:** Vulkan (Windows/Linux, full features), WebGPU (browser via Emscripten, PBR + shadows working), Metal (stubs)
+- **Backends:** Vulkan (Windows/Linux, full features), WebGPU (browser via Emscripten, PBR + shadows working).
+  **There is no Metal backend.** Not stubs -- nothing. `RenderBackend.h` carries a
+  `BuildTarget::Metal` enum value, a `hasMetal` capability flag and a comment saying
+  `(future) MetalRenderer`, and there is not one Metal source file in the tree. This
+  was documented as "Metal (stubs)" for long enough that it was quoted back as fact;
+  a stub is a file that does nothing, and an enum value is not a stub. If macOS
+  support is wanted it is a project, not a gap (backlog: Platform & build)
 - **Scene classification:** `Scene2D` (sprites only, shadows skipped), `Scene2_5D` (sprites+lights), `Scene3D` (full pipeline)
 - **Ray tracing:** Full RT pipeline (shadows/reflections/AO/GI/path tracing, denoisers). Auto-activates on capable hardware
 
@@ -406,6 +412,13 @@ Public docs live in `docs/`. Internal material (roadmap, journals, audits,
 reviews, market and strategy notes, ADRs, coding standards) is untracked in
 `_docs_internal/` and must NOT be added back to the repo.
 
+- `_docs_internal/BACKLOG.md` - **the one list.** Every open item, merged
+  2026-09-14 from six documents that did not know about each other. If work is
+  not here it is not tracked, and starting a seventh list is how the last six
+  happened
+- `docs/WEB_TIER.md` - what web has, what it substitutes, what it does not have.
+  The Absent table is the one that matters: an undocumented absence on web is a
+  silent failure with a long fuse
 - `docs/ARCHITECTURE.md` - system architecture
 - `docs/SCRIPTING_API.md` - AngelScript API reference
 - `docs/USER_MANUAL.md` - component details and user guide

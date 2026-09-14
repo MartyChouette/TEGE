@@ -215,6 +215,55 @@ jobs:
           }
           if ($code -ne 0) { throw "play-cycle stress failed with code $code" }
 
+      - name: Vulkan validation (no validation errors on a real scene)
+        shell: pwsh
+        timeout-minutes: 15
+        # CI has never once seen a Vulkan validation error, and it is not because
+        # there were none: VALIDATION_LAYERS is empty unless ENJIN_BUILD_DEBUG is
+        # defined (Renderer/Vulkan/VulkanContext.cpp), and CI builds Release. So
+        # every VUID the engine has ever emitted has been invisible here.
+        #
+        # VK_INSTANCE_LAYERS makes the loader inject the validation layer into a
+        # Release binary with no rebuild and no code change. Found two real
+        # defects the first time it was run locally (2026-09-14): a VkPipeline
+        # and a VkPipelineLayout alive at every vkDestroyDevice, on every scene.
+        #
+        # Runs the play-cycle scene rather than the golden capture: the leaks
+        # only show at device destruction and the render-pass incompatibilities
+        # only show on a scene with enough material variety to draw the same
+        # pipeline in two passes.
+        env:
+          VK_DRIVER_FILES: ${{ github.workspace }}\mesa\x64\lvp_icd.x86_64.json
+          VK_ICD_FILENAMES: ${{ github.workspace }}\mesa\x64\lvp_icd.x86_64.json
+          VK_INSTANCE_LAYERS: VK_LAYER_KHRONOS_validation
+        run: |
+          $out = "$env:RUNNER_TEMP\vk_validation.txt"
+          & build\bin\Release\EnjinEditor.exe "${{ github.workspace }}\Tests\GoldenScene\GoldenScene.enjinproject" --play --play-cycle 40 3 2>&1 |
+            Tee-Object -FilePath $out | ForEach-Object { "$_" }
+          $code = $LASTEXITCODE
+
+          if (-not (Test-Path $out)) { throw "validation run produced no output at all" }
+          $text = Get-Content $out -Raw
+
+          # The layer has to have actually loaded. Without this the step passes
+          # by finding no errors in a run that was never validated -- which is
+          # the exact failure shape this whole sweep exists to catch.
+          if ($text -notmatch "VK_LAYER_KHRONOS_validation|Validation Error|Validation Warning|validation layer") {
+            Write-Host "::warning::Could not confirm the validation layer loaded."
+            Write-Host "If this keeps appearing, this step is checking nothing."
+          }
+
+          $errors = ([regex]::Matches($text, "Validation Error")).Count
+          Write-Host "Validation errors: $errors"
+          if ($errors -gt 0) {
+            Write-Host "=================== validation output ==================="
+            ([regex]::Matches($text, "(?m)^.*VUID-[A-Za-z0-9-]+.*$") | ForEach-Object { $_.Value }) |
+              Select-Object -First 40 | ForEach-Object { "$_" }
+            Write-Host "========================================================"
+            throw "$errors Vulkan validation error(s). Run locally with VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation to reproduce."
+          }
+          if ($code -ne 0) { throw "validation run exited with code $code" }
+
       - name: Exported-game smoke (pack + run the Windows player headless)
         shell: pwsh
         timeout-minutes: 15

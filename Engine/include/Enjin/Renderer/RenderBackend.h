@@ -30,7 +30,9 @@ enum class BuildTarget : u8 {
     WebGL,           // Legacy alias — use Web instead
     Web = WebGL,     // WebAssembly + WebGPU
     NintendoSwitch,  // Nintendo Switch (NVN graphics API)
-    Metal            // macOS / iOS via Metal backend
+    Metal            // RESERVED. No Metal backend exists in this tree -- this value
+                     // and hasMetal below are the only trace of one. Do not read
+                     // either as "partly implemented" (audit 2026-09-14).
 };
 
 // Texture compression format
@@ -60,7 +62,8 @@ struct PlatformCapabilities {
 // ============================================================================
 // IRenderBackend — Abstract GPU backend interface
 //
-// Implementations: VulkanRenderer, WebGPURenderer, (future) MetalRenderer
+// Implementations: VulkanRenderer, WebGPURenderer. There is no MetalRenderer and no
+// Metal source file anywhere; the BuildTarget value is reserved, not stubbed.
 // RenderSystem operates exclusively through this interface so it compiles
 // and runs identically on all backends.
 // ============================================================================
