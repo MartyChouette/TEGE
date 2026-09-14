@@ -99,6 +99,6 @@ silent: the field saves, the scene loads, the look is wrong, and nothing says so
 3. **Prefer a substitution to a gap.** The four rows above are all cases where
    the web answer turned out to be the better answer.
 4. **Verify in a browser**, not in a green build. WGSL is compiled by the
-   browser: `cd tools && npm install && node check_wgsl.mjs` compiles all 13
+   browser: `cd tools && npm install && node check_wgsl.mjs` compiles all 16
    shaders through Dawn, and `tools/web_capture.mjs` renders a build in headless
    Chrome.
