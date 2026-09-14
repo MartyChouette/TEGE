@@ -231,6 +231,21 @@ public:
     // Get the currently loaded scene name
     const std::string& GetCurrentSceneName() const { return m_CurrentSceneName; }
 
+    // Tell the manager which scene is now live, when it was NOT this class that
+    // loaded it. (BUG-0003, Marty 2026-09-13.)
+    //
+    // m_CurrentSceneName was written in exactly one place -- inside LoadScene --
+    // and two of the three ways a scene actually becomes current do not go
+    // through LoadScene: the editor's OpenSceneImmediate deserializes directly,
+    // and the Player's deferred script scene-request hands the PATH to the flow
+    // transition. So Scene_GetCurrentScene() returned "" for the whole of a
+    // normal play session, and the sharpest case is the obvious one: a script
+    // calls Scene_LoadScene and then asks where it is.
+    //
+    // Takes a name OR a path, because the two callers have different things in
+    // hand and requiring each to convert is how this got missed three times.
+    void NoteSceneBecameCurrent(const std::string& nameOrPath);
+
     // --- Transitions ---
 
     // Load a scene with a transition effect

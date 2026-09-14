@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Enjin/Logging/Log.h"
+
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/ECS/Entity.h"
 #include "Enjin/ECS/World.h"
@@ -25,14 +27,35 @@ inline void SetParent(World* world, Entity child, Entity parent) {
     world->Lock();
 
     // Validate parent exists (prevent stale entity references)
-    if (parent != INVALID_ENTITY && !world->IsValid(parent)) { world->Unlock(); return; }
+    if (parent != INVALID_ENTITY && !world->IsValid(parent)) {
+        world->Unlock();
+        // Silently doing nothing leaves the caller believing the parenting took.
+        ENJIN_LOG_WARN(Renderer, "SetParent: entity %llu cannot be parented to %llu - "
+                       "that parent does not exist. The child is left where it was.",
+                       static_cast<unsigned long long>(child),
+                       static_cast<unsigned long long>(parent));
+        return;
+    }
 
     // Prevent circular parent chains: walk up from parent to see if child is an ancestor
     if (parent != INVALID_ENTITY) {
         Entity check = parent;
         u32 depth = 0;
         while (check != INVALID_ENTITY && depth < 1000) {
-            if (check == child) { world->Unlock(); return; }  // Would create cycle
+            if (check == child) {
+                world->Unlock();
+                // This guard has always been right and always been mute. A tool
+                // that builds a hierarchy gets no signal that its parenting was
+                // refused, so it carries on and writes a scene it believes is
+                // correct.
+                ENJIN_LOG_WARN(Renderer, "SetParent: refusing to parent entity %llu to %llu - "
+                               "%llu is already below %llu, so this would make a cycle.",
+                               static_cast<unsigned long long>(child),
+                               static_cast<unsigned long long>(parent),
+                               static_cast<unsigned long long>(parent),
+                               static_cast<unsigned long long>(child));
+                return;
+            }
             auto* pc = world->GetComponent<ParentComponent>(check);
             if (!pc) break;
             check = pc->parent;
@@ -113,16 +136,42 @@ inline bool IsRoot(World* world, Entity entity) {
 
 // Compute the world-space model matrix for an entity by walking up the parent chain.
 // Multiplies local transforms bottom-up: Grandparent * Parent * Child.
-// Returns local matrix for root entities (no parent). Depth-capped at 64 to prevent infinite loops.
+// Returns local matrix for root entities (no parent).
+//
+// DEPTH-CAPPED, and it did not used to be. This comment claimed "Depth-capped at
+// 64 to prevent infinite loops" for as long as the function has existed and the
+// code had no cap of any kind: the recursion simply followed ParentComponent
+// until it ran out of stack. A parent cycle -- 4 parented to 5 while 5 is
+// parented to 4 -- was a segfault with no message, and the scene loader writes
+// ParentComponent directly rather than through SetParent, so nothing upstream
+// stopped one being authored. (Marty hit exactly this, 2026-09-13: two entities
+// sharing a name, a name-keyed tool picking the wrong one, and an engine that
+// died on the result.)
+//
+// The cap is real now. It returns identity for the over-deep entity rather than
+// guessing, and says so once per entity, because a hierarchy 64 deep is either
+// a cycle or a mistake and silently drawing something at the origin is how the
+// original bug stayed invisible.
 //
 // Results are cached on TransformComponent::cachedWorldMatrix.  The dirty flag is
 // reset once per frame by RenderSystem::Update(), so within a single frame an
 // entity's world matrix is computed at most once even when referenced by multiple
 // passes (main, shadow, outline, etc.).  Parent matrices computed along the way
 // are also cached, turning deep hierarchy walks into O(1) on subsequent calls.
-inline Math::Matrix4 ComputeWorldMatrix(World* world, Entity entity) {
+inline constexpr u32 kMaxHierarchyDepth = 64;
+
+inline Math::Matrix4 ComputeWorldMatrix(World* world, Entity entity, u32 depth) {
     auto* transform = world->GetComponent<TransformComponent>(entity);
     if (!transform) return Math::Matrix4::Identity();
+
+    if (depth >= kMaxHierarchyDepth) {
+        ENJIN_LOG_ERROR(Renderer,
+            "Entity %llu is more than %u levels deep, or its parent chain is a CYCLE. "
+            "Its world transform cannot be computed and it is being treated as if it "
+            "had none. Check for two entities parented to each other.",
+            static_cast<unsigned long long>(entity), kMaxHierarchyDepth);
+        return transform->ToMatrix();
+    }
 
     // Fast path: return cached result if already computed this frame
     if (!transform->worldMatrixDirty) {
@@ -138,10 +187,14 @@ inline Math::Matrix4 ComputeWorldMatrix(World* world, Entity entity) {
     }
 
     // Has parent → recurse (which will also cache parent results)
-    Math::Matrix4 parentWorld = ComputeWorldMatrix(world, pc->parent);
+    Math::Matrix4 parentWorld = ComputeWorldMatrix(world, pc->parent, depth + 1);
     transform->cachedWorldMatrix = parentWorld * transform->ToMatrix();
     transform->worldMatrixDirty = false;
     return transform->cachedWorldMatrix;
+}
+
+inline Math::Matrix4 ComputeWorldMatrix(World* world, Entity entity) {
+    return ComputeWorldMatrix(world, entity, 0);
 }
 
 // World-space position and rotation, for systems that must place something in

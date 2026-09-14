@@ -1092,6 +1092,11 @@ public:
                 const auto* entry = m_SceneManager.GetSceneByName(reqScene);
                 if (entry) {
                     m_PendingFlowScene = entry->path;   // rides the GPU-safe transition
+                    // The flow transition loads the scene without going through
+                    // SceneManager::LoadScene, so nothing was recording which
+                    // scene is now current -- and a script that calls
+                    // Scene_LoadScene and then Scene_GetCurrentScene got "".
+                    m_SceneManager.NoteSceneBecameCurrent(entry->name);
                     DoFlowTransition();
                 } else {
                     ENJIN_LOG_WARN(Player, "Scene request '%s' not in scene list", reqScene.c_str());

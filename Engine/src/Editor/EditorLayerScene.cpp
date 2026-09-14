@@ -650,6 +650,11 @@ void EditorLayer::OpenSceneImmediate(const std::string& path) {
     Scene::DeserializationResult result;
     try {
         result = serializer.Load(path, true); // Clear existing entities
+        // This path deserializes directly rather than through
+        // SceneManager::LoadScene, which is the only place that used to record
+        // which scene is live. Without this the editor's play mode answers
+        // Scene_GetCurrentScene() with an empty string. (BUG-0003.)
+        m_SceneManager.NoteSceneBecameCurrent(path);
     } catch (const std::exception& e) {
         ENJIN_LOG_ERROR(Editor, "Exception loading scene '%s': %s", path.c_str(), e.what());
         ShowNotification("Failed to load scene", NotificationType::Error);

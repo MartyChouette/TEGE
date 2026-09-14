@@ -600,6 +600,29 @@ u32 SceneManager::NormalizeSceneList() {
 
 // --- Runtime Scene Loading ---
 
+void SceneManager::NoteSceneBecameCurrent(const std::string& nameOrPath) {
+    // Prefer the scene-list NAME, which is what a script means by "which scene
+    // am I in" and what Scene_LoadScene takes. Fall back to whatever was handed
+    // over: a name nobody registered is still better than an empty string,
+    // which is indistinguishable from "no scene loaded".
+    if (GetSceneByName(nameOrPath) != nullptr) {
+        m_CurrentSceneName = nameOrPath;
+        return;
+    }
+    for (const auto& entry : m_Scenes) {
+        if (entry.path == nameOrPath) { m_CurrentSceneName = entry.name; return; }
+    }
+    // A bare filename out of a path, as the last resort.
+    const auto slash = nameOrPath.find_last_of("/\\");
+    std::string leaf = (slash == std::string::npos) ? nameOrPath : nameOrPath.substr(slash + 1);
+    const auto dot = leaf.find_last_of('.');
+    if (dot != std::string::npos) leaf = leaf.substr(0, dot);
+    for (const auto& entry : m_Scenes) {
+        if (entry.name == leaf) { m_CurrentSceneName = entry.name; return; }
+    }
+    m_CurrentSceneName = leaf.empty() ? nameOrPath : leaf;
+}
+
 bool SceneManager::LoadScene(const std::string& name) {
     if (!m_World) {
         ENJIN_LOG_ERROR(Asset, "No world set for scene loading");
@@ -640,7 +663,7 @@ bool SceneManager::LoadScene(const std::string& name) {
     }
 
     if (result.success) {
-        m_CurrentSceneName = name;
+        NoteSceneBecameCurrent(name);
         if (m_OnSceneLoaded) {
             m_OnSceneLoaded(name);
         }

@@ -234,6 +234,8 @@ enjin_add_test(TestDropImport         Unit/Editor/TestDropImport.cpp)
 
 # --- Scene ---
 enjin_add_test(TestSaveSystem         Unit/Scene/TestSaveSystem.cpp)
+enjin_add_test(TestHierarchyCycles   Unit/Scene/TestHierarchyCycles.cpp)
+enjin_add_test(TestCurrentSceneName  Unit/Scene/TestCurrentSceneName.cpp)
 enjin_add_test(TestSceneEntityIds   Unit/Scene/TestSceneEntityIds.cpp)
 enjin_add_test(TestUnknownComponentField Unit/Scene/TestUnknownComponentField.cpp)
 enjin_add_test(TestSerializerComponents Unit/Scene/TestSceneSerializerComponents.cpp)

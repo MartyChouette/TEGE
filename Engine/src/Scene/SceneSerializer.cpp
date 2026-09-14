@@ -10598,6 +10598,52 @@ void SceneSerializer::DeserializeEntities(const json& sceneJson, Deserialization
         }
     }
 
+    // BREAK ANY PARENT CYCLE BEFORE ANYTHING WALKS IT.
+    //
+    // This loader writes ParentComponent directly rather than through
+    // SetParent, so SetParent's cycle guard -- which has always existed -- never
+    // sees a loaded scene. A file saying entity 4's parent is 5 and entity 5's
+    // parent is 4 was accepted without comment, and the first thing to walk the
+    // chain recursed until the stack ran out. A segfault, no message, and
+    // nothing naming the two entities responsible.
+    //
+    // It is easy for a scene to end up that way without anyone being careless:
+    // Marty hit it (2026-09-13) because two entities shared a name, a tool keyed
+    // its lookup on the name, and it picked the wrong one. The data was wrong
+    // AND the engine had no opinion about it, which is the half that keeps the
+    // trap armed for the next project.
+    //
+    // A cycle cannot be repaired -- there is no way to know which of the two
+    // links was intended -- so the entity that closes the loop is detached and
+    // becomes a root. The scene loads, the objects are all there, and the log
+    // says exactly which two entities disagreed.
+    for (ECS::Entity entity : result.entities) {
+        if (!m_World->HasComponent<ECS::ParentComponent>(entity)) continue;
+
+        ECS::Entity walk = m_World->GetComponent<ECS::ParentComponent>(entity)->parent;
+        u32 depth = 0;
+        while (walk != ECS::INVALID_ENTITY && m_World->IsValid(walk)) {
+            if (walk == entity || depth > ECS::kMaxHierarchyDepth) {
+                ENJIN_LOG_ERROR(Asset,
+                    "Scene: entity %llu's parent chain loops back to itself "
+                    "(via %llu). A cycle cannot be resolved, so %llu is being "
+                    "detached and loaded as a root. Two entities parented to "
+                    "each other is usually a tool keying on something that is "
+                    "not unique, such as a name.",
+                    static_cast<unsigned long long>(entity),
+                    static_cast<unsigned long long>(
+                        m_World->GetComponent<ECS::ParentComponent>(entity)->parent),
+                    static_cast<unsigned long long>(entity));
+                m_World->RemoveComponent<ECS::ParentComponent>(entity);
+                break;
+            }
+            auto* wpc = m_World->GetComponent<ECS::ParentComponent>(walk);
+            if (!wpc) break;
+            walk = wpc->parent;
+            ++depth;
+        }
+    }
+
     // Rebuild ChildrenComponent from ParentComponent references
     for (ECS::Entity entity : result.entities) {
         if (m_World->HasComponent<ECS::ParentComponent>(entity)) {
