@@ -2868,9 +2868,18 @@ public:
     bool m_AnimationLODEnabled = true;
 
 public:
+    // INCOMPLETE / IN DEVELOPMENT.
+    //
     // Distant skeletal animators refresh their pose at a reduced rate, with dt
     // banked so time never drifts. The single biggest CPU lever for hundreds of
     // animated entities. On by default; off = every animator full-rate.
+    //
+    // The FEATURE works. This SETTER is not finished: nothing in the engine, the
+    // editor, the player or the tests calls it, so the flag is true from
+    // construction to shutdown in every build that has ever run. There is no way
+    // for a person to turn animation LOD off, which is what this pair implies
+    // there is. Needs a Rendering-panel row; until it has one, do not read the
+    // presence of this setter as the feature being configurable.
     void SetAnimationLODEnabled(bool enabled) { m_AnimationLODEnabled = enabled; }
     bool IsAnimationLODEnabled() const { return m_AnimationLODEnabled; }
 
