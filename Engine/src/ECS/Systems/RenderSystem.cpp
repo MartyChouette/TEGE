@@ -6,6 +6,8 @@
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Debug/Profiler.h"
 #include <cstdlib>   // getenv (GPU-particle headless test hook)
+#include "Enjin/ECS/Components/Hierarchy.h"   // ComputeWorldMatrix, used by the shared
+                                             // frame helpers hoisted above the backend #if
 #include "Enjin/Assets/MeshAssetCache.h"   // reload/free CPU mesh data after upload (task #3)
 #if !ENJIN_RENDERER_WEBGPU
 #include "Enjin/Renderer/SkinningComputeShaderData.h"  // embedded SPIR-V (ADR-0002 compute skinning)
@@ -88,6 +90,109 @@ namespace ECS {
 // Anything hoisted here is one implementation both backends share, and cannot
 // silently diverge again.
 // ---------------------------------------------------------------------------
+
+// Movement-driven clip selection, shared by both backends.
+//
+// Idle / walk / run / air chosen from world-space velocity and cross-faded.
+// There is nothing about a renderer in it -- it reads a transform, does some
+// arithmetic and picks a string -- and it was written twice, once in each
+// backend Update, with the web copy labelled "web twin of the Vulkan-path
+// block". A twin is a thing that can stop matching.
+//
+// Both copies were byte-identical apart from the variable they read the
+// animator through, which is the shape that survives review and then drifts on
+// the next edit to one side.
+void RenderSystem::UpdateMovementDrivenAnimation(AnimatorComponent& ac, Entity entity, f32 deltaTime) {
+    auto& mova = ac.movement;
+    if (!mova.enabled || !mova.HasAnyClip() || deltaTime <= 0.0001f) return;
+
+    const Math::Matrix4 wm = ComputeWorldMatrix(m_World, entity);
+    const Math::Vector3 wpos(wm.m[12], wm.m[13], wm.m[14]);
+
+    // First frame seen: record where it is and wait. A delta against an
+    // uninitialised position is a teleport, and a teleport reads as a jump.
+    if (!mova.hasLastPosition) {
+        mova.lastPosition = wpos;
+        mova.hasLastPosition = true;
+        return;
+    }
+
+    const Math::Vector3 delta = wpos - mova.lastPosition;
+    mova.lastPosition = wpos;
+    const f32 horizSpeed = Math::Vector3(delta.x, 0.0f, delta.z).Length() / deltaTime;
+    const f32 vertSpeed = std::abs(delta.y) / deltaTime;
+
+    u8 state = 0;
+    if (vertSpeed > mova.jumpThreshold && !mova.jumpClip.empty()) state = 3;
+    else if (horizSpeed > mova.runThreshold && !mova.runClip.empty()) state = 2;
+    else if (horizSpeed > mova.walkThreshold && !mova.walkClip.empty()) state = 1;
+
+    if (state == mova.currentState) return;
+
+    const std::string* clip = nullptr;
+    switch (state) {
+        case 3: clip = &mova.jumpClip; break;
+        case 2: clip = &mova.runClip;  break;
+        case 1: clip = &mova.walkClip; break;
+        default: clip = &mova.idleClip; break;
+    }
+    if (clip && !clip->empty()) ac.animator.CrossFade(*clip, mova.fadeTime);
+    mova.currentState = state;
+}
+
+// Animator resolution, shared by both backends.
+//
+// EnsureStorageCacheFresh and AnimatorFromEntity were byte-identical in the two
+// halves. ResolveAnimator was NOT: the web copy fell back to
+// World::GetComponent when the cached storage pointer was null, the Vulkan copy
+// returned nullptr, and the Vulkan copy carried all the comments explaining why
+// any of it works. Neither reader could see the other.
+//
+// The hoisted version keeps the WIDER behaviour (the fallback) and the BETTER
+// comments, because that combination is what both halves were reaching for --
+// and because a null storage pointer with live animator components in the world
+// is exactly the mid-frame-AddComponent case the Vulkan comment describes.
+void RenderSystem::EnsureStorageCacheFresh() {
+    if (!m_World) return;
+    if (m_CachedStorageEpoch == m_World->GetStorageEpoch()) return;
+    // World::Clear() ran since the last refetch (scene reload, play-stop full
+    // restore, template apply) — every cached storage pointer AND every raw
+    // component pointer derived from them is dangling.
+    m_FallbackAnimatorEntity = INVALID_ENTITY;
+    m_SkeletonToAnimator.clear();
+    RefreshStorageCache();
+}
+
+AnimatorComponent* RenderSystem::AnimatorFromEntity(Entity e) {
+    if (e == INVALID_ENTITY || !m_World) return nullptr;
+    return m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(e)
+                                   : m_World->GetComponent<AnimatorComponent>(e);
+}
+
+AnimatorComponent* RenderSystem::ResolveAnimator(Entity entity) {
+    EnsureStorageCacheFresh();
+
+    // 1. The entity's own animator (a single-mesh skinned model, or the leader mesh).
+    //    The GetComponent fallback is the web half's and is kept: the cached
+    //    storage pointer can legitimately be null before the first refetch.
+    AnimatorComponent* own = m_CachedAnimatorStorage
+        ? m_CachedAnimatorStorage->Get(entity)
+        : m_World->GetComponent<AnimatorComponent>(entity);
+    if (own) return own;
+
+    // 2. Follower mesh: resolve the animator driving its SHARED skeleton, so every mesh in
+    //    one imported model skins from a single clock (fixes pause desync + slow drift between
+    //    co-skeleton meshes like a body + its joints/clothing). The map stores the ENTITY;
+    //    the pointer is fetched fresh here because AddComponent<AnimatorComponent> mid-frame
+    //    (import dialog) reallocates the storage and dangles cached pointers (2026-08-08).
+    if (SkeletonComponent* sk = m_World->GetComponent<SkeletonComponent>(entity)) {
+        if (sk->skeleton) {
+            auto it = m_SkeletonToAnimator.find(sk->skeleton.get());
+            if (it != m_SkeletonToAnimator.end()) return AnimatorFromEntity(it->second);
+        }
+    }
+    return nullptr;
+}
 
 // Every entity recomputes its world matrix at most once per frame.
 //
@@ -2606,39 +2711,7 @@ void RenderSystem::Update(f32 deltaTime) {
         // Movement-driven playback (web twin of the Vulkan-path block): switch
         // idle/walk/run/air from world-space velocity, cross-faded. The clip
         // switch happens here; the animator itself still ticks in web_main.
-        auto& mova = ac->movement;
-        if (mova.enabled && mova.HasAnyClip() && deltaTime > 0.0001f) {
-            Math::Matrix4 wm = ComputeWorldMatrix(m_World, animEntity);
-            Math::Vector3 wpos(wm.m[12], wm.m[13], wm.m[14]);
-            if (!mova.hasLastPosition) {
-                mova.lastPosition = wpos;
-                mova.hasLastPosition = true;
-            } else {
-                Math::Vector3 delta = wpos - mova.lastPosition;
-                mova.lastPosition = wpos;
-                f32 horizSpeed = Math::Vector3(delta.x, 0.0f, delta.z).Length() / deltaTime;
-                f32 vertSpeed = std::abs(delta.y) / deltaTime;
-
-                u8 state = 0;
-                if (vertSpeed > mova.jumpThreshold && !mova.jumpClip.empty()) state = 3;
-                else if (horizSpeed > mova.runThreshold && !mova.runClip.empty()) state = 2;
-                else if (horizSpeed > mova.walkThreshold && !mova.walkClip.empty()) state = 1;
-
-                if (state != mova.currentState) {
-                    const std::string* clip = nullptr;
-                    switch (state) {
-                        case 3: clip = &mova.jumpClip; break;
-                        case 2: clip = &mova.runClip;  break;
-                        case 1: clip = &mova.walkClip; break;
-                        default: clip = &mova.idleClip; break;
-                    }
-                    if (!clip->empty()) {
-                        ac->animator.CrossFade(*clip, mova.fadeTime);
-                    }
-                    mova.currentState = state;
-                }
-            }
-        }
+        UpdateMovementDrivenAnimation(*ac, animEntity, deltaTime);
     }
 
     // Upload ViewProjection UBO
@@ -5034,37 +5107,6 @@ void RenderSystem::RefreshStorageCache() {
 // Web twin of the Vulkan-side ResolveAnimator (kept in both halves of this file's
 // #if/#else split): follower meshes of a shared skeleton skin from the leader's
 // animator so one imported model runs on a single animation clock.
-void RenderSystem::EnsureStorageCacheFresh() {
-    if (!m_World) return;
-    if (m_CachedStorageEpoch == m_World->GetStorageEpoch()) return;
-    // World::Clear() ran since the last refetch (scene reload, play-stop full
-    // restore, template apply) — every cached storage pointer AND every raw
-    // component pointer derived from them is dangling.
-    m_FallbackAnimatorEntity = INVALID_ENTITY;
-    m_SkeletonToAnimator.clear();
-    RefreshStorageCache();
-}
-
-AnimatorComponent* RenderSystem::AnimatorFromEntity(Entity e) {
-    if (e == INVALID_ENTITY || !m_World) return nullptr;
-    return m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(e)
-                                   : m_World->GetComponent<AnimatorComponent>(e);
-}
-
-AnimatorComponent* RenderSystem::ResolveAnimator(Entity entity) {
-    EnsureStorageCacheFresh();
-    AnimatorComponent* own = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(entity)
-                                                     : m_World->GetComponent<AnimatorComponent>(entity);
-    if (own) return own;
-    if (SkeletonComponent* sk = m_World->GetComponent<SkeletonComponent>(entity)) {
-        if (sk->skeleton) {
-            auto it = m_SkeletonToAnimator.find(sk->skeleton.get());
-            if (it != m_SkeletonToAnimator.end()) return AnimatorFromEntity(it->second);
-        }
-    }
-    return nullptr;
-}
-
 void RenderSystem::RenderEntity(Entity /*entity*/) {}
 void RenderSystem::RenderSprites(u32, u32) {}
 void RenderSystem::CreateDefaultMesh() {}
@@ -7816,39 +7858,7 @@ void RenderSystem::Update(f32 deltaTime) {
         // chains included — moving the import root drives the skinned child's
         // state) and cross-fade. The importer auto-fills the clip names.
         {
-            auto& mova = animComp->movement;
-            if (mova.enabled && mova.HasAnyClip() && deltaTime > 0.0001f) {
-                Math::Matrix4 wm = ComputeWorldMatrix(m_World, entity);
-                Math::Vector3 wpos(wm.m[12], wm.m[13], wm.m[14]);
-                if (!mova.hasLastPosition) {
-                    mova.lastPosition = wpos;
-                    mova.hasLastPosition = true;
-                } else {
-                    Math::Vector3 delta = wpos - mova.lastPosition;
-                    mova.lastPosition = wpos;
-                    f32 horizSpeed = Math::Vector3(delta.x, 0.0f, delta.z).Length() / deltaTime;
-                    f32 vertSpeed = std::abs(delta.y) / deltaTime;
-
-                    u8 state = 0;
-                    if (vertSpeed > mova.jumpThreshold && !mova.jumpClip.empty()) state = 3;
-                    else if (horizSpeed > mova.runThreshold && !mova.runClip.empty()) state = 2;
-                    else if (horizSpeed > mova.walkThreshold && !mova.walkClip.empty()) state = 1;
-
-                    if (state != mova.currentState) {
-                        const std::string* clip = nullptr;
-                        switch (state) {
-                            case 3: clip = &mova.jumpClip; break;
-                            case 2: clip = &mova.runClip;  break;
-                            case 1: clip = &mova.walkClip; break;
-                            default: clip = &mova.idleClip; break;
-                        }
-                        if (!clip->empty()) {
-                            animComp->animator.CrossFade(*clip, mova.fadeTime);
-                        }
-                        mova.currentState = state;
-                    }
-                }
-            }
+            UpdateMovementDrivenAnimation(*animComp, entity, deltaTime);
         }
 
         // Animation LOD: refresh distant animators less often. Time is preserved by
@@ -12954,43 +12964,6 @@ void RenderSystem::CreateDescriptorSets() {
 static_assert(Renderer::MergedGeometryBuffer::VERTEX_STRIDE == sizeof(MeshComponent::Vertex),
               "GeometryPool vertex stride must match MeshComponent::Vertex size");
 
-void RenderSystem::EnsureStorageCacheFresh() {
-    if (!m_World) return;
-    if (m_CachedStorageEpoch == m_World->GetStorageEpoch()) return;
-    // World::Clear() ran since the last refetch (scene reload, play-stop full
-    // restore, template apply) — every cached storage pointer AND every raw
-    // component pointer derived from them is dangling.
-    m_FallbackAnimatorEntity = INVALID_ENTITY;
-    m_SkeletonToAnimator.clear();
-    RefreshStorageCache();
-}
-
-AnimatorComponent* RenderSystem::AnimatorFromEntity(Entity e) {
-    if (e == INVALID_ENTITY || !m_World) return nullptr;
-    return m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(e)
-                                   : m_World->GetComponent<AnimatorComponent>(e);
-}
-
-AnimatorComponent* RenderSystem::ResolveAnimator(Entity entity) {
-    EnsureStorageCacheFresh();
-    // 1. The entity's own animator (a single-mesh skinned model, or the leader mesh).
-    AnimatorComponent* own = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(entity) : nullptr;
-    if (own) return own;
-    // 2. Follower mesh: resolve the animator driving its SHARED skeleton, so every mesh in
-    //    one imported model skins from a single clock (fixes pause desync + slow drift between
-    //    co-skeleton meshes like a body + its joints/clothing). The map stores the ENTITY;
-    //    the pointer is fetched fresh here because AddComponent<AnimatorComponent> mid-frame
-    //    (import dialog) reallocates the storage and dangles cached pointers (2026-08-08).
-    if (SkeletonComponent* sk = m_World->GetComponent<SkeletonComponent>(entity)) {
-        if (sk->skeleton) {
-            auto it = m_SkeletonToAnimator.find(sk->skeleton.get());
-            if (it != m_SkeletonToAnimator.end()) return AnimatorFromEntity(it->second);
-        }
-    }
-    // Non-skinned entity (or no driving animator found). Callers that want the legacy
-    // orphan fallback (m_FallbackAnimatorEntity) apply it themselves.
-    return nullptr;
-}
 
 bool RenderSystem::IsPoolEligible(Entity entity) const {
     if (!m_GeometryPool) return false;

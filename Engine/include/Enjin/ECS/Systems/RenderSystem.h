@@ -2850,6 +2850,10 @@ public:
     // hand-maintained copies did.
     void BeginFrameTransformCaches();
 
+    // Idle/walk/run/air selection from world velocity. Backend-agnostic; it was
+    // written once per backend inside Update until 2026-09-14.
+    void UpdateMovementDrivenAnimation(AnimatorComponent& ac, Entity entity, f32 deltaTime);
+
 private:
 
     // Draw call / triangle counters (current frame, accumulating)
