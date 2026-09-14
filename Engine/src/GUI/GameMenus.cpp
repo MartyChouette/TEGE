@@ -97,6 +97,14 @@ void GameMenuSystem::ShowScreen(MenuScreen screen) {
         m_CurrentScreen != screen && m_SettingsSyncCallback) {
         m_SettingsSyncCallback(m_Graphics, m_Audio);
     }
+    // Read the slots when a screen that shows them opens, not every frame:
+    // GetAllSlots() hits the backend once per slot and a menu does not need
+    // that at frame rate. The main menu needs it too, because Continue has to
+    // know whether it has anything to continue.
+    if (screen == MenuScreen::LoadGame || screen == MenuScreen::MainMenu) {
+        RefreshSlots();
+    }
+
     m_CurrentScreen = screen;
     m_RebindingAction = -1;
 }
@@ -157,6 +165,7 @@ void GameMenuSystem::Render(f32 screenW, f32 screenH) {
         case MenuScreen::Controls:   RenderControls(screenW, screenH);  break;
         case MenuScreen::HowToPlay:  RenderHowToPlay(screenW, screenH); break;
         case MenuScreen::GameOver:   RenderGameOver(screenW, screenH);  break;
+        case MenuScreen::LoadGame:   RenderLoadGame(screenW, screenH);  break;
         case MenuScreen::None:
         default:
             break;
@@ -221,14 +230,130 @@ void GameMenuSystem::RenderMainMenu(f32 w, f32 h) {
         ImGui::Dummy(ImVec2(0, 6));
     };
 
+    // Continue and Load only mean something if there IS a save.
+    //
+    // Continue used to call ResumeGame(), which sets m_GameStarted = true and
+    // consults nothing. On a cold boot it was New Game wearing a different
+    // label -- the button a returning player reaches for first, doing the one
+    // thing that loses their progress. It now resumes the most recent readable
+    // slot, and when there is none it is DISABLED rather than lying.
+    auto CenterButtonEnabled = [&](const char* label, const char* action, bool enabled) {
+        ImGui::SetCursorPosX((cardW - buttonW) * 0.5f);
+        const std::string text =
+            LocalizationManager::Get().GetString(std::string("menu.") + action, label);
+        if (RenderMenuButton(text.c_str(), buttonW, false, enabled)) {
+            if (m_Callback) m_Callback(action);
+        }
+        ImGui::Dummy(ImVec2(0, 6));
+    };
+
+    const bool haveSaves = !m_CachedSlots.empty();
+
     CenterButton("New Game",  "new_game");
-    CenterButton("Continue",  "continue");
+    CenterButtonEnabled("Continue", "continue", m_ResumeSlot >= 0);
+    CenterButtonEnabled("Load Game", "load_game", haveSaves);
     CenterButton("Options",   "options");
     CenterButton("How to Play", "how_to_play");
     CenterButton("Quit",      "quit");
 
     // Handle options / how-to-play navigation internally as well
     // The callback can decide whether to navigate or the caller can call ShowScreen
+    ImGui::End();
+}
+
+// ---------------------------------------------------------------------------
+// Load Game (ENG-001, S7)
+// ---------------------------------------------------------------------------
+
+void GameMenuSystem::RefreshSlots() {
+    m_CachedSlots.clear();
+    m_ResumeSlot = -1;
+    if (!m_SaveSlotProvider) return;
+
+    m_CachedSlots = m_SaveSlotProvider();
+
+    // Drop the slots that hold nothing. A corrupt slot is KEPT: it is a real
+    // save that could not be read, and hiding it is how a player ends up
+    // overwriting something recoverable without being told it existed.
+    m_CachedSlots.erase(
+        std::remove_if(m_CachedSlots.begin(), m_CachedSlots.end(),
+                       [](const Gameplay::SaveSlotInfo& s) { return s.isEmpty && !s.isCorrupt; }),
+        m_CachedSlots.end());
+
+    // Most recent readable slot. Timestamps are written by GetTimestamp() in a
+    // sortable form, so string order is time order.
+    const Gameplay::SaveSlotInfo* best = nullptr;
+    for (const auto& s : m_CachedSlots) {
+        if (s.isCorrupt || s.isEmpty) continue;
+        if (!best || s.timestamp > best->timestamp) best = &s;
+    }
+    if (best) m_ResumeSlot = static_cast<i32>(best->slotIndex);
+}
+
+void GameMenuSystem::RenderLoadGame(f32 w, f32 h) {
+    const f32 cardW = 520.0f;
+    const f32 buttonW = cardW - 60.0f;
+
+    ImGui::SetNextWindowPos(ImVec2(w * 0.5f, h * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(cardW, 0), ImGuiCond_Always);
+    ImGui::Begin("##loadgame", nullptr,
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+        ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoSavedSettings);
+
+    {
+        const std::string title = LocalizationManager::Get().GetString("menu.load_game", "Load Game");
+        ImVec2 sz = ImGui::CalcTextSize(title.c_str());
+        ImGui::SetCursorPosX((cardW - sz.x) * 0.5f);
+        ImGui::TextColored(TC(Theme().textPrimary), "%s", title.c_str());
+    }
+    ImGui::Dummy(ImVec2(0, 18));
+
+    if (m_CachedSlots.empty()) {
+        // Say WHY it is empty. An empty panel reads as a screen that failed to
+        // draw, and "no saves yet" is a different thing from "something broke".
+        const std::string none = LocalizationManager::Get().GetString(
+            "menu.no_saves", "No saved games yet.");
+        ImVec2 sz = ImGui::CalcTextSize(none.c_str());
+        ImGui::SetCursorPosX((cardW - sz.x) * 0.5f);
+        ImGui::TextColored(TC(Theme().textSecondary), "%s", none.c_str());
+        ImGui::Dummy(ImVec2(0, 18));
+    }
+
+    for (const auto& slot : m_CachedSlots) {
+        ImGui::PushID(static_cast<int>(slot.slotIndex));
+
+        // One line the player can actually read: what it is called, where they
+        // were, when, and how long they have played.
+        const i32 mins = static_cast<i32>(slot.playTime / 60.0f);
+        char label[256];
+        if (slot.isCorrupt) {
+            std::snprintf(label, sizeof(label), "%s  -  unreadable",
+                          slot.displayName.c_str());
+        } else {
+            std::snprintf(label, sizeof(label), "%s  -  %s  -  %s  -  %dh %02dm",
+                          slot.displayName.c_str(),
+                          slot.sceneName.empty() ? "?" : slot.sceneName.c_str(),
+                          slot.timestamp.c_str(), mins / 60, mins % 60);
+        }
+
+        ImGui::SetCursorPosX((cardW - buttonW) * 0.5f);
+        // A corrupt slot is shown and NOT clickable. Offering it would fail,
+        // and hiding it would let the player overwrite it without knowing.
+        if (RenderMenuButton(label, buttonW, false, !slot.isCorrupt)) {
+            if (m_Callback) m_Callback("load_slot:" + std::to_string(slot.slotIndex));
+        }
+        ImGui::Dummy(ImVec2(0, 6));
+        ImGui::PopID();
+    }
+
+    ImGui::Dummy(ImVec2(0, 12));
+    ImGui::SetCursorPosX((cardW - buttonW) * 0.5f);
+    const std::string back = LocalizationManager::Get().GetString("menu.back", "Back");
+    if (RenderMenuButton(back.c_str(), buttonW)) {
+        ShowScreen(MenuScreen::MainMenu);
+    }
+
     ImGui::End();
 }
 
@@ -926,9 +1051,16 @@ void GameMenuSystem::RenderHowToPlay(f32 w, f32 h) {
 // Styled menu button
 // ---------------------------------------------------------------------------
 
-bool GameMenuSystem::RenderMenuButton(const char* label, f32 width, bool selected) {
+bool GameMenuSystem::RenderMenuButton(const char* label, f32 width, bool selected,
+                                      bool enabled) {
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(16.0f, 12.0f));
+
+    // A button that cannot do anything says so by looking like it. The
+    // alternative -- rendering it normally and ignoring the click -- is the
+    // shape of failure this menu was built to stop: Continue looked available
+    // on a cold boot and silently started a new game.
+    if (!enabled) ImGui::BeginDisabled();
 
     const UITheme& t = Theme();
     if (selected) {
@@ -948,6 +1080,7 @@ bool GameMenuSystem::RenderMenuButton(const char* label, f32 width, bool selecte
     ImGui::PopStyleColor(4);
     ImGui::PopStyleVar(2);
 
+    if (!enabled) ImGui::EndDisabled();
     return pressed;
 }
 

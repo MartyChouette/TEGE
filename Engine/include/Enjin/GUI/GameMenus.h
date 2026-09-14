@@ -13,6 +13,8 @@
 #include "Enjin/Renderer/RenderQualitySettings.h"
 
 #include <functional>
+#include <vector>
+#include "Enjin/Gameplay/TieredSaveSystem.h"
 #include <string>
 
 namespace Enjin::Renderer { class PostProcessing; }
@@ -28,7 +30,12 @@ enum class MenuScreen : u8 {
     Audio,
     Controls,
     HowToPlay,
-    GameOver
+    GameOver,
+    // A shipped game had no way to reach its own saves. (ENG-001, S7.) There
+    // were twenty slots, three tiers, corruption detection and a full script
+    // API, and no screen in any built game that could list a single one of
+    // them -- SaveLoadMenu.cpp existed and was referenced only from the editor.
+    LoadGame
 };
 
 struct GraphicsSettings {
@@ -59,6 +66,20 @@ struct AudioSettings {
 class ENJIN_API GameMenuSystem {
 public:
     using MenuCallback = std::function<void(const std::string&)>;
+
+    // Where the save slots come from.
+    //
+    // Injected rather than depending on TieredSaveSystem directly, the same way
+    // this class already takes its settings, quality and accessibility state.
+    // The menu renders whatever it is given and knows nothing about tiers,
+    // backends or the save format.
+    //
+    // Returning an EMPTY list is meaningful and must be rendered as "no saves",
+    // never as a blank panel: a blank panel is indistinguishable from a screen
+    // that failed to draw, which is the failure this whole screen exists to
+    // stop repeating.
+    using SaveSlotProvider = std::function<std::vector<Gameplay::SaveSlotInfo>()>;
+    void SetSaveSlotProvider(SaveSlotProvider p) { m_SaveSlotProvider = std::move(p); }
 
     GameMenuSystem() = default;
     ~GameMenuSystem() = default;
@@ -208,7 +229,22 @@ private:
     void RenderControls(f32 w, f32 h);
     void RenderHowToPlay(f32 w, f32 h);
     void RenderGameOver(f32 w, f32 h);
-    bool RenderMenuButton(const char* label, f32 width, bool selected = false);
+    bool RenderMenuButton(const char* label, f32 width, bool selected = false,
+                          bool enabled = true);
+    void RenderLoadGame(f32 w, f32 h);
+
+    SaveSlotProvider m_SaveSlotProvider;
+
+    // Re-read when the screen opens rather than every frame: GetAllSlots() hits
+    // the backend for each of twenty slots, and a menu does not need that at
+    // 144 Hz.
+    std::vector<Gameplay::SaveSlotInfo> m_CachedSlots;
+    void RefreshSlots();
+
+    // The slot Continue would resume: the most recent non-corrupt, non-empty
+    // one, or none. Held so the main menu can disable the button instead of
+    // offering it and doing nothing.
+    i32 m_ResumeSlot = -1;
 
     // Game over state
     bool m_GameOverWon = false;

@@ -353,11 +353,24 @@ public:
             m_ScriptEventBus.Send(e.eventName, data);
         });
 
+        // Where the menu gets its save list. Injected, so GameMenus stays free
+        // of the save system and renders whatever it is handed.
+        m_GameMenu.SetSaveSlotProvider([this]() { return m_TieredSaveSystem.GetAllSlots(); });
+
         m_GameMenu.SetCallback([this](const std::string& action) {
             if (action == "new_game") {
                 StartNewGame();
             } else if (action == "continue") {
-                ResumeGame();
+                // Continue used to call ResumeGame(), which sets a flag and
+                // consults nothing. On a cold boot that is New Game wearing a
+                // different label -- the button a returning player reaches for
+                // first, doing the one thing that discards their progress.
+                // (ENG-001, S7.)
+                ContinueMostRecentSave();
+            } else if (action == "load_game") {
+                m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::LoadGame);
+            } else if (action.rfind("load_slot:", 0) == 0) {
+                LoadSlotAndResume(std::atoi(action.c_str() + 10));
             } else if (action == "resume") {
                 m_GameMenu.HideAll();
                 if (SceneWantsMouseCapture()) Enjin::Input::SetMouseCaptured(true);
@@ -1593,6 +1606,56 @@ public:
     // Pick the current session back up untouched. With no save system this is
     // only meaningful after a quit to menu; from a cold boot it is a new game by
     // another name.
+    // Resume the most recent readable save. The menu has already worked out
+    // whether one exists and disables Continue when it does not, so arriving
+    // here with nothing is a bug rather than a normal path -- say so instead of
+    // silently starting a new game, which is the behaviour being replaced.
+    void ContinueMostRecentSave() {
+        Enjin::i32 best = -1;
+        std::string bestStamp;
+        for (const auto& slot : m_TieredSaveSystem.GetAllSlots()) {
+            if (slot.isEmpty || slot.isCorrupt) continue;
+            if (best < 0 || slot.timestamp > bestStamp) {
+                best = static_cast<Enjin::i32>(slot.slotIndex);
+                bestStamp = slot.timestamp;
+            }
+        }
+        if (best < 0) {
+            ENJIN_LOG_WARN(Player, "Continue: there is no readable save to continue from. "
+                           "Not starting a new game -- that is what New Game is for.");
+            return;
+        }
+        LoadSlotAndResume(best);
+    }
+
+    void LoadSlotAndResume(int slot) {
+        if (slot < 0) return;
+        // The save is a DELTA over the level, so the level has to be there
+        // first. The slot records which one it was.
+        const auto info = m_TieredSaveSystem.GetSlotInfo(static_cast<Enjin::u32>(slot));
+        if (info.isCorrupt) {
+            ENJIN_LOG_ERROR(Player, "Slot %d cannot be read; refusing to load it.", slot);
+            return;
+        }
+        if (!info.sceneName.empty()) {
+            if (const auto* entry = m_SceneManager.GetSceneByName(info.sceneName)) {
+                m_PendingFlowScene = entry->path;
+                m_SceneManager.NoteSceneBecameCurrent(entry->name);
+                DoFlowTransition();
+            } else {
+                ENJIN_LOG_ERROR(Player, "Slot %d names scene '%s', which is not in this "
+                                "build's scene list. Refusing to load a save onto the "
+                                "wrong level.", slot, info.sceneName.c_str());
+                return;
+            }
+        }
+        if (!m_TieredSaveSystem.LoadFromSlot(static_cast<Enjin::u32>(slot), m_World.get())) {
+            ENJIN_LOG_ERROR(Player, "Slot %d failed to load.", slot);
+            return;
+        }
+        ResumeGame();
+    }
+
     void ResumeGame() {
         HideAuthoredMainMenu();
         m_GameMenu.HideAll();
