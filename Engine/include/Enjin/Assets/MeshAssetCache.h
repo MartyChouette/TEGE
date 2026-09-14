@@ -67,6 +67,37 @@ public:
     // reload. Loads/caches the file as a side effect, same as Resolve.
     bool CanResolve(const ECS::MeshComponent::SourceRef& ref);
 
+    // Put THIS geometry in the cache under THIS reference, before a caller
+    // throws the geometry away.
+    //
+    // The bug this exists for (Gobliny, 2026-09-13): the cache answers a
+    // reference by RE-IMPORTING the source file with DEFAULT ImportOptions, on
+    // the stated assumption that "geometry only depends on the file + axis
+    // conversion + skinned-vertex bake". That assumption is false. ImportOptions
+    // also carries `scale`, `normalizeScale`, `convertAxes` and three axis
+    // flips, all of which change vertices, and SourceRef records only the two
+    // axis booleans. So a model imported with anything but the defaults came
+    // back from the cache as different geometry -- in that project, 62 times
+    // larger -- and the scene serializer had already dropped the real vertices
+    // in favour of the reference.
+    //
+    // Recording the options and replaying them would work, and would still be a
+    // bet that two imports agree. Storing what the scene ACTUALLY had removes
+    // the bet: a reference and the baked copy it replaced are then the same
+    // bytes by construction, whatever options produced them, including options
+    // that do not exist yet.
+    //
+    // Returns false if the geometry is empty or the ref is unusable, and the
+    // caller must then keep its inline vertices.
+    bool Adopt(const ECS::MeshComponent::SourceRef& ref, const ECS::MeshComponent& mesh);
+
+    // Delete baked files whose source no longer exists.
+    //
+    // A baked file is named for the FNV-1a of its RESOLVED source path, so
+    // moving or renaming an asset orphans its bake permanently and nothing ever
+    // collects it. Returns how many were removed.
+    usize SweepOrphanedBakes();
+
     // Reload CPU vertices/indices into `mc` when they've been freed (to reclaim RAM after
     // GPU upload) but the mesh is source-reproducible. No-op when data is already present.
     // Returns true if `mc` has usable CPU geometry afterward. This is the reload half of

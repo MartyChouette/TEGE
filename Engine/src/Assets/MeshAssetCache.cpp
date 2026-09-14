@@ -3,6 +3,7 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/Logging/Log.h"
 #include <filesystem>
+#include <unordered_set>
 #include <fstream>
 #include <cstdio>
 #include <system_error>
@@ -253,7 +254,31 @@ const MeshAssetCache::CachedMesh* MeshAssetCache::Find(const ECS::MeshComponent:
     }
 
     const CachedMesh& cm = it->second;
-    if (ref.contentHash != 0 && cm.contentHash != ref.contentHash) {
+
+    // A reference with NO hash cannot be verified, so it is not resolvable.
+    //
+    // This used to read `ref.contentHash != 0 && ...`, i.e. "unknown, trust the
+    // cache". It is the only check standing between a reference and geometry
+    // that is not the geometry the scene had, and a reference could opt out of
+    // it by carrying zero. One project ended up depending on that bypass to make
+    // its references resolve at all, which meant the one safeguard was off
+    // exactly where it was most needed.
+    //
+    // Refusing costs nothing: the serializer keeps inline vertices when a
+    // reference will not resolve, so the scene is larger and correct instead of
+    // smaller and wrong.
+    if (ref.contentHash == 0) {
+        if (logMismatch) {
+            ENJIN_LOG_WARN(Asset,
+                "MeshAssetCache: '%s' mesh %d carries no content hash, so the cached "
+                "geometry cannot be verified against what the scene expected; "
+                "reference not applied. Re-save the scene to record one.",
+                ref.sourcePath.c_str(), ref.meshIndex);
+        }
+        return nullptr;
+    }
+
+    if (cm.contentHash != ref.contentHash) {
         if (logMismatch) {
             ENJIN_LOG_WARN(Asset,
                 "MeshAssetCache: '%s' mesh %d content hash mismatch (source changed on disk "
@@ -263,6 +288,63 @@ const MeshAssetCache::CachedMesh* MeshAssetCache::Find(const ECS::MeshComponent:
         return nullptr;
     }
     return &cm;
+}
+
+bool MeshAssetCache::Adopt(const ECS::MeshComponent::SourceRef& ref,
+                           const ECS::MeshComponent& mesh) {
+    if (!ref.Valid() || mesh.vertices.empty() || ref.contentHash == 0) return false;
+
+    const std::string resolved = ResolvePath(ref.sourcePath);
+    if (resolved.empty()) return false;
+
+    CachedFile& file = LoadFile(ref.sourcePath);
+
+    CachedMesh cm;
+    cm.vertices = mesh.vertices;
+    cm.indices = mesh.indices;
+    cm.subMeshes = mesh.subMeshes;
+    cm.contentHash = ref.contentHash;
+    file.byMeshIndex[ref.meshIndex] = std::move(cm);
+    file.loaded = true;
+
+    WriteBaked(resolved, file);
+    return true;
+}
+
+usize MeshAssetCache::SweepOrphanedBakes() {
+    if (m_CacheDir.empty()) return 0;
+    std::error_code ec;
+    if (!std::filesystem::is_directory(m_CacheDir, ec)) return 0;
+
+    // A baked file records the source's size and mtime but not its PATH, so the
+    // only thing that can be checked from the file alone is whether it still
+    // describes a file that exists. Everything currently loaded is keyed by a
+    // path we DO know, so build the set of bakes that are accounted for and
+    // remove the rest.
+    std::unordered_set<std::string> live;
+    for (const auto& [path, file] : m_Files) {
+        (void)file;
+        const std::string resolved = ResolvePath(path);
+        if (resolved.empty()) continue;
+        if (!std::filesystem::exists(resolved, ec)) continue;
+        const std::string baked = BakedPath(resolved);
+        if (!baked.empty()) live.insert(std::filesystem::path(baked).filename().string());
+    }
+    if (live.empty()) return 0;   // nothing loaded yet: cannot tell orphan from cold
+
+    usize removed = 0;
+    for (const auto& e : std::filesystem::directory_iterator(m_CacheDir, ec)) {
+        if (ec) break;
+        if (!e.is_regular_file(ec)) continue;
+        if (e.path().extension() != ".enjmesh") continue;
+        if (live.count(e.path().filename().string())) continue;
+        if (std::filesystem::remove(e.path(), ec)) {
+            ++removed;
+            ENJIN_LOG_INFO(Asset, "MeshAssetCache: removed orphaned bake '%s'",
+                           e.path().filename().string().c_str());
+        }
+    }
+    return removed;
 }
 
 bool MeshAssetCache::CanResolve(const ECS::MeshComponent::SourceRef& ref) {

@@ -487,8 +487,33 @@ json SerializeMeshComponent(const ECS::MeshComponent& mesh, bool includeVertexDa
     // this mesh RIGHT NOW (source present + hash matches). If it can't, we keep the
     // inline geometry, so geometry is never lost even if a source file is missing or
     // has drifted — worst case the file just doesn't shrink for that mesh.
-    const bool writeAsReference = preferReference && mesh.source.Valid()
+    // Before dropping the vertices, make the cache hold THESE vertices.
+    //
+    // The comment above says "only drop the inline vertices if the cache can
+    // actually reload this mesh RIGHT NOW (source present + hash matches)", and
+    // it was not true: MeshAssetCache::Find skipped the hash comparison entirely
+    // when the reference carried 0, so a reference could opt out of the only
+    // check that made that sentence honest. Find refuses a hashless reference
+    // now, which is half of it.
+    //
+    // The other half is that "can reload" meant "can RE-IMPORT with default
+    // options", and the geometry a re-import produces is not the geometry the
+    // scene holds unless the scene was imported with the defaults too --
+    // ImportOptions::scale, normalizeScale, convertAxes and the three axis flips
+    // all change vertices and none of them is recorded on SourceRef. Gobliny's
+    // goblin came back 62 times too large, and three of its four parts failed to
+    // resolve at all and rendered as nothing for weeks.
+    //
+    // Adopting removes the guess. The bytes the reference will resolve to are
+    // the bytes being dropped, so a reference and the baked copy it replaces are
+    // identical by construction rather than by two importers agreeing.
+    bool writeAsReference = preferReference && mesh.source.Valid()
         && Assets::MeshAssetCache::Get().CanResolve(mesh.source);
+    if (preferReference && !writeAsReference && mesh.source.Valid() && !mesh.vertices.empty()) {
+        if (Assets::MeshAssetCache::Get().Adopt(mesh.source, mesh)) {
+            writeAsReference = Assets::MeshAssetCache::Get().CanResolve(mesh.source);
+        }
+    }
 
     if (includeVertexData && !writeAsReference) {
         json vertices = json::array();
