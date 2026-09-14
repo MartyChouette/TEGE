@@ -1756,7 +1756,28 @@ public:
         m_ControllerSystem.SetPhysics2D(m_Physics2D.get());
         Enjin::Gameplay::GameplayLoop::Wire2DCollisionCallbacks(
             m_Physics2D.get(), m_World.get(), &m_VisualScriptSystem, m_DeferredDestroys);
-        if (!m_StartScene.empty()) LoadSceneFromPack(m_StartScene);
+        if (!m_StartScene.empty()) {
+            if (LoadSceneFromPack(m_StartScene)) {
+                // Bring the new scene fully live, exactly as the first scene and
+                // exactly as DoFlowTransition already does after ITS reload.
+                //
+                // This was missing, and the camera is what made it visible:
+                // InitSceneRuntime is the ONLY place SetGameCameraEntity is
+                // called, so after a restart the controller was still driving a
+                // camera entity belonging to the world that had just been
+                // destroyed. New Game gave you a player you could walk around
+                // with a camera that stayed where it was. (Marty, 2026-09-14.)
+                //
+                // The camera is only the part you can see. The same call wires
+                // quest state, the flower system's camera, free-fly ownership,
+                // streaming chunks and the AngelScript lifecycle -- all of which
+                // were equally stale after a restart and failed more quietly.
+                //
+                // Two reload paths, one of which did this and one of which did
+                // not, with the correct one carrying a comment explaining why.
+                InitSceneRuntime();
+            }
+        }
     }
 
     void Render() override {
