@@ -113,6 +113,14 @@ void ClearBindingsEventListeners();
 // Drop just one entity's listeners, for a despawn. ScriptSystem's destroy
 // observer calls this; without it a dead entity's callbacks kept firing.
 void RemoveBindingsEventListenersForEntity(u64 entityId);
+
+// How many script-visible EventData objects are alive right now.
+//
+// Exists so a leak can be ASSERTED rather than hoped about. EventData is a
+// plain refcounted type with no GC registration, so a leaked one is completely
+// silent -- it was leaking once per Events_Send call and nothing anywhere said
+// so. Steady state between runs is zero.
+i32 LiveScriptEventDataCount();
 void SetBindingsScriptEngine(ScriptEngine* engine);
 void SetBindingsDialogueSystem(ECS::DialogueSystem* system);
 void SetBindingsRenderSystem(ECS::RenderSystem* renderSystem);

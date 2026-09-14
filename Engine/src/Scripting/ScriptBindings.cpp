@@ -663,13 +663,35 @@ static void Script_YieldEndOfFrame() {
 // EVENT DATA WRAPPERS
 // ============================================================================
 
+// A live-instance count, because a leaked EventData is otherwise INVISIBLE.
+//
+// EventData is registered asOBJ_REF with no asOBJ_GC flag, so the garbage
+// collector never sees one and never complains about one. When Events_Send and
+// Events_Broadcast were failing to release their handle parameter, that leak
+// produced no message, no warning and no test failure -- unlike the delegate
+// leak beside it, which at least announced itself at shutdown every time. The
+// silent one was the worse bug and the visible one was what got noticed.
+//
+// One atomic increment per construction is not a cost worth arguing about
+// against a leak nothing can see.
+std::atomic<int> g_LiveScriptEventData{0};
+
 struct ScriptEventData {
     Scripting::EventData data;
     std::atomic<int> refCount{1};
 
+    ScriptEventData() { g_LiveScriptEventData.fetch_add(1, std::memory_order_relaxed); }
+    ~ScriptEventData() { g_LiveScriptEventData.fetch_sub(1, std::memory_order_relaxed); }
+
     void AddRef() { refCount.fetch_add(1, std::memory_order_relaxed); }
     void Release() { if (refCount.fetch_sub(1, std::memory_order_acq_rel) == 1) delete this; }
 };
+
+namespace Enjin { namespace Scripting {
+i32 LiveScriptEventDataCount() {
+    return g_LiveScriptEventData.load(std::memory_order_relaxed);
+}
+}}  // namespace Enjin::Scripting
 
 static ScriptEventData* EventData_Factory() {
     return new ScriptEventData();
@@ -709,6 +731,31 @@ static u64 EventData_GetEntity(ScriptEventData* self, const std::string& key) {
 }
 
 static u32 Events_Listen(const std::string& eventName, asIScriptFunction* callback) {
+    // THE CALLEE OWNS THIS HANDLE AND MUST RELEASE IT.
+    //
+    // Registered as `EventCallback@` -- a plain handle, not `@+`. AngelScript
+    // hands a plain handle parameter to native code as a reference the callee
+    // now owns; `@+` (auto handle) is the form where the engine releases it for
+    // you. This function never released it, and the bus AddRef'd a second
+    // reference of its own, so every `Events_Listen` call left the delegate at
+    // a count of two. Teardown released one. The other survived the engine,
+    // held by nothing the garbage collector could enumerate, which is exactly
+    // what it reported at shutdown: "GC cannot destroy an object of type
+    // '$func' as it can't see all references. Current ref count is 1."
+    //
+    // One leaked delegate per Events_Listen call, for as long as the binding
+    // has existed. It cost a line of shutdown spam and a delegate that kept its
+    // whole script module alive ("There is an external reference to an object
+    // in module 'scripts_BirdFlight', preventing it from being deleted").
+    //
+    // Every exit path below has to release, including the early ones -- those
+    // leaked it too, and they are the paths taken when something has already
+    // gone wrong.
+    struct HandleGuard {
+        asIScriptFunction* fn;
+        ~HandleGuard() { if (fn) fn->Release(); }
+    } guard{callback};
+
     if (!s_BindingsEventBus) return 0;
 
     asIScriptContext* ctx = asGetActiveContext();
@@ -734,12 +781,20 @@ static u32 Events_Listen(const std::string& eventName, asIScriptFunction* callba
     return s_BindingsEventBus->Listen(eventName, obj, callback, entityId);
 }
 
+// EventData@ is an owned handle too, and these two are WORSE than the listen
+// leak was: they are called once per event FIRED, not once per subscription, so
+// a game sending an event every frame leaks an EventData every frame. And it
+// leaked silently -- EventData is registered asOBJ_REF with no asOBJ_GC flag,
+// so nothing is tracking it and there is no shutdown message. The delegate leak
+// at least announced itself.
 static void Events_Send(const std::string& eventName, ScriptEventData* data) {
+    struct Guard { ScriptEventData* d; ~Guard() { if (d) d->Release(); } } guard{data};
     if (!s_BindingsEventBus || !data) return;
     s_BindingsEventBus->Send(eventName, data->data);
 }
 
 static void Events_Broadcast(ScriptEventData* data) {
+    struct Guard { ScriptEventData* d; ~Guard() { if (d) d->Release(); } } guard{data};
     if (!s_BindingsEventBus || !data) return;
     s_BindingsEventBus->Broadcast(data->data);
 }
