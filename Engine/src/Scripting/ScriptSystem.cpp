@@ -361,6 +361,26 @@ void ScriptSystem::InitScript(ECS::Entity entity, usize index) {
     ECS::ScriptAttachment& script = *sp0;
     if (!m_ScriptEngine || script.initialized) return;
 
+    // DISABLED MEANS INERT.
+    //
+    // `enabled` was checked by every per-frame dispatcher and by nothing here,
+    // so a script marked disabled still compiled its module, created its
+    // instance and reported its compile errors -- it simply never ticked.
+    // Marty hit this isolating a crash (2026-09-13): turning a script off did
+    // not take it out of the run, so it did not isolate anything, which is the
+    // one job that switch has.
+    //
+    // The rule, stated because the old behaviour had a defensible reading too:
+    //
+    //   - Disabled when the scene loads: never compiled, never instantiated.
+    //   - Enabled later at runtime: the Update pass retries uninitialized
+    //     scripts every frame, so it comes up then, at the cost of one compile
+    //     at the moment of enabling.
+    //   - Disabled later at runtime: the instance is KEPT and simply stops
+    //     ticking. Destroying it would throw away the script's state, and
+    //     toggling something off and on again should not reset it.
+    if (!script.enabled) return;
+
     // Resolve relative script paths against the script root (project dir).
     // The process CWD is the exe directory, so scene-stored paths like
     // "scripts/Foo.as" never resolve without this.
