@@ -1246,9 +1246,35 @@ public:
         m_InputMap.Update(deltaTime);
 
         // Tick skeletal animators (desktop: main.cpp:818-823)
-        for (auto entity : m_World->GetEntitiesWithComponent<Enjin::ECS::AnimatorComponent>()) {
-            auto* anim = m_World->GetComponent<Enjin::ECS::AnimatorComponent>(entity);
-            if (anim) anim->Update(deltaTime);
+        //
+        // ANIMATION LOD, which web did not have until 2026-09-14.
+        //
+        // Distant animators refresh at 1/2, 1/4 or 1/8 rate with dt banked, so
+        // the pose is still correct when it does refresh. It is the single
+        // biggest CPU lever for a scene with many animated characters, and it
+        // existed only inside the Vulkan RenderSystem::Update -- the flag that
+        // switched it on was not merely unused on web, it was declared inside
+        // `#if !ENJIN_RENDERER_WEBGPU` and did not exist in this build at all.
+        //
+        // So a browser, on the weakest hardware the engine targets, refreshed
+        // every animator every frame while desktop did not. The decision now
+        // lives in RenderSystem::ShouldRefreshAnimator, above the backend #if,
+        // and this is its web call site.
+        if (m_RenderSystem) {
+            for (auto entity : m_World->GetEntitiesWithComponent<Enjin::ECS::AnimatorComponent>()) {
+                auto* anim = m_World->GetComponent<Enjin::ECS::AnimatorComponent>(entity);
+                if (!anim) continue;
+                Enjin::f32 stepDt = deltaTime;
+                if (!m_RenderSystem->ShouldRefreshAnimator(*anim, entity, deltaTime, stepDt)) {
+                    continue;   // skipped this frame; dt stays banked for the next
+                }
+                anim->Update(stepDt);
+            }
+        } else {
+            for (auto entity : m_World->GetEntitiesWithComponent<Enjin::ECS::AnimatorComponent>()) {
+                auto* anim = m_World->GetComponent<Enjin::ECS::AnimatorComponent>(entity);
+                if (anim) anim->Update(deltaTime);
+            }
         }
 
         // Flush deferred entity destroys from previous frame

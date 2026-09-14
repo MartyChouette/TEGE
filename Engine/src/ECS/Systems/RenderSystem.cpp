@@ -92,6 +92,94 @@ namespace ECS {
 // silently diverge again.
 // ---------------------------------------------------------------------------
 
+// Frustum culling that does not need a GPU.
+//
+// GPU culling is Vulkan-only: a compute dispatch, an indirect draw buffer and a
+// HiZ pyramid, none of which exists on WebGPU here. That made "frustum culling"
+// read as a Vulkan feature, and web shipped with NO culling of any kind -- every
+// mesh in the scene submitted every frame, on the weakest hardware the engine
+// targets.
+//
+// Conflating the two is the mistake. Frustum culling is six dot products against
+// an axis-aligned box. What the GPU path buys is doing that for a hundred
+// thousand objects without a readback stall, which matters at a scale web is
+// nowhere near. The test itself is arithmetic and belongs to both backends.
+//
+// Conservative on purpose: the world AABB is built from the eight transformed
+// corners of the local one, which over-estimates for a rotated box. A cull that
+// is slightly too generous costs a few draws. A cull that is too tight deletes
+// geometry a player can see, and that bug is invisible until someone stands in
+// the wrong place.
+void RenderSystem::ExtractFrustumPlanes(const Math::Matrix4& viewProj,
+                                        Math::Vector4 outPlanes[6]) {
+    const f32* m = viewProj.m;
+    // left, right, bottom, top, near, far -- rows of the clip matrix combined.
+    outPlanes[0] = Math::Vector4(m[3] + m[0], m[7] + m[4], m[11] + m[8],  m[15] + m[12]);
+    outPlanes[1] = Math::Vector4(m[3] - m[0], m[7] - m[4], m[11] - m[8],  m[15] - m[12]);
+    outPlanes[2] = Math::Vector4(m[3] + m[1], m[7] + m[5], m[11] + m[9],  m[15] + m[13]);
+    outPlanes[3] = Math::Vector4(m[3] - m[1], m[7] - m[5], m[11] - m[9],  m[15] - m[13]);
+    outPlanes[4] = Math::Vector4(m[3] + m[2], m[7] + m[6], m[11] + m[10], m[15] + m[14]);
+    outPlanes[5] = Math::Vector4(m[3] - m[2], m[7] - m[6], m[11] - m[10], m[15] - m[14]);
+
+    for (int i = 0; i < 6; ++i) {
+        const f32 len = std::sqrt(outPlanes[i].x * outPlanes[i].x +
+                                  outPlanes[i].y * outPlanes[i].y +
+                                  outPlanes[i].z * outPlanes[i].z);
+        if (len > 1e-6f) {
+            outPlanes[i].x /= len; outPlanes[i].y /= len;
+            outPlanes[i].z /= len; outPlanes[i].w /= len;
+        }
+    }
+}
+
+bool RenderSystem::IsEntityInFrustum(Entity entity, const Math::Vector4 planes[6]) {
+    const MeshComponent* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
+    if (!mesh) return true;   // nothing to measure: never cull on ignorance
+
+    // A dirty/unset AABB is signalled by min > max. Do not guess at a box.
+    if (mesh->cachedAABBMin.x > mesh->cachedAABBMax.x) return true;
+
+    // Authored opt-out, same field the Vulkan path honours: things that must
+    // draw regardless of where the camera looks (skyboxes, viewmodels, effects
+    // anchored to the view).
+    if (m_CachedMeshRendererStorage) {
+        const MeshRendererComponent* mr = m_CachedMeshRendererStorage->Get(entity);
+        if (mr && !mr->frustumCull) return true;
+    }
+
+    const Math::Matrix4 wm = ComputeWorldMatrix(m_World, entity);
+    const Math::Vector3& lo = mesh->cachedAABBMin;
+    const Math::Vector3& hi = mesh->cachedAABBMax;
+
+    Math::Vector3 wmin(1e30f, 1e30f, 1e30f), wmax(-1e30f, -1e30f, -1e30f);
+    for (int c = 0; c < 8; ++c) {
+        const Math::Vector3 corner((c & 1) ? hi.x : lo.x,
+                                   (c & 2) ? hi.y : lo.y,
+                                   (c & 4) ? hi.z : lo.z);
+        const Math::Vector3 w(
+            wm.m[0] * corner.x + wm.m[4] * corner.y + wm.m[8]  * corner.z + wm.m[12],
+            wm.m[1] * corner.x + wm.m[5] * corner.y + wm.m[9]  * corner.z + wm.m[13],
+            wm.m[2] * corner.x + wm.m[6] * corner.y + wm.m[10] * corner.z + wm.m[14]);
+        wmin.x = Math::Min(wmin.x, w.x); wmax.x = Math::Max(wmax.x, w.x);
+        wmin.y = Math::Min(wmin.y, w.y); wmax.y = Math::Max(wmax.y, w.y);
+        wmin.z = Math::Min(wmin.z, w.z); wmax.z = Math::Max(wmax.z, w.z);
+    }
+
+    // Reject only when the box is entirely outside a plane. Testing the
+    // positive vertex (the corner furthest along the plane normal) is the
+    // standard conservative form.
+    for (int i = 0; i < 6; ++i) {
+        const Math::Vector4& p = planes[i];
+        const Math::Vector3 positive(p.x >= 0.0f ? wmax.x : wmin.x,
+                                     p.y >= 0.0f ? wmax.y : wmin.y,
+                                     p.z >= 0.0f ? wmax.z : wmin.z);
+        if (p.x * positive.x + p.y * positive.y + p.z * positive.z + p.w < 0.0f) {
+            return false;
+        }
+    }
+    return true;
+}
+
 // Which LOD level this entity should be on, shared by both backends.
 //
 // THIS IS THE ONE THAT WAS COSTING SOMETHING. The two backends did not have two
@@ -3863,11 +3951,31 @@ void RenderSystem::Update(f32 deltaTime) {
         // comparison, and not per entity.
         const Math::Vector3 sortCamPos = m_Camera ? m_Camera->GetPosition() : Math::Vector3(0.0f, 0.0f, 0.0f);
 
+        // FRUSTUM CULLING ON WEB, which did not exist before 2026-09-14.
+        //
+        // Desktop has GPU culling: a compute dispatch and an indirect draw
+        // buffer, neither of which is implemented on WebGPU here. Because the
+        // feature was ONLY ever the GPU implementation, web had no culling of
+        // any kind -- every mesh in the scene was written into the object buffer
+        // and drawn, every frame, facing or not.
+        //
+        // The test does not need a GPU. It is six dot products against a box.
+        // What the GPU path buys is doing that for a hundred thousand objects
+        // without a readback stall, at a scale web is not at.
+        Math::Vector4 webFrustum[6];
+        const bool webCullEnabled = m_Camera != nullptr;
+        if (webCullEnabled) {
+            ExtractFrustumPlanes(m_Camera->GetProjectionMatrix() * m_Camera->GetViewMatrix(),
+                                 webFrustum);
+        }
+
         for (Entity entity : meshEntities) {
             auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
             auto* xf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
             if (!mesh || !xf || !xf->visible) continue;
             if (mesh->vertices.empty() || mesh->indices.empty()) continue;
+
+            if (webCullEnabled && !IsEntityInFrustum(entity, webFrustum)) continue;
 
             // Ensure GPU buffers
             u64 eid = EntityIndex(entity);  // dense index: low 32 bits (raw handle has generation in high bits)

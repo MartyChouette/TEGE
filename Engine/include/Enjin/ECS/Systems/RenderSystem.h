@@ -2865,6 +2865,17 @@ public:
     i32 ChooseLOD(Entity entity, const LODComponent& lod,
                   const TransformComponent& transform, const Math::Vector3& camPos);
 
+    // CPU frustum culling, available to BOTH backends.
+    //
+    // GPU culling is a Vulkan-only compute dispatch, which left web with no
+    // culling at all -- every mesh submitted every frame. The TEST is six dot
+    // products against a box; what the GPU buys is doing it for a hundred
+    // thousand objects without a readback stall, at a scale web is nowhere near.
+    // Conservative: over-estimates a rotated box rather than risk culling
+    // something visible.
+    static void ExtractFrustumPlanes(const Math::Matrix4& viewProj, Math::Vector4 outPlanes[6]);
+    bool IsEntityInFrustum(Entity entity, const Math::Vector4 planes[6]);
+
     // Animation LOD state, OUTSIDE every backend guard.
     //
     // Both the flag and its accessors used to sit inside `#if !ENJIN_RENDERER_WEBGPU`,

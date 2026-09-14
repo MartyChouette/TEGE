@@ -41,6 +41,9 @@ Last verified against the tree 2026-09-14.
 | Morph targets | **Absent** | |
 | Custom shader graphs | **Absent** | |
 | Reflection systems (probes, planar, SSR) | **Absent** | |
+| Frustum culling | Same | CPU, shared with desktop since 2026-09-14. Desktop ALSO has GPU culling (compute + indirect draw) for very large object counts; web has the test, not the dispatch. |
+| Mesh LOD | Same | Shared since 2026-09-14. Web previously used plain camera distance and had neither `useScreenSize`, `lodBias` nor `forceLowestLOD`. |
+| Animation LOD | Same | Shared since 2026-09-14. Web previously refreshed every animator every frame; the flag was declared inside `#if !ENJIN_RENDERER_WEBGPU` and did not exist in a web build. |
 | Ray tracing, path tracing, DDGI | **Absent** | Not a gap: no browser exposes the hardware. Use the substitutions below. |
 
 ### Substituted, and why the substitute is the right answer
