@@ -56,6 +56,10 @@ namespace Enjin::Build { class AssetReader; }
 #endif
 
 // Forward declarations for effect renderers and systems (stored as unique_ptr/raw pointer)
+// Forward declaration: ChooseLOD takes it by const reference and the definition
+// is not needed here. Including the component header would pull LOD geometry
+// into every translation unit that touches RenderSystem.h.
+namespace Enjin { namespace ECS { struct LODComponent; } }
 namespace Enjin {
 // Forward declared rather than included: HandIK.h pulls in the whole IK solver
 // and this header is included almost everywhere. Only a pointer is stored.
@@ -2853,6 +2857,13 @@ public:
     // animator every frame. Backend-agnostic; web's call site is in web_main.
     bool ShouldRefreshAnimator(AnimatorComponent& ac, Entity entity,
                                f32 deltaTime, f32& outStepDt);
+
+    // Which LOD level an entity should be on. Was TWO DIFFERENT ALGORITHMS, one
+    // per backend -- web had plain distance and none of the screen-size metric,
+    // the anti-oscillation fix, lodBias or forceLowestLOD. The swap itself stays
+    // per-backend: web invalidates, Vulkan retires mid-recording.
+    i32 ChooseLOD(Entity entity, const LODComponent& lod,
+                  const TransformComponent& transform, const Math::Vector3& camPos);
 
     // Animation LOD state, OUTSIDE every backend guard.
     //

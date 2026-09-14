@@ -6,6 +6,7 @@
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Debug/Profiler.h"
 #include <cstdlib>   // getenv (GPU-particle headless test hook)
+#include "Enjin/ECS/Components/LOD.h"        // ChooseLOD, shared above the backend #if
 #include "Enjin/ECS/Components/Hierarchy.h"   // ComputeWorldMatrix, used by the shared
                                              // frame helpers hoisted above the backend #if
 #include "Enjin/Assets/MeshAssetCache.h"   // reload/free CPU mesh data after upload (task #3)
@@ -90,6 +91,87 @@ namespace ECS {
 // Anything hoisted here is one implementation both backends share, and cannot
 // silently diverge again.
 // ---------------------------------------------------------------------------
+
+// Which LOD level this entity should be on, shared by both backends.
+//
+// THIS IS THE ONE THAT WAS COSTING SOMETHING. The two backends did not have two
+// copies of this; they had two DIFFERENT ALGORITHMS, and web had the older,
+// broken one:
+//
+//   web     metric = distance to the camera. That is all.
+//   vulkan  screen-size metric off the STABLE source extent, plus lodBias, plus
+//           forceLowestLOD.
+//
+// The Vulkan version carries a comment describing a crash: measuring against the
+// currently-active (already swapped) LOD mesh makes the metric depend on the LOD
+// it just picked, "so the selection oscillates every frame and rebuilds buffers
+// until it OOMs". That was found and fixed on Vulkan. Web never got it, never
+// got `useScreenSize` at all, and never got MeshRenderer's lodBias or
+// forceLowestLOD -- both of which a person can author in the inspector today and
+// which silently did nothing in a browser.
+//
+// Nothing in here is backend-shaped: it reads a transform, a component and the
+// camera position, and returns an index. It was two algorithms because it was
+// written inside two different loops in two halves of one file.
+//
+// The SWAP stays with each backend, because that part genuinely differs: web
+// invalidates the entity's render data, Vulkan RETIRES the buffers because it
+// runs mid-recording and in-flight frames still reference them.
+i32 RenderSystem::ChooseLOD(Entity entity, const LODComponent& lod,
+                            const TransformComponent& transform,
+                            const Math::Vector3& camPos) {
+    f32 metric;
+    if (lod.useScreenSize) {
+        // Screen-space projected size: accounts for object scale.
+        // Approximation: bounding sphere diameter / distance.
+        const MeshComponent* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
+        const f32 dist = Math::Max((transform.position - camPos).Length(), 0.001f);
+        const f32 scale = Math::Max(Math::Max(
+            Math::Abs(transform.scale.x),
+            Math::Abs(transform.scale.y)),
+            Math::Abs(transform.scale.z));
+        // Object size from the STABLE original-mesh extent, not the currently-active
+        // (swapped) LOD mesh — using the live mesh makes the metric depend on the LOD
+        // it just picked, so the selection oscillates every frame and rebuilds buffers
+        // until it OOMs. Fall back to the live AABB only for legacy LODs that predate
+        // sourceMaxExtent.
+        f32 objectSize = scale;
+        if (lod.sourceMaxExtent > 0.0f) {
+            objectSize = scale * lod.sourceMaxExtent;
+        } else if (mesh) {
+            const Math::Vector3 extent = mesh->cachedAABBMax - mesh->cachedAABBMin;
+            objectSize = scale * Math::Max(Math::Max(extent.x, extent.y), extent.z);
+        }
+        // Screen metric: larger = closer/bigger = more detail needed. Inverted so a
+        // larger metric means further away, matching the distance thresholds.
+        metric = dist / Math::Max(objectSize, 0.01f);
+    } else {
+        metric = (transform.position - camPos).Length();
+    }
+
+    // MeshRenderer's LOD controls.
+    //
+    // lodBias biases the METRIC rather than the chosen index: the metric is a
+    // distance (or a screen-size ratio) and the thresholds are spaced
+    // geometrically, so scaling it moves every band together and keeps the
+    // hysteresis meaningful. Biasing the index instead would step past a level
+    // entirely at the far end and do nothing at the near end.
+    //
+    // The sign follows the field's own comment: -1 forces higher detail, +1
+    // forces lower. So a positive bias makes the metric LARGER (further away),
+    // and 2^bias gives a smooth curve that is exactly 1.0 at bias 0.
+    const MeshRendererComponent* mrLod =
+        m_CachedMeshRendererStorage ? m_CachedMeshRendererStorage->Get(entity) : nullptr;
+    f32 lodMetric = metric;
+    if (mrLod && mrLod->lodBias != 0.0f) {
+        lodMetric *= std::pow(2.0f, mrLod->lodBias);
+    }
+
+    if (mrLod && mrLod->forceLowestLOD) {
+        return lod.levelCount > 0 ? lod.levelCount - 1 : 0;
+    }
+    return SelectLOD(lod, lodMetric);
+}
 
 // Animation LOD: should this animator refresh its pose THIS frame, and with how
 // much time?
@@ -3737,8 +3819,7 @@ void RenderSystem::Update(f32 deltaTime) {
                     auto* xf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
                     if (!xf) continue;
 
-                    f32 dist = (xf->position - camPos).Length();
-                    i32 newLOD = SelectLOD(*lod, dist);
+                    const i32 newLOD = ChooseLOD(entity, *lod, *xf, camPos);
                     if (newLOD != lod->activeLOD && newLOD < lod->levelCount) {
                         auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
                         if (mesh && !lod->levels[newLOD].mesh.vertices.empty()) {
@@ -8884,61 +8965,7 @@ void RenderSystem::Update(f32 deltaTime) {
                 if (lod && lod->enabled && lod->levelCount > 1) {
                     auto* transform = xformStorageLoop ? xformStorageLoop->Get(entity) : nullptr;
                     if (transform) {
-                        f32 metric;
-                        if (lod->useScreenSize) {
-                            // Screen-space projected size: accounts for object scale.
-                            // Approximation: bounding sphere diameter / distance.
-                            auto* mesh = meshStorageLoop ? meshStorageLoop->Get(entity) : nullptr;
-                            f32 dist = Math::Max((transform->position - camPos).Length(), 0.001f);
-                            f32 scale = Math::Max(Math::Max(
-                                Math::Abs(transform->scale.x),
-                                Math::Abs(transform->scale.y)),
-                                Math::Abs(transform->scale.z));
-                            // Object size from the STABLE original-mesh extent, not the
-                            // currently-active (swapped) LOD mesh — using the live mesh
-                            // makes the metric depend on the LOD it just picked, so the
-                            // selection oscillates every frame and rebuilds buffers until
-                            // it OOMs. Fall back to the live AABB only for legacy LODs that
-                            // predate sourceMaxExtent.
-                            f32 objectSize = scale;
-                            if (lod->sourceMaxExtent > 0.0f) {
-                                objectSize = scale * lod->sourceMaxExtent;
-                            } else if (mesh) {
-                                Math::Vector3 extent = mesh->cachedAABBMax - mesh->cachedAABBMin;
-                                objectSize = scale * Math::Max(Math::Max(extent.x, extent.y), extent.z);
-                            }
-                            // Screen metric: larger = closer/bigger = more detail needed
-                            // Invert so that larger metric means further away (matches distance thresholds)
-                            metric = dist / Math::Max(objectSize, 0.01f);
-                        } else {
-                            metric = (transform->position - camPos).Length();
-                        }
-
-                        // MeshRenderer's LOD controls, which read nothing before this.
-                        //
-                        // lodBias biases the METRIC rather than the chosen index:
-                        // the metric is a distance (or a screen-size ratio), and the
-                        // thresholds are spaced geometrically, so scaling it moves
-                        // every band together and keeps the hysteresis meaningful.
-                        // Biasing the index instead would step past a level entirely
-                        // at the far end and do nothing at the near end.
-                        //
-                        // The sign follows the field's own comment: -1 forces higher
-                        // detail, +1 forces lower. So a positive bias has to make the
-                        // metric LARGER (further away), and 2^bias gives a smooth
-                        // curve that is exactly 1.0 at bias 0.
-                        const MeshRendererComponent* mrLod =
-                            m_CachedMeshRendererStorage ? m_CachedMeshRendererStorage->Get(entity)
-                                                        : nullptr;
-                        f32 lodMetric = metric;
-                        if (mrLod && mrLod->lodBias != 0.0f) {
-                            lodMetric *= std::pow(2.0f, mrLod->lodBias);
-                        }
-
-                        i32 newLOD = (mrLod && mrLod->forceLowestLOD)
-                                   ? (lod->levelCount > 0 ? lod->levelCount - 1 : 0)
-                                   : SelectLOD(*lod, lodMetric);
-
+                        const i32 newLOD = ChooseLOD(entity, *lod, *transform, camPos);
                         if (newLOD != lod->activeLOD && newLOD < lod->levelCount) {
                             auto* mesh = meshStorageLoop ? meshStorageLoop->Get(entity) : nullptr;
                             if (mesh && lod->levels[newLOD].mesh.IsValid()) {
