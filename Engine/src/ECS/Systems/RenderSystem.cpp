@@ -91,6 +91,55 @@ namespace ECS {
 // silently diverge again.
 // ---------------------------------------------------------------------------
 
+// Animation LOD: should this animator refresh its pose THIS frame, and with how
+// much time?
+//
+// Refreshing a distant animator every frame is work nobody sees. Time is
+// preserved by banking dt into lodAccumulatedTime, so the pose is still correct
+// when it does refresh -- it just refreshes at 1/2, 1/4 or 1/8 rate with
+// distance. The per-entity phase offset spreads the refreshes across frames so
+// they do not all land on the same one (thundering herd). IK is gated with the
+// pose refresh, because applying IK to a stale un-refreshed pose stacks.
+//
+// This lived inside the Vulkan Update and nowhere else, which means WEB HAS NO
+// ANIMATION LOD AT ALL -- every animator refreshes every frame on the platform
+// least able to afford it. There is nothing backend-shaped in here: it reads a
+// transform and the camera, does arithmetic, and returns a bool. It was trapped
+// on one side because it was written inside a loop in a 1,600-line function.
+//
+// Hoisting it does not switch it on for web by itself: on web the animator ticks
+// in web_main.cpp rather than in this Update, so the call site is over there.
+// What this does is make the decision one shared, testable thing that web can
+// call, instead of a block only one backend can see. (Backlog: wire it on web.)
+//
+// Returns false to skip this frame. `outStepDt` is the time to advance by, which
+// is the banked total rather than this frame's dt.
+bool RenderSystem::ShouldRefreshAnimator(AnimatorComponent& ac, Entity entity,
+                                         f32 deltaTime, f32& outStepDt) {
+    outStepDt = deltaTime;
+    if (!m_AnimationLODEnabled || !m_Camera || deltaTime <= 0.0f) return true;
+
+    constexpr f32 kAnimLODNear = 30.0f;   // full rate within this radius
+    constexpr f32 kAnimLODFar  = 70.0f;   // half rate to here
+    constexpr f32 kAnimLODFar2 = 140.0f;  // quarter to here, eighth beyond
+
+    const Math::Matrix4 lodWm = ComputeWorldMatrix(m_World, entity);
+    const Math::Vector3 lodPos(lodWm.m[12], lodWm.m[13], lodWm.m[14]);
+    const f32 camDist = (lodPos - m_Camera->GetPosition()).Length();
+    const u32 interval = (camDist < kAnimLODNear) ? 1u
+                       : (camDist < kAnimLODFar)  ? 2u
+                       : (camDist < kAnimLODFar2) ? 4u : 8u;
+
+    ac.lodAccumulatedTime += deltaTime;
+    ac.lodFramePhase++;
+    if (interval > 1u && ((ac.lodFramePhase + EntityIndex(entity)) % interval) != 0u) {
+        return false;
+    }
+    outStepDt = ac.lodAccumulatedTime;
+    ac.lodAccumulatedTime = 0.0f;
+    return true;
+}
+
 // Movement-driven clip selection, shared by both backends.
 //
 // Idle / walk / run / air chosen from world-space velocity and cross-faded.
@@ -7861,32 +7910,10 @@ void RenderSystem::Update(f32 deltaTime) {
             UpdateMovementDrivenAnimation(*animComp, entity, deltaTime);
         }
 
-        // Animation LOD: refresh distant animators less often. Time is preserved by
-        // banking dt into lodAccumulatedTime, so the pose is still correct when it
-        // does refresh — it just refreshes at 1/2 or 1/4 rate far from the camera.
-        // The per-entity phase offset spreads the refreshes across frames so they
-        // don't all land on the same frame (thundering herd). IK below is gated with
-        // the pose refresh: applying IK to a stale, un-refreshed pose would stack.
+        // Animation LOD. Shared above the backend #if -- see ShouldRefreshAnimator.
         f32 stepDt = deltaTime;
-        if (m_AnimationLODEnabled && m_Camera && deltaTime > 0.0f) {
-            constexpr f32 kAnimLODNear = 30.0f;   // full rate within this radius
-            constexpr f32 kAnimLODFar  = 70.0f;   // half rate to here
-            constexpr f32 kAnimLODFar2 = 140.0f;  // quarter to here, eighth beyond
-            Math::Matrix4 lodWm = ComputeWorldMatrix(m_World, entity);
-            Math::Vector3 lodPos(lodWm.m[12], lodWm.m[13], lodWm.m[14]);
-            f32 camDist = (lodPos - m_Camera->GetPosition()).Length();
-            u32 interval = (camDist < kAnimLODNear) ? 1u
-                         : (camDist < kAnimLODFar)  ? 2u
-                         : (camDist < kAnimLODFar2) ? 4u : 8u;
-
-            animComp->lodAccumulatedTime += deltaTime;
-            animComp->lodFramePhase++;
-            if (interval > 1u &&
-                ((animComp->lodFramePhase + EntityIndex(entity)) % interval) != 0u) {
-                continue;   // skip this frame's refresh; dt stays banked for next time
-            }
-            stepDt = animComp->lodAccumulatedTime;
-            animComp->lodAccumulatedTime = 0.0f;
+        if (!ShouldRefreshAnimator(*animComp, entity, deltaTime, stepDt)) {
+            continue;   // skipped this frame; the dt stays banked for the next one
         }
 
         m_AnimJobs.push_back({ entity, animComp, stepDt });

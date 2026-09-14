@@ -1382,11 +1382,6 @@ public:
     // consumer (physics colliders, picking, effects) is routed through the reload.
     void SetFreeMeshCpuData(bool enabled) { m_FreeMeshCpuData = enabled; }
     bool IsFreeMeshCpuData() const { return m_FreeMeshCpuData; }
-    // Animation LOD: distant skeletal animators refresh their pose at a reduced
-    // rate (dt is banked so time never drifts). The single biggest CPU lever for
-    // hundreds of animated entities. On by default; off = every animator full-rate.
-    void SetAnimationLODEnabled(bool enabled) { m_AnimationLODEnabled = enabled; }
-    bool IsAnimationLODEnabled() const { return m_AnimationLODEnabled; }
     // Player mode: skip GPU compute shaders (culling, HiZ, clustered lighting)
     // that use disk-loaded SPIR-V not available in built games.
     void SetPlayerMode(bool enabled) { m_PlayerMode = enabled; }
@@ -2854,6 +2849,33 @@ public:
     // written once per backend inside Update until 2026-09-14.
     void UpdateMovementDrivenAnimation(AnimatorComponent& ac, Entity entity, f32 deltaTime);
 
+    // Animation LOD. Lived inside the Vulkan Update only, so web refreshes every
+    // animator every frame. Backend-agnostic; web's call site is in web_main.
+    bool ShouldRefreshAnimator(AnimatorComponent& ac, Entity entity,
+                               f32 deltaTime, f32& outStepDt);
+
+    // Animation LOD state, OUTSIDE every backend guard.
+    //
+    // Both the flag and its accessors used to sit inside `#if !ENJIN_RENDERER_WEBGPU`,
+    // so on web the feature did not merely go unused -- it did not exist. That is
+    // why web refreshes every animator at full rate: not an unported pass, a bool
+    // the web build could not see. A distance policy and an on/off switch have
+    // nothing backend-shaped about them.
+    //
+    // Moving them out costs web nothing today (its animator tick lives in
+    // web_main.cpp and does not call this yet) and is what makes wiring it there
+    // a call site rather than a port.
+    bool m_AnimationLODEnabled = true;
+
+public:
+    // Distant skeletal animators refresh their pose at a reduced rate, with dt
+    // banked so time never drifts. The single biggest CPU lever for hundreds of
+    // animated entities. On by default; off = every animator full-rate.
+    void SetAnimationLODEnabled(bool enabled) { m_AnimationLODEnabled = enabled; }
+    bool IsAnimationLODEnabled() const { return m_AnimationLODEnabled; }
+
+private:
+
 private:
 
     // Draw call / triangle counters (current frame, accumulating)
@@ -3015,7 +3037,6 @@ private:
     // skinning independently). Editor Rendering panel checkbox toggles it at runtime.
     bool m_ComputeSkinningEnabled = true;
     bool m_FreeMeshCpuData = false;   // task #3: free CPU verts after upload (opt-in)
-    bool m_AnimationLODEnabled = true;   // distance-based animator update-rate LOD (see SetAnimationLODEnabled)
     VkCommandBuffer m_LastSkinningCmd = VK_NULL_HANDLE;  // once-per-frame guard for RunComputeSkinningPass
     u32 m_RTMode = 0;  // 0=Hybrid, 1=PathTrace
     u32 m_RTFrameCount = 0;
