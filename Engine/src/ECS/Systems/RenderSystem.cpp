@@ -6064,6 +6064,24 @@ void RenderSystem::Shutdown() {
             vkDestroyPipeline(device, m_PlatePipelineOffscreen, nullptr);
             m_PlatePipelineOffscreen = VK_NULL_HANDLE;
         }
+        // The plate's MAIN-pass pipeline and its layout. Both were created and
+        // neither was ever destroyed, anywhere -- the offscreen variant above
+        // was the only one of the three that got cleaned up, because it is also
+        // destroyed on every render-pass recreate and so had a reason to exist
+        // in someone's head. These two are exactly the pair Vulkan reported at
+        // device destruction on EVERY scene:
+        //   "VkPipelineLayout ... has not been destroyed"
+        //   "VkPipeline ... has not been destroyed"
+        // Audited the other twelve pipeline members the same way; these two were
+        // the only ones missing a destroy.
+        if (m_PlatePipeline != VK_NULL_HANDLE) {
+            vkDestroyPipeline(device, m_PlatePipeline, nullptr);
+            m_PlatePipeline = VK_NULL_HANDLE;
+        }
+        if (m_PlatePipelineLayout != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(device, m_PlatePipelineLayout, nullptr);
+            m_PlatePipelineLayout = VK_NULL_HANDLE;
+        }
         if (m_Sky2DPipelineLayout != VK_NULL_HANDLE) {
             vkDestroyPipelineLayout(device, m_Sky2DPipelineLayout, nullptr);
             m_Sky2DPipelineLayout = VK_NULL_HANDLE;

@@ -2,6 +2,7 @@
 
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Platform/Types.h"
+#include <cstdint>
 #include <unordered_map>
 
 #if !ENJIN_RENDERER_WEBGPU
@@ -101,7 +102,42 @@ public:
     usize GetVariantCount() const { return m_Cache.size(); }
 
 private:
-    std::unordered_map<MaterialSpecKey, VkPipeline, MaterialSpecKeyHash> m_Cache;
+    // THE RENDER PASS IS PART OF THE KEY.
+    //
+    // It was not, and a Vulkan pipeline is only usable in a render pass
+    // COMPATIBLE with the one it was built against -- same attachment formats,
+    // same attachment count. This engine has two that are neither: the
+    // swapchain pass is B8G8R8A8_SRGB with MRT (colour + velocity), and an
+    // offscreen target is B8G8R8A8_UNORM with one colour attachment.
+    //
+    // Keyed on material bits alone, whichever pass asked FIRST for a given
+    // material combination owned that pipeline forever, and every later draw
+    // with the same material in the other pass got it back and bound it. The
+    // editor renders the game view offscreen first, so the offscreen variant
+    // won, and the swapchain draws were the ones reported:
+    //
+    //   pAttachments[0].format (VK_FORMAT_B8G8R8A8_SRGB) !=
+    //   pAttachments[0].format (VK_FORMAT_B8G8R8A8_UNORM)
+    //   pColorAttachments[1].attachment ... first is 1, second is VK_ATTACHMENT_UNUSED
+    //
+    // It needed a scene with a material combination drawn in BOTH passes to
+    // show at all, which is why it reproduced on a 237-mesh scene and on
+    // neither of the small ones -- and why the render smoke, which runs a small
+    // scene, was never going to catch it.
+    struct VariantKey {
+        VkRenderPass renderPass = VK_NULL_HANDLE;
+        u32 bits = 0;
+        bool operator==(const VariantKey& o) const {
+            return renderPass == o.renderPass && bits == o.bits;
+        }
+    };
+    struct VariantKeyHash {
+        usize operator()(const VariantKey& k) const {
+            const usize a = static_cast<usize>(reinterpret_cast<uintptr_t>(k.renderPass));
+            return a * 1099511628211ull ^ static_cast<usize>(k.bits);
+        }
+    };
+    std::unordered_map<VariantKey, VkPipeline, VariantKeyHash> m_Cache;
 };
 
 #endif // !ENJIN_RENDERER_WEBGPU

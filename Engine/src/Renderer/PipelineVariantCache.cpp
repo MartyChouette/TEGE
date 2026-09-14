@@ -33,7 +33,8 @@ VkPipeline PipelineVariantCache::GetOrCreate(
     const VkGraphicsPipelineCreateInfo& templateCI,
     const MaterialSpecKey& key
 ) {
-    auto it = m_Cache.find(key);
+    const VariantKey cacheKey{renderPass, key.bits};
+    auto it = m_Cache.find(cacheKey);
     if (it != m_Cache.end()) return it->second;
 
     // Build specialization data from key
@@ -69,9 +70,9 @@ VkPipeline PipelineVariantCache::GetOrCreate(
         return VK_NULL_HANDLE;
     }
 
-    m_Cache[key] = pipeline;
-    ENJIN_LOG_INFO(Renderer, "PipelineVariantCache: created variant 0x%X (total: %zu)",
-                   key.bits, m_Cache.size());
+    m_Cache[cacheKey] = pipeline;
+    ENJIN_LOG_INFO(Renderer, "PipelineVariantCache: created variant 0x%X for pass %p (total: %zu)",
+                   key.bits, static_cast<const void*>(renderPass), m_Cache.size());
     return pipeline;
 }
 
