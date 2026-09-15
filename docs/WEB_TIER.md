@@ -41,7 +41,8 @@ Last verified against the tree 2026-09-15.
 | Morph targets | **Absent** | |
 | Custom shader graphs | **Absent** | |
 | Reflection systems (probes, planar, SSR) | **Absent** | Includes the water-surface reflection on `WaterVolumeComponent` and Water3D's Reflective/Refractive styles: the mirror is real geometry redrawn through the Vulkan ghost path, so a browser draws none of it. The surface itself is unaffected. |
-| Water volumes (surface, waves, foam, translucency) | Same | The surface mesh, its generated material and its opacity are backend-agnostic. Only the reflection above is missing. |
+| Water volumes (surface, waves, translucency) | Same | Verified in a browser 2026-09-15, not inferred: the surface draws, the wave displacement runs (`FLAG_WATER_SURFACE`) and an authored opacity blends over the bed. Until that capture the surface did not exist on web at all. |
+| Water shore foam | **Absent** | `triangle.frag` mentions foam fourteen times and the WGSL not once. The vertex colour that carries the shoreline distance IS written on both paths, so the data is there and only the shader half is missing. A web lake has a hard edge; do not author a scene whose read depends on the foam line. |
 | Frustum culling | Same | CPU, shared with desktop since 2026-09-14. Desktop ALSO has GPU culling (compute + indirect draw) for very large object counts; web has the test, not the dispatch. |
 | Mesh LOD | Same | Shared since 2026-09-14. Web previously used plain camera distance and had neither `useScreenSize`, `lodBias` nor `forceLowestLOD`. |
 | Animation LOD | Same | Shared since 2026-09-14. Web previously refreshed every animator every frame; the flag was declared inside `#if !ENJIN_RENDERER_WEBGPU` and did not exist in a web build. |

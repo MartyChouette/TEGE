@@ -22949,11 +22949,23 @@ void RenderSystem::EnsureWaterMeshes() {
         }  // end else (subdivided-plane grid path)
 
         // Replace the mesh (rebuild-safe: retire old GPU buffers first on a regen).
-        if (regen && static_cast<usize>(EntityIndex(entity)) < m_EntityRenderData.size())
+        //
+        // The braces are load-bearing. #if !ENJIN_RENDERER_WEBGPU deletes the ONLY
+        // statement in this if, so on web the unbraced if silently adopted the mesh
+        // assignment below as its body: the surface mesh was then added only when
+        // `regen` was already true, which on a first pass it never is. Every water
+        // volume in a browser got a material and no mesh, EnsureWaterMeshes never
+        // reached its early-out (which tests for the MeshComponent), and it rebuilt
+        // the same absent surface several times a frame, forever. A lake rendered
+        // as nothing at all while the ground and the island beneath it drew fine,
+        // so it read as an unimplemented feature rather than a broken one.
+        // Clang says -Wdangling-else here and only in the web build.
+        if (regen && static_cast<usize>(EntityIndex(entity)) < m_EntityRenderData.size()) {
             #if !ENJIN_RENDERER_WEBGPU
             // Desktop-only buffer lifetime; the web path recreates lazily.
             RetireEntityBuffers(m_EntityRenderData[static_cast<usize>(EntityIndex(entity))]);
             #endif
+        }
         if (m_World->HasComponent<MeshComponent>(entity))
             *m_World->GetComponent<MeshComponent>(entity) = std::move(mesh);
         else

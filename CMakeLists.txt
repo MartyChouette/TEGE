@@ -116,6 +116,14 @@ endif()
 # Platform detection
 if(ENJIN_PLATFORM_WEB)
     message(STATUS "Building for Web (Emscripten + WebGPU)")
+    # A dangling else is an ERROR on web specifically, because this is the build
+    # where #if deletes statements out from under an unbraced if. EnsureWaterMeshes
+    # had `if (cond)` whose only body sat inside #if !ENJIN_RENDERER_WEBGPU, so on
+    # web it silently adopted the NEXT statement -- the water surface mesh add --
+    # and every lake in a browser rendered as nothing at all, while the desktop
+    # build stayed correct and warning-free. Clang did warn here, and a warning in
+    # a build whose log nobody reads is not a guard (2026-09-15).
+    add_compile_options(-Werror=dangling-else)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
     message(STATUS "Building for Windows")
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")

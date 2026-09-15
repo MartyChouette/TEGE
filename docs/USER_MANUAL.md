@@ -2285,8 +2285,9 @@ broken when it is working as designed:
   surface you would see the mirrored copies directly as objects under the world,
   so the pass is skipped there.
 
-Reflections are a desktop feature. On web the surface still tints, waves, foams
-and goes translucent, but nothing is mirrored into it -- see `docs/WEB_TIER.md`.
+Reflection and shore foam are desktop features. On web the surface tints, waves
+and goes translucent, but nothing is mirrored into it and the shoreline has no
+foam, so a web lake meets the bank on a hard edge -- see `docs/WEB_TIER.md`.
 
 ### Post-Processing
 
