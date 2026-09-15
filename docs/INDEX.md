@@ -9,6 +9,7 @@
 | [API Reference](API_REFERENCE.md) | C++ reference |
 | [Architecture](ARCHITECTURE.md) | How the engine is put together |
 | [Build Guide](BUILD.md) | Platform setup |
+| [Web Tier](WEB_TIER.md) | What a browser build has, substitutes, and does not have |
 | [MCP Server](MCP.md) | Optional localhost agent access |
 | [FAQ](FAQ.md) | Common questions |
 | [Progress](PROGRESS.md) | Where the engine is on the way to 1.0 |

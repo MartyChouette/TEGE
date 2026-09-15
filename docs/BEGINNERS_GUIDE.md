@@ -24,13 +24,13 @@ cd TEGE
 # Windows (Visual Studio)
 cd build && cmake .. && cmake --build . --config Release
 
-# Linux / Mac
+# Linux (Mac is untested, see docs/BUILD.md)
 cd build && cmake .. && make -j$(nproc)
 ```
 
 Run the editor:
 - Windows: `build/bin/Release/EnjinEditor.exe`
-- Linux/Mac: `build/bin/EnjinEditor`
+- Linux: `build/bin/EnjinEditor`
 
 > After adding new source files, re-run `cmake ..` in `build/` — the build globs
 > sources at configure time. If you touched shaders, see §11.

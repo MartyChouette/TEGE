@@ -98,6 +98,14 @@ sudo pacman -S \
 
 ### macOS
 
+> **macOS is untested.** Windows, Linux and web are the platforms CI builds and
+> runs on every change; there is no macOS job, and there is no Metal backend in
+> the tree (`RenderBackend.h` carries a `BuildTarget::Metal` enum value and a
+> capability flag, and that is all). CMake has a Darwin branch and the steps
+> below are the ones that should work through MoltenVK, but nobody is checking
+> that they still do. Treat a macOS build as a port in progress, not a
+> supported target.
+
 ```bash
 brew install cmake vulkan-headers vulkan-loader glfw glslang
 ```

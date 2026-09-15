@@ -75,7 +75,7 @@ enjin/
 │   │   ├── Audio/          # AudioEngine (miniaudio), AudioBus mixer, Steam Audio HRTF
 │   │   ├── Debug/          # Profiler, ScopeTimer, FrameData tracking
 │   │   ├── ECS/            # Entity-Component-System
-│   │   │   ├── Components/ # 70+ component types (incl. joints, ragdoll, behavior trees, dialogue box)
+│   │   │   ├── Components/ # 170+ component types (incl. joints, ragdoll, behavior trees, dialogue box)
 │   │   │   │   ├── Controllers/  # 5 character controller types
 │   │   │   │   └── ...
 │   │   │   └── Systems/    # RenderSystem, ControllerSystem
@@ -237,7 +237,7 @@ Alternative render path: geometry-only pass writes triangle ID + instance ID to 
 ### CPU-Side Optimizations
 - **Per-frame linear allocator:** `FrameAllocator` (8 MB bump allocator reset each frame) with `FrameArray<T>` container, replaces hot-path `std::vector` allocations (`Core/include/Enjin/Memory/FrameAllocator.h`)
 - **64-bit material sort key:** `[8:pipeline][16:material][24:texture][16:depth]` layout for cache-friendly single-comparison sorting
-- **MaterialGPU:** 112-byte GPU-aligned struct with transmission/IOR/thickness/SSS fields and bindless texture indices (uploaded via batched Material SSBO at binding 2; size guarded by static_assert in TestMaterial)
+- **MaterialGPU:** 144-byte GPU-aligned struct with transmission/IOR/thickness/SSS fields, a scrolling-reflection row, a UV-animation row (scroll/flipbook) and bindless texture indices (uploaded via batched Material SSBO at binding 2; size guarded by static_assert in TestMaterial)
 - **LOD hysteresis:** Directional dead-zones prevent LOD ping-ponging, with optional screen-space projected size metric
 - **Binary search keyframes:** `Animation.cpp::SampleKeyframes()` uses `std::upper_bound` for O(log N) lookups instead of O(N) linear scan
 - **Integer sprite sort keys:** `SpriteBatchRenderer` uses pre-hashed `usize` keys instead of `std::string` comparison in sort comparator
@@ -318,7 +318,7 @@ Alternative render path: geometry-only pass writes triangle ID + instance ID to 
 - `SceneManager` - Project manifests, scene lists, runtime loading, transitions
 
 **Features**:
-- Full serialization of all 70+ component types (including joints, ragdoll, and networking)
+- Full serialization of component types (including joints, ragdoll, and networking). 179 are registered in the serializer registry
 - Project manifest format (.enjinproject)
 - Scene build indices and start scene designation
 - Scene transitions (Instant, Fade Black, Fade White, Cross Fade)

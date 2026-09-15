@@ -18,7 +18,7 @@ This document is the contract. For every capability it says one of three things:
 **Absent is the row that matters.** A maker who knows a feature is absent designs
 around it in ten seconds. A maker who finds out at the end has built on sand.
 
-Last verified against the tree 2026-09-14.
+Last verified against the tree 2026-09-15.
 
 ---
 
@@ -40,7 +40,8 @@ Last verified against the tree 2026-09-14.
 | Terrain auto-mesh | **Absent** | Author the mesh and ship it. |
 | Morph targets | **Absent** | |
 | Custom shader graphs | **Absent** | |
-| Reflection systems (probes, planar, SSR) | **Absent** | |
+| Reflection systems (probes, planar, SSR) | **Absent** | Includes the water-surface reflection on `WaterVolumeComponent` and Water3D's Reflective/Refractive styles: the mirror is real geometry redrawn through the Vulkan ghost path, so a browser draws none of it. The surface itself is unaffected. |
+| Water volumes (surface, waves, foam, translucency) | Same | The surface mesh, its generated material and its opacity are backend-agnostic. Only the reflection above is missing. |
 | Frustum culling | Same | CPU, shared with desktop since 2026-09-14. Desktop ALSO has GPU culling (compute + indirect draw) for very large object counts; web has the test, not the dispatch. |
 | Mesh LOD | Same | Shared since 2026-09-14. Web previously used plain camera distance and had neither `useScreenSize`, `lodBias` nor `forceLowestLOD`. |
 | Animation LOD | Same | Shared since 2026-09-14. Web previously refreshed every animator every frame; the flag was declared inside `#if !ENJIN_RENDERER_WEBGPU` and did not exist in a web build. |

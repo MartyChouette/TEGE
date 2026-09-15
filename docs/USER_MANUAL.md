@@ -149,7 +149,7 @@ The Enjin editor is a panel-based workspace. All panels can be toggled from the 
 | Panel | Description |
 |-------|-------------|
 | **Hierarchy** | Entity tree view. Right-click to add, delete, or duplicate entities. Supports drag-and-drop reparenting. |
-| **Inspector** | Component editor for the selected entity. Displays and edits all attached components (50+ component types). Includes an "Add Component" button. |
+| **Inspector** | Component editor for the selected entity. Displays and edits all attached components (170+ component types). Includes an "Add Component" button. |
 | **Console** | Log output for engine messages, warnings, and errors. |
 | **Asset Browser** | Browse and manage project files with grid/list view, thumbnails, search, and drag-and-drop. |
 | **Settings** | Unified settings window with 3 tabs: **System** (camera, performance, IDE, accessibility, fonts), **Project** (project mode, window icon, physics, frame rate, audio, collision groups, build config), **Scene** (skybox, shadows, lighting, cel shading, display, ray tracing, light probes, post processing, retro effects, environment). Opened via View > Settings. |
@@ -2253,6 +2253,40 @@ Per-zone weather overrides are possible via `WeatherZoneComponent` on entities.
 - **Shore foam** -- foam effect at water edges.
 - **Freeze system** -- water can freeze over time.
 - **Ocean mode** -- extended water plane for open-water scenes.
+
+#### Water Volume
+
+**Entity > Effects > Water Volume** creates a lake, pond or pool. The entity's
+own Y position is the water **surface**; `halfExtents` gives the horizontal area
+and, in Y, how far the water reaches **down** to the bed. The engine generates
+the surface mesh and its material for you, so a water volume needs no mesh or
+material of its own.
+
+| Setting | What it does |
+|---------|--------------|
+| **Half Extents** | Horizontal size, and depth below the surface. Changing it rebuilds the mesh. |
+| **Priority** | Which volume wins where two overlap. Higher takes over. |
+| **Water Type** | Lake, Ocean, River or Pond. A preset for metallic and roughness. |
+| **Water Color** | Tint of the surface. |
+| **Opacity** | How much you can see THROUGH the water. At 1 the surface is solid and the bed, anything submerged, and any reflection are all hidden behind it. |
+| **Reflection** | Mirrors the scene above the water into the surface. 0 turns the pass off, which is the right choice for muddy or very deep water. |
+| **Wave Speed / Height** | Surface animation. |
+| **Shore Foam** | Foam at the edges: width, intensity, noise scale and a shallow-water tint. |
+| **Buoyancy** | Floats dynamic rigidbodies that fall in. Strength above 1 floats, 1 is neutral; drag damps bobbing and drift. |
+| **Freeze Settings** | Ice colour and opacity, freeze and thaw rates. Driven at runtime by temperature zones. |
+
+Two things about **Reflection** are worth knowing, because both make it look
+broken when it is working as designed:
+
+- It needs **Opacity below 1**. The reflection is real geometry drawn upside
+  down beneath the surface, not a screen-space trace, so a solid surface hides
+  it completely.
+- It only draws from a camera **above** the water line. From at or below the
+  surface you would see the mirrored copies directly as objects under the world,
+  so the pass is skipped there.
+
+Reflections are a desktop feature. On web the surface still tints, waves, foams
+and goes translucent, but nothing is mirrored into it -- see `docs/WEB_TIER.md`.
 
 ### Post-Processing
 

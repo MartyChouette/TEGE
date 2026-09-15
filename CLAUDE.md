@@ -302,7 +302,7 @@ cd web-demo && python serve.py  # http://localhost:9090
 - **Tests are gated behind `ENJIN_BUILD_TESTS` (default OFF).** If `ctest` runs but counts look stale, the cache lost the flag and you're running frozen binaries: `cmake -DENJIN_BUILD_TESTS=ON ..`
 - **Run all:** `cd build && ctest --output-on-failure`
 - **Run one suite:** `cd build && ctest -R TestPhysics --output-on-failure`
-- **233 CTest targets, 3296 test cases** across 22 subdirectories (counted 2026-09-13: `ctest -N` for targets, `ENJIN_TEST(` occurrences for cases). This line has been wrong by a factor of three before -- if you are about to trust it, count again rather than quote it.
+- **243 CTest targets, 3343 test cases** across 22 subdirectories (counted 2026-09-14: `ctest -N` for targets, `ENJIN_TEST(` occurrences for cases). This line has been wrong by a factor of three before, and it drifted by ten targets in a single day between the last two counts -- if you are about to trust it, count again rather than quote it.
 - **4 tests require environment:** TestAudio, TestAudioTypes, TestAssetPack, TestAssetLoaders (may show "Not Run")
 
 ## Code Conventions
