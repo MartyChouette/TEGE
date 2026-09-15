@@ -122,6 +122,22 @@ A symptom shows up in a project, so the project is where you look, and project d
 - **The palette texture is 256 x `kMaxPaletteSlots` (16), one palette per ROW.** `PALETTE_SLOT_COUNT` in triangle.frag must equal `kMaxPaletteSlots` in `PaletteCycle.h` — one number in two languages, and a mismatch samples a neighbouring palette rather than failing
 - **Palette cycling moves in WHOLE STEPS, so two captures inside one step are legitimately byte-identical.** At 6 entries/sec a step is 167 ms. A "nothing is animating" conclusion drawn from frames 40 vs 95 is a measurement error, not a bug — compare across a step
 - **Descriptor set binding 2** is a plain `STORAGE_BUFFER` (adr-0003) — the material SSBO is a runtime array indexed per draw by `firstInstance` → `gl_InstanceIndex` → `v_MaterialIndex`. ALL set-0 `vkCmdBindDescriptorSets` calls pass `dynamicOffsetCount=0, nullptr`; direct entity draws MUST pass `GetMaterialIndex(entity)` as the draw's `firstInstance`. Set 0 uses `UPDATE_AFTER_BIND` on bindings 2-23 (pool + layout flags must stay in sync); this is what legalizes the per-entity bone/morph/sprite descriptor writes mid-recording
+- **The web `flags` word is NOT the Vulkan `flags` word, and the overlap is the trap.**
+  Bits 3 (skinned), 4 (wind sway), 5 (water surface), 11 (ocean), 21 (affine), 22
+  (vertex snap) and 23 (stipple) mean the same thing on both. Bits 6 and 7 do not:
+  Vulkan has RAIN_RIPPLES and WATER_SHORE there, web has SDF text and
+  palette-indexed. Copying a desktop `pushConstants.flags |= (1 << 7)` into the web
+  object fill turns a lake into palette-indexed text, and it compiles. The two are
+  filled in different places -- `pushConstants` in the Vulkan draw builders,
+  `WebObjectDataUBO::flags` around `RenderSystem.cpp:4149` -- so nothing puts the two
+  lists side by side. **Web still has free bits (9-20); Vulkan has none**, which is why
+  the encodings diverged in the first place.
+- **A web feature can be fully written and simply never switched on.** PBR_WGSL has
+  carried the water wave displacement for months behind `object.flags & 32`, and no
+  code on the web path ever set bit 5, so every browser lake was a static slab while
+  the shader that moves it sat right there. Reading the WGSL proves the capability
+  exists, never that it runs. The cheap check is two captures at different frame
+  counts: identical bytes over hundreds of frames means nothing is animating (2026-09-15).
 - **WGSL is compiled by the BROWSER, so a green web build proves nothing about it.** Run `cd tools && npm install && node check_wgsl.mjs` after ANY edit to `WebShaderData.h` — it compiles all 16 shaders through Dawn, the same compiler Chrome uses, and reports errors with line numbers. **Ask the tool for that number, do not count by hand:** this line said 12, was "corrected" to 13 on 2026-09-14 by grepping the header, and the tool says 16. The grep was a proxy and the proxy was wrong, which is the same defect the line it replaced had. Without it a syntax or type error reaches a player as a black canvas. CI runs it in the web job. (Headless Chrome on this machine exposes `navigator.gpu` but returns no adapter, so a browser cannot be used for this)
 - **WGSL rule:** `textureSample` must be called from uniform control flow — never inside `if` branches that depend on per-vertex/per-fragment data. A branch on a UNIFORM-buffer value is fine, and the implicit form compiles there — measured against Dawn, after a comment in WebShaderData.h claimed otherwise for years
 - **Render pass formats:** Swapchain = `B8G8R8A8_SRGB` with MRT. Offscreen `RenderTarget`s = `B8G8R8A8_UNORM`, single color + depth, `colorAttachmentCount=1`, `SAMPLE_COUNT_1_BIT` (no MSAA)
@@ -302,7 +318,7 @@ cd web-demo && python serve.py  # http://localhost:9090
 - **Tests are gated behind `ENJIN_BUILD_TESTS` (default OFF).** If `ctest` runs but counts look stale, the cache lost the flag and you're running frozen binaries: `cmake -DENJIN_BUILD_TESTS=ON ..`
 - **Run all:** `cd build && ctest --output-on-failure`
 - **Run one suite:** `cd build && ctest -R TestPhysics --output-on-failure`
-- **243 CTest targets, 3343 test cases** across 22 subdirectories (counted 2026-09-14: `ctest -N` for targets, `ENJIN_TEST(` occurrences for cases). This line has been wrong by a factor of three before, and it drifted by ten targets in a single day between the last two counts -- if you are about to trust it, count again rather than quote it.
+- **243 CTest targets, 3347 test cases** across 22 subdirectories (counted 2026-09-15: `ctest -N` for targets, `ENJIN_TEST(` occurrences for cases). This line has been wrong by a factor of three before, and it drifted by ten targets in a single day between two of the counts -- if you are about to trust it, count again rather than quote it.
 - **4 tests require environment:** TestAudio, TestAudioTypes, TestAssetPack, TestAssetLoaders (may show "Not Run")
 
 ## Code Conventions

@@ -4186,6 +4186,24 @@ void RenderSystem::Update(f32 deltaTime) {
                     obj.flags |= ((snapRes < 1 ? 1 : (snapRes > 31 ? 31 : snapRes)) << 24);
                 }
             }
+            // Water surface (bit 5): the ONLY thing the web wave code was missing.
+            // PBR_WGSL has carried the Gerstner-lite displacement all along and reads
+            // `object.flags & 32` to decide whether to run it -- and nothing on this
+            // path ever set that bit, so a browser drew every lake and every Water3D
+            // plane as a static slab. Measured 2026-09-15: web frames 60 and 400 were
+            // byte-identical over the same scene where desktop frames differ.
+            //
+            // Bit 5 is the same number on both backends. Bits 6 and 7 are NOT -- they
+            // are rain ripples and water shore on Vulkan, and SDF text and
+            // palette-indexed here -- so do not reach for the desktop constants when
+            // adding the rest of the water flags to web.
+            if (auto* wv = m_World->GetComponent<WaterVolumeComponent>(entity)) {
+                obj.flags |= (1 << 5);                       // FLAG_WATER_SURFACE
+                obj.parallaxScale = wv->freezeProgress;      // repurposed for water, as on desktop
+                if (wv->waterType == WaterType::Ocean) obj.flags |= (1 << 11);  // adds swell
+            } else if (m_World->HasComponent<Water3DComponent>(entity)) {
+                obj.flags |= (1 << 5);
+            }
             std::memcpy(objDataBuf.data() + offset, &obj, sizeof(obj));
 
             // The batching key. An entity that opts out of instancing gets a key
