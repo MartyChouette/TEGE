@@ -1,0 +1,718 @@
+{
+  "version": "1.0",
+  "formatVersion": 1,
+  "entities": [
+    {
+      "id": 1,
+      "name": {
+        "name": "Camera"
+      },
+      "transform": {
+        "position": [
+          0,
+          0,
+          10
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "camera": {
+        "projectionType": 1,
+        "fieldOfView": 60,
+        "nearPlane": 0.1,
+        "farPlane": 100,
+        "isActive": true,
+        "priority": 0,
+        "clearColor": true,
+        "clearDepth": true,
+        "backgroundColor": [
+          0.13,
+          0.14,
+          0.18
+        ],
+        "orthoSize": 9
+      }
+    },
+    {
+      "id": 2,
+      "name": {
+        "name": "A_BottomLeft"
+      },
+      "transform": {
+        "position": [
+          -7.5,
+          4.0,
+          0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.300706,
+          0.953717
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "sprite2D": {
+        "texturePath": "",
+        "size": [
+          2.2,
+          4.0
+        ],
+        "pivot": [
+          0.0,
+          0.0
+        ],
+        "tint": [
+          0.45,
+          0.85,
+          0.55
+        ],
+        "alpha": 1.0,
+        "orderInLayer": 2
+      }
+    },
+    {
+      "id": 3,
+      "name": {
+        "name": "A_BottomLeft_origin"
+      },
+      "transform": {
+        "position": [
+          -7.5,
+          4.0,
+          0.1
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "sprite2D": {
+        "texturePath": "",
+        "size": [
+          0.4,
+          0.4
+        ],
+        "pivot": [
+          0.5,
+          0.5
+        ],
+        "tint": [
+          1,
+          1,
+          1
+        ],
+        "alpha": 1.0,
+        "orderInLayer": 5
+      }
+    },
+    {
+      "id": 4,
+      "name": {
+        "name": "A_Centre"
+      },
+      "transform": {
+        "position": [
+          -1.9,
+          4.0,
+          0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.300706,
+          0.953717
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "sprite2D": {
+        "texturePath": "",
+        "size": [
+          2.2,
+          4.0
+        ],
+        "pivot": [
+          0.5,
+          0.5
+        ],
+        "tint": [
+          0.95,
+          0.45,
+          0.35
+        ],
+        "alpha": 1.0,
+        "orderInLayer": 2
+      }
+    },
+    {
+      "id": 5,
+      "name": {
+        "name": "A_Centre_origin"
+      },
+      "transform": {
+        "position": [
+          -1.9,
+          4.0,
+          0.1
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "sprite2D": {
+        "texturePath": "",
+        "size": [
+          0.4,
+          0.4
+        ],
+        "pivot": [
+          0.5,
+          0.5
+        ],
+        "tint": [
+          1,
+          1,
+          1
+        ],
+        "alpha": 1.0,
+        "orderInLayer": 5
+      }
+    },
+    {
+      "id": 6,
+      "name": {
+        "name": "A_TopRight"
+      },
+      "transform": {
+        "position": [
+          3.7,
+          4.0,
+          0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.300706,
+          0.953717
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "sprite2D": {
+        "texturePath": "",
+        "size": [
+          2.2,
+          4.0
+        ],
+        "pivot": [
+          1.0,
+          1.0
+        ],
+        "tint": [
+          0.45,
+          0.65,
+          0.95
+        ],
+        "alpha": 1.0,
+        "orderInLayer": 2
+      }
+    },
+    {
+      "id": 7,
+      "name": {
+        "name": "A_TopRight_origin"
+      },
+      "transform": {
+        "position": [
+          3.7,
+          4.0,
+          0.1
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "sprite2D": {
+        "texturePath": "",
+        "size": [
+          0.4,
+          0.4
+        ],
+        "pivot": [
+          0.5,
+          0.5
+        ],
+        "tint": [
+          1,
+          1,
+          1
+        ],
+        "alpha": 1.0,
+        "orderInLayer": 5
+      }
+    },
+    {
+      "id": 8,
+      "name": {
+        "name": "B_rot0"
+      },
+      "transform": {
+        "position": [
+          -8.4,
+          -4.0,
+          0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "sprite2D": {
+        "texturePath": "",
+        "size": [
+          2.2,
+          4.0
+        ],
+        "pivot": [
+          0.5,
+          0.5
+        ],
+        "tint": [
+          0.92,
+          0.78,
+          0.35
+        ],
+        "alpha": 1.0,
+        "orderInLayer": 2
+      }
+    },
+    {
+      "id": 9,
+      "name": {
+        "name": "B_rot0_origin"
+      },
+      "transform": {
+        "position": [
+          -8.4,
+          -4.0,
+          0.1
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "sprite2D": {
+        "texturePath": "",
+        "size": [
+          0.3,
+          0.3
+        ],
+        "pivot": [
+          0.5,
+          0.5
+        ],
+        "tint": [
+          1,
+          1,
+          1
+        ],
+        "alpha": 1.0,
+        "orderInLayer": 5
+      }
+    },
+    {
+      "id": 10,
+      "name": {
+        "name": "B_rot30"
+      },
+      "transform": {
+        "position": [
+          -4.2,
+          -4.0,
+          0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.258819,
+          0.965926
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "sprite2D": {
+        "texturePath": "",
+        "size": [
+          2.2,
+          4.0
+        ],
+        "pivot": [
+          0.5,
+          0.5
+        ],
+        "tint": [
+          0.92,
+          0.78,
+          0.35
+        ],
+        "alpha": 1.0,
+        "orderInLayer": 2
+      }
+    },
+    {
+      "id": 11,
+      "name": {
+        "name": "B_rot30_origin"
+      },
+      "transform": {
+        "position": [
+          -4.2,
+          -4.0,
+          0.1
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "sprite2D": {
+        "texturePath": "",
+        "size": [
+          0.3,
+          0.3
+        ],
+        "pivot": [
+          0.5,
+          0.5
+        ],
+        "tint": [
+          1,
+          1,
+          1
+        ],
+        "alpha": 1.0,
+        "orderInLayer": 5
+      }
+    },
+    {
+      "id": 12,
+      "name": {
+        "name": "B_rot45"
+      },
+      "transform": {
+        "position": [
+          0.0,
+          -4.0,
+          0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.382683,
+          0.92388
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "sprite2D": {
+        "texturePath": "",
+        "size": [
+          2.2,
+          4.0
+        ],
+        "pivot": [
+          0.5,
+          0.5
+        ],
+        "tint": [
+          0.92,
+          0.78,
+          0.35
+        ],
+        "alpha": 1.0,
+        "orderInLayer": 2
+      }
+    },
+    {
+      "id": 13,
+      "name": {
+        "name": "B_rot45_origin"
+      },
+      "transform": {
+        "position": [
+          0.0,
+          -4.0,
+          0.1
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "sprite2D": {
+        "texturePath": "",
+        "size": [
+          0.3,
+          0.3
+        ],
+        "pivot": [
+          0.5,
+          0.5
+        ],
+        "tint": [
+          1,
+          1,
+          1
+        ],
+        "alpha": 1.0,
+        "orderInLayer": 5
+      }
+    },
+    {
+      "id": 14,
+      "name": {
+        "name": "B_rot60"
+      },
+      "transform": {
+        "position": [
+          4.2,
+          -4.0,
+          0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.5,
+          0.866025
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "sprite2D": {
+        "texturePath": "",
+        "size": [
+          2.2,
+          4.0
+        ],
+        "pivot": [
+          0.5,
+          0.5
+        ],
+        "tint": [
+          0.92,
+          0.78,
+          0.35
+        ],
+        "alpha": 1.0,
+        "orderInLayer": 2
+      }
+    },
+    {
+      "id": 15,
+      "name": {
+        "name": "B_rot60_origin"
+      },
+      "transform": {
+        "position": [
+          4.2,
+          -4.0,
+          0.1
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "sprite2D": {
+        "texturePath": "",
+        "size": [
+          0.3,
+          0.3
+        ],
+        "pivot": [
+          0.5,
+          0.5
+        ],
+        "tint": [
+          1,
+          1,
+          1
+        ],
+        "alpha": 1.0,
+        "orderInLayer": 5
+      }
+    },
+    {
+      "id": 16,
+      "name": {
+        "name": "B_rot90"
+      },
+      "transform": {
+        "position": [
+          8.4,
+          -4.0,
+          0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.707107,
+          0.707107
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "sprite2D": {
+        "texturePath": "",
+        "size": [
+          2.2,
+          4.0
+        ],
+        "pivot": [
+          0.5,
+          0.5
+        ],
+        "tint": [
+          0.92,
+          0.78,
+          0.35
+        ],
+        "alpha": 1.0,
+        "orderInLayer": 2
+      }
+    },
+    {
+      "id": 17,
+      "name": {
+        "name": "B_rot90_origin"
+      },
+      "transform": {
+        "position": [
+          8.4,
+          -4.0,
+          0.1
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "sprite2D": {
+        "texturePath": "",
+        "size": [
+          0.3,
+          0.3
+        ],
+        "pivot": [
+          0.5,
+          0.5
+        ],
+        "tint": [
+          1,
+          1,
+          1
+        ],
+        "alpha": 1.0,
+        "orderInLayer": 5
+      }
+    }
+  ]
+}

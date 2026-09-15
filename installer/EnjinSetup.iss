@@ -92,7 +92,6 @@ Source: "{#SourceRoot}\docs\ARCHITECTURE.md";   DestDir: "{app}\docs"; Component
 Source: "{#SourceRoot}\docs\BUILD.md";           DestDir: "{app}\docs"; Components: docs; Flags: ignoreversion
 Source: "{#SourceRoot}\docs\SCRIPTING_API.md";   DestDir: "{app}\docs"; Components: docs; Flags: ignoreversion skipifsourcedoesntexist
 Source: "{#SourceRoot}\docs\ROADMAP.md";         DestDir: "{app}\docs"; Components: docs; Flags: ignoreversion skipifsourcedoesntexist
-Source: "{#SourceRoot}\docs\manual.html";        DestDir: "{app}\docs"; Components: docs; Flags: ignoreversion skipifsourcedoesntexist
 
 ; ============================================================
 ; Shortcuts

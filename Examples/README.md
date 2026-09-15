@@ -39,6 +39,11 @@ Output lands in `build/bin/Examples/`.
 
 ## Scene examples (no build — open in the editor)
 
+- **SpritePivot** — 2D sprite `pivot` and the rotation of a non-square
+  sprite, laid out so a wrong answer is obvious rather than subtle. Every
+  sprite carries a marker at its own origin. Open
+  `SpritePivot/SpritePivot.enjinproject`. See `SpritePivot/README.md`.
+
 The engine has several water systems; each has its own example project:
 
 - **WaterVolume** — the full 3D water: Lake / Ocean / River / Pond presets with
