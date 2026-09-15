@@ -1,3 +1,4 @@
+#include <vector>
 #include <unordered_set>
 #include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/ECS/Components/GeneratedGeometry.h"
@@ -10467,36 +10468,74 @@ void SceneSerializer::DeserializeEntities(const json& sceneJson, Deserialization
                     if (result.warnings.size() >= kMaxLoadWarnings) break;
 
                     const json& v = it.value();
-                    json altered;
-                    if (v.is_boolean())            altered = !v.get<bool>();
-                    // Integers flip between 0 and 1 rather than taking a jump.
+
+                    // SEVERAL probe values, not one.
                     //
-                    // Adding a constant pushes an ENUM out of its valid range,
-                    // and a deserializer that range-checks then ignores the
-                    // probe and looks like it ignores the field. That fired on
-                    // handIK's own `mode` the first time this ran: a real,
-                    // read, range-checked field reported as unknown. Staying
-                    // inside the range keeps the probe honest.
-                    else if (v.is_number_integer()) altered = (v.get<long long>() == 0) ? 1 : 0;
-                    else if (v.is_number())         altered = (v.get<double>() == 0.0) ? 1.0 : 0.0;
-                    else if (v.is_string())         altered = v.get<std::string>() + "_x";
-                    else continue;                  // array, object, null: not perturbable
+                    // The probe decides a field was read by changing it and
+                    // seeing the component change. One candidate cannot tell
+                    // "the deserializer ignores this key" apart from "the
+                    // deserializer read it and REJECTED the probe", and a
+                    // rejected probe leaves the component identical -- which
+                    // reads as ignored.
+                    //
+                    // The previous version flipped integers between 0 and 1 to
+                    // stay inside enum ranges. That still fails any field whose
+                    // valid range starts above 1: `pomMaxSteps` accepts 1..256
+                    // and `ditherGradientBands` accepts 2..8, so probing with 0
+                    // is refused and all 62 of Playground's materials reported
+                    // two fields as unknown that the serializer reads correctly
+                    // twenty lines apart.
+                    //
+                    // It is compounded by components serializing only what
+                    // DIFFERS from the default: a field authored AT its default
+                    // is absent from both sides of the comparison, so the probe
+                    // is the only thing that can see it at all.
+                    //
+                    // So offer a spread and require ALL of them to be ignored
+                    // before saying anything. A deserializer that range-checks
+                    // will accept at least one; only a key nothing reads
+                    // refuses every one. Cost is a few more round trips on a
+                    // path that is already bounded by kMaxLoadWarnings.
+                    std::vector<json> candidates;
+                    if (v.is_boolean()) {
+                        candidates.push_back(!v.get<bool>());
+                    } else if (v.is_number_integer()) {
+                        const long long n = v.get<long long>();
+                        for (long long c : { 1ll, 2ll, 0ll, n + 1, n - 1 }) {
+                            if (c != n) candidates.push_back(c);
+                        }
+                    } else if (v.is_number()) {
+                        const double n = v.get<double>();
+                        for (double c : { 1.0, 0.5, 0.0, n + 1.0 }) {
+                            if (c != n) candidates.push_back(c);
+                        }
+                    } else if (v.is_string()) {
+                        candidates.push_back(v.get<std::string>() + "_x");
+                        candidates.push_back(std::string("x"));
+                    } else {
+                        continue;                   // array, object, null: not perturbable
+                    }
 
-                    json probe = componentJson;
-                    probe[it.key()] = altered;
+                    bool wasRead = false;
+                    for (const json& altered : candidates) {
+                        json probe = componentJson;
+                        probe[it.key()] = altered;
 
-                    reg.rem(m_World, entity);
-                    reg.de(m_World, entity, probe);
-                    const json probed = reg.has(m_World, entity)
-                        ? reg.ser(m_World, entity) : json::object();
+                        reg.rem(m_World, entity);
+                        reg.de(m_World, entity, probe);
+                        const json probed = reg.has(m_World, entity)
+                            ? reg.ser(m_World, entity) : json::object();
 
-                    // Put the component back the way the scene asked for it,
-                    // whatever the verdict. A diagnostic that changes what loads
-                    // would be worse than the bug it reports.
-                    reg.rem(m_World, entity);
-                    reg.de(m_World, entity, componentJson);
+                        // Put the component back the way the scene asked for it,
+                        // whatever the verdict. A diagnostic that changes what
+                        // loads would be worse than the bug it reports.
+                        reg.rem(m_World, entity);
+                        reg.de(m_World, entity, componentJson);
 
-                    if (probed != loaded) continue;   // the value was read
+                        if (probed != loaded) { wasRead = true; break; }
+                    }
+
+                    if (wasRead) continue;
 
                     result.warnings.push_back(
                         "Component '" + std::string(reg.key) + "' has no field '" + it.key() +
