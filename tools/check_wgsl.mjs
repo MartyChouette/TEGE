@@ -41,23 +41,80 @@ const sourcePaths = process.argv.length > 2
 // string. The delimiter is usually empty but not always (the particle and
 // vegetation systems use R"WGSL(...)WGSL"), so it is captured and used to find
 // the matching terminator.
-function extractShaders(source) {
+function extractShaders(source, macros = {}) {
   const out = [];
-  const decl = /static\s+const\s+char\*\s+(\w+)\s*=\s*R"(\w*)\(/g;
+  const decl = /static\s+const\s+char\*\s+(\w+)\s*=\s*/g;
   let m;
   while ((m = decl.exec(source)) !== null) {
     const name = m[1];
-    const term = ')' + m[2] + '"';
-    const start = m.index + m[0].length;
-    const end = source.indexOf(term, start);
-    if (end === -1) {
-      out.push({ name, code: null, error: 'unterminated raw string' });
-      continue;
+    let i = m.index + m[0].length;
+    let code = '';
+    let bad = null;
+    // A shader initialiser is one or more adjacent raw strings, optionally with
+    // a macro spliced between them -- ENJIN_WEB_OBJECTDATA_WGSL, which carries
+    // the ObjectData declaration generated from WebObjectDataLayout.h so the
+    // shader and the C++ struct cannot drift. Consume the whole initialiser up
+    // to its `;`, not just the first chunk.
+    for (;;) {
+      // Skip whitespace AND the C++ comments that explain the splice.
+      for (;;) {
+        while (i < source.length && /\s/.test(source[i])) i++;
+        if (source[i] === '/' && source[i + 1] === '/') {
+          const nl = source.indexOf('\n', i);
+          if (nl === -1) { i = source.length; break; }
+          i = nl + 1;
+          continue;
+        }
+        break;
+      }
+      if (source[i] === ';') break;
+      const rs = /^R"(\w*)\(/.exec(source.slice(i, i + 32));
+      if (rs) {
+        const term = ')' + rs[1] + '"';
+        const start = i + rs[0].length;
+        const end = source.indexOf(term, start);
+        if (end === -1) { bad = 'unterminated raw string'; break; }
+        code += source.slice(start, end);
+        i = end + term.length;
+        continue;
+      }
+      const id = /^[A-Za-z_]\w*/.exec(source.slice(i));
+      if (id) {
+        if (!(id[0] in macros)) { bad = `unknown macro ${id[0]} in ${name}`; break; }
+        code += macros[id[0]];
+        i += id[0].length;
+        continue;
+      }
+      break;   // not a shader initialiser we understand; leave it alone
     }
-    out.push({ name, code: source.slice(start, end) });
-    decl.lastIndex = end;
+    if (bad) out.push({ name, code: null, error: bad });
+    else if (code) out.push({ name, code });
+    decl.lastIndex = i;
   }
   return out;
+}
+
+// The ObjectData WGSL, built from the SAME field list the C++ struct is built
+// from. Derived, never copied: a second copy here would be the very thing this
+// whole arrangement exists to remove.
+function objectDataWGSL(repo) {
+  const src = readFileSync(
+    resolve(repo, 'Engine/include/Enjin/Renderer/WebGPU/WebObjectDataLayout.h'), 'utf8');
+  const key = '#define ENJIN_WEB_OBJECTDATA_FIELDS(X)';
+  const at = src.indexOf(key);
+  if (at < 0) throw new Error('no ENJIN_WEB_OBJECTDATA_FIELDS in WebObjectDataLayout.h');
+  // The macro body runs while lines keep their line-continuation backslash.
+  const lines = src.slice(at).split('\n');
+  const body = [];
+  for (let i = 1; i < lines.length; i++) {
+    body.push(lines[i]);
+    if (!lines[i].trimEnd().endsWith('\\')) break;
+  }
+  const rows = [...body.join('\n').matchAll(/X\(\s*([^,]+?)\s*,\s*(\w+)\s*,\s*"([^"]+)"/g)];
+  if (!rows.length) throw new Error('ENJIN_WEB_OBJECTDATA_FIELDS has no rows');
+  return 'struct ObjectData {\n'
+    + rows.map((r) => '    ' + r[2] + ': ' + r[3] + ',\n').join('')
+    + '};\n';
 }
 
 // A .cpp may embed non-WGSL raw strings (HTML, JS). Only compile what declares
@@ -66,9 +123,11 @@ function looksLikeWGSL(code) {
   return /@(vertex|fragment|compute)\b/.test(code);
 }
 
+const WGSL_MACROS = { ENJIN_WEB_OBJECTDATA_WGSL: objectDataWGSL(repo) };
+
 const shaders = [];
 for (const path of sourcePaths) {
-  const found = extractShaders(readFileSync(path, 'utf8'))
+  const found = extractShaders(readFileSync(path, 'utf8'), WGSL_MACROS)
     .filter((s) => s.code === null || looksLikeWGSL(s.code));
   const rel = path.startsWith(repo) ? path.slice(repo.length + 1) : path;
   for (const s of found) shaders.push({ ...s, file: rel });

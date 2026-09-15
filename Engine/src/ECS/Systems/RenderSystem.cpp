@@ -435,6 +435,7 @@ void RenderSystem::BeginFrameTransformCaches() {
 #if ENJIN_RENDERER_WEBGPU
 
 #include "Enjin/Renderer/WebGPU/WebSceneTarget.h"   // kWebSceneSampleCount
+#include "Enjin/Renderer/WebGPU/WebObjectDataLayout.h"
 #include "Enjin/Renderer/WebGPU/WebShaderData.h"
 #include "Enjin/Renderer/WebGPU/WebGPURenderer.h"
 #include "Enjin/Renderer/WebGPU/WebGPURenderEncoder.h"
@@ -555,38 +556,24 @@ struct WebLightingUBO {
     WebLightVec4 lightmapParams;           // 16
 };                                         // Total: 992 bytes (appended the cookie rows)
 
+// The per-entity GPU layout is declared ONCE, in WebObjectDataLayout.h, and both
+// this struct and the WGSL `ObjectData` in PBR_WGSL and OUTLINE_WGSL are generated
+// from that one list. They were three hand-maintained copies until 2026-09-15.
+//
+// The canary is the last field. C++ writes it, the shader reads it back, and a
+// mismatch paints the scene magenta rather than letting every material be quietly
+// read at the wrong offset. Measured coverage: a drift that changes the struct SIZE
+// never reaches it (WebGPU rejects the draw and the canvas goes black, which is loud
+// but mute about why); this catches the quieter case where the buffer still binds and
+// the tail has shifted. Magenta means this struct, black means look elsewhere.
 struct WebObjectDataUBO {
-    alignas(16) Math::Matrix4 model;       // 64
-    alignas(16) Math::Vector3 baseColor;   // 12
-    f32 metallic;                           // 4
-    alignas(16) Math::Vector3 emissiveColor;// 12
-    f32 roughness;                          // 4
-    f32 emissiveStrength;                   // 4
-    f32 opacity;                            // 4
-    f32 alphaCutoff;                        // 4
-    i32 flags;                              // 4
-    f32 parallaxScale;                      // 4
-    f32 uvScrollU;                          // 4  material UV scroll (waterfalls)
-    f32 uvScrollV;                          // 4
-    f32 scrollReflSpeedU;                   // 4  hand-crafted scrolling reflection
-    f32 scrollReflSpeedV;                   // 4
-    f32 scrollReflStrength;                 // 4  0 = off (also when no texture)
-    f32 matcapBlend;                        // 4  1 = matcap texture bound, 0 = off
-    // Water shore foam. These are `surfaceParam1/2/3` push constants on Vulkan and
-    // had no home here at all, which is why foam was the one part of a water volume
-    // a browser could not draw: the shader half was missing AND the data half was.
-    f32 shoreWidth;                         // 4  0 = not a shore surface
-    f32 foamIntensity;                      // 4
-    f32 foamScale;                          // 4
-    f32 _padObj;                            // 4  keeps the struct 16-byte aligned
-};                                          // Total: 160 bytes — keep in lockstep
-                                            // with BOTH WGSL ObjectData structs
-                                            // (pbr + shadow) in WebShaderData.h
+    ENJIN_WEB_OBJECTDATA_FIELDS(ENJIN_WEB_OBJECTDATA_MEMBER)
+};
 static_assert(sizeof(WebObjectDataUBO) == 160,
-              "WebObjectDataUBO must match BOTH WGSL ObjectData structs in "
-              "WebShaderData.h (PBR_WGSL and OUTLINE_WGSL). Nothing else checks this: "
-              "the WGSL is a string literal, so a mismatch is a silent read at the "
-              "wrong offset and every material on web comes out wrong at once.");
+              "WebObjectDataUBO changed size. Add the field to the list in "
+              "WebObjectDataLayout.h (the shaders follow automatically), keep the "
+              "struct 16-byte aligned, and move this number.");
+static constexpr f32 kWebObjectLayoutCanary = ENJIN_WEB_OBJECT_LAYOUT_CANARY;
 
 // Spot shadow VP UBO: 2 lights x (view + proj) = 4 matrices
 struct WebSpotShadowVPUBO {

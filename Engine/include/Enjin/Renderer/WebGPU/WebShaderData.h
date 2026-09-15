@@ -1,5 +1,8 @@
 #pragma once
 
+// The ObjectData layout both shaders below splice in. One list, two readers.
+#include "Enjin/Renderer/WebGPU/WebObjectDataLayout.h"
+
 #include "Enjin/Platform/Platform.h"
 
 #if ENJIN_PLATFORM_WEB
@@ -71,28 +74,13 @@ struct LightingUBO {
 @group(0) @binding(6) var lightmapTex1: texture_2d<f32>;
 @group(0) @binding(7) var lightmapTex2: texture_2d<f32>;
 
-struct ObjectData {
-    model: mat4x4<f32>,
-    baseColor: vec3<f32>,
-    metallic: f32,
-    emissiveColor: vec3<f32>,
-    roughness: f32,
-    emissiveStrength: f32,
-    opacity: f32,
-    alphaCutoff: f32,
-    flags: i32,
-    parallaxScale: f32,
-    uvScrollU: f32,
-    uvScrollV: f32,
-    scrollReflSpeedU: f32,
-    scrollReflSpeedV: f32,
-    scrollReflStrength: f32,
-    matcapBlend: f32,
-    shoreWidth: f32,      // water shore foam; 0 = not a shore surface
-    foamIntensity: f32,
-    foamScale: f32,
-    _padObj: f32,         // keeps this 16-byte aligned, matches WebObjectDataUBO
-};
+)"
+// The ObjectData declaration is GENERATED from the single field list in
+// WebObjectDataLayout.h, the same list WebObjectDataUBO is built from, so this
+// shader and the C++ struct cannot drift. It used to be a hand-written copy here
+// and another in the other shader below.
+ENJIN_WEB_OBJECTDATA_WGSL
+R"(
 struct ObjectDataArray {
     data: array<ObjectData>,
 };
@@ -844,7 +832,21 @@ fn shadeSurface(in: VertexOutput) -> vec4<f32> {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return shadeSurface(in);
+    // Layout canary, applied HERE for the same reason the SDF text block is: the
+    // value is per-instance, so branching on it earlier makes every textureSample
+    // above it non-uniform and the shader will not compile. (It did not -- Dawn
+    // said so, which is the whole argument for check_wgsl.mjs.)
+    //
+    // C++ writes 1234.5 into the last field of ObjectData. Anything else means this
+    // struct and WebObjectDataUBO have drifted, every field after the missing one is
+    // read at the wrong offset, and the materials are all quietly wrong. Paint
+    // magenta instead: a scene nobody can look at gets reported in seconds, a scene
+    // that is merely a bit off gets shipped.
+    let surfaceColor = shadeSurface(in);
+    if (abs(objects.data[in.instanceIdx].layoutCanary - 1234.5) > 0.01) {
+        return vec4<f32>(1.0, 0.0, 1.0, 1.0);
+    }
+    return surfaceColor;
 }
 
 // ---------------------------------------------------------------------------
@@ -951,28 +953,13 @@ struct ViewProjection {
 
 // Must stay field-for-field identical to the ObjectData in PBR_WGSL: both are
 // views of the same WebObjectDataUBO bytes.
-struct ObjectData {
-    model: mat4x4<f32>,
-    baseColor: vec3<f32>,       // repurposed: outline colour
-    metallic: f32,              // repurposed: outline width (object space)
-    emissiveColor: vec3<f32>,
-    roughness: f32,
-    emissiveStrength: f32,
-    opacity: f32,
-    alphaCutoff: f32,
-    flags: i32,
-    parallaxScale: f32,
-    uvScrollU: f32,
-    uvScrollV: f32,
-    scrollReflSpeedU: f32,
-    scrollReflSpeedV: f32,
-    scrollReflStrength: f32,
-    matcapBlend: f32,
-    shoreWidth: f32,      // water shore foam; 0 = not a shore surface
-    foamIntensity: f32,
-    foamScale: f32,
-    _padObj: f32,         // keeps this 16-byte aligned, matches WebObjectDataUBO
-};
+)"
+// The ObjectData declaration is GENERATED from the single field list in
+// WebObjectDataLayout.h, the same list WebObjectDataUBO is built from, so this
+// shader and the C++ struct cannot drift. It used to be a hand-written copy here
+// and another in the other shader below.
+ENJIN_WEB_OBJECTDATA_WGSL
+R"(
 struct ObjectDataArray {
     data: array<ObjectData>,
 };

@@ -800,6 +800,14 @@ jobs:
           node check_wgsl.mjs
           node check_instancing.mjs
 
+      # check_wgsl proves the WGSL is LEGAL. It cannot prove the WGSL agrees
+      # with the C++ struct it reads: dropping a field from one ObjectData
+      # declaration still compiles 16/16 (verified by mutation, 2026-09-15) and
+      # every material on web then reads at shifted offsets. One layout, three
+      # hand-maintained declarations, and nothing else compares them.
+      - name: ObjectData struct parity (C++ vs both WGSL copies)
+        run: python tools/objectdata_parity.py --strict
+
       # A doc sample that names a function the engine does not register fails
       # in the READER's script, pointing at their file, so it reads as their
       # mistake. Eleven of these were live when this check was written.
