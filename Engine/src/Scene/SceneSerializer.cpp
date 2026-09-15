@@ -164,7 +164,16 @@ static u64 SceneRefKey(u64 rawFromFile) {
 // Reports rather than aborts: a save that refuses to write is worse than a save
 // that warns, and by the time this runs the person has already made the edit.
 // It is a tripwire for the ENGINE writing something wrong, not a content lint.
-static void ValidateEntityTable(const json& entitiesArray, const char* where) {
+// asError: a SAVE is the engine writing something wrong, so it shouts. A LOAD is
+// usually somebody else's file -- hand-authored, from an older build, or appended
+// to by a tool -- and the person reading the log did not necessarily cause it, so
+// it warns instead. It still has to SAY it: this ran on save only, which meant a
+// file nobody re-saved was never checked at all. Whistland's OpenSea.enjin carried
+// four duplicate pairs through every load in silence, and the only way to hear
+// about them was to re-save the scene (2026-09-15).
+#define ENJIN_VALIDATE_LOG(...) do { if (asError) ENJIN_LOG_ERROR(Asset, __VA_ARGS__); \
+                                     else        ENJIN_LOG_WARN (Asset, __VA_ARGS__); } while (0)
+static void ValidateEntityTable(const json& entitiesArray, const char* where, bool asError = true) {
     std::unordered_map<u64, std::string> byId;
     std::vector<std::pair<u64, std::string>> parents;   // (parent id, child name)
     u32 outOfRange = 0, duplicates = 0, dangling = 0;
@@ -184,7 +193,7 @@ static void ValidateEntityTable(const json& entitiesArray, const char* where) {
 
         if (id > 0xFFFFFFFFull) {
             ++outOfRange;
-            ENJIN_LOG_ERROR(Asset,
+            ENJIN_VALIDATE_LOG(
                 "%s: entity '%s' has id %llu, which is larger than a 32-bit slot index "
                 "(generation %llu leaked into the high word). Expected %llu.",
                 where, name.c_str(), static_cast<unsigned long long>(id),
@@ -194,7 +203,7 @@ static void ValidateEntityTable(const json& entitiesArray, const char* where) {
         auto [it, fresh] = byId.emplace(id & 0xFFFFFFFFull, name);
         if (!fresh) {
             ++duplicates;
-            ENJIN_LOG_ERROR(Asset,
+            ENJIN_VALIDATE_LOG(
                 "%s: entities '%s' and '%s' both claim id %llu. A reference to that id "
                 "is ambiguous and one of them will silently win on load.",
                 where, it->second.c_str(), name.c_str(),
@@ -208,7 +217,7 @@ static void ValidateEntityTable(const json& entitiesArray, const char* where) {
     for (const auto& [pid, child] : parents) {
         if (byId.find(pid) == byId.end()) {
             ++dangling;
-            ENJIN_LOG_ERROR(Asset,
+            ENJIN_VALIDATE_LOG(
                 "%s: '%s' is parented to id %llu, which is not in this file. It will "
                 "load unparented -- in the right place, and wrong the moment the "
                 "parent moves.",
@@ -217,10 +226,12 @@ static void ValidateEntityTable(const json& entitiesArray, const char* where) {
     }
 
     if (outOfRange || duplicates || dangling) {
-        ENJIN_LOG_ERROR(Asset, "%s: %u out-of-range id(s), %u duplicate(s), %u dangling parent(s)",
+        ENJIN_VALIDATE_LOG( "%s: %u out-of-range id(s), %u duplicate(s), %u dangling parent(s)",
                         where, outOfRange, duplicates, dangling);
     }
 }
+
+#undef ENJIN_VALIDATE_LOG
 
 static f32 RF(f32 val) {
     if (std::isnan(val) || std::isinf(val)) return val;
@@ -11086,6 +11097,11 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
         if (fv < SCENE_FORMAT_VERSION)
             MigrateScene(sceneJson, fv);
     }
+
+    // Say something about a file we are only READING. The same check on the save
+    // path catches the engine writing a bad table; this one catches a bad table
+    // arriving, which is the case that had no voice at all.
+    ValidateEntityTable(sceneJson["entities"], "LoadScene", /*asError=*/false);
 
     // Structurally valid, safe to clear world now
     if (clearExisting) {

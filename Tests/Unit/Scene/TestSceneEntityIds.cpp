@@ -189,4 +189,63 @@ ENJIN_TEST(SceneEntityIds, HealedFileWritesCleanIdsOnItsNextSave) {
     }
 }
 
+
+// Whistland's OpenSea.enjin, in miniature.
+//
+// Four pairs of entities in that file share an id -- 21 Vane/Mark1, 60
+// Tide20/BowSpray, 61 Tide21/WakeSpray, 62 Tide22/WindStreaks. In every pair the
+// second is a later addition (three particle emitters and a cloth) that reused an
+// id belonging to an earlier mesh, which is why it points at whatever appended
+// them rather than at the allocator: two LIVE entities cannot share a slot index,
+// so a correct save of a correct world cannot produce this.
+//
+// ValidateEntityTable has always been able to say so, and ran on SAVE only, so a
+// file nobody re-saved was never checked. It now runs on load as well, at warning
+// level rather than error, because a file arriving is usually not something the
+// person reading the log did.
+//
+// What this pins is the BEHAVIOUR underneath the warning: both entities still
+// load. The duplicate is a latent trap -- a reference to that id is ambiguous --
+// and not an entity that quietly disappears.
+ENJIN_TEST(SceneEntityIds, TwoEntitiesSharingAnIdBothStillLoad) {
+    json scene;
+    scene["version"] = "1.0";
+    scene["formatVersion"] = 1;
+    scene["entityCount"] = 2;
+    json entities = json::array();
+
+    // The shape the file has: an earlier mesh, and a later emitter that reused 60.
+    json mesh;
+    mesh["id"] = 60;
+    mesh["name"] = { {"name", "Tide20"} };
+    mesh["transform"] = { {"position", {0.0, 0.0, 0.0}},
+                          {"rotation", {0, 0, 0, 1}},
+                          {"scale", {1, 1, 1}} };
+    entities.push_back(mesh);
+
+    json emitter;
+    emitter["id"] = 60;                     // the same id, deliberately
+    emitter["name"] = { {"name", "BowSpray"} };
+    emitter["transform"] = { {"position", {5.0, 0.0, 0.0}},
+                             {"rotation", {0, 0, 0, 1}},
+                             {"scale", {1, 1, 1}} };
+    entities.push_back(emitter);
+
+    scene["entities"] = entities;
+
+    World world;
+    Scene::SceneSerializer deserializer(&world);
+    auto result = deserializer.LoadFromString(scene.dump());
+
+    // It loads. A duplicate id is a warning, not a refusal: by the time anyone
+    // sees this the file already exists, and refusing to open it helps nobody.
+    ENJIN_ASSERT_TRUE(result.success);
+
+    // Both survive. Neither is dropped and neither overwrites the other.
+    const Entity tide = world.FindEntityByName("Tide20");
+    const Entity spray = world.FindEntityByName("BowSpray");
+    ENJIN_ASSERT_TRUE(tide != INVALID_ENTITY);
+    ENJIN_ASSERT_TRUE(spray != INVALID_ENTITY);
+    ENJIN_EXPECT_TRUE(tide != spray);
+}
 ENJIN_TEST_MAIN()

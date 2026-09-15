@@ -28,9 +28,9 @@ Last verified against the tree 2026-09-15.
 |---|---|---|
 | PBR materials, lit meshes | Same | |
 | Shadows | Same | |
-| Skybox, procedural sky, clouds | Same | Draw order differs: the sky is a fullscreen triangle at z=1 that must be drawn AFTER opaque and BEFORE anything alpha-blended. |
+| Skybox, procedural sky, clouds | Same | Fixed 2026-09-15 and verified by capture. It was silently broken for the life of the web player: the boot scene loads BEFORE the RenderSystem is constructed, so `SetSkybox` hit its own null guard and every browser scene drew the built-in default. A scene authoring a red zenith rendered byte-identical to one authoring blue. |
 | GPU particles | Same | `WebGPUParticleSystem.cpp`, compute-driven, verified in a browser. |
-| Vegetation, wind | Same | `WebGPUVegetationSystem.cpp`. |
+| Vegetation, wind | Same | Verified by capture 2026-09-15: trees and grass render and sway. **They cast no shadow**, though, while a mesh beside them does -- see the row below. |
 | Tilemaps | Same | Fixed 2026-09-13. It had never worked: mesh generation lived only in the Vulkan `RenderSystem::Update` body. |
 | Sprites, 2D | Same | |
 | Compute | Same | |
@@ -43,6 +43,8 @@ Last verified against the tree 2026-09-15.
 | Reflection systems (probes, planar, SSR) | **Absent** | Includes the water-surface reflection on `WaterVolumeComponent` and Water3D's Reflective/Refractive styles: the mirror is real geometry redrawn through the Vulkan ghost path, so a browser draws none of it. The surface itself is unaffected. |
 | Water volumes (surface, waves, translucency) | Same | Verified in a browser 2026-09-15 by capture, not by reading guards. Surface draws, an authored opacity blends over the bed, and the Gerstner-lite wave displacement runs. The waves needed fixing to get there: PBR_WGSL had carried the displacement all along but nothing on the web path set `FLAG_WATER_SURFACE`, so frames 60 and 400 of the same scene were byte-identical while desktop differed. Bit 5 means the same thing on both backends; bits 6 and 7 do NOT. |
 | Water shore foam | **Absent** | `triangle.frag` mentions foam fourteen times and the WGSL not once. The vertex colour that carries the shoreline distance IS written on both paths, so the data is there and only the shader half is missing. A web lake has a hard edge; do not author a scene whose read depends on the foam line. |
+| Vegetation shadows | **Absent** | Plants render and sway but cast nothing. The depth IS written (measured: 4 volumes through a valid pipeline, inside the pass) and lost after, so this is a bug rather than a missing feature. Do not author a scene whose read depends on a tree shadow. |
+| 2D water, 2D sky | **Absent** | `Render2DWater` and `Render2DSky` are in the Vulkan half of `RenderSystem::Update` only. A browser draws the sprites and none of the water: no animated surface line, no underwater tint. |
 | Frustum culling | Same | CPU, shared with desktop since 2026-09-14. Desktop ALSO has GPU culling (compute + indirect draw) for very large object counts; web has the test, not the dispatch. |
 | Mesh LOD | Same | Shared since 2026-09-14. Web previously used plain camera distance and had neither `useScreenSize`, `lodBias` nor `forceLowestLOD`. |
 | Animation LOD | Same | Shared since 2026-09-14. Web previously refreshed every animator every frame; the flag was declared inside `#if !ENJIN_RENDERER_WEBGPU` and did not exist in a web build. |

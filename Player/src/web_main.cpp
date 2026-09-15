@@ -25,6 +25,7 @@
 #include "Enjin/Renderer/WebGPU/WebGPUParticleSystem.h"
 #include "Enjin/ECS/Components/GPUParticleEmitter.h"
 #include "Enjin/Effects/ParticleColliders.h"
+#include "Enjin/ECS/Components/Vegetation.h"
 #include "Enjin/Renderer/WebGPU/WebGPUVegetationSystem.h"
 #if defined(ENJIN_WEBGPU_COMPUTE_SMOKETEST)
 #include "Enjin/Renderer/WebGPU/WebGPUComputeSmokeTest.h"
@@ -677,7 +678,10 @@ public:
                         m_SceneRenderSettings = m_ProjectRenderSettings;   // scene defers to the project
                         m_SceneRenderSettings.useProjectDefaults = true;
                     }
-                    if (m_RenderSystem) m_RenderSystem->SetSkybox(serializer.GetSkyboxConfig());
+                    // Remember it: m_RenderSystem does not exist yet on this path.
+                    m_BootSkybox = serializer.GetSkyboxConfig();
+                    m_HasBootSkybox = true;
+                    if (m_RenderSystem) m_RenderSystem->SetSkybox(m_BootSkybox);
                     sceneLoaded = true;
                     m_CurrentWebScenePath = m_StartScene;
                     ENJIN_LOG_INFO(Player, "Loaded scene: %s", m_StartScene.c_str());
@@ -700,7 +704,10 @@ public:
                         m_SceneRenderSettings = m_ProjectRenderSettings;   // scene defers to the project
                         m_SceneRenderSettings.useProjectDefaults = true;
                     }
-                    if (m_RenderSystem) m_RenderSystem->SetSkybox(serializer.GetSkyboxConfig());
+                    // Remember it: m_RenderSystem does not exist yet on this path.
+                    m_BootSkybox = serializer.GetSkyboxConfig();
+                    m_HasBootSkybox = true;
+                    if (m_RenderSystem) m_RenderSystem->SetSkybox(m_BootSkybox);
                     sceneLoaded = true;
                     ENJIN_LOG_INFO(Player, "Loaded loose scene: scene.enjin");
                     ShowWebContentWarnings(sceneStr);
@@ -726,6 +733,18 @@ public:
         m_RenderSystem->SetAssetReader(&m_AssetReader);
         m_RenderSystem->Initialize();
         m_RenderSystem->SetWindSystem(&m_WindSystem);   // wind -> lighting UBO (water waves)
+
+        // The boot scene's sky, which could not be pushed when it was read.
+        //
+        // m_RenderSystem is constructed AFTER the scene load above, so the SetSkybox
+        // there ran against a null pointer and its `if (m_RenderSystem)` guard threw
+        // the config away without a word. m_WebSkyConfigured stayed false, and the
+        // web sky shader drew its built-in default for every scene ever shipped to a
+        // browser -- a scene authoring a red zenith rendered byte-identical to one
+        // authoring a blue one (measured 2026-09-15). A guard that skips work when a
+        // dependency is missing has to be paired with somewhere the work goes
+        // instead, or it is just a silent drop.
+        if (m_HasBootSkybox) m_RenderSystem->SetSkybox(m_BootSkybox);
 
         // GPU particles on web: same emitter component as desktop, driven each frame.
         m_Vegetation = std::make_unique<Enjin::Renderer::WebGPUVegetationSystem>();
@@ -1209,6 +1228,28 @@ public:
             Enjin::Input::GetActiveTouchCount() > 0 ||
             Enjin::Input::IsKeyPressed(Enjin::KeyCode::Space) ||
             Enjin::Input::IsKeyPressed(Enjin::KeyCode::Enter);
+        // Tell the shadow map when the vegetation's contribution changes.
+        //
+        // The shadow pass caches its texture and redraws only when its caster
+        // signature moves, and that signature walks MeshComponents. Plants have
+        // none, so nothing the hook draws could ever ask for a redraw -- a real
+        // hole, and this closes it.
+        //
+        // It is NOT the fix for web vegetation casting no shadow. That symptom
+        // survives this: RenderShadow was measured drawing 4 volumes through a
+        // valid pipeline on the dirty frame (2026-09-15, FoliageDemo) and the
+        // ground still shows nothing, so the depth is being written and lost
+        // somewhere after. Next suspect is the light-matrix convention in the
+        // vegetation shadow path, which packs lightViewProj into `proj` with an
+        // identity `view` rather than the split the mesh casters use.
+        if (m_RenderSystem) {
+            const Enjin::u64 vegReady = (m_Vegetation && m_Vegetation->IsInitialized()) ? 1ull : 0ull;
+            const Enjin::u64 vegCount = m_World
+                ? static_cast<Enjin::u64>(m_World->GetEntitiesWithComponent<Enjin::ECS::VegetationComponent>().size())
+                : 0ull;
+            m_RenderSystem->SetWebShadowExtraSignature((vegReady << 32) ^ vegCount);
+        }
+
         if (!m_AudioEngine.IsDeviceRunning() && sawGesture) {
             m_AudioEngine.ResumeAfterUserGesture();
         }
@@ -2877,6 +2918,12 @@ private:
     Enjin::Renderer::SceneRenderSettings m_SceneRenderSettings;
     Enjin::Renderer::SceneRenderSettings m_ProjectRenderSettings;
     bool m_HasProjectRenderSettings = false;
+
+    // The boot scene is loaded BEFORE m_RenderSystem is constructed, so the
+    // SetSkybox call at load time had nothing to call and was dropped by its own
+    // null guard. Carry the config here and apply it once the system exists.
+    Enjin::Renderer::SkyboxConfig m_BootSkybox;
+    bool m_HasBootSkybox = false;
 
     // Project render quality tiers (ADR-0006) and the tier currently in force.
     // The active tier starts at the project default; a player-facing selector

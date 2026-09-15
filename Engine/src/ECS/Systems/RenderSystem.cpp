@@ -3374,6 +3374,9 @@ void RenderSystem::Update(f32 deltaTime) {
         // have. It is only ever written by this pass, and it was cleared to far
         // depth at creation, so the contents stay valid indefinitely.
         shadowSig ^= casterSigSum;
+        // Whatever the shadow-pass hook draws (web vegetation) is not a
+        // MeshComponent, so none of the above can see it move or appear.
+        shadowSig ^= m_WebShadowExtraSig;
         const bool shadowDirty = !m_WebShadowValid || shadowSig != m_WebShadowSignature;
         m_WebShadowSignature = shadowSig;
 

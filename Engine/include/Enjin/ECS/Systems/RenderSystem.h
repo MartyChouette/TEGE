@@ -833,6 +833,13 @@ public:
      * The callback receives the pass encoder and the light's view-projection,
      * and should render depth only.
      */
+    // Anything drawn into the shadow map by the hook above is invisible to the
+    // caster signature, which only walks MeshComponents. Without a way to move
+    // that signature, a hook contributor gets exactly one chance -- the first
+    // dirty frame -- and if it was not ready then, the cached map never
+    // includes it again. Feed anything here that should force a redraw.
+    void SetWebShadowExtraSignature(u64 sig) { m_WebShadowExtraSig = sig; }
+
     void SetWebShadowPassHook(std::function<void(void*, const Math::Matrix4&)> hook) {
         m_WebShadowPassHook = std::move(hook);
     }
@@ -1812,6 +1819,7 @@ private:
     // with real scene depth. Public setter below.
     std::function<void(void*)> m_WebScenePassHook;
     std::function<void(void*, const Math::Matrix4&)> m_WebShadowPassHook;
+    u64 m_WebShadowExtraSig = 0;   // hook contributors' share of the shadow signature
 
     // Default bone buffer (single identity matrix for non-skinned meshes)
     Renderer::GPUBufferHandle m_WebDefaultBoneBuffer;

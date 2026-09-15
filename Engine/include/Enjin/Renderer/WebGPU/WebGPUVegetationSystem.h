@@ -44,6 +44,12 @@ public:
     // Settled snow, 0..1, from the scene's weather. Fed in per frame like the
     // wind and the sun: this system is owned by the player, not the render
     // system, so it cannot reach the lighting buffer the ground reads.
+    // Whether the GPU side is up. The shadow pass caches its map and only
+    // redraws when something it can see changes, so a caller has to be able to
+    // tell when THIS system starts contributing -- otherwise the one redraw
+    // happens before the plants exist and the grove is shadowless forever.
+    bool IsInitialized() const { return m_Initialized; }
+
     void SetSnowAccumulation(f32 v) { m_SnowAccumulation = v; }
 
     void SetWind(const Math::Vector3& wind, f32 time) { m_Wind = wind; m_WindTime = time; }
