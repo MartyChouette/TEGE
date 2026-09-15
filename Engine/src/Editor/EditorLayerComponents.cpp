@@ -2175,6 +2175,9 @@ void EditorLayer::DrawWaterVolumeComponent(ECS::Entity entity) {
             volume->waterColor = Math::Vector3(waterCol[0], waterCol[1], waterCol[2]);
         }
         InspectorUndo::SliderFloat(m_UndoRedo, "Opacity", &volume->opacity, 0.0f, 1.0f);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("How much you can see THROUGH the surface.\n1 = solid, and the bed, submerged objects\nand reflections all disappear behind it.");
+        InspectorUndo::SliderFloat(m_UndoRedo, "Reflection", &volume->reflectionStrength, 0.0f, 1.0f);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Mirrors the scene above the water into the surface.\n0 = off (right for muddy or very deep water).\n\nNeeds Opacity below 1 to be visible, and only\nshows from a camera above the water line.");
         InspectorUndo::DragFloat(m_UndoRedo, "Wave Speed", &volume->waveSpeed, 0.1f, 0.0f, 10.0f);
         InspectorUndo::DragFloat(m_UndoRedo, "Wave Height", &volume->waveHeight, 0.01f, 0.0f, 2.0f);
 

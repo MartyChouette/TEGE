@@ -2,6 +2,7 @@
 
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Math/Vector.h"
+#include "Enjin/ECS/Components/Material.h"
 #include <cmath>
 
 namespace Enjin {
@@ -29,6 +30,16 @@ struct ENJIN_API WaterVolumeComponent {
     // Water visual settings
     Math::Vector3 waterColor = Math::Vector3(0.1f, 0.3f, 0.5f);
     f32 opacity = 0.7f;
+
+    // Planar reflection: how strongly the scene above the surface is mirrored into
+    // it. 0 disables the pass entirely, which is what you want for muddy or deep
+    // water where a mirror would look wrong.
+    //
+    // This is the same mechanic Water3D's Reflective style uses -- real geometry
+    // redrawn upside down under the surface, not a screen-space trace -- so it
+    // only shows through a surface with opacity < 1, and only from a camera above
+    // the water line. Both of those are handled in MirrorSceneAcrossPlane.
+    f32 reflectionStrength = 0.4f;
 
     // Wave animation
     f32 waveSpeed = 1.0f;
@@ -71,6 +82,68 @@ struct ENJIN_API WaterVolumeComponent {
                std::abs(point.z - center.z) <= halfExtents.z;
     }
 };
+
+// The surface material a water volume renders with.
+//
+// Free function rather than inline in RenderSystem::EnsureWaterMeshes, because
+// everything it decides is a pure function of the component and the render loop
+// around it is not testable without a GPU. The one field that matters most here
+// -- alphaMode -- was wrong for the entire life of the feature and nothing could
+// have caught it, since reaching it meant standing up a Vulkan device.
+inline MaterialComponent MakeWaterSurfaceMaterial(const WaterVolumeComponent& vol) {
+    MaterialComponent m;
+    m.baseColor = vol.waterColor;
+    m.opacity = vol.opacity;
+    m.doubleSided = true;
+    m.castShadows = false;
+
+    // Blend, so you can see INTO the water.
+    //
+    // This was Opaque, commented "writes depth", and that conflated two decisions
+    // made in different places. Depth writing comes from the PIPELINE, and the
+    // pipeline choice already special-cases water: BindGeometryPipelineForMaterial
+    // and the RenderToTarget loop both compute `wantTransparent = ... &&
+    // !isWaterSurf`, so a water surface stays on the depth-writing pipeline no
+    // matter what this field says. That is what keeps overlapping wave fragments
+    // depth-culling instead of stacking up and washing the surface white.
+    //
+    // What alphaMode actually drives is the SORT BUCKET (ComputeSortKey puts Blend
+    // in bucket 2, after all opaque geometry) and the shader, which clamps
+    // `alpha = 1.0` for Opaque and Mask so an opacity value can never make them
+    // see-through.
+    //
+    // Opaque therefore did three things at once: threw away the opacity the author
+    // set on the volume, threw away iceOpacity with it, and put the surface in the
+    // front-to-back bucket where it could draw before the bed it is meant to blend
+    // over. It also hid planar reflections, which are mirrored geometry drawn BELOW
+    // the surface and only read as a reflection through a translucent one.
+    m.alphaMode = MaterialComponent::AlphaMode::Blend;
+
+    switch (vol.waterType) {
+        case WaterType::Ocean: m.metallic = 0.4f;  m.roughness = 0.05f; break;
+        case WaterType::River: m.metallic = 0.25f; m.roughness = 0.15f; break;
+        case WaterType::Pond:  m.metallic = 0.2f;  m.roughness = 0.2f;  break;
+        case WaterType::Lake:
+        default:               m.metallic = 0.3f;  m.roughness = 0.1f;  break;
+    }
+    return m;
+}
+
+// Vertex colour for a point on the water surface. edgeDist is 0 at the rim and
+// 1 at the centre; the shader reads it out of .g to place shoreline foam.
+//
+// Extracted for the same reason as the material: it encodes a decision (what
+// goes in .a) that was wrong and could not be reached without a GPU.
+//
+// .a is 1, NOT vol.opacity. The shader computes
+// `alpha = mat_opacity * fragVertColor.a * texAlpha`, and mat_opacity is already
+// the volume's opacity, so carrying it here squared it -- an authored 0.78
+// rendered as 0.61. Worse when frozen: the freeze lerp swaps mat_opacity for
+// iceOpacity but cannot touch a vertex buffer, so a 0.95 ice sheet rendered at
+// 0.74 and never read as solid. The material is the one carrier.
+inline Math::Vector4 MakeWaterVertexColor(const WaterVolumeComponent& vol, f32 edgeDist) {
+    return Math::Vector4(vol.waterColor.x, edgeDist, vol.waterColor.z, 1.0f);
+}
 
 } // namespace ECS
 } // namespace Enjin

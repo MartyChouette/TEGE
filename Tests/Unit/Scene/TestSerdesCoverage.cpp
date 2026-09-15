@@ -24,6 +24,7 @@
 #include "Enjin/ECS/Components/Ladder.h"
 #include "Enjin/ECS/Components/BrushSolid.h"
 #include "Enjin/ECS/Components/Water3D.h"
+#include "Enjin/ECS/Components/WaterVolume.h"
 #include "Enjin/ECS/Components/ReflectionProbe.h"
 #include "Enjin/ECS/Systems/BrushSolidSystem.h"
 #include "Enjin/ECS/Components/Mesh.h"
@@ -1336,6 +1337,125 @@ ENJIN_TEST(SerdesCoverage, ASceneWithoutAPaletteStaysWithoutOne) {
     const auto out = Enjin::Renderer::DeserializeRenderSettings(empty);
     ENJIN_EXPECT_FALSE(out.scenePaletteEnabled);
     ENJIN_EXPECT_TRUE(out.scenePalettes.empty());
+}
+
+// ---------------------------------------------------------------------------
+// Water volumes: the surface you can actually see through.
+//
+// WaterVolumeComponent is what the Entity menu creates, so it is the common
+// case, and for the whole life of the feature its generated material was
+// hardcoded to AlphaMode::Opaque with the comment "Opaque -- writes depth".
+//
+// Depth writing does not come from that field. The pipeline choice special-cases
+// water independently (`wantTransparent = ... && !isWaterSurf`), so the surface
+// stayed on the depth-writing pipeline either way. What Opaque actually did was
+// make triangle.frag clamp `alpha = 1.0`, which threw away the opacity the
+// author set on the volume AND the iceOpacity the freeze lerp writes, and it
+// parked the surface in the front-to-back sort bucket where it could draw
+// before the bed it is supposed to blend over.
+//
+// The result was a flat sheet: no lake bed, nothing submerged, and no planar
+// reflection either, since those are mirrored geometry drawn BELOW the surface
+// and only read as a reflection through a translucent one.
+//
+// None of that was reachable from a test while the material was built inline in
+// RenderSystem::EnsureWaterMeshes, which needs a GPU. MakeWaterSurfaceMaterial
+// is the same code as a pure function, so these assertions cost nothing.
+
+ENJIN_TEST(SerdesCoverage, WaterSurfaceMaterialBlendsSoYouCanSeeIntoIt) {
+    // Arrange
+    WaterVolumeComponent vol;
+    vol.opacity = 0.62f;
+
+    // Act
+    const MaterialComponent m = MakeWaterSurfaceMaterial(vol);
+
+    // Assert: Blend is what stops the shader clamping alpha to 1, and what puts
+    // the surface in the sort bucket that draws after the bed.
+    ENJIN_EXPECT_TRUE(m.alphaMode == MaterialComponent::AlphaMode::Blend);
+    ENJIN_EXPECT_TRUE(Near(m.opacity, 0.62f));
+}
+
+ENJIN_TEST(SerdesCoverage, WaterSurfaceMaterialSortsAfterOpaqueGeometry) {
+    // Arrange: the bug was an ordering one as much as an alpha one -- water in
+    // the opaque bucket can draw before the bed and blend against the sky.
+    WaterVolumeComponent vol;
+    MaterialComponent water = MakeWaterSurfaceMaterial(vol);
+    MaterialComponent bed;                       // default = Opaque
+
+    // Act: ComputeSortKey puts the pipeline bucket in the high bits.
+    water.ComputeSortKey(10.0f);
+    bed.ComputeSortKey(20.0f);
+
+    // Assert: whatever the depths, the bed's bucket must come first.
+    ENJIN_EXPECT_TRUE(bed.cachedSortKey < water.cachedSortKey);
+}
+
+ENJIN_TEST(SerdesCoverage, WaterSurfaceOpacityIsNotAppliedTwice) {
+    // Arrange: the shader computes alpha = mat_opacity * vertexColor.a. The mesh
+    // builder used to put the volume's opacity in BOTH, squaring it -- an
+    // authored 0.78 rendered as 0.61.
+    WaterVolumeComponent vol;
+    vol.opacity = 0.78f;
+
+    // Act
+    const MaterialComponent m = MakeWaterSurfaceMaterial(vol);
+    const Vector4 centre = MakeWaterVertexColor(vol, 1.0f);
+    const Vector4 rim    = MakeWaterVertexColor(vol, 0.0f);
+
+    // Assert: the material is the single carrier of opacity, and the vertex is
+    // neutral, so the product is the authored value and not its square.
+    ENJIN_EXPECT_TRUE(Near(m.opacity, 0.78f));
+    ENJIN_EXPECT_TRUE(Near(centre.w, 1.0f));
+    ENJIN_EXPECT_TRUE(Near(m.opacity * centre.w, 0.78f));
+
+    // And the channel the foam actually needs still carries the edge distance.
+    ENJIN_EXPECT_TRUE(Near(centre.y, 1.0f));
+    ENJIN_EXPECT_TRUE(Near(rim.y, 0.0f));
+}
+
+ENJIN_TEST(SerdesCoverage, FrozenWaterReachesItsAuthoredIceOpacity) {
+    // Arrange: the freeze lerp replaces mat_opacity with iceOpacity in push
+    // constants, but it cannot reach a vertex buffer. While the vertex carried
+    // the LIQUID opacity, a fully frozen 0.95 sheet rendered at 0.95 * 0.7.
+    WaterVolumeComponent vol;
+    vol.opacity = 0.7f;
+    vol.iceOpacity = 0.95f;
+
+    // Act: what the shader multiplies at freezeProgress = 1.
+    const Vector4 vtx = MakeWaterVertexColor(vol, 1.0f);
+    const f32 frozenAlpha = vol.iceOpacity * vtx.w;
+
+    // Assert: ice is as solid as it was authored to be.
+    ENJIN_EXPECT_TRUE(Near(frozenAlpha, 0.95f));
+}
+
+ENJIN_TEST(SerdesCoverage, WaterVolumeReflectionStrengthSurvivesASave) {
+    // Arrange: a new authored field is exactly the shape that gets forgotten in
+    // the serializer, which is what this whole file exists to catch.
+    World src, dst;
+    Entity e = Base(src);
+
+    WaterVolumeComponent vol;
+    vol.halfExtents = Vector3(9.0f, 2.0f, 11.0f);
+    vol.reflectionStrength = 0.65f;
+    vol.opacity = 0.78f;
+    vol.waterColor = Vector3(0.1f, 0.42f, 0.55f);
+    vol.waterType = WaterType::Pond;
+    src.AddComponent<WaterVolumeComponent>(e, vol);
+
+    // Act
+    Entity r = RoundTrip(src, e, dst);
+
+    // Assert
+    ENJIN_ASSERT_TRUE(dst.HasComponent<WaterVolumeComponent>(r));
+    const auto* out = dst.GetComponent<WaterVolumeComponent>(r);
+    ENJIN_ASSERT_TRUE(out != nullptr);
+    ENJIN_EXPECT_TRUE(Near(out->reflectionStrength, 0.65f));
+    ENJIN_EXPECT_TRUE(Near(out->opacity, 0.78f));
+    ENJIN_EXPECT_TRUE(Near(out->halfExtents.x, 9.0f));
+    ENJIN_EXPECT_TRUE(Near(out->halfExtents.z, 11.0f));
+    ENJIN_EXPECT_TRUE(out->waterType == WaterType::Pond);
 }
 
 ENJIN_TEST_MAIN()

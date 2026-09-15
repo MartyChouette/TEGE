@@ -1173,6 +1173,7 @@ json SerializeWaterVolumeComponent(const ECS::WaterVolumeComponent& volume) {
     j["waterType"] = static_cast<u32>(volume.waterType);
     j["waterColor"] = SerializeVector3(volume.waterColor);
     j["opacity"] = RF(volume.opacity);
+    j["reflectionStrength"] = RF(volume.reflectionStrength);
     j["waveSpeed"] = RF(volume.waveSpeed);
     j["waveHeight"] = RF(volume.waveHeight);
     j["enableShore"] = RF(volume.enableShore);
@@ -1197,6 +1198,7 @@ ECS::WaterVolumeComponent DeserializeWaterVolumeComponent(const json& j) {
     if (j.contains("waterType")) { u32 v = j["waterType"].get<u32>(); if (v <= 3) volume.waterType = static_cast<ECS::WaterType>(v); }
     if (j.contains("waterColor")) volume.waterColor = DeserializeVector3(j["waterColor"]);
     if (j.contains("opacity")) volume.opacity = j["opacity"].get<f32>();
+    if (j.contains("reflectionStrength")) volume.reflectionStrength = j["reflectionStrength"].get<f32>();
     if (j.contains("waveSpeed")) volume.waveSpeed = j["waveSpeed"].get<f32>();
     if (j.contains("waveHeight")) volume.waveHeight = j["waveHeight"].get<f32>();
     if (j.contains("enableShore")) volume.enableShore = JB(j["enableShore"]);

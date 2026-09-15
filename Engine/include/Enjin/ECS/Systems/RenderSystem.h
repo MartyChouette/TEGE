@@ -1599,6 +1599,11 @@ private:
     // Mirror every mesh above a horizontal plane at planeY and re-draw it as a
     // tinted, dimmed reflection. Shared by reflective floors and reflective water.
     void MirrorSceneAcrossPlane(f32 planeY, const Math::Vector3& tint, f32 strength, Entity skipEntity);
+    // Set when the main pass fires its reflection draw mid-loop (just before the
+    // first water surface). Read after the loop so a scene with reflective planes
+    // but no water still gets the pass. Member rather than a local because the
+    // loop and the fallback sit in different scopes.
+    bool m_ReflectionsDoneThisPass = false;
     void CreateShadowPipeline();
     // Recreate all pipelines. If gpuAlreadyIdle is true, skips vkDeviceWaitIdle (caller guarantees GPU is idle).
     void RecreatePipelines(bool gpuAlreadyIdle = false);

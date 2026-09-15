@@ -9041,6 +9041,7 @@ void RenderSystem::Update(f32 deltaTime) {
         constexpr usize PREFETCH_AHEAD = 4;
 
         bool mainTransparentBound = false; // opaque geometry pipeline currently bound
+        m_ReflectionsDoneThisPass = false;
         m_LastPipelineWasCustom = false;   // reset custom-shader pipeline tracking per loop
         InvalidateBoundSet0();             // arm the set-0 cache fresh for this loop
 
@@ -9089,6 +9090,24 @@ void RenderSystem::Update(f32 deltaTime) {
                 }
             }
 
+            // Planar reflections, immediately before the first water surface of
+            // the frame. This is the player's pass, and it needs the same slot for
+            // the same reasons as the offscreen one -- see the long note in
+            // RenderToTarget. Short version: after the loop the water has already
+            // written depth over every mirrored fragment, so the reflection is
+            // drawn and discarded; before the loop it becomes a solid puppet under
+            // the world. Water is AlphaMode::Blend, so the sort key guarantees all
+            // opaque geometry is already down by the time we get here.
+            if (!m_ReflectionsDoneThisPass &&
+                ((m_CachedWater3DStorage && m_CachedWater3DStorage->Has(entity)) ||
+                 (m_CachedWaterVolumeStorage && m_CachedWaterVolumeStorage->Has(entity)))) {
+                m_ReflectionsDoneThisPass = true;
+                RenderPlanarReflections();
+                // The pass binds its own state; make the next bind unconditional.
+                mainTransparentBound = false;
+                m_LastPipelineWasCustom = false;
+            }
+
             BindGeometryPipelineForMaterial(commandBuffer, entity, m_Pipeline.get(), m_TransparentPipeline.get(), mainTransparentBound);
             RenderEntity(entity);
         }
@@ -9113,8 +9132,10 @@ void RenderSystem::Update(f32 deltaTime) {
     // Render onion skin ghosts (editor viewport only, before sprites)
     RenderOnionSkinGhosts();
 
-    // Hand-crafted planar floor reflections (mirrored geometry), after opaque 3D.
-    RenderPlanarReflections();
+    // Reflections normally ran mid-loop, just before the first water surface. A
+    // scene with reflective planes but no water never reaches that point, so it
+    // still needs the pass here.
+    if (!m_ReflectionsDoneThisPass) RenderPlanarReflections();
 
     // Sorted 2D sprite rendering pass (after 3D geometry)
     RenderSprites(0, 0);
@@ -10031,6 +10052,11 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
         m_ArenaBatchKeyToIndex.clear();
     }
 
+    // Planar reflections are drawn BETWEEN the opaque geometry and the water that
+    // covers them -- see the fire point below for why that is the only slot that
+    // works.
+    bool rtReflectionsDone = false;
+
     for (Entity entity : renderList) {
         {
             // Skip invisible entities or entities without transform (cached storage)
@@ -10089,6 +10115,44 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             const bool rtIsBlended = material &&
                                      material->alphaMode == MaterialComponent::AlphaMode::Blend &&
                                      !rtIsWater;
+
+            // Planar reflections go in HERE, immediately before the first water
+            // surface of the frame, and nowhere else.
+            //
+            // They are mirrored geometry drawn below the surface, so they have to
+            // land after everything they could be occluded by and before the water
+            // that tints them. Both halves of that matter:
+            //
+            //  - After the pass (where this used to be) the water has already
+            //    written depth at the surface, and every mirrored fragment sits
+            //    below it and fails the depth test. The reflection was drawn and
+            //    discarded, every frame, which is why a water volume showed no
+            //    reflection at all no matter what strength it was given.
+            //  - Before the opaque geometry it would draw against the clear colour
+            //    and then WRITE depth, punching a hole through the lake bed: a
+            //    solid upside-down puppet hanging under the world rather than a
+            //    reflection.
+            //
+            // Letting water skip its depth write instead is the other obvious fix
+            // and it is worse: the mirror then draws over the surface unoccluded
+            // and bleeds past the water's edge at grazing angles, and the waves
+            // stop depth-culling their own overlap (the wash-out the pipeline
+            // comment below is about).
+            //
+            // The sort key is what makes this slot exist: water is AlphaMode::Blend
+            // so ComputeSortKey puts it in bucket 2, after all opaque geometry, and
+            // reaching the first water entity therefore means the opaque half of
+            // the frame is complete.
+            if (rtIsWater && !rtReflectionsDone && pass != TargetPass::TransparentOIT) {
+                rtReflectionsDone = true;
+                RenderPlanarReflections();
+                // The pass binds its own pipeline state and resets the descriptor
+                // cache, so force this loop to rebind before it draws the water.
+                rtTransparentBound = false;
+                rtCustomBound = false;
+                m_LastPipelineWasCustom = false;
+                targetPipeline->Bind(commandBuffer);
+            }
             if (pass == TargetPass::OpaqueOnly && rtIsBlended) continue;
             if (pass == TargetPass::TransparentOIT && !rtIsBlended) continue;
 
@@ -10848,10 +10912,10 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     // players will see it - no editor selection glow on particles or anything else.
     if (viewportIndex == 0) RenderSelectionHighlight();
 
-    // Hand-crafted planar floor reflections (mirrored geometry) — also in the
-    // offscreen path so the editor game view and golden capture show them, not
-    // just the player's main pass.
-    RenderPlanarReflections();
+    // Reflections already ran, mid-loop, just before the first water surface (see
+    // the long note there). A scene with reflective planes but no water never hits
+    // that point, so it still needs the pass here.
+    if (!rtReflectionsDone) RenderPlanarReflections();
 
     // Sorted 2D sprite rendering pass (after 3D geometry)
     RenderSprites(target->GetWidth(), target->GetHeight());
@@ -15545,10 +15609,23 @@ void RenderSystem::MirrorSceneAcrossPlane(f32 planeY, const Math::Vector3& tint,
     f32 fpMinX = -1e9f, fpMaxX = 1e9f, fpMinZ = -1e9f, fpMaxZ = 1e9f;
     bool haveFootprint = false;
     if (auto* stf = m_World->GetComponent<TransformComponent>(skipEntity)) {
-        fpMinX = stf->position.x - stf->scale.x;
-        fpMaxX = stf->position.x + stf->scale.x;
-        fpMinZ = stf->position.z - stf->scale.z;
-        fpMaxZ = stf->position.z + stf->scale.z;
+        // How big the reflective surface is in XZ. Transform scale is the right
+        // answer for a ReflectivePlane (a unit quad scaled to size) and the WRONG
+        // one for a water volume, whose surface mesh is built from halfExtents
+        // while the transform stays at scale 1. Reading scale there gives a 1x1
+        // footprint, and the margin test then culls everything that is not
+        // practically on top of the entity origin -- an empty mirror, which is
+        // indistinguishable from the reflection pass not running at all.
+        f32 halfX = stf->scale.x;
+        f32 halfZ = stf->scale.z;
+        if (auto* wv = m_World->GetComponent<WaterVolumeComponent>(skipEntity)) {
+            halfX = wv->halfExtents.x;
+            halfZ = wv->halfExtents.z;
+        }
+        fpMinX = stf->position.x - halfX;
+        fpMaxX = stf->position.x + halfX;
+        fpMinZ = stf->position.z - halfZ;
+        fpMaxZ = stf->position.z + halfZ;
         haveFootprint = true;
     }
 
@@ -15558,6 +15635,7 @@ void RenderSystem::MirrorSceneAcrossPlane(f32 planeY, const Math::Vector3& tint,
         if (e == skipEntity) continue;
         if (m_World->HasComponent<ReflectivePlaneComponent>(e)) continue;  // don't reflect reflectors
         if (m_World->HasComponent<Water3DComponent>(e)) continue;          // nor water in water
+        if (m_World->HasComponent<WaterVolumeComponent>(e)) continue;      // nor a second pool
         auto* tf = m_World->GetComponent<TransformComponent>(e);
         if (!tf) continue;
         if (tf->position.y < planeY - 0.001f) continue;   // only what sits above the plane
@@ -15590,7 +15668,8 @@ void RenderSystem::RenderPlanarReflections() {
 
     auto planes = m_World->GetEntitiesWithComponent<ReflectivePlaneComponent>();
     auto waters = m_World->GetEntitiesWithComponent<Water3DComponent>();
-    if (planes.empty() && waters.empty()) return;
+    auto volumes = m_World->GetEntitiesWithComponent<WaterVolumeComponent>();
+    if (planes.empty() && waters.empty() && volumes.empty()) return;
 
     m_LastBound.Reset(); m_GeometryPoolBound = false;  // reset descriptor cache for this pass
 
@@ -15622,6 +15701,30 @@ void RenderSystem::RenderPlanarReflections() {
         auto* wtf = m_World->GetComponent<TransformComponent>(waterEnt);
         if (!wtf) continue;
         MirrorSceneAcrossPlane(wtf->position.y + 0.02f, water->settings.shallowColor, s, waterEnt);
+    }
+
+    // Water volumes (lakes, ponds, pools) get the same real mirror. This is the
+    // component the Entity menu actually creates, so until now the common case --
+    // drop a Water Volume, look at it -- had no scene reflection at all: the only
+    // thing the surface showed was triangle.frag's flat skyReflectColor fresnel,
+    // one colour for the whole sheet regardless of what was standing next to it.
+    //
+    // The surface plane is the ENTITY's Y, not the volume centre. The mesh is built
+    // at local y = 0 and halfExtents.y measures DOWNWARD to the bed, which is the
+    // same convention ControllerSystem::FindWaterAt uses ("surface = the entity's
+    // Y, bottom = Y - 2*halfY"). Taking the centre instead would sink the mirror
+    // plane by the pool's depth and reflect the world into the wrong place.
+    //
+    // Frozen water stops mirroring the scene: ice is not a mirror, and the shader
+    // already swings the surface toward iceColor with its own broader fresnel.
+    for (Entity volEnt : volumes) {
+        auto* vol = m_World->GetComponent<WaterVolumeComponent>(volEnt);
+        if (!vol) continue;
+        f32 s = Math::Clamp(vol->reflectionStrength, 0.0f, 1.0f) * (1.0f - vol->freezeProgress);
+        if (s <= 0.001f) continue;
+        auto* vtf = m_World->GetComponent<TransformComponent>(volEnt);
+        if (!vtf) continue;
+        MirrorSceneAcrossPlane(vtf->position.y + 0.02f, vol->waterColor, s, volEnt);
     }
 }
 
@@ -22741,6 +22844,25 @@ void RenderSystem::EnsureWaterMeshes() {
         auto* boundary = m_World->GetComponent<BoundaryPolygonComponent>(entity);
         const bool usePolygon = boundary && boundary->points.size() >= 3;
         const bool boundaryDirty = usePolygon && boundary->dirty;
+        // Keep the generated material in step with the component's visual fields.
+        //
+        // The material below is built ONCE, when the mesh is created, and the loop
+        // then early-outs forever. So dragging Water Color or Opacity in the
+        // inspector changed the component and nothing else: the surface kept the
+        // values it was born with. The editor only forced a rebuild for half
+        // extents and water type, which is why resizing a pool appeared to "fix"
+        // a colour change made ten minutes earlier.
+        //
+        // Syncing is a two-field copy, so it is cheaper than the rebuild the
+        // inspector would otherwise have to trigger, and it makes both sliders
+        // live. The material holds the LIQUID values on purpose -- the freeze lerp
+        // toward iceColor/iceOpacity happens later, in push constants, and would
+        // be overwritten here if it were baked in.
+        if (auto* wmat = m_World->GetComponent<MaterialComponent>(entity)) {
+            wmat->baseColor = waterVol->waterColor;
+            wmat->opacity = waterVol->opacity;
+        }
+
         if (waterVol->meshCreated && m_World->GetComponent<MeshComponent>(entity) && !boundaryDirty) continue;
         const bool regen = waterVol->meshCreated;   // already existed -> this is a rebuild
 
@@ -22760,7 +22882,7 @@ void RenderSystem::EnsureWaterMeshes() {
                 v.position = Math::Vector3(xz.x, 0.0f, xz.y);
                 v.normal = Math::Vector3(0.0f, 1.0f, 0.0f);
                 v.uv = Math::Vector2(0.5f + xz.x * 0.02f, 0.5f + xz.y * 0.02f);
-                v.color = Math::Vector4(waterVol->waterColor.x, edgeDist, waterVol->waterColor.z, waterVol->opacity);
+                v.color = MakeWaterVertexColor(*waterVol, edgeDist);
                 return v;
             };
             const u32 n = static_cast<u32>(boundary->points.size());
@@ -22803,13 +22925,7 @@ void RenderSystem::EnsureWaterMeshes() {
                 // Normalize so center = 1.0 (max edge dist is 0.5)
                 f32 edgeDist = std::min(minEdgeDist * 2.0f, 1.0f);
 
-                // R = water color red (unused by shader for water), G = edge distance, B = unused, A = opacity
-                v.color = Math::Vector4(
-                    waterVol->waterColor.x,
-                    edgeDist,
-                    waterVol->waterColor.z,
-                    waterVol->opacity
-                );
+                v.color = MakeWaterVertexColor(*waterVol, edgeDist);
                 mesh.vertices.push_back(v);
             }
         }
@@ -22843,34 +22959,9 @@ void RenderSystem::EnsureWaterMeshes() {
         else
             m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
 
-        // Add material with water visual properties based on water type
-        MaterialComponent material;
-        material.baseColor = waterVol->waterColor;
-        material.opacity = waterVol->opacity;
-        material.doubleSided = true;
-        material.castShadows = false;
-        material.alphaMode = static_cast<MaterialComponent::AlphaMode>(0);  // Opaque — writes depth
-
-        // Water type presets for material properties
-        switch (waterVol->waterType) {
-            case WaterType::Ocean:
-                material.metallic = 0.4f;
-                material.roughness = 0.05f;
-                break;
-            case WaterType::River:
-                material.metallic = 0.25f;
-                material.roughness = 0.15f;
-                break;
-            case WaterType::Pond:
-                material.metallic = 0.2f;
-                material.roughness = 0.2f;
-                break;
-            case WaterType::Lake:
-            default:
-                material.metallic = 0.3f;
-                material.roughness = 0.1f;
-                break;
-        }
+        // Surface material. Pure function of the component, so it lives with the
+        // component and is covered by tests that need no GPU.
+        MaterialComponent material = MakeWaterSurfaceMaterial(*waterVol);
 
         m_World->AddComponent<MaterialComponent>(entity, material);
 
