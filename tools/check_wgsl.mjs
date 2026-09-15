@@ -97,6 +97,30 @@ function extractShaders(source, macros = {}) {
 // The ObjectData WGSL, built from the SAME field list the C++ struct is built
 // from. Derived, never copied: a second copy here would be the very thing this
 // whole arrangement exists to remove.
+// The LightingUBO WGSL, built from the SAME field list WebLightingUBO is built
+// from. Every field is a vec4; a row is a name and a count.
+function lightingWGSL(repo) {
+  const src = readFileSync(
+    resolve(repo, 'Engine/include/Enjin/Renderer/WebGPU/WebLightingLayout.h'), 'utf8');
+  const key = '#define ENJIN_WEB_LIGHTING_FIELDS(X1, XN)';
+  const at = src.indexOf(key);
+  if (at < 0) throw new Error('no ENJIN_WEB_LIGHTING_FIELDS in WebLightingLayout.h');
+  const lines = src.slice(at).split('\n');
+  const body = [];
+  for (let i = 1; i < lines.length; i++) {
+    body.push(lines[i]);
+    if (!lines[i].trimEnd().endsWith('\\')) break;
+  }
+  const out = [];
+  const row = /X1\(\s*(\w+)\s*\)|XN\(\s*(\w+)\s*,\s*(\d+)\s*\)/g;
+  for (const m of body.join('\n').matchAll(row)) {
+    if (m[1]) out.push('    ' + m[1] + ': vec4<f32>,\n');
+    else out.push('    ' + m[2] + ': array<vec4<f32>, ' + m[3] + '>,\n');
+  }
+  if (!out.length) throw new Error('ENJIN_WEB_LIGHTING_FIELDS has no rows');
+  return 'struct LightingUBO {\n' + out.join('') + '};\n';
+}
+
 function objectDataWGSL(repo) {
   const src = readFileSync(
     resolve(repo, 'Engine/include/Enjin/Renderer/WebGPU/WebObjectDataLayout.h'), 'utf8');
@@ -123,7 +147,10 @@ function looksLikeWGSL(code) {
   return /@(vertex|fragment|compute)\b/.test(code);
 }
 
-const WGSL_MACROS = { ENJIN_WEB_OBJECTDATA_WGSL: objectDataWGSL(repo) };
+const WGSL_MACROS = {
+  ENJIN_WEB_OBJECTDATA_WGSL: objectDataWGSL(repo),
+  ENJIN_WEB_LIGHTING_WGSL: lightingWGSL(repo),
+};
 
 const shaders = [];
 for (const path of sourcePaths) {

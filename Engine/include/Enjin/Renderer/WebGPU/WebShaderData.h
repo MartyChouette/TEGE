@@ -2,6 +2,7 @@
 
 // The ObjectData layout both shaders below splice in. One list, two readers.
 #include "Enjin/Renderer/WebGPU/WebObjectDataLayout.h"
+#include "Enjin/Renderer/WebGPU/WebLightingLayout.h"
 
 #include "Enjin/Platform/Platform.h"
 
@@ -20,37 +21,13 @@ struct ViewProjection {
     time: f32,
 };
 
-struct LightingUBO {
-    lightDir: array<vec4<f32>, 8>,
-    lightColor: array<vec4<f32>, 8>,
-    lightParams: array<vec4<f32>, 8>,
-    ambientColor: vec4<f32>,
-    fogColor: vec4<f32>,
-    fogParams: vec4<f32>,
-    shadowParams: vec4<f32>,
-    lightCount: vec4<f32>,
-    spotPos: array<vec4<f32>, 4>,
-    spotDir: array<vec4<f32>, 4>,
-    spotColor: array<vec4<f32>, 4>,
-    spotParams: array<vec4<f32>, 4>,
-    windData: vec4<f32>,                 // xyz = wind dir * strength, w = wind clock
-    skyTop: vec4<f32>,                   // xyz zenith, w = configured flag
-    skyBottom: vec4<f32>,
-    skyHorizon: vec4<f32>,               // w = horizon haze
-    skySunDir: vec4<f32>,                // w = sun intensity
-    skySunColor: vec4<f32>,              // w = sun size
-    skyClouds: vec4<f32>,                // cov1, scale1, speed, cov2
-    skyCloudColor: vec4<f32>,            // w = scale2
-    snowParams: vec4<f32>,               // x = snow accumulation (0..1); yzw reserved
-    // Light cookies, appended so every offset above is unchanged. Declared in
-    // BOTH copies of this struct even though only the PBR shader reads them:
-    // the two must describe the same buffer or the binding sizes disagree.
-    spotCookie: array<vec4<f32>, 4>,     // x = atlas cell (-1 = none), y = scale, z = intensity
-    spotCookieRight: array<vec4<f32>, 4>,// xyz = the light's local +X
-    // Baked lightmap strength in x; the atlases themselves are textures above.
-    // Appended last in both copies, same prefix rule as everything else here.
-    lightmapParams: vec4<f32>,
-};
+)"
+// GENERATED from the single field list in WebLightingLayout.h -- the same list
+// WebLightingUBO is built from. Both shaders must describe the SAME buffer or
+// their binding sizes disagree, which is exactly why this stopped being two
+// hand-written copies.
+ENJIN_WEB_LIGHTING_WGSL
+R"(
 
 @group(0) @binding(0) var<uniform> viewProj: ViewProjection;
 @group(0) @binding(1) var<uniform> lighting: LightingUBO;
@@ -1771,37 +1748,13 @@ struct ViewProjection {
     viewPos: vec3<f32>,
     time: f32,
 };
-struct LightingUBO {
-    lightDir: array<vec4<f32>, 8>,
-    lightColor: array<vec4<f32>, 8>,
-    lightParams: array<vec4<f32>, 8>,
-    ambientColor: vec4<f32>,
-    fogColor: vec4<f32>,
-    fogParams: vec4<f32>,
-    shadowParams: vec4<f32>,
-    lightCount: vec4<f32>,
-    spotPos: array<vec4<f32>, 4>,
-    spotDir: array<vec4<f32>, 4>,
-    spotColor: array<vec4<f32>, 4>,
-    spotParams: array<vec4<f32>, 4>,
-    windData: vec4<f32>,                 // xyz = wind dir * strength, w = wind clock
-    skyTop: vec4<f32>,                   // xyz zenith, w = configured flag
-    skyBottom: vec4<f32>,
-    skyHorizon: vec4<f32>,               // w = horizon haze
-    skySunDir: vec4<f32>,                // w = sun intensity
-    skySunColor: vec4<f32>,              // w = sun size
-    skyClouds: vec4<f32>,                // cov1, scale1, speed, cov2
-    skyCloudColor: vec4<f32>,            // w = scale2
-    snowParams: vec4<f32>,               // x = snow accumulation (0..1); yzw reserved
-    // Light cookies, appended so every offset above is unchanged. Declared in
-    // BOTH copies of this struct even though only the PBR shader reads them:
-    // the two must describe the same buffer or the binding sizes disagree.
-    spotCookie: array<vec4<f32>, 4>,     // x = atlas cell (-1 = none), y = scale, z = intensity
-    spotCookieRight: array<vec4<f32>, 4>,// xyz = the light's local +X
-    // Baked lightmap strength in x; the atlases themselves are textures above.
-    // Appended last in both copies, same prefix rule as everything else here.
-    lightmapParams: vec4<f32>,
-};
+)"
+// GENERATED from the single field list in WebLightingLayout.h -- the same list
+// WebLightingUBO is built from. Both shaders must describe the SAME buffer or
+// their binding sizes disagree, which is exactly why this stopped being two
+// hand-written copies.
+ENJIN_WEB_LIGHTING_WGSL
+R"(
 @group(0) @binding(0) var<uniform> viewProj: ViewProjection;
 @group(0) @binding(1) var<uniform> lighting: LightingUBO;
 

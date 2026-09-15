@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The per-entity GPU layout is declared once. Check it has stayed that way.
+"""The web GPU buffer layouts are declared once each. Check they stayed that way.
 
 Until 2026-09-15 this buffer was written out three times by hand -- the C++
 `WebObjectDataUBO` and a `struct ObjectData` inside each of PBR_WGSL and
@@ -18,8 +18,13 @@ from. This checks that nobody has quietly undone that:
   - the C++ struct is still generated, not re-expanded by hand
   - the static_assert still matches what the field list adds up to
 
-    python tools/objectdata_parity.py           # the report
-    python tools/objectdata_parity.py --strict  # exit 1 on any of the above
+Two layouts live this way: ObjectData (per entity, in WebObjectDataLayout.h) and
+LightingUBO (per frame, in WebLightingLayout.h). Both were three hand-written
+copies; the lighting one also carried a size comment reading 992 bytes while its
+fields added up to 1008, which is what a hand-maintained number does over time.
+
+    python tools/gpu_layout_parity.py           # the report
+    python tools/gpu_layout_parity.py --strict  # exit 1 on any of the above
 """
 import re
 import sys
@@ -27,6 +32,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 LAYOUT = ROOT / "Engine/include/Enjin/Renderer/WebGPU/WebObjectDataLayout.h"
+LIGHTING = ROOT / "Engine/include/Enjin/Renderer/WebGPU/WebLightingLayout.h"
 WGSL = ROOT / "Engine/include/Enjin/Renderer/WebGPU/WebShaderData.h"
 CPP = ROOT / "Engine/src/ECS/Systems/RenderSystem.cpp"
 
@@ -99,6 +105,48 @@ def main():
                         "(PBR_WGSL and OUTLINE_WGSL)")
     else:
         print(f"  ok  {splices} shaders splice the generated declaration")
+
+    # ---- LightingUBO, the same arrangement ----
+    lsrc = LIGHTING.read_text(encoding="utf-8", errors="ignore")
+    lat = lsrc.find("#define ENJIN_WEB_LIGHTING_FIELDS(X1, XN)")
+    if lat < 0:
+        problems.append("no ENJIN_WEB_LIGHTING_FIELDS in WebLightingLayout.h")
+    else:
+        lbody = []
+        for line in lsrc[lat:].split("\n")[1:]:
+            lbody.append(line)
+            if not line.rstrip().endswith("\\"):
+                break
+        joined = "\n".join(lbody)
+        lrows = re.findall(r"X1\(\s*(\w+)\s*\)|XN\(\s*(\w+)\s*,\s*(\d+)\s*\)", joined)
+        vec4s = sum(int(n) if n else 1 for _, _, n in lrows)
+        lbytes = vec4s * 16
+        print(f"One list: {len(lrows)} lighting fields, {vec4s} vec4s -> {lbytes} bytes")
+
+        if "ENJIN_WEB_LIGHTING_FIELDS(ENJIN_WEB_LIGHTING_MEMBER1, ENJIN_WEB_LIGHTING_MEMBERN)" not in cpp:
+            problems.append("WebLightingUBO is no longer generated from the list")
+        else:
+            print("  ok  WebLightingUBO is generated from the list")
+
+        lm = re.search(r"static_assert\(sizeof\(WebLightingUBO\) == (\d+)", cpp)
+        if not lm:
+            problems.append("no static_assert on sizeof(WebLightingUBO)")
+        elif int(lm.group(1)) != lbytes:
+            problems.append(f"WebLightingUBO static_assert says {lm.group(1)}, the list adds up to {lbytes}")
+        else:
+            print(f"  ok  WebLightingUBO static_assert agrees at {lbytes} bytes")
+
+        lhand = shaders.count("struct LightingUBO {")
+        if lhand:
+            problems.append(f"{lhand} hand-written `struct LightingUBO` back in WebShaderData.h")
+        else:
+            print("  ok  no hand-written LightingUBO in the shader header")
+
+        lsplice = shaders.count("ENJIN_WEB_LIGHTING_WGSL")
+        if lsplice < 2:
+            problems.append(f"{lsplice} shader(s) splice the generated LightingUBO, expected 2")
+        else:
+            print(f"  ok  {lsplice} shaders splice the generated LightingUBO")
 
     if problems:
         print("\nThe layout has been un-singled:")

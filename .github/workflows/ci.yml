@@ -805,8 +805,8 @@ jobs:
       # declaration still compiles 16/16 (verified by mutation, 2026-09-15) and
       # every material on web then reads at shifted offsets. One layout, three
       # hand-maintained declarations, and nothing else compares them.
-      - name: ObjectData struct parity (C++ vs both WGSL copies)
-        run: python tools/objectdata_parity.py --strict
+      - name: GPU layout parity (ObjectData + LightingUBO declared once)
+        run: python tools/gpu_layout_parity.py --strict
 
       # A doc sample that names a function the engine does not register fails
       # in the READER's script, pointing at their file, so it reads as their

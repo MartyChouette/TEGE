@@ -122,7 +122,8 @@ A symptom shows up in a project, so the project is where you look, and project d
 - **The palette texture is 256 x `kMaxPaletteSlots` (16), one palette per ROW.** `PALETTE_SLOT_COUNT` in triangle.frag must equal `kMaxPaletteSlots` in `PaletteCycle.h` — one number in two languages, and a mismatch samples a neighbouring palette rather than failing
 - **Palette cycling moves in WHOLE STEPS, so two captures inside one step are legitimately byte-identical.** At 6 entries/sec a step is 167 ms. A "nothing is animating" conclusion drawn from frames 40 vs 95 is a measurement error, not a bug — compare across a step
 - **Descriptor set binding 2** is a plain `STORAGE_BUFFER` (adr-0003) — the material SSBO is a runtime array indexed per draw by `firstInstance` → `gl_InstanceIndex` → `v_MaterialIndex`. ALL set-0 `vkCmdBindDescriptorSets` calls pass `dynamicOffsetCount=0, nullptr`; direct entity draws MUST pass `GetMaterialIndex(entity)` as the draw's `firstInstance`. Set 0 uses `UPDATE_AFTER_BIND` on bindings 2-23 (pool + layout flags must stay in sync); this is what legalizes the per-entity bone/morph/sprite descriptor writes mid-recording
-- **The web per-entity GPU layout is declared ONCE, in `WebObjectDataLayout.h`.**
+- **The web GPU buffer layouts are declared ONCE each** -- ObjectData in
+  `WebObjectDataLayout.h`, LightingUBO in `WebLightingLayout.h`.
   It used to be three hand-written copies (the C++ `WebObjectDataUBO` plus a
   `struct ObjectData` in each of PBR_WGSL and OUTLINE_WGSL), and missing one --
   OUTLINE_WGSL, always, since it is a different shader that merely shares the
@@ -130,11 +131,15 @@ A symptom shows up in a project, so the project is where you look, and project d
   material on web read at shifted offsets at once. **Adding a field is now ONE row
   in `ENJIN_WEB_OBJECTDATA_FIELDS`**; the struct and both shaders are generated
   from it. Keep it 16-byte aligned and move the `static_assert`. Two guards:
-  `python tools/objectdata_parity.py --strict` (in CI) fails if anyone re-adds a
+  `python tools/gpu_layout_parity.py --strict` (in CI) fails if anyone re-adds a
   hand copy or stops generating, and the last field is a runtime CANARY the shader
   checks -- a mismatch paints the scene magenta. Measured coverage of the canary:
   a size-changing drift never reaches it (WebGPU rejects the draw, canvas goes
   black), so magenta means this struct and black means look elsewhere.
+  `LightingUBO` got the same treatment on the same day (PBR_WGSL + SKY_WGSL, 24
+  fields): its hand-maintained size comment read 992 bytes while the fields added
+  up to 1008, which is what a number nobody can check does over time. APPEND rows
+  there, never insert -- the cookie rows were appended for exactly that reason.
 - **The web `flags` word is NOT the Vulkan `flags` word, and the overlap is the trap.**
   Bits 3 (skinned), 4 (wind sway), 5 (water surface), 11 (ocean), 21 (affine), 22
   (vertex snap) and 23 (stipple) mean the same thing on both. Bits 6 and 7 do not:

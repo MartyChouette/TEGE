@@ -435,6 +435,7 @@ void RenderSystem::BeginFrameTransformCaches() {
 #if ENJIN_RENDERER_WEBGPU
 
 #include "Enjin/Renderer/WebGPU/WebSceneTarget.h"   // kWebSceneSampleCount
+#include "Enjin/Renderer/WebGPU/WebLightingLayout.h"
 #include "Enjin/Renderer/WebGPU/WebObjectDataLayout.h"
 #include "Enjin/Renderer/WebGPU/WebShaderData.h"
 #include "Enjin/Renderer/WebGPU/WebGPURenderer.h"
@@ -522,39 +523,17 @@ struct WebViewProjectionUBO {
 
 struct alignas(16) WebLightVec4 { f32 x, y, z, w; };
 
+// Generated from the one list in WebLightingLayout.h, the same list both WGSL
+// LightingUBO declarations are generated from. It was three hand-written copies
+// until 2026-09-15, and the size comment here said 992 while the fields added up
+// to 1008 -- which is what a hand-maintained number does over time.
 struct WebLightingUBO {
-    WebLightVec4 lightDir[8];              // 128  (0-3: dir directions, 4-7: point positions)
-    WebLightVec4 lightColor[8];            // 128  (matching color.rgb + intensity.w)
-    WebLightVec4 lightParams[8];           // 128  (point: range, linear, quadratic, constant)
-    WebLightVec4 ambientColor;             // 16
-    WebLightVec4 fogColor;                 // 16
-    WebLightVec4 fogParams;                // 16
-    WebLightVec4 shadowParams;             // 16
-    WebLightVec4 lightCount;               // 16   (x=dir, y=point, z=spot)
-    // Spot lights (separate arrays since they need both position and direction)
-    WebLightVec4 spotPos[4];               // 64   position.xyz, range.w
-    WebLightVec4 spotDir[4];               // 64   direction.xyz
-    WebLightVec4 spotColor[4];             // 64   color.rgb, intensity.w
-    WebLightVec4 spotParams[4];            // 64   innerCutoff.x, outerCutoff.y
-    WebLightVec4 windData;                 // 16   xyz = wind dir * strength, w = wind clock
-    // Sky palette + atmosphere (mirrors the sky block in pbr.wgsl/SKY_WGSL)
-    WebLightVec4 skyTop;                   // xyz zenith color, w = configured flag
-    WebLightVec4 skyBottom;                // xyz ground-arc color
-    WebLightVec4 skyHorizon;               // xyz horizon color, w = horizon haze
-    WebLightVec4 skySunDir;                // xyz sun direction, w = sun intensity
-    WebLightVec4 skySunColor;              // xyz sun color, w = sun size
-    WebLightVec4 skyClouds;                // x cov1, y scale1, z speed, w cov2
-    WebLightVec4 skyCloudColor;            // xyz cloud color, w = scale2
-    WebLightVec4 snowParams;               // x = snow accumulation (0..1); yzw reserved
-    // Light cookies. APPENDED rather than squeezed into the spot arrays: every
-    // field above keeps its offset, so nothing that writes this UBO had to be
-    // touched or re-checked.
-    WebLightVec4 spotCookie[4];            // 64   x = atlas cell (-1 = none), y = scale, z = intensity
-    WebLightVec4 spotCookieRight[4];       // 64   xyz = the light's local +X
-    // Baked lightmap strength in x. The atlases are textures on the frame
-    // group; only the dial lives here.
-    WebLightVec4 lightmapParams;           // 16
-};                                         // Total: 992 bytes (appended the cookie rows)
+    ENJIN_WEB_LIGHTING_FIELDS(ENJIN_WEB_LIGHTING_MEMBER1, ENJIN_WEB_LIGHTING_MEMBERN)
+};
+static_assert(sizeof(WebLightingUBO) == 1008,
+              "WebLightingUBO changed size. APPEND a row to the list in "
+              "WebLightingLayout.h (inserting moves every offset after it), then "
+              "move this number. The shaders follow automatically.");
 
 // The per-entity GPU layout is declared ONCE, in WebObjectDataLayout.h, and both
 // this struct and the WGSL `ObjectData` in PBR_WGSL and OUTLINE_WGSL are generated
