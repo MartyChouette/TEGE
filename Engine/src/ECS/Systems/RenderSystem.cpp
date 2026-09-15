@@ -572,9 +572,21 @@ struct WebObjectDataUBO {
     f32 scrollReflSpeedV;                   // 4
     f32 scrollReflStrength;                 // 4  0 = off (also when no texture)
     f32 matcapBlend;                        // 4  1 = matcap texture bound, 0 = off
-};                                          // Total: 144 bytes — keep in lockstep
+    // Water shore foam. These are `surfaceParam1/2/3` push constants on Vulkan and
+    // had no home here at all, which is why foam was the one part of a water volume
+    // a browser could not draw: the shader half was missing AND the data half was.
+    f32 shoreWidth;                         // 4  0 = not a shore surface
+    f32 foamIntensity;                      // 4
+    f32 foamScale;                          // 4
+    f32 _padObj;                            // 4  keeps the struct 16-byte aligned
+};                                          // Total: 160 bytes — keep in lockstep
                                             // with BOTH WGSL ObjectData structs
                                             // (pbr + shadow) in WebShaderData.h
+static_assert(sizeof(WebObjectDataUBO) == 160,
+              "WebObjectDataUBO must match BOTH WGSL ObjectData structs in "
+              "WebShaderData.h (PBR_WGSL and OUTLINE_WGSL). Nothing else checks this: "
+              "the WGSL is a string literal, so a mismatch is a silent read at the "
+              "wrong offset and every material on web comes out wrong at once.");
 
 // Spot shadow VP UBO: 2 lights x (view + proj) = 4 matrices
 struct WebSpotShadowVPUBO {
@@ -4204,6 +4216,13 @@ void RenderSystem::Update(f32 deltaTime) {
                 obj.flags |= (1 << 5);                       // FLAG_WATER_SURFACE
                 obj.parallaxScale = wv->freezeProgress;      // repurposed for water, as on desktop
                 if (wv->waterType == WaterType::Ocean) obj.flags |= (1 << 11);  // adds swell
+                // Shore foam. Same gate as the Vulkan push-constant block: no foam
+                // on ice, and the intensity fades out as the surface freezes.
+                if (wv->enableShore && wv->freezeProgress < 0.8f) {
+                    obj.shoreWidth = wv->shoreWidth;
+                    obj.foamIntensity = wv->foamIntensity * (1.0f - wv->freezeProgress);
+                    obj.foamScale = wv->foamScale;
+                }
             } else if (m_World->HasComponent<Water3DComponent>(entity)) {
                 obj.flags |= (1 << 5);
             }

@@ -88,6 +88,10 @@ struct ObjectData {
     scrollReflSpeedV: f32,
     scrollReflStrength: f32,
     matcapBlend: f32,
+    shoreWidth: f32,      // water shore foam; 0 = not a shore surface
+    foamIntensity: f32,
+    foamScale: f32,
+    _padObj: f32,         // keeps this 16-byte aligned, matches WebObjectDataUBO
 };
 struct ObjectDataArray {
     data: array<ObjectData>,
@@ -310,6 +314,13 @@ fn fresnelSchlickRoughness(cosTheta: f32, F0: vec3<f32>, roughness: f32) -> vec3
 }
 
 // Directional shadow map lookup with 3x3 PCF (9 taps)
+// Shore foam noise. The same hash triangle.frag uses (127.1/311.7, 43758.5453),
+// kept digit-for-digit so a lake does not foam in a different pattern per
+// backend -- it is a hash, so any drift is a completely different result.
+fn foamHash(p: vec2<f32>) -> f32 {
+    return fract(sin(dot(p, vec2<f32>(127.1, 311.7))) * 43758.5453);
+}
+
 fn sampleShadow(worldPos: vec3<f32>) -> f32 {
     let shadowMat = shadowVP.proj * shadowVP.view;
     let lightClip = shadowMat * vec4<f32>(worldPos, 1.0);
@@ -759,6 +770,41 @@ fn shadeSurface(in: VertexOutput) -> vec4<f32> {
         color = mix(color, vec3<f32>(0.95, 0.97, 1.0), snowCoverage);
     }
 
+    // Shore foam (mirrors triangle.frag ~1942). Gated on the parameters rather
+    // than on a flag bit: they are 0 for anything that is not a shore surface, so
+    // this needs no bit at all -- which matters here, because the web flags word
+    // does NOT share bits 6 and 7 with Vulkan and reaching for FLAG_WATER_SHORE
+    // would have landed on palette-indexed.
+    //
+    // Everything it reads was already being carried: the shoreline distance rides
+    // in vertex colour .g (MakeWaterVertexColor writes it on both paths) and the
+    // world position is in world_pos. Only the three parameters were missing, and
+    // they now ride in ObjectData.
+    if (object.foamIntensity > 0.0 && object.shoreWidth > 0.0) {
+        let edgeDist = in.color.g;              // 0 at the rim, 1 at the centre
+        let shoreW = object.shoreWidth;
+
+        // Shallow water tint near the bank, before the foam goes on top.
+        let shallowBlend = 1.0 - smoothstep(0.0, shoreW * 2.0, edgeDist);
+        let shoreColor = object.baseColor * 1.5 + vec3<f32>(0.1, 0.15, 0.1);
+        color = mix(color, shoreColor, shallowBlend * 0.4);
+
+        // Three octaves of hashed noise, drifting on the same water clock the
+        // wave displacement uses, so the foam moves with the surface.
+        let foamSc = object.foamScale;
+        var waterTime = lighting.windData.w;
+        if (waterTime == 0.0) { waterTime = viewProj.time; }
+        let wp = in.world_pos.xz;
+        let n1 = foamHash(floor(wp * foamSc));
+        let n2 = foamHash(floor(wp * foamSc * 2.3 + vec2<f32>(waterTime * 0.3)));
+        let n3 = foamHash(floor(wp * foamSc * 4.7 + vec2<f32>(waterTime * 0.7)));
+        let noise = n1 * 0.5 + n2 * 0.3 + n3 * 0.2;
+
+        let foamThreshold = smoothstep(shoreW, 0.0, edgeDist);
+        let foam = smoothstep(0.35, 0.65, noise) * foamThreshold * object.foamIntensity;
+        color = mix(color, vec3<f32>(0.9, 0.95, 1.0), foam);
+    }
+
     // Height-based distance fog (matches Vulkan)
     let fogDensity = lighting.fogParams.x;
     if (fogDensity > 0.0) {
@@ -922,6 +968,10 @@ struct ObjectData {
     scrollReflSpeedV: f32,
     scrollReflStrength: f32,
     matcapBlend: f32,
+    shoreWidth: f32,      // water shore foam; 0 = not a shore surface
+    foamIntensity: f32,
+    foamScale: f32,
+    _padObj: f32,         // keeps this 16-byte aligned, matches WebObjectDataUBO
 };
 struct ObjectDataArray {
     data: array<ObjectData>,
