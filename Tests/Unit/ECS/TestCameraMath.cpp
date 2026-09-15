@@ -16,6 +16,7 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Components/Transform.h"
+#include "Enjin/Scripting/ScriptBindings.h"
 
 #include <cmath>
 
@@ -204,4 +205,86 @@ ENJIN_TEST(CameraMath, AZeroSizedViewportIsRefusedRatherThanDividedBy) {
     ENJIN_EXPECT_TRUE(!ScreenToWorldOnPlane(&w, cam, Math::Vector2(0, 0), kW, 0.0f, 0.0f, out));
 }
 
+
+// ---------------------------------------------------------------------------
+// The viewport the screen-space bindings answer against.
+//
+// Everything above tests the arithmetic, and the arithmetic was never wrong.
+// What shipped broken was the SIZE handed to it: the editor pushed 0,0 once and
+// the setter read that as "keep what you have", so every script query answered
+// for a compiled-in 1280x720 that belonged to nobody. The desktop player pushed
+// once at boot and went stale on the first resize, and the web player never
+// pushed at all. A wrong viewport does not fail, it just answers somewhere else,
+// so these pin the setter contract rather than the maths.
+// ---------------------------------------------------------------------------
+
+ENJIN_TEST(RenderView, AZeroSizeKeepsTheLastGoodViewportInsteadOfAdoptingIt) {
+    // Arrange: a runtime has pushed a real size.
+    Scripting::SetBindingsRenderView(nullptr, 1600.0f, 900.0f);
+    ENJIN_ASSERT_TRUE(Scripting::BindingsRenderViewIsSet());
+
+    // Act: a caller pushes zeros -- a minimised window, or a panel that has not
+    // drawn yet. This is the exact call that used to poison every query.
+    Scripting::SetBindingsRenderView(nullptr, 0.0f, 0.0f);
+
+    // Assert: the last good size survives. It must NOT become 0, and it must not
+    // silently fall back to some default nobody chose.
+    f32 vw = 0.0f, vh = 0.0f;
+    Scripting::BindingsRenderViewSize(vw, vh);
+    ENJIN_EXPECT_TRUE(Near(vw, 1600.0f));
+    ENJIN_EXPECT_TRUE(Near(vh, 900.0f));
+}
+
+ENJIN_TEST(RenderView, AResizeActuallyMovesTheStoredViewport) {
+    // Arrange / Act: what a resize or a re-docked Game View panel does every frame.
+    Scripting::SetBindingsRenderView(nullptr, 1280.0f, 720.0f);
+    f32 w1 = 0.0f, h1 = 0.0f;
+    Scripting::BindingsRenderViewSize(w1, h1);
+
+    Scripting::SetBindingsRenderView(nullptr, 1920.0f, 1080.0f);
+    f32 w2 = 0.0f, h2 = 0.0f;
+    Scripting::BindingsRenderViewSize(w2, h2);
+
+    // Assert: the push is honoured, not cached forever behind the first value.
+    ENJIN_EXPECT_TRUE(Near(w1, 1280.0f) && Near(h1, 720.0f));
+    ENJIN_EXPECT_TRUE(Near(w2, 1920.0f) && Near(h2, 1080.0f));
+}
+
+ENJIN_TEST(RenderView, KeepLastChangesTheCameraWithoutTouchingTheSize) {
+    // Arrange: the case the old zeros were trying to express.
+    Scripting::SetBindingsRenderView(nullptr, 1440.0f, 810.0f);
+
+    // Act: camera swapped, viewport unchanged.
+    Scripting::SetBindingsRenderViewKeepLast(nullptr);
+
+    // Assert: size intact. A caller now says this explicitly instead of
+    // encoding it as a pair of zeros that read as a bug at every other site.
+    f32 vw = 0.0f, vh = 0.0f;
+    Scripting::BindingsRenderViewSize(vw, vh);
+    ENJIN_EXPECT_TRUE(Near(vw, 1440.0f));
+    ENJIN_EXPECT_TRUE(Near(vh, 810.0f));
+}
+
+// The same screen pixel is a DIFFERENT world point once the viewport changes.
+// This is the user-visible half: a click that lands on the enemy windowed has
+// to land on the enemy fullscreen too.
+ENJIN_TEST(RenderView, TheSamePixelIsADifferentWorldPointAtADifferentViewport) {
+    // Arrange
+    World w;
+    const Entity cam = MakeCamera(w, ProjectionType::Orthographic);
+    Math::Vector3 wide, tall;
+
+    // Act: one pixel, two viewport shapes with different aspect ratios.
+    const bool a = ScreenToWorldOnPlane(&w, cam, Math::Vector2(200.0f, 100.0f),
+                                        800.0f, 400.0f, 0.0f, wide);
+    const bool b = ScreenToWorldOnPlane(&w, cam, Math::Vector2(200.0f, 100.0f),
+                                        400.0f, 400.0f, 0.0f, tall);
+
+    // Assert: both answer, and they disagree. If a stale viewport were being
+    // used for one of them, these would come back equal and a pick would be
+    // wrong everywhere except the one window size that was baked in.
+    ENJIN_ASSERT_TRUE(a);
+    ENJIN_ASSERT_TRUE(b);
+    ENJIN_EXPECT_TRUE(!Near(wide.x, tall.x));
+}
 ENJIN_TEST_MAIN()

@@ -81,6 +81,11 @@ void SetBindingsRenderViewKeepLast(const Renderer::Camera* camera) {
 // True once a runtime has pushed a real size. Screen-space queries answer with
 // a shrug rather than a fiction before that.
 bool BindingsRenderViewIsSet() { return s_BindingsViewSet; }
+
+void BindingsRenderViewSize(f32& outWidth, f32& outHeight) {
+    outWidth = s_BindingsViewW;
+    outHeight = s_BindingsViewH;
+}
 } // namespace Scripting
 } // namespace Enjin
 

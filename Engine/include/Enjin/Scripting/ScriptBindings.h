@@ -89,6 +89,11 @@ void SetBindingsPhysics(Physics::IPhysicsBackend* physics);
 void SetBindingsRenderView(const Renderer::Camera* camera, f32 viewportWidth, f32 viewportHeight);
 void SetBindingsRenderViewKeepLast(const Renderer::Camera* camera);
 bool BindingsRenderViewIsSet();
+// The size screen-space queries are currently answering against. Exposed so the
+// zero-guard is observable: the bug that shipped was not wrong arithmetic, it was
+// the right arithmetic on somebody else's viewport, and nothing could see the
+// number to disagree with it.
+void BindingsRenderViewSize(f32& outWidth, f32& outHeight);
 // Screen-point pick through that same render view (same ray as the script-facing
 // Physics_RaycastScreen). 0 = nothing hit / no camera / web. Drives the
 // OnMouseEnter/OnMouseExit/OnClick script callbacks in ScriptSystem.
