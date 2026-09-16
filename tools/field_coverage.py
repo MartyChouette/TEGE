@@ -33,7 +33,13 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 COMPONENTS = os.path.join(ROOT, 'Engine', 'include', 'Enjin', 'ECS', 'Components')
 SERIALIZER = os.path.join(ROOT, 'Engine', 'src', 'Scene', 'SceneSerializer.cpp')
-INSPECTOR = os.path.join(ROOT, 'Engine', 'src', 'Editor', 'EditorLayerComponents.cpp')
+# ALL of them, not EditorLayerComponents.cpp alone. The inspector is spread over
+# 73 files -- EditorLayerComponents_Audio.cpp, EditorLayerInspector.cpp,
+# EditorLayerRendering.cpp and more -- and reading one of them reported 55
+# components as unauthorable including AudioSourceComponent, which has an
+# inspector with a working audition button. A tool that names the wrong files
+# is worse than no tool: every number it prints is confident and wrong.
+EDITOR_DIR = os.path.join(ROOT, 'Engine', 'src', 'Editor')
 BASELINE = os.path.join(ROOT, 'tools', 'field_coverage_baseline.txt')
 
 # Field types worth checking. Deliberately the plain ones: a std::vector or a
@@ -50,9 +56,52 @@ def read(path):
 
 
 def strip_comments(src):
-    """So a field named only inside a comment does not read as covered."""
-    src = re.sub(r'/\*.*?\*/', '', src, flags=re.S)
-    return re.sub(r'//[^\n]*', '', src)
+    """Remove C++ comments, respecting string literals. So a field named only in
+    a comment does not read as covered.
+
+    A single pass, not two regexes. The two-regex version -- block comments with
+    DOTALL, then line comments -- silently ate live code: a `/*` inside a LINE
+    comment opens a block the first pass then closes at the next `*/` hundreds of
+    lines later, taking everything between with it. It removed the editor's only
+    use of VoxelVolumeComponent and reported the component as unauthorable. The
+    same stripper runs over the serializer, so every field count it produced was
+    suspect until this was fixed.
+    """
+    out = []
+    i, n = 0, len(src)
+    while i < n:
+        c = src[i]
+        if c == '"' or c == "'":
+            quote = c
+            out.append(c)
+            i += 1
+            while i < n:
+                out.append(src[i])
+                if src[i] == '\\':          # escaped char: take the next one whole
+                    if i + 1 < n:
+                        out.append(src[i + 1])
+                    i += 2
+                    continue
+                if src[i] == quote:
+                    i += 1
+                    break
+                i += 1
+            continue
+        if c == '/' and i + 1 < n:
+            if src[i + 1] == '/':
+                while i < n and src[i] != '\n':
+                    i += 1
+                continue
+            if src[i + 1] == '*':
+                i += 2
+                while i + 1 < n and not (src[i] == '*' and src[i + 1] == '/'):
+                    i += 1
+                i += 2
+                out.append(' ')             # keep tokens either side apart
+                continue
+        out.append(c)
+        i += 1
+    return ''.join(out)
 
 
 def components():
@@ -103,7 +152,9 @@ def main():
 
     comps = components()
     ser_src = strip_comments(read(SERIALIZER))
-    insp_src = strip_comments(read(INSPECTOR))
+    insp_src = strip_comments(''.join(
+        read(os.path.join(EDITOR_DIR, f))
+        for f in sorted(os.listdir(EDITOR_DIR)) if f.endswith('.cpp')))
     registered = set(re.findall(r'ENJIN_SERDES\("[^"]+",\s*ECS::(\w+)', ser_src))
     inspected = set(re.findall(r'(?:Get|Has)Component<ECS::(\w+)>', insp_src))
 
@@ -164,8 +215,16 @@ def main():
     print('LOD vertexCount recomputed from the mesh. Correct engineering, not a missing')
     print('save. So asymmetry is a SMELL worth reading, not a verdict.')
     print()
-    print('The number that is a real finding is "saved but NO inspector" above: those')
-    print('components can be written to a scene file and cannot be edited by a person.')
+    print('And the THIRD overclaim was the worst, because it was confident: reading only')
+    print('EditorLayerComponents.cpp reported 55 components as unauthorable, including')
+    print('AudioSourceComponent, which has an inspector with a working audition button.')
+    print('The inspector is spread over 73 files. Then the comment stripper turned out')
+    print('to be eating live code -- a /* inside a // comment opened a block it closed')
+    print('hundreds of lines later -- which hid the editor's only use of')
+    print('VoxelVolumeComponent. 55 became 4 became 3.')
+    print()
+    print('The real finding is small and checked by hand: three components can be')
+    print('written to a scene file and appear nowhere in the editor at all.')
 
     if args.verbose:
         for title, items in (('NO serializer', no_serdes), ('NO inspector', no_inspector),
