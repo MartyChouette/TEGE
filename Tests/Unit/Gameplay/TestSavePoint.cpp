@@ -1,0 +1,237 @@
+#include "EnjinTest.h"
+#include "Enjin/ECS/World.h"
+#include "Enjin/ECS/Components/Transform.h"
+#include "Enjin/ECS/Components/Name.h"
+#include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/Gameplay/SavePointSystem.h"
+#include "Enjin/Gameplay/TieredSaveSystem.h"
+#include "Enjin/Gameplay/SaveBackend.h"
+
+#include <map>
+#include <memory>
+#include <string>
+
+using namespace Enjin;
+using namespace Enjin::ECS;
+using namespace Enjin::Gameplay;
+
+// SavePointComponent had five script setters and no reader until 2026-09-16: a
+// configured save point compiled, ran and never saved. These pin the behaviour
+// that replaced that, and each is written so a regression shows up as a save
+// that did NOT happen rather than as a crash.
+
+namespace {
+
+// In-memory save backend. Nothing here touches the filesystem, so these run in
+// milliseconds, cannot be disturbed by a developer's own play-session saves,
+// and leave nothing to clean up.
+//
+// The first version of this file used LocalSaveBackend against a temp
+// directory, copying an existing test that had to isolate itself for exactly
+// that reason. Implementing the five-method ISaveBackend interface is less code
+// than the directory juggling it replaces.
+class MemorySaveBackend : public ISaveBackend {
+public:
+    bool Write(const std::string& key, const std::string& data) override {
+        m_Data[key] = data;
+        return true;
+    }
+    bool Read(const std::string& key, std::string& outData) override {
+        auto it = m_Data.find(key);
+        if (it == m_Data.end()) return false;
+        outData = it->second;
+        return true;
+    }
+    bool Delete(const std::string& key) override { return m_Data.erase(key) > 0; }
+    bool Exists(const std::string& key) override { return m_Data.count(key) > 0; }
+    std::string GetName() const override { return "Memory"; }
+
+private:
+    std::map<std::string, std::string> m_Data;
+};
+
+struct Fixture {
+    World world;
+    TieredSaveSystem save;
+    SavePointSystem points;
+    Entity player = INVALID_ENTITY;
+
+    Fixture() {
+        save.SetBackend(std::make_shared<MemorySaveBackend>());
+
+        player = world.CreateEntity();
+        world.AddComponent<NameComponent>(player, NameComponent{"Player"});
+        world.AddComponent<TransformComponent>(player, TransformComponent{});
+
+        points.SetWorld(&world);
+        points.SetSaveSystem(&save);
+        points.SetSceneName("TestScene");
+        // No input map on purpose: a test that simulated key presses would be
+        // testing the input system. Points here either save on enter, or are
+        // checked for NOT saving.
+    }
+
+    Entity AddPoint(Math::Vector3 at, bool saveOnEnter = true) {
+        Entity e = world.CreateEntity();
+        TransformComponent xf;
+        xf.position = at;
+        world.AddComponent<TransformComponent>(e, xf);
+        SavePointComponent sp;
+        sp.saveOnEnter = saveOnEnter;
+        sp.radius = 2.0f;
+        world.AddComponent<SavePointComponent>(e, sp);
+        return e;
+    }
+
+    void MovePlayer(Math::Vector3 to) {
+        world.GetComponent<TransformComponent>(player)->position = to;
+    }
+
+    bool AnySlotUsed() {
+        for (const auto& s : save.GetAllSlots()) {
+            if (!s.isEmpty) return true;
+        }
+        return false;
+    }
+};
+
+} // namespace
+
+ENJIN_TEST(SavePoint, SavesWhenThePlayerWalksIn) {
+    // Arrange: a save point at the origin, player far away.
+    Fixture f;
+    Entity point = f.AddPoint(Math::Vector3(0.0f, 0.0f, 0.0f));
+    f.MovePlayer(Math::Vector3(50.0f, 0.0f, 0.0f));
+    f.points.Update(0.016f);
+    // Asserted first because it is the half that would pass even with the
+    // system deleted; the walk-in below is the half that would not.
+    ENJIN_EXPECT_FALSE(f.AnySlotUsed());
+    ENJIN_EXPECT_FALSE(f.world.GetComponent<SavePointComponent>(point)->playerInRange);
+
+    // Act: walk into the radius.
+    f.MovePlayer(Math::Vector3(0.5f, 0.0f, 0.0f));
+    f.points.Update(0.016f);
+
+    // Assert
+    ENJIN_EXPECT_TRUE(f.world.GetComponent<SavePointComponent>(point)->playerInRange);
+    ENJIN_EXPECT_TRUE(f.world.GetComponent<SavePointComponent>(point)->used);
+    ENJIN_EXPECT_TRUE(f.AnySlotUsed());
+}
+
+ENJIN_TEST(SavePoint, RadiusIsRespected) {
+    Fixture f;
+    Entity point = f.AddPoint(Math::Vector3(0.0f, 0.0f, 0.0f));
+    f.world.GetComponent<SavePointComponent>(point)->radius = 2.0f;
+
+    // 2.5 away from a radius of 2 is outside. Just outside rather than far
+    // away, because an off-by-one in the comparison is what this catches.
+    f.MovePlayer(Math::Vector3(2.5f, 0.0f, 0.0f));
+    f.points.Update(0.016f);
+    ENJIN_EXPECT_FALSE(f.AnySlotUsed());
+
+    // 1.9 is inside.
+    f.MovePlayer(Math::Vector3(1.9f, 0.0f, 0.0f));
+    f.points.Update(0.016f);
+    ENJIN_EXPECT_TRUE(f.AnySlotUsed());
+}
+
+ENJIN_TEST(SavePoint, OneTimeUseStopsAfterTheFirst) {
+    Fixture f;
+    Entity point = f.AddPoint(Math::Vector3(0.0f, 0.0f, 0.0f));
+    f.world.GetComponent<SavePointComponent>(point)->oneTimeUse = true;
+
+    f.MovePlayer(Math::Vector3(0.5f, 0.0f, 0.0f));
+    f.points.Update(0.016f);
+    ENJIN_EXPECT_TRUE(f.world.GetComponent<SavePointComponent>(point)->used);
+
+    // Walk out and back in. `used` latches, so the second entry must not save.
+    // Proven by deleting the slot first: if it saves again, the slot comes back.
+    f.save.DeleteSlot(0);
+    ENJIN_EXPECT_FALSE(f.AnySlotUsed());
+
+    f.MovePlayer(Math::Vector3(50.0f, 0.0f, 0.0f));
+    f.points.Update(0.016f);
+    f.MovePlayer(Math::Vector3(0.5f, 0.0f, 0.0f));
+    f.points.Update(0.016f);
+    ENJIN_EXPECT_FALSE(f.AnySlotUsed());
+}
+
+ENJIN_TEST(SavePoint, RequiringInputDoesNotSaveOnItsOwn) {
+    Fixture f;
+    // saveOnEnter false, and no input map attached, so nothing can press
+    // Interact. Standing in it must not save.
+    Entity point = f.AddPoint(Math::Vector3(0.0f, 0.0f, 0.0f), /*saveOnEnter=*/false);
+
+    f.MovePlayer(Math::Vector3(0.5f, 0.0f, 0.0f));
+    for (int i = 0; i < 10; ++i) f.points.Update(0.016f);
+
+    ENJIN_EXPECT_FALSE(f.AnySlotUsed());
+    ENJIN_EXPECT_FALSE(f.world.GetComponent<SavePointComponent>(point)->used);
+    // The prompt is how a player is told the point is there at all.
+    ENJIN_EXPECT_TRUE(!f.points.GetPrompt().empty());
+}
+
+ENJIN_TEST(SavePoint, DisablingInWorldPointsTurnsThemAllOff) {
+    // Arrange: a game manager that switches in-world points off.
+    Fixture f;
+    Entity manager = f.world.CreateEntity();
+    SaveSystemComponent cfg;
+    cfg.allowInWorldSavePoints = false;
+    f.world.AddComponent<SaveSystemComponent>(manager, cfg);
+    f.AddPoint(Math::Vector3(0.0f, 0.0f, 0.0f));
+
+    // Act: stand in a point that would otherwise save.
+    f.MovePlayer(Math::Vector3(0.5f, 0.0f, 0.0f));
+    f.points.Update(0.016f);
+
+    // Assert
+    ENJIN_EXPECT_FALSE(f.AnySlotUsed());
+}
+
+ENJIN_TEST(SavePoint, ZeroRadiusFallsBackToTheSceneDefault) {
+    Fixture f;
+    Entity manager = f.world.CreateEntity();
+    SaveSystemComponent cfg;
+    cfg.savePointRadius = 10.0f;      // generous, and not the component default
+    f.world.AddComponent<SaveSystemComponent>(manager, cfg);
+
+    Entity point = f.AddPoint(Math::Vector3(0.0f, 0.0f, 0.0f));
+    f.world.GetComponent<SavePointComponent>(point)->radius = 0.0f;   // "use the default"
+
+    // 6 away: outside the component's own 2.0 default, inside the scene's 10.
+    // If the fallback is dropped this saves nothing.
+    f.MovePlayer(Math::Vector3(6.0f, 0.0f, 0.0f));
+    f.points.Update(0.016f);
+    ENJIN_EXPECT_TRUE(f.AnySlotUsed());
+}
+
+ENJIN_TEST(SavePoint, SlotTargetIsHonoured) {
+    // Arrange: a point that names slot 4 rather than "next available".
+    Fixture f;
+    Entity point = f.AddPoint(Math::Vector3(0.0f, 0.0f, 0.0f));
+    f.world.GetComponent<SavePointComponent>(point)->slotTarget = 4;
+
+    // Act
+    f.MovePlayer(Math::Vector3(0.5f, 0.0f, 0.0f));
+    f.points.Update(0.016f);
+
+    // Assert: slot 4 written, and slot 0 -- where "next available" would have
+    // gone -- untouched.
+    ENJIN_EXPECT_FALSE(f.save.GetSlotInfo(4).isEmpty);
+    ENJIN_EXPECT_TRUE(f.save.GetSlotInfo(0).isEmpty);
+}
+
+ENJIN_TEST(SavePoint, NoPlayerMeansNoSaveAndNoCrash) {
+    Fixture f;
+    // A scene can legitimately have save points and no player yet -- during a
+    // load, or in a menu scene. It must not save, and it must not fall over.
+    f.world.DestroyEntity(f.player);
+    f.world.Update(0.0f);            // flush the deferred destroy
+
+    f.AddPoint(Math::Vector3(0.0f, 0.0f, 0.0f));
+    f.points.Update(0.016f);
+
+    ENJIN_EXPECT_FALSE(f.AnySlotUsed());
+}
+
+ENJIN_TEST_MAIN()

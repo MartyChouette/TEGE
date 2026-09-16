@@ -47,6 +47,7 @@
 #include "Enjin/Gameplay/DynamicDifficultySystem.h"
 #include "Enjin/Gameplay/FaceCardSystem.h"
 #include "Enjin/Gameplay/TieredSaveSystem.h"
+#include "Enjin/Gameplay/SavePointSystem.h"
 #include "Enjin/Editor/PlayModeDiff.h"
 #include "Enjin/Editor/EditorSettings.h"
 #include "Enjin/Scene/LevelStreaming.h"
@@ -386,6 +387,7 @@ private:
 
     // Tiered save system
     Gameplay::TieredSaveSystem m_TieredSaveSystem;
+    Gameplay::SavePointSystem m_SavePointSystem;
 
     // Frame timing profiler (logs breakdown every N frames during play)
     f32 m_ProfileAccumPhysics = 0.0f;

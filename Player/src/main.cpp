@@ -142,6 +142,7 @@ static bool IsCaptureRun() {
 #include "Enjin/Gameplay/TieredSaveSystem.h"
 #include "Enjin/Gameplay/DynamicDifficultySystem.h"
 #include "Enjin/Gameplay/FaceCardSystem.h"
+#include "Enjin/Gameplay/SavePointSystem.h"
 #include "Enjin/ECS/Systems/SwarmSystem.h"
 #include "Enjin/ECS/Systems/GeneratedGeometrySystem.h"
 #include "Enjin/ECS/Systems/BrushSolidSystem.h"
@@ -606,6 +607,12 @@ public:
         m_DynamicDifficulty.SetEnabled(true);
         m_FaceCardSystem.SetWorld(m_World.get());
         m_FaceCardSystem.SetRenderSystem(m_RenderSystem);
+
+        // Save points. Until 2026-09-16 SavePointComponent had setters and no
+        // reader, so a configured save point never saved.
+        m_SavePointSystem.SetWorld(m_World.get());
+        m_SavePointSystem.SetSaveSystem(&m_TieredSaveSystem);
+        m_SavePointSystem.SetInputActionMap(&m_InputMap);
         m_StreamingManager.SetWorld(m_World.get());
         m_SceneManager.SetWorld(m_World.get());
         if (!m_LooseFilesMode) {
@@ -1551,6 +1558,11 @@ public:
 
         // Save system (auto-save timer)
         m_TieredSaveSystem.Update(deltaTime, m_World.get(), m_StartScene);
+
+        // In-world save points. After the save system, so a point that saves
+        // this frame writes against state the save system has already settled.
+        m_SavePointSystem.SetSceneName(m_StartScene);
+        m_SavePointSystem.Update(deltaTime);
 
         // Hazard/pickup overlap checks (for CharacterVirtual which doesn't fire collision events)
         Enjin::Gameplay::GameplayLoop::CheckHazardOverlaps(m_World.get(), deltaTime, m_DeferredDestroys);
@@ -3982,6 +3994,7 @@ private:
     Enjin::ECS::GeneratedGeometrySystem m_GeneratedGeometry;
     Enjin::Gameplay::DynamicDifficultySystem m_DynamicDifficulty;
     Enjin::Gameplay::FaceCardSystem m_FaceCardSystem;
+    Enjin::Gameplay::SavePointSystem m_SavePointSystem;
     Enjin::ECS::StateMachineSystem m_StateMachineSystem;
     Enjin::ECS::VisualScriptSystem m_VisualScriptSystem;
     Enjin::ECS::BehaviorTreeSystem m_BehaviorTreeSystem;

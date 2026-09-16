@@ -146,6 +146,13 @@ void PlayMode::Initialize(ECS::World* world, Renderer::Camera* camera,
         m_DynamicDifficulty.SetEnabled(true);
         m_FaceCardSystem.SetWorld(world);
 
+        // Save points. Editor play mode ticks this too, or a save point works
+        // in an exported game and does nothing when you press Play -- which is
+        // the asymmetry that let palette cycling sit broken for months.
+        m_SavePointSystem.SetWorld(world);
+        m_SavePointSystem.SetSaveSystem(&m_TieredSaveSystem);
+        m_SavePointSystem.SetInputActionMap(m_InputMap);
+
         // Initialize network system
         m_NetworkSystem.SetWorld(world);
 
@@ -1374,6 +1381,8 @@ void PlayMode::Update(f32 deltaTime) {
 
         // Tiered save system (auto-save timer, play time tracking)
         m_TieredSaveSystem.Update(deltaTime, m_World, m_TieredSaveSystem.GetCurrentScene());
+        m_SavePointSystem.SetSceneName(m_TieredSaveSystem.GetCurrentScene());
+        m_SavePointSystem.Update(deltaTime);
 
         auto t4 = std::chrono::high_resolution_clock::now();
 
