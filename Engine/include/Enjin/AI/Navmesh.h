@@ -2,6 +2,7 @@
 
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Math/Vector.h"
+#include "Enjin/Math/Spline.h"
 #include <vector>
 #include <unordered_map>
 #include <queue>
@@ -310,6 +311,37 @@ namespace NavmeshUtils {
     /// Triangulate a convex polygon
     ENJIN_API std::vector<u32> TriangulateConvex(const std::vector<Math::Vector3>& vertices);
 }
+
+// ============================================================================
+// Path smoothing
+// ============================================================================
+//
+// A* returns CORNERS. An agent following them walks the polygon boundary: it
+// aims at a corner, arrives, turns on the spot, aims at the next one. The route
+// is correct and the movement reads like a machine, which is the usual reason a
+// navmesh looks worse than hand-placed waypoints.
+//
+// Math::Spline has been in the tree the whole time and nothing in AI used it.
+// These two functions are that connection, kept PURE -- points in, points out,
+// no world, no navmesh, no components -- so they are testable without a scene.
+
+/// Catmull-Rom through the waypoints. Passes through every one, so the route is
+/// still the route; only what happens BETWEEN corners changes. Fewer than two
+/// points comes back as a spline with just those points.
+ENJIN_API Math::Spline BuildPathSpline(const std::vector<Math::Vector3>& waypoints);
+
+/// The same curve resampled at roughly even spacing, for an agent that wants
+/// points rather than a parameter. The first and last waypoint are preserved
+/// EXACTLY -- a smoothed path that no longer starts where the agent stands, or
+/// ends where it was sent, is worse than a jagged one.
+///
+/// IMPORTANT: a smoothed path is NOT guaranteed to stay on the navmesh. The
+/// curve passes through the corners but bulges between them, and around a tight
+/// concave turn that bulge can leave the walkable surface. Treat the result as a
+/// steering suggestion for an agent that still collides, not as proof of
+/// walkability. Spacing <= 0 returns the waypoints unchanged.
+ENJIN_API std::vector<Math::Vector3> SmoothPath(const std::vector<Math::Vector3>& waypoints,
+                                                f32 spacing);
 
 } // namespace AI
 } // namespace Enjin

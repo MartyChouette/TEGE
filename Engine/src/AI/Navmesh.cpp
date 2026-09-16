@@ -876,5 +876,41 @@ std::vector<u32> TriangulateConvex(const std::vector<Math::Vector3>& vertices) {
 
 } // namespace NavmeshUtils
 
+// ============================================================================
+// Path smoothing (see the note in Navmesh.h)
+// ============================================================================
+
+Math::Spline BuildPathSpline(const std::vector<Math::Vector3>& waypoints) {
+    Math::Spline spline(Math::SplineType::CatmullRom);
+    for (const auto& p : waypoints) spline.AddPoint(p);
+    return spline;
+}
+
+std::vector<Math::Vector3> SmoothPath(const std::vector<Math::Vector3>& waypoints,
+                                      f32 spacing) {
+    // Nothing to smooth, or nothing asked for: hand back what came in rather
+    // than an empty path. An agent given an empty path stops where it stands,
+    // which looks like pathfinding failing rather than smoothing declining.
+    if (waypoints.size() < 3 || spacing <= 0.0f) return waypoints;
+
+    const Math::Spline spline = BuildPathSpline(waypoints);
+    const f32 total = spline.GetTotalLength();
+    if (!(total > 0.0f)) return waypoints;
+
+    std::vector<Math::Vector3> out;
+    // +2 for the endpoints, which are placed exactly rather than sampled.
+    out.reserve(static_cast<usize>(total / spacing) + 2);
+    out.push_back(waypoints.front());
+
+    for (f32 d = spacing; d < total; d += spacing) {
+        out.push_back(spline.Evaluate(spline.DistanceToT(d)));
+    }
+
+    // Exactly, not "close enough": the destination is the one point the caller
+    // actually asked for.
+    out.push_back(waypoints.back());
+    return out;
+}
+
 } // namespace AI
 } // namespace Enjin

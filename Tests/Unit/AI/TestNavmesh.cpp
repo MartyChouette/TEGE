@@ -219,4 +219,78 @@ ENJIN_TEST(PathFollower, Defaults) {
     ENJIN_EXPECT_TRUE(follower.smoothRotation);
 }
 
+
+// ===========================================================================
+// Path smoothing — Math::Spline finally wired to nav
+// ===========================================================================
+//
+// A* returns corners. These pin what smoothing may and may not do to them: it
+// may round the route BETWEEN corners, it may not move where the agent starts
+// or where it was sent, and it may not hand back nothing.
+
+namespace {
+// A right-angle path: straight along +X, then a square turn along +Z. The corner
+// is the whole point -- a smoothed route should cut it, a raw one cannot.
+std::vector<Vector3> LPath() {
+    return { Vector3(0, 0, 0), Vector3(10, 0, 0), Vector3(10, 0, 10) };
+}
+bool Near(f32 a, f32 b, f32 eps = 0.001f) { return std::fabs(a - b) < eps; }
+bool Same(const Vector3& a, const Vector3& b) {
+    return Near(a.x, b.x) && Near(a.y, b.y) && Near(a.z, b.z);
+}
+} // namespace
+
+ENJIN_TEST(PathSmoothing, TheAgentStillStartsAndEndsWhereItWasTold) {
+    // The one thing smoothing must never do. A curve that starts a little off
+    // the agent, or stops a little short of the destination, is worse than the
+    // jagged path it replaced -- the agent visibly misses.
+    const auto raw = LPath();
+    const auto smooth = SmoothPath(raw, 1.0f);
+
+    ENJIN_ASSERT_TRUE(smooth.size() >= 2);
+    ENJIN_EXPECT_TRUE(Same(smooth.front(), raw.front()));
+    ENJIN_EXPECT_TRUE(Same(smooth.back(), raw.back()));
+}
+
+ENJIN_TEST(PathSmoothing, TheCornerIsActuallyRounded) {
+    // Otherwise this is just a resample. Every raw point lies on one of the two
+    // axis-aligned legs, so a rounded route must put at least one sample off
+    // both of them.
+    const auto smooth = SmoothPath(LPath(), 0.5f);
+
+    bool offTheLegs = false;
+    for (const auto& p : smooth) {
+        const bool onFirstLeg  = Near(p.z, 0.0f);
+        const bool onSecondLeg = Near(p.x, 10.0f);
+        if (!onFirstLeg && !onSecondLeg) { offTheLegs = true; break; }
+    }
+    ENJIN_EXPECT_TRUE(offTheLegs);
+}
+
+ENJIN_TEST(PathSmoothing, ADegeneratePathComesBackUnchangedRatherThanEmpty) {
+    // An agent handed an empty path stops where it stands, which reads as
+    // pathfinding having failed rather than smoothing having declined.
+    const std::vector<Vector3> none;
+    const std::vector<Vector3> one{ Vector3(1, 2, 3) };
+    const std::vector<Vector3> two{ Vector3(0, 0, 0), Vector3(5, 0, 0) };
+
+    ENJIN_EXPECT_TRUE(SmoothPath(none, 1.0f).empty());
+    ENJIN_EXPECT_EQ(SmoothPath(one, 1.0f).size(), one.size());
+    ENJIN_EXPECT_EQ(SmoothPath(two, 1.0f).size(), two.size());
+    // Spacing is a distance, not a hint: zero or negative means do nothing.
+    ENJIN_EXPECT_EQ(SmoothPath(LPath(), 0.0f).size(), LPath().size());
+    ENJIN_EXPECT_EQ(SmoothPath(LPath(), -1.0f).size(), LPath().size());
+}
+
+ENJIN_TEST(PathSmoothing, TighterSpacingGivesMorePointsAndTheSplineKeepsTheCorners) {
+    const auto coarse = SmoothPath(LPath(), 4.0f);
+    const auto fine   = SmoothPath(LPath(), 0.5f);
+    ENJIN_EXPECT_TRUE(fine.size() > coarse.size());
+
+    // Catmull-Rom passes THROUGH its control points, so the route is still the
+    // route: the spline can be evaluated back at each original waypoint.
+    const Spline s = BuildPathSpline(LPath());
+    ENJIN_ASSERT_EQ(s.GetPointCount(), LPath().size());
+    ENJIN_EXPECT_TRUE(Same(s.GetPoint(1).position, Vector3(10, 0, 0)));
+}
 ENJIN_TEST_MAIN()
