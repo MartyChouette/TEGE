@@ -3398,6 +3398,7 @@ void RenderSystem::Update(f32 deltaTime) {
 
                 // Draw each mesh entity into the shadow map. One bind group for
                 // the whole pass; the caster's row is its index in the list.
+                bool shadowIncomplete = false;
                 u32 shadowDrawCount = 0;
                 const bool shadowObjOK = webShadowObjects();
                 if (shadowObjOK) {
@@ -3423,9 +3424,12 @@ void RenderSystem::Update(f32 deltaTime) {
                     }
 
                     u64 eid = EntityIndex(entity);  // dense index: low 32 bits (raw handle has generation in high bits)
-                    if (eid >= m_EntityRenderData.size()) continue;
+                    // Not ready YET is not the same as nothing to draw. The web path
+                    // creates entity buffers lazily in the main draw loop, which runs
+                    // AFTER this pass, so on the first frame every caster lands here.
+                    if (eid >= m_EntityRenderData.size()) { shadowIncomplete = true; continue; }
                     auto& rd = m_EntityRenderData[eid];
-                    if (!rd.valid || !rd.vertexBuffer.IsValid() || !rd.indexBuffer.IsValid()) continue;
+                    if (!rd.valid || !rd.vertexBuffer.IsValid() || !rd.indexBuffer.IsValid()) { shadowIncomplete = true; continue; }
 
                     WGPUBuffer vb = webBufMgr->GetNativeBuffer(rd.vertexBuffer);
                     WGPUBuffer ib = webBufMgr->GetNativeBuffer(rd.indexBuffer);
@@ -3453,7 +3457,17 @@ void RenderSystem::Update(f32 deltaTime) {
                 wgpuRenderPassEncoderRelease(shadowPass);
                 // The map now matches m_WebShadowSignature: reuse it until
                 // a caster or the sun moves.
-                m_WebShadowValid = true;
+                //
+                // Unless a caster was skipped for having no GPU buffers yet. The
+                // signature is built from transforms, so it does not change when the
+                // buffers later appear, and caching here gave that frame the only
+                // chance the map would ever get: in a STATIC scene it stayed empty for
+                // the life of the process. Every tree in FoliageDemo stood in full sun
+                // casting nothing, while ShadowCheck looked correct purely because its
+                // player moves and dirtied the signature again a frame later
+                // (measured 2026-09-15: casters=4 drew=0, all four skipped for having
+                // no render-data slot yet).
+                m_WebShadowValid = !shadowIncomplete;
             }
         }
     }
