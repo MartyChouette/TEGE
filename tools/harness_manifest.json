@@ -132,12 +132,9 @@
         500
       ],
       "claims": {
-        "draws": true,
-        "animates": {
-          "min_changed_pct": 0.5
-        }
+        "draws": true
       },
-      "note": "UNRESOLVED, not a known-still demo. The scene carries an animator, a skeleton and a handIK component, so something is meant to move; with no input driving the first-person camera it may be legitimately still, or the animator may not be running. Left ON so the harness stays red until somebody settles it -- turning it off would bury the question."
+      "animates_off_because": "SETTLED 2026-09-16, having been left failing on purpose until somebody looked. The animator component that made it suspicious is serialized as {\"speed\": 1.0} and nothing else -- no clip, no state machine, so there is nothing to play. The hand IK engages on proximity (engageDistance 0.45) and the first-person player has to walk to a surface to trigger it, which the harness never does. Still under no input, legitimately. Worth noting separately that a demo of hand IK shows none of it to somebody who just launches it."
     },
     {
       "name": "Ladders",
