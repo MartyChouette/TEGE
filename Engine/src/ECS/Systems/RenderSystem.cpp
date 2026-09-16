@@ -4978,6 +4978,19 @@ void RenderSystem::Update(f32 deltaTime) {
                 if (!bg.IsValid()) { runStart = runEnd; return; }
                 wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 1, webBindMgr->GetNativeGroup(bg), 0, nullptr);
                 wgpuRenderPassEncoderDrawIndexed(scenePassEncoder, 6, runEnd - runStart, 0, 0, runStart);
+
+                // Counted, for the same reason the Vulkan sprite batch is (2cd5991b):
+                // a draw nobody counts is a draw nobody can check, and a 2D scene
+                // reported zero draw calls to its own stats overlay.
+                //
+                // This is the web half of that fix and it was missed the first time.
+                // The desktop/web parity check found it -- Water2D and SpritePivot
+                // passed `renders` on desktop and failed it on web, which is the
+                // exact shape the comparison exists to catch, landing on the fix
+                // for the previous instance of the same shape.
+                m_DrawCallCount++;
+                m_TriangleCount += 2 * (runEnd - runStart);   // one quad per sprite
+
                 runStart = runEnd;
             };
 
