@@ -220,7 +220,7 @@ def main():
     print('AudioSourceComponent, which has an inspector with a working audition button.')
     print('The inspector is spread over 73 files. Then the comment stripper turned out')
     print('to be eating live code -- a /* inside a // comment opened a block it closed')
-    print('hundreds of lines later -- which hid the editor's only use of')
+    print('hundreds of lines later -- which hid the only editor use of')
     print('VoxelVolumeComponent. 55 became 4 became 3.')
     print()
     print('The real finding is small and checked by hand: three components can be')
