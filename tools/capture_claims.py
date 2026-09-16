@@ -18,10 +18,106 @@ how the scene looks.
     animates   two frames captured far apart are not the same frame
 
 Pure stdlib on purpose -- no PIL, no numpy -- so it runs wherever the captures
-land, including a CI box with nothing installed. P6 PPM is the input because
-that is what both capture paths already write beside their PNG.
+land, including a CI box with nothing installed. Reads both capture formats: P6
+PPM from the desktop player and PNG from the browser, through ONE reader, so a
+desktop frame and a web frame are judged by identical code.
 """
+import struct
 import sys
+import zlib
+
+
+def read_png(path):
+    """(width, height, RGB bytes) from an 8-bit PNG. Stdlib only, via zlib.
+
+    The web capture path writes PNG (puppeteer screenshots the canvas) and the
+    desktop path writes both PNG and PPM. Decoding PNG here rather than teaching
+    the web tool to emit PPM keeps ONE reader, which matters because the point of
+    the parity check is that a desktop frame and a web frame go through exactly
+    the same claim code. Two readers is two places for a swizzle to differ, and a
+    red/blue swap between the two would read as a renderer bug.
+
+    Handles colour types 2 (RGB), 6 (RGBA) and 0 (greyscale) at 8 bits, which is
+    everything either capture path produces. Interlaced PNGs are rejected rather
+    than silently mis-decoded.
+    """
+    with open(path, 'rb') as f:
+        data = f.read()
+    if data[:8] != b'\x89PNG\r\n\x1a\n':
+        raise ValueError('%s: not a PNG' % path)
+
+    pos, idat, w, h, depth, ctype = 8, [], 0, 0, 0, 0
+    while pos + 8 <= len(data):
+        length, tag = struct.unpack('>I4s', data[pos:pos + 8])
+        body = data[pos + 8:pos + 8 + length]
+        pos += 12 + length                       # length + tag + body + crc
+        if tag == b'IHDR':
+            w, h, depth, ctype, _, _, interlace = struct.unpack('>IIBBBBB', body)
+            if interlace:
+                raise ValueError('%s: interlaced PNG not supported' % path)
+            if depth != 8:
+                raise ValueError('%s: %d-bit PNG not supported' % (path, depth))
+        elif tag == b'IDAT':
+            idat.append(body)
+        elif tag == b'IEND':
+            break
+    if not idat or not w or not h:
+        raise ValueError('%s: no image data' % path)
+
+    channels = {0: 1, 2: 3, 6: 4}.get(ctype)
+    if channels is None:
+        raise ValueError('%s: unsupported PNG colour type %d' % (path, ctype))
+
+    raw = zlib.decompress(b''.join(idat))
+    stride = w * channels
+    out = bytearray(w * h * 3)
+    prev = bytearray(stride)
+    at = 0
+    for y in range(h):
+        filt = raw[at]
+        line = bytearray(raw[at + 1:at + 1 + stride])
+        at += 1 + stride
+        # PNG scanline filters, per spec. Each is defined against the byte
+        # `channels` back in this line and the byte above in the previous one.
+        if filt == 1:
+            for i in range(channels, stride):
+                line[i] = (line[i] + line[i - channels]) & 0xFF
+        elif filt == 2:
+            for i in range(stride):
+                line[i] = (line[i] + prev[i]) & 0xFF
+        elif filt == 3:
+            for i in range(stride):
+                left = line[i - channels] if i >= channels else 0
+                line[i] = (line[i] + ((left + prev[i]) >> 1)) & 0xFF
+        elif filt == 4:
+            for i in range(stride):
+                a = line[i - channels] if i >= channels else 0
+                b = prev[i]
+                c = prev[i - channels] if i >= channels else 0
+                p = a + b - c
+                pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                pred = a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
+                line[i] = (line[i] + pred) & 0xFF
+        elif filt != 0:
+            raise ValueError('%s: bad PNG filter %d on row %d' % (path, filt, y))
+
+        base = y * w * 3
+        for x in range(w):
+            s = x * channels
+            if channels == 1:
+                v = line[s]
+                out[base + x * 3] = out[base + x * 3 + 1] = out[base + x * 3 + 2] = v
+            else:
+                out[base + x * 3] = line[s]
+                out[base + x * 3 + 1] = line[s + 1]
+                out[base + x * 3 + 2] = line[s + 2]
+        prev = line
+    return w, h, bytes(out)
+
+
+def read_image(path):
+    """Either capture format, chosen by extension."""
+    return read_png(path) if path.lower().endswith('.png') else read_ppm(path)
 
 
 def read_ppm(path):
@@ -80,7 +176,7 @@ def draws(path, quantise=8):
     scene whose meshes all failed to draw against a procedural sky reads as a
     pass here, and wants an entity count or a region probe on top.
     """
-    w, h, px = read_ppm(path)
+    w, h, px = read_image(path)
     counts = {}
     total = 0
     for r, g, b in _samples(px):
@@ -110,8 +206,8 @@ def animates(path_a, path_b, tol=8, min_changed_pct=0.5):
 
     `tol` is per channel, so dithering and one-bit noise do not count as motion.
     """
-    wa, ha, a = read_ppm(path_a)
-    wb, hb, b = read_ppm(path_b)
+    wa, ha, a = read_image(path_a)
+    wb, hb, b = read_image(path_b)
     if (wa, ha) != (wb, hb):
         return False, 'size mismatch %dx%d vs %dx%d' % (wa, ha, wb, hb)
     changed = total = 0

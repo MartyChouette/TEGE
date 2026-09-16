@@ -478,6 +478,53 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    // --build-desktop <project> <outDir>: HEADLESS. Run the REAL export pipeline
+    // for a desktop target and exit. Same path a person takes through the build
+    // dialog, so what lands in outDir is what a player would be handed: a pak, the
+    // loose scripts and assets the runtime reads, and the player executable.
+    //
+    // The capture harness (tools/harness.py) needs this. It runs EXPORTED games,
+    // because the exported game is the render path that had no coverage, and
+    // exporting three dozen Examples by hand through a GUI is not a thing anyone
+    // would keep doing.
+    for (int i = 1; i < argc; i++) {
+        if (argv[i] && std::string(argv[i]) == "--build-desktop" && i + 2 < argc
+            && argv[i + 1] && argv[i + 2]) {
+            const std::string projectPath = argv[i + 1];
+            const std::string outDir = argv[i + 2];
+
+            Enjin::Build::BuildConfig cfg;
+            cfg.projectPath = projectPath;
+            cfg.outputDir = outDir;
+            cfg.target = Enjin::Build::BuildTargetPlatform::Desktop;
+            cfg.packagingMode = Enjin::Build::PackagingMode::Packed;
+            // Deliberately NOT assetsOnly: a missing runtime must fail the build
+            // rather than leave a folder with nothing that can run it. The whole
+            // point here is to produce something the harness can actually boot.
+            cfg.assetsOnly = false;
+            // No splash. The harness photographs frames by ordinal, and a card in
+            // front of the game for the first seconds moves every frame number.
+            cfg.engineSplash = false;
+
+            Enjin::Build::BuildPipeline pipeline;
+            std::cout << "[build-desktop] building '" << projectPath << "' -> " << outDir << "\n";
+            Enjin::Build::BuildResult r = pipeline.Execute(cfg);
+            for (const auto& m : r.messages) {
+                if (m.severity == Enjin::Build::MessageSeverity::Error)
+                    std::cout << "[build-desktop] error: " << m.text << "\n";
+                else if (m.severity == Enjin::Build::MessageSeverity::Warning)
+                    std::cout << "[build-desktop] warning: " << m.text << "\n";
+            }
+            if (!r.success) {
+                std::cout << "[build-desktop] FAILED\n";
+                return 1;
+            }
+            std::cout << "[build-desktop] DONE: " << r.filesPacked << " files -> "
+                      << r.outputPath << "\n";
+            return 0;
+        }
+    }
+
     for (int i = 1; i < argc; i++) {
         if (argv[i] && std::string(argv[i]) == "--build-web" && i + 1 < argc && argv[i + 1]) {
             std::string projectPath = argv[i + 1];
