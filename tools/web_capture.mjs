@@ -38,7 +38,19 @@ const flag = (name, fallback) => {
 // blank white materials and looks like the feature is broken when it is only
 // unfinished. 120 frames is about two seconds of animation, past every
 // first-frame default and far enough in for cycling to have moved.
-const wantFrames = flag('--frames', 120);
+// A COMMA LIST captures at each point: --frames 30,90,240,500 writes
+// <out>.f0030.png and so on. One value keeps the original behaviour and writes
+// the path given, because CI and the demo-room checker call it that way.
+//
+// More than one because a single picture cannot tell a still scene from a
+// stopped one, which is the failure this whole harness exists to catch.
+const frameList = (() => {
+    const i = args.indexOf('--frames');
+    if (i < 0 || !args[i + 1]) return [120];
+    return args[i + 1].split(',').map((s) => Number(s.trim()))
+        .filter((n) => Number.isFinite(n) && n > 0).sort((a, b) => a - b);
+})();
+const wantFrames = frameList[frameList.length - 1];
 const timeoutMs = flag('--timeout', 120000);
 const showLog = args.includes('--show-log');
 const doClick = args.includes('--click');
@@ -187,20 +199,35 @@ try {
         }
     }
 
-    // Then let it run on for the requested number of frames. rAF is the honest
-    // clock here: it counts frames the browser actually presented.
-    frames = await page.evaluate((n) => new Promise((resolve) => {
-        let i = 0;
-        const tick = () => { if (++i >= n) resolve(i); else requestAnimationFrame(tick); };
-        requestAnimationFrame(tick);
-    }), wantFrames);
-
+    // Then let it run on, stopping at each requested frame count to photograph
+    // it. rAF is the honest clock here: it counts frames the browser actually
+    // presented.
     const canvas = await page.$('#game-canvas');
     if (!canvas) throw new Error('no #game-canvas on the page');
-    const shot = await canvas.screenshot({ type: 'png' });
-    await writeFile(path.resolve(outPath), shot);
 
-    console.log(`captured ${outPath} after ${frames} frames (${shot.length} bytes)`);
+    const multi = frameList.length > 1;
+    const stem = outPath.replace(/\.png$/i, '');
+    let waited = 0;
+    for (const target of frameList) {
+        const step = target - waited;
+        if (step > 0) {
+            waited = await page.evaluate((n, from) => new Promise((resolve) => {
+                let i = 0;
+                const tick = () => {
+                    if (++i >= n) resolve(from + i);
+                    else requestAnimationFrame(tick);
+                };
+                requestAnimationFrame(tick);
+            }), step, waited);
+        }
+        frames = waited;
+        const shot = await canvas.screenshot({ type: 'png' });
+        const dest = multi
+            ? `${stem}.f${String(target).padStart(4, '0')}.png`
+            : outPath;
+        await writeFile(path.resolve(dest), shot);
+        console.log(`captured ${dest} after ${frames} frames (${shot.length} bytes)`);
+    }
     if (showLog) {
         for (const l of logLines) console.log('  ' + l);
     } else {

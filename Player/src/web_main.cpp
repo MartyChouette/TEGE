@@ -3054,6 +3054,26 @@ int main(int argc, char* argv[]) {
     g_Player = &player;
     player.StartBoot();  // async — completes over several event-loop turns
 
+    // ?fixedDelta=0.0166667 makes every frame advance the simulation by the same
+    // step instead of by measured time, so frame N is the same moment of the
+    // game on any machine under any load.
+    //
+    // For the capture harness, which photographs frames by ORDINAL. Without it a
+    // browser capture is sampling a game that moves on rAF timing, and the same
+    // frame number is a different moment depending on what the machine was
+    // doing -- measured on desktop, where two identical runs of one binary
+    // disagreed by 91% before the same fix landed there. It also makes a desktop
+    // capture and a web capture of the same project directly comparable, which
+    // is the whole point of running both.
+    //
+    // Read once, here, rather than through an exported setter: the loop starts
+    // immediately and a setter called from JavaScript after boot would leave the
+    // first frames running on real time. Zero or absent = normal behaviour.
+    static const float s_WebFixedDelta = static_cast<float>(EM_ASM_DOUBLE({
+        var m = /[?&]fixedDelta=([0-9.]+)/.exec(location.search);
+        return m ? parseFloat(m[1]) : 0.0;
+    }));
+
     // Emscripten main loop with proper delta time
     emscripten_set_main_loop_arg([](void* userData) {
         auto* p = static_cast<WebGamePlayer*>(userData);
@@ -3064,6 +3084,7 @@ int main(int argc, char* argv[]) {
         float dt = static_cast<float>((now - lastTime) / 1000.0);
         lastTime = now;
         dt = std::min(dt, 0.1f);  // Clamp to 100ms (10fps floor)
+        if (s_WebFixedDelta > 0.0f) dt = s_WebFixedDelta;
 
         p->Update(dt);
         p->Render();
