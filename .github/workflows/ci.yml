@@ -169,6 +169,17 @@ jobs:
           }
           python Tests/GoldenScene/check_golden.py golden_out/smoke
 
+      - name: Capture claim tests
+        shell: pwsh
+        timeout-minutes: 5
+        # The claims decide whether a rendering bug gets reported, so they are
+        # the thing that must not be quietly loosened. Synthetic images, no
+        # captures checked in, no GPU: this runs in seconds and fails if a
+        # threshold moves until everything passes.
+        run: |
+          python tools/test_capture_claims.py
+          if ($LASTEXITCODE -ne 0) { throw "capture claim tests failed" }
+
       - name: Capture harness (exported games, on lavapipe)
         shell: pwsh
         timeout-minutes: 25
