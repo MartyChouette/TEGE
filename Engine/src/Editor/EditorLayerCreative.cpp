@@ -60,16 +60,22 @@ namespace {
 //
 // So the palette is written in sRGB, the way it was chosen, and converted here.
 // Measured, not guessed: the sampled pixel matched the sRGB transfer curve.
-inline f32 SrgbToLinear(f32 c) {
-    return (c <= 0.04045f) ? (c / 12.92f) : std::pow((c + 0.055f) / 1.055f, 2.4f);
-}
-
+// Authored colours now pass straight through.
+//
+// This used to convert sRGB -> linear, correctly, while the swapchain was
+// B8G8R8A8_SRGB: ImGui writes vertex colours through untouched and the hardware
+// encoded them a second time, so an authored #1b212b sampled on screen as
+// RGB(91,101,114). The swapchain is B8G8R8A8_UNORM as of 2026-09-16, because the
+// SCENE shaders already encode and were being encoded twice, so there is no
+// hardware encode left to cancel and converting here would darken this surface by
+// exactly the amount it used to correct.
+//
+// Kept as a named function rather than deleted at every call site: it says that a
+// colour here is authored in sRGB, and it is where the conversion goes back if the
+// swapchain ever returns to _SRGB. ImGuiLayer's palette pass came out in the same
+// change; they belong together.
 inline ImU32 Authored(u8 r, u8 g, u8 b, u8 a = 255) {
-    auto conv = [](u8 v) {
-        return static_cast<u8>(SrgbToLinear(static_cast<f32>(v) / 255.0f) * 255.0f + 0.5f);
-    };
-    // Alpha is not a colour channel and is not transfer-encoded.
-    return IM_COL32(conv(r), conv(g), conv(b), a);
+    return IM_COL32(r, g, b, a);
 }
 
 // The palette, settled in the mockup rather than in C++ at five minutes a

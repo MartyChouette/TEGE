@@ -1166,14 +1166,24 @@ void ImGuiLayer::ApplyTheme(Editor::EditorTheme theme, const Editor::AccentColor
     // Alpha is not a colour channel and is not transfer-encoded. Runs last, so
     // the accent overrides and the derived slots above are covered too.
     // ------------------------------------------------------------------
-    auto srgbToLinear = [](f32 c) {
-        return (c <= 0.04045f) ? (c / 12.92f) : std::pow((c + 0.055f) / 1.055f, 2.4f);
-    };
-    for (int i = 0; i < ImGuiCol_COUNT; ++i) {
-        colors[i].x = srgbToLinear(colors[i].x);
-        colors[i].y = srgbToLinear(colors[i].y);
-        colors[i].z = srgbToLinear(colors[i].z);
-    }
+    //
+    // REMOVED 2026-09-16, with the reason it existed.
+    //
+    // The conversion above was correct while the swapchain was B8G8R8A8_SRGB:
+    // ImGui writes vertex colours straight through, the hardware encoded them
+    // as though they were linear, and every theme colour landed about three and
+    // a half times lighter than authored. Pre-converting to linear cancelled it.
+    //
+    // The swapchain is B8G8R8A8_UNORM now (VulkanSwapchain::ChooseSwapSurfaceFormat),
+    // because the SCENE shaders already encode and were being encoded twice --
+    // measured at one full sRGB transfer of error on every desktop build. With
+    // no hardware encode left to cancel, this conversion would darken the whole
+    // editor by exactly the amount it used to correct.
+    //
+    // So the colours go through as authored, which is what IM_COL32 has always
+    // meant everywhere else. If the swapchain is ever put back to _SRGB, this
+    // and the four Authored() helpers in the editor panels come back together or
+    // the editor is wrong again.
 }
 
 void ImGuiLayer::SetGlobalScale(f32 scale) {

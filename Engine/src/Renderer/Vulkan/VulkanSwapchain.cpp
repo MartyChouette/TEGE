@@ -141,9 +141,33 @@ VkSurfaceFormatKHR VulkanSwapchain::ChooseSwapSurfaceFormat(const std::vector<Vk
         m_HDROutputMode = 0;
     }
 
-    // SDR: Prefer SRGB with 32-bit color
+    // SDR: UNORM, not SRGB, because the SHADERS already encode.
+    //
+    // triangle.frag ends with pow(result, 1/2.2), and so do grass.frag,
+    // shrub.frag, tree.frag and sprite_lit.frag. An _SRGB attachment applies the
+    // transfer function again on write, so everything that reached this
+    // swapchain was encoded TWICE and shipped about a gamma too bright.
+    //
+    // Measured 2026-09-16 on Examples/WaterVolume, mean RGB: the editor's
+    // offscreen UNORM game-view target reads (138,170,178) and the web build,
+    // whose surface has always been BGRA8Unorm, reads (144,181,196). The
+    // exported player read (193,212,216) -- which is what you get by feeding
+    // (138,170,178) through one more sRGB encode, predicted (194,213,218),
+    // measured (193,212,216). Not a trend, an identity.
+    //
+    // It hid because it was CONSISTENT: the editor composites its correct
+    // offscreen target through ImGui into this same swapchain, so the editor
+    // displayed the same too-bright image the player did, and the two agreed
+    // with each other. Only web disagreed, and only a capture of all three put
+    // them side by side.
+    //
+    // This is the coupled half: the ImGui theme used to convert its colours
+    // sRGB->linear precisely BECAUSE this was _SRGB (ImGuiLayer.cpp, and private
+    // copies in four editor panels). Those conversions came out in the same
+    // change. Moving this line back without restoring them turns all editor
+    // chrome dark.
     for (const auto& format : availableFormats) {
-        if (format.format == VK_FORMAT_B8G8R8A8_SRGB &&
+        if (format.format == VK_FORMAT_B8G8R8A8_UNORM &&
             format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
             return format;
         }

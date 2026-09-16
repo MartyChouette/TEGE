@@ -27,17 +27,22 @@ namespace Editor {
 
 namespace {
 
-// The swapchain is B8G8R8A8_SRGB and ImGui writes vertex colours straight
-// through, so an authored colour has to be converted to linear or it renders
-// about three times lighter than it is. Same conversion the creative surface uses.
+// Authored colours now pass straight through.
+//
+// This used to convert sRGB -> linear, correctly, while the swapchain was
+// B8G8R8A8_SRGB: ImGui writes vertex colours through untouched and the hardware
+// encoded them a second time, so an authored #1b212b sampled on screen as
+// RGB(91,101,114). The swapchain is B8G8R8A8_UNORM as of 2026-09-16, because the
+// SCENE shaders already encode and were being encoded twice, so there is no
+// hardware encode left to cancel and converting here would darken this surface by
+// exactly the amount it used to correct.
+//
+// Kept as a named function rather than deleted at every call site: it says that a
+// colour here is authored in sRGB, and it is where the conversion goes back if the
+// swapchain ever returns to _SRGB. ImGuiLayer's palette pass came out in the same
+// change; they belong together.
 ImU32 Authored(const Renderer::PaletteColor& c) {
-    auto lin = [](u8 v) {
-        const f32 s = static_cast<f32>(v) / 255.0f;
-        const f32 l = (s <= 0.04045f) ? (s / 12.92f)
-                                      : std::pow((s + 0.055f) / 1.055f, 2.4f);
-        return static_cast<u8>(l * 255.0f + 0.5f);
-    };
-    return IM_COL32(lin(c.r), lin(c.g), lin(c.b), 255);
+    return IM_COL32(c.r, c.g, c.b, 255);
 }
 
 // One row of swatches. Returns the index under the cursor, or -1.

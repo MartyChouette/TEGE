@@ -37,20 +37,22 @@ namespace Editor {
 
 namespace {
 
-// sRGB -> linear, then pack. Same reasoning as Authored() in
-// EditorLayerCreative.cpp: ImGui writes vertex colours straight through and the
-// hardware encodes them a second time, so an authored #1b212b samples on screen as
-// RGB(91,101,114) unless it is converted here.
-f32 SrgbToLinear(f32 c) {
-    return (c <= 0.04045f) ? (c / 12.92f)
-                           : std::pow((c + 0.055f) / 1.055f, 2.4f);
-}
-
+// Authored colours now pass straight through.
+//
+// This used to convert sRGB -> linear, correctly, while the swapchain was
+// B8G8R8A8_SRGB: ImGui writes vertex colours through untouched and the hardware
+// encoded them a second time, so an authored #1b212b sampled on screen as
+// RGB(91,101,114). The swapchain is B8G8R8A8_UNORM as of 2026-09-16, because the
+// SCENE shaders already encode and were being encoded twice, so there is no
+// hardware encode left to cancel and converting here would darken this surface by
+// exactly the amount it used to correct.
+//
+// Kept as a named function rather than deleted at every call site: it says that a
+// colour here is authored in sRGB, and it is where the conversion goes back if the
+// swapchain ever returns to _SRGB. ImGuiLayer's palette pass came out in the same
+// change; they belong together.
 ImU32 Authored(u8 r, u8 g, u8 b, u8 a = 255) {
-    return IM_COL32(static_cast<int>(SrgbToLinear(r / 255.0f) * 255.0f + 0.5f),
-                    static_cast<int>(SrgbToLinear(g / 255.0f) * 255.0f + 0.5f),
-                    static_cast<int>(SrgbToLinear(b / 255.0f) * 255.0f + 0.5f),
-                    a);
+    return IM_COL32(r, g, b, a);
 }
 
 std::string FormatTime(f32 seconds) {

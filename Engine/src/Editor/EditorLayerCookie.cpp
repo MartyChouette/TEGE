@@ -34,15 +34,17 @@ namespace {
 constexpr u32 kPreviewCells = 64;
 
 ImU32 GreyToColor(u8 v) {
-    // The swapchain is B8G8R8A8_SRGB and ImGui writes vertex colours straight
-    // through, so a value packed here is treated as linear and comes out about
-    // three times lighter than authored. Convert to linear first, the same way
-    // the creative-mode surface does.
-    const f32 s = static_cast<f32>(v) / 255.0f;
-    const f32 lin = (s <= 0.04045f) ? (s / 12.92f)
-                                    : std::pow((s + 0.055f) / 1.055f, 2.4f);
-    const u8 c = static_cast<u8>(lin * 255.0f + 0.5f);
-    return IM_COL32(c, c, c, 255);
+    // Straight through. This used to convert sRGB -> linear, correctly, while
+    // the swapchain was B8G8R8A8_SRGB and the hardware encoded ImGui's vertex
+    // colours a second time. The swapchain is B8G8R8A8_UNORM as of 2026-09-16
+    // (the scene shaders already encode, and were encoding twice), so there is
+    // nothing left to cancel and converting here would make this preview about
+    // three times darker than the cookie it is previewing.
+    //
+    // A cookie is a GREYSCALE MASK, so this one matters twice over: the preview
+    // is supposed to show the value the shader will multiply by, and a transfer
+    // curve applied to it is a lie about the data rather than about a colour.
+    return IM_COL32(v, v, v, 255);
 }
 
 } // namespace
