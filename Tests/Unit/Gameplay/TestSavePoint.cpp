@@ -234,4 +234,84 @@ ENJIN_TEST(SavePoint, NoPlayerMeansNoSaveAndNoCrash) {
     ENJIN_EXPECT_FALSE(f.AnySlotUsed());
 }
 
+// ===========================================================================
+// Auto-save configuration
+//
+// AutoSaveConfig and SaveSystemComponent's auto-save block are the same six
+// settings written twice, and nothing connected them: ConfigureAutoSave had no
+// callers, so `enabled` stayed false and TieredSaveSystem::Update returned on
+// its first line. Timed auto-save had never run in a shipped game.
+// ===========================================================================
+
+ENJIN_TEST(AutoSaveConfig, ComponentTurnsAutoSaveOn) {
+    // Arrange: a game manager asking for timed auto-save.
+    Fixture f;
+    Entity manager = f.world.CreateEntity();
+    SaveSystemComponent cfg;
+    cfg.autoSaveEnabled = true;
+    cfg.autoSaveOnInterval = true;
+    cfg.autoSaveIntervalSeconds = 60.0f;
+    f.world.AddComponent<SaveSystemComponent>(manager, cfg);
+    ENJIN_EXPECT_FALSE(f.save.GetAutoSaveConfig().enabled);   // off until it is read
+
+    // Act: one tick of the save system.
+    f.save.Update(0.016f, &f.world, "TestScene");
+
+    // Assert
+    ENJIN_EXPECT_TRUE(f.save.GetAutoSaveConfig().enabled);
+    ENJIN_EXPECT_TRUE(f.save.GetAutoSaveConfig().onTimedInterval);
+    ENJIN_EXPECT_FLOAT_EQ(f.save.GetAutoSaveConfig().intervalSeconds, 60.0f);
+}
+
+ENJIN_TEST(AutoSaveConfig, TimedAutoSaveActuallyFires) {
+    // Arrange: a short interval, at the clamp floor so the test stays quick.
+    Fixture f;
+    Entity manager = f.world.CreateEntity();
+    SaveSystemComponent cfg;
+    cfg.autoSaveEnabled = true;
+    cfg.autoSaveOnInterval = true;
+    cfg.autoSaveIntervalSeconds = TieredSaveSystem::kMinAutoSaveInterval;
+    f.world.AddComponent<SaveSystemComponent>(manager, cfg);
+
+    // Act: tick past the interval.
+    for (int i = 0; i < 4; ++i) {
+        f.save.Update(2.0f, &f.world, "TestScene");
+    }
+
+    // Assert: something was written. Before this wiring nothing ever was.
+    ENJIN_EXPECT_TRUE(f.AnySlotUsed());
+}
+
+ENJIN_TEST(AutoSaveConfig, ZeroIntervalIsClampedNotObeyed) {
+    // Arrange: 0 seconds, which would save every single frame.
+    Fixture f;
+    Entity manager = f.world.CreateEntity();
+    SaveSystemComponent cfg;
+    cfg.autoSaveEnabled = true;
+    cfg.autoSaveOnInterval = true;
+    cfg.autoSaveIntervalSeconds = 0.0f;
+    f.world.AddComponent<SaveSystemComponent>(manager, cfg);
+
+    // Act
+    f.save.Update(0.016f, &f.world, "TestScene");
+
+    // Assert: clamped to the floor, not taken literally and not silently
+    // turned into "never".
+    ENJIN_EXPECT_FLOAT_EQ(f.save.GetAutoSaveConfig().intervalSeconds,
+                          TieredSaveSystem::kMinAutoSaveInterval);
+}
+
+ENJIN_TEST(AutoSaveConfig, NoComponentLeavesAutoSaveAlone) {
+    // Arrange: a world with no game manager at all.
+    Fixture f;
+
+    // Act
+    f.save.Update(0.016f, &f.world, "TestScene");
+
+    // Assert: still off, and nothing saved. A scene without the component must
+    // not start auto-saving behind the author's back.
+    ENJIN_EXPECT_FALSE(f.save.GetAutoSaveConfig().enabled);
+    ENJIN_EXPECT_FALSE(f.AnySlotUsed());
+}
+
 ENJIN_TEST_MAIN()

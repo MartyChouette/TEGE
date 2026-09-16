@@ -4,6 +4,7 @@
 #include "Enjin/Scene/SceneSerializer.h"
 #include <unordered_map>
 #include "Enjin/ECS/Components/StableId.h"
+#include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/Logging/Log.h"
 
 #include <nlohmann/json.hpp>
@@ -520,9 +521,43 @@ u32 TieredSaveSystem::GetNextAutoSaveSlot() {
     return slot;
 }
 
+void TieredSaveSystem::ApplyConfigFromWorld(ECS::World* world) {
+    if (!world) return;
+    for (ECS::Entity e : world->GetEntitiesWithComponent<ECS::SaveSystemComponent>()) {
+        const auto* c = world->GetComponent<ECS::SaveSystemComponent>(e);
+        if (!c) continue;
+        m_AutoSaveConfig.enabled = c->autoSaveEnabled;
+        m_AutoSaveConfig.onSceneTransition = c->autoSaveOnSceneTransition;
+        m_AutoSaveConfig.onTimedInterval = c->autoSaveOnInterval;
+        m_AutoSaveConfig.onCheckpoint = c->autoSaveOnCheckpoint;
+        m_AutoSaveConfig.autoSaveSlotCount = c->autoSaveSlotCount;
+
+        // A zero interval would save every frame, which is a disk-shredder
+        // rather than a setting. Clamped and said out loud ONCE, because a
+        // believable wrong value is worse than an absurd one: silently treating
+        // 0 as "never" would look like auto-save being broken again.
+        f32 interval = c->autoSaveIntervalSeconds;
+        if (m_AutoSaveConfig.onTimedInterval && interval < kMinAutoSaveInterval) {
+            static bool warned = false;
+            if (!warned) {
+                warned = true;
+                ENJIN_LOG_WARN(Editor,
+                    "SaveSystemComponent.autoSaveIntervalSeconds is %.2f; clamping to %.0fs. "
+                    "A shorter interval saves faster than a save takes.",
+                    interval, kMinAutoSaveInterval);
+            }
+            interval = kMinAutoSaveInterval;
+        }
+        m_AutoSaveConfig.intervalSeconds = interval;
+        break;   // first game manager wins
+    }
+}
+
 void TieredSaveSystem::Update(f32 deltaTime, ECS::World* world, const std::string& currentScene) {
     m_SessionPlayTime += deltaTime;
     m_CurrentScene = currentScene;
+
+    ApplyConfigFromWorld(world);
 
     if (!m_AutoSaveConfig.enabled || !world) return;
 

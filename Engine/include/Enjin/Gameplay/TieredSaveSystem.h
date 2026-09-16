@@ -41,6 +41,10 @@ struct AutoSaveConfig {
 // 3-tier save system: SceneState, RunState, MetaProgression
 class ENJIN_API TieredSaveSystem {
 public:
+    // Floor for a timed auto-save. Below this a save starts before the last
+    // one finished.
+    static constexpr f32 kMinAutoSaveInterval = 5.0f;
+
     // Save format this build writes and is willing to read.
     //
     // 3 dropped the embedded full-scene dump: a save is a delta over the level
@@ -83,6 +87,22 @@ public:
     // Checkpoints & auto-save
     void Checkpoint(ECS::World* world, const std::string& sceneName);
     void ConfigureAutoSave(const AutoSaveConfig& config);
+
+    // Adopt the auto-save block from a SaveSystemComponent in the world, if
+    // one is there. Called at the top of Update, so every runtime that already
+    // ticks this system gets it and no caller changes.
+    //
+    // AutoSaveConfig and SaveSystemComponent's auto-save fields are the same
+    // six settings written twice, and NOTHING connected them: ConfigureAutoSave
+    // had no callers anywhere, so `enabled` sat at its default of false and
+    // Update returned on the first line. Timed auto-save has never run in a
+    // shipped game, and the component field that would switch it on was read by
+    // nobody (2026-09-16).
+    //
+    // The component WINS while it exists, every frame. That matters if anything
+    // ever calls ConfigureAutoSave as well: authored configuration beats code,
+    // because the person editing the scene can see it.
+    void ApplyConfigFromWorld(ECS::World* world);
     const AutoSaveConfig& GetAutoSaveConfig() const { return m_AutoSaveConfig; }
     AutoSaveConfig& GetAutoSaveConfig() { return m_AutoSaveConfig; }
     void Update(f32 deltaTime, ECS::World* world, const std::string& currentScene);
