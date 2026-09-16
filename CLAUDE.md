@@ -140,6 +140,20 @@ A symptom shows up in a project, so the project is where you look, and project d
   fields): its hand-maintained size comment read 992 bytes while the fields added
   up to 1008, which is what a number nobody can check does over time. APPEND rows
   there, never insert -- the cookie rows were appended for exactly that reason.
+- **A new WebGPU pipeline drawing into the scene pass must match its attachment
+  state exactly: `RGBA16Float` colour, `Depth24PlusStencil8` depth,
+  `Renderer::kWebSceneSampleCount`.** Guess any of the three and the pipeline is
+  not compatible with the pass, every draw in it is dropped, and the canvas goes
+  BLACK -- the same symptom as the documented sample-count trap, and the console
+  says only "Attachment state ... is not compatible". Copy the sky pipeline, do
+  not invent the formats (2026-09-16).
+- **`alphaBlend = true` turns blending ON and nothing else. The default
+  `GPUBlendState` is One/Zero, which is a REPLACE.** A pipeline that sets the flag
+  without also setting the factors overwrites the target with whatever the shader
+  returns, including fully transparent black. A full-screen overlay doing this
+  wiped the sky and every sprite above the 2D waterline while the water itself
+  looked perfect. Set srcColor=SrcAlpha, dstColor=OneMinusSrcAlpha, srcAlpha=One,
+  dstAlpha=OneMinusSrcAlpha, the way the sprite pipeline does.
 - **The web `flags` word is NOT the Vulkan `flags` word, and the overlap is the trap.**
   Bits 3 (skinned), 4 (wind sway), 5 (water surface), 11 (ocean), 21 (affine), 22
   (vertex snap) and 23 (stipple) mean the same thing on both. Bits 6 and 7 do not:

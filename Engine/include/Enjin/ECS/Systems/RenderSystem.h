@@ -907,6 +907,13 @@ public:
 #if ENJIN_RENDERER_WEBGPU
     // Web variant: store the scene's sky config; the lighting-UBO fill reads it.
     void SetSkybox(const Renderer::SkyboxConfig& config) { m_WebSkyConfig = config; m_WebSkyConfigured = true; }
+    // 2D scene water. Same shape as the sky above: the web side just stores it,
+    // and RenderSystem::Update draws the overlay when it is enabled. Declared
+    // here because the Vulkan SetWater2D lives in the other half of the split,
+    // so a web build had no way to be told about it at all -- which is why a 2D
+    // scene's water was missing in a browser rather than merely unimplemented.
+    void SetWater2D(const Renderer::Water2DConfig& config) { m_Water2DConfig = config; }
+    const Renderer::Water2DConfig& GetWater2DConfig() const { return m_Water2DConfig; }
 #endif
 
     void SetWindSystem(Effects::WindSystem* wind) { m_WindSystem = wind; }
@@ -2078,6 +2085,17 @@ private:
     };
     WebPlateParams m_WebPlateParams;
 
+    // 2D scene water. Six vec4s, matching Water2DParams in WATER2D_WGSL.
+    struct WebWater2DParams {
+        f32 surface[4];    // rgb tint, w = opacity
+        f32 deep[4];       // rgb tint, w = depthFalloff
+        f32 foam[4];       // rgb colour, w = foamWidth
+        f32 waveParm[4];   // waterLineY, waveAmplitude, waveLength, waveSpeed
+        f32 camParm[4];    // camY, orthoHalfHeight, time, causticStrength
+        f32 spanParm[4];   // camX, visible world width, unused, unused
+    };
+    static_assert(sizeof(f32) * 24 == 96, "Water2DParams is six vec4s");
+
     f32 m_WebTime = 0.0f;  // Accumulated time for shader animations
 #else
     // Vulkan-specific rendering resources (advanced pipelines)
@@ -2218,6 +2236,17 @@ private:
     Renderer::SkyboxConfig m_WebSkyConfig;   // web: scene sky (desktop uses m_Skybox)
     f32 m_WeatherSkyRain = 0.0f, m_WeatherSkySnow = 0.0f;  // live weather sky blend
     bool m_WebSkyConfigured = false;
+    // 2D scene water, declared OUTSIDE the backend split so both SetWater2D
+    // implementations write the same field: the Vulkan one is a method, the web
+    // one is inline above. It lived in the Vulkan-only block until 2026-09-16,
+    // which is why a web build had nowhere to put the config even after the
+    // player was taught to load it.
+    Renderer::Water2DConfig m_Water2DConfig;
+    Renderer::GPUShaderHandle m_WebWater2DShader;
+    Renderer::GPUBufferHandle m_WebWater2DParams;
+    Renderer::GPUBindGroupLayoutHandle m_WebWater2DLayout;
+    Renderer::GPUBindGroupHandle m_WebWater2DBindGroup;
+    Renderer::GPUPipelineHandle m_WebWater2DPipeline;
     // Vulkan stores this on the ShadowMap object; the web path has no such
     // object, so the slider needs somewhere to live.
     f32 m_WebShadowStrength = 1.0f;
@@ -2616,7 +2645,6 @@ private:
     // sprites, submerging everything below a world-space waterline. Cousin of
     // the 2D sky; alpha-blended (the sky is opaque), so its pipeline differs
     // only in the blend state.
-    Renderer::Water2DConfig m_Water2DConfig;
     bool m_PendingWater2DConfig = false;
     Renderer::Water2DConfig m_PendingWater2D;
     VkPipeline m_Water2DPipeline = VK_NULL_HANDLE;

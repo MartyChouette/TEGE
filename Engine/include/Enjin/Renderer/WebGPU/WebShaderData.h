@@ -1904,6 +1904,118 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 // Pre-rendered background plate: a finished picture of a room plus the depth it
 // was rendered at, so live geometry occludes against it. Desktop counterpart is
 // Engine/shaders/plate.frag; the maths is deliberately identical.
+// 2D scene water, ported from Engine/shaders/water2d.frag. A full-screen
+// alpha-blended overlay drawn AFTER the sprites in a Scene2D, so everything below
+// the world-space waterline reads as submerged. It reconstructs each pixel's world
+// position from the ortho camera, so the line sits at a fixed world Y and the body
+// scrolls with the camera rather than being painted on the screen.
+//
+// The hash/noise/fbm constants are copied digit for digit from the GLSL. They are
+// hashes: a drifted digit is not a slightly different ripple, it is a different sea.
+static const char* WATER2D_WGSL = R"(
+struct Water2DParams {
+    surface:  vec4<f32>,   // rgb tint, w = opacity
+    deep:     vec4<f32>,   // rgb tint, w = depthFalloff
+    foam:     vec4<f32>,   // rgb colour, w = foamWidth
+    waveParm: vec4<f32>,   // waterLineY, waveAmplitude, waveLength, waveSpeed
+    camParm:  vec4<f32>,   // camY, orthoHalfHeight, time, causticStrength
+    spanParm: vec4<f32>,   // camX, visible world width, unused, unused
+};
+@group(0) @binding(0) var<uniform> w: Water2DParams;
+
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
+    var out: VertexOutput;
+    let x = f32(i32(vertexIndex & 1u) * 4 - 1);
+    let y = f32(i32(vertexIndex >> 1u) * 4 - 1);
+    out.position = vec4<f32>(x, y, 1.0, 1.0);
+    // fragUV: 0..1 across the screen with y=0 at the TOP, matching the GLSL.
+    out.uv = vec2<f32>(x * 0.5 + 0.5, 0.5 - y * 0.5);
+    return out;
+}
+
+fn w2dHash(p0: vec2<f32>) -> f32 {
+    var p = fract(p0 * vec2<f32>(123.34, 345.45));
+    p = p + dot(p, p + 34.345);
+    return fract(p.x * p.y);
+}
+fn w2dNoise(p: vec2<f32>) -> f32 {
+    let i = floor(p);
+    var f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    let a = w2dHash(i);
+    let b = w2dHash(i + vec2<f32>(1.0, 0.0));
+    let c = w2dHash(i + vec2<f32>(0.0, 1.0));
+    let d = w2dHash(i + vec2<f32>(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+fn w2dFbm(p0: vec2<f32>) -> f32 {
+    var v = 0.0;
+    var amp = 0.5;
+    var p = p0;
+    for (var i = 0; i < 4; i = i + 1) {
+        v = v + amp * w2dNoise(p);
+        p = p * 2.0 + 11.0;
+        amp = amp * 0.5;
+    }
+    return v;
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    let camY = w.camParm.x;
+    let halfH = max(w.camParm.y, 0.0001);
+    let time = w.camParm.z;
+    let caustic = w.camParm.w;
+
+    let worldY = camY + halfH - in.uv.y * (2.0 * halfH);
+    let worldX = w.spanParm.x + (in.uv.x - 0.5) * w.spanParm.y;
+
+    let waveLen = max(w.waveParm.z, 0.001);
+    let amp = w.waveParm.y;
+    let spd = w.waveParm.w;
+    let k = 6.28318530718 / waveLen;
+    let surf = w.waveParm.x
+             + amp * sin(worldX * k + time * spd)
+             + amp * 0.45 * sin(worldX * k * 2.3 - time * spd * 1.7)
+             + amp * 0.25 * (w2dNoise(vec2<f32>(worldX * 0.15, time * 0.4)) - 0.5) * 2.0;
+
+    let depthBelow = surf - worldY;
+    if (depthBelow <= -w.foam.w) {
+        return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+    }
+
+    let falloff = max(w.deep.w, 0.001);
+    let t = clamp(depthBelow / falloff, 0.0, 1.0);
+    var tint = mix(w.surface.rgb, w.deep.rgb, t);
+
+    let causticFade = (1.0 - t) * caustic;
+    if (causticFade > 0.0) {
+        var c = w2dFbm(vec2<f32>(worldX * 0.5 + time * 0.6, worldY * 0.5 - time * 0.3));
+        c = pow(clamp(c, 0.0, 1.0), 2.0);
+        tint = tint + vec3<f32>(c * causticFade * 0.6);
+    }
+
+    var alpha = mix(0.35, 1.0, t) * w.surface.w;
+
+    let foamBand = w.foam.w;
+    let foamT = 1.0 - clamp(abs(depthBelow) / max(foamBand, 0.001), 0.0, 1.0);
+    if (foamT > 0.0) {
+        let sparkle = 0.6 + 0.4 * w2dNoise(vec2<f32>(worldX * 1.3, time * 2.0));
+        let f = pow(foamT, 1.5) * sparkle;
+        tint = mix(tint, w.foam.rgb, f);
+        alpha = max(alpha, f);
+    }
+
+    return vec4<f32>(tint, clamp(alpha, 0.0, 1.0));
+}
+)";
+
 static const char* PLATE_WGSL = R"(
 struct PlateParams {
     mapping: vec4<f32>,   // x = a, y = b, z = 1 if depth is a + b/dist, w = world-unit bias

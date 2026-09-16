@@ -682,6 +682,9 @@ public:
                     m_BootSkybox = serializer.GetSkyboxConfig();
                     m_HasBootSkybox = true;
                     if (m_RenderSystem) m_RenderSystem->SetSkybox(m_BootSkybox);
+                    m_BootWater2D = serializer.GetWater2DConfig();
+                    m_HasBootWater2D = true;
+                    if (m_RenderSystem) m_RenderSystem->SetWater2D(m_BootWater2D);
                     sceneLoaded = true;
                     m_CurrentWebScenePath = m_StartScene;
                     ENJIN_LOG_INFO(Player, "Loaded scene: %s", m_StartScene.c_str());
@@ -708,6 +711,9 @@ public:
                     m_BootSkybox = serializer.GetSkyboxConfig();
                     m_HasBootSkybox = true;
                     if (m_RenderSystem) m_RenderSystem->SetSkybox(m_BootSkybox);
+                    m_BootWater2D = serializer.GetWater2DConfig();
+                    m_HasBootWater2D = true;
+                    if (m_RenderSystem) m_RenderSystem->SetWater2D(m_BootWater2D);
                     sceneLoaded = true;
                     ENJIN_LOG_INFO(Player, "Loaded loose scene: scene.enjin");
                     ShowWebContentWarnings(sceneStr);
@@ -745,6 +751,7 @@ public:
         // dependency is missing has to be paired with somewhere the work goes
         // instead, or it is just a silent drop.
         if (m_HasBootSkybox) m_RenderSystem->SetSkybox(m_BootSkybox);
+        if (m_HasBootWater2D) m_RenderSystem->SetWater2D(m_BootWater2D);
 
         // GPU particles on web: same emitter component as desktop, driven each frame.
         m_Vegetation = std::make_unique<Enjin::Renderer::WebGPUVegetationSystem>();
@@ -1675,9 +1682,21 @@ public:
                 Enjin::Math::Vector3 fwd = xf->rotation.GetForward();
                 Enjin::Math::Vector3 up = xf->rotation.GetUp();
                 m_Camera->SetLookAt(pos, pos + fwd, up);
-                if (cc->fieldOfView > 0.0f) {
-                    Enjin::f32 aspect = static_cast<Enjin::f32>(m_Renderer->GetSwapChainWidth()) /
-                                 static_cast<Enjin::f32>(std::max(m_Renderer->GetSwapChainHeight(), 1u));
+                const Enjin::f32 aspect = static_cast<Enjin::f32>(m_Renderer->GetSwapChainWidth()) /
+                             static_cast<Enjin::f32>(std::max(m_Renderer->GetSwapChainHeight(), 1u));
+                // An ORTHOGRAPHIC camera was rendered in perspective here, always.
+                // This block only ever called SetPerspective and never looked at
+                // projectionType, so every 2D scene in a browser was drawn through a
+                // 60-degree frustum: sprites took perspective foreshortening and
+                // anything reconstructing world position from the projection (the 2D
+                // water overlay) got a half-height of 0.577 where the author had
+                // asked for 9. Measured 2026-09-16 against Examples/Water2D.
+                if (cc->projectionType == Enjin::ECS::ProjectionType::Orthographic) {
+                    const Enjin::f32 halfH = cc->orthoSize > 0.0f ? cc->orthoSize : 10.0f;
+                    const Enjin::f32 halfW = halfH * aspect;
+                    m_Camera->SetOrthographic(-halfW, halfW, -halfH, halfH,
+                                              cc->nearPlane, cc->farPlane);
+                } else if (cc->fieldOfView > 0.0f) {
                     // Options FOV override (desktop-menu parity): the slider
                     // wins over the authored camera when the player set it.
                     Enjin::f32 fov = (m_OptionsFov > 0.0f) ? m_OptionsFov : cc->fieldOfView;
@@ -2474,6 +2493,7 @@ private:
             m_SceneRenderSettings.useProjectDefaults = true;
         }
         if (m_RenderSystem) m_RenderSystem->SetSkybox(serializer.GetSkyboxConfig());
+        if (m_RenderSystem) m_RenderSystem->SetWater2D(serializer.GetWater2DConfig());
         ApplyWebPostProcess();
         m_CurrentWebScenePath = scenePath;
         m_SimClock.Reset();
@@ -2924,6 +2944,8 @@ private:
     // null guard. Carry the config here and apply it once the system exists.
     Enjin::Renderer::SkyboxConfig m_BootSkybox;
     bool m_HasBootSkybox = false;
+    Enjin::Renderer::Water2DConfig m_BootWater2D;
+    bool m_HasBootWater2D = false;
 
     // Project render quality tiers (ADR-0006) and the tier currently in force.
     // The active tier starts at the project default; a player-facing selector

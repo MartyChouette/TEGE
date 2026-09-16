@@ -1624,6 +1624,74 @@ void RenderSystem::Initialize() {
             ENJIN_LOG_INFO(Renderer, "RenderSystem: Procedural sky pipeline initialized");
         }
 
+        // 2D scene water: a full-screen alpha-blended overlay drawn after the
+        // sprites, so everything below the world-space waterline reads as
+        // submerged. No depth: a Scene2D has nothing to test against.
+        m_WebWater2DShader = shaderMgr->LoadShader(
+            Renderer::WebShaderData::WATER2D_WGSL,
+            std::strlen(Renderer::WebShaderData::WATER2D_WGSL),
+            Renderer::GPUShaderStage::Vertex, "Water2D");
+        {
+            WebWater2DParams initial{};
+            Renderer::GPUBufferDesc wbd;
+            wbd.size = sizeof(WebWater2DParams);
+            wbd.usage = Renderer::GPUBufferUsage::Uniform | Renderer::GPUBufferUsage::CopyDst;
+            wbd.hostVisible = true;
+            wbd.label = "Water2DParams";
+            m_WebWater2DParams = bufMgr->CreateBufferWithData(wbd, &initial);
+
+            Renderer::GPUBindGroupLayoutDesc wld;
+            wld.entries = { {0, BType::UniformBuffer, SStage::Fragment, sizeof(WebWater2DParams)} };
+            m_WebWater2DLayout = bindMgr->CreateBindGroupLayout(wld);
+
+            Renderer::GPUBindGroupDesc wbg;
+            wbg.layout = m_WebWater2DLayout;
+            Renderer::GPUBindGroupEntry we0;
+            we0.binding = 0; we0.buffer = m_WebWater2DParams;
+            we0.bufferSize = sizeof(WebWater2DParams);
+            wbg.entries.push_back(we0);
+            wbg.label = "Water2DBindGroup";
+            m_WebWater2DBindGroup = bindMgr->CreateBindGroup(wbg);
+
+            Renderer::GPURenderPipelineDesc wpd;
+            wpd.vertexShader = m_WebWater2DShader;
+            wpd.fragmentShader = m_WebWater2DShader;
+            wpd.bindGroupLayouts = {m_WebWater2DLayout};
+            wpd.topology = Renderer::GPUPrimitiveTopology::TriangleList;
+            wpd.cullMode = Renderer::GPUCullMode::None;
+            wpd.frontFace = Renderer::GPUFrontFace::CCW;
+            // An overlay: always draws, never writes depth. depthTest stays TRUE
+            // with Always rather than being switched off, because a pipeline with
+            // no depth state is not attachment-compatible with a pass that has a
+            // depth buffer.
+            wpd.depthTest = true;
+            wpd.depthWrite = false;
+            wpd.depthCompare = Renderer::GPUCompareFunction::Always;
+            wpd.hasColorAttachment = true;
+            wpd.alphaBlend = true;
+            // alphaBlend only turns blending ON. The default GPUBlendState is
+            // One/Zero -- a straight REPLACE -- so enabling it without setting the
+            // factors overwrites the target with whatever the shader returns,
+            // including the fully transparent black this shader returns above the
+            // waterline. That blanked the entire sky and every sprite above the
+            // line while the water itself looked perfect (2026-09-16).
+            wpd.blendState.srcColor = Renderer::GPUBlendFactor::SrcAlpha;
+            wpd.blendState.dstColor = Renderer::GPUBlendFactor::OneMinusSrcAlpha;
+            wpd.blendState.srcAlpha = Renderer::GPUBlendFactor::One;
+            wpd.blendState.dstAlpha = Renderer::GPUBlendFactor::OneMinusSrcAlpha;
+            // These MUST match the scene target, not be guessed. Getting either
+            // wrong makes the pipeline incompatible with the pass and the whole
+            // canvas goes black -- the same failure mode as a sample-count mismatch.
+            wpd.colorFormat = Renderer::GPUTextureFormat::RGBA16Float;
+            wpd.depthFormat = Renderer::GPUTextureFormat::Depth24PlusStencil8;
+            wpd.sampleCount = Renderer::kWebSceneSampleCount;
+            wpd.label = "water2d";
+            m_WebWater2DPipeline = pipeMgr->CreateRenderPipeline(wpd);
+            if (m_WebWater2DPipeline.IsValid()) {
+                ENJIN_LOG_INFO(Renderer, "RenderSystem: 2D water pipeline initialized");
+            }
+        }
+
         // Pre-rendered background plate. Unlike the sky this one draws BEFORE
         // the opaque meshes and WRITES depth, which is what lets a painted room
         // occlude live geometry. depthCompare is Always rather than the test
@@ -4880,6 +4948,48 @@ void RenderSystem::Update(f32 deltaTime) {
             }
             flushSpriteRun(static_cast<u32>(spriteDraws.size()), runTexture);
         }
+    }
+
+    // 2D scene water. After the sprites, so it tints everything already drawn
+    // below the waterline, and before the weather so rain still falls over it.
+    //
+    // The overlay reconstructs each pixel's world position from the ortho camera,
+    // so the line stays at a fixed world Y and the body scrolls with the view
+    // instead of being painted onto the screen.
+    if (usePostProcess && m_WebWater2DPipeline.IsValid() && scenePassEncoder &&
+        m_Water2DConfig.enabled && m_Camera) {
+        const auto& c = m_Water2DConfig;
+        // Ortho half-height straight off the projection: for an orthographic
+        // matrix m[5] is 2/(top-bottom), so its reciprocal is the half-height.
+        // Reading it here rather than adding a Camera accessor keeps this to one
+        // backend and cannot disagree with what the camera actually projected.
+        const Math::Matrix4 proj = m_Camera->GetProjectionMatrix();
+        const f32 halfH = (std::abs(proj.m[5]) > 1e-6f) ? std::abs(1.0f / proj.m[5]) : 1.0f;
+        const f32 aspect = (m_Renderer && m_Renderer->GetSwapchainHeight() > 0)
+            ? static_cast<f32>(m_Renderer->GetSwapchainWidth()) /
+              static_cast<f32>(m_Renderer->GetSwapchainHeight())
+            : 1.777f;
+        const Math::Vector3 camPos = m_Camera->GetPosition();
+
+        WebWater2DParams wp{};
+        wp.surface[0] = c.surfaceColor.x; wp.surface[1] = c.surfaceColor.y;
+        wp.surface[2] = c.surfaceColor.z; wp.surface[3] = c.opacity;
+        wp.deep[0] = c.deepColor.x; wp.deep[1] = c.deepColor.y;
+        wp.deep[2] = c.deepColor.z; wp.deep[3] = c.depthFalloff;
+        wp.foam[0] = c.foamColor.x; wp.foam[1] = c.foamColor.y;
+        wp.foam[2] = c.foamColor.z; wp.foam[3] = c.foamWidth;
+        wp.waveParm[0] = c.waterLineY;  wp.waveParm[1] = c.waveAmplitude;
+        wp.waveParm[2] = c.waveLength;  wp.waveParm[3] = c.waveSpeed;
+        wp.camParm[0] = camPos.y; wp.camParm[1] = halfH;
+        wp.camParm[2] = m_WebTime; wp.camParm[3] = c.causticStrength;
+        wp.spanParm[0] = camPos.x; wp.spanParm[1] = halfH * 2.0f * aspect;
+        bufMgr->UploadData(m_WebWater2DParams, &wp, sizeof(wp));
+
+        wgpuRenderPassEncoderSetPipeline(scenePassEncoder,
+            webPipeMgr->GetNativePipeline(m_WebWater2DPipeline));
+        wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 0,
+            webBindMgr->GetNativeGroup(m_WebWater2DBindGroup), 0, nullptr);
+        wgpuRenderPassEncoderDraw(scenePassEncoder, 3, 1, 0, 0);
     }
 
     // Weather particles (rain streaks / snow flakes): the WeatherSystem's CPU
