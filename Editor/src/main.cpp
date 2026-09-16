@@ -18,6 +18,7 @@
 #include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/Build/BuildPipeline.h"
 #include "Enjin/Build/BuildReport.h"
+#include "Enjin/Build/HTML5Exporter.h"   // --build-web emits the shell through this
 #include <memory>
 #if defined(_WIN32)
     #ifndef WIN32_LEAN_AND_MEAN
@@ -564,29 +565,47 @@ int main(int argc, char* argv[]) {
             std::cout << "[build-web] packed " << r.filesPacked << " files -> "
                       << outDir << "/game.enjpak\n";
 
-            // A web build is not done until the web PLAYER (wasm) is next to the pak.
-            // Reuse the already-built engine from build-web/bin — do NOT silently ship
-            // a pak with no player. If the engine isn't built, say exactly what to run.
-            namespace fs = std::filesystem;
-            bool haveWasm = false;
-            for (const char* f : {"EnjinPlayer.js", "EnjinPlayer.wasm"}) {
-                fs::path src = fs::path("build-web") / "bin" / f;
-                std::error_code ec;
-                if (fs::exists(src, ec)) {
-                    fs::copy_file(src, fs::path(outDir) / f, fs::copy_options::overwrite_existing, ec);
-                    if (!ec) haveWasm = true;
-                }
+            // The web SHELL and the runtime both come from HTML5Exporter, which
+            // already knows how to do this and does it better than the copy that
+            // used to live here.
+            //
+            // Two things were wrong with the old block. It looked for the runtime
+            // at a CWD-relative "build-web/bin", so running the editor from
+            // build/bin/Release -- which is where it lives -- found nothing and
+            // told the user to go and build an engine that was already built.
+            // And it emitted no index.html at all while printing "web build
+            // ready ... Serve it and reload", so the thing it declared ready
+            // could not be opened. HTML5Exporter walks up from the output dir
+            // and from the editor executable to find the repo, and writes the
+            // page, the preloader and the stylesheet.
+            Enjin::Build::HTML5ExportConfig webCfg;
+            webCfg.outputDir = outDir;
+            webCfg.title = std::filesystem::path(projectPath).stem().string();
+            webCfg.zipOutput = false;   // a folder to serve, not an archive to upload
+            Enjin::Build::HTML5ExportResult webRes =
+                Enjin::Build::HTML5Exporter::Export(webCfg, cfg);
+            if (!webRes.success) {
+                std::cout << "[build-web] pak is ready, but the web shell/runtime step failed: "
+                          << webRes.error << "\n"
+                          << "[build-web] If the web engine has never been built, build it once:\n"
+                          << "[build-web]   emcmake cmake -B build-web -S . -DENJIN_PLATFORM_WEB=ON\n"
+                          << "[build-web]   emmake cmake --build build-web --target EnjinPlayer\n";
+                return 1;
             }
-            if (haveWasm) {
-                std::cout << "[build-web] DONE: web build ready in " << outDir
-                          << " (pak + player). Serve it and reload.\n";
-            } else {
-                std::cout << "[build-web] pak is ready, but NO web engine build was found at "
-                             "build-web/bin/EnjinPlayer.wasm.\n"
-                             "[build-web] Build the web engine once, then re-run this:\n"
-                             "[build-web]   emcmake cmake -B build-web -S . -DENJIN_PLATFORM_WEB=ON\n"
-                             "[build-web]   emmake cmake --build build-web --target EnjinPlayer\n";
+            // Export writes the shell; the RUNTIME is a separate step. It copies
+            // the prebuilt EnjinPlayer.js/.wasm out of build-web/bin when one
+            // exists and only falls back to invoking emcc when it does not, so a
+            // tree that has already built the web engine pays nothing here.
+            if (!Enjin::Build::HTML5Exporter::InvokeEmscriptenBuild(
+                    outDir, outDir + "/game.enjpak")) {
+                std::cout << "[build-web] shell written, but no web runtime.\n"
+                          << "[build-web] Build the web engine once, then re-run this:\n"
+                          << "[build-web]   emcmake cmake -B build-web -S . -DENJIN_PLATFORM_WEB=ON\n"
+                          << "[build-web]   emmake cmake --build build-web --target EnjinPlayer\n";
+                return 1;
             }
+            std::cout << "[build-web] DONE: " << outDir << " holds the pak, the player and "
+                      << "index.html. Serve the folder and open it.\n";
             return 0;
         }
     }

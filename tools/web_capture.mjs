@@ -160,6 +160,23 @@ try {
     // frame wait below is time the page spends ALIVE after the gesture, which is
     // what a script waiting on audio needs.
     if (doClick) {
+        // A generated export gates itself behind a "Click to Play" overlay that
+        // sits ON TOP of the canvas, so clicking the canvas hits the overlay's
+        // backdrop and the game never starts. Captures of a real export were a
+        // perfect photograph of the play button until this was added.
+        //
+        // The hand-written demo shells in web-demo/ have no such gate, which is
+        // why this went unnoticed: the tool was only ever pointed at those.
+        const gate = await page.$('#click-to-play');
+        if (gate) {
+            const visible = await gate.evaluate(
+                (el) => getComputedStyle(el).display !== 'none');
+            if (visible) {
+                await gate.click();
+                await new Promise((r) => setTimeout(r, 500));
+            }
+        }
+
         const target = await page.$('#game-canvas');
         // Twice: the engine notices a gesture by polling its own Input each
         // frame, and a single press/release can fall between two polls.
