@@ -4404,6 +4404,15 @@ int main(int argc, char* argv[]) {
         s_GoldenFrames.push_back(240);
     }
 
+    // A capture run advances the simulation by a FIXED step, so frame N is the
+    // same moment of the game whatever the machine was doing. See
+    // Application::s_FixedFrameDelta -- without it the harness photographs a
+    // different scene on a loaded machine than on an idle one, which it did.
+    // 1/60 so the frame numbers in a manifest read as sixtieths of a second.
+    if (!s_GoldenBase.empty()) {
+        Enjin::Application::s_FixedFrameDelta = 1.0f / 60.0f;
+    }
+
     // Set working directory to exe location so relative paths work
     Enjin::Platform::SetWorkingDirectoryToExecutableDirectory();
 

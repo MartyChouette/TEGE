@@ -68,6 +68,21 @@ public:
      */
     static u32 s_HeadlessFrameLimit;
 
+    /**
+     * @brief Fixed frame delta for capture runs (0 = use the real clock).
+     *
+     * When set, every frame is handed this delta instead of the measured one, so
+     * frame N is always the same moment of the SIMULATION regardless of how fast
+     * the machine happened to be running. A capture harness needs that: it
+     * photographs frames by ORDINAL, and without a fixed delta it is sampling a
+     * game that advances on wall-clock, so the same frame number is a different
+     * moment under load.
+     *
+     * It makes the run non-real-time by construction, which is correct for a
+     * capture and wrong for playing, so nothing sets it outside --golden.
+     */
+    static f32 s_FixedFrameDelta;
+
 protected:
     /**
      * @brief Request application shutdown (sets m_Running = false)

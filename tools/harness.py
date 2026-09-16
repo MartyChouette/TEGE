@@ -77,7 +77,7 @@ def run(project, game_dir, outdir):
         return False, 'no EnjinPlayer.exe (build it first)', []
     shutil.copyfile(PLAYER, exe)
 
-    frames = project.get('frames', [90, 400])
+    frames = project.get('frames', [30, 90, 240, 500])
     base = os.path.join(outdir, project['name'])
     cmd = [exe, '--golden', base, '--golden-frames', ','.join(str(f) for f in frames)]
     try:
@@ -118,7 +118,10 @@ def check(project, bases):
         else:
             pct = anim.get('min_changed_pct', 0.5) if isinstance(anim, dict) else 0.5
             try:
-                ok, detail = capture_claims.animates(bases[0] + '.ppm', bases[-1] + '.ppm',
+                # ALL the captures, not the first and last: two samples can land
+                # on the same phase of a periodic motion or both land after a
+                # scene has settled. See capture_claims.animates.
+                ok, detail = capture_claims.animates([b + '.ppm' for b in bases],
                                                      min_changed_pct=pct)
             except (OSError, ValueError) as e:
                 ok, detail = False, str(e)

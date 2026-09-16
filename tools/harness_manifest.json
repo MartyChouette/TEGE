@@ -21,15 +21,19 @@
     "is meant to be still and a demo whose animation broke look identical from the",
     "outside, and the difference has to be written down by a person who checked.",
     "",
-    "PaletteCycling is why this exists. On 2026-09-16 its exported build was byte-identical across seven captures spanning 6.5 seconds while authoring two palettes cycling at 6 entries/sec. Root cause: the player calls World::Update(0.0f), so nothing ever deposited a real dt in the palette clock. Fixed in Player/src/main.cpp; this project now moves 8.65%."
+    "PaletteCycling is why this exists. On 2026-09-16 its exported build was byte-identical across seven captures spanning 6.5 seconds while authoring two palettes cycling at 6 entries/sec. Root cause: the player calls World::Update(0.0f), so nothing ever deposited a real dt in the palette clock. Fixed in Player/src/main.cpp; this project now moves 8.65%.",
+    "",
+    "FOUR capture points, not two. Two was the first design and it was not sound: ShadowCheck reported 60.29% moved and then 0.00% on two identical runs of the same binary. Captures are taken by frame ORDINAL while scenes move on a clock, so two samples can land on the same phase of a loop, or both land after a physics scene has come to rest. animates now passes if ANY pair differs."
   ],
   "projects": [
     {
       "name": "BiscuitBird",
       "project": "Examples/BiscuitBird/BiscuitBird.enjinproject",
       "frames": [
+        30,
         90,
-        400
+        240,
+        500
       ],
       "claims": {
         "draws": true,
@@ -42,8 +46,10 @@
       "name": "Buoyancy",
       "project": "Examples/Buoyancy/Buoyancy.enjinproject",
       "frames": [
+        30,
         90,
-        400
+        240,
+        500
       ],
       "claims": {
         "draws": true,
@@ -56,8 +62,10 @@
       "name": "FixedTimestep",
       "project": "Examples/FixedTimestep/FixedTimestep.enjinproject",
       "frames": [
+        30,
         90,
-        400
+        240,
+        500
       ],
       "claims": {
         "draws": true,
@@ -70,8 +78,10 @@
       "name": "FluidSim",
       "project": "Examples/FluidSim/FluidSim.enjinproject",
       "frames": [
+        30,
         90,
-        400
+        240,
+        500
       ],
       "claims": {
         "draws": true,
@@ -84,8 +94,10 @@
       "name": "FoliageDemo",
       "project": "Examples/FoliageDemo/FoliageDemo.enjinproject",
       "frames": [
+        30,
         90,
-        400
+        240,
+        500
       ],
       "claims": {
         "draws": true,
@@ -98,8 +110,10 @@
       "name": "GeneratedGeometry",
       "project": "Examples/GeneratedGeometry/GeneratedGeometry.enjinproject",
       "frames": [
+        30,
         90,
-        400
+        240,
+        500
       ],
       "claims": {
         "draws": true,
@@ -112,8 +126,10 @@
       "name": "HandIK",
       "project": "Examples/HandIK/HandIK.enjinproject",
       "frames": [
+        30,
         90,
-        400
+        240,
+        500
       ],
       "claims": {
         "draws": true,
@@ -127,8 +143,10 @@
       "name": "Ladders",
       "project": "Examples/Ladders/Ladders.enjinproject",
       "frames": [
+        30,
         90,
-        400
+        240,
+        500
       ],
       "claims": {
         "draws": true,
@@ -141,8 +159,10 @@
       "name": "LightCookies",
       "project": "Examples/LightCookies/LightCookies.enjinproject",
       "frames": [
+        30,
         90,
-        400
+        240,
+        500
       ],
       "claims": {
         "draws": true
@@ -153,8 +173,10 @@
       "name": "Lightmap",
       "project": "Examples/Lightmap/Lightmap.enjinproject",
       "frames": [
+        30,
         90,
-        400
+        240,
+        500
       ],
       "claims": {
         "draws": true
@@ -165,8 +187,10 @@
       "name": "PaletteCycling",
       "project": "Examples/PaletteCycling/PaletteCycling.enjinproject",
       "frames": [
+        30,
         90,
-        400
+        240,
+        500
       ],
       "claims": {
         "draws": true,
@@ -179,8 +203,10 @@
       "name": "Playground",
       "project": "Examples/Playground/Playground.enjinproject",
       "frames": [
+        30,
         90,
-        400
+        240,
+        500
       ],
       "claims": {
         "draws": true,
@@ -193,8 +219,10 @@
       "name": "Potions",
       "project": "Examples/Potions/Potions.enjinproject",
       "frames": [
+        30,
         90,
-        400
+        240,
+        500
       ],
       "claims": {
         "draws": true,
@@ -207,8 +235,10 @@
       "name": "PreRenderedBackground-Live",
       "project": "Examples/PreRenderedBackground/Live.enjinproject",
       "frames": [
+        30,
         90,
-        400
+        240,
+        500
       ],
       "claims": {
         "draws": true
@@ -219,8 +249,10 @@
       "name": "PreRenderedBackground-Plate",
       "project": "Examples/PreRenderedBackground/Plate.enjinproject",
       "frames": [
+        30,
         90,
-        400
+        240,
+        500
       ],
       "claims": {
         "draws": true
@@ -231,8 +263,10 @@
       "name": "PreRenderedBackground",
       "project": "Examples/PreRenderedBackground/PreRenderedBackground.enjinproject",
       "frames": [
+        30,
         90,
-        400
+        240,
+        500
       ],
       "claims": {
         "draws": true
@@ -243,8 +277,10 @@
       "name": "ReflectionProbes",
       "project": "Examples/ReflectionProbes/ReflectionProbes.enjinproject",
       "frames": [
+        30,
         90,
-        400
+        240,
+        500
       ],
       "claims": {
         "draws": true
@@ -255,8 +291,10 @@
       "name": "RoomAcoustics",
       "project": "Examples/RoomAcoustics/RoomAcoustics.enjinproject",
       "frames": [
+        30,
         90,
-        400
+        240,
+        500
       ],
       "claims": {
         "draws": true,
@@ -269,8 +307,10 @@
       "name": "Ropes",
       "project": "Examples/Ropes/Ropes.enjinproject",
       "frames": [
+        30,
         90,
-        400
+        240,
+        500
       ],
       "claims": {
         "draws": true,
@@ -283,8 +323,10 @@
       "name": "ShadowCheck",
       "project": "Examples/ShadowCheck/ShadowCheck.enjinproject",
       "frames": [
+        30,
         90,
-        400
+        240,
+        500
       ],
       "claims": {
         "draws": true,
@@ -297,8 +339,10 @@
       "name": "SpritePivot",
       "project": "Examples/SpritePivot/SpritePivot.enjinproject",
       "frames": [
+        30,
         90,
-        400
+        240,
+        500
       ],
       "claims": {
         "draws": true
@@ -309,8 +353,10 @@
       "name": "Water2D",
       "project": "Examples/Water2D/Water2D.enjinproject",
       "frames": [
+        30,
         90,
-        400
+        240,
+        500
       ],
       "claims": {
         "draws": true,
@@ -323,8 +369,10 @@
       "name": "WaterFX",
       "project": "Examples/WaterFX/WaterFX.enjinproject",
       "frames": [
+        30,
         90,
-        400
+        240,
+        500
       ],
       "claims": {
         "draws": true,
@@ -337,8 +385,10 @@
       "name": "WaterShowcase",
       "project": "Examples/WaterShowcase/WaterShowcase.enjinproject",
       "frames": [
+        30,
         90,
-        400
+        240,
+        500
       ],
       "claims": {
         "draws": true,
@@ -351,8 +401,10 @@
       "name": "WaterVolume",
       "project": "Examples/WaterVolume/WaterVolume.enjinproject",
       "frames": [
+        30,
         90,
-        400
+        240,
+        500
       ],
       "claims": {
         "draws": true,
@@ -365,8 +417,10 @@
       "name": "WindParticles",
       "project": "Examples/WindParticles/WindParticles.enjinproject",
       "frames": [
+        30,
         90,
-        400
+        240,
+        500
       ],
       "claims": {
         "draws": true,

@@ -31,6 +31,7 @@ extern Window* CreateWindow(const WindowDesc& desc);
 extern void DestroyWindow(Window* window);
 
 u32 Application::s_HeadlessFrameLimit = 0;
+f32 Application::s_FixedFrameDelta = 0.0f;
 
 Application::Application() {
 }
@@ -213,6 +214,21 @@ void Application::RunOneFrame() {
     // Clamp delta time to prevent physics explosion after long pause/resume
     if (deltaTime > 0.1f) {
         deltaTime = 0.1f;
+    }
+
+    // Capture runs replace the measured delta with a fixed one, so that frame N
+    // is the same moment of the SIMULATION every time.
+    //
+    // Without this a capture harness measures a moving target. Frames are
+    // photographed by ordinal while the game advances on wall-clock, so on a
+    // loaded machine frame 400 is an earlier moment than on an idle one. Cost,
+    // measured on Examples/ShadowCheck: two identical runs of the same binary
+    // reported 60.29% of pixels moved and then 0.00%, because in one the player
+    // was still falling at frame 400 and in the other it had already landed by
+    // frame 30. The same run photographed a different scene depending on what
+    // else the machine was doing, which is worse than no measurement.
+    if (s_FixedFrameDelta > 0.0f) {
+        deltaTime = s_FixedFrameDelta;
     }
 
     // Update window events

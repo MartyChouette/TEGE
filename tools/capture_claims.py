@@ -197,32 +197,59 @@ def draws(path, quantise=8):
         w, h, distinct, modal_pct)
 
 
-def animates(path_a, path_b, tol=8, min_changed_pct=0.5):
-    """Is anything moving between two captures taken frames apart?
+def animates(paths, tol=8, min_changed_pct=0.5):
+    """Is anything moving across a series of captures?
 
-    This is the check that catches the failure mode this harness exists for: a
+    This is the check that catches the failure mode the harness exists for: a
     feature whose shader, data and pipeline all exist and which nothing ever
     switched on renders a perfectly valid frame that is byte-identical to the
     frame three hundred frames earlier.
 
+    TAKES A LIST, and passes if ANY pair of captures differs. Two samples was the
+    first design and it was not sound: captures are taken by frame ORDINAL while
+    scenes move on a CLOCK, so two samples can land on the same phase of a
+    periodic motion, or both land after a physics scene has settled. Measured on
+    ShadowCheck, which reported 60.29% moved and then 0.00% on two identical runs
+    of the same binary -- its frame 90 was byte-identical across both runs while
+    its frame 400 differed between them by 60%. A check that flaky is worse than
+    no check, because it teaches people to ignore red.
+
     `tol` is per channel, so dithering and one-bit noise do not count as motion.
     """
-    wa, ha, a = read_image(path_a)
-    wb, hb, b = read_image(path_b)
-    if (wa, ha) != (wb, hb):
-        return False, 'size mismatch %dx%d vs %dx%d' % (wa, ha, wb, hb)
-    changed = total = 0
+    if isinstance(paths, str):
+        paths = [paths]
+    if len(paths) < 2:
+        return False, 'needs at least two captures, got %d' % len(paths)
+
+    frames = []
+    for p in paths:
+        w, h, px = read_image(p)
+        frames.append((w, h, px, p))
+
+    size = (frames[0][0], frames[0][1])
+    for w, h, _, p in frames:
+        if (w, h) != size:
+            return False, 'size mismatch: %s is %dx%d, expected %dx%d' % (p, w, h, size[0], size[1])
+
+    best, best_pair = 0.0, ''
     step = 3 * STRIDE
-    for i in range(0, min(len(a), len(b)) - 2, step):
-        total += 1
-        if (abs(a[i] - b[i]) > tol or abs(a[i + 1] - b[i + 1]) > tol
-                or abs(a[i + 2] - b[i + 2]) > tol):
-            changed += 1
-    if not total:
-        return False, 'no pixels'
-    pct = 100.0 * changed / total
-    return pct >= min_changed_pct, '%.2f%% of sampled pixels moved (need %.2f%%)' % (
-        pct, min_changed_pct)
+    for i in range(len(frames)):
+        for j in range(i + 1, len(frames)):
+            a, b = frames[i][2], frames[j][2]
+            changed = total = 0
+            for k in range(0, min(len(a), len(b)) - 2, step):
+                total += 1
+                if (abs(a[k] - b[k]) > tol or abs(a[k + 1] - b[k + 1]) > tol
+                        or abs(a[k + 2] - b[k + 2]) > tol):
+                    changed += 1
+            pct = 100.0 * changed / total if total else 0.0
+            if pct > best:
+                best, best_pair = pct, '%s vs %s' % (_tag(frames[i][3]), _tag(frames[j][3]))
+
+    if not best_pair:
+        best_pair = '%s vs %s' % (_tag(frames[0][3]), _tag(frames[-1][3]))
+    return best >= min_changed_pct, '%.2f%% moved at best (%s), need %.2f%% across %d captures' % (
+        best, best_pair, min_changed_pct, len(frames))
 
 
 def renders(sidecar_path, min_draws=1):
@@ -247,6 +274,16 @@ def renders(sidecar_path, min_draws=1):
         draws_, min_draws, data.get('entityRenderSlots', 0), data.get('worldEntities', 0))
 
 
+def _tag(path):
+    """The frame marker out of a capture path, for readable reports."""
+    import os
+    name = os.path.basename(path)
+    for part in name.split('.'):
+        if part.startswith('f') and part[1:].isdigit():
+            return part
+    return name
+
+
 def main():
     if len(sys.argv) < 3:
         print(__doc__)
@@ -261,8 +298,7 @@ def main():
         elif claim == 'renders':
             ok, detail = renders(sys.argv[2])
         elif claim == 'animates':
-            pct = float(sys.argv[4]) if len(sys.argv) > 4 else 0.5
-            ok, detail = animates(sys.argv[2], sys.argv[3], min_changed_pct=pct)
+            ok, detail = animates(sys.argv[2:])
         else:
             print('unknown claim %r' % claim)
             return 2
