@@ -88,7 +88,7 @@ silent: the field saves, the scene loads, the look is wrong, and nothing says so
 |---|---|---|
 | AngelScript, all bindings | Same | Bindings must use the `ENJIN_AS_*` macros; raw `asFUNCTION` fails on WASM. |
 | Physics, 2D and 3D | Same | |
-| Audio | Same | Browsers require a user gesture before any sound. |
+| Audio | Same | With one timing rule that has no desktop equivalent: **no clip loads until the page has seen a user gesture.** Before one, `Audio_GetLength` returns -1, `Audio_IsPlaying` is false and `Audio_Seek` returns false, so a game that queries or seeks audio in its opening seconds silently gets nothing. After a click the clip registers immediately. `Audio_Seek` itself works (verified 2026-09-16), landing about 31 ms short of the target where desktop is exact -- Web Audio buffer granularity. |
 | Save system | Same | IndexedDB-backed `/saves/`, synced after each write. |
 | Input, touch, rebinding | Same | Browser key events land between frames; the web path latches edges. |
 | Level streaming | Same | Lazy pak filesystem. |

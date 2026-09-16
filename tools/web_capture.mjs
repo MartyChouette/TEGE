@@ -12,7 +12,7 @@
 // That was previously believed impossible here, which is why this did not exist.
 //
 // Usage:
-//   node web_capture.mjs <url> <out.png> [--frames N] [--timeout MS] [--show-log]
+//   node web_capture.mjs <url> <out.png> [--frames N] [--timeout MS] [--show-log] [--click]
 //
 // Exit code is non-zero when the page never rendered, so this can gate CI.
 
@@ -25,7 +25,7 @@ const args = process.argv.slice(2);
 const url = args[0];
 const outPath = args[1];
 if (!url || !outPath) {
-    console.error('usage: node web_capture.mjs <url> <out.png> [--frames N] [--timeout MS] [--show-log]');
+    console.error('usage: node web_capture.mjs <url> <out.png> [--frames N] [--timeout MS] [--show-log] [--click]');
     process.exit(2);
 }
 const flag = (name, fallback) => {
@@ -41,6 +41,7 @@ const flag = (name, fallback) => {
 const wantFrames = flag('--frames', 120);
 const timeoutMs = flag('--timeout', 120000);
 const showLog = args.includes('--show-log');
+const doClick = args.includes('--click');
 
 const CHROME_CANDIDATES = [
     process.env.CHROME_PATH,
@@ -142,6 +143,32 @@ try {
         for (const l of logLines.slice(-12)) console.error('  ' + l);
         throw new Error('the engine never loaded a scene');
     });
+
+    // --click: one real gesture, dispatched AFTER the readiness wait above and
+    // BEFORE the frame wait below. Order is the whole point.
+    //
+    // A browser holds every AudioContext suspended until the page has seen a
+    // user gesture, and this engine holds CLIP LOADING with it, so an
+    // audio-dependent capture without a click measures a game that was never
+    // allowed to start: Audio_GetLength returns -1 and Audio_Seek returns false
+    // for the whole run.
+    //
+    // Clicking BEFORE readiness does not work and is worth not rediscovering:
+    // the click lands before the canvas is wired, the gesture is lost, and the
+    // readiness check then fails with "the engine never loaded a scene" -- so
+    // the capture looks broken rather than un-clicked. Clicking here means the
+    // frame wait below is time the page spends ALIVE after the gesture, which is
+    // what a script waiting on audio needs.
+    if (doClick) {
+        const target = await page.$('#game-canvas');
+        // Twice: the engine notices a gesture by polling its own Input each
+        // frame, and a single press/release can fall between two polls.
+        for (let i = 0; i < 2; i++) {
+            if (target) await target.click();
+            else await page.mouse.click(450, 300);
+            await new Promise((r) => setTimeout(r, 300));
+        }
+    }
 
     // Then let it run on for the requested number of frames. rAF is the honest
     // clock here: it counts frames the browser actually presented.
