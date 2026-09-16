@@ -226,7 +226,29 @@ try {
             ? `${stem}.f${String(target).padStart(4, '0')}.png`
             : outPath;
         await writeFile(path.resolve(dest), shot);
-        console.log(`captured ${dest} after ${frames} frames (${shot.length} bytes)`);
+
+        // The same numbers the desktop capture writes beside its image, from the
+        // engine's own exports. Pixels cannot say WHY a frame is wrong: a scene
+        // whose meshes all failed to draw still fills the canvas with sky, and a
+        // draw-call count of zero settles that in one line.
+        //
+        // Field names match the desktop sidecar exactly so one claim reads both.
+        // entityRenderSlots keeps the desktop name rather than the export's:
+        // getEntityCount returns the size of the per-entity render-data array,
+        // which is a high-water mark indexed by entity id and not a count of
+        // anything, and calling it a count on one runtime and a slot count on
+        // the other is how a phantom parity difference gets invented.
+        const stats = await page.evaluate(() => ({
+            drawCalls: (typeof Module !== 'undefined' && Module._getDrawCallCount)
+                ? Module._getDrawCallCount() : null,
+            entityRenderSlots: (typeof Module !== 'undefined' && Module._getEntityCount)
+                ? Module._getEntityCount() : null,
+        })).catch(() => ({ drawCalls: null, entityRenderSlots: null }));
+        await writeFile(path.resolve(dest.replace(/\.png$/i, '.json')),
+                        JSON.stringify({ frame: target, ...stats }, null, 2) + '\n');
+
+        console.log(`captured ${dest} after ${frames} frames (${shot.length} bytes, ` +
+                    `${stats.drawCalls} draw calls)`);
     }
     if (showLog) {
         for (const l of logLines) console.log('  ' + l);

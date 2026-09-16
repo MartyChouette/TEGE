@@ -235,10 +235,14 @@ def check_web(project, bases):
             ok, detail = False, str(e)
         results.append(('web draws@%s' % b.rsplit('.', 1)[-1], ok, detail))
 
-    # No `renders` on web: the sidecar with the draw-call count is written by the
-    # desktop player's --golden and the browser has no equivalent. The web build
-    # does export getDrawCallCount, so this is wireable later; it is simply not
-    # wired, and claiming it here would mean claiming a number nobody read.
+    if claims.get('renders', True):
+        for b in bases:
+            try:
+                ok, detail = capture_claims.renders(b + '.json')
+            except (OSError, ValueError) as e:
+                ok, detail = False, str(e)
+            results.append(('web renders@%s' % b.rsplit('.', 1)[-1], ok, detail))
+
     if claims.get('animates') is not None and len(bases) >= 2:
         pct = claims['animates'].get('min_changed_pct', 0.5)             if isinstance(claims['animates'], dict) else 0.5
         try:
@@ -264,11 +268,19 @@ def parity(project, desktop_results, web_results):
     be noise with a number attached.
     """
     def verdict(results, name):
-        hits = [ok for claim, ok, _ in results if claim.endswith(name)]
+        # Match the claim's BASE name. Claims that run per capture are reported
+        # as "draws@f0030" and "web renders@f0500", so an endswith() test against
+        # "draws" matched none of them and this function quietly returned None --
+        # which the caller reads as "not comparable" and skips. The result was a
+        # parity check that silently compared `animates` alone, the one claim
+        # whose name has no suffix, while looking like it covered all three.
+        def base(claim):
+            return claim.split('@', 1)[0].replace('web ', '').strip()
+        hits = [ok for claim, ok, _ in results if base(claim) == name]
         return all(hits) if hits else None
 
     out = []
-    for name in ('draws', 'animates'):
+    for name in ('draws', 'renders', 'animates'):
         d = verdict(desktop_results, name)
         w = verdict(web_results, name)
         if d is None or w is None:
