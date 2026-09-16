@@ -818,6 +818,12 @@ jobs:
         # already undocumented when the baseline was recorded.
         run: python tools/check_doc_api.py --strict
 
+      # The binding index in SCRIPTING_API.md is generated from the registration
+      # strings. --check fails when a binding was added without regenerating, which
+      # is how the reference drifted to naming barely half the API in the first place.
+      - name: Scripting reference index is current
+        run: python tools/gen_scripting_api.py --check
+
       - name: Install Emscripten
         uses: mymindstorm/setup-emsdk@v14
         with:

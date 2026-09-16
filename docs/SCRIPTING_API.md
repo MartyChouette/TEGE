@@ -863,3 +863,1452 @@ Per-entity (Braid-style) and scene-wide (Sands of Time-style) time rewind.
 **Settings Persistence**
 
 - `Accessibility_SaveSettings()` — Save all accessibility settings to `accessibility.json`.
+
+<!-- BEGIN GENERATED BINDING INDEX -- tools/gen_scripting_api.py -->
+
+## Every registered binding
+
+1322 global functions, grouped by where they are registered. These lines are
+GENERATED from the registration strings themselves, so a signature here is the
+one the engine accepts -- if it disagrees with the prose above, the prose is
+wrong. Regenerate with `python tools/gen_scripting_api.py` after adding a
+binding.
+
+Signatures only. Where a function needs explaining rather than listing, it is
+written up by hand in the sections above; this index exists so that nothing is
+merely absent.
+
+### AI and navigation  (34)
+
+- `Vector3 Navmesh_GetPathWaypoint(int)`
+- `bool BT_GetBlackboardBool(uint64, const string&in)`
+- `bool BT_IsEnabled(uint64)`
+- `bool Navmesh_HasNavmesh()`
+- `bool Navmesh_IsPointOnNavmesh(float, float, float)`
+- `bool Navmesh_PathExists(float, float, float, float, float, float)`
+- `float AI_GetAttackRange(uint64)`
+- `float AI_GetDetectionRange(uint64)`
+- `float AI_GetMoveSpeed(uint64)`
+- `float BT_GetBlackboardFloat(uint64, const string&in)`
+- `float Navmesh_GetPathCost()`
+- `int AI_GetState(uint64)`
+- `int BT_GetBlackboardInt(uint64, const string&in)`
+- `int Navmesh_FindPath(float, float, float, float, float, float)`
+- `string BT_GetBlackboardString(uint64, const string&in)`
+- `uint64 AI_GetTarget(uint64)`
+- `void AI_SetAttackRange(uint64, float)`
+- `void AI_SetChaseSpeed(uint64, float)`
+- `void AI_SetDetectionRange(uint64, float)`
+- `void AI_SetFieldOfView(uint64, float)`
+- `void AI_SetFleeSpeed(uint64, float)`
+- `void AI_SetMoveSpeed(uint64, float)`
+- `void AI_SetState(uint64, int)`
+- `void AI_SetTarget(uint64, uint64)`
+- `void AI_SetTargetPosition(uint64, float, float, float)`
+- `void AI_SetUseNavmesh(uint64, bool)`
+- `void BT_ClearBlackboard(uint64)`
+- `void BT_Disable(uint64)`
+- `void BT_Enable(uint64)`
+- `void BT_Reset(uint64)`
+- `void BT_SetBlackboardBool(uint64, const string&in, bool)`
+- `void BT_SetBlackboardFloat(uint64, const string&in, float)`
+- `void BT_SetBlackboardInt(uint64, const string&in, int)`
+- `void BT_SetBlackboardString(uint64, const string&in, const string&in)`
+
+### Accessibility  (42)
+
+- `bool Accessibility_GetAudioIndicators()`
+- `bool Accessibility_GetDwellClick()`
+- `bool Accessibility_GetDyslexiaFont()`
+- `bool Accessibility_GetFlashingLights()`
+- `bool Accessibility_GetReducedMotion()`
+- `bool Accessibility_GetScreenReader()`
+- `bool Accessibility_GetScreenShake()`
+- `bool Accessibility_GetStickyDrag()`
+- `bool Accessibility_GetSwitchAccess()`
+- `bool Announcer_IsEnabled()`
+- `bool Subtitle_IsEnabled()`
+- `float Accessibility_GetBrightness()`
+- `float Accessibility_GetContrast()`
+- `float Accessibility_GetFontScale()`
+- `float Colorblind_GetStrength()`
+- `float Subtitle_GetFontSize()`
+- `int Colorblind_GetMode()`
+- `void Accessibility_SaveSettings()`
+- `void Accessibility_SetAudioIndicators(bool)`
+- `void Accessibility_SetBrightness(float)`
+- `void Accessibility_SetContrast(float)`
+- `void Accessibility_SetDwellClick(bool, float = 0.0)`
+- `void Accessibility_SetDyslexiaFont(bool)`
+- `void Accessibility_SetFlashingLights(bool)`
+- `void Accessibility_SetFontScale(float)`
+- `void Accessibility_SetReducedMotion(bool)`
+- `void Accessibility_SetScreenReader(bool)`
+- `void Accessibility_SetScreenShake(bool)`
+- `void Accessibility_SetStickyDrag(bool)`
+- `void Accessibility_SetSwitchAccess(bool, float = 0.0)`
+- `void Announcer_Announce(const string&in)`
+- `void Announcer_AnnounceHighPriority(const string&in)`
+- `void Announcer_Clear()`
+- `void Announcer_SetEnabled(bool)`
+- `void Colorblind_SetMode(int)`
+- `void Colorblind_SetStrength(float)`
+- `void Subtitle_Clear()`
+- `void Subtitle_SetEnabled(bool)`
+- `void Subtitle_SetFontSize(float)`
+- `void Subtitle_Show(const string&in, const string&in = \`
+- `void Subtitle_ShowCaption(const string&in, float = 2.5)`
+- `void Subtitle_ShowWithColor(const string&in, const string&in, float, float, float, float = 3.0)`
+
+### Audio  (15)
+
+- `bool Audio_IsPlaying(uint64)`
+- `bool Audio_Seek(uint64, float)`
+- `float Audio_GetChannelVolume(uint8)`
+- `float Audio_GetLength(uint64)`
+- `float Audio_GetMasterVolume()`
+- `float Audio_GetTime(uint64)`
+- `void Audio_Play(uint64)`
+- `void Audio_PlayAtPosition(const string &in, const Vector3 &in)`
+- `void Audio_SetChannelVolume(uint8, float)`
+- `void Audio_SetMasterVolume(float)`
+- `void Audio_SetPitch(uint64, float)`
+- `void Audio_SetVolume(uint64, float)`
+- `void Audio_Stop(uint64)`
+- `void Audio_StopAll()`
+- `void Audio_StopChannel(uint8)`
+
+### Audio graph  (4)
+
+- `float AudioGraph_GetParameter(const string &in)`
+- `void AudioGraph_SetParameter(const string &in, float)`
+- `void AudioGraph_StopAll()`
+- `void AudioGraph_TriggerEvent(const string &in)`
+
+### Audio-reactive drivers  (17)
+
+- `bool BeatClock_IsBeatThisFrame(uint64)`
+- `bool BeatClock_IsDownbeatThisFrame(uint64)`
+- `bool Sidechain_IsDucking(uint64)`
+- `float AudioReactive_GetCurrentValue(uint64)`
+- `float BeatClock_GetBPM(uint64)`
+- `float Morph_GetWeight(uint64, const string &in)`
+- `float RTPC_GetParameter(uint64, const string &in)`
+- `int Conductor_GetState(uint64)`
+- `int Morph_GetTargetCount(uint64)`
+- `uint BeatClock_GetCurrentBar(uint64)`
+- `uint BeatClock_GetCurrentBeat(uint64)`
+- `void AudioReactive_SetEnabled(uint64, bool)`
+- `void BeatClock_SetBPM(uint64, float)`
+- `void Conductor_SetState(uint64, int)`
+- `void Morph_SetWeight(uint64, const string &in, float)`
+- `void RTPC_SetParameter(uint64, const string &in, float)`
+- `void Sidechain_SetEnabled(uint64, bool)`
+
+### Components  (350)
+
+- `Vector3 BoxCollider_GetCenter(uint64)`
+- `Vector3 BoxCollider_GetSize(uint64)`
+- `Vector3 CapsuleCollider_GetCenter(uint64)`
+- `Vector3 Controller_GetVelocity(uint64)`
+- `Vector3 Conveyor_GetDirection(uint64)`
+- `Vector3 Light_GetColor(uint64)`
+- `Vector3 Material_GetBaseColor(uint64)`
+- `Vector3 Material_GetSSSColor(uint64)`
+- `Vector3 Rigidbody_GetAngularVelocity(uint64)`
+- `Vector3 Rigidbody_GetVelocity(uint64)`
+- `Vector3 SphereCollider_GetCenter(uint64)`
+- `Vector3 Teleporter_GetDestination(uint64)`
+- `Vector3 TriggerZone_GetBoxSize(uint64)`
+- `Vector3 WaterVehicle_GetForward(uint64)`
+- `Vector3 WaterVehicle_GetVelocity(uint64)`
+- `bool AddComponent_AudioSource(uint64)`
+- `bool AddComponent_BoxCollider(uint64)`
+- `bool AddComponent_CapsuleCollider(uint64)`
+- `bool AddComponent_Health(uint64)`
+- `bool AddComponent_Interactable(uint64)`
+- `bool AddComponent_Inventory(uint64)`
+- `bool AddComponent_Light(uint64)`
+- `bool AddComponent_Material(uint64)`
+- `bool AddComponent_Notes(uint64)`
+- `bool AddComponent_Rigidbody(uint64)`
+- `bool AddComponent_SphereCollider(uint64)`
+- `bool AddComponent_Sprite2D(uint64)`
+- `bool AddComponent_Tag(uint64)`
+- `bool AddComponent_Text(uint64)`
+- `bool AddComponent_Timer(uint64)`
+- `bool AddComponent_TriggerZone(uint64)`
+- `bool Animator_IsPlaying(uint64)`
+- `bool BoxCollider_IsTrigger(uint64)`
+- `bool Camera_HasVCam(uint64)`
+- `bool Camera_IsActive(uint64)`
+- `bool Camera_IsEnabled(uint64)`
+- `bool Camera_IsManualControl()`
+- `bool Camera_IsVCamLive(uint64)`
+- `bool CapsuleCollider_IsTrigger(uint64)`
+- `bool Controller_GetIgnoreTimeScale(uint64)`
+- `bool Conveyor_IsActive(uint64)`
+- `bool GameOver_IsTriggered(uint64)`
+- `bool GoalZone_IsSatisfied(uint64)`
+- `bool HasComponent_Animator(uint64)`
+- `bool HasComponent_AudioSource(uint64)`
+- `bool HasComponent_BoxCollider(uint64)`
+- `bool HasComponent_Camera(uint64)`
+- `bool HasComponent_CapsuleCollider(uint64)`
+- `bool HasComponent_Conveyor(uint64)`
+- `bool HasComponent_Damage(uint64)`
+- `bool HasComponent_GoalZone(uint64)`
+- `bool HasComponent_Health(uint64)`
+- `bool HasComponent_Interactable(uint64)`
+- `bool HasComponent_Inventory(uint64)`
+- `bool HasComponent_LOD(uint64)`
+- `bool HasComponent_Layer(uint64)`
+- `bool HasComponent_Light(uint64)`
+- `bool HasComponent_Lock(uint64)`
+- `bool HasComponent_Material(uint64)`
+- `bool HasComponent_MovingPlatform(uint64)`
+- `bool HasComponent_Notes(uint64)`
+- `bool HasComponent_Pickup(uint64)`
+- `bool HasComponent_Resource(uint64)`
+- `bool HasComponent_Rigidbody(uint64)`
+- `bool HasComponent_SphereCollider(uint64)`
+- `bool HasComponent_Switch(uint64)`
+- `bool HasComponent_Tag(uint64)`
+- `bool HasComponent_Teleporter(uint64)`
+- `bool HasComponent_Tilemap(uint64)`
+- `bool HasComponent_Timer(uint64)`
+- `bool HasComponent_TriggerZone(uint64)`
+- `bool Health_IsDead(uint64)`
+- `bool Health_IsInvulnerable(uint64)`
+- `bool Interactable_HasBeenUsed(uint64)`
+- `bool Interactable_IsEnabled(uint64)`
+- `bool Inventory_AddItem(uint64, const string &in, int)`
+- `bool Inventory_HasItem(uint64, const string &in)`
+- `bool Inventory_HasKey(uint64, const string &in)`
+- `bool Inventory_RemoveItem(uint64, const string &in, int)`
+- `bool LOD_IsEnabled(uint64)`
+- `bool Light_GetCastShadows(uint64)`
+- `bool Lock_IsLocked(uint64)`
+- `bool Lock_IsOpen(uint64)`
+- `bool Material_GetPaletteIndexed(uint64)`
+- `bool Material_GetStippleTransparency(uint64)`
+- `bool MovingPlatform_IsMoving(uint64)`
+- `bool Pickup_GetDestroyOnPickup(uint64)`
+- `bool Resource_IsDepleted(uint64)`
+- `bool Resource_TryConsume(uint64, float)`
+- `bool Rigidbody_GetUseGravity(uint64)`
+- `bool Rigidbody_IsGrounded(uint64)`
+- `bool Rigidbody_IsKinematic(uint64)`
+- `bool SphereCollider_IsTrigger(uint64)`
+- `bool Switch_IsActive(uint64)`
+- `bool Tag_Has(uint64, const string &in)`
+- `bool Teleporter_GetPreserveVelocity(uint64)`
+- `bool Timer_GetLoop(uint64)`
+- `bool Timer_IsComplete(uint64)`
+- `bool Timer_IsRunning(uint64)`
+- `bool TriggerZone_GetTriggerOnce(uint64)`
+- `bool Viewmodel_Get(uint64)`
+- `bool WaterVehicle_Has(uint64)`
+- `bool WaterVehicle_IsPlaning(uint64)`
+- `float Animator_GetSpeed(uint64)`
+- `float BoxCollider_GetBounciness(uint64)`
+- `float BoxCollider_GetFriction(uint64)`
+- `float Camera2D_GetZoom(uint64)`
+- `float Camera_GetFOV(uint64)`
+- `float Camera_GetOrthoSize(uint64)`
+- `float CapsuleCollider_GetBounciness(uint64)`
+- `float CapsuleCollider_GetFriction(uint64)`
+- `float CapsuleCollider_GetHeight(uint64)`
+- `float CapsuleCollider_GetRadius(uint64)`
+- `float Controller_GetCameraYaw(uint64)`
+- `float Conveyor_GetSpeed(uint64)`
+- `float Damage_GetDamage(uint64)`
+- `float Damage_GetInterval(uint64)`
+- `float Damage_GetKnockback(uint64)`
+- `float Health_Get(uint64)`
+- `float Health_GetMax(uint64)`
+- `float Health_GetPercent(uint64)`
+- `float Health_GetShield(uint64)`
+- `float Interactable_GetRange(uint64)`
+- `float Light_GetIntensity(uint64)`
+- `float Light_GetRange(uint64)`
+- `float Material_GetIOR(uint64)`
+- `float Material_GetOpacity(uint64)`
+- `float Material_GetSSSIntensity(uint64)`
+- `float Material_GetSSSRadius(uint64)`
+- `float Material_GetThickness(uint64)`
+- `float Material_GetTransmission(uint64)`
+- `float MovingPlatform_GetSpeed(uint64)`
+- `float MovingPlatform_GetWaitTime(uint64)`
+- `float Pickup_GetRange(uint64)`
+- `float Pickup_GetValue(uint64)`
+- `float Resource_GetMax(uint64)`
+- `float Resource_GetPercent(uint64)`
+- `float Resource_GetValue(uint64)`
+- `float Rigidbody_GetAngularDrag(uint64)`
+- `float Rigidbody_GetDrag(uint64)`
+- `float Rigidbody_GetGravityScale(uint64)`
+- `float Rigidbody_GetMass(uint64)`
+- `float SphereCollider_GetBounciness(uint64)`
+- `float SphereCollider_GetFriction(uint64)`
+- `float SphereCollider_GetRadius(uint64)`
+- `float Teleporter_GetCooldown(uint64)`
+- `float Timer_GetDuration(uint64)`
+- `float Timer_GetElapsed(uint64)`
+- `float Timer_GetProgress(uint64)`
+- `float Timer_GetRemaining(uint64)`
+- `float TriggerZone_GetSphereRadius(uint64)`
+- `float WaterVehicle_GetHeading(uint64)`
+- `float WaterVehicle_GetHeel(uint64)`
+- `float WaterVehicle_GetHullSpeed(uint64)`
+- `float WaterVehicle_GetLeeway(uint64)`
+- `float WaterVehicle_GetRudder(uint64)`
+- `float WaterVehicle_GetSpeedOverGround(uint64)`
+- `float WaterVehicle_GetSpeedThroughWater(uint64)`
+- `float WaterVehicle_GetThrottle(uint64)`
+- `int Camera_GetPriority(uint64)`
+- `int Camera_GetProjectionType(uint64)`
+- `int Camera_GetVCamPriority(uint64)`
+- `int GoalZone_GetGoalGroup(uint64)`
+- `int Inventory_GetCoins(uint64)`
+- `int Inventory_GetGems(uint64)`
+- `int Inventory_GetItemCount(uint64, const string &in)`
+- `int LOD_GetCurrentLOD(uint64)`
+- `int LOD_GetLevelCount(uint64)`
+- `int Light_GetType(uint64)`
+- `int Material_GetAlphaMode(uint64)`
+- `int Material_GetPaletteSlot(uint64)`
+- `int MovingPlatform_GetWaypointCount(uint64)`
+- `int Pickup_GetType(uint64)`
+- `int Switch_GetLinkedCount(uint64)`
+- `int Tag_GetCount(uint64)`
+- `int Tilemap_GetHeight(uint64)`
+- `int Tilemap_GetTile(uint64, int, int)`
+- `int Tilemap_GetWidth(uint64)`
+- `int TriggerZone_GetShape(uint64)`
+- `string Animator_GetCurrentAnimation(uint64)`
+- `string Camera_GetPresetName(int)`
+- `string GoalZone_GetNextScene(uint64)`
+- `string GoalZone_GetRequiredTag(uint64)`
+- `string Interactable_GetPrompt(uint64)`
+- `string Layer_GetName(uint64)`
+- `string Lock_GetRequiredKey(uint64)`
+- `string Notes_Get(uint64)`
+- `string Pickup_GetCustomId(uint64)`
+- `string Resource_GetName(uint64)`
+- `string Switch_GetPrompt(uint64)`
+- `string Tag_GetAt(uint64, int)`
+- `uint BoxCollider_GetCategoryBits(uint64)`
+- `uint BoxCollider_GetCollisionMask(uint64)`
+- `uint Layer_GetLayer(uint64)`
+- `uint SphereCollider_GetCategoryBits(uint64)`
+- `uint SphereCollider_GetCollisionMask(uint64)`
+- `uint64 Camera2D_GetFollowTarget(uint64)`
+- `uint64 Camera_GetActive()`
+- `uint64 Switch_GetLinkedEntity(uint64, int)`
+- `void Animator_CrossFade(uint64, const string &in, float)`
+- `void Animator_Pause(uint64)`
+- `void Animator_Play(uint64, const string &in)`
+- `void Animator_Resume(uint64)`
+- `void Animator_SetSpeed(uint64, float)`
+- `void Animator_Stop(uint64)`
+- `void AudioSource_Play(uint64)`
+- `void AudioSource_SetClip(uint64, const string &in)`
+- `void AudioSource_SetVolume(uint64, float)`
+- `void AudioSource_Stop(uint64)`
+- `void BoxCollider_SetBounciness(uint64, float)`
+- `void BoxCollider_SetCategoryBits(uint64, uint)`
+- `void BoxCollider_SetCenter(uint64, float, float, float)`
+- `void BoxCollider_SetCollisionMask(uint64, uint)`
+- `void BoxCollider_SetFriction(uint64, float)`
+- `void BoxCollider_SetSize(uint64, float, float, float)`
+- `void BoxCollider_SetTrigger(uint64, bool)`
+- `void Camera2D_AddTarget(uint64, uint64)`
+- `void Camera2D_ClearTargets(uint64)`
+- `void Camera2D_RemoveTarget(uint64, uint64)`
+- `void Camera2D_SetDeadZone(uint64, float, float)`
+- `void Camera2D_SetFollowTarget(uint64, uint64)`
+- `void Camera2D_SetLookAhead(uint64, float, float)`
+- `void Camera2D_SetZoom(uint64, float)`
+- `void Camera2D_Shake(uint64, float, float)`
+- `void Camera_ApplyPreset(uint64, int)`
+- `void Camera_ApplyVCamShot(uint64, int)`
+- `void Camera_MakeActive(uint64)`
+- `void Camera_ReleaseManualControl()`
+- `void Camera_SetEnabled(uint64, bool)`
+- `void Camera_SetFOV(uint64, float)`
+- `void Camera_SetNearFar(uint64, float, float)`
+- `void Camera_SetOrthoSize(uint64, float)`
+- `void Camera_SetPriority(uint64, int)`
+- `void Camera_SetProjectionType(uint64, int)`
+- `void Camera_SetVCamEnabled(uint64, bool)`
+- `void Camera_SetVCamFOV(uint64, float)`
+- `void Camera_SetVCamOffset(uint64, float, float, float)`
+- `void Camera_SetVCamPriority(uint64, int)`
+- `void Camera_TakeManualControl(uint64)`
+- `void CapsuleCollider_SetBounciness(uint64, float)`
+- `void CapsuleCollider_SetCenter(uint64, float, float, float)`
+- `void CapsuleCollider_SetFriction(uint64, float)`
+- `void CapsuleCollider_SetHeight(uint64, float)`
+- `void CapsuleCollider_SetRadius(uint64, float)`
+- `void CapsuleCollider_SetTrigger(uint64, bool)`
+- `void Controller_SetCameraYaw(uint64, float)`
+- `void Controller_SetEnabled(uint64, bool)`
+- `void Controller_SetIgnoreTimeScale(uint64, bool)`
+- `void Controller_SetMouseLook(uint64, bool)`
+- `void Controller_SetMoveSpeed(uint64, float)`
+- `void Controller_SetThirdPersonCamera(uint64, float, float, float)`
+- `void Conveyor_SetActive(uint64, bool)`
+- `void Conveyor_SetDirection(uint64, float, float, float)`
+- `void Conveyor_SetSpeed(uint64, float)`
+- `void Damage_SetDamage(uint64, float)`
+- `void Damage_SetInterval(uint64, float)`
+- `void Damage_SetKnockback(uint64, float)`
+- `void GameOver_SetMessages(uint64, const string &in, const string &in)`
+- `void GameOver_Trigger(uint64, bool)`
+- `void Health_Damage(uint64, float)`
+- `void Health_Heal(uint64, float)`
+- `void Health_SetCurrent(uint64, float)`
+- `void Health_SetInvulnerable(uint64, bool)`
+- `void Health_SetMaxHealth(uint64, float)`
+- `void Health_SetShield(uint64, float)`
+- `void Interactable_SetEnabled(uint64, bool)`
+- `void Interactable_SetPrompt(uint64, const string &in)`
+- `void Interactable_SetRange(uint64, float)`
+- `void Inventory_AddKey(uint64, const string &in)`
+- `void Inventory_Clear(uint64)`
+- `void Inventory_SetCoins(uint64, int)`
+- `void Inventory_SetGems(uint64, int)`
+- `void LOD_SetEnabled(uint64, bool)`
+- `void Layer_SetLayer(uint64, uint)`
+- `void Light_SetCastShadows(uint64, bool)`
+- `void Light_SetColor(uint64, const Vector3 &in)`
+- `void Light_SetIntensity(uint64, float)`
+- `void Light_SetRange(uint64, float)`
+- `void Light_SetSpotAngles(uint64, float, float)`
+- `void Light_SetType(uint64, int)`
+- `void Lock_SetLocked(uint64, bool)`
+- `void Lock_SetOpen(uint64, bool)`
+- `void Material_SetAlphaMode(uint64, int)`
+- `void Material_SetBaseColor(uint64, const Vector3 &in)`
+- `void Material_SetBaseColorTexture(uint64, const string &in)`
+- `void Material_SetEmissiveTexture(uint64, const string &in)`
+- `void Material_SetIOR(uint64, float)`
+- `void Material_SetMetallic(uint64, float)`
+- `void Material_SetNormalTexture(uint64, const string &in)`
+- `void Material_SetOpacity(uint64, float)`
+- `void Material_SetPaletteIndexed(uint64, bool)`
+- `void Material_SetPaletteSlot(uint64, int)`
+- `void Material_SetRoughness(uint64, float)`
+- `void Material_SetSSSColor(uint64, const Vector3 &in)`
+- `void Material_SetSSSIntensity(uint64, float)`
+- `void Material_SetSSSRadius(uint64, float)`
+- `void Material_SetStippleTransparency(uint64, bool)`
+- `void Material_SetThickness(uint64, float)`
+- `void Material_SetTransmission(uint64, float)`
+- `void MovingPlatform_SetMoving(uint64, bool)`
+- `void MovingPlatform_SetSpeed(uint64, float)`
+- `void MovingPlatform_SetWaitTime(uint64, float)`
+- `void Notes_Set(uint64, const string &in)`
+- `void Pickup_SetCustomId(uint64, const string &in)`
+- `void Pickup_SetDestroyOnPickup(uint64, bool)`
+- `void Pickup_SetRange(uint64, float)`
+- `void Pickup_SetType(uint64, int)`
+- `void Pickup_SetValue(uint64, float)`
+- `void Resource_SetMax(uint64, float)`
+- `void Resource_SetValue(uint64, float)`
+- `void Rigidbody_SetAngularDrag(uint64, float)`
+- `void Rigidbody_SetAngularVelocity(uint64, float, float, float)`
+- `void Rigidbody_SetDrag(uint64, float)`
+- `void Rigidbody_SetGravityScale(uint64, float)`
+- `void Rigidbody_SetKinematic(uint64, bool)`
+- `void Rigidbody_SetMass(uint64, float)`
+- `void Rigidbody_SetUseGravity(uint64, bool)`
+- `void Rigidbody_SetVelocity(uint64, float, float, float)`
+- `void SphereCollider_SetBounciness(uint64, float)`
+- `void SphereCollider_SetCategoryBits(uint64, uint)`
+- `void SphereCollider_SetCenter(uint64, float, float, float)`
+- `void SphereCollider_SetCollisionMask(uint64, uint)`
+- `void SphereCollider_SetFriction(uint64, float)`
+- `void SphereCollider_SetRadius(uint64, float)`
+- `void SphereCollider_SetTrigger(uint64, bool)`
+- `void Switch_SetActive(uint64, bool)`
+- `void Tag_Add(uint64, const string &in)`
+- `void Tag_Remove(uint64, const string &in)`
+- `void Teleporter_SetCooldown(uint64, float)`
+- `void Teleporter_SetDestination(uint64, float, float, float)`
+- `void Teleporter_SetPreserveVelocity(uint64, bool)`
+- `void Tilemap_SetTile(uint64, int, int, int)`
+- `void Timer_SetDuration(uint64, float)`
+- `void Timer_SetElapsed(uint64, float)`
+- `void Timer_SetLoop(uint64, bool)`
+- `void Timer_SetRunning(uint64, bool)`
+- `void TriggerZone_SetBoxSize(uint64, float, float, float)`
+- `void TriggerZone_SetShape(uint64, int)`
+- `void TriggerZone_SetSphereRadius(uint64, float)`
+- `void TriggerZone_SetTriggerOnce(uint64, bool)`
+- `void Viewmodel_Set(uint64, bool)`
+- `void WaterVehicle_SetCurrent(uint64, float, float)`
+- `void WaterVehicle_SetDrive(uint64, float, float, float)`
+- `void WaterVehicle_SetHeading(uint64, float)`
+- `void WaterVehicle_SetHullSpeed(uint64, float)`
+- `void WaterVehicle_SetLateralGrip(uint64, float)`
+- `void WaterVehicle_SetMaxThrust(uint64, float)`
+- `void WaterVehicle_SetRighting(uint64, float)`
+- `void WaterVehicle_SetRudder(uint64, float)`
+- `void WaterVehicle_SetThrottle(uint64, float)`
+
+### Core, math, debug and entity  (67)
+
+- `Quaternion Quaternion_FromEuler(const Vector3 &in)`
+- `Quaternion Quaternion_Identity()`
+- `Quaternion Quaternion_Slerp(const Quaternion &in, const Quaternion &in, float)`
+- `Vector3 DataAsset_GetVector3(const string &in, const string &in)`
+- `Vector4 DataAsset_GetVector4(const string &in, const string &in)`
+- `bool DataAsset_GetBool(const string &in, const string &in)`
+- `bool DataAsset_Load(const string &in)`
+- `float Abs(float)`
+- `float Acos(float)`
+- `float Asin(float)`
+- `float Atan2(float, float)`
+- `float Ceil(float)`
+- `float Clamp(float, float, float)`
+- `float Cos(float)`
+- `float DataAsset_GetFloat(const string &in, const string &in)`
+- `float DataAsset_GetFloatAt(const string &in, const string &in, int)`
+- `float Degrees(float)`
+- `float Events_CurrentFloat(const string &in)`
+- `float Floor(float)`
+- `float Lerp(float, float, float)`
+- `float Max(float, float)`
+- `float Min(float, float)`
+- `float MoveTowards(float, float, float)`
+- `float PI()`
+- `float Pow(float, float)`
+- `float Radians(float)`
+- `float Random()`
+- `float RandomRange(float, float)`
+- `float Round(float)`
+- `float Sign(float)`
+- `float Sin(float)`
+- `float Sqrt(float)`
+- `float Tan(float)`
+- `float Time_GetDeltaTime()`
+- `float Time_GetFixedDeltaTime()`
+- `float Time_GetScale()`
+- `float Time_GetTime()`
+- `float Time_GetTimeScale()`
+- `float VisualScript_GetVariable(uint64, const string &in)`
+- `int DataAsset_GetArrayLength(const string &in, const string &in)`
+- `int DataAsset_GetInt(const string &in, const string &in)`
+- `int DataAsset_ListAll()`
+- `int DataAsset_ListBySchema(const string &in)`
+- `int Events_CurrentInt(const string &in)`
+- `int RandomInt(int, int)`
+- `string DataAsset_GetListResult(int)`
+- `string DataAsset_GetSchemaName(const string &in)`
+- `string DataAsset_GetString(const string &in, const string &in)`
+- `string DataAsset_GetStringAt(const string &in, const string &in, int)`
+- `string Events_CurrentString(const string &in)`
+- `uint Events_Listen(const string &in, EventCallback@)`
+- `uint StartCoroutine(const string &in)`
+- `uint Time_GetFrameCount()`
+- `void Debug_Log(const string &in)`
+- `void Debug_LogError(const string &in)`
+- `void Debug_LogWarning(const string &in)`
+- `void Events_Broadcast(EventData@)`
+- `void Events_Send(const string &in, EventData@)`
+- `void StopAllCoroutines()`
+- `void StopCoroutine(uint)`
+- `void Time_SetScale(float)`
+- `void Time_SetTimeScale(float)`
+- `void VisualScript_SendEvent(uint64, const string &in)`
+- `void VisualScript_SetVariable(uint64, const string &in, float)`
+- `void YieldEndOfFrame()`
+- `void YieldFrames(uint)`
+- `void YieldSeconds(float)`
+
+### Dialogue  (10)
+
+- `bool Dialogue_IsActive(uint64)`
+- `string Dialogue_GetChoiceText(uint64, uint)`
+- `string Dialogue_GetCurrentSpeaker(uint64)`
+- `string Dialogue_GetCurrentText(uint64)`
+- `string Dialogue_GetVariable(uint64, const string&in)`
+- `uint Dialogue_GetChoiceCount(uint64)`
+- `void Dialogue_Advance(uint64)`
+- `void Dialogue_Choose(uint64, uint)`
+- `void Dialogue_SetVariable(uint64, const string&in, const string&in)`
+- `void Dialogue_Start(uint64)`
+
+### Elemental effects  (29)
+
+- `bool Elemental_HasEmitter(uint64)`
+- `bool Elemental_HasSurface(uint64)`
+- `bool Elemental_HasVolume(uint64)`
+- `bool Elemental_IsEmitterActive(uint64)`
+- `float Elemental_GetEmitterRate(uint64)`
+- `float Elemental_GetFireIntensityAt(float, float, float, float)`
+- `float Elemental_GetFlammability(uint64)`
+- `float Elemental_GetMoistureAt(float, float, float, float)`
+- `float Elemental_GetSurfaceChar(uint64)`
+- `float Elemental_GetSurfaceFrost(uint64)`
+- `float Elemental_GetSurfaceSnow(uint64)`
+- `float Elemental_GetSurfaceWetness(uint64)`
+- `int Elemental_GetActiveCount()`
+- `int Elemental_GetFireCount()`
+- `int Elemental_GetWaterCount()`
+- `uint Elemental_SpawnEarth(float, float, float, float, float, float, float)`
+- `uint Elemental_SpawnFire(float, float, float, float, float)`
+- `uint Elemental_SpawnSnow(float, float, float, float)`
+- `uint Elemental_SpawnSteam(float, float, float, float)`
+- `uint Elemental_SpawnWater(float, float, float, float, float, float, float)`
+- `void Elemental_SetEmitterActive(uint64, bool)`
+- `void Elemental_SetEmitterElement(uint64, float, float, float, float)`
+- `void Elemental_SetEmitterIntensity(uint64, float)`
+- `void Elemental_SetEmitterRate(uint64, float)`
+- `void Elemental_SetFlammability(uint64, float)`
+- `void Elemental_SetVolumeKill(uint64, bool)`
+- `void Elemental_SetVolumeTempBias(uint64, float)`
+- `void Elemental_SpawnDebrisBurst(float, float, float, float, float, float, int)`
+- `void Elemental_SpawnRainBurst(float, float, float, float, int)`
+
+### Flash API shim  (58)
+
+- `bool Flash_GetVisible(uint64)`
+- `bool Flash_IsKeyDown(int)`
+- `bool Flash_SO_Has(const string &in, const string &in)`
+- `float Flash_GetAlpha(uint64)`
+- `float Flash_GetFrameRate()`
+- `float Flash_GetMouseX()`
+- `float Flash_GetMouseY()`
+- `float Flash_GetRotation(uint64)`
+- `float Flash_GetScaleX(uint64)`
+- `float Flash_GetScaleY(uint64)`
+- `float Flash_GetStageHeight()`
+- `float Flash_GetStageWidth()`
+- `float Flash_GetX(uint64)`
+- `float Flash_GetY(uint64)`
+- `float Flash_MathAbs(float)`
+- `float Flash_MathAtan2(float, float)`
+- `float Flash_MathCeil(float)`
+- `float Flash_MathCos(float)`
+- `float Flash_MathFloor(float)`
+- `float Flash_MathRandom()`
+- `float Flash_MathRound(float)`
+- `float Flash_MathSin(float)`
+- `float Flash_MathSqrt(float)`
+- `float Math_Abs(float)`
+- `float Math_Atan2(float, float)`
+- `float Math_Ceil(float)`
+- `float Math_Cos(float)`
+- `float Math_Floor(float)`
+- `float Math_Random()`
+- `float Math_Round(float)`
+- `float Math_Sin(float)`
+- `float Math_Sqrt(float)`
+- `int Flash_GetCurrentFrame(uint64)`
+- `int Flash_GetTotalFrames(uint64)`
+- `string Flash_GetText(uint64)`
+- `string Flash_SO_Get(const string &in, const string &in)`
+- `uint Flash_SetInterval(float)`
+- `uint Flash_SetTimeout(float)`
+- `uint64 Flash_GetChildByName(uint64, const string &in)`
+- `void Flash_ClearInterval(uint)`
+- `void Flash_GotoAndPlay(uint64, int)`
+- `void Flash_GotoAndStop(uint64, int)`
+- `void Flash_Play(uint64)`
+- `void Flash_PlaySound(const string &in)`
+- `void Flash_SO_Clear(const string &in)`
+- `void Flash_SO_Flush(const string &in)`
+- `void Flash_SO_Set(const string &in, const string &in, const string &in)`
+- `void Flash_SetAlpha(uint64, float)`
+- `void Flash_SetRotation(uint64, float)`
+- `void Flash_SetScaleX(uint64, float)`
+- `void Flash_SetScaleY(uint64, float)`
+- `void Flash_SetText(uint64, const string &in)`
+- `void Flash_SetVisible(uint64, bool)`
+- `void Flash_SetVolume(const string &in, float)`
+- `void Flash_SetX(uint64, float)`
+- `void Flash_SetY(uint64, float)`
+- `void Flash_Stop(uint64)`
+- `void Flash_StopSound(const string &in)`
+
+### Flower  (24)
+
+- `bool Flower_HasGrabbable(uint64)`
+- `bool Flower_HasJelly(uint64)`
+- `bool Flower_HasStem(uint64)`
+- `bool Flower_HasTether(uint64)`
+- `bool Flower_IsBroken(uint64)`
+- `bool Flower_IsEvaluated(uint64)`
+- `bool Flower_IsGrabbed(uint64)`
+- `bool Flower_JustBroke(uint64)`
+- `float Flower_GetGrabRadius(uint64)`
+- `float Flower_GetGrabSpring(uint64)`
+- `float Flower_GetMaxDistance(uint64)`
+- `float Flower_GetScore(uint64)`
+- `float Flower_GetTension(uint64)`
+- `int Flower_GetPartsRemoved(uint64)`
+- `void Flower_SetDamping(uint64, float)`
+- `void Flower_SetGrabRadius(uint64, float)`
+- `void Flower_SetGrabSpring(uint64, float)`
+- `void Flower_SetGroundLevel(uint64, float)`
+- `void Flower_SetJellyDamping(uint64, float)`
+- `void Flower_SetJellyStiffness(uint64, float)`
+- `void Flower_SetLiquidIntensity(uint64, float)`
+- `void Flower_SetMaxDistance(uint64, float)`
+- `void Flower_SetSapColor(uint64, float, float, float)`
+- `void Flower_SetSpringK(uint64, float)`
+
+### Gameplay components  (71)
+
+- `bool Possessable_IsPossessed(uint64)`
+- `bool Pushable_IsBeingPushed(uint64)`
+- `bool Ragdoll_IsActive(uint64)`
+- `bool ReflectionProbe_IsActive(uint64)`
+- `bool SavePoint_IsUsed(uint64)`
+- `float DamageResist_Get(uint64, const string &in)`
+- `float Difficulty_GetMultiplier(uint64, const string &in)`
+- `float Difficulty_GetScore(uint64)`
+- `float LookAt_GetSpeed(uint64)`
+- `float ReflectionProbe_GetIntensity(uint64)`
+- `float SliderJoint_GetDisplacement(uint64)`
+- `float SpringJoint_GetStress(uint64)`
+- `float TempZone_GetTemperature(uint64)`
+- `uint Difficulty_GetBaseDifficulty(uint64)`
+- `void BallSocket_SetConeLimit(uint64, bool, float)`
+- `void BallSocket_SetTwistLimit(uint64, bool, float, float)`
+- `void Billboard_SetFaceCamera(uint64, bool)`
+- `void Billboard_SetLockY(uint64, bool)`
+- `void Billboard_SetRotationOffset(uint64, float)`
+- `void DamageResist_Set(uint64, const string &in, float)`
+- `void Difficulty_RecordCheckpointHealth(uint64, float)`
+- `void Difficulty_RecordDeath(uint64)`
+- `void Difficulty_RecordHit(uint64)`
+- `void Difficulty_RecordShot(uint64)`
+- `void Difficulty_Reset(uint64)`
+- `void Difficulty_SetBaseDifficulty(uint64, uint)`
+- `void Difficulty_SetEnabled(uint64, bool)`
+- `void Difficulty_SetPlayerEntity(uint64, uint64)`
+- `void Difficulty_SetResourceRatio(uint64, float)`
+- `void FixedJoint_SetBreakable(uint64, bool, float)`
+- `void Footstep_SetPitchVariance(uint64, float)`
+- `void Footstep_SetRunInterval(uint64, float)`
+- `void Footstep_SetVolume(uint64, float)`
+- `void Footstep_SetWalkInterval(uint64, float)`
+- `void Lens_SetAnamorphicSqueeze(uint64, float)`
+- `void Lens_SetChromaticAberration(uint64, float)`
+- `void Lens_SetDistortion(uint64, float)`
+- `void Lens_SetEnabled(uint64, bool)`
+- `void Lens_SetVignette(uint64, float, float)`
+- `void LookAt_ClearTarget(uint64)`
+- `void LookAt_SetConstraints(uint64, bool, bool, bool)`
+- `void LookAt_SetInstant(uint64, bool)`
+- `void LookAt_SetSpeed(uint64, float)`
+- `void LookAt_SetTarget(uint64, uint64)`
+- `void LookAt_SetTargetPosition(uint64, float, float, float)`
+- `void Possessable_SetPlayerIndex(uint64, int)`
+- `void Possessable_SetPrompt(uint64, const string &in)`
+- `void Possessable_SetRange(uint64, float)`
+- `void Pushable_SetAxes(uint64, bool, bool, bool)`
+- `void Pushable_SetPushSpeed(uint64, float)`
+- `void Ragdoll_SetActive(uint64, bool)`
+- `void Ragdoll_SetBlendWeight(uint64, float)`
+- `void Ragdoll_SetGravityScale(uint64, float)`
+- `void ReflectionProbe_SetActive(uint64, bool)`
+- `void ReflectionProbe_SetIntensity(uint64, float)`
+- `void Reverb_SetActive(uint64, bool)`
+- `void Reverb_SetDamping(uint64, float)`
+- `void Reverb_SetDecayTime(uint64, float)`
+- `void Reverb_SetRoomSize(uint64, float)`
+- `void Reverb_SetWetDryMix(uint64, float)`
+- `void SavePoint_SetMessage(uint64, const string &in)`
+- `void SavePoint_SetRadius(uint64, float)`
+- `void SavePoint_SetSaveOnEnter(uint64, bool)`
+- `void SavePoint_SetSlot(uint64, int)`
+- `void SliderJoint_SetLimits(uint64, bool, float, float)`
+- `void SliderJoint_SetMotor(uint64, bool, float, float)`
+- `void SpringJoint_SetDamping(uint64, float)`
+- `void SpringJoint_SetRestLength(uint64, float)`
+- `void SpringJoint_SetStiffness(uint64, float)`
+- `void TempZone_SetPriority(uint64, int)`
+- `void TempZone_SetTemperature(uint64, float)`
+
+### Gameplay systems  (18)
+
+- `bool Cinematic_IsPlaying()`
+- `bool QuestFlow_HasVariable(uint64, const string &in)`
+- `bool Quest_IsActive(const string &in)`
+- `bool Quest_IsComplete(const string &in)`
+- `string QuestFlow_GetVariable(uint64, const string &in)`
+- `uint64 Pool_Acquire(const string &in)`
+- `void Cinematic_Play(uint64)`
+- `void Cinematic_Stop(uint64)`
+- `void Destructible_ApplyDamage(uint64, float)`
+- `void Destructible_ApplyDamageAt(uint64, float, float, float, float)`
+- `void Destructible_Destroy(uint64, float, float, float, float)`
+- `void Pool_Release(const string &in, uint64)`
+- `void QuestFlow_ClearVariable(uint64, const string &in)`
+- `void QuestFlow_SetInt(uint64, const string &in, int)`
+- `void QuestFlow_SetVariable(uint64, const string &in, const string &in)`
+- `void Quest_CompleteObjective(const string &in, int)`
+- `void Quest_Fail(const string &in)`
+- `void Quest_Start(const string &in)`
+
+### HUD  (15)
+
+- `bool HUD_IsVisible(uint64)`
+- `float HUD_GetMaxValue(uint64)`
+- `float HUD_GetValue(uint64)`
+- `string HUD_GetText(uint64)`
+- `void HUD_SetBindField(uint64, const string &in)`
+- `void HUD_SetFillColor(uint64, float, float, float)`
+- `void HUD_SetFontSize(uint64, float)`
+- `void HUD_SetPosition(uint64, float, float)`
+- `void HUD_SetSize(uint64, float, float)`
+- `void HUD_SetSourceEntity(uint64, uint64)`
+- `void HUD_SetText(uint64, const string &in)`
+- `void HUD_SetTextColor(uint64, float, float, float)`
+- `void HUD_SetValue(uint64, float, float)`
+- `void HUD_SetVisible(uint64, bool)`
+- `void HUD_SetWorldOffset(uint64, const Vector3 &in)`
+
+### Input  (30)
+
+- `Vector2 Input_GetGamepadLeftStick(int)`
+- `Vector2 Input_GetGamepadRightStick(int)`
+- `Vector2 Input_GetMouseDelta()`
+- `Vector2 Input_GetMousePosition()`
+- `Vector2 Input_GetScrollDelta()`
+- `bool Input_GetGamepadButton(int, int)`
+- `bool Input_GetGamepadButtonDown(int, int)`
+- `bool Input_GetKey(int)`
+- `bool Input_GetKeyDown(int)`
+- `bool Input_GetKeyUp(int)`
+- `bool Input_GetMouseButton(int)`
+- `bool Input_GetMouseButtonDown(int)`
+- `bool Input_GetMouseButtonUp(int)`
+- `bool Input_IsGamepadConnected(int)`
+- `bool Input_IsMouseCaptured()`
+- `float Input_GetGamepadAxis(int, int)`
+- `float Input_GetGamepadLeftTrigger(int)`
+- `float Input_GetGamepadRightTrigger(int)`
+- `float Input_GetPinchDelta()`
+- `int Input_GetTextInputCount()`
+- `int Input_GetTouchCount()`
+- `string Input_GetTextInput()`
+- `void Input_SetMouseCaptured(bool)`
+- `void Touch_AddActionButton(const string &in, int, float, float, float)`
+- `void Touch_AddButton(const string &in, int, float, float, float)`
+- `void Touch_ClearButtons()`
+- `void Touch_SetLookRegion(bool)`
+- `void Touch_SetStick(bool, int, int, int, int)`
+- `void Touch_SetStickActions(bool, int, int, int, int)`
+- `void Touch_UsePreset(int)`
+
+### Input actions and rebinding  (25)
+
+- `Vector2 InputAction_GetMovement()`
+- `bool InputAction_IsCrouchToggle()`
+- `bool InputAction_IsDown(int action)`
+- `bool InputAction_IsPressed(int action)`
+- `bool InputAction_IsReleased(int action)`
+- `bool InputAction_IsSprintToggle()`
+- `float InputAction_GetMouseSensitivity()`
+- `float InputAction_GetValue(int action)`
+- `int InputAction_GetCount()`
+- `int InputAction_PollNextKey()`
+- `string InputAction_GetBindingName(int index)`
+- `string InputAction_GetName(int index)`
+- `void InputAction_AddGamepadBinding(int action, int button)`
+- `void InputAction_AddMouseBinding(int action, int button)`
+- `void InputAction_ApplyGamepadOnly()`
+- `void InputAction_ApplyLeftHandOnly()`
+- `void InputAction_ApplyRightHandOnly()`
+- `void InputAction_ClearBindings(int action)`
+- `void InputAction_Rebind(int actionIndex, int keyCode)`
+- `void InputAction_ResetDefaults()`
+- `void InputAction_SetCrouchToggle(bool toggle)`
+- `void InputAction_SetMouseSensitivity(float sens)`
+- `void InputAction_SetName(int action, const string &in name)`
+- `void InputAction_SetSensitivity(int action, float sensitivity)`
+- `void InputAction_SetSprintToggle(bool toggle)`
+
+### Level streaming  (10)
+
+- `bool Streaming_IsLoaded(const string &in)`
+- `float Streaming_GetResidentMB()`
+- `int Streaming_GetBudgetEvictions()`
+- `int Streaming_GetLoadedCount()`
+- `int Streaming_GetMemoryBudgetMB()`
+- `int Streaming_GetState(const string &in)`
+- `void Streaming_ForceLoad(const string &in)`
+- `void Streaming_ForceUnload(const string &in)`
+- `void Streaming_SetEnabled(bool)`
+- `void Streaming_SetMemoryBudgetMB(int)`
+
+### MIDI  (11)
+
+- `bool MIDI_IsDeviceOpen()`
+- `bool MIDI_IsNoteOff(uint8, uint8 = 0xFF)`
+- `bool MIDI_IsNoteOn(uint8, uint8 = 0xFF)`
+- `bool MIDI_OpenDevice(uint32)`
+- `string MIDI_GetDeviceName(uint32)`
+- `uint32 MIDI_GetDeviceCount()`
+- `uint32 MIDI_GetEventCount()`
+- `uint8 MIDI_GetCC(uint8, uint8 = 0xFF)`
+- `uint8 MIDI_GetCCValue(uint8, uint8 = 0)`
+- `uint8 MIDI_GetNoteVelocity(uint8, uint8 = 0xFF)`
+- `void MIDI_CloseDevice()`
+
+### Networking (LAN)  (20)
+
+- `bool Net_GetLobbyPlayerReady(int)`
+- `bool Net_HostGame(int, const string &in)`
+- `bool Net_IsConnected()`
+- `bool Net_IsHost()`
+- `bool Net_JoinGame(const string &in, int, const string &in)`
+- `float Net_GetPacketLoss()`
+- `float Net_GetPing()`
+- `int Net_GetLobbyPlayerCount()`
+- `int Net_GetLocalPlayerId()`
+- `int Net_GetPlayerCount()`
+- `int Net_GetRole()`
+- `int Net_RegisterEntity(uint64)`
+- `string Net_GetLobbyPlayerName(int)`
+- `void Net_CallRPC(const string &in, int, const string &in)`
+- `void Net_CallRPCAll(const string &in, const string &in)`
+- `void Net_Disconnect()`
+- `void Net_RegisterRPCHandler(const string &in)`
+- `void Net_RequestOwnership(int)`
+- `void Net_SetReady(bool)`
+- `void Net_UnregisterEntity(int)`
+
+### Noise  (16)
+
+- `float Noise_Billow2D(float, float, int, float, float, float, uint)`
+- `float Noise_Billow3D(float, float, float, int, float, float, float, uint)`
+- `float Noise_DomainWarp2D(float, float, float, float, uint)`
+- `float Noise_DomainWarp3D(float, float, float, float, float, uint)`
+- `float Noise_FBM2D(float, float, int, float, float, float, uint)`
+- `float Noise_FBM3D(float, float, float, int, float, float, float, uint)`
+- `float Noise_Perlin2D(float, float, uint)`
+- `float Noise_Perlin3D(float, float, float, uint)`
+- `float Noise_Ridged2D(float, float, int, float, float, float, uint)`
+- `float Noise_Ridged3D(float, float, float, int, float, float, float, uint)`
+- `float Noise_Simplex2D(float, float, uint)`
+- `float Noise_Simplex3D(float, float, float, uint)`
+- `float Noise_Value2D(float, float, uint)`
+- `float Noise_Value3D(float, float, float, uint)`
+- `float Noise_Worley2D(float, float, uint)`
+- `float Noise_Worley3D(float, float, float, uint)`
+
+### Particles  (15)
+
+- `bool Particle_IsPlaying(uint64)`
+- `float Particle_GetEmissionRate(uint64)`
+- `void GPUParticle_Burst(uint64, int)`
+- `void Particle_ApplyPreset(uint64, const string &in)`
+- `void Particle_Burst(uint64, int)`
+- `void Particle_Play(uint64)`
+- `void Particle_SetAlpha(uint64, float, float)`
+- `void Particle_SetColor(uint64, float, float, float, float, float, float)`
+- `void Particle_SetEmissionRate(uint64, float)`
+- `void Particle_SetGravity(uint64, float, float, float)`
+- `void Particle_SetLifetime(uint64, float)`
+- `void Particle_SetLoop(uint64, bool)`
+- `void Particle_SetSize(uint64, float, float)`
+- `void Particle_SetSpeed(uint64, float)`
+- `void Particle_Stop(uint64)`
+
+### Physics  (34)
+
+- `Vector2 Camera_WorldToScreen(uint64 camera, const Vector3 &in worldPoint)`
+- `Vector2 Input_GetScreenSize()`
+- `Vector3 Camera_ScreenToWorld(uint64 camera, const Vector2 &in screen)`
+- `Vector3 Camera_ScreenToWorldOnPlane(uint64 camera, const Vector2 &in screen, float planeZ)`
+- `Vector3 Physics_GetVelocity(uint64)`
+- `bool Controls_IsHintVisible()`
+- `bool Physics_CheckBox(const Vector3 &in, const Vector3 &in)`
+- `bool Physics_CheckBox(const Vector3 &in, const Vector3 &in, uint)`
+- `bool Physics_CheckSphere(const Vector3 &in, float)`
+- `bool Physics_CheckSphere(const Vector3 &in, float, uint)`
+- `bool Physics_Raycast(const Vector3 &in, const Vector3 &in, float)`
+- `bool Physics_Raycast(const Vector3 &in, const Vector3 &in, float, uint)`
+- `bool Physics_RaycastHit(const Vector3 &in, const Vector3 &in, float, RaycastHit &out)`
+- `bool Physics_RaycastHit(const Vector3 &in, const Vector3 &in, float, uint, RaycastHit &out)`
+- `float DistanceJoint_GetCurrentStress(uint64)`
+- `float HingeJoint_GetCurrentAngle(uint64)`
+- `int Physics_OverlapBoxEntities(const Vector3 &in, const Vector3 &in)`
+- `int Physics_OverlapBoxEntitiesMask(const Vector3 &in, const Vector3 &in, uint)`
+- `int Physics_OverlapSphereEntities(const Vector3 &in, float)`
+- `int Physics_OverlapSphereEntitiesMask(const Vector3 &in, float, uint)`
+- `uint64 Physics_CreateDistanceJoint(uint64, uint64, float)`
+- `uint64 Physics_CreateHingeJoint(uint64, uint64, float, float, float)`
+- `uint64 Physics_GetOverlapResult(int)`
+- `uint64 Physics_RaycastScreen(float, float)`
+- `void Controls_SetHintVisible(bool)`
+- `void DistanceJoint_SetRestDistance(uint64, float)`
+- `void HingeJoint_SetLimits(uint64, float, float)`
+- `void HingeJoint_SetMotor(uint64, float, float)`
+- `void Physics_AddForce(uint64, const Vector3 &in)`
+- `void Physics_AddImpulse(uint64, const Vector3 &in)`
+- `void Physics_DestroyJoint(uint64)`
+- `void Physics_SetGravityScale(uint64, float)`
+- `void Physics_SetVelocity(uint64, const Vector3 &in)`
+- `void Physics_Teleport(uint64, const Vector3 &in)`
+
+### Plugins  (4)
+
+- `bool Plugin_IsLoaded(const string &in)`
+- `bool Plugin_Load(const string &in)`
+- `string Plugin_GetVersion(const string &in)`
+- `void Plugin_Unload(const string &in)`
+
+### Prefabs  (4)
+
+- `bool Prefab_IsPrefabInstance(uint64)`
+- `uint64 Prefab_Instantiate(const string &in, float, float, float)`
+- `uint64 Prefab_InstantiateEx(const string &in, float, float, float, float, float, float, float, float, float)`
+- `void Prefab_Unpack(uint64)`
+
+### Procedural generation  (56)
+
+- `float ProceduralGen_GetHeight(int x, int y)`
+- `int Fourier_GetActiveTerms(uint64)`
+- `int ProceduralGen_GetCell(int x, int y)`
+- `int ProceduralGen_GetGridHeight()`
+- `int ProceduralGen_GetWidth()`
+- `int ProceduralGen_PrefabAssemble(int maxRooms, uint seed)`
+- `int RandomBag_Count(uint64 self)`
+- `int RandomBag_DrawIndex(uint64 self)`
+- `int RandomBag_Remaining(uint64 self)`
+- `int Scatter_Clear(uint64 self)`
+- `int Scatter_Count(uint64 self)`
+- `int Scatter_Generate(uint64 self)`
+- `int TerrainGen_Generate(uint64 self)`
+- `int WFC_Generate(uint64 self)`
+- `string ProceduralGen_Grammar(const string &in rules, const string &in startSymbol, uint seed)`
+- `string ProceduralGen_LSystem(const string &in axiom, const string &in rules, uint iterations)`
+- `string RandomBag_Draw(uint64 self)`
+- `uint CA_GetGeneration(uint64)`
+- `uint CA_GetLiveCells(uint64)`
+- `uint Physarum_GetStepCount(uint64)`
+- `uint RD_GetStepCount(uint64)`
+- `void CA_Reset(uint64)`
+- `void CA_SetRule(uint64, int)`
+- `void CA_SetRunning(uint64, bool)`
+- `void CA_SetStampPattern(uint64, const string &in)`
+- `void Fourier_SetContour(uint64, int)`
+- `void Fourier_SetExtrude(uint64, float)`
+- `void Fourier_SetTerms(uint64, int)`
+- `void MetaballSurface_SetGridResolution(uint64, int)`
+- `void MetaballSurface_SetGridSize(uint64, float)`
+- `void MetaballSurface_SetGroup(uint64, int)`
+- `void Metaball_SetColor(uint64, float, float, float)`
+- `void Metaball_SetGroup(uint64, int)`
+- `void Metaball_SetRadius(uint64, float)`
+- `void Metaball_SetStrength(uint64, float)`
+- `void P4D_SetAnimate(uint64, bool)`
+- `void P4D_SetPolytope(uint64, int)`
+- `void P4D_SetRotation(uint64, float, float, float, float, float, float)`
+- `void P4D_SetScale(uint64, float)`
+- `void Physarum_Rebake(uint64)`
+- `void Physarum_SetAgentCount(uint64, uint)`
+- `void Physarum_SetPreset(uint64, int)`
+- `void Physarum_SetSettleSteps(uint64, uint)`
+- `void ProceduralGen_BSP(uint width, uint height, uint minRoomSize, uint maxRoomSize, uint seed)`
+- `void ProceduralGen_CellularAutomata(uint width, uint height, uint fillPct, uint smoothPasses, uint seed)`
+- `void ProceduralGen_DiamondSquare(uint size, float roughness, uint seed)`
+- `void ProceduralGen_RandomWalker(uint width, uint height, uint steps, uint seed)`
+- `void ProceduralGen_SpawnGrid(float cellSize, int wallValue, int floorValue)`
+- `void ProceduralGen_Voronoi(uint width, uint height, uint numPoints, uint seed)`
+- `void ProceduralGen_WFC(uint width, uint height, uint tileSetSize, uint seed)`
+- `void ProceduralMesh_SetRegenerate(uint64, bool)`
+- `void ProceduralTexture_SetRegenerate(uint64, bool)`
+- `void RD_Rebake(uint64)`
+- `void RD_SetPreset(uint64, int)`
+- `void RD_SetSettleSteps(uint64, uint)`
+- `void RandomBag_Reset(uint64 self)`
+
+### Rendering  (107)
+
+- `Vector3 PostProcess_GetColorFilter()`
+- `Vector3 Render_GetAmbientColor()`
+- `Vector3 Render_GetFogColor()`
+- `bool PPVolume_IsActive(uint64)`
+- `bool PPVolume_IsGlobal(uint64)`
+- `bool PostProcess_IsBloomEnabled()`
+- `bool PostProcess_IsCausticsEnabled()`
+- `bool PostProcess_IsChromaticAberrationEnabled()`
+- `bool PostProcess_IsContactShadowsEnabled()`
+- `bool PostProcess_IsFXAAEnabled()`
+- `bool PostProcess_IsFilmGrainEnabled()`
+- `bool PostProcess_IsFogShaftsEnabled()`
+- `bool PostProcess_IsGodRaysEnabled()`
+- `bool PostProcess_IsSSAOEnabled()`
+- `bool PostProcess_IsVignetteEnabled()`
+- `bool RenderTarget_BindToEntity(uint64 handle, uint64 entity)`
+- `bool Render_IsRainActive()`
+- `bool Render_IsShadowsEnabled()`
+- `bool Render_IsWireframeEnabled()`
+- `float PPVolume_GetBlendRadius(uint64)`
+- `float PPVolume_GetWeight(uint64)`
+- `float PostProcess_GetBloomIntensity()`
+- `float PostProcess_GetBloomThreshold()`
+- `float PostProcess_GetBrightness()`
+- `float PostProcess_GetCausticsIntensity()`
+- `float PostProcess_GetCausticsWaterY()`
+- `float PostProcess_GetChromaticAberrationIntensity()`
+- `float PostProcess_GetContactShadowsIntensity()`
+- `float PostProcess_GetContrast()`
+- `float PostProcess_GetExposure()`
+- `float PostProcess_GetFilmGrainIntensity()`
+- `float PostProcess_GetFogShaftsIntensity()`
+- `float PostProcess_GetFogShaftsMaxDistance()`
+- `float PostProcess_GetGamma()`
+- `float PostProcess_GetGodRaysIntensity()`
+- `float PostProcess_GetSSAOIntensity()`
+- `float PostProcess_GetSSAORadius()`
+- `float PostProcess_GetSaturation()`
+- `float PostProcess_GetVignetteIntensity()`
+- `float PostProcess_GetVignetteSmoothness()`
+- `float Render_GetAmbientIntensity()`
+- `float Render_GetFogDensity()`
+- `float Render_GetFogEnd()`
+- `float Render_GetFogHeightFalloff()`
+- `float Render_GetFogStart()`
+- `float Render_GetShadowDistance()`
+- `float Render_GetShadowStrength()`
+- `float Render_GetSnowIntensity()`
+- `float Render_GetWorldCurvature()`
+- `int PPVolume_GetPriority(uint64)`
+- `int PostProcess_GetGodRaysSamples()`
+- `int PostProcess_GetToneMapping()`
+- `uint64 RenderTarget_Create(int width, int height)`
+- `void PPVolume_SetActive(uint64, bool)`
+- `void PPVolume_SetBlendRadius(uint64, float)`
+- `void PPVolume_SetGlobal(uint64, bool)`
+- `void PPVolume_SetPriority(uint64, int)`
+- `void PPVolume_SetWeight(uint64, float)`
+- `void Particles_OneShot(const string &in preset, float x, float y, float z, int count)`
+- `void PostProcess_SetBloomEnabled(bool)`
+- `void PostProcess_SetBloomIntensity(float)`
+- `void PostProcess_SetBloomThreshold(float)`
+- `void PostProcess_SetBrightness(float)`
+- `void PostProcess_SetCausticsEnabled(bool)`
+- `void PostProcess_SetCausticsIntensity(float)`
+- `void PostProcess_SetCausticsWaterY(float)`
+- `void PostProcess_SetChromaticAberrationEnabled(bool)`
+- `void PostProcess_SetChromaticAberrationIntensity(float)`
+- `void PostProcess_SetColorFilter(const Vector3 &in)`
+- `void PostProcess_SetContactShadowsEnabled(bool)`
+- `void PostProcess_SetContactShadowsIntensity(float)`
+- `void PostProcess_SetContrast(float)`
+- `void PostProcess_SetExposure(float)`
+- `void PostProcess_SetFXAAEnabled(bool)`
+- `void PostProcess_SetFilmGrainEnabled(bool)`
+- `void PostProcess_SetFilmGrainIntensity(float)`
+- `void PostProcess_SetFogShaftsEnabled(bool)`
+- `void PostProcess_SetFogShaftsIntensity(float)`
+- `void PostProcess_SetFogShaftsMaxDistance(float)`
+- `void PostProcess_SetGamma(float)`
+- `void PostProcess_SetGodRaysEnabled(bool)`
+- `void PostProcess_SetGodRaysIntensity(float)`
+- `void PostProcess_SetGodRaysSamples(int)`
+- `void PostProcess_SetSSAOEnabled(bool)`
+- `void PostProcess_SetSSAOIntensity(float)`
+- `void PostProcess_SetSSAORadius(float)`
+- `void PostProcess_SetSaturation(float)`
+- `void PostProcess_SetToneMapping(int)`
+- `void PostProcess_SetVignetteEnabled(bool)`
+- `void PostProcess_SetVignetteIntensity(float)`
+- `void PostProcess_SetVignetteSmoothness(float)`
+- `void RenderTarget_Destroy(uint64 handle)`
+- `void RenderTarget_SetCamera(uint64 handle, uint64 cameraEntity)`
+- `void Render_SetAmbientColor(const Vector3 &in)`
+- `void Render_SetAmbientIntensity(float)`
+- `void Render_SetFogColor(const Vector3 &in)`
+- `void Render_SetFogDensity(float)`
+- `void Render_SetFogEnd(float)`
+- `void Render_SetFogHeightFalloff(float)`
+- `void Render_SetFogStart(float)`
+- `void Render_SetRainActive(bool)`
+- `void Render_SetShadowDistance(float)`
+- `void Render_SetShadowStrength(float)`
+- `void Render_SetShadowsEnabled(bool)`
+- `void Render_SetSnowIntensity(float)`
+- `void Render_SetWireframeEnabled(bool)`
+- `void Render_SetWorldCurvature(float)`
+
+### Rewind and replay  (11)
+
+- `bool Rewind_IsAnyRewinding()`
+- `bool Rewind_IsEntityRewinding(uint64)`
+- `bool Rewind_IsSceneRewinding()`
+- `float Rewind_GetCurrentTime()`
+- `float Rewind_GetRecordedDuration()`
+- `void Rewind_SeekScene(float)`
+- `void Rewind_SetEntityChannels(uint64, uint)`
+- `void Rewind_StartEntity(uint64)`
+- `void Rewind_StartScene()`
+- `void Rewind_StopEntity(uint64)`
+- `void Rewind_StopScene()`
+
+### Save system  (28)
+
+- `bool Meta_GetBool(const string &in, bool)`
+- `bool SaveData_GetBool(uint64, const string &in, bool)`
+- `bool SaveData_Has(uint64)`
+- `bool SaveData_HasTag(uint64, const string &in)`
+- `bool SaveGame_DeleteSlot(int)`
+- `bool SaveGame_FromSlot(int)`
+- `bool SaveGame_ToSlot(int)`
+- `float Meta_GetFloat(const string &in, float)`
+- `float SaveData_GetFloat(uint64, const string &in, float)`
+- `int Meta_GetInt(const string &in, int)`
+- `int SaveData_GetInt(uint64, const string &in, int)`
+- `int SaveData_GetTier(uint64)`
+- `string Meta_GetString(const string &in, const string &in)`
+- `string SaveData_GetString(uint64, const string &in, const string &in)`
+- `void AutoSave_Enable(bool)`
+- `void AutoSave_SetInterval(float)`
+- `void Meta_Save()`
+- `void Meta_SetBool(const string &in, bool)`
+- `void Meta_SetFloat(const string &in, float)`
+- `void Meta_SetInt(const string &in, int)`
+- `void Meta_SetString(const string &in, const string &in)`
+- `void SaveData_AddTag(uint64, const string &in)`
+- `void SaveData_Set(uint64, int)`
+- `void SaveData_SetBool(uint64, const string &in, bool)`
+- `void SaveData_SetFloat(uint64, const string &in, float)`
+- `void SaveData_SetInt(uint64, const string &in, int)`
+- `void SaveData_SetString(uint64, const string &in, const string &in)`
+- `void SaveGame_Checkpoint()`
+
+### Scene and save data  (34)
+
+- `Vector3 Entity_GetForward(uint64)`
+- `Vector3 Entity_GetPosition(uint64)`
+- `Vector3 Entity_GetRight(uint64)`
+- `Vector3 Entity_GetRotation(uint64)`
+- `Vector3 Entity_GetScale(uint64)`
+- `Vector3 Entity_GetUp(uint64)`
+- `bool Entity_IsVisible(uint64)`
+- `bool Scene_HasTag(uint64, const string &in)`
+- `bool Scene_IsValid(uint64)`
+- `int Entity_GetChildCount(uint64)`
+- `string Entity_GetName(uint64)`
+- `string Scene_GetCurrentScene()`
+- `string Scene_GetEntityName(uint64)`
+- `uint64 Entity_GetChild(uint64, int)`
+- `uint64 Entity_GetParent(uint64)`
+- `uint64 Scene_FindEntity(const string &in)`
+- `uint64 Scene_FindEntityByTag(const string &in)`
+- `uint64 Scene_GetEntityCount()`
+- `uint64 Scene_Instantiate()`
+- `uint64 Scene_InstantiateAt(const Vector3 &in)`
+- `uint64 Scene_InstantiateNamed(const string &in)`
+- `void Entity_RemoveParent(uint64)`
+- `void Entity_SetParent(uint64, uint64)`
+- `void Entity_SetPosition(uint64, const Vector3 &in)`
+- `void Entity_SetRotation(uint64, const Vector3 &in)`
+- `void Entity_SetScale(uint64, const Vector3 &in)`
+- `void Entity_SetVisible(uint64, bool)`
+- `void Flow_Advance()`
+- `void Scene_AddTag(uint64, const string &in)`
+- `void Scene_DestroyEntity(uint64)`
+- `void Scene_LoadScene(const string &in)`
+- `void Scene_RemoveTag(uint64, const string &in)`
+- `void Scene_Restart()`
+- `void Scene_SetEntityName(uint64, const string &in)`
+
+### ScriptBindings_Physics2D.cpp  (20)
+
+- `Vector2 Physics2D_GetGravity()`
+- `Vector2 Physics2D_GetVelocity(uint64)`
+- `bool Physics2D_OverlapBox(const Vector2 &in, const Vector2 &in)`
+- `bool Physics2D_OverlapBoxMask(const Vector2 &in, const Vector2 &in, uint)`
+- `bool Physics2D_OverlapCircle(const Vector2 &in, float)`
+- `bool Physics2D_OverlapCircleMask(const Vector2 &in, float, uint)`
+- `bool Physics2D_Raycast(const Vector2 &in, const Vector2 &in, float)`
+- `bool Physics2D_RaycastMask(const Vector2 &in, const Vector2 &in, float, uint)`
+- `int Physics2D_OverlapBoxEntities(const Vector2 &in, const Vector2 &in)`
+- `int Physics2D_OverlapBoxEntitiesMask(const Vector2 &in, const Vector2 &in, uint)`
+- `int Physics2D_OverlapCircleEntities(const Vector2 &in, float)`
+- `int Physics2D_OverlapCircleEntitiesMask(const Vector2 &in, float, uint)`
+- `uint64 Physics2D_GetOverlapResult(int)`
+- `uint64 Physics2D_RaycastHit(const Vector2 &in, const Vector2 &in, float)`
+- `uint64 Physics2D_RaycastHitMask(const Vector2 &in, const Vector2 &in, float, uint)`
+- `void Physics2D_AddForce(uint64, const Vector2 &in)`
+- `void Physics2D_AddImpulse(uint64, const Vector2 &in)`
+- `void Physics2D_SetGravity(const Vector2 &in)`
+- `void Physics2D_SetGravityScale(uint64, float)`
+- `void Physics2D_SetVelocity(uint64, const Vector2 &in)`
+
+### Sprites (2D)  (16)
+
+- `bool SpriteAnim_IsPlaying(uint64)`
+- `float Sprite_GetHeight(uint64)`
+- `float Sprite_GetWidth(uint64)`
+- `string Sprite_GetTexture(uint64)`
+- `uint SpriteAnim_GetCurrentFrame(uint64)`
+- `void SpriteAnim_Play(uint64, const string &in)`
+- `void SpriteAnim_SetSpeed(uint64, float)`
+- `void SpriteAnim_Stop(uint64)`
+- `void Sprite_SetAlpha(uint64, float)`
+- `void Sprite_SetColor(uint64, float, float, float, float)`
+- `void Sprite_SetFlipX(uint64, bool)`
+- `void Sprite_SetFlipY(uint64, bool)`
+- `void Sprite_SetSize(uint64, float, float)`
+- `void Sprite_SetSortOrder(uint64, int)`
+- `void Sprite_SetTexture(uint64, const string &in)`
+- `void Sprite_SetVisible(uint64, bool)`
+
+### State machines  (20)
+
+- `bool SM_GetBool(uint64, const string&in)`
+- `bool SM_HasState(uint64, const string&in)`
+- `float SM_GetFloat(uint64, const string&in)`
+- `float SM_GetStateTime(uint64)`
+- `int SM_GetInt(uint64, const string&in)`
+- `string SM_GetCurrentState(uint64)`
+- `string SM_GetOnEnter(uint64, const string&in)`
+- `string SM_GetOnExit(uint64, const string&in)`
+- `string SM_GetOnUpdate(uint64, const string&in)`
+- `string SM_GetPreviousState(uint64)`
+- `void SM_AddState(uint64, const string&in)`
+- `void SM_AddTransition(uint64, const string&in, const string&in)`
+- `void SM_SendTrigger(uint64, const string&in)`
+- `void SM_SetBool(uint64, const string&in, bool)`
+- `void SM_SetFloat(uint64, const string&in, float)`
+- `void SM_SetInt(uint64, const string&in, int)`
+- `void SM_SetOnEnter(uint64, const string&in, const string&in)`
+- `void SM_SetOnExit(uint64, const string&in, const string&in)`
+- `void SM_SetOnUpdate(uint64, const string&in, const string&in)`
+- `void SM_SetState(uint64, const string&in)`
+
+### Text and fonts  (13)
+
+- `Vector3 Text_MeasureTo(uint64, int)`
+- `int Text_Length(uint64)`
+- `string Text_GetContent(uint64)`
+- `void Text_ClearRuns(uint64)`
+- `void Text_RevealTo(uint64, int)`
+- `void Text_SetAlignment(uint64, int)`
+- `void Text_SetBgColor(uint64, float, float, float)`
+- `void Text_SetBgOpacity(uint64, float)`
+- `void Text_SetColor(uint64, float, float, float)`
+- `void Text_SetContent(uint64, const string &in)`
+- `void Text_SetFontSize(uint64, float)`
+- `void Text_SetRun(uint64, int, int, float, float, float)`
+- `void Text_SetWrapWidth(uint64, float)`
+
+### Tweening  (10)
+
+- `float Tween_GetValue(uint64, uint)`
+- `uint Tween_Color(uint64, const Vector3&in, float, int)`
+- `uint Tween_Float(uint64, float, float, float, int)`
+- `uint Tween_Opacity(uint64, float, float, int)`
+- `uint Tween_Position(uint64, const Vector3&in, float, int)`
+- `uint Tween_Rotation(uint64, const Vector3&in, float, int)`
+- `uint Tween_Scale(uint64, const Vector3&in, float, int)`
+- `void Tween_SetDelay(uint64, uint, float)`
+- `void Tween_SetOnComplete(uint64, uint, const string&in)`
+- `void Tween_StopAll(uint64)`
+
+### UI and dialogue  (40)
+
+- `bool Loc_HasString(const string &in)`
+- `bool UI_IsCanvasVisible(uint64)`
+- `bool UI_IsChecked(uint64, int)`
+- `bool UI_IsElementVisible(uint64, int)`
+- `bool UI_IsFocused(uint64, int)`
+- `bool UI_IsHovered(uint64, int)`
+- `bool UI_IsPressed(uint64, int)`
+- `float UI_GetFontSize(uint64, int)`
+- `float UI_GetProgress(uint64, int)`
+- `float UI_GetSliderValue(uint64, int)`
+- `int UI_AddElement(uint64, int, const string &in, int parentId = 0)`
+- `int UI_FindElement(uint64, const string &in)`
+- `int UI_GetFocusedElement(uint64)`
+- `string Loc_Get(const string &in)`
+- `string Loc_GetLocale()`
+- `string Loc_GetWithFallback(const string &in, const string &in)`
+- `string UI_GetText(uint64, int)`
+- `void Loc_SetLocale(const string &in)`
+- `void UI_ClearCharColors(uint64, int)`
+- `void UI_ClearFocus(uint64)`
+- `void UI_SetBgColor(uint64, int, float, float, float, float)`
+- `void UI_SetCanvasSortOrder(uint64, int)`
+- `void UI_SetCanvasVisible(uint64, bool)`
+- `void UI_SetCharColor(uint64, int, int, float, float, float)`
+- `void UI_SetCharColorRange(uint64, int, int, int, float, float, float)`
+- `void UI_SetChecked(uint64, int, bool)`
+- `void UI_SetElementAnchor(uint64, int, float, float, float, float)`
+- `void UI_SetElementEnabled(uint64, int, bool)`
+- `void UI_SetElementOffsets(uint64, int, float, float, float, float)`
+- `void UI_SetElementVisible(uint64, int, bool)`
+- `void UI_SetFocus(uint64, int)`
+- `void UI_SetFocusable(uint64, int, bool)`
+- `void UI_SetFontSize(uint64, int, float)`
+- `void UI_SetImageAlpha(uint64, int, float)`
+- `void UI_SetImagePath(uint64, int, const string &in)`
+- `void UI_SetProgress(uint64, int, float)`
+- `void UI_SetSliderValue(uint64, int, float)`
+- `void UI_SetTabOrder(uint64, int, int)`
+- `void UI_SetText(uint64, int, const string &in)`
+- `void UI_SetTextColor(uint64, int, float, float, float)`
+
+### Water  (18)
+
+- `bool Water3D_Has(uint64)`
+- `float Water3D_GetHeight(float, float)`
+- `float Water3D_GetWaveHeight(uint64)`
+- `float Water_GetHeight(uint64, float, float)`
+- `void Water3D_SetDeepColor(uint64, const Vector3 &in)`
+- `void Water3D_SetFoam(uint64, bool, float, float)`
+- `void Water3D_SetGerstner(uint64, bool, float)`
+- `void Water3D_SetOpacity(uint64, float)`
+- `void Water3D_SetReflection(uint64, float, float)`
+- `void Water3D_SetShallowColor(uint64, const Vector3 &in)`
+- `void Water3D_SetStyle(uint64, int)`
+- `void Water3D_SetWaveDirection(uint64, float, float)`
+- `void Water3D_SetWaveFrequency(uint64, float)`
+- `void Water3D_SetWaveHeight(uint64, float)`
+- `void Water3D_SetWaveSpeed(uint64, float)`
+- `void Water_Splash(uint64, float, float, float)`
+- `void Water_SustainedPressure(uint64, float, float, float, float)`
+- `void Water_Wake(uint64, float, float, float, float, float)`
+
+### Weather  (26)
+
+- `bool Weather_IsLightning()`
+- `bool Weather_LightningJustFired()`
+- `bool WorldTime_GetSeasonalWeather()`
+- `bool WorldTime_IsNight()`
+- `float Weather_GetFogDensity()`
+- `float Weather_GetRainIntensity()`
+- `float Weather_GetSnowIntensity()`
+- `float WorldTime_GetTimeOfDay()`
+- `int Weather_Get()`
+- `int WorldTime_GetSeason()`
+- `string WorldTime_GetSeasonName()`
+- `void Weather_Set(int, float = 2.0)`
+- `void Weather_SetFogColor(float, float, float)`
+- `void Weather_SetFogDensity(float)`
+- `void Weather_SetFogRange(float, float)`
+- `void Weather_SetLightningInterval(float, float)`
+- `void Weather_SetRainIntensity(float)`
+- `void Weather_SetSnowIntensity(float)`
+- `void Weather_SetWind(float, float, float, float)`
+- `void Wind_SetDirection(float, float, float)`
+- `void Wind_SetStrength(float)`
+- `void WorldTime_AdvanceSeason()`
+- `void WorldTime_SetSeason(int)`
+- `void WorldTime_SetSeasonalWeather(bool)`
+- `void WorldTime_SetSecondsPerHour(float)`
+- `void WorldTime_SetTimeOfDay(float)`
+
+<!-- END GENERATED BINDING INDEX -->

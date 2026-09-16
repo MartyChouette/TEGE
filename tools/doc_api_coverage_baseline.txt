@@ -1,14 +1,14 @@
 # How many registered script bindings are NOT named in docs/SCRIPTING_API.md.
 #
-# Recorded 2026-09-16: 1250 bindings registered, 621 named in the reference,
-# 629 undocumented. That is roughly half the scripting API, in a document that
-# presents itself as the reference -- a person who finds a binding working and
-# goes looking for it has a coin-flip chance of finding a line about it.
+# Was 629 when first measured (2026-09-16): the reference was hand-written and
+# named barely half of what the engine registered. tools/gen_scripting_api.py now
+# generates a complete signature index into that document, which took it to 10.
 #
-# This number is a CEILING, not a target. `check_doc_api.py --strict` fails when
-# the count goes above it, which catches a binding registered without a line in
-# the reference. It does not fail on the existing backlog, because failing CI on
-# 629 pre-existing gaps would just get the check switched off.
+# The 10 that remain are object PROPERTY accessors -- get_position, set_rotation
+# and their siblings -- registered on the Transform/entity type rather than as
+# global functions, so a global-binding index correctly leaves them out. They are
+# covered by the hand-written prose instead.
 #
-# Lower it deliberately as entries are written. The tool says when it can be.
-629
+# This number is a CEILING. `check_doc_api.py --strict` fails when it rises,
+# which now catches a new binding registered without regenerating the index.
+10
