@@ -3889,7 +3889,35 @@ void RenderSystem::Update(f32 deltaTime) {
         colorAtt.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
         colorAtt.loadOp = WGPULoadOp_Clear;
         colorAtt.storeOp = WGPUStoreOp_Store;
-        colorAtt.clearValue = {0.4, 0.5, 0.65, 1.0};  // sky color
+        // The active camera's backgroundColor, not a constant. This was a hardcoded
+        // {0.4, 0.5, 0.65} labelled "sky color" while desktop hardcoded a different
+        // {0.1, 0.1, 0.15}, so the same scene had two backgrounds in two places and
+        // the authored field drove neither (2026-09-16).
+        // Authored colours are sRGB. This target is RGBA16Float and the post-process
+        // encodes to sRGB on the way out, so writing the authored number straight in
+        // gets it encoded a second time and the background comes out washed: 0.13
+        // arrived as 101 where the inspector swatch and the desktop clear both show
+        // 33. Convert to linear here so the encode on the way out lands back on the
+        // colour the author picked. Desktop needs no such step -- its target is UNORM
+        // and the value is written as-is.
+        auto srgbToLinear = [](f32 c) {
+            return (c <= 0.04045f) ? (c / 12.92f)
+                                   : std::pow((c + 0.055f) / 1.055f, 2.4f);
+        };
+        f32 clearR = srgbToLinear(0.4f), clearG = srgbToLinear(0.5f), clearB = srgbToLinear(0.65f);
+        if (m_World) {
+            const Entity camEntity = ECS::CameraManager::GetActiveCamera(m_World);
+            if (camEntity != 0) {
+                if (const auto* cc = m_World->GetComponent<CameraComponent>(camEntity)) {
+                    if (cc->clearColor) {
+                        clearR = srgbToLinear(cc->backgroundColor.x);
+                        clearG = srgbToLinear(cc->backgroundColor.y);
+                        clearB = srgbToLinear(cc->backgroundColor.z);
+                    }
+                }
+            }
+        }
+        colorAtt.clearValue = {clearR, clearG, clearB, 1.0};
 
         WGPURenderPassDepthStencilAttachment depthAtt = {};
         depthAtt.view = static_cast<WGPUTextureView>(m_WebSceneDepthView);
@@ -4748,7 +4776,19 @@ void RenderSystem::Update(f32 deltaTime) {
     // Letting the procedural sky run afterwards would repaint every pixel the
     // plate left at the far plane -- its windows, its doorways, its horizon --
     // with a different sky.
-    if (usePostProcess && m_WebSkyPipeline.IsValid() && scenePassEncoder && !webPlateDrawn) {
+    // Only for a scene that ASKED for a sky. The lighting block above already says
+    // this -- "the sky itself is not drawn, because the scene did not ask for one"
+    // -- and the draw never implemented it, so the shader's built-in palette got
+    // painted over scenes that configured none, hiding whatever the camera cleared
+    // to. Desktop matches: Render2DSky returns early for anything but Procedural.
+    //
+    // This gate is only correct now that the clear above reads the camera. On its
+    // own it just revealed the hardcoded clear underneath, which is why it was
+    // written, measured, reverted, and only re-applied with the other half.
+    const bool webSkyConfigured = m_WebSkyConfigured &&
+        WeatherSky(m_WebSkyConfig).type != Renderer::SkyboxType::None;
+    if (usePostProcess && webSkyConfigured && m_WebSkyPipeline.IsValid() &&
+        scenePassEncoder && !webPlateDrawn) {
         wgpuRenderPassEncoderSetPipeline(scenePassEncoder, webPipeMgr->GetNativePipeline(m_WebSkyPipeline));
         wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 0, webBindMgr->GetNativeGroup(m_WebFrameBindGroup), 0, nullptr);
         wgpuRenderPassEncoderDraw(scenePassEncoder, 3, 1, 0, 0);  // Fullscreen triangle at z=1
@@ -9970,6 +10010,25 @@ bool RenderSystem::IsOITCurrentFor(Renderer::RenderTarget* target) const {
     return m_OITManager->GetSceneDepthView() == target->GetDepthImageView() &&
            m_OITManager->GetWidth() == target->GetWidth() &&
            m_OITManager->GetHeight() == target->GetHeight();
+}
+
+// The authored background colour, finally read by something.
+//
+// CameraComponent::backgroundColor was serialized and editable since the component
+// existed and NO renderer looked at it: desktop cleared to a hardcoded
+// {0.1, 0.1, 0.15} in RenderTarget::Begin and web to a different hardcoded
+// {0.4, 0.5, 0.65}, so one scene had two backgrounds and the one the author picked
+// had none. A scene with no camera keeps the old constant rather than going black.
+void RenderSystem::ApplyCameraClearColor(Renderer::RenderTarget* target) const {
+    if (!target || !m_World) return;
+    const Entity camEntity = ECS::CameraManager::GetActiveCamera(m_World);
+    if (camEntity == 0) return;
+    if (const auto* cc = m_World->GetComponent<CameraComponent>(camEntity)) {
+        if (cc->clearColor) {
+            target->SetClearColor(cc->backgroundColor.x, cc->backgroundColor.y,
+                                  cc->backgroundColor.z);
+        }
+    }
 }
 
 void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Camera* camera,

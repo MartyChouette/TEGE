@@ -39,6 +39,15 @@ public:
     // Begin rendering to this target (begins render pass)
     void Begin(VkCommandBuffer cmd);
 
+    // What Begin() clears the colour attachment to. Defaults to the constant this
+    // used to hardcode, so a caller that never sets it is unchanged.
+    //
+    // CameraComponent::backgroundColor was authored, serialized and shown in the
+    // inspector, and read by NO renderer -- desktop cleared to a hardcoded
+    // {0.1, 0.1, 0.15} here and web to a different hardcoded {0.4, 0.5, 0.65}, so
+    // the same scene had two backgrounds and the authored one had none (2026-09-16).
+    void SetClearColor(f32 r, f32 g, f32 b) { m_ClearR = r; m_ClearG = g; m_ClearB = b; }
+
     // End rendering to this target (ends render pass, transitions for sampling)
     void End(VkCommandBuffer cmd);
 
@@ -88,6 +97,7 @@ public:
     bool IsValid() const { return m_Framebuffer != VK_NULL_HANDLE; }
 
 private:
+    f32 m_ClearR = 0.1f, m_ClearG = 0.1f, m_ClearB = 0.15f;
     bool CreateImages();
     // One-time clear + transition of the fresh color image to SHADER_READ_ONLY_OPTIMAL.
     // Consumers (ImGui viewport widget, PostProcessing source/placeholder bindings)

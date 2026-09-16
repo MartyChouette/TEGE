@@ -3842,6 +3842,7 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     const bool useOIT = m_RenderSystem->RequestOITForTarget(sceneTarget);
 
     // Render scene + effects into the chosen target
+    m_RenderSystem->ApplyCameraClearColor(sceneTarget);   // before Begin: Begin is the clear
     sceneTarget->Begin(commandBuffer);
     if (useSplitscreen && !splitViewports.empty()) {
         m_RenderSystem->RenderSplitscreen(sceneTarget, splitViewports);

@@ -624,6 +624,10 @@ public:
         TransparentOIT,  // only blended, into the OIT accumulation targets
     };
 
+    // Point a render target's clear at the active camera's backgroundColor.
+    // Call BEFORE target->Begin(), which is what actually clears.
+    void ApplyCameraClearColor(Renderer::RenderTarget* target) const;
+
     void RenderToTarget(Renderer::RenderTarget* target, Renderer::Camera* camera,
                         u32 viewportIndex = 0, TargetPass pass = TargetPass::All);
 

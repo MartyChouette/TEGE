@@ -114,7 +114,7 @@ void RenderTarget::Begin(VkCommandBuffer cmd) {
     rpBegin.renderArea.extent = {m_Width, m_Height};
 
     std::array<VkClearValue, 2> clearValues{};
-    clearValues[0].color = {{0.1f, 0.1f, 0.15f, 1.0f}};  // Dark background
+    clearValues[0].color = {{m_ClearR, m_ClearG, m_ClearB, 1.0f}};  // active camera's background
     clearValues[1].depthStencil = {1.0f, 0};
     rpBegin.clearValueCount = static_cast<u32>(clearValues.size());
     rpBegin.pClearValues = clearValues.data();

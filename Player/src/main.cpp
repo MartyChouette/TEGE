@@ -1919,6 +1919,7 @@ public:
                     // Editor-only RT dispatch site: Update() early-returns on
                     // the skip flag before reaching RT (no-op when RT is off)
                     m_RenderSystem->RecordRTFrame(false);
+                    m_RenderSystem->ApplyCameraClearColor(m_ScenePPTarget.get());
                     m_ScenePPTarget->Begin(preCmd);
                     m_RenderSystem->RenderToTarget(m_ScenePPTarget.get(), m_Camera.get(), 1);
                     // Particles into the SAME offscreen target, with the offscreen
