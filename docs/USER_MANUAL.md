@@ -2932,6 +2932,10 @@ Rooms are defined as JSON files with the following properties:
 
 Enjin supports splitscreen rendering for local multiplayer games.
 
+> **Desktop only.** Splitscreen does not render in a browser build yet. Local
+> co-op on one machine still works on web -- multiple gamepads are read there --
+> but everyone shares one view rather than getting their own.
+
 ### Supported Configurations
 
 | Mode | Layout |
@@ -4089,6 +4093,58 @@ Configure the export via a modal dialog:
 ---
 
 ## 32. Networking & Security Settings
+
+### How multiplayer works here, in plain terms
+
+There is no separate server program. **One player's computer runs the game and
+everyone else connects to it.** That player is the *host*. If they quit, the game
+ends, because their machine was the one running it.
+
+Whether other people can reach that host depends on where they are:
+
+**Same house, same wifi.** It just works. The computers can see each other
+directly and nothing needs setting up.
+
+**Different houses.** Here it stops being simple, and not because of anything
+Enjin does. Home routers refuse incoming connections by default -- that is what
+they are for -- so your friend's computer cannot knock on your door. There are
+two ways around it:
+
+1. **The host opens a port on their router.** Free, and it works, but it means
+   going into router settings, and many people cannot or should not.
+2. **A relay.** Both players connect OUT to a small shared computer somewhere
+   else, and it passes messages between them. Outgoing connections are always
+   allowed, so this works from anywhere with no settings to change.
+
+**A relay is not running your game.** It is worth being clear about this because
+the word sounds bigger than it is. The relay does not know the rules, does not
+hold your save, and does not simulate anything -- it copies messages from one
+player to the other, like a switchboard. The game is still running on the host's
+machine. It exists only because two home internet connections cannot talk to each
+other directly.
+
+Somebody has to run that relay, and pay for it. It can be you, on a cheap server;
+it can be a community; some storefronts provide one for games sold through them.
+
+### Desktop and browser are different here
+
+**On desktop**, all of the above is available, and the same-wifi case needs no
+relay and no internet at all.
+
+**In a browser**, players on the SAME machine need nothing -- two gamepads in one
+computer is ordinary local co-op and it works. But a browser tab cannot accept an
+incoming connection at all, so players on DIFFERENT machines always go through a
+relay, even two people sitting in the same room.
+
+That is a requirement, not a wall: browser multiplayer is perfectly possible, it
+just always needs that middle computer. Plan for it when you design the game
+rather than discovering it at release.
+
+> **Status today:** multiplayer is desktop-only, on a LAN or a port-forwarded
+> direct connection. There is no relay yet, and a browser build currently has no
+> networking at all. See `docs/WEB_TIER.md`.
+
+### Configuration
 
 Enjin loads its runtime networking configuration from a JSON file so multiplayer tuning does not require a rebuild.
 
