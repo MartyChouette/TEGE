@@ -169,6 +169,20 @@ jobs:
           }
           python Tests/GoldenScene/check_golden.py golden_out/smoke
 
+      - name: Field coverage (fields that never save, components nobody can author)
+        shell: pwsh
+        timeout-minutes: 5
+        # The capture harness catches a feature that renders nothing. It cannot
+        # catch a field that never saves, because the frame looks identical
+        # either way, nor a component with no inspector, because nothing draws
+        # it to be photographed. This counts both.
+        #
+        # A baseline, not a target: it fails when a number goes UP. Lower one and
+        # re-record. Static analysis, no build needed, runs in a second.
+        run: |
+          python tools/field_coverage.py --strict
+          if ($LASTEXITCODE -ne 0) { throw "field coverage got worse than the baseline" }
+
       - name: Capture claim tests
         shell: pwsh
         timeout-minutes: 5
