@@ -16377,7 +16377,7 @@ void RenderSystem::RenderSprites(u32 targetWidth, u32 targetHeight) {
         VkDescriptorSet bindlessSet = m_BindlessManager ? m_BindlessManager->GetDescriptorSet()
                                                         : VK_NULL_HANDLE;
 
-        m_SpriteBatchRenderer->Render(
+        m_DrawCallCount += m_SpriteBatchRenderer->Render(
             commandBuffer,
             *m_ActiveDescriptorSets,
             GetActiveBufferIndex(currentFrame),

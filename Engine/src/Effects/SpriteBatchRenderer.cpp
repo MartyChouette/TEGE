@@ -398,7 +398,7 @@ void SpriteBatchRenderer::CreateLitPipelineWithPass(VkRenderPass renderPass, VkD
     }
 }
 
-void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
+u32 SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
                                   const std::vector<VkDescriptorSet>& descriptorSets,
                                   u32 currentFrame,
                                   ECS::World* world,
@@ -407,7 +407,7 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
                                   u32 viewportWidth,
                                   u32 viewportHeight,
                                   bool litMode) {
-    if (!m_Initialized || !m_Pipeline || !world) return;
+    if (!m_Initialized || !m_Pipeline || !world) return 0;
 
     // Collect all visible Sprite2DComponent entities (skip tilemaps).
     // This rebuild is O(N) per frame (cheap) and picks up visibility/entity changes.
@@ -427,7 +427,7 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
         m_SortedSprites.push_back({ entity, sprite->sortingLayer, sprite->orderInLayer, sprite });
     }
 
-    if (m_SortedSprites.empty()) return;
+    if (m_SortedSprites.empty()) return 0;
 
     // Sort every call, and note why the obvious optimisation is not available.
     //
@@ -473,7 +473,7 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
     } else {
         extent = m_Renderer->GetSwapchainExtent();
     }
-    if (extent.width == 0 || extent.height == 0) return;
+    if (extent.width == 0 || extent.height == 0) return 0;
 
     // A sprite's art is sampled out of the bindless array by an index carried in
     // its own instance data, so two sprites with two different images ride the
@@ -638,7 +638,7 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
         }
     }
 
-    if (m_InstanceDataCache.empty()) return;
+    if (m_InstanceDataCache.empty()) return 0;
 
     m_InstanceBuffer->UploadData(m_InstanceDataCache.data(),
                                  m_InstanceDataCache.size() * sizeof(SpriteInstanceData));
@@ -668,8 +668,16 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
     pc.flags = 0;
 
     // firstInstance is how each run addresses its own slice of the one upload.
+    // Counted, because a draw nobody counts is a draw nobody can check. The
+    // sprite path issued its draws here and never touched RenderSystem's
+    // counter, so a 2D game reported ZERO draw calls in its own stats overlay
+    // and through the web build's getDrawCallCount. Found 2026-09-16 when the
+    // capture harness failed Water2D and SpritePivot for rendering nothing while
+    // both were visibly rendering.
+    u32 drawCalls = 0;
     auto drawRun = [&](Renderer::VulkanPipeline* pipeline, u32 first, u32 count) {
         if (count == 0 || !pipeline) return;
+        ++drawCalls;
         pipeline->Bind(commandBuffer);
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
             pipeline->GetLayout(), 0, 1, &descriptorSets[currentFrame], 0, nullptr);
@@ -700,6 +708,7 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
         drawRun(pipe, runStart, i + 1 - runStart);
         runStart = i + 1;
     }
+    return drawCalls;
 }
 
 bool SpriteBatchRenderer::ReloadShaders(const std::string& shaderDir, VkDescriptorSetLayout sharedLayout) {

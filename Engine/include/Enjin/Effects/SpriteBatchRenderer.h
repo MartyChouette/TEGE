@@ -86,7 +86,11 @@ public:
     // bindlessSet: set 1, the array those slots index into.
     // viewportWidth/Height: 0 = use swapchain extent, >0 = override (for render targets)
     // litMode: when true, uses the lit pipeline with LightingUBO for 2.5D sprite lighting
-    void Render(VkCommandBuffer commandBuffer,
+    // Returns the number of draw calls issued, so the caller can account for
+    // them. It returned void and the sprite path was therefore invisible to
+    // RenderSystem's draw counter: a 2D game reported zero draw calls in its own
+    // stats and through the web build's getDrawCallCount (2026-09-16).
+    u32 Render(VkCommandBuffer commandBuffer,
                 const std::vector<VkDescriptorSet>& descriptorSets,
                 u32 currentFrame,
                 ECS::World* world,

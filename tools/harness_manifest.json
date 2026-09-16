@@ -149,11 +149,9 @@
         500
       ],
       "claims": {
-        "draws": true,
-        "animates": {
-          "min_changed_pct": 0.5
-        }
-      }
+        "draws": true
+      },
+      "animates_off_because": "Third-person controller, no script, no animator. Climbing needs input the harness does not give. Checked 2026-09-16."
     },
     {
       "name": "LightCookies",
@@ -225,11 +223,9 @@
         500
       ],
       "claims": {
-        "draws": true,
-        "animates": {
-          "min_changed_pct": 0.5
-        }
-      }
+        "draws": true
+      },
+      "animates_off_because": "Top-down 2D with one script whose MovePlayer runs on input and mode changes, never per frame. A town/battle demo with nobody playing it is still. Checked 2026-09-16."
     },
     {
       "name": "PreRenderedBackground-Live",
@@ -297,11 +293,9 @@
         500
       ],
       "claims": {
-        "draws": true,
-        "animates": {
-          "min_changed_pct": 0.5
-        }
-      }
+        "draws": true
+      },
+      "animates_off_because": "An AUDIO demo. Its one script plays a clap on input and moves nothing; a still picture is the correct result. Worth its own claim on sound one day, not on pixels. Checked 2026-09-16."
     },
     {
       "name": "Ropes",
@@ -329,11 +323,9 @@
         500
       ],
       "claims": {
-        "draws": true,
-        "animates": {
-          "min_changed_pct": 0.5
-        }
-      }
+        "draws": true
+      },
+      "animates_off_because": "A third-person controller and nothing else that moves: no script, no animator. The player stands where it lands and the camera holds. Its earlier \"91% moved\" was the boot-time drop caught mid-fall on a loaded machine, which is what led to the fixed-timestep capture. Checked 2026-09-16."
     },
     {
       "name": "SpritePivot",
