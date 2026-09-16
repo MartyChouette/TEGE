@@ -23,7 +23,9 @@
     "",
     "PaletteCycling is why this exists. On 2026-09-16 its exported build was byte-identical across seven captures spanning 6.5 seconds while authoring two palettes cycling at 6 entries/sec. Root cause: the player calls World::Update(0.0f), so nothing ever deposited a real dt in the palette clock. Fixed in Player/src/main.cpp; this project now moves 8.65%.",
     "",
-    "FOUR capture points, not two. Two was the first design and it was not sound: ShadowCheck reported 60.29% moved and then 0.00% on two identical runs of the same binary. Captures are taken by frame ORDINAL while scenes move on a clock, so two samples can land on the same phase of a loop, or both land after a physics scene has come to rest. animates now passes if ANY pair differs."
+    "FOUR capture points, not two. Two was the first design and it was not sound: ShadowCheck reported 60.29% moved and then 0.00% on two identical runs of the same binary. Captures are taken by frame ORDINAL while scenes move on a clock, so two samples can land on the same phase of a loop, or both land after a physics scene has come to rest. animates now passes if ANY pair differs.",
+    "",
+    "\"ci\": true marks the projects the CI gate runs (--ci). Three, not 26, because CI renders on lavapipe in software and a gate that takes an hour is a gate nobody waits for. Each one is there for a stated reason on its entry; the full sweep stays a thing a person runs locally."
   ],
   "projects": [
     {
@@ -192,7 +194,9 @@
         "animates": {
           "min_changed_pct": 0.5
         }
-      }
+      },
+      "ci": true,
+      "ci_because": "REGRESSION GUARD for 424a4551: palette cycling had never run in an exported game and this project is the only thing that proves it does. It failed `animates` at 0.00% before that fix and passes at 19% after."
     },
     {
       "name": "Playground",
@@ -352,7 +356,9 @@
         "animates": {
           "min_changed_pct": 0.5
         }
-      }
+      },
+      "ci": true,
+      "ci_because": "The 2D path: sprites, the batched sprite draw call, and the 2D water overlay. Its `renders` claim caught the sprite batch counting no draws at all (2cd5991b)."
     },
     {
       "name": "WaterFX",
@@ -400,7 +406,9 @@
         "animates": {
           "min_changed_pct": 0.5
         }
-      }
+      },
+      "ci": true,
+      "ci_because": "The 3D path: meshes, a water volume with shore foam and a procedural sky, and something that visibly moves."
     },
     {
       "name": "WindParticles",

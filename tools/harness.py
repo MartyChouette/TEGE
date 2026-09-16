@@ -284,6 +284,8 @@ def main():
     ap.add_argument('--only', action='append', help='run just this project (repeatable)')
     ap.add_argument('--list', action='store_true', help='show what is wired and exit')
     ap.add_argument('--outdir', help='keep captures here instead of a temp dir')
+    ap.add_argument('--ci', action='store_true',
+                    help='run only the projects marked "ci" in the manifest')
     ap.add_argument('--web', action='store_true',
                     help='also export and capture each project in a browser, and compare')
     ap.add_argument('--skip-export', action='store_true',
@@ -294,13 +296,12 @@ def main():
         manifest = json.load(f)
     all_projects = manifest['projects']
 
-    if args.list:
-        print('%d project(s) wired:' % len(all_projects))
-        for p in all_projects:
-            print('  %-22s %-52s frames=%s' % (p['name'], p['project'], p.get('frames')))
-        return 0
-
     projects = all_projects
+    if args.ci:
+        # A gate has to finish. The full sweep is 26 projects at 500 simulation
+        # frames each, and CI renders on lavapipe in software, so gating on all
+        # of it would trade a useful check for a slow one nobody waits for.
+        projects = [p for p in projects if p.get('ci')]
     if args.only:
         wanted = set(args.only)
         projects = [p for p in all_projects if p['name'] in wanted]
@@ -308,6 +309,16 @@ def main():
         if missing:
             print('not in the manifest: %s' % ', '.join(sorted(missing)))
             return 2
+
+    # After the filters, so --list --ci shows what the GATE runs rather than
+    # everything. A flag that changes the run but not the listing is a flag that
+    # lies about what it does.
+    if args.list:
+        print('%d project(s):' % len(projects))
+        for p in projects:
+            print('  %-22s %-52s frames=%s%s' % (p['name'], p['project'], p.get('frames'),
+                                                 '  [ci]' if p.get('ci') else ''))
+        return 0
 
     outdir = args.outdir or tempfile.mkdtemp(prefix='enjin_harness_')
     os.makedirs(outdir, exist_ok=True)

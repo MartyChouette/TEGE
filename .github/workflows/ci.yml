@@ -169,6 +169,45 @@ jobs:
           }
           python Tests/GoldenScene/check_golden.py golden_out/smoke
 
+      - name: Capture harness (exported games, on lavapipe)
+        shell: pwsh
+        timeout-minutes: 25
+        env:
+          VK_DRIVER_FILES: ${{ github.workspace }}\mesa\x64\lvp_icd.x86_64.json
+          VK_ICD_FILENAMES: ${{ github.workspace }}\mesa\x64\lvp_icd.x86_64.json
+        # Everything above this gates the EDITOR. This gates what a player runs:
+        # each project is exported through the real pipeline and the exported
+        # game is booted and photographed, because that path had no coverage at
+        # all until EnjinPlayer grew --golden.
+        #
+        # It catches the failure class nothing else here can see -- a feature
+        # written on both render paths and switched on in neither compiles clean,
+        # passes ctest, and compiles through Dawn without complaint. Palette
+        # cycling had never run in an exported game and every check in this file
+        # was green throughout.
+        #
+        # Three projects, not the 26 in the manifest: CI renders in software and
+        # a gate that takes an hour is a gate nobody waits for. Each is marked in
+        # the manifest with the reason it earns a slot. The full sweep is a thing
+        # a person runs locally.
+        #
+        # The window is hidden during a capture, so this needs no desktop
+        # session, and the simulation advances by a fixed step, so a frame number
+        # is the same moment of the game however slow lavapipe is that day --
+        # without that the whole thing measures runner load.
+        run: |
+          python tools/harness.py --ci --outdir "${{ github.workspace }}\harness_out"
+          if ($LASTEXITCODE -ne 0) { throw "capture harness reported a failing claim" }
+
+      - name: Upload harness captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: harness-captures
+          path: harness_out/*.png
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Sprite draw order (2D sorting reaches the frame)
         shell: pwsh
         timeout-minutes: 10
