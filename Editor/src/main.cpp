@@ -471,6 +471,20 @@ int main(int argc, char* argv[]) {
     // into a temp project through the real copy path and check the RESULT, not
     // the template folder. Exits non-zero if any template would produce a
     // broken project, which is the shape CI wants.
+    // --new-from-template <id> <outDir>: HEADLESS. Make a project from a shipped
+    // template and exit. Pass no id to list what there is.
+    for (int i = 1; i < argc; i++) {
+        if (argv[i] && std::string(argv[i]) == "--new-from-template") {
+            const std::string id = (i + 1 < argc && argv[i + 1]) ? argv[i + 1] : std::string();
+            const std::string out = (i + 2 < argc && argv[i + 2]) ? argv[i + 2] : std::string();
+            if (id.empty() || out.empty()) {
+                std::cout << "usage: EnjinEditor --new-from-template <templateId> <outDir>\n";
+                return 2;
+            }
+            return Enjin::Editor::EditorLayer::CreateProjectFromTemplate(id, out);
+        }
+    }
+
     for (int i = 1; i < argc; i++) {
         if (argv[i] && std::string(argv[i]) == "--validate-templates") {
             const std::string only =

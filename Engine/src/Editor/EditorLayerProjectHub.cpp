@@ -2926,6 +2926,83 @@ void CheckApiDrift(const std::filesystem::path& projRoot,
 
 } // namespace
 
+int EditorLayer::CreateProjectFromTemplate(const std::string& templateId,
+                                           const std::string& outDir) {
+    namespace fs = std::filesystem;
+
+    // Making a project from a template was reachable ONLY through the hub UI.
+    // Nothing could do it from a script, from CI, or from a terminal, which
+    // makes "start from a template" a thing you must have a mouse and a running
+    // editor to do. The capture harness needed it to cover the sixteen shipped
+    // templates -- the validator instantiates them into a temp directory and
+    // then deletes it -- but the gap is the engine's, not the harness's.
+    LoadBuiltinTemplates();
+    if (s_BuiltinTemplates.empty()) {
+        std::printf("no built-in templates found\n");
+        return 1;
+    }
+
+    const HubTemplateInfo* tmpl = nullptr;
+    for (const auto& t : s_BuiltinTemplates) {
+        if (t.id == templateId) { tmpl = &t; break; }
+    }
+    if (!tmpl) {
+        std::printf("no template with id '%s'. Known ids:\n", templateId.c_str());
+        for (const auto& t : s_BuiltinTemplates) std::printf("  %s\n", t.id.c_str());
+        return 1;
+    }
+
+    std::error_code ec;
+    const fs::path proj = fs::path(outDir);
+    fs::create_directories(proj / "scenes", ec);
+
+    // Two kinds of template, the same way the hub sees them: a whole project
+    // under Examples/, or a scene folder under builtin_templates/.
+    if (!tmpl->examplePath.empty()) {
+        const std::string made = CopyExampleProject(
+            tmpl->examplePath, proj.parent_path().string(), proj.filename().string());
+        if (made.empty()) {
+            std::printf("[new-from-template] example copy produced no .enjinproject\n");
+            return 1;
+        }
+        std::printf("[new-from-template] %s -> %s\n", templateId.c_str(), made.c_str());
+        return 0;
+    }
+
+    if (!CopyBuiltinTemplate(templateId, proj, "scenes/Main.enjin")) {
+        std::printf("[new-from-template] template copy failed\n");
+        return 1;
+    }
+
+    // The scripting API headers ship with a new project. Without them a scene
+    // that includes scripts/enjin_api/*.as fails to compile, and it reads as a
+    // broken template rather than an incomplete creation step.
+    const fs::path apiDir = Scripting::ScriptEngine::FindApiDirectory("");
+    if (!apiDir.empty()) {
+        fs::create_directories(proj / "scripts", ec);
+        fs::copy(apiDir, proj / "scripts" / "enjin_api",
+                 fs::copy_options::recursive | fs::copy_options::skip_existing, ec);
+        ec.clear();
+    }
+
+    const fs::path manifest = proj / (templateId + ".enjinproject");
+    std::ofstream pf(manifest);
+    if (!pf.is_open()) {
+        std::printf("[new-from-template] could not write %s\n", manifest.string().c_str());
+        return 1;
+    }
+    // "version" is deliberately absent rather than a number: the loader demands
+    // the STRING "1.0" and rejects the whole scene on a bare number, so writing
+    // nothing is safer than writing it wrong. Same shape the validator emits.
+    pf << "{\"projectName\":\"" << templateId << "\",\"projectMode\":2,\"scenes\":["
+       << "{\"buildIndex\":0,\"isStartScene\":true,\"name\":\"Main\","
+       << "\"path\":\"scenes/Main.enjin\"}]}";
+    pf.close();
+
+    std::printf("[new-from-template] %s -> %s\n", templateId.c_str(), manifest.string().c_str());
+    return 0;
+}
+
 int EditorLayer::ValidateTemplatesDeep(const std::string& onlyId) {
     namespace fs = std::filesystem;
     LoadBuiltinTemplates();

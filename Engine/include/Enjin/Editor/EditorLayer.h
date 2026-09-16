@@ -252,6 +252,14 @@ public:
     // Empty id means all of them. Returns 0 when every template passes.
     static int ValidateTemplatesDeep(const std::string& onlyId = std::string());
 
+    // Create a project from a shipped template, headless. Returns 0 on success.
+    //
+    // This was reachable only through the project hub's UI, so starting from a
+    // template required a mouse and a running editor -- no script, no CI and no
+    // terminal could do it. Driven by EnjinEditor --new-from-template.
+    static int CreateProjectFromTemplate(const std::string& templateId,
+                                         const std::string& outDir);
+
     static inline std::string s_GoldenCapturePath;
     // --bake-plate <name>: bake a background plate from the launch scene, then
     // exit. Exists so the bake has a path that is not a mouse click.

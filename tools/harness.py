@@ -102,7 +102,9 @@ def export_web(project, outdir):
     web_dir = os.path.join(outdir, '_web', project['name'])
     if not os.path.isfile(EDITOR):
         return False, 'no EnjinEditor.exe', web_dir
-    src = os.path.join(ROOT, project['project'])
+    src, err = project_source(project, outdir)
+    if err:
+        return False, err, web_dir
     shutil.rmtree(web_dir, ignore_errors=True)
     os.makedirs(web_dir, exist_ok=True)
     try:
@@ -139,14 +141,46 @@ def run_web(project, web_dir, outdir):
     return True, 'captured', ['%s.f%04d' % (base, f) for f in frames]
 
 
+def project_source(project, outdir):
+    """The .enjinproject this entry names. Returns (path, error).
+
+    An entry either points at a project in the tree ("project") or names a
+    shipped TEMPLATE ("template"), which has to be instantiated first. A template
+    is the thing a person starts from, so it is worth knowing that the sixteen of
+    them still boot and draw -- and the only way to make one outside the hub UI
+    is EnjinEditor --new-from-template, which exists for this.
+    """
+    if project.get('template'):
+        stage = os.path.join(outdir, '_tmpl', project['name'])
+        shutil.rmtree(stage, ignore_errors=True)
+        os.makedirs(stage, exist_ok=True)
+        try:
+            proc = subprocess.run([EDITOR, '--new-from-template', project['template'], stage],
+                                  capture_output=True, text=True, timeout=180)
+        except subprocess.TimeoutExpired:
+            return None, 'template instantiation timed out'
+        if proc.returncode != 0:
+            tail = (proc.stdout or '').strip().splitlines()[-1:] or ['no output']
+            return None, 'template instantiation failed: %s' % tail[0]
+        found = [f for f in os.listdir(stage) if f.endswith('.enjinproject')]
+        if not found:
+            return None, 'template produced no .enjinproject'
+        return os.path.join(stage, found[0]), None
+
+    src = os.path.join(ROOT, project['project'])
+    if not os.path.isfile(src):
+        return None, 'no such project: %s' % project['project']
+    return src, None
+
+
 def export(project, outdir):
     """Run the real export pipeline. Returns (ok, note, game_dir)."""
     game_dir = os.path.join(outdir, '_export', project['name'])
     if not os.path.isfile(EDITOR):
         return False, 'no EnjinEditor.exe (build it first)', game_dir
-    src = os.path.join(ROOT, project['project'])
-    if not os.path.isfile(src):
-        return False, 'no such project: %s' % project['project'], game_dir
+    src, err = project_source(project, outdir)
+    if err:
+        return False, err, game_dir
 
     shutil.rmtree(game_dir, ignore_errors=True)
     os.makedirs(game_dir, exist_ok=True)
@@ -328,7 +362,8 @@ def main():
     if args.list:
         print('%d project(s):' % len(projects))
         for p in projects:
-            print('  %-22s %-52s frames=%s%s' % (p['name'], p['project'], p.get('frames'),
+            source = p.get('project') or ('template:' + p.get('template', '?'))
+            print('  %-22s %-52s frames=%s%s' % (p['name'], source, p.get('frames'),
                                                  '  [ci]' if p.get('ci') else ''))
         return 0
 
