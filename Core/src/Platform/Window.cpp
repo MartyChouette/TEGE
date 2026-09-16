@@ -23,6 +23,7 @@ public:
     GLFWWindow(const WindowDesc& desc) : m_Desc(desc) {
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API); // We'll use Vulkan
         glfwWindowHint(GLFW_RESIZABLE, desc.resizable ? GLFW_TRUE : GLFW_FALSE);
+        glfwWindowHint(GLFW_VISIBLE, desc.visible ? GLFW_TRUE : GLFW_FALSE);
 
         // Add error callback before creation
         glfwSetErrorCallback([](int error, const char* description) {

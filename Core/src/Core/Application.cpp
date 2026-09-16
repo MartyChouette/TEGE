@@ -106,6 +106,11 @@ void Application::InitializeEngine() {
         if (f) { fclose(f); windowDesc.iconPath = iconPaths[i]; break; }
     }
     windowDesc.fullscreen = false;
+    // A measured run does not need to be seen. Both capture modes hide the
+    // window: a sweep of the examples otherwise opens one per project and owns
+    // the screen for minutes, which makes it a thing you cannot run while
+    // working, and a machine with no desktop session cannot run it at all.
+    windowDesc.visible = !(s_HeadlessFrameLimit > 0 || s_FixedFrameDelta > 0.0f);
     // Parentheses prevent potential macro substitution as well.
     m_Window = (CreateWindow)(windowDesc);
     

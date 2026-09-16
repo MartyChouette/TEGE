@@ -13,6 +13,18 @@ struct WindowDesc {
     const char* iconPath = nullptr; // Path to PNG icon file (nullptr = no icon)
     bool resizable = true;
     bool fullscreen = false;
+    // Create the window without showing it. The swapchain, the render loop and
+    // presentation all work normally; nobody sees the frames.
+    //
+    // For capture runs. A sweep of the example projects opens and closes a
+    // window per project and takes over the screen for minutes, which makes it
+    // something you cannot run while working, and it cannot run at all on a
+    // machine with no desktop session. Hidden rather than a headless Vulkan
+    // surface because it needs one GLFW hint and keeps the presentation path
+    // identical to the one a player takes -- a separate offscreen path would be
+    // a second render path to keep honest, which is the problem this harness
+    // exists to find.
+    bool visible = true;
 };
 
 class ENJIN_API Window {
