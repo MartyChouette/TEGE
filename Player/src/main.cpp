@@ -1083,6 +1083,27 @@ public:
         if (!m_Initialized) return;
         m_FrameDeltaTime = deltaTime;  // Render() needs it for the compute pre-pass
 
+        // Palette cycling clock. The player drives the frame delta itself and
+        // calls World::Update(0.0f), so RenderSystem::Update sees a zero dt --
+        // and TickPaletteTime refuses a zero deposit on purpose, because the web
+        // runtime makes that same zero call and claiming the frame there would
+        // drop the real dt that follows. The consequence on desktop was that
+        // NOTHING ever deposited a real dt in an exported game: the palette
+        // table was built once and held that frame forever.
+        //
+        // Deposit-only and self-guarded against a second deposit in the same
+        // frame, which is why the editor can tick it too without doubling the
+        // speed. Same line, same reason, as EditorLayer::Update.
+        //
+        // Found 2026-09-16 by the capture harness: Examples/PaletteCycling
+        // authors two palettes cycling at 6 entries/sec, and seven captures
+        // spanning 6.5 seconds of an exported build were byte-identical. It
+        // rendered its palettes perfectly and simply never moved, which is
+        // indistinguishable from the feature being switched off.
+        if (m_RenderSystem) {
+            m_RenderSystem->TickPaletteTime(deltaTime);
+        }
+
         // Apply deferred fullscreen change (safe between frames)
         if (m_FullscreenChangeRequested) {
             m_FullscreenChangeRequested = false;

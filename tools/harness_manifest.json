@@ -1,31 +1,378 @@
 {
   "_comment": [
-    "What tools/harness.py boots and what each capture must prove.",
+    "What tools/harness.py exports, boots and checks, and what each capture must prove.",
     "",
-    "A project appears here only once it has been EXPORTED to `dist`, because the",
-    "desktop runtime under test is the exported game -- the render path a player",
-    "actually takes. Exporting the 31 Examples and 16 templates is the next piece",
-    "of this work; until then this file lists what is genuinely wired, so the",
-    "report cannot imply coverage that does not exist.",
+    "Every project here is exported through the REAL pipeline and the exported game",
+    "is what gets booted, because that is the render path which had no capture",
+    "coverage at all. Testing the project folder instead would measure a path no",
+    "player runs.",
     "",
-    "frames: which frame ordinals to photograph. Two, far apart, because one",
-    "picture cannot tell a still scene from a stopped one. The first is late",
-    "enough that boot defaults are no longer on screen.",
+    "frames: which frame ordinals to photograph. Two, far apart, because one picture",
+    "cannot tell a still scene from a stopped one. The first is late enough that boot",
+    "defaults are no longer on screen.",
     "",
     "claims.draws: the frame is not one flat colour.",
     "claims.animates.min_changed_pct: how much of the frame must move between the",
-    "first and last capture. Raise it for a scene that should be visibly busy;",
-    "lower it for one where only a small region moves."
+    "first and last capture. This is the claim that catches a feature which renders",
+    "a perfectly valid frame and was never switched on.",
+    "",
+    "animates starts ON for every project. A project that legitimately does not move",
+    "gets it turned OFF here WITH A REASON on the entry, never silently: a demo that",
+    "is meant to be still and a demo whose animation broke look identical from the",
+    "outside, and the difference has to be written down by a person who checked.",
+    "",
+    "PaletteCycling is why this exists. On 2026-09-16 its exported build was byte-identical across seven captures spanning 6.5 seconds while authoring two palettes cycling at 6 entries/sec. Root cause: the player calls World::Update(0.0f), so nothing ever deposited a real dt in the palette clock. Fixed in Player/src/main.cpp; this project now moves 8.65%."
   ],
   "projects": [
     {
-      "name": "playground",
-      "dist": "dist/Playground-PC",
-      "frames": [90, 400],
-      "timeout": 120,
+      "name": "BiscuitBird",
+      "project": "Examples/BiscuitBird/BiscuitBird.enjinproject",
+      "frames": [
+        90,
+        400
+      ],
       "claims": {
         "draws": true,
-        "animates": { "min_changed_pct": 0.5 }
+        "animates": {
+          "min_changed_pct": 0.5
+        }
+      }
+    },
+    {
+      "name": "Buoyancy",
+      "project": "Examples/Buoyancy/Buoyancy.enjinproject",
+      "frames": [
+        90,
+        400
+      ],
+      "claims": {
+        "draws": true,
+        "animates": {
+          "min_changed_pct": 0.5
+        }
+      }
+    },
+    {
+      "name": "FixedTimestep",
+      "project": "Examples/FixedTimestep/FixedTimestep.enjinproject",
+      "frames": [
+        90,
+        400
+      ],
+      "claims": {
+        "draws": true,
+        "animates": {
+          "min_changed_pct": 0.5
+        }
+      }
+    },
+    {
+      "name": "FluidSim",
+      "project": "Examples/FluidSim/FluidSim.enjinproject",
+      "frames": [
+        90,
+        400
+      ],
+      "claims": {
+        "draws": true,
+        "animates": {
+          "min_changed_pct": 0.5
+        }
+      }
+    },
+    {
+      "name": "FoliageDemo",
+      "project": "Examples/FoliageDemo/FoliageDemo.enjinproject",
+      "frames": [
+        90,
+        400
+      ],
+      "claims": {
+        "draws": true,
+        "animates": {
+          "min_changed_pct": 0.5
+        }
+      }
+    },
+    {
+      "name": "GeneratedGeometry",
+      "project": "Examples/GeneratedGeometry/GeneratedGeometry.enjinproject",
+      "frames": [
+        90,
+        400
+      ],
+      "claims": {
+        "draws": true,
+        "animates": {
+          "min_changed_pct": 0.5
+        }
+      }
+    },
+    {
+      "name": "HandIK",
+      "project": "Examples/HandIK/HandIK.enjinproject",
+      "frames": [
+        90,
+        400
+      ],
+      "claims": {
+        "draws": true,
+        "animates": {
+          "min_changed_pct": 0.5
+        }
+      },
+      "note": "UNRESOLVED, not a known-still demo. The scene carries an animator, a skeleton and a handIK component, so something is meant to move; with no input driving the first-person camera it may be legitimately still, or the animator may not be running. Left ON so the harness stays red until somebody settles it -- turning it off would bury the question."
+    },
+    {
+      "name": "Ladders",
+      "project": "Examples/Ladders/Ladders.enjinproject",
+      "frames": [
+        90,
+        400
+      ],
+      "claims": {
+        "draws": true,
+        "animates": {
+          "min_changed_pct": 0.5
+        }
+      }
+    },
+    {
+      "name": "LightCookies",
+      "project": "Examples/LightCookies/LightCookies.enjinproject",
+      "frames": [
+        90,
+        400
+      ],
+      "claims": {
+        "draws": true
+      },
+      "animates_off_because": "A fixed gobo on a fixed light. Scene has no script and no animator: nothing in it can move. Checked 2026-09-16."
+    },
+    {
+      "name": "Lightmap",
+      "project": "Examples/Lightmap/Lightmap.enjinproject",
+      "frames": [
+        90,
+        400
+      ],
+      "claims": {
+        "draws": true
+      },
+      "animates_off_because": "A baked-lighting room. Baked is the point, and the scene has no script and no animator. Checked 2026-09-16."
+    },
+    {
+      "name": "PaletteCycling",
+      "project": "Examples/PaletteCycling/PaletteCycling.enjinproject",
+      "frames": [
+        90,
+        400
+      ],
+      "claims": {
+        "draws": true,
+        "animates": {
+          "min_changed_pct": 0.5
+        }
+      }
+    },
+    {
+      "name": "Playground",
+      "project": "Examples/Playground/Playground.enjinproject",
+      "frames": [
+        90,
+        400
+      ],
+      "claims": {
+        "draws": true,
+        "animates": {
+          "min_changed_pct": 0.5
+        }
+      }
+    },
+    {
+      "name": "Potions",
+      "project": "Examples/Potions/Potions.enjinproject",
+      "frames": [
+        90,
+        400
+      ],
+      "claims": {
+        "draws": true,
+        "animates": {
+          "min_changed_pct": 0.5
+        }
+      }
+    },
+    {
+      "name": "PreRenderedBackground-Live",
+      "project": "Examples/PreRenderedBackground/Live.enjinproject",
+      "frames": [
+        90,
+        400
+      ],
+      "claims": {
+        "draws": true
+      },
+      "animates_off_because": "The live-geometry half of the same comparison. No script, no animator. Checked 2026-09-16."
+    },
+    {
+      "name": "PreRenderedBackground-Plate",
+      "project": "Examples/PreRenderedBackground/Plate.enjinproject",
+      "frames": [
+        90,
+        400
+      ],
+      "claims": {
+        "draws": true
+      },
+      "animates_off_because": "The plate half of the same comparison. No script, no animator. Checked 2026-09-16."
+    },
+    {
+      "name": "PreRenderedBackground",
+      "project": "Examples/PreRenderedBackground/PreRenderedBackground.enjinproject",
+      "frames": [
+        90,
+        400
+      ],
+      "claims": {
+        "draws": true
+      },
+      "animates_off_because": "A pre-rendered plate with a depth plate behind it. Still by construction; no script, no animator. Checked 2026-09-16."
+    },
+    {
+      "name": "ReflectionProbes",
+      "project": "Examples/ReflectionProbes/ReflectionProbes.enjinproject",
+      "frames": [
+        90,
+        400
+      ],
+      "claims": {
+        "draws": true
+      },
+      "animates_off_because": "Two static probe-placement scenes, no script and no animator. Checked 2026-09-16."
+    },
+    {
+      "name": "RoomAcoustics",
+      "project": "Examples/RoomAcoustics/RoomAcoustics.enjinproject",
+      "frames": [
+        90,
+        400
+      ],
+      "claims": {
+        "draws": true,
+        "animates": {
+          "min_changed_pct": 0.5
+        }
+      }
+    },
+    {
+      "name": "Ropes",
+      "project": "Examples/Ropes/Ropes.enjinproject",
+      "frames": [
+        90,
+        400
+      ],
+      "claims": {
+        "draws": true,
+        "animates": {
+          "min_changed_pct": 0.5
+        }
+      }
+    },
+    {
+      "name": "ShadowCheck",
+      "project": "Examples/ShadowCheck/ShadowCheck.enjinproject",
+      "frames": [
+        90,
+        400
+      ],
+      "claims": {
+        "draws": true,
+        "animates": {
+          "min_changed_pct": 0.5
+        }
+      }
+    },
+    {
+      "name": "SpritePivot",
+      "project": "Examples/SpritePivot/SpritePivot.enjinproject",
+      "frames": [
+        90,
+        400
+      ],
+      "claims": {
+        "draws": true
+      },
+      "animates_off_because": "Three sprites at one rotation demonstrating pivot points. Deliberately still. Checked 2026-09-16."
+    },
+    {
+      "name": "Water2D",
+      "project": "Examples/Water2D/Water2D.enjinproject",
+      "frames": [
+        90,
+        400
+      ],
+      "claims": {
+        "draws": true,
+        "animates": {
+          "min_changed_pct": 0.5
+        }
+      }
+    },
+    {
+      "name": "WaterFX",
+      "project": "Examples/WaterFX/WaterFX.enjinproject",
+      "frames": [
+        90,
+        400
+      ],
+      "claims": {
+        "draws": true,
+        "animates": {
+          "min_changed_pct": 0.5
+        }
+      }
+    },
+    {
+      "name": "WaterShowcase",
+      "project": "Examples/WaterShowcase/WaterShowcase.enjinproject",
+      "frames": [
+        90,
+        400
+      ],
+      "claims": {
+        "draws": true,
+        "animates": {
+          "min_changed_pct": 0.5
+        }
+      }
+    },
+    {
+      "name": "WaterVolume",
+      "project": "Examples/WaterVolume/WaterVolume.enjinproject",
+      "frames": [
+        90,
+        400
+      ],
+      "claims": {
+        "draws": true,
+        "animates": {
+          "min_changed_pct": 0.5
+        }
+      }
+    },
+    {
+      "name": "WindParticles",
+      "project": "Examples/WindParticles/WindParticles.enjinproject",
+      "frames": [
+        90,
+        400
+      ],
+      "claims": {
+        "draws": true,
+        "animates": {
+          "min_changed_pct": 0.5
+        }
       }
     }
   ]
