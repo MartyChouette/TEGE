@@ -15,7 +15,10 @@
 [![Vulkan 1.3](https://img.shields.io/badge/Vulkan-1.3-AC162C.svg?logo=vulkan&logoColor=white)](https://www.vulkan.org/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20Web-lightgrey.svg)]()
 [![CI](https://github.com/MartyChouette/TEGE/actions/workflows/ci.yml/badge.svg)](https://github.com/MartyChouette/TEGE/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/Tests-2%2C000%2B_passing-brightgreen.svg)](https://github.com/MartyChouette/TEGE/actions/workflows/ci.yml)
+<!-- Counted 2026-09-16: `ctest -N` gives 243 targets, `ENJIN_TEST(` occurrences give
+     3,348 cases. The badge rounds DOWN so it stays true as tests are added; recount
+     before changing it rather than scaling the old number. -->
+[![Tests](https://img.shields.io/badge/Tests-3%2C300%2B_passing-brightgreen.svg)](https://github.com/MartyChouette/TEGE/actions/workflows/ci.yml)
 
 <br>
 

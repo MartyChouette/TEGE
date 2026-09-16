@@ -3805,7 +3805,12 @@ Log output appears in the editor's Console panel and in the terminal.
 
 Enjin includes a full Vulkan ray tracing pipeline for hybrid raster+RT rendering. The system detects RT hardware support at startup and gracefully falls back to raster-only rendering on unsupported GPUs.
 
-> **Note:** The RT pipeline code is complete but currently uses placeholder SPIR-V shader stubs. Once the RT shaders are compiled and embedded, the system will activate automatically.
+> **The shaders ship.** This note used to say the pipeline ran on placeholder
+> stubs and would activate "once the RT shaders are compiled and embedded".
+> They are: `RTShaderData.h` carries around 660 KB of compiled SPIR-V, and
+> `tools/rt_shader_freshness.py` checks that header against the `rt_*` sources
+> it was generated from. RT activates on its own on capable hardware, and only
+> for `Scene3D` -- 2D and 2.5D scenes skip it entirely. Verified 2026-09-16.
 
 ### Requirements
 

@@ -200,7 +200,9 @@ enjin/
 - Material SSBO in RT hit shaders (binding 9) for full PBR material access during ray traversal
 - RTCompositor enable flags: bits 0-5 (shadows/reflections/AO/GI/translucency/caustics)
 - RT descriptor set (27 bindings: 0-13 base, 14=translucency, 15=caustics, 16=NEE lights, 17=SDF, 18=simplified materials, 19-20=ReSTIR reservoirs, 21-23=screen-space radiance cache, 24-26=surfel radiance cache; separate from main pipeline set 0)
-- Graceful fallback: placeholder SPIR-V stubs detected and skipped, raster path unaffected
+- Graceful fallback: a MISSING or placeholder shader is detected and skipped, raster path
+  unaffected. This is the safety net, not the normal state -- the real SPIR-V ships in
+  `RTShaderData.h` and `tools/rt_shader_freshness.py` checks it against its sources
 - Only active for Scene3D render mode (2D/2.5D scenes skip RT entirely)
 - Editor panel with per-effect toggles, config sliders, BLAS/instance stats
 
