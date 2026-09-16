@@ -15,6 +15,7 @@ scene and false of a broken one, and that survive somebody legitimately changing
 how the scene looks.
 
     draws      the frame is not one flat colour
+    renders    the renderer issued draw calls, not just a backdrop
     animates   two frames captured far apart are not the same frame
 
 Pure stdlib on purpose -- no PIL, no numpy -- so it runs wherever the captures
@@ -224,16 +225,41 @@ def animates(path_a, path_b, tol=8, min_changed_pct=0.5):
         pct, min_changed_pct)
 
 
+def renders(sidecar_path, min_draws=1):
+    """Did the renderer issue any draw calls, or is the frame only a backdrop?
+
+    This is the claim `draws` cannot make. A scene whose meshes all failed to
+    draw in front of a procedural sky produces a frame with plenty of distinct
+    colours and no dominant one, so `draws` passes it -- measured, not feared.
+
+    The evidence is the DRAW CALL count. `entityRenderSlots` is reported next to
+    it for context but is deliberately not tested: it is a high-water mark
+    indexed by entity id, not a count of things that drew, so it stays non-zero
+    for a scene that renders nothing. The web build's getEntityCount is the same
+    number under a name that suggests otherwise.
+    """
+    import json
+    with open(sidecar_path, encoding='utf-8') as f:
+        data = json.load(f)
+    draws_ = data.get('drawCalls', 0)
+    ok = draws_ >= min_draws
+    return ok, '%d draw calls (need %d), %d entity slots, world holds %d' % (
+        draws_, min_draws, data.get('entityRenderSlots', 0), data.get('worldEntities', 0))
+
+
 def main():
     if len(sys.argv) < 3:
         print(__doc__)
         print('usage: capture_claims.py draws FRAME.ppm')
+        print('       capture_claims.py renders FRAME.json')
         print('       capture_claims.py animates A.ppm B.ppm [min_changed_pct]')
         return 2
     claim = sys.argv[1]
     try:
         if claim == 'draws':
             ok, detail = draws(sys.argv[2])
+        elif claim == 'renders':
+            ok, detail = renders(sys.argv[2])
         elif claim == 'animates':
             pct = float(sys.argv[4]) if len(sys.argv) > 4 else 0.5
             ok, detail = animates(sys.argv[2], sys.argv[3], min_changed_pct=pct)

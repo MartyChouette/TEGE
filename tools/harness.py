@@ -103,6 +103,14 @@ def check(project, bases):
                 ok, detail = False, str(e)
             results.append(('draws@%s' % b.rsplit('.', 1)[-1], ok, detail))
 
+    if claims.get('renders', True):
+        for b in bases:
+            try:
+                ok, detail = capture_claims.renders(b + '.json')
+            except (OSError, ValueError) as e:
+                ok, detail = False, str(e)
+            results.append(('renders@%s' % b.rsplit('.', 1)[-1], ok, detail))
+
     anim = claims.get('animates')
     if anim is not None:
         if len(bases) < 2:

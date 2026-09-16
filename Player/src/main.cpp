@@ -1842,6 +1842,43 @@ public:
         }
     }
 
+    // Numbers to go beside the picture, as <base>.json.
+    //
+    // Pixels alone cannot say WHY a frame is wrong. A scene whose meshes all
+    // failed to draw still passes a "not blank" check against a procedural sky,
+    // measured; an entity count of zero next to it settles that in one line.
+    //
+    // These are the same two counters the WEB build already exports through
+    // getEntityCount and getDrawCallCount, read from the same RenderSystem
+    // accessors, so a desktop run and a browser run produce comparable numbers.
+    // That comparison is the parity check the recent bugs all failed, and it
+    // only works if both sides count the same thing the same way.
+    //
+    // Hand-written JSON rather than a library: four numbers, and the player has
+    // no JSON writer linked for its own use.
+    void WriteGoldenSidecar(const std::string& base, Enjin::u32 frame,
+                            Enjin::u32 w, Enjin::u32 h) {
+        std::ofstream out(base + ".json");
+        if (!out.is_open()) return;
+        out << "{\n"
+            << "  \"frame\": " << frame << ",\n"
+            << "  \"width\": " << w << ",\n"
+            << "  \"height\": " << h << ",\n"
+            << "  \"drawCalls\": " << (m_RenderSystem ? m_RenderSystem->GetDrawCallCount() : 0u)
+            << ",\n"
+            // NOT a count of entities that drew. m_EntityRenderData is indexed by
+            // entity id and resized to the highest id seen, so this is a
+            // high-water mark and can exceed the number of live entities -- it
+            // read 6 against a 5-entity scene the first time it was printed.
+            // Recorded anyway because it is exactly what the web build exports
+            // as getEntityCount, so the two runtimes stay comparable; drawCalls
+            // above is the number that says anything was actually drawn.
+            << "  \"entityRenderSlots\": "
+            << (m_RenderSystem ? m_RenderSystem->GetEntityRenderDataSize() : Enjin::usize(0)) << ",\n"
+            << "  \"worldEntities\": " << (m_World ? m_World->GetEntityCount() : Enjin::usize(0)) << "\n"
+            << "}\n";
+    }
+
     // One frame of --golden. Called after the frame was presented, so the image
     // read here is the one that went to the screen: post-process, UI and all.
     void CaptureGoldenFrame(Enjin::u32 frameOrdinal) {
@@ -1859,6 +1896,8 @@ public:
             // as a passing frame reports green for a game that drew nothing.
             ENJIN_LOG_ERROR(Player, "--golden: capture failed at frame %u", frameOrdinal);
             s_GoldenFailed = true;
+        } else {
+            WriteGoldenSidecar(s_GoldenBase + suffix, frameOrdinal, w, h);
         }
 
         if (frameOrdinal >= *std::max_element(s_GoldenFrames.begin(), s_GoldenFrames.end())) {
