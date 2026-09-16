@@ -436,6 +436,8 @@ void RenderSystem::BeginFrameTransformCaches() {
 
 #include "Enjin/Renderer/WebGPU/WebSceneTarget.h"   // kWebSceneSampleCount
 #include "Enjin/Renderer/WebGPU/WebLightingLayout.h"
+#include "Enjin/Effects/FluidSimulation.h"
+#include "Enjin/ECS/Components/FluidVolume.h"
 #include "Enjin/Renderer/WebGPU/WebObjectDataLayout.h"
 #include "Enjin/Renderer/WebGPU/WebShaderData.h"
 #include "Enjin/Renderer/WebGPU/WebGPURenderer.h"
@@ -5099,6 +5101,98 @@ void RenderSystem::Update(f32 deltaTime) {
         }
     }
 
+    // Fluid cells. Same billboards the Vulkan FluidRenderer draws, through the web
+    // sprite pipeline rather than a pipeline of its own -- the cells are untextured
+    // camera-facing quads with a per-instance colour and alpha, which is exactly what
+    // that pipeline already does for weather.
+    //
+    // Cell selection mirrors FluidRenderer::Render so the two backends pick the same
+    // cells: skip anything below the volume's densityThreshold, size from the volume
+    // extents over the grid resolution, alpha from density clamped to 1 times opacity.
+    if (usePostProcess && m_WebSpritePipeline.IsValid() && scenePassEncoder && m_WebFluidSim) {
+        static std::vector<WebSpriteInst> finsts;
+        finsts.clear();
+        constexpr usize kMaxWebFluidCells = 20000;
+        for (Entity e : m_World->GetEntitiesWithComponent<FluidVolumeComponent>()) {
+            if (finsts.size() >= kMaxWebFluidCells) break;
+            auto* vol = m_World->GetComponent<FluidVolumeComponent>(e);
+            if (!vol || !vol->isActive || !vol->renderEnabled) continue;
+            auto* xf = m_World->GetComponent<TransformComponent>(e);
+            if (!xf || !xf->visible) continue;
+            const Effects::FluidGridData* grid = m_WebFluidSim->GetGridData(e);
+            if (!grid || grid->N == 0) continue;
+
+            const u32 N = grid->N;
+            const f32 cx = (vol->halfExtents.x * 2.0f) / static_cast<f32>(N);
+            const f32 cy = (vol->halfExtents.y * 2.0f) / static_cast<f32>(N);
+            const f32 cz = (vol->halfExtents.z * 2.0f) / static_cast<f32>(N);
+            f32 cell = std::min(cx, cy);
+            if (grid->is3D) cell = std::min(cell, cz);
+            const Math::Vector3 origin(xf->position.x - vol->halfExtents.x,
+                                       xf->position.y - vol->halfExtents.y,
+                                       xf->position.z - vol->halfExtents.z);
+
+            auto push = [&](f32 wx, f32 wy, f32 wz, f32 d) {
+                const f32 a = std::min(d, 1.0f) * vol->opacity;
+                finsts.push_back({wx, wy, wz, cell, cell, 0.0f,
+                                  vol->fluidColor.x, vol->fluidColor.y, vol->fluidColor.z, a,
+                                  0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f});
+            };
+
+            if (!grid->is3D) {
+                for (u32 j = 1; j <= N && finsts.size() < kMaxWebFluidCells; ++j)
+                for (u32 i = 1; i <= N && finsts.size() < kMaxWebFluidCells; ++i) {
+                    const f32 d = grid->density[grid->IX(i, j)];
+                    if (d < vol->densityThreshold) continue;
+                    push(origin.x + (static_cast<f32>(i) - 0.5f) * cx,
+                         origin.y + (static_cast<f32>(j) - 0.5f) * cy,
+                         xf->position.z, d);
+                }
+            } else {
+                for (u32 k = 1; k <= N && finsts.size() < kMaxWebFluidCells; ++k)
+                for (u32 j = 1; j <= N && finsts.size() < kMaxWebFluidCells; ++j)
+                for (u32 i = 1; i <= N && finsts.size() < kMaxWebFluidCells; ++i) {
+                    const f32 d = grid->density[grid->IX3(i, j, k)];
+                    if (d < vol->densityThreshold) continue;
+                    push(origin.x + (static_cast<f32>(i) - 0.5f) * cx,
+                         origin.y + (static_cast<f32>(j) - 0.5f) * cy,
+                         origin.z + (static_cast<f32>(k) - 0.5f) * cz, d);
+                }
+            }
+        }
+
+        if (!finsts.empty()) {
+            auto* webBufMgrF = static_cast<Renderer::WebGPUBufferManager*>(bufMgr);
+            const usize needBytes = finsts.size() * sizeof(WebSpriteInst);
+            if (!m_WebFluidInstBuf.IsValid() || m_WebFluidInstCapacity < needBytes) {
+                if (m_WebFluidInstBuf.IsValid()) bufMgr->DestroyBuffer(m_WebFluidInstBuf);
+                m_WebFluidInstCapacity = needBytes + needBytes / 2;   // headroom, as weather does
+                m_WebFluidInstBuf = bufMgr->CreateBuffer(
+                    {m_WebFluidInstCapacity,
+                     Renderer::GPUBufferUsage::Vertex | Renderer::GPUBufferUsage::CopyDst, true});
+            }
+            bufMgr->UploadData(m_WebFluidInstBuf, finsts.data(), needBytes);
+
+            if (!m_WebWhiteSpriteBindGroup.IsValid()) {
+                Renderer::GPUBindGroupDesc fTexBGD;
+                fTexBGD.layout = m_WebSpriteTexLayout;
+                fTexBGD.entries = {
+                    {0, {}, 0, 0, m_WebDefaultWhiteTex, {}},
+                    {1, {}, 0, 0, {}, m_WebDefaultWhiteTex},
+                };
+                m_WebWhiteSpriteBindGroup = webBindMgr->CreateBindGroup(fTexBGD);
+            }
+
+            wgpuRenderPassEncoderSetPipeline(scenePassEncoder, webPipeMgr->GetNativePipeline(m_WebSpritePipeline));
+            wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 0, webBindMgr->GetNativeGroup(m_WebFrameBindGroup), 0, nullptr);
+            wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 1, webBindMgr->GetNativeGroup(m_WebWhiteSpriteBindGroup), 0, nullptr);
+            wgpuRenderPassEncoderSetVertexBuffer(scenePassEncoder, 0, webBufMgrF->GetNativeBuffer(m_WebParticleQuadVB), 0, WGPU_WHOLE_SIZE);
+            wgpuRenderPassEncoderSetVertexBuffer(scenePassEncoder, 1, webBufMgrF->GetNativeBuffer(m_WebFluidInstBuf), 0, WGPU_WHOLE_SIZE);
+            wgpuRenderPassEncoderSetIndexBuffer(scenePassEncoder, webBufMgrF->GetNativeBuffer(m_WebParticleQuadIB), WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
+            wgpuRenderPassEncoderDrawIndexed(scenePassEncoder, 6, static_cast<u32>(finsts.size()), 0, 0, 0);
+        }
+    }
+
     // Elemental particles (campfire flames, water fountain, etc): the ElementalSystem
     // pool drawn as camera-facing soft-dot billboards through the per-particle-colored
     // particle pipeline. This was a no-op stub on web, so the campfire had light but no
@@ -5563,7 +5657,11 @@ void RenderSystem::SpawnGPUParticlePreset(u32, const Math::Vector3&, const Math:
             "Particles_SpawnPreset is inert on web (no GPU compute path yet)");
     }
 }
-void RenderSystem::SetFluidSimulation(Effects::FluidSimulation* /*sim*/) {}
+// Remember it. This was an empty stub, so a browser ticked the whole fluid
+// simulation -- advection, pressure, terrain coupling -- and drew none of it. The
+// cells are billboards, and the web sprite pipeline already draws camera-facing
+// instanced quads, so the draw below needs no shader or pipeline of its own.
+void RenderSystem::SetFluidSimulation(Effects::FluidSimulation* sim) { m_WebFluidSim = sim; }
 Renderer::GPUBufferHandle RenderSystem::UploadWebInstances(WebInstanceSlot slot,
                                                           const void* data, usize bytes) {
     auto* bufMgr = m_Renderer ? m_Renderer->GetBufferManager() : nullptr;

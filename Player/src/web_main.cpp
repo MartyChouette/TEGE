@@ -26,6 +26,8 @@
 #include "Enjin/ECS/Components/GPUParticleEmitter.h"
 #include "Enjin/Effects/ParticleColliders.h"
 #include "Enjin/ECS/Components/Vegetation.h"
+#include "Enjin/Effects/FluidSimulation.h"
+#include "Enjin/Effects/FluidTerrainCoupling.h"
 #include "Enjin/Renderer/WebGPU/WebGPUVegetationSystem.h"
 #if defined(ENJIN_WEBGPU_COMPUTE_SMOKETEST)
 #include "Enjin/Renderer/WebGPU/WebGPUComputeSmokeTest.h"
@@ -752,6 +754,7 @@ public:
         // instead, or it is just a silent drop.
         if (m_HasBootSkybox) m_RenderSystem->SetSkybox(m_BootSkybox);
         if (m_HasBootWater2D) m_RenderSystem->SetWater2D(m_BootWater2D);
+        m_RenderSystem->SetFluidSimulation(&m_FluidSimulation);
 
         // GPU particles on web: same emitter component as desktop, driven each frame.
         m_Vegetation = std::make_unique<Enjin::Renderer::WebGPUVegetationSystem>();
@@ -1273,6 +1276,8 @@ public:
                 static_cast<Enjin::f32>(m_Renderer->GetSwapChainHeight()));
         }
 
+        m_FluidSimulation.Update(deltaTime, m_World.get());
+        m_FluidTerrainCoupling.Update(deltaTime, m_World.get(), m_FluidSimulation);
         m_AudioEngine.Update(deltaTime);
         m_AudioEngine.UpdateAudioSources(deltaTime);
         m_AudioGraphRuntime.Update(deltaTime);   // desktop: main.cpp:964
@@ -2836,10 +2841,13 @@ private:
     // and were absent here, so audio event graphs and the accessibility audio
     // indicators simply did not run in a browser.
     //
-    // Fluid deliberately NOT wired yet. Its simulation would tick fine, but
-    // FluidRenderer is Vulkan-only and RenderSystem::SetFluidSimulation is a
-    // no-op stub on the web branch, so it would cost frame time and draw
-    // nothing. Waits on the WebGPU fluid path (hardening list item 18).
+    // Fluid now ticks and draws here. It was deliberately left out while
+    // RenderSystem::SetFluidSimulation was a no-op stub on this backend -- ticking
+    // a simulation that cannot be seen is pure cost. The cells are camera-facing
+    // billboards and the web sprite pipeline already draws those, so the render
+    // side needed no pipeline of its own.
+    Enjin::Effects::FluidSimulation m_FluidSimulation;
+    Enjin::Effects::FluidTerrainCoupling m_FluidTerrainCoupling;
     Enjin::Audio::AudioEventGraphRuntime m_AudioGraphRuntime;
     Enjin::Accessibility::AudioVisualIndicatorSystem m_AudioIndicators;
     // No MIDI on web (no MIDIInput in this build), so SetMIDI is never called

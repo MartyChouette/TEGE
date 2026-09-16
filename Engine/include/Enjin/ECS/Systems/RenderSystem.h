@@ -2240,6 +2240,11 @@ private:
     Renderer::SkyboxConfig m_WebSkyConfig;   // web: scene sky (desktop uses m_Skybox)
     f32 m_WeatherSkyRain = 0.0f, m_WeatherSkySnow = 0.0f;  // live weather sky blend
     bool m_WebSkyConfigured = false;
+    // The fluid sim, for the web draw below. SetFluidSimulation was a no-op stub
+    // on this backend, so the simulation ticked in a browser and could not be seen.
+    Effects::FluidSimulation* m_WebFluidSim = nullptr;
+    Renderer::GPUBufferHandle m_WebFluidInstBuf;
+    usize m_WebFluidInstCapacity = 0;
     // 2D scene water, declared OUTSIDE the backend split so both SetWater2D
     // implementations write the same field: the Vulkan one is a method, the web
     // one is inline above. It lived in the Vulkan-only block until 2026-09-16,
