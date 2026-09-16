@@ -28,8 +28,13 @@ inline std::unique_ptr<INetworkTransport> CreateTransport(TransportType type = T
         case TransportType::UDP:
             return std::make_unique<UDPTransport>();
         case TransportType::WebSocket:
-            // WebSocket transport will be implemented in a follow-up.
-            // For now, fall back to UDP on desktop, nullptr on web.
+            // NOT IMPLEMENTED. This returns nullptr on web, which means a browser
+            // build has NO network transport at all -- web multiplayer does not
+            // work, it is not merely limited. Said plainly here because the
+            // enum above and INetworkTransport's header both describe WebSocket
+            // as the NAT-traversal path, which reads as though it exists.
+            // Planned in adr-0007 (hosted relay + matchmaking); until that lands,
+            // multiplayer is desktop UDP on a LAN or a port-forwarded direct IP.
 #ifdef ENJIN_PLATFORM_WEB
             return nullptr;  // TODO: WebSocketTransport
 #else

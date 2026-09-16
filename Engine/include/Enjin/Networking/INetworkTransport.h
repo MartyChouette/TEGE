@@ -6,7 +6,9 @@ namespace Enjin {
 namespace Networking {
 
 // Abstract transport interface — implementations provide the actual socket layer.
-// UDP (default desktop), WebSocket (web builds / NAT traversal), or custom.
+// UDP (desktop, the only implementation that exists today) or custom.
+// A WebSocket transport is PLANNED, not written -- see TransportFactory and
+// adr-0007. Web builds currently get nullptr from the factory.
 class INetworkTransport {
 public:
     virtual ~INetworkTransport() = default;
