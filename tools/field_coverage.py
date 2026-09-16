@@ -155,7 +155,28 @@ def main():
     insp_src = strip_comments(''.join(
         read(os.path.join(EDITOR_DIR, f))
         for f in sorted(os.listdir(EDITOR_DIR)) if f.endswith('.cpp')))
-    registered = set(re.findall(r'ENJIN_SERDES\("[^"]+",\s*ECS::(\w+)', ser_src))
+    # Two ways a component gets serialized, and reading only the first was the
+    # fourth thing this tool got wrong. The ENJIN_SERDES registry covers the
+    # REGULAR components; the core ones -- mesh, animator, children, the IK
+    # family -- are written inline in the entity loop
+    # (`entityJson["mesh"] = SerializeMeshComponent(...)`), exactly as the
+    # registry's own comment says: "use ENJIN_SERDES; the few irregular ones are
+    # explicit entries". Counting only the macro reported MeshComponent as
+    # having no serializer, in an engine whose scene files are full of meshes.
+    # THREE ways a component reaches a scene file, and reading fewer than all of
+    # them is how this tool got the count wrong twice in a row.
+    #
+    #   ENJIN_SERDES("key", ECS::Foo, ...)          the regular registry
+    #   entityJson["mesh"] = SerializeMeshComponent(...)   core types, inline
+    #   ComponentSerdes{ "handIK", [](...){ ...HasComponent<ECS::HandIKComponent>
+    #                                       the "irregular ones", inline lambdas
+    #
+    # So the test is simply whether the serializer TOUCHES the type at all. That
+    # is a weaker claim than "has a serializer" and it is the honest one: a
+    # component the serializer never mentions certainly does not save, and one it
+    # does mention is somebody's deliberate handling that this tool should not
+    # second-guess.
+    registered = set(re.findall(r'ECS::(\w+Component)\b', ser_src))
     inspected = set(re.findall(r'(?:Get|Has)Component<ECS::(\w+)>', insp_src))
 
     no_serdes, no_inspector = [], []
