@@ -812,7 +812,11 @@ jobs:
       # in the READER's script, pointing at their file, so it reads as their
       # mistake. Eleven of these were live when this check was written.
       - name: Validate doc code samples against the script API
-        run: python tools/check_doc_api.py
+        # --strict also fails when the UNDOCUMENTED binding count rises above
+        # tools/doc_api_coverage_baseline.txt, which catches a binding registered
+        # without a line in SCRIPTING_API.md. It does not fail on the 629 that were
+        # already undocumented when the baseline was recorded.
+        run: python tools/check_doc_api.py --strict
 
       - name: Install Emscripten
         uses: mymindstorm/setup-emsdk@v14

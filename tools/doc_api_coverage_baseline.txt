@@ -1,0 +1,14 @@
+# How many registered script bindings are NOT named in docs/SCRIPTING_API.md.
+#
+# Recorded 2026-09-16: 1250 bindings registered, 621 named in the reference,
+# 629 undocumented. That is roughly half the scripting API, in a document that
+# presents itself as the reference -- a person who finds a binding working and
+# goes looking for it has a coin-flip chance of finding a line about it.
+#
+# This number is a CEILING, not a target. `check_doc_api.py --strict` fails when
+# the count goes above it, which catches a binding registered without a line in
+# the reference. It does not fail on the existing backlog, because failing CI on
+# 629 pre-existing gaps would just get the check switched off.
+#
+# Lower it deliberately as entries are written. The tool says when it can be.
+629

@@ -123,6 +123,30 @@ def code_blocks(text):
     return blocks
 
 
+# The other direction: how much of the API the reference actually mentions.
+#
+# The check above asks whether every name a DOC uses exists. This asks whether
+# every name that EXISTS is mentioned by the reference, which is the question a
+# person has when a binding works and they cannot find out that it is there.
+# Measured 2026-09-16: 1249 registered, 621 named, 628 undocumented -- about half
+# the scripting API, while SCRIPTING_API.md presents itself as the reference.
+#
+# Writing 628 entries is not a thing a check can do. Keeping the gap from growing
+# is: --strict fails only when the undocumented count goes ABOVE the recorded
+# baseline, so adding a binding without documenting it is caught while the
+# existing backlog is not treated as a new failure.
+COVERAGE_BASELINE = os.path.join(ROOT, 'tools', 'doc_api_coverage_baseline.txt')
+
+
+def coverage(registered):
+    ref = os.path.join(ROOT, 'docs/SCRIPTING_API.md')
+    if not os.path.exists(ref):
+        return None, None
+    text = open(ref, encoding='utf-8', errors='replace').read()
+    named = {n for n in registered if n in text}
+    return len(named), sorted(registered - named)
+
+
 def main():
     registered = registered_names()
     if len(registered) < 200:
@@ -157,10 +181,32 @@ def main():
                     if entry not in missing[doc]:
                         missing[doc].append(entry)
 
+    named, undocumented = coverage(registered)
+    cov_failed = False
+    if named is not None:
+        print(f'reference coverage: {named}/{len(registered)} bindings named in '
+              f'SCRIPTING_API.md, {len(undocumented)} undocumented')
+        baseline = None
+        if os.path.exists(COVERAGE_BASELINE):
+            for line in open(COVERAGE_BASELINE, encoding='utf-8'):
+                line = line.split('#')[0].strip()
+                if line.isdigit():
+                    baseline = int(line)
+                    break
+        if baseline is not None and len(undocumented) > baseline:
+            print(f'  UNDOCUMENTED COUNT ROSE: {len(undocumented)} > baseline {baseline}')
+            print('  A new binding was registered without a line in SCRIPTING_API.md.')
+            print('  Document it, or lower the baseline deliberately if entries were removed.')
+            for n in undocumented[:10]:
+                print(f'    {n}')
+            cov_failed = True
+        elif baseline is not None and len(undocumented) < baseline:
+            print(f'  (baseline {baseline} can be lowered to {len(undocumented)})')
+
     if not missing:
         print(f'doc API check: OK ({len(registered)} bindings, '
               f'{len(DOCS)} docs, every sampled name exists)')
-        return 0
+        return 1 if (cov_failed and '--strict' in sys.argv) else 0
 
     total = 0
     for doc, names in sorted(missing.items()):
