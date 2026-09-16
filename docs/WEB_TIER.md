@@ -94,6 +94,8 @@ silent: the field saves, the scene loads, the look is wrong, and nothing says so
 | Input, touch, rebinding | Same | Browser key events land between frames; the web path latches edges. |
 | Level streaming | Same | Lazy pak filesystem. |
 | Multiplayer / networking | **Absent** | A browser build has no network transport at all: `TransportFactory` returns `nullptr` on web, because the WebSocket transport the enum and headers describe is not implemented. Desktop multiplayer is UDP on a LAN or a port-forwarded direct IP. Planned in adr-0007 (hosted relay + room-code matchmaking); until then, do not design a web game around multiplayer. |
+| Local / couch co-op (one machine) | Same | Multiple gamepads work: the Emscripten HTML5 Gamepad API is wired in `Core/src/Platform/Input.cpp` and sampled every frame. A shared-screen co-op game needs no network and no server on web. |
+| Splitscreen | **Absent** | `RenderSplitscreen` is defined only in the Vulkan half of `RenderSystem.cpp` and appears nowhere in the web half. Shared-screen local co-op works; split views do not. |
 | Texture filtering settings | **Absent, silently** | Discarded on web; pixel art blurs in a browser. This one is a bug, not a tier decision. |
 
 ---
