@@ -67,6 +67,19 @@ public:
     VkRenderPass GetRenderPass() const { return m_RenderPass; }
     VulkanContext* GetContext() const { return m_Context.get(); }
     VulkanSwapchain* GetSwapchain() const { return m_Swapchain.get(); }
+
+    // Read the most recently presented swapchain image back to CPU memory as
+    // RGBA8, row-major from the top. Blocking (submits its own copy and waits),
+    // so this belongs in a capture harness and not in a frame loop.
+    //
+    // Why the swapchain and not an offscreen target: this is the image the player
+    // actually presented, post-process and all. Rendering a parallel copy into a
+    // RenderTarget would photograph a second render path, which is the exact
+    // mistake that makes a capture agree with itself and disagree with the screen.
+    //
+    // Returns empty if the driver did not grant TRANSFER_SRC on the swapchain
+    // (VulkanSwapchain::IsCaptureSupported) or if any step fails.
+    std::vector<u8> CaptureSwapchainToPixels(u32& outWidth, u32& outHeight) const;
     VkExtent2D GetSwapchainExtent() const { return m_Swapchain ? m_Swapchain->GetExtent() : VkExtent2D{0, 0}; }
 
     void OnWindowResize(u32 width, u32 height);

@@ -1,0 +1,32 @@
+{
+  "_comment": [
+    "What tools/harness.py boots and what each capture must prove.",
+    "",
+    "A project appears here only once it has been EXPORTED to `dist`, because the",
+    "desktop runtime under test is the exported game -- the render path a player",
+    "actually takes. Exporting the 31 Examples and 16 templates is the next piece",
+    "of this work; until then this file lists what is genuinely wired, so the",
+    "report cannot imply coverage that does not exist.",
+    "",
+    "frames: which frame ordinals to photograph. Two, far apart, because one",
+    "picture cannot tell a still scene from a stopped one. The first is late",
+    "enough that boot defaults are no longer on screen.",
+    "",
+    "claims.draws: the frame is not one flat colour.",
+    "claims.animates.min_changed_pct: how much of the frame must move between the",
+    "first and last capture. Raise it for a scene that should be visibly busy;",
+    "lower it for one where only a small region moves."
+  ],
+  "projects": [
+    {
+      "name": "playground",
+      "dist": "dist/Playground-PC",
+      "frames": [90, 400],
+      "timeout": 120,
+      "claims": {
+        "draws": true,
+        "animates": { "min_changed_pct": 0.5 }
+      }
+    }
+  ]
+}

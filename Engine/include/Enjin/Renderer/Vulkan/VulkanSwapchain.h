@@ -41,6 +41,11 @@ public:
     VkImageView GetDepthImageView() const { return m_DepthImageView; }
     VkFormat GetDepthFormat() const { return m_DepthFormat; }
 
+    // Whether the swapchain images were created with TRANSFER_SRC, i.e. whether
+    // a presented frame can be read back to the CPU. Driver-dependent, so the
+    // capture path asks rather than assumes.
+    bool IsCaptureSupported() const { return m_CaptureSupported; }
+
     // Velocity buffer for TAA / temporal upscaling (RG16F per-pixel motion vectors)
     VkImageView GetVelocityImageView() const { return m_VelocityImageView; }
     VkImage GetVelocityImage() const { return m_VelocityImage; }
@@ -94,6 +99,8 @@ private:
     std::vector<VkImageView> m_ImageViews;
     std::vector<VkFramebuffer> m_Framebuffers;
     VkRenderPass m_RenderPass = VK_NULL_HANDLE;
+    // Set at creation from the surface's supported usage flags: see IsCaptureSupported.
+    bool m_CaptureSupported = false;
     
     // Depth buffer resources
     VkImage m_DepthImage = VK_NULL_HANDLE;

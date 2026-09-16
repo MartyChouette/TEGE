@@ -269,6 +269,22 @@ bool VulkanSwapchain::CreateSwapchain(VkSurfaceKHR surface, u32 width, u32 heigh
     createInfo.imageArrayLayers = 1;
     createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
+    // TRANSFER_SRC lets the presented image be copied back to the CPU, which is
+    // what EnjinPlayer --golden does. Without it the copy is illegal and the
+    // PLAYER -- the runtime a shipped game actually takes -- is the one runtime
+    // that cannot photograph itself.
+    //
+    // Conditional, because the flag is a capability, not a guarantee: asking for
+    // an unsupported usage fails swapchain creation outright, which would trade a
+    // missing test feature for a black window. Universally present in practice on
+    // desktop drivers and on lavapipe; the flag records what was actually granted
+    // so the capture path can say "unsupported here" rather than produce garbage.
+    m_CaptureSupported =
+        (support.capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) != 0;
+    if (m_CaptureSupported) {
+        createInfo.imageUsage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    }
+
     u32 queueFamilyIndices[] = {
         m_Context->GetGraphicsQueueFamily(),
         m_Context->GetPresentQueueFamily()

@@ -1223,5 +1223,136 @@ void VulkanRenderer::EndRenderPass(IRenderEncoder* encoder) {
     }
 }
 
+std::vector<u8> VulkanRenderer::CaptureSwapchainToPixels(u32& outWidth, u32& outHeight) const {
+    outWidth = outHeight = 0;
+    if (!m_Context || !m_Swapchain) return {};
+    if (!m_Swapchain->IsCaptureSupported()) {
+        ENJIN_LOG_ERROR(Renderer, "swapchain capture: driver did not grant TRANSFER_SRC on the "
+                                  "surface, so the presented image cannot be read back");
+        return {};
+    }
+
+    const std::vector<VkImage>& images = m_Swapchain->GetImages();
+    if (m_CurrentImageIndex >= images.size()) return {};
+    VkImage srcImage = images[m_CurrentImageIndex];
+
+    const VkExtent2D extent = m_Swapchain->GetExtent();
+    if (extent.width == 0 || extent.height == 0) return {};
+    const VkDeviceSize imageSize = VkDeviceSize(extent.width) * extent.height * 4;
+
+    VkDevice device = m_Context->GetDevice();
+    VkQueue queue = m_Context->GetGraphicsQueue();
+
+    // Everything below is allocated per capture and torn down before returning.
+    // A capture happens a handful of times in a run, so a transient pool and a
+    // one-shot staging buffer are the right trade against holding GPU memory for
+    // a feature a normal session never uses.
+    VkCommandPool pool = VK_NULL_HANDLE;
+    VkBuffer staging = VK_NULL_HANDLE;
+    VkDeviceMemory memory = VK_NULL_HANDLE;
+    VkCommandBuffer cmd = VK_NULL_HANDLE;
+    std::vector<u8> pixels;
+
+    auto cleanup = [&]() {
+        if (cmd != VK_NULL_HANDLE) vkFreeCommandBuffers(device, pool, 1, &cmd);
+        if (staging != VK_NULL_HANDLE) vkDestroyBuffer(device, staging, nullptr);
+        if (memory != VK_NULL_HANDLE) vkFreeMemory(device, memory, nullptr);
+        if (pool != VK_NULL_HANDLE) vkDestroyCommandPool(device, pool, nullptr);
+    };
+
+    VkCommandPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
+    poolInfo.queueFamilyIndex = m_Context->GetGraphicsQueueFamily();
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+    if (vkCreateCommandPool(device, &poolInfo, nullptr, &pool) != VK_SUCCESS) return {};
+
+    VkBufferCreateInfo bufInfo{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    bufInfo.size = imageSize;
+    bufInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    bufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    if (vkCreateBuffer(device, &bufInfo, nullptr, &staging) != VK_SUCCESS) { cleanup(); return {}; }
+
+    VkMemoryRequirements memReqs;
+    vkGetBufferMemoryRequirements(device, staging, &memReqs);
+    VkMemoryAllocateInfo allocInfo{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+    allocInfo.allocationSize = memReqs.size;
+    allocInfo.memoryTypeIndex = m_Context->FindMemoryType(
+        memReqs.memoryTypeBits,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    if (vkAllocateMemory(device, &allocInfo, nullptr, &memory) != VK_SUCCESS ||
+        vkBindBufferMemory(device, staging, memory, 0) != VK_SUCCESS) { cleanup(); return {}; }
+
+    VkCommandBufferAllocateInfo cmdInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+    cmdInfo.commandPool = pool;
+    cmdInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cmdInfo.commandBufferCount = 1;
+    if (vkAllocateCommandBuffers(device, &cmdInfo, &cmd) != VK_SUCCESS) { cleanup(); return {}; }
+
+    VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    if (vkBeginCommandBuffer(cmd, &begin) != VK_SUCCESS) { cleanup(); return {}; }
+
+    // The image is in PRESENT_SRC because it has just been presented, and it has
+    // to be put back there: the swapchain hands it out again by index, and the
+    // next acquire expects the layout it left in.
+    VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    barrier.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = srcImage;
+    barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    VkBufferImageCopy region{};
+    region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.imageExtent = {extent.width, extent.height, 1};
+    vkCmdCopyImageToBuffer(cmd, srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                           staging, 1, &region);
+
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    if (vkEndCommandBuffer(cmd) != VK_SUCCESS) { cleanup(); return {}; }
+
+    VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    submit.commandBufferCount = 1;
+    submit.pCommandBuffers = &cmd;
+    if (vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE) != VK_SUCCESS) { cleanup(); return {}; }
+    vkQueueWaitIdle(queue);
+
+    void* mapped = nullptr;
+    if (vkMapMemory(device, memory, 0, imageSize, 0, &mapped) != VK_SUCCESS || !mapped) {
+        cleanup();
+        return {};
+    }
+
+    // The swapchain is B8G8R8A8 on every platform this ships to, but ask the
+    // format rather than assume it: a capture that silently swaps red and blue
+    // looks like a shader bug and is nearly impossible to attribute.
+    const VkFormat fmt = m_Swapchain->GetImageFormat();
+    const bool bgra = (fmt == VK_FORMAT_B8G8R8A8_SRGB || fmt == VK_FORMAT_B8G8R8A8_UNORM);
+    pixels.resize(static_cast<usize>(imageSize));
+    const u8* src = static_cast<const u8*>(mapped);
+    for (usize i = 0; i < pixels.size(); i += 4) {
+        pixels[i + 0] = bgra ? src[i + 2] : src[i + 0];
+        pixels[i + 1] = src[i + 1];
+        pixels[i + 2] = bgra ? src[i + 0] : src[i + 2];
+        pixels[i + 3] = src[i + 3];
+    }
+    vkUnmapMemory(device, memory);
+    cleanup();
+
+    outWidth = extent.width;
+    outHeight = extent.height;
+    return pixels;
+}
+
 } // namespace Renderer
 } // namespace Enjin

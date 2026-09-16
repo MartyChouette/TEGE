@@ -111,6 +111,18 @@ protected:
     using BackgroundTickCallback = std::function<void()>;
     void SetBackgroundTickCallback(BackgroundTickCallback cb) { m_BackgroundTick = std::move(cb); }
 
+    // Runs immediately after Render(), with the 1-based ordinal of the frame
+    // just presented. Unset in a normal run; EnjinPlayer --golden uses it to
+    // photograph chosen frames, which keeps the capture in the runtime that
+    // owns a renderer instead of putting Vulkan into Core.
+    //
+    // After Render() and not before, because the point of a capture is the
+    // image that was presented: called earlier it would photograph the previous
+    // frame, which is a whole frame of animation out and reads as a subtle
+    // timing bug rather than an off-by-one.
+    using PostRenderCallback = std::function<void(u32 frameOrdinal)>;
+    void SetPostRenderCallback(PostRenderCallback cb) { m_PostRender = std::move(cb); }
+
     /**
      * @brief Execute a single frame (update + render + frame limiting).
      * Used directly by the Emscripten main loop callback, and called
@@ -138,6 +150,11 @@ private:
     bool m_IsIdle = false;
     FrameSettingsCallback m_TargetFPSCallback;
     BackgroundTickCallback m_BackgroundTick;
+    PostRenderCallback m_PostRender;
+    // Separate from m_FramesRendered, which only counts under the headless cap
+    // and so is 0 in a normal run. The post-render hook needs a true frame
+    // ordinal whether or not a cap is set.
+    u32 m_PostRenderFrame = 0;
     u32 m_FramesRendered = 0;
 };
 

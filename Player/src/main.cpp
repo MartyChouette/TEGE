@@ -16,6 +16,7 @@
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/Renderer/Skybox.h"
 #include "Enjin/Renderer/Vulkan/VulkanRenderer.h"
+#include "Enjin/Renderer/CaptureWrite.h"
 #include "Enjin/Renderer/Camera.h"
 #include "Enjin/Renderer/CameraController.h"
 #include "Enjin/Scene/SceneSerializer.h"
@@ -34,6 +35,37 @@ static bool s_SimulateTouch = false;
 // Set by --replay. A path rather than a bool, because the player loads the file
 // itself; there is no editor here to pick the newest one out of a folder.
 static std::string s_ReplayPath;
+
+// Set by --golden <base> / --golden-frames N[,N...]: capture the presented image
+// at each listed frame, writing <base>.fNNNN.png/.ppm, then exit after the last.
+//
+// The player was the only runtime that could not photograph itself -- the editor
+// has --golden against its game-view target and the web build's canvas can be
+// read from JS -- so the render path an EXPORTED GAME takes was the one path no
+// capture could see. Several features have shipped fully written and never
+// switched on; none of them were visible to a build, a test run or a shader
+// compile, and only a capture catches that class at all.
+//
+// A LIST of frames rather than one, because a single image cannot tell a still
+// scene from a stopped one. Two captures far apart, compared, is what proves
+// something is actually animating.
+static std::string s_GoldenBase;
+static std::vector<Enjin::u32> s_GoldenFrames;
+// A failed capture must fail the RUN. A harness that reads a missing file as
+// a passing frame reports green for a game that drew nothing, which is the
+// one outcome this whole flag exists to make impossible.
+static bool s_GoldenFailed = false;
+
+// True when this process exists to be measured rather than played: --frames or
+// --golden. Both want the real game loop and NOT a title screen, so they take
+// the same boot branch.
+//
+// --golden used to miss this and photographed the built-in TEGE title screen at
+// frame 240 -- a perfectly valid capture of the wrong thing, and one that looks
+// like a working harness until somebody opens the PNG.
+static bool IsCaptureRun() {
+    return Enjin::Application::s_HeadlessFrameLimit > 0 || !s_GoldenBase.empty();
+}
 #include "Enjin/Input/MIDIInput.h"
 #include "Enjin/GUI/GameMenus.h"
 #include "Enjin/GUI/ImGuiLayer.h"
@@ -241,6 +273,15 @@ public:
         // uncapped games, tearing against the author's explicit setting.
         if (m_Renderer->GetSwapchain()) {
             m_Renderer->GetSwapchain()->SetVSyncEnabled(m_VSync);
+        }
+
+        // --golden: photograph the frames the harness asked for, then exit.
+        //
+        // Registered here because this is the first point where a renderer
+        // exists. It is a no-op unless --golden was passed, so a shipped game
+        // pays one null function check per frame for it.
+        if (!s_GoldenBase.empty() && !s_GoldenFrames.empty()) {
+            SetPostRenderCallback([this](Enjin::u32 frame) { CaptureGoldenFrame(frame); });
         }
 
         // Set up frame rate limiting callback
@@ -1780,6 +1821,32 @@ public:
         }
     }
 
+    // One frame of --golden. Called after the frame was presented, so the image
+    // read here is the one that went to the screen: post-process, UI and all.
+    void CaptureGoldenFrame(Enjin::u32 frameOrdinal) {
+        if (!m_Renderer || s_GoldenFrames.empty()) return;
+        if (std::find(s_GoldenFrames.begin(), s_GoldenFrames.end(), frameOrdinal)
+            == s_GoldenFrames.end()) return;
+
+        Enjin::u32 w = 0, h = 0;
+        std::vector<Enjin::u8> pixels = m_Renderer->CaptureSwapchainToPixels(w, h);
+
+        char suffix[32];
+        std::snprintf(suffix, sizeof(suffix), ".f%04u", frameOrdinal);
+        if (pixels.empty() || !Enjin::Renderer::WriteCapture(s_GoldenBase + suffix, pixels, w, h)) {
+            // Loud, and fatal to the run: a harness that treats a failed capture
+            // as a passing frame reports green for a game that drew nothing.
+            ENJIN_LOG_ERROR(Player, "--golden: capture failed at frame %u", frameOrdinal);
+            s_GoldenFailed = true;
+        }
+
+        if (frameOrdinal >= *std::max_element(s_GoldenFrames.begin(), s_GoldenFrames.end())) {
+            ENJIN_LOG_INFO(Player, "--golden: captured %zu frame(s), shutting down",
+                           s_GoldenFrames.size());
+            RequestShutdown();
+        }
+    }
+
     void Render() override {
         if (!m_Initialized || !m_Renderer) return;
 
@@ -2938,9 +3005,9 @@ private:
         // matches rather than restyling on a later open.
         AdoptAuthoredMenuTheme();
 
-        if (Enjin::Application::s_HeadlessFrameLimit > 0) {
-            // Headless CI: always boot straight into gameplay so the smoke
-            // exercises the real game loop, not a title screen.
+        if (IsCaptureRun()) {
+            // Headless CI and capture runs: always boot straight into gameplay
+            // so the run exercises the real game loop, not a title screen.
             m_GameMenu.HideAll();
             HideAuthoredMainMenu();
             m_GameStarted = true;
@@ -4252,6 +4319,29 @@ int main(int argc, char* argv[]) {
         if (argv[i] && std::string(argv[i]) == "--replay" && i + 1 < argc && argv[i + 1]) {
             s_ReplayPath = argv[++i];
         }
+        // --golden BASE [--golden-frames N[,N...]]: see s_GoldenBase.
+        if (argv[i] && std::string(argv[i]) == "--golden" && i + 1 < argc && argv[i + 1]) {
+            s_GoldenBase = argv[++i];
+        }
+        if (argv[i] && std::string(argv[i]) == "--golden-frames" && i + 1 < argc && argv[i + 1]) {
+            std::string spec = argv[++i];
+            for (size_t start = 0; start <= spec.size();) {
+                const size_t comma = spec.find(',', start);
+                const std::string one = spec.substr(start, comma - start);
+                const int n = std::atoi(one.c_str());
+                if (n > 0) s_GoldenFrames.push_back(static_cast<Enjin::u32>(n));
+                if (comma == std::string::npos) break;
+                start = comma + 1;
+            }
+        }
+    }
+
+    // A --golden run with no frame list still has to capture something, or the
+    // flag silently does nothing and the harness reports a missing file rather
+    // than a missing argument. 240 matches the editor's default and is far
+    // enough in that first-frame defaults are no longer what is on screen.
+    if (!s_GoldenBase.empty() && s_GoldenFrames.empty()) {
+        s_GoldenFrames.push_back(240);
     }
 
     // Set working directory to exe location so relative paths work
@@ -4260,5 +4350,7 @@ int main(int argc, char* argv[]) {
     Enjin::Application* app = CreateApplication();
     int result = app->Run();
     delete app;
+    // A clean shutdown with a missing capture is still a failed --golden run.
+    if (s_GoldenFailed && result == 0) result = 1;
     return result;
 }

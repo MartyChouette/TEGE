@@ -233,6 +233,10 @@ void Application::RunOneFrame() {
     Update(deltaTime);
     Render();
 
+    // Capture hook: see Application::SetPostRenderCallback. Placed here so it
+    // sees the frame that was just presented.
+    if (m_PostRender) m_PostRender(++m_PostRenderFrame);
+
     // Take the crash handler slot back if something displaced it.
     //
     // Periodic rather than once at startup, because the modules that displace it
