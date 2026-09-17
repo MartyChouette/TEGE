@@ -201,7 +201,7 @@ def check_assets(base, game):
     return problems, wasm_size
 
 
-def check_boot(chrome, base, game, attempts=3):
+def check_boot(chrome, base, game, attempts=6):
     """Did the engine actually run? Retries only a harness race, never a failure.
 
     Headless Chrome sometimes exits before the page has logged ANYTHING -- the
@@ -217,6 +217,19 @@ def check_boot(chrome, base, game, attempts=3):
 
     So only the first is retried. A build that genuinely fails to instantiate
     still logs its way to the failure and is reported on the first attempt.
+
+    THREE ATTEMPTS WAS NOT ENOUGH, measured 2026-09-16: on a machine that had
+    just finished an Emscripten build, this reported FAIL on three consecutive
+    runs with six games, a different game each time, while every one of those
+    games rendered perfectly under tools/web_capture.mjs. The losing runs had
+    stderr of 312 to 578 bytes -- Chrome's own startup noise and not one CONSOLE
+    line -- which is precisely the race described above, three times running.
+    Six costs nothing when the first attempt succeeds, which is almost always.
+
+    Set ENJIN_DEMOROOM_DEBUG=1 to print the browser's stderr for a failing
+    attempt. Without it a red result says "the engine never ran" and nothing
+    about why, and two plausible fixes were guessed at and reverted before
+    anybody read the log.
     """
     for attempt in range(attempts):
         ran, fetch_fail, spoke = _boot_once(chrome, base, game)
@@ -248,6 +261,14 @@ def _boot_once(chrome, base, game):
                 stdout=subprocess.DEVNULL, stderr=fh, timeout=180)
         log = open(err, encoding="utf-8", errors="replace").read()
     ran = any(m in log for m in ENGINE_RAN)
+    if not ran and os.environ.get("ENJIN_DEMOROOM_DEBUG"):
+        # A red result here says "the engine never ran" and nothing about WHY.
+        # Set ENJIN_DEMOROOM_DEBUG=1 to get the browser's own account of it,
+        # which is the difference between diagnosing this and guessing at it
+        # twice, as happened on 2026-09-16.
+        sys.stderr.write("\n===== FAILING LOG: %s (%d bytes) =====\n" % (game, len(log)))
+        sys.stderr.write(log[-4000:])
+        sys.stderr.write("\n===== end =====\n")
     fetch_fail = re.findall(r"Failed to load resource.*?(\S+)", log)
     # Did the PAGE produce any console output at all? Chrome's own startup
     # warnings are always present, so their absence proves nothing -- only a
