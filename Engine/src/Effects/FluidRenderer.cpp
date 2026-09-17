@@ -239,7 +239,7 @@ void FluidRenderer::Render(VkCommandBuffer commandBuffer,
         ++volumeCount;
     }
     if (volumeCount == 0) return;
-    const usize shareOfCap = FluidBudgetShare(MAX_FLUID_CELLS, volumeCount);
+    const usize shareOfCap = DrawBudgetShare(MAX_FLUID_CELLS, volumeCount);
 
     for (ECS::Entity entity : world->GetEntitiesWithComponent<ECS::FluidVolumeComponent>()) {
         auto* vol = world->GetComponent<ECS::FluidVolumeComponent>(entity);

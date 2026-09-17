@@ -14,6 +14,22 @@ void FluidSimulation::Update(f32 dt, ECS::World* world) {
     if (dt > 0.5f) return;  // Skip on long frames (loading/pause)
     dt = std::min(dt, 1.0f / 30.0f);  // Clamp for stability
 
+    // Release grids whose volume is gone. OnEntityRemoved does exactly this and
+    // has never had a caller, so deleting a chimney left its grid allocated for
+    // the life of the process -- about 5 MB for a 48^3 volume, leaked again
+    // every time a level streamed that chunk back in. Pruning here rather than
+    // adding a destruction hook keeps it self-healing: any way a volume can
+    // disappear is covered, including World::Clear on a scene change.
+    for (auto it = m_Grids.begin(); it != m_Grids.end(); ) {
+        const ECS::Entity e = it->first;
+        if (!world->IsValid(e) || !world->HasComponent<ECS::FluidVolumeComponent>(e)) {
+            m_PendingTime.erase(e);
+            it = m_Grids.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
     // Volumes take turns inside a time budget. See SetFrameBudgetMs: every
     // volume used to solve in full every frame, and three campfires was 4 fps.
     const auto& all = world->GetEntitiesWithComponent<ECS::FluidVolumeComponent>();

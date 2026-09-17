@@ -1,4 +1,5 @@
 #include "Enjin/Effects/FluidCellSelection.h"
+#include "Enjin/Effects/DrawBudget.h"
 
 #include <algorithm>
 
@@ -28,11 +29,6 @@ f32 DensityAt(const FluidGridData& grid, u32 i, u32 j, u32 k) {
 
 } // namespace
 
-usize FluidBudgetShare(usize budget, usize volumeCount) {
-    if (volumeCount == 0) return budget;
-    return std::max<usize>(1, budget / volumeCount);
-}
-
 void SelectFluidCells(const FluidGridData& grid, f32 densityThreshold,
                       usize budget, std::vector<FluidCellPick>& out) {
     if (grid.N == 0 || budget == 0) return;
@@ -46,7 +42,7 @@ void SelectFluidCells(const FluidGridData& grid, f32 densityThreshold,
     });
     if (wanted == 0) return;
 
-    const usize stride = (wanted > budget) ? (wanted + budget - 1) / budget : usize(1);
+    const usize stride = DrawStride(wanted, budget);
     const f32 alphaScale = static_cast<f32>(stride);
 
     // `out` is the caller's shared cache across volumes, so the budget is on

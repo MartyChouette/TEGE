@@ -438,6 +438,7 @@ void RenderSystem::BeginFrameTransformCaches() {
 #include "Enjin/Renderer/WebGPU/WebLightingLayout.h"
 #include "Enjin/Effects/FluidSimulation.h"
 #include "Enjin/Effects/FluidCellSelection.h"
+#include "Enjin/Effects/DrawBudget.h"
 #include "Enjin/ECS/Components/FluidVolume.h"
 #include "Enjin/Renderer/WebGPU/WebObjectDataLayout.h"
 #include "Enjin/Renderer/WebGPU/WebShaderData.h"
@@ -4825,17 +4826,48 @@ void RenderSystem::Update(f32 deltaTime) {
         instances.clear();
         instances.reserve(1024);
 
+        // Three things were wrong here, and all three are cases of this path
+        // having been written separately from the Vulkan one rather than from
+        // the same rule.
+        //
+        // 1. The budget was first-come and `break` left the EMITTER loop, so
+        //    once 8192 instances were reached every remaining emitter in the
+        //    scene drew nothing at all. Same bug the Vulkan ParticleRenderer
+        //    had; it is now the same fix, through Effects::DrawBudgetShare.
+        // 2. No `visible` check, so hiding an emitter's entity hid it on
+        //    desktop and not in a browser.
+        // 3. It scanned the whole pool VECTOR and filtered on lifetime, where
+        //    the pool is compacted with the live particles at the front. That
+        //    is the dead tail walked every frame for nothing; `activeCount` is
+        //    what the Vulkan path reads.
+        usize webDrawingEmitters = 0;
         for (Entity pe : particleEntities) {
             auto* emitter = m_World->GetComponent<ParticleEmitterComponent>(pe);
-            if (!emitter || emitter->pool.particles.empty()) continue;
-            for (const auto& p : emitter->pool.particles) {
-                if (p.lifetime <= 0.0f) continue;
-                f32 lifeRatio = p.lifetime / std::max(p.maxLifetime, 0.001f);
+            if (!emitter || !emitter->pool.initialized || emitter->pool.activeCount == 0) continue;
+            auto* pxf = m_World->GetComponent<TransformComponent>(pe);
+            if (pxf && !pxf->visible) continue;
+            ++webDrawingEmitters;
+        }
+        const usize webShare = Effects::DrawBudgetShare(WEB_MAX_PARTICLES, webDrawingEmitters);
+
+        for (Entity pe : particleEntities) {
+            auto* emitter = m_World->GetComponent<ParticleEmitterComponent>(pe);
+            if (!emitter || !emitter->pool.initialized || emitter->pool.activeCount == 0) continue;
+            auto* pxf = m_World->GetComponent<TransformComponent>(pe);
+            if (pxf && !pxf->visible) continue;
+
+            const usize remaining = WEB_MAX_PARTICLES - instances.size();
+            if (remaining == 0) break;
+            const usize allowance = std::min(webShare, remaining);
+            const usize stride = Effects::DrawStride(emitter->pool.activeCount, allowance);
+
+            for (u32 i = 0; i < emitter->pool.activeCount && instances.size() < WEB_MAX_PARTICLES;
+                 i += static_cast<u32>(stride)) {
+                const auto& p = emitter->pool.particles[i];
+                const f32 lifeRatio = p.lifetime / std::max(p.maxLifetime, 0.001f);
                 instances.push_back({p.position.x, p.position.y, p.position.z,
                     p.size, p.alpha * lifeRatio, p.color.x, p.color.y, p.color.z});
-                if (instances.size() >= WEB_MAX_PARTICLES) break;
             }
-            if (instances.size() >= WEB_MAX_PARTICLES) break;
         }
 
         if (!instances.empty()) {
@@ -5143,7 +5175,7 @@ void RenderSystem::Update(f32 deltaTime) {
             if (!grid || grid->N == 0) continue;
             ++fluidVolumeCount;
         }
-        const usize fluidShare = Effects::FluidBudgetShare(kMaxWebFluidCells, fluidVolumeCount);
+        const usize fluidShare = Effects::DrawBudgetShare(kMaxWebFluidCells, fluidVolumeCount);
 
         for (Entity e : m_World->GetEntitiesWithComponent<FluidVolumeComponent>()) {
             auto* vol = m_World->GetComponent<FluidVolumeComponent>(e);
@@ -9717,6 +9749,25 @@ void RenderSystem::RecordComputePrePass(f32 deltaTime) {
 void RenderSystem::TickGPUEmitters(f32 deltaTime) {
     if (!m_World || !m_GPUParticleSystem) return;
 
+    // Every GPU emitter spawns into ONE ring buffer, and a spawn overwrites the
+    // oldest slot wherever it came from. So an emitter's real cost is its
+    // steady-state population -- rate times lifetime -- and when the scene asks
+    // for more of those at once than the ring holds, the fastest emitter cycles
+    // it and overwrites everyone else's particles mid-life. A six-second smoke
+    // plume next to a spammy spark emitter gets cut short, with nothing about
+    // the smoke emitter to explain why.
+    //
+    // Measure the demand first, then scale every emitter by the same factor, so
+    // the scene degrades evenly instead of by spawn order.
+    f64 poolDemand = 0.0;
+    for (Entity e : m_World->GetEntitiesWithComponent<GPUParticleEmitterComponent>()) {
+        auto* em = m_World->GetComponent<GPUParticleEmitterComponent>(e);
+        if (!em || !em->emitting || em->spawnRate <= 0.0f) continue;
+        poolDemand += static_cast<f64>(em->spawnRate) * static_cast<f64>(em->customLifetime);
+    }
+    const f32 spawnScale =
+        Effects::PoolDemandScale(poolDemand, m_GPUParticleSystem->GetConfig().maxParticles);
+
     for (Entity e : m_World->GetEntitiesWithComponent<GPUParticleEmitterComponent>()) {
         auto* em = m_World->GetComponent<GPUParticleEmitterComponent>(e);
         if (!em) continue;
@@ -9775,9 +9826,12 @@ void RenderSystem::TickGPUEmitters(f32 deltaTime) {
             em->burstNow = false;
         }
 
-        // Continuous emission, accumulating fractional spawns
+        // Continuous emission, accumulating fractional spawns. The scale is the
+        // scene's share of the ring (1.0 whenever the scene fits), applied to
+        // the rate rather than to the batch so fractional spawns still
+        // accumulate correctly at low rates.
         if (em->emitting && em->spawnRate > 0.0f) {
-            em->accumulator += em->spawnRate * deltaTime;
+            em->accumulator += em->spawnRate * spawnScale * deltaTime;
             u32 n = static_cast<u32>(em->accumulator);
             if (n > 0) {
                 em->accumulator -= static_cast<f32>(n);

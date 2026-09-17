@@ -1,4 +1,5 @@
 #include "Enjin/Effects/ParticleRenderer.h"
+#include "Enjin/Effects/DrawBudget.h"
 #include "Enjin/Effects/ElementalSystem.h"
 #include "Enjin/Renderer/Vulkan/ShaderData.h"
 #include "Enjin/Renderer/Vulkan/VulkanPipeline.h"
@@ -230,6 +231,29 @@ void ParticleRenderer::Render(VkCommandBuffer commandBuffer,
     // Gather all emitter pool particles into instance cache
     m_InstanceDataCache.clear();
 
+    // Every emitter in the scene draws out of ONE instance buffer, so the cap
+    // has to be shared deliberately. It used to be first-come: emitters early
+    // in the ECS order filled the buffer and the rest of the scene's particles
+    // drew nothing at all, which looks like emitters that were never placed
+    // rather than particles that were dropped. Count the emitters that will
+    // draw, then give each an equal share.
+    //
+    // A campfire-and-chimney scene is exactly the shape that hit this: many
+    // small emitters rather than one big one, so the ones that vanish are
+    // whichever the scene happens to list last.
+    usize drawingEmitters = 0;
+    for (ECS::Entity entity : world->GetEntitiesWithComponent<ECS::ParticleEmitterComponent>()) {
+        if (!world->HasComponent<ECS::TransformComponent>(entity)) continue;
+        auto* emitter = world->GetComponent<ECS::ParticleEmitterComponent>(entity);
+        if (!emitter) continue;
+        auto* xf = world->GetComponent<ECS::TransformComponent>(entity);
+        if (xf && !xf->visible) continue;
+        if (!emitter->pool.initialized || emitter->pool.activeCount == 0) continue;
+        ++drawingEmitters;
+    }
+    if (drawingEmitters == 0) return;
+    const usize emitterShare = DrawBudgetShare(MAX_PARTICLES, drawingEmitters);
+
     for (ECS::Entity entity : world->GetEntitiesWithComponent<ECS::ParticleEmitterComponent>()) {
         if (!world->HasComponent<ECS::TransformComponent>(entity)) continue;
 
@@ -246,7 +270,22 @@ void ParticleRenderer::Render(VkCommandBuffer commandBuffer,
         const bool velocityStretch = emitter->renderMode == ECS::ParticleEmitterComponent::RenderMode::VelocityStretch;
         const f32 stretchScale = emitter->velocityStretchScale;
 
-        for (u32 i = 0; i < pool.activeCount && m_InstanceDataCache.size() < MAX_PARTICLES; ++i) {
+        // Over its share, an emitter takes every stride-th particle rather than
+        // its first N. Its plume keeps its extent and thins out; truncating the
+        // pool instead cuts by pool ORDER, which for a recycling pool is
+        // roughly by age, so the oldest end of the plume disappears and the
+        // effect looks cropped rather than sparse.
+        //
+        // No alpha compensation here, unlike the fluid grid: fluid cells sample
+        // a continuous density field, where half the billboards at twice the
+        // alpha integrates to the same cloud. Particles are discrete objects,
+        // and twice-as-bright sparks do not read as twice as many sparks.
+        const usize remaining = MAX_PARTICLES - m_InstanceDataCache.size();
+        if (remaining == 0) break;
+        const usize allowance = std::min(emitterShare, remaining);
+        const usize stride = DrawStride(pool.activeCount, allowance);
+
+        for (u32 i = 0; i < pool.activeCount && m_InstanceDataCache.size() < MAX_PARTICLES; i += static_cast<u32>(stride)) {
             const auto& p = pool.particles[i];
             ParticleInstanceData inst;
             inst.position = p.position;

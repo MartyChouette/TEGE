@@ -10,6 +10,10 @@
 // and 16,384 were drawn (Tests/Integration/FluidBench.cpp).
 #include "EnjinTest.h"
 #include "Enjin/Effects/FluidCellSelection.h"
+#include "Enjin/Effects/FluidSimulation.h"
+#include "Enjin/ECS/World.h"
+#include "Enjin/ECS/Components/Transform.h"
+#include "Enjin/ECS/Components/FluidVolume.h"
 
 #include <set>
 
@@ -157,25 +161,51 @@ ENJIN_TEST(FluidCellSelection, test_selection_empty_grid_selects_nothing) {
     ENJIN_ASSERT_EQ(out.size(), static_cast<usize>(0));
 }
 
-ENJIN_TEST(FluidBudgetShare, test_share_splits_the_budget_evenly_between_volumes) {
-    // Arrange / Act / Assert
-    ENJIN_ASSERT_EQ(FluidBudgetShare(65536, 1), static_cast<usize>(65536));
-    ENJIN_ASSERT_EQ(FluidBudgetShare(65536, 4), static_cast<usize>(16384));
-    ENJIN_ASSERT_EQ(FluidBudgetShare(65536, 8), static_cast<usize>(8192));
-}
+// The grid allocated for a volume must not outlive the volume. FluidSimulation
+// has an OnEntityRemoved that frees it and has never had a caller, so a deleted
+// chimney leaked about 5 MB for the life of the process and a streaming level
+// leaked one per cycle.
+ENJIN_TEST(FluidSimulation, test_grid_is_released_when_its_volume_is_destroyed) {
+    // Arrange
+    ECS::World world;
+    ECS::Entity e = world.CreateEntity();
+    world.AddComponent<ECS::TransformComponent>(e, ECS::TransformComponent{});
+    ECS::FluidVolumeComponent v;
+    v.gridSize = 16;
+    world.AddComponent<ECS::FluidVolumeComponent>(e, v);
 
-ENJIN_TEST(FluidBudgetShare, test_share_never_returns_zero_for_a_crowded_scene) {
-    // 200 campfires must each draw SOMETHING rather than the first few taking
-    // everything and the rest being invisible.
-    // Arrange / Act
-    const usize share = FluidBudgetShare(100, 200);
+    FluidSimulation sim;
+    sim.Update(1.0f / 60.0f, &world);
+    ENJIN_EXPECT_TRUE(sim.GetGridData(e) != nullptr);
+
+    // Act
+    world.DestroyEntity(e);
+    world.Update(0.0f);              // flushes the deferred destroy
+    sim.Update(1.0f / 60.0f, &world);
 
     // Assert
-    ENJIN_ASSERT_TRUE(share >= 1);
+    ENJIN_EXPECT_NULL(sim.GetGridData(e));
 }
 
-ENJIN_TEST(FluidBudgetShare, test_share_with_no_volumes_returns_the_whole_budget) {
-    ENJIN_ASSERT_EQ(FluidBudgetShare(65536, 0), static_cast<usize>(65536));
+ENJIN_TEST(FluidSimulation, test_grid_is_released_when_the_component_is_removed) {
+    // Arrange
+    ECS::World world;
+    ECS::Entity e = world.CreateEntity();
+    world.AddComponent<ECS::TransformComponent>(e, ECS::TransformComponent{});
+    ECS::FluidVolumeComponent v;
+    v.gridSize = 16;
+    world.AddComponent<ECS::FluidVolumeComponent>(e, v);
+
+    FluidSimulation sim;
+    sim.Update(1.0f / 60.0f, &world);
+    ENJIN_EXPECT_TRUE(sim.GetGridData(e) != nullptr);
+
+    // Act: the entity survives, the volume does not.
+    world.RemoveComponent<ECS::FluidVolumeComponent>(e);
+    sim.Update(1.0f / 60.0f, &world);
+
+    // Assert
+    ENJIN_EXPECT_NULL(sim.GetGridData(e));
 }
 
 ENJIN_TEST_MAIN()

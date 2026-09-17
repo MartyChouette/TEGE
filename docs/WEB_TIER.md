@@ -34,7 +34,7 @@ Last verified against the tree 2026-09-15.
 | Tilemaps | Same | Fixed 2026-09-13. It had never worked: mesh generation lived only in the Vulkan `RenderSystem::Update` body. |
 | Sprites, 2D | Same | |
 | Compute | Same | |
-| CPU ParticleRenderer visuals | **Absent** | |
+| CPU particle emitters | Same | `ParticleEmitterComponent` renders through the web particle pipeline (`RenderSystem.cpp`, the web `Update` body), capped at 8192 instances shared between emitters. The Vulkan `ParticleRenderer` CLASS is absent, which is what this row used to say -- and it read as the capability being gone, which it is not. What IS missing is the emitter `texturePath`: web particles are untextured coloured billboards. Use a GPU emitter for textured particles. |
 | Decals, trails, line renderers | **Absent** | |
 | 3D text | **Absent** | Use a UI canvas label positioned in screen space. |
 | Terrain auto-mesh | **Absent** | Author the mesh and ship it. |

@@ -18,6 +18,7 @@
 // differ in which cells they build one FOR, which is what this header is.
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Effects/FluidSimulation.h"
+#include "Enjin/Effects/DrawBudget.h"
 
 #include <vector>
 
@@ -31,10 +32,6 @@ struct FluidCellPick {
     f32 density = 0.0f;     // raw density, already at or above the threshold
     f32 alphaScale = 1.0f;  // stride compensation -- multiply density by this
 };
-
-// An equal slice of a shared budget, never first-come. A zero volume count
-// gets the whole budget so a caller need not special-case an empty scene.
-ENJIN_API usize FluidBudgetShare(usize budget, usize volumeCount);
 
 // Cells of `grid` worth drawing, at most `budget` of them, appended to `out`.
 //
