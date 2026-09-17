@@ -355,8 +355,13 @@ void FluidSimulation::Step2D(FluidGridData& grid, f32 dt, f32 visc, f32 diff,
     Advect2D(grid, 0, grid.density, grid.densityPrev, grid.velocityX, grid.velocityY, dt);
     ClearSolidDensity(grid);
 
-    // Apply buoyancy (upward force proportional to density)
-    if (buoyancy > 0.0f) {
+    // Density-proportional vertical force. POSITIVE rises (smoke, steam, fire),
+    // NEGATIVE sinks (water, lava) -- and negative used to be discarded by a
+    // `> 0.0f` gate, so no fluid in the engine could ever fall. That is what
+    // stood between this solver and a liquid that pools: obstacles contain it,
+    // the projection keeps it incompressible, and gravity is what makes it
+    // settle in the container rather than hang in the air.
+    if (buoyancy != 0.0f) {
         for (u32 j = 1; j <= N; ++j) {
             for (u32 i = 1; i <= N; ++i) {
                 grid.velocityY[grid.IX(i, j)] += buoyancy * grid.density[grid.IX(i, j)] * dt;
@@ -510,8 +515,8 @@ void FluidSimulation::Step3D(FluidGridData& grid, f32 dt, f32 visc, f32 diff,
     Advect3D(grid, 0, grid.density, grid.densityPrev, grid.velocityX, grid.velocityY, grid.velocityZ, dt);
     ClearSolidDensity(grid);
 
-    // Apply buoyancy (Y-up)
-    if (buoyancy > 0.0f) {
+    // Y-up, and see the 2D note: negative sinks, and used to be discarded.
+    if (buoyancy != 0.0f) {
         for (u32 k = 1; k <= N; ++k) {
             for (u32 j = 1; j <= N; ++j) {
                 for (u32 i = 1; i <= N; ++i) {
