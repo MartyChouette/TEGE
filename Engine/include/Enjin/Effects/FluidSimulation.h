@@ -29,6 +29,15 @@ struct FluidGridData {
     std::vector<f32> pressure;
     std::vector<f32> divergence;
 
+    // One byte per cell: 1 = inside solid geometry, 0 = fluid. EMPTY means the
+    // volume has no obstacles, which is the old behaviour and costs nothing to
+    // check. Filled by Effects::BuildFluidObstacleMask from the scene's
+    // colliders; see FluidObstacles.h for why this exists at all.
+    std::vector<u8> solid;
+
+    bool HasObstacles() const { return !solid.empty(); }
+    bool IsSolid(usize index) const { return !solid.empty() && solid[index] != 0; }
+
     void Allocate(u32 gridSize, bool mode3D) {
         N = gridSize;
         is3D = mode3D;
@@ -41,6 +50,9 @@ struct FluidGridData {
         velocityYPrev.assign(totalSize, 0.0f);
         pressure.assign(totalSize, 0.0f);
         divergence.assign(totalSize, 0.0f);
+        // Reallocating drops any obstacle mask: it was sized for the OLD
+        // resolution, and keeping it would index cells that no longer exist.
+        solid.clear();
         if (is3D) {
             velocityZ.assign(totalSize, 0.0f);
             velocityZPrev.assign(totalSize, 0.0f);
@@ -79,6 +91,18 @@ public:
     void AddDensityAtWorldPos(ECS::Entity entity, const Math::Vector3& worldPos, f32 amount, f32 radius);
     void AddVelocityAtWorldPos(ECS::Entity entity, const Math::Vector3& worldPos, const Math::Vector3& velocity, f32 radius);
     void Reset(ECS::Entity entity);
+
+    // Obstacles for one volume: one byte per cell, 1 = solid, sized to match
+    // the grid's own arrays. Build it with Effects::BuildFluidObstacleMask.
+    // An empty mask means no obstacles, which is the behaviour every volume
+    // had before obstacles existed.
+    //
+    // Set rather than derived, because the cases differ: a bake voxelises once
+    // against static level geometry, and a live volume would want to refresh
+    // only when a collider actually moves. Neither wants it recomputed per
+    // step -- the mask costs cells-times-colliders to build.
+    void SetObstacleMask(ECS::Entity entity, std::vector<u8> mask);
+    void ClearObstacleMask(ECS::Entity entity);
     void OnEntityRemoved(ECS::Entity entity);
 
     const FluidGridData* GetGridData(ECS::Entity entity) const;

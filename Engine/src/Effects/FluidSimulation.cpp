@@ -9,6 +9,71 @@
 namespace Enjin {
 namespace Effects {
 
+namespace {
+
+// Apply the wall rule to INTERIOR solid cells, the same way SetBoundary
+// applies it to the grid's own shell.
+//
+// Putting it here rather than in each solve stage is deliberate: SetBoundary
+// is already called after every relaxation sweep, every advection and every
+// projection stage, so obstacles get enforced everywhere they need to be by
+// changing one function instead of five, and a new stage cannot forget.
+//
+//   b != 0 is a velocity component -> zero inside a solid. No-slip, and it is
+//   what stops the projection pushing flow into the wall.
+//   b == 0 is a scalar (pressure, divergence) -> copy the average of the fluid
+//   neighbours, which is a zero-gradient Neumann condition across the face and
+//   therefore no flux through it. A solid with no fluid neighbour at all is
+//   interior to a thick wall and never read, so 0 is fine there.
+//
+// Density is NOT handled here even though it is also a b == 0 scalar: averaging
+// fluid neighbours into a wall cell would make the wall glow with smoke. It is
+// cleared separately after advection.
+template <typename IndexFn>
+void EnforceSolidCells(FluidGridData& grid, i32 b, std::vector<f32>& x,
+                       u32 N, bool is3D, IndexFn idx) {
+    if (!grid.HasObstacles()) return;
+
+    const u32 kHi = is3D ? N : 1;
+    for (u32 k = 1; k <= kHi; ++k) {
+        for (u32 j = 1; j <= N; ++j) {
+            for (u32 i = 1; i <= N; ++i) {
+                const usize c = idx(i, j, k);
+                if (!grid.IsSolid(c)) continue;
+
+                if (b != 0) { x[c] = 0.0f; continue; }
+
+                f32 sum = 0.0f;
+                i32 n = 0;
+                auto take = [&](usize nb) {
+                    if (!grid.IsSolid(nb)) { sum += x[nb]; ++n; }
+                };
+                take(idx(i - 1, j, k));
+                take(idx(i + 1, j, k));
+                take(idx(i, j - 1, k));
+                take(idx(i, j + 1, k));
+                if (is3D) {
+                    take(idx(i, j, k - 1));
+                    take(idx(i, j, k + 1));
+                }
+                x[c] = n ? sum / static_cast<f32>(n) : 0.0f;
+            }
+        }
+    }
+}
+
+// Smoke that advected into a wall is deleted rather than averaged away, so a
+// wall never lights up with the density of what hit it.
+void ClearSolidDensity(FluidGridData& grid) {
+    if (!grid.HasObstacles()) return;
+    for (usize c = 0; c < grid.density.size(); ++c) {
+        if (grid.solid[c]) grid.density[c] = 0.0f;
+    }
+}
+
+} // namespace
+
+
 void FluidSimulation::Update(f32 dt, ECS::World* world) {
     if (!world || dt <= 0.0f) return;
     if (dt > 0.5f) return;  // Skip on long frames (loading/pause)
@@ -226,6 +291,22 @@ void FluidSimulation::Reset(ECS::Entity entity) {
     }
 }
 
+void FluidSimulation::SetObstacleMask(ECS::Entity entity, std::vector<u8> mask) {
+    auto it = m_Grids.find(entity);
+    if (it == m_Grids.end()) return;   // no grid yet; the volume has not stepped
+
+    // A mask sized for a different resolution would index cells that do not
+    // exist. Refusing is better than clamping: a silently half-applied set of
+    // obstacles looks like the solver ignoring geometry.
+    if (mask.size() != it->second.density.size()) return;
+    it->second.solid = std::move(mask);
+}
+
+void FluidSimulation::ClearObstacleMask(ECS::Entity entity) {
+    auto it = m_Grids.find(entity);
+    if (it != m_Grids.end()) it->second.solid.clear();
+}
+
 void FluidSimulation::OnEntityRemoved(ECS::Entity entity) {
     m_Grids.erase(entity);
 }
@@ -272,6 +353,7 @@ void FluidSimulation::Step2D(FluidGridData& grid, f32 dt, f32 visc, f32 diff,
     Diffuse2D(grid, 0, grid.density, grid.densityPrev, diff, dt, iterations);
     std::swap(grid.densityPrev, grid.density);
     Advect2D(grid, 0, grid.density, grid.densityPrev, grid.velocityX, grid.velocityY, dt);
+    ClearSolidDensity(grid);
 
     // Apply buoyancy (upward force proportional to density)
     if (buoyancy > 0.0f) {
@@ -385,6 +467,9 @@ void FluidSimulation::SetBoundary2D(FluidGridData& grid, i32 b, std::vector<f32>
     x[grid.IX(0, N + 1)]     = 0.5f * (x[grid.IX(1, N + 1)] + x[grid.IX(0, N)]);
     x[grid.IX(N + 1, 0)]     = 0.5f * (x[grid.IX(N, 0)] + x[grid.IX(N + 1, 1)]);
     x[grid.IX(N + 1, N + 1)] = 0.5f * (x[grid.IX(N, N + 1)] + x[grid.IX(N + 1, N)]);
+
+    EnforceSolidCells(grid, b, x, N, false,
+                      [&](u32 i, u32 j, u32) { return static_cast<usize>(grid.IX(i, j)); });
 }
 
 // ============================================================================
@@ -423,6 +508,7 @@ void FluidSimulation::Step3D(FluidGridData& grid, f32 dt, f32 visc, f32 diff,
     Diffuse3D(grid, 0, grid.density, grid.densityPrev, diff, dt, iterations);
     std::swap(grid.densityPrev, grid.density);
     Advect3D(grid, 0, grid.density, grid.densityPrev, grid.velocityX, grid.velocityY, grid.velocityZ, dt);
+    ClearSolidDensity(grid);
 
     // Apply buoyancy (Y-up)
     if (buoyancy > 0.0f) {
@@ -582,6 +668,9 @@ void FluidSimulation::SetBoundary3D(FluidGridData& grid, i32 b, std::vector<f32>
     x[grid.IX3(0, N + 1, N + 1)]     = (x[grid.IX3(1, N + 1, N + 1)] + x[grid.IX3(0, N, N + 1)] + x[grid.IX3(0, N + 1, N)]) / 3.0f;
     x[grid.IX3(N + 1, 0, N + 1)]     = (x[grid.IX3(N, 0, N + 1)] + x[grid.IX3(N + 1, 1, N + 1)] + x[grid.IX3(N + 1, 0, N)]) / 3.0f;
     x[grid.IX3(N + 1, N + 1, N + 1)] = (x[grid.IX3(N, N + 1, N + 1)] + x[grid.IX3(N + 1, N, N + 1)] + x[grid.IX3(N + 1, N + 1, N)]) / 3.0f;
+
+    EnforceSolidCells(grid, b, x, N, true,
+                      [&](u32 i, u32 j, u32 k) { return static_cast<usize>(grid.IX3(i, j, k)); });
 }
 
 } // namespace Effects

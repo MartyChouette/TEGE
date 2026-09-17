@@ -27,10 +27,15 @@ static_assert(sizeof(ParticleColliderShape) == 48, "must match the GLSL/WGSL sha
 // Max shapes uploaded to the sim (matches the shader-side cap).
 constexpr u32 kMaxParticleColliders = 32;
 
-// Gather every non-trigger Box/Sphere/Capsule collider in the world (capped).
+// Gather every non-trigger Box/Sphere/Capsule collider in the world.
 // Collider sizes are WORLD SPACE per engine convention; capsule height is the
 // cylinder section only.
-void GatherParticleColliders(ECS::World* world, std::vector<ParticleColliderShape>& out);
+//
+// `maxShapes` defaults to the GPU sim's shader-side cap. The fluid obstacle
+// voxeliser passes no cap: it runs once at bake time on the CPU, where 32 is
+// an arbitrary limit that would silently drop a room's worth of walls.
+void GatherParticleColliders(ECS::World* world, std::vector<ParticleColliderShape>& out,
+                             usize maxShapes = kMaxParticleColliders);
 
 } // namespace Effects
 } // namespace Enjin

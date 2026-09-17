@@ -6,7 +6,8 @@
 namespace Enjin {
 namespace Effects {
 
-void GatherParticleColliders(ECS::World* world, std::vector<ParticleColliderShape>& out) {
+void GatherParticleColliders(ECS::World* world, std::vector<ParticleColliderShape>& out,
+                             usize maxShapes) {
     out.clear();
     if (!world) return;
     using namespace Enjin::ECS;
@@ -16,7 +17,7 @@ void GatherParticleColliders(ECS::World* world, std::vector<ParticleColliderShap
     };
 
     for (Entity e : world->GetEntitiesWithComponent<BoxColliderComponent>()) {
-        if (out.size() >= kMaxParticleColliders) return;
+        if (out.size() >= maxShapes) return;
         auto* col = world->GetComponent<BoxColliderComponent>(e);
         auto* xf = world->GetComponent<TransformComponent>(e);
         if (!col || !xf || col->isTrigger) continue;
@@ -28,7 +29,7 @@ void GatherParticleColliders(ECS::World* world, std::vector<ParticleColliderShap
         out.push_back(s);
     }
     for (Entity e : world->GetEntitiesWithComponent<SphereColliderComponent>()) {
-        if (out.size() >= kMaxParticleColliders) return;
+        if (out.size() >= maxShapes) return;
         auto* col = world->GetComponent<SphereColliderComponent>(e);
         auto* xf = world->GetComponent<TransformComponent>(e);
         if (!col || !xf || col->isTrigger) continue;
@@ -40,7 +41,7 @@ void GatherParticleColliders(ECS::World* world, std::vector<ParticleColliderShap
         out.push_back(s);
     }
     for (Entity e : world->GetEntitiesWithComponent<CapsuleColliderComponent>()) {
-        if (out.size() >= kMaxParticleColliders) return;
+        if (out.size() >= maxShapes) return;
         auto* col = world->GetComponent<CapsuleColliderComponent>(e);
         auto* xf = world->GetComponent<TransformComponent>(e);
         if (!col || !xf || col->isTrigger) continue;
