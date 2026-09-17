@@ -21,6 +21,7 @@
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/FluidVolume.h"
 #include "Enjin/Effects/FluidSimulation.h"
+#include "Enjin/Effects/FluidBake.h"
 
 #include <chrono>
 #include <cstdio>
@@ -208,6 +209,40 @@ int main() {
             std::printf("%-8d %12u %12s %9.1f%%\n",
                         step, visible, visible > 16384 ? "EXCEEDED" : "ok", pct);
         }
+    }
+
+    // What a RECORDING costs on disk, which is what decides whether a town can
+    // have a river loop and a few chimneys. Estimated at 12x in the header
+    // comments; this is the number from real smoke rather than the estimate.
+    std::printf("\nbaked recording, 2 seconds of smoke at 30fps:\n");
+    std::printf("%-6s %12s %12s %12s %10s\n",
+                "grid", "raw KB/fr", "baked KB/fr", "MB/sec", "ratio");
+    for (u32 gridSize : {16u, 32u, 48u}) {
+        ECS::World world;
+        ECS::Entity e = world.CreateEntity();
+        world.AddComponent<ECS::TransformComponent>(e, ECS::TransformComponent{});
+        ECS::FluidVolumeComponent v;
+        v.dimension = ECS::FluidDimension::Mode3D;
+        v.fluidType = ECS::FluidType::Smoke;
+        v.gridSize = gridSize;
+        v.buoyancy = 1.0f;
+        v.halfExtents = Math::Vector3(8.0f, 8.0f, 8.0f);
+        world.AddComponent<ECS::FluidVolumeComponent>(e, v);
+
+        Effects::FluidBakeSettings s;
+        s.frameRate = 30.0f;
+        s.duration = 2.0f;
+        s.settleTime = 2.0f;
+        s.useSceneColliders = false;
+
+        Effects::FluidBake bake;
+        if (!Effects::BakeFluid(&world, e, s, bake)) continue;
+
+        const f64 rawKB = f64(bake.CellCount() * sizeof(f32)) / 1024.0;
+        const f64 bakedKB = f64(bake.EncodedBytes()) / f64(bake.FrameCount()) / 1024.0;
+        std::printf("%-6u %12.1f %12.2f %12.2f %9.1fx\n",
+                    bake.gridSize, rawKB, bakedKB,
+                    bakedKB * f64(s.frameRate) / 1024.0, bake.CompressionRatio());
     }
 
     std::printf("\nRelaxation is the per-iteration column: diffuse on three velocity\n");

@@ -346,6 +346,7 @@ enjin_add_test(TestFluidCellSelection Unit/Effects/TestFluidCellSelection.cpp)
 enjin_add_test(TestDrawBudget        Unit/Effects/TestDrawBudget.cpp)
 enjin_add_test(TestFluidObstacles    Unit/Effects/TestFluidObstacles.cpp)
 enjin_add_test(TestFluidSurface      Unit/Effects/TestFluidSurface.cpp)
+enjin_add_test(TestFluidBake         Unit/Effects/TestFluidBake.cpp)
 
 # --- Geometry ---
 enjin_add_test(TestCSG                Unit/Geometry/TestCSG.cpp)
