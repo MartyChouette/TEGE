@@ -1179,6 +1179,35 @@ about what one does, and the ones that sat out catch up.
 
 For anything that is set dressing rather than gameplay, **record it instead**.
 
+#### Obstacles
+
+A fluid volume is stopped by the scene's colliders, live and in a bake alike.
+A 3D volume reads the 3D colliders (Box, Sphere, Capsule); a 2D volume reads
+**both** those and the 2D `Body2D` shapes, because a 2D volume in front of 3D
+geometry is an ordinary scene rather than a mistake. A 3D collider counts
+against a 2D volume when it intersects the volume's depth, so a flat quad
+sitting in the sheet is a wall and a crate well behind it is not. Triggers and
+sensors are ignored -- they detect overlap, they are not geometry.
+
+The mask is rebuilt when the colliders or the volume move, not every frame, so
+a collider dragged in the editor takes effect as soon as it settles.
+
+#### What gets simulated
+
+In a built game a volume the camera cannot see is not solved at all. That
+matters because a grid pays for its whole box whether or not there is smoke in
+it -- one 48-cell 3D volume is about 56 ms -- so a village of chimneys used to
+cost the same whether two were on screen or twenty. A volume is kept while any
+part of its box is in view, so a plume walking off the edge of the screen does
+not pop.
+
+A culled volume FREEZES rather than resetting, and the time it missed is
+dropped: walk back to a campfire and you see the plume it had, not a
+fast-forward through the minutes you were away.
+
+The editor does NOT cull, deliberately. It has two views of the same scene, and
+culling against one of them would freeze smoke you are looking at in the other.
+
 #### Bake and Playback
 
 Under **Fluid Volume > Bake / Playback**. A bake solves the whole take once,
@@ -1195,7 +1224,7 @@ quality stop being a frame-rate decision.
 | Settle | Simulated and thrown away before recording starts, so the take opens on a developed plume instead of an empty grid filling up. |
 | Loop | Record a take that wraps -- a river, a chimney that never stops. |
 | Loop Blend Frames | Frames cross-faded into the start on wrap. The last frame of a fluid take never matches the first, so `0` pops once per cycle. |
-| Use Scene Colliders | Voxelise the level's colliders as walls, so the recorded fluid flows around the geometry. |
+| Use Scene Colliders | Voxelise the level's colliders as walls, so the recorded fluid flows around the geometry. Obstacles apply to a LIVE volume too, whether or not you ever bake it. |
 
 Baking adds a **Fluid Playback** component and points it at the file it just
 wrote. That component has `playing`, `speed` (negative runs the take
@@ -1204,7 +1233,25 @@ Fluid Volume keeps describing the *look* -- colour, opacity, density threshold
 -- so a recording can be recoloured or resized without re-baking.
 
 One recording is shared by every volume that references it, so twenty
-chimneys playing one take hold one copy of it.
+chimneys playing one take hold one copy of it. Three ways to point a second
+volume at one that already exists:
+
+- **Drag it** out of the Asset Browser onto the **Recording** field. Takes
+  show there as `FLD`, and hovering one reports its grid, length and whether
+  it loops -- read from the file's header, so it costs nothing.
+- **Pick...** next to the field lists every recording under the project's
+  `assets/`, with the same summary beside each. If the list is empty it names
+  the directory it searched.
+- **Type the path**, project-relative, e.g. `assets/fluid/Chimney.enjfluid`.
+
+Right-clicking a recording in the Asset Browser also offers **Play on Selected
+Fluid Volume**, which adds the Fluid Playback component if the volume does not
+have one yet. It is greyed out, rather than hidden, when the selection is not
+a fluid volume.
+
+A recording dragged in from outside the project is refused rather than
+stored: the path would be absolute, and a scene carrying one breaks the first
+time the project is moved or opened on another machine.
 
 **Storage**, measured on real smoke rather than estimated. Only the density
 field is recorded, quantised to 8 bits, with empty cells run-encoded:

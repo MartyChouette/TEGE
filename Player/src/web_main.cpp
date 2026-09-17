@@ -1294,6 +1294,24 @@ public:
         // has taken over. Running it the other way round would solve the
         // volume once before playback claimed it, which shows as one frame of
         // real simulation every time a take starts.
+        // Cull volumes the camera cannot see. A village has twenty chimneys
+        // and two on screen, and a 48^3 volume is 56 ms whether or not anyone
+        // is looking at it. Fed from the renderer's active camera each frame
+        // rather than cached: a camera switch must not leave the solver culling
+        // against the previous view. No camera means no viewer, which means
+        // nothing is culled.
+        if (auto* fluidCam = m_RenderSystem ? m_RenderSystem->GetCamera() : nullptr) {
+            Enjin::Effects::FluidViewer viewer;
+            viewer.position = fluidCam->GetPosition();
+            Enjin::ECS::RenderSystem::ExtractFrustumPlanes(
+                fluidCam->GetProjectionMatrix() * fluidCam->GetViewMatrix(),
+                viewer.frustumPlanes);
+            viewer.hasFrustum = true;
+            m_FluidSimulation.SetViewer(viewer);
+        } else {
+            m_FluidSimulation.ClearViewer();
+        }
+
         m_FluidPlayback.Update(deltaTime, m_World.get(), m_FluidSimulation);
         m_FluidSimulation.Update(deltaTime, m_World.get());
         m_FluidTerrainCoupling.Update(deltaTime, m_World.get(), m_FluidSimulation);

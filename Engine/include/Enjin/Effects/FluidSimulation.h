@@ -35,6 +35,13 @@ struct FluidGridData {
     // colliders; see FluidObstacles.h for why this exists at all.
     std::vector<u8> solid;
 
+    // Fingerprint of everything `solid` was built FROM: the scene's colliders
+    // plus this volume's own placement (the mask is world space, so moving the
+    // volume invalidates it just as moving a crate does). The live solver
+    // rebuilds when this changes and not otherwise -- voxelising every volume
+    // every frame is the honest alternative and costs far more than a hash.
+    u64 obstacleKey = 0;
+
     // True when this grid's contents come from a RECORDING rather than from
     // the solver. The solver skips it entirely: re-solving a played-back frame
     // would immediately overwrite it with a step of real simulation, so the
@@ -59,6 +66,7 @@ struct FluidGridData {
         // Reallocating drops any obstacle mask: it was sized for the OLD
         // resolution, and keeping it would index cells that no longer exist.
         solid.clear();
+        obstacleKey = 0;   // the mask is gone, so the cache key must go too
         if (is3D) {
             velocityZ.assign(totalSize, 0.0f);
             velocityZPrev.assign(totalSize, 0.0f);
@@ -87,6 +95,33 @@ struct FluidGridData {
     u32 IX(u32 i, u32 j) const { return i + (N + 2) * j; }
     // 3D indexing: i,j,k in [0..N+1]
     u32 IX3(u32 i, u32 j, u32 k) const { return i + (N + 2) * (j + (N + 2) * k); }
+};
+
+// Where the camera is, so a volume nobody can see need not be solved.
+//
+// Fed in by each runtime rather than read from the world: the solver has no
+// business knowing which camera is the active one, and the editor's answer
+// (edit camera, or the game camera in play mode) is not the player's. This is
+// the shape ParticleSystem::SetSceneWind already uses for scene state a system
+// does not own.
+//
+// UNSET means nothing is culled -- the behaviour before this existed. A viewer
+// that might be stale or wrong would freeze smoke in front of the player,
+// which is far worse than paying for a volume that is off screen.
+struct ENJIN_API FluidViewer {
+    Math::Vector3 position;
+
+    // Six planes as (nx, ny, nz, d), inward-facing, from
+    // RenderSystem::ExtractFrustumPlanes. A volume whose bounding sphere is
+    // fully behind any one of them is not solved this frame.
+    Math::Vector4 frustumPlanes[6];
+    bool hasFrustum = false;
+
+    // Beyond this distance a volume is not solved, measured to its bounding
+    // sphere. 0 means no distance limit, which is the honest default: what
+    // counts as "far" depends on the scene's scale and guessing it would
+    // freeze a chimney in a cramped level.
+    f32 cullDistance = 0.0f;
 };
 
 // Stable Fluids solver (Jos Stam, unconditionally stable)
@@ -152,6 +187,23 @@ public:
     // budget that is never hit.
     u32 GetDeferredVolumeCount() const { return m_DeferredVolumes; }
 
+    // Cull volumes the camera cannot see. Nothing is culled until a runtime
+    // sets this; see FluidViewer.
+    //
+    // A culled volume FREEZES: it keeps its density and resumes from it, and
+    // the time it missed is dropped rather than owed, so walking back to a
+    // campfire shows the plume it had rather than a fast-forward of the
+    // minutes you were away. Frozen-and-resuming is the compromise this buys;
+    // the alternative is paying 56 ms for a volume behind the player.
+    void SetViewer(const FluidViewer& viewer) { m_Viewer = viewer; m_HasViewer = true; }
+    void ClearViewer() { m_HasViewer = false; }
+    bool HasViewer() const { return m_HasViewer; }
+
+    // Volumes skipped this frame because the viewer could not see them. Same
+    // reason the deferred count exists: work that vanishes silently cannot be
+    // told apart from work that was never needed.
+    u32 GetCulledVolumeCount() const { return m_CulledVolumes; }
+
 private:
     std::unordered_map<ECS::Entity, FluidGridData> m_Grids;
 
@@ -162,7 +214,10 @@ private:
     usize m_RoundRobinStart = 0;
     f64 m_FrameBudgetMs = 8.0;
     u32 m_DeferredVolumes = 0;
+    u32 m_CulledVolumes = 0;
     ECS::Entity m_SoloEntity = ECS::INVALID_ENTITY;
+    FluidViewer m_Viewer;
+    bool m_HasViewer = false;
 
     // 2D solver steps
     void Step2D(FluidGridData& grid, f32 dt, f32 visc, f32 diff, f32 dissipation, f32 velDissipation, i32 iterations, f32 buoyancy);

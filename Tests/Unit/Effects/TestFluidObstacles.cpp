@@ -12,6 +12,7 @@
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/FluidVolume.h"
+#include "Enjin/Physics/PhysicsTypes2D.h"
 
 #include <cmath>
 #include <algorithm>
@@ -189,6 +190,218 @@ ENJIN_TEST(FluidSimulationObstacles, test_smoke_does_not_cross_a_solid_wall) {
 
     ENJIN_EXPECT_TRUE(below > 1.0f);              // the plume exists
     ENJIN_EXPECT_TRUE(above < below * 0.05f);     // and almost none got through
+}
+
+ENJIN_TEST(FluidObstacles2D, test_a_2d_body_blocks_a_2d_volume) {
+    // The gap this closes: 2D and 3D physics are strictly separate, so a 2D
+    // scene has no BoxColliderComponent anywhere -- its geometry is
+    // Body2DComponent. Gathering a 2D volume's obstacles through the 3D
+    // components returned NOTHING, and an empty mask is indistinguishable from
+    // a solver that ignores geometry.
+    ECS::World world;
+    ECS::Entity wall = world.CreateEntity();
+    ECS::TransformComponent xf;
+    xf.position = Math::Vector3(0.0f, 0.0f, 0.0f);
+    world.AddComponent<ECS::TransformComponent>(wall, xf);
+    Physics::Body2DComponent body;
+    body.shapeType = Physics::Shape2DType::Box;
+    body.box.halfExtents = Math::Vector2(20.0f, 1.5f);
+    body.isStatic = true;
+    world.AddComponent<Physics::Body2DComponent>(wall, body);
+
+    std::vector<u8> mask;
+    BuildFluidObstacleMask(&world, Math::Vector3(0, 0, 0), Math::Vector3(8, 8, 1),
+                           16, false, mask);
+
+    const usize stride = 18;
+    usize solidCells = 0;
+    for (u8 c : mask) solidCells += (c != 0);
+    ENJIN_EXPECT_TRUE(solidCells > 0);
+
+    // The slab sits across the middle rows and nowhere near the top.
+    ENJIN_EXPECT_TRUE(mask[8 + stride * 8] != 0);
+    ENJIN_EXPECT_TRUE(mask[8 + stride * 16] == 0);
+    ENJIN_EXPECT_TRUE(mask[8 + stride * 1] == 0);
+}
+
+ENJIN_TEST(FluidObstacles2D, test_a_sensor_is_not_a_wall) {
+    // A sensor detects overlap; it does not stop smoke. Same exclusion the 3D
+    // gather makes for isTrigger, and forgetting it would turn every trigger
+    // volume in a level into a wall.
+    ECS::World world;
+    ECS::Entity e = world.CreateEntity();
+    world.AddComponent<ECS::TransformComponent>(e, ECS::TransformComponent{});
+    Physics::Body2DComponent body;
+    body.shapeType = Physics::Shape2DType::Box;
+    body.box.halfExtents = Math::Vector2(20.0f, 1.5f);
+    body.isSensor = true;
+    world.AddComponent<Physics::Body2DComponent>(e, body);
+
+    std::vector<u8> mask;
+    BuildFluidObstacleMask(&world, Math::Vector3(0, 0, 0), Math::Vector3(8, 8, 1),
+                           16, false, mask);
+
+    for (u8 c : mask) ENJIN_EXPECT_TRUE(c == 0);
+}
+
+ENJIN_TEST(FluidObstacles2D, test_a_circle_body_is_round_not_its_bounding_box) {
+    // A shape approximated by its AABB stops smoke where there is nothing,
+    // which reads as a solver bug rather than as a shape the mask could not
+    // represent.
+    ECS::World world;
+    ECS::Entity e = world.CreateEntity();
+    world.AddComponent<ECS::TransformComponent>(e, ECS::TransformComponent{});
+    Physics::Body2DComponent body;
+    body.shapeType = Physics::Shape2DType::Circle;
+    body.circle.radius = 4.0f;
+    world.AddComponent<Physics::Body2DComponent>(e, body);
+
+    std::vector<u8> mask;
+    BuildFluidObstacleMask(&world, Math::Vector3(0, 0, 0), Math::Vector3(8, 8, 1),
+                           16, false, mask);
+
+    const usize stride = 18;
+    // Centre solid, the corner of its bounding box open.
+    ENJIN_EXPECT_TRUE(mask[8 + stride * 8] != 0);
+    // Cell centres near (-3.5,-3.5) are outside a radius-4 circle at 4.95 away.
+    ENJIN_EXPECT_TRUE(mask[5 + stride * 5] == 0);
+}
+
+ENJIN_TEST(FluidObstacles2D, test_the_live_solver_builds_its_own_mask_from_the_scene) {
+    // The second half of the same bug: BuildFluidObstacleMask had exactly one
+    // caller, inside BakeFluid. A LIVE volume never asked the world for
+    // obstacles at all, so the same scene flowed around a crate when baked and
+    // straight through it when played -- one feature, present or absent
+    // depending on which you looked at.
+    ECS::World world;
+
+    ECS::Entity wall = world.CreateEntity();
+    world.AddComponent<ECS::TransformComponent>(wall, ECS::TransformComponent{});
+    Physics::Body2DComponent body;
+    body.shapeType = Physics::Shape2DType::Box;
+    body.box.halfExtents = Math::Vector2(20.0f, 1.5f);
+    body.isStatic = true;
+    world.AddComponent<Physics::Body2DComponent>(wall, body);
+
+    ECS::Entity e = world.CreateEntity();
+    world.AddComponent<ECS::TransformComponent>(e, ECS::TransformComponent{});
+    ECS::FluidVolumeComponent v;
+    v.dimension = ECS::FluidDimension::Mode2D;
+    v.fluidType = ECS::FluidType::Smoke;
+    v.gridSize = 16;
+    v.buoyancy = 2.0f;
+    v.halfExtents = Math::Vector3(8.0f, 8.0f, 1.0f);
+    world.AddComponent<ECS::FluidVolumeComponent>(e, v);
+
+    // No SetObstacleMask call anywhere: the solver has to go and get it.
+    FluidSimulation sim;
+    for (int i = 0; i < 400; ++i) sim.Update(1.0f / 60.0f, &world);
+
+    const FluidGridData* g = sim.GetGridData(e);
+    ENJIN_ASSERT_TRUE(g != nullptr);
+    ENJIN_ASSERT_TRUE(g->HasObstacles());
+
+    const u32 N = g->N;
+    f32 below = 0.0f, above = 0.0f;
+    for (u32 j = 1; j <= N; ++j)
+        for (u32 i = 1; i <= N; ++i) {
+            const f32 d = g->density[g->IX(i, j)];
+            if (j <= 6) below += d;
+            else if (j >= 11) above += d;
+        }
+
+    ENJIN_EXPECT_TRUE(below > 1.0f);              // the plume exists
+    ENJIN_EXPECT_TRUE(above < below * 0.05f);     // and almost none got through
+}
+
+ENJIN_TEST(FluidObstacles2D, test_a_3d_collider_blocks_a_2d_volume_too) {
+    // The mixed scene, which is the normal one: a 2D fluid volume in front of
+    // 3D meshes carrying ordinary BoxColliders. Gathering only Body2D for a 2D
+    // volume reproduced the original bug -- smoke through a visible crate --
+    // in exactly the scene a person would open to check the fix.
+    ECS::World world;
+
+    ECS::Entity crate = world.CreateEntity();
+    ECS::TransformComponent xf;
+    xf.position = Math::Vector3(0.0f, 0.0f, 0.0f);
+    world.AddComponent<ECS::TransformComponent>(crate, xf);
+    ECS::BoxColliderComponent col;
+    col.size = Math::Vector3(40.0f, 3.0f, 4.0f);   // world space, spans the sheet in Z
+    world.AddComponent<ECS::BoxColliderComponent>(crate, col);
+
+    std::vector<u8> mask;
+    BuildFluidObstacleMask(&world, Math::Vector3(0, 0, 0), Math::Vector3(8, 8, 1),
+                           16, false, mask);
+
+    const usize stride = 18;
+    ENJIN_EXPECT_TRUE(mask[8 + stride * 8] != 0);    // the slab
+    ENJIN_EXPECT_TRUE(mask[8 + stride * 16] == 0);   // clear above it
+}
+
+ENJIN_TEST(FluidObstacles2D, test_a_flat_collider_in_the_sheet_still_blocks) {
+    // Taken from a real scene: a Quad with a box collider of 5.3 x 1.0 x 0.0.
+    // A flat collider is an ordinary thing to author in a 2D scene, and a
+    // point test at the middle of the volume catches it only when the sample
+    // plane lands exactly on it -- so it would work in one scene and vanish in
+    // the next, which reads as the feature being unreliable rather than as a
+    // geometry test that cannot see a shape with no thickness.
+    ECS::World world;
+    ECS::Entity quad = world.CreateEntity();
+    ECS::TransformComponent xf;
+    xf.position = Math::Vector3(0.0f, 0.0f, 0.4f);   // off-centre inside the slab
+    world.AddComponent<ECS::TransformComponent>(quad, xf);
+    ECS::BoxColliderComponent col;
+    col.size = Math::Vector3(20.0f, 3.0f, 0.0f);     // ZERO thickness
+    world.AddComponent<ECS::BoxColliderComponent>(quad, col);
+
+    std::vector<u8> mask;
+    BuildFluidObstacleMask(&world, Math::Vector3(0, 0, 0), Math::Vector3(8, 8, 1),
+                           16, false, mask);
+
+    const usize stride = 18;
+    ENJIN_EXPECT_TRUE(mask[8 + stride * 8] != 0);    // the slab is seen
+    ENJIN_EXPECT_TRUE(mask[8 + stride * 16] == 0);   // and only where it is
+}
+
+ENJIN_TEST(FluidObstacles2D, test_a_3d_collider_off_the_sheet_does_not_block_it) {
+    // The other half of the same decision: a 3D box is tested against the
+    // volume's Z plane, so one passing well behind the sheet is not a wall.
+    // Without this the union would turn every collider in the level into one.
+    ECS::World world;
+    ECS::Entity crate = world.CreateEntity();
+    ECS::TransformComponent xf;
+    xf.position = Math::Vector3(0.0f, 0.0f, 50.0f);   // far behind the sheet
+    world.AddComponent<ECS::TransformComponent>(crate, xf);
+    ECS::BoxColliderComponent col;
+    col.size = Math::Vector3(40.0f, 3.0f, 4.0f);
+    world.AddComponent<ECS::BoxColliderComponent>(crate, col);
+
+    std::vector<u8> mask;
+    BuildFluidObstacleMask(&world, Math::Vector3(0, 0, 0), Math::Vector3(8, 8, 1),
+                           16, false, mask);
+
+    for (u8 c : mask) ENJIN_EXPECT_TRUE(c == 0);
+}
+
+ENJIN_TEST(FluidObstacles2D, test_the_mask_is_rebuilt_when_a_collider_moves) {
+    // The live mask is cached against a fingerprint rather than rebuilt every
+    // frame. A collider that moves changes its transform, so it changes the
+    // fingerprint -- if it did not, geometry would silently stop mattering the
+    // moment it was dragged.
+    ECS::World world;
+    ECS::Entity wall = world.CreateEntity();
+    ECS::TransformComponent xf;
+    world.AddComponent<ECS::TransformComponent>(wall, xf);
+    Physics::Body2DComponent body;
+    body.shapeType = Physics::Shape2DType::Box;
+    body.box.halfExtents = Math::Vector2(2.0f, 2.0f);
+    world.AddComponent<Physics::Body2DComponent>(wall, body);
+
+    const u64 before = FluidObstacleFingerprint(&world, false);
+    world.GetComponent<ECS::TransformComponent>(wall)->position = Math::Vector3(3, 0, 0);
+    const u64 after = FluidObstacleFingerprint(&world, false);
+
+    ENJIN_EXPECT_TRUE(before != after);
 }
 
 ENJIN_TEST(FluidSimulationObstacles, test_a_mask_sized_for_another_resolution_is_refused) {

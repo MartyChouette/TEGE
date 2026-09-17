@@ -1,742 +1,1823 @@
 {
- "version": "1.0",
- "entities": [
-  {
-   "id": 1,
-   "name": {
-    "name": "Sun"
-   },
-   "transform": {
-    "position": [
-     6,
-     16,
-     10
+  "entities": [
+    {
+      "boxCollider": {
+        "bounciness": 0.0,
+        "categoryBits": 1,
+        "center": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "collisionMask": 4294967295,
+        "friction": 0.5,
+        "isTrigger": false,
+        "size": [
+          2.0,
+          2.4000000953674316,
+          12.699999809265137
+        ]
+      },
+      "id": 7,
+      "material": {
+        "baseColor": [
+          0.28074198961257935,
+          0.954941987991333,
+          1.0
+        ],
+        "opacity": 0.6200000047683716,
+        "roughness": 1.0
+      },
+      "mesh": {
+        "indexCount": 36,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3,
+          4,
+          5,
+          6,
+          4,
+          6,
+          7,
+          8,
+          9,
+          10,
+          8,
+          10,
+          11,
+          12,
+          13,
+          14,
+          12,
+          14,
+          15,
+          16,
+          17,
+          18,
+          16,
+          18,
+          19,
+          20,
+          21,
+          22,
+          20,
+          22,
+          23
+        ],
+        "vertexCount": 24,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.5
+            ],
+            "uv": [
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.5
+            ],
+            "uv": [
+              1.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.5
+            ],
+            "uv": [
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.5
+            ],
+            "uv": [
+              0.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              -1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              -0.5
+            ],
+            "uv": [
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              -1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              -0.5
+            ],
+            "uv": [
+              1.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              -1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              -0.5
+            ],
+            "uv": [
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              -1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              -0.5
+            ],
+            "uv": [
+              0.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              1.0,
+              0.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.5
+            ],
+            "uv": [
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              1.0,
+              0.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.5
+            ],
+            "uv": [
+              1.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              1.0,
+              0.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              -0.5
+            ],
+            "uv": [
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              1.0,
+              0.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              -0.5
+            ],
+            "uv": [
+              0.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              -1.0,
+              0.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              -0.5
+            ],
+            "uv": [
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              -1.0,
+              0.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              -0.5
+            ],
+            "uv": [
+              1.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              -1.0,
+              0.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.5
+            ],
+            "uv": [
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              -1.0,
+              0.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.5
+            ],
+            "uv": [
+              0.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              1.0,
+              0.0,
+              0.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.5
+            ],
+            "uv": [
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              1.0,
+              0.0,
+              0.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              -0.5
+            ],
+            "uv": [
+              1.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              1.0,
+              0.0,
+              0.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              -0.5
+            ],
+            "uv": [
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              1.0,
+              0.0,
+              0.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.5
+            ],
+            "uv": [
+              0.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              -1.0,
+              0.0,
+              0.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              -0.5
+            ],
+            "uv": [
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              -1.0,
+              0.0,
+              0.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.5
+            ],
+            "uv": [
+              1.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              -1.0,
+              0.0,
+              0.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.5
+            ],
+            "uv": [
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              -1.0,
+              0.0,
+              0.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              -0.5
+            ],
+            "uv": [
+              0.0,
+              1.0
+            ]
+          }
+        ]
+      },
+      "name": {
+        "name": "Cube"
+      },
+      "rigidbody": {
+        "angularDrag": 0.05000000074505806,
+        "angularVelocity": [
+          0.5757480263710022,
+          -7.000000096013537e-06,
+          -1.4000000192027073e-05
+        ],
+        "bodyType": 0,
+        "collisionMode": 0,
+        "drag": 0.0,
+        "freezePositionX": 0.0,
+        "freezePositionY": 0.0,
+        "freezePositionZ": 0.0,
+        "freezeRotationX": 0.0,
+        "freezeRotationY": 0.0,
+        "freezeRotationZ": 0.0,
+        "gravityScale": 1.0,
+        "isGrounded": false,
+        "isSleeping": false,
+        "mass": 1.0,
+        "maxAngularVelocity": 50.0,
+        "maxVelocity": 100.0,
+        "useGravity": true,
+        "velocity": [
+          5.700000110664405e-05,
+          -42.50149154663086,
+          1.1963520050048828
+        ]
+      },
+      "stableId": 3298553125083400854,
+      "transform": {
+        "position": [
+          -24.18775177001953,
+          3.3451240062713623,
+          0.312593013048172
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          2.0,
+          2.4000000953674316,
+          12.699999809265137
+        ],
+        "visible": false
+      }
+    },
+    {
+      "id": 2,
+      "material": {
+        "baseColor": [
+          0.2800000011920929,
+          0.30000001192092896,
+          0.23999999463558197
+        ],
+        "roughness": 0.949999988079071
+      },
+      "mesh": {
+        "indexCount": 36,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3,
+          4,
+          5,
+          6,
+          4,
+          6,
+          7,
+          8,
+          9,
+          10,
+          8,
+          10,
+          11,
+          12,
+          13,
+          14,
+          12,
+          14,
+          15,
+          16,
+          17,
+          18,
+          16,
+          18,
+          19,
+          20,
+          21,
+          22,
+          20,
+          22,
+          23
+        ],
+        "vertexCount": 24,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -30.0,
+              -0.5,
+              20.0
+            ],
+            "uv": [
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              30.0,
+              -0.5,
+              20.0
+            ],
+            "uv": [
+              1.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              30.0,
+              0.5,
+              20.0
+            ],
+            "uv": [
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -30.0,
+              0.5,
+              20.0
+            ],
+            "uv": [
+              0.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              -1.0
+            ],
+            "position": [
+              30.0,
+              -0.5,
+              -20.0
+            ],
+            "uv": [
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              -1.0
+            ],
+            "position": [
+              -30.0,
+              -0.5,
+              -20.0
+            ],
+            "uv": [
+              1.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              -1.0
+            ],
+            "position": [
+              -30.0,
+              0.5,
+              -20.0
+            ],
+            "uv": [
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              -1.0
+            ],
+            "position": [
+              30.0,
+              0.5,
+              -20.0
+            ],
+            "uv": [
+              0.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              1.0,
+              0.0,
+              0.0
+            ],
+            "position": [
+              30.0,
+              -0.5,
+              20.0
+            ],
+            "uv": [
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              1.0,
+              0.0,
+              0.0
+            ],
+            "position": [
+              30.0,
+              -0.5,
+              -20.0
+            ],
+            "uv": [
+              1.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              1.0,
+              0.0,
+              0.0
+            ],
+            "position": [
+              30.0,
+              0.5,
+              -20.0
+            ],
+            "uv": [
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              1.0,
+              0.0,
+              0.0
+            ],
+            "position": [
+              30.0,
+              0.5,
+              20.0
+            ],
+            "uv": [
+              0.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              -1.0,
+              0.0,
+              0.0
+            ],
+            "position": [
+              -30.0,
+              -0.5,
+              -20.0
+            ],
+            "uv": [
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              -1.0,
+              0.0,
+              0.0
+            ],
+            "position": [
+              -30.0,
+              -0.5,
+              20.0
+            ],
+            "uv": [
+              1.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              -1.0,
+              0.0,
+              0.0
+            ],
+            "position": [
+              -30.0,
+              0.5,
+              20.0
+            ],
+            "uv": [
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              -1.0,
+              0.0,
+              0.0
+            ],
+            "position": [
+              -30.0,
+              0.5,
+              -20.0
+            ],
+            "uv": [
+              0.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              1.0,
+              0.0
+            ],
+            "position": [
+              -30.0,
+              0.5,
+              20.0
+            ],
+            "uv": [
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              1.0,
+              0.0
+            ],
+            "position": [
+              30.0,
+              0.5,
+              20.0
+            ],
+            "uv": [
+              1.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              1.0,
+              0.0
+            ],
+            "position": [
+              30.0,
+              0.5,
+              -20.0
+            ],
+            "uv": [
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              1.0,
+              0.0
+            ],
+            "position": [
+              -30.0,
+              0.5,
+              -20.0
+            ],
+            "uv": [
+              0.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              -1.0,
+              0.0
+            ],
+            "position": [
+              -30.0,
+              -0.5,
+              -20.0
+            ],
+            "uv": [
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              -1.0,
+              0.0
+            ],
+            "position": [
+              30.0,
+              -0.5,
+              -20.0
+            ],
+            "uv": [
+              1.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              -1.0,
+              0.0
+            ],
+            "position": [
+              30.0,
+              -0.5,
+              20.0
+            ],
+            "uv": [
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              -1.0,
+              0.0
+            ],
+            "position": [
+              -30.0,
+              -0.5,
+              20.0
+            ],
+            "uv": [
+              0.0,
+              1.0
+            ]
+          }
+        ]
+      },
+      "name": {
+        "name": "Ground"
+      },
+      "stableId": 10587217068287275350,
+      "transform": {
+        "position": [
+          0.0,
+          -1.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "fluidVolume": {
+        "buoyancy": 1.0,
+        "densityThreshold": 0.019999999552965164,
+        "diffusion": 0.0,
+        "dimension": 0,
+        "dissipation": 0.9900000095367432,
+        "fluidColor": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "fluidType": 2,
+        "gridSize": 96,
+        "halfExtents": [
+          5.0,
+          5.0,
+          1.0
+        ],
+        "isActive": true,
+        "opacity": 0.30000001192092896,
+        "priority": 0,
+        "renderEnabled": 1.0,
+        "solverIterations": 20,
+        "sourceDensity": 18.0,
+        "sourceRadius": 3.0,
+        "sourceVelocityScale": 28.0,
+        "velocityDissipation": 0.9950000047683716,
+        "viscosity": 9.999999747378752e-06
+      },
+      "id": 3,
+      "name": {
+        "name": "Smoke"
+      },
+      "stableId": 13457850316922672058,
+      "transform": {
+        "position": [
+          -11.0,
+          4.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "fluidPlayback": {
+        "bakePath": "assets/fluid/steam3d.enjfluid",
+        "playing": true,
+        "speed": 0.5,
+        "time": 58.61618423461914
+      },
+      "fluidVolume": {
+        "buoyancy": 0.8999999761581421,
+        "densityThreshold": 0.019999999552965164,
+        "diffusion": 0.0,
+        "dimension": 0,
+        "dissipation": 0.9649999737739563,
+        "fluidColor": [
+          0.6000000238418579,
+          0.8500000238418579,
+          1.0
+        ],
+        "fluidType": 4,
+        "gridSize": 128,
+        "halfExtents": [
+          5.0,
+          5.0,
+          1.0
+        ],
+        "isActive": true,
+        "opacity": 0.4000000059604645,
+        "priority": 0,
+        "renderEnabled": 1.0,
+        "solverIterations": 20,
+        "sourceDensity": 14.0,
+        "sourceRadius": 3.0,
+        "sourceVelocityScale": 28.0,
+        "velocityDissipation": 0.9900000095367432,
+        "viscosity": 9.999999747378752e-06
+      },
+      "id": 4,
+      "name": {
+        "name": "Steam3D"
+      },
+      "stableId": 7541299391496671156,
+      "transform": {
+        "position": [
+          0.0,
+          4.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "fluidVolume": {
+        "buoyancy": 0.8999999761581421,
+        "densityThreshold": 0.019999999552965164,
+        "diffusion": 0.0,
+        "dimension": 0,
+        "dissipation": 0.9649999737739563,
+        "fluidColor": [
+          1.0,
+          0.5,
+          0.11999999731779099
+        ],
+        "fluidType": 3,
+        "gridSize": 96,
+        "halfExtents": [
+          5.0,
+          5.0,
+          1.0
+        ],
+        "isActive": true,
+        "opacity": 0.800000011920929,
+        "priority": 0,
+        "renderEnabled": 1.0,
+        "solverIterations": 20,
+        "sourceDensity": 22.0,
+        "sourceRadius": 3.0,
+        "sourceVelocityScale": 28.0,
+        "velocityDissipation": 0.9900000095367432,
+        "viscosity": 9.999999747378752e-06
+      },
+      "id": 5,
+      "name": {
+        "name": "Fire"
+      },
+      "stableId": 4343489568386865465,
+      "transform": {
+        "position": [
+          11.0,
+          4.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "id": 6,
+      "light": {
+        "castShadows": false,
+        "color": [
+          1.0,
+          0.9700000286102295,
+          0.8999999761581421
+        ],
+        "constantAttenuation": 1.0,
+        "cookie": {
+          "barWidth": 0.11999999731779099,
+          "brightness": 0.0,
+          "columns": 3.0,
+          "contrast": 1.0,
+          "cookieIntensity": 1.0,
+          "cookieScale": 1.0,
+          "enabled": false,
+          "invert": false,
+          "pattern": 0,
+          "resolution": 256,
+          "rotation": 0.0,
+          "rows": 3.0,
+          "seed": 1337,
+          "softness": 0.03999999910593033,
+          "sourcePath": "",
+          "texturePath": "",
+          "vignette": 0.0
+        },
+        "innerConeAngle": 12.5,
+        "intensity": 1.100000023841858,
+        "linearAttenuation": 0.09000000357627869,
+        "outerConeAngle": 17.5,
+        "quadraticAttenuation": 0.03200000151991844,
+        "range": 10.0,
+        "type": 0
+      },
+      "name": {
+        "name": "Sun"
+      },
+      "stableId": 17532621420468727117,
+      "transform": {
+        "position": [
+          6.0,
+          16.0,
+          10.0
+        ],
+        "rotation": [
+          -0.3400000035762787,
+          -0.10000000149011612,
+          0.0,
+          0.9300000071525574
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "boxCollider": {
+        "bounciness": 0.0,
+        "categoryBits": 1,
+        "center": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "collisionMask": 4294967295,
+        "friction": 0.5,
+        "isTrigger": false,
+        "size": [
+          5.300000190734863,
+          1.0,
+          0.0
+        ]
+      },
+      "id": 8,
+      "material": {},
+      "mesh": {
+        "indexCount": 6,
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "vertexCount": 4,
+        "vertices": [
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              -0.5,
+              0.0
+            ],
+            "uv": [
+              1.0,
+              0.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position": [
+              -0.5,
+              0.5,
+              0.0
+            ],
+            "uv": [
+              0.0,
+              1.0
+            ]
+          }
+        ]
+      },
+      "name": {
+        "name": "Quad"
+      },
+      "stableId": 14506795817666754922,
+      "transform": {
+        "position": [
+          -12.03000545501709,
+          5.80025577545166,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          5.300000190734863,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "camera": {
+        "backgroundColor": [
+          0.4000000059604645,
+          0.550000011920929,
+          0.75
+        ],
+        "clearColor": true,
+        "clearDepth": true,
+        "cullingMask": 4294967295,
+        "farPlane": 500.0,
+        "fieldOfView": 55.0,
+        "isActive": true,
+        "nearPlane": 0.10000000149011612,
+        "orthoSize": 10.0,
+        "priority": 0,
+        "projectionType": 0,
+        "viewportHeight": 1.0,
+        "viewportWidth": 1.0,
+        "viewportX": 0.0,
+        "viewportY": 0.0
+      },
+      "id": 1,
+      "name": {
+        "name": "Camera"
+      },
+      "stableId": 17572022652017034662,
+      "transform": {
+        "position": [
+          0.0,
+          7.0,
+          22.0
+        ],
+        "rotation": [
+          -0.10452800244092941,
+          0.0,
+          0.0,
+          0.994521975517273
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    }
+  ],
+  "entityCount": 8,
+  "formatVersion": 1,
+  "renderSettings": {
+    "aaComparisonDivider": 0.5,
+    "aaComparisonEnabled": false,
+    "aaComparisonModeLeft": 0,
+    "aaComparisonModeRight": 1,
+    "aaMode": 1,
+    "adaptiveRayBudgetEnabled": false,
+    "adaptiveRayDisocclusionBoost": true,
+    "adaptiveRayEdgeBoost": true,
+    "adaptiveRayMaxPerPixel": 4,
+    "adaptiveRayMinPerPixel": 1,
+    "adaptiveRayVarianceScale": 4.0,
+    "adaptiveRayVarianceThreshold": 0.10000000149011612,
+    "ambientColor": [
+      0.10000000149011612,
+      0.10000000149011612,
+      0.15000000596046448
     ],
-    "rotation": [
-     -0.34,
-     -0.1,
-     0,
-     0.93
+    "ambientIntensity": 1.0,
+    "artStylePreset": 0,
+    "backfaceCulling": false,
+    "bloomEnabled": false,
+    "bloomIntensity": 0.5,
+    "bloomRadius": 0.004999999888241291,
+    "bloomThreshold": 1.0,
+    "brightness": 0.0,
+    "cascadeFarUpdateInterval": 2,
+    "cascadeProgressiveUpdate": false,
+    "causticsEnabled": false,
+    "causticsIntensity": 0.30000001192092896,
+    "causticsScale": 1.0,
+    "causticsSpeed": 1.0,
+    "causticsWaterY": 0.0,
+    "celDiffuseBands": 3.0,
+    "celOutlineColor": [
+      0.0,
+      0.0,
+      0.0
     ],
-    "scale": [
-     1,
-     1,
-     1
-    ]
-   },
-   "light": {
-    "type": 0,
-    "color": [
-     1,
-     0.97,
-     0.9
+    "celOutlineCurvatureWeight": 0.0,
+    "celOutlineEnabled": false,
+    "celOutlineThickness": 1.0,
+    "celOutlineThreshold": 0.10000000149011612,
+    "celShadingEnabled": false,
+    "celShadowMode": 0.0,
+    "celSpecularCutoff": 0.5,
+    "chromaticAberrationEnabled": false,
+    "chromaticAberrationIntensity": 0.004999999888241291,
+    "colorBitDepth": 8,
+    "colorFilter": [
+      1.0,
+      1.0,
+      1.0
     ],
-    "intensity": 1.1,
-    "castShadows": false,
-    "range": 10,
-    "innerConeAngle": 12.5,
-    "outerConeAngle": 17.5,
-    "constantAttenuation": 1,
-    "linearAttenuation": 0.09,
-    "quadraticAttenuation": 0.032
-   }
+    "colorQuantEnabled": false,
+    "contactShadowsEnabled": false,
+    "contactShadowsIntensity": 1.0,
+    "contactShadowsLength": 0.10000000149011612,
+    "contactShadowsSteps": 16,
+    "contrast": 1.0,
+    "crtBloomRadius": 1.5,
+    "crtBloomSigma": 0.800000011920929,
+    "crtBloomStrength": 0.30000001192092896,
+    "crtCurvature": 0.0,
+    "crtEnabled": false,
+    "crtMaskPitch": 1.0,
+    "crtMaskType": 0,
+    "crtModelPreset": 0.0,
+    "crtPhosphorEnabled": false,
+    "crtTVL": 400.0,
+    "ddgiAmortizationRate": 8,
+    "ddgiEnabled": false,
+    "ddgiGridOrigin": [
+      -16.0,
+      0.0,
+      -16.0
+    ],
+    "ddgiGridSpacing": 4.0,
+    "ddgiHysteresis": 0.9700000286102295,
+    "ddgiMaxTraceDistance": 30.0,
+    "ddgiOctResolution": 8,
+    "ddgiProbeCountX": 8,
+    "ddgiProbeCountY": 4,
+    "ddgiProbeCountZ": 8,
+    "ddgiRaysPerProbe": 64,
+    "ddgiVoxelResolution": 64,
+    "ddgiVoxelWorldExtent": 50.0,
+    "depthSortJitter": 0.0,
+    "ditherEnabled": false,
+    "ditherPattern": 0,
+    "ditherStrength": 1.0,
+    "dofApertureShape": 0,
+    "dofBokehSize": 4.0,
+    "dofDebugCoC": false,
+    "dofEnabled": false,
+    "dofFarBlurStrength": 1.0,
+    "dofFocalDistance": 10.0,
+    "dofFocalRange": 5.0,
+    "dofNearBlurStrength": 1.0,
+    "energyConservation": false,
+    "exposure": 1.0,
+    "filmGrainEnabled": false,
+    "filmGrainIntensity": 0.05000000074505806,
+    "fogColor": [
+      0.5,
+      0.5,
+      0.6000000238418579
+    ],
+    "fogDensity": 0.0,
+    "fogEnd": 100.0,
+    "fogHeightFalloff": 0.10000000149011612,
+    "fogShaftsDecay": 0.949999988079071,
+    "fogShaftsDensity": 0.05000000074505806,
+    "fogShaftsEnabled": false,
+    "fogShaftsIntensity": 0.30000001192092896,
+    "fogShaftsMaxDistance": 50.0,
+    "fogShaftsSamples": 16,
+    "fogStart": 20.0,
+    "fresnelEnabled": false,
+    "fxaaEnabled": true,
+    "fxaaReduceMin": 0.007813000120222569,
+    "fxaaReduceMul": 0.125,
+    "fxaaSpanMax": 8.0,
+    "gamma": 1.0,
+    "geometryOutlineColor": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "geometryOutlineWidth": 0.019999999552965164,
+    "geometryOutlinesEnabled": false,
+    "geometryTerm": false,
+    "globalAffineTexturing": false,
+    "globalFlatShading": false,
+    "globalGouraudOnly": false,
+    "globalStippleTransparency": false,
+    "globalUVQuantize": false,
+    "globalVertexSnapResolution": 160,
+    "globalVertexSnapping": false,
+    "godRaysDecay": 0.9700000286102295,
+    "godRaysDensity": 1.0,
+    "godRaysEnabled": false,
+    "godRaysIntensity": 0.5,
+    "godRaysSamples": 64,
+    "godRaysWeight": 0.009999999776482582,
+    "gpuParticleDamping": 0.10000000149011612,
+    "gpuParticleDirection": [
+      0.0,
+      1.0,
+      0.0
+    ],
+    "gpuParticleEndAlpha": 0.0,
+    "gpuParticleEndColor": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "gpuParticleEndSize": 0.30000001192092896,
+    "gpuParticleGravity": [
+      0.0,
+      -9.800000190734863,
+      0.0
+    ],
+    "gpuParticleMaxLifetime": 3.0,
+    "gpuParticleMaxParticles": 65536,
+    "gpuParticleSpawnRate": 100.0,
+    "gpuParticleSpread": 0.5,
+    "gpuParticleStartAlpha": 1.0,
+    "gpuParticleStartColor": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "gpuParticleStartSize": 0.10000000149011612,
+    "gpuParticleTurbulenceFrequency": 1.0,
+    "gpuParticleTurbulenceStrength": 0.0,
+    "halfLambert": false,
+    "hdrOutput": false,
+    "internalHeight": 240,
+    "internalWidth": 320,
+    "lightBVHEnabled": false,
+    "lightBVHMaxLights": 32768,
+    "lightBVHMinLightsForBVH": 16,
+    "lightBVHRebuildEveryFrame": false,
+    "lightRampMode": 0.0,
+    "lightmap": {
+      "basis": [
+        "",
+        "",
+        ""
+      ],
+      "enabled": false,
+      "strength": 1.0
+    },
+    "lutEnabled": false,
+    "lutSize": 32,
+    "lutStrength": 1.0,
+    "normalQuantizeSteps": 0.0,
+    "oitEnabled": false,
+    "paletteColors": 16,
+    "paletteEnabled": false,
+    "posterizeLevels": 0.0,
+    "radianceCacheDepthThreshold": 0.10000000149011612,
+    "radianceCacheEnabled": false,
+    "radianceCacheExcludeDirectional": true,
+    "radianceCacheHysteresis": 0.8999999761581421,
+    "radianceCacheMaxAge": 8.0,
+    "radianceCacheNormalThreshold": 0.8500000238418579,
+    "radianceCacheTileSize": 32,
+    "rainActive": false,
+    "resDownscaleEnabled": false,
+    "restirDistanceBias": 0.10000000149011612,
+    "restirEnabled": false,
+    "restirInitialCandidates": 8,
+    "restirSpatialDepthThreshold": 0.10000000149011612,
+    "restirSpatialNeighbors": 5,
+    "restirSpatialNormalThreshold": 0.8999999761581421,
+    "restirSpatialRadius": 30.0,
+    "restirSpatialReuse": false,
+    "restirTemporalDepthThreshold": 0.10000000149011612,
+    "restirTemporalMaxHistory": 20,
+    "restirTemporalNormalThreshold": 0.8999999761581421,
+    "restirTemporalReuse": false,
+    "rtAOEnabled": true,
+    "rtAOPower": 1.5,
+    "rtAORadius": 2.0,
+    "rtAOStrength": 1.0,
+    "rtDenoiserEnabled": true,
+    "rtDenoiserIterations": 5,
+    "rtDenoiserTemporalAlpha": 0.05000000074505806,
+    "rtDenoiserType": 0,
+    "rtEnabled": false,
+    "rtGIBounces": 1,
+    "rtGIEnabled": false,
+    "rtGIIntensity": 1.0,
+    "rtGIMaxDistance": 50.0,
+    "rtGIStrength": 0.5,
+    "rtMode": 0,
+    "rtOIDNQuality": 1,
+    "rtPathTracerFireflyClamp": 10.0,
+    "rtPathTracerMIS": true,
+    "rtPathTracerMaxBounces": 4,
+    "rtPathTracerNEE": true,
+    "rtPathTracerRRMinBounce": 3.0,
+    "rtPathTracerRRMinProb": 0.05000000074505806,
+    "rtPathTracerTargetSPP": 1024,
+    "rtReflectionMaxDistance": 50.0,
+    "rtReflectionRoughnessThreshold": 0.5,
+    "rtReflectionSDFFallback": true,
+    "rtReflectionSDFMaxDistance": 500.0,
+    "rtReflectionStrength": 0.5,
+    "rtReflectionsEnabled": true,
+    "rtShadowMaxDistance": 100.0,
+    "rtShadowRadius": 0.009999999776482582,
+    "rtShadowStrength": 1.0,
+    "rtShadowsEnabled": true,
+    "rtSimplifiedMaterials": true,
+    "rtSimplifyAfterBounce": 1,
+    "rtTemporalReuseAO": true,
+    "rtTemporalReuseDisocclusionThreshold": 0.10000000149011612,
+    "rtTemporalReuseEnabled": false,
+    "rtTemporalReuseGI": true,
+    "rtTemporalReuseHistoryLength": 0.8999999761581421,
+    "rtTemporalReuseNormalThreshold": 0.8999999761581421,
+    "rtTemporalReuseReflections": true,
+    "rtTemporalReuseShadows": true,
+    "saturation": 1.0,
+    "scanlineIntensity": 0.30000001192092896,
+    "scanlineWidth": 1.0,
+    "seasonalChangeInterval": 300.0,
+    "seasonalWeatherEnabled": false,
+    "secondsPerGameHour": 60.0,
+    "shadingModel": 0,
+    "shadowDistance": 100.0,
+    "shadowResolution": 2048,
+    "shadowSoftness": 0.0,
+    "shadowStrength": 1.0,
+    "shadowsEnabled": true,
+    "snowIntensity": 0.0,
+    "sphereEnvMapEnabled": false,
+    "sphereEnvStrength": 0.5,
+    "ssaoBias": 0.02500000037252903,
+    "ssaoEnabled": false,
+    "ssaoIntensity": 1.5,
+    "ssaoRadius": 0.5,
+    "ssaoSamples": 16,
+    "startMonth": 6,
+    "startTimeOfDay": 8.0,
+    "stippleBgColor": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "stippleColorMode": 0,
+    "stippleDensity": 0.5,
+    "stippleEnabled": false,
+    "stippleFgColor": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "stipplePatternMask": 1,
+    "stippleScale": 1.0,
+    "stippleStrength": 1.0,
+    "surfelCacheBlendWeight": 0.5,
+    "surfelCacheCameraRadius": 50.0,
+    "surfelCacheEnabled": false,
+    "surfelCacheExcludeDirectional": true,
+    "surfelCacheMaxAge": 32.0,
+    "surfelCacheMaxSurfels": 65536,
+    "surfelCacheNormalThreshold": 0.699999988079071,
+    "surfelCachePlacementInterval": 4,
+    "surfelCacheRadius": 0.5,
+    "surfelCacheRaysPerSurfel": 2,
+    "surfelCacheUpdateFraction": 0.125,
+    "taaFeedbackMax": 0.9700000286102295,
+    "taaFeedbackMin": 0.8799999952316284,
+    "taaJitterScale": 1.0,
+    "taaSharpness": 0.10000000149011612,
+    "textureAnisotropy": 8,
+    "textureFilter": 2,
+    "textureMipmaps": true,
+    "texturePageSize": 0.0,
+    "textureWrap": 0,
+    "tiltShiftBandWidth": 0.30000001192092896,
+    "tiltShiftBlurAmount": 3.0,
+    "tiltShiftEnabled": false,
+    "tiltShiftFocusY": 0.5,
+    "toneMappingMode": 0,
+    "upscalerQuality": 2,
+    "upscalerSharpness": 0.0,
+    "upscalerType": 0,
+    "usePointFiltering": true,
+    "useProjectDefaults": true,
+    "vhsBlueShift": 0.05000000074505806,
+    "vhsColorBleed": 0.003000000026077032,
+    "vhsEnabled": false,
+    "vhsInterlacing": false,
+    "vhsNoiseIntensity": 0.05000000074505806,
+    "vhsScreenTear": false,
+    "vhsTearOffset": 0.0,
+    "vhsTrackingIntensity": 0.30000001192092896,
+    "vhsTrackingSpeed": 1.0,
+    "vhsWobbleIntensity": 0.0020000000949949026,
+    "vhsWobbleSpeed": 2.0,
+    "vignetteEnabled": false,
+    "vignetteIntensity": 0.30000001192092896,
+    "vignetteSmoothness": 0.5,
+    "volumetricFogAnisotropy": 0.30000001192092896,
+    "volumetricFogBaseHeight": 0.0,
+    "volumetricFogColor": [
+      0.8999999761581421,
+      0.8999999761581421,
+      1.0
+    ],
+    "volumetricFogDensity": 0.019999999552965164,
+    "volumetricFogEnabled": false,
+    "volumetricFogHeightFalloff": 0.10000000149011612,
+    "volumetricFogNoiseScale": 0.10000000149011612,
+    "volumetricFogNoiseStrength": 0.30000001192092896,
+    "volumetricFogTemporalBlend": 0.8999999761581421,
+    "volumetricFogWindX": 1.0,
+    "volumetricFogWindZ": 0.5,
+    "whitePoint": 4.0,
+    "wireframe": false,
+    "worldCurvature": 0.0,
+    "worldTimeEnabled": false
   },
-  {
-   "id": 2,
-   "name": {
-    "name": "Camera"
-   },
-   "transform": {
-    "position": [
-     0,
-     7,
-     22
+  "skybox": {
+    "bottomColor": [
+      0.5,
+      0.550000011920929,
+      0.6000000238418579
     ],
-    "rotation": [
-     -0.10452846326765347,
-     0,
-     0,
-     0.9945218953682733
+    "cloud2Coverage": 0.0,
+    "cloud2Scale": 2.5,
+    "cloudColor": [
+      1.0,
+      1.0,
+      1.0
     ],
-    "scale": [
-     1,
-     1,
-     1
-    ]
-   },
-   "camera": {
-    "projectionType": 0,
-    "fieldOfView": 55,
-    "nearPlane": 0.1,
-    "farPlane": 500,
-    "isActive": true,
-    "priority": 0,
-    "clearColor": true,
-    "clearDepth": true,
-    "backgroundColor": [
-     0.4,
-     0.55,
-     0.75
+    "cloudCoverage": 0.25,
+    "cloudScale": 2.0,
+    "cloudShadowStrength": 0.6000000238418579,
+    "cloudSoftness": 0.5,
+    "cloudSpeed": 1.0,
+    "cubemapPaths": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
     ],
-    "orthoSize": 10
-   }
+    "horizonColor": [
+      0.6000000238418579,
+      0.7400000095367432,
+      0.8799999952316284
+    ],
+    "horizonHaze": 0.0,
+    "rotation": 0.0,
+    "solidColor": [
+      0.20000000298023224,
+      0.30000001192092896,
+      0.4000000059604645
+    ],
+    "sunColor": [
+      1.0,
+      0.949999988079071,
+      0.8199999928474426
+    ],
+    "sunDirection": [
+      0.3499999940395355,
+      -0.699999988079071,
+      0.4000000059604645
+    ],
+    "sunIntensity": 1.0,
+    "sunSize": 0.029999999329447746,
+    "topColor": [
+      0.18000000715255737,
+      0.36000001430511475,
+      0.6800000071525574
+    ],
+    "type": 2
   },
-  {
-   "id": 3,
-   "name": {
-    "name": "Ground"
-   },
-   "transform": {
-    "position": [
-     0,
-     -1,
-     0
+  "version": "1.0",
+  "water2d": {
+    "causticStrength": 0.25,
+    "deepColor": [
+      0.03999999910593033,
+      0.11999999731779099,
+      0.25999999046325684
     ],
-    "rotation": [
-     0,
-     0,
-     0,
-     1
+    "depthFalloff": 6.0,
+    "enabled": false,
+    "foamColor": [
+      0.8999999761581421,
+      0.9599999785423279,
+      1.0
     ],
-    "scale": [
-     1,
-     1,
-     1
-    ]
-   },
-   "mesh": {
-    "vertexCount": 24,
-    "indexCount": 36,
-    "vertices": [
-     {
-      "position": [
-       -30,
-       -0.5,
-       20
-      ],
-      "normal": [
-       0,
-       0,
-       1
-      ],
-      "uv": [
-       0,
-       0
-      ]
-     },
-     {
-      "position": [
-       30,
-       -0.5,
-       20
-      ],
-      "normal": [
-       0,
-       0,
-       1
-      ],
-      "uv": [
-       1,
-       0
-      ]
-     },
-     {
-      "position": [
-       30,
-       0.5,
-       20
-      ],
-      "normal": [
-       0,
-       0,
-       1
-      ],
-      "uv": [
-       1,
-       1
-      ]
-     },
-     {
-      "position": [
-       -30,
-       0.5,
-       20
-      ],
-      "normal": [
-       0,
-       0,
-       1
-      ],
-      "uv": [
-       0,
-       1
-      ]
-     },
-     {
-      "position": [
-       30,
-       -0.5,
-       -20
-      ],
-      "normal": [
-       0,
-       0,
-       -1
-      ],
-      "uv": [
-       0,
-       0
-      ]
-     },
-     {
-      "position": [
-       -30,
-       -0.5,
-       -20
-      ],
-      "normal": [
-       0,
-       0,
-       -1
-      ],
-      "uv": [
-       1,
-       0
-      ]
-     },
-     {
-      "position": [
-       -30,
-       0.5,
-       -20
-      ],
-      "normal": [
-       0,
-       0,
-       -1
-      ],
-      "uv": [
-       1,
-       1
-      ]
-     },
-     {
-      "position": [
-       30,
-       0.5,
-       -20
-      ],
-      "normal": [
-       0,
-       0,
-       -1
-      ],
-      "uv": [
-       0,
-       1
-      ]
-     },
-     {
-      "position": [
-       30,
-       -0.5,
-       20
-      ],
-      "normal": [
-       1,
-       0,
-       0
-      ],
-      "uv": [
-       0,
-       0
-      ]
-     },
-     {
-      "position": [
-       30,
-       -0.5,
-       -20
-      ],
-      "normal": [
-       1,
-       0,
-       0
-      ],
-      "uv": [
-       1,
-       0
-      ]
-     },
-     {
-      "position": [
-       30,
-       0.5,
-       -20
-      ],
-      "normal": [
-       1,
-       0,
-       0
-      ],
-      "uv": [
-       1,
-       1
-      ]
-     },
-     {
-      "position": [
-       30,
-       0.5,
-       20
-      ],
-      "normal": [
-       1,
-       0,
-       0
-      ],
-      "uv": [
-       0,
-       1
-      ]
-     },
-     {
-      "position": [
-       -30,
-       -0.5,
-       -20
-      ],
-      "normal": [
-       -1,
-       0,
-       0
-      ],
-      "uv": [
-       0,
-       0
-      ]
-     },
-     {
-      "position": [
-       -30,
-       -0.5,
-       20
-      ],
-      "normal": [
-       -1,
-       0,
-       0
-      ],
-      "uv": [
-       1,
-       0
-      ]
-     },
-     {
-      "position": [
-       -30,
-       0.5,
-       20
-      ],
-      "normal": [
-       -1,
-       0,
-       0
-      ],
-      "uv": [
-       1,
-       1
-      ]
-     },
-     {
-      "position": [
-       -30,
-       0.5,
-       -20
-      ],
-      "normal": [
-       -1,
-       0,
-       0
-      ],
-      "uv": [
-       0,
-       1
-      ]
-     },
-     {
-      "position": [
-       -30,
-       0.5,
-       20
-      ],
-      "normal": [
-       0,
-       1,
-       0
-      ],
-      "uv": [
-       0,
-       0
-      ]
-     },
-     {
-      "position": [
-       30,
-       0.5,
-       20
-      ],
-      "normal": [
-       0,
-       1,
-       0
-      ],
-      "uv": [
-       1,
-       0
-      ]
-     },
-     {
-      "position": [
-       30,
-       0.5,
-       -20
-      ],
-      "normal": [
-       0,
-       1,
-       0
-      ],
-      "uv": [
-       1,
-       1
-      ]
-     },
-     {
-      "position": [
-       -30,
-       0.5,
-       -20
-      ],
-      "normal": [
-       0,
-       1,
-       0
-      ],
-      "uv": [
-       0,
-       1
-      ]
-     },
-     {
-      "position": [
-       -30,
-       -0.5,
-       -20
-      ],
-      "normal": [
-       0,
-       -1,
-       0
-      ],
-      "uv": [
-       0,
-       0
-      ]
-     },
-     {
-      "position": [
-       30,
-       -0.5,
-       -20
-      ],
-      "normal": [
-       0,
-       -1,
-       0
-      ],
-      "uv": [
-       1,
-       0
-      ]
-     },
-     {
-      "position": [
-       30,
-       -0.5,
-       20
-      ],
-      "normal": [
-       0,
-       -1,
-       0
-      ],
-      "uv": [
-       1,
-       1
-      ]
-     },
-     {
-      "position": [
-       -30,
-       -0.5,
-       20
-      ],
-      "normal": [
-       0,
-       -1,
-       0
-      ],
-      "uv": [
-       0,
-       1
-      ]
-     }
+    "foamWidth": 0.3499999940395355,
+    "opacity": 0.7200000286102295,
+    "surfaceColor": [
+      0.25,
+      0.550000011920929,
+      0.7200000286102295
     ],
-    "indices": [
-     0,
-     1,
-     2,
-     0,
-     2,
-     3,
-     4,
-     5,
-     6,
-     4,
-     6,
-     7,
-     8,
-     9,
-     10,
-     8,
-     10,
-     11,
-     12,
-     13,
-     14,
-     12,
-     14,
-     15,
-     16,
-     17,
-     18,
-     16,
-     18,
-     19,
-     20,
-     21,
-     22,
-     20,
-     22,
-     23
-    ]
-   },
-   "material": {
-    "baseColor": [
-     0.28,
-     0.3,
-     0.24
-    ],
-    "metallic": 0,
-    "roughness": 0.95
-   }
-  },
-  {
-   "id": 4,
-   "name": {
-    "name": "Smoke"
-   },
-   "transform": {
-    "position": [
-     -11,
-     4.0,
-     0
-    ],
-    "rotation": [
-     0,
-     0,
-     0,
-     1
-    ],
-    "scale": [
-     1,
-     1,
-     1
-    ]
-   },
-   "fluidVolume": {
-    "halfExtents": [
-     5,
-     5,
-     1
-    ],
-    "fluidType": 3,
-    "dimension": 0,
-    "gridSize": 96,
-    "viscosity": 1e-05,
-    "diffusion": 0.0,
-    "dissipation": 0.965,
-    "velocityDissipation": 0.99,
-    "solverIterations": 20,
-    "buoyancy": 0.9,
-    "fluidColor": [
-     0.35,
-     0.35,
-     0.38
-    ],
-    "opacity": 0.6,
-    "densityThreshold": 0.02,
-    "renderEnabled": true,
-    "sourceRadius": 3.0,
-    "sourceDensity": 18,
-    "sourceVelocityScale": 28,
-    "isActive": true,
-    "priority": 0
-   }
-  },
-  {
-   "id": 5,
-   "name": {
-    "name": "Steam3D"
-   },
-   "transform": {
-    "position": [
-     0,
-     4.0,
-     0
-    ],
-    "rotation": [
-     0,
-     0,
-     0,
-     1
-    ],
-    "scale": [
-     1,
-     1,
-     1
-    ]
-   },
-   "fluidVolume": {
-    "halfExtents": [
-     5,
-     5,
-     1
-    ],
-    "fluidType": 4,
-    "dimension": 1,
-    "gridSize": 40,
-    "viscosity": 1e-05,
-    "diffusion": 0.0,
-    "dissipation": 0.965,
-    "velocityDissipation": 0.99,
-    "solverIterations": 20,
-    "buoyancy": 0.9,
-    "fluidColor": [
-     0.6,
-     0.85,
-     1.0
-    ],
-    "opacity": 0.4,
-    "densityThreshold": 0.02,
-    "renderEnabled": true,
-    "sourceRadius": 3.0,
-    "sourceDensity": 14,
-    "sourceVelocityScale": 28,
-    "isActive": true,
-    "priority": 0
-   }
-  },
-  {
-   "id": 6,
-   "name": {
-    "name": "Fire"
-   },
-   "transform": {
-    "position": [
-     11,
-     4.0,
-     0
-    ],
-    "rotation": [
-     0,
-     0,
-     0,
-     1
-    ],
-    "scale": [
-     1,
-     1,
-     1
-    ]
-   },
-   "fluidVolume": {
-    "halfExtents": [
-     5,
-     5,
-     1
-    ],
-    "fluidType": 3,
-    "dimension": 0,
-    "gridSize": 96,
-    "viscosity": 1e-05,
-    "diffusion": 0.0,
-    "dissipation": 0.965,
-    "velocityDissipation": 0.99,
-    "solverIterations": 20,
-    "buoyancy": 0.9,
-    "fluidColor": [
-     1.0,
-     0.5,
-     0.12
-    ],
-    "opacity": 0.8,
-    "densityThreshold": 0.02,
-    "renderEnabled": true,
-    "sourceRadius": 3.0,
-    "sourceDensity": 22,
-    "sourceVelocityScale": 28,
-    "isActive": true,
-    "priority": 0
-   }
+    "waterLineY": 0.0,
+    "waveAmplitude": 0.3499999940395355,
+    "waveLength": 6.0,
+    "waveSpeed": 1.0
   }
- ],
- "skybox": {
-  "type": 2,
-  "topColor": [
-   0.18,
-   0.36,
-   0.68
-  ],
-  "horizonColor": [
-   0.6,
-   0.74,
-   0.88
-  ],
-  "bottomColor": [
-   0.5,
-   0.55,
-   0.6
-  ],
-  "sunDirection": [
-   0.35,
-   -0.7,
-   0.4
-  ],
-  "sunIntensity": 1.0,
-  "sunSize": 0.03,
-  "sunColor": [
-   1,
-   0.95,
-   0.82
-  ],
-  "cloudCoverage": 0.25,
-  "cloudScale": 2.0,
-  "cloudColor": [
-   1,
-   1,
-   1
-  ]
- }
 }

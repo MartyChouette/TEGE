@@ -1,13 +1,38 @@
 #include "Enjin/Effects/FluidSimulation.h"
+#include "Enjin/Effects/FluidObstacles.h"
 #include "Enjin/ECS/Components/FluidVolume.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include <algorithm>
+#include <cstring>
 #include <chrono>
 #include <cmath>
 #include <vector>
 
 namespace Enjin {
 namespace Effects {
+
+namespace {
+// FNV-1a over a float's bits. Same mixer FluidObstacleFingerprint uses, so a
+// volume's key and the world's fingerprint combine without a second scheme.
+u64 MixF32(u64 h, f32 v) {
+    u32 bits = 0;
+    std::memcpy(&bits, &v, sizeof(bits));
+    return (h ^ static_cast<u64>(bits)) * 1099511628211ull;
+}
+
+// A sphere is culled when it lies entirely behind any one plane. Planes point
+// INWARD, so "behind" is a signed distance below -radius.
+bool SphereOutsideFrustum(const Math::Vector4 planes[6],
+                          const Math::Vector3& centre, f32 radius) {
+    for (int i = 0; i < 6; ++i) {
+        const f32 d = planes[i].x * centre.x + planes[i].y * centre.y
+                    + planes[i].z * centre.z + planes[i].w;
+        if (d < -radius) return true;
+    }
+    return false;
+}
+
+} // namespace
 
 namespace {
 
@@ -100,10 +125,17 @@ void FluidSimulation::Update(f32 dt, ECS::World* world) {
     const auto& all = world->GetEntitiesWithComponent<ECS::FluidVolumeComponent>();
     std::vector<ECS::Entity> order(all.begin(), all.end());
     m_DeferredVolumes = 0;
+    m_CulledVolumes = 0;
     if (order.empty()) return;
     if (m_RoundRobinStart >= order.size()) m_RoundRobinStart = 0;
     std::rotate(order.begin(), order.begin() + static_cast<long long>(m_RoundRobinStart),
                 order.end());
+
+    // The collider fingerprint is per WORLD, so it is gathered at most once per
+    // dimension per frame rather than once per volume. Lazily, because a scene
+    // with no fluid in view should not pay for a scan at all.
+    u64 worldKey[2] = {0, 0};
+    bool worldKeyValid[2] = {false, false};
 
     const auto frameStart = std::chrono::high_resolution_clock::now();
     auto elapsedMs = [&]() {
@@ -127,6 +159,38 @@ void FluidSimulation::Update(f32 dt, ECS::World* world) {
         {
             auto it = m_Grids.find(entity);
             if (it != m_Grids.end() && it->second.playbackDriven) continue;
+        }
+
+        // Nothing the camera can see is ever culled; see FluidViewer for why
+        // this stays off until a runtime opts in. The sphere is the volume's
+        // own box, so a plume that rises past the top of its grid is not a
+        // case this can get wrong -- the grid IS the extent.
+        if (m_HasViewer) {
+            auto* cullXf = world->GetComponent<ECS::TransformComponent>(entity);
+            const Math::Vector3 c = cullXf ? cullXf->position
+                                           : Math::Vector3(0.0f, 0.0f, 0.0f);
+            const Math::Vector3& h = vol->halfExtents;
+            const f32 radius = std::sqrt(h.x * h.x + h.y * h.y + h.z * h.z);
+
+            bool culled = false;
+            if (m_Viewer.cullDistance > 0.0f) {
+                const f32 dx = c.x - m_Viewer.position.x;
+                const f32 dy = c.y - m_Viewer.position.y;
+                const f32 dz = c.z - m_Viewer.position.z;
+                const f32 dist = std::sqrt(dx * dx + dy * dy + dz * dz) - radius;
+                if (dist > m_Viewer.cullDistance) culled = true;
+            }
+            if (!culled && m_Viewer.hasFrustum) {
+                culled = SphereOutsideFrustum(m_Viewer.frustumPlanes, c, radius);
+            }
+            if (culled) {
+                ++m_CulledVolumes;
+                // Drop what it is owed rather than banking it: a volume that
+                // was off screen for a minute must not fast-forward through
+                // that minute the moment it comes back into view.
+                m_PendingTime[entity] = 0.0f;
+                continue;
+            }
         }
 
         // Everything this volume is owed, including frames it sat out, so it
@@ -168,6 +232,46 @@ void FluidSimulation::Update(f32 dt, ECS::World* world) {
         if (needRealloc) {
             grid.Allocate(clampedSize, is3D);
             vol->simulationInitialized = true;
+        }
+
+        // Obstacles, in the LIVE path and not only inside a bake.
+        //
+        // BuildFluidObstacleMask had exactly one caller -- BakeFluid -- so a
+        // running volume knew about the six walls of its own grid and nothing
+        // else. Smoke went straight through every crate, in the editor and in
+        // a shipped game alike, while a BAKE of the same scene flowed around
+        // them correctly: the same feature, present or absent depending on
+        // which of the two you happened to look at.
+        {
+            auto* xf = world->GetComponent<ECS::TransformComponent>(entity);
+            const Math::Vector3 centre = xf ? xf->position
+                                            : Math::Vector3(0.0f, 0.0f, 0.0f);
+            const int dim = is3D ? 1 : 0;
+            if (!worldKeyValid[dim]) {
+                worldKey[dim] = FluidObstacleFingerprint(world, is3D);
+                worldKeyValid[dim] = true;
+            }
+            u64 key = worldKey[dim];
+            key = MixF32(key, centre.x);
+            key = MixF32(key, centre.y);
+            key = MixF32(key, centre.z);
+            key = MixF32(key, vol->halfExtents.x);
+            key = MixF32(key, vol->halfExtents.y);
+            key = MixF32(key, vol->halfExtents.z);
+            // 0 is the "never built" value Allocate resets to, so a key that
+            // hashes to it simply rebuilds once more. Cheaper than a flag.
+            if (key != grid.obstacleKey) {
+                std::vector<u8> mask;
+                BuildFluidObstacleMask(world, centre, vol->halfExtents,
+                                       grid.N, is3D, mask);
+                // An all-zero mask is kept EMPTY rather than stored: HasObstacles
+                // is what skips the per-cell solid test, and a scene with no
+                // colliders should not pay for one.
+                const bool any = std::any_of(mask.begin(), mask.end(),
+                                             [](u8 v) { return v != 0; });
+                grid.solid = any ? std::move(mask) : std::vector<u8>();
+                grid.obstacleKey = key;
+            }
         }
 
         // Emit from the volume's source each frame. The sourceDensity / sourceRadius /
