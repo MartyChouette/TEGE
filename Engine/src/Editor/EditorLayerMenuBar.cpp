@@ -1056,21 +1056,38 @@ void EditorLayer::DrawMenuBar() {
                 // Fluid volumes had no Entity entry at all, so placing smoke
                 // meant knowing FluidVolumeComponent exists and adding it by
                 // hand -- the same bar Water 3D and Terrain already pass.
-                // Smoke rather than the component default (Water 2D), because
-                // a gas is what this solver actually does well and it is what
-                // a person reaches for first.
-                if (ImGui::MenuItem("Fluid Volume (Smoke)")) {
-                    if (m_World) {
+                //
+                // A submenu rather than five flat rows: the presets differ
+                // only in which fluid they are, and they belong together.
+                // Naming each one after what it MAKES ("Smoke") rather than
+                // after the system that makes it ("Fluid Volume (Smoke)") is
+                // the point -- a person looking for smoke is looking for
+                // smoke, not for a solver.
+                if (ImGui::BeginMenu("Fluid")) {
+                    struct FluidEntry { const char* label; ECS::FluidType type; const char* name; };
+                    static const FluidEntry kFluids[] = {
+                        {"Smoke Volume", ECS::FluidType::Smoke, "Smoke Volume"},
+                        {"Steam Volume", ECS::FluidType::Steam, "Steam Volume"},
+                        {"Gas Volume",   ECS::FluidType::Gas,   "Gas Volume"},
+                        {"Water Volume", ECS::FluidType::Water, "Water Volume"},
+                        {"Lava Volume",  ECS::FluidType::Lava,  "Lava Volume"},
+                    };
+                    for (const FluidEntry& f : kFluids) {
+                        if (!ImGui::MenuItem(f.label)) continue;
+                        if (!m_World) continue;
                         ECS::Entity entity = m_World->CreateEntity();
                         m_World->AddComponent<ECS::TransformComponent>(entity);
                         ECS::FluidVolumeComponent vol;
+                        // 3D because that is what these read as in a scene; a
+                        // 2D volume is a special case the inspector switches to.
                         vol.dimension = ECS::FluidDimension::Mode3D;
-                        vol.fluidType = ECS::FluidType::Smoke;
+                        vol.fluidType = f.type;
                         vol.ApplyPreset();
                         m_World->AddComponent<ECS::FluidVolumeComponent>(entity, vol);
-                        m_World->AddComponent<ECS::NameComponent>(entity, "Smoke Volume");
+                        m_World->AddComponent<ECS::NameComponent>(entity, f.name);
                         SelectEntity(entity); RecordLayerCreate(entity);
                     }
+                    ImGui::EndMenu();
                 }
                 if (ImGui::MenuItem("Grass Volume")) {
                     if (m_World) {

@@ -1156,8 +1156,19 @@ volume are voxelised into the grid, so smoke fills a room and stops at the
 walls instead of passing through them. This is on for a bake; see below.
 
 **`buoyancy` decides which way it goes.** Positive rises, which is smoke,
-steam and fire. Negative sinks, which is how a liquid falls and pools in
+steam and gas. Negative sinks, which is how a liquid falls and pools in
 whatever contains it. Zero floats in place.
+
+Picking a **Fluid Type** applies a preset: Smoke, Steam and Gas rise, Water
+and Lava sink (lava more slowly, so it oozes rather than pours). Changing the
+type overwrites the tuning fields with that preset's values; everything stays
+editable afterwards.
+
+> Volumes authored before 2026-09-17 keep whatever buoyancy is stored in the
+> scene. Water and Lava used to be 0, because the solver discarded a negative
+> value and no fluid could fall. Loading a scene never re-applies a preset, so
+> an existing pond will not start sinking on its own -- set the type again, or
+> type a negative buoyancy, to opt in.
 
 **It is expensive to solve every frame, and that cost does not depend on how
 much smoke there is.** A grid pays for its whole box whether it is full or

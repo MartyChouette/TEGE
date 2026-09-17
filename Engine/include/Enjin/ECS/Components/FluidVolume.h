@@ -58,12 +58,17 @@ struct ENJIN_API FluidVolumeComponent {
         switch (fluidType) {
             case FluidType::Water:
                 viscosity = 0.0001f; diffusion = 0.0001f; dissipation = 0.999f;
-                velocityDissipation = 0.999f; buoyancy = 0.0f;
+                // Negative sinks. It was 0 because the solver discarded a
+                // negative buoyancy outright, so water could not fall and
+                // "water" was a colour on a gas. Now it falls, is stopped by
+                // scene colliders, and pools in whatever contains it.
+                velocityDissipation = 0.999f; buoyancy = -1.0f;
                 fluidColor = Math::Vector3(0.2f, 0.4f, 0.8f); opacity = 0.7f;
                 break;
             case FluidType::Lava:
                 viscosity = 0.5f; diffusion = 0.001f; dissipation = 0.998f;
-                velocityDissipation = 0.995f; buoyancy = 0.0f;
+                // Sinks, but slowly: lava should ooze and spread, not pour.
+                velocityDissipation = 0.995f; buoyancy = -0.35f;
                 fluidColor = Math::Vector3(0.9f, 0.3f, 0.05f); opacity = 1.0f;
                 break;
             case FluidType::Gas:

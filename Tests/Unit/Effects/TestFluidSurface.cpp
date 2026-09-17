@@ -196,4 +196,27 @@ ENJIN_TEST(FluidSimulationGravity, test_negative_buoyancy_sinks_relative_to_none
     ENJIN_EXPECT_TRUE(rising > still);     // positive still rises, unchanged
 }
 
+ENJIN_TEST(FluidSimulationGravity, test_the_liquid_presets_sink_and_the_gas_presets_rise) {
+    // The presets are what a person gets from Entity > Effects > Fluid, so
+    // "Water Volume" has to behave like water. Water and Lava carried
+    // buoyancy 0 for as long as the solver discarded negative values, which
+    // made them a colour and a viscosity on a gas solver.
+    // Arrange / Act / Assert
+    auto buoyancyOf = [](ECS::FluidType type) {
+        ECS::FluidVolumeComponent v;
+        v.fluidType = type;
+        v.ApplyPreset();
+        return v.buoyancy;
+    };
+
+    ENJIN_EXPECT_TRUE(buoyancyOf(ECS::FluidType::Water) < 0.0f);
+    ENJIN_EXPECT_TRUE(buoyancyOf(ECS::FluidType::Lava) < 0.0f);
+    // Lava oozes rather than pours, so it sinks more gently than water.
+    ENJIN_EXPECT_TRUE(buoyancyOf(ECS::FluidType::Lava) > buoyancyOf(ECS::FluidType::Water));
+
+    ENJIN_EXPECT_TRUE(buoyancyOf(ECS::FluidType::Smoke) > 0.0f);
+    ENJIN_EXPECT_TRUE(buoyancyOf(ECS::FluidType::Steam) > 0.0f);
+    ENJIN_EXPECT_TRUE(buoyancyOf(ECS::FluidType::Gas) > 0.0f);
+}
+
 ENJIN_TEST_MAIN()

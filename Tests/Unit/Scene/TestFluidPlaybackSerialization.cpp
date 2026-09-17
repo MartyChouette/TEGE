@@ -112,4 +112,41 @@ ENJIN_TEST(FluidPlaybackSerialization, test_a_remembered_load_failure_is_not_per
     std::remove(path.c_str());
 }
 
+ENJIN_TEST(FluidPlaybackSerialization, test_an_existing_scene_keeps_its_authored_buoyancy) {
+    // The Water and Lava presets changed from buoyancy 0 to negative, so they
+    // now fall. That is only safe for already-authored scenes because a scene
+    // stores the VALUE and never re-applies the preset on load -- if loading
+    // called ApplyPreset, every shipped water volume in every project would
+    // quietly start sinking after an engine update.
+    // Arrange: a water volume authored the old way.
+    const std::string path = ScenePath("enjin_test_fluid_legacy_buoyancy.enjin");
+    {
+        ECS::World world;
+        ECS::Entity e = world.CreateEntity();
+        world.AddComponent<ECS::TransformComponent>(e);
+        world.AddComponent<ECS::NameComponent>(e, "OldPond");
+        ECS::FluidVolumeComponent vol;
+        vol.fluidType = ECS::FluidType::Water;
+        vol.buoyancy = 0.0f;               // what the old preset produced
+        world.AddComponent<ECS::FluidVolumeComponent>(e, vol);
+
+        Scene::SceneSerializer serializer(&world);
+        ENJIN_ASSERT_TRUE(serializer.Save(path).success);
+    }
+
+    // Act
+    ECS::World loaded;
+    Scene::SceneSerializer serializer(&loaded);
+    ENJIN_ASSERT_TRUE(serializer.Load(path).success);
+
+    // Assert: still 0, not the new preset's negative value.
+    ECS::Entity found = loaded.FindEntityByName("OldPond");
+    ENJIN_ASSERT_TRUE(found != ECS::INVALID_ENTITY);
+    const auto* vol = loaded.GetComponent<ECS::FluidVolumeComponent>(found);
+    ENJIN_ASSERT_TRUE(vol != nullptr);
+    ENJIN_EXPECT_FLOAT_NEAR(vol->buoyancy, 0.0f, 0.0001f);
+
+    std::remove(path.c_str());
+}
+
 ENJIN_TEST_MAIN()
