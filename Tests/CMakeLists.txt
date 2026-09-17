@@ -14,6 +14,28 @@ target_link_libraries(SerializerRoundTrip PRIVATE
 
 target_compile_features(SerializerRoundTrip PRIVATE cxx_std_20)
 
+# Not a test: a measurement. Prints what a 3D fluid step costs so the grid-size
+# cap and the iteration clamp can be argued about with numbers.
+add_executable(FluidBench
+    Integration/FluidBench.cpp
+)
+
+target_link_libraries(FluidBench PRIVATE
+    EnjinEngine
+)
+
+target_compile_features(FluidBench PRIVATE cxx_std_20)
+
+add_executable(ParticleBench
+    Integration/ParticleBench.cpp
+)
+
+target_link_libraries(ParticleBench PRIVATE
+    EnjinEngine
+)
+
+target_compile_features(ParticleBench PRIVATE cxx_std_20)
+
 add_executable(StableIdRoundTrip
     Integration/StableIdRoundTrip.cpp
 )
@@ -320,6 +342,7 @@ enjin_add_test(TestReactionDiffusion  Unit/Effects/TestReactionDiffusion.cpp)
 enjin_add_test(TestScreenTransition   Unit/Effects/TestScreenTransition.cpp)
 enjin_add_test(TestWeather            Unit/Effects/TestWeather.cpp)
 enjin_add_test(TestParticleEmitter    Unit/Effects/TestParticleEmitter.cpp)
+enjin_add_test(TestFluidCellSelection Unit/Effects/TestFluidCellSelection.cpp)
 
 # --- Geometry ---
 enjin_add_test(TestCSG                Unit/Geometry/TestCSG.cpp)

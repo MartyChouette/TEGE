@@ -236,3 +236,8 @@ Testing/
 
 # Local playable builds produced by --build-web. Artifacts, never sources.
 dist/
+
+# Editor auto-saves of open scenes. Working state, not repo content:
+# they appear whenever an editor session is running and are overwritten
+# on a timer, so committing one races the editor that wrote it.
+*.enjin.autosave

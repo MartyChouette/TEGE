@@ -437,6 +437,7 @@ void RenderSystem::BeginFrameTransformCaches() {
 #include "Enjin/Renderer/WebGPU/WebSceneTarget.h"   // kWebSceneSampleCount
 #include "Enjin/Renderer/WebGPU/WebLightingLayout.h"
 #include "Enjin/Effects/FluidSimulation.h"
+#include "Enjin/Effects/FluidCellSelection.h"
 #include "Enjin/ECS/Components/FluidVolume.h"
 #include "Enjin/Renderer/WebGPU/WebObjectDataLayout.h"
 #include "Enjin/Renderer/WebGPU/WebShaderData.h"
@@ -5121,13 +5122,30 @@ void RenderSystem::Update(f32 deltaTime) {
     //
     // Cell selection mirrors FluidRenderer::Render so the two backends pick the same
     // cells: skip anything below the volume's densityThreshold, size from the volume
-    // extents over the grid resolution, alpha from density clamped to 1 times opacity.
+    // extents over the grid resolution, alpha from density clamped to 1 times opacity,
+    // one shared budget split evenly between volumes, and an over-budget volume thinned
+    // by a stride rather than truncated. The cap is lower here than on desktop on
+    // purpose -- see docs/WEB_TIER.md; the SELECTION rule is what has to match.
     if (usePostProcess && m_WebSpritePipeline.IsValid() && scenePassEncoder && m_WebFluidSim) {
         static std::vector<WebSpriteInst> finsts;
         finsts.clear();
         constexpr usize kMaxWebFluidCells = 20000;
+
+        // Volumes that will actually draw, so the budget can be shared rather than
+        // taken first-come by whichever volume the ECS happens to list first.
+        u32 fluidVolumeCount = 0;
         for (Entity e : m_World->GetEntitiesWithComponent<FluidVolumeComponent>()) {
-            if (finsts.size() >= kMaxWebFluidCells) break;
+            auto* vol = m_World->GetComponent<FluidVolumeComponent>(e);
+            if (!vol || !vol->isActive || !vol->renderEnabled) continue;
+            auto* xf = m_World->GetComponent<TransformComponent>(e);
+            if (!xf || !xf->visible) continue;
+            const Effects::FluidGridData* grid = m_WebFluidSim->GetGridData(e);
+            if (!grid || grid->N == 0) continue;
+            ++fluidVolumeCount;
+        }
+        const usize fluidShare = Effects::FluidBudgetShare(kMaxWebFluidCells, fluidVolumeCount);
+
+        for (Entity e : m_World->GetEntitiesWithComponent<FluidVolumeComponent>()) {
             auto* vol = m_World->GetComponent<FluidVolumeComponent>(e);
             if (!vol || !vol->isActive || !vol->renderEnabled) continue;
             auto* xf = m_World->GetComponent<TransformComponent>(e);
@@ -5145,32 +5163,26 @@ void RenderSystem::Update(f32 deltaTime) {
                                        xf->position.y - vol->halfExtents.y,
                                        xf->position.z - vol->halfExtents.z);
 
-            auto push = [&](f32 wx, f32 wy, f32 wz, f32 d) {
-                const f32 a = std::min(d, 1.0f) * vol->opacity;
+            // WHICH cells draw is FluidCellSelection's decision, shared with the
+            // Vulkan backend so the two cannot disagree about it again. Building
+            // a sprite instance from a chosen cell is this backend's business.
+            const bool is3D = grid->is3D;
+            const usize room = kMaxWebFluidCells - finsts.size();
+            if (room == 0) break;
+            static std::vector<Effects::FluidCellPick> picks;
+            picks.clear();
+            Effects::SelectFluidCells(*grid, vol->densityThreshold,
+                                      std::min(fluidShare, room), picks);
+
+            for (const Effects::FluidCellPick& pick : picks) {
+                const f32 wx = origin.x + (static_cast<f32>(pick.i) - 0.5f) * cx;
+                const f32 wy = origin.y + (static_cast<f32>(pick.j) - 0.5f) * cy;
+                const f32 wz = is3D ? origin.z + (static_cast<f32>(pick.k) - 0.5f) * cz
+                                    : xf->position.z;
+                const f32 a = std::min(1.0f, pick.density * pick.alphaScale) * vol->opacity;
                 finsts.push_back({wx, wy, wz, cell, cell, 0.0f,
                                   vol->fluidColor.x, vol->fluidColor.y, vol->fluidColor.z, a,
                                   0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f});
-            };
-
-            if (!grid->is3D) {
-                for (u32 j = 1; j <= N && finsts.size() < kMaxWebFluidCells; ++j)
-                for (u32 i = 1; i <= N && finsts.size() < kMaxWebFluidCells; ++i) {
-                    const f32 d = grid->density[grid->IX(i, j)];
-                    if (d < vol->densityThreshold) continue;
-                    push(origin.x + (static_cast<f32>(i) - 0.5f) * cx,
-                         origin.y + (static_cast<f32>(j) - 0.5f) * cy,
-                         xf->position.z, d);
-                }
-            } else {
-                for (u32 k = 1; k <= N && finsts.size() < kMaxWebFluidCells; ++k)
-                for (u32 j = 1; j <= N && finsts.size() < kMaxWebFluidCells; ++j)
-                for (u32 i = 1; i <= N && finsts.size() < kMaxWebFluidCells; ++i) {
-                    const f32 d = grid->density[grid->IX3(i, j, k)];
-                    if (d < vol->densityThreshold) continue;
-                    push(origin.x + (static_cast<f32>(i) - 0.5f) * cx,
-                         origin.y + (static_cast<f32>(j) - 0.5f) * cy,
-                         origin.z + (static_cast<f32>(k) - 0.5f) * cz, d);
-                }
             }
         }
 

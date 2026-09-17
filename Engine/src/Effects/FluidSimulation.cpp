@@ -2,7 +2,9 @@
 #include "Enjin/ECS/Components/FluidVolume.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <vector>
 
 namespace Enjin {
 namespace Effects {
@@ -12,9 +14,49 @@ void FluidSimulation::Update(f32 dt, ECS::World* world) {
     if (dt > 0.5f) return;  // Skip on long frames (loading/pause)
     dt = std::min(dt, 1.0f / 30.0f);  // Clamp for stability
 
-    for (ECS::Entity entity : world->GetEntitiesWithComponent<ECS::FluidVolumeComponent>()) {
+    // Volumes take turns inside a time budget. See SetFrameBudgetMs: every
+    // volume used to solve in full every frame, and three campfires was 4 fps.
+    const auto& all = world->GetEntitiesWithComponent<ECS::FluidVolumeComponent>();
+    std::vector<ECS::Entity> order(all.begin(), all.end());
+    m_DeferredVolumes = 0;
+    if (order.empty()) return;
+    if (m_RoundRobinStart >= order.size()) m_RoundRobinStart = 0;
+    std::rotate(order.begin(), order.begin() + static_cast<long long>(m_RoundRobinStart),
+                order.end());
+
+    const auto frameStart = std::chrono::high_resolution_clock::now();
+    auto elapsedMs = [&]() {
+        return std::chrono::duration<f64, std::milli>(
+            std::chrono::high_resolution_clock::now() - frameStart).count();
+    };
+
+    usize index = 0;
+    for (ECS::Entity entity : order) {
+        ++index;
         auto* vol = world->GetComponent<ECS::FluidVolumeComponent>(entity);
         if (!vol || !vol->isActive) continue;
+
+        // Everything this volume is owed, including frames it sat out, so it
+        // moves at the right speed rather than in slow motion.
+        f32& owed = m_PendingTime[entity];
+        owed += dt;
+
+        // The FIRST volume always runs. A budget that can starve everything
+        // would freeze all the smoke on a slow frame, which reads as broken
+        // rather than as degraded.
+        if (index > 1 && elapsedMs() >= m_FrameBudgetMs) {
+            ++m_DeferredVolumes;
+            // Resume here next frame so the same volumes are not always last.
+            m_RoundRobinStart = (m_RoundRobinStart + index - 1) % order.size();
+            continue;
+        }
+
+        // Clamped for stability exactly as a single frame's dt is: a volume
+        // that sat out ten frames must not take one enormous step.
+        f32 stepDt = std::min(owed, 1.0f / 30.0f);
+        owed = 0.0f;
+        const f32 dtSaved = dt;
+        dt = stepDt;
 
         // Initialize grid if needed
         auto& grid = m_Grids[entity];
@@ -65,6 +107,8 @@ void FluidSimulation::Update(f32 dt, ECS::World* world) {
             Step2D(grid, dt, vol->viscosity, vol->diffusion, vol->dissipation,
                    vol->velocityDissipation, iterations, vol->buoyancy);
         }
+
+        dt = dtSaved;
     }
 }
 

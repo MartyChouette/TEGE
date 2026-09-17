@@ -1,4 +1,5 @@
 #include "Enjin/Effects/FluidRenderer.h"
+#include "Enjin/Effects/FluidCellSelection.h"
 #include "Enjin/Renderer/Vulkan/ShaderData.h"
 #include "Enjin/ECS/Components/FluidVolume.h"
 #include "Enjin/ECS/Components/Transform.h"
@@ -222,6 +223,24 @@ void FluidRenderer::Render(VkCommandBuffer commandBuffer,
 
     m_InstanceDataCache.clear();
 
+    // Every volume draws out of ONE instance cache, so the cap has to be shared
+    // deliberately. It used to be first-come: a single saturated volume took all
+    // 16384 cells and every other volume in the scene drew nothing, which looks
+    // like the smoke was never placed. Count the volumes that will draw, then
+    // give each an equal share of the budget.
+    u32 volumeCount = 0;
+    for (ECS::Entity entity : world->GetEntitiesWithComponent<ECS::FluidVolumeComponent>()) {
+        auto* vol = world->GetComponent<ECS::FluidVolumeComponent>(entity);
+        if (!vol || !vol->isActive || !vol->renderEnabled) continue;
+        auto* transform = world->GetComponent<ECS::TransformComponent>(entity);
+        if (!transform || !transform->visible) continue;
+        const FluidGridData* grid = m_Simulation->GetGridData(entity);
+        if (!grid || grid->N == 0) continue;
+        ++volumeCount;
+    }
+    if (volumeCount == 0) return;
+    const usize shareOfCap = FluidBudgetShare(MAX_FLUID_CELLS, volumeCount);
+
     for (ECS::Entity entity : world->GetEntitiesWithComponent<ECS::FluidVolumeComponent>()) {
         auto* vol = world->GetComponent<ECS::FluidVolumeComponent>(entity);
         if (!vol || !vol->isActive || !vol->renderEnabled) continue;
@@ -235,62 +254,41 @@ void FluidRenderer::Render(VkCommandBuffer commandBuffer,
         u32 N = grid->N;
         bool is3D = grid->is3D;
 
-        // Compute cell size in world space
-        f32 cellSizeX = (vol->halfExtents.x * 2.0f) / N;
-        f32 cellSizeY = (vol->halfExtents.y * 2.0f) / N;
+        // Cell size in world space. Z is computed for both modes so the emit
+        // loop below can stay one body instead of two near-identical copies.
+        const f32 cellSizeX = (vol->halfExtents.x * 2.0f) / N;
+        const f32 cellSizeY = (vol->halfExtents.y * 2.0f) / N;
+        const f32 cellSizeZ = (vol->halfExtents.z * 2.0f) / N;
         f32 cellSize = std::min(cellSizeX, cellSizeY);
+        if (is3D) cellSize = std::min(cellSize, cellSizeZ);
 
         // Entity world position is the center of the volume
-        Math::Vector3 origin(
+        const Math::Vector3 origin(
             transform->position.x - vol->halfExtents.x,
             transform->position.y - vol->halfExtents.y,
             transform->position.z - vol->halfExtents.z);
 
-        if (!is3D) {
-            for (u32 j = 1; j <= N && m_InstanceDataCache.size() < MAX_FLUID_CELLS; ++j) {
-                for (u32 i = 1; i <= N && m_InstanceDataCache.size() < MAX_FLUID_CELLS; ++i) {
-                    f32 d = grid->density[grid->IX(i, j)];
-                    if (d < vol->densityThreshold) continue;
+        // WHICH cells draw is FluidCellSelection's decision, shared with the web
+        // backend so the two cannot disagree about it again. How an instance is
+        // built from a chosen cell is this backend's business, and is the part
+        // the two are allowed to differ on.
+        const usize room = MAX_FLUID_CELLS - m_InstanceDataCache.size();
+        if (room == 0) break;
+        m_PickCache.clear();
+        SelectFluidCells(*grid, vol->densityThreshold, std::min(shareOfCap, room), m_PickCache);
 
-                    FluidCellInstanceData inst;
-                    inst.position.x = origin.x + (static_cast<f32>(i) - 0.5f) * cellSizeX;
-                    inst.position.y = origin.y + (static_cast<f32>(j) - 0.5f) * cellSizeY;
-                    inst.position.z = transform->position.z;
-                    inst.size = cellSize;
-                    f32 clamped = std::min(d, 1.0f);
-                    inst.colorR = vol->fluidColor.x;
-                    inst.colorG = vol->fluidColor.y;
-                    inst.colorB = vol->fluidColor.z;
-                    inst.alpha = std::min(d, 1.0f) * vol->opacity;
-
-                    m_InstanceDataCache.push_back(inst);
-                }
-            }
-        } else {
-            f32 cellSizeZ = (vol->halfExtents.z * 2.0f) / N;
-            cellSize = std::min(cellSize, cellSizeZ);
-
-            for (u32 k = 1; k <= N && m_InstanceDataCache.size() < MAX_FLUID_CELLS; ++k) {
-                for (u32 j = 1; j <= N && m_InstanceDataCache.size() < MAX_FLUID_CELLS; ++j) {
-                    for (u32 i = 1; i <= N && m_InstanceDataCache.size() < MAX_FLUID_CELLS; ++i) {
-                        f32 d = grid->density[grid->IX3(i, j, k)];
-                        if (d < vol->densityThreshold) continue;
-
-                        FluidCellInstanceData inst;
-                        inst.position.x = origin.x + (static_cast<f32>(i) - 0.5f) * cellSizeX;
-                        inst.position.y = origin.y + (static_cast<f32>(j) - 0.5f) * cellSizeY;
-                        inst.position.z = origin.z + (static_cast<f32>(k) - 0.5f) * cellSizeZ;
-                        inst.size = cellSize;
-                        f32 clamped = std::min(d, 1.0f);
-                        inst.colorR = vol->fluidColor.x;
-                        inst.colorG = vol->fluidColor.y;
-                        inst.colorB = vol->fluidColor.z;
-                        inst.alpha = std::min(d, 1.0f) * vol->opacity;
-
-                        m_InstanceDataCache.push_back(inst);
-                    }
-                }
-            }
+        for (const FluidCellPick& pick : m_PickCache) {
+            FluidCellInstanceData inst;
+            inst.position.x = origin.x + (static_cast<f32>(pick.i) - 0.5f) * cellSizeX;
+            inst.position.y = origin.y + (static_cast<f32>(pick.j) - 0.5f) * cellSizeY;
+            inst.position.z = is3D ? origin.z + (static_cast<f32>(pick.k) - 0.5f) * cellSizeZ
+                                   : transform->position.z;
+            inst.size = cellSize;
+            inst.colorR = vol->fluidColor.x;
+            inst.colorG = vol->fluidColor.y;
+            inst.colorB = vol->fluidColor.z;
+            inst.alpha = std::min(1.0f, pick.density * pick.alphaScale) * vol->opacity;
+            m_InstanceDataCache.push_back(inst);
         }
     }
 

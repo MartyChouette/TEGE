@@ -7,6 +7,7 @@
 #include "Enjin/Math/Matrix.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/Effects/FluidSimulation.h"
+#include "Enjin/Effects/FluidCellSelection.h"
 #include "Enjin/Renderer/Vulkan/VulkanRenderer.h"
 #include "Enjin/Renderer/Vulkan/VulkanPipeline.h"
 #include "Enjin/Renderer/Vulkan/VulkanBuffer.h"
@@ -72,13 +73,22 @@ private:
     std::unique_ptr<Renderer::VulkanBuffer> m_QuadVertexBuffer;
     std::unique_ptr<Renderer::VulkanBuffer> m_QuadIndexBuffer;
     std::unique_ptr<Renderer::VulkanBuffer> m_InstanceBuffer;
-    static constexpr u32 MAX_FLUID_CELLS = 16384;
+    // A saturated 48^3 smoke volume wants about 40k cells above its density
+    // threshold (measured: Tests/Integration/FluidBench.cpp). At 16384 -- the
+    // old value -- 59% of one volume went undrawn and every volume after the
+    // first drew nothing, because the cache and this cap are shared. 65536
+    // holds one dense volume outright; past that the emit loop thins evenly
+    // instead of truncating.
+    static constexpr u32 MAX_FLUID_CELLS = 65536;
 
     std::unique_ptr<Renderer::VulkanPipeline> m_Pipeline;
     std::unique_ptr<Renderer::VulkanShader> m_VertexShader;
     std::unique_ptr<Renderer::VulkanShader> m_FragmentShader;
 
     std::vector<FluidCellInstanceData> m_InstanceDataCache;
+    // Reused across frames and volumes so the per-frame selection does not
+    // allocate; cleared per volume, never read outside Render.
+    std::vector<FluidCellPick> m_PickCache;
 
     bool m_Initialized = false;
 };

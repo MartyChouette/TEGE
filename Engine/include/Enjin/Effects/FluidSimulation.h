@@ -84,8 +84,38 @@ public:
     const FluidGridData* GetGridData(ECS::Entity entity) const;
     FluidGridData* GetMutableGridData(ECS::Entity entity);
 
+    // How long the whole fluid step may take, in milliseconds. Volumes take
+    // turns: whatever does not fit this frame is simulated next frame with the
+    // time it missed, so motion runs at the right SPEED even when a volume gets
+    // fewer updates.
+    //
+    // There was no budget at all, and a 3D volume measured ~100 ms per step at
+    // the shipped default of 20 iterations (Tests/Integration/FluidBench.cpp).
+    // Three campfires in a scene was 4 fps, because every one of them solved in
+    // full, every frame, on the main thread. Nothing culled distance, nothing
+    // skipped off-screen, nothing capped the total.
+    //
+    // 8 ms is half a 60 fps frame and still far too much for one system; it is
+    // set here because the alternative today is 300. Lower it as the solver gets
+    // cheaper.
+    void SetFrameBudgetMs(f64 ms) { m_FrameBudgetMs = ms; }
+    f64 GetFrameBudgetMs() const { return m_FrameBudgetMs; }
+
+    // Volumes whose step was deferred this frame, for the profiler and for
+    // tests -- a budget that silently drops work is indistinguishable from a
+    // budget that is never hit.
+    u32 GetDeferredVolumeCount() const { return m_DeferredVolumes; }
+
 private:
     std::unordered_map<ECS::Entity, FluidGridData> m_Grids;
+
+    // Time each volume is owed because the budget ran out before its turn.
+    std::unordered_map<ECS::Entity, f32> m_PendingTime;
+    // Where the round-robin resumes, so the same volumes are not always the
+    // ones that get skipped.
+    usize m_RoundRobinStart = 0;
+    f64 m_FrameBudgetMs = 8.0;
+    u32 m_DeferredVolumes = 0;
 
     // 2D solver steps
     void Step2D(FluidGridData& grid, f32 dt, f32 visc, f32 diff, f32 dissipation, f32 velDissipation, i32 iterations, f32 buoyancy);
