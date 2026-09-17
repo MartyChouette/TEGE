@@ -754,6 +754,16 @@ private:
     // this volume solved ahead of time.
     void DrawFluidBakeControls(ECS::Entity entity);
     void BakeFluidVolume(ECS::Entity entity);
+    // Point a volume at a recording given any path to it -- a browser drag
+    // hands over an absolute one, the picker a project-relative one, and only
+    // this knows which the runtime can resolve. Reports through
+    // m_FluidBakeStatus and returns false rather than storing a path that
+    // would fail to load later, three layers from here.
+    bool SetFluidRecording(ECS::Entity entity, const std::string& path);
+    // Every .enjfluid under the project's assets/, as {relative path, header
+    // summary}. Rescanned when the picker opens: a list nobody is looking at
+    // does not need maintaining, and the alternative is a Refresh button.
+    std::vector<std::pair<std::string, std::string>> ScanFluidRecordings(std::string& searchedDir) const;
     void DrawFluidTerrainCoupling(ECS::Entity entity);
     void DrawElementalSurfaceComponent(ECS::Entity entity);
     void DrawElementalEmitterComponent(ECS::Entity entity);
@@ -1638,6 +1648,11 @@ private:
     // every scene.
     Effects::FluidBakeSettings m_FluidBakeSettings;
     std::string m_FluidBakeStatus;
+    // What the recording picker is showing: {project-relative path, header
+    // summary}, filled when the popup opens. m_FluidTakeSearchDir is the
+    // directory that was scanned, so an empty list can say where it looked.
+    std::vector<std::pair<std::string, std::string>> m_FluidTakeChoices;
+    std::string m_FluidTakeSearchDir;
 
     // Fluid-terrain coupling (erosion/deposition from fluid to terrain heightmap)
     Effects::FluidTerrainCoupling m_FluidTerrainCoupling;

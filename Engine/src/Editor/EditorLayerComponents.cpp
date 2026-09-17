@@ -3866,6 +3866,93 @@ void EditorLayer::BakeFluidVolume(ECS::Entity entity) {
     m_FluidPlayback.ClearCache();   // a re-bake replaced the file under the cache
 }
 
+// Accept any path to a recording and store the one the runtime can resolve.
+//
+// A drag out of the asset browser carries an ABSOLUTE path; the picker and a
+// bake carry a PROJECT-RELATIVE one. Both arrive here so there is a single
+// place that knows which of the two a scene may hold: an absolute path breaks
+// the moment the project is moved or opened on another machine, and one
+// pointing outside the project cannot be resolved by `ResolveWithinRoot` at
+// all. Refusing loudly beats storing it and failing at load, where the cause
+// is three layers from the symptom.
+bool EditorLayer::SetFluidRecording(ECS::Entity entity, const std::string& path) {
+    m_FluidBakeStatus.clear();
+    if (!m_World || path.empty()) return false;
+
+    auto* play = m_World->GetComponent<ECS::FluidPlaybackComponent>(entity);
+    if (!play) return false;
+
+    namespace fs = std::filesystem;
+    std::string ext = fs::path(path).extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (ext != ".enjfluid") {
+        m_FluidBakeStatus = "That is not a recording -- a take is a .enjfluid file.";
+        return false;
+    }
+
+    std::string relative = path;
+    if (fs::path(path).is_absolute()) {
+        if (m_SceneManager.GetProjectPath().empty()) {
+            m_FluidBakeStatus = "Save the project first -- a recording is stored next to it.";
+            return false;
+        }
+        const std::string projDir =
+            fs::path(m_SceneManager.GetProjectPath()).parent_path().string();
+        // The tested containment check, not a hand-rolled one. It returns ""
+        // rather than a path climbing out of the project, which is the answer
+        // this needs -- a scene can only carry a path the runtime's
+        // ResolveWithinRoot will accept later.
+        relative = Platform::MakeRelativeToRoot(projDir, path);
+        if (relative.empty()) {
+            m_FluidBakeStatus = "That recording is outside the project, so a scene could not "
+                                "find it again. Move it under assets/ first.";
+            return false;
+        }
+        // Forward slashes into the scene. MakeRelativeToRoot hands back the
+        // platform's separator, so a drag on Windows would store
+        // "assets\\fluid\\x.enjfluid" -- which loads here and nowhere
+        // else. Baking already writes the generic form; a drop must match it.
+        relative = std::filesystem::path(relative).generic_string();
+    }
+
+    play->bakePath = relative;
+    play->loadAttempted = false;
+    play->loadFailed = false;
+    play->time = 0.0f;
+    m_FluidPlayback.ClearCache();
+    return true;
+}
+
+// Every take the project actually has, formatted for the picker.
+//
+// The scan itself lives in Effects::FindFluidRecordings, next to the format it
+// reads, so it can be tested without an editor: "an empty list" is exactly the
+// kind of bug that is invisible in a UI and obvious in a test.
+std::vector<std::pair<std::string, std::string>>
+EditorLayer::ScanFluidRecordings(std::string& searchedDir) const {
+    std::vector<std::pair<std::string, std::string>> rows;
+    searchedDir.clear();
+    if (m_SceneManager.GetProjectPath().empty()) return rows;
+
+    const std::string projDir =
+        std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path().string();
+    for (const auto& take : Effects::FindFluidRecordings(projDir, &searchedDir)) {
+        // The header, not the file size: 7 MB says nothing about whether a
+        // take is the four-second loop you wanted or a one-shot.
+        std::string summary = "unreadable header";
+        if (take.readable) {
+            char buf[160];
+            std::snprintf(buf, sizeof(buf), "%u^%d  %u frames  %.1fs  %s",
+                          take.info.gridSize, take.info.is3D ? 3 : 2, take.info.frameCount,
+                          take.info.Duration(), take.info.looping ? "loop" : "one-shot");
+            summary = buf;
+        }
+        rows.emplace_back(take.relativePath, summary);
+    }
+    return rows;
+}
+
 // Recording a take, and the controls for playing one back.
 //
 // This lives under Fluid Volume rather than in a window of its own because a
@@ -3936,11 +4023,54 @@ void EditorLayer::DrawFluidBakeControls(ECS::Entity entity) {
     } else {
         char path[512];
         std::snprintf(path, sizeof(path), "%s", play->bakePath.c_str());
+        // Typing a path still works, and was the ONLY way to point a second
+        // volume at an existing take -- which meant knowing the folder
+        // convention and spelling it. The two ways in that do not require
+        // that are below: drop one from the asset browser, or pick from what
+        // the project has.
         if (ImGui::InputText("Recording##FluidPlay", path, sizeof(path))) {
             play->bakePath = path;
             play->loadAttempted = false;   // a new path deserves a fresh try
             play->loadFailed = false;
             m_FluidPlayback.ClearCache();
+        }
+        if (ImGui::BeginDragDropTarget()) {
+            if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("ASSET_PATH")) {
+                if (pl->Data) SetFluidRecording(entity, std::string(static_cast<const char*>(pl->Data)));
+            }
+            ImGui::EndDragDropTarget();
+        }
+        ImGui::SetItemTooltip("Project-relative, e.g. assets/fluid/Smoke Volume.enjfluid.\n"
+                              "Drag a recording here from the Asset Browser, or use Pick.");
+
+        // Rescanned on open rather than held and refreshed: the list is small,
+        // it is only ever read while this popup is up, and a Refresh button is
+        // an admission that the tool does not know when its own data changed.
+        if (ImGui::Button("Pick...##FluidPlay")) {
+            m_FluidTakeChoices = ScanFluidRecordings(m_FluidTakeSearchDir);
+            ImGui::OpenPopup("FluidTakePicker");
+        }
+        if (ImGui::BeginPopup("FluidTakePicker")) {
+            if (m_FluidTakeChoices.empty()) {
+                // Naming the directory turns "there are none" into something a
+                // person can act on -- most often it is the wrong project, or
+                // nothing has been baked yet.
+                ImGui::TextDisabled("No recordings under");
+                ImGui::TextDisabled("%s", m_FluidTakeSearchDir.empty()
+                                          ? "(no project open)" : m_FluidTakeSearchDir.c_str());
+                ImGui::TextDisabled("Bake one above, and it lands there.");
+            } else {
+                for (const auto& take : m_FluidTakeChoices) {
+                    // One label rather than a Selectable plus a SameLine
+                    // caption: a Selectable is as wide as the popup, so
+                    // anything drawn beside it lands past the right edge.
+                    const std::string row = take.first + "   " + take.second;
+                    if (ImGui::Selectable(row.c_str(), take.first == play->bakePath)) {
+                        SetFluidRecording(entity, take.first);
+                    }
+                }
+            }
+            ImGui::EndPopup();
         }
         if (play->loadFailed) {
             ImGui::TextColored(ImVec4(0.9f, 0.4f, 0.35f, 1.0f),

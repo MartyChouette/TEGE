@@ -64,6 +64,33 @@ ENJIN_API void EncodeFluidDensity(const std::vector<f32>& density, f32 maxDensit
 ENJIN_API bool DecodeFluidDensity(const std::vector<u8>& in, f32 maxDensity,
                                   usize cellCount, std::vector<f32>& out);
 
+// What a take IS, without reading a single frame of it.
+//
+// A browser row, a hover tooltip and a picker list all want the grid, the
+// length and whether it loops. Loading the file to answer that reads megabytes
+// per entry, so this reads only the 48-byte header -- and it is the SAME
+// parser FluidBake::Load uses, so a format change cannot leave the two
+// disagreeing about where a field lives.
+struct ENJIN_API FluidBakeInfo {
+    u32 gridSize = 0;
+    bool is3D = true;
+    bool looping = false;
+    u32 loopBlendFrames = 0;
+    f32 frameRate = 30.0f;
+    Math::Vector3 halfExtents = Math::Vector3(5.0f, 5.0f, 5.0f);
+    f32 maxDensity = 1.0f;
+    u32 frameCount = 0;
+
+    f32 Duration() const {
+        return frameRate > 0.0f ? static_cast<f32>(frameCount) / frameRate : 0.0f;
+    }
+};
+
+// False for a missing file, a file that is not a recording, and a recording
+// written by a different format version -- the three cases a caller must not
+// tell apart by guessing at the extension.
+ENJIN_API bool ReadFluidBakeInfo(const std::string& path, FluidBakeInfo& out);
+
 struct ENJIN_API FluidBake {
     u32 gridSize = 0;                  // N, excluding the padding shell
     bool is3D = true;
@@ -111,6 +138,30 @@ struct ENJIN_API FluidBake {
     bool Save(const std::string& path) const;
     bool Load(const std::string& path);
 };
+
+// One recording found on disk, as a picker needs it.
+//
+// `readable` false means the extension matched and the header did not -- a
+// file being listed as a take it cannot be is worse than it not appearing,
+// because the failure then happens later, in playback, with no clue attached.
+struct ENJIN_API FluidTakeEntry {
+    std::string relativePath;   // project-relative, forward slashes
+    FluidBakeInfo info;
+    bool readable = false;
+};
+
+// Every .enjfluid under `projectDir`/assets, sorted by path.
+//
+// Under assets/ only, because that is the one tree BuildPipeline copies into
+// an exported game -- a recording anywhere else plays in the editor and is
+// missing from every build, which is the worst shape of bug: it works
+// everywhere you would test it.
+//
+// `searchedDir`, when given, comes back as the directory that was scanned, so
+// an empty result can say WHERE it looked. "No recordings" on its own is
+// indistinguishable from looking in the wrong project.
+ENJIN_API std::vector<FluidTakeEntry> FindFluidRecordings(const std::string& projectDir,
+                                                          std::string* searchedDir = nullptr);
 
 // How a take is recorded. The frame budget, the 48 grid clamp and the
 // iteration clamp all exist because the solver normally runs inside a frame;

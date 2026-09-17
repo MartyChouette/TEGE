@@ -40,6 +40,7 @@
 #include "Enjin/ECS/Components/GravityZone.h"
 #include "Enjin/ECS/Components/PostProcessVolume.h"
 #include "Enjin/ECS/Components/FluidVolume.h"
+#include "Enjin/ECS/Components/FluidPlayback.h"
 #include "Enjin/ECS/Components/Text.h"
 #include "Enjin/ECS/Components/IKComponents.h"
 #include "Enjin/ECS/Components/Flower.h"
@@ -95,6 +96,7 @@
 #include "Enjin/Scene/LevelStreaming.h"
 #include "Enjin/Effects/VoronoiMeshFracture.h"
 #include "Enjin/Effects/InteractiveWater.h"
+#include "Enjin/Effects/FluidBake.h"
 #include "Enjin/Math/Math.h"
 #include <stb_image.h>
 #include <imgui.h>
@@ -945,6 +947,13 @@ void EditorLayer::DrawAssetBrowserPanel() {
     auto IsPrefab = [](const std::string& ext) {
         return ext == ".enjprefab";
     };
+    // A baked fluid take. Without a row of its own a recording showed as an
+    // unlabelled grey square, which is indistinguishable from a file the
+    // editor does not understand -- and the thing a person needs from it
+    // (grid, length, whether it loops) is in its header, not its size.
+    auto IsFluidBake = [](const std::string& ext) {
+        return ext == ".enjfluid";
+    };
 
     auto GetTypeColor = [&](const std::string& ext) -> ImVec4 {
         if (IsModel(ext))  return ImVec4(0.4f, 0.8f, 1.0f, 1.0f);   // Cyan
@@ -954,6 +963,7 @@ void EditorLayer::DrawAssetBrowserPanel() {
         if (IsScript(ext)) return ImVec4(0.6f, 0.8f, 1.0f, 1.0f);   // Light blue
         if (IsAudio(ext))  return ImVec4(0.5f, 1.0f, 0.8f, 1.0f);   // Teal
         if (IsPrefab(ext)) return ImVec4(1.0f, 0.9f, 0.5f, 1.0f);   // Yellow
+        if (IsFluidBake(ext)) return ImVec4(0.5f, 0.7f, 1.0f, 1.0f); // Fluid blue
         return ImVec4(0.7f, 0.7f, 0.7f, 1.0f);                      // Gray
     };
 
@@ -965,7 +975,32 @@ void EditorLayer::DrawAssetBrowserPanel() {
         if (IsScript(ext)) return "AS";
         if (IsAudio(ext))  return "SFX";
         if (IsPrefab(ext)) return "PFB";
+        if (IsFluidBake(ext)) return "FLD";
         return "";
+    };
+
+    // What a recording holds, read from its 48-byte header rather than by
+    // loading the frames. Memoised on the last path asked about, because a
+    // tooltip is re-evaluated every frame the pointer rests on the file and
+    // opening it sixty times a second to print the same line is waste.
+    auto FluidTakeSummary = [](const std::string& path) -> std::string {
+        static std::string cachedPath;
+        static std::string cachedText;
+        if (path == cachedPath) return cachedText;
+
+        Effects::FluidBakeInfo info;
+        cachedPath = path;
+        if (!Effects::ReadFluidBakeInfo(path, info)) {
+            cachedText = "Not a readable recording";
+            return cachedText;
+        }
+        char buf[192];
+        std::snprintf(buf, sizeof(buf), "%u^%d grid  |  %u frames  |  %.1fs @ %.0ffps  |  %s",
+                      info.gridSize, info.is3D ? 3 : 2, info.frameCount,
+                      info.Duration(), info.frameRate,
+                      info.looping ? "loops" : "one-shot");
+        cachedText = buf;
+        return cachedText;
     };
 
     auto FormatFileSize = [](u64 bytes) -> std::string {
@@ -1191,6 +1226,10 @@ void EditorLayer::DrawAssetBrowserPanel() {
                     ImGui::BeginTooltip();
                     ImGui::Text("%s", entry.name.c_str());
                     ImGui::TextDisabled("%s  |  %s", entry.extension.c_str(), FormatFileSize(entry.fileSize).c_str());
+                    if (IsFluidBake(entry.extension)) {
+                        ImGui::TextDisabled("%s", FluidTakeSummary(entry.fullPath).c_str());
+                        ImGui::TextDisabled("Drag onto a fluid volume's Recording field.");
+                    }
                     ImGui::EndTooltip();
                 }
 
@@ -1212,6 +1251,29 @@ void EditorLayer::DrawAssetBrowserPanel() {
                             bool hasAlpha = (entry.extension == ".png" || entry.extension == ".tga");
                             m_TextureCompSettings.format = Assets::TextureCompressor::RecommendFormat(
                                 4, hasAlpha, false, false);
+                        }
+                    }
+                    if (IsFluidBake(entry.extension)) {
+                        // Closes the loop for someone who found the recording
+                        // before they found the field it goes in. Disabled
+                        // rather than hidden when the selection cannot take
+                        // one, so the reason is on screen: the answer is
+                        // always "select the volume first".
+                        ECS::Entity sel = GetSelectedEntity();
+                        const bool canApply = m_World && sel != ECS::INVALID_ENTITY
+                                           && m_World->HasComponent<ECS::FluidVolumeComponent>(sel);
+                        if (ImGui::MenuItem("Play on Selected Fluid Volume", nullptr, false, canApply)) {
+                            if (!m_World->HasComponent<ECS::FluidPlaybackComponent>(sel)) {
+                                m_World->AddComponent<ECS::FluidPlaybackComponent>(sel);
+                            }
+                            SetFluidRecording(sel, entry.fullPath);
+                        }
+                        if (!canApply) {
+                            // A line under the item, not a tooltip on it:
+                            // SetItemTooltip hover-tests the item, and a
+                            // DISABLED item is not hovered, so the tooltip
+                            // would never have appeared at all.
+                            ImGui::TextDisabled("   select a fluid volume first");
                         }
                     }
                     if (IsModel(entry.extension)) {
@@ -1357,11 +1419,40 @@ void EditorLayer::DrawAssetBrowserPanel() {
                                          ImVec2(200.0f, 200.0f));
                             ImGui::EndTooltip();
                         }
+                    } else if (IsFluidBake(entry.extension)) {
+                        ImGui::BeginTooltip();
+                        ImGui::Text("%s", entry.name.c_str());
+                        ImGui::TextDisabled("%s", FluidTakeSummary(entry.fullPath).c_str());
+                        ImGui::TextDisabled("Drag onto a fluid volume's Recording field.");
+                        ImGui::EndTooltip();
                     }
                 }
 
                 // Right-click context menu
                 if (ImGui::BeginPopupContextItem("##AssetCtxList")) {
+                    if (IsFluidBake(entry.extension)) {
+                        // Closes the loop for someone who found the recording
+                        // before they found the field it goes in. Disabled
+                        // rather than hidden when the selection cannot take
+                        // one, so the reason is on screen: the answer is
+                        // always "select the volume first".
+                        ECS::Entity sel = GetSelectedEntity();
+                        const bool canApply = m_World && sel != ECS::INVALID_ENTITY
+                                           && m_World->HasComponent<ECS::FluidVolumeComponent>(sel);
+                        if (ImGui::MenuItem("Play on Selected Fluid Volume", nullptr, false, canApply)) {
+                            if (!m_World->HasComponent<ECS::FluidPlaybackComponent>(sel)) {
+                                m_World->AddComponent<ECS::FluidPlaybackComponent>(sel);
+                            }
+                            SetFluidRecording(sel, entry.fullPath);
+                        }
+                        if (!canApply) {
+                            // A line under the item, not a tooltip on it:
+                            // SetItemTooltip hover-tests the item, and a
+                            // DISABLED item is not hovered, so the tooltip
+                            // would never have appeared at all.
+                            ImGui::TextDisabled("   select a fluid volume first");
+                        }
+                    }
                     if (IsImage(entry.extension)) {
                         if (ImGui::MenuItem("Open in Pixel Editor")) {
                             OpenTextureInPixelEditor(entry.fullPath);

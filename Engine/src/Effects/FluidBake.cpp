@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 
 namespace Enjin {
@@ -34,6 +35,38 @@ bool Read(std::ifstream& f, T& v) {
     f.read(reinterpret_cast<char*>(&v), sizeof(T));
     return static_cast<bool>(f);
 }
+
+// The file header, parsed in ONE place.
+//
+// Load() and ReadFluidBakeInfo() both start here, so the field order lives in
+// a single function and `kHeaderBytes` below is derived from it rather than
+// counted by hand -- the seek past the header used to be a literal sum, which
+// is a number that goes wrong silently the first time a field is added.
+bool ReadHeader(std::ifstream& f, FluidBakeInfo& out) {
+    char magic[sizeof(kMagic)] = {};
+    f.read(magic, sizeof(magic));
+    if (!f || std::memcmp(magic, kMagic, sizeof(kMagic)) != 0) return false;
+
+    u32 version = 0;
+    if (!Read(f, version) || version != kVersion) return false;
+
+    u8 is3DByte = 0, loopByte = 0;
+    u16 pad = 0;
+    if (!Read(f, out.gridSize) || !Read(f, is3DByte) || !Read(f, loopByte) || !Read(f, pad)
+        || !Read(f, out.loopBlendFrames) || !Read(f, out.frameRate)
+        || !Read(f, out.halfExtents.x) || !Read(f, out.halfExtents.y)
+        || !Read(f, out.halfExtents.z)
+        || !Read(f, out.maxDensity) || !Read(f, out.frameCount)) {
+        return false;
+    }
+    out.is3D = is3DByte != 0;
+    out.looping = loopByte != 0;
+    return true;
+}
+
+// magic + version + gridSize + (is3D,looping,pad) + loopBlendFrames
+// + frameRate + halfExtents.xyz + maxDensity + frameCount
+constexpr std::streamoff kHeaderBytes = sizeof(kMagic) + 4 * 10;
 
 } // namespace
 
@@ -181,32 +214,23 @@ bool FluidBake::Load(const std::string& path) {
     std::ifstream f(path, std::ios::binary);
     if (!f) return false;
 
-    char magic[sizeof(kMagic)] = {};
-    f.read(magic, sizeof(magic));
-    if (!f || std::memcmp(magic, kMagic, sizeof(kMagic)) != 0) return false;
-
-    u32 version = 0;
-    if (!Read(f, version) || version != kVersion) return false;
-
-    u8 is3DByte = 0, loopByte = 0;
-    u16 pad = 0;
-    u32 frameCount = 0;
-    if (!Read(f, gridSize) || !Read(f, is3DByte) || !Read(f, loopByte) || !Read(f, pad)
-        || !Read(f, loopBlendFrames) || !Read(f, frameRate)
-        || !Read(f, halfExtents.x) || !Read(f, halfExtents.y) || !Read(f, halfExtents.z)
-        || !Read(f, maxDensity) || !Read(f, frameCount)) {
-        return false;
-    }
-    is3D = is3DByte != 0;
-    looping = loopByte != 0;
+    FluidBakeInfo info;
+    if (!ReadHeader(f, info)) return false;
+    gridSize = info.gridSize;
+    is3D = info.is3D;
+    looping = info.looping;
+    loopBlendFrames = info.loopBlendFrames;
+    frameRate = info.frameRate;
+    halfExtents = info.halfExtents;
+    maxDensity = info.maxDensity;
+    const u32 frameCount = info.frameCount;
 
     // A corrupt or hostile header must not turn into a multi-gigabyte reserve
     // before the read fails. The file is on disk and its frames cannot be
     // larger than it is.
     f.seekg(0, std::ios::end);
     const std::streamoff fileSize = f.tellg();
-    f.seekg(0, std::ios::beg);
-    f.seekg(sizeof(kMagic) + 4 * 9 + 4, std::ios::beg);   // past the header
+    f.seekg(kHeaderBytes, std::ios::beg);
     if (static_cast<std::streamoff>(frameCount) > fileSize) return false;
 
     frames.clear();
@@ -223,6 +247,51 @@ bool FluidBake::Load(const std::string& path) {
         frames.push_back(std::move(frame));
     }
     return true;
+}
+
+bool ReadFluidBakeInfo(const std::string& path, FluidBakeInfo& out) {
+    std::ifstream f(path, std::ios::binary);
+    if (!f) return false;
+    return ReadHeader(f, out);
+}
+
+std::vector<FluidTakeEntry> FindFluidRecordings(const std::string& projectDir,
+                                                std::string* searchedDir) {
+    namespace fs = std::filesystem;
+    std::vector<FluidTakeEntry> takes;
+    if (searchedDir) searchedDir->clear();
+    if (projectDir.empty()) return takes;
+
+    const fs::path assetsDir = fs::path(projectDir) / "assets";
+    if (searchedDir) *searchedDir = assetsDir.generic_string();
+
+    std::error_code ec;
+    if (!fs::exists(assetsDir, ec)) return takes;
+
+    // skip_permission_denied and the error_code overloads throughout: a folder
+    // the editor cannot read is a folder to walk past, not a reason to fail
+    // the whole listing.
+    for (fs::recursive_directory_iterator it(assetsDir, fs::directory_options::skip_permission_denied, ec), end;
+         it != end && !ec; it.increment(ec)) {
+        if (!it->is_regular_file(ec)) continue;
+
+        std::string ext = it->path().extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (ext != ".enjfluid") continue;
+
+        FluidTakeEntry entry;
+        entry.relativePath = fs::relative(it->path(), fs::path(projectDir), ec).generic_string();
+        if (ec || entry.relativePath.empty()) { ec.clear(); continue; }
+        entry.readable = ReadFluidBakeInfo(it->path().string(), entry.info);
+        takes.push_back(std::move(entry));
+    }
+
+    std::sort(takes.begin(), takes.end(),
+              [](const FluidTakeEntry& a, const FluidTakeEntry& b) {
+                  return a.relativePath < b.relativePath;
+              });
+    return takes;
 }
 
 bool BakeFluid(ECS::World* world, ECS::Entity volume,

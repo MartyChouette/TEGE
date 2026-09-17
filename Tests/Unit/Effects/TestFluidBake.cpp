@@ -16,6 +16,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <string>
 
 using namespace Enjin;
@@ -400,6 +401,183 @@ ENJIN_TEST(FluidBakeFile, test_loading_a_file_that_is_not_a_bake_fails_cleanly) 
 ENJIN_TEST(FluidBakeFile, test_loading_a_missing_file_fails_cleanly) {
     FluidBake bake;
     ENJIN_EXPECT_FALSE(bake.Load(TempPath("enjin_no_such_bake_exists.enjfluid")));
+}
+
+ENJIN_TEST(FluidBakeHeader, test_reading_the_header_alone_reports_the_whole_take) {
+    // Arrange: a take with every header field set to something other than its
+    // default, so a field that is never read cannot pass by accident.
+    ECS::World world;
+    ECS::Entity e = MakeSmokeVolume(world, 8);
+    FluidBakeSettings s;
+    s.frameRate = 24.0f;
+    s.duration = 0.5f;
+    s.settleTime = 0.2f;
+    s.looping = true;
+    s.loopBlendFrames = 3;
+    s.useSceneColliders = false;
+
+    FluidBake baked;
+    ENJIN_ASSERT_TRUE(BakeFluid(&world, e, s, baked));
+    const std::string path = TempPath("enjin_test_fluid_header.enjfluid");
+    ENJIN_ASSERT_TRUE(baked.Save(path));
+
+    // Act: the header only -- this is what a browser tooltip and the picker
+    // read, and reading the frames to answer it would be megabytes per row.
+    FluidBakeInfo info;
+    const bool ok = ReadFluidBakeInfo(path, info);
+
+    // Assert
+    ENJIN_ASSERT_TRUE(ok);
+    ENJIN_EXPECT_EQ(info.gridSize, baked.gridSize);
+    ENJIN_EXPECT_EQ(info.is3D, baked.is3D);
+    ENJIN_EXPECT_EQ(info.looping, baked.looping);
+    ENJIN_EXPECT_EQ(info.loopBlendFrames, baked.loopBlendFrames);
+    ENJIN_EXPECT_FLOAT_NEAR(info.frameRate, baked.frameRate, 0.0001f);
+    ENJIN_EXPECT_FLOAT_NEAR(info.maxDensity, baked.maxDensity, 0.0001f);
+    ENJIN_EXPECT_FLOAT_NEAR(info.halfExtents.y, baked.halfExtents.y, 0.0001f);
+    ENJIN_EXPECT_EQ(static_cast<usize>(info.frameCount), baked.FrameCount());
+    // The number the UI actually prints, derived rather than stored.
+    ENJIN_EXPECT_FLOAT_NEAR(info.Duration(), baked.Duration(), 0.0001f);
+
+    std::remove(path.c_str());
+}
+
+ENJIN_TEST(FluidBakeHeader, test_a_file_that_is_not_a_recording_is_refused) {
+    // A picker that lists whatever carries the extension would show junk as a
+    // take with a grid of whatever those bytes happened to spell.
+    const std::string path = TempPath("enjin_test_header_junk.enjfluid");
+    {
+        std::ofstream f(path, std::ios::binary);
+        const char junk[] = "ENJFLUI-almost, but not quite, the magic";
+        f.write(junk, sizeof(junk));
+    }
+
+    FluidBakeInfo info;
+    ENJIN_EXPECT_FALSE(ReadFluidBakeInfo(path, info));
+    std::remove(path.c_str());
+}
+
+ENJIN_TEST(FluidBakeHeader, test_a_truncated_header_is_refused_not_half_read) {
+    // Arrange: a real recording cut off inside its header. Half-reading it
+    // would report a take with a plausible grid and no frames, which reads as
+    // a failed bake rather than a damaged file.
+    ECS::World world;
+    ECS::Entity e = MakeSmokeVolume(world, 8);
+    FluidBakeSettings s;
+    s.duration = 0.2f;
+    s.settleTime = 0.0f;
+    s.useSceneColliders = false;
+    FluidBake baked;
+    ENJIN_ASSERT_TRUE(BakeFluid(&world, e, s, baked));
+
+    const std::string full = TempPath("enjin_test_header_full.enjfluid");
+    ENJIN_ASSERT_TRUE(baked.Save(full));
+
+    std::vector<char> bytes;
+    {
+        std::ifstream in(full, std::ios::binary);
+        bytes.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    }
+    ENJIN_ASSERT_TRUE(bytes.size() > 20);
+
+    const std::string cut = TempPath("enjin_test_header_cut.enjfluid");
+    {
+        std::ofstream out(cut, std::ios::binary);
+        out.write(bytes.data(), 20);   // magic and a little else: mid-header
+    }
+
+    // Act + Assert
+    FluidBakeInfo info;
+    ENJIN_EXPECT_FALSE(ReadFluidBakeInfo(cut, info));
+
+    std::remove(full.c_str());
+    std::remove(cut.c_str());
+}
+
+ENJIN_TEST(FluidBakeHeader, test_a_missing_file_is_refused) {
+    FluidBakeInfo info;
+    ENJIN_EXPECT_FALSE(ReadFluidBakeInfo(TempPath("enjin_no_such_header.enjfluid"), info));
+}
+
+ENJIN_TEST(FluidTakeDiscovery, test_recordings_under_assets_are_found_with_project_relative_paths) {
+    // Arrange: a project-shaped directory with takes at two depths, plus a
+    // file that merely looks like one.
+    namespace fs = std::filesystem;
+    const fs::path proj = fs::temp_directory_path() / "enjin_test_fluid_project";
+    fs::remove_all(proj);
+    fs::create_directories(proj / "assets" / "fluid");
+    fs::create_directories(proj / "assets" / "cinematics" / "act1");
+
+    ECS::World world;
+    ECS::Entity e = MakeSmokeVolume(world, 8);
+    FluidBakeSettings s;
+    s.duration = 0.2f;
+    s.settleTime = 0.0f;
+    s.useSceneColliders = false;
+    FluidBake baked;
+    ENJIN_ASSERT_TRUE(BakeFluid(&world, e, s, baked));
+    ENJIN_ASSERT_TRUE(baked.Save((proj / "assets" / "fluid" / "Chimney.enjfluid").string()));
+    ENJIN_ASSERT_TRUE(baked.Save((proj / "assets" / "cinematics" / "act1" / "Flood.enjfluid").string()));
+    { std::ofstream f(proj / "assets" / "fluid" / "notes.txt"); f << "not a take"; }
+
+    // Act
+    std::string searched;
+    const std::vector<FluidTakeEntry> takes = FindFluidRecordings(proj.string(), &searched);
+
+    // Assert: both, found at any depth, and NOT the .txt.
+    ENJIN_ASSERT_EQ(takes.size(), static_cast<usize>(2));
+    // Project-relative and forward-slashed, which is the only form a scene can
+    // carry across platforms.
+    ENJIN_EXPECT_EQ(takes[0].relativePath, std::string("assets/cinematics/act1/Flood.enjfluid"));
+    ENJIN_EXPECT_EQ(takes[1].relativePath, std::string("assets/fluid/Chimney.enjfluid"));
+    ENJIN_EXPECT_TRUE(takes[0].readable);
+    ENJIN_EXPECT_EQ(takes[1].info.gridSize, baked.gridSize);
+    ENJIN_EXPECT_TRUE(searched.find("assets") != std::string::npos);
+
+    fs::remove_all(proj);
+}
+
+ENJIN_TEST(FluidTakeDiscovery, test_a_file_that_is_not_a_take_is_listed_as_unreadable_not_hidden) {
+    // Listing it with its header unread is the honest answer: the file IS
+    // there, carrying the extension, and a picker that silently omits it
+    // leaves a person looking for a take they can see in their file manager.
+    namespace fs = std::filesystem;
+    const fs::path proj = fs::temp_directory_path() / "enjin_test_fluid_project_junk";
+    fs::remove_all(proj);
+    fs::create_directories(proj / "assets" / "fluid");
+    { std::ofstream f(proj / "assets" / "fluid" / "Broken.enjfluid", std::ios::binary); f << "junk"; }
+
+    const std::vector<FluidTakeEntry> takes = FindFluidRecordings(proj.string());
+
+    ENJIN_ASSERT_EQ(takes.size(), static_cast<usize>(1));
+    ENJIN_EXPECT_FALSE(takes[0].readable);
+
+    fs::remove_all(proj);
+}
+
+ENJIN_TEST(FluidTakeDiscovery, test_an_empty_result_still_reports_where_it_looked) {
+    // The whole point of the out-parameter: "none found" and "wrong project"
+    // are the same sentence without it.
+    namespace fs = std::filesystem;
+    const fs::path proj = fs::temp_directory_path() / "enjin_test_fluid_project_empty";
+    fs::remove_all(proj);
+    fs::create_directories(proj / "assets");
+
+    std::string searched;
+    const std::vector<FluidTakeEntry> takes = FindFluidRecordings(proj.string(), &searched);
+
+    ENJIN_EXPECT_TRUE(takes.empty());
+    ENJIN_EXPECT_TRUE(searched.find("assets") != std::string::npos);
+
+    // And a project with no assets/ at all still names the directory, rather
+    // than coming back with an empty string that prints as nothing.
+    fs::remove_all(proj);
+    fs::create_directories(proj);
+    std::string searchedNoAssets;
+    ENJIN_EXPECT_TRUE(FindFluidRecordings(proj.string(), &searchedNoAssets).empty());
+    ENJIN_EXPECT_FALSE(searchedNoAssets.empty());
+
+    fs::remove_all(proj);
 }
 
 ENJIN_TEST(FluidBakeRecording, test_a_bake_solves_only_the_volume_it_is_recording) {
