@@ -314,4 +314,43 @@ ENJIN_TEST(AutoSaveConfig, NoComponentLeavesAutoSaveAlone) {
     ENJIN_EXPECT_FALSE(f.AnySlotUsed());
 }
 
+ENJIN_TEST(AutoSaveConfig, SceneTransitionSavesWhenAsked) {
+    // Arrange: auto-save on scene transition, which is what a project ticks to
+    // get "save when the player leaves a level".
+    Fixture f;
+    Entity manager = f.world.CreateEntity();
+    SaveSystemComponent cfg;
+    cfg.autoSaveEnabled = true;
+    cfg.autoSaveOnInterval = false;          // only the transition should fire
+    cfg.autoSaveOnSceneTransition = true;
+    f.world.AddComponent<SaveSystemComponent>(manager, cfg);
+    f.save.Update(0.016f, &f.world, "LevelOne");   // adopt the config
+    ENJIN_EXPECT_FALSE(f.AnySlotUsed());
+
+    // Act: leave the scene.
+    f.save.OnSceneTransition("LevelOne", "LevelTwo", &f.world);
+
+    // Assert
+    ENJIN_EXPECT_TRUE(f.AnySlotUsed());
+}
+
+ENJIN_TEST(AutoSaveConfig, SceneTransitionStaysQuietWhenNotAsked) {
+    // Arrange: auto-save on, transition saving explicitly OFF. The master
+    // switch being on must not save every time a scene changes.
+    Fixture f;
+    Entity manager = f.world.CreateEntity();
+    SaveSystemComponent cfg;
+    cfg.autoSaveEnabled = true;
+    cfg.autoSaveOnInterval = false;
+    cfg.autoSaveOnSceneTransition = false;
+    f.world.AddComponent<SaveSystemComponent>(manager, cfg);
+    f.save.Update(0.016f, &f.world, "LevelOne");
+
+    // Act
+    f.save.OnSceneTransition("LevelOne", "LevelTwo", &f.world);
+
+    // Assert
+    ENJIN_EXPECT_FALSE(f.AnySlotUsed());
+}
+
 ENJIN_TEST_MAIN()

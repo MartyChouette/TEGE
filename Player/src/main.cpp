@@ -3259,6 +3259,21 @@ private:
         m_PendingFlowScene.clear();
         ENJIN_LOG_INFO(Player, "Startup flow: transitioning to scene '%s'", next.c_str());
 
+        // Tell the save system we are leaving a scene, BEFORE anything is torn
+        // down: it caches the departing scene's SceneState entities out of the
+        // live world, and auto-saves if the project asked for a save on scene
+        // transition.
+        //
+        // Nothing called this until 2026-09-16. TieredSaveSystem describes
+        // itself as a 3-tier system -- SceneState, RunState, MetaProgression --
+        // and the SceneState tier is populated here and nowhere else, so it was
+        // never populated. autoSaveOnSceneTransition was dead for the same
+        // reason: the flag was read, by a function no runtime invoked.
+        //
+        // This one call covers script-driven loads too: Scene_LoadScene is
+        // deferred into m_PendingFlowScene and comes through here.
+        m_TieredSaveSystem.OnSceneTransition(m_CurrentFlowScene, next, m_World.get());
+
         if (m_Renderer) m_Renderer->WaitForAllFrames();   // no GPU work references the old entities
         m_ScriptSystem.ShutdownAllScripts();
         m_StreamingManager.ClearChunks();                  // drop streamed-in chunk entities with the old scene
