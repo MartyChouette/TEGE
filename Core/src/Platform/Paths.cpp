@@ -297,6 +297,20 @@ std::string ResolveWithinRoot(const std::string& root, const std::string& relati
     auto rootNorm = std::filesystem::path(root).lexically_normal();
     auto resolvedStr = resolved.string();
     auto rootStr = rootNorm.string();
+
+    // A root given WITH a trailing separator survives lexically_normal with it
+    // still attached, so the boundary check below would look for a doubled
+    // separator and never match -- every path under that root would be refused
+    // and every asset would silently read as missing. Trailing separators are
+    // not exotic: std::filesystem::temp_directory_path() returns one, and so
+    // does anything built by appending "/" to a directory name.
+    while (rootStr.size() > 1 &&
+           (rootStr.back() == '/' || rootStr.back() == '\\')) {
+        // Stop at a bare root ("C:\" or "/"), where the separator is the path
+        // rather than a trailing decoration.
+        if (rootStr.size() == 3 && rootStr[1] == ':') break;
+        rootStr.pop_back();
+    }
     // Accept the root itself, or anything under root + separator. The
     // separator boundary matters: "C:/proj2/x" must not pass for root
     // "C:/proj" even though it shares the string prefix.

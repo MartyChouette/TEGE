@@ -35,6 +35,12 @@ struct FluidGridData {
     // colliders; see FluidObstacles.h for why this exists at all.
     std::vector<u8> solid;
 
+    // True when this grid's contents come from a RECORDING rather than from
+    // the solver. The solver skips it entirely: re-solving a played-back frame
+    // would immediately overwrite it with a step of real simulation, so the
+    // recording would be visible for no frames at all.
+    bool playbackDriven = false;
+
     bool HasObstacles() const { return !solid.empty(); }
     bool IsSolid(usize index) const { return !solid.empty() && solid[index] != 0; }
 
@@ -103,6 +109,13 @@ public:
     // step -- the mask costs cells-times-colliders to build.
     void SetObstacleMask(ECS::Entity entity, std::vector<u8> mask);
     void ClearObstacleMask(ECS::Entity entity);
+
+    // Drive a volume's grid from a recorded frame instead of solving it.
+    // Allocates the grid on first use and marks it playback-driven, so Update
+    // leaves it alone from then on. Returns false if the density does not
+    // match the grid the given size implies.
+    bool SetPlaybackDensity(ECS::Entity entity, u32 gridSize, bool is3D,
+                            const std::vector<f32>& density);
     void OnEntityRemoved(ECS::Entity entity);
 
     const FluidGridData* GetGridData(ECS::Entity entity) const;

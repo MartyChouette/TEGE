@@ -117,6 +117,14 @@ void FluidSimulation::Update(f32 dt, ECS::World* world) {
         auto* vol = world->GetComponent<ECS::FluidVolumeComponent>(entity);
         if (!vol || !vol->isActive) continue;
 
+        // A played-back volume is not simulated. Stepping it would overwrite
+        // the recorded frame with a frame of real simulation before anything
+        // could draw it, so the recording would never be seen.
+        {
+            auto it = m_Grids.find(entity);
+            if (it != m_Grids.end() && it->second.playbackDriven) continue;
+        }
+
         // Everything this volume is owed, including frames it sat out, so it
         // moves at the right speed rather than in slow motion.
         f32& owed = m_PendingTime[entity];
@@ -300,6 +308,20 @@ void FluidSimulation::SetObstacleMask(ECS::Entity entity, std::vector<u8> mask) 
     // obstacles looks like the solver ignoring geometry.
     if (mask.size() != it->second.density.size()) return;
     it->second.solid = std::move(mask);
+}
+
+bool FluidSimulation::SetPlaybackDensity(ECS::Entity entity, u32 gridSize, bool is3D,
+                                         const std::vector<f32>& density) {
+    if (gridSize == 0) return false;
+    const usize s = static_cast<usize>(gridSize) + 2;
+    const usize expected = is3D ? s * s * s : s * s;
+    if (density.size() != expected) return false;
+
+    auto& grid = m_Grids[entity];
+    if (grid.N != gridSize || grid.is3D != is3D) grid.Allocate(gridSize, is3D);
+    grid.playbackDriven = true;
+    grid.density = density;
+    return true;
 }
 
 void FluidSimulation::ClearObstacleMask(ECS::Entity entity) {

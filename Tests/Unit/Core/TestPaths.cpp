@@ -60,6 +60,30 @@ ENJIN_TEST(PathSanitize, SafeFileName_SeparatorsOrDotDot_Rejected) {
 // ResolveWithinRoot
 // ===========================================================================
 
+// A root given with a TRAILING SEPARATOR used to refuse everything under it.
+// lexically_normal keeps the trailing separator, so the boundary check looked
+// for a doubled one and never matched, and the caller saw "" -- which reads as
+// the asset being missing rather than as the root being spelled differently.
+// Roots like this are ordinary: temp_directory_path() returns one, and so does
+// anything built by appending a separator to a directory name.
+ENJIN_TEST(PathSanitize, ResolveWithinRoot_RootWithTrailingSeparator_StillResolves) {
+    // Arrange / Act
+    const std::string withSlash = Platform::ResolveWithinRoot("/data/assets/", "fluid/river.enjfluid");
+    const std::string without   = Platform::ResolveWithinRoot("/data/assets",  "fluid/river.enjfluid");
+
+    // Assert: both resolve, and to the same place.
+    ENJIN_EXPECT_FALSE(withSlash.empty());
+    ENJIN_EXPECT_FALSE(without.empty());
+    ENJIN_EXPECT_STR_EQ(withSlash.c_str(), without.c_str());
+}
+
+ENJIN_TEST(PathSanitize, ResolveWithinRoot_TrailingSeparatorStillRejectsEscapes) {
+    // The trailing-separator fix must not have opened the boundary it exists
+    // to enforce.
+    ENJIN_EXPECT_TRUE(Platform::ResolveWithinRoot("/data/assets/", "../secrets.txt").empty());
+    ENJIN_EXPECT_TRUE(Platform::ResolveWithinRoot("/data/assets/", "../assets2/x.txt").empty());
+}
+
 ENJIN_TEST(PathSanitize, ResolveWithinRoot_PathInsideRoot_ReturnsNormalized) {
     // Arrange
     std::string root = "C:/proj";
