@@ -209,11 +209,8 @@ public:
     GUI::UISystem* GetUISystem() const { return m_UISystem; }
     void SetWeatherSystem(Effects::WeatherSystem* ws) { m_WeatherSystem = ws; }
     void SetElementalSystem(Effects::ElementalSystem* es) { m_ElementalSystem = es; }
-    void SetParticleSystem(Effects::ParticleSystem* ps) { m_ParticleSystem = ps; }
     void SetSceneManager(Scene::SceneManager* sm) { m_SceneManager = sm; }
     void SetWater3D(Effects::Water3D* w) { m_Water3D = w; }
-    void SetFluidSimulation(Effects::FluidSimulation* fs) { m_FluidSimulation = fs; }
-    void SetFluidTerrainCoupling(Effects::FluidTerrainCoupling* ftc) { m_FluidTerrainCoupling = ftc; }
     void SetCurlNoiseSystem(Effects::CurlNoiseSystem* cn) { m_CurlNoiseSystem = cn; }
     void SetEditorSettings(EditorSettings* settings) { m_EditorSettings = settings; }
 
@@ -355,11 +352,8 @@ private:
     u32 m_GameOverRestartListener = 0;   // UI event bus listener id (0 = none)
     bool m_RestartRequested = false;     // Set by "gameover_restart"; handled in Update()
     Effects::WeatherSystem* m_WeatherSystem = nullptr;
-    Effects::ParticleSystem* m_ParticleSystem = nullptr;
     Scene::SceneManager* m_SceneManager = nullptr;
     Effects::Water3D* m_Water3D = nullptr;
-    Effects::FluidSimulation* m_FluidSimulation = nullptr;
-    Effects::FluidTerrainCoupling* m_FluidTerrainCoupling = nullptr;
     Effects::CurlNoiseSystem* m_CurlNoiseSystem = nullptr;
     Effects::ElementalSystem* m_ElementalSystem = nullptr;
     EditorSettings* m_EditorSettings = nullptr;

@@ -833,11 +833,8 @@ void EditorLayer::InitializePlayMode() {
         m_PlayMode.SetPostProcessing(m_PostProcessing.get());
         m_PlayMode.SetWeatherSystem(&m_WeatherSystem);
         m_PlayMode.SetElementalSystem(&m_ElementalSystem);
-        m_PlayMode.SetParticleSystem(&m_ParticleSystem);
         m_PlayMode.SetSceneManager(&m_SceneManager);
         m_PlayMode.SetWater3D(&m_Water3D);
-        m_PlayMode.SetFluidSimulation(&m_FluidSimulation);
-        m_PlayMode.SetFluidTerrainCoupling(&m_FluidTerrainCoupling);
         m_PlayMode.SetCurlNoiseSystem(m_CurlNoiseSystem.get());
         m_PlayMode.SetEditorSettings(&m_EditorSettings);
         SyncRuntimeAccessibility();
@@ -3430,6 +3427,21 @@ void EditorLayer::UpdateGameViewSims(f32 simDt) {
     }
 
     // Update fluid simulation
+    // Project-relative recording paths resolve against the project directory,
+    // and the editor can open a different project without restarting -- so the
+    // root is pushed every frame rather than once at play. The setter no-ops
+    // when it is unchanged and drops its cache when it is not, which is what
+    // makes this cheap AND correct across a project switch.
+    if (!m_SceneManager.GetProjectPath().empty()) {
+        m_FluidPlayback.SetAssetRoot(
+            std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path().string());
+    }
+
+    // Recordings first: a played-back volume is driven from a file rather than
+    // solved, and FluidSimulation::Update skips any volume playback has taken
+    // over. The other order solves the volume once before playback claims it,
+    // which shows as one frame of real simulation every time a take starts.
+    m_FluidPlayback.Update(simDt, m_World, m_FluidSimulation);
     m_FluidSimulation.Update(simDt, m_World);
 
     // Update fluid-terrain coupling (erosion/deposition)

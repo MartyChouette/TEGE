@@ -1345,24 +1345,19 @@ void PlayMode::Update(f32 deltaTime) {
         }
         m_EntityEventBus.ProcessDeferred();
 
-        // Fluid simulation + terrain coupling + curl noise
-        if (m_FluidSimulation) m_FluidSimulation->Update(deltaTime, m_World);
-        if (m_FluidTerrainCoupling && m_FluidSimulation) m_FluidTerrainCoupling->Update(deltaTime, m_World, *m_FluidSimulation);
-        if (m_CurlNoiseSystem) m_CurlNoiseSystem->Update(deltaTime);
-
-        // Weather (needs camera position for particle spawning around player)
-        if (m_WeatherSystem && m_Camera) {
-            m_WeatherSystem->Update(deltaTime, m_Camera->GetPosition());
-        }
-
-        // Particles (push scene wind so wind-driven emitters drift with the world)
-        if (m_ParticleSystem) {
-            if (auto* ws = m_RenderSystem ? m_RenderSystem->GetWindSystem() : nullptr) {
-                Math::Vector4 w = ws->GetWindVector();
-                m_ParticleSystem->SetSceneWind(Math::Vector3(w.x, w.y, w.z));
-            }
-            m_ParticleSystem->Update(deltaTime, m_World);
-        }
+        // Fluid, terrain coupling, curl noise, weather and particles are NOT
+        // ticked here. EditorLayer::UpdateGameViewSims owns all five, and it
+        // runs every frame this does -- its guard passes whenever PlayMode is
+        // playing -- so ticking them here as well ran each of them TWICE per
+        // frame at the same dt. Everything a person tuned against editor play
+        // mode therefore ran at half that speed in an exported game, which is
+        // the cruellest shape of bug: the feature works, it is simply wrong,
+        // and it is wrong only in the place you are looking at it.
+        //
+        // This is the trap CLAUDE.md records for the palette clock. The eleven
+        // game-view sims were moved to UpdateGameViewSims in 8efc8fe8; these
+        // five kept their copies here, and nothing put the two lists side by
+        // side to notice.
 
         // Audio
         m_AudioEngine.Update(deltaTime);

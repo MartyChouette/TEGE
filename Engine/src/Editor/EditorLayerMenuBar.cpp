@@ -1053,6 +1053,25 @@ void EditorLayer::DrawMenuBar() {
                         SelectEntity(entity); RecordLayerCreate(entity);
                     }
                 }
+                // Fluid volumes had no Entity entry at all, so placing smoke
+                // meant knowing FluidVolumeComponent exists and adding it by
+                // hand -- the same bar Water 3D and Terrain already pass.
+                // Smoke rather than the component default (Water 2D), because
+                // a gas is what this solver actually does well and it is what
+                // a person reaches for first.
+                if (ImGui::MenuItem("Fluid Volume (Smoke)")) {
+                    if (m_World) {
+                        ECS::Entity entity = m_World->CreateEntity();
+                        m_World->AddComponent<ECS::TransformComponent>(entity);
+                        ECS::FluidVolumeComponent vol;
+                        vol.dimension = ECS::FluidDimension::Mode3D;
+                        vol.fluidType = ECS::FluidType::Smoke;
+                        vol.ApplyPreset();
+                        m_World->AddComponent<ECS::FluidVolumeComponent>(entity, vol);
+                        m_World->AddComponent<ECS::NameComponent>(entity, "Smoke Volume");
+                        SelectEntity(entity); RecordLayerCreate(entity);
+                    }
+                }
                 if (ImGui::MenuItem("Grass Volume")) {
                     if (m_World) {
                         ECS::Entity entity = m_World->CreateEntity();

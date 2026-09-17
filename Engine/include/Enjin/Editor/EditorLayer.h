@@ -40,6 +40,8 @@
 #include "Enjin/ECS/Systems/ParallaxSystem.h"
 #include "Enjin/Effects/ElementalSystem.h"
 #include "Enjin/Effects/FluidSimulation.h"
+#include "Enjin/Effects/FluidPlaybackSystem.h"
+#include "Enjin/Effects/FluidBake.h"
 #include "Enjin/Effects/FluidTerrainCoupling.h"
 #include "Enjin/Effects/CurlNoiseSystem.h"
 #include "Enjin/Scene/SceneManager.h"
@@ -747,6 +749,11 @@ private:
     void DrawRopeComponent(ECS::Entity entity);
     void DrawDoorComponent(ECS::Entity entity);
     void DrawFluidVolumeComponent(ECS::Entity entity);
+    // Recording a take and playing one back. Under Fluid Volume rather than in
+    // a window of its own: a recording is not a separate thing you own, it is
+    // this volume solved ahead of time.
+    void DrawFluidBakeControls(ECS::Entity entity);
+    void BakeFluidVolume(ECS::Entity entity);
     void DrawFluidTerrainCoupling(ECS::Entity entity);
     void DrawElementalSurfaceComponent(ECS::Entity entity);
     void DrawElementalEmitterComponent(ECS::Entity entity);
@@ -1624,6 +1631,13 @@ private:
 
     // Fluid simulation (Stable Fluids solver for FluidVolumeComponent)
     Effects::FluidSimulation m_FluidSimulation;
+    Effects::FluidPlaybackSystem m_FluidPlayback;
+    // Bake settings are per-editor, not per-volume: they describe how you want
+    // to RECORD, which is a property of the take rather than of the fluid, and
+    // serializing them onto every volume would save the same numbers into
+    // every scene.
+    Effects::FluidBakeSettings m_FluidBakeSettings;
+    std::string m_FluidBakeStatus;
 
     // Fluid-terrain coupling (erosion/deposition from fluid to terrain heightmap)
     Effects::FluidTerrainCoupling m_FluidTerrainCoupling;

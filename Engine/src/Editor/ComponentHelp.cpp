@@ -1,3 +1,5 @@
+#include "Enjin/ECS/Components/FluidVolume.h"
+#include "Enjin/ECS/Components/FluidPlayback.h"
 #include "Enjin/Editor/ComponentHelp.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Transform.h"
@@ -431,7 +433,11 @@ static const std::unordered_map<std::string, ComponentHelp>& Registry() {
         r["cameraTrigger"] = { "Switches or blends the camera when the player enters its area.", "Place it where you want the camera to change and pick the target view.", nullptr, { { RelationKind::PairsWith, "Transform", Has<ECS::TransformComponent>, Add<ECS::TransformComponent> } } };
         r["temperatureZone"] = { "Marks an area as hot or cold so things inside react to it.", "Place it and set the temperature for that space.", nullptr, { { RelationKind::PairsWith, "Transform", Has<ECS::TransformComponent>, Add<ECS::TransformComponent> } } };
         r["gravityZone"] = { "Changes gravity direction or strength for anything inside it.", "Set the gravity vector and drop physics objects in.", nullptr, { { RelationKind::FeedsPhysics, "Physics", nullptr, nullptr } } };
-        r["fluidVolume"] = { "Marks a body of fluid that makes objects float and drag.", "Size the volume to your water or liquid area.", nullptr, { { RelationKind::FeedsPhysics, "Physics", nullptr, nullptr } } };
+        // This described buoyancy and pointed at Physics, which is Water Volume,
+        // a different component. Fluid Volume is the grid SOLVER: it simulates
+        // smoke, steam and gas and draws it, and makes nothing float.
+        r["fluidVolume"] = { "Simulates smoke, steam or liquid on a grid and draws it. Scene colliders act as walls, so it flows around the level.", "Place it where the smoke should be and size it to cover the plume. A 3D volume is expensive to solve every frame -- use Bake / Playback to record it once and play it back.", nullptr, { { RelationKind::PairsWith, "Transform", Has<ECS::TransformComponent>, Add<ECS::TransformComponent> } } };
+        r["fluidPlayback"] = { "Plays a recorded fluid simulation on this volume instead of solving it every frame. Costs almost nothing to run.", "Bake a recording from the Fluid Volume's Bake / Playback section -- it fills this in for you.", nullptr, { { RelationKind::PairsWith, "Fluid Volume", Has<ECS::FluidVolumeComponent>, Add<ECS::FluidVolumeComponent> } } };
         r["recordRewind"] = { "A rewind your PLAYER can use: this one entity records its own motion and can run it backward. Braid-style. Not the editor's Debug Recorder, which is a debugging tool in the toolbar and never ships.", "Pick the key to hold, how far back it can go, and what it costs.", nullptr, { { RelationKind::PairsWith, "Transform", Has<ECS::TransformComponent>, Add<ECS::TransformComponent> } } };
         r["sceneRewind"] = { "A rewind your PLAYER can use, over the whole world at once: enemies, projectiles, pickups, physics. Sands of Time-style. Not the editor's Debug Recorder, which is a debugging tool in the toolbar and never ships.", "Put one on a game-manager entity. A second one in the same scene does nothing extra.", nullptr, {} };
         r["tilemap"] = { "A grid of tiles for building 2D levels.", "Pick a tileset and paint tiles onto the grid.", nullptr, { { RelationKind::FeedsRenderer, "Renderer", nullptr, nullptr } } };

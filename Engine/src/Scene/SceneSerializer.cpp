@@ -43,6 +43,7 @@
 #include "Enjin/ECS/Components/Elemental.h"
 #include "Enjin/ECS/Components/PostProcessVolume.h"
 #include "Enjin/ECS/Components/FluidVolume.h"
+#include "Enjin/ECS/Components/FluidPlayback.h"
 #include "Enjin/ECS/Components/Text.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
@@ -2971,6 +2972,30 @@ ECS::PostProcessVolumeComponent DeserializePostProcessVolumeComponent(const json
     if (j.contains("overrideMask")) vol.overrideMask = j["overrideMask"].get<u32>();
     if (j.contains("settings")) vol.settings = DeserializePPSettings(j["settings"]);
     return vol;
+}
+
+// A recorded fluid take played on this entity's volume.
+//
+// `loadAttempted` and `loadFailed` are deliberately NOT serialized: they are
+// the playback system's memory of having already tried this file, and saving
+// a remembered failure into the scene would mean a recording that was missing
+// once is never retried, even after the file is put back.
+json SerializeFluidPlaybackComponent(const ECS::FluidPlaybackComponent& p) {
+    json j;
+    j["bakePath"] = p.bakePath;
+    j["playing"] = p.playing;
+    j["speed"] = RF(p.speed);
+    j["time"] = RF(p.time);
+    return j;
+}
+
+ECS::FluidPlaybackComponent DeserializeFluidPlaybackComponent(const json& j) {
+    ECS::FluidPlaybackComponent p;
+    if (j.contains("bakePath")) p.bakePath = SafeStr(j["bakePath"], MAX_STR_PATH);
+    if (j.contains("playing")) p.playing = JB(j["playing"]);
+    if (j.contains("speed")) p.speed = j["speed"].get<f32>();
+    if (j.contains("time")) p.time = j["time"].get<f32>();
+    return p;
 }
 
 json SerializeFluidVolumeComponent(const ECS::FluidVolumeComponent& vol) {
@@ -9710,6 +9735,7 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
         ENJIN_SERDES("fixedJoint", ECS::FixedJointComponent, SerializeFixedJointComponent, DeserializeFixedJointComponent),
         ENJIN_SERDES("flowerParticleConfig", ECS::FlowerParticleConfigComponent, SerializeFlowerParticleConfigComponent, DeserializeFlowerParticleConfigComponent),
         ENJIN_SERDES("flowerStem", ECS::FlowerStemComponent, SerializeFlowerStemComponent, DeserializeFlowerStemComponent),
+        ENJIN_SERDES("fluidPlayback", ECS::FluidPlaybackComponent, SerializeFluidPlaybackComponent, DeserializeFluidPlaybackComponent),
         ENJIN_SERDES("fluidVolume", ECS::FluidVolumeComponent, SerializeFluidVolumeComponent, DeserializeFluidVolumeComponent),
         ENJIN_SERDES("followTarget", ECS::FollowTargetComponent, SerializeFollowTargetComponent, DeserializeFollowTargetComponent),
         ENJIN_SERDES("footstep", ECS::FootstepComponent, SerializeFootstepComponent, DeserializeFootstepComponent),

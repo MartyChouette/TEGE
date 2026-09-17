@@ -61,6 +61,8 @@ extern char** environ;
 #include "Enjin/ECS/Components/PostProcessVolume.h"
 #include "Enjin/ECS/Components/ArtStyle.h"
 #include "Enjin/ECS/Components/FluidVolume.h"
+#include "Enjin/ECS/Components/FluidPlayback.h"
+#include "Enjin/Platform/Paths.h"
 #include "Enjin/ECS/Components/CineComponent.h"
 #include "Enjin/ECS/Components/Elemental.h"
 #include "Enjin/ECS/Components/Text.h"
@@ -3775,10 +3777,186 @@ void EditorLayer::DrawFluidVolumeComponent(ECS::Entity entity) {
             m_FluidSimulation.Reset(entity);
         }
 
+        DrawFluidBakeControls(entity);
+
         if (ImGui::Button("Remove##FluidVolume")) {
             RemoveComponentWithUndo<ECS::FluidVolumeComponent>(entity, "fluidVolume", "Fluid Volume");
         }
     }
+}
+
+// Solve the whole take now and write it next to the project.
+//
+// Synchronous on purpose, for now. A 48^3 second of footage is a few seconds
+// of solving, which is a pause rather than a hang; a 128^3 minute is not, and
+// that is the point at which this needs to move off the main thread. The
+// status line says what happened either way, because a button that appears to
+// do nothing is worse than a slow one.
+void EditorLayer::BakeFluidVolume(ECS::Entity entity) {
+    m_FluidBakeStatus.clear();
+    if (!m_World) return;
+
+    auto* vol = m_World->GetComponent<ECS::FluidVolumeComponent>(entity);
+    if (!vol) return;
+
+    if (m_SceneManager.GetProjectPath().empty()) {
+        // Nowhere project-relative to put it, and an absolute path baked into
+        // a scene would break the moment the project moved.
+        m_FluidBakeStatus = "Save the project first -- a recording is stored next to it.";
+        return;
+    }
+    const std::filesystem::path projDir =
+        std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path();
+    // Under assets/, not a folder of its own. BuildPipeline copies the whole
+    // assets/ tree into an exported game and nothing else, for exactly the
+    // reason that applies here: a bakePath is a string in a component, so
+    // scene scanning can never discover it. A recording outside assets/ would
+    // play in the editor and be missing from every build, which is the worst
+    // shape of bug -- it works everywhere you would test it.
+    const std::filesystem::path bakeDir = projDir / "assets" / "fluid";
+
+    std::error_code ec;
+    std::filesystem::create_directories(bakeDir, ec);
+    if (ec) {
+        m_FluidBakeStatus = "Could not create " + bakeDir.string();
+        return;
+    }
+
+    // Named after the entity, so re-baking the same volume replaces its take
+    // rather than littering the folder with numbered copies.
+    std::string stem = "volume";
+    if (auto* name = m_World->GetComponent<ECS::NameComponent>(entity)) {
+        if (!name->name.empty() && Platform::IsSafeFileName(name->name)) stem = name->name;
+    }
+    const std::string fileName = stem + ".enjfluid";
+    const std::filesystem::path outPath = bakeDir / fileName;
+
+    // A volume mid-simulation would bake from whatever state it happens to be
+    // in, so a re-bake of the same scene would not reproduce. Start clean and
+    // let the settle pass develop it.
+    m_FluidSimulation.Reset(entity);
+
+    Effects::FluidBake bake;
+    const bool ok = Effects::BakeFluid(m_World, entity, m_FluidBakeSettings, bake);
+    if (!ok) {
+        m_FluidBakeStatus = "Bake failed -- the volume produced no frames.";
+        return;
+    }
+    if (!bake.Save(outPath.string())) {
+        m_FluidBakeStatus = "Could not write " + outPath.string();
+        return;
+    }
+
+    char msg[512];
+    std::snprintf(msg, sizeof(msg),
+                  "Baked %zu frames (%.1fs) to assets/fluid/%s -- %.1f MB, %.1fx smaller than raw.",
+                  bake.FrameCount(), bake.Duration(), fileName.c_str(),
+                  static_cast<f64>(bake.EncodedBytes()) / (1024.0 * 1024.0),
+                  bake.CompressionRatio());
+    m_FluidBakeStatus = msg;
+
+    // Point the volume at what was just baked. Baking and then having to type
+    // the path in is the kind of step that makes a tool feel like a pipeline.
+    auto* play = m_World->GetComponent<ECS::FluidPlaybackComponent>(entity);
+    if (!play) play = &m_World->AddComponent<ECS::FluidPlaybackComponent>(entity);
+    play->bakePath = "assets/fluid/" + fileName;
+    play->loadAttempted = false;
+    play->loadFailed = false;
+    play->time = 0.0f;
+    m_FluidPlayback.ClearCache();   // a re-bake replaced the file under the cache
+}
+
+// Recording a take, and the controls for playing one back.
+//
+// This lives under Fluid Volume rather than in a window of its own because a
+// recording is not a separate thing you own -- it is this volume, solved
+// ahead of time. Baking somewhere else and then hunting for the file is how
+// an offline tool becomes a pipeline.
+void EditorLayer::DrawFluidBakeControls(ECS::Entity entity) {
+    auto* vol = m_World->GetComponent<ECS::FluidVolumeComponent>(entity);
+    if (!vol) return;
+
+    ImGui::Separator();
+    if (!ImGui::TreeNode("Bake / Playback##FluidVol")) return;
+
+    // The sums a person needs BEFORE committing to a bake: how long it will
+    // take to solve and how big the file will be. Both were unknowable until
+    // now, which meant the only way to find out was to run one.
+    const u32 clamped = vol->dimension == ECS::FluidDimension::Mode3D
+                      ? std::min(vol->gridSize, 48u) : std::min(vol->gridSize, 128u);
+    const f32 frames = m_FluidBakeSettings.duration * m_FluidBakeSettings.frameRate;
+    const f32 settle = m_FluidBakeSettings.settleTime * m_FluidBakeSettings.frameRate;
+    ImGui::TextDisabled("%u^%d grid, %.0f frames (+%.0f settled and discarded)",
+                        clamped, vol->dimension == ECS::FluidDimension::Mode3D ? 3 : 2,
+                        frames, settle);
+
+    ImGui::DragFloat("Duration (s)##FluidBake", &m_FluidBakeSettings.duration, 0.1f, 0.1f, 60.0f);
+    ImGui::DragFloat("Frame Rate##FluidBake", &m_FluidBakeSettings.frameRate, 1.0f, 5.0f, 60.0f);
+    ImGui::SetItemTooltip("Playback is resampled from this, so a 30fps take plays\n"
+                          "correctly in a 60fps game. Lower is smaller on disk.");
+    ImGui::DragFloat("Settle (s)##FluidBake", &m_FluidBakeSettings.settleTime, 0.1f, 0.0f, 30.0f);
+    ImGui::SetItemTooltip("Simulated and thrown away before recording starts, so the\n"
+                          "take opens on a developed plume instead of an empty grid.");
+
+    ImGui::Checkbox("Loop##FluidBake", &m_FluidBakeSettings.looping);
+    if (m_FluidBakeSettings.looping) {
+        int blend = static_cast<int>(m_FluidBakeSettings.loopBlendFrames);
+        if (ImGui::DragInt("Loop Blend Frames##FluidBake", &blend, 1, 0, 60)) {
+            m_FluidBakeSettings.loopBlendFrames = static_cast<u32>(std::max(0, blend));
+        }
+        ImGui::SetItemTooltip("Frames cross-faded into the start on wrap. The last frame\n"
+                              "of a fluid take never matches the first, so 0 pops once\n"
+                              "per cycle.");
+    }
+    ImGui::Checkbox("Use Scene Colliders##FluidBake", &m_FluidBakeSettings.useSceneColliders);
+    ImGui::SetItemTooltip("Voxelise the scene's box/sphere/capsule colliders as walls,\n"
+                          "so the recorded fluid flows around the level instead of\n"
+                          "through it.");
+
+    if (ImGui::Button("Bake Recording##FluidBake")) {
+        BakeFluidVolume(entity);
+    }
+    ImGui::SetItemTooltip("Solves the whole take now. The editor is unresponsive while\n"
+                          "it runs; the status below reports the result.");
+
+    if (!m_FluidBakeStatus.empty()) {
+        ImGui::TextWrapped("%s", m_FluidBakeStatus.c_str());
+    }
+
+    // Playing a recording back is a component, so it can be added and removed
+    // without disturbing the volume that describes the look.
+    ImGui::Separator();
+    auto* play = m_World->GetComponent<ECS::FluidPlaybackComponent>(entity);
+    if (!play) {
+        if (ImGui::Button("Play a Recording##FluidBake")) {
+            m_World->AddComponent<ECS::FluidPlaybackComponent>(entity);
+        }
+        ImGui::SetItemTooltip("Drives this volume from a recorded file instead of\n"
+                              "solving it every frame.");
+    } else {
+        char path[512];
+        std::snprintf(path, sizeof(path), "%s", play->bakePath.c_str());
+        if (ImGui::InputText("Recording##FluidPlay", path, sizeof(path))) {
+            play->bakePath = path;
+            play->loadAttempted = false;   // a new path deserves a fresh try
+            play->loadFailed = false;
+            m_FluidPlayback.ClearCache();
+        }
+        if (play->loadFailed) {
+            ImGui::TextColored(ImVec4(0.9f, 0.4f, 0.35f, 1.0f),
+                               "Could not read that recording.");
+        }
+        ImGui::Checkbox("Playing##FluidPlay", &play->playing);
+        ImGui::DragFloat("Speed##FluidPlay", &play->speed, 0.05f, -4.0f, 4.0f);
+        ImGui::SetItemTooltip("Negative runs the take backwards.");
+        ImGui::DragFloat("Time (s)##FluidPlay", &play->time, 0.05f, 0.0f, 3600.0f);
+        if (ImGui::Button("Stop Playing##FluidPlay")) {
+            RemoveComponentWithUndo<ECS::FluidPlaybackComponent>(entity, "fluidPlayback",
+                                                                 "Fluid Playback");
+        }
+    }
+
+    ImGui::TreePop();
 }
 
 void EditorLayer::DrawFluidTerrainCoupling(ECS::Entity entity) {

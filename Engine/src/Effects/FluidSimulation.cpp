@@ -114,6 +114,10 @@ void FluidSimulation::Update(f32 dt, ECS::World* world) {
     usize index = 0;
     for (ECS::Entity entity : order) {
         ++index;
+        // Baking records one volume; solving the other nine costs the same
+        // wait for output nobody asked for.
+        if (m_SoloEntity != ECS::INVALID_ENTITY && entity != m_SoloEntity) continue;
+
         auto* vol = world->GetComponent<ECS::FluidVolumeComponent>(entity);
         if (!vol || !vol->isActive) continue;
 

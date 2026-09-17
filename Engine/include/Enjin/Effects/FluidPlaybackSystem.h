@@ -31,7 +31,15 @@ public:
     // process CWD is never reliable here (the editor and player both run from
     // their exe directory), so this is set at play/boot like every other root
     // in the engine.
-    void SetAssetRoot(const std::string& root) { m_AssetRoot = root; }
+    // Safe to call every frame: unchanged is a no-op. A CHANGE drops the
+    // cache, because a different project is a different set of takes and a
+    // cache keyed by relative path would otherwise serve the old project's
+    // recording for the same file name.
+    void SetAssetRoot(const std::string& root) {
+        if (root == m_AssetRoot) return;
+        m_AssetRoot = root;
+        m_Cache.clear();
+    }
 
     void Update(f32 deltaTime, ECS::World* world, FluidSimulation& sim);
 

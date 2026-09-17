@@ -348,6 +348,7 @@ enjin_add_test(TestFluidObstacles    Unit/Effects/TestFluidObstacles.cpp)
 enjin_add_test(TestFluidSurface      Unit/Effects/TestFluidSurface.cpp)
 enjin_add_test(TestFluidBake         Unit/Effects/TestFluidBake.cpp)
 enjin_add_test(TestFluidPlayback     Unit/Effects/TestFluidPlayback.cpp)
+enjin_add_test(TestFluidPlaybackSerialization Unit/Scene/TestFluidPlaybackSerialization.cpp)
 
 # --- Geometry ---
 enjin_add_test(TestCSG                Unit/Geometry/TestCSG.cpp)

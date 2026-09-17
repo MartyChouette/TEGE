@@ -92,6 +92,7 @@ static bool IsCaptureRun() {
 #include "Enjin/Effects/InteractiveWater.h"
 #include "Enjin/Effects/Wind.h"
 #include "Enjin/Effects/FluidSimulation.h"
+#include "Enjin/Effects/FluidPlaybackSystem.h"
 #include "Enjin/Effects/FluidTerrainCoupling.h"
 #include "Enjin/Effects/CurlNoiseSystem.h"
 #include "Enjin/Effects/ElementalSystem.h"
@@ -588,6 +589,9 @@ public:
         m_AudioEngine.SetWorld(m_World.get());
         m_AudioEngine.SetAssetRoot(gameRoot);
         Enjin::Assets::PrefabManager::Get().SetAssetRoot(gameRoot);
+        // Recorded fluid takes are project-relative, like every other asset
+        // path: the process CWD is the exe directory and is never reliable.
+        m_FluidPlayback.SetAssetRoot(gameRoot);
         // Resolve project-relative mesh references against the game root (loose assets
         // ship next to the exe). NOTE: for this to work in an exported game the source
         // mesh files must ship with the build; otherwise reference-mode scenes need to
@@ -1448,6 +1452,12 @@ public:
             // the mesh was built as, however the waves are authored.
             water3d->meshDirty = true;
         }
+        // Recordings first: a played-back volume is driven from a file rather
+        // than solved, and FluidSimulation::Update skips any volume playback
+        // has taken over. Running it the other way round would solve the
+        // volume once before playback claimed it, which shows as one frame of
+        // real simulation every time a take starts.
+        m_FluidPlayback.Update(deltaTime, m_World.get(), m_FluidSimulation);
         m_FluidSimulation.Update(deltaTime, m_World.get());
         m_FluidTerrainCoupling.Update(deltaTime, m_World.get(), m_FluidSimulation);
         m_CurlNoiseSystem.Update(deltaTime);
@@ -4059,6 +4069,7 @@ private:
 
     // Fluid simulation, terrain coupling, curl noise, wind, world time, seasonal weather
     Enjin::Effects::FluidSimulation m_FluidSimulation;
+    Enjin::Effects::FluidPlaybackSystem m_FluidPlayback;
     Enjin::Effects::FluidTerrainCoupling m_FluidTerrainCoupling;
     Enjin::Effects::CurlNoiseSystem m_CurlNoiseSystem;
     Enjin::Effects::WindSystem m_WindSystem;

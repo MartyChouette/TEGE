@@ -243,6 +243,10 @@ bool BakeFluid(ECS::World* world, ECS::Entity volume,
     // take longer AND come out wrong, since a deferred volume records a
     // duplicate of the frame before it.
     sim.SetFrameBudgetMs(1.0e9);
+    // One volume is being recorded. Update iterates the whole world, so
+    // without this a bake in a ten-volume level solves all ten for the entire
+    // take -- ten times the wait for exactly the same file.
+    sim.SetSoloEntity(volume);
 
     const f32 dt = 1.0f / settings.frameRate;
 

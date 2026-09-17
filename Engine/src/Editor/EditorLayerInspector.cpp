@@ -78,6 +78,7 @@
 #include "Enjin/ECS/Components/PostProcessVolume.h"
 #include "Enjin/ECS/Components/ArtStyle.h"
 #include "Enjin/ECS/Components/FluidVolume.h"
+#include "Enjin/ECS/Components/FluidPlayback.h"
 #include "Enjin/ECS/Components/CineComponent.h"
 #include "Enjin/ECS/Components/Elemental.h"
 #include "Enjin/ECS/Components/Text.h"
@@ -893,6 +894,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::FluidVolumeComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::FluidVolumeComponent>(e); },
             "fluidVolume"},
+        {"Fluid Playback", "Effects", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::FluidPlaybackComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::FluidPlaybackComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::FluidPlaybackComponent>(e); },
+            "fluidPlayback"},
         {"Post-Process Volume", "Effects", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::PostProcessVolumeComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::PostProcessVolumeComponent>(e); },

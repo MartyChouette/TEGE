@@ -116,6 +116,15 @@ public:
     // match the grid the given size implies.
     bool SetPlaybackDensity(ECS::Entity entity, u32 gridSize, bool is3D,
                             const std::vector<f32>& density);
+
+    // Solve ONLY this volume and ignore every other one in the world.
+    //
+    // For baking. A bake records one volume, but Update iterates the world, so
+    // without this a bake in a ten-volume level solves all ten for the whole
+    // take -- ten times the wait for the same output. INVALID_ENTITY (the
+    // default) means solve everything, which is what a running game wants.
+    void SetSoloEntity(ECS::Entity entity) { m_SoloEntity = entity; }
+    ECS::Entity GetSoloEntity() const { return m_SoloEntity; }
     void OnEntityRemoved(ECS::Entity entity);
 
     const FluidGridData* GetGridData(ECS::Entity entity) const;
@@ -153,6 +162,7 @@ private:
     usize m_RoundRobinStart = 0;
     f64 m_FrameBudgetMs = 8.0;
     u32 m_DeferredVolumes = 0;
+    ECS::Entity m_SoloEntity = ECS::INVALID_ENTITY;
 
     // 2D solver steps
     void Step2D(FluidGridData& grid, f32 dt, f32 visc, f32 diff, f32 dissipation, f32 velDissipation, i32 iterations, f32 buoyancy);

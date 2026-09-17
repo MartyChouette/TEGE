@@ -1141,6 +1141,80 @@ A camera override volume. When the player enters this zone, the game camera swit
 
 ---
 
+#### FluidVolumeComponent
+
+A grid fluid simulation for smoke, steam, gas and liquid. Add it from
+**Entity > Effects > Fluid Volume (Smoke)**, or add the component to an
+existing entity.
+
+The volume is a box. Everything inside it is simulated on a grid of
+`gridSize` cells per side, and the cells that hold enough density are drawn as
+camera-facing billboards.
+
+**Scene colliders act as walls.** Box, sphere and capsule colliders inside the
+volume are voxelised into the grid, so smoke fills a room and stops at the
+walls instead of passing through them. This is on for a bake; see below.
+
+**`buoyancy` decides which way it goes.** Positive rises, which is smoke,
+steam and fire. Negative sinks, which is how a liquid falls and pools in
+whatever contains it. Zero floats in place.
+
+**It is expensive to solve every frame, and that cost does not depend on how
+much smoke there is.** A grid pays for its whole box whether it is full or
+empty. Measured on one 48-cell 3D volume at the shipped defaults: about 56 ms
+a frame, which is 18 fps on its own. Several volumes used to multiply that;
+they now share a per-frame time budget and take turns, so ten volumes cost
+about what one does, and the ones that sat out catch up.
+
+For anything that is set dressing rather than gameplay, **record it instead**.
+
+#### Bake and Playback
+
+Under **Fluid Volume > Bake / Playback**. A bake solves the whole take once,
+at author time, and writes it to `assets/fluid/<entity name>.enjfluid` inside your
+project. It goes under `assets/` because that is the tree an exported game
+ships -- a recording anywhere else would play in the editor and be missing
+from every build. Playing that recording back costs almost nothing, so resolution and
+quality stop being a frame-rate decision.
+
+| Setting | What it does |
+|---|---|
+| Duration | Seconds of footage kept. |
+| Frame Rate | Frames recorded per second. Playback resamples, so a 30fps take plays correctly in a 60fps game. Lower is smaller on disk. |
+| Settle | Simulated and thrown away before recording starts, so the take opens on a developed plume instead of an empty grid filling up. |
+| Loop | Record a take that wraps -- a river, a chimney that never stops. |
+| Loop Blend Frames | Frames cross-faded into the start on wrap. The last frame of a fluid take never matches the first, so `0` pops once per cycle. |
+| Use Scene Colliders | Voxelise the level's colliders as walls, so the recorded fluid flows around the geometry. |
+
+Baking adds a **Fluid Playback** component and points it at the file it just
+wrote. That component has `playing`, `speed` (negative runs the take
+backwards) and `time`, and it drives the volume instead of the solver. The
+Fluid Volume keeps describing the *look* -- colour, opacity, density threshold
+-- so a recording can be recoloured or resized without re-baking.
+
+One recording is shared by every volume that references it, so twenty
+chimneys playing one take hold one copy of it.
+
+**Storage**, measured on real smoke rather than estimated. Only the density
+field is recorded, quantised to 8 bits, with empty cells run-encoded:
+
+| Grid | Per frame | Per second at 30fps |
+|---|---|---|
+| 16 | 5.7 KB | 0.17 MB |
+| 32 | 35 KB | 1.0 MB |
+| 48 | 48 KB | 1.4 MB |
+
+A five-second looping river at grid 48 is about 7 MB. Larger grids compress
+better, because proportionally more of the box is empty.
+
+**What the solver does not do.** There is no free surface, so liquid has no
+splashes, droplets or thin sheets -- those need a different kind of solver.
+Water pours in, is stopped by the geometry, pools, and has a smooth surface,
+which is what set dressing and a canned cinematic need and is not what a
+physics-accurate liquid looks like.
+
+---
+
 ### 5.10 Visual Components
 
 #### BillboardComponent

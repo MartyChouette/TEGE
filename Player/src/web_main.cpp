@@ -27,6 +27,7 @@
 #include "Enjin/Effects/ParticleColliders.h"
 #include "Enjin/ECS/Components/Vegetation.h"
 #include "Enjin/Effects/FluidSimulation.h"
+#include "Enjin/Effects/FluidPlaybackSystem.h"
 #include "Enjin/Effects/FluidTerrainCoupling.h"
 #include "Enjin/Renderer/WebGPU/WebGPUVegetationSystem.h"
 #if defined(ENJIN_WEBGPU_COMPUTE_SMOKETEST)
@@ -1288,6 +1289,12 @@ public:
                 static_cast<Enjin::f32>(m_Renderer->GetSwapChainHeight()));
         }
 
+        // Recordings first: a played-back volume is driven from a file rather
+        // than solved, and FluidSimulation::Update skips any volume playback
+        // has taken over. Running it the other way round would solve the
+        // volume once before playback claimed it, which shows as one frame of
+        // real simulation every time a take starts.
+        m_FluidPlayback.Update(deltaTime, m_World.get(), m_FluidSimulation);
         m_FluidSimulation.Update(deltaTime, m_World.get());
         m_FluidTerrainCoupling.Update(deltaTime, m_World.get(), m_FluidSimulation);
         m_AudioEngine.Update(deltaTime);
@@ -2434,6 +2441,10 @@ private:
         // Prefab root first: Scatter and WFC resolve their prefab paths
         // through it, and web has no meaningful working directory at all.
         Enjin::Assets::PrefabManager::Get().SetAssetRoot(".");
+        // Same root every other web asset uses: the pak is mounted at the
+        // virtual filesystem root, so "." is where project-relative paths
+        // resolve from in a browser.
+        m_FluidPlayback.SetAssetRoot(".");
         Enjin::ECS::DungeonGeneratorSystem::GenerateAll(m_World.get());
         // Terrain BEFORE scatter: a scatter with conformToTerrain samples the
         // terrain heightmap, and a terrain that bakes at play start has an empty
@@ -2863,6 +2874,7 @@ private:
     // billboards and the web sprite pipeline already draws those, so the render
     // side needed no pipeline of its own.
     Enjin::Effects::FluidSimulation m_FluidSimulation;
+    Enjin::Effects::FluidPlaybackSystem m_FluidPlayback;
     Enjin::Effects::FluidTerrainCoupling m_FluidTerrainCoupling;
     Enjin::Audio::AudioEventGraphRuntime m_AudioGraphRuntime;
     Enjin::Accessibility::AudioVisualIndicatorSystem m_AudioIndicators;

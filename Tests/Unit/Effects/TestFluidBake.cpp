@@ -402,4 +402,42 @@ ENJIN_TEST(FluidBakeFile, test_loading_a_missing_file_fails_cleanly) {
     ENJIN_EXPECT_FALSE(bake.Load(TempPath("enjin_no_such_bake_exists.enjfluid")));
 }
 
+ENJIN_TEST(FluidBakeRecording, test_a_bake_solves_only_the_volume_it_is_recording) {
+    // A bake records ONE volume, but FluidSimulation::Update iterates the
+    // world -- so without a solo filter, baking one chimney in a ten-volume
+    // level solves all ten for the whole take: ten times the wait for exactly
+    // the same file.
+    // Arrange: two volumes, only one of which is being recorded.
+    ECS::World world;
+    ECS::Entity target = MakeSmokeVolume(world, 16);
+    ECS::Entity other = MakeSmokeVolume(world, 16);
+
+    FluidBakeSettings s;
+    s.frameRate = 30.0f;
+    s.duration = 0.3f;
+    s.settleTime = 0.3f;
+    s.useSceneColliders = false;
+
+    // Act
+    FluidBake bake;
+    ENJIN_ASSERT_TRUE(BakeFluid(&world, target, s, bake));
+
+    // Assert: the recorded volume has frames with smoke in them...
+    std::vector<f32> frame;
+    ENJIN_ASSERT_TRUE(bake.SampleAt(0.0f, frame));
+    f32 total = 0.0f;
+    for (f32 d : frame) total += d;
+    ENJIN_EXPECT_TRUE(total > 1.0f);
+
+    // ...and the other volume was never touched, so its component still reads
+    // as never having been initialised by this bake.
+    const auto* otherVol = world.GetComponent<ECS::FluidVolumeComponent>(other);
+    ENJIN_ASSERT_TRUE(otherVol != nullptr);
+    ENJIN_EXPECT_FALSE(otherVol->simulationInitialized);
+
+    const auto* targetVol = world.GetComponent<ECS::FluidVolumeComponent>(target);
+    ENJIN_ASSERT_TRUE(targetVol != nullptr);
+    ENJIN_EXPECT_TRUE(targetVol->simulationInitialized);
+}
+
 ENJIN_TEST_MAIN()
