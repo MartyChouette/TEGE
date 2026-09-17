@@ -143,6 +143,7 @@ static bool IsCaptureRun() {
 #include "Enjin/Gameplay/DynamicDifficultySystem.h"
 #include "Enjin/Gameplay/FaceCardSystem.h"
 #include "Enjin/Gameplay/SavePointSystem.h"
+#include "Enjin/Gameplay/SaveIndicator.h"
 #include "Enjin/ECS/Systems/SwarmSystem.h"
 #include "Enjin/ECS/Systems/GeneratedGeometrySystem.h"
 #include "Enjin/ECS/Systems/BrushSolidSystem.h"
@@ -613,6 +614,9 @@ public:
         m_SavePointSystem.SetWorld(m_World.get());
         m_SavePointSystem.SetSaveSystem(&m_TieredSaveSystem);
         m_SavePointSystem.SetInputActionMap(&m_InputMap);
+        m_SaveIndicator.SetWorld(m_World.get());
+        m_SavePointSystem.SetIndicator(&m_SaveIndicator);
+        m_SavePointSystem.SetAnnouncer(&m_Announcer);
         m_StreamingManager.SetWorld(m_World.get());
         m_SceneManager.SetWorld(m_World.get());
         if (!m_LooseFilesMode) {
@@ -1563,6 +1567,7 @@ public:
         // this frame writes against state the save system has already settled.
         m_SavePointSystem.SetSceneName(m_StartScene);
         m_SavePointSystem.Update(deltaTime);
+        m_SaveIndicator.Update(deltaTime);
 
         // Hazard/pickup overlap checks (for CharacterVirtual which doesn't fire collision events)
         Enjin::Gameplay::GameplayLoop::CheckHazardOverlaps(m_World.get(), deltaTime, m_DeferredDestroys);
@@ -2226,6 +2231,7 @@ public:
                     m_SubtitleSystem.RenderOverlay(0.0f, 0.0f, extent.width, extent.height);
                     m_AlternativeInput.RenderOverlay();
                     m_AudioIndicators.RenderOverlay(0.0f, 0.0f, extent.width, extent.height);
+                    m_SaveIndicator.RenderOverlay(0.0f, 0.0f, extent.width, extent.height);
                     m_Announcer.RenderStatusBar();
                 }
             }
@@ -4010,6 +4016,7 @@ private:
     Enjin::Gameplay::DynamicDifficultySystem m_DynamicDifficulty;
     Enjin::Gameplay::FaceCardSystem m_FaceCardSystem;
     Enjin::Gameplay::SavePointSystem m_SavePointSystem;
+    Enjin::Gameplay::SaveIndicator m_SaveIndicator;
     Enjin::ECS::StateMachineSystem m_StateMachineSystem;
     Enjin::ECS::VisualScriptSystem m_VisualScriptSystem;
     Enjin::ECS::BehaviorTreeSystem m_BehaviorTreeSystem;

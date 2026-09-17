@@ -4,6 +4,8 @@
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/Input/InputAction.h"
+#include "Enjin/Gameplay/SaveIndicator.h"
+#include "Enjin/Accessibility/Announcer.h"
 #include "Enjin/Logging/Log.h"
 
 #include <cmath>
@@ -49,38 +51,23 @@ Entity SavePointSystem::FindPlayer() const {
 }
 
 void SavePointSystem::Update(f32 deltaTime) {
-    // The message fades whatever else happens, so a save confirmation does not
-    // stay on screen because the player walked away mid-frame.
-    if (m_MessageTimer > 0.0f) {
-        m_MessageTimer -= deltaTime;
-        if (m_MessageTimer <= 0.0f) {
-            m_MessageTimer = 0.0f;
-            m_Message.clear();
-        }
-    }
+    // SaveIndicator owns the lifetime of what is on screen -- it takes a
+    // duration and expires itself -- so there is no timer here to keep in step
+    // with it. These two strings are the last thing issued, for tests.
     m_Prompt.clear();
 
     if (!m_World || !m_SaveSystem) return;
 
     // Scene configuration, if a game manager carries it.
     ECS::SaveSystemComponent config = DefaultConfig();
-    ECS::SaveSystemComponent* liveConfig = nullptr;
     for (Entity e : m_World->GetEntitiesWithComponent<ECS::SaveSystemComponent>()) {
-        liveConfig = m_World->GetComponent<ECS::SaveSystemComponent>(e);
-        if (liveConfig) config = *liveConfig;
+        if (const auto* c = m_World->GetComponent<ECS::SaveSystemComponent>(e)) config = *c;
         break;
     }
     if (!config.allowInWorldSavePoints) return;
 
-    // Tick the save indicator down on the live component, not the copy, or it
-    // latches on forever after the first save.
-    if (liveConfig && liveConfig->saveIndicatorTimer > 0.0f) {
-        liveConfig->saveIndicatorTimer -= deltaTime;
-        if (liveConfig->saveIndicatorTimer <= 0.0f) {
-            liveConfig->saveIndicatorTimer = 0.0f;
-            liveConfig->isSaving = false;
-        }
-    }
+    // isSaving / saveIndicatorTimer are driven by SaveIndicator::Update, on the
+    // same clock as what is on screen, so the two cannot disagree.
 
     const Entity player = FindPlayer();
     if (player == INVALID_ENTITY) return;
@@ -107,7 +94,11 @@ void SavePointSystem::Update(f32 deltaTime) {
         sp->playerInRange = inRange;
 
         const bool spent = sp->oneTimeUse && sp->used;
-        if (!inRange || spent) continue;
+        if (!inRange) {
+            if (m_PromptingPoint == e) m_PromptingPoint = INVALID_ENTITY;
+            continue;
+        }
+        if (spent) continue;
 
         // saveOnEnter is the point's own override; savePointRequiresInput is the
         // scene-wide default for points that do not ask for either.
@@ -115,6 +106,13 @@ void SavePointSystem::Update(f32 deltaTime) {
 
         if (!autoSave && config.savePointShowPrompt) {
             m_Prompt = "Press Interact to save";
+            // Once, on entering range. A caption re-issued every frame would
+            // stack sixty deep a second and never expire.
+            if (m_PromptingPoint != e) {
+                m_PromptingPoint = e;
+                if (m_Indicator) m_Indicator->Show(m_Prompt, 4.0f);
+                if (m_Announcer) m_Announcer->Announce(m_Prompt);
+            }
         }
 
         const bool trigger = autoSave ? entered : interactPressed;
@@ -137,18 +135,20 @@ void SavePointSystem::Update(f32 deltaTime) {
         if (ok) {
             sp->used = true;
             m_Message = sp->saveMessage;
-            m_MessageTimer = config.saveIndicatorDuration;
-            if (liveConfig && config.showSaveIndicator) {
-                liveConfig->isSaving = true;
-                liveConfig->saveIndicatorTimer = config.saveIndicatorDuration;
-            }
+            if (m_Indicator) m_Indicator->Show(m_Message, config.saveIndicatorDuration);
+            // Spoken as well as shown: a save is exactly the kind of event a
+            // screen-reader user needs and cannot otherwise perceive.
+            if (m_Announcer) m_Announcer->Announce(m_Message);
             ENJIN_LOG_INFO(Game, "Save point saved to slot %u (scene '%s')",
                            slot, m_SceneName.c_str());
         } else {
             // Loud. A save point that silently fails to save is the bug this
             // whole system was written to end.
             m_Message = "Save failed";
-            m_MessageTimer = config.saveIndicatorDuration;
+            if (m_Indicator) m_Indicator->Show(m_Message, config.saveIndicatorDuration);
+            if (m_Announcer) {
+                m_Announcer->Announce(m_Message, Accessibility::AnnouncePriority::High);
+            }
             ENJIN_LOG_ERROR(Game, "Save point FAILED to write slot %u (scene '%s')",
                             slot, m_SceneName.c_str());
         }

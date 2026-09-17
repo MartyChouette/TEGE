@@ -5996,6 +5996,10 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     if ((m_PlayMode.IsPlaying() || m_PlayMode.IsPaused()) && ovW > 0.0f && ovH > 0.0f) {
         m_SubtitleSystem.RenderOverlay(ovX, ovY,
                                        static_cast<u32>(ovW), static_cast<u32>(ovH));
+        // The editor's game view draws what the exported game draws, so a save
+        // prompt is visible where it is authored and not only where it ships.
+        m_PlayMode.GetSaveIndicator().RenderOverlay(ovX, ovY,
+                                                    static_cast<u32>(ovW), static_cast<u32>(ovH));
     }
 
     // Render audio visual indicators (accessibility)

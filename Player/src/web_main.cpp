@@ -111,6 +111,8 @@
 #include "Enjin/Gameplay/QuestSystem.h"
 #include "Enjin/Gameplay/ObjectPool.h"
 #include "Enjin/Gameplay/TieredSaveSystem.h"
+#include "Enjin/Gameplay/SavePointSystem.h"
+#include "Enjin/Gameplay/SaveIndicator.h"
 #include "Enjin/Gameplay/DynamicDifficultySystem.h"
 #include "Enjin/Gameplay/FaceCardSystem.h"
 #include "Enjin/ECS/Systems/SwarmSystem.h"
@@ -492,6 +494,16 @@ public:
         m_DynamicDifficulty.SetWorld(m_World.get());
         m_DynamicDifficulty.SetEnabled(true);
         m_FaceCardSystem.SetWorld(m_World.get());
+
+        // Save points, on web too. The first wiring of this covered the desktop
+        // player and editor play mode and not the browser, which is the
+        // one-runtime-only trap this codebase keeps falling into.
+        m_SavePointSystem.SetWorld(m_World.get());
+        m_SavePointSystem.SetSaveSystem(&m_TieredSaveSystem);
+        m_SavePointSystem.SetInputActionMap(&m_InputMap);
+        m_SaveIndicator.SetWorld(m_World.get());
+        m_SavePointSystem.SetIndicator(&m_SaveIndicator);
+        m_SavePointSystem.SetAnnouncer(&m_Announcer);
         m_AISystem.SetEnabled(true);
         m_StateMachineSystem.SetScriptEngine(&m_ScriptEngine);
         m_CinematicSystem.SetEnabled(true);
@@ -1550,6 +1562,9 @@ public:
         }
         // Auto-save timer (desktop: main.cpp:1214); saves land in IDBFS.
         m_TieredSaveSystem.Update(deltaTime, m_World.get(), m_StartScene);
+        m_SavePointSystem.SetSceneName(m_StartScene);
+        m_SavePointSystem.Update(deltaTime);
+        m_SaveIndicator.Update(deltaTime);
         // Resource (stamina/mana) regeneration (desktop: main.cpp:1241)
         for (auto entity : m_World->GetEntitiesWithComponent<Enjin::ECS::ResourceComponent>()) {
             auto* res = m_World->GetComponent<Enjin::ECS::ResourceComponent>(entity);
@@ -2060,6 +2075,7 @@ public:
         m_UICanvasTookPointer = uiTookIt;
         // Subtitle overlay (accessibility) -- same draw code as desktop
         m_SubtitleSystem.RenderOverlay(0.0f, 0.0f, w, h);
+        m_SaveIndicator.RenderOverlay(0.0f, 0.0f, w, h);
         // Switch-scanning highlight / dwell cursor
         m_AlternativeInput.RenderOverlay();
         // Screen reader status bar (announcements also speak via Web Speech API)
@@ -2866,6 +2882,8 @@ private:
     Enjin::ECS::GeneratedGeometrySystem m_GeneratedGeometry;
     Enjin::Gameplay::DynamicDifficultySystem m_DynamicDifficulty;
     Enjin::Gameplay::FaceCardSystem m_FaceCardSystem;
+    Enjin::Gameplay::SavePointSystem m_SavePointSystem;
+    Enjin::Gameplay::SaveIndicator m_SaveIndicator;
     Enjin::ECS::StateMachineSystem m_StateMachineSystem;
     Enjin::ECS::AISystem m_AISystem;
     Enjin::ECS::DialogueSystem m_DialogueSystem;

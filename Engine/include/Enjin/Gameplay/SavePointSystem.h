@@ -6,10 +6,12 @@
 
 namespace Enjin {
 namespace InputSystem { class InputActionMap; }
+namespace Accessibility { class AccessibilityAnnouncer; }
 
 namespace Gameplay {
 
 class TieredSaveSystem;
+class SaveIndicator;
 
 // Makes SavePointComponent actually save.
 //
@@ -49,20 +51,35 @@ public:
     void SetSaveSystem(TieredSaveSystem* saveSystem) { m_SaveSystem = saveSystem; }
     void SetInputActionMap(InputSystem::InputActionMap* map) { m_InputMap = map; }
 
+    // Where the prompt and the confirmation are SHOWN and SPOKEN.
+    //
+    // Two wrong homes before this one, and both are worth not repeating. An
+    // ImGui chip drawn by this system bypassed the HUD font, the accessibility
+    // text scale and the editor's game-view origin. The SUBTITLE system fixed
+    // all three and introduced a worse problem: ShowCaption is opt-in, because
+    // a caption describes a SOUND for someone who cannot hear it, so a save
+    // became invisible to anyone without captions turned on.
+    //
+    // SaveIndicator is the save system's own feedback, configured by
+    // SaveSystemComponent's showSaveIndicator and saveIndicatorDuration -- the
+    // settings that were written for this and had nothing reading them.
+    //
+    // The ANNOUNCER stays. A save is exactly the kind of event a screen-reader
+    // user needs and cannot otherwise perceive, and that is what an announcer
+    // is for. Both are optional: a runtime that wants neither passes neither.
+    void SetIndicator(SaveIndicator* indicator) { m_Indicator = indicator; }
+    void SetAnnouncer(Accessibility::AccessibilityAnnouncer* announcer) { m_Announcer = announcer; }
+
     // The scene a save records. The player already tracks this for
     // TieredSaveSystem; the same string comes here.
     void SetSceneName(const std::string& scene) { m_SceneName = scene; }
 
     void Update(f32 deltaTime);
 
-    // For a HUD. Empty when there is nothing to show.
-    //
-    // The system does not draw: it has no business knowing about fonts or
-    // canvases, and a runtime that wants no prompt should not have to suppress
-    // one. It reports, and whoever draws decides.
+    // What the system last put on screen, for tests. The DISPLAY goes through
+    // SaveIndicator; these are observables, not a drawing contract.
     const std::string& GetPrompt() const { return m_Prompt; }
     const std::string& GetMessage() const { return m_Message; }
-    f32 GetMessageTimer() const { return m_MessageTimer; }
 
 private:
     ECS::Entity FindPlayer() const;
@@ -70,11 +87,15 @@ private:
     ECS::World* m_World = nullptr;
     TieredSaveSystem* m_SaveSystem = nullptr;
     InputSystem::InputActionMap* m_InputMap = nullptr;
+    SaveIndicator* m_Indicator = nullptr;
+    Accessibility::AccessibilityAnnouncer* m_Announcer = nullptr;
     std::string m_SceneName;
 
     std::string m_Prompt;
     std::string m_Message;
-    f32 m_MessageTimer = 0.0f;
+    // Which point is currently prompting, so the caption is shown once on
+    // entering range rather than re-issued every frame.
+    ECS::Entity m_PromptingPoint = ECS::INVALID_ENTITY;
 };
 
 } // namespace Gameplay

@@ -6,6 +6,7 @@
 #include "Enjin/Gameplay/SavePointSystem.h"
 #include "Enjin/Gameplay/TieredSaveSystem.h"
 #include "Enjin/Gameplay/SaveBackend.h"
+#include "Enjin/Gameplay/SaveIndicator.h"
 
 #include <map>
 #include <memory>
@@ -54,6 +55,7 @@ struct Fixture {
     World world;
     TieredSaveSystem save;
     SavePointSystem points;
+    SaveIndicator indicator;
     Entity player = INVALID_ENTITY;
 
     Fixture() {
@@ -66,6 +68,10 @@ struct Fixture {
         points.SetWorld(&world);
         points.SetSaveSystem(&save);
         points.SetSceneName("TestScene");
+        // The display goes through SubtitleSystem, so the tests can assert what
+        // a player would actually be shown rather than an internal string.
+        indicator.SetWorld(&world);
+        points.SetIndicator(&indicator);
         // No input map on purpose: a test that simulated key presses would be
         // testing the input system. Points here either save on enter, or are
         // checked for NOT saving.
@@ -81,6 +87,14 @@ struct Fixture {
         sp.radius = 2.0f;
         world.AddComponent<SavePointComponent>(e, sp);
         return e;
+    }
+
+    // Both, in the order the runtimes do it. Ticking only the save point system
+    // left the indicator's timer frozen, and a test then read "the prompt was
+    // re-issued every frame" from what was really "nothing ever expired it".
+    void Tick(f32 dt = 0.016f) {
+        points.Update(dt);
+        indicator.Update(dt);
     }
 
     void MovePlayer(Math::Vector3 to) {
@@ -351,6 +365,61 @@ ENJIN_TEST(AutoSaveConfig, SceneTransitionStaysQuietWhenNotAsked) {
 
     // Assert
     ENJIN_EXPECT_FALSE(f.AnySlotUsed());
+}
+
+ENJIN_TEST(SavePoint, ConfirmationReachesTheDisplay) {
+    // Arrange: a save point that saves on entry.
+    Fixture f;
+    f.AddPoint(Math::Vector3(0.0f, 0.0f, 0.0f));
+    ENJIN_EXPECT_TRUE(f.indicator.GetText().empty());
+
+    // Act
+    f.MovePlayer(Math::Vector3(0.5f, 0.0f, 0.0f));
+    f.points.Update(0.016f);
+
+    // Assert: the player is TOLD, with no opt-in in the way. This briefly went
+    // through SubtitleSystem::ShowCaption, which early-returns unless captions
+    // are enabled -- so a save was invisible to anyone who had not turned
+    // captions on, which is most people. A caption describes a SOUND; a save
+    // confirmation is the save system talking.
+    ENJIN_EXPECT_EQ(f.indicator.GetText(), std::string("Game Saved"));
+}
+
+ENJIN_TEST(SavePoint, PromptIsShownOnceNotEveryFrame) {
+    // Arrange: a point that needs a key press, so it prompts while you stand
+    // in it.
+    Fixture f;
+    f.AddPoint(Math::Vector3(0.0f, 0.0f, 0.0f), /*saveOnEnter=*/false);
+
+    // Act: stand in it for sixty frames.
+    f.MovePlayer(Math::Vector3(0.5f, 0.0f, 0.0f));
+    for (int i = 0; i < 60; ++i) f.Tick();
+
+    // Assert: still showing, and its timer has not been reset to full by the
+    // last frame. Re-issuing every frame would leave it pinned at its duration
+    // forever and it would never expire after the player walks away.
+    ENJIN_EXPECT_FALSE(f.indicator.GetText().empty());
+    ENJIN_EXPECT_TRUE(f.indicator.GetRemaining() < 4.0f);
+}
+
+ENJIN_TEST(SavePoint, ShowSaveIndicatorOffMeansNoMessage) {
+    // Arrange: a project that asked for no save indicator. It still SAVES; it
+    // just does not say so, which is the difference between a setting and a
+    // switch.
+    Fixture f;
+    Entity manager = f.world.CreateEntity();
+    SaveSystemComponent cfg;
+    cfg.showSaveIndicator = false;
+    f.world.AddComponent<SaveSystemComponent>(manager, cfg);
+    f.AddPoint(Math::Vector3(0.0f, 0.0f, 0.0f));
+
+    // Act
+    f.MovePlayer(Math::Vector3(0.5f, 0.0f, 0.0f));
+    f.Tick();
+
+    // Assert: saved, and silent.
+    ENJIN_EXPECT_TRUE(f.AnySlotUsed());
+    ENJIN_EXPECT_TRUE(f.indicator.GetText().empty());
 }
 
 ENJIN_TEST_MAIN()

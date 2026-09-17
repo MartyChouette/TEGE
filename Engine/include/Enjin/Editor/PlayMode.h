@@ -48,6 +48,7 @@
 #include "Enjin/Gameplay/FaceCardSystem.h"
 #include "Enjin/Gameplay/TieredSaveSystem.h"
 #include "Enjin/Gameplay/SavePointSystem.h"
+#include "Enjin/Gameplay/SaveIndicator.h"
 #include "Enjin/Editor/PlayModeDiff.h"
 #include "Enjin/Editor/EditorSettings.h"
 #include "Enjin/Scene/LevelStreaming.h"
@@ -132,6 +133,11 @@ public:
     // image size each frame (see SetBindingsRenderView).
     Renderer::Camera* GetGameCamera() { return m_Camera; }
     Gameplay::TieredSaveSystem* GetTieredSaveSystem() { return &m_TieredSaveSystem; }
+    // So the editor's game view can draw the same save prompt and confirmation
+    // the exported game does, rather than the feature being invisible where it
+    // is authored.
+    const Gameplay::SavePointSystem& GetSavePointSystem() const { return m_SavePointSystem; }
+    Gameplay::SaveIndicator& GetSaveIndicator() { return m_SaveIndicator; }
     ECS::TweenSystem* GetTweenSystem() { return &m_TweenSystem; }
     ECS::StateMachineSystem* GetStateMachineSystem() { return &m_StateMachineSystem; }
     ECS::DialogueSystem* GetDialogueSystem() { return &m_DialogueSystem; }
@@ -388,6 +394,7 @@ private:
     // Tiered save system
     Gameplay::TieredSaveSystem m_TieredSaveSystem;
     Gameplay::SavePointSystem m_SavePointSystem;
+    Gameplay::SaveIndicator m_SaveIndicator;
 
     // Frame timing profiler (logs breakdown every N frames during play)
     f32 m_ProfileAccumPhysics = 0.0f;

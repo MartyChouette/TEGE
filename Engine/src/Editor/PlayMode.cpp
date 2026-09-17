@@ -152,6 +152,8 @@ void PlayMode::Initialize(ECS::World* world, Renderer::Camera* camera,
         m_SavePointSystem.SetWorld(world);
         m_SavePointSystem.SetSaveSystem(&m_TieredSaveSystem);
         m_SavePointSystem.SetInputActionMap(m_InputMap);
+        m_SaveIndicator.SetWorld(world);
+        m_SavePointSystem.SetIndicator(&m_SaveIndicator);
 
         // Initialize network system
         m_NetworkSystem.SetWorld(world);
@@ -574,6 +576,9 @@ void PlayMode::Play() {
     // Water-enter events (splash VFX / sound / score) go through the same bus.
     m_InteractiveWaterSystem.SetEventBus(&m_EntityEventBus);
     m_DialogueSystem.SetSubtitleSystem(m_SubtitleSystem);
+    // Same place, same pointers: these are injected by the editor and are not
+    // set yet where the save point system is otherwise configured.
+    m_SavePointSystem.SetAnnouncer(m_Announcer);
     // ActionTrigger components: input actions wired to scene effects with no
     // script, so the editor previews exactly what the exported game runs.
     m_ActionTriggerSystem.SetInputActionMap(m_InputMap);
@@ -1383,6 +1388,7 @@ void PlayMode::Update(f32 deltaTime) {
         m_TieredSaveSystem.Update(deltaTime, m_World, m_TieredSaveSystem.GetCurrentScene());
         m_SavePointSystem.SetSceneName(m_TieredSaveSystem.GetCurrentScene());
         m_SavePointSystem.Update(deltaTime);
+        m_SaveIndicator.Update(deltaTime);
 
         auto t4 = std::chrono::high_resolution_clock::now();
 
