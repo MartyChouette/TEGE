@@ -42,6 +42,7 @@
 #include "Enjin/Effects/FluidSimulation.h"
 #include "Enjin/ECS/World.h"
 
+#include <atomic>
 #include <functional>
 #include <string>
 #include <vector>
@@ -203,6 +204,42 @@ struct ENJIN_API FluidBakeSettings {
     u32 loopBlendFrames = 0;
     bool useSceneColliders = true;
 };
+
+// Everything a bake needs from the scene, COPIED, so the solve itself can run
+// anywhere.
+//
+// A bake is seconds of solving for a grid-48 take and minutes for a 128, which
+// is a frozen editor unless it moves off the main thread. It cannot simply be
+// handed a World to do that: ECS reads are lock-free ONLY because structural
+// mutation is owner-thread-only (adr-0004), so a solver walking the world from
+// a worker would be reading components while the editor added and removed
+// them. Taking the snapshot on the owner thread and solving from it is what
+// makes the worker legal rather than merely lucky.
+struct ENJIN_API FluidBakeInput {
+    bool valid = false;
+    u32 gridSize = 0;               // already clamped the way the live solver clamps
+    bool is3D = true;
+    Math::Vector3 halfExtents = Math::Vector3(5.0f, 5.0f, 5.0f);
+    FluidSimulation::FluidStepParams params;
+    std::vector<u8> obstacles;      // empty = none, as everywhere else
+};
+
+// Read the scene. MUST be called on the world's owner thread.
+ENJIN_API FluidBakeInput PrepareFluidBake(ECS::World* world, ECS::Entity volume,
+                                          const FluidBakeSettings& settings);
+
+// Solve a prepared bake. Touches no world, so this is the half that may run on
+// a worker thread.
+//
+// `cancel`, when given, is polled every frame: a bake a person cannot stop is
+// a bake they will kill the editor to escape. A cancelled bake returns false
+// and leaves `out` alone rather than handing back a truncated take, because a
+// short recording looks like a bad simulation rather than an abandoned one.
+ENJIN_API bool BakeFluidPrepared(const FluidBakeInput& input,
+                                 const FluidBakeSettings& settings,
+                                 FluidBake& out,
+                                 const std::function<void(f32)>& onProgress = {},
+                                 const std::atomic<bool>* cancel = nullptr);
 
 // Run the solver headless and record it. `volume` must carry a
 // FluidVolumeComponent; obstacles are voxelised once from `world` before the

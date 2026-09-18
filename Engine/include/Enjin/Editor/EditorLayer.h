@@ -1648,6 +1648,33 @@ private:
     // every scene.
     Effects::FluidBakeSettings m_FluidBakeSettings;
     std::string m_FluidBakeStatus;
+
+    // A bake runs on a WORKER. A grid-48 second is a few seconds of solving and
+    // a 128 minute is minutes of it, which is an editor that looks hung -- and
+    // a tool that looks hung is a tool people kill.
+    //
+    // The worker touches no World: Effects::PrepareFluidBake takes the snapshot
+    // here on the owner thread and the solve runs from that alone, because ECS
+    // reads are lock-free only while structural mutation stays owner-thread-only
+    // (adr-0004). The result is collected in Update, not in the panel, so a bake
+    // still finishes if the volume is deselected while it runs.
+    std::thread m_FluidBakeThread;
+    std::atomic<f32> m_FluidBakeProgress{0.0f};
+    std::atomic<bool> m_FluidBakeCancel{false};
+    std::atomic<bool> m_FluidBakeFinished{false};
+    bool m_FluidBakeRunning = false;
+    bool m_FluidBakeSucceeded = false;
+    Effects::FluidBake m_FluidBakeResult;
+    ECS::Entity m_FluidBakeEntity = ECS::INVALID_ENTITY;
+    std::string m_FluidBakeOutPath;      // absolute
+    std::string m_FluidBakeRelPath;      // what the component gets
+
+    // Collect a finished bake: write the file and point the volume at it. Runs
+    // on the main thread, from Update.
+    void FinishFluidBake();
+    // Stop and join any running bake. Called on teardown -- a detached solver
+    // writing into a destroyed EditorLayer is a crash on exit.
+    void CancelFluidBake();
     // What the recording picker is showing: {project-relative path, header
     // summary}, filled when the popup opens. m_FluidTakeSearchDir is the
     // directory that was scanned, so an empty list can say where it looked.

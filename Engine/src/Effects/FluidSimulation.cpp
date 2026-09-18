@@ -309,6 +309,51 @@ void FluidSimulation::Update(f32 dt, ECS::World* world) {
     }
 }
 
+// One step of one grid, with no world and no member state. See FluidStepParams.
+void FluidSimulation::StepGrid(FluidGridData& grid, const FluidStepParams& p, f32 dt) {
+    if (grid.N == 0 || dt <= 0.0f) return;
+
+    // The same emission Update performs, spelled out here rather than shared
+    // through AddDensityAtWorldPos: that one is keyed by entity, and an
+    // isolated step has no entity.
+    if (p.sourceDensity > 0.0f) {
+        const f32 rate = p.sourceDensity * dt;
+        const f32 r = std::max(1.0f, p.sourceRadius);
+        const i32 ir = static_cast<i32>(r);
+        const i32 N = static_cast<i32>(grid.N);
+        const i32 cx = static_cast<i32>(static_cast<f32>(grid.N) * 0.5f);
+        const i32 cy = static_cast<i32>(static_cast<f32>(grid.N) * 0.15f);
+        const i32 cz = grid.is3D ? cx : 0;
+
+        for (i32 k = grid.is3D ? std::max(1, cz - ir) : 0;
+             k <= (grid.is3D ? std::min(N, cz + ir) : 0); ++k) {
+            for (i32 j = std::max(1, cy - ir); j <= std::min(N, cy + ir); ++j) {
+                for (i32 i = std::max(1, cx - ir); i <= std::min(N, cx + ir); ++i) {
+                    const f32 dx = static_cast<f32>(i - cx);
+                    const f32 dy = static_cast<f32>(j - cy);
+                    const f32 dz = grid.is3D ? static_cast<f32>(k - cz) : 0.0f;
+                    const f32 dist = std::sqrt(dx * dx + dy * dy + dz * dz);
+                    if (dist > r) continue;
+                    const f32 falloff = 1.0f - dist / r;
+                    const usize idx = grid.is3D ? grid.IX3(static_cast<u32>(i), static_cast<u32>(j),
+                                                           static_cast<u32>(k))
+                                                : grid.IX(static_cast<u32>(i), static_cast<u32>(j));
+                    grid.density[idx] += rate * falloff;
+                    grid.velocityY[idx] += p.sourceVelocityScale * falloff;
+                }
+            }
+        }
+    }
+
+    if (grid.is3D) {
+        Step3D(grid, dt, p.viscosity, p.diffusion, p.dissipation,
+               p.velocityDissipation, p.iterations, p.buoyancy);
+    } else {
+        Step2D(grid, dt, p.viscosity, p.diffusion, p.dissipation,
+               p.velocityDissipation, p.iterations, p.buoyancy);
+    }
+}
+
 void FluidSimulation::AddDensityAtWorldPos(ECS::Entity entity, const Math::Vector3& worldPos, f32 amount, f32 radius) {
     auto it = m_Grids.find(entity);
     if (it == m_Grids.end()) return;

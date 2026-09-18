@@ -162,6 +162,32 @@ public:
     ECS::Entity GetSoloEntity() const { return m_SoloEntity; }
     void OnEntityRemoved(ECS::Entity entity);
 
+    // Everything one step needs from a volume, COPIED.
+    //
+    // This is what lets a bake run off the main thread. ECS reads are only
+    // lock-free because structural mutation is owner-thread-only (adr-0004), so
+    // a solver that walked the world from a worker would be reading components
+    // while the editor added and removed them. A bake takes this snapshot on
+    // the owner thread and then never touches the world again.
+    struct FluidStepParams {
+        f32 viscosity = 0.0f;
+        f32 diffusion = 0.0f;
+        f32 dissipation = 1.0f;
+        f32 velocityDissipation = 1.0f;
+        f32 buoyancy = 0.0f;
+        i32 iterations = 20;
+
+        // The plume injected each step, in GRID coordinates -- the same
+        // emission Update does, kept here so an isolated step reproduces a
+        // live volume exactly rather than approximately.
+        f32 sourceDensity = 0.0f;
+        f32 sourceRadius = 1.0f;
+        f32 sourceVelocityScale = 0.0f;
+    };
+
+    // Step ONE grid from a snapshot, touching no world and no member state.
+    static void StepGrid(FluidGridData& grid, const FluidStepParams& params, f32 dt);
+
     const FluidGridData* GetGridData(ECS::Entity entity) const;
     FluidGridData* GetMutableGridData(ECS::Entity entity);
 
@@ -220,18 +246,18 @@ private:
     bool m_HasViewer = false;
 
     // 2D solver steps
-    void Step2D(FluidGridData& grid, f32 dt, f32 visc, f32 diff, f32 dissipation, f32 velDissipation, i32 iterations, f32 buoyancy);
-    void Diffuse2D(FluidGridData& grid, i32 b, std::vector<f32>& x, const std::vector<f32>& x0, f32 diff, f32 dt, i32 iterations);
-    void Advect2D(FluidGridData& grid, i32 b, std::vector<f32>& d, const std::vector<f32>& d0, const std::vector<f32>& u, const std::vector<f32>& v, f32 dt);
-    void Project2D(FluidGridData& grid, std::vector<f32>& u, std::vector<f32>& v, std::vector<f32>& p, std::vector<f32>& div, i32 iterations);
-    void SetBoundary2D(FluidGridData& grid, i32 b, std::vector<f32>& x);
+    static void Step2D(FluidGridData& grid, f32 dt, f32 visc, f32 diff, f32 dissipation, f32 velDissipation, i32 iterations, f32 buoyancy);
+    static void Diffuse2D(FluidGridData& grid, i32 b, std::vector<f32>& x, const std::vector<f32>& x0, f32 diff, f32 dt, i32 iterations);
+    static void Advect2D(FluidGridData& grid, i32 b, std::vector<f32>& d, const std::vector<f32>& d0, const std::vector<f32>& u, const std::vector<f32>& v, f32 dt);
+    static void Project2D(FluidGridData& grid, std::vector<f32>& u, std::vector<f32>& v, std::vector<f32>& p, std::vector<f32>& div, i32 iterations);
+    static void SetBoundary2D(FluidGridData& grid, i32 b, std::vector<f32>& x);
 
     // 3D solver steps
-    void Step3D(FluidGridData& grid, f32 dt, f32 visc, f32 diff, f32 dissipation, f32 velDissipation, i32 iterations, f32 buoyancy);
-    void Diffuse3D(FluidGridData& grid, i32 b, std::vector<f32>& x, const std::vector<f32>& x0, f32 diff, f32 dt, i32 iterations);
-    void Advect3D(FluidGridData& grid, i32 b, std::vector<f32>& d, const std::vector<f32>& d0, const std::vector<f32>& u, const std::vector<f32>& v, const std::vector<f32>& w, f32 dt);
-    void Project3D(FluidGridData& grid, std::vector<f32>& u, std::vector<f32>& v, std::vector<f32>& w, std::vector<f32>& p, std::vector<f32>& div, i32 iterations);
-    void SetBoundary3D(FluidGridData& grid, i32 b, std::vector<f32>& x);
+    static void Step3D(FluidGridData& grid, f32 dt, f32 visc, f32 diff, f32 dissipation, f32 velDissipation, i32 iterations, f32 buoyancy);
+    static void Diffuse3D(FluidGridData& grid, i32 b, std::vector<f32>& x, const std::vector<f32>& x0, f32 diff, f32 dt, i32 iterations);
+    static void Advect3D(FluidGridData& grid, i32 b, std::vector<f32>& d, const std::vector<f32>& d0, const std::vector<f32>& u, const std::vector<f32>& v, const std::vector<f32>& w, f32 dt);
+    static void Project3D(FluidGridData& grid, std::vector<f32>& u, std::vector<f32>& v, std::vector<f32>& w, std::vector<f32>& p, std::vector<f32>& div, i32 iterations);
+    static void SetBoundary3D(FluidGridData& grid, i32 b, std::vector<f32>& x);
 };
 
 } // namespace Effects

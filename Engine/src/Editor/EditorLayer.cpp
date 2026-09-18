@@ -188,6 +188,9 @@ EditorLayer::EditorLayer() {
 }
 
 EditorLayer::~EditorLayer() {
+    // Before anything else is torn down: the bake worker writes into members of
+    // this object, so a solve still running here is a write into freed memory.
+    CancelFluidBake();
     Shutdown();
 }
 
@@ -3441,6 +3444,11 @@ void EditorLayer::UpdateGameViewSims(f32 simDt) {
     // solved, and FluidSimulation::Update skips any volume playback has taken
     // over. The other order solves the volume once before playback claims it,
     // which shows as one frame of real simulation every time a take starts.
+    // Collect a finished bake here rather than in the panel that started it: a
+    // bake must still land if the volume is deselected, or the Inspector is
+    // closed, while it runs.
+    FinishFluidBake();
+
     m_FluidPlayback.Update(simDt, m_World, m_FluidSimulation);
     m_FluidSimulation.Update(simDt, m_World);
 

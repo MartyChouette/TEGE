@@ -17,6 +17,8 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <atomic>
+#include <thread>
 #include <string>
 
 using namespace Enjin;
@@ -515,6 +517,110 @@ ENJIN_TEST(FluidBakeDelta, test_a_frame_is_never_stored_in_the_larger_of_the_two
     }
 }
 
+ENJIN_TEST(FluidBakeThreaded, test_a_prepared_bake_matches_one_taken_straight_from_the_world) {
+    // The split is only safe if it changes nothing. A snapshot that misses a
+    // field -- an iteration clamp, a source radius -- produces a take of a
+    // volume that does not exist, and it would look plausible.
+    ECS::World world;
+    ECS::Entity e = MakeSmokeVolume(world, 16);
+    FluidBakeSettings s;
+    s.frameRate = 30.0f;
+    s.duration = 0.5f;
+    s.settleTime = 0.2f;
+    s.useSceneColliders = false;
+
+    FluidBake direct;
+    ENJIN_ASSERT_TRUE(BakeFluid(&world, e, s, direct));
+
+    const FluidBakeInput input = PrepareFluidBake(&world, e, s);
+    ENJIN_ASSERT_TRUE(input.valid);
+    FluidBake prepared;
+    ENJIN_ASSERT_TRUE(BakeFluidPrepared(input, s, prepared));
+
+    ENJIN_ASSERT_EQ(prepared.FrameCount(), direct.FrameCount());
+    ENJIN_EXPECT_EQ(prepared.gridSize, direct.gridSize);
+    ENJIN_EXPECT_FLOAT_NEAR(prepared.maxDensity, direct.maxDensity, 0.0001f);
+
+    std::vector<f32> a, b;
+    ENJIN_ASSERT_TRUE(direct.SampleAt(0.3f, a));
+    ENJIN_ASSERT_TRUE(prepared.SampleAt(0.3f, b));
+    ENJIN_ASSERT_EQ(a.size(), b.size());
+    for (usize i = 0; i < a.size(); ++i) ENJIN_EXPECT_FLOAT_NEAR(b[i], a[i], 0.0001f);
+}
+
+ENJIN_TEST(FluidBakeThreaded, test_a_prepared_bake_needs_no_world_at_all) {
+    // What the worker thread depends on: once prepared, the solve must not
+    // touch the ECS. Destroying the world before solving is the only way to
+    // prove that rather than assert it, since a stale read would usually still
+    // return plausible numbers.
+    FluidBakeInput input;
+    FluidBakeSettings s;
+    s.frameRate = 30.0f;
+    s.duration = 0.4f;
+    s.settleTime = 0.1f;
+    s.useSceneColliders = false;
+    {
+        ECS::World world;
+        ECS::Entity e = MakeSmokeVolume(world, 16);
+        input = PrepareFluidBake(&world, e, s);
+    }
+    ENJIN_ASSERT_TRUE(input.valid);
+
+    FluidBake bake;
+    ENJIN_ASSERT_TRUE(BakeFluidPrepared(input, s, bake));
+    ENJIN_EXPECT_TRUE(bake.FrameCount() > 0);
+}
+
+ENJIN_TEST(FluidBakeThreaded, test_a_cancelled_bake_returns_nothing_rather_than_a_short_take) {
+    // A truncated take reads as a bad simulation, not as an abandoned bake, and
+    // would be debugged as one. Cancelling leaves the caller's bake untouched.
+    ECS::World world;
+    ECS::Entity e = MakeSmokeVolume(world, 16);
+    FluidBakeSettings s;
+    s.frameRate = 30.0f;
+    s.duration = 2.0f;
+    s.settleTime = 0.5f;
+    s.useSceneColliders = false;
+
+    const FluidBakeInput input = PrepareFluidBake(&world, e, s);
+    ENJIN_ASSERT_TRUE(input.valid);
+
+    std::atomic<bool> cancel{true};       // cancelled before it starts
+    FluidBake bake;
+    bake.gridSize = 1234;                 // a sentinel that must survive
+    ENJIN_EXPECT_FALSE(BakeFluidPrepared(input, s, bake, {}, &cancel));
+    ENJIN_EXPECT_EQ(bake.gridSize, 1234u);
+    ENJIN_EXPECT_EQ(bake.FrameCount(), static_cast<usize>(0));
+}
+
+ENJIN_TEST(FluidBakeThreaded, test_a_bake_runs_on_a_worker_thread) {
+    // The shape the editor uses: prepare here, solve there, collect the result.
+    ECS::World world;
+    ECS::Entity e = MakeSmokeVolume(world, 16);
+    FluidBakeSettings s;
+    s.frameRate = 30.0f;
+    s.duration = 0.5f;
+    s.settleTime = 0.2f;
+    s.useSceneColliders = false;
+
+    const FluidBakeInput input = PrepareFluidBake(&world, e, s);
+    ENJIN_ASSERT_TRUE(input.valid);
+
+    FluidBake bake;
+    std::atomic<f32> progress{-1.0f};
+    std::atomic<bool> ok{false};
+    std::thread worker([&]() {
+        ok = BakeFluidPrepared(input, s, bake,
+                               [&](f32 p) { progress.store(p); }, nullptr);
+    });
+    worker.join();
+
+    ENJIN_EXPECT_TRUE(ok.load());
+    ENJIN_EXPECT_TRUE(bake.FrameCount() > 0);
+    // Progress reached the end, which is what the editor's bar reads.
+    ENJIN_EXPECT_FLOAT_NEAR(progress.load(), 1.0f, 0.0001f);
+}
+
 ENJIN_TEST(FluidBakeHeader, test_reading_the_header_alone_reports_the_whole_take) {
     // Arrange: a take with every header field set to something other than its
     // default, so a field that is never read cannot pass by accident.
@@ -719,15 +825,19 @@ ENJIN_TEST(FluidBakeRecording, test_a_bake_solves_only_the_volume_it_is_recordin
     for (f32 d : frame) total += d;
     ENJIN_EXPECT_TRUE(total > 1.0f);
 
-    // ...and the other volume was never touched, so its component still reads
-    // as never having been initialised by this bake.
+    // ...and NEITHER volume was touched. The recorded one used to come back
+    // with simulationInitialized set, because the bake drove the live solver
+    // over the world to do its work. It now solves a snapshot instead, so it
+    // mutates no component at all -- which is what makes it safe to run on a
+    // worker thread, and also what makes a re-bake of the same scene
+    // reproduce: a bake that edits the scene it is recording cannot.
     const auto* otherVol = world.GetComponent<ECS::FluidVolumeComponent>(other);
     ENJIN_ASSERT_TRUE(otherVol != nullptr);
     ENJIN_EXPECT_FALSE(otherVol->simulationInitialized);
 
     const auto* targetVol = world.GetComponent<ECS::FluidVolumeComponent>(target);
     ENJIN_ASSERT_TRUE(targetVol != nullptr);
-    ENJIN_EXPECT_TRUE(targetVol->simulationInitialized);
+    ENJIN_EXPECT_FALSE(targetVol->simulationInitialized);
 }
 
 ENJIN_TEST_MAIN()

@@ -3794,14 +3794,21 @@ void EditorLayer::DrawFluidVolumeComponent(ECS::Entity entity) {
     }
 }
 
-// Solve the whole take now and write it next to the project.
+// Start a bake on a worker thread.
 //
-// Synchronous on purpose, for now. A 48^3 second of footage is a few seconds
-// of solving, which is a pause rather than a hang; a 128^3 minute is not, and
-// that is the point at which this needs to move off the main thread. The
-// status line says what happened either way, because a button that appears to
-// do nothing is worse than a slow one.
+// It used to run right here, synchronously, and the comment above it said that
+// was fine because a grid-48 second is "a pause rather than a hang". That was
+// true for the smallest take anyone would make and false for every other one:
+// a 128 grid or a minute of footage is minutes of solving with a frozen window
+// and no way out but the task manager.
+//
+// The snapshot is taken HERE, on the world's owner thread, and the solve runs
+// from that alone. Handing a worker the World instead would be reading
+// components while the editor adds and removes them, which adr-0004 permits
+// only inside a fork-join where the owner is parked -- and an editor that keeps
+// drawing is not parked.
 void EditorLayer::BakeFluidVolume(ECS::Entity entity) {
+    if (m_FluidBakeRunning) return;   // one at a time; the button is hidden anyway
     m_FluidBakeStatus.clear();
     if (!m_World) return;
 
@@ -3838,41 +3845,102 @@ void EditorLayer::BakeFluidVolume(ECS::Entity entity) {
         if (!name->name.empty() && Platform::IsSafeFileName(name->name)) stem = name->name;
     }
     const std::string fileName = stem + ".enjfluid";
-    const std::filesystem::path outPath = bakeDir / fileName;
 
     // A volume mid-simulation would bake from whatever state it happens to be
-    // in, so a re-bake of the same scene would not reproduce. Start clean and
-    // let the settle pass develop it.
+    // in, so a re-bake of the same scene would not reproduce. The snapshot
+    // starts from an empty grid and the settle pass develops it.
     m_FluidSimulation.Reset(entity);
 
-    Effects::FluidBake bake;
-    const bool ok = Effects::BakeFluid(m_World, entity, m_FluidBakeSettings, bake);
-    if (!ok) {
+    const Effects::FluidBakeInput input =
+        Effects::PrepareFluidBake(m_World, entity, m_FluidBakeSettings);
+    if (!input.valid) {
+        m_FluidBakeStatus = "Bake failed -- the volume has nothing to record.";
+        return;
+    }
+
+    m_FluidBakeEntity = entity;
+    m_FluidBakeOutPath = (bakeDir / fileName).string();
+    m_FluidBakeRelPath = "assets/fluid/" + fileName;
+    m_FluidBakeProgress.store(0.0f);
+    m_FluidBakeCancel.store(false);
+    m_FluidBakeFinished.store(false);
+    m_FluidBakeSucceeded = false;
+    m_FluidBakeRunning = true;
+    m_FluidBakeResult = Effects::FluidBake{};
+    m_FluidBakeStatus = "Baking...";
+
+    const Effects::FluidBakeSettings settings = m_FluidBakeSettings;   // by value
+    m_FluidBakeThread = std::thread([this, input, settings]() {
+        const bool ok = Effects::BakeFluidPrepared(
+            input, settings, m_FluidBakeResult,
+            [this](f32 p) { m_FluidBakeProgress.store(p, std::memory_order_relaxed); },
+            &m_FluidBakeCancel);
+        m_FluidBakeSucceeded = ok;
+        // Last, and the only write the main thread waits on: everything above
+        // must be visible before this becomes true.
+        m_FluidBakeFinished.store(true, std::memory_order_release);
+    });
+}
+
+// Collect a finished bake. Main thread, from Update -- not from the panel,
+// because a bake must still land if the volume is deselected while it runs.
+void EditorLayer::FinishFluidBake() {
+    if (!m_FluidBakeRunning) return;
+    if (!m_FluidBakeFinished.load(std::memory_order_acquire)) return;
+
+    if (m_FluidBakeThread.joinable()) m_FluidBakeThread.join();
+    m_FluidBakeRunning = false;
+
+    if (m_FluidBakeCancel.load()) {
+        m_FluidBakeStatus = "Bake cancelled -- nothing was written.";
+        return;
+    }
+    if (!m_FluidBakeSucceeded) {
         m_FluidBakeStatus = "Bake failed -- the volume produced no frames.";
         return;
     }
-    if (!bake.Save(outPath.string())) {
-        m_FluidBakeStatus = "Could not write " + outPath.string();
+    if (!m_FluidBakeResult.Save(m_FluidBakeOutPath)) {
+        m_FluidBakeStatus = "Could not write " + m_FluidBakeOutPath;
         return;
     }
 
     char msg[512];
     std::snprintf(msg, sizeof(msg),
-                  "Baked %zu frames (%.1fs) to assets/fluid/%s -- %.1f MB, %.1fx smaller than raw.",
-                  bake.FrameCount(), bake.Duration(), fileName.c_str(),
-                  static_cast<f64>(bake.EncodedBytes()) / (1024.0 * 1024.0),
-                  bake.CompressionRatio());
+                  "Baked %zu frames (%.1fs) to %s -- %.1f MB, %.1fx smaller than raw.",
+                  m_FluidBakeResult.FrameCount(), m_FluidBakeResult.Duration(),
+                  m_FluidBakeRelPath.c_str(),
+                  static_cast<f64>(m_FluidBakeResult.EncodedBytes()) / (1024.0 * 1024.0),
+                  m_FluidBakeResult.CompressionRatio());
     m_FluidBakeStatus = msg;
+
+    // The volume may have been deleted while the bake ran. The file is still
+    // worth keeping -- it is a recording of a volume that existed -- so this
+    // reports rather than discards.
+    if (!m_World || !m_World->IsValid(m_FluidBakeEntity)
+        || !m_World->HasComponent<ECS::FluidVolumeComponent>(m_FluidBakeEntity)) {
+        m_FluidBakeStatus += " The volume is gone, so nothing was pointed at it.";
+        return;
+    }
 
     // Point the volume at what was just baked. Baking and then having to type
     // the path in is the kind of step that makes a tool feel like a pipeline.
-    auto* play = m_World->GetComponent<ECS::FluidPlaybackComponent>(entity);
-    if (!play) play = &m_World->AddComponent<ECS::FluidPlaybackComponent>(entity);
-    play->bakePath = "assets/fluid/" + fileName;
+    auto* play = m_World->GetComponent<ECS::FluidPlaybackComponent>(m_FluidBakeEntity);
+    if (!play) play = &m_World->AddComponent<ECS::FluidPlaybackComponent>(m_FluidBakeEntity);
+    play->bakePath = m_FluidBakeRelPath;
     play->loadAttempted = false;
     play->loadFailed = false;
     play->time = 0.0f;
     m_FluidPlayback.ClearCache();   // a re-bake replaced the file under the cache
+}
+
+// Teardown, and the Cancel button. A worker writing into a destroyed
+// EditorLayer is a crash on exit, so this never returns without joining.
+void EditorLayer::CancelFluidBake() {
+    if (!m_FluidBakeRunning) return;
+    m_FluidBakeCancel.store(true);
+    if (m_FluidBakeThread.joinable()) m_FluidBakeThread.join();
+    m_FluidBakeRunning = false;
+    m_FluidBakeStatus = "Bake cancelled -- nothing was written.";
 }
 
 // Accept any path to a recording and store the one the runtime can resolve.
@@ -4009,11 +4077,21 @@ void EditorLayer::DrawFluidBakeControls(ECS::Entity entity) {
                           "so the recorded fluid flows around the level instead of\n"
                           "through it.");
 
-    if (ImGui::Button("Bake Recording##FluidBake")) {
+    if (m_FluidBakeRunning) {
+        // A progress bar and a way out. The bar is the point of reporting
+        // progress at all: a number that only exists in a callback tells the
+        // person at the machine nothing.
+        ImGui::ProgressBar(m_FluidBakeProgress.load(std::memory_order_relaxed),
+                           ImVec2(-1.0f, 0.0f));
+        if (ImGui::Button("Cancel##FluidBake")) CancelFluidBake();
+        ImGui::SetItemTooltip("Stops the solve. Nothing is written.");
+    } else if (ImGui::Button("Bake Recording##FluidBake")) {
         BakeFluidVolume(entity);
     }
-    ImGui::SetItemTooltip("Solves the whole take now. The editor is unresponsive while\n"
-                          "it runs; the status below reports the result.");
+    if (!m_FluidBakeRunning) {
+        ImGui::SetItemTooltip("Solves the whole take on a worker thread. The editor stays\n"
+                              "usable; progress and the result appear below.");
+    }
 
     if (!m_FluidBakeStatus.empty()) {
         ImGui::TextWrapped("%s", m_FluidBakeStatus.c_str());

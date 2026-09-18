@@ -461,66 +461,85 @@ std::vector<FluidTakeEntry> FindFluidRecordings(const std::string& projectDir,
     return takes;
 }
 
-bool BakeFluid(ECS::World* world, ECS::Entity volume,
-               const FluidBakeSettings& settings,
-               FluidBake& out,
-               const std::function<void(f32)>& onProgress) {
-    if (!world) return false;
+FluidBakeInput PrepareFluidBake(ECS::World* world, ECS::Entity volume,
+                                const FluidBakeSettings& settings) {
+    FluidBakeInput in;
+    if (!world) return in;
     auto* vol = world->GetComponent<ECS::FluidVolumeComponent>(volume);
-    if (!vol) return false;
-    if (settings.frameRate <= 0.0f || settings.duration <= 0.0f) return false;
+    if (!vol) return in;
+    if (settings.frameRate <= 0.0f || settings.duration <= 0.0f) return in;
 
     auto* xf = world->GetComponent<ECS::TransformComponent>(volume);
     const Math::Vector3 centre = xf ? xf->position : Math::Vector3(0.0f, 0.0f, 0.0f);
 
-    FluidSimulation sim;
-    // No frame budget. The budget exists so a volume cannot eat a frame, and a
-    // bake has no frame -- deferring volumes here would only make the take
-    // take longer AND come out wrong, since a deferred volume records a
-    // duplicate of the frame before it.
-    sim.SetFrameBudgetMs(1.0e9);
-    // One volume is being recorded. Update iterates the whole world, so
-    // without this a bake in a ten-volume level solves all ten for the entire
-    // take -- ten times the wait for exactly the same file.
-    sim.SetSoloEntity(volume);
+    in.is3D = vol->dimension == ECS::FluidDimension::Mode3D;
 
-    const f32 dt = 1.0f / settings.frameRate;
+    // The live solver's clamps, repeated here rather than discovered by
+    // stepping a grid once: a take must record at the resolution the volume
+    // will actually play at, or the recording is of a different volume.
+    u32 clamped = vol->gridSize;
+    clamped = in.is3D ? std::min(clamped, 48u) : std::min(clamped, 128u);
+    in.gridSize = std::max(clamped, 8u);
 
-    // One step allocates the grid, which the obstacle mask has to be sized
-    // against. Voxelising before that would produce a mask for a grid that
-    // does not exist yet and SetObstacleMask would correctly refuse it.
-    sim.Update(dt, world);
+    i32 iterations = vol->solverIterations;
+    if (in.is3D && in.gridSize > 32) iterations = std::min(iterations, 10);
+
+    in.halfExtents = vol->halfExtents;
+    in.params.viscosity = vol->viscosity;
+    in.params.diffusion = vol->diffusion;
+    in.params.dissipation = vol->dissipation;
+    in.params.velocityDissipation = vol->velocityDissipation;
+    in.params.buoyancy = vol->buoyancy;
+    in.params.iterations = iterations;
+    in.params.sourceDensity = vol->sourceDensity;
+    in.params.sourceRadius = vol->sourceRadius;
+    in.params.sourceVelocityScale = vol->sourceVelocityScale;
+
+    // The one thing that genuinely needs the world, taken once. A bake runs
+    // against static geometry by definition, so a snapshot is not an
+    // approximation here -- it is the definition.
     if (settings.useSceneColliders) {
-        const FluidGridData* g = sim.GetGridData(volume);
-        if (g && g->N > 0) {
-            std::vector<u8> mask;
-            BuildFluidObstacleMask(world, centre, vol->halfExtents, g->N, g->is3D, mask);
-            sim.SetObstacleMask(volume, std::move(mask));
-        }
+        BuildFluidObstacleMask(world, centre, in.halfExtents, in.gridSize, in.is3D,
+                               in.obstacles);
+        bool any = false;
+        for (u8 c : in.obstacles) { if (c) { any = true; break; } }
+        if (!any) in.obstacles.clear();
     }
 
-    const u32 settleFrames = static_cast<u32>(std::max(0.0f, settings.settleTime) * settings.frameRate);
+    in.valid = true;
+    return in;
+}
+
+bool BakeFluidPrepared(const FluidBakeInput& input,
+                       const FluidBakeSettings& settings,
+                       FluidBake& out,
+                       const std::function<void(f32)>& onProgress,
+                       const std::atomic<bool>* cancel) {
+    if (!input.valid || input.gridSize == 0) return false;
+    if (settings.frameRate <= 0.0f || settings.duration <= 0.0f) return false;
+
+    FluidGridData grid;
+    grid.Allocate(input.gridSize, input.is3D);
+    if (!input.obstacles.empty() && input.obstacles.size() == grid.density.size()) {
+        grid.solid = input.obstacles;
+    }
+
+    const f32 dt = 1.0f / settings.frameRate;
+    const u32 settleFrames =
+        static_cast<u32>(std::max(0.0f, settings.settleTime) * settings.frameRate);
     const u32 keepFrames = std::max(1u, static_cast<u32>(settings.duration * settings.frameRate));
     const u32 totalFrames = settleFrames + keepFrames;
+
+    auto cancelled = [&]() { return cancel && cancel->load(std::memory_order_relaxed); };
 
     // Simulated and thrown away, so the take opens on a developed plume rather
     // than on an empty grid filling up -- and so a LOOP is recorded from a
     // settled state, which is most of what makes one loopable at all.
     for (u32 n = 0; n < settleFrames; ++n) {
-        sim.Update(dt, world);
+        if (cancelled()) return false;
+        FluidSimulation::StepGrid(grid, input.params, dt);
         if (onProgress) onProgress(static_cast<f32>(n) / static_cast<f32>(totalFrames));
     }
-
-    const FluidGridData* grid = sim.GetGridData(volume);
-    if (!grid || grid->N == 0) return false;
-
-    out = FluidBake{};
-    out.gridSize = grid->N;
-    out.is3D = grid->is3D;
-    out.looping = settings.looping;
-    out.loopBlendFrames = settings.looping ? settings.loopBlendFrames : 0;
-    out.frameRate = settings.frameRate;
-    out.halfExtents = vol->halfExtents;
 
     // Two passes over the kept frames, because the 8-bit quantisation is
     // scaled against the take's PEAK and the peak is not known until the take
@@ -531,28 +550,29 @@ bool BakeFluid(ECS::World* world, ECS::Entity volume,
     raw.reserve(keepFrames);
     f32 peak = 0.0f;
     for (u32 n = 0; n < keepFrames; ++n) {
-        sim.Update(dt, world);
-        const FluidGridData* g = sim.GetGridData(volume);
-        if (!g) return false;
-        for (f32 d : g->density) peak = std::max(peak, d);
-        raw.push_back(g->density);
+        if (cancelled()) return false;
+        FluidSimulation::StepGrid(grid, input.params, dt);
+        for (f32 d : grid.density) peak = std::max(peak, d);
+        raw.push_back(grid.density);
         if (onProgress) {
             onProgress(static_cast<f32>(settleFrames + n) / static_cast<f32>(totalFrames));
         }
     }
 
-    out.maxDensity = (peak > 0.0f) ? peak : 1.0f;
-    out.frames.reserve(raw.size());
-    out.frameIsKey.reserve(raw.size());
+    FluidBake result;
+    result.gridSize = grid.N;
+    result.is3D = grid.is3D;
+    result.looping = settings.looping;
+    result.loopBlendFrames = settings.looping ? settings.loopBlendFrames : 0;
+    result.frameRate = settings.frameRate;
+    result.halfExtents = input.halfExtents;
+    result.maxDensity = (peak > 0.0f) ? peak : 1.0f;
+    result.frames.reserve(raw.size());
+    result.frameIsKey.reserve(raw.size());
 
-    // Keyframe, then deltas against the frame before. The comparison is done on
-    // the QUANTISED bytes, not on the floats: two densities that round to the
-    // same byte are the same frame as far as the file is concerned, and that
-    // is most of what a delta saves -- a cell drifting by a thousandth is not
-    // a change anyone can see.
     std::vector<u8> prevQ, curQ, asKey, asDelta;
     for (usize n = 0; n < raw.size(); ++n) {
-        QuantiseDensity(raw[n], out.maxDensity, curQ);
+        QuantiseDensity(raw[n], result.maxDensity, curQ);
 
         // A forced keyframe every interval, to bound what a SEEK costs.
         const bool forcedKey = (n % kKeyframeInterval) == 0;
@@ -561,23 +581,37 @@ bool BakeFluid(ECS::World* world, ECS::Entity volume,
         // Otherwise encode BOTH and keep the smaller. Measured on real takes,
         // a delta is not automatically the winner: in turbulent smoke nearly
         // every cell moves by a quantisation step each frame, so a delta byte
-        // costs exactly what a literal does and the escapes make it slightly
-        // worse. The win is real where a field is STILL -- a settled pool, the
-        // quiet interior of a plume, a take that has stopped developing -- and
-        // choosing per frame takes that win without betting on it.
+        // costs exactly what a literal does and the escapes make it worse. The
+        // win is real where a field is STILL -- a settled pool, the quiet
+        // interior of a plume -- and choosing per frame takes it without
+        // betting on it.
         bool key = forcedKey;
         if (!forcedKey) {
             EncodeDelta(curQ, prevQ, asDelta);
             key = asDelta.size() >= asKey.size();
         }
 
-        out.frames.push_back(key ? asKey : asDelta);
-        out.frameIsKey.push_back(key ? 1 : 0);
+        result.frames.push_back(key ? asKey : asDelta);
+        result.frameIsKey.push_back(key ? 1 : 0);
         prevQ = curQ;
     }
 
+    // Assigned only once the take is whole. A cancel partway through leaves the
+    // caller's bake untouched rather than handing back a truncated one, which
+    // would read as a bad simulation instead of an abandoned bake.
+    out = std::move(result);
     if (onProgress) onProgress(1.0f);
     return true;
+}
+
+bool BakeFluid(ECS::World* world, ECS::Entity volume,
+               const FluidBakeSettings& settings,
+               FluidBake& out,
+               const std::function<void(f32)>& onProgress) {
+    // Snapshot then solve, on one thread. The split exists for the editor's
+    // worker; a caller that does not need one should not have to know about it.
+    const FluidBakeInput input = PrepareFluidBake(world, volume, settings);
+    return BakeFluidPrepared(input, settings, out, onProgress, nullptr);
 }
 
 } // namespace Effects

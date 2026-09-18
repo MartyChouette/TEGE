@@ -1239,7 +1239,16 @@ quality stop being a frame-rate decision.
 | Settle | Simulated and thrown away before recording starts, so the take opens on a developed plume instead of an empty grid filling up. |
 | Loop | Record a take that wraps -- a river, a chimney that never stops. |
 | Loop Blend Frames | Frames cross-faded into the start on wrap. The last frame of a fluid take never matches the first, so `0` pops once per cycle. |
-| Use Scene Colliders | Voxelise the level's colliders as walls, so the recorded fluid flows around the geometry. Obstacles apply to a LIVE volume too, whether or not you ever bake it. |
+| Use Scene Colliders | Voxelise the level's colliders as walls, so the recorded fluid flows around the geometry. Snapshotted when the bake starts, since a bake records static geometry by definition. Obstacles apply to a LIVE volume too, whether or not you ever bake it. |
+
+A bake runs on a worker thread: the editor stays usable, a progress bar
+replaces the Bake button while it runs, and **Cancel** stops it. A cancelled
+bake writes nothing at all rather than a short take, because a truncated
+recording looks like a bad simulation rather than an abandoned bake.
+
+A bake does not touch the scene it is recording. It takes a snapshot of the
+volume and the level's colliders and solves from that, which is what makes
+re-baking the same scene reproduce.
 
 Baking adds a **Fluid Playback** component and points it at the file it just
 wrote. That component has `playing`, `speed` (negative runs the take
