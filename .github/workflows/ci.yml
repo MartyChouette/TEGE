@@ -922,6 +922,15 @@ jobs:
       - name: Vacuous assertion audit (no assertion that cannot fail)
         run: python tools/vacuous_assertion_audit.py --strict
 
+      # EnjinCore and EnjinEngine both put their include/ on the PUBLIC include
+      # path, so a header present in both is two definitions of the same thing
+      # and search order picks the winner. Enjin/Math/Vector.h was in both for
+      # months: the Engine copy, the pre-SIMD one, is what everything compiled,
+      # so the SIMD math never ran and the two libraries disagreed about the
+      # inline bodies of a Vector3 they hand each other. Every build was green.
+      - name: Shadowed header audit (one header, one include path)
+        run: python tools/shadowed_header_audit.py --strict
+
       # A doc sample that names a function the engine does not register fails
       # in the READER's script, pointing at their file, so it reads as their
       # mistake. Eleven of these were live when this check was written.
