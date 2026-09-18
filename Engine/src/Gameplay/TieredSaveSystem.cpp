@@ -70,6 +70,13 @@ void TieredSaveSystem::CollectEntitiesByTier(ECS::World* world, ECS::Persistence
         auto* sd = world->GetComponent<ECS::SaveDataComponent>(entity);
         if (!sd || sd->tier != tier) continue;
 
+        // saveEnabled is the off switch on a component whose entire job is
+        // deciding what persists, and it had no reader: unticking it in the
+        // inspector saved the entity anyway. Of the failures a save system can
+        // have, "the thing you turned off is still on" is the one a person
+        // cannot see until the load.
+        if (!sd->saveEnabled) continue;
+
         // Serialize this entity using the SceneSerializer per-entity method
         std::string entityJson = Scene::SceneSerializer::SerializeEntityToString(world, entity);
         if (entityJson.empty()) continue;
@@ -100,6 +107,24 @@ void TieredSaveSystem::CollectEntitiesByTier(ECS::World* world, ECS::Persistence
             continue;
         }
         parsed["stableId"] = json::object({{"id", sid->id}});
+
+        // savePosition / saveRotation / saveScale, which had no reader either:
+        // the record carried the whole transform whatever they said. Dropping a
+        // key is the right mechanism rather than writing the live value back,
+        // because DeserializeTransformComponent applies each of the three only
+        // `if (j.contains(...))` -- so an absent key leaves the loaded entity
+        // wherever the SCENE put it, which is what "do not save my position"
+        // has to mean. A patrol guard that should restart its route on load, a
+        // door that should reopen at its authored angle: both are this.
+        if (parsed.contains("transform") && parsed["transform"].is_object()) {
+            auto& xf = parsed["transform"];
+            if (!sd->savePosition) xf.erase("position");
+            if (!sd->saveRotation) xf.erase("rotation");
+            if (!sd->saveScale)    xf.erase("scale");
+            // Every field dropped: the object says nothing, so do not write it.
+            if (xf.empty()) parsed.erase("transform");
+        }
+
         entitiesArr.push_back(std::move(parsed));
     }
     outJson = entitiesArr.dump();

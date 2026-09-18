@@ -359,6 +359,7 @@ enjin_add_test(TestSceneFailureModes Unit/Scene/TestSceneFailureModes.cpp)
 enjin_add_test(TestSaveCloudSync     Unit/Gameplay/TestSaveCloudSync.cpp)
 enjin_add_test(TestTriggerZoneNotify Unit/Gameplay/TestTriggerZoneNotify.cpp)
 enjin_add_test(TestPickupMotion Unit/Gameplay/TestPickupMotion.cpp)
+enjin_add_test(TestSaveDataFlags   Unit/Gameplay/TestSaveDataFlags.cpp)
 enjin_add_test(TestRigidbodyVelocityClamp Unit/Physics/TestRigidbodyVelocityClamp.cpp)
 
 # --- Geometry ---
