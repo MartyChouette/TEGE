@@ -138,8 +138,11 @@ ENJIN_TEST(Vector2, Dot) {
 }
 
 ENJIN_TEST(Vector2, Normalize) {
+    // Same gap as Vector3::Normalize: a unit-length check cannot tell a correct
+    // direction from any other unit vector.
     Vector2 v(3.0f, 4.0f);
     Vector2 n = v.Normalized();
+    ENJIN_EXPECT_VEC2_EQ(n, 0.6f, 0.8f);
     ENJIN_EXPECT_FLOAT_NEAR(n.Length(), 1.0f, 0.001f);
 }
 
@@ -213,14 +216,32 @@ ENJIN_TEST(Vector3, Dot) {
 }
 
 ENJIN_TEST(Vector3, Cross) {
+    // Basis vectors alone cannot see a broken cross product: seven of the nine
+    // products are zero, so `y*oz - z*oy` and `y*oz + z*oy` agree. Flipping that
+    // sign in Vector.h left all 61 tests in this file green. So the inputs here
+    // have no zeros in them, and the properties are asserted alongside the
+    // numbers -- a failed orthogonality check names the broken PROPERTY, which
+    // is more use to whoever broke it than a wrong component.
+    Vector3 a(1.0f, 2.0f, 3.0f), b(4.0f, 5.0f, 6.0f);
+    Vector3 c = a.Cross(b);
+    ENJIN_EXPECT_VEC3_EQ(c, -3.0f, 6.0f, -3.0f);
+    ENJIN_EXPECT_VEC3_EQ(b.Cross(a), 3.0f, -6.0f, 3.0f);   // anticommutative
+    ENJIN_EXPECT_FLOAT_NEAR(c.Dot(a), 0.0f, 1e-3f);        // perpendicular to both
+    ENJIN_EXPECT_FLOAT_NEAR(c.Dot(b), 0.0f, 1e-3f);
+
+    // The basis case is kept. The problem was never that it existed.
     Vector3 x(1.0f, 0.0f, 0.0f), y(0.0f, 1.0f, 0.0f);
-    Vector3 z = x.Cross(y);
-    ENJIN_EXPECT_VEC3_EQ(z, 0.0f, 0.0f, 1.0f);
+    ENJIN_EXPECT_VEC3_EQ(x.Cross(y), 0.0f, 0.0f, 1.0f);
 }
 
 ENJIN_TEST(Vector3, Normalize) {
+    // Length 1 is a CONSEQUENCE of normalising, not a definition of it, and it
+    // is equally true of every wrong answer that happens to be a unit vector.
+    // Making Normalized() return (0,0,1) for every input in the engine left this
+    // file green. Assert the direction.
     Vector3 v(3.0f, 0.0f, 4.0f);
     Vector3 n = v.Normalized();
+    ENJIN_EXPECT_VEC3_EQ(n, 0.6f, 0.0f, 0.8f);
     ENJIN_EXPECT_FLOAT_NEAR(n.Length(), 1.0f, 0.001f);
 }
 
@@ -488,6 +509,84 @@ ENJIN_TEST(Quaternion, LookRotationIsPoleStable) {
         prevF = f;
         prev = q;
     }
+}
+
+// ---------------------------------------------------------------------------
+// Both halves of the SIMD fork
+//
+// Six functions in Vector.h are written TWICE: an SSE2 body and a scalar body,
+// chosen at compile time by `if (!std::is_constant_evaluated())`. At runtime the
+// SSE2 body always wins, so the scalar body is unreachable from an ordinary test
+// and is only ever executed in a constant expression -- or on a machine without
+// SSE2, which is where a game ships to and CI does not run.
+//
+// Measured: flipping the sign in the SCALAR Vector3::Cross and rebuilding left
+// all 61 tests in this file green, including the strengthened Cross test above.
+// Not because that test is weak, but because the line it is aimed at does not
+// execute. A constexpr call is the only way in.
+//
+// So each of the six is evaluated both ways and the two are required to agree.
+// That is the property that matters: which one ran is an implementation detail,
+// and the answer must not depend on it.
+// ---------------------------------------------------------------------------
+
+ENJIN_TEST(SimdParity, Vector3CrossAgreesWithItsScalarBody) {
+    // constexpr forces is_constant_evaluated() -- the scalar body.
+    constexpr Vector3 a(1.0f, 2.0f, 3.0f), b(4.0f, 5.0f, 6.0f);
+    constexpr Vector3 scalar = a.Cross(b);
+
+    // Reading them through volatile keeps the compiler from folding the runtime
+    // call into the same constant and quietly testing one path twice.
+    volatile f32 ax = 1.0f, ay = 2.0f, az = 3.0f;
+    const Vector3 simd = Vector3(ax, ay, az).Cross(Vector3(4.0f, 5.0f, 6.0f));
+
+    ENJIN_EXPECT_VEC3_EQ(scalar, -3.0f, 6.0f, -3.0f);
+    ENJIN_EXPECT_FLOAT_NEAR(simd.x, scalar.x, 1e-5f);
+    ENJIN_EXPECT_FLOAT_NEAR(simd.y, scalar.y, 1e-5f);
+    ENJIN_EXPECT_FLOAT_NEAR(simd.z, scalar.z, 1e-5f);
+}
+
+ENJIN_TEST(SimdParity, Vector3DotAgreesWithItsScalarBody) {
+    constexpr Vector3 a(1.0f, 2.0f, 3.0f), b(4.0f, -5.0f, 6.0f);
+    constexpr f32 scalar = a.Dot(b);
+
+    volatile f32 ax = 1.0f, ay = 2.0f, az = 3.0f;
+    const f32 simd = Vector3(ax, ay, az).Dot(Vector3(4.0f, -5.0f, 6.0f));
+
+    ENJIN_EXPECT_FLOAT_NEAR(scalar, 12.0f, 1e-5f);   // 4 - 10 + 18
+    ENJIN_EXPECT_FLOAT_NEAR(simd, scalar, 1e-5f);
+}
+
+ENJIN_TEST(SimdParity, Vector4DotAgreesWithItsScalarBody) {
+    constexpr Vector4 a(1.0f, 2.0f, 3.0f, 4.0f), b(5.0f, -6.0f, 7.0f, -8.0f);
+    constexpr f32 scalar = a.Dot(b);
+
+    volatile f32 ax = 1.0f;
+    const f32 simd = Vector4(ax, 2.0f, 3.0f, 4.0f).Dot(Vector4(5.0f, -6.0f, 7.0f, -8.0f));
+
+    ENJIN_EXPECT_FLOAT_NEAR(scalar, -18.0f, 1e-5f);  // 5 - 12 + 21 - 32
+    ENJIN_EXPECT_FLOAT_NEAR(simd, scalar, 1e-5f);
+}
+
+ENJIN_TEST(SimdParity, Vector4ArithmeticAgreesWithItsScalarBodies) {
+    // operator+, operator- and operator*(f32) are all forked the same way, and
+    // all three are one shuffle away from silently permuting the components.
+    constexpr Vector4 a(1.0f, 2.0f, 3.0f, 4.0f), b(10.0f, 20.0f, 30.0f, 40.0f);
+    constexpr Vector4 sum = a + b;
+    constexpr Vector4 difference = b - a;
+    constexpr Vector4 scaled = a * 2.5f;
+
+    volatile f32 ax = 1.0f;
+    const Vector4 ra(ax, 2.0f, 3.0f, 4.0f);
+    const Vector4 rb(10.0f, 20.0f, 30.0f, 40.0f);
+
+    ENJIN_EXPECT_VEC4_EQ(sum, 11.0f, 22.0f, 33.0f, 44.0f);
+    ENJIN_EXPECT_VEC4_EQ(difference, 9.0f, 18.0f, 27.0f, 36.0f);
+    ENJIN_EXPECT_VEC4_EQ(scaled, 2.5f, 5.0f, 7.5f, 10.0f);
+
+    ENJIN_EXPECT_VEC4_EQ(ra + rb, sum.x, sum.y, sum.z, sum.w);
+    ENJIN_EXPECT_VEC4_EQ(rb - ra, difference.x, difference.y, difference.z, difference.w);
+    ENJIN_EXPECT_VEC4_EQ(ra * 2.5f, scaled.x, scaled.y, scaled.z, scaled.w);
 }
 
 ENJIN_TEST_MAIN()

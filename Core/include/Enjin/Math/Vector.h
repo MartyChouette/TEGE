@@ -1,5 +1,21 @@
 #pragma once
 
+// There were TWO files at the include path "Enjin/Math/Vector.h": this one and
+// Engine/include/Enjin/Math/Vector.h. Whichever include directory a translation
+// unit searched first decided which Vector3 it got, and the Engine copy -- the
+// one the engine and every test actually compiled against -- was the pre-SIMD
+// version. So bf5c2d6e's SIMD math sprint never ran anywhere, and Core and
+// Engine object files disagreed about the inline bodies of a type they pass to
+// each other.
+//
+// It was invisible from the outside: both copies compute the same answers, so
+// nothing failed. It surfaced only when a mutation test broke Normalized() HERE
+// and all 65 math tests stayed green, because the header under test was the
+// other one.
+//
+// The Engine copy is deleted. Do not add a second Enjin/Math/*.h anywhere.
+
+
 #include "Enjin/Math/Math.h"
 #include "Enjin/Math/Simd.h"
 #include <cstring>
@@ -192,6 +208,21 @@ struct ENJIN_API Vector4 {
 using Vec2 = Vector2;
 using Vec3 = Vector3;
 using Vec4 = Vector4;
+
+// Interpolation functions.
+// These lived only in the Engine copy of this header. See the note at the top
+// of the file for why there was a second copy.
+ENJIN_FORCE_INLINE Vector2 Lerp(const Vector2& a, const Vector2& b, f32 t) {
+    return a + (b - a) * Clamp(t, 0.0f, 1.0f);
+}
+
+ENJIN_FORCE_INLINE Vector3 Lerp(const Vector3& a, const Vector3& b, f32 t) {
+    return a + (b - a) * Clamp(t, 0.0f, 1.0f);
+}
+
+ENJIN_FORCE_INLINE Vector4 Lerp(const Vector4& a, const Vector4& b, f32 t) {
+    return a + (b - a) * Clamp(t, 0.0f, 1.0f);
+}
 
 } // namespace Math
 } // namespace Enjin
