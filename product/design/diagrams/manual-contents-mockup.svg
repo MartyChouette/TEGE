@@ -1,0 +1,355 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:svg="http://www.w3.org/2000/svg"
+     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+     xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+     viewBox="0 0 1600 1260" width="1600" height="1260"
+     role="img"
+     aria-label="A contents mockup for the TEGE player's manual: nine chapters and three appendices with their sections, page numbers, audience markers, and a status column showing which parts are written.">
+  <title>TEGE manual, chapters and sections</title>
+  <desc>Structure drawn in the pack-in manual idiom: numbered chapters in navy squares, sections on gold squares, dot leaders to page numbers, audience markers in the margin, and a status column using the verdict marks.</desc>
+  <sodipodi:namedview inkscape:document-units="px" pagecolor="#FDFBF4" bordercolor="#16161A"/>
+
+  <defs>
+    <pattern id="leader" width="6" height="2" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="1" fill="#9A9A9A"/>
+    </pattern>
+  </defs>
+
+  <g inkscape:groupmode="layer" inkscape:label="00 Paper" id="m-paper" sodipodi:insensitive="true">
+    <rect x="0" y="0" width="1600" height="1260" fill="#FDFBF4"/>
+  </g>
+
+  <g inkscape:groupmode="layer" inkscape:label="10 Title" id="m-title">
+    <rect x="0" y="0" width="1600" height="92" fill="#12233D"/>
+    <rect x="0" y="86" width="1600" height="6" fill="#D62828"/>
+    <text x="32" y="50" font-family="Impact, Anton, sans-serif" font-size="38" fill="#FDFBF4">TEGE PLAYER'S MANUAL</text>
+    <text x="32" y="74" font-family="Archivo, Arial, sans-serif" font-size="14" fill="#C9D2DE">Chapters and sections. Structure mockup in the pack-in manual idiom.</text>
+    <rect x="1370" y="22" width="198" height="30" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+    <text x="1469" y="44" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="17" fill="#16161A">STRUCTURE MOCKUP</text>
+    <text x="1568" y="72" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="13" fill="#F2B417">2026-09-17</text>
+  </g>
+
+  <!-- =============== LEFT PAGE =============== -->
+  <g inkscape:groupmode="layer" inkscape:label="20 Column one" id="m-col1">
+    <rect x="32" y="112" width="424" height="30" fill="#12233D"/>
+    <text x="46" y="134" font-family="Impact, Anton, sans-serif" font-size="17" fill="#FDFBF4">CONTENTS</text>
+
+    <text x="46" y="176" font-family="Impact, Anton, sans-serif" font-size="16" fill="#D62828">FRONT MATTER</text>
+    <rect x="48" y="188" width="12" height="12" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+    <text x="70" y="199" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">Before you start: the one rule</text>
+    <line x1="290" y1="196" x2="428" y2="196" stroke="#9A9A9A" stroke-width="2" stroke-dasharray="1.5 4"/>
+    <text x="448" y="199" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">2</text>
+    <rect x="48" y="208" width="12" height="12" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+    <text x="70" y="219" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">How to read the boxes</text>
+    <line x1="250" y1="216" x2="428" y2="216" stroke="#9A9A9A" stroke-width="2" stroke-dasharray="1.5 4"/>
+    <text x="448" y="219" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">4</text>
+    <rect x="48" y="228" width="12" height="12" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+    <text x="70" y="239" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">Meet the three players</text>
+    <line x1="252" y1="236" x2="428" y2="236" stroke="#9A9A9A" stroke-width="2" stroke-dasharray="1.5 4"/>
+    <text x="448" y="239" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">5</text>
+
+    <g inkscape:label="ch1">
+      <rect x="46" y="268" width="26" height="26" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+      <text x="59" y="288" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="17" fill="#FDFBF4">1</text>
+      <text x="84" y="288" font-family="Impact, Anton, sans-serif" font-size="18" fill="#16161A">SETTING UP</text>
+      <rect x="426" y="272" width="20" height="18" fill="#12233D"/>
+      <text x="436" y="286" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#FDFBF4">2</text>
+      <rect x="84" y="302" width="11" height="11" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+      <text x="104" y="312" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">Installing, and first launch</text>
+      <line x1="272" y1="309" x2="428" y2="309" stroke="#9A9A9A" stroke-width="2" stroke-dasharray="1.5 4"/>
+      <text x="448" y="312" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">8</text>
+      <rect x="84" y="320" width="11" height="11" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+      <text x="104" y="330" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">The project hub</text>
+      <line x1="212" y1="327" x2="424" y2="327" stroke="#9A9A9A" stroke-width="2" stroke-dasharray="1.5 4"/>
+      <text x="448" y="330" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">10</text>
+    </g>
+
+    <g inkscape:label="ch2">
+      <rect x="46" y="352" width="26" height="26" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+      <text x="59" y="372" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="17" fill="#FDFBF4">2</text>
+      <text x="84" y="372" font-family="Impact, Anton, sans-serif" font-size="18" fill="#16161A">CREATIVE MODE</text>
+      <rect x="426" y="356" width="20" height="18" fill="#12233D"/>
+      <text x="436" y="370" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#FDFBF4">2</text>
+      <rect x="84" y="386" width="11" height="11" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+      <text x="104" y="396" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">The rail, and its three bands</text>
+      <line x1="284" y1="393" x2="424" y2="393" stroke="#9A9A9A" stroke-width="2" stroke-dasharray="1.5 4"/>
+      <text x="448" y="396" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">14</text>
+      <rect x="84" y="404" width="11" height="11" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+      <text x="104" y="414" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">Press, drag, release</text>
+      <line x1="236" y1="411" x2="424" y2="411" stroke="#9A9A9A" stroke-width="2" stroke-dasharray="1.5 4"/>
+      <text x="448" y="414" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">16</text>
+      <rect x="84" y="422" width="11" height="11" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+      <text x="104" y="432" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">Path is a different gesture</text>
+      <line x1="270" y1="429" x2="424" y2="429" stroke="#9A9A9A" stroke-width="2" stroke-dasharray="1.5 4"/>
+      <text x="448" y="432" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">18</text>
+    </g>
+
+    <g inkscape:label="ch3">
+      <rect x="46" y="454" width="26" height="26" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+      <text x="59" y="474" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="17" fill="#FDFBF4">3</text>
+      <text x="84" y="474" font-family="Impact, Anton, sans-serif" font-size="18" fill="#16161A">BUILDING A LEVEL</text>
+      <rect x="426" y="458" width="20" height="18" fill="#12233D"/>
+      <text x="436" y="472" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#FDFBF4">2</text>
+      <rect x="84" y="488" width="11" height="11" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+      <text x="104" y="498" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">Blocking out in grey</text>
+      <line x1="238" y1="495" x2="424" y2="495" stroke="#9A9A9A" stroke-width="2" stroke-dasharray="1.5 4"/>
+      <text x="448" y="498" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">20</text>
+      <rect x="84" y="506" width="11" height="11" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+      <text x="104" y="516" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">Terrain, water and caves</text>
+      <line x1="268" y1="513" x2="424" y2="513" stroke="#9A9A9A" stroke-width="2" stroke-dasharray="1.5 4"/>
+      <text x="448" y="516" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">23</text>
+      <rect x="84" y="524" width="11" height="11" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+      <text x="104" y="534" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">Plants, and why they go last</text>
+      <line x1="286" y1="531" x2="424" y2="531" stroke="#9A9A9A" stroke-width="2" stroke-dasharray="1.5 4"/>
+      <text x="448" y="534" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">26</text>
+    </g>
+
+    <g inkscape:label="ch4">
+      <rect x="46" y="556" width="26" height="26" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+      <text x="59" y="576" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="17" fill="#FDFBF4">4</text>
+      <text x="84" y="576" font-family="Impact, Anton, sans-serif" font-size="18" fill="#16161A">MAKING IT MOVE</text>
+      <rect x="426" y="560" width="20" height="18" fill="#12233D"/>
+      <text x="436" y="574" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#FDFBF4">2</text>
+      <rect x="84" y="590" width="11" height="11" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+      <text x="104" y="600" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">Controllers and colliders</text>
+      <line x1="266" y1="597" x2="424" y2="597" stroke="#9A9A9A" stroke-width="2" stroke-dasharray="1.5 4"/>
+      <text x="448" y="600" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">28</text>
+      <rect x="84" y="608" width="11" height="11" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+      <text x="104" y="618" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">Wind, and what it does not push</text>
+      <line x1="308" y1="615" x2="424" y2="615" stroke="#9A9A9A" stroke-width="2" stroke-dasharray="1.5 4"/>
+      <text x="448" y="618" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">31</text>
+      <rect x="84" y="626" width="11" height="11" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+      <text x="104" y="636" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">Gravity zones, and a trap</text>
+      <line x1="270" y1="633" x2="424" y2="633" stroke="#9A9A9A" stroke-width="2" stroke-dasharray="1.5 4"/>
+      <text x="448" y="636" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">33</text>
+    </g>
+
+    <g inkscape:label="ch5">
+      <rect x="46" y="658" width="26" height="26" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+      <text x="59" y="678" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="17" fill="#FDFBF4">5</text>
+      <text x="84" y="678" font-family="Impact, Anton, sans-serif" font-size="18" fill="#16161A">MENUS AND SAVES</text>
+      <rect x="426" y="662" width="20" height="18" fill="#12233D"/>
+      <text x="436" y="676" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#FDFBF4">2</text>
+      <rect x="84" y="692" width="11" height="11" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+      <text x="104" y="702" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">The nine screens</text>
+      <line x1="220" y1="699" x2="424" y2="699" stroke="#9A9A9A" stroke-width="2" stroke-dasharray="1.5 4"/>
+      <text x="448" y="702" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">36</text>
+      <rect x="84" y="710" width="11" height="11" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+      <text x="104" y="720" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">Your startup flow is empty</text>
+      <line x1="276" y1="717" x2="424" y2="717" stroke="#9A9A9A" stroke-width="2" stroke-dasharray="1.5 4"/>
+      <text x="448" y="720" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">38</text>
+      <rect x="84" y="728" width="11" height="11" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+      <text x="104" y="738" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">An empty save list must say so</text>
+      <line x1="300" y1="735" x2="424" y2="735" stroke="#9A9A9A" stroke-width="2" stroke-dasharray="1.5 4"/>
+      <text x="448" y="738" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">39</text>
+    </g>
+  </g>
+
+  <!-- =============== COLUMN TWO =============== -->
+  <g inkscape:groupmode="layer" inkscape:label="30 Column two" id="m-col2">
+    <g inkscape:label="ch6">
+      <rect x="496" y="172" width="26" height="26" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+      <text x="509" y="192" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="17" fill="#FDFBF4">6</text>
+      <text x="534" y="192" font-family="Impact, Anton, sans-serif" font-size="18" fill="#16161A">SHIPPING TO A BROWSER</text>
+      <rect x="876" y="176" width="20" height="18" fill="#12233D"/>
+      <text x="886" y="190" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#FDFBF4">2</text>
+      <rect x="534" y="206" width="11" height="11" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+      <text x="554" y="216" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">Build Game, platform web</text>
+      <line x1="718" y1="213" x2="874" y2="213" stroke="#9A9A9A" stroke-width="2" stroke-dasharray="1.5 4"/>
+      <text x="898" y="216" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">42</text>
+      <rect x="534" y="224" width="11" height="11" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+      <text x="554" y="234" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">Packed, open, or loose files</text>
+      <line x1="728" y1="231" x2="874" y2="231" stroke="#9A9A9A" stroke-width="2" stroke-dasharray="1.5 4"/>
+      <text x="898" y="234" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">44</text>
+    </g>
+
+    <g inkscape:label="ch7">
+      <rect x="496" y="256" width="26" height="26" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+      <text x="509" y="276" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="17" fill="#FDFBF4">7</text>
+      <text x="534" y="276" font-family="Impact, Anton, sans-serif" font-size="18" fill="#16161A">PLAYING ON A PHONE</text>
+      <rect x="876" y="260" width="20" height="18" fill="#12233D"/>
+      <text x="886" y="274" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#FDFBF4">2</text>
+      <rect x="534" y="290" width="11" height="11" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+      <text x="554" y="300" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">The touch fingerprint</text>
+      <line x1="690" y1="297" x2="874" y2="297" stroke="#9A9A9A" stroke-width="2" stroke-dasharray="1.5 4"/>
+      <text x="898" y="300" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">46</text>
+      <rect x="534" y="308" width="11" height="11" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+      <text x="554" y="318" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">Simulate touch before you send it</text>
+      <line x1="762" y1="315" x2="874" y2="315" stroke="#9A9A9A" stroke-width="2" stroke-dasharray="1.5 4"/>
+      <text x="898" y="318" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">48</text>
+    </g>
+
+    <g inkscape:label="ch8">
+      <rect x="496" y="340" width="26" height="26" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+      <text x="509" y="360" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="17" fill="#FDFBF4">8</text>
+      <text x="534" y="360" font-family="Impact, Anton, sans-serif" font-size="18" fill="#16161A">THE FAST PATH</text>
+      <rect x="876" y="344" width="20" height="18" fill="#12233D"/>
+      <text x="886" y="358" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#FDFBF4">1</text>
+      <rect x="534" y="374" width="11" height="11" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+      <text x="554" y="384" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">The scripting API, and lifecycle</text>
+      <line x1="748" y1="381" x2="874" y2="381" stroke="#9A9A9A" stroke-width="2" stroke-dasharray="1.5 4"/>
+      <text x="898" y="384" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">52</text>
+      <rect x="534" y="392" width="11" height="11" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+      <text x="554" y="402" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">A debugger worth opening</text>
+      <line x1="722" y1="399" x2="874" y2="399" stroke="#9A9A9A" stroke-width="2" stroke-dasharray="1.5 4"/>
+      <text x="898" y="402" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">56</text>
+      <rect x="534" y="410" width="11" height="11" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+      <text x="554" y="420" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">Fixing a texture without leaving</text>
+      <line x1="750" y1="417" x2="874" y2="417" stroke="#9A9A9A" stroke-width="2" stroke-dasharray="1.5 4"/>
+      <text x="898" y="420" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">59</text>
+      <rect x="534" y="428" width="11" height="11" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+      <text x="554" y="438" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">Traps that punish transferred habits</text>
+      <line x1="790" y1="435" x2="874" y2="435" stroke="#9A9A9A" stroke-width="2" stroke-dasharray="1.5 4"/>
+      <text x="898" y="438" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">62</text>
+    </g>
+
+    <g inkscape:label="ch9">
+      <rect x="496" y="460" width="26" height="26" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+      <text x="509" y="480" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="17" fill="#FDFBF4">9</text>
+      <text x="534" y="480" font-family="Impact, Anton, sans-serif" font-size="18" fill="#16161A">WITHOUT A MOUSE</text>
+      <rect x="876" y="464" width="20" height="18" fill="#12233D"/>
+      <text x="886" y="478" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#FDFBF4">3</text>
+      <rect x="534" y="494" width="11" height="11" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+      <text x="554" y="504" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">Five devices, really configurable</text>
+      <line x1="756" y1="501" x2="874" y2="501" stroke="#9A9A9A" stroke-width="2" stroke-dasharray="1.5 4"/>
+      <text x="898" y="504" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">66</text>
+      <rect x="534" y="512" width="11" height="11" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+      <text x="554" y="522" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">Scanning, and how big a group</text>
+      <line x1="748" y1="519" x2="874" y2="519" stroke="#9A9A9A" stroke-width="2" stroke-dasharray="1.5 4"/>
+      <text x="898" y="522" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">69</text>
+      <rect x="534" y="530" width="11" height="11" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+      <text x="554" y="540" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">The dial you cannot open</text>
+      <line x1="722" y1="537" x2="874" y2="537" stroke="#9A9A9A" stroke-width="2" stroke-dasharray="1.5 4"/>
+      <text x="898" y="540" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">71</text>
+    </g>
+
+    <g inkscape:label="appendices">
+      <line x1="496" y1="572" x2="898" y2="572" stroke="#16161A" stroke-width="3"/>
+      <text x="496" y="600" font-family="Impact, Anton, sans-serif" font-size="16" fill="#D62828">APPENDICES</text>
+      <rect x="498" y="612" width="12" height="12" fill="#D62828" stroke="#16161A" stroke-width="2"/>
+      <text x="520" y="623" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">A &#183; When something does nothing</text>
+      <line x1="740" y1="620" x2="874" y2="620" stroke="#9A9A9A" stroke-width="2" stroke-dasharray="1.5 4"/>
+      <text x="898" y="623" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">74</text>
+      <rect x="498" y="632" width="12" height="12" fill="#D62828" stroke="#16161A" stroke-width="2"/>
+      <text x="520" y="643" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">B &#183; Trap index</text>
+      <line x1="626" y1="640" x2="874" y2="640" stroke="#9A9A9A" stroke-width="2" stroke-dasharray="1.5 4"/>
+      <text x="898" y="643" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">78</text>
+      <rect x="498" y="652" width="12" height="12" fill="#D62828" stroke="#16161A" stroke-width="2"/>
+      <text x="520" y="663" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">C &#183; Glossary and index</text>
+      <line x1="680" y1="660" x2="874" y2="660" stroke="#9A9A9A" stroke-width="2" stroke-dasharray="1.5 4"/>
+      <text x="898" y="663" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">82</text>
+    </g>
+
+    <rect x="496" y="694" width="402" height="52" fill="#F0EBDD" stroke="#16161A" stroke-width="3"/>
+    <text x="510" y="716" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#16161A">Nine chapters, three appendices, about 86 pages.</text>
+    <text x="510" y="734" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">Chapters 1 to 7 run as one walkthrough. 8 and 9 stand alone.</text>
+  </g>
+
+  <!-- =============== RIGHT PANEL =============== -->
+  <g inkscape:groupmode="layer" inkscape:label="40 Key and status" id="m-key">
+    <line x1="938" y1="112" x2="938" y2="1040" stroke="#16161A" stroke-width="3"/>
+
+    <rect x="970" y="112" width="598" height="30" fill="#12233D"/>
+    <text x="984" y="134" font-family="Impact, Anton, sans-serif" font-size="17" fill="#FDFBF4">HOW THIS MANUAL IS BUILT</text>
+
+    <text x="970" y="174" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">Depth is a coloured square, not a type size</text>
+    <rect x="972" y="186" width="24" height="24" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+    <text x="1010" y="204" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">chapter</text>
+    <rect x="1106" y="190" width="16" height="16" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+    <text x="1134" y="204" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">section</text>
+    <rect x="1230" y="190" width="16" height="16" fill="#D62828" stroke="#16161A" stroke-width="3"/>
+    <text x="1258" y="204" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">appendix</text>
+    <text x="970" y="232" font-family="Archivo, Arial, sans-serif" font-size="12" font-style="italic" fill="#5A5A63">Open the book anywhere and you know your depth without reading a word.</text>
+
+    <text x="970" y="272" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">The margin number says who the chapter is for</text>
+    <rect x="972" y="284" width="22" height="20" fill="#12233D"/>
+    <text x="983" y="299" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#FDFBF4">1</text>
+    <text x="1004" y="299" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">has shipped games before</text>
+    <rect x="972" y="310" width="22" height="20" fill="#12233D"/>
+    <text x="983" y="325" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#FDFBF4">2</text>
+    <text x="1004" y="325" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">never opened a game engine</text>
+    <rect x="972" y="336" width="22" height="20" fill="#12233D"/>
+    <text x="983" y="351" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#FDFBF4">3</text>
+    <text x="1004" y="351" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">plays with a switch and a gaze tracker</text>
+    <rect x="1290" y="282" width="278" height="76" fill="#F4E6E1" stroke="#D62828" stroke-width="3"/>
+    <text x="1302" y="302" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#D62828">All three markers are the SAME navy.</text>
+    <text x="1302" y="320" font-family="Archivo, Arial, sans-serif" font-size="11.5" fill="#16161A">Only the numeral changes. Our hues already</text>
+    <text x="1302" y="336" font-family="Archivo, Arial, sans-serif" font-size="11.5" fill="#16161A">mean works, caution and missing. Spending</text>
+    <text x="1302" y="352" font-family="Archivo, Arial, sans-serif" font-size="11.5" fill="#16161A">them on audience would break the system.</text>
+
+    <text x="970" y="396" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">Three boxes interrupt the text, and only three</text>
+    <g inkscape:label="try box">
+      <rect x="976" y="414" width="180" height="70" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <rect x="976" y="414" width="180" height="24" fill="#17804A"/>
+      <text x="988" y="432" font-family="Impact, Anton, sans-serif" font-size="14" fill="#FFFFFF">TRY IT</text>
+      <text x="988" y="456" font-family="Archivo, Arial, sans-serif" font-size="11.5" fill="#16161A">Do this now. Checked</text>
+      <text x="988" y="472" font-family="Archivo, Arial, sans-serif" font-size="11.5" fill="#16161A">against the engine.</text>
+    </g>
+    <g inkscape:label="watch box">
+      <rect x="1174" y="414" width="180" height="70" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <rect x="1174" y="414" width="180" height="24" fill="#F2B417"/>
+      <text x="1186" y="432" font-family="Impact, Anton, sans-serif" font-size="14" fill="#16161A">WATCH OUT</text>
+      <text x="1186" y="456" font-family="Archivo, Arial, sans-serif" font-size="11.5" fill="#16161A">It works, but not the</text>
+      <text x="1186" y="472" font-family="Archivo, Arial, sans-serif" font-size="11.5" fill="#16161A">way you expect.</text>
+    </g>
+    <g inkscape:label="owes box">
+      <rect x="1372" y="414" width="196" height="70" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <rect x="1372" y="414" width="196" height="24" fill="#D62828"/>
+      <text x="1384" y="432" font-family="Impact, Anton, sans-serif" font-size="14" fill="#FFFFFF">THE ENGINE OWES YOU</text>
+      <text x="1384" y="456" font-family="Archivo, Arial, sans-serif" font-size="11.5" fill="#16161A">Not there yet. Carries</text>
+      <text x="1384" y="472" font-family="Archivo, Arial, sans-serif" font-size="11.5" fill="#16161A">a gap ID.</text>
+    </g>
+
+    <rect x="970" y="520" width="598" height="30" fill="#D62828"/>
+    <text x="984" y="542" font-family="Impact, Anton, sans-serif" font-size="17" fill="#FFFFFF">WHAT IS ACTUALLY WRITTEN</text>
+
+    <g inkscape:label="status rows">
+      <circle cx="986" cy="578" r="12" fill="#17804A" stroke="#16161A" stroke-width="3"/>
+      <polyline points="980,578 985,584 993,572" fill="none" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="1010" y="583" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#16161A">Chapters 2 to 7</text>
+      <text x="1170" y="583" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#5A5A63">written in full, as Player Two's walkthrough</text>
+
+      <polygon points="986,602 998,626 974,626" fill="#F2B417" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+      <line x1="986" y1="610" x2="986" y2="618" stroke="#16161A" stroke-width="3" stroke-linecap="round"/>
+      <circle cx="986" cy="622" r="2" fill="#16161A"/>
+      <text x="1010" y="619" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#16161A">Chapters 8 and 9</text>
+      <text x="1170" y="619" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#5A5A63">framed against verified anchors, not drafted</text>
+
+      <rect x="974" y="638" width="24" height="24" fill="#D62828" stroke="#16161A" stroke-width="3"/>
+      <line x1="979" y1="657" x2="993" y2="643" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round"/>
+      <text x="1010" y="655" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#16161A">Chapter 1, appendices</text>
+      <text x="1170" y="655" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#5A5A63">not started. Appendix A exists as ENGINE_FACTS</text>
+    </g>
+
+    <text x="970" y="700" font-family="Archivo, Arial, sans-serif" font-size="12" font-style="italic" fill="#5A5A63">The same three marks that appear inside the manual also describe the manual. That is deliberate:</text>
+    <text x="970" y="718" font-family="Archivo, Arial, sans-serif" font-size="12" font-style="italic" fill="#5A5A63">a reader who learns them on this page can read a status and a warning with the same glance.</text>
+
+    <rect x="970" y="748" width="598" height="30" fill="#12233D"/>
+    <text x="984" y="770" font-family="Impact, Anton, sans-serif" font-size="17" fill="#FDFBF4">PAGE FURNITURE, EVERY SPREAD</text>
+
+    <rect x="976" y="800" width="270" height="110" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+    <text x="990" y="822" font-family="Archivo, Arial, sans-serif" font-size="11" font-style="italic" fill="#5A5A63">CREATIVE MODE</text>
+    <line x1="990" y1="830" x2="1232" y2="830" stroke="#DAD5C6" stroke-width="2"/>
+    <rect x="1000" y="842" width="90" height="52" fill="#C9D6CF" stroke="#16161A" stroke-width="3"/>
+    <text x="1104" y="858" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#16161A">framed = a real screen</text>
+    <text x="1104" y="876" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">unframed = a drawing</text>
+    <rect x="1096" y="884" width="22" height="18" fill="#12233D"/>
+    <text x="1107" y="898" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="13" fill="#FDFBF4">16</text>
+    <text x="1232" y="898" text-anchor="end" font-family="Archivo, Arial, sans-serif" font-size="11" font-style="italic" fill="#5A5A63">TEGE</text>
+
+    <text x="1270" y="822" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">Running head names the chapter, so a reader</text>
+    <text x="1270" y="840" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">who opens in the middle is never lost.</text>
+    <text x="1270" y="866" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">Page number in a chip at the foot, publication</text>
+    <text x="1270" y="884" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">name opposite. The two swap on facing pages.</text>
+    <text x="1270" y="910" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#D62828">Cross-references go inline: (see page 33).</text>
+  </g>
+
+  <g inkscape:groupmode="layer" inkscape:label="99 Footer" id="m-footer" sodipodi:insensitive="true">
+    <line x1="32" y1="1060" x2="1568" y2="1060" stroke="#16161A" stroke-width="3"/>
+    <text x="32" y="1086" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-style="italic" fill="#5A5A63">Fashioned after the pack-in manuals rather than the one-page designs, because this is the reader-facing artifact: read once in order, then used as a reference forever.</text>
+    <text x="32" y="1106" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-style="italic" fill="#5A5A63">Page numbers are a proposal for pacing, not a measurement. Chapters 2 to 7 already exist as manual/10-first-timer.md.</text>
+    <text x="32" y="1136" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">product/design/diagrams/manual-contents-mockup.svg &#183; structure only, no page designed yet &#183; all marks original</text>
+    <rect x="1392" y="1072" width="176" height="30" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+    <text x="1480" y="1093" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="15" fill="#16161A">NOT TO SCALE</text>
+  </g>
+</svg>

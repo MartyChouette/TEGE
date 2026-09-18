@@ -1,0 +1,314 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:svg="http://www.w3.org/2000/svg"
+     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+     xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+     viewBox="0 0 1240 1240" width="1240" height="1240">
+  <title>TEGE symbol set</title>
+  <desc>Original marks for TEGE documents. Verdicts, depth bullets, input devices, engine nouns, structural marks, and the reach strip. Drawn from simple geometry so they survive at 16px and stay editable.</desc>
+
+  <sodipodi:namedview inkscape:document-units="px" pagecolor="#FDFBF4" bordercolor="#16161A"/>
+
+  <g inkscape:groupmode="layer" inkscape:label="00 Paper" id="layer-paper" sodipodi:insensitive="true">
+    <rect x="0" y="0" width="1240" height="1240" fill="#FDFBF4"/>
+    <text x="50" y="56" font-family="Impact, Anton, sans-serif" font-size="38" fill="#12233D">SYMBOLS</text>
+    <text x="50" y="82" font-family="Archivo, Arial, sans-serif" font-size="14" fill="#5A5A63">Built from squares, circles and straight lines so they hold together at 16px. No gradients, no fine detail, no outlined text.</text>
+    <line x1="50" y1="98" x2="1190" y2="98" stroke="#16161A" stroke-width="3"/>
+  </g>
+
+  <!-- ===================== A. VERDICTS AND DEPTH ===================== -->
+  <g inkscape:groupmode="layer" inkscape:label="A Verdicts and depth" id="layer-verdict">
+    <text x="50" y="136" font-family="Impact, Anton, sans-serif" font-size="20" fill="#D62828">A &#183; VERDICTS AND DEPTH</text>
+
+    <g inkscape:label="Works" id="sym-works">
+      <circle cx="130" cy="190" r="26" fill="#17804A" stroke="#16161A" stroke-width="3"/>
+      <polyline points="117,190 127,201 145,178" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <text x="130" y="248" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#16161A">WORKS</text>
+    <text x="130" y="266" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">verified, do this</text>
+
+    <g inkscape:label="Surprise" id="sym-surprise">
+      <polygon points="295,162 323,212 267,212" fill="#F2B417" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+      <line x1="295" y1="180" x2="295" y2="196" stroke="#16161A" stroke-width="4" stroke-linecap="round"/>
+      <circle cx="295" cy="204" r="2.6" fill="#16161A"/>
+    </g>
+    <text x="295" y="248" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#16161A">SURPRISE</text>
+    <text x="295" y="266" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">works, but not how you think</text>
+
+    <g inkscape:label="Missing" id="sym-missing">
+      <rect x="434" y="164" width="52" height="52" fill="#D62828" stroke="#16161A" stroke-width="3"/>
+      <line x1="444" y1="206" x2="476" y2="174" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round"/>
+    </g>
+    <text x="460" y="248" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#16161A">MISSING</text>
+    <text x="460" y="266" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">not there, has a gap ID</text>
+
+    <g inkscape:label="Chapter bullet" id="sym-chapter">
+      <rect x="601" y="166" width="48" height="48" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+      <text x="625" y="201" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="26" fill="#FDFBF4">3</text>
+    </g>
+    <text x="625" y="248" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#16161A">CHAPTER</text>
+    <text x="625" y="266" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">navy, numbered</text>
+
+    <g inkscape:label="Section bullet" id="sym-section">
+      <rect x="772" y="172" width="36" height="36" fill="#0B5FCE" stroke="#16161A" stroke-width="3"/>
+    </g>
+    <text x="790" y="248" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#16161A">SECTION</text>
+    <text x="790" y="266" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">blue square</text>
+
+    <g inkscape:label="Step bullet" id="sym-step">
+      <rect x="943" y="178" width="24" height="24" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+    </g>
+    <text x="955" y="248" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#16161A">STEP</text>
+    <text x="955" y="266" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">gold square</text>
+
+    <g inkscape:label="Gap badge" id="sym-gapbadge">
+      <rect x="1086" y="172" width="68" height="36" fill="#D62828" stroke="#16161A" stroke-width="3"/>
+      <text x="1120" y="199" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="21" fill="#FFFFFF">G4</text>
+    </g>
+    <text x="1120" y="248" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#16161A">GAP ID</text>
+    <text x="1120" y="266" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">never a number alone</text>
+
+    <text x="50" y="296" font-family="Archivo, Arial, sans-serif" font-size="11.5" font-style="italic" fill="#5A5A63">Depth is carried by the bullet, not by type size. Open a page anywhere and you know how deep you are without reading.</text>
+  </g>
+
+  <!-- ===================== B. INPUT DEVICES ===================== -->
+  <g inkscape:groupmode="layer" inkscape:label="B Input devices" id="layer-inputs">
+    <text x="50" y="348" font-family="Impact, Anton, sans-serif" font-size="20" fill="#D62828">B &#183; INPUT DEVICES</text>
+
+    <g inkscape:label="Mouse" id="sym-mouse">
+      <rect x="112" y="376" width="36" height="56" rx="18" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <line x1="130" y1="376" x2="130" y2="396" stroke="#16161A" stroke-width="3"/>
+      <rect x="127" y="384" width="6" height="13" rx="3" fill="#16161A"/>
+    </g>
+    <text x="130" y="456" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A">MOUSE</text>
+
+    <g inkscape:label="Keyboard" id="sym-key">
+      <rect x="269" y="380" width="52" height="48" rx="6" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <rect x="278" y="388" width="34" height="24" rx="3" fill="#F0EBDD" stroke="#16161A" stroke-width="2"/>
+    </g>
+    <text x="295" y="456" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A">KEY</text>
+
+    <g inkscape:label="Gamepad" id="sym-pad">
+      <rect x="424" y="386" width="72" height="38" rx="17" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <rect x="440" y="402" width="16" height="6" fill="#16161A"/>
+      <rect x="445" y="397" width="6" height="16" fill="#16161A"/>
+      <circle cx="474" cy="399" r="5" fill="#16161A"/>
+      <circle cx="484" cy="410" r="5" fill="#16161A"/>
+    </g>
+    <text x="460" y="456" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A">GAMEPAD</text>
+
+    <g inkscape:label="Touch" id="sym-touch">
+      <rect x="617" y="396" width="16" height="34" rx="8" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <path d="M 607 390 A 18 18 0 0 1 643 390" fill="none" stroke="#16161A" stroke-width="3" stroke-linecap="round"/>
+      <path d="M 597 382 A 28 28 0 0 1 653 382" fill="none" stroke="#16161A" stroke-width="3" stroke-linecap="round" opacity="0.55"/>
+    </g>
+    <text x="625" y="456" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A">TOUCH</text>
+
+    <g inkscape:label="Switch" id="sym-switch">
+      <circle cx="790" cy="404" r="24" fill="#FFFFFF" stroke="#16161A" stroke-width="4"/>
+      <circle cx="790" cy="404" r="10" fill="#16161A"/>
+    </g>
+    <text x="790" y="456" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A">SWITCH</text>
+
+    <g inkscape:label="Gaze" id="sym-gaze">
+      <path d="M 925 404 Q 955 380 985 404 Q 955 428 925 404 Z" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <circle cx="955" cy="404" r="9" fill="#16161A"/>
+    </g>
+    <text x="955" y="456" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A">GAZE</text>
+
+    <g inkscape:label="Sip and puff" id="sym-sip">
+      <rect x="1094" y="390" width="16" height="28" rx="5" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <path d="M 1122 394 q 9 10 0 20" fill="none" stroke="#16161A" stroke-width="3" stroke-linecap="round"/>
+      <path d="M 1134 388 q 12 16 0 32" fill="none" stroke="#16161A" stroke-width="3" stroke-linecap="round" opacity="0.7"/>
+      <path d="M 1146 382 q 15 22 0 44" fill="none" stroke="#16161A" stroke-width="3" stroke-linecap="round" opacity="0.45"/>
+    </g>
+    <text x="1120" y="456" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A">SIP / PUFF</text>
+
+    <text x="50" y="484" font-family="Archivo, Arial, sans-serif" font-size="11.5" font-style="italic" fill="#5A5A63">Seven devices, because seven is what the engine actually supports. These sizes are for headings and legends. The reach strip below uses the same glyphs at 26px.</text>
+  </g>
+
+  <!-- ===================== C. ENGINE NOUNS ===================== -->
+  <g inkscape:groupmode="layer" inkscape:label="C Engine nouns" id="layer-nouns">
+    <text x="50" y="530" font-family="Impact, Anton, sans-serif" font-size="20" fill="#D62828">C &#183; ENGINE NOUNS</text>
+
+    <g inkscape:label="Entity" id="sym-entity">
+      <rect x="104" y="558" width="52" height="52" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <circle cx="130" cy="584" r="7" fill="#16161A"/>
+    </g>
+    <text x="130" y="636" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A">ENTITY</text>
+
+    <g inkscape:label="Component" id="sym-component">
+      <rect x="269" y="560" width="48" height="48" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <rect x="317" y="574" width="14" height="20" fill="#16161A"/>
+    </g>
+    <text x="295" y="636" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A">COMPONENT</text>
+
+    <g inkscape:label="System" id="sym-system">
+      <rect x="428" y="562" width="54" height="10" fill="#16161A"/>
+      <rect x="428" y="578" width="54" height="10" fill="#16161A"/>
+      <rect x="428" y="594" width="54" height="10" fill="#16161A"/>
+      <polygon points="490,574 508,584 490,594" fill="#17804A" stroke="#16161A" stroke-width="2"/>
+    </g>
+    <text x="460" y="636" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A">SYSTEM</text>
+
+    <g inkscape:label="Scene" id="sym-scene">
+      <rect x="591" y="560" width="68" height="48" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <line x1="591" y1="592" x2="659" y2="592" stroke="#16161A" stroke-width="3"/>
+      <circle cx="641" cy="574" r="7" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+    </g>
+    <text x="625" y="636" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A">SCENE</text>
+
+    <g inkscape:label="Script" id="sym-script">
+      <polyline points="780,564 766,584 780,604" fill="none" stroke="#16161A" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+      <polyline points="800,564 814,584 800,604" fill="none" stroke="#16161A" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <text x="790" y="636" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A">SCRIPT</text>
+
+    <g inkscape:label="Asset" id="sym-asset">
+      <rect x="931" y="592" width="48" height="14" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <rect x="935" y="578" width="48" height="14" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <rect x="939" y="564" width="48" height="14" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+    </g>
+    <text x="955" y="636" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A">ASSET</text>
+
+    <g inkscape:label="Ship" id="sym-ship">
+      <rect x="1092" y="574" width="56" height="34" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <polygon points="1120,556 1136,574 1104,574" fill="#17804A" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+    </g>
+    <text x="1120" y="636" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A">SHIP</text>
+  </g>
+
+  <!-- ===================== D. STRUCTURAL ===================== -->
+  <g inkscape:groupmode="layer" inkscape:label="D Structural" id="layer-structural">
+    <text x="50" y="694" font-family="Impact, Anton, sans-serif" font-size="20" fill="#D62828">D &#183; STRUCTURAL</text>
+
+    <g inkscape:label="Cross reference" id="sym-xref">
+      <rect x="96" y="722" width="40" height="48" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <line x1="104" y1="736" x2="128" y2="736" stroke="#16161A" stroke-width="2.5"/>
+      <line x1="104" y1="748" x2="128" y2="748" stroke="#16161A" stroke-width="2.5"/>
+      <line x1="142" y1="746" x2="164" y2="746" stroke="#0B5FCE" stroke-width="3"/>
+      <polygon points="164,740 178,746 164,752" fill="#0B5FCE"/>
+    </g>
+    <text x="130" y="794" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A">SEE ALSO</text>
+
+    <g inkscape:label="Note" id="sym-note">
+      <rect x="271" y="724" width="48" height="44" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+      <line x1="280" y1="738" x2="310" y2="738" stroke="#16161A" stroke-width="2.5"/>
+      <line x1="280" y1="748" x2="310" y2="748" stroke="#16161A" stroke-width="2.5"/>
+      <line x1="280" y1="758" x2="300" y2="758" stroke="#16161A" stroke-width="2.5"/>
+    </g>
+    <text x="295" y="794" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A">NOTE</text>
+
+    <g inkscape:label="Source verified" id="sym-source">
+      <rect x="436" y="722" width="42" height="48" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <polyline points="446,748 456,758 474,734" fill="none" stroke="#17804A" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <text x="460" y="794" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A">READ FROM SOURCE</text>
+
+    <g inkscape:label="Reaction mascot" id="sym-mascot">
+      <circle cx="625" cy="744" r="22" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+      <circle cx="617" cy="740" r="2.8" fill="#16161A"/>
+      <circle cx="633" cy="740" r="2.8" fill="#16161A"/>
+      <path d="M 616 751 q 9 8 18 0" fill="none" stroke="#16161A" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="603" y1="752" x2="593" y2="762" stroke="#16161A" stroke-width="3" stroke-linecap="round"/>
+      <line x1="647" y1="752" x2="657" y2="762" stroke="#16161A" stroke-width="3" stroke-linecap="round"/>
+    </g>
+    <text x="625" y="794" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A">REACTION</text>
+
+    <g inkscape:label="Dial" id="sym-dial">
+      <circle cx="790" cy="744" r="23" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <circle cx="790" cy="744" r="8" fill="#12233D"/>
+      <line x1="790" y1="721" x2="790" y2="736" stroke="#16161A" stroke-width="2.5"/>
+      <line x1="810" y1="756" x2="798" y2="749" stroke="#16161A" stroke-width="2.5"/>
+      <line x1="770" y1="756" x2="782" y2="749" stroke="#16161A" stroke-width="2.5"/>
+    </g>
+    <text x="790" y="794" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A">DIAL</text>
+
+    <g inkscape:label="Offline" id="sym-offline">
+      <rect x="931" y="722" width="48" height="32" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <line x1="955" y1="754" x2="955" y2="764" stroke="#16161A" stroke-width="3"/>
+      <line x1="941" y1="764" x2="969" y2="764" stroke="#16161A" stroke-width="3"/>
+    </g>
+    <text x="955" y="794" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A">OFFLINE</text>
+
+    <g inkscape:label="Browser" id="sym-browser">
+      <rect x="1092" y="722" width="56" height="40" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <rect x="1092" y="722" width="56" height="11" fill="#12233D"/>
+      <circle cx="1100" cy="727.5" r="2" fill="#FFFFFF"/>
+      <circle cx="1107" cy="727.5" r="2" fill="#FFFFFF"/>
+      <circle cx="1114" cy="727.5" r="2" fill="#FFFFFF"/>
+    </g>
+    <text x="1120" y="794" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A">BROWSER</text>
+  </g>
+
+    <!-- ===================== E. REACH STRIP ===================== -->
+  <g inkscape:groupmode="layer" inkscape:label="E Reach strip" id="layer-reach">
+    <text x="50" y="880" font-family="Impact, Anton, sans-serif" font-size="20" fill="#D62828">E &#183; REACH STRIP</text>
+    <text x="50" y="902" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#16161A">Who can actually perform this operation. Seven positions, ALWAYS in this order, so position three is the gamepad in every language.</text>
+    <text x="50" y="920" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#16161A">Lit means yes. Hollow and struck means no. The letters below are a locale layer and can be switched off.</text>
+    <text x="50" y="974" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">Place a floor in Creative Mode</text>
+    <text x="50" y="992" font-family="Archivo, Arial, sans-serif" font-size="11" font-style="italic" fill="#5A5A63">example only, this row is not yet verified</text>
+    <rect x="560" y="950" width="34" height="38" fill="#E4EEEB" stroke="#17804A" stroke-width="3"/>
+    <rect x="570" y="956" width="14" height="26" rx="7" fill="none" stroke="#16161A" stroke-width="2.6"/><line x1="577" y1="956" x2="577" y2="965" stroke="#16161A" stroke-width="2.6"/>
+    <rect x="608" y="950" width="34" height="38" fill="#E4EEEB" stroke="#17804A" stroke-width="3"/>
+    <rect x="614" y="959" width="22" height="20" rx="3" fill="none" stroke="#16161A" stroke-width="2.6"/><rect x="619" y="963" width="12" height="8" fill="#16161A"/>
+    <rect x="656" y="950" width="34" height="38" fill="#E4EEEB" stroke="#17804A" stroke-width="3"/>
+    <rect x="659" y="961" width="28" height="16" rx="7" fill="none" stroke="#16161A" stroke-width="2.6"/><circle cx="667" cy="969" r="2.6" fill="#16161A"/><circle cx="679" cy="969" r="2.6" fill="#16161A"/>
+    <rect x="704" y="950" width="34" height="38" fill="#E4EEEB" stroke="#17804A" stroke-width="3"/>
+    <circle cx="721" cy="973" r="5" fill="#16161A"/><path d="M 709 965 A 12 12 0 0 1 733 965" fill="none" stroke="#16161A" stroke-width="2.6" stroke-linecap="round"/>
+    <rect x="752" y="950" width="34" height="38" fill="#FFFFFF" stroke="#C9C9C9" stroke-width="3"/>
+    <circle cx="769" cy="969" r="12" fill="none" stroke="#9A9A9A" stroke-width="3.2"/><circle cx="769" cy="969" r="5" fill="#9A9A9A"/>
+    <line x1="756" y1="983" x2="782" y2="955" stroke="#9A9A9A" stroke-width="2.4"/>
+    <rect x="800" y="950" width="34" height="38" fill="#FFFFFF" stroke="#C9C9C9" stroke-width="3"/>
+    <path d="M 804 969 Q 817 958 830 969 Q 817 980 804 969 Z" fill="none" stroke="#9A9A9A" stroke-width="2.6"/><circle cx="817" cy="969" r="4.5" fill="#9A9A9A"/>
+    <line x1="804" y1="983" x2="830" y2="955" stroke="#9A9A9A" stroke-width="2.4"/>
+    <rect x="848" y="950" width="34" height="38" fill="#FFFFFF" stroke="#C9C9C9" stroke-width="3"/>
+    <rect x="853" y="961" width="8" height="16" rx="3" fill="none" stroke="#9A9A9A" stroke-width="2.6"/><path d="M 866 962 q 6 7 0 14" fill="none" stroke="#9A9A9A" stroke-width="2.6" stroke-linecap="round"/><path d="M 874 959 q 8 10 0 20" fill="none" stroke="#9A9A9A" stroke-width="2.6" stroke-linecap="round"/>
+    <line x1="852" y1="983" x2="878" y2="955" stroke="#9A9A9A" stroke-width="2.4"/>
+    <text x="50" y="1088" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">Open the quick-access dial</text>
+    <text x="50" y="1106" font-family="Archivo, Arial, sans-serif" font-size="11" font-style="italic" fill="#D62828">verified, and this row is gap G2</text>
+    <rect x="560" y="1064" width="34" height="38" fill="#FFFFFF" stroke="#C9C9C9" stroke-width="3"/>
+    <rect x="570" y="1070" width="14" height="26" rx="7" fill="none" stroke="#9A9A9A" stroke-width="2.6"/><line x1="577" y1="1070" x2="577" y2="1079" stroke="#9A9A9A" stroke-width="2.6"/>
+    <line x1="564" y1="1097" x2="590" y2="1069" stroke="#9A9A9A" stroke-width="2.4"/>
+    <rect x="608" y="1064" width="34" height="38" fill="#FFFFFF" stroke="#C9C9C9" stroke-width="3"/>
+    <rect x="614" y="1073" width="22" height="20" rx="3" fill="none" stroke="#9A9A9A" stroke-width="2.6"/><rect x="619" y="1077" width="12" height="8" fill="#9A9A9A"/>
+    <line x1="612" y1="1097" x2="638" y2="1069" stroke="#9A9A9A" stroke-width="2.4"/>
+    <rect x="656" y="1064" width="34" height="38" fill="#E4EEEB" stroke="#17804A" stroke-width="3"/>
+    <rect x="659" y="1075" width="28" height="16" rx="7" fill="none" stroke="#16161A" stroke-width="2.6"/><circle cx="667" cy="1083" r="2.6" fill="#16161A"/><circle cx="679" cy="1083" r="2.6" fill="#16161A"/>
+    <rect x="704" y="1064" width="34" height="38" fill="#FFFFFF" stroke="#C9C9C9" stroke-width="3"/>
+    <circle cx="721" cy="1087" r="5" fill="#9A9A9A"/><path d="M 709 1079 A 12 12 0 0 1 733 1079" fill="none" stroke="#9A9A9A" stroke-width="2.6" stroke-linecap="round"/>
+    <line x1="708" y1="1097" x2="734" y2="1069" stroke="#9A9A9A" stroke-width="2.4"/>
+    <rect x="752" y="1064" width="34" height="38" fill="#FFFFFF" stroke="#C9C9C9" stroke-width="3"/>
+    <circle cx="769" cy="1083" r="12" fill="none" stroke="#9A9A9A" stroke-width="3.2"/><circle cx="769" cy="1083" r="5" fill="#9A9A9A"/>
+    <line x1="756" y1="1097" x2="782" y2="1069" stroke="#9A9A9A" stroke-width="2.4"/>
+    <rect x="800" y="1064" width="34" height="38" fill="#FFFFFF" stroke="#C9C9C9" stroke-width="3"/>
+    <path d="M 804 1083 Q 817 1072 830 1083 Q 817 1094 804 1083 Z" fill="none" stroke="#9A9A9A" stroke-width="2.6"/><circle cx="817" cy="1083" r="4.5" fill="#9A9A9A"/>
+    <line x1="804" y1="1097" x2="830" y2="1069" stroke="#9A9A9A" stroke-width="2.4"/>
+    <rect x="848" y="1064" width="34" height="38" fill="#FFFFFF" stroke="#C9C9C9" stroke-width="3"/>
+    <rect x="853" y="1075" width="8" height="16" rx="3" fill="none" stroke="#9A9A9A" stroke-width="2.6"/><path d="M 866 1076 q 6 7 0 14" fill="none" stroke="#9A9A9A" stroke-width="2.6" stroke-linecap="round"/><path d="M 874 1073 q 8 10 0 20" fill="none" stroke="#9A9A9A" stroke-width="2.6" stroke-linecap="round"/>
+    <line x1="852" y1="1097" x2="878" y2="1069" stroke="#9A9A9A" stroke-width="2.4"/>
+    <rect x="908" y="1064" width="150" height="38" fill="#D62828" stroke="#16161A" stroke-width="3"/>
+    <text x="983" y="1090" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="16" fill="#FFFFFF">1 OF 7</text>
+  </g>
+  <g inkscape:groupmode="layer" inkscape:label="E2 Locale letters (switch off to test)" id="layer-locale">
+    <text x="577" y="1002" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">M</text>
+    <text x="625" y="1002" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">K</text>
+    <text x="673" y="1002" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">G</text>
+    <text x="721" y="1002" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">T</text>
+    <text x="769" y="1002" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">S</text>
+    <text x="817" y="1002" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">E</text>
+    <text x="865" y="1002" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">P</text>
+    <text x="577" y="1116" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">M</text>
+    <text x="625" y="1116" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">K</text>
+    <text x="673" y="1116" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">G</text>
+    <text x="721" y="1116" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">T</text>
+    <text x="769" y="1116" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">S</text>
+    <text x="817" y="1116" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">E</text>
+    <text x="865" y="1116" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">P</text>
+  </g>
+  <g inkscape:groupmode="layer" inkscape:label="F Mirror these in right-to-left" id="layer-rtl">
+    <rect x="50" y="1146" width="1140" height="32" fill="#0B5FCE"/>
+    <text x="64" y="1169" font-family="Impact, Anton, sans-serif" font-size="16" fill="#FFFFFF">MIRROR IN RIGHT-TO-LEFT LOCALES, AND ONLY THESE</text>
+    <text x="64" y="1200" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">sym-xref &#183; sym-system &#183; sym-ship &#183; the reach strip ORDER</text>
+    <text x="64" y="1220" font-family="Archivo, Arial, sans-serif" font-size="12" font-style="italic" fill="#5A5A63">Everything else stays put. Mirroring a verdict, a device or an engine noun is the classic localisation bug.</text>
+  </g>
+</svg>

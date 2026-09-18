@@ -1,0 +1,238 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:svg="http://www.w3.org/2000/svg"
+     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+     xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+     viewBox="0 0 1640 1080" width="1640" height="1080">
+  <title>TEGE page-device stencil</title>
+  <desc>Layout devices for documents, drawn from 1990s manual and player's-guide conventions. STENCIL.svg holds interface parts; this file holds the devices a PAGE is built from.</desc>
+
+  <sodipodi:namedview inkscape:document-units="px" pagecolor="#FDFBF4" bordercolor="#16161A"/>
+
+  <g inkscape:groupmode="layer" inkscape:label="00 Paper" id="layer-paper" sodipodi:insensitive="true">
+    <rect x="0" y="0" width="1640" height="1080" fill="#FDFBF4"/>
+    <text x="40" y="58" font-family="Impact, Anton, sans-serif" font-size="38" fill="#12233D">PAGE DEVICES</text>
+    <text x="40" y="84" font-family="Archivo, Arial, sans-serif" font-size="14" fill="#5A5A63">How a page explains something. Interface parts live in STENCIL.svg. Both get copied, never redrawn.</text>
+    <line x1="40" y1="100" x2="1600" y2="100" stroke="#16161A" stroke-width="3"/>
+  </g>
+
+  <!-- ============ E. CALLOUTS AND POINTERS ============ -->
+  <g inkscape:groupmode="layer" inkscape:label="E Callouts and pointers" id="layer-callouts">
+    <text x="40" y="142" font-family="Impact, Anton, sans-serif" font-size="22" fill="#D62828">E &#183; CALLOUTS AND POINTERS</text>
+
+    <!-- E1: the signature device. Numbers ranged down both sides, leaders in,
+         numbered legend underneath. Use when one picture has many parts. -->
+    <g inkscape:label="E1 Numbered callout ring">
+      <rect x="76" y="176" width="300" height="186" fill="#16161A"/>
+      <rect x="70" y="170" width="300" height="186" fill="#C9D6CF" stroke="#16161A" stroke-width="3"/>
+      <text x="220" y="272" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#5A5A63">screen or diagram</text>
+
+      <g inkscape:label="Left numbers">
+        <circle cx="44" cy="200" r="15" fill="#D62828" stroke="#16161A" stroke-width="3"/>
+        <text x="44" y="206" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="16" fill="#FFFFFF">1</text>
+        <line x1="59" y1="200" x2="116" y2="200" stroke="#F2B417" stroke-width="3"/>
+        <circle cx="120" cy="200" r="4" fill="#16161A"/>
+
+        <circle cx="44" cy="252" r="15" fill="#D62828" stroke="#16161A" stroke-width="3"/>
+        <text x="44" y="258" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="16" fill="#FFFFFF">2</text>
+        <line x1="59" y1="252" x2="146" y2="252" stroke="#F2B417" stroke-width="3"/>
+        <circle cx="150" cy="252" r="4" fill="#16161A"/>
+
+        <circle cx="44" cy="304" r="15" fill="#D62828" stroke="#16161A" stroke-width="3"/>
+        <text x="44" y="310" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="16" fill="#FFFFFF">3</text>
+        <line x1="59" y1="304" x2="126" y2="304" stroke="#F2B417" stroke-width="3"/>
+        <circle cx="130" cy="304" r="4" fill="#16161A"/>
+      </g>
+
+      <g inkscape:label="Right numbers">
+        <circle cx="396" cy="200" r="15" fill="#D62828" stroke="#16161A" stroke-width="3"/>
+        <text x="396" y="206" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="16" fill="#FFFFFF">4</text>
+        <line x1="381" y1="200" x2="320" y2="200" stroke="#F2B417" stroke-width="3"/>
+        <circle cx="316" cy="200" r="4" fill="#16161A"/>
+
+        <circle cx="396" cy="252" r="15" fill="#D62828" stroke="#16161A" stroke-width="3"/>
+        <text x="396" y="258" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="16" fill="#FFFFFF">5</text>
+        <line x1="381" y1="252" x2="298" y2="252" stroke="#F2B417" stroke-width="3"/>
+        <circle cx="294" cy="252" r="4" fill="#16161A"/>
+
+        <circle cx="396" cy="304" r="15" fill="#D62828" stroke="#16161A" stroke-width="3"/>
+        <text x="396" y="310" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="16" fill="#FFFFFF">6</text>
+        <line x1="381" y1="304" x2="330" y2="304" stroke="#F2B417" stroke-width="3"/>
+        <circle cx="326" cy="304" r="4" fill="#16161A"/>
+      </g>
+
+      <g inkscape:label="Legend">
+        <circle cx="48" cy="392" r="11" fill="#D62828"/>
+        <text x="48" y="397" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="13" fill="#FFFFFF">1</text>
+        <text x="66" y="389" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#16161A">Name of the part</text>
+        <text x="66" y="406" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">One line on what it does.</text>
+
+        <circle cx="48" cy="436" r="11" fill="#D62828"/>
+        <text x="48" y="441" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="13" fill="#FFFFFF">2</text>
+        <text x="66" y="433" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#16161A">Name of the part</text>
+        <text x="66" y="450" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">One line on what it does.</text>
+
+        <circle cx="244" cy="392" r="11" fill="#D62828"/>
+        <text x="244" y="397" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="13" fill="#FFFFFF">3</text>
+        <text x="262" y="389" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#16161A">Name of the part</text>
+        <text x="262" y="406" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">One line on what it does.</text>
+
+        <circle cx="244" cy="436" r="11" fill="#D62828"/>
+        <text x="244" y="441" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="13" fill="#FFFFFF">4</text>
+        <text x="262" y="433" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#16161A">Name of the part</text>
+        <text x="262" y="450" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">One line on what it does.</text>
+      </g>
+      <text x="220" y="482" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-style="italic" fill="#5A5A63">Numbers run down both sides. Legend repeats them in two columns.</text>
+    </g>
+
+    <!-- E2: labels sit outside the frame and point in. Use for two or three
+         parts, where a full ring would be heavier than the picture. -->
+    <g inkscape:label="E2 Label outside pointing in">
+      <rect x="486" y="176" width="290" height="150" fill="#16161A"/>
+      <rect x="480" y="170" width="290" height="150" fill="#C9D6CF" stroke="#16161A" stroke-width="3"/>
+      <line x1="548" y1="378" x2="548" y2="286" stroke="#F2B417" stroke-width="3"/>
+      <circle cx="548" cy="282" r="4" fill="#16161A"/>
+      <line x1="706" y1="378" x2="706" y2="248" stroke="#F2B417" stroke-width="3"/>
+      <circle cx="706" cy="244" r="4" fill="#16161A"/>
+      <text x="548" y="398" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#D62828">Cash on hand</text>
+      <text x="706" y="398" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#D62828">Current health</text>
+      <text x="625" y="440" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-style="italic" fill="#5A5A63">For two or three parts. Lighter than a full ring.</text>
+    </g>
+
+    <!-- E3: a sequence with no numbers. The arrow carries the ordering, so use
+         it when the steps are automatic consequences rather than instructions. -->
+    <g inkscape:label="E3 Arrow-chained sequence">
+      <rect x="866" y="176" width="170" height="116" fill="#16161A"/>
+      <rect x="860" y="170" width="170" height="116" fill="#C9D6CF" stroke="#16161A" stroke-width="3"/>
+      <rect x="1136" y="176" width="170" height="116" fill="#16161A"/>
+      <rect x="1130" y="170" width="170" height="116" fill="#C9D6CF" stroke="#16161A" stroke-width="3"/>
+      <rect x="1406" y="176" width="170" height="116" fill="#16161A"/>
+      <rect x="1400" y="170" width="170" height="116" fill="#C9D6CF" stroke="#16161A" stroke-width="3"/>
+
+      <circle cx="1080" cy="228" r="21" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+      <polygon points="1072,216 1094,228 1072,240" fill="#16161A"/>
+      <circle cx="1350" cy="228" r="21" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+      <polygon points="1342,216 1364,228 1342,240" fill="#16161A"/>
+
+      <text x="945" y="312" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">you press it</text>
+      <text x="1215" y="312" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">this happens</text>
+      <text x="1485" y="312" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">and you end here</text>
+      <text x="1215" y="398" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-style="italic" fill="#5A5A63">Arrow carries the order. Use when the steps follow automatically</text>
+      <text x="1215" y="416" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-style="italic" fill="#5A5A63">rather than being things the reader has to do.</text>
+    </g>
+  </g>
+
+  <!-- ============ F. TEXT DEVICES ============ -->
+  <g inkscape:groupmode="layer" inkscape:label="F Text devices" id="layer-text">
+    <text x="40" y="548" font-family="Impact, Anton, sans-serif" font-size="22" fill="#D62828">F &#183; TEXT DEVICES</text>
+
+    <!-- F1: answers BOTH branches of a condition. The reader never has to work
+         out which case they are in and then guess the other. -->
+    <g inkscape:label="F1 Two-branch sidebar">
+      <rect x="40" y="576" width="400" height="168" fill="#FFFFFF" stroke="#D62828" stroke-width="2"/>
+      <text x="56" y="602" font-family="Archivo, Arial, sans-serif" font-size="15" font-weight="bold" fill="#D62828">If your project has a start scene:</text>
+      <text x="56" y="622" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#16161A">What happens, in two or three lines. Say the outcome, not the</text>
+      <text x="56" y="638" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#16161A">mechanism.</text>
+      <text x="56" y="678" font-family="Archivo, Arial, sans-serif" font-size="15" font-weight="bold" fill="#D62828">If it does not:</text>
+      <text x="56" y="698" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#16161A">The other outcome. Both branches always get answered, so the</text>
+      <text x="56" y="714" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#16161A">reader never has to guess which case they are in.</text>
+      <text x="240" y="768" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-style="italic" fill="#5A5A63">Thin rule, not a heavy box. It is an aside, not a warning.</text>
+    </g>
+
+    <!-- F2: a whole sub-article inside a page, with its own heading. -->
+    <g inkscape:label="F2 Sub-article container">
+      <rect x="480" y="576" width="420" height="168" rx="14" fill="#FFFFFF" stroke="#0B5FCE" stroke-width="3"/>
+      <text x="690" y="608" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="17" font-weight="bold" fill="#0B5FCE">Hey! The gravity zone did nothing!</text>
+      <text x="500" y="640" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">A digression that is worth a whole box, sitting inside a page about</text>
+      <text x="500" y="658" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">something else. Rounded outline, own heading, no fill, so it reads</text>
+      <text x="500" y="676" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">as a nested article rather than as an interruption.</text>
+      <text x="500" y="708" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">Use it where a callout panel would be too loud and a paragraph</text>
+      <text x="500" y="726" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">would get lost.</text>
+      <text x="690" y="768" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-style="italic" fill="#5A5A63">Nested article. Quieter than a panel, louder than a paragraph.</text>
+    </g>
+
+    <!-- F3: term in colour, description in italic, hanging indent. -->
+    <g inkscape:label="F3 Term and description list">
+      <circle cx="948" cy="592" r="4" fill="#16161A"/>
+      <text x="962" y="598" font-family="Archivo, Arial, sans-serif" font-size="16" font-weight="bold" fill="#17804A">Floor</text>
+      <text x="1080" y="590" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-style="italic" fill="#16161A">Press, drag, release. The ground you walk on.</text>
+      <text x="1080" y="607" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-style="italic" fill="#16161A">No size, no material, no name asked for.</text>
+
+      <circle cx="948" cy="646" r="4" fill="#16161A"/>
+      <text x="962" y="652" font-family="Archivo, Arial, sans-serif" font-size="16" font-weight="bold" fill="#17804A">Wall</text>
+      <text x="1080" y="644" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-style="italic" fill="#16161A">The same gesture. Anything you want the player</text>
+      <text x="1080" y="661" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-style="italic" fill="#16161A">to bump into rather than fall off.</text>
+
+      <circle cx="948" cy="700" r="4" fill="#16161A"/>
+      <text x="962" y="706" font-family="Archivo, Arial, sans-serif" font-size="16" font-weight="bold" fill="#F2B417">Path</text>
+      <text x="1080" y="698" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-style="italic" fill="#16161A">Not press-drag-release. The one tool on the rail</text>
+      <text x="1080" y="715" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-style="italic" fill="#16161A">whose gesture is a different shape.</text>
+
+      <text x="1230" y="768" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-style="italic" fill="#5A5A63">Term carries the verdict colour. Description stays italic and quiet.</text>
+    </g>
+  </g>
+
+  <!-- ============ G. TABLES AND FURNITURE ============ -->
+  <g inkscape:groupmode="layer" inkscape:label="G Tables and furniture" id="layer-tables">
+    <text x="40" y="828" font-family="Impact, Anton, sans-serif" font-size="22" fill="#D62828">G &#183; TABLES AND FURNITURE</text>
+
+    <!-- G1: one hue per COLUMN, not one hue for the whole header. Lets an eye
+         track a column down a long chart without a ruler. -->
+    <g inkscape:label="G1 Per-column header table">
+      <rect x="40" y="858" width="112" height="30" fill="#12233D"/>
+      <text x="96" y="879" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#FFFFFF">Tool</text>
+      <rect x="152" y="858" width="112" height="30" fill="#D62828"/>
+      <text x="208" y="879" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#FFFFFF">Band</text>
+      <rect x="264" y="858" width="112" height="30" fill="#17804A"/>
+      <text x="320" y="879" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#FFFFFF">Gesture</text>
+      <rect x="376" y="858" width="112" height="30" fill="#0B5FCE"/>
+      <text x="432" y="879" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#FFFFFF">Makes</text>
+      <rect x="488" y="858" width="112" height="30" fill="#6B4FA8"/>
+      <text x="544" y="879" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#FFFFFF">Notes</text>
+
+      <rect x="40" y="888" width="560" height="26" fill="#F0EBDD"/>
+      <text x="52" y="906" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">Floor</text>
+      <text x="164" y="906" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">Structure</text>
+      <text x="276" y="906" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">drag</text>
+      <text x="388" y="906" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">ground</text>
+      <text x="500" y="906" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">start here</text>
+
+      <rect x="40" y="914" width="560" height="26" fill="#FFFFFF"/>
+      <text x="52" y="932" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">Path</text>
+      <text x="164" y="932" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">Structure</text>
+      <text x="276" y="932" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#D62828">not a drag</text>
+      <text x="388" y="932" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">wall run</text>
+      <text x="500" y="932" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">the odd one</text>
+
+      <rect x="40" y="940" width="560" height="26" fill="#F0EBDD"/>
+      <text x="52" y="958" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">Plants</text>
+      <text x="164" y="958" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">Volume</text>
+      <text x="276" y="958" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">drag</text>
+      <text x="388" y="958" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">foliage</text>
+      <text x="500" y="958" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">do it last</text>
+      <rect x="40" y="858" width="560" height="108" fill="none" stroke="#16161A" stroke-width="3"/>
+      <text x="320" y="994" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-style="italic" fill="#5A5A63">One hue per column. An eye tracks a column down a long chart without a ruler.</text>
+    </g>
+
+    <!-- G2: the per-letter colour heading. Optional, and expensive to read at
+         small sizes, so it belongs on section openers only. -->
+    <g inkscape:label="G2 Multi-colour heading (optional)">
+      <text x="660" y="892" font-family="Impact, Anton, sans-serif" font-size="40" fill="#D62828">B</text>
+      <text x="686" y="892" font-family="Impact, Anton, sans-serif" font-size="40" fill="#5A5A63">UILDING A</text>
+      <text x="880" y="892" font-family="Impact, Anton, sans-serif" font-size="40" fill="#0B5FCE">L</text>
+      <text x="902" y="892" font-family="Impact, Anton, sans-serif" font-size="40" fill="#5A5A63">EDGE</text>
+      <text x="660" y="920" font-family="Archivo, Arial, sans-serif" font-size="11" font-style="italic" fill="#5A5A63">Initial letters carry colour, the rest goes grey. Section openers only.</text>
+      <text x="660" y="938" font-family="Archivo, Arial, sans-serif" font-size="11" font-style="italic" fill="#5A5A63">It gets hard to read below about 28px, so never use it on a subhead.</text>
+    </g>
+
+    <!-- G3: page furniture. Verso and recto differ so a spread reads correctly. -->
+    <g inkscape:label="G3 Page furniture">
+      <line x1="660" y1="972" x2="1580" y2="972" stroke="#16161A" stroke-width="2"/>
+      <text x="660" y="1000" font-family="Archivo, Arial, sans-serif" font-size="12" font-style="italic" fill="#5A5A63">TEGE PLAYER'S GUIDE</text>
+      <rect x="1100" y="984" width="28" height="24" fill="#12233D"/>
+      <text x="1114" y="1001" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="15" fill="#FFFFFF">7</text>
+      <text x="1580" y="1000" text-anchor="end" font-family="Archivo, Arial, sans-serif" font-size="12" font-style="italic" fill="#5A5A63">CREATIVE MODE</text>
+      <text x="1120" y="1036" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-style="italic" fill="#5A5A63">Publication name on the left, section on the right, page in a chip between them.</text>
+      <text x="1120" y="1054" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-style="italic" fill="#5A5A63">Swap the two outer items on facing pages so a spread reads outward.</text>
+    </g>
+  </g>
+</svg>

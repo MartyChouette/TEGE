@@ -1,0 +1,215 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:svg="http://www.w3.org/2000/svg"
+     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+     xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+     viewBox="0 0 1600 1060" width="1600" height="1060"
+     role="img"
+     aria-label="A taxonomy sheet of ten moves and attacks, each with a delivery diagram and its tunable parameters, grouped into ground, contact and reach.">
+  <title>Kettle Hollow, the move set</title>
+  <desc>Taxonomy archetype. Every move reduced to a source token, a target token and the shape between them, with its parameters listed beside the diagram rather than buried in prose.</desc>
+  <sodipodi:namedview inkscape:document-units="px" pagecolor="#FDFBF4" bordercolor="#16161A"/>
+
+  <defs>
+    <marker id="mArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#16161A"/>
+    </marker>
+    <marker id="mArrowRed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#D62828"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1600" height="1060" fill="#FDFBF4"/>
+
+  <g inkscape:groupmode="layer" inkscape:label="10 Title" id="v-title">
+    <rect x="0" y="0" width="1600" height="88" fill="#12233D"/>
+    <rect x="0" y="82" width="1600" height="6" fill="#D62828"/>
+    <text x="32" y="48" font-family="Impact, Anton, sans-serif" font-size="36" fill="#FDFBF4">THE MOVE SET</text>
+    <text x="32" y="72" font-family="Archivo, Arial, sans-serif" font-size="14" fill="#C9D2DE">Ten moves. Each one is a source, a target, and the shape between them.</text>
+    <rect x="1382" y="20" width="186" height="28" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+    <text x="1475" y="41" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="15" fill="#16161A">PROPOSAL</text>
+    <text x="1568" y="70" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#F2B417">2026-09-17 &#183; KETTLE HOLLOW</text>
+  </g>
+
+  <g inkscape:groupmode="layer" inkscape:label="15 How to read" id="v-howto">
+    <rect x="32" y="104" width="1536" height="52" fill="#F0EBDD" stroke="#16161A" stroke-width="3"/>
+    <circle cx="60" cy="130" r="11" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+    <text x="80" y="135" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">= you</text>
+    <line x1="140" y1="120" x2="154" y2="140" stroke="#D62828" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="154" y1="120" x2="140" y2="140" stroke="#D62828" stroke-width="3.5" stroke-linecap="round"/>
+    <text x="168" y="135" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">= whatever it lands on</text>
+    <text x="352" y="135" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-style="italic" fill="#5A5A63">Actors are stripped to marks on purpose. Draw a character here and readers take the example for the definition.</text>
+    <text x="352" y="150" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-style="italic" fill="#5A5A63">Parameters sit beside each diagram, never in the prose, so nobody has to extract a number from a sentence.</text>
+  </g>
+
+  <!-- ================= GROUND ================= -->
+  <g inkscape:groupmode="layer" inkscape:label="20 Ground" id="v-ground">
+    <rect x="32" y="176" width="756" height="30" fill="#12233D"/>
+    <text x="46" y="198" font-family="Impact, Anton, sans-serif" font-size="17" fill="#FDFBF4">GROUND &#183; always available</text>
+    <rect x="32" y="206" width="756" height="486" fill="none" stroke="#16161A" stroke-width="3"/>
+
+    <g inkscape:label="walk">
+      <text x="50" y="238" font-family="Archivo, Arial, sans-serif" font-size="16" font-weight="bold" fill="#17804A">Walk</text>
+      <text x="50" y="256" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">Hold a direction. Speed ramps over a quarter second.</text>
+      <circle cx="80" cy="292" r="11" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <line x1="98" y1="292" x2="206" y2="292" stroke="#16161A" stroke-width="3" marker-end="url(#mArrow)"/>
+      <text x="252" y="282" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">moveSpeed        4.5 m/s</text>
+      <text x="252" y="298" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">accel            0.25 s</text>
+      <text x="252" y="314" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">airControl       0.5</text>
+      <line x1="50" y1="330" x2="770" y2="330" stroke="#DAD5C6" stroke-width="2"/>
+    </g>
+
+    <g inkscape:label="sprint">
+      <text x="50" y="358" font-family="Archivo, Arial, sans-serif" font-size="16" font-weight="bold" fill="#17804A">Sprint</text>
+      <text x="50" y="376" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">Same direction held past one second. No button.</text>
+      <circle cx="80" cy="412" r="11" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <line x1="98" y1="412" x2="206" y2="412" stroke="#16161A" stroke-width="6" marker-end="url(#mArrow)"/>
+      <line x1="104" y1="426" x2="150" y2="426" stroke="#16161A" stroke-width="2.5" opacity="0.5"/>
+      <text x="252" y="402" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">sprintSpeed      7.2 m/s</text>
+      <text x="252" y="418" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">holdToEngage     1.0 s</text>
+      <text x="252" y="434" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">turnPenalty      0.4</text>
+      <line x1="50" y1="450" x2="770" y2="450" stroke="#DAD5C6" stroke-width="2"/>
+    </g>
+
+    <g inkscape:label="jump">
+      <text x="50" y="478" font-family="Archivo, Arial, sans-serif" font-size="16" font-weight="bold" fill="#17804A">Jump</text>
+      <text x="50" y="496" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">Fixed arc. Forgiving for a tenth of a second after the edge.</text>
+      <circle cx="80" cy="548" r="11" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <path d="M 94 544 Q 150 494 206 548" fill="none" stroke="#16161A" stroke-width="3" marker-end="url(#mArrow)"/>
+      <line x1="60" y1="560" x2="100" y2="560" stroke="#16161A" stroke-width="4"/>
+      <line x1="190" y1="560" x2="228" y2="560" stroke="#16161A" stroke-width="4"/>
+      <text x="252" y="522" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">jumpHeight       2.1 m</text>
+      <text x="252" y="538" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">coyoteTime       0.10 s</text>
+      <text x="252" y="554" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">gapCleared       3.4 m</text>
+      <line x1="50" y1="578" x2="770" y2="578" stroke="#DAD5C6" stroke-width="2"/>
+    </g>
+
+    <g inkscape:label="hover">
+      <text x="50" y="606" font-family="Archivo, Arial, sans-serif" font-size="16" font-weight="bold" fill="#D62828">Hover</text>
+      <rect x="112" y="592" width="60" height="18" fill="#D62828" stroke="#16161A" stroke-width="2"/>
+      <text x="142" y="606" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="13" fill="#FFFFFF">G1</text>
+      <text x="50" y="624" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">Hold in the air and fall slowly. The move The Split is built around.</text>
+      <circle cx="80" cy="664" r="11" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <path d="M 94 660 Q 140 620 178 646 L 206 676" fill="none" stroke="#D62828" stroke-width="3" stroke-dasharray="9 7" marker-end="url(#mArrowRed)"/>
+      <text x="252" y="646" font-family="JetBrains Mono, monospace" font-size="11" fill="#D62828">descentClamp     no field</text>
+      <text x="252" y="662" font-family="JetBrains Mono, monospace" font-size="11" fill="#D62828">hoverBudget      no field</text>
+      <text x="252" y="678" font-family="JetBrains Mono, monospace" font-size="11" fill="#D62828">velocity         read only</text>
+      <text x="486" y="646" font-family="Archivo, Arial, sans-serif" font-size="11.5" font-weight="bold" fill="#D62828">Cannot be authored or scripted.</text>
+      <text x="486" y="662" font-family="Archivo, Arial, sans-serif" font-size="11.5" fill="#16161A">Sits next to coyoteTime, which is the</text>
+      <text x="486" y="678" font-family="Archivo, Arial, sans-serif" font-size="11.5" fill="#16161A">same kind of forgiveness parameter.</text>
+    </g>
+  </g>
+
+  <!-- ================= CONTACT ================= -->
+  <g inkscape:groupmode="layer" inkscape:label="30 Contact" id="v-contact">
+    <rect x="812" y="176" width="756" height="30" fill="#12233D"/>
+    <text x="826" y="198" font-family="Impact, Anton, sans-serif" font-size="17" fill="#FDFBF4">CONTACT &#183; close range</text>
+    <rect x="812" y="206" width="756" height="366" fill="none" stroke="#16161A" stroke-width="3"/>
+
+    <g inkscape:label="swipe">
+      <text x="830" y="238" font-family="Archivo, Arial, sans-serif" font-size="16" font-weight="bold" fill="#17804A">Swipe</text>
+      <text x="830" y="256" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">A short arc in front. Hits everything the arc passes through.</text>
+      <circle cx="860" cy="300" r="11" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <path d="M 878 276 A 34 34 0 0 1 878 324" fill="none" stroke="#16161A" stroke-width="7"/>
+      <line x1="898" y1="286" x2="910" y2="298" stroke="#D62828" stroke-width="3.5" stroke-linecap="round"/>
+      <line x1="910" y1="286" x2="898" y2="298" stroke="#D62828" stroke-width="3.5" stroke-linecap="round"/>
+      <text x="1000" y="288" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">arc              110 deg</text>
+      <text x="1000" y="304" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">reach            1.6 m</text>
+      <text x="1000" y="320" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">recovery         0.22 s</text>
+      <line x1="830" y1="338" x2="1550" y2="338" stroke="#DAD5C6" stroke-width="2"/>
+    </g>
+
+    <g inkscape:label="charge swipe">
+      <text x="830" y="366" font-family="Archivo, Arial, sans-serif" font-size="16" font-weight="bold" fill="#17804A">Charge Swipe</text>
+      <text x="830" y="384" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">The same arc, held. Wider, slower, and it does not stop on the first hit.</text>
+      <circle cx="860" cy="432" r="11" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <path d="M 872 398 A 46 46 0 0 1 872 466" fill="none" stroke="#16161A" stroke-width="10" opacity="0.85"/>
+      <line x1="906" y1="404" x2="918" y2="416" stroke="#D62828" stroke-width="3.5" stroke-linecap="round"/>
+      <line x1="918" y1="404" x2="906" y2="416" stroke="#D62828" stroke-width="3.5" stroke-linecap="round"/>
+      <line x1="906" y1="448" x2="918" y2="460" stroke="#D62828" stroke-width="3.5" stroke-linecap="round"/>
+      <line x1="918" y1="448" x2="906" y2="460" stroke="#D62828" stroke-width="3.5" stroke-linecap="round"/>
+      <text x="1000" y="416" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">arc              190 deg</text>
+      <text x="1000" y="432" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">chargeTime       0.6 s</text>
+      <text x="1000" y="448" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">pierce           on</text>
+      <line x1="830" y1="486" x2="1550" y2="486" stroke="#DAD5C6" stroke-width="2"/>
+    </g>
+
+    <g inkscape:label="ground pound">
+      <text x="830" y="508" font-family="Archivo, Arial, sans-serif" font-size="16" font-weight="bold" fill="#17804A">Ground Pound</text>
+      <text x="830" y="524" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">Drop from a jump. A ring leaves the landing point outward.</text>
+      <circle cx="876" cy="548" r="10" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <circle cx="876" cy="548" r="19" fill="none" stroke="#16161A" stroke-width="4"/>
+      <line x1="856" y1="566" x2="896" y2="566" stroke="#16161A" stroke-width="4"/>
+      <line x1="906" y1="540" x2="918" y2="552" stroke="#D62828" stroke-width="3.5" stroke-linecap="round"/>
+      <line x1="918" y1="540" x2="906" y2="552" stroke="#D62828" stroke-width="3.5" stroke-linecap="round"/>
+      <text x="1000" y="534" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">radius           3.0 m</text>
+      <text x="1000" y="550" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">needsFallOf      1.5 m</text>
+      <text x="1000" y="566" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">stagger          0.8 s</text>
+    </g>
+  </g>
+
+  <!-- ================= REACH ================= -->
+  <g inkscape:groupmode="layer" inkscape:label="40 Reach" id="v-reach">
+    <rect x="812" y="596" width="756" height="30" fill="#12233D"/>
+    <text x="826" y="618" font-family="Impact, Anton, sans-serif" font-size="17" fill="#FDFBF4">REACH &#183; found in the valley</text>
+    <rect x="812" y="626" width="756" height="300" fill="none" stroke="#16161A" stroke-width="3"/>
+
+    <g inkscape:label="throw">
+      <text x="830" y="658" font-family="Archivo, Arial, sans-serif" font-size="16" font-weight="bold" fill="#17804A">Throw</text>
+      <text x="830" y="676" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">Lobbed. Passes over low cover, which is the whole point of it.</text>
+      <circle cx="860" cy="724" r="11" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <path d="M 874 718 Q 926 668 968 722" fill="none" stroke="#16161A" stroke-width="3" stroke-dasharray="7 5"/>
+      <rect x="908" y="712" width="14" height="22" fill="#9AA0A6" stroke="#16161A" stroke-width="2.5"/>
+      <line x1="962" y1="716" x2="974" y2="728" stroke="#D62828" stroke-width="3.5" stroke-linecap="round"/>
+      <line x1="974" y1="716" x2="962" y2="728" stroke="#D62828" stroke-width="3.5" stroke-linecap="round"/>
+      <text x="1006" y="706" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">launchAngle      42 deg</text>
+      <text x="1006" y="722" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">range            6.0 m</text>
+      <text x="1006" y="738" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">arcClears        1.8 m</text>
+      <line x1="830" y1="756" x2="1550" y2="756" stroke="#DAD5C6" stroke-width="2"/>
+    </g>
+
+    <g inkscape:label="gust">
+      <text x="830" y="784" font-family="Archivo, Arial, sans-serif" font-size="16" font-weight="bold" fill="#17804A">Gust</text>
+      <text x="830" y="802" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">A cone of push. Moves objects and plants, never the player.</text>
+      <circle cx="860" cy="844" r="11" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <path d="M 876 844 L 962 816 L 962 872 Z" fill="#0B5FCE" opacity="0.25" stroke="#0B5FCE" stroke-width="3"/>
+      <line x1="956" y1="832" x2="968" y2="844" stroke="#D62828" stroke-width="3.5" stroke-linecap="round"/>
+      <line x1="968" y1="832" x2="956" y2="844" stroke="#D62828" stroke-width="3.5" stroke-linecap="round"/>
+      <text x="1006" y="826" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">coneAngle        38 deg</text>
+      <text x="1006" y="842" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">range            4.5 m</text>
+      <text x="1006" y="858" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">pushForce        12 N</text>
+      <text x="1300" y="834" font-family="Archivo, Arial, sans-serif" font-size="11" font-style="italic" fill="#5A5A63">reads WindSystem,</text>
+      <text x="1300" y="850" font-family="Archivo, Arial, sans-serif" font-size="11" font-style="italic" fill="#5A5A63">so it bends the plants</text>
+      <line x1="830" y1="878" x2="1550" y2="878" stroke="#DAD5C6" stroke-width="2"/>
+    </g>
+
+    <g inkscape:label="hook">
+      <text x="830" y="906" font-family="Archivo, Arial, sans-serif" font-size="16" font-weight="bold" fill="#F2B417">Hook</text>
+      <rect x="884" y="892" width="126" height="18" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+      <text x="947" y="906" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="12" fill="#16161A">WATCH OUT</text>
+      <text x="1030" y="906" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">Pulls YOU to the point, not the point to you. Players expect the opposite.</text>
+    </g>
+  </g>
+
+  <!-- ================= FOOTER ================= -->
+  <g inkscape:groupmode="layer" inkscape:label="99 Footer" id="v-foot">
+    <rect x="32" y="712" width="756" height="214" fill="#F0EBDD" stroke="#16161A" stroke-width="3"/>
+    <rect x="32" y="712" width="756" height="28" fill="#D62828"/>
+    <text x="46" y="732" font-family="Impact, Anton, sans-serif" font-size="15" fill="#FFFFFF">WHY THIS SHEET IS SHAPED LIKE THIS</text>
+    <text x="46" y="762" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">A move list in prose is unusable, because the thing you need to compare is the SHAPE of</text>
+    <text x="46" y="780" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">the delivery, and prose cannot show a shape. Laid out this way, three things fall out for free:</text>
+    <rect x="48" y="796" width="12" height="12" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+    <text x="70" y="807" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">Two moves with the same diagram are the same move. Cut one.</text>
+    <rect x="48" y="818" width="12" height="12" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+    <text x="70" y="829" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">A shape nobody has drawn yet is a move nobody has designed yet.</text>
+    <rect x="48" y="840" width="12" height="12" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+    <text x="70" y="851" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">The parameter names ARE the fields. This sheet is half of the implementation.</text>
+    <text x="46" y="880" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-style="italic" fill="#5A5A63">Note that Gust and Charge Swipe are both wide, short and forward. That is visible here and</text>
+    <text x="46" y="896" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-style="italic" fill="#5A5A63">invisible in a list. One of them probably should not exist, and the drawing is what asked.</text>
+
+    <line x1="32" y1="950" x2="1568" y2="950" stroke="#16161A" stroke-width="3"/>
+    <text x="32" y="976" font-family="Archivo, Arial, sans-serif" font-size="12" font-style="italic" fill="#5A5A63">Nine of ten moves are buildable today with CharacterController and ActionTriggerComponent. Hover is gap G1 and blocks nothing else on this sheet.</text>
+    <text x="32" y="1000" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">product/design/diagrams/onepager-move-set.svg &#183; original content &#183; numbers are intent, not measurement</text>
+    <rect x="1392" y="962" width="176" height="30" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+    <text x="1480" y="983" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="15" fill="#16161A">NOT TO SCALE</text>
+  </g>
+</svg>

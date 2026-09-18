@@ -1,0 +1,236 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:svg="http://www.w3.org/2000/svg"
+     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+     xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+     viewBox="0 0 1600 1080" width="1600" height="1080"
+     role="img"
+     aria-label="A one-page design for the Windmill Yard: fourteen events in one medium location, seven of them a fixed chain and seven free to fire in any order, drawn so the difference is visible.">
+  <title>Windmill Yard, fourteen events</title>
+  <desc>Level sheet archetype. Sequenced events are navy circles joined by a chain; free events are gold diamonds with no connections. One free event is gated, and the gate is drawn rather than described.</desc>
+  <sodipodi:namedview inkscape:document-units="px" pagecolor="#FDFBF4" bordercolor="#16161A"/>
+
+  <defs>
+    <marker id="yChain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#12233D"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1600" height="1080" fill="#FDFBF4"/>
+
+  <g inkscape:groupmode="layer" inkscape:label="10 Title" id="y-title">
+    <rect x="0" y="0" width="1600" height="88" fill="#12233D"/>
+    <rect x="0" y="82" width="1600" height="6" fill="#D62828"/>
+    <text x="32" y="48" font-family="Impact, Anton, sans-serif" font-size="36" fill="#FDFBF4">WINDMILL YARD</text>
+    <text x="32" y="72" font-family="Archivo, Arial, sans-serif" font-size="14" fill="#C9D2DE">One medium location. Fourteen events, and which of them have an order.</text>
+    <rect x="1382" y="20" width="186" height="28" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+    <text x="1475" y="41" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="15" fill="#16161A">PROPOSAL</text>
+    <text x="1568" y="70" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#F2B417">2026-09-17 &#183; LANDMARK 3</text>
+  </g>
+
+  <!-- ================= PLAN ================= -->
+  <g inkscape:groupmode="layer" inkscape:label="20 Ground plan" id="y-plan">
+    <rect x="40" y="150" width="1020" height="660" fill="#E3E8DE" stroke="#16161A" stroke-width="4"/>
+    <rect x="70" y="180" width="960" height="600" fill="none" stroke="#8A9488" stroke-width="3" stroke-dasharray="14 10"/>
+    <text x="84" y="202" font-family="Archivo, Arial, sans-serif" font-size="12" font-style="italic" fill="#6C766A">dry stone wall, not climbable</text>
+
+    <g inkscape:label="mill">
+      <rect x="150" y="300" width="230" height="260" fill="#E5DCC6" stroke="#16161A" stroke-width="4"/>
+      <text x="265" y="410" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="18" fill="#16161A">THE MILL</text>
+      <rect x="236" y="536" width="58" height="24" fill="#A6472E" stroke="#16161A" stroke-width="3"/>
+      <text x="265" y="582" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">ground door</text>
+      <rect x="150" y="300" width="230" height="30" fill="#A6472E"/>
+      <text x="265" y="284" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">upper door, locked at first</text>
+      <rect x="240" y="270" width="50" height="22" fill="#9AA0A6" stroke="#16161A" stroke-width="3"/>
+    </g>
+
+    <g inkscape:label="store">
+      <rect x="720" y="300" width="200" height="150" fill="#E5DCC6" stroke="#16161A" stroke-width="4"/>
+      <text x="820" y="336" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="16" fill="#16161A">GRAIN STORE</text>
+      <rect x="796" y="426" width="48" height="24" fill="#A6472E" stroke="#16161A" stroke-width="3"/>
+    </g>
+
+    <g inkscape:label="props">
+      <circle cx="560" cy="640" r="34" fill="#B4BABF" stroke="#16161A" stroke-width="4"/>
+      <circle cx="560" cy="640" r="18" fill="#2A2A2E"/>
+      <text x="560" y="702" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">the well</text>
+
+      <rect x="820" y="590" width="110" height="60" fill="#D8C98C" stroke="#16161A" stroke-width="3"/>
+      <line x1="820" y1="610" x2="930" y2="610" stroke="#16161A" stroke-width="2"/>
+      <line x1="820" y1="630" x2="930" y2="630" stroke="#16161A" stroke-width="2"/>
+      <text x="875" y="672" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">bale stack</text>
+
+      <rect x="440" y="214" width="140" height="56" fill="#CFE0CE" stroke="#16161A" stroke-width="3"/>
+      <text x="510" y="248" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#3F5A3E">goat pen</text>
+
+      <rect x="660" y="700" width="120" height="40" fill="#C8A77A" stroke="#16161A" stroke-width="3"/>
+      <circle cx="686" cy="746" r="14" fill="none" stroke="#16161A" stroke-width="3"/>
+      <circle cx="754" cy="746" r="14" fill="none" stroke="#16161A" stroke-width="3"/>
+      <text x="720" y="776" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">cart</text>
+
+      <rect x="160" y="650" width="90" height="70" fill="#E5DCC6" stroke="#16161A" stroke-width="3"/>
+      <text x="205" y="692" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">notice</text>
+      <text x="205" y="706" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">board</text>
+
+      <rect x="490" y="470" width="20" height="90" fill="#8A6A3A" stroke="#16161A" stroke-width="3"/>
+      <polygon points="500,440 524,458 500,476 476,458" fill="#F2B417" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+      <text x="500" y="590" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">bell post</text>
+    </g>
+
+    <g inkscape:label="gate">
+      <rect x="64" y="430" width="14" height="120" fill="#A6472E" stroke="#16161A" stroke-width="4"/>
+      <text x="86" y="578" font-family="Archivo, Arial, sans-serif" font-size="12" font-style="italic" fill="#5A5A63">gate in</text>
+    </g>
+
+    <g inkscape:label="exit">
+      <rect x="1022" y="240" width="14" height="110" fill="#17804A" stroke="#16161A" stroke-width="4"/>
+      <text x="940" y="228" font-family="Archivo, Arial, sans-serif" font-size="12" font-style="italic" fill="#17804A">north gate, out to The Split</text>
+    </g>
+  </g>
+
+  <!-- ================= SEQUENCED CHAIN ================= -->
+  <g inkscape:groupmode="layer" inkscape:label="30 Sequenced" id="y-seq">
+    <path d="M 100 490 L 236 548" fill="none" stroke="#12233D" stroke-width="5" marker-end="url(#yChain)"/>
+    <path d="M 272 540 Q 300 506 318 486" fill="none" stroke="#12233D" stroke-width="5" marker-end="url(#yChain)"/>
+    <path d="M 352 462 Q 520 386 700 380" fill="none" stroke="#12233D" stroke-width="5" marker-end="url(#yChain)"/>
+    <path d="M 760 400 Q 560 470 310 480" fill="none" stroke="#12233D" stroke-width="5" marker-end="url(#yChain)"/>
+    <path d="M 268 430 L 268 320" fill="none" stroke="#12233D" stroke-width="5" marker-end="url(#yChain)"/>
+    <path d="M 300 290 Q 640 250 1014 290" fill="none" stroke="#12233D" stroke-width="5" marker-end="url(#yChain)"/>
+
+    <circle cx="100" cy="490" r="19" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+    <text x="100" y="497" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="18" fill="#FDFBF4">1</text>
+    <circle cx="256" cy="556" r="19" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+    <text x="256" y="563" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="18" fill="#FDFBF4">2</text>
+    <circle cx="332" cy="470" r="19" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+    <text x="332" y="477" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="18" fill="#FDFBF4">3</text>
+    <circle cx="716" cy="380" r="19" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+    <text x="716" y="387" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="18" fill="#FDFBF4">4</text>
+    <circle cx="296" cy="484" r="19" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+    <text x="296" y="491" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="18" fill="#FDFBF4">5</text>
+    <circle cx="268" cy="310" r="19" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+    <text x="268" y="317" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="18" fill="#FDFBF4">6</text>
+    <circle cx="1014" cy="290" r="19" fill="#17804A" stroke="#16161A" stroke-width="3"/>
+    <text x="1014" y="297" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="18" fill="#FFFFFF">7</text>
+  </g>
+
+  <!-- ================= FREE EVENTS ================= -->
+  <g inkscape:groupmode="layer" inkscape:label="40 Free" id="y-free">
+    <g inkscape:label="A goats">
+      <polygon points="510,182 532,204 510,226 488,204" fill="#F2B417" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+      <text x="510" y="210" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="16" fill="#16161A">A</text>
+    </g>
+    <g inkscape:label="B bales">
+      <polygon points="875,556 897,578 875,600 853,578" fill="#F2B417" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+      <text x="875" y="584" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="16" fill="#16161A">B</text>
+    </g>
+    <g inkscape:label="C bell">
+      <polygon points="568,410 590,432 568,454 546,432" fill="#F2B417" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+      <text x="568" y="438" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="16" fill="#16161A">C</text>
+    </g>
+    <g inkscape:label="D notice">
+      <polygon points="205,616 227,638 205,660 183,638" fill="#F2B417" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+      <text x="205" y="644" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="16" fill="#16161A">D</text>
+    </g>
+    <g inkscape:label="E dog">
+      <polygon points="720,672 742,694 720,716 698,694" fill="#F2B417" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+      <text x="720" y="700" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="16" fill="#16161A">E</text>
+    </g>
+    <g inkscape:label="F well">
+      <polygon points="560,584 582,606 560,628 538,606" fill="#F2B417" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+      <text x="560" y="612" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="16" fill="#16161A">F</text>
+    </g>
+    <g inkscape:label="G cellar, gated">
+      <polygon points="820,470 844,494 820,518 796,494" fill="#FDFBF4" stroke="#F2B417" stroke-width="5" stroke-linejoin="round"/>
+      <text x="820" y="500" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="16" fill="#16161A">G</text>
+      <path d="M 776 470 L 800 470" stroke="#12233D" stroke-width="4" stroke-dasharray="6 5"/>
+      <rect x="742" y="458" width="30" height="24" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+      <text x="757" y="476" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#FDFBF4">3</text>
+    </g>
+  </g>
+
+  <!-- ================= SIDEBAR ================= -->
+  <g inkscape:groupmode="layer" inkscape:label="50 Lists" id="y-lists">
+    <rect x="1090" y="150" width="478" height="30" fill="#12233D"/>
+    <text x="1104" y="172" font-family="Impact, Anton, sans-serif" font-size="17" fill="#FDFBF4">THE CHAIN &#183; must happen in order</text>
+
+    <circle cx="1106" cy="202" r="12" fill="#12233D"/><text x="1106" y="207" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="13" fill="#FDFBF4">1</text>
+    <text x="1128" y="207" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">Step through the gate. The yard is quiet.</text>
+    <circle cx="1106" cy="232" r="12" fill="#12233D"/><text x="1106" y="237" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="13" fill="#FDFBF4">2</text>
+    <text x="1128" y="237" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">The sails stop. Wind drops to zero.</text>
+    <circle cx="1106" cy="262" r="12" fill="#12233D"/><text x="1106" y="267" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="13" fill="#FDFBF4">3</text>
+    <text x="1128" y="267" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">Inside, find the jammed gear.</text>
+    <circle cx="1106" cy="292" r="12" fill="#12233D"/><text x="1106" y="297" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="13" fill="#FDFBF4">4</text>
+    <text x="1128" y="297" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">Fetch the crank from the grain store.</text>
+    <circle cx="1106" cy="322" r="12" fill="#12233D"/><text x="1106" y="327" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="13" fill="#FDFBF4">5</text>
+    <text x="1128" y="327" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">Fit it. The gear turns.</text>
+    <circle cx="1106" cy="352" r="12" fill="#12233D"/><text x="1106" y="357" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="13" fill="#FDFBF4">6</text>
+    <text x="1128" y="357" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">Sails turn. Wind returns, stronger.</text>
+    <circle cx="1106" cy="382" r="12" fill="#17804A"/><text x="1106" y="387" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="13" fill="#FFFFFF">7</text>
+    <text x="1128" y="387" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#16161A">North gate opens. You may leave.</text>
+
+    <rect x="1090" y="412" width="478" height="30" fill="#F2B417"/>
+    <text x="1104" y="434" font-family="Impact, Anton, sans-serif" font-size="17" fill="#16161A">FREE &#183; any time, any order, or never</text>
+
+    <polygon points="1106,452 1118,464 1106,476 1094,464" fill="#F2B417" stroke="#16161A" stroke-width="2.5"/>
+    <text x="1106" y="469" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-weight="bold" fill="#16161A">A</text>
+    <text x="1128" y="469" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">Feed the goats. They follow you after.</text>
+    <polygon points="1106,484 1118,496 1106,508 1094,496" fill="#F2B417" stroke="#16161A" stroke-width="2.5"/>
+    <text x="1106" y="501" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-weight="bold" fill="#16161A">B</text>
+    <text x="1128" y="501" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">Knock the bale stack down. Pure physics.</text>
+    <polygon points="1106,516 1118,528 1106,540 1094,528" fill="#F2B417" stroke="#16161A" stroke-width="2.5"/>
+    <text x="1106" y="533" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-weight="bold" fill="#16161A">C</text>
+    <text x="1128" y="533" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">Ring the bell. The goats come running.</text>
+    <polygon points="1106,548 1118,560 1106,572 1094,560" fill="#F2B417" stroke="#16161A" stroke-width="2.5"/>
+    <text x="1106" y="565" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-weight="bold" fill="#16161A">D</text>
+    <text x="1128" y="565" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">Read the notice board. Names the valley.</text>
+    <polygon points="1106,580 1118,592 1106,604 1094,592" fill="#F2B417" stroke="#16161A" stroke-width="2.5"/>
+    <text x="1106" y="597" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-weight="bold" fill="#16161A">E</text>
+    <text x="1128" y="597" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">Wake the dog under the cart.</text>
+    <polygon points="1106,612 1118,624 1106,636 1094,624" fill="#F2B417" stroke="#16161A" stroke-width="2.5"/>
+    <text x="1106" y="629" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-weight="bold" fill="#16161A">F</text>
+    <text x="1128" y="629" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">Wind the well bucket up. Something in it.</text>
+    <polygon points="1106,644 1118,656 1106,668 1094,656" fill="#FDFBF4" stroke="#F2B417" stroke-width="3.5"/>
+    <text x="1106" y="661" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-weight="bold" fill="#16161A">G</text>
+    <text x="1128" y="661" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">The cellar key.</text>
+    <rect x="1236" y="646" width="86" height="20" fill="#12233D"/>
+    <text x="1279" y="661" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-weight="bold" fill="#FDFBF4">AFTER 3</text>
+    <text x="1336" y="661" font-family="Archivo, Arial, sans-serif" font-size="12" font-style="italic" fill="#5A5A63">the only gate</text>
+
+    <rect x="1090" y="694" width="478" height="30" fill="#12233D"/>
+    <text x="1104" y="716" font-family="Impact, Anton, sans-serif" font-size="17" fill="#FDFBF4">KEY</text>
+    <circle cx="1108" cy="746" r="13" fill="#12233D"/>
+    <text x="1136" y="751" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">sequenced, joined by a chain</text>
+    <polygon points="1108,764 1121,777 1108,790 1095,777" fill="#F2B417" stroke="#16161A" stroke-width="2.5"/>
+    <text x="1136" y="782" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">free, drawn with nothing attached</text>
+    <polygon points="1108,798 1121,811 1108,824 1095,811" fill="#FDFBF4" stroke="#F2B417" stroke-width="3.5"/>
+    <text x="1136" y="816" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">free, but gated. The gate is drawn</text>
+    <circle cx="1108" cy="840" r="13" fill="#17804A"/>
+    <text x="1136" y="845" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">the exit</text>
+  </g>
+
+  <!-- ================= TEACHING NOTE ================= -->
+  <g inkscape:groupmode="layer" inkscape:label="60 Note" id="y-note">
+    <rect x="40" y="836" width="1020" height="150" fill="#F0EBDD" stroke="#16161A" stroke-width="3"/>
+    <rect x="40" y="836" width="1020" height="28" fill="#D62828"/>
+    <text x="54" y="856" font-family="Impact, Anton, sans-serif" font-size="15" fill="#FFFFFF">WHY SEQUENCED AND FREE ARE DRAWN DIFFERENTLY</text>
+    <text x="54" y="886" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">Most level documents list events and leave the ordering in prose, so the reader has to hold the whole</text>
+    <text x="54" y="904" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">dependency graph in their head. Here the chain IS a chain: if a marker has a line into it, something must</text>
+    <text x="54" y="922" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">happen first. If it has no line, it can fire whenever, in any order, or never at all.</text>
+    <text x="54" y="950" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#D62828">The useful consequence: seven of the fourteen can be cut without touching the chain.</text>
+    <text x="54" y="970" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">A drawing that makes cuttable content obvious is worth more at a scope meeting than a list ever is.</text>
+
+    <text x="1090" y="886" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A">Wind is the spine here</text>
+    <text x="1090" y="904" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">Events 2 and 6 set WindSystem strength to 0</text>
+    <text x="1090" y="920" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">and back up. The whole yard reacts: plants,</text>
+    <text x="1090" y="936" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">cloth, the vane. One value, a location-wide beat.</text>
+    <text x="1090" y="962" font-family="Archivo, Arial, sans-serif" font-size="12" font-style="italic" fill="#17804A">Every event here is an ActionTriggerComponent.</text>
+    <text x="1090" y="978" font-family="Archivo, Arial, sans-serif" font-size="12" font-style="italic" fill="#17804A">No scripting needed anywhere on this sheet.</text>
+  </g>
+
+  <g inkscape:groupmode="layer" inkscape:label="99 Footer" id="y-foot" sodipodi:insensitive="true">
+    <line x1="40" y1="1008" x2="1568" y2="1008" stroke="#16161A" stroke-width="3"/>
+    <text x="40" y="1034" font-family="Archivo, Arial, sans-serif" font-size="12" font-style="italic" fill="#5A5A63">Landmark 3 of Kettle Hollow. Roughly six minutes of the twenty-four, and the first place the player is left alone with a problem.</text>
+    <text x="40" y="1058" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">product/design/diagrams/onepager-windmill-yard-events.svg &#183; original content</text>
+    <rect x="1392" y="1018" width="176" height="30" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+    <text x="1480" y="1039" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="15" fill="#16161A">NOT TO SCALE</text>
+  </g>
+</svg>

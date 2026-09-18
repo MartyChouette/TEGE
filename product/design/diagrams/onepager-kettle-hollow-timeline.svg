@@ -1,0 +1,255 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:svg="http://www.w3.org/2000/svg"
+     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+     xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+     viewBox="0 0 1600 1000" width="1600" height="1000"
+     role="img"
+     aria-label="A one-page design for Kettle Hollow: the whole valley as a map, with a gameplay-minutes ruler along the bottom aligning six landmarks to the first twenty-four minutes of play.">
+  <title>Kettle Hollow, time and space</title>
+  <desc>Map plus timeline archetype. Six landmarks, the route through them, difficulty zones, and a minutes ruler so pacing and layout can be read against each other.</desc>
+  <sodipodi:namedview inkscape:document-units="px" pagecolor="#FDFBF4" bordercolor="#16161A"/>
+
+  <defs>
+    <marker id="kRoute" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#16161A"/>
+    </marker>
+    <pattern id="kGapHatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
+      <rect width="8" height="8" fill="#FDFBF4"/><rect width="4" height="8" fill="#D62828"/>
+    </pattern>
+  </defs>
+
+  <rect x="0" y="0" width="1600" height="1000" fill="#FDFBF4"/>
+
+  <!-- ===== title ===== -->
+  <g inkscape:groupmode="layer" inkscape:label="10 Title" id="k-title">
+    <rect x="0" y="0" width="1600" height="88" fill="#12233D"/>
+    <rect x="0" y="82" width="1600" height="6" fill="#D62828"/>
+    <text x="32" y="48" font-family="Impact, Anton, sans-serif" font-size="36" fill="#FDFBF4">KETTLE HOLLOW</text>
+    <text x="32" y="72" font-family="Archivo, Arial, sans-serif" font-size="14" fill="#C9D2DE">The whole valley, and the first 24 minutes of play, on one sheet.</text>
+    <rect x="1382" y="20" width="186" height="28" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+    <text x="1475" y="41" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="15" fill="#16161A">PROPOSAL</text>
+    <text x="1568" y="70" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#F2B417">2026-09-17 &#183; NOT TO SCALE</text>
+  </g>
+
+  <!-- ===== map ===== -->
+  <g inkscape:groupmode="layer" inkscape:label="20 Terrain" id="k-terrain">
+    <path d="M 90 230 Q 150 150 300 160 L 640 140 Q 820 135 900 190 L 1060 200 Q 1180 230 1160 330
+             L 1180 520 Q 1170 640 1040 660 L 760 700 Q 560 730 400 690 L 190 650 Q 80 600 100 460 Z"
+          fill="#CFE0CE" stroke="#16161A" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M 120 250 Q 200 200 330 215 L 560 205 Q 700 200 760 240 L 700 300 Q 520 330 360 320 Q 200 310 120 250 Z"
+          fill="#B7D0B6" stroke="none"/>
+    <text x="250" y="270" font-family="Archivo, Arial, sans-serif" font-size="13" font-style="italic" fill="#5D7A5C">upper meadow</text>
+  </g>
+
+  <g inkscape:groupmode="layer" inkscape:label="25 Water" id="k-water">
+    <path d="M 150 430 Q 320 400 470 440 Q 600 474 760 450 Q 900 430 1010 470 Q 1090 500 1140 560"
+          fill="none" stroke="#7FB2D9" stroke-width="30" stroke-linecap="round"/>
+    <path d="M 150 430 Q 320 400 470 440 Q 600 474 760 450 Q 900 430 1010 470 Q 1090 500 1140 560"
+          fill="none" stroke="#4E8DBE" stroke-width="4" stroke-linecap="round" stroke-dasharray="14 10"/>
+    <ellipse cx="300" cy="580" rx="92" ry="48" fill="#7FB2D9" stroke="#16161A" stroke-width="3"/>
+    <text x="300" y="586" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13" font-style="italic" fill="#1B4A70">reed shallows</text>
+  </g>
+
+  <g inkscape:groupmode="layer" inkscape:label="30 Cliffs and cave" id="k-cliffs">
+    <polygon points="880,540 990,505 1090,545 1090,625 985,665 880,620" fill="#9AA0A6" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+    <polygon points="880,540 990,505 990,575 880,620" fill="#B4BABF" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M 946 610 q 22 -42 46 0 z" fill="#2A2A2E" stroke="#16161A" stroke-width="3"/>
+    <text x="1062" y="688" font-family="Archivo, Arial, sans-serif" font-size="13" font-style="italic" fill="#4A4F55">kettle cave</text>
+
+    <polygon points="620,300 700,270 780,300 780,360 700,392 620,360" fill="#9AA0A6" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+    <polygon points="620,300 700,270 700,330 620,360" fill="#B4BABF" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+  </g>
+
+  <g inkscape:groupmode="layer" inkscape:label="35 Wind" id="k-wind">
+    <path d="M 160 180 q 44 -18 88 0 q 44 18 88 0" fill="none" stroke="#0B5FCE" stroke-width="4" stroke-linecap="round" opacity="0.75"/>
+    <polygon points="336,173 354,180 336,187" fill="#0B5FCE" opacity="0.75"/>
+    <path d="M 420 168 q 44 -18 88 0 q 44 18 88 0" fill="none" stroke="#0B5FCE" stroke-width="4" stroke-linecap="round" opacity="0.6"/>
+    <polygon points="596,161 614,168 596,175" fill="#0B5FCE" opacity="0.6"/>
+    <text x="180" y="150" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#0B5FCE">PREVAILING WIND, WEST TO EAST</text>
+  </g>
+
+  <!-- ===== landmarks ===== -->
+  <g inkscape:groupmode="layer" inkscape:label="40 Landmarks" id="k-marks">
+    <g inkscape:label="1 wake point">
+      <polygon points="180,470 189,492 212,492 194,506 201,528 180,514 159,528 166,506 148,492 171,492" fill="#F2B417" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+      <circle cx="180" cy="560" r="17" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+      <text x="180" y="567" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="17" fill="#FDFBF4">1</text>
+      <text x="158" y="602" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#16161A">Wake Point</text>
+    </g>
+
+    <g inkscape:label="2 shallows">
+      <circle cx="300" cy="532" r="17" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+      <text x="300" y="539" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="17" fill="#FDFBF4">2</text>
+      <text x="300" y="640" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#16161A">Reed Shallows</text>
+    </g>
+
+    <g inkscape:label="3 windmill yard">
+      <rect x="470" y="352" width="54" height="62" fill="#E5DCC6" stroke="#16161A" stroke-width="3"/>
+      <polygon points="464,352 497,318 530,352" fill="#A6472E" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+      <line x1="497" y1="332" x2="455" y2="300" stroke="#16161A" stroke-width="4"/>
+      <line x1="497" y1="332" x2="539" y2="300" stroke="#16161A" stroke-width="4"/>
+      <line x1="497" y1="332" x2="455" y2="364" stroke="#16161A" stroke-width="4"/>
+      <circle cx="497" cy="446" r="17" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+      <text x="497" y="453" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="17" fill="#FDFBF4">3</text>
+      <text x="497" y="482" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#16161A">Windmill Yard</text>
+      <text x="497" y="498" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-style="italic" fill="#D62828">detailed on its own sheet</text>
+    </g>
+
+    <g inkscape:label="4 the split">
+      <rect x="700" y="470" width="120" height="56" fill="url(#kGapHatch)" stroke="#D62828" stroke-width="4"/>
+      <circle cx="760" cy="560" r="17" fill="#D62828" stroke="#16161A" stroke-width="3"/>
+      <text x="760" y="567" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="17" fill="#FFFFFF">4</text>
+      <text x="760" y="596" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#16161A">The Split</text>
+    </g>
+
+    <g inkscape:label="5 cave">
+      <circle cx="985" cy="722" r="17" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+      <text x="985" y="729" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="17" fill="#FDFBF4">5</text>
+    </g>
+
+    <g inkscape:label="6 overlook">
+      <polygon points="1100,250 1109,272 1132,272 1114,286 1121,308 1100,294 1079,308 1086,286 1068,272 1091,272" fill="#17804A" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+      <circle cx="1100" cy="340" r="17" fill="#17804A" stroke="#16161A" stroke-width="3"/>
+      <text x="1100" y="347" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="17" fill="#FFFFFF">6</text>
+      <text x="1100" y="376" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#16161A">The Overlook</text>
+    </g>
+  </g>
+
+  <!-- ===== routes ===== -->
+  <g inkscape:groupmode="layer" inkscape:label="45 Routes" id="k-routes">
+    <path d="M 196 520 Q 240 540 286 536" fill="none" stroke="#16161A" stroke-width="5" marker-end="url(#kRoute)"/>
+    <path d="M 316 520 Q 400 480 480 456" fill="none" stroke="#16161A" stroke-width="5" marker-end="url(#kRoute)"/>
+    <path d="M 514 452 Q 620 490 740 552" fill="none" stroke="#16161A" stroke-width="5" marker-end="url(#kRoute)"/>
+    <path d="M 778 566 Q 870 640 966 712" fill="none" stroke="#16161A" stroke-width="5" marker-end="url(#kRoute)"/>
+    <path d="M 998 706 Q 1080 540 1098 362" fill="none" stroke="#16161A" stroke-width="5" marker-end="url(#kRoute)"/>
+    <path d="M 512 430 Q 700 350 1084 336" fill="none" stroke="#5A5A63" stroke-width="4" stroke-dasharray="12 9"/>
+    <text x="800" y="366" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" font-style="italic" fill="#5A5A63">ridge shortcut, opens only after the cave</text>
+  </g>
+
+  <!-- ===== callouts ===== -->
+  <g inkscape:groupmode="layer" inkscape:label="50 Callouts" id="k-callouts">
+    <line x1="822" y1="498" x2="900" y2="452" stroke="#D62828" stroke-width="2.5"/>
+    <rect x="906" y="404" width="266" height="62" fill="#FFFFFF" stroke="#D62828" stroke-width="3"/>
+    <rect x="906" y="404" width="266" height="22" fill="#D62828"/>
+    <text x="918" y="421" font-family="Impact, Anton, sans-serif" font-size="13" fill="#FFFFFF">THE ENGINE OWES YOU &#183; G1</text>
+    <text x="918" y="442" font-family="Archivo, Arial, sans-serif" font-size="11.5" fill="#16161A">The Split needs hover. CharacterController has</text>
+    <text x="918" y="458" font-family="Archivo, Arial, sans-serif" font-size="11.5" fill="#16161A">no hover field and script cannot reach velocity.</text>
+
+    <line x1="300" y1="656" x2="300" y2="682" stroke="#16161A" stroke-width="2"/>
+    <text x="196" y="702" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">Swim is taught here because drowning is impossible:</text>
+    <text x="196" y="718" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">the shallows have no deep water and no current.</text>
+  </g>
+
+  <!-- ===== sidebar ===== -->
+  <g inkscape:groupmode="layer" inkscape:label="55 Sidebar" id="k-side">
+    <rect x="1216" y="112" width="352" height="30" fill="#12233D"/>
+    <text x="1230" y="134" font-family="Impact, Anton, sans-serif" font-size="17" fill="#FDFBF4">THE SHAPE OF A SESSION</text>
+
+    <rect x="1216" y="158" width="16" height="16" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+    <text x="1244" y="172" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">0 to 6 min &#183; taught</text>
+    <text x="1244" y="190" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">Walk, swim, climb. Nothing can kill you.</text>
+
+    <rect x="1216" y="212" width="16" height="16" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+    <text x="1244" y="226" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">6 to 15 min &#183; tested</text>
+    <text x="1244" y="244" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">The yard, then the gap. First real failure.</text>
+
+    <rect x="1216" y="266" width="16" height="16" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+    <text x="1244" y="280" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">15 to 24 min &#183; trusted</text>
+    <text x="1244" y="298" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">The cave is dark and unguided. The ridge</text>
+    <text x="1244" y="314" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">shortcut rewards remembering the way.</text>
+
+    <rect x="1216" y="346" width="352" height="30" fill="#12233D"/>
+    <text x="1230" y="368" font-family="Impact, Anton, sans-serif" font-size="17" fill="#FDFBF4">ENGINE PARTS USED</text>
+    <text x="1216" y="396" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">Terrain &#183; WaterVolume &#183; Cave</text>
+    <text x="1216" y="416" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">WindSystem &#183; Plants &#183; Ladder</text>
+    <text x="1216" y="436" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">CharacterController &#183; ActionTrigger</text>
+    <text x="1216" y="462" font-family="Archivo, Arial, sans-serif" font-size="11.5" font-style="italic" fill="#5A5A63">Every one is on the Creative Mode rail, so</text>
+    <text x="1216" y="478" font-family="Archivo, Arial, sans-serif" font-size="11.5" font-style="italic" fill="#5A5A63">the whole valley is authorable without script.</text>
+
+    <rect x="1216" y="508" width="352" height="30" fill="#D62828"/>
+    <text x="1230" y="530" font-family="Impact, Anton, sans-serif" font-size="17" fill="#FFFFFF">THE ONE THING THAT BLOCKS</text>
+    <text x="1216" y="558" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">Landmark 4 is the only place in the valley</text>
+    <text x="1216" y="576" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">that cannot be built today. Everything else</text>
+    <text x="1216" y="594" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">is drags on the rail.</text>
+    <text x="1216" y="620" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#D62828">Until G1 closes, The Split is a water</text>
+    <text x="1216" y="638" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#D62828">crossing and the timeline is unchanged.</text>
+
+    <rect x="1216" y="668" width="352" height="30" fill="#12233D"/>
+    <text x="1230" y="690" font-family="Impact, Anton, sans-serif" font-size="17" fill="#FDFBF4">KEY</text>
+    <line x1="1222" y1="716" x2="1276" y2="716" stroke="#16161A" stroke-width="5"/>
+    <text x="1290" y="721" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#16161A">critical path</text>
+    <line x1="1222" y1="740" x2="1276" y2="740" stroke="#5A5A63" stroke-width="4" stroke-dasharray="10 8"/>
+    <text x="1290" y="745" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#16161A">opens later</text>
+    <circle cx="1230" cy="766" r="11" fill="#12233D"/>
+    <text x="1290" y="771" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#16161A">landmark</text>
+    <circle cx="1230" cy="792" r="11" fill="#D62828"/>
+    <text x="1290" y="797" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#16161A">landmark that is blocked</text>
+  </g>
+
+  <!-- ===== timeline ===== -->
+  <g inkscape:groupmode="layer" inkscape:label="60 Timeline" id="k-time">
+    <rect x="60" y="770" width="1120" height="26" fill="#12233D"/>
+    <text x="74" y="789" font-family="Impact, Anton, sans-serif" font-size="15" fill="#FDFBF4">AVERAGE GAMEPLAY MINUTES</text>
+
+    <line x1="60" y1="838" x2="1180" y2="838" stroke="#16161A" stroke-width="4"/>
+    <g inkscape:label="ticks">
+      <line x1="60" y1="838" x2="60" y2="856" stroke="#16161A" stroke-width="3"/>
+      <text x="60" y="876" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">0</text>
+      <line x1="200" y1="838" x2="200" y2="852" stroke="#16161A" stroke-width="2"/>
+      <text x="200" y="876" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">3</text>
+      <line x1="340" y1="838" x2="340" y2="856" stroke="#16161A" stroke-width="3"/>
+      <text x="340" y="876" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">6</text>
+      <line x1="480" y1="838" x2="480" y2="852" stroke="#16161A" stroke-width="2"/>
+      <text x="480" y="876" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">9</text>
+      <line x1="620" y1="838" x2="620" y2="856" stroke="#16161A" stroke-width="3"/>
+      <text x="620" y="876" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">12</text>
+      <line x1="760" y1="838" x2="760" y2="852" stroke="#16161A" stroke-width="2"/>
+      <text x="760" y="876" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">15</text>
+      <line x1="900" y1="838" x2="900" y2="856" stroke="#16161A" stroke-width="3"/>
+      <text x="900" y="876" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">18</text>
+      <line x1="1040" y1="838" x2="1040" y2="852" stroke="#16161A" stroke-width="2"/>
+      <text x="1040" y="876" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">21</text>
+      <line x1="1180" y1="838" x2="1180" y2="856" stroke="#16161A" stroke-width="3"/>
+      <text x="1180" y="876" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#16161A">24</text>
+    </g>
+
+    <g inkscape:label="beats">
+      <circle cx="60" cy="838" r="13" fill="#12233D" stroke="#FDFBF4" stroke-width="2"/>
+      <text x="60" y="843" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="13" fill="#FDFBF4">1</text>
+      <text x="60" y="820" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#16161A">wake</text>
+
+      <circle cx="200" cy="838" r="13" fill="#12233D" stroke="#FDFBF4" stroke-width="2"/>
+      <text x="200" y="843" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="13" fill="#FDFBF4">2</text>
+      <text x="200" y="820" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#16161A">swim</text>
+
+      <circle cx="340" cy="838" r="13" fill="#12233D" stroke="#FDFBF4" stroke-width="2"/>
+      <text x="340" y="843" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="13" fill="#FDFBF4">3</text>
+      <text x="340" y="820" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#16161A">the yard</text>
+
+      <circle cx="574" cy="838" r="13" fill="#D62828" stroke="#FDFBF4" stroke-width="2"/>
+      <text x="574" y="843" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="13" fill="#FFFFFF">4</text>
+      <text x="574" y="820" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#D62828">the split</text>
+
+      <circle cx="760" cy="838" r="13" fill="#12233D" stroke="#FDFBF4" stroke-width="2"/>
+      <text x="760" y="843" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="13" fill="#FDFBF4">5</text>
+      <text x="760" y="820" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#16161A">cave</text>
+
+      <circle cx="1086" cy="838" r="13" fill="#17804A" stroke="#FDFBF4" stroke-width="2"/>
+      <text x="1086" y="843" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="13" fill="#FFFFFF">6</text>
+      <text x="1086" y="820" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#16161A">overlook</text>
+    </g>
+
+    <g inkscape:label="phase bands">
+      <rect x="60" y="892" width="280" height="20" fill="#CFE0CE" stroke="#16161A" stroke-width="2"/>
+      <text x="200" y="907" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-weight="bold" fill="#16161A">TAUGHT</text>
+      <rect x="340" y="892" width="420" height="20" fill="#F2E3B8" stroke="#16161A" stroke-width="2"/>
+      <text x="550" y="907" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-weight="bold" fill="#16161A">TESTED</text>
+      <rect x="760" y="892" width="420" height="20" fill="#DCE6F2" stroke="#16161A" stroke-width="2"/>
+      <text x="970" y="907" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-weight="bold" fill="#16161A">TRUSTED</text>
+    </g>
+
+    <text x="60" y="942" font-family="Archivo, Arial, sans-serif" font-size="12" font-style="italic" fill="#5A5A63">The ruler is the point of this sheet. Landmark 4 sits at minute 11, one third of the way in, which is where the first real failure belongs.</text>
+    <text x="60" y="960" font-family="Archivo, Arial, sans-serif" font-size="12" font-style="italic" fill="#5A5A63">Move it earlier and the player has not been taught enough to read it as fair. Later, and the middle of the valley has no teeth.</text>
+    <text x="60" y="984" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">product/design/diagrams/onepager-kettle-hollow-timeline.svg &#183; original content &#183; minutes are intent, not measurement</text>
+  </g>
+</svg>

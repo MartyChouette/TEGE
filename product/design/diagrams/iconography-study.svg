@@ -1,0 +1,351 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:svg="http://www.w3.org/2000/svg"
+     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+     xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+     viewBox="0 0 1600 1210" width="1600" height="1210"
+     role="img"
+     aria-label="A one-page study of imagery and iconography: the depiction ladder, token systems, matrix conventions, line grammar, colour as identity, and three gaps in our own symbol set.">
+  <title>Imagery and iconography, on one page</title>
+  <desc>Drawn rather than described, because a text document about pictures is the wrong artifact. Follows the seven part anatomy it documents.</desc>
+  <sodipodi:namedview inkscape:document-units="px" pagecolor="#FDFBF4" bordercolor="#16161A"/>
+
+  <defs>
+    <pattern id="scGreen" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="7" height="7" fill="#FFFFFF"/><rect width="3.6" height="7" fill="#17804A"/>
+    </pattern>
+    <pattern id="scRed" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
+      <rect width="7" height="7" fill="#FFFFFF"/><rect width="3.6" height="7" fill="#D62828"/>
+    </pattern>
+    <pattern id="scBlue" width="7" height="7" patternUnits="userSpaceOnUse">
+      <rect width="7" height="7" fill="#FFFFFF"/><rect width="7" height="3.6" fill="#0B5FCE"/>
+    </pattern>
+    <marker id="flow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#16161A"/>
+    </marker>
+  </defs>
+
+  <g inkscape:groupmode="layer" inkscape:label="00 Paper" id="l-paper" sodipodi:insensitive="true">
+    <rect x="0" y="0" width="1600" height="1210" fill="#FDFBF4"/>
+  </g>
+
+  <!-- ===================== TITLE BLOCK ===================== -->
+  <g inkscape:groupmode="layer" inkscape:label="10 Title" id="l-title">
+    <rect x="0" y="0" width="1600" height="92" fill="#12233D"/>
+    <rect x="0" y="86" width="1600" height="6" fill="#D62828"/>
+    <text x="32" y="50" font-family="Impact, Anton, sans-serif" font-size="38" fill="#FDFBF4">IMAGERY &amp; ICONOGRAPHY</text>
+    <text x="32" y="74" font-family="Archivo, Arial, sans-serif" font-size="14" fill="#C9D2DE">What the pictures are made of. Read from 27 one-page designs and 8 game manuals.</text>
+    <rect x="1392" y="22" width="176" height="30" fill="#D62828" stroke="#16161A" stroke-width="3"/>
+    <text x="1480" y="44" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="17" fill="#FFFFFF">STUDY</text>
+    <text x="1568" y="72" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="13" fill="#F2B417">2026-09-17</text>
+  </g>
+
+  <!-- ===================== 1. DEPICTION LADDER ===================== -->
+  <g inkscape:groupmode="layer" inkscape:label="20 Depiction ladder" id="l-ladder">
+    <rect x="32" y="112" width="1536" height="32" fill="#12233D"/>
+    <text x="46" y="135" font-family="Impact, Anton, sans-serif" font-size="19" fill="#FDFBF4">1 &#183; THE DEPICTION LADDER</text>
+    <text x="1554" y="135" text-anchor="end" font-family="Archivo, Arial, sans-serif" font-size="13" font-style="italic" fill="#C9D2DE">the same subject, six ways</text>
+
+    <text x="32" y="168" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">The level of abstraction is chosen by what the reader has to DO with the picture, never by what was easiest to draw.</text>
+
+    <!-- rung 1: capture -->
+    <g inkscape:label="rung 1 capture">
+      <rect x="96" y="196" width="128" height="92" fill="#C9D6CF" stroke="#16161A" stroke-width="3"/>
+      <rect x="96" y="196" width="128" height="16" fill="#12233D"/>
+      <line x1="96" y1="262" x2="224" y2="262" stroke="#8FA89B" stroke-width="4"/>
+      <rect x="142" y="232" width="14" height="30" fill="#D62828" stroke="#16161A" stroke-width="2"/>
+      <rect x="140" y="222" width="18" height="12" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+      <text x="160" y="312" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="16" fill="#16161A">CAPTURE</text>
+      <text x="160" y="332" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">recognise the real screen</text>
+      <text x="160" y="352" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-style="italic" fill="#D62828">framed = it is real</text>
+    </g>
+
+    <!-- rung 2: rendered -->
+    <g inkscape:label="rung 2 rendered">
+      <rect x="386" y="216" width="18" height="16" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+      <rect x="404" y="216" width="12" height="16" fill="#C08F12" stroke="#16161A" stroke-width="3"/>
+      <rect x="386" y="232" width="18" height="34" fill="#D62828" stroke="#16161A" stroke-width="3"/>
+      <rect x="404" y="232" width="12" height="34" fill="#A31F1F" stroke="#16161A" stroke-width="3"/>
+      <rect x="388" y="266" width="10" height="22" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+      <rect x="404" y="266" width="10" height="22" fill="#0A1526" stroke="#16161A" stroke-width="3"/>
+      <ellipse cx="402" cy="292" rx="26" ry="6" fill="#16161A" opacity="0.2"/>
+      <text x="416" y="312" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="16" fill="#16161A">RENDERED</text>
+      <text x="416" y="332" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">identify one specific thing</text>
+      <text x="416" y="352" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-style="italic" fill="#5A5A63">painted art sits here, for tone only</text>
+    </g>
+
+    <!-- rung 3: flat sprite -->
+    <g inkscape:label="rung 3 sprite">
+      <rect x="658" y="216" width="28" height="18" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+      <rect x="656" y="234" width="32" height="34" fill="#D62828" stroke="#16161A" stroke-width="3"/>
+      <rect x="660" y="268" width="10" height="20" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+      <rect x="674" y="268" width="10" height="20" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+      <text x="672" y="312" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="16" fill="#16161A">FLAT SPRITE</text>
+      <text x="672" y="332" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">compare many at once</text>
+    </g>
+
+    <!-- rung 4: iso block -->
+    <g inkscape:label="rung 4 iso block">
+      <polygon points="900,236 928,222 956,236 928,250" fill="#8FA89B" stroke="#16161A" stroke-width="3"/>
+      <polygon points="900,236 928,250 928,284 900,270" fill="#6E8377" stroke="#16161A" stroke-width="3"/>
+      <polygon points="956,236 928,250 928,284 956,270" fill="#54685C" stroke="#16161A" stroke-width="3"/>
+      <text x="928" y="312" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="16" fill="#16161A">ISO BLOCK</text>
+      <text x="928" y="332" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">shape and connection of space</text>
+    </g>
+
+    <!-- rung 5: schematic -->
+    <g inkscape:label="rung 5 schematic">
+      <rect x="1136" y="228" width="72" height="44" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <text x="1172" y="255" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#16161A">player</text>
+      <line x1="1208" y1="250" x2="1244" y2="250" stroke="#16161A" stroke-width="3" marker-end="url(#flow)"/>
+      <text x="1184" y="312" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="16" fill="#16161A">SCHEMATIC</text>
+      <text x="1184" y="332" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">follow a mechanism</text>
+    </g>
+
+    <!-- rung 6: token -->
+    <g inkscape:label="rung 6 token">
+      <circle cx="1440" cy="250" r="16" fill="#D62828" stroke="#16161A" stroke-width="3"/>
+      <text x="1440" y="312" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="16" fill="#16161A">TOKEN</text>
+      <text x="1440" y="332" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">read a pattern across dozens</text>
+    </g>
+
+    <!-- the gradient arrow underneath -->
+    <line x1="120" y1="376" x2="1470" y2="376" stroke="#16161A" stroke-width="3" marker-end="url(#flow)"/>
+    <text x="180" y="398" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#16161A">ONE of a thing</text>
+    <text x="1400" y="398" text-anchor="end" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#16161A">HUNDREDS of them</text>
+    <text x="790" y="398" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13" font-style="italic" fill="#D62828">abstraction rises as count rises</text>
+
+    <rect x="32" y="414" width="1536" height="30" fill="#F0EBDD" stroke="#16161A" stroke-width="2"/>
+    <text x="46" y="434" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#16161A">RULE: never mix two rungs inside one drawing. Where a page needs both, zone them. Mixing makes the reader ask which parts are literal.</text>
+  </g>
+
+  <!-- ===================== 2. TOKENS ===================== -->
+  <g inkscape:groupmode="layer" inkscape:label="30 Tokens" id="l-tokens">
+    <rect x="32" y="464" width="752" height="32" fill="#12233D"/>
+    <text x="46" y="487" font-family="Impact, Anton, sans-serif" font-size="19" fill="#FDFBF4">2 &#183; TOKEN SYSTEMS</text>
+
+    <g inkscape:label="actor pair">
+      <text x="46" y="524" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">The actor pair</text>
+      <circle cx="60" cy="556" r="13" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <line x1="76" y1="556" x2="136" y2="556" stroke="#16161A" stroke-width="3" marker-end="url(#flow)"/>
+      <line x1="146" y1="546" x2="164" y2="566" stroke="#D62828" stroke-width="4" stroke-linecap="round"/>
+      <line x1="164" y1="546" x2="146" y2="566" stroke="#D62828" stroke-width="4" stroke-linecap="round"/>
+      <text x="200" y="548" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">source and target, stripped to marks.</text>
+      <text x="200" y="566" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">Any more detail and readers take the</text>
+      <text x="200" y="584" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">example for the definition.</text>
+    </g>
+
+    <g inkscape:label="bead string">
+      <text x="46" y="626" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">The bead string</text>
+      <circle cx="60" cy="656" r="12" fill="url(#scGreen)" stroke="#16161A" stroke-width="3"/>
+      <circle cx="90" cy="656" r="12" fill="url(#scRed)" stroke="#16161A" stroke-width="3"/>
+      <circle cx="120" cy="656" r="12" fill="url(#scGreen)" stroke="#16161A" stroke-width="3"/>
+      <circle cx="150" cy="656" r="12" fill="url(#scBlue)" stroke="#16161A" stroke-width="3"/>
+      <line x1="170" y1="656" x2="196" y2="656" stroke="#16161A" stroke-width="3" marker-end="url(#flow)"/>
+      <rect x="206" y="642" width="96" height="28" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+      <text x="254" y="662" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#16161A">outcome</text>
+      <text x="326" y="640" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">Value, order and</text>
+      <text x="326" y="656" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">result in one small</text>
+      <text x="326" y="672" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">inline mark.</text>
+    </g>
+
+    <g inkscape:label="node with vector">
+      <text x="46" y="712" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">The node that points</text>
+      <line x1="78" y1="768" x2="78" y2="746" stroke="#16161A" stroke-width="3"/>
+      <circle cx="78" cy="738" r="13" fill="#0B5FCE" stroke="#16161A" stroke-width="3"/>
+      <line x1="94" y1="732" x2="128" y2="720" stroke="#16161A" stroke-width="3" marker-end="url(#flow)"/>
+      <text x="170" y="732" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">Identity by colour, position by placement,</text>
+      <text x="170" y="750" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">tendency by the vector. We have nothing</text>
+      <text x="170" y="768" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#D62828">that carries a direction.</text>
+    </g>
+
+    <g inkscape:label="depth bullets">
+      <text x="480" y="524" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">Depth bullets</text>
+      <rect x="482" y="540" width="26" height="26" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+      <text x="520" y="560" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">chapter</text>
+      <rect x="484" y="576" width="20" height="20" fill="#0B5FCE" stroke="#16161A" stroke-width="3"/>
+      <text x="520" y="592" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">section</text>
+      <rect x="486" y="606" width="14" height="14" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+      <text x="520" y="618" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">step</text>
+      <text x="480" y="648" font-family="Archivo, Arial, sans-serif" font-size="12" font-style="italic" fill="#5A5A63">Hierarchy by hue, not by type size.</text>
+      <text x="480" y="666" font-family="Archivo, Arial, sans-serif" font-size="12" font-style="italic" fill="#5A5A63">Learned once, used forever.</text>
+    </g>
+
+    <g inkscape:label="callout index">
+      <text x="480" y="712" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">Two jobs, one shape</text>
+      <circle cx="498" cy="744" r="16" fill="#D62828" stroke="#16161A" stroke-width="3"/>
+      <text x="498" y="750" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="17" fill="#FFFFFF">1</text>
+      <line x1="514" y1="744" x2="560" y2="744" stroke="#16161A" stroke-width="2"/>
+      <circle cx="564" cy="744" r="4" fill="#16161A"/>
+      <text x="586" y="736" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">A callout number ENDS a leader line.</text>
+      <text x="586" y="754" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">A step number BEGINS a paragraph.</text>
+      <text x="586" y="772" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">Same mark, never confused.</text>
+    </g>
+  </g>
+
+  <!-- ===================== 3. MATRIX ===================== -->
+  <g inkscape:groupmode="layer" inkscape:label="40 Matrix" id="l-matrix">
+    <rect x="816" y="464" width="752" height="32" fill="#12233D"/>
+    <text x="830" y="487" font-family="Impact, Anton, sans-serif" font-size="19" fill="#FDFBF4">3 &#183; MATRIX CONVENTIONS</text>
+
+    <g inkscape:label="axis icons">
+      <circle cx="944" cy="520" r="11" fill="#17804A" stroke="#16161A" stroke-width="2.5"/>
+      <rect x="1005" y="509" width="22" height="22" fill="#F2B417" stroke="#16161A" stroke-width="2.5"/>
+      <polygon points="1088,509 1099,531 1077,531" fill="#D62828" stroke="#16161A" stroke-width="2.5" stroke-linejoin="round"/>
+      <polygon points="1148,509 1160,520 1148,531 1136,520" fill="#0B5FCE" stroke="#16161A" stroke-width="2.5"/>
+      <circle cx="884" cy="580" r="11" fill="#17804A" stroke="#16161A" stroke-width="2.5"/>
+      <rect x="873" y="629" width="22" height="22" fill="#F2B417" stroke="#16161A" stroke-width="2.5"/>
+      <polygon points="884,689 895,711 873,711" fill="#D62828" stroke="#16161A" stroke-width="2.5" stroke-linejoin="round"/>
+      <polygon points="884,749 896,760 884,771 872,760" fill="#0B5FCE" stroke="#16161A" stroke-width="2.5"/>
+    </g>
+
+    <g inkscape:label="grid">
+      <rect x="914" y="550" width="240" height="240" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <line x1="974" y1="550" x2="974" y2="790" stroke="#16161A" stroke-width="1.5"/>
+      <line x1="1034" y1="550" x2="1034" y2="790" stroke="#16161A" stroke-width="1.5"/>
+      <line x1="1094" y1="550" x2="1094" y2="790" stroke="#16161A" stroke-width="1.5"/>
+      <line x1="914" y1="610" x2="1154" y2="610" stroke="#16161A" stroke-width="1.5"/>
+      <line x1="914" y1="670" x2="1154" y2="670" stroke="#16161A" stroke-width="1.5"/>
+      <line x1="914" y1="730" x2="1154" y2="730" stroke="#16161A" stroke-width="1.5"/>
+
+      <g inkscape:label="greyed redundant half">
+        <polygon points="914,610 974,610 974,670 1034,670 1034,730 1094,730 1094,790 914,790" fill="#EDEAE0"/>
+        <line x1="914" y1="610" x2="974" y2="610" stroke="#16161A" stroke-width="1.5"/>
+        <line x1="974" y1="670" x2="1034" y2="670" stroke="#16161A" stroke-width="1.5"/>
+        <line x1="1034" y1="730" x2="1094" y2="730" stroke="#16161A" stroke-width="1.5"/>
+        <line x1="974" y1="610" x2="974" y2="670" stroke="#16161A" stroke-width="1.5"/>
+        <line x1="1034" y1="670" x2="1034" y2="730" stroke="#16161A" stroke-width="1.5"/>
+        <line x1="1094" y1="730" x2="1094" y2="790" stroke="#16161A" stroke-width="1.5"/>
+      </g>
+
+      <g inkscape:label="boxed diagonal">
+        <rect x="917" y="553" width="54" height="54" fill="none" stroke="#D62828" stroke-width="3"/>
+        <rect x="977" y="613" width="54" height="54" fill="none" stroke="#D62828" stroke-width="3"/>
+        <rect x="1037" y="673" width="54" height="54" fill="none" stroke="#D62828" stroke-width="3"/>
+        <rect x="1097" y="733" width="54" height="54" fill="none" stroke="#D62828" stroke-width="3"/>
+      </g>
+
+      <g inkscape:label="filled and explicit empty">
+        <circle cx="1004" cy="580" r="9" fill="#17804A"/>
+        <circle cx="1124" cy="580" r="9" fill="#17804A"/>
+        <line x1="1058" y1="572" x2="1070" y2="588" stroke="#9A9A9A" stroke-width="3" stroke-linecap="round"/>
+        <line x1="1070" y1="572" x2="1058" y2="588" stroke="#9A9A9A" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="1064" cy="640" r="9" fill="#17804A"/>
+        <line x1="1118" y1="632" x2="1130" y2="648" stroke="#9A9A9A" stroke-width="3" stroke-linecap="round"/>
+        <line x1="1130" y1="632" x2="1118" y2="648" stroke="#9A9A9A" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="1124" cy="700" r="9" fill="#17804A"/>
+      </g>
+    </g>
+
+    <g inkscape:label="matrix callouts">
+      <line x1="1160" y1="580" x2="1210" y2="568" stroke="#16161A" stroke-width="2"/>
+      <text x="1218" y="566" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#16161A">Icon beside every label</text>
+      <text x="1218" y="584" font-family="Archivo, Arial, sans-serif" font-size="11.5" fill="#5A5A63">readable before the words are learned</text>
+
+      <line x1="1160" y1="640" x2="1210" y2="634" stroke="#D62828" stroke-width="2"/>
+      <text x="1218" y="632" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#D62828">Empty cells get a MARK</text>
+      <text x="1218" y="650" font-family="Archivo, Arial, sans-serif" font-size="11.5" fill="#5A5A63">an explicit no proves somebody thought</text>
+      <text x="1218" y="666" font-family="Archivo, Arial, sans-serif" font-size="11.5" fill="#5A5A63">about it. A blank cell proves nothing.</text>
+
+      <line x1="1160" y1="706" x2="1210" y2="706" stroke="#16161A" stroke-width="2"/>
+      <text x="1218" y="704" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#16161A">Diagonal boxed</text>
+      <text x="1218" y="722" font-family="Archivo, Arial, sans-serif" font-size="11.5" fill="#5A5A63">self against self is a special case</text>
+
+      <line x1="1160" y1="762" x2="1210" y2="762" stroke="#16161A" stroke-width="2"/>
+      <text x="1218" y="760" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#16161A">Redundant half greyed, not deleted</text>
+      <text x="1218" y="778" font-family="Archivo, Arial, sans-serif" font-size="11.5" fill="#5A5A63">symmetry is a real property, so show it</text>
+    </g>
+  </g>
+
+  <!-- ===================== 4. LINE GRAMMAR ===================== -->
+  <g inkscape:groupmode="layer" inkscape:label="50 Line grammar" id="l-lines">
+    <rect x="32" y="810" width="470" height="32" fill="#12233D"/>
+    <text x="46" y="833" font-family="Impact, Anton, sans-serif" font-size="19" fill="#FDFBF4">4 &#183; LINE GRAMMAR</text>
+
+    <line x1="52" y1="872" x2="150" y2="872" stroke="#16161A" stroke-width="1.5"/>
+    <circle cx="154" cy="872" r="4" fill="#16161A"/>
+    <text x="180" y="877" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">thin, no head = a LABEL points at a thing</text>
+
+    <line x1="52" y1="906" x2="146" y2="906" stroke="#16161A" stroke-width="4" marker-end="url(#flow)"/>
+    <text x="180" y="911" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">thick, arrowed = FLOW, cause or movement</text>
+
+    <line x1="52" y1="940" x2="160" y2="940" stroke="#16161A" stroke-width="3" stroke-dasharray="8 6"/>
+    <text x="180" y="945" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">dashed = conditional, optional or hidden</text>
+
+    <line x1="52" y1="974" x2="146" y2="974" stroke="#16161A" stroke-width="7" marker-end="url(#flow)"/>
+    <line x1="52" y1="1000" x2="146" y2="1000" stroke="#16161A" stroke-width="2" marker-end="url(#flow)"/>
+    <text x="180" y="979" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">weight tracks importance: the primary path</text>
+    <text x="180" y="1000" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">is visibly heavier than a branch</text>
+
+    <text x="52" y="1036" font-family="Archivo, Arial, sans-serif" font-size="12" font-style="italic" fill="#D62828">A reader must be able to tell a label from a flow without reading either.</text>
+  </g>
+
+  <!-- ===================== 5. COLOUR AS IDENTITY ===================== -->
+  <g inkscape:groupmode="layer" inkscape:label="60 Colour identity" id="l-colour">
+    <rect x="530" y="810" width="470" height="32" fill="#12233D"/>
+    <text x="544" y="833" font-family="Impact, Anton, sans-serif" font-size="19" fill="#FDFBF4">5 &#183; COLOUR AS IDENTITY</text>
+
+    <text x="544" y="866" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">One hue per thing, carried across every depiction of it on the page:</text>
+
+    <circle cx="566" cy="908" r="17" fill="#0B5FCE" stroke="#16161A" stroke-width="3"/>
+    <text x="566" y="944" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">emblem</text>
+
+    <rect x="620" y="890" width="50" height="36" fill="#0B5FCE" opacity="0.22" stroke="#0B5FCE" stroke-width="2"/>
+    <text x="645" y="944" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">zone</text>
+
+    <rect x="700" y="888" width="56" height="40" fill="#FFFFFF" stroke="#0B5FCE" stroke-width="3"/>
+    <line x1="710" y1="902" x2="746" y2="902" stroke="#16161A" stroke-width="2"/>
+    <line x1="710" y1="914" x2="738" y2="914" stroke="#16161A" stroke-width="2"/>
+    <text x="728" y="944" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">sidebar</text>
+
+    <text x="790" y="915" font-family="Archivo, Arial, sans-serif" font-size="17" font-weight="bold" fill="#0B5FCE">Label</text>
+    <text x="812" y="944" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">label</text>
+
+    <circle cx="880" cy="898" r="8" fill="#0B5FCE" stroke="#16161A" stroke-width="2"/>
+    <circle cx="902" cy="912" r="8" fill="#0B5FCE" stroke="#16161A" stroke-width="2"/>
+    <circle cx="880" cy="922" r="8" fill="#0B5FCE" stroke="#16161A" stroke-width="2"/>
+    <text x="890" y="944" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">nodes</text>
+
+    <text x="544" y="984" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">A reader who learns one colour can find everything about it without reading a word.</text>
+
+    <rect x="544" y="1000" width="440" height="42" fill="#F4E6E1" stroke="#D62828" stroke-width="3"/>
+    <text x="558" y="1018" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#D62828">WHERE IT FAILS: our green and red measure 1.01:1 against each other.</text>
+    <text x="558" y="1035" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#16161A">A hue-only notation in our palette dies the moment it is printed. Texture the beads.</text>
+  </g>
+
+  <!-- ===================== 6. OUR GAPS ===================== -->
+  <g inkscape:groupmode="layer" inkscape:label="70 Our gaps" id="l-gaps">
+    <rect x="1028" y="810" width="540" height="32" fill="#D62828"/>
+    <text x="1042" y="833" font-family="Impact, Anton, sans-serif" font-size="19" fill="#FFFFFF">6 &#183; WHAT OUR SET LACKS</text>
+
+    <rect x="1042" y="858" width="26" height="26" fill="#D62828" stroke="#16161A" stroke-width="3"/>
+    <line x1="1047" y1="879" x2="1063" y2="863" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round"/>
+    <text x="1082" y="872" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">No sequence notation</text>
+    <text x="1082" y="890" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">Nothing encodes an ordered series inline. Our steps are numbered</text>
+    <text x="1082" y="906" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">panels, which is heavyweight. The touch fingerprint needs this.</text>
+
+    <rect x="1042" y="928" width="26" height="26" fill="#D62828" stroke="#16161A" stroke-width="3"/>
+    <line x1="1047" y1="949" x2="1063" y2="933" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round"/>
+    <text x="1082" y="942" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">No directional mark</text>
+    <text x="1082" y="960" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">Every symbol we have carries a value. None carries a tendency.</text>
+
+    <rect x="1042" y="982" width="26" height="26" fill="#D62828" stroke="#16161A" stroke-width="3"/>
+    <line x1="1047" y1="1003" x2="1063" y2="987" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round"/>
+    <text x="1082" y="996" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">Matrix conventions unwritten</text>
+    <text x="1082" y="1014" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">We drew gap matrices without deciding what an empty cell means.</text>
+
+    <rect x="1042" y="1036" width="26" height="26" fill="#17804A" stroke="#16161A" stroke-width="3"/>
+    <polyline points="1047,1049 1053,1056 1063,1042" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="1082" y="1050" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#17804A">What we already do better</text>
+    <text x="1082" y="1068" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">Per-part verdict marks. Nothing in either corpus can say half a page is built.</text>
+  </g>
+
+  <!-- ===================== FOOTER ===================== -->
+  <g inkscape:groupmode="layer" inkscape:label="99 Footer" id="l-footer" sodipodi:insensitive="true">
+    <line x1="32" y1="1104" x2="1568" y2="1104" stroke="#16161A" stroke-width="3"/>
+    <text x="32" y="1130" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-style="italic" fill="#5A5A63">Drawn rather than written, because a text document about pictures is the wrong artifact. Follows the seven part anatomy it documents: title and date, one dominant illustration,</text>
+    <text x="32" y="1150" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-style="italic" fill="#5A5A63">callouts on leader lines, a detail inset, sidebars, a description, and whitespace on purpose.</text>
+    <text x="32" y="1180" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">product/design/diagrams/iconography-study.svg &#183; prose version: STUDY_IMAGERY_AND_ICONOGRAPHY.md &#183; all marks original</text>
+    <rect x="1392" y="1116" width="176" height="30" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+    <text x="1480" y="1137" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="15" fill="#16161A">NOT TO SCALE</text>
+  </g>
+</svg>

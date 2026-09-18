@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:svg="http://www.w3.org/2000/svg"
+     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+     xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+     viewBox="0 0 880 340" width="880" height="340"
+     role="img"
+     aria-label="Twenty editor operations sit behind four radial dials, and only a gamepad can open them. Switch, gaze and sip-and-puff input have no path in.">
+  <title>Who can open the quick-access dial</title>
+  <desc>Four dials hold twenty operations. One input device reaches them, using a hold-aim-release gesture that a binary switch cannot produce.</desc>
+
+  <defs>
+    <marker id="dialArrow" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <g inkscape:groupmode="layer" inkscape:label="Devices" id="layer-devices">
+    <rect x="20" y="30" width="188" height="48" 
+          fill="none" stroke="currentColor" stroke-width="3"/>
+    <text x="114" y="52" text-anchor="middle" font-family="Archivo, Arial, sans-serif"
+          font-size="13" font-weight="800" fill="currentColor">Gamepad</text>
+    <text x="114" y="69" text-anchor="middle" font-family="Archivo, Arial, sans-serif"
+          font-size="11" fill="currentColor" >hold, aim, release</text>
+
+    <rect x="20" y="106" width="188" height="48" 
+          fill="none" stroke="#D62828" stroke-width="3" stroke-dasharray="5 5"/>
+    <text x="114" y="128" text-anchor="middle" font-family="Archivo, Arial, sans-serif"
+          font-size="13" font-weight="800" fill="#D62828">Switch access</text>
+    <text x="114" y="145" text-anchor="middle" font-family="Archivo, Arial, sans-serif"
+          font-size="11" fill="#D62828">cannot hold and aim at once</text>
+
+    <rect x="20" y="182" width="188" height="48" 
+          fill="none" stroke="#D62828" stroke-width="3" stroke-dasharray="5 5"/>
+    <text x="114" y="204" text-anchor="middle" font-family="Archivo, Arial, sans-serif"
+          font-size="13" font-weight="800" fill="#D62828">Gaze tracker</text>
+    <text x="114" y="221" text-anchor="middle" font-family="Archivo, Arial, sans-serif"
+          font-size="11" fill="#D62828">aims well, cannot hold</text>
+
+    <rect x="20" y="258" width="188" height="48" 
+          fill="none" stroke="#D62828" stroke-width="3" stroke-dasharray="5 5"/>
+    <text x="114" y="280" text-anchor="middle" font-family="Archivo, Arial, sans-serif"
+          font-size="13" font-weight="800" fill="#D62828">Sip and puff</text>
+    <text x="114" y="297" text-anchor="middle" font-family="Archivo, Arial, sans-serif"
+          font-size="11" fill="#D62828">four signals, none analogue</text>
+  </g>
+
+  <g inkscape:groupmode="layer" inkscape:label="Paths" id="layer-paths">
+    <line x1="208" y1="54" x2="372" y2="140" stroke="currentColor"
+          stroke-width="3" marker-end="url(#dialArrow)"/>
+    <text x="284" y="86" text-anchor="middle" font-family="monospace"
+          font-size="11" fill="currentColor">RB / LB / Start / Y</text>
+
+    <line x1="208" y1="130" x2="330" y2="146" stroke="#D62828"
+          stroke-width="3" stroke-dasharray="5 5"/>
+    <line x1="296" y1="128" x2="320" y2="156" stroke="#D62828" stroke-width="2"/>
+    <line x1="320" y1="128" x2="296" y2="156" stroke="#D62828" stroke-width="2"/>
+
+    <line x1="208" y1="206" x2="330" y2="182" stroke="#D62828"
+          stroke-width="3" stroke-dasharray="5 5"/>
+    <line x1="296" y1="180" x2="320" y2="208" stroke="#D62828" stroke-width="2"/>
+    <line x1="320" y1="180" x2="296" y2="208" stroke="#D62828" stroke-width="2"/>
+
+    <line x1="208" y1="282" x2="330" y2="218" stroke="#D62828"
+          stroke-width="3" stroke-dasharray="5 5"/>
+    <line x1="296" y1="232" x2="320" y2="260" stroke="#D62828" stroke-width="2"/>
+    <line x1="320" y1="232" x2="296" y2="260" stroke="#D62828" stroke-width="2"/>
+
+    <text x="268" y="300" text-anchor="middle" font-family="Archivo, Arial, sans-serif"
+          font-size="11" fill="#D62828">no path exists</text>
+  </g>
+
+  <g inkscape:groupmode="layer" inkscape:label="Dials" id="layer-dials">
+    <circle cx="452" cy="170" r="76" fill="none" stroke="currentColor" stroke-width="3"/>
+    <circle cx="452" cy="170" r="16" fill="none" stroke="currentColor" stroke-width="3"/>
+    <line x1="452" y1="94" x2="452" y2="154" stroke="currentColor" stroke-width="2"/>
+    <line x1="452" y1="186" x2="452" y2="246" stroke="currentColor" stroke-width="2"/>
+    <line x1="376" y1="170" x2="436" y2="170" stroke="currentColor" stroke-width="2"/>
+    <line x1="468" y1="170" x2="528" y2="170" stroke="currentColor" stroke-width="2"/>
+    <text x="452" y="268" text-anchor="middle" font-family="Archivo, Arial, sans-serif"
+          font-size="12" fill="currentColor" >one dial, six sectors</text>
+
+    <line x1="528" y1="170" x2="592" y2="170" stroke="currentColor"
+          stroke-width="3" marker-end="url(#dialArrow)"/>
+
+    <rect x="600" y="46" width="256" height="60" 
+          fill="none" stroke="currentColor" stroke-width="3"/>
+    <text x="616" y="70" font-family="Archivo, Arial, sans-serif" font-size="13"
+          font-weight="800" fill="currentColor">Tools</text>
+    <text x="616" y="90" font-family="Archivo, Arial, sans-serif" font-size="11" fill="currentColor">Translate, Rotate, Scale, Space, Focus, Grid</text>
+
+    <rect x="600" y="116" width="256" height="60" 
+          fill="none" stroke="currentColor" stroke-width="3"/>
+    <text x="616" y="140" font-family="Archivo, Arial, sans-serif" font-size="13"
+          font-weight="800" fill="currentColor">File</text>
+    <text x="616" y="160" font-family="Archivo, Arial, sans-serif" font-size="11" fill="currentColor">Save, Undo, Redo, Duplicate, Delete, Palette</text>
+
+    <rect x="600" y="186" width="256" height="60" 
+          fill="none" stroke="currentColor" stroke-width="3"/>
+    <text x="616" y="210" font-family="Archivo, Arial, sans-serif" font-size="13"
+          font-weight="800" fill="currentColor">Play</text>
+    <text x="616" y="230" font-family="Archivo, Arial, sans-serif" font-size="11" fill="currentColor">Play, Pause, Stop</text>
+
+    <rect x="600" y="256" width="256" height="60" 
+          fill="none" stroke="currentColor" stroke-width="3"/>
+    <text x="616" y="280" font-family="Archivo, Arial, sans-serif" font-size="13"
+          font-weight="800" fill="currentColor">Create</text>
+    <text x="616" y="300" font-family="Archivo, Arial, sans-serif" font-size="11" fill="currentColor">Empty, Cube, Light, Camera, Sprite</text>
+  </g>
+</svg>

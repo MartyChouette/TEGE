@@ -1,0 +1,163 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:svg="http://www.w3.org/2000/svg"
+     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+     xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+     viewBox="0 0 880 1470" width="880" height="1470">
+  <title>Symbol variants D: four more per row</title>
+  <desc>Columns I, J, K and L. Same rows and codes as sheet A, so 6K names one mark without describing it.</desc>
+  <sodipodi:namedview inkscape:document-units="px" pagecolor="#FDFBF4" bordercolor="#16161A"/>
+
+  <g inkscape:groupmode="layer" inkscape:label="00 Paper" id="layer-paper" sodipodi:insensitive="true">
+    <rect x="0" y="0" width="880" height="1470" fill="#FDFBF4"/>
+    <text x="24" y="52" font-family="Impact, Anton, sans-serif" font-size="34" fill="#12233D">MORE OPTIONS &#183; SHEET D</text>
+    <text x="24" y="76" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#5A5A63">Four more per row, same numbering. Gold is always a fill with an ink keyline, never a line on the stock.</text>
+    <line x1="24" y1="112" x2="856" y2="112" stroke="#16161A" stroke-width="3"/>
+    <text x="270" y="128" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="16" fill="#D62828">I</text>
+    <text x="420" y="128" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="16" fill="#D62828">J</text>
+    <text x="570" y="128" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="16" fill="#D62828">K</text>
+    <text x="720" y="128" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="16" fill="#D62828">L</text>
+  </g>
+
+  <g inkscape:groupmode="layer" inkscape:label="Row tints" id="layer-tints" sodipodi:insensitive="true">
+    <rect x="24" y="134" width="832" height="130" fill="#F3F0E6"/>
+    <rect x="24" y="394" width="832" height="130" fill="#F3F0E6"/>
+    <rect x="24" y="654" width="832" height="130" fill="#F3F0E6"/>
+    <rect x="24" y="914" width="832" height="130" fill="#F3F0E6"/>
+    <rect x="24" y="1174" width="832" height="130" fill="#F3F0E6"/>
+  </g>
+
+  <g inkscape:groupmode="layer" inkscape:label="1 Works" id="d-works">
+    <text x="30" y="178" font-family="Impact, Anton, sans-serif" font-size="19" fill="#16161A">1 WORKS</text>
+    <g inkscape:label="1I pennant"><line x1="252" y1="160" x2="252" y2="212" stroke="#16161A" stroke-width="4" stroke-linecap="round"/><path d="M 252 162 L 294 174 L 252 188 Z" fill="#17804A" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/></g>
+    <g inkscape:label="1J stamp"><rect x="396" y="162" width="48" height="48" rx="4" fill="#17804A" stroke="#16161A" stroke-width="3"/><circle cx="420" cy="186" r="11" fill="#FDFBF4"/></g>
+    <g inkscape:label="1K go light"><circle cx="570" cy="186" r="24" fill="#FDFBF4" stroke="#16161A" stroke-width="4"/><circle cx="570" cy="186" r="13" fill="#17804A"/></g>
+    <g inkscape:label="1L hex check"><polygon points="720,162 741,174 741,198 720,210 699,198 699,174" fill="#17804A" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/><polyline points="709,186 717,195 732,175" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></g>
+    <text x="270" y="242" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">1I</text>
+    <text x="420" y="242" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">1J</text>
+    <text x="570" y="242" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">1K</text>
+    <text x="720" y="242" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">1L</text>
+  </g>
+
+  <g inkscape:groupmode="layer" inkscape:label="2 Surprise" id="d-surprise">
+    <text x="30" y="308" font-family="Impact, Anton, sans-serif" font-size="19" fill="#16161A">2 SURPRISE</text>
+    <g inkscape:label="2I hexagon"><polygon points="270,292 291,304 291,328 270,340 249,328 249,304" fill="#F2B417" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/><line x1="270" y1="304" x2="270" y2="320" stroke="#16161A" stroke-width="4" stroke-linecap="round"/><circle cx="270" cy="328" r="2.6" fill="#16161A"/></g>
+    <g inkscape:label="2J square"><rect x="396" y="292" width="48" height="48" fill="#F2B417" stroke="#16161A" stroke-width="3"/><line x1="420" y1="303" x2="420" y2="320" stroke="#16161A" stroke-width="4" stroke-linecap="round"/><circle cx="420" cy="328" r="2.6" fill="#16161A"/></g>
+    <g inkscape:label="2K burst"><polygon points="570,288 578,306 597,302 587,318 599,332 580,333 574,351 566,334 547,337 555,320 543,307 562,305" fill="#F2B417" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/><line x1="571" y1="311" x2="571" y2="325" stroke="#16161A" stroke-width="4" stroke-linecap="round"/><circle cx="571" cy="332" r="2.4" fill="#16161A"/></g>
+    <g inkscape:label="2L pennant"><line x1="700" y1="290" x2="700" y2="342" stroke="#16161A" stroke-width="4" stroke-linecap="round"/><path d="M 700 292 L 744 304 L 700 318 Z" fill="#F2B417" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/><line x1="714" y1="300" x2="714" y2="308" stroke="#16161A" stroke-width="3" stroke-linecap="round"/></g>
+    <text x="270" y="372" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">2I</text>
+    <text x="420" y="372" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">2J</text>
+    <text x="570" y="372" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">2K</text>
+    <text x="720" y="372" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">2L</text>
+  </g>
+
+  <g inkscape:groupmode="layer" inkscape:label="3 Missing" id="d-missing">
+    <text x="30" y="438" font-family="Impact, Anton, sans-serif" font-size="19" fill="#16161A">3 MISSING</text>
+    <g inkscape:label="3I hole"><circle cx="270" cy="446" r="25" fill="#D62828" stroke="#16161A" stroke-width="3"/><circle cx="270" cy="446" r="11" fill="#FDFBF4" stroke="#16161A" stroke-width="2.5"/></g>
+    <g inkscape:label="3J solid frame, empty inside"><rect x="395" y="421" width="50" height="50" fill="none" stroke="#D62828" stroke-width="6"/><line x1="405" y1="461" x2="435" y2="431" stroke="#D62828" stroke-width="3" stroke-dasharray="5 5"/></g>
+    <g inkscape:label="3K hexagon slash"><polygon points="570,422 591,434 591,458 570,470 549,458 549,434" fill="#D62828" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/><line x1="559" y1="459" x2="581" y2="433" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round"/></g>
+    <g inkscape:label="3L empty brackets"><path d="M 706 420 L 694 420 L 694 472 L 706 472" fill="none" stroke="#D62828" stroke-width="6" stroke-linejoin="round"/><path d="M 734 420 L 746 420 L 746 472 L 734 472" fill="none" stroke="#D62828" stroke-width="6" stroke-linejoin="round"/></g>
+    <text x="270" y="502" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">3I</text>
+    <text x="420" y="502" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">3J</text>
+    <text x="570" y="502" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">3K</text>
+    <text x="720" y="502" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">3L</text>
+  </g>
+
+  <g inkscape:groupmode="layer" inkscape:label="4 Mouse" id="d-mouse">
+    <text x="30" y="568" font-family="Impact, Anton, sans-serif" font-size="19" fill="#16161A">4 MOUSE</text>
+    <g inkscape:label="4I corded"><rect x="253" y="556" width="32" height="46" rx="16" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/><rect x="266" y="564" width="6" height="12" rx="3" fill="#16161A"/><path d="M 269 556 q 0 -16 18 -18" fill="none" stroke="#16161A" stroke-width="3.5" stroke-linecap="round"/></g>
+    <g inkscape:label="4J wheel emphasis"><rect x="404" y="552" width="32" height="50" rx="16" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/><rect x="414" y="560" width="12" height="20" rx="6" fill="#16161A"/><line x1="396" y1="562" x2="390" y2="556" stroke="#16161A" stroke-width="3" stroke-linecap="round"/><line x1="396" y1="578" x2="390" y2="584" stroke="#16161A" stroke-width="3" stroke-linecap="round"/></g>
+    <g inkscape:label="4K pointer only"><polygon points="556,552 556,596 567,586 575,602 583,598 575,582 590,581" fill="#16161A" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/></g>
+    <g inkscape:label="4L click"><rect x="704" y="560" width="32" height="46" rx="16" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/><line x1="720" y1="560" x2="720" y2="576" stroke="#16161A" stroke-width="3"/><path d="M 700 548 l -7 -7 M 720 543 l 0 -9 M 740 548 l 7 -7" stroke="#16161A" stroke-width="3" stroke-linecap="round"/></g>
+    <text x="270" y="632" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">4I</text>
+    <text x="420" y="632" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">4J</text>
+    <text x="570" y="632" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">4K</text>
+    <text x="720" y="632" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">4L</text>
+  </g>
+
+  <g inkscape:groupmode="layer" inkscape:label="5 Key" id="d-key">
+    <text x="30" y="698" font-family="Impact, Anton, sans-serif" font-size="19" fill="#16161A">5 KEY</text>
+    <g inkscape:label="5I return key"><rect x="244" y="682" width="52" height="48" rx="6" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/><polyline points="283,694 283,710 259,710" fill="none" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/><polygon points="265,703 265,717 255,710" fill="#16161A"/></g>
+    <g inkscape:label="5J three keys"><rect x="382" y="690" width="22" height="32" rx="4" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/><rect x="409" y="690" width="22" height="32" rx="4" fill="#F2B417" stroke="#16161A" stroke-width="3"/><rect x="436" y="690" width="22" height="32" rx="4" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/></g>
+    <g inkscape:label="5K wide key"><rect x="530" y="692" width="80" height="28" rx="6" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/><line x1="545" y1="712" x2="595" y2="712" stroke="#16161A" stroke-width="3"/></g>
+    <g inkscape:label="5L modifier key"><rect x="694" y="682" width="52" height="48" rx="6" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/><polygon points="720,694 734,710 726,710 726,720 714,720 714,710 706,710" fill="#16161A"/></g>
+    <text x="270" y="762" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">5I</text>
+    <text x="420" y="762" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">5J</text>
+    <text x="570" y="762" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">5K</text>
+    <text x="720" y="762" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">5L</text>
+  </g>
+
+  <g inkscape:groupmode="layer" inkscape:label="6 Gamepad" id="d-pad">
+    <text x="30" y="828" font-family="Impact, Anton, sans-serif" font-size="19" fill="#16161A">6 GAMEPAD</text>
+    <text x="30" y="848" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">four more, all abstract</text>
+    <g inkscape:label="6I grips only"><path d="M 250 818 q 12 -6 18 6 l 6 16 q 4 14 -8 18 q -12 3 -16 -10 l -4 -16 q -3 -10 4 -14 Z" fill="#FFFFFF" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/><path d="M 290 818 q -12 -6 -18 6 l -6 16 q -4 14 8 18 q 12 3 16 -10 l 4 -16 q 3 -10 -4 -14 Z" fill="#FFFFFF" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/><rect x="260" y="820" width="20" height="11" rx="5" fill="#16161A"/></g>
+    <g inkscape:label="6J tiled"><rect x="392" y="806" width="56" height="56" rx="10" fill="#12233D" stroke="#16161A" stroke-width="3"/><rect x="402" y="824" width="36" height="20" rx="9" fill="#FDFBF4"/><circle cx="412" cy="834" r="3.4" fill="#12233D"/><circle cx="428" cy="834" r="3.4" fill="#12233D"/></g>
+    <g inkscape:label="6K wired"><rect x="538" y="822" width="64" height="34" rx="15" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/><circle cx="554" cy="839" r="4.5" fill="#16161A"/><circle cx="586" cy="839" r="4.5" fill="#16161A"/><path d="M 570 822 q 0 -14 -14 -18 q -14 -4 -14 -10" fill="none" stroke="#16161A" stroke-width="3" stroke-linecap="round"/></g>
+    <g inkscape:label="6L wireless"><rect x="690" y="826" width="60" height="32" rx="14" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/><circle cx="705" cy="842" r="4.2" fill="#16161A"/><circle cx="735" cy="842" r="4.2" fill="#16161A"/><path d="M 706 814 A 20 20 0 0 1 734 814" fill="none" stroke="#16161A" stroke-width="3" stroke-linecap="round"/><path d="M 697 805 A 32 32 0 0 1 743 805" fill="none" stroke="#16161A" stroke-width="3" stroke-linecap="round" opacity="0.55"/></g>
+    <text x="270" y="892" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">6I</text>
+    <text x="420" y="892" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">6J</text>
+    <text x="570" y="892" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">6K</text>
+    <text x="720" y="892" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">6L</text>
+  </g>
+
+  <g inkscape:groupmode="layer" inkscape:label="7 Touch" id="d-touch">
+    <text x="30" y="958" font-family="Impact, Anton, sans-serif" font-size="19" fill="#16161A">7 TOUCH</text>
+    <g inkscape:label="7I pinch"><circle cx="252" cy="950" r="7" fill="#16161A"/><circle cx="288" cy="982" r="7" fill="#16161A"/><line x1="262" y1="960" x2="278" y2="972" stroke="#16161A" stroke-width="3" stroke-dasharray="4 4"/><polygon points="268,956 280,958 272,968" fill="#16161A"/><polygon points="272,976 260,974 268,964" fill="#16161A"/></g>
+    <g inkscape:label="7J tap target"><path d="M 396 950 L 396 940 L 406 940 M 434 940 L 444 940 L 444 950 M 444 982 L 444 992 L 434 992 M 406 992 L 396 992 L 396 982" fill="none" stroke="#16161A" stroke-width="3.5" stroke-linecap="square"/><circle cx="420" cy="966" r="8" fill="#16161A"/></g>
+    <g inkscape:label="7K swipe"><circle cx="544" cy="966" r="8" fill="#16161A"/><line x1="556" y1="966" x2="586" y2="966" stroke="#16161A" stroke-width="4" stroke-linecap="round"/><polygon points="586,958 600,966 586,974" fill="#16161A"/><line x1="552" y1="978" x2="574" y2="978" stroke="#16161A" stroke-width="3" stroke-linecap="round" opacity="0.5"/></g>
+    <g inkscape:label="7L long press"><circle cx="720" cy="966" r="8" fill="#16161A"/><path d="M 720 942 A 24 24 0 1 1 699 954" fill="none" stroke="#16161A" stroke-width="3.5" stroke-linecap="round"/></g>
+    <text x="270" y="1022" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">7I</text>
+    <text x="420" y="1022" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">7J</text>
+    <text x="570" y="1022" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">7K</text>
+    <text x="720" y="1022" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">7L</text>
+  </g>
+
+  <g inkscape:groupmode="layer" inkscape:label="8 Switch" id="d-switch">
+    <text x="30" y="1088" font-family="Impact, Anton, sans-serif" font-size="19" fill="#16161A">8 SWITCH</text>
+    <g inkscape:label="8I button on a plate"><rect x="240" y="1072" width="60" height="48" rx="6" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/><circle cx="270" cy="1096" r="15" fill="#16161A"/></g>
+    <g inkscape:label="8J corded switch"><circle cx="420" cy="1092" r="22" fill="#FFFFFF" stroke="#16161A" stroke-width="4"/><circle cx="420" cy="1092" r="9" fill="#16161A"/><path d="M 420 1114 q 0 14 14 18" fill="none" stroke="#16161A" stroke-width="3.5" stroke-linecap="round"/></g>
+    <g inkscape:label="8K two switches"><circle cx="548" cy="1096" r="17" fill="#FFFFFF" stroke="#16161A" stroke-width="4"/><circle cx="548" cy="1096" r="7" fill="#16161A"/><circle cx="592" cy="1096" r="17" fill="#FFFFFF" stroke="#16161A" stroke-width="4"/><circle cx="592" cy="1096" r="7" fill="#16161A"/></g>
+    <g inkscape:label="8L paddle"><rect x="690" y="1084" width="60" height="16" rx="8" fill="#F2B417" stroke="#16161A" stroke-width="3"/><line x1="682" y1="1112" x2="758" y2="1112" stroke="#16161A" stroke-width="4" stroke-linecap="round"/><line x1="720" y1="1100" x2="720" y2="1112" stroke="#16161A" stroke-width="3"/></g>
+    <text x="270" y="1152" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">8I</text>
+    <text x="420" y="1152" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">8J</text>
+    <text x="570" y="1152" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">8K</text>
+    <text x="720" y="1152" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">8L</text>
+  </g>
+
+  <g inkscape:groupmode="layer" inkscape:label="9 Gaze" id="d-gaze">
+    <text x="30" y="1218" font-family="Impact, Anton, sans-serif" font-size="19" fill="#16161A">9 GAZE</text>
+    <g inkscape:label="9I tracker bar"><rect x="232" y="1214" width="76" height="18" rx="9" fill="#12233D" stroke="#16161A" stroke-width="3"/><circle cx="270" cy="1223" r="6" fill="#FDFBF4"/><circle cx="270" cy="1223" r="2.4" fill="#12233D"/><line x1="248" y1="1232" x2="244" y2="1242" stroke="#16161A" stroke-width="3" stroke-linecap="round"/><line x1="292" y1="1232" x2="296" y2="1242" stroke="#16161A" stroke-width="3" stroke-linecap="round"/><path d="M 258 1208 L 270 1196 L 282 1208" fill="none" stroke="#16161A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.6"/></g>
+    <g inkscape:label="9J dwell dots"><circle cx="420" cy="1226" r="7" fill="#16161A"/><circle cx="420" cy="1200" r="4" fill="#16161A"/><circle cx="443" cy="1213" r="4" fill="#16161A"/><circle cx="443" cy="1239" r="4" fill="#16161A"/><circle cx="420" cy="1252" r="4" fill="#FDFBF4" stroke="#16161A" stroke-width="2.5"/><circle cx="397" cy="1239" r="4" fill="#FDFBF4" stroke="#16161A" stroke-width="2.5"/><circle cx="397" cy="1213" r="4" fill="#FDFBF4" stroke="#16161A" stroke-width="2.5"/></g>
+    <g inkscape:label="9K gaze beam"><path d="M 534 1220 Q 552 1206 570 1220 Q 552 1234 534 1220 Z" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/><circle cx="552" cy="1220" r="6" fill="#16161A"/><line x1="576" y1="1224" x2="602" y2="1236" stroke="#16161A" stroke-width="3" stroke-dasharray="5 4"/><circle cx="608" cy="1239" r="5" fill="#16161A"/></g>
+    <g inkscape:label="9L scan ring"><path d="M 720 1202 A 24 24 0 1 1 703 1209" fill="none" stroke="#16161A" stroke-width="5" stroke-linecap="round"/><circle cx="720" cy="1226" r="7" fill="#16161A"/></g>
+    <text x="270" y="1282" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">9I</text>
+    <text x="420" y="1282" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">9J</text>
+    <text x="570" y="1282" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">9K</text>
+    <text x="720" y="1282" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">9L</text>
+  </g>
+
+  <g inkscape:groupmode="layer" inkscape:label="10 Sip and puff" id="d-sip">
+    <text x="30" y="1348" font-family="Impact, Anton, sans-serif" font-size="19" fill="#16161A">10 SIP / PUFF</text>
+    <g inkscape:label="10I tube both ways"><rect x="246" y="1340" width="16" height="30" rx="5" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/><line x1="270" y1="1348" x2="300" y2="1348" stroke="#16161A" stroke-width="3.5"/><polygon points="300,1342 312,1348 300,1354" fill="#16161A"/><line x1="300" y1="1364" x2="270" y2="1364" stroke="#16161A" stroke-width="3.5"/><polygon points="270,1358 258,1364 270,1370" fill="#16161A"/></g>
+    <g inkscape:label="10J pressure"><circle cx="420" cy="1356" r="25" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/><line x1="400" y1="1348" x2="416" y2="1348" stroke="#16161A" stroke-width="4" stroke-linecap="round"/><line x1="408" y1="1340" x2="408" y2="1356" stroke="#16161A" stroke-width="4" stroke-linecap="round"/><line x1="426" y1="1366" x2="442" y2="1366" stroke="#16161A" stroke-width="4" stroke-linecap="round"/></g>
+    <g inkscape:label="10K four signals"><rect x="546" y="1338" width="16" height="30" rx="5" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/><rect x="572" y="1334" width="9" height="9" fill="#16161A"/><rect x="588" y="1334" width="9" height="9" fill="none" stroke="#16161A" stroke-width="2.5"/><rect x="572" y="1358" width="9" height="9" fill="#16161A"/><rect x="588" y="1358" width="9" height="9" fill="none" stroke="#16161A" stroke-width="2.5"/></g>
+    <g inkscape:label="10L bellows"><path d="M 696 1340 L 728 1348 L 728 1364 L 696 1372 Z" fill="#FFFFFF" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/><line x1="706" y1="1343" x2="706" y2="1369" stroke="#16161A" stroke-width="2.5"/><line x1="716" y1="1345" x2="716" y2="1367" stroke="#16161A" stroke-width="2.5"/><path d="M 736 1350 q 10 6 0 12" fill="none" stroke="#16161A" stroke-width="3" stroke-linecap="round"/><path d="M 746 1345 q 14 11 0 22" fill="none" stroke="#16161A" stroke-width="3" stroke-linecap="round" opacity="0.6"/></g>
+    <text x="270" y="1412" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">10I</text>
+    <text x="420" y="1412" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">10J</text>
+    <text x="570" y="1412" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">10K</text>
+    <text x="720" y="1412" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">10L</text>
+  </g>
+
+  <g inkscape:groupmode="layer" inkscape:label="97 Row rules" id="d-rules" sodipodi:insensitive="true">
+    <line x1="24" y1="264" x2="856" y2="264" stroke="#DAD5C6" stroke-width="1.5"/>
+    <line x1="24" y1="394" x2="856" y2="394" stroke="#DAD5C6" stroke-width="1.5"/>
+    <line x1="24" y1="524" x2="856" y2="524" stroke="#DAD5C6" stroke-width="1.5"/>
+    <line x1="24" y1="654" x2="856" y2="654" stroke="#DAD5C6" stroke-width="1.5"/>
+    <line x1="24" y1="784" x2="856" y2="784" stroke="#DAD5C6" stroke-width="1.5"/>
+    <line x1="24" y1="914" x2="856" y2="914" stroke="#DAD5C6" stroke-width="1.5"/>
+    <line x1="24" y1="1044" x2="856" y2="1044" stroke="#DAD5C6" stroke-width="1.5"/>
+    <line x1="24" y1="1174" x2="856" y2="1174" stroke="#DAD5C6" stroke-width="1.5"/>
+    <line x1="24" y1="1304" x2="856" y2="1304" stroke="#DAD5C6" stroke-width="1.5"/>
+    <line x1="24" y1="1434" x2="856" y2="1434" stroke="#16161A" stroke-width="2"/>
+    <text x="24" y="1454" font-family="Archivo, Arial, sans-serif" font-size="11.5" font-style="italic" fill="#5A5A63">Sheets A, C and D all use these row numbers, so a pick can mix freely: 1A, 6K, 9C.</text>
+  </g>
+</svg>

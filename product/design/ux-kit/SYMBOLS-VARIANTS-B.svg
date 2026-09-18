@@ -1,0 +1,424 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:svg="http://www.w3.org/2000/svg"
+     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+     xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+     viewBox="0 0 880 1470" width="880" height="1470">
+  <title>Symbol variants B: engine nouns and structural marks</title>
+  <desc>Five alternative treatments per concept, coded row-letter. Sheet A has verdicts and input devices.</desc>
+  <sodipodi:namedview inkscape:document-units="px" pagecolor="#FDFBF4" bordercolor="#16161A"/>
+
+  <g inkscape:groupmode="layer" inkscape:label="00 Paper" id="layer-paper" sodipodi:insensitive="true">
+    <rect x="0" y="0" width="880" height="1470" fill="#FDFBF4"/>
+    <text x="24" y="52" font-family="Impact, Anton, sans-serif" font-size="34" fill="#12233D">PICK A SYMBOL &#183; SHEET B</text>
+    <text x="24" y="76" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#5A5A63">Engine nouns and structural marks. Say the code, for example "13D".</text>
+    <line x1="24" y1="112" x2="856" y2="112" stroke="#16161A" stroke-width="3"/>
+    <text x="235" y="128" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="16" fill="#D62828">A</text>
+    <text x="365" y="128" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="16" fill="#D62828">B</text>
+    <text x="495" y="128" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="16" fill="#D62828">C</text>
+    <text x="625" y="128" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="16" fill="#D62828">D</text>
+    <text x="755" y="128" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="16" fill="#D62828">E</text>
+  </g>
+
+  <g inkscape:groupmode="layer" inkscape:label="Row tints" id="layer-tints" sodipodi:insensitive="true">
+    <rect x="24" y="134" width="832" height="130" fill="#F3F0E6"/>
+    <rect x="24" y="394" width="832" height="130" fill="#F3F0E6"/>
+    <rect x="24" y="654" width="832" height="130" fill="#F3F0E6"/>
+    <rect x="24" y="914" width="832" height="130" fill="#F3F0E6"/>
+    <rect x="24" y="1174" width="832" height="130" fill="#F3F0E6"/>
+  </g>
+
+  <!-- ============ 11. ENTITY ============ -->
+  <g inkscape:groupmode="layer" inkscape:label="11 Entity" id="row-entity">
+    <text x="30" y="178" font-family="Impact, Anton, sans-serif" font-size="19" fill="#16161A">11 ENTITY</text>
+    <text x="30" y="198" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">a thing in the world</text>
+
+    <g inkscape:label="11A square and core">
+      <rect x="210" y="157" width="50" height="50" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <circle cx="235" cy="182" r="7" fill="#16161A"/>
+    </g>
+    <g inkscape:label="11B disc and core">
+      <circle cx="365" cy="182" r="25" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <circle cx="365" cy="182" r="7" fill="#16161A"/>
+    </g>
+    <g inkscape:label="11C empty container">
+      <rect x="470" y="157" width="50" height="50" fill="#FFFFFF" stroke="#16161A" stroke-width="4"/>
+    </g>
+    <g inkscape:label="11D identified">
+      <rect x="600" y="157" width="50" height="50" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <text x="625" y="192" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="21" font-weight="bold" fill="#16161A">#</text>
+    </g>
+    <g inkscape:label="11E selection bounds">
+      <path d="M 730 170 L 730 157 L 743 157 M 767 157 L 780 157 L 780 170 M 780 194 L 780 207 L 767 207 M 743 207 L 730 207 L 730 194" fill="none" stroke="#16161A" stroke-width="4" stroke-linecap="square"/>
+      <circle cx="755" cy="182" r="6" fill="#16161A"/>
+    </g>
+
+    <text x="235" y="242" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">11A</text>
+    <text x="365" y="242" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">11B</text>
+    <text x="495" y="242" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">11C</text>
+    <text x="625" y="242" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">11D</text>
+    <text x="755" y="242" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">11E</text>
+  </g>
+
+  <!-- ============ 12. COMPONENT ============ -->
+  <g inkscape:groupmode="layer" inkscape:label="12 Component" id="row-component">
+    <text x="30" y="308" font-family="Impact, Anton, sans-serif" font-size="19" fill="#16161A">12 COMPONENT</text>
+    <text x="30" y="328" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">data bolted to an entity</text>
+
+    <g inkscape:label="12A square with tab">
+      <rect x="205" y="288" width="48" height="48" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <rect x="253" y="302" width="14" height="20" fill="#16161A"/>
+    </g>
+    <g inkscape:label="12B record of fields">
+      <rect x="337" y="288" width="56" height="48" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <line x1="337" y1="304" x2="393" y2="304" stroke="#16161A" stroke-width="2.5"/>
+      <line x1="337" y1="320" x2="393" y2="320" stroke="#16161A" stroke-width="2.5"/>
+    </g>
+    <g inkscape:label="12C notched to fit">
+      <path d="M 471 288 L 519 288 L 519 303 A 9 9 0 0 0 519 321 L 519 336 L 471 336 Z" fill="#FFFFFF" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+    </g>
+    <g inkscape:label="12D attached to a host">
+      <rect x="596" y="290" width="34" height="44" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <rect x="630" y="300" width="24" height="24" fill="#0B5FCE" stroke="#16161A" stroke-width="3"/>
+    </g>
+    <g inkscape:label="12E filled block">
+      <rect x="731" y="288" width="48" height="48" fill="#0B5FCE" stroke="#16161A" stroke-width="3"/>
+      <line x1="740" y1="304" x2="770" y2="304" stroke="#FFFFFF" stroke-width="3"/>
+      <line x1="740" y1="318" x2="762" y2="318" stroke="#FFFFFF" stroke-width="3"/>
+    </g>
+
+    <text x="235" y="372" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">12A</text>
+    <text x="365" y="372" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">12B</text>
+    <text x="495" y="372" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">12C</text>
+    <text x="625" y="372" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">12D</text>
+    <text x="755" y="372" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">12E</text>
+  </g>
+
+  <!-- ============ 13. SYSTEM ============ -->
+  <g inkscape:groupmode="layer" inkscape:label="13 System" id="row-system">
+    <text x="30" y="438" font-family="Impact, Anton, sans-serif" font-size="19" fill="#16161A">13 SYSTEM</text>
+    <text x="30" y="458" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">code that runs every frame</text>
+
+    <g inkscape:label="13A bars and arrow">
+      <rect x="203" y="422" width="54" height="10" fill="#16161A"/>
+      <rect x="203" y="437" width="54" height="10" fill="#16161A"/>
+      <rect x="203" y="452" width="54" height="10" fill="#16161A"/>
+      <polygon points="265,432 283,442 265,452" fill="#17804A" stroke="#16161A" stroke-width="2"/>
+    </g>
+    <g inkscape:label="13B loop">
+      <path d="M 365 419 A 23 23 0 1 1 346 430" fill="none" stroke="#16161A" stroke-width="5" stroke-linecap="round"/>
+      <polygon points="340,420 352,434 336,438" fill="#16161A"/>
+    </g>
+    <g inkscape:label="13C pipeline">
+      <rect x="466" y="426" width="20" height="32" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <line x1="486" y1="442" x2="502" y2="442" stroke="#16161A" stroke-width="3"/>
+      <polygon points="502,430 522,442 502,454" fill="#17804A" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+    </g>
+    <g inkscape:label="13D interlocking chevrons">
+      <polyline points="602,422 620,442 602,462" fill="none" stroke="#16161A" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+      <polyline points="626,422 644,442 626,462" fill="none" stroke="#16161A" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/>
+    </g>
+    <g inkscape:label="13E hub and spokes">
+      <circle cx="755" cy="442" r="10" fill="#16161A"/>
+      <line x1="755" y1="418" x2="755" y2="432" stroke="#16161A" stroke-width="4" stroke-linecap="round"/>
+      <line x1="776" y1="454" x2="764" y2="447" stroke="#16161A" stroke-width="4" stroke-linecap="round"/>
+      <line x1="734" y1="454" x2="746" y2="447" stroke="#16161A" stroke-width="4" stroke-linecap="round"/>
+    </g>
+
+    <text x="235" y="502" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">13A</text>
+    <text x="365" y="502" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">13B</text>
+    <text x="495" y="502" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">13C</text>
+    <text x="625" y="502" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">13D</text>
+    <text x="755" y="502" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">13E</text>
+  </g>
+
+  <!-- ============ 14. SCENE ============ -->
+  <g inkscape:groupmode="layer" inkscape:label="14 Scene" id="row-scene">
+    <text x="30" y="568" font-family="Impact, Anton, sans-serif" font-size="19" fill="#16161A">14 SCENE</text>
+
+    <g inkscape:label="14A horizon and sun">
+      <rect x="201" y="548" width="68" height="48" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <line x1="201" y1="580" x2="269" y2="580" stroke="#16161A" stroke-width="3"/>
+      <circle cx="251" cy="562" r="7" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+    </g>
+    <g inkscape:label="14B frame of contents">
+      <rect x="331" y="548" width="68" height="48" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <rect x="341" y="566" width="16" height="20" fill="#16161A"/>
+      <circle cx="371" cy="576" r="9" fill="#16161A"/>
+      <polygon points="389,586 381,570 397,570" fill="#16161A"/>
+    </g>
+    <g inkscape:label="14C slate">
+      <rect x="461" y="548" width="68" height="50" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <rect x="461" y="548" width="68" height="14" fill="#16161A"/>
+      <line x1="461" y1="584" x2="529" y2="584" stroke="#16161A" stroke-width="3"/>
+    </g>
+    <g inkscape:label="14D playable">
+      <rect x="591" y="548" width="68" height="48" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <polygon points="616,560 640,572 616,584" fill="#17804A" stroke="#16161A" stroke-width="2.5" stroke-linejoin="round"/>
+    </g>
+    <g inkscape:label="14E nested">
+      <rect x="721" y="544" width="68" height="48" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <rect x="733" y="556" width="44" height="30" fill="#F0EBDD" stroke="#16161A" stroke-width="3"/>
+    </g>
+
+    <text x="235" y="632" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">14A</text>
+    <text x="365" y="632" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">14B</text>
+    <text x="495" y="632" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">14C</text>
+    <text x="625" y="632" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">14D</text>
+    <text x="755" y="632" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">14E</text>
+  </g>
+
+  <!-- ============ 15. SCRIPT ============ -->
+  <g inkscape:groupmode="layer" inkscape:label="15 Script" id="row-script">
+    <text x="30" y="698" font-family="Impact, Anton, sans-serif" font-size="19" fill="#16161A">15 SCRIPT</text>
+
+    <g inkscape:label="15A chevrons">
+      <polyline points="225,682 211,702 225,722" fill="none" stroke="#16161A" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+      <polyline points="245,682 259,702 245,722" fill="none" stroke="#16161A" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <g inkscape:label="15B page of code">
+      <rect x="341" y="676" width="48" height="52" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <polyline points="358,692 350,702 358,712" fill="none" stroke="#16161A" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      <polyline points="372,692 380,702 372,712" fill="none" stroke="#16161A" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <g inkscape:label="15C page with folded corner">
+      <path d="M 473 676 L 505 676 L 519 690 L 519 728 L 473 728 Z" fill="#FFFFFF" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+      <path d="M 505 676 L 505 690 L 519 690" fill="none" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+      <line x1="482" y1="704" x2="510" y2="704" stroke="#16161A" stroke-width="2.5"/>
+      <line x1="482" y1="716" x2="502" y2="716" stroke="#16161A" stroke-width="2.5"/>
+    </g>
+    <g inkscape:label="15D chevron and slash">
+      <polyline points="613,686 601,702 613,718" fill="none" stroke="#16161A" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+      <line x1="632" y1="682" x2="618" y2="722" stroke="#16161A" stroke-width="4" stroke-linecap="round"/>
+      <polyline points="637,686 649,702 637,718" fill="none" stroke="#16161A" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <g inkscape:label="15E prompt">
+      <rect x="725" y="678" width="60" height="48" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+      <polyline points="737,694 745,702 737,710" fill="none" stroke="#FDFBF4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      <line x1="752" y1="710" x2="770" y2="710" stroke="#FDFBF4" stroke-width="3"/>
+    </g>
+
+    <text x="235" y="762" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">15A</text>
+    <text x="365" y="762" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">15B</text>
+    <text x="495" y="762" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">15C</text>
+    <text x="625" y="762" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">15D</text>
+    <text x="755" y="762" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">15E</text>
+  </g>
+
+  <!-- ============ 16. ASSET ============ -->
+  <g inkscape:groupmode="layer" inkscape:label="16 Asset" id="row-asset">
+    <text x="30" y="828" font-family="Impact, Anton, sans-serif" font-size="19" fill="#16161A">16 ASSET</text>
+
+    <g inkscape:label="16A stack">
+      <rect x="211" y="842" width="48" height="14" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <rect x="215" y="828" width="48" height="14" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <rect x="219" y="814" width="48" height="14" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+    </g>
+    <g inkscape:label="16B disc">
+      <circle cx="365" cy="832" r="25" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <circle cx="365" cy="832" r="7" fill="#16161A"/>
+    </g>
+    <g inkscape:label="16C crate">
+      <polygon points="470,820 495,808 520,820 520,848 495,860 470,848" fill="#FFFFFF" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+      <line x1="470" y1="820" x2="495" y2="832" stroke="#16161A" stroke-width="3"/>
+      <line x1="520" y1="820" x2="495" y2="832" stroke="#16161A" stroke-width="3"/>
+      <line x1="495" y1="832" x2="495" y2="860" stroke="#16161A" stroke-width="3"/>
+    </g>
+    <g inkscape:label="16D file with picture">
+      <path d="M 603 808 L 635 808 L 649 822 L 649 858 L 603 858 Z" fill="#FFFFFF" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+      <circle cx="616" cy="832" r="5" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+      <polygon points="608,850 622,834 640,850" fill="#17804A" stroke="#16161A" stroke-width="2" stroke-linejoin="round"/>
+    </g>
+    <g inkscape:label="16E tagged bundle">
+      <rect x="727" y="812" width="44" height="44" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <path d="M 771 820 L 787 828 L 771 836 Z" fill="#F2B417" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+      <line x1="736" y1="826" x2="762" y2="826" stroke="#16161A" stroke-width="3"/>
+      <line x1="736" y1="838" x2="754" y2="838" stroke="#16161A" stroke-width="3"/>
+    </g>
+
+    <text x="235" y="892" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">16A</text>
+    <text x="365" y="892" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">16B</text>
+    <text x="495" y="892" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">16C</text>
+    <text x="625" y="892" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">16D</text>
+    <text x="755" y="892" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">16E</text>
+  </g>
+
+  <!-- ============ 17. REACTION ============ -->
+  <g inkscape:groupmode="layer" inkscape:label="17 Reaction" id="row-reaction">
+    <text x="30" y="958" font-family="Impact, Anton, sans-serif" font-size="19" fill="#16161A">17 REACTION</text>
+    <text x="30" y="978" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">margin figure with no job</text>
+
+    <g inkscape:label="17A round, pleased">
+      <circle cx="235" cy="962" r="22" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+      <circle cx="227" cy="958" r="2.8" fill="#16161A"/>
+      <circle cx="243" cy="958" r="2.8" fill="#16161A"/>
+      <path d="M 226 969 q 9 8 18 0" fill="none" stroke="#16161A" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="213" y1="970" x2="203" y2="980" stroke="#16161A" stroke-width="3" stroke-linecap="round"/>
+      <line x1="257" y1="970" x2="267" y2="980" stroke="#16161A" stroke-width="3" stroke-linecap="round"/>
+    </g>
+    <g inkscape:label="17B delighted, arms up">
+      <circle cx="365" cy="966" r="22" fill="#17804A" stroke="#16161A" stroke-width="3"/>
+      <circle cx="357" cy="961" r="3.4" fill="#FFFFFF"/>
+      <circle cx="373" cy="961" r="3.4" fill="#FFFFFF"/>
+      <ellipse cx="365" cy="974" rx="6" ry="5" fill="#FFFFFF"/>
+      <line x1="345" y1="956" x2="333" y2="942" stroke="#16161A" stroke-width="3" stroke-linecap="round"/>
+      <line x1="385" y1="956" x2="397" y2="942" stroke="#16161A" stroke-width="3" stroke-linecap="round"/>
+    </g>
+    <g inkscape:label="17C unimpressed">
+      <circle cx="495" cy="962" r="22" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <line x1="484" y1="957" x2="491" y2="957" stroke="#16161A" stroke-width="3" stroke-linecap="round"/>
+      <line x1="499" y1="957" x2="506" y2="957" stroke="#16161A" stroke-width="3" stroke-linecap="round"/>
+      <line x1="486" y1="971" x2="504" y2="971" stroke="#16161A" stroke-width="2.5" stroke-linecap="round"/>
+      
+    </g>
+    <g inkscape:label="17D blocky cousin">
+      <rect x="603" y="942" width="44" height="40" rx="6" fill="#0B5FCE" stroke="#16161A" stroke-width="3"/>
+      <circle cx="616" cy="957" r="3" fill="#FFFFFF"/>
+      <circle cx="634" cy="957" r="3" fill="#FFFFFF"/>
+      <path d="M 615 969 q 10 7 20 0" fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="613" y1="982" x2="613" y2="992" stroke="#16161A" stroke-width="3" stroke-linecap="round"/>
+      <line x1="637" y1="982" x2="637" y2="992" stroke="#16161A" stroke-width="3" stroke-linecap="round"/>
+    </g>
+    <g inkscape:label="17E worried">
+      <circle cx="755" cy="962" r="22" fill="#D62828" stroke="#16161A" stroke-width="3"/>
+      <circle cx="747" cy="957" r="3" fill="#FFFFFF"/>
+      <circle cx="763" cy="957" r="3" fill="#FFFFFF"/>
+      <path d="M 746 974 q 9 -7 18 0" fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round"/>
+      <path d="M 779 946 q 7 9 0 13 q -7 -4 0 -13 Z" fill="#0B5FCE" stroke="#16161A" stroke-width="2" stroke-linejoin="round"/>
+    </g>
+
+    <text x="235" y="1022" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">17A</text>
+    <text x="365" y="1022" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">17B</text>
+    <text x="495" y="1022" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">17C</text>
+    <text x="625" y="1022" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">17D</text>
+    <text x="755" y="1022" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">17E</text>
+  </g>
+
+  <!-- ============ 18. DIAL ============ -->
+  <g inkscape:groupmode="layer" inkscape:label="18 Dial" id="row-dial">
+    <text x="30" y="1088" font-family="Impact, Anton, sans-serif" font-size="19" fill="#16161A">18 DIAL</text>
+    <text x="30" y="1108" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">the quick-access radial</text>
+
+    <g inkscape:label="18A hub and spokes">
+      <circle cx="235" cy="1092" r="23" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <circle cx="235" cy="1092" r="8" fill="#12233D"/>
+      <line x1="235" y1="1069" x2="235" y2="1084" stroke="#16161A" stroke-width="2.5"/>
+      <line x1="255" y1="1104" x2="243" y2="1097" stroke="#16161A" stroke-width="2.5"/>
+      <line x1="215" y1="1104" x2="227" y2="1097" stroke="#16161A" stroke-width="2.5"/>
+    </g>
+    <g inkscape:label="18B one sector lit">
+      <circle cx="365" cy="1092" r="23" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <path d="M 365 1092 L 365 1069 A 23 23 0 0 1 385 1104 Z" fill="#F2B417" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+      <circle cx="365" cy="1092" r="7" fill="#12233D"/>
+    </g>
+    <g inkscape:label="18C quartered">
+      <circle cx="495" cy="1092" r="23" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <line x1="495" y1="1069" x2="495" y2="1115" stroke="#16161A" stroke-width="3"/>
+      <line x1="472" y1="1092" x2="518" y2="1092" stroke="#16161A" stroke-width="3"/>
+    </g>
+    <g inkscape:label="18D needle">
+      <circle cx="625" cy="1092" r="23" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <line x1="625" y1="1092" x2="641" y2="1076" stroke="#D62828" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="625" cy="1092" r="5" fill="#16161A"/>
+    </g>
+    <g inkscape:label="18E ring of options">
+      <circle cx="755" cy="1069" r="5.5" fill="#16161A"/>
+      <circle cx="775" cy="1081" r="5.5" fill="#16161A"/>
+      <circle cx="775" cy="1104" r="5.5" fill="#16161A"/>
+      <circle cx="755" cy="1115" r="5.5" fill="#16161A"/>
+      <circle cx="735" cy="1104" r="5.5" fill="#16161A"/>
+      <circle cx="735" cy="1081" r="5.5" fill="#16161A"/>
+    </g>
+
+    <text x="235" y="1152" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">18A</text>
+    <text x="365" y="1152" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">18B</text>
+    <text x="495" y="1152" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">18C</text>
+    <text x="625" y="1152" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">18D</text>
+    <text x="755" y="1152" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">18E</text>
+  </g>
+
+  <!-- ============ 19. NOTE ============ -->
+  <g inkscape:groupmode="layer" inkscape:label="19 Note" id="row-note">
+    <text x="30" y="1218" font-family="Impact, Anton, sans-serif" font-size="19" fill="#16161A">19 NOTE</text>
+
+    <g inkscape:label="19A ruled card">
+      <rect x="209" y="1200" width="52" height="44" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+      <line x1="218" y1="1214" x2="252" y2="1214" stroke="#16161A" stroke-width="2.5"/>
+      <line x1="218" y1="1224" x2="252" y2="1224" stroke="#16161A" stroke-width="2.5"/>
+      <line x1="218" y1="1234" x2="240" y2="1234" stroke="#16161A" stroke-width="2.5"/>
+    </g>
+    <g inkscape:label="19B folded corner">
+      <path d="M 341 1198 L 389 1198 L 389 1232 L 377 1246 L 341 1246 Z" fill="#F2B417" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+      <path d="M 389 1232 L 377 1232 L 377 1246" fill="none" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+    </g>
+    <g inkscape:label="19C speech bubble">
+      <path d="M 469 1198 L 521 1198 L 521 1232 L 497 1232 L 487 1246 L 485 1232 L 469 1232 Z" fill="#F2B417" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+    </g>
+    <g inkscape:label="19D pinned">
+      <rect x="601" y="1204" width="48" height="42" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+      <circle cx="625" cy="1200" r="7" fill="#D62828" stroke="#16161A" stroke-width="3"/>
+    </g>
+    <g inkscape:label="19E tag">
+      <path d="M 729 1202 L 771 1202 L 785 1222 L 771 1242 L 729 1242 Z" fill="#F2B417" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+      <circle cx="742" cy="1222" r="4.5" fill="#16161A"/>
+    </g>
+
+    <text x="235" y="1282" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">19A</text>
+    <text x="365" y="1282" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">19B</text>
+    <text x="495" y="1282" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">19C</text>
+    <text x="625" y="1282" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">19D</text>
+    <text x="755" y="1282" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">19E</text>
+  </g>
+
+  <!-- ============ 20. SEE ALSO ============ -->
+  <g inkscape:groupmode="layer" inkscape:label="20 See also" id="row-xref">
+    <text x="30" y="1348" font-family="Impact, Anton, sans-serif" font-size="19" fill="#16161A">20 SEE ALSO</text>
+    <text x="30" y="1368" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">inline cross-reference</text>
+
+    <g inkscape:label="20A page and arrow">
+      <rect x="199" y="1328" width="38" height="46" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <line x1="207" y1="1342" x2="229" y2="1342" stroke="#16161A" stroke-width="2.5"/>
+      <line x1="207" y1="1354" x2="229" y2="1354" stroke="#16161A" stroke-width="2.5"/>
+      <line x1="245" y1="1352" x2="263" y2="1352" stroke="#0B5FCE" stroke-width="3"/>
+      <polygon points="263,1346 277,1352 263,1358" fill="#0B5FCE"/>
+    </g>
+    <g inkscape:label="20B arrow into bracket">
+      <path d="M 385 1330 L 397 1330 L 397 1374 L 385 1374" fill="none" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+      <line x1="337" y1="1352" x2="369" y2="1352" stroke="#0B5FCE" stroke-width="4"/>
+      <polygon points="369,1344 385,1352 369,1360" fill="#0B5FCE"/>
+    </g>
+    <g inkscape:label="20C linked pages">
+      <rect x="463" y="1330" width="34" height="42" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <rect x="493" y="1338" width="34" height="42" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+    </g>
+    <g inkscape:label="20D double chevron">
+      <polyline points="606,1336 626,1352 606,1368" fill="none" stroke="#0B5FCE" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+      <polyline points="628,1336 648,1352 628,1368" fill="none" stroke="#0B5FCE" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <g inkscape:label="20E page number chip">
+      <rect x="731" y="1334" width="48" height="36" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+      <text x="755" y="1360" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="19" fill="#FDFBF4">p7</text>
+    </g>
+
+    <text x="235" y="1412" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">20A</text>
+    <text x="365" y="1412" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">20B</text>
+    <text x="495" y="1412" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">20C</text>
+    <text x="625" y="1412" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">20D</text>
+    <text x="755" y="1412" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">20E</text>
+  </g>
+
+  <g inkscape:groupmode="layer" inkscape:label="99 Footer" id="layer-footer" sodipodi:insensitive="true">
+    <line x1="24" y1="1434" x2="856" y2="1434" stroke="#16161A" stroke-width="2"/>
+    <text x="24" y="1454" font-family="Archivo, Arial, sans-serif" font-size="11.5" font-style="italic" fill="#5A5A63">Pick for the SET, not for the single mark. Entity, component and asset sit next to each other constantly and must not blur together.</text>
+  </g>
+  <g inkscape:groupmode="layer" inkscape:label="97 Row rules" id="layer-rules" sodipodi:insensitive="true">
+    <line x1="24" y1="264" x2="856" y2="264" stroke="#DAD5C6" stroke-width="1.5"/>
+    <line x1="24" y1="394" x2="856" y2="394" stroke="#DAD5C6" stroke-width="1.5"/>
+    <line x1="24" y1="524" x2="856" y2="524" stroke="#DAD5C6" stroke-width="1.5"/>
+    <line x1="24" y1="654" x2="856" y2="654" stroke="#DAD5C6" stroke-width="1.5"/>
+    <line x1="24" y1="784" x2="856" y2="784" stroke="#DAD5C6" stroke-width="1.5"/>
+    <line x1="24" y1="914" x2="856" y2="914" stroke="#DAD5C6" stroke-width="1.5"/>
+    <line x1="24" y1="1044" x2="856" y2="1044" stroke="#DAD5C6" stroke-width="1.5"/>
+    <line x1="24" y1="1174" x2="856" y2="1174" stroke="#DAD5C6" stroke-width="1.5"/>
+    <line x1="24" y1="1304" x2="856" y2="1304" stroke="#DAD5C6" stroke-width="1.5"/>
+  </g>
+</svg>

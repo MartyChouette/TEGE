@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:svg="http://www.w3.org/2000/svg"
+     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+     xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+     viewBox="0 0 900 250" width="900" height="250"
+     role="img"
+     aria-label="A drag in the viewport becomes geometry through BuildBrushes, a pure function that needs no viewport, no ImGui and no GPU, which is why it can be tested.">
+  <title>What happens between a drag and a wall</title>
+  <desc>The gesture is captured, BuildBrushes turns a drag plus numbers into a brush list with no engine dependencies, and only then does anything reach the world.</desc>
+
+  <defs>
+    <marker id="gestureArrow" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <g inkscape:groupmode="layer" inkscape:label="Pipeline" id="layer-pipeline">
+    <rect x="20" y="74" width="180" height="76" 
+          fill="none" stroke="currentColor" stroke-width="3"/>
+    <text x="110" y="104" text-anchor="middle" font-family="Archivo, Arial, sans-serif"
+          font-size="13" font-weight="800" fill="currentColor">Your drag</text>
+    <text x="110" y="124" text-anchor="middle" font-family="Archivo, Arial, sans-serif"
+          font-size="11" fill="currentColor" >press, drag, release</text>
+
+    <line x1="200" y1="112" x2="252" y2="112" stroke="currentColor"
+          stroke-width="3" marker-end="url(#gestureArrow)"/>
+
+    <rect x="260" y="74" width="200" height="76"
+          fill="#17804A" stroke="#16161A" stroke-width="4"/>
+    <text x="360" y="104" text-anchor="middle" font-family="monospace"
+          font-size="13" font-weight="800" fill="#FFFFFF">BuildBrushes</text>
+    <text x="360" y="124" text-anchor="middle" font-family="Archivo, Arial, sans-serif"
+          font-size="11" fill="#FFFFFF">a drag plus numbers in,</text>
+    <text x="360" y="139" text-anchor="middle" font-family="Archivo, Arial, sans-serif"
+          font-size="11" fill="#FFFFFF">a brush list out</text>
+
+    <line x1="460" y1="112" x2="512" y2="112" stroke="currentColor"
+          stroke-width="3" marker-end="url(#gestureArrow)"/>
+
+    <rect x="520" y="74" width="180" height="76" 
+          fill="none" stroke="currentColor" stroke-width="3"/>
+    <text x="610" y="104" text-anchor="middle" font-family="monospace"
+          font-size="13" fill="currentColor">BrushSolid[]</text>
+    <text x="610" y="124" text-anchor="middle" font-family="Archivo, Arial, sans-serif"
+          font-size="11" fill="currentColor" >plain geometry</text>
+
+    <line x1="700" y1="112" x2="752" y2="112" stroke="currentColor"
+          stroke-width="3" marker-end="url(#gestureArrow)"/>
+
+    <rect x="760" y="74" width="120" height="76" 
+          fill="none" stroke="currentColor" stroke-width="3"/>
+    <text x="820" y="104" text-anchor="middle" font-family="Archivo, Arial, sans-serif"
+          font-size="13" font-weight="800" fill="currentColor">World</text>
+    <text x="820" y="124" text-anchor="middle" font-family="Archivo, Arial, sans-serif"
+          font-size="11" fill="currentColor" >a wall exists</text>
+  </g>
+
+  <g inkscape:groupmode="layer" inkscape:label="Purity note" id="layer-note">
+    <line x1="360" y1="150" x2="360" y2="186" stroke="#17804A"
+          stroke-width="2" stroke-dasharray="3 3"/>
+    <text x="360" y="204" text-anchor="middle" font-family="Archivo, Arial, sans-serif"
+          font-size="12" font-weight="800" fill="#17804A">no viewport, no ImGui, no GPU</text>
+    <text x="360" y="222" text-anchor="middle" font-family="Archivo, Arial, sans-serif"
+          font-size="11" fill="#17804A">which is why this part can be tested</text>
+  </g>
+</svg>

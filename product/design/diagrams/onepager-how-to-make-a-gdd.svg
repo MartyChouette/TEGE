@@ -1,0 +1,226 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:svg="http://www.w3.org/2000/svg"
+     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+     xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+     viewBox="0 0 1600 1290" width="1600" height="1290"
+     role="img"
+     aria-label="A flow chart for making a game design document: narrow the question, answer five questions on paper, check whether a sentence would do, pick an archetype, sketch, draw, mark every part, check it reads standing up, then date it and pin it up.">
+  <title>How to make a game design document</title>
+  <desc>A decision flow with two exits, a branch into six page archetypes, and a loop back, so the process is drawn rather than listed.</desc>
+  <sodipodi:namedview inkscape:document-units="px" pagecolor="#FDFBF4" bordercolor="#16161A"/>
+
+  <defs>
+    <marker id="fA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#16161A"/>
+    </marker>
+    <marker id="fR" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#D62828"/>
+    </marker>
+    <marker id="fG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#17804A"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1600" height="1290" fill="#FDFBF4"/>
+
+  <g inkscape:groupmode="layer" inkscape:label="10 Title" id="f-title">
+    <rect x="0" y="0" width="1600" height="92" fill="#12233D"/>
+    <rect x="0" y="86" width="1600" height="6" fill="#D62828"/>
+    <text x="32" y="50" font-family="Impact, Anton, sans-serif" font-size="38" fill="#FDFBF4">HOW TO MAKE A DESIGN DOCUMENT</text>
+    <text x="32" y="74" font-family="Archivo, Arial, sans-serif" font-size="14" fill="#C9D2DE">The goal is to communicate an idea. It is not to produce documentation. Everything below follows from that.</text>
+    <rect x="1382" y="22" width="186" height="28" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+    <text x="1475" y="43" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="15" fill="#16161A">METHOD</text>
+    <text x="1568" y="72" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#F2B417">2026-09-17</text>
+  </g>
+
+  <!-- ================= MAIN FLOW ================= -->
+  <g inkscape:groupmode="layer" inkscape:label="20 Flow" id="f-flow">
+    <rect x="270" y="140" width="340" height="54" rx="27" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+    <text x="440" y="164" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="17" fill="#FDFBF4">START</text>
+    <text x="440" y="184" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#C9D2DE">You have one thing to communicate</text>
+    <line x1="440" y1="194" x2="440" y2="208" stroke="#16161A" stroke-width="4" marker-end="url(#fA)"/>
+
+    <polygon points="440,214 615,270 440,326 265,270" fill="#F2B417" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+    <text x="440" y="264" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13.5" font-weight="bold" fill="#16161A">Can you say the question</text>
+    <text x="440" y="282" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13.5" font-weight="bold" fill="#16161A">in ONE sentence?</text>
+    <line x1="440" y1="326" x2="440" y2="350" stroke="#16161A" stroke-width="4" marker-end="url(#fA)"/>
+    <text x="456" y="344" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#17804A">YES</text>
+
+    <path d="M 265 270 L 170 270 L 170 167 L 264 167" fill="none" stroke="#D62828" stroke-width="3.5" marker-end="url(#fR)"/>
+    <text x="176" y="228" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#D62828">NO</text>
+    <text x="176" y="244" font-family="Archivo, Arial, sans-serif" font-size="11.5" fill="#D62828">narrow it</text>
+
+    <rect x="270" y="356" width="340" height="66" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+    <text x="440" y="380" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">Answer the five questions</text>
+    <text x="440" y="400" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#5A5A63">On paper. With a pen. Before drawing anything.</text>
+    <text x="440" y="416" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11.5" font-style="italic" fill="#D62828">Question five is the one everybody skips</text>
+    <line x1="440" y1="422" x2="440" y2="444" stroke="#16161A" stroke-width="4" marker-end="url(#fA)"/>
+
+    <polygon points="440,450 615,506 440,562 265,506" fill="#F2B417" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+    <text x="440" y="500" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13.5" font-weight="bold" fill="#16161A">Would a sentence say it</text>
+    <text x="440" y="518" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13.5" font-weight="bold" fill="#16161A">faster than a picture?</text>
+    <line x1="440" y1="562" x2="440" y2="586" stroke="#16161A" stroke-width="4" marker-end="url(#fA)"/>
+    <text x="456" y="580" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#D62828">NO</text>
+
+    <line x1="615" y1="506" x2="686" y2="506" stroke="#17804A" stroke-width="3.5" marker-end="url(#fG)"/>
+    <text x="624" y="496" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#17804A">YES</text>
+    <rect x="694" y="476" width="200" height="60" rx="30" fill="#17804A" stroke="#16161A" stroke-width="3"/>
+    <text x="794" y="502" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="15" fill="#FFFFFF">WRITE THE SENTENCE</text>
+    <text x="794" y="522" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#D8ECE0">and stop. That was the document.</text>
+
+    <polygon points="440,592 615,648 440,704 265,648" fill="#F2B417" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+    <text x="440" y="642" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13.5" font-weight="bold" fill="#16161A">What SHAPE is the thing</text>
+    <text x="440" y="660" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13.5" font-weight="bold" fill="#16161A">you are explaining?</text>
+    <line x1="615" y1="648" x2="884" y2="648" stroke="#16161A" stroke-width="3.5" marker-end="url(#fA)"/>
+    <text x="700" y="638" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#16161A">PICK THE ARCHETYPE</text>
+    <line x1="440" y1="704" x2="440" y2="728" stroke="#16161A" stroke-width="4" marker-end="url(#fA)"/>
+
+    <rect x="270" y="734" width="340" height="62" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+    <text x="440" y="758" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">Sketch it by hand</text>
+    <text x="440" y="778" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#5A5A63">Relationships first, boxes second. Nobody</text>
+    <text x="440" y="792" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#5A5A63">defends a sketch, so it gets corrected.</text>
+    <line x1="440" y1="796" x2="440" y2="818" stroke="#16161A" stroke-width="4" marker-end="url(#fA)"/>
+
+    <rect x="270" y="824" width="340" height="80" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+    <text x="440" y="848" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">Draw the page</text>
+    <text x="440" y="868" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#5A5A63">One dominant illustration. Callouts on leaders,</text>
+    <text x="440" y="884" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#5A5A63">in place. A sidebar. A description. Whitespace.</text>
+    <line x1="440" y1="904" x2="440" y2="926" stroke="#16161A" stroke-width="4" marker-end="url(#fA)"/>
+
+    <rect x="270" y="932" width="340" height="66" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+    <text x="440" y="956" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">Mark every part</text>
+    <circle cx="336" cy="976" r="10" fill="#17804A" stroke="#16161A" stroke-width="2.5"/>
+    <polygon points="376,966 388,988 364,988" fill="#F2B417" stroke="#16161A" stroke-width="2.5" stroke-linejoin="round"/>
+    <rect x="404" y="966" width="20" height="20" fill="#D62828" stroke="#16161A" stroke-width="2.5"/>
+    <text x="446" y="982" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#5A5A63">works &#183; will surprise &#183; missing</text>
+    <line x1="440" y1="998" x2="440" y2="1020" stroke="#16161A" stroke-width="4" marker-end="url(#fA)"/>
+
+    <polygon points="440,1026 615,1082 440,1138 265,1082" fill="#F2B417" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+    <text x="440" y="1076" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13.5" font-weight="bold" fill="#16161A">Readable standing up,</text>
+    <text x="440" y="1094" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13.5" font-weight="bold" fill="#16161A">at arm's length?</text>
+    <line x1="440" y1="1138" x2="440" y2="1160" stroke="#16161A" stroke-width="4" marker-end="url(#fA)"/>
+    <text x="456" y="1156" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#17804A">YES</text>
+
+    <path d="M 265 1082 L 196 1082 L 196 864 L 264 864" fill="none" stroke="#D62828" stroke-width="3.5" marker-end="url(#fR)"/>
+    <text x="204" y="978" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#D62828">NO</text>
+    <text x="204" y="994" font-family="Archivo, Arial, sans-serif" font-size="11.5" fill="#D62828">cut content.</text>
+    <text x="204" y="1008" font-family="Archivo, Arial, sans-serif" font-size="11.5" fill="#D62828">never shrink</text>
+    <text x="204" y="1022" font-family="Archivo, Arial, sans-serif" font-size="11.5" fill="#D62828">the type</text>
+
+    <rect x="270" y="1166" width="340" height="56" rx="28" fill="#17804A" stroke="#16161A" stroke-width="3"/>
+    <text x="440" y="1190" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="16" fill="#FFFFFF">DATE IT. PIN IT UP.</text>
+    <text x="440" y="1210" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#D8ECE0">On the wall, beside the work</text>
+
+    <path d="M 270 1194 L 96 1194 L 96 167 L 264 167" fill="none" stroke="#0B5FCE" stroke-width="3.5" stroke-dasharray="11 8" marker-end="url(#fA)"/>
+    <text x="106" y="700" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#0B5FCE">WHEN IT IS WRONG,</text>
+    <text x="106" y="718" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#0B5FCE">DRAW THE NEXT ONE</text>
+    <text x="106" y="738" font-family="Archivo, Arial, sans-serif" font-size="11.5" font-style="italic" fill="#0B5FCE">Redraw, never revise.</text>
+    <text x="106" y="754" font-family="Archivo, Arial, sans-serif" font-size="11.5" font-style="italic" fill="#0B5FCE">Keep the old one.</text>
+  </g>
+
+  <!-- ================= ARCHETYPES ================= -->
+  <g inkscape:groupmode="layer" inkscape:label="30 Archetypes" id="f-arch">
+    <line x1="892" y1="308" x2="892" y2="990" stroke="#16161A" stroke-width="3"/>
+
+    <rect x="920" y="276" width="648" height="30" fill="#12233D"/>
+    <text x="934" y="298" font-family="Impact, Anton, sans-serif" font-size="17" fill="#FDFBF4">SIX SHAPES, SIX PAGES</text>
+
+    <g inkscape:label="a sequence">
+      <line x1="892" y1="352" x2="918" y2="352" stroke="#16161A" stroke-width="3"/>
+      <rect x="920" y="320" width="648" height="64" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <rect x="936" y="336" width="20" height="16" fill="#16161A"/><rect x="960" y="336" width="20" height="16" fill="#16161A"/><rect x="984" y="336" width="20" height="16" fill="#16161A"/>
+      <rect x="936" y="356" width="20" height="16" fill="#16161A"/><rect x="960" y="356" width="20" height="16" fill="#16161A"/><rect x="984" y="356" width="20" height="16" fill="#16161A"/>
+      <text x="1030" y="346" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">A SEQUENCE over time</text>
+      <text x="1030" y="366" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#5A5A63">Storyboard grid. The same frame repeated, banded by phase.</text>
+    </g>
+
+    <g inkscape:label="a space">
+      <line x1="892" y1="424" x2="918" y2="424" stroke="#16161A" stroke-width="3"/>
+      <rect x="920" y="392" width="648" height="64" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <path d="M 936 444 L 948 412 L 972 424 L 996 406 L 1004 444 Z" fill="#CFE0CE" stroke="#16161A" stroke-width="2.5" stroke-linejoin="round"/>
+      <circle cx="960" cy="430" r="5" fill="#12233D"/>
+      <text x="1030" y="418" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">A SPACE</text>
+      <text x="1030" y="438" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#5A5A63">Annotated map, or a level sheet. Add a time ruler for pacing.</text>
+    </g>
+
+    <g inkscape:label="a vocabulary">
+      <line x1="892" y1="496" x2="918" y2="496" stroke="#16161A" stroke-width="3"/>
+      <rect x="920" y="464" width="648" height="64" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <circle cx="944" cy="496" r="9" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <line x1="958" y1="496" x2="986" y2="496" stroke="#16161A" stroke-width="3" marker-end="url(#fA)"/>
+      <line x1="996" y1="488" x2="1006" y2="504" stroke="#D62828" stroke-width="3" stroke-linecap="round"/>
+      <line x1="1006" y1="488" x2="996" y2="504" stroke="#D62828" stroke-width="3" stroke-linecap="round"/>
+      <text x="1030" y="490" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">A VOCABULARY</text>
+      <text x="1030" y="510" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#5A5A63">Taxonomy sheet. Strip the actors to tokens or the example</text>
+      <text x="1030" y="524" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#5A5A63">gets read as the definition.</text>
+    </g>
+
+    <g inkscape:label="a tradeoff">
+      <line x1="892" y1="568" x2="918" y2="568" stroke="#16161A" stroke-width="3"/>
+      <rect x="920" y="536" width="648" height="64" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <polygon points="970,548 996,590 944,590" fill="none" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+      <circle cx="970" cy="562" r="5" fill="#D62828"/><circle cx="956" cy="582" r="5" fill="#0B5FCE"/><circle cx="984" cy="582" r="5" fill="#17804A"/>
+      <text x="1030" y="562" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">A TRADE-OFF</text>
+      <text x="1030" y="582" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#5A5A63">Constraint triangle. Put the governing rules in the empty centre.</text>
+    </g>
+
+    <g inkscape:label="a relationship">
+      <line x1="892" y1="640" x2="918" y2="640" stroke="#16161A" stroke-width="3"/>
+      <rect x="920" y="608" width="648" height="64" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <rect x="936" y="624" width="26" height="18" fill="none" stroke="#16161A" stroke-width="3"/>
+      <rect x="978" y="648" width="26" height="18" fill="none" stroke="#16161A" stroke-width="3"/>
+      <line x1="962" y1="636" x2="978" y2="652" stroke="#16161A" stroke-width="3" marker-end="url(#fA)"/>
+      <text x="1030" y="634" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">A RELATIONSHIP</text>
+      <text x="1030" y="654" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#5A5A63">Module map, screen flow, or state machine. Label every arrow.</text>
+    </g>
+
+    <g inkscape:label="a comparison">
+      <line x1="892" y1="712" x2="918" y2="712" stroke="#16161A" stroke-width="3"/>
+      <rect x="920" y="680" width="648" height="64" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <rect x="936" y="694" width="60" height="36" fill="none" stroke="#16161A" stroke-width="3"/>
+      <line x1="956" y1="694" x2="956" y2="730" stroke="#16161A" stroke-width="1.5"/>
+      <line x1="976" y1="694" x2="976" y2="730" stroke="#16161A" stroke-width="1.5"/>
+      <line x1="936" y1="706" x2="996" y2="706" stroke="#16161A" stroke-width="1.5"/>
+      <line x1="936" y1="718" x2="996" y2="718" stroke="#16161A" stroke-width="1.5"/>
+      <circle cx="946" cy="712" r="3.5" fill="#17804A"/>
+      <text x="1030" y="706" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">A COMPARISON</text>
+      <text x="1030" y="726" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#5A5A63">Interaction matrix. Mark the empty cells. A blank proves nothing.</text>
+    </g>
+
+    <rect x="920" y="776" width="648" height="30" fill="#D62828"/>
+    <text x="934" y="798" font-family="Impact, Anton, sans-serif" font-size="17" fill="#FFFFFF">THE FOUR RULES THAT DO THE WORK</text>
+
+    <rect x="920" y="818" width="16" height="16" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+    <text x="950" y="832" font-family="Archivo, Arial, sans-serif" font-size="13.5" font-weight="bold" fill="#16161A">One page. The size limit IS the edit.</text>
+    <text x="950" y="850" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#5A5A63">A document with no limit never decides what matters.</text>
+
+    <rect x="920" y="872" width="16" height="16" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+    <text x="950" y="886" font-family="Archivo, Arial, sans-serif" font-size="13.5" font-weight="bold" fill="#16161A">One page per SYSTEM, not per game.</text>
+    <text x="950" y="904" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#5A5A63">Expect a hundred of them over a project, not one.</text>
+
+    <rect x="920" y="926" width="16" height="16" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+    <text x="950" y="940" font-family="Archivo, Arial, sans-serif" font-size="13.5" font-weight="bold" fill="#16161A">A paragraph describing how three things connect</text>
+    <text x="950" y="958" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#5A5A63">is a diagram you have not drawn yet.</text>
+
+    <rect x="920" y="980" width="16" height="16" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+    <text x="950" y="994" font-family="Archivo, Arial, sans-serif" font-size="13.5" font-weight="bold" fill="#16161A">If nobody can be wrong about it, it will never be corrected.</text>
+    <text x="950" y="1012" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#5A5A63">Specific numbers and drawn relationships can be contradicted. That is the point.</text>
+
+    <rect x="920" y="1046" width="648" height="120" fill="#F0EBDD" stroke="#16161A" stroke-width="3"/>
+    <rect x="920" y="1046" width="648" height="28" fill="#12233D"/>
+    <text x="934" y="1066" font-family="Impact, Anton, sans-serif" font-size="15" fill="#FDFBF4">THE FIVE QUESTIONS, FROM THE BOX ABOVE</text>
+    <text x="934" y="1092" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">1 &#183; Who is here, and what are they trying to finish?</text>
+    <text x="934" y="1110" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">2 &#183; What must be visible without a click?</text>
+    <text x="934" y="1128" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">3 &#183; What is allowed to be one click away?</text>
+    <text x="934" y="1146" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">4 &#183; What must never steal focus or interrupt?</text>
+    <text x="1270" y="1092" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#D62828">5 &#183; How do they</text>
+    <text x="1270" y="1110" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#D62828">know it worked?</text>
+    <text x="1270" y="1132" font-family="Archivo, Arial, sans-serif" font-size="11.5" font-style="italic" fill="#5A5A63">Skipping this is what</text>
+    <text x="1270" y="1148" font-family="Archivo, Arial, sans-serif" font-size="11.5" font-style="italic" fill="#5A5A63">makes software feel broken.</text>
+  </g>
+
+  <g inkscape:groupmode="layer" inkscape:label="99 Footer" id="f-foot" sodipodi:insensitive="true">
+    <line x1="32" y1="1240" x2="1568" y2="1240" stroke="#16161A" stroke-width="3"/>
+    <text x="32" y="1266" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">product/design/diagrams/onepager-how-to-make-a-gdd.svg &#183; method from ONE_PAGE_DESIGN.md &#183; this sheet is itself a relationship page, which is why it is a flow chart</text>
+  </g>
+</svg>

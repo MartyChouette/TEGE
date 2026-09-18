@@ -1,0 +1,289 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:svg="http://www.w3.org/2000/svg"
+     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+     xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+     viewBox="0 0 1640 1240" width="1640" height="1240">
+  <title>TEGE UX stencil</title>
+  <desc>Copy a part from here, paste into TEMPLATE-screen.svg, edit the text. House style: 3px ink borders, hard 6px offset shadows drawn as real rectangles (no filters, so Inkscape stays fast and the SVG stays editable).</desc>
+
+  <sodipodi:namedview inkscape:document-units="px" showgrid="false" pagecolor="#FDFBF4" bordercolor="#16161A"/>
+
+  <g inkscape:groupmode="layer" inkscape:label="00 Paper" id="layer-paper" sodipodi:insensitive="true">
+    <rect x="0" y="0" width="1640" height="1240" fill="#FDFBF4"/>
+    <text x="40" y="58" font-family="Impact, Anton, sans-serif" font-size="40" fill="#12233D">TEGE UX STENCIL</text>
+    <text x="40" y="84" font-family="Archivo, Arial, sans-serif" font-size="14" fill="#5A5A63">Copy a part. Paste into TEMPLATE-screen.svg. Edit the text. Never redraw from scratch.</text>
+    <line x1="40" y1="100" x2="1600" y2="100" stroke="#16161A" stroke-width="3"/>
+  </g>
+
+  <!-- ==================== A. CONTROLS ==================== -->
+  <g inkscape:groupmode="layer" inkscape:label="A Controls" id="layer-controls">
+    <text x="40" y="142" font-family="Impact, Anton, sans-serif" font-size="22" fill="#D62828">A &#183; CONTROLS</text>
+
+    <g inkscape:label="Button default" id="c-btn-default">
+      <rect x="40" y="162" width="150" height="46" fill="#16161A"/>
+      <rect x="34" y="156" width="150" height="46" fill="#FDFBF4" stroke="#16161A" stroke-width="3"/>
+      <text x="109" y="185" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="16" font-weight="bold" fill="#16161A">Button</text>
+    </g>
+    <g inkscape:label="Button hover" id="c-btn-hover">
+      <rect x="216" y="162" width="150" height="46" fill="#16161A"/>
+      <rect x="210" y="156" width="150" height="46" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+      <text x="285" y="185" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="16" font-weight="bold" fill="#16161A">Hover</text>
+    </g>
+    <g inkscape:label="Button pressed" id="c-btn-pressed">
+      <rect x="386" y="162" width="150" height="46" fill="#17804A" stroke="#16161A" stroke-width="3"/>
+      <text x="461" y="191" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="16" font-weight="bold" fill="#FFFFFF">Pressed</text>
+    </g>
+    <g inkscape:label="Button disabled" id="c-btn-disabled">
+      <rect x="562" y="156" width="150" height="46" fill="#F0EBDD" stroke="#5A5A63" stroke-width="3" stroke-dasharray="6 5"/>
+      <text x="637" y="185" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="16" font-weight="bold" fill="#5A5A63">Disabled</text>
+    </g>
+
+    <g inkscape:label="Checkbox on" id="c-check-on">
+      <rect x="748" y="162" width="28" height="28" fill="#17804A" stroke="#16161A" stroke-width="3"/>
+      <polyline points="753,176 760,183 772,168" fill="none" stroke="#FFFFFF" stroke-width="4"/>
+      <text x="786" y="183" font-family="Archivo, Arial, sans-serif" font-size="15" fill="#16161A">Enabled</text>
+    </g>
+    <g inkscape:label="Checkbox off" id="c-check-off">
+      <rect x="748" y="204" width="28" height="28" fill="#FDFBF4" stroke="#16161A" stroke-width="3"/>
+      <text x="786" y="225" font-family="Archivo, Arial, sans-serif" font-size="15" fill="#16161A">Disabled</text>
+    </g>
+
+    <g inkscape:label="Slider" id="c-slider">
+      <text x="900" y="152" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#5A5A63">Scan speed</text>
+      <line x1="900" y1="178" x2="1120" y2="178" stroke="#16161A" stroke-width="4"/>
+      <rect x="900" y="172" width="120" height="12" fill="#0B5FCE"/>
+      <rect x="1010" y="160" width="22" height="36" fill="#16161A"/>
+      <rect x="1006" y="156" width="22" height="36" fill="#FDFBF4" stroke="#16161A" stroke-width="3"/>
+      <text x="1140" y="184" font-family="JetBrains Mono, monospace" font-size="14" fill="#16161A">1.5 s</text>
+    </g>
+
+    <g inkscape:label="Dropdown" id="c-dropdown">
+      <rect x="1240" y="162" width="200" height="46" fill="#16161A"/>
+      <rect x="1234" y="156" width="200" height="46" fill="#FDFBF4" stroke="#16161A" stroke-width="3"/>
+      <text x="1250" y="185" font-family="Archivo, Arial, sans-serif" font-size="15" fill="#16161A">Directional</text>
+      <polygon points="1400,174 1418,174 1409,188" fill="#16161A"/>
+    </g>
+
+    <g inkscape:label="Text field" id="c-field">
+      <rect x="40" y="232" width="330" height="42" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <text x="54" y="259" font-family="JetBrains Mono, monospace" font-size="15" fill="#16161A">gravityStrength</text>
+      <line x1="300" y1="238" x2="300" y2="268" stroke="#16161A" stroke-width="2"/>
+      <text x="326" y="259" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="15" fill="#16161A">2.0</text>
+    </g>
+  </g>
+
+  <!-- ==================== B. PANELS ==================== -->
+  <g inkscape:groupmode="layer" inkscape:label="B Panels" id="layer-panels">
+    <text x="40" y="330" font-family="Impact, Anton, sans-serif" font-size="22" fill="#D62828">B &#183; PANELS</text>
+
+    <g inkscape:label="Dockable panel" id="p-dock">
+      <rect x="46" y="356" width="340" height="230" fill="#16161A"/>
+      <rect x="40" y="350" width="340" height="230" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <rect x="40" y="350" width="340" height="34" fill="#12233D"/>
+      <text x="54" y="374" font-family="Impact, Anton, sans-serif" font-size="17" fill="#FDFBF4">INSPECTOR</text>
+      <text x="360" y="374" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="17" font-weight="bold" fill="#FDFBF4">&#215;</text>
+      <line x1="40" y1="420" x2="380" y2="420" stroke="#F0EBDD" stroke-width="2"/>
+      <text x="54" y="410" font-family="Archivo, Arial, sans-serif" font-size="14" fill="#16161A">Row one</text>
+      <line x1="40" y1="456" x2="380" y2="456" stroke="#F0EBDD" stroke-width="2"/>
+      <text x="54" y="446" font-family="Archivo, Arial, sans-serif" font-size="14" fill="#16161A">Row two</text>
+      <rect x="40" y="456" width="340" height="36" fill="#F2B417"/>
+      <text x="54" y="481" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">Selected row</text>
+      <line x1="40" y1="528" x2="380" y2="528" stroke="#F0EBDD" stroke-width="2"/>
+      <text x="54" y="518" font-family="Archivo, Arial, sans-serif" font-size="14" fill="#16161A">Row four</text>
+    </g>
+
+    <g inkscape:label="Tab strip" id="p-tabs">
+      <rect x="430" y="350" width="112" height="38" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+      <text x="486" y="375" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#FDFBF4">Scene</text>
+      <rect x="542" y="350" width="112" height="38" fill="#F0EBDD" stroke="#16161A" stroke-width="3"/>
+      <text x="598" y="375" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="14" fill="#16161A">Game</text>
+      <rect x="654" y="350" width="112" height="38" fill="#F0EBDD" stroke="#16161A" stroke-width="3"/>
+      <text x="710" y="375" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="14" fill="#16161A">Assets</text>
+    </g>
+
+    <g inkscape:label="Callout panel TRY IT" id="p-callout">
+      <rect x="436" y="418" width="330" height="120" fill="#16161A"/>
+      <rect x="430" y="412" width="330" height="120" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <rect x="430" y="412" width="330" height="32" fill="#17804A"/>
+      <text x="444" y="435" font-family="Impact, Anton, sans-serif" font-size="16" fill="#FFFFFF">TRY IT</text>
+      <text x="444" y="468" font-family="Archivo, Arial, sans-serif" font-size="14" fill="#16161A">Green header = it works.</text>
+      <text x="444" y="490" font-family="Archivo, Arial, sans-serif" font-size="14" fill="#16161A">Gold = it will surprise you.</text>
+      <text x="444" y="512" font-family="Archivo, Arial, sans-serif" font-size="14" fill="#16161A">Red = it is missing.</text>
+    </g>
+
+    <g inkscape:label="Modal" id="p-modal">
+      <rect x="816" y="356" width="360" height="200" fill="#16161A"/>
+      <rect x="810" y="350" width="360" height="200" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <rect x="810" y="350" width="360" height="36" fill="#D62828"/>
+      <text x="824" y="376" font-family="Impact, Anton, sans-serif" font-size="18" fill="#FFFFFF">BUILD GAME</text>
+      <text x="824" y="418" font-family="Archivo, Arial, sans-serif" font-size="14" fill="#16161A">Platform</text>
+      <rect x="824" y="430" width="150" height="38" fill="#FDFBF4" stroke="#16161A" stroke-width="3"/>
+      <text x="838" y="455" font-family="Archivo, Arial, sans-serif" font-size="14" fill="#16161A">Web</text>
+      <rect x="1000" y="496" width="150" height="40" fill="#17804A" stroke="#16161A" stroke-width="3"/>
+      <text x="1075" y="523" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="15" font-weight="bold" fill="#FFFFFF">Build</text>
+    </g>
+
+    <g inkscape:label="Empty state" id="p-empty">
+      <rect x="1220" y="350" width="360" height="200" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <rect x="1220" y="350" width="360" height="34" fill="#12233D"/>
+      <text x="1234" y="374" font-family="Impact, Anton, sans-serif" font-size="17" fill="#FDFBF4">LOAD GAME</text>
+      <text x="1400" y="440" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="26" fill="#5A5A63">NO SAVES YET</text>
+      <text x="1400" y="470" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#5A5A63">Searched: saves/</text>
+      <text x="1400" y="510" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" font-style="italic" fill="#D62828">An empty list must SAY it is empty.</text>
+      <text x="1400" y="528" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" font-style="italic" fill="#D62828">A blank panel reads as broken.</text>
+    </g>
+  </g>
+
+  <!-- ==================== C. EDITOR SURFACES ==================== -->
+  <g inkscape:groupmode="layer" inkscape:label="C Editor surfaces" id="layer-editor">
+    <text x="40" y="646" font-family="Impact, Anton, sans-serif" font-size="22" fill="#D62828">C &#183; EDITOR SURFACES</text>
+
+    <g inkscape:label="Creative rail" id="e-rail">
+      <rect x="46" y="678" width="96" height="392" fill="#16161A"/>
+      <rect x="40" y="672" width="96" height="392" fill="#FDFBF4" stroke="#16161A" stroke-width="3"/>
+      <text x="88" y="698" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="14" fill="#D62828">BUILD</text>
+      <g inkscape:label="Structure band">
+        <rect x="52" y="708" width="72" height="24" fill="#F0EBDD" stroke="#16161A" stroke-width="2"/>
+        <text x="88" y="725" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#16161A">Wall</text>
+        <rect x="52" y="736" width="72" height="24" fill="#F2B417" stroke="#16161A" stroke-width="2"/>
+        <text x="88" y="753" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#16161A">Floor</text>
+        <rect x="52" y="764" width="72" height="24" fill="#F0EBDD" stroke="#16161A" stroke-width="2"/>
+        <text x="88" y="781" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#16161A">Stairs</text>
+        <rect x="52" y="792" width="72" height="24" fill="#F0EBDD" stroke="#16161A" stroke-width="2"/>
+        <text x="88" y="809" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#16161A">Path</text>
+      </g>
+      <line x1="52" y1="826" x2="124" y2="826" stroke="#16161A" stroke-width="2"/>
+      <g inkscape:label="Volume band">
+        <rect x="52" y="834" width="72" height="24" fill="#F0EBDD" stroke="#16161A" stroke-width="2"/>
+        <text x="88" y="851" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#16161A">Brush</text>
+        <rect x="52" y="862" width="72" height="24" fill="#F0EBDD" stroke="#16161A" stroke-width="2"/>
+        <text x="88" y="879" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#16161A">Water</text>
+        <rect x="52" y="890" width="72" height="24" fill="#F0EBDD" stroke="#16161A" stroke-width="2"/>
+        <text x="88" y="907" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#16161A">Terrain</text>
+        <rect x="52" y="918" width="72" height="24" fill="#F0EBDD" stroke="#16161A" stroke-width="2"/>
+        <text x="88" y="935" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#16161A">Plants</text>
+      </g>
+      <line x1="52" y1="952" x2="124" y2="952" stroke="#16161A" stroke-width="2"/>
+      <g inkscape:label="Object band">
+        <rect x="52" y="960" width="72" height="24" fill="#F0EBDD" stroke="#16161A" stroke-width="2"/>
+        <text x="88" y="977" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#16161A">Prop</text>
+      </g>
+      <line x1="52" y1="996" x2="124" y2="996" stroke="#16161A" stroke-width="3"/>
+      <rect x="52" y="1006" width="72" height="26" fill="#0B5FCE" stroke="#16161A" stroke-width="2"/>
+      <text x="88" y="1024" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#FFFFFF">Edit</text>
+    </g>
+
+    <g inkscape:label="Radial dial" id="e-dial">
+      <circle cx="330" cy="866" r="6" fill="#16161A"/>
+      <circle cx="324" cy="860" r="112" fill="#FDFBF4" stroke="#16161A" stroke-width="3"/>
+      <path d="M 324 860 L 324 748 A 112 112 0 0 1 421 916 Z" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+      <circle cx="324" cy="860" r="34" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+      <text x="324" y="866" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="14" fill="#FDFBF4">TOOLS</text>
+      <line x1="324" y1="826" x2="324" y2="754" stroke="#16161A" stroke-width="2"/>
+      <line x1="353" y1="877" x2="415" y2="913" stroke="#16161A" stroke-width="2"/>
+      <line x1="295" y1="877" x2="233" y2="913" stroke="#16161A" stroke-width="2"/>
+      <text x="324" y="742" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#16161A">Move</text>
+      <text x="450" y="930" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">Rotate</text>
+      <text x="200" y="930" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">Scale</text>
+    </g>
+
+    <g inkscape:label="Viewport frame" id="e-viewport">
+      <rect x="506" y="678" width="470" height="300" fill="#16161A"/>
+      <rect x="500" y="672" width="470" height="300" fill="#C9D6CF" stroke="#16161A" stroke-width="3"/>
+      <rect x="500" y="672" width="470" height="30" fill="#12233D"/>
+      <text x="514" y="694" font-family="Impact, Anton, sans-serif" font-size="15" fill="#FDFBF4">SCENE</text>
+      <line x1="500" y1="880" x2="970" y2="880" stroke="#8FA89B" stroke-width="3"/>
+      <text x="735" y="930" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#5A5A63">viewport content goes here</text>
+    </g>
+
+    <g inkscape:label="Player figure" id="e-player">
+      <rect x="1040" y="700" width="34" height="34" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+      <circle cx="1050" cy="713" r="3" fill="#16161A"/>
+      <circle cx="1064" cy="713" r="3" fill="#16161A"/>
+      <rect x="1042" y="734" width="30" height="40" fill="#D62828" stroke="#16161A" stroke-width="3"/>
+      <rect x="1046" y="774" width="10" height="24" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+      <rect x="1060" y="774" width="10" height="24" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+      <text x="1057" y="818" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#5A5A63">Player</text>
+    </g>
+
+    <g inkscape:label="Wind arrow" id="e-wind">
+      <path d="M 1120 720 q 40 -18 80 0 q 40 18 80 0" fill="none" stroke="#0B5FCE" stroke-width="5"/>
+      <polygon points="1280,712 1298,720 1280,728" fill="#0B5FCE"/>
+      <path d="M 1120 752 q 40 -18 80 0 q 40 18 80 0" fill="none" stroke="#0B5FCE" stroke-width="5"/>
+      <polygon points="1280,744 1298,752 1280,760" fill="#0B5FCE"/>
+      <text x="1200" y="790" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#0B5FCE">WIND</text>
+    </g>
+
+    <g inkscape:label="Ledge block" id="e-ledge">
+      <polygon points="1120,900 1240,900 1280,872 1160,872" fill="#8FA89B" stroke="#16161A" stroke-width="3"/>
+      <polygon points="1120,900 1240,900 1240,950 1120,950" fill="#6E8377" stroke="#16161A" stroke-width="3"/>
+      <polygon points="1240,900 1280,872 1280,922 1240,950" fill="#5A6E62" stroke="#16161A" stroke-width="3"/>
+      <text x="1200" y="980" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#5A5A63">Ledge (isometric)</text>
+    </g>
+
+    <g inkscape:label="Menu bar" id="e-menubar">
+      <rect x="1340" y="672" width="256" height="34" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+      <text x="1354" y="695" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#FDFBF4">File</text>
+      <text x="1394" y="695" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#FDFBF4">Edit</text>
+      <text x="1434" y="695" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#FDFBF4">View</text>
+      <text x="1482" y="695" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#F2B417">Build</text>
+    </g>
+  </g>
+
+  <!-- ==================== D. TOUCH ==================== -->
+  <g inkscape:groupmode="layer" inkscape:label="D Touch" id="layer-touch">
+    <text x="40" y="1112" font-family="Impact, Anton, sans-serif" font-size="22" fill="#D62828">D &#183; TOUCH &amp; ACCESSIBILITY</text>
+
+    <g inkscape:label="Phone frame" id="t-phone">
+      <rect x="46" y="1144" width="200" height="82" fill="#16161A"/>
+      <rect x="40" y="1138" width="200" height="82" rx="10" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+      <rect x="52" y="1148" width="176" height="62" fill="#C9D6CF" stroke="#16161A" stroke-width="2"/>
+      <circle cx="78" cy="1190" r="14" fill="#FDFBF4" stroke="#16161A" stroke-width="3"/>
+      <circle cx="202" cy="1190" r="13" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+      <text x="202" y="1195" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#16161A">A</text>
+      <text x="140" y="1163" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">phone, landscape</text>
+    </g>
+
+    <g inkscape:label="Thumb stick zone" id="t-stick">
+      <circle cx="330" cy="1180" r="40" fill="none" stroke="#16161A" stroke-width="3" stroke-dasharray="7 6"/>
+      <circle cx="330" cy="1180" r="18" fill="#FDFBF4" stroke="#16161A" stroke-width="3"/>
+      <text x="330" y="1234" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-weight="bold" fill="#5A5A63">Move zone</text>
+    </g>
+
+    <g inkscape:label="Controls hint" id="t-hint">
+      <rect x="410" y="1150" width="230" height="58" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+      <text x="424" y="1172" font-family="JetBrains Mono, monospace" font-size="12" fill="#F2B417">A  Jump</text>
+      <text x="424" y="1194" font-family="JetBrains Mono, monospace" font-size="12" fill="#FDFBF4">B  Interact</text>
+      <text x="525" y="1234" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-weight="bold" fill="#5A5A63">Controls hint (from the preset)</text>
+    </g>
+
+    <g inkscape:label="Gaze ring" id="a-gaze">
+      <circle cx="730" cy="1180" r="26" fill="none" stroke="#0B5FCE" stroke-width="4"/>
+      <path d="M 730 1154 A 26 26 0 0 1 756 1180" fill="none" stroke="#0B5FCE" stroke-width="9"/>
+      <circle cx="730" cy="1180" r="4" fill="#0B5FCE"/>
+      <text x="730" y="1234" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-weight="bold" fill="#5A5A63">Gaze dwell</text>
+    </g>
+
+    <g inkscape:label="Scan highlight" id="a-scan">
+      <rect x="820" y="1158" width="170" height="44" fill="#FDFBF4" stroke="#16161A" stroke-width="3"/>
+      <rect x="812" y="1150" width="186" height="60" fill="none" stroke="#17804A" stroke-width="6"/>
+      <text x="905" y="1186" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">Scanned</text>
+      <text x="905" y="1234" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-weight="bold" fill="#5A5A63">Switch scan focus</text>
+    </g>
+
+    <g inkscape:label="Callout number" id="a-callout">
+      <circle cx="1080" cy="1180" r="22" fill="#D62828" stroke="#16161A" stroke-width="3"/>
+      <text x="1080" y="1189" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="22" fill="#FFFFFF">1</text>
+      <line x1="1102" y1="1180" x2="1190" y2="1180" stroke="#16161A" stroke-width="3"/>
+      <circle cx="1194" cy="1180" r="5" fill="#16161A"/>
+      <text x="1140" y="1234" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-weight="bold" fill="#5A5A63">Callout + leader line</text>
+    </g>
+
+    <g inkscape:label="Sticky note" id="a-note">
+      <rect x="1266" y="1150" width="200" height="72" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+      <text x="1280" y="1174" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#16161A">Q5: how do they</text>
+      <text x="1280" y="1194" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#16161A">know it worked?</text>
+      <text x="1366" y="1234" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-weight="bold" fill="#5A5A63">Open question</text>
+    </g>
+  </g>
+</svg>

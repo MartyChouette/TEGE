@@ -1,0 +1,300 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:svg="http://www.w3.org/2000/svg"
+     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+     xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+     viewBox="0 0 1120 1660" width="1120" height="1660">
+  <title>Symbol variants C: three standout languages</title>
+  <desc>Columns F, G and H are not twenty separate ideas. Each is one design language applied to every mark, so the choice is a set rather than a pick-and-mix.</desc>
+  <sodipodi:namedview inkscape:document-units="px" pagecolor="#FDFBF4" bordercolor="#16161A"/>
+
+  <defs>
+    <pattern id="hatchGreen" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="7" height="7" fill="#FFFFFF"/><rect width="3.6" height="7" fill="#17804A"/>
+    </pattern>
+    <pattern id="hatchRed" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
+      <rect width="7" height="7" fill="#FFFFFF"/><rect width="3.6" height="7" fill="#D62828"/>
+    </pattern>
+    <pattern id="hatchGoldDiag" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="7" height="7" fill="#FFFFFF"/><rect width="3.6" height="7" fill="#F2B417"/>
+    </pattern>
+    <pattern id="hatchGold" width="7" height="7" patternUnits="userSpaceOnUse">
+      <rect width="7" height="7" fill="#FFFFFF"/><rect width="7" height="3.6" fill="#F2B417"/>
+    </pattern>
+    <pattern id="dotInk" width="6" height="6" patternUnits="userSpaceOnUse">
+      <rect width="6" height="6" fill="#FFFFFF"/><circle cx="3" cy="3" r="2" fill="#16161A"/>
+    </pattern>
+    <pattern id="hatchGrey" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="7" height="7" fill="#FFFFFF"/><rect width="3.2" height="7" fill="#9A9A9A"/>
+    </pattern>
+    <pattern id="dotGrey" width="6" height="6" patternUnits="userSpaceOnUse">
+      <rect width="6" height="6" fill="#FFFFFF"/><circle cx="3" cy="3" r="1.9" fill="#9A9A9A"/>
+    </pattern>
+    <pattern id="hatchInk" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="7" height="7" fill="#FFFFFF"/><rect width="3.4" height="7" fill="#16161A"/>
+    </pattern>
+    <pattern id="greyHatchA" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="7" height="7" fill="#FFFFFF"/><rect width="3.6" height="7" fill="#707070"/>
+    </pattern>
+    <pattern id="greyHatchB" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
+      <rect width="7" height="7" fill="#FFFFFF"/><rect width="3.6" height="7" fill="#707070"/>
+    </pattern>
+  </defs>
+
+  <g inkscape:groupmode="layer" inkscape:label="00 Paper" id="layer-paper" sodipodi:insensitive="true">
+    <rect x="0" y="0" width="1120" height="1660" fill="#FDFBF4"/>
+    <text x="24" y="50" font-family="Impact, Anton, sans-serif" font-size="32" fill="#12233D">STANDOUT &#183; SHEET C</text>
+    <text x="24" y="74" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#5A5A63">Three languages, each applied to every mark. Pick a LETTER, not twenty icons. Codes work the same way: 3G, 17F.</text>
+    <line x1="24" y1="88" x2="1096" y2="88" stroke="#16161A" stroke-width="3"/>
+
+    <text x="190" y="116" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="18" fill="#D62828">F</text>
+    <text x="285" y="116" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="18" fill="#D62828">G</text>
+    <text x="380" y="116" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="18" fill="#D62828">H</text>
+    <text x="190" y="129" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="10" font-weight="bold" letter-spacing="0.8" fill="#5A5A63">woodcut</text>
+    <text x="285" y="129" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="10" font-weight="bold" letter-spacing="0.8" fill="#5A5A63">screened</text>
+    <text x="380" y="129" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="10" font-weight="bold" letter-spacing="0.8" fill="#5A5A63">seal</text>
+    <text x="800" y="129" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="10" font-weight="bold" letter-spacing="0.8" fill="#5A5A63">woodcut</text>
+    <text x="895" y="129" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="10" font-weight="bold" letter-spacing="0.8" fill="#5A5A63">screened</text>
+    <text x="990" y="129" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="10" font-weight="bold" letter-spacing="0.8" fill="#5A5A63">seal</text>
+    <text x="800" y="116" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="17" fill="#D62828">F</text>
+    <text x="895" y="116" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="17" fill="#D62828">G</text>
+    <text x="990" y="116" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="17" fill="#D62828">H</text>
+
+    
+  </g>
+
+  <g inkscape:groupmode="layer" inkscape:label="Row tints" id="layer-tints" sodipodi:insensitive="true">
+    <rect x="24" y="134" width="1072" height="130" fill="#F3F0E6"/>
+    <rect x="24" y="394" width="1072" height="130" fill="#F3F0E6"/>
+    <rect x="24" y="654" width="1072" height="130" fill="#F3F0E6"/>
+    <rect x="24" y="914" width="1072" height="130" fill="#F3F0E6"/>
+    <rect x="24" y="1174" width="1072" height="130" fill="#F3F0E6"/>
+    <line x1="560" y1="134" x2="560" y2="1434" stroke="#16161A" stroke-width="2"/>
+  </g>
+
+  <!-- ================= LEFT PANEL, ROWS 1-10 ================= -->
+  <g inkscape:groupmode="layer" inkscape:label="Rows 1-10" id="left">
+
+    <!-- 1 WORKS -->
+    <text x="30" y="192" font-family="Impact, Anton, sans-serif" font-size="17" fill="#16161A">1 WORKS</text>
+    <g inkscape:label="1F"><circle cx="190" cy="186" r="23" fill="#17804A"/><polyline points="178,186 187,196 204,174" fill="none" stroke="#FDFBF4" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/></g>
+    <g inkscape:label="1G"><circle cx="285" cy="186" r="23" fill="url(#hatchGreen)" stroke="#16161A" stroke-width="3"/><polyline points="273,186 282,196 299,174" fill="none" stroke="#16161A" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/></g>
+    <g inkscape:label="1H"><polygon points="389,168 402,181 402,195 389,208 371,208 358,195 358,181 371,168" fill="#16161A"/><polygon points="385,164 398,177 398,191 385,204 367,204 354,191 354,177 367,164" fill="#17804A" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/><polyline points="366,184 374,193 388,173" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></g>
+
+    <!-- 2 SURPRISE -->
+    <text x="30" y="322" font-family="Impact, Anton, sans-serif" font-size="17" fill="#16161A">2 SURPRISE</text>
+    <g inkscape:label="2F"><polygon points="190,292 213,338 167,338" fill="#16161A"/><line x1="190" y1="307" x2="190" y2="322" stroke="#FDFBF4" stroke-width="4" stroke-linecap="round"/><circle cx="190" cy="330" r="2.6" fill="#FDFBF4"/></g>
+    <g inkscape:label="2G"><polygon points="285,292 308,338 262,338" fill="url(#hatchGold)" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/><line x1="285" y1="309" x2="285" y2="323" stroke="#16161A" stroke-width="4" stroke-linecap="round"/><circle cx="285" cy="331" r="2.6" fill="#16161A"/></g>
+    <g inkscape:label="2H"><polygon points="384,298 397,311 397,325 384,338 366,338 353,325 353,311 366,298" fill="#16161A"/><polygon points="380,294 393,307 393,321 380,334 362,334 349,321 349,307 362,294" fill="#F2B417" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/><line x1="371" y1="303" x2="371" y2="317" stroke="#16161A" stroke-width="4" stroke-linecap="round"/><circle cx="371" cy="325" r="2.6" fill="#16161A"/></g>
+
+    <!-- 3 MISSING -->
+    <text x="30" y="452" font-family="Impact, Anton, sans-serif" font-size="17" fill="#16161A">3 MISSING</text>
+    <g inkscape:label="3F"><rect x="167" y="423" width="46" height="46" fill="#16161A"/><line x1="176" y1="461" x2="204" y2="431" stroke="#FDFBF4" stroke-width="6" stroke-linecap="round"/></g>
+    <g inkscape:label="3G"><rect x="262" y="423" width="46" height="46" fill="url(#hatchRed)" stroke="#16161A" stroke-width="3"/><line x1="271" y1="461" x2="299" y2="431" stroke="#16161A" stroke-width="6" stroke-linecap="round"/></g>
+    <g inkscape:label="3H"><polygon points="384,428 397,441 397,455 384,468 366,468 353,455 353,441 366,428" fill="#16161A"/><polygon points="380,424 393,437 393,451 380,464 362,464 349,451 349,437 362,424" fill="#D62828" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/><line x1="358" y1="457" x2="384" y2="431" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round"/></g>
+
+    <!-- 4 MOUSE -->
+    <text x="30" y="582" font-family="Impact, Anton, sans-serif" font-size="17" fill="#16161A">4 MOUSE</text>
+    <g inkscape:label="4F"><rect x="175" y="550" width="30" height="50" rx="15" fill="#16161A"/><rect x="187" y="558" width="6" height="12" rx="3" fill="#FDFBF4"/></g>
+    <g inkscape:label="4G"><rect x="270" y="550" width="30" height="50" rx="15" fill="url(#hatchGrey)" stroke="#16161A" stroke-width="3"/><line x1="285" y1="550" x2="285" y2="568" stroke="#16161A" stroke-width="3"/></g>
+    <g inkscape:label="4H"><polygon points="384,558 397,571 397,585 384,598 366,598 353,585 353,571 366,558" fill="#16161A"/><polygon points="380,554 393,567 393,581 380,594 362,594 349,581 349,567 362,554" fill="#FDFBF4" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/><rect x="363" y="562" width="16" height="26" rx="8" fill="#16161A"/></g>
+
+    <!-- 5 KEY -->
+    <text x="30" y="712" font-family="Impact, Anton, sans-serif" font-size="17" fill="#16161A">5 KEY</text>
+    <g inkscape:label="5F"><rect x="167" y="684" width="46" height="44" rx="6" fill="#16161A"/><rect x="176" y="692" width="28" height="20" rx="3" fill="#FDFBF4"/></g>
+    <g inkscape:label="5G"><rect x="262" y="684" width="46" height="44" rx="6" fill="url(#hatchGrey)" stroke="#16161A" stroke-width="3"/><rect x="271" y="692" width="28" height="19" rx="3" fill="#FFFFFF" stroke="#16161A" stroke-width="2.5"/></g>
+    <g inkscape:label="5H"><polygon points="384,688 397,701 397,715 384,728 366,728 353,715 353,701 366,688" fill="#16161A"/><polygon points="380,684 393,697 393,711 380,724 362,724 349,711 349,697 362,684" fill="#FDFBF4" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/><rect x="358" y="692" width="26" height="24" rx="4" fill="#16161A"/></g>
+
+    <!-- 6 GAMEPAD -->
+    <text x="30" y="842" font-family="Impact, Anton, sans-serif" font-size="17" fill="#16161A">6 GAMEPAD</text>
+    <g inkscape:label="6F"><rect x="158" y="818" width="64" height="36" rx="16" fill="#16161A"/><rect x="169" y="833" width="14" height="5" fill="#FDFBF4"/><rect x="173.5" y="828.5" width="5" height="14" fill="#FDFBF4"/><circle cx="201" cy="830" r="4" fill="#FDFBF4"/><circle cx="209" cy="840" r="4" fill="#FDFBF4"/></g>
+    <g inkscape:label="6G"><rect x="253" y="818" width="64" height="36" rx="16" fill="url(#hatchGrey)" stroke="#16161A" stroke-width="3"/><circle cx="270" cy="836" r="5" fill="#16161A"/><circle cx="300" cy="836" r="5" fill="#16161A"/></g>
+    <g inkscape:label="6H"><polygon points="384,818 397,831 397,845 384,858 366,858 353,845 353,831 366,818" fill="#16161A"/><polygon points="380,814 393,827 393,841 380,854 362,854 349,841 349,827 362,814" fill="#FDFBF4" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/><rect x="356" y="826" width="30" height="17" rx="8" fill="#16161A"/></g>
+
+    <!-- 7 TOUCH -->
+    <text x="30" y="972" font-family="Impact, Anton, sans-serif" font-size="17" fill="#16161A">7 TOUCH</text>
+    <g inkscape:label="7F"><circle cx="190" cy="966" r="9" fill="#16161A"/><path d="M 168 944 A 31 31 0 0 1 212 944" fill="none" stroke="#16161A" stroke-width="6" stroke-linecap="round"/></g>
+    <g inkscape:label="7G"><circle cx="285" cy="966" r="23" fill="url(#hatchGrey)" stroke="#16161A" stroke-width="3"/><circle cx="285" cy="966" r="13" fill="#FFFFFF" stroke="#16161A" stroke-width="2.5"/><circle cx="285" cy="966" r="5" fill="#16161A"/></g>
+    <g inkscape:label="7H"><polygon points="384,948 397,961 397,975 384,988 366,988 353,975 353,961 366,948" fill="#16161A"/><polygon points="380,944 393,957 393,971 380,984 362,984 349,971 349,957 362,944" fill="#FDFBF4" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/><circle cx="371" cy="964" r="7" fill="#16161A"/><circle cx="371" cy="964" r="14" fill="none" stroke="#16161A" stroke-width="3"/></g>
+
+    <!-- 8 SWITCH -->
+    <text x="30" y="1102" font-family="Impact, Anton, sans-serif" font-size="17" fill="#16161A">8 SWITCH</text>
+    <g inkscape:label="8F"><circle cx="190" cy="1096" r="23" fill="#16161A"/><circle cx="190" cy="1096" r="9" fill="#FDFBF4"/></g>
+    <g inkscape:label="8G"><circle cx="285" cy="1096" r="23" fill="url(#hatchGrey)" stroke="#16161A" stroke-width="3"/><circle cx="285" cy="1096" r="9" fill="#16161A"/></g>
+    <g inkscape:label="8H"><polygon points="384,1078 397,1091 397,1105 384,1118 366,1118 353,1105 353,1091 366,1078" fill="#16161A"/><polygon points="380,1074 393,1087 393,1101 380,1114 362,1114 349,1101 349,1087 362,1074" fill="#FDFBF4" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/><circle cx="371" cy="1094" r="11" fill="#16161A"/></g>
+
+    <!-- 9 GAZE -->
+    <text x="30" y="1232" font-family="Impact, Anton, sans-serif" font-size="17" fill="#16161A">9 GAZE</text>
+    <g inkscape:label="9F"><path d="M 164 1226 Q 190 1204 216 1226 Q 190 1248 164 1226 Z" fill="#16161A"/><circle cx="190" cy="1226" r="7" fill="#FDFBF4"/></g>
+    <g inkscape:label="9G"><path d="M 259 1226 Q 285 1202 311 1226 Q 285 1250 259 1226 Z" fill="url(#hatchGrey)" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/><circle cx="285" cy="1226" r="8" fill="#16161A"/></g>
+    <g inkscape:label="9H"><polygon points="384,1208 397,1221 397,1235 384,1248 366,1248 353,1235 353,1221 366,1208" fill="#16161A"/><polygon points="380,1204 393,1217 393,1231 380,1244 362,1244 349,1231 349,1217 362,1204" fill="#FDFBF4" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/><path d="M 356 1224 Q 371 1210 386 1224 Q 371 1238 356 1224 Z" fill="#16161A"/></g>
+
+    <!-- 10 SIP / PUFF -->
+    <text x="30" y="1362" font-family="Impact, Anton, sans-serif" font-size="17" fill="#16161A">10 SIP/PUFF</text>
+    <g inkscape:label="10F"><rect x="166" y="1340" width="15" height="26" rx="5" fill="#16161A"/><path d="M 192 1344 q 9 12 0 24" fill="none" stroke="#16161A" stroke-width="5" stroke-linecap="round"/><path d="M 206 1338 q 13 18 0 36" fill="none" stroke="#16161A" stroke-width="5" stroke-linecap="round"/></g>
+    <g inkscape:label="10G"><circle cx="285" cy="1356" r="23" fill="url(#hatchGrey)" stroke="#16161A" stroke-width="3"/><polygon points="272,1350 292,1350 292,1345 302,1354 292,1363 292,1358 272,1358" fill="#16161A"/></g>
+    <g inkscape:label="10H"><polygon points="384,1338 397,1351 397,1365 384,1378 366,1378 353,1365 353,1351 366,1338" fill="#16161A"/><polygon points="380,1334 393,1347 393,1361 380,1374 362,1374 349,1361 349,1347 362,1334" fill="#FDFBF4" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/><rect x="357" y="1344" width="12" height="20" rx="4" fill="#16161A"/><path d="M 378 1346 q 7 8 0 16" fill="none" stroke="#16161A" stroke-width="3.5" stroke-linecap="round"/></g>
+  </g>
+
+  <!-- ================= RIGHT PANEL, ROWS 11-20 ================= -->
+  <g inkscape:groupmode="layer" inkscape:label="Rows 11-20" id="right">
+
+    <!-- 11 ENTITY -->
+    <text x="600" y="192" font-family="Impact, Anton, sans-serif" font-size="17" fill="#16161A">11 ENTITY</text>
+    <g inkscape:label="11F"><rect x="777" y="163" width="46" height="46" fill="#16161A"/><circle cx="800" cy="186" r="8" fill="#FDFBF4"/></g>
+    <g inkscape:label="11G"><rect x="872" y="163" width="46" height="46" fill="url(#hatchGrey)" stroke="#16161A" stroke-width="3"/><circle cx="895" cy="186" r="8" fill="#16161A"/></g>
+    <g inkscape:label="11H"><polygon points="1003,168 1016,181 1016,195 1003,208 985,208 972,195 972,181 985,168" fill="#16161A"/><polygon points="999,164 1012,177 1012,191 999,204 981,204 968,191 968,177 981,164" fill="#FDFBF4" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/><circle cx="990" cy="184" r="8" fill="#16161A"/></g>
+
+    <!-- 12 COMPONENT -->
+    <text x="600" y="322" font-family="Impact, Anton, sans-serif" font-size="17" fill="#16161A">12 COMPONENT</text>
+    <g inkscape:label="12F"><rect x="775" y="294" width="42" height="44" fill="#16161A"/><rect x="817" y="308" width="12" height="16" fill="#16161A"/><line x1="783" y1="308" x2="809" y2="308" stroke="#FDFBF4" stroke-width="3"/><line x1="783" y1="322" x2="803" y2="322" stroke="#FDFBF4" stroke-width="3"/></g>
+    <g inkscape:label="12G"><rect x="870" y="294" width="42" height="44" fill="url(#hatchGrey)" stroke="#16161A" stroke-width="3"/><rect x="912" y="308" width="12" height="16" fill="#16161A"/></g>
+    <g inkscape:label="12H"><polygon points="1003,298 1016,311 1016,325 1003,338 985,338 972,325 972,311 985,298" fill="#16161A"/><polygon points="999,294 1012,307 1012,321 999,334 981,334 968,321 968,307 981,294" fill="#FDFBF4" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/><rect x="979" y="302" width="22" height="24" fill="#16161A"/></g>
+
+    <!-- 13 SYSTEM -->
+    <text x="600" y="452" font-family="Impact, Anton, sans-serif" font-size="17" fill="#16161A">13 SYSTEM</text>
+    <g inkscape:label="13F"><rect x="775" y="426" width="40" height="9" fill="#16161A"/><rect x="775" y="441" width="40" height="9" fill="#16161A"/><rect x="775" y="456" width="40" height="9" fill="#16161A"/><polygon points="820,436 834,446 820,456" fill="#16161A"/></g>
+    <g inkscape:label="13G"><circle cx="895" cy="446" r="23" fill="url(#hatchGrey)" stroke="#16161A" stroke-width="3"/><path d="M 895 430 A 16 16 0 1 1 883 436" fill="none" stroke="#16161A" stroke-width="4" stroke-linecap="round"/><polygon points="879,428 889,438 877,442" fill="#16161A"/></g>
+    <g inkscape:label="13H"><polygon points="1003,428 1016,441 1016,455 1003,468 985,468 972,455 972,441 985,428" fill="#16161A"/><polygon points="999,424 1012,437 1012,451 999,464 981,464 968,451 968,437 981,424" fill="#FDFBF4" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/><rect x="978" y="432" width="24" height="6" fill="#16161A"/><rect x="978" y="441" width="24" height="6" fill="#16161A"/><rect x="978" y="450" width="24" height="6" fill="#16161A"/></g>
+
+    <!-- 14 SCENE -->
+    <text x="600" y="582" font-family="Impact, Anton, sans-serif" font-size="17" fill="#16161A">14 SCENE</text>
+    <g inkscape:label="14F"><rect x="770" y="554" width="60" height="44" fill="#16161A"/><rect x="770" y="582" width="60" height="16" fill="#FDFBF4"/><circle cx="816" cy="566" r="6" fill="#FDFBF4"/></g>
+    <g inkscape:label="14G"><rect x="865" y="554" width="60" height="44" fill="url(#hatchGrey)" stroke="#16161A" stroke-width="3"/><line x1="865" y1="582" x2="925" y2="582" stroke="#16161A" stroke-width="4"/></g>
+    <g inkscape:label="14H"><polygon points="1003,558 1016,571 1016,585 1003,598 985,598 972,585 972,571 985,558" fill="#16161A"/><polygon points="999,554 1012,567 1012,581 999,594 981,594 968,581 968,567 981,554" fill="#FDFBF4" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/><rect x="976" y="562" width="28" height="24" fill="#16161A"/><rect x="976" y="578" width="28" height="8" fill="#FDFBF4"/></g>
+
+    <!-- 15 SCRIPT -->
+    <text x="600" y="712" font-family="Impact, Anton, sans-serif" font-size="17" fill="#16161A">15 SCRIPT</text>
+    <g inkscape:label="15F"><polyline points="792,686 776,706 792,726" fill="none" stroke="#16161A" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/><polyline points="812,686 828,706 812,726" fill="none" stroke="#16161A" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/></g>
+    <g inkscape:label="15G"><rect x="872" y="682" width="46" height="48" fill="url(#hatchGrey)" stroke="#16161A" stroke-width="3"/><polyline points="890,696 882,706 890,716" fill="none" stroke="#16161A" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><polyline points="900,696 908,706 900,716" fill="none" stroke="#16161A" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></g>
+    <g inkscape:label="15H"><polygon points="1003,688 1016,701 1016,715 1003,728 985,728 972,715 972,701 985,688" fill="#16161A"/><polygon points="999,684 1012,697 1012,711 999,724 981,724 968,711 968,697 981,684" fill="#FDFBF4" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/><polyline points="984,694 976,704 984,714" fill="none" stroke="#16161A" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><polyline points="996,694 1004,704 996,714" fill="none" stroke="#16161A" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></g>
+
+    <!-- 16 ASSET -->
+    <text x="600" y="842" font-family="Impact, Anton, sans-serif" font-size="17" fill="#16161A">16 ASSET</text>
+    <g inkscape:label="16F"><rect x="776" y="844" width="44" height="12" fill="#16161A"/><rect x="780" y="830" width="44" height="12" fill="#16161A"/><rect x="784" y="816" width="44" height="12" fill="#16161A"/></g>
+    <g inkscape:label="16G"><polygon points="872,824 895,813 918,824 918,848 895,859 872,848" fill="url(#hatchGrey)" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/><line x1="872" y1="824" x2="895" y2="835" stroke="#16161A" stroke-width="3"/><line x1="918" y1="824" x2="895" y2="835" stroke="#16161A" stroke-width="3"/></g>
+    <g inkscape:label="16H"><polygon points="1003,818 1016,831 1016,845 1003,858 985,858 972,845 972,831 985,818" fill="#16161A"/><polygon points="999,814 1012,827 1012,841 999,854 981,854 968,841 968,827 981,814" fill="#FDFBF4" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/><rect x="978" y="838" width="24" height="7" fill="#16161A"/><rect x="978" y="828" width="24" height="7" fill="#16161A"/><rect x="978" y="818" width="24" height="7" fill="#16161A"/></g>
+
+    <!-- 17 REACTION -->
+    <text x="600" y="972" font-family="Impact, Anton, sans-serif" font-size="17" fill="#16161A">17 REACTION</text>
+    <g inkscape:label="17F"><circle cx="800" cy="966" r="22" fill="#16161A"/><circle cx="792" cy="961" r="3.4" fill="#FDFBF4"/><circle cx="808" cy="961" r="3.4" fill="#FDFBF4"/><path d="M 790 973 q 10 9 20 0" fill="none" stroke="#FDFBF4" stroke-width="3" stroke-linecap="round"/></g>
+    <g inkscape:label="17G"><circle cx="895" cy="966" r="22" fill="url(#hatchGold)" stroke="#16161A" stroke-width="3"/><circle cx="887" cy="961" r="3" fill="#16161A"/><circle cx="903" cy="961" r="3" fill="#16161A"/><path d="M 885 973 q 10 9 20 0" fill="none" stroke="#16161A" stroke-width="2.5" stroke-linecap="round"/></g>
+    <g inkscape:label="17H"><polygon points="1003,948 1016,961 1016,975 1003,988 985,988 972,975 972,961 985,948" fill="#16161A"/><polygon points="999,944 1012,957 1012,971 999,984 981,984 968,971 968,957 981,944" fill="#F2B417" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/><circle cx="983" cy="960" r="2.8" fill="#16161A"/><circle cx="997" cy="960" r="2.8" fill="#16161A"/><path d="M 982 970 q 8 7 16 0" fill="none" stroke="#16161A" stroke-width="2.5" stroke-linecap="round"/></g>
+
+    <!-- 18 DIAL -->
+    <text x="600" y="1102" font-family="Impact, Anton, sans-serif" font-size="17" fill="#16161A">18 DIAL</text>
+    <g inkscape:label="18F"><circle cx="800" cy="1096" r="23" fill="#16161A"/><circle cx="800" cy="1096" r="8" fill="#FDFBF4"/><line x1="800" y1="1073" x2="800" y2="1088" stroke="#FDFBF4" stroke-width="3"/><line x1="820" y1="1108" x2="808" y2="1101" stroke="#FDFBF4" stroke-width="3"/><line x1="780" y1="1108" x2="792" y2="1101" stroke="#FDFBF4" stroke-width="3"/></g>
+    <g inkscape:label="18G"><circle cx="895" cy="1096" r="23" fill="url(#hatchGrey)" stroke="#16161A" stroke-width="3"/><path d="M 895 1096 L 895 1073 A 23 23 0 0 1 915 1108 Z" fill="#F2B417" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/><circle cx="895" cy="1096" r="7" fill="#16161A"/></g>
+    <g inkscape:label="18H"><polygon points="1003,1078 1016,1091 1016,1105 1003,1118 985,1118 972,1105 972,1091 985,1078" fill="#16161A"/><polygon points="999,1074 1012,1087 1012,1101 999,1114 981,1114 968,1101 968,1087 981,1074" fill="#FDFBF4" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/><circle cx="990" cy="1094" r="13" fill="none" stroke="#16161A" stroke-width="3"/><circle cx="990" cy="1094" r="5" fill="#16161A"/></g>
+
+    <!-- 19 NOTE -->
+    <text x="600" y="1232" font-family="Impact, Anton, sans-serif" font-size="17" fill="#16161A">19 NOTE</text>
+    <g inkscape:label="19F"><path d="M 776 1204 L 824 1204 L 824 1238 L 812 1250 L 776 1250 Z" fill="#16161A"/><line x1="784" y1="1216" x2="816" y2="1216" stroke="#FDFBF4" stroke-width="3"/><line x1="784" y1="1228" x2="806" y2="1228" stroke="#FDFBF4" stroke-width="3"/></g>
+    <g inkscape:label="19G"><rect x="871" y="1204" width="48" height="44" fill="url(#hatchGoldDiag)" stroke="#16161A" stroke-width="3"/><line x1="880" y1="1218" x2="910" y2="1218" stroke="#16161A" stroke-width="3"/><line x1="880" y1="1230" x2="902" y2="1230" stroke="#16161A" stroke-width="3"/></g>
+    <g inkscape:label="19H"><polygon points="1003,1208 1016,1221 1016,1235 1003,1248 985,1248 972,1235 972,1221 985,1208" fill="#16161A"/><polygon points="999,1204 1012,1217 1012,1231 999,1244 981,1244 968,1231 968,1217 981,1204" fill="#F2B417" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/><line x1="978" y1="1216" x2="1002" y2="1216" stroke="#16161A" stroke-width="3"/><line x1="978" y1="1226" x2="996" y2="1226" stroke="#16161A" stroke-width="3"/></g>
+
+    <!-- 20 SEE ALSO -->
+    <text x="600" y="1362" font-family="Impact, Anton, sans-serif" font-size="17" fill="#16161A">20 SEE ALSO</text>
+    <g inkscape:label="20F"><polyline points="782,1340 802,1356 782,1372" fill="none" stroke="#16161A" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/><polyline points="804,1340 824,1356 804,1372" fill="none" stroke="#16161A" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/></g>
+    <g inkscape:label="20G"><circle cx="895" cy="1356" r="23" fill="url(#hatchGrey)" stroke="#16161A" stroke-width="3"/><line x1="882" y1="1356" x2="902" y2="1356" stroke="#16161A" stroke-width="4"/><polygon points="902,1348 914,1356 902,1364" fill="#16161A"/></g>
+    <g inkscape:label="20H"><polygon points="1003,1338 1016,1351 1016,1365 1003,1378 985,1378 972,1365 972,1351 985,1338" fill="#16161A"/><polygon points="999,1334 1012,1347 1012,1361 999,1374 981,1374 968,1361 968,1347 981,1334" fill="#FDFBF4" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/><line x1="978" y1="1354" x2="996" y2="1354" stroke="#16161A" stroke-width="4"/><polygon points="996,1347 1007,1354 996,1361" fill="#16161A"/></g>
+  </g>
+  <g inkscape:groupmode="layer" inkscape:label="98 Codes" id="layer-codes">
+    <text x="190" y="242" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">1F</text>
+    <text x="285" y="242" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">1G</text>
+    <text x="380" y="242" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">1H</text>
+    <text x="800" y="242" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">11F</text>
+    <text x="895" y="242" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">11G</text>
+    <text x="990" y="242" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">11H</text>
+    <text x="190" y="372" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">2F</text>
+    <text x="285" y="372" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">2G</text>
+    <text x="380" y="372" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">2H</text>
+    <text x="800" y="372" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">12F</text>
+    <text x="895" y="372" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">12G</text>
+    <text x="990" y="372" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">12H</text>
+    <text x="190" y="502" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">3F</text>
+    <text x="285" y="502" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">3G</text>
+    <text x="380" y="502" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">3H</text>
+    <text x="800" y="502" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">13F</text>
+    <text x="895" y="502" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">13G</text>
+    <text x="990" y="502" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">13H</text>
+    <text x="190" y="632" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">4F</text>
+    <text x="285" y="632" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">4G</text>
+    <text x="380" y="632" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">4H</text>
+    <text x="800" y="632" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">14F</text>
+    <text x="895" y="632" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">14G</text>
+    <text x="990" y="632" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">14H</text>
+    <text x="190" y="762" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">5F</text>
+    <text x="285" y="762" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">5G</text>
+    <text x="380" y="762" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">5H</text>
+    <text x="800" y="762" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">15F</text>
+    <text x="895" y="762" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">15G</text>
+    <text x="990" y="762" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">15H</text>
+    <text x="190" y="892" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">6F</text>
+    <text x="285" y="892" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">6G</text>
+    <text x="380" y="892" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">6H</text>
+    <text x="800" y="892" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">16F</text>
+    <text x="895" y="892" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">16G</text>
+    <text x="990" y="892" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">16H</text>
+    <text x="190" y="1022" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">7F</text>
+    <text x="285" y="1022" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">7G</text>
+    <text x="380" y="1022" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">7H</text>
+    <text x="800" y="1022" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">17F</text>
+    <text x="895" y="1022" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">17G</text>
+    <text x="990" y="1022" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">17H</text>
+    <text x="190" y="1152" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">8F</text>
+    <text x="285" y="1152" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">8G</text>
+    <text x="380" y="1152" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">8H</text>
+    <text x="800" y="1152" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">18F</text>
+    <text x="895" y="1152" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">18G</text>
+    <text x="990" y="1152" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">18H</text>
+    <text x="190" y="1282" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">9F</text>
+    <text x="285" y="1282" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">9G</text>
+    <text x="380" y="1282" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">9H</text>
+    <text x="800" y="1282" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">19F</text>
+    <text x="895" y="1282" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">19G</text>
+    <text x="990" y="1282" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">19H</text>
+    <text x="190" y="1412" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">10F</text>
+    <text x="285" y="1412" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">10G</text>
+    <text x="380" y="1412" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">10H</text>
+    <text x="800" y="1412" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">20F</text>
+    <text x="895" y="1412" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">20G</text>
+    <text x="990" y="1412" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">20H</text>
+  </g>
+  <g inkscape:groupmode="layer" inkscape:label="99 Why G" id="layer-proof">
+    <line x1="24" y1="1452" x2="1096" y2="1452" stroke="#16161A" stroke-width="3"/>
+    <text x="24" y="1484" font-family="Impact, Anton, sans-serif" font-size="20" fill="#D62828">WHY G EXISTS</text>
+    <text x="24" y="1506" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">Green and red measure 1.01:1 against each other. They are different hues at almost the same lightness, so any process that</text>
+    <text x="24" y="1524" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#16161A">removes hue removes the distinction entirely. Texture is a second channel, and direction is not a colour.</text>
+
+    <text x="212" y="1556" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-weight="bold" letter-spacing="1.4" fill="#5A5A63">FLAT COLOUR</text>
+    <rect x="150" y="1566" width="54" height="54" fill="#17804A" stroke="#16161A" stroke-width="3"/>
+    <rect x="220" y="1566" width="54" height="54" fill="#D62828" stroke="#16161A" stroke-width="3"/>
+    <text x="212" y="1638" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">in colour: obvious</text>
+
+    <text x="420" y="1556" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-weight="bold" letter-spacing="1.4" fill="#5A5A63">THE SAME, IN GREY</text>
+    <rect x="358" y="1566" width="54" height="54" fill="#707070" stroke="#16161A" stroke-width="3"/>
+    <rect x="428" y="1566" width="54" height="54" fill="#707070" stroke="#16161A" stroke-width="3"/>
+    <text x="420" y="1638" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-weight="bold" fill="#D62828">one grey. no verdict.</text>
+
+    <text x="660" y="1556" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-weight="bold" letter-spacing="1.4" fill="#5A5A63">SCREENED</text>
+    <rect x="598" y="1566" width="54" height="54" fill="url(#hatchGreen)" stroke="#16161A" stroke-width="3"/>
+    <rect x="668" y="1566" width="54" height="54" fill="url(#hatchRed)" stroke="#16161A" stroke-width="3"/>
+    <text x="660" y="1638" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">in colour: obvious</text>
+
+    <text x="900" y="1556" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-weight="bold" letter-spacing="1.4" fill="#5A5A63">SCREENED, IN GREY</text>
+    <rect x="838" y="1566" width="54" height="54" fill="url(#greyHatchA)" stroke="#16161A" stroke-width="3"/>
+    <rect x="908" y="1566" width="54" height="54" fill="url(#greyHatchB)" stroke="#16161A" stroke-width="3"/>
+    <text x="900" y="1638" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-weight="bold" fill="#17804A">still two things.</text>
+  </g>
+  <g inkscape:groupmode="layer" inkscape:label="97 Row rules" id="layer-rules" sodipodi:insensitive="true">
+    <line x1="24" y1="264" x2="1096" y2="264" stroke="#DAD5C6" stroke-width="1.5"/>
+    <line x1="24" y1="394" x2="1096" y2="394" stroke="#DAD5C6" stroke-width="1.5"/>
+    <line x1="24" y1="524" x2="1096" y2="524" stroke="#DAD5C6" stroke-width="1.5"/>
+    <line x1="24" y1="654" x2="1096" y2="654" stroke="#DAD5C6" stroke-width="1.5"/>
+    <line x1="24" y1="784" x2="1096" y2="784" stroke="#DAD5C6" stroke-width="1.5"/>
+    <line x1="24" y1="914" x2="1096" y2="914" stroke="#DAD5C6" stroke-width="1.5"/>
+    <line x1="24" y1="1044" x2="1096" y2="1044" stroke="#DAD5C6" stroke-width="1.5"/>
+    <line x1="24" y1="1174" x2="1096" y2="1174" stroke="#DAD5C6" stroke-width="1.5"/>
+    <line x1="24" y1="1304" x2="1096" y2="1304" stroke="#DAD5C6" stroke-width="1.5"/>
+  </g>
+</svg>

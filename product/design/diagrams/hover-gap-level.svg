@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:svg="http://www.w3.org/2000/svg"
+     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+     xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+     viewBox="0 0 900 470" width="900" height="470"
+     role="img"
+     aria-label="An isometric cutaway of the walkthrough level: a starting ledge, a gap too wide to jump, wind blowing across, and a far ledge with a flag. The hover arc that would cross the gap is marked as not yet authorable.">
+  <title>The walkthrough level, and the one move you cannot author</title>
+  <desc>Two ledges and a gap. Wind moves the grass but not the player. The hover arc across the gap is drawn in red because CharacterController has no hover and script cannot reach its velocity.</desc>
+
+  <g inkscape:groupmode="layer" inkscape:label="10 Sky" id="layer-sky" sodipodi:insensitive="true">
+    <rect x="0" y="0" width="900" height="470" fill="#DCE6E0"/>
+  </g>
+
+  <g inkscape:groupmode="layer" inkscape:label="20 Wind" id="layer-wind">
+    <path d="M 70 150 q 45 -20 90 0 q 45 20 90 0 q 45 -20 90 0" fill="none" stroke="#0B5FCE" stroke-width="5" stroke-linecap="round"/>
+    <polygon points="340,142 362,150 340,158" fill="#0B5FCE"/>
+    <path d="M 420 186 q 45 -20 90 0 q 45 20 90 0 q 45 -20 90 0" fill="none" stroke="#0B5FCE" stroke-width="5" stroke-linecap="round"/>
+    <polygon points="690,178 712,186 690,194" fill="#0B5FCE"/>
+    <path d="M 160 218 q 45 -20 90 0 q 45 20 90 0" fill="none" stroke="#0B5FCE" stroke-width="4" stroke-linecap="round" opacity="0.7"/>
+    <polygon points="340,211 358,218 340,225" fill="#0B5FCE" opacity="0.7"/>
+  </g>
+
+  <g inkscape:groupmode="layer" inkscape:label="30 Ledges" id="layer-ledges">
+    <g inkscape:label="Start ledge">
+      <polygon points="70,330 270,330 340,295 140,295" fill="#8FA89B" stroke="#16161A" stroke-width="3"/>
+      <polygon points="70,330 270,330 270,392 70,392" fill="#6E8377" stroke="#16161A" stroke-width="3"/>
+      <polygon points="270,330 340,295 340,357 270,392" fill="#54685C" stroke="#16161A" stroke-width="3"/>
+      <path d="M 120 328 l -5 -18 M 120 328 l 4 -16 M 132 328 l -4 -20" stroke="#17804A" stroke-width="3" fill="none"/>
+      <path d="M 196 322 l -6 -18 M 196 322 l 4 -17" stroke="#17804A" stroke-width="3" fill="none"/>
+      <path d="M 256 316 l -6 -17 M 256 316 l 5 -15" stroke="#17804A" stroke-width="3" fill="none"/>
+    </g>
+    <g inkscape:label="Far ledge">
+      <polygon points="560,330 760,330 830,295 630,295" fill="#8FA89B" stroke="#16161A" stroke-width="3"/>
+      <polygon points="560,330 760,330 760,392 560,392" fill="#6E8377" stroke="#16161A" stroke-width="3"/>
+      <polygon points="760,330 830,295 830,357 760,392" fill="#54685C" stroke="#16161A" stroke-width="3"/>
+      <path d="M 596 328 l -5 -18 M 596 328 l 4 -16" stroke="#17804A" stroke-width="3" fill="none"/>
+      <path d="M 700 318 l -6 -18 M 700 318 l 5 -16" stroke="#17804A" stroke-width="3" fill="none"/>
+      <g inkscape:label="Flag">
+        <line x1="742" y1="306" x2="742" y2="222" stroke="#16161A" stroke-width="5"/>
+        <path d="M 742 226 L 800 240 L 742 256 Z" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+      </g>
+    </g>
+  </g>
+
+  <g inkscape:groupmode="layer" inkscape:label="40 Player" id="layer-player">
+    <ellipse cx="180" cy="316" rx="26" ry="7" fill="#16161A" opacity="0.25"/>
+    <rect x="166" y="290" width="11" height="24" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+    <rect x="182" y="290" width="11" height="24" fill="#12233D" stroke="#16161A" stroke-width="3"/>
+    <rect x="163" y="254" width="33" height="38" fill="#D62828" stroke="#16161A" stroke-width="3"/>
+    <rect x="164" y="222" width="31" height="32" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+    <circle cx="173" cy="236" r="3.2" fill="#16161A"/>
+    <circle cx="187" cy="236" r="3.2" fill="#16161A"/>
+    <path d="M 173 245 q 7 5 14 0" fill="none" stroke="#16161A" stroke-width="2.5" stroke-linecap="round"/>
+  </g>
+
+  <g inkscape:groupmode="layer" inkscape:label="50 The move that is missing" id="layer-gap">
+    <path d="M 214 250 Q 420 150 628 292" fill="none" stroke="#D62828" stroke-width="5" stroke-dasharray="12 9" stroke-linecap="round"/>
+    <polygon points="620,278 638,298 612,300" fill="#D62828"/>
+    <g inkscape:label="Missing badge">
+      <rect x="330" y="96" width="250" height="52" fill="#16161A"/>
+      <rect x="324" y="90" width="250" height="52" fill="#D62828" stroke="#16161A" stroke-width="3"/>
+      <text x="449" y="114" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="19" fill="#FFFFFF">HOVER: NOT AUTHORABLE</text>
+      <text x="449" y="133" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#FFFFFF">no field, and script cannot reach velocity &#183; G1</text>
+    </g>
+    <g inkscape:label="Gap measure">
+      <line x1="276" y1="352" x2="554" y2="352" stroke="#16161A" stroke-width="3"/>
+      <line x1="276" y1="340" x2="276" y2="364" stroke="#16161A" stroke-width="3"/>
+      <line x1="554" y1="340" x2="554" y2="364" stroke="#16161A" stroke-width="3"/>
+      <rect x="352" y="336" width="126" height="30" fill="#FDFBF4" stroke="#16161A" stroke-width="3"/>
+      <text x="415" y="357" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">too far to jump</text>
+    </g>
+  </g>
+
+  <g inkscape:groupmode="layer" inkscape:label="60 Callouts" id="layer-callouts">
+    <g inkscape:label="Callout 1">
+      <line x1="112" y1="418" x2="150" y2="380" stroke="#16161A" stroke-width="3"/>
+      <circle cx="92" cy="432" r="20" fill="#D62828" stroke="#16161A" stroke-width="3"/>
+      <text x="92" y="440" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="21" fill="#FFFFFF">1</text>
+      <text x="122" y="439" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">You start here</text>
+    </g>
+    <g inkscape:label="Callout 2">
+      <line x1="415" y1="408" x2="415" y2="372" stroke="#16161A" stroke-width="3"/>
+      <circle cx="415" cy="428" r="20" fill="#D62828" stroke="#16161A" stroke-width="3"/>
+      <text x="415" y="436" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="21" fill="#FFFFFF">2</text>
+      <text x="445" y="435" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">Falling in is the level working</text>
+    </g>
+    <g inkscape:label="Callout 3">
+      <line x1="80" y1="130" x2="80" y2="156" stroke="#16161A" stroke-width="3"/>
+      <circle cx="80" cy="110" r="20" fill="#0B5FCE" stroke="#16161A" stroke-width="3"/>
+      <text x="80" y="118" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="21" fill="#FFFFFF">3</text>
+      <text x="110" y="107" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">Wind moves the grass</text>
+      <text x="110" y="126" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#16161A">and the flag. Not you.</text>
+    </g>
+    <g inkscape:label="Callout 4">
+      <line x1="800" y1="412" x2="762" y2="378" stroke="#16161A" stroke-width="3"/>
+      <circle cx="820" cy="428" r="20" fill="#17804A" stroke="#16161A" stroke-width="3"/>
+      <text x="820" y="436" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="21" fill="#FFFFFF">4</text>
+      <text x="790" y="462" text-anchor="end" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">Something worth reaching</text>
+    </g>
+  </g>
+</svg>

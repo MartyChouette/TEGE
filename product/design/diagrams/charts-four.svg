@@ -1,0 +1,245 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:svg="http://www.w3.org/2000/svg"
+     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+     xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+     viewBox="0 0 1600 1210" width="1600" height="1210"
+     role="img"
+     aria-label="Four gameplay charts: switch-access reach time against target count, hover budget against gap width, the gravity zone reader matrix, and the touch scheme fingerprint.">
+  <title>Four charts this project needed</title>
+  <desc>Each chart turns an adjective into a shape. Two produce a number we did not previously have: the scan group size, and the hover budget The Split actually requires.</desc>
+  <sodipodi:namedview inkscape:document-units="px" pagecolor="#FDFBF4" bordercolor="#16161A"/>
+
+  <defs>
+    <marker id="cA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#16161A"/>
+    </marker>
+    <pattern id="cFeas" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="8" height="8" fill="#FDFBF4"/><rect width="3" height="8" fill="#17804A" opacity="0.45"/>
+    </pattern>
+  </defs>
+
+  <rect x="0" y="0" width="1600" height="1210" fill="#FDFBF4"/>
+
+  <g inkscape:groupmode="layer" inkscape:label="10 Title" id="c-title">
+    <rect x="0" y="0" width="1600" height="92" fill="#12233D"/>
+    <rect x="0" y="86" width="1600" height="6" fill="#D62828"/>
+    <text x="32" y="50" font-family="Impact, Anton, sans-serif" font-size="36" fill="#FDFBF4">FOUR CHARTS THIS PROJECT NEEDED</text>
+    <text x="32" y="74" font-family="Archivo, Arial, sans-serif" font-size="14" fill="#C9D2DE">Each one turns an adjective into a shape. Two of them produce a number nobody had picked.</text>
+    <rect x="1382" y="22" width="186" height="28" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+    <text x="1475" y="43" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="15" fill="#16161A">DERIVED</text>
+    <text x="1568" y="72" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="12" fill="#F2B417">2026-09-17</text>
+  </g>
+
+  <!-- ================= CHART 1 ================= -->
+  <g inkscape:groupmode="layer" inkscape:label="20 Scan reach time" id="c1">
+    <rect x="32" y="110" width="758" height="30" fill="#12233D"/>
+    <text x="46" y="132" font-family="Impact, Anton, sans-serif" font-size="16" fill="#FDFBF4">1 &#183; FLAT SCANNING IS UNUSABLE PAST ABOUT 15 TARGETS</text>
+    <rect x="32" y="140" width="758" height="500" fill="none" stroke="#16161A" stroke-width="3"/>
+    <text x="46" y="164" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#5A5A63">Worst-case seconds to reach one operation by switch scanning, at the default 1.5 s per element.</text>
+
+    <g inkscape:label="axes">
+      <line x1="100" y1="540" x2="740" y2="540" stroke="#16161A" stroke-width="3"/>
+      <line x1="100" y1="200" x2="100" y2="540" stroke="#16161A" stroke-width="3"/>
+      <text x="100" y="562" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">0</text>
+      <line x1="313" y1="540" x2="313" y2="546" stroke="#16161A" stroke-width="2"/>
+      <text x="313" y="562" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">20</text>
+      <line x1="527" y1="540" x2="527" y2="546" stroke="#16161A" stroke-width="2"/>
+      <text x="527" y="562" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">40</text>
+      <line x1="740" y1="540" x2="740" y2="546" stroke="#16161A" stroke-width="2"/>
+      <text x="740" y="562" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">60</text>
+      <text x="420" y="584" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A">scan targets on screen</text>
+
+      <line x1="94" y1="427" x2="100" y2="427" stroke="#16161A" stroke-width="2"/>
+      <text x="88" y="431" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">30</text>
+      <line x1="94" y1="313" x2="100" y2="313" stroke="#16161A" stroke-width="2"/>
+      <text x="88" y="317" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">60</text>
+      <line x1="94" y1="200" x2="100" y2="200" stroke="#16161A" stroke-width="2"/>
+      <text x="88" y="204" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">90</text>
+      <text x="56" y="380" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A" transform="rotate(-90 56 380)">seconds, worst case</text>
+    </g>
+
+    <g inkscape:label="series">
+      <line x1="100" y1="540" x2="740" y2="200" stroke="#D62828" stroke-width="5"/>
+      <path d="M 100 540 L 207 504 L 313 489 L 420 477 L 527 468 L 634 459 L 740 452"
+            fill="none" stroke="#17804A" stroke-width="5" stroke-dasharray="14 8"/>
+      <text x="628" y="252" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#D62828">FLAT</text>
+      <text x="628" y="268" font-family="Archivo, Arial, sans-serif" font-size="11.5" fill="#D62828">one long list</text>
+      <text x="628" y="432" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#17804A">GROUPED</text>
+      <text x="628" y="448" font-family="Archivo, Arial, sans-serif" font-size="11.5" fill="#17804A">two levels</text>
+    </g>
+
+    <g inkscape:label="the editor today">
+      <line x1="527" y1="200" x2="527" y2="540" stroke="#16161A" stroke-width="2" stroke-dasharray="6 5"/>
+      <circle cx="527" cy="313" r="8" fill="#D62828" stroke="#16161A" stroke-width="3"/>
+      <circle cx="527" cy="468" r="8" fill="#17804A" stroke="#16161A" stroke-width="3"/>
+      <rect x="352" y="222" width="168" height="54" fill="#FFFFFF" stroke="#D62828" stroke-width="3"/>
+      <text x="364" y="242" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#D62828">40 targets, flat:</text>
+      <text x="364" y="264" font-family="Impact, Anton, sans-serif" font-size="20" fill="#D62828">60 SECONDS</text>
+      <line x1="520" y2="313" x2="520" y1="313" stroke="#16161A" stroke-width="2"/>
+      <line x1="519" y1="313" x2="440" y2="290" stroke="#D62828" stroke-width="2"/>
+      <rect x="352" y="486" width="168" height="40" fill="#FFFFFF" stroke="#17804A" stroke-width="3"/>
+      <text x="364" y="512" font-family="Impact, Anton, sans-serif" font-size="18" fill="#17804A">19 SECONDS</text>
+      <line x1="519" y1="468" x2="440" y2="492" stroke="#17804A" stroke-width="2"/>
+    </g>
+
+    <rect x="46" y="596" width="730" height="34" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+    <text x="60" y="618" font-family="Archivo, Arial, sans-serif" font-size="13.5" font-weight="bold" fill="#16161A">THE NUMBER: best group size is the square root of the target count. For the editor's forty, groups of SIX.</text>
+  </g>
+
+  <!-- ================= CHART 2 ================= -->
+  <g inkscape:groupmode="layer" inkscape:label="30 Hover budget" id="c2">
+    <rect x="810" y="110" width="758" height="30" fill="#12233D"/>
+    <text x="824" y="132" font-family="Impact, Anton, sans-serif" font-size="16" fill="#FDFBF4">2 &#183; THE SPLIT NEEDS 0.36 s OF HOVER, NOT MORE</text>
+    <rect x="810" y="140" width="758" height="500" fill="none" stroke="#16161A" stroke-width="3"/>
+    <text x="824" y="164" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#5A5A63">Hover seconds required to clear a gap, given a 3.4 m jump. Two approach speeds from the move set.</text>
+
+    <g inkscape:label="feasible band">
+      <rect x="880" y="313" width="640" height="227" fill="url(#cFeas)"/>
+      <line x1="880" y1="313" x2="1520" y2="313" stroke="#17804A" stroke-width="4"/>
+      <text x="1240" y="306" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#17804A">ceiling: 0.8 s before a 1.5 m/s clamp drops you past the ledge</text>
+    </g>
+
+    <g inkscape:label="axes">
+      <line x1="880" y1="540" x2="1520" y2="540" stroke="#16161A" stroke-width="3"/>
+      <line x1="880" y1="200" x2="880" y2="540" stroke="#16161A" stroke-width="3"/>
+      <text x="880" y="562" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">3</text>
+      <line x1="1093" y1="540" x2="1093" y2="546" stroke="#16161A" stroke-width="2"/>
+      <text x="1093" y="562" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">6</text>
+      <line x1="1307" y1="540" x2="1307" y2="546" stroke="#16161A" stroke-width="2"/>
+      <text x="1307" y="562" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">9</text>
+      <line x1="1520" y1="540" x2="1520" y2="546" stroke="#16161A" stroke-width="2"/>
+      <text x="1520" y="562" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">12</text>
+      <text x="1200" y="584" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A">gap width, metres</text>
+
+      <line x1="874" y1="427" x2="880" y2="427" stroke="#16161A" stroke-width="2"/>
+      <text x="868" y="431" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">0.4</text>
+      <line x1="874" y1="313" x2="880" y2="313" stroke="#16161A" stroke-width="2"/>
+      <text x="868" y="317" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">0.8</text>
+      <line x1="874" y1="200" x2="880" y2="200" stroke="#16161A" stroke-width="2"/>
+      <text x="868" y="204" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="11" fill="#16161A">1.2</text>
+      <text x="838" y="380" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A" transform="rotate(-90 838 380)">hover seconds needed</text>
+    </g>
+
+    <g inkscape:label="series">
+      <line x1="908" y1="540" x2="1520" y2="202" stroke="#0B5FCE" stroke-width="5"/>
+      <line x1="908" y1="540" x2="1292" y2="200" stroke="#16161A" stroke-width="5" stroke-dasharray="14 8"/>
+      <text x="1432" y="236" text-anchor="end" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#0B5FCE">SPRINT 7.2 m/s</text>
+      <text x="1188" y="232" text-anchor="end" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#16161A">WALK 4.5 m/s</text>
+    </g>
+
+    <g inkscape:label="the split">
+      <line x1="1093" y1="200" x2="1093" y2="540" stroke="#D62828" stroke-width="2" stroke-dasharray="6 5"/>
+      <circle cx="1093" cy="438" r="8" fill="#0B5FCE" stroke="#16161A" stroke-width="3"/>
+      <circle cx="1093" cy="376" r="8" fill="#16161A" stroke="#16161A" stroke-width="3"/>
+      <text x="1104" y="212" font-family="Archivo, Arial, sans-serif" font-size="12" font-weight="bold" fill="#D62828">THE SPLIT, 6 m</text>
+      <rect x="932" y="450" width="150" height="56" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+      <text x="944" y="470" font-family="Archivo, Arial, sans-serif" font-size="11.5" fill="#16161A">sprint in: 0.36 s</text>
+      <text x="944" y="490" font-family="Archivo, Arial, sans-serif" font-size="11.5" fill="#16161A">walk in: 0.58 s</text>
+      <line x1="1084" y1="438" x2="1082" y2="464" stroke="#0B5FCE" stroke-width="2"/>
+    </g>
+
+    <rect x="824" y="596" width="730" height="34" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+    <text x="838" y="618" font-family="Archivo, Arial, sans-serif" font-size="13.5" font-weight="bold" fill="#16161A">THE NUMBER: a 0.8 s budget and a 1.5 m/s clamp clears every gap up to 9 m. That is the whole feature.</text>
+  </g>
+
+  <!-- ================= CHART 3 ================= -->
+  <g inkscape:groupmode="layer" inkscape:label="40 Gravity matrix" id="c3">
+    <rect x="32" y="660" width="758" height="30" fill="#D62828"/>
+    <text x="46" y="682" font-family="Impact, Anton, sans-serif" font-size="16" fill="#FFFFFF">3 &#183; GAP G4, AS FOUR CELLS</text>
+    <rect x="32" y="690" width="758" height="380" fill="none" stroke="#16161A" stroke-width="3"/>
+    <text x="46" y="714" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#5A5A63">Who reads a GravityZoneComponent, and what happens when they do.</text>
+
+    <text x="330" y="748" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#16161A">JoltBackend</text>
+    <text x="330" y="764" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11.5" fill="#5A5A63">rigidbodies</text>
+    <text x="560" y="748" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#16161A">ControllerSystem</text>
+    <text x="560" y="764" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11.5" fill="#5A5A63">characters</text>
+
+    <text x="196" y="826" text-anchor="end" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#16161A">Directional</text>
+    <rect x="130" y="836" width="72" height="20" fill="#12233D"/>
+    <text x="166" y="851" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" font-weight="bold" fill="#FDFBF4">DEFAULT</text>
+    <text x="196" y="946" text-anchor="end" font-family="Archivo, Arial, sans-serif" font-size="13" font-weight="bold" fill="#16161A">Point</text>
+
+    <rect x="216" y="776" width="228" height="100" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+    <circle cx="260" cy="826" r="17" fill="#17804A" stroke="#16161A" stroke-width="3"/>
+    <polyline points="251,826 258,834 270,818" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="290" y="820" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A">Applied correctly</text>
+    <text x="290" y="838" font-family="Archivo, Arial, sans-serif" font-size="11.5" fill="#5A5A63">A barrel really does float</text>
+
+    <rect x="446" y="776" width="228" height="100" fill="#F4E6E1" stroke="#D62828" stroke-width="4"/>
+    <rect x="490" y="809" width="34" height="34" fill="#D62828" stroke="#16161A" stroke-width="3"/>
+    <line x1="497" y1="836" x2="517" y2="816" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round"/>
+    <text x="536" y="814" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#D62828">DOES NOTHING</text>
+    <text x="536" y="832" font-family="Archivo, Arial, sans-serif" font-size="11.5" fill="#16161A">No warning anywhere.</text>
+    <text x="536" y="850" font-family="Archivo, Arial, sans-serif" font-size="11.5" fill="#16161A">Player walks through it.</text>
+
+    <rect x="216" y="896" width="228" height="100" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+    <circle cx="260" cy="946" r="17" fill="#17804A" stroke="#16161A" stroke-width="3"/>
+    <polyline points="251,946 258,954 270,938" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="290" y="940" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A">Applied correctly</text>
+
+    <rect x="446" y="896" width="228" height="100" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+    <polygon points="504,930 518,956 490,956" fill="#F2B417" stroke="#16161A" stroke-width="3" stroke-linejoin="round"/>
+    <line x1="504" y1="940" x2="504" y2="948" stroke="#16161A" stroke-width="3" stroke-linecap="round"/>
+    <text x="536" y="934" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A">Only the planetary</text>
+    <text x="536" y="952" font-family="Archivo, Arial, sans-serif" font-size="11.5" fill="#5A5A63">controller reads it</text>
+
+    <rect x="46" y="1014" width="730" height="42" fill="#F0EBDD" stroke="#16161A" stroke-width="3"/>
+    <text x="60" y="1032" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A">The default row crossed with the common controller is the one dead cell. That is the whole bug.</text>
+    <text x="60" y="1048" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">It took a session to find in code and is a glance here. The fastest bug report is often a four cell matrix.</text>
+  </g>
+
+  <!-- ================= CHART 4 ================= -->
+  <g inkscape:groupmode="layer" inkscape:label="50 Touch fingerprint" id="c4">
+    <rect x="810" y="660" width="758" height="30" fill="#12233D"/>
+    <text x="824" y="682" font-family="Impact, Anton, sans-serif" font-size="16" fill="#FDFBF4">4 &#183; WHY A BUTTON APPEARS WHEN YOU DROP IN A COMPONENT</text>
+    <rect x="810" y="690" width="758" height="380" fill="none" stroke="#16161A" stroke-width="3"/>
+    <text x="824" y="714" font-family="Archivo, Arial, sans-serif" font-size="12.5" fill="#5A5A63">The touch scheme is rebuilt from a fingerprint, not authored. Three inputs, one rebuild, two outputs.</text>
+
+    <rect x="836" y="734" width="196" height="46" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+    <text x="934" y="754" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A">Controller preset</text>
+    <text x="934" y="770" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">which actions this scene consumes</text>
+
+    <rect x="836" y="796" width="196" height="46" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+    <text x="934" y="816" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A">Every ActionTrigger</text>
+    <text x="934" y="832" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">that asked for a button</text>
+
+    <rect x="836" y="858" width="196" height="46" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+    <text x="934" y="878" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A">Project overrides</text>
+    <text x="934" y="894" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">from the .enjinproject</text>
+
+    <line x1="1032" y1="757" x2="1104" y2="810" stroke="#16161A" stroke-width="4" marker-end="url(#cA)"/>
+    <line x1="1032" y1="819" x2="1104" y2="819" stroke="#16161A" stroke-width="4" marker-end="url(#cA)"/>
+    <line x1="1032" y1="881" x2="1104" y2="828" stroke="#16161A" stroke-width="4" marker-end="url(#cA)"/>
+
+    <rect x="1114" y="790" width="150" height="58" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+    <text x="1189" y="814" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="16" fill="#16161A">FINGERPRINT</text>
+    <text x="1189" y="834" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#16161A">changed? rebuild</text>
+
+    <line x1="1264" y1="800" x2="1340" y2="768" stroke="#16161A" stroke-width="4" marker-end="url(#cA)"/>
+    <line x1="1264" y1="838" x2="1340" y2="872" stroke="#16161A" stroke-width="4" marker-end="url(#cA)"/>
+
+    <rect x="1348" y="738" width="196" height="58" fill="#FFFFFF" stroke="#17804A" stroke-width="4"/>
+    <text x="1446" y="762" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A">On-screen buttons</text>
+    <text x="1446" y="780" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">what a thumb can press</text>
+
+    <rect x="1348" y="844" width="196" height="58" fill="#FFFFFF" stroke="#17804A" stroke-width="4"/>
+    <text x="1446" y="868" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A">Controls hint</text>
+    <text x="1446" y="886" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11" fill="#5A5A63">bottom-left corner</text>
+
+    <path d="M 1446 902 Q 1446 940 1200 940 Q 934 940 934 910" fill="none" stroke="#0B5FCE" stroke-width="3" stroke-dasharray="9 7" marker-end="url(#cA)"/>
+    <text x="1190" y="960" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="11.5" font-style="italic" fill="#0B5FCE">both outputs come from the same preset, which is why a scene never shows a control it does not have</text>
+
+    <rect x="824" y="1000" width="730" height="56" fill="#F0EBDD" stroke="#16161A" stroke-width="3"/>
+    <text x="838" y="1020" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#16161A">This is not a bug, and it surprises people, so it is a WATCH OUT rather than a gap.</text>
+    <text x="838" y="1038" font-family="Archivo, Arial, sans-serif" font-size="12" fill="#5A5A63">Nothing was authored. Drop a component in, the fingerprint changes, the scheme rebuilds, a button exists.</text>
+  </g>
+
+  <g inkscape:groupmode="layer" inkscape:label="99 Footer" id="c-foot" sodipodi:insensitive="true">
+    <line x1="32" y1="1102" x2="1568" y2="1102" stroke="#16161A" stroke-width="3"/>
+    <text x="32" y="1128" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-style="italic" fill="#5A5A63">Charts 1 and 2 are DERIVED from values read out of the engine, so they are arithmetic rather than opinion. Charts 3 and 4 are structural and describe what the code does today.</text>
+    <text x="32" y="1148" font-family="Archivo, Arial, sans-serif" font-size="12.5" font-style="italic" fill="#5A5A63">None of the four is a measurement of a running build. Nothing here has been profiled.</text>
+    <text x="32" y="1176" font-family="JetBrains Mono, monospace" font-size="11" fill="#5A5A63">product/design/diagrams/charts-four.svg &#183; the four named in GAMEPLAY_CHARTS.md section 5</text>
+    <rect x="1392" y="1112" width="176" height="30" fill="#F2B417" stroke="#16161A" stroke-width="3"/>
+    <text x="1480" y="1133" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="15" fill="#16161A">INTENT, NOT MEASURED</text>
+  </g>
+</svg>

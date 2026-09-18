@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:svg="http://www.w3.org/2000/svg"
+     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+     xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+     viewBox="0 0 1600 1120" width="1600" height="1120">
+  <title>UX screen template</title>
+  <desc>Copy this file, rename it after the screen, fill the layers. Answer the five questions before drawing; they constrain the layout more than a sketch does.</desc>
+
+  <sodipodi:namedview inkscape:document-units="px" pagecolor="#FDFBF4" bordercolor="#16161A"
+                      inkscape:current-layer="layer-content"/>
+
+  <g inkscape:groupmode="layer" inkscape:label="00 Paper" id="layer-paper" sodipodi:insensitive="true">
+    <rect x="0" y="0" width="1600" height="1120" fill="#FDFBF4"/>
+  </g>
+
+  <g inkscape:groupmode="layer" inkscape:label="10 Title block" id="layer-title">
+    <rect x="40" y="36" width="1520" height="72" fill="#12233D"/>
+    <text x="60" y="86" font-family="Impact, Anton, sans-serif" font-size="38" fill="#FDFBF4">SCREEN NAME</text>
+    <text x="1540" y="70" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="13" fill="#F2B417">v1 &#183; 2026-00-00</text>
+    <text x="1540" y="92" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="13" fill="#FDFBF4">status: exploring</text>
+  </g>
+
+  <!-- Draw the interface here. Paste parts from STENCIL.svg. -->
+  <g inkscape:groupmode="layer" inkscape:label="20 Screen" id="layer-content">
+    <rect x="40" y="132" width="1000" height="620" fill="#F0EBDD" stroke="#16161A" stroke-width="3" stroke-dasharray="10 8"/>
+    <text x="540" y="440" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="28" fill="#5A5A63">PASTE THE SCREEN HERE</text>
+    <text x="540" y="472" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-size="14" fill="#5A5A63">Parts live in STENCIL.svg. Delete this placeholder when you start.</text>
+  </g>
+
+  <!-- Numbered callouts pointing at the screen. Keep them on their own layer so
+       they can be hidden for a clean render. -->
+  <g inkscape:groupmode="layer" inkscape:label="30 Callouts" id="layer-callouts">
+    <circle cx="1090" cy="170" r="22" fill="#D62828" stroke="#16161A" stroke-width="3"/>
+    <text x="1090" y="179" text-anchor="middle" font-family="Impact, Anton, sans-serif" font-size="22" fill="#FFFFFF">1</text>
+    <text x="1126" y="166" font-family="Archivo, Arial, sans-serif" font-size="15" font-weight="bold" fill="#16161A">What this part is</text>
+    <text x="1126" y="188" font-family="Archivo, Arial, sans-serif" font-size="14" fill="#5A5A63">and why it sits here</text>
+  </g>
+
+  <!-- The five questions, from _docs_internal/CREATIVE_MODE_UI.md. Answer them
+       first. They constrain the layout more than a picture does, and question
+       five is the one everybody skips. -->
+  <g inkscape:groupmode="layer" inkscape:label="40 The five questions" id="layer-questions">
+    <rect x="40" y="784" width="1520" height="296" fill="#FFFFFF" stroke="#16161A" stroke-width="3"/>
+    <rect x="40" y="784" width="1520" height="36" fill="#D62828"/>
+    <text x="56" y="810" font-family="Impact, Anton, sans-serif" font-size="18" fill="#FFFFFF">ANSWER BEFORE YOU DRAW</text>
+
+    <text x="56" y="854" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">1 &#183; Who is at this screen, and what are they trying to finish?</text>
+    <text x="72" y="876" font-family="Archivo, Arial, sans-serif" font-size="14" fill="#5A5A63">&#8230;</text>
+
+    <text x="56" y="908" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">2 &#183; What must be visible without a click?</text>
+    <text x="72" y="930" font-family="Archivo, Arial, sans-serif" font-size="14" fill="#5A5A63">&#8230;</text>
+
+    <text x="56" y="962" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">3 &#183; What is allowed to be one click away?</text>
+    <text x="72" y="984" font-family="Archivo, Arial, sans-serif" font-size="14" fill="#5A5A63">&#8230;</text>
+
+    <text x="56" y="1016" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">4 &#183; What must never steal focus or interrupt?</text>
+    <text x="72" y="1038" font-family="Archivo, Arial, sans-serif" font-size="14" fill="#5A5A63">&#8230;</text>
+
+    <text x="820" y="854" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#D62828">5 &#183; How do they know it worked?</text>
+    <text x="836" y="876" font-family="Archivo, Arial, sans-serif" font-size="14" fill="#5A5A63">&#8230;</text>
+    <text x="836" y="906" font-family="Archivo, Arial, sans-serif" font-size="12" font-style="italic" fill="#5A5A63">This is the one everybody skips, and it is</text>
+    <text x="836" y="924" font-family="Archivo, Arial, sans-serif" font-size="12" font-style="italic" fill="#5A5A63">the one that makes software feel broken.</text>
+
+    <text x="820" y="968" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">Reachable without a mouse?</text>
+    <text x="836" y="990" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#5A5A63">Switch scan order, gaze targets big enough,</text>
+    <text x="836" y="1008" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#5A5A63">no gesture needing a hold plus an aim.</text>
+
+    <text x="820" y="1040" font-family="Archivo, Arial, sans-serif" font-size="14" font-weight="bold" fill="#16161A">Works at 190% UI scale?</text>
+    <text x="836" y="1062" font-family="Archivo, Arial, sans-serif" font-size="13" fill="#5A5A63">Anything pinned to the bottom is what goes missing.</text>
+  </g>
+</svg>
