@@ -774,6 +774,23 @@ void JoltBackend::CreateBodyForEntity(ECS::Entity entity) {
         f32 clampedGravityScale = std::clamp(rb->gravityScale, -10.0f, 10.0f);
         bodySettings.mGravityFactor = rb->useGravity ? clampedGravityScale : 0.0f;
 
+        // Speed ceilings. The component documents these as "clamped each frame"
+        // and NOTHING clamped them -- not here, not in the sync, not anywhere --
+        // so a body could reach any speed the solver produced and tunnel or
+        // explode with the setting sitting there looking applied.
+        //
+        // Given to Jolt rather than clamped per frame, because Jolt enforces
+        // them INSIDE the solver: clamping after the step leaves the body
+        // having already travelled at the speed it was not allowed to reach,
+        // which is precisely the tunnelling this prevents. Jolt's own defaults
+        // are 500 m/s and about 47 rad/s; the component's are lower on purpose.
+        if (rb->maxVelocity > 0.0f) {
+            bodySettings.mMaxLinearVelocity = rb->maxVelocity;
+        }
+        if (rb->maxAngularVelocity > 0.0f) {
+            bodySettings.mMaxAngularVelocity = rb->maxAngularVelocity;
+        }
+
         // Mass override
         if (rb->mass > 0.0f && motionType == JPH::EMotionType::Dynamic) {
             bodySettings.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;

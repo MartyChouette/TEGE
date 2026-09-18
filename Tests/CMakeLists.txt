@@ -356,6 +356,7 @@ enjin_add_test(TestFluidPlayback     Unit/Effects/TestFluidPlayback.cpp)
 enjin_add_test(TestFluidPlaybackSerialization Unit/Scene/TestFluidPlaybackSerialization.cpp)
 enjin_add_test(TestSceneFailureModes Unit/Scene/TestSceneFailureModes.cpp)
 enjin_add_test(TestSaveCloudSync     Unit/Gameplay/TestSaveCloudSync.cpp)
+enjin_add_test(TestRigidbodyVelocityClamp Unit/Physics/TestRigidbodyVelocityClamp.cpp)
 
 # --- Geometry ---
 enjin_add_test(TestCSG                Unit/Geometry/TestCSG.cpp)
