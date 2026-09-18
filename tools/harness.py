@@ -240,6 +240,17 @@ def check(project, bases):
                 ok, detail = False, str(e)
             results.append(('renders@%s' % b.rsplit('.', 1)[-1], ok, detail))
 
+    # Opt-in, unlike draws and renders: most projects make no claim about sound
+    # and a default-on audio check would fail them all for being quiet. A demo
+    # whose point IS audio asks for it in the manifest.
+    if claims.get('hears'):
+        for b in bases:
+            try:
+                ok, detail = capture_claims.hears(b + '.json')
+            except (OSError, ValueError) as e:
+                ok, detail = False, str(e)
+            results.append(('hears@%s' % b.rsplit('.', 1)[-1], ok, detail))
+
     anim = claims.get('animates')
     if anim is not None:
         if len(bases) < 2:

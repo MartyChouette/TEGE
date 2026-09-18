@@ -1928,7 +1928,32 @@ public:
             // above is the number that says anything was actually drawn.
             << "  \"entityRenderSlots\": "
             << (m_RenderSystem ? m_RenderSystem->GetEntityRenderDataSize() : Enjin::usize(0)) << ",\n"
-            << "  \"worldEntities\": " << (m_World ? m_World->GetEntityCount() : Enjin::usize(0)) << "\n"
+            << "  \"worldEntities\": " << (m_World ? m_World->GetEntityCount() : Enjin::usize(0)) << ",\n";
+
+        // Audio, because a picture cannot see it and some demos are ABOUT it.
+        //
+        // RoomAcoustics is eleven rooms whose whole point is that they sound
+        // different; judged on pixels it is a still image and always will be.
+        // Worse, what has actually broken here was invisible to every check the
+        // project had: the reverb bus was compiled out of every build so no
+        // scene ever had reverb, and the listener sat frozen at the origin so
+        // spatialisation was computed against a point the player was never at.
+        // Twelve DSP suites stayed green through both, because none of them go
+        // through AudioEngine.
+        const auto audio = m_AudioEngine.Snapshot();
+        out << "  \"audio\": {\n"
+            << "    \"reverbBusReady\": " << (audio.reverbBusReady ? "true" : "false") << ",\n"
+            << "    \"listener\": [" << audio.listener.x << ", " << audio.listener.y
+            << ", " << audio.listener.z << "],\n"
+            << "    \"reverbWetDry\": " << audio.reverbWetDry << ",\n"
+            << "    \"reverbRoomSize\": " << audio.reverbRoomSize << ",\n"
+            << "    \"reverbDamping\": " << audio.reverbDamping << ",\n"
+            << "    \"reverbDecayTime\": " << audio.reverbDecayTime << ",\n"
+            << "    \"reverbPreDelay\": " << audio.reverbPreDelay << ",\n"
+            << "    \"hasMeasuredRoom\": " << (audio.hasMeasuredRoom ? "true" : "false") << ",\n"
+            << "    \"soundsLoaded\": " << audio.soundsLoaded << ",\n"
+            << "    \"soundsPlaying\": " << audio.soundsPlaying << "\n"
+            << "  }\n"
             << "}\n";
     }
 

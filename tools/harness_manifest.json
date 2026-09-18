@@ -294,9 +294,11 @@
         500
       ],
       "claims": {
-        "draws": true
+        "draws": true,
+        "hears": true
       },
-      "animates_off_because": "An AUDIO demo. Its one script plays a clap on input and moves nothing; a still picture is the correct result. Worth its own claim on sound one day, not on pixels. Checked 2026-09-16."
+      "animates_off_because": "An AUDIO demo. Its one script plays a clap on input and moves nothing; a still picture is the correct result. Worth its own claim on sound one day, not on pixels. Checked 2026-09-16.",
+      "hears_because": "Eleven rooms whose entire point is that they sound different. Judged on pixels it is a still photograph and always will be, so the pixel claims can never say whether the demo works. This one goes through AudioEngine, which is where the reverb bus being compiled out and the listener being frozen at the origin both hid from twelve green DSP suites."
     },
     {
       "name": "Ropes",

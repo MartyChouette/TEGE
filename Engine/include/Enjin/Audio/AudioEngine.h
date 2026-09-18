@@ -155,6 +155,31 @@ public:
 
     void SetListenerPosition(const Math::Vector3& position, const Math::Vector3& forward, const Math::Vector3& up);
 
+    // What the audio engine is CURRENTLY doing, for anything that has to check
+    // from outside. Read-only, no behaviour.
+    //
+    // Every field here corresponds to something that was broken for a long time
+    // with nothing able to notice. The reverb bus was compiled out of every
+    // build, so no scene ever had reverb. The listener was frozen at the origin,
+    // so spatialisation was computed against a point the player was never at.
+    // And the DSP suites all passed throughout, because none of them go through
+    // AudioEngine -- the one place the feature was switched off. Twelve green
+    // suites over a bus that was never built. A picture cannot see any of it,
+    // which is why the capture harness needs to be able to ask.
+    struct AudioSnapshot {
+        bool reverbBusReady = false;   // false = compiled out; the 2026-09-12 bug
+        Math::Vector3 listener;        // frozen at the origin was the other one
+        f32 reverbWetDry = 0.0f;
+        f32 reverbRoomSize = 0.0f;
+        f32 reverbDamping = 0.0f;
+        f32 reverbDecayTime = 0.0f;
+        f32 reverbPreDelay = 0.0f;
+        bool hasMeasuredRoom = false;
+        usize soundsLoaded = 0;
+        usize soundsPlaying = 0;
+    };
+    AudioSnapshot Snapshot() const;
+
     // What one play of a source sounds like: which of its clips, and the pitch
     // and volume after the authored random ranges are applied.
     struct PlayVariation {

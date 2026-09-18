@@ -618,6 +618,39 @@ bool AudioEngine::HasReverbBus() const {
     return m_Impl && m_Impl->reverbReady;
 }
 
+// See the comment on AudioSnapshot: this is the only way anything outside the
+// audio engine can ask what it is doing, and what it reports are the exact
+// things that have been silently wrong here before.
+//
+// Reads the TARGET values (tWet and friends), not the smoothed ones the audio
+// thread is interpolating toward. The smoothed values lag by design and would
+// read as zero for the first moments after a change, which is the difference
+// between "reverb is off" and "reverb was set half a frame ago".
+AudioEngine::AudioSnapshot AudioEngine::Snapshot() const {
+    AudioSnapshot snap;
+    if (!m_Impl) return snap;
+
+    snap.reverbBusReady = m_Impl->reverbReady;
+    snap.listener = m_ListenerPosition;
+    snap.hasMeasuredRoom = m_HasMeasuredRoom;
+
+    if (m_Impl->reverbReady) {
+        const auto& rv = m_Impl->reverb;
+        snap.reverbWetDry    = rv.tWet.load(std::memory_order_relaxed);
+        snap.reverbRoomSize  = rv.tRoom.load(std::memory_order_relaxed);
+        snap.reverbDamping   = rv.tDamp.load(std::memory_order_relaxed);
+        snap.reverbDecayTime = rv.tDecay.load(std::memory_order_relaxed);
+        snap.reverbPreDelay  = rv.tPre.load(std::memory_order_relaxed);
+    }
+
+    snap.soundsLoaded = m_Sounds.size();
+    for (const auto& [handle, inst] : m_Sounds) {
+        (void)inst;
+        if (IsPlaying(handle)) ++snap.soundsPlaying;
+    }
+    return snap;
+}
+
 void AudioEngine::SetMeasuredRoom(const f32 rt60[3], f32 meanFreePath, f32 reflectedEnergy) {
     if (!m_Impl || !m_Impl->reverbReady) return;
     auto& rn = m_Impl->reverb;

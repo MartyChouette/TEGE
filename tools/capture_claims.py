@@ -274,6 +274,65 @@ def renders(sidecar_path, min_draws=1):
         draws_, min_draws, data.get('entityRenderSlots', 0), data.get('worldEntities', 0))
 
 
+def hears(sidecar_path):
+    """Is there an audio world at all, and is the listener standing in it?
+
+    The claim `draws` and `renders` cannot make. RoomAcoustics is eleven rooms
+    whose entire point is that they sound different; every pixel claim about it
+    is a claim about a still photograph, and it will pass forever whatever the
+    audio does.
+
+    Three things are tested, and each one was broken for a long time with
+    nothing able to see it:
+
+    reverbBusReady   The Freeverb bus lived inside an OFF-by-default CMake
+                     option, so every call that fed it returned at its first
+                     line and every scene in the engine's history played dry.
+                     "The reverb sounds wrong" and "there is no reverb" were
+                     indistinguishable from outside.
+
+    listener         It was frozen at the origin, so spatialisation was computed
+                     against a point the player was never at. A non-origin
+                     listener is weak evidence on its own -- a scene can legally
+                     start there -- so it is reported either way and only FAILS
+                     when the room says the listener should have moved.
+
+    room             hasMeasuredRoom, or a non-zero decay time. A bus that
+                     exists and is fed silence is the same as no bus.
+
+    Twelve DSP suites were green through all of it, because none of them go
+    through AudioEngine, which is the one place the feature was switched off.
+    That is the gap this claim exists to close.
+    """
+    import json
+    with open(sidecar_path, encoding='utf-8') as f:
+        data = json.load(f)
+    audio = data.get('audio')
+    if audio is None:
+        return False, ('no audio block in the sidecar -- this capture came from a '
+                       'player built before the audio snapshot existed')
+
+    bus = bool(audio.get('reverbBusReady'))
+    decay = float(audio.get('reverbDecayTime', 0.0))
+    measured = bool(audio.get('hasMeasuredRoom'))
+    listener = audio.get('listener') or [0.0, 0.0, 0.0]
+    at_origin = all(abs(float(c)) < 1e-6 for c in listener)
+
+    detail = ('bus %s, decay %.2fs, measuredRoom %s, listener (%.2f, %.2f, %.2f)%s, '
+              '%d clip(s) loaded, %d playing' % (
+                  'ready' if bus else 'MISSING', decay, 'yes' if measured else 'no',
+                  float(listener[0]), float(listener[1]), float(listener[2]),
+                  ' AT ORIGIN' if at_origin else '',
+                  int(audio.get('soundsLoaded', 0)),
+                  int(audio.get('soundsPlaying', 0))))
+
+    if not bus:
+        return False, detail + ' -- the reverb bus is not in this build'
+    if not measured and decay <= 0.0:
+        return False, detail + ' -- the bus exists and nothing is feeding it'
+    return True, detail
+
+
 def _tag(path):
     """The frame marker out of a capture path, for readable reports."""
     import os
@@ -289,6 +348,7 @@ def main():
         print(__doc__)
         print('usage: capture_claims.py draws FRAME.ppm')
         print('       capture_claims.py renders FRAME.json')
+        print('       capture_claims.py hears FRAME.json')
         print('       capture_claims.py animates A.ppm B.ppm [min_changed_pct]')
         return 2
     claim = sys.argv[1]
@@ -297,6 +357,8 @@ def main():
             ok, detail = draws(sys.argv[2])
         elif claim == 'renders':
             ok, detail = renders(sys.argv[2])
+        elif claim == 'hears':
+            ok, detail = hears(sys.argv[2])
         elif claim == 'animates':
             ok, detail = animates(sys.argv[2:])
         else:
