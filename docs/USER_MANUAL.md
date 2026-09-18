@@ -1269,16 +1269,24 @@ stored: the path would be absolute, and a scene carrying one breaks the first
 time the project is moved or opened on another machine.
 
 **Storage**, measured on real smoke rather than estimated. Only the density
-field is recorded, quantised to 8 bits, with empty cells run-encoded:
+field is recorded, quantised to 8 bits, with empty cells run-encoded and each
+frame stored either whole or as a delta against the one before it, whichever
+is smaller:
 
-| Grid | Per frame | Per second at 30fps |
-|---|---|---|
-| 16 | 5.7 KB | 0.17 MB |
-| 32 | 35 KB | 1.0 MB |
-| 48 | 48 KB | 1.4 MB |
+| Grid | Per frame | Per second at 30fps | vs raw floats | Saved by deltas |
+|---|---|---|---|---|
+| 16 | 5.2 KB | 0.15 MB | 4.4x | 9% |
+| 32 | 19.5 KB | 0.57 MB | 7.9x | 44% |
+| 48 | 16.6 KB | 0.49 MB | 29.4x | 65% |
 
-A five-second looping river at grid 48 is about 7 MB. Larger grids compress
-better, because proportionally more of the box is empty.
+A five-second looping river at grid 48 is about 2.4 MB. Larger grids compress
+better, because proportionally more of the box is empty and more of it is
+still.
+
+Deltas are not automatically the smaller choice: in turbulent smoke nearly
+every cell moves by a quantisation step each frame, so a delta byte costs what
+a whole one does. The encoder tries both per frame and keeps the smaller, which
+is why the saving above climbs with the grid rather than being a flat rate.
 
 **What the solver does not do.** There is no free surface, so liquid has no
 splashes, droplets or thin sheets -- those need a different kind of solver.

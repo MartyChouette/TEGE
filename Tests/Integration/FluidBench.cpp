@@ -240,10 +240,36 @@ int main() {
 
         const f64 rawKB = f64(bake.CellCount() * sizeof(f32)) / 1024.0;
         const f64 bakedKB = f64(bake.EncodedBytes()) / f64(bake.FrameCount()) / 1024.0;
-        std::printf("%-6u %12.1f %12.2f %12.2f %9.1fx\n",
+
+        // What the same take would cost with every frame stored whole, which
+        // is what the format did before per-frame deltas. Re-encoding a decoded
+        // frame reproduces its keyframe exactly, because quantising an
+        // already-quantised field is idempotent.
+        usize allKeyBytes = 0;
+        usize deltaFrames = 0;
+        std::vector<f32> decoded;
+        std::vector<u8> asKey;
+        for (usize n = 0; n < bake.FrameCount(); ++n) {
+            bake.SampleAt(f32(n) / bake.frameRate, decoded);
+            Effects::EncodeFluidDensity(decoded, bake.maxDensity, asKey);
+            allKeyBytes += asKey.size();
+            if (!bake.frameIsKey[n]) ++deltaFrames;
+        }
+        const f64 saved = allKeyBytes
+            ? 100.0 * (1.0 - f64(bake.EncodedBytes()) / f64(allKeyBytes)) : 0.0;
+
+        std::printf("%-6u %12.1f %12.2f %12.2f %9.1fx %8zu/%zu %7.1f%%\n",
                     bake.gridSize, rawKB, bakedKB,
-                    bakedKB * f64(s.frameRate) / 1024.0, bake.CompressionRatio());
+                    bakedKB * f64(s.frameRate) / 1024.0, bake.CompressionRatio(),
+                    deltaFrames, bake.FrameCount(), saved);
     }
+
+    std::printf("\nThe last two columns are per-frame deltas: how many frames were\n");
+    std::printf("stored as a delta rather than whole, and what that saved against\n");
+    std::printf("storing every frame whole. Turbulent smoke moves nearly every cell\n");
+    std::printf("by a quantisation step per frame, so a delta byte costs what a\n");
+    std::printf("literal does there; the encoder keeps whichever is smaller per\n");
+    std::printf("frame, so the saving is whatever the take's still parts are worth.\n");
 
     std::printf("\nRelaxation is the per-iteration column: diffuse on three velocity\n");
     std::printf("components plus density, and two pressure projections. That is the\n");

@@ -403,6 +403,118 @@ ENJIN_TEST(FluidBakeFile, test_loading_a_missing_file_fails_cleanly) {
     ENJIN_EXPECT_FALSE(bake.Load(TempPath("enjin_no_such_bake_exists.enjfluid")));
 }
 
+ENJIN_TEST(FluidBakeDelta, test_a_delta_take_round_trips_frame_for_frame) {
+    // Deltas are only worth having if playback is bit-identical to what the
+    // keyframe-only format gave. Every frame, not just a sample: a chain that
+    // drifts shows up late in a take, which is the hardest place to notice it.
+    ECS::World world;
+    ECS::Entity e = MakeSmokeVolume(world, 8);
+    FluidBakeSettings s;
+    s.frameRate = 30.0f;
+    s.duration = 2.5f;          // comfortably past one keyframe interval
+    s.settleTime = 0.2f;
+    s.useSceneColliders = false;
+
+    FluidBake baked;
+    ENJIN_ASSERT_TRUE(BakeFluid(&world, e, s, baked));
+    ENJIN_ASSERT_TRUE(baked.FrameCount() > 30);
+
+    const std::string path = TempPath("enjin_test_fluid_delta.enjfluid");
+    ENJIN_ASSERT_TRUE(baked.Save(path));
+    FluidBake loaded;
+    ENJIN_ASSERT_TRUE(loaded.Load(path));
+    ENJIN_ASSERT_EQ(loaded.FrameCount(), baked.FrameCount());
+
+    std::vector<f32> a, b;
+    for (usize n = 0; n < baked.FrameCount(); ++n) {
+        const f32 t = static_cast<f32>(n) / baked.frameRate;
+        ENJIN_ASSERT_TRUE(baked.SampleAt(t, a));
+        ENJIN_ASSERT_TRUE(loaded.SampleAt(t, b));
+        ENJIN_ASSERT_EQ(a.size(), b.size());
+        for (usize i = 0; i < a.size(); ++i) ENJIN_EXPECT_FLOAT_NEAR(b[i], a[i], 0.0001f);
+    }
+    std::remove(path.c_str());
+}
+
+ENJIN_TEST(FluidBakeDelta, test_seeking_backwards_decodes_the_same_frame_as_playing_forwards) {
+    // The decode cache continues from the previous frame when it can and walks
+    // from a keyframe when it cannot. A seek that returns a different frame
+    // from the one playback shows would be invisible until someone scrubbed.
+    ECS::World world;
+    ECS::Entity e = MakeSmokeVolume(world, 8);
+    FluidBakeSettings s;
+    s.frameRate = 30.0f;
+    s.duration = 2.0f;
+    s.settleTime = 0.1f;
+    s.useSceneColliders = false;
+
+    FluidBake bake;
+    ENJIN_ASSERT_TRUE(BakeFluid(&world, e, s, bake));
+    ENJIN_ASSERT_TRUE(bake.FrameCount() > 40);
+
+    // Forward, remembering frame 35.
+    std::vector<f32> forward;
+    for (usize n = 0; n <= 35; ++n) {
+        ENJIN_ASSERT_TRUE(bake.SampleAt(static_cast<f32>(n) / bake.frameRate, forward));
+    }
+
+    // Jump away, then back.
+    std::vector<f32> scratch;
+    ENJIN_ASSERT_TRUE(bake.SampleAt(0.0f, scratch));
+    std::vector<f32> seeked;
+    ENJIN_ASSERT_TRUE(bake.SampleAt(35.0f / bake.frameRate, seeked));
+
+    ENJIN_ASSERT_EQ(seeked.size(), forward.size());
+    for (usize i = 0; i < forward.size(); ++i) {
+        ENJIN_EXPECT_FLOAT_NEAR(seeked[i], forward[i], 0.0001f);
+    }
+}
+
+ENJIN_TEST(FluidBakeDelta, test_a_frame_is_never_stored_in_the_larger_of_the_two_encodings) {
+    // The measured finding this format change had to absorb: a delta is NOT
+    // automatically smaller. In turbulent smoke nearly every cell moves by a
+    // quantisation step each frame, so a delta byte costs what a literal does
+    // and the escapes make it worse. The encoder therefore tries both and keeps
+    // the smaller, which is what makes the format a guaranteed improvement
+    // rather than a bet -- and what this asserts.
+    ECS::World world;
+    ECS::Entity e = MakeSmokeVolume(world, 16);
+    FluidBakeSettings s;
+    s.frameRate = 30.0f;
+    s.duration = 2.0f;
+    s.settleTime = 0.5f;
+    s.useSceneColliders = false;
+
+    FluidBake bake;
+    ENJIN_ASSERT_TRUE(BakeFluid(&world, e, s, bake));
+    ENJIN_ASSERT_EQ(bake.frameIsKey.size(), bake.frames.size());
+    ENJIN_ASSERT_TRUE(bake.FrameCount() > 30);
+
+    // Every frame decodes, whichever way it was stored. That is the property
+    // that matters; the sizes are checked against each other below.
+    std::vector<f32> out;
+    for (usize n = 0; n < bake.FrameCount(); ++n) {
+        ENJIN_ASSERT_TRUE(bake.SampleAt(static_cast<f32>(n) / bake.frameRate, out));
+    }
+
+    // The contract, checked exactly rather than through a proxy: for every
+    // frame, what was STORED is no larger than that frame encoded as a
+    // keyframe. Re-encoding the decoded frame reproduces the keyframe byte for
+    // byte, because quantising an already-quantised field is idempotent.
+    //
+    // An earlier version of this test compared against the AVERAGE keyframe and
+    // failed, which was the test being wrong and not the encoder: keyframes
+    // early in a take are small because the plume has barely formed, so their
+    // average is no bound at all on a frame 50 frames later.
+    std::vector<f32> decoded;
+    std::vector<u8> asKey;
+    for (usize n = 0; n < bake.frames.size(); ++n) {
+        ENJIN_ASSERT_TRUE(bake.SampleAt(static_cast<f32>(n) / bake.frameRate, decoded));
+        EncodeFluidDensity(decoded, bake.maxDensity, asKey);
+        ENJIN_EXPECT_TRUE(bake.frames[n].size() <= asKey.size());
+    }
+}
+
 ENJIN_TEST(FluidBakeHeader, test_reading_the_header_alone_reports_the_whole_take) {
     // Arrange: a take with every header field set to something other than its
     // default, so a field that is never read cannot pass by accident.

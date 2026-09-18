@@ -107,6 +107,19 @@ struct ENJIN_API FluidBake {
 
     std::vector<std::vector<u8>> frames;
 
+    // Per frame: 1 = a KEYFRAME, decodable on its own; 0 = a DELTA against the
+    // frame before it. Kept exactly in step with `frames` -- Save and Load are
+    // the only two places that build either, and both refuse a file where the
+    // two disagree.
+    //
+    // Deltas exist because consecutive frames of a take are nearly identical
+    // and the first version of this format exploited none of that: it stored
+    // every frame whole, so a cell that never changed cost a byte in every
+    // frame of the take. A run of UNCHANGED cells now costs two bytes however
+    // long it is, which is what a settled pool or the still interior of a
+    // plume actually is.
+    std::vector<u8> frameIsKey;
+
     usize CellCount() const {
         const usize s = static_cast<usize>(gridSize) + 2;
         return is3D ? s * s * s : s * s;
@@ -137,6 +150,20 @@ struct ENJIN_API FluidBake {
 
     bool Save(const std::string& path) const;
     bool Load(const std::string& path);
+
+private:
+    // Decoded quantised frame, and which frame it is.
+    //
+    // A delta frame needs the one before it, so decoding frame N means walking
+    // from the last keyframe at or before N. Sequential playback -- which is
+    // every playback -- then costs ONE delta apply per frame because the cache
+    // already holds N-1. A seek costs at most the keyframe interval.
+    mutable std::vector<u8> m_CacheQuantised;
+    mutable i64 m_CacheIndex = -1;
+
+    // Quantised frame `index`, decoded through the chain. False on a malformed
+    // take rather than a partially filled one.
+    bool DecodeQuantisedFrame(i64 index, std::vector<u8>& out) const;
 };
 
 // One recording found on disk, as a picker needs it.
