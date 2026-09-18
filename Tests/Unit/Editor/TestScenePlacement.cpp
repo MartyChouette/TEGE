@@ -81,10 +81,18 @@ ENJIN_TEST(ScenePlacement, TheScaleMultipliesTheSameCurve) {
     const u32 twice = PlantDensity(PlantKind::Shrubs, 6.0f, 6.0f, 2.0f);
     ENJIN_EXPECT_TRUE(twice > once);
 
-    // A scale of 1 is exactly the palette's behaviour -- that is the equality
-    // that keeps the two surfaces agreeing.
-    ENJIN_EXPECT_EQ(PlantDensity(PlantKind::Grass, 4.0f, 3.0f, 1.0f),
-                    PlantDensity(PlantKind::Grass, 4.0f, 3.0f, 1.0f));
+    // A scale of 1 is exactly the palette's behaviour. There is only one
+    // function, so the identity has to be pinned against a number worked out
+    // from the curve rather than against a second call with the same arguments:
+    // both sides of that agree however wrong the curve is.
+    // Grass is 4 instances per unit of area, area = 2*4 * 2*3 = 48, clamped to
+    // [32, 6000].
+    ENJIN_EXPECT_EQ(PlantDensity(PlantKind::Grass, 4.0f, 3.0f, 1.0f), 192u);
+
+    // And the scale multiplies the AREA term: twice the density is the same
+    // count as twice the rectangle, which is what "the same curve" means.
+    ENJIN_EXPECT_EQ(PlantDensity(PlantKind::Grass, 8.0f, 3.0f, 1.0f),
+                    PlantDensity(PlantKind::Grass, 4.0f, 3.0f, 2.0f));
 }
 
 ENJIN_TEST(ScenePlacement, AMirroredDragStillCountsAsArea) {

@@ -906,6 +906,15 @@ jobs:
       - name: Unread field audit (no new field that nothing consumes)
         run: python tools/unread_field_audit.py --strict
 
+      # The framework refuses to pass a test that asserted NOTHING. It counts
+      # assertions, so it cannot see ENJIN_EXPECT_TRUE(true), which satisfies the
+      # counter and checks nothing -- the guard gets routed around rather than
+      # hit. Six of these were live when this check was written, two of them
+      # added the same morning. ENJIN_SKIP and ENJIN_SURVIVED are the honest
+      # versions and say which case it is.
+      - name: Vacuous assertion audit (no assertion that cannot fail)
+        run: python tools/vacuous_assertion_audit.py --strict
+
       # A doc sample that names a function the engine does not register fails
       # in the READER's script, pointing at their file, so it reads as their
       # mistake. Eleven of these were live when this check was written.

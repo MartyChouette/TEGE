@@ -38,8 +38,16 @@ ENJIN_TEST(EditorWatch, IdenticalListingsFingerprintTheSame) {
         {"data/letters/steward.enjdata",   2000},
     };
 
+    // A SEPARATELY built listing with the same content. Folding the same object
+    // twice agrees in every implementation, including one that hashed the
+    // vector's address, so it proved nothing the name promised.
+    const std::vector<std::pair<std::string, i64>> same = {
+        {"data/letters/matriarch.enjdata", 1000},
+        {"data/letters/steward.enjdata",   2000},
+    };
+
     // Assert
-    ENJIN_EXPECT_EQ(Fingerprint(listing), Fingerprint(listing));
+    ENJIN_EXPECT_EQ(Fingerprint(listing), Fingerprint(same));
 }
 
 ENJIN_TEST(EditorWatch, IterationOrderIsNotAChange) {

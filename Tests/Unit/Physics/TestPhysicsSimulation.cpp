@@ -77,7 +77,8 @@ ENJIN_TEST(PhysicsSim3D, GravityRoundTrips) {
     // Assert
     Math::Vector3 g = backend->GetGravity();
     ENJIN_EXPECT_FLOAT_NEAR(g.y, -20.0f, 0.01f);
-    ENJIN_EXPECT_STR_EQ(backend->GetName(), backend->GetName());  // name is non-null
+    // Comparing GetName() with itself agreed however the name was built. The
+    // line below is what the comment on it had always claimed to be doing.
     ENJIN_EXPECT_NOT_NULL(backend->GetName());
 }
 

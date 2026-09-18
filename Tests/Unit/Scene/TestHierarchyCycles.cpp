@@ -56,7 +56,7 @@ ENJIN_TEST(HierarchyCycles, AParentCycleReturnsInsteadOfExhaustingTheStack) {
     // return; the process died inside the recursion.
     const Math::Matrix4 m = ECS::ComputeWorldMatrix(&world, a);
     std::printf("    survived; translation (%.2f, %.2f, %.2f)\n", m.m[12], m.m[13], m.m[14]);
-    ENJIN_EXPECT_TRUE(true);
+    ENJIN_SURVIVED("a parent cycle, without exhausting the stack");
 }
 
 // A chain deeper than the cap is treated the same way, because it is either a
@@ -77,7 +77,7 @@ ENJIN_TEST(HierarchyCycles, AChainDeeperThanTheCapIsBounded) {
 
     const Math::Matrix4 m = ECS::ComputeWorldMatrix(&world, previous);
     std::printf("    deep chain survived; x = %.1f\n", m.m[12]);
-    ENJIN_EXPECT_TRUE(true);
+    ENJIN_SURVIVED("a chain past the depth cap, without exhausting the stack");
 }
 
 // SetParent's guard is correct and was silent. Keep it correct.

@@ -70,9 +70,7 @@ ENJIN_TEST(RigidbodyVelocityClamp, test_a_falling_body_does_not_exceed_its_ceili
 
     // Assert
     if (speed < 0.0f) {
-        // Jolt is not in this build; nothing to assert about its solver.
-        ENJIN_EXPECT_TRUE(true);
-        return;
+        ENJIN_SKIP("Jolt is not in this build; no solver to test");
     }
     // A little slack: the ceiling is enforced per step, so the reported speed
     // can sit a fraction above it between the solve and the sync.
@@ -93,8 +91,7 @@ ENJIN_TEST(RigidbodyVelocityClamp, test_a_higher_ceiling_lets_the_body_go_faster
 
     // Assert
     if (slowSpeed < 0.0f || fastSpeed < 0.0f) {
-        ENJIN_EXPECT_TRUE(true);
-        return;
+        ENJIN_SKIP("Jolt is not in this build; no solver to test");
     }
     ENJIN_EXPECT_TRUE(fastSpeed > slowSpeed);
 }
