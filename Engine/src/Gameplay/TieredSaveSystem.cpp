@@ -330,11 +330,26 @@ bool TieredSaveSystem::SaveToSlot(u32 slot, ECS::World* world, const std::string
     }
 
     ENJIN_LOG_INFO(Editor, "TieredSaveSystem: Saved to slot %u (%s)", slot, sceneName.c_str());
+
+    // Upload, if asked to and if there is anywhere to upload to. Guarded on the
+    // backend as well as the flag: a game that sets enableCloudSync without
+    // installing a backend gets local saves, not a failure -- the save already
+    // succeeded and the cloud is the extra.
+    if (m_CloudSync.enabled && m_CloudSync.onSave && m_CloudBackend) {
+        SyncToCloud();
+    }
     return true;
 }
 
 bool TieredSaveSystem::LoadFromSlot(u32 slot, ECS::World* world) {
     if (!world || slot >= MAX_SLOTS || !m_LocalBackend) return false;
+
+    // Pull first, so a slot saved on another machine is the one that loads.
+    // Before the read rather than after, or the sync would arrive a load too
+    // late and the player would see yesterday's game until they reloaded.
+    if (m_CloudSync.enabled && m_CloudSync.onLoad && m_CloudBackend) {
+        SyncFromCloud();
+    }
 
     std::string key = GetSlotKey(slot);
     std::string data;
@@ -531,6 +546,12 @@ void TieredSaveSystem::ApplyConfigFromWorld(ECS::World* world) {
         m_AutoSaveConfig.onTimedInterval = c->autoSaveOnInterval;
         m_AutoSaveConfig.onCheckpoint = c->autoSaveOnCheckpoint;
         m_AutoSaveConfig.autoSaveSlotCount = c->autoSaveSlotCount;
+
+        // The three cloud flags the component has always carried and nothing
+        // ever read.
+        m_CloudSync.enabled = c->enableCloudSync;
+        m_CloudSync.onSave = c->syncOnSave;
+        m_CloudSync.onLoad = c->syncOnLoad;
 
         // A zero interval would save every frame, which is a disk-shredder
         // rather than a setting. Clamped and said out loud ONCE, because a

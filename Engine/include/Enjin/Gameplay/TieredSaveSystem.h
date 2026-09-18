@@ -38,6 +38,22 @@ struct AutoSaveConfig {
     u32 autoSaveSlotCount = 3;    // Rotating auto-save slots (slot 17-19)
 };
 
+// When a save or a load should reach the cloud backend, if one is installed.
+//
+// SaveSystemComponent has carried enableCloudSync, syncOnSave and syncOnLoad
+// since it was written, and nothing read them: SyncToCloud existed and was
+// called from exactly one place, a button in the editor's save debug panel. So
+// a game could not ask for a save to be uploaded, only a developer with the
+// panel open could. These are that configuration, and they do nothing at all
+// unless a backend has been installed with SetCloudBackend -- which no shipped
+// code does yet, so this is the wiring for a capability rather than the
+// capability.
+struct CloudSyncConfig {
+    bool enabled = false;
+    bool onSave = true;    // upload after a successful save
+    bool onLoad = true;    // pull before reading a slot
+};
+
 // 3-tier save system: SceneState, RunState, MetaProgression
 class ENJIN_API TieredSaveSystem {
 public:
@@ -134,6 +150,10 @@ public:
     ISaveBackend* GetBackend() const { return m_LocalBackend.get(); }
     ISaveBackend* GetCloudBackend() const { return m_CloudBackend.get(); }
 
+    // See CloudSyncConfig. Set from SaveSystemComponent by ApplyConfigFromWorld.
+    void SetCloudSyncConfig(const CloudSyncConfig& cfg) { m_CloudSync = cfg; }
+    const CloudSyncConfig& GetCloudSyncConfig() const { return m_CloudSync; }
+
     // Track play time
     void AddPlayTime(f32 deltaTime) { m_SessionPlayTime += deltaTime; }
     f32 GetSessionPlayTime() const { return m_SessionPlayTime; }
@@ -145,6 +165,7 @@ public:
 private:
     std::shared_ptr<ISaveBackend> m_LocalBackend;
     std::shared_ptr<ISaveBackend> m_CloudBackend;
+    CloudSyncConfig m_CloudSync;
 
     // Meta-progression (always loaded)
     std::unordered_map<std::string, f32> m_MetaFloats;
