@@ -529,6 +529,15 @@ jobs:
       - name: Backend parity (no new one-sided RenderSystem method)
         run: python3 tools/backend_parity.py --strict
 
+      # The other unwired guard, and it was worse than unwired: it reported
+      # PBR, OUTLINE and SKY as missing both stages on web. Its extractor
+      # stopped at the first )" and saw 114 characters of a 42,000-character
+      # shader, because those blobs are concatenated raw strings with generated
+      # layout macros spliced between them. A guard that cries wolf on PBR is a
+      # guard people learn to ignore.
+      - name: Shader parity (a shared effect keeps its stages on web)
+        run: python3 tools/shader_parity.py --strict
+
       - name: RT shader freshness (generated header matches its sources)
         # Another pure source check, so it also runs before the slow steps.
         #

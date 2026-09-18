@@ -60,6 +60,14 @@ def glsl_shaders():
     return out
 
 
+# Whitespace, comments or a MACRO name, then another R"( -- the declaration
+# continues. The macro is the part that matters: ENJIN_WEB_LIGHTING_WGSL and
+# ENJIN_WEB_OBJECTDATA_WGSL splice the generated layout blocks between the raw
+# strings, so a pattern that skipped only comments stopped at the first chunk
+# and saw a shader with no stages in it at all.
+CONTINUES = re.compile(r'\s*(?:/\*.*?\*/|//[^\n]*\n|[A-Za-z_][A-Za-z0-9_]*|\s)*R"\(', re.S)
+
+
 def wgsl_shaders():
     """Returns {NAME: body}. The blobs are raw string literals R"( ... )"."""
     if not os.path.isfile(WGSL_FILE):
@@ -68,9 +76,27 @@ def wgsl_shaders():
     out = {}
     for m in re.finditer(r'const char\*\s+([A-Za-z0-9_]+)_WGSL\s*=\s*R"\(', text):
         name = m.group(1)
-        start = m.end()
-        end = text.find(')"', start)
-        out[name] = text[start:end if end > 0 else len(text)]
+        # CONCATENATED literals, not one. PBR, OUTLINE and SKY are assembled
+        # from several R"( ... )" chunks with generated layout blocks spliced
+        # between them, so stopping at the first )" saw 117 characters of
+        # PBR_WGSL -- no @vertex, no @fragment -- and reported the three most
+        # important shaders on web as missing both stages. A guard that cries
+        # wolf on PBR is a guard people learn to ignore.
+        pos = m.end()
+        chunks = []
+        while True:
+            end = text.find(')"', pos)
+            if end < 0:
+                chunks.append(text[pos:])
+                break
+            chunks.append(text[pos:end])
+            # Another raw string for the same declaration, or the end of it?
+            rest = text[end + 2:]
+            nxt = CONTINUES.match(rest)
+            if not nxt:
+                break
+            pos = end + 2 + nxt.end()
+        out[name] = "".join(chunks)
     return out
 
 
