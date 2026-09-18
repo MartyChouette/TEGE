@@ -46,9 +46,6 @@ struct DungeonGeneratorComponent {
     bool generateOnStart = true;  // regenerate when play begins
     u32  lastSeed = 0;            // the seed actually used (shown in the inspector)
 
-    // Runtime: the editor "Generate" button and play-start set this; the
-    // DungeonGeneratorSystem consumes it and paints the tilemap. Not serialized.
-    bool generateNow = false;
 };
 
 } // namespace ECS

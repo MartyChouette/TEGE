@@ -70,9 +70,6 @@ struct ScatterComponent {
     u32 lastSeed  = 0;               // the seed actually used (shown in the inspector)
     u32 lastCount = 0;               // how many instances the last generate actually placed
 
-    // Runtime: the inspector "Generate Now" button and play-start set this; the
-    // ScatterSystem consumes it. Not serialized.
-    bool generateNow = false;
 };
 
 // Marker placed on every entity the ScatterSystem spawns. Serialized (presence

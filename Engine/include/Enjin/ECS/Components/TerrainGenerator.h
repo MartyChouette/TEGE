@@ -56,9 +56,6 @@ struct TerrainGeneratorComponent {
 
     u32 lastSeed = 0;            // the seed actually used (shown in the inspector)
 
-    // Runtime: the inspector "Generate Now" button and play-start set this; the
-    // TerrainGeneratorSystem consumes it. Not serialized.
-    bool generateNow = false;
 };
 
 } // namespace ECS

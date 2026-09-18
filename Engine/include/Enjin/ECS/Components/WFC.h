@@ -65,9 +65,6 @@ struct WFCComponent {
     bool lastSuccess = false;     // did the last generate fully collapse with no contradiction?
     u32  lastCount   = 0;         // Modules3D: how many prefab modules the last run placed
 
-    // Runtime: the inspector "Generate Now" button and play-start set this; the
-    // WFCSystem consumes it. Not serialized.
-    bool generateNow = false;
 };
 
 } // namespace ECS
