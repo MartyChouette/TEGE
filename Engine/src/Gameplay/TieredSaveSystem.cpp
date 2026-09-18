@@ -446,6 +446,10 @@ std::vector<SaveSlotInfo> TieredSaveSystem::GetAllSlots() const {
 // ---------------------------------------------------------------------------
 
 bool TieredSaveSystem::SaveMeta() {
+    // A game that turned the tier off must not still be leaving a meta file on
+    // disk. Guarded here as well as in the setters, because SaveMeta is public
+    // and a game can call it directly.
+    if (!m_MetaConfig.enabled) return false;
     if (!m_LocalBackend) return false;
 
     json j;
@@ -471,6 +475,9 @@ bool TieredSaveSystem::SaveMeta() {
 }
 
 bool TieredSaveSystem::LoadMeta() {
+    // Symmetric with SaveMeta: with the tier off, a meta file left over from
+    // before it was turned off must not come back and repopulate the maps.
+    if (!m_MetaConfig.enabled) return false;
     if (!m_LocalBackend) return false;
 
     std::string data;
@@ -505,22 +512,47 @@ bool TieredSaveSystem::LoadMeta() {
     }
 }
 
-void TieredSaveSystem::SetMetaFloat(const std::string& key, f32 value) { m_MetaFloats[key] = value; }
+// The four meta setters honour enableMetaProgression and autoSaveMeta, which
+// were fields on SaveSystemComponent with no reader: the tier was always on
+// however it was configured, and nothing was ever written out unless a game
+// remembered to call SaveMeta() itself.
+//
+// Disabled means the setter does NOTHING, rather than storing a value that will
+// not be persisted. Storing it would make GetMeta* return it for the rest of
+// the session and then lose it at shutdown, which is the worst of both: it
+// looks like it works right up until the game is restarted.
+void TieredSaveSystem::SetMetaFloat(const std::string& key, f32 value) {
+    if (!m_MetaConfig.enabled) return;
+    m_MetaFloats[key] = value;
+    if (m_MetaConfig.autoSave) SaveMeta();
+}
 f32 TieredSaveSystem::GetMetaFloat(const std::string& key, f32 fallback) const {
     auto it = m_MetaFloats.find(key);
     return it != m_MetaFloats.end() ? it->second : fallback;
 }
-void TieredSaveSystem::SetMetaInt(const std::string& key, i32 value) { m_MetaInts[key] = value; }
+void TieredSaveSystem::SetMetaInt(const std::string& key, i32 value) {
+    if (!m_MetaConfig.enabled) return;
+    m_MetaInts[key] = value;
+    if (m_MetaConfig.autoSave) SaveMeta();
+}
 i32 TieredSaveSystem::GetMetaInt(const std::string& key, i32 fallback) const {
     auto it = m_MetaInts.find(key);
     return it != m_MetaInts.end() ? it->second : fallback;
 }
-void TieredSaveSystem::SetMetaBool(const std::string& key, bool value) { m_MetaBools[key] = value; }
+void TieredSaveSystem::SetMetaBool(const std::string& key, bool value) {
+    if (!m_MetaConfig.enabled) return;
+    m_MetaBools[key] = value;
+    if (m_MetaConfig.autoSave) SaveMeta();
+}
 bool TieredSaveSystem::GetMetaBool(const std::string& key, bool fallback) const {
     auto it = m_MetaBools.find(key);
     return it != m_MetaBools.end() ? it->second : fallback;
 }
-void TieredSaveSystem::SetMetaString(const std::string& key, const std::string& value) { m_MetaStrings[key] = value; }
+void TieredSaveSystem::SetMetaString(const std::string& key, const std::string& value) {
+    if (!m_MetaConfig.enabled) return;
+    m_MetaStrings[key] = value;
+    if (m_MetaConfig.autoSave) SaveMeta();
+}
 std::string TieredSaveSystem::GetMetaString(const std::string& key, const std::string& fallback) const {
     auto it = m_MetaStrings.find(key);
     return it != m_MetaStrings.end() ? it->second : fallback;
@@ -577,6 +609,10 @@ void TieredSaveSystem::ApplyConfigFromWorld(ECS::World* world) {
         m_CloudSync.enabled = c->enableCloudSync;
         m_CloudSync.onSave = c->syncOnSave;
         m_CloudSync.onLoad = c->syncOnLoad;
+
+        // Meta progression: two more that had no reader.
+        m_MetaConfig.enabled = c->enableMetaProgression;
+        m_MetaConfig.autoSave = c->autoSaveMeta;
 
         // A zero interval would save every frame, which is a disk-shredder
         // rather than a setting. Clamped and said out loud ONCE, because a

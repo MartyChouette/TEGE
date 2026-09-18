@@ -54,6 +54,15 @@ struct CloudSyncConfig {
     bool onLoad = true;    // pull before reading a slot
 };
 
+// Meta-progression: the tier that survives deleting every save slot --
+// unlocks, achievements, "you have died 40 times". Both flags come from
+// SaveSystemComponent and neither had a reader, so the tier was always on and
+// never written unless a game called SaveMeta() by hand.
+struct MetaProgressionConfig {
+    bool enabled = true;    // false = the whole tier is off; setters are no-ops
+    bool autoSave = true;   // write it out on change rather than only on demand
+};
+
 // 3-tier save system: SceneState, RunState, MetaProgression
 class ENJIN_API TieredSaveSystem {
 public:
@@ -83,6 +92,10 @@ public:
     std::vector<SaveSlotInfo> GetAllSlots() const;
 
     // Meta-progression (separate file, never deleted by slot operations)
+    // Applied from SaveSystemComponent by ApplyConfigFromWorld.
+    void SetMetaConfig(const MetaProgressionConfig& cfg) { m_MetaConfig = cfg; }
+    const MetaProgressionConfig& GetMetaConfig() const { return m_MetaConfig; }
+
     bool SaveMeta();
     bool LoadMeta();
     void SetMetaFloat(const std::string& key, f32 value);
@@ -168,6 +181,7 @@ private:
     CloudSyncConfig m_CloudSync;
 
     // Meta-progression (always loaded)
+    MetaProgressionConfig m_MetaConfig;
     std::unordered_map<std::string, f32> m_MetaFloats;
     std::unordered_map<std::string, i32> m_MetaInts;
     std::unordered_map<std::string, bool> m_MetaBools;
