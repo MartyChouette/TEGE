@@ -89,7 +89,6 @@
 #include "Enjin/Renderer/LightCookie.h"   // CookieParams for the Cookie Creator
 #include "Enjin/Editor/FeedbackSystem.h"
 #include "Enjin/Editor/TemplateCreator.h"
-#include "Enjin/Editor/TemplateMarketplace.h"
 #include "Enjin/Scripting/AS3Transpiler.h"
 #include "Enjin/Networking/NetworkTypes.h"
 #include "Enjin/Build/HTML5Exporter.h"
@@ -2560,15 +2559,12 @@ private:
 
     void DrawTemplateCreatorWindow();
 
-    // Template Marketplace
-    Editor::TemplateMarketplace m_TemplateMarketplace;
     char m_MarketSearchBuf[128] = "";
     i32 m_MarketCategoryFilter = 0;   // 0=All, 1=Starter, 2=Genre, 3=Systems, 4=Retro, 5=Advanced
     i32 m_MarketMaturityFilter = 0;   // 0=All, 1=Stable, 2=Beta, 3=Preview, 4=Experimental
     i32 m_MarketSortBy = 0;           // 0=Name, 1=Rating, 2=Downloads
     std::string m_MarketDetailId;     // ID of entry with detail popup open
 
-    void DrawTemplateMarketplaceWindow();
 
     // Notification Toast System
     enum class NotificationType : u8 { Info = 0, Success, Warning, Error };

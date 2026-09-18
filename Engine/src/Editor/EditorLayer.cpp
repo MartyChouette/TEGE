@@ -4827,10 +4827,6 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         DrawTemplateCreatorWindow();
     }
 
-    // Template Marketplace window
-    if (m_TemplateMarketplace.IsOpen()) {
-        DrawTemplateMarketplaceWindow();
-    }
 
     // Audio Mixer window
     if (m_ShowAudioMixer) {

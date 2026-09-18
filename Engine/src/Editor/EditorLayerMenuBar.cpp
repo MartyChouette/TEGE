@@ -717,15 +717,6 @@ void EditorLayer::DrawMenuBar() {
                     if (ImGui::MenuItem("Template Creator", nullptr, &m_ShowTemplateCreator)) {
                         if (m_ShowTemplateCreator) m_TmplNeedsRescan = true;
                     }
-                    {
-                        bool mpOpen = m_TemplateMarketplace.IsOpen();
-                        if (ImGui::MenuItem("Template Marketplace", nullptr, &mpOpen)) {
-                            if (mpOpen && m_TemplateMarketplace.GetCatalog().empty()) {
-                                m_TemplateMarketplace.Initialize("templates");
-                            }
-                            m_TemplateMarketplace.SetOpen(mpOpen);
-                        }
-                    }
                     ImGui::EndMenu();
                 }
                 // --- Collaboration & Version Control ---

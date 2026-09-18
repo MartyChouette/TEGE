@@ -1,6 +1,7 @@
 #include "Enjin/Platform/Desktop.h"
 #include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/Editor/TemplateMaturity.h"
 #ifndef _WIN32
 // POSIX environment for posix_spawn. Declared at GLOBAL scope: a block-scope
 // extern inside namespace Enjin mangles as a namespaced symbol under GCC.
@@ -1096,23 +1097,6 @@ void EditorLayer::DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 /*c
     ImVec2 demosPos(sectionPad, linkY);
     ImVec2 demosSz(0.0f, linkFontSize);
 
-    // Template Marketplace link
-    f32 marketX = demosPos.x + demosSz.x + 24.0f;
-    const char* marketText = "Template Marketplace";
-    ImVec2 marketSz = font->CalcTextSizeA(linkFontSize, FLT_MAX, 0.0f, marketText);
-    ImVec2 marketPos(marketX, linkY);
-    bool marketHovered = (io.MousePos.x >= marketPos.x && io.MousePos.x <= marketPos.x + marketSz.x &&
-                         io.MousePos.y >= marketPos.y && io.MousePos.y <= marketPos.y + marketSz.y);
-    dl->AddText(nullptr, linkFontSize, marketPos,
-        marketHovered ? IM_COL32(180, 185, 210, 255) : IM_COL32(120, 125, 150, 200), marketText);
-    if (marketHovered)
-        dl->AddLine(ImVec2(marketPos.x, marketPos.y + marketSz.y + 1.0f),
-                    ImVec2(marketPos.x + marketSz.x, marketPos.y + marketSz.y + 1.0f),
-                    IM_COL32(180, 185, 210, 200));
-    if (marketHovered && ImGui::IsMouseClicked(0)) {
-        m_TemplateMarketplace.SetOpen(true);
-    }
-
     // Right: Skip to Empty Scene
     const char* skipText = "Skip to Empty Scene";
     ImVec2 skipSz = font->CalcTextSizeA(linkFontSize, FLT_MAX, 0.0f, skipText);
@@ -1735,7 +1719,7 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
 
         // Maturity tier badge (top-left corner) — polished pill shape
         {
-            const char* tierLabel = Editor::TemplateMarketplace::GetMaturityName(s_BuiltinTemplates[i].maturity);
+            const char* tierLabel = Editor::GetMaturityName(s_BuiltinTemplates[i].maturity);
             ImU32 tierCol, tierBorderCol;
             switch (s_BuiltinTemplates[i].maturity) {
                 case Editor::MaturityTier::Stable:
@@ -3393,204 +3377,7 @@ void EditorLayer::DrawTemplateCreatorWindow() {
 }
 
 // ============================================================================
-// Template Marketplace Window
 // ============================================================================
-void EditorLayer::DrawTemplateMarketplaceWindow() {
-    ImGui::SetNextWindowSize(ImVec2(680 * m_EditorSettings.uiScale, 550 * m_EditorSettings.uiScale), ImGuiCond_FirstUseEver);
-    bool open = m_TemplateMarketplace.IsOpen();
-    if (!ImGui::Begin("Template Marketplace", &open)) {
-        ImGui::End();
-        m_TemplateMarketplace.SetOpen(open);
-        return;
-    }
-    m_TemplateMarketplace.SetOpen(open);
-
-    // Search bar
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.4f);
-    ImGui::InputTextWithHint("##mktsearch", "Search templates...", m_MarketSearchBuf, sizeof(m_MarketSearchBuf));
-    ImGui::SameLine();
-
-    // Category filter
-    const char* categories[] = { "All", "Starter", "Genre", "Systems", "Retro", "Advanced" };
-    ImGui::SetNextItemWidth(100.0f);
-    ImGui::Combo("##mktcat", &m_MarketCategoryFilter, categories, 6);
-    ImGui::SameLine();
-
-    // Status (maturity) filter
-    const char* maturityOpts[] = { "All Status", "Stable", "Beta", "Preview", "Experimental" };
-    ImGui::SetNextItemWidth(110.0f);
-    ImGui::Combo("##mktstatus", &m_MarketMaturityFilter, maturityOpts, 5);
-    ImGui::SameLine();
-
-    // Sort
-    const char* sortOpts[] = { "Name", "Rating", "Downloads" };
-    ImGui::SetNextItemWidth(90.0f);
-    ImGui::Combo("##mktsort", &m_MarketSortBy, sortOpts, 3);
-
-    ImGui::Separator();
-
-    // Get filtered results
-    std::string catFilter = m_MarketCategoryFilter > 0 ? categories[m_MarketCategoryFilter] : "";
-    auto results = m_TemplateMarketplace.FilterAndSearch(m_MarketSearchBuf, catFilter);
-
-    // Apply maturity filter
-    if (m_MarketMaturityFilter > 0) {
-        Editor::MaturityTier filterTier = static_cast<Editor::MaturityTier>(m_MarketMaturityFilter - 1);
-        results.erase(std::remove_if(results.begin(), results.end(),
-            [filterTier](const Editor::MarketplaceEntry* e) { return e->maturity != filterTier; }),
-            results.end());
-    }
-
-    // Sort results
-    if (m_MarketSortBy == 1) { // Rating
-        std::sort(results.begin(), results.end(),
-            [](const Editor::MarketplaceEntry* a, const Editor::MarketplaceEntry* b) {
-                return a->rating > b->rating;
-            });
-    } else if (m_MarketSortBy == 2) { // Downloads
-        std::sort(results.begin(), results.end(),
-            [](const Editor::MarketplaceEntry* a, const Editor::MarketplaceEntry* b) {
-                return a->downloadCount > b->downloadCount;
-            });
-    }
-
-    if (results.empty()) {
-        DrawEmptyState("{ }", "No Templates Found", "Try a different search or category filter");
-    } else {
-        // Results count
-        ImGui::TextDisabled("%zu template%s", results.size(), results.size() == 1 ? "" : "s");
-        ImGui::Spacing();
-
-        // Group results by maturity tier
-        struct TierGroup {
-            Editor::MaturityTier tier;
-            const char* label;
-            ImVec4 color;
-            std::vector<const Editor::MarketplaceEntry*> entries;
-        };
-        TierGroup groups[] = {
-            { Editor::MaturityTier::Stable,       "Stable",       ImVec4(0.3f, 0.55f, 0.86f, 1.0f), {} },
-            { Editor::MaturityTier::Beta,         "Beta",         ImVec4(0.3f, 0.7f, 0.3f, 1.0f),   {} },
-            { Editor::MaturityTier::Preview,      "Preview",      ImVec4(0.82f, 0.67f, 0.2f, 1.0f), {} },
-            { Editor::MaturityTier::Experimental, "Experimental", ImVec4(0.82f, 0.27f, 0.27f, 1.0f), {} },
-        };
-        for (auto* entry : results) {
-            for (auto& g : groups) {
-                if (entry->maturity == g.tier) { g.entries.push_back(entry); break; }
-            }
-        }
-
-        // Draw each non-empty group
-        for (auto& group : groups) {
-            if (group.entries.empty()) continue;
-
-            // Group header with colored label and count
-            ImGui::PushStyleColor(ImGuiCol_Text, group.color);
-            bool groupOpen = ImGui::TreeNodeEx(group.label, ImGuiTreeNodeFlags_DefaultOpen,
-                "%s (%zu)", group.label, group.entries.size());
-            ImGui::PopStyleColor();
-            if (!groupOpen) continue;
-
-            // Subtle separator under group header
-            ImGui::Separator();
-
-            for (auto* entry : group.entries) {
-                ImGui::PushID(entry->id.c_str());
-
-                // Accent color bar
-                ImVec4 accent(entry->accentColor[0], entry->accentColor[1],
-                              entry->accentColor[2], entry->accentColor[3]);
-                ImGui::PushStyleColor(ImGuiCol_Header, accent);
-                ImGui::PushStyleColor(ImGuiCol_HeaderHovered,
-                    ImVec4(accent.x * 1.2f, accent.y * 1.2f, accent.z * 1.2f, accent.w));
-
-                bool nodeOpen = ImGui::TreeNode("##mktentry", "%s", entry->name.c_str());
-                ImGui::PopStyleColor(2);
-
-                // Badges on same line
-                ImGui::SameLine();
-                ImGui::TextDisabled("[%s]", entry->category.c_str());
-                ImGui::SameLine();
-                ImGui::TextDisabled("[%s]", entry->projectMode.c_str());
-
-                // Rating stars + download count
-                ImGui::SameLine(ImGui::GetContentRegionAvail().x - 120.0f + ImGui::GetCursorPosX());
-                ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.2f, 1.0f), "%.1f", entry->rating);
-                ImGui::SameLine();
-                ImGui::TextDisabled("(%u)", entry->downloadCount);
-
-                // Install status indicator
-                bool installed = m_TemplateMarketplace.IsInstalled(entry->id);
-                if (installed) {
-                    ImGui::SameLine();
-                    ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.3f, 1.0f), "[OK]");
-                }
-
-                if (nodeOpen) {
-                    // Description
-                    ImGui::TextWrapped("%s", entry->description.c_str());
-                    ImGui::Spacing();
-
-                    // Metadata
-                    ImGui::TextDisabled("Author: %s  |  Version: %s  |  License: %s",
-                        entry->author.c_str(), entry->version.c_str(), entry->license.c_str());
-                    ImGui::TextDisabled("Quality: %s  |  Maturity: %s  |  Size: %s",
-                        Editor::TemplateMarketplace::GetQualityName(entry->quality),
-                        Editor::TemplateMarketplace::GetMaturityName(entry->maturity),
-                        entry->fileSizeBytes < 1024 ? (std::to_string(entry->fileSizeBytes) + " B").c_str() :
-                        (std::to_string(entry->fileSizeBytes / 1024) + " KB").c_str());
-
-                    // Tags
-                    if (!entry->tags.empty()) {
-                        ImGui::TextDisabled("Tags:");
-                        ImGui::SameLine();
-                        for (usize t = 0; t < entry->tags.size(); ++t) {
-                            if (t > 0) ImGui::SameLine();
-                            ImGui::SmallButton(entry->tags[t].c_str());
-                        }
-                    }
-
-                    ImGui::Spacing();
-
-                    // Install / Uninstall buttons — all templates unlocked
-                    if (installed) {
-                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.2f, 1.0f));
-                        ImGui::Button("Installed", ImVec2(90, 0));
-                        ImGui::PopStyleColor();
-                        ImGui::SameLine();
-                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.15f, 0.15f, 1.0f));
-                        if (ImGui::Button("Remove", ImVec2(70, 0))) {
-                            m_TemplateMarketplace.Uninstall(entry->id);
-                            ShowNotification("Removed: " + entry->name, NotificationType::Info);
-                            m_TmplNeedsRescan = true;
-                        }
-                        ImGui::PopStyleColor();
-                    } else {
-                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.4f, 0.8f, 1.0f));
-                        if (ImGui::Button("Install", ImVec2(90, 0))) {
-                            if (m_TemplateMarketplace.Install(entry->id)) {
-                                ShowNotification("Installed: " + entry->name, NotificationType::Success);
-                                m_TmplNeedsRescan = true;
-                            } else {
-                                ShowNotification("Failed to install: " + entry->name, NotificationType::Error);
-                            }
-                        }
-                        ImGui::PopStyleColor();
-                    }
-
-                    ImGui::TreePop();
-                }
-
-                ImGui::PopID();
-            }
-
-            ImGui::TreePop();
-            ImGui::Spacing();
-        }
-    }
-
-    ImGui::End();
-}
 
 // ============================================================================
 // Notification Toast System
