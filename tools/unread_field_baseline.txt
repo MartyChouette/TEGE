@@ -1,0 +1,20 @@
+# Recorded by tools/unread_field_audit.py. These are the fields that
+# nothing reads TODAY, accepted so a new one fails CI on its own.
+# Each line is either dead weight or a field read somewhere the grep
+# cannot see. Removing one and re-recording is the only way down.
+DynamicDifficultyComponent.hintsBeforeSection
+FollowTargetComponent.currentVelocity
+LipSyncComponent.linkedAudioSource
+LookAtIKComponent.currentNeckRotation
+MaterialComponent.scrollReflectionTexture
+NetworkTransformComponent.correctionBlend
+NetworkTransformComponent.interpProgress
+NetworkTransformComponent.interpStartPosition
+NetworkTransformComponent.interpStartRotation
+NetworkTransformComponent.predictionError
+PoolableComponent.spawnedBy
+ReflectivePlaneComponent.reflectionTexId
+ResourceComponent.timeSinceLastUse
+SaveSystemComponent.autoSaveRotation
+SaveSystemComponent.autoSaveTimer
+VisualScriptComponent.playStartTime

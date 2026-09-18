@@ -15,13 +15,21 @@ The question asked here is deliberately narrow and mechanical:
 
 Those three make a field storable and editable, not effective.
 
+NOT the same question as tools/field_coverage.py, which sits beside it. That
+one asks whether a field SAVES and can be AUTHORED -- is it in the serializer,
+the deserializer, the inspector. This one asks whether anything CONSUMES it. A
+field can pass either and fail the other, and the two failures look nothing
+alike: a field that does not save loses its value on reload, a field nothing
+reads holds its value forever and changes nothing.
+
 What this CANNOT tell you, and the reason a clean report is not a guarantee: a
 value read into a local that nothing then uses passes unchanged. "Has a reader"
 is weaker than "works". It is still the difference between a field that might
 work and one that provably cannot.
 
-    python tools/unread_field_audit.py              # report
-    python tools/unread_field_audit.py --strict     # exit 1 on any finding
+    python tools/unread_field_audit.py                   # report
+    python tools/unread_field_audit.py --strict          # exit 1 if worse than the baseline
+    python tools/unread_field_audit.py --write-baseline  # record where it stands
     python tools/unread_field_audit.py --component MeshRendererComponent
 """
 import argparse
@@ -31,6 +39,7 @@ import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BASELINE = os.path.join(ROOT, 'tools', 'unread_field_baseline.txt')
 
 COMPONENT_DIRS = [
     os.path.join('Engine', 'include', 'Enjin', 'ECS', 'Components'),
@@ -109,7 +118,10 @@ def readers(field):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--strict', action='store_true')
+    ap.add_argument('--strict', action='store_true',
+                    help='exit 1 if any field is unread that was not in the baseline')
+    ap.add_argument('--write-baseline', action='store_true',
+                    help='record the current findings as accepted')
     ap.add_argument('--component', help='audit one component instead of all')
     args = ap.parse_args()
 
@@ -143,17 +155,51 @@ def main():
     print('  %d components, %d fields checked' % (len(comps), checked))
     print('  (skipped: names too generic to grep, cached* runtime state)')
 
+    names = sorted('%s.%s' % (c, f) for c, f in findings)
+
+    if args.write_baseline:
+        with open(BASELINE, 'w', encoding='utf-8') as f:
+            f.write('# Recorded by tools/unread_field_audit.py. These are the fields that\n'
+                    '# nothing reads TODAY, accepted so a new one fails CI on its own.\n'
+                    '# Each line is either dead weight or a field read somewhere the grep\n'
+                    '# cannot see. Removing one and re-recording is the only way down.\n')
+            for n in names:
+                f.write(n + '\n')
+        print('\nbaseline written: %d field(s)' % len(names))
+        return 0
+
     if findings:
         print('\nNO READER outside the header, the serializer and the inspector:')
-        for comp, field in findings:
-            print('  %s.%s' % (comp, field))
-        print('\n%d field(s). Each is either dead, or read somewhere this cannot see --'
-              % len(findings))
-        print('check before deleting: a read through a macro or a generated')
-        print('accessor does not grep like a normal one.')
-        return 1 if args.strict else 0
+        for n in names:
+            print('  ' + n)
 
-    print('\nEvery checked field is mentioned somewhere that could use it.')
+    if args.strict:
+        if not os.path.isfile(BASELINE):
+            print('\nno baseline recorded -- run with --write-baseline')
+            return 1
+        known = set()
+        for line in open(BASELINE, encoding='utf-8'):
+            line = line.strip()
+            if line and not line.startswith('#'):
+                known.add(line)
+        fresh = [n for n in names if n not in known]
+        if fresh:
+            print('\nNEW since the baseline:')
+            for n in fresh:
+                print('  ' + n)
+            print('\nA field that saves, loads, shows in the inspector and is read by '
+                  'nothing\nis the defect this counts. Wire it up, or add it to the '
+                  'baseline deliberately.')
+            return 1
+        gone = sorted(known - set(names))
+        if gone:
+            print('\nno longer unread: %s -- re-record with --write-baseline'
+                  % ', '.join(gone))
+        print('\nnothing newly unread')
+        return 0
+
+    if not findings:
+        print('\nEvery checked field is mentioned somewhere that could use it.')
     print('That is weaker than "works": a value read into a local that nothing')
     print('uses passes this unchanged.')
     return 0

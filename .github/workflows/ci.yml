@@ -880,6 +880,14 @@ jobs:
       - name: Manual field parity (USER_MANUAL tables match the structs)
         run: python tools/manual_field_parity.py --strict
 
+      # A field can save, reload, and show in the inspector while nothing in the
+      # engine ever reads it -- the round trip genuinely works, so no test sees
+      # it. Four such flags were found carrying comments describing a mechanism
+      # nobody had built. The baseline holds the ones that exist today; this
+      # fails on a NEW one.
+      - name: Unread field audit (no new field that nothing consumes)
+        run: python tools/unread_field_audit.py --strict
+
       # A doc sample that names a function the engine does not register fails
       # in the READER's script, pointing at their file, so it reads as their
       # mistake. Eleven of these were live when this check was written.
