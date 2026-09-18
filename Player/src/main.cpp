@@ -92,6 +92,7 @@ static bool IsCaptureRun() {
 #include "Enjin/Effects/InteractiveWater.h"
 #include "Enjin/Effects/Wind.h"
 #include "Enjin/Effects/FluidSimulation.h"
+#include "Enjin/Effects/SplineIKDeformer.h"
 #include "Enjin/Effects/FluidPlaybackSystem.h"
 #include "Enjin/Effects/FluidTerrainCoupling.h"
 #include "Enjin/Effects/CurlNoiseSystem.h"
@@ -1313,6 +1314,12 @@ public:
         m_SurfaceResponseSystem.Initialize(&m_AudioEngine, m_RenderSystem, m_Physics.get(), m_Physics2D.get());
         m_SurfaceResponseSystem.Update(m_World.get(), deltaTime);
         m_ClothSystem.Update(m_World.get(), deltaTime, &m_WindSystem);
+        // Spline IK chains -- tentacles, tails, vines -- ride the same
+        // runtime-geometry upload protocol cloth does, which is why they are
+        // ticked together. Nothing called this system at all before: the
+        // component, the solver and the mesh generator all existed and no
+        // runtime ran any of them.
+        m_SplineIKSystem.Update(m_World.get(), deltaTime);
         // Update flower system viewport (full screen in player)
         if (m_Renderer) {
             auto ext = m_Renderer->GetSwapchainExtent();
@@ -4087,6 +4094,7 @@ private:
 
     // Fluid simulation, terrain coupling, curl noise, wind, world time, seasonal weather
     Enjin::Effects::FluidSimulation m_FluidSimulation;
+    Enjin::Effects::SplineIKSystem m_SplineIKSystem;
     Enjin::Effects::FluidPlaybackSystem m_FluidPlayback;
     Enjin::Effects::FluidTerrainCoupling m_FluidTerrainCoupling;
     Enjin::Effects::CurlNoiseSystem m_CurlNoiseSystem;

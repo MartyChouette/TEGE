@@ -3,6 +3,7 @@
 #include "Enjin/Platform/Desktop.h"
 #include "Enjin/Editor/EditorLayer.h"
 #include "Enjin/AI/Navmesh.h"
+#include "Enjin/Effects/SplineIKDeformer.h"
 #include "Enjin/ECS/Components/NavmeshVolume.h"
 #include "Enjin/ECS/Components/BrushSolid.h"
 #include "Enjin/Editor/EditorWidgets.h"
@@ -890,6 +891,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::GravityZoneComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::GravityZoneComponent>(e); },
             "gravityZone"},
+        {"Spline IK Chain", "Effects", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<Effects::SplineIKComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<Effects::SplineIKComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<Effects::SplineIKComponent>(e); },
+            "splineIK"},
         {"Path Follower", "AI", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<AI::PathFollowerComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<AI::PathFollowerComponent>(e); },
@@ -1964,6 +1970,10 @@ void EditorLayer::DrawInspectorPanel() {
 
         if (m_World->HasComponent<AI::PathFollowerComponent>(m_PrimarySelected)) {
             DrawPathFollowerComponent(m_PrimarySelected);
+        }
+
+        if (m_World->HasComponent<Effects::SplineIKComponent>(m_PrimarySelected)) {
+            DrawSplineIKComponent(m_PrimarySelected);
         }
 
         // Fluid Volume component

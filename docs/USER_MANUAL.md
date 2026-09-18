@@ -1860,6 +1860,34 @@ Marks an entity as part of an object pool for efficient reuse (e.g., bullets, pa
 
 ### 5.19 Footstep Audio
 
+#### SplineIKComponent
+
+A hanging chain that generates its own mesh: tentacles, tails, vines, kelp,
+chains. Add it from **Add Component > Effects > Spline IK Chain**. The root
+stays pinned to the entity, so move the entity and the chain follows.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `jointCount` | i32 | 8 | Segments in the chain. More is smoother and slower. Clamped to 2-128. |
+| `totalLength` | f32 | 5.0 | Length of the whole chain. |
+| `gravity` | f32 | -9.81 | Negative hangs down; positive floats up, which is what kelp or a balloon string wants. |
+| `stiffness` | f32 | 0.5 | 0 is floppy, 1 is rigid. |
+| `damping` | f32 | 0.1 | Velocity damping. |
+| `meshRadius` | f32 | 0.2 | Radius at the root. |
+| `meshRadiusTip` | f32 | 0.05 | Radius at the tip. Smaller than `meshRadius` tapers it. |
+| `meshSegments` | i32 | 8 | Sides around the tube. |
+| `targetPosition` | Vector3 | (0, 0, 0) | Point to reach for, when `useTarget` is on. |
+| `useTarget` | bool | false | Solve towards `targetPosition` instead of hanging freely. |
+| `useGravity` | bool | true | Apply `gravity`. |
+| `usePhysics` | bool | true | Spring-mass motion. Off holds the rest pose. |
+| `mode` | enum | Tube | Tube or Ribbon. Custom is not implemented and draws a tube. |
+| `uvTiling` | f32 | 1.0 | Texture repeats along the length. |
+
+The chain only moves in **play mode** -- its system runs in the players and in
+editor play, not in the editor's idle loop. The joints are not saved: the chain
+is rebuilt from `jointCount` and `totalLength` on the first tick, so a scene
+never opens mid-swing.
+
 #### PathFollowerComponent
 
 Moves an entity along a route you author, with no script involved. Add it from

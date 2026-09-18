@@ -2,6 +2,7 @@
 #include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/Editor/EditorLayer.h"
 #include "Enjin/AI/Navmesh.h"
+#include "Enjin/Effects/SplineIKDeformer.h"
 #include "Enjin/ECS/Components/NavmeshVolume.h"
 #include "Enjin/AI/NavmeshBake.h"
 #include "Enjin/ECS/Components/BrushSolid.h"
@@ -3700,6 +3701,86 @@ void EditorLayer::DrawDoorComponent(ECS::Entity entity) {
         if (ImGui::Button("Remove##Door")) {
             RemoveComponentWithUndo<ECS::DoorComponent>(entity, "door", "Door");
         }
+    }
+}
+
+// A hanging chain that generates its own mesh: tentacles, tails, vines, ropes
+// with a shape rather than a simulation.
+//
+// The solver, the mesh generator and the component all existed and nothing
+// ticked any of them, so this had no UI because there was nothing to drive.
+void EditorLayer::DrawSplineIKComponent(ECS::Entity entity) {
+    auto* chain = m_World->GetComponent<Effects::SplineIKComponent>(entity);
+    if (!chain) return;
+
+    if (!UI::SectionHeader("Spline IK Chain", ImGuiTreeNodeFlags_DefaultOpen)) return;
+
+    // Shape. Changing either of these rebuilds the chain from scratch on the
+    // next tick, which is why initialized is cleared rather than trusted.
+    int joints = chain->jointCount;
+    if (ImGui::DragInt("Joints##SplineIK", &joints, 1, 2, 128)) {
+        chain->jointCount = joints;
+        chain->initialized = false;
+    }
+    ImGui::SetItemTooltip("Segments in the chain. More is smoother and slower.");
+    if (InspectorUndo::DragFloat(m_UndoRedo, "Length##SplineIK", &chain->totalLength, 0.1f, 0.1f, 200.0f)) {
+        chain->initialized = false;
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Motion");
+    InspectorUndo::Checkbox(m_UndoRedo, "Physics##SplineIK", &chain->usePhysics);
+    ImGui::SetItemTooltip("Spring-mass motion. Off holds the chain in its rest pose.");
+    InspectorUndo::Checkbox(m_UndoRedo, "Gravity##SplineIK", &chain->useGravity);
+    InspectorUndo::DragFloat(m_UndoRedo, "Gravity Force##SplineIK", &chain->gravity, 0.1f, -100.0f, 100.0f);
+    ImGui::SetItemTooltip("Negative pulls down. Positive makes it float upward,\n"
+                          "which is what a kelp frond or a balloon string wants.");
+    InspectorUndo::DragFloat(m_UndoRedo, "Stiffness##SplineIK", &chain->stiffness, 0.01f, 0.0f, 1.0f);
+    ImGui::SetItemTooltip("0 is floppy, 1 is rigid.");
+    InspectorUndo::DragFloat(m_UndoRedo, "Damping##SplineIK", &chain->damping, 0.01f, 0.0f, 1.0f);
+
+    ImGui::Separator();
+    InspectorUndo::Checkbox(m_UndoRedo, "Reach For Target##SplineIK", &chain->useTarget);
+    ImGui::SetItemTooltip("Solves the chain towards a point instead of letting\n"
+                          "it hang. The root always stays on this entity.");
+    if (chain->useTarget) {
+        f32 t[3] = {chain->targetPosition.x, chain->targetPosition.y, chain->targetPosition.z};
+        if (ImGui::DragFloat3("Target##SplineIK", t, 0.1f)) {
+            chain->targetPosition = Math::Vector3(t[0], t[1], t[2]);
+        }
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Mesh");
+    const char* modes[] = {"Tube", "Ribbon", "Custom"};
+    int mode = static_cast<int>(chain->mode);
+    if (ImGui::Combo("Shape##SplineIK", &mode, modes, 3)) {
+        chain->mode = static_cast<Effects::SplineIKComponent::DeformMode>(mode);
+        chain->initialized = false;
+    }
+    if (chain->mode == Effects::SplineIKComponent::DeformMode::Custom) {
+        // Saying so beats quietly drawing a tube and leaving someone to wonder
+        // why their setting did nothing.
+        ImGui::TextDisabled("Custom is not implemented and draws a tube.");
+    }
+    InspectorUndo::DragFloat(m_UndoRedo, "Radius##SplineIK", &chain->meshRadius, 0.01f, 0.001f, 20.0f);
+    InspectorUndo::DragFloat(m_UndoRedo, "Tip Radius##SplineIK", &chain->meshRadiusTip, 0.01f, 0.0f, 20.0f);
+    ImGui::SetItemTooltip("Radius at the far end. Smaller than Radius tapers it.");
+    int segments = chain->meshSegments;
+    if (ImGui::DragInt("Segments##SplineIK", &segments, 1, 3, 64)) {
+        chain->meshSegments = segments;
+        chain->initialized = false;
+    }
+    ImGui::SetItemTooltip("Sides around the tube.");
+    InspectorUndo::DragFloat(m_UndoRedo, "UV Tiling##SplineIK", &chain->uvTiling, 0.1f, 0.0f, 100.0f);
+
+    ImGui::TextDisabled("%zu joints simulated", chain->joints.size());
+    // The chain only moves in PLAY mode: its system is ticked by the runtimes
+    // and by play mode, not by the editor's idle loop.
+    ImGui::TextDisabled("Press Play to see it move.");
+
+    if (ImGui::Button("Remove##SplineIK")) {
+        RemoveComponentWithUndo<Effects::SplineIKComponent>(entity, "splineIK", "Spline IK Chain");
     }
 }
 

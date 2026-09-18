@@ -27,6 +27,7 @@
 #include "Enjin/Effects/ParticleColliders.h"
 #include "Enjin/ECS/Components/Vegetation.h"
 #include "Enjin/Effects/FluidSimulation.h"
+#include "Enjin/Effects/SplineIKDeformer.h"
 #include "Enjin/Effects/FluidPlaybackSystem.h"
 #include "Enjin/Effects/FluidTerrainCoupling.h"
 #include "Enjin/Renderer/WebGPU/WebGPUVegetationSystem.h"
@@ -1444,6 +1445,12 @@ public:
         // MeshComponent vertices + meshDirty; the web render path re-uploads
         // dirty meshes each frame.
         m_ClothSystem.Update(m_World.get(), deltaTime, &m_WindSystem);
+        // Spline IK chains -- tentacles, tails, vines -- ride the same
+        // runtime-geometry upload protocol cloth does, which is why they are
+        // ticked together. Nothing called this system at all before: the
+        // component, the solver and the mesh generator all existed and no
+        // runtime ran any of them.
+        m_SplineIKSystem.Update(m_World.get(), deltaTime);
 
         // Flower system (desktop: main.cpp:1065). Full-canvas viewport, same as
         // the desktop player's full-screen case. WebGPURenderer exposes the
@@ -2892,6 +2899,7 @@ private:
     // billboards and the web sprite pipeline already draws those, so the render
     // side needed no pipeline of its own.
     Enjin::Effects::FluidSimulation m_FluidSimulation;
+    Enjin::Effects::SplineIKSystem m_SplineIKSystem;
     Enjin::Effects::FluidPlaybackSystem m_FluidPlayback;
     Enjin::Effects::FluidTerrainCoupling m_FluidTerrainCoupling;
     Enjin::Audio::AudioEventGraphRuntime m_AudioGraphRuntime;

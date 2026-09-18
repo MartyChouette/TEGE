@@ -2,6 +2,7 @@
 #include <unordered_set>
 #include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/AI/Navmesh.h"
+#include "Enjin/Effects/SplineIKDeformer.h"
 #include "Enjin/ECS/Components/GeneratedGeometry.h"
 #include "Enjin/ECS/Components/ProceduralMesh.h"
 #include "Enjin/ECS/Components/BrushSolid.h"
@@ -2981,6 +2982,60 @@ ECS::PostProcessVolumeComponent DeserializePostProcessVolumeComponent(const json
 // the playback system's memory of having already tried this file, and saving
 // a remembered failure into the scene would mean a recording that was missing
 // once is never retried, even after the file is put back.
+// The chain's SHAPE and behaviour, not its simulated state. The joints are
+// where the tentacle happens to be hanging this frame; saving them would open
+// the scene mid-swing, and the system rebuilds them from jointCount and
+// totalLength anyway.
+json SerializeSplineIKComponent(const Effects::SplineIKComponent& c) {
+    json j;
+    j["jointCount"] = c.jointCount;
+    j["totalLength"] = RF(c.totalLength);
+    j["gravity"] = RF(c.gravity);
+    j["stiffness"] = RF(c.stiffness);
+    j["damping"] = RF(c.damping);
+    j["meshRadius"] = RF(c.meshRadius);
+    j["meshRadiusTip"] = RF(c.meshRadiusTip);
+    j["meshSegments"] = c.meshSegments;
+    j["targetPosition"] = {RF(c.targetPosition.x), RF(c.targetPosition.y), RF(c.targetPosition.z)};
+    j["useTarget"] = c.useTarget;
+    j["useGravity"] = c.useGravity;
+    j["usePhysics"] = c.usePhysics;
+    j["mode"] = static_cast<i32>(c.mode);
+    j["uvTiling"] = RF(c.uvTiling);
+    return j;
+}
+
+Effects::SplineIKComponent DeserializeSplineIKComponent(const json& j) {
+    Effects::SplineIKComponent c;
+    if (j.contains("jointCount")) c.jointCount = j["jointCount"].get<i32>();
+    if (j.contains("totalLength")) c.totalLength = j["totalLength"].get<f32>();
+    if (j.contains("gravity")) c.gravity = j["gravity"].get<f32>();
+    if (j.contains("stiffness")) c.stiffness = j["stiffness"].get<f32>();
+    if (j.contains("damping")) c.damping = j["damping"].get<f32>();
+    if (j.contains("meshRadius")) c.meshRadius = j["meshRadius"].get<f32>();
+    if (j.contains("meshRadiusTip")) c.meshRadiusTip = j["meshRadiusTip"].get<f32>();
+    if (j.contains("meshSegments")) c.meshSegments = j["meshSegments"].get<i32>();
+    if (j.contains("targetPosition") && j["targetPosition"].is_array()
+        && j["targetPosition"].size() >= 3) {
+        const auto& t = j["targetPosition"];
+        c.targetPosition = Math::Vector3(t[0].get<f32>(), t[1].get<f32>(), t[2].get<f32>());
+    }
+    if (j.contains("useTarget")) c.useTarget = JB(j["useTarget"]);
+    if (j.contains("useGravity")) c.useGravity = JB(j["useGravity"]);
+    if (j.contains("usePhysics")) c.usePhysics = JB(j["usePhysics"]);
+    if (j.contains("mode")) {
+        const i32 m = j["mode"].get<i32>();
+        // Clamped rather than cast straight through: a scene carrying a mode
+        // from a future build would otherwise index a switch with no case.
+        if (m >= 0 && m <= 2) c.mode = static_cast<Effects::SplineIKComponent::DeformMode>(m);
+    }
+    if (j.contains("uvTiling")) c.uvTiling = j["uvTiling"].get<f32>();
+    // Rebuilt on the first tick from jointCount/totalLength; a loaded chain
+    // must not claim to be initialised with an empty joint list.
+    c.initialized = false;
+    return c;
+}
+
 // Only what a person authored. currentPath, currentWaypointIndex, isFollowing
 // and hasArrived are where the follower HAS GOT TO, and saving those would make
 // a scene open with the entity halfway along its route -- and the std::function
@@ -9787,6 +9842,7 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
         ENJIN_SERDES("fixedJoint", ECS::FixedJointComponent, SerializeFixedJointComponent, DeserializeFixedJointComponent),
         ENJIN_SERDES("flowerParticleConfig", ECS::FlowerParticleConfigComponent, SerializeFlowerParticleConfigComponent, DeserializeFlowerParticleConfigComponent),
         ENJIN_SERDES("flowerStem", ECS::FlowerStemComponent, SerializeFlowerStemComponent, DeserializeFlowerStemComponent),
+        ENJIN_SERDES("splineIK", Effects::SplineIKComponent, SerializeSplineIKComponent, DeserializeSplineIKComponent),
         ENJIN_SERDES("pathFollower", AI::PathFollowerComponent, SerializePathFollowerComponent, DeserializePathFollowerComponent),
         ENJIN_SERDES("fluidPlayback", ECS::FluidPlaybackComponent, SerializeFluidPlaybackComponent, DeserializeFluidPlaybackComponent),
         ENJIN_SERDES("fluidVolume", ECS::FluidVolumeComponent, SerializeFluidVolumeComponent, DeserializeFluidVolumeComponent),

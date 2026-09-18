@@ -1179,6 +1179,12 @@ void PlayMode::Update(f32 deltaTime) {
             m_SurfaceResponseSystem.Update(m_World, deltaTime);
             m_ClothSystem.Update(m_World, deltaTime,
                                  m_RenderSystem ? m_RenderSystem->GetWindSystem() : nullptr);
+            // Spline IK chains -- tentacles, tails, vines -- ride the same
+            // runtime-geometry upload protocol cloth does, which is why they
+            // are ticked together. Nothing called this system anywhere before:
+            // the component, the solver and the mesh generator all existed and
+            // no runtime ran any of them.
+            m_SplineIKSystem.Update(m_World, deltaTime);
         }
 
         // Apply accessibility visual settings (colorblind filters, brightness,

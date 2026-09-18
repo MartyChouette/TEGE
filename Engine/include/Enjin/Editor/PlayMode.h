@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Enjin/Platform/Platform.h"
+#include "Enjin/Effects/SplineIKDeformer.h"
 #include <functional>
 #include <vector>
 #include "Enjin/Gameplay/SimulationClock.h"
@@ -245,6 +246,7 @@ private:
 
     // Grid cloth simulation (flags/capes/curtains, tearable)
     Gameplay::ClothSystem m_ClothSystem;
+    Effects::SplineIKSystem m_SplineIKSystem;
 
     // Physics systems (created via factory)
     Gameplay::SimulationClock m_SimClock;

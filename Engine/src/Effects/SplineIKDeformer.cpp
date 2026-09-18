@@ -1,4 +1,5 @@
 #include "Enjin/Effects/SplineIKDeformer.h"
+#include "Enjin/ECS/Components/ProceduralMesh.h"
 #include <cmath>
 #include <algorithm>
 
@@ -562,7 +563,14 @@ void SplineIKSystem::Update(ECS::World* world, f32 deltaTime) {
     m_ActiveChainCount = 0;
     m_TotalJointCount = 0;
 
-    for (ECS::Entity entity : world->GetEntitiesWithComponent<SplineIKComponent>()) {
+    // Snapshot the entity list before touching anything. The loop below ADDS
+    // components (a MeshComponent, a ProceduralMeshComponent) and mutating
+    // storage while iterating a storage's own entity vector is the kind of
+    // thing that works until the day it reallocates.
+    const auto& live = world->GetEntitiesWithComponent<SplineIKComponent>();
+    std::vector<ECS::Entity> chains(live.begin(), live.end());
+
+    for (ECS::Entity entity : chains) {
         auto* chain = world->GetComponent<SplineIKComponent>(entity);
         auto* transform = world->GetComponent<ECS::TransformComponent>(entity);
         if (!chain || !transform) continue;
@@ -616,9 +624,33 @@ void SplineIKSystem::Update(ECS::World* world, f32 deltaTime) {
                 mesh = world->GetComponent<ECS::MeshComponent>(entity);
             }
             if (mesh) {
+                // Topology changes when the joint count or the radial segment
+                // count does. The two flags mean different things to the
+                // renderer: topologyDirty drops and rebuilds the buffers at the
+                // new size, meshDirty re-uploads into the live one.
+                const bool topologyChanged = mesh->indices.size() != meshData.indices.size();
+
                 mesh->vertices = std::move(meshData.vertices);
                 mesh->indices = std::move(meshData.indices);
                 mesh->aabbDirty = true;
+
+                // Without this the chain solves perfectly on the CPU and never
+                // moves on screen. The GPU re-upload path is keyed to the
+                // components that own runtime-generated geometry -- cloth,
+                // rope, Water3D and ProceduralMesh -- and a spline chain was
+                // none of them, so its regenerated vertices reached the GPU
+                // exactly once. ProceduralMeshComponent::Source has carried a
+                // SplineIK value the whole time with nothing setting it.
+                auto* proc = world->GetComponent<ECS::ProceduralMeshComponent>(entity);
+                if (!proc) {
+                    world->AddComponent<ECS::ProceduralMeshComponent>(entity);
+                    proc = world->GetComponent<ECS::ProceduralMeshComponent>(entity);
+                }
+                if (proc) {
+                    proc->source = ECS::ProceduralMeshComponent::Source::SplineIK;
+                    proc->meshDirty = true;
+                    if (topologyChanged) proc->topologyDirty = true;
+                }
             }
         }
 
