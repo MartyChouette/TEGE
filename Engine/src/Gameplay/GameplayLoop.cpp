@@ -417,6 +417,92 @@ void CheckHazardOverlaps3D(ECS::World* world,
     for (auto e : world->GetEntitiesWithComponent<ECS::TopDown3DController>()) checkPlayer(e);
 }
 
+// Bob, spin and magnet: the "Visual feedback" and magnet fields on
+// PickupComponent, which have never had a reader.
+//
+// bobSpeed, bobHeight and rotationSpeed ship non-zero, so a coin was authored to
+// float and turn and instead sat perfectly still -- and magnetToPlayer, the one
+// field a person would actually go looking for, moved nothing at all. Nothing
+// ticked a pickup per frame except the respawn timer.
+//
+// This runs BEFORE the overlap checks so a magnet-pulled pickup is collected on
+// the frame it reaches the player rather than the one after.
+void UpdatePickupMotion(ECS::World* world, f32 deltaTime) {
+    if (!world || deltaTime <= 0.0f) return;
+
+    // The same five controller types ProcessPickup accepts as collectors. A
+    // magnet that flew toward an entity that cannot collect it would look like
+    // the pickup was broken.
+    std::vector<Math::Vector3> playerPositions;
+    auto gather = [&](auto tag) {
+        using T = decltype(tag);
+        for (auto e : world->GetEntitiesWithComponent<T>()) {
+            if (auto* t = world->GetComponent<ECS::TransformComponent>(e)) {
+                playerPositions.push_back(t->position);
+            }
+        }
+    };
+    gather(ECS::Platformer2DController{});
+    gather(ECS::TopDown2DController{});
+    gather(ECS::FirstPersonController{});
+    gather(ECS::ThirdPersonController{});
+    gather(ECS::TopDown3DController{});
+
+    for (auto entity : world->GetEntitiesWithComponent<ECS::PickupComponent>()) {
+        auto* pk = world->GetComponent<ECS::PickupComponent>(entity);
+        if (!pk || pk->isCollected) continue;   // hidden, waiting on a respawn
+        auto* xf = world->GetComponent<ECS::TransformComponent>(entity);
+        if (!xf) continue;
+
+        if (!pk->motionAnchored) {
+            pk->motionAnchor = xf->position;
+            pk->motionAnchored = true;
+        }
+
+        // The magnet moves the ANCHOR, not the drawn position, so the bob keeps
+        // swinging around the pickup while it travels instead of fighting it.
+        if (pk->magnetToPlayer && pk->magnetSpeed > 0.0f && !playerPositions.empty()) {
+            const Math::Vector3* nearest = nullptr;
+            f32 nearestSq = pk->magnetRange * pk->magnetRange;
+            for (const auto& pos : playerPositions) {
+                Math::Vector3 d = pos - pk->motionAnchor;
+                f32 distSq = d.LengthSquared();
+                if (distSq <= nearestSq) { nearestSq = distSq; nearest = &pos; }
+            }
+            if (nearest) {
+                Math::Vector3 delta = *nearest - pk->motionAnchor;
+                f32 dist = delta.Length();
+                f32 step = pk->magnetSpeed * deltaTime;
+                // Never overshoot: past the player it would oscillate instead of
+                // arriving, and the overlap test would flicker with it.
+                pk->motionAnchor = (dist <= step || dist <= 0.0001f)
+                                 ? *nearest
+                                 : pk->motionAnchor + delta * (step / dist);
+            }
+        }
+
+        Math::Vector3 position = pk->motionAnchor;
+        if (pk->bobSpeed != 0.0f && pk->bobHeight != 0.0f) {
+            pk->bobPhase += pk->bobSpeed * deltaTime;
+            // Wrap rather than accumulate: a coin left alone for an hour would
+            // otherwise feed a number large enough that sinf loses the phase.
+            if (pk->bobPhase > Math::PI_2) pk->bobPhase -= Math::PI_2;
+            position.y += Math::Sin(pk->bobPhase) * pk->bobHeight;
+        }
+        xf->position = position;
+
+        if (pk->rotationSpeed != 0.0f) {
+            // Applied incrementally so an authored tilt is kept and spun around
+            // rather than replaced. Renormalised because a quaternion multiplied
+            // sixty times a second drifts off the unit sphere.
+            xf->rotation = xf->rotation * Math::Quaternion::FromEuler(
+                Math::Vector3(0.0f, Math::Radians(pk->rotationSpeed * deltaTime), 0.0f));
+            xf->rotation.Normalize();
+        }
+        xf->worldMatrixDirty = true;
+    }
+}
+
 void CheckPickupOverlaps2D(ECS::World* world,
                             std::vector<ECS::Entity>& deferredDestroys) {
     if (!world) return;

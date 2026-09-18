@@ -83,6 +83,10 @@ namespace GameplayLoop {
 
     // 2D pickup AABB overlap check. Box2D v3 kinematic-kinematic sensor events
     // are unreliable, so we manually check each frame for 2D controllers.
+    // Bob, spin and magnet. Call BEFORE the overlap checks so a magnet-pulled
+    // pickup is collected on the frame it arrives, not the one after.
+    ENJIN_API void UpdatePickupMotion(ECS::World* world, f32 deltaTime);
+
     ENJIN_API void CheckPickupOverlaps2D(ECS::World* world,
                                           std::vector<ECS::Entity>& deferredDestroys);
 

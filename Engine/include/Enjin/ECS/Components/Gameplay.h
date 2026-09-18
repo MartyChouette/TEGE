@@ -890,6 +890,17 @@ struct PickupComponent {
     f32 bobSpeed = 2.0f;           // Floating bob animation
     f32 bobHeight = 0.2f;
     f32 rotationSpeed = 90.0f;     // Degrees per second
+
+    // Runtime motion state, not serialized.
+    // The bob has to swing around a FIXED anchor: adding an offset to the LIVE
+    // position every frame walks the pickup off the spot it was placed on, a
+    // little further each frame and always in one direction. The anchor can only
+    // be learned from the transform on the first tick, which is why it carries
+    // its own "have I got it yet" flag rather than testing for a zero vector --
+    // the origin is a legitimate place to put a coin.
+    Math::Vector3 motionAnchor = Math::Vector3(0.0f);
+    bool motionAnchored = false;
+    f32 bobPhase = 0.0f;
 };
 
 // Simple Inventory

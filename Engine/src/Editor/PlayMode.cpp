@@ -1431,6 +1431,7 @@ void PlayMode::Update(f32 deltaTime) {
         // Pickup overlap (manual AABB — Box2D sensor events unreliable for kinematic-kinematic,
         // Jolt CharacterVirtual doesn't fire collision events with static bodies)
         Gameplay::GameplayLoop::CheckHazardOverlaps3D(m_World, m_DeferredDestroys);
+        Gameplay::GameplayLoop::UpdatePickupMotion(m_World, deltaTime);
         Gameplay::GameplayLoop::CheckPickupOverlaps3D(m_World, m_DeferredDestroys);
         Gameplay::GameplayLoop::CheckPickupOverlaps2D(m_World, m_DeferredDestroys);
 
