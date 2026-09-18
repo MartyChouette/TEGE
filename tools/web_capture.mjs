@@ -13,6 +13,7 @@
 //
 // Usage:
 //   node web_capture.mjs <url> <out.png> [--frames N] [--timeout MS] [--show-log] [--click]
+//                        [--allow-splash]
 //
 // Exit code is non-zero when the page never rendered, so this can gate CI.
 
@@ -25,7 +26,7 @@ const args = process.argv.slice(2);
 const url = args[0];
 const outPath = args[1];
 if (!url || !outPath) {
-    console.error('usage: node web_capture.mjs <url> <out.png> [--frames N] [--timeout MS] [--show-log] [--click]');
+    console.error('usage: node web_capture.mjs <url> <out.png> [--frames N] [--timeout MS] [--show-log] [--click] [--allow-splash]');
     process.exit(2);
 }
 const flag = (name, fallback) => {
@@ -54,6 +55,13 @@ const wantFrames = frameList[frameList.length - 1];
 const timeoutMs = flag('--timeout', 120000);
 const showLog = args.includes('--show-log');
 const doClick = args.includes('--click');
+// Photographing the "Click to Play" card is a capture of nothing, and it does
+// not look like a failure: the file is written, the byte count is plausible,
+// and the draw-call count is non-zero because the shell itself draws. Two
+// captures of two DIFFERENT builds both came back as the title card and still
+// differed in size, which "confirmed" a renderer fix that had not been
+// exercised at all. Pass --allow-splash when the card is what you actually want.
+const allowSplash = args.includes('--allow-splash');
 
 const CHROME_CANDIDATES = [
     process.env.CHROME_PATH,
@@ -221,10 +229,50 @@ try {
             }), step, waited);
         }
         frames = waited;
-        const shot = await canvas.screenshot({ type: 'png' });
         const dest = multi
             ? `${stem}.f${String(target).padStart(4, '0')}.png`
             : outPath;
+
+        // Is the play gate still up? Checked at CAPTURE time rather than once at
+        // the start, because a multi-frame run photographs repeatedly and the
+        // gate is dismissed partway through a --click run.
+        const gated = await page.evaluate(() => {
+            const el = document.querySelector('#click-to-play');
+            if (!el) return null;
+
+            // checkVisibility, not getComputedStyle. An element's computed
+            // style is its OWN: after the shell hides the gate by hiding an
+            // ANCESTOR, #click-to-play still computes display:block opacity:1
+            // while rendering nothing at all. Reading it that way refused every
+            // capture including the ones that had correctly clicked through.
+            // getClientRects is the fallback for a browser without
+            // checkVisibility: an unrendered element has no boxes.
+            const shown = typeof el.checkVisibility === 'function'
+                ? el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })
+                : el.getClientRects().length > 0;
+            if (!shown) return null;
+
+            const cs = getComputedStyle(el);
+            const r = el.getBoundingClientRect();
+            return { display: cs.display, opacity: cs.opacity,
+                     size: `${Math.round(r.width)}x${Math.round(r.height)}` };
+        }).catch(() => null);
+
+        if (gated && !allowSplash) {
+            // The style goes in the message because "still up" is a conclusion
+            // and these are the facts behind it -- an overlay left in the DOM
+            // at opacity 0 is not up, and telling those apart from the outside
+            // is the whole difficulty.
+            console.error(
+                `refusing to capture ${dest}: the "Click to Play" gate is still up ` +
+                `(${JSON.stringify(gated)}), so this would photograph the title card rather ` +
+                `than the scene. Pass --click to get past it, or --allow-splash if the card ` +
+                `is what you want.`);
+            await browser.close();
+            process.exit(2);
+        }
+
+        const shot = await canvas.screenshot({ type: 'png' });
         await writeFile(path.resolve(dest), shot);
 
         // The same numbers the desktop capture writes beside its image, from the
