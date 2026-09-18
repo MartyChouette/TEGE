@@ -708,6 +708,14 @@ void PlayMode::Resume() {
     m_BehaviorTreeSystem.SetEnabled(true);
     m_DialogueSystem.SetEnabled(true);
     m_StateMachineSystem.SetEnabled(true);
+    // Pause() disables this at :677 and nothing turned it back on: its only
+    // other SetEnabled(true) is in Play(). So one pause killed every
+    // VirtualCameraComponent for the rest of the session -- CameraDirector's
+    // Update bails on !m_Enabled, and the scene silently fell back to the
+    // controller path, which looks like the vcams were never set up rather than
+    // like a bug. An asymmetric enable/disable pair is only ever one line from
+    // this, and nothing in the language makes the two lists agree.
+    m_CameraDirector.SetEnabled(true);
     // Do NOT capture mouse here — only focus mode (F11) captures the mouse.
 
     m_State.store(PlayState::Playing, std::memory_order_relaxed);

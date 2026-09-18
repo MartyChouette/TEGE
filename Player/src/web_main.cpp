@@ -514,6 +514,13 @@ public:
         m_UISystem.SetInputActionMap(&m_InputMap);
         // NOTE: the web player does not run InteractiveWaterSystem (no member); water
         // simulation/events are desktop-only for now. (Was erroneously wired here.)
+        // QuestSystem::Update returns at its first line on !m_Enabled, and the
+        // web player never enabled it -- so quests were wired into visual
+        // scripting, dialogue and the script bindings, updated every frame, and
+        // could not progress at all in a browser. Desktop enables it at
+        // main.cpp:3193 among a block of "enable all gameplay systems"; web has
+        // the same block and this one line was missing from it.
+        m_QuestSystem.SetEnabled(true);
         m_DialogueSystem.SetQuestSystem(&m_QuestSystem);
         m_DialogueSystem.SetCinematicSystem(&m_CinematicSystem);
         m_DialogueSystem.SetTieredSaveSystem(&m_TieredSaveSystem);
