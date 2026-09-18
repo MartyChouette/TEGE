@@ -1,4 +1,5 @@
 #include "Enjin/Gameplay/SaveLoadMenu.h"
+#include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/Gameplay/TieredSaveSystem.h"
 #include "Enjin/ECS/World.h"
 #include <imgui.h>
@@ -6,9 +7,10 @@
 namespace Enjin {
 namespace Gameplay {
 
-void DrawSaveLoadMenu(SaveLoadMenuComponent& menu,
+void DrawSaveLoadMenu(ECS::SaveLoadMenuComponent& menu,
                        TieredSaveSystem* saveSystem,
-                       ECS::World* world) {
+                       ECS::World* world,
+                       u32 maxManualSlots) {
     if (!menu.isOpen || !saveSystem || !world) return;
 
     ImGui::SetNextWindowSize(ImVec2(600, 450), ImGuiCond_FirstUseEver);
@@ -23,14 +25,14 @@ void DrawSaveLoadMenu(SaveLoadMenuComponent& menu,
 
     // Mode tabs
     if (menu.allowManualSave) {
-        if (ImGui::RadioButton("Save", menu.mode == SaveLoadMenuComponent::Mode::Save)) {
-            menu.mode = SaveLoadMenuComponent::Mode::Save;
+        if (ImGui::RadioButton("Save", menu.mode == ECS::SaveLoadMenuComponent::Mode::Save)) {
+            menu.mode = ECS::SaveLoadMenuComponent::Mode::Save;
         }
         ImGui::SameLine();
     }
     if (menu.allowManualLoad) {
-        if (ImGui::RadioButton("Load", menu.mode == SaveLoadMenuComponent::Mode::Load)) {
-            menu.mode = SaveLoadMenuComponent::Mode::Load;
+        if (ImGui::RadioButton("Load", menu.mode == ECS::SaveLoadMenuComponent::Mode::Load)) {
+            menu.mode = ECS::SaveLoadMenuComponent::Mode::Load;
         }
     }
     ImGui::Separator();
@@ -43,6 +45,11 @@ void DrawSaveLoadMenu(SaveLoadMenuComponent& menu,
         for (const auto& slot : slots) {
             // Skip auto-saves if configured
             if (slot.isAutoSave && !menu.showAutoSaves) continue;
+            // The game's manual-slot ceiling. Auto-saves are not manual slots
+            // and are never counted against it -- they live in their own
+            // rotating range above the manual ones.
+            if (!slot.isAutoSave && maxManualSlots > 0 &&
+                slot.slotIndex >= maxManualSlots) continue;
 
             if (idx % cols == 0) ImGui::TableNextRow();
             ImGui::TableNextColumn();
@@ -84,7 +91,7 @@ void DrawSaveLoadMenu(SaveLoadMenuComponent& menu,
             }
 
             // Action button
-            if (menu.mode == SaveLoadMenuComponent::Mode::Save && menu.allowManualSave && !slot.isAutoSave) {
+            if (menu.mode == ECS::SaveLoadMenuComponent::Mode::Save && menu.allowManualSave && !slot.isAutoSave) {
                 if (slot.isEmpty) {
                     if (ImGui::SmallButton("Save Here")) {
                         saveSystem->SaveToSlot(slot.slotIndex, world,
@@ -110,7 +117,7 @@ void DrawSaveLoadMenu(SaveLoadMenuComponent& menu,
                         }
                     }
                 }
-            } else if (menu.mode == SaveLoadMenuComponent::Mode::Load && menu.allowManualLoad &&
+            } else if (menu.mode == ECS::SaveLoadMenuComponent::Mode::Load && menu.allowManualLoad &&
                        !slot.isEmpty && !slot.isCorrupt) {
                 if (ImGui::SmallButton("Load")) {
                     saveSystem->LoadFromSlot(slot.slotIndex, world);

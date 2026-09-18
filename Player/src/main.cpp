@@ -142,6 +142,7 @@ static bool IsCaptureRun() {
 #include "Enjin/ECS/Systems/ParallaxSystem.h"
 #include "Enjin/Gameplay/ObjectPool.h"
 #include "Enjin/Gameplay/TieredSaveSystem.h"
+#include "Enjin/Gameplay/SaveLoadMenu.h"
 #include "Enjin/Gameplay/DynamicDifficultySystem.h"
 #include "Enjin/Gameplay/FaceCardSystem.h"
 #include "Enjin/Gameplay/SavePointSystem.h"
@@ -1807,6 +1808,12 @@ public:
         m_Paused = true;
         Enjin::Input::SetMouseCaptured(false);
 
+        // showOnPause (the widget) and showSaveMenuOnPause (the game) both had
+        // no reader -- nothing opened the save menu, ever, on any runtime. Both
+        // must agree: the game has to permit a save menu on pause and this menu
+        // has to be one that wants to appear there.
+        OpenSaveMenusOnPause();
+
         // An authored PauseMenu canvas wins over the generated one, same rule as
         // the main menu. It is scene content, so it is SHOWN rather than spawned
         // -- and must not be destroyed on close.
@@ -2303,6 +2310,14 @@ public:
                 DrawEngineSplash();
             }
 
+            // Save / load menu.
+            //
+            // DrawSaveLoadMenu had NO CALLER anywhere: the component was
+            // addable from the inspector, serialized, and had an editor UI, and
+            // the menu itself was never drawn in any runtime. A game that added
+            // a Save/Load Menu got nothing, and nothing ever set isOpen either.
+            DrawSaveLoadMenus();
+
             // Tilde console (Quake-style, slides up from bottom)
             DrawConsole(cmd);
 
@@ -2346,6 +2361,77 @@ public:
                                      kFadeStart, /*creditLine*/ nullptr,
                                      m_ImGuiLayer ? m_ImGuiLayer->GetHeadingFont() : nullptr,
                                      splashOpts);
+    }
+
+    // Every SaveLoadMenuComponent in the scene, with the scene-wide policy
+    // applied on top.
+    //
+    // SaveSystemComponent and SaveLoadMenuComponent carry the SAME five
+    // settings, and the menu read only its own copy -- so maxManualSlots,
+    // allowManualSave, allowManualLoad, allowDeleteSlot and showSaveMenuOnPause
+    // on the save system had no reader at all. That is the duplicated-settings
+    // trap this project has hit before (sprint/crouch lived in three places and
+    // two menus edited different state).
+    //
+    // Resolved as policy AND widget rather than by deleting either: the save
+    // system says what this GAME permits, the menu says what this WIDGET
+    // offers, and a widget must never offer what the game forbids. Both remain
+    // authorable and the stricter one wins.
+    void OpenSaveMenusOnPause() {
+        if (!m_World) return;
+        const Enjin::ECS::SaveSystemComponent* policy = nullptr;
+        for (auto e : m_World->GetEntitiesWithComponent<Enjin::ECS::SaveSystemComponent>()) {
+            policy = m_World->GetComponent<Enjin::ECS::SaveSystemComponent>(e);
+            if (policy) break;
+        }
+        // No SaveSystemComponent in the scene means no policy authored, and the
+        // widget's own flag decides. A scene that never configured saving must
+        // not have a save menu forced on it, but it must not have one silently
+        // suppressed either.
+        if (policy && !policy->showSaveMenuOnPause) return;
+
+        for (auto e : m_World->GetEntitiesWithComponent<Enjin::ECS::SaveLoadMenuComponent>()) {
+            auto* menu = m_World->GetComponent<Enjin::ECS::SaveLoadMenuComponent>(e);
+            if (menu && menu->showOnPause) menu->isOpen = true;
+        }
+    }
+
+    void DrawSaveLoadMenus() {
+        if (!m_World) return;
+
+        const Enjin::ECS::SaveSystemComponent* policy = nullptr;
+        for (auto e : m_World->GetEntitiesWithComponent<Enjin::ECS::SaveSystemComponent>()) {
+            policy = m_World->GetComponent<Enjin::ECS::SaveSystemComponent>(e);
+            if (policy) break;
+        }
+
+        for (auto e : m_World->GetEntitiesWithComponent<Enjin::ECS::SaveLoadMenuComponent>()) {
+            auto* menu = m_World->GetComponent<Enjin::ECS::SaveLoadMenuComponent>(e);
+            if (!menu || !menu->isOpen) continue;
+
+            if (!policy) {
+                Enjin::Gameplay::DrawSaveLoadMenu(*menu, &m_TieredSaveSystem, m_World.get());
+                continue;
+            }
+
+            // Narrow a COPY for the duration of the draw. The component keeps
+            // what the author set, so toggling the policy back on restores the
+            // menu rather than having quietly overwritten it.
+            Enjin::ECS::SaveLoadMenuComponent effective = *menu;
+            effective.allowManualSave = menu->allowManualSave && policy->allowManualSave;
+            effective.allowManualLoad = menu->allowManualLoad && policy->allowManualLoad;
+            effective.allowDelete     = menu->allowDelete     && policy->allowDeleteSlot;
+
+            Enjin::Gameplay::DrawSaveLoadMenu(effective, &m_TieredSaveSystem, m_World.get(),
+                                              policy->maxManualSlots);
+
+            // Carry back only the runtime state the draw owns.
+            menu->isOpen         = effective.isOpen;
+            menu->selectedSlot   = effective.selectedSlot;
+            menu->mode           = effective.mode;
+            menu->confirmOverwrite = effective.confirmOverwrite;
+            menu->confirmDelete    = effective.confirmDelete;
+        }
     }
 
     void DrawConsole(VkCommandBuffer) {

@@ -113,6 +113,7 @@
 #include "Enjin/Gameplay/QuestSystem.h"
 #include "Enjin/Gameplay/ObjectPool.h"
 #include "Enjin/Gameplay/TieredSaveSystem.h"
+#include "Enjin/Gameplay/SaveLoadMenu.h"
 #include "Enjin/Gameplay/SavePointSystem.h"
 #include "Enjin/Gameplay/SaveIndicator.h"
 #include "Enjin/Gameplay/DynamicDifficultySystem.h"
@@ -1034,9 +1035,63 @@ public:
             s.celOutlineThreshold, s.celOutlineColor);
     }
 
+    // See the desktop player for the reasoning. SaveSystemComponent is the
+    // GAME's policy and SaveLoadMenuComponent is the WIDGET; a widget must not
+    // offer what the game forbids, so the stricter of the two wins and both
+    // stay authorable. Five fields on the save system had no reader before this:
+    // maxManualSlots, allowManualSave, allowManualLoad, allowDeleteSlot and
+    // showSaveMenuOnPause.
+    const Enjin::ECS::SaveSystemComponent* FindSavePolicy() const {
+        if (!m_World) return nullptr;
+        for (auto e : m_World->GetEntitiesWithComponent<Enjin::ECS::SaveSystemComponent>()) {
+            if (auto* c = m_World->GetComponent<Enjin::ECS::SaveSystemComponent>(e)) return c;
+        }
+        return nullptr;
+    }
+
+    void OpenSaveMenusOnPause() {
+        if (!m_World) return;
+        const auto* policy = FindSavePolicy();
+        // No policy authored means the widget's own flag decides: a scene that
+        // never configured saving must not have a save menu forced on it, nor
+        // one silently suppressed.
+        if (policy && !policy->showSaveMenuOnPause) return;
+        for (auto e : m_World->GetEntitiesWithComponent<Enjin::ECS::SaveLoadMenuComponent>()) {
+            auto* menu = m_World->GetComponent<Enjin::ECS::SaveLoadMenuComponent>(e);
+            if (menu && menu->showOnPause) menu->isOpen = true;
+        }
+    }
+
+    void DrawSaveLoadMenus() {
+        if (!m_World) return;
+        const auto* policy = FindSavePolicy();
+        for (auto e : m_World->GetEntitiesWithComponent<Enjin::ECS::SaveLoadMenuComponent>()) {
+            auto* menu = m_World->GetComponent<Enjin::ECS::SaveLoadMenuComponent>(e);
+            if (!menu || !menu->isOpen) continue;
+            if (!policy) {
+                Enjin::Gameplay::DrawSaveLoadMenu(*menu, &m_TieredSaveSystem, m_World.get());
+                continue;
+            }
+            // A COPY, so the author's values survive the policy being narrowed
+            // and restored.
+            Enjin::ECS::SaveLoadMenuComponent effective = *menu;
+            effective.allowManualSave = menu->allowManualSave && policy->allowManualSave;
+            effective.allowManualLoad = menu->allowManualLoad && policy->allowManualLoad;
+            effective.allowDelete     = menu->allowDelete     && policy->allowDeleteSlot;
+            Enjin::Gameplay::DrawSaveLoadMenu(effective, &m_TieredSaveSystem, m_World.get(),
+                                              policy->maxManualSlots);
+            menu->isOpen           = effective.isOpen;
+            menu->selectedSlot     = effective.selectedSlot;
+            menu->mode             = effective.mode;
+            menu->confirmOverwrite = effective.confirmOverwrite;
+            menu->confirmDelete    = effective.confirmDelete;
+        }
+    }
+
     void TogglePauseMenu() {
         if (m_Paused) { ClosePauseMenu(); return; }
         m_Paused = true;
+        OpenSaveMenusOnPause();
         m_PauseMenuEntity = m_World->CreateEntity();
         m_World->AddComponent<Enjin::ECS::NameComponent>(m_PauseMenuEntity, "Pause Menu UI");
         m_World->AddComponent<Enjin::GUI::UICanvasComponent>(m_PauseMenuEntity,
@@ -2116,6 +2171,11 @@ public:
         // Subtitle overlay (accessibility) -- same draw code as desktop
         m_SubtitleSystem.RenderOverlay(0.0f, 0.0f, w, h);
         m_SaveIndicator.RenderOverlay(0.0f, 0.0f, w, h);
+        // Save / load menu -- same draw as desktop. It had no caller on EITHER
+        // runtime, because the component it took was a second declaration of
+        // SaveLoadMenuComponent living in Enjin::Gameplay while every entity
+        // carried the Enjin::ECS one.
+        DrawSaveLoadMenus();
         // Switch-scanning highlight / dwell cursor
         m_AlternativeInput.RenderOverlay();
         // Screen reader status bar (announcements also speak via Web Speech API)
