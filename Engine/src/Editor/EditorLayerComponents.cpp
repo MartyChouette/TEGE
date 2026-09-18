@@ -3,6 +3,7 @@
 #include "Enjin/Editor/EditorLayer.h"
 #include "Enjin/AI/Navmesh.h"
 #include "Enjin/Effects/SplineIKDeformer.h"
+#include "Enjin/Renderer/SDFRenderer.h"
 #include "Enjin/ECS/Components/NavmeshVolume.h"
 #include "Enjin/AI/NavmeshBake.h"
 #include "Enjin/ECS/Components/BrushSolid.h"
@@ -423,6 +424,59 @@ void EditorLayer::DrawMeshComponent(ECS::Entity entity) {
                 }
             }
             ImGui::TextDisabled("%zu triangles -> about %zu", triCount, target);
+
+            // Rebuild this model as a solid.
+            //
+            // MeshToSDF and SDFMeshRenderer::ExtractIsosurface are a thousand
+            // lines that nothing in the engine called: no runtime, no editor,
+            // no test. Voxelising a mesh into a distance field and marching it
+            // back out is what turns a wall of overlapping, self-intersecting
+            // parts into one closed surface, which is the job nothing else here
+            // does -- Simplify above removes triangles, it cannot weld a model
+            // that was never watertight.
+            ImGui::Separator();
+            ImGui::TextUnformatted("Remesh");
+            ImGui::SetNextItemWidth(160.0f);
+            ImGui::SliderInt("##sdfres", &m_SdfRemeshResolution, 16, 128, "%d^3 grid");
+            ImGui::SetItemTooltip("Voxel grid the model is sampled into. Higher keeps more\n"
+                                  "detail and costs memory cubed; 128 is 2 million voxels.\n"
+                                  "The result replaces this mesh; Ctrl+Z puts it back.");
+            ImGui::SameLine();
+            if (ImGui::Button("Remesh")) {
+                std::vector<ECS::Vertex>  oldVertices  = mesh->vertices;
+                std::vector<u32>          oldIndices   = mesh->indices;
+                std::vector<ECS::MeshComponent::SubMesh> oldSubMeshes = mesh->subMeshes;
+
+                Renderer::SDFVolume volume = Renderer::MeshToSDF::ConvertMesh(
+                    mesh->vertices, mesh->indices, m_SdfRemeshResolution);
+                Renderer::MeshData rebuilt =
+                    Renderer::SDFMeshRenderer::ExtractIsosurface(volume, 0.0f);
+
+                if (!rebuilt.vertices.empty() && rebuilt.indices.size() >= 3) {
+                    // One submesh: marching cubes produces a single surface and
+                    // cannot know which of the original material slots any part
+                    // of it belonged to. Keeping the old slot list would index
+                    // ranges that no longer exist.
+                    m_UndoRedo.Execute(std::make_unique<Editor::MeshEditCommand>(
+                        m_World, entity, "Remesh Mesh",
+                        std::move(oldVertices), std::move(oldIndices), std::move(oldSubMeshes),
+                        mesh->source,
+                        rebuilt.vertices, rebuilt.indices,
+                        std::vector<ECS::MeshComponent::SubMesh>{},
+                        ECS::MeshComponent::SourceRef{}));
+                    MarkDirty();
+                    ENJIN_LOG_INFO(Editor, "Remeshed at %d^3: %zu -> %zu triangles",
+                                   m_SdfRemeshResolution, triCount, rebuilt.indices.size() / 3);
+                } else {
+                    // Say so rather than appearing to work. A model thinner
+                    // than one voxel falls through the grid entirely, and an
+                    // empty result would otherwise read as a deleted mesh.
+                    ENJIN_LOG_WARN(Editor, "Remesh produced nothing at %d^3 -- the model may be "
+                                           "thinner than one voxel. Try a higher resolution.",
+                                   m_SdfRemeshResolution);
+                }
+            }
+            ImGui::TextDisabled("Welds a model into one closed surface. UVs are not preserved.");
         }
 
         // Mesh Info read-only panel

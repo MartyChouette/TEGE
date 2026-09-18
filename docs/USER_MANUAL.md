@@ -425,6 +425,21 @@ Gives the entity a human-readable display name shown in the hierarchy.
 
 Stores the vertex and index data used by the renderer to draw geometry. Vertices contain position, normal, UV, color, tangent, bone weights, and bone indices.
 
+Two tools sit in the inspector next to the triangle count they change, and both
+are undoable:
+
+- **Reduce** cuts the triangle count to the **keep** percentage. It removes
+  triangles from the surface you have; it cannot close one that was never
+  closed. A model can refuse to reduce further, and says so rather than
+  appearing to work.
+- **Remesh** voxelises the model into a distance field at the chosen grid and
+  marches a fresh surface back out. That welds a wall of overlapping,
+  self-intersecting parts into **one closed surface**, which is the job Reduce
+  cannot do. The grid costs memory cubed, so 128 is two million voxels, and a
+  model thinner than one voxel falls through it entirely -- the tool says so
+  instead of leaving an empty mesh behind. **UVs are not preserved**, so a
+  remeshed model needs its texturing redone.
+
 Typically populated by importing a 3D model or by using a built-in primitive (Cube, Sphere, etc.).
 
 **Sub-mesh support:** When a model has multiple materials, `MeshComponent` stores a `subMeshes` array. Each `SubMesh` defines a range within the shared vertex/index buffers (`indexOffset`, `indexCount`) and a `materialSlot` index that maps to a slot in `MaterialSlotsComponent`. The render system draws each sub-mesh with its corresponding material.

@@ -1648,6 +1648,9 @@ private:
     // to RECORD, which is a property of the take rather than of the fluid, and
     // serializing them onto every volume would save the same numbers into
     // every scene.
+    // Voxel grid the SDF remesh samples into. Per-editor rather than per-mesh:
+    // it describes how you want to rebuild, not anything about the model.
+    int m_SdfRemeshResolution = 48;
     Effects::FluidBakeSettings m_FluidBakeSettings;
     std::string m_FluidBakeStatus;
 
