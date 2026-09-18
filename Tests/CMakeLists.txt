@@ -410,6 +410,7 @@ enjin_add_test(TestNetworkSecurity    Unit/Networking/TestNetworkSecurity.cpp)
 # --- Assets ---
 enjin_add_test(TestAssetPack          Unit/Assets/TestAssetPack.cpp)
 enjin_add_test(TestAssetLoaders       Unit/Assets/TestAssetLoaders.cpp)
+enjin_add_test(TestPlyVoxLoading     Unit/Assets/TestPlyVoxLoading.cpp)
 enjin_add_test(TestDataAsset          Unit/Assets/TestDataAsset.cpp)
 enjin_add_test(TestSchemaTypeNames   Unit/Assets/TestSchemaTypeNames.cpp)
 enjin_add_test(TestBuildPipeline      Unit/Assets/TestBuildPipeline.cpp)

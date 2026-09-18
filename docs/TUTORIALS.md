@@ -302,8 +302,8 @@ Enjin includes 9 built-in camera presets accessible via scripting:
 | FBX | .fbx | Via Assimp |
 | OBJ | .obj | Via Assimp, no animation |
 | Collada | .dae | Via Assimp |
-| PLY | .ply | Point clouds |
-| VOX | .vox | MagicaVoxel voxels |
+| PLY | .ply | Point clouds and meshes. A PLY with a face element imports as geometry, not just points; vertex colours are read. |
+| VOX | .vox | MagicaVoxel voxels, converted to a triangle mesh on import. |
 
 ### Importing via Editor
 
