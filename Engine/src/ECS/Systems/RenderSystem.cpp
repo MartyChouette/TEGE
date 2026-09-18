@@ -5971,6 +5971,15 @@ void RenderSystem::RefreshStorageCache() {
     m_CachedTransformStorage = m_World->GetComponentStorage<TransformComponent>();
     m_CachedMeshStorage = m_World->GetComponentStorage<MeshComponent>();
     m_CachedMaterialStorage = m_World->GetComponentStorage<MaterialComponent>();
+    // Nulled in the no-world branch above and never assigned here, so on the
+    // DESKTOP path this cache was null for the life of the process while the
+    // web path set it correctly. Everything MeshRendererComponent authors was
+    // therefore ignored on Vulkan and honoured in a browser: the frustumCull
+    // opt-out that keeps skyboxes and viewmodels drawn, lodBias, forceLowestLOD,
+    // and contributeMotionVectors, which is what stops TAA smearing a
+    // vertex-animated flag. Every read is written as `cache ? cache->Get() :
+    // nullptr`, so the absence degraded silently in all four places.
+    m_CachedMeshRendererStorage = m_World->GetComponentStorage<MeshRendererComponent>();
     m_CachedMaterialSlotsStorage = m_World->GetComponentStorage<MaterialSlotsComponent>();
     m_CachedAnimatorStorage = m_World->GetComponentStorage<AnimatorComponent>();
     m_CachedViewmodelStorage = m_World->GetComponentStorage<ViewmodelComponent>();
