@@ -132,6 +132,46 @@ void RenderSystem::ExtractFrustumPlanes(const Math::Matrix4& viewProj,
     }
 }
 
+// See the header: one list, because two of them drifted in both directions.
+void RenderSystem::CacheComponentStorages() {
+    if (!m_World) {
+        m_CachedStorageEpoch = 0;
+        m_CachedTransformStorage = nullptr;
+        m_CachedMeshStorage = nullptr;
+        m_CachedMaterialStorage = nullptr;
+        m_CachedMeshRendererStorage = nullptr;
+        m_CachedMaterialSlotsStorage = nullptr;
+        m_CachedAnimatorStorage = nullptr;
+        m_CachedViewmodelStorage = nullptr;
+        m_CachedTextStorage = nullptr;
+        m_CachedArtStyleStorage = nullptr;
+        m_CachedSpriteStorage = nullptr;
+        m_CachedWaterVolumeStorage = nullptr;
+        m_CachedWater3DStorage = nullptr;
+        m_CachedClothStorage = nullptr;
+        m_CachedRopeStorage = nullptr;
+        m_CachedVegetationStorage = nullptr;
+        return;
+    }
+
+    m_CachedStorageEpoch = m_World->GetStorageEpoch();
+    m_CachedTransformStorage = m_World->GetComponentStorage<TransformComponent>();
+    m_CachedMeshStorage = m_World->GetComponentStorage<MeshComponent>();
+    m_CachedMaterialStorage = m_World->GetComponentStorage<MaterialComponent>();
+    m_CachedMeshRendererStorage = m_World->GetComponentStorage<MeshRendererComponent>();
+    m_CachedMaterialSlotsStorage = m_World->GetComponentStorage<MaterialSlotsComponent>();
+    m_CachedAnimatorStorage = m_World->GetComponentStorage<AnimatorComponent>();
+    m_CachedViewmodelStorage = m_World->GetComponentStorage<ViewmodelComponent>();
+    m_CachedTextStorage = m_World->GetComponentStorage<TextComponent>();
+    m_CachedArtStyleStorage = m_World->GetComponentStorage<ArtStyleComponent>();
+    m_CachedSpriteStorage = m_World->GetComponentStorage<Sprite2DComponent>();
+    m_CachedWaterVolumeStorage = m_World->GetComponentStorage<WaterVolumeComponent>();
+    m_CachedWater3DStorage = m_World->GetComponentStorage<Water3DComponent>();
+    m_CachedClothStorage = m_World->GetComponentStorage<ClothComponent>();
+    m_CachedRopeStorage = m_World->GetComponentStorage<RopeComponent>();
+    m_CachedVegetationStorage = m_World->GetComponentStorage<VegetationComponent>();
+}
+
 bool RenderSystem::IsEntityInFrustum(Entity entity, const Math::Vector4 planes[6]) {
     const MeshComponent* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
     if (!mesh) return true;   // nothing to measure: never cull on ignorance
@@ -5648,17 +5688,7 @@ void RenderSystem::FlushPendingChanges() {
 
 void RenderSystem::RefreshStorageCache() {
     if (!m_World) return;
-    m_CachedStorageEpoch = m_World->GetStorageEpoch();
-    m_CachedTransformStorage = m_World->GetComponentStorage<TransformComponent>();
-    m_CachedMeshStorage = m_World->GetComponentStorage<MeshComponent>();
-    m_CachedMaterialStorage = m_World->GetComponentStorage<MaterialComponent>();
-    m_CachedMeshRendererStorage = m_World->GetComponentStorage<MeshRendererComponent>();
-    m_CachedMaterialSlotsStorage = m_World->GetComponentStorage<MaterialSlotsComponent>();
-    m_CachedAnimatorStorage = m_World->GetComponentStorage<AnimatorComponent>();
-    m_CachedViewmodelStorage = m_World->GetComponentStorage<ViewmodelComponent>();
-    m_CachedClothStorage = m_World->GetComponentStorage<ClothComponent>();
-    m_CachedRopeStorage = m_World->GetComponentStorage<RopeComponent>();
-    m_CachedVegetationStorage = m_World->GetComponentStorage<VegetationComponent>();
+    CacheComponentStorages();
 
     // Rebuild light entity list if dirty
     if (m_LightListDirty) {
@@ -5948,49 +5978,7 @@ u32 RenderSystem::GetHDROutputMode() const {
 #endif
 
 void RenderSystem::RefreshStorageCache() {
-    if (!m_World) {
-        m_CachedStorageEpoch = 0;
-        m_CachedTransformStorage = nullptr;
-        m_CachedMeshStorage = nullptr;
-        m_CachedMaterialStorage = nullptr;
-        m_CachedMeshRendererStorage = nullptr;
-        m_CachedMaterialSlotsStorage = nullptr;
-        m_CachedAnimatorStorage = nullptr;
-        m_CachedViewmodelStorage = nullptr;
-        m_CachedTextStorage = nullptr;
-        m_CachedArtStyleStorage = nullptr;
-        m_CachedSpriteStorage = nullptr;
-        m_CachedWaterVolumeStorage = nullptr;
-        m_CachedWater3DStorage = nullptr;
-        m_CachedClothStorage = nullptr;
-        m_CachedRopeStorage = nullptr;
-        m_CachedVegetationStorage = nullptr;
-        return;
-    }
-    m_CachedStorageEpoch = m_World->GetStorageEpoch();
-    m_CachedTransformStorage = m_World->GetComponentStorage<TransformComponent>();
-    m_CachedMeshStorage = m_World->GetComponentStorage<MeshComponent>();
-    m_CachedMaterialStorage = m_World->GetComponentStorage<MaterialComponent>();
-    // Nulled in the no-world branch above and never assigned here, so on the
-    // DESKTOP path this cache was null for the life of the process while the
-    // web path set it correctly. Everything MeshRendererComponent authors was
-    // therefore ignored on Vulkan and honoured in a browser: the frustumCull
-    // opt-out that keeps skyboxes and viewmodels drawn, lodBias, forceLowestLOD,
-    // and contributeMotionVectors, which is what stops TAA smearing a
-    // vertex-animated flag. Every read is written as `cache ? cache->Get() :
-    // nullptr`, so the absence degraded silently in all four places.
-    m_CachedMeshRendererStorage = m_World->GetComponentStorage<MeshRendererComponent>();
-    m_CachedMaterialSlotsStorage = m_World->GetComponentStorage<MaterialSlotsComponent>();
-    m_CachedAnimatorStorage = m_World->GetComponentStorage<AnimatorComponent>();
-    m_CachedViewmodelStorage = m_World->GetComponentStorage<ViewmodelComponent>();
-    m_CachedTextStorage = m_World->GetComponentStorage<TextComponent>();
-    m_CachedArtStyleStorage = m_World->GetComponentStorage<ArtStyleComponent>();
-    m_CachedSpriteStorage = m_World->GetComponentStorage<Sprite2DComponent>();
-    m_CachedWaterVolumeStorage = m_World->GetComponentStorage<WaterVolumeComponent>();
-    m_CachedClothStorage = m_World->GetComponentStorage<ClothComponent>();
-    m_CachedRopeStorage = m_World->GetComponentStorage<RopeComponent>();
-    m_CachedVegetationStorage = m_World->GetComponentStorage<VegetationComponent>();
-    m_CachedWater3DStorage = m_World->GetComponentStorage<Water3DComponent>();
+    CacheComponentStorages();
 }
 
 void RenderSystem::Initialize() {
@@ -7096,6 +7084,33 @@ const Renderer::TessellatedGraphic* RenderSystem::GetOrTessellateGraphic(const s
         it = m_VectorGraphicCache.emplace(path, Renderer::TessellateSVG(loadPath, tolerance)).first;
     }
     return it->second.valid ? &it->second : nullptr;
+}
+
+void RenderSystem::ReleasePoolAlloc(EntityRenderData& rd) {
+    if (!rd.poolAlloc.valid || !m_GeometryPool) { rd.poolAlloc = {}; rd.poolHash = 0; return; }
+    if (rd.poolHash != 0) {
+        auto it = m_PooledMeshes.find(rd.poolHash);
+        if (it != m_PooledMeshes.end()) {
+            if (it->second.refs > 0) --it->second.refs;
+            // Only the last holder returns the memory. Freeing on the first
+            // release would hand the block back to the free list while every
+            // other entity is still drawing out of it.
+            if (it->second.refs == 0) {
+                m_GeometryPool->Free(it->second.alloc);
+                m_PooledMeshes.erase(it);
+            }
+            rd.poolAlloc = {};
+            rd.poolHash = 0;
+            return;
+        }
+        // Hash recorded but no table entry: the share was already torn down.
+        // Do not double-free the block it used to point at.
+        rd.poolAlloc = {};
+        rd.poolHash = 0;
+        return;
+    }
+    m_GeometryPool->Free(rd.poolAlloc);
+    rd.poolAlloc = {};
 }
 
 void RenderSystem::RetireEntityBuffers(EntityRenderData& rd) {
@@ -11850,9 +11865,7 @@ void RenderSystem::OnEntityRemoved(Entity entity) {
     // Free merged geometry pool allocation before erasing render data
     if (static_cast<usize>(EntityIndex(entity)) < m_EntityRenderData.size() && m_EntityRenderData[static_cast<usize>(EntityIndex(entity))].valid) {
         auto& rd = m_EntityRenderData[static_cast<usize>(EntityIndex(entity))];
-        if (rd.poolAlloc.valid && m_GeometryPool) {
-            m_GeometryPool->Free(rd.poolAlloc);
-        }
+        ReleasePoolAlloc(rd);
         // Retire, not destroy: entity deletion is flushed at World::Update start
         // while the previous frame is still executing on the GPU — immediate
         // vkDestroyBuffer here was the "delete imported stag = device lost"
@@ -13631,6 +13644,10 @@ EntityRenderData* RenderSystem::SetupEntityBuffers(Entity entity) {
         m_EntityRenderData.resize(static_cast<usize>(EntityIndex(entity)) + 1);
     }
     EntityRenderData& renderData = m_EntityRenderData[static_cast<usize>(EntityIndex(entity))];
+    // Hand the old pool block back BEFORE retiring. RetireEntityBuffers ends in
+    // Invalidate(), which clears poolAlloc without returning it, so a rebuild
+    // used to leak a block out of a pool whose only source of free space is Free().
+    ReleasePoolAlloc(renderData);
     // Retire, not destroy: a REBUILD replaces buffers the previous frame may
     // still be reading (deferred setups run pre-recording, but pre-recording
     // does not mean GPU-idle — MAX_FRAMES_IN_FLIGHT frames stay live).
@@ -13640,14 +13657,55 @@ EntityRenderData* RenderSystem::SetupEntityBuffers(Entity entity) {
 
     // Try merged geometry pool for static 3D meshes
     if (IsPoolEligible(entity)) {
+        // Identical geometry is uploaded ONCE and shared. Keyed on the source
+        // asset's content hash, so every entity instancing the same imported
+        // mesh lands on one allocation. A mesh with no source reference (built
+        // procedurally, or authored inline in the scene) hashes to 0 and keeps
+        // its own block, exactly as before.
+        //
+        // This is what makes a large field of one asset possible at all: the
+        // pool holds 1M vertices and 2M indices, and 7344 copies of a 1456-vertex
+        // plant wants 10.7M and 29.2M of them. Shared, it wants 1456 and 3981.
+        const u64 shareKey = mesh->source.Valid() ? mesh->source.contentHash : 0ull;
+        const u32 wantVerts = static_cast<u32>(mesh->vertices.size());
+        const u32 wantIndices = static_cast<u32>(mesh->indices.size());
+
+        if (shareKey != 0) {
+            auto it = m_PooledMeshes.find(shareKey);
+            // The size check is the cheap guard. It costs nothing and it catches
+            // both a 64-bit hash collision and the case that actually worries me:
+            // a source-referenced mesh whose vertices were replaced after import,
+            // leaving a contentHash that no longer describes the geometry.
+            if (it != m_PooledMeshes.end()
+                && it->second.vertexCount == wantVerts
+                && it->second.indexCount == wantIndices) {
+                ++it->second.refs;
+                renderData.poolAlloc = it->second.alloc;
+                renderData.poolHash = shareKey;
+                renderData.indexCount = it->second.alloc.indexCount;
+                m_DDGIGeometryDirty = true;  // new INSTANCE at a new transform
+                maybeFreeCpu();
+                return &renderData;
+            }
+        }
+
         auto alloc = m_GeometryPool->Upload(
             mesh->vertices.data(),
-            static_cast<u32>(mesh->vertices.size()),
+            wantVerts,
             mesh->indices.data(),
-            static_cast<u32>(mesh->indices.size()));
+            wantIndices);
         if (alloc.valid) {
             renderData.poolAlloc = alloc;
             renderData.indexCount = alloc.indexCount;
+            if (shareKey != 0) {
+                PooledMesh rec;
+                rec.alloc = alloc;
+                rec.vertexCount = wantVerts;
+                rec.indexCount = wantIndices;
+                rec.refs = 1;
+                m_PooledMeshes[shareKey] = rec;
+                renderData.poolHash = shareKey;
+            }
             m_DDGIGeometryDirty = true;  // new pooled mesh — refeed DDGI voxelizer
             // No per-entity VB/IB needed — pool owns the memory
             maybeFreeCpu();

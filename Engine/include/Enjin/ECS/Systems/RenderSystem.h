@@ -251,6 +251,11 @@ struct EntityRenderData {
     Entity owner = INVALID_ENTITY;
 #if !ENJIN_RENDERER_WEBGPU
     Renderer::MeshAllocation poolAlloc;
+    // Content hash of the shared pool allocation this entity is HOLDING A
+    // REFERENCE TO, or 0 when poolAlloc is owned outright. Release has to know
+    // the difference: freeing a shared block because one of its users went away
+    // leaves every other user drawing from reclaimed memory.
+    u64 poolHash = 0;
 #endif
 
     void Invalidate() {
@@ -277,6 +282,7 @@ struct EntityRenderData {
         owner = INVALID_ENTITY;
 #if !ENJIN_RENDERER_WEBGPU
         poolAlloc = {};
+        poolHash = 0;
 #endif
     }
 };
@@ -1654,6 +1660,20 @@ private:
     // caching the storage pointer eliminates the first lookup for every entity.
 public:
     void RefreshStorageCache();
+
+    // The component-storage pointers, in ONE place.
+    //
+    // RefreshStorageCache has a copy per backend and the two lists drifted:
+    // the desktop copy never assigned m_CachedMeshRendererStorage, so every
+    // MeshRendererComponent field was ignored on Vulkan and honoured on web,
+    // and the web copy never assigned m_CachedArtStyleStorage, so a CelToon
+    // outline was ignored in a browser and honoured on the desktop. Both
+    // failures are silent, because every read is written as
+    // `cache ? cache->Get(e) : nullptr`.
+    //
+    // The per-backend functions keep whatever is genuinely platform-specific
+    // and call this for the list itself.
+    void CacheComponentStorages();
     // Compare against World::GetStorageEpoch() before using cached storage
     // pointers — on mismatch (World::Clear ran) every cached pointer is
     // dangling; refetches and drops derived raw pointers. One int compare
@@ -2535,6 +2555,38 @@ private:
     // Merged geometry buffer (single VB+IB for all static 3D meshes)
     std::unique_ptr<Renderer::MergedGeometryBuffer> m_GeometryPool;
     bool IsPoolEligible(Entity entity) const;  // Check if entity should use merged pool
+
+    // ---- Shared pool allocations -------------------------------------------
+    // One upload per distinct MESH, not per entity. Before this, every entity
+    // uploaded its own copy of its vertices even when a thousand of them
+    // referenced the same asset, so a field of 7344 identical corn plants asked
+    // the pool for 10.7M vertices and 29.2M indices against a capacity of 1M and
+    // 2M. The geometry is 1456 vertices; the duplication was the entire problem.
+    //
+    // Keyed on MeshComponent::SourceRef::contentHash, which is already computed
+    // by the importer, already stored in the scene, and already the thing
+    // MeshAssetCache trusts to decide whether cached geometry matches what a
+    // scene expected. Entities without a source reference (procedurally built
+    // meshes, inline scene geometry) carry hash 0 and keep their own allocation.
+    //
+    // SAFE BECAUSE POOLED MESHES ARE STATIC. IsPoolEligible already rejects
+    // every component that rewrites vertices at runtime -- sprites, tilemaps,
+    // terrain, jelly, cloth, rope, procedural, water, skinned. Nothing that
+    // reaches this table can mutate its geometry behind the share.
+    struct PooledMesh {
+        Renderer::MeshAllocation alloc;
+        u32 vertexCount = 0;   // guards against a hash collision, and against a
+        u32 indexCount = 0;    // stale hash left by an edited mesh
+        u32 refs = 0;
+    };
+    std::unordered_map<u64, PooledMesh> m_PooledMeshes;
+
+    // Hand back this entity's pool allocation: decrement a shared block's
+    // refcount and free it only when the last user lets go, or free an owned
+    // block outright. Call this before Invalidate() -- Invalidate CLEARS
+    // poolAlloc without returning it, so every rebuild used to leak a block out
+    // of a pool that has no other way of getting it back.
+    void ReleasePoolAlloc(EntityRenderData& rd);
 
     // GPU frustum culling system
     std::unique_ptr<Renderer::GPUCullingSystem> m_GPUCulling;
