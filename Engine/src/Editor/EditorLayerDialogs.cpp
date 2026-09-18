@@ -263,6 +263,48 @@ void EditorLayer::DrawStatsOverlay() {
             ImGui::Text("Triangles: %u", m_PerfMetrics.triangleCount);
         }
 
+        // Geometry pool + mesh sharing.
+        //
+        // Two numbers nobody could see before, and both change what you do next.
+        // The pool is a FIXED allocation: run it out and meshes silently fall back
+        // to per-entity buffers, which costs memory and draw calls and looks like
+        // nothing at all from the outside. And sharing is what makes a field of
+        // one asset affordable -- an asset that misses the share pays its full
+        // geometry per instance, and the only symptom is that the pool fills.
+        if (m_RenderSystem) {
+            auto gp = m_RenderSystem->GetGeometryPoolStats();
+            if (gp.maxVertices > 0) {
+                f32 vPct = 100.0f * static_cast<f32>(gp.usedVertices) / static_cast<f32>(gp.maxVertices);
+                f32 iPct = 100.0f * static_cast<f32>(gp.usedIndices) / static_cast<f32>(gp.maxIndices);
+                f32 worst = vPct > iPct ? vPct : iPct;
+                ImVec4 poolColor = worst > 90.0f ? ImVec4(1.0f, 0.3f, 0.3f, 1.0f) :
+                                   worst > 70.0f ? ImVec4(1.0f, 1.0f, 0.2f, 1.0f) :
+                                                   ImVec4(0.2f, 1.0f, 0.2f, 1.0f);
+                ImGui::TextColored(poolColor, "Geometry Pool: %.0f%% verts, %.0f%% idx", vPct, iPct);
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip(
+                        "Shared vertex/index buffer for static meshes.\n"
+                        "%u / %u vertices, %u / %u indices.\n\n"
+                        "When it fills, meshes fall back to their own buffers:\n"
+                        "more memory, more draw calls, no error.",
+                        gp.usedVertices, gp.maxVertices, gp.usedIndices, gp.maxIndices);
+                }
+            }
+            if (gp.sharedInstances > gp.sharedMeshes) {
+                f32 savedMB = static_cast<f32>(gp.bytesSaved) / (1024.0f * 1024.0f);
+                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f),
+                                   "Mesh Sharing: %u instances / %u meshes (-%.0f MB)",
+                                   gp.sharedInstances, gp.sharedMeshes, savedMB);
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip(
+                        "Entities whose mesh came from the same imported asset\n"
+                        "share ONE upload instead of one copy each.\n\n"
+                        "Needs a mesh reference with a content hash, which an\n"
+                        "imported model has and inline scene geometry does not.");
+                }
+            }
+        }
+
         // Descriptor cache hit rate
         u32 totalDescOps = m_PerfMetrics.descriptorCacheHits + m_PerfMetrics.descriptorCacheWrites;
         if (totalDescOps > 0) {

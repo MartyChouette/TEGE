@@ -13724,13 +13724,23 @@ EntityRenderData* RenderSystem::SetupEntityBuffers(Entity entity) {
 
         if (shareKey != 0) {
             auto it = m_PooledMeshes.find(shareKey);
-            // The size check is the cheap guard. It costs nothing and it catches
-            // both a 64-bit hash collision and the case that actually worries me:
-            // a source-referenced mesh whose vertices were replaced after import,
-            // leaving a contentHash that no longer describes the geometry.
-            if (it != m_PooledMeshes.end()
-                && it->second.vertexCount == wantVerts
-                && it->second.indexCount == wantIndices) {
+            // The size check is a cheap guard against a 64-bit hash collision and
+            // against a source-referenced mesh whose vertices were replaced after
+            // import, leaving a contentHash that no longer describes it.
+            //
+            // It is SKIPPED when the component has no CPU copy resident. That is
+            // not a weakening: with vertices freed there is nothing to compare,
+            // and the hash is already the engine's trust mechanism for exactly
+            // this question (MeshAssetCache::Find refuses a zero or mismatched
+            // hash and logs why). Requiring the counts here would instead force
+            // every instance to page its geometry back in just to be told it did
+            // not need it -- which for 7344 instances of a 1456-vertex mesh is
+            // over a gigabyte of memcpy, and reads as a stall, not as a cost.
+            const bool countsAgree = (wantVerts == 0 && wantIndices == 0)
+                || (it != m_PooledMeshes.end()
+                    && it->second.vertexCount == wantVerts
+                    && it->second.indexCount == wantIndices);
+            if (it != m_PooledMeshes.end() && countsAgree) {
                 ++it->second.refs;
                 renderData.poolAlloc = it->second.alloc;
                 renderData.poolHash = shareKey;
