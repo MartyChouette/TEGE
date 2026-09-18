@@ -2039,6 +2039,25 @@ A tag component that enables wind sway on any mesh entity. When attached, the ve
 
 > **Note:** The glTF loader does not currently import vertex colors (COLOR_0 attribute). Imported models will sway uniformly unless vertex color support is added. The procedural vegetation systems (TreeVolume, GrassVolume, ShrubVolume) bypass this limitation with hardcoded geometry.
 
+#### What you can author on a vegetation volume
+
+The geometry of grass, shrubs and trees is **procedural and cannot be
+replaced**. What you author is its shape, placement and appearance:
+
+| | Grass | Shrub | Tree |
+|---|---|---|---|
+| Density, extents, size range | yes | yes | yes |
+| Colours (base/tip, trunk/canopy, seasonal) | yes | yes | yes |
+| Wind response | yes | yes | yes |
+| Custom **texture** | `customAssetPath` | `customAssetPath` | `barkTexturePath`, `canopyTexturePath` |
+| Custom **mesh** | no | no | no |
+| Colliders | no | no | `generateColliders` |
+
+A custom asset path is a TEXTURE in every case. It is sampled onto the
+procedural geometry with alpha cutout, so a foliage sheet reads as shaped
+leaves, and the silhouette underneath is still the generated one. Pointing any
+of these at a model file does nothing.
+
 #### TreeVolumeComponent
 
 Defines a volume that procedurally places GPU-instanced trees. Each tree consists of tapered trunk quads and intersecting canopy quads, all animated by the wind system. Deciduous trees change color with the seasons; evergreen trees remain constant.
@@ -2083,7 +2102,7 @@ Defines a volume that procedurally places GPU-instanced grass blades. Each blade
 | `baseColor` | Vector3 | (0.11, 0.18, 0.09) | Color at the blade root. |
 | `tipColor` | Vector3 | (0.24, 0.37, 0.16) | Color at the blade tip. |
 | `windSwayStrength` | f32 | 1.0 | Wind sway multiplier. |
-| `customAssetPath` | string | "" | Optional texture or model to override procedural blades. |
+| `customAssetPath` | string | "" | Optional TEXTURE sampled onto the procedural blades, alpha-cutout so a foliage sheet reads as shaped leaves. A model path does nothing here; the geometry stays procedural. |
 
 **Wind behavior:** Grass uses `heightFraction²` displacement, keeping roots planted while tips move freely. Two sine-wave frequencies (slow + fast) create organic motion. Blades also bend away from the player within a step radius for interactive feedback.
 
@@ -2102,7 +2121,7 @@ Defines a volume that procedurally places GPU-instanced shrubs. Each shrub is a 
 | `tipColor` | Vector3 | (0.42, 0.58, 0.27) | Color at the shrub tips. |
 | `windSwayStrength` | f32 | 0.5 | Wind sway multiplier. |
 | `quadsPerShrub` | u32 | 3 | Number of intersecting quads per shrub. |
-| `customAssetPath` | string | "" | Optional texture or model to override procedural shrubs. |
+| `customAssetPath` | string | "" | Optional TEXTURE sampled onto the procedural quads, alpha-cutout. A model path does nothing here; the geometry stays procedural. |
 
 **Wind behavior:** Shrubs use `heightFraction^1.5` displacement — stiffer than grass but more flexible than tree trunks. Slower primary frequency than grass for a heavier, bushier feel.
 
