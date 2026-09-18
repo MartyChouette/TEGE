@@ -23,7 +23,7 @@ extern const size_t TriangleFragmentShaderDataSize;
 extern const unsigned char PostProcessFragmentShaderData[];
 extern const size_t PostProcessFragmentShaderDataSize;
 
-// particle.vert.spv (3192 bytes, 798 words)
+// particle.vert.spv (3392 bytes, 848 words)
 extern const unsigned char ParticleVertexShaderData[];
 extern const size_t ParticleVertexShaderDataSize;
 

@@ -13,6 +13,7 @@ layout(location = 3) in vec2 inSizeAlpha;  // x = size, y = alpha
 layout(location = 4) in vec2 inStretchDir; // xy = screen-space stretch direction (for rain elongation)
 layout(location = 5) in float inStretch;   // Stretch factor (1.0 = no stretch)
 layout(location = 6) in vec3 inColor;      // per-particle tint
+layout(location = 7) in vec4 inUVRect;     // xy = UV offset, zw = UV scale (sheet frame)
 
 // View/Projection UBO
 layout(binding = 0) uniform UniformBufferObject {
@@ -42,7 +43,9 @@ void main() {
 
     gl_Position = ubo.proj * ubo.view * vec4(worldPos, 1.0);
 
-    fragUV = inQuadUV;
+    // The quad's own 0..1 UV mapped into this instance's sub-rect. A whole
+    // texture is offset 0 scale 1, so an emitter with no sheet is unchanged.
+    fragUV = inQuadUV * inUVRect.zw + inUVRect.xy;
     fragAlpha = alpha;
     fragColor = inColor;
 }

@@ -29,6 +29,15 @@ struct ParticleInstanceData {
     f32 stretchDirY;          // Stretch direction Y
     f32 stretch;              // Stretch factor (1.0 = circle, >1 = elongated)
     Math::Vector3 color;      // Per-particle tint (from the emitter's colour over life)
+
+    // Sub-rect of the texture this instance samples: xy = offset, zw = scale.
+    //
+    // Defaults to the whole texture, which is what weather, elemental and every
+    // untextured emitter want -- so this costs them nothing and they do not
+    // have to know it exists. A sheet emitter overwrites it per particle to
+    // pick the frame for that particle's own age.
+    Math::Vector2 uvOffset = Math::Vector2(0.0f, 0.0f);
+    Math::Vector2 uvScale = Math::Vector2(1.0f, 1.0f);
 };
 
 // 3D billboard particle renderer for weather effects

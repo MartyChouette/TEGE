@@ -98,6 +98,7 @@ silent: the field saves, the scene loads, the look is wrong, and nothing says so
 | Local / couch co-op (one machine) | Same | Multiple gamepads work: the Emscripten HTML5 Gamepad API is wired in `Core/src/Platform/Input.cpp` and sampled every frame. A shared-screen co-op game needs no network and no server on web. |
 | Splitscreen | **Absent** | `RenderSplitscreen` is defined only in the Vulkan half of `RenderSystem.cpp` and appears nowhere in the web half. Shared-screen local co-op works; split views do not. |
 | Texture filtering settings | **Absent, silently** | Discarded on web; pixel art blurs in a browser. This one is a bug, not a tier decision. |
+| Particle textures | **Absent** | Web particles are procedural soft circles: PARTICLE_WGSL's fragment stage computes a radial falloff and samples no texture at all, so an emitter's `texturePath` -- and with it the sprite sheet -- does nothing in a browser. Desktop binds the texture and animates the sheet per particle. Tint, size, lifetime and motion are the same on both. |
 | Hand IK (`HandIKComponent`) | **Absent** | `SolveHandIK` and every read of the component are in the Vulkan half of `RenderSystem.cpp` only, so a character set up to plant its hands on a weapon or a ledge simply does not in a browser -- the animation plays unmodified. Found 2026-09-18 by `tools/backend_parity.py`, which had drifted 27 methods because nothing ran it. |
 
 ---

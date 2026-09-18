@@ -1,4 +1,5 @@
 #include "Enjin/Effects/ParticleRenderer.h"
+#include <algorithm>
 #include "Enjin/Effects/DrawBudget.h"
 #include "Enjin/Effects/ElementalSystem.h"
 #include "Enjin/Renderer/Vulkan/ShaderData.h"
@@ -150,7 +151,7 @@ void ParticleRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescrip
     bindings[1].stride = sizeof(ParticleInstanceData);
     bindings[1].inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
 
-    std::array<VkVertexInputAttributeDescription, 7> attrs{};
+    std::array<VkVertexInputAttributeDescription, 8> attrs{};
     attrs[0].binding = 0;
     attrs[0].location = 0;
     attrs[0].format = VK_FORMAT_R32G32_SFLOAT;
@@ -179,6 +180,13 @@ void ParticleRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescrip
     attrs[6].location = 6;
     attrs[6].format = VK_FORMAT_R32G32B32_SFLOAT;
     attrs[6].offset = offsetof(ParticleInstanceData, color);
+
+    // uvOffset and uvScale are adjacent in the struct, so one vec4 attribute
+    // covers both and costs one binding slot instead of two.
+    attrs[7].binding = 1;
+    attrs[7].location = 7;
+    attrs[7].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+    attrs[7].offset = offsetof(ParticleInstanceData, uvOffset);
 
     VkPipelineVertexInputStateCreateInfo vertexInput{};
     vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -270,6 +278,13 @@ void ParticleRenderer::Render(VkCommandBuffer commandBuffer,
         const bool velocityStretch = emitter->renderMode == ECS::ParticleEmitterComponent::RenderMode::VelocityStretch;
         const f32 stretchScale = emitter->velocityStretchScale;
 
+        // Sprite sheet, clamped the way the inspector's sliders are. These two
+        // fields had an inspector row and a serializer entry and were read by
+        // NOTHING, so a sheet texture drew its whole grid on every particle.
+        const i32 sheetCols = std::max(1, std::min(emitter->textureSheetX, 16));
+        const i32 sheetRows = std::max(1, std::min(emitter->textureSheetY, 16));
+        const i32 frameCount = sheetCols * sheetRows;
+
         // Over its share, an emitter takes every stride-th particle rather than
         // its first N. Its plume keeps its extent and thins out; truncating the
         // pool instead cuts by pool ORDER, which for a recycling pool is
@@ -292,6 +307,23 @@ void ParticleRenderer::Render(VkCommandBuffer commandBuffer,
             inst.size = p.size * 2.0f;
             inst.alpha = p.alpha;
             inst.color = p.color;
+
+            // Sheet frame for THIS particle's age. Per particle rather than
+            // global time, which is what separates this from the material
+            // flipbook: an explosion is many puffs each playing its own
+            // animation from its own birth, not one animation everything shares.
+            if (sheetCols > 1 || sheetRows > 1) {
+                const f32 span = (p.maxLifetime > 0.0001f) ? p.maxLifetime : 1.0f;
+                const f32 t = std::clamp(p.lifetime / span, 0.0f, 0.9999f);
+                const i32 frame = std::min(static_cast<i32>(t * static_cast<f32>(frameCount)),
+                                           frameCount - 1);
+                const i32 col = frame % sheetCols;
+                const i32 row = frame / sheetCols;
+                inst.uvScale = Math::Vector2(1.0f / static_cast<f32>(sheetCols),
+                                             1.0f / static_cast<f32>(sheetRows));
+                inst.uvOffset = Math::Vector2(static_cast<f32>(col) * inst.uvScale.x,
+                                              static_cast<f32>(row) * inst.uvScale.y);
+            }
 
             if (velocityStretch && stretchScale > 0.0f) {
                 f32 velLen = p.velocity.Length();

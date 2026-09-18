@@ -1371,7 +1371,9 @@ world units, so the scale is what relates them to the entity.
 | `coneAngle` | f32 | 30.0 | Cone emission angle (degrees). |
 | `gravity` | Vector3 | (0, -9.8, 0) | Gravity force on particles. |
 | `drag` | f32 | 0.0 | Air resistance on particles. |
-| `texturePath` | string | "" | Particle texture. |
+| `texturePath` | string | "" | Particle texture. Desktop only: web particles are procedural soft circles and sample no texture. |
+| `textureSheetX` | i32 | 1 | Sprite-sheet columns. |
+| `textureSheetY` | i32 | 1 | Sprite-sheet rows. With more than one cell the emitter plays the sheet across each particle's OWN lifetime, so every puff animates from its own birth rather than all of them showing the same frame. Desktop only, for the same reason as the texture. |
 | `textureSheetX/Y` | i32 | 1 / 1 | Animation frame grid dimensions. |
 
 #### Sprite2DComponent
