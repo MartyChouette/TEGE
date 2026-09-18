@@ -42,6 +42,21 @@ struct ENJIN_API FluidVolumeComponent {
     Math::Vector3 fluidColor = Math::Vector3(0.2f, 0.4f, 0.8f);
     f32 opacity = 0.7f;
     f32 densityThreshold = 0.01f;
+
+    // How the cells are DRAWN, not how they are solved.
+    //
+    // One quad per cell, at one size, on a regular grid draws the grid: that is
+    // why fluid reads as voxels however fine the simulation is. `cellJitter`
+    // lets each cell's billboard sit off its lattice point (in cell widths,
+    // never more than half a cell, so the cloud's silhouette stays the
+    // simulation's) and `cellSizeVariance` makes a faint cell draw a smaller
+    // puff than a dense one, so the edge of a plume stops being a row of
+    // identical squares at low alpha.
+    //
+    // Both 0 is the look every scene authored before these existed was composed
+    // against, which is why they can be turned off rather than only tuned down.
+    f32 cellJitter = 0.35f;
+    f32 cellSizeVariance = 0.5f;
     bool renderEnabled = true;
 
     // Source injection

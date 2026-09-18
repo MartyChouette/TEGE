@@ -31,6 +31,32 @@ struct FluidCellPick {
     u32 k = 0;              // always 0 in 2D
     f32 density = 0.0f;     // raw density, already at or above the threshold
     f32 alphaScale = 1.0f;  // stride compensation -- multiply density by this
+
+    // Offset from the cell CENTRE in cell widths, and a multiplier on the
+    // billboard's size. Both exist to break up the lattice: one quad per cell,
+    // at one size, on a regular grid draws the grid, which is why fluid reads
+    // as voxels however fine the simulation underneath it is.
+    //
+    // Deterministic per cell, hashed from i/j/k alone and never from time, so
+    // a still frame stays still -- jitter that reseeds per frame is a boil,
+    // and a boil is worse than a lattice.
+    f32 offsetX = 0.0f;
+    f32 offsetY = 0.0f;
+    f32 offsetZ = 0.0f;
+    f32 sizeScale = 1.0f;
+};
+
+// How far a cell's billboard may wander from its centre, in cell widths, and
+// how much of its size follows its density.
+//
+// Zero for both is the old look exactly, quads pinned to lattice points all the
+// same size, so this can be turned off rather than tuned away. Per VOLUME
+// rather than per process: a chimney and a lava pool want different amounts of
+// it, and it belongs in the scene with everything else about how a volume
+// looks. FluidVolumeComponent carries the authored values.
+struct ENJIN_API FluidLookSettings {
+    f32 jitter = 0.0f;        // cell widths, +/- half this on each axis
+    f32 sizeVariance = 0.0f;  // fraction of the billboard size that follows density
 };
 
 // Cells of `grid` worth drawing, at most `budget` of them, appended to `out`.
@@ -39,8 +65,12 @@ struct FluidCellPick {
 // than the first `budget`: the cloud keeps its SHAPE and loses density, and
 // alphaScale puts the density back, so thinning does not read as fading. Half
 // the billboards at twice the alpha integrates to about the same cloud.
+//
+// `look` defaults to OFF so a caller that does not care about the look cannot
+// accidentally get one; the renderers pass the volume's authored values.
 ENJIN_API void SelectFluidCells(const FluidGridData& grid, f32 densityThreshold,
-                                usize budget, std::vector<FluidCellPick>& out);
+                                usize budget, std::vector<FluidCellPick>& out,
+                                const FluidLookSettings& look = FluidLookSettings{});
 
 } // namespace Effects
 } // namespace Enjin

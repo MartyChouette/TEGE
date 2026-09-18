@@ -3764,6 +3764,15 @@ void EditorLayer::DrawFluidVolumeComponent(ECS::Entity entity) {
         InspectorUndo::DragFloat(m_UndoRedo, "Opacity##FluidVol", &vol->opacity, 0.01f, 0.0f, 1.0f);
         InspectorUndo::DragFloat(m_UndoRedo, "Density Threshold##FluidVol", &vol->densityThreshold, 0.001f, 0.0f, 1.0f, "%.4f");
         InspectorUndo::Checkbox(m_UndoRedo, "Render Enabled##FluidVol", &vol->renderEnabled);
+        InspectorUndo::DragFloat(m_UndoRedo, "Cell Jitter##FluidVol", &vol->cellJitter, 0.01f, 0.0f, 1.0f);
+        ImGui::SetItemTooltip("Moves each cell's billboard off its lattice point, in cell\n"
+                              "widths. 0 draws the grid, which is why fluid reads as\n"
+                              "voxels. Never leaves its own cell, so the cloud's shape\n"
+                              "stays the simulation's.");
+        InspectorUndo::DragFloat(m_UndoRedo, "Cell Size Variance##FluidVol", &vol->cellSizeVariance, 0.01f, 0.0f, 1.0f);
+        ImGui::SetItemTooltip("How much of a billboard's size follows its density, so the\n"
+                              "faint edge of a plume is small puffs rather than a row of\n"
+                              "identical squares at low alpha.");
 
         ImGui::Separator();
         ImGui::Text("Source");

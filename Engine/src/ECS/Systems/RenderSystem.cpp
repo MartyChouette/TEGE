@@ -5204,15 +5204,21 @@ void RenderSystem::Update(f32 deltaTime) {
             static std::vector<Effects::FluidCellPick> picks;
             picks.clear();
             Effects::SelectFluidCells(*grid, vol->densityThreshold,
-                                      std::min(fluidShare, room), picks);
+                                      std::min(fluidShare, room), picks,
+                                      Effects::FluidLookSettings{vol->cellJitter,
+                                                                 vol->cellSizeVariance});
 
             for (const Effects::FluidCellPick& pick : picks) {
-                const f32 wx = origin.x + (static_cast<f32>(pick.i) - 0.5f) * cx;
-                const f32 wy = origin.y + (static_cast<f32>(pick.j) - 0.5f) * cy;
-                const f32 wz = is3D ? origin.z + (static_cast<f32>(pick.k) - 0.5f) * cz
+                // Same jitter and size scale the desktop path applies, from the
+                // same picks -- the backends differ in how they build an
+                // instance and must not differ in where it ends up.
+                const f32 wx = origin.x + (static_cast<f32>(pick.i) - 0.5f + pick.offsetX) * cx;
+                const f32 wy = origin.y + (static_cast<f32>(pick.j) - 0.5f + pick.offsetY) * cy;
+                const f32 wz = is3D ? origin.z + (static_cast<f32>(pick.k) - 0.5f + pick.offsetZ) * cz
                                     : xf->position.z;
                 const f32 a = std::min(1.0f, pick.density * pick.alphaScale) * vol->opacity;
-                finsts.push_back({wx, wy, wz, cell, cell, 0.0f,
+                const f32 fcell = cell * pick.sizeScale;
+                finsts.push_back({wx, wy, wz, fcell, fcell, 0.0f,
                                   vol->fluidColor.x, vol->fluidColor.y, vol->fluidColor.z, a,
                                   0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f});
             }

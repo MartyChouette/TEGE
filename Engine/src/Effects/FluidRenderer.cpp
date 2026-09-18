@@ -275,15 +275,18 @@ void FluidRenderer::Render(VkCommandBuffer commandBuffer,
         const usize room = MAX_FLUID_CELLS - m_InstanceDataCache.size();
         if (room == 0) break;
         m_PickCache.clear();
-        SelectFluidCells(*grid, vol->densityThreshold, std::min(shareOfCap, room), m_PickCache);
+        SelectFluidCells(*grid, vol->densityThreshold, std::min(shareOfCap, room), m_PickCache,
+                         FluidLookSettings{vol->cellJitter, vol->cellSizeVariance});
 
         for (const FluidCellPick& pick : m_PickCache) {
             FluidCellInstanceData inst;
-            inst.position.x = origin.x + (static_cast<f32>(pick.i) - 0.5f) * cellSizeX;
-            inst.position.y = origin.y + (static_cast<f32>(pick.j) - 0.5f) * cellSizeY;
-            inst.position.z = is3D ? origin.z + (static_cast<f32>(pick.k) - 0.5f) * cellSizeZ
+            // The offset is in CELL WIDTHS, so each axis multiplies by its own
+            // cell size and a non-cubic volume jitters correctly.
+            inst.position.x = origin.x + (static_cast<f32>(pick.i) - 0.5f + pick.offsetX) * cellSizeX;
+            inst.position.y = origin.y + (static_cast<f32>(pick.j) - 0.5f + pick.offsetY) * cellSizeY;
+            inst.position.z = is3D ? origin.z + (static_cast<f32>(pick.k) - 0.5f + pick.offsetZ) * cellSizeZ
                                    : transform->position.z;
-            inst.size = cellSize;
+            inst.size = cellSize * pick.sizeScale;
             inst.colorR = vol->fluidColor.x;
             inst.colorG = vol->fluidColor.y;
             inst.colorB = vol->fluidColor.z;

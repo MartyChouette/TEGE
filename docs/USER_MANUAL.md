@@ -1179,6 +1179,21 @@ about what one does, and the ones that sat out catch up.
 
 For anything that is set dressing rather than gameplay, **record it instead**.
 
+#### Why it used to look like voxels, and the two dials that fix it
+
+Fluid draws one billboard per cell. At a fixed size on a lattice that draws the
+lattice, which is why fluid read as voxels however fine the simulation under it
+was. Two per-volume settings break it up, both on the Fluid Volume inspector:
+
+| Setting | What it does |
+|---|---|
+| Cell Jitter | Moves each cell's billboard off its lattice point, measured in cell widths. Never more than half a cell, so a quad stays inside the cell it came from and the cloud's silhouette is still the simulation's. |
+| Cell Size Variance | How much of a billboard's size follows its density, so the faint edge of a plume is small puffs instead of a row of identical squares at low alpha. |
+
+Both are deterministic per cell, hashed from the cell's coordinates and never
+from time, so a still plume stays still. Setting both to 0 gives exactly the
+old lattice look, which is the right thing for a deliberately blocky style.
+
 #### Obstacles
 
 A fluid volume is stopped by the scene's colliders, live and in a bake alike.

@@ -3013,6 +3013,8 @@ json SerializeFluidVolumeComponent(const ECS::FluidVolumeComponent& vol) {
     j["fluidColor"] = SerializeVector3(vol.fluidColor);
     j["opacity"] = RF(vol.opacity);
     j["densityThreshold"] = RF(vol.densityThreshold);
+    j["cellJitter"] = RF(vol.cellJitter);
+    j["cellSizeVariance"] = RF(vol.cellSizeVariance);
     j["renderEnabled"] = RF(vol.renderEnabled);
     j["sourceRadius"] = RF(vol.sourceRadius);
     j["sourceDensity"] = RF(vol.sourceDensity);
@@ -3037,6 +3039,11 @@ ECS::FluidVolumeComponent DeserializeFluidVolumeComponent(const json& j) {
     if (j.contains("fluidColor")) vol.fluidColor = DeserializeVector3(j["fluidColor"]);
     if (j.contains("opacity")) vol.opacity = j["opacity"].get<f32>();
     if (j.contains("densityThreshold")) vol.densityThreshold = j["densityThreshold"].get<f32>();
+    // Absent in a scene authored before the look existed. The component default
+    // applies there, which is the new look -- deliberate, because the old look
+    // is the bug being fixed and a scene that wants it can say so.
+    if (j.contains("cellJitter")) vol.cellJitter = j["cellJitter"].get<f32>();
+    if (j.contains("cellSizeVariance")) vol.cellSizeVariance = j["cellSizeVariance"].get<f32>();
     if (j.contains("renderEnabled")) vol.renderEnabled = JB(j["renderEnabled"]);
     if (j.contains("sourceRadius")) vol.sourceRadius = j["sourceRadius"].get<f32>();
     if (j.contains("sourceDensity")) vol.sourceDensity = j["sourceDensity"].get<f32>();
