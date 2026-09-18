@@ -111,6 +111,35 @@ def readers(field):
     except Exception:
         return None   # unknown, not "none"
     files = [f for f in r.stdout.split('\n') if f.strip()]
+
+    # A component header is dropped wholesale below, on the grounds that the only
+    # mention of a field in it is the field's own declaration. That is wrong for a
+    # component with INLINE METHODS: ResourceComponent::Regenerate genuinely reads
+    # timeSinceLastUse, regenDelay and depletedThreshold, in the header, and all
+    # three were reported as unread. A false positive costs more than it looks --
+    # the triage goes and wires a field that already works, which means editing
+    # correct code and writing a test for behaviour that was already there.
+    #
+    # So the header counts as a reader when the field appears on a line that is
+    # NOT its declaration: a use inside a method body.
+    def header_uses_beyond_declaration(path):
+        try:
+            with open(path, encoding='utf-8', errors='replace') as fh:
+                lines = fh.read().split('\n')
+        except OSError:
+            return False
+        use = re.compile(r'\b' + re.escape(field) + r'\b')
+        # "f32 depletedThreshold = 20.0f;" -- a type, the name, then an
+        # initialiser or a terminator. Anything else mentioning it is a use.
+        decl = re.compile(r'^[A-Za-z_][\w:<>,\s\*&]*\b' + re.escape(field) + r'\b\s*(=|;|\{)')
+        for line in lines:
+            stripped = line.strip()
+            if not use.search(stripped) or stripped.startswith('//'):
+                continue
+            if decl.match(stripped):
+                continue
+            return True
+        return False
     # Parenthesised deliberately. Written without them this read
     #     (not excluded and not a component header) or 'Components' not in f
     # because `and` binds tighter than `or`, so EVERY path without "Components"
@@ -122,7 +151,8 @@ def readers(field):
         if any(f.endswith(s) for s in EXCLUDE_SUFFIXES):
             return False                       # storable/editable, not effective
         if f.endswith('.h') and 'Components' in f:
-            return False                       # the declaration itself
+            # Its declaration only, unless a method in the same header uses it.
+            return header_uses_beyond_declaration(f)
         return True
 
     return [f for f in files if is_reader(f)]
