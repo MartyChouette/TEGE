@@ -1,6 +1,7 @@
 #include "Enjin/ECS/Components/PreRenderedBackground.h"
 #include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/AI/Navmesh.h"
 #include "Enjin/ECS/Components/NavmeshVolume.h"
 #include "Enjin/AI/NavmeshBake.h"
 #include "Enjin/ECS/Components/BrushSolid.h"
@@ -3699,6 +3700,87 @@ void EditorLayer::DrawDoorComponent(ECS::Entity entity) {
         if (ImGui::Button("Remove##Door")) {
             RemoveComponentWithUndo<ECS::DoorComponent>(entity, "door", "Door");
         }
+    }
+}
+
+// Following an authored path, with no script involved.
+//
+// The component existed with a helper class, no system, no serializer and no
+// UI, so adding one did nothing and there was no way to give it a route. The
+// waypoint list here is the authoring path: Add Point drops one at the
+// entity's own position, which is where a person is already looking.
+void EditorLayer::DrawPathFollowerComponent(ECS::Entity entity) {
+    auto* follower = m_World->GetComponent<AI::PathFollowerComponent>(entity);
+    if (!follower) return;
+
+    if (!UI::SectionHeader("Path Follower", ImGuiTreeNodeFlags_DefaultOpen)) return;
+
+    InspectorUndo::DragFloat(m_UndoRedo, "Speed##PathFollow", &follower->speed, 0.1f, 0.0f, 100.0f);
+    InspectorUndo::DragFloat(m_UndoRedo, "Turn Speed##PathFollow", &follower->turnSpeed, 1.0f, 0.0f, 1440.0f);
+    ImGui::SetItemTooltip("Degrees per second. Only used when Smooth Rotation is on.");
+    InspectorUndo::DragFloat(m_UndoRedo, "Arrival Radius##PathFollow", &follower->arrivalRadius, 0.05f, 0.01f, 20.0f);
+    ImGui::SetItemTooltip("How close counts as reaching a waypoint.");
+    InspectorUndo::DragFloat(m_UndoRedo, "Slowdown Radius##PathFollow", &follower->slowdownRadius, 0.1f, 0.0f, 50.0f);
+    ImGui::SetItemTooltip("Start easing off this far out. 0 arrives at full speed.");
+    InspectorUndo::Checkbox(m_UndoRedo, "Smooth Rotation##PathFollow", &follower->smoothRotation);
+    InspectorUndo::Checkbox(m_UndoRedo, "Auto Start##PathFollow", &follower->autoStart);
+    ImGui::SetItemTooltip("Begin following as soon as the scene runs. Off means a\n"
+                          "script or a navmesh query provides the path instead.");
+    InspectorUndo::Checkbox(m_UndoRedo, "Loop##PathFollow", &follower->loop);
+
+    ImGui::Separator();
+    ImGui::Text("Waypoints (%zu)", follower->waypoints.size());
+    if (follower->waypoints.empty()) {
+        // Naming what to do beats an empty box: this component does nothing at
+        // all without a route, and that is not obvious from an empty list.
+        ImGui::TextDisabled("No route yet. Move the entity where you want the");
+        ImGui::TextDisabled("path to start and press Add Point.");
+    }
+
+    int removeAt = -1;
+    for (usize n = 0; n < follower->waypoints.size(); ++n) {
+        ImGui::PushID(static_cast<int>(n));
+        f32 v[3] = {follower->waypoints[n].x, follower->waypoints[n].y, follower->waypoints[n].z};
+        char label[32];
+        std::snprintf(label, sizeof(label), "%zu", n);
+        if (ImGui::DragFloat3(label, v, 0.1f)) {
+            follower->waypoints[n] = Math::Vector3(v[0], v[1], v[2]);
+        }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Here")) {
+            if (auto* xf = m_World->GetComponent<ECS::TransformComponent>(entity)) {
+                follower->waypoints[n] = xf->position;
+            }
+        }
+        ImGui::SetItemTooltip("Move this waypoint to the entity's position.");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("X")) removeAt = static_cast<int>(n);
+        ImGui::PopID();
+    }
+    if (removeAt >= 0) {
+        follower->waypoints.erase(follower->waypoints.begin() + removeAt);
+    }
+
+    if (ImGui::Button("Add Point##PathFollow")) {
+        Math::Vector3 at(0.0f, 0.0f, 0.0f);
+        if (auto* xf = m_World->GetComponent<ECS::TransformComponent>(entity)) at = xf->position;
+        follower->waypoints.push_back(at);
+    }
+    ImGui::SetItemTooltip("Adds a waypoint at the entity's current position.");
+    ImGui::SameLine();
+    if (ImGui::Button("Clear##PathFollow")) follower->waypoints.clear();
+
+    // Runtime state, read-only. A person debugging a route wants to see where
+    // the follower thinks it is without opening a console.
+    ImGui::Separator();
+    ImGui::TextDisabled("%s, waypoint %u of %zu",
+                        follower->hasArrived ? "arrived"
+                                             : (follower->isFollowing ? "following" : "idle"),
+                        follower->currentWaypointIndex,
+                        follower->currentPath.waypoints.size());
+
+    if (ImGui::Button("Remove##PathFollow")) {
+        RemoveComponentWithUndo<AI::PathFollowerComponent>(entity, "pathFollower", "Path Follower");
     }
 }
 

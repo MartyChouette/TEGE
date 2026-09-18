@@ -246,6 +246,19 @@ private:
  * @brief Component for following a path
  */
 struct PathFollowerComponent {
+    // AUTHORED waypoints, in world space.
+    //
+    // Without these the component could only ever be driven by a script
+    // calling PathFollower::SetPath, which meant a person with no scripting
+    // had no way to make an entity follow anything -- the component had a
+    // helper, no system, no serializer and no inspector, so placing one did
+    // nothing at all. These are what the system starts from.
+    std::vector<Math::Vector3> waypoints;
+    bool autoStart = true;      // begin following as soon as the scene runs
+    bool loop = false;          // on arrival, start again from the first point
+
+    // Runtime path. Copied from `waypoints` on start, or replaced wholesale by
+    // a script or a navmesh query -- which is why it stays separate from them.
     PathResult currentPath;
     u32 currentWaypointIndex = 0;
     f32 speed = 5.0f;

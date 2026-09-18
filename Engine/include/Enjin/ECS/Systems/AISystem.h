@@ -25,6 +25,10 @@ public:
 
     void SetWorld(World* world) { m_World = world; }
 
+    // Move entities along their authored path. Called from Update; separate so
+    // a test can drive it without a navmesh or an AI controller.
+    void UpdatePathFollowers(f32 deltaTime);
+
     // Enable/disable all AI updates (disabled in editor mode, enabled in play mode)
     void SetEnabled(bool enabled) { m_Enabled = enabled; }
     bool IsEnabled() const { return m_Enabled; }

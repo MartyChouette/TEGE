@@ -2,6 +2,7 @@
 #include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/Platform/Desktop.h"
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/AI/Navmesh.h"
 #include "Enjin/ECS/Components/NavmeshVolume.h"
 #include "Enjin/ECS/Components/BrushSolid.h"
 #include "Enjin/Editor/EditorWidgets.h"
@@ -889,6 +890,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::GravityZoneComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::GravityZoneComponent>(e); },
             "gravityZone"},
+        {"Path Follower", "AI", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<AI::PathFollowerComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<AI::PathFollowerComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<AI::PathFollowerComponent>(e); },
+            "pathFollower"},
         {"Fluid Volume", "Effects", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::FluidVolumeComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::FluidVolumeComponent>(e); },
@@ -1954,6 +1960,10 @@ void EditorLayer::DrawInspectorPanel() {
         // Door component (G7 hinged door)
         if (m_World->HasComponent<ECS::DoorComponent>(m_PrimarySelected)) {
             DrawDoorComponent(m_PrimarySelected);
+        }
+
+        if (m_World->HasComponent<AI::PathFollowerComponent>(m_PrimarySelected)) {
+            DrawPathFollowerComponent(m_PrimarySelected);
         }
 
         // Fluid Volume component

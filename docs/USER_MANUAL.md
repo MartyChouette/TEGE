@@ -1860,6 +1860,29 @@ Marks an entity as part of an object pool for efficient reuse (e.g., bullets, pa
 
 ### 5.19 Footstep Audio
 
+#### PathFollowerComponent
+
+Moves an entity along a route you author, with no script involved. Add it from
+**Add Component > AI > Path Follower**, put the entity where the route should
+start, and press **Add Point** for each waypoint; each point can be nudged by
+hand or snapped to the entity's current position with **Here**.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `waypoints` | list | [] | The authored route, in world space. Empty means the follower does nothing. |
+| `autoStart` | bool | true | Start following as soon as the scene runs. Turn it off when a script or a navmesh query will supply the path instead. |
+| `loop` | bool | false | On arrival, start again from the first point. |
+| `speed` | f32 | 5.0 | Units per second. |
+| `turnSpeed` | f32 | 180.0 | Degrees per second. Only used when `smoothRotation` is on. |
+| `arrivalRadius` | f32 | 0.5 | How close counts as reaching a waypoint. |
+| `slowdownRadius` | f32 | 2.0 | Start easing off this far out. 0 arrives at full speed. |
+| `smoothRotation` | bool | true | Turn towards the next waypoint at `turnSpeed` rather than snapping. |
+
+Following runs inside the AI system, which is disabled outside play mode -- so
+a follower never drags an entity around while you are placing it. Only the
+route and the tuning are saved; where the follower had got to is not, so a
+scene always opens at the start of its path.
+
 #### FootstepComponent
 
 Surface-aware footstep sounds. Plays different audio clips based on the surface the character is walking on.

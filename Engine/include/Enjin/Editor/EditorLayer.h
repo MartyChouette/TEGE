@@ -748,6 +748,7 @@ private:
     void DrawLadderComponent(ECS::Entity entity);
     void DrawRopeComponent(ECS::Entity entity);
     void DrawDoorComponent(ECS::Entity entity);
+    void DrawPathFollowerComponent(ECS::Entity entity);
     void DrawFluidVolumeComponent(ECS::Entity entity);
     // Recording a take and playing one back. Under Fluid Volume rather than in
     // a window of its own: a recording is not a separate thing you own, it is

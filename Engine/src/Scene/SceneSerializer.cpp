@@ -1,6 +1,7 @@
 #include <vector>
 #include <unordered_set>
 #include "Enjin/Scene/SceneSerializer.h"
+#include "Enjin/AI/Navmesh.h"
 #include "Enjin/ECS/Components/GeneratedGeometry.h"
 #include "Enjin/ECS/Components/ProceduralMesh.h"
 #include "Enjin/ECS/Components/BrushSolid.h"
@@ -2980,6 +2981,50 @@ ECS::PostProcessVolumeComponent DeserializePostProcessVolumeComponent(const json
 // the playback system's memory of having already tried this file, and saving
 // a remembered failure into the scene would mean a recording that was missing
 // once is never retried, even after the file is put back.
+// Only what a person authored. currentPath, currentWaypointIndex, isFollowing
+// and hasArrived are where the follower HAS GOT TO, and saving those would make
+// a scene open with the entity halfway along its route -- and the std::function
+// callbacks cannot be serialized at all.
+json SerializePathFollowerComponent(const AI::PathFollowerComponent& f) {
+    json j;
+    json pts = json::array();
+    for (const auto& w : f.waypoints) {
+        pts.push_back({RF(w.x), RF(w.y), RF(w.z)});
+    }
+    j["waypoints"] = pts;
+    j["autoStart"] = f.autoStart;
+    j["loop"] = f.loop;
+    j["speed"] = RF(f.speed);
+    j["turnSpeed"] = RF(f.turnSpeed);
+    j["arrivalRadius"] = RF(f.arrivalRadius);
+    j["slowdownRadius"] = RF(f.slowdownRadius);
+    j["smoothRotation"] = f.smoothRotation;
+    return j;
+}
+
+AI::PathFollowerComponent DeserializePathFollowerComponent(const json& j) {
+    AI::PathFollowerComponent f;
+    if (j.contains("waypoints") && j["waypoints"].is_array()) {
+        // Capped like every other unbounded array a scene can carry: a hostile
+        // or corrupt file must not turn into a multi-gigabyte reserve.
+        const usize kMaxWaypoints = 100000;
+        for (const auto& w : j["waypoints"]) {
+            if (f.waypoints.size() >= kMaxWaypoints) break;
+            if (!w.is_array() || w.size() < 3) continue;
+            f.waypoints.push_back(Math::Vector3(w[0].get<f32>(), w[1].get<f32>(),
+                                                w[2].get<f32>()));
+        }
+    }
+    if (j.contains("autoStart")) f.autoStart = JB(j["autoStart"]);
+    if (j.contains("loop")) f.loop = JB(j["loop"]);
+    if (j.contains("speed")) f.speed = j["speed"].get<f32>();
+    if (j.contains("turnSpeed")) f.turnSpeed = j["turnSpeed"].get<f32>();
+    if (j.contains("arrivalRadius")) f.arrivalRadius = j["arrivalRadius"].get<f32>();
+    if (j.contains("slowdownRadius")) f.slowdownRadius = j["slowdownRadius"].get<f32>();
+    if (j.contains("smoothRotation")) f.smoothRotation = JB(j["smoothRotation"]);
+    return f;
+}
+
 json SerializeFluidPlaybackComponent(const ECS::FluidPlaybackComponent& p) {
     json j;
     j["bakePath"] = p.bakePath;
@@ -9742,6 +9787,7 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
         ENJIN_SERDES("fixedJoint", ECS::FixedJointComponent, SerializeFixedJointComponent, DeserializeFixedJointComponent),
         ENJIN_SERDES("flowerParticleConfig", ECS::FlowerParticleConfigComponent, SerializeFlowerParticleConfigComponent, DeserializeFlowerParticleConfigComponent),
         ENJIN_SERDES("flowerStem", ECS::FlowerStemComponent, SerializeFlowerStemComponent, DeserializeFlowerStemComponent),
+        ENJIN_SERDES("pathFollower", AI::PathFollowerComponent, SerializePathFollowerComponent, DeserializePathFollowerComponent),
         ENJIN_SERDES("fluidPlayback", ECS::FluidPlaybackComponent, SerializeFluidPlaybackComponent, DeserializeFluidPlaybackComponent),
         ENJIN_SERDES("fluidVolume", ECS::FluidVolumeComponent, SerializeFluidVolumeComponent, DeserializeFluidVolumeComponent),
         ENJIN_SERDES("followTarget", ECS::FollowTargetComponent, SerializeFollowTargetComponent, DeserializeFollowTargetComponent),

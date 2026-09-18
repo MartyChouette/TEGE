@@ -1,4 +1,5 @@
 #include "Enjin/ECS/Systems/AISystem.h"
+#include "Enjin/AI/Navmesh.h"
 #include "Enjin/ECS/Components/NavmeshVolume.h"
 #include "Enjin/Math/Math.h"
 #include "Enjin/Logging/Log.h"
@@ -97,6 +98,11 @@ void AISystem::Update(f32 deltaTime) {
         DrawNavmeshDebug();
     }
 
+    // Entities following an authored path. Before this, PathFollowerComponent
+    // had a helper class and nothing that called it per frame, so placing one
+    // in a scene did nothing whatsoever.
+    UpdatePathFollowers(deltaTime);
+
     // Iterate all entities with AIControllerComponent + TransformComponent.
     // Storage pointers hoisted out of the loop (audit 2026-08-31): direct
     // sparse-set Get() instead of per-entity type-ID hash lookups, and the
@@ -171,6 +177,68 @@ void AISystem::Update(f32 deltaTime) {
 // ============================================================================
 // State Processors
 // ============================================================================
+
+void AISystem::UpdatePathFollowers(f32 deltaTime) {
+    if (!m_Enabled || !m_World || deltaTime <= 0.0f) return;
+
+    auto* followStore = m_World->GetComponentStorage<AI::PathFollowerComponent>();
+    auto* xformStore = m_World->GetComponentStorage<TransformComponent>();
+    if (!followStore || !xformStore) return;
+
+    const bool checkValid = m_World->HasPendingDestructions();
+    for (Entity entity : followStore->GetEntities()) {
+        if (checkValid && !m_World->IsValid(entity)) continue;
+
+        auto* follower = followStore->Get(entity);
+        auto* transform = xformStore->Get(entity);
+        if (!follower || !transform) continue;
+
+        // Start from the authored waypoints. Only when the component has no
+        // path of its own: a script that called SetPath, or a navmesh query,
+        // owns the path from then on and must not be overwritten every frame.
+        if (follower->autoStart && !follower->isFollowing && !follower->hasArrived
+            && follower->currentPath.waypoints.empty() && !follower->waypoints.empty()) {
+            AI::PathResult authored;
+            authored.waypoints = follower->waypoints;
+            authored.success = true;
+            AI::PathFollower::SetPath(*follower, authored);
+        }
+
+        if (!follower->isFollowing) {
+            // Arrived, and asked to go round again. Restarting here rather
+            // than inside PathFollower::Update keeps that helper a pure
+            // movement step, which is what makes it testable on its own.
+            if (follower->loop && follower->hasArrived && !follower->waypoints.empty()) {
+                AI::PathResult authored;
+                authored.waypoints = follower->waypoints;
+                authored.success = true;
+                AI::PathFollower::SetPath(*follower, authored);
+            } else {
+                continue;
+            }
+        }
+
+        // The helper works in position/forward, which is what a path is about;
+        // the transform stores a quaternion. Forward comes out of the rotation
+        // and the new heading goes back through Quaternion::FromEuler -- never
+        // a hand-rolled axis product, which is what corrupted compound
+        // rotations the last time someone built one by hand.
+        Math::Vector3 position = transform->position;
+        Math::Vector3 forward = transform->rotation.Rotate(Math::Vector3(0.0f, 0.0f, 1.0f));
+
+        AI::PathFollower::Update(position, forward, *follower, deltaTime);
+
+        transform->position = position;
+        {
+            // Yaw only. A follower that pitched to face a waypoint on a slope
+            // would tip the entity over, and nothing here has any business
+            // touching roll.
+            const f32 yaw = std::atan2(forward.x, forward.z);
+            transform->rotation = Math::Quaternion::FromEuler(Math::Vector3(0.0f, yaw, 0.0f));
+        }
+        transform->worldMatrixDirty = true;
+    }
+}
 
 void AISystem::ProcessIdle(Entity entity, AIControllerComponent& ai, TransformComponent& transform,
                            AgentState& state, f32 dt) {
