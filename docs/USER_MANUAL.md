@@ -425,6 +425,15 @@ Gives the entity a human-readable display name shown in the hierarchy.
 
 Stores the vertex and index data used by the renderer to draw geometry. Vertices contain position, normal, UV, color, tangent, bone weights, and bone indices.
 
+**Getting geometry out.** Right-click an entity in the Hierarchy and choose
+**Export as Model...** to write a `.glb`. Select several first and the menu
+offers to export the whole selection as one file, each piece carrying its world
+placement, so re-importing puts the arrangement back as it was. Geometry,
+per-piece placement and material colours travel; textures, skinning, animation
+and per-sub-mesh material slots do not. Entities in the selection with no mesh
+(a light, a camera) are skipped and counted in the log rather than failing the
+export.
+
 Two tools sit in the inspector next to the triangle count they change, and both
 are undoable:
 

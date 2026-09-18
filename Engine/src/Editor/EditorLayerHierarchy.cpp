@@ -1,4 +1,6 @@
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/Assets/GLBExporter.h"
+#include "Enjin/Platform/Paths.h"
 #include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Editor/ScenePicker.h"
@@ -625,6 +627,69 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
         }
         if (ImGui::MenuItem("Focus", "F")) {
             FocusOnEntity(entity);
+        }
+
+        // Get geometry OUT of the editor.
+        //
+        // The engine could read glTF and never write it, so anything authored
+        // here -- a remeshed model, a spline chain, a group of pieces placed by
+        // hand -- could not be opened in Blender or handed to anyone. Exporting
+        // the SELECTION rather than the scene is the useful unit: it is what is
+        // already highlighted, and each piece carries its world transform so a
+        // re-import puts the arrangement back.
+        {
+            const bool multi = m_SelectedEntities.size() > 1 && IsSelected(entity);
+            char exportLabel[64];
+            if (multi) {
+                std::snprintf(exportLabel, sizeof(exportLabel),
+                              "Export Selected (%d) as Model...",
+                              static_cast<int>(m_SelectedEntities.size()));
+            } else {
+                std::snprintf(exportLabel, sizeof(exportLabel), "Export as Model...");
+            }
+            if (ImGui::MenuItem(exportLabel)) {
+                std::vector<ECS::Entity> toExport;
+                if (multi) {
+                    toExport.assign(m_SelectedEntities.begin(), m_SelectedEntities.end());
+                } else {
+                    toExport.push_back(entity);
+                }
+
+                std::string suggested = "model.glb";
+                if (!multi) {
+                    if (auto* nc = m_World->GetComponent<ECS::NameComponent>(entity)) {
+                        if (!nc->name.empty() && Platform::IsSafeFileName(nc->name)) {
+                            suggested = nc->name + ".glb";
+                        }
+                    }
+                }
+
+                std::vector<FileFilter> filters = {{"glTF binary", "*.glb"}};
+                const std::string path =
+                    FileDialog::SaveFile("Export Model", filters, "", suggested);
+                if (!path.empty()) {
+                    const auto r = Assets::ExportEntitiesToGLB(m_World, toExport, path);
+                    if (r.success) {
+                        // Says what LEFT, including what did not: a selection
+                        // holding a light and a mesh exports one thing, and
+                        // silence about the other reads as a lost object.
+                        if (r.skipped > 0) {
+                            ENJIN_LOG_INFO(Editor,
+                                "Exported %u mesh(es), %u vertices to %s (%u selected had no mesh)",
+                                r.meshesWritten, r.verticesWritten, path.c_str(), r.skipped);
+                        } else {
+                            ENJIN_LOG_INFO(Editor, "Exported %u mesh(es), %u vertices to %s",
+                                           r.meshesWritten, r.verticesWritten, path.c_str());
+                        }
+                    } else {
+                        ENJIN_LOG_WARN(Editor, "Export failed: %s", r.error.c_str());
+                    }
+                }
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Writes a .glb. Geometry, per-piece placement and material\n"
+                                  "colours travel; textures, skinning and animation do not.");
+            }
         }
         // Group the multi-selection under a new empty entity. The group parent
         // sits at the origin with identity transform, so nothing moves.
