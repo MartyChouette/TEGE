@@ -81,6 +81,11 @@ struct BoneSSBO {
 @group(2) @binding(7) var matcapSmp: sampler;
 @group(2) @binding(8) var scrollReflTex: texture_2d<f32>;
 @group(2) @binding(9) var scrollReflSmp: sampler;
+// Height map for parallax occlusion mapping. Defaults to the BLACK texture when
+// a material has none: height 0 everywhere means the march finds the surface on
+// its first step and shifts the UV by nothing.
+@group(2) @binding(10) var heightTex: texture_2d<f32>;
+@group(2) @binding(11) var heightSmp: sampler;
 
 struct ShadowViewProjection {
     view: mat4x4<f32>,
@@ -252,6 +257,53 @@ fn vs_main(in: VertexInput, @builtin(instance_index) instanceIdx: u32) -> Vertex
     out.color = in.color;
     out.uv1 = in.uv1;
     return out;
+}
+
+// Parallax occlusion mapping, ported from triangle.frag:860. The last
+// capability Vulkan had and WebGPU did not.
+//
+// Marches the view ray through the height field in tangent space until it
+// passes below the surface, then interpolates the last two steps. Layer count
+// is adaptive: more steps at grazing angles, where the parallax shift is
+// largest and stepping artefacts show.
+//
+// textureSampleLevel, not textureSample. The loop is not uniform control flow
+// -- its trip count depends on the height values it reads -- and an implicit-LOD
+// sample there is exactly what WGSL forbids. Explicit level 0 is legal
+// anywhere, and a parallax march wants the base mip regardless.
+fn parallaxOcclusionMapping(texCoords: vec2<f32>, viewDirTangent: vec3<f32>,
+                            parallaxScale: f32) -> vec2<f32> {
+    let minLayers = 8.0;
+    let maxLayers = 32.0;
+    let numLayers = mix(maxLayers, minLayers, abs(dot(vec3<f32>(0.0, 0.0, 1.0), viewDirTangent)));
+
+    let layerDepth = 1.0 / numLayers;
+    let P = viewDirTangent.xy * parallaxScale;
+    let deltaTexCoords = P / numLayers;
+
+    var currentLayerDepth = 0.0;
+    var currentTexCoords = texCoords;
+    var currentDepthMapValue = textureSampleLevel(heightTex, heightSmp, currentTexCoords, 0.0).r;
+
+    // Bounded, unlike the desktop while-loop: maxLayers is 32, and a runaway
+    // here would hang the GPU rather than drop a frame.
+    for (var i = 0; i < 32; i = i + 1) {
+        if (currentLayerDepth >= currentDepthMapValue) { break; }
+        currentTexCoords = currentTexCoords - deltaTexCoords;
+        currentDepthMapValue = textureSampleLevel(heightTex, heightSmp, currentTexCoords, 0.0).r;
+        currentLayerDepth = currentLayerDepth + layerDepth;
+    }
+
+    let prevTexCoords = currentTexCoords + deltaTexCoords;
+    let afterDepth = currentDepthMapValue - currentLayerDepth;
+    let beforeDepth = textureSampleLevel(heightTex, heightSmp, prevTexCoords, 0.0).r
+                      - currentLayerDepth + layerDepth;
+    let denom = afterDepth - beforeDepth;
+    // Guard the divide: equal depths mean the march never actually crossed the
+    // surface, and the raw ratio would be inf/NaN and take the whole pixel with
+    // it.
+    let weight = select(0.0, afterDepth / denom, abs(denom) > 0.00001);
+    return prevTexCoords * weight + currentTexCoords * (1.0 - weight);
 }
 
 fn distributionGGX(N: vec3<f32>, H: vec3<f32>, roughness: f32) -> f32 {
@@ -435,7 +487,31 @@ fn shadeSurface(in: VertexOutput) -> vec4<f32> {
     // Affine texturing divides the w the vertex stage multiplied in. clipW is
     // 1.0 when the flag is off, so this is one unconditional divide either way
     // and the sample below stays in uniform control flow.
-    let uv = in.uv / in.clipW;
+    var uv = in.uv / in.clipW;
+
+    // Parallax occlusion mapping (bit 10 + a non-zero scale, matching
+    // triangle.frag:1199). Shifts the UV along the view ray through the height
+    // field BEFORE any material texture is sampled, which is the whole effect.
+    //
+    // Branching here is legal where branching around textureSample is not: the
+    // march uses textureSampleLevel with an explicit LOD, and only
+    // implicit-derivative sampling requires uniform control flow. That matters
+    // for cost -- the march is up to 32 samples and must not run on every
+    // fragment of every material that has no height map.
+    if ((object.flags & 1024) != 0 && object.parallaxScale > 0.0) {
+        let Vw = normalize(viewProj.viewPos - in.world_pos);
+        let Nw = normalize(in.world_normal);
+        let Tw = normalize(in.world_tangent);
+        let Bw = normalize(in.world_bitangent);
+        // World -> tangent is the TRANSPOSE of the tangent->world basis, which
+        // for an orthonormal basis is three dots.
+        let viewDirTangent = normalize(vec3<f32>(dot(Vw, Tw), dot(Vw, Bw), dot(Vw, Nw)));
+        // Degenerate tangents (an unskinned import with no tangent data) make
+        // that basis meaningless; desktop has the same guard before its TBN.
+        if (dot(in.world_tangent, in.world_tangent) > 0.001) {
+            uv = parallaxOcclusionMapping(uv, viewDirTangent, object.parallaxScale);
+        }
+    }
 
     // Stipple transparency (bit 23): a 4x4 Bayer screen-door instead of alpha
     // blending, so a transparent surface stays sorted and cheap. Same matrix

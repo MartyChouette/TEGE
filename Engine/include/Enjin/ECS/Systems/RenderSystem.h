@@ -230,6 +230,7 @@ struct EntityRenderData {
     bool texBindGroupValid = false;             // true if textures loaded for this entity
     bool hasMatcap = false;                     // matcap texture bound (drives ObjectData.matcapBlend)
     bool hasScrollRefl = false;                 // scrolling-reflection texture bound
+    bool hasHeight = false;                     // height map bound (drives parallax flag bit 10)
     // Skinned meshes cannot share the frame's object bind group, because
     // binding 1 is their own bone buffer. Cached here and rebuilt only when the
     // shared object buffer is reallocated, rather than created and destroyed

@@ -1234,8 +1234,14 @@ void RenderSystem::Initialize() {
     };
     m_WebObjectLayout = bindMgr->CreateBindGroupLayout(objectLayoutDesc);
 
-    // Group 2: Textures (5 texture + 5 sampler: baseColor/normal/MR +
-    // matcap + scrolling-reflection for the hand-crafted reflection styles)
+    // Group 2: Textures (6 texture + 6 sampler: baseColor/normal/MR +
+    // matcap + scrolling-reflection for the hand-crafted reflection styles +
+    // height for parallax occlusion mapping)
+    //
+    // Every entry here has to match WebShaderData.h's @group(2) bindings and
+    // the entries list in the per-material bind group below, or the draw fails
+    // validation and the canvas goes black with only a console line about an
+    // incompatible bind group. Three places, one list.
     Renderer::GPUBindGroupLayoutDesc texLayoutDesc;
     texLayoutDesc.entries = {
         {0, BType::SampledTexture, SStage::Fragment, 0},
@@ -1248,6 +1254,8 @@ void RenderSystem::Initialize() {
         {7, BType::Sampler, SStage::Fragment, 0},
         {8, BType::SampledTexture, SStage::Fragment, 0},
         {9, BType::Sampler, SStage::Fragment, 0},
+        {10, BType::SampledTexture, SStage::Fragment, 0},   // height (parallax)
+        {11, BType::Sampler, SStage::Fragment, 0},
     };
     m_WebTextureLayout = bindMgr->CreateBindGroupLayout(texLayoutDesc);
 
@@ -1601,6 +1609,8 @@ void RenderSystem::Initialize() {
         {7, {}, 0, 0, {}, m_WebDefaultWhiteTex},
         {8, {}, 0, 0, m_WebDefaultBlackTex, {}},   // scrollRefl (gated by strength=0)
         {9, {}, 0, 0, {}, m_WebDefaultBlackTex},
+        {10, {}, 0, 0, m_WebDefaultBlackTex, {}},  // height (gated by flag bit 10)
+        {11, {}, 0, 0, {}, m_WebDefaultBlackTex},
     };
     m_WebDefaultTexBindGroup = bindMgr->CreateBindGroup(defTexBGDesc);
 
@@ -4267,17 +4277,29 @@ void RenderSystem::Update(f32 deltaTime) {
                 // Hand-crafted reflection styles: matcap + scrolling reflection
                 auto matcapT = WebGetOrLoadTexture(mat ? mat->matcapTexturePath : std::string());
                 auto scrollT = WebGetOrLoadTexture(mat ? mat->scrollReflectionTexturePath : std::string());
+                // Height map for parallax occlusion mapping -- the last
+                // capability Vulkan had and WebGPU did not.
+                auto heightT = WebGetOrLoadTexture(mat ? mat->heightTexturePath : std::string());
                 rd.hasMatcap = matcapT.IsValid();
                 rd.hasScrollRefl = scrollT.IsValid();
+                // Recorded on rd rather than read later: the texture handles go
+                // out of scope at the end of this block, and the ObjectData fill
+                // that needs to know is further down.
+                rd.hasHeight = heightT.IsValid();
 
                 // Only create custom bind group if at least one texture loaded
                 if (baseColorTex.IsValid() || normalTex.IsValid() || mrTex.IsValid() ||
-                    matcapT.IsValid() || scrollT.IsValid()) {
+                    matcapT.IsValid() || scrollT.IsValid() || heightT.IsValid()) {
                     auto bc = baseColorTex.IsValid() ? baseColorTex : m_WebDefaultWhiteTex;
                     auto nm = normalTex.IsValid() ? normalTex : m_WebDefaultNormalTex;
                     auto mr = mrTex.IsValid() ? mrTex : m_WebDefaultBlackTex;
                     auto mc = matcapT.IsValid() ? matcapT : m_WebDefaultWhiteTex;
                     auto sr = scrollT.IsValid() ? scrollT : m_WebDefaultBlackTex;
+                    // BLACK when absent: height 0 everywhere means the parallax
+                    // loop finds the surface at depth 0 on its first step and
+                    // shifts the UV by nothing. A white default would displace
+                    // every untextured surface by the full scale.
+                    auto ht = heightT.IsValid() ? heightT : m_WebDefaultBlackTex;
 
                     Renderer::GPUBindGroupDesc texBGDesc;
                     texBGDesc.layout = m_WebTextureLayout;
@@ -4292,6 +4314,8 @@ void RenderSystem::Update(f32 deltaTime) {
                         {7, {}, 0, 0, {}, mc},
                         {8, {}, 0, 0, sr, {}},
                         {9, {}, 0, 0, {}, sr},
+                        {10, {}, 0, 0, ht, {}},
+                        {11, {}, 0, 0, {}, ht},
                     };
                     auto* bm = m_Renderer->GetBindGroupManager();
                     if (bm) rd.texBindGroup = bm->CreateBindGroup(texBGDesc);
@@ -4369,6 +4393,11 @@ void RenderSystem::Update(f32 deltaTime) {
                 // and 7 mean different things per backend), and every bit that
                 // agrees is one less false friend. m_Global* have no web
                 // equivalent yet; these are the per-material ones.
+                // Parallax (bit 10) opts in only when a height map loaded. The
+                // shader also requires parallaxScale > 0, matching
+                // triangle.frag:1199 -- both, so a material with a height map
+                // and a zero scale costs nothing.
+                if (rd.hasHeight) obj.flags |= (1 << 10);
                 if (mat->flatShading)  obj.flags |= (1 << 20);
                 if (mat->uvQuantize)   obj.flags |= (1 << 12);
                 if (mat->gouraudOnly)  obj.flags |= (1 << 13);
