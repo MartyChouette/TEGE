@@ -524,8 +524,10 @@ ENJIN_TEST(FbxImportProbe, SkinnedFbxImportsAtVisibleWorldSize) {
     const char* kProbePath =
         "C:/Users/jerma/Downloads/FBX-20260807T212605Z-1-001/FBX/ShibaInu.fbx";
     if (!fs::exists(kProbePath)) {
-        printf("  [skip] probe FBX not present: %s\n", kProbePath);
-        return;
+        // A bare return here reported PASS, which is the exact failure the
+        // framework's empty-test guard and ENJIN_SKIP were added for -- and this
+        // probe is the case ENJIN_SKIP's own comment names.
+        ENJIN_SKIP("probe FBX not present on this machine");
     }
 
     // Arrange

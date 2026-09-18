@@ -385,4 +385,44 @@ ENJIN_TEST(Network_Regression, ReplayWindow_Reset_ClearsState) {
 }
 #endif  // HAS_NETWORK_SECURITY
 
+// Every __has_include guard above is currently TRUE, so all 39 tests in this
+// file compile and run. That is the only reason the file's count is what it is,
+// and nothing said so: if one of those headers is renamed or moved, its tests
+// stop existing, the run still says PASS, and the total quietly comes out
+// smaller. An absence is invisible in a way a failure never is.
+//
+// The guards were added so the file would compile "if individual subsystems are
+// not yet wired into the test build". They all are now, so a missing header is
+// no longer an expected state -- it is a rename nobody noticed, and this is the
+// one test that says which one.
+ENJIN_TEST(HardeningRegression, EverySubsystemThisFileCoversIsStillPresent) {
+    // Arrange / Act / Assert: each of these is a group of tests above that would
+    // otherwise disappear without a word.
+#ifndef HAS_MESH_FACTORY
+    ENJIN_EXPECT_STR_EQ("Enjin/Renderer/MeshFactory.h", "missing: 6 tests did not compile");
+#endif
+#ifndef HAS_PREFAB
+    ENJIN_EXPECT_STR_EQ("Enjin/Assets/Prefab.h", "missing: 5 tests did not compile");
+#endif
+#ifndef HAS_COLLAB
+    ENJIN_EXPECT_STR_EQ("Enjin/Editor/CollaborativeEditing.h", "missing: 4 tests did not compile");
+#endif
+#ifndef HAS_SHADER_GRAPH
+    ENJIN_EXPECT_STR_EQ("Enjin/Editor/ShaderGraph.h", "missing: 3 tests did not compile");
+#endif
+#ifndef HAS_CAMERA
+    ENJIN_EXPECT_STR_EQ("Enjin/ECS/Components/Camera.h", "missing: 5 tests did not compile");
+#endif
+#ifndef HAS_ASSET_PACKER
+    ENJIN_EXPECT_STR_EQ("Enjin/Build/AssetPacker.h", "missing: 4 tests did not compile");
+#endif
+#ifndef HAS_NETWORK_TYPES
+    ENJIN_EXPECT_STR_EQ("Enjin/Networking/NetworkTypes.h", "missing: 6 tests did not compile");
+#endif
+#ifndef HAS_NETWORK_SECURITY
+    ENJIN_EXPECT_STR_EQ("Enjin/Networking/NetworkSecurity.h", "missing: 6 tests did not compile");
+#endif
+    ENJIN_SURVIVED("every guarded header resolved, so the whole file compiled");
+}
+
 ENJIN_TEST_MAIN()

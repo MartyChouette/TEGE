@@ -85,9 +85,16 @@ jobs:
 
       - name: Run tests
         working-directory: build
-        # The four env-gated suites need an audio device / packed assets the
-        # runner doesn't have; GPU suites need a real GPU.
-        run: ctest -C Release --output-on-failure -E "TestAudio|TestAudioTypes|TestAssetPack|TestAssetLoaders"
+        # TestAudio, TestAudioTypes, TestAssetPack and TestAssetLoaders were
+        # excluded here by name, described as "env-gated suites [that] need an
+        # audio device / packed assets". They are not gated on anything: between
+        # the four files there is not one getenv and not one ENJIN_SKIP, and most
+        # of what they hold is enum values, named constants and struct defaults
+        # that need no environment at all. 91 tests and 290 assertions were
+        # skipped on every push because they shared a binary with something that
+        # sounded expensive. The one test that genuinely needs a fixture -- the
+        # FBX import probe -- now reports SKIP with a reason instead of PASS.
+        run: ctest -C Release --output-on-failure
 
       - name: Install software Vulkan (lavapipe)
         shell: pwsh
@@ -565,7 +572,7 @@ jobs:
 
       - name: Run tests
         working-directory: build-linux
-        run: ctest --output-on-failure -E "TestAudio|TestAudioTypes|TestAssetPack|TestAssetLoaders"
+        run: ctest --output-on-failure
 
       - name: Render smoke test (golden capture on lavapipe)
         timeout-minutes: 15
@@ -845,7 +852,7 @@ jobs:
         env:
           ASAN_OPTIONS: detect_leaks=0:abort_on_error=1:strict_string_checks=1
           TSAN_OPTIONS: halt_on_error=0:second_deadlock_stack=1
-        run: ctest --output-on-failure -E "TestAudio|TestAudioTypes|TestAssetPack|TestAssetLoaders"
+        run: ctest --output-on-failure
 
   web:
     name: Web (WebAssembly build)

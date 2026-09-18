@@ -350,8 +350,8 @@ cd web-demo && python serve.py  # http://localhost:9090
 - **Tests are gated behind `ENJIN_BUILD_TESTS` (default OFF).** If `ctest` runs but counts look stale, the cache lost the flag and you're running frozen binaries: `cmake -DENJIN_BUILD_TESTS=ON ..`
 - **Run all:** `cd build && ctest --output-on-failure`
 - **Run one suite:** `cd build && ctest -R TestPhysics --output-on-failure`
-- **243 CTest targets, 3347 test cases** across 22 subdirectories (counted 2026-09-15: `ctest -N` for targets, `ENJIN_TEST(` occurrences for cases). This line has been wrong by a factor of three before, and it drifted by ten targets in a single day between two of the counts -- if you are about to trust it, count again rather than quote it.
-- **4 tests require environment:** TestAudio, TestAudioTypes, TestAssetPack, TestAssetLoaders (may show "Not Run")
+- **Count before you quote:** `ctest -N | tail -1` for targets, `grep -rho 'ENJIN_TEST(' Tests --include=*.cpp | wc -l` for cases. A standing number lived on this line for months and was wrong every time anyone checked -- by a factor of three once, by ten targets in a single day, and by 20 targets and 186 cases over the three days before it was removed. It kept getting quoted into commit messages and issue bodies, where the "this drifts" caveat did not travel with it. A number nobody can trust is worse than no number.
+- **Nothing is excluded from CI, and nothing is env-gated by name.** TestAudio, TestAudioTypes, TestAssetPack and TestAssetLoaders used to be excluded from every CI run and described here as requiring an environment. They do not: no getenv, no ENJIN_SKIP, and mostly enum values and struct defaults. The exclusion is gone. A test that genuinely needs a fixture says so with `ENJIN_SKIP(reason)`, which reports SKIP and is never counted as a pass -- a bare `return` reports PASS and is how the FBX probe stayed green without ever running
 
 ## Code Conventions
 

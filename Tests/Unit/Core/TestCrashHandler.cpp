@@ -20,6 +20,8 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#else
+#include <windows.h>
 #endif
 
 using namespace Enjin;
@@ -40,6 +42,11 @@ std::string ReadWholeFile(const char* path) {
 bool Contains(const std::string& haystack, const char* needle) {
     return haystack.find(needle) != std::string::npos;
 }
+
+#ifdef _WIN32
+// Stands in for whatever loaded module takes the slot in the real case.
+LONG WINAPI Impostor(EXCEPTION_POINTERS*) { return EXCEPTION_CONTINUE_SEARCH; }
+#endif
 
 } // namespace
 
@@ -123,6 +130,47 @@ ENJIN_TEST(CrashHandler, AbortIsReportedToo) {
     ENJIN_EXPECT_TRUE(Contains(report, "Call Stack:"));
 
     std::remove(reportPath);
+}
+
+#else  // _WIN32
+
+// The two tests above fork a child, crash it, and read what the handler wrote.
+// That is POSIX and cannot compile here. Gated out, they simply did not exist on
+// Windows: the run said "Ran: 1" and nothing said two more had been written. A
+// smaller total with no explanation is the failure mode -- a local green covered
+// less than its number suggested, and the number is what people read. Registered
+// as skips, they appear in every run on every platform with a reason attached.
+ENJIN_TEST(CrashHandler, ReportNamesTheSignalAndTheCallStack) {
+    ENJIN_SKIP("fork + signal delivery; POSIX only");
+}
+
+ENJIN_TEST(CrashHandler, AbortIsReportedToo) {
+    ENJIN_SKIP("fork + signal delivery; POSIX only");
+}
+
+// And the behaviour Windows CAN test without dying, which is the one that
+// actually went wrong here. SetUnhandledExceptionFilter is a single global slot
+// and the last caller wins, so GLFW, the Vulkan loader, a driver or an overlay
+// hook can take ours out silently -- editor access violations on 2026-09-08
+// produced no report at all for exactly that reason. ReassertCrashHandler is the
+// repair, and until now nothing checked that it repairs anything.
+ENJIN_TEST(CrashHandler, ReassertTakesTheSlotBackAfterSomethingElseTakesIt) {
+    // Arrange
+    Debug::InstallCrashHandler();
+    LPTOP_LEVEL_EXCEPTION_FILTER ours = SetUnhandledExceptionFilter(nullptr);
+    ENJIN_ASSERT_NOT_NULL(ours);            // ours was in the slot
+    SetUnhandledExceptionFilter(ours);      // put it back, undisturbed
+
+    // Act: an impostor takes the slot, the way a loaded module would.
+    LPTOP_LEVEL_EXCEPTION_FILTER displaced = SetUnhandledExceptionFilter(Impostor);
+    ENJIN_EXPECT_EQ(displaced, ours);
+    Debug::ReassertCrashHandler();
+
+    // Assert: the slot holds ours again, not the impostor.
+    LPTOP_LEVEL_EXCEPTION_FILTER now = SetUnhandledExceptionFilter(nullptr);
+    ENJIN_EXPECT_EQ(now, ours);
+
+    Debug::UninstallCrashHandler();
 }
 
 #endif // !_WIN32
