@@ -872,6 +872,14 @@ jobs:
       - name: GPU layout parity (ObjectData + LightingUBO declared once)
         run: python tools/gpu_layout_parity.py --strict
 
+      # The manual is what a person with no AI and no network reads to find out
+      # what a component does, and nothing checked its 570 field rows against
+      # the structs. They had drifted: seven documented fields did not exist at
+      # all, ten vegetation colours were the palette before the foliage was
+      # re-authored, and the camera's clear colour was a different colour.
+      - name: Manual field parity (USER_MANUAL tables match the structs)
+        run: python tools/manual_field_parity.py --strict
+
       # A doc sample that names a function the engine does not register fails
       # in the READER's script, pointing at their file, so it reads as their
       # mistake. Eleven of these were live when this check was written.

@@ -525,7 +525,7 @@ Attaches a game camera to an entity. The editor has its own camera; this compone
 | `orthoSize` | f32 | 10.0 | Half-height of orthographic view. |
 | `priority` | i32 | 0 | Higher priority cameras take precedence. |
 | `isActive` | bool | true | Whether this camera is eligible for activation. |
-| `backgroundColor` | Vector3 | (0.1, 0.1, 0.15) | Clear color. |
+| `backgroundColor` | Vector3 | (0.68, 0.75, 0.72) | Clear color. |
 | `viewportX/Y` | f32 | 0.0 | Viewport position (normalized 0-1). |
 | `viewportWidth/Height` | f32 | 1.0 | Viewport dimensions (normalized 0-1). |
 | `cullingMask` | u32 | 0xFFFFFFFF | Layer bitmask for what to render. |
@@ -549,7 +549,8 @@ Renders 3D text in the world using stb_truetype font rasterization to a texture.
 | `text` | string | "" | The text string to render. |
 | `fontPath` | string | "" | Path to a .ttf font file. |
 | `fontSize` | f32 | 32.0 | Font size in pixels. |
-| `color` | Vector3 | (1, 1, 1) | Text color. |
+| `textColor` | Vector3 | (1, 1, 1) | Text color. |
+| `bgColor` | Vector3 | (0, 0, 0) | Background color, drawn when `showBackground` is set. |
 
 ---
 
@@ -955,9 +956,9 @@ To use one of your own actions rather than a built-in one, name it first in **Pr
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `action` | action | none | Which input action fires this. Built-in actions and your named ones both appear in the dropdown. |
+| `action` | action | -1 (none) | Which input action fires this. Built-in actions and your named ones both appear in the dropdown. |
 | `mode` | enum | Toggle | On Press, On Release, While Held, or Toggle (each press flips it on and off). |
-| `effect` | enum | Nothing | What happens: slow/speed time, show or hide an entity, send an event, or show a subtitle. |
+| `effect` | enum | None | What happens: slow/speed time, show or hide an entity, send an event, or show a subtitle. |
 | `targetEntity` | string | "" | Entity name the effect applies to. Empty means this entity. |
 | `timeScale` | f32 | 0.25 | World speed while on, for the time effect. 1.0 is normal. |
 | `keepPlayerSpeed` | bool | true | Character controllers keep running at full speed while the world slows. This is what makes bullet time feel right. |
@@ -1442,8 +1443,7 @@ A general-purpose state machine for game logic, AI, or animation.
 |-------|------|---------|-------------|
 | `currentState` | string | "idle" | Name of the current state. |
 | `previousState` | string | "" | Name of the previous state. |
-| `stateTimer` | f32 | 0.0 | Time spent in the current state. |
-| `stateJustChanged` | bool | false | True on the first frame of a new state. |
+| `stateTime` | f32 | 0.0 | Time spent in the current state. |
 | `floatParams` | list | [] | Named float parameters (key-value pairs). |
 | `intParams` | list | [] | Named integer parameters. |
 | `boolParams` | list | [] | Named boolean parameters. |
@@ -1484,12 +1484,10 @@ Automatically builds a UICanvas-based dialogue box overlay for displaying dialog
 | `textColor` | Vector3 | (0.9, 0.9, 0.9) | Dialogue text color. |
 | `showPortrait` | bool | true | Show character portrait image. |
 | `portraitSize` | f32 | 96.0 | Portrait dimensions in pixels. |
-| `choiceFontSize` | f32 | 16.0 | Font size for choice buttons. |
-| `choiceColor` | Vector3 | (0.7, 0.7, 0.7) | Default choice text color. |
-| `choiceHighlightColor` | Vector3 | (1.0, 0.9, 0.3) | Highlighted choice color. |
-| `showContinueIndicator` | bool | true | Show blinking "continue" indicator. |
-| `continueText` | string | ">" | Text for the continue indicator. |
-| `continueBlinkRate` | f32 | 2.0 | Blink speed in Hz. |
+| `choiceSpacing` | f32 | 6.0 | Vertical gap between choice buttons, in pixels. |
+| `choiceColor` | Vector3 | (0.15, 0.15, 0.2) | Choice button background. |
+| `choiceTextColor` | Vector3 | (0.85, 0.85, 0.85) | Choice button text. |
+| `continueText` | string | ">>>" | Text for the continue indicator. |
 
 The inspector groups settings into collapsible sections: **Box Layout**, **Text Style**, **Portrait**, **Choices**, and **Continue Indicator**.
 
@@ -1988,12 +1986,12 @@ Defines a volume that procedurally places GPU-instanced trees. Each tree consist
 | `trunkWidth` | f32 | 0.15 | Base width of the trunk. |
 | `canopyRadius` | f32 | 1.0 | Radius of the canopy quads. |
 | `canopyOffset` | f32 | 1.5 | Y offset from base to canopy center. |
-| `trunkColor` | Vector3 | (0.35, 0.22, 0.1) | Trunk bark color. |
-| `canopyBaseColor` | Vector3 | (0.1, 0.35, 0.08) | Canopy color at the base. |
-| `canopyTipColor` | Vector3 | (0.2, 0.5, 0.15) | Canopy color at the tips. |
-| `springCanopyColor` | Vector3 | (0.3, 0.6, 0.2) | Canopy tint during spring (deciduous only). |
-| `summerCanopyColor` | Vector3 | (0.1, 0.35, 0.08) | Canopy tint during summer (deciduous only). |
-| `fallCanopyColor` | Vector3 | (0.7, 0.4, 0.1) | Canopy tint during autumn (deciduous only). |
+| `trunkColor` | Vector3 | (0.22, 0.15, 0.09) | Trunk bark color. |
+| `canopyBaseColor` | Vector3 | (0.11, 0.18, 0.09) | Canopy color at the base. |
+| `canopyTipColor` | Vector3 | (0.52, 0.68, 0.32) | Canopy color at the tips. |
+| `springCanopyColor` | Vector3 | (0.42, 0.62, 0.24) | Canopy tint during spring (deciduous only). |
+| `summerCanopyColor` | Vector3 | (0.24, 0.37, 0.16) | Canopy tint during summer (deciduous only). |
+| `fallCanopyColor` | Vector3 | (0.68, 0.42, 0.12) | Canopy tint during autumn (deciduous only). |
 | `windSwayStrength` | f32 | 0.3 | Wind sway multiplier. |
 | `minHeightScale` | f32 | 0.6 | Minimum random height scale per instance. |
 | `maxHeightScale` | f32 | 1.4 | Maximum random height scale per instance. |
@@ -2016,8 +2014,8 @@ Defines a volume that procedurally places GPU-instanced grass blades. Each blade
 | `bladeHeight` | f32 | 0.3 | Blade height in world units. |
 | `bladeHeightVariance` | f32 | 0.1 | Random height variation per blade. |
 | `bladeWidth` | f32 | 0.03 | Blade width at the base. |
-| `baseColor` | Vector3 | (0.2, 0.5, 0.1) | Color at the blade root. |
-| `tipColor` | Vector3 | (0.4, 0.7, 0.2) | Color at the blade tip. |
+| `baseColor` | Vector3 | (0.11, 0.18, 0.09) | Color at the blade root. |
+| `tipColor` | Vector3 | (0.24, 0.37, 0.16) | Color at the blade tip. |
 | `windSwayStrength` | f32 | 1.0 | Wind sway multiplier. |
 | `customAssetPath` | string | "" | Optional texture or model to override procedural blades. |
 
@@ -2034,8 +2032,8 @@ Defines a volume that procedurally places GPU-instanced shrubs. Each shrub is a 
 | `shrubHeight` | f32 | 0.6 | Shrub height in world units. |
 | `heightVariance` | f32 | 0.2 | Random height variation per shrub. |
 | `width` | f32 | 0.4 | Shrub width. |
-| `baseColor` | Vector3 | (0.15, 0.35, 0.1) | Color at the shrub base. |
-| `tipColor` | Vector3 | (0.3, 0.55, 0.15) | Color at the shrub tips. |
+| `baseColor` | Vector3 | (0.11, 0.18, 0.09) | Color at the shrub base. |
+| `tipColor` | Vector3 | (0.42, 0.58, 0.27) | Color at the shrub tips. |
 | `windSwayStrength` | f32 | 0.5 | Wind sway multiplier. |
 | `quadsPerShrub` | u32 | 3 | Number of intersecting quads per shrub. |
 | `customAssetPath` | string | "" | Optional texture or model to override procedural shrubs. |
