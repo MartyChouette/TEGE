@@ -86,6 +86,58 @@ if (!chromePath) {
 // only way to see what a player sees.
 const useGPU = args.includes('--gpu');
 
+// Click the "Click to Play" card away and wait for the preloader it lives in to
+// actually go. Safe to call repeatedly: it does nothing when there is no gate.
+//
+// It waits on the PARENT, not the gate. The shell's click handler fades and
+// hides #preloader and never touches #click-to-play, so the gate element stays
+// display:block forever and is only ever hidden by its ancestor.
+async function dismissGate(page, budgetMs) {
+    const deadline = Date.now() + budgetMs;
+    let dismissed = false;
+    while (Date.now() < deadline) {
+        const state = await page.evaluate(() => {
+            const vis = (el) => !!el && (typeof el.checkVisibility === 'function'
+                ? el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })
+                : el.getClientRects().length > 0);
+            return {
+                preUp: vis(document.getElementById('preloader')),
+                gateUp: vis(document.getElementById('click-to-play')),
+            };
+        }).catch(() => null);
+
+        if (!state || !state.preUp) return dismissed;   // nothing in the way
+
+        if (state.gateUp) {
+            // TWO clicks, and they do different jobs.
+            //
+            // The coordinate click is a trusted gesture, which is what grants
+            // the page user activation -- a browser holds every AudioContext
+            // suspended until it sees one, and this engine holds CLIP LOADING
+            // with it, so without this an audio-dependent capture measures a
+            // game that was never allowed to start.
+            //
+            // It does not DISMISS the gate. Measured on a real export: the
+            // element is unoccluded (elementFromPoint at its centre returns
+            // #click-to-play), it is not moving (tegeBreathe animates
+            // text-shadow only), and a hundred coordinate clicks over thirty
+            // seconds left the preloader at display:flex -- while a single
+            // el.click() took it to display:none immediately. Something in the
+            // page swallows the real event before it reaches the listener; the
+            // synthetic dispatch goes straight to the element and runs it.
+            await page.click('#click-to-play').catch(() => {});
+            await page.evaluate(() => {
+                const g = document.getElementById('click-to-play');
+                if (g) g.click();
+            }).catch(() => {});
+            dismissed = true;
+        }
+        await new Promise((r) => setTimeout(r, 250));
+    }
+    if (dismissed) console.error('  note: clicked the gate but the preloader is still up');
+    return dismissed;
+}
+
 const browser = await launch({
     executablePath: chromePath,
     headless: !useGPU,
@@ -187,15 +239,23 @@ try {
         //
         // The hand-written demo shells in web-demo/ have no such gate, which is
         // why this went unnoticed: the tool was only ever pointed at those.
-        const gate = await page.$('#click-to-play');
-        if (gate) {
-            const visible = await gate.evaluate(
-                (el) => getComputedStyle(el).display !== 'none');
-            if (visible) {
-                await gate.click();
-                await new Promise((r) => setTimeout(r, 500));
-            }
-        }
+        // Dismissing the gate is not a one-shot, because WHEN it appears is not
+        // knowable from here.
+        //
+        // Readiness above is `_getEntityCount() > 0`, true the moment a scene
+        // loads. The gate is revealed much later and by a different mechanism:
+        // the Module calls hidePreloader() when the engine finishes
+        // initializing, which only sets ready=true, and showClickToPlay() then
+        // waits for an EASED progress bar to reach 0.995. The gap between those
+        // two is however long that project takes to initialize -- measured at
+        // over eight seconds on Ropes -- so any fixed wait is a guess, and a
+        // guess that is too short skips the click, reports "no gate", and
+        // photographs the card that appears straight afterwards.
+        //
+        // So: poll until the preloader is actually gone, clicking the gate every
+        // time it is visible. A shell with no gate at all just falls out of the
+        // loop when the deadline passes, having cost nothing.
+        await dismissGate(page, 30000);
 
         const target = await page.$('#game-canvas');
         // Twice: the engine notices a gesture by polling its own Input each
@@ -232,6 +292,13 @@ try {
         const dest = multi
             ? `${stem}.f${String(target).padStart(4, '0')}.png`
             : outPath;
+
+        // One more attempt right before photographing. A multi-frame run
+        // captures at f30, f90, f240 and f500, and the gate can surface between
+        // any two of them -- it is revealed by the preloader's own animation,
+        // not by anything this tool controls. Short budget: by here it is a
+        // late arrival, not a slow boot.
+        if (doClick) await dismissGate(page, 3000);
 
         // Is the play gate still up? Checked at CAPTURE time rather than once at
         // the start, because a multi-frame run photographs repeatedly and the
