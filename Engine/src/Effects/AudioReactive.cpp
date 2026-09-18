@@ -234,7 +234,7 @@ void MeshDisplacer::DisplaceVertices(
     const std::vector<Math::Vector3>& originalVerts,
     const std::vector<Math::Vector3>& originalNorms,
     const std::vector<f32>& displacements,
-    AudioReactiveComponent::DisplacementAxis axis,
+    AudioSpectrumComponent::DisplacementAxis axis,
     const Math::Vector3& customAxis,
     const Math::Vector3& meshCenter) {
 
@@ -246,22 +246,22 @@ void MeshDisplacer::DisplaceVertices(
         Math::Vector3 direction;
 
         switch (axis) {
-            case AudioReactiveComponent::DisplacementAxis::Normal:
+            case AudioSpectrumComponent::DisplacementAxis::Normal:
                 direction = (i < originalNorms.size()) ? originalNorms[i] : Math::Vector3(0, 1, 0);
                 break;
 
-            case AudioReactiveComponent::DisplacementAxis::Radial: {
+            case AudioSpectrumComponent::DisplacementAxis::Radial: {
                 Math::Vector3 toVert = originalVerts[i] - meshCenter;
                 f32 len = toVert.Length();
                 direction = (len > Math::EPSILON) ? toVert / len : Math::Vector3(0, 1, 0);
                 break;
             }
 
-            case AudioReactiveComponent::DisplacementAxis::YUp:
+            case AudioSpectrumComponent::DisplacementAxis::YUp:
                 direction = Math::Vector3(0, 1, 0);
                 break;
 
-            case AudioReactiveComponent::DisplacementAxis::Custom:
+            case AudioSpectrumComponent::DisplacementAxis::Custom:
                 direction = customAxis.Normalized();
                 break;
         }
@@ -332,7 +332,7 @@ void MeshDisplacer::ComputeMeshBounds(const std::vector<ECS::MeshComponent::Vert
 // AUDIO REACTIVE SYSTEM — Initialization
 // ============================================================================
 
-void AudioReactiveSystem::InitializeComponent(AudioReactiveComponent& comp,
+void AudioReactiveSystem::InitializeComponent(AudioSpectrumComponent& comp,
                                                const ECS::MeshComponent& mesh) {
     usize vertCount = mesh.vertices.size();
 
@@ -391,7 +391,7 @@ void AudioReactiveSystem::InitializeComponent(AudioReactiveComponent& comp,
 // ============================================================================
 
 AudioReactiveSystem::FrequencyWeights AudioReactiveSystem::ComputeVertexWeights(
-    const AudioReactiveComponent& comp,
+    const AudioSpectrumComponent& comp,
     const Math::Vector3& vertexPos,
     const Math::Vector2& vertexUV,
     usize vertexIndex) const {
@@ -399,14 +399,14 @@ AudioReactiveSystem::FrequencyWeights AudioReactiveSystem::ComputeVertexWeights(
     FrequencyWeights weights;
 
     switch (comp.mapping) {
-        case AudioReactiveComponent::MappingMode::Uniform:
+        case AudioSpectrumComponent::MappingMode::Uniform:
             // Equal weighting for all frequencies
             weights.bass = 0.333f;
             weights.mid = 0.333f;
             weights.treble = 0.333f;
             break;
 
-        case AudioReactiveComponent::MappingMode::HeightBased: {
+        case AudioSpectrumComponent::MappingMode::HeightBased: {
             // Map vertex Y to frequency range: low Y = bass, high Y = treble
             f32 rangeY = comp.meshBoundsMax.y - comp.meshBoundsMin.y;
             f32 t = 0.5f;
@@ -431,7 +431,7 @@ AudioReactiveSystem::FrequencyWeights AudioReactiveSystem::ComputeVertexWeights(
             break;
         }
 
-        case AudioReactiveComponent::MappingMode::RadialBased: {
+        case AudioSpectrumComponent::MappingMode::RadialBased: {
             // Map distance from center: inner = bass, outer = treble
             f32 dist = (vertexPos - comp.meshCenter).Length();
             f32 t = (comp.meshRadius > Math::EPSILON) ?
@@ -452,7 +452,7 @@ AudioReactiveSystem::FrequencyWeights AudioReactiveSystem::ComputeVertexWeights(
             break;
         }
 
-        case AudioReactiveComponent::MappingMode::UVBased: {
+        case AudioSpectrumComponent::MappingMode::UVBased: {
             // U coordinate maps to frequency: left = bass, right = treble
             f32 t = Math::Clamp(vertexUV.x, 0.0f, 1.0f);
 
@@ -482,11 +482,11 @@ AudioReactiveSystem::FrequencyWeights AudioReactiveSystem::ComputeVertexWeights(
 void AudioReactiveSystem::Update(ECS::World* world, f32 dt) {
     if (!world || dt <= 0.0f) return;
 
-    const auto& entities = world->GetEntitiesWithComponent<AudioReactiveComponent>();
+    const auto& entities = world->GetEntitiesWithComponent<AudioSpectrumComponent>();
     if (entities.empty()) return;
 
     for (ECS::Entity entity : entities) {
-        auto* comp = world->GetComponent<AudioReactiveComponent>(entity);
+        auto* comp = world->GetComponent<AudioSpectrumComponent>(entity);
         auto* mesh = world->GetComponent<ECS::MeshComponent>(entity);
         if (!comp || !mesh || mesh->vertices.empty()) continue;
 

@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Find a header reachable at the same include path from more than one root.
+"""Find a header reachable at two include paths, or a component declared twice.
+
+Two checks, one class of bug: the same thing declared in two places, where the
+copies cannot meet and nothing fails to build.
 
 EnjinCore and EnjinEngine each put their own include/ on the PUBLIC include
 path, so both are searched for every `#include "Enjin/..."` in the project and
@@ -23,6 +26,7 @@ correct in review because the reviewer is reading the copy the author edited.
   python tools/shadowed_header_audit.py --strict  # exit 1 if any exist
 """
 import os
+import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -33,6 +37,45 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INCLUDE_ROOTS = ['Core/include', 'Engine/include']
 
 HEADER_SUFFIXES = ('.h', '.hpp', '.hh', '.inl')
+
+
+# Component structs, wherever they are declared. A component is identified by
+# NAME at runtime through the ECS, so two structs sharing a name in different
+# namespaces are two different component types that read as one.
+#
+# SaveLoadMenuComponent was declared in Enjin::ECS (serialized, in the
+# inspector, present in every scene) and again in Enjin::Gameplay, and
+# DrawSaveLoadMenu took the Gameplay one -- so the draw function could never be
+# passed a component any entity actually had. It had no caller anywhere in the
+# repo because there could not be one, and the save/load menu was simply never
+# drawn in any runtime. Nothing about that fails to compile.
+COMPONENT_DECL = re.compile(r'^\s*struct\s+(?:ENJIN_API\s+)?([A-Za-z_]\w*Component)\s*(?:final\s*)?[:{]',
+                            re.MULTILINE)
+
+COMPONENT_ROOTS = ['Engine/include', 'Core/include', 'Engine/src', 'Core/src']
+
+
+def duplicate_components():
+    """{name: [paths]} for every component struct declared more than once."""
+    seen = {}
+    for root in COMPONENT_ROOTS:
+        base_dir = os.path.join(ROOT, root)
+        if not os.path.isdir(base_dir):
+            continue
+        for base, _dirs, files in os.walk(base_dir):
+            for name in files:
+                if not name.endswith(('.h', '.hpp', '.cpp')):
+                    continue
+                path = os.path.join(base, name)
+                try:
+                    with open(path, encoding='utf-8', errors='replace') as fh:
+                        text = fh.read()
+                except OSError:
+                    continue
+                for m in set(COMPONENT_DECL.findall(text)):
+                    rel = os.path.relpath(path, ROOT).replace(os.sep, '/')
+                    seen.setdefault(m, set()).add(rel)
+    return {k: sorted(v) for k, v in seen.items() if len(v) > 1}
 
 
 def main():
@@ -53,10 +96,24 @@ def main():
                     os.path.relpath(path, ROOT).replace(os.sep, '/'))
 
     dupes = {k: v for k, v in reachable.items() if len(v) > 1}
-    if not dupes:
-        print('shadowed header audit: none (%d headers across %d roots)'
+    comps = duplicate_components()
+
+    if not dupes and not comps:
+        print('shadowed header audit: none (%d headers across %d roots, '
+              'no duplicated component declarations)'
               % (len(reachable), len(INCLUDE_ROOTS)))
         return 0
+
+    if comps:
+        print('Component structs declared in more than one place.')
+        print('Two structs sharing a name are two TYPES that read as one.')
+        for name, paths in sorted(comps.items()):
+            print('  struct %s' % name)
+            for pth in paths:
+                print('      %s' % pth)
+        print('')
+        if not dupes:
+            return 1 if strict else 0
 
     print('Headers reachable at the SAME include path from more than one root.')
     print('Which one a translation unit gets depends on include search order.\n')

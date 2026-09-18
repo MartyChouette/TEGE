@@ -155,7 +155,20 @@ private:
 // AUDIO REACTIVE COMPONENT (ECS)
 // ============================================================================
 
-struct AudioReactiveComponent {
+// Renamed from AudioReactiveComponent 2026-09-18. It shared that name with
+// Enjin::ECS::AudioReactiveComponent, which is a DIFFERENT feature -- that one
+// reads a VU level off an audio bus and drives one property (light intensity
+// and friends); this one runs an FFT and displaces mesh vertices per frequency
+// band. Two unrelated components answering to one name, in two namespaces.
+//
+// It cost something concrete: MeshDisplacer::DisplaceVertices takes THIS type
+// and AudioReactiveSystem iterates the ECS one, so the displacement half could
+// never be called with a component any entity actually had. Found by
+// tools/shadowed_header_audit.py.
+//
+// Only the ECS one is serialized ("audioReactive" in the component registry),
+// so this rename touches no scene on disk.
+struct AudioSpectrumComponent {
     // --- FFT settings ---
     i32 fftSize = 1024;            // FFT window size (power of 2)
     f32 smoothing = 0.8f;          // Spectrum smoothing factor
@@ -223,7 +236,7 @@ struct MeshDisplacer {
                                  const std::vector<Math::Vector3>& originalVerts,
                                  const std::vector<Math::Vector3>& originalNorms,
                                  const std::vector<f32>& displacements,
-                                 AudioReactiveComponent::DisplacementAxis axis,
+                                 AudioSpectrumComponent::DisplacementAxis axis,
                                  const Math::Vector3& customAxis,
                                  const Math::Vector3& meshCenter);
 
@@ -257,7 +270,7 @@ public:
     /**
      * @brief Update all audio-reactive entities
      *
-     * For each entity with AudioReactiveComponent + MeshComponent:
+     * For each entity with AudioSpectrumComponent + MeshComponent:
      * 1. Feed audio samples to FFT analyzer
      * 2. Map frequency bands to per-vertex displacement weights
      * 3. Smoothly animate displacement toward target
@@ -284,9 +297,9 @@ public:
 
 private:
     /**
-     * @brief Initialize runtime state for an AudioReactiveComponent
+     * @brief Initialize runtime state for an AudioSpectrumComponent
      */
-    void InitializeComponent(AudioReactiveComponent& comp,
+    void InitializeComponent(AudioSpectrumComponent& comp,
                              const ECS::MeshComponent& mesh);
 
     /**
@@ -299,7 +312,7 @@ private:
         f32 treble = 0.333f;
     };
 
-    FrequencyWeights ComputeVertexWeights(const AudioReactiveComponent& comp,
+    FrequencyWeights ComputeVertexWeights(const AudioSpectrumComponent& comp,
                                            const Math::Vector3& vertexPos,
                                            const Math::Vector2& vertexUV,
                                            usize vertexIndex) const;

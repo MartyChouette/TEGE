@@ -928,7 +928,7 @@ jobs:
       # months: the Engine copy, the pre-SIMD one, is what everything compiled,
       # so the SIMD math never ran and the two libraries disagreed about the
       # inline bodies of a Vector3 they hand each other. Every build was green.
-      - name: Shadowed header audit (one header, one include path)
+      - name: Shadowed header audit (one header, one include path; one name, one component)
         run: python tools/shadowed_header_audit.py --strict
 
       # A doc sample that names a function the engine does not register fails
