@@ -111,9 +111,21 @@ def readers(field):
     except Exception:
         return None   # unknown, not "none"
     files = [f for f in r.stdout.split('\n') if f.strip()]
-    return [f for f in files
-            if not any(f.endswith(s) for s in EXCLUDE_SUFFIXES)
-            and not f.endswith('.h') or 'Components' not in f]
+    # Parenthesised deliberately. Written without them this read
+    #     (not excluded and not a component header) or 'Components' not in f
+    # because `and` binds tighter than `or`, so EVERY path without "Components"
+    # in it counted as a reader -- including SceneSerializer.cpp, the file this
+    # is supposed to ignore. The audit therefore only found fields that were
+    # missing from the serializer as well, and reported a clean bill for the
+    # much larger class it exists to catch.
+    def is_reader(f):
+        if any(f.endswith(s) for s in EXCLUDE_SUFFIXES):
+            return False                       # storable/editable, not effective
+        if f.endswith('.h') and 'Components' in f:
+            return False                       # the declaration itself
+        return True
+
+    return [f for f in files if is_reader(f)]
 
 
 def main():
