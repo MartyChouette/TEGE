@@ -1615,7 +1615,7 @@ public:
         Enjin::Gameplay::GameplayLoop::UpdateHealthSystems(m_World.get(), deltaTime, m_DeferredDestroys);
 
         // Trigger zones (fills entitiesInside — required for reach-the-goal victory)
-        Enjin::Gameplay::GameplayLoop::UpdateTriggerZones(m_World.get());
+        Enjin::Gameplay::GameplayLoop::UpdateTriggerZones(m_World.get(), &m_VisualScriptSystem, deltaTime);
 
         // Game over state (player death / victory detection). The game-over UI
         // itself is the UICanvas screen GameplayLoop spawns (one source, rendered

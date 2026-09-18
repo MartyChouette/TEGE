@@ -1691,7 +1691,7 @@ public:
             Enjin::Gameplay::GameplayLoop::CheckPickupOverlaps3D(m_World.get(), deferred);
             Enjin::Gameplay::GameplayLoop::CheckPickupOverlaps2D(m_World.get(), deferred);
             Enjin::Gameplay::GameplayLoop::UpdateHealthSystems(m_World.get(), deltaTime, deferred);
-            Enjin::Gameplay::GameplayLoop::UpdateTriggerZones(m_World.get());
+            Enjin::Gameplay::GameplayLoop::UpdateTriggerZones(m_World.get(), &m_VisualScriptSystem, deltaTime);
             (void)Enjin::Gameplay::GameplayLoop::UpdateGameOverState(m_World.get(), deltaTime);
             Enjin::Gameplay::GameplayLoop::FlushDeferredDestroys(m_World.get(), deferred);
             // 2D collision callbacks queue into the long-lived member

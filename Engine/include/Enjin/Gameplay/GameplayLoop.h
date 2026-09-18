@@ -125,7 +125,15 @@ namespace GameplayLoop {
     // entitiesInside, so without this call trigger zones (and the
     // victoryTriggerEntity "reach the goal" win condition) never activate.
     // Call once per frame before UpdateGameOverState.
-    ENJIN_API void UpdateTriggerZones(ECS::World* world);
+    //
+    // `vsSystem` and `deltaTime` are what make onEnterNotify / onExitNotify /
+    // onStayNotify mean anything: the edge is delivered to the named entity
+    // through the same VisualScriptSystem channel the physics collision
+    // dispatch uses. Passing nullptr keeps the overlap bookkeeping and skips
+    // the notifications, which is what a caller with no scripting wants.
+    ENJIN_API void UpdateTriggerZones(ECS::World* world,
+                                       ECS::VisualScriptSystem* vsSystem = nullptr,
+                                       f32 deltaTime = 0.0f);
 
     // Update game over state: checks player death (defeat) and enemy
     // elimination / victory trigger (victory). Call once per frame after

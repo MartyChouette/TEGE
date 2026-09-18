@@ -1438,7 +1438,7 @@ void PlayMode::Update(f32 deltaTime) {
         Gameplay::GameplayLoop::UpdateHealthSystems(m_World, deltaTime, m_DeferredDestroys);
 
         // Trigger zones (fills entitiesInside — required for reach-the-goal victory)
-        Gameplay::GameplayLoop::UpdateTriggerZones(m_World);
+        Gameplay::GameplayLoop::UpdateTriggerZones(m_World, &m_VisualScriptSystem, deltaTime);
 
         // Game over state (player death / victory detection)
         m_GameOverReady = Gameplay::GameplayLoop::UpdateGameOverState(m_World, deltaTime);

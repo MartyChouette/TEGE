@@ -650,7 +650,8 @@ void Wire2DCollisionCallbacks(Physics::IPhysicsBackend2D* physics2D,
     });
 }
 
-void UpdateTriggerZones(ECS::World* world) {
+void UpdateTriggerZones(ECS::World* world, ECS::VisualScriptSystem* vsSystem,
+                        f32 deltaTime) {
     if (!world) return;
 
     // Gather all player-controlled entities (2D + 3D). A trigger zone only cares
@@ -700,9 +701,41 @@ void UpdateTriggerZones(ECS::World* world) {
             for (auto p : zone->entitiesInside) if (p == e) return true;
             return false;
         };
+        // Enter, exit and stay, delivered to the entities the zone names.
+        //
+        // onEnterNotify, onExitNotify and onStayNotify have been authored fields
+        // with no reader: the zone computed exactly who was inside and told
+        // nobody, so a zone wired to open a door did nothing and the header's
+        // own comment claimed it fired them. They go through the same
+        // VisualScriptSystem channel the physics collision dispatch uses, so a
+        // zone trigger and a sensor trigger arrive at a script the same way.
+        //
+        // The entity that crossed the boundary is passed as `other`, which is
+        // the part that makes it useful: a door needs to know WHO opened it.
+        auto notify = [&](ECS::Entity target, ECS::Entity crosser, bool entering) {
+            if (!vsSystem || target == ECS::INVALID_ENTITY) return;
+            if (!world->IsValid(target)) return;
+            if (entering) vsSystem->OnTriggerEnter(target, crosser, deltaTime);
+            else          vsSystem->OnTriggerExit(target, crosser, deltaTime);
+        };
+
         for (auto e : nowInside) {
-            if (!wasInside(e)) zone->hasTriggered = true;  // enter edge
+            if (!wasInside(e)) {
+                zone->hasTriggered = true;  // enter edge
+                notify(zone->onEnterNotify, e, true);
+            } else {
+                // Still inside. Stay fires every frame on purpose -- that is
+                // what a "stay" event is for -- and is the reason it is a
+                // separate field rather than a flag on enter.
+                notify(zone->onStayNotify, e, true);
+            }
         }
+        for (auto prev : zone->entitiesInside) {
+            bool stillThere = false;
+            for (auto e : nowInside) { if (e == prev) { stillThere = true; break; } }
+            if (!stillThere) notify(zone->onExitNotify, prev, false);
+        }
+
         zone->entitiesInside = std::move(nowInside);
     }
 }
