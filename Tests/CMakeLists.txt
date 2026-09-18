@@ -157,6 +157,7 @@ enjin_add_test(TestObjectPool         Unit/Core/TestObjectPool.cpp)
 enjin_add_test(TestProfiler           Unit/Core/TestProfiler.cpp)
 enjin_add_test(TestCrashHandler       Unit/Core/TestCrashHandler.cpp)
 enjin_add_test(TestTestFramework      Unit/Core/TestTestFramework.cpp)
+enjin_add_test(TestAssertionMessages Unit/Core/TestAssertionMessages.cpp)
 enjin_add_test(TestLocalization       Unit/Core/TestLocalization.cpp)
 enjin_add_test(TestSwarm              Unit/Sim/TestSwarm.cpp)
 

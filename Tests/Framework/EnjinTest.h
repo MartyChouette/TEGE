@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 #include <functional>
+#include <type_traits>
 
 #ifdef _WIN32
     #define WIN32_LEAN_AND_MEAN
@@ -305,6 +306,63 @@ inline void ReportFailureMsg(const char* file, int line, const char* msg) {
 
 // --- EXPECT (non-fatal) ---
 
+// --- values in a failure line -----------------------------------------------
+//
+// A comparison written as ENJIN_EXPECT_TRUE(a == b) prints "EXPECT_TRUE(a == b)"
+// and nothing else, so a failure names the line and not the numbers -- which is
+// a rebuild under a debugger to learn something the test already knew.
+// ENJIN_EXPECT_FLOAT_NEAR has always printed both sides, and those are the
+// readable failures in the log. This is the same idea for every other
+// comparison.
+//
+// It has to accept whatever a test compares, so an unprintable type yields "?"
+// rather than refusing to compile. The ORDER below matters: a const char* is a
+// pointer and a bool is an integer, so the specific cases come first.
+namespace EnjinTest {
+
+template <typename T>
+inline std::string Describe(const T& value) {
+    using U = std::decay_t<T>;
+    if constexpr (std::is_same_v<U, bool>) {
+        return value ? "true" : "false";
+    } else if constexpr (std::is_same_v<U, char*> || std::is_same_v<U, const char*>) {
+        return value ? std::string("\"") + value + "\"" : std::string("(null)");
+    } else if constexpr (std::is_same_v<U, std::string>) {
+        return std::string("\"") + value + "\"";
+    } else if constexpr (std::is_enum_v<U>) {
+        return std::to_string(static_cast<long long>(value));
+    } else if constexpr (std::is_floating_point_v<U>) {
+        char buffer[64];
+        snprintf(buffer, sizeof(buffer), "%g", static_cast<double>(value));
+        return buffer;
+    } else if constexpr (std::is_integral_v<U>) {
+        return std::to_string(value);
+    } else if constexpr (std::is_pointer_v<U>) {
+        if (!value) return "nullptr";
+        char buffer[32];
+        snprintf(buffer, sizeof(buffer), "%p", static_cast<const void*>(value));
+        return buffer;
+    } else {
+        return "?";
+    }
+}
+
+} // namespace EnjinTest
+
+// Both operands are bound ONCE. A macro that evaluated (a) in the comparison and
+// again in the message would call a test's helper twice, which is how an
+// assertion starts changing what it measures.
+#define ENJIN_IMPL_CMP(label, a, b, cond, onFailure)                                \
+    do { EnjinTest::CountAssertion();                                               \
+         auto&& _enjinA = (a); auto&& _enjinB = (b);                                \
+         if (!(cond)) {                                                             \
+             const std::string _enjinMsg = std::string(label "(" #a "=") +          \
+                 EnjinTest::Describe(_enjinA) + ", " #b "=" +                       \
+                 EnjinTest::Describe(_enjinB) + ")";                                \
+             EnjinTest::ReportFailureMsg(__FILE__, __LINE__, _enjinMsg.c_str());    \
+             onFailure;                                                             \
+         }} while(0)
+
 #define ENJIN_EXPECT_TRUE(expr)                                                     \
     do { EnjinTest::CountAssertion(); if (!(expr)) {                                                             \
         EnjinTest::ReportFailure(__FILE__, __LINE__, "EXPECT_TRUE(" #expr ")");     \
@@ -316,36 +374,22 @@ inline void ReportFailureMsg(const char* file, int line, const char* msg) {
     }} while(0)
 
 #define ENJIN_EXPECT_EQ(actual, expected)                                           \
-    do { EnjinTest::CountAssertion(); if (!((actual) == (expected))) {                                            \
-        EnjinTest::ReportFailure(__FILE__, __LINE__,                                \
-            "EXPECT_EQ(" #actual ", " #expected ")");                               \
-    }} while(0)
+    ENJIN_IMPL_CMP("EXPECT_EQ", actual, expected, _enjinA == _enjinB, (void)0)
 
 #define ENJIN_EXPECT_NE(actual, expected)                                           \
-    do { EnjinTest::CountAssertion(); if ((actual) == (expected)) {                                              \
-        EnjinTest::ReportFailure(__FILE__, __LINE__,                                \
-            "EXPECT_NE(" #actual ", " #expected ")");                               \
-    }} while(0)
+    ENJIN_IMPL_CMP("EXPECT_NE", actual, expected, !(_enjinA == _enjinB), (void)0)
 
-#define ENJIN_EXPECT_LT(a, b)                                                      \
-    do { EnjinTest::CountAssertion(); if (!((a) < (b))) {                                                        \
-        EnjinTest::ReportFailure(__FILE__, __LINE__, "EXPECT_LT(" #a ", " #b ")");  \
-    }} while(0)
+#define ENJIN_EXPECT_LT(a, b)                                                       \
+    ENJIN_IMPL_CMP("EXPECT_LT", a, b, _enjinA < _enjinB, (void)0)
 
-#define ENJIN_EXPECT_LE(a, b)                                                      \
-    do { EnjinTest::CountAssertion(); if (!((a) <= (b))) {                                                       \
-        EnjinTest::ReportFailure(__FILE__, __LINE__, "EXPECT_LE(" #a ", " #b ")");  \
-    }} while(0)
+#define ENJIN_EXPECT_LE(a, b)                                                       \
+    ENJIN_IMPL_CMP("EXPECT_LE", a, b, _enjinA <= _enjinB, (void)0)
 
-#define ENJIN_EXPECT_GT(a, b)                                                      \
-    do { EnjinTest::CountAssertion(); if (!((a) > (b))) {                                                        \
-        EnjinTest::ReportFailure(__FILE__, __LINE__, "EXPECT_GT(" #a ", " #b ")");  \
-    }} while(0)
+#define ENJIN_EXPECT_GT(a, b)                                                       \
+    ENJIN_IMPL_CMP("EXPECT_GT", a, b, _enjinA > _enjinB, (void)0)
 
-#define ENJIN_EXPECT_GE(a, b)                                                      \
-    do { EnjinTest::CountAssertion(); if (!((a) >= (b))) {                                                       \
-        EnjinTest::ReportFailure(__FILE__, __LINE__, "EXPECT_GE(" #a ", " #b ")");  \
-    }} while(0)
+#define ENJIN_EXPECT_GE(a, b)                                                       \
+    ENJIN_IMPL_CMP("EXPECT_GE", a, b, _enjinA >= _enjinB, (void)0)
 
 #define ENJIN_EXPECT_FLOAT_NEAR(a, b, tol)                                         \
     do { EnjinTest::CountAssertion(); if (std::fabs((a) - (b)) > (tol)) {                                       \
@@ -378,6 +422,42 @@ inline void ReportFailureMsg(const char* file, int line, const char* msg) {
     do { EnjinTest::CountAssertion(); if ((ptr) == nullptr) {                                                    \
         EnjinTest::ReportFailure(__FILE__, __LINE__, "EXPECT_NOT_NULL(" #ptr ")");  \
     }} while(0)
+
+// The ASSERT family had TRUE, FALSE, EQ, NE, NULL and NOT_NULL and nothing else,
+// so every ordering comparison that had to be fatal was written as
+// ENJIN_ASSERT_TRUE(x > y) -- 489 of them -- and threw both values away.
+// CLAUDE.md documented that workaround as the convention. It existed only
+// because these did not.
+#define ENJIN_ASSERT_LT(a, b)                                                       \
+    ENJIN_IMPL_CMP("ASSERT_LT", a, b, _enjinA < _enjinB, return)
+
+#define ENJIN_ASSERT_LE(a, b)                                                       \
+    ENJIN_IMPL_CMP("ASSERT_LE", a, b, _enjinA <= _enjinB, return)
+
+#define ENJIN_ASSERT_GT(a, b)                                                       \
+    ENJIN_IMPL_CMP("ASSERT_GT", a, b, _enjinA > _enjinB, return)
+
+#define ENJIN_ASSERT_GE(a, b)                                                       \
+    ENJIN_IMPL_CMP("ASSERT_GE", a, b, _enjinA >= _enjinB, return)
+
+#define ENJIN_ASSERT_FLOAT_NEAR(a, b, tol)                                          \
+    do { EnjinTest::CountAssertion();                                               \
+         const double _enjinA = (double)(a), _enjinB = (double)(b);                 \
+         if (std::fabs(_enjinA - _enjinB) > (double)(tol)) {                        \
+             char _buf[256];                                                        \
+             snprintf(_buf, sizeof(_buf),                                           \
+                 "ASSERT_FLOAT_NEAR(" #a "=%g, " #b "=%g, tol=%g) delta=%g",        \
+                 _enjinA, _enjinB, (double)(tol), std::fabs(_enjinA - _enjinB));    \
+             EnjinTest::ReportFailureMsg(__FILE__, __LINE__, _buf);                 \
+             return;                                                                \
+         }} while(0)
+
+#define ENJIN_ASSERT_FLOAT_EQ(a, b)                                                 \
+    ENJIN_ASSERT_FLOAT_NEAR(a, b, 0.001f)
+
+#define ENJIN_ASSERT_STR_EQ(a, b)                                                   \
+    ENJIN_IMPL_CMP("ASSERT_STR_EQ", a, b,                                           \
+                   std::string(_enjinA) == std::string(_enjinB), return)
 
 #define ENJIN_EXPECT_VEC2_EQ(v, ex, ey)                                            \
     do {                                                                            \
