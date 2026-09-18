@@ -777,6 +777,67 @@ ENJIN_TEST(NestedBuildOutput, OutputDirIsNotCopiedIntoItself) {
     fs::remove_all(root, ec);
 }
 
+ENJIN_TEST(NestedBuildOutput, AHalfFinishedOutputDirIsStillRecognisedAsOutput) {
+    // StaleOutputIsNotPackedAsProjectContent, just below, covers a stale output
+    // directory that FINISHED: it is skipped on its game.manifest. But the
+    // manifest and the pak are both written at the END of a build, so a build
+    // that dies in between -- after the loose scripts and assets go out, before
+    // the pak lands -- leaves an output directory carrying no end-of-build
+    // artifact at all. Nothing could recognise that, and the next build into a
+    // different directory would collect its contents as project content.
+    //
+    // Not hypothetical: web-demo/Build in this repo is exactly that shape,
+    // scripts and no pak, and MyGame/Build had nested seven levels deep with
+    // nineteen frozen copies of every enjin_api script inside.
+    //
+    // The fix is a marker written at the START. This test is the case where it
+    // is the only thing that can work: when the stale directory IS the current
+    // output dir, the scan already skips it by name.
+    namespace fs = std::filesystem;
+    std::error_code ec;
+
+    fs::path root = fs::temp_directory_path() / "enjin_partial_output_test";
+    MakeProjectWithStaleOutput(root);
+    fs::remove_all(root / "Build", ec);           // start from no stale output
+
+    // Arrange: one build into root/Build, which claims the directory up front.
+    BuildConfig first;
+    first.projectPath   = (root / "Nested.enjinproject").string();
+    first.outputDir     = (root / "Build").string();
+    first.packagingMode = PackagingMode::LooseFiles;
+    BuildPipeline firstRun;
+    firstRun.Execute(first);
+    ENJIN_ASSERT_TRUE(fs::exists(root / "Build" / ".enjin-build-output"));
+
+    // Now strip every END-of-build artifact. What remains is the shape a build
+    // that failed halfway leaves behind.
+    fs::remove(root / "Build" / "game.manifest", ec);
+    fs::remove(root / "Build" / "game.enjpak", ec);
+
+    // A file the project scan COLLECTS, sitting in that wreckage. A directory
+    // the scan merely walks is harmless; the damage is what it picks up and
+    // copies. .enjdata is on the scan's list.
+    fs::create_directories(root / "Build" / "assets", ec);
+    { std::ofstream leftover(root / "Build" / "assets" / "stale.enjdata"); leftover << "{}"; }
+
+    // Act: build somewhere else entirely. The stale root/Build is no longer the
+    // configured output dir, so the name check cannot save it -- the marker is
+    // the only thing left that identifies it.
+    fs::path out = fs::temp_directory_path() / "enjin_partial_output_test_out";
+    fs::remove_all(out, ec);
+    BuildConfig second = first;
+    second.outputDir = out.string();
+    BuildPipeline secondRun;
+    secondRun.Execute(second);
+
+    // Assert: the wreckage was not treated as project content.
+    ENJIN_EXPECT_FALSE(fs::exists(out / "Build"));
+    ENJIN_EXPECT_FALSE(fs::exists(out / "Build" / "assets" / "stale.enjdata"));
+
+    fs::remove_all(root, ec);
+    fs::remove_all(out, ec);
+}
+
 ENJIN_TEST(NestedBuildOutput, StaleOutputIsNotPackedAsProjectContent) {
     namespace fs = std::filesystem;
     std::error_code ec;

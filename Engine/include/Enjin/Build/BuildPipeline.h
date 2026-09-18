@@ -48,6 +48,11 @@ private:
     // Phase 3: Pack everything into .enjpak
     bool PackAssets(const std::string& outputDir, const std::string& key);
     // Phase 3 (alt): Copy loose files to output directory (no packing)
+    // Claims an output directory as build output before anything scans the
+    // project, so a build that fails partway still leaves it recognisable to the
+    // next build. See the Phase 0 comment in Execute.
+    void MarkOutputDirectory(const std::string& outputDir);
+
     bool CopyLooseFiles(const std::string& outputDir);
     // Phase 3.5 (pak mode): scripts + enjin_api + assets must also ship loose —
     // the script engine reads from the filesystem (pak script loading is

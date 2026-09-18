@@ -13,6 +13,12 @@ namespace fs = std::filesystem;
 
 namespace Enjin::Build {
 
+// Written into an output directory at the START of a build. Its whole job is to
+// let the next build's project scan recognise a nested output directory even
+// when that build never finished -- game.enjpak and game.manifest are both
+// written at the end and cannot do it.
+static constexpr const char* kBuildOutputMarker = ".enjin-build-output";
+
 BuildResult BuildPipeline::Execute(const BuildConfig& config) {
     m_Result = BuildResult{};
     m_Config = config;
@@ -36,6 +42,22 @@ BuildResult BuildPipeline::Execute(const BuildConfig& config) {
     }
 
     AddMessage(MessageSeverity::Info, "Starting build...");
+
+    // Phase 0: claim the output directory BEFORE anything scans the project.
+    //
+    // A build output directory nested inside the project it builds is skipped by
+    // ScanProjectDirectory, which recognises one by the artifacts a build leaves:
+    // game.enjpak or game.manifest. Both are written at the END. So a build that
+    // dies anywhere in between -- after the loose scripts go out, before the pak
+    // lands -- leaves an output directory with no marker on it, and the NEXT
+    // build walks straight in, copies the wreckage back in one level deeper, and
+    // does it again every time after that. That is where
+    // MyGame/Build/Build/Build/Build/Build/Build/Build came from, along with
+    // nineteen frozen copies of every enjin_api script.
+    //
+    // The marker is written first and never removed, so a half-finished output
+    // directory is still identifiable as output.
+    MarkOutputDirectory(config.outputDir);
 
     // Phase 1: Scan project
     ReportProgress("Scanning project", 0.0f);
@@ -967,6 +989,35 @@ bool BuildPipeline::VerifyBuild(const std::string& pakPath, const std::string& k
     return true;
 }
 
+// See the Phase 0 comment in Execute: this exists so a build that fails halfway
+// still leaves its output directory recognisable to the next build's project
+// scan. Failure to write it is not a build failure -- the pak and manifest still
+// mark the directory once they land -- but it is worth saying, because the cost
+// lands on a later build rather than this one.
+void BuildPipeline::MarkOutputDirectory(const std::string& outputDir) {
+    if (outputDir.empty()) return;
+
+    std::error_code ec;
+    fs::create_directories(fs::path(outputDir), ec);
+    if (ec) return;   // CopyLooseFiles/PackAssets report this properly
+
+    const fs::path marker = fs::path(outputDir) / kBuildOutputMarker;
+    if (fs::exists(marker, ec)) return;
+
+    std::ofstream out(marker);
+    if (!out) {
+        AddMessage(MessageSeverity::Warning,
+                   std::string("Could not write ") + kBuildOutputMarker + " in " + outputDir +
+                   " -- if this build fails before the pak is written, the next build "
+                   "will not recognise this directory as output");
+        return;
+    }
+    out << "This directory is Enjin build output.\n"
+        << "It is written at the START of a build so that a build which fails\n"
+        << "partway still leaves the directory identifiable, and the next build\'s"
+        << " project scan skips it instead of copying it into itself.\n";
+}
+
 bool BuildPipeline::CopyLooseFiles(const std::string& outputDir) {
     // Create output directory
     try {
@@ -1192,8 +1243,12 @@ void BuildPipeline::ScanProjectDirectory() {
             if (canon == outputDir) return true;
         }
         // Output directories from earlier builds, under any name, are
-        // identified by the artifacts only a build writes.
-        return fs::exists(dir / "game.enjpak", lec) ||
+        // identified by the artifacts only a build writes. The marker comes
+        // first in that list because it is the only one written at the START of
+        // a build: the pak and the manifest both land at the end, so they can
+        // only recognise a build that finished.
+        return fs::exists(dir / kBuildOutputMarker, lec) ||
+               fs::exists(dir / "game.enjpak", lec) ||
                fs::exists(dir / "game.manifest", lec);
     };
 
