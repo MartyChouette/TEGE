@@ -520,6 +520,15 @@ jobs:
         # recorded with a reason, and this fails only when the divergence GROWS.
         run: python3 tools/runtime_parity.py --strict
 
+      # The sibling check the comment above already points at, which was never
+      # actually wired up -- so it drifted to 27 unbaselined methods and nobody
+      # saw. One of them was load-bearing: PassesMeshRendererFilters sat in the
+      # Vulkan-only region, so the MeshRenderer enabled switch, the render-layer
+      # mask and the draw distance all did nothing on web. Another was an
+      # undocumented absence: hand IK.
+      - name: Backend parity (no new one-sided RenderSystem method)
+        run: python3 tools/backend_parity.py --strict
+
       - name: RT shader freshness (generated header matches its sources)
         # Another pure source check, so it also runs before the slow steps.
         #

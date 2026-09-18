@@ -646,14 +646,6 @@ public:
     // Is OIT on AND usable? The draw path asks this before deciding to hold the
     // blended geometry back, so a half-initialised OIT can never make transparency
     // disappear -- it just stays sorted.
-    // The MeshRendererComponent filters, in ONE place. Three separate render-list
-    // builds call it; a rule added to only one of them applies in one view and not
-    // the others.
-    bool PassesMeshRendererFilters(const MeshRendererComponent* mr,
-                                   const Math::Vector3& position,
-                                   const Math::Vector3& camPos,
-                                   bool haveCam, u32 cullingMask) const;
-
     bool IsOITUsable() const;
 
     // Whether what was built still matches this target at its current size.
@@ -2580,6 +2572,7 @@ private:
         u32 refs = 0;
     };
     std::unordered_map<u64, PooledMesh> m_PooledMeshes;
+    bool m_LoggedPoolOverflow = false;   // the pool filling is loud once, not every mesh
 
     // Hand back this entity's pool allocation: decrement a shared block's
     // refcount and free it only when the last user lets go, or free an owned
@@ -2587,6 +2580,24 @@ private:
     // poolAlloc without returning it, so every rebuild used to leak a block out
     // of a pool that has no other way of getting it back.
     void ReleasePoolAlloc(EntityRenderData& rd);
+
+public:
+    // What the geometry pool and the mesh sharing are actually doing, for the
+    // performance panel. A person tuning a scene has to be able to SEE that their
+    // four thousand instances of one rock collapsed to a single upload -- and,
+    // more importantly, see it when they DIDN'T, because a mesh that misses the
+    // share costs its full geometry every time and nothing else on screen says so.
+    struct GeometryPoolStats {
+        u32 usedVertices = 0;
+        u32 maxVertices = 0;
+        u32 usedIndices = 0;
+        u32 maxIndices = 0;
+        u32 sharedMeshes = 0;      // distinct meshes in the share table
+        u32 sharedInstances = 0;   // entities pointing at them
+        u64 bytesSaved = 0;        // what the duplicates would have cost
+    };
+    GeometryPoolStats GetGeometryPoolStats() const;
+private:
 
     // GPU frustum culling system
     std::unique_ptr<Renderer::GPUCullingSystem> m_GPUCulling;
@@ -2988,6 +2999,16 @@ public:
     // Conservative: over-estimates a rotated box rather than risk culling
     // something visible.
     static void ExtractFrustumPlanes(const Math::Matrix4& viewProj, Math::Vector4 outPlanes[6]);
+    // The MeshRendererComponent filters, in ONE place, for BOTH backends. Four
+    // render-list builds call it; a rule added to only one applies in one view
+    // and not the others. It lived in the Vulkan-only section until 2026-09-18,
+    // which is why the enabled switch, the layer mask and the draw distance all
+    // did nothing on web.
+    bool PassesMeshRendererFilters(const MeshRendererComponent* mr,
+                                   const Math::Vector3& position,
+                                   const Math::Vector3& camPos,
+                                   bool haveCam, u32 cullingMask) const;
+
     bool IsEntityInFrustum(Entity entity, const Math::Vector4 planes[6]);
 
     // Animation LOD state, OUTSIDE every backend guard.
@@ -3181,7 +3202,21 @@ private:
     // positions are guaranteed identical (no shadow-acne flicker from the two passes
     // skinning independently). Editor Rendering panel checkbox toggles it at runtime.
     bool m_ComputeSkinningEnabled = true;
-    bool m_FreeMeshCpuData = false;   // task #3: free CPU verts after upload (opt-in)
+    // Free the CPU vertex/index copy once geometry is on the GPU.
+    //
+    // ON BY DEFAULT. It was opt-in and nothing in the engine ever opted in, so
+    // every entity held its own CPU copy of its mesh forever -- including every
+    // entity sharing ONE imported asset. Measured on a field of 7344 instances of
+    // a 1456-vertex plant: 1.45 GB of vertices and 0.12 GB of indices resident,
+    // for 198 KB of unique geometry.
+    //
+    // Safe to default because the free is already conditional on being able to
+    // UNDO it: SetupEntityBuffers only frees a mesh that carries a source
+    // reference the MeshAssetCache says it CanResolve, and EnsureCpuData restores
+    // the data before anything that needs it on the CPU (physics, picking,
+    // bounds, a rebuild) reads it back. Inline scene geometry, procedural meshes
+    // and anything else with no resolvable source is never touched.
+    bool m_FreeMeshCpuData = true;
     VkCommandBuffer m_LastSkinningCmd = VK_NULL_HANDLE;  // once-per-frame guard for RunComputeSkinningPass
     u32 m_RTMode = 0;  // 0=Hybrid, 1=PathTrace
     u32 m_RTFrameCount = 0;

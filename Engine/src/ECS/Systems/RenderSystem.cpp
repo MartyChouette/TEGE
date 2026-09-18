@@ -172,6 +172,43 @@ void RenderSystem::CacheComponentStorages() {
     m_CachedVegetationStorage = m_World->GetComponentStorage<VegetationComponent>();
 }
 
+// Moved out of the Vulkan-only region, where it had always lived.
+//
+// It is pure logic -- a component, two positions and a mask -- with nothing
+// backend-specific in it, and web could not call it. The three settings it
+// enforces therefore did nothing in a browser: the MeshRenderer ENABLED master
+// switch (web checked it when collecting shadow casters and not when drawing),
+// renderLayerMask against the camera's cullingMask, and maxDrawDistance. All
+// three work on the desktop, which is the worst shape for a parity bug: the
+// author sets them, sees them work, and ships a build where they do not.
+bool RenderSystem::PassesMeshRendererFilters(const MeshRendererComponent* mr,
+                                             const Math::Vector3& position,
+                                             const Math::Vector3& camPos,
+                                             bool haveCam, u32 cullingMask) const {
+    if (!mr) return true;   // no component: nothing to filter on
+
+    // The master switch. It did nothing at all: an author could untick "Enabled"
+    // and watch the mesh carry on drawing, with no other setting that would have
+    // turned it off.
+    if (!mr->enabled) return false;
+
+    // Layers. Both halves of this were inert -- MeshRenderer::renderLayerMask says
+    // which layers an entity is on, CameraComponent::cullingMask says which layers
+    // a camera renders, and nothing read either, so the two could never disagree.
+    if ((mr->renderLayerMask & cullingMask) == 0) return false;
+
+    // Draw distance. 0 means infinite, which is why this is a guarded test and not
+    // a clamp: a 0 read as a distance would hide every mesh in the scene.
+    if (mr->maxDrawDistance > 0.0f && haveCam) {
+        const Math::Vector3 d = position - camPos;
+        if (d.x * d.x + d.y * d.y + d.z * d.z >
+            mr->maxDrawDistance * mr->maxDrawDistance) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool RenderSystem::IsEntityInFrustum(Entity entity, const Math::Vector4 planes[6]) {
     const MeshComponent* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
     if (!mesh) return true;   // nothing to measure: never cull on ignorance
@@ -4099,6 +4136,14 @@ void RenderSystem::Update(f32 deltaTime) {
         // without a readback stall, at a scale web is not at.
         Math::Vector4 webFrustum[6];
         const bool webCullEnabled = m_Camera != nullptr;
+        // Which layers this camera renders. Defaults to everything when the
+        // scene has no camera component to ask -- never to nothing, or a
+        // missing component would hide the whole scene.
+        u32 webCullingMask = 0xFFFFFFFFu;
+        for (Entity camEnt : m_World->GetEntitiesWithComponent<CameraComponent>()) {
+            const auto* cc = m_World->GetComponent<CameraComponent>(camEnt);
+            if (cc && cc->isActive) { webCullingMask = cc->cullingMask; break; }
+        }
         if (webCullEnabled) {
             ExtractFrustumPlanes(m_Camera->GetProjectionMatrix() * m_Camera->GetViewMatrix(),
                                  webFrustum);
@@ -4109,6 +4154,19 @@ void RenderSystem::Update(f32 deltaTime) {
             auto* xf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
             if (!mesh || !xf || !xf->visible) continue;
             if (mesh->vertices.empty() || mesh->indices.empty()) continue;
+
+            // The same filters the desktop path applies: the enabled switch,
+            // the render-layer mask against this camera's culling mask, and the
+            // draw distance. Before this, web drew a mesh whose MeshRenderer
+            // was switched off.
+            {
+                const MeshRendererComponent* wmr = m_CachedMeshRendererStorage
+                    ? m_CachedMeshRendererStorage->Get(entity) : nullptr;
+                if (!PassesMeshRendererFilters(wmr, xf->position, sortCamPos,
+                                               m_Camera != nullptr, webCullingMask)) {
+                    continue;
+                }
+            }
 
             if (webCullEnabled && !IsEntityInFrustum(entity, webFrustum)) continue;
 
@@ -7084,6 +7142,26 @@ const Renderer::TessellatedGraphic* RenderSystem::GetOrTessellateGraphic(const s
         it = m_VectorGraphicCache.emplace(path, Renderer::TessellateSVG(loadPath, tolerance)).first;
     }
     return it->second.valid ? &it->second : nullptr;
+}
+
+RenderSystem::GeometryPoolStats RenderSystem::GetGeometryPoolStats() const {
+    GeometryPoolStats st;
+    if (m_GeometryPool) {
+        st.usedVertices = m_GeometryPool->GetUsedVertices();
+        st.maxVertices = m_GeometryPool->GetMaxVertices();
+        st.usedIndices = m_GeometryPool->GetUsedIndices();
+        st.maxIndices = m_GeometryPool->GetMaxIndices();
+    }
+    for (const auto& kv : m_PooledMeshes) {
+        st.sharedMeshes++;
+        st.sharedInstances += kv.second.refs;
+        if (kv.second.refs > 1) {
+            const u64 dup = static_cast<u64>(kv.second.refs - 1);
+            st.bytesSaved += dup * (static_cast<u64>(kv.second.vertexCount) * sizeof(MeshComponent::Vertex)
+                                    + static_cast<u64>(kv.second.indexCount) * sizeof(u32));
+        }
+    }
+    return st;
 }
 
 void RenderSystem::ReleasePoolAlloc(EntityRenderData& rd) {
@@ -10173,33 +10251,7 @@ bool RenderSystem::PrepareOITForTarget(Renderer::RenderTarget* target) {
 //
 // `cullingMask` is the active camera's layer mask; pass 0xFFFFFFFF where there is
 // no camera to ask. `haveCam` gates the distance test only.
-bool RenderSystem::PassesMeshRendererFilters(const MeshRendererComponent* mr,
-                                             const Math::Vector3& position,
-                                             const Math::Vector3& camPos,
-                                             bool haveCam, u32 cullingMask) const {
-    if (!mr) return true;   // no component: nothing to filter on
 
-    // The master switch. It did nothing at all: an author could untick "Enabled"
-    // and watch the mesh carry on drawing, with no other setting that would have
-    // turned it off.
-    if (!mr->enabled) return false;
-
-    // Layers. Both halves of this were inert -- MeshRenderer::renderLayerMask says
-    // which layers an entity is on, CameraComponent::cullingMask says which layers
-    // a camera renders, and nothing read either, so the two could never disagree.
-    if ((mr->renderLayerMask & cullingMask) == 0) return false;
-
-    // Draw distance. 0 means infinite, which is why this is a guarded test and not
-    // a clamp: a 0 read as a distance would hide every mesh in the scene.
-    if (mr->maxDrawDistance > 0.0f && haveCam) {
-        const Math::Vector3 d = position - camPos;
-        if (d.x * d.x + d.y * d.y + d.z * d.z >
-            mr->maxDrawDistance * mr->maxDrawDistance) {
-            return false;
-        }
-    }
-    return true;
-}
 
 bool RenderSystem::IsOITUsable() const {
     return m_OITEnabled && m_OITManager && m_OITManager->IsInitialized() &&
@@ -13711,7 +13763,23 @@ EntityRenderData* RenderSystem::SetupEntityBuffers(Entity entity) {
             maybeFreeCpu();
             return &renderData;
         }
-        // Pool allocation failed (overflow) — fall through to per-entity buffers
+        // Pool allocation failed (overflow) — fall through to per-entity buffers.
+        //
+        // SAY SO ONCE. This is the quietest expensive thing in the renderer: the
+        // scene keeps drawing, nothing errors, and every mesh from here on costs
+        // its own buffers and its own draw call. The only outward sign used to be
+        // that the frame got slower for no stated reason. The performance panel
+        // now shows pool usage live; this catches the person who is not looking
+        // at it.
+        if (!m_LoggedPoolOverflow) {
+            m_LoggedPoolOverflow = true;
+            ENJIN_LOG_WARN(Renderer,
+                "Geometry pool is full (%u/%u vertices, %u/%u indices). Meshes from here on "
+                "get their own buffers: more memory and one draw call each. Reduce mesh count, "
+                "simplify geometry, or reuse imported assets so instances can share an upload.",
+                m_GeometryPool->GetUsedVertices(), m_GeometryPool->GetMaxVertices(),
+                m_GeometryPool->GetUsedIndices(), m_GeometryPool->GetMaxIndices());
+        }
     }
 
     // Per-entity buffers (dynamic meshes, pool overflow fallback)
