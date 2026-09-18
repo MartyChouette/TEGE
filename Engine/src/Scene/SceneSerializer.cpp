@@ -957,6 +957,13 @@ ECS::MeshComponent DeserializeMeshComponent(const json& j) {
         static constexpr usize kMaxIndices = 10'000'000;
         if (j["indices"].size() <= kMaxIndices) {
             mesh.indices = j["indices"].get<std::vector<u32>>();
+        } else {
+            // Say so. The vertex cap above logs and this one did not, so a mesh
+            // over the index cap came back with its vertices and no indices --
+            // which draws nothing and reads as a broken model rather than as a
+            // file the loader refused.
+            ENJIN_LOG_WARN(Asset, "Mesh index count %zu exceeds cap %zu; indices dropped",
+                           j["indices"].size(), kMaxIndices);
         }
     }
 
