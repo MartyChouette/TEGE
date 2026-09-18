@@ -240,6 +240,14 @@ fn vs_main(in: VertexInput, @builtin(instance_index) instanceIdx: u32) -> Vertex
     } else {
         out.clipW = 1.0;
     }
+    // UV quantisation (bit 12): snap UV to a low-precision grid, which is the
+    // fixed-point texture coordinate a PlayStation actually had. Ported from
+    // triangle.vert:338 with the same 128.0 divisor, and it runs AFTER the
+    // affine multiply above so the two compose the way they do on desktop.
+    if ((object.flags & 4096) != 0) {
+        out.uv = floor(out.uv * 128.0) / 128.0;
+    }
+
     out.instanceIdx = instanceIdx;
     out.color = in.color;
     out.uv1 = in.uv1;
@@ -491,6 +499,27 @@ fn shadeSurface(in: VertexOutput) -> vec4<f32> {
         let TBN = mat3x3<f32>(T, B, N);
         N = normalize(TBN * tangentNormal);
     }
+
+    // Flat shading (bit 20): derive the face normal from screen-space
+    // derivatives instead of interpolating the vertex one, which is the hard
+    // faceted look. Ported from triangle.frag:1204.
+    //
+    // AFTER the normal-map block deliberately, so it overrides a normal map
+    // rather than being overridden by one -- same precedence as desktop, where
+    // flat shading is the first branch of the same if/else chain. dpdx/dpdy are
+    // fragment-stage only and need no uniformity guard: every fragment in a
+    // quad evaluates them.
+    // The derivative is taken UNCONDITIONALLY and the flag only selects it.
+    // dpdx/dpdy carry the same uniform-control-flow requirement textureSample
+    // does, and `object` is indexed per instance, so computing this inside the
+    // branch is a compile error from Dawn: "'dpdy' must only be called from
+    // uniform control flow". Same shape as clipW in the vertex stage, which is
+    // always divided out and set to 1.0 when affine texturing is off.
+    let flatNormal = normalize(cross(dpdx(in.world_pos), dpdy(in.world_pos)));
+    if ((object.flags & 1048576) != 0) {
+        N = flatNormal;
+    }
+
     // Baked light that still reacts to a normal map. Three atlases hold the
     // light arriving from three fixed tangent-space directions, blended by how
     // much this pixel's bumped normal faces each -- so a bump picks up light a
@@ -790,6 +819,30 @@ fn shadeSurface(in: VertexOutput) -> vec4<f32> {
     if ((object.flags & 64) != 0) {
         if (sdfCov < 0.01) { discard; }
         return vec4<f32>(in.color.rgb * object.baseColor, sdfCov * in.color.a * object.opacity);
+    }
+
+    // Gouraud-only (bit 13): the whole point is that per-pixel lighting does not
+    // happen -- the vertex colour IS the lighting, computed per vertex and
+    // interpolated, which is what hardware of that era did.
+    //
+    // Placed here, not early, ON PURPOSE. Returning before the lighting loop
+    // would be the faster thing and would put a per-instance branch around
+    // textureSample calls, which WGSL requires to sit in uniform control flow.
+    // So the lighting is computed and discarded. It costs work on a mode chosen
+    // for cheapness, and the alternative does not compile. Same reason the SDF
+    // and stipple branches below are where they are.
+    //
+    // Desktop (triangle.frag:1451) gamma-corrects here because it writes the
+    // swapchain directly. This path outputs linear HDR and the post-process
+    // pass does ACES and gamma, so applying it here would double-correct --
+    // the same trap the exported-desktop double-gamma bug is made of.
+    if ((object.flags & 8192) != 0) {
+        // `emissive` is this shader's own term (line ~699). Desktop multiplies
+        // by an emissive TEXTURE here; the web path has no emissive texture
+        // sample at all, so matching desktop's expression literally would not
+        // compile. This matches what web's lit path already does.
+        let gouraud = albedo + emissive;
+        return vec4<f32>(gouraud, alpha);
     }
 
     // Output linear HDR — post-process pass handles ACES tonemap + gamma

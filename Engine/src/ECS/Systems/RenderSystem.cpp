@@ -4355,6 +4355,23 @@ void RenderSystem::Update(f32 deltaTime) {
             if (mat) {
                 if (mat->affineTexturing)     obj.flags |= (1 << 21);
                 if (mat->stippleTransparency) obj.flags |= (1 << 23);
+
+                // Three retro shading modes that existed only on desktop:
+                // flatShading (20), uvQuantize (12) and gouraudOnly (13). A
+                // material authored with any of them rendered smooth-shaded and
+                // full-precision in a browser while looking correct in the
+                // editor -- the same class as affine/snap/stipple above, which
+                // is why they sit together.
+                //
+                // DELIBERATELY the same bit numbers Vulkan uses. Web still has
+                // free bits and could have picked any, but the two flag words
+                // have already diverged enough to be a documented trap (bits 6
+                // and 7 mean different things per backend), and every bit that
+                // agrees is one less false friend. m_Global* have no web
+                // equivalent yet; these are the per-material ones.
+                if (mat->flatShading)  obj.flags |= (1 << 20);
+                if (mat->uvQuantize)   obj.flags |= (1 << 12);
+                if (mat->gouraudOnly)  obj.flags |= (1 << 13);
                 // Palette-indexed: bit 7 opts in, bits 24-27 carry the table.
                 // Packed into the flags word rather than added as a field so
                 // ObjectData does not grow -- its layout has to stay identical
