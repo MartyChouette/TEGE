@@ -317,7 +317,14 @@ bool VulkanImage::CreateFromData(
     std::memcpy(mapped, data, static_cast<size_t>(imageSize));
     vkUnmapMemory(m_Context->GetDevice(), stagingBufferMemory);
     
-    // Create image
+    // Every failure path from here down calls Destroy() as well as freeing the
+    // staging buffer.
+    //
+    // Not because the object leaks if it is destroyed -- the destructor handles
+    // that -- but because CreateImage overwrites m_Image without releasing what
+    // was there. A caller that treats `false` as "nothing was created" and tries
+    // again on the same object therefore leaks the first image and its memory
+    // outright, and `false` now means what it says: this image holds nothing.
     CreateImage(
         width,
         height,
@@ -336,6 +343,7 @@ bool VulkanImage::CreateFromData(
     if (!AllocateMemory(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
         vkFreeMemory(m_Context->GetDevice(), stagingBufferMemory, nullptr);
         vkDestroyBuffer(m_Context->GetDevice(), stagingBuffer, nullptr);
+        Destroy();
         return false;
     }
     
@@ -343,6 +351,7 @@ bool VulkanImage::CreateFromData(
         ENJIN_LOG_ERROR(Renderer, "Failed to bind image memory");
         vkFreeMemory(m_Context->GetDevice(), stagingBufferMemory, nullptr);
         vkDestroyBuffer(m_Context->GetDevice(), stagingBuffer, nullptr);
+        Destroy();
         return false;
     }
 
@@ -357,6 +366,7 @@ bool VulkanImage::CreateFromData(
             ENJIN_LOG_ERROR(Renderer, "Failed to create temp command pool for image upload");
             vkFreeMemory(m_Context->GetDevice(), stagingBufferMemory, nullptr);
             vkDestroyBuffer(m_Context->GetDevice(), stagingBuffer, nullptr);
+            Destroy();
             return false;
         }
 
@@ -371,6 +381,7 @@ bool VulkanImage::CreateFromData(
             vkDestroyCommandPool(m_Context->GetDevice(), tempPool, nullptr);
             vkFreeMemory(m_Context->GetDevice(), stagingBufferMemory, nullptr);
             vkDestroyBuffer(m_Context->GetDevice(), stagingBuffer, nullptr);
+            Destroy();
             return false;
         }
 
@@ -447,7 +458,7 @@ bool VulkanImage::CreateFromData(
             vkDestroyCommandPool(m_Context->GetDevice(), tempPool, nullptr);
             vkFreeMemory(m_Context->GetDevice(), stagingBufferMemory, nullptr);
             vkDestroyBuffer(m_Context->GetDevice(), stagingBuffer, nullptr);
-            Destroy();   // S1: release m_Image/m_Memory too, not just staging
+            Destroy();
             return false;
         }
         vkQueueWaitIdle(m_Context->GetGraphicsQueue());
@@ -464,6 +475,7 @@ bool VulkanImage::CreateFromData(
     if (!CreateImageView()) {
         vkFreeMemory(m_Context->GetDevice(), stagingBufferMemory, nullptr);
         vkDestroyBuffer(m_Context->GetDevice(), stagingBuffer, nullptr);
+        Destroy();
         return false;
     }
 

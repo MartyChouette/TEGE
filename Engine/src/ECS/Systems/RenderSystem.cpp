@@ -6546,7 +6546,9 @@ void RenderSystem::FlushSceneClear() {
     m_EntityPoseKey.clear();
     m_PoseUniqueCount = 0;
     m_SortedRenderList.clear();
-    m_EntityMaterialIndex.clear();
+    // assign, not clear: the frame is about to refill it and keeping the
+    // allocation is the point of using a vector here.
+    std::fill(m_EntityMaterialIndex.begin(), m_EntityMaterialIndex.end(), 0u);
     m_EntityToCullIndex.clear();
     m_CullableObjects.clear();
     m_CachedLightEntities.clear();
@@ -14514,7 +14516,9 @@ void RenderSystem::BuildMaterialSSBO() {
     }
 
     // Full rebuild path: entity count changed or materials are dirty
-    m_EntityMaterialIndex.clear();
+    // assign, not clear: the frame is about to refill it and keeping the
+    // allocation is the point of using a vector here.
+    std::fill(m_EntityMaterialIndex.begin(), m_EntityMaterialIndex.end(), 0u);
     m_EntitySlotMaterialBase.clear();
     m_MaterialSSBOCount = 0;
 
@@ -14602,7 +14606,16 @@ void RenderSystem::BuildMaterialSSBO() {
         usize offset = static_cast<usize>(m_MaterialSSBOStride) * index;
         std::memcpy(m_MaterialSSBOData.data() + offset, &materialGPU, sizeof(MaterialGPU));
 
-        m_EntityMaterialIndex[static_cast<u64>(entity)] = index;
+        {
+            const usize slot = static_cast<usize>(EntityIndex(entity));
+            if (slot >= m_EntityMaterialIndex.size()) {
+                // Grown, not reserved up front: the table is as big as the
+                // highest entity index in use, which for a scene that never
+                // destroys anything is the entity count.
+                m_EntityMaterialIndex.resize(slot + 1, 0);
+            }
+            m_EntityMaterialIndex[slot] = index;
+        }
         ++index;
 
         // One entry per material slot, straight after the entity's own. The
@@ -14648,8 +14661,8 @@ void RenderSystem::BuildMaterialSSBO() {
 }
 
 u32 RenderSystem::GetMaterialIndex(Entity entity) const {
-    auto it = m_EntityMaterialIndex.find(static_cast<u64>(entity));
-    return (it != m_EntityMaterialIndex.end()) ? it->second : 0;
+    const usize slot = static_cast<usize>(EntityIndex(entity));
+    return (slot < m_EntityMaterialIndex.size()) ? m_EntityMaterialIndex[slot] : 0;
 }
 
 void RenderSystem::BuildSlotPushConstants(const MaterialComponent& slotMat,

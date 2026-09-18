@@ -2770,7 +2770,19 @@ private:
 
     // Material SSBO batching state
     std::vector<u8> m_MaterialSSBOData;                 // CPU-side buffer (aligned MaterialGPU entries)
-    std::unordered_map<u64, u32> m_EntityMaterialIndex;
+    // Entity -> its material's index in the SSBO, addressed by ENTITY INDEX
+    // rather than by a hash of the handle. It is read once per entity per draw
+    // in the main pass, which is the hottest lookup in the builder, and the
+    // dense index is exactly what a vector wants.
+    //
+    // Indexing by EntityIndex is safe here because the table is cleared and
+    // refilled every frame: two LIVE entities can never share a slot index, and
+    // a recycled slot belongs to whichever entity holds it this frame. Anything
+    // that outlived a frame would need the generation as well.
+    //
+    // 0 is both "no entry" and "the first material", which is what the map
+    // returned before and what every caller already expects.
+    std::vector<u32> m_EntityMaterialIndex;
     // entity -> index of its FIRST slot entry; slot n is base + n.
     std::unordered_map<u64, u32> m_EntitySlotMaterialBase;  // Entity -> index into SSBO
     u32 m_MaterialSSBOCount = 0;                         // Number of materials this frame
