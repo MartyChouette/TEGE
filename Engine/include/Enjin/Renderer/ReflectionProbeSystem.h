@@ -176,6 +176,11 @@ private:
     // probes get from the geometry fingerprint.
     bool m_ImplicitDirty = false;
     u32 m_ImplicitSettleFrames = 0;
+    // Frames since the scene-wide probe last baked. The settle counter answers
+    // "has the world stopped moving"; this one answers "how often are we willing
+    // to pay for it", which a world that keeps starting and stopping needs too.
+    i32 m_FramesSinceImplicitBake = 0x7fffffff;
+    bool m_LoggedImplicitThrottle = false;   // say it once, not every frame
     Math::Vector3 m_ImplicitCenter;
     Math::Vector3 m_ImplicitMin;
     Math::Vector3 m_ImplicitMax;
@@ -193,6 +198,10 @@ private:
     u32 m_FramesSinceGeometryChanged = 0;
     bool m_GeometryDirty = false;
     static constexpr u32 kSettleFrames = 12;
+    // Floor on how often the IMPLICIT probe may re-bake: six full scene renders,
+    // so at 60fps this is one of them every five seconds at worst. Placed probes
+    // are deliberately exempt -- someone asked for those.
+    static constexpr i32 kMinImplicitRebakeFrames = 300;
 
     // Baked cubemaps indexed by entity ID
     std::unordered_map<u64, BakedCubemap> m_BakedCubemaps;

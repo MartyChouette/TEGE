@@ -294,7 +294,15 @@ void ReflectionProbeSystem::UpdateImplicitProbe(ECS::World* world) {
 
     // Only re-bake when the volume has actually moved. Scene bounds jitter by
     // millimetres as things settle, and a probe is six full scene renders.
-    constexpr f32 kMoved = 0.25f;
+    //
+    // THE THRESHOLD IS RELATIVE TO THE WORLD, NOT ABSOLUTE. It used to be a flat
+    // 0.25 units, which asks a 20-unit room and a 900-unit landscape to hold the
+    // same stillness. A world that FOLLOWS THE PLAYER -- pooled scenery recycled
+    // ahead of a vehicle, a plate that snaps along behind it -- translates its
+    // bounds by tens of units as a matter of course while looking identical, and
+    // every one of those translations bought six full scene renders.
+    const f32 extent = Math::Max(Math::Max(hi.x - lo.x, hi.y - lo.y), hi.z - lo.z);
+    const f32 kMoved = Math::Max(0.25f, extent * 0.01f);
     const bool moved = !m_ImplicitActive ||
         Math::Abs(centre.x - m_ImplicitCenter.x) > kMoved ||
         Math::Abs(centre.y - m_ImplicitCenter.y) > kMoved ||
@@ -330,16 +338,53 @@ void ReflectionProbeSystem::UpdateImplicitProbe(ECS::World* world) {
         m_ImplicitSettleFrames = 0;
     }
 
+    if (m_FramesSinceImplicitBake < 0x7fffffff) ++m_FramesSinceImplicitBake;
+
     if (firstTime) {
         // No cubemap yet, so the reflection is the sky fallback right now.
         // Waiting only makes the wrong thing last longer.
         m_ImplicitDirty = false;
         m_ImplicitSettleFrames = 0;
+        m_FramesSinceImplicitBake = 0;
         RequestBake(kImplicitProbeKey);
     } else if (m_ImplicitDirty) {
         if (++m_ImplicitSettleFrames < kSettleFrames) return;
+
+        // A HARD CEILING ON WHAT THIS IS ALLOWED TO COST.
+        //
+        // Settling is not enough on its own. A world that moves, stops, and moves
+        // again -- which is every streaming world, and every game whose scenery
+        // is pooled ahead of the player -- settles over and over, and each settle
+        // was buying six full scene renders. Measured on a chase game whose
+        // ground plate snaps forward every 104 units: 21 re-bakes in 38 seconds,
+        // roughly one every 1.8s, each one six renders of a ten-million-triangle
+        // scene. That is more geometry than the game itself was drawing, and it
+        // read as a hitch every couple of seconds.
+        //
+        // So the implicit probe may re-bake no more often than this. A stale
+        // scene-wide reflection for a few seconds is invisible; the stall is not.
+        // Placed probes are unaffected -- an author who put a probe somewhere
+        // asked for it, and the implicit one is the one nobody asked for.
+        if (m_FramesSinceImplicitBake < kMinImplicitRebakeFrames) {
+            // Say so ONCE. A scene-wide reflection that is deliberately a few
+            // seconds stale is invisible until someone goes looking for why it
+            // lags the world, and then it is maddening. Once per session, naming
+            // the reason and the fix, costs nothing and answers the question
+            // before it gets asked.
+            if (!m_LoggedImplicitThrottle) {
+                m_LoggedImplicitThrottle = true;
+                ENJIN_LOG_INFO(Renderer,
+                    "Reflection: this scene's bounds keep moving, so the scene-wide probe is "
+                    "rate-limited to one re-bake per %d frames (it is six full scene renders). "
+                    "Place a ReflectionProbe where you want it if you need it fresher.",
+                    kMinImplicitRebakeFrames);
+            }
+            return;
+        }
+
         m_ImplicitDirty = false;
         m_ImplicitSettleFrames = 0;
+        m_FramesSinceImplicitBake = 0;
         RequestBake(kImplicitProbeKey);   // a real change, and it has settled
     } else if (!implicitBlocked && m_BakedCubemaps.find(kImplicitProbeKey) == m_BakedCubemaps.end()) {
         RequestBake(kImplicitProbeKey);
