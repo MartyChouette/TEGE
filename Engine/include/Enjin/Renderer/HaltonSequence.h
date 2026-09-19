@@ -42,4 +42,24 @@ inline Math::Vector2 HaltonJitter(u32 frameIndex, u32 width, u32 height) {
     return Math::Vector2(jitterX, jitterY);
 }
 
+// Whether this frame's projection matrix should carry a temporal jitter.
+//
+// The rule is NOT "the user picked TAA or an upscaler". Jitter is only correct
+// when something downstream consumes it -- resolves TAA, or dispatches the
+// upscaler. Without that it is a full-resolution image with a per-frame
+// sub-pixel wobble and no temporal accumulation: visible shimmer, and strictly
+// worse than the setting being off.
+//
+// That is what shipped. ApplyTAA is called only from the editor, and the
+// upscaler's Dispatch has exactly one call site, also in the editor. So both
+// options previewed correctly while authoring and degraded every built game,
+// which is the opposite of the order anyone would debug in.
+//
+// `aaMode` 2 is TAA; `upscalerType` 0 is none.
+inline bool ShouldApplyTemporalJitter(u32 aaMode, u32 upscalerType,
+                                      bool temporalResolveActive) {
+    const bool wantsTemporal = (aaMode == 2) || (upscalerType > 0);
+    return wantsTemporal && temporalResolveActive;
+}
+
 } // namespace Enjin::Renderer

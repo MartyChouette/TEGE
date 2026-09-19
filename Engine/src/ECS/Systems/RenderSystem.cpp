@@ -1,6 +1,7 @@
 #include "Enjin/ECS/Systems/RenderSystem.h"
 // Needed by EnsureTilemapMeshes, which both backend Update bodies call.
 // The other include of this sits deep inside the !WEBGPU branch.
+#include "Enjin/Renderer/HaltonSequence.h"   // jitter + ShouldApplyTemporalJitter
 #include "Enjin/Renderer/MeshFactory.h"
 #include <chrono>
 #include "Enjin/Logging/Log.h"
@@ -14139,7 +14140,24 @@ void RenderSystem::UpdateFrameUniforms() {
     // TAA / Upscaler jitter injection: apply sub-pixel Halton offset to the projection
     // matrix so each frame samples a slightly different sub-pixel position. Both TAA
     // and temporal upscalers (FSR 2, DLSS, XeSS) require jittered input.
-    if (m_AAMode == 2 || m_UpscalerType > 0) { // TAA or temporal upscaler
+    // ...but ONLY when something will resolve it this frame. Jitter with no
+    // resolve is a full-resolution image with a per-frame sub-pixel wobble --
+    // shimmer, and strictly worse than the setting being off. See
+    // SetTemporalResolveActive.
+    const bool wantsJitter = (m_AAMode == 2 || m_UpscalerType > 0);
+    const bool applyJitter = Renderer::ShouldApplyTemporalJitter(
+        m_AAMode, m_UpscalerType, m_TemporalResolveActive);
+    if (wantsJitter && !applyJitter) {
+        static bool s_noResolveWarned = false;
+        if (!s_noResolveWarned) {
+            s_noResolveWarned = true;
+            ENJIN_LOG_WARN(Renderer,
+                "%s is selected but nothing here resolves it, so temporal jitter is off. "
+                "The image is rendered at full resolution with no temporal anti-aliasing.",
+                m_AAMode == 2 ? "TAA" : "A temporal upscaler");
+        }
+    }
+    if (applyJitter) { // TAA or temporal upscaler, and something will resolve it
         VkExtent2D extent = m_VulkanRenderer->GetSwapchainExtent();
         // When an upscaler is active, compute jitter relative to the lower render resolution
         // so that sub-pixel offsets are correctly sized for the internal rendering target.

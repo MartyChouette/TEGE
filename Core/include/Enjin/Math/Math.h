@@ -1,6 +1,11 @@
 #pragma once
 
 #include "Enjin/Platform/Types.h"
+// For ENJIN_FORCE_INLINE, used on nearly every function below. Types.h does not
+// define it, so this header only compiled when some EARLIER include in the
+// translation unit happened to pull in Platform.h. Every engine .cpp did; the
+// first test to include a Math header on its own did not.
+#include "Enjin/Platform/Platform.h"
 #include <cmath>
 #include <limits>
 #include <cstdlib>

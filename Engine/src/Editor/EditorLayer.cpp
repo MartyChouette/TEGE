@@ -3749,6 +3749,17 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         EvaluatePostProcessVolumes(m_Camera->GetPosition());
     }
 
+    // Tell the renderer whether this frame's temporal jitter will actually be
+    // consumed, BEFORE the scene renders and the projection matrix is built.
+    //
+    // Only the upscaler qualifies here. The editor's TAA path deliberately
+    // passes a null velocity view -- the offscreen scene target writes no
+    // velocity buffer -- so ApplyTAA early-returns and resolves nothing, and
+    // jittering for it would be the same shimmer this flag exists to stop.
+    if (m_RenderSystem) {
+        m_RenderSystem->SetTemporalResolveActive(m_RenderSystem->IsUpscalerActive());
+    }
+
     // Always render to scene RT then copy to game view RT.
     // Never render directly to game view RT's MRT render pass (causes teal on NVIDIA).
     bool usePostProcessing = m_SceneRenderTarget && m_SceneRenderTarget->IsValid();

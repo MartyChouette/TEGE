@@ -1365,6 +1365,24 @@ public:
 
     f32 GetUpscalerSharpness() const { return m_UpscalerSharpness; }
     void SetUpscalerSharpness(f32 s) { m_UpscalerSharpness = s; }
+
+    // Whether something downstream will actually CONSUME this frame's temporal
+    // jitter -- resolve TAA, or dispatch the upscaler.
+    //
+    // Jitter used to be injected on the strength of the user's preference
+    // alone: pick TAA or any upscaler and the projection matrix got a per-frame
+    // sub-pixel Halton offset. Nothing in a shipped game ever resolved it.
+    // ApplyTAA is called only from the editor, and the upscaler's Dispatch has
+    // exactly one call site, also in the editor -- so selecting either option
+    // in a build gave a full-resolution image with a sub-pixel wobble and no
+    // temporal accumulation. Strictly worse than leaving it off, and it
+    // previewed CORRECTLY in the editor, which is the wrong way round for
+    // finding it.
+    //
+    // A consumer opts in each frame, before the scene renders. Default false,
+    // so a runtime that resolves nothing gets no jitter.
+    void SetTemporalResolveActive(bool active) { m_TemporalResolveActive = active; }
+    bool IsTemporalResolveActive() const { return m_TemporalResolveActive; }
 #if !ENJIN_RENDERER_WEBGPU
     bool IsUpscalerActive() const { return m_UpscalerType > 0 && m_Upscaler != nullptr; }
     Renderer::IUpscaler* GetUpscaler() const { return m_Upscaler.get(); }
@@ -3170,6 +3188,7 @@ private:
     // Anti-aliasing mode: 0=None, 1=FXAA, 2=TAA, 3=SMAA, 4=MSAA 2x, 5=MSAA 4x, 6=MSAA 8x
     u32 m_AAMode = 1;
     // Frame counter for Halton jitter sequence cycling (incremented each frame)
+    bool m_TemporalResolveActive = false;
     u32 m_TAAFrameCounter = 0;
     // Previous jitter offset (NDC) stored for velocity buffer reprojection
     Math::Vector2 m_PrevJitter = Math::Vector2(0.0f, 0.0f);
