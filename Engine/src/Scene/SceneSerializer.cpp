@@ -10312,6 +10312,9 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
         json sceneJson;
         sceneJson["formatVersion"] = SCENE_FORMAT_VERSION;
         sceneJson["version"] = "1.0";
+        // Filled in after the loop: with a selection filter this is no longer
+        // the world's entity count, and a header that disagrees with the array
+        // below it is the kind of thing a loader trusts.
         sceneJson["entityCount"] = static_cast<u32>(entities.size());
 
         json entitiesArray = json::array();
@@ -11069,8 +11072,22 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             std::sort(sortedEntities.begin(), sortedEntities.end());
         }
 
+        // A selection-scoped save: Copy and Cut pass the editor's selection and
+        // get only those entities. Empty means the whole world, which is what
+        // every other caller wants.
+        //
+        // Deliberately NOT on Save(): a scene FILE must never be partial, and a
+        // filter reachable from there is one stray option away from silently
+        // truncating somebody's level.
+        const bool filtered = !options.onlyEntities.empty();
+
         for (ECS::Entity entity : sortedEntities) {
             if (!m_World->IsValid(entity)) {
+                continue;
+            }
+            if (filtered &&
+                std::find(options.onlyEntities.begin(), options.onlyEntities.end(), entity)
+                    == options.onlyEntities.end()) {
                 continue;
             }
             // Runtime-spawned junk (generated colliders, pooled spawns) never
@@ -11118,7 +11135,11 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
         }
 
         ValidateEntityTable(entitiesArray, "SaveScene");
-        sceneJson["entities"] = entitiesArray;
+         // The count of what was actually WRITTEN. With a selection filter it
+         // is not the world-s entity count, and a header disagreeing with the
+         // array under it is exactly what a loader trusts.
+         sceneJson["entityCount"] = static_cast<u32>(entitiesArray.size());
+         sceneJson["entities"] = entitiesArray;
 
         // Serialize accessibility content flags
         if (static_cast<u32>(m_ContentFlags.flags) != 0 || !m_ContentFlags.customWarnings.empty()) {

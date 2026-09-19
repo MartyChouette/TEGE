@@ -48,6 +48,20 @@ ENJIN_API nlohmann::json ParseSceneJson(const std::string& text);
 
 // Scene serialization options
 struct SerializationOptions {
+    // When non-empty, ONLY these entities are written. Empty means the whole
+    // world, which is what a scene save wants.
+    //
+    // Added because Copy and Cut had no way to say "just these": both called
+    // SaveToString with no selection and put the ENTIRE SCENE on the clipboard,
+    // so copying one cube in a five-entity scene and pasting gave ten entities.
+    // The menu looked right, the paste looked like it worked, and the count was
+    // the only tell.
+    //
+    // Children are NOT pulled in automatically -- the caller decides, because
+    // the editor's selection already has its own rules about what a multi-select
+    // includes and duplicating them here would make the two disagree.
+    std::vector<ECS::Entity> onlyEntities;
+
     bool prettyPrint = true;        // Format JSON for readability
     bool includeVertexData = true;  // Include full mesh vertex/index data
     u32 indentSize = 2;             // JSON indent size (if prettyPrint)

@@ -354,6 +354,9 @@ void EditorLayer::DrawMenuBar() {
                 Scene::SceneSerializer serializer(m_World);
                 Scene::SerializationOptions opts;
                 opts.includeVertexData = true;
+                // Just the selection. This used to serialize the WHOLE SCENE,
+                // so cutting one entity put every entity on the clipboard.
+                opts.onlyEntities.assign(m_SelectedEntities.begin(), m_SelectedEntities.end());
                 m_ClipboardEntityJson = serializer.SaveToString(opts);
                 m_ClipboardIsCut = true;
                 m_ClipboardSourceEntity = m_PrimarySelected;
@@ -364,6 +367,7 @@ void EditorLayer::DrawMenuBar() {
                 Scene::SceneSerializer serializer(m_World);
                 Scene::SerializationOptions opts;
                 opts.includeVertexData = true;
+                opts.onlyEntities.assign(m_SelectedEntities.begin(), m_SelectedEntities.end());
                 m_ClipboardEntityJson = serializer.SaveToString(opts);
                 m_ClipboardIsCut = false;
                 m_ClipboardSourceEntity = m_PrimarySelected;
