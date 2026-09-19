@@ -649,7 +649,14 @@ void NetworkSystem::HandlePacket(const NetworkAddress& sender, const u8* data, u
         // We peek at the message type byte to decide.
         if (size >= PACKET_HEADER_SIZE) {
             u8 msgTypeByte = data[0];
-            bool isUnauthenticatedMsg = (msgTypeByte == static_cast<u8>(MessageType::ConnectionRequest));
+            // Must match the exemption list in SendPacket exactly. These four
+            // are the handshake, and a client has no key while they are in
+            // flight.
+            bool isUnauthenticatedMsg =
+                (msgTypeByte == static_cast<u8>(MessageType::ConnectionRequest) ||
+                 msgTypeByte == static_cast<u8>(MessageType::ConnectionAccept) ||
+                 msgTypeByte == static_cast<u8>(MessageType::ConnectionReject) ||
+                 msgTypeByte == static_cast<u8>(MessageType::SessionKeyExchange));
 
             if (!isUnauthenticatedMsg) {
                 u32 authOverhead = 4 + HMAC_TAG_SIZE;  // auth sequence (4) + HMAC tag (32)
@@ -1349,10 +1356,23 @@ void NetworkSystem::SendPacket(const NetworkAddress& addr, MessageType type, con
     WritePacketHeader(m_SendBuffer, header);
     m_SendBuffer.insert(m_SendBuffer.end(), payload.begin(), payload.end());
 
-    // Append HMAC authentication if enabled
-    // Skip authentication for ConnectionRequest (client doesn't have key yet)
-    if (m_AuthEnabled && m_SessionKeyGenerated &&
-        type != MessageType::ConnectionRequest) {
+    // Append HMAC authentication if enabled.
+    //
+    // The whole HANDSHAKE is exempt, not just ConnectionRequest. A client has
+    // no session key until SessionKeyExchange arrives, so it can neither verify
+    // an authenticated packet nor strip its 36-byte trailer (4-byte sequence +
+    // 32-byte HMAC) before the payload-size check. Authenticating the reply
+    // therefore made every client drop the host's ConnectionAccept with
+    // "Payload size mismatch (header=25, actual=61)" -- exactly 36 bytes over --
+    // and no client could ever reach the Connected state.
+    //
+    // ConnectionRequest alone was exempt, and the comment above the receive-side
+    // check even claimed SessionKeyExchange was too. It was not.
+    const bool isHandshake = (type == MessageType::ConnectionRequest ||
+                              type == MessageType::ConnectionAccept ||
+                              type == MessageType::ConnectionReject ||
+                              type == MessageType::SessionKeyExchange);
+    if (m_AuthEnabled && m_SessionKeyGenerated && !isHandshake) {
         AuthenticateOutgoing(m_SendBuffer, conn);
     }
 

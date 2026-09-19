@@ -61,6 +61,29 @@ void CollaborativeEditingSystem::Shutdown() {
 }
 
 void CollaborativeEditingSystem::Update(f32 deltaTime) {
+    // A joining client finishes its handshake HERE, not in JoinSession.
+    //
+    // JoinSession asked `if (m_Network->IsConnected())` immediately after
+    // JoinGame and sent the scene-sync request only if that was already true.
+    // It never is: JoinGame sends a ConnectionRequest and the accept arrives a
+    // round trip later, so the check ran while the socket was still connecting,
+    // the sync request was never sent, and the client sat in Joining forever.
+    // A synchronous test of an asynchronous connect.
+    //
+    // Measured before the fix: host and client completed the UDP handshake --
+    // the host received the ConnectionRequest, the client received the accept --
+    // and collaboration still reported active=0, peers=0 on the client for 1200
+    // frames. The networking was never the problem.
+    //
+    // This runs BEFORE the IsActive guard on purpose: Joining is not active, so
+    // a retry placed after it could never fire.
+    if (m_State == CollabSessionState::Joining && m_Network && m_Network->IsConnected()) {
+        m_State = CollabSessionState::Syncing;
+        u8 dummy = 0;
+        m_Network->CallRPC(RPC_SYNC_REQUEST, 0, &dummy, 1);
+        ENJIN_LOG_INFO(Editor, "Collab: connected, requesting scene sync from host");
+    }
+
     if (!IsActive()) return;
 
     m_Time += deltaTime;

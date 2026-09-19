@@ -2072,11 +2072,20 @@ void EditorLayer::Update(f32 deltaTime) {
         }
     }
 
-    // Update collaborative editing (process remote ops, broadcast transforms)
-    if (m_CollabSystem.IsActive()) {
-        m_CollabSystem.SetLocalCameraPosition(m_Camera ? m_Camera->GetPosition() : Math::Vector3());
-        if (m_PrimarySelected != ECS::INVALID_ENTITY) {
-            m_CollabSystem.SetLocalCursorEntity(m_PrimarySelected);
+    // Update collaborative editing (process remote ops, broadcast transforms).
+    //
+    // Ticked whenever a session EXISTS, for the same reason the socket is: a
+    // joining client is not "active" until its scene sync completes, and the
+    // step that gets it there lives at the top of CollaborativeEditingSystem::
+    // Update. Gating this on IsActive() meant the client could never advance
+    // past Joining. The local cursor and camera are still only broadcast once
+    // the session is genuinely live.
+    if (collabSessionExists) {
+        if (m_CollabSystem.IsActive()) {
+            m_CollabSystem.SetLocalCameraPosition(m_Camera ? m_Camera->GetPosition() : Math::Vector3());
+            if (m_PrimarySelected != ECS::INVALID_ENTITY) {
+                m_CollabSystem.SetLocalCursorEntity(m_PrimarySelected);
+            }
         }
         m_CollabSystem.Update(deltaTime);
     }
