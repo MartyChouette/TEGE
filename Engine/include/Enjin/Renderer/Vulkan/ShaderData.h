@@ -139,7 +139,7 @@ extern const size_t OitCompositeFragmentShaderDataSize;
 extern const unsigned char OitAccumFragmentShaderData[];
 extern const size_t OitAccumFragmentShaderDataSize;
 
-// taa_resolve.comp.spv (7656 bytes, 1914 words)
+// taa_resolve.comp.spv (8952 bytes, 2238 words)
 extern const unsigned char TAAResolveComputeShaderData[];
 extern const size_t TAAResolveComputeShaderDataSize;
 

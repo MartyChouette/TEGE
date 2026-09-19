@@ -3752,12 +3752,17 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     // Tell the renderer whether this frame's temporal jitter will actually be
     // consumed, BEFORE the scene renders and the projection matrix is built.
     //
-    // Only the upscaler qualifies here. The editor's TAA path deliberately
-    // passes a null velocity view -- the offscreen scene target writes no
-    // velocity buffer -- so ApplyTAA early-returns and resolves nothing, and
-    // jittering for it would be the same shimmer this flag exists to stop.
+    // TAA counts now. It used to be excluded because the editor's offscreen
+    // scene target writes no velocity buffer and ApplyTAA bailed out, so
+    // jittering for it was pure shimmer. ApplyTAA reconstructs motion from
+    // depth instead, so it resolves -- and jitter is what gives it different
+    // sub-pixel samples to converge. Without the jitter a static scene hands
+    // TAA the same image every frame and it has nothing to average.
     if (m_RenderSystem) {
-        m_RenderSystem->SetTemporalResolveActive(m_RenderSystem->IsUpscalerActive());
+        const bool taaWillResolve = m_PostProcessing && m_PostProcessing->IsInitialized() &&
+                                    m_PostProcessing->IsTAAEnabled();
+        m_RenderSystem->SetTemporalResolveActive(
+            m_RenderSystem->IsUpscalerActive() || taaWillResolve);
     }
 
     // Always render to scene RT then copy to game view RT.
@@ -4010,16 +4015,23 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             // against garbage: smearing and ghosting that look like a TAA
             // tuning problem and are not.
             //
-            // ApplyTAA early-returns on a null velocity view, so passing null
-            // skips it cleanly and the frame falls through to the scene colour.
-            // A standalone build is unaffected: it renders through the
-            // swapchain main pass, which does write velocity.
+            // Null velocity is now a SUPPORTED input, not a way of skipping TAA.
+            // ApplyTAA reconstructs motion from depth and a reprojection matrix
+            // when there is no velocity buffer, so the offscreen path resolves
+            // instead of doing nothing.
+            //
+            // What it cannot see is per-object motion: depth says where a
+            // surface is, not what moved. Camera motion and static geometry
+            // reproject exactly; a moving object is treated as still and
+            // smears. A velocity attachment on this target is still the
+            // complete answer and is still open.
             m_PostProcessing->SetVelocityImageView(VK_NULL_HANDLE);
             static bool s_taaNoticeLogged = false;
             if (!s_taaNoticeLogged) {
                 s_taaNoticeLogged = true;
-                ENJIN_LOG_INFO(Editor, "TAA is skipped in the editor: the offscreen "
-                               "scene target writes no velocity buffer. It applies in a build.");
+                ENJIN_LOG_INFO(Editor, "TAA resolves from depth here: the offscreen scene "
+                               "target writes no velocity buffer, so moving objects smear "
+                               "while the camera and static geometry are exact.");
             }
             if (m_SceneRenderTarget && m_SceneRenderTarget->IsValid()) {
                 m_PostProcessing->SetDepthImageView(m_SceneRenderTarget->GetDepthImageView());

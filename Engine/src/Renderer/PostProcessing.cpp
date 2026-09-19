@@ -1976,6 +1976,12 @@ struct TAAPushConstants {
     f32 feedbackMax;
     f32 sharpness;
     u32 frameIndex;
+    // prevViewProj * inverse(currentViewProj). 64 bytes on top of the 32
+    // above, which keeps the whole block inside Vulkan's guaranteed 128-byte
+    // push-constant floor. Keep it that way: two separate matrices would not
+    // fit and would need a descriptor.
+    f32 reproject[16];
+    u32 hasVelocityBuffer;
 };
 
 bool PostProcessing::CreateTAAResources() {
@@ -2252,7 +2258,12 @@ bool PostProcessing::ApplyTAA(VkCommandBuffer cmd) {
     if (!m_TAAReady || m_Settings.aaMode != 2) return false;
     if (m_TAAComputePipeline == VK_NULL_HANDLE) return false;
     if (m_SceneImageView == VK_NULL_HANDLE) return false;
-    if (m_TAAVelocityView == VK_NULL_HANDLE || m_TAADepthView == VK_NULL_HANDLE) return false;
+    // Depth is required; velocity is not. Both offscreen paths (the editor's
+    // scene target and the player's post-process target) carry one colour
+    // attachment and no velocity buffer, so requiring velocity here is what
+    // stopped TAA running anywhere outside a swapchain main pass. Without it
+    // the shader reconstructs motion from depth and the reprojection matrix.
+    if (m_TAADepthView == VK_NULL_HANDLE) return false;
 
     VkDevice device = m_Context->GetDevice();
 
@@ -2323,9 +2334,15 @@ bool PostProcessing::ApplyTAA(VkCommandBuffer cmd) {
     historyColorInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     VkDescriptorImageInfo velocityInfo{};
+    const bool hasVelocity = (m_TAAVelocityView != VK_NULL_HANDLE);
     velocityInfo.sampler = m_TAASampler;
-    velocityInfo.imageView = m_TAAVelocityView;
-    velocityInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    // A descriptor cannot be written with a null image view, so when there is
+    // no velocity buffer this slot gets the depth view as a stand-in. The
+    // shader branches on hasVelocityBuffer and never samples it.
+    velocityInfo.imageView = hasVelocity ? m_TAAVelocityView : m_TAADepthView;
+    velocityInfo.imageLayout = hasVelocity
+        ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+        : VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 
     VkDescriptorImageInfo depthInfo{};
     depthInfo.sampler = m_TAASampler;
@@ -2384,6 +2401,44 @@ bool PostProcessing::ApplyTAA(VkCommandBuffer cmd) {
     pc.feedbackMax = m_Settings.taaFeedbackMax;
     pc.sharpness = m_Settings.taaSharpness;
     pc.frameIndex = m_TAAFrameIndex;
+    pc.hasVelocityBuffer = hasVelocity ? 1u : 0u;
+
+    // reproject = prevViewProj * inverse(currentViewProj), built from the
+    // columns the caller already supplies for SSAO and contact shadows. Both
+    // are stored column-major as four Vector4s, which is the same layout
+    // Matrix4 uses, so this is a copy rather than a transpose.
+    {
+        auto writeCols = [](f32* dst, const Math::Vector4& c0, const Math::Vector4& c1,
+                            const Math::Vector4& c2, const Math::Vector4& c3) {
+            const Math::Vector4 cols[4] = {c0, c1, c2, c3};
+            for (int c = 0; c < 4; ++c) {
+                dst[c * 4 + 0] = cols[c].x; dst[c * 4 + 1] = cols[c].y;
+                dst[c * 4 + 2] = cols[c].z; dst[c * 4 + 3] = cols[c].w;
+            }
+        };
+        Math::Matrix4 invCurr, prev;
+        writeCols(invCurr.m, m_Settings.invViewProj0, m_Settings.invViewProj1,
+                  m_Settings.invViewProj2, m_Settings.invViewProj3);
+
+        if (m_HasPrevViewProj) {
+            prev = m_PrevViewProj;
+        } else {
+            // First frame: no history to reproject to, so use THIS frame's
+            // view-projection. reproject then collapses to identity and the
+            // velocity comes out zero, which is exactly right -- the history
+            // buffer is empty and gets rejected downstream anyway.
+            writeCols(prev.m, m_Settings.viewProj0, m_Settings.viewProj1,
+                      m_Settings.viewProj2, m_Settings.viewProj3);
+        }
+
+        const Math::Matrix4 reproject = prev * invCurr;
+        for (int i = 0; i < 16; ++i) pc.reproject[i] = reproject.m[i];
+
+        // Cache this frame's view-projection for the next one.
+        writeCols(m_PrevViewProj.m, m_Settings.viewProj0, m_Settings.viewProj1,
+                  m_Settings.viewProj2, m_Settings.viewProj3);
+        m_HasPrevViewProj = true;
+    }
 
     // --- Bind pipeline and dispatch ---
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_TAAComputePipeline);

@@ -10455,8 +10455,15 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
         RefreshStorageCache();
     }
 
+    // Size temporal jitter against THIS target, not the window. Restored below
+    // so the main pass keeps using the swapchain extent.
+    m_JitterExtentW = target ? target->GetWidth() : 0;
+    m_JitterExtentH = target ? target->GetHeight() : 0;
+
     // Upload frame-level uniforms to offscreen buffers (game camera view/proj + lighting)
     UpdateFrameUniforms();
+    m_JitterExtentW = 0;
+    m_JitterExtentH = 0;
     BuildMaterialSSBO();
 
 
@@ -14159,6 +14166,11 @@ void RenderSystem::UpdateFrameUniforms() {
     }
     if (applyJitter) { // TAA or temporal upscaler, and something will resolve it
         VkExtent2D extent = m_VulkanRenderer->GetSwapchainExtent();
+        // An offscreen target overrides it: see m_JitterExtentW.
+        if (m_JitterExtentW > 0 && m_JitterExtentH > 0) {
+            extent.width = m_JitterExtentW;
+            extent.height = m_JitterExtentH;
+        }
         // When an upscaler is active, compute jitter relative to the lower render resolution
         // so that sub-pixel offsets are correctly sized for the internal rendering target.
         u32 jitterW = extent.width;

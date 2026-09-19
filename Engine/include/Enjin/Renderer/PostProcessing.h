@@ -2,6 +2,7 @@
 
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Math/Vector.h"
+#include "Enjin/Math/Matrix.h"   // Matrix4, for the TAA reprojection cache
 
 // PostProcessing uses Vulkan types throughout — on WebGPU builds, only the
 // PostProcessSettings struct is needed (for SceneRenderSettings serialization).
@@ -533,6 +534,14 @@ public:
     // on the view being non-null, so selecting TAA pointed post-processing at an
     // image that had never been written and the game view went BLACK.
     bool ApplyTAA(VkCommandBuffer cmd);
+
+private:
+    // Last frame's view-projection, kept so TAA can reproject from depth when
+    // there is no velocity buffer. Set by ApplyTAA itself: nothing else knows
+    // when a TAA frame was actually resolved.
+    Math::Matrix4 m_PrevViewProj;
+    bool m_HasPrevViewProj = false;
+public:
 
     // Bind the external velocity buffer (RG16F from the MRT pass)
     void SetVelocityImageView(VkImageView velocityView) { m_TAAVelocityView = velocityView; }

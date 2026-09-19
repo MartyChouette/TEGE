@@ -3189,6 +3189,18 @@ private:
     u32 m_AAMode = 1;
     // Frame counter for Halton jitter sequence cycling (incremented each frame)
     bool m_TemporalResolveActive = false;
+    // The extent temporal jitter should be sized against: the target actually
+    // being rendered, not the window.
+    //
+    // Jitter is a SUB-PIXEL offset, so it has to be scaled by the resolution it
+    // will be sampled at. It was computed from the swapchain extent always,
+    // which is right for the main pass and wrong for every offscreen target --
+    // the editor game view renders at 974x548 inside a much larger window, so
+    // the offsets came out a fraction of the pixel they were supposed to span
+    // and TAA had nothing to average. Zero means "use the swapchain", which is
+    // what the main pass wants.
+    u32 m_JitterExtentW = 0;
+    u32 m_JitterExtentH = 0;
     u32 m_TAAFrameCounter = 0;
     // Previous jitter offset (NDC) stored for velocity buffer reprojection
     Math::Vector2 m_PrevJitter = Math::Vector2(0.0f, 0.0f);
