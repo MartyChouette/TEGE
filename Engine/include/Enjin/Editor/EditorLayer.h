@@ -2468,11 +2468,26 @@ private:
     void OpenToolPanel(f32 baseW, f32 baseH) const;
 
 
+    // Clipboard actions, callable from the menu item, the accelerator, or a
+    // context menu. NOT inside a BeginMenu body -- see RaiseShortcut below for
+    // why that broke Ctrl+X/C/V.
+    void DoCut();
+    void DoCopy();
+    void DoPaste();
+
     // Keyboard shortcuts whose action lives inside a menu item's body.
     //
     // Seven of these -- New, Open, Save As, Import, Cut, Copy, Paste -- were
     // printed as accelerators in the menu bar and handled nowhere, so the menu
     // item worked when clicked and the key it advertised did nothing.
+    //
+    // IT HAS ONE REQUIREMENT that cost Cut, Copy and Paste: the body only runs
+    // when the menu is OPEN, because ImGui does not evaluate a collapsed
+    // BeginMenu block. So those three did nothing unless the Edit menu happened
+    // to be expanded, and the raised bit sat pending until the next time it
+    // was, then fired unexpectedly. They are DoCut/DoCopy/DoPaste now and are
+    // dispatched every frame. The File actions keep this pattern, because their
+    // bodies carry file dialogs and unsaved-changes prompts.
     //
     // Rather than copy each body out (file dialogs, unsaved-changes prompts,
     // clipboard state), the key RAISES the same request the menu item answers:

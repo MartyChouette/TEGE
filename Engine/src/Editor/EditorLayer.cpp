@@ -2405,11 +2405,21 @@ void EditorLayer::Update(f32 deltaTime) {
         // Each raises the request its menu item answers, so there is one code
         // path and the two cannot drift.
         for (ShortcutAction a : { ShortcutAction::NewScene, ShortcutAction::OpenScene,
-                                  ShortcutAction::SaveSceneAs, ShortcutAction::ImportModel,
-                                  ShortcutAction::Cut, ShortcutAction::Copy,
-                                  ShortcutAction::Paste }) {
+                                  ShortcutAction::SaveSceneAs, ShortcutAction::ImportModel }) {
             if (ShortcutPressed(a)) RaiseShortcut(a);
         }
+
+        // Cut, Copy and Paste act IMMEDIATELY rather than raising a request.
+        //
+        // They used to be raised like the four above and answered inside the
+        // Edit menu's body -- which ImGui only evaluates when the menu is OPEN.
+        // So the keys did nothing in normal use, and the raised bit sat pending
+        // until the next time somebody opened the Edit menu, then fired there.
+        // Their bodies are self-contained (no file dialog, no unsaved-changes
+        // prompt), so they are plain methods and both paths call them.
+        if (ShortcutPressed(ShortcutAction::Cut))   DoCut();
+        if (ShortcutPressed(ShortcutAction::Copy))  DoCopy();
+        if (ShortcutPressed(ShortcutAction::Paste)) DoPaste();
 
         // Keyboard shortcuts help (Ctrl+Shift+/)
         if (Input::IsKeyDown(KeyCode::LeftControl) && Input::IsKeyDown(KeyCode::LeftShift) &&

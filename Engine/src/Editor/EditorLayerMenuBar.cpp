@@ -128,6 +128,69 @@
 namespace Enjin {
 namespace Editor {
 
+// Cut / Copy / Paste, callable from anywhere.
+//
+// These used to live INSIDE the Edit menu's body, reached as
+// `MenuItem(...) || TakeShortcut(Action::Cut)`. That pattern is right for the
+// File actions -- the key raises a request the menu item answers, so the two
+// cannot drift -- but it has one requirement nobody noticed: the body only runs
+// when the menu is OPEN. ImGui does not evaluate a collapsed BeginMenu block.
+// So Ctrl+X, Ctrl+C and Ctrl+V did nothing unless the Edit menu happened to be
+// expanded, and the raised bit sat pending until the next time it was, then
+// fired unexpectedly.
+//
+// The File actions keep the raise-and-answer pattern because their bodies carry
+// file dialogs and unsaved-changes prompts. These three are self-contained, so
+// they are simply methods, and the menu item and the accelerator both call
+// them.
+void EditorLayer::DoCut() {
+    if (m_SelectedEntities.empty() || !m_World) return;
+    DoCopy();
+    m_ClipboardIsCut = true;
+    DeleteSelectedEntities();
+}
+
+void EditorLayer::DoCopy() {
+    if (m_SelectedEntities.empty() || !m_World) return;
+    Scene::SceneSerializer serializer(m_World);
+    Scene::SerializationOptions opts;
+    opts.includeVertexData = true;
+    // Just the selection. This used to serialize the WHOLE SCENE, so copying
+    // one entity put every entity on the clipboard.
+    opts.onlyEntities.assign(m_SelectedEntities.begin(), m_SelectedEntities.end());
+    m_ClipboardEntityJson = serializer.SaveToString(opts);
+    m_ClipboardIsCut = false;
+    m_ClipboardSourceEntity = m_PrimarySelected;
+}
+
+void EditorLayer::DoPaste() {
+    if (m_ClipboardEntityJson.empty() || !m_World) return;
+    Scene::SceneSerializer serializer(m_World);
+    auto result = serializer.LoadFromString(m_ClipboardEntityJson, false);
+    if (result.success && !result.entities.empty()) {
+        if (result.entities.size() == 1) {
+            auto cmd = std::make_unique<FullCreateEntityCommand>(
+                m_World, result.entities[0],
+                [this](ECS::Entity restored) { SelectEntity(restored); });
+            m_UndoRedo.Execute(std::move(cmd));
+        } else {
+            m_UndoRedo.BeginCompound("Paste Entities");
+            for (ECS::Entity e : result.entities) {
+                auto cmd = std::make_unique<FullCreateEntityCommand>(m_World, e);
+                m_UndoRedo.Execute(std::move(cmd));
+            }
+            m_UndoRedo.EndCompound();
+        }
+        if (result.rootEntity != ECS::INVALID_ENTITY) {
+            SelectEntity(result.rootEntity);
+        }
+    }
+    if (m_ClipboardIsCut) {
+        m_ClipboardEntityJson.clear();
+        m_ClipboardIsCut = false;
+    }
+}
+
 void EditorLayer::DrawMenuBar() {
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
@@ -349,56 +412,15 @@ void EditorLayer::DrawMenuBar() {
             }
             ImGui::Separator();
             bool hasSelection = !m_SelectedEntities.empty() && m_World;
-            if ((ImGui::MenuItem("Cut", ShortcutChord(ShortcutAction::Cut), false, hasSelection) ||
-                 TakeShortcut(ShortcutAction::Cut)) && hasSelection) {
-                Scene::SceneSerializer serializer(m_World);
-                Scene::SerializationOptions opts;
-                opts.includeVertexData = true;
-                // Just the selection. This used to serialize the WHOLE SCENE,
-                // so cutting one entity put every entity on the clipboard.
-                opts.onlyEntities.assign(m_SelectedEntities.begin(), m_SelectedEntities.end());
-                m_ClipboardEntityJson = serializer.SaveToString(opts);
-                m_ClipboardIsCut = true;
-                m_ClipboardSourceEntity = m_PrimarySelected;
-                DeleteSelectedEntities();
+            if (ImGui::MenuItem("Cut", ShortcutChord(ShortcutAction::Cut), false, hasSelection)) {
+                DoCut();
             }
-            if ((ImGui::MenuItem("Copy", ShortcutChord(ShortcutAction::Copy), false, hasSelection) ||
-                 TakeShortcut(ShortcutAction::Copy)) && hasSelection) {
-                Scene::SceneSerializer serializer(m_World);
-                Scene::SerializationOptions opts;
-                opts.includeVertexData = true;
-                opts.onlyEntities.assign(m_SelectedEntities.begin(), m_SelectedEntities.end());
-                m_ClipboardEntityJson = serializer.SaveToString(opts);
-                m_ClipboardIsCut = false;
-                m_ClipboardSourceEntity = m_PrimarySelected;
+            if (ImGui::MenuItem("Copy", ShortcutChord(ShortcutAction::Copy), false, hasSelection)) {
+                DoCopy();
             }
-            if ((ImGui::MenuItem("Paste", ShortcutChord(ShortcutAction::Paste), false, !m_ClipboardEntityJson.empty()) ||
-                 TakeShortcut(ShortcutAction::Paste)) && !m_ClipboardEntityJson.empty()) {
-                Scene::SceneSerializer serializer(m_World);
-                auto result = serializer.LoadFromString(m_ClipboardEntityJson, false);
-                if (result.success && !result.entities.empty()) {
-                    // Wrap all pasted entities in undo commands
-                    if (result.entities.size() == 1) {
-                        auto cmd = std::make_unique<FullCreateEntityCommand>(
-                            m_World, result.entities[0],
-                            [this](ECS::Entity restored) { SelectEntity(restored); });
-                        m_UndoRedo.Execute(std::move(cmd));
-                    } else {
-                        m_UndoRedo.BeginCompound("Paste Entities");
-                        for (ECS::Entity e : result.entities) {
-                            auto cmd = std::make_unique<FullCreateEntityCommand>(m_World, e);
-                            m_UndoRedo.Execute(std::move(cmd));
-                        }
-                        m_UndoRedo.EndCompound();
-                    }
-                    if (result.rootEntity != ECS::INVALID_ENTITY) {
-                        SelectEntity(result.rootEntity);
-                    }
-                }
-                if (m_ClipboardIsCut) {
-                    m_ClipboardEntityJson.clear();
-                    m_ClipboardIsCut = false;
-                }
+            if (ImGui::MenuItem("Paste", ShortcutChord(ShortcutAction::Paste), false,
+                                !m_ClipboardEntityJson.empty())) {
+                DoPaste();
             }
             ImGui::EndMenu();
         }
