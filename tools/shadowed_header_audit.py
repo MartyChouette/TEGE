@@ -54,9 +54,28 @@ COMPONENT_DECL = re.compile(r'^\s*struct\s+(?:ENJIN_API\s+)?([A-Za-z_]\w*Compone
 
 COMPONENT_ROOTS = ['Engine/include', 'Core/include', 'Engine/src', 'Core/src']
 
+# Systems, for the same reason and with a worse failure.
+#
+# This check exists because the component version of it missed one. It caught
+# AudioReactiveComponent declared in both Enjin::ECS and Enjin::Effects, and the
+# rename that followed left a SECOND collision standing: there are two classes
+# called AudioReactiveSystem, Enjin::Audio (beat clock, RTPC, lip sync, MIDI --
+# ticked by PlayMode and both players) and Enjin::Effects (FFT to per-vertex
+# mesh displacement -- constructed by nothing, anywhere). The runtimes tick the
+# one whose name they recognise, and the other half of the feature has never
+# run on any platform.
+#
+# A system collision is worse than a component one because there is no registry
+# to disagree with: a system is wired by someone typing its name, so the wrong
+# one is simply the one that got typed, and nothing in the build or the tests
+# can tell.
+SYSTEM_DECL = re.compile(
+    r'^\s*class\s+(?:ENJIN_API\s+)?([A-Za-z_]\w*System)\s*(?:final\s*)?[:{]',
+    re.MULTILINE)
 
-def duplicate_components():
-    """{name: [paths]} for every component struct declared more than once."""
+
+def duplicate_declarations(pattern):
+    """{name: [paths]} for every name `pattern` matches in more than one file."""
     seen = {}
     for root in COMPONENT_ROOTS:
         base_dir = os.path.join(ROOT, root)
@@ -72,7 +91,7 @@ def duplicate_components():
                         text = fh.read()
                 except OSError:
                     continue
-                for m in set(COMPONENT_DECL.findall(text)):
+                for m in set(pattern.findall(text)):
                     rel = os.path.relpath(path, ROOT).replace(os.sep, '/')
                     seen.setdefault(m, set()).add(rel)
     return {k: sorted(v) for k, v in seen.items() if len(v) > 1}
@@ -96,13 +115,24 @@ def main():
                     os.path.relpath(path, ROOT).replace(os.sep, '/'))
 
     dupes = {k: v for k, v in reachable.items() if len(v) > 1}
-    comps = duplicate_components()
+    comps = duplicate_declarations(COMPONENT_DECL)
+    systems = duplicate_declarations(SYSTEM_DECL)
 
-    if not dupes and not comps:
+    if not dupes and not comps and not systems:
         print('shadowed header audit: none (%d headers across %d roots, '
-              'no duplicated component declarations)'
+              'no duplicated component or system declarations)'
               % (len(reachable), len(INCLUDE_ROOTS)))
         return 0
+
+    if systems:
+        print('Systems declared in more than one place.')
+        print('A system is wired by someone typing its name, so a collision')
+        print('means the runtimes tick one of them and the other never runs.')
+        for name, paths in sorted(systems.items()):
+            print('  class %s' % name)
+            for pth in paths:
+                print('      %s' % pth)
+        print('')
 
     if comps:
         print('Component structs declared in more than one place.')
@@ -112,8 +142,9 @@ def main():
             for pth in paths:
                 print('      %s' % pth)
         print('')
-        if not dupes:
-            return 1 if strict else 0
+
+    if (comps or systems) and not dupes:
+        return 1 if strict else 0
 
     print('Headers reachable at the SAME include path from more than one root.')
     print('Which one a translation unit gets depends on include search order.\n')

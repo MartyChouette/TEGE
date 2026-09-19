@@ -332,7 +332,7 @@ void MeshDisplacer::ComputeMeshBounds(const std::vector<ECS::MeshComponent::Vert
 // AUDIO REACTIVE SYSTEM — Initialization
 // ============================================================================
 
-void AudioReactiveSystem::InitializeComponent(AudioSpectrumComponent& comp,
+void AudioSpectrumSystem::InitializeComponent(AudioSpectrumComponent& comp,
                                                const ECS::MeshComponent& mesh) {
     usize vertCount = mesh.vertices.size();
 
@@ -390,7 +390,7 @@ void AudioReactiveSystem::InitializeComponent(AudioSpectrumComponent& comp,
 // AUDIO REACTIVE SYSTEM — Frequency Weight Computation
 // ============================================================================
 
-AudioReactiveSystem::FrequencyWeights AudioReactiveSystem::ComputeVertexWeights(
+AudioSpectrumSystem::FrequencyWeights AudioSpectrumSystem::ComputeVertexWeights(
     const AudioSpectrumComponent& comp,
     const Math::Vector3& vertexPos,
     const Math::Vector2& vertexUV,
@@ -479,7 +479,7 @@ AudioReactiveSystem::FrequencyWeights AudioReactiveSystem::ComputeVertexWeights(
 // AUDIO REACTIVE SYSTEM — Update
 // ============================================================================
 
-void AudioReactiveSystem::Update(ECS::World* world, f32 dt) {
+void AudioSpectrumSystem::Update(ECS::World* world, f32 dt) {
     if (!world || dt <= 0.0f) return;
 
     const auto& entities = world->GetEntitiesWithComponent<AudioSpectrumComponent>();
@@ -590,7 +590,7 @@ void AudioReactiveSystem::Update(ECS::World* world, f32 dt) {
 // AUDIO REACTIVE SYSTEM — Test Audio Generation
 // ============================================================================
 
-std::vector<f32> AudioReactiveSystem::GenerateTestAudio(f32 frequency, f32 duration, f32 sampleRate) {
+std::vector<f32> AudioSpectrumSystem::GenerateTestAudio(f32 frequency, f32 duration, f32 sampleRate) {
     if (frequency <= 0.0f || duration <= 0.0f || sampleRate <= 0.0f) return {};
 
     i32 sampleCount = static_cast<i32>(duration * sampleRate);

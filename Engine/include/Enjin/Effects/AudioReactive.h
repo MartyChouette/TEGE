@@ -162,12 +162,28 @@ private:
 // band. Two unrelated components answering to one name, in two namespaces.
 //
 // It cost something concrete: MeshDisplacer::DisplaceVertices takes THIS type
-// and AudioReactiveSystem iterates the ECS one, so the displacement half could
-// never be called with a component any entity actually had. Found by
-// tools/shadowed_header_audit.py.
+// while the ECS component is the one entities actually carry, so the
+// displacement half could never be called with a component that existed in a
+// scene. Found by tools/shadowed_header_audit.py.
 //
 // Only the ECS one is serialized ("audioReactive" in the component registry),
 // so this rename touches no scene on disk.
+//
+// The SYSTEM had the same collision and it survived the first rename: there
+// were two classes called AudioReactiveSystem, Enjin::Audio (beat clock, RTPC,
+// lip sync, MIDI -- the one PlayMode and both players tick) and this one. The
+// runtimes wired the name they recognised. Renamed to AudioSpectrumSystem on
+// 2026-09-19 so the component and its system share a name and neither can be
+// mistaken for the other; the audit now checks systems as well as components.
+//
+// STILL NOT WIRED, and do not wire it as a one-liner. Nothing constructs
+// AudioSpectrumSystem, and if something did, the displacement would follow a
+// SYNTHETIC 110/880/5000 Hz tone: InitializeComponent reads audioClipPath only
+// to decide whether to generate that test signal and never loads the file
+// ("A real implementation would load the audio file here"). Meshes would move,
+// convincingly, to audio nobody authored -- which looks far more finished than
+// a feature that does nothing. It needs real samples first, either decoded
+// through AudioEngine or tapped off the live mixer.
 struct AudioSpectrumComponent {
     // --- FFT settings ---
     i32 fftSize = 1024;            // FFT window size (power of 2)
@@ -262,10 +278,10 @@ struct MeshDisplacer {
 // AUDIO REACTIVE SYSTEM
 // ============================================================================
 
-class ENJIN_API AudioReactiveSystem {
+class ENJIN_API AudioSpectrumSystem {
 public:
-    AudioReactiveSystem() = default;
-    ~AudioReactiveSystem() = default;
+    AudioSpectrumSystem() = default;
+    ~AudioSpectrumSystem() = default;
 
     /**
      * @brief Update all audio-reactive entities
