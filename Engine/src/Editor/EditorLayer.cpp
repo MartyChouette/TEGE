@@ -1,4 +1,5 @@
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/Networking/NetworkSystem.h"   // the editor pumps the socket for collab
 #include "Enjin/Editor/EditorShortcuts.h"
 #include "Enjin/ECS/Systems/BrushSolidSystem.h"
 #include "Enjin/ECS/Systems/VoxelVolumeSystem.h"
@@ -1071,6 +1072,49 @@ void EditorLayer::Update(f32 deltaTime) {
         ENJIN_LOG_INFO(Editor, "--compute-skinning: compute skinning forced ON");
     }
 
+    // --collab-host / --collab-join probe support. Start the session a few
+    // frames in, for the same reason --play waits: the scene has to be loaded
+    // first. Then log the peer count every second and exit at --collab-frames,
+    // which is what lets a two-instance test ASSERT rather than eyeball.
+    if ((s_CollabHostPort > 0 || s_CollabJoinPort > 0) && m_World) {
+        static int s_CollabCountdown = 60;
+        if (s_CollabCountdown > 0 && --s_CollabCountdown == 0) {
+            auto* net = m_PlayMode.GetNetworkSystem();
+            const std::string user =
+                s_CollabUserName.empty() ? std::string("probe") : s_CollabUserName;
+            if (net) {
+                m_CollabSystem.Initialize(m_World, net);
+                if (s_CollabHostPort > 0) {
+                    const bool ok = m_CollabSystem.HostSession(
+                        static_cast<u16>(s_CollabHostPort), user);
+                    ENJIN_LOG_WARN(Editor, "COLLABPROBE host port=%d ok=%d",
+                                   s_CollabHostPort, (int)ok);
+                } else {
+                    const bool ok = m_CollabSystem.JoinSession(
+                        s_CollabJoinIP, static_cast<u16>(s_CollabJoinPort), user);
+                    ENJIN_LOG_WARN(Editor, "COLLABPROBE join %s:%d ok=%d",
+                                   s_CollabJoinIP.c_str(), s_CollabJoinPort, (int)ok);
+                }
+            } else {
+                ENJIN_LOG_WARN(Editor, "COLLABPROBE no NetworkSystem");
+            }
+        }
+    }
+    if (s_CollabExitFrame > 0) {
+        static int s_CollabFrame = 0;
+        ++s_CollabFrame;
+        if ((s_CollabFrame % 60) == 0) {
+            ENJIN_LOG_WARN(Editor, "COLLABPROBE frame=%d active=%d peers=%d",
+                           s_CollabFrame, (int)m_CollabSystem.IsActive(),
+                           (int)m_CollabSystem.GetPeers().size());
+        }
+        if (s_CollabFrame >= s_CollabExitFrame) {
+            ENJIN_LOG_WARN(Editor, "COLLABPROBE done peers=%d",
+                           (int)m_CollabSystem.GetPeers().size());
+            if (m_Window) m_Window->Close();   // same exit the golden harness uses
+        }
+    }
+
     // --play probe support: enter play mode ~2s after boot, once the launch
     // project's scene is fully loaded and a few frames have rendered.
     if (s_AutoPlayOnLaunch && m_RenderSystem) {
@@ -1987,6 +2031,46 @@ void EditorLayer::Update(f32 deltaTime) {
 
     // Update input action map each frame
     m_InputMap.Update(deltaTime);
+
+    // Pump the collaboration socket whenever a session EXISTS, not just when it
+    // is active.
+    //
+    // Two things were wrong. Collaboration runs on PlayMode's NetworkSystem
+    // (that is what the Host and Join buttons hand it) and PlayMode only calls
+    // its Update inside the Playing guard, so in EDIT mode -- which is when
+    // people collaborate -- nothing received packets. The feature had twelve
+    // implementation files and no tick, and its own triage recorded that a live
+    // two-instance test "CANNOT PASS".
+    //
+    // The second one I introduced myself and it is the more interesting bug:
+    // gating this on IsActive() deadlocks a client. IsActive() is true only for
+    // Hosting or Connected, and a joining client sits in Joining until it
+    // receives the accept -- which it cannot receive while the pump is gated on
+    // a state it can only reach by receiving. Measured: the client logged
+    // "Connecting to 127.0.0.1:7777", bound its socket, and sat at peers=0 for
+    // 1200 frames against a live host.
+    //
+    // Guarded on not-playing so the two never both tick it in one frame: a
+    // second Update re-reads the socket and runs the heartbeat and
+    // reliable-message timers at double rate.
+    const bool collabSessionExists =
+        m_CollabSystem.GetState() != Editor::CollabSessionState::Disconnected;
+    if (collabSessionExists && !m_PlayMode.IsPlaying()) {
+        if (auto* net = m_PlayMode.GetNetworkSystem()) {
+            // And it has to be ENABLED, which was the third link in the same
+            // chain. NetworkSystem::Update early-returns on !m_Enabled, and the
+            // only SetEnabled(true) in the repo is in PlayMode's play-start
+            // path -- HostGame and JoinGame do not enable it themselves. So in
+            // edit mode the system was off, and pumping a disabled system is
+            // still doing nothing. Enabled here rather than inside HostGame so
+            // the player's own enable/disable semantics are untouched.
+            if (!net->IsEnabled()) {
+                net->SetEnabled(true);
+                ENJIN_LOG_INFO(Editor, "Collaboration: networking enabled for edit mode");
+            }
+            net->Update(deltaTime);
+        }
+    }
 
     // Update collaborative editing (process remote ops, broadcast transforms)
     if (m_CollabSystem.IsActive()) {

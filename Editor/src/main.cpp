@@ -452,6 +452,18 @@ int main(int argc, char* argv[]) {
             Enjin::Editor::EditorLayer::s_BakePlateName = argv[++i];
         } else if (flag == "--golden-frames" && i + 1 < argc && argv[i + 1]) {
             Enjin::Editor::EditorLayer::s_GoldenCaptureFrame = std::atoi(argv[++i]);
+        } else if (flag == "--collab-host" && i + 1 < argc && argv[i + 1]) {
+            // Start a collaborative session on launch. Hosting is a button in a
+            // panel, so without this the feature's own two-instance test cannot
+            // be run at all - by a person or by CI.
+            Enjin::Editor::EditorLayer::s_CollabHostPort = std::atoi(argv[++i]);
+        } else if (flag == "--collab-join" && i + 2 < argc && argv[i + 1] && argv[i + 2]) {
+            Enjin::Editor::EditorLayer::s_CollabJoinIP = argv[++i];
+            Enjin::Editor::EditorLayer::s_CollabJoinPort = std::atoi(argv[++i]);
+        } else if (flag == "--collab-name" && i + 1 < argc && argv[i + 1]) {
+            Enjin::Editor::EditorLayer::s_CollabUserName = argv[++i];
+        } else if (flag == "--collab-frames" && i + 1 < argc && argv[i + 1]) {
+            Enjin::Editor::EditorLayer::s_CollabExitFrame = std::atoi(argv[++i]);
         }
     }
 

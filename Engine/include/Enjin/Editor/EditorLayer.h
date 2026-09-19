@@ -263,6 +263,22 @@ public:
                                          const std::string& outDir);
 
     static inline std::string s_GoldenCapturePath;
+
+    // --collab-host <port> / --collab-join <ip> <port> / --collab-frames N:
+    // start a collaborative session on launch and exit after N frames, logging
+    // the peer count.
+    //
+    // Hosting and joining are BUTTONS in a panel, and a button cannot be
+    // exercised by a test or by CI -- the same reason --golden and --bake-plate
+    // exist. The backlog item for this feature asked for a live two-instance
+    // test and recorded that it "CANNOT PASS", which was true twice over: the
+    // socket was never pumped in edit mode, and there was no way to start a
+    // session without a human clicking.
+    static inline i32 s_CollabHostPort = 0;
+    static inline std::string s_CollabJoinIP;
+    static inline i32 s_CollabJoinPort = 0;
+    static inline std::string s_CollabUserName;
+    static inline i32 s_CollabExitFrame = 0;
     // --bake-plate <name>: bake a background plate from the launch scene, then
     // exit. Exists so the bake has a path that is not a mouse click.
     static inline std::string s_BakePlateName;
