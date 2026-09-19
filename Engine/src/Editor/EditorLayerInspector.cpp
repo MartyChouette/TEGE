@@ -1830,7 +1830,8 @@ void EditorLayer::DrawInspectorPanel() {
                     ImGui::Checkbox("Wireframe##MR", &mr->wireframe);
                     if (mr->wireframe) {
                         f32 wfColor[3] = { mr->wireframeColor.x, mr->wireframeColor.y, mr->wireframeColor.z };
-                        if (ImGui::ColorEdit3("Wire Color##MR", wfColor)) {
+                        if (InspectorUndo::ColorEdit3(m_UndoRedo, "Wire Color##MR", wfColor,
+                                [mr](f32 r, f32 g, f32 b) { mr->wireframeColor = Math::Vector3(r, g, b); })) {
                             mr->wireframeColor = Math::Vector3(wfColor[0], wfColor[1], wfColor[2]);
                         }
                         ImGui::DragFloat("Wire Opacity##MR", &mr->wireframeOpacity, 0.05f, 0.0f, 1.0f, "%.2f");
@@ -2290,9 +2291,15 @@ void EditorLayer::DrawInspectorPanel() {
                         "No seeding: this will stay a flat colour.");
                 ImGui::SeparatorText("Look");
                 f32 lo[3] = { rd->colorLow.x, rd->colorLow.y, rd->colorLow.z };
-                if (ImGui::ColorEdit3("Color Low", lo)) rd->colorLow = Math::Vector3(lo[0], lo[1], lo[2]);
+                if (InspectorUndo::ColorEdit3(m_UndoRedo, "Color Low", lo,
+                        [rd](f32 r, f32 g, f32 b) { rd->colorLow = Math::Vector3(r, g, b); })) {
+                    rd->colorLow = Math::Vector3(lo[0], lo[1], lo[2]);
+                }
                 f32 hi[3] = { rd->colorHigh.x, rd->colorHigh.y, rd->colorHigh.z };
-                if (ImGui::ColorEdit3("Color High", hi)) rd->colorHigh = Math::Vector3(hi[0], hi[1], hi[2]);
+                if (InspectorUndo::ColorEdit3(m_UndoRedo, "Color High", hi,
+                        [rd](f32 r, f32 g, f32 b) { rd->colorHigh = Math::Vector3(r, g, b); })) {
+                    rd->colorHigh = Math::Vector3(hi[0], hi[1], hi[2]);
+                }
                 i32 settle = static_cast<i32>(rd->settleSteps);
                 if (ImGui::DragInt("Settle Steps", &settle, 25, 0, 20000))
                     rd->settleSteps = static_cast<u32>(settle < 0 ? 0 : settle);
@@ -2357,9 +2364,15 @@ void EditorLayer::DrawInspectorPanel() {
                 ImGui::SliderFloat("Outer Radius", &ph->seedOuterRadius, 0.0f, 1.0f, "%.2f");
                 ImGui::SeparatorText("Look");
                 f32 tc[3] = { ph->trailColor.x, ph->trailColor.y, ph->trailColor.z };
-                if (ImGui::ColorEdit3("Trail Color", tc)) ph->trailColor = Math::Vector3(tc[0], tc[1], tc[2]);
+                if (InspectorUndo::ColorEdit3(m_UndoRedo, "Trail Color", tc,
+                        [ph](f32 r, f32 g, f32 b) { ph->trailColor = Math::Vector3(r, g, b); })) {
+                    ph->trailColor = Math::Vector3(tc[0], tc[1], tc[2]);
+                }
                 f32 bc[3] = { ph->backgroundColor.x, ph->backgroundColor.y, ph->backgroundColor.z };
-                if (ImGui::ColorEdit3("Background", bc)) ph->backgroundColor = Math::Vector3(bc[0], bc[1], bc[2]);
+                if (InspectorUndo::ColorEdit3(m_UndoRedo, "Background", bc,
+                        [ph](f32 r, f32 g, f32 b) { ph->backgroundColor = Math::Vector3(r, g, b); })) {
+                    ph->backgroundColor = Math::Vector3(bc[0], bc[1], bc[2]);
+                }
                 i32 settle = static_cast<i32>(ph->settleSteps);
                 if (ImGui::DragInt("Settle Steps", &settle, 25, 0, 20000))
                     ph->settleSteps = static_cast<u32>(settle < 0 ? 0 : settle);
@@ -2407,7 +2420,10 @@ void EditorLayer::DrawInspectorPanel() {
                 ImGui::DragInt("Group", &mb->groupId, 1, 0, 64);
                 ImGui::SetItemTooltip("Blobs merge only with others in the same group.\nA Metaball Surface with this group renders the result.");
                 f32 mbCol[3] = { mb->color.x, mb->color.y, mb->color.z };
-                if (ImGui::ColorEdit3("Color", mbCol)) mb->color = Math::Vector3(mbCol[0], mbCol[1], mbCol[2]);
+                if (InspectorUndo::ColorEdit3(m_UndoRedo, "Color", mbCol,
+                        [mb](f32 r, f32 g, f32 b) { mb->color = Math::Vector3(r, g, b); })) {
+                    mb->color = Math::Vector3(mbCol[0], mbCol[1], mbCol[2]);
+                }
                 if (m_World->GetEntitiesWithComponent<ECS::MetaballSurfaceComponent>().empty())
                     ImGui::TextColored(ImVec4(0.95f, 0.65f, 0.20f, 1.0f),
                         "No Metaball Surface in the scene - nothing will render.");
@@ -2482,9 +2498,15 @@ void EditorLayer::DrawInspectorPanel() {
                 if (ca->meshMode == Effects::CAMeshMode::MarchingCubes)
                     ImGui::SliderFloat("Iso Level", &ca->isoLevel, 0.0f, 1.0f, "%.2f");
                 f32 lc[3] = { ca->liveColor.x, ca->liveColor.y, ca->liveColor.z };
-                if (ImGui::ColorEdit3("Live Color", lc)) ca->liveColor = Math::Vector3(lc[0], lc[1], lc[2]);
+                if (InspectorUndo::ColorEdit3(m_UndoRedo, "Live Color", lc,
+                        [ca](f32 r, f32 g, f32 b) { ca->liveColor = Math::Vector3(r, g, b); })) {
+                    ca->liveColor = Math::Vector3(lc[0], lc[1], lc[2]);
+                }
                 f32 dc[3] = { ca->dyingColor.x, ca->dyingColor.y, ca->dyingColor.z };
-                if (ImGui::ColorEdit3("Dying Color", dc)) ca->dyingColor = Math::Vector3(dc[0], dc[1], dc[2]);
+                if (InspectorUndo::ColorEdit3(m_UndoRedo, "Dying Color", dc,
+                        [ca](f32 r, f32 g, f32 b) { ca->dyingColor = Math::Vector3(r, g, b); })) {
+                    ca->dyingColor = Math::Vector3(dc[0], dc[1], dc[2]);
+                }
                 const char* stamps[] = { "Random fill", "Glider", "Pulsar", "Gosper Glider Gun" };
                 int si = 0;
                 if (ca->stampPattern == "glider") si = 1;
@@ -2610,7 +2632,10 @@ void EditorLayer::DrawInspectorPanel() {
                 ImGui::SliderFloat("Damping", &sw->damping, 0.0f, 1.0f, "%.2f");
                 ImGui::DragFloat("Cube Size", &sw->cubeSize, 0.01f, 0.01f, 5.0f);
                 f32 swCol[3] = { sw->color.x, sw->color.y, sw->color.z };
-                if (ImGui::ColorEdit3("Color", swCol)) sw->color = Math::Vector3(swCol[0], swCol[1], swCol[2]);
+                if (InspectorUndo::ColorEdit3(m_UndoRedo, "Color", swCol,
+                        [sw](f32 r, f32 g, f32 b) { sw->color = Math::Vector3(r, g, b); })) {
+                    sw->color = Math::Vector3(swCol[0], swCol[1], swCol[2]);
+                }
                 ImGui::TextDisabled("(simulates in Play mode as instanced proxy cubes)");
             }
         }
@@ -3616,7 +3641,13 @@ void EditorLayer::DrawInspectorPanel() {
                             ImGui::DragFloat("Speed Multiplier", &layer.speedMultiplier, 0.01f, 0.0f, 10.0f, "%.2f");
                             ImGui::DragFloat2("Offset", &layer.offset.x, 0.1f);
                             ImGui::DragFloat2("Scale", &layer.scale.x, 0.1f, 0.01f, 1000.0f);
-                            ImGui::ColorEdit3("Tint", &layer.tint.x);
+                            f32 layerTint[3] = { layer.tint.x, layer.tint.y, layer.tint.z };
+                            if (InspectorUndo::ColorEdit3(m_UndoRedo, "Tint", layerTint,
+                                    [pm, i](f32 r, f32 g, f32 b) {
+                                        pm->layers[i].tint = Math::Vector3(r, g, b);
+                                    })) {
+                                layer.tint = Math::Vector3(layerTint[0], layerTint[1], layerTint[2]);
+                            }
                             ImGui::DragFloat("Alpha", &layer.alpha, 0.01f, 0.0f, 1.0f, "%.2f");
                             ImGui::Checkbox("Repeat X", &layer.repeatX);
                             ImGui::SameLine();
@@ -3701,9 +3732,21 @@ void EditorLayer::DrawInspectorPanel() {
                     ImGui::DragFloat("Tension", &iw->tension, 0.01f, 0.0f, 1.0f);
                     ImGui::Separator();
                     ImGui::Text("Appearance");
-                    ImGui::ColorEdit3("Shallow Color", &iw->shallowColor.x);
-                    ImGui::ColorEdit3("Deep Color", &iw->deepColor.x);
-                    ImGui::ColorEdit3("Foam Color", &iw->foamColor.x);
+                    f32 iwShallow[3] = { iw->shallowColor.x, iw->shallowColor.y, iw->shallowColor.z };
+                    if (InspectorUndo::ColorEdit3(m_UndoRedo, "Shallow Color", iwShallow,
+                            [iw](f32 r, f32 g, f32 b) { iw->shallowColor = Math::Vector3(r, g, b); })) {
+                        iw->shallowColor = Math::Vector3(iwShallow[0], iwShallow[1], iwShallow[2]);
+                    }
+                    f32 iwDeep[3] = { iw->deepColor.x, iw->deepColor.y, iw->deepColor.z };
+                    if (InspectorUndo::ColorEdit3(m_UndoRedo, "Deep Color", iwDeep,
+                            [iw](f32 r, f32 g, f32 b) { iw->deepColor = Math::Vector3(r, g, b); })) {
+                        iw->deepColor = Math::Vector3(iwDeep[0], iwDeep[1], iwDeep[2]);
+                    }
+                    f32 iwFoam[3] = { iw->foamColor.x, iw->foamColor.y, iw->foamColor.z };
+                    if (InspectorUndo::ColorEdit3(m_UndoRedo, "Foam Color", iwFoam,
+                            [iw](f32 r, f32 g, f32 b) { iw->foamColor = Math::Vector3(r, g, b); })) {
+                        iw->foamColor = Math::Vector3(iwFoam[0], iwFoam[1], iwFoam[2]);
+                    }
                     ImGui::DragFloat("Opacity", &iw->opacity, 0.01f, 0.0f, 1.0f);
                     ImGui::DragFloat("Depth Threshold", &iw->depthColorThreshold, 0.1f, 0.0f, 20.0f);
                     ImGui::DragFloat("Foam Threshold", &iw->foamThreshold, 0.01f, 0.0f, 2.0f);
@@ -4664,8 +4707,20 @@ void EditorLayer::DrawInspectorPanel() {
                         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Base opacity of the nearest ghost (closest frame)");
                         ImGui::SliderFloat("Falloff##Onion3D", &onionSkin.opacityFalloff, 0.1f, 1.0f, "%.2f");
                         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Each step multiplies opacity by this value (lower = faster fade)");
-                        ImGui::ColorEdit3("Before Tint##Onion3D", &onionSkin.beforeTint.x);
-                        ImGui::ColorEdit3("After Tint##Onion3D", &onionSkin.afterTint.x);
+                        f32 onionBefore[3] = { onionSkin.beforeTint.x, onionSkin.beforeTint.y, onionSkin.beforeTint.z };
+                        if (InspectorUndo::ColorEdit3(m_UndoRedo, "Before Tint##Onion3D", onionBefore,
+                                [animComp](f32 r, f32 g, f32 b) {
+                                    animComp->onionSkin.beforeTint = Math::Vector3(r, g, b);
+                                })) {
+                            onionSkin.beforeTint = Math::Vector3(onionBefore[0], onionBefore[1], onionBefore[2]);
+                        }
+                        f32 onionAfter[3] = { onionSkin.afterTint.x, onionSkin.afterTint.y, onionSkin.afterTint.z };
+                        if (InspectorUndo::ColorEdit3(m_UndoRedo, "After Tint##Onion3D", onionAfter,
+                                [animComp](f32 r, f32 g, f32 b) {
+                                    animComp->onionSkin.afterTint = Math::Vector3(r, g, b);
+                                })) {
+                            onionSkin.afterTint = Math::Vector3(onionAfter[0], onionAfter[1], onionAfter[2]);
+                        }
 
                         // Visual opacity preview strip
                         {
