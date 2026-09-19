@@ -314,7 +314,8 @@ void EditorLayer::DrawPostProcessVolumeComponent(ECS::Entity entity) {
             // Color Grading
             if (ImGui::TreeNode("Color Grading##PPVolSet")) {
                 f32 col[3] = { s.colorFilter.x, s.colorFilter.y, s.colorFilter.z };
-                if (ImGui::ColorEdit3("Color Filter##PPVolCG", col)) {
+                if (InspectorUndo::ColorEdit3(m_UndoRedo, "Color Filter##PPVolCG", col,
+                        [vol](f32 r, f32 g, f32 b) { vol->settings.colorFilter = Math::Vector3(r, g, b); })) {
                     s.colorFilter = Math::Vector3(col[0], col[1], col[2]);
                 }
                 ImGui::DragFloat("Saturation##PPVolCG", &s.saturation, 0.01f, 0.0f, 3.0f);
@@ -370,7 +371,8 @@ void EditorLayer::DrawPostProcessVolumeComponent(ECS::Entity entity) {
                 ImGui::DragFloat("Normal Weight##PPVolCel", &s.celOutlineNormalWeight, 0.01f, 0.0f, 2.0f);
                 ImGui::DragFloat("Curvature Weight##PPVolCel", &s.celOutlineCurvatureWeight, 0.01f, 0.0f, 2.0f);
                 f32 outColor[3] = { s.celOutlineColor.x, s.celOutlineColor.y, s.celOutlineColor.z };
-                if (ImGui::ColorEdit3("Color##PPVolCel", outColor)) {
+                if (InspectorUndo::ColorEdit3(m_UndoRedo, "Color##PPVolCel", outColor,
+                        [vol](f32 r, f32 g, f32 b) { vol->settings.celOutlineColor = Math::Vector3(r, g, b); })) {
                     s.celOutlineColor = Math::Vector3(outColor[0], outColor[1], outColor[2]);
                 }
                 ImGui::TreePop();
@@ -1133,7 +1135,10 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
         // Color Grading
         if (UI::SectionHeader("Color Grading")) {
             f32 colorFilter[3] = { settings.colorFilter.x, settings.colorFilter.y, settings.colorFilter.z };
-            if (ImGui::ColorEdit3("Color Filter", colorFilter)) {
+            if (InspectorUndo::ColorEdit3(m_UndoRedo, "Color Filter", colorFilter,
+                    [this](f32 r, f32 g, f32 b) {
+                        if (m_PostProcessing) m_PostProcessing->GetSettings().colorFilter = Math::Vector3(r, g, b);
+                    })) {
                 settings.colorFilter = Math::Vector3(colorFilter[0], colorFilter[1], colorFilter[2]);
             }
 
@@ -1634,13 +1639,19 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
                 // Show color pickers for mono and duo-tone modes
                 if (settings.stippleColorMode <= 1) {
                     f32 fg[3] = { settings.stippleFgColor.x, settings.stippleFgColor.y, settings.stippleFgColor.z };
-                    if (ImGui::ColorEdit3("Foreground##Stipple", fg)) {
+                    if (InspectorUndo::ColorEdit3(m_UndoRedo, "Foreground##Stipple", fg,
+                            [this](f32 r, f32 g, f32 b) {
+                                if (m_PostProcessing) m_PostProcessing->GetSettings().stippleFgColor = Math::Vector3(r, g, b);
+                            })) {
                         settings.stippleFgColor = Math::Vector3(fg[0], fg[1], fg[2]);
                     }
                     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Ink / dot color");
 
                     f32 bg[3] = { settings.stippleBgColor.x, settings.stippleBgColor.y, settings.stippleBgColor.z };
-                    if (ImGui::ColorEdit3("Background##Stipple", bg)) {
+                    if (InspectorUndo::ColorEdit3(m_UndoRedo, "Background##Stipple", bg,
+                            [this](f32 r, f32 g, f32 b) {
+                                if (m_PostProcessing) m_PostProcessing->GetSettings().stippleBgColor = Math::Vector3(r, g, b);
+                            })) {
                         settings.stippleBgColor = Math::Vector3(bg[0], bg[1], bg[2]);
                     }
                     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Paper / gap color");
@@ -1665,7 +1676,10 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("Weight of normal-based edge detection (catches surface detail depth misses)");
                 ImGui::SliderFloat("Curvature Weight##PP", &s.celOutlineCurvatureWeight, 0.0f, 2.0f);
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("Curvature-driven thickness variation (NPR pen/ink).\nThicker lines on curved edges, thinner on flat surfaces.");
-                ImGui::ColorEdit3("Outline Color##PP", &s.celOutlineColor.x);
+                InspectorUndo::ColorEdit3(m_UndoRedo, "Outline Color##PP", &s.celOutlineColor.x,
+                        [this](f32 r, f32 g, f32 b) {
+                            if (m_PostProcessing) m_PostProcessing->GetSettings().celOutlineColor = Math::Vector3(r, g, b);
+                        });
             }
         }
 
@@ -2201,7 +2215,10 @@ void EditorLayer::DrawSettingsSection_RetroEffects() {
                 ImGui::Checkbox("Enabled##Fog", &fog.enabled);
                 if (fog.enabled) {
                     f32 fogColor[3] = { fog.color.x, fog.color.y, fog.color.z };
-                    if (ImGui::ColorEdit3("Color##Fog", fogColor)) {
+                    if (InspectorUndo::ColorEdit3(m_UndoRedo, "Color##Fog", fogColor,
+                            [this](f32 r, f32 g, f32 b) {
+                                m_RetroEffects.GetFogSettings().color = Math::Vector3(r, g, b);
+                            })) {
                         fog.color = Math::Vector3(fogColor[0], fogColor[1], fogColor[2]);
                     }
                     ImGui::DragFloat("Start Distance", &fog.start, 0.5f, 0.0f, 100.0f);
@@ -2587,7 +2604,10 @@ void EditorLayer::DrawSettingsSection_AmbientLighting() {
     if (UI::SectionHeader("Ambient Lighting")) {
         Math::Vector3 ambientColor = m_RenderSystem->GetAmbientColor();
         f32 ambient[3] = { ambientColor.x, ambientColor.y, ambientColor.z };
-        if (ImGui::ColorEdit3("Ambient Color", ambient)) {
+        if (InspectorUndo::ColorEdit3(m_UndoRedo, "Ambient Color", ambient,
+                [this](f32 r, f32 g, f32 b) {
+                    if (m_RenderSystem) m_RenderSystem->SetAmbientColor(Math::Vector3(r, g, b));
+                })) {
             m_RenderSystem->SetAmbientColor(Math::Vector3(ambient[0], ambient[1], ambient[2]));
         }
         ImGui::SetItemTooltip("Base color for ambient light applied uniformly to all surfaces.\nSimulates indirect light in the scene.");
@@ -2741,7 +2761,10 @@ void EditorLayer::DrawSettingsSection_CelShading() {
             }
             ImGui::SetItemTooltip("Extrusion distance in world units.\n0.01-0.03 typical for characters, 0.05+ for stylized look.");
             Math::Vector3 outColor = m_RenderSystem->GetGeometryOutlineColor();
-            if (ImGui::ColorEdit3("Outline Color##GeomOutline", &outColor.x)) {
+            if (InspectorUndo::ColorEdit3(m_UndoRedo, "Outline Color##GeomOutline", &outColor.x,
+                    [this](f32 r, f32 g, f32 b) {
+                        if (m_RenderSystem) m_RenderSystem->SetGeometryOutlineColor(Math::Vector3(r, g, b));
+                    })) {
                 m_RenderSystem->SetGeometryOutlineColor(outColor);
             }
         }

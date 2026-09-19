@@ -5443,7 +5443,10 @@ void EditorLayer::DrawSprite2DComponent(ECS::Entity entity) {
                 ImGui::SetTooltip("Offset in world units (X, Y) from sprite position");
             }
             f32 col[4] = { sprite->shadowColor.x, sprite->shadowColor.y, sprite->shadowColor.z, sprite->shadowColor.w };
-            if (ImGui::ColorEdit4("Shadow Color", col, ImGuiColorEditFlags_AlphaBar)) {
+            if (InspectorUndo::ColorEdit4(m_UndoRedo, "Shadow Color", col,
+                    [sprite](f32 r, f32 g, f32 b, f32 a) {
+                        sprite->shadowColor = Math::Vector4(r, g, b, a);
+                    }, ImGuiColorEditFlags_AlphaBar)) {
                 sprite->shadowColor = Math::Vector4(col[0], col[1], col[2], col[3]);
             }
             InspectorUndo::DragFloat(m_UndoRedo, "Shadow Scale", &sprite->shadowScale, 0.01f, 0.1f, 3.0f);
