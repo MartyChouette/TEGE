@@ -3752,18 +3752,20 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     // Tell the renderer whether this frame's temporal jitter will actually be
     // consumed, BEFORE the scene renders and the projection matrix is built.
     //
-    // TAA is deliberately NOT counted here yet, even though ApplyTAA now
-    // resolves instead of bailing out.
+    // TAA counts, now that it genuinely resolves.
     //
-    // Measured 2026-09-19: with jitter on for TAA, an edge produces 834
-    // intermediate coverage pixels against 836 with no antialiasing at all --
-    // no averaging whatever -- while the mean per-pixel delta jumps to 36,
-    // which is the image being SHIFTED by the jitter and never converged. That
-    // is the exact harm this flag exists to prevent, so TAA does not get jitter
-    // until its history actually accumulates. FXAA and SMAA reach 1161 and 1188
-    // on the same edge, so the measurement is sound.
+    // It took four fixes to get here and the last one was the reason it had
+    // never run: TAA read PostProcessing's OWN scene image, which this path
+    // never renders into, so ApplyTAA returned at its third guard. The editor
+    // now hands it the scene target (SetTAASceneColor). Jitter is what gives
+    // the resolve different sub-pixel samples to average -- without it a static
+    // scene hands TAA the same image every frame and there is nothing to
+    // converge.
     if (m_RenderSystem) {
-        m_RenderSystem->SetTemporalResolveActive(m_RenderSystem->IsUpscalerActive());
+        const bool taaWillResolve = m_PostProcessing && m_PostProcessing->IsInitialized() &&
+                                    m_PostProcessing->IsTAAEnabled();
+        m_RenderSystem->SetTemporalResolveActive(
+            m_RenderSystem->IsUpscalerActive() || taaWillResolve);
     }
 
     // Always render to scene RT then copy to game view RT.
@@ -4036,6 +4038,14 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             }
             if (m_SceneRenderTarget && m_SceneRenderTarget->IsValid()) {
                 m_PostProcessing->SetDepthImageView(m_SceneRenderTarget->GetDepthImageView());
+                // The colour TAA resolves. Without this it read PostProcessing's
+                // own scene image, which this path never renders into, so the
+                // view was null and ApplyTAA returned at its third guard --
+                // which is why TAA had never run here. End() has already put the
+                // target in SHADER_READ_ONLY, so ApplyTAA must not barrier it.
+                m_PostProcessing->SetTAASceneColor(m_SceneRenderTarget->GetColorImageView(),
+                                                   m_SceneRenderTarget->GetColorImage(),
+                                                   /*alreadyReadable*/ true);
             }
             const bool taaResolved = m_PostProcessing->ApplyTAA(commandBuffer);
 

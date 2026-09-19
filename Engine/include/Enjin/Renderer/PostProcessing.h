@@ -539,12 +539,36 @@ private:
     // Last frame's view-projection, kept so TAA can reproject from depth when
     // there is no velocity buffer. Set by ApplyTAA itself: nothing else knows
     // when a TAA frame was actually resolved.
+    VkImageView m_TAAColorView = VK_NULL_HANDLE;
+    VkImage m_TAAColorImage = VK_NULL_HANDLE;
+    bool m_TAAColorReadable = false;
     Math::Matrix4 m_PrevViewProj;
     bool m_HasPrevViewProj = false;
 public:
 
     // Bind the external velocity buffer (RG16F from the MRT pass)
     void SetVelocityImageView(VkImageView velocityView) { m_TAAVelocityView = velocityView; }
+
+    // The colour image TAA should resolve, when the scene was rendered into a
+    // target this object does not own.
+    //
+    // TAA read m_SceneImageView, which is PostProcessing's OWN scene image and
+    // exists only when PostProcessing owns the render. Both runtimes render the
+    // scene into an external RenderTarget and hand it over through
+    // UpdateSourceImage -- which writes the post-process shader's descriptor and
+    // never touches m_SceneImageView. So the view was null, ApplyTAA returned
+    // at its third guard, and TAA had never once run on any platform. There was
+    // no setter for it because nothing had noticed.
+    //
+    // The image handle comes too, because the barrier needs it. `alreadyReadable`
+    // says the caller has already transitioned it for sampling (RenderTarget::End
+    // does), in which case the scene barrier is skipped rather than declaring a
+    // layout the image is not in.
+    void SetTAASceneColor(VkImageView view, VkImage image, bool alreadyReadable) {
+        m_TAAColorView = view;
+        m_TAAColorImage = image;
+        m_TAAColorReadable = alreadyReadable;
+    }
 
     // Bind the external depth buffer for TAA (D32F from the scene pass)
     void SetDepthImageView(VkImageView depthView) { m_TAADepthView = depthView; }

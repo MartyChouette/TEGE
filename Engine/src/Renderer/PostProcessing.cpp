@@ -2257,7 +2257,13 @@ VkImageView PostProcessing::GetTAAOutputImageView() const {
 bool PostProcessing::ApplyTAA(VkCommandBuffer cmd) {
     if (!m_TAAReady || m_Settings.aaMode != 2) return false;
     if (m_TAAComputePipeline == VK_NULL_HANDLE) return false;
-    if (m_SceneImageView == VK_NULL_HANDLE) return false;
+    // The colour TAA resolves: an externally-owned target when one was handed
+    // over, otherwise this object's own scene image.
+    const VkImageView taaColorView =
+        (m_TAAColorView != VK_NULL_HANDLE) ? m_TAAColorView : m_SceneImageView;
+    const VkImage taaColorImage =
+        (m_TAAColorView != VK_NULL_HANDLE) ? m_TAAColorImage : m_SceneImage;
+    if (taaColorView == VK_NULL_HANDLE) return false;
     // Depth is required; velocity is not. Both offscreen paths (the editor's
     // scene target and the player's post-process target) carry one colour
     // attachment and no velocity buffer, so requiring velocity here is what
@@ -2279,17 +2285,22 @@ bool PostProcessing::ApplyTAA(VkCommandBuffer cmd) {
     VkImageMemoryBarrier preBarriers[3]{};
     u32 barrierCount = 0;
 
-    // Scene image -> shader read
+    // Scene image -> shader read. Skipped when the caller handed over a target
+    // it has already transitioned for sampling: barriering it from a layout it
+    // is not in is a validation error and can corrupt the image.
+    const bool needSceneBarrier = !(m_TAAColorView != VK_NULL_HANDLE && m_TAAColorReadable);
+    if (needSceneBarrier) {
     preBarriers[barrierCount].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     preBarriers[barrierCount].oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     preBarriers[barrierCount].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     preBarriers[barrierCount].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     preBarriers[barrierCount].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    preBarriers[barrierCount].image = m_SceneImage;
+    preBarriers[barrierCount].image = taaColorImage;
     preBarriers[barrierCount].subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
     preBarriers[barrierCount].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     preBarriers[barrierCount].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
     barrierCount++;
+    }
 
     // History read buffer -> shader read (might be UNDEFINED on first frame)
     preBarriers[barrierCount].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -2325,7 +2336,7 @@ bool PostProcessing::ApplyTAA(VkCommandBuffer cmd) {
 
     VkDescriptorImageInfo currentColorInfo{};
     currentColorInfo.sampler = m_TAASampler;
-    currentColorInfo.imageView = m_SceneImageView;
+    currentColorInfo.imageView = taaColorView;
     currentColorInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     VkDescriptorImageInfo historyColorInfo{};
@@ -2467,20 +2478,28 @@ bool PostProcessing::ApplyTAA(VkCommandBuffer cmd) {
     postBarriers[0].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
     postBarriers[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
-    postBarriers[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    postBarriers[1].oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    postBarriers[1].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    postBarriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    postBarriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    postBarriers[1].image = m_SceneImage;
-    postBarriers[1].subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
-    postBarriers[1].srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    postBarriers[1].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    // Hand the scene image back to COLOR_ATTACHMENT only when WE own it. With an
+    // externally-supplied target the caller owns its layout, and m_SceneImage is
+    // VK_NULL_HANDLE on that path -- barriering a null image handle is what
+    // crashed the editor the first time this was wired up.
+    u32 postCount = 1;
+    if (needSceneBarrier) {
+        postBarriers[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        postBarriers[1].oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        postBarriers[1].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        postBarriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        postBarriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        postBarriers[1].image = taaColorImage;
+        postBarriers[1].subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+        postBarriers[1].srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        postBarriers[1].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        postCount = 2;
+    }
 
     vkCmdPipelineBarrier(cmd,
         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        0, 0, nullptr, 0, nullptr, 2, postBarriers);
+        0, 0, nullptr, 0, nullptr, postCount, postBarriers);
 
     // Advance frame counter and swap ping-pong for next frame.
     // After the swap, m_TAACurrentIndex points to the buffer that will be *written*
