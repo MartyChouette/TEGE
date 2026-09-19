@@ -190,6 +190,7 @@ enjin_add_test(TestPhysicsSimulation  Unit/Physics/TestPhysicsSimulation.cpp)
 # --- Renderer ---
 enjin_add_test(TestRTConfig           Unit/Renderer/TestRTConfig.cpp)
 enjin_add_test(TestFrustumCull        Unit/Renderer/TestFrustumCull.cpp)
+enjin_add_test(TestMaterialFlagWord  Unit/Renderer/TestMaterialFlagWord.cpp)
 enjin_add_test(TestEntityFrustumCull Unit/Renderer/TestEntityFrustumCull.cpp)
 enjin_add_test(TestSdfRemesh         Unit/Renderer/TestSdfRemesh.cpp)
 enjin_add_test(TestTerrainLayers      Unit/Renderer/TestTerrainLayers.cpp)
