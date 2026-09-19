@@ -778,17 +778,32 @@ ECS::MeshComponent MeshFactory::CreateTerrain(const ECS::TerrainComponent& terra
                 static_cast<f32>(z) / static_cast<f32>(h - 1)
             );
 
-            // Vertex color = splatmap weights (RGBA for 4 texture layers)
-            Math::Vector4 color(1.0f, 1.0f, 1.0f, 1.0f);
-            if (terrain.splatmap.size() >= static_cast<usize>(w) * h * 4) {
-                usize idx = (static_cast<usize>(z) * w + x) * 4;
-                color = Math::Vector4(
-                    terrain.splatmap[idx + 0],
-                    terrain.splatmap[idx + 1],
-                    terrain.splatmap[idx + 2],
-                    terrain.splatmap[idx + 3]
-                );
-            }
+            // Vertex colour stays WHITE. The splat weights are not written
+            // here, and that is deliberate.
+            //
+            // They used to be: layer weights went into vertex colour as RGBA,
+            // ready for a shader that samples TerrainComponent::layers[4] and
+            // blends between them. That shader does not exist. layers[] is read
+            // by exactly two things -- the inspector, which shows and clears the
+            // path, and the serializer -- so nothing binds those textures and
+            // nothing consumes the weights.
+            //
+            // What DID consume them was triangle.frag's `albedo *=
+            // fragVertColor.rgb`, which is meant for baked vertex lighting and
+            // applies to everything that is not a water surface. So a default
+            // terrain (InitializeFlat gives layer 0 full weight) multiplied its
+            // albedo by (1,0,0) and rendered RED; painting the second layer
+            // turned it green, the third blue, the fourth black. Web never had
+            // the bug -- its PBR shader has no vertex-colour multiply at all --
+            // so the two backends disagreed and the browser was the one that
+            // looked right.
+            //
+            // terrain.splatmap remains the authoritative store and is still
+            // painted, serialized and auto-generated. When a real splat shader
+            // lands it reads from there, or this transport comes back together
+            // WITH the consumer that needs it. Until then, shipping the weights
+            // into a channel that means "tint" is the bug.
+            const Math::Vector4 color(1.0f, 1.0f, 1.0f, 1.0f);
 
             ECS::MeshComponent::Vertex vert;
             vert.position = pos;
