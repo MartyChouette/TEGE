@@ -111,6 +111,14 @@ static void Weather_SetFogRange(float start, float end) {
     s_BindingsWeather->SetFogEnd(end);
 }
 
+// The WEATHER system's wind, which slants precipitation. This is NOT the wind
+// control, and three documents plus an example README said it was -- corrected
+// 2026-09-18 after the validation triage found it.
+//
+// It does not touch WindSystem, so it moves no foliage, no vegetation and no
+// particles. Wind_SetDirection / Wind_SetStrength above are those. The two stay
+// separate on purpose: slanting rain should not have to shake every tree, and
+// a calm day with heavy rain falling straight down is a thing someone will want.
 static void Weather_SetWind(float dirX, float dirY, float dirZ, float strength) {
     if (!s_BindingsWeather) return;
     s_BindingsWeather->SetWindDirection(Math::Vector3(dirX, dirY, dirZ));

@@ -495,7 +495,7 @@ Permanent key-value storage that survives across runs and save slot deletion.
 - `Weather_SetFogDensity(float)`, `Weather_GetFogDensity()` — Fog density (0-1).
 - `Weather_SetFogColor(float r, float g, float b)` — Fog color RGB.
 - `Weather_SetFogRange(float start, float end)` — Fog start/end distances.
-- `Weather_SetWind(float dirX, float dirY, float dirZ, float strength)` — Wind direction and strength.
+- `Weather_SetWind(float dirX, float dirY, float dirZ, float strength)` — the WEATHER system's wind, which slants precipitation. It does NOT drive foliage, vegetation or particles; for those use `Wind_SetDirection` / `Wind_SetStrength`, which write the global wind field.
 - `Weather_IsLightning()` — True if lightning is currently active.
 - `Weather_LightningJustFired()` — True for one frame when a lightning bolt triggers (use for SFX).
 - `Weather_SetLightningInterval(float minSec, float maxSec)` — Set random lightning interval range.

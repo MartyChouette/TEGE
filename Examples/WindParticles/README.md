@@ -12,7 +12,9 @@ the particles, so they drift and gust with everything else instead of moving in 
 straight line. **Wind Influence** controls how hard the wind pushes them.
 
 The scene wind direction/strength comes from the Weather/Wind settings (default is
-a light breeze along +X); scripts can change it live with `Weather_SetWind`.
+a light breeze along +X); scripts can change it live with `Wind_SetDirection` and
+`Wind_SetStrength`. NOT `Weather_SetWind` -- that one sets the weather system's
+own wind, which slants precipitation and moves no foliage.
 
 ## Robust settings (on the emitter)
 

@@ -2699,7 +2699,9 @@ A global wind system drives environmental motion across the engine. Configure wi
 
 **Zone overrides:** `WeatherZoneComponent` can override global wind within a region (e.g., calm inside a cave, strong gusts on a cliffside).
 
-**Scripting:** Use `Weather_SetWind(dirX, dirY, dirZ, strength)` in AngelScript to control wind at runtime.
+**Scripting:** Use `Wind_SetDirection(x, y, z)` and `Wind_SetStrength(s)` to control the wind that moves foliage, vegetation and particles at runtime.
+
+`Weather_SetWind(dirX, dirY, dirZ, strength)` is a DIFFERENT thing and is not the wind control: it sets the WeatherSystem's own wind, which slants precipitation. It does not touch the WindSystem, so it will not move a single leaf. The two are deliberately separate -- slanting rain should not have to shake every tree.
 
 **Importing trees with wind:**
 
