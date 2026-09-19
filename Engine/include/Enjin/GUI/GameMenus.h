@@ -165,6 +165,17 @@ public:
     void SetGameTitle(const std::string& title);
 
     // Game over screen
+    // NO CALLERS as of 2026-09-19, and that is correct rather than an oversight.
+    //
+    // The game-over screen a player sees is the UICanvas one that
+    // GameplayLoop::UpdateGameOverState spawns, rendered by UISystem in all
+    // three runtimes (UI unification Phase 2). The editor used to call this on
+    // top of that, so editor play mode stacked two game-over screens while a
+    // build showed one; that call is gone.
+    //
+    // Kept because GameMenuSystem owns the other menu screens and this is its
+    // matching entry point, but do not wire it back up without deciding which
+    // of the two screens is the real one -- having both is what went wrong.
     void ShowGameOver(bool won, const std::string& message, bool allowRestart, bool returnToMenu);
     bool IsGameOverScreen() const { return m_CurrentScreen == MenuScreen::GameOver; }
 

@@ -2767,22 +2767,20 @@ void EditorLayer::Update(f32 deltaTime) {
     // runtime scales its whole dt upstream; the editor scales per-clock).
     UpdateGameViewSims(deltaTime * (m_PlayMode.IsPlaying() ? Scripting::GetTimeScale() : 1.0f));
 
-    // Show game over screen when ready (player died or victory condition met)
-    if (m_PlayMode.IsGameOverReady() && !m_GameMenu.IsGameOverScreen()) {
-        // Find the GameOverComponent to get display parameters
-        for (auto entity : m_World->GetEntitiesWithComponent<ECS::GameOverComponent>()) {
-            auto* go = m_World->GetComponent<ECS::GameOverComponent>(entity);
-            if (go && go->triggered && go->screenVisible) {
-                const std::string& msg = go->won ? go->victoryMessage : go->defeatMessage;
-                m_GameMenu.ShowGameOver(go->won, msg, go->allowRestart, go->returnToMenu);
-                // Release mouse capture so the player can click buttons
-                if (m_GameViewMouseCaptured) {
-                    m_GameViewMouseCaptured = false;
-                    Input::SetMouseCaptured(false);
-                }
-                break;
-            }
-        }
+    // Game over draws ONE screen, the same one a shipped game draws.
+    //
+    // GameplayLoop::UpdateGameOverState spawns a UICanvas game-over screen
+    // (UI unification Phase 2) and UISystem renders it in all three runtimes,
+    // the editor included -- PlayMode already listens for its "gameover_restart"
+    // event. The editor ALSO showed m_GameMenu's ImGui game-over screen on top,
+    // left behind when the unification happened, so editor play mode stacked two
+    // game-over screens while a build showed one. Previewing something no player
+    // will see is the same defect as previewing nothing.
+    //
+    // The mouse release moved with it: the canvas has the buttons now.
+    if (m_PlayMode.IsGameOverReady() && m_GameViewMouseCaptured) {
+        m_GameViewMouseCaptured = false;
+        Input::SetMouseCaptured(false);
     }
 
     // Safety net: release mouse capture if play mode stopped
