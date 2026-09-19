@@ -57,8 +57,43 @@ bool ApplyDamage(ECS::World* world, ECS::Entity target, f32 damage,
     // player still bled shield on every contact.
     if (hp->isInvulnerable || hp->invulnerabilityTimer > 0.0f) return false;
 
+    // Resistance and weakness, applied to the INCOMING amount before anything
+    // else consumes it.
+    //
+    // DamageResistanceComponent has six per-type multipliers, an authoring UI
+    // and a GetMultiplier helper, and this function -- the one place contact
+    // damage, hazards, stomps and every script damage call go through -- never
+    // read it. The only consumer anywhere was AISystem's melee path, which
+    // hardcodes the PHYSICAL multiplier, so five of the six types did nothing
+    // at all and the sixth worked for exactly one attacker.
+    //
+    // Before the shield on purpose: a fire-immune target should not spend
+    // shield absorbing fire. Multiplier 0 therefore means the hit is fully
+    // ignored, which is what "immune" has to mean, and the function still
+    // returns true because the hit DID resolve -- a caller that destroys itself
+    // on hit should still do so against an immune target.
+    //
+    // The damage TYPE lives on the attacker's DamageComponent, so a call with
+    // no `src` (the script binding's bare ApplyDamage) has no type and is
+    // treated as Physical, matching DamageComponent's own default.
+    f32 incoming = damage;
+    if (const auto* resist = world->GetComponent<ECS::DamageResistanceComponent>(target)) {
+        const auto type = src ? src->type : ECS::DamageComponent::DamageType::Physical;
+        incoming *= resist->GetMultiplier(type);
+        if (incoming <= 0.0f) {
+            // Immune. Still counts as a resolved hit, and still starts the
+            // i-frame window, or a fire-immune player standing in fire would
+            // take the resistance check sixty times a second forever.
+            if (hp->invulnerabilityTime > 0.0f) {
+                hp->invulnerabilityTimer = hp->invulnerabilityTime;
+            }
+            hp->timeSinceLastDamage = 0.0f;
+            return true;
+        }
+    }
+
     // Shield absorbs before health.
-    f32 remaining = damage;
+    f32 remaining = incoming;
     if (hp->currentShield > 0.0f) {
         const f32 absorbed = Math::Min(remaining, hp->currentShield);
         hp->currentShield -= absorbed;
