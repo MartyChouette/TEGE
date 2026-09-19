@@ -54,6 +54,11 @@ HEADER_DIRS = [
     'Engine/include/Enjin/Physics',
 ]
 
+# Headers that are not C++ API at all. WebShaderData.h is WGSL source held in
+# string literals, so the declaration regex happily reported shader functions
+# like `fract` as engine methods that only the editor calls.
+SKIP_HEADERS = ('WebShaderData.h', 'ShaderData.h', 'RTShaderData.h')
+
 EDITOR_SRC = ('Engine/src/Editor',)
 # Where a shipped game's code lives. A call from any of these clears a method.
 RUNTIME_SRC = (
@@ -83,10 +88,33 @@ DECL = re.compile(
     r'(?P<name>[A-Za-z_]\w*)\s*\([^;]*\)\s*(?:const\s*)?(?:override\s*)?(?:noexcept\s*)?[;{]',
     re.MULTILINE)
 
-# Call sites only: `->Name(` or `.Name(`. This deliberately does NOT match
-# `Type::Name(` so a method's own DEFINITION is not mistaken for a call.
-def call_re(name):
-    return re.compile(r'(?:->|\.)' + re.escape(name) + r'\s*\(')
+# Call sites. Two forms, and missing the second one is what made the first
+# version of this tool wrong:
+#
+#   obj->Name(  /  obj.Name(     a call through an instance
+#   Name(                        a call from INSIDE the same class, or a free
+#                                function -- no prefix at all
+#
+# TieredSaveSystem::SyncToCloud is reached from TieredSaveSystem's own Update,
+# written plainly as `SyncToCloud();`, so the prefix-only version reported it as
+# editor-only when a runtime reaches it every frame. A guard that cries wolf
+# gets its baseline padded with things that are fine, which is how it stops
+# catching the things that are not.
+#
+# `(?<![:\w])` keeps the method's own DEFINITION out: `void Type::Name(` has a
+# colon immediately before the name, and `OtherName(` has a word character.
+# Collected ONCE per corpus rather than searched once per name. A regex per
+# name across two multi-megabyte blobs is O(names x text) and took minutes;
+# this is one pass and takes seconds.
+CALL_PREFIXED = re.compile(r'(?:->|\.)([A-Za-z_]\w*)\s*\(')
+CALL_BARE = re.compile(r'(?<![:\w.>])([A-Za-z_]\w*)\s*\(')
+
+
+def called_names(text):
+    """Every function name that `text` appears to CALL."""
+    names = set(CALL_PREFIXED.findall(text))
+    names.update(CALL_BARE.findall(text))
+    return names
 
 # Names too generic to attribute to one class, or inherited from the standard
 # library, where a text search cannot tell one owner from another.
@@ -125,6 +153,8 @@ def main():
         except OSError:
             continue
         rel = os.path.relpath(path, ROOT).replace(os.sep, '/')
+        if os.path.basename(path) in SKIP_HEADERS:
+            continue
         for m in DECL.finditer(text):
             n = m.group('name')
             if n in SKIP_NAMES or len(n) < 5:
@@ -147,12 +177,14 @@ def main():
             pass
     runtime_blob = '\n'.join(runtime_text)
 
+    editor_calls = called_names(editor_blob)
+    runtime_calls = called_names(runtime_blob)
+
     hits = {}
     for n, decl_path in sorted(names.items()):
-        rx = call_re(n)
-        if not rx.search(editor_blob):
+        if n not in editor_calls:
             continue                     # never called by the editor either
-        if rx.search(runtime_blob):
+        if n in runtime_calls:
             continue                     # a runtime reaches it: fine
         hits[n] = decl_path
 
