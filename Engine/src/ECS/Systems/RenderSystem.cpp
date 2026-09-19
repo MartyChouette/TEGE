@@ -6956,7 +6956,7 @@ void RenderSystem::ProcessPendingRecreation() {
             CreateSkyboxPipeline();
             // Rebuild the offscreen variant against the new pipeline layout
             if (m_OffscreenRenderPass != VK_NULL_HANDLE) {
-                CreateSkyboxPipelineVariant(m_OffscreenRenderPass, 1, VK_SAMPLE_COUNT_1_BIT, m_SkyboxPipelineOffscreen);
+                CreateSkyboxPipelineVariant(m_OffscreenRenderPass, m_OffscreenColorAttachments, VK_SAMPLE_COUNT_1_BIT, m_SkyboxPipelineOffscreen);
             }
             ENJIN_LOG_INFO(Renderer, "Shader hot-reload: skybox shaders reloaded successfully");
             break;
@@ -19074,34 +19074,36 @@ void RenderSystem::RenderTrees(u32 viewportWidth, u32 viewportHeight) {
                            viewportWidth, viewportHeight, mode2D, bindlessSet);
 }
 
-void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass) {
+void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass,
+                                                       u32 colorAttachmentCount) {
     if (!m_Pipeline) return;
     m_OffscreenRenderPass = renderPass;  // Cache for RecreatePipelines
+    m_OffscreenColorAttachments = colorAttachmentCount;
     VkDescriptorSetLayout layout = m_Pipeline->GetDescriptorSetLayout();
 
     if (m_WeatherRenderer) {
-        m_WeatherRenderer->RecreateForRenderPass(renderPass, layout, 1);
+        m_WeatherRenderer->RecreateForRenderPass(renderPass, layout, colorAttachmentCount);
     }
     if (m_GrassRenderer) {
-        m_GrassRenderer->RecreateForRenderPass(renderPass, layout, 1);
+        m_GrassRenderer->RecreateForRenderPass(renderPass, layout, colorAttachmentCount);
     }
     if (m_ShrubRenderer) {
-        m_ShrubRenderer->RecreateForRenderPass(renderPass, layout, 1);
+        m_ShrubRenderer->RecreateForRenderPass(renderPass, layout, colorAttachmentCount);
     }
     if (m_ParticleRenderer) {
-        m_ParticleRenderer->RecreateForRenderPass(renderPass, layout, 1);
+        m_ParticleRenderer->RecreateForRenderPass(renderPass, layout, colorAttachmentCount);
     }
     if (m_FluidRenderer) {
-        m_FluidRenderer->RecreateForRenderPass(renderPass, layout, 1);
+        m_FluidRenderer->RecreateForRenderPass(renderPass, layout, colorAttachmentCount);
     }
     if (m_TreeRenderer) {
-        m_TreeRenderer->RecreateForRenderPass(renderPass, layout, 1);
+        m_TreeRenderer->RecreateForRenderPass(renderPass, layout, colorAttachmentCount);
     }
     if (m_SpriteBatchRenderer) {
-        m_SpriteBatchRenderer->RecreateForRenderPass(renderPass, layout, 1);
+        m_SpriteBatchRenderer->RecreateForRenderPass(renderPass, layout, colorAttachmentCount);
     }
     if (m_GPUParticleSystem) {
-        m_GPUParticleSystem->RecreateDrawPipeline(renderPass, layout, 1,
+        m_GPUParticleSystem->RecreateDrawPipeline(renderPass, layout, colorAttachmentCount,
             m_BindlessManager ? m_BindlessManager->GetDescriptorSetLayout() : VK_NULL_HANDLE);
     }
 
@@ -19117,7 +19119,7 @@ void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass)
         config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         config.polygonMode = m_WireframeMode ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
         config.msaaSamples = VK_SAMPLE_COUNT_1_BIT;  // Offscreen RT is always 1 sample
-        config.colorAttachmentCount = 1; // Single color output (no MRT velocity — avoids NVIDIA teal)
+        config.colorAttachmentCount = colorAttachmentCount; // follows the PASS: 2 when it carries velocity
         // Match the main pipeline: enable alpha blending so transparent materials
         // render see-through in the editor scene view too (no-op for opaque alpha=1).
         config.alphaBlend = true;
@@ -19151,7 +19153,7 @@ void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass)
         config.polygonMode = VK_POLYGON_MODE_FILL;
         config.alphaBlend = true;
         config.msaaSamples = VK_SAMPLE_COUNT_1_BIT;
-        config.colorAttachmentCount = 1;
+        config.colorAttachmentCount = colorAttachmentCount;
 
         m_OffscreenLinePipeline = std::make_unique<Renderer::VulkanPipeline>(m_VulkanRenderer->GetContext());
     if (m_BindlessManager) m_OffscreenLinePipeline->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());
@@ -19172,7 +19174,7 @@ void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass)
         config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         config.polygonMode = VK_POLYGON_MODE_FILL;
         config.msaaSamples = VK_SAMPLE_COUNT_1_BIT;
-        config.colorAttachmentCount = 1;
+        config.colorAttachmentCount = colorAttachmentCount;
 
         m_OffscreenOutlinePipeline = std::make_unique<Renderer::VulkanPipeline>(m_VulkanRenderer->GetContext());
     if (m_BindlessManager) m_OffscreenOutlinePipeline->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());
@@ -19190,7 +19192,7 @@ void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass)
             vkDestroyPipeline(m_VulkanRenderer->GetContext()->GetDevice(), m_SkyboxPipelineOffscreen, nullptr);
             m_SkyboxPipelineOffscreen = VK_NULL_HANDLE;
         }
-        if (!CreateSkyboxPipelineVariant(renderPass, 1, VK_SAMPLE_COUNT_1_BIT, m_SkyboxPipelineOffscreen)) {
+        if (!CreateSkyboxPipelineVariant(renderPass, colorAttachmentCount, VK_SAMPLE_COUNT_1_BIT, m_SkyboxPipelineOffscreen)) {
             ENJIN_LOG_WARN(Renderer, "Failed to create offscreen skybox pipeline");
         }
     }
@@ -19201,7 +19203,7 @@ void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass)
             vkDestroyPipeline(m_VulkanRenderer->GetContext()->GetDevice(), m_Sky2DPipelineOffscreen, nullptr);
             m_Sky2DPipelineOffscreen = VK_NULL_HANDLE;
         }
-        CreateSky2DPipelineVariant(renderPass, 1, VK_SAMPLE_COUNT_1_BIT, m_Sky2DPipelineOffscreen);
+        CreateSky2DPipelineVariant(renderPass, colorAttachmentCount, VK_SAMPLE_COUNT_1_BIT, m_Sky2DPipelineOffscreen);
     }
 
     // Offscreen background plate variant. The editor game view renders into
@@ -19441,7 +19443,7 @@ void RenderSystem::CreateSky2DPipeline(VkRenderPass renderPass) {
     if (m_Sky2DPipeline == VK_NULL_HANDLE)
         CreateSky2DPipelineVariant(mainPass, 2, m_VulkanRenderer->GetMSAASamples(), m_Sky2DPipeline);
     if (m_OffscreenRenderPass != VK_NULL_HANDLE && m_Sky2DPipelineOffscreen == VK_NULL_HANDLE)
-        CreateSky2DPipelineVariant(m_OffscreenRenderPass, 1, VK_SAMPLE_COUNT_1_BIT, m_Sky2DPipelineOffscreen);
+        CreateSky2DPipelineVariant(m_OffscreenRenderPass, m_OffscreenColorAttachments, VK_SAMPLE_COUNT_1_BIT, m_Sky2DPipelineOffscreen);
 }
 
 bool RenderSystem::CreateSky2DPipelineVariant(VkRenderPass renderPass, u32 colorAttachmentCount,

@@ -28,7 +28,18 @@ public:
     void SetTextureCallbacks(TextureRegisterFn onRegister, TextureUnregisterFn onUnregister);
 
     // Create the render target with given dimensions
-    bool Create(VulkanRenderer* renderer, u32 width, u32 height);
+    // `withVelocity` adds a second colour attachment carrying per-pixel screen
+    // motion (RG16F), which is what TAA needs to reproject moving OBJECTS
+    // rather than just the camera. triangle.frag already writes it at location
+    // 1 for the swapchain main pass; this makes the offscreen pass able to
+    // receive it too.
+    //
+    // Off by default on purpose. A target with velocity has a different
+    // attachment layout, so every pipeline drawn into it must be built with
+    // colorAttachmentCount 2 -- the effect renderers already take that as a
+    // parameter and cache per pass. Turning it on for a target whose pipelines
+    // still say 1 makes every draw in it incompatible and the image goes black.
+    bool Create(VulkanRenderer* renderer, u32 width, u32 height, bool withVelocity = false);
 
     // Destroy all Vulkan resources
     void Destroy();
@@ -92,12 +103,22 @@ public:
     VkSampler GetSampler() const { return m_Sampler; }
     VkDescriptorSet GetImGuiTextureID() const { return m_UIDescriptor; }
     VkImage GetColorImage() const { return m_ColorImage; }
+
+    // Null unless the target was created withVelocity.
+    VkImageView GetVelocityImageView() const { return m_VelocityImageView; }
+    VkImage GetVelocityImage() const { return m_VelocityImage; }
+    bool HasVelocity() const { return m_VelocityImageView != VK_NULL_HANDLE; }
     u32 GetWidth() const { return m_Width; }
     u32 GetHeight() const { return m_Height; }
     bool IsValid() const { return m_Framebuffer != VK_NULL_HANDLE; }
 
 private:
     f32 m_ClearR = 0.1f, m_ClearG = 0.1f, m_ClearB = 0.15f;
+    bool m_WantVelocity = false;
+    VkImage m_VelocityImage = VK_NULL_HANDLE;
+    VkDeviceMemory m_VelocityMemory = VK_NULL_HANDLE;
+    VkImageView m_VelocityImageView = VK_NULL_HANDLE;
+
     bool CreateImages();
     // One-time clear + transition of the fresh color image to SHADER_READ_ONLY_OPTIMAL.
     // Consumers (ImGui viewport widget, PostProcessing source/placeholder bindings)

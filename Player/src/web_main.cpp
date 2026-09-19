@@ -921,9 +921,11 @@ public:
             m_Particles->SetRuntimeTunables(gp);
         }
 
-        // ApplyToRuntime passes null pp on web, so feed the post-process effects
-        // (vignette, chromatic aberration, saturation, color filter, color quant) to
-        // the web PP pass directly from the scene settings.
+        // Web has no PostProcessing OBJECT, so the graded effects (vignette,
+        // chromatic aberration, saturation, colour filter, colour quant) go to
+        // the web PP pass as loose scalars. ApplyToRuntime DOES fill
+        // m_WebPostProcessBase now -- it used to be handed nullptr -- so the
+        // values come from the scene rather than from defaults.
         ApplyWebPostProcess();
 
         m_Initialized = true;
@@ -989,14 +991,17 @@ public:
 
     // Push the scene's post-process settings to the web PP pass (vignette, chromatic
     // aberration, saturation, color filter, color quantization). SceneRenderSettings
-    // carries these; ApplyToRuntime skips them on web (null pp), so this is the path.
+    // carries these and ApplyToRuntime maps them into m_WebPostProcessBase; this
+    // is the path that pushes them, because web has no PostProcessing object to
+    // read them from.
     void ApplyWebPostProcess() {
         if (!m_RenderSystem) return;
         const auto& s = m_SceneRenderSettings;
         m_RenderSystem->SetWebToneMapMode(m_WebPostProcessBase.toneMappingMode);
-        // Scene LUT. ApplyToRuntime passes null pp on web, so the LUT would
-        // otherwise be the one graded effect that worked in the editor and in a
-        // desktop build and silently did nothing in a browser.
+        // Scene LUT. The LUT image belongs to the renderer rather than to the
+        // settings struct, so ApplyToRuntime cannot load it whatever it is
+        // passed -- without this it was the one graded effect that worked in the
+        // editor and in a desktop build and silently did nothing in a browser.
         if (s.lutEnabled && !s.lutPath.empty()) {
             m_RenderSystem->SetWebLUT(m_RenderSystem->ResolveWebTexture(s.lutPath),
                                       s.lutStrength, s.lutSize);

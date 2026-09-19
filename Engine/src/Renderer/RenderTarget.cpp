@@ -2,6 +2,7 @@
 #include "Enjin/Renderer/RenderTarget.h"
 #include "Enjin/Renderer/Vulkan/VulkanRenderer.h"
 #include "Enjin/Renderer/Vulkan/VulkanContext.h"
+#include "Enjin/Renderer/Vulkan/VulkanSwapchain.h"   // VELOCITY_FORMAT
 #include "Enjin/Logging/Log.h"
 
 #include <array>
@@ -15,7 +16,7 @@ RenderTarget::~RenderTarget() {
     Destroy();
 }
 
-bool RenderTarget::Create(VulkanRenderer* renderer, u32 width, u32 height) {
+bool RenderTarget::Create(VulkanRenderer* renderer, u32 width, u32 height, bool withVelocity) {
     if (!renderer || width == 0 || height == 0) {
         ENJIN_LOG_ERROR(Renderer, "Invalid parameters for RenderTarget::Create");
         return false;
@@ -23,6 +24,7 @@ bool RenderTarget::Create(VulkanRenderer* renderer, u32 width, u32 height) {
 
     m_Renderer = renderer;
     m_Context = renderer->GetContext();
+    m_WantVelocity = withVelocity;
     m_Width = width;
     m_Height = height;
 
@@ -113,10 +115,14 @@ void RenderTarget::Begin(VkCommandBuffer cmd) {
     rpBegin.renderArea.offset = {0, 0};
     rpBegin.renderArea.extent = {m_Width, m_Height};
 
-    std::array<VkClearValue, 2> clearValues{};
-    clearValues[0].color = {{m_ClearR, m_ClearG, m_ClearB, 1.0f}};  // active camera's background
-    clearValues[1].depthStencil = {1.0f, 0};
-    rpBegin.clearValueCount = static_cast<u32>(clearValues.size());
+    // One clear per attachment, in attachment order. A short array here is a
+    // validation error, and the depth clear would land on velocity.
+    std::array<VkClearValue, 3> clearValues{};
+    u32 clearCount = 0;
+    clearValues[clearCount++].color = {{m_ClearR, m_ClearG, m_ClearB, 1.0f}};  // active camera's background
+    if (m_WantVelocity) clearValues[clearCount++].color = {{0.0f, 0.0f, 0.0f, 0.0f}};  // no motion
+    clearValues[clearCount++].depthStencil = {1.0f, 0};
+    rpBegin.clearValueCount = clearCount;
     rpBegin.pClearValues = clearValues.data();
 
     vkCmdBeginRenderPass(cmd, &rpBegin, VK_SUBPASS_CONTENTS_INLINE);
@@ -308,6 +314,50 @@ bool RenderTarget::CreateImages() {
     depthInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     depthInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
+    // Velocity attachment (optional): per-pixel screen motion, written by
+    // triangle.frag at location 1. COLOR_ATTACHMENT because the pass writes it,
+    // SAMPLED because the TAA resolve reads it.
+    if (m_WantVelocity) {
+        VkImageCreateInfo velInfo{};
+        velInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        velInfo.imageType = VK_IMAGE_TYPE_2D;
+        velInfo.extent = { m_Width, m_Height, 1 };
+        velInfo.mipLevels = 1;
+        velInfo.arrayLayers = 1;
+        velInfo.format = VulkanSwapchain::VELOCITY_FORMAT;
+        velInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        velInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        velInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        velInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+        velInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        if (vkCreateImage(device, &velInfo, nullptr, &m_VelocityImage) != VK_SUCCESS) {
+            ENJIN_LOG_ERROR(Renderer, "RenderTarget: failed to create velocity image");
+            return false;
+        }
+        VkMemoryRequirements velReqs{};
+        vkGetImageMemoryRequirements(device, m_VelocityImage, &velReqs);
+        VkMemoryAllocateInfo velAlloc{};
+        velAlloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        velAlloc.allocationSize = velReqs.size;
+        velAlloc.memoryTypeIndex = m_Context->FindMemoryType(
+            velReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        if (vkAllocateMemory(device, &velAlloc, nullptr, &m_VelocityMemory) != VK_SUCCESS ||
+            vkBindImageMemory(device, m_VelocityImage, m_VelocityMemory, 0) != VK_SUCCESS) {
+            ENJIN_LOG_ERROR(Renderer, "RenderTarget: failed to back velocity image");
+            return false;
+        }
+        VkImageViewCreateInfo velView{};
+        velView.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        velView.image = m_VelocityImage;
+        velView.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        velView.format = VulkanSwapchain::VELOCITY_FORMAT;
+        velView.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+        if (vkCreateImageView(device, &velView, nullptr, &m_VelocityImageView) != VK_SUCCESS) {
+            ENJIN_LOG_ERROR(Renderer, "RenderTarget: failed to create velocity view");
+            return false;
+        }
+    }
+
     if (vkCreateImage(device, &depthInfo, nullptr, &m_DepthImage) != VK_SUCCESS) {
         ENJIN_LOG_ERROR(Renderer, "Failed to create render target depth image");
         return false;
@@ -376,18 +426,33 @@ bool RenderTarget::CreateRenderPass() {
     depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-    VkAttachmentReference colorRef{};
-    colorRef.attachment = 0;
-    colorRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    // Velocity, when present, is colour attachment 1 and depth moves to 2. The
+    // order matches the swapchain main pass so triangle.frag's location-1
+    // output lands in the same place either way.
+    VkAttachmentDescription velocityAttachment{};
+    velocityAttachment.format = VulkanSwapchain::VELOCITY_FORMAT;
+    velocityAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    velocityAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    velocityAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    velocityAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    velocityAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    velocityAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    velocityAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkAttachmentReference colorRefs[2]{};
+    colorRefs[0].attachment = 0;
+    colorRefs[0].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorRefs[1].attachment = 1;
+    colorRefs[1].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
     VkAttachmentReference depthRef{};
-    depthRef.attachment = 1;
+    depthRef.attachment = m_WantVelocity ? 2u : 1u;
     depthRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
     VkSubpassDescription subpass{};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &colorRef;
+    subpass.colorAttachmentCount = m_WantVelocity ? 2u : 1u;
+    subpass.pColorAttachments = colorRefs;
     subpass.pDepthStencilAttachment = &depthRef;
 
     // External dependency ordering the PREVIOUS frame's attachment writes
@@ -411,11 +476,15 @@ bool RenderTarget::CreateRenderPass() {
     dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
                                VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
-    std::array<VkAttachmentDescription, 2> attachments = {colorAttachment, depthAttachment};
+    std::array<VkAttachmentDescription, 3> attachments{};
+    u32 attachmentCount = 0;
+    attachments[attachmentCount++] = colorAttachment;
+    if (m_WantVelocity) attachments[attachmentCount++] = velocityAttachment;
+    attachments[attachmentCount++] = depthAttachment;
 
     VkRenderPassCreateInfo rpInfo{};
     rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    rpInfo.attachmentCount = static_cast<u32>(attachments.size());
+    rpInfo.attachmentCount = attachmentCount;
     rpInfo.pAttachments = attachments.data();
     rpInfo.subpassCount = 1;
     rpInfo.pSubpasses = &subpass;
@@ -433,12 +502,16 @@ bool RenderTarget::CreateRenderPass() {
 bool RenderTarget::CreateFramebuffer() {
     VkDevice device = m_Context->GetDevice();
 
-    std::array<VkImageView, 2> attachments = {m_ColorImageView, m_DepthImageView};
+    std::array<VkImageView, 3> attachments{};
+    u32 attachmentCount = 0;
+    attachments[attachmentCount++] = m_ColorImageView;
+    if (m_WantVelocity) attachments[attachmentCount++] = m_VelocityImageView;
+    attachments[attachmentCount++] = m_DepthImageView;
 
     VkFramebufferCreateInfo fbInfo{};
     fbInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
     fbInfo.renderPass = m_RenderPass;
-    fbInfo.attachmentCount = static_cast<u32>(attachments.size());
+    fbInfo.attachmentCount = attachmentCount;
     fbInfo.pAttachments = attachments.data();
     fbInfo.width = m_Width;
     fbInfo.height = m_Height;
@@ -799,6 +872,18 @@ void RenderTarget::DestroyResources() {
     if (m_RenderPass != VK_NULL_HANDLE) {
         vkDestroyRenderPass(device, m_RenderPass, nullptr);
         m_RenderPass = VK_NULL_HANDLE;
+    }
+    if (m_VelocityImageView != VK_NULL_HANDLE) {
+        vkDestroyImageView(device, m_VelocityImageView, nullptr);
+        m_VelocityImageView = VK_NULL_HANDLE;
+    }
+    if (m_VelocityImage != VK_NULL_HANDLE) {
+        vkDestroyImage(device, m_VelocityImage, nullptr);
+        m_VelocityImage = VK_NULL_HANDLE;
+    }
+    if (m_VelocityMemory != VK_NULL_HANDLE) {
+        vkFreeMemory(device, m_VelocityMemory, nullptr);
+        m_VelocityMemory = VK_NULL_HANDLE;
     }
     if (m_DepthImageView != VK_NULL_HANDLE) {
         vkDestroyImageView(device, m_DepthImageView, nullptr);

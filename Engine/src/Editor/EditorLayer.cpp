@@ -238,7 +238,11 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
 
     m_SceneRenderTarget = std::make_unique<Renderer::RenderTarget>();
     m_SceneRenderTarget->SetTextureCallbacks(imguiRegister, imguiUnregister);
-    if (!m_SceneRenderTarget->Create(renderer, m_GameViewWidth, m_GameViewHeight)) {
+    // With a velocity attachment: TAA reprojects moving OBJECTS from it rather
+    // than reconstructing camera motion from depth, which is the difference
+    // between a moving object smearing and a moving object resolving.
+    if (!m_SceneRenderTarget->Create(renderer, m_GameViewWidth, m_GameViewHeight,
+                                     /*withVelocity*/ true)) {
         ENJIN_LOG_WARN(Editor, "Failed to create Scene render target");
         m_SceneRenderTarget.reset();
     }
@@ -3013,7 +3017,13 @@ void EditorLayer::PrepareRenderTargets() {
             : m_GameViewRenderTarget->GetRenderPass();
 
         if (m_RenderSystem) {
-            m_RenderSystem->RecreateEffectPipelinesForRenderPass(effectRenderPass);
+            // The count must match the PASS, not a constant: the scene target
+            // carries velocity, the game-view fallback does not.
+            const u32 effectAttachments =
+                (m_SceneRenderTarget && m_SceneRenderTarget->IsValid() &&
+                 m_SceneRenderTarget->HasVelocity()) ? 2u : 1u;
+            m_RenderSystem->RecreateEffectPipelinesForRenderPass(effectRenderPass,
+                                                                 effectAttachments);
         }
 
         if (m_PostProcessing && m_SceneRenderTarget && m_SceneRenderTarget->IsValid()) {
@@ -4023,12 +4033,14 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             // when there is no velocity buffer, so the offscreen path resolves
             // instead of doing nothing.
             //
-            // What it cannot see is per-object motion: depth says where a
-            // surface is, not what moved. Camera motion and static geometry
-            // reproject exactly; a moving object is treated as still and
-            // smears. A velocity attachment on this target is still the
-            // complete answer and is still open.
-            m_PostProcessing->SetVelocityImageView(VK_NULL_HANDLE);
+            // The scene target carries a velocity attachment, so TAA gets real
+            // per-pixel motion and reprojects moving OBJECTS, not just the
+            // camera. The depth reconstruction inside ApplyTAA stays as the
+            // fallback for targets without one.
+            m_PostProcessing->SetVelocityImageView(
+                m_SceneRenderTarget && m_SceneRenderTarget->HasVelocity()
+                    ? m_SceneRenderTarget->GetVelocityImageView()
+                    : VK_NULL_HANDLE);
             static bool s_taaNoticeLogged = false;
             if (!s_taaNoticeLogged) {
                 s_taaNoticeLogged = true;
@@ -4076,7 +4088,12 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
                     // Same as above: no velocity is written offscreen, so TAA
                     // is skipped and colorInput stays null, which falls back to
                     // the scene colour below.
-                    m_PostProcessing->SetVelocityImageView(VK_NULL_HANDLE);
+                    // The real thing now. Depth reconstruction stays as the
+                // fallback inside ApplyTAA for targets without velocity.
+                m_PostProcessing->SetVelocityImageView(
+                    m_SceneRenderTarget && m_SceneRenderTarget->HasVelocity()
+                        ? m_SceneRenderTarget->GetVelocityImageView()
+                        : VK_NULL_HANDLE);
                     m_PostProcessing->SetDepthImageView(m_SceneRenderTarget->GetDepthImageView());
                     if (m_PostProcessing->ApplyTAA(commandBuffer)) {
                         colorInput = m_PostProcessing->GetTAAOutputImageView();

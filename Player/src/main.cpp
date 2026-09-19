@@ -2169,10 +2169,13 @@ public:
                     // argument tells ApplyTAA not to barrier it.
                     m_TAAResolvedThisFrame = false;
                     if (m_PostProcessing && m_PostProcessing->IsTAAEnabled()) {
-                        // No velocity attachment on this target, so the resolve
-                        // reconstructs motion from depth: exact for the camera
-                        // and static geometry, blind to per-object motion.
-                        m_PostProcessing->SetVelocityImageView(VK_NULL_HANDLE);
+                        // Real per-pixel velocity, so moving objects reproject
+                        // instead of smearing. ApplyTAA falls back to depth
+                        // reconstruction if a target ever lacks the attachment.
+                        m_PostProcessing->SetVelocityImageView(
+                            m_ScenePPTarget->HasVelocity()
+                                ? m_ScenePPTarget->GetVelocityImageView()
+                                : VK_NULL_HANDLE);
                         m_PostProcessing->SetDepthImageView(m_ScenePPTarget->GetDepthImageView());
                         m_PostProcessing->SetTAASceneColor(m_ScenePPTarget->GetColorImageView(),
                                                            m_ScenePPTarget->GetColorImage(),
@@ -3144,11 +3147,17 @@ private:
         // contrast filters work in the editor and web player only).
         if (kEnableRasterPP && m_PostProcessing) {
             m_ScenePPTarget = std::make_unique<Enjin::Renderer::RenderTarget>();
-            if (!m_ScenePPTarget->Create(m_Renderer.get(), ppExtent.width, ppExtent.height)) {
+            // With velocity, so a shipped game gets the same object-accurate TAA
+            // the editor does rather than the depth-only reconstruction.
+            if (!m_ScenePPTarget->Create(m_Renderer.get(), ppExtent.width, ppExtent.height,
+                                         /*withVelocity*/ true)) {
                 ENJIN_LOG_WARN(Player, "Scene PP target creation failed — post-processing disabled in raster path");
                 m_ScenePPTarget.reset();
             } else if (m_RenderSystem) {
-                m_RenderSystem->RecreateEffectPipelinesForRenderPass(m_ScenePPTarget->GetRenderPass());
+                // The count follows the pass: 2 because it carries velocity.
+                m_RenderSystem->RecreateEffectPipelinesForRenderPass(
+                    m_ScenePPTarget->GetRenderPass(),
+                    m_ScenePPTarget->HasVelocity() ? 2u : 1u);
             }
         }
 

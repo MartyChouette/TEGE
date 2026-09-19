@@ -1034,7 +1034,13 @@ public:
 
 #if !ENJIN_RENDERER_WEBGPU
     // Recreate effect renderer pipelines for a specific render pass (e.g. render target)
-    void RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass);
+    // `colorAttachmentCount` must match the PASS. 1 for a plain colour+depth
+    // offscreen target, 2 when it carries a velocity attachment as well. Every
+    // pipeline built here is drawn into that pass, and a pipeline whose blend
+    // state has the wrong number of attachments is not compatible with it --
+    // the draws are dropped and the target renders black.
+    void RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass,
+                                              u32 colorAttachmentCount = 1);
 #endif
 
     // Scene composition (auto-detected rendering mode)
@@ -3199,6 +3205,12 @@ private:
     // the offsets came out a fraction of the pixel they were supposed to span
     // and TAA had nothing to average. Zero means "use the swapchain", which is
     // what the main pass wants.
+    // Colour attachments on the cached offscreen pass: 1, or 2 when that target
+    // carries velocity. Every offscreen pipeline variant must be built with
+    // this, not with a literal, or it is incompatible with the pass and its
+    // draws vanish.
+    u32 m_OffscreenColorAttachments = 1;
+
     u32 m_JitterExtentW = 0;
     u32 m_JitterExtentH = 0;
     u32 m_TAAFrameCounter = 0;
