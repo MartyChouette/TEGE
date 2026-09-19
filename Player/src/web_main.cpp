@@ -1696,6 +1696,19 @@ public:
         UpdateWeatherZones();
         if (m_Camera) {
             m_StreamingManager.Update(m_Camera->GetPosition(), deltaTime);
+            // 2D scenes get precipitation as an XY sheet falling down the
+            // screen, exactly as the desktop player does at main.cpp:2711.
+            //
+            // Web never called this, so m_Mode2D stayed false and a 2D game
+            // exported to a browser got 3D-mode weather: particles distributed
+            // through a volume around the camera rather than a flat sheet. The
+            // same scene looked right in the editor and on desktop, which is
+            // the shape that survives -- nobody compares the two.
+            if (m_RenderSystem) {
+                m_WeatherSystem.SetMode2D(
+                    m_RenderSystem->GetSceneComposition().mode
+                        != Enjin::ECS::SceneRenderMode::Scene3D);
+            }
             m_WeatherSystem.Update(deltaTime, m_Camera->GetPosition());
             m_RenderSystem->SetWeatherSkyBlend(m_WeatherSystem.GetRainIntensity(),
                                                m_WeatherSystem.GetSnowIntensity());
