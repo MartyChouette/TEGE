@@ -2132,6 +2132,15 @@ public:
                     // Editor-only RT dispatch site: Update() early-returns on
                     // the skip flag before reaching RT (no-op when RT is off)
                     m_RenderSystem->RecordRTFrame(false);
+                    // Jitter is only correct when something will resolve it.
+                    // TAA does, below, now that it is given a colour input.
+                    {
+                        const bool taaWillResolve =
+                            m_PostProcessing && m_PostProcessing->IsInitialized() &&
+                            m_PostProcessing->IsTAAEnabled();
+                        m_RenderSystem->SetTemporalResolveActive(
+                            m_RenderSystem->IsUpscalerActive() || taaWillResolve);
+                    }
                     m_RenderSystem->ApplyCameraClearColor(m_ScenePPTarget.get());
                     m_ScenePPTarget->Begin(preCmd);
                     m_RenderSystem->RenderToTarget(m_ScenePPTarget.get(), m_Camera.get(), 1);
@@ -2147,6 +2156,30 @@ public:
                     m_RenderSystem->RenderElementalParticles(m_ElementalSystem, ppW, ppH,
                         /*useOffscreenSets*/ true, /*viewport*/ 1);
                     m_ScenePPTarget->End(preCmd);
+
+                    // TAA resolve. It has to happen HERE, between the offscreen
+                    // target closing and the swapchain pass opening: ApplyTAA is
+                    // a compute dispatch and cannot be recorded inside a render
+                    // pass, and the post-process block further down runs with
+                    // the swapchain pass already open.
+                    //
+                    // A built game had no TAA at all before this -- ApplyTAA had
+                    // exactly one call site and it was in the editor. End() has
+                    // already transitioned the target for sampling, so the last
+                    // argument tells ApplyTAA not to barrier it.
+                    m_TAAResolvedThisFrame = false;
+                    if (m_PostProcessing && m_PostProcessing->IsTAAEnabled()) {
+                        // No velocity attachment on this target, so the resolve
+                        // reconstructs motion from depth: exact for the camera
+                        // and static geometry, blind to per-object motion.
+                        m_PostProcessing->SetVelocityImageView(VK_NULL_HANDLE);
+                        m_PostProcessing->SetDepthImageView(m_ScenePPTarget->GetDepthImageView());
+                        m_PostProcessing->SetTAASceneColor(m_ScenePPTarget->GetColorImageView(),
+                                                           m_ScenePPTarget->GetColorImage(),
+                                                           /*alreadyReadable*/ true);
+                        m_TAAResolvedThisFrame = m_PostProcessing->ApplyTAA(preCmd);
+                    }
+
                     m_RenderSystem->SetSkipMainPassRendering(true);
                     m_RasterPPThisFrame = true;
                 }
@@ -2188,10 +2221,19 @@ public:
         if (m_RasterPPThisFrame && m_PostProcessing && m_ScenePPTarget) {
             VkCommandBuffer ppCmd = m_Renderer->GetCurrentCommandBuffer();
             if (ppCmd != VK_NULL_HANDLE) {
-                if (m_LastPTSourceView != m_ScenePPTarget->GetColorImageView()) {
-                    m_PostProcessing->UpdateSourceImage(m_ScenePPTarget->GetColorImageView(),
+                // Read the TAA output when it actually resolved. Gating on the
+                // resolve rather than on the view being non-null matters: the
+                // view exists as soon as the TAA resources do, written or not,
+                // and sampling an unwritten one renders black.
+                VkImageView ppSource = m_ScenePPTarget->GetColorImageView();
+                if (m_TAAResolvedThisFrame) {
+                    VkImageView taaOut = m_PostProcessing->GetTAAOutputImageView();
+                    if (taaOut != VK_NULL_HANDLE) ppSource = taaOut;
+                }
+                if (m_LastPTSourceView != ppSource) {
+                    m_PostProcessing->UpdateSourceImage(ppSource,
                                                         m_ScenePPTarget->GetSampler());
-                    m_LastPTSourceView = m_ScenePPTarget->GetColorImageView();
+                    m_LastPTSourceView = ppSource;
                 }
                 m_PostProcessing->ApplyToCurrentPass(ppCmd, extent.width, extent.height);
             }
@@ -3050,6 +3092,26 @@ private:
                 ENJIN_LOG_WARN(Player, "PostProcessing init failed");
                 m_PostProcessing.reset();
             }
+        }
+
+        // Re-apply the scene's render settings now that PostProcessing exists.
+        //
+        // The scene loads BEFORE this point, and LoadSceneFromPack applies its
+        // settings with `m_PostProcessing ? &...GetSettings() : nullptr` -- which
+        // was nullptr every time, because this object did not exist yet. So the
+        // post-process half of every scene's render settings was silently
+        // dropped and nothing ever re-applied it: a built game ran on
+        // PostProcessSettings defaults no matter what the scene asked for.
+        // Colour grading, vignette, bloom, tone mapping, the AA mode, the
+        // colourblind modes -- none of it reached a shipped game. It all worked
+        // in the editor, which builds PostProcessing before it opens a scene.
+        //
+        // Verified by capture: a scene with colorFilter (1,0,0) and a full
+        // vignette exported to a desktop build and rendered untinted, while the
+        // same scene in the editor rendered red.
+        if (m_PostProcessing) {
+            m_SceneRenderSettings.ApplyToRuntime(m_RenderSystem,
+                                                 &m_PostProcessing->GetSettings());
         }
         // React to swapchain recreation (fullscreen toggle, resolution change,
         // window resize): post-processing holds targets and descriptors sized
@@ -4276,6 +4338,9 @@ private:
     static constexpr bool kEnableRasterPP = true;
     std::unique_ptr<Enjin::Renderer::RenderTarget> m_ScenePPTarget;
     bool m_RasterPPThisFrame = false;
+    // Whether ApplyTAA resolved this frame, so the post-process pass knows
+    // whether the TAA output holds anything.
+    bool m_TAAResolvedThisFrame = false;
     Enjin::f32 m_FrameDeltaTime = 0.016f;
 
     // Player hybrid RT overlay: blends ray-traced shadow/AO/reflect/GI onto the
