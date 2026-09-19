@@ -1365,9 +1365,20 @@ fn applyColorblindCorrection(color: vec3<f32>) -> vec3<f32> {
     let mode = params.colorblindMode;
     if (mode == 0u) { return color; }
 
-    if (mode == 7u) {
-        let gray = dot(color, vec3<f32>(0.299, 0.587, 0.114));
-        return mix(color, vec3<f32>(gray), params.colorblindStrength);
+    // Achromatopsia (7) and achromatomaly (8): luminance, the second at partial
+    // strength -- the same relationship 4-6 have to 1-3.
+    //
+    // Mode 8 used to fall through to the matrix path below and land in its
+    // `else`, which is the TRITANOPIA matrix: a player selecting "weak colour
+    // vision" got a blue-yellow correction instead of a desaturation. And the
+    // luminance here was Rec.601 (0.299/0.587/0.114) where postprocess.frag
+    // uses Rec.709, so even mode 7 rendered a different grey on web than on
+    // desktop from the same setting.
+    if (mode == 7u || mode == 8u) {
+        let lum = dot(color, vec3<f32>(0.2126, 0.7152, 0.0722));
+        var achromaStrength = params.colorblindStrength;
+        if (mode == 8u) { achromaStrength = achromaStrength * 0.5; }
+        return mix(color, vec3<f32>(lum), achromaStrength);
     }
 
     var simR: vec3<f32>;
@@ -1397,11 +1408,18 @@ fn applyColorblindCorrection(color: vec3<f32>) -> vec3<f32> {
 
     let simulated = vec3<f32>(dot(color, simR), dot(color, simG), dot(color, simB));
     let error = color - simulated;
-    var corrected = color;
-    corrected.g = corrected.g + error.r * 0.7;
-    corrected.b = corrected.b + error.r * 0.7;
 
-    return mix(color, saturate(corrected), strength);
+    // Redistribute the error across the channels that CAN be seen, matching
+    // postprocess.frag. This used to spread only error.r, and into g and b
+    // alone -- so a tritanope, whose error is almost entirely in BLUE, got
+    // essentially no correction on web while desktop corrected them properly
+    // from the identical setting.
+    var correction: vec3<f32>;
+    correction.r = error.g * 0.7 + error.b * 0.7;
+    correction.g = error.r * 0.7 + error.b * 0.7;
+    correction.b = error.r * 0.7 + error.g * 0.7;
+
+    return saturate(color + correction * strength);
 }
 
 // Ordered 4x4 Bayer matrix (0..~0.94) for dithering + stipple thresholding.

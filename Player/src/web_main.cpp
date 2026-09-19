@@ -641,6 +641,20 @@ public:
         // Colorblind_/Accessibility_ script call is a silent no-op on web.
         Enjin::Scripting::SetBindingsSubtitles(&m_SubtitleSystem);
         Enjin::Scripting::SetBindingsAnnouncer(&m_Announcer);
+
+        // Screen reader: UI focus changes speak on web too.
+        //
+        // The Announcer was constructed here, enabled from settings and ticked
+        // every frame -- and nothing ever connected it to UISystem, which is
+        // what builds the "label, Button" and "Slider at N%" strings on focus
+        // change and switch-access scanning. So on web only a script's own
+        // Announce() call spoke, and navigating a menu was silent, while the
+        // same build on desktop read every control aloud. The platform half
+        // works: Announcer speaks through window.speechSynthesis with an
+        // iOS/Safari gesture unlock. Only this line was missing.
+        m_UISystem.SetAnnouncerCallback([this](const std::string& text) {
+            m_Announcer.Announce(text, Enjin::Accessibility::AnnouncePriority::Normal);
+        });
         Enjin::Scripting::SetBindingsAccessibilitySettings(&m_AccessibilitySettings);
         Enjin::Scripting::SetBindingsAccessibilitySaveCallback([this]() {
             SaveWebAccessibilitySettings();
