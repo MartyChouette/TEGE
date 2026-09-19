@@ -55,44 +55,53 @@ ENJIN_TEST(LookAtIK, test_the_solver_turns_the_head_toward_the_target) {
     ENJIN_EXPECT_FLOAT_NEAR(f.y, 0.0f, 0.05f);
 }
 
-ENJIN_TEST(LookAtIK, test_maxRotation_limits_the_STEP_not_the_total_turn) {
-    // This pins what the solver DOES, which is not what the field says.
+ENJIN_TEST(LookAtIK, test_maxRotation_limits_the_TOTAL_turn_from_rest) {
+    // maxRotation used to be a RATE limit: it clamped the step from the current
+    // rotation toward the target each call, so the head walked all the way to
+    // the target given enough calls -- 200 steps with a 30-degree "max" turned
+    // a head the full 180. The field is documented as "Max angle in degrees"
+    // and smoothSpeed is already a rate limit, so the component had two of
+    // those and nothing to stop a neck rotating like an owl.
     //
-    // LookAtIKComponent documents maxRotation as "Max angle in degrees", which
-    // reads as a limit on how far the head may turn from rest -- the thing that
-    // stops a look-at spinning a neck like an owl. It is not. Solve clamps the
-    // delta from the CURRENT rotation toward the target on each call:
-    //
-    //     delta = targetRot * currentRotation.Conjugate();
-    //     if (angle > maxAngleRad) { ... }
-    //
-    // so `current` walks toward the target a bounded amount per call and
-    // arrives in full given enough calls. That is a rate limit, and smoothSpeed
-    // is already one. There is no angle limit anywhere.
-    //
-    // Asserted as-is rather than "fixed" to pass: changing it means deciding
-    // what the angle is measured FROM, and Solve never receives a rest
-    // orientation to measure against. That is a signature change and a design
-    // call, so it is on the backlog instead of being guessed at here. The
-    // component was dead until today, so nothing shipped depends on either
-    // reading.
-    // Arrange: forward is +Z, so directly behind is -Z.
+    // It is now measured from the rest orientation, which is what an angle
+    // limit has to be measured from.
+    // Arrange: forward is +Z, so directly behind is -Z. Rest is identity.
     const Math::Vector3 head(0.0f, 0.0f, 0.0f);
     const Math::Vector3 behind(0.0f, 0.0f, -10.0f);
-    Math::Quaternion current = Math::Quaternion::Identity();
+    const Math::Quaternion rest = Math::Quaternion::Identity();
+    Math::Quaternion current = rest;
 
-    // Act: one step, then many.
-    const Math::Quaternion afterOne =
-        Animation::LookAtIK::Solve(head, behind, current, 30.0f, 20.0f, 1.0f / 60.0f);
-    for (int i = 0; i < 200; ++i) {
-        current = Animation::LookAtIK::Solve(head, behind, current, 30.0f, 20.0f, 1.0f / 60.0f);
+    // Act: far more steps than it takes to converge.
+    for (int i = 0; i < 400; ++i) {
+        current = Animation::LookAtIK::Solve(head, behind, current,
+                                             30.0f, 20.0f, 1.0f / 60.0f, rest);
     }
 
-    // Assert: one step barely moves (the clamp bites), and two hundred get all
-    // the way round to face the target behind. If maxRotation were a total
-    // limit, the second would still be near +Z.
-    ENJIN_EXPECT_TRUE(Forward(afterOne).z > 0.9f);
-    ENJIN_EXPECT_TRUE(Forward(current).z < -0.9f);
+    // Assert: the head settles within 30 degrees of rest and stays there. Under
+    // the old behaviour it would have come all the way round to face -Z.
+    const Math::Vector3 f = Forward(current);
+    ENJIN_EXPECT_TRUE(f.z > 0.8f);          // cos(30) = 0.866, with slack
+    ENJIN_EXPECT_TRUE(f.z < 0.999f);        // it DID turn -- not a no-op
+}
+
+ENJIN_TEST(LookAtIK, test_a_generous_clamp_still_reaches_the_target) {
+    // The control. Without it, a clamp that simply froze the head would pass
+    // the test above.
+    // Arrange
+    const Math::Vector3 head(0.0f, 0.0f, 0.0f);
+    const Math::Vector3 right(10.0f, 0.0f, 0.0f);
+    const Math::Quaternion rest = Math::Quaternion::Identity();
+    Math::Quaternion current = rest;
+
+    // Act
+    for (int i = 0; i < 400; ++i) {
+        current = Animation::LookAtIK::Solve(head, right, current,
+                                             180.0f, 20.0f, 1.0f / 60.0f, rest);
+    }
+
+    // Assert: fully turned to face +X.
+    const Math::Vector3 f = Forward(current);
+    ENJIN_EXPECT_FLOAT_NEAR(f.x, 1.0f, 0.05f);
 }
 
 ENJIN_TEST(LookAtIK, test_a_target_on_top_of_the_head_leaves_the_rotation_alone) {

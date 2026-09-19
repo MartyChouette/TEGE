@@ -8694,9 +8694,16 @@ void RenderSystem::Update(f32 deltaTime) {
                     // column of the world matrix.
                     const Math::Vector3 headWorldPos(headWorld.m[12], headWorld.m[13], headWorld.m[14]);
 
+                    // The head's ANIMATED world rotation, before IK touches it.
+                    // maxRotation is measured from here, so a look-at deflects
+                    // the animation by at most that many degrees rather than
+                    // walking to the target over enough frames.
+                    const Math::Quaternion restWorld = Math::Quaternion::FromMatrix(headWorld);
+
                     const Math::Quaternion solved = Animation::LookAtIK::Solve(
                         headWorldPos, targetPos, lookAtIK->currentHeadRotation,
-                        lookAtIK->maxRotation, lookAtIK->smoothSpeed, deltaTime);
+                        lookAtIK->maxRotation, lookAtIK->smoothSpeed, deltaTime,
+                        restWorld);
                     lookAtIK->currentHeadRotation = solved;
 
                     // Solve returns a WORLD rotation; localRotations are in

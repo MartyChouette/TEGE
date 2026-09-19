@@ -12,37 +12,60 @@ namespace Animation {
 
 class ENJIN_API LookAtIK {
 public:
+    // Aim `restRotation`'s forward axis at the target, smoothed, and never more
+    // than maxAngleDeg away from rest.
+    //
+    // maxAngleDeg USED TO BE A RATE LIMIT. It clamped the step from
+    // currentRotation toward the target on each call, so `current` walked to
+    // the target a bounded amount per call and arrived in full given enough
+    // calls -- 200 steps with a 30-degree "max" turned a head the full 180.
+    // The field is documented as "Max angle in degrees" and smoothSpeed is
+    // already a rate limit, so the component had two of those and nothing to
+    // stop a neck rotating like an owl.
+    //
+    // It now clamps the RESULT against restRotation, which is what an angle
+    // limit has to be measured from. restRotation is the head's animated
+    // orientation before IK, so a look-at deflects the animation by at most
+    // that many degrees and an authored head-turn still reads through.
+    //
+    // FORWARD IS +Z. RotationFromDirection below builds its basis with f as the
+    // third column, so the rotation it returns maps +Z onto the direction. A
+    // `Math::Vector3 forward(0, 0, -1)` used to be declared here and never
+    // used, which reads as the authority on the axis and is wrong.
     static Math::Quaternion Solve(
         const Math::Vector3& headWorldPos,
         const Math::Vector3& targetPos,
         const Math::Quaternion& currentRotation,
         f32 maxAngleDeg,
         f32 smoothSpeed,
-        f32 dt
+        f32 dt,
+        const Math::Quaternion& restRotation = Math::Quaternion::Identity()
     ) {
         Math::Vector3 toTarget = targetPos - headWorldPos;
         f32 dist = std::sqrt(toTarget.x * toTarget.x + toTarget.y * toTarget.y + toTarget.z * toTarget.z);
         if (dist < 0.001f) return currentRotation;
 
         Math::Vector3 dir(toTarget.x / dist, toTarget.y / dist, toTarget.z / dist);
-
-        // Compute look-at quaternion from direction
-        Math::Vector3 forward(0.0f, 0.0f, -1.0f);
         Math::Quaternion targetRot = RotationFromDirection(dir, Math::Vector3(0.0f, 1.0f, 0.0f));
 
-        // Clamp rotation angle
-        f32 maxAngleRad = maxAngleDeg * 3.14159265f / 180.0f;
-        Math::Quaternion delta = targetRot * currentRotation.Conjugate();
-        f32 halfAngle = std::acos(std::clamp(delta.w, -1.0f, 1.0f));
-        f32 angle = halfAngle * 2.0f;
-
-        if (angle > maxAngleRad) {
-            f32 t = maxAngleRad / angle;
-            targetRot = Math::Quaternion::Slerp(currentRotation, targetRot, t);
+        // Clamp the TARGET against rest before smoothing toward it. Clamping
+        // after would fight the smoothing: the result would be pulled back
+        // every frame and never settle.
+        const f32 maxAngleRad = maxAngleDeg * 3.14159265f / 180.0f;
+        if (maxAngleRad > 0.0f) {
+            const Math::Quaternion fromRest = targetRot * restRotation.Conjugate();
+            // A quaternion and its negation are the same rotation; without this
+            // the angle comes out as the reflex one and a small turn reads as a
+            // large one.
+            const f32 w = std::fabs(std::clamp(fromRest.w, -1.0f, 1.0f));
+            const f32 angleFromRest = 2.0f * std::acos(w);
+            if (angleFromRest > maxAngleRad) {
+                targetRot = Math::Quaternion::Slerp(restRotation, targetRot,
+                                                    maxAngleRad / angleFromRest);
+            }
         }
 
-        // Smooth interpolation
-        f32 t = std::clamp(smoothSpeed * dt, 0.0f, 1.0f);
+        const f32 t = std::clamp(smoothSpeed * dt, 0.0f, 1.0f);
         return Math::Quaternion::Slerp(currentRotation, targetRot, t);
     }
 
