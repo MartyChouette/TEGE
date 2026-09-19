@@ -9224,6 +9224,20 @@ ECS::MovingPlatformComponent DeserializeMovingPlatformComponent(const json& j) {
     if (j.contains("waitTime")) mp.waitTime = j["waitTime"].get<f32>();
     if (j.contains("mode")) { i32 v = j["mode"].get<i32>(); if (v >= 0 && v <= 3) mp.mode = static_cast<ECS::MovingPlatformComponent::PlatformMode>(v); }
     if (j.contains("carryEntities")) mp.carryEntities = JB(j["carryEntities"]);
+
+    // Triggered means "runs only while a linked switch is on", and
+    // MovingPlatformComponent::isMoving defaults to true. Nothing wrote that
+    // field, so every Triggered platform in every scene began its life running
+    // -- a lift cycling its floors from the moment the level loaded, before
+    // anybody had touched a call button, and stopping the first time someone
+    // pressed one. The mode's entire contract inverted.
+    //
+    // Corrected here rather than by serialising isMoving, because isMoving is
+    // simulation state and not an authored value: a platform paused mid-ride
+    // when the author hit save should not come back paused.
+    if (mp.mode == ECS::MovingPlatformComponent::PlatformMode::Triggered) {
+        mp.isMoving = false;
+    }
     return mp;
 }
 
