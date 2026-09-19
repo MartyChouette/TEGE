@@ -632,6 +632,30 @@ bool ControllerSystem::QueryJumpPressedNow() {
     return pressed;
 }
 
+bool ControllerSystem::IsJumpHeld() {
+    if (m_ExternalFixedClock && !m_RealtimePass) return m_LatchJump;
+    if (m_InputMap) return m_InputMap->IsActionDown(InputSystem::GameAction::Jump);
+    bool held = Input::IsKeyDown(KeyCode::Space);
+    for (i32 gp = 0; gp < 4; ++gp) {
+        if (Input::IsGamepadConnected(gp) && Input::IsGamepadButtonDown(GamepadButton::A, gp)) {
+            held = true;
+        }
+    }
+    return held;
+}
+
+bool ControllerSystem::IsCrouchHeld() {
+    if (m_ExternalFixedClock && !m_RealtimePass) return m_LatchCrouch;
+    if (m_InputMap) return m_InputMap->IsActionDown(InputSystem::GameAction::Crouch);
+    bool held = Input::IsKeyDown(KeyCode::LeftControl) || Input::IsKeyDown(KeyCode::C);
+    for (i32 gp = 0; gp < 4; ++gp) {
+        if (Input::IsGamepadConnected(gp) && Input::IsGamepadButtonDown(GamepadButton::B, gp)) {
+            held = true;
+        }
+    }
+    return held;
+}
+
 bool ControllerSystem::IsSprintHeld() {
     if (m_InputMap) return m_InputMap->IsActionDown(InputSystem::GameAction::Sprint);
 
@@ -1765,6 +1789,34 @@ void ControllerSystem::NoteBlockedOrMoving(Entity entity, const Math::Vector2& i
     }
 }
 
+bool ControllerSystem::ResolveZoneGravity(const Math::Vector3& position,
+                                         Math::Vector3& outGravity) const {
+    if (!m_World) return false;
+
+    const GravityZoneComponent* best = nullptr;
+    Math::Vector3 bestCenter(0.0f, 0.0f, 0.0f);
+    bool found = false;
+
+    for (Entity zone : m_World->GetEntitiesWithComponent<GravityZoneComponent>()) {
+        auto* gz = m_World->GetComponent<GravityZoneComponent>(zone);
+        if (!gz || !gz->isActive) continue;
+        auto* zt = m_World->GetComponent<TransformComponent>(zone);
+        if (!zt) continue;
+        if (!gz->ContainsPoint(zt->position, position)) continue;
+
+        // Overlapping zones resolve by priority, as the component documents.
+        // Ties go to the first found, which is stable for a given scene.
+        if (found && gz->priority <= best->priority) continue;
+        best = gz;
+        bestCenter = zt->position;
+        found = true;
+    }
+
+    if (!found) return false;
+    outGravity = best->GetGravityAt(bestCenter, position);
+    return true;
+}
+
 void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& ctrl, TransformComponent& transform, f32 dt) {
     (void)entity;
 
@@ -1955,6 +2007,19 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
     Math::Vector3 forward(-sinYaw, 0.0f, -cosYaw);
     Math::Vector3 right(cosYaw, 0.0f, -sinYaw);
 
+    // A gravity zone containing the player replaces the controller's authored
+    // gravity with the zone's own vertical acceleration, so a low-gravity or
+    // inverted-gravity room is a component an author drops in the editor and
+    // not a script that fights the controller for the position.
+    //
+    // A weightless zone (strength ~0) additionally switches to drift: released
+    // input coasts instead of braking, and Jump becomes a thruster. See below.
+    constexpr f32 kWeightlessEpsilon = 0.05f;
+    Math::Vector3 zoneGravity(0.0f, 0.0f, 0.0f);
+    const bool inGravityZone = ResolveZoneGravity(transform.position, zoneGravity);
+    const f32 gravityAccelY = inGravityZone ? zoneGravity.y : -ctrl.gravity;
+    const bool weightless = inGravityZone && zoneGravity.Length() < kWeightlessEpsilon;
+
     Math::Vector3 moveDir = forward * input.y + right * input.x;
     f32 moveMag = moveDir.Length();
     if (moveMag > 1.0f) {
@@ -2017,7 +2082,7 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
     if (moveMag > 0.01f) {
         ctrl.velocity.x = Math::MoveTowards(ctrl.velocity.x, targetVelocity.x, accel * dt);
         ctrl.velocity.z = Math::MoveTowards(ctrl.velocity.z, targetVelocity.z, accel * dt);
-    } else if (!ctrl.isDashing) {
+    } else if (!ctrl.isDashing && !weightless) {
         ctrl.velocity.x = Math::MoveTowards(ctrl.velocity.x, 0.0f, ctrl.deceleration * dt);
         ctrl.velocity.z = Math::MoveTowards(ctrl.velocity.z, 0.0f, ctrl.deceleration * dt);
     }
@@ -2029,8 +2094,35 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
     bool swimming = !climbing && UpdateSwim(m_World, ctrl, transform, moveDir, moveMag, dt, jumpInput);
     if (climbing) ctrl.isSwimming = false;
 
+    // Weightless drift, ported from the Unity ZeroGMovement (it lives in
+    // FirstPersonDrifter.cs, which is why it is easy to miss): six degrees of
+    // freedom with WASD on the horizontal, Jump up, Crouch down, Sprint to
+    // boost, and velocity eased toward that target rather than set to it.
+    //
+    // Easing toward the target is what makes it feel like mass. It also means
+    // releasing everything eases you to a stop instead of coasting forever,
+    // which is the original's behaviour and the forgiving one: a player who
+    // overshoots in a room with no floor can simply let go.
+    if (weightless && !climbing && !swimming) {
+        Math::Vector3 thrust = moveDir * speed;
+        if (IsJumpHeld())   thrust.y += speed;
+        if (IsCrouchHeld()) thrust.y -= speed;
+
+        // Keep the diagonal from being faster than the axis.
+        const f32 mag = thrust.Length();
+        if (mag > speed) thrust = thrust * (speed / mag);
+
+        // inertia 0.5 in the original, in its own Lerp-per-second form.
+        constexpr f32 kDriftInertia = 0.5f;
+        const f32 k = Math::Clamp(dt * kDriftInertia, 0.0f, 1.0f);
+        ctrl.velocity = ctrl.velocity + (thrust - ctrl.velocity) * k;
+
+        ctrl.isGrounded = false;
+        ctrl.isJumping = false;
+        ctrl.isFalling = false;
+    }
     // Jumping (check stamina cost)
-    if (jumpInput && ctrl.isGrounded && !ctrl.isCrouching && !climbing && !swimming) {
+    else if (jumpInput && ctrl.isGrounded && !ctrl.isCrouching && !climbing && !swimming) {
         bool canJump = true;
         if (m_World) {
             auto* resource = m_World->GetComponent<ResourceComponent>(entity);
@@ -2045,9 +2137,11 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
         }
     }
 
-    // Gravity
-    if (!ctrl.isGrounded && !climbing && !swimming) {
-        ctrl.velocity.y -= ctrl.gravity * dt;
+    // Gravity. Signed, because a zone may point it up. Skipped while
+    // weightless: that branch above already set the whole velocity, and a
+    // near-zero acceleration added on top would only fight its easing.
+    if (!ctrl.isGrounded && !climbing && !swimming && !weightless) {
+        ctrl.velocity.y += gravityAccelY * dt;
         ctrl.isFalling = ctrl.velocity.y < 0;
     }
 

@@ -145,6 +145,11 @@ private:
     bool IsJumpPressed();
     bool IsSprintHeld();
     bool IsCrouchPressed();
+    // Held, not edge. Crouch in particular is a toggle everywhere else
+    // (IsCrouchPressed drives `isCrouching = !isCrouching`), but a thruster
+    // has to read the button being down, not the frame it went down.
+    bool IsJumpHeld();
+    bool IsCrouchHeld();
     bool IsDashPressed();
     // Latch-aware raw queries (used by PumpFrameInput and the non-latched path)
     bool QueryJumpPressedNow();
@@ -154,6 +159,16 @@ private:
     Math::Vector2 GetLookDelta();
     Math::Vector2 GetZoomScroll();
     bool IsPrimaryClickPressed();
+    // Effective gravity at a world point, from the highest-priority GravityZone
+    // containing it. Returns false when no zone applies, leaving `outGravity`
+    // untouched so the caller keeps its own authored gravity.
+    //
+    // Every controller used to ignore Directional zones -- only the planet
+    // walker read zones, and only Point ones -- so a zero-G or low-G room
+    // authored in the editor did nothing to a first-person player standing in
+    // it. The zone is a world fact, not a planet-walker feature.
+    bool ResolveZoneGravity(const Math::Vector3& position, Math::Vector3& outGravity) const;
+
     bool CheckGround(const Math::Vector3& position, f32& groundY, Entity selfEntity = 0);
     bool CheckGround2D(const Math::Vector3& position, f32& groundY, Entity& groundEntity,
                        f32 capsuleRadius = 0.3f, f32 capsuleHalfHeight = 0.5f);
