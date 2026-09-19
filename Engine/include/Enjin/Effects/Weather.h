@@ -109,6 +109,17 @@ public:
 
     // 2D scene mode: particles spawn in an XY sheet around the camera and fall
     // straight down the screen (no Z motion), for side-scroller/top-down scenes
+    // 2D precipitation: an XY sheet falling down the screen instead of a 3D
+    // volume around the camera. THIS is the 2D weather path, and all three
+    // runtimes set it automatically from the scene's composition mode, so
+    // marking a scene 2D is all an author has to do.
+    //
+    // There used to be a separate Effects::Weather2D class next to this one --
+    // its own screen-space particle pool, its own SetWeather, and a
+    // SetParallaxLayers that stored a count nothing ever read. Nothing
+    // constructed it, nothing drew its particles, and it had no renderer to be
+    // waiting for. Deleted 2026-09-19. If 2D weather needs something, it goes
+    // here, where the wiring already is.
     void SetMode2D(bool enabled) { m_Mode2D = enabled; }
     bool GetMode2D() const { return m_Mode2D; }
 
@@ -202,36 +213,6 @@ private:
     f32 m_SpawnAccumulator = 0.0f;
 
     bool m_Initialized = false;
-};
-
-// 2D Weather variant (for side-scrollers, top-down)
-class ENJIN_API Weather2D {
-public:
-    void Initialize(u32 maxParticles = 200);
-    void Update(f32 deltaTime, const Math::Vector2& cameraPos, const Math::Vector2& screenSize);
-
-    void SetWeather(WeatherType type);
-    void SetIntensity(f32 intensity) { m_Intensity = intensity; }
-
-    // For 2D, weather is screen-space particles
-    struct Particle2D {
-        Math::Vector2 position;  // Screen space
-        Math::Vector2 velocity;
-        f32 size;
-        f32 alpha;
-    };
-
-    const std::vector<Particle2D>& GetParticles() const { return m_Particles; }
-
-    // Parallax layers for depth (very SNES/Genesis)
-    void SetParallaxLayers(u32 layers) { m_ParallaxLayers = layers; }
-
-private:
-    std::vector<Particle2D> m_Particles;
-    WeatherType m_Weather = WeatherType::Clear;
-    f32 m_Intensity = 0.5f;
-    u32 m_ParallaxLayers = 3;
-    Math::Vector2 m_ScreenSize;
 };
 
 } // namespace Effects
