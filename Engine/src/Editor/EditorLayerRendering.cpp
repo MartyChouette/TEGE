@@ -2349,9 +2349,27 @@ void EditorLayer::DrawSettingsSection_Skybox() {
 
             ImGui::Separator();
             ImGui::Text("Colors:");
-            changed |= ImGui::ColorEdit3("Top Color", &config.topColor.x);
-            changed |= ImGui::ColorEdit3("Horizon Color", &config.horizonColor.x);
-            changed |= ImGui::ColorEdit3("Bottom Color", &config.bottomColor.x);
+            changed |= InspectorUndo::ColorEdit3(m_UndoRedo, "Top Color", &config.topColor.x,
+                    [this](f32 r, f32 g, f32 b) {
+                        if (!m_RenderSystem) return;
+                        auto c = m_RenderSystem->GetSkyboxConfig();
+                        c.topColor = Math::Vector3(r, g, b);
+                        m_RenderSystem->SetSkybox(c);
+                    });
+            changed |= InspectorUndo::ColorEdit3(m_UndoRedo, "Horizon Color", &config.horizonColor.x,
+                    [this](f32 r, f32 g, f32 b) {
+                        if (!m_RenderSystem) return;
+                        auto c = m_RenderSystem->GetSkyboxConfig();
+                        c.horizonColor = Math::Vector3(r, g, b);
+                        m_RenderSystem->SetSkybox(c);
+                    });
+            changed |= InspectorUndo::ColorEdit3(m_UndoRedo, "Bottom Color", &config.bottomColor.x,
+                    [this](f32 r, f32 g, f32 b) {
+                        if (!m_RenderSystem) return;
+                        auto c = m_RenderSystem->GetSkyboxConfig();
+                        c.bottomColor = Math::Vector3(r, g, b);
+                        m_RenderSystem->SetSkybox(c);
+                    });
 
             ImGui::Separator();
             changed |= ImGui::DragFloat3("Sun Direction", &config.sunDirection.x, 0.01f, -1.0f, 1.0f);
@@ -2359,7 +2377,13 @@ void EditorLayer::DrawSettingsSection_Skybox() {
 
         // Solid color controls
         if (config.type == Renderer::SkyboxType::SolidColor) {
-            changed |= ImGui::ColorEdit3("Sky Color", &config.solidColor.x);
+            changed |= InspectorUndo::ColorEdit3(m_UndoRedo, "Sky Color", &config.solidColor.x,
+                    [this](f32 r, f32 g, f32 b) {
+                        if (!m_RenderSystem) return;
+                        auto c = m_RenderSystem->GetSkyboxConfig();
+                        c.solidColor = Math::Vector3(r, g, b);
+                        m_RenderSystem->SetSkybox(c);
+                    });
         }
 
         // Cubemap controls
@@ -2390,13 +2414,25 @@ void EditorLayer::DrawSettingsSection_Skybox() {
             changed |= ImGui::SliderFloat("Sun Intensity", &config.sunIntensity, 0.0f, 3.0f);
             if (config.sunIntensity > 0.001f) {
                 changed |= ImGui::SliderFloat("Sun Size", &config.sunSize, 0.005f, 0.3f);
-                changed |= ImGui::ColorEdit3("Sun Color", &config.sunColor.x);
+                changed |= InspectorUndo::ColorEdit3(m_UndoRedo, "Sun Color", &config.sunColor.x,
+                    [this](f32 r, f32 g, f32 b) {
+                        if (!m_RenderSystem) return;
+                        auto c = m_RenderSystem->GetSkyboxConfig();
+                        c.sunColor = Math::Vector3(r, g, b);
+                        m_RenderSystem->SetSkybox(c);
+                    });
             }
             changed |= ImGui::SliderFloat("Cloud Coverage", &config.cloudCoverage, 0.0f, 1.0f);
             if (config.cloudCoverage > 0.001f) {
                 changed |= ImGui::SliderFloat("Cloud Scale", &config.cloudScale, 0.2f, 6.0f);
                 changed |= ImGui::SliderFloat("Cloud Speed", &config.cloudSpeed, 0.0f, 10.0f);
-                changed |= ImGui::ColorEdit3("Cloud Color", &config.cloudColor.x);
+                changed |= InspectorUndo::ColorEdit3(m_UndoRedo, "Cloud Color", &config.cloudColor.x,
+                    [this](f32 r, f32 g, f32 b) {
+                        if (!m_RenderSystem) return;
+                        auto c = m_RenderSystem->GetSkyboxConfig();
+                        c.cloudColor = Math::Vector3(r, g, b);
+                        m_RenderSystem->SetSkybox(c);
+                    });
                 changed |= ImGui::SliderFloat("Cloud Shadows", &config.cloudShadowStrength, 0.0f, 1.0f);
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("How much passing clouds darken the ground (sun light only)");
             }
@@ -2443,15 +2479,33 @@ void EditorLayer::DrawSettingsSection_Skybox() {
         if (water.enabled) {
             wchanged |= ImGui::DragFloat("Water Line Y", &water.waterLineY, 0.1f);
             ImGui::SetItemTooltip("World-space Y of the water surface");
-            wchanged |= ImGui::ColorEdit3("Surface Color", &water.surfaceColor.x);
-            wchanged |= ImGui::ColorEdit3("Deep Color", &water.deepColor.x);
+            wchanged |= InspectorUndo::ColorEdit3(m_UndoRedo, "Surface Color", &water.surfaceColor.x,
+                [this](f32 r, f32 g, f32 b) {
+                    if (!m_RenderSystem) return;
+                    auto w = m_RenderSystem->GetWater2DConfig();
+                    w.surfaceColor = Math::Vector3(r, g, b);
+                    m_RenderSystem->SetWater2D(w);
+                });
+            wchanged |= InspectorUndo::ColorEdit3(m_UndoRedo, "Deep Color", &water.deepColor.x,
+                [this](f32 r, f32 g, f32 b) {
+                    if (!m_RenderSystem) return;
+                    auto w = m_RenderSystem->GetWater2DConfig();
+                    w.deepColor = Math::Vector3(r, g, b);
+                    m_RenderSystem->SetWater2D(w);
+                });
             wchanged |= ImGui::SliderFloat("Water Opacity", &water.opacity, 0.0f, 1.0f);
             wchanged |= ImGui::SliderFloat("Depth Falloff", &water.depthFalloff, 0.5f, 40.0f);
             ImGui::SetItemTooltip("World units below the line to reach the deep color / full opacity");
             wchanged |= ImGui::SliderFloat("Wave Amplitude", &water.waveAmplitude, 0.0f, 3.0f);
             wchanged |= ImGui::SliderFloat("Wave Length", &water.waveLength, 0.5f, 40.0f);
             wchanged |= ImGui::SliderFloat("Wave Speed", &water.waveSpeed, 0.0f, 5.0f);
-            wchanged |= ImGui::ColorEdit3("Foam Color", &water.foamColor.x);
+            wchanged |= InspectorUndo::ColorEdit3(m_UndoRedo, "Foam Color", &water.foamColor.x,
+                [this](f32 r, f32 g, f32 b) {
+                    if (!m_RenderSystem) return;
+                    auto w = m_RenderSystem->GetWater2DConfig();
+                    w.foamColor = Math::Vector3(r, g, b);
+                    m_RenderSystem->SetWater2D(w);
+                });
             wchanged |= ImGui::SliderFloat("Foam Width", &water.foamWidth, 0.0f, 3.0f);
             wchanged |= ImGui::SliderFloat("Caustics", &water.causticStrength, 0.0f, 1.0f);
         }

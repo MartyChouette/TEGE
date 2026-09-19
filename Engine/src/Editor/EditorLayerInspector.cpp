@@ -2119,7 +2119,13 @@ void EditorLayer::DrawInspectorPanel() {
                     ImGui::SliderFloat("Softness", &em->softness, 0.0f, 1.0f, "%.2f");
                     ImGui::SetItemTooltip("0 = hard edge, 1 = fully soft falloff");
                 }
-                ImGui::ColorEdit4("Color", &em->customColor.x);
+                f32 emCustom[4] = { em->customColor.x, em->customColor.y, em->customColor.z, em->customColor.w };
+                if (InspectorUndo::ColorEdit4(m_UndoRedo, "Color", emCustom,
+                        [em](f32 r, f32 g, f32 b, f32 a) {
+                            em->customColor = Math::Vector4(r, g, b, a);
+                        })) {
+                    em->customColor = Math::Vector4(emCustom[0], emCustom[1], emCustom[2], emCustom[3]);
+                }
                 ImGui::SliderFloat("Opacity", &em->customColor.w, 0.0f, 1.0f, "%.2f");
                 ImGui::SetItemTooltip("Per-particle transparency (the color's alpha channel)");
                 ImGui::DragFloat("Size", &em->customSize, 0.01f, 0.0f, 20.0f);
@@ -2152,7 +2158,13 @@ void EditorLayer::DrawInspectorPanel() {
                     ImGui::Checkbox("Leave Stains", &em->leaveStains);
                     ImGui::SetItemTooltip("Particles leave a lasting mark where they strike (liquid, blood, paint).\nDesktop builds for now.");
                     if (em->leaveStains) {
-                        ImGui::ColorEdit4("Stain Color", &em->stainColor.x);
+                        f32 emStain[4] = { em->stainColor.x, em->stainColor.y, em->stainColor.z, em->stainColor.w };
+                        if (InspectorUndo::ColorEdit4(m_UndoRedo, "Stain Color", emStain,
+                                [em](f32 r, f32 g, f32 b, f32 a) {
+                                    em->stainColor = Math::Vector4(r, g, b, a);
+                                })) {
+                            em->stainColor = Math::Vector4(emStain[0], emStain[1], emStain[2], emStain[3]);
+                        }
                         ImGui::DragFloat("Stain Size", &em->stainSize, 0.02f, 0.05f, 4.0f);
                         ImGui::DragFloat("Stain Lifetime", &em->stainLifetime, 1.0f, 2.0f, 3600.0f);
                         ImGui::SetItemTooltip("Seconds a stain lingers before fading");

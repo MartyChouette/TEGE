@@ -74,6 +74,12 @@ namespace Detail {
         static std::unordered_map<ImGuiID, f32[2]> s;
         return s;
     }
+    // Its own cache for the same reason Float2Cache has one: sharing Float3Cache
+    // would write v[3] past the end of an f32[3].
+    inline std::unordered_map<ImGuiID, f32[4]>& Float4Cache() {
+        static std::unordered_map<ImGuiID, f32[4]> s;
+        return s;
+    }
     inline std::unordered_map<ImGuiID, i32>& IntCache() {
         static std::unordered_map<ImGuiID, i32> s;
         return s;
@@ -292,6 +298,39 @@ inline bool ColorEdit3(UndoRedoManager& undo, const char* label, f32 col[3],
                 undo.Execute(std::make_unique<PropertyEditCommand<V3>>(
                     label, V3{o0, o1, o2}, V3{n0, n1, n2},
                     [setter](const V3& val) { setter(val.x, val.y, val.z); }
+                ));
+            }
+        }
+    }
+    return changed;
+}
+
+// ---- ColorEdit4 (operates on f32[4]: RGB plus alpha) ----
+//
+// Alpha is a fourth channel and not a fourth colour: a material's opacity and a
+// UI tint's transparency both live here, so an undo that restored RGB and left
+// alpha where the drag put it would half-revert the edit.
+inline bool ColorEdit4(UndoRedoManager& undo, const char* label, f32 col[4],
+                       std::function<void(f32, f32, f32, f32)> setter,
+                       ImGuiColorEditFlags flags = 0)
+{
+    bool changed = ImGui::ColorEdit4(label, col, flags);
+    ImGuiID id = ImGui::GetItemID();
+    if (ImGui::IsItemActivated()) {
+        auto& cache = Detail::Float4Cache()[id];
+        cache[0] = col[0]; cache[1] = col[1]; cache[2] = col[2]; cache[3] = col[3];
+    }
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+        auto it = Detail::Float4Cache().find(id);
+        if (it != Detail::Float4Cache().end()) {
+            f32 o0 = it->second[0], o1 = it->second[1], o2 = it->second[2], o3 = it->second[3];
+            f32 n0 = col[0], n1 = col[1], n2 = col[2], n3 = col[3];
+            Detail::Float4Cache().erase(it);
+            if (o0 != n0 || o1 != n1 || o2 != n2 || o3 != n3) {
+                struct V4 { f32 x, y, z, w; };
+                undo.Execute(std::make_unique<PropertyEditCommand<V4>>(
+                    label, V4{o0, o1, o2, o3}, V4{n0, n1, n2, n3},
+                    [setter](const V4& val) { setter(val.x, val.y, val.z, val.w); }
                 ));
             }
         }
