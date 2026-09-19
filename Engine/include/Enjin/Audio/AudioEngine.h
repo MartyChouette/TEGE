@@ -193,6 +193,17 @@ public:
     // Load audio clip from file
     AudioClipHandle LoadClip(const std::string& filepath);
 
+    // Whether a clip's audio was actually DECODED, and how long it is.
+    //
+    // LoadClip used to accept any file that opened, so "loaded" meant "a file
+    // exists there" -- a .txt renamed to .wav passed, and so did a format with
+    // no decoder compiled into the build. These report what the decoder found,
+    // which is what makes an unplayable clip observable instead of silent.
+    // Duration is 0 for a clip that failed, and for a format whose length
+    // miniaudio cannot determine without decoding it whole.
+    bool IsClipDecodable(AudioClipHandle clip) const;
+    f32 GetClipDuration(AudioClipHandle clip) const;
+
     // Unload audio clip
     void UnloadClip(AudioClipHandle clip);
 

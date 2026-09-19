@@ -320,6 +320,7 @@ enjin_add_test(TestPathFollowing      Unit/AI/TestPathFollowing.cpp)
 
 # --- Audio ---
 enjin_add_test(TestAudio              Unit/Audio/TestAudio.cpp)
+enjin_add_test(TestAudioDecode        Unit/Audio/TestAudioDecode.cpp)
 enjin_add_test(TestAcousticMaterial  Unit/Audio/TestAcousticMaterial.cpp)
 enjin_add_test(TestAcousticScene     Unit/Audio/TestAcousticScene.cpp)
 

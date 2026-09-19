@@ -881,18 +881,59 @@ AudioClipHandle AudioEngine::LoadClip(const std::string& filepath) {
     AudioClipData clipData;
     clipData.filepath = resolved;
 
-    // Verify file exists (miniaudio supports WAV, MP3, FLAC, and Vorbis natively)
-    std::ifstream testFile(resolved, std::ios::binary);
-    if (testFile.is_open()) {
+    // DECODE the header rather than just opening the file.
+    //
+    // This used to be an ifstream::is_open() test, which answers "does a file
+    // exist here" and was recorded as "clip loaded". A .txt renamed to .wav
+    // registered as a valid clip, and so did a format with no decoder compiled
+    // in -- which is exactly what happened to Vorbis: `.ogg` was offered in
+    // every audio filter, packed into builds, reported as assigned, and silent
+    // at play time. A believable wrong answer is worse than an error.
+    //
+    // ma_decoder_init_file parses the header and picks a decoder, so an
+    // unsupported or corrupt file fails HERE, by name, at import time. It also
+    // gives the clip a real duration, which nothing could fill before.
+    ma_decoder probe;
+    const ma_result probeResult = ma_decoder_init_file(resolved.c_str(), nullptr, &probe);
+    if (probeResult == MA_SUCCESS) {
         clipData.loaded = true;
-        testFile.close();
+        clipData.sampleRate = probe.outputSampleRate;
+        clipData.channels = static_cast<u16>(probe.outputChannels);
+
+        ma_uint64 frames = 0;
+        if (ma_decoder_get_length_in_pcm_frames(&probe, &frames) == MA_SUCCESS &&
+            probe.outputSampleRate > 0) {
+            clipData.duration = static_cast<f32>(frames) /
+                                static_cast<f32>(probe.outputSampleRate);
+        }
+        ma_decoder_uninit(&probe);
     } else {
-        ENJIN_LOG_WARN(Audio, "Audio file not found: %s", resolved.c_str());
+        std::ifstream testFile(resolved, std::ios::binary);
+        if (!testFile.is_open()) {
+            ENJIN_LOG_WARN(Audio, "Audio file not found: %s", resolved.c_str());
+        } else {
+            // Present but undecodable. Name the format, because the usual cause
+            // is a codec this build does not carry rather than a broken file.
+            ENJIN_LOG_WARN(Audio,
+                "Audio file cannot be decoded: %s (miniaudio result %d). "
+                "The file exists but no decoder in this build accepts it.",
+                resolved.c_str(), static_cast<int>(probeResult));
+        }
     }
 
     m_Clips[handle] = std::move(clipData);
     ENJIN_LOG_INFO(Audio, "Registered audio clip: %s (handle: %u)", resolved.c_str(), handle);
     return handle;
+}
+
+bool AudioEngine::IsClipDecodable(AudioClipHandle clip) const {
+    auto it = m_Clips.find(clip);
+    return it != m_Clips.end() && it->second.loaded;
+}
+
+f32 AudioEngine::GetClipDuration(AudioClipHandle clip) const {
+    auto it = m_Clips.find(clip);
+    return (it != m_Clips.end()) ? it->second.duration : 0.0f;
 }
 
 void AudioEngine::UnloadClip(AudioClipHandle clip) {
