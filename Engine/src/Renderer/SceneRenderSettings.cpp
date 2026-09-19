@@ -730,6 +730,22 @@ void SceneRenderSettings::ApplyToRuntimeUnclamped(ECS::RenderSystem* rs, PostPro
         rs->SetCelShadowMode(celShadowMode);
         rs->SetHalfLambert(halfLambert);
 
+        // Anti-aliasing mode.
+        //
+        // This is what tells the RENDERER which AA the scene asked for, and it
+        // was missing: SetAAMode had exactly one caller, the editor's AA
+        // dropdown. So a scene that selected TAA reached PostProcessSettings
+        // (which drives the resolve) but never reached RenderSystem::m_AAMode,
+        // which is what gates temporal JITTER -- TAA resolved a sequence of
+        // identical frames and produced no antialiasing at all. A scene that
+        // selected MSAA 2x/4x/8x reached nothing whatsoever, because MSAA lives
+        // entirely on this side; it applied only if a person changed the
+        // dropdown by hand in the editor, and never in a built game.
+        //
+        // Safe to call here: SetAAMode only sets a PENDING flag for MSAA and
+        // the swapchain rebuild happens at the top of the next Update.
+        rs->SetAAMode(aaMode);
+
         // Temporal Upscaling
 #if !ENJIN_RENDERER_WEBGPU
         rs->SetUpscalerSharpness(upscalerSharpness);

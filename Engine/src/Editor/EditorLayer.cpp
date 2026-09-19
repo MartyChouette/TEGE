@@ -3752,17 +3752,18 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     // Tell the renderer whether this frame's temporal jitter will actually be
     // consumed, BEFORE the scene renders and the projection matrix is built.
     //
-    // TAA counts now. It used to be excluded because the editor's offscreen
-    // scene target writes no velocity buffer and ApplyTAA bailed out, so
-    // jittering for it was pure shimmer. ApplyTAA reconstructs motion from
-    // depth instead, so it resolves -- and jitter is what gives it different
-    // sub-pixel samples to converge. Without the jitter a static scene hands
-    // TAA the same image every frame and it has nothing to average.
+    // TAA is deliberately NOT counted here yet, even though ApplyTAA now
+    // resolves instead of bailing out.
+    //
+    // Measured 2026-09-19: with jitter on for TAA, an edge produces 834
+    // intermediate coverage pixels against 836 with no antialiasing at all --
+    // no averaging whatever -- while the mean per-pixel delta jumps to 36,
+    // which is the image being SHIFTED by the jitter and never converged. That
+    // is the exact harm this flag exists to prevent, so TAA does not get jitter
+    // until its history actually accumulates. FXAA and SMAA reach 1161 and 1188
+    // on the same edge, so the measurement is sound.
     if (m_RenderSystem) {
-        const bool taaWillResolve = m_PostProcessing && m_PostProcessing->IsInitialized() &&
-                                    m_PostProcessing->IsTAAEnabled();
-        m_RenderSystem->SetTemporalResolveActive(
-            m_RenderSystem->IsUpscalerActive() || taaWillResolve);
+        m_RenderSystem->SetTemporalResolveActive(m_RenderSystem->IsUpscalerActive());
     }
 
     // Always render to scene RT then copy to game view RT.
