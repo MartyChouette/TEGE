@@ -2193,7 +2193,21 @@ void EditorLayer::DrawUIEditorOverlay() {
     // Render the canvas preview using the existing widget renderers
     m_UISystem.RenderCanvasPreview(*canvas);
 
-    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    // The GAME VIEW window's list, not the foreground one.
+    //
+    // The foreground list renders above every ImGui window, so this overlay
+    // used to paint its selection boxes, resize handles, snap guides and labels
+    // straight across the inspector, the hierarchy and the menu bar -- the
+    // overlay stopped being usable exactly when you needed the panels. A window
+    // list clips to its window, which is what confines it to the view it is
+    // editing. Same reason GameMenus targets this list.
+    //
+    // Null when the Game View tab is not the visible one, or before its first
+    // draw. Drawing anyway would put the overlay in the SCREEN's top-left
+    // corner against a stale rect -- the documented m_EditorViewportImageMinX
+    // trap -- so it is skipped instead.
+    ImDrawList* dl = m_GameViewDrawList;
+    if (!dl) return;
 
     // Draw selection outline and handles for selected element
     auto* selElem = canvas->GetElement(m_UIEditSelectedElementId);

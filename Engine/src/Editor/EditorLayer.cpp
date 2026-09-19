@@ -6099,13 +6099,20 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     ImGuiIO& navIo = ImGui::GetIO();
     if (gameplayHasInput) navIo.ConfigFlags &= ~ImGuiConfigFlags_NavEnableKeyboard;
     else                  navIo.ConfigFlags |=  ImGuiConfigFlags_NavEnableKeyboard;
-    m_GameViewImageDrawnThisFrame = false;   // re-armed by DrawGameViewPanel next frame
-    m_GameViewDrawList = nullptr;            // a window draw list never outlives its frame
-
-    // Render UI editor overlay (design-time WYSIWYG preview in Game View)
+    // Render UI editor overlay (design-time WYSIWYG preview in Game View).
+    //
+    // BEFORE the draw-list reset below, not after. It used to run after, so
+    // m_GameViewDrawList was already null and the overlay had nothing to draw
+    // into but the FOREGROUND list -- which renders above every editor panel.
+    // Turning on "Edit in Viewport" therefore painted selection boxes, handles
+    // and guides across the inspector, the hierarchy and the menu bar, and the
+    // overlay stopped being usable exactly when you needed the panels.
     if (m_UIEditMode && m_PlayMode.IsStopped()) {
         DrawUIEditorOverlay();
     }
+
+    m_GameViewImageDrawnThisFrame = false;   // re-armed by DrawGameViewPanel next frame
+    m_GameViewDrawList = nullptr;            // a window draw list never outlives its frame
 
     // Pause menu is now rendered inside the Game View panel (DrawGameViewPanel)
     // to prevent it from overlapping the Scene tab.
