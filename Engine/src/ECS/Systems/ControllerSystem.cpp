@@ -20,7 +20,7 @@ namespace Enjin {
 namespace ECS {
 
 // Defined further down with the other gameplay-primitive helpers (ladder/swim).
-static void UpdateDoors(World* world, f32 dt);
+static void UpdateDoors(World* world, f32 dt, InputSystem::InputActionMap* inputMap);
 
 // Pull the camera in so the world never gets between it and the player.
 //
@@ -212,7 +212,7 @@ void ControllerSystem::Update(f32 deltaTime) {
 
     // Doors (G7): once per frame, normal pass only (the bullet-time realtime
     // pass calls Update a second time and would double-step/double-toggle).
-    if (!m_RealtimePass) UpdateDoors(m_World, deltaTime);
+    if (!m_RealtimePass) UpdateDoors(m_World, deltaTime, m_InputMap);
 
     ForEachActiveController<Platformer2DController>(m_World, m_RealtimePass,
         [&](Entity entity, Platformer2DController& controller, TransformComponent& transform) {
@@ -1219,24 +1219,57 @@ static bool FindLadderAt(World* world, const Math::Vector3& pos,
     return false;
 }
 
-// Doors (G7): swing animation + E-to-toggle for any controller in range.
+// Does this character hold the key a lock asks for?
+//
+// Mirrors GameplaySystem::EntityHasKey, which is a private member of a system
+// this one cannot reach. Kept deliberately identical in behaviour: an empty
+// requiredKey means "any key opens it", a missing inventory means no, and
+// consumeKey removes the key on use.
+static bool DoorUserHasKey(World* world, Entity user, const LockComponent* lock) {
+    if (!lock || lock->requiredKey.empty()) return true;
+    auto* inv = world->GetComponent<InventoryComponent>(user);
+    if (!inv) return false;
+    auto it = std::find(inv->keys.begin(), inv->keys.end(), lock->requiredKey);
+    if (it == inv->keys.end()) return false;
+    if (lock->consumeKey) inv->keys.erase(it);
+    return true;
+}
+
+// Doors (G7): swing animation + interact-to-toggle for any controller in range.
 // Lives here because this system has input + world in every runtime. Called
 // once per ControllerSystem::Update (non-realtime pass only - the realtime
 // bullet-time pass runs Update a second time).
-static void UpdateDoors(World* world, f32 dt) {
-    // Gather controller positions once (any FP/TP character can open doors).
+static void UpdateDoors(World* world, f32 dt, InputSystem::InputActionMap* inputMap) {
+    // Gather the characters who can open doors -- ENTITY as well as position,
+    // because a locked door has to ask what the person is carrying.
+    Entity userEntity[8];
     Math::Vector3 users[8];
     u32 userCount = 0;
     for (Entity e : world->GetEntitiesWithComponent<ThirdPersonController>()) {
         if (userCount >= 8) break;
-        if (auto* tf = world->GetComponent<TransformComponent>(e)) users[userCount++] = tf->position;
+        if (auto* tf = world->GetComponent<TransformComponent>(e)) {
+            userEntity[userCount] = e;
+            users[userCount++] = tf->position;
+        }
     }
     for (Entity e : world->GetEntitiesWithComponent<FirstPersonController>()) {
         if (userCount >= 8) break;
-        if (auto* tf = world->GetComponent<TransformComponent>(e)) users[userCount++] = tf->position;
+        if (auto* tf = world->GetComponent<TransformComponent>(e)) {
+            userEntity[userCount] = e;
+            users[userCount++] = tf->position;
+        }
     }
 
-    bool interactPressed = Input::IsKeyPressed(KeyCode::E);
+    // The rebindable Interact ACTION, not a hardcoded key.
+    //
+    // This read Input::IsKeyPressed(KeyCode::E) directly, so rebinding Interact
+    // moved every other interaction in the game and left doors on E. That is
+    // the same trap SavePointComponent::savePointKey carries and the reason
+    // SavePointSystem reads the action instead. The fallback keeps doors
+    // working in a headless test, where no map is attached.
+    const bool interactPressed = inputMap
+        ? inputMap->IsActionPressed(InputSystem::GameAction::Interact)
+        : Input::IsKeyPressed(KeyCode::E);
 
     for (Entity e : world->GetEntitiesWithComponent<DoorComponent>()) {
         auto* door = world->GetComponent<DoorComponent>(e);
@@ -1250,12 +1283,23 @@ static void UpdateDoors(World* world, f32 dt) {
             door->initialized = true;
         }
 
-        // Toggle when a character in range presses E.
+        // Toggle when a character in range asks to interact.
+        //
+        // A LockComponent on the same entity now gates it, which it never did:
+        // DoorComponent::locked was an independent bool and LockComponent's
+        // requiredKey only worked for GameplaySystem's own doors, so a key
+        // could never open a DoorComponent. Both gates apply -- door->locked is
+        // the "this door does not open" switch, the lock is "this door opens if
+        // you have the key".
+        const auto* lock = world->GetComponent<LockComponent>(e);
         if (interactPressed && !door->locked) {
             for (u32 i = 0; i < userCount; ++i) {
                 Math::Vector3 d = users[i] - tf->position;
                 d.y = 0.0f;
                 if (d.LengthSquared() <= door->interactRadius * door->interactRadius) {
+                    if (lock && lock->isLocked && !DoorUserHasKey(world, userEntity[i], lock)) {
+                        break;   // in range, wrong key: the door stays shut
+                    }
                     door->open = !door->open;
                     door->closeTimer = 0.0f;
                     break;
