@@ -3,6 +3,7 @@
 // timing, responsive canvas via ResizeObserver, all gameplay systems active.
 
 #include "Enjin/Platform/Platform.h"
+#include "Enjin/ECS/PostProcessVolumeBlend.h"
 #include <filesystem>
 #include <set>
 #include <cctype>
@@ -875,7 +876,12 @@ public:
             m_RenderSystem->SetRenderQuality(m_RenderQuality);
             m_RenderSystem->SetActiveQualityTier(m_ActiveQualityTier);
         }
-        m_SceneRenderSettings.ApplyToRuntime(m_RenderSystem, nullptr);
+        // Web has no PostProcessing object, so the second argument was nullptr
+        // and every PostProcessVolume in a scene was inert in a browser. The
+        // scene's authored values now land in a real PostProcessSettings, which
+        // is what a volume blends on top of; ApplyWebPostProcess reads the
+        // blended result rather than m_SceneRenderSettings directly.
+        m_SceneRenderSettings.ApplyToRuntime(m_RenderSystem, &m_WebPostProcessBase);
         // World time is authored per scene. Seed the clock from it, and let the
         // scene decide whether it runs at all -- an editor checkbox was the only
         // source before, so a shipped game could never turn day and night on.
@@ -987,7 +993,7 @@ public:
     void ApplyWebPostProcess() {
         if (!m_RenderSystem) return;
         const auto& s = m_SceneRenderSettings;
-        m_RenderSystem->SetWebToneMapMode(s.toneMappingMode);
+        m_RenderSystem->SetWebToneMapMode(m_WebPostProcessBase.toneMappingMode);
         // Scene LUT. ApplyToRuntime passes null pp on web, so the LUT would
         // otherwise be the one graded effect that worked in the editor and in a
         // desktop build and silently did nothing in a browser.
@@ -1016,10 +1022,21 @@ public:
             // An explicit ?sharp= still wins over that default.
             if (sharp >= 0.0f) m_RenderSystem->SetWebSharpness(sharp);
         }
+        PushWebPostProcessScalars(m_WebPostProcessBase);
+    }
+
+    // The cheap half of the push: the graded scalars, with no LUT resolve and
+    // no EM_ASM round trip. Split out so post-process VOLUMES can drive it
+    // every frame as the camera moves -- ApplyWebPostProcess itself is still
+    // called only on a scene load and on a rewind transition, because those
+    // two costs are what made per-frame re-pushing a bad idea.
+    void PushWebPostProcessScalars(const Enjin::Renderer::PostProcessSettings& s) {
+        if (!m_RenderSystem) return;
+
         // A Rewind Ability's authored tint and vignette, folded in on top of the
-        // scene's grade. Web has no PostProcessSettings object -- these go
-        // through as loose scalars -- so the desktop RewindFeedbackApplier does
-        // not fit and the same values are applied here by hand.
+        // scene's grade. Web has no PostProcessing OBJECT -- these go through as
+        // loose scalars -- so the desktop RewindFeedbackApplier does not fit and
+        // the same values are applied here by hand.
         //
         // Both were serialized, both were documented as a screen tint, and
         // neither had ever been rendered on any platform.
@@ -1657,6 +1674,26 @@ public:
                 m_RewindFeedbackWasActive = feedbackActive;
                 ApplyWebPostProcess();
             }
+        }
+
+        // Post-process volumes. Every PostProcessVolume in a scene used to be
+        // inert in a browser: the web player never evaluated one, so a volume
+        // authored and previewed in the editor simply did not exist once the
+        // game shipped to the web.
+        //
+        // Only the cheap scalar push runs here, and only while a volume is
+        // actually contributing -- a scene with no volumes takes the early-out
+        // inside BlendPostProcessVolumes and pushes nothing, which is what it
+        // did before. The extra push on the frame contribution ENDS is what
+        // puts the scene's own grade back as the camera leaves.
+        if (m_World && m_Camera) {
+            Enjin::Renderer::PostProcessSettings blended = m_WebPostProcessBase;
+            const bool contributing = Enjin::ECS::BlendPostProcessVolumes(
+                m_World.get(), m_Camera->GetPosition(), m_WebPostProcessBase, blended);
+            if (contributing || m_WebPostProcessVolumeActive) {
+                PushWebPostProcessScalars(blended);
+            }
+            m_WebPostProcessVolumeActive = contributing;
         }
         m_CameraDirector.Update(m_World.get(), m_Camera.get(), deltaTime);
         Enjin::ECS::ParallaxSystem::ApplyParallaxLayers(m_World.get(), deltaTime);
@@ -2646,6 +2683,12 @@ private:
         }
         if (m_RenderSystem) m_RenderSystem->SetSkybox(serializer.GetSkyboxConfig());
         if (m_RenderSystem) m_RenderSystem->SetWater2D(serializer.GetWater2DConfig());
+        // A scene TRANSITION never applied the new scene's render settings: only
+        // boot did (FinishInitialize), so shadow distance, ambient, fog, texture
+        // filtering, OIT and backface culling all kept the FIRST scene's values
+        // for the rest of the session. The skybox and the 2D water were updated
+        // two lines up, which is what made the rest look deliberate.
+        m_SceneRenderSettings.ApplyToRuntime(m_RenderSystem, &m_WebPostProcessBase);
         ApplyWebPostProcess();
         m_CurrentWebScenePath = scenePath;
         m_SimClock.Reset();
@@ -3095,6 +3138,14 @@ private:
     Enjin::Scene::SceneManager m_SceneManager;
     Enjin::Networking::NetworkSystem m_NetworkSystem;
     Enjin::Renderer::SceneRenderSettings m_SceneRenderSettings;
+
+    // The scene's authored post-process values, mapped out of
+    // m_SceneRenderSettings by ApplyToRuntime. Volumes blend on top of this
+    // each frame; it is never itself written by a blend.
+    Enjin::Renderer::PostProcessSettings m_WebPostProcessBase;
+    // Whether a volume contributed last frame, so the frame it stops
+    // contributing still pushes once and restores the scene's own grade.
+    bool m_WebPostProcessVolumeActive = false;
     Enjin::Renderer::SceneRenderSettings m_ProjectRenderSettings;
     bool m_HasProjectRenderSettings = false;
 

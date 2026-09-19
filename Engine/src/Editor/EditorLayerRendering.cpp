@@ -1,4 +1,5 @@
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/ECS/PostProcessVolumeBlend.h"
 #include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/Editor/EditorWidgets.h"
 #include "Enjin/Editor/InspectorUndo.h"
@@ -149,56 +150,27 @@ void EditorLayer::RemoveComponentWithUndo(ECS::Entity entity, const std::string&
 void EditorLayer::EvaluatePostProcessVolumes(const Math::Vector3& cameraPosition) {
     if (!m_PostProcessing || !m_World) return;
 
-    auto volumeEntities = m_World->GetEntitiesWithComponent<ECS::PostProcessVolumeComponent>();
-    if (volumeEntities.empty()) return;
+    auto& live = m_PostProcessing->GetSettings();
 
-    // Save the global/panel PP settings as the base layer (restored each frame before blending)
-    // The base settings come from the PostProcessing panel — we capture them once and
-    // restore before blending so volume changes don't permanently modify panel values.
-    auto& currentSettings = m_PostProcessing->GetSettings();
-
-    // Collect active volumes with their blend weights
-    struct VolumeEntry {
-        const ECS::PostProcessVolumeComponent* vol;
-        f32 blendWeight;
-    };
-    std::vector<VolumeEntry> activeVolumes;
-    activeVolumes.reserve(volumeEntities.size());
-
-    for (auto entity : volumeEntities) {
-        auto* vol = m_World->GetComponent<ECS::PostProcessVolumeComponent>(entity);
-        if (!vol || !vol->isActive) continue;
-
-        Math::Vector3 center(0, 0, 0);
-        if (!vol->isGlobal) {
-            auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
-            if (!transform) continue;
-            center = transform->position;
-        }
-
-        f32 w = vol->GetBlendWeight(center, cameraPosition);
-        if (w <= 0.001f) continue;
-
-        activeVolumes.push_back({ vol, w });
+    // Capture the panel's authored values BEFORE blending. The blend is undone
+    // again by RestorePostProcessVolumeBase at the end of the offscreen pass,
+    // so the panels -- which draw later, in Render -- always show and edit
+    // these values rather than whatever volume the camera happens to be in.
+    if (!m_PostProcessVolumeBase) {
+        m_PostProcessVolumeBase = std::make_unique<Renderer::PostProcessSettings>();
     }
+    *m_PostProcessVolumeBase = live;
 
-    if (activeVolumes.empty()) return;
+    // Blending from the base, not from `live`, is the fix: see
+    // ECS::BlendPostProcessVolumes for what the old self-blend did.
+    m_PostProcessVolumeActive =
+        ECS::BlendPostProcessVolumes(m_World, cameraPosition, *m_PostProcessVolumeBase, live);
+}
 
-    // Sort by priority (lowest first — applied first, higher priority overrides)
-    std::sort(activeVolumes.begin(), activeVolumes.end(),
-        [](const VolumeEntry& a, const VolumeEntry& b) {
-            return a.vol->priority < b.vol->priority;
-        });
-
-    // Start from current global settings and blend each volume on top
-    Renderer::PostProcessSettings blended = currentSettings;
-    for (auto& entry : activeVolumes) {
-        ECS::BlendPostProcessSettings(blended, blended, entry.vol->settings,
-            entry.blendWeight, entry.vol->overrideMask);
-    }
-
-    // Apply blended result
-    currentSettings = blended;
+void EditorLayer::RestorePostProcessVolumeBase() {
+    if (!m_PostProcessVolumeActive || !m_PostProcessing || !m_PostProcessVolumeBase) return;
+    m_PostProcessing->GetSettings() = *m_PostProcessVolumeBase;
+    m_PostProcessVolumeActive = false;
 }
 
 

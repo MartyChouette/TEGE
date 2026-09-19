@@ -167,6 +167,7 @@ enjin_add_test(TestComponentPointerLifetime Unit/ECS/TestComponentPointerLifetim
 enjin_add_test(TestGameplaySystem    Unit/ECS/TestGameplaySystem.cpp)
 enjin_add_test(TestMeshRendererFields Unit/ECS/TestMeshRendererFields.cpp)
 enjin_add_test(TestEntityNameCache    Unit/ECS/TestEntityNameCache.cpp)
+enjin_add_test(TestPostProcessVolumes Unit/ECS/TestPostProcessVolumes.cpp)
 enjin_add_test(TestCollisionFiltering Unit/ECS/TestCollisionFiltering.cpp)
 enjin_add_test(TestFirstPersonMovement Unit/ECS/TestFirstPersonMovement.cpp)
 enjin_add_test(TestCamera             Unit/ECS/TestCamera.cpp)

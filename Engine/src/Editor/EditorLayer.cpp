@@ -4260,6 +4260,11 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             m_RenderProfileFrames = 0;
         }
     }
+
+    // Post-processing has consumed the volume-blended settings by now, so put
+    // the author's values back. The panels draw in Render, below, and must not
+    // see or edit a blended copy.
+    RestorePostProcessVolumeBase();
 }
 
 void EditorLayer::Render(VkCommandBuffer commandBuffer) {

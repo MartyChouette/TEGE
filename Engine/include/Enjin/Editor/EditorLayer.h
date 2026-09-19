@@ -109,6 +109,7 @@ namespace Enjin {
 // Forward declarations
 namespace Renderer {
     class PostProcessing;
+    struct PostProcessSettings;
 }
 namespace ECS {
     class RenderSystem;
@@ -577,6 +578,17 @@ private:
     void DrawPostProcessVolumeComponent(ECS::Entity entity);
     void DrawArtStyleComponent(ECS::Entity entity);
     void EvaluatePostProcessVolumes(const Math::Vector3& cameraPosition);
+    void RestorePostProcessVolumeBase();
+
+    // The PostProcessing panel's authored settings, held apart from the live
+    // ones so a volume blend starts from the same place every frame and can be
+    // undone on the frame the camera leaves. Without this the blend compounded
+    // into itself and the panel's own values were overwritten in place.
+    // By pointer because this header forward-declares the renderer's
+    // post-processing types rather than including them, the way m_PostProcessing
+    // already does. Allocated on first use.
+    std::unique_ptr<Renderer::PostProcessSettings> m_PostProcessVolumeBase;
+    bool m_PostProcessVolumeActive = false;
     void DrawGameViewPanel();
     void DrawSceneListPanel();
 

@@ -1,4 +1,5 @@
 #include "Enjin/Core/Application.h"
+#include "Enjin/ECS/PostProcessVolumeBlend.h"
 #include <cstdio>
 #include "Enjin/Scripting/ScriptChecker.h"
 #include "Enjin/Core/Version.h"
@@ -4213,6 +4214,11 @@ private:
     Enjin::Effects::WindSystem m_WindSystem;
     Enjin::Effects::WorldTimeSystem m_WorldTime;
     Enjin::Renderer::SceneRenderSettings m_SceneRenderSettings;
+
+    // Authored post-process settings, held apart from the live ones so a
+    // volume blend starts from the same place each frame and can be undone.
+    Enjin::Renderer::PostProcessSettings m_PostProcessVolumeBase;
+    bool m_PostProcessVolumeActive = false;
     Enjin::Renderer::SceneRenderSettings m_ProjectRenderSettings;
     bool m_HasProjectRenderSettings = false;
     bool m_HasProjectAudioSettings = false;
@@ -4441,49 +4447,23 @@ private:
     void EvaluatePostProcessVolumes(const Enjin::Math::Vector3& cameraPosition) {
         if (!m_PostProcessing || !m_World) return;
 
-        auto volumeEntities = m_World->GetEntitiesWithComponent<Enjin::ECS::PostProcessVolumeComponent>();
-        if (volumeEntities.empty()) return;
+        auto& live = m_PostProcessing->GetSettings();
 
-        auto& currentSettings = m_PostProcessing->GetSettings();
-
-        struct VolumeEntry {
-            const Enjin::ECS::PostProcessVolumeComponent* vol;
-            Enjin::f32 blendWeight;
-        };
-        std::vector<VolumeEntry> activeVolumes;
-        activeVolumes.reserve(volumeEntities.size());
-
-        for (auto entity : volumeEntities) {
-            auto* vol = m_World->GetComponent<Enjin::ECS::PostProcessVolumeComponent>(entity);
-            if (!vol || !vol->isActive) continue;
-
-            Enjin::Math::Vector3 center(0, 0, 0);
-            if (!vol->isGlobal) {
-                auto* transform = m_World->GetComponent<Enjin::ECS::TransformComponent>(entity);
-                if (!transform) continue;
-                center = transform->position;
-            }
-
-            Enjin::f32 w = vol->GetBlendWeight(center, cameraPosition);
-            if (w <= 0.001f) continue;
-
-            activeVolumes.push_back({ vol, w });
+        // Undo last frame's blend before reading the base. Without this the
+        // blend compounds into itself every frame and a volume's authored
+        // weight stops meaning anything -- see ECS::BlendPostProcessVolumes.
+        if (m_PostProcessVolumeActive) {
+            live = m_PostProcessVolumeBase;
+            m_PostProcessVolumeActive = false;
         }
 
-        if (activeVolumes.empty()) return;
+        // Re-captured every frame on purpose: an options menu or a scene load
+        // can change the authored settings between frames, and those changes
+        // are the new base rather than something a volume should undo.
+        m_PostProcessVolumeBase = live;
 
-        std::sort(activeVolumes.begin(), activeVolumes.end(),
-            [](const VolumeEntry& a, const VolumeEntry& b) {
-                return a.vol->priority < b.vol->priority;
-            });
-
-        Enjin::Renderer::PostProcessSettings blended = currentSettings;
-        for (auto& entry : activeVolumes) {
-            Enjin::ECS::BlendPostProcessSettings(blended, blended, entry.vol->settings,
-                entry.blendWeight, entry.vol->overrideMask);
-        }
-
-        currentSettings = blended;
+        m_PostProcessVolumeActive = Enjin::ECS::BlendPostProcessVolumes(
+            m_World.get(), cameraPosition, m_PostProcessVolumeBase, live);
     }
 
     // Gameplay processing methods (ProcessContactDamage, ProcessPickup,
