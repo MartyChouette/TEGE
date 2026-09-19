@@ -674,7 +674,11 @@ void EditorLayer::DrawLayersPanel() {
         ImGui::SameLine();
 
         float layerCol[3] = { layer.color.x, layer.color.y, layer.color.z };
-        if (ImGui::ColorEdit3("##color", layerCol,
+        if (InspectorUndo::ColorEdit3(m_UndoRedo, "##color", layerCol,
+                [this, i](f32 r, f32 g, f32 b) {
+                    auto& ls = m_LayerSystem.Stack();
+                    if (i < ls.layers.size()) ls.layers[i].color = Math::Vector3(r, g, b);
+                },
                 ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel)) {
             layer.color = Math::Vector3(layerCol[0], layerCol[1], layerCol[2]);
         }
@@ -3000,11 +3004,13 @@ void EditorLayer::DrawParticleEditorPanel() {
     // --- Color Gradient ---
     if (UI::SectionHeader("Color Gradient")) {
         f32 startCol[3] = { emitter->startColor.x, emitter->startColor.y, emitter->startColor.z };
-        if (ImGui::ColorEdit3("Start Color##pe", startCol)) {
+        if (InspectorUndo::ColorEdit3(m_UndoRedo, "Start Color##pe", startCol,
+                [emitter](f32 r, f32 g, f32 b) { emitter->startColor = Math::Vector3(r, g, b); })) {
             emitter->startColor = Math::Vector3(startCol[0], startCol[1], startCol[2]);
         }
         f32 endCol[3] = { emitter->endColor.x, emitter->endColor.y, emitter->endColor.z };
-        if (ImGui::ColorEdit3("End Color##pe", endCol)) {
+        if (InspectorUndo::ColorEdit3(m_UndoRedo, "End Color##pe", endCol,
+                [emitter](f32 r, f32 g, f32 b) { emitter->endColor = Math::Vector3(r, g, b); })) {
             emitter->endColor = Math::Vector3(endCol[0], endCol[1], endCol[2]);
         }
 

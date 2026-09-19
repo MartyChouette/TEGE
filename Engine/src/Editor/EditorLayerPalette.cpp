@@ -12,6 +12,7 @@
 #include "Enjin/Editor/EditorLayer.h"
 #include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/Editor/EditorWidgets.h"
+#include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Renderer/PaletteCycle.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
 
@@ -202,9 +203,27 @@ void EditorLayer::DrawSettingsSection_ScenePalette() {
     ImGui::PushItemWidth(220.0f * s);
     int sel = s_Selected;
     if (ImGui::SliderInt("Entry", &sel, 0, static_cast<int>(palette.count) - 1)) s_Selected = sel;
-    Renderer::PaletteColor& pc = palette.colors[static_cast<u32>(s_Selected)];
+    const u32 entry = static_cast<u32>(s_Selected);
+    Renderer::PaletteColor& pc = palette.colors[entry];
     f32 col[3] = { pc.r / 255.0f, pc.g / 255.0f, pc.b / 255.0f };
-    if (ImGui::ColorEdit3("Colour", col)) {
+    // The index is captured BY VALUE. s_Selected is a static that the strip
+    // above rewrites on a click, so an undo that read it at execute time would
+    // recolour whatever entry happens to be selected then rather than the one
+    // that was edited. `palette` and `cycles` are local copies refetched every
+    // frame, so the setter re-fetches and re-applies instead of capturing them:
+    // capturing by reference dangles, and by value would write back a stale
+    // snapshot of every other entry in the table.
+    if (InspectorUndo::ColorEdit3(m_UndoRedo, "Colour", col,
+            [this, slot, entry](f32 r, f32 g, f32 b) {
+                if (!m_RenderSystem) return;
+                auto pal = m_RenderSystem->GetScenePalette(slot);
+                if (entry >= pal.count) return;
+                pal.colors[entry].r = static_cast<u8>(r * 255.0f + 0.5f);
+                pal.colors[entry].g = static_cast<u8>(g * 255.0f + 0.5f);
+                pal.colors[entry].b = static_cast<u8>(b * 255.0f + 0.5f);
+                m_RenderSystem->SetScenePalette(slot, pal,
+                                                m_RenderSystem->GetPaletteCycles(slot));
+            })) {
         pc.r = static_cast<u8>(col[0] * 255.0f + 0.5f);
         pc.g = static_cast<u8>(col[1] * 255.0f + 0.5f);
         pc.b = static_cast<u8>(col[2] * 255.0f + 0.5f);
