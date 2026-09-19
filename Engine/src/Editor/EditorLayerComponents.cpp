@@ -787,7 +787,12 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
         ImGui::DragFloat("Outline Width##Mat", &material->outlineWidth, 0.001f, 0.0f, 0.2f, "%.3f");
         ImGui::SetItemTooltip("Per-material outline width (0 = use global setting).\nInverted-hull backface extrusion in world units.");
         if (material->outlineWidth > 0.0f) {
-            ImGui::ColorEdit3("Outline Color##Mat", &material->outlineColor.x);
+            f32 outlineCol[3] = { material->outlineColor.x, material->outlineColor.y,
+                                  material->outlineColor.z };
+            if (InspectorUndo::ColorEdit3(m_UndoRedo, "Outline Color##Mat", outlineCol,
+                    [material](f32 r, f32 g, f32 b) { material->outlineColor = Math::Vector3(r, g, b); })) {
+                material->outlineColor = Math::Vector3(outlineCol[0], outlineCol[1], outlineCol[2]);
+            }
         }
 
         // Dithered gradient rendering
@@ -815,7 +820,8 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
                 material->ditherTransPattern = static_cast<u8>(dtPat);
             }
             float blendCol[3] = { material->ditherTransBlendColor.x, material->ditherTransBlendColor.y, material->ditherTransBlendColor.z };
-            if (ImGui::ColorEdit3("Blend Color##DT", blendCol)) {
+            if (InspectorUndo::ColorEdit3(m_UndoRedo, "Blend Color##DT", blendCol,
+                    [material](f32 r, f32 g, f32 b) { material->ditherTransBlendColor = Math::Vector3(r, g, b); })) {
                 material->ditherTransBlendColor = Math::Vector3(blendCol[0], blendCol[1], blendCol[2]);
             }
             InspectorUndo::DragFloat(m_UndoRedo, "Trans Opacity##DT", &material->ditherTransOpacity, 0.01f, 0.0f, 1.0f);
@@ -1285,7 +1291,8 @@ void EditorLayer::DrawMaterialSlotsComponent(ECS::Entity entity) {
                 // Base color
                 f32 baseColor[3] = { slot.baseColor.x, slot.baseColor.y, slot.baseColor.z };
                 std::string bcLabel = "Base Color##slot" + std::to_string(i);
-                if (ImGui::ColorEdit3(bcLabel.c_str(), baseColor)) {
+                if (InspectorUndo::ColorEdit3(m_UndoRedo, bcLabel.c_str(), baseColor,
+                        [matSlots, i](f32 r, f32 g, f32 b) { matSlots->slots[i].baseColor = Math::Vector3(r, g, b); })) {
                     slot.baseColor = Math::Vector3(baseColor[0], baseColor[1], baseColor[2]);
                 }
 
@@ -1302,7 +1309,8 @@ void EditorLayer::DrawMaterialSlotsComponent(ECS::Entity entity) {
                 // Emission
                 f32 emissive[3] = { slot.emissiveColor.x, slot.emissiveColor.y, slot.emissiveColor.z };
                 std::string emLabel = "Emissive##slot" + std::to_string(i);
-                if (ImGui::ColorEdit3(emLabel.c_str(), emissive)) {
+                if (InspectorUndo::ColorEdit3(m_UndoRedo, emLabel.c_str(), emissive,
+                        [matSlots, i](f32 r, f32 g, f32 b) { matSlots->slots[i].emissiveColor = Math::Vector3(r, g, b); })) {
                     slot.emissiveColor = Math::Vector3(emissive[0], emissive[1], emissive[2]);
                 }
                 std::string esLabel = "Emissive Strength##slot" + std::to_string(i);
@@ -1608,7 +1616,11 @@ void EditorLayer::DrawHoverHighlightComponent(ECS::Entity entity) {
 
     ImGui::BeginDisabled(!h->enabled);
 
-    ImGui::ColorEdit3("Color##Hover", &h->color.x);
+    f32 hoverCol[3] = { h->color.x, h->color.y, h->color.z };
+    if (InspectorUndo::ColorEdit3(m_UndoRedo, "Color##Hover", hoverCol,
+            [h](f32 r, f32 g, f32 b) { h->color = Math::Vector3(r, g, b); })) {
+        h->color = Math::Vector3(hoverCol[0], hoverCol[1], hoverCol[2]);
+    }
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Outline colour while the cursor is on this entity.");
 
     InspectorUndo::DragFloat(m_UndoRedo, "Thickness##Hover", &h->thickness, 0.002f, 0.0f, 1.0f, "%.3f");
@@ -3399,7 +3411,8 @@ void EditorLayer::DrawReflectivePlaneComponent(ECS::Entity entity) {
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("How strongly the mirror shows (0 = off, 1 = full).");
 
         f32 tint[3] = { plane->tint.x, plane->tint.y, plane->tint.z };
-        if (ImGui::ColorEdit3("Tint##ReflPlane", tint)) {
+        if (InspectorUndo::ColorEdit3(m_UndoRedo, "Tint##ReflPlane", tint,
+                [plane](f32 r, f32 g, f32 b) { plane->tint = Math::Vector3(r, g, b); })) {
             plane->tint = Math::Vector3(tint[0], tint[1], tint[2]);
         }
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Colours the reflection — wet-asphalt blue, gold sheen, murky water.");
@@ -5043,7 +5056,8 @@ void EditorLayer::DrawRecordRewindComponent(ECS::Entity entity) {
         if (ImGui::TreeNode("Visual Feedback")) {
             InspectorUndo::DragFloat(m_UndoRedo, "Vignette Strength", &rr->rewindVignetteStrength, 0.05f, 0.0f, 1.0f);
             f32 tint[3] = { rr->rewindTint.x, rr->rewindTint.y, rr->rewindTint.z };
-            if (ImGui::ColorEdit3("Rewind Tint", tint)) {
+            if (InspectorUndo::ColorEdit3(m_UndoRedo, "Rewind Tint", tint,
+                    [rr](f32 r, f32 g, f32 b) { rr->rewindTint = Math::Vector3(r, g, b); })) {
                 rr->rewindTint = Math::Vector3(tint[0], tint[1], tint[2]);
             }
             ImGui::TreePop();
@@ -5110,7 +5124,8 @@ void EditorLayer::DrawSceneRewindComponent(ECS::Entity entity) {
         if (ImGui::TreeNode("Visual Feedback")) {
             InspectorUndo::DragFloat(m_UndoRedo, "Vignette Strength", &sr->rewindVignetteStrength, 0.05f, 0.0f, 1.0f);
             f32 tint[3] = { sr->rewindTint.x, sr->rewindTint.y, sr->rewindTint.z };
-            if (ImGui::ColorEdit3("Rewind Tint", tint)) {
+            if (InspectorUndo::ColorEdit3(m_UndoRedo, "Rewind Tint", tint,
+                    [sr](f32 r, f32 g, f32 b) { sr->rewindTint = Math::Vector3(r, g, b); })) {
                 sr->rewindTint = Math::Vector3(tint[0], tint[1], tint[2]);
             }
             ImGui::TreePop();
@@ -6307,7 +6322,8 @@ void EditorLayer::DrawDialogueBoxComponent(ECS::Entity entity) {
             InspectorUndo::DragFloat(m_UndoRedo, "Margin", &box->boxMargin, 0.5f, 0.0f, 100.0f);
             InspectorUndo::DragFloat(m_UndoRedo, "Padding", &box->boxPadding, 0.5f, 0.0f, 50.0f);
             f32 col[3] = { box->boxColor.x, box->boxColor.y, box->boxColor.z };
-            if (ImGui::ColorEdit3("Box Color", col)) {
+            if (InspectorUndo::ColorEdit3(m_UndoRedo, "Box Color", col,
+                    [box](f32 r, f32 g, f32 b) { box->boxColor = Math::Vector3(r, g, b); })) {
                 box->boxColor = Math::Vector3(col[0], col[1], col[2]);
             }
             InspectorUndo::SliderFloat(m_UndoRedo, "Box Alpha", &box->boxAlpha, 0.0f, 1.0f);
@@ -6318,12 +6334,14 @@ void EditorLayer::DrawDialogueBoxComponent(ECS::Entity entity) {
         if (ImGui::TreeNode("Text Style")) {
             InspectorUndo::DragFloat(m_UndoRedo, "Speaker Font Size", &box->speakerFontSize, 0.5f, 8.0f, 48.0f);
             f32 sc[3] = { box->defaultSpeakerColor.x, box->defaultSpeakerColor.y, box->defaultSpeakerColor.z };
-            if (ImGui::ColorEdit3("Default Speaker Color", sc)) {
+            if (InspectorUndo::ColorEdit3(m_UndoRedo, "Default Speaker Color", sc,
+                    [box](f32 r, f32 g, f32 b) { box->defaultSpeakerColor = Math::Vector3(r, g, b); })) {
                 box->defaultSpeakerColor = Math::Vector3(sc[0], sc[1], sc[2]);
             }
             InspectorUndo::DragFloat(m_UndoRedo, "Text Font Size", &box->textFontSize, 0.5f, 8.0f, 48.0f);
             f32 tc[3] = { box->textColor.x, box->textColor.y, box->textColor.z };
-            if (ImGui::ColorEdit3("Text Color", tc)) {
+            if (InspectorUndo::ColorEdit3(m_UndoRedo, "Text Color", tc,
+                    [box](f32 r, f32 g, f32 b) { box->textColor = Math::Vector3(r, g, b); })) {
                 box->textColor = Math::Vector3(tc[0], tc[1], tc[2]);
             }
             ImGui::TreePop();
@@ -6340,11 +6358,13 @@ void EditorLayer::DrawDialogueBoxComponent(ECS::Entity entity) {
         if (ImGui::TreeNode("Choices")) {
             InspectorUndo::DragFloat(m_UndoRedo, "Choice Spacing", &box->choiceSpacing, 0.5f, 0.0f, 24.0f);
             f32 cc[3] = { box->choiceColor.x, box->choiceColor.y, box->choiceColor.z };
-            if (ImGui::ColorEdit3("Choice BG Color", cc)) {
+            if (InspectorUndo::ColorEdit3(m_UndoRedo, "Choice BG Color", cc,
+                    [box](f32 r, f32 g, f32 b) { box->choiceColor = Math::Vector3(r, g, b); })) {
                 box->choiceColor = Math::Vector3(cc[0], cc[1], cc[2]);
             }
             f32 ctc[3] = { box->choiceTextColor.x, box->choiceTextColor.y, box->choiceTextColor.z };
-            if (ImGui::ColorEdit3("Choice Text Color", ctc)) {
+            if (InspectorUndo::ColorEdit3(m_UndoRedo, "Choice Text Color", ctc,
+                    [box](f32 r, f32 g, f32 b) { box->choiceTextColor = Math::Vector3(r, g, b); })) {
                 box->choiceTextColor = Math::Vector3(ctc[0], ctc[1], ctc[2]);
             }
             ImGui::TreePop();
