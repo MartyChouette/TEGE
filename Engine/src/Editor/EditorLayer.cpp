@@ -3824,6 +3824,7 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     bool usePPShader = usePostProcessing && m_PostProcessing &&
                        m_PostProcessing->IsInitialized() && (cameraPPEnabled || ptDisplayActive || rtHybridActive);
 
+
     // Choose render target: scene RT when post-processing is active, game view RT otherwise
     Renderer::RenderTarget* sceneTarget = usePostProcessing
         ? m_SceneRenderTarget.get()
@@ -4023,11 +4024,17 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             if (m_SceneRenderTarget && m_SceneRenderTarget->IsValid()) {
                 m_PostProcessing->SetDepthImageView(m_SceneRenderTarget->GetDepthImageView());
             }
-            m_PostProcessing->ApplyTAA(commandBuffer);
+            const bool taaResolved = m_PostProcessing->ApplyTAA(commandBuffer);
 
-            // Redirect post-processing input to TAA output
+            // Redirect post-processing input to TAA output -- but ONLY if TAA
+            // actually resolved. The output VIEW exists as soon as the TAA
+            // resources are created, so testing it for null said "yes" even
+            // though ApplyTAA had just bailed out on the missing velocity
+            // buffer. Post-processing then sampled an image nothing had ever
+            // written and the game view rendered BLACK: picking TAA did not
+            // fail to antialias, it blanked the frame.
             VkImageView taaOutput = m_PostProcessing->GetTAAOutputImageView();
-            if (taaOutput != VK_NULL_HANDLE && m_SceneRenderTarget) {
+            if (taaResolved && taaOutput != VK_NULL_HANDLE && m_SceneRenderTarget) {
                 m_PostProcessing->UpdateSourceImage(taaOutput, m_SceneRenderTarget->GetSampler());
                 m_LastPPSourceView = taaOutput;
                 ppSourceRedirected = true;
@@ -4048,8 +4055,12 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
                     // the scene colour below.
                     m_PostProcessing->SetVelocityImageView(VK_NULL_HANDLE);
                     m_PostProcessing->SetDepthImageView(m_SceneRenderTarget->GetDepthImageView());
-                    m_PostProcessing->ApplyTAA(commandBuffer);
-                    colorInput = m_PostProcessing->GetTAAOutputImageView();
+                    if (m_PostProcessing->ApplyTAA(commandBuffer)) {
+                        colorInput = m_PostProcessing->GetTAAOutputImageView();
+                    }
+                    // Same rule as above: an unwritten TAA output is not a
+                    // valid upscaler input, and colorInput staying null is what
+                    // makes the scene colour the fallback below.
                 }
 
                 // Fall back to scene render target color if TAA didn't run

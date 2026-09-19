@@ -522,7 +522,17 @@ public:
     // Dispatches a compute shader that blends the current jittered frame with clamped
     // history to produce a temporally-stable output.  Call SetVelocityImageView() and
     // SetDepthImageView() before the first Apply()/ApplyToCurrentPass() each frame.
-    void ApplyTAA(VkCommandBuffer cmd);
+    // Resolve TAA into the history buffer. Returns TRUE only if it actually
+    // ran: it needs a velocity view, a depth view, a compute pipeline and
+    // aaMode 2, and it bails out silently when any of those is missing.
+    //
+    // The return value is not optional decoration. A caller that redirects
+    // post-processing to GetTAAOutputImageView() must gate that on this,
+    // because the output VIEW exists as soon as the TAA resources are created
+    // -- whether or not anything was ever written into it. The editor redirected
+    // on the view being non-null, so selecting TAA pointed post-processing at an
+    // image that had never been written and the game view went BLACK.
+    bool ApplyTAA(VkCommandBuffer cmd);
 
     // Bind the external velocity buffer (RG16F from the MRT pass)
     void SetVelocityImageView(VkImageView velocityView) { m_TAAVelocityView = velocityView; }

@@ -2248,11 +2248,11 @@ VkImageView PostProcessing::GetTAAOutputImageView() const {
     return m_TAAHistoryViews[1 - m_TAACurrentIndex];
 }
 
-void PostProcessing::ApplyTAA(VkCommandBuffer cmd) {
-    if (!m_TAAReady || m_Settings.aaMode != 2) return;
-    if (m_TAAComputePipeline == VK_NULL_HANDLE) return;
-    if (m_SceneImageView == VK_NULL_HANDLE) return;
-    if (m_TAAVelocityView == VK_NULL_HANDLE || m_TAADepthView == VK_NULL_HANDLE) return;
+bool PostProcessing::ApplyTAA(VkCommandBuffer cmd) {
+    if (!m_TAAReady || m_Settings.aaMode != 2) return false;
+    if (m_TAAComputePipeline == VK_NULL_HANDLE) return false;
+    if (m_SceneImageView == VK_NULL_HANDLE) return false;
+    if (m_TAAVelocityView == VK_NULL_HANDLE || m_TAADepthView == VK_NULL_HANDLE) return false;
 
     VkDevice device = m_Context->GetDevice();
 
@@ -2433,6 +2433,7 @@ void PostProcessing::ApplyTAA(VkCommandBuffer cmd) {
     // buffer that GetTAAOutputImageView() should return.
     m_TAAFrameIndex++;
     m_TAACurrentIndex = 1 - outputIdx;  // Next frame writes to the other buffer
+    return true;
 }
 
 } // namespace Renderer
