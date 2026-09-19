@@ -367,6 +367,7 @@ enjin_add_test(TestSaveDataFlags   Unit/Gameplay/TestSaveDataFlags.cpp)
 enjin_add_test(TestMetaProgression  Unit/Gameplay/TestMetaProgression.cpp)
 enjin_add_test(TestDamageResistance Unit/Gameplay/TestDamageResistance.cpp)
 enjin_add_test(TestDoorLock        Unit/Gameplay/TestDoorLock.cpp)
+enjin_add_test(TestDestructibleDrops Unit/Gameplay/TestDestructibleDrops.cpp)
 enjin_add_test(TestRigidbodyVelocityClamp Unit/Physics/TestRigidbodyVelocityClamp.cpp)
 
 # --- Geometry ---

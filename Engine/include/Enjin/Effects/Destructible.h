@@ -91,6 +91,14 @@ public:
     u32 GetPersistentFragmentCount() const;
 
 private:
+    // Drop the pickups a destroyed DestructibleComponent was authored to drop,
+    // scaled by DynamicDifficultyComponent::resourceDropMultiplier.
+    //
+    // spawnPickup / pickupId / pickupCount were serialized and shown in the
+    // inspector and read by nothing, so a crate authored to drop three coins
+    // dropped none, and the difficulty multiplier had no drop to scale.
+    void SpawnDestructiblePickups(ECS::Entity source, const std::string& pickupId, i32 count);
+
     // Create persistent fragment entities using VoronoiMeshFracture
     void CreatePersistentFragments(const DestructionEvent& event, const struct FractureConfig& config);
 

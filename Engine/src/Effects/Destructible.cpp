@@ -5,12 +5,87 @@
 #include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/DynamicDifficulty.h"
+#include "Enjin/Renderer/MeshFactory.h"
 #include "Enjin/Logging/Log.h"
 #include <cmath>
 #include <algorithm>
 
 namespace Enjin {
 namespace Effects {
+
+namespace {
+
+// The live resource-drop multiplier, or 1.0 when no difficulty component is
+// driving one. Read straight off the component rather than through
+// DynamicDifficultySystem, which this translation unit does not own; the system
+// picks the first enabled component and so does this.
+f32 ResourceDropMultiplier(ECS::World* world) {
+    if (!world) return 1.0f;
+    for (auto e : world->GetEntitiesWithComponent<ECS::DynamicDifficultyComponent>()) {
+        auto* dd = world->GetComponent<ECS::DynamicDifficultyComponent>(e);
+        if (!dd || !dd->enabled) continue;
+        return dd->resourceDropMultiplier;
+    }
+    return 1.0f;
+}
+
+} // namespace
+
+// ============================================================================
+// Pickup drops
+// ============================================================================
+
+// Spawn `count` pickups at the destroyed entity's position.
+//
+// Scattered on a ring rather than stacked at one point: pickups have a
+// magnetToPlayer mode and a pickupRange, and three coins at identical
+// coordinates read as one coin to a player and to the collect logic.
+void DestructibleSystem::SpawnDestructiblePickups(ECS::Entity source,
+                                                  const std::string& pickupId,
+                                                  i32 count) {
+    if (!m_World || count <= 0) return;
+
+    Math::Vector3 origin(0.0f, 0.0f, 0.0f);
+    if (auto* t = m_World->GetComponent<ECS::TransformComponent>(source)) {
+        origin = t->position;
+    }
+
+    for (i32 i = 0; i < count; ++i) {
+        const f32 angle = (count <= 1) ? 0.0f
+                        : (6.2831853f * static_cast<f32>(i) / static_cast<f32>(count));
+        const f32 radius = (count <= 1) ? 0.0f : 0.35f;
+
+        ECS::Entity e = m_World->CreateEntity();
+
+        ECS::TransformComponent t;
+        t.position = Math::Vector3(origin.x + std::cos(angle) * radius,
+                                   origin.y + 0.3f,
+                                   origin.z + std::sin(angle) * radius);
+        t.scale = Math::Vector3(0.2f, 0.2f, 0.2f);
+        m_World->AddComponent<ECS::TransformComponent>(e, t);
+
+        m_World->AddComponent<ECS::MeshComponent>(e, Renderer::MeshFactory::CreateSphere(0.5f));
+
+        ECS::MaterialComponent mat;
+        mat.baseColor = Math::Vector3(1.0f, 0.84f, 0.0f);
+        mat.emissiveColor = Math::Vector3(0.4f, 0.33f, 0.0f);
+        mat.emissiveStrength = 0.3f;
+        m_World->AddComponent<ECS::MaterialComponent>(e, mat);
+
+        ECS::PickupComponent pickup;
+        // Custom carries the authored id through to whatever collects it; the
+        // typed values (Health, Ammo, Coin) mean a fixed effect this component
+        // cannot know, and guessing one would apply an effect nobody authored.
+        pickup.type = ECS::PickupComponent::PickupType::Custom;
+        pickup.customId = pickupId;
+        pickup.value = 1.0f;
+        m_World->AddComponent<ECS::PickupComponent>(e, pickup);
+
+        m_World->AddComponent<ECS::NameComponent>(
+            e, ECS::NameComponent{pickupId.empty() ? std::string("Pickup") : pickupId});
+    }
+}
 
 // ============================================================================
 // Lifecycle
@@ -212,6 +287,24 @@ void DestructibleSystem::ProcessDestructionQueue() {
 
         // Fire destroyed callback
         if (dc->onDestroyed) dc->onDestroyed(event.entity);
+
+        // Drop the pickups this destructible was authored to drop.
+        //
+        // spawnPickup, pickupId and pickupCount were serialized, shown in the
+        // inspector and read by NOTHING: a crate authored to drop three coins
+        // broke open and dropped nothing, on every platform. That also left
+        // DynamicDifficultyComponent::resourceDropMultiplier with nothing to
+        // multiply -- it was computed every frame and applied to no drop that
+        // existed -- so both halves are wired here.
+        //
+        // The multiplier rounds rather than truncates, so an eased-off player
+        // on a 1.5x multiplier gets 2 from a 1-coin crate instead of 1.
+        if (dc->spawnPickup && dc->pickupCount > 0) {
+            const f32 mult = ResourceDropMultiplier(m_World);
+            i32 count = static_cast<i32>(std::lround(static_cast<f32>(dc->pickupCount) * mult));
+            if (count < 0) count = 0;
+            SpawnDestructiblePickups(event.entity, dc->pickupId, count);
+        }
 
         // Hide the original entity
         auto* transform = m_World->GetComponent<ECS::TransformComponent>(event.entity);
