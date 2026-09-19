@@ -13,6 +13,8 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/DynamicDifficulty.h"
+#include "Enjin/ECS/Components/Controllers/CharacterController.h"
 
 using namespace Enjin;
 using DamageType = ECS::DamageComponent::DamageType;
@@ -173,6 +175,81 @@ ENJIN_TEST(DamageResistance, test_a_source_less_call_is_treated_as_physical) {
 
     // Assert: halved, not ignored.
     ENJIN_EXPECT_FLOAT_NEAR(HealthOf(world, target), 80.0f, 0.001f);
+}
+
+// ---------------------------------------------------------------------------
+// Dynamic difficulty, which computed a damage multiplier that nothing applied
+// ---------------------------------------------------------------------------
+
+ENJIN_TEST(DamageResistance, test_dynamic_difficulty_scales_damage_the_PLAYER_takes) {
+    // DynamicDifficultySystem recomputes enemyDamageMultiplier every frame from
+    // how the player is doing, and the only reader in the engine was a script
+    // getter -- so "adjusts damage" was really "publishes a number about
+    // damage" and every game had to do the multiplication itself.
+    // Arrange
+    ECS::World world;
+    ECS::Entity player = MakeTarget(world, 100.0f);
+    world.AddComponent<ECS::FirstPersonController>(player);
+
+    ECS::Entity director = world.CreateEntity();
+    ECS::DynamicDifficultyComponent dd;
+    dd.enabled = true;
+    dd.adjustEnemyDamage = true;
+    dd.enemyDamageMultiplier = 0.5f;      // player is struggling; ease off
+    world.AddComponent<ECS::DynamicDifficultyComponent>(director, dd);
+
+    ECS::Entity attacker = MakeAttacker(world, DamageType::Physical, 40.0f);
+
+    // Act
+    Hit(world, player, attacker);
+
+    // Assert
+    ENJIN_EXPECT_FLOAT_NEAR(HealthOf(world, player), 80.0f, 0.001f);
+}
+
+ENJIN_TEST(DamageResistance, test_dynamic_difficulty_leaves_non_player_targets_alone) {
+    // The multiplier eases off when the PLAYER is struggling. Applying it to
+    // damage the player DEALS would make a struggling player hit softer too,
+    // which is the opposite of the intent -- so it is scoped to targets under
+    // player control.
+    // Arrange
+    ECS::World world;
+    ECS::Entity enemy = MakeTarget(world, 100.0f);   // no controller
+
+    ECS::Entity director = world.CreateEntity();
+    ECS::DynamicDifficultyComponent dd;
+    dd.enabled = true;
+    dd.adjustEnemyDamage = true;
+    dd.enemyDamageMultiplier = 0.5f;
+    world.AddComponent<ECS::DynamicDifficultyComponent>(director, dd);
+
+    // Act
+    Hit(world, enemy, MakeAttacker(world, DamageType::Physical, 40.0f));
+
+    // Assert: full damage.
+    ENJIN_EXPECT_FLOAT_NEAR(HealthOf(world, enemy), 60.0f, 0.001f);
+}
+
+ENJIN_TEST(DamageResistance, test_the_director_can_be_switched_off) {
+    // Both flags, because either one being ignored looks identical to the
+    // feature working.
+    // Arrange
+    ECS::World world;
+    ECS::Entity player = MakeTarget(world, 100.0f);
+    world.AddComponent<ECS::FirstPersonController>(player);
+
+    ECS::Entity director = world.CreateEntity();
+    ECS::DynamicDifficultyComponent dd;
+    dd.enabled = false;                   // master switch off
+    dd.adjustEnemyDamage = true;
+    dd.enemyDamageMultiplier = 0.5f;
+    world.AddComponent<ECS::DynamicDifficultyComponent>(director, dd);
+
+    // Act
+    Hit(world, player, MakeAttacker(world, DamageType::Physical, 40.0f));
+
+    // Assert: untouched by the director.
+    ENJIN_EXPECT_FLOAT_NEAR(HealthOf(world, player), 60.0f, 0.001f);
 }
 
 ENJIN_TEST_MAIN()

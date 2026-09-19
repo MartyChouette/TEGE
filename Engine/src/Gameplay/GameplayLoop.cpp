@@ -1,4 +1,5 @@
 #include "Enjin/Gameplay/GameplayLoop.h"
+#include "Enjin/ECS/Components/DynamicDifficulty.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Transform.h"
@@ -89,6 +90,33 @@ bool ApplyDamage(ECS::World* world, ECS::Entity target, f32 damage,
             }
             hp->timeSinceLastDamage = 0.0f;
             return true;
+        }
+    }
+
+    // Dynamic difficulty, applied to damage the PLAYER takes.
+    //
+    // DynamicDifficultySystem computes enemyDamageMultiplier every frame from
+    // how the player is doing, and nothing applied it: the only reader anywhere
+    // was a script getter, so a game had to do the multiplication itself and
+    // the "adjusts damage" the feature claims was really "publishes a number
+    // about damage". Same for aiAggression and resourceDrop, which still have
+    // no consumer and are on the backlog.
+    //
+    // Scoped to targets under player control, because that is what the
+    // multiplier MEANS -- it eases off when the player is struggling, and
+    // applying it to damage the player DEALS would make a struggling player
+    // hit softer too, which is the opposite of the intent.
+    if (world->GetComponent<ECS::FirstPersonController>(target) ||
+        world->GetComponent<ECS::ThirdPersonController>(target) ||
+        world->GetComponent<ECS::TopDown3DController>(target) ||
+        world->GetComponent<ECS::Platformer2DController>(target) ||
+        world->GetComponent<ECS::TopDown2DController>(target)) {
+        for (auto e : world->GetEntitiesWithComponent<ECS::DynamicDifficultyComponent>()) {
+            const auto* dd = world->GetComponent<ECS::DynamicDifficultyComponent>(e);
+            if (dd && dd->enabled && dd->adjustEnemyDamage) {
+                incoming *= dd->enemyDamageMultiplier;
+            }
+            break;   // one difficulty director per world, like the save config
         }
     }
 
