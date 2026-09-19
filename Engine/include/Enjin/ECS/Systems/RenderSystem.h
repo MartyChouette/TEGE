@@ -1125,6 +1125,21 @@ public:
 
     // Global retro shader overrides (forced on all entities when true)
     bool GetGlobalFlatShading() const { return m_GlobalFlatShading; }
+    // Force the scene's dimension instead of inferring it.
+    //
+    // 0 = Auto (classify from content, the historic behaviour), 1 = 2D,
+    // 2 = 2.5D, 3 = 3D. Auto is a reasonable guess and a frustrating thing to
+    // author against: one leftover cube puts a 2D game on the full 3D pipeline
+    // and one debug light takes a pure 2D scene to 2.5D, with nothing saying
+    // either happened.
+    void SetSceneDimensionOverride(u32 v) {
+        if (m_SceneDimensionOverride != v) {
+            m_SceneDimensionOverride = v;
+            m_SceneComposition.dirty = true;   // re-classify on the next frame
+        }
+    }
+    u32 GetSceneDimensionOverride() const { return m_SceneDimensionOverride; }
+
     void SetGlobalFlatShading(bool v) { m_GlobalFlatShading = v; }
     bool GetGlobalAffineTexturing() const { return m_GlobalAffineTexturing; }
     void SetGlobalAffineTexturing(bool v) { m_GlobalAffineTexturing = v; }
@@ -2517,6 +2532,7 @@ private:
 
     // Scene composition cache (auto-detected per frame, drives rendering decisions)
     SceneComposition m_SceneComposition;
+    u32 m_SceneDimensionOverride = 0;   // 0 = Auto; see SetSceneDimensionOverride
     u32 m_DiagnosticFrameCounter = 0;
 
 #if !ENJIN_RENDERER_WEBGPU

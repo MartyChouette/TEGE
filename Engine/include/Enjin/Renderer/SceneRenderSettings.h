@@ -26,6 +26,21 @@ struct SceneRenderSettings {
     // --- Override flag ---
     bool useProjectDefaults = true;
 
+    // --- Scene dimension ---
+    // 0 = Auto (classify from what is in the scene), 1 = 2D, 2 = 2.5D, 3 = 3D.
+    //
+    // Auto is the historic behaviour and stays the default: 3D meshes present
+    // means Scene3D, else any light means Scene2_5D, else Scene2D. It is a
+    // reasonable guess and a frustrating one to author against, because the
+    // things that flip it are invisible. ONE leftover cube puts a 2D game on
+    // the full 3D pipeline -- shadows, 3D lighting, and weather falling as a
+    // volume instead of a sheet. ONE point light added while debugging takes a
+    // pure 2D scene to 2.5D. Nothing says either happened.
+    //
+    // Set it explicitly and the classifier stops guessing. (Marty 2026-09-18:
+    // "not being clear about pure 2D is frustrating".)
+    u32 sceneDimension = 0;
+
     // --- Art Style Preset ---
     // 0=Realistic PBR, 1=Classic Blinn-Phong, 2=Hand-Painted, 3=Toon/Anime,
     // 4=Low-Poly Retro, 5=Pixel Art, 6=NPR Sketch

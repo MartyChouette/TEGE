@@ -54,6 +54,26 @@ void RenderSystem::ClassifySceneComposition() {
         }
     }
 
+    // An EXPLICIT dimension wins over anything counted above.
+    //
+    // The counts are still gathered, because the rest of the renderer uses them
+    // (sprite batching kicks in over 100 sprites, shadow-caster reserves size
+    // off mesh3DCount) -- only the classification is overridden.
+    //
+    // Auto is a reasonable guess and a frustrating thing to author against: one
+    // leftover cube puts a 2D game on the full 3D pipeline, one debug light
+    // takes a pure 2D scene to 2.5D, and nothing says either happened. A scene
+    // that declares itself 2D stays 2D.
+    if (m_SceneDimensionOverride >= 1 && m_SceneDimensionOverride <= 3) {
+        switch (m_SceneDimensionOverride) {
+            case 1:  m_SceneComposition.mode = SceneRenderMode::Scene2D;   break;
+            case 2:  m_SceneComposition.mode = SceneRenderMode::Scene2_5D; break;
+            default: m_SceneComposition.mode = SceneRenderMode::Scene3D;   break;
+        }
+        m_SceneComposition.dirty = false;
+        return;
+    }
+
     // Classify scene mode
     // Scene3D: 3D meshes present — full pipeline (shadows, lighting, normal maps)
     // Scene2_5D: sprites only but lights exist — skip shadows, populate full lighting UBO

@@ -47,6 +47,10 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
 
     if (rs) {
 #if !ENJIN_RENDERER_WEBGPU
+        // Round-trips with ApplyToRuntime. Missing this is how a setting saves,
+        // reloads and silently reverts on the next capture -- the documented
+        // failure for every effect config in this file.
+        s.sceneDimension       = rs->GetSceneDimensionOverride();
         s.shadowsEnabled       = rs->IsShadowsEnabled();
         s.shadowResolution     = rs->GetShadowResolution();
         s.shadowDistance       = rs->GetShadowDistance();
@@ -707,6 +711,11 @@ void SceneRenderSettings::ApplyToRuntimeUnclamped(ECS::RenderSystem* rs, PostPro
         rs->SetWorldCurvature(worldCurvature);
         rs->SetRainActive(rainActive);
         // Global retro overrides
+        // The authored dimension, or 0 for Auto. Pushed here with everything
+        // else so a scene that declares itself 2D says so in the player, the
+        // editor and an exported build identically.
+        rs->SetSceneDimensionOverride(sceneDimension);
+
         rs->SetGlobalFlatShading(globalFlatShading);
         rs->SetGlobalAffineTexturing(globalAffineTexturing);
         rs->SetGlobalVertexSnapping(globalVertexSnapping);
@@ -1413,6 +1422,7 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     json j;
 
     j["useProjectDefaults"] = s.useProjectDefaults;
+    j["sceneDimension"]    = s.sceneDimension;
     j["artStylePreset"]    = s.artStylePreset;
 
     // Volumetric fog. Ten knobs that were editable and unsaveable until 2026-09-08.
@@ -1826,6 +1836,7 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     SceneRenderSettings s;
 
     if (j.contains("useProjectDefaults")) s.useProjectDefaults = JB(j["useProjectDefaults"]);
+    if (j.contains("sceneDimension"))    s.sceneDimension    = j["sceneDimension"].get<u32>();
     if (j.contains("artStylePreset"))    s.artStylePreset    = j["artStylePreset"].get<u32>();
 
     // Volumetric fog. Absent in every scene written before these keys existed,

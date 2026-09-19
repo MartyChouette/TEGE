@@ -2248,6 +2248,40 @@ void EditorLayer::DrawSettingsSection_RetroEffects() {
 void EditorLayer::DrawSettingsSection_ArtStylePreset() {
     if (!m_RenderSystem) return;
 
+    // Scene dimension. Explicit, because inferring it is frustrating to author
+    // against: one leftover 3D mesh puts a 2D game on the full 3D pipeline and
+    // one debug light takes a pure 2D scene to 2.5D, with nothing saying either
+    // happened. (Marty 2026-09-18: "not being clear about pure 2D is
+    // frustrating".)
+    {
+        const char* dimNames[] = { "Auto (detect)", "2D", "2.5D", "3D" };
+        int dim = static_cast<int>(m_RenderSystem->GetSceneDimensionOverride());
+        if (dim < 0 || dim > 3) dim = 0;
+        if (ImGui::Combo("Scene Dimension", &dim, dimNames, 4)) {
+            m_RenderSystem->SetSceneDimensionOverride(static_cast<u32>(dim));
+            MarkDirty();
+        }
+
+        // Say what is ACTUALLY in effect and why. On Auto the answer changes
+        // with the scene's contents, and the counts are the thing that explains
+        // a surprise -- a scene that looks 2D but reports 3D has a mesh in it.
+        const auto& comp = m_RenderSystem->GetSceneComposition();
+        const char* live = comp.mode == ECS::SceneRenderMode::Scene2D   ? "2D"
+                         : comp.mode == ECS::SceneRenderMode::Scene2_5D ? "2.5D"
+                                                                        : "3D";
+        if (dim == 0) {
+            ImGui::TextDisabled("Detected: %s  (%u sprites, %u tilemaps, %u 3D meshes)",
+                                live, comp.spriteCount, comp.tilemapCount, comp.mesh3DCount);
+            if (comp.mesh3DCount > 0) {
+                ImGui::TextDisabled("A 3D mesh forces 3D. Set this explicitly to override.");
+            }
+        } else {
+            ImGui::TextDisabled("Forced: %s  (%u sprites, %u tilemaps, %u 3D meshes present)",
+                                live, comp.spriteCount, comp.tilemapCount, comp.mesh3DCount);
+        }
+        ImGui::Separator();
+    }
+
     const char* presetNames[] = {
         "Realistic PBR",
         "Classic Blinn-Phong",
