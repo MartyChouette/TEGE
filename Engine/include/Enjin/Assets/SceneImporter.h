@@ -121,6 +121,23 @@ struct ImportResult {
 class ENJIN_API SceneImporter {
 public:
     // Import a glTF file and create entities in the world
+    // Write an embedded glTF image out beside the model and return its path.
+    //
+    // A .glb carries its textures inside the file, and the material pipeline
+    // takes a PATH rather than bytes, so an import has to land them somewhere.
+    // They go in `<dir>/extracted_textures/` named by a hash OF THE CONTENT:
+    // two models sharing a texture then write one file, and re-importing the
+    // same model produces the same path instead of a second copy. An
+    // index-based name would collide between models and would change whenever
+    // an exporter reordered its images.
+    //
+    // Returns "" when there is nothing to write or the write fails -- the
+    // caller treats that as "no texture", which is what it had before.
+    // Public so it can be tested without hand-building a .glb.
+    static std::string ExtractEmbeddedTexture(const std::vector<u8>& data,
+                                              const std::string& mimeType,
+                                              const std::string& baseDir);
+
     static ImportResult ImportGLTF(const std::string& filepath, ECS::World* world,
                                     const ImportOptions& options = {});
 

@@ -20,6 +20,8 @@
 #include <cmath>
 #include <cstring>
 #include <filesystem>
+#include <cstdio>
+#include <fstream>
 #include <algorithm>
 #include <unordered_map>
 
@@ -395,6 +397,52 @@ static void ApplyImportRotation(ECS::World* world, const ImportResult& result,
     }
 }
 
+// See the header for why this exists and why the name is a content hash.
+std::string SceneImporter::ExtractEmbeddedTexture(const std::vector<u8>& data,
+                                                  const std::string& mimeType,
+                                                  const std::string& baseDir) {
+    if (data.empty()) return "";
+    namespace fs = std::filesystem;
+
+    const char* ext = ".png";
+    if (mimeType.find("jpeg") != std::string::npos ||
+        mimeType.find("jpg") != std::string::npos) ext = ".jpg";
+
+    // FNV-1a over the bytes. Not cryptographic -- it only has to tell the
+    // images inside one project apart.
+    u64 hash = 1469598103934665603ull;
+    for (u8 b : data) { hash ^= b; hash *= 1099511628211ull; }
+
+    char stem[64];
+    std::snprintf(stem, sizeof(stem), "embedded_%016llx%s",
+                  static_cast<unsigned long long>(hash), ext);
+
+    std::error_code ec;
+    const fs::path dir = fs::path(baseDir) / "extracted_textures";
+    fs::create_directories(dir, ec);
+    const fs::path out = dir / stem;
+
+    // Already there from a previous import, or from another model sharing the
+    // same texture. Writing it again would be identical bytes for no reason.
+    if (fs::exists(out, ec)) return out.string();
+
+    std::ofstream f(out, std::ios::binary);
+    if (!f) {
+        ENJIN_LOG_WARN(Assets,
+            "glTF: could not write embedded texture to %s -- the surface will "
+            "import untextured", out.string().c_str());
+        return "";
+    }
+    f.write(reinterpret_cast<const char*>(data.data()),
+            static_cast<std::streamsize>(data.size()));
+    if (!f) {
+        ENJIN_LOG_WARN(Assets, "glTF: embedded texture write to %s failed partway",
+                       out.string().c_str());
+        return "";
+    }
+    return out.string();
+}
+
 ImportResult SceneImporter::ImportGLTF(const std::string& filepath, ECS::World* world,
                                         const ImportOptions& options) {
     ImportResult result;
@@ -751,8 +799,34 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
             // Resolve texture paths from glTF image URIs with fallback directories
             auto resolveGltfTex = [&](i32 texIdx) -> std::string {
                 if (texIdx < 0 || texIdx >= static_cast<i32>(scene.images.size())) return "";
-                const std::string& uri = scene.images[texIdx].uri;
-                if (uri.empty()) return "";
+                const GLTFImage& img = scene.images[texIdx];
+                const std::string& uri = img.uri;
+
+                // EMBEDDED images, which is most of what a .glb contains.
+                //
+                // GLTFLoader has always filled GLTFImage::data from the buffer
+                // view, and nothing ever read it: this resolver returned ""
+                // for an empty uri, so every texture packed inside a GLB was
+                // parsed and then dropped. The model imported, the materials
+                // came through, and the surfaces were untextured -- which
+                // reads as a bad export rather than an importer bug.
+                //
+                // The material pipeline takes a PATH, not bytes, so the bytes
+                // are written out beside the model. That is what an import
+                // step is for, and it is what other engines do with embedded
+                // textures.
+                //
+                // Named by a hash OF THE CONTENT, so: two models in one folder
+                // sharing a texture write one file, and re-importing the same
+                // model overwrites nothing and produces the same path. An
+                // index-based name would collide between models and change
+                // whenever an exporter reordered its images.
+                if (uri.empty()) {
+                    const std::string extracted =
+                        ExtractEmbeddedTexture(img.data, img.mimeType, scene.basePath);
+                    if (!extracted.empty()) stats.texturePathsResolved.push_back(extracted);
+                    return extracted;
+                }
                 namespace fs = std::filesystem;
                 fs::path resolved = fs::path(scene.basePath) / uri;
                 if (fs::exists(resolved)) {
