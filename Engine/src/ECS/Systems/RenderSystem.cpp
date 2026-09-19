@@ -8666,14 +8666,62 @@ void RenderSystem::Update(f32 deltaTime) {
                 }
             }
 
-            // Get head bone world position from entity transform
+            // The head bone, by NAME, and the solved rotation written back onto
+            // it.
+            //
+            // This used to take the head position as entityPosition + (0,1.6,0)
+            // -- a guess at how tall a character is -- solve, store the result
+            // in currentHeadRotation, and stop. Nothing read that field, so the
+            // head never turned. headBoneName and neckBoneName were never read
+            // at all, and neither was currentNeckRotation. The component
+            // serialized, showed an inspector, cost a solve every frame and did
+            // nothing, which is the same shape InteractionIK was in above.
             auto* entityTransform = m_World->GetComponent<TransformComponent>(entity);
-            if (entityTransform) {
-                Math::Vector3 headWorldPos = entityTransform->position + Math::Vector3(0, 1.6f, 0);
-                Math::Quaternion solved = Animation::LookAtIK::Solve(
-                    headWorldPos, targetPos, lookAtIK->currentHeadRotation,
-                    lookAtIK->maxRotation, lookAtIK->smoothSpeed, deltaTime);
-                lookAtIK->currentHeadRotation = solved;
+            const auto* skeleton = animComp->animator.GetSkeleton();
+            const i32 headIdx = skeleton
+                ? skeleton->FindBoneIndex(lookAtIK->headBoneName) : -1;
+
+            if (entityTransform && skeleton && headIdx >= 0) {
+                const auto& pose = animComp->animator.GetCurrentPose();
+                if (headIdx < static_cast<i32>(pose.worldTransforms.size()) &&
+                    headIdx < static_cast<i32>(pose.localRotations.size())) {
+
+                    const Math::Matrix4 entityWorld = entityTransform->ToMatrix();
+                    const Math::Matrix4 headWorld = entityWorld * pose.worldTransforms[headIdx];
+
+                    // The REAL head position, from the pose, rather than a
+                    // guess about character height. Translation is the last
+                    // column of the world matrix.
+                    const Math::Vector3 headWorldPos(headWorld.m[12], headWorld.m[13], headWorld.m[14]);
+
+                    const Math::Quaternion solved = Animation::LookAtIK::Solve(
+                        headWorldPos, targetPos, lookAtIK->currentHeadRotation,
+                        lookAtIK->maxRotation, lookAtIK->smoothSpeed, deltaTime);
+                    lookAtIK->currentHeadRotation = solved;
+
+                    // Solve returns a WORLD rotation; localRotations are in
+                    // PARENT space. Converting through the parent is the
+                    // difference between a head that looks at the target and
+                    // one that looks at it only while the character faces down
+                    // -Z. (TwoBoneIK above pre-multiplies a world-space delta
+                    // straight onto a local rotation, which carries that
+                    // approximation -- not copied here.)
+                    const i32 parentIdx = skeleton->bones[headIdx].parentIndex;
+                    const Math::Matrix4 parentWorld =
+                        (parentIdx >= 0 && parentIdx < static_cast<i32>(pose.worldTransforms.size()))
+                        ? entityWorld * pose.worldTransforms[parentIdx]
+                        : entityWorld;
+                    const Math::Quaternion parentRot = Math::Quaternion::FromMatrix(parentWorld);
+                    const Math::Quaternion desiredLocal = parentRot.Conjugate() * solved;
+
+                    // lookWeight blends between the animation's own head
+                    // rotation and the look-at, so a partial weight is a
+                    // partial turn rather than an on/off switch.
+                    auto& poseMut = const_cast<Animation::SkeletonPose&>(pose);
+                    poseMut.localRotations[headIdx] = Math::Quaternion::Slerp(
+                        poseMut.localRotations[headIdx], desiredLocal,
+                        std::clamp(lookAtIK->lookWeight, 0.0f, 1.0f));
+                }
             }
         }
 
