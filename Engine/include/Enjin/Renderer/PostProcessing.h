@@ -348,7 +348,21 @@ struct alignas(16) PostProcessSettings {
     alignas(4) f32 _ssrPad1 = 0.0f;
 
     // TAA config (CPU-side only — used by the TAA compute pass, not the post-process UBO)
-    f32 taaSharpness   = 0.1f;     // Sharpening strength applied after TAA resolve (0 = off)
+    // Sharpening applied AFTER the TAA resolve, to counter TAA's inherent blur.
+    // It works by pushing high-frequency edge energy back up, which is the exact
+    // thing antialiasing removed -- so it trades the effect away.
+    //
+    // MEASURED 2026-09-20 on the AA capture scene, as mean absolute luminance
+    // gradient against a no-antialiasing reference (lower = smoother):
+    //   0.0 -> 49.5% smoother than no AA   (TAA doing its whole job)
+    //   0.1 -> 25.0% smoother              (half the antialiasing given back)
+    //   0.3 ->  0.1% smoother              (exactly cancels; TAA nets nothing)
+    //   0.6 -> 30.8% SHARPER than no AA    (actively worse than off)
+    //
+    // Default is 0 because the house rule is that an effect float defaults to
+    // off rather than to a plausible guess, and 0.1 was silently costing half
+    // the antialiasing of anyone who picked TAA without touching this.
+    f32 taaSharpness   = 0.0f;
     f32 taaJitterScale = 1.0f;     // Jitter magnitude multiplier (1.0 = standard Halton)
     f32 taaFeedbackMin = 0.88f;    // Min history blend weight
     f32 taaFeedbackMax = 0.97f;    // Max history blend weight

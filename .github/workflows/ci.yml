@@ -176,6 +176,24 @@ jobs:
           }
           python Tests/GoldenScene/check_golden.py golden_out/smoke
 
+      - name: Antialiasing check (every AA mode does something, and holds still)
+        shell: pwsh
+        timeout-minutes: 20
+        env:
+          VK_DRIVER_FILES: ${{ github.workspace }}\mesa\x64\lvp_icd.x86_64.json
+          VK_ICD_FILENAMES: ${{ github.workspace }}\mesa\x64\lvp_icd.x86_64.json
+          VK_LOADER_DEBUG: error,warn
+        # Renders the same scene once per AA mode and compares the captures
+        # against each other. Catches three things nothing else does: a mode that
+        # is inert (byte-identical to no antialiasing), a SPATIAL filter that
+        # changes between two frames of a static scene (it is being jittered with
+        # nothing resolving it, which is worse than off), and TAA thrashing
+        # instead of settling. Relational, never a reference-image diff, for the
+        # same lavapipe reason as the golden check above.
+        run: |
+          python Tests/AAScene/check_aa.py build/bin/Release/EnjinEditor.exe
+          if ($LASTEXITCODE -ne 0) { throw "antialiasing check failed" }
+
       - name: Field coverage (fields that never save, components nobody can author)
         shell: pwsh
         timeout-minutes: 5

@@ -1246,6 +1246,20 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
             // TAA settings (CPU-side config for the TAA compute pass)
             if (settings.aaMode == 2) {
                 ImGui::SliderFloat("Sharpness", &settings.taaSharpness, 0.0f, 1.0f, "%.2f");
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Counters TAA blur by pushing edge energy back up --\n"
+                                      "the same energy the antialiasing removed. Measured\n"
+                                      "against a no-AA reference: 0.0 is 49%% smoother, 0.1\n"
+                                      "is 25%%, 0.3 breaks even, and above that TAA is worse\n"
+                                      "than leaving antialiasing off.");
+                }
+                // Past break-even the setting is not a trade-off any more, it is
+                // a downgrade, and nothing on screen said so.
+                if (settings.taaSharpness >= 0.3f) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.2f, 1.0f),
+                        "At %.2f, sharpening cancels the antialiasing TAA adds.",
+                        settings.taaSharpness);
+                }
                 ImGui::SliderFloat("Jitter Scale", &settings.taaJitterScale, 0.0f, 2.0f, "%.2f");
                 ImGui::SliderFloat("Feedback Min", &settings.taaFeedbackMin, 0.0f, 1.0f, "%.2f");
                 ImGui::SliderFloat("Feedback Max", &settings.taaFeedbackMax, 0.0f, 1.0f, "%.2f");
@@ -2928,6 +2942,11 @@ void EditorLayer::DrawSettingsSection_DisplayOptions() {
 
 void EditorLayer::DrawSettingsSection_RayTracing() {
     if (!m_RenderSystem) return;
+
+    // This section was the only one of the four missing it, so turning ray
+    // tracing on under project defaults appeared to work and was gone on
+    // reload, with nothing on screen to explain why.
+    DrawProjectDefaultsBanner();
 
     // === GPU COMPUTE SKINNING (ADR-0002, experimental) ===
     {
