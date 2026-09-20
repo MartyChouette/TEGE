@@ -1249,8 +1249,35 @@ public:
         f32 farPlane = 1000.0f;
         f32 toneMapMode = 0.0f;   // 0 = none, 3 = ACES. Matches SceneRenderSettings.
         f32 lutStrength = 0.0f;   // 0 = no LUT
-        f32 lutSize = 32.0f;          // 36 f32 = 144 bytes (16-multiple)
+        f32 lutSize = 32.0f;
+        // Depth of field and tilt-shift, ported from postprocess.frag. Both
+        // were desktop-only: a game authoring either got it in the editor and
+        // on desktop and silently nothing in a browser.
+        //
+        // DoF needs linear depth, which this pass has had since MSAA came off
+        // and the depth texture became bindable. Tilt-shift needs only the
+        // screen position, so it works regardless.
+        f32 dofFocalDistance = 10.0f;
+        f32 dofFocalRange = 5.0f;
+        f32 dofBlurStrength = 0.0f;     // 0 = off
+        f32 tiltShiftFocusY = 0.5f;
+        f32 tiltShiftBandWidth = 0.3f;
+        f32 tiltShiftBlurAmount = 0.0f; // 0 = off
+        f32 ppPadA = 0.0f;              // keeps the block a 16-byte multiple
+        f32 ppPadB = 0.0f;              // 44 f32 = 176 bytes (16-multiple)
     };
+    // The size is ASSERTED rather than commented. This struct must match
+    // PostProcessParams in POSTPROCESS_WGSL byte for byte, and the only thing
+    // that had ever enforced it was a trailing comment -- which is precisely
+    // how the LightingUBO comment came to read 992 while its fields summed to
+    // 1008. A mismatch here does not fail loudly: every effect after the
+    // first wrong offset reads a neighbouring field's bytes.
+    static_assert(sizeof(WebPPAccessibilityParams) == 176,
+                  "WebPPAccessibilityParams must stay 176 bytes and in lockstep with "
+                  "PostProcessParams in POSTPROCESS_WGSL (44 f32). Update BOTH.");
+    static_assert(sizeof(WebPPAccessibilityParams) % 16 == 0,
+                  "Uniform block must be a 16-byte multiple.");
+
     WebPPAccessibilityParams m_WebPPAccessibility;
     // Beside the params rather than in the WebGPU-only block below: the
     // SetWebLUT setter is not inside that guard, so a desktop build must still
@@ -1312,6 +1339,21 @@ public:
         m_WebPPAccessibility.colorQuantLevels = colorQuantLevels;
         m_WebPPAccessibility.filmGrain = filmGrain;
         m_WebPPAccessibility.crtScanline = crtScanline;
+    }
+
+    // Depth of field and tilt-shift on web. Separate from the call above for
+    // the same reason sharpness is: a caller that does not know about them must
+    // not silently zero them by omitting arguments.
+    void SetWebDepthOfField(f32 focalDistance, f32 focalRange, f32 blurStrength) {
+        m_WebPPAccessibility.dofFocalDistance = focalDistance;
+        m_WebPPAccessibility.dofFocalRange = focalRange;
+        m_WebPPAccessibility.dofBlurStrength = blurStrength;
+    }
+
+    void SetWebTiltShift(f32 focusY, f32 bandWidth, f32 blurAmount) {
+        m_WebPPAccessibility.tiltShiftFocusY = focusY;
+        m_WebPPAccessibility.tiltShiftBandWidth = bandWidth;
+        m_WebPPAccessibility.tiltShiftBlurAmount = blurAmount;
         // Sharpening is driven by SetWebSharpness rather than this call, so a
         // scene's post-process settings never silently switch off the pass that
         // makes upscaled rendering look right. The scale/sharpness members are

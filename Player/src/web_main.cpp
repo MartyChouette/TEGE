@@ -1069,6 +1069,23 @@ public:
             // web until the depth buffer became readable.
             s.celOutlineEnabled ? s.celOutlineThickness : 0.0f,
             s.celOutlineThreshold, s.celOutlineColor);
+
+        // Depth of field and tilt-shift. Authored in SceneRenderSettings and
+        // implemented in postprocess.frag since well before this, and silently
+        // absent in a browser -- a game that focused its camera got it on
+        // desktop and a flat image on web with nothing to say why.
+        //
+        // Web takes ONE blur strength where desktop has separate near and far:
+        // the near/far split needs the signed circle of confusion and a second
+        // kernel, and claiming to honour two numbers while using one would be
+        // worse than honouring the larger of them honestly.
+        m_RenderSystem->SetWebDepthOfField(
+            s.dofFocalDistance, s.dofFocalRange,
+            s.dofEnabled ? std::max(s.dofNearBlurStrength, s.dofFarBlurStrength) : 0.0f);
+
+        m_RenderSystem->SetWebTiltShift(
+            s.tiltShiftFocusY, s.tiltShiftBandWidth,
+            s.tiltShiftEnabled ? s.tiltShiftBlurAmount : 0.0f);
     }
 
     // See the desktop player for the reasoning. SaveSystemComponent is the

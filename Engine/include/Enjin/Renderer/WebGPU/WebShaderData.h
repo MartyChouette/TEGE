@@ -1217,7 +1217,15 @@ struct PostProcessParams {
     toneMapMode: f32,     // 0 = none, 3 = ACES (was ppPad1)
     lutStrength: f32,     // 0 = no LUT (was ppPad2)
     lutSize: f32,         // edge size of the strip, e.g. 32 (was ppPad3)
-                          // 36 f32 = 144 bytes; must match WebPPAccessibilityParams
+    dofFocalDistance: f32,
+    dofFocalRange: f32,
+    dofBlurStrength: f32,   // 0 = off
+    tiltShiftFocusY: f32,
+    tiltShiftBandWidth: f32,
+    tiltShiftBlurAmount: f32, // 0 = off
+    ppPadA: f32,
+    ppPadB: f32,
+                          // 44 f32 = 176 bytes; must match WebPPAccessibilityParams
 };
 @group(0) @binding(2) var<uniform> params: PostProcessParams;
 
@@ -1253,6 +1261,52 @@ fn linearDepth(d: f32) -> f32 {
     let n = params.nearPlane;
     let f = params.farPlane;
     return (n * f) / max(f - d * (f - n), 0.0001);
+}
+
+// Depth of field and tilt-shift, ported from postprocess.frag's applyDoF and
+// applyTiltShift. Both were desktop-only, so a game authoring either got it in
+// the editor and on desktop and silently nothing in a browser.
+//
+// Both blur by sampling the SCENE texture at offsets rather than smearing the
+// already-processed colour, which is why they take uv and run before tone
+// mapping: a blur of tone-mapped pixels is not the same image.
+//
+// textureSampleLevel, not textureSample: the taps below sit inside branches
+// that depend on per-pixel depth, which is not uniform control flow, and
+// implicit-LOD sampling is illegal there. Explicit level 0 is legal anywhere
+// and a full-resolution blur wants the base mip regardless.
+
+// 16-tap Poisson disc, the same kernel and radius scale desktop uses.
+fn dofBlur(uv: vec2<f32>, texelSize: vec2<f32>, radius: f32) -> vec3<f32> {
+    var acc = vec3<f32>(0.0);
+    let k = array<vec2<f32>, 16>(
+        vec2<f32>(-0.94201624, -0.39906216), vec2<f32>( 0.94558609, -0.76890725),
+        vec2<f32>(-0.09418410, -0.92938870), vec2<f32>( 0.34495938,  0.29387760),
+        vec2<f32>(-0.91588581,  0.45771432), vec2<f32>(-0.81544232, -0.87912464),
+        vec2<f32>(-0.38277543,  0.27676845), vec2<f32>( 0.97484398,  0.75648379),
+        vec2<f32>( 0.44323325, -0.97511554), vec2<f32>( 0.53742981, -0.47373420),
+        vec2<f32>(-0.26496911, -0.41893023), vec2<f32>( 0.79197514,  0.19090188),
+        vec2<f32>(-0.24188840,  0.99706507), vec2<f32>(-0.81409955,  0.91437590),
+        vec2<f32>( 0.19984126,  0.78641367), vec2<f32>( 0.14383161, -0.14100790));
+    for (var i = 0; i < 16; i = i + 1) {
+        acc = acc + textureSampleLevel(sceneTexture, sceneSampler,
+                                       uv + k[i] * texelSize * radius, 0.0).rgb;
+    }
+    return acc / 16.0;
+}
+
+// 5x5 box blur, matching desktop's tilt-shift tap pattern.
+fn boxBlur5(uv: vec2<f32>, texelSize: vec2<f32>, radius: f32) -> vec3<f32> {
+    var acc = vec3<f32>(0.0);
+    var n = 0.0;
+    for (var x = -2; x <= 2; x = x + 1) {
+        for (var y = -2; y <= 2; y = y + 1) {
+            let o = vec2<f32>(f32(x), f32(y)) * texelSize * radius;
+            acc = acc + textureSampleLevel(sceneTexture, sceneSampler, uv + o, 0.0).rgb;
+            n = n + 1.0;
+        }
+    }
+    return acc / max(n, 1.0);
 }
 
 fn depthAt(px: vec2<i32>, dim: vec2<i32>) -> f32 {
@@ -1558,6 +1612,32 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let rel = edge / max(centre, 0.001);
         let line = smoothstep(params.celOutlineThreshold, params.celOutlineThreshold * 2.0, rel);
         color = mix(color, vec3<f32>(params.celOutlineR, params.celOutlineG, params.celOutlineB), line);
+    }
+
+    // Depth of field: circle of confusion from the distance to the focal
+    // plane, then a Poisson blur scaled by it. Applied here, in LINEAR space
+    // and before tone mapping, because blurring tone-mapped pixels is not the
+    // same image as tone mapping a blurred one.
+    if (params.dofBlurStrength > 0.0) {
+        let lin = depthAt(px, dim);
+        let coc = (lin - params.dofFocalDistance) / max(params.dofFocalRange, 0.001);
+        let cocMag = clamp(abs(coc), 0.0, 1.0) * params.dofBlurStrength;
+        // In focus: skip the sixteen taps entirely rather than blur by zero.
+        if (cocMag >= 0.01) {
+            let texelSize = vec2<f32>(1.0 / params.screenW, 1.0 / params.screenH);
+            color = mix(color, dofBlur(in.uv, texelSize, cocMag * 4.0), cocMag);
+        }
+    }
+
+    // Tilt-shift: blur by distance from a horizontal band, no depth involved.
+    if (params.tiltShiftBlurAmount > 0.0) {
+        let dist = abs(in.uv.y - params.tiltShiftFocusY);
+        let halfBand = params.tiltShiftBandWidth * 0.5;
+        let blur = smoothstep(halfBand * 0.5, halfBand, dist);
+        if (blur >= 0.01) {
+            let texelSize = vec2<f32>(1.0 / params.screenW, 1.0 / params.screenH);
+            color = mix(color, boxBlur5(in.uv, texelSize, params.tiltShiftBlurAmount * blur), blur);
+        }
     }
 
     color = linearToSrgb(color);
