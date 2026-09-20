@@ -611,8 +611,21 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
                 break;
             }
             case Editor::EditOpType::RemoveComponent: {
-                // Component removal handled by key — remove the component type
-                // For now, log it; full removal requires type registry lookup
+                // This did nothing at all, so a peer removing a component was
+                // applied everywhere except here and the two scenes silently
+                // diverged. The serializer registry already knows how to remove
+                // any of its ~140 keys by name -- the "requires type registry
+                // lookup" this used to defer to has existed for a while.
+                auto entity = static_cast<ECS::Entity>(op.entityId);
+                if (!m_World->IsValid(entity)) break;
+                if (op.componentKey == "parent") {
+                    ECS::RemoveParent(m_World, entity);
+                } else if (!Scene::SceneSerializer::RemoveOneComponent(
+                               m_World, entity, op.componentKey)) {
+                    ENJIN_LOG_WARN(Editor,
+                        "Collab: remote removal of '%s' on entity %llu - unknown key, ignored",
+                        op.componentKey.c_str(), (unsigned long long)op.entityId);
+                }
                 break;
             }
             case Editor::EditOpType::ModifyTransform: {
@@ -626,7 +639,23 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
                 break;
             }
             case Editor::EditOpType::SetParent: {
-                // Parent-child relationships handled at scene level, not ECS World
+                // Also did nothing, and the claim above it was wrong: parenting
+                // IS an ECS relationship (ECS::SetParent, which is what the
+                // hierarchy panel calls). A remote reparent left this editor's
+                // copy of the scene with the old hierarchy.
+                auto entity = static_cast<ECS::Entity>(op.entityId);
+                if (!m_World->IsValid(entity)) break;
+                ECS::Entity newParent = ECS::INVALID_ENTITY;
+                if (!op.dataJson.empty()) {
+                    try {
+                        newParent = static_cast<ECS::Entity>(std::stoull(op.dataJson));
+                    } catch (const std::exception&) {
+                        ENJIN_LOG_WARN(Editor, "Collab: SetParent has invalid parent id '%s'",
+                                       op.dataJson.c_str());
+                        break;
+                    }
+                }
+                ECS::SetParent(m_World, entity, newParent);
                 break;
             }
             default: break;
