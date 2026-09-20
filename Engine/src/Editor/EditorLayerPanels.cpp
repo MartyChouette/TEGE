@@ -5518,7 +5518,8 @@ void EditorLayer::DrawNetworkPanel() {
 
         ImGui::Spacing();
 
-        // Join
+        // Join by address. Still here, and still the thing that always works:
+        // adr-0007's rule is that discovery below must never become required.
         ImGui::Text("Server IP:");
         ImGui::SameLine();
         ImGui::SetNextItemWidth(150 * ImGui::GetIO().FontGlobalScale);
@@ -5526,6 +5527,66 @@ void EditorLayer::DrawNetworkPanel() {
         ImGui::SameLine();
         if (ImGui::Button("Join Game")) {
             netSystem->JoinGame(m_NetworkIP, static_cast<u16>(m_NetworkPort), m_NetworkPlayerName);
+        }
+
+        // --- Games on this network (adr-0007 Track B step 1) ---
+        //
+        // Before this, joining meant somebody reading an IP address out loud.
+        // The list needs no server and works with the internet unplugged.
+        ImGui::Separator();
+        bool browsing = netSystem->IsBrowsingLan();
+        if (ImGui::Checkbox("Look for games on this network", &browsing)) {
+            if (browsing) netSystem->StartBrowsingLan();
+            else          netSystem->StopBrowsingLan();
+        }
+
+        if (browsing) {
+            const auto& found = netSystem->GetDiscoveredSessions();
+            if (found.empty()) {
+                // Name what was searched rather than showing a bare "none":
+                // an empty list that does not say where it looked is the thing
+                // a Refresh button gets added for.
+                ImGui::TextDisabled("No games announcing on this subnet yet "
+                                    "(listening on port %u for '%s')",
+                                    Networking::DISCOVERY_PORT,
+                                    netSystem->GetDiscoveryGameId().c_str());
+            } else if (ImGui::BeginTable("##LanGames", 3,
+                                         ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+                ImGui::TableSetupColumn("Game", ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableSetupColumn("Players", ImGuiTableColumnFlags_WidthFixed,
+                                        70 * ImGui::GetIO().FontGlobalScale);
+                ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed,
+                                        60 * ImGui::GetIO().FontGlobalScale);
+                ImGui::TableHeadersRow();
+                for (usize i = 0; i < found.size(); ++i) {
+                    const auto& sess = found[i];
+                    ImGui::TableNextRow();
+                    ImGui::PushID(static_cast<int>(i));
+                    ImGui::TableSetColumnIndex(0);
+                    ImGui::Text("%s", sess.sessionName.c_str());
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("%s:%u",
+                            Networking::NetworkAddress::IPToString(sess.address.ip).c_str(),
+                            sess.address.port);
+                    }
+                    ImGui::TableSetColumnIndex(1);
+                    ImGui::Text("%u/%u", sess.playerCount, sess.maxPlayers);
+                    ImGui::TableSetColumnIndex(2);
+                    // A full game is shown as full rather than offered and then
+                    // refused at connect time.
+                    ImGui::BeginDisabled(sess.IsFull());
+                    if (ImGui::SmallButton("Join")) {
+                        netSystem->JoinDiscovered(sess, m_NetworkPlayerName);
+                    }
+                    ImGui::EndDisabled();
+                    if (sess.IsFull() && ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("This game is full (%u/%u)",
+                                          sess.playerCount, sess.maxPlayers);
+                    }
+                    ImGui::PopID();
+                }
+                ImGui::EndTable();
+            }
         }
     } else {
         // Status line

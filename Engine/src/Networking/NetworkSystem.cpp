@@ -68,8 +68,34 @@ bool NetworkSystem::HostGame(u16 port, const std::string& playerName) {
     // (pointers returned by FindConnectionByAddress remain valid)
     m_Connections.reserve(MAX_PLAYERS + 1);
 
+    // Announce on the subnet so nobody has to read an IP address out loud.
+    // A failure here is not a failure to host: the game is up and reachable by
+    // address either way, which is the rule adr-0007 puts above everything.
+    if (m_AnnounceOnLan) {
+        if (!m_Discovery.StartAnnouncing(port, playerName, m_DiscoveryGameId,
+                                         static_cast<u8>(m_Config.maxPlayers))) {
+            ENJIN_LOG_WARN(Network, "NetworkSystem: hosting, but LAN announce failed "
+                                    "-- clients must join by address");
+        }
+    }
+
     ENJIN_LOG_INFO(Network, "NetworkSystem: Hosting on port %u as '%s'", port, playerName.c_str());
     return true;
+}
+
+bool NetworkSystem::StartBrowsingLan() {
+    return m_Discovery.StartListening(m_DiscoveryGameId);
+}
+
+void NetworkSystem::StopBrowsingLan() {
+    // Only stops LISTENING. A host browsing its own subnet keeps announcing.
+    if (m_Discovery.IsListening() && !m_Discovery.IsAnnouncing()) m_Discovery.Stop();
+}
+
+bool NetworkSystem::JoinDiscovered(const DiscoveredSession& session,
+                                   const std::string& playerName) {
+    return JoinGame(NetworkAddress::IPToString(session.address.ip),
+                    session.address.port, playerName);
 }
 
 bool NetworkSystem::JoinGame(const std::string& ip, u16 port, const std::string& playerName) {
@@ -123,6 +149,10 @@ bool NetworkSystem::JoinGame(const std::string& ip, u16 port, const std::string&
 void NetworkSystem::Disconnect() {
     if (m_Role == NetworkRole::None) return;
 
+    // Stop advertising a game that is ending, or it lingers in every browser
+    // on the subnet until the timeout expires it.
+    m_Discovery.Stop();
+
     // Send disconnect to all peers (S-M11: avoid static vector destruction order issues)
     const std::vector<u8> empty;
     SendToAll(MessageType::Disconnect, empty);
@@ -169,6 +199,13 @@ void NetworkSystem::Update(f32 deltaTime) {
     ENJIN_PROFILE_SCOPE("Networking");
 
     m_Time += deltaTime;
+
+    // Discovery runs on its own transport and is independent of the game
+    // socket, so it ticks whether or not anyone is connected.
+    if (m_Role == NetworkRole::Host) {
+        m_Discovery.SetPlayerCount(static_cast<u8>(GetConnectedPlayerCount()));
+    }
+    m_Discovery.Update(deltaTime);
 
     ProcessIncomingPackets();
     UpdateHeartbeats(deltaTime);

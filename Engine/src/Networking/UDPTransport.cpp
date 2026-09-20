@@ -72,6 +72,23 @@ bool UDPTransport::Bind(u16 port) {
     }
 #endif
 
+    // Permit sending to a broadcast address. Without SO_BROADCAST, a sendto()
+    // aimed at 255.255.255.255 fails with a permission error on every platform,
+    // which is what LAN discovery needs to do. It grants PERMISSION only -- it
+    // changes nothing for a socket that never addresses a broadcast, which is
+    // every game socket -- so it is set here rather than behind another method
+    // that the transport interface would have to expose.
+    {
+        int broadcastEnable = 1;
+        if (setsockopt(sock, SOL_SOCKET, SO_BROADCAST,
+                       reinterpret_cast<const char*>(&broadcastEnable),
+                       sizeof(broadcastEnable)) != 0) {
+            // Not fatal: only discovery needs it, and a game still hosts and
+            // joins by address without it.
+            ENJIN_LOG_WARN(Network, "UDPTransport: SO_BROADCAST unavailable; LAN discovery will not announce");
+        }
+    }
+
     struct sockaddr_in addr {};
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);

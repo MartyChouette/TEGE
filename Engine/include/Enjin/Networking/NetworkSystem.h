@@ -2,6 +2,7 @@
 
 #include "Enjin/Networking/NetworkTypes.h"
 #include "Enjin/Networking/INetworkTransport.h"
+#include "Enjin/Networking/LanDiscovery.h"
 #include "Enjin/Networking/NetworkSerializer.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Entity.h"
@@ -89,6 +90,42 @@ public:
     NetworkConfig& GetConfig() { return m_Config; }
     bool LoadConfig(const std::string& path = NetworkConfig::GetDefaultPath());
     bool SaveConfig(const std::string& path = NetworkConfig::GetDefaultPath()) const;
+
+    // ========================================================================
+    // LAN DISCOVERY (adr-0007 Track B step 1)
+    //
+    // A host announces itself on the subnet automatically; a client can browse
+    // for hosts instead of being told an IP address. Both are CONVENIENCES:
+    // HostGame and JoinGame(ip, port) work exactly as before with discovery
+    // switched off, and nothing in the connect path routes through it. That is
+    // adr-0007's standing rule -- nothing we build may become required.
+    // ========================================================================
+
+    // Games on one subnet only list their own kind. Set before hosting.
+    void SetDiscoveryGameId(const std::string& gameId) { m_DiscoveryGameId = gameId; }
+    const std::string& GetDiscoveryGameId() const { return m_DiscoveryGameId; }
+
+    // A host announces by default. Turn this off for a private game.
+    void SetAnnounceOnLan(bool enabled) { m_AnnounceOnLan = enabled; }
+    bool GetAnnounceOnLan() const { return m_AnnounceOnLan; }
+
+    // CLIENT: start/stop looking for hosts. Safe to call while not connected,
+    // which is the whole point -- this is what a join screen does.
+    bool StartBrowsingLan();
+    void StopBrowsingLan();
+    bool IsBrowsingLan() const { return m_Discovery.IsListening(); }
+    const std::vector<DiscoveredSession>& GetDiscoveredSessions() const {
+        return m_Discovery.GetSessions();
+    }
+
+    // Convenience: join a session the browser found.
+    bool JoinDiscovered(const DiscoveredSession& session, const std::string& playerName);
+
+    // Test seam: discovery binds its own socket, so a loopback test has to be
+    // able to replace that one too, not just the game transport.
+    void SetDiscoveryTransportForTest(std::unique_ptr<INetworkTransport> t) {
+        m_Discovery.SetTransport(std::move(t));
+    }
 
     // Stats
     f32 GetPing() const;
@@ -213,6 +250,12 @@ private:
     std::string m_LocalPlayerName;
     NetworkConfig m_Config;
     std::unique_ptr<INetworkTransport> m_Transport;
+
+    // Discovery owns its OWN transport: it binds a different port and a host
+    // announces from an ephemeral one, so it cannot share the game socket.
+    LanDiscovery m_Discovery;
+    std::string m_DiscoveryGameId = "enjin";
+    bool m_AnnounceOnLan = true;
 
     // Inject a custom transport (e.g. WebSocket). If not set, UDP is used by default.
     public: void SetTransport(std::unique_ptr<INetworkTransport> transport) { m_Transport = std::move(transport); }
