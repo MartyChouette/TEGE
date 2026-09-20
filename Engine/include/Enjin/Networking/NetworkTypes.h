@@ -27,6 +27,18 @@ static constexpr f32 DEFAULT_SYNC_RATE = 1.0f / 20.0f;  // 20 Hz
 static constexpr u32 RELIABLE_MAX_RETRIES = 10;
 static constexpr f32 RELIABLE_RETRY_INTERVAL = 0.2f;
 
+// A reliable message larger than one datagram is split across several.
+//
+// Nothing below this layer fragments: the receive buffer is MAX_PACKET_SIZE and
+// an oversized datagram is discarded by recvfrom, not truncated, so a scene
+// sync simply vanished. The chunk is sized to leave room for the packet header
+// (12), the reliable wrapper (11) and the auth trailer (36), with slack.
+static constexpr u32 RELIABLE_CHUNK_PAYLOAD = 1200;
+static constexpr u32 RELIABLE_MAX_FRAGMENTS = 8192;                 // ~9.8 MB at the chunk size above
+static constexpr u32 RELIABLE_MAX_MESSAGE_BYTES = 8 * 1024 * 1024;  // Hard ceiling on one reassembly
+static constexpr u32 RELIABLE_OUTBOX_CAP = 16384;                   // Fragments in flight, all peers
+static constexpr f32 RELIABLE_REASSEMBLY_TIMEOUT = 20.0f;           // Abandon a half-arrived message
+
 // ============================================================================
 // TYPE ALIASES
 // ============================================================================
@@ -214,9 +226,54 @@ struct ConnectionInfo {
     // NET-3: Ownership request rate limiting
     f32 lastOwnershipRequestTime = 0.0f;
 
+    // Set when reliable traffic arrives and cleared once something has been
+    // sent back. An ack rides the next outgoing packet header, so with nothing
+    // to send the only ack carrier is the 1 Hz heartbeat -- five times slower
+    // than the 0.2s retry timer, which made every fragment retransmit several
+    // times before its ack could possibly arrive.
+    bool ackPending = false;
+
     // Authentication sequence (monotonically increasing per-connection)
     u32 authSendSequence = 0;       // Next outgoing auth sequence
     bool authenticated = false;     // True once session key has been exchanged
+
+    // Reliable-message de-duplication.
+    //
+    // A retransmit is a NEW packet with a new outer sequence and a new auth
+    // sequence, so neither the ack window nor the replay window can tell it
+    // from a first delivery. The message id is the only thing that survives a
+    // retransmit unchanged. Without this, a reliable edit whose ack was lost
+    // gets applied twice, which for a scene edit is not a no-op.
+    // Keyed per FRAGMENT: each chunk of a message is acked and retransmitted on
+    // its own, so a duplicate arrives as one chunk, not as the whole message.
+    static constexpr u32 kReliableSeenSize = 1024;
+    u64 reliableSeenKeys[kReliableSeenSize] = {};
+
+    // Returns false if this fragment has already been delivered.
+    bool MarkReliableDelivered(u32 messageId, u16 fragIndex) {
+        if (messageId == 0) return true;  // Unset id: cannot dedupe, deliver it
+        const u64 key = (static_cast<u64>(messageId) << 16) | fragIndex;
+        const u32 slot = static_cast<u32>(key % kReliableSeenSize);
+        if (reliableSeenKeys[slot] == key) return false;
+        reliableSeenKeys[slot] = key;
+        return true;
+    }
+};
+
+// ============================================================================
+// RELIABLE REASSEMBLY
+// ============================================================================
+
+// One partially-arrived fragmented message. Chunks may arrive out of order and
+// a retransmit may arrive twice, so slots are filled by index rather than
+// appended.
+struct ReliableReassembly {
+    u16 fragCount = 0;
+    u16 received = 0;
+    u8 innerType = 0;
+    f32 lastActivity = 0.0f;
+    usize totalBytes = 0;
+    std::vector<std::vector<u8>> chunks;
 };
 
 // ============================================================================
@@ -302,7 +359,11 @@ struct LobbyPlayer {
 // ============================================================================
 
 struct ReliableMessage {
-    u16 sequence = 0;
+    u16 sequence = 0;       // Outer packet sequence, rewritten on every retransmit so an ack can match it
+    u32 messageId = 0;      // Stable across retransmits. This is what the receiver de-duplicates on
+    u16 fragIndex = 0;      // Which chunk of the message this is
+    u16 fragCount = 1;      // How many chunks the whole message was split into (1 = not fragmented)
+    bool sent = false;      // Queued but not yet on the wire: the send budget paces fragments out
     f32 lastSendTime = 0.0f;
     f32 firstSendTime = 0.0f;
     i32 retryCount = 0;

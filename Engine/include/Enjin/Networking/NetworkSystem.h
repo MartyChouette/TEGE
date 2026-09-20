@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <vector>
 #include <memory>
+#include <set>
 
 namespace Enjin {
 namespace Networking {
@@ -115,7 +116,31 @@ private:
     void BanSender(const NetworkAddress& sender, const char* reason);
     void DisconnectSender(const NetworkAddress& sender, const char* reason);
 
+    // Routes one decoded message to its handler. Called for a packet as it
+    // arrives, and again for each message unwrapped from a ReliableMessage.
+    void DispatchMessage(MessageType type, const NetworkAddress& sender, PlayerId senderId,
+                         const u8* payload, u32 payloadSize);
+
     // Message handlers
+    void HandleReliableMessage(const NetworkAddress& sender, PlayerId senderId, const u8* payload, u32 size);
+
+    // Reliability comes from the sender's own registry; warns once per name when
+    // the sender has no registration for it.
+    bool ResolveRPCReliability(const std::string& name, const RPCRegistration* reg);
+
+    // Shared tail of the single-datagram and reassembled reliable paths.
+    void DispatchReliablePayload(const NetworkAddress& sender, PlayerId senderId,
+                                 u8 innerTypeByte, const u8* innerPayload, u32 innerSize);
+
+    // Sends queued reliable fragments within the outgoing budget. Fragmenting a
+    // large message produces hundreds of datagrams at once, and blasting them
+    // trips the RECEIVER's rate limiter -- which is a DoS guard, so the sender
+    // paces instead.
+    void FlushPendingReliable();
+
+    // Drops reassemblies that stopped arriving, so a half-sent message cannot
+    // hold its buffers for the life of the process.
+    void ExpireReassemblies();
     void HandleConnectionRequest(const NetworkAddress& sender, const u8* payload, u32 size);
     void HandleConnectionAccept(const u8* payload, u32 size);
     void HandleConnectionReject(const u8* payload, u32 size);
@@ -151,7 +176,7 @@ private:
     // Sending
     void SendPacket(const NetworkAddress& addr, MessageType type, const std::vector<u8>& payload);
     void SendToAll(MessageType type, const std::vector<u8>& payload, PlayerId exclude = INVALID_PLAYER);
-    void SendReliable(const NetworkAddress& addr, MessageType type, const std::vector<u8>& payload);
+    bool SendReliable(const NetworkAddress& addr, MessageType type, const std::vector<u8>& payload);
 
     // Authentication & Replay protection
     void GenerateSessionKey();
@@ -221,6 +246,12 @@ private:
 
     // Reliable outbox
     std::vector<ReliableMessage> m_ReliableOutbox;
+    RateLimiter m_ReliableSendPackets;   // Mirrors the receiver's packet budget
+    RateLimiter m_ReliableSendBytes;     // and its byte budget
+    // Partially-arrived fragmented messages, per sender, keyed by message id.
+    std::unordered_map<NetworkAddress, std::unordered_map<u32, ReliableReassembly>, NetworkAddressHash> m_Reassembly;
+    u32 m_NextReliableMessageId = 1;   // 0 means "no id", so ids start at 1
+    std::set<std::string> m_WarnedUnregisteredRPCs;
 
     // Sync timer
     f32 m_SyncTimer = 0.0f;

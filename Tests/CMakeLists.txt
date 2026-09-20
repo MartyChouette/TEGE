@@ -421,6 +421,7 @@ enjin_add_test(TestFlagshipCoinRush   Unit/Gameplay/TestFlagshipCoinRush.cpp)
 enjin_add_test(TestNetworking         Unit/Networking/TestNetworking.cpp)
 enjin_add_test(TestNetworkAdversarial Unit/Networking/TestNetworkAdversarial.cpp)
 enjin_add_test(TestNetworkSecurity    Unit/Networking/TestNetworkSecurity.cpp)
+enjin_add_test(TestNetworkReliable    Unit/Networking/TestNetworkReliable.cpp)
 
 # --- Assets ---
 enjin_add_test(TestAssetPack          Unit/Assets/TestAssetPack.cpp)

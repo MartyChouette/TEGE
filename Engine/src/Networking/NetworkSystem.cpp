@@ -174,6 +174,7 @@ void NetworkSystem::Update(f32 deltaTime) {
     UpdateHeartbeats(deltaTime);
     CheckTimeouts(deltaTime);
     UpdateReliableMessages(deltaTime);
+    ExpireReassemblies();
 
     // Entity sync at configured rate
     m_SyncTimer += deltaTime;
@@ -291,18 +292,20 @@ void NetworkSystem::RegisterRPC(const std::string& name, RPCCallback callback, b
 void NetworkSystem::CallRPC(const std::string& name, PlayerId target, const u8* data, u32 size) {
     u32 nameHash = FNV1aHash(name);
     auto it = m_RPCRegistry.find(nameHash);
-    bool reliable = (it != m_RPCRegistry.end()) ? it->second.reliable : false;
+    const bool reliable = ResolveRPCReliability(name, it != m_RPCRegistry.end() ? &it->second : nullptr);
 
-    // S-C3: Reject payload too large for u16 size field
-    if (size > 65535) {
-        ENJIN_LOG_ERROR(Network, "RPC payload too large: %u bytes (max 65535)", size);
+    // The size field is u32 because a scene sync is routinely larger than 64 KB,
+    // and the reliable layer fragments anything over one datagram now. The
+    // ceiling is what one reassembly is allowed to hold.
+    if (size > RELIABLE_MAX_MESSAGE_BYTES) {
+        ENJIN_LOG_ERROR(Network, "RPC payload too large: %u bytes (max %u)", size, RELIABLE_MAX_MESSAGE_BYTES);
         return;
     }
 
     std::vector<u8> payload;
     WriteU32(payload, nameHash);
     WriteU8(payload, target);
-    WriteU16(payload, static_cast<u16>(size));
+    WriteU32(payload, size);
     if (data && size > 0) {
         payload.insert(payload.end(), data, data + size);
     }
@@ -317,21 +320,36 @@ void NetworkSystem::CallRPC(const std::string& name, PlayerId target, const u8* 
     }
 }
 
+// Reliability is looked up in the SENDER's own registry, which means a peer
+// that calls an RPC it never registered sends it UNRELIABLY whatever the other
+// end declared -- a different delivery guarantee for the same message, decided
+// by which side is talking. A caller does not need a handler, so this is legal;
+// it is just never what anyone means. Say so once per name.
+bool NetworkSystem::ResolveRPCReliability(const std::string& name, const RPCRegistration* reg) {
+    if (reg) return reg->reliable;
+    if (m_WarnedUnregisteredRPCs.insert(name).second) {
+        ENJIN_LOG_WARN(Network, "RPC '%s' is not registered here, so it is being sent UNRELIABLY. "
+                                "Register it on both ends to get the reliability it was declared with.",
+                       name.c_str());
+    }
+    return false;
+}
+
 void NetworkSystem::CallRPCAll(const std::string& name, const u8* data, u32 size) {
-    // S-C4: Reject payload too large for u16 size field
-    if (size > 65535) {
-        ENJIN_LOG_ERROR(Network, "RPC broadcast payload too large: %u bytes (max 65535)", size);
+    if (size > RELIABLE_MAX_MESSAGE_BYTES) {
+        ENJIN_LOG_ERROR(Network, "RPC broadcast payload too large: %u bytes (max %u)",
+                        size, RELIABLE_MAX_MESSAGE_BYTES);
         return;
     }
 
     u32 nameHash = FNV1aHash(name);
     auto it = m_RPCRegistry.find(nameHash);
-    bool reliable = (it != m_RPCRegistry.end()) ? it->second.reliable : false;
+    const bool reliable = ResolveRPCReliability(name, it != m_RPCRegistry.end() ? &it->second : nullptr);
 
     std::vector<u8> payload;
     WriteU32(payload, nameHash);
     WriteU8(payload, INVALID_PLAYER);  // broadcast
-    WriteU16(payload, static_cast<u16>(size));
+    WriteU32(payload, size);
     if (data && size > 0) {
         payload.insert(payload.end(), data, data + size);
     }
@@ -455,8 +473,11 @@ static u32 GetMinPayloadSize(MessageType type) {
         case MessageType::EntityDestroy: return 4;
         case MessageType::OwnershipRequest: return 4;
         case MessageType::OwnershipGrant: return 5;
-        case MessageType::RPCCall: return 7;
+        // [u32 nameHash][u8 target][u32 size]
+        case MessageType::RPCCall: return 9;
         case MessageType::SessionKeyExchange: return SESSION_KEY_SIZE;
+        // [u16 outer sequence][u32 message id][u8 inner type], then the inner payload
+        case MessageType::ReliableMessage: return 7;
         default: return 0;
     }
 }
@@ -644,9 +665,10 @@ void NetworkSystem::HandlePacket(const NetworkAddress& sender, const u8* data, u
     if (m_AuthEnabled && m_SessionKeyGenerated) {
         // Authenticated packets have a 4-byte auth sequence + 32-byte HMAC appended.
         // Layout: [PacketHeader | Payload | AuthSequence(4) | HMAC(32)]
-        // However, ConnectionRequest packets from unknown clients are NOT authenticated
-        // (they don't have the session key yet). SessionKeyExchange is also unauthenticated.
-        // We peek at the message type byte to decide.
+        // The four handshake messages are NOT authenticated: a client has no
+        // session key until SessionKeyExchange arrives, so it can neither verify
+        // nor strip the trailer on anything that precedes it. We peek at the
+        // message type byte to decide.
         if (size >= PACKET_HEADER_SIZE) {
             u8 msgTypeByte = data[0];
             // Must match the exemption list in SendPacket exactly. These four
@@ -761,6 +783,15 @@ void NetworkSystem::HandlePacket(const NetworkAddress& sender, const u8* data, u
         return;
     }
 
+    DispatchMessage(type, sender, header.senderId, payload, payloadSize);
+}
+
+// Routes one decoded message. Split out of HandlePacket so a ReliableMessage
+// can unwrap its payload and run it through the same table: before this existed
+// the switch had no ReliableMessage case at all, so every message sent through
+// SendReliable fell into `default:` and was discarded.
+void NetworkSystem::DispatchMessage(MessageType type, const NetworkAddress& sender,
+                                    PlayerId senderId, const u8* payload, u32 payloadSize) {
     switch (type) {
         case MessageType::ConnectionRequest:
             HandleConnectionRequest(sender, payload, payloadSize);
@@ -772,40 +803,43 @@ void NetworkSystem::HandlePacket(const NetworkAddress& sender, const u8* data, u
             HandleConnectionReject(payload, payloadSize);
             break;
         case MessageType::Disconnect:
-            HandleDisconnect(sender, header.senderId);
+            HandleDisconnect(sender, senderId);
             break;
         case MessageType::Heartbeat:
-            HandleHeartbeat(sender, header.senderId);
+            HandleHeartbeat(sender, senderId);
             break;
         case MessageType::HeartbeatAck:
-            HandleHeartbeatAck(sender, header.senderId);
+            HandleHeartbeatAck(sender, senderId);
             break;
         case MessageType::PlayerReady:
-            HandlePlayerReady(header.senderId, payload, payloadSize);
+            HandlePlayerReady(senderId, payload, payloadSize);
             break;
         case MessageType::LobbyState:
             HandleLobbyState(payload, payloadSize);
             break;
         case MessageType::EntitySnapshot:
-            HandleEntitySnapshot(header.senderId, payload, payloadSize);
+            HandleEntitySnapshot(senderId, payload, payloadSize);
             break;
         case MessageType::EntitySpawn:
-            HandleEntitySpawn(header.senderId, payload, payloadSize);
+            HandleEntitySpawn(senderId, payload, payloadSize);
             break;
         case MessageType::EntityDestroy:
-            HandleEntityDestroy(header.senderId, payload, payloadSize);
+            HandleEntityDestroy(senderId, payload, payloadSize);
             break;
         case MessageType::OwnershipRequest:
-            HandleOwnershipRequest(header.senderId, payload, payloadSize);
+            HandleOwnershipRequest(senderId, payload, payloadSize);
             break;
         case MessageType::OwnershipGrant:
             HandleOwnershipGrant(payload, payloadSize);
             break;
         case MessageType::RPCCall:
-            HandleRPCCall(header.senderId, payload, payloadSize);
+            HandleRPCCall(senderId, payload, payloadSize);
             break;
         case MessageType::SessionKeyExchange:
             HandleSessionKeyExchange(sender, payload, payloadSize);
+            break;
+        case MessageType::ReliableMessage:
+            HandleReliableMessage(sender, senderId, payload, payloadSize);
             break;
         default:
             break;
@@ -1279,12 +1313,151 @@ void NetworkSystem::ApplyPhysicsAuthority(ECS::Entity entity, bool isLocallyOwne
     }
 }
 
+void NetworkSystem::HandleReliableMessage(const NetworkAddress& sender, PlayerId senderId,
+                                          const u8* payload, u32 size) {
+    // Wrapper: [u16 outerSequence][u32 messageId][u16 fragIndex][u16 fragCount][u8 innerType][chunk]
+    //
+    // The outer sequence is only there so the sender can match an ack; the ack
+    // itself rides the next packet header back, handled in ProcessAck. The
+    // message id is the one field a retransmit does NOT change, so it is both
+    // the de-duplication key and the reassembly key.
+    u32 offset = 0;
+    ReadU16(payload, offset, size);              // outer sequence, already acked by header
+    const u32 messageId = ReadU32(payload, offset, size);
+    const u16 fragIndex = ReadU16(payload, offset, size);
+    const u16 fragCount = ReadU16(payload, offset, size);
+
+    if (fragCount == 0 || fragIndex >= fragCount || fragCount > RELIABLE_MAX_FRAGMENTS) {
+        ENJIN_LOG_WARN(Network, "NetworkSystem: Reliable fragment %u of %u is out of range, dropping",
+                       fragIndex, fragCount);
+        RegisterViolation(sender, "bad reliable fragment header");
+        return;
+    }
+
+    // Deliver each fragment once. The ack can be lost as easily as the chunk,
+    // and the retransmit that follows is indistinguishable from a first
+    // delivery at every other layer.
+    if (ConnectionInfo* conn = FindConnectionByAddress(sender)) {
+        // Owe an ack either way: a duplicate means our last one did not arrive.
+        conn->ackPending = true;
+        if (!conn->MarkReliableDelivered(messageId, fragIndex)) return;
+    }
+
+    // Only the FIRST fragment carries the inner type byte; the rest are payload.
+    const u8* chunk = payload + offset;
+    u32 chunkSize = (size > offset) ? size - offset : 0;
+
+    if (fragCount == 1) {
+        if (chunkSize < 1) {
+            RegisterViolation(sender, "empty reliable message");
+            return;
+        }
+        DispatchReliablePayload(sender, senderId, chunk[0], chunk + 1, chunkSize - 1);
+        return;
+    }
+
+    auto& perSender = m_Reassembly[sender];
+    auto& entry = perSender[messageId];
+    if (entry.fragCount == 0) {
+        entry.fragCount = fragCount;
+        entry.chunks.resize(fragCount);
+    } else if (entry.fragCount != fragCount) {
+        // The same message id claiming a different length is not a thing a
+        // sender does; drop the whole reassembly rather than trust either.
+        ENJIN_LOG_WARN(Network, "NetworkSystem: Reliable message %u changed fragment count, dropping", messageId);
+        RegisterViolation(sender, "inconsistent fragment count");
+        perSender.erase(messageId);
+        return;
+    }
+
+    entry.lastActivity = m_Time;
+    if (entry.chunks[fragIndex].empty() && chunkSize > 0) {
+        entry.totalBytes += chunkSize;
+        if (entry.totalBytes > RELIABLE_MAX_MESSAGE_BYTES) {
+            ENJIN_LOG_ERROR(Network, "NetworkSystem: Reassembled message exceeds %u bytes, dropping",
+                            RELIABLE_MAX_MESSAGE_BYTES);
+            RegisterViolation(sender, "oversized reassembly");
+            perSender.erase(messageId);
+            return;
+        }
+        entry.chunks[fragIndex].assign(chunk, chunk + chunkSize);
+        entry.received++;
+    }
+
+    if (entry.received < entry.fragCount) return;
+
+    // Complete. Concatenate in index order; fragment 0 leads with the type byte.
+    std::vector<u8> whole;
+    whole.reserve(entry.totalBytes);
+    for (const auto& c : entry.chunks) {
+        whole.insert(whole.end(), c.begin(), c.end());
+    }
+    perSender.erase(messageId);
+    if (perSender.empty()) m_Reassembly.erase(sender);
+
+    if (whole.empty()) {
+        RegisterViolation(sender, "empty reassembled message");
+        return;
+    }
+    DispatchReliablePayload(sender, senderId, whole[0], whole.data() + 1, static_cast<u32>(whole.size() - 1));
+}
+
+// Shared tail of both the single-datagram and the reassembled paths: validate
+// the inner type, then run it through the same table an arriving packet uses.
+void NetworkSystem::DispatchReliablePayload(const NetworkAddress& sender, PlayerId senderId,
+                                            u8 innerTypeByte, const u8* innerPayload, u32 innerSize) {
+    if (innerTypeByte == 0 || innerTypeByte > static_cast<u8>(MessageType::SessionKeyExchange)) {
+        ENJIN_LOG_WARN(Network, "NetworkSystem: Reliable message carried invalid type %u, dropping", innerTypeByte);
+        RegisterViolation(sender, "invalid reliable inner type");
+        return;
+    }
+
+    const MessageType innerType = static_cast<MessageType>(innerTypeByte);
+
+    // A reliable message may not carry another one. Nothing sends that, and
+    // honouring it would let one packet recurse.
+    if (innerType == MessageType::ReliableMessage) {
+        ENJIN_LOG_WARN(Network, "NetworkSystem: Reliable message nested inside a reliable message, dropping");
+        RegisterViolation(sender, "nested reliable message");
+        return;
+    }
+
+    const u32 minPayload = GetMinPayloadSize(innerType);
+    if (innerSize < minPayload) {
+        ENJIN_LOG_WARN(Network, "NetworkSystem: Reliable payload too small for message %u (min=%u, got=%u), dropping",
+                       innerTypeByte, minPayload, innerSize);
+        RegisterViolation(sender, "reliable payload too small");
+        return;
+    }
+
+    DispatchMessage(innerType, sender, senderId, innerPayload, innerSize);
+}
+
+// A sender that disappears mid-message leaves its chunks behind. Without this
+// they are held for the life of the process.
+void NetworkSystem::ExpireReassemblies() {
+    for (auto sit = m_Reassembly.begin(); sit != m_Reassembly.end();) {
+        auto& perSender = sit->second;
+        for (auto it = perSender.begin(); it != perSender.end();) {
+            if (m_Time - it->second.lastActivity > RELIABLE_REASSEMBLY_TIMEOUT) {
+                ENJIN_LOG_WARN(Network, "NetworkSystem: Abandoning reliable message %u, %u of %u fragments arrived",
+                               it->first, it->second.received, it->second.fragCount);
+                it = perSender.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        if (perSender.empty()) sit = m_Reassembly.erase(sit);
+        else ++sit;
+    }
+}
+
 void NetworkSystem::HandleRPCCall(PlayerId senderId, const u8* payload, u32 size) {
-    if (size < 7) return;
+    if (size < 9) return;
     u32 offset = 0;
     u32 nameHash = ReadU32(payload, offset, size);
     PlayerId targetId = ReadU8(payload, offset, size);
-    u16 dataSize = ReadU16(payload, offset, size);
+    u32 dataSize = ReadU32(payload, offset, size);
 
     // Check if this is for us
     if (targetId != INVALID_PLAYER && targetId != m_LocalPlayerId) {
@@ -1298,7 +1471,15 @@ void NetworkSystem::HandleRPCCall(PlayerId senderId, const u8* payload, u32 size
             ConnectionInfo* conn = FindConnectionByPlayerId(targetId);
             if (conn) {
                 std::vector<u8> fwdPayload(payload, payload + size);
-                SendPacket(conn->address, MessageType::RPCCall, fwdPayload);
+                // Forward with the reliability this RPC was declared with. A
+                // plain SendPacket here also meant a forwarded message larger
+                // than one datagram was unsendable.
+                auto reg = m_RPCRegistry.find(nameHash);
+                if (reg != m_RPCRegistry.end() && reg->second.reliable) {
+                    SendReliable(conn->address, MessageType::RPCCall, fwdPayload);
+                } else {
+                    SendPacket(conn->address, MessageType::RPCCall, fwdPayload);
+                }
             }
         }
         return;
@@ -1319,7 +1500,16 @@ void NetworkSystem::HandleRPCCall(PlayerId senderId, const u8* payload, u32 size
     // If host and broadcast target, forward to all other clients
     if (m_Role == NetworkRole::Host && targetId == INVALID_PLAYER) {
         std::vector<u8> fwdPayload(payload, payload + size);
-        SendToAll(MessageType::RPCCall, fwdPayload, senderId);
+        auto reg = m_RPCRegistry.find(nameHash);
+        if (reg != m_RPCRegistry.end() && reg->second.reliable) {
+            for (auto& conn : m_Connections) {
+                if (conn.state == ConnectionState::Connected && conn.playerId != senderId) {
+                    SendReliable(conn.address, MessageType::RPCCall, fwdPayload);
+                }
+            }
+        } else {
+            SendToAll(MessageType::RPCCall, fwdPayload, senderId);
+        }
     }
 }
 
@@ -1388,40 +1578,137 @@ void NetworkSystem::SendToAll(MessageType type, const std::vector<u8>& payload, 
     }
 }
 
-void NetworkSystem::SendReliable(const NetworkAddress& addr, MessageType type, const std::vector<u8>& payload) {
+bool NetworkSystem::SendReliable(const NetworkAddress& addr, MessageType type, const std::vector<u8>& payload) {
     // Build the inner packet data
     std::vector<u8> innerPacket;
     WriteU8(innerPacket, static_cast<u8>(type));
     innerPacket.insert(innerPacket.end(), payload.begin(), payload.end());
 
-    // Track for retransmission
-    ReliableMessage rm;
-    ConnectionInfo* conn = FindConnectionByAddress(addr);
-    rm.sequence = conn ? conn->localSequence : 0;
-    rm.lastSendTime = m_Time;
-    rm.firstSendTime = m_Time;
-    rm.retryCount = 0;
-    rm.data = innerPacket;
-    rm.target = addr;
-    // N18: Cap outbox to prevent unbounded growth
-    if (m_ReliableOutbox.size() >= 1024) {
-        ENJIN_LOG_WARN(Network, "Reliable outbox full (1024), dropping message");
-        return;
+    if (innerPacket.size() > RELIABLE_MAX_MESSAGE_BYTES) {
+        ENJIN_LOG_ERROR(Network, "Reliable message too large: %zu bytes (max %u)",
+                        innerPacket.size(), RELIABLE_MAX_MESSAGE_BYTES);
+        return false;
     }
-    m_ReliableOutbox.push_back(rm);
 
-    // Send wrapped
-    std::vector<u8> wrappedPayload;
-    WriteU16(wrappedPayload, rm.sequence);
-    wrappedPayload.insert(wrappedPayload.end(), innerPacket.begin(), innerPacket.end());
-    SendPacket(addr, MessageType::ReliableMessage, wrappedPayload);
+    // Split into datagram-sized chunks. One chunk is the common case and still
+    // goes through this path, so there is only one wire format to get right.
+    const usize chunkSize = RELIABLE_CHUNK_PAYLOAD;
+    const usize fragTotal = (innerPacket.size() + chunkSize - 1) / chunkSize;
+    const u16 fragCount = static_cast<u16>(fragTotal == 0 ? 1 : fragTotal);
+
+    if (fragCount > RELIABLE_MAX_FRAGMENTS) {
+        ENJIN_LOG_ERROR(Network, "Reliable message needs %u fragments (max %u)",
+                        fragCount, RELIABLE_MAX_FRAGMENTS);
+        return false;
+    }
+
+    // Reserve the whole message or none of it. A partial send is worse than a
+    // refused one: the receiver waits for chunks that were never queued, and
+    // the sender reports success.
+    if (m_ReliableOutbox.size() + fragCount > RELIABLE_OUTBOX_CAP) {
+        ENJIN_LOG_WARN(Network, "Reliable outbox full (%zu of %u), dropping a %u-fragment message",
+                       m_ReliableOutbox.size(), RELIABLE_OUTBOX_CAP, fragCount);
+        return false;
+    }
+
+    const u32 messageId = m_NextReliableMessageId++;
+    if (m_NextReliableMessageId == 0) m_NextReliableMessageId = 1;  // 0 means "no id"
+
+    ConnectionInfo* conn = FindConnectionByAddress(addr);
+
+    (void)conn;
+    for (u16 frag = 0; frag < fragCount; frag++) {
+        const usize begin = static_cast<usize>(frag) * chunkSize;
+        const usize end = std::min(begin + chunkSize, innerPacket.size());
+
+        ReliableMessage rm;
+        rm.messageId = messageId;
+        rm.fragIndex = frag;
+        rm.fragCount = fragCount;
+        rm.sent = false;
+        rm.lastSendTime = m_Time;
+        rm.firstSendTime = m_Time;
+        rm.retryCount = 0;
+        rm.data.assign(innerPacket.begin() + begin, innerPacket.begin() + end);
+        rm.target = addr;
+        m_ReliableOutbox.push_back(rm);
+    }
+
+    // Put what the budget allows on the wire now; the rest goes out over the
+    // next frames from Update.
+    FlushPendingReliable();
+    return true;
 }
 
-// ============================================================================
-// UPDATE TICKS
-// ============================================================================
+// The outgoing budget mirrors the receiver's own limits, because both ends read
+// the same config. Without it a 200 KB scene sync arrives as 171 datagrams in
+// one frame, the receiver's token bucket rejects all but the burst allowance,
+// and the sender is registered as a violator for sending the thing it was asked
+// to send.
+// Share of the configured rate that bulk reliable traffic may use. The rest is
+// left for the protocol's own packets.
+static constexpr f32 kReliableSendShare = 0.6f;
+
+void NetworkSystem::FlushPendingReliable() {
+    const f32 now = m_Time;
+
+    auto configure = [now](RateLimiter& limiter, f32 maxPerSecond, f32 burst) {
+        if (maxPerSecond <= 0.0f) return;
+        const f32 maxTokens = std::max(1.0f, burst);
+        const f32 refillRate = std::max(0.0f, maxPerSecond);
+        if (limiter.maxTokens != maxTokens || limiter.refillRate != refillRate) {
+            limiter.Configure(maxTokens, refillRate, now, maxTokens);
+        }
+    };
+    // Headroom. The receiver's bucket is also drained by heartbeats, acks and
+    // entity snapshots, so pacing reliable fragments at exactly the configured
+    // rate overshoots it. The overshoot is small per second and cumulative over
+    // a long transfer: a 171-fragment message lost a handful of chunks, each
+    // retried until its retry count ran out, and the message then never
+    // completed. Measured: at 100% every size up to 120 fragments arrived and
+    // 171 did not.
+    configure(m_ReliableSendPackets, m_Config.maxPacketsPerSecond * kReliableSendShare,
+              m_Config.burstPackets * kReliableSendShare);
+    configure(m_ReliableSendBytes, m_Config.maxBytesPerSecond * kReliableSendShare,
+              m_Config.burstBytes * kReliableSendShare);
+
+    for (auto& rm : m_ReliableOutbox) {
+        if (rm.sent) continue;
+
+        const f32 wireSize = static_cast<f32>(PACKET_HEADER_SIZE + 11 + rm.data.size());
+        if (m_Config.maxPacketsPerSecond > 0.0f && !m_ReliableSendPackets.Consume(1.0f, now)) break;
+        if (m_Config.maxBytesPerSecond > 0.0f && !m_ReliableSendBytes.Consume(wireSize, now)) break;
+
+        ConnectionInfo* conn = FindConnectionByAddress(rm.target);
+        rm.sequence = conn ? conn->localSequence : 0;
+
+        std::vector<u8> wrappedPayload;
+        WriteU16(wrappedPayload, rm.sequence);
+        WriteU32(wrappedPayload, rm.messageId);
+        WriteU16(wrappedPayload, rm.fragIndex);
+        WriteU16(wrappedPayload, rm.fragCount);
+        wrappedPayload.insert(wrappedPayload.end(), rm.data.begin(), rm.data.end());
+        SendPacket(rm.target, MessageType::ReliableMessage, wrappedPayload);
+
+        rm.sent = true;
+        rm.lastSendTime = m_Time;
+    }
+}
 
 void NetworkSystem::UpdateHeartbeats(f32 dt) {
+    // Answer reliable traffic in the SAME frame it arrived. The payload does
+    // not matter; every packet header carries this connection's ack sequence
+    // and bitfield, which is what retires the sender's outbox.
+    {
+        const std::vector<u8> empty;
+        for (auto& conn : m_Connections) {
+            if (conn.ackPending && conn.state == ConnectionState::Connected) {
+                conn.ackPending = false;
+                SendPacket(conn.address, MessageType::Heartbeat, empty);
+            }
+        }
+    }
+
     m_HeartbeatTimer += dt;
     if (m_HeartbeatTimer < HEARTBEAT_INTERVAL) return;
     m_HeartbeatTimer -= HEARTBEAT_INTERVAL;
@@ -1484,32 +1771,52 @@ void NetworkSystem::CheckTimeouts(f32 dt) {
 }
 
 void NetworkSystem::UpdateReliableMessages(f32 dt) {
+    (void)dt;
+
+    // A retransmit is re-QUEUED rather than sent here, so it goes out through
+    // the same budget a first send does. Retransmitting 171 fragments the
+    // instant their retry timer expires is the same burst the pacing exists to
+    // avoid, and it would arrive at a receiver that is already rate-limiting.
     for (auto it = m_ReliableOutbox.begin(); it != m_ReliableOutbox.end();) {
-        f32 elapsed = m_Time - it->lastSendTime;
+        if (!it->sent) { ++it; continue; }   // Still waiting on the send budget
+
+        const f32 elapsed = m_Time - it->lastSendTime;
         if (elapsed >= RELIABLE_RETRY_INTERVAL) {
             if (it->retryCount >= RELIABLE_MAX_RETRIES) {
-                ENJIN_LOG_WARN(Network, "NetworkSystem: Reliable message dropped after %d retries",
-                               RELIABLE_MAX_RETRIES);
-                it = m_ReliableOutbox.erase(it);
+                // Abandon the WHOLE message, not just this chunk. Dropping one
+                // fragment leaves the receiver holding an incomplete reassembly
+                // it can never finish, while the sender carries on as though it
+                // had delivered -- silence on both sides. The receiver's own
+                // reassembly timeout eventually reclaims the buffers.
+                const u32 lostId = it->messageId;
+                const NetworkAddress lostTarget = it->target;
+                const u16 lostFrag = it->fragIndex;
+                const u16 lostCount = it->fragCount;
+                if (lostCount > 1) {
+                    ENJIN_LOG_ERROR(Network,
+                        "NetworkSystem: Reliable message %u abandoned after %d retries on fragment %u of %u",
+                        lostId, RELIABLE_MAX_RETRIES, lostFrag, lostCount);
+                } else {
+                    ENJIN_LOG_WARN(Network, "NetworkSystem: Reliable message dropped after %d retries",
+                                   RELIABLE_MAX_RETRIES);
+                }
+                it = std::remove_if(m_ReliableOutbox.begin(), m_ReliableOutbox.end(),
+                        [&](const ReliableMessage& rm) {
+                            return rm.messageId == lostId && rm.target == lostTarget;
+                        });
+                m_ReliableOutbox.erase(it, m_ReliableOutbox.end());
+                it = m_ReliableOutbox.begin();
                 continue;
             }
-
-            // Retransmit
-            // H2 fix: capture the new outer sequence so ProcessAck can match acks
-            ConnectionInfo* retryConn = FindConnectionByAddress(it->target);
-            if (retryConn) {
-                it->sequence = retryConn->localSequence; // will be used by SendPacket
-            }
-            std::vector<u8> wrappedPayload;
-            WriteU16(wrappedPayload, it->sequence);
-            wrappedPayload.insert(wrappedPayload.end(), it->data.begin(), it->data.end());
-            SendPacket(it->target, MessageType::ReliableMessage, wrappedPayload);
-            it->lastSendTime = m_Time;
+            it->sent = false;
             it->retryCount++;
         }
         ++it;
     }
+
+    FlushPendingReliable();
 }
+
 
 void NetworkSystem::SendEntitySnapshots() {
     if (!m_World || m_Connections.empty()) return;

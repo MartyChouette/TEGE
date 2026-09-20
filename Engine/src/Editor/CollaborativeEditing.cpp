@@ -820,11 +820,14 @@ void CollaborativeEditingSystem::HandleSyncRequest(u8 senderId, const u8* /*data
         sceneJson = m_OnSceneSyncRequest();
     }
 
-    // S-H10: Cap sync response size to 64MB to prevent unbounded allocation
-    static constexpr size_t MAX_SYNC_SIZE = 64 * 1024 * 1024;
+    // S-H10 capped this at 64 MB to prevent unbounded allocation, but the
+    // transport refuses a reliable message over RELIABLE_MAX_MESSAGE_BYTES, so
+    // a scene between the two limits passed this check and was then dropped a
+    // layer down. One limit, owned by the layer that enforces it.
     if (!sceneJson.empty()) {
-        if (sceneJson.size() > MAX_SYNC_SIZE) {
-            ENJIN_LOG_ERROR(Editor, "Collab: Scene JSON too large for sync (%zu bytes, max 64MB)", sceneJson.size());
+        if (sceneJson.size() > Networking::RELIABLE_MAX_MESSAGE_BYTES) {
+            ENJIN_LOG_ERROR(Editor, "Collab: Scene JSON too large for sync (%zu bytes, max %u)",
+                            sceneJson.size(), Networking::RELIABLE_MAX_MESSAGE_BYTES);
         } else {
             auto payload = reinterpret_cast<const u8*>(sceneJson.data());
             m_Network->CallRPC(RPC_SYNC_RESPONSE, senderId, payload, static_cast<u32>(sceneJson.size()));
