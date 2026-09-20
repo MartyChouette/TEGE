@@ -7541,6 +7541,15 @@ void RenderSystem::FlushPendingChanges() {
         if (m_RTInitialized && m_RTDummyImageView && m_RTDummySampler && !m_DescriptorSets.empty()) {
             CreateDescriptorSets();
         }
+        // The scene's RT sub-settings could not be applied when it asked for
+        // them: the subsystems did not exist yet, so every pointer-guarded
+        // block in ApplyToRuntime was skipped and they came up with defaults
+        // (reflections, shadows, AO and GI all default OFF). Apply them now
+        // that the subsystems are real, or enabling ray tracing in a scene
+        // initialises ray tracing with every feature switched off.
+        if (m_RTInitialized && m_ReapplyRTSettings) {
+            m_ReapplyRTSettings();
+        }
     }
 
     // Re-assert the froxel volume on binding 23 of every set-0 descriptor set.

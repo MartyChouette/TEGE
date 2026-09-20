@@ -772,118 +772,24 @@ void SceneRenderSettings::ApplyToRuntimeUnclamped(ECS::RenderSystem* rs, PostPro
         rs->SetGeometryOutlineWidth(geometryOutlineWidth);
         rs->SetGeometryOutlineColor(geometryOutlineColor);
 
-        // Ray Tracing
+        // Every RT sub-setting lives in ApplyRayTracingToRuntime so it can run a
+        // SECOND time after a deferred bring-up. Enabling ray tracing does not
+        // create the subsystems -- it schedules them for the next
+        // FlushPendingChanges -- so on the apply that turns RT ON, every
+        // GetRTx() below is null and every setting here is dropped, leaving the
+        // subsystems to come up with their defaults, which are OFF.
 #if !ENJIN_RENDERER_WEBGPU
-        rs->SetRayTracingEnabled(rtEnabled);
-        rs->SetRTMode(rtMode);
-        if (auto* rtShadows = rs->GetRTShadows()) {
-            rtShadows->GetConfig().enabled = rtShadowsEnabled;
-            rtShadows->GetConfig().maxDistance = rtShadowMaxDistance;
-            rtShadows->GetConfig().radius = rtShadowRadius;
+        const bool rtWasInitialised = rs->IsRayTracingInitialized();
+#endif
+        ApplyRayTracingToRuntime(rs);
+#if !ENJIN_RENDERER_WEBGPU
+        if (rtEnabled && !rtWasInitialised) {
+            SceneRenderSettings pending = *this;
+            rs->SetDeferredRTSettingsCallback([rs, pending]() {
+                pending.ApplyRayTracingToRuntime(rs);
+            });
         }
-        if (auto* rtReflect = rs->GetRTReflections()) {
-            rtReflect->GetConfig().enabled = rtReflectionsEnabled;
-            rtReflect->GetConfig().maxDistance = rtReflectionMaxDistance;
-            rtReflect->GetConfig().roughnessThreshold = rtReflectionRoughnessThreshold;
-            rtReflect->GetConfig().sdfFallback = rtReflectionSDFFallback;
-            rtReflect->GetConfig().sdfMaxDistance = rtReflectionSDFMaxDistance;
-        }
-        if (auto* rtAO = rs->GetRTAO()) {
-            rtAO->GetConfig().enabled = rtAOEnabled;
-            rtAO->GetConfig().radius = rtAORadius;
-            rtAO->GetConfig().power = rtAOPower;
-        }
-        if (auto* rtGI = rs->GetRTGI()) {
-            rtGI->GetConfig().enabled = rtGIEnabled;
-            rtGI->GetConfig().maxDistance = rtGIMaxDistance;
-            rtGI->GetConfig().intensity = rtGIIntensity;
-            rtGI->GetConfig().bounces = rtGIBounces;
-        }
-        if (auto* rc = rs->GetRadianceCache()) {
-            rc->GetConfig().enabled = radianceCacheEnabled;
-            rc->GetConfig().tileSize = radianceCacheTileSize;
-            rc->GetConfig().maxAge = radianceCacheMaxAge;
-            rc->GetConfig().depthThreshold = radianceCacheDepthThreshold;
-            rc->GetConfig().normalThreshold = radianceCacheNormalThreshold;
-            rc->GetConfig().hysteresis = radianceCacheHysteresis;
-            rc->GetConfig().excludeDirectional = radianceCacheExcludeDirectional;
-        }
-        if (auto* pathTracer = rs->GetPathTracer()) {
-            pathTracer->GetConfig().maxBounces = rtPathTracerMaxBounces;
-            pathTracer->GetConfig().targetSPP = rtPathTracerTargetSPP;
-            pathTracer->GetConfig().fireflyClampValue = rtPathTracerFireflyClamp;
-            pathTracer->GetConfig().enableNEE = rtPathTracerNEE;
-            pathTracer->GetConfig().enableMIS = rtPathTracerMIS;
-            pathTracer->GetConfig().russianRouletteMinBounce = rtPathTracerRRMinBounce;
-            pathTracer->GetConfig().russianRouletteMinProb = rtPathTracerRRMinProb;
-        }
-        if (auto* denoiser = rs->GetSVGFDenoiser()) {
-            denoiser->GetConfig().atrousIterations = rtDenoiserIterations;
-            denoiser->GetConfig().temporalAlpha = rtDenoiserTemporalAlpha;
-        }
-        rs->SetDenoiserType(rtDenoiserType);
-        if (auto* oidn = rs->GetOIDNDenoiser()) {
-            oidn->GetConfig().quality = static_cast<Renderer::OIDNQuality>(std::min(rtOIDNQuality, 2u));
-        }
-        if (auto* restir = rs->GetReSTIR()) {
-            restir->GetConfig().enabled = restirEnabled;
-            restir->GetConfig().initialCandidates = restirInitialCandidates;
-            restir->GetConfig().distanceBias = restirDistanceBias;
-            restir->GetConfig().temporalReuse = restirTemporalReuse;
-            restir->GetConfig().temporalMaxHistory = restirTemporalMaxHistory;
-            restir->GetConfig().temporalDepthThreshold = restirTemporalDepthThreshold;
-            restir->GetConfig().temporalNormalThreshold = restirTemporalNormalThreshold;
-            restir->GetConfig().spatialReuse = restirSpatialReuse;
-            restir->GetConfig().spatialNeighbors = restirSpatialNeighbors;
-            restir->GetConfig().spatialRadius = restirSpatialRadius;
-            restir->GetConfig().spatialDepthThreshold = restirSpatialDepthThreshold;
-            restir->GetConfig().spatialNormalThreshold = restirSpatialNormalThreshold;
-        }
-        if (auto* tr = rs->GetRTTemporalReuse()) {
-            tr->GetConfig().enabled = rtTemporalReuseEnabled;
-            tr->GetConfig().historyLength = rtTemporalReuseHistoryLength;
-            tr->GetConfig().disocclusionThreshold = rtTemporalReuseDisocclusionThreshold;
-            tr->GetConfig().normalThreshold = rtTemporalReuseNormalThreshold;
-            tr->GetConfig().reuseShadows = rtTemporalReuseShadows;
-            tr->GetConfig().reuseReflections = rtTemporalReuseReflections;
-            tr->GetConfig().reuseAO = rtTemporalReuseAO;
-            tr->GetConfig().reuseGI = rtTemporalReuseGI;
-        }
-        if (auto* sc = rs->GetSurfelRadianceCache()) {
-            sc->GetConfig().enabled = surfelCacheEnabled;
-            sc->GetConfig().maxSurfels = surfelCacheMaxSurfels;
-            sc->GetConfig().surfelRadius = surfelCacheRadius;
-            sc->GetConfig().updateFraction = surfelCacheUpdateFraction;
-            sc->GetConfig().maxAge = surfelCacheMaxAge;
-            sc->GetConfig().excludeDirectional = surfelCacheExcludeDirectional;
-            sc->GetConfig().cameraRadius = surfelCacheCameraRadius;
-            sc->GetConfig().blendWeight = surfelCacheBlendWeight;
-            sc->GetConfig().normalThreshold = surfelCacheNormalThreshold;
-            sc->GetConfig().placementInterval = surfelCachePlacementInterval;
-            sc->GetConfig().raysPerSurfel = surfelCacheRaysPerSurfel;
-        }
-        if (auto* bvh = rs->GetLightBVH()) {
-            bvh->GetConfig().enabled = lightBVHEnabled;
-            bvh->GetConfig().maxLights = lightBVHMaxLights;
-            bvh->GetConfig().minLightsForBVH = lightBVHMinLightsForBVH;
-            bvh->GetConfig().rebuildEveryFrame = lightBVHRebuildEveryFrame;
-        }
-        if (auto* arb = rs->GetAdaptiveRayBudget()) {
-            arb->GetConfig().enabled = adaptiveRayBudgetEnabled;
-            arb->GetConfig().minRaysPerPixel = adaptiveRayMinPerPixel;
-            arb->GetConfig().maxRaysPerPixel = adaptiveRayMaxPerPixel;
-            arb->GetConfig().varianceThreshold = adaptiveRayVarianceThreshold;
-            arb->GetConfig().varianceScale = adaptiveRayVarianceScale;
-            arb->GetConfig().edgeBoost = adaptiveRayEdgeBoost;
-            arb->GetConfig().disocclusionBoost = adaptiveRayDisocclusionBoost;
-        }
-        if (auto* compositor = rs->GetRTCompositor()) {
-            compositor->GetConfig().shadowStrength = rtShadowStrength;
-            compositor->GetConfig().reflectionStrength = rtReflectionStrength;
-            compositor->GetConfig().aoStrength = rtAOStrength;
-            compositor->GetConfig().giStrength = rtGIStrength;
-        }
-#endif // !ENJIN_RENDERER_WEBGPU
+#endif
     }
 
     if (pp) {
@@ -2294,5 +2200,124 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     return s;
 }
 
+
+// Every RT sub-setting, in one place so it can be applied twice: once when the
+// scene is applied, and again once a deferred RT bring-up has created the
+// subsystems that were null the first time. Before this existed, a scene that
+// enabled ray tracing got ray tracing initialised with every feature OFF.
+void SceneRenderSettings::ApplyRayTracingToRuntime(ECS::RenderSystem* rs) const {
+    if (!rs) return;
+#if !ENJIN_RENDERER_WEBGPU
+        rs->SetRayTracingEnabled(rtEnabled);
+        rs->SetRTMode(rtMode);
+        if (auto* rtShadows = rs->GetRTShadows()) {
+            rtShadows->GetConfig().enabled = rtShadowsEnabled;
+            rtShadows->GetConfig().maxDistance = rtShadowMaxDistance;
+            rtShadows->GetConfig().radius = rtShadowRadius;
+        }
+        if (auto* rtReflect = rs->GetRTReflections()) {
+            rtReflect->GetConfig().enabled = rtReflectionsEnabled;
+            rtReflect->GetConfig().maxDistance = rtReflectionMaxDistance;
+            rtReflect->GetConfig().roughnessThreshold = rtReflectionRoughnessThreshold;
+            rtReflect->GetConfig().sdfFallback = rtReflectionSDFFallback;
+            rtReflect->GetConfig().sdfMaxDistance = rtReflectionSDFMaxDistance;
+        }
+        if (auto* rtAO = rs->GetRTAO()) {
+            rtAO->GetConfig().enabled = rtAOEnabled;
+            rtAO->GetConfig().radius = rtAORadius;
+            rtAO->GetConfig().power = rtAOPower;
+        }
+        if (auto* rtGI = rs->GetRTGI()) {
+            rtGI->GetConfig().enabled = rtGIEnabled;
+            rtGI->GetConfig().maxDistance = rtGIMaxDistance;
+            rtGI->GetConfig().intensity = rtGIIntensity;
+            rtGI->GetConfig().bounces = rtGIBounces;
+        }
+        if (auto* rc = rs->GetRadianceCache()) {
+            rc->GetConfig().enabled = radianceCacheEnabled;
+            rc->GetConfig().tileSize = radianceCacheTileSize;
+            rc->GetConfig().maxAge = radianceCacheMaxAge;
+            rc->GetConfig().depthThreshold = radianceCacheDepthThreshold;
+            rc->GetConfig().normalThreshold = radianceCacheNormalThreshold;
+            rc->GetConfig().hysteresis = radianceCacheHysteresis;
+            rc->GetConfig().excludeDirectional = radianceCacheExcludeDirectional;
+        }
+        if (auto* pathTracer = rs->GetPathTracer()) {
+            pathTracer->GetConfig().maxBounces = rtPathTracerMaxBounces;
+            pathTracer->GetConfig().targetSPP = rtPathTracerTargetSPP;
+            pathTracer->GetConfig().fireflyClampValue = rtPathTracerFireflyClamp;
+            pathTracer->GetConfig().enableNEE = rtPathTracerNEE;
+            pathTracer->GetConfig().enableMIS = rtPathTracerMIS;
+            pathTracer->GetConfig().russianRouletteMinBounce = rtPathTracerRRMinBounce;
+            pathTracer->GetConfig().russianRouletteMinProb = rtPathTracerRRMinProb;
+        }
+        if (auto* denoiser = rs->GetSVGFDenoiser()) {
+            denoiser->GetConfig().atrousIterations = rtDenoiserIterations;
+            denoiser->GetConfig().temporalAlpha = rtDenoiserTemporalAlpha;
+        }
+        rs->SetDenoiserType(rtDenoiserType);
+        if (auto* oidn = rs->GetOIDNDenoiser()) {
+            oidn->GetConfig().quality = static_cast<Renderer::OIDNQuality>(std::min(rtOIDNQuality, 2u));
+        }
+        if (auto* restir = rs->GetReSTIR()) {
+            restir->GetConfig().enabled = restirEnabled;
+            restir->GetConfig().initialCandidates = restirInitialCandidates;
+            restir->GetConfig().distanceBias = restirDistanceBias;
+            restir->GetConfig().temporalReuse = restirTemporalReuse;
+            restir->GetConfig().temporalMaxHistory = restirTemporalMaxHistory;
+            restir->GetConfig().temporalDepthThreshold = restirTemporalDepthThreshold;
+            restir->GetConfig().temporalNormalThreshold = restirTemporalNormalThreshold;
+            restir->GetConfig().spatialReuse = restirSpatialReuse;
+            restir->GetConfig().spatialNeighbors = restirSpatialNeighbors;
+            restir->GetConfig().spatialRadius = restirSpatialRadius;
+            restir->GetConfig().spatialDepthThreshold = restirSpatialDepthThreshold;
+            restir->GetConfig().spatialNormalThreshold = restirSpatialNormalThreshold;
+        }
+        if (auto* tr = rs->GetRTTemporalReuse()) {
+            tr->GetConfig().enabled = rtTemporalReuseEnabled;
+            tr->GetConfig().historyLength = rtTemporalReuseHistoryLength;
+            tr->GetConfig().disocclusionThreshold = rtTemporalReuseDisocclusionThreshold;
+            tr->GetConfig().normalThreshold = rtTemporalReuseNormalThreshold;
+            tr->GetConfig().reuseShadows = rtTemporalReuseShadows;
+            tr->GetConfig().reuseReflections = rtTemporalReuseReflections;
+            tr->GetConfig().reuseAO = rtTemporalReuseAO;
+            tr->GetConfig().reuseGI = rtTemporalReuseGI;
+        }
+        if (auto* sc = rs->GetSurfelRadianceCache()) {
+            sc->GetConfig().enabled = surfelCacheEnabled;
+            sc->GetConfig().maxSurfels = surfelCacheMaxSurfels;
+            sc->GetConfig().surfelRadius = surfelCacheRadius;
+            sc->GetConfig().updateFraction = surfelCacheUpdateFraction;
+            sc->GetConfig().maxAge = surfelCacheMaxAge;
+            sc->GetConfig().excludeDirectional = surfelCacheExcludeDirectional;
+            sc->GetConfig().cameraRadius = surfelCacheCameraRadius;
+            sc->GetConfig().blendWeight = surfelCacheBlendWeight;
+            sc->GetConfig().normalThreshold = surfelCacheNormalThreshold;
+            sc->GetConfig().placementInterval = surfelCachePlacementInterval;
+            sc->GetConfig().raysPerSurfel = surfelCacheRaysPerSurfel;
+        }
+        if (auto* bvh = rs->GetLightBVH()) {
+            bvh->GetConfig().enabled = lightBVHEnabled;
+            bvh->GetConfig().maxLights = lightBVHMaxLights;
+            bvh->GetConfig().minLightsForBVH = lightBVHMinLightsForBVH;
+            bvh->GetConfig().rebuildEveryFrame = lightBVHRebuildEveryFrame;
+        }
+        if (auto* arb = rs->GetAdaptiveRayBudget()) {
+            arb->GetConfig().enabled = adaptiveRayBudgetEnabled;
+            arb->GetConfig().minRaysPerPixel = adaptiveRayMinPerPixel;
+            arb->GetConfig().maxRaysPerPixel = adaptiveRayMaxPerPixel;
+            arb->GetConfig().varianceThreshold = adaptiveRayVarianceThreshold;
+            arb->GetConfig().varianceScale = adaptiveRayVarianceScale;
+            arb->GetConfig().edgeBoost = adaptiveRayEdgeBoost;
+            arb->GetConfig().disocclusionBoost = adaptiveRayDisocclusionBoost;
+        }
+        if (auto* compositor = rs->GetRTCompositor()) {
+            compositor->GetConfig().shadowStrength = rtShadowStrength;
+            compositor->GetConfig().reflectionStrength = rtReflectionStrength;
+            compositor->GetConfig().aoStrength = rtAOStrength;
+            compositor->GetConfig().giStrength = rtGIStrength;
+        }
+#endif // !ENJIN_RENDERER_WEBGPU
+}
 } // namespace Renderer
 } // namespace Enjin

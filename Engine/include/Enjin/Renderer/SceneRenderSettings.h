@@ -553,6 +553,12 @@ struct SceneRenderSettings {
     // applied in two of them.
     void ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSettings* pp) const;
 
+    // The ray tracing half of ApplyToRuntime, separated so it can be applied a
+    // SECOND time after a deferred RT bring-up. Enabling ray tracing only
+    // SCHEDULES the subsystems, so the first apply finds every GetRTx() null
+    // and silently drops the scene's RT settings.
+    void ApplyRayTracingToRuntime(ECS::RenderSystem* rs) const;
+
     // The same work with no tier applied. Used by ApplyToRuntime once it has
     // built the clamped copy; call it directly only when you have already
     // clamped, or you deliberately want the authored values.

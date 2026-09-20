@@ -110,6 +110,7 @@ namespace ECS { struct HandIKComponent; struct AnimatorComponent; }
 #include <unordered_map>
 #include <unordered_set>
 #include <memory>
+#include <functional>
 #include <vector>
 #include "Enjin/Renderer/RenderQualitySettings.h"
 #include "Enjin/Renderer/PaletteCycle.h"
@@ -1466,10 +1467,34 @@ public:
     // flush. InitializeRayTracing used to run ONCE at RenderSystem::Initialize
     // — before any scene could set rtEnabled — so the whole RT stack was
     // unreachable at runtime (every rtEnabled scene rendered pure raster).
+    bool IsRayTracingInitialized() const { return m_RTInitialized; }
+
     void SetRayTracingEnabled(bool enabled) {
         if (enabled == m_RTEnabled) return;
         m_RTEnabled = enabled;
         if (enabled && !m_RTInitialized) m_PendingRTInit = true;
+    }
+
+    // Re-apply the scene's render settings once the deferred RT bring-up has
+    // finished creating the subsystems.
+    //
+    // Without this, every RT feature a scene authors is silently dropped. The
+    // apply path does `SetRayTracingEnabled(true)` and then, a few lines later,
+    // `if (auto* rtReflect = GetRTReflections()) { ...enabled = ... }` -- and at
+    // that moment the subsystems DO NOT EXIST, because enabling only sets
+    // m_PendingRTInit and the real bring-up happens in FlushPendingChanges a
+    // frame later. So every one of those pointer-guarded blocks is skipped, the
+    // subsystems are then created with their DEFAULTS (reflections, shadows, AO
+    // and GI all default to enabled = false), and a scene that asked for ray
+    // traced reflections gets ray tracing initialised with reflections off.
+    //
+    // Measured: a scene with rtEnabled and rtReflectionsEnabled logged
+    // "reflections=yes", built its BLAS and TLAS, and rendered a frame
+    // byte-identical to one with the reflection shader replaced by a constant
+    // -- because the dispatch guard reads that same defaulted config and the
+    // pass never ran.
+    void SetDeferredRTSettingsCallback(std::function<void()> cb) {
+        m_ReapplyRTSettings = std::move(cb);
     }
 
     // GPU compute skinning (ADR-0002 Phase 1, Vulkan-only). Default OFF: when disabled the
@@ -3296,6 +3321,9 @@ private:
     bool m_RTEnabled = false;
     bool m_RTInitialized = false;   // InitializeRayTracing completed successfully
     bool m_PendingRTInit = false;   // RT enabled post-boot; init at next flush
+    // Runs right after a deferred RT init so the scene's RT sub-settings, which
+    // could not be applied while the subsystems were null, are applied now.
+    std::function<void()> m_ReapplyRTSettings;
     // GPU compute skinning feature flag (ADR-0002 Phase 1). Default OFF. Declared outside the
     // Vulkan-only block so the inline setter/getter compile on every backend; only the Vulkan
     // path acts on it.
