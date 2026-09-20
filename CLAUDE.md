@@ -294,6 +294,76 @@ A symptom shows up in a project, so the project is where you look, and project d
 - **`Accessibility::ApplyTextScale` is the one place that knows which systems draw text** (UI + subtitles + announcer). Push font scale through it, never `uiSystem.SetFontScale` alone, or subtitles and the screen-reader bar silently stay unscaled
 - **The touch overlay compiles on all platforms.** `EnjinPlayer --touch` and editor View > Simulate Touch Controls make the mouse one touch. Game-specific buttons (Playground SLO-MO) are `Custom0..7` actions named+bound from script plus `Touch_AddActionButton`, never hardcoded ImGui windows in a player
 
+### Networking
+- **The handshake carries no HMAC trailer, and the exemption list exists TWICE.**
+  Authenticated packets are `[PacketHeader | Payload | AuthSequence(4) | HMAC(32)]`,
+  and the 36-byte trailer is stripped before the payload-size check. A client has
+  no session key until `SessionKeyExchange` arrives, so it can neither verify nor
+  strip a trailer before then: `ConnectionRequest`, `ConnectionAccept`,
+  `ConnectionReject` and `SessionKeyExchange` are all exempt, on BOTH sides.
+  `SendPacket` and the receive path each hold their own copy of that list and the
+  two must match. When only `ConnectionRequest` was exempt, every client dropped
+  the host's accept as "Payload size mismatch (header=25, actual=61)", exactly 36
+  bytes over, and sat in Connecting forever -- so NO client could connect, LAN
+  multiplayer included, while the editor and the host both looked healthy. The
+  comment above the check claimed `SessionKeyExchange` was exempt when it was not
+  (fixed 2026-09-19)
+- **`NetworkSystem::Update` early-returns on `!m_Enabled`, and only PlayMode's
+  play-start path calls `SetEnabled(true)`.** Anything wanting network traffic
+  outside play (collaborative editing) must enable and pump it itself. Gating
+  that pump on `IsActive()` DEADLOCKS a joining client: it sits in Joining until
+  the accept arrives, which it cannot receive while the pump waits for a state
+  only receiving can reach
+- **Never test `IsConnected()` on the line after `JoinGame`.** The accept is a
+  round trip away, so a synchronous test of an asynchronous connect is always
+  false. Retry from Update, above any IsActive guard, since Joining is not active
+- **`SendReliable` wraps its message in a `ReliableMessage` packet, and the
+  receive switch must have a case for it.** It did not, so EVERY reliable message
+  in the engine fell into `default: break;` and was discarded -- collab sync
+  requests, edit operations, ownership requests, every reliable RPC. What hid it
+  for so long is that the ack rides the NEXT packet header and `ProcessAck` runs
+  before dispatch, so the receiver discarded the payload and then acked the packet
+  that carried it: reliable delivery reported success for a message it never
+  dispatched. The unwrap and the arriving-packet path now share `DispatchMessage`,
+  so the two cannot drift again (fixed 2026-09-19)
+- **A retransmit is a NEW packet at every layer except one.** It takes a fresh
+  outer sequence and a fresh auth sequence, so neither the ack window nor the
+  replay window can tell it from a first delivery. `ReliableMessage::messageId`
+  is the only field that survives a retransmit unchanged, and the receiver
+  de-duplicates on `(messageId, fragIndex)`. Without it, a reliable edit whose
+  ack was lost is applied twice, and for a scene edit that is not a no-op
+- **Reliability is read from the SENDER's own RPC registry.** A peer that calls
+  an RPC it never registered sends it unreliably whatever the other end declared
+  -- the same message with a different delivery guarantee depending on who is
+  talking. Register the name on both ends; the caller needs no handler, only the
+  declaration. `ResolveRPCReliability` warns once per name rather than silently
+  downgrading
+- **Nothing below the reliable layer fragments, and an oversized datagram is
+  DISCARDED by `recvfrom`, not truncated.** The receive buffer is
+  `MAX_PACKET_SIZE` (1400), so anything bigger simply vanished with no error on
+  either side -- which is what a scene sync is. `SendReliable` now splits into
+  `RELIABLE_CHUNK_PAYLOAD` chunks that are acked and retransmitted individually
+  and reassembled per `(sender, messageId)`. The RPC size field is `u32`, because
+  a scene is routinely over the 64 KB a `u16` could express
+- **Fragmenting a large message produces hundreds of datagrams at once, and
+  sending them in one frame trips the RECEIVER's rate limiter** -- which is a DoS
+  guard, so the sender paces instead, at `kReliableSendShare` (60%) of the
+  configured rate. The other 40% is for heartbeats, acks and snapshots, which
+  drain the same bucket at the receiver: pacing at 100% overshoots by a little
+  every second, and over a long transfer that is enough to lose chunks. Measured
+  at 100%: every size up to 120 fragments arrived and 171 did not. **Retransmits
+  go through the same budget**, or the retry timer re-creates the burst it exists
+  to avoid
+- **An ack only rides an outgoing packet, and with nothing to send the only
+  carrier was the 1 Hz heartbeat** -- five times slower than the 0.2s retry
+  interval, so every fragment retransmitted several times before its ack could
+  possibly arrive. `ConnectionInfo::ackPending` sends one in the frame reliable
+  traffic lands
+- **A fragment that exhausts its retries must abandon the WHOLE message, loudly.**
+  Dropping the one chunk leaves the receiver holding a reassembly it can never
+  finish while the sender carries on as though it had delivered: silence on both
+  sides. The receiver's `RELIABLE_REASSEMBLY_TIMEOUT` reclaims the buffers
+
 ### Platform Integration
 - **A change inside a platform guard is UNVERIFIED until that platform builds it, and there are THREE.** Windows, Linux (WSL Ubuntu reproduces CI exactly) and web all have to compile. A broken string literal inside a `#else` built clean on MSVC four times before Linux caught it; a `#include <execinfo.h>` under `ENJIN_PLATFORM_LINUX` broke the web build, because **Emscripten reports itself as Linux** and takes the POSIX branch. Anything POSIX-only needs `#if !defined(__EMSCRIPTEN__)` around it
 - **Opening a file, a folder, a URL or a built game goes through `Enjin/Platform/Desktop.h`** (`OpenInDesktop` / `RevealInFileManager` / `OpenUrlPreferChromium` / `LaunchDetached`) — never a fresh `ShellExecuteA` / `fork`+`execlp` / `posix_spawnp` at the call site. Five hand-rolled variants existed and most had a Windows branch with an empty `#else`, so on Linux Open Folder, Run in Browser, Show in Explorer and Launch game all silently did nothing (one of them printed "Launching game..." while launching nothing). Every function returns whether the action started — report failure, do not imply success

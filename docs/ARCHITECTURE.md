@@ -493,6 +493,66 @@ Alternative render path: geometry-only pass writes triangle ID + instance ID to 
 - Memory usage tracking
 - ImGui overlay panel with graphs, progress bars, detailed scope table
 
+### Networking System
+
+- `NetworkSystem` - peer-hosted UDP. One player's machine is the host; there is
+  no separate server program. LAN or a port-forwarded direct IP; there is no
+  relay, no NAT traversal and no matchmaking (see `_docs_internal/architecture/`
+  adr-0007 for the plan)
+- **No web transport.** `TransportFactory` returns `nullptr` on web. A browser
+  build has no networking at all
+- `NetworkIdentity` / `NetworkTransform` components mark what replicates
+- **Packet layout:** `[PacketHeader | Payload | AuthSequence(4) | HMAC(32)]`.
+  The 36-byte auth trailer is appended on send and stripped on receive before
+  the payload-size check
+- **Reliable delivery** wraps the message in a `ReliableMessage` packet:
+  `[u16 outerSequence][u32 messageId][u16 fragIndex][u16 fragCount][u8 innerType][chunk]`.
+  The outer sequence is what an ack matches; the ack itself rides the next
+  packet header back rather than travelling as its own message. The message id
+  is the only field a retransmit leaves unchanged, so it is both the
+  de-duplication key (with the fragment index) and the reassembly key
+- **Fragmentation** lives in that layer and nowhere else. Nothing below it
+  splits a message, and an oversized datagram is discarded by `recvfrom` rather
+  than truncated, so a message over `MAX_PACKET_SIZE` (1400) used to vanish
+  silently -- which is what a scene sync is. `SendReliable` splits into
+  `RELIABLE_CHUNK_PAYLOAD` chunks, each acked and retransmitted on its own, and
+  the receiver reassembles per `(sender, messageId)` with a timeout that
+  reclaims a message that stopped arriving
+- **Outgoing reliable traffic is paced** at `kReliableSendShare` of the
+  configured rate limit, retransmits included. A few hundred fragments sent in
+  one frame would trip the receiver's own rate limiter, and the remaining share
+  is what heartbeats, acks and snapshots need from the same bucket. A large
+  transfer is therefore bounded by `maxBytesPerSecond` in
+  `config/network_settings.json`, not by the link
+- **The four handshake messages carry no trailer**: `ConnectionRequest`,
+  `ConnectionAccept`, `ConnectionReject`, `SessionKeyExchange`. They are pre-key
+  by necessity, since a client has no session key until the exchange lands and
+  can neither verify nor strip a trailer before then. The exemption list exists
+  twice, in `SendPacket` and in the receive path, and the two must match: when
+  they did not, every client dropped the host's `ConnectionAccept` as a payload
+  size mismatch exactly 36 bytes over and sat in `Connecting` forever, which is
+  to say no client could connect at all (fixed 2026-09-19)
+- Per-sender token-bucket rate limiting and a violation/ban window, configured
+  from `config/network_settings.json`
+
+### Collaborative Editing
+
+- `CollaborativeEditingSystem` rides `NetworkSystem` with four RPCs: edit
+  operation, scene-sync request, scene-sync response, peer cursor
+- Conflict resolution is Lamport-clock last-writer-wins, not operational
+  transform, whatever older notes say
+- The editor pumps its own network tick, so a session runs in edit mode rather
+  than only during play. Two instances are drivable from the command line:
+  `--collab-host`, `--collab-join`, `--collab-name`, `--collab-frames`
+- **Status: incomplete.** A client connects, is assigned a player id and
+  requests the scene sync. The host's side of that exchange was never reached
+  because the reliable channel discarded the request (fixed 2026-09-19, along
+  with the fragmentation a scene-sized response needs), but the sync completing
+  has still not been observed in a live two-editor session, and the collab
+  layer's own 64 MB sync ceiling disagrees with the transport's
+  `RELIABLE_MAX_MESSAGE_BYTES`. `CollaborativeEditingUI`, the only peer-cursor
+  renderer, is never instantiated. Tracked in `_docs_internal/BACKLOG.md`
+
 ### Plugin System
 
 - `IPlugin` interface: `OnLoad()`, `OnUnload()`, `OnUpdate()`, `GetName()`, `GetVersion()`

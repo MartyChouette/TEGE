@@ -76,7 +76,16 @@ material struct is 144 bytes and shared, so a field always *serializes*; whether
 the web shader reads it is the question, and today most do not.
 
 Known-working on web: base colour, metallic/roughness, normal maps, emissive,
-alpha modes, vertex snapping, dither modes, palette-indexed, lightmapped.
+alpha modes, vertex snapping, dither modes, palette-indexed, lightmapped,
+height maps (parallax occlusion), affine texturing, stipple, and the three retro
+shading modes (`flatShading`, `uvQuantize`, `gouraudOnly`).
+
+**There is no longer any capability in the Vulkan material flag word that WebGPU
+lacks** (closed 2026-09-18, bit 10 last). The two flag words still do not mean
+the same thing bit for bit: 3, 4, 5, 11, 21, 22 and 23 agree, and bits 6 and 7
+are different capabilities per backend, which is a trap and not a gap. Web
+parallax bounds its march at 32 steps where desktop loops unbounded, because a
+runaway on a browser GPU hangs the device rather than dropping a frame.
 
 **Everything else on a material should be assumed absent on web until it has a
 row in this table.** That is deliberately pessimistic, because the failure is
@@ -94,6 +103,8 @@ silent: the field saves, the scene loads, the look is wrong, and nothing says so
 | Save system | Same | IndexedDB-backed `/saves/`, synced after each write. |
 | Input, touch, rebinding | Same | Browser key events land between frames; the web path latches edges. |
 | Level streaming | Same | Lazy pak filesystem. |
+| 2D weather | Same | Fixed 2026-09-18. `WeatherSystem::SetMode2D` switches precipitation from a volume around the camera to a sheet falling down the screen. The editor and the desktop player drive it off the scene classification; the web player never called it, so a 2D game exported to a browser got volume-mode weather. The same scene looked right in the editor and on desktop, which is why it survived. |
+| Accessibility (screen reader, colourblind modes) | Same | Fixed 2026-09-18, three gaps. The Announcer was constructed, enabled and ticked, but never connected to `UISystem`, so menu navigation was silent on web while the identical build read every control aloud on desktop. Colourblind mode 8 (Achromatomaly) fell through to the tritanopia matrix, giving a blue-yellow correction where a desaturation was asked for; mode 7 used Rec.601 luminance where desktop uses Rec.709. Error redistribution was a third of the desktop amount. |
 | Multiplayer / networking | **Absent** | A browser build has no network transport at all: `TransportFactory` returns `nullptr` on web, because the WebSocket transport the enum and headers describe is not implemented. Desktop multiplayer is UDP on a LAN or a port-forwarded direct IP. Planned in adr-0007 (hosted relay + room-code matchmaking); until then, do not design a web game around multiplayer. |
 | Local / couch co-op (one machine) | Same | Multiple gamepads work: the Emscripten HTML5 Gamepad API is wired in `Core/src/Platform/Input.cpp` and sampled every frame. A shared-screen co-op game needs no network and no server on web. |
 | Splitscreen | **Absent** | `RenderSplitscreen` is defined only in the Vulkan half of `RenderSystem.cpp` and appears nowhere in the web half. Shared-screen local co-op works; split views do not. |

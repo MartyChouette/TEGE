@@ -27,8 +27,8 @@ Working toward 1.0 in summer 2027. The big pieces, ticked when they work end to 
 - [x] Scene editing, gizmos, undo, command palette
 - [x] Shader graph, dialogue trees, animation graphs
 - [x] Pixel editor, vector drawing, sprite sheet import
-- [ ] Terrain sculpting
-- [ ] Tilemap painter
+- [x] Terrain sculpting, including caves dug into the surface
+- [x] Tilemap painter
 - [ ] Visual UI layout editor
 - [ ] Texture and vertex weight painting
 

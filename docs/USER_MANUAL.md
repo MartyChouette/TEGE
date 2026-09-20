@@ -216,6 +216,24 @@ Panels display helpful empty-state messages when there is nothing to show:
 | `F11` | Toggle focus mode (fullscreen game view) |
 | `Ctrl` + `B` | Toggle Creative Mode (build surface) |
 
+### Undo
+
+`Ctrl` + `Z` walks back 100 steps of scene editing. It covers moving, rotating
+and scaling, creating, deleting, renaming and reparenting entities, adding and
+removing components, painting a tilemap, each creative-mode placement, and every
+field you edit in the Inspector.
+
+That includes the colour pickers. All of them: material and light colours,
+particle gradients, the skybox and 2D water colours, layer colours, palette
+entries. Alpha comes back with the colour rather than staying where the drag
+left it, so an opacity or a UI tint reverts whole.
+
+The sub-editors keep their own undo, because they are editing their own
+documents rather than the scene: Vector Drawing, Pixel Editor, Particle Graph,
+Shader Graph and the Flash timeline each have a separate stack, and `Ctrl` + `Z`
+inside one of them does not reach the scene. Editor settings and the Project Hub
+are not scene state and are not undoable at all.
+
 ### Creative Mode
 
 Creative Mode is a build surface for blocking out a level. Press `Ctrl` + `B`,
@@ -1441,6 +1459,16 @@ Grid-based tile rendering for retro-style 2D games.
 | `collisionMask` | list | [] | Per-tile boolean: which tiles are solid. |
 
 Helper methods: `GetTile(x, y)` and `SetTile(x, y, tileIndex)`.
+
+**Painting tiles.** Tick **Edit Mode (Viewport Brush)** in the Tilemap inspector.
+Set **Brush Tile** to the index you want, then left-drag in the viewport to
+paint and right-drag to erase. Viewport picking is off while edit mode is on, so
+a stroke cannot deselect the tilemap you are painting. One stroke is one undo
+step, however many cells it covered.
+
+The **Tile Editor** tree below it shows the tileset as a palette when the
+component has a `tilesetPath`: click a tile there to make it the brush, instead
+of counting indices by hand.
 
 #### Camera2DBoundsComponent
 
@@ -4437,7 +4465,7 @@ Enjin loads its runtime networking configuration from a JSON file so multiplayer
 
 **Notes**
 
-The `rateLimit` block controls per-sender packet and bandwidth throttling with a token-bucket burst allowance. The `security` block determines how many violations within a rolling window will trigger a temporary ban and optional kick. For competitive or high-traffic games, raise `maxBytesPerSecond`, `burstBytes`, and/or `maxPacketsPerSecond` to match your netcode needs.
+The `rateLimit` block controls per-sender packet and bandwidth throttling with a token-bucket burst allowance. It also bounds **bulk transfer**, which is easy to miss: anything sent reliably and larger than one datagram is split into chunks and paced out at a share of these numbers, so a large transfer takes as long as `maxBytesPerSecond` allows however fast the connection is. The defaults are sized for gameplay traffic. The `security` block determines how many violations within a rolling window will trigger a temporary ban and optional kick. For competitive or high-traffic games, raise `maxBytesPerSecond`, `burstBytes`, and/or `maxPacketsPerSecond` to match your netcode needs.
 
 ---
 
