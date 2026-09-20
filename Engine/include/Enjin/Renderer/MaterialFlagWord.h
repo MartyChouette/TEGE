@@ -53,6 +53,10 @@ struct MaterialFlagOverrides {
     bool vertexSnapping = false;
     bool uvQuantize = false;
     bool gouraudOnly = false;
+    // BuildSlotPushConstants forces this one globally too. It was missing here
+    // while the struct's comment claimed to match "every hand-written site",
+    // which is what a struct written from five of six sites looks like.
+    bool stippleTransparency = false;
 };
 
 inline i32 BuildMaterialFlagWord(const ECS::MaterialComponent& m,
@@ -78,7 +82,7 @@ inline i32 BuildMaterialFlagWord(const ECS::MaterialComponent& m,
     if (m.vertexSnapping      || global.vertexSnapping)   f |= (1 << 22);
     if (m.uvQuantize          || global.uvQuantize)       f |= (1 << 12);
     if (m.gouraudOnly         || global.gouraudOnly)      f |= (1 << 13);
-    if (m.stippleTransparency)                            f |= (1 << 23);
+    if (m.stippleTransparency || global.stippleTransparency) f |= (1 << 23);
 
     // Packed fields. Masked at the width the shader reads, so an out-of-range
     // authored value cannot bleed into the neighbouring bits -- which is the

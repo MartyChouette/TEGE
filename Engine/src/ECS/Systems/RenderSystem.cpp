@@ -1,4 +1,5 @@
 #include "Enjin/ECS/Systems/RenderSystem.h"
+#include "Enjin/Renderer/MaterialFlagWord.h"
 // Needed by EnsureTilemapMeshes, which both backend Update bodies call.
 // The other include of this sits deep inside the !WEBGPU branch.
 #include "Enjin/Renderer/HaltonSequence.h"   // jitter + ShouldApplyTemporalJitter
@@ -10830,29 +10831,26 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 texEmissive = material->cachedEmissiveTexture;
                 texMatcap = material->cachedMatcapTexture;
 
-                pushConstants.flags = 0;
-                if (material->doubleSided) pushConstants.flags |= 1;
-                if (material->castShadows) pushConstants.flags |= 2;
-                if (material->receiveShadows) pushConstants.flags |= 4;
-                pushConstants.flags |= (static_cast<i32>(material->alphaMode) << 8);
-                if (boundTexture != nullptr) pushConstants.flags |= (1 << 16);
-                if (material->normalTexture >= 0) pushConstants.flags |= (1 << 17);
-                if (material->metallicRoughnessTexture >= 0) pushConstants.flags |= (1 << 18);
-                if (material->emissiveTexture >= 0) pushConstants.flags |= (1 << 19);
-                // Height texture flag
-                if (material->heightTexture >= 0) pushConstants.flags |= (1 << 10);
-                // Retro flags (per-material)
-                if (material->flatShading) pushConstants.flags |= (1 << 20);
-                if (material->affineTexturing) pushConstants.flags |= (1 << 21);
-                if (material->vertexSnapping) pushConstants.flags |= (1 << 22);
-                if (material->stippleTransparency) pushConstants.flags |= (1 << 23);
-                if (material->uvQuantize) pushConstants.flags |= (1 << 12);
-                if (material->gouraudOnly) pushConstants.flags |= (1 << 13);
-        if (material->sdfText) pushConstants.flags |= (1 << 3);
-                if (material->sdfText) pushConstants.flags |= (1 << 3);
-                pushConstants.flags |= (static_cast<i32>(material->shadowDitherMode & 0x3) << 14);
-                pushConstants.flags |= (static_cast<i32>((material->vertexSnapResolution / 8) & 0x1F) << 24);
-                pushConstants.flags |= (static_cast<i32>(material->shadowDitherPattern & 0x7) << 29);
+                // One definition, in MaterialFlagWord.h. Bit 16 is what is BOUND
+                // while 17-19 are what is NAMED -- that asymmetry is deliberate
+                // and predates this, so it is preserved exactly rather than
+                // tidied: a material can name a texture that failed to load.
+                {
+                    Renderer::MaterialTextureBindings texBind;
+                    texBind.baseColor         = (boundTexture != nullptr);
+                    texBind.normal            = (material->normalTexture >= 0);
+                    texBind.metallicRoughness = (material->metallicRoughnessTexture >= 0);
+                    texBind.emissive          = (material->emissiveTexture >= 0);
+                    texBind.height            = (material->heightTexture >= 0);
+                    Renderer::MaterialFlagOverrides global;
+                    global.flatShading         = m_GlobalFlatShading;
+                    global.affineTexturing     = m_GlobalAffineTexturing;
+                    global.vertexSnapping      = m_GlobalVertexSnapping;
+                    global.stippleTransparency = m_GlobalStippleTransparency;
+                    global.uvQuantize          = m_GlobalUVQuantize;
+                    global.gouraudOnly         = m_GlobalGouraudOnly;
+                    pushConstants.flags = Renderer::BuildMaterialFlagWord(*material, texBind, global);
+                }
                 pushConstants.parallaxScale = material->parallaxScale;
                 // Artistic surface params (reused push constant slots)
                 pushConstants.surfaceParam1 = material->reflectivity;
@@ -10917,13 +10915,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 pushConstants.parallaxScale = 0.0f;
             }
 
-            // Global retro overrides (OR with per-material — global forces on)
-            if (m_GlobalFlatShading) pushConstants.flags |= (1 << 20);
-            if (m_GlobalAffineTexturing) pushConstants.flags |= (1 << 21);
-            if (m_GlobalVertexSnapping) pushConstants.flags |= (1 << 22);
-            if (m_GlobalStippleTransparency) pushConstants.flags |= (1 << 23);
-            if (m_GlobalUVQuantize) pushConstants.flags |= (1 << 12);
-            if (m_GlobalGouraudOnly) pushConstants.flags |= (1 << 13);
+            // Global retro overrides now ride the shared builder above.
             if (m_GlobalVertexSnapping && m_GlobalVertexSnapResolution > 0) {
                 pushConstants.flags = (pushConstants.flags & ~(0x1F << 24)) | (static_cast<i32>((m_GlobalVertexSnapResolution / 8) & 0x1F) << 24);
             }
@@ -11292,31 +11284,8 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
 
                     // Build push constants for this sub-mesh's material
                     Renderer::PushConstants subPC = pushConstants;  // Copy shared state (model, flags base)
-                    subPC.baseColor = slotMat->baseColor;
-                    subPC.metallic = slotMat->metallic;
-                    subPC.emissiveColor = slotMat->emissiveColor;
-                    subPC.roughness = slotMat->roughness;
-                    subPC.emissiveStrength = slotMat->emissiveStrength;
-                    subPC.opacity = slotMat->opacity;
-                    subPC.alphaCutoff = slotMat->alphaCutoff;
-                    subPC.parallaxScale = slotMat->parallaxScale;
-
-                    // Rebuild flags from this slot's material
-                    subPC.flags = pushConstants.flags & ((1 << 3) | (1 << 4) | (1 << 5) | (1 << 6) | (1 << 7) | (1 << 11)); // Preserve skinned, wind, water flags
-                    if (slotMat->doubleSided) subPC.flags |= 1;
-                    if (slotMat->castShadows) subPC.flags |= 2;
-                    if (slotMat->receiveShadows) subPC.flags |= 4;
-                    subPC.flags |= (static_cast<i32>(slotMat->alphaMode) << 8);
-                    if (slotMat->flatShading) subPC.flags |= (1 << 20);
-                    if (slotMat->affineTexturing) subPC.flags |= (1 << 21);
-                    if (slotMat->vertexSnapping) subPC.flags |= (1 << 22);
-                    if (slotMat->stippleTransparency) subPC.flags |= (1 << 23);
-                    if (slotMat->uvQuantize) subPC.flags |= (1 << 12);
-                    if (slotMat->gouraudOnly) subPC.flags |= (1 << 13);
-                    if (slotMat->sdfText) subPC.flags |= (1 << 3);
-                    subPC.flags |= (static_cast<i32>(slotMat->shadowDitherMode & 0x3) << 14);
-                    subPC.flags |= (static_cast<i32>((slotMat->vertexSnapResolution / 8) & 0x1F) << 24);
-                    subPC.flags |= (static_cast<i32>(slotMat->shadowDitherPattern & 0x7) << 29);
+                    // Fields and flags both come from BuildSlotPushConstants
+                    // below, once this slot's textures have resolved.
 
                     // Resolve textures for this slot's material
                     Renderer::Texture* subBoundTex = nullptr;
@@ -11370,20 +11339,10 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                     subTexEmissive = slotMat->cachedEmissiveTexture;
                     subTexMatcap = slotMat->cachedMatcapTexture;
 
-                    // Set texture flags in push constants
-                    if (subBoundTex) subPC.flags |= (1 << 16);
-                    if (slotMat->normalTexture >= 0) subPC.flags |= (1 << 17);
-                    if (slotMat->metallicRoughnessTexture >= 0) subPC.flags |= (1 << 18);
-                    if (slotMat->emissiveTexture >= 0) subPC.flags |= (1 << 19);
-                    if (slotMat->heightTexture >= 0) subPC.flags |= (1 << 10);
-
-                    // Global retro overrides
-                    if (m_GlobalFlatShading) subPC.flags |= (1 << 20);
-                    if (m_GlobalAffineTexturing) subPC.flags |= (1 << 21);
-                    if (m_GlobalVertexSnapping) subPC.flags |= (1 << 22);
-                    if (m_GlobalStippleTransparency) subPC.flags |= (1 << 23);
-                    if (m_GlobalUVQuantize) subPC.flags |= (1 << 12);
-                    if (m_GlobalGouraudOnly) subPC.flags |= (1 << 13);
+                    // Same job as the block that used to be here, in the one
+                    // place that does it. Called AFTER the textures above
+                    // resolve, because the word describes what is bound.
+                    BuildSlotPushConstants(*slotMat, pushConstants, subPC);
 
                     UpdateEntityTextureDescriptors(subBoundTex, subTexHeight, subTexNormal, subTexMR, subTexEmissive, subTexMatcap);
 
@@ -11724,27 +11683,23 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                 texEmissive = material->cachedEmissiveTexture;
                 texMatcap = material->cachedMatcapTexture;
 
-                pushConstants.flags = 0;
-                if (material->doubleSided) pushConstants.flags |= 1;
-                if (material->castShadows) pushConstants.flags |= 2;
-                if (material->receiveShadows) pushConstants.flags |= 4;
-                pushConstants.flags |= (static_cast<i32>(material->alphaMode) << 8);
-                if (boundTexture != nullptr) pushConstants.flags |= (1 << 16);
-                if (material->normalTexture >= 0) pushConstants.flags |= (1 << 17);
-                if (material->metallicRoughnessTexture >= 0) pushConstants.flags |= (1 << 18);
-                if (material->emissiveTexture >= 0) pushConstants.flags |= (1 << 19);
-                if (material->heightTexture >= 0) pushConstants.flags |= (1 << 10);
-                if (material->flatShading) pushConstants.flags |= (1 << 20);
-                if (material->affineTexturing) pushConstants.flags |= (1 << 21);
-                if (material->vertexSnapping) pushConstants.flags |= (1 << 22);
-                if (material->stippleTransparency) pushConstants.flags |= (1 << 23);
-                if (material->uvQuantize) pushConstants.flags |= (1 << 12);
-                if (material->gouraudOnly) pushConstants.flags |= (1 << 13);
-        if (material->sdfText) pushConstants.flags |= (1 << 3);
-                if (material->sdfText) pushConstants.flags |= (1 << 3);
-                pushConstants.flags |= (static_cast<i32>(material->shadowDitherMode & 0x3) << 14);
-                pushConstants.flags |= (static_cast<i32>((material->vertexSnapResolution / 8) & 0x1F) << 24);
-                pushConstants.flags |= (static_cast<i32>(material->shadowDitherPattern & 0x7) << 29);
+                // One definition, in MaterialFlagWord.h.
+                {
+                    Renderer::MaterialTextureBindings texBind;
+                    texBind.baseColor         = (boundTexture != nullptr);
+                    texBind.normal            = (material->normalTexture >= 0);
+                    texBind.metallicRoughness = (material->metallicRoughnessTexture >= 0);
+                    texBind.emissive          = (material->emissiveTexture >= 0);
+                    texBind.height            = (material->heightTexture >= 0);
+                    Renderer::MaterialFlagOverrides global;
+                    global.flatShading         = m_GlobalFlatShading;
+                    global.affineTexturing     = m_GlobalAffineTexturing;
+                    global.vertexSnapping      = m_GlobalVertexSnapping;
+                    global.stippleTransparency = m_GlobalStippleTransparency;
+                    global.uvQuantize          = m_GlobalUVQuantize;
+                    global.gouraudOnly         = m_GlobalGouraudOnly;
+                    pushConstants.flags = Renderer::BuildMaterialFlagWord(*material, texBind, global);
+                }
                 pushConstants.parallaxScale = material->parallaxScale;
                 // Artistic surface params (reused push constant slots)
                 pushConstants.surfaceParam1 = material->reflectivity;
@@ -11809,13 +11764,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                 pushConstants.parallaxScale = 0.0f;
             }
 
-            // Global retro overrides (OR with per-material — global forces on)
-            if (m_GlobalFlatShading) pushConstants.flags |= (1 << 20);
-            if (m_GlobalAffineTexturing) pushConstants.flags |= (1 << 21);
-            if (m_GlobalVertexSnapping) pushConstants.flags |= (1 << 22);
-            if (m_GlobalStippleTransparency) pushConstants.flags |= (1 << 23);
-            if (m_GlobalUVQuantize) pushConstants.flags |= (1 << 12);
-            if (m_GlobalGouraudOnly) pushConstants.flags |= (1 << 13);
+            // Global retro overrides now ride the shared builder above.
             if (m_GlobalVertexSnapping && m_GlobalVertexSnapResolution > 0) {
                 pushConstants.flags = (pushConstants.flags & ~(0x1F << 24)) | (static_cast<i32>((m_GlobalVertexSnapResolution / 8) & 0x1F) << 24);
             }
@@ -14958,35 +14907,29 @@ void RenderSystem::BuildSlotPushConstants(const MaterialComponent& slotMat,
     // material-owned bit is rebuilt from the slot below.
     out.flags = base.flags & ((1 << 3) | (1 << 4) | (1 << 5) | (1 << 6) | (1 << 7) | (1 << 11));
 
-    if (slotMat.doubleSided)    out.flags |= 1;
-    if (slotMat.castShadows)    out.flags |= 2;
-    if (slotMat.receiveShadows) out.flags |= 4;
-    out.flags |= (static_cast<i32>(slotMat.alphaMode) << 8);   // bits 8-9: the alpha test
-    if (slotMat.sdfText)              out.flags |= (1 << 3);
-    if (slotMat.flatShading)          out.flags |= (1 << 20);
-    if (slotMat.affineTexturing)      out.flags |= (1 << 21);
-    if (slotMat.vertexSnapping)       out.flags |= (1 << 22);
-    if (slotMat.stippleTransparency)  out.flags |= (1 << 23);
-    if (slotMat.uvQuantize)           out.flags |= (1 << 12);
-    if (slotMat.gouraudOnly)          out.flags |= (1 << 13);
-    out.flags |= (static_cast<i32>(slotMat.shadowDitherMode & 0x3) << 14);
-    out.flags |= (static_cast<i32>((slotMat.vertexSnapResolution / 8) & 0x1F) << 24);
-    out.flags |= (static_cast<i32>(slotMat.shadowDitherPattern & 0x7) << 29);
+    // One definition, in MaterialFlagWord.h. OR-ed into the masked draw flags
+    // above rather than replacing them: those describe the DRAW (skinning,
+    // wind, water) and a material slot cannot know them.
+    {
+        Renderer::MaterialTextureBindings texBind;
+        // A slot whose texture has not resolved yet must NOT claim one: these
+        // bits gate the samples in the shader.
+        texBind.baseColor         = (slotMat.cachedBaseColorTexture != nullptr);
+        texBind.normal            = (slotMat.normalTexture >= 0);
+        texBind.metallicRoughness = (slotMat.metallicRoughnessTexture >= 0);
+        texBind.emissive          = (slotMat.emissiveTexture >= 0);
+        texBind.height            = (slotMat.heightTexture >= 0);
 
-    // Texture-presence bits. These gate the samples in the shader, so a slot
-    // whose texture has not resolved yet must NOT claim one.
-    if (slotMat.cachedBaseColorTexture)        out.flags |= (1 << 16);
-    if (slotMat.normalTexture >= 0)            out.flags |= (1 << 17);
-    if (slotMat.metallicRoughnessTexture >= 0) out.flags |= (1 << 18);
-    if (slotMat.emissiveTexture >= 0)          out.flags |= (1 << 19);
-    if (slotMat.heightTexture >= 0)            out.flags |= (1 << 10);
+        Renderer::MaterialFlagOverrides global;
+        global.flatShading         = m_GlobalFlatShading;
+        global.affineTexturing     = m_GlobalAffineTexturing;
+        global.vertexSnapping      = m_GlobalVertexSnapping;
+        global.stippleTransparency = m_GlobalStippleTransparency;
+        global.uvQuantize          = m_GlobalUVQuantize;
+        global.gouraudOnly         = m_GlobalGouraudOnly;
 
-    if (m_GlobalFlatShading)         out.flags |= (1 << 20);
-    if (m_GlobalAffineTexturing)     out.flags |= (1 << 21);
-    if (m_GlobalVertexSnapping)      out.flags |= (1 << 22);
-    if (m_GlobalStippleTransparency) out.flags |= (1 << 23);
-    if (m_GlobalUVQuantize)          out.flags |= (1 << 12);
-    if (m_GlobalGouraudOnly)         out.flags |= (1 << 13);
+        out.flags |= Renderer::BuildMaterialFlagWord(slotMat, texBind, global);
+    }
 }
 
 u32 RenderSystem::GetSlotMaterialIndex(Entity entity, i32 slot) const {
@@ -15830,27 +15773,24 @@ void RenderSystem::RenderEntity(Entity entity) {
         texMatcap = material->cachedMatcapTexture;
 
         // Compute flags same as MaterialGPU::FromComponent
-        pushConstants.flags = 0;
-        if (material->doubleSided) pushConstants.flags |= 1;
-        if (material->castShadows) pushConstants.flags |= 2;
-        if (material->receiveShadows) pushConstants.flags |= 4;
-        pushConstants.flags |= (static_cast<i32>(material->alphaMode) << 8);
-        if (boundTexture != nullptr) pushConstants.flags |= (1 << 16);
-        if (material->normalTexture >= 0) pushConstants.flags |= (1 << 17);
-        if (material->metallicRoughnessTexture >= 0) pushConstants.flags |= (1 << 18);
-        if (material->emissiveTexture >= 0) pushConstants.flags |= (1 << 19);
-        if (material->heightTexture >= 0) pushConstants.flags |= (1 << 10);
-        // Retro flags (per-material)
-        if (material->flatShading) pushConstants.flags |= (1 << 20);
-        if (material->affineTexturing) pushConstants.flags |= (1 << 21);
-        if (material->vertexSnapping) pushConstants.flags |= (1 << 22);
-        if (material->stippleTransparency) pushConstants.flags |= (1 << 23);
-        if (material->uvQuantize) pushConstants.flags |= (1 << 12);
-        if (material->gouraudOnly) pushConstants.flags |= (1 << 13);
-        if (material->sdfText) pushConstants.flags |= (1 << 3);
-        pushConstants.flags |= (static_cast<i32>(material->shadowDitherMode & 0x3) << 14);
-        pushConstants.flags |= (static_cast<i32>((material->vertexSnapResolution / 8) & 0x1F) << 24);
-        pushConstants.flags |= (static_cast<i32>(material->shadowDitherPattern & 0x7) << 29);
+        // One definition, in MaterialFlagWord.h. This is the draw an exported
+        // game takes, so a bit that goes missing here ships.
+        {
+            Renderer::MaterialTextureBindings texBind;
+            texBind.baseColor         = (boundTexture != nullptr);
+            texBind.normal            = (material->normalTexture >= 0);
+            texBind.metallicRoughness = (material->metallicRoughnessTexture >= 0);
+            texBind.emissive          = (material->emissiveTexture >= 0);
+            texBind.height            = (material->heightTexture >= 0);
+            Renderer::MaterialFlagOverrides global;
+            global.flatShading         = m_GlobalFlatShading;
+            global.affineTexturing     = m_GlobalAffineTexturing;
+            global.vertexSnapping      = m_GlobalVertexSnapping;
+            global.stippleTransparency = m_GlobalStippleTransparency;
+            global.uvQuantize          = m_GlobalUVQuantize;
+            global.gouraudOnly         = m_GlobalGouraudOnly;
+            pushConstants.flags = Renderer::BuildMaterialFlagWord(*material, texBind, global);
+        }
         pushConstants.parallaxScale = material->parallaxScale;
         // Artistic surface params (reused push constant slots)
         pushConstants.surfaceParam1 = material->reflectivity;
@@ -15914,13 +15854,7 @@ void RenderSystem::RenderEntity(Entity entity) {
         pushConstants.parallaxScale = 0.0f;
     }
 
-    // Global retro overrides (OR with per-material — global forces on)
-    if (m_GlobalFlatShading) pushConstants.flags |= (1 << 20);
-    if (m_GlobalAffineTexturing) pushConstants.flags |= (1 << 21);
-    if (m_GlobalVertexSnapping) pushConstants.flags |= (1 << 22);
-    if (m_GlobalStippleTransparency) pushConstants.flags |= (1 << 23);
-    if (m_GlobalUVQuantize) pushConstants.flags |= (1 << 12);
-    if (m_GlobalGouraudOnly) pushConstants.flags |= (1 << 13);
+    // Global retro overrides now ride the shared builder above.
     if (m_GlobalVertexSnapping && m_GlobalVertexSnapResolution > 0) {
         pushConstants.flags = (pushConstants.flags & ~(0x1F << 24)) | (static_cast<i32>((m_GlobalVertexSnapResolution / 8) & 0x1F) << 24);
     }
