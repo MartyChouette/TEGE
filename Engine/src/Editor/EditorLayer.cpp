@@ -576,102 +576,23 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
     // Set initial window title
     UpdateWindowTitle();
 
-    // Wire collaborative editing callbacks
-    m_CollabSystem.SetOnRemoteEdit([this](const Editor::EditOperation& op) {
-        if (!m_World) return;
-        switch (op.type) {
-            case Editor::EditOpType::CreateEntity: {
-                if (!op.dataJson.empty()) {
-                    Scene::SceneSerializer::DeserializeEntityFromString(m_World, op.dataJson);
-                } else {
-                    auto entity = m_World->CreateEntity();
-                    m_World->AddComponent<ECS::TransformComponent>(entity);
-                }
-                break;
-            }
-            case Editor::EditOpType::DeleteEntity: {
-                auto entity = static_cast<ECS::Entity>(op.entityId);
-                if (m_World->GetComponent<ECS::TransformComponent>(entity)) {
-                    m_World->DestroyEntity(entity);
-                    DeselectEntity(entity);
-                }
-                break;
-            }
-            case Editor::EditOpType::RenameEntity: {
-                auto entity = static_cast<ECS::Entity>(op.entityId);
-                m_World->SetEntityName(entity, op.dataJson);
-                break;
-            }
-            case Editor::EditOpType::SetComponent: {
-                auto entity = static_cast<ECS::Entity>(op.entityId);
-                if (m_World->GetComponent<ECS::TransformComponent>(entity)) {
-                    Scene::SceneSerializer::DeserializeOneComponent(
-                        m_World, entity, op.componentKey, op.dataJson);
-                }
-                break;
-            }
-            case Editor::EditOpType::RemoveComponent: {
-                // This did nothing at all, so a peer removing a component was
-                // applied everywhere except here and the two scenes silently
-                // diverged. The serializer registry already knows how to remove
-                // any of its ~140 keys by name -- the "requires type registry
-                // lookup" this used to defer to has existed for a while.
-                auto entity = static_cast<ECS::Entity>(op.entityId);
-                if (!m_World->IsValid(entity)) break;
-                if (op.componentKey == "parent") {
-                    ECS::RemoveParent(m_World, entity);
-                } else if (!Scene::SceneSerializer::RemoveOneComponent(
-                               m_World, entity, op.componentKey)) {
-                    ENJIN_LOG_WARN(Editor,
-                        "Collab: remote removal of '%s' on entity %llu - unknown key, ignored",
-                        op.componentKey.c_str(), (unsigned long long)op.entityId);
-                }
-                break;
-            }
-            case Editor::EditOpType::ModifyTransform: {
-                auto entity = static_cast<ECS::Entity>(op.entityId);
-                auto* xform = m_World->GetComponent<ECS::TransformComponent>(entity);
-                if (xform) {
-                    xform->position = op.position;
-                    xform->rotation = Math::Quaternion::FromEuler(op.rotation);
-                    xform->scale = op.scale;
-                }
-                break;
-            }
-            case Editor::EditOpType::SetParent: {
-                // Also did nothing, and the claim above it was wrong: parenting
-                // IS an ECS relationship (ECS::SetParent, which is what the
-                // hierarchy panel calls). A remote reparent left this editor's
-                // copy of the scene with the old hierarchy.
-                auto entity = static_cast<ECS::Entity>(op.entityId);
-                if (!m_World->IsValid(entity)) break;
-                ECS::Entity newParent = ECS::INVALID_ENTITY;
-                if (!op.dataJson.empty()) {
-                    try {
-                        newParent = static_cast<ECS::Entity>(std::stoull(op.dataJson));
-                    } catch (const std::exception&) {
-                        ENJIN_LOG_WARN(Editor, "Collab: SetParent has invalid parent id '%s'",
-                                       op.dataJson.c_str());
-                        break;
-                    }
-                }
-                ECS::SetParent(m_World, entity, newParent);
-                break;
-            }
-            default: break;
-        }
-    });
-    m_CollabSystem.SetOnSceneSyncRequest([this]() -> std::string {
-        if (!m_World) return "{}";
-        Scene::SceneSerializer serializer(m_World);
-        return serializer.SaveToString();
-    });
-    m_CollabSystem.SetOnSceneSyncReceived([this](const std::string& json) {
-        if (!m_World) return;
-        ClearSelection();
-        Scene::SceneSerializer serializer(m_World);
-        serializer.LoadFromString(json, true);
-    });
+    // Collaborative editing runs through CollaborativeEditingUI.
+    //
+    // There used to be two implementations of this. EditorLayer applied remote
+    // operations with inline lambdas here, and CollaborativeEditingUI -- which
+    // nothing ever constructed -- had a fuller version of the same thing. The
+    // dead one was better: it handled component removal through the serializer
+    // registry for all ~140 keys, reparented through ECS::SetParent, validated
+    // the entity first, and carried the peer cursors and conflict dialog that
+    // the inline version had no equivalent for.
+    //
+    // Keeping the worse copy alive because it was the one being called is how
+    // both halves rot. The class owns the callbacks now; the selection clearing
+    // the inline version did before a sync replaces the scene is preserved as a
+    // hook, since that part it had right and the class did not.
+    m_CollabUI.Initialize(&m_CollabSystem, m_World, &m_SceneLockManager, &m_UndoRedo);
+    m_CollabUI.SetOnBeforeSceneReplaced([this]() { ClearSelection(); });
+    m_CollabUI.WireCallbacks();
 
     // Wire Logger output to the editor console panel
     // Record the editor thread before installing the callback: PushConsoleMessage

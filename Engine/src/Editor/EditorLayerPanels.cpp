@@ -5773,6 +5773,11 @@ void EditorLayer::DrawCollaborationPanel() {
             }
         }
 
+        // The conflict modal belongs to CollaborativeEditingUI, which is where
+        // the side-by-side comparison lives. Drawn from here because a modal has
+        // to be issued inside the window that owns the conflict list.
+        m_CollabUI.DrawConflictModal();
+
         // Operation log
         ImGui::Separator();
         if (ImGui::TreeNode("Operation Log")) {

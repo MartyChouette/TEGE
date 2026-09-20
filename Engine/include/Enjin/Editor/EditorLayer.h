@@ -80,6 +80,7 @@
 #include "Enjin/Assets/SrtImport.h"
 #include "Enjin/Editor/SceneLock.h"
 #include "Enjin/Editor/CollaborativeEditing.h"
+#include "Enjin/Editor/CollaborativeEditingUI.h"
 #include "Enjin/Editor/EditorShortcuts.h"
 #include "Enjin/Editor/EditorMode.h"
 #include "Enjin/Editor/Walkthrough.h"
@@ -298,7 +299,7 @@ public:
     void Render(VkCommandBuffer commandBuffer);            // Call DURING main render pass
 
     // Set the world to edit
-    void SetWorld(ECS::World* world) { m_World = world; m_SceneManager.SetWorld(world); m_ParallaxSystem.SetWorld(world); m_LayerSystem.SetWorld(world); }
+    void SetWorld(ECS::World* world) { m_World = world; m_SceneManager.SetWorld(world); m_ParallaxSystem.SetWorld(world); m_LayerSystem.SetWorld(world); m_CollabUI.SetWorld(world); }
     ECS::World* GetWorld() const { return m_World; }
 
     // Set the camera for the viewport
@@ -2295,6 +2296,9 @@ private:
 
     // Collaborative Editing
     CollaborativeEditingSystem m_CollabSystem;
+    // Owns the remote-edit, scene-sync and peer-cursor handling. Was dead code
+    // until 2026-09-19 while EditorLayer carried a thinner copy of the same job.
+    CollaborativeEditingUI m_CollabUI;
     char m_CollabHostIP[64] = "127.0.0.1";
     i32 m_CollabPort = 7778;
     char m_CollabUserName[64] = {};

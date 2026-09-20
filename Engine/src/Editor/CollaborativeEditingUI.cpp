@@ -97,285 +97,23 @@ void CollaborativeEditingUI::WireCallbacks() {
 // DRAW PANEL
 // ============================================================================
 
-void CollaborativeEditingUI::DrawPanel() {
-    if (!m_Collab) return;
-
-    if (!ImGui::Begin("Collaboration", nullptr, ImGuiWindowFlags_None)) {
-        ImGui::End();
-        return;
-    }
-
-    CollabSessionState state = m_Collab->GetState();
-
-    // ------------------------------------------------------------------
-    // Disconnected: show host/join controls
-    // ------------------------------------------------------------------
-    if (state == CollabSessionState::Disconnected) {
-        // Status indicator
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Status: Disconnected");
-        ImGui::Separator();
-
-        // The host/join fields are stored on EditorLayer's collab member
-        // variables (m_CollabUserName, etc.). Since this UI class is designed
-        // to work independently, we use our own small static buffers here.
-        // EditorLayer can still use its own DrawCollaborationPanel if it
-        // prefers — this class is an alternative integration path.
-        static char s_UserName[64] = {};
-        static char s_HostIP[64] = "127.0.0.1";
-        static i32 s_Port = 7778;
-
-        ImGui::Text("User Name:");
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(150);
-        ImGui::InputText("##CollabUIName", s_UserName, sizeof(s_UserName));
-
-        ImGui::Separator();
-
-        // Host
-        ImGui::Text("Port:");
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(80);
-        ImGui::InputInt("##CollabUIPort", &s_Port, 0, 0);
-        // Clamp port to valid range
-        if (s_Port < 1024) s_Port = 1024;
-        if (s_Port > 65535) s_Port = 65535;
-
-        ImGui::SameLine();
-        if (ImGui::Button("Host Session")) {
-            if (std::strlen(s_UserName) == 0) {
-                std::strncpy(s_UserName, "Host", sizeof(s_UserName) - 1);
-            }
-            bool ok = m_Collab->HostSession(static_cast<u16>(s_Port), s_UserName);
-            if (ok) {
-                WireCallbacks();
-                ENJIN_LOG_INFO(Editor, "CollabUI: Hosting session on port %d", s_Port);
-            }
-        }
-
-        ImGui::Spacing();
-
-        // Join
-        ImGui::Text("Host IP:");
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(150);
-        ImGui::InputText("##CollabUIIP", s_HostIP, sizeof(s_HostIP));
-        ImGui::SameLine();
-        if (ImGui::Button("Join Session")) {
-            if (std::strlen(s_UserName) == 0) {
-                std::strncpy(s_UserName, "Peer", sizeof(s_UserName) - 1);
-            }
-            bool ok = m_Collab->JoinSession(s_HostIP, static_cast<u16>(s_Port), s_UserName);
-            if (ok) {
-                WireCallbacks();
-                ENJIN_LOG_INFO(Editor, "CollabUI: Joining session at %s:%d", s_HostIP, s_Port);
-            }
-        }
-
-        ImGui::End();
-        return;
-    }
-
-    // ------------------------------------------------------------------
-    // Active session: status, peers, conflicts, log
-    // ------------------------------------------------------------------
-
-    // Status indicator with colored text
-    const char* stateStr = "Unknown";
-    ImVec4 stateColor = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
-    switch (state) {
-        case CollabSessionState::Hosting:
-            stateStr = "Hosting";
-            stateColor = ImVec4(0.4f, 1.0f, 0.4f, 1.0f);
-            break;
-        case CollabSessionState::Joining:
-            stateStr = "Joining...";
-            stateColor = ImVec4(1.0f, 0.8f, 0.3f, 1.0f);
-            break;
-        case CollabSessionState::Connected:
-            stateStr = "Connected";
-            stateColor = ImVec4(0.4f, 0.8f, 1.0f, 1.0f);
-            break;
-        case CollabSessionState::Syncing:
-            stateStr = "Syncing...";
-            stateColor = ImVec4(1.0f, 0.6f, 0.3f, 1.0f);
-            break;
-        default: break;
-    }
-    ImGui::TextColored(stateColor, "Status: %s", stateStr);
-
-    ImGui::SameLine(ImGui::GetContentRegionAvail().x - 100);
-    if (ImGui::Button("Leave Session")) {
-        m_Collab->LeaveSession();
-    }
-
-    ImGui::Separator();
-
-    // ------------------------------------------------------------------
-    // Conflict strategy dropdown
-    // ------------------------------------------------------------------
-    if (ImGui::TreeNode("Settings")) {
-        const char* strategies[] = {
-            "Last Writer Wins", "Host Authority", "Merge", "Ask (Manual)"
-        };
-        int currentStrategy = static_cast<int>(m_Collab->GetConflictStrategy());
-        if (ImGui::Combo("Conflict Resolution", &currentStrategy,
-                         strategies, IM_ARRAYSIZE(strategies))) {
-            m_Collab->SetConflictStrategy(
-                static_cast<ConflictStrategy>(currentStrategy));
-        }
-        ImGui::TreePop();
-    }
-
-    ImGui::Separator();
-
-    // ------------------------------------------------------------------
-    // Connected peers list
-    // ------------------------------------------------------------------
-    const auto& peers = m_Collab->GetPeers();
-    if (ImGui::TreeNodeEx("Peers", ImGuiTreeNodeFlags_DefaultOpen)) {
-        if (ImGui::BeginTable("##CollabUIPeers", 4,
-                              ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
-            ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 14);
-            ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Machine", ImGuiTableColumnFlags_WidthFixed, 100);
-            ImGui::TableSetupColumn("Editing", ImGuiTableColumnFlags_WidthFixed, 100);
-            ImGui::TableHeadersRow();
-
-            for (const auto& peer : peers) {
-                ImGui::TableNextRow();
-
-                // Colored dot
-                ImGui::TableSetColumnIndex(0);
-                PeerColor pc = GetPeerColor(peer.peerId);
-                ImU32 dotColor = peer.connected
-                    ? pc.ToImU32(255)
-                    : IM_COL32(100, 100, 100, 180);
-                ImVec2 dotCenter = ImVec2(
-                    ImGui::GetCursorScreenPos().x + 7,
-                    ImGui::GetCursorScreenPos().y + ImGui::GetTextLineHeight() * 0.5f);
-                ImGui::GetWindowDrawList()->AddCircleFilled(dotCenter, 5.0f, dotColor);
-                ImGui::Dummy(ImVec2(14, ImGui::GetTextLineHeight()));
-
-                // Name
-                ImGui::TableSetColumnIndex(1);
-                ImGui::Text("%s", peer.name.c_str());
-
-                // Machine
-                ImGui::TableSetColumnIndex(2);
-                ImGui::TextDisabled("%s", peer.machine.c_str());
-
-                // Currently editing entity
-                ImGui::TableSetColumnIndex(3);
-                if (peer.cursorEntityId != 0 && m_World) {
-                    auto* name = m_World->GetComponent<ECS::NameComponent>(
-                        static_cast<ECS::Entity>(peer.cursorEntityId));
-                    if (name) {
-                        ImGui::TextDisabled("%s", name->name.c_str());
-                    } else {
-                        ImGui::TextDisabled("#%u", peer.cursorEntityId);
-                    }
-                } else {
-                    ImGui::TextDisabled("--");
-                }
-            }
-            ImGui::EndTable();
-        }
-        ImGui::TreePop();
-    }
-
-    // ------------------------------------------------------------------
-    // Pending conflicts
-    // ------------------------------------------------------------------
-    const auto& conflicts = m_Collab->GetConflicts();
-    if (!conflicts.empty()) {
-        ImGui::Separator();
-        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f),
-                           "Conflicts (%zu)", conflicts.size());
-
-        for (usize i = 0; i < conflicts.size(); ++i) {
-            const auto& c = conflicts[i];
-            ImGui::PushID(static_cast<int>(i));
-
-            // Entity name or ID
-            std::string entityLabel;
-            if (m_World) {
-                auto* nc = m_World->GetComponent<ECS::NameComponent>(
-                    static_cast<ECS::Entity>(c.localOp.entityId));
-                if (nc) {
-                    entityLabel = nc->name;
-                }
-            }
-            if (entityLabel.empty()) {
-                entityLabel = "#" + std::to_string(c.localOp.entityId);
-            }
-
-            ImGui::BulletText("%s: %s (local) vs %s (remote)",
-                              entityLabel.c_str(),
-                              EditOpTypeName(c.localOp.type),
-                              EditOpTypeName(c.remoteOp.type));
-
-            ImGui::SameLine();
-            if (ImGui::SmallButton("Keep Local")) {
-                m_Collab->ResolveConflict(i, ConflictStrategy::Reject);
-            }
-            ImGui::SameLine();
-            if (ImGui::SmallButton("Accept Remote")) {
-                m_Collab->ResolveConflict(i, ConflictStrategy::LastWriterWins);
-            }
-            ImGui::SameLine();
-            if (ImGui::SmallButton("View Details")) {
-                ShowConflictDialog(c.localOp, c.remoteOp);
-            }
-
-            ImGui::PopID();
-        }
-    }
-
-    // ------------------------------------------------------------------
-    // Operation log
-    // ------------------------------------------------------------------
-    ImGui::Separator();
-    if (ImGui::TreeNode("Operation Log")) {
-        const auto& log = m_Collab->GetOperationLog();
-        ImGui::Text("%zu operations (seq %llu)",
-                    log.size(),
-                    (unsigned long long)m_Collab->GetCurrentSequence());
-
-        f32 maxH = std::min(200.0f, ImGui::GetContentRegionAvail().y);
-        ImGui::BeginChild("##CollabUIOpLog", ImVec2(0, maxH), ImGuiChildFlags_Borders);
-
-        // Most recent first
-        for (auto it = log.rbegin(); it != log.rend(); ++it) {
-            const auto& op = *it;
-            PeerColor pc = GetPeerColor(op.authorId);
-
-            ImGui::TextDisabled("[%llu]", (unsigned long long)op.sequenceId);
-            ImGui::SameLine();
-            ImGui::TextColored(ImVec4(pc.r, pc.g, pc.b, 1.0f),
-                               "%s", EditOpTypeName(op.type));
-            ImGui::SameLine();
-            ImGui::Text("#%llu", (unsigned long long)op.entityId);
-            ImGui::SameLine();
-            ImGui::TextDisabled("by %s",
-                                op.authorName.empty() ? "local" : op.authorName.c_str());
-        }
-
-        ImGui::EndChild();
-        ImGui::TreePop();
-    }
-
-    // Conflict modal (rendered last so it's on top)
-    DrawConflictModal();
-
-    ImGui::End();
-}
-
-// ============================================================================
-// DRAW PEER OVERLAYS
-// ============================================================================
+// DrawPanel lived here and is gone.
+//
+// There were two collaboration panels. This one used static buffers, ignored
+// the editor's panel-visibility state so its close button did nothing, and
+// sized its widgets without reading FontGlobalScale. EditorLayer's panel does
+// all three properly AND has the conflict-strategy selector, the peers table,
+// the resolve buttons and the operation log that this one never grew. Its own
+// comment called itself "an alternative integration path", which is how a
+// second implementation describes itself right before it starts rotting.
+//
+// EditorLayer::DrawCollaborationPanel is the panel. This class keeps what it is
+// genuinely better at: applying remote operations, the scene sync, the peer
+// overlays, and the conflict modal -- which EditorLayer now calls.
 
 bool CollaborativeEditingUI::WorldToScreen(
-    const Math::Matrix4& viewProj, f32 viewportW, f32 viewportH,
+    const Math::Matrix4& viewProj, f32 originX, f32 originY,
+    f32 viewportW, f32 viewportH,
     const Math::Vector3& worldPos, f32& screenX, f32& screenY) const
 {
     Math::Vector4 clip = viewProj * Math::Vector4(worldPos.x, worldPos.y, worldPos.z, 1.0f);
@@ -387,13 +125,17 @@ bool CollaborativeEditingUI::WorldToScreen(
 
     if (ndcZ < 0.0f || ndcZ > 1.0f) return false;
 
-    screenX = (ndcX + 1.0f) * 0.5f * viewportW;
-    screenY = (ndcY + 1.0f) * 0.5f * viewportH;
+    // Same mapping the viewport's own bone picking uses, origin included --
+    // that one is proven correct because it hit-tests against the real mouse
+    // position, so any disagreement with it would show up immediately.
+    screenX = (ndcX + 1.0f) * 0.5f * viewportW + originX;
+    screenY = (ndcY + 1.0f) * 0.5f * viewportH + originY;
     return true;
 }
 
 void CollaborativeEditingUI::DrawPeerOverlays(
     const Math::Matrix4& viewProj,
+    f32 originX, f32 originY,
     f32 viewportWidth, f32 viewportHeight)
 {
     if (!m_Collab || !m_Collab->IsActive() || !m_World) return;
@@ -401,17 +143,16 @@ void CollaborativeEditingUI::DrawPeerOverlays(
     ImDrawList* drawList = ImGui::GetBackgroundDrawList();
     const auto& peers = m_Collab->GetPeers();
 
+    const u8 localPeer = m_Collab->GetLocalPeerId();
+
     for (const auto& peer : peers) {
-        // Skip self and disconnected peers
         if (!peer.connected) continue;
-        // Skip the local peer by comparing with the current sequence's author
-        // The collab system's local peer ID is implicit — we skip peers whose
-        // cursor matches nothing relevant. We identify "self" by checking if
-        // this peer is the one we control. The simplest heuristic: the host
-        // is peerId 0, and after connection the local peer ID is assigned.
-        // Since we don't expose the local peer ID directly, we skip drawing
-        // for any peer whose camera position matches our own camera exactly.
-        // But a more robust approach: just draw all remote peers' cursors.
+        // Leave ourselves out. The comment that used to sit here reasoned its
+        // way around not having the local peer id -- compare camera positions,
+        // or just draw everyone -- and settled on drawing everyone, so your own
+        // selection got a second ring and a label with your name on it.
+        // CollaborativeEditingSystem knows which peer it is; it just never said.
+        if (peer.peerId == localPeer) continue;
 
         // If this peer has a selected entity, draw an overlay
         if (peer.cursorEntityId == 0) continue;
@@ -426,7 +167,7 @@ void CollaborativeEditingUI::DrawPeerOverlays(
 
         // Project entity position to screen
         f32 sx = 0.0f, sy = 0.0f;
-        if (!WorldToScreen(viewProj, viewportWidth, viewportHeight,
+        if (!WorldToScreen(viewProj, originX, originY, viewportWidth, viewportHeight,
                            transform->position, sx, sy)) {
             continue;
         }
@@ -452,7 +193,7 @@ void CollaborativeEditingUI::DrawPeerOverlays(
 
         // Draw camera position indicator (small diamond at peer's camera pos)
         f32 camSx = 0.0f, camSy = 0.0f;
-        if (WorldToScreen(viewProj, viewportWidth, viewportHeight,
+        if (WorldToScreen(viewProj, originX, originY, viewportWidth, viewportHeight,
                           peer.cameraPos, camSx, camSy)) {
             f32 d = 6.0f;
             ImVec2 pts[4] = {
@@ -734,6 +475,10 @@ std::string CollaborativeEditingUI::OnSceneSyncRequested() {
 
 void CollaborativeEditingUI::OnSceneSyncReceived(const std::string& sceneJson) {
     if (!m_World || sceneJson.empty()) return;
+
+    // Everything holding an entity handle has to let go first: the load below
+    // clears the world, and a handle kept across that names a recycled slot.
+    if (m_OnBeforeSceneReplaced) m_OnBeforeSceneReplaced();
 
     Scene::SceneSerializer serializer(m_World);
     auto result = serializer.LoadFromString(sceneJson, true); // clear existing

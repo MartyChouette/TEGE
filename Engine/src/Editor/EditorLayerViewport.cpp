@@ -265,6 +265,23 @@ void EditorLayer::DrawViewportPanel() {
             // front, the hint drew centred on the tab strip.
             if (m_SceneViewVisibleThisFrame) {
                 DrawCreativeOverlay(imgMin, imgMax);
+
+                // Peer cursors, drawn here for exactly the reasons above: this
+                // is the only place the viewport image rect is known current,
+                // and the rect is PASSED rather than read back from the members
+                // so it cannot be a stale one from another frame or another
+                // window. Nothing had ever called this -- the renderer existed
+                // and the class holding it was never constructed -- so a
+                // collaborative session showed no sign of anyone else in the
+                // scene.
+                if (m_Camera) {
+                    const Math::Matrix4 viewProj =
+                        m_Camera->GetProjectionMatrix() * m_Camera->GetViewMatrix();
+                    m_CollabUI.DrawPeerOverlays(viewProj,
+                                                imgMin.x, imgMin.y,
+                                                imgMax.x - imgMin.x,
+                                                imgMax.y - imgMin.y);
+                }
             }
 
             // Drop target: accept asset drags onto scene viewport

@@ -9,6 +9,7 @@
 #include "Enjin/Editor/SceneLock.h"
 #include "Enjin/Editor/UndoRedo.h"
 #include <string>
+#include <functional>
 #include <vector>
 
 namespace Enjin {
@@ -48,14 +49,22 @@ public:
     void Initialize(CollaborativeEditingSystem* collab, ECS::World* world,
                     SceneLockManager* lockMgr, UndoRedoManager* undoRedo = nullptr);
 
-    // Draw the collaboration panel (host/join, peer list, conflict queue).
-    // Called from EditorLayer::OnImGuiRender when the Collaboration panel bit
-    // is set.
-    void DrawPanel();
+    // The panel itself is EditorLayer::DrawCollaborationPanel. This class used
+    // to carry a second, weaker one; see the note where it was removed.
+    //
+    // Draw the conflict resolution modal. Called at the END of the panel so it
+    // sits on top, and only does anything when a conflict is waiting.
+    void DrawConflictModal();
 
     // Draw peer cursors and camera frustums in the viewport.
     // viewProj is the local editor camera's view-projection matrix.
+    // originX/originY are the viewport IMAGE's top-left in SCREEN space. They
+    // are required, not optional: this draws into the background draw list,
+    // which is absolute screen space, so without them every cursor lands in the
+    // corner of the monitor. Pass the rect from inside the Scene panel while it
+    // is drawing; the cached members are stale or unwritten anywhere else.
     void DrawPeerOverlays(const Math::Matrix4& viewProj,
+                          f32 originX, f32 originY,
                           f32 viewportWidth, f32 viewportHeight);
 
     // Apply a remote EditOperation to the local ECS world. This is registered
@@ -84,13 +93,30 @@ public:
     // after Initialize.
     void WireCallbacks();
 
+    // The editor swaps its World on new scene, project load and play-mode
+    // transitions. EditorLayer::SetWorld fans out to every system that holds
+    // one; this joins that fan-out, because a callback that writes into a World
+    // the editor has already replaced is the worst kind of stale pointer.
+    void SetWorld(ECS::World* world) { m_World = world; }
+
+    // Runs immediately before a received sync replaces the whole scene.
+    //
+    // The load clears the world, and entity ids are GENERATIONAL: a handle kept
+    // across it does not dangle in a way that compares unequal, it names a
+    // recycled slot holding somebody else's entity. EditorLayer's own callback
+    // cleared the selection first for exactly this reason and this class did
+    // not, so adopting it without the hook would have traded a working
+    // behaviour for a subtle one.
+    void SetOnBeforeSceneReplaced(std::function<void()> cb) { m_OnBeforeSceneReplaced = std::move(cb); }
+
 private:
     // Helpers
     static PeerColor GetPeerColor(u8 peerId);
     static const char* EditOpTypeName(EditOpType type);
 
     // World-to-screen projection helper
-    bool WorldToScreen(const Math::Matrix4& viewProj, f32 viewportW, f32 viewportH,
+    bool WorldToScreen(const Math::Matrix4& viewProj, f32 originX, f32 originY,
+                       f32 viewportW, f32 viewportH,
                        const Math::Vector3& worldPos, f32& screenX, f32& screenY) const;
 
     // Apply individual operation types to the ECS world
@@ -104,14 +130,12 @@ private:
     void ApplyLockEntity(const EditOperation& op);
     void ApplyUnlockEntity(const EditOperation& op);
 
-    // Draw the conflict resolution modal popup
-    void DrawConflictModal();
-
     // State
     CollaborativeEditingSystem* m_Collab = nullptr;
     ECS::World* m_World = nullptr;
     SceneLockManager* m_LockMgr = nullptr;
     UndoRedoManager* m_UndoRedo = nullptr;
+    std::function<void()> m_OnBeforeSceneReplaced;
 
     // Conflict dialog state
     PendingConflictDialog m_ConflictDialog;

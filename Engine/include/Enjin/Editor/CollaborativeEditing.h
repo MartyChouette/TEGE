@@ -210,6 +210,11 @@ public:
     // ========================================================================
 
     const std::vector<CollabPeer>& GetPeers() const { return m_Peers; }
+
+    // Which peer WE are: 0 while hosting, and the id the host assigned once a
+    // join completes. Anything drawing per-peer needs this to leave itself out,
+    // and without it the only options are guessing or drawing your own cursor.
+    u8 GetLocalPeerId() const { return m_LocalPeerId; }
     void SetLocalCursorEntity(ECS::Entity entity);
     void SetLocalCameraPosition(const Math::Vector3& pos);
 
