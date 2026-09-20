@@ -3011,28 +3011,56 @@ void EditorLayer::DrawSettingsSection_Networking() {
 
         // --- Rate Limiting ---
         if (ImGui::TreeNode("Rate Limiting")) {
-            if (ImGui::DragFloat("Max Packets/sec", &m_NetworkConfig.maxPacketsPerSecond, 1.0f, 10.0f, 1000.0f, "%.0f")) {
-                m_NetworkConfig.maxPacketsPerSecond = std::clamp(m_NetworkConfig.maxPacketsPerSecond, 10.0f, 1000.0f);
+            // These bound BULK TRANSFER as well as gameplay traffic. Anything
+            // sent reliably and larger than one datagram is split into chunks
+            // and paced out at a share of these numbers, so they are what
+            // decides how long a collaborative scene sync takes.
+            //
+            // The ranges used to stop at 1000 packets and 1024 KB, which were
+            // the defaults themselves as of 2026-09-19: both sliders sat pinned
+            // at their own maximum, so someone wanting a faster sync opened this
+            // panel, dragged, and nothing moved. A control that cannot leave its
+            // default is not a setting.
+            ImGui::TextDisabled("Bounds gameplay traffic AND scene syncing.");
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("A reliable message bigger than one packet is split and paced\n"
+                                  "within these limits. Raising them speeds up collaborative\n"
+                                  "scene sync; lowering them makes flooding a host harder.");
+            }
+
+            if (ImGui::DragFloat("Max Packets/sec", &m_NetworkConfig.maxPacketsPerSecond, 10.0f, 10.0f, 10000.0f, "%.0f")) {
+                m_NetworkConfig.maxPacketsPerSecond = std::clamp(m_NetworkConfig.maxPacketsPerSecond, 10.0f, 10000.0f);
                 changed = true;
             }
 
             float maxKB = m_NetworkConfig.maxBytesPerSecond / 1024.0f;
-            if (ImGui::DragFloat("Max KB/sec", &maxKB, 1.0f, 1.0f, 1024.0f, "%.0f")) {
-                maxKB = std::clamp(maxKB, 1.0f, 1024.0f);
+            if (ImGui::DragFloat("Max KB/sec", &maxKB, 16.0f, 1.0f, 8192.0f, "%.0f")) {
+                maxKB = std::clamp(maxKB, 1.0f, 8192.0f);
                 m_NetworkConfig.maxBytesPerSecond = maxKB * 1024.0f;
                 changed = true;
             }
 
-            if (ImGui::DragFloat("Burst Packets", &m_NetworkConfig.burstPackets, 1.0f, 5.0f, 500.0f, "%.0f")) {
-                m_NetworkConfig.burstPackets = std::clamp(m_NetworkConfig.burstPackets, 5.0f, 500.0f);
+            if (ImGui::DragFloat("Burst Packets", &m_NetworkConfig.burstPackets, 5.0f, 5.0f, 2000.0f, "%.0f")) {
+                m_NetworkConfig.burstPackets = std::clamp(m_NetworkConfig.burstPackets, 5.0f, 2000.0f);
                 changed = true;
             }
 
             float burstKB = m_NetworkConfig.burstBytes / 1024.0f;
-            if (ImGui::DragFloat("Burst KB", &burstKB, 1.0f, 1.0f, 512.0f, "%.0f")) {
-                burstKB = std::clamp(burstKB, 1.0f, 512.0f);
+            if (ImGui::DragFloat("Burst KB", &burstKB, 8.0f, 1.0f, 2048.0f, "%.0f")) {
+                burstKB = std::clamp(burstKB, 1.0f, 2048.0f);
                 m_NetworkConfig.burstBytes = burstKB * 1024.0f;
                 changed = true;
+            }
+
+            // The packet and byte budgets have to move together: at the reliable
+            // chunk size, 1 MB/s needs roughly 875 packets a second, so a low
+            // packet cap silently becomes the real limit and the byte number
+            // becomes decoration. Say so rather than letting someone discover it.
+            const float neededPackets = m_NetworkConfig.maxBytesPerSecond / 1200.0f;
+            if (m_NetworkConfig.maxPacketsPerSecond < neededPackets) {
+                ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.2f, 1.0f),
+                    "Packet cap is the real limit here (~%.0f/sec needed for %.0f KB/sec).",
+                    neededPackets, m_NetworkConfig.maxBytesPerSecond / 1024.0f);
             }
 
             ImGui::TreePop();

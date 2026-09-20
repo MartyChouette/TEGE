@@ -4449,10 +4449,10 @@ Enjin loads its runtime networking configuration from a JSON file so multiplayer
   "serverIP": "127.0.0.1",
   "syncRate": 0.05,
   "rateLimit": {
-    "maxPacketsPerSecond": 200.0,
-    "maxBytesPerSecond": 131072.0,
-    "burstPackets": 50.0,
-    "burstBytes": 65536.0
+    "maxPacketsPerSecond": 1000.0,
+    "maxBytesPerSecond": 1048576.0,
+    "burstPackets": 200.0,
+    "burstBytes": 262144.0
   },
   "security": {
     "maxViolations": 10,
@@ -4465,7 +4465,9 @@ Enjin loads its runtime networking configuration from a JSON file so multiplayer
 
 **Notes**
 
-The `rateLimit` block controls per-sender packet and bandwidth throttling with a token-bucket burst allowance. It also bounds **bulk transfer**, which is easy to miss: anything sent reliably and larger than one datagram is split into chunks and paced out at a share of these numbers, so a large transfer takes as long as `maxBytesPerSecond` allows however fast the connection is. The defaults are sized for gameplay traffic. The `security` block determines how many violations within a rolling window will trigger a temporary ban and optional kick. For competitive or high-traffic games, raise `maxBytesPerSecond`, `burstBytes`, and/or `maxPacketsPerSecond` to match your netcode needs.
+The `rateLimit` block controls per-sender packet and bandwidth throttling with a token-bucket burst allowance. It also bounds **bulk transfer**, which is easy to miss: anything sent reliably and larger than one datagram is split into chunks and paced out at a share of these numbers, so a large transfer takes as long as `maxBytesPerSecond` allows however fast the connection is. A 2 MB collaborative scene sync takes roughly three seconds at the default.
+
+These are a ceiling on what a sender is **allowed**, not a target, so raising them costs nothing until something actually sends that much. Raise the packet and byte numbers together: at the reliable chunk size, 1 MB/s needs about 875 packets a second, so a low packet cap silently becomes the real limit. The `security` block determines how many violations within a rolling window will trigger a temporary ban and optional kick. For competitive or high-traffic games, raise `maxBytesPerSecond`, `burstBytes`, and/or `maxPacketsPerSecond` to match your netcode needs.
 
 ---
 

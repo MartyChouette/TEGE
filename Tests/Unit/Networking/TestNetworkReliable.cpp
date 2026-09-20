@@ -234,14 +234,17 @@ ENJIN_TEST(NetworkFragment, PayloadLargerThan64KArrivesWhole) {
     net.client.CallRPC("test_scene", 0, sent.data(), static_cast<u32>(sent.size()));
 
     // It cannot arrive in one frame and should not: the send budget mirrors the
-    // receiver's rate limit, so 200 KB at the default 128 KB/s takes a second
-    // and a half of wall clock however fast the frames go.
+    // receiver's rate limit, so a large payload is spread over several frames
+    // however fast they go. How MANY frames is a function of the configured
+    // rate, so this asserts that it was paced, not how slow the pacing is --
+    // the first version of this pinned "more than 60 frames" and broke the day
+    // the default rate went up, which is a test measuring a config value.
     int frames = 0;
     while (got.size() != sent.size() && frames < 900) { net.Pump(1); frames++; }
 
     ENJIN_ASSERT_TRUE(got.size() == sent.size());
     ENJIN_EXPECT_TRUE(got == sent);
-    ENJIN_EXPECT_TRUE(frames > 60);
+    ENJIN_EXPECT_TRUE(frames > 1);
 }
 
 // Out-of-order and duplicated chunks are both ordinary on UDP.

@@ -286,11 +286,22 @@ struct NetworkConfig {
     std::string serverIP = "127.0.0.1";
     f32 syncRate = DEFAULT_SYNC_RATE;
 
-    // Rate limiting (per-sender)
-    f32 maxPacketsPerSecond = 200.0f;
-    f32 maxBytesPerSecond = 128.0f * 1024.0f;   // 128 KB/s
-    f32 burstPackets = 50.0f;
-    f32 burstBytes = 64.0f * 1024.0f;          // 64 KB burst
+    // Rate limiting (per-sender).
+    //
+    // These are a CEILING on what a sender is allowed, not a target, so raising
+    // them costs nothing until something actually sends that much. They were
+    // sized for gameplay packets -- 20 Hz snapshots and input -- and a bulk
+    // transfer has to fit through the same hole: at the old 128 KB/s a 2 MB
+    // scene sync took about 25 seconds, which is not a LAN experience.
+    //
+    // The packet and byte limits have to move together. At the reliable chunk
+    // size a byte budget of 1 MB/s needs roughly 875 packets per second, so a
+    // 200/s packet cap would have been the real limit and the byte number would
+    // have been decoration.
+    f32 maxPacketsPerSecond = 1000.0f;
+    f32 maxBytesPerSecond = 1024.0f * 1024.0f;  // 1 MB/s
+    f32 burstPackets = 200.0f;
+    f32 burstBytes = 256.0f * 1024.0f;         // 256 KB burst
 
     // Abuse protection
     u32 maxViolations = 10;
