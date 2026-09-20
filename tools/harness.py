@@ -48,6 +48,18 @@ import os
 import shutil
 import socketserver
 import subprocess
+
+# Launching a console-subsystem exe on Windows CREATES A CONSOLE WINDOW, and it
+# takes focus. The engine hides the GAME window correctly during a capture
+# (Application: "A measured run does not need to be seen"), but Game.exe and
+# EnjinPlayer.exe are both CONSOLE subsystem, so every project in a sweep still
+# flashed a terminal onto the primary screen and stole the cursor. Forty-two
+# projects, forty-two grabs -- which made the sweep unrunnable while anyone was
+# using the machine, the exact thing hiding the window was meant to fix.
+#
+# CREATE_NO_WINDOW suppresses that console. stdout is already piped, so nothing
+# is lost by not having one.
+NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0) if os.name == 'nt' else 0
 import sys
 import tempfile
 import threading
@@ -109,7 +121,7 @@ def export_web(project, outdir):
     os.makedirs(web_dir, exist_ok=True)
     try:
         proc = subprocess.run([EDITOR, '--build-web', src, web_dir],
-                              capture_output=True, text=True,
+                              capture_output=True, creationflags=NO_WINDOW, text=True,
                               timeout=project.get('export_timeout', 300))
     except subprocess.TimeoutExpired:
         return False, 'web export timed out', web_dir
@@ -131,7 +143,7 @@ def run_web(project, web_dir, outdir):
                '--frames', ','.join(str(f) for f in frames), '--click']
         try:
             proc = subprocess.run(cmd, cwd=os.path.join(ROOT, 'tools'),
-                                  capture_output=True, text=True,
+                                  capture_output=True, creationflags=NO_WINDOW, text=True,
                                   timeout=project.get('web_timeout', 300))
         except subprocess.TimeoutExpired:
             return False, 'web capture timed out', []
@@ -156,7 +168,7 @@ def project_source(project, outdir):
         os.makedirs(stage, exist_ok=True)
         try:
             proc = subprocess.run([EDITOR, '--new-from-template', project['template'], stage],
-                                  capture_output=True, text=True, timeout=180)
+                                  capture_output=True, creationflags=NO_WINDOW, text=True, timeout=180)
         except subprocess.TimeoutExpired:
             return None, 'template instantiation timed out'
         if proc.returncode != 0:
@@ -186,7 +198,7 @@ def export(project, outdir):
     os.makedirs(game_dir, exist_ok=True)
     try:
         proc = subprocess.run([EDITOR, '--build-desktop', src, game_dir],
-                              capture_output=True, text=True,
+                              capture_output=True, creationflags=NO_WINDOW, text=True,
                               timeout=project.get('export_timeout', 300))
     except subprocess.TimeoutExpired:
         return False, 'export timed out', game_dir
@@ -210,7 +222,7 @@ def run(project, game_dir, outdir):
     base = os.path.join(outdir, project['name'])
     cmd = [exe, '--golden', base, '--golden-frames', ','.join(str(f) for f in frames)]
     try:
-        proc = subprocess.run(cmd, cwd=game_dir, capture_output=True,
+        proc = subprocess.run(cmd, cwd=game_dir, capture_output=True, creationflags=NO_WINDOW,
                               timeout=project.get('timeout', 180))
     except subprocess.TimeoutExpired:
         return False, 'timed out', []

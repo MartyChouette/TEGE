@@ -157,6 +157,22 @@ const browser = await launch({
             '--enable-features=Vulkan',
             '--hide-scrollbars',
             '--mute-audio',
+            // STEALS FOCUS WITHOUT THIS, even fully headless. Asking for
+            // Vulkan makes Chrome spawn a separate GPU-info-collection
+            // process on Windows, and that process creates a window, takes
+            // the foreground, and is destroyed again in under 25ms.
+            //
+            // Measured during a 42-project sweep with a 25ms foreground-window
+            // logger: the window is gone before its owner can even be
+            // resolved, so it logs as proc=Idle, and focus then falls through
+            // to Program Manager -- the DESKTOP -- rather than back to
+            // whatever the person was using. That is why it reads as "my
+            // cursor was grabbed and I had to alt-tab": input goes to the
+            // desktop. Nothing appears on screen long enough to identify by
+            // eye, and a 400ms poll misses it entirely and reports silence.
+            '--disable-gpu-process-for-dx12-vulkan-info-collection',
+            // NOT --no-startup-window: it stops Puppeteer getting a target at
+            // all and every capture dies with "Timed out after waiting 30000ms".
           ],
 });
 
