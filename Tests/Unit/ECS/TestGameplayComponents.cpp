@@ -257,7 +257,12 @@ ENJIN_TEST(AudioListener, Defaults) {
 
 ENJIN_TEST(Interactable, Defaults) {
     InteractableComponent ic;
-    ENJIN_EXPECT_STR_EQ(ic.promptText, "Press E to interact");
+    // The default names the ACTION, not a key. It used to read "Press E",
+    // which started lying the moment anyone rebound Interact -- and the engine
+    // knew the real binding the whole time. InputActionMap::ResolvePromptText
+    // substitutes the live binding at display time.
+    ENJIN_EXPECT_STR_EQ(ic.promptText, "Press {Interact} to interact");
+    ENJIN_EXPECT_TRUE(ic.promptText.find("{Interact}") != std::string::npos);
     ENJIN_EXPECT_FLOAT_EQ(ic.interactionRange, 2.0f);
     ENJIN_EXPECT_TRUE(ic.requiresLookAt);
     ENJIN_EXPECT_FLOAT_EQ(ic.lookAtAngle, 45.0f);

@@ -660,6 +660,46 @@ static const char* GamepadAxisToName(i32 code, bool positive) {
     return "?";
 }
 
+std::string InputActionMap::ResolvePromptText(const std::string& text) const {
+    // Nothing to do for authored text that names no action.
+    if (text.find('{') == std::string::npos) return text;
+
+    std::string out;
+    out.reserve(text.size() + 16);
+
+    usize i = 0;
+    while (i < text.size()) {
+        const usize open = text.find('{', i);
+        if (open == std::string::npos) { out.append(text, i, std::string::npos); break; }
+        const usize close = text.find('}', open + 1);
+        if (close == std::string::npos) { out.append(text, i, std::string::npos); break; }
+
+        out.append(text, i, open - i);
+        const std::string token = text.substr(open + 1, close - open - 1);
+
+        // Match on the action's NAME, so a renamed custom action still resolves
+        // and a game can write {Fire} as readily as {Interact}.
+        bool resolved = false;
+        for (i32 a = 0; a < GetActionCount(); ++a) {
+            const char* name = GetActionName(a);
+            if (!name || token != name) continue;
+            const char* binding = GetBindingDisplayName(a);
+            if (binding && *binding) {
+                out += binding;
+                resolved = true;
+            }
+            break;
+        }
+        // An unbound action, or an unknown token, keeps its braces. A player
+        // seeing "Press {Interact}" has an unbound action to fix; a player
+        // seeing "Press  " has nothing to go on.
+        if (!resolved) out.append(text, open, close - open + 1);
+
+        i = close + 1;
+    }
+    return out;
+}
+
 const char* InputActionMap::GetBindingDisplayName(i32 index) const {
     if (index < 0 || index >= static_cast<i32>(GameAction::Count)) return "";
     const auto& cfg = m_Actions[index];

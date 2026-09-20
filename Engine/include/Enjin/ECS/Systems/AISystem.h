@@ -84,6 +84,14 @@ public:
 
     const std::vector<DebugLine>& GetDebugLines() const { return m_DebugLines; }
 
+    /// Rebuild the navmesh overlay WITHOUT running a full AI tick.
+    ///
+    /// Update() only runs during play, so before this the debug lines could
+    /// only ever exist in play mode -- and a navmesh overlay is something you
+    /// want while editing, right after baking one. The editor calls this per
+    /// frame while the volume's Debug Draw is ticked.
+    void BuildDebugLines();
+
     // --- Settings ---
 
     /// How often (seconds) to re-path during chase. 0 = every frame.

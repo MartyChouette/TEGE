@@ -511,7 +511,7 @@ struct PossessableComponent {
     bool autoDetect = true;          // Automatically detect controller type on possess
     i32 playerIndex = 0;             // Which player (0-3) can possess this entity
     f32 possessRange = 5.0f;         // Max distance to possess (0 = unlimited)
-    std::string promptText = "Press E to enter"; // UI prompt when in range
+    std::string promptText = "Press {Interact} to enter"; // token resolves to the live binding
 
     // Transition settings
     f32 transitionDuration = 0.3f;   // Camera blend time on possess/unpossess

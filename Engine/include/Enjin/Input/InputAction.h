@@ -214,6 +214,20 @@ public:
     const char* GetGamepadBindingDisplayName(i32 index) const;
     i32 GetActionCategory(i32 index) const;
 
+    // Substitute live bindings into authored prompt text.
+    //
+    // A prompt that names a key starts lying the moment someone rebinds, and
+    // four component defaults shipped saying "Press E" while the engine knew
+    // the real binding all along. Authored text uses a token -- "Press
+    // {Interact} to open" -- and this replaces it with whatever Interact is
+    // bound to right now.
+    //
+    // Unknown tokens are left alone rather than blanked: a prompt reading
+    // "Press {Frobnicate}" is a visible authoring mistake, where an empty
+    // string is an invisible one. Legacy text with no token is returned
+    // untouched, so old scenes keep working and simply stay stale.
+    std::string ResolvePromptText(const std::string& text) const;
+
     // Persistence
     std::string ToJson() const;
     bool FromJson(const std::string& jsonStr);

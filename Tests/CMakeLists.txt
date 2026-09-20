@@ -423,6 +423,8 @@ enjin_add_test(TestNetworkAdversarial Unit/Networking/TestNetworkAdversarial.cpp
 enjin_add_test(TestNetworkSecurity    Unit/Networking/TestNetworkSecurity.cpp)
 enjin_add_test(TestNetworkReliable    Unit/Networking/TestNetworkReliable.cpp)
 enjin_add_test(TestCollabSync         Unit/Editor/TestCollabSync.cpp)
+enjin_add_test(TestLanDiscovery       Unit/Networking/TestLanDiscovery.cpp)
+enjin_add_test(TestPromptBindings     Unit/Input/TestPromptBindings.cpp)
 
 # --- Assets ---
 enjin_add_test(TestAssetPack          Unit/Assets/TestAssetPack.cpp)

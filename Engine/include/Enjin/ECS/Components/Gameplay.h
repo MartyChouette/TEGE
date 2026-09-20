@@ -842,7 +842,7 @@ struct SidechainComponent {
 
 // Interactable - can be interacted with by player
 struct InteractableComponent {
-    std::string promptText = "Press E to interact";
+    std::string promptText = "Press {Interact} to interact";  // token resolves to the live binding
     f32 interactionRange = 2.0f;
     bool requiresLookAt = true;    // Must be looking at object
     f32 lookAtAngle = 45.0f;       // Degrees
@@ -2051,7 +2051,7 @@ struct LockComponent {
 
     // Prompt
     std::string lockedPrompt = "Requires key";
-    std::string unlockedPrompt = "Press E to open";
+    std::string unlockedPrompt = "Press {Interact} to open";
 };
 
 // Pushable component — entity can be pushed by the player or other forces
@@ -2116,7 +2116,7 @@ struct SwitchComponent {
     f32 transitionProgress = 0.0f;
 
     // Prompt
-    std::string promptText = "Press E";
+    std::string promptText = "Press {Interact}";
     bool showPrompt = true;
 
     // State
@@ -2652,12 +2652,19 @@ struct NetworkTransformComponent {
     Math::Quaternion lastSyncedRotation = Math::Quaternion(0, 0, 0, 1);
     Math::Vector3 lastSyncedScale = Math::Vector3(1.0f, 1.0f, 1.0f);
     Math::Vector3 networkVelocity;
-    Math::Vector3 interpStartPosition;
-    Math::Quaternion interpStartRotation = Math::Quaternion(0, 0, 0, 1);
-    f32 interpProgress = 0.0f;
     f32 interpDuration = 0.05f;
-    Math::Vector3 predictionError;
-    f32 correctionBlend = 0.0f;
+
+    // interpStartPosition, interpStartRotation, interpProgress, predictionError
+    // and correctionBlend were REMOVED on 2026-09-20. They were the remains of a
+    // per-component interpolation approach that lost: smoothing is done by
+    // NetworkSystem::InterpolateRemoteEntities, which keeps per-networkId
+    // snapshot buffers, interpolates against a delayed render time, and
+    // dead-reckons forward on a late packet using the replicated velocity.
+    //
+    // Deleted rather than wired, because wiring them would have given one
+    // entity two sources of truth for its position -- and the surviving one is
+    // the better mechanism. They were never serialized, so no scene data
+    // changes and nothing needs migrating.
 };
 
 // ============================================================================

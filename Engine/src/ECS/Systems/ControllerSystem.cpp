@@ -1158,10 +1158,23 @@ void ControllerSystem::UpdateTopDown3D(Entity entity, TopDown3DController& ctrl,
         }
     }
 
-    // Handle click-to-move
-    if (ctrl.enableClickToMove && IsPrimaryClickPressed()) {
-        // In a real implementation, you'd raycast to find world position
-        // For now, we'll just use keyboard input
+    // Click-to-move is NOT implemented, and says so once instead of pretending.
+    //
+    // This was an empty if-block behind a serialized, inspector-visible flag:
+    // tick it, click, and the character uses keyboard input as though nothing
+    // had happened. Implementing it needs two things this system does not have
+    // -- the active camera and the viewport rect -- to turn a click into a
+    // world ray, plus a target position and arrival logic on the component,
+    // which has only the bool. So it is a feature with a shape, not a fix.
+    if (ctrl.enableClickToMove) {
+        static bool s_ClickToMoveWarned = false;
+        if (!s_ClickToMoveWarned) {
+            s_ClickToMoveWarned = true;
+            ENJIN_LOG_WARN(Player,
+                "enableClickToMove is set, but click-to-move is not implemented: "
+                "the controller is still driven by movement input. Needs a camera "
+                "and viewport to build a click ray, and a target on the component.");
+        }
     }
 
     Math::Vector2 input = GetMovementInput(ctrl);

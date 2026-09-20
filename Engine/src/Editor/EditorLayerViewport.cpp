@@ -266,6 +266,27 @@ void EditorLayer::DrawViewportPanel() {
             if (m_SceneViewVisibleThisFrame) {
                 DrawCreativeOverlay(imgMin, imgMax);
 
+                // Navmesh overlay. The volume's "Debug Draw" checkbox used to
+                // write a field nothing read: AISystem::SetDebugDraw had no
+                // caller and GetDebugLines had none either, so ticking it did
+                // nothing at all. It is also built here rather than in
+                // AISystem::Update because that only runs during PLAY, and a
+                // navmesh overlay is something you want while editing.
+                if (m_World && m_Camera) {
+                    bool wantNavDebug = false;
+                    for (auto e : m_World->GetEntitiesWithComponent<ECS::NavmeshVolumeComponent>()) {
+                        auto* nv = m_World->GetComponent<ECS::NavmeshVolumeComponent>(e);
+                        if (nv && nv->debugDraw) { wantNavDebug = true; break; }
+                    }
+                    if (auto* ai = m_PlayMode.GetAISystem()) {
+                        ai->SetDebugDraw(wantNavDebug);
+                        if (wantNavDebug) {
+                            if (!m_PlayMode.IsPlaying()) ai->BuildDebugLines();
+                            DrawNavmeshOverlay(imgMin, imgMax, ai->GetDebugLines());
+                        }
+                    }
+                }
+
                 // Peer cursors, drawn here for exactly the reasons above: this
                 // is the only place the viewport image rect is known current,
                 // and the rect is PASSED rather than read back from the members
@@ -2129,6 +2150,49 @@ void EditorLayer::HandleTilemapBrush() {
         m_TilemapPaintCellIndex.clear();
         m_TilemapBrushActive = false;
     }
+}
+
+// Project the AI system's debug line segments into the viewport image.
+//
+// Same rule as every other overlay here: the image rect is PASSED in, because
+// the cached m_EditorViewportImage* members are only written while the Scene
+// panel is actually drawing and are stale or unset anywhere else.
+void EditorLayer::DrawNavmeshOverlay(const ImVec2& imgMin, const ImVec2& imgMax,
+                                     const std::vector<ECS::AISystem::DebugLine>& segments) {
+    if (segments.empty() || !m_Camera) return;
+
+    const Math::Matrix4 viewProj = m_Camera->GetProjectionMatrix() * m_Camera->GetViewMatrix();
+    const f32 vpW = imgMax.x - imgMin.x;
+    const f32 vpH = imgMax.y - imgMin.y;
+    if (vpW <= 0.0f || vpH <= 0.0f) return;
+
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    dl->PushClipRect(imgMin, imgMax, true);
+
+    auto project = [&](const Math::Vector3& world, ImVec2& out) -> bool {
+        const Math::Vector4 clip = viewProj * Math::Vector4(world.x, world.y, world.z, 1.0f);
+        if (clip.w <= 0.001f) return false;                  // behind the camera
+        const f32 ndcX = clip.x / clip.w;
+        const f32 ndcY = clip.y / clip.w;
+        const f32 ndcZ = clip.z / clip.w;
+        if (ndcZ < 0.0f || ndcZ > 1.0f) return false;
+        out = ImVec2((ndcX + 1.0f) * 0.5f * vpW + imgMin.x,
+                     (ndcY + 1.0f) * 0.5f * vpH + imgMin.y);
+        return true;
+    };
+
+    for (const auto& seg : segments) {
+        ImVec2 a, b;
+        // Both ends must survive the clip: projecting a point behind the camera
+        // produces a mirrored coordinate, which draws a line across the screen.
+        if (!project(seg.start, a) || !project(seg.end, b)) continue;
+        const ImU32 col = IM_COL32(static_cast<int>(seg.color.x * 255.0f),
+                                   static_cast<int>(seg.color.y * 255.0f),
+                                   static_cast<int>(seg.color.z * 255.0f), 200);
+        dl->AddLine(a, b, col, 1.5f);
+    }
+
+    dl->PopClipRect();
 }
 
 void EditorLayer::DrawUIEditorOverlay() {

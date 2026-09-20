@@ -29,7 +29,7 @@ Working toward 1.0 in summer 2027. The big pieces, ticked when they work end to 
 - [x] Pixel editor, vector drawing, sprite sheet import
 - [x] Terrain sculpting, including caves dug into the surface
 - [x] Tilemap painter
-- [ ] Visual UI layout editor
+- [x] Visual UI layout editor
 - [ ] Texture and vertex weight painting
 
 ## Platforms

@@ -2583,6 +2583,8 @@ private:
     std::string m_GitLastError;
 
     void DrawUIEditorOverlay();
+    void DrawNavmeshOverlay(const ImVec2& imgMin, const ImVec2& imgMax,
+                            const std::vector<ECS::AISystem::DebugLine>& segments);
     void HandleUIEditorInput();
     void UIEditorScreenToDesign(f32 screenX, f32 screenY, f32& designX, f32& designY);
     void UIEditorDesignToScreen(f32 designX, f32 designY, f32& screenX, f32& screenY);

@@ -748,6 +748,11 @@ f32 AISystem::DistanceTo(const Math::Vector3& a, const Math::Vector3& b) const {
 // Debug Visualization
 // ============================================================================
 
+void AISystem::BuildDebugLines() {
+    m_DebugLines.clear();
+    if (m_Navmesh) DrawNavmeshDebug();
+}
+
 void AISystem::DrawNavmeshDebug() {
     if (!m_Navmesh) return;
 
