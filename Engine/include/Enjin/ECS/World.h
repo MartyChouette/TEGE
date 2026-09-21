@@ -402,6 +402,29 @@ public:
      */
     void AdoptOwnerThread() { m_OwnerThreadId = std::this_thread::get_id(); }
 
+    /**
+     * @brief Is the caller the structural-mutation owner thread (adr-0004)?
+     *
+     * Public because the invariant has a second half that AssertOwnerThread
+     * cannot express. That guard covers STRUCTURAL mutation -- Add, Remove,
+     * Create, Destroy, Clear. It says nothing about writing to component DATA
+     * from a worker, which is also forbidden and which nothing detected.
+     *
+     * The live example is `ECS::ComputeWorldMatrix`: it looks like a read and
+     * it is not. It MEMOISES, writing `cachedWorldMatrix` and clearing
+     * `worldMatrixDirty` all the way up the parent chain, so two workers holding
+     * sibling entities under one parent both recompute and both write that
+     * parent's 64-byte matrix at once -- a torn matrix, for one frame,
+     * non-reproducibly. The parallel shadow pass avoids it by pre-warming every
+     * caster's matrix on the main thread first, which works and is a CONVENTION:
+     * the next parallel region that forgets brings the race back.
+     *
+     * So anything that memoises asks this before it writes, and computes without
+     * caching when the answer is no. Costs one thread-id compare, and only on
+     * the path that was about to write.
+     */
+    bool IsOwnerThread() const { return std::this_thread::get_id() == m_OwnerThreadId; }
+
 private:
     void RebuildNameCache();
 

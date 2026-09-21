@@ -17333,14 +17333,24 @@ void RenderSystem::RenderShadowPass() {
             // creates GPU buffers and mutates the map, which is not safe from
             // the worker threads recording the secondaries.
             //
-            // World matrices get the same treatment, for the same reason.
+            // World matrices get the same treatment, and as of 2026-09-21 for a
+            // DIFFERENT reason than when this was written.
+            //
             // ECS::ComputeWorldMatrix WRITES transform->cachedWorldMatrix and
             // clears worldMatrixDirty as it walks the parent chain, so two
             // workers holding sibling entities under one parent both recomputed
             // and both wrote that parent's 64-byte matrix concurrently -- a torn
-            // matrix, one frame, non-reproducibly. adr-0004 lets workers read
-            // only, and AssertOwnerThread cannot catch this because it guards
-            // structural mutation, not component-data writes.
+            // matrix, one frame, non-reproducibly. AssertOwnerThread cannot
+            // catch it: that guard is for structural mutation, and this is a
+            // component-data write.
+            //
+            // The function now refuses to cache off the owner thread -- it
+            // computes the same answer and does not store it -- so this warm is
+            // no longer what makes the parallel path CORRECT. It is what makes
+            // it FAST: warmed, every worker hits the clean-cache fast path and
+            // never recomputes an ancestor chain. Keep it for that, and know
+            // that forgetting it in a new parallel region now costs time rather
+            // than producing a torn matrix (tests: TestWorldMatrixThreadSafety).
             //
             // Warming here fills every cache (the recursion covers ancestors
             // too), so each worker's call takes the `if (!worldMatrixDirty)

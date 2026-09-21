@@ -173,22 +173,50 @@ inline Math::Matrix4 ComputeWorldMatrix(World* world, Entity entity, u32 depth) 
         return transform->ToMatrix();
     }
 
-    // Fast path: return cached result if already computed this frame
+    // Fast path: return cached result if already computed this frame. No thread
+    // question here -- reading a clean cache is a lock-free read like any other.
     if (!transform->worldMatrixDirty) {
         return transform->cachedWorldMatrix;
     }
 
+    // THIS FUNCTION MEMOISES, so it is a write, and adr-0004 forbids writing
+    // component data from a worker thread.
+    //
+    // It reads like a getter, which is what makes it dangerous. On a miss it
+    // writes `cachedWorldMatrix` and clears `worldMatrixDirty` for this entity
+    // AND every ancestor it walks, so two workers holding sibling entities under
+    // one parent both recompute and both write that parent's 64-byte matrix at
+    // once: a torn matrix, one frame, non-reproducible. `AssertOwnerThread`
+    // cannot catch it -- that guard is for STRUCTURAL mutation, and this is a
+    // data write.
+    //
+    // The parallel shadow pass already avoids it by pre-warming every caster on
+    // the main thread so workers only ever hit the fast path above. That works
+    // and it is a convention: the next parallel region that forgets brings the
+    // race back, one frame at a time, in a form nobody can reproduce.
+    //
+    // Off the owner thread we therefore compute the SAME answer and simply do
+    // not store it. The caller gets a correct matrix; the cost is recomputation
+    // that a pre-warm would have avoided, which is the right price for removing
+    // a data race that cannot otherwise be detected.
+    const bool mayCache = world->IsOwnerThread();
+
     // No parent → local matrix is the world matrix
     auto* pc = world->GetComponent<ParentComponent>(entity);
     if (!pc || pc->parent == INVALID_ENTITY) {
-        transform->cachedWorldMatrix = transform->ToMatrix();
+        const Math::Matrix4 local = transform->ToMatrix();
+        if (!mayCache) return local;
+        transform->cachedWorldMatrix = local;
         transform->worldMatrixDirty = false;
         return transform->cachedWorldMatrix;
     }
 
-    // Has parent → recurse (which will also cache parent results)
+    // Has parent → recurse (which will also cache parent results, on the owner
+    // thread only -- the recursion carries the same rule up the chain).
     Math::Matrix4 parentWorld = ComputeWorldMatrix(world, pc->parent, depth + 1);
-    transform->cachedWorldMatrix = parentWorld * transform->ToMatrix();
+    const Math::Matrix4 result = parentWorld * transform->ToMatrix();
+    if (!mayCache) return result;
+    transform->cachedWorldMatrix = result;
     transform->worldMatrixDirty = false;
     return transform->cachedWorldMatrix;
 }
