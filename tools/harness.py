@@ -223,6 +223,16 @@ def export(project, outdir):
     return True, 'exported', game_dir
 
 
+def _capture_bytes(base):
+    """The raw capture for one frame, or None. Compared byte for byte, because
+    the question is reproducibility and any tolerance would hide the answer."""
+    try:
+        with open(base + '.ppm', 'rb') as f:
+            return f.read()
+    except OSError:
+        return None
+
+
 def run(project, game_dir, outdir):
     """Boot the exported game and capture its frames. Returns (ok, note, basepaths)."""
     # The FRESHLY BUILT player, not the one the export copied in: BuildPipeline
@@ -439,6 +449,13 @@ def main():
                     help='also export and capture each project in a browser, and compare')
     ap.add_argument('--skip-export', action='store_true',
                     help='reuse the exports already in outdir (needs --outdir)')
+    ap.add_argument('--repeat', type=int, default=1, metavar='N',
+                    help='capture each project N times and report which frames are '
+                         'NOT reproducible. Every A/B in this repo assumes the capture '
+                         'is bit-exact run to run, and for at least three projects it '
+                         'is not (FluidSim, AnimationLOD, BiscuitBird as of 2026-09-21). '
+                         'A single A/B pair on an unstable capture reads as a finding '
+                         'and is a coin flip. Use this before trusting one.')
     args = ap.parse_args()
 
     with open(MANIFEST, encoding='utf-8') as f:
@@ -495,6 +512,36 @@ def main():
             continue
 
         ran += 1
+
+        # Determinism check. Re-capture the SAME export with the SAME binary and
+        # compare byte for byte -- the only thing varying is the run itself.
+        #
+        # This exists because the bit-exactness the rest of the harness is read
+        # against turned out to have exceptions, and the way that surfaced was a
+        # 0.058% move being attributed to a code change it had nothing to do with.
+        # A capture that flips on its own makes a single A/B pair a coin flip, and
+        # it reads exactly like a finding.
+        if args.repeat > 1:
+            first = {b: _capture_bytes(b) for b in bases}
+            unstable = set()
+            for _ in range(args.repeat - 1):
+                rok, rnote, rbases = run(p, game_dir, outdir)
+                if not rok:
+                    print('FAIL %-22s repeat: %s' % (p['name'], rnote))
+                    failures += 1
+                    break
+                for b in rbases:
+                    if _capture_bytes(b) != first.get(b):
+                        unstable.add(b)
+            for b in sorted(unstable):
+                print('FAIL %-22s %-14s %s is NOT reproducible across %d runs of one '
+                      'binary -- an A/B against it needs repeats on both sides'
+                      % (p['name'], 'determinism', os.path.basename(b), args.repeat))
+            failures += len(unstable)
+            if not unstable:
+                print('pass %-22s %-14s all %d captures identical across %d runs'
+                      % (p['name'], 'determinism', len(bases), args.repeat))
+
         desktop_results = check(p, bases)
         for name, passed, detail in desktop_results:
             print('%s %-22s %-14s %s' % ('pass' if passed else 'FAIL', p['name'], name, detail))
