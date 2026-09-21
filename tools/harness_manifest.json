@@ -726,6 +726,19 @@
         }
       },
       "_animates_why": "The palette on the 500 cube cycles, same as SurfaceBands, so this scene moves."
+    },
+    {
+      "name": "LODLadder",
+      "project": "Examples/LODLadder/LODLadder.enjinproject",
+      "_why": "Identical LOD'd spheres at increasing distance, so one frame shows the whole ladder. LODComponent was made real on 2026-09-21 and had no capture at all, which is a poor state for a feature whose failure mode is silent: a wrong metric does not crash or vanish, it picks the wrong mesh, and the coarsest mesh of a smooth object still looks like the object. sourceMaxExtent is left at 0 on purpose -- that is the legacy case whose metric divided by an unset AABB, went negative, and pinned every such entity to its coarsest level in every exported game.",
+      "frames": [
+        30,
+        240
+      ],
+      "claims": {
+        "draws": true
+      },
+      "_animates_why": "OFF: nothing in the scene moves. A LOD ladder is a still comparison."
     }
   ]
 }
