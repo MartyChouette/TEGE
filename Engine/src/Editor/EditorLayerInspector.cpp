@@ -243,6 +243,12 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::LODComponent>(e); },
             "lod", DimensionTag::Only3D},
+        {"Animation LOD", "Rendering", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::AnimationLODComponent>(e)
+                                                   || !w->HasComponent<ECS::AnimatorComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::AnimationLODComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::AnimationLODComponent>(e); },
+            "animationLOD", DimensionTag::Only3D},
         {"Material", "Rendering", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::MaterialComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::MaterialComponent>(e); },
@@ -1786,6 +1792,11 @@ void EditorLayer::DrawInspectorPanel() {
         // LOD component
         if (m_World->HasComponent<ECS::LODComponent>(m_PrimarySelected)) {
             DrawLODComponent(m_PrimarySelected);
+        }
+
+        // Animation LOD component
+        if (m_World->HasComponent<ECS::AnimationLODComponent>(m_PrimarySelected)) {
+            DrawAnimationLODComponent(m_PrimarySelected);
         }
 
         // Material component

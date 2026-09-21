@@ -1471,10 +1471,14 @@ public:
                 auto* anim = m_World->GetComponent<Enjin::ECS::AnimatorComponent>(entity);
                 if (!anim) continue;
                 Enjin::f32 stepDt = deltaTime;
-                if (!m_RenderSystem->ShouldRefreshAnimator(*anim, entity, deltaTime, stepDt)) {
+                Enjin::ECS::AnimationQuality quality{};
+                if (!m_RenderSystem->ShouldRefreshAnimator(*anim, entity, deltaTime, stepDt, quality)) {
                     continue;   // skipped this frame; dt stays banked for the next
                 }
-                anim->Update(stepDt);
+                // Fidelity as well as rate: blend trees and keyframe interpolation drop
+                // out with distance the same way they do on desktop. Web does not run
+                // the IK pass, so the band's `ik` flag has nothing to gate here.
+                anim->Update(stepDt, quality);
             }
         } else {
             for (auto entity : m_World->GetEntitiesWithComponent<Enjin::ECS::AnimatorComponent>()) {

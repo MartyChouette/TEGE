@@ -183,9 +183,13 @@ struct BoneTrack {
     std::vector<Math::Vector3> scales;
 
     // Sample the track at a given time
-    Math::Vector3 SamplePosition(f32 time) const;
-    Math::Quaternion SampleRotation(f32 time) const;
-    Math::Vector3 SampleScale(f32 time) const;
+    // `interpolate` false returns the preceding keyframe instead of blending toward
+    // the next one. That is animation LOD's fidelity knob (AnimationLOD.h): at
+    // distance the snap is invisible and it saves a lerp or a slerp per bone, per
+    // frame, on every character in a crowd.
+    Math::Vector3 SamplePosition(f32 time, bool interpolate = true) const;
+    Math::Quaternion SampleRotation(f32 time, bool interpolate = true) const;
+    Math::Vector3 SampleScale(f32 time, bool interpolate = true) const;
 };
 
 // A complete skeletal animation clip
@@ -428,6 +432,13 @@ public:
 
     // Blend tree support
     void UpdateBlendTree(const BlendTree& blendTree, f32 paramValue, f32 deltaTime);
+
+
+    // Animation LOD fidelity (AnimationLOD.h). Set per frame by whoever ticks this
+    // animator, because it follows the camera and can change between frames.
+    void SetInterpolate(bool on) { m_Interpolate = on; }
+
+    bool GetInterpolate() const { return m_Interpolate; }
     f32 GetCurrentTime() const { return m_CurrentTime; }
 
     // Bone manipulation (for IK, procedural animation)
@@ -489,6 +500,7 @@ private:
     f32 m_Speed = 1.0f;
     bool m_IsPlaying = false;
     bool m_IsPaused = false;
+    bool m_Interpolate = true;   // false = snap to the preceding keyframe (animation LOD)
 
     // Blending
     f32 m_BlendTime = 0.0f;

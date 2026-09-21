@@ -7463,6 +7463,50 @@ ECS::FlowerParticleConfigComponent DeserializeFlowerParticleConfigComponent(cons
 // each save entry point; saving is main-thread only.
 static bool g_PreferMeshReferences = true;
 
+json SerializeAnimationLODComponent(const ECS::AnimationLODComponent& lod) {
+    json j;
+    j["enabled"] = lod.enabled;
+    j["bandCount"] = RF(lod.bandCount);
+    j["cullDistance"] = RF(lod.cullDistance);
+    json bands = json::array();
+    for (i32 b = 0; b < lod.bandCount && b < ECS::AnimationLODComponent::MAX_BANDS; ++b) {
+        const auto& band = lod.bands[b];
+        json jb;
+        jb["beginDistance"] = RF(band.beginDistance);
+        jb["updateHz"] = RF(band.updateHz);
+        jb["ik"] = band.ik;
+        jb["blendTrees"] = band.blendTrees;
+        jb["interpolate"] = band.interpolate;
+        bands.push_back(jb);
+    }
+    j["bands"] = bands;
+    return j;
+}
+
+ECS::AnimationLODComponent DeserializeAnimationLODComponent(const json& j) {
+    ECS::AnimationLODComponent lod;
+    if (j.contains("enabled")) lod.enabled = JB(j["enabled"]);
+    if (j.contains("cullDistance")) lod.cullDistance = j["cullDistance"].get<f32>();
+    if (j.contains("bandCount")) {
+        lod.bandCount = j["bandCount"].get<i32>();
+        if (lod.bandCount < 1) lod.bandCount = 1;
+        if (lod.bandCount > ECS::AnimationLODComponent::MAX_BANDS)
+            lod.bandCount = ECS::AnimationLODComponent::MAX_BANDS;
+    }
+    if (j.contains("bands") && j["bands"].is_array()) {
+        for (i32 b = 0; b < lod.bandCount && b < static_cast<i32>(j["bands"].size()); ++b) {
+            const auto& jb = j["bands"][b];
+            auto& band = lod.bands[b];
+            if (jb.contains("beginDistance")) band.beginDistance = jb["beginDistance"].get<f32>();
+            if (jb.contains("updateHz")) band.updateHz = jb["updateHz"].get<f32>();
+            if (jb.contains("ik")) band.ik = JB(jb["ik"]);
+            if (jb.contains("blendTrees")) band.blendTrees = JB(jb["blendTrees"]);
+            if (jb.contains("interpolate")) band.interpolate = JB(jb["interpolate"]);
+        }
+    }
+    return lod;
+}
+
 json SerializeLODComponent(const ECS::LODComponent& lod) {
     json j;
     j["levelCount"] = RF(lod.levelCount);
@@ -9831,6 +9875,7 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
     static const std::vector<ComponentSerdes> reg = {
         ENJIN_SERDES("aiController", ECS::AIControllerComponent, SerializeAIControllerComponent, DeserializeAIControllerComponent),
         ENJIN_SERDES("animatedSprite2D", ECS::AnimatedSprite2DComponent, SerializeAnimatedSprite2DComponent, DeserializeAnimatedSprite2DComponent),
+        ENJIN_SERDES("animationLOD", ECS::AnimationLODComponent, SerializeAnimationLODComponent, DeserializeAnimationLODComponent),
         ENJIN_SERDES("animationRecorder", ECS::AnimationRecorderComponent, SerializeAnimationRecorderComponent, DeserializeAnimationRecorderComponent),
         ENJIN_SERDES("brushSolid", ECS::BrushSolidComponent, SerializeBrushSolidComponent, DeserializeBrushSolidComponent),
         ENJIN_SERDES("artStyle", ECS::ArtStyleComponent, SerializeArtStyleComponent, DeserializeArtStyleComponent),

@@ -3,6 +3,7 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/ECS/Component.h"
 #include "Enjin/Animation/Animation.h"
+#include "Enjin/ECS/Components/AnimationLOD.h"
 #include "Enjin/Math/Vector.h"
 #include <memory>
 
@@ -88,7 +89,11 @@ struct ENJIN_API AnimatorComponent : public IComponent {
     // Deliberately absent from the copy/move member lists below — resetting to 0 on
     // copy is harmless for a runtime accumulator.
     f32 lodAccumulatedTime = 0.0f;
-    u32 lodFramePhase = 0;
+    // Set once, the first time this animator is rate-limited, after its accumulator has
+    // been nudged by a fraction of a period. Without that nudge every character in a crowd
+    // sharing one band refreshes on the SAME frame, and the saving turns into a spike on
+    // that frame -- worse than doing the work every frame.
+    u32 lodPhaseSeeded = 0;
 
     AnimatorComponent() = default;
 
@@ -166,11 +171,18 @@ struct ENJIN_API AnimatorComponent : public IComponent {
         return (it != blendParameters.end()) ? it->second : 0.0f;
     }
 
-    void Update(f32 deltaTime) {
+    // `quality` is what animation LOD allows this animator on this frame
+    // (AnimationLOD.h). It defaults to full fidelity, so a caller that knows nothing
+    // about LOD keeps exactly the behaviour it had.
+    void Update(f32 deltaTime, const AnimationQuality& quality = AnimationQuality{}) {
         stateMachine.Update(deltaTime);
+        animator.SetInterpolate(quality.interpolate);
 
-        // If blend tree is enabled and has a valid parameter, use it instead of normal playback
-        if (blendTree.enabled && !blendTree.parameterName.empty() && blendTree.nodes.size() >= 2) {
+        // If blend tree is enabled and has a valid parameter, use it instead of normal
+        // playback. Dropping the blend tree falls back to plain clip playback rather
+        // than to nothing: a distant character should stop BLENDING, not stop moving.
+        if (quality.blendTrees && blendTree.enabled && !blendTree.parameterName.empty()
+            && blendTree.nodes.size() >= 2) {
             f32 paramValue = GetBlendParameter(blendTree.parameterName);
             animator.UpdateBlendTree(blendTree, paramValue, deltaTime);
         } else {

@@ -144,6 +144,7 @@ void RenderSystem::CacheComponentStorages() {
         m_CachedMeshRendererStorage = nullptr;
         m_CachedMaterialSlotsStorage = nullptr;
         m_CachedAnimatorStorage = nullptr;
+        m_CachedAnimationLODStorage = nullptr;
         m_CachedViewmodelStorage = nullptr;
         m_CachedTextStorage = nullptr;
         m_CachedArtStyleStorage = nullptr;
@@ -163,6 +164,7 @@ void RenderSystem::CacheComponentStorages() {
     m_CachedMeshRendererStorage = m_World->GetComponentStorage<MeshRendererComponent>();
     m_CachedMaterialSlotsStorage = m_World->GetComponentStorage<MaterialSlotsComponent>();
     m_CachedAnimatorStorage = m_World->GetComponentStorage<AnimatorComponent>();
+    m_CachedAnimationLODStorage = m_World->GetComponentStorage<AnimationLODComponent>();
     m_CachedViewmodelStorage = m_World->GetComponentStorage<ViewmodelComponent>();
     m_CachedTextStorage = m_World->GetComponentStorage<TextComponent>();
     m_CachedArtStyleStorage = m_World->GetComponentStorage<ArtStyleComponent>();
@@ -333,50 +335,82 @@ i32 RenderSystem::ChooseLOD(Entity entity, LODComponent& lod,
     return SelectLOD(lod, lodMetric);
 }
 
-// Animation LOD: should this animator refresh its pose THIS frame, and with how
-// much time?
+// What an entity with no AnimationLODComponent gets.
 //
-// Refreshing a distant animator every frame is work nobody sees. Time is
-// preserved by banking dt into lodAccumulatedTime, so the pose is still correct
-// when it does refresh -- it just refreshes at 1/2, 1/4 or 1/8 rate with
-// distance. The per-entity phase offset spreads the refreshes across frames so
-// they do not all land on the same one (thundering herd). IK is gated with the
-// pose refresh, because applying IK to a stale un-refreshed pose stacks.
+// The component's own defaults, which reproduce the four hardcoded distances and the
+// 1/2/4/8 frame interval this replaced, at 60fps. A project that adds the component and
+// leaves it alone therefore changes nothing, and one that never adds it keeps the
+// behaviour it already had.
+static const ECS::AnimationLODComponent kDefaultAnimationLOD{};
+
+// Animation LOD: should this animator refresh its pose THIS frame, with how much time,
+// and at what fidelity?
 //
-// This lived inside the Vulkan Update and nowhere else, which means WEB HAS NO
-// ANIMATION LOD AT ALL -- every animator refreshes every frame on the platform
-// least able to afford it. There is nothing backend-shaped in here: it reads a
-// transform and the camera, does arithmetic, and returns a bool. It was trapped
-// on one side because it was written inside a loop in a 1,600-line function.
+// Refreshing a distant animator at full rate and full fidelity is work nobody sees, and
+// animation is usually the most expensive thing a crowd does. Time for skipped frames is
+// banked in lodAccumulatedTime, so the clip never drifts -- it advances by the whole
+// elapsed time on the frame it does refresh.
 //
-// Hoisting it does not switch it on for web by itself: on web the animator ticks
-// in web_main.cpp rather than in this Update, so the call site is over there.
-// What this does is make the decision one shared, testable thing that web can
-// call, instead of a block only one backend can see. (Backlog: wire it on web.)
+// The bands are AUTHORED now, on AnimationLODComponent, per model. They used to be four
+// `constexpr f32` distances and a 1/2/4/8 frame interval sitting in this function, which
+// meant a project could not tune them, could not measure them per character, and could not
+// see them at all. The rate is in HERTZ rather than frames for the same reason: skipping
+// every Nth FRAME made a distant character animate twice as smoothly at 120fps as at 60,
+// which is backwards -- the machine struggling to hold 60 is the one that needed the
+// saving. An entity with no component gets kDefaultAnimationLOD, which reproduces the old
+// numbers at 60fps.
 //
-// Returns false to skip this frame. `outStepDt` is the time to advance by, which
-// is the banked total rather than this frame's dt.
+// The per-entity phase offset spreads refreshes across frames so they do not all land on
+// the same one (thundering herd); without it the saving is real but the frame it lands on
+// is worse than doing the work every frame.
+//
+// This lived inside the Vulkan Update and nowhere else, so WEB HAD NO ANIMATION LOD AT
+// ALL -- every animator refreshed every frame on the platform least able to afford it.
+// There is nothing backend-shaped in here: it reads a transform, a component and the
+// camera, does arithmetic, and answers. Hoisting it does not switch it on for web by
+// itself (web ticks animators in web_main.cpp), but it makes the decision one shared,
+// testable thing that web can call.
+//
+// Returns false to skip this frame. `outStepDt` is the banked total, not this frame's dt;
+// `outQuality` is what the pose update is allowed to do.
 bool RenderSystem::ShouldRefreshAnimator(AnimatorComponent& ac, Entity entity,
-                                         f32 deltaTime, f32& outStepDt) {
+                                         f32 deltaTime, f32& outStepDt,
+                                         AnimationQuality& outQuality) {
     outStepDt = deltaTime;
+    outQuality = AnimationQuality{};
     if (!m_AnimationLODEnabled || !m_Camera || deltaTime <= 0.0f) return true;
 
-    constexpr f32 kAnimLODNear = 30.0f;   // full rate within this radius
-    constexpr f32 kAnimLODFar  = 70.0f;   // half rate to here
-    constexpr f32 kAnimLODFar2 = 140.0f;  // quarter to here, eighth beyond
+    const AnimationLODComponent* authored =
+        m_CachedAnimationLODStorage ? m_CachedAnimationLODStorage->Get(entity) : nullptr;
+    const AnimationLODComponent& lod = authored ? *authored : kDefaultAnimationLOD;
+    if (!lod.enabled) return true;
 
     const Math::Matrix4 lodWm = ComputeWorldMatrix(m_World, entity);
     const Math::Vector3 lodPos(lodWm.m[12], lodWm.m[13], lodWm.m[14]);
     const f32 camDist = (lodPos - m_Camera->GetPosition()).Length();
-    const u32 interval = (camDist < kAnimLODNear) ? 1u
-                       : (camDist < kAnimLODFar)  ? 2u
-                       : (camDist < kAnimLODFar2) ? 4u : 8u;
 
     ac.lodAccumulatedTime += deltaTime;
-    ac.lodFramePhase++;
-    if (interval > 1u && ((ac.lodFramePhase + EntityIndex(entity)) % interval) != 0u) {
-        return false;
+
+    // Past the cull distance the pose is HELD, not zeroed: it still renders and still
+    // casts a shadow, so freezing it is the cheap answer and blanking it is a bug.
+    if (lod.cullDistance > 0.0f && camDist > lod.cullDistance) return false;
+
+    const AnimationLODComponent::Band& band = lod.bands[lod.ResolveBand(camDist)];
+    outQuality.blendTrees  = band.blendTrees;
+    outQuality.interpolate = band.interpolate;
+
+    if (band.updateHz > 0.0f) {
+        const f32 period = 1.0f / band.updateHz;
+        // Spread the herd: each entity's first refresh is offset within the period by a
+        // fraction of its slot index, so a crowd sharing one band does not refresh on the
+        // same frame and spike it.
+        if (ac.lodPhaseSeeded == 0u) {
+            ac.lodPhaseSeeded = 1u;
+            ac.lodAccumulatedTime += period * (static_cast<f32>(EntityIndex(entity) % 16u) / 16.0f);
+        }
+        if (ac.lodAccumulatedTime < period) return false;
     }
+
     outStepDt = ac.lodAccumulatedTime;
     ac.lodAccumulatedTime = 0.0f;
     return true;
@@ -8594,11 +8628,28 @@ void RenderSystem::Update(f32 deltaTime) {
 
         // Animation LOD. Shared above the backend #if -- see ShouldRefreshAnimator.
         f32 stepDt = deltaTime;
-        if (!ShouldRefreshAnimator(*animComp, entity, deltaTime, stepDt)) {
+        AnimationQuality quality{};
+        if (!ShouldRefreshAnimator(*animComp, entity, deltaTime, stepDt, quality)) {
             continue;   // skipped this frame; the dt stays banked for the next one
         }
 
-        m_AnimJobs.push_back({ entity, animComp, stepDt });
+        // IK rides the band too, and is decided HERE rather than in the IK pass so the
+        // decision is made once, from the same distance, as everything else about this
+        // frame's quality.
+        bool allowIK = true;
+        if (m_AnimationLODEnabled && m_Camera) {
+            const AnimationLODComponent* authoredLod =
+                m_CachedAnimationLODStorage ? m_CachedAnimationLODStorage->Get(entity) : nullptr;
+            const AnimationLODComponent& lodCfg = authoredLod ? *authoredLod : kDefaultAnimationLOD;
+            if (lodCfg.enabled) {
+                const Math::Matrix4 wm = ComputeWorldMatrix(m_World, entity);
+                const f32 d = (Math::Vector3(wm.m[12], wm.m[13], wm.m[14])
+                               - m_Camera->GetPosition()).Length();
+                allowIK = lodCfg.bands[lodCfg.ResolveBand(d)].ik;
+            }
+        }
+
+        m_AnimJobs.push_back({ entity, animComp, stepDt, quality, allowIK });
     }
     }   // end Anim/1-collect scope
 
@@ -8621,15 +8672,15 @@ void RenderSystem::Update(f32 deltaTime) {
                 const usize end = std::min(start + chunk, jobCount);
                 futures.push_back(m_ThreadPool.Submit([this, start, end]() {
                     for (usize i = start; i < end; ++i)
-                        m_AnimJobs[i].comp->Update(m_AnimJobs[i].stepDt);
+                        m_AnimJobs[i].comp->Update(m_AnimJobs[i].stepDt, m_AnimJobs[i].quality);
                 }));
             }
             const usize mainEnd = std::min(chunk, jobCount);
             for (usize i = 0; i < mainEnd; ++i)
-                m_AnimJobs[i].comp->Update(m_AnimJobs[i].stepDt);
+                m_AnimJobs[i].comp->Update(m_AnimJobs[i].stepDt, m_AnimJobs[i].quality);
             for (auto& f : futures) f.get();
         } else {
-            for (auto& j : m_AnimJobs) j.comp->Update(j.stepDt);
+            for (auto& j : m_AnimJobs) j.comp->Update(j.stepDt, j.quality);
         }
     }
 
@@ -8643,6 +8694,11 @@ void RenderSystem::Update(f32 deltaTime) {
         // IK used to be skipped entirely unless a clip was playing, which is
         // backwards for the case that matters most: a character standing still
         // with a hand resting on a counter is exactly when nothing is playing.
+        // Animation LOD said this character is too far away to be worth a solve.
+        // Skipping it also skips the bind-pose restore below, which is correct: a pose
+        // nobody is editing has nothing to reset.
+        if (!job.allowIK) continue;
+
         const bool hasIK =
             m_World->HasComponent<LookAtIKComponent>(entity) ||
             m_World->HasComponent<InteractionIKComponent>(entity) ||

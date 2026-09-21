@@ -727,6 +727,7 @@ private:
     void DrawTransformComponent(ECS::Entity entity);
     void DrawMeshComponent(ECS::Entity entity);
     void DrawLODComponent(ECS::Entity entity);
+    void DrawAnimationLODComponent(ECS::Entity entity);
     void DrawMaterialComponent(ECS::Entity entity);
     void DrawMaterialSlotsComponent(ECS::Entity entity);
     void DrawLightComponent(ECS::Entity entity);

@@ -43,6 +43,7 @@ namespace Enjin::Build { class AssetReader; }
 #include "Enjin/Renderer/VectorTessellator.h"
 #include "Enjin/ECS/Components/DisplayGraphic.h"
 #include "Enjin/ECS/Components/Skeleton.h"
+#include "Enjin/ECS/Components/AnimationLOD.h"
 #include "Enjin/ECS/Components/Viewmodel.h"
 #include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/MeshRenderer.h"
@@ -1841,6 +1842,7 @@ private:
     ComponentStorage<MeshRendererComponent>* m_CachedMeshRendererStorage = nullptr;
     ComponentStorage<MaterialSlotsComponent>* m_CachedMaterialSlotsStorage = nullptr;
     ComponentStorage<AnimatorComponent>* m_CachedAnimatorStorage = nullptr;
+    ComponentStorage<AnimationLODComponent>* m_CachedAnimationLODStorage = nullptr;
     ComponentStorage<ViewmodelComponent>* m_CachedViewmodelStorage = nullptr;
     // First animator-with-skeleton entity (orphan skinned mesh fallback). Stored as an
     // ENTITY, not an AnimatorComponent*: AddComponent<AnimatorComponent> mid-frame (FBX
@@ -1859,7 +1861,16 @@ private:
     // clip events are COLLECTED, not fired, so nothing calls into gameplay/scripts on a
     // worker thread); Pass 3 (serial) applies IK and fires the deferred events. Reused
     // across frames to avoid per-frame allocation.
-    struct AnimUpdateJob { Entity entity; AnimatorComponent* comp; f32 stepDt; };
+    // quality and allowIK are animation LOD's answers for THIS frame, decided once in
+    // pass 1 from one distance, rather than each pass asking again and risking three
+    // slightly different answers for one character.
+    struct AnimUpdateJob {
+        Entity entity;
+        AnimatorComponent* comp;
+        f32 stepDt;
+        AnimationQuality quality;
+        bool allowIK;
+    };
     std::vector<AnimUpdateJob> m_AnimJobs;
     // Resolve the animator that should skin this entity: its own, else the leader driving
     // its shared skeleton, else the per-frame fallback. Returns null for non-skinned entities.
@@ -3138,7 +3149,8 @@ public:
     // Animation LOD. Lived inside the Vulkan Update only, so web refreshes every
     // animator every frame. Backend-agnostic; web's call site is in web_main.
     bool ShouldRefreshAnimator(AnimatorComponent& ac, Entity entity,
-                               f32 deltaTime, f32& outStepDt);
+                               f32 deltaTime, f32& outStepDt,
+                               AnimationQuality& outQuality);
 
     // Which LOD level an entity should be on. Was TWO DIFFERENT ALGORITHMS, one
     // per backend -- web had plain distance and none of the screen-size metric,

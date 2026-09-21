@@ -163,7 +163,7 @@ const SpriteFrame* SpriteAnimator::GetCurrentFrame() const {
 
 template<typename T>
 static T SampleKeyframes(const std::vector<f32>& times, const std::vector<T>& values, f32 time,
-                         T (*lerpFunc)(const T&, const T&, f32)) {
+                         T (*lerpFunc)(const T&, const T&, f32), bool interpolate = true) {
     if (times.size() != values.size() || times.empty()) return T{};
     if (values.size() == 1) return values[0];
 
@@ -182,6 +182,11 @@ static T SampleKeyframes(const std::vector<f32>& times, const std::vector<T>& va
     f32 denom = t2 - t1;
     f32 t = (denom > 1e-7f) ? (time - t1) / denom : 0.0f;
 
+    // Nearest PRECEDING key, not nearest key. Holding the pose the clip was last in
+    // is what a low-fidelity sample should look like; rounding to whichever key is
+    // closer would let a pose arrive before its keyframe does.
+    if (!interpolate) return values[i];
+
     return lerpFunc(values[i], values[i + 1], t);
 }
 
@@ -193,21 +198,21 @@ static Math::Quaternion SlerpQuat(const Math::Quaternion& a, const Math::Quatern
     return Math::Quaternion::Slerp(a, b, t);
 }
 
-Math::Vector3 BoneTrack::SamplePosition(f32 time) const {
-    return SampleKeyframes(positionTimes, positions, time, LerpVec3);
+Math::Vector3 BoneTrack::SamplePosition(f32 time, bool interpolate) const {
+    return SampleKeyframes(positionTimes, positions, time, LerpVec3, interpolate);
 }
 
-Math::Quaternion BoneTrack::SampleRotation(f32 time) const {
+Math::Quaternion BoneTrack::SampleRotation(f32 time, bool interpolate) const {
     // Return identity quaternion instead of zero quaternion when keyframes are empty
     if (rotations.empty() || rotationTimes.size() != rotations.size()) {
         return Math::Quaternion(0, 0, 0, 1);
     }
-    return SampleKeyframes(rotationTimes, rotations, time, SlerpQuat);
+    return SampleKeyframes(rotationTimes, rotations, time, SlerpQuat, interpolate);
 }
 
-Math::Vector3 BoneTrack::SampleScale(f32 time) const {
+Math::Vector3 BoneTrack::SampleScale(f32 time, bool interpolate) const {
     if (scales.empty()) return Math::Vector3(1, 1, 1);
-    return SampleKeyframes(scaleTimes, scales, time, LerpVec3);
+    return SampleKeyframes(scaleTimes, scales, time, LerpVec3, interpolate);
 }
 
 // ============================================================================
@@ -510,13 +515,13 @@ void SkeletalAnimator::SampleAnimation(const SkeletalAnimation& anim, f32 time, 
         }
 
         if (!track.positions.empty()) {
-            outPose.localPositions[track.boneIndex] = track.SamplePosition(time);
+            outPose.localPositions[track.boneIndex] = track.SamplePosition(time, m_Interpolate);
         }
         if (!track.rotations.empty()) {
-            outPose.localRotations[track.boneIndex] = track.SampleRotation(time);
+            outPose.localRotations[track.boneIndex] = track.SampleRotation(time, m_Interpolate);
         }
         if (!track.scales.empty()) {
-            outPose.localScales[track.boneIndex] = track.SampleScale(time);
+            outPose.localScales[track.boneIndex] = track.SampleScale(time, m_Interpolate);
         }
     }
 }
@@ -582,13 +587,13 @@ std::vector<Math::Matrix4> SkeletalAnimator::SampleSkinningMatricesAtTime(f32 ti
     for (const auto& track : m_CurrentAnim->tracks) {
         if (track.boneIndex < 0 || track.boneIndex >= static_cast<i32>(boneCount)) continue;
         if (!track.positions.empty()) {
-            tempPose.localPositions[track.boneIndex] = track.SamplePosition(time);
+            tempPose.localPositions[track.boneIndex] = track.SamplePosition(time, m_Interpolate);
         }
         if (!track.rotations.empty()) {
-            tempPose.localRotations[track.boneIndex] = track.SampleRotation(time);
+            tempPose.localRotations[track.boneIndex] = track.SampleRotation(time, m_Interpolate);
         }
         if (!track.scales.empty()) {
-            tempPose.localScales[track.boneIndex] = track.SampleScale(time);
+            tempPose.localScales[track.boneIndex] = track.SampleScale(time, m_Interpolate);
         }
     }
 

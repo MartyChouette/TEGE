@@ -565,6 +565,71 @@ void EditorLayer::DrawMeshComponent(ECS::Entity entity) {
     }
 }
 
+void EditorLayer::DrawAnimationLODComponent(ECS::Entity entity) {
+    bool open = UI::SectionHeader("Animation LOD", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("AnimLODCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::AnimationLODComponent>(entity, "animationLOD", "Animation LOD");
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (!open) return;
+
+    ECS::AnimationLODComponent* lod = m_World->GetComponent<ECS::AnimationLODComponent>(entity);
+    if (!lod) return;
+    DrawComponentHelp("animationLOD", m_World, entity);
+
+    if (!m_World->HasComponent<ECS::AnimatorComponent>(entity)) {
+        ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f),
+                           "No Animator - this only affects entities that animate");
+    }
+
+    InspectorUndo::Checkbox(m_UndoRedo, "Enabled", &lod->enabled);
+
+    // 0 means never; the slider starts at 0 so that is reachable without typing.
+    InspectorUndo::SliderFloat(m_UndoRedo, "Stop Updating Past", &lod->cullDistance,
+                               0.0f, 500.0f, "%.0f m");
+    ImGui::TextDisabled("Pose is HELD past this, not blanked: it still renders");
+    ImGui::TextDisabled("and still casts a shadow. 0 never stops.");
+
+    i32 bandCount = lod->bandCount;
+    if (InspectorUndo::SliderInt(m_UndoRedo, "Bands", &bandCount, 1,
+                                 ECS::AnimationLODComponent::MAX_BANDS)) {
+        lod->bandCount = bandCount;
+    }
+
+    ImGui::Separator();
+    for (i32 b = 0; b < lod->bandCount && b < ECS::AnimationLODComponent::MAX_BANDS; ++b) {
+        auto& band = lod->bands[b];
+        ImGui::PushID(b);
+
+        char label[48];
+        std::snprintf(label, sizeof(label), "Band %d", b);
+        if (ImGui::TreeNodeEx(label, b == 0 ? ImGuiTreeNodeFlags_DefaultOpen : 0)) {
+            if (b == 0) {
+                ImGui::TextDisabled("From the camera outwards");
+            } else {
+                InspectorUndo::SliderFloat(m_UndoRedo, "From", &band.beginDistance,
+                                           0.0f, 500.0f, "%.0f m");
+            }
+            // In hertz, not frames: skipping every Nth frame made a distant character
+            // animate more smoothly on a faster machine, which is backwards.
+            InspectorUndo::SliderFloat(m_UndoRedo, "Update Rate", &band.updateHz,
+                                       0.0f, 60.0f, band.updateHz <= 0.0f ? "every frame" : "%.1f Hz");
+            InspectorUndo::Checkbox(m_UndoRedo, "Solve IK", &band.ik);
+            InspectorUndo::Checkbox(m_UndoRedo, "Blend Trees", &band.blendTrees);
+            InspectorUndo::Checkbox(m_UndoRedo, "Interpolate Keys", &band.interpolate);
+            if (!band.interpolate) {
+                ImGui::TextDisabled("Snaps to the preceding keyframe");
+            }
+            ImGui::TreePop();
+        }
+        ImGui::PopID();
+    }
+}
+
 void EditorLayer::DrawLODComponent(ECS::Entity entity) {
     bool lodOpen = UI::SectionHeader("LOD", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("LODCtx")) {
