@@ -159,6 +159,37 @@ def camera(entity_id, pos, pitch_deg):
     }
 
 
+def viewport_camera(entity_id, name, pos, pitch_deg, rect):
+    """A camera that owns part of the frame.
+
+    The player switches to the splitscreen path when there are TWO OR MORE active
+    cameras and at least one has a viewport rect that is not the full frame
+    (Player/src/main.cpp). Both conditions, so a second full-frame camera does not
+    do it.
+
+    PITCH ONLY, and deliberately. The first version of this composed a yaw and a
+    pitch by hand and aimed the right-hand camera at empty sky, which read as
+    "splitscreen is not working" when splitscreen was working perfectly -- the half
+    was simply empty. Hand-rolled axis products are a documented trap in this
+    engine (the gizmo write-back bug); two cameras offset along X see the same row
+    from different places, which is all this demo needs.
+    """
+    p = math.radians(pitch_deg)
+    x, y, w, h = rect
+    return {
+        "id": entity_id,
+        "name": {"name": name},
+        "transform": transform(pos, rot=(math.sin(p / 2), 0.0, 0.0, math.cos(p / 2))),
+        "camera": {"projectionType": 0, "fieldOfView": 58.0, "nearPlane": 0.1,
+                   "farPlane": 500.0, "isActive": True, "priority": 10,
+                   "clearColor": True, "clearDepth": True,
+                   "backgroundColor": [0.55, 0.62, 0.70],
+                   "cullingMask": 4294967295, "orthoSize": 10.0,
+                   "viewportX": x, "viewportY": y,
+                   "viewportWidth": w, "viewportHeight": h},
+    }
+
+
 def ground(entity_id, half=24.0):
     return {
         "id": entity_id,
@@ -347,6 +378,38 @@ def strip_modes(entities):
     return out
 
 
+# --------------------------------------------------------------------------
+# Splitscreen -- the band row, seen through two viewports
+# --------------------------------------------------------------------------
+
+def splitscreen():
+    """Two viewports over the SAME band row, on purpose.
+
+    RenderSplitscreen is the third push-constant builder and it holds its own copy
+    of the surfaceParam cascade -- the copy that was missing the ArtStyle overrides.
+    Until this project existed, NOTHING in the harness rendered through it at all,
+    so that builder could not be migrated to the shared cascade with any proof, and
+    a bug in it was invisible. Putting the band cubes in front of it is what makes
+    the migration checkable rather than a leap.
+
+    The two cameras look from different angles so the halves are visibly different
+    frames. Two halves that matched would pass a draws claim while proving only
+    that one view got copied twice.
+    """
+    e = [x for x in surface_bands() if "camera" not in x]
+    # Offset along X and at different heights, so the halves are visibly different
+    # frames of the same row. Two halves that matched would pass a draws claim while
+    # proving only that one view got copied twice.
+    # Ids 20 and 21, NOT 2 and 3. The ground is entity 3, and reusing that id made it
+    # vanish from both halves -- which read as "splitscreen loses the ground" when it
+    # was two entities claiming one id.
+    e.append(viewport_camera(20, "CameraLeft",  (-3.2, 3.0, 9.5), -10.0,
+                             (0.0, 0.0, 0.5, 1.0)))
+    e.append(viewport_camera(21, "CameraRight", (3.2, 5.5, 13.0), -18.0,
+                             (0.5, 0.0, 0.5, 1.0)))
+    return e
+
+
 def main():
     import sys
     control = "--control" in sys.argv
@@ -360,6 +423,10 @@ def main():
         print("CONTROL: band modes and art styles stripped")
     write_project("SurfaceBands", sb, palettes)
     write_project("ArtStyles", art)
+    ss = splitscreen()
+    if control:
+        ss = strip_modes(ss)
+    write_project("Splitscreen", ss, palettes)
 
 
 if __name__ == "__main__":
