@@ -681,6 +681,35 @@
         "renders": true
       },
       "note": "adr-0008 reference corpus: one cube per material mode, cel shading ON. Captured so a flag-word or permutation change is a pixel diff rather than a judgement."
+    },
+    {
+      "name": "SurfaceBands",
+      "project": "Examples/SurfaceBands/SurfaceBands.enjinproject",
+      "_why": "Every surfaceParam band the cascade can claim, in band order, so a capture diff says WHICH band moved. Verified against a stripped control (python tools/make_coverage_demos.py --control): 100 dither gradient, 200 dither transparency, 300 elemental, 400 surface noise and 500 palette all change the picture. Band 600 lightmapped is deliberately NOT here -- without a baked lightmap it renders identical to a plain material, which is coverage that covers nothing; the Lightmap project has the bake, and that 600 beats 500 for the slot is pinned by TestMaterialDrawState.",
+      "frames": [
+        30,
+        240
+      ],
+      "claims": {
+        "draws": true,
+        "animates": {
+          "min_changed_pct": 0.3
+        }
+      },
+      "_animates_why": "The palette on the 500 cube cycles at 6 entries/sec, so this scene DOES move and the claim is kept on: it is the only thing here that would notice palette cycling stopping."
+    },
+    {
+      "name": "ArtStyles",
+      "project": "Examples/ArtStyles/ArtStyles.enjinproject",
+      "_why": "The four per-entity ArtStyleComponent overrides. All four verified against a stripped control: PrePBR, CelToon, Retro and MaterialExpression each change the picture. NPR, PixelArt and Analog are full-screen styles applied from the camera, so a per-entity cube would prove nothing about them and they are left out rather than included to make the row look complete.",
+      "frames": [
+        30,
+        240
+      ],
+      "claims": {
+        "draws": true
+      },
+      "_animates_why": "OFF: these are static shading overrides and nothing in the scene moves. That is the point -- a diff here means the art-style path changed, not that a clock stopped."
     }
   ]
 }
