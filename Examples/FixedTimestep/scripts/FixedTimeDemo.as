@@ -8,6 +8,13 @@ class FixedTimeDemo : TegeBehavior {
     array<Vector3> startPos;
     array<Vector3> startRot;
 
+    // How long one run of the demo lasts before it replays itself. Long enough
+    // to watch the ball land and the stack settle, short enough that nobody
+    // waits for it -- and short enough that two captures seconds apart are
+    // never both in the still part of the same cycle.
+    float CYCLE_SECONDS = 4.0f;   // not const: AngelScript forbids const class properties
+    float sinceCycle = 0.0f;
+
     void OnStart() {
         // Remember every dynamic body's starting pose so R can reset the scene
         // instantly (Scene_Restart needs the SceneManager to own the scene,
@@ -76,6 +83,28 @@ class FixedTimeDemo : TegeBehavior {
         }
         if (Input_GetKeyDown(Key::R)) {
             ResetBodies();
+        }
+
+        // The demo runs itself on a loop.
+        //
+        // Without this the whole thing is over in about a second and a half: the
+        // ball falls, the stack settles, and every frame after that is the same
+        // still picture of a pile of crates. Someone who opens it, reads the
+        // instructions and then looks up has missed it, and in a browser they
+        // ALWAYS have -- the page spends longer than that on its preloader and
+        // its click-to-play gate before a frame is ever shown. A demo whose
+        // subject is simulation timing should still be simulating when you look
+        // at it.
+        //
+        // Any key that changes the scene pushes the next cycle back, so the loop
+        // never interrupts someone experimenting.
+        sinceCycle += dt;
+        if (Input_GetKeyDown(Key::E) || Input_GetKeyDown(Key::R)) sinceCycle = 0.0f;
+        if (sinceCycle >= CYCLE_SECONDS) {
+            sinceCycle = 0.0f;
+            ResetBodies();
+            // Reset drops the bodies back at their start, so the ball falls and
+            // the stack is struck again -- the same event the demo opens with.
         }
     }
 }

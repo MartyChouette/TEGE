@@ -69,6 +69,13 @@
         240,
         500
       ],
+      "web_frames": [
+        150,
+        200,
+        260,
+        330
+      ],
+      "_web_frames_why": "A browser cannot be photographed at simulation frame 30: the preloader, the Click-to-Play gate and the clicking needed to get through them take real time, and the earliest reachable frame here was measured at about 120. The demo replays itself every 4 seconds (240 frames), so these four land at cycle phases 150, 200, 20 and 90 -- ball settled, still settled, just reset, mid-fall. Asking for the desktop frames instead returned four photographs of the same settled pile, which is what made this project read as FROZEN on web.",
       "claims": {
         "draws": true,
         "animates": {
@@ -745,6 +752,23 @@
         "draws": true
       },
       "_animates_why": "OFF: nothing in the scene moves. A LOD ladder is a still comparison."
+    },
+    {
+      "name": "AnimationLOD",
+      "project": "Examples/AnimationLOD/AnimationLOD.enjinproject",
+      "_why": "Four identical swaying rigs at increasing distance, each gated by an AnimationLODComponent. The component shipped on 2026-09-21 with unit tests and NO capture, because nothing in the harness had a rigged model in it -- HandIK has the only skeleton in Examples and its animator carries no clip. Unit tests pin the band arithmetic; they cannot tell you the gate is wired to the animator, and a rate gate that is computed and never applied looks exactly like one that works. The control (make_coverage_demos.py --control) is the gate DISABLED, same rigs and same clip, so a byte-identical pair means the feature did nothing.",
+      "frames": [
+        30,
+        90,
+        240
+      ],
+      "claims": {
+        "draws": true,
+        "animates": {
+          "min_changed_pct": 0.3
+        }
+      },
+      "_animates_why": "The near rig is in the 0 Hz band, which means unthrottled, so it sways every frame. A still capture here would mean the animator is not ticking at all."
     }
   ]
 }

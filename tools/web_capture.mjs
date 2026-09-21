@@ -301,20 +301,69 @@ try {
 
     const multi = frameList.length > 1;
     const stem = outPath.replace(/\.png$/i, '');
+
+    // Count SIMULATION frames when the build can report them, rAF ticks
+    // otherwise.
+    //
+    // rAF ticks start at page load, and on web everything before the first
+    // counted frame -- the preloader, the "Click to Play" gate, this tool's own
+    // click choreography -- is time the game may already have been running. So
+    // "capture at frame 30" meant "capture an unknown distance into the
+    // simulation", varying with machine load, and a desktop capture at frame 30
+    // and a web capture at frame 30 were not photographs of the same moment.
+    // That is how Examples/FixedTimestep -- a demo about simulation timing --
+    // read as FROZEN on web: by the time counting began its one falling body had
+    // landed, so every capture was the same settled scene, and comparing two of
+    // them proved only that nothing was moving any more.
+    //
+    // _getSimFrame counts frames in which gameplay actually ran. An older build
+    // does not export it and falls back to rAF, which is the behaviour this
+    // replaces rather than a second thing to maintain.
+    const hasSimClock = await page.evaluate(
+        () => typeof Module !== 'undefined' && typeof Module._getSimFrame === 'function'
+    ).catch(() => false);
+    if (!hasSimClock) {
+        console.error('  note: this build does not export _getSimFrame; ' +
+                      'counting browser frames, which start before the game does');
+    }
+
+    const dest0 = (st, t, m, o) =>
+        m ? `${st}.f${String(t).padStart(4, '0')}.png` : o;
+
     let waited = 0;
     for (const target of frameList) {
         const step = target - waited;
         if (step > 0) {
-            waited = await page.evaluate((n, from) => new Promise((resolve) => {
-                let i = 0;
-                const tick = () => {
-                    if (++i >= n) resolve(from + i);
-                    else requestAnimationFrame(tick);
-                };
-                requestAnimationFrame(tick);
-            }), step, waited);
+            waited = hasSimClock
+                ? await page.evaluate((t) => new Promise((resolve) => {
+                    // ABSOLUTE, not relative. `target` means "the target'th
+                    // frame the simulation has run", so it is the same moment a
+                    // desktop capture at that frame photographs -- a relative
+                    // wait would just re-add whatever offset this tool's own
+                    // startup happened to cost.
+                    const tick = () => {
+                        const now = Module._getSimFrame();
+                        if (now >= t) resolve(now);
+                        else requestAnimationFrame(tick);
+                    };
+                    requestAnimationFrame(tick);
+                }), target)
+                : await page.evaluate((n, from) => new Promise((resolve) => {
+                    let i = 0;
+                    const tick = () => {
+                        if (++i >= n) resolve(from + i);
+                        else requestAnimationFrame(tick);
+                    };
+                    requestAnimationFrame(tick);
+                }), step, waited);
         }
         frames = waited;
+        if (hasSimClock && waited > target + 5) {
+            console.error(`  warning: ${dest0(stem, target, multi, outPath)} is LATE -- asked for ` +
+                          `simulation frame ${target}, got ${waited}. The page spent that long ` +
+                          `getting to a running game, so this is not the same moment a desktop ` +
+                          `capture at frame ${target} photographs.`);
+        }
         const dest = multi
             ? `${stem}.f${String(target).padStart(4, '0')}.png`
             : outPath;

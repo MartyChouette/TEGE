@@ -135,7 +135,22 @@ def run_web(project, web_dir, outdir):
     """Serve the web build and capture it in Chrome. Returns (ok, note, bases)."""
     if not os.path.isfile(WEB_CAPTURE):
         return False, 'no web_capture.mjs', []
-    frames = project.get('frames', [30, 90, 240, 500])
+    # Web frames are allowed to differ from desktop frames, and for some
+    # projects they HAVE to.
+    #
+    # A browser cannot be photographed at simulation frame 30. The preloader, the
+    # "Click to Play" gate and the clicking needed to get through them all take
+    # real time, and the game is running for the last part of it: measured on
+    # FixedTimestep, the earliest reachable frame was around 120. Asking for 30
+    # and silently getting 120 is how that project read as FROZEN on web for
+    # weeks -- every capture landed after its one falling body had settled, so
+    # comparing two of them proved only that nothing was moving any more.
+    #
+    # web_capture.mjs now counts SIMULATION frames and warns when a target is
+    # already behind it. This is the other half: a project whose motion happens
+    # early says which frames a browser can actually reach. Defaults to `frames`,
+    # so nothing else has to change.
+    frames = project.get('web_frames', project.get('frames', [30, 90, 240, 500]))
     base = os.path.join(outdir, project['name'] + '.web')
     with serve(web_dir) as port:
         url = 'http://127.0.0.1:%d/index.html?fixedDelta=%.8f' % (port, CAPTURE_DELTA)

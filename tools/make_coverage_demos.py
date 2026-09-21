@@ -515,6 +515,142 @@ def splitscreen():
     return e
 
 
+# --------------------------------------------------------------------------
+# Animation LOD -- identical rigs at increasing distance
+# --------------------------------------------------------------------------
+
+def _bone_chain(count, seg):
+    """A straight chain of `count` bones, each `seg` tall, rooted at the origin."""
+    bones = []
+    for i in range(count):
+        bones.append({
+            "name": "B%d" % i,
+            "parentIndex": i - 1,
+            "bindPosition": [0.0, 0.0 if i == 0 else seg, 0.0],
+            "bindRotation": [0, 0, 0, 1],
+            "bindScale": [1, 1, 1],
+            # Bind pose is a pure translation up the chain, so the inverse is a
+            # pure translation down it.
+            "inverseBindMatrix": [1, 0, 0, 0,  0, 1, 0, 0,  0, 0, 1, 0,
+                                  -0.0, -seg * i, -0.0, 1],
+        })
+    return bones
+
+
+def _skinned_column(count, seg, half=0.22):
+    """A stack of boxes, one per bone, each rigidly weighted to its own bone.
+
+    Rigid weights on purpose: a smooth skin blends two bones per vertex and a
+    frozen deep bone still moves a little, which is exactly the difference a
+    capture would then fail to see. One bone per box makes a gated bone
+    UNAMBIGUOUSLY still.
+    """
+    verts, idx = [], []
+    for b in range(count):
+        y0, y1 = b * seg, (b + 1) * seg
+        corners = [(-half, y0, -half), (half, y0, -half), (half, y1, -half), (-half, y1, -half),
+                   (-half, y0,  half), (half, y0,  half), (half, y1,  half), (-half, y1,  half)]
+        base = len(verts)
+        for c in corners:
+            n = (c[0], 0.0, c[2])
+            verts.append({"position": list(c), "normal": list(n), "uv": [0.0, 0.0],
+                          "boneWeights": [1.0, 0.0, 0.0, 0.0],
+                          "boneIndices": [b, 0, 0, 0]})
+        for a, bb, cc in ((0,1,2),(0,2,3),(4,6,5),(4,7,6),
+                          (0,4,5),(0,5,1),(1,5,6),(1,6,2),
+                          (2,6,7),(2,7,3),(3,7,4),(3,4,0)):
+            idx += [base + a, base + bb, base + cc]
+    return {"vertexCount": len(verts), "indexCount": len(idx),
+            "vertices": verts, "indices": idx}
+
+
+def _sway_clip(count, duration=2.0, keys=24):
+    """A clip that swings every bone about Z, deeper bones further.
+
+    The amplitude GROWS with depth so the tip travels furthest, which is what
+    makes a dropped update rate visible: a low-Hz band holds a pose, and the
+    part of the silhouette that moved most is the part that is now visibly
+    somewhere else.
+    """
+    import math
+    tracks = []
+    for b in range(count):
+        amp = 0.10 + 0.05 * b
+        times, rots = [], []
+        for k in range(keys + 1):
+            t = duration * k / keys
+            a = amp * math.sin(2.0 * math.pi * t / duration + b * 0.4)
+            times.append(round(t, 5))
+            rots.append([0.0, 0.0, round(math.sin(a * 0.5), 6), round(math.cos(a * 0.5), 6)])
+        tracks.append({
+            # boneName, not boneIndex: AddAnimation re-resolves indices from the
+            # skeleton by NAME, so an index written here is discarded and the
+            # track silently binds to bone 0.
+            "boneName": "B%d" % b,
+            "boneIndex": b,
+            "positionTimes": [], "positions": [],
+            "rotationTimes": times, "rotations": rots,
+            "scaleTimes": [], "scales": [],
+        })
+    return {"duration": duration, "ticksPerSecond": 1.0, "playMode": 0, "tracks": tracks}
+
+
+def anim_lod():
+    """Four identical rigs at increasing distance, each swaying, LOD'd by distance.
+
+    AnimationLODComponent shipped on 2026-09-21 with unit tests and NO capture,
+    because nothing in the harness had a rigged model in it. Unit tests pin the
+    band arithmetic; they cannot tell you the gate is wired to the animator, and
+    a rate gate that is computed and never applied looks exactly like a rate gate
+    that is working -- the animation plays, it just plays at full rate.
+
+    The control is the component DISABLED, which is the honest A/B: same rigs,
+    same clip, same frame, every bone updated every frame. If the captures match,
+    the feature did nothing.
+
+    The rigs are the same world size and simply get further away, for the reason
+    written up in lod_ladder: apparent size held constant is a metric held
+    constant, and the demo covers nothing.
+    """
+    BONES, SEG = 6, 0.55
+    e = [sun(1), ground(3, half=110.0)]
+    e.append(camera(2, (0.0, 3.0, 12.0), -4.0))
+
+    skel = {"name": "SwayChain", "sourceAssetPath": "", "bones": _bone_chain(BONES, SEG)}
+    mesh = _skinned_column(BONES, SEG)
+    clip = _sway_clip(BONES)
+
+    # Bands in HERTZ, and aggressive on purpose: the point is to be SEEN in a
+    # single frame, not to be a sensible shipping default. 0 Hz holds the pose.
+    bands = [
+        {"beginDistance": 0.0,  "updateHz": 0.0,  "ik": True,  "blendTrees": True,
+         "interpolate": True,  "maxBoneDepth": 0},
+        {"beginDistance": 12.0, "updateHz": 6.0,  "ik": False, "blendTrees": False,
+         "interpolate": True,  "maxBoneDepth": 0},
+        {"beginDistance": 26.0, "updateHz": 2.0,  "ik": False, "blendTrees": False,
+         "interpolate": False, "maxBoneDepth": 3},
+        {"beginDistance": 46.0, "updateHz": 0.5,  "ik": False, "blendTrees": False,
+         "interpolate": False, "maxBoneDepth": 1},
+    ]
+
+    # Spread across X as well as Z: stacked on the view axis the silhouettes
+    # overlap and the only thing a capture can compare is hidden.
+    for i, (x, z) in enumerate(((-4.5, 6.0), (-1.6, -6.0), (1.8, -22.0), (5.0, -44.0))):
+        e.append({
+            "id": 40 + i,
+            "name": {"name": "Rig_at_%dm" % int(12.0 - z)},
+            "transform": transform((x, 0.0, z)),
+            "mesh": mesh,
+            "material": material(baseColor=[0.78, 0.44, 0.52], roughness=0.5),
+            "skeleton": skel,
+            "animator": {"speed": 1.0, "currentAnimation": "Sway",
+                         "animations": {"Sway": clip}},
+            "animationLOD": {"enabled": True, "bandCount": 4, "cullDistance": 0.0,
+                             "bands": bands},
+        })
+    return e
+
+
 def main():
     import sys
     control = "--control" in sys.argv
@@ -542,6 +678,16 @@ def main():
             if "lod" in ent:
                 ent["lod"]["enabled"] = False
     write_project("LODLadder", ladder)
+
+    rigs = anim_lod()
+    if control:
+        # The control is the GATE turned off, not the component removed: removing
+        # it would also remove whatever defaults the system applies, and the diff
+        # would mean two things at once.
+        for ent in rigs:
+            if "animationLOD" in ent:
+                ent["animationLOD"]["enabled"] = False
+    write_project("AnimationLOD", rigs)
 
 
 if __name__ == "__main__":
