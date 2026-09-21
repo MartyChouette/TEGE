@@ -2,6 +2,7 @@
 #include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/Components/Ladder.h"
 #include "Enjin/ECS/Components/WaterVolume.h"
+#include "Enjin/ECS/Components/BoundaryPolygon.h"
 #include "Enjin/Effects/InteractiveWater.h"
 #include "Enjin/ECS/Components/Door.h"
 #include "Enjin/Scripting/ScriptBindings.h"
@@ -1370,8 +1371,11 @@ static bool FindWaterAt(World* world, const Math::Vector3& pos, f32* outSurfaceY
         auto* wv = world->GetComponent<WaterVolumeComponent>(e);
         auto* tf = world->GetComponent<TransformComponent>(e);
         if (!wv || !tf) continue;
-        if (pos.x < tf->position.x - wv->halfExtents.x || pos.x > tf->position.x + wv->halfExtents.x) continue;
-        if (pos.z < tf->position.z - wv->halfExtents.z || pos.z > tf->position.z + wv->halfExtents.z) continue;
+        // The footprint, outline included. Testing halfExtents here is what let
+        // a swimmer start swimming in the dry corners of a kidney-shaped lake.
+        if (!wv->FootprintContainsXZ(tf->position,
+                                     world->GetComponent<BoundaryPolygonComponent>(e),
+                                     pos.x, pos.z)) continue;
         f32 surf = tf->position.y;
         f32 bottom = surf - wv->halfExtents.y * 2.0f;
         if (pos.y >= bottom && pos.y <= surf) {
@@ -1393,8 +1397,9 @@ static bool FindWaterSurfaceXZ(World* world, f32 x, f32 z, f32* outSurfaceY, Ent
         auto* wv = world->GetComponent<WaterVolumeComponent>(e);
         auto* tf = world->GetComponent<TransformComponent>(e);
         if (!wv || !tf) continue;
-        if (x < tf->position.x - wv->halfExtents.x || x > tf->position.x + wv->halfExtents.x) continue;
-        if (z < tf->position.z - wv->halfExtents.z || z > tf->position.z + wv->halfExtents.z) continue;
+        if (!wv->FootprintContainsXZ(tf->position,
+                                     world->GetComponent<BoundaryPolygonComponent>(e),
+                                     x, z)) continue;
         // Overlapping volumes resolve by priority, the same rule buoyancy uses.
         if (!found || wv->priority > bestPriority) {
             found = true; best = tf->position.y; bestE = e; bestPriority = wv->priority;

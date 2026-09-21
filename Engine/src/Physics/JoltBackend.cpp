@@ -47,6 +47,7 @@
 #include "Enjin/Assets/MeshAssetCache.h"   // reload freed CPU verts for collider gen (task #3)
 #include "Enjin/ECS/Components/GravityZone.h"
 #include "Enjin/ECS/Components/WaterVolume.h"
+#include "Enjin/ECS/Components/BoundaryPolygon.h"
 #include "Enjin/ECS/Components/Water3D.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Math/Math.h"
@@ -1073,6 +1074,16 @@ void JoltBackend::ApplyBuoyancy() {
     struct BuoyZone {
         f32 surfaceY, bottomY, minX, maxX, minZ, maxZ, strength, drag;
         i32 priority;
+        // The drag-editable shoreline, when the volume has one. Without it a
+        // kidney-shaped lake floated things across the whole rectangle it was
+        // seeded from, including the dry deck in its corners.
+        //
+        // A borrowed pointer, and safe to borrow: the zone list is built and
+        // consumed inside this one function, which adds and removes no
+        // components in between.
+        const ECS::WaterVolumeComponent* volume = nullptr;
+        const ECS::BoundaryPolygonComponent* outline = nullptr;
+        Math::Vector3 origin = Math::Vector3(0.0f, 0.0f, 0.0f);
         // Water3D surfaces WAVE. Floating things at the flat entity Y meant a
         // boat sat at the mean level while the swell passed straight through
         // it -- the more visible the waves, the more obviously wrong. These
@@ -1101,8 +1112,11 @@ void JoltBackend::ApplyBuoyancy() {
             z.strength = wv->buoyancyStrength;
             z.drag     = wv->buoyancyDrag;
             z.priority = wv->priority;
-            // A WaterVolume is a box of water with no animated surface, so its
-            // level stays flat. Nothing to sample.
+            z.volume  = wv;
+            z.outline = m_World->GetComponent<ECS::BoundaryPolygonComponent>(e);
+            z.origin  = tf->position;
+            // A WaterVolume has no animated surface, so its level stays flat.
+            // Nothing to sample.
             zones.push_back(z);
         }
     }
@@ -1151,6 +1165,10 @@ void JoltBackend::ApplyBuoyancy() {
         for (const BuoyZone& z : zones) {
             if (tf->position.x < z.minX || tf->position.x > z.maxX) continue;
             if (tf->position.z < z.minZ || tf->position.z > z.maxZ) continue;
+            // Inside the box, but a shaped volume also has to be inside its
+            // shoreline. Water3D zones have no outline and stop at the box.
+            if (z.volume && !z.volume->FootprintContainsXZ(z.origin, z.outline,
+                                                           tf->position.x, tf->position.z)) continue;
             // Against the surface where this body IS. On a waving surface the
             // mean level is the wrong test: a body under a crest is submerged
             // and one under a trough is not, and using the mean makes things

@@ -3,6 +3,7 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Math/Vector.h"
 #include "Enjin/ECS/Components/Material.h"
+#include "Enjin/ECS/Components/BoundaryPolygon.h"
 #include <cmath>
 
 namespace Enjin {
@@ -74,12 +75,38 @@ struct ENJIN_API WaterVolumeComponent {
     // Dirty flag: set to false to force mesh regeneration
     bool meshCreated = false;
 
-    // Check if a point is inside this volume's bounding box
+    // Is this XZ inside the water's horizontal footprint?
+    //
+    // THE footprint rule, in one place. It is the halfExtents box, narrowed by
+    // the drag-editable outline when the entity carries one.
+    //
+    // It had been written out inline at every site that asks -- swimming and
+    // floating in ControllerSystem, buoyancy in JoltBackend, the surface mesh in
+    // RenderSystem -- and the copies did not agree. Only the renderer learned
+    // about BoundaryPolygonComponent, so a lake dragged into a kidney rendered
+    // as a kidney and behaved as the rectangle it was seeded from. Four copies
+    // of a rule is four chances for the next one to be missed, so there is one.
+    //
+    // `outline` is the entity's BoundaryPolygonComponent, or null when it has
+    // none. A caller that does not look one up gets the old box behaviour, which
+    // is what every scene authored before the outline existed wants.
+    //
+    // center = entity's world position (from TransformComponent). Rotation and
+    // scale are ignored here, as they are everywhere else in the water path.
+    bool FootprintContainsXZ(const Math::Vector3& center,
+                             const BoundaryPolygonComponent* outline,
+                             f32 x, f32 z) const {
+        if (std::abs(x - center.x) > halfExtents.x) return false;
+        if (std::abs(z - center.z) > halfExtents.z) return false;
+        return outline ? outline->ContainsXZ(center, x, z) : true;
+    }
+
+    // Check if a point is inside this volume
     // center = entity's world position (from TransformComponent)
-    bool ContainsPoint(const Math::Vector3& center, const Math::Vector3& point) const {
-        return std::abs(point.x - center.x) <= halfExtents.x &&
-               std::abs(point.y - center.y) <= halfExtents.y &&
-               std::abs(point.z - center.z) <= halfExtents.z;
+    bool ContainsPoint(const Math::Vector3& center, const Math::Vector3& point,
+                       const BoundaryPolygonComponent* outline = nullptr) const {
+        return std::abs(point.y - center.y) <= halfExtents.y &&
+               FootprintContainsXZ(center, outline, point.x, point.z);
     }
 };
 

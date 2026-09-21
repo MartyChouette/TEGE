@@ -19,6 +19,7 @@
 #include "Enjin/Editor/ScenePlacement.h"
 #include <cfloat>
 #include "Enjin/ECS/Components/WaterVolume.h"
+#include "Enjin/ECS/Components/BoundaryPolygon.h"
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/Renderer/MeshFactory.h"
 #include "Enjin/ECS/Components/TreeVolume.h"
@@ -2028,6 +2029,21 @@ ECS::Entity EditorLayer::PlaceCreativeComponent(BuildTool tool,
                                        plan.halfExtents.z);
         wv.waterType = ECS::WaterType::Lake;
         wv.waveHeight = s.waveScale;
+
+        // The editable shoreline, seeded as the drag rectangle. The viewport's
+        // boundary handles only appear on an entity that HAS an outline, so
+        // without this the rail's Water tool makes a pool that can never be
+        // anything but a rectangle.
+        //
+        // The engine could already do better and nobody could reach it: the only
+        // thing that ever created an outline was the old Build Palette's Lake
+        // tool, behind View > Build Palette (Creative), off by default. Same
+        // shape as the vegetation split this rail was built to fix.
+        auto& outline = m_World->AddComponent<ECS::BoundaryPolygonComponent>(entity);
+        const f32 ohx = plan.halfExtents.x;
+        const f32 ohz = plan.halfExtents.z;
+        outline.points = { {-ohx, -ohz}, {ohx, -ohz}, {ohx, ohz}, {-ohx, ohz} };
+        outline.dirty = true;
 
         if (auto* nc = m_World->GetComponent<ECS::NameComponent>(entity)) {
             nc->name = "Water (swimmable)";
