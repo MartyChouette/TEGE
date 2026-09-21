@@ -116,7 +116,30 @@ The auto-preset is applied before scripts tick and reapplies only when the contr
 `Audio_SetVolume/SetPitch(uint64, float)`, `Audio_IsPlaying(uint64)`
 `Audio_SetMasterVolume/GetMasterVolume(float)`
 `Audio_SetChannelVolume(uint8, float)`, `Audio_GetChannelVolume(uint8)`, `Audio_StopChannel(uint8)`
+`Audio_IsReady()` — false while a browser still has audio gated (see below)
 Channel constants: `AUDIO_CHANNEL_SFX=0`, `AUDIO_CHANNEL_MUSIC=1`, `AUDIO_CHANNEL_UI=2`, `AUDIO_CHANNEL_VOICE=3`
+
+### Is there audio at all
+
+- `bool Audio_IsReady()` — whether the audio device is actually running.
+
+It answers **false** in a browser until the player has interacted with the page.
+Browsers will not start an AudioContext before a gesture, so a web build boots
+with audio gated; every `Audio_Play` before the first click or key is accepted,
+returns a handle and makes no sound. A title screen that scores its own music,
+or a tutorial that waits for a voice line to finish, has to be able to tell that
+apart from "the clip is missing", and until now nothing in the API hinted at it.
+
+On desktop it is true once the device opens, so the same script runs unchanged:
+
+<!-- sample-context: uint64 radio = Scene_FindEntity("Radio"); -->
+```angelscript
+if (Audio_IsReady()) {
+    Audio_Play(radio);
+} else {
+    Subtitle_Show("Click anywhere to enable sound");
+}
+```
 
 ### Where the audio is
 
@@ -963,6 +986,7 @@ merely absent.
 ### Audio  (15)
 
 - `bool Audio_IsPlaying(uint64)`
+- `bool Audio_IsReady()`
 - `bool Audio_Seek(uint64, float)`
 - `float Audio_GetChannelVolume(uint8)`
 - `float Audio_GetLength(uint64)`

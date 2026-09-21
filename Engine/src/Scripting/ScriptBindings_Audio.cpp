@@ -134,6 +134,24 @@ static void Audio_SetPitch(u64 entityId, f32 pitch) {
     }
 }
 
+// Is the audio device actually running, or is a browser still holding it?
+//
+// Every AudioContext a browser creates starts suspended and stays that way until
+// the page has seen a real user gesture, so for the opening seconds of EVERY web
+// build no clip is loaded: Audio_GetLength returns -1, Audio_IsPlaying is false,
+// and Audio_Seek returns false. A game that seeks, reads a length, or branches on
+// IsPlaying during its intro therefore does nothing at all in a browser -- and on
+// desktop, where the device is up in a tenth of a second, it works, so nothing
+// hints at it.
+//
+// The engine already knew the answer (AudioEngine::IsDeviceRunning is false while
+// gated, deliberately tracked rather than inferred from the device). A script had
+// no way to ASK. That is the whole gap, and this is the whole fix.
+static bool Audio_IsReady() {
+    if (!s_BindingsAudio) return false;
+    return s_BindingsAudio->IsDeviceRunning();
+}
+
 static bool Audio_IsPlaying(u64 entityId) {
     if (!s_BindingsWorld || !s_BindingsAudio) return false;
 
@@ -235,6 +253,10 @@ void RegisterAudioBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Audio_SetPitch(uint64, float)",
         ENJIN_AS_FN(Audio_SetPitch), ENJIN_AS_CALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "bool Audio_IsReady()",
+        ENJIN_AS_FN(Audio_IsReady), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool Audio_IsPlaying(uint64)",
