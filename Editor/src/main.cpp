@@ -441,6 +441,16 @@ int main(int argc, char* argv[]) {
             Enjin::Editor::EditorLayer::s_ComputeSkinningOnLaunch = true;
         } else if (flag == "--golden" && i + 1 < argc && argv[i + 1]) {
             Enjin::Editor::EditorLayer::s_GoldenCapturePath = argv[++i];
+            // A measured run does not need to be seen, and on this editor it was
+            // being seen: the player sets s_FixedFrameDelta for --golden and the
+            // editor never did, so Application left the window VISIBLE (that flag
+            // is what decides it) and a capture opened an editor over whatever the
+            // person at the machine was doing. Setting it also makes the capture
+            // deterministic -- frame N is the same moment of the scene on an idle
+            // machine and a loaded one, which is the reason the player sets it.
+            // 1/60 so a frame number reads as sixtieths of a second, matching the
+            // player and the harness manifest.
+            Enjin::Application::s_FixedFrameDelta = 1.0f / 60.0f;
         } else if (flag == "--bake-lightmap") {
             // Bake the launch scene's lightmap and exit. Same reason as
             // --bake-plate: a menu action cannot be exercised by a test.

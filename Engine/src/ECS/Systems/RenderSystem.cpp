@@ -11715,60 +11715,26 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                     global.stippleTransparency = m_GlobalStippleTransparency;
                     global.uvQuantize          = m_GlobalUVQuantize;
                     global.gouraudOnly         = m_GlobalGouraudOnly;
-                    pushConstants.flags = Renderer::BuildMaterialFlagWord(*material, texBind, global);
-                }
-                pushConstants.parallaxScale = material->parallaxScale;
-                // Artistic surface params (reused push constant slots)
-                pushConstants.surfaceParam1 = material->reflectivity;
-                pushConstants.surfaceParam2 = material->fresnelPower;
-                pushConstants.surfaceParam3 = material->rimLightStrength;
-                // Dithered gradient: encode bands + pattern into surfaceParam1
-                if (material->ditherGradient) {
-                    pushConstants.flags |= (1 << 20); // Force flat shading
-                    pushConstants.surfaceParam1 = 100.0f + static_cast<f32>(material->ditherGradientBands)
-                        + static_cast<f32>(material->ditherGradientPattern) * 0.1f;
-                }
-                // Dithered transparency: encode pattern + opacity + blend color into surfaceParams
-                if (material->ditherTransparency) {
-                    pushConstants.surfaceParam1 = 200.0f + static_cast<f32>(material->ditherTransPattern);
-                    pushConstants.surfaceParam2 = material->ditherTransOpacity;
-                    u32 r = static_cast<u32>(material->ditherTransBlendColor.x * 1023.0f) & 0x3FF;
-                    u32 g = static_cast<u32>(material->ditherTransBlendColor.y * 1023.0f) & 0x3FF;
-                    u32 b = static_cast<u32>(material->ditherTransBlendColor.z * 1023.0f) & 0x3FF;
-                    u32 packed = (r << 20) | (g << 10) | b;
-                    pushConstants.surfaceParam3 = *reinterpret_cast<f32*>(&packed);
-                }
-                // Elemental surface effects: encode char/wet/snow/frost into surfaceParams
-                if (!material->ditherGradient && !material->ditherTransparency) {
-                    auto* elemSurface = m_World->GetComponent<ECS::ElementalSurfaceComponent>(entity);
-                    if (elemSurface && (elemSurface->charAmount > 0.01f || elemSurface->wetness > 0.01f ||
-                                        elemSurface->snowCoverage > 0.01f || elemSurface->frostAmount > 0.01f)) {
-                        pushConstants.surfaceParam1 = 300.0f + elemSurface->charAmount;
-                        pushConstants.surfaceParam2 = elemSurface->wetness + std::floor(elemSurface->snowCoverage * 256.0f);
-                        pushConstants.surfaceParam3 = elemSurface->frostAmount;
+                    // Flags AND the surfaceParam band cascade, from the ONE definition
+                    // (MaterialDrawState.h). Third and last of the three builders, and
+                    // the one that had drifted furthest behind -- this copy never had the
+                    // ArtStyle cel rim or the MaterialExpression noise, so a CelToon rim
+                    // strength did nothing in an editor splitscreen view. It does now, as
+                    // a consequence of there being one definition rather than three.
+                    {
+                        const Renderer::MaterialDrawState ds = Renderer::BuildMaterialDrawState(
+                            *material, texBind, global,
+                            PaletteBandFor(material->paletteSlot),
+                            m_World->GetComponent<ECS::ElementalSurfaceComponent>(entity),
+                            m_CachedArtStyleStorage ? m_CachedArtStyleStorage->Get(entity) : nullptr,
+                            m_GlobalVertexSnapResolution);
+                        pushConstants.flags         = ds.flags;
+                        pushConstants.surfaceParam1 = ds.surfaceParam1;
+                        pushConstants.surfaceParam2 = ds.surfaceParam2;
+                        pushConstants.surfaceParam3 = ds.surfaceParam3;
                     }
                 }
-                // Procedural surface noise: encode scale/strength into surfaceParams (range 400+)
-                // Only when no other effect has claimed the surfaceParam slots
-                if (!material->ditherGradient && !material->ditherTransparency &&
-                    material->surfaceNoiseScale > 0.0f && pushConstants.surfaceParam1 < 100.0f) {
-                    pushConstants.surfaceParam1 = 400.0f + material->surfaceNoiseScale;
-                    pushConstants.surfaceParam2 = material->surfaceNoiseStrength;
-                }
-                // Palette-indexed, last so it wins the slot. The flags word has
-                // no free bits (24-28 carry vertexSnapResolution), so this rides
-                // surfaceParam1 like the modes above. Bands: 100 dither gradient,
-                // 200 dithered transparency, 300 elemental, 400 surface noise,
-                // 500 this.
-                if (material->paletteIndexed) {
-                    pushConstants.surfaceParam1 = PaletteBandFor(material->paletteSlot);
-                }
-                // Lightmapped, after the palette so it wins the slot when both
-                // are set. They cannot coexist -- the flags word has no free
-                // bits, so every mode here shares one float.
-                if (material->lightmapped) {
-                    pushConstants.surfaceParam1 = ECS::MaterialGPU::SURFACE_PARAM1_LIGHTMAPPED;
-                }
+                pushConstants.parallaxScale = material->parallaxScale;
             } else {
                 pushConstants.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
                 pushConstants.metallic = 0.0f;
@@ -11779,11 +11745,6 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                 pushConstants.alphaCutoff = 0.5f;
                 pushConstants.flags = 0;
                 pushConstants.parallaxScale = 0.0f;
-            }
-
-            // Global retro overrides now ride the shared builder above.
-            if (m_GlobalVertexSnapping && m_GlobalVertexSnapResolution > 0) {
-                pushConstants.flags = (pushConstants.flags & ~(0x1F << 24)) | (static_cast<i32>((m_GlobalVertexSnapResolution / 8) & 0x1F) << 24);
             }
 
             if (m_World->HasComponent<VegetationComponent>(entity)) {
