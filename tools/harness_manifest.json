@@ -30,6 +30,7 @@
   "projects": [
     {
       "name": "BiscuitBird",
+      "_determinism": "f0500 is NOT reproducible: it takes one value inside a full sweep and another captured alone, both reproducibly. 848 px in a 75x27 box on the TAIL of the on-screen string '...of centre to steer' -- UI text, not geometry. Measured 2026-09-21; run tools/harness.py --repeat before trusting an A/B here.",
       "project": "Examples/BiscuitBird/BiscuitBird.enjinproject",
       "frames": [
         30,
@@ -85,6 +86,7 @@
     },
     {
       "name": "FluidSim",
+      "_determinism": "f0500 is NOT reproducible across three runs in one context -- genuinely nondeterministic, 8811 px over a 388x339 region of the simulation. Measured 2026-09-21; an A/B against this frame needs repeats on both sides.",
       "project": "Examples/FluidSim/FluidSim.enjinproject",
       "frames": [
         30,
@@ -755,6 +757,7 @@
     },
     {
       "name": "AnimationLOD",
+      "_determinism": "f0030 differs between two full sweeps (1547 px on the NEAR rig, a pose difference) while three solo runs agree. Whether that is the demo or the engine has not been separated. Measured 2026-09-21.",
       "project": "Examples/AnimationLOD/AnimationLOD.enjinproject",
       "_why": "Four identical swaying rigs at increasing distance, each gated by an AnimationLODComponent. The component shipped on 2026-09-21 with unit tests and NO capture, because nothing in the harness had a rigged model in it -- HandIK has the only skeleton in Examples and its animator carries no clip. Unit tests pin the band arithmetic; they cannot tell you the gate is wired to the animator, and a rate gate that is computed and never applied looks exactly like one that works. The control (make_coverage_demos.py --control) is the gate DISABLED, same rigs and same clip, so a byte-identical pair means the feature did nothing.",
       "frames": [
