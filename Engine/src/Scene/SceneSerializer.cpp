@@ -7463,6 +7463,100 @@ ECS::FlowerParticleConfigComponent DeserializeFlowerParticleConfigComponent(cons
 // each save entry point; saving is main-thread only.
 static bool g_PreferMeshReferences = true;
 
+// Warn about opaque meshes that occupy exactly the same space.
+//
+// Two coincident opaque surfaces have no correct answer: the depth test cannot separate
+// them, so which one a player sees is decided by DRAW ORDER, and draw order is not part of
+// a scene's meaning. The picture is then stable only by luck, and it changes the moment
+// anything reorders draws -- a different sort key, instancing, or the GPU-driven path,
+// which emits in cull order rather than in the render list's order.
+//
+// Found on RoomAcoustics, 2026-09-21: three pairs of lintels sat at identical positions
+// and scales with different materials. The scene rendered "correctly" for as long as the
+// per-entity order happened to favour one of each pair, and turning GPU-driven rendering on
+// showed the other, which read as a rendering bug for a day. The data was wrong AND the
+// engine had no opinion about it, which is the half that keeps the trap armed: fixing one
+// scene does not stop the next one doing it.
+//
+// EDITOR ONLY, and deliberately. The check runs on the file-load path and not on the
+// string/pak path a player uses, because it has one false-positive class it cannot see
+// past: entities stacked in one place ON PURPOSE because a script shows one at a time.
+// Potions does exactly that -- three BattleEnemy meshes at one point, with
+// `SV(enemyEnts[k], int(k) == i)` revealing a single one per battle -- and they are
+// visible at LOAD, because the script hides them in OnStart, after this runs. Warning
+// about that in a shipped game is noise on every boot, and a warning nobody trusts is
+// worse than no warning. In the editor an author can look at the pair and decide, which
+// is the whole point of telling them.
+//
+// The check is exact-match only, on the full world matrix and mesh size. Near-coincident
+// surfaces z-fight too, but "near" needs a tolerance nobody can pick correctly, and an
+// exact duplicate is unambiguously a mistake rather than a judgement call.
+static void WarnOnCoincidentMeshes(ECS::World* world, DeserializationResult& result) {
+    if (!world) return;
+
+    // WORLD matrices, not local transforms.
+    //
+    // Local would be wrong in the way that matters: four bench seats parented to four
+    // different benches share one local position and stand in four different places.
+    // BiscuitBird has seventeen such groups and Potions one, and a check comparing local
+    // transforms calls every one of them a fault -- which is how a warning becomes noise
+    // nobody reads.
+    struct Placement { Math::Matrix4 world; u32 indexCount; };
+    std::vector<std::pair<Placement, ECS::Entity>> placed;
+    placed.reserve(result.entities.size());
+
+    for (ECS::Entity e : result.entities) {
+        const auto* mesh = world->GetComponent<ECS::MeshComponent>(e);
+        const auto* xf = world->GetComponent<ECS::TransformComponent>(e);
+        if (!mesh || !xf || mesh->indices.empty()) continue;
+        // Blended surfaces are MEANT to stack, and an invisible one cannot z-fight.
+        const auto* mat = world->GetComponent<ECS::MaterialComponent>(e);
+        if (mat && mat->alphaMode == ECS::MaterialComponent::AlphaMode::Blend) continue;
+        if (!xf->visible) continue;
+        placed.push_back({ { ECS::ComputeWorldMatrix(world, e),
+                             static_cast<u32>(mesh->indices.size()) }, e });
+    }
+
+    auto same = [](const Math::Matrix4& a, const Math::Matrix4& b) {
+        const f32 eps = 1e-4f;
+        for (int i = 0; i < 16; ++i) {
+            if (std::fabs(a.m[i] - b.m[i]) >= eps) return false;
+        }
+        return true;
+    };
+
+    auto nameOf = [world](ECS::Entity e) -> std::string {
+        const auto* n = world->GetComponent<ECS::NameComponent>(e);
+        return (n && !n->name.empty()) ? n->name : std::string("(unnamed)");
+    };
+
+    // Quadratic, so it is capped. A scene large enough to hit the cap has bigger problems
+    // than this check, and a load must not get slower the more entities it has.
+    constexpr usize kMaxChecked = 4096;
+    const usize n = placed.size() < kMaxChecked ? placed.size() : kMaxChecked;
+    usize reported = 0;
+    for (usize i = 0; i < n && reported < 8; ++i) {
+        for (usize j = i + 1; j < n; ++j) {
+            if (placed[i].first.indexCount != placed[j].first.indexCount) continue;
+            if (!same(placed[i].first.world, placed[j].first.world)) continue;
+
+            const std::string a = nameOf(placed[i].second);
+            const std::string b = nameOf(placed[j].second);
+            const std::string msg =
+                "'" + a + "' and '" + b + "' occupy exactly the same space. Two opaque "
+                "surfaces in one place have no correct answer -- which one shows is decided "
+                "by draw order, so the picture will change whenever draw order does. Delete "
+                "one, or move it.";
+            result.warnings.push_back(msg);
+            // Logged as well as collected: the editor shows warnings and a PLAYER does not,
+            // and this is exactly the class of thing that only bites in an exported game.
+            ENJIN_LOG_WARN(Asset, "Coincident meshes: %s", msg.c_str());
+            ++reported;
+            break;   // one report per entity is enough to find the cluster
+        }
+    }
+}
+
 json SerializeAnimationLODComponent(const ECS::AnimationLODComponent& lod) {
     json j;
     j["enabled"] = lod.enabled;
@@ -11121,6 +11215,7 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
         }
 
         DeserializeEntities(sceneJson, result);
+        WarnOnCoincidentMeshes(m_World, result);
 
         result.success = true;
         ENJIN_LOG_INFO(Asset, "Loaded scene from %s (%zu entities)", filepath.c_str(), result.entities.size());
