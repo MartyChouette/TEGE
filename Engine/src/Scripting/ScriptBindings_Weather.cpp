@@ -178,6 +178,77 @@ static void WorldTime_SetSeason(int season) {
 static void WorldTime_AdvanceSeason() {
     WorldTime_SetSeason(WorldTime_GetSeason() + 1);
 }
+// --- the date ---------------------------------------------------------------
+// A calendar game needs to ask what day it is and to schedule against it. Until
+// this block existed script could read the hour and the season and nothing else,
+// so nothing could be scheduled: no holiday, no visitor, no "the farm is ready
+// on the ninth".
+static int WorldTime_GetDay() {
+    return s_BindingsWorldTime ? static_cast<int>(s_BindingsWorldTime->GetState().day) : 1;
+}
+static int WorldTime_GetMonth() {
+    return s_BindingsWorldTime ? static_cast<int>(s_BindingsWorldTime->GetState().month) : 1;
+}
+static int WorldTime_GetYear() {
+    return s_BindingsWorldTime ? static_cast<int>(s_BindingsWorldTime->GetState().year) : 1;
+}
+// 1-based day within the year. This is what date-seeded systems hash on, so it
+// is also the number a script should pass to WorldTime_GetWeatherOn.
+static int WorldTime_GetDayOfYear() {
+    return s_BindingsWorldTime ? static_cast<int>(s_BindingsWorldTime->GetState().dayOfYear) : 1;
+}
+static void WorldTime_SetDate(int day, int month, int year) {
+    if (!s_BindingsWorldTime) return;
+    const auto& st = s_BindingsWorldTime->GetState();
+    s_BindingsWorldTime->SetTime(st.timeOfDay,
+                                 static_cast<u32>(day < 1 ? 1 : day),
+                                 static_cast<u32>(month < 1 ? 1 : month),
+                                 static_cast<u32>(year < 1 ? 1 : year));
+}
+
+// --- the forecast -----------------------------------------------------------
+// Weather is a pure function of the world seed and the date, so a script can ask
+// what the sky will be on a day it has not reached yet. That is the whole point
+// of making it deterministic: a forecast board is a real thing you walk up to
+// and read, not a promise the engine cannot keep.
+static int WorldTime_GetWeatherOn(int dayOfYear) {
+    if (!s_BindingsSeasonal || !s_BindingsWorldTime) return 0;
+    Effects::WorldTimeState probe = s_BindingsWorldTime->GetState();
+    probe.dayOfYear = static_cast<u32>(dayOfYear < 1 ? 1 : dayOfYear);
+    // The season has to follow the day being asked about, not the day it is.
+    const u32 daysPerSeason = 30;
+    probe.season = static_cast<Effects::Season>(((probe.dayOfYear - 1) / daysPerSeason) % 4);
+    return static_cast<int>(s_BindingsSeasonal->WeatherOn(probe));
+}
+// --- authored days ----------------------------------------------------------
+// The game reads its own calendar file and pushes the answers in here. The
+// engine never learns the file format, which is the point: a game can change
+// how it stores a year without the engine moving at all.
+static void WorldTime_SetAuthoredWeather(int dayOfYear, int weather) {
+    if (!s_BindingsSeasonal) return;
+    if (dayOfYear < 1) return;
+    if (weather < 0 || weather > static_cast<int>(Effects::WeatherType::Storm)) return;
+    s_BindingsSeasonal->SetAuthoredWeather(static_cast<u32>(dayOfYear),
+                                           static_cast<Effects::WeatherType>(weather));
+}
+static void WorldTime_ClearAuthoredWeather() {
+    if (s_BindingsSeasonal) s_BindingsSeasonal->ClearAuthoredWeather();
+}
+static bool WorldTime_IsAuthored(int dayOfYear) {
+    return s_BindingsSeasonal && dayOfYear >= 1 &&
+           s_BindingsSeasonal->IsAuthored(static_cast<u32>(dayOfYear));
+}
+static int WorldTime_GetAuthoredDayCount() {
+    return s_BindingsSeasonal ? static_cast<int>(s_BindingsSeasonal->GetAuthoredDayCount()) : 0;
+}
+
+static std::string WorldTime_GetWorldSeed() {
+    return s_BindingsSeasonal ? s_BindingsSeasonal->GetConfig().worldSeed : std::string();
+}
+static void WorldTime_SetWorldSeed(const std::string& seed) {
+    if (s_BindingsSeasonal) s_BindingsSeasonal->GetConfig().worldSeed = seed;
+}
+
 static void WorldTime_SetSecondsPerHour(f32 seconds) {
     if (!s_BindingsWorldTime) return;
     s_BindingsWorldTime->GetCalendarConfig().secondsPerGameHour = seconds;
@@ -225,6 +296,38 @@ void RegisterWeatherBindings(asIScriptEngine* engine) {
         ENJIN_AS_FN(WorldTime_AdvanceSeason), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void WorldTime_SetSecondsPerHour(float)",
         ENJIN_AS_FN(WorldTime_SetSecondsPerHour), ENJIN_AS_CALL_CDECL));
+
+    // The date. Reading it was impossible before this, so nothing could be
+    // scheduled against the calendar the engine already kept.
+    AS_CHECK(engine->RegisterGlobalFunction("int WorldTime_GetDay()",
+        ENJIN_AS_FN(WorldTime_GetDay), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int WorldTime_GetMonth()",
+        ENJIN_AS_FN(WorldTime_GetMonth), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int WorldTime_GetYear()",
+        ENJIN_AS_FN(WorldTime_GetYear), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int WorldTime_GetDayOfYear()",
+        ENJIN_AS_FN(WorldTime_GetDayOfYear), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void WorldTime_SetDate(int, int, int)",
+        ENJIN_AS_FN(WorldTime_SetDate), ENJIN_AS_CALL_CDECL));
+
+    // The forecast, which only means anything because the weather is a pure
+    // function of the seed and the date.
+    AS_CHECK(engine->RegisterGlobalFunction("int WorldTime_GetWeatherOn(int)",
+        ENJIN_AS_FN(WorldTime_GetWeatherOn), ENJIN_AS_CALL_CDECL));
+    // Authored days. A day written down always happens; a blank day rolls.
+    AS_CHECK(engine->RegisterGlobalFunction("void WorldTime_SetAuthoredWeather(int, int)",
+        ENJIN_AS_FN(WorldTime_SetAuthoredWeather), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void WorldTime_ClearAuthoredWeather()",
+        ENJIN_AS_FN(WorldTime_ClearAuthoredWeather), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool WorldTime_IsAuthored(int)",
+        ENJIN_AS_FN(WorldTime_IsAuthored), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int WorldTime_GetAuthoredDayCount()",
+        ENJIN_AS_FN(WorldTime_GetAuthoredDayCount), ENJIN_AS_CALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction("string WorldTime_GetWorldSeed()",
+        ENJIN_AS_FN(WorldTime_GetWorldSeed), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void WorldTime_SetWorldSeed(const string &in)",
+        ENJIN_AS_FN(WorldTime_SetWorldSeed), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool WorldTime_GetSeasonalWeather()",
         ENJIN_AS_FN(WorldTime_GetSeasonalWeather), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void WorldTime_SetSeasonalWeather(bool)",

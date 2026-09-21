@@ -1,4 +1,6 @@
 #include "Enjin/Effects/SeasonalWeather.h"
+
+#include <string>
 #include <cmath>
 
 namespace Enjin {
@@ -50,20 +52,52 @@ f32 SeasonalWeatherSystem::ComputeTemperature(const WorldTimeState& time) const 
     return range.minTemp + (range.maxTemp - range.minTemp) * cosT;
 }
 
-WeatherType SeasonalWeatherSystem::PickWeather(Season season) {
-    // Simple xorshift PRNG
-    m_RandomSeed ^= m_RandomSeed << 13;
-    m_RandomSeed ^= m_RandomSeed >> 17;
-    m_RandomSeed ^= m_RandomSeed << 5;
-    f32 roll = static_cast<f32>(m_RandomSeed & 0xFFFF) / 65535.0f;
+u32 DateHash(const std::string& seed, u32 dayOfYear) {
+    u32 h = 0x811C9DC5u;
+    const auto feed = [&h](const char* bytes, size_t count) {
+        for (size_t i = 0; i < count; ++i) {
+            h ^= static_cast<u32>(static_cast<u8>(bytes[i]));
+            h *= 0x01000193u;
+        }
+    };
 
-    const auto& prob = GetWeatherProb(season);
+    feed(seed.data(), seed.size());
+    const char tag = 'w';               // the stream this hash is for
+    feed(&tag, 1);
+    const std::string digits = std::to_string(dayOfYear);
+    feed(digits.data(), digits.size());
 
-    f32 cumulative = 0.0f;
+    // The avalanche. Without it the low bits stay correlated across
+    // consecutive days -- see the header for what that costs.
+    h ^= h >> 16;
+    h *= 0x7FEB352Du;
+    h ^= h >> 15;
+    h *= 0x846CA68Bu;
+    h ^= h >> 16;
+    return h;
+}
+
+// A pure function of the seed and the date. It used to advance a running
+// xorshift, which made the weather on a date depend on how many rolls had
+// happened since the process started: reload a save and the sky changed.
+WeatherType SeasonalWeatherSystem::PickWeather(const WorldTimeState& time) const {
+    // A day with weather written on it always happens. Only a blank day rolls.
+    const auto authored = m_Authored.find(time.dayOfYear);
+    if (authored != m_Authored.end()) return authored->second;
+
+    const f64 roll = static_cast<f64>(DateHash(m_Config.worldSeed, time.dayOfYear)) /
+                     4294967296.0;
+
+    const auto& prob = GetWeatherProb(time.season);
+
+    f64 cumulative = 0.0;
     cumulative += prob.clear;
     if (roll < cumulative) return WeatherType::Clear;
     cumulative += prob.cloudy;
-    if (roll < cumulative) return WeatherType::Clear;  // Cloudy mapped to Clear with fog
+    // Cloudy used to fall through to Clear, so the seasonal system could never
+    // return a WeatherType the enum has had all along. Fall is 30% cloudy; all
+    // of it was being reported as clear sky.
+    if (roll < cumulative) return WeatherType::Cloudy;
     cumulative += prob.rain;
     if (roll < cumulative) return WeatherType::Rain;
     cumulative += prob.heavyRain;
@@ -104,7 +138,7 @@ void SeasonalWeatherSystem::Update(f32 dt, const WorldTimeState& time, WeatherSy
     m_HasAppliedOnce = true;
 
     // Pick weather from this season's probabilities.
-    m_CurrentWeatherType = PickWeather(time.season);
+    m_CurrentWeatherType = PickWeather(time);
 
     // Below freezing, rain falls as snow.
     if (m_CurrentTemperature < 0.0f) {

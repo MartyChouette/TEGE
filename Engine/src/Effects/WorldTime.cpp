@@ -45,6 +45,7 @@ void WorldTimeSystem::SetTime(f32 hour, u32 day, u32 month, u32 year) {
     if (monthsPerSeason == 0) monthsPerSeason = 1;
     u32 seasonIndex = ((month - 1) / monthsPerSeason) % 4;
     m_State.season = static_cast<Season>(seasonIndex);
+    ComputeDayOfYear();
 
     ComputeDaylightHours();
     ComputeSunPosition();
@@ -66,6 +67,14 @@ void WorldTimeSystem::AdvanceCalendar() {
         u32 seasonIndex = ((m_State.month - 1) / monthsPerSeason) % 4;
         m_State.season = static_cast<Season>(seasonIndex);
     }
+    ComputeDayOfYear();
+}
+
+// (month - 1) * daysPerMonth + day. Kept in the state so that anything hashing
+// on the date -- weather, visitors, anything else seeded per day -- does not
+// have to reach for CalendarConfig to work out what day of the year it is.
+void WorldTimeSystem::ComputeDayOfYear() {
+    m_State.dayOfYear = (m_State.month - 1) * m_CalendarConfig.daysPerMonth + m_State.day;
 }
 
 void WorldTimeSystem::ComputeDaylightHours() {

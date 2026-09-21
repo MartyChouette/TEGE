@@ -157,6 +157,60 @@ ENJIN_TEST(BindingRegistration, RegisterTimeBindingsActuallyRegisters) {
     engine.Shutdown();
 }
 
+ENJIN_TEST(BindingRegistration, TheDateIsReadableFromScript) {
+    // A calendar game has to be able to ask what day it is. Until these landed,
+    // script could read the hour and the season and nothing else, so nothing
+    // could be scheduled against the calendar the engine already kept: no
+    // holiday, no visitor, no "the farm is ready on the ninth".
+    //
+    // Checking the exact declaration matters more than checking the count. A
+    // typo in the decl string still registers a function, it just registers one
+    // no script can call, and the registration itself reports success.
+    ScriptEngine engine;
+    ENJIN_ASSERT_TRUE(InitWithBindings(engine));
+    asIScriptEngine* as = engine.GetASEngine();
+    ENJIN_ASSERT_NOT_NULL(as);
+
+    ENJIN_EXPECT_TRUE(HasGlobalFunction(as, "int WorldTime_GetDay()"));
+    ENJIN_EXPECT_TRUE(HasGlobalFunction(as, "int WorldTime_GetMonth()"));
+    ENJIN_EXPECT_TRUE(HasGlobalFunction(as, "int WorldTime_GetYear()"));
+    ENJIN_EXPECT_TRUE(HasGlobalFunction(as, "int WorldTime_GetDayOfYear()"));
+    ENJIN_EXPECT_TRUE(HasGlobalFunction(as, "void WorldTime_SetDate(int, int, int)"));
+    engine.Shutdown();
+}
+
+ENJIN_TEST(BindingRegistration, TheForecastIsReadableFromScript) {
+    // Weather is a pure function of the world seed and the date, which is the
+    // only reason a script can be told what Thursday looks like on Monday. If
+    // this surface is missing, the forecast board cannot exist.
+    ScriptEngine engine;
+    ENJIN_ASSERT_TRUE(InitWithBindings(engine));
+    asIScriptEngine* as = engine.GetASEngine();
+    ENJIN_ASSERT_NOT_NULL(as);
+
+    ENJIN_EXPECT_TRUE(HasGlobalFunction(as, "int WorldTime_GetWeatherOn(int)"));
+    ENJIN_EXPECT_TRUE(HasGlobalFunction(as, "string WorldTime_GetWorldSeed()"));
+    ENJIN_EXPECT_TRUE(HasGlobalFunction(as, "void WorldTime_SetWorldSeed(const string&in)"));
+    engine.Shutdown();
+}
+
+ENJIN_TEST(BindingRegistration, AuthoredDaysAreSettableFromScript) {
+    // The engine deliberately does not know the game's calendar file format, so
+    // this is the whole seam between them: the game reads its own year and pushes
+    // the authored days in through these four. If the seam is missing, an
+    // authored calendar cannot reach the weather system at all.
+    ScriptEngine engine;
+    ENJIN_ASSERT_TRUE(InitWithBindings(engine));
+    asIScriptEngine* as = engine.GetASEngine();
+    ENJIN_ASSERT_NOT_NULL(as);
+
+    ENJIN_EXPECT_TRUE(HasGlobalFunction(as, "void WorldTime_SetAuthoredWeather(int, int)"));
+    ENJIN_EXPECT_TRUE(HasGlobalFunction(as, "void WorldTime_ClearAuthoredWeather()"));
+    ENJIN_EXPECT_TRUE(HasGlobalFunction(as, "bool WorldTime_IsAuthored(int)"));
+    ENJIN_EXPECT_TRUE(HasGlobalFunction(as, "int WorldTime_GetAuthoredDayCount()"));
+    engine.Shutdown();
+}
+
 ENJIN_TEST(BindingRegistration, RegisterAllBindingsRegistersTheWholeSurface) {
     // The one that would have caught the web bug outright. Roughly 940 global
     // functions are registered today; the floor is deliberately far below that so

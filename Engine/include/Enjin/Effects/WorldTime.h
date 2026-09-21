@@ -25,6 +25,10 @@ struct DaylightConfig {
 struct WorldTimeState {
     f32 timeOfDay = 12.0f;    // 0-24
     u32 day = 1, month = 6, year = 1;
+    // 1-based day within the year: (month - 1) * daysPerMonth + day. Derived
+    // here rather than at each call site because date-seeded systems hash on it
+    // and none of them can see CalendarConfig.
+    u32 dayOfYear = 151;
     Season season = Season::Summer;
     f32 daylightHours = 14.0f;
     f32 sunElevation = 0.0f;  // -1 to 1
@@ -57,6 +61,7 @@ private:
     void AdvanceCalendar();
     void ComputeSunPosition();
     void ComputeDaylightHours();
+    void ComputeDayOfYear();
 
     WorldTimeState m_State;
     CalendarConfig m_CalendarConfig;
