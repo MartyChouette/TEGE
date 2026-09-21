@@ -10974,7 +10974,30 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                     global.stippleTransparency = m_GlobalStippleTransparency;
                     global.uvQuantize          = m_GlobalUVQuantize;
                     global.gouraudOnly         = m_GlobalGouraudOnly;
-                    pushConstants.flags = Renderer::BuildMaterialFlagWord(*material, texBind, global);
+                    // Flags AND the surfaceParam band cascade, from the ONE definition
+                    // (MaterialDrawState.h). This builder is where that cascade was MOST
+                    // complete -- the other two had each lost pieces of it -- so migrating
+                    // it is the step that removes the original rather than adding a fourth
+                    // caller.
+                    //
+                    // One behaviour change, small and deliberate: the art-style overrides
+                    // used to sit OUTSIDE the `if (material)` branch, so an entity with a
+                    // mesh and no MaterialComponent could still take a PrePBR or Retro
+                    // flag. They are inside now, matching RenderEntity. Nothing authored
+                    // reaches that case, and keeping the block outside would mean keeping a
+                    // second copy of it, which is the thing being removed.
+                    {
+                        const Renderer::MaterialDrawState ds = Renderer::BuildMaterialDrawState(
+                            *material, texBind, global,
+                            PaletteBandFor(material->paletteSlot),
+                            m_World->GetComponent<ECS::ElementalSurfaceComponent>(entity),
+                            m_CachedArtStyleStorage ? m_CachedArtStyleStorage->Get(entity) : nullptr,
+                            m_GlobalVertexSnapResolution);
+                        pushConstants.flags         = ds.flags;
+                        pushConstants.surfaceParam1 = ds.surfaceParam1;
+                        pushConstants.surfaceParam2 = ds.surfaceParam2;
+                        pushConstants.surfaceParam3 = ds.surfaceParam3;
+                    }
 
                     // adr-0008 phase 1: bind this material's specialization
                     // variant. THIS is the path an exported game takes -- see
@@ -11009,57 +11032,6 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                     }
                 }
                 pushConstants.parallaxScale = material->parallaxScale;
-                // Artistic surface params (reused push constant slots)
-                pushConstants.surfaceParam1 = material->reflectivity;
-                pushConstants.surfaceParam2 = material->fresnelPower;
-                pushConstants.surfaceParam3 = material->rimLightStrength;
-                // Dithered gradient: encode bands + pattern into surfaceParam1
-                if (material->ditherGradient) {
-                    pushConstants.flags |= (1 << 20); // Force flat shading
-                    pushConstants.surfaceParam1 = 100.0f + static_cast<f32>(material->ditherGradientBands)
-                        + static_cast<f32>(material->ditherGradientPattern) * 0.1f;
-                }
-                // Dithered transparency: encode pattern + opacity + blend color into surfaceParams
-                if (material->ditherTransparency) {
-                    pushConstants.surfaceParam1 = 200.0f + static_cast<f32>(material->ditherTransPattern);
-                    pushConstants.surfaceParam2 = material->ditherTransOpacity;
-                    u32 r = static_cast<u32>(material->ditherTransBlendColor.x * 1023.0f) & 0x3FF;
-                    u32 g = static_cast<u32>(material->ditherTransBlendColor.y * 1023.0f) & 0x3FF;
-                    u32 b = static_cast<u32>(material->ditherTransBlendColor.z * 1023.0f) & 0x3FF;
-                    u32 packed = (r << 20) | (g << 10) | b;
-                    pushConstants.surfaceParam3 = *reinterpret_cast<f32*>(&packed);
-                }
-                // Elemental surface effects: encode char/wet/snow/frost into surfaceParams
-                if (!material->ditherGradient && !material->ditherTransparency) {
-                    auto* elemSurface = m_World->GetComponent<ECS::ElementalSurfaceComponent>(entity);
-                    if (elemSurface && (elemSurface->charAmount > 0.01f || elemSurface->wetness > 0.01f ||
-                                        elemSurface->snowCoverage > 0.01f || elemSurface->frostAmount > 0.01f)) {
-                        pushConstants.surfaceParam1 = 300.0f + elemSurface->charAmount;
-                        pushConstants.surfaceParam2 = elemSurface->wetness + std::floor(elemSurface->snowCoverage * 256.0f);
-                        pushConstants.surfaceParam3 = elemSurface->frostAmount;
-                    }
-                }
-                // Procedural surface noise: encode scale/strength into surfaceParams (range 400+)
-                // Only when no other effect has claimed the surfaceParam slots
-                if (!material->ditherGradient && !material->ditherTransparency &&
-                    material->surfaceNoiseScale > 0.0f && pushConstants.surfaceParam1 < 100.0f) {
-                    pushConstants.surfaceParam1 = 400.0f + material->surfaceNoiseScale;
-                    pushConstants.surfaceParam2 = material->surfaceNoiseStrength;
-                }
-                // Palette-indexed, last so it wins the slot. The flags word has
-                // no free bits (24-28 carry vertexSnapResolution), so this rides
-                // surfaceParam1 like the modes above. Bands: 100 dither gradient,
-                // 200 dithered transparency, 300 elemental, 400 surface noise,
-                // 500 this.
-                if (material->paletteIndexed) {
-                    pushConstants.surfaceParam1 = PaletteBandFor(material->paletteSlot);
-                }
-                // Lightmapped, after the palette so it wins the slot when both
-                // are set. They cannot coexist -- the flags word has no free
-                // bits, so every mode here shares one float.
-                if (material->lightmapped) {
-                    pushConstants.surfaceParam1 = ECS::MaterialGPU::SURFACE_PARAM1_LIGHTMAPPED;
-                }
             } else {
                 pushConstants.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
                 pushConstants.metallic = 0.0f;
@@ -11072,62 +11044,6 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 pushConstants.parallaxScale = 0.0f;
             }
 
-            // Global retro overrides now ride the shared builder above.
-            if (m_GlobalVertexSnapping && m_GlobalVertexSnapResolution > 0) {
-                pushConstants.flags = (pushConstants.flags & ~(0x1F << 24)) | (static_cast<i32>((m_GlobalVertexSnapResolution / 8) & 0x1F) << 24);
-            }
-
-            // Per-entity art style override (ArtStyleComponent)
-            ArtStyleComponent* artStyle = m_CachedArtStyleStorage ? m_CachedArtStyleStorage->Get(entity) : nullptr;
-            if (artStyle && artStyle->style != ArtStyleType::Inherit) {
-                switch (artStyle->style) {
-                case ArtStyleType::PrePBR:
-                    if (artStyle->prePBR_flatShading) pushConstants.flags |= (1 << 20);
-                    if (artStyle->prePBR_gouraudOnly) pushConstants.flags |= (1 << 13);
-                    break;
-                case ArtStyleType::HandPainted:
-                    // Hand-painted uses light ramp (handled at scene level),
-                    // per-entity just force-enables half-Lambert via gouraud mode
-                    break;
-                case ArtStyleType::CelToon:
-                    // Per-entity cel: rim strength via push constants (outline handled in outline pass)
-                    pushConstants.surfaceParam3 = artStyle->cel_rimStrength;
-                    break;
-                case ArtStyleType::Retro:
-                    if (artStyle->retro_flatShading) pushConstants.flags |= (1 << 20);
-                    if (artStyle->retro_affineTexturing) pushConstants.flags |= (1 << 21);
-                    if (artStyle->retro_vertexSnapping) pushConstants.flags |= (1 << 22);
-                    if (artStyle->retro_uvQuantize) pushConstants.flags |= (1 << 12);
-                    if (artStyle->retro_vertexSnapping && artStyle->retro_snapResolution > 0) {
-                        pushConstants.flags = (pushConstants.flags & ~(0x1F << 24))
-                            | (static_cast<i32>((artStyle->retro_snapResolution / 8) & 0x1F) << 24);
-                    }
-                    break;
-                case ArtStyleType::MaterialExpression:
-                    // Override surface noise from art style component (SSS handled in SSBO build)
-                    if (material && artStyle->matExpr_surfaceNoiseScale > 0.0f &&
-                        pushConstants.surfaceParam1 < 100.0f) {
-                        pushConstants.surfaceParam1 = 400.0f + artStyle->matExpr_surfaceNoiseScale;
-                        pushConstants.surfaceParam2 = artStyle->matExpr_surfaceNoiseStrength;
-                    }
-                    break;
-                case ArtStyleType::NPR:
-                case ArtStyleType::PixelArt:
-                case ArtStyleType::Analog:
-                    // Full-screen styles: outlines, palettes, film effects. There is
-                    // nothing to do per ENTITY -- a full-screen pass cannot grain one
-                    // object -- so these are applied scene-wide from the component on
-                    // the active camera, by ApplyArtStyleSceneOverride below.
-                    //
-                    // This comment used to claim the post-process pass "queries
-                    // ArtStyleComponent on the camera entity". No such query existed,
-                    // so around twenty-five fields of this component were authored,
-                    // saved, reloaded and read by nothing at all.
-                    break;
-                default:
-                    break;
-                }
-            }
 
             // Set wind sway flag for vegetation entities
             if (m_World->HasComponent<VegetationComponent>(entity)) {
