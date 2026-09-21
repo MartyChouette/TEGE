@@ -1,5 +1,6 @@
 #include "Enjin/Renderer/Vulkan/VulkanPipeline.h"
 #include "Enjin/Logging/Log.h"
+#include <cstring>
 #include "Enjin/Core/Assert.h"
 #include <array>
 
@@ -52,14 +53,18 @@ void VulkanPipeline::BindVariant(VkCommandBuffer commandBuffer, VkPipeline varia
 }
 
 VkPipeline VulkanPipeline::GetVariant(const MaterialSpecKey& key) {
-    // TODO: Properly cache all sub-structs of VkGraphicsPipelineCreateInfo
-    // (vertex input, rasterization, blend, dynamic state, etc.) as member variables
-    // so the template CI doesn't reference dangling stack pointers.
-    // For now, return the default pipeline — specialization constants are still
-    // in the shader with default values (all features enabled), so the GPU driver
-    // can still optimize. Variant creation will be enabled once the CI is fully cached.
-    (void)key;
-    return m_Pipeline;
+    // No retained CI means this pipeline cannot be specialized (a custom vertex
+    // input, or creation failed). Falling back to the default pipeline is the
+    // pre-adr-0008 behaviour and is correct rather than merely safe: the shader
+    // still compiles with its declared specialization defaults.
+    if (!m_HasTemplateCI || m_Pipeline == VK_NULL_HANDLE) return m_Pipeline;
+
+    VkPipeline variant = m_VariantCache.GetOrCreate(
+        m_Context->GetDevice(), m_PipelineLayout, m_RenderPass, m_TemplateCICache, key);
+
+    // A failed variant must not take the frame down. Draw with the default and
+    // let the error PipelineVariantCache already logged be the signal.
+    return (variant != VK_NULL_HANDLE) ? variant : m_Pipeline;
 }
 
 void VulkanPipeline::Destroy() {
@@ -91,7 +96,7 @@ void VulkanPipeline::Bind(VkCommandBuffer commandBuffer) {
 }
 
 bool VulkanPipeline::CreateDescriptorSetLayout() {
-    std::array<VkDescriptorSetLayoutBinding, 24> bindings{};
+    std::array<VkDescriptorSetLayoutBinding, 25> bindings{};
 
     // UBO binding 0: model/view/projection matrices (vertex shader)
     bindings[0].binding = 0;
@@ -113,7 +118,14 @@ bool VulkanPipeline::CreateDescriptorSetLayout() {
     bindings[2].binding = 2;
     bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     bindings[2].descriptorCount = 1;
-    bindings[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    // VERTEX as well as FRAGMENT (adr-0008). Restricting a binding to the
+    // stages that use it is correct and stays correct; the problem was that the
+    // vertex stage could not see the material buffer AT ALL, so a vertex-stage
+    // value (vertexSnapResolution) had to be packed into the push-constant
+    // flags word instead -- the one resource both stages share, and the one
+    // whose 32 bits are scarce. The restriction shaped the data layout rather
+    // than being a bug itself. Additive: nothing that reads this today changes.
+    bindings[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT;
     bindings[2].pImmutableSamplers = nullptr;
 
     // Sampler binding 3: base color texture (fragment shader)
@@ -263,6 +275,22 @@ bool VulkanPipeline::CreateDescriptorSetLayout() {
     bindings[23].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     bindings[23].pImmutableSamplers = nullptr;
 
+    // SSBO binding 24: the GPU-CULLING ObjectData, separate from binding 13.
+    //
+    // They cannot share one binding. FlushArenaBatches points 13 at the arena's
+    // per-frame ObjectData and never restores it; DrawIndirect needs the culling
+    // ObjectData. Both are UPDATE_AFTER_BIND writes, and vkUpdateDescriptorSets
+    // is a HOST operation applied at SUBMIT -- so the last host write wins for
+    // EVERY draw in the command buffer, whatever order they were recorded in.
+    // Re-pointing 13 inside DrawIndirect was tried and changed nothing, which is
+    // the evidence. One binding cannot mean two buffers in one submit, so the
+    // indirect path gets its own.
+    bindings[24].binding = 24;
+    bindings[24].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    bindings[24].descriptorCount = 1;
+    bindings[24].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    bindings[24].pImmutableSamplers = nullptr;
+
     // UPDATE_AFTER_BIND on every non-UBO binding (adr-0003): legalizes the
     // per-entity mid-recording writes (bone binding 7, morph binding 20, sprite
     // textures 3/6) that previously invalidated the in-flight command buffer —
@@ -270,7 +298,7 @@ bool VulkanPipeline::CreateDescriptorSetLayout() {
     // uniform-buffer UAB feature is not among the enabled descriptor-indexing
     // features, and nothing rewrites them after bind. The matching pool flag
     // lives on RenderSystem's m_DescriptorPool.
-    std::array<VkDescriptorBindingFlags, 24> bindingFlags{};
+    std::array<VkDescriptorBindingFlags, 25> bindingFlags{};
     for (usize i = 2; i < bindingFlags.size(); i++) {
         bindingFlags[i] = VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
     }
@@ -576,9 +604,71 @@ bool VulkanPipeline::CreatePipeline(
     }
 
     m_RenderPass = config.renderPass;
-    // Note: template CI caching disabled — sub-struct pointers are stack-local
-    // and would dangle. GetVariant() returns the default pipeline until proper
-    // member-variable caching of all pipeline state is implemented.
+
+    // Retain the create info so PipelineVariantCache can build specialization
+    // variants later (adr-0008 phase 1).
+    //
+    // A VkGraphicsPipelineCreateInfo is a tree of raw pointers into what were,
+    // until now, locals of this function. Keeping the CI without keeping what
+    // it points AT is why this was disabled and why nothing in this engine was
+    // ever specialized: every sub-struct below is copied to a member and then
+    // the copy's own internal pointers are re-aimed at members too. Missing one
+    // is a dangling pointer handed to the driver on the first variant, so the
+    // rule is that every pointer field assigned here names an m_Cached member
+    // and nothing else.
+    //
+    // DECLINED for a custom vertex input: config.customVertexInput is owned by
+    // the caller and may not outlive this call, and deep-copying an arbitrary
+    // one means copying arrays we were not given the lengths of by contract.
+    // Those pipelines keep the old behaviour (GetVariant returns the default),
+    // which is exactly what they do today.
+    if (config.customVertexInput == nullptr) {
+        m_CachedStages = shaderStages;   // pName is a literal; modules outlive us
+
+        m_CachedBindingDesc = bindingDescription;
+        m_CachedAttributeDescs.assign(attributeDescriptions.begin(), attributeDescriptions.end());
+        m_CachedVertexInput = vertexInputInfo;
+        m_CachedVertexInput.pVertexBindingDescriptions = &m_CachedBindingDesc;
+        m_CachedVertexInput.pVertexAttributeDescriptions = m_CachedAttributeDescs.data();
+
+        m_CachedInputAssembly = inputAssembly;
+
+        m_CachedViewport = viewport;
+        m_CachedScissor = scissor;
+        m_CachedViewportState = viewportState;
+        m_CachedViewportState.pViewports = &m_CachedViewport;
+        m_CachedViewportState.pScissors = &m_CachedScissor;
+
+        m_CachedRasterizer = rasterizer;
+        m_CachedMultisample = multisampling;
+        m_CachedDepthStencil = depthStencil;
+
+        m_CachedBlendAttachments.assign(blendAttachments.begin(), blendAttachments.end());
+        m_CachedColorBlend = colorBlending;
+        m_CachedColorBlend.pAttachments = m_CachedBlendAttachments.data();
+        m_CachedColorBlend.attachmentCount = static_cast<u32>(m_CachedBlendAttachments.size());
+
+        m_CachedDynamicStates.assign(dynamicStates.begin(), dynamicStates.end());
+        m_CachedDynamicState = dynamicState;
+        m_CachedDynamicState.pDynamicStates = m_CachedDynamicStates.data();
+        m_CachedDynamicState.dynamicStateCount = static_cast<u32>(m_CachedDynamicStates.size());
+
+        m_TemplateCICache = pipelineInfo;
+        m_TemplateCICache.pStages = m_CachedStages.data();
+        m_TemplateCICache.stageCount = static_cast<u32>(m_CachedStages.size());
+        m_TemplateCICache.pVertexInputState = &m_CachedVertexInput;
+        m_TemplateCICache.pInputAssemblyState = &m_CachedInputAssembly;
+        m_TemplateCICache.pViewportState = &m_CachedViewportState;
+        m_TemplateCICache.pRasterizationState = &m_CachedRasterizer;
+        m_TemplateCICache.pMultisampleState = &m_CachedMultisample;
+        m_TemplateCICache.pDepthStencilState = &m_CachedDepthStencil;
+        m_TemplateCICache.pColorBlendState = &m_CachedColorBlend;
+        m_TemplateCICache.pDynamicState = &m_CachedDynamicState;
+        m_TemplateCICache.pTessellationState = nullptr;
+        m_TemplateCICache.basePipelineHandle = VK_NULL_HANDLE;
+        m_TemplateCICache.basePipelineIndex = -1;
+        m_HasTemplateCI = true;
+    }
 
     ENJIN_LOG_INFO(Renderer, "Graphics pipeline created successfully");
     return true;

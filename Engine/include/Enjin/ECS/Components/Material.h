@@ -395,8 +395,11 @@ struct alignas(16) MaterialGPU {
         if (mat.doubleSided) gpu.flags |= 1;
         if (mat.castShadows) gpu.flags |= 2;
         if (mat.receiveShadows) gpu.flags |= 4;
-        if (mat.excludeFromCelShading) gpu.flags |= (1 << 4);
-        gpu.flags |= (static_cast<i32>(mat.alphaMode) << 8);
+        // NOT bit 4: that is FLAG_WIND_SWAY in the vertex shader, and this word
+        // and the push-constant word disagreed about it -- which is why the
+        // checkbox did nothing on any direct draw. Specialization constant now
+        // (adr-0008 phase 2).
+        gpu.flags |= ((static_cast<i32>(mat.alphaMode) & 0x3) << 8);  // masked, as BuildMaterialFlagWord does
 
         // Texture flags (bits 16-19, bit 10 for height)
         if (mat.baseColorTexture >= 0) gpu.flags |= (1 << 16);
@@ -412,7 +415,7 @@ struct alignas(16) MaterialGPU {
         if (mat.stippleTransparency) gpu.flags |= (1 << 23);
         if (mat.uvQuantize) gpu.flags |= (1 << 12);
         if (mat.gouraudOnly) gpu.flags |= (1 << 13);
-        if (mat.sdfText) gpu.flags |= (1 << 3);
+        // sdfText: specialization constant now (adr-0008 phase 2), not bit 3.
         // Shadow dither mode packed into bits 14-15
         gpu.flags |= (static_cast<i32>(mat.shadowDitherMode & 0x3) << 14);
         // Vertex snap resolution packed into bits 24-28 (5 bits, value/8)

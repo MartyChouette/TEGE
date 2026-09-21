@@ -1,3 +1,4 @@
+#include "Enjin/Renderer/Vulkan/ShaderData.h"
 #include <string>
 #include <vector>
 #include "Enjin/Renderer/ShaderPaths.h"
@@ -275,17 +276,39 @@ bool GPUCullingSystem::ExecuteCulling(
     VkMemoryBarrier barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
     barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    barrier.dstAccessMask = VK_ACCESS_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_SHADER_READ_BIT;
+    // HOST_READ as well: the visibility buffer is mapped and read on the CPU
+    // (below) and without this there is no guarantee the compute write is ever
+    // visible to the host at all.
+    barrier.dstAccessMask = VK_ACCESS_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_SHADER_READ_BIT
+                          | VK_ACCESS_HOST_READ_BIT;
     vkCmdPipelineBarrier(commandBuffer,
         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-        VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT
+            | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_HOST_BIT,
         0, 1, &barrier, 0, nullptr, 0, nullptr);
 
     outIndirectDrawBuffer = m_IndirectDrawBuffer->GetBuffer();
 
-    // GPU-driven: no CPU readback. Draw count is stored in m_DrawCountBuffer
-    // for vkCmdDrawIndexedIndirectCount. Visibility buffer still written for
-    // CPU-side fallback queries (IsVisible), read lazily from previous frame.
+    // GPU-driven: no CPU readback of the draw count. Visibility is still read
+    // here for CPU-side queries (IsVisible), and this read is LAZY -- it happens
+    // while the command buffer is still being recorded, so what it returns is a
+    // PREVIOUS dispatch's results, not this one's.
+    //
+    // That is acceptable for culling (one frame of latency at most) but it is
+    // NOT acceptable before any dispatch has completed: the buffer then holds
+    // zeroes, every object reads as invisible, and the caller deletes the scene.
+    // So the results are not believed until enough dispatches have been recorded
+    // that the one being read has been through the frames-in-flight pipeline and
+    // had its fence waited on. Until then IsVisible answers "visible".
+    //
+    // kVisibilityTrustAfter is frames-in-flight + 1. Erring high costs a couple
+    // of frames of unculled drawing at scene start; erring low costs the scene.
+    constexpr u32 kVisibilityTrustAfter = 4;
+    if (m_CullDispatches < kVisibilityTrustAfter) {
+        m_CullDispatches++;
+        if (m_CullDispatches >= kVisibilityTrustAfter) m_VisibilityValid = true;
+    }
+
     m_CachedVisibility.resize(m_ObjectCount);
     void* mapped = m_VisibilityBuffer->Map();
     if (mapped) {
@@ -485,6 +508,23 @@ bool GPUCullingSystem::CreateComputePipeline() {
                 ENJIN_LOG_INFO(Renderer, "Loaded compute shader from: %s", path.c_str());
                 break;
             }
+        }
+    }
+
+    // Fall back to the SPIR-V embedded in the binary.
+    //
+    // This is what actually ships. BuildPipeline emits loose scripts/ and
+    // assets/ and has NO shader-copy step, so an exported game contains zero
+    // .spv files: before this, GPU culling logged "enabled", failed to find
+    // cull.comp.spv, and silently degraded to CPU in every built game while the
+    // GPU-driven indirect draw path went unused entirely. The file probe above
+    // is kept first so a shader edit can still be iterated without rebuilding.
+    if (!shaderLoaded) {
+        if (computeShader.LoadFromSPIRV(ShaderData::CullComputeShaderData,
+                                        ShaderData::CullComputeShaderDataSize)
+            && computeShader.GetModule() != VK_NULL_HANDLE) {
+            shaderLoaded = true;
+            ENJIN_LOG_INFO(Renderer, "Loaded embedded cull.comp (no .spv on disk)");
         }
     }
 
@@ -696,6 +736,16 @@ bool GPUCullingSystem::CreateHiZComputePipeline() {
             loaded = true;
             ENJIN_LOG_INFO(Renderer, "Loaded HiZ cull shader from: %s", path.c_str());
             break;
+        }
+    }
+
+    // Same embedded fallback as cull.comp: an exported game ships no .spv.
+    if (!loaded) {
+        if (computeShader.LoadFromSPIRV(ShaderData::CullHiZComputeShaderData,
+                                        ShaderData::CullHiZComputeShaderDataSize)
+            && computeShader.GetModule() != VK_NULL_HANDLE) {
+            loaded = true;
+            ENJIN_LOG_INFO(Renderer, "Loaded embedded cull_hiz.comp (no .spv on disk)");
         }
     }
 

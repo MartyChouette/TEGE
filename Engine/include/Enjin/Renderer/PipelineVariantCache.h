@@ -24,9 +24,16 @@ namespace Renderer {
 //   Bit 5: DOUBLE_SIDED
 //   Bit 6: FLAT_SHADING
 //   Bits 7-8: ALPHA_MODE (0=Opaque, 1=Mask, 2=Blend)
+//   Bit 9:    SDF_TEXT      (adr-0008 phase 2)
+//   Bit 10:   EXCLUDE_CEL   (adr-0008 phase 2)
 //
 // Dynamic flags (remain in push constants, not part of the key):
 //   SKINNED, WIND_SWAY, WATER_*, GOURAUD_ONLY, retro art style flags, etc.
+//
+// SDF_TEXT and EXCLUDE_CEL moved here from the flag word because they are
+// material-STATIC and the word had no room for them: both were squatting on
+// bits the VERTEX shader reads as SKINNED and WIND_SWAY. Bit 3 and bit 4 now
+// mean one thing each again. See adr-0008.
 
 struct MaterialSpecKey {
     u32 bits = 0;
@@ -40,6 +47,8 @@ struct MaterialSpecKey {
     static constexpr u32 DOUBLE_SIDED    = (1u << 5);
     static constexpr u32 FLAT_SHADING    = (1u << 6);
     static constexpr u32 ALPHA_MODE_MASK = (3u << 7);
+    static constexpr u32 SDF_TEXT        = (1u << 9);
+    static constexpr u32 EXCLUDE_CEL     = (1u << 10);
 
     void SetAlphaMode(u32 mode) { bits = (bits & ~ALPHA_MODE_MASK) | ((mode & 3u) << 7); }
     u32 GetAlphaMode() const { return (bits >> 7) & 3u; }
@@ -63,6 +72,8 @@ struct SpecConstantData {
     u32 doubleSided;        // constant_id = 5
     u32 flatShading;        // constant_id = 6
     u32 alphaMode;          // constant_id = 7
+    u32 sdfText;            // constant_id = 8
+    u32 excludeCel;         // constant_id = 9
 };
 
 inline SpecConstantData MaterialSpecKeyToData(const MaterialSpecKey& key) {
@@ -75,6 +86,8 @@ inline SpecConstantData MaterialSpecKeyToData(const MaterialSpecKey& key) {
     d.doubleSided     = (key.bits & MaterialSpecKey::DOUBLE_SIDED)  ? 1 : 0;
     d.flatShading     = (key.bits & MaterialSpecKey::FLAT_SHADING)  ? 1 : 0;
     d.alphaMode       = key.GetAlphaMode();
+    d.sdfText         = (key.bits & MaterialSpecKey::SDF_TEXT)    ? 1 : 0;
+    d.excludeCel      = (key.bits & MaterialSpecKey::EXCLUDE_CEL) ? 1 : 0;
     return d;
 }
 

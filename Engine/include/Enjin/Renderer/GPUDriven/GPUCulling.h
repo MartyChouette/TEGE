@@ -99,6 +99,17 @@ public:
     // Check if object at given index is visible (after ExecuteCulling)
     // Returns true if index is out of range or culling hasn't run yet
     bool IsVisible(u32 objectIndex) const {
+        // Culling is an OPTIMISATION, so a wrong answer must err towards
+        // DRAWING. A wrong "invisible" deletes geometry from the screen; a
+        // wrong "visible" costs one draw call.
+        //
+        // This used to return `m_CachedVisibility[i] != 0` against a buffer the
+        // GPU had not necessarily written yet -- ExecuteCulling records the
+        // dispatch and then maps the buffer on the CPU during recording, so
+        // early frames read zeroes and EVERY object was skipped. That is what
+        // made the ground disappear whenever GPU culling was switched on
+        // outside the editor (adr-0008 investigation, 2026-09-20).
+        if (!m_VisibilityValid) return true;
         if (objectIndex >= m_CachedVisibility.size()) return true;
         return m_CachedVisibility[objectIndex] != 0;
     }
@@ -114,6 +125,12 @@ public:
     // Get the per-object visibility buffer (for DGC command generation)
     VkBuffer GetVisibilityBuffer() const;
     u32 GetMaxObjects() const { return m_MaxObjects; }
+
+    // True once the cached visibility is old enough to be trustworthy: the
+    // dispatch whose results it holds has been through the frames-in-flight
+    // pipeline, so its fence has been waited on before the command buffer was
+    // reused. Until then IsVisible answers "visible" for everything.
+    bool IsVisibilityValid() const { return m_VisibilityValid; }
 
     // Upload per-object data to the ObjectData SSBO
     bool UploadObjectData(const void* data, usize sizeBytes);
@@ -149,6 +166,9 @@ private:
     VkDescriptorSet m_DescriptorSet = VK_NULL_HANDLE;
     VkDescriptorPool m_DescriptorPool = VK_NULL_HANDLE;
     u32 m_ObjectCount = 0;
+    // Dispatches recorded so far, and whether the readback can be believed.
+    u32 m_CullDispatches = 0;
+    bool m_VisibilityValid = false;
 
     VulkanContext* m_Context = nullptr;
 

@@ -96,6 +96,12 @@ SHADERS_LIST = [
     ("oit_composite.frag.spv", "OitCompositeFragmentShaderData", "uchar"),
     ("oit_accum.frag.spv",     "OitAccumFragmentShaderData",     "uchar"),
     ("taa_resolve.comp.spv",   "TAAResolveComputeShaderData",    "uchar"),
+    # GPU-driven culling. Embedded for the same reason the raster shaders are:
+    # an exported game ships no .spv at all (BuildPipeline has no shader-copy
+    # step), so a file-only compute shader silently falls back to CPU in every
+    # built game while the log still says "GPU frustum culling enabled".
+    ("cull.comp.spv",          "CullComputeShaderData",          "uchar"),
+    ("cull_hiz.comp.spv",      "CullHiZComputeShaderData",       "uchar"),
     ("rt_hybrid_apply.frag.spv", "RTHybridApplyFragmentShaderData", "uchar"),
     ("gpu_particle.vert.spv",  "GpuParticleVertexShaderData",    "uchar"),
     ("gpu_particle.frag.spv",  "GpuParticleFragmentShaderData",  "uchar"),

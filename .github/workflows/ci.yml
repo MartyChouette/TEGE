@@ -915,6 +915,17 @@ jobs:
       - name: GPU layout parity (ObjectData + LightingUBO declared once)
         run: python tools/gpu_layout_parity.py --strict
 
+      # Same defect class, the other GPU layout that had no guard. triangle.vert
+      # and triangle.frag read ONE push-constant flags word and each carried its
+      # own hand-written #define list; bit 3 came to mean SKINNED in the vert and
+      # SDF_TEXT in the frag, and bit 4 WIND_SWAY and EXCLUDE_CEL. A skinned mesh
+      # took the SDF text path (silent on opaque textures, destructive on
+      # alpha-tested ones) and wind-swaying foliage lost cel shading. Nothing
+      # compared the two lists. Now one table generates both, and this fails if
+      # either shader drifts from it or if a bit is claimed twice (adr-0008).
+      - name: Material flag bits (one table, both shader stages)
+        run: python tools/gen_material_flags.py --check
+
       # The manual is what a person with no AI and no network reads to find out
       # what a component does, and nothing checked its 570 field rows against
       # the structs. They had drifted: seven documented fields did not exist at

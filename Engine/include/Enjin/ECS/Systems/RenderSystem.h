@@ -202,7 +202,13 @@ struct ObjectDataGPU {
     f32 parallaxScale;               // 4 bytes
     u32 teleported;                  // 1 = network snap/spawn (zero velocity), 0 = normal
     u32 boneBase;                    // skinning arena: base matrix offset (slot*256); 0 = per-entity path
-    f32 _pad[1];                     // pad to 192 total
+    // Was `f32 _pad[1]`. Carries the material SSBO index for INDIRECT draws
+    // (adr-0008 phase 4). Direct draws pass the same index as `firstInstance`
+    // -> gl_InstanceIndex -> v_MaterialIndex (adr-0003); the indirect path had
+    // no equivalent, so triangle.frag fell back to material entry 0 and every
+    // indirectly-drawn object rendered with the wrong material. Same size, so
+    // the 192-byte static_assert below is unchanged.
+    u32 materialIndex;               // pad slot reused; keeps the struct at 192
     Math::Matrix4 prevModel;         // 64 bytes — previous frame model matrix for velocity
 };
 static_assert(sizeof(ObjectDataGPU) == 192, "ObjectDataGPU must be 192 bytes for std430");
@@ -2559,7 +2565,10 @@ private:
     void EnsureArenaSharedMeshes();                        // build shared VB/IB (FlushPendingChanges only)
     bool ArenaEligible(Entity e, MeshComponent* mesh, u64& outHash) const;
     void FlushArenaBatches(VkCommandBuffer cmd, VkPipelineLayout layout);
-    void UpdateArenaObjectDataDescriptor(Renderer::VulkanBuffer* buf);   // rebind binding 13
+    void UpdateArenaObjectDataDescriptor(Renderer::VulkanBuffer* buf);
+    // Same, for a raw VkBuffer the engine does not own a VulkanBuffer for
+    // (the GPU culling system's ObjectData). See DrawIndirect.
+    void PointObjectDataDescriptorAt(VkBuffer buf);   // rebind binding 13
 
     // --- #1 step 3: pose-dedup (skin each unique pose ONCE, reuse across instances+passes) ----
     // A pose = (meshHash, clip, quantized normalized time). All instances with the same pose key

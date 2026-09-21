@@ -11,11 +11,11 @@ namespace Enjin {
 namespace Renderer {
 namespace ShaderData {
 
-// triangle.vert.spv (25668 bytes, 6417 words)
+// triangle.vert.spv (25828 bytes, 6457 words)
 extern const unsigned char TriangleVertexShaderData[];
 extern const size_t TriangleVertexShaderDataSize;
 
-// triangle.frag.spv (151116 bytes, 37779 words)
+// triangle.frag.spv (151156 bytes, 37789 words)
 extern const unsigned char TriangleFragmentShaderData[];
 extern const size_t TriangleFragmentShaderDataSize;
 
@@ -142,6 +142,14 @@ extern const size_t OitAccumFragmentShaderDataSize;
 // taa_resolve.comp.spv (8952 bytes, 2238 words)
 extern const unsigned char TAAResolveComputeShaderData[];
 extern const size_t TAAResolveComputeShaderDataSize;
+
+// cull.comp.spv (9436 bytes, 2359 words)
+extern const unsigned char CullComputeShaderData[];
+extern const size_t CullComputeShaderDataSize;
+
+// cull_hiz.comp.spv (17652 bytes, 4413 words)
+extern const unsigned char CullHiZComputeShaderData[];
+extern const size_t CullHiZComputeShaderDataSize;
 
 // rt_hybrid_apply.frag.spv (2372 bytes, 593 words)
 extern const unsigned char RTHybridApplyFragmentShaderData[];

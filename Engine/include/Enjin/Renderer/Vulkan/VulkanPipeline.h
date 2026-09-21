@@ -110,9 +110,35 @@ private:
 
     // Specialization variant cache
     PipelineVariantCache m_VariantCache;
-    // Cached template create info for variant pipeline creation
+    // Cached template create info for variant pipeline creation.
+    //
+    // EVERY sub-struct the CI points at has to live here, not on
+    // CreatePipeline's stack. A VkGraphicsPipelineCreateInfo is a tree of raw
+    // pointers, so retaining the CI while its pVertexInputState (and the
+    // binding/attribute arrays THAT points at, and the blend attachment
+    // vector, and the dynamic state list) went out of scope would hand
+    // vkCreateGraphicsPipelines a fistful of dangling pointers the next time a
+    // variant was built. That is why GetVariant was stubbed to return the
+    // default pipeline, and why nothing in this engine was ever specialized.
+    //
+    // Keep these in the same order CreatePipeline fills them; a member added
+    // here and not wired there is a silently empty state struct.
     VkGraphicsPipelineCreateInfo m_TemplateCICache{};
     std::vector<VkPipelineShaderStageCreateInfo> m_CachedStages;
+    VkVertexInputBindingDescription m_CachedBindingDesc{};
+    std::vector<VkVertexInputAttributeDescription> m_CachedAttributeDescs;
+    VkPipelineVertexInputStateCreateInfo m_CachedVertexInput{};
+    VkPipelineInputAssemblyStateCreateInfo m_CachedInputAssembly{};
+    VkViewport m_CachedViewport{};
+    VkRect2D m_CachedScissor{};
+    VkPipelineViewportStateCreateInfo m_CachedViewportState{};
+    VkPipelineRasterizationStateCreateInfo m_CachedRasterizer{};
+    VkPipelineMultisampleStateCreateInfo m_CachedMultisample{};
+    std::vector<VkPipelineColorBlendAttachmentState> m_CachedBlendAttachments;
+    VkPipelineColorBlendStateCreateInfo m_CachedColorBlend{};
+    std::vector<VkDynamicState> m_CachedDynamicStates;
+    VkPipelineDynamicStateCreateInfo m_CachedDynamicState{};
+    VkPipelineDepthStencilStateCreateInfo m_CachedDepthStencil{};
     bool m_HasTemplateCI = false;
 };
 

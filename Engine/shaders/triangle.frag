@@ -205,20 +205,39 @@ layout(constant_id = 4) const uint SPEC_HAS_HEIGHT_TEX = 1;
 layout(constant_id = 5) const uint SPEC_DOUBLE_SIDED = 1;
 layout(constant_id = 6) const uint SPEC_FLAT_SHADING = 0;
 layout(constant_id = 7) const uint SPEC_ALPHA_MODE = 0;  // 0=Opaque, 1=Mask, 2=Blend
+// adr-0008 phase 2. These were runtime flag bits 3 and 4, which the VERTEX
+// shader reads as SKINNED and WIND_SWAY off the SAME push-constant word -- so a
+// skinned mesh took the SDF text path and wind-swaying foliage lost cel
+// shading. Both are material-STATIC, so they belong in a permutation.
+// Default 0: a material that does not ask for them does not get them.
+layout(constant_id = 8) const uint SPEC_SDF_TEXT    = 0;
+layout(constant_id = 9) const uint SPEC_EXCLUDE_CEL = 0;
 
 // Material flag bits (dynamic flags — still checked at runtime via push constants/SSBO)
+// BEGIN GENERATED MATERIAL FLAGS -- edit MaterialFlagBits.h, not this
+// Generated from Engine/include/Enjin/Renderer/MaterialFlagBits.h.
+// Both stages read ONE push-constant word; a bit means the same thing
+// in each, and this block is what keeps that true.
 #define FLAG_DOUBLE_SIDED       (1 << 0)
 #define FLAG_CAST_SHADOWS       (1 << 1)
 #define FLAG_RECEIVE_SHADOWS    (1 << 2)
-#define FLAG_EXCLUDE_CEL        (1 << 4)
+#define FLAG_WATER_SURFACE      (1 << 5)
+#define FLAG_RAIN_RIPPLES       (1 << 6)
+#define FLAG_WATER_SHORE        (1 << 7)
+#define FLAG_HAS_HEIGHT_TEX     (1 << 10)
+#define FLAG_WATER_OCEAN        (1 << 11)
+#define FLAG_UV_QUANTIZE        (1 << 12)
+#define FLAG_GOURAUD_ONLY       (1 << 13)
 #define FLAG_HAS_BASE_COLOR_TEX (1 << 16)
 #define FLAG_HAS_NORMAL_TEX     (1 << 17)
 #define FLAG_HAS_METALLIC_TEX   (1 << 18)
 #define FLAG_HAS_EMISSIVE_TEX   (1 << 19)
-
+#define FLAG_FLAT_SHADING       (1 << 20)
+#define FLAG_AFFINE_TEXTURING   (1 << 21)
+#define FLAG_VERTEX_SNAPPING    (1 << 22)
+#define FLAG_STIPPLE_TRANS      (1 << 23)
+// END GENERATED MATERIAL FLAGS
 // Height texture flag
-#define FLAG_HAS_HEIGHT_TEX     (1 << 10)
-
 // The Half-Life 2 basis, in tangent space. These literals are the SAME numbers
 // as kBasis in RadiosityNormalMap.cpp, written out rather than derived so the
 // bake and the shader cannot drift apart. If they ever do the picture does not
@@ -228,22 +247,9 @@ const vec3 kRNMBasis1 = vec3(-0.408248290,  0.707106781, 0.577350269);
 const vec3 kRNMBasis2 = vec3( 0.816496581,  0.0,         0.577350269);
 
 // Water/rain flag bits
-#define FLAG_WATER_SURFACE      (1 << 5)
-#define FLAG_RAIN_RIPPLES       (1 << 6)
-#define FLAG_WATER_SHORE        (1 << 7)
-#define FLAG_WATER_OCEAN        (1 << 11)
-
 // Retro flag bits (must match vertex shader and C++ Material.h)
-#define FLAG_FLAT_SHADING       (1 << 20)
-#define FLAG_AFFINE_TEXTURING   (1 << 21)
-#define FLAG_VERTEX_SNAPPING    (1 << 22)
-#define FLAG_STIPPLE_TRANS      (1 << 23)
 // SDF text: base color alpha is a signed distance field (FontAtlas, on-edge
 // 180/255); threshold it with screen-space AA for crisp glyphs at any scale.
-#define FLAG_SDF_TEXT           (1 << 3)
-#define FLAG_UV_QUANTIZE        (1 << 12)
-#define FLAG_GOURAUD_ONLY       (1 << 13)
-
 // Shadow dither mode (bits 14-15): 0=None, 1=By Darkness, 2=By Distance, 3=By Angle
 #define FLAG_SHADOW_DITHER_SHIFT 14
 #define FLAG_SHADOW_DITHER_MASK  (3 << FLAG_SHADOW_DITHER_SHIFT)
@@ -290,11 +296,19 @@ struct ObjectData {
     int flags;               // 4 bytes
     float parallaxScale;     // 4 bytes
     uint teleported;         // 4 bytes (1 = zero velocity)
-    float _objPad[2];        // 8 bytes
+    uint boneBase;           // 4 bytes (skinning arena base; vert-only)
+    uint materialIndex;      // 4 bytes (adr-0008: material index for indirect)
     mat4 prevModel;          // 64 bytes
 };
 layout(std430, binding = 13) readonly buffer ObjectDataSSBO {
     ObjectData objectData[];
+};
+// The GPU-culling ObjectData, on its OWN binding. Binding 13 is re-pointed at
+// the arena's per-frame buffer by FlushArenaBatches and never restored, and
+// descriptor writes are HOST ops applied at submit -- so one binding cannot
+// mean two buffers in a single command buffer. adr-0008.
+layout(std430, binding = 24) readonly buffer CullObjectDataSSBO {
+    ObjectData cullObjectData[];
 };
 
 // Shadow data SSBO for point/spot light shadow matrices (binding 12)
@@ -1101,12 +1115,17 @@ void main() {
     // ObjectData; only the extended fields (SSS/transmission/bindless indices)
     // read from here.
     {
-        int mi = (v_ObjectIndex >= 0) ? 0 : max(v_MaterialIndex, 0);
+        // Indirect draws now carry their own material index instead of
+        // falling back to entry 0, which made every indirectly-drawn object
+        // render with the wrong material (adr-0008 phase 4).
+        int mi = (v_ObjectIndex >= 0)
+               ? int(cullObjectData[v_ObjectIndex].materialIndex)
+               : max(v_MaterialIndex, 0);
         materialData = materialEntries[mi];
     }
 
     if (v_ObjectIndex >= 0) {
-        ObjectData od = objectData[v_ObjectIndex];
+        ObjectData od = cullObjectData[v_ObjectIndex];
         mat_baseColor = od.baseColor;
         mat_metallic = od.metallic;
         mat_emissiveColor = od.emissiveColor;
@@ -1368,7 +1387,7 @@ void main() {
         // each quad, at full atlas RGB) was compositing into an opaque box
         // behind every word. Discarding it kills the box at the source while
         // the surviving edge keeps its anti-aliasing.
-        if ((mat_flags & FLAG_SDF_TEXT) != 0) {
+        if (SPEC_SDF_TEXT != 0) {
             float sdfEdge = 180.0 / 255.0;
             float sdfW = clamp(fwidth(texColor.a), 0.008, 0.10);
             float a = smoothstep(sdfEdge - sdfW, sdfEdge + sdfW, texColor.a);
@@ -1456,7 +1475,7 @@ void main() {
         result = pow(result, vec3(1.0 / 2.2));
         // Alpha handling
         float alpha = mat_opacity * fragVertColor.a * texAlpha;
-        int alphaMode = (mat_flags >> 8) & 0x3;
+        int alphaMode = int(SPEC_ALPHA_MODE);   // adr-0008 phase 4: specialized, not bits 8-9
         if (alphaMode == 1) {
             if (alpha < mat_alphaCutoff) discard;
         }
@@ -1614,7 +1633,7 @@ void main() {
 
         if (i == 0u) sunShadow = shadow;   // the sun; snow below is shaded by it
 
-        bool useCel = (lighting.celDiffuseBands >= 2.0) && ((mat_flags & FLAG_EXCLUDE_CEL) == 0);
+        bool useCel = (lighting.celDiffuseBands >= 2.0) && (SPEC_EXCLUDE_CEL == 0);
         result += shadow * (useCel
             ? calcBlinnPhongCel(lightDir, lightColor, intensity, normal, viewDir, albedo, metallic, shininess)
             : calcBlinnPhong(lightDir, lightColor, intensity, normal, viewDir, albedo, metallic, shininess));
@@ -1649,7 +1668,7 @@ void main() {
                 if (int(i) < lighting.pointShadowCount && (mat_flags & FLAG_RECEIVE_SHADOWS) != 0) {
                     shadow = calcPointShadow(fragWorldPos, int(i));
                 }
-                bool useCelPt = (lighting.celDiffuseBands >= 2.0) && ((mat_flags & FLAG_EXCLUDE_CEL) == 0);
+                bool useCelPt = (lighting.celDiffuseBands >= 2.0) && (SPEC_EXCLUDE_CEL == 0);
                 result += shadow * (useCelPt
                     ? calcBlinnPhongCel(lightDir, lightColor, intensity * atten, normal, viewDir, albedo, metallic, shininess)
                     : calcBlinnPhong(lightDir, lightColor, intensity * atten, normal, viewDir, albedo, metallic, shininess));
@@ -1677,7 +1696,7 @@ void main() {
                         shadow = calcSpotShadow(fragWorldPos, int(i));
                     }
                     shadow *= calcSpotCookie(i, lightDir, spotDir, outerCutoff);
-                    bool useCelSp = (lighting.celDiffuseBands >= 2.0) && ((mat_flags & FLAG_EXCLUDE_CEL) == 0);
+                    bool useCelSp = (lighting.celDiffuseBands >= 2.0) && (SPEC_EXCLUDE_CEL == 0);
                     result += shadow * (useCelSp
                         ? calcBlinnPhongCel(lightDir, lightColor, intensity * atten * spotIntensity, normal, viewDir, albedo, metallic, shininess)
                         : calcBlinnPhong(lightDir, lightColor, intensity * atten * spotIntensity, normal, viewDir, albedo, metallic, shininess));
@@ -1714,7 +1733,7 @@ void main() {
             shadow = calcPointShadow(fragWorldPos, int(i));
         }
 
-        bool useCelPt = (lighting.celDiffuseBands >= 2.0) && ((mat_flags & FLAG_EXCLUDE_CEL) == 0);
+        bool useCelPt = (lighting.celDiffuseBands >= 2.0) && (SPEC_EXCLUDE_CEL == 0);
         result += shadow * (useCelPt
             ? calcBlinnPhongCel(lightDir, lightColor, intensity * atten, normal, viewDir, albedo, metallic, shininess)
             : calcBlinnPhong(lightDir, lightColor, intensity * atten, normal, viewDir, albedo, metallic, shininess));
@@ -1759,7 +1778,7 @@ void main() {
 
             shadow *= calcSpotCookie(i, lightDir, spotDir, outerCutoff);
 
-            bool useCelSp = (lighting.celDiffuseBands >= 2.0) && ((mat_flags & FLAG_EXCLUDE_CEL) == 0);
+            bool useCelSp = (lighting.celDiffuseBands >= 2.0) && (SPEC_EXCLUDE_CEL == 0);
             result += shadow * (useCelSp
                 ? calcBlinnPhongCel(lightDir, lightColor, intensity * atten * spotIntensity, normal, viewDir, albedo, metallic, shininess)
                 : calcBlinnPhong(lightDir, lightColor, intensity * atten * spotIntensity, normal, viewDir, albedo, metallic, shininess));
@@ -2204,7 +2223,7 @@ void main() {
 
     // Alpha handling
     float alpha = mat_opacity * fragVertColor.a * texAlpha;
-    int alphaMode = (mat_flags >> 8) & 0x3;
+    int alphaMode = int(SPEC_ALPHA_MODE);   // adr-0008 phase 4: specialized, not bits 8-9
     if (alphaMode == 1) { // Mask mode
         if (alpha < mat_alphaCutoff) {
             discard;

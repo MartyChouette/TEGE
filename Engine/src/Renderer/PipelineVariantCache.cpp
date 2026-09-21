@@ -11,7 +11,7 @@ namespace Renderer {
 
 // VkSpecializationMapEntry table — maps constant_id to byte offsets in SpecConstantData.
 // Must match the layout(constant_id=N) declarations in the fragment shader.
-static const std::array<VkSpecializationMapEntry, 8> s_SpecMapEntries = {{
+static const std::array<VkSpecializationMapEntry, 10> s_SpecMapEntries = {{
     { 0, offsetof(SpecConstantData, hasBaseColorTex), sizeof(u32) },
     { 1, offsetof(SpecConstantData, hasNormalTex),    sizeof(u32) },
     { 2, offsetof(SpecConstantData, hasMetallicTex),  sizeof(u32) },
@@ -20,6 +20,8 @@ static const std::array<VkSpecializationMapEntry, 8> s_SpecMapEntries = {{
     { 5, offsetof(SpecConstantData, doubleSided),     sizeof(u32) },
     { 6, offsetof(SpecConstantData, flatShading),     sizeof(u32) },
     { 7, offsetof(SpecConstantData, alphaMode),       sizeof(u32) },
+    { 8, offsetof(SpecConstantData, sdfText),         sizeof(u32) },
+    { 9, offsetof(SpecConstantData, excludeCel),      sizeof(u32) },
 }};
 
 PipelineVariantCache::~PipelineVariantCache() {

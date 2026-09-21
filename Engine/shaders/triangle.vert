@@ -107,11 +107,18 @@ struct ObjectData {
     float parallaxScale;
     uint teleported;       // 1 = network snap/spawn (zero velocity), 0 = normal
     uint boneBase;         // skinning arena: base matrix offset (slot*kBonesPerSlot); 0 = per-entity path
-    float _objPad[1];
+    uint materialIndex;    // adr-0008: material SSBO index for indirect draws
     mat4 prevModel;        // Previous frame model matrix for velocity
 };
 layout(std430, binding = 13) readonly buffer ObjectDataSSBO {
     ObjectData objectData[];
+};
+// The GPU-culling ObjectData, on its OWN binding. Binding 13 is re-pointed at
+// the arena's per-frame buffer by FlushArenaBatches and never restored, and
+// descriptor writes are HOST ops applied at submit -- so one binding cannot
+// mean two buffers in a single command buffer. adr-0008.
+layout(std430, binding = 24) readonly buffer CullObjectDataSSBO {
+    ObjectData cullObjectData[];
 };
 
 layout(location = 0) out vec3 fragWorldPos;
@@ -128,19 +135,23 @@ layout(location = 10) out vec2 fragUV1;          // second UV channel (passthrou
 layout(location = 11) flat out int v_MaterialIndex; // material SSBO index (direct draws set it via firstInstance)
 
 // Flag bits (must match C++ Material.h and RenderSystem.cpp)
+// BEGIN GENERATED MATERIAL FLAGS -- edit MaterialFlagBits.h, not this
+// Generated from Engine/include/Enjin/Renderer/MaterialFlagBits.h.
+// Both stages read ONE push-constant word; a bit means the same thing
+// in each, and this block is what keeps that true.
 #define FLAG_SKINNED          (1 << 3)
 #define FLAG_WIND_SWAY        (1 << 4)
 #define FLAG_WATER_SURFACE    (1 << 5)
 #define FLAG_RAIN_RIPPLES     (1 << 6)
 #define FLAG_WATER_SHORE      (1 << 7)
 #define FLAG_WATER_OCEAN      (1 << 11)
+#define FLAG_UV_QUANTIZE      (1 << 12)
+#define FLAG_GOURAUD_ONLY     (1 << 13)
 #define FLAG_FLAT_SHADING     (1 << 20)
 #define FLAG_AFFINE_TEXTURING (1 << 21)
 #define FLAG_VERTEX_SNAPPING  (1 << 22)
 #define FLAG_STIPPLE_TRANS    (1 << 23)
-#define FLAG_UV_QUANTIZE      (1 << 12)
-#define FLAG_GOURAUD_ONLY     (1 << 13)
-
+// END GENERATED MATERIAL FLAGS
 void main() {
     // Multi-draw indirect mode: when parallaxScale == -1.0, per-object data comes from
     // ObjectData SSBO (binding 13) indexed by gl_InstanceIndex (set via firstInstance).
@@ -159,7 +170,7 @@ void main() {
     mat4 objPrevModel;
     uint boneBase = 0u;   // arena skinning slot offset (0 = per-entity bone buffer at binding 7)
     if (indirectMode) {
-        ObjectData od = objectData[gl_InstanceIndex];
+        ObjectData od = cullObjectData[gl_InstanceIndex];
         objModel = od.model;
         objFlags = od.flags;
         objParallaxScale = od.parallaxScale;

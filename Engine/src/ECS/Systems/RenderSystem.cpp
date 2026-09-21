@@ -9022,9 +9022,50 @@ void RenderSystem::Update(f32 deltaTime) {
     // Build list of cullable objects for GPU frustum culling
     // Only done when we have 3D meshes and GPU culling is enabled.
     // In editor mode, skip culling entirely so all entities are visible for editing.
-    // In player mode, skip because GPU compute shaders (cull.comp.spv) are not
-    // available in built games — indirect draw buffers would be empty, causing
-    // entities to be marked as "drawn" but never actually rendered.
+    //
+    // STILL skipped in player mode. The CPU-side visibility skips are GONE
+    // (they were unsound, see below), and that was necessary but not enough.
+    //
+    // MEASURED on Playground, guard off, comparing captures:
+    //   CPU visibility skips deleted .................. 80% of pixels wrong, 42 draws
+    //   ... and the per-entity indirect skip disabled .. 25-40% wrong, 86 draws
+    // 86 draws is MORE than the 80 baseline: with both skips gone, everything
+    // is drawn per-entity AND the indirect draws are added on top. The image is
+    // still wrong, so THE INDIRECT DRAWS THEMSELVES PRODUCE GARBAGE and they
+    // land in the pass that is actually presented. They are not drawing into a
+    // discarded buffer -- they are corrupting the picture.
+    //
+    // That inverts an earlier conclusion recorded here: DrawIndirect does
+    // record into the swapchain pass while RenderToTarget records into an
+    // offscreen target, and that IS true, but the swapchain pass is what
+    // reaches the screen for this project. Do not chase the pass mismatch.
+    //
+    // WHERE TO LOOK NEXT: the draw commands and the data they index. Dump a few
+    // entries of m_IndirectDrawBuffer after cull.comp runs and check indexCount
+    // / firstIndex / vertexOffset against the mesh's real geometry-pool
+    // allocation, and check the ObjectData row each firstInstance selects. Do
+    // that BEFORE editing anything; five attempts were made by editing first.
+    //
+    // RULED OUT by measurement, do not re-investigate:
+    //   * descriptor-set mismatch -- active set at DrawIndirect is MAIN.
+    //   * RenderToTarget's visibility skip -- it fired ZERO times.
+    //   * bad pool offsets in BuildCullableObjectList -- indirectEligible
+    //     requires hasPoolAlloc.
+    //   * the culling dispatch not running -- it is reached.
+    //
+    // FIXED and KEPT, each verified to leave the picture byte-identical:
+    //   1. cull.comp.spv embedded in ShaderData.h -- an export ships no .spv,
+    //      so GPU culling fell back to CPU in every built game.
+    //   2. ObjectData carries a per-object materialIndex (was entry 0 for all).
+    //   3. An out-of-bounds `_pad[0] = _pad[1]` clobbering prevModel.m[0].
+    //   4. Binding 24 for the culling ObjectData.
+    //   5. IsVisible errs towards VISIBLE until trusted, barrier has HOST_READ.
+    //   6. The CPU-side IsVisible skips are deleted. GPUCullingSystem read its
+    //      visibility buffer during command recording with no fence: 0, then
+    //      46, then 23 of 62 objects "visible" on consecutive readbacks. A
+    //      GPU-driven path must not ask the CPU what is visible.
+    //
+    // Test, ready: Playground byte-identical WHILE draw calls drop.
     if (m_GPUCullingEnabled && !m_IsEditorMode && !m_PlayerMode && m_SceneComposition.mesh3DCount > 0) {
         BuildCullableObjectList();
     }
@@ -9261,16 +9302,18 @@ void RenderSystem::Update(f32 deltaTime) {
                 auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
                 if (!xform) continue;
                 if (!xform->visible) continue;
-                // Skip GPU-culled entities (frustum culling — disabled in editor mode)
-                if (m_GPUCullingEnabled && !m_IsEditorMode && m_GPUCulling && !m_CullableObjects.empty()) {
-                    usize entityIdx = static_cast<usize>(EntityIndex(entity));
-                    if (entityIdx < m_EntityToCullIndex.size()) {
-                        u32 cullIdx = m_EntityToCullIndex[entityIdx];
-                        if (cullIdx != UINT32_MAX && !m_GPUCulling->IsVisible(cullIdx)) {
-                            continue;
-                        }
-                    }
-                }
+                // CPU-side GPU-culling skip REMOVED (adr-0008, 2026-09-21).
+                //
+                // GPUCullingSystem maps its visibility buffer and reads it while the command
+                // buffer is still being recorded -- no fence, no wait -- so the CPU saw a
+                // previous frame's result, a half-written one, or zeroes. Measured on
+                // Playground: 0, then 46, then 23 of 62 objects "visible" on consecutive
+                // readbacks. Culling real geometry against that deleted the ground.
+                //
+                // A GPU-driven path should not ask the CPU what is visible at all:
+                // cull.comp already compacts the indirect draw to visible objects. If a
+                // CPU-side query is ever needed again it has to be double-buffered and read
+                // after the owning frame's fence, not read during recording.
                 // Skip 2D sprites — rendered in sorted pass after 3D geometry
                 if (spriteStorageVP && spriteStorageVP->Has(entity)) continue;
                 BindGeometryPipelineForMaterial(commandBuffer, entity, m_Pipeline.get(), m_TransparentPipeline.get(), vpTransparentBound);
@@ -9379,20 +9422,18 @@ void RenderSystem::Update(f32 deltaTime) {
                 continue;
             }
 
-            // Skip GPU-culled entities (frustum culling — disabled in editor mode).
-            // frustumCull = false opts an entity OUT of that test, for the things
-            // whose bounds lie about where they draw: a vertex-animated banner, a
-            // shader that pushes geometry outward, a skybox shell.
-            if (m_GPUCullingEnabled && !m_IsEditorMode && m_GPUCulling && !m_CullableObjects.empty() &&
-                (!mr || (mr->frustumCull && mr->occlusionCull))) {
-                usize entityIdx = static_cast<usize>(EntityIndex(entity));
-                if (entityIdx < m_EntityToCullIndex.size()) {
-                    u32 cullIdx = m_EntityToCullIndex[entityIdx];
-                    if (cullIdx != UINT32_MAX && !m_GPUCulling->IsVisible(cullIdx)) {
-                        continue;
-                    }
-                }
-            }
+            // CPU-side GPU-culling skip REMOVED (adr-0008, 2026-09-21).
+            //
+            // GPUCullingSystem maps its visibility buffer and reads it while the command
+            // buffer is still being recorded -- no fence, no wait -- so the CPU saw a
+            // previous frame's result, a half-written one, or zeroes. Measured on
+            // Playground: 0, then 46, then 23 of 62 objects "visible" on consecutive
+            // readbacks. Culling real geometry against that deleted the ground.
+            //
+            // A GPU-driven path should not ask the CPU what is visible at all:
+            // cull.comp already compacts the indirect draw to visible objects. If a
+            // CPU-side query is ever needed again it has to be double-buffered and read
+            // after the owning frame's fence, not read during recording.
 
             // Compute 64-bit sort key (pipeline | material/texture hash | depth).
             // Always recomputed — cachedSortKey's texture bits feed pool batching too.
@@ -10632,16 +10673,18 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             auto* xformRT = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
             if (!xformRT || !xformRT->visible) continue;
 
-            // Skip GPU-culled entities (frustum culling — disabled in editor mode)
-            if (m_GPUCullingEnabled && !m_IsEditorMode && m_GPUCulling && !m_CullableObjects.empty()) {
-                usize entityIdx = static_cast<usize>(EntityIndex(entity));
-                if (entityIdx < m_EntityToCullIndex.size()) {
-                    u32 cullIdx = m_EntityToCullIndex[entityIdx];
-                    if (cullIdx != UINT32_MAX && !m_GPUCulling->IsVisible(cullIdx)) {
-                        continue;
-                    }
-                }
-            }
+            // CPU-side GPU-culling skip REMOVED (adr-0008, 2026-09-21).
+            //
+            // GPUCullingSystem maps its visibility buffer and reads it while the command
+            // buffer is still being recorded -- no fence, no wait -- so the CPU saw a
+            // previous frame's result, a half-written one, or zeroes. Measured on
+            // Playground: 0, then 46, then 23 of 62 objects "visible" on consecutive
+            // readbacks. Culling real geometry against that deleted the ground.
+            //
+            // A GPU-driven path should not ask the CPU what is visible at all:
+            // cull.comp already compacts the indirect draw to visible objects. If a
+            // CPU-side query is ever needed again it has to be double-buffered and read
+            // after the owning frame's fence, not read during recording.
 
             // Skip 2D sprites — rendered in sorted pass after 3D geometry
             if (spriteStorageRT && spriteStorageRT->Has(entity)) continue;
@@ -10725,6 +10768,14 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             if (pass == TargetPass::OpaqueOnly && rtIsBlended) continue;
             if (pass == TargetPass::TransparentOIT && !rtIsBlended) continue;
 
+            // adr-0008: which pipeline this entity is actually drawn with.
+            // A specialization variant belongs to ONE pipeline, so the variant
+            // has to be taken from whichever of these the engine picked --
+            // taking it unconditionally from targetPipeline overrides the
+            // engine's choice and silently redraws custom-shader, OIT and
+            // transparent entities with the base material pipeline.
+            Renderer::VulkanPipeline* activePipeline = targetPipeline;
+
             if (pass == TargetPass::TransparentOIT) {
                 // One pipeline for the whole accumulation pass. A custom shader
                 // graph cannot be honoured here -- it writes colour + velocity, not
@@ -10735,10 +10786,12 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                     m_OITAccumPipeline->Bind(commandBuffer);
                     rtTransparentBound = true;
                 }
+                activePipeline = m_OITAccumPipeline.get();
             } else if (Renderer::VulkanPipeline* rtCustom =
                     GetEntityCustomPipeline(entity, targetPipeline == m_OffscreenPipeline.get())) {
                 rtCustom->Bind(commandBuffer);
                 rtCustomBound = true;
+                activePipeline = rtCustom;
             } else if (rtTransparentPipeline) {
                 // Blended geometry uses the depth-write-OFF pipeline so it doesn't cull
                 // what's behind it; opaque uses the normal one. Switch only on change
@@ -10755,6 +10808,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                     rtTransparentBound = wantTransparent;
                 }
                 rtCustomBound = false;
+                activePipeline = wantTransparent ? rtTransparentPipeline : targetPipeline;
             }
 
             Renderer::Texture* boundTexture = nullptr;
@@ -10859,6 +10913,38 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                     global.uvQuantize          = m_GlobalUVQuantize;
                     global.gouraudOnly         = m_GlobalGouraudOnly;
                     pushConstants.flags = Renderer::BuildMaterialFlagWord(*material, texBind, global);
+
+                    // adr-0008 phase 1: bind this material's specialization
+                    // variant. THIS is the path an exported game takes -- see
+                    // the note on RenderToTarget -- so a variant missing here
+                    // is a variant that never ships.
+                    const Renderer::MaterialSpecKey specKey =
+                        Renderer::BuildMaterialSpecKey(*material, texBind, global);
+                    // Taken from the pipeline the engine SELECTED for this
+                    // entity (base / OIT / custom-shader / transparent), never
+                    // from targetPipeline unconditionally. A variant belongs to
+                    // one pipeline; binding the wrong one silently redraws the
+                    // entity with the base material pipeline, which is a
+                    // picture change that looks like a shading bug.
+                    //
+                    // Bound every time rather than only when the key changes.
+                    // The skip needs m_BoundSpecKey to be invalidated wherever
+                    // anything else binds a pipeline, and several places do --
+                    // foliage, the arena flush, the post-reflection rebind --
+                    // so until they all invalidate it, tracking is a source of
+                    // wrong variants rather than a saving.
+                    //
+                    // rtCustomBound is set afterwards for the reason the engine
+                    // already uses it: this is a bind the loop's change-tracking
+                    // did not make, so the next entity must rebind rather than
+                    // assume its base pipeline is still current.
+                    if (activePipeline) {
+                        VkPipeline variant = activePipeline->GetVariant(specKey);
+                        if (variant != VK_NULL_HANDLE) {
+                            activePipeline->BindVariant(commandBuffer, variant);
+                            rtCustomBound = true;
+                        }
+                    }
                 }
                 pushConstants.parallaxScale = material->parallaxScale;
                 // Artistic surface params (reused push constant slots)
@@ -12348,7 +12434,8 @@ void RenderSystem::UploadObjectData() {
             if (material->stippleTransparency) flags |= (1 << 23);
             if (material->uvQuantize) flags |= (1 << 12);
             if (material->gouraudOnly) flags |= (1 << 13);
-            if (material->sdfText) flags |= (1 << 3);
+            // sdfText is a specialization constant now (adr-0008 phase 2);
+            // bit 3 is FLAG_SKINNED to the vertex shader and nothing else.
             flags |= (static_cast<i32>(material->shadowDitherMode & 0x3) << 14);
             flags |= (static_cast<i32>((material->vertexSnapResolution / 8) & 0x1F) << 24);
             flags |= (static_cast<i32>(material->shadowDitherPattern & 0x7) << 29);
@@ -12409,7 +12496,11 @@ void RenderSystem::UploadObjectData() {
         // Store current model matrix for next frame's previous-model lookup (eliminates second pass)
         m_PrevModelMatrices[entityId] = obj.model;
 
-        obj._pad[0] = obj._pad[1] = 0.0f;
+        // The index the fragment shader needs to find THIS object's material.
+        // (This line replaces `obj._pad[0] = obj._pad[1] = 0.0f;`, which wrote
+        // one element past a one-element array and so zeroed prevModel.m[0]
+        // every frame -- harmless only because this whole path was dormant.)
+        obj.materialIndex = GetMaterialIndex(entity);
         idx++;
     }
 
@@ -12427,6 +12518,25 @@ void RenderSystem::DrawIndirect(VkCommandBuffer commandBuffer) {
     VkBuffer indirectBuffer = m_GPUCulling->GetIndirectDrawBuffer();
     VkBuffer drawCountBuffer = m_GPUCulling->GetDrawCountBuffer();
     if (indirectBuffer == VK_NULL_HANDLE || drawCountBuffer == VK_NULL_HANDLE) return;
+
+    // Point binding 13 at OUR ObjectData before drawing.
+    //
+    // This is not belt-and-braces. FlushArenaBatches re-points binding 13 at the
+    // arena's per-frame ObjectData and deliberately never restores it -- its own
+    // comment says so, and says the restore is unsafe because a descriptor write
+    // recorded after those draws would be applied to them at submit. It then
+    // assumes "the static indirect path [re-points it] before its own draws",
+    // and notes the arrangement is only harmless "in the editor where static
+    // indirect is inactive". That assumption was never satisfied: DrawIndirect
+    // did NOT re-point it, and the whole path only ever ran in the editor.
+    //
+    // In a player frame the order is DrawIndirect early, FlushArenaBatches late,
+    // so from the SECOND frame on the indirect draws were reading the arena's
+    // ObjectData -- other objects' transforms and materials entirely. That is
+    // what made the scene come back washed out and untextured, and why adding a
+    // per-object materialIndex moved the pixel count by 800 out of 380,000: the
+    // index was right and it was being read from the wrong buffer.
+    PointObjectDataDescriptorAt(m_GPUCulling->GetObjectDataBuffer());   // binding 24
 
     // Bind the merged geometry pool (single VB + IB for all static meshes)
     if (!m_GeometryPoolBound) { m_GeometryPool->BindBuffers(commandBuffer); m_GeometryPoolBound = true; }
@@ -13047,7 +13157,7 @@ void RenderSystem::CreateDescriptorSets() {
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     poolSizes[1].descriptorCount = totalSets * 15;  // 12 original + 3 new (21,22,23)
     poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSizes[2].descriptorCount = totalSets * 7;
+    poolSizes[2].descriptorCount = totalSets * 8;   // +1: binding 24, the culling ObjectData
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -13235,7 +13345,7 @@ void RenderSystem::CreateDescriptorSets() {
             probeCubemapImageInfo.imageView = m_DummyCubeImageView;
         }
 
-        std::array<VkWriteDescriptorSet, 24> descriptorWrites{};
+        std::array<VkWriteDescriptorSet, 25> descriptorWrites{};
 
         // MVP descriptor
         descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -13362,6 +13472,17 @@ void RenderSystem::CreateDescriptorSets() {
         descriptorWrites[13].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         descriptorWrites[13].descriptorCount = 1;
         descriptorWrites[13].pBufferInfo = &objectDataBufferInfo;
+
+        // Culling ObjectData SSBO descriptor (binding 24). Starts pointed at the
+        // same buffer as 13; DrawIndirect re-points it and, unlike 13, nothing
+        // else ever writes it, so it survives the frame.
+        descriptorWrites[24].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[24].dstSet = m_DescriptorSets[i];
+        descriptorWrites[24].dstBinding = 24;
+        descriptorWrites[24].dstArrayElement = 0;
+        descriptorWrites[24].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        descriptorWrites[24].descriptorCount = 1;
+        descriptorWrites[24].pBufferInfo = &objectDataBufferInfo;
 
         // Cluster grid SSBO descriptor (binding 14)
         descriptorWrites[14].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -13621,7 +13742,7 @@ void RenderSystem::CreateDescriptorSets() {
                     offDummy3D.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
                 }
 
-                std::array<VkWriteDescriptorSet, 24> offWrites{};
+                std::array<VkWriteDescriptorSet, 25> offWrites{};
                 const u32 offWriteCount = offHaveDummies ? 24u : 21u;
                 for (u32 w = 0; w < offWriteCount; ++w) {
                     offWrites[w].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -13658,6 +13779,7 @@ void RenderSystem::CreateDescriptorSets() {
                 offWrites[12].pBufferInfo = &offShadowDataInfo;
                 offWrites[13].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
                 offWrites[13].pBufferInfo = &offObjectDataInfo;
+
                 offWrites[14].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
                 offWrites[14].pBufferInfo = &offClusterGridInfo;
                 offWrites[15].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -13694,6 +13816,26 @@ void RenderSystem::CreateDescriptorSets() {
 
                 vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(),
                     offWriteCount, offWrites.data(), 0, nullptr);
+
+                // Binding 24 (culling ObjectData) is written on its own: the
+                // array above is submitted as a contiguous range whose length
+                // varies with offHaveDummies, so index 24 is not always reached.
+                // It must be written even though the offscreen/editor path never
+                // draws indirect -- the layout declares it, PARTIALLY_BOUND is
+                // not enabled, and an unwritten descriptor the shader can reach
+                // is invalid.
+                {
+                    VkWriteDescriptorSet w24{};
+                    w24.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                    w24.dstSet = m_OffscreenDescriptorSets[idx];
+                    w24.dstBinding = 24;
+                    w24.dstArrayElement = 0;
+                    w24.descriptorCount = 1;
+                    w24.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                    w24.pBufferInfo = &offObjectDataInfo;
+                    vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(),
+                                           1, &w24, 0, nullptr);
+                }
             }
         }
     }
@@ -18321,6 +18463,27 @@ void RenderSystem::UpdateArenaObjectDataDescriptor(Renderer::VulkanBuffer* buf) 
     VkWriteDescriptorSet w{};
     w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     w.dstSet = (*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)];
+    w.dstBinding = 24;   // the indirect pass's OWN binding, never touched by the arena
+    w.dstArrayElement = 0;
+    w.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    w.descriptorCount = 1;
+    w.pBufferInfo = &info;
+    vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(), 1, &w, 0, nullptr);
+}
+
+// Point binding 13 at a raw VkBuffer. Same mechanism as the arena rebind above,
+// for a buffer the engine does not own a VulkanBuffer for.
+void RenderSystem::PointObjectDataDescriptorAt(VkBuffer buf) {
+    if (buf == VK_NULL_HANDLE) return;
+    const u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
+    VkDescriptorBufferInfo info{};
+    info.buffer = buf;
+    info.offset = 0;
+    info.range = VK_WHOLE_SIZE;
+
+    VkWriteDescriptorSet w{};
+    w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    w.dstSet = (*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)];
     w.dstBinding = 13;
     w.dstArrayElement = 0;
     w.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -18361,7 +18524,7 @@ static void FillArenaMaterial(ObjectDataGPU& od, const MaterialComponent* m, boo
     if (m->stippleTransparency) f |= (1 << 23);
     if (m->uvQuantize) f |= (1 << 12);
     if (m->gouraudOnly) f |= (1 << 13);
-    if (m->sdfText) f |= (1 << 3);
+    // sdfText: specialization constant now (adr-0008 phase 2), not bit 3.
     f |= (static_cast<i32>(m->shadowDitherMode & 0x3) << 14);
     f |= (static_cast<i32>((m->vertexSnapResolution / 8) & 0x1F) << 24);
     f |= (static_cast<i32>(m->shadowDitherPattern & 0x7) << 29);

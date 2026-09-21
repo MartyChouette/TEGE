@@ -65,10 +65,82 @@ ENJIN_TEST(MaterialFlagWord, test_each_retro_mode_owns_exactly_its_own_bit) {
         ECS::MaterialComponent m; m.gouraudOnly = true;
         ENJIN_EXPECT_EQ(BuildMaterialFlagWord(m) & (1 << 13), (1 << 13));
     }
-    {
-        ECS::MaterialComponent m; m.sdfText = true;
-        ENJIN_EXPECT_EQ(BuildMaterialFlagWord(m) & (1 << 3), (1 << 3));
-    }
+}
+
+// ============================================================================
+// BITS 3 AND 4 BELONG TO THE VERTEX SHADER, AND ONLY TO IT (adr-0008 phase 2)
+//
+// triangle.vert and triangle.frag declare the SAME push-constant block, so they
+// read one `flags` word. The vert reads bit 3 as FLAG_SKINNED and bit 4 as
+// FLAG_WIND_SWAY; the frag used to read the same two bits as SDF text and
+// exclude-cel. Both meanings were live at once:
+//
+//   * a skinned mesh took the SDF text path, which hard-discards every fragment
+//     under 180/255 alpha -- silent on an opaque texture, which is why it went
+//     unseen, and destructive on an alpha-tested one (hair, foliage cards);
+//   * wind-swaying vegetation was silently excluded from cel shading;
+//   * and `excludeFromCelShading` did NOTHING on any direct draw, because
+//     MaterialGPU::From set bit 4 for it while BuildMaterialFlagWord never did,
+//     and direct draws read the push-constant word.
+//
+// Both are material-STATIC, so they are specialization constants now and the
+// flag word must never claim either bit again.
+// ============================================================================
+
+ENJIN_TEST(MaterialFlagWord, test_sdf_text_does_not_touch_the_skinned_bit) {
+    ECS::MaterialComponent m;
+    m.sdfText = true;
+    // Bit 3 is FLAG_SKINNED to the vertex shader. A material must not be able
+    // to set it, or a text quad tells the vertex shader it has bones.
+    ENJIN_EXPECT_EQ(BuildMaterialFlagWord(m) & (1 << 3), 0);
+}
+
+ENJIN_TEST(MaterialFlagWord, test_exclude_cel_does_not_touch_the_wind_sway_bit) {
+    ECS::MaterialComponent m;
+    m.excludeFromCelShading = true;
+    // Bit 4 is FLAG_WIND_SWAY to the vertex shader.
+    ENJIN_EXPECT_EQ(BuildMaterialFlagWord(m) & (1 << 4), 0);
+}
+
+ENJIN_TEST(MaterialFlagWord, test_the_two_words_agree_about_bits_3_and_4) {
+    // The push-constant word and the material SSBO word are built by different
+    // code and have to agree. They did not, and nothing checked: that is what
+    // made the exclude-cel checkbox inert on every direct draw.
+    ECS::MaterialComponent m;
+    m.sdfText = true;
+    m.excludeFromCelShading = true;
+
+    const i32 pushWord = BuildMaterialFlagWord(m);
+    const ECS::MaterialGPU gpu = ECS::MaterialGPU::FromComponent(m);
+
+    ENJIN_EXPECT_EQ(pushWord & (1 << 3), 0);
+    ENJIN_EXPECT_EQ(pushWord & (1 << 4), 0);
+    ENJIN_EXPECT_EQ(gpu.flags & (1 << 3), 0);
+    ENJIN_EXPECT_EQ(gpu.flags & (1 << 4), 0);
+}
+
+ENJIN_TEST(MaterialFlagWord, test_alpha_mode_left_the_push_constant_word) {
+    // adr-0008 phase 4. alphaMode is material-static, so it is SPEC_ALPHA_MODE
+    // and bits 8-9 of the push-constant word are free.
+    ECS::MaterialComponent m;
+    m.alphaMode = ECS::MaterialComponent::AlphaMode::Blend;   // 2
+    ENJIN_EXPECT_EQ(BuildMaterialFlagWord(m) & (3 << 8), 0);
+
+    // It is still in the SSBO word, and that is NOT drift: the ray-tracing hit
+    // shaders read it from there and cannot be specialized per material.
+    const ECS::MaterialGPU gpu = ECS::MaterialGPU::FromComponent(m);
+    ENJIN_EXPECT_EQ((gpu.flags >> 8) & 0x3, 2);
+}
+
+ENJIN_TEST(MaterialFlagWord, test_alpha_mode_is_masked_in_both_words) {
+    // MaterialGPU::From shifted alphaMode without the & 0x3 that
+    // BuildMaterialFlagWord applies, so an out-of-range value bled into bit 10
+    // (HAS_HEIGHT_TEX) on the SSBO path only.
+    ECS::MaterialComponent m;
+    m.alphaMode = ECS::MaterialComponent::AlphaMode::Blend;   // 2
+    const ECS::MaterialGPU gpu = ECS::MaterialGPU::FromComponent(m);
+    ENJIN_EXPECT_EQ(gpu.flags & (1 << 10), 0);
+    ENJIN_EXPECT_EQ((gpu.flags >> 8) & 0x3, 2);
 }
 
 ENJIN_TEST(MaterialFlagWord, test_texture_bits_describe_what_is_BOUND_not_what_is_named) {
@@ -119,7 +191,9 @@ ENJIN_TEST(MaterialFlagWord, test_packed_fields_land_in_their_own_ranges) {
     const i32 f = BuildMaterialFlagWord(m);
 
     // Assert
-    ENJIN_EXPECT_EQ((f >> 8) & 0x3, 2);
+    // alphaMode is NOT here any more: it is SPEC_ALPHA_MODE as of adr-0008
+    // phase 4, and bits 8-9 of this word are free.
+    ENJIN_EXPECT_EQ((f >> 8) & 0x3, 0);
     ENJIN_EXPECT_EQ((f >> 14) & 0x3, 3);
     ENJIN_EXPECT_EQ((f >> 24) & 0x1F, 8);
     ENJIN_EXPECT_EQ((f >> 29) & 0x7, 5);
