@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Enjin/Renderer/GpuLifetime.h"
+
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/ECS/System.h"
 #include "Enjin/ECS/World.h"
@@ -367,7 +369,11 @@ public:
     // Reset all per-entity caches (render data, material indices, sorted lists).
     // Must be called after World::Clear() and before the next render frame.
     void OnSceneClear();
-    void FlushSceneClear();
+
+    // Do the deferred scene clear. Destroys per-entity GPU buffers, so it takes
+    // the safe-point token -- and unlike the three below it is PUBLIC, which
+    // makes it the one a caller outside this class could most easily get wrong.
+    void FlushSceneClear(const Renderer::GpuLifetimeToken&);
 
     // Process deferred changes (skybox config, pipeline recreation) — call at frame start,
     // BEFORE any command buffer recording (RenderOffscreen, Update, etc.)
@@ -676,8 +682,10 @@ public:
 
     // The actual build: recreates the OIT render pass and its pipelines. Only
     // FlushPendingChanges may call it, because only there is destroying GPU
-    // objects safe.
-    bool PrepareOITForTarget(Renderer::RenderTarget* target);
+    // objects safe -- and that is now the TOKEN's job to enforce rather than
+    // this sentence's (see Renderer::GpuLifetimeToken).
+    bool PrepareOITForTarget(Renderer::RenderTarget* target,
+                             const Renderer::GpuLifetimeToken&);
 
     // Render multiple cameras to a single render target using viewport subdivision (splitscreen)
     // Each ViewportCamera defines a normalized rect within the target.
@@ -3020,7 +3028,7 @@ private:
     // model rendered untextured. Runs pre-recording from FlushPendingChanges,
     // because GetOrLoadTexture registers into the bindless set and doing that
     // mid-command-buffer invalidates the in-flight recording.
-    void EnsureMaterialSlotTextures();
+    void EnsureMaterialSlotTextures(const Renderer::GpuLifetimeToken&);
 
     // Derive a sub-mesh draw's push constants from its material SLOT.
     //
@@ -3088,7 +3096,9 @@ private:
     u64 m_NextScriptRenderTargetHandle = 1;
     u64 m_ScriptTargetRoundRobin = 0;                     // rotates which target renders this frame
     bool m_ScriptTargetsRenderedThisFrame = false;        // reset in FlushPendingChanges
-    void ProcessPendingScriptRenderTargets();             // create + bind at the safe point
+    // Create + bind at the safe point. The token IS the safe point, spelled so a
+    // caller cannot get it wrong.
+    void ProcessPendingScriptRenderTargets(const Renderer::GpuLifetimeToken&);
 
     // Active rendering target pointers — swapped for offscreen passes
     std::vector<VkDescriptorSet>* m_ActiveDescriptorSets = nullptr;

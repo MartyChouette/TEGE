@@ -6103,7 +6103,7 @@ void RenderSystem::OnEntityRemoved(Entity entity) {
 
 void RenderSystem::OnSceneClear() { m_SceneClearPending = true; }
 
-void RenderSystem::FlushSceneClear() {
+void RenderSystem::FlushSceneClear(const Renderer::GpuLifetimeToken&) {
     if (!m_SceneClearPending) return;
     m_SceneClearPending = false;
 
@@ -6131,7 +6131,11 @@ void RenderSystem::FlushSceneClear() {
 }
 
 void RenderSystem::FlushPendingChanges() {
-    if (m_SceneClearPending) FlushSceneClear();
+    // The web flush has no mid-recording hazard to guard against -- the browser
+    // player records nothing before it -- so the whole body is the safe point
+    // and the token is minted at the top.
+    const Renderer::GpuLifetimeToken gpuSafe;
+    if (m_SceneClearPending) FlushSceneClear(gpuSafe);
     // Re-arm the palette clock, exactly as the Vulkan flush does. Missing it
     // here meant the guard latched on the first web frame and never opened
     // again: the palette uploaded once and then held that frame forever, which
@@ -6976,7 +6980,7 @@ void RenderSystem::OnSceneClear() {
     m_SceneClearPending = true;
 }
 
-void RenderSystem::FlushSceneClear() {
+void RenderSystem::FlushSceneClear(const Renderer::GpuLifetimeToken&) {
     // Wait for in-flight GPU work before invalidating any resources
     if (m_Renderer && m_VulkanRenderer->GetContext()) {
         m_VulkanRenderer->GetContext()->WaitForGPU();
@@ -7606,7 +7610,7 @@ void RenderSystem::RetireEntityBuffers(EntityRenderData& rd) {
     rd.Invalidate();
 }
 
-void RenderSystem::EnsureMaterialSlotTextures() {
+void RenderSystem::EnsureMaterialSlotTextures(const Renderer::GpuLifetimeToken&) {
 #if !ENJIN_RENDERER_WEBGPU
     if (!m_World) return;
     for (Entity entity : m_World->GetEntitiesWithComponent<MaterialSlotsComponent>()) {
@@ -7659,6 +7663,17 @@ void RenderSystem::FlushPendingChanges() {
         return;
     }
 
+    // PAST THE GUARD, and only here, the frame's GPU-safe point is real: no
+    // command buffer for this frame has been recorded yet. The token is minted
+    // at exactly that line, and anything that destroys or recreates a GPU object
+    // takes one -- so "call it from the safe point" is a thing the compiler
+    // checks rather than a thing the next person has to know.
+    //
+    // Deliberately AFTER the early return above: minting it at the top of the
+    // function would hand out a token on the editor's mid-recording path, which
+    // is the one case this whole mechanism exists for.
+    const Renderer::GpuLifetimeToken gpuSafe;
+
     // Material-slot textures. This creates VkImages and does a blocking staging
     // submit, and it registers bindless slots, so it belongs BELOW the guard
     // with everything else that touches GPU lifetime. It used to sit on the
@@ -7677,10 +7692,10 @@ void RenderSystem::FlushPendingChanges() {
     if (m_PendingOITTarget) {
         Renderer::RenderTarget* oitTarget = m_PendingOITTarget;
         m_PendingOITTarget = nullptr;
-        PrepareOITForTarget(oitTarget);
+        PrepareOITForTarget(oitTarget, gpuSafe);
     }
 
-    EnsureMaterialSlotTextures();
+    EnsureMaterialSlotTextures(gpuSafe);
 
     // CPU-generated textures (reaction-diffusion, Physarum, script pixels).
     // This creates a texture, registers a bindless slot and retires the
@@ -7699,7 +7714,7 @@ void RenderSystem::FlushPendingChanges() {
     // Script render targets (FR-4): build queued targets / apply queued material
     // binds at this pre-recording safe point, and re-arm the per-frame render.
     m_ScriptTargetsRenderedThisFrame = false;
-    ProcessPendingScriptRenderTargets();
+    ProcessPendingScriptRenderTargets(gpuSafe);
 
     // Asset hot-reload: textures repainted on disk (Pixel Editor Save, or any
     // external image editor) and shader source edits. Both watchers are polled
@@ -7839,7 +7854,7 @@ void RenderSystem::FlushPendingChanges() {
     // Flush deferred scene clear (set by OnSceneClear mid-frame)
     if (m_SceneClearPending) {
         m_SceneClearPending = false;
-        FlushSceneClear();
+        FlushSceneClear(gpuSafe);
     }
 
     // Deferred per-entity buffer setup. OnEntityAdded fires for EVERY
@@ -10545,7 +10560,7 @@ bool RenderSystem::BindScriptRenderTargetToEntity(u64 handle, Entity entity) {
     return true;
 }
 
-void RenderSystem::ProcessPendingScriptRenderTargets() {
+void RenderSystem::ProcessPendingScriptRenderTargets(const Renderer::GpuLifetimeToken&) {
     if (m_ScriptRenderTargets.empty()) return;
     for (auto& [handle, slot] : m_ScriptRenderTargets) {
         if (slot.pendingWidth != 0 && !slot.target) {
@@ -10700,7 +10715,8 @@ bool RenderSystem::RequestOITForTarget(Renderer::RenderTarget* target) {
     return IsOITUsable() && m_OITManager->GetConfig().enabled && IsOITCurrentFor(target);
 }
 
-bool RenderSystem::PrepareOITForTarget(Renderer::RenderTarget* target) {
+bool RenderSystem::PrepareOITForTarget(Renderer::RenderTarget* target,
+                                       const Renderer::GpuLifetimeToken&) {
     // Say WHY, once, whenever the setting is on and the pass cannot run. A
     // transparency mode that silently does nothing is the thing this whole change
     // exists to stop, and "it is on but you see no difference" needs an answer.
