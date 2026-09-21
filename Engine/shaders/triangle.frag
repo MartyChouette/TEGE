@@ -311,6 +311,12 @@ layout(std430, binding = 24) readonly buffer CullObjectDataSSBO {
     ObjectData cullObjectData[];
 };
 
+// Which of those two an indirect draw reads, carried in parallaxScale.
+// Keep in lockstep with kIndirectMode* in Enjin/Renderer/RenderStructs.h and
+// with the identical block in triangle.vert.
+#define INDIRECT_MODE_STATIC (-1.0)   // binding 24 -- GPU culling, textured batcher, DGC
+#define INDIRECT_MODE_ARENA  (-2.0)   // binding 13 -- bone-arena instanced draws
+
 // Shadow data SSBO for point/spot light shadow matrices (binding 12)
 #define MAX_SHADOW_POINT_LIGHTS 4
 #define MAX_SHADOW_SPOT_LIGHTS 4
@@ -1114,18 +1120,23 @@ void main() {
     // was always 0 for the indirect batch) — core material comes from
     // ObjectData; only the extended fields (SSS/transmission/bindless indices)
     // read from here.
+    // Uniform (push-constant) branch: every fragment of a draw takes the same side.
+    bool arenaMode = (material.parallaxScale <= INDIRECT_MODE_ARENA + 0.5);
+
     {
         // Indirect draws now carry their own material index instead of
         // falling back to entry 0, which made every indirectly-drawn object
         // render with the wrong material (adr-0008 phase 4).
         int mi = (v_ObjectIndex >= 0)
-               ? int(cullObjectData[v_ObjectIndex].materialIndex)
+               ? int(arenaMode ? objectData[v_ObjectIndex].materialIndex
+                               : cullObjectData[v_ObjectIndex].materialIndex)
                : max(v_MaterialIndex, 0);
         materialData = materialEntries[mi];
     }
 
     if (v_ObjectIndex >= 0) {
-        ObjectData od = cullObjectData[v_ObjectIndex];
+        ObjectData od = arenaMode ? objectData[v_ObjectIndex]
+                                  : cullObjectData[v_ObjectIndex];
         mat_baseColor = od.baseColor;
         mat_metallic = od.metallic;
         mat_emissiveColor = od.emissiveColor;

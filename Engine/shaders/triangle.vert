@@ -121,6 +121,13 @@ layout(std430, binding = 24) readonly buffer CullObjectDataSSBO {
     ObjectData cullObjectData[];
 };
 
+// Which of those two an indirect draw reads, carried in parallaxScale.
+// Keep in lockstep with kIndirectMode* in Enjin/Renderer/RenderStructs.h.
+// Tested with inequalities, not ==, so no draw depends on float equality: a real
+// material's parallaxScale is a height-map depth and never negative.
+#define INDIRECT_MODE_STATIC (-1.0)   // binding 24 -- GPU culling, textured batcher, DGC
+#define INDIRECT_MODE_ARENA  (-2.0)   // binding 13 -- bone-arena instanced draws
+
 layout(location = 0) out vec3 fragWorldPos;
 layout(location = 1) out vec3 fragNormal;
 layout(location = 2) out vec2 fragUV;
@@ -153,10 +160,11 @@ layout(location = 11) flat out int v_MaterialIndex; // material SSBO index (dire
 #define FLAG_STIPPLE_TRANS    (1 << 23)
 // END GENERATED MATERIAL FLAGS
 void main() {
-    // Multi-draw indirect mode: when parallaxScale == -1.0, per-object data comes from
-    // ObjectData SSBO (binding 13) indexed by gl_InstanceIndex (set via firstInstance).
-    // Otherwise, per-entity push constants are used (traditional path).
-    bool indirectMode = (pushConstants.parallaxScale == -1.0);
+    // Indirect mode: per-object data comes from an ObjectData SSBO indexed by
+    // gl_InstanceIndex (set via firstInstance), rather than from push constants.
+    // Which SSBO depends on the mode -- see INDIRECT_MODE_* above.
+    bool indirectMode = (pushConstants.parallaxScale <= INDIRECT_MODE_STATIC + 0.5);
+    bool arenaMode    = (pushConstants.parallaxScale <= INDIRECT_MODE_ARENA  + 0.5);
     v_ObjectIndex = indirectMode ? gl_InstanceIndex : -1;
     // Direct draws encode the material SSBO index in firstInstance (adr-0003);
     // in indirect mode gl_InstanceIndex is the OBJECT index and the fragment
@@ -170,7 +178,9 @@ void main() {
     mat4 objPrevModel;
     uint boneBase = 0u;   // arena skinning slot offset (0 = per-entity bone buffer at binding 7)
     if (indirectMode) {
-        ObjectData od = cullObjectData[gl_InstanceIndex];
+        // Uniform (push-constant) branch: every invocation in a draw takes the same side.
+        ObjectData od = arenaMode ? objectData[gl_InstanceIndex]
+                                  : cullObjectData[gl_InstanceIndex];
         objModel = od.model;
         objFlags = od.flags;
         objParallaxScale = od.parallaxScale;

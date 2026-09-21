@@ -6444,6 +6444,14 @@ void RenderSystem::Initialize() {
     // layout lacks the EXECUTION_SET token (validation 11153/11019/11011). DGC is
     // off-by-default at render time anyway, so skip init until the EXT path is finished.
     // Multi-draw indirect remains the active GPU-driven path.
+    // ENJIN_GPU_DRIVEN=1 turns the GPU-driven path on without a rebuild, which is what
+    // a capture harness needs to diff it against the per-entity picture.
+    if (const char* gd = std::getenv("ENJIN_GPU_DRIVEN")) {
+        m_GPUDrivenEnabled = (gd[0] == '1');
+        ENJIN_LOG_INFO(Renderer, "GPU-driven rendering %s by ENJIN_GPU_DRIVEN",
+                       m_GPUDrivenEnabled ? "ENABLED" : "disabled");
+    }
+
     constexpr bool kEnableDGCInit = false;
     if (kEnableDGCInit && m_GPUCullingEnabled && m_GPUCulling && m_VulkanRenderer->GetContext()->IsDGCSupported()) {
         m_DGC = std::make_unique<Renderer::DeviceGeneratedCommands>();
@@ -9019,54 +9027,88 @@ void RenderSystem::Update(f32 deltaTime) {
         return;
     }
 
-    // Build list of cullable objects for GPU frustum culling
+    // Build list of cullable objects for GPU frustum culling.
     // Only done when we have 3D meshes and GPU culling is enabled.
     // In editor mode, skip culling entirely so all entities are visible for editing.
     //
-    // STILL skipped in player mode. The CPU-side visibility skips are GONE
-    // (they were unsound, see below), and that was necessary but not enough.
+    // The `!m_PlayerMode` guard is GONE (2026-09-21), replaced by m_GPUDrivenEnabled -- a
+    // switch with an ENJIN_GPU_DRIVEN=1 override, because every A/B of this path used to
+    // cost two full engine builds and that is most of why it stayed broken for so long.
     //
-    // MEASURED on Playground, guard off, comparing captures:
-    //   CPU visibility skips deleted .................. 80% of pixels wrong, 42 draws
-    //   ... and the per-entity indirect skip disabled .. 25-40% wrong, 86 draws
-    // 86 draws is MORE than the 80 baseline: with both skips gone, everything
-    // is drawn per-entity AND the indirect draws are added on top. The image is
-    // still wrong, so THE INDIRECT DRAWS THEMSELVES PRODUCE GARBAGE and they
-    // land in the pass that is actually presented. They are not drawing into a
-    // discarded buffer -- they are corrupting the picture.
+    // MEASURED 2026-09-21, exported games, per-entity picture vs GPU-driven picture:
+    //   Playground     78-80 draws -> 42-44, 217 of 1,440,000 pixels differ, all by 1
+    //                  except a single pixel at frame 500
+    //   MaterialModes  22 draws -> 22, byte-identical
+    //   FoliageDemo    1 draw -> 1 (all instanced, nothing eligible), 2 pixels differ
+    // Default is still OFF: switching it on is a change to what every exported game
+    // renders, and that is not this commit's call to make.
     //
-    // That inverts an earlier conclusion recorded here: DrawIndirect does
-    // record into the swapchain pass while RenderToTarget records into an
-    // offscreen target, and that IS true, but the swapchain pass is what
-    // reaches the screen for this project. Do not chase the pass mismatch.
+    // TWO bugs kept it broken, and neither was the one the previous notes were chasing.
     //
-    // WHERE TO LOOK NEXT: the draw commands and the data they index. Dump a few
-    // entries of m_IndirectDrawBuffer after cull.comp runs and check indexCount
-    // / firstIndex / vertexOffset against the mesh's real geometry-pool
-    // allocation, and check the ObjectData row each firstInstance selects. Do
-    // that BEFORE editing anything; five attempts were made by editing first.
+    // ONE. The static indirect path and the bone arena both push an indirect-mode sentinel
+    // and both read the SAME ObjectData binding, and the two functions that point that
+    // binding at a buffer had their binding numbers SWAPPED -- the arena wrote 24 under a
+    // comment reading "never touched by the arena", the static path wrote 13 under a
+    // call-site comment reading "binding 24". Neither shader ever read 13.
     //
-    // RULED OUT by measurement, do not re-investigate:
+    // The static indirect path and the bone arena both push an indirect-mode sentinel and
+    // both read the SAME ObjectData binding, and the two functions that point that binding
+    // at a buffer had their binding numbers swapped -- the arena wrote 24 under a comment
+    // reading "never touched by the arena", the static path wrote 13 under a call-site
+    // comment reading "binding 24". Neither shader ever read 13.
+    //
+    // A descriptor write is a HOST op applied at SUBMIT, so the last write to a binding is
+    // what every draw in that command buffer sees. In a player frame the order is
+    // DrawIndirect early, FlushArenaBatches late: the arena's buffer won, and the static
+    // indirect draws rendered other objects' transforms and materials. That is the whole of
+    // the "washed out and untextured, 25-41% of pixels wrong" symptom, and it is why adding
+    // a correct per-object materialIndex moved the picture by only 800 pixels out of 380,000
+    // -- the index was right and was being read out of the wrong buffer.
+    //
+    // The two paths now have genuinely separate bindings, which is what adr-0008 intended:
+    // 13 is the arena's (stomped every frame, never restored), 24 is the static indirect
+    // path's (nothing else may write it), and parallaxScale carries WHICH of the two a draw
+    // means (Renderer::kIndirectMode*). DrawTexturedIndirect also pointed no descriptor at
+    // all and now points its own.
+    //
+    // TWO, and this one has nothing to do with drawing, which is why it survived every
+    // attempt to find it by reading the render path: BuildCullableObjectList used to write
+    // mesh->cachedAABBMin/Max. Nothing else populates that cache in a player, so merely
+    // running this function re-LODded the entire scene through ChooseLOD's sentinel bug and
+    // moved a quarter of the pixels. See the note inside BuildCullableObjectList; the bounds
+    // are computed into locals now.
+    //
+    // Method note, since this cost a day: the four suspects were separated by four env-gated
+    // skips in ONE build, not by four builds. The capture harness is bit-exact run to run
+    // (measured: zero differing pixels across two runs of the same binary), so a diff of a
+    // few hundred pixels is signal, not noise -- and a 25% diff that does NOT move when you
+    // disable every indirect draw is telling you the cause was never the drawing.
+    //
+    // RULED OUT by measurement earlier, do not re-investigate:
     //   * descriptor-set mismatch -- active set at DrawIndirect is MAIN.
     //   * RenderToTarget's visibility skip -- it fired ZERO times.
-    //   * bad pool offsets in BuildCullableObjectList -- indirectEligible
-    //     requires hasPoolAlloc.
+    //   * bad pool offsets in BuildCullableObjectList -- indirectEligible requires
+    //     hasPoolAlloc.
     //   * the culling dispatch not running -- it is reached.
     //
-    // FIXED and KEPT, each verified to leave the picture byte-identical:
-    //   1. cull.comp.spv embedded in ShaderData.h -- an export ships no .spv,
-    //      so GPU culling fell back to CPU in every built game.
+    // Still open, and it is a REAL bug independent of this path: ChooseLOD's legacy branch
+    // (LODComponent::sourceMaxExtent == 0) reads the mesh AABB, and on the unset sentinel
+    // (min 1,1,1 / max -1,-1,-1) the extent is NEGATIVE, clamps to 0.01, and pins the entity
+    // to its LOWEST LOD. Nothing populates that cache in an exported game, so every such
+    // entity has always shipped at its coarsest mesh. Not fixed here: fixing it changes what
+    // every exported game looks like, which needs saying out loud first.
+    //
+    // Earlier fixes on this path, each verified to leave the picture byte-identical:
+    //   1. cull.comp.spv embedded in ShaderData.h -- an export ships no .spv, so GPU culling
+    //      fell back to CPU in every built game.
     //   2. ObjectData carries a per-object materialIndex (was entry 0 for all).
     //   3. An out-of-bounds `_pad[0] = _pad[1]` clobbering prevModel.m[0].
-    //   4. Binding 24 for the culling ObjectData.
-    //   5. IsVisible errs towards VISIBLE until trusted, barrier has HOST_READ.
-    //   6. The CPU-side IsVisible skips are deleted. GPUCullingSystem read its
-    //      visibility buffer during command recording with no fence: 0, then
-    //      46, then 23 of 62 objects "visible" on consecutive readbacks. A
-    //      GPU-driven path must not ask the CPU what is visible.
-    //
-    // Test, ready: Playground byte-identical WHILE draw calls drop.
-    if (m_GPUCullingEnabled && !m_IsEditorMode && !m_PlayerMode && m_SceneComposition.mesh3DCount > 0) {
+    //   4. IsVisible errs towards VISIBLE until trusted, barrier has HOST_READ.
+    //   5. The CPU-side IsVisible skips are deleted. GPUCullingSystem read its visibility
+    //      buffer during command recording with no fence: 0, then 46, then 23 of 62 objects
+    //      "visible" on consecutive readbacks. A GPU-driven path must not ask the CPU what
+    //      is visible.
+    if (m_GPUDrivenEnabled && m_GPUCullingEnabled && !m_IsEditorMode && m_SceneComposition.mesh3DCount > 0) {
         BuildCullableObjectList();
     }
 
@@ -12181,6 +12223,66 @@ void RenderSystem::BuildFrameShadowCasterList() {
     }
 }
 
+bool RenderSystem::IndirectDrawRepresentable(Entity entity, const MaterialComponent* material) {
+    if (!material) return false;
+
+    // --- Needs a pipeline specialization variant the single indirect draw cannot bind.
+    // The base pipeline's declared defaults are permissive for the texture bits (the flag
+    // word still gates them), so those cost nothing here; these four do not have that
+    // property. SPEC_FLAT_SHADING and SPEC_SDF_TEXT default to 0, so the feature is simply
+    // absent on the base pipeline however the flag word is set; SPEC_ALPHA_MODE defaults to
+    // Opaque, so a Mask or Blend material silently stops cutting out or blending; and
+    // SPEC_EXCLUDE_CEL defaults to 0, so a material that opted out of cel shading gets it.
+    if (material->flatShading || m_GlobalFlatShading) return false;
+    if (material->alphaMode != MaterialComponent::AlphaMode::Opaque) return false;
+    if (material->sdfText) return false;
+    if (material->excludeFromCelShading) return false;
+
+    // --- Claims a surfaceParam band. triangle.frag hardcodes all three to 0 for an
+    // indirect draw (ObjectDataGPU has no room for them), so every one of these modes
+    // would silently turn off: 100 dither gradient, 200 dithered transparency, 300
+    // elemental, 400 surface noise, 500 palette-indexed, 600 lightmapped.
+    if (material->ditherGradient || material->ditherTransparency) return false;
+    if (material->paletteIndexed || material->lightmapped) return false;
+    if (material->surfaceNoiseScale > 0.0f) return false;
+
+    // Below the bands, surfaceParam1/3 are reflectivity and rim strength. Zero in both is
+    // what makes the forced 0 harmless; fresnelPower is not checked because it only ever
+    // scales reflectivity, and scaling zero is zero.
+    if (material->reflectivity != 0.0f || material->rimLightStrength != 0.0f) return false;
+
+    // --- Per-entity components the builder folds into flags or surfaceParams.
+    if (m_World->HasComponent<VegetationComponent>(entity)) return false;          // wind sway
+    if (m_CachedWaterVolumeStorage && m_CachedWaterVolumeStorage->Has(entity)) return false;
+    if (m_CachedWater3DStorage && m_CachedWater3DStorage->Has(entity)) return false;
+    if (m_World->HasComponent<ECS::ElementalSurfaceComponent>(entity)) return false;
+    if (const ArtStyleComponent* art = m_CachedArtStyleStorage ? m_CachedArtStyleStorage->Get(entity) : nullptr) {
+        if (art->style != ArtStyleType::Inherit) return false;
+    }
+
+    // --- A custom shader is a whole other pipeline.
+    if (GetEntityCustomPipeline(entity, false)) return false;
+
+    // --- One indirect command is one draw with ONE material, over the mesh's whole index
+    // range. A multi-material mesh is several draws with a material each on the per-entity
+    // path, so sending it indirect paints every sub-mesh with slot 0's material -- right
+    // shape, wrong colours, which is what the last cluster of wrong pixels on Playground
+    // turned out to be.
+    if (const MeshComponent* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr) {
+        if (mesh->HasSubMeshes()) return false;
+    }
+    if (const MaterialSlotsComponent* slots =
+            m_CachedMaterialSlotsStorage ? m_CachedMaterialSlotsStorage->Get(entity) : nullptr) {
+        if (!slots->slots.empty()) return false;
+    }
+
+    // --- LOD picks a different mesh per frame; the cullable object was built from the
+    // base mesh's index range, so an entity that switches level would draw the wrong one.
+    if (m_World->HasComponent<LODComponent>(entity)) return false;
+
+    return true;
+}
+
 void RenderSystem::BuildCullableObjectList() {
     m_CullableObjects.clear();
     m_EntityToCullIndex.clear();
@@ -12216,7 +12318,24 @@ void RenderSystem::BuildCullableObjectList() {
         auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
         if (!mesh || !mesh->IsValid()) continue;
 
-        // Compute AABB from mesh vertices (cached on MeshComponent to avoid per-frame recomputation)
+        // Bounds for the cull test, computed into LOCALS and deliberately NOT written back
+        // to mesh->cachedAABBMin/Max.
+        //
+        // Writing that cache is what made this whole path change the picture, and it took
+        // a four-way bisect to see because it has nothing to do with drawing. In a player
+        // NOTHING else populates the mesh AABB, so it sits at its "unset" sentinel
+        // (min 1,1,1 / max -1,-1,-1). ChooseLOD's legacy branch -- taken whenever
+        // LODComponent::sourceMaxExtent is 0 -- does `extent = max - min`, which on the
+        // sentinel is NEGATIVE, clamps to 0.01, and yields a huge metric: every such entity
+        // is pinned to its LOWEST LOD. Populating the cache here silently switched that off
+        // for the whole scene, so turning GPU-driven rendering on re-LODded the level and
+        // moved 25-40% of the pixels. Measured on Playground: suppress this one write and
+        // the fully-enabled path is byte-identical to the per-entity picture.
+        //
+        // A culling pass has no business reconfiguring LOD. The ChooseLOD sentinel bug is
+        // real and separate -- and fixing it changes what every exported game looks like,
+        // so it is written up rather than fixed here (BACKLOG, Renderer & GPU).
+        Math::Vector3 aabbMin, aabbMax;
         if (mesh->aabbDirty) {
             Math::Vector3 bMin(1e30f, 1e30f, 1e30f);
             Math::Vector3 bMax(-1e30f, -1e30f, -1e30f);
@@ -12232,14 +12351,16 @@ void RenderSystem::BuildCullableObjectList() {
                 bMin = Math::Vector3(-0.5f);
                 bMax = Math::Vector3(0.5f);
             }
-            mesh->cachedAABBMin = bMin;
-            mesh->cachedAABBMax = bMax;
-            mesh->aabbDirty = false;
+            aabbMin = bMin;
+            aabbMax = bMax;
+        } else {
+            aabbMin = mesh->cachedAABBMin;
+            aabbMax = mesh->cachedAABBMax;
         }
 
         Renderer::BoundingBox bounds;
-        bounds.min = mesh->cachedAABBMin;
-        bounds.max = mesh->cachedAABBMax;
+        bounds.min = aabbMin;
+        bounds.max = aabbMax;
 
         Renderer::CullableObject obj;
         obj.SetBounds(bounds);
@@ -12284,7 +12405,12 @@ void RenderSystem::BuildCullableObjectList() {
                     || material->cachedEmissiveTexture != nullptr
                     || material->cachedMatcapTexture != nullptr;
             }
-            if (!hasTextures) {
+            // Both indirect routes draw through the base pipeline with only what fits in
+            // ObjectDataGPU, so both ask the same question first.
+            const bool representable = IndirectDrawRepresentable(entity, material);
+            if (!representable) {
+                // Falls through to the per-entity draw, which can express everything.
+            } else if (!hasTextures) {
                 // Non-textured: GPU culling emits indirect draw commands directly
                 obj.indirectEligible = 1;
                 if (entIdx >= m_IndirectDrawn.size()) m_IndirectDrawn.resize(entIdx + 1, false);
@@ -12413,33 +12539,30 @@ void RenderSystem::UploadObjectData() {
             obj.opacity = material->opacity;
             obj.alphaCutoff = material->alphaCutoff;
 
-            i32 flags = 0;
-            if (material->doubleSided) flags |= 1;
-            if (material->castShadows) flags |= 2;
-            if (material->receiveShadows) flags |= 4;
-            flags |= (static_cast<i32>(material->alphaMode) << 8);
-            // Text entities carry their rasterized texture in m_TextTextureCache (not on
-            // the material), so the material's baseColorTexture flag is unset — force the
-            // base-colour-texture bit so the pooled shader (which reads od.flags) samples
-            // the bound text texture. Without this, authored text is invisible.
-            bool hasTextTex = m_CachedTextStorage && m_CachedTextStorage->Has(entity);
-            if (material->baseColorTexture >= 0 || hasTextTex) flags |= (1 << 16);
-            if (material->normalTexture >= 0) flags |= (1 << 17);
-            if (material->metallicRoughnessTexture >= 0) flags |= (1 << 18);
-            if (material->emissiveTexture >= 0) flags |= (1 << 19);
-            if (material->heightTexture >= 0) flags |= (1 << 10);
-            if (material->flatShading) flags |= (1 << 20);
-            if (material->affineTexturing) flags |= (1 << 21);
-            if (material->vertexSnapping) flags |= (1 << 22);
-            if (material->stippleTransparency) flags |= (1 << 23);
-            if (material->uvQuantize) flags |= (1 << 12);
-            if (material->gouraudOnly) flags |= (1 << 13);
-            // sdfText is a specialization constant now (adr-0008 phase 2);
-            // bit 3 is FLAG_SKINNED to the vertex shader and nothing else.
-            flags |= (static_cast<i32>(material->shadowDitherMode & 0x3) << 14);
-            flags |= (static_cast<i32>((material->vertexSnapResolution / 8) & 0x1F) << 24);
-            flags |= (static_cast<i32>(material->shadowDitherPattern & 0x7) << 29);
-            obj.flags = flags;
+            // The SAME builder the per-entity path uses (MaterialFlagWord.h). This was
+            // hand-rolled here, which is how it kept packing alphaMode into bits 8-9 for
+            // months after adr-0008 phase 4 made alpha mode a specialization constant and
+            // freed those bits -- a word only this path wrote and only this path read, so
+            // nothing could notice. Texture presence is what is BOUND, matching the
+            // per-entity site; text entities carry their rasterized texture off the
+            // material, so the base-colour bit is forced for them the way it always was.
+            Renderer::MaterialTextureBindings texBind;
+            const bool hasTextTex = m_CachedTextStorage && m_CachedTextStorage->Has(entity);
+            texBind.baseColor         = (material->baseColorTexture >= 0) || hasTextTex;
+            texBind.normal            = (material->normalTexture >= 0);
+            texBind.metallicRoughness = (material->metallicRoughnessTexture >= 0);
+            texBind.emissive          = (material->emissiveTexture >= 0);
+            texBind.height            = (material->heightTexture >= 0);
+
+            Renderer::MaterialFlagOverrides global;
+            global.flatShading         = m_GlobalFlatShading;
+            global.affineTexturing     = m_GlobalAffineTexturing;
+            global.vertexSnapping      = m_GlobalVertexSnapping;
+            global.stippleTransparency = m_GlobalStippleTransparency;
+            global.uvQuantize          = m_GlobalUVQuantize;
+            global.gouraudOnly         = m_GlobalGouraudOnly;
+
+            obj.flags = Renderer::BuildMaterialFlagWord(*material, texBind, global);
             obj.parallaxScale = material->parallaxScale;
         } else {
             obj.baseColor = Math::Vector3(1.0f);
@@ -12453,7 +12576,8 @@ void RenderSystem::UploadObjectData() {
             obj.parallaxScale = 0.0f;
         }
 
-        if (m_GlobalFlatShading) obj.flags |= (1 << 20);
+        // (Global flat shading is applied by BuildMaterialFlagWord above; a material-less
+        // entity keeps flags 0, exactly as the per-entity builder leaves it.)
 
         // Populate previous-frame model matrix for motion vector computation.
         // If no previous matrix exists (first frame for this entity), use current
@@ -12545,7 +12669,7 @@ void RenderSystem::DrawIndirect(VkCommandBuffer commandBuffer) {
     // parallaxScale = -1.0 tells the vertex/fragment shaders to read per-object data
     // from the ObjectData SSBO (binding 13) indexed by gl_InstanceIndex instead of push constants.
     Renderer::PushConstants indirectPC{};
-    indirectPC.parallaxScale = -1.0f;
+    indirectPC.parallaxScale = Renderer::kIndirectModeStatic;
     vkCmdPushConstants(commandBuffer, m_Pipeline->GetLayout(),
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
         sizeof(Renderer::PushConstants), &indirectPC);
@@ -12579,12 +12703,19 @@ void RenderSystem::DrawTexturedIndirect(VkCommandBuffer commandBuffer) {
     VkBuffer indirectBuffer = m_IndirectDrawBatcher->GetIndirectBuffer();
     if (indirectBuffer == VK_NULL_HANDLE) return;
 
+    // Same re-point DrawIndirect does, and for the same reason: these commands index the
+    // GPU-culling ObjectData by firstInstance, and binding 24 is shared with that path.
+    // This call was missing, so a frame where DrawDGC took the DGC branch (or where
+    // m_CullableObjects was empty for DrawIndirect but the batcher still had batches)
+    // drew these against whatever buffer binding 24 last named.
+    if (m_GPUCulling) PointObjectDataDescriptorAt(m_GPUCulling->GetObjectDataBuffer());
+
     // Bind the merged geometry pool (single VB + IB for all static meshes)
     if (!m_GeometryPoolBound) { m_GeometryPool->BindBuffers(commandBuffer); m_GeometryPoolBound = true; }
 
     // Push sentinel constants for indirect mode (same as non-textured path)
     Renderer::PushConstants indirectPC{};
-    indirectPC.parallaxScale = -1.0f;
+    indirectPC.parallaxScale = Renderer::kIndirectModeStatic;
     vkCmdPushConstants(commandBuffer, m_Pipeline->GetLayout(),
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
         sizeof(Renderer::PushConstants), &indirectPC);
@@ -18449,9 +18580,16 @@ bool RenderSystem::ArenaEligible(Entity e, MeshComponent* mesh, u64& outHash) co
     return true;
 }
 
-// Rebind the ObjectData SSBO (binding 13) to an arbitrary buffer. Mirrors UpdateBoneDescriptor;
-// legalized by set-0's UPDATE_AFTER_BIND on bindings 2-23 (adr-0003). Used to point binding 13
-// at the arena's per-frame ObjectData during the instanced skinned draw, then restored after.
+// Point binding 13 (the ARENA's ObjectData) at the arena's per-frame buffer. Mirrors
+// UpdateBoneDescriptor; legalized by set-0's UPDATE_AFTER_BIND on bindings 2-23 (adr-0003).
+//
+// Binding 13 and binding 24 hold the same struct for two different draw paths, and the split
+// is the whole point: vkUpdateDescriptorSets is a HOST op applied at SUBMIT, so a binding
+// written twice in one command buffer means only its LAST value for every draw in that buffer.
+// The arena stomps 13 every frame and never restores it; 24 belongs to the static indirect
+// path and nothing else may write it. This function had the two numbers the wrong way round,
+// which pointed the arena buffer at 24 and left the static indirect draws reading the arena's
+// transforms and materials -- the "washed out and untextured" player frame (adr-0008).
 void RenderSystem::UpdateArenaObjectDataDescriptor(Renderer::VulkanBuffer* buf) {
     if (!buf) return;
     u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
@@ -18463,7 +18601,7 @@ void RenderSystem::UpdateArenaObjectDataDescriptor(Renderer::VulkanBuffer* buf) 
     VkWriteDescriptorSet w{};
     w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     w.dstSet = (*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)];
-    w.dstBinding = 24;   // the indirect pass's OWN binding, never touched by the arena
+    w.dstBinding = 13;   // the arena's binding; the static indirect path owns 24
     w.dstArrayElement = 0;
     w.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     w.descriptorCount = 1;
@@ -18471,8 +18609,8 @@ void RenderSystem::UpdateArenaObjectDataDescriptor(Renderer::VulkanBuffer* buf) 
     vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(), 1, &w, 0, nullptr);
 }
 
-// Point binding 13 at a raw VkBuffer. Same mechanism as the arena rebind above,
-// for a buffer the engine does not own a VulkanBuffer for.
+// Point binding 24 (the STATIC INDIRECT path's ObjectData) at a raw VkBuffer. Same mechanism
+// as the arena rebind above, for a buffer the engine does not own a VulkanBuffer for.
 void RenderSystem::PointObjectDataDescriptorAt(VkBuffer buf) {
     if (buf == VK_NULL_HANDLE) return;
     const u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
@@ -18484,7 +18622,7 @@ void RenderSystem::PointObjectDataDescriptorAt(VkBuffer buf) {
     VkWriteDescriptorSet w{};
     w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     w.dstSet = (*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)];
-    w.dstBinding = 13;
+    w.dstBinding = 24;   // the indirect pass's OWN binding, never touched by the arena
     w.dstArrayElement = 0;
     w.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     w.descriptorCount = 1;
@@ -18636,9 +18774,12 @@ void RenderSystem::FlushArenaBatches(VkCommandBuffer cmd, VkPipelineLayout layou
     UpdateArenaObjectDataDescriptor(m_ArenaObjectData.get());
     UpdateBoneDescriptor(m_BoneArena.get());
 
-    // Sentinel push constants: parallaxScale == -1.0 switches the shaders to indirect mode.
+    // Sentinel push constants: a negative parallaxScale switches the shaders to indirect
+    // mode, and kIndirectModeArena is what sends them to binding 13 rather than the static
+    // indirect path's binding 24. Both paths used to push the same value and read the same
+    // binding, so whichever wrote its descriptor last supplied BOTH.
     Renderer::PushConstants pc{};
-    pc.parallaxScale = -1.0f;
+    pc.parallaxScale = Renderer::kIndirectModeArena;
     vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                        0, sizeof(Renderer::PushConstants), &pc);
 

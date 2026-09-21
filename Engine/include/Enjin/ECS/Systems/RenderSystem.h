@@ -1515,10 +1515,21 @@ public:
     // consumer (physics colliders, picking, effects) is routed through the reload.
     void SetFreeMeshCpuData(bool enabled) { m_FreeMeshCpuData = enabled; }
     bool IsFreeMeshCpuData() const { return m_FreeMeshCpuData; }
-    // Player mode: skip GPU compute shaders (culling, HiZ, clustered lighting)
-    // that use disk-loaded SPIR-V not available in built games.
-    void SetPlayerMode(bool enabled) { m_PlayerMode = enabled; }
-    bool IsPlayerMode() const { return m_PlayerMode; }
+    // GPU-driven rendering: build the cullable list, run the culling compute, and issue
+    // indirect draws for the objects IndirectDrawRepresentable accepts. Off by default
+    // because it does not yet reproduce the per-entity picture exactly (see the note at
+    // the BuildCullableObjectList call site). A switch rather than a compiled-in guard so
+    // the difference can be measured without a rebuild -- the absence of that is most of
+    // why the path stayed broken: every A/B cost two full builds.
+    // ENJIN_GPU_DRIVEN=1 in the environment turns it on for a capture run.
+    void SetGPUDrivenEnabled(bool enabled) { m_GPUDrivenEnabled = enabled; }
+    bool IsGPUDrivenEnabled() const { return m_GPUDrivenEnabled; }
+
+    // There is no SetPlayerMode any more. It meant "skip the GPU compute shaders,
+    // because a built game has no disk-loaded SPIR-V", and both halves of that are gone:
+    // cull.comp and cull_hiz.comp are embedded in ShaderData.h, and the guard it fed --
+    // the one that kept GPU culling out of every exported game -- is deleted. It survived
+    // as a flag nothing read, which is the shape that invites a new gate to be hung on it.
     u32 GetRTMode() const { return m_RTMode; }
     void SetRTMode(u32 mode) { m_RTMode = mode; }
 
@@ -2297,7 +2308,6 @@ private:
     bool m_EditorWireframe = false;
     bool m_EditorUnlit = false;
 
-    bool m_PlayerMode = false;
     bool m_PendingMSAAChange = false;
     bool m_PendingHDRChange = false;   // Deferred HDR toggle requested mid-frame
     bool m_PendingHDREnabled = false;  // Target HDR state for the pending change
@@ -2721,6 +2731,7 @@ private:
     std::vector<Renderer::CullableObject> m_CullableObjects;
     std::vector<u32> m_EntityToCullIndex; // Maps entity index to cullable object index
     bool m_GPUCullingEnabled = true;  // Enabled: GPU-driven indirect draws (no readback stall)
+    bool m_GPUDrivenEnabled = false;  // See SetGPUDrivenEnabled; ENJIN_GPU_DRIVEN=1 overrides
 #endif
 
     bool m_IsEditorMode = false;      // When true, skip frustum culling (show all entities)
@@ -2734,6 +2745,21 @@ private:
     usize m_RecentStainCursor = 0;
 
 #if !ENJIN_RENDERER_WEBGPU
+    // Can the GPU-driven indirect path draw this entity and get the SAME pixels the
+    // per-entity path would? Everything it answers "no" to falls back to a per-entity
+    // draw, which is always correct and merely slower.
+    //
+    // It has to be a whitelist. One indirect draw binds ONE pipeline and carries only
+    // what fits in ObjectDataGPU, while the per-entity builder binds a per-material
+    // specialization variant (adr-0008 phase 1) and pushes three surfaceParam floats
+    // that every art mode shares as a numeric band. So a material needing a variant --
+    // flat shading, a non-opaque alpha mode, SDF text, cel exclusion -- or any of the
+    // band modes, or a per-entity component that contributes flags (vegetation wind
+    // sway, water, elemental surfaces, art styles), cannot be represented and must not
+    // be sent indirect. Sending it anyway is not a crash; it is a slightly wrong
+    // picture, which is the failure mode that kept this path switched off.
+    bool IndirectDrawRepresentable(Entity entity, const MaterialComponent* material);
+
     void BuildCullableObjectList();
     void PerformGPUCulling();
     void PerformGPUCullingAsync(); // Record to compute command buffer

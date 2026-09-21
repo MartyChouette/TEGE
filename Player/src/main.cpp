@@ -369,7 +369,6 @@ public:
         // Disable ray tracing in built games — RT compute shaders use
         // placeholder SPIR-V that crashes the NVIDIA driver.
         m_RenderSystem->SetRayTracingEnabled(false);
-        m_RenderSystem->SetPlayerMode(true);  // Skip GPU compute shaders not embedded in builds
         m_RenderSystem->Initialize();
 
         // 120-FPS-No-Matter-What pillar: hold the frame rate by scaling shadow quality
