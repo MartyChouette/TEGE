@@ -2,6 +2,7 @@
 
 #include "Enjin/Networking/INetworkTransport.h"
 #include "Enjin/Networking/UDPTransport.h"
+#include "Enjin/Networking/WebSocketTransport.h"
 #include <memory>
 
 namespace Enjin {
@@ -28,17 +29,26 @@ inline std::unique_ptr<INetworkTransport> CreateTransport(TransportType type = T
         case TransportType::UDP:
             return std::make_unique<UDPTransport>();
         case TransportType::WebSocket:
-            // NOT IMPLEMENTED. This returns nullptr on web, which means a browser
-            // build has NO network transport at all -- web multiplayer does not
-            // work, it is not merely limited. Said plainly here because the
-            // enum above and INetworkTransport's header both describe WebSocket
-            // as the NAT-traversal path, which reads as though it exists.
-            // Planned in adr-0007 (hosted relay + matchmaking); until that lands,
-            // multiplayer is desktop UDP on a LAN or a port-forwarded direct IP.
 #ifdef ENJIN_PLATFORM_WEB
-            return nullptr;  // TODO: WebSocketTransport
+            // A browser still has NO network transport, and this returns
+            // nullptr rather than something that cannot work.
+            //
+            // WebSocketTransportWeb exists and did compile and link for web,
+            // but browser networking is PARKED (2026-09-20) and it is compiled
+            // out. What was never demonstrated is a browser completing a game
+            // join against a live host, and shipping a transport on the
+            // strength of "it compiles" is how a silent absence gets made.
+            return nullptr;
 #else
-            return std::make_unique<UDPTransport>();
+            // Desktop: a real WebSocket server (and a client, opened lazily on
+            // the first SendTo). Proven against an independent RFC 6455 client
+            // and against headless Chrome, so a host CAN serve a browser -- it
+            // is the browser end that is parked.
+            //
+            // ws:// only, not wss://. A page served over HTTPS refuses a ws://
+            // connection as mixed content, so this means a LAN or a developer
+            // machine. TLS and NAT traversal are the relay's job in step 4.
+            return std::make_unique<WebSocketTransport>();
 #endif
         default:
             return nullptr;

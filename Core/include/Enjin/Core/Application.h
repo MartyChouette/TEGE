@@ -83,6 +83,27 @@ public:
      */
     static f32 s_FixedFrameDelta;
 
+    /**
+     * @brief Dedicated-server mode: no window, no input, no renderer.
+     *
+     * Distinct from s_HeadlessFrameLimit, which still creates a window (hidden)
+     * and still renders -- it is a capture run that nobody watches. A server
+     * creates NO window at all, which is the difference that matters on the box
+     * a server actually runs on: one with no desktop session, where window
+     * creation does not merely go unseen, it fails.
+     *
+     * Consequences, all of them deliberate: Input is never initialized (passing
+     * it a null window logs an error and leaves every read stale), Input::Update
+     * is never called, and the derived application is expected to skip its
+     * renderer. MainLoop already guards its window use, so the loop itself
+     * needs nothing further.
+     *
+     * A server has no vsync and no present to block on, so NOTHING paces it.
+     * Whatever sets this must also set a target FPS callback, or the loop spins
+     * a core flat.
+     */
+    static bool s_ServerMode;
+
 protected:
     /**
      * @brief Request application shutdown (sets m_Running = false)

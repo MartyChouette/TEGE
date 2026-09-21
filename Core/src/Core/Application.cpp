@@ -32,6 +32,7 @@ extern void DestroyWindow(Window* window);
 
 u32 Application::s_HeadlessFrameLimit = 0;
 f32 Application::s_FixedFrameDelta = 0.0f;
+bool Application::s_ServerMode = false;
 
 Application::Application() {
 }
@@ -43,7 +44,7 @@ int Application::Run() {
     int exitCode = 0;
     try {
         InitializeEngine();
-        if (!m_Running || !m_Window) {
+        if (!m_Running || (!m_Window && !s_ServerMode)) {
             // Engine init already logged the failure.
             ShutdownEngine();
             return 1;
@@ -111,6 +112,18 @@ void Application::InitializeEngine() {
     // the screen for minutes, which makes it a thing you cannot run while
     // working, and a machine with no desktop session cannot run it at all.
     windowDesc.visible = !(s_HeadlessFrameLimit > 0 || s_FixedFrameDelta > 0.0f);
+
+    // A dedicated server creates NO window, rather than a hidden one. On the
+    // machine a server actually runs on there is no desktop session, so this is
+    // not a cosmetic difference: creation would fail and take the process with
+    // it. MainLoop already guards every use of m_Window, so leaving it null is
+    // the whole change here.
+    if (s_ServerMode) {
+        ENJIN_LOG_INFO(Core, "Server mode: no window, no input, no renderer");
+        ENJIN_LOG_INFO(Core, "Engine initialized successfully");
+        return;
+    }
+
     // Parentheses prevent potential macro substitution as well.
     m_Window = (CreateWindow)(windowDesc);
     
@@ -245,11 +258,13 @@ void Application::RunOneFrame() {
         }
     }
 
-    // Update input system (must be after PollEvents)
-    Input::Update();
-
-    // Update idle state based on input activity
-    UpdateIdleState(deltaTime);
+    // Update input system (must be after PollEvents). A server never
+    // initialized it, and the desktop path polls gamepads through GLFW, which
+    // is not initialized either when no window was ever created.
+    if (!s_ServerMode) {
+        Input::Update();
+        UpdateIdleState(deltaTime);
+    }
 
     Update(deltaTime);
     Render();

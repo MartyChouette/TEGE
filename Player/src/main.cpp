@@ -9,6 +9,9 @@
 #include "Enjin/Platform/Paths.h"
 #include "Enjin/Platform/Window.h"
 #include "Enjin/ECS/World.h"
+#include <atomic>
+#include <csignal>
+#include "Enjin/Networking/WebSocketTransport.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Components/Light.h"
@@ -32,6 +35,31 @@
 
 // --touch: simulate the mobile touch overlay with the mouse (set in main()).
 static bool s_SimulateTouch = false;
+
+// Set by --server / --port / --max-players (adr-0007 Track B step 2).
+//
+// A dedicated server exists so a game can outlive the host player quitting, and
+// so a community can run one on a box they own. What it deliberately does NOT
+// do is make a game reachable from outside that network: it still sits behind
+// someone's NAT, which is what steps 3 and 4 are for. Saying so here because a
+// "dedicated server" that quietly does not solve reachability is the kind of
+// half-answer people build a weekend on.
+static Enjin::u16 s_ServerPort = 7777;
+static Enjin::u8  s_ServerMaxPlayers = 8;
+static Enjin::f32 s_ServerTickRate = 60.0f;
+
+// Set by --join HOST:PORT. A diagnostic in the same family as --frames and
+// --replay: it exists so a person can prove a server accepts connections
+// without writing a game first. A real game joins from its own menu through
+// the Net_JoinGame script binding; this never becomes the only way in.
+static std::string s_JoinTarget;
+static bool s_UseWebSocket = false;
+
+// Set from the console control handler. A server has no window to close, so
+// Ctrl+C (or a service stop) is the only way out, and it must unwind through
+// the normal shutdown rather than killing the process: the host has to tell
+// its clients it is going, or every one of them sits in a timeout.
+static std::atomic<bool> s_ServerStopRequested{false};
 
 // Set by --replay. A path rather than a bool, because the player loads the file
 // itself; there is no editor here to pick the newest one out of a folder.
@@ -192,7 +220,12 @@ static char s_PlayerSceneNameBuf[256] = {};
 class GamePlayer : public Enjin::Application {
 public:
     void Initialize() override {
-        ENJIN_LOG_INFO(Player, "Enjin Player starting...");
+        // --server: simulate and host, draw nothing. Read once here so every
+        // guard below reads the same value and the intent is visible at the top
+        // rather than inferred from a static three hundred lines down.
+        const bool server = Enjin::Application::s_ServerMode;
+        ENJIN_LOG_INFO(Player, server ? "Enjin dedicated server starting..."
+                                      : "Enjin Player starting...");
 
         // Try to open assets: first check for .enjpak, then fall back to loose files
         std::string exeDir = Enjin::Platform::GetExecutableDirectory();
@@ -259,25 +292,33 @@ public:
         // Window title is set via WindowDesc at creation time in Application::Run()
         // (no SetTitle method on Window — title comes from WindowDesc.title)
 
-        // Initialize Vulkan renderer
-        m_Renderer = std::make_unique<Enjin::Renderer::VulkanRenderer>();
-        if (!m_Renderer->Initialize(GetWindow())) {
-            ENJIN_LOG_FATAL(Player, "Failed to initialize Vulkan renderer");
-            m_Renderer.reset();
-            return;
-        }
-
-        GetWindow()->SetResizeCallback([this](Enjin::u32, Enjin::u32) {
-            if (m_Renderer) {
-                m_Renderer->SetFramebufferResized(true);
+        // Initialize Vulkan renderer.
+        //
+        // Skipped entirely by --server. A dedicated server has no window to
+        // present to and frequently no GPU and no Vulkan loader either, so this
+        // is not an optimisation: it is the difference between running and not
+        // running on the machine a server lives on. Everything downstream that
+        // touches m_Renderer or m_RenderSystem is null-guarded for this reason.
+        if (!server) {
+            m_Renderer = std::make_unique<Enjin::Renderer::VulkanRenderer>();
+            if (!m_Renderer->Initialize(GetWindow())) {
+                ENJIN_LOG_FATAL(Player, "Failed to initialize Vulkan renderer");
+                m_Renderer.reset();
+                return;
             }
-        });
+
+            GetWindow()->SetResizeCallback([this](Enjin::u32, Enjin::u32) {
+                if (m_Renderer) {
+                    m_Renderer->SetFramebufferResized(true);
+                }
+            });
+        }
 
         // Apply VSync setting. Honored independently of the fps cap: with an
         // uncapped target, vsync IS the cap (present blocks on refresh). The
         // old `(m_TargetFPS != 0) && m_VSync` silently disabled vsync for
         // uncapped games, tearing against the author's explicit setting.
-        if (m_Renderer->GetSwapchain()) {
+        if (m_Renderer && m_Renderer->GetSwapchain()) {
             m_Renderer->GetSwapchain()->SetVSyncEnabled(m_VSync);
         }
 
@@ -319,7 +360,10 @@ public:
         // Create ECS world
         m_World = std::make_unique<Enjin::ECS::World>();
 
-        // Setup render system
+        // Setup render system. A server registers none: RenderSystem owns GPU
+        // resources from its constructor onward, and m_RenderSystem staying
+        // null is what every guard downstream tests.
+        if (!server) {
         m_RenderSystem = m_World->RegisterSystem<Enjin::ECS::RenderSystem>(m_World.get(), m_Renderer.get());
         m_RenderSystem->SetCamera(m_Camera.get());
         // Disable ray tracing in built games — RT compute shaders use
@@ -340,6 +384,7 @@ public:
             ENJIN_LOG_WARN(Player, "Failed to initialize ImGui layer — menus will not render");
             m_ImGuiLayer.reset();
         }
+        }  // if (!server)
 
         // Connect game menu to input system
         m_GameMenu.SetInputMap(&m_InputMap);
@@ -588,7 +633,11 @@ public:
         m_TieredSaveSystem.LoadMeta();
 
         // Initialize systems needed for script bindings
-        m_AudioEngine.Initialize();
+        // A server opens no audio device. miniaudio on a headless box either
+        // fails or grabs a dummy backend, and either way nobody is listening;
+        // the World is still handed over so any code reaching for the engine
+        // finds it wired rather than half-constructed.
+        if (!server) m_AudioEngine.Initialize();
         m_AudioEngine.SetWorld(m_World.get());
         m_AudioEngine.SetAssetRoot(gameRoot);
         Enjin::Assets::PrefabManager::Get().SetAssetRoot(gameRoot);
@@ -605,7 +654,7 @@ public:
         // Draw elemental fire/smoke in the main pass too (cameras with post-
         // processing OFF take the direct swapchain path, which otherwise never
         // draws elemental — campfires showed no flames).
-        m_RenderSystem->SetMainPassElemental(&m_ElementalSystem);
+        if (m_RenderSystem) m_RenderSystem->SetMainPassElemental(&m_ElementalSystem);
         m_FireLights.reserve(Enjin::Effects::ElementalSystem::MAX_FIRE_LIGHTS);
         m_AudioReactiveSystem.SetWorld(m_World.get());
         m_AudioReactiveSystem.SetAudio(&m_AudioEngine);
@@ -746,6 +795,67 @@ public:
         }
 
         m_NetworkSystem.SetWorld(m_World.get());
+
+        // --server: start hosting. NetworkSystem::Update early-returns on
+        // !m_Enabled and only PlayMode's play-start path ever sets it, so a
+        // server has to enable and host itself.
+        if (server) {
+            m_NetworkSystem.SetEnabled(true);
+            // Injected BEFORE HostGame, which is what binds it.
+            if (s_UseWebSocket) {
+                m_NetworkSystem.SetTransport(std::make_unique<Enjin::Networking::WebSocketTransport>());
+                ENJIN_LOG_INFO(Network, "Server: WebSocket transport (browsers can join)");
+            }
+            m_NetworkSystem.SetDiscoveryGameId(m_WindowTitle.empty() ? "enjin" : m_WindowTitle);
+            // Before HostGame, which is what hands the cap to the announcement.
+            // NetworkConfig::maxPlayers is both what the browser is told and
+            // what the connect path enforces, so setting it late would advertise
+            // one number and admit another.
+            m_NetworkSystem.GetConfig().maxPlayers = s_ServerMaxPlayers;
+            if (!m_NetworkSystem.HostGame(s_ServerPort, m_WindowTitle.empty()
+                                              ? std::string("Enjin server")
+                                              : m_WindowTitle)) {
+                ENJIN_LOG_FATAL(Network, "Server: failed to host on port %u", s_ServerPort);
+                RequestShutdown();
+                return;
+            }
+            // Nothing else paces a windowless loop: no vsync, no present to
+            // block on. Without this the process spins a core flat.
+            m_TargetFPS = static_cast<Enjin::u32>(s_ServerTickRate);
+            ENJIN_LOG_INFO(Network, "Server listening on port %u, up to %u player(s), %.0f Hz",
+                           s_ServerPort, static_cast<unsigned>(s_ServerMaxPlayers),
+                           s_ServerTickRate);
+        }
+
+        // --join HOST:PORT. Like the server, this has to enable and drive the
+        // network itself: NetworkSystem::Update early-returns on !m_Enabled and
+        // only PlayMode's play-start path sets it.
+        //
+        // The connection is NOT tested here. The accept is a round trip away,
+        // so a synchronous check on the next line is always false; Update
+        // reports it when it actually lands.
+        if (!s_JoinTarget.empty()) {
+            const auto colon = s_JoinTarget.rfind(':');
+            const std::string ip = colon == std::string::npos
+                                 ? s_JoinTarget : s_JoinTarget.substr(0, colon);
+            const int port = colon == std::string::npos
+                           ? 7777 : std::atoi(s_JoinTarget.c_str() + colon + 1);
+            if (port <= 0 || port > 65535) {
+                ENJIN_LOG_FATAL(Network, "--join: '%s' has no usable port", s_JoinTarget.c_str());
+                RequestShutdown();
+                return;
+            }
+            m_NetworkSystem.SetEnabled(true);
+            if (s_UseWebSocket) {
+                m_NetworkSystem.SetTransport(std::make_unique<Enjin::Networking::WebSocketTransport>());
+            }
+            if (!m_NetworkSystem.JoinGame(ip, static_cast<Enjin::u16>(port), "client")) {
+                ENJIN_LOG_FATAL(Network, "--join: could not start joining %s:%d", ip.c_str(), port);
+                RequestShutdown();
+                return;
+            }
+            ENJIN_LOG_INFO(Network, "--join: joining %s:%d", ip.c_str(), port);
+        }
 
         ENJIN_LOG_INFO(Player, "Gameplay systems initialized");
 
@@ -1035,6 +1145,13 @@ public:
         Enjin::Scripting::SetBindingsPostProcessing(nullptr);
         Enjin::Scripting::SetBindingsPhysics2D(nullptr);
         Enjin::Scripting::SetBindingsNetworking(nullptr);
+        // Say goodbye before going. Disconnect sends the message to every peer;
+        // without it a player who QUITS NORMALLY is indistinguishable from one
+        // whose machine died, and the host holds their slot for the full 10s
+        // timeout -- a ghost in the lobby, and on a small max-players a
+        // refused rejoin. Costs one datagram. (Found by watching a --join
+        // client exit cleanly and the server time it out anyway.)
+        m_NetworkSystem.Disconnect();
         Enjin::Scripting::SetBindingsPluginSystem(nullptr);
         Enjin::Scripting::SetBindingsAudioGraphRuntime(nullptr);
         m_MIDIInput.Shutdown();
@@ -1420,8 +1537,10 @@ public:
         UpdateWeatherZones(deltaTime);
         if (m_Camera) {
             m_WeatherSystem.Update(deltaTime, m_Camera->GetPosition());
-            m_RenderSystem->SetWeatherSkyBlend(m_WeatherSystem.GetRainIntensity(),
-                                               m_WeatherSystem.GetSnowIntensity());
+            if (m_RenderSystem) {
+                m_RenderSystem->SetWeatherSkyBlend(m_WeatherSystem.GetRainIntensity(),
+                                                   m_WeatherSystem.GetSnowIntensity());
+            }
             m_StreamingManager.Update(m_Camera->GetPosition(), deltaTime);
         }
         m_DestructibleSystem.Update(deltaTime);
@@ -1514,9 +1633,11 @@ public:
             m_ElementalSystem.Update(m_World.get(), deltaTime, m_Camera->GetPosition());
             m_EffectsTime += deltaTime;
             m_ElementalSystem.BuildFireLights(m_EffectsTime, m_FireLights);
-            m_RenderSystem->ClearTransientPointLights();
-            for (const auto& fl : m_FireLights) {
-                m_RenderSystem->AddTransientPointLight(fl.position, fl.range, fl.color, fl.intensity);
+            if (m_RenderSystem) {
+                m_RenderSystem->ClearTransientPointLights();
+                for (const auto& fl : m_FireLights) {
+                    m_RenderSystem->AddTransientPointLight(fl.position, fl.range, fl.color, fl.intensity);
+                }
             }
         }
 
@@ -1596,6 +1717,27 @@ public:
 
         // Networking
         m_NetworkSystem.Update(deltaTime);
+
+        // --join: say when the handshake actually completed. Logged once, on the
+        // transition, because this is a diagnostic and a person is reading it.
+        if (!s_JoinTarget.empty() && !m_JoinReported && m_NetworkSystem.IsConnected()) {
+            m_JoinReported = true;
+            ENJIN_LOG_INFO(Network, "--join: CONNECTED to %s as player %d",
+                           s_JoinTarget.c_str(), m_NetworkSystem.GetLocalPlayerId());
+        }
+
+        // Ctrl+C on a server. Handled here rather than in the signal handler
+        // because Disconnect touches the world and the socket, and a handler
+        // runs on another thread with almost nothing safe to call. The flag is
+        // all the handler sets; this is where it is honoured, and going through
+        // Disconnect is what tells the clients rather than leaving each one to
+        // discover the silence on its own timeout.
+        if (Enjin::Application::s_ServerMode && s_ServerStopRequested.load()) {
+            ENJIN_LOG_INFO(Network, "Server: stop requested, disconnecting clients");
+            m_NetworkSystem.Disconnect();
+            RequestShutdown();
+            return;
+        }
 
         // Save system (auto-save timer)
         m_TieredSaveSystem.Update(deltaTime, m_World.get(), m_StartScene);
@@ -3084,14 +3226,29 @@ private:
         Enjin::Scripting::SetBindingsStreaming(&m_StreamingManager);
         Enjin::Scripting::SetBindingsSceneManager(&m_SceneManager);
         Enjin::Scripting::SetBindingsFlowAdvanceFlag(&m_FlowAdvanceRequested);
-        // Initialize post-processing (settings object for script bindings)
-        auto ppExtent = m_Renderer->GetSwapchainExtent();
-        m_PostProcessing = std::make_unique<Enjin::Renderer::PostProcessing>();
+        // Initialize post-processing (settings object for script bindings).
+        //
+        // The extent read used to sit one line ABOVE the `if (m_Renderer ...)`
+        // below, so the null check written for exactly this case never got the
+        // chance to fire. It cost nothing while a renderer always existed and
+        // was the first thing a dedicated server hit.
+        //
+        // PostProcessing is likewise only CONSTRUCTED when there is a renderer
+        // to initialize it against: an unconditional make_unique left a live
+        // pointer to an uninitialized object, and every `if (m_PostProcessing)`
+        // downstream reads as satisfied.
+        Enjin::u32 ppWidth = 0, ppHeight = 0;
+        if (m_Renderer) {
+            const auto ext = m_Renderer->GetSwapchainExtent();
+            ppWidth = ext.width;
+            ppHeight = ext.height;
+            m_PostProcessing = std::make_unique<Enjin::Renderer::PostProcessing>();
+        }
         if (m_Renderer && m_Renderer->GetContext()) {
             // Swapchain MRT pass (color + velocity) — blend state needs 2 attachments (VUID-07609)
             if (!m_PostProcessing->Initialize(m_Renderer->GetContext(),
                     m_Renderer->GetRenderPass(),
-                    ppExtent.width, ppExtent.height, m_Renderer.get(), 2)) {
+                    ppWidth, ppHeight, m_Renderer.get(), 2)) {
                 ENJIN_LOG_WARN(Player, "PostProcessing init failed");
                 m_PostProcessing.reset();
             }
@@ -3149,7 +3306,7 @@ private:
             m_ScenePPTarget = std::make_unique<Enjin::Renderer::RenderTarget>();
             // With velocity, so a shipped game gets the same object-accurate TAA
             // the editor does rather than the depth-only reconstruction.
-            if (!m_ScenePPTarget->Create(m_Renderer.get(), ppExtent.width, ppExtent.height,
+            if (!m_ScenePPTarget->Create(m_Renderer.get(), ppWidth, ppHeight,
                                          /*withVelocity*/ true)) {
                 ENJIN_LOG_WARN(Player, "Scene PP target creation failed — post-processing disabled in raster path");
                 m_ScenePPTarget.reset();
@@ -3275,9 +3432,12 @@ private:
             return reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(ds));
         });
 
-        // Wire fluid simulation and wind system to renderer
-        m_RenderSystem->SetFluidSimulation(&m_FluidSimulation);
-        m_RenderSystem->SetWindSystem(&m_WindSystem);
+        // Wire fluid simulation and wind system to renderer. Both systems still
+        // SIMULATE without one; this hands them over for drawing.
+        if (m_RenderSystem) {
+            m_RenderSystem->SetFluidSimulation(&m_FluidSimulation);
+            m_RenderSystem->SetWindSystem(&m_WindSystem);
+        }
 
         // Initialize curl noise system
         m_CurlNoiseSystem.Initialize(m_World.get());
@@ -3302,13 +3462,23 @@ private:
         // matches rather than restyling on a later open.
         AdoptAuthoredMenuTheme();
 
-        if (IsCaptureRun()) {
+        if (IsCaptureRun() || Enjin::Application::s_ServerMode || !s_JoinTarget.empty()) {
             // Headless CI and capture runs: always boot straight into gameplay
             // so the run exercises the real game loop, not a title screen.
+            //
+            // A dedicated server needs the same, and needs it harder: a title
+            // screen waits for a New Game nobody is there to press, and
+            // GamePlayer::Update returns on !m_GameStarted well BEFORE it ticks
+            // the network. A server left on the title screen therefore hosts a
+            // socket that is bound, logs that it is listening, announces
+            // nothing and answers nothing -- alive, idle, and silent, which is
+            // the hardest shape of broken to read from the outside.
             m_GameMenu.HideAll();
             HideAuthoredMainMenu();
             m_GameStarted = true;
-            ENJIN_LOG_INFO(Player, "Headless mode: booted straight into gameplay (skipped title screen)");
+            ENJIN_LOG_INFO(Player, Enjin::Application::s_ServerMode
+                ? "Server mode: booted straight into gameplay (skipped title screen)"
+                : "Headless mode: booted straight into gameplay (skipped title screen)");
         } else if (!m_StartupFlow.empty()) {
             // Run the authored startup flow (splash/cutscene/menu/gameplay steps).
             BeginStartupFlow();
@@ -4119,6 +4289,7 @@ private:
 
     bool m_Initialized = false;
     bool m_GameStarted = false;
+    bool m_JoinReported = false;   // --join logs its success once, on the edge
     // Whether gameplay has run at least once since launch -- the difference
     // between "New Game on a pristine scene" and "New Game that has to throw a
     // played-through world away first".
@@ -4607,6 +4778,35 @@ int main(int argc, char* argv[]) {
         if (argv[i] && std::string(argv[i]) == "--touch") {
             s_SimulateTouch = true;
         }
+        // --server [--port N] [--max-players N] [--tick-rate HZ]: run the
+        // simulation and host, draw nothing (adr-0007 Track B step 2).
+        if (argv[i] && std::string(argv[i]) == "--server") {
+            Enjin::Application::s_ServerMode = true;
+        }
+        if (argv[i] && std::string(argv[i]) == "--join" && i + 1 < argc && argv[i + 1]) {
+            s_JoinTarget = argv[++i];
+        }
+        // --websocket: host over WebSocket instead of UDP, so a BROWSER can
+        // join (adr-0007 Track B step 3). ws:// only -- a page served over
+        // HTTPS refuses a ws:// connection as mixed content, so this is a LAN
+        // or a developer machine until the relay terminates TLS in step 4.
+        if (argv[i] && std::string(argv[i]) == "--websocket") {
+            s_UseWebSocket = true;
+        }
+        if (argv[i] && std::string(argv[i]) == "--port" && i + 1 < argc && argv[i + 1]) {
+            const int n = std::atoi(argv[++i]);
+            if (n > 0 && n <= 65535) s_ServerPort = static_cast<Enjin::u16>(n);
+        }
+        if (argv[i] && std::string(argv[i]) == "--max-players" && i + 1 < argc && argv[i + 1]) {
+            const int n = std::atoi(argv[++i]);
+            if (n > 0 && n <= 255) s_ServerMaxPlayers = static_cast<Enjin::u8>(n);
+        }
+        // Clamped rather than trusted: a server with no window has no vsync and
+        // nothing else pacing it, so a zero or a negative here is a spun core.
+        if (argv[i] && std::string(argv[i]) == "--tick-rate" && i + 1 < argc && argv[i + 1]) {
+            const int n = std::atoi(argv[++i]);
+            if (n > 0 && n <= 240) s_ServerTickRate = static_cast<Enjin::f32>(n);
+        }
         // --replay FILE: play a .tegereplay back through this build.
         //
         // Replay existed only in the editor, which is the one place a repro is
@@ -4653,6 +4853,15 @@ int main(int argc, char* argv[]) {
 
     // Set working directory to exe location so relative paths work
     Enjin::Platform::SetWorkingDirectoryToExecutableDirectory();
+
+    // A server has no window to close, so Ctrl+C and a service stop are the
+    // only ways out. The handler does nothing but set a flag: it can be
+    // delivered on any thread, and almost nothing is safe to call from one.
+    // GamePlayer::Update reads the flag and unwinds properly from there.
+    if (Enjin::Application::s_ServerMode) {
+        std::signal(SIGINT,  [](int) { s_ServerStopRequested.store(true); });
+        std::signal(SIGTERM, [](int) { s_ServerStopRequested.store(true); });
+    }
 
     Enjin::Application* app = CreateApplication();
     int result = app->Run();
