@@ -2751,6 +2751,7 @@ private:
     std::vector<Renderer::CullableObject> m_CullableObjects;
     std::vector<u32> m_EntityToCullIndex; // Maps entity index to cullable object index
     bool m_GPUCullingEnabled = true;  // Enabled: GPU-driven indirect draws (no readback stall)
+    f32 m_AdaptiveLODScale = 1.0f;    // see SetAdaptiveLODScale
     bool m_GPUDrivenEnabled = true;   // See SetGPUDrivenEnabled; ENJIN_GPU_DRIVEN=0 turns it off
 #endif
 
@@ -3160,6 +3161,21 @@ public:
     bool ShouldRefreshAnimator(AnimatorComponent& ac, Entity entity,
                                f32 deltaTime, f32& outStepDt,
                                AnimationQuality& outQuality);
+
+    // The frame-rate governor's LOD scale, 1.0 = author's schedule untouched.
+    //
+    // AdaptiveQualitySystem has computed this since it was written (VeryLow 0.5 through
+    // Ultra 1.5, higher = transitions further away = more detail) and NOTHING read it:
+    // GetRecommendedLODBias and its adjustLODBias flag had zero callers, so the governor
+    // scaled shadow quality under load and never touched LOD. A setter with nothing
+    // reading it is the silent-stub shape this project keeps finding.
+    //
+    // Applied to the METRIC rather than to the chosen index, for the same reason
+    // MeshRenderer::lodBias is: the thresholds are spaced geometrically, so scaling the
+    // metric moves every band together and keeps the hysteresis meaningful. Biasing the
+    // index instead steps past a level entirely at the far end and does nothing near.
+    void SetAdaptiveLODScale(f32 scale) { m_AdaptiveLODScale = (scale > 0.01f) ? scale : 0.01f; }
+    f32 GetAdaptiveLODScale() const { return m_AdaptiveLODScale; }
 
     // Which LOD level an entity should be on. Was TWO DIFFERENT ALGORITHMS, one
     // per backend -- web had plain distance and none of the screen-size metric,

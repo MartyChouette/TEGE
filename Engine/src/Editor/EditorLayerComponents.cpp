@@ -674,6 +674,20 @@ void EditorLayer::DrawLODComponent(ECS::Entity entity) {
                 lod->levels[i].maxDistance = lod->baseDistance * std::pow(lod->distanceMultiplier, static_cast<f32>(i));
             }
         }
+        // These three were honoured at runtime and had no UI at all, so a project could
+        // only reach them from a scene file or a script. The screen-size one matters most:
+        // it changes what the METRIC measures, and getting it wrong is invisible -- an
+        // object scaled up with distance keeps a constant apparent size, so it never
+        // changes level, and that reads as "LOD is broken" rather than "LOD is working".
+        InspectorUndo::Checkbox(m_UndoRedo, "Use Screen Size", &lod->useScreenSize);
+        ImGui::TextDisabled(lod->useScreenSize
+            ? "Metric is distance / on-screen size: a bigger object holds detail further."
+            : "Metric is raw camera distance: size is ignored.");
+
+        InspectorUndo::SliderFloat(m_UndoRedo, "Hysteresis", &lod->hysteresisRatio,
+                                   0.0f, 0.5f, "%.2f");
+        ImGui::TextDisabled("Dead zone around each threshold. 0 flickers at the boundary.");
+
         if (InspectorUndo::SliderFloat(m_UndoRedo, "Distance Mult", &lod->distanceMultiplier, 1.2f, 5.0f, "%.1f")) {
             for (int i = 0; i < lod->levelCount; ++i) {
                 lod->levels[i].maxDistance = lod->baseDistance * std::pow(lod->distanceMultiplier, static_cast<f32>(i));
@@ -707,6 +721,19 @@ void EditorLayer::DrawLODComponent(ECS::Entity entity) {
                 InspectorUndo::SliderFloat(m_UndoRedo, label, &lod->reductionRatios[i], 0.01f, 0.99f, "%.2f");
                 ImGui::PopItemWidth();
             }
+
+            // Per-level threshold. SelectLOD already prefers this over
+            // baseDistance * multiplier^level whenever it is above 0, so an irregular
+            // ladder has always been possible from a scene file -- the inspector just
+            // recomputed all of them from the two sliders and offered no way to say it.
+            char distLabel[40];
+            snprintf(distLabel, sizeof(distLabel), "Switch at##loddist%d", i);
+            ImGui::SameLine();
+            ImGui::PushItemWidth(110);
+            InspectorUndo::DragFloat(m_UndoRedo, distLabel, &lod->levels[i].maxDistance,
+                                     0.5f, 0.0f, 10000.0f,
+                                     lod->levels[i].maxDistance > 0.0f ? "%.1f m" : "auto");
+            ImGui::PopItemWidth();
         }
     }
 }

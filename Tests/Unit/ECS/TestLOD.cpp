@@ -1,6 +1,8 @@
 #include "EnjinTest.h"
 #include "Enjin/ECS/Components/LOD.h"
 
+#include <cmath>
+
 using namespace Enjin;
 using namespace Enjin::ECS;
 
@@ -228,6 +230,65 @@ ENJIN_TEST(LODExtent, DegenerateMeshIsZeroNotAGuess) {
     LODComponent lod;
     MeshComponent flat = BoxMesh(0.0f, 0.0f, 0.0f);   // every vertex coincident
     ENJIN_EXPECT_EQ(ResolveLODSourceExtent(lod, &flat), 0.0f);
+}
+
+// ===========================================================================
+// The governor's global LOD scale
+//
+// AdaptiveQualitySystem has computed a LOD bias since it was written and NOTHING
+// read it: GetRecommendedLODBias and its adjustLODBias flag had zero callers, so the
+// frame-rate governor scaled shadow quality under load and never touched LOD.
+//
+// It is applied to the METRIC, so these pin the arithmetic that RenderSystem does
+// rather than reaching into the renderer: scale > 1 means transitions further away
+// and MORE detail, which is the OPPOSITE convention to MeshRenderer::lodBias, and
+// the two being opposite is exactly the kind of thing a test should hold still.
+// ===========================================================================
+
+namespace {
+// What ChooseLOD does with the two biases, in one place.
+f32 BiasedMetric(f32 metric, f32 meshRendererBias, f32 adaptiveScale) {
+    f32 m = metric;
+    if (meshRendererBias != 0.0f) m *= std::pow(2.0f, meshRendererBias);
+    if (adaptiveScale != 1.0f) m /= adaptiveScale;
+    return m;
+}
+}  // namespace
+
+ENJIN_TEST(LODAdaptiveScale, test_scale_of_one_leaves_the_metric_alone) {
+    // Arrange / Act / Assert — the default must be exactly inert, or every project
+    // that never touches quality settings silently re-LODs.
+    ENJIN_EXPECT_FLOAT_EQ(BiasedMetric(20.0f, 0.0f, 1.0f), 20.0f);
+}
+
+ENJIN_TEST(LODAdaptiveScale, test_higher_scale_means_more_detail) {
+    // Ultra is 1.5: the metric shrinks, so an object sits in a nearer band and keeps
+    // a finer mesh.
+    const f32 ultra = BiasedMetric(30.0f, 0.0f, 1.5f);
+    ENJIN_EXPECT_TRUE(ultra < 30.0f);
+    ENJIN_EXPECT_FLOAT_EQ(ultra, 20.0f);
+}
+
+ENJIN_TEST(LODAdaptiveScale, test_lower_scale_means_less_detail) {
+    // VeryLow is 0.5: the metric doubles and everything drops a level sooner, which
+    // is the whole point of the governor reaching LOD at all.
+    ENJIN_EXPECT_FLOAT_EQ(BiasedMetric(30.0f, 0.0f, 0.5f), 60.0f);
+}
+
+ENJIN_TEST(LODAdaptiveScale, test_the_two_biases_run_in_opposite_directions) {
+    // MeshRenderer::lodBias: POSITIVE means lower detail (metric grows).
+    // The governor's scale: HIGHER means more detail (metric shrinks).
+    // Opposite by design -- one is what the author asked for, the other is what the
+    // machine can afford -- so a change that quietly aligned them would be wrong.
+    ENJIN_EXPECT_TRUE(BiasedMetric(10.0f, 1.0f, 1.0f) > 10.0f);
+    ENJIN_EXPECT_TRUE(BiasedMetric(10.0f, 0.0f, 1.5f) < 10.0f);
+}
+
+ENJIN_TEST(LODAdaptiveScale, test_author_bias_and_governor_scale_compose) {
+    // An entity forced toward detail by its author, on a machine the governor has
+    // turned down: both apply, neither wins outright.
+    const f32 m = BiasedMetric(16.0f, -1.0f, 0.5f);   // halve, then double
+    ENJIN_EXPECT_FLOAT_EQ(m, 16.0f);
 }
 
 ENJIN_TEST_MAIN()

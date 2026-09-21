@@ -1829,6 +1829,8 @@ void EditorLayer::DrawInspectorPanel() {
                     if (mr->maxDrawDistance < 0.0f) mr->maxDrawDistance = 0.0f;
                     ImGui::DragInt("Render Queue##MR", &mr->renderQueue, 1.0f, -5000, 5000);
                     ImGui::DragFloat("LOD Bias##MR", &mr->lodBias, 0.1f, -2.0f, 2.0f, "%.1f");
+                    // Honoured by ChooseLOD since it was written, with no way to set it.
+                    ImGui::Checkbox("Force Lowest LOD##MR", &mr->forceLowestLOD);
 
                     const char* shadowModes[] = { "From Material", "Off", "On", "Two-Sided" };
                     int sm = static_cast<int>(mr->shadowMode);

@@ -329,6 +329,14 @@ i32 RenderSystem::ChooseLOD(Entity entity, LODComponent& lod,
     if (mrLod && mrLod->lodBias != 0.0f) {
         lodMetric *= std::pow(2.0f, mrLod->lodBias);
     }
+    // Then the global scale from the frame-rate governor. DIVIDED, because its
+    // convention is the opposite of the per-entity bias above: higher means further
+    // transitions and MORE detail, where a higher lodBias means less. The two are
+    // deliberately not merged -- one is what the author asked for, the other is what
+    // the machine can afford, and a project should be able to read them apart.
+    if (m_AdaptiveLODScale != 1.0f) {
+        lodMetric /= m_AdaptiveLODScale;
+    }
 
     if (mrLod && mrLod->forceLowestLOD) {
         return lod.levelCount > 0 ? lod.levelCount - 1 : 0;
@@ -15423,6 +15431,8 @@ void RenderSystem::ApplyAdaptiveQualityLevel(Renderer::QualityLevel level) {
     SetShadowResolution(m_AdaptiveQuality.GetRecommendedShadowResolution());
     SetShadowsEnabled(level > QL::VeryLow);
     SetCascadeProgressiveUpdate(level <= QL::Medium);
+    // The governor has recommended this since it was written and nobody read it.
+    SetAdaptiveLODScale(m_AdaptiveQuality.GetRecommendedLODBias());
 }
 
 void RenderSystem::SetHDREnabled(bool enabled) {
