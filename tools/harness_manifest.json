@@ -800,6 +800,19 @@
         "draws": true
       },
       "_animates_why": "OFF: nothing in the scene moves. This is a still comparison between two spheres."
+    },
+    {
+      "name": "MeshRendererFilters",
+      "project": "Examples/MeshRendererFilters/MeshRendererFilters.enjinproject",
+      "_why": "MeshRendererComponent is authored by NO project in the corpus -- measured with tools/feature_coverage.py rather than remembered, which is how this gap was found. It matters more than an ordinary hole because all three filters it carries were recently inert: `enabled` did nothing at all, `renderLayerMask` and the camera's cullingMask were never compared, and maxDrawDistance is the kind of guarded test that silently inverts. Each was fixed and nothing since could tell you if one broke again. Four spheres, three of which must be INVISIBLE for three different reasons, so a filter that stops working makes a sphere APPEAR -- a failure that adds something obvious rather than removing something you have to look for. The first sphere is unfiltered on purpose: an empty capture would otherwise be indistinguishable from a project that failed to load. Control (make_coverage_demos.py --control) makes every filter permissive, so all four draw.",
+      "frames": [
+        30,
+        240
+      ],
+      "claims": {
+        "draws": true
+      },
+      "_animates_why": "OFF: nothing in the scene moves. This is a still visibility test."
     }
   ]
 }

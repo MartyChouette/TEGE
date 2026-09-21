@@ -12454,11 +12454,44 @@ void RenderSystem::BuildCullableObjectList() {
     auto* spriteStorageBCO = m_World->GetComponentStorage<Sprite2DComponent>();
     auto* tilemapStorageBCO = m_World->GetComponentStorage<TilemapComponent>();
 
+    // The same MeshRenderer filters the per-entity path applies, resolved once.
+    //
+    // This loop tested only transform->visible, so an entity that reached the
+    // indirect path ignored its MeshRenderer entirely: `enabled = false` did not
+    // hide it, a render layer the camera excludes did not hide it, and a draw
+    // distance did not hide it. GPU-driven rendering became the DEFAULT on
+    // 2026-09-21, so that turned three working switches back off for every game
+    // in one commit -- and `enabled` is the one an author reaches for first.
+    //
+    // Found by Examples/MeshRendererFilters, which exists because
+    // tools/feature_coverage.py reported MeshRendererComponent as authored by no
+    // project in the corpus. All three filters had been inert once before.
+    const MeshRendererComponent* bcoMR = nullptr;
+    auto* mrStorageBCO = m_World->GetComponentStorage<MeshRendererComponent>();
+    Math::Vector3 bcoCamPos;
+    const bool bcoHaveCam = (m_Camera != nullptr);
+    if (bcoHaveCam) bcoCamPos = m_Camera->GetPosition();
+    u32 bcoCullingMask = 0xFFFFFFFFu;   // no camera is not an instruction to hide the scene
+    {
+        const Entity camEntity = ECS::CameraManager::GetActiveCamera(m_World);
+        if (camEntity != 0) {
+            if (auto* cc = m_World->GetComponent<CameraComponent>(camEntity)) {
+                bcoCullingMask = cc->cullingMask;
+            }
+        }
+    }
+
     for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
         auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
         if (!xform || !xform->visible) continue;
         if (spriteStorageBCO && spriteStorageBCO->Has(entity)) continue;
         if (tilemapStorageBCO && tilemapStorageBCO->Has(entity)) continue;
+
+        bcoMR = mrStorageBCO ? mrStorageBCO->Get(entity) : nullptr;
+        if (!PassesMeshRendererFilters(bcoMR, xform->position, bcoCamPos,
+                                       bcoHaveCam, bcoCullingMask)) {
+            continue;
+        }
 
         auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
         if (!mesh || !mesh->IsValid()) continue;

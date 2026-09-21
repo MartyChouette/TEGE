@@ -845,6 +845,88 @@ def custom_shader():
     return e
 
 
+# --------------------------------------------------------------------------
+# MeshRenderer filters -- three switches that were each inert once
+# --------------------------------------------------------------------------
+
+def mesh_renderer_filters():
+    """Four spheres. Three of them should be INVISIBLE, each for a different reason.
+
+    `MeshRendererComponent` is authored by no project in the whole corpus --
+    measured with tools/feature_coverage.py, which is how this gap was found
+    rather than remembered. That matters more than an ordinary coverage hole,
+    because all three of the filters it carries were recently INERT:
+
+      enabled          "It did nothing at all: an author could untick Enabled
+                        and watch the mesh carry on drawing."
+      renderLayerMask  "Both halves of this were inert" -- the mask and the
+                        camera's cullingMask were never compared.
+      maxDrawDistance  guarded so 0 means infinite, which is the kind of test
+                        that silently inverts.
+
+    Each was fixed, and nothing since could have told you if one broke again.
+
+    The demo is self-checking in a single frame: a filter that stops working
+    makes a sphere APPEAR. That is a better shape than a subtle shading
+    difference, because the failure adds something obvious rather than removing
+    something you have to look for.
+
+    The reference sphere is deliberately first and unfiltered. A capture showing
+    nothing at all would otherwise be indistinguishable from a scene that failed
+    to load -- which the draws claim would report as a broken project rather
+    than as the interesting answer.
+
+    Control (--control) makes every filter permissive, so all four draw. If the
+    two captures match, none of the filters did anything.
+    """
+    e = [sun(1), ground(3, half=60.0)]
+
+    # cullingMask = layers 0 and 1 only. Sphere 3 sits on layer 2, so the camera
+    # must not render it. Picking a mask rather than leaving it at all-ones is
+    # the point: an inert comparison passes trivially when everything is 0xFFFFFFFF.
+    cam = camera(2, (0.0, 3.2, 12.0), -8.0)
+    cam["camera"]["cullingMask"] = 0b011
+    e.append(cam)
+
+    spheres = [
+        # (x, label, meshRenderer, permissive meshRenderer for the control)
+        (-4.8, "Visible",
+         {"enabled": True, "renderLayerMask": 1, "maxDrawDistance": 0.0},
+         {"enabled": True, "renderLayerMask": 1, "maxDrawDistance": 0.0}),
+        (-1.6, "HiddenByEnabled",
+         {"enabled": False, "renderLayerMask": 1, "maxDrawDistance": 0.0},
+         {"enabled": True,  "renderLayerMask": 1, "maxDrawDistance": 0.0}),
+        (1.6, "HiddenByLayer",
+         {"enabled": True, "renderLayerMask": 0b100, "maxDrawDistance": 0.0},
+         {"enabled": True, "renderLayerMask": 0b001, "maxDrawDistance": 0.0}),
+        # Roughly 12.4 units from the camera, so a 4-unit draw distance excludes
+        # it while 0 (infinite) keeps it.
+        (4.8, "HiddenByDistance",
+         {"enabled": True, "renderLayerMask": 1, "maxDrawDistance": 4.0},
+         {"enabled": True, "renderLayerMask": 1, "maxDrawDistance": 0.0}),
+    ]
+
+    for i, (x, label, mr, _permissive) in enumerate(spheres):
+        e.append({
+            "id": 30 + i,
+            "name": {"name": label},
+            "transform": transform((x, 1.3, 0.0), scale=(1.3, 1.3, 1.3)),
+            "mesh": uv_sphere(1.0, 28, 14),
+            "material": material(baseColor=[0.90, 0.55, 0.20], roughness=0.45),
+            "meshRenderer": mr,
+        })
+    return e
+
+
+def mesh_renderer_filters_permissive(entities):
+    """The control: same scene, every filter switched to permissive."""
+    for ent in entities:
+        if "meshRenderer" in ent:
+            ent["meshRenderer"] = {"enabled": True, "renderLayerMask": 1,
+                                   "maxDrawDistance": 0.0}
+    return entities
+
+
 def main():
     import sys
     control = "--control" in sys.argv
@@ -899,6 +981,11 @@ def main():
         for ent in shaded:
             ent.pop("customShader", None)
     write_project("CustomShader", shaded)
+
+    filters = mesh_renderer_filters()
+    if control:
+        filters = mesh_renderer_filters_permissive(filters)
+    write_project("MeshRendererFilters", filters)
 
 
 if __name__ == "__main__":
