@@ -320,6 +320,8 @@ public:
           m_CurrentAnimName(other.m_CurrentAnimName), m_CurrentAnim(nullptr),
           m_NextAnimName(other.m_NextAnimName), m_NextAnim(nullptr),
           m_CurrentPose(other.m_CurrentPose), m_BlendPose(other.m_BlendPose),
+          m_Interpolate(other.m_Interpolate), m_MaxBoneDepth(other.m_MaxBoneDepth),
+          m_BoneDepth(other.m_BoneDepth),
           m_CurrentTime(other.m_CurrentTime), m_PreviousTime(other.m_PreviousTime),
           m_NormalizedTime(other.m_NormalizedTime),
           m_Speed(other.m_Speed), m_IsPlaying(other.m_IsPlaying), m_IsPaused(other.m_IsPaused),
@@ -345,6 +347,9 @@ public:
         m_NextAnimName = other.m_NextAnimName;
         m_CurrentPose = other.m_CurrentPose;
         m_BlendPose = other.m_BlendPose;
+        m_Interpolate = other.m_Interpolate;
+        m_MaxBoneDepth = other.m_MaxBoneDepth;
+        m_BoneDepth = other.m_BoneDepth;
         m_CurrentTime = other.m_CurrentTime;
         m_PreviousTime = other.m_PreviousTime;
         m_NormalizedTime = other.m_NormalizedTime;
@@ -437,6 +442,13 @@ public:
     // Animation LOD fidelity (AnimationLOD.h). Set per frame by whoever ticks this
     // animator, because it follows the camera and can change between frames.
     void SetInterpolate(bool on) { m_Interpolate = on; }
+    // Bones deeper than this in the hierarchy hold their BIND pose instead of being
+    // sampled. 0 means every bone. Depth is the proxy for importance that needs no
+    // per-model authoring: fingers hang off a hand off an arm, and facial bones hang
+    // off a head, so the things nobody can see at fifty metres are exactly the deep
+    // ones. A rig that disagrees can set 0 and pay for every bone.
+    void SetMaxBoneDepth(u32 depth) { m_MaxBoneDepth = depth; }
+    u32 GetMaxBoneDepth() const { return m_MaxBoneDepth; }
 
     bool GetInterpolate() const { return m_Interpolate; }
     f32 GetCurrentTime() const { return m_CurrentTime; }
@@ -501,6 +513,11 @@ private:
     bool m_IsPlaying = false;
     bool m_IsPaused = false;
     bool m_Interpolate = true;   // false = snap to the preceding keyframe (animation LOD)
+    u32 m_MaxBoneDepth = 0;      // 0 = sample every bone (animation LOD)
+    // Depth of each bone from its root, computed once per skeleton. Derived state, so
+    // the copy and move lists below carry it rather than recomputing: missing a member
+    // in those lists is this class's documented way of losing data silently.
+    std::vector<u32> m_BoneDepth;
 
     // Blending
     f32 m_BlendTime = 0.0f;

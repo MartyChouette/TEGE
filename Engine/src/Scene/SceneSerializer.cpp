@@ -7571,6 +7571,7 @@ json SerializeAnimationLODComponent(const ECS::AnimationLODComponent& lod) {
         jb["ik"] = band.ik;
         jb["blendTrees"] = band.blendTrees;
         jb["interpolate"] = band.interpolate;
+        jb["maxBoneDepth"] = RF(static_cast<i32>(band.maxBoneDepth));
         bands.push_back(jb);
     }
     j["bands"] = bands;
@@ -7596,6 +7597,10 @@ ECS::AnimationLODComponent DeserializeAnimationLODComponent(const json& j) {
             if (jb.contains("ik")) band.ik = JB(jb["ik"]);
             if (jb.contains("blendTrees")) band.blendTrees = JB(jb["blendTrees"]);
             if (jb.contains("interpolate")) band.interpolate = JB(jb["interpolate"]);
+            if (jb.contains("maxBoneDepth")) {
+                const i32 d = jb["maxBoneDepth"].get<i32>();
+                band.maxBoneDepth = (d > 0) ? static_cast<u32>(d) : 0u;
+            }
         }
     }
     return lod;

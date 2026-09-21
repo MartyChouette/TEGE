@@ -177,6 +177,7 @@ struct ENJIN_API AnimatorComponent : public IComponent {
     void Update(f32 deltaTime, const AnimationQuality& quality = AnimationQuality{}) {
         stateMachine.Update(deltaTime);
         animator.SetInterpolate(quality.interpolate);
+        animator.SetMaxBoneDepth(quality.maxBoneDepth);
 
         // If blend tree is enabled and has a valid parameter, use it instead of normal
         // playback. Dropping the blend tree falls back to plain clip playback rather

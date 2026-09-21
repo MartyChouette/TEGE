@@ -9,6 +9,8 @@
 #include "Enjin/ECS/Components/AnimationLOD.h"
 #include "Enjin/Animation/Animation.h"
 
+#include <memory>
+
 using namespace Enjin;
 using namespace Enjin::ECS;
 
@@ -116,6 +118,127 @@ ENJIN_TEST(AnimationLODSampling, ClampingIsUnaffectedByFidelity) {
     const Animation::BoneTrack t = TwoKeyTrack();
     ENJIN_EXPECT_FLOAT_EQ(t.SamplePosition(-1.0f, false).x, 0.0f);
     ENJIN_EXPECT_FLOAT_EQ(t.SamplePosition(99.0f, false).x, 10.0f);
+}
+
+// ---------------------------------------------------------------------------
+// Bone-depth reduction
+//
+// Deep bones hold their BIND pose instead of being sampled. Depth is the proxy for
+// importance: fingers hang off a hand off an arm, facial bones off a head, so the
+// bones nobody can resolve at distance are the deep ones.
+// ---------------------------------------------------------------------------
+
+namespace {
+// root -> spine -> arm -> hand -> finger, depths 0..4.
+std::shared_ptr<Animation::Skeleton> ChainSkeleton() {
+    auto sk = std::make_shared<Animation::Skeleton>();
+    const char* names[5] = { "root", "spine", "arm", "hand", "finger" };
+    for (int i = 0; i < 5; ++i) {
+        Animation::Bone b;
+        b.name = names[i];
+        b.parentIndex = i - 1;                       // topologically sorted
+        b.bindPosition = Math::Vector3(0.0f, static_cast<f32>(i), 0.0f);
+        b.bindRotation = Math::Quaternion(0, 0, 0, 1);
+        b.bindScale = Math::Vector3(1, 1, 1);
+        b.inverseBindMatrix = Math::Matrix4::Identity();
+        sk->bones.push_back(b);
+    }
+    return sk;
+}
+
+// Every bone animated away from its bind position, so "held at bind" is visible.
+Animation::SkeletalAnimation ChainClip() {
+    Animation::SkeletalAnimation a;
+    a.name = "wave";
+    a.duration = 1.0f;
+    a.playMode = Animation::PlayMode::Loop;
+    const char* names[5] = { "root", "spine", "arm", "hand", "finger" };
+    for (int i = 0; i < 5; ++i) {
+        Animation::BoneTrack t;
+        // boneNAME, not boneIndex: AddAnimation re-resolves the index from the name
+        // against the skeleton, so a track with no name resolves to -1 and is skipped.
+        t.boneName = names[i];
+        t.positionTimes = { 0.0f, 1.0f };
+        t.positions = { Math::Vector3(100.0f, 0.0f, 0.0f), Math::Vector3(100.0f, 0.0f, 0.0f) };
+        a.tracks.push_back(t);
+    }
+    return a;
+}
+
+f32 SampledX(Animation::SkeletalAnimator& an, int bone) {
+    return an.GetCurrentPose().localPositions[static_cast<usize>(bone)].x;
+}
+}  // namespace
+
+ENJIN_TEST(AnimationLODBones, ZeroMeansEveryBoneIsSampled) {
+    Animation::SkeletalAnimator an;
+    an.SetSkeleton(ChainSkeleton());
+    an.AddAnimation(ChainClip());
+    an.SetMaxBoneDepth(0);
+    an.Play("wave");
+    an.Update(0.016f);
+    for (int i = 0; i < 5; ++i) ENJIN_EXPECT_FLOAT_EQ(SampledX(an, i), 100.0f);
+}
+
+ENJIN_TEST(AnimationLODBones, DeepBonesHoldTheirBindPose) {
+    Animation::SkeletalAnimator an;
+    an.SetSkeleton(ChainSkeleton());
+    an.AddAnimation(ChainClip());
+    an.SetMaxBoneDepth(2);          // root(0), spine(1), arm(2) animate; hand/finger do not
+    an.Play("wave");
+    an.Update(0.016f);
+    ENJIN_EXPECT_FLOAT_EQ(SampledX(an, 0), 100.0f);
+    ENJIN_EXPECT_FLOAT_EQ(SampledX(an, 1), 100.0f);
+    ENJIN_EXPECT_FLOAT_EQ(SampledX(an, 2), 100.0f);
+    // Bind x is 0, so a held bone is unmistakable.
+    ENJIN_EXPECT_FLOAT_EQ(SampledX(an, 3), 0.0f);
+    ENJIN_EXPECT_FLOAT_EQ(SampledX(an, 4), 0.0f);
+}
+
+ENJIN_TEST(AnimationLODBones, LimitIsLiveAndReversible) {
+    // The band follows the camera, so the limit changes between frames and a bone that
+    // stopped being sampled has to come back when the character is close again.
+    Animation::SkeletalAnimator an;
+    an.SetSkeleton(ChainSkeleton());
+    an.AddAnimation(ChainClip());
+    an.Play("wave");
+
+    an.SetMaxBoneDepth(1);
+    an.Update(0.016f);
+    ENJIN_EXPECT_FLOAT_EQ(SampledX(an, 4), 0.0f);
+
+    an.SetMaxBoneDepth(0);
+    an.Update(0.016f);
+    ENJIN_EXPECT_FLOAT_EQ(SampledX(an, 4), 100.0f);
+}
+
+ENJIN_TEST(AnimationLODBones, CopyCarriesTheDerivedDepths) {
+    // This class copies by explicit member list, and a member left out of those lists is
+    // its documented way of losing data silently. m_BoneDepth is derived state, so a copy
+    // that dropped it would sample every bone and look merely "slow", never wrong.
+    Animation::SkeletalAnimator an;
+    an.SetSkeleton(ChainSkeleton());
+    an.AddAnimation(ChainClip());
+    an.SetMaxBoneDepth(2);
+    an.Play("wave");
+
+    Animation::SkeletalAnimator copy = an;
+    copy.Update(0.016f);
+    ENJIN_EXPECT_EQ(copy.GetMaxBoneDepth(), 2u);
+    ENJIN_EXPECT_FLOAT_EQ(copy.GetCurrentPose().localPositions[4].x, 0.0f);
+
+    Animation::SkeletalAnimator assigned;
+    assigned = an;
+    assigned.Update(0.016f);
+    ENJIN_EXPECT_EQ(assigned.GetMaxBoneDepth(), 2u);
+    ENJIN_EXPECT_FLOAT_EQ(assigned.GetCurrentPose().localPositions[4].x, 0.0f);
+}
+
+ENJIN_TEST(AnimationLODBands, BoneDepthDefaultsToEveryBone) {
+    // Nothing is dropped unless a project asks for it: the defaults reproduce the old
+    // behaviour, and silently dropping bones would be a picture change nobody requested.
+    AnimationLODComponent lod;
+    for (i32 b = 0; b < lod.bandCount; ++b) ENJIN_EXPECT_EQ(lod.bands[b].maxBoneDepth, 0u);
 }
 
 ENJIN_TEST_MAIN()

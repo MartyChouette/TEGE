@@ -396,8 +396,9 @@ bool RenderSystem::ShouldRefreshAnimator(AnimatorComponent& ac, Entity entity,
     if (lod.cullDistance > 0.0f && camDist > lod.cullDistance) return false;
 
     const AnimationLODComponent::Band& band = lod.bands[lod.ResolveBand(camDist)];
-    outQuality.blendTrees  = band.blendTrees;
-    outQuality.interpolate = band.interpolate;
+    outQuality.blendTrees   = band.blendTrees;
+    outQuality.interpolate  = band.interpolate;
+    outQuality.maxBoneDepth = band.maxBoneDepth;
 
     if (band.updateHz > 0.0f) {
         const f32 period = 1.0f / band.updateHz;

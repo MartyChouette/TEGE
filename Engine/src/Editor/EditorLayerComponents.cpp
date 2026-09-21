@@ -624,6 +624,15 @@ void EditorLayer::DrawAnimationLODComponent(ECS::Entity entity) {
             if (!band.interpolate) {
                 ImGui::TextDisabled("Snaps to the preceding keyframe");
             }
+            i32 depth = static_cast<i32>(band.maxBoneDepth);
+            if (InspectorUndo::SliderInt(m_UndoRedo, "Max Bone Depth", &depth, 0, 12,
+                                        depth <= 0 ? "every bone" : "%d")) {
+                band.maxBoneDepth = (depth > 0) ? static_cast<u32>(depth) : 0u;
+            }
+            if (band.maxBoneDepth > 0) {
+                ImGui::TextDisabled("Deeper bones hold their bind pose: fingers and");
+                ImGui::TextDisabled("face first, because those hang deepest off a rig.");
+            }
             ImGui::TreePop();
         }
         ImGui::PopID();

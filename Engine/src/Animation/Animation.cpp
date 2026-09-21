@@ -221,7 +221,19 @@ Math::Vector3 BoneTrack::SampleScale(f32 time, bool interpolate) const {
 
 void SkeletalAnimator::SetSkeleton(std::shared_ptr<Skeleton> skeleton) {
     m_Skeleton = skeleton;
+    m_BoneDepth.clear();
     if (skeleton) {
+        // Depth from the root, once per skeleton. Bones are topologically sorted by
+        // the importer (parent index < child index), which is what lets this be a
+        // single forward pass rather than a walk per bone.
+        m_BoneDepth.resize(skeleton->bones.size(), 0u);
+        for (usize i = 0; i < skeleton->bones.size(); ++i) {
+            const i32 parent = skeleton->bones[i].parentIndex;
+            m_BoneDepth[i] = (parent >= 0 && static_cast<usize>(parent) < i)
+                           ? m_BoneDepth[static_cast<usize>(parent)] + 1u
+                           : 0u;
+        }
+
         m_CurrentPose.Resize(skeleton->bones.size());
         m_BlendPose.Resize(skeleton->bones.size());
 
@@ -511,6 +523,16 @@ void SkeletalAnimator::SampleAnimation(const SkeletalAnimation& anim, f32 time, 
     // Apply animation tracks
     for (const auto& track : anim.tracks) {
         if (track.boneIndex < 0 || track.boneIndex >= static_cast<i32>(outPose.localPositions.size())) {
+            continue;
+        }
+
+        // Animation LOD: a bone past the depth limit keeps the bind pose the loop
+        // above just wrote. Skipping the track IS the saving -- three keyframe
+        // samples, one of them a slerp -- and it costs nothing to leave the bone
+        // where the bind pose put it, which is why this is a `continue` and not a
+        // separate pass.
+        if (m_MaxBoneDepth > 0u && static_cast<usize>(track.boneIndex) < m_BoneDepth.size()
+            && m_BoneDepth[static_cast<usize>(track.boneIndex)] > m_MaxBoneDepth) {
             continue;
         }
 

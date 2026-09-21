@@ -54,16 +54,25 @@ struct AnimationLODComponent {
         // Interpolate between keyframes. Off snaps to the preceding key, which at distance
         // is invisible and skips a slerp per bone per frame.
         bool interpolate = true;
+
+        // Bones deeper than this in the hierarchy hold their BIND pose rather than being
+        // sampled. 0 means every bone.
+        //
+        // Depth is the proxy for importance that needs no per-model authoring, and it is
+        // a good one: fingers hang off a hand off an arm, facial bones hang off a head,
+        // so the bones nobody can resolve at fifty metres are exactly the deep ones. A
+        // rig that disagrees sets 0 and pays for every bone.
+        u32 maxBoneDepth = 0;
     };
 
     // Defaults reproduce the behaviour the hardcoded version had at 60fps (full, half,
     // quarter, eighth) so switching a project to this component changes nothing by itself,
     // and then keep it at that rate on machines that are not running at 60.
     std::array<Band, MAX_BANDS> bands = { {
-        { 0.0f,    0.0f, true,  true,  true  },
-        { 30.0f,  30.0f, true,  true,  true  },
-        { 70.0f,  15.0f, false, false, true  },
-        { 140.0f,  7.5f, false, false, false },
+        { 0.0f,    0.0f, true,  true,  true,  0u },
+        { 30.0f,  30.0f, true,  true,  true,  0u },
+        { 70.0f,  15.0f, false, false, true,  0u },
+        { 140.0f,  7.5f, false, false, false, 0u },
     } };
 
     i32 bandCount = 4;
@@ -95,6 +104,7 @@ struct AnimationLODComponent {
 struct AnimationQuality {
     bool blendTrees = true;
     bool interpolate = true;
+    u32  maxBoneDepth = 0;   // 0 = every bone
 };
 
 } // namespace ECS
