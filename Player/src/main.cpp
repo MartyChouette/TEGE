@@ -1363,10 +1363,38 @@ public:
             }
         }
 
-        // RenderSystem::Update (called via World::Update above) handles:
-        // RefreshStorageCache, UpdateFrameUniforms, BeginMainRenderPass, entity drawing
-        // Tick skeletal animators manually
-        if (m_World) {
+        // Tick skeletal animators, THROUGH the animation-LOD gate.
+        //
+        // This player does not call RenderSystem::Update (see the commit that
+        // cut it: the full Update crashed the driver from here), so it does not
+        // get that function's animation pass and has to run its own. It used to
+        // run a bare ac->Update(deltaTime) on every animator -- no gate, no
+        // quality, full rate, always.
+        //
+        // The cost was AnimationLODComponent doing nothing whatsoever in an
+        // exported game. Its unit tests pin the band arithmetic and pass; the
+        // web player calls the gate and honours it; this runtime, the one a
+        // shipped game actually runs, skipped it. Measured 2026-09-21 on
+        // Examples/AnimationLOD: pinning every band to 0.5 Hz produced a capture
+        // byte-identical to the ungated one.
+        //
+        // That is the same shape as the three push-constant builders and the two
+        // Update bodies: the decision lives in one place, and a call site that
+        // does not go through it is a runtime where the feature does not exist.
+        if (m_World && m_RenderSystem) {
+            for (auto entity : m_World->GetEntitiesWithComponent<Enjin::ECS::AnimatorComponent>()) {
+                auto* ac = m_World->GetComponent<Enjin::ECS::AnimatorComponent>(entity);
+                if (!ac) continue;
+                Enjin::f32 stepDt = deltaTime;
+                Enjin::ECS::AnimationQuality quality{};
+                if (!m_RenderSystem->ShouldRefreshAnimator(*ac, entity, deltaTime, stepDt, quality)) {
+                    continue;   // skipped this frame; the dt stays banked for the next
+                }
+                ac->Update(stepDt, quality);
+            }
+        } else if (m_World) {
+            // No render system means no camera to measure distance from, so
+            // there is no band to resolve: everything refreshes.
             for (auto entity : m_World->GetEntitiesWithComponent<Enjin::ECS::AnimatorComponent>()) {
                 auto* ac = m_World->GetComponent<Enjin::ECS::AnimatorComponent>(entity);
                 if (ac) ac->Update(deltaTime);
@@ -2186,42 +2214,14 @@ public:
             m_Camera->SetPerspective(fov, aspect, nearP, farP);
         }
 
-        // Detect splitscreen: multiple active cameras with non-default viewports
+        // Splitscreen. The detection rule used to be written out here and
+        // nowhere else, which is why the web player never split the screen at
+        // all; it is RenderSystem::ApplySplitscreenFromWorld now and both
+        // players call the same one.
         bool splitscreenActive = false;
         if (m_World && m_RenderSystem) {
-            auto allCameras = Enjin::ECS::CameraManager::GetAllActiveCameras(m_World.get());
-            bool useSplitscreen = false;
-
-            if (allCameras.size() > 1) {
-                for (auto camEntity : allCameras) {
-                    auto* cc = m_World->GetComponent<Enjin::ECS::CameraComponent>(camEntity);
-                    if (cc && (cc->viewportX != 0.0f || cc->viewportY != 0.0f ||
-                               cc->viewportWidth != 1.0f || cc->viewportHeight != 1.0f)) {
-                        useSplitscreen = true;
-                        break;
-                    }
-                }
-            }
-
-            if (useSplitscreen) {
-                std::vector<Enjin::ECS::ViewportCamera> viewports;
-                for (auto camEntity : allCameras) {
-                    auto* cc = m_World->GetComponent<Enjin::ECS::CameraComponent>(camEntity);
-                    if (!cc) continue;
-                    Enjin::ECS::ViewportCamera vc;
-                    vc.entity = camEntity;
-                    vc.viewportX = cc->viewportX;
-                    vc.viewportY = cc->viewportY;
-                    vc.viewportWidth = cc->viewportWidth;
-                    vc.viewportHeight = cc->viewportHeight;
-                    viewports.push_back(vc);
-                    if (viewports.size() >= Enjin::ECS::RenderSystem::MAX_SPLITSCREEN_VIEWPORTS) break;
-                }
-                m_RenderSystem->SetMainPassSplitscreen(viewports);
-            } else {
-                m_RenderSystem->SetMainPassSplitscreen({});
-            }
-            splitscreenActive = useSplitscreen;
+            m_RenderSystem->ApplySplitscreenFromWorld();
+            splitscreenActive = !m_RenderSystem->GetMainPassViewports().empty();
         }
 
         // Live accessibility sync BEFORE the frame renders: game scripts can

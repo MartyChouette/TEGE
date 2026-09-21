@@ -2210,10 +2210,30 @@ void EditorLayer::Update(f32 deltaTime) {
     // RenderSystem::Update() is not called by the editor because it handles
     // terrain/sprite/tilemap regeneration that the editor manages separately.
     // Skeletal animation must be ticked here so imported FBX models animate.
+    //
+    // The animation-LOD gate applies in PLAY MODE only. Pressing Play should
+    // show what ships, and that includes distant characters refreshing at the
+    // rate the game gives them. While EDITING it must not: an author posing or
+    // scrubbing a rig they have walked away from would be fighting a stutter
+    // that is correct in the game and only noise in the tool.
+    //
+    // This is the third call site of the same decision (the player, the web
+    // player, here). The decision itself stays in ShouldRefreshAnimator; what
+    // differs per site is whether to consult it at all.
     if (m_World) {
+        const bool applyAnimLOD = m_RenderSystem && m_PlayMode.IsPlaying();
         for (auto entity : m_World->GetEntitiesWithComponent<ECS::AnimatorComponent>()) {
             auto* animComp = m_World->GetComponent<ECS::AnimatorComponent>(entity);
-            if (animComp) {
+            if (!animComp) continue;
+            if (applyAnimLOD) {
+                f32 stepDt = deltaTime;
+                ECS::AnimationQuality quality{};
+                if (!m_RenderSystem->ShouldRefreshAnimator(*animComp, entity, deltaTime,
+                                                           stepDt, quality)) {
+                    continue;   // skipped this frame; the dt stays banked
+                }
+                animComp->Update(stepDt, quality);
+            } else {
                 animComp->Update(deltaTime);
             }
         }

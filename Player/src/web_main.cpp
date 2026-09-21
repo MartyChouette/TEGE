@@ -1392,6 +1392,20 @@ public:
         if (!m_AudioEngine.IsDeviceRunning() && sawGesture) {
             m_AudioEngine.ResumeAfterUserGesture();
         }
+        // ONE activation fact, shared by the audio gate and the simulation gate.
+        // Asked here because this runs before the gate check at the top of the
+        // next frame, and because `sawGesture` is already in hand.
+        if (!m_WebGestureSeen && sawGesture) {
+#if defined(__EMSCRIPTEN__)
+            m_WebGestureSeen = EM_ASM_INT({
+                return (navigator.userActivation && navigator.userActivation.hasBeenActive) ? 1 : 0;
+            }) != 0;
+#else
+            m_WebGestureSeen = true;
+#endif
+            if (m_WebGestureSeen)
+                ENJIN_LOG_INFO(Player, "Page activated: the simulation starts now");
+        }
 
         // Screen-space script queries (Camera_ScreenToWorld, Physics_RaycastScreen,
         // OnClick picking) need the canvas size. The web player never pushed it
@@ -1438,6 +1452,54 @@ public:
         // Input must keep rotating its per-frame state while paused, or the
         // Escape pressed-edge (and every other key edge) would freeze.
         Enjin::Input::Update();
+
+        // The simulation does not start until the page has been activated.
+        //
+        // A browser will not run an AudioContext before a real user gesture, so
+        // an exported web game shows a "Click to Play" overlay and waits. The
+        // GAME did not wait: the loop ticked physics and scripts behind the
+        // overlay from the first frame, so by the time a player clicked, however
+        // many seconds the preloader had taken were already spent. In
+        // Examples/FixedTimestep the wrecking ball had swung, hit the stack and
+        // come to rest before anyone saw a frame of it; the player clicks Play
+        // and is shown the aftermath. Desktop has no gate and no equivalent, so
+        // this is web-only and it is not a tier decision -- it is a bug, and the
+        // demo it ruins is the one whose whole subject is simulation timing.
+        //
+        // The fact asked for is the same one the audio gate uses
+        // (navigator.userActivation.hasBeenActive, via AudioEngine), not "a
+        // click happened": input can be synthesised, page activation cannot, and
+        // the two gates lifting on different facts is how they would drift.
+        //
+        // Rendering keeps running, so the scene is visible at its authored pose
+        // behind the overlay rather than black.
+        if (!m_SimulationStarted) {
+            if (!m_ShellStartQueried) {
+                m_ShellStartQueried = true;
+#if defined(__EMSCRIPTEN__)
+                // A plain window global, NOT a property on Module. The shell
+                // script runs before EnjinPlayer.js and emscripten builds its
+                // own Module object over whatever was there, so a flag parked on
+                // Module is silently gone by the time this asks -- measured
+                // 2026-09-21, the hook read as absent and the fallback fired.
+                m_ShellControlsStart = EM_ASM_INT({
+                    return window.enjinHoldSimulation ? 1 : 0;
+                }) != 0;
+#endif
+            }
+            // A shell that holds the start owns it completely: page activation
+            // is the click that BEGINS the overlay's fade, and half a second of
+            // simulation behind a fading overlay is still simulation the player
+            // did not see.
+            if (m_ShellControlsStart ? m_ShellSaidGo : m_WebGestureSeen) {
+                m_SimulationStarted = true;
+            } else {
+                m_World->Update(0.0f);   // flush deferred destroys only
+                SyncCameraToWorld();
+                return;
+            }
+        }
+        m_SimFrame++;
         if (m_Paused || m_AtMainMenu) {
             // World::Update still runs so deferred entity destroys flush (the
             // pause canvas removal on resume) -- gameplay systems stay skipped.
@@ -1877,6 +1939,12 @@ public:
     // Camera-entity -> render camera sync. Runs every frame, INCLUDING while
     // paused (the render pass always reads m_Camera).
     void SyncCameraToWorld() {
+        // Splitscreen, via the same scene rule the desktop player uses. m_Camera
+        // is still synced below: it is what every pass AFTER the mesh draws
+        // (sky, particles, sprites, UI) renders through, and it is the fallback
+        // when the split cannot be resolved.
+        if (m_World && m_RenderSystem) m_RenderSystem->ApplySplitscreenFromWorld();
+
         const auto& camEntities = m_World->GetEntitiesWithComponent<Enjin::ECS::CameraComponent>();
         if (!camEntities.empty() && m_Camera) {
             auto camEntity = camEntities[0];
@@ -2463,6 +2531,8 @@ public:
     Enjin::u32 GetDrawCalls() const {
         return m_RenderSystem ? m_RenderSystem->GetDrawCallCount() : 0;
     }
+    void BeginSimulation() { m_ShellSaidGo = true; }
+    Enjin::u64 GetSimFrame() const { return m_SimFrame; }
     Enjin::u32 GetEntityCount() const {
         return m_RenderSystem ? m_RenderSystem->GetEntityRenderDataSize() : 0;
     }
@@ -3111,6 +3181,20 @@ private:
     // desktop renders it on web via ImGui's WebGPU backend (UI unification Phase 1).
     Enjin::GUI::UISystem m_UISystem;
     bool m_Paused = false;
+    // Web gate: the page has been activated (navigator.userActivation), and the
+    // simulation has therefore been allowed to start. Latched, never cleared --
+    // a page cannot become un-activated, and a game must not restart if focus
+    // is lost. See the gate in Update().
+    bool m_WebGestureSeen = false;
+    bool m_SimulationStarted = false;
+    // Frames in which gameplay ran. Read by getSimFrame(); see it for why a
+    // capture tool must count this rather than rAF ticks.
+    Enjin::u64 m_SimFrame = 0;
+    // Does this page's shell tell us when to start? Asked once (the answer
+    // cannot change), because the alternative is an EM_ASM every frame.
+    bool m_ShellStartQueried = false;
+    bool m_ShellControlsStart = false;
+    bool m_ShellSaidGo = false;
     Enjin::ECS::Entity m_PauseMenuEntity = Enjin::ECS::INVALID_ENTITY;
     Enjin::ECS::Entity m_OptionsMenuEntity = Enjin::ECS::INVALID_ENTITY;
     // Controls / key bindings. Generated from m_InputMap, so it lists exactly
@@ -3217,6 +3301,33 @@ EMSCRIPTEN_KEEPALIVE int getDrawCallCount() {
 
 EMSCRIPTEN_KEEPALIVE int getEntityCount() {
     return g_Player ? static_cast<int>(g_Player->GetEntityCount()) : 0;
+}
+
+// Frames in which the SIMULATION actually ran, which is not the same as frames
+// the browser presented.
+//
+// A capture tool counts rAF ticks, and on web those start at page load: the
+// preloader, the "Click to Play" gate and whatever choreography a tool needs to
+// dismiss it all happen before the first counted frame. Even with the activation
+// gate in Update(), a tool's own clicking takes real time. So "photograph frame
+// 30" meant "photograph an unknown time into the simulation", and the answer
+// changed with machine load -- which is how Examples/FixedTimestep, a demo whose
+// whole subject is simulation timing, came to look frozen in a browser and fine
+// on desktop. Counting this instead makes a web capture comparable to a desktop
+// one.
+// The shell says the player can now see and play the game.
+//
+// Called after the "Click to Play" overlay has finished fading out, which is a
+// later and more honest moment than the click that started the fade. A shell
+// that uses this sets window.enjinHoldSimulation so the engine knows to wait for
+// it; a hand-written shell that does neither falls back to page activation, so
+// nothing has to be updated in lockstep.
+EMSCRIPTEN_KEEPALIVE void beginSimulation() {
+    if (g_Player) g_Player->BeginSimulation();
+}
+
+EMSCRIPTEN_KEEPALIVE int getSimFrame() {
+    return g_Player ? static_cast<int>(g_Player->GetSimFrame()) : 0;
 }
 
 // --- Streaming / memory telemetry (memory stress harness) ---
