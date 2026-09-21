@@ -284,7 +284,7 @@ bool RenderSystem::IsEntityInFrustum(Entity entity, const Math::Vector4 planes[6
 // The SWAP stays with each backend, because that part genuinely differs: web
 // invalidates the entity's render data, Vulkan RETIRES the buffers because it
 // runs mid-recording and in-flight frames still reference them.
-i32 RenderSystem::ChooseLOD(Entity entity, const LODComponent& lod,
+i32 RenderSystem::ChooseLOD(Entity entity, LODComponent& lod,
                             const TransformComponent& transform,
                             const Math::Vector3& camPos) {
     f32 metric;
@@ -297,18 +297,11 @@ i32 RenderSystem::ChooseLOD(Entity entity, const LODComponent& lod,
             Math::Abs(transform.scale.x),
             Math::Abs(transform.scale.y)),
             Math::Abs(transform.scale.z));
-        // Object size from the STABLE original-mesh extent, not the currently-active
-        // (swapped) LOD mesh — using the live mesh makes the metric depend on the LOD
-        // it just picked, so the selection oscillates every frame and rebuilds buffers
-        // until it OOMs. Fall back to the live AABB only for legacy LODs that predate
-        // sourceMaxExtent.
-        f32 objectSize = scale;
-        if (lod.sourceMaxExtent > 0.0f) {
-            objectSize = scale * lod.sourceMaxExtent;
-        } else if (mesh) {
-            const Math::Vector3 extent = mesh->cachedAABBMax - mesh->cachedAABBMin;
-            objectSize = scale * Math::Max(Math::Max(extent.x, extent.y), extent.z);
-        }
+        // Object size from the STABLE original-mesh extent (see ResolveLODSourceExtent).
+        // 0 means nothing measurable, and then scale alone is the metric -- the same
+        // thing this did when the entity had no mesh at all.
+        const f32 srcExtent = ResolveLODSourceExtent(lod, mesh);
+        const f32 objectSize = (srcExtent > 0.0f) ? scale * srcExtent : scale;
         // Screen metric: larger = closer/bigger = more detail needed. Inverted so a
         // larger metric means further away, matching the distance thresholds.
         metric = dist / Math::Max(objectSize, 0.01f);
@@ -9027,6 +9020,11 @@ void RenderSystem::Update(f32 deltaTime) {
         return;
     }
 
+    // Load every dirty material's textures BEFORE anything asks what is textured. This
+    // has to precede BuildCullableObjectList, which routes an entity by whether its
+    // material has textures, and BuildMaterialSSBO, which turns them into bindless indices.
+    ResolveDirtyMaterialTextures();
+
     // Build list of cullable objects for GPU frustum culling.
     // Only done when we have 3D meshes and GPU culling is enabled.
     // In editor mode, skip culling entirely so all entities are visible for editing.
@@ -9072,11 +9070,12 @@ void RenderSystem::Update(f32 deltaTime) {
     // all and now points its own.
     //
     // TWO, and this one has nothing to do with drawing, which is why it survived every
-    // attempt to find it by reading the render path: BuildCullableObjectList used to write
-    // mesh->cachedAABBMin/Max. Nothing else populates that cache in a player, so merely
-    // running this function re-LODded the entire scene through ChooseLOD's sentinel bug and
-    // moved a quarter of the pixels. See the note inside BuildCullableObjectList; the bounds
-    // are computed into locals now.
+    // attempt to find it by reading the render path: BuildCullableObjectList writes
+    // mesh->cachedAABBMin/Max, nothing else populates that cache in a player, and
+    // ChooseLOD's legacy branch read the unset sentinel as a NEGATIVE size and pinned every
+    // such entity to its lowest LOD. So merely RUNNING a culling pass re-LODded the entire
+    // scene and moved a quarter of the pixels. Fixed at the LOD end (ResolveLODSourceExtent
+    // in LOD.h), which is where it was wrong.
     //
     // Method note, since this cost a day: the four suspects were separated by four env-gated
     // skips in ONE build, not by four builds. The capture harness is bit-exact run to run
@@ -9090,13 +9089,6 @@ void RenderSystem::Update(f32 deltaTime) {
     //   * bad pool offsets in BuildCullableObjectList -- indirectEligible requires
     //     hasPoolAlloc.
     //   * the culling dispatch not running -- it is reached.
-    //
-    // Still open, and it is a REAL bug independent of this path: ChooseLOD's legacy branch
-    // (LODComponent::sourceMaxExtent == 0) reads the mesh AABB, and on the unset sentinel
-    // (min 1,1,1 / max -1,-1,-1) the extent is NEGATIVE, clamps to 0.01, and pins the entity
-    // to its LOWEST LOD. Nothing populates that cache in an exported game, so every such
-    // entity has always shipped at its coarsest mesh. Not fixed here: fixing it changes what
-    // every exported game looks like, which needs saying out loud first.
     //
     // Earlier fixes on this path, each verified to leave the picture byte-identical:
     //   1. cull.comp.spv embedded in ShaderData.h -- an export ships no .spv, so GPU culling
@@ -10870,63 +10862,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 pushConstants.alphaCutoff = material->alphaCutoff;
 
                 // Resolve textures using cache (avoids per-frame string hash lookups)
-                if (material->textureCacheDirty) {
-                    if (!material->baseColorTexturePath.empty()) {
-                        auto tex = GetOrLoadTexture(material->baseColorTexturePath);
-                        if (tex && tex->IsValid()) {
-                            material->cachedBaseColorTexture = tex.get();
-                            material->baseColorTexture = 1;
-                        }
-                    }
-                    if (!material->heightTexturePath.empty()) {
-                        auto tex = GetOrLoadTexture(material->heightTexturePath);
-                        if (tex && tex->IsValid()) {
-                            material->cachedHeightTexture = tex.get();
-                            material->heightTexture = 1;
-                        }
-                    }
-                    if (!material->normalTexturePath.empty()) {
-                        auto tex = GetOrLoadTexture(material->normalTexturePath);
-                        if (tex && tex->IsValid()) {
-                            material->cachedNormalTexture = tex.get();
-                            material->normalTexture = 1;
-                        }
-                    }
-                    if (!material->metallicRoughnessTexturePath.empty()) {
-                        auto tex = GetOrLoadTexture(material->metallicRoughnessTexturePath);
-                        if (tex && tex->IsValid()) {
-                            material->cachedMetallicRoughnessTexture = tex.get();
-                            material->metallicRoughnessTexture = 1;
-                        }
-                    }
-                    // Specular map overrides metallic-roughness slot for pre-PBR shading
-                    if (!material->specularTexturePath.empty()) {
-                        auto tex = GetOrLoadTexture(material->specularTexturePath);
-                        if (tex && tex->IsValid()) {
-                            material->cachedMetallicRoughnessTexture = tex.get();
-                            material->metallicRoughnessTexture = 1;
-                        }
-                    }
-                    if (!material->emissiveTexturePath.empty()) {
-                        auto tex = GetOrLoadTexture(material->emissiveTexturePath);
-                        if (tex && tex->IsValid()) {
-                            material->cachedEmissiveTexture = tex.get();
-                            material->emissiveTexture = 1;
-                        }
-                    }
-                    if (!material->matcapTexturePath.empty()) {
-                        auto tex = GetOrLoadTexture(material->matcapTexturePath);
-                        if (tex && tex->IsValid()) {
-                            material->cachedMatcapTexture = tex.get();
-                            material->matcapTexture = 1;
-                        }
-                    }
-                    material->textureCacheDirty = false;
-                    material->cachedTextureKey = { material->cachedBaseColorTexture,
-                        material->cachedHeightTexture, material->cachedNormalTexture,
-                        material->cachedMetallicRoughnessTexture, material->cachedEmissiveTexture,
-                        material->cachedMatcapTexture };
-                }
+                ResolveMaterialTextureCache(material);
 
                 // Use cached texture pointers
                 boundTexture = material->cachedBaseColorTexture;
@@ -11754,63 +11690,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                 pushConstants.alphaCutoff = material->alphaCutoff;
 
                 // Resolve textures using cache (avoids per-frame string hash lookups)
-                if (material->textureCacheDirty) {
-                    if (!material->baseColorTexturePath.empty()) {
-                        auto tex = GetOrLoadTexture(material->baseColorTexturePath);
-                        if (tex && tex->IsValid()) {
-                            material->cachedBaseColorTexture = tex.get();
-                            material->baseColorTexture = 1;
-                        }
-                    }
-                    if (!material->heightTexturePath.empty()) {
-                        auto tex = GetOrLoadTexture(material->heightTexturePath);
-                        if (tex && tex->IsValid()) {
-                            material->cachedHeightTexture = tex.get();
-                            material->heightTexture = 1;
-                        }
-                    }
-                    if (!material->normalTexturePath.empty()) {
-                        auto tex = GetOrLoadTexture(material->normalTexturePath);
-                        if (tex && tex->IsValid()) {
-                            material->cachedNormalTexture = tex.get();
-                            material->normalTexture = 1;
-                        }
-                    }
-                    if (!material->metallicRoughnessTexturePath.empty()) {
-                        auto tex = GetOrLoadTexture(material->metallicRoughnessTexturePath);
-                        if (tex && tex->IsValid()) {
-                            material->cachedMetallicRoughnessTexture = tex.get();
-                            material->metallicRoughnessTexture = 1;
-                        }
-                    }
-                    // Specular map overrides metallic-roughness slot for pre-PBR shading
-                    if (!material->specularTexturePath.empty()) {
-                        auto tex = GetOrLoadTexture(material->specularTexturePath);
-                        if (tex && tex->IsValid()) {
-                            material->cachedMetallicRoughnessTexture = tex.get();
-                            material->metallicRoughnessTexture = 1;
-                        }
-                    }
-                    if (!material->emissiveTexturePath.empty()) {
-                        auto tex = GetOrLoadTexture(material->emissiveTexturePath);
-                        if (tex && tex->IsValid()) {
-                            material->cachedEmissiveTexture = tex.get();
-                            material->emissiveTexture = 1;
-                        }
-                    }
-                    if (!material->matcapTexturePath.empty()) {
-                        auto tex = GetOrLoadTexture(material->matcapTexturePath);
-                        if (tex && tex->IsValid()) {
-                            material->cachedMatcapTexture = tex.get();
-                            material->matcapTexture = 1;
-                        }
-                    }
-                    material->textureCacheDirty = false;
-                    material->cachedTextureKey = { material->cachedBaseColorTexture,
-                        material->cachedHeightTexture, material->cachedNormalTexture,
-                        material->cachedMetallicRoughnessTexture, material->cachedEmissiveTexture,
-                        material->cachedMatcapTexture };
-                }
+                ResolveMaterialTextureCache(material);
 
                 // Use cached texture pointers
                 boundTexture = material->cachedBaseColorTexture;
@@ -12318,25 +12198,26 @@ void RenderSystem::BuildCullableObjectList() {
         auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
         if (!mesh || !mesh->IsValid()) continue;
 
-        // Bounds for the cull test, computed into LOCALS and deliberately NOT written back
-        // to mesh->cachedAABBMin/Max.
+        // Bounds for the cull test, in a cache this pass OWNS -- deliberately not
+        // mesh->cachedAABBMin/Max.
         //
-        // Writing that cache is what made this whole path change the picture, and it took
-        // a four-way bisect to see because it has nothing to do with drawing. In a player
-        // NOTHING else populates the mesh AABB, so it sits at its "unset" sentinel
-        // (min 1,1,1 / max -1,-1,-1). ChooseLOD's legacy branch -- taken whenever
-        // LODComponent::sourceMaxExtent is 0 -- does `extent = max - min`, which on the
-        // sentinel is NEGATIVE, clamps to 0.01, and yields a huge metric: every such entity
-        // is pinned to its LOWEST LOD. Populating the cache here silently switched that off
-        // for the whole scene, so turning GPU-driven rendering on re-LODded the level and
-        // moved 25-40% of the pixels. Measured on Playground: suppress this one write and
-        // the fully-enabled path is byte-identical to the per-entity picture.
+        // Writing the shared one is what made turning this path on change the picture, and
+        // it took a four-way bisect to find because it has nothing to do with drawing. In a
+        // player NOTHING else populates that cache, so it sits at its unset sentinel
+        // (min 1,1,1 / max -1,-1,-1), and consumers keyed off it behave differently the
+        // moment a culling pass fills it in -- 25-40% of the pixels moved, on Playground and
+        // on BiscuitBird, from a pass that draws nothing. Fixing ChooseLOD's end of it was
+        // necessary and did not make the two equivalent, measured both ways: a culling pass
+        // simply has no business publishing state other systems read.
         //
-        // A culling pass has no business reconfiguring LOD. The ChooseLOD sentinel bug is
-        // real and separate -- and fixing it changes what every exported game looks like,
-        // so it is written up rather than fixed here (BACKLOG, Renderer & GPU).
+        // Keyed by entity slot and invalidated on vertex count, so this walks a mesh's
+        // vertices once rather than every frame.
         Math::Vector3 aabbMin, aabbMax;
-        if (mesh->aabbDirty) {
+        const usize boundsSlot = static_cast<usize>(EntityIndex(entity));
+        if (boundsSlot >= m_CullBoundsCache.size()) m_CullBoundsCache.resize(boundsSlot + 1);
+        CullBoundsEntry& cachedBounds = m_CullBoundsCache[boundsSlot];
+        const u32 liveVertexCount = static_cast<u32>(mesh->vertices.size());
+        if (cachedBounds.vertexCount != liveVertexCount || mesh->aabbDirty) {
             Math::Vector3 bMin(1e30f, 1e30f, 1e30f);
             Math::Vector3 bMax(-1e30f, -1e30f, -1e30f);
             for (const auto& vertex : mesh->vertices) {
@@ -12351,12 +12232,12 @@ void RenderSystem::BuildCullableObjectList() {
                 bMin = Math::Vector3(-0.5f);
                 bMax = Math::Vector3(0.5f);
             }
-            aabbMin = bMin;
-            aabbMax = bMax;
-        } else {
-            aabbMin = mesh->cachedAABBMin;
-            aabbMax = mesh->cachedAABBMax;
+            cachedBounds.lo = bMin;
+            cachedBounds.hi = bMax;
+            cachedBounds.vertexCount = liveVertexCount;
         }
+        aabbMin = cachedBounds.lo;
+        aabbMax = cachedBounds.hi;
 
         Renderer::BoundingBox bounds;
         bounds.min = aabbMin;
@@ -14987,6 +14868,105 @@ void RenderSystem::EnsureTextTextures() {
     }
 }
 
+// Resolve a material's authored texture PATHS into loaded textures and cached pointers.
+//
+// ONE definition. Three near-copies of this lived inside draw loops, and the third had
+// already drifted: it lost the specular-map branch entirely (so a pre-PBR specular map
+// silently did nothing on that path) while being the only one that invalidated the
+// material SSBO afterwards (so on the other two a freshly-loaded texture's bindless index
+// did not reach the shader until something else happened to dirty it).
+//
+// It has to run for EVERY material once per frame and BEFORE anything asks what is
+// textured -- never from inside a draw loop. Resolving mid-draw made texture loading
+// depend on an entity being drawn PER-ENTITY, which is exactly what the GPU-driven path
+// stops doing, and the two then deadlock: BuildCullableObjectList sees null cached
+// pointers, calls the entity untextured, sends it down the indirect route, RenderEntity
+// skips it, so its textures are never loaded and it stays "untextured" forever, rendering
+// flat base colour. Measured on BiscuitBird (stump, nest and ramp went white, 86,000
+// pixels of one frame) and RoomAcoustics, 2026-09-21.
+//
+// Returns true if it loaded anything, so the caller can rebuild the material SSBO in the
+// SAME frame rather than the next one.
+bool RenderSystem::ResolveMaterialTextureCache(MaterialComponent* material) {
+    if (!material || !material->textureCacheDirty) return false;
+    if (!material->baseColorTexturePath.empty()) {
+        auto tex = GetOrLoadTexture(material->baseColorTexturePath);
+        if (tex && tex->IsValid()) {
+            material->cachedBaseColorTexture = tex.get();
+            material->baseColorTexture = 1;
+        }
+    }
+    if (!material->heightTexturePath.empty()) {
+        auto tex = GetOrLoadTexture(material->heightTexturePath);
+        if (tex && tex->IsValid()) {
+            material->cachedHeightTexture = tex.get();
+            material->heightTexture = 1;
+        }
+    }
+    if (!material->normalTexturePath.empty()) {
+        auto tex = GetOrLoadTexture(material->normalTexturePath);
+        if (tex && tex->IsValid()) {
+            material->cachedNormalTexture = tex.get();
+            material->normalTexture = 1;
+        }
+    }
+    if (!material->metallicRoughnessTexturePath.empty()) {
+        auto tex = GetOrLoadTexture(material->metallicRoughnessTexturePath);
+        if (tex && tex->IsValid()) {
+            material->cachedMetallicRoughnessTexture = tex.get();
+            material->metallicRoughnessTexture = 1;
+        }
+    }
+    // Specular map overrides metallic-roughness slot for pre-PBR shading
+    if (!material->specularTexturePath.empty()) {
+        auto tex = GetOrLoadTexture(material->specularTexturePath);
+        if (tex && tex->IsValid()) {
+            material->cachedMetallicRoughnessTexture = tex.get();
+            material->metallicRoughnessTexture = 1;
+        }
+    }
+    if (!material->emissiveTexturePath.empty()) {
+        auto tex = GetOrLoadTexture(material->emissiveTexturePath);
+        if (tex && tex->IsValid()) {
+            material->cachedEmissiveTexture = tex.get();
+            material->emissiveTexture = 1;
+        }
+    }
+    if (!material->matcapTexturePath.empty()) {
+        auto tex = GetOrLoadTexture(material->matcapTexturePath);
+        if (tex && tex->IsValid()) {
+            material->cachedMatcapTexture = tex.get();
+            material->matcapTexture = 1;
+        }
+    }
+    material->textureCacheDirty = false;
+    material->cachedTextureKey = { material->cachedBaseColorTexture,
+        material->cachedHeightTexture, material->cachedNormalTexture,
+        material->cachedMetallicRoughnessTexture, material->cachedEmissiveTexture,
+        material->cachedMatcapTexture };
+    return true;
+}
+
+// Resolve every dirty material's textures, once, at the top of the frame.
+//
+// Must precede BuildMaterialSSBO (so newly-loaded textures get real bindless indices this
+// frame) and BuildCullableObjectList (so "does this entity have textures?" is answered
+// against loaded textures rather than against whatever a draw loop happened to touch
+// first).
+void RenderSystem::ResolveDirtyMaterialTextures() {
+    if (!m_World) return;
+    bool any = false;
+    for (Entity e : m_World->GetEntitiesWithComponent<MaterialComponent>()) {
+        any |= ResolveMaterialTextureCache(
+            m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(e)
+                                    : m_World->GetComponent<MaterialComponent>(e));
+    }
+    if (any) {
+        m_MaterialSSBODirty = true;
+        m_MaterialSSBOBuilt = false;
+    }
+}
+
 void RenderSystem::BuildMaterialSSBO() {
     // Rasterize authored text and route its texture onto the material (bindless), so
     // world text renders through the normal textured path — no setter required. Runs
@@ -15986,62 +15966,7 @@ void RenderSystem::RenderEntity(Entity entity) {
         pushConstants.alphaCutoff = material->alphaCutoff;
 
         // Resolve textures using cache (avoids per-frame string hash lookups)
-        if (material->textureCacheDirty) {
-            // Cache miss - load all textures and cache pointers
-            if (!material->baseColorTexturePath.empty()) {
-                auto tex = GetOrLoadTexture(material->baseColorTexturePath);
-                if (tex && tex->IsValid()) {
-                    material->cachedBaseColorTexture = tex.get();
-                    material->baseColorTexture = 1;
-                }
-            }
-            if (!material->heightTexturePath.empty()) {
-                auto tex = GetOrLoadTexture(material->heightTexturePath);
-                if (tex && tex->IsValid()) {
-                    material->cachedHeightTexture = tex.get();
-                    material->heightTexture = 1;
-                }
-            }
-            if (!material->normalTexturePath.empty()) {
-                auto tex = GetOrLoadTexture(material->normalTexturePath);
-                if (tex && tex->IsValid()) {
-                    material->cachedNormalTexture = tex.get();
-                    material->normalTexture = 1;
-                }
-            }
-            if (!material->metallicRoughnessTexturePath.empty()) {
-                auto tex = GetOrLoadTexture(material->metallicRoughnessTexturePath);
-                if (tex && tex->IsValid()) {
-                    material->cachedMetallicRoughnessTexture = tex.get();
-                    material->metallicRoughnessTexture = 1;
-                }
-            }
-            if (!material->emissiveTexturePath.empty()) {
-                auto tex = GetOrLoadTexture(material->emissiveTexturePath);
-                if (tex && tex->IsValid()) {
-                    material->cachedEmissiveTexture = tex.get();
-                    material->emissiveTexture = 1;
-                }
-            }
-            if (!material->matcapTexturePath.empty()) {
-                auto tex = GetOrLoadTexture(material->matcapTexturePath);
-                if (tex && tex->IsValid()) {
-                    material->cachedMatcapTexture = tex.get();
-                    material->matcapTexture = 1;
-                }
-            }
-            material->textureCacheDirty = false;
-            material->cachedTextureKey = { material->cachedBaseColorTexture,
-                material->cachedHeightTexture, material->cachedNormalTexture,
-                material->cachedMetallicRoughnessTexture, material->cachedEmissiveTexture,
-                material->cachedMatcapTexture };
-            // Textures just resolved to real bindless handles — the material SSBO
-            // was built BEFORE this (BuildMaterialSSBO runs at frame start) with
-            // the default index, so force a rebuild next frame or the material
-            // renders untextured until something else dirties it. This was the
-            // "waterfall untextured on first play, fixed after New Game" bug: the
-            // texture loads fine, but its bindless index never reached the SSBO.
-            // (The SDF/text path already does this; the regular path didn't.)
+        if (ResolveMaterialTextureCache(material)) {
             m_MaterialSSBODirty = true;
             m_MaterialSSBOBuilt = false;
         }

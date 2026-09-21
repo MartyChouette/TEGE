@@ -116,7 +116,12 @@ private:
     };
     struct CachedFile {
         bool loaded = false;   // set once a load has been attempted (success or fail)
-        std::unordered_map<i32, CachedMesh> byMeshIndex;
+        // Keyed by (meshIndex, lodLevel) via CacheKey, not by meshIndex alone. A
+        // generated LOD level shares its source path and mesh index with LOD 0 and
+        // differs only in the level, so a level-blind key makes level 3 overwrite the
+        // full-detail mesh in the cache -- and the baked file -- for every entity that
+        // references it.
+        std::unordered_map<u64, CachedMesh> byMeshIndex;
     };
     std::unordered_map<std::string, CachedFile> m_Files;
     std::string m_SearchRoot;   // base for resolving project-relative source paths
@@ -137,6 +142,13 @@ private:
     // Locate the cached geometry for a ref (loads the file if needed, verifies hash).
     // Returns nullptr if unresolvable. logMismatch controls whether a miss is logged.
     const CachedMesh* Find(const ECS::MeshComponent::SourceRef& ref, bool logMismatch);
+
+    // The cache key. lodLevel is bounded by LODComponent::MAX_LEVELS (5), so three bits
+    // is room to spare; meshIndex keeps its full range above them.
+    static u64 CacheKey(i32 meshIndex, i32 lodLevel) {
+        const u64 lvl = static_cast<u64>(lodLevel < 0 ? 0 : lodLevel) & 0x7ull;
+        return (static_cast<u64>(static_cast<u32>(meshIndex)) << 3) | lvl;
+    }
 };
 
 } // namespace Assets

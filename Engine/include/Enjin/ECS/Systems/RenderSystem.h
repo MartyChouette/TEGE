@@ -56,8 +56,8 @@ namespace Enjin::Build { class AssetReader; }
 #endif
 
 // Forward declarations for effect renderers and systems (stored as unique_ptr/raw pointer)
-// Forward declaration: ChooseLOD takes it by const reference and the definition
-// is not needed here. Including the component header would pull LOD geometry
+// Forward declaration: ChooseLOD takes it by reference and the
+// definition is not needed here. Including the component header would pull LOD geometry
 // into every translation unit that touches RenderSystem.h.
 namespace Enjin { namespace ECS { struct LODComponent; } }
 namespace Enjin {
@@ -2760,6 +2760,20 @@ private:
     // picture, which is the failure mode that kept this path switched off.
     bool IndirectDrawRepresentable(Entity entity, const MaterialComponent* material);
 
+    // See the definitions: texture resolution must not live inside a draw loop, or what
+    // gets loaded depends on what gets drawn per-entity.
+    bool ResolveMaterialTextureCache(MaterialComponent* material);
+    void ResolveDirtyMaterialTextures();
+
+    // Local-space bounds for the cull test, owned by the culling pass. See the note at
+    // the computation site: publishing these to MeshComponent::cachedAABB* changes how
+    // unrelated systems behave, so this pass keeps its own copy.
+    struct CullBoundsEntry {
+        u32 vertexCount = UINT32_MAX;   // invalidation key; UINT32_MAX = never computed
+        Math::Vector3 lo, hi;
+    };
+    std::vector<CullBoundsEntry> m_CullBoundsCache;   // indexed by entity slot
+
     void BuildCullableObjectList();
     void PerformGPUCulling();
     void PerformGPUCullingAsync(); // Record to compute command buffer
@@ -3130,7 +3144,7 @@ public:
     // per backend -- web had plain distance and none of the screen-size metric,
     // the anti-oscillation fix, lodBias or forceLowestLOD. The swap itself stays
     // per-backend: web invalidates, Vulkan retires mid-recording.
-    i32 ChooseLOD(Entity entity, const LODComponent& lod,
+    i32 ChooseLOD(Entity entity, LODComponent& lod,
                   const TransformComponent& transform, const Math::Vector3& camPos);
 
     // CPU frustum culling, available to BOTH backends.

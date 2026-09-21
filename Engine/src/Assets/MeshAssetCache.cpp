@@ -13,7 +13,9 @@ namespace {
 // Baked mesh cache format. Bump kBakedVersion whenever the Vertex layout or this
 // serialization changes so stale .enjmesh files are rejected instead of misread.
 constexpr Enjin::u32 kBakedMagic   = 0x48534D45u;  // 'EMSH'
-constexpr Enjin::u32 kBakedVersion = 1u;
+// v2: entries carry a lodLevel, so generated LOD levels can live in the same file
+// as the mesh they came from without colliding with it.
+constexpr Enjin::u32 kBakedVersion = 2u;
 static_assert(std::is_trivially_copyable_v<Enjin::ECS::MeshComponent::Vertex>,
               "Vertex must stay trivially copyable for raw baked-cache I/O");
 }
@@ -105,7 +107,8 @@ MeshAssetCache::CachedFile& MeshAssetCache::LoadFile(const std::string& path) {
         cm.indices = mc->indices;
         cm.subMeshes = mc->subMeshes;
         cm.contentHash = mc->source.contentHash;
-        file.byMeshIndex[mc->source.meshIndex] = std::move(cm);
+        // An import only ever yields LOD 0 -- levels 1+ do not exist in the file.
+        file.byMeshIndex[CacheKey(mc->source.meshIndex, 0)] = std::move(cm);
     }
 
     ENJIN_LOG_INFO(Asset, "MeshAssetCache: loaded '%s' (%zu mesh(es))",
@@ -160,8 +163,8 @@ bool MeshAssetCache::LoadBaked(const std::string& resolvedSource, CachedFile& ou
 
     CachedFile tmp;   // fill locally; only commit on full success
     for (u32 m = 0; m < meshCount; ++m) {
-        i32 meshIndex = 0; u64 hash = 0, vcount = 0, icount = 0; u32 smcount = 0;
-        rd(&meshIndex, 4); rd(&hash, 8); rd(&vcount, 8);
+        i32 meshIndex = 0, lodLevel = 0; u64 hash = 0, vcount = 0, icount = 0; u32 smcount = 0;
+        rd(&meshIndex, 4); rd(&lodLevel, 4); rd(&hash, 8); rd(&vcount, 8);
         if (!in || vcount > 100000000ull) return false;
         CachedMesh cm; cm.contentHash = hash;
         cm.vertices.resize(static_cast<usize>(vcount));
@@ -188,7 +191,7 @@ bool MeshAssetCache::LoadBaked(const std::string& resolvedSource, CachedFile& ou
             if (nlen) rd(sm.name.data(), nlen);
         }
         if (!in) return false;
-        tmp.byMeshIndex[meshIndex] = std::move(cm);
+        tmp.byMeshIndex[CacheKey(meshIndex, lodLevel)] = std::move(cm);
     }
     if (!in) return false;
 
@@ -221,10 +224,12 @@ void MeshAssetCache::WriteBaked(const std::string& resolvedSource, const CachedF
 
     u32 meshCount = static_cast<u32>(file.byMeshIndex.size());
     wr(&meshCount, 4);
-    for (const auto& [idx, cm] : file.byMeshIndex) {
-        i32 meshIndex = idx; u64 hash = cm.contentHash;
+    for (const auto& [key, cm] : file.byMeshIndex) {
+        i32 meshIndex = static_cast<i32>(static_cast<u32>(key >> 3));
+        i32 lodLevel = static_cast<i32>(key & 0x7ull);
+        u64 hash = cm.contentHash;
         u64 vcount = cm.vertices.size(), icount = cm.indices.size();
-        wr(&meshIndex, 4); wr(&hash, 8); wr(&vcount, 8);
+        wr(&meshIndex, 4); wr(&lodLevel, 4); wr(&hash, 8); wr(&vcount, 8);
         if (vcount) wr(cm.vertices.data(), static_cast<usize>(vcount) * sizeof(ECS::MeshComponent::Vertex));
         wr(&icount, 8);
         if (icount) wr(cm.indices.data(), static_cast<usize>(icount) * sizeof(u32));
@@ -244,11 +249,21 @@ const MeshAssetCache::CachedMesh* MeshAssetCache::Find(const ECS::MeshComponent:
     if (!ref.Valid()) return nullptr;
 
     CachedFile& file = LoadFile(ref.sourcePath);
-    auto it = file.byMeshIndex.find(ref.meshIndex);
+    auto it = file.byMeshIndex.find(CacheKey(ref.meshIndex, ref.lodLevel));
     if (it == file.byMeshIndex.end()) {
         if (logMismatch) {
-            ENJIN_LOG_ERROR(Asset, "MeshAssetCache: mesh index %d not found in '%s'",
-                            ref.meshIndex, ref.sourcePath.c_str());
+            // A missing LOD level is a different story from a missing mesh: levels are
+            // generated, so the only way to get one back is to re-run LOD generation.
+            if (ref.lodLevel > 0) {
+                ENJIN_LOG_WARN(Asset,
+                    "MeshAssetCache: LOD level %d of mesh %d has no baked copy in '%s'. "
+                    "Generated levels are not in the source file and cannot be re-imported; "
+                    "regenerate LODs for this model.",
+                    ref.lodLevel, ref.meshIndex, ref.sourcePath.c_str());
+            } else {
+                ENJIN_LOG_ERROR(Asset, "MeshAssetCache: mesh index %d not found in '%s'",
+                                ref.meshIndex, ref.sourcePath.c_str());
+            }
         }
         return nullptr;
     }
@@ -304,7 +319,7 @@ bool MeshAssetCache::Adopt(const ECS::MeshComponent::SourceRef& ref,
     cm.indices = mesh.indices;
     cm.subMeshes = mesh.subMeshes;
     cm.contentHash = ref.contentHash;
-    file.byMeshIndex[ref.meshIndex] = std::move(cm);
+    file.byMeshIndex[CacheKey(ref.meshIndex, ref.lodLevel)] = std::move(cm);
     file.loaded = true;
 
     WriteBaked(resolved, file);

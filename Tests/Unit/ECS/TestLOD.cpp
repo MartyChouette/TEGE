@@ -150,4 +150,84 @@ ENJIN_TEST(LODSelect, ThresholdFallbackUsesBaseDistance) {
     ENJIN_EXPECT_EQ(SelectLOD(lod, 30.0f), 2);  // past fallback thresholds 10 and 20
 }
 
+// ===========================================================================
+// ResolveLODSourceExtent
+//
+// The metric's denominator. Its unset-AABB case is the one that shipped broken:
+// nothing populates MeshComponent::cachedAABB* in a player, so the old fallback read
+// the sentinel (min 1,1,1 / max -1,-1,-1), got a NEGATIVE extent, and pinned every
+// legacy LOD to its coarsest mesh. These pin the four sources and the refusal.
+// ===========================================================================
+
+namespace {
+MeshComponent BoxMesh(f32 halfX, f32 halfY, f32 halfZ) {
+    MeshComponent m;
+    const f32 xs[2] = { -halfX, halfX };
+    const f32 ys[2] = { -halfY, halfY };
+    const f32 zs[2] = { -halfZ, halfZ };
+    for (int i = 0; i < 8; ++i) {
+        MeshComponent::Vertex v;
+        v.position = Math::Vector3(xs[i & 1], ys[(i >> 1) & 1], zs[(i >> 2) & 1]);
+        m.vertices.push_back(v);
+    }
+    for (u32 i = 0; i < 6; ++i) m.indices.push_back(i);
+    return m;
+}
+} // namespace
+
+ENJIN_TEST(LODExtent, PrefersRecordedSourceExtent) {
+    LODComponent lod;
+    lod.sourceMaxExtent = 7.0f;
+    MeshComponent live = BoxMesh(100.0f, 100.0f, 100.0f);   // must be ignored
+    ENJIN_EXPECT_EQ(ResolveLODSourceExtent(lod, &live), 7.0f);
+}
+
+ENJIN_TEST(LODExtent, UnsetAabbDoesNotProduceNegativeExtent) {
+    // The shipped bug. A mesh whose AABB was never computed and whose vertices are
+    // gone must yield "no idea" (0), never a negative extent.
+    LODComponent lod;
+    MeshComponent live;                       // no vertices, sentinel AABB
+    live.indices.push_back(0);
+    ENJIN_EXPECT_EQ(ResolveLODSourceExtent(lod, &live), 0.0f);
+    ENJIN_EXPECT_EQ(lod.sourceMaxExtent, 0.0f);   // nothing invented, nothing cached
+}
+
+ENJIN_TEST(LODExtent, ComputesFromVerticesWhenAabbUnset) {
+    LODComponent lod;
+    MeshComponent live = BoxMesh(1.0f, 3.0f, 2.0f);   // extents 2, 6, 4 -> 6
+    ENJIN_EXPECT_TRUE(live.aabbDirty);
+    ENJIN_EXPECT_EQ(ResolveLODSourceExtent(lod, &live), 6.0f);
+}
+
+ENJIN_TEST(LODExtent, BackFillsSoTheMetricIsStable) {
+    LODComponent lod;
+    MeshComponent live = BoxMesh(1.0f, 3.0f, 2.0f);
+    ENJIN_EXPECT_EQ(ResolveLODSourceExtent(lod, &live), 6.0f);
+    ENJIN_EXPECT_EQ(lod.sourceMaxExtent, 6.0f);
+    // Second call must not depend on the live mesh at all — that dependency is what
+    // made the selection feed back on itself and flicker.
+    ENJIN_EXPECT_EQ(ResolveLODSourceExtent(lod, nullptr), 6.0f);
+}
+
+ENJIN_TEST(LODExtent, PrefersLevelZeroOverTheSwappedLiveMesh) {
+    // Mid-swap the live mesh IS a coarse level. Measuring it would move the metric
+    // that chose it.
+    LODComponent lod;
+    lod.levelCount = 2;
+    lod.levels[0].mesh = BoxMesh(5.0f, 5.0f, 5.0f);    // original, extent 10
+    MeshComponent live = BoxMesh(0.5f, 0.5f, 0.5f);    // swapped-in coarse level
+    ENJIN_EXPECT_EQ(ResolveLODSourceExtent(lod, &live), 10.0f);
+}
+
+ENJIN_TEST(LODExtent, NoMeshAtAllIsZeroNotAGuess) {
+    LODComponent lod;
+    ENJIN_EXPECT_EQ(ResolveLODSourceExtent(lod, nullptr), 0.0f);
+}
+
+ENJIN_TEST(LODExtent, DegenerateMeshIsZeroNotAGuess) {
+    LODComponent lod;
+    MeshComponent flat = BoxMesh(0.0f, 0.0f, 0.0f);   // every vertex coincident
+    ENJIN_EXPECT_EQ(ResolveLODSourceExtent(lod, &flat), 0.0f);
+}
+
 ENJIN_TEST_MAIN()

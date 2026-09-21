@@ -5,6 +5,7 @@
 #include <vector>
 #include <array>
 #include <cmath>
+#include <algorithm>
 
 namespace Enjin {
 namespace ECS {
@@ -57,6 +58,59 @@ struct LODComponent {
     // LOD 0 is always 1.0 (original), these are for LOD 1-4
     std::array<f32, MAX_LEVELS> reductionRatios = { 1.0f, 0.5f, 0.25f, 0.12f, 0.06f };
 };
+
+// The stable object size the screen-size LOD metric divides by.
+//
+// It MUST be the ORIGINAL mesh's extent and never the currently-active LOD's: using the
+// live mesh makes the metric depend on the level it just picked, so the selection
+// oscillates every frame and rebuilds GPU buffers until it runs out of memory. That is a
+// crash this engine has already had.
+//
+// `MeshSimplifier::GenerateLODs` records the extent. Anything older, or hand-built, has 0
+// -- and the old fallback then read the LIVE mesh's cached AABB, which in a PLAYER is
+// nobody's job to populate, so it sat at its unset sentinel (min 1,1,1 / max -1,-1,-1).
+// `max - min` is NEGATIVE there, the caller's `Max(objectSize, 0.01f)` clamped it to 0.01,
+// and the metric came out enormous: every legacy LOD in every exported game was pinned to
+// its LOWEST mesh, permanently. Found 2026-09-21. The editor never showed it, because the
+// inspector computes that AABB.
+//
+// So take the extent from whichever source can be trusted, in order, and BACK-FILL
+// sourceMaxExtent -- a legacy LOD then gets the frame-to-frame stability a generated one
+// has, and the walk over the vertices happens once instead of per frame.
+//
+// Returns 0 when there is nothing trustworthy to measure. The caller must then fall back
+// to the entity's scale alone rather than guessing at a box, which is the rule
+// IsEntityInFrustum already follows for the same cache.
+inline f32 ResolveLODSourceExtent(LODComponent& lod, const MeshComponent* liveMesh) {
+    if (lod.sourceMaxExtent > 0.0f) return lod.sourceMaxExtent;
+
+    // LOD 0 is the original by construction; prefer it over the live mesh, which may
+    // already have been swapped to a coarser level.
+    const MeshComponent* src = nullptr;
+    if (lod.levelCount > 0 && lod.levels[0].mesh.IsValid()) src = &lod.levels[0].mesh;
+    else                                                    src = liveMesh;
+    if (!src) return 0.0f;
+
+    Math::Vector3 lo = src->cachedAABBMin, hi = src->cachedAABBMax;
+    if (lo.x > hi.x) {
+        // Unset. Compute from the vertices if they are still resident, but do NOT reload
+        // them from the asset cache to answer a LOD query, and do not invent a box.
+        if (src->vertices.empty()) return 0.0f;
+        lo = Math::Vector3(1e30f, 1e30f, 1e30f);
+        hi = Math::Vector3(-1e30f, -1e30f, -1e30f);
+        for (const auto& v : src->vertices) {
+            lo.x = std::min(lo.x, v.position.x); hi.x = std::max(hi.x, v.position.x);
+            lo.y = std::min(lo.y, v.position.y); hi.y = std::max(hi.y, v.position.y);
+            lo.z = std::min(lo.z, v.position.z); hi.z = std::max(hi.z, v.position.z);
+        }
+    }
+
+    const Math::Vector3 ext = hi - lo;
+    const f32 e = std::max(std::max(ext.x, ext.y), ext.z);
+    if (!(e > 0.0f)) return 0.0f;   // also catches NaN
+    lod.sourceMaxExtent = e;
+    return e;
+}
 
 // Select which LOD index to display for `metric` (camera distance, or a
 // distance/screen-size ratio when useScreenSize is on), given the current
