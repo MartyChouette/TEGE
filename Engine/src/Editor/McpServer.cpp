@@ -104,6 +104,16 @@ static json ToolList() {
              json::array({"path"})),
         tool("save_scene", "Save the open scene to its file.",
              json::object(), json::array()),
+        tool("save_scene_as", "Save the open scene to a NEW project-relative path and make that "
+             "the open scene. Creates intermediate directories. Refused during play mode.",
+             {{"path", {{"type", "string"}, {"description", "scene path relative to the project root, e.g. scenes/chunks/house_interior.enjin"}}}},
+             json::array({"path"})),
+        tool("new_scene", "Clear to an empty scene and write it to a NEW project-relative path, "
+             "which becomes the open scene. This is how a streaming sub-scene is created. "
+             "Unsaved edits to the current scene are NOT saved first. Refused during play mode. "
+             "Applied on the next editor update, so poll list_scenes to confirm.",
+             {{"path", {{"type", "string"}, {"description", "scene path relative to the project root"}}}},
+             json::array({"path"})),
         tool("press_key", "Inject a key press into the running game (merged with live input). key = single char or space/enter/escape/tab/shift/ctrl/up/down/left/right.",
              {{"key", {{"type", "string"}}},
               {"hold_ms", {{"type", "number"}, {"description", "how long the key stays down (default 120)"}}}},
@@ -188,7 +198,8 @@ json McpServerCallTool(McpServer* self, ECS::World* world,
     (void)self;
     auto needWorld = [&]() -> ECS::World* { return world; };
 
-    if (name == "list_scenes" || name == "open_scene" || name == "save_scene" || name == "get_log" ||
+    if (name == "list_scenes" || name == "open_scene" || name == "save_scene" ||
+        name == "save_scene_as" || name == "new_scene" || name == "get_log" ||
         name == "press_key" || name == "click_at" || name == "type_text" ||
         name == "editor_drag" || name == "editor_click" ||
         name == "editor_viewport_info" || name == "editor_set_build_tool" ||

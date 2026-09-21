@@ -1248,6 +1248,39 @@ void EditorLayer::Update(f32 deltaTime) {
                     SaveScene(m_CurrentScenePath);
                     return "saved " + m_CurrentScenePath;
                 }
+                // save_scene_as and new_scene exist so that a streaming sub-scene
+                // can be authored without leaving the editor. Level streaming
+                // points each StreamingVolumeComponent at its own .enjin file, and
+                // until these two landed there was no way to make one through the
+                // tool surface at all: save_scene took no path, and open_scene
+                // only opened files that already existed.
+                if (op == "save_scene_as" || op == "new_scene") {
+                    if (!m_PlayMode.IsStopped())
+                        return "error: refusing during play mode (play-state would be baked into the file)";
+                    std::string rel = args.value("path", "");
+                    if (rel.empty()) return std::string("error: 'path' is required");
+                    std::string projPath = m_SceneManager.GetProjectPath();
+                    if (projPath.empty()) return std::string("error: no project open");
+                    std::string projDir = std::filesystem::path(projPath).parent_path().string();
+                    std::string resolved = Platform::ResolveWithinRoot(projDir, rel);
+                    if (resolved.empty()) return "error: path escapes the project root";
+                    std::error_code ec;
+                    std::filesystem::create_directories(
+                        std::filesystem::path(resolved).parent_path(), ec);
+                    if (op == "save_scene_as") {
+                        SaveScene(resolved);
+                        m_CurrentScenePath = resolved;
+                        ClearDirty();
+                        UpdateWindowTitle();
+                        return "saved as " + rel;
+                    }
+                    // Clearing the world mid-frame would strand anything holding
+                    // entity handles, so it goes through the same deferred path
+                    // File > New Scene uses and lands on the next update.
+                    m_PendingNewScene = NewSceneMode::SaveAsNew;
+                    m_PendingNewScenePath = resolved;
+                    return "new scene queued at " + rel;
+                }
                 if (op == "press_key") {
                     if (m_PlayMode.IsStopped()) return std::string("error: start play mode first");
                     std::string key = args.value("key", "");
