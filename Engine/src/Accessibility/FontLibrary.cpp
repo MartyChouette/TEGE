@@ -22,6 +22,17 @@ static constexpr bool OPEN_DYSLEXIC_EMBEDDED = true;
 void FontLibrary::SetFont(FontFamily family) {
     m_Config.selectedFamily = family;
 
+    // A font choice is still RECORDED without an ImGui context, it just cannot
+    // be applied to an atlas that does not exist. ImGui::GetIO() dereferences
+    // the global context unconditionally, so calling this from a runtime with
+    // no ImGui layer -- a dedicated server, a headless test -- is an access
+    // violation rather than a no-op. The selection above is kept so that a
+    // context appearing later starts from the right family.
+    if (!ImGui::GetCurrentContext()) {
+        m_FontLoaded = false;
+        return;
+    }
+
     ImGuiIO& io = ImGui::GetIO();
 
     switch (family) {
@@ -102,6 +113,8 @@ bool FontLibrary::ApplySpacing() {
     if (m_Config.letterSpacing <= 0.0f && m_Config.lineSpacing <= 1.0f) {
         return false;
     }
+    // Same reason as SetFont: GetStyle() has no null context to return.
+    if (!ImGui::GetCurrentContext()) return false;
 
     ImGuiStyle& style = ImGui::GetStyle();
 
