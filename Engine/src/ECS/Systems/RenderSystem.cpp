@@ -12316,8 +12316,9 @@ void RenderSystem::BuildCullableObjectList() {
         if (static_cast<usize>(EntityIndex(entity)) < m_EntityRenderData.size() &&
             m_EntityRenderData[static_cast<usize>(EntityIndex(entity))].valid &&
             m_EntityRenderData[static_cast<usize>(EntityIndex(entity))].poolAlloc.valid) {
-            obj.indexOffset = m_EntityRenderData[static_cast<usize>(EntityIndex(entity))].poolAlloc.indexOffset;
-            obj.vertexOffset = m_EntityRenderData[static_cast<usize>(EntityIndex(entity))].poolAlloc.vertexOffset;
+            const auto& pa = m_EntityRenderData[static_cast<usize>(EntityIndex(entity))].poolAlloc;
+            obj.indexOffset = pa.indexOffset;
+            obj.vertexOffset = pa.vertexOffset;
             hasPoolAlloc = true;
         } else {
             obj.indexOffset = 0;

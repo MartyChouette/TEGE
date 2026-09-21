@@ -184,6 +184,16 @@ try {
     const logLines = [];
     page.on('console', (m) => logLines.push(`[${m.type()}] ${m.text()}`));
     page.on('pageerror', (e) => logLines.push(`[pageerror] ${e.message}`));
+    // The URL, not just "Failed to load resource". A console 404 carries no URL, so a
+    // checker reading these could only ever say "1 fetch failure" and leave whoever saw
+    // it to guess -- and on this demo room the answer was favicon.ico every time, which
+    // is browser noise and not a deployment problem.
+    page.on('response', (r) => {
+        if (r.status() >= 400) logLines.push(`[http${r.status()}] ${r.url()}`);
+    });
+    page.on('requestfailed', (r) => {
+        logLines.push(`[requestfailed] ${r.url()} ${r.failure()?.errorText ?? ''}`);
+    });
 
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
 

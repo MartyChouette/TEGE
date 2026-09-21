@@ -231,11 +231,67 @@ def check_boot(chrome, base, game, attempts=6):
     about why, and two plausible fixes were guessed at and reverted before
     anybody read the log.
     """
+    # Puppeteer first: it does not lose the startup race, so one attempt is the
+    # whole answer. Raw Chrome stays as the fallback for a checkout with no node
+    # modules installed.
+    viaCapture = _boot_via_capture(base, game)
+    if viaCapture is not None:
+        ran, fetch_fail, _ = viaCapture
+        return ran, fetch_fail
+
+    fetch_fail = []
     for attempt in range(attempts):
         ran, fetch_fail, spoke = _boot_once(chrome, base, game)
         if ran or spoke:
             return ran, fetch_fail
     return False, fetch_fail
+
+
+# Boot a game through tools/web_capture.mjs (Puppeteer) instead of raw Chrome.
+#
+# The raw-Chrome path below loses a startup race often enough that this checker
+# retries it SIX times and still reported ENGINE NEVER RAN on five of six games
+# on 2026-09-21 -- while web_capture.mjs, same flags, booted the same demo room
+# and photographed a correct frame every time. Its own docstring records the
+# identical thing happening on 2026-09-16. Retrying an unreliable mechanism six
+# times is not the same as using a reliable one.
+#
+# It is also STRONGER evidence: raw Chrome proves the engine logged something,
+# Puppeteer drives it for real frames, so a game that instantiates and then dies
+# on its first frame is caught here and was not before.
+#
+# Falls back to raw Chrome when node or the capture script is unavailable, so a
+# checkout without `npm install` still gets the old behaviour rather than an error.
+def _boot_via_capture(base, game):
+    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web_capture.mjs")
+    if not os.path.isfile(script):
+        return None
+    with tempfile.TemporaryDirectory() as tmp:
+        shot = os.path.join(tmp, "boot.png")
+        try:
+            proc = subprocess.run(
+                ["node", script, "%s%s/index.html" % (base, game), shot,
+                 "--frames", "30", "--show-log"],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                timeout=180, cwd=os.path.dirname(script))
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return None
+        log = proc.stdout.decode("utf-8", "replace")
+    ran = any(m in log for m in ENGINE_RAN)
+    # Real URLs, from web_capture's response listener. A console "Failed to load
+    # resource" carries no URL, so this could only ever say "1 fetch failure" and
+    # leave whoever saw it to guess -- and on a working demo room the answer was
+    # favicon.ico every time, which is the browser asking for something no page
+    # declared rather than a deployment problem.
+    fetch_fail = [u for u in re.findall(r"\[(?:http\d{3}|requestfailed)\]\s+(\S+)", log)
+                  if not u.rstrip("/").endswith("favicon.ico")]
+    if os.environ.get("ENJIN_DEMOROOM_DEBUG") and not ran:
+        sys.stderr.write("\n===== FAILING CAPTURE LOG: %s (%d bytes) =====\n" % (game, len(log)))
+        sys.stderr.write(log[-4000:])
+        sys.stderr.write("\n===== end =====\n")
+    # `spoke` is True either way: Puppeteer does not lose the startup race that
+    # the retry loop exists for, so a negative here is a real negative.
+    return ran, fetch_fail, True
 
 
 def _boot_once(chrome, base, game):
@@ -255,6 +311,16 @@ def _boot_once(chrome, base, game):
                 [chrome, "--headless=new", "--no-sandbox",
                  "--enable-unsafe-webgpu", "--enable-unsafe-swiftshader",
                  "--enable-features=Vulkan",
+                 # Asking for Vulkan makes Chrome spawn a separate GPU-info
+                 # collection process on Windows. web_capture.mjs disables it
+                 # because that process steals focus; here it is worse than
+                 # rude. On 2026-09-21 every game reported ENGINE NEVER RAN
+                 # with no console output at all, while web_capture.mjs --
+                 # same flags plus this one -- booted the SAME demo room and
+                 # photographed a correct frame. Chrome's log was full of
+                 # "GPU state invalid after WaitForGetOffsetInRange", which is
+                 # that process falling over and taking the adapter with it.
+                 "--disable-gpu-process-for-dx12-vulkan-info-collection",
                  "--virtual-time-budget=25000", "--enable-logging=stderr", "--v=0",
                  "--user-data-dir=" + os.path.join(tmp, "profile"),
                  "--dump-dom", "%s%s/index.html" % (base, game)],
