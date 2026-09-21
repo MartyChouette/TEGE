@@ -15907,12 +15907,16 @@ void RenderSystem::BindGeometryPipelineForMaterial(VkCommandBuffer cmd, Entity e
     bool isWaterSurf = (m_CachedWater3DStorage && m_CachedWater3DStorage->Has(entity)) ||
                        (m_CachedWaterVolumeStorage && m_CachedWaterVolumeStorage->Has(entity));
     bool want = transparent && mat && mat->alphaMode == MaterialComponent::AlphaMode::Blend && !isWaterSurf;
+    Renderer::VulkanPipeline* active = want ? transparent : opaque;
     if (m_LastPipelineWasCustom || want != transparentBound) {
-        Renderer::VulkanPipeline* target = want ? transparent : opaque;
-        if (target) target->Bind(cmd);
+        if (active) active->Bind(cmd);
         transparentBound = want;
         m_LastPipelineWasCustom = false;
     }
+    // The pipeline this entity is actually drawing with. RenderEntity specializes it,
+    // and it has to specialize the one SELECTED here (base / transparent / custom),
+    // never the base unconditionally: a variant belongs to one pipeline.
+    m_ActiveGeometryPipeline = active;
 }
 
 void RenderSystem::RenderEntity(Entity entity) {
@@ -16055,6 +16059,34 @@ void RenderSystem::RenderEntity(Entity entity) {
             global.uvQuantize          = m_GlobalUVQuantize;
             global.gouraudOnly         = m_GlobalGouraudOnly;
             pushConstants.flags = Renderer::BuildMaterialFlagWord(*material, texBind, global);
+
+            // Bind this material's specialization variant (adr-0008 phase 1), from the
+            // SAME texBind and globals the flag word above was built from.
+            //
+            // The main pass did not do this and RenderToTarget did, and the main pass is
+            // what RenderSystem::Update draws -- editor play mode and every exported game.
+            // The base pipeline's declared defaults are SPEC_FLAT_SHADING 0,
+            // SPEC_ALPHA_MODE Opaque, SPEC_SDF_TEXT 0 and SPEC_EXCLUDE_CEL 0, and the
+            // shader gates each feature on its constant being non-zero, so without a
+            // variant those four authored settings did NOTHING here.
+            //
+            // One call site and one set of inputs is not tidiness, it is the requirement
+            // BuildMaterialSpecKey's own header states: the shader gates every specialized
+            // feature as `SPEC_X != 0 && (mat_flags & FLAG_X) != 0`, so a key claiming no
+            // base-colour texture while the flag word claims one silently drops the
+            // texture. Built from a different site with `baseColorTexture >= 0` instead of
+            // the resolved pointer, that is exactly what happened -- 228,000 pixels of
+            // Playground, which read as the fix working until the two inputs were compared.
+            if (m_ActiveGeometryPipeline) {
+                const VkPipeline variant = m_ActiveGeometryPipeline->GetVariant(
+                    Renderer::BuildMaterialSpecKey(*material, texBind, global));
+                if (variant != VK_NULL_HANDLE) {
+                    m_ActiveGeometryPipeline->BindVariant(commandBuffer, variant);
+                    // A bind the caller's change-tracking did not make, so the next entity
+                    // must rebind rather than assume its base pipeline is still current.
+                    m_LastPipelineWasCustom = true;
+                }
+            }
         }
         pushConstants.parallaxScale = material->parallaxScale;
         // Artistic surface params (reused push constant slots)

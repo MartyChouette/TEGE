@@ -2279,6 +2279,10 @@ private:
     };
     std::unordered_map<u64, CustomShaderPipeline> m_CustomShaderPipelines; // key = source hash
     std::unordered_map<u32, u64> m_EntityCustomShader;                     // EntityIndex -> source hash
+    // The geometry pipeline BindGeometryPipelineForMaterial selected for the entity
+    // currently being drawn, so RenderEntity can bind that pipeline's specialization
+    // variant rather than the base pipeline's.
+    Renderer::VulkanPipeline* m_ActiveGeometryPipeline = nullptr;
     bool m_LastPipelineWasCustom = false;
     Renderer::VulkanPipeline* GetEntityCustomPipeline(Entity entity, bool offscreenPass);
 #endif
