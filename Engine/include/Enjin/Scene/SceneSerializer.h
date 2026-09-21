@@ -69,8 +69,9 @@ struct SerializationOptions {
     // When true, an imported mesh that carries a valid source reference is written as
     // that reference (path + mesh index + axis + content hash) instead of inline
     // vertices — the geometry is reloaded/shared from the source file on load. Shrinks
-    // scene files and dedups repeated assets. OFF by default: opt-in, needs the source
-    // files to stay reachable at their recorded paths. Authored/procedural meshes
+    // scene files and dedups repeated assets. ON by default (the comment here said "OFF"
+    // for long enough to be quoted back as fact; the value below has been true throughout).
+    // Needs the source files to stay reachable at their recorded paths. Authored/procedural meshes
     // (no source ref) always serialize inline regardless. This is the standard engine
     // model (scenes reference imported assets, not copies of their geometry). It is
     // loss-safe: the saver only drops a mesh's inline vertices when the source can be

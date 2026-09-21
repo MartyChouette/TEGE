@@ -229,9 +229,50 @@ ECS::MeshComponent MeshSimplifier::Simplify(const ECS::MeshComponent& source, f3
     }
 
     // --- Rebuild: compact survivors, remap triangles, drop degenerates ---
+    //
+    // Sub-mesh ranges are carried through. They used to be dropped, silently: a
+    // multi-material model's LODs came back as one undifferentiated index range, so the
+    // whole thing painted with slot 0's material the moment it switched level. Nothing
+    // reported it because a LOD level is not compared with the mesh it replaced.
+    //
+    // This works because the rebuild visits source triangles in order and appends in
+    // order, so a contiguous source range stays contiguous in the output; only its length
+    // changes. Ranges that are not well formed (not triangle-aligned, out of bounds, or
+    // not ascending and disjoint) are not something to guess at -- the sub-meshes are
+    // dropped with a warning instead, which is the old behaviour plus an explanation.
     auto findRoot = [&](u32 v) -> u32 { while (remap[v] != v) v = remap[v]; return v; };
     ECS::MeshComponent result;
     std::vector<u32> vertexMap(vertCount, UINT32_MAX);
+
+    std::vector<i32> triToSub;              // source triangle -> sub-mesh, -1 = none
+    std::vector<u32> outTrisPerSub;         // surviving triangles per sub-mesh
+    bool keepSubMeshes = !source.subMeshes.empty();
+    if (keepSubMeshes) {
+        u32 expectedOffset = 0;
+        for (const auto& sm : source.subMeshes) {
+            if ((sm.indexOffset % 3u) != 0u || (sm.indexCount % 3u) != 0u ||
+                sm.indexOffset != expectedOffset ||
+                static_cast<usize>(sm.indexOffset) + sm.indexCount > source.indices.size()) {
+                keepSubMeshes = false;
+                break;
+            }
+            expectedOffset += sm.indexCount;
+        }
+    }
+    if (keepSubMeshes) {
+        triToSub.assign(triCount, -1);
+        outTrisPerSub.assign(source.subMeshes.size(), 0u);
+        for (usize sIdx = 0; sIdx < source.subMeshes.size(); ++sIdx) {
+            const auto& sm = source.subMeshes[sIdx];
+            const u32 first = sm.indexOffset / 3u;
+            const u32 last  = first + sm.indexCount / 3u;
+            for (u32 t = first; t < last && t < triCount; ++t) triToSub[t] = static_cast<i32>(sIdx);
+        }
+    } else if (!source.subMeshes.empty()) {
+        ENJIN_LOG_WARN(Asset,
+            "MeshSimplifier: sub-mesh ranges are not contiguous triangle-aligned spans, so "
+            "this LOD level drops them and will draw with one material");
+    }
     for (u32 i = 0; i < vertCount; ++i) {
         u32 root = findRoot(i);
         if (vertexMap[root] == UINT32_MAX) {
@@ -247,6 +288,22 @@ ECS::MeshComponent MeshSimplifier::Simplify(const ECS::MeshComponent& source, f3
         result.indices.push_back(n0);
         result.indices.push_back(n1);
         result.indices.push_back(n2);
+        if (keepSubMeshes && triToSub[t] >= 0) outTrisPerSub[static_cast<usize>(triToSub[t])]++;
+    }
+
+    if (keepSubMeshes) {
+        // A sub-mesh whose triangles were all collapsed keeps its place with a zero count.
+        // Dropping it would renumber the ones after it, and materialSlot is an index into
+        // MaterialSlotsComponent -- shifting those repaints the rest of the model.
+        u32 offset = 0;
+        result.subMeshes.reserve(source.subMeshes.size());
+        for (usize sIdx = 0; sIdx < source.subMeshes.size(); ++sIdx) {
+            ECS::MeshComponent::SubMesh sm = source.subMeshes[sIdx];
+            sm.indexOffset = offset;
+            sm.indexCount = outTrisPerSub[sIdx] * 3u;
+            offset += sm.indexCount;
+            result.subMeshes.push_back(std::move(sm));
+        }
     }
 
     return result;
@@ -302,6 +359,25 @@ void MeshSimplifier::GenerateLODs(const ECS::MeshComponent& sourceMesh, ECS::LOD
         // as nothing, and its collapse to a tiny bound also drives LOD flicker. Keep
         // the last good level as the coarsest LOD instead of shipping garbage.
         if (i > 0 && tris < kMinLODTriangles) break;
+
+        // Give the level a reference of its own, so the scene can store a pointer to it
+        // instead of a second copy of the model's vertices as JSON text.
+        //
+        // The lodLevel is what makes this safe. Every level shares the source path and
+        // mesh index of the model it came from, so without it a simplified level adopts
+        // itself over LOD 0's cache entry and the full-detail mesh is replaced by a coarse
+        // one everywhere that reference resolves. The content hash is of THIS level's
+        // bytes, so a drifted source is detected per level.
+        //
+        // A procedural or authored mesh has no source ref, and then there is nothing to
+        // reference: the level keeps its inline geometry and the serializer writes it out,
+        // which is correct and merely larger.
+        if (i > 0 && sourceMesh.source.Valid()) {
+            lvlMesh.source = sourceMesh.source;
+            lvlMesh.source.lodLevel = i;
+            lvlMesh.source.contentHash =
+                ECS::MeshComponent::ComputeContentHash(lvlMesh.vertices, lvlMesh.indices);
+        }
 
         ECS::LODComponent::LODLevel& level = lod.levels[i];
         level.reductionRatio = ratio;

@@ -125,9 +125,32 @@ std::string MeshAssetCache::BakedPath(const std::string& resolvedSource) const {
         if (m_SearchRoot.empty()) return "";  // nowhere to bake — baking disabled
         dir = (std::filesystem::path(m_SearchRoot) / ".enjin" / "meshcache").string();
     }
-    // FNV-1a of the resolved path -> stable hex filename (avoids path-length/charset issues).
+    // FNV-1a of the source path -> stable hex filename (avoids path-length/charset issues).
+    //
+    // Hashed RELATIVE to the search root, not absolute. Absolute was not portable, and a
+    // bake has to be: an exported game ships the bakes under its own root, and a generated
+    // LOD level exists NOWHERE ELSE -- it is not in the source file, so a bake that cannot
+    // be found cannot be re-imported either, and the level is simply gone. Absolute also
+    // meant moving or renaming a project orphaned every bake it had, permanently, which is
+    // the mess SweepOrphanedBakes exists to clean up after.
+    //
+    // Separators are normalised so the same asset hashes the same whichever way a path
+    // reached here. A source outside the root has no relative form and keeps its absolute
+    // path as the key -- it is not shippable anyway.
+    std::string key = resolvedSource;
+    if (!m_SearchRoot.empty()) {
+        std::error_code relEc;
+        const std::filesystem::path rel =
+            std::filesystem::relative(resolvedSource, m_SearchRoot, relEc);
+        if (!relEc && !rel.empty() && rel.native().rfind(
+                std::filesystem::path("..").native(), 0) != 0) {
+            key = rel.generic_string();
+        }
+    }
+    for (char& c : key) { if (c == char(0x5C)) c = '/'; }   // 0x5C = backslash
+
     u64 h = 1469598103934665603ULL;
-    for (unsigned char c : resolvedSource) { h ^= c; h *= 1099511628211ULL; }
+    for (unsigned char c : key) { h ^= c; h *= 1099511628211ULL; }
     char name[32];
     std::snprintf(name, sizeof(name), "%016llx.enjmesh", static_cast<unsigned long long>(h));
     return (std::filesystem::path(dir) / name).string();

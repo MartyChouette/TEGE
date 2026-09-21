@@ -188,6 +188,10 @@ ECS::Entity App::LoadModel(const std::string& path, Math::Vector3 position, Math
 
     Assets::ImportOptions options;
     options.scale = 1.0f;
+    // LOD generation is an AUTHORING cost, not a load-time one. It decimates the mesh
+    // four times, and the default went ON for the editor's import pipeline, where that
+    // happens once and is baked. A game calling LoadModel is holding the frame open.
+    options.generateLODs = false;
     auto result = Assets::SceneImporter::Import(path, m_World.get(), options);
 
     if (!result.success) {

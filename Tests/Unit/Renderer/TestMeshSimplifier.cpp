@@ -118,4 +118,88 @@ ENJIN_TEST(MeshSimplifier, generate_lods_sets_stable_source_extent) {
     ENJIN_ASSERT_TRUE(lod.sourceMaxExtent > MaxExtent(sphere) * 0.9f);
 }
 
+// ---------------------------------------------------------------------------
+// Sub-mesh survival and per-level references (2026-09-21)
+// ---------------------------------------------------------------------------
+
+ENJIN_TEST(MeshSimplifier, simplify_carries_submesh_ranges_through) {
+    ECS::MeshComponent src = Renderer::MeshFactory::CreateSphere(1.0f, 24, 24);
+    // Split the sphere into two contiguous halves with different material slots.
+    const u32 total = static_cast<u32>(src.indices.size());
+    const u32 half = (total / 2u / 3u) * 3u;
+    src.subMeshes.push_back({ 0u, half, 0, "lower" });
+    src.subMeshes.push_back({ half, total - half, 1, "upper" });
+
+    ECS::MeshComponent out = Renderer::MeshSimplifier::Simplify(src, 0.5f);
+
+    // Dropping these made a multi-material model paint entirely with slot 0 the moment
+    // it switched LOD level.
+    ENJIN_ASSERT_EQ(out.subMeshes.size(), src.subMeshes.size());
+    ENJIN_EXPECT_EQ(out.subMeshes[0].materialSlot, 0);
+    ENJIN_EXPECT_EQ(out.subMeshes[1].materialSlot, 1);
+    ENJIN_EXPECT_TRUE(out.subMeshes[0].name == "lower");
+
+    // Ranges must tile the index buffer exactly: contiguous, in order, no gaps.
+    u32 walked = 0;
+    for (const auto& sm : out.subMeshes) {
+        ENJIN_EXPECT_EQ(sm.indexOffset, walked);
+        ENJIN_EXPECT_EQ(sm.indexCount % 3u, 0u);
+        walked += sm.indexCount;
+    }
+    ENJIN_EXPECT_EQ(walked, static_cast<u32>(out.indices.size()));
+}
+
+ENJIN_TEST(MeshSimplifier, simplify_refuses_to_guess_at_malformed_submeshes) {
+    ECS::MeshComponent src = Renderer::MeshFactory::CreateSphere(1.0f, 16, 16);
+    src.subMeshes.push_back({ 1u, 9u, 0, "not triangle aligned" });   // offset % 3 != 0
+
+    ECS::MeshComponent out = Renderer::MeshSimplifier::Simplify(src, 0.5f);
+
+    // Wrong ranges would draw the wrong triangles with the wrong material. No ranges at
+    // all just draws it with one, which is the old behaviour and is at least honest.
+    ENJIN_EXPECT_TRUE(out.subMeshes.empty());
+}
+
+ENJIN_TEST(MeshSimplifier, generated_levels_reference_their_own_lod_level) {
+    ECS::MeshComponent src = Renderer::MeshFactory::CreateSphere(1.0f, 24, 24);
+    src.source.sourcePath = "assets/ball.gltf";
+    src.source.meshIndex = 2;
+    src.source.contentHash =
+        ECS::MeshComponent::ComputeContentHash(src.vertices, src.indices);
+
+    ECS::LODComponent lod;
+    Renderer::MeshSimplifier::GenerateLODs(src, lod);
+    ENJIN_ASSERT_TRUE(lod.levelCount > 1);
+
+    // Level 0 IS the source mesh and keeps the source's own reference.
+    ENJIN_EXPECT_EQ(lod.levels[0].mesh.source.lodLevel, 0);
+
+    for (int i = 1; i < lod.levelCount; ++i) {
+        const auto& ref = lod.levels[i].mesh.source;
+        // Without the level in the reference, a generated level adopts itself over LOD 0's
+        // cache entry and the full-detail mesh is replaced by a coarse one everywhere.
+        ENJIN_EXPECT_EQ(ref.lodLevel, i);
+        ENJIN_EXPECT_EQ(ref.meshIndex, 2);
+        ENJIN_EXPECT_TRUE(ref.sourcePath == "assets/ball.gltf");
+        ENJIN_EXPECT_TRUE(ref.Valid());
+        // Hash must be of THIS level's bytes, or drift detection compares a coarse mesh
+        // against the full-detail hash and rejects every level.
+        ENJIN_EXPECT_TRUE(ref.contentHash != 0);
+        ENJIN_EXPECT_TRUE(ref.contentHash != src.source.contentHash);
+        ENJIN_EXPECT_EQ(ref.contentHash,
+            ECS::MeshComponent::ComputeContentHash(lod.levels[i].mesh.vertices,
+                                                   lod.levels[i].mesh.indices));
+    }
+}
+
+ENJIN_TEST(MeshSimplifier, procedural_mesh_levels_stay_inline) {
+    // No source file means nothing to reference; the level must keep its geometry.
+    ECS::MeshComponent src = Renderer::MeshFactory::CreateSphere(1.0f, 24, 24);
+    ECS::LODComponent lod;
+    Renderer::MeshSimplifier::GenerateLODs(src, lod);
+    ENJIN_ASSERT_TRUE(lod.levelCount > 1);
+    ENJIN_EXPECT_FALSE(lod.levels[1].mesh.source.Valid());
+    ENJIN_EXPECT_TRUE(lod.levels[1].mesh.IsValid());
+}
+
 ENJIN_TEST_MAIN()

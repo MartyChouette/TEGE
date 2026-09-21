@@ -596,6 +596,9 @@ json SerializeMeshComponent(const ECS::MeshComponent& mesh, bool includeVertexDa
         src["path"] = mesh.source.sourcePath;
         src["meshIndex"] = mesh.source.meshIndex;
         src["axisZToY"] = mesh.source.axisZToY;
+        // Only written when it is not the default, so an ordinary mesh's reference is
+        // byte-identical to what older builds wrote.
+        if (mesh.source.lodLevel != 0) src["lodLevel"] = mesh.source.lodLevel;
         src["axisLToR"] = mesh.source.axisLToR;
         src["contentHash"] = mesh.source.contentHash;
         j["source"] = src;
@@ -990,6 +993,7 @@ ECS::MeshComponent DeserializeMeshComponent(const json& j) {
         mesh.source.sourcePath = src.value("path", std::string{});
         mesh.source.meshIndex = src.value("meshIndex", -1);
         mesh.source.axisZToY = src.value("axisZToY", false);
+        mesh.source.lodLevel = src.value("lodLevel", 0);
         mesh.source.axisLToR = src.value("axisLToR", false);
         mesh.source.contentHash = src.value("contentHash", u64{0});
     }
@@ -7450,6 +7454,15 @@ ECS::FlowerParticleConfigComponent DeserializeFlowerParticleConfigComponent(cons
 // LOD, Grass, Vegetation
 // ============================================================================
 
+// Whether this save may replace geometry with a source reference.
+//
+// SerializeLODComponent goes through the ENJIN_SERDES registry, whose signature is
+// (component) -> json and so cannot see SerializationOptions. A LOD level is geometry the
+// ENGINE generated, and it has to obey the same switch as the mesh it came from: a scene
+// asked to be self-contained must not come back half references. Set once at the top of
+// each save entry point; saving is main-thread only.
+static bool g_PreferMeshReferences = true;
+
 json SerializeLODComponent(const ECS::LODComponent& lod) {
     json j;
     j["levelCount"] = RF(lod.levelCount);
@@ -7468,7 +7481,13 @@ json SerializeLODComponent(const ECS::LODComponent& lod) {
     json levelsArr = json::array();
     for (int i = 0; i < lod.levelCount; ++i) {
         json level;
-        level["mesh"] = SerializeMeshComponent(lod.levels[i].mesh, true);
+        // preferReference, which this did not pass. That one missing argument is why a
+        // LOD'd model wrote FIVE full copies of its vertices into the scene as JSON text,
+        // and why nobody turns LOD on: the machinery to store a reference instead has
+        // existed the whole time and every level opted out of it by default.
+        // SerializeMeshComponent keeps the inline geometry when the reference will not
+        // resolve, so the worst case is the file simply does not shrink.
+        level["mesh"] = SerializeMeshComponent(lod.levels[i].mesh, true, g_PreferMeshReferences);
         level["maxDistance"] = RF(lod.levels[i].maxDistance);
         level["reductionRatio"] = RF(lod.levels[i].reductionRatio);
         levelsArr.push_back(level);
@@ -9757,6 +9776,7 @@ void SceneSerializer::MigrateScene(json& root, u32 fromVersion) {
 }
 
 SerializationResult SceneSerializer::Save(const std::string& filepath, const SerializationOptions& options) {
+    g_PreferMeshReferences = options.useMeshReferences;
     if (!m_World) {
         SerializationResult result;
         result.success = false;
@@ -10265,6 +10285,7 @@ bool SceneSerializer::IsSaveBlockedFor(const std::string& path) const {
 }
 
 SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, const std::vector<ECS::Entity>& entities, const SerializationOptions& options) {
+    g_PreferMeshReferences = options.useMeshReferences;
     if (!m_World) {
         SerializationResult result;
         result.success = false;
@@ -11067,6 +11088,7 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
 }
 
 std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
+    g_PreferMeshReferences = options.useMeshReferences;
     if (!m_World) {
         return "";
     }

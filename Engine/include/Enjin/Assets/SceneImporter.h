@@ -73,7 +73,16 @@ struct ImportOptions {
     bool autoPlayAnimation = true;
     bool generateColliders = true;
     ImportColliderShape colliderShape = ImportColliderShape::Box;
-    bool generateLODs = false;  // Off by default — LOD generation is expensive for large meshes
+    // On by default. It was off, and that plus the LOD serializer never asking for a
+    // reference is the whole reason LOD was vestigial: you had to know the checkbox
+    // existed, and ticking it wrote five full copies of the model into the scene as JSON.
+    // Both halves are fixed, so the default can be the useful one.
+    //
+    // The cost is bounded at the other end: MeshSimplifier::GenerateLODs skips meshes over
+    // 100,000 vertices outright, stops as soon as a level falls below 16 triangles, and
+    // SceneImporter only asks for LODs on meshes over 64 vertices. MeshAssetCache's
+    // re-import path still forces this OFF -- it wants LOD 0's vertices and nothing else.
+    bool generateLODs = true;
 
     // Source application preset
     SourceApp sourceApp = SourceApp::Auto;

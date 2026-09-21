@@ -747,6 +747,15 @@ bool BuildPipeline::EmitLooseRuntimeFiles(const std::string& outputDir) {
     copyTree(fs::path(m_ProjectDir) / "assets",
              fs::path(outputDir) / "assets", "assets");
 
+    // Baked mesh geometry (.enjmesh). Not an optimisation here -- a GENERATED LOD level
+    // exists nowhere else. It is not in the source model file, so a game that cannot find
+    // the bake cannot re-import it either and the level is simply missing. MeshAssetCache
+    // derives this directory from its search root, which the player sets to the game root,
+    // and names each file by the hash of the source's PROJECT-RELATIVE path, so a bake
+    // copied here is found under the game's own root without any rewriting.
+    copyTree(fs::path(m_ProjectDir) / ".enjin" / "meshcache",
+             fs::path(outputDir) / ".enjin" / "meshcache", ".enjin/meshcache");
+
     if (failed > 0) {
         AddMessage(MessageSeverity::Error,
                    "Emitted " + std::to_string(copied) + " loose runtime files to " + outputDir +
@@ -754,7 +763,7 @@ bool BuildPipeline::EmitLooseRuntimeFiles(const std::string& outputDir) {
         return false;
     }
     AddMessage(MessageSeverity::Info,
-               "Emitted " + std::to_string(copied) + " loose runtime files (scripts + enjin_api + assets) to " + outputDir);
+               "Emitted " + std::to_string(copied) + " loose runtime files (scripts + enjin_api + assets + mesh bakes) to " + outputDir);
     return true;
 }
 

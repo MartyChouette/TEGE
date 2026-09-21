@@ -766,6 +766,10 @@ void LevelGenerator::InstantiateInWorld(ECS::World* world) {
             // Import 3D model using auto-detection
             Assets::ImportOptions importOpts;
             importOpts.scale = 1.0f;
+            // Off for the same reason as App::LoadModel: this runs per ROOM while a
+            // level is being assembled, and four decimations per prefab is not a cost
+            // to pay in the middle of that.
+            importOpts.generateLODs = false;
             auto importResult = Assets::SceneImporter::Import(room.prefab->meshPath, world, importOpts);
             if (importResult.success) {
                 // Set the imported root entity's transform to match room placement

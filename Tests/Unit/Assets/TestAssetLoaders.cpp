@@ -104,7 +104,10 @@ ENJIN_TEST(Importer, OptionsDefaults) {
     ENJIN_EXPECT_TRUE(opts.importLights);
     ENJIN_EXPECT_TRUE(opts.importAnimations);
     ENJIN_EXPECT_TRUE(opts.generateColliders);
-    ENJIN_EXPECT_FALSE(opts.generateLODs);
+    // On since 2026-09-21. It was off, and combined with the LOD serializer never asking
+    // for an asset reference that is the whole reason LOD was vestigial: you had to know a
+    // checkbox existed, and ticking it wrote five full copies of the model into the scene.
+    ENJIN_EXPECT_TRUE(opts.generateLODs);
     ENJIN_EXPECT_EQ((int)opts.sourceApp, (int)SourceApp::Auto);
     ENJIN_EXPECT_TRUE(opts.convertAxes);
     ENJIN_EXPECT_FALSE(opts.flipX);
