@@ -787,6 +787,19 @@
       },
       "_animates_why": "Gerstner waves move the surface every frame; a still capture would mean the water mesh is not being regenerated.",
       "_web_why": "Also carries the web half. The web path set only the water-surface bit for a Water3D plane and none of its authored settings, so foam was absent there too -- and web needs no flag bit, it gates foam on the parameters being non-zero."
+    },
+    {
+      "name": "CustomShader",
+      "project": "Examples/CustomShader/CustomShader.enjinproject",
+      "_why": "CustomShaderComponent had no capture, which matters more than it looks: the shader graph is an EDITOR tool and the thing it produces is meant to survive into a build. A persisted shader is recompiled at the next FlushPendingChanges in whatever runtime loads the scene, so what a capture answers is not 'does the graph work' but 'does its output reach a game' -- the question this engine keeps getting wrong. Two identical spheres, one wearing the shader and one on the stock material as an in-frame reference: if both look the same, the custom pipeline was never bound, and that is visible in one picture. The shader reads pc.baseColor and lighting.cameraPos on purpose, so the capture also proves the SHARED pipeline layout is intact -- a custom pipeline binding its own descriptors would still draw, just with nonsense in those. Control (make_coverage_demos.py --control) drops the component.",
+      "frames": [
+        30,
+        240
+      ],
+      "claims": {
+        "draws": true
+      },
+      "_animates_why": "OFF: nothing in the scene moves. This is a still comparison between two spheres."
     }
   ]
 }

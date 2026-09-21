@@ -719,6 +719,132 @@ def water_foam():
     return e
 
 
+# --------------------------------------------------------------------------
+# Custom shaders -- a persisted graph result, in a BUILD
+# --------------------------------------------------------------------------
+
+# The interface a custom shader must match, copied from what the Shader Graph
+# emits (Engine/src/Editor/ShaderGraph.cpp). It is not a free-form shader slot:
+# the compiled pipeline SHARES the main pipeline layout, so the descriptor sets
+# and push constants bound for an ordinary entity stay valid for this one. Get a
+# binding number or a push-constant field wrong and it is not a compile error,
+# it is garbage read at the wrong offset.
+_CS_VERT = """#version 450
+
+layout(location = 0) in vec3 inPosition;
+layout(location = 1) in vec3 inNormal;
+layout(location = 2) in vec2 inUV;
+layout(location = 3) in vec4 inColor;
+
+layout(set = 0, binding = 0) uniform ViewProjectionUBO {
+    mat4 view;
+    mat4 proj;
+} vp;
+
+layout(push_constant) uniform PushConstants {
+    mat4 model;
+    vec3 baseColor; float metallic;
+    vec3 emissiveColor; float roughness;
+    float emissiveStrength, opacity, alphaCutoff;
+    int flags;
+    float parallaxScale;
+} pc;
+
+layout(location = 0) out vec3 fragNormal;
+layout(location = 1) out vec2 fragUV;
+layout(location = 2) out vec4 fragColor;
+layout(location = 3) out vec3 fragWorldPos;
+
+void main() {
+    vec4 worldPos = pc.model * vec4(inPosition, 1.0);
+    fragWorldPos = worldPos.xyz;
+    gl_Position = vp.proj * vp.view * worldPos;
+    fragNormal = mat3(pc.model) * inNormal;
+    fragUV = inUV;
+    fragColor = inColor;
+}
+"""
+
+# Hard world-space bands plus a facing term. Chosen to be unmistakable rather
+# than pretty: a capture has to tell this apart from the ordinary lit material
+# the control renders, and a subtle tint would be indistinguishable from a
+# lighting difference.
+#
+# It reads pc.baseColor and lighting.cameraPos so the capture also proves the
+# SHARED layout is intact -- a custom pipeline that bound its own descriptors
+# would still draw, just with nonsense in those.
+_CS_FRAG = """#version 450
+
+layout(location = 0) in vec3 fragNormal;
+layout(location = 1) in vec2 fragUV;
+layout(location = 2) in vec4 fragColor;
+layout(location = 3) in vec3 fragWorldPos;
+
+layout(location = 0) out vec4 outColor;
+
+layout(set = 0, binding = 1) uniform LightingUBO {
+    vec3 ambientColor; float ambientIntensity;
+    vec3 cameraPos; float _pad0;
+} lighting;
+
+layout(push_constant) uniform PushConstants {
+    mat4 model;
+    vec3 baseColor; float metallic;
+    vec3 emissiveColor; float roughness;
+    float emissiveStrength, opacity, alphaCutoff;
+    int flags;
+    float parallaxScale;
+} pc;
+
+void main() {
+    float band = step(0.5, fract(fragWorldPos.y * 2.0));
+    vec3 toCam = normalize(lighting.cameraPos - fragWorldPos);
+    float facing = max(dot(normalize(fragNormal), toCam), 0.0);
+    vec3 a = pc.baseColor;
+    vec3 b = vec3(1.0) - pc.baseColor;
+    outColor = vec4(mix(a, b, band) * (0.35 + 0.65 * facing), 1.0);
+}
+"""
+
+
+def custom_shader():
+    """Two identical spheres, one wearing a persisted custom shader.
+
+    CustomShaderComponent had no capture, which matters more than it looks:
+    the shader graph is an EDITOR tool, and the thing it produces is meant to
+    survive into a build. A persisted shader is recompiled at the next
+    FlushPendingChanges in whatever runtime loads the scene -- so the question a
+    capture answers is not "does the graph work" but "does its output reach a
+    game", which is the question this engine keeps getting wrong.
+
+    The second sphere is the built-in material, unchanged, as an in-frame
+    reference: if BOTH spheres end up looking the same, the custom pipeline was
+    never bound, and that is visible in one picture without a control run.
+
+    The control (--control) drops the component, so the shaded sphere falls back
+    to its ordinary material.
+    """
+    e = [sun(1), ground(3, half=30.0)]
+    e.append(camera(2, (0.0, 3.4, 9.5), -10.0))
+
+    for i, (x, custom) in enumerate(((-2.2, True), (2.2, False))):
+        ent = {
+            "id": 20 + i,
+            "name": {"name": "Custom" if custom else "Reference"},
+            "transform": transform((x, 1.5, 0.0), scale=(1.4, 1.4, 1.4)),
+            "mesh": uv_sphere(1.0, 32, 16),
+            "material": material(baseColor=[0.85, 0.30, 0.20], roughness=0.5),
+        }
+        if custom:
+            ent["customShader"] = {
+                "vs": _CS_VERT,
+                "fs": _CS_FRAG,
+                "label": "CoverageBands",
+            }
+        e.append(ent)
+    return e
+
+
 def main():
     import sys
     control = "--control" in sys.argv
@@ -765,6 +891,14 @@ def main():
             if "water3D" in ent:
                 ent["water3D"]["enableFoam"] = False
     write_project("WaterFoam", foam)
+
+    shaded = custom_shader()
+    if control:
+        # Control = no custom shader at all, so the left sphere renders through
+        # the ordinary material path and the pair differs for one reason.
+        for ent in shaded:
+            ent.pop("customShader", None)
+    write_project("CustomShader", shaded)
 
 
 if __name__ == "__main__":

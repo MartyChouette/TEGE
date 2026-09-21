@@ -16109,6 +16109,21 @@ void RenderSystem::BindGeometryPipelineForMaterial(VkCommandBuffer cmd, Entity e
     if (Renderer::VulkanPipeline* custom = GetEntityCustomPipeline(entity, offscreenPass)) {
         custom->Bind(cmd);
         m_LastPipelineWasCustom = true;
+        // THIS ASSIGNMENT IS THE WHOLE FIX for custom shaders on the main pass.
+        //
+        // The early return used to skip it, so m_ActiveGeometryPipeline kept the
+        // PREVIOUS entity's standard pipeline -- and RenderEntity then asked that
+        // stale pipeline for a specialization variant and bound it, over the
+        // custom pipeline bound one line above. A shader graph result compiled,
+        // logged "Compiled custom shader pipeline", and drew as the ordinary
+        // material in every build. The comment below already said a variant
+        // belongs to one pipeline and must never be the base unconditionally;
+        // the custom branch was the path that did not honour it.
+        //
+        // GetVariant on a pipeline with no retained template CI returns that
+        // pipeline's own handle, so the specialize step re-binds the same custom
+        // pipeline -- a redundant bind, not a stomp.
+        m_ActiveGeometryPipeline = custom;
         return;
     }
     auto* mat = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
