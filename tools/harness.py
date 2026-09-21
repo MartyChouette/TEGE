@@ -231,6 +231,71 @@ def run(project, game_dir, outdir):
     return True, 'booted', ['%s.f%04d' % (base, f) for f in frames]
 
 
+def project_path(project):
+    """The .enjinproject this entry names, absolute. The editor resolves a launch
+    path against its OWN cwd, not the repo, so a relative one silently opens no
+    project and captures an empty hub."""
+    return os.path.join(ROOT, project['project'])
+
+
+def run_editor(project, outdir):
+    """Photograph the project through the EDITOR, not the exported game.
+
+    WHY A SECOND RUNNER. Everything above measures the exported player, on the
+    grounds that it is the path with no coverage. That left the other half with
+    none: RenderToTarget is the editor viewport, RenderSplitscreen is called ONLY
+    from EditorLayer, and the creative-mode surfaces and the inspector exist
+    nowhere else. Both bugs found on 2026-09-21 were the same shape in reverse --
+    a feature working in the editor viewport and not in a build -- and a harness
+    that can only see one side cannot see that shape at all.
+
+    It captures the GAME VIEW after --play, so it is the editor's render path and
+    the editor's camera, at the editor's game-view resolution. That resolution is
+    NOT the player's, so these frames are never pixel-compared with the desktop
+    ones; the claims are evaluated independently. Comparing them would be
+    comparing two different targets and calling the difference a defect.
+
+    Requires EnjinEditor --golden to set Application::s_FixedFrameDelta, which it
+    did not until 2026-09-21: that flag is what Application reads to decide the
+    window is hidden, so before it an editor capture opened a window over whatever
+    the person at the machine was doing, and photographed a different moment on a
+    loaded machine than on an idle one.
+    """
+    if not os.path.isfile(EDITOR):
+        return False, 'no EnjinEditor.exe (build it first)', []
+
+    proj = os.path.abspath(project_path(project))
+    base = os.path.join(outdir, project['name'] + '.editor')
+    # ONE frame. The editor takes a single --golden-frames ordinal, not a list, so
+    # `animates` cannot be evaluated here and is not offered: a claim that cannot
+    # be computed must not be silently reported as passing.
+    frame = project.get('editor_frame', 120)
+    cmd = [EDITOR, proj, '--play', '--golden', base,
+           '--golden-frames', str(frame)]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, creationflags=NO_WINDOW,
+                              timeout=project.get('editor_timeout', 240))
+    except subprocess.TimeoutExpired:
+        return False, 'timed out', []
+    if proc.returncode != 0:
+        return False, 'exit code %d' % proc.returncode, []
+    if not os.path.isfile(base + '.ppm'):
+        return False, 'no capture written', []
+    return True, 'booted', [base]
+
+
+def check_editor(project, bases):
+    """The editor claims. `draws` only -- see run_editor on why not `animates`."""
+    results = []
+    for b in bases:
+        try:
+            ok, detail = capture_claims.draws(b + '.ppm')
+        except (OSError, ValueError) as e:
+            ok, detail = False, str(e)
+        results.append(('editor-draws', ok, detail))
+    return results
+
+
 def check(project, bases):
     """Evaluate this project's claims. Returns [(claim, ok, detail)]."""
     results = []
@@ -420,6 +485,21 @@ def main():
             print('%s %-22s %-14s %s' % ('pass' if passed else 'FAIL', p['name'], name, detail))
             if not passed:
                 failures += 1
+
+        # Editor-side capture, opt-in per project. Off by default because it doubles
+        # a sweep's wall clock and most projects have nothing editor-specific to
+        # say; the ones that do are marked in the manifest.
+        if p.get('editor_capture'):
+            eok, enote, ebases = run_editor(p, outdir)
+            if not eok:
+                print('FAIL %-22s editor: %s' % (p['name'], enote))
+                failures += 1
+            else:
+                for name, passed, detail in check_editor(p, ebases):
+                    print('%s %-22s %-14s %s'
+                          % ('pass' if passed else 'FAIL', p['name'], name, detail))
+                    if not passed:
+                        failures += 1
 
         if not args.web:
             continue

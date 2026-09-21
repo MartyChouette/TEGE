@@ -696,7 +696,9 @@
           "min_changed_pct": 0.3
         }
       },
-      "_animates_why": "The palette on the 500 cube cycles at 6 entries/sec, so this scene DOES move and the claim is kept on: it is the only thing here that would notice palette cycling stopping."
+      "_animates_why": "The palette on the 500 cube cycles at 6 entries/sec, so this scene DOES move and the claim is kept on: it is the only thing here that would notice palette cycling stopping.",
+      "editor_capture": true,
+      "_editor_why": "The surfaceParam cascade now has one definition and three callers. This is the editor-side caller."
     },
     {
       "name": "ArtStyles",
@@ -709,7 +711,9 @@
       "claims": {
         "draws": true
       },
-      "_animates_why": "OFF: these are static shading overrides and nothing in the scene moves. That is the point -- a diff here means the art-style path changed, not that a clock stopped."
+      "_animates_why": "OFF: these are static shading overrides and nothing in the scene moves. That is the point -- a diff here means the art-style path changed, not that a clock stopped.",
+      "editor_capture": true,
+      "_editor_why": "The per-entity art-style overrides were missing from two of the three push-constant builders; the editor viewport is the path that HAD them, so it is worth watching from both sides."
     },
     {
       "name": "Splitscreen",
@@ -725,7 +729,9 @@
           "min_changed_pct": 0.3
         }
       },
-      "_animates_why": "The palette on the 500 cube cycles, same as SurfaceBands, so this scene moves."
+      "_animates_why": "The palette on the 500 cube cycles, same as SurfaceBands, so this scene moves.",
+      "editor_capture": true,
+      "_editor_why": "RenderSplitscreen is called ONLY from EditorLayer, so this is the only way that function is exercised at all."
     },
     {
       "name": "LODLadder",
