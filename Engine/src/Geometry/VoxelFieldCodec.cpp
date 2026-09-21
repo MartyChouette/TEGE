@@ -1,79 +1,11 @@
 #include "Enjin/Geometry/VoxelFieldCodec.h"
+#include "Enjin/Encoding/Base64.h"
 
 #include <algorithm>
 #include <cmath>
 
 namespace Enjin {
 namespace Geometry {
-
-namespace {
-
-constexpr char kAlphabet[] =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-// -1 for anything that is not a base64 digit, so a corrupt string is rejected
-// rather than silently decoding to something plausible.
-i32 DecodeChar(char c) {
-    if (c >= 'A' && c <= 'Z') return c - 'A';
-    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
-    if (c >= '0' && c <= '9') return c - '0' + 52;
-    if (c == '+') return 62;
-    if (c == '/') return 63;
-    return -1;
-}
-
-std::string Base64Encode(const std::vector<u8>& bytes) {
-    std::string out;
-    out.reserve((bytes.size() + 2) / 3 * 4);
-    usize i = 0;
-    while (i + 2 < bytes.size()) {
-        const u32 n = (static_cast<u32>(bytes[i]) << 16) |
-                      (static_cast<u32>(bytes[i + 1]) << 8) |
-                      static_cast<u32>(bytes[i + 2]);
-        out += kAlphabet[(n >> 18) & 63];
-        out += kAlphabet[(n >> 12) & 63];
-        out += kAlphabet[(n >> 6) & 63];
-        out += kAlphabet[n & 63];
-        i += 3;
-    }
-    const usize rest = bytes.size() - i;
-    if (rest == 1) {
-        const u32 n = static_cast<u32>(bytes[i]) << 16;
-        out += kAlphabet[(n >> 18) & 63];
-        out += kAlphabet[(n >> 12) & 63];
-        out += "==";
-    } else if (rest == 2) {
-        const u32 n = (static_cast<u32>(bytes[i]) << 16) |
-                      (static_cast<u32>(bytes[i + 1]) << 8);
-        out += kAlphabet[(n >> 18) & 63];
-        out += kAlphabet[(n >> 12) & 63];
-        out += kAlphabet[(n >> 6) & 63];
-        out += '=';
-    }
-    return out;
-}
-
-bool Base64Decode(const std::string& text, std::vector<u8>& out) {
-    out.clear();
-    out.reserve(text.size() / 4 * 3);
-
-    u32 acc = 0;
-    u32 bits = 0;
-    for (char c : text) {
-        if (c == '=' || c == '\n' || c == '\r') continue;
-        const i32 d = DecodeChar(c);
-        if (d < 0) return false;
-        acc = (acc << 6) | static_cast<u32>(d);
-        bits += 6;
-        if (bits >= 8) {
-            bits -= 8;
-            out.push_back(static_cast<u8>((acc >> bits) & 0xFFu));
-        }
-    }
-    return true;
-}
-
-} // namespace
 
 std::string EncodeVoxelField(const std::vector<f32>& field, f32 band) {
     if (field.empty() || band <= 0.0f) return std::string();
@@ -110,7 +42,7 @@ std::string EncodeVoxelField(const std::vector<f32>& field, f32 band) {
     packed.push_back(static_cast<u8>(count));
     packed.push_back(run);
 
-    return Base64Encode(packed);
+    return Encoding::Base64Encode(packed);
 }
 
 bool DecodeVoxelField(const std::string& text, f32 band, usize expectedCount,
@@ -118,7 +50,7 @@ bool DecodeVoxelField(const std::string& text, f32 band, usize expectedCount,
     if (text.empty() || band <= 0.0f || expectedCount == 0) return false;
 
     std::vector<u8> packed;
-    if (!Base64Decode(text, packed)) return false;
+    if (!Encoding::Base64Decode(text, packed)) return false;
     if (packed.empty() || (packed.size() % 2) != 0) return false;
 
     std::vector<f32> decoded;
