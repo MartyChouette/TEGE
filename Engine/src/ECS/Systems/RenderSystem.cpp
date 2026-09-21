@@ -9158,8 +9158,26 @@ void RenderSystem::Update(f32 deltaTime) {
     //      buffer during command recording with no fence: 0, then 46, then 23 of 62 objects
     //      "visible" on consecutive readbacks. A GPU-driven path must not ask the CPU what
     //      is visible.
-    if (m_GPUDrivenEnabled && m_GPUCullingEnabled && !m_IsEditorMode && m_SceneComposition.mesh3DCount > 0) {
+    // NOT in splitscreen. RenderEntity skips anything BuildCullableObjectList marked as
+    // indirect-drawn, and the single indirect draw that replaces those entities is issued
+    // in the NON-splitscreen branch only -- so with both on, every indirect-eligible
+    // object is skipped per-entity and never drawn at all. On the Splitscreen demo that
+    // was the whole ground plane, in both halves, while the cubes rendered fine.
+    //
+    // Skipping the cull list rather than teaching the splitscreen branch to draw indirect,
+    // because GPU culling compacts against ONE camera's frustum: doing it properly means a
+    // cull dispatch and an indirect buffer PER VIEWPORT, which is a feature rather than a
+    // fix. Splitscreen therefore draws per-entity, which is what it did before GPU-driven
+    // rendering was switched on and is correct if slower.
+    const bool splitscreenActive = !m_MainPassViewports.empty();
+    if (m_GPUDrivenEnabled && m_GPUCullingEnabled && !m_IsEditorMode && !splitscreenActive
+        && m_SceneComposition.mesh3DCount > 0) {
         BuildCullableObjectList();
+    } else if (splitscreenActive) {
+        // Stale marks from a previous non-splitscreen frame would skip those entities
+        // here too, and the list is only rebuilt by the call above.
+        m_IndirectDrawn.clear();
+        m_CullableObjects.clear();
     }
 
     // Select shadow-casting point/spot lights (before shadow passes)

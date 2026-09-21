@@ -714,7 +714,7 @@
     {
       "name": "Splitscreen",
       "project": "Examples/Splitscreen/Splitscreen.enjinproject",
-      "_why": "Two viewports over the same surfaceParam band row. RenderSplitscreen is the third push-constant builder and holds its own copy of the cascade -- the copy that was missing the ArtStyle overrides -- and until this project existed NOTHING in the harness rendered through it, so it could not be migrated to the shared cascade with any proof. The two cameras look from different angles on purpose: two halves that matched would pass a draws claim while proving only that one view was copied twice.",
+      "_why": "Two viewports over the same surfaceParam band row. It covers the MAIN PASS in splitscreen mode -- the player sets m_MainPassViewports and RenderSystem::Update renders each viewport itself. It does NOT cover RenderSplitscreen, which is called only from EditorLayer and still has no coverage at all; that was assumed when this project was added and measured false when a diagnostic in RenderSplitscreen logged nothing. The two cameras look from different places on purpose: two halves that matched would pass a draws claim while proving only that one view got copied twice. It earned itself immediately by catching GPU-driven rendering deleting the ground from both halves.",
       "frames": [
         30,
         240
@@ -725,8 +725,7 @@
           "min_changed_pct": 0.3
         }
       },
-      "_animates_why": "The palette on the 500 cube cycles, same as SurfaceBands, so this scene moves.",
-      "_known_defect": "THIS PROJECT PASSES AND SPLITSCREEN IS NOT FINE. The ground plane renders in neither half. Measured 2026-09-21 the only way that settles it: the SAME scene with the right camera deactivated and the left one made full-frame draws the ground and its shadows correctly, and putting the two viewport cameras back makes it vanish from both halves. The cubes draw either way, so it is not the loop skipping meshes -- RenderSplitscreen's per-entity skips are sprites and invisible transforms and nothing else. Cause not found yet. The claims here (draws, animates) cannot see it, which is exactly why it is written down rather than left for a green row to imply everything works."
+      "_animates_why": "The palette on the 500 cube cycles, same as SurfaceBands, so this scene moves."
     }
   ]
 }
