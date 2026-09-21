@@ -1517,12 +1517,17 @@ public:
     void SetFreeMeshCpuData(bool enabled) { m_FreeMeshCpuData = enabled; }
     bool IsFreeMeshCpuData() const { return m_FreeMeshCpuData; }
     // GPU-driven rendering: build the cullable list, run the culling compute, and issue
-    // indirect draws for the objects IndirectDrawRepresentable accepts. Off by default
-    // because it does not yet reproduce the per-entity picture exactly (see the note at
-    // the BuildCullableObjectList call site). A switch rather than a compiled-in guard so
-    // the difference can be measured without a rebuild -- the absence of that is most of
-    // why the path stayed broken: every A/B cost two full builds.
-    // ENJIN_GPU_DRIVEN=1 in the environment turns it on for a capture run.
+    // indirect draws for the objects IndirectDrawRepresentable accepts.
+    //
+    // ON by default since 2026-09-21, after a 43-project sweep comparing it against the
+    // per-entity picture: 42 clean, peak draw calls 5771 -> 265 across the set. The 43rd
+    // is RoomAcoustics, whose scene has three pairs of coincident opaque lintels -- two
+    // surfaces in one place have no correct answer, and the two paths pick different
+    // winners, so it can never agree while the duplicates exist.
+    //
+    // ENJIN_GPU_DRIVEN=0 turns it off, which is how that comparison is run. Keeping the
+    // switch matters more than it looks: before it existed every A/B of this path cost
+    // two full engine builds, and that is most of why it stayed broken for three sessions.
     void SetGPUDrivenEnabled(bool enabled) { m_GPUDrivenEnabled = enabled; }
     bool IsGPUDrivenEnabled() const { return m_GPUDrivenEnabled; }
 
@@ -2742,7 +2747,7 @@ private:
     std::vector<Renderer::CullableObject> m_CullableObjects;
     std::vector<u32> m_EntityToCullIndex; // Maps entity index to cullable object index
     bool m_GPUCullingEnabled = true;  // Enabled: GPU-driven indirect draws (no readback stall)
-    bool m_GPUDrivenEnabled = false;  // See SetGPUDrivenEnabled; ENJIN_GPU_DRIVEN=1 overrides
+    bool m_GPUDrivenEnabled = true;   // See SetGPUDrivenEnabled; ENJIN_GPU_DRIVEN=0 turns it off
 #endif
 
     bool m_IsEditorMode = false;      // When true, skip frustum culling (show all entities)
