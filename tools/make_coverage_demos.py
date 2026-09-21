@@ -651,6 +651,74 @@ def anim_lod():
     return e
 
 
+# --------------------------------------------------------------------------
+# Water3D foam -- the one setting the MAIN pass never applied
+# --------------------------------------------------------------------------
+
+def water_foam():
+    """A Water3D plane with foam on, and nothing else in the scene competing.
+
+    `Water3DSettings::enableFoam` had no capture anywhere, and the reason it
+    needed one is the reason it was broken: the foam block existed in
+    `RenderToTarget` (the editor viewport) and `RenderSplitscreen`, and NOT in
+    `RenderEntity` -- which is editor play mode and every exported game. So foam
+    appeared while you authored it and vanished from the build, which reads as an
+    art problem rather than a missing branch.
+
+    The control is `enableFoam` OFF with every other water setting identical, so
+    a byte-identical pair means the flag reached no shader.
+
+    VertexWave style, not Refractive: the foam block is explicitly skipped for
+    Refractive water (it takes the surfaceParams for its refraction split), so a
+    demo authored Refractive would prove nothing and look deliberate.
+
+    The plane sits at the ORIGIN with its placement in settings.position, because
+    the surface mesh is generated in WORLD space around that and the entity
+    transform is applied on top -- putting the offset in both moves the water
+    twice as far as intended.
+    """
+    e = [sun(1)]
+    e.append(camera(2, (0.0, 5.5, 13.0), -18.0))
+
+    # A dark floor under the water so the surface reads against something. Foam is
+    # a light value on the crests; over a light ground the contrast is smaller and
+    # so is the thing the capture has to see.
+    e.append({
+        "id": 3,
+        "name": {"name": "Seabed"},
+        "transform": transform((0.0, -1.2, 0.0), scale=(40.0, 0.2, 40.0)),
+        "mesh": cube(1.0),
+        "material": material(baseColor=[0.10, 0.12, 0.16], roughness=0.95),
+    })
+
+    e.append({
+        "id": 10,
+        "name": {"name": "Water"},
+        # Transform stays at the ORIGIN. See the docstring.
+        "transform": transform((0.0, 0.0, 0.0)),
+        "water3D": {
+            "position": [0.0, 0.0, 0.0],
+            "width": 26.0,
+            "depth": 26.0,
+            "tileSize": 0.5,
+            "style": 2,              # VertexWave -- foam is skipped for Refractive
+            "shallowColor": [0.10, 0.42, 0.55],
+            "deepColor": [0.03, 0.12, 0.22],
+            "opacity": 0.85,
+            "waveSpeed": 1.1,
+            "waveHeight": 0.45,      # tall enough that crests actually cross the
+            "waveFrequency": 1.6,    # foam threshold below
+            "waveDirection": [1.0, 0.35],
+            "gerstnerWaves": True,
+            "waveSteepness": 0.6,
+            "enableFoam": True,
+            "foamThreshold": 0.30,   # crest height at which foam starts
+            "foamScale": 9.0,
+        },
+    })
+    return e
+
+
 def main():
     import sys
     control = "--control" in sys.argv
@@ -688,6 +756,15 @@ def main():
             if "animationLOD" in ent:
                 ent["animationLOD"]["enabled"] = False
     write_project("AnimationLOD", rigs)
+
+    foam = water_foam()
+    if control:
+        # The control is the FLAG off and every other water setting untouched, so
+        # the pair differs for exactly one reason.
+        for ent in foam:
+            if "water3D" in ent:
+                ent["water3D"]["enableFoam"] = False
+    write_project("WaterFoam", foam)
 
 
 if __name__ == "__main__":

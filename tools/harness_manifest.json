@@ -769,6 +769,24 @@
         }
       },
       "_animates_why": "The near rig is in the 0 Hz band, which means unthrottled, so it sways every frame. A still capture here would mean the animator is not ticking at all."
+    },
+    {
+      "name": "WaterFoam",
+      "project": "Examples/WaterFoam/WaterFoam.enjinproject",
+      "_why": "Water3DSettings::enableFoam had no capture anywhere, and the reason it needed one is the reason it was broken: the foam block existed in RenderToTarget (the editor viewport) and RenderSplitscreen and NOT in RenderEntity, which is editor play mode and every exported game. Foam appeared while you authored it and vanished from the build, which reads as an art problem rather than a missing branch. Control (make_coverage_demos.py --control) is enableFoam OFF with every other water setting identical, so a byte-identical pair means the flag reached no shader. VertexWave style on purpose -- the foam block is skipped for Refractive water, so a Refractive demo would prove nothing while looking deliberate.",
+      "frames": [
+        30,
+        90,
+        240
+      ],
+      "claims": {
+        "draws": true,
+        "animates": {
+          "min_changed_pct": 0.5
+        }
+      },
+      "_animates_why": "Gerstner waves move the surface every frame; a still capture would mean the water mesh is not being regenerated.",
+      "_web_why": "Also carries the web half. The web path set only the water-surface bit for a Water3D plane and none of its authored settings, so foam was absent there too -- and web needs no flag bit, it gates foam on the parameters being non-zero."
     }
   ]
 }

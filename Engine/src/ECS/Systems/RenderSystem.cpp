@@ -4762,8 +4762,21 @@ void RenderSystem::Update(f32 deltaTime) {
                     obj.foamIntensity = wv->foamIntensity * (1.0f - wv->freezeProgress);
                     obj.foamScale = wv->foamScale;
                 }
-            } else if (m_World->HasComponent<Water3DComponent>(entity)) {
+            } else if (auto* w3d = m_World->GetComponent<Water3DComponent>(entity)) {
                 obj.flags |= (1 << 5);
+                // Foam on the crests, the same setting desktop reads. No flag bit
+                // is needed: the web path gates foam on the PARAMETERS, which are
+                // zero for any surface that did not ask for it.
+                //
+                // Refractive is excluded here exactly as on desktop -- that style
+                // claims the same slots for its refraction split, so foam and
+                // refraction cannot both be expressed.
+                if (w3d->settings.enableFoam &&
+                    w3d->settings.style != Effects::WaterStyle::Refractive) {
+                    obj.shoreWidth = w3d->settings.foamThreshold;
+                    obj.foamIntensity = 1.0f;     // desktop passes a literal 1 here too
+                    obj.foamScale = w3d->settings.foamScale;
+                }
             }
             std::memcpy(objDataBuf.data() + offset, &obj, sizeof(obj));
 
@@ -16381,8 +16394,28 @@ void RenderSystem::RenderEntity(Entity entity) {
         if (water3d) {
             pushConstants.baseColor = water3d->settings.shallowColor;
             pushConstants.opacity = water3d->settings.opacity;
+            // Foam on the wave crests. The vertex G channel carries crest height as
+            // well as edge distance (Water3D::GenerateMesh), so this is foam on the
+            // tops rather than only at the plane border.
+            //
+            // This block existed in RenderToTarget and RenderSplitscreen and NOT
+            // here, and THIS is the main pass -- editor play mode and every
+            // exported game -- so enableFoam worked while you authored it in the
+            // viewport and did nothing in the build. Third instance of that exact
+            // shape found on 2026-09-21; see Examples/WaterFoam, which exists to
+            // stop it being a fourth.
+            if (water3d->settings.enableFoam &&
+                water3d->settings.style != Effects::WaterStyle::Refractive) {
+                pushConstants.flags |= (1 << 7); // FLAG_WATER_SHORE
+                pushConstants.surfaceParam1 = water3d->settings.foamThreshold;
+                pushConstants.surfaceParam2 = 1.0f;
+                pushConstants.surfaceParam3 = water3d->settings.foamScale;
+            }
             // Refractive water: signal the shader (surfaceParam3 marker) and hand it
             // the reflection strength + fresnel power for the top-down refraction split.
+            // AFTER the foam block, matching the other two builders: the two modes
+            // claim the same three params and Refractive wins, which is also why the
+            // foam block excludes it rather than relying on order alone.
             if (water3d->settings.style == Effects::WaterStyle::Refractive) {
                 pushConstants.surfaceParam1 = Math::Clamp(water3d->settings.reflectionStrength, 0.0f, 1.0f);
                 pushConstants.surfaceParam2 = water3d->settings.fresnelPower;
