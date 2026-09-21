@@ -10,6 +10,8 @@
 #include "Enjin/Debug/Profiler.h"
 #include <cstdlib>   // getenv (GPU-particle headless test hook)
 #include "Enjin/ECS/Components/LOD.h"        // ChooseLOD, shared above the backend #if
+#include "Enjin/Renderer/GPUBuffer.h"      // IGPUBufferManager, for the shared buffer drop
+#include "Enjin/ECS/Components/Camera.h"   // CameraManager, for the shared splitscreen detector
 #include "Enjin/ECS/Components/Hierarchy.h"   // ComputeWorldMatrix, used by the shared
                                              // frame helpers hoisted above the backend #if
 #include "Enjin/Assets/MeshAssetCache.h"   // reload/free CPU mesh data after upload (task #3)
@@ -61,6 +63,124 @@ Renderer::SkyboxConfig RenderSystem::WeatherSky(const Renderer::SkyboxConfig& cf
     out.cloudCoverage = out.cloudCoverage + (0.9f - out.cloudCoverage) * wet;
     return out;
 }
+// Rebuild terrain meshes whose heightmap changed, on EVERY backend.
+//
+// This was written inline in the Vulkan Update() and nowhere else. RenderSystem
+// has two Update() definitions -- one per backend, ~5000 lines apart -- so "put
+// it in Update" silently means "desktop only", and terrain sculpted at runtime
+// (TerrainGeneratorSystem, the creative terrain tools, any script writing
+// heightmap) never regenerated its mesh in a browser: the component changed, the
+// flag stayed set, and the old geometry drew forever. It reads as a terrain tool
+// that does nothing on web rather than as a missing render step.
+//
+// The collider invalidation is part of the same operation and must not be split
+// from it: a mesh collider cooked from the OLD geometry leaves the player
+// walking on a surface that is no longer drawn.
+void RenderSystem::RegenerateDirtyTerrainMeshes() {
+    if (!m_World) return;
+
+    for (Entity entity : m_World->GetEntitiesWithComponent<TerrainComponent>()) {
+        auto* terrain = m_World->GetComponent<TerrainComponent>(entity);
+        if (!terrain || !terrain->meshDirty) continue;
+
+        auto mesh = Renderer::MeshFactory::CreateTerrain(*terrain);
+        if (m_World->HasComponent<MeshComponent>(entity)) {
+            *m_World->GetComponent<MeshComponent>(entity) = std::move(mesh);
+        } else {
+            m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
+        }
+        DropEntityGeometryBuffers(entity);
+        terrain->meshDirty = false;
+
+        if (auto* mc = m_World->GetComponent<MeshColliderComponent>(entity)) {
+            mc->generated = false;
+            mc->vertices.clear();
+            mc->indices.clear();
+        }
+    }
+
+    for (Entity entity : m_World->GetEntitiesWithComponent<Terrain2DComponent>()) {
+        auto* terrain2d = m_World->GetComponent<Terrain2DComponent>(entity);
+        if (!terrain2d || !terrain2d->meshDirty) continue;
+
+        auto mesh = Renderer::MeshFactory::CreateTerrain2D(*terrain2d);
+        if (m_World->HasComponent<MeshComponent>(entity)) {
+            *m_World->GetComponent<MeshComponent>(entity) = std::move(mesh);
+        } else {
+            m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
+        }
+        DropEntityGeometryBuffers(entity);
+        terrain2d->meshDirty = false;
+    }
+}
+
+// Force an entity's vertex/index buffers to be rebuilt from its (new) mesh.
+// The two backends release GPU memory differently -- Vulkan defers into the
+// graveyard because a buffer may still be in flight, WebGPU drops the handle and
+// lets the browser reclaim it -- so this is the one place that difference lives.
+void RenderSystem::DropEntityGeometryBuffers(Entity entity) {
+    const usize idx = static_cast<usize>(EntityIndex(entity));
+    if (idx >= m_EntityRenderData.size()) return;
+#if ENJIN_RENDERER_WEBGPU
+    auto& rd = m_EntityRenderData[idx];
+    if (!rd.valid) return;
+    if (auto* bufMgr = m_Renderer ? m_Renderer->GetBufferManager() : nullptr) {
+        if (rd.vertexBuffer.IsValid()) bufMgr->DestroyBuffer(rd.vertexBuffer);
+        if (rd.indexBuffer.IsValid()) bufMgr->DestroyBuffer(rd.indexBuffer);
+    }
+    rd.vertexBuffer = {};
+    rd.indexBuffer = {};
+    rd.valid = false;
+#else
+    RetireEntityBuffers(m_EntityRenderData[idx]);
+#endif
+}
+
+// Splitscreen detection, for every backend and every runtime.
+//
+// This lived inline in the desktop Player's frame loop and nowhere else, so the
+// web player never split the screen at all -- it rendered camera 0 full-bleed
+// and the second player had no view. Splitting it out is what lets both call it,
+// and a rule about the SCENE (how many cameras, do they carry viewport rects)
+// has no business being written per backend.
+//
+// The trigger is deliberately narrow: more than one active camera is not enough
+// on its own, because a scene can legitimately hold a spare camera at default
+// full-screen rect, and treating that as splitscreen would halve everyone's view.
+// At least one camera has to have been GIVEN a rect.
+void RenderSystem::ApplySplitscreenFromWorld() {
+    if (!m_World) { SetMainPassSplitscreen({}); return; }
+
+    const std::vector<u64> cameras = CameraManager::GetAllActiveCameras(m_World);
+    if (cameras.size() <= 1) { SetMainPassSplitscreen({}); return; }
+
+    bool anyAuthoredRect = false;
+    for (Entity camEntity : cameras) {
+        const auto* cc = m_World->GetComponent<CameraComponent>(camEntity);
+        if (cc && (cc->viewportX != 0.0f || cc->viewportY != 0.0f ||
+                   cc->viewportWidth != 1.0f || cc->viewportHeight != 1.0f)) {
+            anyAuthoredRect = true;
+            break;
+        }
+    }
+    if (!anyAuthoredRect) { SetMainPassSplitscreen({}); return; }
+
+    std::vector<ViewportCamera> viewports;
+    for (Entity camEntity : cameras) {
+        const auto* cc = m_World->GetComponent<CameraComponent>(camEntity);
+        if (!cc) continue;
+        ViewportCamera vc;
+        vc.entity = camEntity;
+        vc.viewportX = cc->viewportX;
+        vc.viewportY = cc->viewportY;
+        vc.viewportWidth = cc->viewportWidth;
+        vc.viewportHeight = cc->viewportHeight;
+        viewports.push_back(vc);
+        if (viewports.size() >= MAX_SPLITSCREEN_VIEWPORTS) break;
+    }
+    SetMainPassSplitscreen(viewports);
+}
+
 // One warning, shared by both backends, for a scene with nothing lighting it.
 //
 // It lives outside the platform guards on purpose: the fake sun it replaced was
@@ -747,6 +867,64 @@ u32 RenderSystem::WebScaledDim(u32 v) const {
     const f32 s = (m_WebRenderScale < 0.5f) ? 0.5f : (m_WebRenderScale > 1.0f ? 1.0f : m_WebRenderScale);
     const u32 out = static_cast<u32>(static_cast<f32>(v) * s + 0.5f);
     return out < 64u ? 64u : out;
+}
+
+// One ViewProjection buffer and group-0 bind group per splitscreen viewport.
+//
+// Allocated once and kept (at most four of each, 144 bytes apiece). They are
+// separate buffers rather than offsets into one because the group-0 layout
+// declares a fixed-size, non-dynamic uniform binding: giving it an offset would
+// mean a dynamic-offset layout, which every other group-0 bind in the frame
+// would then have to pass too.
+//
+// Everything else in group 0 -- lighting, palettes, cookies, lightmaps -- is
+// shared with the single-camera bind group, because none of it is per-view.
+void RenderSystem::WebDropSplitViewportResources() {
+    if (!m_Renderer) { m_WebSplitVPBuffers.clear(); m_WebSplitVPBindGroups.clear(); return; }
+    auto* bufMgr = m_Renderer->GetBufferManager();
+    auto* bindMgr = m_Renderer->GetBindGroupManager();
+    if (bindMgr) for (auto& bg : m_WebSplitVPBindGroups) if (bg.IsValid()) bindMgr->DestroyBindGroup(bg);
+    if (bufMgr) for (auto& b : m_WebSplitVPBuffers) if (b.IsValid()) bufMgr->DestroyBuffer(b);
+    m_WebSplitVPBindGroups.clear();
+    m_WebSplitVPBuffers.clear();
+}
+
+bool RenderSystem::WebEnsureSplitViewportResources(u32 count) {
+    if (count < 2) return false;
+    if (count > MAX_SPLITSCREEN_VIEWPORTS) count = MAX_SPLITSCREEN_VIEWPORTS;
+    if (m_WebSplitVPBindGroups.size() >= count) return true;
+    if (!m_Renderer || !m_WebFrameLayout.IsValid()) return false;
+
+    auto* bufMgr = m_Renderer->GetBufferManager();
+    auto* bindMgr = m_Renderer->GetBindGroupManager();
+    if (!bufMgr || !bindMgr) return false;
+
+    while (m_WebSplitVPBindGroups.size() < count) {
+        Renderer::GPUBufferDesc bd;
+        bd.size = sizeof(WebViewProjectionUBO);
+        bd.usage = Renderer::GPUBufferUsage::Uniform | Renderer::GPUBufferUsage::CopyDst;
+        Renderer::GPUBufferHandle buf = bufMgr->CreateBuffer(bd);
+        if (!buf.IsValid()) return false;
+
+        Renderer::GPUBindGroupDesc bgd;
+        bgd.layout = m_WebFrameLayout;
+        bgd.entries = {
+            {0, buf, 0, sizeof(WebViewProjectionUBO), {}, {}},
+            {1, m_WebLightingBuffer, 0, sizeof(WebLightingUBO), {}, {}},
+            {2, {}, 0, 0, m_WebScenePaletteTex, {}},
+            {3, {}, 0, 0, m_WebSpotCookieTex, {}},
+            {4, {}, 0, 0, {}, m_WebSpotCookieTex},
+            {5, {}, 0, 0, m_WebLightmapTex[0].IsValid() ? m_WebLightmapTex[0] : m_WebDefaultWhiteTex, {}},
+            {6, {}, 0, 0, m_WebLightmapTex[1].IsValid() ? m_WebLightmapTex[1] : m_WebDefaultWhiteTex, {}},
+            {7, {}, 0, 0, m_WebLightmapTex[2].IsValid() ? m_WebLightmapTex[2] : m_WebDefaultWhiteTex, {}},
+        };
+        Renderer::GPUBindGroupHandle bg = bindMgr->CreateBindGroup(bgd);
+        if (!bg.IsValid()) { bufMgr->DestroyBuffer(buf); return false; }
+
+        m_WebSplitVPBuffers.push_back(buf);
+        m_WebSplitVPBindGroups.push_back(bg);
+    }
+    return true;
 }
 
 void RenderSystem::RecreateWebSizedTargets(u32 sceneW, u32 sceneH) {
@@ -2374,6 +2552,11 @@ void RenderSystem::WebUpdateSceneLightmap() {
         return;
     }
     m_WebFrameBindGroup = rebuilt;
+    // The splitscreen group-0s snapshot these SAME lightmap textures, so a
+    // rebake leaves them pointing at the old atlases. Dropping them here makes
+    // the next splitscreen frame rebuild them; keeping them would light player
+    // one's half from the new bake and player two's from the old one.
+    WebDropSplitViewportResources();
     // Not bindless indices here -- this backend has no bindless -- but the same
     // 'already resident' latch, so the group is rebuilt once per bake and not
     // once per frame.
@@ -3108,6 +3291,11 @@ void RenderSystem::Update(f32 deltaTime) {
         // switch happens here; the animator itself still ticks in web_main.
         UpdateMovementDrivenAnimation(*ac, animEntity, deltaTime);
     }
+
+    // Terrain sculpted at runtime rebuilds its mesh here too, not only on
+    // desktop. Before the mesh loop, so the new geometry is uploaded the same
+    // frame it is generated rather than one frame late.
+    RegenerateDirtyTerrainMeshes();
 
     // Upload ViewProjection UBO
     {
@@ -4010,6 +4198,82 @@ void RenderSystem::Update(f32 deltaTime) {
         }
     }
 
+    // ========================================================================
+    // The views this frame draws
+    // ========================================================================
+    // One entry is the ordinary case: the whole scene target through m_Camera.
+    // More than one is splitscreen, which web did not have at all until
+    // 2026-09-21 -- SetMainPassSplitscreen existed, the desktop Player set it,
+    // and the web path read a single camera and stretched it across the canvas.
+    //
+    // Each view carries its OWN camera, because the aspect ratio of a half-width
+    // viewport is not the aspect ratio of the canvas. Reusing m_Camera's
+    // projection for a 2x1 split is what makes splitscreen look squashed, and it
+    // is the kind of wrong that reads as an art problem.
+    struct WebView {
+        Renderer::Camera camera;
+        f32 x = 0.0f, y = 0.0f, w = 0.0f, h = 0.0f;   // pixels, in scene-target space
+    };
+    std::vector<WebView> webViews;
+    {
+        u32 wanted = static_cast<u32>(m_MainPassViewports.size());
+        if (wanted > MAX_SPLITSCREEN_VIEWPORTS) wanted = MAX_SPLITSCREEN_VIEWPORTS;
+        for (u32 v = 0; v < wanted; ++v) {
+            const ViewportCamera& vc = m_MainPassViewports[v];
+            const auto* cc = m_World->GetComponent<CameraComponent>(vc.entity);
+            const auto* xf = m_World->GetComponent<TransformComponent>(vc.entity);
+            if (!cc || !xf) continue;
+
+            WebView view;
+            view.x = vc.viewportX * sceneW;
+            view.y = vc.viewportY * sceneH;
+            view.w = vc.viewportWidth * sceneW;
+            view.h = vc.viewportHeight * sceneH;
+            if (view.w < 1.0f || view.h < 1.0f) continue;
+
+            const f32 aspect = view.w / view.h;
+            if (cc->projectionType == ProjectionType::Perspective) {
+                view.camera.SetPerspective(cc->fieldOfView, aspect, cc->nearPlane, cc->farPlane);
+            } else {
+                const f32 halfH = cc->orthoSize > 0.0f ? cc->orthoSize : 10.0f;
+                view.camera.SetOrthographic(-halfH * aspect, halfH * aspect, -halfH, halfH,
+                                            cc->nearPlane, cc->farPlane);
+            }
+            const Math::Vector3 fwd = xf->rotation.Rotate(Math::Vector3(0.0f, 0.0f, -1.0f));
+            const Math::Vector3 up  = xf->rotation.Rotate(Math::Vector3(0.0f, 1.0f, 0.0f));
+            view.camera.SetPosition(xf->position);
+            view.camera.SetLookAt(xf->position, xf->position + fwd, up);
+            webViews.push_back(view);
+        }
+        // Any failure to resolve a split view falls back to the single camera
+        // rather than to nothing: a missing transform must not blank the screen.
+        if (webViews.size() < 2 || !WebEnsureSplitViewportResources(
+                                        static_cast<u32>(webViews.size()))) {
+            webViews.clear();
+            if (m_Camera) {
+                WebView view;
+                view.camera = *m_Camera;
+                view.w = sceneW;
+                view.h = sceneH;
+                webViews.push_back(view);
+            }
+        } else {
+            // Per-viewport ViewProjection uploads. Separate buffers, because a
+            // queue write lands before the whole command buffer runs -- see
+            // m_WebSplitVPBuffers.
+            for (usize v = 0; v < webViews.size(); ++v) {
+                WebViewProjectionUBO vp{};
+                vp.view = webViews[v].camera.GetViewMatrix();
+                vp.proj = webViews[v].camera.GetProjectionMatrix();
+                vp.proj.m[5] = -vp.proj.m[5];   // Vulkan Y-down -> WebGPU Y-up
+                vp.viewPos = webViews[v].camera.GetPosition();
+                vp.time = m_WebTime;
+                bufMgr->UploadData(m_WebSplitVPBuffers[v], &vp, sizeof(vp));
+            }
+        }
+    }
+    const bool webSplitscreen = webViews.size() > 1;
+
     if (usePostProcess) {
         // MSAA off: render the scene directly into the 1x samplable HDR target
         // (no MSAA buffer, no resolve). See the MSAA note in RecreateWebSizedTargets.
@@ -4183,7 +4447,6 @@ void RenderSystem::Update(f32 deltaTime) {
         // The test does not need a GPU. It is six dot products against a box.
         // What the GPU path buys is doing that for a hundred thousand objects
         // without a readback stall, at a scale web is not at.
-        Math::Vector4 webFrustum[6];
         const bool webCullEnabled = m_Camera != nullptr;
         // Which layers this camera renders. Defaults to everything when the
         // scene has no camera component to ask -- never to nothing, or a
@@ -4193,10 +4456,23 @@ void RenderSystem::Update(f32 deltaTime) {
             const auto* cc = m_World->GetComponent<CameraComponent>(camEnt);
             if (cc && cc->isActive) { webCullingMask = cc->cullingMask; break; }
         }
-        if (webCullEnabled) {
-            ExtractFrustumPlanes(m_Camera->GetProjectionMatrix() * m_Camera->GetViewMatrix(),
-                                 webFrustum);
+        // Splitscreen culls against EVERY view, keeping anything visible in any
+        // one of them. Culling against view 0 alone would delete, from player
+        // two's half of the screen, whatever player one happens not to be
+        // looking at -- and it would do it silently.
+        Math::Vector4 webFrustaAll[MAX_SPLITSCREEN_VIEWPORTS][6];
+        const usize webFrustumCount = webViews.size();
+        for (usize v = 0; v < webFrustumCount; ++v) {
+            ExtractFrustumPlanes(webViews[v].camera.GetProjectionMatrix()
+                                     * webViews[v].camera.GetViewMatrix(),
+                                 webFrustaAll[v]);
         }
+        auto webVisibleInAnyView = [&](Entity e) -> bool {
+            for (usize v = 0; v < webFrustumCount; ++v) {
+                if (IsEntityInFrustum(e, webFrustaAll[v])) return true;
+            }
+            return false;
+        };
 
         for (Entity entity : meshEntities) {
             auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
@@ -4217,7 +4493,7 @@ void RenderSystem::Update(f32 deltaTime) {
                 }
             }
 
-            if (webCullEnabled && !IsEntityInFrustum(entity, webFrustum)) continue;
+            if (webCullEnabled && webFrustumCount > 0 && !webVisibleInAnyView(entity)) continue;
 
             // Ensure GPU buffers
             u64 eid = EntityIndex(entity);  // dense index: low 32 bits (raw handle has generation in high bits)
@@ -4620,148 +4896,182 @@ void RenderSystem::Update(f32 deltaTime) {
                 static_cast<u32>(sceneW), static_cast<u32>(sceneH));
         }
 
-        usize i = 0;
-        bool vmDepthActive = false;
-        while (i < drawCmds.size()) {
-            const auto& cmd = drawCmds[i];
-            u64 eid = EntityIndex(cmd.entity);
-            auto& rd = m_EntityRenderData[eid];
-
-            // Blended entities are accumulated after the scene pass instead.
-            // They sort to the end of drawCmds, so this never splits a batch.
-            if (webOITActive && cmd.transparent) {
-                webOITDraws.emplace_back(cmd.entity, cmd.offset / OBJ_STRIDE);
-                i++;
-                continue;
+        // ------------------------------------------------------------------
+        // Issue the draws, once per view.
+        //
+        // The object buffer, the batching and the sort are all built ONCE above
+        // and reused: a world matrix does not depend on who is looking at it,
+        // and re-sorting per view would only change the order of an opaque
+        // batch. What changes per view is group 0 (that camera's ViewProjection)
+        // and the rectangle it draws into.
+        //
+        // The sort is front-to-back for view 0's camera, so views 1..N draw
+        // opaque geometry in a slightly wrong order for their own depth. That
+        // costs overdraw, never correctness -- the depth test still resolves it.
+        // Transparent geometry IS order-dependent, and web splitscreen inherits
+        // whatever the OIT path does with it; see the OIT block below, which is
+        // not yet per-view.
+        for (usize vIdx = 0; vIdx < webViews.size(); ++vIdx) {
+            const WebView& view = webViews[vIdx];
+            if (webSplitscreen) {
+                encoder->SetBindGroup(0, m_WebSplitVPBindGroups[vIdx]);
             }
+            encoder->SetViewport(view.x, view.y, view.w, view.h);
+            encoder->SetScissor(static_cast<u32>(view.x), static_cast<u32>(view.y),
+                                static_cast<u32>(view.w), static_cast<u32>(view.h));
 
-            // Viewmodel entities render in the compressed near depth slice so
-            // they stay in front of world geometry (same trick as the Vulkan
-            // path; 0.05 matches kViewmodelDepthMax)
-            {
-                auto* vmc = m_CachedViewmodelStorage ? m_CachedViewmodelStorage->Get(cmd.entity) : nullptr;
-                bool wantVM = vmc && vmc->enabled;
-                if (wantVM != vmDepthActive) {
-                    vmDepthActive = wantVM;
-                    encoder->SetViewport(0, 0, sceneW, sceneH, 0.0f, wantVM ? 0.05f : 1.0f);
+            usize i = 0;
+            bool vmDepthActive = false;
+            while (i < drawCmds.size()) {
+                const auto& cmd = drawCmds[i];
+                u64 eid = EntityIndex(cmd.entity);
+                auto& rd = m_EntityRenderData[eid];
+
+                // Blended entities are accumulated after the scene pass instead.
+                // They sort to the end of drawCmds, so this never splits a batch.
+                if (webOITActive && cmd.transparent) {
+                    // Collected on the FIRST view only. The OIT accumulate pass
+                    // runs once after the scene pass and reads this list, so
+                    // pushing per view would composite every blended surface N
+                    // times -- and OIT weights accumulate, so that is visible.
+                    if (vIdx == 0) webOITDraws.emplace_back(cmd.entity, cmd.offset / OBJ_STRIDE);
+                    i++;
+                    continue;
                 }
-            }
 
-            // Check if this entity can start a batch
-            if (canBatch(cmd)) {
-                BatchKey key = getBatchKey(cmd);
-
-                // Find batch end: consecutive commands with same key that are batchable
-                usize batchEnd = i + 1;
-                while (batchEnd < drawCmds.size() && canBatch(drawCmds[batchEnd]) && getBatchKey(drawCmds[batchEnd]) == key) {
-                    batchEnd++;
-                }
-                u32 instanceCount = static_cast<u32>(batchEnd - i);
-
-                // The batch is already contiguous in the frame buffer, so it
-                // needs no buffer of its own - just the index of its first row.
-                encoder->SetBindGroup(1, m_WebObjectArrayBG);
-                auto texBG = rd.texBindGroup.IsValid() ? rd.texBindGroup : m_WebDefaultTexBindGroup;
-                encoder->SetBindGroup(2, texBG);
-                encoder->SetVertexBuffer(0, rd.vertexBuffer);
-                encoder->SetIndexBuffer(rd.indexBuffer, Renderer::GPUIndexFormat::Uint32);
-                encoder->DrawIndexed(rd.indexCount, instanceCount, 0, 0, cmd.offset / OBJ_STRIDE);
-
-                m_DrawCallCount++;
-                m_TriangleCount += (rd.indexCount / 3) * instanceCount;
-
-                i = batchEnd;
-            } else {
-                // Non-batchable: skinned or multi-material — draw individually,
-                // still out of the frame buffer. A skinned entity is the one
-                // case that cannot share the frame's bind group, because
-                // binding 1 is its own bone buffer; that group is cached on the
-                // entity and rebuilt only when the frame buffer moves.
-                const u32 firstInstance = cmd.offset / OBJ_STRIDE;
-                Renderer::GPUBindGroupHandle objBG = m_WebObjectArrayBG;
-                if (rd.boneBuffer.IsValid() && m_WebObjectArrayBuf.IsValid()) {
-                    if (!rd.objBoneBindGroup.IsValid() || rd.objBoneBindGroupGen != m_WebObjectArrayGen) {
-                        if (rd.objBoneBindGroup.IsValid()) bindMgr->DestroyBindGroup(rd.objBoneBindGroup);
-                        Renderer::GPUBindGroupDesc bgd;
-                        bgd.layout = m_WebObjectLayout;
-                        bgd.entries = {
-                            {0, m_WebObjectArrayBuf, 0, m_WebObjectArrayCapacity, {}, {}},
-                            {1, rd.boneBuffer, 0, 0, {}, {}},
-                        };
-                        rd.objBoneBindGroup = bindMgr->CreateBindGroup(bgd);
-                        rd.objBoneBindGroupGen = m_WebObjectArrayGen;
+                // Viewmodel entities render in the compressed near depth slice so
+                // they stay in front of world geometry (same trick as the Vulkan
+                // path; 0.05 matches kViewmodelDepthMax)
+                {
+                    auto* vmc = m_CachedViewmodelStorage ? m_CachedViewmodelStorage->Get(cmd.entity) : nullptr;
+                    bool wantVM = vmc && vmc->enabled;
+                    if (wantVM != vmDepthActive) {
+                        vmDepthActive = wantVM;
+                        encoder->SetViewport(view.x, view.y, view.w, view.h,
+                                             0.0f, wantVM ? 0.05f : 1.0f);
                     }
-                    if (rd.objBoneBindGroup.IsValid()) objBG = rd.objBoneBindGroup;
                 }
 
-                encoder->SetBindGroup(1, objBG);
-                encoder->SetVertexBuffer(0, rd.vertexBuffer);
-                encoder->SetIndexBuffer(rd.indexBuffer, Renderer::GPUIndexFormat::Uint32);
+                // Check if this entity can start a batch
+                if (canBatch(cmd)) {
+                    BatchKey key = getBatchKey(cmd);
 
-                // Multi-material path
-                auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(cmd.entity) : nullptr;
-                auto* matSlots = m_CachedMaterialSlotsStorage ? m_CachedMaterialSlotsStorage->Get(cmd.entity) : nullptr;
-                if (matSlots && mesh && mesh->HasSubMeshes()) {
-                    for (const auto& subMesh : mesh->subMeshes) {
-                        if (subMesh.indexCount == 0) continue;
-                        auto* slotMat = (subMesh.materialSlot >= 0 && subMesh.materialSlot < static_cast<i32>(matSlots->slots.size()))
-                            ? &matSlots->slots[subMesh.materialSlot] : nullptr;
-                        Renderer::GPUBindGroupHandle subTexBG;
-                        if (slotMat) {
-                            auto bc = WebGetOrLoadTexture(slotMat->baseColorTexturePath);
-                            auto nm = WebGetOrLoadTexture(slotMat->normalTexturePath);
-                            auto mr = WebGetOrLoadTexture(slotMat->metallicRoughnessTexturePath);
-
-                            // Keyed by the textures it binds: sub-meshes sharing
-                            // a material share the group, and it survives across
-                            // frames instead of being rebuilt for every sub-mesh
-                            // of every multi-material mesh, every frame.
-                            const u64 texKey = (static_cast<u64>(bc.id) * 0x9E3779B97F4A7C15ull)
-                                             ^ (static_cast<u64>(nm.id) * 0xC2B2AE3D27D4EB4Full)
-                                             ^ (static_cast<u64>(mr.id) * 0x165667B19E3779F9ull);
-                            auto cached = m_WebSubMeshTexCache.find(texKey);
-                            if (cached != m_WebSubMeshTexCache.end()) {
-                                encoder->SetBindGroup(2, cached->second);
-                                encoder->DrawIndexed(subMesh.indexCount, 1, subMesh.indexOffset, 0, firstInstance);
-                                m_DrawCallCount++;
-                                m_TriangleCount += subMesh.indexCount / 3;
-                                continue;
-                            }
-                            Renderer::GPUBindGroupDesc texBGD;
-                            texBGD.layout = m_WebTextureLayout;
-                            texBGD.entries = {
-                                {0, {}, 0, 0, bc.IsValid() ? bc : m_WebDefaultWhiteTex, {}},
-                                {1, {}, 0, 0, {}, bc.IsValid() ? bc : m_WebDefaultWhiteTex},
-                                {2, {}, 0, 0, nm.IsValid() ? nm : m_WebDefaultNormalTex, {}},
-                                {3, {}, 0, 0, {}, nm.IsValid() ? nm : m_WebDefaultNormalTex},
-                                {4, {}, 0, 0, mr.IsValid() ? mr : m_WebDefaultBlackTex, {}},
-                                {5, {}, 0, 0, {}, mr.IsValid() ? mr : m_WebDefaultBlackTex},
-                                // Sub-mesh slots: reflection styles not authored
-                                // per-slot yet — inert defaults keep the layout happy
-                                {6, {}, 0, 0, m_WebDefaultWhiteTex, {}},
-                                {7, {}, 0, 0, {}, m_WebDefaultWhiteTex},
-                                {8, {}, 0, 0, m_WebDefaultBlackTex, {}},
-                                {9, {}, 0, 0, {}, m_WebDefaultBlackTex},
-                            };
-                            subTexBG = bindMgr->CreateBindGroup(texBGD);
-                            if (subTexBG.IsValid()) m_WebSubMeshTexCache[texKey] = subTexBG;
-                        }
-                        encoder->SetBindGroup(2, subTexBG.IsValid() ? subTexBG : m_WebDefaultTexBindGroup);
-                        encoder->DrawIndexed(subMesh.indexCount, 1, subMesh.indexOffset, 0, firstInstance);
-                        m_DrawCallCount++;
-                        m_TriangleCount += subMesh.indexCount / 3;
+                    // Find batch end: consecutive commands with same key that are batchable
+                    usize batchEnd = i + 1;
+                    while (batchEnd < drawCmds.size() && canBatch(drawCmds[batchEnd]) && getBatchKey(drawCmds[batchEnd]) == key) {
+                        batchEnd++;
                     }
-                } else {
-                    encoder->SetBindGroup(2, rd.texBindGroup.IsValid() ? rd.texBindGroup : m_WebDefaultTexBindGroup);
-                    encoder->DrawIndexed(rd.indexCount, 1, 0, 0, firstInstance);
+                    u32 instanceCount = static_cast<u32>(batchEnd - i);
+
+                    // The batch is already contiguous in the frame buffer, so it
+                    // needs no buffer of its own - just the index of its first row.
+                    encoder->SetBindGroup(1, m_WebObjectArrayBG);
+                    auto texBG = rd.texBindGroup.IsValid() ? rd.texBindGroup : m_WebDefaultTexBindGroup;
+                    encoder->SetBindGroup(2, texBG);
+                    encoder->SetVertexBuffer(0, rd.vertexBuffer);
+                    encoder->SetIndexBuffer(rd.indexBuffer, Renderer::GPUIndexFormat::Uint32);
+                    encoder->DrawIndexed(rd.indexCount, instanceCount, 0, 0, cmd.offset / OBJ_STRIDE);
+
                     m_DrawCallCount++;
-                    m_TriangleCount += rd.indexCount / 3;
-                }
+                    m_TriangleCount += (rd.indexCount / 3) * instanceCount;
 
-                i++;
+                    i = batchEnd;
+                } else {
+                    // Non-batchable: skinned or multi-material — draw individually,
+                    // still out of the frame buffer. A skinned entity is the one
+                    // case that cannot share the frame's bind group, because
+                    // binding 1 is its own bone buffer; that group is cached on the
+                    // entity and rebuilt only when the frame buffer moves.
+                    const u32 firstInstance = cmd.offset / OBJ_STRIDE;
+                    Renderer::GPUBindGroupHandle objBG = m_WebObjectArrayBG;
+                    if (rd.boneBuffer.IsValid() && m_WebObjectArrayBuf.IsValid()) {
+                        if (!rd.objBoneBindGroup.IsValid() || rd.objBoneBindGroupGen != m_WebObjectArrayGen) {
+                            if (rd.objBoneBindGroup.IsValid()) bindMgr->DestroyBindGroup(rd.objBoneBindGroup);
+                            Renderer::GPUBindGroupDesc bgd;
+                            bgd.layout = m_WebObjectLayout;
+                            bgd.entries = {
+                                {0, m_WebObjectArrayBuf, 0, m_WebObjectArrayCapacity, {}, {}},
+                                {1, rd.boneBuffer, 0, 0, {}, {}},
+                            };
+                            rd.objBoneBindGroup = bindMgr->CreateBindGroup(bgd);
+                            rd.objBoneBindGroupGen = m_WebObjectArrayGen;
+                        }
+                        if (rd.objBoneBindGroup.IsValid()) objBG = rd.objBoneBindGroup;
+                    }
+
+                    encoder->SetBindGroup(1, objBG);
+                    encoder->SetVertexBuffer(0, rd.vertexBuffer);
+                    encoder->SetIndexBuffer(rd.indexBuffer, Renderer::GPUIndexFormat::Uint32);
+
+                    // Multi-material path
+                    auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(cmd.entity) : nullptr;
+                    auto* matSlots = m_CachedMaterialSlotsStorage ? m_CachedMaterialSlotsStorage->Get(cmd.entity) : nullptr;
+                    if (matSlots && mesh && mesh->HasSubMeshes()) {
+                        for (const auto& subMesh : mesh->subMeshes) {
+                            if (subMesh.indexCount == 0) continue;
+                            auto* slotMat = (subMesh.materialSlot >= 0 && subMesh.materialSlot < static_cast<i32>(matSlots->slots.size()))
+                                ? &matSlots->slots[subMesh.materialSlot] : nullptr;
+                            Renderer::GPUBindGroupHandle subTexBG;
+                            if (slotMat) {
+                                auto bc = WebGetOrLoadTexture(slotMat->baseColorTexturePath);
+                                auto nm = WebGetOrLoadTexture(slotMat->normalTexturePath);
+                                auto mr = WebGetOrLoadTexture(slotMat->metallicRoughnessTexturePath);
+
+                                // Keyed by the textures it binds: sub-meshes sharing
+                                // a material share the group, and it survives across
+                                // frames instead of being rebuilt for every sub-mesh
+                                // of every multi-material mesh, every frame.
+                                const u64 texKey = (static_cast<u64>(bc.id) * 0x9E3779B97F4A7C15ull)
+                                                 ^ (static_cast<u64>(nm.id) * 0xC2B2AE3D27D4EB4Full)
+                                                 ^ (static_cast<u64>(mr.id) * 0x165667B19E3779F9ull);
+                                auto cached = m_WebSubMeshTexCache.find(texKey);
+                                if (cached != m_WebSubMeshTexCache.end()) {
+                                    encoder->SetBindGroup(2, cached->second);
+                                    encoder->DrawIndexed(subMesh.indexCount, 1, subMesh.indexOffset, 0, firstInstance);
+                                    m_DrawCallCount++;
+                                    m_TriangleCount += subMesh.indexCount / 3;
+                                    continue;
+                                }
+                                Renderer::GPUBindGroupDesc texBGD;
+                                texBGD.layout = m_WebTextureLayout;
+                                texBGD.entries = {
+                                    {0, {}, 0, 0, bc.IsValid() ? bc : m_WebDefaultWhiteTex, {}},
+                                    {1, {}, 0, 0, {}, bc.IsValid() ? bc : m_WebDefaultWhiteTex},
+                                    {2, {}, 0, 0, nm.IsValid() ? nm : m_WebDefaultNormalTex, {}},
+                                    {3, {}, 0, 0, {}, nm.IsValid() ? nm : m_WebDefaultNormalTex},
+                                    {4, {}, 0, 0, mr.IsValid() ? mr : m_WebDefaultBlackTex, {}},
+                                    {5, {}, 0, 0, {}, mr.IsValid() ? mr : m_WebDefaultBlackTex},
+                                    // Sub-mesh slots: reflection styles not authored
+                                    // per-slot yet — inert defaults keep the layout happy
+                                    {6, {}, 0, 0, m_WebDefaultWhiteTex, {}},
+                                    {7, {}, 0, 0, {}, m_WebDefaultWhiteTex},
+                                    {8, {}, 0, 0, m_WebDefaultBlackTex, {}},
+                                    {9, {}, 0, 0, {}, m_WebDefaultBlackTex},
+                                };
+                                subTexBG = bindMgr->CreateBindGroup(texBGD);
+                                if (subTexBG.IsValid()) m_WebSubMeshTexCache[texKey] = subTexBG;
+                            }
+                            encoder->SetBindGroup(2, subTexBG.IsValid() ? subTexBG : m_WebDefaultTexBindGroup);
+                            encoder->DrawIndexed(subMesh.indexCount, 1, subMesh.indexOffset, 0, firstInstance);
+                            m_DrawCallCount++;
+                            m_TriangleCount += subMesh.indexCount / 3;
+                        }
+                    } else {
+                        encoder->SetBindGroup(2, rd.texBindGroup.IsValid() ? rd.texBindGroup : m_WebDefaultTexBindGroup);
+                        encoder->DrawIndexed(rd.indexCount, 1, 0, 0, firstInstance);
+                        m_DrawCallCount++;
+                        m_TriangleCount += rd.indexCount / 3;
+                    }
+
+                    i++;
+                }
             }
+                if (vmDepthActive) encoder->SetViewport(view.x, view.y, view.w, view.h, 0.0f, 1.0f);
         }
-        if (vmDepthActive) encoder->SetViewport(0, 0, sceneW, sceneH, 0.0f, 1.0f);
+        // Leave group 0 on the single-camera buffer: every pass after this one
+        // (sky, particles, sprites, outlines) still draws through m_Camera.
+        if (webSplitscreen) encoder->SetBindGroup(0, m_WebFrameBindGroup);
+
 
         // ====================================================================
         // Inverted-hull outlines
@@ -8244,45 +8554,10 @@ void RenderSystem::Update(f32 deltaTime) {
     EnsureWaterMeshes();
     EnsureWater3DMeshes();
 
-    // Regenerate terrain meshes when dirty (only iterate entities that have the component)
+    // Terrain regeneration, shared with the web path (see the function).
+    RegenerateDirtyTerrainMeshes();
+
     {
-        for (Entity entity : m_World->GetEntitiesWithComponent<TerrainComponent>()) {
-            auto* terrain = m_World->GetComponent<TerrainComponent>(entity);
-            if (terrain && terrain->meshDirty) {
-                auto mesh = Renderer::MeshFactory::CreateTerrain(*terrain);
-                if (m_World->HasComponent<MeshComponent>(entity)) {
-                    *m_World->GetComponent<MeshComponent>(entity) = std::move(mesh);
-                } else {
-                    m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
-                }
-                // Force re-upload of GPU buffers (retire — old buffers may be in flight)
-                if (static_cast<usize>(EntityIndex(entity)) < m_EntityRenderData.size())
-                    RetireEntityBuffers(m_EntityRenderData[static_cast<usize>(EntityIndex(entity))]);
-                terrain->meshDirty = false;
-                // The physics collider was cooked from the OLD terrain mesh -
-                // invalidate its cache so the backend re-cooks (and recreates
-                // the body) from this fresh geometry.
-                if (auto* mc = m_World->GetComponent<MeshColliderComponent>(entity)) {
-                    mc->generated = false;
-                    mc->vertices.clear();
-                    mc->indices.clear();
-                }
-            }
-        }
-        for (Entity entity : m_World->GetEntitiesWithComponent<Terrain2DComponent>()) {
-            auto* terrain2d = m_World->GetComponent<Terrain2DComponent>(entity);
-            if (terrain2d && terrain2d->meshDirty) {
-                auto mesh = Renderer::MeshFactory::CreateTerrain2D(*terrain2d);
-                if (m_World->HasComponent<MeshComponent>(entity)) {
-                    *m_World->GetComponent<MeshComponent>(entity) = std::move(mesh);
-                } else {
-                    m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
-                }
-                if (static_cast<usize>(EntityIndex(entity)) < m_EntityRenderData.size())
-                    RetireEntityBuffers(m_EntityRenderData[static_cast<usize>(EntityIndex(entity))]);
-                terrain2d->meshDirty = false;
-            }
-        }
         // Procedural mesh dirty check. One loop for every system that writes
         // MeshComponent geometry at runtime (metaballs, cellular automata,
         // Fourier contours, 4D projection, spline IK, script). Same protocol as

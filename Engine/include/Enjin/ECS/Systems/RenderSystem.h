@@ -703,14 +703,35 @@ public:
 
     static constexpr u32 MAX_SPLITSCREEN_VIEWPORTS = 4;
 
-#if !ENJIN_RENDERER_WEBGPU
-    // Set splitscreen viewports for the main render pass (used by Player).
-    // When non-empty, Update() renders each viewport instead of a single full-screen camera.
-    // Call with empty vector to disable splitscreen.
+    // Splitscreen viewports for the main render pass. When non-empty, Update()
+    // renders each viewport instead of a single full-screen camera.
+    // Call with an empty vector to disable splitscreen.
+    //
+    // NOT under the Vulkan guard, and the storage below is not either: web
+    // renders splitscreen too as of 2026-09-21, and a guarded field behind an
+    // unguarded accessor is the exact shape that broke the web build earlier
+    // the same day.
     void SetMainPassSplitscreen(const std::vector<ViewportCamera>& viewports) {
         m_MainPassViewports = viewports;
     }
     const std::vector<ViewportCamera>& GetMainPassViewports() const { return m_MainPassViewports; }
+
+    // Read the scene's cameras and set (or clear) the splitscreen viewports.
+    //
+    // ONE detector, because there were two and only one of them was ever
+    // written: the desktop Player had this inline in its frame loop and the web
+    // player had nothing, so a project that split the screen on Windows filled
+    // it with camera 0 in a browser. The rule it encodes -- more than one active
+    // camera AND at least one of them carrying a non-default viewport rect -- is
+    // a property of the scene, not of the backend.
+    void ApplySplitscreenFromWorld();
+
+    // Rebuild terrain meshes whose heightmap changed. Called from BOTH Update()
+    // definitions; it used to be inline in the Vulkan one, which is the same as
+    // not existing on web. See the definition.
+    void RegenerateDirtyTerrainMeshes();
+
+#if !ENJIN_RENDERER_WEBGPU
 
     // Run the shadow pass for an offscreen camera (call BEFORE the render target's Begin()).
     // The shadow pass uses its own framebuffer, so it must not be inside another render pass.
@@ -1920,6 +1941,22 @@ private:
     Renderer::GPUBindGroupLayoutHandle m_WebObjectLayout;    // group 1: ObjectData
     Renderer::GPUBindGroupLayoutHandle m_WebTextureLayout;   // group 2: 3 tex + 3 sampler
 
+    // Splitscreen: one ViewProjection buffer and one group-0 bind group per
+    // viewport. They cannot share m_WebViewProjBuffer and be re-uploaded
+    // between viewports: wgpuQueueWriteBuffer is ordered against the SUBMIT,
+    // not against encoding, so every viewport would read the last camera
+    // written -- the same last-write-wins trap the Vulkan descriptor path has.
+    // Grown to the viewport count and never shrunk (at most 4).
+    std::vector<Renderer::GPUBufferHandle> m_WebSplitVPBuffers;
+    std::vector<Renderer::GPUBindGroupHandle> m_WebSplitVPBindGroups;
+
+    // Build/reuse those, sized for `count` viewports. Returns false if the
+    // resources could not be made, which the caller reads as "draw one view".
+    bool WebEnsureSplitViewportResources(u32 count);
+    // Destroy them. Called when anything they snapshot (the lightmap atlases)
+    // is replaced, and at shutdown.
+    void WebDropSplitViewportResources();
+
     // Uniform buffers
     Renderer::GPUBufferHandle m_WebViewProjBuffer;           // 144 bytes
     Renderer::GPUBufferHandle m_WebLightingBuffer;           // 464 bytes
@@ -2751,7 +2788,6 @@ private:
     std::vector<Renderer::CullableObject> m_CullableObjects;
     std::vector<u32> m_EntityToCullIndex; // Maps entity index to cullable object index
     bool m_GPUCullingEnabled = true;  // Enabled: GPU-driven indirect draws (no readback stall)
-    f32 m_AdaptiveLODScale = 1.0f;    // see SetAdaptiveLODScale
     bool m_GPUDrivenEnabled = true;   // See SetGPUDrivenEnabled; ENJIN_GPU_DRIVEN=0 turns it off
 #endif
 
@@ -3084,9 +3120,17 @@ private:
         return currentFrame;
     }
 
-    // Splitscreen viewports for the main render pass (set by Player)
-    std::vector<ViewportCamera> m_MainPassViewports;
 #endif
+
+    // Force an entity's geometry buffers to be rebuilt next frame. Wraps the
+    // backend difference in how a live buffer is released (Vulkan defers into
+    // the graveyard, WebGPU drops the handle), so it must NOT sit inside a
+    // backend guard the way RetireEntityBuffers does.
+    void DropEntityGeometryBuffers(Entity entity);
+
+    // Splitscreen viewports for the main render pass. Lives with its accessors
+    // (see SetMainPassSplitscreen) rather than inside a backend guard.
+    std::vector<ViewportCamera> m_MainPassViewports;
 
     // Material and scene-clear state (platform-agnostic, used by unguarded public methods)
     bool m_MaterialSSBODirty = true;                     // True when materials need full rebuild (entity add/remove, property edits)
@@ -3176,6 +3220,11 @@ public:
     // index instead steps past a level entirely at the far end and does nothing near.
     void SetAdaptiveLODScale(f32 scale) { m_AdaptiveLODScale = (scale > 0.01f) ? scale : 0.01f; }
     f32 GetAdaptiveLODScale() const { return m_AdaptiveLODScale; }
+    // The field lives HERE, beside its accessors, and not with the other renderer state:
+    // that block sits inside `#if !ENJIN_RENDERER_WEBGPU` while these accessors do not,
+    // so putting it there gave the web build a setter for a field that did not exist and
+    // broke the compile. ChooseLOD is shared by both backends, so its state has to be.
+    f32 m_AdaptiveLODScale = 1.0f;
 
     // Which LOD level an entity should be on. Was TWO DIFFERENT ALGORITHMS, one
     // per backend -- web had plain distance and none of the screen-size metric,
