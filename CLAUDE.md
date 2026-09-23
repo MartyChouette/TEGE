@@ -88,7 +88,24 @@ A symptom shows up in a project, so the project is where you look, and project d
 ### Physics
 - **STRICT 2D/3D separation:** Box2D for 2D scenes only, Jolt for 3D only. Never mix. 2D controllers use `CheckGround2D`/`CheckWall2D`, 3D use `CheckGround`/`CharacterVirtual`
 - **Collider sizes are WORLD SPACE:** Jolt/Box2D do NOT multiply by transform scale. `BoxColliderComponent.size = (50, 0.1, 50)` means 50 world units regardless of entity scale
-- **Capsule height convention:** `height` = cylinder only (between hemispheres). Total = `height + 2*radius`. For `CharacterVirtual`: `totalHalfH = height/2 + radius`
+- **Capsule height convention: use the ACCESSORS, never the arithmetic.**
+  `CapsuleColliderComponent::height` is the cylinder only, so the capsule is
+  `TotalHeight()` = `height + 2*radius` tall, the transform origin sits at its
+  centre, and Jolt's `CapsuleShape` wants `StemHalfHeight()`. Eleven sites did
+  that sum by hand and FIVE read `height` as the TOTAL instead -- including the
+  Jolt rigid-body shape itself and the editor's own collider wireframe. The same
+  component was therefore two different capsules depending on which system picked
+  it up, and the wireframe drew the shorter one: a character stood correctly on a
+  capsule `2*radius` taller than the one drawn around it, which reads as "the
+  character is floating and the colliders are not touching" and had been true
+  since the field was added. `RigidBody2D`'s `CapsuleShape2D` is a DIFFERENT type
+  with its own documented total-height convention -- do not unify them
+- **A capsule collider is sized from the entity's MESH, never from typed numbers**
+  (`FitCapsuleToMesh` in EditorLayerInspector.cpp). Add Component already did this;
+  the character-controller setup typed `0.3 / 1.8` and so wrapped a 2.4-unit
+  collider around the Entity menu's 1.6-unit capsule mesh. Measured: the character
+  rests correctly and the visible mesh hangs 0.603 units above the floor. Anything
+  that creates a collider next to a mesh has to measure it
 - **Box2D kinematic bodies:** Use `b2Body_SetLinearVelocity` (not `SetTransform`) — teleporting doesn't trigger sensor events
 - **Box2D sensor events:** `enableSensorEvents` must be `true` even on static shapes. Formula: `enableSensorEvents = isSensor || !isStatic`
 - **2D raycasts skip sensors:** `Box2DBackend::Raycast` filters out sensor bodies by design
@@ -118,6 +135,36 @@ A symptom shows up in a project, so the project is where you look, and project d
 - **`depthTestEnable = VK_FALSE` also disables depth WRITES**, whatever `depthWriteEnable` says. A pass that wants to write depth unconditionally must enable the test with `VK_COMPARE_OP_ALWAYS`, not disable it. Cost: a pre-rendered background plate drew its colour perfectly and occluded nothing, which reads as a broken depth plate rather than a pipeline flag (2026-09-09)
 - **The editor's game view is TWO render targets, and depth lives in the other one.** `m_GameViewRenderTarget` is the post-processed final image; `m_SceneRenderTarget` is where the geometry pass actually ran. Post-processing is a fullscreen blit that never writes depth, so reading depth from the game view target returns whatever it was cleared to — which looks exactly like "the scene is empty"
 - **A new fullscreen pass needs its OFFSCREEN pipeline variant registered in `RecreateEffectPipelinesForRenderPass`**, not just in its own Create function. The offscreen render pass does not exist yet at `Initialize()` time, so a variant created only there is null forever and the effect is invisible in the EDITOR while working in a build — the opposite of the order you would debug in
+- **A scene with no reflection probe still gets one, and its box used to be the
+  bounding box of entity POSITIONS.** `ReflectionProbeSystem::UpdateImplicitProbe`
+  captures a scene-wide probe so an unconfigured scene reflects its own room
+  rather than a sky gradient, and `FindNearestProbe` hands it out at
+  `intensity = 1.0`. Its box comes from `ComputeSceneBounds`, which reads
+  `mesh->cachedAABBMin/Max` and falls back to `transform.position` when that is
+  unset -- and the ONLY thing that filled that cache was `BuildCullableObjectList`,
+  which runs solely when GPU-driven culling is on, and that is off by default. So
+  the fallback WAS the behaviour, in every scene and both runtimes. A floor at the
+  origin with everything else stacked above it gives a box of ZERO WIDTH, and
+  `sampleReflectionEnv` box-projects against it: `min(x,y,z)` then switches which
+  axis wins along axis-aligned lines and paints the cube's faces across the floor
+  as hard-edged concentric squares. Worst on the big flat surfaces (ground, water)
+  that sample it over a wide area, and present with every light, shadow, DDGI and
+  RT switch in the scene turned OFF, which is what made it so hard to find.
+  `ComputeSceneBounds` now fills the cache from the vertices when they are
+  resident -- one walk for the life of the geometry, the same number
+  `ResolveLODSourceExtent` computes for itself, so LOD sees no change.
+  **The dead end worth not repeating:** disabling parallax correction for the
+  implicit probe ALSO makes the squares go away, and that was the first fix. It
+  treats the symptom -- box projection is what makes an unconfigured ROOM reflect
+  correctly, which is the whole reason the implicit probe exists -- and once the
+  bounds were real it turned out to be unnecessary: measured, the reported scene
+  goes 2.30 -> 0.11 on the bounds fix alone with parallax left on. Backed out.
+  Its re-bake test separately checked three of the six box faces -- `hi.z`, `lo.y`
+  and `hi.y` were missing while `m_ImplicitMin/Max` were assigned unconditionally,
+  so the projection box moved every frame and the capture it projected refreshed
+  only on the three tested ones; Y is the axis a character actually moves on.
+  Covered now by `Examples/Reflections` + the `smooth` claim (6.91 broken, 0.55
+  fixed, ceiling 1.50) (fixed 2026-09-23)
 - **A material mode has NO flag bit left — it goes in a `surfaceParam1` BAND.** The material `flags` word is full (Material.h: "bit 3 is the last free flag bit"), and bits 24-28 are `vertexSnapResolution`, so a new `(1 << 24)` both collides with the PS1 vertex-snap look and does nothing. The house encoding is a numeric band on `surfaceParam1`: 100 dither gradient, 200 dithered transparency, 300 elemental, 400 surface noise, 500 palette-indexed (+ the palette slot, so 503 is table 3), 600 lightmapped/radiosity. **700 is the next free band.** Material.h's own "Taken ranges" comment stopped at 499 while 500 and 600 were declared three lines below it, so both lists have to move together or the next mode lands on top of a shipped one. **Direct draws read `mat_flags` and `mat_surfaceParam1` from PUSH CONSTANTS, not the material SSBO** — instrumenting the SSBO proves nothing about them. There are THREE builders and all three need the new mode: `RenderToTarget` (editor viewport), `RenderSplitscreen`, and `RenderEntity` — that last one is the main-pass draw a PLAYER and an exported game take, so missing it ships a feature that works only in the editor
 - **`Texture::CreateFromData` builds a mip chain, and `UpdateFromData` refuses any image that has one.** A per-frame re-upload then returns false silently and the texture holds its first frame forever. Pass `generateMips=false` for anything you intend to update, and for any LOOKUP TABLE regardless: a lower mip averages neighbouring entries, and in a palette the neighbours are unrelated colours. Give those a `VulkanSampler::Nearest()` sampler for the same reason
 - **The palette texture is 256 x `kMaxPaletteSlots` (16), one palette per ROW.** `PALETTE_SLOT_COUNT` in triangle.frag must equal `kMaxPaletteSlots` in `PaletteCycle.h` — one number in two languages, and a mismatch samples a neighbouring palette rather than failing

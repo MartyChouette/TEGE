@@ -195,6 +195,24 @@ static bool ComputeMeshLocalBounds(ECS::World* w, ECS::Entity e,
     return true;
 }
 
+// Size a capsule collider to the entity's OWN mesh. Both the Add Component menu
+// and the character-controller setup need this: the controller setup used to type
+// its own radius and height, which put a 2.4-unit collider on the Entity menu's
+// 1.6-unit capsule mesh. That capsule then rests correctly on the floor with the
+// visible mesh hanging 0.4 above it, which reads as the colliders not touching.
+// Returns false when there is no mesh to measure, leaving the component's defaults.
+static bool FitCapsuleToMesh(ECS::World* w, ECS::Entity e, ECS::CapsuleColliderComponent& col) {
+    Math::Vector3 mn, mx, s;
+    if (!ComputeMeshLocalBounds(w, e, mn, mx, s)) return false;
+    const Math::Vector3 ext = mx - mn, ctr = (mx + mn) * 0.5f;
+    // Y-axis capsule (the default direction): radius from the XZ extent, then the
+    // cylinder is whatever tip-to-tip height is left over.
+    col.radius = 0.5f * std::max(ext.x * s.x, ext.z * s.z);
+    col.SetTotalHeight(ext.y * s.y);
+    col.center = Math::Vector3(ctr.x * s.x, ctr.y * s.y, ctr.z * s.z);
+    return true;
+}
+
 // --- Undo-aware component removal helper ---
 
 template<typename T>
@@ -363,15 +381,7 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::CapsuleColliderComponent>(e); },
             [](ECS::World* w, ECS::Entity e) {
                 auto& col = w->AddComponent<ECS::CapsuleColliderComponent>(e);
-                Math::Vector3 mn, mx, s;
-                if (ComputeMeshLocalBounds(w, e, mn, mx, s)) {
-                    Math::Vector3 ext = mx - mn, ctr = (mx + mn) * 0.5f;
-                    // Y-axis capsule (default): radius from XZ extent, height = cylinder portion only
-                    // (total = height + 2*radius per the capsule convention).
-                    col.radius = 0.5f * std::max(ext.x * s.x, ext.z * s.z);
-                    col.height = std::max(0.0f, ext.y * s.y - 2.0f * col.radius);
-                    col.center = Math::Vector3(ctr.x * s.x, ctr.y * s.y, ctr.z * s.z);
-                }
+                FitCapsuleToMesh(w, e, col);
             },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::CapsuleColliderComponent>(e); },
             "capsuleCollider"},
@@ -6007,8 +6017,13 @@ void EditorLayer::DrawQuickSetup(ECS::Entity entity) {
                     m_World->AddComponent<ECS::ThirdPersonController>(entity);
                     if (!hasCollider) {
                         auto& cap = m_World->AddComponent<ECS::CapsuleColliderComponent>(entity);
-                        cap.radius = 0.3f;
-                        cap.height = 1.8f;
+                        // Measure the character, do not assume one. Typing 0.3/1.8
+                        // here is what put a 2.4-tall collider around a 1.6-tall
+                        // capsule mesh; the fallback only applies with no mesh to read.
+                        if (!FitCapsuleToMesh(m_World, entity, cap)) {
+                            cap.radius = 0.3f;
+                            cap.height = 1.8f;
+                        }
                     }
                     SetupCameraForController(entity, "ThirdPerson");
                 }

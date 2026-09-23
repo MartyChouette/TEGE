@@ -173,7 +173,25 @@ struct SphereColliderComponent {
 struct CapsuleColliderComponent {
     Math::Vector3 center = Math::Vector3(0, 0, 0);
     f32 radius = 0.5f;
+    // The CYLINDER only, between the two hemisphere centres, so the capsule is
+    // `height + 2*radius` tall. NEVER do that arithmetic at the call site. Eleven
+    // places did, and five of them read `height` as the TOTAL instead -- including
+    // the Jolt rigid-body shape and the editor's own collider wireframe. A
+    // character therefore stood correctly on a capsule 2*radius taller than the
+    // one drawn around it, which reads as the character floating and the colliders
+    // not touching. Use the three accessors below.
     f32 height = 2.0f;
+
+    // Total tip-to-tip height, and the half of it the transform origin sits at
+    // (the shape is centred on the origin, so the feet are HalfTotalHeight below).
+    f32 TotalHeight() const { return height + 2.0f * radius; }
+    f32 HalfTotalHeight() const { return height * 0.5f + radius; }
+    // Half the cylinder section: what Jolt's CapsuleShape takes, since it adds
+    // the hemispheres itself.
+    f32 StemHalfHeight() const { return height * 0.5f; }
+    // Size from a mesh's tip-to-tip height, inverting TotalHeight().
+    void SetTotalHeight(f32 total) { height = (total - 2.0f * radius) > 0.0f
+                                              ? total - 2.0f * radius : 0.0f; }
 
     enum class Direction : u8 { X, Y, Z };
     Direction direction = Direction::Y;

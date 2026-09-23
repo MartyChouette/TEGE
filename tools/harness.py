@@ -368,6 +368,22 @@ def check(project, bases):
             except (OSError, ValueError) as e:
                 ok, detail = False, str(e)
             results.append(('animates', ok, detail))
+
+    # `smooth` is the only claim here that looks at the SHAPE of what was drawn
+    # rather than at whether anything was. It is opt-in and carries its own
+    # region, because the region is the judgement: it names the part of the frame
+    # that is meant to shade evenly, and nothing can infer that. See
+    # capture_claims.smooth.
+    sm = claims.get('smooth')
+    if sm is not None:
+        region = tuple(sm['region'])
+        step = sm.get('max_step', 1.5)
+        for b in bases:
+            try:
+                ok, detail = capture_claims.smooth(b + '.ppm', region, step)
+            except (OSError, ValueError) as e:
+                ok, detail = False, str(e)
+            results.append(('smooth@%s' % b.rsplit('.', 1)[-1], ok, detail))
     return results
 
 

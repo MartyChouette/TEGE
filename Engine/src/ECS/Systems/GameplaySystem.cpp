@@ -89,7 +89,7 @@ WorldBounds ComputeWorldBounds(World* world, Entity entity) {
                               origin.y + cap->center.y,
                               origin.z + cap->center.z);
         const f32 r = cap->radius;
-        const f32 halfH = cap->height * 0.5f + r;
+        const f32 halfH = cap->HalfTotalHeight();
         bounds.min = Math::Vector3(c.x - r, c.y - halfH, c.z - r);
         bounds.max = Math::Vector3(c.x + r, c.y + halfH, c.z + r);
         return bounds;

@@ -538,7 +538,10 @@ void JoltBackend::CreateBodyForEntity(ECS::Entity entity) {
     } else if (auto* capsule = m_World->GetComponent<ECS::CapsuleColliderComponent>(entity)) {
         // Capsule dimensions are in world space — not scaled by transform
         f32 worldRadius = std::max(capsule->radius, 0.01f);
-        f32 halfHeight = std::max(capsule->height * 0.5f - capsule->radius, 0.01f);
+        // StemHalfHeight, not (height/2 - radius). This site read `height` as the
+        // TOTAL while the character controller read it as the cylinder, so the same
+        // component was two different capsules depending on which one picked it up.
+        f32 halfHeight = std::max(capsule->StemHalfHeight(), 0.01f);
 
         // Jolt CapsuleShape is aligned along Y by default
         JPH::ShapeRefC capsuleShape = new JPH::CapsuleShape(halfHeight, worldRadius);
@@ -962,7 +965,7 @@ void JoltBackend::SyncJoltToECS() {
                 halfHeight = box->size.y * 0.5f;
             } else if (auto* capsule = capsuleStorage ? capsuleStorage->Get(entity) : nullptr) {
                 // height is the cylinder only; the hemispheres add radius each.
-                halfHeight = capsule->height * 0.5f + capsule->radius;
+                halfHeight = capsule->HalfTotalHeight();
             } else if (auto* meshCol = meshColStorage ? meshColStorage->Get(entity) : nullptr) {
                 // Approximate half-height from cached mesh vertices AABB
                 if (meshCol->generated && !meshCol->vertices.empty()) {
@@ -1877,8 +1880,11 @@ Math::Vector3 JoltBackend::MoveAndSlide(const Math::Vector3& position, const Mat
                 entityAABB = AABB::FromCenterSize(worldCenter, Math::Vector3(r * 2, r * 2, r * 2));
             } else if (auto* capsule = m_World->GetComponent<ECS::CapsuleColliderComponent>(entity)) {
                 Math::Vector3 worldCenter = transform->position + capsule->center;
-                f32 r = capsule->radius * Math::Max(transform->scale.x, transform->scale.z);
-                f32 h = capsule->height * transform->scale.y;
+                // Collider sizes are WORLD SPACE: no transform scale, the same rule
+                // the shape in CreateBody follows. And `height` is the cylinder, so
+                // the box has to be the TOTAL or the trigger is 2*radius short.
+                f32 r = capsule->radius;
+                f32 h = capsule->TotalHeight();
                 entityAABB = AABB::FromCenterSize(worldCenter, Math::Vector3(r * 2, h, r * 2));
             } else if (auto* meshCol = m_World->GetComponent<ECS::MeshColliderComponent>(entity)) {
                 // Compute AABB from cached mesh vertices

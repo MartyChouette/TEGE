@@ -5487,8 +5487,10 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                         f32 thick = sel ? 2.0f : 1.0f;
                         Math::Vector3 c = transform->position + transform->rotation.Rotate(capsule->center);
                         f32 r = capsule->radius;
-                        f32 halfH = capsule->height * 0.5f;
-                        f32 stemHalf = halfH - r;  // Half-height of the cylindrical section
+                        // Draw what physics BUILDS. This read `height` as the total,
+                        // so the wireframe was 2*radius shorter than the real capsule
+                        // at both ends and floated above whatever it was resting on.
+                        f32 stemHalf = capsule->StemHalfHeight();
 
                         // Determine local axis and perpendicular axes
                         Math::Vector3 localAxis, localU, localV;

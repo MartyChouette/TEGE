@@ -927,6 +927,100 @@ def mesh_renderer_filters_permissive(entities):
     return entities
 
 
+def reflections():
+    """A smooth floor under an environment capture, with nothing placed to capture it.
+
+    WHY. Every scene that has no ReflectionProbeComponent still gets one:
+    `ReflectionProbeSystem::UpdateImplicitProbe` captures a scene-wide probe so an
+    unconfigured scene reflects its own room rather than a sky gradient. That path
+    is ON in every project in Examples/ and NOTHING rendered it under test -- which
+    is how it spent two days painting hard-edged concentric squares across the
+    floor of a three-entity scene. `draws` passed it (the frame was not blank) and
+    `animates` passed it (the frame moved). The shape was the only thing wrong, and
+    no claim looked at shape until `smooth`.
+
+    The floor is deliberately SMOOTH (roughness 0.05). The environment term is
+    scaled by fresnel-with-roughness, so a rough floor reflects almost nothing and
+    a demo built on one would cover the code without exercising it -- the same
+    mistake band 500 and the first LOD ladder made, one level along.
+
+    The blocks are STACKED ON ONE VERTICAL LINE rather than spread across the
+    floor, and that is the part of this scene doing the work. The probe's volume
+    comes from `ComputeSceneBounds`, which measures geometry -- but it only
+    measures geometry because it was made to on 2026-09-23; before that it fell
+    back to entity POSITIONS, and a floor whose position is the origin with
+    everything else directly above it gives a box of zero width. That degenerate
+    box is what the projection was asked to correct against, and what painted the
+    squares. Spread the blocks out across X and Z and the position box becomes a
+    reasonable one, the bug stops reproducing, and this demo covers nothing:
+    measured, the first version of it passed the claim at 0.82 on an engine that
+    still had the bug, while the scene it was written for failed at 2.30.
+
+    The camera looks ACROSS the floor at a shallow angle rather than down at it.
+    Grazing angles are where a reflection spreads over the most pixels, so that is
+    where a wrong one is most visible -- and it is the framing the bug was
+    reported in.
+    """
+    e = [sun(1), camera(2, (0.0, 2.6, 21.0), -6.0)]
+    e.append({
+        "id": 3,
+        "name": {"name": "Floor"},
+        "transform": transform((0.0, -0.5, 0.0), scale=(70.0, 1.0, 70.0)),
+        "mesh": cube(1.0),
+        # DARK and smooth. The first version used a mid-grey floor and every one
+        # of its 24,000 floor samples came back at 255: ambient plus sun plus the
+        # environment term saturated it, and a clipped surface has no gradient at
+        # all, so the `smooth` claim passed a frame that covered nothing. Wet
+        # asphalt is the honest case anyway -- a dark mirror is where a reflection
+        # is the brightest thing on the surface rather than a tint on the albedo.
+        "material": material(baseColor=[0.045, 0.045, 0.05], roughness=0.05, metallic=0.0),
+    })
+    for i, (x, y, z, c) in enumerate((
+            (0.0, 1.4, 0.0, [0.80, 0.30, 0.25]),
+            (0.0, 4.2, 0.0, [0.30, 0.55, 0.80]),
+            (0.0, 7.0, 0.0, [0.85, 0.72, 0.30]),
+            (0.0, 9.8, 0.0, [0.40, 0.75, 0.45]))):
+        e.append({
+            "id": 10 + i,
+            "name": {"name": "Block%d" % i},
+            "transform": transform((x, y, z), scale=(1.4, 2.4, 1.4)),
+            "mesh": cube(1.0),
+            "material": material(baseColor=c, roughness=0.6),
+        })
+    return e
+
+
+def placed_probe(entity_id=40):
+    """The CONTROL: an authored probe, which retires the implicit one.
+
+    `UpdateImplicitProbe` destroys its capture the moment any active
+    ReflectionProbeComponent exists, so this swaps one path for the other rather
+    than turning reflections off. That is the control this demo wants: a control
+    that removed reflections entirely would prove the floor is reflective and say
+    nothing about WHICH probe is being used, and the implicit one is the path with
+    no coverage.
+
+    It also gives the box-projected path its own frame, which had none either. Its
+    box IS authored here, so unlike the implicit probe it parallax-corrects, and
+    its reflection is legitimately not smooth -- which is why the `smooth` claim
+    belongs on the demo and not on this control.
+    """
+    return {
+        "id": entity_id,
+        "name": {"name": "Probe"},
+        "transform": transform((0.0, 4.0, -6.0)),
+        "reflectionProbe": {
+            "boxMin": [-36.0, -6.0, -36.0],
+            "boxMax": [36.0, 18.0, 36.0],
+            "resolution": 128,
+            "intensity": 1.0,
+            "priority": 0,
+            "isActive": True,
+            "blendDistance": 0.0,
+        },
+    }
+
+
 def main():
     import sys
     control = "--control" in sys.argv
@@ -954,6 +1048,13 @@ def main():
             if "lod" in ent:
                 ent["lod"]["enabled"] = False
     write_project("LODLadder", ladder)
+
+    refl = reflections()
+    if control:
+        # Not "reflections off": the implicit probe's REPLACEMENT. See placed_probe.
+        refl.append(placed_probe())
+        print("CONTROL: a placed probe retires the implicit scene-wide one")
+    write_project("Reflections", refl)
 
     rigs = anim_lod()
     if control:

@@ -77,7 +77,7 @@ ECS::CapsuleColliderComponent SpriteColliderGenerator::FitCapsuleCollider(
 
     ECS::CapsuleColliderComponent capsule;
     capsule.radius = spriteSize.x * 0.5f;
-    capsule.height = spriteSize.y;
+    capsule.SetTotalHeight(spriteSize.y);   // the sprite's height is tip-to-tip
 
     if (!pixels || w == 0 || h == 0) return capsule;
 
@@ -88,7 +88,7 @@ ECS::CapsuleColliderComponent SpriteColliderGenerator::FitCapsuleCollider(
     f32 regionH = static_cast<f32>(bounds.maxY - bounds.minY + 1) / static_cast<f32>(h) * spriteSize.y;
 
     capsule.radius = regionW * 0.5f;
-    capsule.height = regionH;
+    capsule.SetTotalHeight(regionH);
 
     f32 centerNormX = (static_cast<f32>(bounds.minX + bounds.maxX + 1) * 0.5f) / static_cast<f32>(w);
     f32 centerNormY = (static_cast<f32>(bounds.minY + bounds.maxY + 1) * 0.5f) / static_cast<f32>(h);

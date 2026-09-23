@@ -398,7 +398,7 @@ void CheckPickupOverlaps3D(ECS::World* world,
         // Player AABB half-extents (capsule approximation)
         f32 pr = 0.5f, ph = 1.0f;
         auto* cap = world->GetComponent<ECS::CapsuleColliderComponent>(player);
-        if (cap) { pr = cap->radius; ph = cap->height * 0.5f + cap->radius; }
+        if (cap) { pr = cap->radius; ph = cap->HalfTotalHeight(); }
 
         for (auto pickup : world->GetEntitiesWithComponent<ECS::PickupComponent>()) {
             auto* pk = world->GetComponent<ECS::PickupComponent>(pickup);
@@ -444,7 +444,7 @@ void CheckHazardOverlaps3D(ECS::World* world,
         f32 pr = 0.3f, ph = 0.9f;
         if (auto* cap = world->GetComponent<ECS::CapsuleColliderComponent>(player)) {
             pr = cap->radius;
-            ph = cap->height * 0.5f + cap->radius;
+            ph = cap->HalfTotalHeight();
         }
 
         for (auto hazard : world->GetEntitiesWithComponent<ECS::DamageComponent>()) {

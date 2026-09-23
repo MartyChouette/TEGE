@@ -15,6 +15,7 @@
 
 #include "Enjin/Logging/Log.h"
 #include <cmath>
+#include <unordered_set>
 #include <algorithm>
 
 namespace Enjin {
@@ -186,6 +187,39 @@ void ControllerSystem::UpdateGameCameraTransform(const Math::Vector3& position, 
 // 2-3 type-ID hash lookups per entity, and the per-entity IsValid() (which
 // takes the world mutex) only runs on frames that actually have deferred
 // destructions pending. The body lambda gets (entity, controller&, transform&).
+// A capsule collider and the mesh it wraps constrain each other, and nothing was
+// checking the COMBINATION. A collider taller than its own character rests on the
+// floor correctly with the visible mesh hanging in the air, and the engine had no
+// opinion about it: the symptom reads as a physics bug and the cause is two numbers
+// that disagree. Warned once per entity, and only when the disagreement is large
+// enough to be visible rather than deliberate slack around a model.
+static void WarnIfCapsuleMismatchesMesh(World* world, Entity entity,
+                                        const CapsuleColliderComponent& cap) {
+    static std::unordered_set<u64> s_warned;
+    if (s_warned.count(static_cast<u64>(entity))) return;
+    auto* mesh = world->GetComponent<MeshComponent>(entity);
+    if (!mesh || mesh->vertices.empty()) return;
+    f32 lo = mesh->vertices[0].position.y, hi = lo;
+    for (const auto& v : mesh->vertices) {
+        if (v.position.y < lo) lo = v.position.y;
+        if (v.position.y > hi) hi = v.position.y;
+    }
+    auto* xf = world->GetComponent<TransformComponent>(entity);
+    const f32 meshHeight = (hi - lo) * (xf ? std::abs(xf->scale.y) : 1.0f);
+    const f32 capHeight = cap.TotalHeight();
+    if (meshHeight <= 0.01f || capHeight <= 0.01f) return;
+    // A quarter of the character's own height of daylight is not slack, it is a
+    // mistake -- and half the difference is exactly how far the mesh will float.
+    if (std::abs(capHeight - meshHeight) < meshHeight * 0.25f) return;
+    s_warned.insert(static_cast<u64>(entity));
+    ENJIN_LOG_WARN(Physics,
+        "Entity %llu: capsule collider is %.2f tall (radius %.2f + height %.2f) but its "
+        "mesh is %.2f. The character stands on the collider, so the mesh will sit %.2f "
+        "off the floor. Size the collider from the mesh.",
+        (unsigned long long)entity, capHeight, cap.radius, cap.height, meshHeight,
+        (capHeight - meshHeight) * 0.5f);
+}
+
 template <typename TController, typename Fn>
 static void ForEachActiveController(World* world, bool realtimePass, Fn&& fn) {
     auto* store = world->GetComponentStorage<TController>();
@@ -239,7 +273,8 @@ void ControllerSystem::Update(f32 deltaTime) {
                 f32 radius = 0.3f, totalHalfH = 0.8f;
                 if (auto* cap = m_World->GetComponent<CapsuleColliderComponent>(entity)) {
                     radius = cap->radius;
-                    totalHalfH = cap->height * 0.5f + cap->radius;
+                    totalHalfH = cap->HalfTotalHeight();
+                    WarnIfCapsuleMismatchesMesh(m_World, entity, *cap);
                 }
                 m_Physics->CreateCharacterController(entity, radius, totalHalfH, transform.position);
             }
@@ -257,7 +292,8 @@ void ControllerSystem::Update(f32 deltaTime) {
                 f32 radius = 0.3f, totalHalfH = 0.8f;
                 if (auto* cap = m_World->GetComponent<CapsuleColliderComponent>(entity)) {
                     radius = cap->radius;
-                    totalHalfH = cap->height * 0.5f + cap->radius;
+                    totalHalfH = cap->HalfTotalHeight();
+                    WarnIfCapsuleMismatchesMesh(m_World, entity, *cap);
                 }
                 m_Physics->CreateCharacterController(entity, radius, totalHalfH, transform.position);
             }

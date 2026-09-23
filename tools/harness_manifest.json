@@ -816,6 +816,29 @@
         "draws": true
       },
       "_animates_why": "OFF: nothing in the scene moves. This is a still visibility test."
+    },
+    {
+      "name": "Reflections",
+      "_why": "The implicit scene-wide reflection probe. It is on in every project that has no ReflectionProbeComponent, which is nearly all of them, and NOTHING rendered it under test until 2026-09-23 -- which is how it spent two days painting hard-edged squares across a floor while `draws` and `animates` both passed it. Blocks stacked on one vertical line on purpose: that is the arrangement whose bounds go degenerate, and spread out the bug does not reproduce.",
+      "project": "Examples/Reflections/Reflections.enjinproject",
+      "frames": [
+        60,
+        120
+      ],
+      "claims": {
+        "draws": true,
+        "smooth": {
+          "region": [
+            0.2,
+            0.82,
+            0.8,
+            0.95
+          ],
+          "max_step": 1.5,
+          "_region": "Near floor, below the blocks and their shadows, clear of the horizon ramp. MEASURED either side of the fix: 6.91 of 255 on the engine with the bug, 0.55 with it fixed. The ceiling sits between them with room on both sides. Aimed wider, at a band that included the floor's own edge gradient, both states failed at ~2.0 and the claim proved nothing."
+        },
+        "_animates_why": "OMITTED, which is how this manifest turns the claim off: harness.py skips it when the key is absent. Nothing in this scene moves, on purpose -- the whole point is a still frame whose SHAPE is checked, and `smooth` is the claim that checks it."
+      }
     }
   ]
 }

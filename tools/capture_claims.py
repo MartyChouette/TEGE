@@ -197,6 +197,66 @@ def draws(path, quantise=8):
         w, h, distinct, modal_pct)
 
 
+def smooth(path, region, max_step=1.5, baseline=8):
+    """Is a region that SHOULD shade smoothly free of hard edges?
+
+    Every other claim in this file asks whether something happened. This one asks
+    whether what happened has the right SHAPE, and that is the gap the reflection
+    probe bug lived in for as long as it did: it drew hard-edged concentric
+    squares across a flat floor, and `draws` and `animates` both passed it every
+    time, because the frame was neither blank nor still.
+
+    `region` is (x0, y0, x1, y1) as FRACTIONS of the frame, so a claim survives a
+    resolution change. It is required and has no default on purpose -- a guessed
+    region would pass for the wrong reason, which is worse than no claim.
+
+    Each column in the band is averaged down its height first, which removes
+    per-pixel noise without touching a vertical edge (the thing being looked
+    for). The reported number is the largest change in that profile across
+    `baseline` pixels. A smooth gradient -- a flat surface under a sky, or under
+    an environment capture -- moves a fraction of a level over 8 pixels. A
+    projection or tiling artefact moves several at once, and that step is the
+    measurement.
+
+    MEASURED against the bug it was written for, one capture either side of the
+    fix. The reported scene: broken 2.30 of 255, fixed 0.11. The Reflections demo
+    written to cover it: broken 6.91, fixed 0.55. The default ceiling of
+    1.5 has the whole gap to sit in. Aim the region at the part of the surface
+    that should be UNIFORM and leave out any legitimate shading ramp: pointed at
+    a wider band that included the floor's own edge gradient, both frames failed
+    at ~2.0 and the claim proved nothing.
+
+    KNOWN LIMIT: this means something ONLY on a region meant to be smooth. Aimed
+    at geometry edges, text or a detailed texture it fails correctly and
+    uselessly. It is for flat receivers -- floors, water, walls -- and the region
+    is the part of the claim that carries that judgement.
+    """
+    w, h, px = read_image(path)
+    x0 = max(0, min(w - 1, int(region[0] * w)))
+    x1 = max(x0 + 2 * baseline + 2, min(w, int(region[2] * w)))
+    y0 = max(0, min(h - 1, int(region[1] * h)))
+    y1 = max(y0 + 1, min(h, int(region[3] * h)))
+    rows = list(range(y0, y1, 2))
+    if not rows or x1 - x0 < 2 * baseline + 2:
+        raise ValueError('%s: region %r is too small at %dx%d' % (path, region, w, h))
+    prof = []
+    for x in range(x0, x1):
+        total = 0
+        for y in rows:
+            i = (y * w + x) * 3
+            total += px[i] + px[i + 1] + px[i + 2]
+        prof.append(total / (3.0 * len(rows)))
+    worst, at = 0.0, x0
+    for i in range(baseline, len(prof) - baseline):
+        step = abs(prof[i + baseline] - prof[i - baseline])
+        if step > worst:
+            worst, at = step, x0 + i
+    spread = max(prof) - min(prof)
+    ok = worst <= max_step
+    return ok, ('sharpest edge %.2f of 255 over %dpx at x=%d (ceiling %.2f), '
+                'total spread %.2f across the region' % (worst, baseline, at, max_step, spread))
+
+
 def animates(paths, tol=8, min_changed_pct=0.5):
     """Is anything moving across a series of captures?
 
@@ -350,6 +410,7 @@ def main():
         print('       capture_claims.py renders FRAME.json')
         print('       capture_claims.py hears FRAME.json')
         print('       capture_claims.py animates A.ppm B.ppm [min_changed_pct]')
+        print('       capture_claims.py smooth FRAME.ppm x0,y0,x1,y1 [max_step]')
         return 2
     claim = sys.argv[1]
     try:
@@ -361,6 +422,16 @@ def main():
             ok, detail = hears(sys.argv[2])
         elif claim == 'animates':
             ok, detail = animates(sys.argv[2:])
+        elif claim == 'smooth':
+            if len(sys.argv) < 4:
+                print('smooth needs a region: x0,y0,x1,y1 as fractions of the frame')
+                return 2
+            reg = tuple(float(v) for v in sys.argv[3].split(','))
+            if len(reg) != 4:
+                print('smooth region must be four fractions: x0,y0,x1,y1')
+                return 2
+            step = float(sys.argv[4]) if len(sys.argv) > 4 else 1.5
+            ok, detail = smooth(sys.argv[2], reg, step)
         else:
             print('unknown claim %r' % claim)
             return 2

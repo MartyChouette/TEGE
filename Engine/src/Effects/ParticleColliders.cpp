@@ -49,7 +49,7 @@ void GatherParticleColliders(ECS::World* world, std::vector<ParticleColliderShap
         Math::Vector3 p = xf->position + xf->rotation.Rotate(col->center);
         s.posKind = Math::Vector4(p.x, p.y, p.z, 2.0f);
         s.rot = quat(xf->rotation);
-        s.dims = Math::Vector4(col->radius, col->height * 0.5f, 0.0f, 0.0f);
+        s.dims = Math::Vector4(col->radius, col->StemHalfHeight(), 0.0f, 0.0f);
         out.push_back(s);
     }
 }

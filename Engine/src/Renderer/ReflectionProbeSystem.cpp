@@ -204,10 +204,32 @@ bool ReflectionProbeSystem::ComputeSceneBounds(ECS::World* world,
             if (rb->bodyType != ECS::RigidbodyComponent::BodyType::Static) continue;
         }
 
-        // The cached AABB uses min > max to mean "not computed yet". Rather than
-        // walk the vertices of every mesh in the scene to fix that here, fall
-        // back to the entity's position: it still bounds WHERE the thing is,
-        // which is all a probe placement needs.
+        // The cached AABB uses min > max to mean "not computed yet", and the
+        // POSITION fallback below used to be the whole story: the only thing that
+        // fills that cache is BuildCullableObjectList, which runs solely when
+        // GPU-driven culling is on, and that is off by default. So the "scene
+        // bounds" were the bounding box of entity POSITIONS in every scene, in
+        // both runtimes -- routinely degenerate. A floor and one object directly
+        // above it gave a box of zero width, which is what the box projection was
+        // being asked to correct against.
+        //
+        // Fill the cache here instead when the vertices are resident. It is one
+        // walk per mesh for the life of the geometry, it is the same number LOD
+        // computes for itself today (ResolveLODSourceExtent), and it is what the
+        // field is for. The position fallback stays for meshes whose CPU data has
+        // been freed, where there is genuinely nothing to measure.
+        if (mesh->cachedAABBMin.x > mesh->cachedAABBMax.x && !mesh->vertices.empty()) {
+            Math::Vector3 mn = mesh->vertices[0].position, mx = mn;
+            for (const auto& v : mesh->vertices) {
+                mn.x = Math::Min(mn.x, v.position.x); mx.x = Math::Max(mx.x, v.position.x);
+                mn.y = Math::Min(mn.y, v.position.y); mx.y = Math::Max(mx.y, v.position.y);
+                mn.z = Math::Min(mn.z, v.position.z); mx.z = Math::Max(mx.z, v.position.z);
+            }
+            mesh->cachedAABBMin = mn;
+            mesh->cachedAABBMax = mx;
+            mesh->aabbDirty = false;
+        }
+
         Math::Vector3 localMin = mesh->cachedAABBMin;
         Math::Vector3 localMax = mesh->cachedAABBMax;
         const bool haveLocal = (localMin.x <= localMax.x &&
@@ -303,13 +325,23 @@ void ReflectionProbeSystem::UpdateImplicitProbe(ECS::World* world) {
     // every one of those translations bought six full scene renders.
     const f32 extent = Math::Max(Math::Max(hi.x - lo.x, hi.y - lo.y), hi.z - lo.z);
     const f32 kMoved = Math::Max(0.25f, extent * 0.01f);
+    // ALL SIX FACES. It used to test lo.x, hi.x and lo.z and leave hi.z, lo.y
+    // and hi.y out, while m_ImplicitMin/Max below are assigned unconditionally --
+    // so the box the shader projects against moved every frame while the cubemap
+    // it projects only re-baked when one of the three tested faces did. Y is the
+    // axis a character actually changes on a flat level, and Y was the missing
+    // one: lifting something re-shaped the projection and never refreshed the
+    // capture, which reads as a reflection that lags and snaps.
     const bool moved = !m_ImplicitActive ||
         Math::Abs(centre.x - m_ImplicitCenter.x) > kMoved ||
         Math::Abs(centre.y - m_ImplicitCenter.y) > kMoved ||
         Math::Abs(centre.z - m_ImplicitCenter.z) > kMoved ||
         Math::Abs(lo.x - m_ImplicitMin.x) > kMoved ||
         Math::Abs(hi.x - m_ImplicitMax.x) > kMoved ||
-        Math::Abs(lo.z - m_ImplicitMin.z) > kMoved;
+        Math::Abs(lo.y - m_ImplicitMin.y) > kMoved ||
+        Math::Abs(hi.y - m_ImplicitMax.y) > kMoved ||
+        Math::Abs(lo.z - m_ImplicitMin.z) > kMoved ||
+        Math::Abs(hi.z - m_ImplicitMax.z) > kMoved;
 
     m_ImplicitCenter = centre;
     m_ImplicitMin = lo;
