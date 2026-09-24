@@ -757,7 +757,7 @@ Allows the player to switch which entity they control at runtime.
 | `autoDetect` | bool | true | Auto-detect controller type on possess. |
 | `playerIndex` | i32 | 0 | Which player (0-3) can possess this entity. |
 | `possessRange` | f32 | 5.0 | Maximum distance to possess (0 = unlimited). |
-| `promptText` | string | "Press E to enter" | UI prompt shown when in range. |
+| `promptText` | string | "Press {Interact} to enter" | UI prompt shown when in range. `{Interact}` resolves to the live binding. |
 | `transitionDuration` | f32 | 0.3 | Camera blend time on possess/unpossess. |
 | `disableOnUnpossess` | bool | true | Disable controller when not possessed. |
 
@@ -1019,7 +1019,7 @@ Makes an entity interactable by the player (doors, NPCs, switches, etc.).
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `promptText` | string | "Press E to interact" | Text shown when player is in range. |
+| `promptText` | string | "Press {Interact} to interact" | Text shown when player is in range. `{Interact}` resolves to the live binding. |
 | `interactionRange` | f32 | 2.0 | Maximum interaction distance. |
 | `requiresLookAt` | bool | true | Player must be facing the object. |
 | `lookAtAngle` | f32 | 45.0 | Cone angle (degrees) for look-at check. |
@@ -1566,7 +1566,7 @@ Represents a locked entity (door, gate, chest) that requires a key to open.
 | `closedRotation` / `openRotation` | Vector3 | (0,0,0) | Rotation lerp targets for animation. |
 | `openSpeed` | f32 | 3.0 | Lerp speed for open/close animation. |
 | `lockedPrompt` | string | "Requires key" | UI prompt when locked. |
-| `unlockedPrompt` | string | "Press E to open" | UI prompt when unlocked. |
+| `unlockedPrompt` | string | "Press {Interact} to open" | UI prompt when unlocked. `{Interact}` resolves to the live binding. |
 
 #### PushableComponent
 
@@ -1600,7 +1600,7 @@ Pressure plates, toggles, and timed switches that activate linked entities.
 | `linkedEntities` | list | [] | Entities controlled by this switch. |
 | `offPosition` / `onPosition` | Vector3 | varies | Visual position transition. |
 | `transitionSpeed` | f32 | 8.0 | Visual transition speed. |
-| `promptText` | string | "Press E" | Interaction prompt. |
+| `promptText` | string | "Press {Interact}" | Interaction prompt. `{Interact}` resolves to the live binding. |
 
 #### GoalZoneComponent
 

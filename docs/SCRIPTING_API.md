@@ -891,7 +891,7 @@ Per-entity (Braid-style) and scene-wide (Sands of Time-style) time rewind.
 
 ## Every registered binding
 
-1322 global functions, grouped by where they are registered. These lines are
+1335 global functions, grouped by where they are registered. These lines are
 GENERATED from the registration strings themselves, so a signature here is the
 one the engine accepts -- if it disagrees with the prose above, the prose is
 wrong. Regenerate with `python tools/gen_scripting_api.py` after adding a
@@ -983,7 +983,7 @@ merely absent.
 - `void Subtitle_ShowCaption(const string&in, float = 2.5)`
 - `void Subtitle_ShowWithColor(const string&in, const string&in, float, float, float, float = 3.0)`
 
-### Audio  (15)
+### Audio  (16)
 
 - `bool Audio_IsPlaying(uint64)`
 - `bool Audio_IsReady()`
@@ -2306,19 +2306,27 @@ merely absent.
 - `void Water_SustainedPressure(uint64, float, float, float, float)`
 - `void Water_Wake(uint64, float, float, float, float, float)`
 
-### Weather  (26)
+### Weather  (38)
 
 - `bool Weather_IsLightning()`
 - `bool Weather_LightningJustFired()`
 - `bool WorldTime_GetSeasonalWeather()`
+- `bool WorldTime_IsAuthored(int)`
 - `bool WorldTime_IsNight()`
 - `float Weather_GetFogDensity()`
 - `float Weather_GetRainIntensity()`
 - `float Weather_GetSnowIntensity()`
 - `float WorldTime_GetTimeOfDay()`
 - `int Weather_Get()`
+- `int WorldTime_GetAuthoredDayCount()`
+- `int WorldTime_GetDay()`
+- `int WorldTime_GetDayOfYear()`
+- `int WorldTime_GetMonth()`
 - `int WorldTime_GetSeason()`
+- `int WorldTime_GetWeatherOn(int)`
+- `int WorldTime_GetYear()`
 - `string WorldTime_GetSeasonName()`
+- `string WorldTime_GetWorldSeed()`
 - `void Weather_Set(int, float = 2.0)`
 - `void Weather_SetFogColor(float, float, float)`
 - `void Weather_SetFogDensity(float)`
@@ -2330,9 +2338,13 @@ merely absent.
 - `void Wind_SetDirection(float, float, float)`
 - `void Wind_SetStrength(float)`
 - `void WorldTime_AdvanceSeason()`
+- `void WorldTime_ClearAuthoredWeather()`
+- `void WorldTime_SetAuthoredWeather(int, int)`
+- `void WorldTime_SetDate(int, int, int)`
 - `void WorldTime_SetSeason(int)`
 - `void WorldTime_SetSeasonalWeather(bool)`
 - `void WorldTime_SetSecondsPerHour(float)`
 - `void WorldTime_SetTimeOfDay(float)`
+- `void WorldTime_SetWorldSeed(const string &in)`
 
 <!-- END GENERATED BINDING INDEX -->
