@@ -135,7 +135,7 @@ extern const size_t FluidFragmentShaderDataSize;
 extern const unsigned char OitCompositeFragmentShaderData[];
 extern const size_t OitCompositeFragmentShaderDataSize;
 
-// oit_accum.frag.spv (151268 bytes, 37817 words)
+// oit_accum.frag.spv (153732 bytes, 38433 words)
 extern const unsigned char OitAccumFragmentShaderData[];
 extern const size_t OitAccumFragmentShaderDataSize;
 

@@ -573,6 +573,33 @@ if(NOT ENJIN_PLATFORM_WEB)
             list(APPEND ENJIN_SPV_OUTPUTS "${SPV}")
         endforeach()
 
+        # triangle.frag is compiled TWICE: once as itself, and once with
+        # -DENJIN_OIT into oit_accum.frag.spv, the weighted-blended accumulation
+        # variant the OIT pass binds. There is no oit_accum.frag on disk and there
+        # never was one -- the glob above cannot see a define-variant, so it has to
+        # be named here.
+        #
+        # Without this, _gen_all.py dies with FileNotFoundError on
+        # oit_accum.frag.spv, which is what a clean checkout did on EVERY commit
+        # from a9ba66e6 (2026-09-11) onward: 304 commits, CI red the whole way, and
+        # nobody's machine noticed because *.spv is gitignored and nothing cleans
+        # it, so every existing working copy kept packing the artifact it built
+        # before the source moved. Which is the worse half: that stale .spv was a
+        # 2026-09-11 snapshot of triangle.frag, so the accumulation pass shipped a
+        # material shader twelve days behind the one the main pass ran, on every
+        # build, everywhere. Same failure as the rt_ prefix exclusion above, second
+        # time: a shader _gen_all.py requires and the build does not produce.
+        set(ENJIN_OIT_ACCUM_SPV "${CMAKE_SOURCE_DIR}/Engine/shaders/oit_accum.frag.spv")
+        add_custom_command(
+            OUTPUT "${ENJIN_OIT_ACCUM_SPV}"
+            COMMAND "${ENJIN_GLSLANG}" -V -DENJIN_OIT
+                    "${CMAKE_SOURCE_DIR}/Engine/shaders/triangle.frag"
+                    -o "${ENJIN_OIT_ACCUM_SPV}"
+            DEPENDS "${CMAKE_SOURCE_DIR}/Engine/shaders/triangle.frag"
+            COMMENT "SPIR-V: triangle.frag -DENJIN_OIT -> oit_accum.frag.spv"
+            VERBATIM)
+        list(APPEND ENJIN_SPV_OUTPUTS "${ENJIN_OIT_ACCUM_SPV}")
+
         set(ENJIN_SHADERDATA_H "${CMAKE_SOURCE_DIR}/Engine/include/Enjin/Renderer/Vulkan/ShaderData.h")
         set(ENJIN_SHADERDATA_CPP "${CMAKE_SOURCE_DIR}/Engine/src/Renderer/Vulkan/ShaderDataGenerated.cpp")
 
