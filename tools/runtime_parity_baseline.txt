@@ -19,6 +19,22 @@ web:CollabSystem
 desktop:FlashTimelineEditor
 web:FlashTimelineEditor
 
+# Added 2026-09-24, by hand rather than --record so the reason survives. All
+# three live in Engine/include/Enjin/Editor/ and are authoring tools, not
+# gameplay: AuditionAudio plays a sound from the inspector, Walkthrough drives
+# the in-editor tour, and Watch is the path-version watcher the panels poll
+# instead of having Refresh buttons. A shipped game has nothing to audition, no
+# tour, and no files changing under it.
+#
+# They are not new code. They surfaced now because the web job had been failing
+# at an earlier step since before this check could run.
+desktop:AuditionAudio
+web:AuditionAudio
+desktop:Walkthrough
+web:Walkthrough
+desktop:Watch
+web:Watch
+
 # PlayMode is the editor's play-mode container, not a system. The players ARE
 # the runtime, so there is nothing to contain.
 desktop:PlayMode
@@ -62,14 +78,18 @@ web:PostProcessing
 # AudioGraphRuntime and AudioIndicators were here and are now CLOSED (both tick
 # on web as of 2026-09-06). Marty confirmed the gaps were not intentional.
 #
-# Fluid stays, but as a SEQUENCED gap rather than an unknown. Marty asked for
-# web fluid parity; the simulation would tick fine, but FluidRenderer.cpp is
-# Vulkan-only (9 direct vk* call sites) and RenderSystem::SetFluidSimulation is
-# a no-op stub on the web branch, so wiring the sim today costs frame time and
-# draws nothing -- strictly worse than leaving it off. It lands with the WebGPU
-# fluid render path, hardening list item 18.
-web:FluidSimulation
-web:FluidTerrainCoupling
+# Fluid was a SEQUENCED gap: the sim would have ticked fine, but FluidRenderer
+# was Vulkan-only and SetFluidSimulation was a no-op stub on the web branch, so
+# wiring it would have cost frame time and drawn nothing. It was to land with the
+# WebGPU fluid render path.
+#
+# CLOSED, checked 2026-09-24 rather than assumed: the web branch draws fluid
+# cells as billboards (RenderSystem.cpp, "Same billboards the Vulkan
+# FluidRenderer draws") and its SetFluidSimulation stores a real m_WebFluidSim
+# instead of discarding the pointer. Both lines removed rather than left sitting
+# here, because a stale "known gap" tells the next reader the feature is still
+# off. The tool had been reporting them closed and nobody saw it: this check
+# lives in the web job, which had been failing at an earlier step.
 # PARTLY a false positive of this tool, and worth reading before acting on it.
 # Per-sprite parallax works in all three runtimes: they all call the STATIC
 # ParallaxSystem::ApplyParallaxLayers, which this tool cannot see because it

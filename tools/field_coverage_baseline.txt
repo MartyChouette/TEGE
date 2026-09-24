@@ -3,5 +3,12 @@
 # Lower one and re-record; there is no way to raise one quietly.
 no_inspector 4
 no_serdes 0
-read_only 13
+# read_only raised 13 -> 14 on 2026-09-24, deliberately and not by --write-baseline.
+# The new entry is Terrain2DComponent.meshDirty, which is the SAME thing as the other
+# thirteen and not a missing save: a frame-local upload flag the deserializer sets true,
+# RenderSystem reads and clears, and the editor re-raises on an edit. SceneSerializer
+# says so itself: "meshDirty / topologyDirty are frame-local upload flags, never
+# persisted." It is not new code -- it came in with 7dd1aa9d. It surfaced now because
+# the Build step had been failing since 2026-09-11, so this check had not RUN in months.
+read_only 14
 write_only 0
