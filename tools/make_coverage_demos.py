@@ -39,6 +39,7 @@ TRAPS THIS FILE HAS ALREADY HIT, so the next person does not:
 import json
 import math
 import os
+import struct
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -927,6 +928,149 @@ def mesh_renderer_filters_permissive(entities):
     return entities
 
 
+# --------------------------------------------------------------------------
+# GaussianSplat -- a synthetic 3DGS cloud, so the splat path has an asset
+# --------------------------------------------------------------------------
+
+# SH band-0 basis constant, the same one SplatLoader uses to turn f_dc into a
+# colour. Kept here rather than inlined because the two have to agree.
+SH_C0 = 0.28209479177387814
+
+
+def _splat_record(pos, colour, opacity, scale, rot=(1.0, 0.0, 0.0, 0.0)):
+    """One 3DGS vertex, in the units the FILE stores rather than the ones you think in.
+
+    SplatLoader reads a capture straight out of INRIA's trainer, so every field
+    is stored the way gradient descent left it and is decoded on load:
+      colour  = 0.5 + SH_C0 * f_dc      -> f_dc   = (colour - 0.5) / SH_C0
+      opacity = sigmoid(stored)         -> stored = logit(opacity)
+      scale   = exp(stored)             -> stored = log(scale)
+    Writing the decoded values straight in gives a black, fully transparent,
+    e-to-the-metre cloud, which is the first thing this got wrong.
+
+    rot is (w, x, y, z): rot_0 is the REAL part in INRIA's layout, which is not
+    the order most quaternion code in this repo uses.
+    """
+    r, g, b = colour
+    sx, sy, sz = scale
+    qw, qx, qy, qz = rot
+    p = min(max(opacity, 1e-4), 1.0 - 1e-4)
+    return struct.pack('<15f',
+        pos[0], pos[1], pos[2],
+        (r - 0.5) / SH_C0, (g - 0.5) / SH_C0, (b - 0.5) / SH_C0,
+        math.log(p / (1.0 - p)),
+        math.log(sx), math.log(sy), math.log(sz),
+        qw, qx, qy, qz, 0.0)[:14 * 4]
+
+
+def write_splat_ply(path, records):
+    """Binary little-endian 3DGS .ply. The loader accepts nothing else.
+
+    The property ORDER here is the record layout: SplatLoader reads the header
+    to find each field by name, but _splat_record packs them positionally, so
+    the two lists have to stay in step.
+    """
+    props = ["x", "y", "z",
+             "f_dc_0", "f_dc_1", "f_dc_2",
+             "opacity",
+             "scale_0", "scale_1", "scale_2",
+             "rot_0", "rot_1", "rot_2", "rot_3"]
+    head = ["ply",
+            "format binary_little_endian 1.0",
+            "element vertex %d" % len(records)]
+    head += ["property float " + p for p in props]
+    head.append("end_header")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        f.write((chr(10).join(head) + chr(10)).encode("ascii"))
+        for rec in records:
+            f.write(rec)
+    print("wrote %s (%d splats)" % (os.path.relpath(path, REPO), len(records)))
+
+
+def splat_axes_cloud():
+    """Three coloured bars along X, Y and Z, plus a white ball at the origin.
+
+    A splat cloud is the one asset where "it rendered something" proves almost
+    nothing: a cloud with the wrong rotation convention, the wrong handedness or
+    undecoded scales still draws a plausible haze. Axes are chosen so the frame
+    answers the questions that actually go wrong. Red runs +X, green +Y, blue +Z,
+    so a flipped or swapped axis is visible rather than merely different. The bars
+    are ANISOTROPIC -- long along their own axis, thin across it -- so a build
+    that ignores scale_1/scale_2 draws three fat blobs instead of three bars. And
+    the diagonal bar is ROTATED rather than axis-aligned, which is the only part
+    of the frame that fails if rot_0 is read as x instead of w.
+    """
+    # SEPARATED gaussians rather than a continuous bar, so a capture can read each
+    # one's colour, anisotropy and rotation on its own.
+    #
+    # What this is NOT: a workaround for overlap. An earlier version was changed
+    # to this layout because its bars "rendered white", and the reason given was
+    # that overlapping splats accumulate past 1. They cannot -- the splat blend is
+    # "over", which converges on the splat colour. The RGB was correct all along;
+    # the capture PNG carried the target's ALPHA, which blended draws were
+    # stamping with their own low value, and the image viewer composited that
+    # over white. Both are fixed (VulkanPipeline alpha factors, WriteCapture).
+    # The real train_7000 capture (741,883 splats) renders correctly through the
+    # same path. Continuous bars would be fine now; spaced ones are just easier
+    # to read.
+    recs = []
+    long_, thin = 0.20, 0.055
+    for axis, colour in ((0, (0.95, 0.16, 0.14)),
+                         (1, (0.18, 0.88, 0.26)),
+                         (2, (0.22, 0.38, 0.98))):
+        scale = [thin, thin, thin]
+        scale[axis] = long_
+        for i in range(6):
+            pos = [0.0, 0.0, 0.0]
+            pos[axis] = 0.55 * (i + 1)
+            recs.append(_splat_record(pos, colour, 0.85, tuple(scale)))
+
+    # The origin marker: isotropic and white, so it is the control the three
+    # anisotropic bars are read against.
+    recs.append(_splat_record((0.0, 0.0, 0.0), (0.97, 0.97, 0.95), 0.9,
+                              (0.16, 0.16, 0.16)))
+
+    # A 45-degree bar in the XY plane. Rotation about Z by 45 deg is (w,x,y,z)
+    # with w = cos(22.5), z = sin(22.5). The three axis bars cannot tell a correct
+    # rotation from an ignored one, because a bar along X looks the same either
+    # way; this one cannot be faked.
+    h = math.radians(45.0) * 0.5
+    c45 = math.cos(math.radians(45.0))
+    for i in range(5):
+        t = 0.62 * (i + 1)
+        recs.append(_splat_record((t * c45, t * c45, 0.0),
+                                  (0.98, 0.78, 0.12), 0.85, (long_, thin, thin),
+                                  rot=(math.cos(h), 0.0, 0.0, math.sin(h))))
+    return recs
+
+
+def gaussian_splat():
+    """The scene. One GaussianSplatComponent is all the renderer supports (v1)."""
+    cam = camera(2, (3.4, 2.6, 5.6), -16.0)
+    # Dark background. A splat cloud is additive-looking and light-coloured; read
+    # against the default pale sky the low-opacity splats have nowhere to go.
+    cam["camera"]["backgroundColor"] = [0.06, 0.07, 0.09]
+    e = [sun(1), cam]
+    e.append({
+        "id": 3,
+        "name": {"name": "Splats"},
+        "transform": transform((0.0, 0.0, 0.0)),
+        "gaussianSplat": {
+            "sourcePath": "assets/axes.ply",
+            "opacityScale": 1.0,
+            "splatScale": 1.0,
+            # FALSE on purpose. flipYZ exists because real captures come out of
+            # COLMAP with Y down and Z forward; this file is authored in engine
+            # space already, so flipping it would put the axes where no axis is.
+            "flipYZ": False,
+            "maxSplats": 2000000,
+            "visible": True,
+        },
+    })
+    return e
+
+
 def reflections():
     """A smooth floor under an environment capture, with nothing placed to capture it.
 
@@ -1055,6 +1199,10 @@ def main():
         refl.append(placed_probe())
         print("CONTROL: a placed probe retires the implicit scene-wide one")
     write_project("Reflections", refl)
+
+    write_splat_ply(os.path.join(REPO, "Examples", "GaussianSplat", "assets", "axes.ply"),
+                    splat_axes_cloud())
+    write_project("GaussianSplat", gaussian_splat())
 
     rigs = anim_lod()
     if control:

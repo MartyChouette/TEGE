@@ -1,0 +1,171 @@
+{
+ "version": "1.0",
+ "formatVersion": 1,
+ "entityCount": 3,
+ "entities": [
+  {
+   "id": 1,
+   "name": {
+    "name": "Sun"
+   },
+   "transform": {
+    "position": [
+     0.0,
+     14.0,
+     9.0
+    ],
+    "rotation": [
+     -0.42261826174069944,
+     0.0,
+     0.0,
+     0.9063077870366499
+    ],
+    "scale": [
+     1.0,
+     1.0,
+     1.0
+    ]
+   },
+   "light": {
+    "type": 0,
+    "color": [
+     1.0,
+     0.97,
+     0.92
+    ],
+    "intensity": 2.6,
+    "range": 100.0,
+    "castShadows": true,
+    "constantAttenuation": 1.0,
+    "linearAttenuation": 0.09,
+    "quadraticAttenuation": 0.032,
+    "innerConeAngle": 12.5,
+    "outerConeAngle": 17.5
+   }
+  },
+  {
+   "id": 2,
+   "name": {
+    "name": "Camera"
+   },
+   "transform": {
+    "position": [
+     3.4,
+     2.6,
+     5.6
+    ],
+    "rotation": [
+     -0.13917310096006544,
+     0.0,
+     0.0,
+     0.9902680687415704
+    ],
+    "scale": [
+     1.0,
+     1.0,
+     1.0
+    ]
+   },
+   "camera": {
+    "projectionType": 0,
+    "fieldOfView": 55.0,
+    "nearPlane": 0.1,
+    "farPlane": 500.0,
+    "isActive": true,
+    "priority": 10,
+    "clearColor": true,
+    "clearDepth": true,
+    "backgroundColor": [
+     0.06,
+     0.07,
+     0.09
+    ],
+    "cullingMask": 4294967295,
+    "orthoSize": 10.0,
+    "viewportX": 0.0,
+    "viewportY": 0.0,
+    "viewportWidth": 1.0,
+    "viewportHeight": 1.0
+   }
+  },
+  {
+   "id": 3,
+   "name": {
+    "name": "Splats"
+   },
+   "transform": {
+    "position": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "rotation": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ],
+    "scale": [
+     1.0,
+     1.0,
+     1.0
+    ]
+   },
+   "gaussianSplat": {
+    "sourcePath": "assets/axes.ply",
+    "opacityScale": 1.0,
+    "splatScale": 1.0,
+    "flipYZ": false,
+    "maxSplats": 2000000,
+    "visible": true
+   }
+  }
+ ],
+ "renderSettings": {
+  "aaMode": 1,
+  "ambientColor": [
+   0.22,
+   0.24,
+   0.28
+  ],
+  "ambientIntensity": 0.35,
+  "useProjectDefaults": false
+ },
+ "skybox": {
+  "type": 2,
+  "topColor": [
+   0.24,
+   0.42,
+   0.72
+  ],
+  "horizonColor": [
+   0.62,
+   0.74,
+   0.86
+  ],
+  "bottomColor": [
+   0.52,
+   0.55,
+   0.52
+  ],
+  "solidColor": [
+   0.3,
+   0.42,
+   0.58
+  ],
+  "sunDirection": [
+   0.0,
+   1.0,
+   0.0
+  ],
+  "rotation": 0.0,
+  "cubemapPaths": [
+   "",
+   "",
+   "",
+   "",
+   "",
+   ""
+  ]
+ }
+}
