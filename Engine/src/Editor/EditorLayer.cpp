@@ -1,4 +1,5 @@
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/Renderer/CaptureWrite.h"
 #include "Enjin/Networking/NetworkSystem.h"   // the editor pumps the socket for collab
 #include "Enjin/Editor/EditorShortcuts.h"
 #include "Enjin/ECS/Systems/BrushSolidSystem.h"
@@ -6899,27 +6900,10 @@ bool EditorLayer::CaptureGameViewToFile(const std::string& basePath) {
         ENJIN_LOG_ERROR(Editor, "capture: game view readback failed (%ux%u, %zu bytes)",
                         w, h, pixels.size());
     } else {
-        // PNG for human eyeballing/diffing
-        std::string pngPath = basePath + ".png";
-        stbi_write_png(pngPath.c_str(), static_cast<int>(w), static_cast<int>(h), 4,
-                       pixels.data(), static_cast<int>(w * 4));
-
-        // P6 PPM for the dependency-free comparer (tools/probes/golden_compare.py, stdlib only)
-        std::string ppmPath = basePath + ".ppm";
-        std::ofstream ppm(ppmPath, std::ios::binary);
-        if (ppm.is_open()) {
-            ppm << "P6\n" << w << " " << h << "\n255\n";
-            std::vector<u8> rgb(static_cast<usize>(w) * h * 3);
-            for (usize i = 0, j = 0; i < pixels.size(); i += 4, j += 3) {
-                rgb[j + 0] = pixels[i + 0];
-                rgb[j + 1] = pixels[i + 1];
-                rgb[j + 2] = pixels[i + 2];
-            }
-            ppm.write(reinterpret_cast<const char*>(rgb.data()),
-                      static_cast<std::streamsize>(rgb.size()));
-        }
-        ENJIN_LOG_INFO(Editor, "capture: %ux%u game view -> %s(.png/.ppm)",
-                       w, h, basePath.c_str());
+        // One writer for both runtimes (Renderer::WriteCapture): RGB PNG for eyes,
+        // P6 PPM for tools/probes/golden_compare.py. This was a second copy that
+        // wrote the PNG with the target's alpha, which the player's copy also did.
+        Renderer::WriteCapture(basePath, pixels, w, h);
     }
     return !pixels.empty() && w != 0 && h != 0;
 }

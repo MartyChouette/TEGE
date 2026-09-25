@@ -503,8 +503,16 @@ bool VulkanPipeline::CreatePipeline(
     colorBlendAttachment.srcColorBlendFactor = config.alphaBlend ? VK_BLEND_FACTOR_SRC_ALPHA : VK_BLEND_FACTOR_ONE;
     colorBlendAttachment.dstColorBlendFactor = config.alphaBlend ? VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA : VK_BLEND_FACTOR_ZERO;
     colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+    // Alpha composites with the same "over" rule as colour, so a translucent draw
+    // over an opaque pixel leaves it opaque. It was ONE/ZERO, which stamped each
+    // fragment's OWN alpha into the target: a splat rim at 0.02 made that pixel
+    // 2% opaque. Nothing in a player reads it (the swapchain presents opaque), but
+    // the editor's Game View is an ImGui image and ImGui blends, and every capture
+    // PNG kept it -- a correct splat frame viewed as white tubes, which cost a
+    // session and got the GaussianSplat demo's data "fixed" for a bug it never had.
     colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    colorBlendAttachment.dstAlphaBlendFactor = config.alphaBlend ? VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA
+                                                                 : VK_BLEND_FACTOR_ZERO;
     colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
 
     // Velocity attachment: no blending, write RG only
