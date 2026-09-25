@@ -175,11 +175,30 @@ ECS::MeshComponent MeshSimplifier::Simplify(const ECS::MeshComponent& source, f3
     std::priority_queue<EdgeCollapse, std::vector<EdgeCollapse>, std::greater<EdgeCollapse>> pq;
     auto makeCollapse = [&](u32 a, u32 b) -> EdgeCollapse {
         Quadric qs = Q[a]; qs.add(Q[b]);
+        Math::Vector3 pa = vertices[a].position, pb = vertices[b].position, mid = (pa + pb) * 0.5f;
+        double ea = qs.error(pa.x, pa.y, pa.z);
+        double eb = qs.error(pb.x, pb.y, pb.z);
+        double em = qs.error(mid.x, mid.y, mid.z);
+
         Math::Vector3 opt;
-        if (!qs.solveOptimal(opt)) {
-            // Singular (flat/degenerate) — take the cheapest of the two endpoints or the midpoint.
-            Math::Vector3 pa = vertices[a].position, pb = vertices[b].position, mid = (pa + pb) * 0.5f;
-            double ea = qs.error(pa.x,pa.y,pa.z), eb = qs.error(pb.x,pb.y,pb.z), em = qs.error(mid.x,mid.y,mid.z);
+        bool validOpt = qs.solveOptimal(opt);
+        if (validOpt) {
+            // Sanity check optimal point: must be finite, not far outside the edge vicinity,
+            // and its error must not be significantly worse than endpoint/midpoint errors.
+            if (!std::isfinite(opt.x) || !std::isfinite(opt.y) || !std::isfinite(opt.z)) {
+                validOpt = false;
+            } else {
+                f32 edgeLenSq = (pa - pb).LengthSquared();
+                f32 distSq = std::min((opt - pa).LengthSquared(), (opt - pb).LengthSquared());
+                double eOpt = qs.error(opt.x, opt.y, opt.z);
+                double minEndpointError = std::min({ea, eb, em});
+                if (distSq > 4.0f * edgeLenSq + 1e-4f || eOpt > minEndpointError * 2.5 + 1e-3) {
+                    validOpt = false;
+                }
+            }
+        }
+        if (!validOpt) {
+            // Singular or ill-conditioned — take the cheapest of the two endpoints or the midpoint.
             opt = (ea <= eb && ea <= em) ? pa : (eb <= em ? pb : mid);
         }
         double c = qs.error(opt.x, opt.y, opt.z);
@@ -211,6 +230,23 @@ ECS::MeshComponent MeshSimplifier::Simplify(const ECS::MeshComponent& source, f3
         f32 nl = nrm.Length();
         vertices[a].normal = (nl > 1e-6f) ? nrm * (1.0f/nl) : vertices[a].normal;
         vertices[a].uv = (vertices[a].uv + vertices[b].uv) * 0.5f;
+        vertices[a].uv1 = (vertices[a].uv1 + vertices[b].uv1) * 0.5f;
+        vertices[a].color = (vertices[a].color + vertices[b].color) * 0.5f;
+
+        f32 weightA = vertices[a].boneWeights.x + vertices[a].boneWeights.y + vertices[a].boneWeights.z + vertices[a].boneWeights.w;
+        f32 weightB = vertices[b].boneWeights.x + vertices[b].boneWeights.y + vertices[b].boneWeights.z + vertices[b].boneWeights.w;
+        if (weightA < 1e-4f && weightB > 1e-4f) {
+            vertices[a].boneWeights = vertices[b].boneWeights;
+            vertices[a].boneIndices[0] = vertices[b].boneIndices[0];
+            vertices[a].boneIndices[1] = vertices[b].boneIndices[1];
+            vertices[a].boneIndices[2] = vertices[b].boneIndices[2];
+            vertices[a].boneIndices[3] = vertices[b].boneIndices[3];
+            vertices[a].boneWeights2 = vertices[b].boneWeights2;
+            vertices[a].boneIndices2[0] = vertices[b].boneIndices2[0];
+            vertices[a].boneIndices2[1] = vertices[b].boneIndices2[1];
+            vertices[a].boneIndices2[2] = vertices[b].boneIndices2[2];
+            vertices[a].boneIndices2[3] = vertices[b].boneIndices2[3];
+        }
 
         remap[b] = a;
         vertRemoved[b] = true;

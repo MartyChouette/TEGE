@@ -208,7 +208,8 @@ private:
                                                    std::vector<ECS::Entity>& outEntities,
                                                    ImportStats& stats,
                                                    AssimpSkeletonContext& skelCtx,
-                                                   ECS::Entity pendingParent = ECS::INVALID_ENTITY);
+                                                   ECS::Entity pendingParent = ECS::INVALID_ENTITY,
+                                                   i32 parentAssimpNodeIndex = -1);
 };
 
 } // namespace Assets

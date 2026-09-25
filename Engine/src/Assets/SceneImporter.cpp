@@ -1876,7 +1876,8 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
                                                        std::vector<ECS::Entity>& outEntities,
                                                        ImportStats& stats,
                                                        AssimpSkeletonContext& skelCtx,
-                                                       ECS::Entity pendingParent) {
+                                                       ECS::Entity pendingParent,
+                                                       i32 parentAssimpNodeIndex) {
     if (nodeIndex < 0 || nodeIndex >= static_cast<i32>(scene.nodes.size())) {
         return ECS::INVALID_ENTITY;
     }
@@ -1887,7 +1888,7 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
             const AssimpNode& skippedNode = scene.nodes[nodeIndex];
             for (i32 childIdx : skippedNode.children) {
                 CreateEntityFromAssimpNode(scene, childIdx, world, options, outEntities, stats, skelCtx,
-                                           pendingParent);
+                                           pendingParent, parentAssimpNodeIndex);
             }
             return ECS::INVALID_ENTITY;
         }
@@ -1916,14 +1917,12 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
     }
     if (skipNode) {
         // Don't create an entity — recurse into children, passing the pending
-        // parent through so meshes under skipped nodes still get parented.
-        // (Returning INVALID_ENTITY used to drop the whole subtree out of the
-        // hierarchy: callers only SetParent on a valid return, so mesh entities
-        // under $AssimpFbx$/bone/empty nodes were orphaned at scene root —
-        // "pieces not placed into the auto parent", Marty 2026-08-08.)
+        // parent and parentAssimpNodeIndex through so intermediate skipped node
+        // transforms ($AssimpFbx$ helpers, bone nodes, empty transforms) are
+        // accumulated correctly on child entities.
         for (i32 childIdx : node.children) {
             CreateEntityFromAssimpNode(scene, childIdx, world, options, outEntities, stats, skelCtx,
-                                       pendingParent);
+                                       pendingParent, parentAssimpNodeIndex);
         }
         return ECS::INVALID_ENTITY;
     }
@@ -2081,9 +2080,46 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
         transform.rotation = wrot;
         transform.scale = wscale;
     } else {
-        transform.position = pos;
-        transform.rotation = rot;
-        transform.scale = node.scale;
+        // Rigid mesh in a rigid file: accumulate local transforms of all nodes
+        // from parentAssimpNodeIndex down to nodeIndex (including skipped intermediate
+        // nodes like $AssimpFbx$ helpers) so no position/rotation/scale offset is lost.
+        Math::Matrix4 localAccum = Math::Matrix4::Identity();
+        std::vector<i32> chain;
+        i32 walk = nodeIndex;
+        while (walk >= 0 && walk != parentAssimpNodeIndex) {
+            chain.push_back(walk);
+            walk = scene.nodes[walk].parentIndex;
+        }
+        for (auto it = chain.rbegin(); it != chain.rend(); ++it) {
+            const auto& n = scene.nodes[*it];
+            Math::Matrix4 local = Math::Matrix4::Translation(n.translation) *
+                                  n.rotation.ToMatrix() *
+                                  Math::Matrix4::Scale(n.scale);
+            localAccum = localAccum * local;
+        }
+
+        Math::Vector3 relPos(localAccum.m[12], localAccum.m[13], localAccum.m[14]);
+        Math::Vector3 c0(localAccum.m[0], localAccum.m[1], localAccum.m[2]);
+        Math::Vector3 c1(localAccum.m[4], localAccum.m[5], localAccum.m[6]);
+        Math::Vector3 c2(localAccum.m[8], localAccum.m[9], localAccum.m[10]);
+        Math::Vector3 relScale(c0.Length(), c1.Length(), c2.Length());
+        if (relScale.x > 1e-6f) c0 = c0 / relScale.x;
+        if (relScale.y > 1e-6f) c1 = c1 / relScale.y;
+        if (relScale.z > 1e-6f) c2 = c2 / relScale.z;
+        Math::Matrix4 rotM = Math::Matrix4::Identity();
+        rotM.m[0] = c0.x; rotM.m[1] = c0.y; rotM.m[2]  = c0.z;
+        rotM.m[4] = c1.x; rotM.m[5] = c1.y; rotM.m[6]  = c1.z;
+        rotM.m[8] = c2.x; rotM.m[9] = c2.y; rotM.m[10] = c2.z;
+        Math::Quaternion relRot = Math::Quaternion::FromMatrix(rotM);
+
+        if (zToY || lToR || options.flipX || options.flipY || options.flipZ) {
+            relPos = ConvertPosition(relPos, zToY, lToR, options.flipX, options.flipY, options.flipZ);
+            relRot = ConvertRotation(relRot, zToY, lToR);
+        }
+
+        transform.position = relPos;
+        transform.rotation = relRot;
+        transform.scale = relScale;
     }
 
     // Add mesh component if node has meshes
@@ -2582,7 +2618,7 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
     // pendingParent (survives skipped intermediate nodes).
     for (i32 childIndex : node.children) {
         CreateEntityFromAssimpNode(scene, childIndex, world, options,
-                                   outEntities, stats, skelCtx, entity);
+                                   outEntities, stats, skelCtx, entity, nodeIndex);
     }
 
     return entity;
