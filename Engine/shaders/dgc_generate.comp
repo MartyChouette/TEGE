@@ -29,7 +29,7 @@ struct CullableObject {
     uint indexOffset;
     uint vertexOffset;
     uint indirectEligible;
-    uint _pad1;
+    uint cullFlags;        // bit 0 skip frustum, bit 1 skip occlusion (GPUCulling.h kCullSkip*)
     uint _pad2;
 };
 

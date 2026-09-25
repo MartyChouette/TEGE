@@ -28,16 +28,11 @@ enum class RenderLayer : u32 {
 struct MeshRendererComponent {
     // Visibility & culling
     bool enabled = true;                  // Master on/off (skips draw entirely)
-    // Opt out of GPU culling, for geometry whose bounds lie about where it draws:
-    // a vertex-animated banner, a shader that pushes vertices outward, a skybox
-    // shell.
-    //
-    // These are COUPLED today, and turning off either one opts the entity out of
-    // both. The GPU culling pass tests frustum and HiZ occlusion together and
-    // returns one answer per object, so separating them needs a per-object flag in
-    // the cull buffer and a change to the culling compute shader. Written down
-    // rather than left for someone to discover by setting one and watching the
-    // other change too.
+    // Opt out of culling, for geometry whose bounds lie about where it draws: a
+    // vertex-animated banner, a shader that pushes vertices outward, a skybox
+    // shell. Each switches off only the test it names; they travel to the GPU
+    // cull pass as CullableObject::cullFlags. Both apply only to meshes the GPU
+    // pass draws indirectly; per-entity draws are not culled there at all.
     bool frustumCull = true;
     bool occlusionCull = true;
     f32 maxDrawDistance = 0.0f;           // 0 = infinite, >0 = fade out beyond this distance

@@ -15,7 +15,7 @@ struct CullableObject {
     uint indexOffset;
     uint vertexOffset;
     uint indirectEligible; // 1 = emit indirect draw command, 0 = visibility only
-    uint _pad1;
+    uint cullFlags;        // bit 0 skip frustum, bit 1 skip occlusion (GPUCulling.h kCullSkip*)
     uint _pad2;
 };
 
@@ -97,8 +97,8 @@ void main() {
     vec3 boundsMin = obj.boundsMin.xyz;
     vec3 boundsMax = obj.boundsMax.xyz;
 
-    // Check visibility
-    bool visible = IsAABBVisible(boundsMin, boundsMax, obj.transform);
+    bool visible = (obj.cullFlags & 1u) != 0u ||
+                   IsAABBVisible(boundsMin, boundsMax, obj.transform);
 
     visibility[index] = visible ? 1u : 0u;
 

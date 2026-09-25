@@ -1,5 +1,6 @@
 #include "EnjinTest.h"
 #include "Enjin/Renderer/SceneRenderSettings.h"
+#include <nlohmann/json.hpp>
 
 using namespace Enjin;
 using namespace Enjin::Renderer;
@@ -226,6 +227,27 @@ ENJIN_TEST(Static, DefaultsFactory) {
     ENJIN_EXPECT_TRUE(s.useProjectDefaults);
     ENJIN_EXPECT_TRUE(s.shadowsEnabled);
     ENJIN_EXPECT_TRUE(s.fxaaEnabled);
+}
+
+// ===========================================================================
+// Occlusion culling
+// ===========================================================================
+
+ENJIN_TEST(Culling, OcclusionIsOnByDefaultAndSurvivesASave) {
+    // On by default: it is two-phase, so it never draws a frame late, and the
+    // harness compares every project with it on and off byte for byte.
+    SceneRenderSettings s;
+    ENJIN_EXPECT_TRUE(s.occlusionCulling);
+
+    // Turning it OFF must survive a save, or the default quietly wins back.
+    s.occlusionCulling = false;
+    SceneRenderSettings back = DeserializeRenderSettings(SerializeRenderSettings(s));
+    ENJIN_EXPECT_FALSE(back.occlusionCulling);
+
+    // A scene saved before the field existed gets the default.
+    auto j = SerializeRenderSettings(s);
+    j.erase("occlusionCulling");
+    ENJIN_EXPECT_TRUE(DeserializeRenderSettings(j).occlusionCulling);
 }
 
 ENJIN_TEST_MAIN()

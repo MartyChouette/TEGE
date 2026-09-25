@@ -353,6 +353,34 @@ def check(project, bases):
                 ok, detail = False, str(e)
             results.append(('hears@%s' % b.rsplit('.', 1)[-1], ok, detail))
 
+    # Opt-in: byte-identical to another project's capture of the same frame. For
+    # an optimisation whose whole contract is "the picture does not change":
+    # this project with the optimisation on, the named one with it off, listed
+    # EARLIER in the manifest so its captures already exist.
+    other = claims.get('matches')
+    if other:
+        for b in bases:
+            suffix = os.path.basename(b)[len(project['name']):]          # ".f0032"
+            theirs = os.path.join(os.path.dirname(b), other + suffix + '.ppm')
+            mine, ref = _capture_bytes(b), _capture_bytes(os.path.splitext(theirs)[0])
+            if mine is None or ref is None:
+                ok, detail = False, 'missing capture (%s)' % ('ours' if mine is None else other)
+            elif mine == ref:
+                ok, detail = True, 'identical to %s' % other
+            else:
+                ok, detail = False, 'differs from %s' % other
+            results.append(('matches@%s' % b.rsplit('.', 1)[-1], ok, detail))
+
+    # Opt-in: the GPU cull pass's exact counts (desktop only; web has no pass).
+    cull = claims.get('culls')
+    if cull:
+        for b in bases:
+            try:
+                ok, detail = capture_claims.culls(b + '.json', cull['objects'], cull['visible'])
+            except (OSError, ValueError, KeyError) as e:
+                ok, detail = False, str(e)
+            results.append(('culls@%s' % b.rsplit('.', 1)[-1], ok, detail))
+
     anim = claims.get('animates')
     if anim is not None:
         if len(bases) < 2:

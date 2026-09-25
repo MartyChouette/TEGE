@@ -2797,6 +2797,18 @@ void EditorLayer::DrawSettingsSection_DisplayOptions() {
         }
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Cull back-facing triangles for better performance");
 
+        bool occlusion = m_RenderSystem->IsOcclusionCullingEnabled();
+        if (ImGui::Checkbox("Occlusion Culling", &occlusion)) {
+            m_RenderSystem->SetOcclusionCullingEnabled(occlusion);
+        }
+        ImGui::SetItemTooltip(
+            "Skip drawing meshes hidden behind other meshes. On by default; saved with the scene.\n"
+            "Works in the built game on desktop; the editor views always draw everything,\n"
+            "and so does a camera with post-processing on.\n"
+            "With MSAA on it uses only the previous frame's depth, so something that is\n"
+            "suddenly uncovered can appear one frame late.\n"
+            "Opt a single mesh out with Mesh Renderer > Occlusion Cull.");
+
         // Wireframe
         bool wireframe = m_RenderSystem->IsWireframeEnabled();
         if (ImGui::Checkbox("Wireframe", &wireframe)) {

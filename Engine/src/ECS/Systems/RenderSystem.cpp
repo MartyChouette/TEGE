@@ -6816,6 +6816,12 @@ void RenderSystem::Initialize() {
         ENJIN_LOG_INFO(Renderer, "GPU-driven rendering %s by ENJIN_GPU_DRIVEN",
                        m_GPUDrivenEnabled ? "ENABLED" : "disabled");
     }
+    // Not a default: an OVERRIDE, checked where occlusion is decided, because
+    // the scene's setting is applied later (on load) and would win otherwise.
+    if (const char* oc = std::getenv("ENJIN_OCCLUSION")) {
+        m_OcclusionForcedOff = (oc[0] == '0');
+        if (m_OcclusionForcedOff) ENJIN_LOG_INFO(Renderer, "Occlusion culling forced OFF by ENJIN_OCCLUSION=0");
+    }
 
     constexpr bool kEnableDGCInit = false;
     if (kEnableDGCInit && m_GPUCullingEnabled && m_GPUCulling && m_VulkanRenderer->GetContext()->IsDGCSupported()) {
@@ -7144,7 +7150,21 @@ void RenderSystem::Shutdown() {
         m_IndirectDrawBatcher.reset();
     }
 
-    // Clean up GPU culling system
+    // Clean up GPU culling system (the pyramid first: the culling system holds
+    // a raw pointer to it)
+    // Parked views first (see SelectCullView), then the active one below.
+    for (auto& v : m_CullViews) {
+        if (!v) continue;
+        if (v->gpuCulling) v->gpuCulling->SetHiZPyramid(nullptr);
+        v->hiz.reset();
+        if (v->batcher) v->batcher->Shutdown();
+        v->batcher.reset();
+        if (v->gpuCulling) v->gpuCulling->Shutdown();
+        v->gpuCulling.reset();
+    }
+    m_CullViews.clear();
+    if (m_GPUCulling) m_GPUCulling->SetHiZPyramid(nullptr);
+    m_HiZPyramid.reset();
     if (m_GPUCulling) {
         m_GPUCulling->Shutdown();
         m_GPUCulling.reset();
@@ -7710,6 +7730,18 @@ void RenderSystem::FlushPendingChanges() {
     }
 
     EnsureMaterialSlotTextures(gpuSafe);
+#if !ENJIN_RENDERER_WEBGPU
+    {
+        // Every view's pyramid, here at the one safe point.
+        const u32 active = m_ActiveCullView;
+        const u32 viewCount = std::max<u32>(1u, static_cast<u32>(m_CullViews.size()));
+        for (u32 v = 0; v < viewCount; ++v) {
+            SelectCullView(v);
+            EnsureHiZPyramid(gpuSafe);
+        }
+        SelectCullView(active);
+    }
+#endif
 
     // CPU-generated textures (reaction-diffusion, Physarum, script pixels).
     // This creates a texture, registers a bindless slot and retires the
@@ -7722,6 +7754,11 @@ void RenderSystem::FlushPendingChanges() {
 
     // New frame is about to record — allow the compute pre-pass to run once
     m_ComputePrePassDone = false;
+    // Occlusion history counts frames here, the one point every path (player,
+    // post-process player, editor) passes once per frame -- NOT in Update, which
+    // the editor never calls. Only if a frame was prepared since the last tick,
+    // so a second flush in the same frame cannot count as a new frame.
+    if (m_FramePrepDone) ++m_RenderFrameSerial;
     m_FramePrepDone = false;
     m_PaletteTickedThisFrame = false;   // re-arm the palette clock for this frame
 
@@ -8559,6 +8596,8 @@ void RenderSystem::Update(f32 deltaTime) {
 
     // Reset per-frame stats
     ResetFrameCounters();
+    m_LateOcclusionPending = false;
+    if (m_GPUCulling) m_GPUCulling->BeginFrame();
 
     // Begin async compute scheduler frame (reset per-frame state)
     if (m_AsyncComputeScheduler) {
@@ -9545,7 +9584,11 @@ void RenderSystem::Update(f32 deltaTime) {
     // Skipped in editor mode — the editor scene view shows all entities.
     if (m_GPUCullingEnabled && !m_IsEditorMode && !m_CullableObjects.empty()) {
         UploadObjectData();
-        if (m_VulkanRenderer->HasAsyncCompute() && m_VulkanRenderer->BeginComputeCommandBuffer()) {
+        // Occlusion stays on the graphics queue: the pyramid is built there from
+        // the depth buffer, and handing it to another queue is a feature, not a
+        // flag. Async culling is frustum-only.
+        if (!m_HiZPyramid && m_VulkanRenderer->HasAsyncCompute() &&
+            m_VulkanRenderer->BeginComputeCommandBuffer()) {
             // Record culling on async compute queue
             PerformGPUCullingAsync();
             m_VulkanRenderer->EndComputeCommandBuffer();
@@ -10118,6 +10161,24 @@ void RenderSystem::Update(f32 deltaTime) {
                 }
             }
 
+            // Occlusion phase 1 at the opaque/blend boundary: every opaque occluder
+            // is in the depth buffer by now, and nothing blended is. The test is
+            // BindGeometryPipelineForMaterial's own (Blend, or a water surface), and
+            // the sort key puts all of those after every opaque entity. Before the
+            // reflections below, which are drawn at this same boundary.
+            if (m_LateOcclusionPending) {
+                const auto* bm = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
+                const bool blendOrWater =
+                    (bm && bm->alphaMode == MaterialComponent::AlphaMode::Blend) ||
+                    (m_CachedWater3DStorage && m_CachedWater3DStorage->Has(entity)) ||
+                    (m_CachedWaterVolumeStorage && m_CachedWaterVolumeStorage->Has(entity));
+                if (blendOrWater) {
+                    RunLateOcclusion(commandBuffer);
+                    mainTransparentBound = false;   // RunLateOcclusion bound the opaque pipeline
+                    m_LastPipelineWasCustom = false;
+                }
+            }
+
             // Planar reflections, immediately before the first water surface of
             // the frame. This is the player's pass, and it needs the same slot for
             // the same reasons as the offscreen one -- see the long note in
@@ -10148,6 +10209,10 @@ void RenderSystem::Update(f32 deltaTime) {
             if (m_Pipeline) FlushArenaBatches(commandBuffer, m_Pipeline->GetLayout());
         }
     }
+
+    // A scene with nothing blended never reached the boundary inside the loop.
+    // Here every opaque draw, the skinned arena batches included, is down.
+    if (m_LateOcclusionPending) RunLateOcclusion(commandBuffer);
 
     // Geometry outline pass (inverted-hull backface extrusion, after main geometry)
     RenderOutlinePass();
@@ -11029,6 +11094,18 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     }
     m_LastBound.Reset(); m_GeometryPoolBound = false; InvalidateBoundSet0();
 
+    // This target is the frame's cull target (CullForTarget ran for it): draw
+    // what the GPU pass kept, and the loop below skips those entities. Every
+    // other target (the editor's views, mirrors, a second pass) draws everything
+    // per-entity, as it always has.
+    const bool rtCullTarget = target == m_CullTarget && m_CullTargetCulled &&
+                              pass != TargetPass::TransparentOIT;
+    if (rtCullTarget) {
+        DrawIndirect(commandBuffer);
+        if (m_IndirectDrawBatcher && m_IndirectDrawBatcher->HasBatches()) DrawTexturedIndirect(commandBuffer);
+        m_LastBound.Reset(); m_GeometryPoolBound = false; InvalidateBoundSet0();
+    }
+
     // Edit mode never calls Update(), which is where m_SortedRenderList is normally
     // (re)built. So after entities were imported/added/removed in the editor the list
     // went STALE: the color pass + bone-arena instancing kept drawing the OLD set
@@ -11113,6 +11190,10 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             // Skip invisible entities or entities without transform (cached storage)
             auto* xformRT = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
             if (!xformRT || !xformRT->visible) continue;
+            if (rtCullTarget && static_cast<usize>(EntityIndex(entity)) < m_IndirectDrawn.size() &&
+                m_IndirectDrawn[static_cast<usize>(EntityIndex(entity))]) {
+                continue;   // drawn by the indirect list above
+            }
 
             // CPU-side GPU-culling skip REMOVED (adr-0008, 2026-09-21).
             //
@@ -11196,6 +11277,13 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             // so ComputeSortKey puts it in bucket 2, after all opaque geometry, and
             // reaching the first water entity therefore means the opaque half of
             // the frame is complete.
+            // Occlusion phase 1 at the opaque/blend boundary, as in the main pass.
+            if (m_LateOcclusionPending && rtCullTarget && (rtIsBlended || rtIsWater)) {
+                RunLateOcclusion(commandBuffer);
+                rtTransparentBound = false;
+                rtCustomBound = false;
+                m_LastPipelineWasCustom = false;
+            }
             if (rtIsWater && !rtReflectionsDone && pass != TargetPass::TransparentOIT) {
                 rtReflectionsDone = true;
                 RenderPlanarReflections();
@@ -11815,6 +11903,9 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
 
     // #1 arena (step 2): one instanced draw per accumulated (mesh, texture-set) group.
     if (m_UseBoneArena) FlushArenaBatches(commandBuffer, targetPipeline->GetLayout());
+
+    // Nothing blended reached the boundary inside the loop.
+    if (m_LateOcclusionPending && rtCullTarget) RunLateOcclusion(commandBuffer);
 
     // Restore the full depth range if the last entity was a viewmodel
     SetViewmodelDepth(commandBuffer, false);
@@ -12449,14 +12540,14 @@ bool RenderSystem::IndirectDrawRepresentable(Entity entity, const MaterialCompon
 
 void RenderSystem::BuildCullableObjectList() {
     m_CullableObjects.clear();
+    m_CullableEntities.clear();
     m_EntityToCullIndex.clear();
 
     if (!m_World || !m_GPUCulling) return;
 
-    // Reserve capacity
+    // Reserve capacity. A hint only: the editor never classifies the scene, so
+    // this count can be stale there, and returning on 0 skipped a real scene.
     usize meshCount = m_SceneComposition.mesh3DCount;
-    if (meshCount == 0) return;
-
     m_CullableObjects.reserve(meshCount);
     m_EntityToCullIndex.resize(m_World->GetEntityCount(), UINT32_MAX);
 
@@ -12565,6 +12656,14 @@ void RenderSystem::BuildCullableObjectList() {
         obj.transform = ECS::ComputeWorldMatrix(m_World, entity);
         obj.meshIndex = EntityIndex(entity); // entity slot index doubles as mesh index for now
         obj.indexCount = static_cast<u32>(mesh->indices.size());
+        // MeshRenderer's culling opt-outs. frustumCull was read only by the WEB
+        // frustum test, so on desktop, where this pass is on by default, a mesh
+        // whose bounds understate where it draws was culled at the screen edge
+        // with the box unticked.
+        if (bcoMR) {
+            if (!bcoMR->frustumCull)   obj.cullFlags |= Renderer::kCullSkipFrustum;
+            if (!bcoMR->occlusionCull) obj.cullFlags |= Renderer::kCullSkipOcclusion;
+        }
 
         // Index the per-entity tracking vectors by EntityIndex (slot), NOT the
         // raw generational handle — a recycled handle's raw value is billions
@@ -12634,6 +12733,7 @@ void RenderSystem::BuildCullableObjectList() {
         m_EntityToCullIndex[entIdx] = cullIndex;
 
         m_CullableObjects.push_back(obj);
+        m_CullableEntities.push_back(entity);   // UploadObjectData walks this, 1:1
         cullIndex++;
     }
 
@@ -12643,6 +12743,92 @@ void RenderSystem::BuildCullableObjectList() {
             m_IndirectDrawBatcher->UploadCommands();
         }
     }
+}
+
+bool RenderSystem::GetGPUCullStats(u32& objects, u32& visible) const {
+    if (!m_GPUCulling || !m_GPUCullingEnabled) return false;
+    const auto stats = m_GPUCulling->GetStats();
+    objects = stats.totalObjects;
+    visible = stats.visibleObjects;
+    return true;
+}
+
+void RenderSystem::SwapCullViewState(CullViewState& v) {
+    std::swap(m_GPUCulling, v.gpuCulling);
+    std::swap(m_HiZPyramid, v.hiz);
+    std::swap(m_HiZInitFailed, v.hizInitFailed);
+    std::swap(m_HiZFailedExtent, v.hizFailedExtent);
+    std::swap(m_CullableObjects, v.cullable);
+    std::swap(m_CullableEntities, v.cullableEntities);
+    std::swap(m_EntityToCullIndex, v.entityToCullIndex);
+    std::swap(m_ObjectDataCPU, v.objectDataCPU);
+    std::swap(m_IndirectDrawn, v.indirectDrawn);
+    std::swap(m_IndirectDrawBatcher, v.batcher);
+    std::swap(m_LastCullFrameSerial, v.lastCullFrameSerial);
+    std::swap(m_LastCullViewProj, v.lastCullViewProj);
+    std::swap(m_LastCullDepthView, v.lastCullDepthView);
+    std::swap(m_LateOcclusionPending, v.lateOcclusionPending);
+    std::swap(m_CullTarget, v.cullTarget);
+    std::swap(m_CullTargetCulled, v.cullTargetCulled);
+    std::swap(m_CullTargetWidth, v.cullTargetWidth);
+    std::swap(m_CullTargetHeight, v.cullTargetHeight);
+}
+
+void RenderSystem::SelectCullView(u32 viewId) {
+    if (viewId == m_ActiveCullView) return;
+    if (m_CullViews.size() <= std::max(viewId, m_ActiveCullView)) {
+        m_CullViews.resize(std::max(viewId, m_ActiveCullView) + 1);
+    }
+    for (auto& v : m_CullViews) if (!v) v = std::make_unique<CullViewState>();
+    SwapCullViewState(*m_CullViews[m_ActiveCullView]);   // park the active view
+    SwapCullViewState(*m_CullViews[viewId]);             // bring the new one in
+    m_ActiveCullView = viewId;
+}
+
+bool RenderSystem::EnsureCullViewResources() {
+    if (m_GPUCulling) return true;
+    if (!m_GPUCullingEnabled || !m_VulkanRenderer) return false;
+    // A view seen for the first time. Creating is safe mid-recording (nothing
+    // is destroyed); the pyramid still waits for the next FlushPendingChanges.
+    auto culling = std::make_unique<Renderer::GPUCullingSystem>(m_VulkanRenderer->GetContext());
+    if (!culling->Initialize()) return false;
+    m_GPUCulling = std::move(culling);
+    auto batcher = std::make_unique<Renderer::IndirectDrawBatcher>();
+    if (batcher->Initialize(m_VulkanRenderer->GetContext(), m_GPUCulling->GetMaxObjects())) {
+        m_IndirectDrawBatcher = std::move(batcher);
+    }
+    return true;
+}
+
+void RenderSystem::SetCullTarget(Renderer::RenderTarget* target, u32 viewId) {
+    SelectCullView(viewId);
+    m_CullTarget = target;
+    m_CullTargetWidth = target ? target->GetWidth() : 0;
+    m_CullTargetHeight = target ? target->GetHeight() : 0;
+}
+
+void RenderSystem::CullForTarget(Renderer::Camera* camera) {
+    m_CullTargetCulled = false;
+    // Editor views are allowed: each is its own view (SetCullTarget). Not gated
+    // on m_SceneComposition either -- the editor never classifies the scene, so
+    // its counts are stale there; BuildCullableObjectList counts for itself.
+    if (!m_CullTarget || !camera || !m_GPUDrivenEnabled || !m_GPUCullingEnabled ||
+        !EnsureCullViewResources()) {
+        m_IndirectDrawn.clear();
+        m_CullableObjects.clear();
+        return;
+    }
+    // BuildCullableObjectList and the cull read m_Camera; RenderToTarget swaps
+    // it the same way.
+    Renderer::Camera* prevCamera = m_Camera;
+    m_Camera = camera;
+    BuildCullableObjectList();
+    if (!m_CullableObjects.empty()) {
+        UploadObjectData();
+        PerformGPUCulling();
+        m_CullTargetCulled = true;
+    }
+    m_Camera = prevCamera;
 }
 
 void RenderSystem::PerformGPUCulling() {
@@ -12655,33 +12841,209 @@ void RenderSystem::PerformGPUCulling() {
     // Submit objects for culling
     m_GPUCulling->SubmitObjects(m_CullableObjects);
 
+    // This cull's own phase-1 state, whatever an earlier frame left behind.
+    m_LateOcclusionPending = false;
+    m_GPUCulling->BeginFrame();
+
     VkBuffer indirectBuffer;
     u32 drawCount;
+    const Math::Matrix4 view = m_Camera->GetViewMatrix();
+    const Math::Matrix4 proj = m_Camera->GetProjectionMatrix();
+    const VkImageView depthView = GetCullDepthSource().view;
 
-    // Use two-phase HiZ occlusion culling when Hi-Z pyramid is available
-    if (m_HiZPyramid && m_GPUCulling->HasHiZ()) {
-        if (m_GPUCulling->ExecuteTwoPhase(
-                m_Camera->GetViewMatrix(),
-                m_Camera->GetProjectionMatrix(),
-                commandBuffer,
-                indirectBuffer,
-                drawCount)) {
-            auto stats = m_GPUCulling->GetStats();
-            (void)stats;
-            return;
+    // Occlusion only with an unbroken history (see m_LastCullFrameSerial). A
+    // pyramid built from some other camera's depth would hide things that are
+    // on screen; with no history this frame is frustum-only, which is merely
+    // slower.
+    // ...and only with a pyramid made for THIS depth's size. After a resize the
+    // pyramid catches up at the next FlushPendingChanges; reading a depth image
+    // of another size would fetch outside it and could hide visible objects.
+    const CullDepthSource depthNow = GetCullDepthSource();
+    const bool haveHistory = m_HiZPyramid && m_GPUCulling->HasHiZ() &&
+                             m_LastCullFrameSerial != 0 &&
+                             m_LastCullFrameSerial + 1 == m_RenderFrameSerial &&
+                             m_LastCullDepthView == depthView && depthView != VK_NULL_HANDLE &&
+                             m_HiZPyramid->GetDepthWidth() == depthNow.width &&
+                             m_HiZPyramid->GetDepthHeight() == depthNow.height;
+    bool culled = false;
+    if (haveHistory) {
+        BuildHiZFromCullDepth(commandBuffer);
+        culled = m_GPUCulling->ExecuteOcclusion(view, proj, m_LastCullViewProj,
+                                                commandBuffer, indirectBuffer, drawCount);
+        // Phase 1 needs the main pass paused mid-frame, which MSAA cannot do.
+        // Without it this frame is single-phase: correct, one frame of latency.
+        m_LateOcclusionPending = culled && (m_CullTarget ? m_CullTarget->CanSuspend()
+                                                         : m_VulkanRenderer->CanSuspendMainRenderPass());
+    }
+    if (!culled) {
+        m_GPUCulling->ExecuteCulling(view, proj, commandBuffer, indirectBuffer, drawCount);
+    }
+
+    // This frame's main pass draws into depthView with this camera, which is
+    // what next frame's occlusion test will read.
+    m_LastCullFrameSerial = m_RenderFrameSerial;
+    m_LastCullViewProj = proj * view;
+    m_LastCullDepthView = depthView;
+}
+
+RenderSystem::CullDepthSource RenderSystem::GetCullDepthSource() const {
+    CullDepthSource src;
+    if (m_CullTarget) {
+        src.image = m_CullTarget->GetDepthImage();
+        src.view = m_CullTarget->GetDepthImageView();
+        src.format = m_CullTarget->GetDepthFormat();
+        src.width = m_CullTarget->GetWidth();
+        src.height = m_CullTarget->GetHeight();
+    } else if (auto* swapchain = m_VulkanRenderer ? m_VulkanRenderer->GetSwapchain() : nullptr) {
+        src.image = swapchain->GetDepthImage();
+        src.view = swapchain->GetDepthImageView();
+        src.format = swapchain->GetDepthFormat();
+        src.width = swapchain->GetExtent().width;
+        src.height = swapchain->GetExtent().height;
+    }
+    return src;
+}
+
+void RenderSystem::BuildHiZFromCullDepth(VkCommandBuffer cmd) {
+    const CullDepthSource depth = GetCullDepthSource();
+    if (depth.image == VK_NULL_HANDLE || !m_HiZPyramid) return;
+
+    // Called twice a frame: at frame start on LAST frame's stored depth, and at
+    // the opaque/blend boundary on THIS frame's, with the pass suspended. Both
+    // times the pass that wrote it (the swapchain main pass, or a RenderTarget's)
+    // ended in DEPTH_STENCIL_ATTACHMENT_OPTIMAL. Leaves it in READ_ONLY: the
+    // resume passes start from that layout, and the next frame's pass starts
+    // from UNDEFINED and clears.
+    const VkFormat fmt = depth.format;
+    const bool hasStencil = fmt == VK_FORMAT_D32_SFLOAT_S8_UINT || fmt == VK_FORMAT_D24_UNORM_S8_UINT ||
+                            fmt == VK_FORMAT_D16_UNORM_S8_UINT;
+    VkImageMemoryBarrier b{};
+    b.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    b.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    b.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    b.oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    b.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+    b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    b.image = depth.image;
+    b.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | (hasStencil ? VK_IMAGE_ASPECT_STENCIL_BIT : 0);
+    b.subresourceRange.levelCount = 1;
+    b.subresourceRange.layerCount = 1;
+    vkCmdPipelineBarrier(cmd,
+        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &b);
+
+    m_HiZPyramid->Generate(cmd, depth.view);
+}
+
+void RenderSystem::RunLateOcclusion(VkCommandBuffer cmd) {
+    m_LateOcclusionPending = false;
+    if (!m_GPUCulling || !m_HiZPyramid || !m_Camera) return;
+
+    // Leave the pass in a plain state before pausing it: a viewmodel narrows the
+    // depth range, and that would otherwise carry into the resumed half.
+    SetViewmodelDepth(cmd, false);
+
+    if (m_CullTarget) m_CullTarget->Suspend(cmd);
+    else              m_VulkanRenderer->SuspendMainRenderPass();
+    BuildHiZFromCullDepth(cmd);   // THIS frame's opaque depth
+    const Math::Matrix4 viewProj = m_Camera->GetProjectionMatrix() * m_Camera->GetViewMatrix();
+    const bool haveLateList = m_GPUCulling->ExecuteOcclusionLate(viewProj, cmd);
+    if (m_CullTarget) m_CullTarget->Resume(cmd);
+    else              m_VulkanRenderer->ResumeMainRenderPass();
+
+    // A new render pass instance inherits NO dynamic state and no bindings.
+    // Rebind what the pass that was paused had: RenderToTarget's offscreen
+    // pipeline and sets, or the main pass's. (GetActiveBufferIndex already
+    // answers for whichever is active.)
+    const u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
+    Renderer::VulkanPipeline* pipe = (m_OffscreenMode && m_OffscreenPipeline) ? m_OffscreenPipeline.get()
+                                                                              : m_Pipeline.get();
+    pipe->Bind(cmd);
+    m_BoundSpecKey.bits = 0xFFFFFFFF;
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe->GetLayout(), 0, 1,
+        &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 0, nullptr);
+    if (m_BindlessManager) {
+        VkDescriptorSet bindlessSet = m_BindlessManager->GetDescriptorSet();
+        if (bindlessSet) {
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                pipe->GetLayout(), 1, 1, &bindlessSet, 0, nullptr);
         }
     }
-
-    // Fallback to single-phase culling
-    if (m_GPUCulling->ExecuteCulling(
-            m_Camera->GetViewMatrix(),
-            m_Camera->GetProjectionMatrix(),
-            commandBuffer,
-            indirectBuffer,
-            drawCount)) {
-        auto stats = m_GPUCulling->GetStats();
-        (void)stats;
+    if (!m_CullTarget) {   // RenderTarget::Resume sets its own viewport and scissor
+        const VkExtent2D extent = m_VulkanRenderer->GetSwapchainExtent();
+        VkViewport viewport{};
+        viewport.width = static_cast<f32>(extent.width);
+        viewport.height = static_cast<f32>(extent.height);
+        viewport.maxDepth = 1.0f;
+        vkCmdSetViewport(cmd, 0, 1, &viewport);
+        VkRect2D scissor{};
+        scissor.extent = extent;
+        vkCmdSetScissor(cmd, 0, 1, &scissor);
     }
+    m_LastBound.Reset();
+    m_GeometryPoolBound = false;
+    InvalidateBoundSet0();
+
+    // What phase 1 found: hidden last frame, visible now.
+    if (haveLateList) DrawIndirect(cmd, /*lateList*/ true);
+}
+
+void RenderSystem::EnsureHiZPyramid(const Renderer::GpuLifetimeToken&) {
+    // Sizes only -- never the target itself, which the editor may have
+    // recreated since SetCullTarget recorded it.
+    u32 depthW = m_CullTargetWidth, depthH = m_CullTargetHeight;
+    if (!m_CullTarget) {
+        auto* swapchain = m_VulkanRenderer ? m_VulkanRenderer->GetSwapchain() : nullptr;
+        depthW = (swapchain && swapchain->GetDepthImage() != VK_NULL_HANDLE) ? swapchain->GetExtent().width : 0;
+        depthH = (swapchain && swapchain->GetDepthImage() != VK_NULL_HANDLE) ? swapchain->GetExtent().height : 0;
+    }
+    // The editor's own swapchain pass draws only its UI; its views are cull
+    // TARGETS, which is what makes them eligible.
+    const bool wanted = m_OcclusionCullingEnabled && !m_OcclusionForcedOff &&
+                        m_GPUCulling && m_GPUCullingEnabled && m_GPUDrivenEnabled &&
+                        (!m_IsEditorMode || m_CullTarget) && depthW > 0 && depthH > 0;
+    VkDevice device = m_VulkanRenderer ? m_VulkanRenderer->GetContext()->GetDevice() : VK_NULL_HANDLE;
+
+    if (!wanted) {
+        if (m_HiZPyramid) {
+            // Rare (a settings change), and the previous frame's submit may
+            // still be reading it, so wait rather than retire it.
+            vkDeviceWaitIdle(device);
+            if (m_GPUCulling) m_GPUCulling->SetHiZPyramid(nullptr);
+            m_HiZPyramid.reset();
+        }
+        m_LastCullFrameSerial = 0;
+        return;
+    }
+
+    const VkExtent2D ext{depthW, depthH};
+    if (m_HiZPyramid && m_HiZPyramid->GetDepthWidth() == ext.width &&
+        m_HiZPyramid->GetDepthHeight() == ext.height) {
+        return;
+    }
+    if (m_HiZInitFailed && m_HiZFailedExtent.width == ext.width &&
+        m_HiZFailedExtent.height == ext.height) {
+        return;
+    }
+
+    vkDeviceWaitIdle(device);
+    m_GPUCulling->SetHiZPyramid(nullptr);
+    m_HiZPyramid.reset();
+    m_LastCullFrameSerial = 0;   // a new pyramid has no history
+
+    auto hiz = std::make_unique<Renderer::HiZPyramid>(m_VulkanRenderer->GetContext());
+    if (!hiz->Initialize(ext.width, ext.height)) {
+        ENJIN_LOG_WARN(Renderer, "Occlusion culling unavailable at %ux%u (HiZ pyramid failed); "
+                       "frustum culling only", ext.width, ext.height);
+        m_HiZInitFailed = true;
+        m_HiZFailedExtent = ext;
+        return;
+    }
+    m_HiZInitFailed = false;
+    m_HiZPyramid = std::move(hiz);
+    m_GPUCulling->SetHiZPyramid(m_HiZPyramid.get());
+    ENJIN_LOG_INFO(Renderer, "Occlusion culling on (%ux%u depth)", ext.width, ext.height);
 }
 
 void RenderSystem::PerformGPUCullingAsync() {
@@ -12709,21 +13071,17 @@ void RenderSystem::UploadObjectData() {
     // Build ObjectData array matching cullable objects 1:1
     m_ObjectDataCPU.resize(m_CullableObjects.size());
 
-    // Cache storage pointers to avoid per-entity type-ID hash lookups
-    auto* spriteStorageUOD = m_World->GetComponentStorage<Sprite2DComponent>();
-    auto* tilemapStorageUOD = m_World->GetComponentStorage<TilemapComponent>();
-
+    // Walk the entities BuildCullableObjectList kept, in its order, so ObjectData
+    // slot i is object i. This walked the world with its own copy of the filters
+    // and the copy was missing the MeshRenderer ones (enabled, render layer, draw
+    // distance): after the first filtered mesh every indirect mesh read the NEXT
+    // mesh's transform and material. A disabled cube drew and the cube after it
+    // vanished, on the default path, in any game that used those switches.
     u32 idx = 0;
-    for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
-        auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
-        if (!xform || !xform->visible) continue;
-        if (spriteStorageUOD && spriteStorageUOD->Has(entity)) continue;
-        if (tilemapStorageUOD && tilemapStorageUOD->Has(entity)) continue;
-
-        auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
-        if (!mesh || !mesh->IsValid()) continue;
-
+    for (Entity entity : m_CullableEntities) {
         if (idx >= m_ObjectDataCPU.size()) break;
+        // Non-null: BuildCullableObjectList kept only entities with a transform.
+        auto* xform = m_CachedTransformStorage->Get(entity);
 
         ObjectDataGPU& obj = m_ObjectDataCPU[idx];
         obj.model = ECS::ComputeWorldMatrix(m_World, entity);
@@ -12834,12 +13192,16 @@ void RenderSystem::UploadObjectData() {
     }
 }
 
-void RenderSystem::DrawIndirect(VkCommandBuffer commandBuffer) {
+void RenderSystem::DrawIndirect(VkCommandBuffer commandBuffer, bool lateList) {
     if (!m_GPUCulling || !m_GPUCullingEnabled || !m_GeometryPool) return;
     if (m_CullableObjects.empty()) return;
 
-    VkBuffer indirectBuffer = m_GPUCulling->GetIndirectDrawBuffer();
-    VkBuffer drawCountBuffer = m_GPUCulling->GetDrawCountBuffer();
+    // lateList: occlusion phase 1's commands (see RunLateOcclusion). Same object
+    // indices, same ObjectData, a different command buffer and count.
+    VkBuffer indirectBuffer = lateList ? m_GPUCulling->GetLateIndirectDrawBuffer()
+                                       : m_GPUCulling->GetIndirectDrawBuffer();
+    VkBuffer drawCountBuffer = lateList ? m_GPUCulling->GetLateDrawCountBuffer()
+                                        : m_GPUCulling->GetDrawCountBuffer();
     if (indirectBuffer == VK_NULL_HANDLE || drawCountBuffer == VK_NULL_HANDLE) return;
 
     // Point binding 13 at OUR ObjectData before drawing.

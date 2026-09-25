@@ -62,6 +62,15 @@ public:
     void BeginMainRenderPass();
 
     bool IsMainRenderPassActive() const { return m_IsMainRenderPassActive; }
+    // Pause and resume the main pass mid-frame, for work that cannot be recorded
+    // inside a render pass (the second occlusion phase: a compute pass over THIS
+    // frame's depth). Resume begins a LOAD-op twin of the main pass, which is
+    // compatible with it, so every pipeline and framebuffer keeps working.
+    // Not available with MSAA: that pass RESOLVES at its end, and pausing it
+    // would resolve half a frame.
+    bool CanSuspendMainRenderPass() const { return m_ResumeRenderPass != VK_NULL_HANDLE; }
+    void SuspendMainRenderPass();   // leaves depth in DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+    void ResumeMainRenderPass();    // expects depth in DEPTH_STENCIL_READ_ONLY_OPTIMAL
 
     VkCommandBuffer GetCurrentCommandBuffer() const;
     VkRenderPass GetRenderPass() const { return m_RenderPass; }
@@ -183,6 +192,8 @@ private:
     VkSurfaceKHR m_Surface = VK_NULL_HANDLE;
 
     VkRenderPass m_RenderPass = VK_NULL_HANDLE;
+    VkRenderPass m_ResumeRenderPass = VK_NULL_HANDLE;   // LOAD twin of m_RenderPass (non-MSAA only)
+    void DestroyResumeRenderPass();
     VkCommandPool m_CommandPool = VK_NULL_HANDLE;
     std::vector<VkCommandBuffer> m_CommandBuffers;
 

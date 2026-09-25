@@ -496,7 +496,51 @@ bool RenderTarget::CreateRenderPass() {
         return false;
     }
 
+    // The resume twin (Suspend/Resume): every attachment LOADed, starting from
+    // the layouts the first half left. Only load ops and layouts differ, which
+    // keeps it compatible with m_RenderPass and its framebuffer.
+    std::array<VkAttachmentDescription, 3> resumeAttachments = attachments;
+    for (u32 i = 0; i < attachmentCount; ++i) resumeAttachments[i].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    resumeAttachments[0].initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    if (m_WantVelocity) resumeAttachments[1].initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    resumeAttachments[attachmentCount - 1].initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+    VkSubpassDependency resumeDep = dependency;
+    resumeDep.srcStageMask |= VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+    resumeDep.srcAccessMask |= VK_ACCESS_SHADER_READ_BIT;
+    resumeDep.dstAccessMask |= VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+                               VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+    VkRenderPassCreateInfo resumeInfo = rpInfo;
+    resumeInfo.pAttachments = resumeAttachments.data();
+    resumeInfo.pDependencies = &resumeDep;
+    if (vkCreateRenderPass(device, &resumeInfo, nullptr, &m_ResumeRenderPass) != VK_SUCCESS) {
+        m_ResumeRenderPass = VK_NULL_HANDLE;   // occlusion on this target stays single-phase
+    }
+
     return true;
+}
+
+void RenderTarget::Suspend(VkCommandBuffer cmd) {
+    vkCmdEndRenderPass(cmd);
+}
+
+void RenderTarget::Resume(VkCommandBuffer cmd) {
+    if (m_ResumeRenderPass == VK_NULL_HANDLE) return;
+    VkRenderPassBeginInfo rpBegin{};
+    rpBegin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    rpBegin.renderPass = m_ResumeRenderPass;
+    rpBegin.framebuffer = m_Framebuffer;
+    rpBegin.renderArea.offset = {0, 0};
+    rpBegin.renderArea.extent = {m_Width, m_Height};
+    vkCmdBeginRenderPass(cmd, &rpBegin, VK_SUBPASS_CONTENTS_INLINE);
+
+    VkViewport viewport{};
+    viewport.width = static_cast<f32>(m_Width);
+    viewport.height = static_cast<f32>(m_Height);
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(cmd, 0, 1, &viewport);
+    VkRect2D scissor{};
+    scissor.extent = {m_Width, m_Height};
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
 }
 
 bool RenderTarget::CreateFramebuffer() {
@@ -872,6 +916,10 @@ void RenderTarget::DestroyResources() {
     if (m_RenderPass != VK_NULL_HANDLE) {
         vkDestroyRenderPass(device, m_RenderPass, nullptr);
         m_RenderPass = VK_NULL_HANDLE;
+    }
+    if (m_ResumeRenderPass != VK_NULL_HANDLE) {
+        vkDestroyRenderPass(device, m_ResumeRenderPass, nullptr);
+        m_ResumeRenderPass = VK_NULL_HANDLE;
     }
     if (m_VelocityImageView != VK_NULL_HANDLE) {
         vkDestroyImageView(device, m_VelocityImageView, nullptr);

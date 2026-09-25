@@ -143,13 +143,17 @@ extern const size_t OitAccumFragmentShaderDataSize;
 extern const unsigned char TAAResolveComputeShaderData[];
 extern const size_t TAAResolveComputeShaderDataSize;
 
-// cull.comp.spv (9436 bytes, 2359 words)
+// cull.comp.spv (9616 bytes, 2404 words)
 extern const unsigned char CullComputeShaderData[];
 extern const size_t CullComputeShaderDataSize;
 
-// cull_hiz.comp.spv (17652 bytes, 4413 words)
+// cull_hiz.comp.spv (19312 bytes, 4828 words)
 extern const unsigned char CullHiZComputeShaderData[];
 extern const size_t CullHiZComputeShaderDataSize;
+
+// hiz_generate.comp.spv (3284 bytes, 821 words)
+extern const unsigned char HiZGenerateComputeShaderData[];
+extern const size_t HiZGenerateComputeShaderDataSize;
 
 // rt_hybrid_apply.frag.spv (2372 bytes, 593 words)
 extern const unsigned char RTHybridApplyFragmentShaderData[];

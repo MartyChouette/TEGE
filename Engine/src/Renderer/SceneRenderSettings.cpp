@@ -46,6 +46,7 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
     SceneRenderSettings s;
 
     if (rs) {
+        s.occlusionCulling     = rs->IsOcclusionCullingEnabled();
 #if !ENJIN_RENDERER_WEBGPU
         // Round-trips with ApplyToRuntime. Missing this is how a setting saves,
         // reloads and silently reverts on the next capture -- the documented
@@ -493,6 +494,7 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
 void SceneRenderSettings::ApplyToRuntimeUnclamped(ECS::RenderSystem* rs, PostProcessSettings* pp) const {
     if (rs) {
         rs->SetShadowDistance(shadowDistance);  // both backends (web: single-cascade fit range)
+        rs->SetOcclusionCullingEnabled(occlusionCulling);   // stored on web, acted on only by Vulkan
 #if !ENJIN_RENDERER_WEBGPU
         rs->SetShadowResolution(shadowResolution);
         rs->SetShadowStrength(shadowStrength);
@@ -1440,6 +1442,7 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     j["adaptiveRayDisocclusionBoost"] = s.adaptiveRayDisocclusionBoost;
 
     // RenderSystem
+    j["occlusionCulling"]  = s.occlusionCulling;
     j["shadowsEnabled"]    = s.shadowsEnabled;
     j["shadowResolution"]  = s.shadowResolution;
     j["shadowDistance"]    = RF(s.shadowDistance);
@@ -1890,6 +1893,7 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("seasonalChangeInterval")) s.seasonalChangeInterval = j["seasonalChangeInterval"].get<f32>();
 
     // RenderSystem
+    if (j.contains("occlusionCulling"))  s.occlusionCulling  = JB(j["occlusionCulling"]);
     if (j.contains("shadowsEnabled"))    s.shadowsEnabled    = JB(j["shadowsEnabled"]);
     if (j.contains("shadowResolution")) s.shadowResolution  = j["shadowResolution"].get<u32>();
     if (j.contains("shadowDistance"))   s.shadowDistance     = j["shadowDistance"].get<f32>();

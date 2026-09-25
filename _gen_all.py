@@ -102,6 +102,7 @@ SHADERS_LIST = [
     # built game while the log still says "GPU frustum culling enabled".
     ("cull.comp.spv",          "CullComputeShaderData",          "uchar"),
     ("cull_hiz.comp.spv",      "CullHiZComputeShaderData",       "uchar"),
+    ("hiz_generate.comp.spv",  "HiZGenerateComputeShaderData",   "uchar"),
     ("rt_hybrid_apply.frag.spv", "RTHybridApplyFragmentShaderData", "uchar"),
     ("gpu_particle.vert.spv",  "GpuParticleVertexShaderData",    "uchar"),
     ("gpu_particle.frag.spv",  "GpuParticleFragmentShaderData",  "uchar"),

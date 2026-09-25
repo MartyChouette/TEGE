@@ -40,6 +40,7 @@ public:
     const std::vector<VkFramebuffer>& GetFramebuffers() const { return m_Framebuffers; }
     VkImageView GetDepthImageView() const { return m_DepthImageView; }
     VkFormat GetDepthFormat() const { return m_DepthFormat; }
+    VkImage GetDepthImage() const { return m_DepthImage; }   // occlusion culling reads it
 
     // Whether the swapchain images were created with TRANSFER_SRC, i.e. whether
     // a presented frame can be read back to the CPU. Driver-dependent, so the

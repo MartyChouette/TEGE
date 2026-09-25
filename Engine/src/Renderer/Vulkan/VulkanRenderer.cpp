@@ -160,6 +160,7 @@ void VulkanRenderer::Shutdown() {
         m_CommandPool = VK_NULL_HANDLE;
     }
 
+    if (m_Context) DestroyResumeRenderPass();
     if (m_Context && m_RenderPass != VK_NULL_HANDLE) {
         vkDestroyRenderPass(m_Context->GetDevice(), m_RenderPass, nullptr);
         m_RenderPass = VK_NULL_HANDLE;
@@ -224,7 +225,11 @@ bool VulkanRenderer::CreateRenderPass() {
         depthAttachment.format = m_Swapchain->GetDepthFormat();
         depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
         depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        // STORE: occlusion culling builds next frame's Hi-Z pyramid from this
+        // depth, before the pass clears it again. DONT_CARE let the driver
+        // discard it, and a pyramid built from discarded depth is garbage in
+        // the one direction that matters, hiding things that are on screen.
+        depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
         depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -277,6 +282,32 @@ bool VulkanRenderer::CreateRenderPass() {
         }
 
         ENJIN_LOG_INFO(Renderer, "Render pass created with velocity + depth attachments");
+
+        // The resume twin: same attachments, LOADed instead of cleared, starting
+        // from the layouts the main pass (or SuspendMainRenderPass's caller) left
+        // them in. Only load ops and layouts differ, so it is render-pass
+        // COMPATIBLE with m_RenderPass: pipelines and framebuffers built for the
+        // main pass are valid in it unchanged.
+        std::array<VkAttachmentDescription, 3> resumeAttachments = attachments;
+        for (auto& a : resumeAttachments) a.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+        resumeAttachments[0].initialLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;          // main pass finalLayout
+        resumeAttachments[1].initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; // main pass finalLayout
+        resumeAttachments[2].initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+
+        // What ran in between is compute reading depth; the attachments were last
+        // written by the first half of the pass.
+        VkSubpassDependency resumeDep = dependency;
+        resumeDep.srcStageMask |= VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+        resumeDep.srcAccessMask |= VK_ACCESS_SHADER_READ_BIT;
+        resumeDep.dstAccessMask |= VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+
+        VkRenderPassCreateInfo resumeInfo = renderPassInfo;
+        resumeInfo.pAttachments = resumeAttachments.data();
+        resumeInfo.pDependencies = &resumeDep;
+        if (vkCreateRenderPass(m_Context->GetDevice(), &resumeInfo, nullptr, &m_ResumeRenderPass) != VK_SUCCESS) {
+            ENJIN_LOG_WARN(Renderer, "Resume render pass not created; two-phase occlusion unavailable");
+            m_ResumeRenderPass = VK_NULL_HANDLE;
+        }
     } else {
         // ---- MSAA render pass ----
         // Attachment layout:
@@ -735,6 +766,43 @@ void VulkanRenderer::BeginMainRenderPass() {
     m_IsMainRenderPassActive = true;
 }
 
+void VulkanRenderer::SuspendMainRenderPass() {
+    if (!m_IsMainRenderPassActive) return;
+    vkCmdEndRenderPass(m_CommandBuffers[m_CurrentFrame]);
+    m_IsMainRenderPassActive = false;
+}
+
+void VulkanRenderer::ResumeMainRenderPass() {
+    if (m_IsMainRenderPassActive || m_ResumeRenderPass == VK_NULL_HANDLE) return;
+
+    VkRenderPassBeginInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    info.renderPass = m_ResumeRenderPass;
+    info.framebuffer = m_Swapchain->GetFramebuffer(m_CurrentImageIndex);
+    info.renderArea.offset = { 0, 0 };
+    info.renderArea.extent = m_Swapchain->GetExtent();
+    // No clears: every attachment LOADs. The count may be zero.
+#ifdef ENJIN_VRS
+    VkRenderingFragmentShadingRateAttachmentInfoKHR vrsAttachment{};
+    if (m_ShadingRateImageView != VK_NULL_HANDLE) {
+        vrsAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_FRAGMENT_SHADING_RATE_ATTACHMENT_INFO_KHR;
+        vrsAttachment.imageView = m_ShadingRateImageView;
+        vrsAttachment.imageLayout = VK_IMAGE_LAYOUT_FRAGMENT_SHADING_RATE_ATTACHMENT_OPTIMAL_KHR;
+        vrsAttachment.shadingRateAttachmentTexelSize = m_ShadingRateTileSize;
+        info.pNext = &vrsAttachment;
+    }
+#endif
+    vkCmdBeginRenderPass(m_CommandBuffers[m_CurrentFrame], &info, VK_SUBPASS_CONTENTS_INLINE);
+    m_IsMainRenderPassActive = true;
+}
+
+void VulkanRenderer::DestroyResumeRenderPass() {
+    if (m_ResumeRenderPass != VK_NULL_HANDLE && m_Context) {
+        vkDestroyRenderPass(m_Context->GetDevice(), m_ResumeRenderPass, nullptr);
+    }
+    m_ResumeRenderPass = VK_NULL_HANDLE;
+}
+
 void VulkanRenderer::EndFrame() {
     if (!m_IsFrameStarted) {
         ENJIN_LOG_WARN(Renderer, "EndFrame called without matching BeginFrame");
@@ -1074,6 +1142,7 @@ bool VulkanRenderer::IsVSyncEnabled() const {
 }
 
 bool VulkanRenderer::RecreateRenderPass() {
+    DestroyResumeRenderPass();
     if (m_RenderPass != VK_NULL_HANDLE) {
         vkDestroyRenderPass(m_Context->GetDevice(), m_RenderPass, nullptr);
         m_RenderPass = VK_NULL_HANDLE;

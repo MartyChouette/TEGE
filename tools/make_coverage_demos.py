@@ -919,6 +919,142 @@ def mesh_renderer_filters():
     return e
 
 
+def occlusion_culling():
+    """A wall with cubes hidden behind it. The frame shows none of them, on purpose.
+
+    Occlusion culling had never run in any build: the Hi-Z pyramid it needs was
+    never created, and when it was, a 96-byte UBO refused the occlusion test's
+    176-byte upload every frame, so the test read a zero matrix and culled
+    nothing. A picture cannot catch either, because culling that works and
+    culling that does nothing draw the same frame. That is the point of the
+    `culls` claim this project carries: it reads the GPU pass's own count.
+
+    Expected: ground, wall, the two cubes in front of it, and the one hidden
+    cube that opts out (MeshRenderer occlusionCull false). Five of ten. The five
+    hidden cubes are the only things that may be culled, so the count is exact in
+    both directions: more visible means occlusion stopped working, fewer means
+    it deleted something that is on screen.
+
+    Control (--control) turns occlusion off. The capture must be identical.
+    """
+    e = [sun(1), ground(3, half=60.0), camera(2, (0.0, 3.2, 12.0), -8.0)]
+
+    def box(i, name, pos, scale, colour, occlusion=True):
+        return {
+            "id": i,
+            "name": {"name": name},
+            "transform": transform(pos, scale=scale),
+            "mesh": cube(),
+            "material": material(baseColor=colour, roughness=0.6),
+            "meshRenderer": {"enabled": True, "frustumCull": True, "occlusionCull": occlusion},
+        }
+
+    # Tall and wide enough that every hidden cube is behind it from this camera:
+    # the sight line to the highest hidden corner crosses the wall's plane near
+    # y = 4, and the wall stands to y = 7.
+    e.append(box(50, "Wall", (0.0, 3.5, 4.0), (24.0, 7.0, 0.5), [0.30, 0.32, 0.36]))
+    e.append(box(51, "FrontLeft", (-2.2, 0.5, 7.0), (1.0, 1.0, 1.0), [0.20, 0.55, 0.85]))
+    e.append(box(52, "FrontRight", (2.2, 0.5, 7.0), (1.0, 1.0, 1.0), [0.20, 0.55, 0.85]))
+    for k, (x, y) in enumerate([(-4.0, 0.5), (-1.5, 1.5), (1.0, 0.5), (3.5, 2.5), (0.0, 3.0)]):
+        e.append(box(60 + k, "Hidden%d" % k, (x, y, -2.0), (1.0, 1.0, 1.0), [0.85, 0.25, 0.20]))
+    e.append(box(70, "HiddenButOptedOut", (1.5, 1.0, -4.0), (1.0, 1.0, 1.0),
+                 [0.85, 0.25, 0.20], occlusion=False))
+    return e
+
+
+DOOR_SCRIPT = """// The wall leaves the world in ONE frame, half a second in. Everything behind it
+// was hidden last frame and is visible this frame, which is exactly the case
+// single-phase occlusion gets wrong: its test reads last frame's depth, which
+// still has the wall in it. Occlusion phase 1 re-tests against this frame's.
+class Door : TegeBehavior {
+    float t = 0.0f;
+    void OnUpdate(float dt) {
+        t += dt;
+        if (t > 0.5f) SetPosition(Vector3(0.0f, -200.0f, 4.0f));
+    }
+}
+"""
+
+
+def occlusion_door():
+    """OcclusionCulling's scene with a wall that disappears. See DOOR_SCRIPT.
+
+    Written twice, occlusion on and off, and the harness requires the two to
+    capture byte-identically on every frame around the moment the wall goes.
+    Single-phase occlusion fails that on exactly one frame (measured: 45,381
+    pixels, the five hidden cubes missing); two-phase passes it.
+    """
+    e = occlusion_culling()
+    for ent in e:
+        if ent["name"]["name"] == "Wall":
+            ent["scriptComponent"] = {"scripts": [{"path": "scripts/Door.as", "class": "Door",
+                                                   "enabled": True, "properties": {}}]}
+    return e
+
+
+def filter_order(filtered_first):
+    """Three cubes that must draw, after three that must not.
+
+    The GPU-driven path uploads per-object data in a second walk over the world,
+    and that walk lacked the MeshRenderer filters the cull list applies. So once
+    ONE filtered mesh came before the others, every indirect mesh after it read
+    its neighbour's transform and material: the disabled cube drew and the last
+    visible cube vanished. MeshRendererFilters could not see it, because its
+    filtered spheres come after everything that draws.
+
+    The filtered cubes come FIRST in the scene file here, so they are walked first
+    (walk order is creation order, not id), one per filter. FilterOrderRef is the
+    SAME world with the same cubes written LAST. Only the order differs: a reference without them would not do,
+    because scene-wide systems (the implicit reflection probe's box) still see
+    filtered meshes and shade the others slightly differently.
+    """
+    e = [sun(1), camera(2, (0.0, 3.2, 12.0), -8.0)]
+    cam = e[1]
+    cam["camera"]["cullingMask"] = 0b011
+
+    def box(i, name, pos, colour, mr):
+        return {"id": i, "name": {"name": name}, "transform": transform(pos),
+                "mesh": cube(), "material": material(baseColor=colour, roughness=0.6),
+                "meshRenderer": mr}
+
+    # Walk order is CREATION order, i.e. the order in the scene file, not the id.
+    # The ids differ too so each half reads the same way in the inspector.
+    base = 5 if filtered_first else 20
+    filtered = [
+        box(base + 0, "Disabled", (0.0, 3.0, 0.0), [0.1, 0.1, 0.1], {"enabled": False}),
+        box(base + 1, "OtherLayer", (-2.0, 3.0, 0.0), [0.1, 0.1, 0.1],
+            {"enabled": True, "renderLayerMask": 0b100}),
+        box(base + 2, "TooFar", (2.0, 3.0, 0.0), [0.1, 0.1, 0.1],
+            {"enabled": True, "maxDrawDistance": 4.0}),
+    ]
+    drawn = [box(10 + i, "Cube%d" % i, (x, 0.5, 6.0), colour, {"enabled": True})
+             for i, (x, colour) in enumerate([(-3.0, [0.9, 0.1, 0.1]), (0.0, [0.1, 0.9, 0.1]),
+                                              (3.0, [0.1, 0.1, 0.9])])]
+    return e + (filtered + drawn if filtered_first else drawn + filtered)
+
+
+def with_post_processing(entities):
+    """The same scene through the player's OTHER render path.
+
+    A camera with post-processing renders the scene into an offscreen target
+    and composites it, and that path had no GPU culling at all until occlusion
+    was made to follow it (RenderSystem::SetCullTarget / CullForTarget). Its
+    pause-and-resume is a different render pass from the swapchain's, so it
+    needs its own proof rather than inheriting the swapchain path's.
+    """
+    for ent in entities:
+        if "camera" in ent:
+            ent["camera"]["enablePostProcessing"] = True
+    return entities
+
+
+def write_script(project, rel_path, text):
+    path = os.path.join(REPO, "Examples", project, rel_path)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
+        f.write(text)
+
+
 def mesh_renderer_filters_permissive(entities):
     """The control: same scene, every filter switched to permissive."""
     for ent in entities:
@@ -1235,6 +1371,25 @@ def main():
     if control:
         filters = mesh_renderer_filters_permissive(filters)
     write_project("MeshRendererFilters", filters)
+
+    # Control = occlusion off, everything else identical.
+    write_project("OcclusionCulling", occlusion_culling(),
+                  {"occlusionCulling": not control})
+
+    # The pair is its OWN control: the harness compares them frame by frame.
+    for name, on in (("OcclusionDoorOff", False), ("OcclusionDoor", True)):
+        write_project(name, occlusion_door(), {"occlusionCulling": on})
+        write_script(name, "scripts/Door.as", DOOR_SCRIPT)
+
+    write_project("FilterOrderRef", filter_order(False))
+    write_project("FilterOrder", filter_order(True))
+
+    # All three again through the post-processing (offscreen) render path.
+    write_project("OcclusionCullingPP", with_post_processing(occlusion_culling()),
+                  {"occlusionCulling": not control})
+    for name, on in (("OcclusionDoorPPOff", False), ("OcclusionDoorPP", True)):
+        write_project(name, with_post_processing(occlusion_door()), {"occlusionCulling": on})
+        write_script(name, "scripts/Door.as", DOOR_SCRIPT)
 
 
 if __name__ == "__main__":

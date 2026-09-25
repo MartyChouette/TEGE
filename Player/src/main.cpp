@@ -2108,6 +2108,17 @@ public:
             << (m_RenderSystem ? m_RenderSystem->GetEntityRenderDataSize() : Enjin::usize(0)) << ",\n"
             << "  \"worldEntities\": " << (m_World ? m_World->GetEntityCount() : Enjin::usize(0)) << ",\n";
 
+        // The GPU cull pass's own answer. drawCalls cannot carry it: every
+        // indirect mesh is one multi-draw, so culling nothing and culling
+        // everything both read 1. Absent when the pass is not running.
+        {
+            Enjin::u32 cullObjects = 0, cullVisible = 0;
+            if (m_RenderSystem && m_RenderSystem->GetGPUCullStats(cullObjects, cullVisible)) {
+                out << "  \"gpuCull\": { \"objects\": " << cullObjects
+                    << ", \"visible\": " << cullVisible << " },\n";
+            }
+        }
+
         // Audio, because a picture cannot see it and some demos are ABOUT it.
         //
         // RoomAcoustics is eleven rooms whose whole point is that they sound
@@ -2242,6 +2253,9 @@ public:
         // in postprocess.frag ever applied in exported games. PT mode keeps its
         // own PP source; splitscreen falls back to the direct path (no PP).
         m_RasterPPThisFrame = false;
+        // GPU culling reads, and pauses, the swapchain pass unless this frame
+        // renders offscreen, which re-points it below.
+        if (m_RenderSystem) m_RenderSystem->SetCullTarget(nullptr);
         {
             bool ptMode = m_RenderSystem && m_RenderSystem->IsRayTracingEnabled() &&
                           m_RenderSystem->GetRTMode() == 1;
@@ -2262,6 +2276,9 @@ public:
                     // Pre-recording flush: Update()'s own flush is guarded off
                     // by the skip flag (mid-frame guard), so materials/bindless
                     // must flush here — same contract as the editor loop.
+                    // Before the flush: the Hi-Z pyramid is sized from the cull
+                    // target there.
+                    m_RenderSystem->SetCullTarget(m_ScenePPTarget.get());
                     m_RenderSystem->FlushPendingChanges();
                     m_RenderSystem->BeginFrame(m_FrameDeltaTime);
                     // Compute pre-pass (fog froxels, DDGI, clustered lights,
@@ -2284,6 +2301,9 @@ public:
                             m_RenderSystem->IsUpscalerActive() || taaWillResolve);
                     }
                     m_RenderSystem->ApplyCameraClearColor(m_ScenePPTarget.get());
+                    // Frustum + occlusion phase 0, outside any render pass;
+                    // RenderToTarget draws the result and runs phase 1.
+                    m_RenderSystem->CullForTarget(m_Camera.get());
                     m_ScenePPTarget->Begin(preCmd);
                     m_RenderSystem->RenderToTarget(m_ScenePPTarget.get(), m_Camera.get(), 1);
                     // Particles into the SAME offscreen target, with the offscreen

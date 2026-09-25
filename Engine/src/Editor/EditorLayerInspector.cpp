@@ -1834,7 +1834,12 @@ void EditorLayer::DrawInspectorPanel() {
                     DrawComponentHelp("meshRenderer", m_World, m_PrimarySelected);
                     ImGui::Checkbox("Enabled##MR", &mr->enabled);
                     ImGui::Checkbox("Frustum Cull##MR", &mr->frustumCull);
+                    ImGui::SetItemTooltip("Untick for a mesh whose shader moves it outside its own\n"
+                                          "bounds (sway, inflate), so it is not dropped at the screen edge.");
                     ImGui::Checkbox("Occlusion Cull##MR", &mr->occlusionCull);
+                    ImGui::SetItemTooltip("Untick to always draw this mesh even when something is in front\n"
+                                          "of it. Only matters with Render Settings > Display Options >\n"
+                                          "Occlusion Culling on, in the built game.");
                     ImGui::DragFloat("Max Draw Distance##MR", &mr->maxDrawDistance, 1.0f, 0.0f, 10000.0f, "%.0f");
                     if (mr->maxDrawDistance < 0.0f) mr->maxDrawDistance = 0.0f;
                     ImGui::DragInt("Render Queue##MR", &mr->renderQueue, 1.0f, -5000, 5000);

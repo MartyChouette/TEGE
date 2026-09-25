@@ -830,6 +830,34 @@ public:
     // PrefabManager::SetAssetRoot, and for the same reason -- the process CWD is
     // the exe directory and is never the project.
     void SetAssetRoot(const std::string& root) { m_AssetRoot = root; }
+    // Hi-Z occlusion culling: skip meshes hidden behind others. Two-phase: last
+    // frame's depth first, then this frame's opaque depth re-tests what that
+    // hid (RunLateOcclusion), so nothing appears a frame late. With MSAA the
+    // main pass cannot be paused and it is single-phase. Desktop player,
+    // GPU-driven path only; saved per scene in SceneRenderSettings. ON by
+    // default. ENJIN_OCCLUSION=0 forces it off whatever the scene says, which is
+    // what lets a harness capture the same scene both ways.
+    void SetOcclusionCullingEnabled(bool enabled) { m_OcclusionCullingEnabled = enabled; }
+    bool IsOcclusionCullingEnabled() const { return m_OcclusionCullingEnabled; }
+#if !ENJIN_RENDERER_WEBGPU
+    // GPU culling for a scene drawn into an OFFSCREEN target instead of the
+    // swapchain (the player's post-processing path). Call SetCullTarget before
+    // the frame's FlushPendingChanges (the Hi-Z pyramid is sized from it there;
+    // nullptr = the swapchain, which is what every frame not calling this uses),
+    // then CullForTarget before target->Begin, then RenderToTarget into it:
+    // that draws the culled indirect lists, skips what they drew, and runs
+    // occlusion phase 1 by suspending the target's pass.
+    //
+    // viewId: one per camera that is culled in the same frame (the editor's
+    // scene view and game view). Each view has its own culling state -- GPU
+    // buffers, Hi-Z pyramid, lists, history -- because a second cull in one
+    // frame would otherwise overwrite the first one's buffers before either was
+    // drawn. View 0 is the player's (swapchain or its post-process target).
+    // Call SetCullTarget(nullptr, 0) when done, so the next frame's swapchain
+    // pass finds view 0 active.
+    void SetCullTarget(Renderer::RenderTarget* target, u32 viewId = 0);
+    void CullForTarget(Renderer::Camera* camera);
+#endif
     const std::string& GetAssetRoot() const { return m_AssetRoot; }
 
     void SetShadowDistance(f32 d);
@@ -1106,6 +1134,12 @@ public:
     // Draw call / triangle counters — getters return last completed frame's values
     // so that UI reads (which happen before the next render) see valid numbers.
     u32 GetDrawCallCount() const { return m_LastDrawCallCount; }
+    // What the GPU cull pass decided, for tests: GetDrawCallCount cannot show it,
+    // because every indirect mesh goes out in one multi-draw that counts as 1
+    // whether the pass culled nothing or everything. False when the pass is not
+    // running (web, or GPU culling off). Read back from an EARLIER frame's
+    // dispatch, so it is only meaningful on a scene that has held still.
+    bool GetGPUCullStats(u32& objects, u32& visible) const;
     u32 GetTriangleCount() const { return m_LastTriangleCount; }
     u32 GetDescriptorCacheHits() const { return m_LastDescriptorCacheHits; }
     u32 GetDescriptorCacheWrites() const { return m_LastDescriptorCacheWrites; }
@@ -2430,6 +2464,8 @@ private:
 
     // Shared by both backends: Vulkan CSM range + web single-cascade frustum fit
     std::string m_AssetRoot;            // see SetAssetRoot
+    bool m_OcclusionCullingEnabled = true;    // see SetOcclusionCullingEnabled
+    bool m_OcclusionForcedOff = false;        // ENJIN_OCCLUSION=0, read at Initialize
     f32 m_ShadowDistance = 100.0f;
 
 #if !ENJIN_RENDERER_WEBGPU
@@ -2803,6 +2839,7 @@ private:
     // GPU frustum culling system
     std::unique_ptr<Renderer::GPUCullingSystem> m_GPUCulling;
     std::vector<Renderer::CullableObject> m_CullableObjects;
+    std::vector<Entity> m_CullableEntities;   // entity for each m_CullableObjects slot
     std::vector<u32> m_EntityToCullIndex; // Maps entity index to cullable object index
     bool m_GPUCullingEnabled = true;  // Enabled: GPU-driven indirect draws (no readback stall)
     bool m_GPUDrivenEnabled = true;   // See SetGPUDrivenEnabled; ENJIN_GPU_DRIVEN=0 turns it off
@@ -2855,7 +2892,7 @@ private:
     // Indirect draw: ObjectData upload + vkCmdDrawIndexedIndirectCount
     std::vector<ObjectDataGPU> m_ObjectDataCPU;
     void UploadObjectData();
-    void DrawIndirect(VkCommandBuffer commandBuffer);
+    void DrawIndirect(VkCommandBuffer commandBuffer, bool lateList = false);
     // Entities drawn by DrawIndirect (non-textured pool entities) — skip in per-entity loop
     std::vector<bool> m_IndirectDrawn;
 
@@ -2873,8 +2910,69 @@ private:
     void DispatchRTEffectsAsync(u32 frameIndex);    // RT effects on async compute queue
     void DenoiseRTOutputsAsync(u32 frameIndex);     // Denoiser on async compute queue
 
-    // Hi-Z occlusion culling (previous-frame depth pyramid)
+    // Hi-Z occlusion culling (previous-frame depth pyramid). Created, resized and
+    // destroyed only in EnsureHiZPyramid.
     std::unique_ptr<Renderer::HiZPyramid> m_HiZPyramid;
+    bool m_HiZInitFailed = false;          // don't retry every frame at the same size
+    VkExtent2D m_HiZFailedExtent{0, 0};
+    // Whether last frame's depth is a picture the occlusion test may trust:
+    // culling ran on the IMMEDIATELY preceding frame, into the same depth image,
+    // and m_LastCullViewProj is the camera that drew it. Any frame that took
+    // another path (post-process offscreen, splitscreen) breaks the chain.
+    u64 m_RenderFrameSerial = 0;           // ticks once per Update
+    u64 m_LastCullFrameSerial = 0;         // 0 = no history
+    Math::Matrix4 m_LastCullViewProj;
+    VkImageView m_LastCullDepthView = VK_NULL_HANDLE;
+    void EnsureHiZPyramid(const Renderer::GpuLifetimeToken&);
+    void BuildHiZFromCullDepth(VkCommandBuffer cmd);
+    // Occlusion phase 1: set when phase 0 ran this frame and the main pass can be
+    // paused; consumed by RunLateOcclusion at the opaque/blend boundary.
+    bool m_LateOcclusionPending = false;
+    void RunLateOcclusion(VkCommandBuffer cmd);
+
+    // Where culling reads depth and pauses: the swapchain main pass, or the
+    // offscreen target registered with SetCullTarget.
+    Renderer::RenderTarget* m_CullTarget = nullptr;
+    bool m_CullTargetCulled = false;       // CullForTarget produced lists this frame
+    // The cull target's size, recorded when it was set. EnsureHiZPyramid runs in
+    // FlushPendingChanges, where the editor's views may have been recreated
+    // since, so it must never dereference m_CullTarget there.
+    u32 m_CullTargetWidth = 0, m_CullTargetHeight = 0;
+
+    // Per-view culling state (see SetCullTarget). The ACTIVE view's state lives
+    // in the ordinary members above, so every existing function works on it
+    // unchanged; the others wait in m_CullViews. SelectCullView swaps.
+    struct CullViewState {
+        std::unique_ptr<Renderer::GPUCullingSystem> gpuCulling;
+        std::unique_ptr<Renderer::HiZPyramid> hiz;
+        bool hizInitFailed = false;
+        VkExtent2D hizFailedExtent{0, 0};
+        std::vector<Renderer::CullableObject> cullable;
+        std::vector<Entity> cullableEntities;
+        std::vector<u32> entityToCullIndex;
+        std::vector<ObjectDataGPU> objectDataCPU;
+        std::vector<bool> indirectDrawn;
+        std::unique_ptr<Renderer::IndirectDrawBatcher> batcher;
+        u64 lastCullFrameSerial = 0;
+        Math::Matrix4 lastCullViewProj;
+        VkImageView lastCullDepthView = VK_NULL_HANDLE;
+        bool lateOcclusionPending = false;
+        Renderer::RenderTarget* cullTarget = nullptr;
+        bool cullTargetCulled = false;
+        u32 cullTargetWidth = 0, cullTargetHeight = 0;
+    };
+    std::vector<std::unique_ptr<CullViewState>> m_CullViews;   // [id]; the active id's slot is a placeholder
+    u32 m_ActiveCullView = 0;
+    void SwapCullViewState(CullViewState& v);
+    void SelectCullView(u32 viewId);
+    bool EnsureCullViewResources();   // a new view's GPU culling system and batcher
+    struct CullDepthSource {
+        VkImage image = VK_NULL_HANDLE;
+        VkImageView view = VK_NULL_HANDLE;
+        VkFormat format = VK_FORMAT_UNDEFINED;
+        u32 width = 0, height = 0;
+    };
+    CullDepthSource GetCullDepthSource() const;
 
     // Multi-threaded command buffer recording
     Renderer::ThreadPool m_ThreadPool;

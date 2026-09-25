@@ -47,6 +47,7 @@ struct SceneRenderSettings {
     u32 artStylePreset = 0;
 
     // --- RenderSystem fields ---
+    bool occlusionCulling = true;   // Hi-Z; desktop player only (RenderSystem::SetOcclusionCullingEnabled)
     bool shadowsEnabled = true;
     u32 shadowResolution = 2048;    // 512/1024/2048/4096
     f32 shadowDistance = 100.0f;    // Max shadow distance

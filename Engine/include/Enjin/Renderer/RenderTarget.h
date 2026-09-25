@@ -61,6 +61,17 @@ public:
 
     // End rendering to this target (ends render pass, transitions for sampling)
     void End(VkCommandBuffer cmd);
+    // Pause and resume the pass Begin opened, for work that cannot be recorded
+    // inside it (occlusion phase 1 reads this target's depth with compute).
+    // Suspend ends the pass WITHOUT End's colour transition, so colour stays in
+    // COLOR_ATTACHMENT_OPTIMAL and depth in DEPTH_STENCIL_ATTACHMENT_OPTIMAL.
+    // Resume expects depth in DEPTH_STENCIL_READ_ONLY_OPTIMAL (where the Hi-Z
+    // build leaves it) and reopens a LOAD-op twin of the pass, render-pass
+    // compatible with it, so pipelines built for this target keep working.
+    // Resume re-sets viewport and scissor; bindings are the caller's.
+    void Suspend(VkCommandBuffer cmd);
+    void Resume(VkCommandBuffer cmd);
+    bool CanSuspend() const { return m_ResumeRenderPass != VK_NULL_HANDLE; }
 
     // Capture color attachment pixels to CPU memory (RGBA8, blocking)
     // Returns empty vector on failure. Caller owns the data.
@@ -153,6 +164,7 @@ private:
 
     // Render pass and framebuffer (color + depth, no MRT velocity)
     VkRenderPass m_RenderPass = VK_NULL_HANDLE;
+    VkRenderPass m_ResumeRenderPass = VK_NULL_HANDLE;   // LOAD twin (see Suspend/Resume)
     VkFramebuffer m_Framebuffer = VK_NULL_HANDLE;
 
     // Single-attachment render pass for post-processing (color only, no velocity/depth)

@@ -67,18 +67,6 @@ MaterialComponent.parallaxMode
 MaterialComponent.pomHeightScale
 MaterialComponent.pomMaxSteps
 MaterialComponent.scrollReflectionTexture
-# occlusionCull added 2026-09-24. It is the FOURTH MeshRenderer filter and the
-# only inert one: declared, serialized both ways, and drawn as a checkbox in the
-# inspector at EditorLayerInspector.cpp:1837, read by nothing. The other three
-# were inert once too -- see the comment on BuildCullableObjectList, which says
-# so and which Examples/MeshRendererFilters exists to cover.
-#
-# Baselined rather than wired because wiring it is a change to cull_hiz.comp and
-# the per-object cull struct, on the GPU-driven path, and that is not something
-# to start speculatively. A checkbox that does nothing fails the offline golden
-# rule, so this is debt with a date on it, not a decision: it wants either the
-# flag honoured or the checkbox gone, and that is Marty's call.
-MeshRendererComponent.occlusionCull
 MeshRendererComponent.customShaderName
 MeshRendererComponent.lightmapUVChannel
 NavmeshVolumeComponent.debugDraw

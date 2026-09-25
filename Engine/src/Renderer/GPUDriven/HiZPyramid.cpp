@@ -4,6 +4,7 @@
 #include "Enjin/Renderer/GPUDriven/HiZPyramid.h"
 #include "Enjin/Renderer/Vulkan/VulkanBuffer.h"
 #include "Enjin/Renderer/Vulkan/VulkanShader.h"
+#include "Enjin/Renderer/Vulkan/ShaderData.h"
 #include "Enjin/Logging/Log.h"
 #include <algorithm>
 #include <cmath>
@@ -19,17 +20,21 @@ HiZPyramid::~HiZPyramid() {
     Shutdown();
 }
 
-bool HiZPyramid::Initialize(u32 width, u32 height) {
-    m_Width = width;
-    m_Height = height;
-    m_MipLevels = static_cast<u32>(std::floor(std::log2(std::max(width, height)))) + 1;
+bool HiZPyramid::Initialize(u32 depthWidth, u32 depthHeight) {
+    m_DepthWidth = depthWidth;
+    m_DepthHeight = depthHeight;
+    m_Width = std::max(1u, depthWidth / 2);
+    m_Height = std::max(1u, depthHeight / 2);
+    m_MipLevels = static_cast<u32>(std::floor(std::log2(std::max(m_Width, m_Height)))) + 1;
+    m_BoundDepthView = VK_NULL_HANDLE;
 
     if (!CreateImage()) return false;
     if (!CreateSampler()) return false;
     if (!CreateComputePipeline()) return false;
     if (!CreateDescriptorResources()) return false;
 
-    ENJIN_LOG_INFO(Renderer, "HiZ pyramid initialized: %ux%u, %u mip levels", width, height, m_MipLevels);
+    ENJIN_LOG_INFO(Renderer, "HiZ pyramid initialized: %ux%u from %ux%u depth, %u mip levels",
+                   m_Width, m_Height, depthWidth, depthHeight, m_MipLevels);
     return true;
 }
 
@@ -51,11 +56,6 @@ void HiZPyramid::Shutdown() {
     if (m_DescriptorSetLayout != VK_NULL_HANDLE) { vkDestroyDescriptorSetLayout(device, m_DescriptorSetLayout, nullptr); m_DescriptorSetLayout = VK_NULL_HANDLE; }
     if (m_DescriptorPool != VK_NULL_HANDLE) { vkDestroyDescriptorPool(device, m_DescriptorPool, nullptr); m_DescriptorPool = VK_NULL_HANDLE; }
     m_DescriptorSets.clear();
-}
-
-bool HiZPyramid::Resize(u32 width, u32 height) {
-    Shutdown();
-    return Initialize(width, height);
 }
 
 bool HiZPyramid::CreateImage() {
@@ -136,16 +136,14 @@ bool HiZPyramid::CreateImage() {
 }
 
 bool HiZPyramid::CreateSampler() {
-    // Use reduction mode sampler for conservative reads (MIN = closest occluder)
-    VkSamplerReductionModeCreateInfo reductionInfo{};
-    reductionInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_REDUCTION_MODE_CREATE_INFO;
-    reductionInfo.reductionMode = VK_SAMPLER_REDUCTION_MODE_MAX; // MAX depth = furthest (conservative for occlusion)
-
+    // Plain nearest. Every read (the downsample and the cull test) is a
+    // texelFetch, which ignores filtering, and a combined image sampler still
+    // needs a sampler. This used to chain a MAX reduction mode, which is only
+    // valid with the samplerFilterMinmax feature enabled; nothing checked it.
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    samplerInfo.pNext = &reductionInfo;
-    samplerInfo.magFilter = VK_FILTER_LINEAR;
-    samplerInfo.minFilter = VK_FILTER_LINEAR;
+    samplerInfo.magFilter = VK_FILTER_NEAREST;
+    samplerInfo.minFilter = VK_FILTER_NEAREST;
     samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
     samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
@@ -200,15 +198,12 @@ bool HiZPyramid::CreateComputePipeline() {
         return false;
     }
 
-    // Load compute shader
+    // Embedded, like cull_hiz: an exported game ships no .spv files, so a
+    // file-loaded shader here silently disabled occlusion in every built game.
     VulkanShader computeShader(m_Context);
-    const std::vector<std::string> shaderPaths = Renderer::ShaderSearchPaths("hiz_generate.comp.spv");
-    bool loaded = false;
-    for (const std::string& path : shaderPaths) {
-        if (computeShader.LoadFromFile(path, false)) { loaded = true; break; }
-    }
-    if (!loaded) {
-        ENJIN_LOG_WARN(Renderer, "HiZ downsample shader not found — Hi-Z occlusion disabled");
+    if (!computeShader.LoadFromSPIRV(ShaderData::HiZGenerateComputeShaderData,
+                                     ShaderData::HiZGenerateComputeShaderDataSize)) {
+        ENJIN_LOG_WARN(Renderer, "HiZ downsample shader failed to load - occlusion culling disabled");
         return false;
     }
 
@@ -230,10 +225,8 @@ bool HiZPyramid::CreateComputePipeline() {
 
 bool HiZPyramid::CreateDescriptorResources() {
     VkDevice device = m_Context->GetDevice();
-    u32 setCount = m_MipLevels > 0 ? m_MipLevels - 1 : 0; // One set per mip transition
-    if (setCount == 0) return true;
+    const u32 setCount = m_MipLevels;   // depth -> mip 0, then mip i-1 -> mip i
 
-    // Descriptor pool
     VkDescriptorPoolSize poolSizes[2]{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     poolSizes[0].descriptorCount = setCount;
@@ -250,10 +243,8 @@ bool HiZPyramid::CreateDescriptorResources() {
         return false;
     }
 
-    // Allocate descriptor sets
     std::vector<VkDescriptorSetLayout> layouts(setCount, m_DescriptorSetLayout);
     m_DescriptorSets.resize(setCount);
-
     VkDescriptorSetAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     allocInfo.descriptorPool = m_DescriptorPool;
@@ -264,17 +255,15 @@ bool HiZPyramid::CreateDescriptorResources() {
         return false;
     }
 
-    // Write descriptor sets: each reads from mip N, writes to mip N+1
-    // Note: descriptor sets for mip 0 source are updated dynamically in Generate()
-    // since the initial depth image view comes from outside
+    // Sets 1.. are fixed. Set 0's SOURCE is the depth buffer, bound in Generate.
     for (u32 i = 0; i < setCount; ++i) {
         VkDescriptorImageInfo srcInfo{};
         srcInfo.sampler = m_Sampler;
-        srcInfo.imageView = m_MipViews[i]; // Read from mip i
+        srcInfo.imageView = (i > 0) ? m_MipViews[i - 1] : VK_NULL_HANDLE;
         srcInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
         VkDescriptorImageInfo dstInfo{};
-        dstInfo.imageView = m_MipViews[i + 1]; // Write to mip i+1
+        dstInfo.imageView = m_MipViews[i];
         dstInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
         VkWriteDescriptorSet writes[2]{};
@@ -291,93 +280,91 @@ bool HiZPyramid::CreateDescriptorResources() {
         writes[1].descriptorCount = 1;
         writes[1].pImageInfo = &dstInfo;
 
-        vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
+        // Set 0 gets only its destination now.
+        if (i == 0) vkUpdateDescriptorSets(device, 1, &writes[1], 0, nullptr);
+        else        vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
     }
 
     return true;
 }
 
 void HiZPyramid::Generate(VkCommandBuffer commandBuffer, VkImageView depthImageView) {
-    if (m_DownsamplePipeline == VK_NULL_HANDLE || m_MipLevels <= 1) return;
+    if (m_DownsamplePipeline == VK_NULL_HANDLE || m_DescriptorSets.empty() ||
+        depthImageView == VK_NULL_HANDLE) {
+        return;
+    }
+    VkDevice device = m_Context->GetDevice();
 
-    // Transition entire HiZ image to GENERAL for compute writes
-    VkImageMemoryBarrier barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.srcAccessMask = 0;
-    barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-    barrier.image = m_Image;
-    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    barrier.subresourceRange.baseMipLevel = 0;
-    barrier.subresourceRange.levelCount = m_MipLevels;
-    barrier.subresourceRange.layerCount = 1;
-    vkCmdPipelineBarrier(commandBuffer,
-        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-        0, 0, nullptr, 0, nullptr, 1, &barrier);
+    // Point set 0 at the depth buffer. Only when the view CHANGES: the owner
+    // rebuilds this pyramid when the depth buffer is recreated, so in practice
+    // this is written once, before any frame has used the set.
+    if (depthImageView != m_BoundDepthView) {
+        VkDescriptorImageInfo depthInfo{};
+        depthInfo.sampler = m_Sampler;
+        depthInfo.imageView = depthImageView;
+        depthInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+        VkWriteDescriptorSet w{};
+        w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        w.dstSet = m_DescriptorSets[0];
+        w.dstBinding = 0;
+        w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        w.descriptorCount = 1;
+        w.pImageInfo = &depthInfo;
+        vkUpdateDescriptorSets(device, 1, &w, 0, nullptr);
+        m_BoundDepthView = depthImageView;
+    }
+
+    auto levelBarrier = [&](u32 baseMip, u32 count, VkImageLayout oldLayout, VkImageLayout newLayout,
+                            VkAccessFlags srcAccess, VkAccessFlags dstAccess) {
+        VkImageMemoryBarrier b{};
+        b.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        b.srcAccessMask = srcAccess;
+        b.dstAccessMask = dstAccess;
+        b.oldLayout = oldLayout;
+        b.newLayout = newLayout;
+        b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        b.image = m_Image;
+        b.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        b.subresourceRange.baseMipLevel = baseMip;
+        b.subresourceRange.levelCount = count;
+        b.subresourceRange.layerCount = 1;
+        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &b);
+    };
+
+    // Every level to GENERAL for writing. UNDEFINED discards last frame's
+    // pyramid, which is rebuilt in full below; what this waits on is the
+    // previous cull pass reading it.
+    levelBarrier(0, m_MipLevels, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL,
+                 VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_SHADER_WRITE_BIT);
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_DownsamplePipeline);
 
-    // Generate mip chain: each level reads previous, writes next
-    u32 srcWidth = m_Width;
-    u32 srcHeight = m_Height;
-
-    for (u32 mip = 0; mip < m_MipLevels - 1; ++mip) {
-        u32 dstWidth = std::max(1u, srcWidth / 2);
-        u32 dstHeight = std::max(1u, srcHeight / 2);
-
-        // Transition source mip to SHADER_READ_ONLY
-        if (mip > 0) {
-            VkImageMemoryBarrier readBarrier{};
-            readBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-            readBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-            readBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-            readBarrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-            readBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            readBarrier.image = m_Image;
-            readBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-            readBarrier.subresourceRange.baseMipLevel = mip;
-            readBarrier.subresourceRange.levelCount = 1;
-            readBarrier.subresourceRange.layerCount = 1;
-            vkCmdPipelineBarrier(commandBuffer,
-                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                0, 0, nullptr, 0, nullptr, 1, &readBarrier);
+    u32 srcW = m_DepthWidth, srcH = m_DepthHeight;
+    u32 dstW = m_Width,      dstH = m_Height;
+    for (u32 level = 0; level < m_MipLevels; ++level) {
+        if (level > 0) {
+            // The level just written becomes this dispatch's source.
+            levelBarrier(level - 1, 1, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                         VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
         }
-
-        // Bind descriptor set for this mip transition
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
-            m_PipelineLayout, 0, 1, &m_DescriptorSets[mip], 0, nullptr);
+                                m_PipelineLayout, 0, 1, &m_DescriptorSets[level], 0, nullptr);
+        i32 srcDims[2] = { static_cast<i32>(srcW), static_cast<i32>(srcH) };
+        vkCmdPushConstants(commandBuffer, m_PipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT,
+                           0, sizeof(srcDims), srcDims);
+        vkCmdDispatch(commandBuffer, (dstW + 7) / 8, (dstH + 7) / 8, 1);
 
-        // Push source dimensions
-        i32 srcDims[2] = { static_cast<i32>(srcWidth), static_cast<i32>(srcHeight) };
-        vkCmdPushConstants(commandBuffer, m_PipelineLayout,
-            VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(srcDims), srcDims);
-
-        // Dispatch
-        u32 groupsX = (dstWidth + 7) / 8;
-        u32 groupsY = (dstHeight + 7) / 8;
-        vkCmdDispatch(commandBuffer, groupsX, groupsY, 1);
-
-        srcWidth = dstWidth;
-        srcHeight = dstHeight;
+        srcW = dstW;
+        srcH = dstH;
+        dstW = std::max(1u, dstW / 2);
+        dstH = std::max(1u, dstH / 2);
     }
 
-    // Final barrier: transition to SHADER_READ_ONLY for sampling in culling shader
-    VkImageMemoryBarrier finalBarrier{};
-    finalBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    finalBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    finalBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    finalBarrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-    finalBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    finalBarrier.image = m_Image;
-    finalBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    finalBarrier.subresourceRange.baseMipLevel = 0;
-    finalBarrier.subresourceRange.levelCount = m_MipLevels;
-    finalBarrier.subresourceRange.layerCount = 1;
-    vkCmdPipelineBarrier(commandBuffer,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-        0, 0, nullptr, 0, nullptr, 1, &finalBarrier);
+    // Only the LAST level is still GENERAL; the rest moved as they were read.
+    levelBarrier(m_MipLevels - 1, 1, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                 VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
 }
 
 } // namespace Renderer

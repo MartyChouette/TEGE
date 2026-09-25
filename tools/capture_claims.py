@@ -334,6 +334,27 @@ def renders(sidecar_path, min_draws=1):
         draws_, min_draws, data.get('entityRenderSlots', 0), data.get('worldEntities', 0))
 
 
+def culls(sidecar_path, objects, visible):
+    """Did the GPU cull pass keep exactly the objects it should?
+
+    drawCalls cannot say: every indirect mesh goes out in one multi-draw, which
+    counts as 1 whether the pass culled nothing or everything. The player writes
+    the pass's own counts to the sidecar as gpuCull. EXACT on both numbers,
+    because each direction of error is a different failure: more visible than
+    expected is culling that does nothing, fewer is culling that deletes
+    something on screen. Absent gpuCull means the pass never ran, which fails.
+    """
+    import json
+    with open(sidecar_path, encoding='utf-8') as f:
+        data = json.load(f)
+    gc = data.get('gpuCull')
+    if not gc:
+        return False, 'no gpuCull in the sidecar: the GPU cull pass did not run'
+    ok = gc.get('objects') == objects and gc.get('visible') == visible
+    return ok, '%d of %d visible (expected %d of %d)' % (
+        gc.get('visible', -1), gc.get('objects', -1), visible, objects)
+
+
 def hears(sidecar_path):
     """Is there an audio world at all, and is the listener standing in it?
 

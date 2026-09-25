@@ -852,6 +852,139 @@
         "draws": true,
         "_animates_why": "OMITTED: nothing in this scene moves. The 'white streaks' once reported for this demo were never in the frame: the RGB was correct and the capture PNG carried the target's alpha, which blended draws stamped with their own low value (fixed in VulkanPipeline and WriteCapture). That is why a colour claim 'measured MORE colour in the white capture' -- it was reading the true RGB. What this entry proves is that the loader parses, the renderer draws and the pipeline builds. Colour fidelity has no claim yet."
       }
+    },
+    {
+      "name": "OcclusionCulling",
+      "_why": "Hi-Z occlusion culling had never run in any build, and a picture cannot tell working culling from inert culling: both draw the same frame. So this entry's real check is culls, which reads the GPU cull pass's own count from the sidecar. Five of ten must survive: ground, wall, the two cubes in front of the wall and the hidden cube that opts out. Exact both ways: 6+ means occlusion stopped working, 4- means it removed something on screen. The --control build of this project (occlusion off) must capture identically; measured byte-identical at three frames when it was written, and with a strafing camera at eight.",
+      "project": "Examples/OcclusionCulling/OcclusionCulling.enjinproject",
+      "frames": [
+        60,
+        120
+      ],
+      "claims": {
+        "draws": true,
+        "culls": {
+          "objects": 10,
+          "visible": 5
+        }
+      }
+    },
+    {
+      "name": "OcclusionDoorOff",
+      "_why": "The reference half of OcclusionDoor: the same scene with occlusion off. Must stay listed BEFORE OcclusionDoor, whose matches claim reads these captures.",
+      "project": "Examples/OcclusionDoorOff/OcclusionDoorOff.enjinproject",
+      "frames": [
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36
+      ],
+      "claims": {
+        "draws": true
+      }
+    },
+    {
+      "name": "OcclusionDoor",
+      "_why": "The one test that tells two-phase occlusion from single-phase. The wall leaves the world in one frame at 0.5 s; single-phase culls what was behind it for that frame because its test reads LAST frame's depth. Every frame around the moment must be byte-identical to OcclusionDoorOff. Measured when written: single-phase differs on one frame (45,381 px), two-phase on none.",
+      "project": "Examples/OcclusionDoor/OcclusionDoor.enjinproject",
+      "frames": [
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36
+      ],
+      "claims": {
+        "draws": true,
+        "matches": "OcclusionDoorOff"
+      }
+    },
+    {
+      "name": "OcclusionCullingPP",
+      "_why": "OcclusionCulling through the post-processing path: the camera renders into an offscreen target, which had no GPU culling at all before occlusion was made to follow it. Same exact count.",
+      "project": "Examples/OcclusionCullingPP/OcclusionCullingPP.enjinproject",
+      "frames": [
+        60,
+        120
+      ],
+      "claims": {
+        "draws": true,
+        "culls": {
+          "objects": 10,
+          "visible": 5
+        }
+      }
+    },
+    {
+      "name": "OcclusionDoorPPOff",
+      "_why": "Reference half of OcclusionDoorPP. Must stay BEFORE it.",
+      "project": "Examples/OcclusionDoorPPOff/OcclusionDoorPPOff.enjinproject",
+      "frames": [
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36
+      ],
+      "claims": {
+        "draws": true
+      }
+    },
+    {
+      "name": "OcclusionDoorPP",
+      "_why": "OcclusionDoor through the post-processing path, where phase 1 pauses the offscreen target's render pass rather than the swapchain's. Must match OcclusionDoorPPOff on every frame.",
+      "project": "Examples/OcclusionDoorPP/OcclusionDoorPP.enjinproject",
+      "frames": [
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36
+      ],
+      "claims": {
+        "draws": true,
+        "matches": "OcclusionDoorPPOff"
+      }
+    },
+    {
+      "name": "FilterOrderRef",
+      "_why": "Reference half of FilterOrder: the same world with the three filtered cubes walked LAST (higher ids), which the old bug could not trip on. Must stay BEFORE FilterOrder.",
+      "project": "Examples/FilterOrderRef/FilterOrderRef.enjinproject",
+      "frames": [
+        60
+      ],
+      "claims": {
+        "draws": true
+      }
+    },
+    {
+      "name": "FilterOrder",
+      "_why": "Three filtered meshes (disabled, excluded layer, beyond draw distance) walked BEFORE three that draw. The GPU-driven per-object upload once skipped no filters while the cull list skipped all three, so the drawn cubes read their neighbours' transforms and materials. Must match FilterOrderRef, the same world walked in the other order, exactly.",
+      "project": "Examples/FilterOrder/FilterOrder.enjinproject",
+      "frames": [
+        60
+      ],
+      "claims": {
+        "draws": true,
+        "matches": "FilterOrderRef"
+      }
     }
   ]
 }

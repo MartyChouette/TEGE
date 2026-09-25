@@ -3669,7 +3669,12 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
                 static_cast<f32>(m_EditorViewportRT->GetHeight()));
         }
 
-        // Render scene to editor viewport RT
+        // Render scene to editor viewport RT. It is culling view 1: frustum and
+        // occlusion against the EDITOR camera, run before the pass opens.
+        if (m_RenderSystem && m_Camera) {
+            m_RenderSystem->SetCullTarget(m_EditorViewportRT.get(), 1);
+            m_RenderSystem->CullForTarget(m_Camera);
+        }
         m_EditorViewportRT->Begin(commandBuffer);
         if (m_RenderSystem && m_Camera) {
             // Viewport-only: "Lit" draws without shadows here while the game
@@ -3715,6 +3720,7 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             }
         }
         m_EditorViewportRT->End(commandBuffer);
+        if (m_RenderSystem) m_RenderSystem->SetCullTarget(nullptr, 0);
 
         // Restore render state so game view renders with full quality.
         // Wireframe is handled by the offscreen pipeline (scene view only) —
@@ -4003,6 +4009,13 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
 
     // Render scene + effects into the chosen target
     m_RenderSystem->ApplyCameraClearColor(sceneTarget);   // before Begin: Begin is the clear
+    // Culling view 2: the game camera. Not in splitscreen, which has one target
+    // and several cameras.
+    const bool cullGameView = !(useSplitscreen && !splitViewports.empty());
+    if (cullGameView) {
+        m_RenderSystem->SetCullTarget(sceneTarget, 2);
+        m_RenderSystem->CullForTarget(&gameCamera);
+    }
     sceneTarget->Begin(commandBuffer);
     if (useSplitscreen && !splitViewports.empty()) {
         m_RenderSystem->RenderSplitscreen(sceneTarget, splitViewports);
@@ -4027,6 +4040,9 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
                                                  /*useOffscreenSets*/ true, /*viewport*/ 1);
     }
     sceneTarget->End(commandBuffer);
+    // Back to view 0 so nothing later this frame draws against the game view's
+    // cull lists (the OIT pass below draws everything it is asked to anyway).
+    if (cullGameView) m_RenderSystem->SetCullTarget(nullptr, 0);
 
     // The transparent half: accumulate into the OIT targets against the depth the
     // opaque pass just wrote, then resolve the pair back over it.

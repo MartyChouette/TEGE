@@ -1,15 +1,19 @@
 #version 450
 
 // GPU Frustum + Two-Phase Hi-Z Occlusion Culling Compute Shader
-// Phase 0: Frustum cull all objects. Visible objects that pass frustum but fail HiZ are flagged
-//          as "potentially occluded" for re-testing after partial HiZ update.
-// Phase 1: Re-test only the potentially-occluded set against updated HiZ pyramid.
-//          Objects that pass phase 1 are appended to the indirect draw buffer.
+// Phase 0: frustum + occlusion against the pyramid of LAST frame's depth. Objects
+//          that pass the frustum but fail occlusion are flagged for phase 1.
+// Phase 1: with the main pass paused and the pyramid rebuilt from THIS frame's
+//          opaque depth, re-test only the flagged objects. Survivors go to the
+//          late draw list (a different buffer, bound through a second set).
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
-// Push constant to select phase (0 or 1)
+// GPUCulling.cpp HiZCullPush. The occlusion camera is here rather than in the
+// UBO because each phase uses a different one: last frame's for phase 0 (the
+// camera that drew the pyramid's depth), this frame's for phase 1.
 layout(push_constant) uniform PushConstants {
+    mat4 viewProj;
     uint phase;  // 0 = initial cull, 1 = re-test occluded
 } pc;
 
@@ -23,7 +27,7 @@ struct CullableObject {
     uint indexOffset;
     uint vertexOffset;
     uint indirectEligible; // 1 = emit indirect draw command, 0 = visibility only
-    uint _pad1;
+    uint cullFlags;        // bit 0 skip frustum, bit 1 skip occlusion (GPUCulling.h kCullSkip*)
     uint _pad2;
 };
 
@@ -45,7 +49,7 @@ layout(set = 0, binding = 1) writeonly buffer IndirectDrawBuffer {
 
 layout(set = 0, binding = 2) uniform FrustumBuffer {
     vec4 frustumPlanes[6];
-    mat4 viewProj;        // View-projection matrix for screen-space projection
+    mat4 viewProj;        // unused: see pc.viewProj (kept so the UBO has one layout)
     vec2 screenSize;      // Render target width, height
     float nearPlane;
     float _fpad;
@@ -107,7 +111,7 @@ bool IsOccluded(vec3 aabbMin, vec3 aabbMax, mat4 transform) {
         corner.z = ((i & 4) != 0) ? aabbMax.z : aabbMin.z;
 
         vec4 worldPos = transform * vec4(corner, 1.0);
-        vec4 clipPos = viewProj * worldPos;
+        vec4 clipPos = pc.viewProj * worldPos;
 
         if (clipPos.w <= nearPlane) {
             behindCamera = true;
@@ -134,24 +138,29 @@ bool IsOccluded(vec3 aabbMin, vec3 aabbMax, mat4 transform) {
     minY = clamp(minY, -1.0, 1.0);
     maxY = clamp(maxY, -1.0, 1.0);
 
-    // Convert NDC to UV [0,1]
-    vec2 uvMin = vec2(minX, minY) * 0.5 + 0.5;
-    vec2 uvMax = vec2(maxX, maxY) * 0.5 + 0.5;
+    // Screen rect in pyramid-base texels (screenSize IS the pyramid's mip 0).
+    vec2 pMin = (vec2(minX, minY) * 0.5 + 0.5) * screenSize;
+    vec2 pMax = (vec2(maxX, maxY) * 0.5 + 0.5) * screenSize;
 
-    // Compute screen-space AABB size to select mip level
-    vec2 screenMin = uvMin * screenSize;
-    vec2 screenMax = uvMax * screenSize;
-    vec2 screenExtent = screenMax - screenMin;
-    float maxExtent = max(screenExtent.x, screenExtent.y);
+    // The level where the rect spans at most two texels on each axis, so four
+    // exact fetches cover all of it. One filtered sample at the centre, which
+    // this did before, covers only part of the rect unless the sampler does a
+    // MAX reduction, and that needs a device feature nothing checked for.
+    float extent = max(pMax.x - pMin.x, pMax.y - pMin.y);
+    int levels = textureQueryLevels(hizPyramid);
+    int mip = clamp(int(ceil(log2(max(extent, 1.0)))), 0, levels - 1);
 
-    // Select mip level: want the mip where the AABB covers ~1 texel
-    float mipLevel = max(0.0, ceil(log2(maxExtent)));
+    ivec2 size = textureSize(hizPyramid, mip);
+    float scale = 1.0 / float(1 << mip);
+    ivec2 t0 = clamp(ivec2(floor(pMin * scale)), ivec2(0), size - 1);
+    ivec2 t1 = clamp(ivec2(floor(pMax * scale)), ivec2(0), size - 1);
 
-    // Sample Hi-Z at center of the screen-space AABB
-    vec2 uvCenter = (uvMin + uvMax) * 0.5;
-    float occluderDepth = textureLod(hizPyramid, uvCenter, mipLevel).r;
+    float occluderDepth = max(
+        max(texelFetch(hizPyramid, t0, mip).r, texelFetch(hizPyramid, ivec2(t1.x, t0.y), mip).r),
+        max(texelFetch(hizPyramid, ivec2(t0.x, t1.y), mip).r, texelFetch(hizPyramid, t1, mip).r));
 
-    // If the closest point of the AABB is behind the occluder depth -> occluded
+    // Occluded only when the object's NEAREST point is behind the FARTHEST
+    // depth anywhere in its rect.
     return minZ > occluderDepth;
 }
 
@@ -165,10 +174,11 @@ void main() {
         vec3 boundsMin = obj.boundsMin.xyz;
         vec3 boundsMax = obj.boundsMax.xyz;
 
-        bool visible = IsAABBVisible(boundsMin, boundsMax, obj.transform);
+        bool visible = (obj.cullFlags & 1u) != 0u ||
+                       IsAABBVisible(boundsMin, boundsMax, obj.transform);
         bool occluded = false;
 
-        if (visible) {
+        if (visible && (obj.cullFlags & 2u) == 0u) {
             occluded = IsOccluded(boundsMin, boundsMax, obj.transform);
             if (occluded) {
                 visible = false;

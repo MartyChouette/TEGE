@@ -36,6 +36,12 @@ struct ENJIN_API BoundingBox {
     }
 };
 
+// CullableObject::cullFlags. The same two bits are spelled out in cull.comp and
+// cull_hiz.comp. Per-object, and one bit per test, so MeshRenderer's two
+// checkboxes each switch off exactly the test they name.
+constexpr u32 kCullSkipFrustum   = 1u << 0;
+constexpr u32 kCullSkipOcclusion = 1u << 1;
+
 // Object data for GPU culling (layout matches GLSL std430)
 struct CullableObject {
     // Bounds as vec4 for GPU alignment (xyz = value, w = padding)
@@ -48,7 +54,7 @@ struct CullableObject {
     u32 indexOffset = 0;       // offset 108
     u32 vertexOffset = 0;      // offset 112
     u32 indirectEligible = 0;  // offset 116 — 1 = emit indirect draw command, 0 = visibility only
-    u32 _pad1 = 0;             // offset 120
+    u32 cullFlags = 0;         // offset 120 — kCullSkip* bits, from MeshRendererComponent
     u32 _pad2 = 0;             // offset 124
 
     // Helper to set bounds from BoundingBox
@@ -139,19 +145,37 @@ public:
     void SetHiZPyramid(HiZPyramid* hiz) { m_HiZPyramid = hiz; }
     bool HasHiZ() const { return m_HiZPyramid != nullptr; }
 
-    // Two-phase Hi-Z occlusion culling:
-    // Phase 0: Frustum + HiZ cull using previous frame's depth pyramid.
-    //          Definitely-visible objects are drawn immediately; potentially-occluded flagged.
-    // Between phases: Partial HiZ pyramid regenerated from phase 0 visible objects.
-    // Phase 1: Re-test flagged objects against updated HiZ. Newly-visible appended.
-    // Returns true if two-phase was executed (HiZ available + pipeline valid).
-    bool ExecuteTwoPhase(
+    // Two-phase Hi-Z occlusion culling.
+    //
+    // PHASE 0 (ExecuteOcclusion, before the main pass): frustum + occlusion
+    // against the pyramid built from the PREVIOUS frame's depth, projected with
+    // occlusionViewProj, the camera that rendered that depth. Survivors go to the
+    // main draw list; boxes that failed only the occlusion test are flagged.
+    //
+    // PHASE 1 (ExecuteOcclusionLate, main pass paused at the opaque/blend
+    // boundary, pyramid rebuilt from THIS frame's depth): re-test just the flagged
+    // boxes with this frame's camera. Anything now visible goes to the late list,
+    // which the caller draws when the pass resumes. This is what removes the
+    // one-frame pop-in: something revealed by camera motion is found here, in the
+    // same frame, instead of next frame.
+    //
+    // Phase 0 falls back to ExecuteCulling (frustum only) when there is no pyramid.
+    bool ExecuteOcclusion(
         const Math::Matrix4& viewMatrix,
         const Math::Matrix4& projectionMatrix,
+        const Math::Matrix4& occlusionViewProj,
         VkCommandBuffer commandBuffer,
         VkBuffer& outIndirectDrawBuffer,
         u32& outDrawCount
     );
+
+    // Phase 1. Returns false (and records nothing) unless phase 0 ran this frame.
+    bool ExecuteOcclusionLate(const Math::Matrix4& viewProj, VkCommandBuffer commandBuffer);
+    VkBuffer GetLateIndirectDrawBuffer() const;
+    VkBuffer GetLateDrawCountBuffer() const;
+    // Call once per frame before either phase, so a skipped phase 0 cannot leave
+    // a stale "phase 0 ran" behind.
+    void BeginFrame() { m_Phase0RanThisFrame = false; }
 
     // Get the occlusion flag buffer (used between phases for HiZ partial regeneration)
     VkBuffer GetOcclusionFlagBuffer() const;
@@ -162,6 +186,9 @@ private:
     void UpdateFrustumPlanes(const Math::Matrix4& viewProj);
     void UpdateDescriptorSet(VkCommandBuffer commandBuffer);
     void UpdateDescriptorSetTwoPhase(VkCommandBuffer commandBuffer);
+    // Map the visibility buffer and refresh m_CachedVisibility / m_Stats. Both
+    // cull paths end with it, so both share the rule about when it is trusted.
+    void ReadBackVisibility(u32& outDrawCount);
 
     VkDescriptorSet m_DescriptorSet = VK_NULL_HANDLE;
     VkDescriptorPool m_DescriptorPool = VK_NULL_HANDLE;
@@ -181,7 +208,9 @@ private:
     VkPipeline m_CullHiZPipeline = VK_NULL_HANDLE;
     VkPipelineLayout m_HiZPipelineLayout = VK_NULL_HANDLE;
     VkDescriptorSetLayout m_HiZDescriptorSetLayout = VK_NULL_HANDLE;
-    VkDescriptorSet m_HiZDescriptorSet = VK_NULL_HANDLE;
+    VkDescriptorSet m_HiZDescriptorSet = VK_NULL_HANDLE;       // phase 0: the main draw list
+    VkDescriptorSet m_HiZDescriptorSetLate = VK_NULL_HANDLE;   // phase 1: the late draw list
+    VkDescriptorPool m_HiZDescriptorPool = VK_NULL_HANDLE;
 
     // Buffers
     std::unique_ptr<VulkanBuffer> m_ObjectBuffer;      // Input: Objects to cull
@@ -198,6 +227,11 @@ private:
 
     // Two-phase buffers
     std::unique_ptr<VulkanBuffer> m_OcclusionFlagBuffer;  // Per-object occlusion flags (phase 0 → phase 1)
+    // Phase 1's own list. It cannot append to the main one: that list has already
+    // been DRAWN by the time phase 1 runs, from a count read at draw time.
+    std::unique_ptr<VulkanBuffer> m_IndirectDrawBufferLate;
+    std::unique_ptr<VulkanBuffer> m_DrawCountBufferLate;
+    bool m_Phase0RanThisFrame = false;   // ExecuteOcclusion ran; ExecuteOcclusionLate may follow
     bool m_HiZPipelineCreated = false;
     bool CreateHiZComputePipeline();
 };
