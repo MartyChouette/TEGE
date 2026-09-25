@@ -639,6 +639,7 @@ public:
         if (!server) m_AudioEngine.Initialize();
         m_AudioEngine.SetWorld(m_World.get());
         m_AudioEngine.SetAssetRoot(gameRoot);
+        if (m_RenderSystem) m_RenderSystem->SetAssetRoot(gameRoot);
         Enjin::Assets::PrefabManager::Get().SetAssetRoot(gameRoot);
         // Recorded fluid takes are project-relative, like every other asset
         // path: the process CWD is the exe directory and is never reliable.

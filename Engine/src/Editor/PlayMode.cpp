@@ -250,6 +250,7 @@ void PlayMode::Play() {
         m_ScriptSystem.SetScriptRoot(projDir.string());
         m_ScriptEngine.SetScriptDirectory((projDir / "scripts").string());
         m_AudioEngine.SetAssetRoot(projDir.string());
+        if (m_RenderSystem) m_RenderSystem->SetAssetRoot(projDir.string());
         m_StreamingManager.SetSceneRoot(projDir.string());   // chunk sub-scenes are project-relative
     }
 

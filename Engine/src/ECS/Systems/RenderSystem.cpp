@@ -6388,6 +6388,7 @@ void RenderSystem::SetUpscalerQuality(u32 quality) { m_UpscalerQuality = quality
 #include "Enjin/Effects/SplatRenderer.h"
 #include "Enjin/Assets/SplatLoader.h"
 #include "Enjin/ECS/Components/GaussianSplat.h"
+#include "Enjin/Platform/Paths.h"
 #include "Enjin/Effects/ParticleColliders.h"
 #include "Enjin/Effects/Wind.h"
 #include "Enjin/ECS/Components/GPUParticleEmitter.h"
@@ -7784,12 +7785,30 @@ void RenderSystem::FlushPendingChanges() {
                 if (comp->sourcePath.empty()) {
                     m_SplatRenderer->Clear();
                 } else {
-                    auto data = Assets::SplatLoader::LoadFromFile(comp->sourcePath,
+                    // Resolve a project-relative path against the asset root. The
+                    // component documents "project-relative or absolute" and only
+                    // ABSOLUTE has ever worked: sourcePath went straight to the
+                    // loader, so a relative path resolved against the process CWD,
+                    // which is the exe directory in the editor. An exported game
+                    // happened to work anyway -- the player's CWD is the game
+                    // directory BuildPipeline emits assets/ into -- so the feature
+                    // passed a capture and failed for every person who opened the
+                    // project in the editor.
+                    std::string splatPath = comp->sourcePath;
+                    if (!m_AssetRoot.empty() && Platform::IsSafeRelativePath(splatPath)) {
+                        std::string resolved = Platform::ResolveWithinRoot(m_AssetRoot, splatPath);
+                        if (!resolved.empty()) splatPath = resolved;
+                    }
+                    auto data = Assets::SplatLoader::LoadFromFile(splatPath,
                                                                   comp->maxSplats, comp->flipYZ);
                     if (!data.Valid()) {
                         comp->loadError = data.error.empty() ? "no splats in file" : data.error;
                         m_SplatRenderer->Clear();
-                        ENJIN_LOG_ERROR(Renderer, "Gaussian splat load failed: %s", comp->loadError.c_str());
+                        // Name the path we ACTUALLY tried. "file not found" against
+                        // the path the user typed sends them to check a file that is
+                        // there, which is how this stayed unexplained.
+                        ENJIN_LOG_ERROR(Renderer, "Gaussian splat load failed: %s (tried '%s')",
+                                        comp->loadError.c_str(), splatPath.c_str());
                     } else {
                         m_SplatRenderer->LoadSplats(std::move(data));
                         comp->loadedCount = m_SplatRenderer->GetCount();

@@ -3550,8 +3550,13 @@ void EditorLayer::UpdateGameViewSims(f32 simDt) {
     // when it is unchanged and drops its cache when it is not, which is what
     // makes this cheap AND correct across a project switch.
     if (!m_SceneManager.GetProjectPath().empty()) {
-        m_FluidPlayback.SetAssetRoot(
-            std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path().string());
+        const std::string projRoot =
+            std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path().string();
+        m_FluidPlayback.SetAssetRoot(projRoot);
+        // The splat loader resolves project-relative paths against this. Without
+        // it a .ply next to the project loads in an exported game and not in the
+        // editor, because only the player's CWD happens to be the right folder.
+        if (m_RenderSystem) m_RenderSystem->SetAssetRoot(projRoot);
     }
 
     // Recordings first: a played-back volume is driven from a file rather than

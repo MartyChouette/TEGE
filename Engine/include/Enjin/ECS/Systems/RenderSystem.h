@@ -824,6 +824,14 @@ public:
 
     // Shadow distance is used by BOTH backends (web: single-cascade frustum fit)
     f32 GetShadowDistance() const { return m_ShadowDistance; }
+    // Where a PROJECT-RELATIVE asset path resolves from, set by whoever owns the
+    // project: the editor on load, the player at boot. The same shape as
+    // AudioEngine::SetAssetRoot, ScriptSystem::SetScriptRoot and
+    // PrefabManager::SetAssetRoot, and for the same reason -- the process CWD is
+    // the exe directory and is never the project.
+    void SetAssetRoot(const std::string& root) { m_AssetRoot = root; }
+    const std::string& GetAssetRoot() const { return m_AssetRoot; }
+
     void SetShadowDistance(f32 d);
 
 #if !ENJIN_RENDERER_WEBGPU
@@ -2421,6 +2429,7 @@ private:
 #endif // !ENJIN_RENDERER_WEBGPU (shadow mapping block)
 
     // Shared by both backends: Vulkan CSM range + web single-cascade frustum fit
+    std::string m_AssetRoot;            // see SetAssetRoot
     f32 m_ShadowDistance = 100.0f;
 
 #if !ENJIN_RENDERER_WEBGPU
