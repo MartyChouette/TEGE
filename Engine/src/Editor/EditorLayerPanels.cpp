@@ -5955,10 +5955,18 @@ void EditorLayer::RegisterPaletteCommands() {
     });
     m_CommandPalette.RegisterCommand({
         "New Scene", "Scene", "Ctrl+N",
-        "Create a new empty scene",
+        "Create a new empty scene in this project",
         [this]() {
+            // Same as File > New Scene, unsaved-changes prompt included: this
+            // used to clear the world without asking, and without a file.
             // Queued: palette commands fire from the Render phase.
-            if (m_World) m_PendingNewScene = NewSceneMode::ClearOnly;
+            if (!m_World) return;
+            if (m_SceneDirty) {
+                m_UnsavedChangesAction = UnsavedAction::NewScene;
+                m_ShowUnsavedChangesDialog = true;
+            } else {
+                m_PendingNewScene = NewSceneMode::InProject;
+            }
         }
     });
 

@@ -3017,7 +3017,7 @@ void EditorLayer::DrawUnsavedChangesDialog() {
                     break;
                 case UnsavedAction::NewScene:
                     // Queued: this dialog draws in the Render phase.
-                    if (m_World) m_PendingNewScene = NewSceneMode::ToHub;
+                    if (m_World) m_PendingNewScene = NewSceneMode::InProject;
                     break;
                 case UnsavedAction::OpenScene:
                     if (!m_PendingOpenPath.empty()) {
@@ -3046,7 +3046,7 @@ void EditorLayer::DrawUnsavedChangesDialog() {
                     // Queued: this dialog draws in the Render phase. ClearDirty
                     // already ran above on this branch; ApplyPendingNewScene
                     // calling it again is harmless.
-                    if (m_World) m_PendingNewScene = NewSceneMode::ToHub;
+                    if (m_World) m_PendingNewScene = NewSceneMode::InProject;
                     break;
                 case UnsavedAction::OpenScene:
                     if (!m_PendingOpenPath.empty()) {

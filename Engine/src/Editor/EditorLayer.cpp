@@ -6440,12 +6440,43 @@ void EditorLayer::DeselectEntity(ECS::Entity entity) {
 void EditorLayer::ApplyPendingNewScene() {
     if (m_PendingNewScene == NewSceneMode::None) return;
 
-    const NewSceneMode mode = m_PendingNewScene;
+    NewSceneMode mode = m_PendingNewScene;
     const std::string savePath = std::move(m_PendingNewScenePath);
     m_PendingNewScene = NewSceneMode::None;
     m_PendingNewScenePath.clear();
 
     if (!m_World) return;
+
+    // New Scene means a new scene in THIS project. It used to reopen the hub on
+    // the New Project wizard, so asking for a scene got you a project -- and the
+    // hub is the one place that path belongs only when no project is open.
+    std::filesystem::path newScenePath;
+    if (mode == NewSceneMode::InProject) {
+        const std::string manifest = m_SceneManager.GetProjectPath();
+        if (manifest.empty()) {
+            mode = NewSceneMode::ToHub;
+        } else {
+            const std::filesystem::path scenesDir =
+                std::filesystem::path(manifest).parent_path() / "scenes";
+            std::error_code ec;
+            std::filesystem::create_directories(scenesDir, ec);
+            // NewScene, NewScene2, NewScene3 ...: never overwrite a file, and
+            // never reuse a name the project already lists.
+            for (u32 n = 1; n < 1000; ++n) {
+                const std::string stem = (n == 1) ? "NewScene" : "NewScene" + std::to_string(n);
+                const std::filesystem::path candidate = scenesDir / (stem + ".enjin");
+                if (!std::filesystem::exists(candidate) && !m_SceneManager.GetSceneByName(stem)) {
+                    newScenePath = candidate;
+                    break;
+                }
+            }
+            if (newScenePath.empty()) {
+                ShowNotification("Could not pick a free scene name in " + scenesDir.string(),
+                                 NotificationType::Error);
+                return;
+            }
+        }
+    }
 
     // A scene torn down while play mode is running would strand PlayMode's
     // restore state, so stop first -- same order OpenSceneImmediate uses.
@@ -6474,6 +6505,25 @@ void EditorLayer::ApplyPendingNewScene() {
         m_CurrentScenePath = savePath;
         ClearDirty();
         UpdateWindowTitle();
+        return;
+    }
+
+    if (mode == NewSceneMode::InProject) {
+        // A fresh scene starts from the project's render settings, as the hub
+        // path below does.
+        m_SceneManager.GetDefaultRenderSettings().ApplyToRuntime(
+            m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+        m_CurrentSceneUsesProjectDefaults = true;
+
+        const std::string stem = newScenePath.stem().string();
+        SaveScene(newScenePath.string());
+        m_CurrentScenePath = newScenePath.string();
+        m_SceneManager.AddScene(stem, "scenes/" + newScenePath.filename().string());
+        m_SceneManager.SaveProject();
+        ClearDirty();
+        UpdateWindowTitle();
+        ShowNotification("New scene '" + stem + "' added to the project", NotificationType::Success);
+        ENJIN_LOG_INFO(Editor, "New scene %s added to project", m_CurrentScenePath.c_str());
         return;
     }
 

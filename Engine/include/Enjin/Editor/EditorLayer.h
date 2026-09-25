@@ -2045,9 +2045,12 @@ private:
     // invoked it. All four now queue this and Update() performs the clear.
     enum class NewSceneMode : u8 {
         None,
-        ToHub,      // File > New Scene: clear, forget the path, reopen the hub
+        InProject,  // File > New Scene, Ctrl+N, the palette: a new scene IN the open
+                    // project (scenes/NewSceneN.enjin, listed, saved, opened). With no
+                    // project open, falls back to ToHub -- a scene needs a project.
+        ToHub,      // clear, forget the path, reopen the hub
         SaveAsNew,  // project creation: clear, then save an empty scene to the path below
-        ClearOnly,  // command palette: clear and forget the path, leave the UI where it is
+        ClearOnly,  // clear and forget the path, leave the UI where it is
     };
     NewSceneMode m_PendingNewScene = NewSceneMode::None;
     std::string  m_PendingNewScenePath;   // SaveAsNew only

@@ -201,8 +201,7 @@ void EditorLayer::DrawMenuBar() {
                     m_ShowUnsavedChangesDialog = true;
                 } else if (m_World) {
                     // Queued, not done here: this runs in the Render phase.
-                    m_PendingNewScene = NewSceneMode::ToHub;
-                    ENJIN_LOG_INFO(Editor, "Created new scene");
+                    m_PendingNewScene = NewSceneMode::InProject;
                 }
             }
             if (ImGui::MenuItem("Open Scene...", ShortcutChord(ShortcutAction::OpenScene)) ||
