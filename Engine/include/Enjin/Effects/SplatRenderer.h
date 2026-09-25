@@ -44,9 +44,15 @@ public:
                             u32 colorAttachmentCount);
     void RecreateDrawPipeline();   // drop all cached pipelines (pass recreated)
 
-    void Render(VkCommandBuffer cmd, VkDescriptorSet sharedSet,
-                const Math::Matrix4& model, f32 viewportW, f32 viewportH,
-                f32 opacityScale, f32 splatScale);
+    // Returns the number of draw calls issued: one instanced draw, or zero when
+    // there is nothing resident. RETURNED rather than void so the caller can add
+    // it to the frame's draw count, the way SpriteBatchRenderer::Render already
+    // does. It was void, so a whole render path was missing from the profiler AND
+    // from the harness's `renders` claim -- the splat demo drew 138 gaussians and
+    // reported "0 draw calls", which reads as nothing rendering at all.
+    u32 Render(VkCommandBuffer cmd, VkDescriptorSet sharedSet,
+               const Math::Matrix4& model, f32 viewportW, f32 viewportH,
+               f32 opacityScale, f32 splatScale);
 
 private:
     Renderer::VulkanContext* m_Context = nullptr;

@@ -184,10 +184,10 @@ void SplatRenderer::RecreateDrawPipeline() {
     m_FS.reset();
 }
 
-void SplatRenderer::Render(VkCommandBuffer cmd, VkDescriptorSet sharedSet,
-                           const Math::Matrix4& model, f32 viewportW, f32 viewportH,
-                           f32 opacityScale, f32 splatScale) {
-    if (m_Count == 0 || !m_Current || !m_InstanceBuffer) return;
+u32 SplatRenderer::Render(VkCommandBuffer cmd, VkDescriptorSet sharedSet,
+                          const Math::Matrix4& model, f32 viewportW, f32 viewportH,
+                          f32 opacityScale, f32 splatScale) {
+    if (m_Count == 0 || !m_Current || !m_InstanceBuffer) return 0;
 
     m_Current->Bind(cmd);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -210,6 +210,7 @@ void SplatRenderer::Render(VkCommandBuffer cmd, VkDescriptorSet sharedSet,
     VkDeviceSize offset = 0;
     vkCmdBindVertexBuffers(cmd, 0, 1, &vb, &offset);
     vkCmdDraw(cmd, 6, m_Count, 0, 0);
+    return 1;
 }
 
 } // namespace Effects

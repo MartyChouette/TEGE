@@ -19428,7 +19428,7 @@ void RenderSystem::RenderSplats(VkRenderPass pass, u32 colorAttachments,
 
     u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
     Math::Matrix4 model = ComputeWorldMatrix(m_World, m_SplatEntity);
-    m_SplatRenderer->Render(commandBuffer,
+    m_DrawCallCount += m_SplatRenderer->Render(commandBuffer,
                             (*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)],
                             model, viewportW, viewportH,
                             comp->opacityScale, comp->splatScale);
