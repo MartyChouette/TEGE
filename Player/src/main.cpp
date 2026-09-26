@@ -14,6 +14,7 @@
 #include "Enjin/Networking/WebSocketTransport.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/ECS/Components/Camera.h"
+#include "Enjin/ECS/CameraZones.h"
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Text.h"
@@ -1690,7 +1691,7 @@ public:
         // Check if the active camera has post-processing enabled
         bool ppEnabled = true;
         if (m_World) {
-            auto activeCam = Enjin::ECS::CameraManager::GetActiveCamera(m_World.get());
+            auto activeCam = Enjin::ECS::ResolveGameCamera(m_World.get());   // camera zones apply (SD-17)
             if (activeCam != Enjin::ECS::INVALID_ENTITY) {
                 auto* cc = m_World->GetComponent<Enjin::ECS::CameraComponent>(activeCam);
                 if (cc) ppEnabled = cc->enablePostProcessing;
@@ -2216,7 +2217,7 @@ public:
             Enjin::f32 nearP = 0.1f;
             Enjin::f32 farP = 1000.0f;
             if (m_World) {
-                auto activeCam = Enjin::ECS::CameraManager::GetActiveCamera(m_World.get());
+                auto activeCam = Enjin::ECS::ResolveGameCamera(m_World.get());   // camera zones apply (SD-17)
                 if (activeCam != Enjin::ECS::INVALID_ENTITY) {
                     auto* cc = m_World->GetComponent<Enjin::ECS::CameraComponent>(activeCam);
                     if (cc) {
@@ -2278,7 +2279,7 @@ public:
                           m_RenderSystem->GetRTMode() == 1;
             bool cameraPP = true;
             if (m_World) {
-                auto activeCam = Enjin::ECS::CameraManager::GetActiveCamera(m_World.get());
+                auto activeCam = Enjin::ECS::ResolveGameCamera(m_World.get());   // camera zones apply (SD-17)
                 if (activeCam != Enjin::ECS::INVALID_ENTITY) {
                     auto* cc = m_World->GetComponent<Enjin::ECS::CameraComponent>(activeCam);
                     if (cc) cameraPP = cc->enablePostProcessing;

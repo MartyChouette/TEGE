@@ -1,5 +1,6 @@
 #include "Enjin/Editor/EditorLayer.h"
 #include "Enjin/ECS/Components/Water3D.h"
+#include "Enjin/ECS/CameraZones.h"
 #include "Enjin/Renderer/CaptureWrite.h"
 #include "Enjin/Networking/NetworkSystem.h"   // the editor pumps the socket for collab
 #include "Enjin/Editor/EditorShortcuts.h"
@@ -3213,26 +3214,8 @@ void EditorLayer::UpdateGameViewSims(f32 simDt) {
         }
         ECS::Entity playerEntity = m_CachedPlayerEntity;
 
-        if (playerEntity != ECS::INVALID_ENTITY) {
-            auto* playerTransform = m_World->GetComponent<ECS::TransformComponent>(playerEntity);
-            if (playerTransform) {
-                i32 bestCamPriority = INT_MIN;
-                for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::CameraTriggerComponent>()) {
-                    auto* trigger = m_World->GetComponent<ECS::CameraTriggerComponent>(entity);
-                    auto* trigTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
-                    if (trigger && trigTransform && trigger->priority > bestCamPriority) {
-                        if (trigger->ContainsPoint(trigTransform->position, playerTransform->position)) {
-                            // Validate the target camera exists
-                            if (trigger->targetCamera != ECS::INVALID_ENTITY &&
-                                m_World->HasComponent<ECS::CameraComponent>(trigger->targetCamera)) {
-                                m_CameraZoneOverride = trigger->targetCamera;
-                                bestCamPriority = trigger->priority;
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        // The same zone rule both players use (ECS::ResolveCameraZone).
+        m_CameraZoneOverride = ECS::ResolveCameraZone(m_World, playerEntity);
 
         // Override game camera if a zone-driven camera was found
         if (m_CameraZoneOverride != ECS::INVALID_ENTITY) {

@@ -111,6 +111,7 @@
 #include "Enjin/Accessibility/AlternativeInput.h"
 #include "Enjin/Accessibility/Announcer.h"
 #include "Enjin/Accessibility/AccessibilitySettings.h"
+#include "Enjin/ECS/CameraZones.h"
 #include "Enjin/Gameplay/QuestSystem.h"
 #include "Enjin/Gameplay/ObjectPool.h"
 #include "Enjin/Gameplay/TieredSaveSystem.h"
@@ -1946,9 +1947,12 @@ public:
         // when the split cannot be resolved.
         if (m_World && m_RenderSystem) m_RenderSystem->ApplySplitscreenFromWorld();
 
-        const auto& camEntities = m_World->GetEntitiesWithComponent<Enjin::ECS::CameraComponent>();
-        if (!camEntities.empty() && m_Camera) {
-            auto camEntity = camEntities[0];
+        // The same camera the desktop player renders through: the zone camera
+        // while the player stands in one, else the highest-priority active
+        // camera. This took the FIRST camera in the scene, ignoring priority,
+        // isActive and every camera zone (SD-17).
+        const Enjin::ECS::Entity camEntity = Enjin::ECS::ResolveGameCamera(m_World.get());
+        if (camEntity != Enjin::ECS::INVALID_ENTITY && m_Camera) {
             auto* xf = m_World->GetComponent<Enjin::ECS::TransformComponent>(camEntity);
             auto* cc = m_World->GetComponent<Enjin::ECS::CameraComponent>(camEntity);
             if (xf && cc) {

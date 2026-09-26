@@ -2,6 +2,9 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Components/Transform.h"
+#include "Enjin/ECS/Components/CameraTrigger.h"
+#include "Enjin/ECS/Components/Controllers/CharacterController.h"
+#include "Enjin/ECS/CameraZones.h"
 #include "Enjin/Math/Math.h"
 
 using namespace Enjin;
@@ -184,6 +187,64 @@ ENJIN_TEST(CameraManager, GetAllActiveSortedByPriority) {
     ENJIN_EXPECT_EQ(cameras[0], e2); // highest priority first
     ENJIN_EXPECT_EQ(cameras[1], e3);
     ENJIN_EXPECT_EQ(cameras[2], e1);
+}
+
+// SD-17: camera zones were read only by the editor's game view, so a shipped
+// game ignored them, and the web player rendered through the FIRST camera in
+// the scene whatever its priority. ResolveGameCamera is the rule every runtime
+// uses now.
+static Entity MakeCamera(World& w, i32 priority) {
+    Entity e = w.CreateEntity();
+    w.AddComponent<TransformComponent>(e);
+    auto& c = w.AddComponent<CameraComponent>(e);
+    c.priority = priority;
+    c.isActive = true;
+    return e;
+}
+
+static Entity MakeZone(World& w, const Vector3& at, Entity target, i32 priority) {
+    Entity e = w.CreateEntity();
+    auto& t = w.AddComponent<TransformComponent>(e);
+    t.position = at;
+    auto& z = w.AddComponent<CameraTriggerComponent>(e);
+    z.halfExtents = Vector3(2.0f, 2.0f, 2.0f);
+    z.targetCamera = target;
+    z.priority = priority;
+    return e;
+}
+
+ENJIN_TEST(CameraZones, TheZoneCameraWinsWhileThePlayerIsInside) {
+    // Arrange: a main camera, a zone camera, and a player.
+    World w;
+    const Entity mainCam = MakeCamera(w, 10);
+    const Entity zoneCam = MakeCamera(w, 0);
+    const Entity closeCam = MakeCamera(w, 0);
+    MakeZone(w, Vector3(0.0f, 0.0f, 0.0f), zoneCam, 1);
+    MakeZone(w, Vector3(1.0f, 0.0f, 0.0f), closeCam, 5);   // overlaps the first, higher priority
+    const Entity player = w.CreateEntity();
+    auto& pt = w.AddComponent<TransformComponent>(player);
+    w.AddComponent<ThirdPersonController>(player);
+
+    // Act / Assert: outside every zone, the highest-priority camera.
+    pt.position = Vector3(50.0f, 0.0f, 0.0f);
+    ENJIN_EXPECT_EQ(ResolveGameCamera(&w), mainCam);
+
+    // Inside only the first zone.
+    w.GetComponent<TransformComponent>(player)->position = Vector3(-1.5f, 0.0f, 0.0f);
+    ENJIN_EXPECT_EQ(ResolveGameCamera(&w), zoneCam);
+
+    // Inside both: the higher-priority zone.
+    w.GetComponent<TransformComponent>(player)->position = Vector3(0.5f, 0.0f, 0.0f);
+    ENJIN_EXPECT_EQ(ResolveGameCamera(&w), closeCam);
+}
+
+ENJIN_TEST(CameraZones, WithNoPlayerOrZoneItIsTheHighestPriorityCamera) {
+    // The web player used to take the first camera created. Priority decides.
+    World w;
+    MakeCamera(w, 0);
+    const Entity best = MakeCamera(w, 7);
+    ENJIN_EXPECT_EQ(ResolveGameCamera(&w), best);
+    ENJIN_EXPECT_EQ(FindCameraZonePlayer(&w), static_cast<Entity>(INVALID_ENTITY));
 }
 
 ENJIN_TEST_MAIN()
