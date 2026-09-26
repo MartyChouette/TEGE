@@ -9,6 +9,7 @@
 //
 // Found by the feature-audit swarm, verified by reading ApplyDamage.
 #include "EnjinTest.h"
+#include "Enjin/ECS/Systems/AISystem.h"
 #include "Enjin/Gameplay/GameplayLoop.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Transform.h"
@@ -250,6 +251,65 @@ ENJIN_TEST(DamageResistance, test_the_director_can_be_switched_off) {
 
     // Assert: untouched by the director.
     ENJIN_EXPECT_FLOAT_NEAR(HealthOf(world, player), 60.0f, 0.001f);
+}
+
+// SD-22: AI melee dealt damage through its own copy of the rules, which
+// honoured only the isInvulnerable flag: it hit straight through the timed
+// invulnerability frames every other source respects, and never started the
+// target's own frames. It goes through ApplyDamage now.
+static ECS::Entity MakeAttacker(ECS::World& world, ECS::Entity target, f32 damage) {
+    ECS::Entity a = world.CreateEntity();
+    auto& t = world.AddComponent<ECS::TransformComponent>(a);
+    t.position = Math::Vector3(1.0f, 0.0f, 0.0f);   // in reach
+    auto& ai = world.AddComponent<ECS::AIControllerComponent>(a);
+    ai.currentState = ECS::AIControllerComponent::AIState::Attack;
+    ai.targetEntity = target;
+    ai.attackRange = 2.0f;
+    ai.attackDamage = damage;
+    ai.attackCooldown = 1.0f;
+    return a;
+}
+
+ENJIN_TEST(DamageResistance, test_ai_melee_respects_invulnerability_frames) {
+    // Arrange: a target inside its invulnerability window.
+    ECS::World world;
+    ECS::Entity target = world.CreateEntity();
+    world.AddComponent<ECS::TransformComponent>(target);
+    auto& hp = world.AddComponent<ECS::HealthComponent>(target);
+    hp.maxHealth = hp.currentHealth = 100.0f;
+    hp.invulnerabilityTimer = 1.0f;
+    MakeAttacker(world, target, 10.0f);
+    ECS::AISystem ai;
+    ai.SetWorld(&world);
+    ai.SetEnabled(true);   // off by default; without this nothing attacks
+
+    // Act: the attack lands this frame (its cooldown starts at zero).
+    ai.Update(1.0f / 60.0f);
+
+    // Assert
+    ENJIN_EXPECT_FLOAT_EQ(world.GetComponent<ECS::HealthComponent>(target)->currentHealth, 100.0f);
+}
+
+ENJIN_TEST(DamageResistance, test_ai_melee_starts_the_targets_invulnerability) {
+    // Arrange: a target with a half-second window, not in it yet.
+    ECS::World world;
+    ECS::Entity target = world.CreateEntity();
+    world.AddComponent<ECS::TransformComponent>(target);
+    auto& hp = world.AddComponent<ECS::HealthComponent>(target);
+    hp.maxHealth = hp.currentHealth = 100.0f;
+    hp.invulnerabilityTime = 0.5f;
+    MakeAttacker(world, target, 10.0f);
+    ECS::AISystem ai;
+    ai.SetWorld(&world);
+    ai.SetEnabled(true);   // off by default; without this nothing attacks
+
+    // Act
+    ai.Update(1.0f / 60.0f);
+
+    // Assert: hit once, and the window opened as for any other hit.
+    const auto* after = world.GetComponent<ECS::HealthComponent>(target);
+    ENJIN_EXPECT_FLOAT_EQ(after->currentHealth, 90.0f);
+    ENJIN_EXPECT_TRUE(after->invulnerabilityTimer > 0.0f);
 }
 
 ENJIN_TEST_MAIN()

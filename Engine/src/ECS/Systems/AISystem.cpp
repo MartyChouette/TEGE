@@ -1,4 +1,5 @@
 #include "Enjin/ECS/Systems/AISystem.h"
+#include "Enjin/Gameplay/GameplayLoop.h"
 #include "Enjin/AI/Navmesh.h"
 #include "Enjin/ECS/Components/NavmeshVolume.h"
 #include "Enjin/Math/Math.h"
@@ -448,7 +449,6 @@ void AISystem::ProcessChase(Entity entity, AIControllerComponent& ai, TransformC
 
 void AISystem::ProcessAttack(Entity entity, AIControllerComponent& ai, TransformComponent& transform,
                              AgentState& state, f32 dt) {
-    (void)entity;
 
     // No target? Return
     if (ai.targetEntity == 0 || ai.targetEntity == INVALID_ENTITY) {
@@ -474,31 +474,14 @@ void AISystem::ProcessAttack(Entity entity, AIControllerComponent& ai, Transform
     // Attack cooldown
     state.attackCooldownTimer -= dt;
     if (state.attackCooldownTimer <= 0.0f) {
-        // Execute attack: apply damage to target entity if it has HealthComponent
+        // The shared damage path, like every other source of damage. This was
+        // a private copy that honoured only isInvulnerable and the physical
+        // resistance, so an AI hit went straight through invulnerability
+        // frames, ignored the difficulty scaling, never started the target's
+        // own i-frames and skipped the death handling (SD-22). An AI melee hit
+        // is physical: no DamageComponent, so ApplyDamage treats it so.
         if (m_World && m_World->IsValid(ai.targetEntity)) {
-            auto* targetHealth = m_World->GetComponent<HealthComponent>(ai.targetEntity);
-            if (targetHealth && !targetHealth->isDead && !targetHealth->isInvulnerable) {
-                // Apply damage (check resistance)
-                f32 damage = ai.attackDamage;
-                auto* resistance = m_World->GetComponent<DamageResistanceComponent>(ai.targetEntity);
-                if (resistance) {
-                    damage *= resistance->physicalMult; // AI does physical damage by default
-                }
-
-                // Absorb with shield first
-                if (targetHealth->currentShield > 0.0f) {
-                    f32 shieldAbsorb = Math::Min(targetHealth->currentShield, damage);
-                    targetHealth->currentShield -= shieldAbsorb;
-                    damage -= shieldAbsorb;
-                }
-
-                targetHealth->currentHealth -= damage;
-                targetHealth->timeSinceLastDamage = 0.0f;
-                if (targetHealth->currentHealth <= 0.0f) {
-                    targetHealth->currentHealth = 0.0f;
-                    targetHealth->isDead = true;
-                }
-            }
+            Gameplay::GameplayLoop::ApplyDamage(m_World, ai.targetEntity, ai.attackDamage, entity, nullptr);
         }
 
         state.attackCooldownTimer = ai.attackCooldown;
