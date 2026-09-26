@@ -8880,7 +8880,10 @@ void EditorLayer::DrawVehicleController(ECS::Entity entity) {
             InspectorUndo::DragFloat(m_UndoRedo, "Acceleration", &ctrl->acceleration, 0.5f, 0.0f, 100.0f);
             InspectorUndo::DragFloat(m_UndoRedo, "Brake Force", &ctrl->brakeForce, 0.5f, 0.0f, 100.0f);
             InspectorUndo::DragFloat(m_UndoRedo, "Engine Brake", &ctrl->engineBrake, 0.5f, 0.0f, 50.0f);
-            InspectorUndo::Checkbox(m_UndoRedo, "Handbrake", &ctrl->handbrake);
+            // No "Handbrake" checkbox: `handbrake` is runtime state, set from
+            // input every frame and never saved, so ticking it did nothing (SD-18).
+            // How hard the handbrake bites is handbrakeScale.
+            InspectorUndo::DragFloat(m_UndoRedo, "Handbrake Strength", &ctrl->handbrakeScale, 0.05f, 0.0f, 10.0f);
             ImGui::TreePop();
         }
 
