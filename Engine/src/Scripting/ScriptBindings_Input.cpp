@@ -164,6 +164,22 @@ static void Touch_ClearButtons() {
 // keyCode: GLFW key held while pressed; negative = mouse button (-1 = left
 // click, i.e. fire). col/row place the button on a grid growing up-left from
 // the bottom-right of the safe area; radiusFrac is relative to screen height.
+// Radius 0 means "place it for me": the next slot of the engine's own button
+// cluster, in add order. Anything else is the caller's layout, as before.
+static void PlaceScriptTouchButton(Input::TouchButtonDef& b, int index,
+                                   float col, float row, float radiusFrac) {
+    f32 c = col, r = row, rad = radiusFrac;
+    if (radiusFrac <= 0.0f && InputSystem::AutoTouchSlot(index, c, r, rad)) {
+        b.colFromRight = c;
+        b.rowFromBottom = r;
+        b.radiusFrac = rad;
+        return;
+    }
+    b.colFromRight = col;
+    b.rowFromBottom = row;
+    b.radiusFrac = (radiusFrac > 0.01f && radiusFrac < 0.3f) ? radiusFrac : 0.075f;
+}
+
 static void Touch_AddButton(const std::string& label, int keyCode,
                             float col, float row, float radiusFrac) {
     Input::TouchScheme s = Input::GetTouchScheme();
@@ -171,9 +187,7 @@ static void Touch_AddButton(const std::string& label, int keyCode,
     Input::TouchButtonDef& b = s.buttons[s.buttonCount++];
     b = Input::TouchButtonDef{};   // fresh slot: no stale action from a preset
     b.keyCode = keyCode;
-    b.colFromRight = col;
-    b.rowFromBottom = row;
-    b.radiusFrac = (radiusFrac > 0.01f && radiusFrac < 0.3f) ? radiusFrac : 0.075f;
+    PlaceScriptTouchButton(b, s.buttonCount - 1, col, row, radiusFrac);
     for (int i = 0; i < 8; ++i) b.label[i] = '\0';
     for (int i = 0; i < 7 && i < static_cast<int>(label.size()); ++i) b.label[i] = label[i];
     Input::SetTouchScheme(s);
@@ -189,9 +203,7 @@ static void Touch_AddActionButton(const std::string& label, int action,
     Input::TouchButtonDef& b = s.buttons[s.buttonCount++];
     b = Input::TouchButtonDef{};   // fresh slot: no stale keyCode fallback
     b.action = action;
-    b.colFromRight = col;
-    b.rowFromBottom = row;
-    b.radiusFrac = (radiusFrac > 0.01f && radiusFrac < 0.3f) ? radiusFrac : 0.075f;
+    PlaceScriptTouchButton(b, s.buttonCount - 1, col, row, radiusFrac);
     for (int i = 0; i < 8; ++i) b.label[i] = '\0';
     for (int i = 0; i < 7 && i < static_cast<int>(label.size()); ++i) b.label[i] = label[i];
     Input::SetTouchScheme(s);

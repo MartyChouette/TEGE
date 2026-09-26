@@ -262,11 +262,21 @@ class GameController : TegeBehavior {
         TouchAdd("BACK",   Key::E);
     }
 
+    // The battle throws colour c on Num1 + c, in PotionData's COL_ order, so
+    // the buttons follow that order. They used to say RED/YELLOW/BLUE on
+    // Num1-3, which threw red, ORANGE and YELLOW, and green, blue and purple
+    // could not be thrown by touch at all.
+    // (Examples fix, engine not at fault: the labels are authored data the
+    // engine cannot know. The buttons all stacking on one spot WAS the engine's,
+    // fixed there: radius 0 now means the engine places the button.)
     void TouchBattle() {
         Touch_ClearButtons();
-        TouchAdd("RED",    Key::Num1);
-        TouchAdd("YELLOW", Key::Num2);
-        TouchAdd("BLUE",   Key::Num3);
+        TouchAdd("RED",    Key::Num1);   // COL_RED
+        TouchAdd("ORANGE", Key::Num2);   // COL_ORANGE
+        TouchAdd("YELLOW", Key::Num3);   // COL_YELLOW
+        TouchAdd("GREEN",  Key::Num4);   // COL_GREEN
+        TouchAdd("BLUE",   Key::Num5);   // COL_BLUE
+        TouchAdd("PURPLE", Key::Num6);   // COL_PURPLE
         TouchAdd("FOOD",   Key::Num7);
     }
 

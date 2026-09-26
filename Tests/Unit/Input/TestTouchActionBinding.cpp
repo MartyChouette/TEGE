@@ -2,7 +2,12 @@
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/Input/TouchActionBridge.h"
 #include "Enjin/Platform/Input.h"
+#include "Enjin/Scripting/ScriptEngine.h"
+#include "Enjin/Scripting/ScriptBindings.h"
+#include <angelscript.h>
 #include <cstring>
+#include <utility>
+#include <vector>
 
 using namespace Enjin;
 using namespace Enjin::InputSystem;
@@ -147,6 +152,57 @@ ENJIN_TEST(TouchActionBinding, CustomActionLabelIsItsName) {
     ENJIN_ASSERT_TRUE(TouchActionLabel(c0) != nullptr);
     ENJIN_EXPECT_TRUE(std::strcmp(TouchActionLabel(c0), "SLO-MO") == 0);
     SetTouchActionMap(nullptr);
+}
+
+// IN-43: a script adding buttons with col 0, row 0, radius 0 -- trusting the
+// engine to lay them out, as Potions' comment says -- got every button on the
+// same spot. Radius 0 now means the next slot of the engine's own cluster.
+ENJIN_TEST(TouchActionBinding, AutoSlotsAreDistinctAndRunOut) {
+    // Arrange / Act: every auto slot.
+    std::vector<std::pair<f32, f32>> seen;
+    for (int i = 0; i < static_cast<int>(Input::kMaxTouchButtons); ++i) {
+        f32 col = -1.0f, row = -1.0f, radius = 0.0f;
+        ENJIN_ASSERT_TRUE(AutoTouchSlot(i, col, row, radius));
+        // Assert: a real size, and no two slots share a spot.
+        ENJIN_EXPECT_TRUE(radius > 0.01f && radius < 0.3f);
+        for (const auto& p : seen) ENJIN_EXPECT_FALSE(p.first == col && p.second == row);
+        seen.push_back({col, row});
+    }
+    f32 c, r, rad;
+    ENJIN_EXPECT_FALSE(AutoTouchSlot(static_cast<int>(Input::kMaxTouchButtons), c, r, rad));
+    ENJIN_EXPECT_FALSE(AutoTouchSlot(-1, c, r, rad));
+}
+
+ENJIN_TEST(TouchActionBinding, ScriptButtonsWithNoLayoutDoNotStack) {
+    // Arrange: a script adding two buttons exactly as Potions does.
+    Scripting::ScriptEngine engine;
+    ENJIN_ASSERT_TRUE(engine.Initialize());
+    Scripting::RegisterAllBindings(engine.GetASEngine());
+    ENJIN_ASSERT_TRUE(engine.CompileScriptFromMemory("touch_auto",
+        "void Add() {"
+        "    Touch_ClearButtons();"
+        "    Touch_AddButton(\"A\", 65, 0.0f, 0.0f, 0.0f);"
+        "    Touch_AddButton(\"B\", 66, 0.0f, 0.0f, 0.0f);"
+        "}"));
+    asIScriptFunction* fn = engine.GetASEngine()->GetModule("touch_auto")->GetFunctionByName("Add");
+    ENJIN_ASSERT_NOT_NULL(fn);
+
+    // Act
+    asIScriptContext* ctx = engine.AcquireContext();
+    ctx->Prepare(fn);
+    ENJIN_EXPECT_EQ(ctx->Execute(), static_cast<int>(asEXECUTION_FINISHED));
+    engine.ReturnContext(ctx);
+
+    // Assert: two buttons, in two places, each a real size.
+    const Input::TouchScheme s = Input::GetTouchScheme();
+    ENJIN_ASSERT_EQ(s.buttonCount, 2);
+    const auto& a = s.buttons[0];
+    const auto& b = s.buttons[1];
+    ENJIN_EXPECT_FALSE(a.colFromRight == b.colFromRight && a.rowFromBottom == b.rowFromBottom);
+    ENJIN_EXPECT_TRUE(a.radiusFrac > 0.01f && b.radiusFrac > 0.01f);
+
+    Input::SetTouchScheme(Input::TouchScheme{});
+    engine.Shutdown();
 }
 
 ENJIN_TEST_MAIN()

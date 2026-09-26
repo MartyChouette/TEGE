@@ -351,6 +351,14 @@ bool s_ControlsHintEnabled = true;
 void SetControlsHintEnabled(bool enabled) { s_ControlsHintEnabled = enabled; }
 bool IsControlsHintEnabled() { return s_ControlsHintEnabled; }
 
+bool AutoTouchSlot(int index, f32& col, f32& row, f32& radiusFrac) {
+    if (index < 0 || index >= static_cast<int>(Input::kMaxTouchButtons)) return false;
+    col = kSlots[index].col;
+    row = kSlots[index].row;
+    radiusFrac = kSlots[index].radiusFrac;
+    return true;
+}
+
 const char* ControlsHintLookKey(TouchPreset preset, bool mouseCaptured) {
     if (!Preset(preset).look) return nullptr;
     return mouseCaptured ? "Mouse" : "Hold RMB";

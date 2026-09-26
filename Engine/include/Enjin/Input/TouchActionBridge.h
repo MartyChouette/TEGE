@@ -90,6 +90,13 @@ ENJIN_API void DrawTouchOverlay();
 // action map is wired. The rect is the game surface in ImGui coordinates.
 ENJIN_API void DrawControlsHint(f32 x0, f32 y0, f32 w, f32 h);
 
+// Where the engine puts the Nth touch button when the caller does not say: the
+// same cluster the presets use, growing up and left from the bottom-right.
+// Returns false past the last slot. Touch_AddButton / Touch_AddActionButton
+// use it when their radius is 0, so a script can add buttons in order without
+// laying them out; before, every such button landed on the same spot (IN-43).
+ENJIN_API bool AutoTouchSlot(int index, f32& col, f32& row, f32& radiusFrac);
+
 // What the hint says looks with, or nullptr when the scene has no look to
 // offer. Taken from whether the mouse is actually captured: a captured camera
 // turns on any mouse movement ("Mouse"), an uncaptured one on a held right
