@@ -62,20 +62,6 @@ struct MeshData {
 };
 
 // ---------------------------------------------------------------------------
-// SDFRenderComponent — ECS component for SDF-based rendering
-// ---------------------------------------------------------------------------
-struct SDFRenderComponent {
-    enum class RenderMode : u8 { SphereTrace, MeshExtract };
-
-    RenderMode mode = RenderMode::MeshExtract;
-    i32 resolution = 64;             // SDF volume resolution per axis
-    f32 smoothness = 0.01f;          // Isosurface smoothing
-    f32 outlineWidth = 0.0f;         // SDF outline effect (world units)
-    Math::Vector3 outlineColor = {0.0f, 0.0f, 0.0f};
-    bool autoRebuild = true;         // Rebuild SDF when mesh changes
-};
-
-// ---------------------------------------------------------------------------
 // MeshToSDF — Converts polygon meshes to signed distance fields
 // ---------------------------------------------------------------------------
 class ENJIN_API MeshToSDF {
