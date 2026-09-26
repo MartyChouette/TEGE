@@ -3226,10 +3226,8 @@ json SerializePlatformer2D(const ECS::Platformer2DController& ctrl) {
     j["airControl"] = RF(ctrl.airControl);
     j["coyoteTime"] = RF(ctrl.coyoteTime);
     j["jumpBufferTime"] = RF(ctrl.jumpBufferTime);
-    j["enableWallJump"] = ctrl.enableWallJump;
     j["enableWallSlide"] = ctrl.enableWallSlide;
     j["wallSlideSpeed"] = RF(ctrl.wallSlideSpeed);
-    j["wallJumpForce"] = RF(ctrl.wallJumpForce);
     j["stompMinFallSpeed"] = RF(ctrl.stompMinFallSpeed);
     j["stompMinHeight"] = RF(ctrl.stompMinHeight);
     j["stompBounceScale"] = RF(ctrl.stompBounceScale);
@@ -3250,10 +3248,8 @@ ECS::Platformer2DController DeserializePlatformer2D(const json& j) {
     if (j.contains("airControl")) ctrl.airControl = j["airControl"].get<f32>();
     if (j.contains("coyoteTime")) ctrl.coyoteTime = j["coyoteTime"].get<f32>();
     if (j.contains("jumpBufferTime")) ctrl.jumpBufferTime = j["jumpBufferTime"].get<f32>();
-    if (j.contains("enableWallJump")) ctrl.enableWallJump = JB(j["enableWallJump"]);
     if (j.contains("enableWallSlide")) ctrl.enableWallSlide = JB(j["enableWallSlide"]);
     if (j.contains("wallSlideSpeed")) ctrl.wallSlideSpeed = j["wallSlideSpeed"].get<f32>();
-    if (j.contains("wallJumpForce")) ctrl.wallJumpForce = j["wallJumpForce"].get<f32>();
     if (j.contains("stompMinFallSpeed")) ctrl.stompMinFallSpeed = j["stompMinFallSpeed"].get<f32>();
     if (j.contains("stompMinHeight")) ctrl.stompMinHeight = j["stompMinHeight"].get<f32>();
     if (j.contains("stompBounceScale")) ctrl.stompBounceScale = j["stompBounceScale"].get<f32>();
@@ -3300,8 +3296,6 @@ json SerializeTopDown3D(const ECS::TopDown3DController& ctrl) {
     j["cameraDistance"] = RF(ctrl.cameraDistance);
     j["cameraHeight"] = RF(ctrl.cameraHeight);
     j["lockCameraToPlayer"] = ctrl.lockCameraToPlayer;
-    j["enableClickToMove"] = ctrl.enableClickToMove;
-    j["arrivalThreshold"] = RF(ctrl.arrivalThreshold);
     j["enableDash"] = ctrl.enableDash;
     j["dashSpeed"] = RF(ctrl.dashSpeed);
     j["dashDuration"] = RF(ctrl.dashDuration);
@@ -3320,8 +3314,6 @@ ECS::TopDown3DController DeserializeTopDown3D(const json& j) {
     if (j.contains("cameraDistance")) ctrl.cameraDistance = j["cameraDistance"].get<f32>();
     if (j.contains("cameraHeight")) ctrl.cameraHeight = j["cameraHeight"].get<f32>();
     if (j.contains("lockCameraToPlayer")) ctrl.lockCameraToPlayer = JB(j["lockCameraToPlayer"]);
-    if (j.contains("enableClickToMove")) ctrl.enableClickToMove = JB(j["enableClickToMove"]);
-    if (j.contains("arrivalThreshold")) ctrl.arrivalThreshold = j["arrivalThreshold"].get<f32>();
     if (j.contains("enableDash")) ctrl.enableDash = JB(j["enableDash"]);
     if (j.contains("dashSpeed")) ctrl.dashSpeed = j["dashSpeed"].get<f32>();
     if (j.contains("dashDuration")) ctrl.dashDuration = j["dashDuration"].get<f32>();
@@ -3343,7 +3335,6 @@ json SerializeThirdPerson(const ECS::ThirdPersonController& ctrl) {
     j["cameraMinDistance"] = RF(ctrl.cameraMinDistance);
     j["cameraMaxDistance"] = RF(ctrl.cameraMaxDistance);
     j["cameraCollisionRadius"] = RF(ctrl.cameraCollisionRadius);
-    j["lockOnRange"] = RF(ctrl.lockOnRange);
     j["cameraPitch"] = RF(ctrl.cameraPitch);
     j["cameraYaw"] = RF(ctrl.cameraYaw);
     j["cameraMinPitch"] = RF(ctrl.cameraMinPitch);
@@ -3351,7 +3342,6 @@ json SerializeThirdPerson(const ECS::ThirdPersonController& ctrl) {
     j["cameraSensitivity"] = RF(ctrl.cameraSensitivity);
     j["cameraLerpSpeed"] = RF(ctrl.cameraLerpSpeed);
     j["enableCameraCollision"] = ctrl.enableCameraCollision;
-    j["enableLockOn"] = ctrl.enableLockOn;
     j["frameSide"] = static_cast<u8>(ctrl.frameSide);
     j["frameHorizontalBias"] = RF(ctrl.frameHorizontalBias);
     j["ladderGrabHeight"] = RF(ctrl.ladderGrabHeight);
@@ -3373,7 +3363,6 @@ ECS::ThirdPersonController DeserializeThirdPerson(const json& j) {
     if (j.contains("cameraMinDistance")) ctrl.cameraMinDistance = j["cameraMinDistance"].get<f32>();
     if (j.contains("cameraMaxDistance")) ctrl.cameraMaxDistance = j["cameraMaxDistance"].get<f32>();
     if (j.contains("cameraCollisionRadius")) ctrl.cameraCollisionRadius = j["cameraCollisionRadius"].get<f32>();
-    if (j.contains("lockOnRange")) ctrl.lockOnRange = j["lockOnRange"].get<f32>();
     if (j.contains("cameraPitch")) ctrl.cameraPitch = j["cameraPitch"].get<f32>();
     if (j.contains("cameraYaw")) ctrl.cameraYaw = j["cameraYaw"].get<f32>();
     if (j.contains("cameraMinPitch")) ctrl.cameraMinPitch = j["cameraMinPitch"].get<f32>();
@@ -3381,7 +3370,6 @@ ECS::ThirdPersonController DeserializeThirdPerson(const json& j) {
     if (j.contains("cameraSensitivity")) ctrl.cameraSensitivity = j["cameraSensitivity"].get<f32>();
     if (j.contains("cameraLerpSpeed")) ctrl.cameraLerpSpeed = j["cameraLerpSpeed"].get<f32>();
     if (j.contains("enableCameraCollision")) ctrl.enableCameraCollision = JB(j["enableCameraCollision"]);
-    if (j.contains("enableLockOn")) ctrl.enableLockOn = JB(j["enableLockOn"]);
     if (j.contains("frameSide")) { u8 v = j["frameSide"].get<u8>(); if (v <= 2) ctrl.frameSide = static_cast<ECS::ThirdPersonController::FrameSide>(v); }
     if (j.contains("frameHorizontalBias")) ctrl.frameHorizontalBias = j["frameHorizontalBias"].get<f32>();
     if (j.contains("ladderGrabHeight")) ctrl.ladderGrabHeight = j["ladderGrabHeight"].get<f32>();

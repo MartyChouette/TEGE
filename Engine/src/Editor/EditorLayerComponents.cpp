@@ -4661,13 +4661,9 @@ void EditorLayer::DrawPlatformer2DController(ECS::Entity entity) {
         }
 
         if (ImGui::TreeNode("Wall Mechanics")) {
-            InspectorUndo::Checkbox(m_UndoRedo, "Wall Jump", &ctrl->enableWallJump);
             InspectorUndo::Checkbox(m_UndoRedo, "Wall Slide", &ctrl->enableWallSlide);
             if (ctrl->enableWallSlide) {
                 InspectorUndo::DragFloat(m_UndoRedo, "Slide Speed", &ctrl->wallSlideSpeed, 0.1f, 0.1f, 10.0f);
-            }
-            if (ctrl->enableWallJump) {
-                InspectorUndo::DragFloat(m_UndoRedo, "Wall Jump Force", &ctrl->wallJumpForce, 0.1f, 0.1f, 20.0f);
             }
             ImGui::TreePop();
         }
@@ -4825,10 +4821,6 @@ void EditorLayer::DrawTopDown3DController(ECS::Entity entity) {
             ImGui::TreePop();
         }
 
-        InspectorUndo::Checkbox(m_UndoRedo, "Enable Click-To-Move", &ctrl->enableClickToMove);
-        if (ctrl->enableClickToMove) {
-            InspectorUndo::DragFloat(m_UndoRedo, "Arrival Threshold##td3d", &ctrl->arrivalThreshold, 0.05f, 0.1f, 3.0f);
-        }
         InspectorUndo::Checkbox(m_UndoRedo, "Enable Dash", &ctrl->enableDash);
         if (ctrl->enableDash) {
             InspectorUndo::DragFloat(m_UndoRedo, "Dash Speed##td3d", &ctrl->dashSpeed, 0.5f, 1.0f, 50.0f);
@@ -4961,11 +4953,6 @@ void EditorLayer::DrawThirdPersonController(ECS::Entity entity) {
                 InspectorUndo::DragFloat(m_UndoRedo, "Collision Radius##tps", &ctrl->cameraCollisionRadius, 0.05f, 0.05f, 2.0f);
             }
             ImGui::TreePop();
-        }
-
-        InspectorUndo::Checkbox(m_UndoRedo, "Enable Lock-On", &ctrl->enableLockOn);
-        if (ctrl->enableLockOn) {
-            InspectorUndo::DragFloat(m_UndoRedo, "Lock-On Range", &ctrl->lockOnRange, 0.5f, 1.0f, 100.0f);
         }
 
         ImGui::Separator();

@@ -108,11 +108,11 @@ struct Platformer2DController : public CharacterControllerBase {
     f32 stompMinHeight = 0.3f;      // how far above the enemy the player must be
     f32 stompBounceScale = 0.6f;    // bounce height as a fraction of jumpForce
 
-    // Wall mechanics (optional)
-    bool enableWallJump = false;
+    // Wall mechanics (optional). Wall JUMP was a switch and a force that
+    // nothing implemented; it is filed as a feature and has no control until
+    // it exists.
     bool enableWallSlide = false;
     f32 wallSlideSpeed = 2.0f;
-    f32 wallJumpForce = 6.0f;
 
     // State
     bool isJumping = false;
@@ -163,11 +163,8 @@ struct TopDown3DController : public CharacterControllerBase {
     f32 cameraHeight = 10.0f;
     bool lockCameraToPlayer = true;
 
-    // Click-to-move (optional, like Diablo)
-    bool enableClickToMove = false;
-    Math::Vector3 targetPosition = Math::Vector3(0.0f, 0.0f, 0.0f);
-    bool hasTarget = false;
-    f32 arrivalThreshold = 0.5f;
+    // Click-to-move was a switch with no implementation behind it; filed as a
+    // feature, no control until it exists.
 
     // Dash/dodge
     bool enableDash = false;
@@ -219,10 +216,8 @@ struct ThirdPersonController : public CharacterControllerBase {
     bool enableCameraCollision = true;
     f32 cameraCollisionRadius = 0.3f;
 
-    // Lock-on targeting (optional)
-    bool enableLockOn = false;
-    Entity lockedTarget = 0;  // INVALID_ENTITY
-    f32 lockOnRange = 20.0f;
+    // Lock-on targeting was a switch and a range with no implementation;
+    // filed as a feature, no control until it exists.
 
     // State
     bool isJumping = false;

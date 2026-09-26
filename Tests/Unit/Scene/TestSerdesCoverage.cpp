@@ -188,9 +188,8 @@ ENJIN_TEST(SerdesCoverage, SwimTuningSurvivesASave) {
     c.swimDrag = 6.0f;
     c.swimSurfaceBand = 0.4f;
     c.swimSurfaceStrokeScale = 0.15f;
-    // and the two camera fields the audit found dropped
+    // and the camera field the audit found dropped
     c.cameraCollisionRadius = 0.75f;
-    c.lockOnRange = 22.0f;
     src.AddComponent<ThirdPersonController>(e, c);
 
     World dst;
@@ -205,7 +204,6 @@ ENJIN_TEST(SerdesCoverage, SwimTuningSurvivesASave) {
     ENJIN_EXPECT_TRUE(Near(r->swimSurfaceBand, 0.4f));
     ENJIN_EXPECT_TRUE(Near(r->swimSurfaceStrokeScale, 0.15f));
     ENJIN_EXPECT_TRUE(Near(r->cameraCollisionRadius, 0.75f));
-    ENJIN_EXPECT_TRUE(Near(r->lockOnRange, 22.0f));
 }
 
 ENJIN_TEST(SerdesCoverage, WaypointLinkSurvivesASave) {

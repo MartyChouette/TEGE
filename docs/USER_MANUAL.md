@@ -630,10 +630,8 @@ Side-scrolling movement with gravity, jumping, and optional wall mechanics.
 | `airControl` | f32 | 0.5 | Movement control multiplier while airborne. |
 | `coyoteTime` | f32 | 0.1 | Grace period (seconds) after leaving a platform where jump is still allowed. |
 | `jumpBufferTime` | f32 | 0.1 | Input buffer (seconds) for pressing jump slightly before landing. |
-| `enableWallJump` | bool | false | Allow jumping off walls. |
 | `enableWallSlide` | bool | false | Slide down walls slowly. |
 | `wallSlideSpeed` | f32 | 2.0 | Descent speed while wall sliding. |
-| `wallJumpForce` | f32 | 6.0 | Force applied on wall jump. |
 
 #### TopDown2DController
 
@@ -664,8 +662,6 @@ Isometric or overhead 3D movement, similar to Diablo-style games. Includes optio
 | `cameraDistance` | f32 | 15.0 | Camera distance from player. |
 | `cameraHeight` | f32 | 10.0 | Camera height above player. |
 | `lockCameraToPlayer` | bool | true | Camera follows the player. |
-| `enableClickToMove` | bool | false | Click on ground to move (Diablo-style). |
-| `arrivalThreshold` | f32 | 0.5 | Distance at which click-to-move stops. |
 | `enableDash` | bool | false | Enable dash/dodge ability. |
 
 #### ThirdPersonController
@@ -690,8 +686,6 @@ Over-the-shoulder camera that orbits the player. Supports lock-on targeting.
 | `cameraSensitivity` | f32 | 0.15 | Mouse sensitivity for orbit. |
 | `cameraLerpSpeed` | f32 | 20.0 | Smooth camera follow speed. |
 | `enableCameraCollision` | bool | true | Camera avoids clipping through geometry. |
-| `enableLockOn` | bool | false | Enable lock-on targeting system. |
-| `lockOnRange` | f32 | 20.0 | Maximum lock-on distance. |
 
 #### FirstPersonController
 
