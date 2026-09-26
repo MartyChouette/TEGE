@@ -1460,7 +1460,14 @@ fn applyColorblindCorrection(color: vec3<f32>) -> vec3<f32> {
         simB = vec3<f32>(-0.178779, 0.147602, 0.303900);
     }
 
-    let simulated = vec3<f32>(dot(color, simR), dot(color, simG), dot(color, simB));
+    // The three triples are the COLUMNS of the matrix, exactly as GLSL's
+    // mat3(...) takes them in postprocess.frag, and WGSL's mat3x3 constructor
+    // also takes columns, so this is the same product. It used to be
+    // dot(color, simR/G/B), which treats each column as a row: the transpose,
+    // so every red-green and blue-yellow mode simulated a different deficiency
+    // on web than on desktop from the same setting (SD-14). The clamp is
+    // desktop's too; without it the error term could exceed the colour itself.
+    let simulated = saturate(mat3x3<f32>(simR, simG, simB) * color);
     let error = color - simulated;
 
     // Redistribute the error across the channels that CAN be seen, matching
