@@ -1340,10 +1340,21 @@ public:
         // Update input
         m_InputMap.Update(deltaTime);
 
-        // ESC: state-aware menu navigation. The pause ROOT is the unified
-        // UICanvas menu (one UI source, parity with web/editor); GameMenus'
-        // bespoke screens remain for main menu / options / how-to-play.
-        if (Enjin::Input::IsKeyPressed(Enjin::KeyCode::Escape)) {
+        // Pause / back: state-aware menu navigation. The pause ROOT is the
+        // unified UICanvas menu (one UI source, parity with web/editor);
+        // GameMenus' bespoke screens remain for main menu / options / how-to-play.
+        //
+        // Read from ACTIONS (IN-7). It was raw Escape, so rebinding Pause did
+        // nothing and a pad's Start opened nothing. In play the Pause action
+        // opens the menu; inside a menu Cancel (always live) backs out, and so
+        // does whatever Pause is bound to, which is why that one is read past
+        // the focus gate.
+        const bool inMenu = m_Paused || m_GameMenu.IsMenuOpen();
+        const bool pauseOrBack = inMenu
+            ? (m_InputMap.IsActionPressed(Enjin::InputSystem::GameAction::UICancel) ||
+               m_InputMap.IsActionPressedAnyFocus(Enjin::InputSystem::GameAction::Pause))
+            : m_InputMap.IsActionPressed(Enjin::InputSystem::GameAction::Pause);
+        if (pauseOrBack) {
             auto screen = m_GameMenu.GetCurrentScreen();
             if (screen == Enjin::GUI::MenuScreen::MainMenu) {
                 // On title screen — ESC does nothing

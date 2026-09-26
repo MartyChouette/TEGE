@@ -254,6 +254,10 @@ bool InputActionMap::IsActionPressed(GameAction action) const {
     return m_ActionPressed[static_cast<u32>(action)];
 }
 
+bool InputActionMap::IsActionPressedAnyFocus(GameAction action) const {
+    return m_ActionPressed[static_cast<u32>(action)];
+}
+
 bool InputActionMap::IsActionReleased(GameAction action) const {
     if (!ActionPassesFocus(action)) return false;
     return m_ActionReleased[static_cast<u32>(action)];

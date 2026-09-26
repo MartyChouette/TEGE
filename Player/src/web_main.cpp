@@ -1348,7 +1348,7 @@ public:
                 LogActionBindings("after rebind", Enjin::InputSystem::GameAction::Jump);
                 RebuildControlsMenu();
             }
-        } else if (!m_AtMainMenu && Enjin::Input::IsKeyPressed(Enjin::KeyCode::Escape)) {
+        } else if (!m_AtMainMenu && WebPauseOrBackPressed()) {
             // Unwind one screen at a time: controls -> options -> pause -> game.
             if (m_ControlsMenuEntity != Enjin::ECS::INVALID_ENTITY) CloseControlsMenu(true);
             else if (m_OptionsMenuEntity != Enjin::ECS::INVALID_ENTITY) CloseOptionsMenu(true);
@@ -2792,6 +2792,18 @@ private:
     // in /saves. Both are applied, pak first (AccessibilityJsonLayers). Web
     // used to read only /saves, so the project's authored defaults never
     // reached a browser player at all (the mirror of desktop's IN-20).
+    // Pause / back read from actions, as on desktop (IN-7): the Pause action
+    // opens the menu in play; inside a menu Cancel backs out, and so does the
+    // Pause binding itself, read past the focus gate that silences it there.
+    bool WebPauseOrBackPressed() const {
+        using Enjin::InputSystem::GameAction;
+        const bool inMenu = m_Paused || m_OptionsMenuEntity != Enjin::ECS::INVALID_ENTITY ||
+                            m_ControlsMenuEntity != Enjin::ECS::INVALID_ENTITY;
+        return inMenu ? (m_InputMap.IsActionPressed(GameAction::UICancel) ||
+                         m_InputMap.IsActionPressedAnyFocus(GameAction::Pause))
+                      : m_InputMap.IsActionPressed(GameAction::Pause);
+    }
+
     void LoadWebAccessibilitySettings() {
         std::string packJson, playerJson;
         if (m_HasPack) {

@@ -157,6 +157,11 @@ public:
     bool IsActionDown(GameAction action) const;
     bool IsActionPressed(GameAction action) const;
     bool IsActionReleased(GameAction action) const;
+    // Pressed this frame whatever the input focus. For the one case focus
+    // cannot answer: the Pause binding that opened a menu (Start on a pad) has
+    // to close it again, while the menu holds focus and gameplay actions,
+    // Pause among them, read inactive.
+    bool IsActionPressedAnyFocus(GameAction action) const;
     f32 GetActionValue(GameAction action) const;
 
     // Convenience: returns normalized 2D movement vector from Forward/Back/Left/Right

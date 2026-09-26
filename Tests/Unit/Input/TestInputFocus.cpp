@@ -237,4 +237,34 @@ ENJIN_TEST(InputChords, MenuFocusDuringAChordSilencesMovement) {
     ENJIN_EXPECT_FALSE(movesWhileMenu);      // and the editor's chord silences it
 }
 
+// IN-7: both players opened pause on raw Escape and nothing read the Pause
+// action, so rebinding Pause did nothing and a pad's Start opened nothing.
+// Inside a menu, Pause (a gameplay action) reads inactive, so the Start that
+// opened the menu needs a read that ignores focus to close it again.
+ENJIN_TEST(InputFocus, ThePauseBindingIsStillSeenInsideAMenu) {
+    // Arrange: Pause rebound to P, a menu holding focus.
+    InputActionMap map;
+    map.LoadDefaults();
+    map.RebindAction(static_cast<i32>(GameAction::Pause), static_cast<i32>(KeyCode::P));
+    FakeInput input;
+    Input::SetInputFocus(Input::InputFocus::Menu);
+
+    // Act: press P.
+    input.SetKey(KeyCode::P, true);
+    input.Step();
+    map.Update(0.016f);
+
+    // Assert: gated read is quiet, the focus-free read is not.
+    ENJIN_EXPECT_FALSE(map.IsActionPressed(GameAction::Pause));
+    ENJIN_EXPECT_TRUE(map.IsActionPressedAnyFocus(GameAction::Pause));
+
+    // And Escape is Cancel, which passes in a menu whatever Pause is bound to.
+    input.SetKey(KeyCode::P, false);
+    input.SetKey(KeyCode::Escape, true);
+    input.Step();
+    map.Update(0.016f);
+    ENJIN_EXPECT_TRUE(map.IsActionPressed(GameAction::UICancel));
+    ENJIN_EXPECT_FALSE(map.IsActionPressedAnyFocus(GameAction::Pause));   // no longer bound to Escape
+}
+
 ENJIN_TEST_MAIN()
