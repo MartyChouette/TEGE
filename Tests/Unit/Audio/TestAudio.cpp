@@ -115,4 +115,16 @@ ENJIN_TEST(AudioGraph, DataDefaults) {
     ENJIN_EXPECT_EQ(data.nextLinkId, 1u);
 }
 
+// SD-23: the accessibility indicator captioned every sound with its file name,
+// and the authored AudioSourceComponent::audioDescription was read only by its
+// own inspector. The description wins when there is one.
+ENJIN_TEST(AudioCaptions, TheAuthoredDescriptionIsTheCaption) {
+    using Enjin::Audio::AudioEngine;
+    ENJIN_EXPECT_STR_EQ(AudioEngine::SoundCaption("Door creaks open", "assets/sfx/door_03.wav").c_str(),
+                        "Door creaks open");
+    // No description: the file name, without its folders, as before.
+    ENJIN_EXPECT_STR_EQ(AudioEngine::SoundCaption("", "assets/sfx/door_03.wav").c_str(), "door_03.wav");
+    ENJIN_EXPECT_STR_EQ(AudioEngine::SoundCaption("", "C:\\game\\bell.ogg").c_str(), "bell.ogg");
+}
+
 ENJIN_TEST_MAIN()

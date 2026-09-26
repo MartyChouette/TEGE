@@ -1070,13 +1070,10 @@ SoundHandle AudioEngine::Play(AudioClipHandle clip, f32 volume, f32 pitch, bool 
     ENJIN_LOG_DEBUG(Audio, "Playing sound (handle: %u, clip: %u, vol: %.2f)", handle, clip, volume);
 
     // Notify accessibility audio visual indicator system
-    if (m_OnSoundPlayed) {
-        const auto& filepath = clipIt->second.filepath;
-        auto lastSlash = filepath.find_last_of("/\\");
-        std::string label = (lastSlash != std::string::npos)
-            ? filepath.substr(lastSlash + 1)
-            : filepath;
-        m_OnSoundPlayed(label);
+    {
+        const std::string caption = SoundCaption(m_NextCaption, clipIt->second.filepath);
+        m_NextCaption.clear();
+        if (m_OnSoundPlayed) m_OnSoundPlayed(caption);
     }
 
     return handle;
@@ -1204,13 +1201,10 @@ SoundHandle AudioEngine::Play3D(AudioClipHandle clip, const Math::Vector3& posit
 
     ENJIN_LOG_DEBUG(Audio, "Playing 3D sound at (%.1f, %.1f, %.1f)", position.x, position.y, position.z);
 
-    if (m_OnSoundPlayed) {
-        const auto& filepath = clipIt->second.filepath;
-        auto lastSlash = filepath.find_last_of("/\\");
-        std::string label = (lastSlash != std::string::npos)
-            ? filepath.substr(lastSlash + 1)
-            : filepath;
-        m_OnSoundPlayed(label);
+    {
+        const std::string caption = SoundCaption(m_NextCaption, clipIt->second.filepath);
+        m_NextCaption.clear();
+        if (m_OnSoundPlayed) m_OnSoundPlayed(caption);
     }
 
     return handle;
@@ -1534,6 +1528,12 @@ void AudioEngine::Update(f32 deltaTime) {
 // footstep came out identical, which is the exact thing the section exists to
 // prevent. Implemented here rather than at each call site so a script-driven
 // play and a play-on-awake sound the same.
+std::string AudioEngine::SoundCaption(const std::string& description, const std::string& filepath) {
+    if (!description.empty()) return description;
+    const auto lastSlash = filepath.find_last_of("/\\");
+    return (lastSlash != std::string::npos) ? filepath.substr(lastSlash + 1) : filepath;
+}
+
 AudioEngine::PlayVariation AudioEngine::ChooseVariation(ECS::AudioSourceComponent& src) {
     PlayVariation v;
     v.clipPath = src.clipPath;
@@ -1608,11 +1608,15 @@ void AudioEngine::UpdateAudioSources(f32 deltaTime) {
                 bool diegetic3D = audio->is3D &&
                     ch != AudioChannel::Music && ch != AudioChannel::UI;
                 SoundHandle snd;
+                // The caption the accessibility indicator shows for this one
+                // sound: its authored description (SD-23).
+                m_NextCaption = audio->audioDescription;
                 if (diegetic3D) {
                     snd = Play3D(clip, position, v.volume, audio->minDistance, audio->maxDistance, ch);
                 } else {
                     snd = Play(clip, v.volume, v.pitch, audio->loop, ch);
                 }
+                m_NextCaption.clear();   // a play that bailed early must not caption the next sound
                 audio->soundHandle = snd;
                 audio->isPlaying = true;
             }

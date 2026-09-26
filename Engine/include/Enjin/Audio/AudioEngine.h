@@ -290,6 +290,12 @@ public:
     // Called whenever a sound is played, with the clip filepath as label
     using SoundPlayedCallback = std::function<void(const std::string& soundName)>;
     void SetOnSoundPlayed(SoundPlayedCallback cb) { m_OnSoundPlayed = std::move(cb); }
+
+    // What the accessibility indicator says for a sound: the authored
+    // description when there is one, else the clip's file name. Captions used
+    // to show the file name always, and AudioSourceComponent::audioDescription
+    // was read only by its own inspector (SD-23).
+    static std::string SoundCaption(const std::string& description, const std::string& filepath);
     const SoundPlayedCallback& GetOnSoundPlayed() const { return m_OnSoundPlayed; }
 
 #ifdef ENJIN_AUDIO_STEAM_AUDIO
@@ -365,6 +371,9 @@ private:
 
     // Accessibility callback
     SoundPlayedCallback m_OnSoundPlayed;
+    // Description for the NEXT Play/Play3D only, set by the audio source path
+    // right before it plays and consumed by that call.
+    std::string m_NextCaption;
 
 public:
     // Audio bus mixer (hierarchical volume routing)
