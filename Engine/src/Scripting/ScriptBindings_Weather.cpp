@@ -166,12 +166,21 @@ static std::string WorldTime_GetSeasonName() {
     const int i = WorldTime_GetSeason();
     return kSeasonNames[(i < 0 || i > 3) ? 1 : i];
 }
-// Seasons follow the calendar, so moving to one means moving the month. Each
-// season is three months starting at March.
+// A season is a quarter of the year's months, the same division WorldTime.cpp
+// derives the season with. Never less than one, so a calendar of fewer than four
+// months still has seasons.
+static u32 MonthsPerSeason() {
+    const u32 m = s_BindingsWorldTime ? s_BindingsWorldTime->GetCalendarConfig().monthsPerYear / 4 : 3;
+    return m == 0 ? 1 : m;
+}
+// Seasons follow the calendar, so moving to one means moving the month: the last
+// month of that season. On the default twelve-month calendar that is still
+// Spring=3, Summer=6, Fall=9, Winter=12. It used to be those four numbers written
+// down, which on a four-month calendar sent Summer to month 6 of 4.
 static void WorldTime_SetSeason(int season) {
     if (!s_BindingsWorldTime) return;
     const int s = (season % 4 + 4) % 4;
-    const u32 month = static_cast<u32>(3 + s * 3);   // Spring=3, Summer=6, Fall=9, Winter=12
+    const u32 month = static_cast<u32>(s + 1) * MonthsPerSeason();
     const auto& st = s_BindingsWorldTime->GetState();
     s_BindingsWorldTime->SetTime(st.timeOfDay, 1, month, st.year);
 }
@@ -205,6 +214,33 @@ static void WorldTime_SetDate(int day, int month, int year) {
                                  static_cast<u32>(month < 1 ? 1 : month),
                                  static_cast<u32>(year < 1 ? 1 : year));
 }
+// --- the shape of the year ---------------------------------------------------
+// The engine counts twelve months of thirty days. A game whose year is four
+// seasons of thirty days (Shells) had no way to say so, so every day number it
+// wrote down landed on the wrong date: its day 31 is the first of summer, the
+// engine's is the first of February. Four months of thirty makes each month a
+// season and dayOfYear run 1..120.
+//
+// The date is clamped into the new shape and re-derived, so the season and
+// dayOfYear are right on the same frame rather than at the next midnight.
+static void WorldTime_SetCalendar(int daysPerMonth, int monthsPerYear) {
+    if (!s_BindingsWorldTime) return;
+    if (daysPerMonth < 1 || monthsPerYear < 1) return;
+    auto& cal = s_BindingsWorldTime->GetCalendarConfig();
+    cal.daysPerMonth = static_cast<u32>(daysPerMonth);
+    cal.monthsPerYear = static_cast<u32>(monthsPerYear);
+    const auto st = s_BindingsWorldTime->GetState();
+    s_BindingsWorldTime->SetTime(st.timeOfDay,
+                                 st.day > cal.daysPerMonth ? cal.daysPerMonth : st.day,
+                                 st.month > cal.monthsPerYear ? cal.monthsPerYear : st.month,
+                                 st.year);
+}
+static int WorldTime_GetDaysPerMonth() {
+    return s_BindingsWorldTime ? static_cast<int>(s_BindingsWorldTime->GetCalendarConfig().daysPerMonth) : 30;
+}
+static int WorldTime_GetMonthsPerYear() {
+    return s_BindingsWorldTime ? static_cast<int>(s_BindingsWorldTime->GetCalendarConfig().monthsPerYear) : 12;
+}
 
 // --- the forecast -----------------------------------------------------------
 // Weather is a pure function of the world seed and the date, so a script can ask
@@ -215,8 +251,11 @@ static int WorldTime_GetWeatherOn(int dayOfYear) {
     if (!s_BindingsSeasonal || !s_BindingsWorldTime) return 0;
     Effects::WorldTimeState probe = s_BindingsWorldTime->GetState();
     probe.dayOfYear = static_cast<u32>(dayOfYear < 1 ? 1 : dayOfYear);
-    // The season has to follow the day being asked about, not the day it is.
-    const u32 daysPerSeason = 30;
+    // The season has to follow the day being asked about, not the day it is, and
+    // it has to come from the calendar. This was a flat 30, which only agrees
+    // with the clock on a calendar of one month per season: on the default
+    // twelve-month year it called day 61, which is March and spring, fall.
+    const u32 daysPerSeason = MonthsPerSeason() * s_BindingsWorldTime->GetCalendarConfig().daysPerMonth;
     probe.season = static_cast<Effects::Season>(((probe.dayOfYear - 1) / daysPerSeason) % 4);
     return static_cast<int>(s_BindingsSeasonal->WeatherOn(probe));
 }
@@ -309,6 +348,14 @@ void RegisterWeatherBindings(asIScriptEngine* engine) {
         ENJIN_AS_FN(WorldTime_GetDayOfYear), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void WorldTime_SetDate(int, int, int)",
         ENJIN_AS_FN(WorldTime_SetDate), ENJIN_AS_CALL_CDECL));
+    // The shape of the year, so a game whose year is not twelve months of thirty
+    // days can number its days and have the clock agree.
+    AS_CHECK(engine->RegisterGlobalFunction("void WorldTime_SetCalendar(int, int)",
+        ENJIN_AS_FN(WorldTime_SetCalendar), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int WorldTime_GetDaysPerMonth()",
+        ENJIN_AS_FN(WorldTime_GetDaysPerMonth), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int WorldTime_GetMonthsPerYear()",
+        ENJIN_AS_FN(WorldTime_GetMonthsPerYear), ENJIN_AS_CALL_CDECL));
 
     // The forecast, which only means anything because the weather is a pure
     // function of the seed and the date.

@@ -6,6 +6,7 @@
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Platform/Paths.h"
 #include <nlohmann/json.hpp>
+#include "Enjin/Scripting/ScriptBindings.h"
 #include <fstream>
 #include <filesystem>
 #include "Enjin/GUI/UIFontRegistry.h"
@@ -105,6 +106,8 @@ bool SceneManager::LoadProject(const std::string& manifestPath) {
             const std::filesystem::path dir =
                 std::filesystem::absolute(std::filesystem::path(manifestPath), ec).parent_path();
             if (!ec) GUI::UIFontRegistry::Get().SetRoot(dir.string());
+            // And where a script's File_ReadText looks, for the same reason.
+            if (!ec) Scripting::SetBindingsFileRoot(dir.string());
         }
         m_ProjectRoot = std::filesystem::path(manifestPath).parent_path().string();
         m_ProjectName = root.value("projectName", "Untitled Project");

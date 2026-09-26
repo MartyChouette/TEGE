@@ -239,6 +239,9 @@ public:
         // face. BuildPipeline copies the whole assets/ tree next to the exe, so
         // the same project-relative path the editor authored resolves here.
         Enjin::GUI::UIFontRegistry::Get().SetRoot(exeDir);
+        // Loose files a script reads (File_ReadText) sit beside the exe too:
+        // a player's own year file goes in years/ next to Shells.exe.
+        Enjin::Scripting::SetBindingsFileRoot(exeDir);
 
         if (fs::exists(pakPath)) {
             // Packed mode — open .enjpak (try with default key, then empty key for PackedOpen)

@@ -55,6 +55,8 @@ void RegisterRenderBindings(asIScriptEngine* engine);
 void RegisterNoiseBindings(asIScriptEngine* engine);
 void RegisterSaveBindings(asIScriptEngine* engine);
 void RegisterWeatherBindings(asIScriptEngine* engine);
+// File_* and Json_*: loose files under the game root, read only (ScriptBindings_Files.cpp).
+void RegisterFileBindings(asIScriptEngine* engine);
 void RegisterGameplayBindings(asIScriptEngine* engine);
 void RegisterUIBindings(asIScriptEngine* engine);
 void RegisterParticleBindings(asIScriptEngine* engine);
@@ -133,6 +135,13 @@ void SetBindingsPostProcessing(Renderer::PostProcessing* postProcessing);
 void SetBindingsSaveSystem(Gameplay::TieredSaveSystem* sys);
 void SetBindingsWeather(Effects::WeatherSystem* weather);
 void SetBindingsWind(Effects::WindSystem* wind);
+// Where File_* resolves a relative path: the project folder in the editor, the
+// exe's folder in a built game. Set by SceneManager::LoadProject and by the
+// desktop player, next to the font root. Empty means File_* reads nothing.
+void SetBindingsFileRoot(const std::string& absoluteRoot);
+// Drops every document Json_Parse handed out. Called when the scripts shut
+// down, so a handle does not outlive the run that parsed it.
+void ClearBindingsJsonDocuments();
 void SetBindingsWorldTime(Effects::WorldTimeSystem* time,
                           Effects::SeasonalWeatherSystem* seasonal);
 void SetBindingsQuestSystem(Gameplay::QuestSystem* quest);

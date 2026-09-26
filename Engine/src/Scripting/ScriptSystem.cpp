@@ -598,6 +598,8 @@ void ScriptSystem::ShutdownAllScripts() {
     // delegates survive at ref count 1 to the engine's shutdown GC ("GC cannot
     // destroy $func" spam + a close hitch), and listeners leak across Play/Stop.
     Scripting::ClearBindingsEventListeners();
+    // Json_Parse handles belong to the run that parsed them.
+    Scripting::ClearBindingsJsonDocuments();
     // The script clock restarts with the scripts. Without this a second Play in
     // the editor continues the first run's Time_GetTime().
     Scripting::ResetBindingsTime();

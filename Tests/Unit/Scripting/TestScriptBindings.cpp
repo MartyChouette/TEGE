@@ -4,7 +4,11 @@
 #include "Enjin/Scripting/ScriptEvents.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/Platform/Input.h"
+#include "Enjin/Effects/WorldTime.h"
+#include "Enjin/Effects/SeasonalWeather.h"
 #include <angelscript.h>
+#include <filesystem>
+#include <fstream>
 #include <string>
 
 using namespace Enjin;
@@ -1041,6 +1045,160 @@ ENJIN_TEST(GameplayComponentBindings, RegisteredWithCorrectSignatures) {
     ENJIN_ASSERT_TRUE(engine.CompileScriptFromMemory("gameplay_component_bindings", src));
 
     engine.Shutdown();
+}
+
+// ===========================================================================
+// Loose files, JSON, and the shape of the year
+//
+// The seam a game uses to read a calendar it did not pack. Shells keeps its year
+// in years/*.json beside the exe so a player can drop their own in; before
+// these existed a script could not open a file or read JSON at all.
+// ===========================================================================
+
+namespace {
+
+// Compile `source` and run its `int main()`. Returns the value, or -9999 when
+// the script did not compile or did not finish.
+int RunIntMain(ScriptEngine& engine, const char* module, const std::string& source) {
+    if (!engine.CompileScriptFromMemory(module, source)) return -9999;
+    asIScriptModule* mod = engine.GetASEngine()->GetModule(module);
+    if (!mod) return -9999;
+    asIScriptFunction* fn = mod->GetFunctionByDecl("int main()");
+    if (!fn) return -9999;
+    asIScriptContext* ctx = engine.AcquireContext();
+    int result = -9999;
+    if (ctx->Prepare(fn) >= 0 && ctx->Execute() == asEXECUTION_FINISHED)
+        result = static_cast<int>(ctx->GetReturnDWord());
+    engine.ReturnContext(ctx);
+    return result;
+}
+
+} // namespace
+
+ENJIN_TEST(BindingRegistration, FilesJsonAndCalendarAreRegistered) {
+    ScriptEngine engine;
+    ENJIN_ASSERT_TRUE(InitWithBindings(engine));
+    asIScriptEngine* as = engine.GetASEngine();
+
+    ENJIN_EXPECT_TRUE(HasGlobalFunction(as, "string File_ReadText(const string&in)"));
+    ENJIN_EXPECT_TRUE(HasGlobalFunction(as, "bool File_Exists(const string&in)"));
+    ENJIN_EXPECT_TRUE(HasGlobalFunction(as, "int Json_Parse(const string&in)"));
+    ENJIN_EXPECT_TRUE(HasGlobalFunction(as, "string Json_GetKeyAt(int, const string&in, int)"));
+    ENJIN_EXPECT_TRUE(HasGlobalFunction(as, "void WorldTime_SetCalendar(int, int)"));
+    engine.Shutdown();
+}
+
+ENJIN_TEST(FileBindings, JsonReadsByPointerAndFallsBackOnTypos) {
+    // A hand-edited year file: a day keyed by number, a string where a number
+    // belongs. The typo must come back as the fallback, not as garbage.
+    ScriptEngine engine;
+    ENJIN_ASSERT_TRUE(InitWithBindings(engine));
+
+    const int r = RunIntMain(engine, "json_test", R"(
+        int main() {
+            int doc = Json_Parse("""{"seed":"shells-1","yearLength":"120","days":{"5":{"weather":"rain"},"22":{"weather":"clear"}}}""");
+            if (doc <= 0) return 1;
+            if (Json_GetString(doc, "/seed", "") != "shells-1") return 2;
+            if (Json_GetInt(doc, "/yearLength", -1) != -1) return 3;
+            if (Json_GetCount(doc, "/days") != 2) return 4;
+            if (Json_GetKeyAt(doc, "/days", 0) != "22") return 5;   // sorted, not file order
+            if (Json_GetString(doc, "/days/5/weather", "") != "rain") return 6;
+            if (Json_Has(doc, "/days/6")) return 7;
+            if (Json_GetString(doc, "/days/6/weather", "none") != "none") return 8;
+            Json_Free(doc);
+            if (Json_Has(doc, "/seed")) return 9;
+            if (Json_Parse("{ not json") != 0) return 10;
+            return 0;
+        }
+    )");
+    ENJIN_EXPECT_EQ(r, 0);
+    engine.Shutdown();
+}
+
+ENJIN_TEST(FileBindings, ReadsUnderTheRootAndNothingOutsideIt) {
+    namespace fs = std::filesystem;
+    const fs::path root = fs::temp_directory_path() / "enjin_file_bindings_test";
+    fs::create_directories(root / "years");
+    { std::ofstream(root / "years" / "y.json") << "{\"seed\":\"kelp-7\"}"; }
+    { std::ofstream(root.parent_path() / "enjin_outside_root.txt") << "secret"; }
+    SetBindingsFileRoot(root.string());
+
+    ScriptEngine engine;
+    ENJIN_ASSERT_TRUE(InitWithBindings(engine));
+    const int r = RunIntMain(engine, "file_test", R"(
+        int main() {
+            if (!File_Exists("years/y.json")) return 1;
+            int doc = Json_Parse(File_ReadText("years/y.json"));
+            if (Json_GetString(doc, "/seed", "") != "kelp-7") return 2;
+            if (File_Exists("years/missing.json")) return 3;
+            if (File_ReadText("../enjin_outside_root.txt") != "") return 4;
+            if (File_Exists("../enjin_outside_root.txt")) return 5;
+            return 0;
+        }
+    )");
+    ENJIN_EXPECT_EQ(r, 0);
+    engine.Shutdown();
+
+    SetBindingsFileRoot("");
+    std::error_code ec;
+    fs::remove_all(root, ec);
+    fs::remove(root.parent_path() / "enjin_outside_root.txt", ec);
+}
+
+ENJIN_TEST(FileBindings, AFourSeasonYearNumbersItsDaysOneToOneTwenty) {
+    // Shells' year is four seasons of thirty days. On the default twelve-month
+    // calendar its day 31 was the engine's first of February; with the calendar
+    // set to four months of thirty it is the first of summer, as the file means.
+    Effects::WorldTimeSystem time;
+    Effects::SeasonalWeatherSystem seasonal;
+    SetBindingsWorldTime(&time, &seasonal);
+
+    ScriptEngine engine;
+    ENJIN_ASSERT_TRUE(InitWithBindings(engine));
+    const int r = RunIntMain(engine, "calendar_test", R"(
+        int main() {
+            WorldTime_SetCalendar(30, 4);
+            if (WorldTime_GetMonthsPerYear() != 4) return 1;
+            WorldTime_SetDate(1, 2, 1);
+            if (WorldTime_GetDayOfYear() != 31) return 2;
+            if (WorldTime_GetSeason() != 1) return 3;
+            WorldTime_SetDate(30, 4, 1);
+            if (WorldTime_GetDayOfYear() != 120) return 4;
+            if (WorldTime_GetSeason() != 3) return 5;
+            WorldTime_SetSeason(1);                       // was month 6 of 4
+            if (WorldTime_GetMonth() != 2) return 6;
+            WorldTime_SetCalendar(30, 12);
+            WorldTime_SetSeason(1);                       // default calendar unchanged
+            if (WorldTime_GetMonth() != 6) return 7;
+            return 0;
+        }
+    )");
+    ENJIN_EXPECT_EQ(r, 0);
+    engine.Shutdown();
+    SetBindingsWorldTime(nullptr, nullptr);
+}
+
+ENJIN_TEST(FileBindings, ShrinkingTheCalendarClampsTheDate) {
+    // The default date is June; a four-month year has no June. The date has to
+    // land somewhere real on the same frame, not at the next midnight.
+    Effects::WorldTimeSystem time;
+    time.SetTime(12.0f, 15, 6, 1);
+    SetBindingsWorldTime(&time, nullptr);
+
+    ScriptEngine engine;
+    ENJIN_ASSERT_TRUE(InitWithBindings(engine));
+    const int r = RunIntMain(engine, "clamp_test", R"(
+        int main() {
+            WorldTime_SetCalendar(30, 4);
+            if (WorldTime_GetMonth() != 4) return 1;
+            if (WorldTime_GetDay() != 15) return 2;
+            if (WorldTime_GetDayOfYear() != 105) return 3;
+            return 0;
+        }
+    )");
+    ENJIN_EXPECT_EQ(r, 0);
+    engine.Shutdown();
+    SetBindingsWorldTime(nullptr, nullptr);
 }
 
 ENJIN_TEST_MAIN()

@@ -260,6 +260,38 @@ Lists:
 - `string DataAsset_GetStringAt(const string &in asset, const string &in field, int index)`
 - `float DataAsset_GetFloatAt(const string &in asset, const string &in field, int index)`
 
+## Loose Files and JSON
+
+For data the game did not pack: files a player drops beside the exe, or edits
+by hand. Read only. Paths are relative to the game root, which is the project
+folder in the editor and the exe's folder in a built game; absolute paths and
+`..` are refused. The web player sets no root, so these read nothing there.
+
+- `bool File_Exists(const string &in path)`
+- `string File_ReadText(const string &in path)` — the whole file, or `""` when it is missing, unreadable, over 8 MB or outside the root.
+
+JSON is read by handle and [JSON pointer](https://www.rfc-editor.org/rfc/rfc6901) (`"/days/5/weather"`; `""` is the whole document). Every getter takes a fallback and answers it when the value is missing or the wrong type, so a hand-edited file with a typo degrades instead of failing.
+
+- `int Json_Parse(const string &in text)` — a handle above zero, or `0` if the text is not JSON (the parse error and its position go to the log).
+- `void Json_Free(int doc)` — handles are also dropped when the scripts shut down.
+- `bool Json_Has(int doc, const string &in pointer)`
+- `string Json_GetString(int doc, const string &in pointer, const string &in fallback)`
+- `int Json_GetInt(int doc, const string &in pointer, int fallback)`
+- `float Json_GetFloat(int doc, const string &in pointer, float fallback)`
+- `bool Json_GetBool(int doc, const string &in pointer, bool fallback)`
+- `int Json_GetCount(int doc, const string &in pointer)` — elements in an array or keys in an object, else 0.
+- `string Json_GetKeyAt(int doc, const string &in pointer, int index)` — an object's keys, in sorted order, for walking one whose keys you do not know.
+
+```angelscript
+int doc = Json_Parse(File_ReadText("years/the-first-year.json"));
+int n = Json_GetCount(doc, "/days");
+for (int i = 0; i < n; i++) {
+    string day = Json_GetKeyAt(doc, "/days", i);
+    string sky = Json_GetString(doc, "/days/" + day + "/weather", "");
+}
+Json_Free(doc);
+```
+
 Every getter takes the asset name first and the field name second. Field types
 are `String`, `Float`, `Int`, `Bool`, `Vector3`, `Vector4`, `StringArray` and
 `FloatArray`, and all eight are reachable from script.
@@ -524,6 +556,7 @@ Permanent key-value storage that survives across runs and save slot deletion.
 - `Weather_IsLightning()` — True if lightning is currently active.
 - `Weather_LightningJustFired()` — True for one frame when a lightning bolt triggers (use for SFX).
 - `Weather_SetLightningInterval(float minSec, float maxSec)` — Set random lightning interval range.
+- `WorldTime_SetCalendar(int daysPerMonth, int monthsPerYear)` — the shape of the year; the default is 30 and 12. Seasons are a quarter of the months each, so `WorldTime_SetCalendar(30, 4)` makes every month a season and `WorldTime_GetDayOfYear()` run 1 to 120. The current date is clamped into the new shape. `WorldTime_GetDaysPerMonth()` and `WorldTime_GetMonthsPerYear()` read it back.
 
 ## Particle System
 
@@ -893,7 +926,7 @@ Per-entity (Braid-style) and scene-wide (Sands of Time-style) time rewind.
 
 ## Every registered binding
 
-1335 global functions, grouped by where they are registered. These lines are
+1349 global functions, grouped by where they are registered. These lines are
 GENERATED from the registration strings themselves, so a signature here is the
 one the engine accepts -- if it disagrees with the prose above, the prose is
 wrong. Regenerate with `python tools/gen_scripting_api.py` after adding a
@@ -2150,6 +2183,20 @@ merely absent.
 - `void Scene_Restart()`
 - `void Scene_SetEntityName(uint64, const string &in)`
 
+### ScriptBindings_Files.cpp  (11)
+
+- `bool File_Exists(const string &in)`
+- `bool Json_GetBool(int, const string &in, bool)`
+- `bool Json_Has(int, const string &in)`
+- `float Json_GetFloat(int, const string &in, float)`
+- `int Json_GetCount(int, const string &in)`
+- `int Json_GetInt(int, const string &in, int)`
+- `int Json_Parse(const string &in)`
+- `string File_ReadText(const string &in)`
+- `string Json_GetKeyAt(int, const string &in, int)`
+- `string Json_GetString(int, const string &in, const string &in)`
+- `void Json_Free(int)`
+
 ### ScriptBindings_Physics2D.cpp  (20)
 
 - `Vector2 Physics2D_GetGravity()`
@@ -2308,7 +2355,7 @@ merely absent.
 - `void Water_SustainedPressure(uint64, float, float, float, float)`
 - `void Water_Wake(uint64, float, float, float, float, float)`
 
-### Weather  (38)
+### Weather  (41)
 
 - `bool Weather_IsLightning()`
 - `bool Weather_LightningJustFired()`
@@ -2323,7 +2370,9 @@ merely absent.
 - `int WorldTime_GetAuthoredDayCount()`
 - `int WorldTime_GetDay()`
 - `int WorldTime_GetDayOfYear()`
+- `int WorldTime_GetDaysPerMonth()`
 - `int WorldTime_GetMonth()`
+- `int WorldTime_GetMonthsPerYear()`
 - `int WorldTime_GetSeason()`
 - `int WorldTime_GetWeatherOn(int)`
 - `int WorldTime_GetYear()`
@@ -2342,6 +2391,7 @@ merely absent.
 - `void WorldTime_AdvanceSeason()`
 - `void WorldTime_ClearAuthoredWeather()`
 - `void WorldTime_SetAuthoredWeather(int, int)`
+- `void WorldTime_SetCalendar(int, int)`
 - `void WorldTime_SetDate(int, int, int)`
 - `void WorldTime_SetSeason(int)`
 - `void WorldTime_SetSeasonalWeather(bool)`

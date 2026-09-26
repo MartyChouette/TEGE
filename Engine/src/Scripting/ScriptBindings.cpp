@@ -1417,6 +1417,7 @@ void RegisterAllBindings(asIScriptEngine* engine) {
     RegisterDataAssetBindings(engine);
     RegisterSaveBindings(engine);
     RegisterWeatherBindings(engine);
+    RegisterFileBindings(engine);
     RegisterGameplayBindings(engine);
     RegisterUIBindings(engine);
     RegisterParticleBindings(engine);
