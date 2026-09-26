@@ -2297,12 +2297,16 @@ public:
                     m_RenderSystem->RecordRTFrame(false);
                     // Jitter is only correct when something will resolve it.
                     // TAA does, below, now that it is given a colour input.
+                    // An upscaler does NOT here: only the editor dispatches one,
+                    // so counting "an upscaler is selected" jittered a shipped
+                    // game with nothing to resolve it, and it shimmered with FSR
+                    // chosen and TAA off (SD-13, the harm 7ca2683f fixed and
+                    // 727fce25 brought back). Count it once the player runs it.
                     {
                         const bool taaWillResolve =
                             m_PostProcessing && m_PostProcessing->IsInitialized() &&
                             m_PostProcessing->IsTAAEnabled();
-                        m_RenderSystem->SetTemporalResolveActive(
-                            m_RenderSystem->IsUpscalerActive() || taaWillResolve);
+                        m_RenderSystem->SetTemporalResolveActive(taaWillResolve);
                     }
                     m_RenderSystem->ApplyCameraClearColor(m_ScenePPTarget.get());
                     // Frustum + occlusion phase 0, outside any render pass;
