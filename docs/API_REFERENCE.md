@@ -58,38 +58,6 @@ renderer.BeginFrame();
 renderer.EndFrame();
 ```
 
-### RenderPipeline
-
-```cpp
-RenderPipeline pipeline(&renderer);
-
-// Register hooks
-pipeline->RegisterHook(RenderEventType::PreDraw, [](RenderEvent& event) {
-    // Custom logic
-});
-
-// Materials
-u32 materialId = pipeline->RegisterMaterial({
-    .name = "PBR",
-    .shaderPath = "shaders/pbr.frag",
-    .floatParams = {{"metallic", 0.5f}}
-});
-
-// Pipeline state
-PipelineState state;
-state.lineWidth = 2.0f;
-pipeline->SetPipelineState(state);
-```
-
-### Rendering Techniques
-
-```cpp
-RenderingTechniqueManager techniques;
-techniques.RegisterTechnique(std::make_unique<ForwardRendering>());
-techniques.SwitchTechnique("ForwardRendering");
-techniques.Render(deltaTime);
-```
-
 ### GPU Culling
 
 ```cpp
@@ -417,13 +385,11 @@ silhouette and rotates about its own pivot.
 
 ## Water System
 
-```cpp
-WaterRenderer water;
-water.Initialize(&renderer);
-water.SetWaterLevel(0.0f);
-water.SetWaveAmplitude(0.5f);
-water.Render(deltaTime, cameraPosition);
-```
+Water is placed as components, not driven from a renderer class:
+`Water3DComponent` for open surface water (its `settings.position` is where the
+water is; keep the entity transform at the origin) and `WaterVolumeComponent`
+for pools and ponds, with an optional `BoundaryPolygonComponent` outline. Both
+have Entity-menu entries and inspector panels.
 
 ## GUI System
 

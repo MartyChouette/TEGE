@@ -88,10 +88,9 @@ if(ENJIN_PLATFORM_WEB)
          "src/Renderer/ClusteredLighting*.cpp"
          "src/Renderer/Texture.cpp" "src/Renderer/RenderTarget.cpp"
          "src/Renderer/SVGLoader.cpp" "src/Renderer/VectorTessellator.cpp" "src/Renderer/Materials/*.cpp"
-         "src/Renderer/FrameGraph/*.cpp" "src/Renderer/RenderGraph/*.cpp"
-         "src/Renderer/RenderPipeline/*.cpp" "src/Renderer/Techniques/*.cpp"
+         "src/Renderer/FrameGraph/*.cpp"
          "src/Renderer/VRS/*.cpp" "src/Renderer/HaltonSequence.cpp"
-         "src/Renderer/RenderPass.cpp" "src/Renderer/Scripting/*.cpp" "src/Renderer/ShaderManager.cpp"
+         "src/Renderer/RenderPass.cpp" "src/Renderer/ShaderManager.cpp"
          "src/Renderer/VolumetricFog.cpp" "src/Renderer/ShadowAtlas.cpp"
          "src/Renderer/DDGIProbeSystem.cpp" "src/Effects/GPUParticleSystem.cpp"
          "src/Effects/WeatherRenderer.cpp" "src/Effects/ParticleRenderer.cpp"
@@ -102,8 +101,7 @@ if(ENJIN_PLATFORM_WEB)
          # ScriptBindings_Render/_AudioGraph compile on web ON PURPOSE: every
          # script-visible symbol must register on every platform or any .as
          # module mentioning one fails to compile (Render_SetRainActive bug).
-         "src/Editor/*.cpp" "src/App/*.cpp"
-         "src/Water/WaterRenderer.cpp")
+         "src/Editor/*.cpp" "src/App/*.cpp")
     list(REMOVE_ITEM ENGINE_SOURCES ${VULKAN_SOURCES})
 
     # ScenePicker is a RUNTIME utility that happens to live under src/Editor/.
