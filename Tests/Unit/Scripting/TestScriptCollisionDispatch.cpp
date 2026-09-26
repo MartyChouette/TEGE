@@ -36,7 +36,9 @@ namespace fs = std::filesystem;
 class FakeBackend3D : public Physics::IPhysicsBackend {
 public:
     std::vector<Physics::CollisionEvent> events;
+    std::vector<Physics::CollisionPair> staying;
 
+    const std::vector<Physics::CollisionPair>& GetStayingContacts() const override { return staying; }
     void SetWorld(ECS::World*) override {}
     void Update(f32) override {}
     void SetGravity(const Math::Vector3&) override {}
@@ -59,6 +61,9 @@ public:
 class FakeBackend2D : public Physics::IPhysicsBackend2D {
 public:
     CollisionCallback onEnter, onExit, onSensorEnter, onSensorExit;
+    std::vector<Physics::CollisionPair> staying;
+
+    const std::vector<Physics::CollisionPair>& GetStayingContacts() const override { return staying; }
 
     void Initialize(ECS::World*) override {}
     void Update(f32) override {}
@@ -87,11 +92,13 @@ void WriteProbe(const fs::path& p) {
       << "    int collisionExit = 0;\n"
       << "    int triggerEnter = 0;\n"
       << "    int triggerExit = 0;\n"
+      << "    int collisionStay = 0;\n"
       << "    uint64 lastOther = 0;\n"
       << "    void OnCollisionEnter(uint64 other) { collisionEnter += 1; lastOther = other; }\n"
       << "    void OnCollisionExit(uint64 other)  { collisionExit += 1;  lastOther = other; }\n"
       << "    void OnTriggerEnter(uint64 other)   { triggerEnter += 1;   lastOther = other; }\n"
       << "    void OnTriggerExit(uint64 other)    { triggerExit += 1;    lastOther = other; }\n"
+      << "    void OnCollisionStay(uint64 other)  { collisionStay += 1;  lastOther = other; }\n"
       << "}\n";
 }
 
@@ -250,6 +257,30 @@ ENJIN_TEST(ScriptCollisionDispatch, Collision2DCallbacksReachScripts) {
         ENJIN_EXPECT_EQ(fx.Count(e, "triggerExit"), 1);
     }
     ENJIN_EXPECT_EQ(fx.LastOther(fx.a), static_cast<u64>(fx.b));
+}
+
+// SD-2: OnCollisionStay was documented in the manual, the FAQ and the
+// TegeBehavior template, and nothing ever called it.
+ENJIN_TEST(ScriptCollisionDispatch, StayReachesBothScriptsFromBothBackends) {
+    // Arrange: one staying pair on each backend.
+    Fixture fx("stay");
+    FakeBackend3D physics;
+    FakeBackend2D physics2D;
+    physics.staying.push_back(Physics::CollisionPair::Of(fx.a, fx.b));
+    physics2D.staying.push_back(Physics::CollisionPair::Of(fx.b, fx.a));
+
+    // Act: one frame's dispatch.
+    Gameplay::GameplayLoop::DispatchCollisionStay(&physics, &physics2D, &fx.system);
+
+    // Assert: each entity heard it twice (once per backend), about the other.
+    ENJIN_EXPECT_EQ(fx.Count(fx.a, "collisionStay"), 2);
+    ENJIN_EXPECT_EQ(fx.Count(fx.b, "collisionStay"), 2);
+    ENJIN_EXPECT_EQ(fx.LastOther(fx.a), static_cast<u64>(fx.b));
+    ENJIN_EXPECT_EQ(fx.LastOther(fx.b), static_cast<u64>(fx.a));
+
+    // No script system: nothing delivered, nothing crashes.
+    Gameplay::GameplayLoop::DispatchCollisionStay(&physics, &physics2D, nullptr);
+    ENJIN_EXPECT_EQ(fx.Count(fx.a, "collisionStay"), 2);
 }
 
 ENJIN_TEST_MAIN()

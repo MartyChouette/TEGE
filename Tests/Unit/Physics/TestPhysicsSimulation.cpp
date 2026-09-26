@@ -771,4 +771,106 @@ ENJIN_TEST(PhysicsSim3D, AResting3DContactDoesNotExitWhenItFallsAsleep) {
     ENJIN_EXPECT_EQ(laterExits, 1);
 }
 
+// ===========================================================================
+// Staying contacts: what OnCollisionStay reports (SD-2)
+// ===========================================================================
+
+static bool HasPair(const std::vector<Physics::CollisionPair>& pairs, ECS::Entity a, ECS::Entity b) {
+    const Physics::CollisionPair want = Physics::CollisionPair::Of(a, b);
+    for (const auto& p : pairs) if (p == want) return true;
+    return false;
+}
+
+ENJIN_TEST(PhysicsSim3D, ARestingBoxStaysOnTheFloorAsleepOrAwake) {
+    // Arrange: a box dropped onto a static floor.
+    ECS::World world;
+    ECS::Entity floor = world.CreateEntity();
+    {
+        ECS::TransformComponent t;
+        world.AddComponent<ECS::TransformComponent>(floor, t);
+        ECS::BoxColliderComponent bc;
+        bc.size = Math::Vector3(50.0f, 1.0f, 50.0f);
+        world.AddComponent<ECS::BoxColliderComponent>(floor, bc);
+    }
+    ECS::Entity box = world.CreateEntity();
+    {
+        ECS::TransformComponent t;
+        t.position = Math::Vector3(0.0f, 1.2f, 0.0f);
+        world.AddComponent<ECS::TransformComponent>(box, t);
+        ECS::BoxColliderComponent bc;
+        bc.size = Math::Vector3(1.0f, 1.0f, 1.0f);
+        world.AddComponent<ECS::BoxColliderComponent>(box, bc);
+        ECS::RigidbodyComponent rb;
+        rb.bodyType = ECS::RigidbodyComponent::BodyType::Dynamic;
+        rb.mass = 1.0f;
+        world.AddComponent<ECS::RigidbodyComponent>(box, rb);
+    }
+    auto backend = Physics::CreatePhysicsBackend(Physics::PhysicsBackendType::Auto);
+    ENJIN_ASSERT_NOT_NULL(backend.get());
+    backend->SetWorld(&world);
+    backend->SetGravity(Math::Vector3(0.0f, -9.81f, 0.0f));
+
+    // Act: run until it has slept a second, counting the frames it stayed.
+    int stayedAwake = 0, stayedAsleep = 0, asleepFrames = 0;
+    for (int i = 0; i < 600 && asleepFrames < 60; ++i) {
+        backend->Update(1.0f / 60.0f);
+        backend->ClearPendingCollisionEvents();
+        const bool asleep = world.GetComponent<ECS::RigidbodyComponent>(box)->isSleeping;
+        if (asleep) ++asleepFrames;
+        if (HasPair(backend->GetStayingContacts(), floor, box)) (asleep ? stayedAsleep : stayedAwake)++;
+    }
+
+    // Assert: it stayed while settling and went on staying once asleep.
+    ENJIN_ASSERT_TRUE(asleepFrames >= 60);
+    ENJIN_EXPECT_TRUE(stayedAwake > 0);
+    ENJIN_EXPECT_EQ(stayedAsleep, asleepFrames);
+
+    // Thrown clear, it stops staying.
+    backend->ForceSetBodyState(box, Math::Vector3(0.0f, 10.0f, 0.0f), Math::Quaternion::Identity(),
+                               Math::Vector3(0.0f, 0.0f, 0.0f), Math::Vector3(0.0f, 0.0f, 0.0f));
+    backend->Update(1.0f / 60.0f);
+    backend->Update(1.0f / 60.0f);
+    ENJIN_EXPECT_FALSE(HasPair(backend->GetStayingContacts(), floor, box));
+}
+
+ENJIN_TEST(PhysicsSim2D, ARestingBodyStaysOnTheFloor) {
+    // Arrange: a 2D box dropped onto a static floor.
+    ECS::World world;
+    ECS::Entity floor = world.CreateEntity();
+    {
+        ECS::TransformComponent t;
+        world.AddComponent<ECS::TransformComponent>(floor, t);
+        Physics::Body2DComponent b;
+        b.isStatic = true;
+        b.shapeType = Physics::Shape2DType::Box;
+        b.box.halfExtents = Math::Vector2(25.0f, 0.5f);
+        world.AddComponent<Physics::Body2DComponent>(floor, b);
+    }
+    ECS::Entity box = world.CreateEntity();
+    {
+        ECS::TransformComponent t;
+        t.position = Math::Vector3(0.0f, 1.2f, 0.0f);
+        world.AddComponent<ECS::TransformComponent>(box, t);
+        Physics::Body2DComponent b;
+        b.shapeType = Physics::Shape2DType::Box;
+        b.box.halfExtents = Math::Vector2(0.5f, 0.5f);
+        world.AddComponent<Physics::Body2DComponent>(box, b);
+    }
+    auto backend = Physics::CreatePhysicsBackend2D(Physics::PhysicsBackendType::Auto);
+    ENJIN_ASSERT_NOT_NULL(backend.get());
+    backend->Initialize(&world);
+    backend->SetGravity(Math::Vector2(0.0f, -9.81f));
+
+    // Act: two seconds on the floor.
+    int stayed = 0;
+    for (int i = 0; i < 120; ++i) {
+        backend->Update(1.0f / 60.0f);
+        if (HasPair(backend->GetStayingContacts(), floor, box)) ++stayed;
+    }
+
+    // Assert: it stays for most of it (it has to land first), and is staying at the end.
+    ENJIN_EXPECT_TRUE(stayed > 90);
+    ENJIN_EXPECT_TRUE(HasPair(backend->GetStayingContacts(), floor, box));
+}
+
 ENJIN_TEST_MAIN()

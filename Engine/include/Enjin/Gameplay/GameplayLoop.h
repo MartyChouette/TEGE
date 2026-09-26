@@ -119,6 +119,15 @@ namespace GameplayLoop {
                                               std::vector<ECS::Entity>& deferredDestroys,
                                               Scripting::ScriptSystem* scriptSystem = nullptr);
 
+    // OnCollisionStay, once a frame, for every solid contact that was already
+    // touching the step before (both backends' GetStayingContacts), to both
+    // entities, each seeing the other as `other`. Triggers are not included.
+    // ScriptSystem had the handler and nothing called it, while the manual,
+    // the FAQ and the TegeBehavior template all promised it (SD-2).
+    ENJIN_API void DispatchCollisionStay(Physics::IPhysicsBackend* physics,
+                                         Physics::IPhysicsBackend2D* physics2D,
+                                         Scripting::ScriptSystem* scriptSystem);
+
     // Wire 2D physics collision callbacks to scripts and gameplay processing.
     // Sets up OnCollisionEnter/Exit and OnSensorEnter/Exit callbacks on the 2D physics backend.
     // The callbacks capture world, vsSystem, scriptSystem and deferredDestroys by

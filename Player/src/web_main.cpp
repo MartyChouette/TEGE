@@ -1874,6 +1874,7 @@ public:
                 Enjin::Gameplay::GameplayLoop::DispatchCollisionEvents3D(
                     m_World.get(), m_Physics.get(), &m_VisualScriptSystem, deltaTime, deferred, &m_ScriptSystem);
             }
+            Enjin::Gameplay::GameplayLoop::DispatchCollisionStay(m_Physics.get(), m_Physics2D.get(), &m_ScriptSystem);
             m_FootstepSystem.Update(m_World.get(), deltaTime);
             m_SubtitleSystem.Update(deltaTime);
             m_AlternativeInput.Update(deltaTime);

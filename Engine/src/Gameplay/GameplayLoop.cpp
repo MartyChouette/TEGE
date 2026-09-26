@@ -783,6 +783,20 @@ void DispatchCollisionEvents3D(ECS::World* world,
     physics->ClearPendingCollisionEvents();
 }
 
+void DispatchCollisionStay(Physics::IPhysicsBackend* physics,
+                           Physics::IPhysicsBackend2D* physics2D,
+                           Scripting::ScriptSystem* scriptSystem) {
+    if (!scriptSystem) return;
+    auto deliver = [scriptSystem](const std::vector<Physics::CollisionPair>& pairs) {
+        for (const Physics::CollisionPair& p : pairs) {
+            scriptSystem->OnCollisionStay(p.first, p.second);
+            scriptSystem->OnCollisionStay(p.second, p.first);
+        }
+    };
+    if (physics) deliver(physics->GetStayingContacts());
+    if (physics2D) deliver(physics2D->GetStayingContacts());
+}
+
 void Wire2DCollisionCallbacks(Physics::IPhysicsBackend2D* physics2D,
                               ECS::World* world,
                               ECS::VisualScriptSystem* vsSystem,

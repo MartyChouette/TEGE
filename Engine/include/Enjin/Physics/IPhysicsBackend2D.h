@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Enjin/Physics/CollisionPair.h"
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Math/Vector.h"
 #include "Enjin/ECS/Entity.h"
@@ -58,6 +59,13 @@ public:
     virtual void SetOnCollisionExit(CollisionCallback cb) = 0;
     virtual void SetOnSensorEnter(CollisionCallback cb) = 0;
     virtual void SetOnSensorExit(CollisionCallback cb) = 0;
+
+    // Solid contacts (no sensors) touching at the end of the last step AND the
+    // step before it, for OnCollisionStay. See IPhysicsBackend.
+    virtual const std::vector<CollisionPair>& GetStayingContacts() const {
+        static const std::vector<CollisionPair> kNone;
+        return kNone;
+    }
 
     // CCD
     virtual void SetCCDEnabled(bool enabled) = 0;

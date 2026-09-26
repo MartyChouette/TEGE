@@ -62,6 +62,8 @@ public:
     std::vector<ECS::Entity> OverlapBox(const Math::Vector3& center, const Math::Vector3& halfExtents, u32 layerMask = 0xFFFFFFFF) override;
 
     const std::vector<CollisionEvent>& GetPendingCollisionEvents() const override;
+
+    const std::vector<CollisionPair>& GetStayingContacts() const override { return m_StayingContacts; }
     void ClearPendingCollisionEvents() override;
 
     ConstraintSolver* GetConstraintSolver() override { return nullptr; } // Jolt handles constraints internally
@@ -145,6 +147,7 @@ private:
     // Collision event tracking
     CollisionPairSet m_PreviousCollisionPairs;
     CollisionPairSet m_CurrentCollisionPairs;
+    std::vector<CollisionPair> m_StayingContacts;   // see GetStayingContacts
     std::vector<CollisionEvent> m_PendingCollisionEvents;
 
     // Track which entities had bodies last frame for reconciliation

@@ -1162,7 +1162,7 @@ class TegeBehavior {
     // void OnEnable()                { }
     // void OnDisable()               { }
     // void OnCollisionEnter(uint64 other) { }
-    // void OnCollisionStay(uint64 other)  { }
+    // void OnCollisionStay(uint64 other)  { }  // each frame after Enter while touching; not triggers
     // void OnCollisionExit(uint64 other)  { }
     // void OnTriggerEnter(uint64 other)   { }
     // void OnTriggerExit(uint64 other)    { }

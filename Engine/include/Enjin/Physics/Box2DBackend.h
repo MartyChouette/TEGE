@@ -50,6 +50,7 @@ public:
     void SetOnCollisionExit(CollisionCallback cb) override;
     void SetOnSensorEnter(CollisionCallback cb) override;
     void SetOnSensorExit(CollisionCallback cb) override;
+    const std::vector<CollisionPair>& GetStayingContacts() const override { return m_StayingContacts; }
 
     void SetCCDEnabled(bool enabled) override;
 
@@ -101,6 +102,7 @@ private:
     // Contact tracking for enter/exit
     CollisionPairSet m_ActiveContacts;
     CollisionPairSet m_ActiveSensorContacts;
+    std::vector<CollisionPair> m_StayingContacts;   // see GetStayingContacts
 
     // Begin-touch contacts this frame (pollable companion to m_OnCollisionEnter)
     std::vector<Contact2D> m_FrameBeginContacts;

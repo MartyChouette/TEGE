@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Enjin/Physics/CollisionPair.h"
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Math/Vector.h"
 #include "Enjin/Math/Quaternion.h"
@@ -77,6 +78,15 @@ public:
     // Collision events
     virtual const std::vector<CollisionEvent>& GetPendingCollisionEvents() const = 0;
     virtual void ClearPendingCollisionEvents() = 0;
+
+    // Solid contacts (no triggers) touching at the end of the last step AND
+    // the step before it: what OnCollisionStay reports, once a frame. Kept out
+    // of the event queue on purpose, because its consumers read every
+    // non-Enter event as an Exit. A backend that cannot say returns none.
+    virtual const std::vector<CollisionPair>& GetStayingContacts() const {
+        static const std::vector<CollisionPair> kNone;
+        return kNone;
+    }
 
     // Constraint solver
     virtual ConstraintSolver* GetConstraintSolver() = 0;

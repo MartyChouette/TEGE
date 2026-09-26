@@ -3100,7 +3100,7 @@ Scripts can implement any of these methods:
 | `void OnEnable()` | When the script is enabled. |
 | `void OnDisable()` | When the script is disabled. |
 | `void OnCollisionEnter(Entity other)` | When a collision begins. |
-| `void OnCollisionStay(Entity other)` | While a collision persists. |
+| `void OnCollisionStay(Entity other)` | Once a frame while a collision persists, starting the frame after `OnCollisionEnter`. Solid colliders only; triggers have no Stay. Keeps firing while the bodies rest and sleep. |
 | `void OnCollisionExit(Entity other)` | When a collision ends. |
 | `void OnTriggerEnter(Entity other)` | When entering a trigger zone. |
 | `void OnTriggerExit(Entity other)` | When leaving a trigger zone. |

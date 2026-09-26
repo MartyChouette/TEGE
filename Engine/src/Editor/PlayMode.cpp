@@ -1170,6 +1170,7 @@ void PlayMode::Update(f32 deltaTime) {
         // Dispatch 3D collision events to visual scripts and gameplay systems
         Gameplay::GameplayLoop::DispatchCollisionEvents3D(
             m_World, m_Physics.get(), &m_VisualScriptSystem, deltaTime, m_DeferredDestroys, &m_ScriptSystem);
+        Gameplay::GameplayLoop::DispatchCollisionStay(m_Physics.get(), m_Physics2D.get(), &m_ScriptSystem);
 
         auto t1 = std::chrono::high_resolution_clock::now();
 

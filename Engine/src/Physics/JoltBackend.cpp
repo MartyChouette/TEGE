@@ -1575,6 +1575,16 @@ void JoltBackend::ProcessContactEvents() {
         }
     }
 
+    // Solid pairs touching now that were touching last step: OnCollisionStay.
+    // Built after the quiet pairs are kept, so a box asleep on the floor goes
+    // on reporting Stay, as it goes on touching.
+    m_StayingContacts.clear();
+    for (const CollisionPair& pair : m_CurrentCollisionPairs) {
+        if (!m_PreviousCollisionPairs.count(pair)) continue;
+        if (GetColliderInfo(pair.first).isTrigger || GetColliderInfo(pair.second).isTrigger) continue;
+        m_StayingContacts.push_back(pair);
+    }
+
     // Detect exits: pairs that were in previous frame but not current.
     // Exit events report the pair smaller handle first, which may differ from
     // the enter event's order. Consumers must not rely on entityA/entityB order.

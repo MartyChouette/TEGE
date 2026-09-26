@@ -1448,6 +1448,7 @@ public:
         // Dispatch 3D collision events to visual scripts and gameplay systems
         Enjin::Gameplay::GameplayLoop::DispatchCollisionEvents3D(
             m_World.get(), m_Physics.get(), &m_VisualScriptSystem, deltaTime, m_DeferredDestroys, &m_ScriptSystem);
+        Enjin::Gameplay::GameplayLoop::DispatchCollisionStay(m_Physics.get(), m_Physics2D.get(), &m_ScriptSystem);
 
         // --- Controllers & vegetation ---
         // Fixed-timestep projects tick controllers inside the SimClock loop

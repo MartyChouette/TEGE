@@ -436,6 +436,10 @@ void Box2DBackend::DestroyBodyForEntity(ECS::Entity entity) {
     };
     purgeEntity(m_ActiveContacts);
     purgeEntity(m_ActiveSensorContacts);
+    m_StayingContacts.erase(
+        std::remove_if(m_StayingContacts.begin(), m_StayingContacts.end(),
+                       [entity](const CollisionPair& p) { return p.Involves(entity); }),
+        m_StayingContacts.end());
 }
 
 // ============================================================================
@@ -564,6 +568,13 @@ void Box2DBackend::ProcessEvents() {
 
             if (m_OnCollisionExit) m_OnCollisionExit(contact);
         }
+    }
+
+    // Still touching and already touching before this step: OnCollisionStay.
+    // Sensors are tracked separately and are not included.
+    m_StayingContacts.clear();
+    for (const CollisionPair& pair : newContacts) {
+        if (m_ActiveContacts.count(pair)) m_StayingContacts.push_back(pair);
     }
 
     m_ActiveContacts = std::move(newContacts);
