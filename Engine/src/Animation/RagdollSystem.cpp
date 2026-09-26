@@ -243,9 +243,17 @@ void UpdateRagdolls(ECS::World* world, f32 deltaTime,
 
         // Auto-disable after settle
         if (ragdoll->autoDisableAfterSettle && ragdoll->blendProgress >= 1.0f) {
-            // In a full implementation, check velocity of all bone bodies
-            // For now, use the settle timer which counts accumulated rest time
-            ragdoll->settleTimer += deltaTime;
+            // Rest time counts only while the ragdoll is actually at rest:
+            // its body moving slower than settleThreshold. It used to count
+            // from the moment the blend finished, so a ragdoll still tumbling
+            // down a slope switched off mid-fall after settleTime, and
+            // settleThreshold was read by nothing (SD-20). There are no
+            // per-bone bodies yet, so the entity's own Rigidbody is the
+            // measure; with none there is nothing to measure and the timer
+            // runs as before.
+            const auto* rb = world->GetComponent<ECS::RigidbodyComponent>(entity);
+            const bool atRest = !rb || rb->velocity.Length() <= ragdoll->settleThreshold;
+            ragdoll->settleTimer = atRest ? ragdoll->settleTimer + deltaTime : 0.0f;
             if (ragdoll->settleTimer >= ragdoll->settleTime) {
                 // Don't deactivate — just stop updating (entity stays in ragdoll pose)
                 ragdoll->enabled = false;

@@ -1,4 +1,11 @@
 #include "EnjinTest.h"
+#include <memory>
+#include "Enjin/ECS/World.h"
+#include "Enjin/ECS/Components/Transform.h"
+#include "Enjin/Physics/PhysicsBackendFactory.h"
+#include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/Skeleton.h"
+#include "Enjin/Animation/RagdollSystem.h"
 #include "Enjin/Animation/Animation.h"
 
 using namespace Enjin;
@@ -405,6 +412,38 @@ ENJIN_TEST(Utils, LerpPosition) {
     ENJIN_EXPECT_FLOAT_NEAR(mid.x, 5.0f, 0.1f);
     ENJIN_EXPECT_FLOAT_NEAR(mid.y, 10.0f, 0.1f);
     ENJIN_EXPECT_FLOAT_NEAR(mid.z, 15.0f, 0.1f);
+}
+
+// SD-20: a ragdoll switched itself off settleTime after its blend finished,
+// whether or not it had come to rest, so one still tumbling down a slope froze
+// mid-fall; settleThreshold was read by nothing. Rest time now counts only
+// while the body moves slower than the threshold.
+ENJIN_TEST(Ragdoll, ItSwitchesOffOnlyAfterComingToRest) {
+    // Arrange: an enabled ragdoll whose body is still moving.
+    Enjin::ECS::World world;
+    const Enjin::ECS::Entity e = world.CreateEntity();
+    world.AddComponent<Enjin::ECS::TransformComponent>(e);
+    auto& skel = world.AddComponent<Enjin::ECS::SkeletonComponent>(e);
+    skel.skeleton = std::make_shared<Enjin::Animation::Skeleton>();
+    auto& rd = world.AddComponent<Enjin::ECS::RagdollComponent>(e);
+    rd.enabled = true;
+    rd.autoDisableAfterSettle = true;
+    rd.blendTime = 0.0f;
+    rd.settleTime = 0.5f;
+    rd.settleThreshold = 0.1f;
+    auto& rb = world.AddComponent<Enjin::ECS::RigidbodyComponent>(e);
+    rb.velocity = Enjin::Math::Vector3(3.0f, 0.0f, 0.0f);
+    auto physics = Enjin::Physics::CreatePhysicsBackend(Enjin::Physics::PhysicsBackendType::Auto);
+    ENJIN_ASSERT_NOT_NULL(physics.get());
+
+    // Act / Assert: a second of motion, twice the settle time, and still on.
+    for (int i = 0; i < 60; ++i) Enjin::Animation::RagdollSystem::UpdateRagdolls(&world, 1.0f / 60.0f, physics.get());
+    ENJIN_EXPECT_TRUE(world.GetComponent<Enjin::ECS::RagdollComponent>(e)->enabled);
+
+    // At rest for longer than settleTime: off.
+    world.GetComponent<Enjin::ECS::RigidbodyComponent>(e)->velocity = Enjin::Math::Vector3(0.0f, 0.0f, 0.0f);
+    for (int i = 0; i < 40; ++i) Enjin::Animation::RagdollSystem::UpdateRagdolls(&world, 1.0f / 60.0f, physics.get());
+    ENJIN_EXPECT_FALSE(world.GetComponent<Enjin::ECS::RagdollComponent>(e)->enabled);
 }
 
 ENJIN_TEST_MAIN()
