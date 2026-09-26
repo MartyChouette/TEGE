@@ -24433,11 +24433,8 @@ void RenderSystem::EnsureWaterMeshes() {
         f32 hz = waterVol->halfExtents.z;
 
         if (usePolygon) {
-            // Fan-triangulate from the centroid. Local XZ, Y=0. color.y carries the
-            // edge distance the water shader uses for shoreline foam (center=1, rim=0).
-            Math::Vector2 c(0.0f, 0.0f);
-            for (const auto& p : boundary->points) c = c + p;
-            c = c * (1.0f / static_cast<f32>(boundary->points.size()));
+            // Local XZ, Y=0. color.y carries the distance from the shore that the
+            // water shader uses for foam (rim=0, furthest from any edge=1).
             auto makeV = [&](Math::Vector2 xz, f32 edgeDist) {
                 MeshComponent::Vertex v;
                 v.position = Math::Vector3(xz.x, 0.0f, xz.y);
@@ -24446,16 +24443,25 @@ void RenderSystem::EnsureWaterMeshes() {
                 v.color = MakeWaterVertexColor(*waterVol, edgeDist);
                 return v;
             };
-            const u32 n = static_cast<u32>(boundary->points.size());
-            mesh.vertices.reserve(n + 1);
-            mesh.indices.reserve(n * 3);
-            mesh.vertices.push_back(makeV(c, 1.0f));                    // 0 = centroid
-            for (u32 i = 0; i < n; ++i) mesh.vertices.push_back(makeV(boundary->points[i], 0.0f));
-            for (u32 i = 0; i < n; ++i) {
-                mesh.indices.push_back(0);
-                mesh.indices.push_back(1 + i);
-                mesh.indices.push_back(1 + ((i + 1) % n));
+            std::vector<Math::Vector2> pos;
+            std::vector<f32> shoreDist;
+            std::vector<u32> tri;
+            if (!BoundaryPolygonComponent::BuildSurface(boundary->points, 2.0f, pos, shoreDist, tri)) {
+                // An outline with no area (every point on one line, or piled on
+                // one spot) encloses no water. Building from it would retire the
+                // old buffers and hand the draw an empty mesh, so the pond
+                // vanished with nothing said. The last good surface stays, and
+                // the warning fires once per edit because dirty is cleared.
+                if (boundaryDirty) {
+                    ENJIN_LOG_WARN(Renderer, "Water outline on entity %llu encloses no area; "
+                                             "keeping the previous surface", entity);
+                }
+                boundary->dirty = false;
+                continue;
             }
+            mesh.vertices.reserve(pos.size());
+            for (usize i = 0; i < pos.size(); ++i) mesh.vertices.push_back(makeV(pos[i], shoreDist[i]));
+            mesh.indices = std::move(tri);
             boundary->dirty = false;
         } else {
 
@@ -24546,8 +24552,12 @@ void RenderSystem::EnsureWaterMeshes() {
         #endif
         waterVol->meshCreated = true;
 
-        ENJIN_LOG_INFO(Renderer, "Created water surface mesh for entity %llu (%.0f x %.0f)",
-            entity, hx * 2.0f, hz * 2.0f);
+        // First creation only. A shoreline drag rebuilds this every frame, and
+        // logged one line per frame of the drag.
+        if (!regen) {
+            ENJIN_LOG_INFO(Renderer, "Created water surface mesh for entity %llu (%.0f x %.0f)",
+                entity, hx * 2.0f, hz * 2.0f);
+        }
     }
 }
 

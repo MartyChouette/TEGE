@@ -57,6 +57,24 @@ struct ENJIN_API BoundaryPolygonComponent {
         }
         return inside;
     }
+
+    // The flat surface this outline encloses, in local XZ (y carries Z).
+    //
+    // Ear-clipped, so a kidney or an L-shaped pond fills correctly. It used to be
+    // a fan from the centroid, which is only right while the whole rim can be
+    // seen from the middle: pull one side in past the centre and the fan folded
+    // over itself and spilled water onto the bank.
+    //
+    // Triangles are then split until no edge is longer than `maxEdge`, because
+    // the shoreline foam reads a per-vertex distance and a big triangle has none
+    // inside it. `shore` is that distance, 0 on the rim and 1 at the point
+    // furthest from any edge, which is what the centroid used to carry.
+    //
+    // Returns false for fewer than three points or a ring with no area.
+    static bool BuildSurface(const std::vector<Math::Vector2>& ring, f32 maxEdge,
+                             std::vector<Math::Vector2>& positions,
+                             std::vector<f32>& shore,
+                             std::vector<u32>& indices);
 };
 
 } // namespace ECS
