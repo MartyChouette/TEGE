@@ -1556,8 +1556,9 @@ void PlayMode::RestoreEditorState() {
             m_World->DestroyEntity(e);
             ++dropped;
         }
-        // DestroyEntity is deferred to World::Update, which edit mode never
-        // calls — flush it here or the entities linger until the next Play.
+        // DestroyEntity is deferred to the next World::Update (the editor runs
+        // World::Update(0) every frame). Flushed here so the restore pass below
+        // does not see them.
         if (dropped > 0) {
             m_World->FlushPendingDestructions();
             ENJIN_LOG_INFO(Editor, "Dropped %zu transient runtime entities on stop", dropped);
@@ -1642,8 +1643,7 @@ void PlayMode::RestoreEditorState() {
     m_DestroyedEntityJson.clear();
 
     // The recreate pass added entities/components; point the render caches at the
-    // current storages so the editor (which never calls World::Update in edit mode)
-    // draws the recreated entities immediately.
+    // current storages now, so the recreated entities are drawn on the next frame.
     if (m_RenderSystem && recreated > 0) m_RenderSystem->RefreshStorageCache();
 
     // Restoring component VALUES does not touch what the GPU already holds. The

@@ -19,7 +19,7 @@ endif()
 #
 # This is opt-in per target rather than a blanket add_compile_options, which
 # applied to every target added afterwards: the vendored libraries (whose PDBs
-# nobody has ever symbolized) and all 113 test executables, each of which wrote
+# nobody has ever symbolized) and every test executable, each of which wrote
 # a PDB spanning the whole engine archive. That was gigabytes of disk and link
 # time per build for symbols no one reads. Apply ENJIN_PDB_* to a target when a
 # user could be holding the binary when it crashes.
