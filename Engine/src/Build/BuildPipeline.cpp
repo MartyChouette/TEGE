@@ -1130,9 +1130,11 @@ bool BuildPipeline::WriteLooseManifest(const BuildConfig& config, const std::str
         return false;
     }
 
-    // accessibility.json beside the exe. The player looks here FIRST and only
-    // falls back to the pak, so a loose build that omits this ships engine
-    // defaults over whatever the project authored -- which is what it did.
+    // accessibility.json beside the exe: the project's defaults, which the
+    // player's saved choices then overwrite in the same file. The player
+    // applies the pak's copy first and this file on top of it
+    // (AccessibilityJsonLayers), so a loose build without it would ship engine
+    // defaults over what the project authored.
     const std::string accessPath = (fs::path(outputDir) / "accessibility.json").string();
     try {
         std::ofstream file(accessPath);

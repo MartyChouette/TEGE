@@ -3,6 +3,7 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Platform/Types.h"
 #include <string>
+#include <vector>
 
 namespace Enjin {
 
@@ -112,6 +113,21 @@ struct RuntimeAccessibilitySettings {
     std::string ToJson() const;
     bool FromJson(const std::string& jsonStr);
 };
+
+// The order an exported game applies its accessibility files in: the project's
+// defaults (the copy inside the pak) first, then the player's own saved file on
+// top, so the player's choices win and anything they never touched keeps the
+// project default. Empty strings are skipped.
+//
+// The desktop player used to read the pak's copy and never look further, so in
+// every pak build a player's saved settings were ignored on the next launch.
+inline std::vector<std::string> AccessibilityJsonLayers(const std::string& projectDefaults,
+                                                        const std::string& playerSaved) {
+    std::vector<std::string> layers;
+    if (!projectDefaults.empty()) layers.push_back(projectDefaults);
+    if (!playerSaved.empty()) layers.push_back(playerSaved);
+    return layers;
+}
 
 // Push the text-scaling settings to everything that draws text. One call so a
 // player's font scale reaches the UI, subtitles AND the screen-reader bar;

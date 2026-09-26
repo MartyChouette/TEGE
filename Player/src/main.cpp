@@ -4113,24 +4113,32 @@ private:
         std::string exeDir = Enjin::Platform::GetExecutableDirectory();
         std::string settingsPath = (fs::path(exeDir) / "accessibility.json").string();
 
-        // Try loading from pack first, then from file system
-        std::string jsonStr;
+        // The project's defaults ride inside the pak; the player's own choices
+        // are the file beside the exe. Both are applied, pak first, so the
+        // player's win (AccessibilityJsonLayers). Reading the pak and stopping
+        // there threw away every saved change on the next launch (IN-20).
+        std::string packJson, playerJson;
         auto packData = m_AssetReader.ReadFile("accessibility.json");
-        if (!packData.empty()) {
-            jsonStr.assign(packData.begin(), packData.end());
-        } else if (fs::exists(settingsPath)) {
+        packJson.assign(packData.begin(), packData.end());
+        if (fs::exists(settingsPath)) {
             std::ifstream file(settingsPath);
             if (file.is_open()) {
-                jsonStr.assign(std::istreambuf_iterator<char>(file),
-                               std::istreambuf_iterator<char>());
+                playerJson.assign(std::istreambuf_iterator<char>(file),
+                                  std::istreambuf_iterator<char>());
             }
         }
 
-        if (jsonStr.empty()) {
+        const auto layers = Enjin::Accessibility::AccessibilityJsonLayers(packJson, playerJson);
+        if (layers.empty()) {
             ENJIN_LOG_INFO(Player, "No accessibility.json found — using defaults");
             return;
         }
+        for (const std::string& jsonStr : layers) ApplyAccessibilityJson(jsonStr);
+    }
 
+    // One accessibility.json layer onto the current settings: only the keys it
+    // has are changed, so a later layer overrides an earlier one key by key.
+    void ApplyAccessibilityJson(const std::string& jsonStr) {
         try {
             auto j = nlohmann::json::parse(jsonStr);
 

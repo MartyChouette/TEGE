@@ -205,4 +205,27 @@ ENJIN_TEST(AltInput, ManagerNoActiveInputs) {
     ENJIN_EXPECT_EQ(mgr.GetScanTargetCount(), (usize)0);
 }
 
+// IN-20: an exported game read the pak's accessibility.json (the project's
+// defaults) and never looked at the player's saved file, so every change a
+// player made was gone on the next launch. The player's file must come LAST.
+ENJIN_TEST(AccessibilityLayers, ThePlayersSavedFileIsAppliedLast) {
+    // Arrange
+    const std::string project = "{\"fontScale\":1.5}";
+    const std::string player = "{\"fontScale\":2.0}";
+
+    // Act
+    const auto both = Accessibility::AccessibilityJsonLayers(project, player);
+    const auto onlyProject = Accessibility::AccessibilityJsonLayers(project, "");
+    const auto onlyPlayer = Accessibility::AccessibilityJsonLayers("", player);
+    const auto none = Accessibility::AccessibilityJsonLayers("", "");
+
+    // Assert
+    ENJIN_ASSERT_EQ(both.size(), static_cast<usize>(2));
+    ENJIN_EXPECT_TRUE(both.front() == project);
+    ENJIN_EXPECT_TRUE(both.back() == player);
+    ENJIN_EXPECT_TRUE(onlyProject.size() == 1 && onlyProject[0] == project);
+    ENJIN_EXPECT_TRUE(onlyPlayer.size() == 1 && onlyPlayer[0] == player);
+    ENJIN_EXPECT_TRUE(none.empty());
+}
+
 ENJIN_TEST_MAIN()
