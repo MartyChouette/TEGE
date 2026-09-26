@@ -1227,7 +1227,9 @@ ENJIN_TEST(NetworkingNodes, RegisterAndSafeWithoutSession) {
     ENJIN_EXPECT_EQ(std::get<i32>(reg.FindNode(NodeTypes::NetGetPlayerCount)->evaluate(ctx, {})), 0);
     ENJIN_EXPECT_FALSE(std::get<bool>(reg.FindNode(NodeTypes::NetIsHost)->evaluate(ctx, {})));
     ENJIN_EXPECT_EQ(std::get<i32>(reg.FindNode(NodeTypes::NetLobbyCount)->evaluate(ctx, {})), 0);
-    ENJIN_EXPECT_STR_EQ(std::get<std::string>(reg.FindNode(NodeTypes::NetLobbyName)->evaluate(ctx, { static_cast<i32>(0) })).c_str(), "");
+    // Held in a local: .c_str() of the temporary dies before the macro reads it (ASan).
+    const std::string lobbyName = std::get<std::string>(reg.FindNode(NodeTypes::NetLobbyName)->evaluate(ctx, { static_cast<i32>(0) }));
+    ENJIN_EXPECT_STR_EQ(lobbyName.c_str(), "");
     // Set Ready is a safe no-op without a session
     reg.FindNode(NodeTypes::NetSetReady)->execute(ctx, { false, true }, outs);
 }
@@ -1300,7 +1302,8 @@ ENJIN_TEST(UINodes, ReadStateAndStylingRoundTrip) {
     ENJIN_EXPECT_FLOAT_EQ(std::get<f32>(reg.FindNode(NodeTypes::UIGetSliderValue)->evaluate(ctx, { static_cast<Entity>(e), id })), 0.6f);
     ENJIN_EXPECT_TRUE(std::get<bool>(reg.FindNode(NodeTypes::UIIsHovered)->evaluate(ctx, { static_cast<Entity>(e), id })));
     ENJIN_EXPECT_FALSE(std::get<bool>(reg.FindNode(NodeTypes::UIIsPressed)->evaluate(ctx, { static_cast<Entity>(e), id })));
-    ENJIN_EXPECT_STR_EQ(std::get<std::string>(reg.FindNode(NodeTypes::UIGetText)->evaluate(ctx, { static_cast<Entity>(e), id })).c_str(), "Hello");
+    const std::string uiText = std::get<std::string>(reg.FindNode(NodeTypes::UIGetText)->evaluate(ctx, { static_cast<Entity>(e), id }));
+    ENJIN_EXPECT_STR_EQ(uiText.c_str(), "Hello");
     ENJIN_EXPECT_FLOAT_EQ(std::get<f32>(reg.FindNode(NodeTypes::UIGetProgress)->evaluate(ctx, { static_cast<Entity>(e), id })), 0.25f);
 
     // Styling: set text color / bg color+alpha / image alpha, verify on the element
