@@ -105,7 +105,10 @@ void SavePointSystem::Update(f32 deltaTime) {
         const bool autoSave = sp->saveOnEnter || !config.savePointRequiresInput;
 
         if (!autoSave && config.savePointShowPrompt) {
-            m_Prompt = "Press Interact to save";
+            // The live binding, like every other prompt: it said "Press
+            // Interact to save" whatever Interact was bound to (IN-39).
+            m_Prompt = m_InputMap ? m_InputMap->ResolvePromptText("Press {Interact} to save")
+                                  : std::string("Press Interact to save");
             // Once, on entering range. A caption re-issued every frame would
             // stack sixty deep a second and never expire.
             if (m_PromptingPoint != e) {

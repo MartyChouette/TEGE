@@ -1,5 +1,6 @@
 #include "EnjinTest.h"
 #include "Enjin/Input/InputAction.h"
+#include "Enjin/Scripting/ScriptBindings.h"
 #include <string>
 
 using namespace Enjin;
@@ -89,6 +90,21 @@ ENJIN_TEST(PromptBindings, SeveralTokensInOneString) {
     ENJIN_EXPECT_TRUE(out.find("to open") != std::string::npos);
     ENJIN_EXPECT_TRUE(out.find("to climb") != std::string::npos);
     ENJIN_EXPECT_TRUE(out.find("{Interact}") == std::string::npos);
+}
+
+// IN-39: script getters returned the authored text raw, so a script showing an
+// Interactable's prompt printed "{Interact}". They resolve through the map the
+// bindings are wired to.
+ENJIN_TEST(PromptBindings, ScriptGettersResolveThroughTheWiredMap) {
+    // Arrange
+    InputActionMap map;
+    map.RebindAction(static_cast<i32>(GameAction::Interact), static_cast<i32>(KeyCode::F));
+
+    // Act / Assert: resolved with a map, left alone without one.
+    Scripting::SetBindingsInputActionMap(&map);
+    ENJIN_EXPECT_STR_EQ(Scripting::ResolveBindingsPromptText("Press {Interact} to open").c_str(), "Press F to open");
+    Scripting::SetBindingsInputActionMap(nullptr);
+    ENJIN_EXPECT_STR_EQ(Scripting::ResolveBindingsPromptText("Press {Interact} to open").c_str(), "Press {Interact} to open");
 }
 
 ENJIN_TEST_MAIN()

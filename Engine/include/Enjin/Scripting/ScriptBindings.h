@@ -237,6 +237,11 @@ void RegisterInputActionBindings(asIScriptEngine* engine);
 
 // Input action map setter
 void SetBindingsInputActionMap(InputSystem::InputActionMap* map);
+// "Press {Interact} to open" -> "Press E to open", through the map the
+// bindings are wired to (unchanged when none is). Every script getter that
+// hands back an authored prompt goes through this; they returned the raw
+// token, so a script showing one printed a literal "{Interact}" (IN-39).
+std::string ResolveBindingsPromptText(const std::string& text);
 
 // Global time scale (slow-mo/hitstop). Runtimes multiply the dt they hand to
 // GAMEPLAY systems by this; UI/editor/frame limiter stay unscaled. Reset to 1

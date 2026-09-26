@@ -1386,7 +1386,7 @@ static bool HasComponent_Interactable(u64 id) {
 static std::string Interactable_GetPrompt(u64 id) {
     if (!s_BindingsWorld) return "";
     auto* ic = ENJIN_SCRIPT_COMPONENT(InteractableComponent, id);
-    return ic ? ic->promptText : "";
+    return ic ? Enjin::Scripting::ResolveBindingsPromptText(ic->promptText) : "";
 }
 
 static void Interactable_SetPrompt(u64 id, const std::string& val) {
@@ -1812,7 +1812,7 @@ static u64 Switch_GetLinkedEntity(u64 id, i32 index) {
 static std::string Switch_GetPrompt(u64 id) {
     if (!s_BindingsWorld) return "";
     auto* sc = ENJIN_SCRIPT_COMPONENT(SwitchComponent, id);
-    return sc ? sc->promptText : "";
+    return sc ? Enjin::Scripting::ResolveBindingsPromptText(sc->promptText) : "";
 }
 
 // ============================================================================

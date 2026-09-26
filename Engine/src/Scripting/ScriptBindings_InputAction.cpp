@@ -26,6 +26,10 @@ void SetBindingsInputActionMap(InputSystem::InputActionMap* map) {
     InputSystem::SetTouchActionMap(map);
 }
 
+std::string ResolveBindingsPromptText(const std::string& text) {
+    return s_BindingsInputActionMap ? s_BindingsInputActionMap->ResolvePromptText(text) : text;
+}
+
 // ---------------------------------------------------------------------------
 // Public forwarders for VisualScript input-action nodes. Reuse the same map
 // pointer the AngelScript API uses (set via SetBindingsInputActionMap at every

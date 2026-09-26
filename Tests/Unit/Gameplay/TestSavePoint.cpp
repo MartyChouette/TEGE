@@ -1,4 +1,5 @@
 #include "EnjinTest.h"
+#include "Enjin/Input/InputAction.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Name.h"
@@ -420,6 +421,24 @@ ENJIN_TEST(SavePoint, ShowSaveIndicatorOffMeansNoMessage) {
     // Assert: saved, and silent.
     ENJIN_EXPECT_TRUE(f.AnySlotUsed());
     ENJIN_EXPECT_TRUE(f.indicator.GetText().empty());
+}
+
+// IN-39: the prompt said "Press Interact to save" whatever Interact was bound
+// to. It resolves through the map now, like every other prompt.
+ENJIN_TEST(SavePoint, ThePromptNamesTheBoundKey) {
+    // Arrange: Interact rebound to F, and a point that waits for it.
+    Fixture f;
+    InputSystem::InputActionMap map;
+    map.RebindAction(static_cast<i32>(InputSystem::GameAction::Interact), static_cast<i32>(KeyCode::F));
+    f.points.SetInputActionMap(&map);
+    f.AddPoint(Math::Vector3(0.0f, 0.0f, 0.0f), /*saveOnEnter=*/false);
+
+    // Act
+    f.MovePlayer(Math::Vector3(0.5f, 0.0f, 0.0f));
+    f.points.Update(0.016f);
+
+    // Assert
+    ENJIN_EXPECT_STR_EQ(f.points.GetPrompt().c_str(), "Press F to save");
 }
 
 ENJIN_TEST_MAIN()
