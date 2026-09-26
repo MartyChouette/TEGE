@@ -1182,6 +1182,17 @@ void NetworkSystem::HandleEntitySnapshot(PlayerId senderId, const u8* payload, u
         return;
     }
 
+    // Host: what a client sends about the entities it owns has to reach the
+    // other clients too, and a client takes snapshots only from the host. The
+    // host applied them and passed them on to nobody, so with three players a
+    // client-owned entity stood still on the third (SD-12). Every snapshot the
+    // host ACCEPTS from a client is re-sent to the rest; anything it refused
+    // (an entity that client does not own, a non-finite value) is not.
+    const bool relay = IsHost() && senderId != m_LocalPlayerId;
+    std::vector<u8> relayPayload;
+    u16 relayCount = 0;
+    if (relay) WriteU16(relayPayload, 0);   // patched below
+
     for (u16 i = 0; i < count && offset < size; i++) {
         if (size - offset < 9) return;
 
@@ -1247,6 +1258,23 @@ void NetworkSystem::HandleEntitySnapshot(PlayerId senderId, const u8* payload, u
         // Ensure this remote body is network-driven (kinematic). Done here, per snapshot, so it
         // takes effect even if the Rigidbody was added after the entity spawned.
         ApplyPhysicsAuthority(entity, /*isLocallyOwned=*/false);
+
+        if (relay) {
+            WriteU32(relayPayload, snap.networkId);
+            WriteU8(relayPayload, snap.fieldMask);
+            WriteU32(relayPayload, snap.tick);
+            if (snap.fieldMask & SnapPosition) WriteVector3(relayPayload, snap.position);
+            if (snap.fieldMask & SnapRotation) WriteQuaternion(relayPayload, snap.rotation);
+            if (snap.fieldMask & SnapScale) WriteVector3(relayPayload, snap.scale);
+            if (snap.fieldMask & SnapVelocity) WriteVector3(relayPayload, snap.velocity);
+            relayCount++;
+        }
+    }
+
+    if (relay && relayCount > 0) {
+        relayPayload[0] = static_cast<u8>((relayCount >> 8) & 0xFF);
+        relayPayload[1] = static_cast<u8>(relayCount & 0xFF);
+        SendToAll(MessageType::EntitySnapshot, relayPayload, senderId);
     }
 }
 
