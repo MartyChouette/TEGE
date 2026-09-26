@@ -6280,9 +6280,14 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     // Gameplay input belongs to the game only while it is actually playing.
     // Editing or paused reads as Menu, so a scene's actions cannot fire while
     // the user is building the level.
+    // Typing into any editor text field during play (the console, a search box)
+    // is Console focus, so W typed into the console does not also walk the
+    // player: actions and a script's raw keys both go quiet.
     const bool gameplayHasInput = m_PlayMode.IsPlaying() && !m_PlayMode.IsPaused();
-    Input::SetInputFocus(gameplayHasInput ? Input::InputFocus::Gameplay
-                                          : Input::InputFocus::Menu);
+    const bool typing = ImGui::GetCurrentContext() && ImGui::GetIO().WantTextInput;
+    Input::SetInputFocus(!gameplayHasInput ? Input::InputFocus::Menu
+                         : typing          ? Input::InputFocus::Console
+                                           : Input::InputFocus::Gameplay);
 
     // ImGui keyboard navigation moves focus between widgets with the arrow keys.
     // That is right while editing and wrong while playing: pressing arrows to

@@ -56,16 +56,21 @@ static int Input_GetTextInputCount() {
 // Input wrapper functions
 // ============================================================================
 
+// Raw keys answer only while gameplay has input focus, the same rule the
+// InputAction_* bindings follow through InputActionMap. They used to read the
+// keyboard directly, so a script went on seeing W while the player typed into
+// the console or a menu was open. A script that needs keys in a menu reads the
+// UI actions (UIConfirm, UINav*), which always pass.
 static bool Input_GetKey(int keyCode) {
-    return Input::IsKeyDown(static_cast<KeyCode>(keyCode));
+    return Input::IsGameplayFocused() && Input::IsKeyDown(static_cast<KeyCode>(keyCode));
 }
 
 static bool Input_GetKeyDown(int keyCode) {
-    return Input::IsKeyPressed(static_cast<KeyCode>(keyCode));
+    return Input::IsGameplayFocused() && Input::IsKeyPressed(static_cast<KeyCode>(keyCode));
 }
 
 static bool Input_GetKeyUp(int keyCode) {
-    return Input::IsKeyReleased(static_cast<KeyCode>(keyCode));
+    return Input::IsGameplayFocused() && Input::IsKeyReleased(static_cast<KeyCode>(keyCode));
 }
 
 static bool Input_GetMouseButton(int button) {

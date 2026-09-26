@@ -3,6 +3,7 @@
 #include "Enjin/Scripting/ScriptBindings.h"
 #include "Enjin/Scripting/ScriptEvents.h"
 #include "Enjin/ECS/World.h"
+#include "Enjin/Platform/Input.h"
 #include <angelscript.h>
 #include <string>
 
@@ -553,6 +554,50 @@ ENJIN_TEST(Execution, Vector3AdditionResult) {
     ENJIN_ASSERT_NOT_NULL(result);
     ENJIN_EXPECT_FLOAT_NEAR(*result, 5.0f, 0.001f);
 
+    engine.Shutdown();
+}
+
+// Raw keys follow input focus, like InputAction_*. They used to read the
+// keyboard directly, so a script still saw W while the player typed it into
+// the console.
+ENJIN_TEST(Execution, RawKeysAreSilentOutsideGameplayFocus) {
+    // Arrange: a script that reads Space, and Space held down.
+    ScriptEngine engine;
+    ENJIN_ASSERT_TRUE(InitWithBindings(engine));
+    ENJIN_ASSERT_TRUE(engine.CompileScriptFromMemory("rawkey_exec",
+        "bool gHeld = false;\n"
+        "void Read() { gHeld = Input_GetKey(Key::Space); }\n"));
+    asIScriptModule* mod = engine.GetASEngine()->GetModule("rawkey_exec");
+    ENJIN_ASSERT_NOT_NULL(mod);
+    asIScriptFunction* func = mod->GetFunctionByName("Read");
+    ENJIN_ASSERT_NOT_NULL(func);
+    bool* held = static_cast<bool*>(mod->GetAddressOfGlobalVar(mod->GetGlobalVarIndexByName("gHeld")));
+    ENJIN_ASSERT_NOT_NULL(held);
+
+    bool keys[512] = {};
+    bool mouse[8] = {};
+    keys[static_cast<int>(KeyCode::Space)] = true;
+    Input::SetReplayInjection(true);
+    Input::InjectFrameState(keys, mouse, Math::Vector2(0.0f, 0.0f));
+    Input::Update();
+
+    auto read = [&](Input::InputFocus focus) {
+        Input::SetInputFocus(focus);
+        asIScriptContext* ctx = engine.AcquireContext();
+        ctx->Prepare(func);
+        ctx->Execute();
+        engine.ReturnContext(ctx);
+        return *held;
+    };
+
+    // Act / Assert
+    ENJIN_EXPECT_TRUE(read(Input::InputFocus::Gameplay));
+    ENJIN_EXPECT_FALSE(read(Input::InputFocus::Console));
+    ENJIN_EXPECT_FALSE(read(Input::InputFocus::Menu));
+    ENJIN_EXPECT_FALSE(read(Input::InputFocus::Dialogue));
+
+    Input::SetInputFocus(Input::InputFocus::Gameplay);
+    Input::SetReplayInjection(false);
     engine.Shutdown();
 }
 

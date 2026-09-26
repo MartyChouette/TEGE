@@ -56,6 +56,8 @@ The `TegeBehavior` base class and the `enjin_api` helper scripts (Timer, Tween, 
 
 `Input_GetKey(int)`, `Input_GetKeyDown(int)`, `Input_GetKeyUp(int)` — Key enum: A-Z, Num0-9, F1-F12, Space, Escape, Enter, Tab, Backspace, arrows, Shift, Control, Alt, etc.
 
+These answer only while gameplay has input focus, the same as `InputAction_*`: while a menu, the console or a dialogue has focus they return false. For keys in a menu, read the UI actions (`UIConfirm`, `UINav*`), which always pass.
+
 ## Input — Text
 
 `Input_GetTextInput()` → string — Characters typed this frame as a UTF-8 string. OS-processed (shift-aware, keyboard-layout-aware, dead-key/compose-aware). Supports full Latin range including accented characters. Returns empty string if nothing was typed.
