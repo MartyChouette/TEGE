@@ -16,6 +16,8 @@ EnsureWebOITTargets
 RecreateWebSizedTargets
 UploadWebInstances
 WebActivePlate
+WebDropSplitViewportResources
+WebEnsureSplitViewportResources
 WebEnsureTextMeshes
 WebGetOrBuildFontAtlas
 WebGetOrCreateSpriteBindGroup
@@ -26,6 +28,7 @@ WebScaledDim
 # --- vulkan only ---
 AccumulateArenaInstance
 ApplyAdaptiveQualityLevel
+ApplyCameraClearColor
 ApplyDDGISettings
 ApplyGPUParticleSettings
 ApplyPendingHDRChange
@@ -39,6 +42,7 @@ BindScriptRenderTargetToEntity
 BuildCullableObjectList
 BuildDDGIGeometry
 BuildFrameShadowCasterList
+BuildHiZFromCullDepth
 BuildMaterialSSBO
 BuildSlotPushConstants
 BuildTexturedIndirectBatches
@@ -67,6 +71,7 @@ CreateUniformBuffers
 CreateWater2DPipeline
 CreateWater2DPipelineVariant
 CreateWireframeOverlayPipeline
+CullForTarget
 DenoiseRTOutputs
 DenoiseRTOutputsAsync
 DestroyRTDummyResources
@@ -82,6 +87,8 @@ DrawDGC
 DrawIndirect
 DrawTexturedIndirect
 EnsureArenaSharedMeshes
+EnsureCullViewResources
+EnsureHiZPyramid
 EnsureMaterialSSBOCapacity
 EnsureMaterialSlotTextures
 EnsureOverrideTextureHandles
@@ -93,9 +100,12 @@ EnsureTextTextures
 FindShaderDirectory
 FlushArenaBatches
 GetBoneArenaSlot
+GetCullDepthSource
 GetDDGISettings
 GetEntityCustomPipeline
+GetGPUCullStats
 GetGPUParticleSettings
+GetGeometryPoolStats
 GetHDROutputMode
 GetMaterialIndex
 GetOrBuildFontAtlas
@@ -113,6 +123,7 @@ GetSwapchain
 GetVolumetricFogSettings
 GetVulkanRenderer
 HasEntityCustomShader
+IndirectDrawRepresentable
 InitComputeSkinning
 InitializeRayTracing
 IsHDREnabled
@@ -122,9 +133,9 @@ IsPoolEligible
 IsRTHybridActive
 IsRayTracingSupported
 MirrorSceneAcrossPlane
-PassesMeshRendererFilters
 PerformGPUCulling
 PerformGPUCullingAsync
+PointObjectDataDescriptorAt
 PrepareOITForTarget
 ProbeBakeOutsideFrameDiagnostic
 ProcessPendingRecreation
@@ -138,6 +149,7 @@ RecreateEffectPipelinesForRenderPass
 RecreatePipelines
 RecreateRTGBufferImages
 RefreshDescriptorsIfDirty
+ReleasePoolAlloc
 ReloadMainShaders
 ReloadShadowShaders
 ReloadSkyboxShaders
@@ -159,10 +171,15 @@ RenderWireframeOverlayPass
 RequestOITForTarget
 ResizeRayTracing
 ResolveBindlessTextureIndex
+ResolveDirtyMaterialTextures
+ResolveMaterialTextureCache
 RetireEntityBuffers
 RunComputeSkinningPass
+RunLateOcclusion
+SelectCullView
 SelectShadowLights
 SetAdaptiveQualityEnabled
+SetCullTarget
 SetEntityCustomShader
 SetHDREnabled
 SetScriptRenderTargetCamera
@@ -178,6 +195,7 @@ ShutdownComputeSkinning
 ShutdownRayTracing
 SkinUniquePoses
 SolveHandIK
+SwapCullViewState
 TemporalReuseRTOutputs
 TransitionDepthImagesToReadable
 TransitionRTOutputImages

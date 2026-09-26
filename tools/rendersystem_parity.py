@@ -103,10 +103,15 @@ def read_regions():
             # starting at line 10 and counted a shared method hoisted above the
             # real #if as web-only. Caught by the check contradicting a change
             # that was correct, which is the check doing its job on itself.
-            if start is None and depth == 1 and re.match(r"#\s*if\s+ENJIN_RENDERER_WEBGPU\b", s):
+            # The LAST depth-1 web guard before the split wins. Taking the first
+            # one found a ten-line guard inside a shared helper (added 09-21),
+            # and from then on this reported 0 methods and passed every time.
+            if els is None and depth == 1 and re.match(r"#\s*if\s+ENJIN_RENDERER_WEBGPU\b", s):
                 start, start_depth = i, depth
         elif re.match(r"#\s*el(se|if)", s):
-            if start is not None and els is None and depth == start_depth:
+            # Only the split line itself; a small guard's own #else is not it.
+            if (start is not None and els is None and depth == start_depth
+                    and "!ENJIN_RENDERER_WEBGPU" in s):
                 els = i
         elif re.match(r"#\s*endif", s):
             if start is not None and els is not None and end is None and depth == start_depth:

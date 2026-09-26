@@ -17,6 +17,7 @@ vulkan:BindScriptRenderTargetToEntity
 vulkan:BuildCullableObjectList
 vulkan:BuildDDGIGeometry
 vulkan:BuildFrameShadowCasterList
+vulkan:BuildHiZFromCullDepth
 vulkan:BuildMaterialSSBO
 vulkan:BuildSlotPushConstants
 vulkan:BuildTexturedIndirectBatches
@@ -45,6 +46,7 @@ vulkan:CreateUniformBuffers
 vulkan:CreateWater2DPipeline
 vulkan:CreateWater2DPipelineVariant
 vulkan:CreateWireframeOverlayPipeline
+vulkan:CullForTarget
 vulkan:DenoiseRTOutputs
 vulkan:DenoiseRTOutputsAsync
 vulkan:DestroyRTDummyResources
@@ -60,6 +62,8 @@ vulkan:DrawDGC
 vulkan:DrawIndirect
 vulkan:DrawTexturedIndirect
 vulkan:EnsureArenaSharedMeshes
+vulkan:EnsureCullViewResources
+vulkan:EnsureHiZPyramid
 vulkan:EnsureMaterialSSBOCapacity
 vulkan:EnsureMaterialSlotTextures
 vulkan:EnsureOverrideTextureHandles
@@ -71,8 +75,10 @@ vulkan:EnsureTextTextures
 vulkan:FindShaderDirectory
 vulkan:FlushArenaBatches
 vulkan:GetBoneArenaSlot
+vulkan:GetCullDepthSource
 vulkan:GetDDGISettings
 vulkan:GetEntityCustomPipeline
+vulkan:GetGPUCullStats
 vulkan:GetGPUParticleSettings
 vulkan:GetGeometryPoolStats
 vulkan:GetHDROutputMode
@@ -92,6 +98,7 @@ vulkan:GetSwapchain
 vulkan:GetVolumetricFogSettings
 vulkan:GetVulkanRenderer
 vulkan:HasEntityCustomShader
+vulkan:IndirectDrawRepresentable
 vulkan:InitComputeSkinning
 vulkan:InitializeRayTracing
 vulkan:IsHDREnabled
@@ -103,6 +110,7 @@ vulkan:IsRayTracingSupported
 vulkan:MirrorSceneAcrossPlane
 vulkan:PerformGPUCulling
 vulkan:PerformGPUCullingAsync
+vulkan:PointObjectDataDescriptorAt
 vulkan:PrepareOITForTarget
 vulkan:ProbeBakeOutsideFrameDiagnostic
 vulkan:ProcessPendingRecreation
@@ -144,10 +152,15 @@ vulkan:RenderWireframeOverlayPass
 vulkan:RequestOITForTarget
 vulkan:ResizeRayTracing
 vulkan:ResolveBindlessTextureIndex
+vulkan:ResolveDirtyMaterialTextures
+vulkan:ResolveMaterialTextureCache
 vulkan:RetireEntityBuffers
 vulkan:RunComputeSkinningPass
+vulkan:RunLateOcclusion
+vulkan:SelectCullView
 vulkan:SelectShadowLights
 vulkan:SetAdaptiveQualityEnabled
+vulkan:SetCullTarget
 vulkan:SetEntityCustomShader
 vulkan:SetHDREnabled
 vulkan:SetScriptRenderTargetCamera
@@ -163,6 +176,7 @@ vulkan:ShutdownComputeSkinning
 vulkan:ShutdownRayTracing
 vulkan:SkinUniquePoses
 vulkan:SolveHandIK
+vulkan:SwapCullViewState
 vulkan:TemporalReuseRTOutputs
 vulkan:TransitionDepthImagesToReadable
 vulkan:TransitionRTOutputImages
@@ -190,6 +204,8 @@ web:EnsureWebOITTargets
 web:RecreateWebSizedTargets
 web:UploadWebInstances
 web:WebActivePlate
+web:WebDropSplitViewportResources
+web:WebEnsureSplitViewportResources
 web:WebEnsureTextMeshes
 web:WebGetOrBuildFontAtlas
 web:WebGetOrCreateSpriteBindGroup

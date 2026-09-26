@@ -39,11 +39,26 @@ END = "#endif // !ENJIN_RENDERER_WEBGPU"
 
 def regions():
     lines = open(SRC, encoding="utf-8", errors="replace").read().split("\n")
-    try:
-        start = next(i for i, l in enumerate(lines) if l.startswith(WEB_GUARD))
-        mid = next(i for i, l in enumerate(lines) if l.startswith(SPLIT))
-        end = max(i for i, l in enumerate(lines) if l.startswith(END))
-    except (StopIteration, ValueError):
+    # The web half starts at the #if that the SPLIT line closes, not at the
+    # first `#if ENJIN_RENDERER_WEBGPU` in the file. Since 2026-09-21 the first
+    # one is a ten-line guard inside a shared helper near the top, and taking it
+    # counted every shared method between there and the real block as web-only.
+    stack = []
+    start = mid = end = None
+    for i, l in enumerate(lines):
+        s = l.strip()
+        if re.match(r"#\s*if", s):
+            stack.append(i)
+        elif l.startswith(SPLIT) and mid is None:
+            mid = i
+            start = stack[-1] if stack else None
+            split_depth = len(stack)
+        elif re.match(r"#\s*endif", s):
+            if mid is not None and end is None and len(stack) == split_depth:
+                end = i
+            if stack:
+                stack.pop()
+    if start is None or mid is None or end is None or not lines[start].startswith(WEB_GUARD):
         print("could not find the backend split markers in RenderSystem.cpp")
         sys.exit(2)
     return lines[start:mid], lines[mid:end]
